@@ -33,6 +33,7 @@ export function ProjectsPage() {
   const projects = useQuery({ queryKey: ['projects'], queryFn: api.listProjects })
   const form = useForm<ProjectForm>({
     resolver: zodResolver(schema),
+    mode: 'onChange',
     defaultValues: { name: '', slug: '', description: '' },
   })
 
@@ -85,16 +86,16 @@ export function ProjectsPage() {
               createProject.mutate(payload)
             })}
           >
-            <Field label="项目名称">
-              <Input {...form.register('name')} placeholder="轻雪工作台" />
+            <Field error={form.formState.errors.name?.message} label="项目名称" required>
+              <Input {...form.register('name')} aria-invalid={Boolean(form.formState.errors.name)} placeholder="轻雪工作台" />
             </Field>
-            <Field label="项目标识">
-              <Input {...form.register('slug')} placeholder="liteyuki-workbench" />
+            <Field error={form.formState.errors.slug?.message} label="项目标识" required>
+              <Input {...form.register('slug')} aria-invalid={Boolean(form.formState.errors.slug)} placeholder="liteyuki-workbench" />
             </Field>
-            <Field label="描述">
+            <Field error={form.formState.errors.description?.message} label="描述">
               <Textarea {...form.register('description')} placeholder="这个项目负责哪些应用" />
             </Field>
-            <Button disabled={createProject.isPending || updateProject.isPending} type="submit">
+            <Button disabled={createProject.isPending || updateProject.isPending || !form.formState.isValid} type="submit">
               <Plus size={16} />
               {editingProject ? '保存' : '创建'}
             </Button>

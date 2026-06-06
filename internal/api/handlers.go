@@ -34,11 +34,22 @@ func NewHandlers(db *gorm.DB) *Handlers {
 }
 
 func (h *Handlers) GetBootstrapStatus(ctx *gin.Context) {
-	ctx.JSON(http.StatusOK, gin.H{
-		"mode":            h.mode,
-		"initialized":     h.hasPlatformAdmin(),
-		"devLoginEnabled": h.mode == "development",
-	})
+	ctx.JSON(http.StatusOK, bootstrapStatusResponse(h.mode, h.hasPlatformAdmin()))
+}
+
+func bootstrapStatusResponse(mode string, initialized bool) gin.H {
+	status := gin.H{
+		"mode":            mode,
+		"initialized":     initialized,
+		"devLoginEnabled": mode == "development",
+	}
+	if mode == "development" {
+		status["devLoginHint"] = gin.H{
+			"email":    developmentAdminEmail(),
+			"password": developmentAdminPassword(),
+		}
+	}
+	return status
 }
 
 func (h *Handlers) InitializeAdmin(ctx *gin.Context) {
@@ -829,8 +840,8 @@ func hashToken(token string) string {
 }
 
 func ensureDevelopmentAdmin(db *gorm.DB) {
-	email := strings.ToLower(env("LOCAL_ADMIN_EMAIL", "admin@liteyuki.dev"))
-	password := env("LOCAL_ADMIN_PASSWORD", "devops")
+	email := developmentAdminEmail()
+	password := developmentAdminPassword()
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		panic(err)
@@ -861,6 +872,14 @@ func ensureDevelopmentAdmin(db *gorm.DB) {
 	if needsSave {
 		_ = db.Save(&user).Error
 	}
+}
+
+func developmentAdminEmail() string {
+	return strings.ToLower(env("LOCAL_ADMIN_EMAIL", "admin@liteyuki.dev"))
+}
+
+func developmentAdminPassword() string {
+	return env("LOCAL_ADMIN_PASSWORD", "devops")
 }
 
 func ensureCasdoorAuthProvider(db *gorm.DB) {

@@ -40,7 +40,10 @@ export function UsersPage() {
   const queryClient = useQueryClient()
   const [editingUser, setEditingUser] = useState<User | null>(null)
   const users = useQuery({ queryKey: ['users'], queryFn: api.listUsers })
-  const form = useForm<UserForm>({ resolver: zodResolver(schema), defaultValues })
+  const form = useForm<UserForm>({ resolver: zodResolver(schema), mode: 'onChange', defaultValues })
+  const password = form.watch('password')
+  const passwordError = !editingUser && password.length < 8 ? '密码至少 8 位' : form.formState.errors.password?.message
+  const canSubmit = form.formState.isValid && (editingUser || password.length >= 8)
 
   useEffect(() => {
     if (!editingUser) {
@@ -82,23 +85,23 @@ export function UsersPage() {
         <Card>
           <form className="grid gap-3" onSubmit={form.handleSubmit(values => save.mutate(values))}>
             <h2 className="text-base font-semibold">{editingUser ? '编辑用户' : '创建本地用户'}</h2>
-            <Field label="邮箱">
-              <Input {...form.register('email')} autoComplete="email" />
+            <Field error={form.formState.errors.email?.message} label="邮箱" required>
+              <Input {...form.register('email')} aria-invalid={Boolean(form.formState.errors.email)} autoComplete="email" />
             </Field>
-            <Field label="名称">
-              <Input {...form.register('name')} autoComplete="name" />
+            <Field error={form.formState.errors.name?.message} label="名称" required>
+              <Input {...form.register('name')} aria-invalid={Boolean(form.formState.errors.name)} autoComplete="name" />
             </Field>
-            <Field label={editingUser ? '重置密码' : '密码'}>
-              <Input {...form.register('password')} autoComplete="new-password" placeholder={editingUser ? '留空则不修改' : '至少 8 位'} type="password" />
+            <Field error={passwordError} label={editingUser ? '重置密码' : '密码'} required={!editingUser}>
+              <Input {...form.register('password')} aria-invalid={Boolean(passwordError)} autoComplete="new-password" placeholder={editingUser ? '留空则不修改' : '至少 8 位'} type="password" />
             </Field>
-            <Field label="全局角色">
-              <Select {...form.register('role')}>
+            <Field error={form.formState.errors.role?.message} label="全局角色" required>
+              <Select {...form.register('role')} aria-invalid={Boolean(form.formState.errors.role)}>
                 <option value="user">普通用户</option>
                 <option value="platform_admin">平台管理员</option>
               </Select>
             </Field>
-            <Field label="语言">
-              <Select {...form.register('language')}>
+            <Field error={form.formState.errors.language?.message} label="语言" required>
+              <Select {...form.register('language')} aria-invalid={Boolean(form.formState.errors.language)}>
                 <option value="zh-CN">中文</option>
                 <option value="en-US">English</option>
               </Select>
@@ -108,7 +111,7 @@ export function UsersPage() {
               禁用账号
             </label>
             <div className="flex gap-2">
-              <Button disabled={save.isPending} type="submit">
+              <Button disabled={save.isPending || !canSubmit} type="submit">
                 {editingUser ? <Save size={16} /> : <UserPlus size={16} />}
                 {editingUser ? '保存用户' : '创建用户'}
               </Button>
@@ -132,18 +135,15 @@ export function UsersPage() {
                   type="button"
                   onClick={() => setEditingUser(user)}
                 >
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="font-medium">{user.name}</p>
-                      <p className="text-sm text-muted-foreground">{user.email}</p>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <p className="min-w-0 truncate font-medium">{user.name}</p>
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      <StatusBadge>{user.disabled ? 'disabled' : 'active'}</StatusBadge>
+                      <StatusBadge>{user.role === 'platform_admin' ? '平台管理员' : '普通用户'}</StatusBadge>
+                      <StatusBadge>{user.authType}</StatusBadge>
                     </div>
-                    <StatusBadge>{user.disabled ? 'disabled' : 'active'}</StatusBadge>
                   </div>
-                  <div className="flex gap-2 text-xs text-muted-foreground">
-                    <span>{user.role === 'platform_admin' ? '平台管理员' : '普通用户'}</span>
-                    <span>{user.authType}</span>
-                    <span>{user.language}</span>
-                  </div>
+                  <p className="truncate text-sm text-muted-foreground">{user.email}</p>
                 </button>
               </MotionItem>
             ))}

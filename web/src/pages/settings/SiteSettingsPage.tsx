@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Save } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo } from 'react'
+import { useForm } from 'react-hook-form'
 import { toast } from 'sonner'
 import { api } from '../../api/client'
 import { ErrorState } from '../../components/common/error-state'
@@ -11,6 +12,7 @@ import { Field, Input } from '../../components/ui/input'
 
 export function SiteSettingsPage() {
   const queryClient = useQueryClient()
+  const form = useForm<Record<string, string>>({ mode: 'onChange', defaultValues: {} })
   const definitions = useQuery({ queryKey: ['config-definitions'], queryFn: api.listConfigDefinitions })
   const keys = useMemo(() => (definitions.data ?? []).map(definition => definition.key), [definitions.data])
   const values = useQuery({
@@ -18,13 +20,17 @@ export function SiteSettingsPage() {
     queryFn: () => api.getPublicConfigs(keys),
     enabled: keys.length > 0,
   })
-  const [formValues, setFormValues] = useState<Record<string, string>>({})
   const resolvedValues = useMemo(() => {
     const nextValues: Record<string, string> = {}
     for (const definition of definitions.data ?? [])
-      nextValues[definition.key] = formValues[definition.key] ?? values.data?.[definition.key] ?? definition.default
+      nextValues[definition.key] = values.data?.[definition.key] ?? definition.default
     return nextValues
-  }, [definitions.data, formValues, values.data])
+  }, [definitions.data, values.data])
+
+  useEffect(() => {
+    if (definitions.data && values.data)
+      form.reset(resolvedValues)
+  }, [definitions.data, form, resolvedValues, values.data])
 
   const save = useMutation({
     mutationFn: api.updateConfigs,
@@ -48,17 +54,11 @@ export function SiteSettingsPage() {
       <Card className="max-w-3xl">
         <form
           className="grid gap-4"
-          onSubmit={(event) => {
-            event.preventDefault()
-            save.mutate(formValues)
-          }}
+          onSubmit={form.handleSubmit(formValues => save.mutate(formValues))}
         >
           {(definitions.data ?? []).map(definition => (
             <Field key={definition.key} label={definition.label}>
-              <Input
-                value={resolvedValues[definition.key] ?? ''}
-                onChange={event => setFormValues(current => ({ ...current, [definition.key]: event.target.value }))}
-              />
+              <Input {...form.register(definition.key)} />
               <p className="text-xs font-normal text-muted-foreground">
                 {definition.key}
                 {' · '}
@@ -67,7 +67,7 @@ export function SiteSettingsPage() {
             </Field>
           ))}
 
-          <Button className="w-fit" disabled={save.isPending} type="submit">
+          <Button className="w-fit" disabled={save.isPending || !form.formState.isValid} type="submit">
             <Save size={16} />
             保存配置
           </Button>

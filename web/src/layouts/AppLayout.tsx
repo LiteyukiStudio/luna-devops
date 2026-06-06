@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Box, KeyRound, LayoutDashboard, Link2, PanelLeftClose, PanelLeftOpen, Settings, ShieldCheck, Users } from 'lucide-react'
-import { AnimatePresence, motion } from 'motion/react'
-import { useEffect, useState } from 'react'
+import { Box, LayoutDashboard, Link2, Settings, ShieldCheck, Users } from 'lucide-react'
+import { AnimatePresence } from 'motion/react'
+import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -15,13 +15,27 @@ import { ThemeModeSegmented } from '../components/common/theme-mode-segmented'
 import { Button } from '../components/ui/button'
 import { cn } from '../lib/utils'
 
-const navItems = [
-  { to: '/projects', labelKey: 'projects', icon: LayoutDashboard },
-  { to: '/access-tokens', labelKey: 'accessTokens', icon: KeyRound },
-  { to: '/settings/security', labelKey: 'security', icon: Link2 },
-  { to: '/settings/auth-providers', labelKey: 'authProviders', icon: ShieldCheck, permission: 'user.manage' },
-  { to: '/settings/users', labelKey: 'users', icon: Users, permission: 'user.manage' },
-  { to: '/settings/site', labelKey: 'siteSettings', icon: Settings },
+const navSections = [
+  {
+    title: 'DevOps',
+    items: [
+      { to: '/projects', labelKey: 'projects', icon: LayoutDashboard },
+    ],
+  },
+  {
+    title: '个人工作区',
+    items: [
+      { to: '/settings/security', labelKey: 'security', icon: Link2 },
+    ],
+  },
+  {
+    title: '系统管理',
+    items: [
+      { to: '/settings/auth-providers', labelKey: 'authProviders', icon: ShieldCheck, permission: 'user.manage' },
+      { to: '/settings/users', labelKey: 'users', icon: Users, permission: 'user.manage' },
+      { to: '/settings/site', labelKey: 'siteSettings', icon: Settings },
+    ],
+  },
 ]
 
 export function AppLayout() {
@@ -31,7 +45,6 @@ export function AppLayout() {
   const navigate = useNavigate()
   const location = useLocation()
   const queryClient = useQueryClient()
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => window.localStorage.getItem('sidebar-collapsed') === 'true')
   const user = useQuery({ queryKey: ['current-user'], queryFn: api.getCurrentUser })
   const logout = useMutation({
     mutationFn: api.logout,
@@ -54,13 +67,6 @@ export function AppLayout() {
     logout.mutate()
   }
 
-  const toggleSidebar = () => {
-    setSidebarCollapsed((value) => {
-      window.localStorage.setItem('sidebar-collapsed', String(!value))
-      return !value
-    })
-  }
-
   useEffect(() => {
     if (user.data?.language && i18n.language !== user.data.language)
       i18n.changeLanguage(user.data.language)
@@ -77,104 +83,71 @@ export function AppLayout() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <motion.aside
-        animate={{ width: sidebarCollapsed ? 72 : 256 }}
-        className="fixed inset-y-0 left-0 hidden grid-rows-[auto_1fr_auto] overflow-hidden border-r border-border bg-surface lg:grid"
-        transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-      >
-        <div className="flex h-16 items-center gap-3 border-b border-border px-3">
-          <Link
-            aria-label={configs['site.title'] || t('appName')}
-            className={cn('flex min-w-0 flex-1 items-center gap-3', sidebarCollapsed && 'justify-center')}
-            to="/projects"
-          >
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
-              {configs['site.logoUrl']
-                ? <img alt="" className="size-6 rounded-sm object-contain" src={configs['site.logoUrl']} />
-                : <Box size={18} />}
-            </span>
-            <AnimatePresence>
-              {!sidebarCollapsed && (
-                <motion.span
-                  animate={{ opacity: 1, x: 0 }}
-                  className="truncate font-semibold"
-                  exit={{ opacity: 0, x: -4 }}
-                  initial={{ opacity: 0, x: -4 }}
-                  transition={{ duration: 0.16, ease: 'easeOut' }}
-                >
-                  {configs['site.title'] || t('appName')}
-                </motion.span>
-              )}
-            </AnimatePresence>
-          </Link>
-          {!sidebarCollapsed && (
-            <Button aria-label="折叠侧边栏" className="size-8 shrink-0 px-0" variant="ghost" onClick={toggleSidebar}>
-              <PanelLeftClose size={16} />
-            </Button>
-          )}
-        </div>
-        <nav className="space-y-1 overflow-y-auto p-3">
-          {navItems.filter(item => !item.permission || user.data?.permissions.includes(item.permission)).map(item => (
-            <NavLink
-              key={item.to}
-              className={({ isActive }) => cn(
-                'flex h-10 items-center gap-3 rounded-md px-3 text-sm text-muted-foreground transition-all duration-150 hover:bg-muted hover:text-foreground',
-                sidebarCollapsed && 'justify-center px-0',
-                isActive && 'bg-muted text-foreground',
-              )}
-              title={t(item.labelKey)}
-              to={item.to}
-            >
-              <item.icon size={17} />
-              <AnimatePresence>
-                {!sidebarCollapsed && (
-                  <motion.span
-                    animate={{ opacity: 1, x: 0 }}
-                    className="truncate"
-                    exit={{ opacity: 0, x: -4 }}
-                    initial={{ opacity: 0, x: -4 }}
-                    transition={{ duration: 0.14, ease: 'easeOut' }}
-                  >
-                    {t(item.labelKey)}
-                  </motion.span>
-                )}
-              </AnimatePresence>
-            </NavLink>
-          ))}
+      <aside className="fixed inset-y-0 left-0 hidden w-64 grid-rows-[auto_1fr_auto] overflow-hidden border-r border-border bg-surface lg:grid">
+        <Link
+          aria-label={configs['site.title'] || t('appName')}
+          className="flex h-16 min-w-0 items-center gap-3 border-b border-border px-5"
+          to="/projects"
+        >
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
+            {configs['site.logoUrl']
+              ? <img alt="" className="size-6 rounded-sm object-contain" src={configs['site.logoUrl']} />
+              : <Box size={18} />}
+          </span>
+          <span className="truncate font-semibold">{configs['site.title'] || t('appName')}</span>
+        </Link>
+        <nav className="overflow-y-auto px-3 py-4">
+          {navSections.map((section, index) => {
+            const items = section.items.filter(item => !item.permission || user.data?.permissions.includes(item.permission))
+            if (items.length === 0)
+              return null
+
+            return (
+              <section key={section.title} className={cn(index > 0 && 'mt-4 border-t border-border pt-4')}>
+                <p className="mb-2 px-3 text-xs font-medium uppercase tracking-normal text-muted-foreground">{section.title}</p>
+                <div className="space-y-1">
+                  {items.map(item => (
+                    <NavLink
+                      key={item.to}
+                      className={({ isActive }) => cn(
+                        'flex h-10 items-center gap-3 rounded-md px-3 text-sm text-muted-foreground transition-all duration-150 hover:bg-muted hover:text-foreground',
+                        isActive && 'bg-muted text-foreground',
+                      )}
+                      title={t(item.labelKey)}
+                      to={item.to}
+                    >
+                      <item.icon size={17} />
+                      <span className="truncate">{t(item.labelKey)}</span>
+                    </NavLink>
+                  ))}
+                </div>
+              </section>
+            )
+          })}
         </nav>
         <div className="grid gap-3 border-t border-border p-3">
-          {sidebarCollapsed
-            ? (
-                <Button aria-label="展开侧边栏" className="size-9 px-0" variant="ghost" onClick={toggleSidebar}>
-                  <PanelLeftOpen size={16} />
-                </Button>
-              )
-            : (
-                <>
-                  <ThemeModeSegmented mode={mode} setMode={setMode} />
-                  <div className="flex items-center gap-2">
-                    <select
-                      aria-label="语言"
-                      className="h-9 flex-1 rounded-md border border-border bg-background px-2 text-sm transition duration-150 focus:border-primary"
-                      value={user.data?.language || 'zh-CN'}
-                      onChange={event => updateLanguage.mutate({ language: event.target.value as 'zh-CN' | 'en-US' })}
-                    >
-                      <option value="zh-CN">中文</option>
-                      <option value="en-US">English</option>
-                    </select>
-                  </div>
-                  <SidebarUserPanel
-                    logoutLabel={t('logout')}
-                    logoutPending={logout.isPending}
-                    user={user.data}
-                    onLogout={handleLogout}
-                  />
-                </>
-              )}
+          <ThemeModeSegmented mode={mode} setMode={setMode} />
+          <div className="flex items-center gap-2">
+            <select
+              aria-label="语言"
+              className="h-9 flex-1 rounded-md border border-border bg-background px-2 text-sm transition duration-150 focus:border-primary"
+              value={user.data?.language || 'zh-CN'}
+              onChange={event => updateLanguage.mutate({ language: event.target.value as 'zh-CN' | 'en-US' })}
+            >
+              <option value="zh-CN">中文</option>
+              <option value="en-US">English</option>
+            </select>
+          </div>
+          <SidebarUserPanel
+            logoutLabel={t('logout')}
+            logoutPending={logout.isPending}
+            user={user.data}
+            onLogout={handleLogout}
+          />
         </div>
-      </motion.aside>
+      </aside>
 
-      <div className={cn('transition-[padding] duration-200 ease-out lg:min-h-screen', sidebarCollapsed ? 'lg:pl-[72px]' : 'lg:pl-64')}>
+      <div className="lg:min-h-screen lg:pl-64">
         <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b border-border bg-background/90 px-4 backdrop-blur lg:px-6">
           <div className="min-w-0">
             <p className="truncate text-sm font-medium">{configs['site.title'] || t('appName')}</p>

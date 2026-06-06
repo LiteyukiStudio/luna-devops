@@ -19,14 +19,14 @@ import { Card } from '../../components/ui/card'
 import { Field, Input, Select, Textarea } from '../../components/ui/input'
 
 const schema = z.object({
-  name: z.string().min(1),
-  slug: z.string().min(1).regex(/^[a-z0-9-]+$/),
+  name: z.string().min(1, '请输入应用名称'),
+  slug: z.string().min(1, '请输入应用标识').regex(/^[a-z0-9-]+$/, '只能包含小写字母、数字和 -'),
   sourceType: z.enum(['repository', 'image']),
   repositoryUrl: z.string().optional(),
   imageReference: z.string().optional(),
   dockerfilePath: z.string().optional(),
   buildContext: z.string().optional(),
-  servicePort: z.coerce.number().int().positive(),
+  servicePort: z.coerce.number().int('请输入整数端口').positive('端口必须大于 0'),
 })
 
 type ApplicationFormInput = z.input<typeof schema>
@@ -44,6 +44,7 @@ export function ApplicationsPage() {
   })
   const form = useForm<ApplicationFormInput, undefined, ApplicationForm>({
     resolver: zodResolver(schema),
+    mode: 'onChange',
     defaultValues: {
       name: '',
       slug: '',
@@ -127,15 +128,15 @@ export function ApplicationsPage() {
               解析配置
             </Button>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="应用名称">
-                <Input {...form.register('name')} placeholder="控制台" />
+              <Field error={form.formState.errors.name?.message} label="应用名称" required>
+                <Input {...form.register('name')} aria-invalid={Boolean(form.formState.errors.name)} placeholder="控制台" />
               </Field>
-              <Field label="应用标识">
-                <Input {...form.register('slug')} placeholder="console" />
+              <Field error={form.formState.errors.slug?.message} label="应用标识" required>
+                <Input {...form.register('slug')} aria-invalid={Boolean(form.formState.errors.slug)} placeholder="console" />
               </Field>
             </div>
-            <Field label="来源类型">
-              <Select {...form.register('sourceType')}>
+            <Field error={form.formState.errors.sourceType?.message} label="来源类型" required>
+              <Select {...form.register('sourceType')} aria-invalid={Boolean(form.formState.errors.sourceType)}>
                 <option value="repository">代码仓库</option>
                 <option value="image">已有镜像</option>
               </Select>
@@ -143,28 +144,28 @@ export function ApplicationsPage() {
             {sourceType === 'repository'
               ? (
                   <>
-                    <Field label="仓库地址">
-                      <Input {...form.register('repositoryUrl')} placeholder="https://github.com/org/repo" />
+                    <Field error={form.formState.errors.repositoryUrl?.message} label="仓库地址">
+                      <Input {...form.register('repositoryUrl')} aria-invalid={Boolean(form.formState.errors.repositoryUrl)} placeholder="https://github.com/org/repo" />
                     </Field>
                     <div className="grid grid-cols-2 gap-3">
-                      <Field label="Dockerfile">
-                        <Input {...form.register('dockerfilePath')} />
+                      <Field error={form.formState.errors.dockerfilePath?.message} label="Dockerfile">
+                        <Input {...form.register('dockerfilePath')} aria-invalid={Boolean(form.formState.errors.dockerfilePath)} />
                       </Field>
-                      <Field label="构建上下文">
-                        <Input {...form.register('buildContext')} />
+                      <Field error={form.formState.errors.buildContext?.message} label="构建上下文">
+                        <Input {...form.register('buildContext')} aria-invalid={Boolean(form.formState.errors.buildContext)} />
                       </Field>
                     </div>
                   </>
                 )
               : (
-                  <Field label="镜像地址">
-                    <Input {...form.register('imageReference')} placeholder="harbor.local/library/app:latest" />
+                  <Field error={form.formState.errors.imageReference?.message} label="镜像地址">
+                    <Input {...form.register('imageReference')} aria-invalid={Boolean(form.formState.errors.imageReference)} placeholder="harbor.local/library/app:latest" />
                   </Field>
                 )}
-            <Field label="服务端口">
-              <Input type="number" {...form.register('servicePort')} />
+            <Field error={form.formState.errors.servicePort?.message} label="服务端口" required>
+              <Input type="number" {...form.register('servicePort')} aria-invalid={Boolean(form.formState.errors.servicePort)} />
             </Field>
-            <Button disabled={createApplication.isPending} type="submit">
+            <Button disabled={createApplication.isPending || !form.formState.isValid} type="submit">
               <Plus size={16} />
               创建应用
             </Button>

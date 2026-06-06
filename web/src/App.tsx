@@ -1,6 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { AppLayout } from './layouts/AppLayout'
-import { AccessTokensPage } from './pages/access-tokens/AccessTokensPage'
 import { ApplicationConfigPage } from './pages/applications/ApplicationConfigPage'
 import { ApplicationsPage } from './pages/applications/ApplicationsPage'
 import { BootstrapPage } from './pages/bootstrap/BootstrapPage'
@@ -23,7 +22,7 @@ export default function App() {
         <Route path="/projects/:projectId/members" element={<ProjectMembersPage />} />
         <Route path="/projects/:projectId/apps" element={<ApplicationsPage />} />
         <Route path="/projects/:projectId/apps/:applicationId" element={<ApplicationConfigPage />} />
-        <Route path="/access-tokens" element={<AccessTokensPage />} />
+        <Route path="/access-tokens" element={<Navigate to="/settings/security" replace />} />
         <Route path="/settings/security" element={<SecurityPage />} />
         <Route path="/settings/auth-providers" element={<AuthProvidersPage />} />
         <Route path="/settings/site" element={<SiteSettingsPage />} />

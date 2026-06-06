@@ -9,6 +9,7 @@ import { PageHeader } from '../../components/common/page-header'
 import { StatusBadge } from '../../components/common/status-badge'
 import { Button } from '../../components/ui/button'
 import { Card } from '../../components/ui/card'
+import { AccessTokensPanel } from '../access-tokens/AccessTokensPage'
 
 export function SecurityPage() {
   const queryClient = useQueryClient()
@@ -26,7 +27,7 @@ export function SecurityPage() {
   return (
     <div className="grid gap-6">
       <PageHeader
-        description="管理当前账号绑定的 OIDC 第三方登录。"
+        description="管理第三方登录绑定和用于 API 调用的个人 Access Token。"
         title="账号安全"
       />
 
@@ -82,6 +83,14 @@ export function SecurityPage() {
           </div>
         </Card>
       </div>
+
+      <section className="grid gap-3 border-t border-border pt-6">
+        <div>
+          <h2 className="text-lg font-semibold">Access Token</h2>
+          <p className="mt-1 text-sm text-muted-foreground">用于 API 触发构建或部署，不使用 JWT，后端只保存 hash。</p>
+        </div>
+        <AccessTokensPanel />
+      </section>
     </div>
   )
 }

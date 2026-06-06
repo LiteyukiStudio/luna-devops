@@ -16,7 +16,7 @@ export function Button({ className, variant = 'primary', ...props }: ButtonProps
   return (
     <button
       className={cn(
-        'inline-flex h-9 items-center justify-center gap-2 rounded-md px-3 text-sm font-medium transition duration-150 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50',
+        'inline-flex h-9 items-center justify-center gap-2 rounded-md px-3 text-sm font-medium transition duration-150 active:scale-[0.98] disabled:pointer-events-none disabled:saturate-75 disabled:brightness-75 disabled:opacity-65',
         variants[variant],
         className,
       )}

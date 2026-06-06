@@ -29,6 +29,7 @@ export function LoginPage() {
   const providers = useQuery({ queryKey: ['auth-providers'], queryFn: () => api.listAuthProviders(false) })
   const form = useForm<LoginForm>({
     resolver: zodResolver(schema),
+    mode: 'onChange',
     defaultValues: {
       email: '',
       password: '',
@@ -38,10 +39,13 @@ export function LoginPage() {
   useEffect(() => {
     if (status.data && !status.data.initialized)
       navigate('/bootstrap', { replace: true })
-    if (status.data?.devLoginEnabled) {
+    const devLoginHint = status.data?.mode === 'development' && status.data.devLoginEnabled
+      ? status.data.devLoginHint
+      : undefined
+    if (devLoginHint) {
       form.reset({
-        email: 'admin@liteyuki.dev',
-        password: 'devops',
+        email: devLoginHint.email,
+        password: devLoginHint.password,
       })
     }
   }, [form, navigate, status.data])
@@ -78,19 +82,24 @@ export function LoginPage() {
             </div>
           </div>
           <form className="grid gap-3" onSubmit={form.handleSubmit(values => login.mutate(values))}>
-            <Field label="邮箱">
-              <Input {...form.register('email')} autoComplete="email" />
+            <Field error={form.formState.errors.email?.message} label="邮箱" required>
+              <Input {...form.register('email')} aria-invalid={Boolean(form.formState.errors.email)} autoComplete="email" />
             </Field>
-            <Field label="密码">
-              <Input {...form.register('password')} autoComplete="current-password" type="password" />
+            <Field error={form.formState.errors.password?.message} label="密码" required>
+              <Input {...form.register('password')} aria-invalid={Boolean(form.formState.errors.password)} autoComplete="current-password" type="password" />
             </Field>
-            <Button disabled={login.isPending} type="submit">
+            <Button disabled={login.isPending || !form.formState.isValid} type="submit">
               <LogIn size={16} />
               登录
             </Button>
-            {status.data?.devLoginEnabled && (
+            {status.data?.mode === 'development' && status.data.devLoginEnabled && status.data.devLoginHint && (
               <p className="text-xs text-muted-foreground">
-                开发默认账号：admin@liteyuki.dev / devops
+                开发默认账号：
+                {status.data.devLoginHint.email}
+                {' '}
+                /
+                {' '}
+                {status.data.devLoginHint.password}
               </p>
             )}
           </form>

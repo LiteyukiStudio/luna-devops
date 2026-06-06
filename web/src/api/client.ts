@@ -116,6 +116,10 @@ export interface BootstrapStatus {
   mode: 'development' | 'production'
   initialized: boolean
   devLoginEnabled: boolean
+  devLoginHint?: {
+    email: string
+    password: string
+  }
 }
 
 export function oidcStartUrl(providerId: string, mode: 'login' | 'bind', redirect = '/projects') {

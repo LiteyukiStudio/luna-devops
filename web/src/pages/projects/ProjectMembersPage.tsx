@@ -43,6 +43,7 @@ export function ProjectMembersPage() {
   })
   const form = useForm<MemberForm>({
     resolver: zodResolver(schema),
+    mode: 'onChange',
     defaultValues: { email: '', role: 'viewer' },
   })
 
@@ -88,18 +89,18 @@ export function ProjectMembersPage() {
         <Card>
           <form className="grid gap-3" onSubmit={form.handleSubmit(values => createMember.mutate(values))}>
             <h2 className="text-base font-semibold">添加成员</h2>
-            <Field label="用户邮箱">
-              <Input {...form.register('email')} placeholder="user@example.com" />
+            <Field error={form.formState.errors.email?.message} label="用户邮箱" required>
+              <Input {...form.register('email')} aria-invalid={Boolean(form.formState.errors.email)} placeholder="user@example.com" />
             </Field>
-            <Field label="项目角色">
-              <Select {...form.register('role')}>
+            <Field error={form.formState.errors.role?.message} label="项目角色" required>
+              <Select {...form.register('role')} aria-invalid={Boolean(form.formState.errors.role)}>
                 <option value="viewer">Viewer</option>
                 <option value="developer">Developer</option>
                 <option value="admin">Admin</option>
                 <option value="owner">Owner</option>
               </Select>
             </Field>
-            <Button disabled={createMember.isPending} type="submit">
+            <Button disabled={createMember.isPending || !form.formState.isValid} type="submit">
               <UserPlus size={16} />
               添加成员
             </Button>

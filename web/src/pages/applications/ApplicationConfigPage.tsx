@@ -15,14 +15,14 @@ import { Card } from '../../components/ui/card'
 import { Field, Input, Select } from '../../components/ui/input'
 
 const schema = z.object({
-  name: z.string().min(1),
-  slug: z.string().min(1).regex(/^[a-z0-9-]+$/),
+  name: z.string().min(1, '请输入应用名称'),
+  slug: z.string().min(1, '请输入应用标识').regex(/^[a-z0-9-]+$/, '只能包含小写字母、数字和 -'),
   sourceType: z.enum(['repository', 'image']),
   repositoryUrl: z.string().optional(),
   imageReference: z.string().optional(),
   dockerfilePath: z.string().optional(),
   buildContext: z.string().optional(),
-  servicePort: z.coerce.number().int().positive(),
+  servicePort: z.coerce.number().int('请输入整数端口').positive('端口必须大于 0'),
 })
 
 type ApplicationFormInput = z.input<typeof schema>
@@ -38,6 +38,7 @@ export function ApplicationConfigPage() {
   })
   const form = useForm<ApplicationFormInput, undefined, ApplicationForm>({
     resolver: zodResolver(schema),
+    mode: 'onChange',
     defaultValues: {
       name: '',
       slug: '',
@@ -100,12 +101,12 @@ export function ApplicationConfigPage() {
         <form onSubmit={form.handleSubmit(values => updateApplication.mutate(values))}>
           <MotionList className="grid gap-4">
             <div className="grid gap-3 md:grid-cols-2">
-              <MotionItem><Field label="应用名称"><Input {...form.register('name')} /></Field></MotionItem>
-              <MotionItem><Field label="应用标识"><Input {...form.register('slug')} /></Field></MotionItem>
+              <MotionItem><Field error={form.formState.errors.name?.message} label="应用名称" required><Input {...form.register('name')} aria-invalid={Boolean(form.formState.errors.name)} /></Field></MotionItem>
+              <MotionItem><Field error={form.formState.errors.slug?.message} label="应用标识" required><Input {...form.register('slug')} aria-invalid={Boolean(form.formState.errors.slug)} /></Field></MotionItem>
             </div>
             <MotionItem>
-              <Field label="来源类型">
-                <Select {...form.register('sourceType')}>
+              <Field error={form.formState.errors.sourceType?.message} label="来源类型" required>
+                <Select {...form.register('sourceType')} aria-invalid={Boolean(form.formState.errors.sourceType)}>
                   <option value="repository">代码仓库</option>
                   <option value="image">已有镜像</option>
                 </Select>
@@ -115,30 +116,30 @@ export function ApplicationConfigPage() {
               ? (
                   <>
                     <MotionItem>
-                      <Field label="仓库地址">
-                        <Input {...form.register('repositoryUrl')} placeholder="https://github.com/org/repo" />
+                      <Field error={form.formState.errors.repositoryUrl?.message} label="仓库地址">
+                        <Input {...form.register('repositoryUrl')} aria-invalid={Boolean(form.formState.errors.repositoryUrl)} placeholder="https://github.com/org/repo" />
                       </Field>
                     </MotionItem>
                     <div className="grid gap-3 md:grid-cols-2">
-                      <MotionItem><Field label="Dockerfile"><Input {...form.register('dockerfilePath')} /></Field></MotionItem>
-                      <MotionItem><Field label="构建上下文"><Input {...form.register('buildContext')} /></Field></MotionItem>
+                      <MotionItem><Field error={form.formState.errors.dockerfilePath?.message} label="Dockerfile"><Input {...form.register('dockerfilePath')} aria-invalid={Boolean(form.formState.errors.dockerfilePath)} /></Field></MotionItem>
+                      <MotionItem><Field error={form.formState.errors.buildContext?.message} label="构建上下文"><Input {...form.register('buildContext')} aria-invalid={Boolean(form.formState.errors.buildContext)} /></Field></MotionItem>
                     </div>
                   </>
                 )
               : (
                   <MotionItem>
-                    <Field label="镜像地址">
-                      <Input {...form.register('imageReference')} placeholder="harbor.local/library/app:latest" />
+                    <Field error={form.formState.errors.imageReference?.message} label="镜像地址">
+                      <Input {...form.register('imageReference')} aria-invalid={Boolean(form.formState.errors.imageReference)} placeholder="harbor.local/library/app:latest" />
                     </Field>
                   </MotionItem>
                 )}
             <MotionItem>
-              <Field label="服务端口">
-                <Input type="number" {...form.register('servicePort')} />
+              <Field error={form.formState.errors.servicePort?.message} label="服务端口" required>
+                <Input type="number" {...form.register('servicePort')} aria-invalid={Boolean(form.formState.errors.servicePort)} />
               </Field>
             </MotionItem>
             <MotionItem>
-              <Button className="w-fit" disabled={updateApplication.isPending} type="submit">
+              <Button className="w-fit" disabled={updateApplication.isPending || !form.formState.isValid} type="submit">
                 <Save size={16} />
                 保存配置
               </Button>

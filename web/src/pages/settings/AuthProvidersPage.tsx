@@ -58,9 +58,10 @@ export function AuthProvidersPage() {
   const [editingProvider, setEditingProvider] = useState<AuthProvider | null>(null)
   const providers = useQuery({ queryKey: ['auth-providers', 'admin'], queryFn: () => api.listAuthProviders(true) })
   const policy = useQuery({ queryKey: ['auth-admission-policy'], queryFn: api.getAuthAdmissionPolicy })
-  const providerForm = useForm<ProviderForm>({ resolver: zodResolver(providerSchema), defaultValues: providerDefaults })
+  const providerForm = useForm<ProviderForm>({ resolver: zodResolver(providerSchema), mode: 'onChange', defaultValues: providerDefaults })
   const policyForm = useForm<PolicyForm>({
     resolver: zodResolver(policySchema),
+    mode: 'onChange',
     defaultValues: {
       allowLocalLogin: true,
       allowOidcLogin: true,
@@ -145,30 +146,30 @@ export function AuthProvidersPage() {
         <Card>
           <form className="grid gap-3" onSubmit={providerForm.handleSubmit(values => saveProvider.mutate(values))}>
             <h2 className="text-base font-semibold">{editingProvider ? '编辑 OIDC Provider' : '创建 OIDC Provider'}</h2>
-            <Field label="名称">
-              <Input {...providerForm.register('name')} placeholder="Casdoor" />
+            <Field error={providerForm.formState.errors.name?.message} label="名称" required>
+              <Input {...providerForm.register('name')} aria-invalid={Boolean(providerForm.formState.errors.name)} placeholder="Casdoor" />
             </Field>
-            <Field label="Issuer URL">
-              <Input {...providerForm.register('issuerUrl')} placeholder="https://sso.example.com" />
+            <Field error={providerForm.formState.errors.issuerUrl?.message} label="Issuer URL" required>
+              <Input {...providerForm.register('issuerUrl')} aria-invalid={Boolean(providerForm.formState.errors.issuerUrl)} placeholder="https://sso.example.com" />
             </Field>
-            <Field label="Client ID">
-              <Input {...providerForm.register('clientId')} />
+            <Field error={providerForm.formState.errors.clientId?.message} label="Client ID" required>
+              <Input {...providerForm.register('clientId')} aria-invalid={Boolean(providerForm.formState.errors.clientId)} />
             </Field>
-            <Field label="Client Secret 引用">
-              <Input {...providerForm.register('clientSecretRef')} placeholder="env:OIDC_CLIENT_SECRET" />
+            <Field error={providerForm.formState.errors.clientSecretRef?.message} label="Client Secret 引用">
+              <Input {...providerForm.register('clientSecretRef')} aria-invalid={Boolean(providerForm.formState.errors.clientSecretRef)} placeholder="env:OIDC_CLIENT_SECRET" />
             </Field>
-            <Field label="Scopes">
-              <Input {...providerForm.register('scopes')} />
+            <Field error={providerForm.formState.errors.scopes?.message} label="Scopes" required>
+              <Input {...providerForm.register('scopes')} aria-invalid={Boolean(providerForm.formState.errors.scopes)} />
             </Field>
             <div className="grid grid-cols-3 gap-3">
-              <Field label="Group Claim">
-                <Input {...providerForm.register('groupClaim')} />
+              <Field error={providerForm.formState.errors.groupClaim?.message} label="Group Claim" required>
+                <Input {...providerForm.register('groupClaim')} aria-invalid={Boolean(providerForm.formState.errors.groupClaim)} />
               </Field>
-              <Field label="Email Claim">
-                <Input {...providerForm.register('emailClaim')} />
+              <Field error={providerForm.formState.errors.emailClaim?.message} label="Email Claim" required>
+                <Input {...providerForm.register('emailClaim')} aria-invalid={Boolean(providerForm.formState.errors.emailClaim)} />
               </Field>
-              <Field label="Username Claim">
-                <Input {...providerForm.register('usernameClaim')} />
+              <Field error={providerForm.formState.errors.usernameClaim?.message} label="Username Claim" required>
+                <Input {...providerForm.register('usernameClaim')} aria-invalid={Boolean(providerForm.formState.errors.usernameClaim)} />
               </Field>
             </div>
             <label className="flex items-center gap-2 text-sm">
@@ -180,7 +181,7 @@ export function AuthProvidersPage() {
               默认身份源
             </label>
             <div className="flex gap-2">
-              <Button disabled={saveProvider.isPending} type="submit">
+              <Button disabled={saveProvider.isPending || !providerForm.formState.isValid} type="submit">
                 <Save size={16} />
                 {editingProvider ? '保存身份源' : '创建身份源'}
               </Button>
@@ -206,22 +207,22 @@ export function AuthProvidersPage() {
                   允许 OIDC 登录
                 </label>
               </div>
-              <Field label="允许邮箱域">
-                <Textarea {...policyForm.register('allowedEmailDomains')} placeholder="example.com, liteyuki.dev" />
+              <Field error={policyForm.formState.errors.allowedEmailDomains?.message} label="允许邮箱域">
+                <Textarea {...policyForm.register('allowedEmailDomains')} aria-invalid={Boolean(policyForm.formState.errors.allowedEmailDomains)} placeholder="example.com, liteyuki.dev" />
               </Field>
-              <Field label="允许 OIDC 组">
-                <Textarea {...policyForm.register('allowedOidcGroups')} placeholder="devops-admins, platform-users" />
+              <Field error={policyForm.formState.errors.allowedOidcGroups?.message} label="允许 OIDC 组">
+                <Textarea {...policyForm.register('allowedOidcGroups')} aria-invalid={Boolean(policyForm.formState.errors.allowedOidcGroups)} placeholder="devops-admins, platform-users" />
               </Field>
-              <Field label="邀请邮箱">
-                <Textarea {...policyForm.register('invitedEmails')} placeholder="user@example.com" />
+              <Field error={policyForm.formState.errors.invitedEmails?.message} label="邀请邮箱">
+                <Textarea {...policyForm.register('invitedEmails')} aria-invalid={Boolean(policyForm.formState.errors.invitedEmails)} placeholder="user@example.com" />
               </Field>
-              <Field label="默认全局角色">
-                <Select {...policyForm.register('defaultRole')}>
+              <Field error={policyForm.formState.errors.defaultRole?.message} label="默认全局角色" required>
+                <Select {...policyForm.register('defaultRole')} aria-invalid={Boolean(policyForm.formState.errors.defaultRole)}>
                   <option value="user">普通用户</option>
                   <option value="platform_admin">平台管理员</option>
                 </Select>
               </Field>
-              <Button disabled={savePolicy.isPending} type="submit">
+              <Button disabled={savePolicy.isPending || !policyForm.formState.isValid} type="submit">
                 <ShieldCheck size={16} />
                 保存准入策略
               </Button>

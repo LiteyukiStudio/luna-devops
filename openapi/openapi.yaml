@@ -5,6 +5,12 @@ info:
 servers:
   - url: http://localhost:8080/api/v1
 paths:
+  /auth/bootstrap:
+    get:
+      summary: Get bootstrap and runtime mode status
+      responses:
+        "200":
+          description: Bootstrap status. devLoginHint is returned only in development mode.
   /public/configs:
     post:
       summary: Get public app configs by keys

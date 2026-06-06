@@ -28,6 +28,7 @@ export function BootstrapPage() {
   const status = useQuery({ queryKey: ['bootstrap-status'], queryFn: api.getBootstrapStatus })
   const form = useForm<BootstrapForm>({
     resolver: zodResolver(schema),
+    mode: 'onChange',
     defaultValues: {
       email: '',
       name: 'Platform Admin',
@@ -71,16 +72,16 @@ export function BootstrapPage() {
           </div>
 
           <form className="grid gap-3" onSubmit={form.handleSubmit(values => initialize.mutate(values))}>
-            <Field label="管理员邮箱">
-              <Input {...form.register('email')} autoComplete="email" />
+            <Field error={form.formState.errors.email?.message} label="管理员邮箱" required>
+              <Input {...form.register('email')} aria-invalid={Boolean(form.formState.errors.email)} autoComplete="email" />
             </Field>
-            <Field label="管理员名称">
-              <Input {...form.register('name')} autoComplete="name" />
+            <Field error={form.formState.errors.name?.message} label="管理员名称" required>
+              <Input {...form.register('name')} aria-invalid={Boolean(form.formState.errors.name)} autoComplete="name" />
             </Field>
-            <Field label="密码">
-              <Input {...form.register('password')} autoComplete="new-password" type="password" />
+            <Field error={form.formState.errors.password?.message} label="密码" required>
+              <Input {...form.register('password')} aria-invalid={Boolean(form.formState.errors.password)} autoComplete="new-password" type="password" />
             </Field>
-            <Button disabled={initialize.isPending || status.isLoading} type="submit">
+            <Button disabled={initialize.isPending || status.isLoading || !form.formState.isValid} type="submit">
               <ShieldPlus size={16} />
               创建管理员
             </Button>
