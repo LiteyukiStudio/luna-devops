@@ -5,23 +5,6 @@ import (
 	"time"
 )
 
-type OIDCAuthState struct {
-	ID           string    `gorm:"primaryKey" json:"id"`
-	StateHash    string    `gorm:"uniqueIndex;not null" json:"-"`
-	Nonce        string    `gorm:"not null" json:"-"`
-	ProviderID   string    `gorm:"index;not null" json:"providerId"`
-	UserID       string    `gorm:"index" json:"userId"`
-	Mode         string    `gorm:"not null" json:"mode"`
-	RedirectPath string    `gorm:"not null;default:/projects" json:"redirectPath"`
-	ExpiresAt    time.Time `gorm:"index;not null" json:"expiresAt"`
-	CreatedAt    time.Time `json:"createdAt"`
-	UpdatedAt    time.Time `json:"updatedAt"`
-}
-
-func (OIDCAuthState) TableName() string {
-	return "oidc_auth_states"
-}
-
 type AuthProvider struct {
 	ID              string         `gorm:"primaryKey" json:"id"`
 	Type            string         `gorm:"not null" json:"type"`

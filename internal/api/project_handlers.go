@@ -66,6 +66,10 @@ func (h *Handlers) CreateProject(ctx *gin.Context) {
 	if !bindJSON(ctx, &input) {
 		return
 	}
+	input.Slug = strings.TrimSpace(input.Slug)
+	if !h.ensureProjectSlugAvailable(ctx, input.Slug, "") {
+		return
+	}
 
 	project := model.Project{
 		ID:                id.New("prj"),
@@ -107,6 +111,10 @@ func (h *Handlers) UpdateProject(ctx *gin.Context) {
 
 	var input projectInput
 	if !bindJSON(ctx, &input) {
+		return
+	}
+	input.Slug = strings.TrimSpace(input.Slug)
+	if !h.ensureProjectSlugAvailable(ctx, input.Slug, project.ID) {
 		return
 	}
 
@@ -207,6 +215,27 @@ func (h *Handlers) UnpinProject(ctx *gin.Context) {
 		return
 	}
 	ctx.Status(http.StatusNoContent)
+}
+
+func (h *Handlers) ensureProjectSlugAvailable(ctx *gin.Context, slug string, excludeProjectID string) bool {
+	if slug == "" {
+		writeError(ctx, http.StatusBadRequest, "项目空间标识不能为空")
+		return false
+	}
+	query := h.db.Model(&model.Project{}).Where("slug = ?", slug)
+	if strings.TrimSpace(excludeProjectID) != "" {
+		query = query.Where("id <> ?", excludeProjectID)
+	}
+	var count int64
+	if err := query.Count(&count).Error; err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
+		return false
+	}
+	if count > 0 {
+		writeError(ctx, http.StatusBadRequest, "项目空间标识已存在")
+		return false
+	}
+	return true
 }
 
 func (h *Handlers) ListProjectMembers(ctx *gin.Context) {

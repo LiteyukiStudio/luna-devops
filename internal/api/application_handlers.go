@@ -34,6 +34,10 @@ func (h *Handlers) CreateApplication(ctx *gin.Context) {
 	if !bindJSON(ctx, &input) {
 		return
 	}
+	input.Slug = strings.TrimSpace(input.Slug)
+	if !h.ensureApplicationSlugAvailable(ctx, ctx.Param("projectId"), input.Slug, "") {
+		return
+	}
 	gitAccountID, ok := h.applicationGitAccountID(ctx, user.ID, input)
 	if !ok {
 		return
@@ -48,8 +52,10 @@ func (h *Handlers) CreateApplication(ctx *gin.Context) {
 		GitAccountID:   gitAccountID,
 		RepositoryURL:  input.RepositoryURL,
 		ImageReference: input.ImageReference,
+		TargetImageRef: input.TargetImageRef,
 		DockerfilePath: fallback(input.DockerfilePath, "Dockerfile"),
 		BuildContext:   fallback(input.BuildContext, "."),
+		BuildLabels:    strings.Join(normalizeBuildSelectorList(strings.Split(input.BuildLabels, ",")), ","),
 		ServicePort:    fallbackInt(input.ServicePort, 8080),
 	}
 
@@ -87,6 +93,10 @@ func (h *Handlers) UpdateApplication(ctx *gin.Context) {
 	if !bindJSON(ctx, &input) {
 		return
 	}
+	input.Slug = strings.TrimSpace(input.Slug)
+	if !h.ensureApplicationSlugAvailable(ctx, ctx.Param("projectId"), input.Slug, app.ID) {
+		return
+	}
 	gitAccountID, ok := h.applicationGitAccountID(ctx, user.ID, input)
 	if !ok {
 		return
@@ -98,8 +108,10 @@ func (h *Handlers) UpdateApplication(ctx *gin.Context) {
 	app.GitAccountID = gitAccountID
 	app.RepositoryURL = input.RepositoryURL
 	app.ImageReference = input.ImageReference
+	app.TargetImageRef = input.TargetImageRef
 	app.DockerfilePath = fallback(input.DockerfilePath, "Dockerfile")
 	app.BuildContext = fallback(input.BuildContext, ".")
+	app.BuildLabels = strings.Join(normalizeBuildSelectorList(strings.Split(input.BuildLabels, ",")), ",")
 	app.ServicePort = fallbackInt(input.ServicePort, 8080)
 
 	if err := h.db.Save(&app).Error; err != nil {
@@ -142,6 +154,27 @@ func (h *Handlers) findApplication(ctx *gin.Context) (model.Application, bool) {
 	return app, true
 }
 
+func (h *Handlers) ensureApplicationSlugAvailable(ctx *gin.Context, projectID string, slug string, excludeApplicationID string) bool {
+	if slug == "" {
+		writeError(ctx, http.StatusBadRequest, "应用标识不能为空")
+		return false
+	}
+	query := h.db.Model(&model.Application{}).Where("project_id = ? and slug = ?", projectID, slug)
+	if strings.TrimSpace(excludeApplicationID) != "" {
+		query = query.Where("id <> ?", excludeApplicationID)
+	}
+	var count int64
+	if err := query.Count(&count).Error; err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
+		return false
+	}
+	if count > 0 {
+		writeError(ctx, http.StatusBadRequest, "该项目空间内应用标识已存在")
+		return false
+	}
+	return true
+}
+
 func (h *Handlers) applicationGitAccountID(ctx *gin.Context, userID string, input applicationInput) (string, bool) {
 	if fallback(input.SourceType, "repository") != "repository" {
 		return "", true
@@ -164,7 +197,9 @@ type applicationInput struct {
 	GitAccountID   string `json:"gitAccountId"`
 	RepositoryURL  string `json:"repositoryUrl"`
 	ImageReference string `json:"imageReference"`
+	TargetImageRef string `json:"targetImageRef"`
 	DockerfilePath string `json:"dockerfilePath"`
 	BuildContext   string `json:"buildContext"`
+	BuildLabels    string `json:"buildLabels"`
 	ServicePort    int    `json:"servicePort"`
 }

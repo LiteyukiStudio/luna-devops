@@ -34,7 +34,6 @@ services:
       PUBLIC_BASE_URL: http://localhost:8088
       APP_CORS_ORIGINS: http://localhost:8088
       REDIS_ADDR: redis:6379
-      BUILDER_TOKEN: dev-builder-token
     depends_on:
       postgres:
         condition: service_healthy
@@ -67,21 +66,18 @@ services:
         TARGET: builder
     environment:
       APP_ENV: development
-      LITEYUKI_API_URL: http://api:8080
-      BUILDER_TOKEN: dev-builder-token
+      REDIS_ADDR: redis:6379
       BUILDER_AGENT_NAME: local-docker-builder
-      BUILDER_EXECUTOR: docker
-      BUILDER_EXECUTOR_IMAGE: moby/buildkit:v0.24.0-rootless
-      BUILDER_MAX_CONCURRENCY: 1
-      BUILDER_WORKSPACE_ROOT: /builder-workspace
-      BUILDER_WORKSPACE_HOST_ROOT: ${PWD}/.local/builder-workspace
-      BUILDER_NPM_REGISTRY: https://registry.npmmirror.com
+      BUILDER_SCOPES: ${BUILDER_SCOPES:-}
+      BUILDER_LABELS: ${BUILDER_LABELS:-}
+      BUILDER_WORKSPACE_HOST_ROOT: ${BUILDER_WORKSPACE_HOST_ROOT:-/Users/sfkm/Developer/liteyuki-studio/devops/.local/builder-workspace}
     user: root
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./.local/builder-workspace:/builder-workspace
     depends_on:
-      - api
+      redis:
+        condition: service_healthy
 
   web:
     build:

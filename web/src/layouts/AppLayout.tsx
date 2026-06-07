@@ -3,13 +3,13 @@ import { Boxes, ChevronDown, Container, FolderKanban, GitBranch, LayoutDashboard
 import { AnimatePresence } from 'motion/react'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
+import { Link, Navigate, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { toast } from 'sonner'
 import { api } from '@/api/client'
+import { useDocumentTitle } from '@/app/document-title'
 import { usePublicConfig } from '@/app/public-config-context'
 import { useSession } from '@/app/session-context'
 import { useTheme } from '@/app/theme-context'
-import { AuthErrorPage } from '@/components/common/auth-error-page'
 import { DebugFloatingPanel } from '@/components/common/debug-floating-panel'
 import { PageMotion } from '@/components/common/motion'
 import { SidebarUserPanel } from '@/components/common/sidebar-user-panel'
@@ -176,15 +176,28 @@ export function AppLayout() {
   const [projectsExpanded, setProjectsExpanded] = useState(true)
   const projects = useQuery({ queryKey: ['projects'], queryFn: api.listProjects, enabled: Boolean(user) })
   const projectPins = useQuery({ queryKey: ['project-pins'], queryFn: api.listProjectPins, enabled: Boolean(user) })
+  const projectRouteMatch = location.pathname.match(/^\/projects\/([^/]+)/)
+  const appRouteMatch = location.pathname.match(/^\/projects\/([^/]+)\/apps\/([^/]+)$/)
+  const currentApplication = useQuery({
+    queryKey: ['application', appRouteMatch?.[1], appRouteMatch?.[2]],
+    queryFn: () => api.getApplication(appRouteMatch?.[1] ?? '', appRouteMatch?.[2] ?? ''),
+    enabled: Boolean(user && appRouteMatch),
+  })
   const pageMeta = useMemo(() => {
     const rule = pageMetaRules.find(item => item.match(location.pathname))
     const projectWorkspaceMatch = location.pathname.match(/^\/projects\/([^/]+)$/)
-    const currentProject = projectWorkspaceMatch ? projects.data?.find(project => project.id === projectWorkspaceMatch[1]) : undefined
+    const currentProject = projectRouteMatch ? projects.data?.find(project => project.id === projectRouteMatch[1]) : undefined
+    const application = appRouteMatch ? currentApplication.data : undefined
     return {
-      description: currentProject ? currentProject.description || t('common.noDescription') : rule?.descriptionKey ? t(rule.descriptionKey) : t('common.noDescription'),
-      title: currentProject?.name || (rule?.titleKey ? t(rule.titleKey) : configs['site.title'] || t('appName')),
+      description: projectWorkspaceMatch && currentProject ? currentProject.description || t('common.noDescription') : rule?.descriptionKey ? t(rule.descriptionKey) : t('common.noDescription'),
+      title: application
+        ? t('apps.detailTopbarTitle', { name: application.name })
+        : projectWorkspaceMatch && currentProject
+          ? t('projectSpaces.detailTopbarTitle', { name: currentProject.name })
+          : rule?.titleKey ? t(rule.titleKey) : configs['site.title'] || t('appName'),
     }
-  }, [configs, location.pathname, projects.data, t])
+  }, [appRouteMatch, configs, currentApplication.data, location.pathname, projectRouteMatch, projects.data, t])
+  useDocumentTitle(pageMeta.title)
   const pageMotionKey = /^\/projects\/[^/]+$/.test(location.pathname) ? '/projects/:projectId' : location.pathname
   const pinnedProjectIds = useMemo(() => new Set((projectPins.data ?? []).map(project => project.id)), [projectPins.data])
   const sidebarProjects = useMemo(() => {
@@ -223,12 +236,8 @@ export function AppLayout() {
   }
 
   if (!user) {
-    return (
-      <AuthErrorPage
-        title={t('common.loginRequiredTitle')}
-        description={t('common.loginRequiredDescription')}
-      />
-    )
+    const redirect = `${location.pathname}${location.search}`
+    return <Navigate to={`/login?redirect=${encodeURIComponent(redirect)}`} replace />
   }
 
   return (

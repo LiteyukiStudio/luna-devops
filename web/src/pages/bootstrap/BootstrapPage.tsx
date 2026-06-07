@@ -8,6 +8,7 @@ import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import { api } from '@/api/client'
+import { useDocumentTitle } from '@/app/document-title'
 import { usePublicConfig } from '@/app/public-config-context'
 import { useSession } from '@/app/session-context'
 import { FormField as Field } from '@/components/common/form-field'
@@ -40,6 +41,7 @@ export function BootstrapPage() {
       password: '',
     },
   })
+  useDocumentTitle(t('bootstrap.title'))
 
   useEffect(() => {
     if (status.data?.initialized)

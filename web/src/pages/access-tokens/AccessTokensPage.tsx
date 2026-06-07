@@ -12,6 +12,7 @@ import { api } from '@/api/client'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { DataList } from '@/components/common/data-list'
 import { FormField as Field } from '@/components/common/form-field'
+import { StatusValueBadge } from '@/components/common/status-badge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -118,7 +119,7 @@ export function AccessTokensPanel() {
       key: 'status',
       header: t('accessTokens.status'),
       className: 'w-[12%] px-4 py-3 align-middle',
-      render: token => <Badge className={token.revokedAt ? 'text-danger' : undefined}>{tokenStatusLabel(token, t)}</Badge>,
+      render: token => <StatusValueBadge value={tokenStatusValue(token)} />,
     },
     {
       key: 'actions',
@@ -255,10 +256,10 @@ function formatDate(value: string) {
   })
 }
 
-function tokenStatusLabel(token: AccessToken, t: (key: string) => string) {
+function tokenStatusValue(token: AccessToken) {
   if (token.revokedAt)
-    return t('common.revoked')
+    return 'revoked'
   if (token.expiresAt && new Date(token.expiresAt).getTime() < Date.now())
-    return t('common.expired')
-  return t('common.active')
+    return 'expired'
+  return 'active'
 }

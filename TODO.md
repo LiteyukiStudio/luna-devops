@@ -44,8 +44,11 @@
 - [x] 引入前端轻量动效，覆盖页面切换、列表、弹窗和基础控件。
 - [x] 将侧边栏导航改为二级分组结构，按 DevOps、个人工作区、系统管理分栏展示。
 - [x] 将内容区顶部改为当前页面标题和说明，正文区域不再重复渲染页面标题。
+- [x] 项目空间和应用详情页 topbar 使用资源类型前缀展示当前资源名称，并在应用列表提供进入应用详情的唯一入口。
+- [x] 浏览器标签页标题统一为 `{page title} - {site title}`，其中 page title 复用内容区 topbar 标题。
 - [x] 新增 shadcn Dialog 基础组件和可配置二次确认组件。
 - [x] 新增内容区级 `ContentTabs` 组件，统一子 tab、右侧工具按钮布局和 hash 保持状态。
+- [x] 统一前端状态展示：集群、构建、部署、网关、Webhook、扫描、启停和校验状态均使用有语义颜色的状态 Badge，并写入 AI 准则。
 - [x] DevOps 导航新增“代码库”页，在镜像站上方集中管理 Git Provider 和 Git 凭据。
 - [x] Git Provider 表单增加 GitHub/Gitea OAuth App 创建指引，Git 凭据仅在 OAuth App 完整配置后展示跳转授权入口。
 - [x] Git Provider 类型选择和列表展示增加平台图标，优先使用实例 favicon，失败回退内置 GitHub/Gitea/GitLab 图标。
@@ -72,13 +75,19 @@
 - [x] 项目详情页之间切换时复用同一个页面动画容器，只让项目信息和 tab 内容轻量切换。
 - [x] 全部项目列表只保留进入工作台入口，旧项目内列表路由重定向到工作台。
 - [x] 第一批 CRUD 弹窗化：项目空间、应用、项目成员、用户、身份源、Access Token。
-- [x] 将镜像站页面拆为镜像站、凭据、镜像三个子 tab，并将创建/编辑表单改为 Dialog。
+- [x] 将镜像站页面拆为镜像站、凭据、镜像、构建器四个子 tab，并将创建/编辑表单改为 Dialog。
+- [x] 构建器作为镜像站页子资源管理，展示自动注册的 Builder Agent，并保留 global/project/user 三种作用域的 BuildProvider 配置项。
 - [x] 镜像凭据 tab 默认展示全部镜像站凭据，并在凭据行展示所属镜像站名称。
 - [x] 继续将仓库绑定等多表单页面改为创建/编辑 Dialog。
 - [x] 使用浏览器验收前端启动、主题切换和基础路由。
 - [x] 开发环境使用 Vite proxy 反代后端 API。
 - [x] 为 api、worker、web 编写 Dockerfile。
 - [x] 提供完整 docker compose 运行编排。
+- [x] 拆分开发依赖和完整部署的 compose 边界：开发依赖使用独立项目名并暴露 PG/Redis，完整部署的 PG/Redis 仅走容器内网络，避免端口和容器项目名冲突。
+- [x] 明确本地开发拓扑：前端、API、worker 优先在宿主机运行，PG/Redis 由 dev compose 提供；Builder 仅在真实构建联调或完整部署验收时启动。
+- [x] 将 compose 场景收敛为两份：`docker-compose-dev.yaml` 启动 PG/Redis/worker/builder 用于开发联调，`docker-compose.yaml` 保留完整部署栈。
+- [x] `docker-compose-dev.yaml` 的 worker / builder 读取 `.env.dev`，并通过服务级环境变量直接设置容器内连接地址。
+- [x] `.env.example` / `.env.dev` 增加 scope 注释，区分宿主机进程、Builder、安全策略和前端公开入口变量；Compose 容器连接地址直接保留在 compose 文件内。
 
 ## 3. 认证、权限与登录
 
@@ -96,6 +105,7 @@
 - [x] 实现运行模式检测，开发模式支持开发账号快捷登录，生产模式禁用。
 - [x] 收紧开发默认账号提示边界，仅 development 模式由后端下发并展示。
 - [x] 登录页支持最近登录账号头像选择，浏览器本地最多持久化 3 个账号展示信息，不保存密码、Token 或 session cookie；直接恢复登录使用后端 HttpOnly remember cookie。
+- [x] 受保护路由未登录直接跳转 `/login?redirect=...`，当前用户查询对未登录错误不重试，移除中间“需要登录”页面体验。
 - [x] 封装统一用户头像组件，按平台头像、Gravatar 真实头像、字母头像顺序回退。
 - [x] 实现生产模式首个平台管理员初始化流程。
 - [x] 禁止开放自由注册。
@@ -143,6 +153,7 @@
 
 - [x] 实现 Project CRUD。
 - [x] 修复 Project 软删除后 slug 唯一索引仍占用的问题，改为未删除项目唯一。
+- [x] 明确并强化标识唯一约束：项目空间标识全局唯一，应用标识在同一项目空间内唯一，API 返回友好业务错误。
 - [x] 实现 Project namespaceStrategy。
 - [x] 实现 Application CRUD。
 - [x] 支持 sourceType: repository。
@@ -237,6 +248,7 @@
 - [x] 实现手动触发构建 API，先创建 queued 状态的 BuildRun/BuildJob。
 - [x] 实现构建触发器配置 API：manual、webhook、push branch、tag、API token。
 - [x] 实现构建参数配置 API：Dockerfile 路径、构建上下文、目标镜像、目标镜像站凭据、构建目录。
+- [x] 构建触发只允许用户填写目标镜像 Tag 模板；目标镜像名前缀由平台按镜像站和应用标识固定生成，DockerHub 不带域名前缀，其他镜像站强制带 registry domain；镜像站不再承载 repository namespace。
 - [x] 构建触发表单按应用仓库绑定选择分支，Dockerfile 和构建上下文候选按本次构建分支探测；应用编辑仅保留默认分支和默认入口。
 - [x] 新增 BuildVariableSet 构建变量集模型、迁移和 CRUD API，支持 global/project/user 作用域。
 - [x] BuildRun 支持选择多个构建变量集，Builder 领取任务时按权限解析变量。
@@ -247,7 +259,7 @@
 ### 7.2 构建 Builder 执行链路
 
 - [x] 构建执行链路收敛为平台 Builder Agent，移除 GitHub Actions、Gitea Actions 和 Kubernetes Job 构建执行支持。
-- [x] API 只创建 queued 状态的 BuildRun / BuildJob，由 Builder Agent 从数据库队列领取。
+- [x] API 只创建 queued 状态的 BuildRun / BuildJob，并投递到 Redis builder stream 由 Builder Agent 领取。
 - [x] Builder Agent 注入 Git 和 registry 凭据到一次性 executor 容器。
 - [x] Builder Agent 注入构建变量到一次性 executor 容器，并作为 BuildKit build-arg 传入。
 - [x] Builder Agent 实时记录构建日志。
@@ -269,15 +281,15 @@
 #### 7.4.1 API 与队列
 
 - [x] API 创建 BuildRun / BuildJob 后保存在数据库构建队列。
-- [x] 新增 Builder Agent API：heartbeat、claim、logs、complete、fail。
-- [x] 移除 `BUILD_DISPATCH_MODE` 和旧 Asynq `build:run`，BuildJob 始终作为数据库队列由 Builder Agent 领取。
+- [x] Redis Builder 事件支持 heartbeat、claim、logs、complete、fail。
+- [x] 移除 `BUILD_DISPATCH_MODE` 和旧 Asynq `build:run`，BuildJob 始终作为 Redis stream 任务由 Builder Agent 领取。
 - [x] BuildJob 增加 `builderId` 和 `leaseUntil`，支持任务认领和 lease。
 - [x] BuildRun 创建时补充应用、仓库绑定、目标镜像站和凭据权限的强校验，避免 Worker 阶段才发现无权限。
 - [ ] BuildRun 支持 cancel 请求和 canceled 状态，Builder Agent 收到后终止对应 executor 容器。
 
 #### 7.4.2 Worker / Builder Controller
 
-- [x] 新增 `cmd/builder`，Builder Agent 主动轮询平台 API 并执行任务。
+- [x] 新增 `cmd/builder`，Builder Agent 通过 Redis stream 领取任务并执行。
 - [ ] Builder Agent 增加任务 watch/cancel 流程，实时同步 queued/running/succeeded/failed/canceled 状态。
 - [ ] Builder Agent 增加并发控制：全局、项目、用户三个维度的构建并发额度。
 - [ ] Builder Agent 增加超时处理：超过任务超时时间后终止 executor 并标记 failed。
@@ -290,13 +302,19 @@
 - [x] Builder Docker executor 本地开发模式允许使用 privileged BuildKit 容器，解决嵌套构建 `/proc` 挂载权限问题。
 - [x] Builder Git clone 增加浅克隆和重试，BuildKit 构建增加整体重试，缓解 GitHub/DockerHub 网络 EOF。
 - [x] 修正 DockerHub 镜像引用和认证地址：镜像使用 `docker.io/...`，auth config 使用 DockerHub 兼容 key。
-- [x] Builder 增加 `BUILDER_NPM_REGISTRY` 配置入口，开发 compose 默认使用 npm 镜像源作为初步构建加速能力。
+- [x] Builder 增加 `BUILDER_NPM_REGISTRY` 配置入口，默认值下沉到代码，compose 只保留必要连接和身份配置。
+- [x] Builder 通信收敛为 Redis-only：API 投递任务到 Redis stream，Builder 消费任务并写事件，worker 消费事件落库。
+- [x] Builder 使用 `BUILDER_AGENT_NAME` 作为唯一标识自动注册，worker 定时同步 agent online/offline 状态到数据库。
+- [x] Builder 支持 `BUILDER_SCOPES` 和 `BUILDER_LABELS` 上报；API 触发构建时按应用构建标签、builder scope 和在线状态随机选择可用 Builder，并投递到 Builder 专属 Redis stream。
+- [x] 构建运行支持重试，应用构建列表行操作菜单提供重试和右侧日志/日志流侧栏。
+- [x] 修复容器内 Builder 使用宿主机 Docker socket 时 workspace host path 误指向容器内路径导致 Docker Desktop mounts denied 的问题，并验证 neo-blog 前端镜像成功构建推送。
+- [ ] HTTP Builder 接入暂缓：后续如需外部 Builder，再设计平台生成 token、hash 存储、明文只展示一次、吊销/过期和 agent 绑定。
 - [ ] 制作平台自有 builder 镜像，内置 git、ca-certificates、buildctl、shell、jq、基础诊断工具。
 - [ ] 新增 Builder Profile：支持配置 executor 类型、executor image、是否 privileged、CPU/内存/超时/并发、适用项目范围和能力标签。
 - [ ] Builder executor image 必须可配置，默认推荐 BuildKit，生产环境支持使用本地或内网镜像站中的 BuildKit 镜像。
 - [ ] Builder Job 明确入口脚本：clone、checkout、registry login、buildctl build、push、输出 result。
 - [ ] Builder Job 输出结构化 `result.json`，包含 `imageRef`、`imageDigest`、`sourceCommit`、`startedAt`、`finishedAt`。
-- [x] Builder Job 不持有平台 API token，不直接回调 API；只有 Builder Agent 持有平台 builder token。
+- [x] Builder Job 不持有平台 API token，不直接回调 API；Builder Agent 仅通过 Redis stream 与平台交换任务和事件。
 
 #### 7.4.4 隔离与安全
 
@@ -339,8 +357,10 @@
 - [x] 实现 RuntimeCluster 模型、迁移和 CRUD API。
 - [x] 支持设置默认集群。
 - [x] RuntimeCluster 支持 global/project/user scope，只有 global 集群允许设为默认集群，列表按当前用户可访问范围返回。
-- [x] 实现 kubeconfig 保存、脱敏展示和测试连接 API。
+- [x] 实现 kubeconfig 保存、按权限回显和测试连接 API：仅创建者本人或平台管理员可以查看和编辑 kubeconfig 明文。
+- [x] 运行集群测试改为真实 Kubernetes API Server `/version` 连通性检测；无 kubeconfig、无效 kubeconfig 或网络不可达时写入失败状态并返回错误。
 - [x] 集群前端接入改为 kubeconfig-only YAML 代码框，普通用户列表不展示无权维护集群的 endpoint 配置。
+- [x] 约束 kubeconfig 代码框宽度，长行只在编辑器内部滚动，不撑大 Dialog 或表单布局。
 - [x] 引入公共 `CodeEditor` 代码编辑框组件，集群 kubeconfig 使用 YAML 高亮、等宽字体和行号。
 - [x] Kubernetes 和 K3s 接入选项合并为 Kubernetes / K3s，后端兼容旧 k3s 输入并归一到 kubernetes。
 - [ ] 设计 Docker 运行时接入模型：支持 Docker host、Unix socket、TCP TLS CA/cert/key、连接测试、权限边界和部署适配，不复用 kubeconfig 字段。
@@ -414,3 +434,7 @@
 - [x] 将 Registry API 拆分为镜像站、凭据、容器镜像、访问控制、连接测试和 DTO 多文件，`registries.go` 仅保留镜像站主 CRUD 与输入转换。
 - [x] 新增 `tests` 自动化验证：API smoke 覆盖主要后端资源域，Browser smoke 使用 Playwright 登录并访问核心前端页面，`tests/run-all.sh` 串联 Go 测试、前端构建/lint、API 和浏览器验证。
 - [ ] 后续按领域继续拆分后端：将 Git/Registry/Auth/Project handler 的复杂流程逐步沉入 service/repository/provider，handler 保持 HTTP 适配层。
+
+## 100.优化需求
+
+- [ ] 智能引导：例如用户在创建APP选择Git账号时发现没有账号，旁边用一个按钮引导去授权页面。这样的场景还有很多，不一定是Git账号，后续可以总结一批这样的场景进行统一优化。

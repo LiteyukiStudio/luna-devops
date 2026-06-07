@@ -6,11 +6,32 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/security"
 )
+
+func TestUserResponseExternalIDFormatsNumericIDs(t *testing.T) {
+	if got := (UserResponse{ID: float64(79104275)}).ExternalID(); got != "79104275" {
+		t.Fatalf("float64 id = %q", got)
+	}
+	if got := (UserResponse{ID: json.Number("79104275")}).ExternalID(); got != "79104275" {
+		t.Fatalf("json number id = %q", got)
+	}
+
+	var user UserResponse
+	if err := json.NewDecoder(strings.NewReader(`{"id":79104275,"login":"snowykami"}`)).Decode(&user); err != nil {
+		t.Fatal(err)
+	}
+	if got := user.ExternalID(); got != "79104275" {
+		t.Fatalf("decoded id = %q", got)
+	}
+	if got := user.Username(); got != "snowykami" {
+		t.Fatalf("username = %q", got)
+	}
+}
 
 func TestDiscoverBuildOptionsUsesRecursiveTree(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

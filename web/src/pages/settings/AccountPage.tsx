@@ -15,7 +15,7 @@ import { EmptyState } from '@/components/common/empty-state'
 import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
 import { MotionItem, MotionList } from '@/components/common/motion'
-import { StatusBadge } from '@/components/common/status-badge'
+import { StatusValueBadge } from '@/components/common/status-badge'
 import { UserAvatar } from '@/components/common/user-avatar'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -169,7 +169,7 @@ function IdentityBindingsPanel() {
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <p className="font-medium">{identity.providerName}</p>
-                    <StatusBadge>{identity.emailVerified ? t('common.verified') : t('common.unverified')}</StatusBadge>
+                    <StatusValueBadge value={identity.emailVerified ? 'verified' : 'unverified'} />
                   </div>
                   <p className="truncate text-sm text-muted-foreground">{identity.email || identity.username || identity.subject}</p>
                 </div>

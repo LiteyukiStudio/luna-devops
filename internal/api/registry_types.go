@@ -125,12 +125,7 @@ func normalizeScanStatus(value string) string {
 
 func imageReference(registry model.ArtifactRegistry, repository, tag, digest string) string {
 	host := strings.TrimPrefix(strings.TrimPrefix(strings.TrimRight(registry.Endpoint, "/"), "https://"), "http://")
-	parts := []string{host}
-	if registry.Namespace != "" {
-		parts = append(parts, registry.Namespace)
-	}
-	parts = append(parts, strings.Trim(repository, "/"))
-	base := strings.Join(parts, "/")
+	base := strings.Join([]string{host, strings.Trim(repository, "/")}, "/")
 	if digest != "" {
 		return base + "@" + digest
 	}

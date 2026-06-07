@@ -14,7 +14,7 @@ import { EditActionButton } from '@/components/common/edit-action-button'
 import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
 import { PageHeader } from '@/components/common/page-header'
-import { StatusBadge } from '@/components/common/status-badge'
+import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -128,7 +128,7 @@ export function UsersPage() {
       key: 'status',
       header: t('usersPage.status'),
       className: 'w-[12%] px-4 py-3 align-middle',
-      render: user => <StatusBadge>{user.disabled ? t('common.disabled') : t('common.active')}</StatusBadge>,
+      render: user => <StatusValueBadge value={user.disabled ? 'disabled' : 'active'} />,
     },
     {
       key: 'createdAt',

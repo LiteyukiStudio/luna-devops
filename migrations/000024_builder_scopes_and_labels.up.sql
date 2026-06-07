@@ -1,0 +1,3 @@
+ALTER TABLE builder_agents ADD COLUMN IF NOT EXISTS scopes text NOT NULL DEFAULT '';
+ALTER TABLE applications ADD COLUMN IF NOT EXISTS build_labels text NOT NULL DEFAULT '';
+ALTER TABLE build_runs ADD COLUMN IF NOT EXISTS build_labels text NOT NULL DEFAULT '';

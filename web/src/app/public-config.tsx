@@ -15,8 +15,6 @@ export function PublicConfigProvider({ children }: { children: ReactNode }) {
   const value = useMemo(() => ({ ...defaultPublicConfigs, ...(configs.data ?? {}) }), [configs.data])
 
   useEffect(() => {
-    document.title = value['site.title'] || defaultPublicConfigs['site.title']
-
     const faviconUrl = value['site.faviconUrl']
     if (!faviconUrl)
       return

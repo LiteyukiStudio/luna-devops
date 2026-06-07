@@ -50,3 +50,6 @@ pnpm-debug.log*
 
 # workbuddy
 .workbuddy/
+
+# k8s
+*.kubeconfig

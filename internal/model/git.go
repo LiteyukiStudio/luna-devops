@@ -41,22 +41,6 @@ type GitAccount struct {
 	DeletedAt       gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
-type GitOAuthState struct {
-	ID             string    `gorm:"primaryKey" json:"id"`
-	StateHash      string    `gorm:"uniqueIndex;not null" json:"-"`
-	ProviderID     string    `gorm:"index;not null" json:"providerId"`
-	UserID         string    `gorm:"index;not null" json:"userId"`
-	RedirectPath   string    `gorm:"not null;default:/projects" json:"redirectPath"`
-	FrontendOrigin string    `gorm:"not null;default:''" json:"frontendOrigin"`
-	ExpiresAt      time.Time `gorm:"index;not null" json:"expiresAt"`
-	CreatedAt      time.Time `json:"createdAt"`
-	UpdatedAt      time.Time `json:"updatedAt"`
-}
-
-func (GitOAuthState) TableName() string {
-	return "git_oauth_states"
-}
-
 type RepositoryBinding struct {
 	ID            string         `gorm:"primaryKey" json:"id"`
 	ProjectID     string         `gorm:"index;not null" json:"projectId"`

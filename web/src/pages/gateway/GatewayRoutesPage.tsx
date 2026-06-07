@@ -11,6 +11,7 @@ import { DataList } from '@/components/common/data-list'
 import { EditActionButton } from '@/components/common/edit-action-button'
 import { FormField as Field } from '@/components/common/form-field'
 import { ProjectSpaceSelect } from '@/components/common/project-space-select'
+import { StatusValueBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -98,7 +99,7 @@ export function GatewayRoutesPage() {
           { key: 'path', header: t('gatewayRoutesPage.path'), render: item => item.path },
           { key: 'tls', header: t('gatewayRoutesPage.tlsMode'), render: item => item.tlsMode },
           { key: 'cname', header: t('gatewayRoutesPage.cnameTarget'), render: item => item.cnameTarget || '-' },
-          { key: 'status', header: t('common.status'), render: item => item.status },
+          { key: 'status', header: t('common.status'), render: item => <StatusValueBadge value={item.status} /> },
           { key: 'actions', header: t('common.actions'), className: 'text-right whitespace-nowrap', render: item => (
             <div className="flex justify-end gap-2">
               <Button size="sm" variant="ghost" onClick={() => checkDomain.mutate(item.host)}>

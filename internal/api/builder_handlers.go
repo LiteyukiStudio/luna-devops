@@ -11,6 +11,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/config"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/LiteyukiStudio/devops/internal/variables"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -186,13 +187,8 @@ func (h *Handlers) FailBuilderTask(ctx *gin.Context) {
 }
 
 func (h *Handlers) authorizeBuilder(ctx *gin.Context) bool {
-	token := strings.TrimSpace(strings.TrimPrefix(ctx.GetHeader("Authorization"), "Bearer "))
-	expected := strings.TrimSpace(config.Load().BuilderSharedToken)
-	if expected == "" || token == "" || token != expected {
-		writeError(ctx, http.StatusUnauthorized, "builder token is invalid")
-		return false
-	}
-	return true
+	writeError(ctx, http.StatusNotFound, "http builder transport is disabled")
+	return false
 }
 
 func (h *Handlers) claimBuildTask(agentID string) (builderTaskResponse, bool, error) {
@@ -289,6 +285,17 @@ func (h *Handlers) builderPayloadForRun(tx *gorm.DB, run model.BuildRun, job mod
 	if strings.TrimSpace(registrySecret) == "" {
 		return builderTaskResponse{}, errors.New("registry credential secret is missing")
 	}
+	var project model.Project
+	if err := tx.First(&project, "id = ?", run.ProjectID).Error; err != nil {
+		return builderTaskResponse{}, fmt.Errorf("project not found: %w", err)
+	}
+	var application model.Application
+	if err := tx.First(&application, "id = ? and project_id = ?", run.ApplicationID, run.ProjectID).Error; err != nil {
+		return builderTaskResponse{}, fmt.Errorf("application not found: %w", err)
+	}
+	if strings.TrimSpace(run.TargetRepository) == "" {
+		run.TargetRepository = buildTargetImageRepository(registry, project, application)
+	}
 	imageRef := fallback(strings.TrimSpace(run.ImageRef), buildImageRef(registry, run))
 	var actor model.User
 	if err := tx.First(&actor, "id = ?", run.CreatedBy).Error; err != nil {
@@ -319,10 +326,12 @@ func (h *Handlers) builderPayloadForRun(tx *gorm.DB, run model.BuildRun, job mod
 			Env:            buildEnv,
 		},
 		Registry: builderRegistryPayload{
-			Endpoint: registryAuthEndpointForBuilder(registry.Endpoint),
-			Username: credential.Username,
-			Password: registrySecret,
-			ImageRef: imageRef,
+			Endpoint:         registryAuthEndpointForBuilder(registry.Endpoint),
+			Username:         credential.Username,
+			Password:         registrySecret,
+			ImageRef:         imageRef,
+			ImageNamePrefix:  buildImageNamePrefix(registry, run.TargetRepository),
+			ImageTagTemplate: fallback(strings.TrimSpace(run.TargetTag), "latest"),
 		},
 	}, nil
 }
@@ -419,16 +428,106 @@ func buildImageRef(registry model.ArtifactRegistry, run model.BuildRun) string {
 	if repository == "" {
 		return ""
 	}
-	tag := fallback(strings.TrimSpace(run.TargetTag), "latest")
-	endpoint := registryImageHost(registry.Endpoint)
-	namespace := strings.Trim(strings.TrimSpace(registry.Namespace), "/")
-	if namespace != "" && !strings.HasPrefix(repository, namespace+"/") {
-		repository = namespace + "/" + repository
+	tag := renderBuildTagTemplate(fallback(strings.TrimSpace(run.TargetTag), "latest"), variables.Context{SourceBranch: run.SourceBranch, SourceTag: run.SourceTag, SourceCommit: run.SourceCommit})
+	if hasRegistryHost(repository) || isDockerHubRegistry(registry) {
+		return repository + ":" + tag
 	}
+	endpoint := registryImageHost(registry.Endpoint)
 	if endpoint != "" {
 		return endpoint + "/" + repository + ":" + tag
 	}
 	return repository + ":" + tag
+}
+
+func buildTargetImageRepository(registry model.ArtifactRegistry, project model.Project, application model.Application) string {
+	projectSlug := dnsSafeSegment(project.Slug)
+	appSlug := dnsSafeSegment(application.Slug)
+	if strings.TrimSpace(application.Slug) == "" {
+		appSlug = dnsSafeSegment(application.Name)
+	}
+	repository := projectSlug + "-" + appSlug
+	if namespace := strings.Trim(strings.TrimSpace(registry.Namespace), "/"); namespace != "" {
+		repository = namespace + "/" + repository
+	}
+	return buildImageNamePrefix(registry, repository)
+}
+
+func buildImageNamePrefix(registry model.ArtifactRegistry, repository string) string {
+	repository = strings.Trim(strings.TrimSpace(repository), "/")
+	if repository == "" {
+		return ""
+	}
+	if hasRegistryHost(repository) || isDockerHubRegistry(registry) {
+		return repository
+	}
+	host := registryImageHost(registry.Endpoint)
+	if host == "" {
+		return repository
+	}
+	return strings.TrimRight(host, "/") + "/" + repository
+}
+
+func isDockerHubRegistry(registry model.ArtifactRegistry) bool {
+	provider := strings.ToLower(strings.TrimSpace(registry.Provider))
+	if provider == "dockerhub" || provider == "docker-hub" {
+		return true
+	}
+	host := registryImageHost(registry.Endpoint)
+	return host == "docker.io" || host == "registry-1.docker.io" || host == "index.docker.io"
+}
+
+func hasRegistryHost(repository string) bool {
+	first := strings.Split(strings.Trim(repository, "/"), "/")[0]
+	return strings.Contains(first, ".") || strings.Contains(first, ":") || first == "localhost"
+}
+
+func renderBuildTagTemplate(template string, ctx variables.Context) string {
+	return sanitizeImageTag(variables.Render(fallback(strings.TrimSpace(template), "latest"), ctx))
+}
+
+func sanitizeImageTag(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "latest"
+	}
+	var builder strings.Builder
+	for _, char := range value {
+		if char >= 'A' && char <= 'Z' || char >= 'a' && char <= 'z' || char >= '0' && char <= '9' || char == '_' || char == '.' || char == '-' {
+			builder.WriteRune(char)
+			continue
+		}
+		builder.WriteByte('-')
+	}
+	output := strings.Trim(builder.String(), ".-")
+	if output == "" {
+		return "latest"
+	}
+	if len(output) > 128 {
+		output = output[:128]
+	}
+	return output
+}
+
+func dnsSafeSegment(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	var builder strings.Builder
+	previousDash := false
+	for _, char := range value {
+		if char >= 'a' && char <= 'z' || char >= '0' && char <= '9' {
+			builder.WriteRune(char)
+			previousDash = false
+			continue
+		}
+		if !previousDash {
+			builder.WriteByte('-')
+			previousDash = true
+		}
+	}
+	output := strings.Trim(builder.String(), "-")
+	if output == "" {
+		return "app"
+	}
+	return output
 }
 
 func registryImageHost(endpoint string) string {
@@ -541,8 +640,10 @@ type builderBuildPayload struct {
 }
 
 type builderRegistryPayload struct {
-	Endpoint string `json:"endpoint"`
-	Username string `json:"username"`
-	Password string `json:"password"`
-	ImageRef string `json:"imageRef"`
+	Endpoint         string `json:"endpoint"`
+	Username         string `json:"username"`
+	Password         string `json:"password"`
+	ImageRef         string `json:"imageRef"`
+	ImageNamePrefix  string `json:"imageNamePrefix"`
+	ImageTagTemplate string `json:"imageTagTemplate"`
 }

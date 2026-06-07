@@ -1,3 +1,5 @@
+name: liteyuki-devops-dev
+
 services:
   postgres:
     image: postgres:17-alpine
@@ -25,6 +27,39 @@ services:
       timeout: 3s
       retries: 20
 
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        TARGET: worker
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      DATABASE_URL: postgres://devops:devops@postgres:5432/devops?sslmode=disable
+      REDIS_ADDR: redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  builder:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        TARGET: builder
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      REDIS_ADDR: redis:6379
+      BUILDER_AGENT_NAME: ${BUILDER_AGENT_NAME:-local-docker-builder}
+      BUILDER_SCOPES: ${BUILDER_SCOPES:-}
+      BUILDER_LABELS: ${BUILDER_LABELS:-}
+      BUILDER_WORKSPACE_HOST_ROOT: ${BUILDER_WORKSPACE_HOST_ROOT:-/Users/sfkm/Developer/liteyuki-studio/devops/.local/builder-workspace}
+    user: root
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./.local/builder-workspace:/builder-workspace
+
 volumes:
   postgres-data:
-

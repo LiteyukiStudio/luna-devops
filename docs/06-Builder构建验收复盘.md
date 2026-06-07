@@ -100,7 +100,7 @@ BuildRun 已经变为 `failed` 或 `succeeded` 后，前端列表仍可能显示
 
 - 构建触发表单增加目标镜像站选择。
 - 打开触发构建 Dialog 时自动选择可用的默认镜像站。
-- 选择应用后自动带出应用的 Dockerfile 路径和构建上下文。
+- 构建触发 Dialog 只读展示应用的 Dockerfile 路径和构建上下文；实际 BuildRun 由后端强制继承应用配置，修改入口统一放在应用配置页。
 - API client 错误处理优先展示后端 `detail`，方便开发定位。
 
 ### Builder 执行链路

@@ -5,22 +5,22 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/joho/godotenv"
 )
+
+var envLoadOnce sync.Once
 
 type Config struct {
 	APIAddr                     string
 	DatabaseURL                 string
 	RedisAddr                   string
-	BuilderSharedToken          string
 	BuilderTaskLeaseSeconds     int64
 	BuilderPollIntervalSeconds  int64
 	BuilderExecutorImage        string
 	BuilderExecutor             string
 	BuilderMaxConcurrency       int
-	BuilderAPIURL               string
-	BuilderAgentID              string
 	BuilderAgentName            string
 	BuilderWorkspaceRoot        string
 	BuilderWorkspaceHostRoot    string
@@ -31,6 +31,20 @@ type Config struct {
 	CertManagerClusterIssuer    string
 }
 
+type BuilderConfig struct {
+	RedisAddr                  string
+	BuilderPollIntervalSeconds int64
+	BuilderExecutorImage       string
+	BuilderExecutor            string
+	BuilderMaxConcurrency      int
+	BuilderAgentName           string
+	BuilderScopes              []string
+	BuilderLabels              []string
+	BuilderWorkspaceRoot       string
+	BuilderWorkspaceHostRoot   string
+	BuilderNPMRegistry         string
+}
+
 func Load() Config {
 	loadEnvFile()
 
@@ -38,14 +52,11 @@ func Load() Config {
 		APIAddr:                     env("API_ADDR", ":8080"),
 		DatabaseURL:                 env("DATABASE_URL", "postgres://devops:devops@localhost:5432/devops?sslmode=disable"),
 		RedisAddr:                   env("REDIS_ADDR", "localhost:6379"),
-		BuilderSharedToken:          env("BUILDER_SHARED_TOKEN", env("BUILDER_TOKEN", "dev-builder-token")),
 		BuilderTaskLeaseSeconds:     int64(envInt("BUILDER_TASK_LEASE_SECONDS", 300)),
-		BuilderPollIntervalSeconds:  int64(envInt("BUILDER_POLL_INTERVAL_SECONDS", 5)),
+		BuilderPollIntervalSeconds:  int64(envInt("BUILDER_POLL_INTERVAL_SECONDS", 3)),
 		BuilderExecutorImage:        env("BUILDER_EXECUTOR_IMAGE", "moby/buildkit:v0.24.0-rootless"),
 		BuilderExecutor:             env("BUILDER_EXECUTOR", "docker"),
-		BuilderMaxConcurrency:       envInt("BUILDER_MAX_CONCURRENCY", 1),
-		BuilderAPIURL:               env("LITEYUKI_API_URL", env("BUILDER_API_URL", "http://localhost:8080")),
-		BuilderAgentID:              env("BUILDER_AGENT_ID", ""),
+		BuilderMaxConcurrency:       envInt("BUILDER_MAX_CONCURRENCY", 16),
 		BuilderAgentName:            env("BUILDER_AGENT_NAME", "local-builder"),
 		BuilderWorkspaceRoot:        env("BUILDER_WORKSPACE_ROOT", ""),
 		BuilderWorkspaceHostRoot:    env("BUILDER_WORKSPACE_HOST_ROOT", ""),
@@ -57,6 +68,24 @@ func Load() Config {
 	}
 }
 
+func LoadBuilder() BuilderConfig {
+	loadEnvFile()
+
+	return BuilderConfig{
+		RedisAddr:                  env("REDIS_ADDR", "localhost:6379"),
+		BuilderPollIntervalSeconds: int64(envInt("BUILDER_POLL_INTERVAL_SECONDS", 3)),
+		BuilderExecutorImage:       env("BUILDER_EXECUTOR_IMAGE", "moby/buildkit:v0.24.0-rootless"),
+		BuilderExecutor:            env("BUILDER_EXECUTOR", "docker"),
+		BuilderMaxConcurrency:      envInt("BUILDER_MAX_CONCURRENCY", 16),
+		BuilderAgentName:           env("BUILDER_AGENT_NAME", "local-builder"),
+		BuilderScopes:              envList("BUILDER_SCOPES"),
+		BuilderLabels:              envList("BUILDER_LABELS"),
+		BuilderWorkspaceRoot:       env("BUILDER_WORKSPACE_ROOT", "/builder-workspace"),
+		BuilderWorkspaceHostRoot:   env("BUILDER_WORKSPACE_HOST_ROOT", ""),
+		BuilderNPMRegistry:         env("BUILDER_NPM_REGISTRY", ""),
+	}
+}
+
 func RuntimeMode() string {
 	switch strings.ToLower(os.Getenv("APP_ENV")) {
 	case "production", "prod":
@@ -64,31 +93,48 @@ func RuntimeMode() string {
 	case "development", "dev", "local":
 		return "development"
 	}
-
-	if strings.Contains(os.Args[0], "go-build") {
-		return "development"
-	}
 	return "production"
 }
 
 func loadEnvFile() {
-	envFile := os.Getenv("ENV_FILE")
-	if envFile == "" {
-		if RuntimeMode() != "development" {
-			return
-		}
-		envFile = ".env.dev"
+	envLoadOnce.Do(loadEnvFileOnce)
+}
+
+func loadEnvFileOnce() {
+	loadEnvFiles(".env")
+
+	mode := RuntimeMode()
+	switch mode {
+	case "development":
+		loadEnvFiles(".env.development")
+	case "production":
+		loadEnvFiles(".env.production")
 	}
 
-	if err := godotenv.Load(envFile); err != nil {
+	if envFile := strings.TrimSpace(os.Getenv("ENV_FILE")); envFile != "" {
+		loadEnvFiles(envFile)
+	}
+}
+
+func resetEnvLoaderForTest() {
+	envLoadOnce = sync.Once{}
+}
+
+func loadEnvFiles(paths ...string) {
+	for _, path := range paths {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			continue
+		}
+		if err := godotenv.Load(path); err != nil {
+			if RuntimeMode() == "development" {
+				log.Printf("development mode: env file %s not loaded: %v; using process environment", path, err)
+			}
+			continue
+		}
 		if RuntimeMode() == "development" {
-			log.Printf("development mode: env file %s not loaded: %v; using process environment", envFile, err)
+			log.Printf("development mode: loaded env file %s", path)
 		}
-		return
-	}
-
-	if RuntimeMode() == "development" {
-		log.Printf("development mode: loaded env file %s", envFile)
 	}
 }
 

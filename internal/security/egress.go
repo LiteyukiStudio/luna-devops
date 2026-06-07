@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -127,44 +129,69 @@ func (p EgressPolicy) ValidateURL(raw string) (*url.URL, error) {
 
 func (p EgressPolicy) ValidateHostPort(host string, port int) error {
 	host = strings.Trim(strings.TrimSpace(host), "[]")
+	originalHost := host
+	egressDebug("validate host=%s port=%d allowPrivate=%t applyIPFilterToNames=%t allowedPorts=%s domainAllow=%s domainBlock=%s ipAllow=%s ipBlock=%s", originalHost, port, p.AllowPrivateNetwork, p.ApplyIPFilterToNames, debugPorts(p.AllowedPorts), debugList(p.DomainAllowList), debugList(p.DomainBlockList), debugList(p.IPAllowList), debugList(p.IPBlockList))
 	if host == "" || port < 1 || port > 65535 {
+		egressDebug("blocked host=%s port=%d reason=invalid-host-or-port", originalHost, port)
 		return fmt.Errorf("%w: invalid host or port", ErrInvalidURL)
 	}
 	if len(p.AllowedPorts) > 0 && !containsPort(p.AllowedPorts, port) {
+		egressDebug("blocked host=%s port=%d reason=port-not-allowed allowedPorts=%s", originalHost, port, debugPorts(p.AllowedPorts))
 		return fmt.Errorf("%w: port is not allowed", ErrBlockedByPolicy)
 	}
 
 	if ip := net.ParseIP(host); ip != nil {
-		return p.validateIP(ip, false)
+		egressDebug("host is direct ip host=%s ip=%s", originalHost, ip.String())
+		if err := p.validateIP(ip); err != nil {
+			egressDebug("blocked host=%s ip=%s reason=%v", originalHost, ip.String(), err)
+			return err
+		}
+		egressDebug("allowed host=%s ip=%s reason=direct-ip-policy-pass", originalHost, ip.String())
+		return nil
 	}
 	host = normalizeDomain(host)
-	if domainListed(host, p.DomainBlockList) {
+	if listed, item := domainListedBy(host, p.DomainBlockList); listed {
+		egressDebug("blocked host=%s normalized=%s reason=domain-blocklist matched=%s", originalHost, host, item)
 		return fmt.Errorf("%w: domain is in blocklist", ErrBlockedByPolicy)
 	}
-	domainAllowed := domainListed(host, p.DomainAllowList)
+	if listed, item := domainListedBy(host, p.DomainAllowList); listed {
+		egressDebug("allowed host=%s normalized=%s reason=domain-allowlist matched=%s skipIPFilter=true", originalHost, host, item)
+		return nil
+	}
 	if !p.ApplyIPFilterToNames {
+		egressDebug("allowed host=%s normalized=%s reason=ip-filter-disabled", originalHost, host)
 		return nil
 	}
 	ips, err := net.LookupIP(host)
 	if err != nil {
+		egressDebug("blocked host=%s normalized=%s reason=dns-lookup-failed err=%v", originalHost, host, err)
 		return fmt.Errorf("%w: dns lookup failed", ErrBlockedByPolicy)
 	}
+	egressDebug("resolved host=%s normalized=%s ips=%s", originalHost, host, debugIPs(ips))
 	for _, ip := range ips {
-		if err := p.validateIP(ip, domainAllowed); err != nil {
+		if err := p.validateIP(ip); err != nil {
+			egressDebug("blocked host=%s normalized=%s ip=%s reason=%v", originalHost, host, ip.String(), err)
 			return err
 		}
+		egressDebug("ip allowed host=%s normalized=%s ip=%s", originalHost, host, ip.String())
 	}
+	egressDebug("allowed host=%s normalized=%s reason=all-resolved-ips-pass", originalHost, host)
 	return nil
 }
 
-func (p EgressPolicy) validateIP(ip net.IP, domainAllowed bool) error {
+func (p EgressPolicy) validateIP(ip net.IP) error {
 	if ip == nil {
 		return fmt.Errorf("%w: empty ip", ErrBlockedByPolicy)
 	}
-	if ipListed(ip, p.IPBlockList) {
-		return fmt.Errorf("%w: ip is in blocklist", ErrBlockedByPolicy)
+	if listed, item := ipListedBy(ip, p.IPBlockList); listed {
+		return fmt.Errorf("%w: ip is in blocklist (%s)", ErrBlockedByPolicy, item)
 	}
-	if ipListed(ip, p.IPAllowList) || domainAllowed || p.AllowPrivateNetwork {
+	if listed, item := ipListedBy(ip, p.IPAllowList); listed {
+		egressDebug("ip allowlist matched ip=%s matched=%s", ip.String(), item)
+		return nil
+	}
+	if p.AllowPrivateNetwork {
+		egressDebug("ip allowed by private-network policy ip=%s", ip.String())
 		return nil
 	}
 	if isPrivateOrSpecialIP(ip) {
@@ -197,6 +224,11 @@ func containsPort(ports []int, target int) bool {
 }
 
 func domainListed(host string, list []string) bool {
+	listed, _ := domainListedBy(host, list)
+	return listed
+}
+
+func domainListedBy(host string, list []string) (bool, string) {
 	host = normalizeDomain(host)
 	for _, item := range list {
 		item = normalizeDomain(item)
@@ -204,16 +236,19 @@ func domainListed(host string, list []string) bool {
 			continue
 		}
 		if item == host {
-			return true
+			return true, item
+		}
+		if strings.HasSuffix(host, "."+item) {
+			return true, item
 		}
 		if strings.HasPrefix(item, "*.") {
 			suffix := strings.TrimPrefix(item, "*.")
 			if host == suffix || strings.HasSuffix(host, "."+suffix) {
-				return true
+				return true, item
 			}
 		}
 	}
-	return false
+	return false, ""
 }
 
 func normalizeDomain(host string) string {
@@ -221,20 +256,25 @@ func normalizeDomain(host string) string {
 }
 
 func ipListed(ip net.IP, list []string) bool {
+	listed, _ := ipListedBy(ip, list)
+	return listed
+}
+
+func ipListedBy(ip net.IP, list []string) (bool, string) {
 	for _, item := range list {
 		item = strings.TrimSpace(item)
 		if item == "" {
 			continue
 		}
 		if listed := net.ParseIP(item); listed != nil && listed.Equal(ip) {
-			return true
+			return true, item
 		}
 		_, cidr, err := net.ParseCIDR(item)
 		if err == nil && cidr.Contains(ip) {
-			return true
+			return true, item
 		}
 	}
-	return false
+	return false, ""
 }
 
 func isPrivateOrSpecialIP(ip net.IP) bool {
@@ -255,4 +295,52 @@ func inCIDRs(ip net.IP, cidrs []string) bool {
 		}
 	}
 	return false
+}
+
+func egressDebug(format string, args ...any) {
+	if !egressDebugEnabled() {
+		return
+	}
+	log.Printf("[DEBUG] egress."+format, args...)
+}
+
+func egressDebugEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("LOG_LEVEL"))) {
+	case "debug", "trace":
+		return true
+	}
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("APP_ENV"))) {
+	case "development", "dev", "local":
+		return true
+	}
+	return false
+}
+
+func debugList(values []string) string {
+	if len(values) == 0 {
+		return "-"
+	}
+	return strings.Join(values, "|")
+}
+
+func debugPorts(values []int) string {
+	if len(values) == 0 {
+		return "-"
+	}
+	parts := make([]string, 0, len(values))
+	for _, value := range values {
+		parts = append(parts, strconv.Itoa(value))
+	}
+	return strings.Join(parts, "|")
+}
+
+func debugIPs(values []net.IP) string {
+	if len(values) == 0 {
+		return "-"
+	}
+	parts := make([]string, 0, len(values))
+	for _, value := range values {
+		parts = append(parts, value.String())
+	}
+	return strings.Join(parts, "|")
 }

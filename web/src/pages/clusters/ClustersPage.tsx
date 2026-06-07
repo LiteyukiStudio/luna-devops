@@ -12,6 +12,7 @@ import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { DataList } from '@/components/common/data-list'
 import { EditActionButton } from '@/components/common/edit-action-button'
 import { FormField as Field } from '@/components/common/form-field'
+import { StatusValueBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -42,6 +43,7 @@ export function ClustersPage() {
   const projectMap = useMemo(() => Object.fromEntries((projects.data ?? []).map(project => [project.id, project])), [projects.data])
   const form = useForm<ClusterForm>({ defaultValues: clusterDefaults, mode: 'onChange' })
   const scope = form.watch('scope')
+  const canEditKubeconfig = !editingCluster || canInspectClusterKubeconfig(editingCluster, user?.id, user?.role)
 
   useEffect(() => {
     if (scope !== 'global')
@@ -74,9 +76,9 @@ export function ClustersPage() {
     mutationFn: api.testRuntimeCluster,
     onSuccess: () => {
       toast.success(t('deploymentsPage.clusterTested'))
-      queryClient.invalidateQueries({ queryKey: ['runtime-clusters'] })
     },
     onError: error => toast.error(error.message),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['runtime-clusters'] }),
   })
 
   function openDialog(cluster?: RuntimeCluster) {
@@ -85,7 +87,7 @@ export function ClustersPage() {
       ? {
           endpoint: cluster.endpoint,
           isDefault: cluster.isDefault,
-          kubeconfig: '',
+          kubeconfig: cluster.kubeconfig ?? '',
           name: cluster.name,
           ownerRef: cluster.ownerRef,
           scope: cluster.scope,
@@ -111,7 +113,7 @@ export function ClustersPage() {
           { key: 'type', header: t('common.type'), render: item => clusterTypeLabel(item.type, t) },
           { key: 'scope', header: t('common.scope'), render: item => scopeLabel(item, projectMap, t) },
           { key: 'default', header: t('clustersPage.defaultCluster'), render: item => item.isDefault ? t('common.yes') : t('common.no') },
-          { key: 'status', header: t('common.status'), render: item => item.status },
+          { key: 'status', header: t('common.status'), render: item => <StatusValueBadge value={item.status} /> },
           { key: 'actions', header: t('common.actions'), className: 'text-right whitespace-nowrap', render: item => (
             canManageCluster(item, user?.id, user?.role)
               ? (
@@ -133,7 +135,7 @@ export function ClustersPage() {
       />
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent>
+        <DialogContent className="w-[min(92vw,48rem)] max-w-[92vw]">
           <DialogHeader>
             <DialogTitle>{editingCluster ? t('deploymentsPage.editCluster') : t('deploymentsPage.createCluster')}</DialogTitle>
             <DialogDescription>{t('clustersPage.dialogDescription')}</DialogDescription>
@@ -160,7 +162,7 @@ export function ClustersPage() {
                 <option value="kubernetes">{t('deploymentsPage.typeKubernetes')}</option>
               </Select>
             </Field>
-            <Field hint={t('clustersPage.kubeconfigHint')} label={t('deploymentsPage.kubeconfig')} required={!editingCluster}>
+            <Field hint={canEditKubeconfig ? t('clustersPage.kubeconfigHint') : t('clustersPage.kubeconfigRestrictedHint')} label={t('deploymentsPage.kubeconfig')} required={!editingCluster}>
               <Controller
                 control={form.control}
                 name="kubeconfig"
@@ -168,9 +170,11 @@ export function ClustersPage() {
                 render={({ field }) => (
                   <CodeEditor
                     ariaInvalid={Boolean(form.formState.errors.kubeconfig)}
+                    className="w-full"
                     language="yaml"
                     minHeight="16rem"
                     placeholder={t('clustersPage.kubeconfigPlaceholder')}
+                    readOnly={!canEditKubeconfig}
                     value={field.value ?? ''}
                     onChange={field.onChange}
                   />
@@ -201,6 +205,10 @@ function canManageCluster(cluster: RuntimeCluster, userID?: string, role?: strin
   if (cluster.scope === 'project')
     return true
   return false
+}
+
+function canInspectClusterKubeconfig(cluster: RuntimeCluster, userID?: string, role?: string) {
+  return role === 'platform_admin' || cluster.createdBy === userID
 }
 
 function clusterTypeLabel(type: RuntimeCluster['type'], t: (key: string, options?: Record<string, unknown>) => string) {

@@ -19,7 +19,7 @@ export function SidebarUserPanel({
   onLogout: () => void
 }) {
   return (
-    <div className="w-full min-w-0 max-w-full overflow-hidden rounded-lg border border-border bg-background p-2">
+    <div className="w-full min-w-0 max-w-full overflow-hidden px-2 py-1">
       <div className="flex w-full min-w-0 max-w-full items-center gap-3 overflow-hidden">
         <UserAvatar className="size-9 bg-primary text-primary-foreground" user={user} />
         <div className="min-w-0 flex-1 overflow-hidden">

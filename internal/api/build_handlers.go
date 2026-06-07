@@ -1,11 +1,14 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"math/rand/v2"
 	"net/http"
 	"strings"
 
+	builderagent "github.com/LiteyukiStudio/devops/internal/builder"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/gin-gonic/gin"
@@ -48,6 +51,44 @@ func (h *Handlers) ListBuildProviders(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, providers)
+}
+
+func (h *Handlers) ListBuilderAgents(ctx *gin.Context) {
+	user, ok := h.currentUser(ctx)
+	if !ok {
+		return
+	}
+	pagination := paginationFromQuery(ctx)
+	var builders []model.BuilderAgent
+	query := applySearch(ctx, h.db.Model(&model.BuilderAgent{}), "name", "id", "labels", "scopes", "executor", "status")
+	if strings.TrimSpace(ctx.Query("includeOffline")) != "true" {
+		query = query.Where("status = ?", "online")
+	}
+	if err := query.Order(orderByClause(pagination, map[string]string{
+		"name":               "name",
+		"status":             "status",
+		"executor":           "executor",
+		"lastHeartbeatAt":    "last_heartbeat_at",
+		"currentConcurrency": "current_concurrency",
+		"updatedAt":          "updated_at",
+	}, "updated_at")).Find(&builders).Error; err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if user.Role == "platform_admin" {
+		total := int64(len(builders))
+		ctx.JSON(http.StatusOK, paginatedResponse(paginateSlice(builders, pagination), total, pagination))
+		return
+	}
+	projectIDs := h.projectIDsForUser(user.ID)
+	visible := make([]model.BuilderAgent, 0, len(builders))
+	for _, builder := range builders {
+		if builderVisibleToUser(builder.Scopes, user.ID, projectIDs) {
+			visible = append(visible, builder)
+		}
+	}
+	total := int64(len(visible))
+	ctx.JSON(http.StatusOK, paginatedResponse(paginateSlice(visible, pagination), total, pagination))
 }
 
 func (h *Handlers) CreateBuildProvider(ctx *gin.Context) {
@@ -243,14 +284,33 @@ func (h *Handlers) ListBuildRuns(ctx *gin.Context) {
 	if _, ok := h.findProjectForCurrentUser(ctx); !ok {
 		return
 	}
-	query := h.db.Where("project_id = ?", ctx.Param("projectId")).Order("created_at desc")
+	pagination := paginationFromQuery(ctx)
+	query := h.db.Where("project_id = ?", ctx.Param("projectId"))
 	query = applySearch(ctx, query, "id", "source_commit", "target_repository", "image_ref")
 	var runs []model.BuildRun
-	if err := query.Find(&runs).Error; err != nil {
+	if ctx.Query("page") == "" && ctx.Query("pageSize") == "" {
+		if err := query.Order("created_at desc").Find(&runs).Error; err != nil {
+			writeError(ctx, http.StatusInternalServerError, err.Error())
+			return
+		}
+		ctx.JSON(http.StatusOK, runs)
+		return
+	}
+	var total int64
+	if err := query.Model(&model.BuildRun{}).Count(&total).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	ctx.JSON(http.StatusOK, runs)
+	orderBy := orderByClause(pagination, map[string]string{
+		"createdAt":    "created_at",
+		"status":       "status",
+		"sourceCommit": "source_commit",
+	}, "created_at")
+	if err := query.Order(orderBy).Limit(pagination.PageSize).Offset(pagination.Offset()).Find(&runs).Error; err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
+		return
+	}
+	ctx.JSON(http.StatusOK, paginatedResponse(runs, total, pagination))
 }
 
 func (h *Handlers) GetBuildRun(ctx *gin.Context) {
@@ -277,7 +337,47 @@ func (h *Handlers) TriggerBuildRun(ctx *gin.Context) {
 	run.ID = id.New("bldr")
 	run.Status = "queued"
 	run.TriggerType = fallback(strings.TrimSpace(input.TriggerType), "manual")
+	h.createQueuedBuildRun(ctx, user, run, strings.TrimSpace(input.TargetImageRef), http.StatusCreated)
+}
+
+func (h *Handlers) RetryBuildRun(ctx *gin.Context) {
+	user, _, ok := h.projectAndCurrentUserWithRoles(ctx, "owner", "admin", "developer")
+	if !ok {
+		return
+	}
+	previous, ok := h.findBuildRun(ctx)
+	if !ok {
+		return
+	}
+	run := model.BuildRun{
+		ID:                  id.New("bldr"),
+		ProjectID:           previous.ProjectID,
+		ApplicationID:       previous.ApplicationID,
+		BuildProviderID:     previous.BuildProviderID,
+		BuildVariableSetIDs: previous.BuildVariableSetIDs,
+		Status:              "queued",
+		TriggerType:         "retry",
+		SourceBranch:        previous.SourceBranch,
+		SourceTag:           previous.SourceTag,
+		SourceCommit:        previous.SourceCommit,
+		DockerfilePath:      previous.DockerfilePath,
+		BuildContext:        previous.BuildContext,
+		BuildDirectory:      previous.BuildDirectory,
+		TargetRegistryID:    previous.TargetRegistryID,
+		TargetRepository:    previous.TargetRepository,
+		TargetTag:           previous.TargetTag,
+		CacheConfig:         previous.CacheConfig,
+		CreatedBy:           user.ID,
+	}
+	h.createQueuedBuildRun(ctx, user, run, "", http.StatusCreated)
+}
+
+func (h *Handlers) createQueuedBuildRun(ctx *gin.Context, user model.User, run model.BuildRun, targetImageRef string, statusCode int) {
 	if !h.validateBuildRunRequest(ctx, user, &run) {
+		return
+	}
+	builder, ok := h.selectBuilderForRun(ctx, user, run)
+	if !ok {
 		return
 	}
 	job := model.BuildJob{
@@ -286,8 +386,16 @@ func (h *Handlers) TriggerBuildRun(ctx *gin.Context) {
 		ProjectID:  run.ProjectID,
 		Type:       "build",
 		Status:     "queued",
+		BuilderID:  builder.ID,
 	}
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if targetImageRef != "" {
+			if err := tx.Model(&model.Application{}).
+				Where("id = ? and project_id = ?", run.ApplicationID, run.ProjectID).
+				Update("target_image_ref", targetImageRef).Error; err != nil {
+				return err
+			}
+		}
 		if err := tx.Create(&run).Error; err != nil {
 			return err
 		}
@@ -296,15 +404,68 @@ func (h *Handlers) TriggerBuildRun(ctx *gin.Context) {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	ctx.JSON(http.StatusCreated, run)
+	if err := h.enqueueRedisBuilderTask(ctx.Request.Context(), run, job, builder.ID); err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
+		return
+	}
+	ctx.JSON(statusCode, run)
+}
+
+func (h *Handlers) enqueueRedisBuilderTask(ctx context.Context, run model.BuildRun, job model.BuildJob, builderID string) error {
+	if h.builderQueue == nil {
+		return errors.New("redis builder queue is not configured")
+	}
+	payload, err := h.builderPayloadForRun(h.db, run, job)
+	if err != nil {
+		return err
+	}
+	return builderagent.EnqueueRedisTask(ctx, h.builderQueue, builderagent.Task{
+		JobID:         payload.JobID,
+		TargetBuilder: builderID,
+		BuildRunID:    payload.BuildRunID,
+		ProjectID:     payload.ProjectID,
+		ApplicationID: payload.ApplicationID,
+		Repository: builderagent.RepositoryPayload{
+			CloneURL:     payload.Repository.CloneURL,
+			Owner:        payload.Repository.Owner,
+			Repo:         payload.Repository.Repo,
+			SourceBranch: payload.Repository.SourceBranch,
+			SourceTag:    payload.Repository.SourceTag,
+			SourceCommit: payload.Repository.SourceCommit,
+			AccessToken:  payload.Repository.AccessToken,
+		},
+		Build: builderagent.BuildPayload{
+			DockerfilePath: payload.Build.DockerfilePath,
+			BuildContext:   payload.Build.BuildContext,
+			BuildDirectory: payload.Build.BuildDirectory,
+			Env:            payload.Build.Env,
+		},
+		Registry: builderagent.RegistryPayload{
+			Endpoint:         payload.Registry.Endpoint,
+			Username:         payload.Registry.Username,
+			Password:         payload.Registry.Password,
+			ImageRef:         payload.Registry.ImageRef,
+			ImageNamePrefix:  payload.Registry.ImageNamePrefix,
+			ImageTagTemplate: payload.Registry.ImageTagTemplate,
+		},
+	})
 }
 
 func (h *Handlers) validateBuildRunRequest(ctx *gin.Context, user model.User, run *model.BuildRun) bool {
+	var project model.Project
+	if err := h.db.First(&project, "id = ?", run.ProjectID).Error; err != nil {
+		writeError(ctx, http.StatusBadRequest, "项目空间不存在")
+		return false
+	}
 	var app model.Application
 	if err := h.db.First(&app, "id = ? and project_id = ?", run.ApplicationID, run.ProjectID).Error; err != nil {
 		writeError(ctx, http.StatusBadRequest, "应用不存在")
 		return false
 	}
+	run.DockerfilePath = fallback(strings.TrimSpace(app.DockerfilePath), "Dockerfile")
+	run.BuildContext = fallback(strings.TrimSpace(app.BuildContext), ".")
+	run.BuildDirectory = ""
+	run.BuildLabels = strings.Join(normalizeBuildSelectorList(strings.Split(app.BuildLabels, ",")), ",")
 	if app.SourceType == "repository" {
 		var count int64
 		if err := h.db.Model(&model.RepositoryBinding{}).Where("project_id = ? and application_id = ?", run.ProjectID, run.ApplicationID).Count(&count).Error; err != nil {
@@ -323,8 +484,8 @@ func (h *Handlers) validateBuildRunRequest(ctx *gin.Context, user model.User, ru
 			return false
 		}
 	}
-	if strings.TrimSpace(run.TargetRegistryID) == "" || strings.TrimSpace(run.TargetRepository) == "" {
-		writeError(ctx, http.StatusBadRequest, "目标镜像仓库和镜像站不能为空")
+	if strings.TrimSpace(run.TargetRegistryID) == "" {
+		writeError(ctx, http.StatusBadRequest, "目标镜像站不能为空")
 		return false
 	}
 	var registry model.ArtifactRegistry
@@ -332,6 +493,13 @@ func (h *Handlers) validateBuildRunRequest(ctx *gin.Context, user model.User, ru
 		writeError(ctx, http.StatusBadRequest, "目标镜像站不存在")
 		return false
 	}
+	if strings.TrimSpace(run.TargetRepository) == "" {
+		repository, tag := splitTargetImageRef(fallback(strings.TrimSpace(app.TargetImageRef), buildTargetImageRepository(registry, project, app)))
+		run.TargetRepository = repository
+		run.TargetTag = tag
+	}
+	run.TargetRepository = strings.Trim(strings.TrimSpace(run.TargetRepository), "/")
+	run.TargetTag = fallback(strings.TrimSpace(run.TargetTag), "latest")
 	run.ImageRef = fallback(strings.TrimSpace(run.ImageRef), buildImageRef(registry, *run))
 	if !h.usableRegistryCredentialExists(user.ID, registry) {
 		writeError(ctx, http.StatusBadRequest, "目标镜像站缺少可用推送凭据")
@@ -341,6 +509,33 @@ func (h *Handlers) validateBuildRunRequest(ctx *gin.Context, user model.User, ru
 		return false
 	}
 	return true
+}
+
+func (h *Handlers) selectBuilderForRun(ctx *gin.Context, user model.User, run model.BuildRun) (model.BuilderAgent, bool) {
+	requiredLabels := normalizeBuildSelectorList(strings.Split(run.BuildLabels, ","))
+	var builders []model.BuilderAgent
+	if err := h.db.Where("status = ?", "online").Find(&builders).Error; err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
+		return model.BuilderAgent{}, false
+	}
+	candidates := make([]model.BuilderAgent, 0, len(builders))
+	for _, builder := range builders {
+		if builder.MaxConcurrency > 0 && builder.CurrentConcurrency >= builder.MaxConcurrency {
+			continue
+		}
+		if !builderHasLabels(builder.Labels, requiredLabels) {
+			continue
+		}
+		if !builderAllowsRun(builder.Scopes, run.ProjectID, user.ID) {
+			continue
+		}
+		candidates = append(candidates, builder)
+	}
+	if len(candidates) == 0 {
+		writeError(ctx, http.StatusBadRequest, "没有可用 Builder，请检查 Builder 是否在线、标签是否匹配、scope 是否允许当前项目或用户")
+		return model.BuilderAgent{}, false
+	}
+	return candidates[rand.IntN(len(candidates))], true
 }
 
 func (h *Handlers) usableRegistryCredentialExists(userID string, registry model.ArtifactRegistry) bool {
@@ -366,16 +561,35 @@ func (h *Handlers) ListBuildJobs(ctx *gin.Context) {
 	if _, ok := h.findProjectForCurrentUser(ctx); !ok {
 		return
 	}
-	query := h.db.Where("project_id = ?", ctx.Param("projectId")).Order("created_at desc")
+	pagination := paginationFromQuery(ctx)
+	query := h.db.Where("project_id = ?", ctx.Param("projectId"))
 	if runID := strings.TrimSpace(ctx.Query("buildRunId")); runID != "" {
 		query = query.Where("build_run_id = ?", runID)
 	}
 	var jobs []model.BuildJob
-	if err := query.Find(&jobs).Error; err != nil {
+	if ctx.Query("page") == "" && ctx.Query("pageSize") == "" {
+		if err := query.Order("created_at desc").Find(&jobs).Error; err != nil {
+			writeError(ctx, http.StatusInternalServerError, err.Error())
+			return
+		}
+		ctx.JSON(http.StatusOK, jobs)
+		return
+	}
+	var total int64
+	if err := query.Model(&model.BuildJob{}).Count(&total).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	ctx.JSON(http.StatusOK, jobs)
+	orderBy := orderByClause(pagination, map[string]string{
+		"createdAt": "created_at",
+		"status":    "status",
+		"attempts":  "attempts",
+	}, "created_at")
+	if err := query.Order(orderBy).Limit(pagination.PageSize).Offset(pagination.Offset()).Find(&jobs).Error; err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
+		return
+	}
+	ctx.JSON(http.StatusOK, paginatedResponse(jobs, total, pagination))
 }
 
 func (h *Handlers) GetBuildJob(ctx *gin.Context) {
@@ -466,6 +680,11 @@ func (h *Handlers) buildVariableSetFromInput(ctx *gin.Context, user model.User, 
 }
 
 func (h *Handlers) buildRunFromInput(projectID, userID string, input buildRunInput) model.BuildRun {
+	targetRepository, targetTag := splitTargetImageRef(input.TargetImageRef)
+	if targetRepository == "" {
+		targetRepository = strings.Trim(strings.TrimSpace(input.TargetRepository), "/")
+		targetTag = strings.TrimSpace(input.TargetTag)
+	}
 	return model.BuildRun{
 		ProjectID:           projectID,
 		ApplicationID:       strings.TrimSpace(input.ApplicationID),
@@ -478,12 +697,27 @@ func (h *Handlers) buildRunFromInput(projectID, userID string, input buildRunInp
 		BuildContext:        fallback(strings.TrimSpace(input.BuildContext), "."),
 		BuildDirectory:      strings.TrimSpace(input.BuildDirectory),
 		TargetRegistryID:    strings.TrimSpace(input.TargetRegistryID),
-		TargetRepository:    strings.Trim(strings.TrimSpace(input.TargetRepository), "/"),
-		TargetTag:           fallback(strings.TrimSpace(input.TargetTag), "latest"),
-		ImageRef:            strings.TrimSpace(input.ImageRef),
+		TargetRepository:    targetRepository,
+		TargetTag:           fallback(targetTag, "latest"),
+		ImageRef:            "",
 		CacheConfig:         strings.TrimSpace(input.CacheConfig),
 		CreatedBy:           userID,
 	}
+}
+
+func splitTargetImageRef(value string) (string, string) {
+	normalized := strings.Trim(strings.TrimSpace(value), "/")
+	if normalized == "" {
+		return "", ""
+	}
+	lastSlash := strings.LastIndex(normalized, "/")
+	lastColon := strings.LastIndex(normalized, ":")
+	if lastColon > lastSlash {
+		repository := strings.Trim(strings.TrimSpace(normalized[:lastColon]), "/")
+		tag := strings.TrimSpace(normalized[lastColon+1:])
+		return repository, tag
+	}
+	return normalized, "latest"
 }
 
 func normalizeBuildProviderType(value string) string {
@@ -552,6 +786,77 @@ func buildVariableSetIDs(raw string) []string {
 		return normalizeStringList(ids)
 	}
 	return normalizeStringList(strings.Split(raw, ","))
+}
+
+func normalizeBuildSelectorList(values []string) []string {
+	seen := map[string]bool{}
+	output := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.ToLower(strings.TrimSpace(value))
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		output = append(output, value)
+	}
+	return output
+}
+
+func builderHasLabels(rawLabels string, requiredLabels []string) bool {
+	if len(requiredLabels) == 0 {
+		return true
+	}
+	labels := map[string]bool{}
+	for _, label := range normalizeBuildSelectorList(strings.Split(rawLabels, ",")) {
+		labels[label] = true
+	}
+	for _, required := range requiredLabels {
+		if !labels[required] {
+			return false
+		}
+	}
+	return true
+}
+
+func builderAllowsRun(rawScopes string, projectID string, userID string) bool {
+	scopes := normalizeBuildSelectorList(strings.Split(rawScopes, ","))
+	if len(scopes) == 0 {
+		return true
+	}
+	for _, scope := range scopes {
+		switch {
+		case scope == "global":
+			return true
+		case strings.HasPrefix(scope, "project:") && strings.TrimPrefix(scope, "project:") == strings.ToLower(strings.TrimSpace(projectID)):
+			return true
+		case strings.HasPrefix(scope, "user:") && strings.TrimPrefix(scope, "user:") == strings.ToLower(strings.TrimSpace(userID)):
+			return true
+		}
+	}
+	return false
+}
+
+func builderVisibleToUser(rawScopes string, userID string, projectIDs []string) bool {
+	scopes := normalizeBuildSelectorList(strings.Split(rawScopes, ","))
+	if len(scopes) == 0 {
+		return true
+	}
+	userID = strings.ToLower(strings.TrimSpace(userID))
+	projectSet := map[string]bool{}
+	for _, projectID := range projectIDs {
+		projectSet[strings.ToLower(strings.TrimSpace(projectID))] = true
+	}
+	for _, scope := range scopes {
+		switch {
+		case scope == "global":
+			return true
+		case strings.HasPrefix(scope, "user:") && strings.TrimPrefix(scope, "user:") == userID:
+			return true
+		case strings.HasPrefix(scope, "project:") && projectSet[strings.TrimPrefix(scope, "project:")]:
+			return true
+		}
+	}
+	return false
 }
 
 func (h *Handlers) buildVariablesForRun(ctx *gin.Context, user model.User, projectID string, setIDs []string) (map[string]string, bool) {
@@ -633,6 +938,7 @@ type buildRunInput struct {
 	BuildContext        string   `json:"buildContext"`
 	BuildDirectory      string   `json:"buildDirectory"`
 	TargetRegistryID    string   `json:"targetRegistryId"`
+	TargetImageRef      string   `json:"targetImageRef"`
 	TargetRepository    string   `json:"targetRepository"`
 	TargetTag           string   `json:"targetTag"`
 	ImageRef            string   `json:"imageRef"`

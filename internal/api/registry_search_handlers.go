@@ -30,7 +30,7 @@ func (h *Handlers) SearchRegistryRepositories(ctx *gin.Context) {
 		return
 	}
 	credential := h.registryCredentialInput(user, registry)
-	result, err := registryprovider.SearchRepositories(ctx.Request.Context(), registry.Provider, registry.Endpoint, registry.Namespace, search, page, pageSize, h.egressPolicyForUser(user), credential)
+	result, err := registryprovider.SearchRepositories(ctx.Request.Context(), registry.Provider, registry.Endpoint, "", search, page, pageSize, h.egressPolicyForUser(user), credential)
 	if err != nil {
 		writeError(ctx, http.StatusBadGateway, "镜像站上游接口调用失败，请检查凭据权限或稍后重试")
 		return
@@ -86,7 +86,7 @@ func (h *Handlers) registryCredentialInput(user model.User, registry model.Artif
 }
 
 func (h *Handlers) allowRegistrySearch(ctx *gin.Context, userID string) bool {
-	if h.rateLimiter.allow("registry_search:"+userID, 60, time.Minute, time.Now()) {
+	if h.rateLimiter.allow("registry_search:"+userID, 60, time.Minute) {
 		return true
 	}
 	writeError(ctx, http.StatusTooManyRequests, "镜像搜索请求过于频繁，请稍后再试")

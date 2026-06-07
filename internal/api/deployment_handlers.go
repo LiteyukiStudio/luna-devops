@@ -9,6 +9,7 @@ import (
 
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -48,10 +49,7 @@ func (h *Handlers) ListRuntimeClusters(ctx *gin.Context) {
 		return
 	}
 	for index := range clusters {
-		clusters[index].KubeconfigSet = clusters[index].KubeconfigRef != ""
-		if !h.canInspectScopedResourceConfig(user, clusters[index].Scope, clusters[index].OwnerRef) {
-			clusters[index].Endpoint = ""
-		}
+		clusters[index] = h.runtimeClusterResponseForUser(user, clusters[index])
 	}
 	ctx.JSON(http.StatusOK, clusters)
 }
@@ -74,8 +72,7 @@ func (h *Handlers) CreateRuntimeCluster(ctx *gin.Context) {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	cluster.KubeconfigSet = cluster.KubeconfigRef != ""
-	ctx.JSON(http.StatusCreated, cluster)
+	ctx.JSON(http.StatusCreated, h.runtimeClusterResponseForUser(user, cluster))
 }
 
 func (h *Handlers) UpdateRuntimeCluster(ctx *gin.Context) {
@@ -93,6 +90,10 @@ func (h *Handlers) UpdateRuntimeCluster(ctx *gin.Context) {
 	}
 	var input runtimeClusterInput
 	if !bindJSON(ctx, &input) {
+		return
+	}
+	if strings.TrimSpace(input.Kubeconfig) != "" && !h.canInspectRuntimeClusterKubeconfig(user, existing) {
+		writeError(ctx, http.StatusForbidden, "只有创建者或平台管理员可以编辑 kubeconfig")
 		return
 	}
 	next, ok := h.runtimeClusterFromInput(ctx, user, input, existing.ID)
@@ -113,8 +114,7 @@ func (h *Handlers) UpdateRuntimeCluster(ctx *gin.Context) {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	existing.KubeconfigSet = existing.KubeconfigRef != ""
-	ctx.JSON(http.StatusOK, existing)
+	ctx.JSON(http.StatusOK, h.runtimeClusterResponseForUser(user, existing))
 }
 
 func (h *Handlers) DeleteRuntimeCluster(ctx *gin.Context) {
@@ -152,16 +152,52 @@ func (h *Handlers) TestRuntimeCluster(ctx *gin.Context) {
 	}
 	now := time.Now()
 	cluster.LastCheckedAt = &now
-	cluster.Status = "ready"
 	if cluster.KubeconfigRef == "" {
 		cluster.Status = "missing-credential"
+		if err := h.db.Save(&cluster).Error; err != nil {
+			writeError(ctx, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeError(ctx, http.StatusBadRequest, "运行集群缺少 kubeconfig，无法测试连接")
+		return
 	}
+	kubeconfig := h.secrets.Resolve(cluster.KubeconfigRef)
+	if strings.TrimSpace(kubeconfig) == "" {
+		cluster.Status = "missing-credential"
+		if err := h.db.Save(&cluster).Error; err != nil {
+			writeError(ctx, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeError(ctx, http.StatusBadRequest, "运行集群缺少 kubeconfig，无法测试连接")
+		return
+	}
+	client, err := kubeprovider.NewClientFromKubeconfig(kubeconfig)
+	if err != nil {
+		cluster.Status = "unhealthy"
+		if saveErr := h.db.Save(&cluster).Error; saveErr != nil {
+			writeError(ctx, http.StatusInternalServerError, saveErr.Error())
+			return
+		}
+		writeError(ctx, http.StatusBadRequest, "运行集群 kubeconfig 无效")
+		return
+	}
+	pingCtx, cancel := context.WithTimeout(ctx.Request.Context(), 8*time.Second)
+	defer cancel()
+	if err := client.Ping(pingCtx); err != nil {
+		cluster.Status = "unhealthy"
+		if saveErr := h.db.Save(&cluster).Error; saveErr != nil {
+			writeError(ctx, http.StatusInternalServerError, saveErr.Error())
+			return
+		}
+		writeError(ctx, http.StatusBadGateway, "运行集群连接测试失败，请检查 kubeconfig、集群地址和网络连通性")
+		return
+	}
+	cluster.Status = "ready"
 	if err := h.db.Save(&cluster).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	cluster.KubeconfigSet = cluster.KubeconfigRef != ""
-	ctx.JSON(http.StatusOK, cluster)
+	ctx.JSON(http.StatusOK, h.runtimeClusterResponseForUser(user, cluster))
 }
 
 func (h *Handlers) ListEnvironments(ctx *gin.Context) {
@@ -380,6 +416,22 @@ func (h *Handlers) findRelease(ctx *gin.Context) (model.Release, bool) {
 		return release, false
 	}
 	return release, true
+}
+
+func (h *Handlers) runtimeClusterResponseForUser(user model.User, cluster model.RuntimeCluster) model.RuntimeCluster {
+	cluster.KubeconfigSet = cluster.KubeconfigRef != ""
+	cluster.Kubeconfig = ""
+	if !h.canInspectScopedResourceConfig(user, cluster.Scope, cluster.OwnerRef) {
+		cluster.Endpoint = ""
+	}
+	if h.canInspectRuntimeClusterKubeconfig(user, cluster) {
+		cluster.Kubeconfig = h.secrets.Resolve(cluster.KubeconfigRef)
+	}
+	return cluster
+}
+
+func (h *Handlers) canInspectRuntimeClusterKubeconfig(user model.User, cluster model.RuntimeCluster) bool {
+	return user.Role == "platform_admin" || cluster.CreatedBy == user.ID
 }
 
 func (h *Handlers) runtimeClusterFromInput(ctx *gin.Context, user model.User, input runtimeClusterInput, clusterID string) (model.RuntimeCluster, bool) {

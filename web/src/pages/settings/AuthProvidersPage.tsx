@@ -13,7 +13,7 @@ import { EditActionButton } from '@/components/common/edit-action-button'
 import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
 import { MotionItem, MotionList } from '@/components/common/motion'
-import { StatusBadge } from '@/components/common/status-badge'
+import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -185,7 +185,7 @@ export function AuthProvidersPage() {
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
                         {provider.isDefault && <StatusBadge>{t('common.default')}</StatusBadge>}
-                        <StatusBadge>{provider.enabled ? t('common.enabled') : t('common.disabled')}</StatusBadge>
+                        <StatusValueBadge value={provider.enabled ? 'enabled' : 'disabled'} />
                         <EditActionButton
                           aria-label={t('edit')}
                           type="button"

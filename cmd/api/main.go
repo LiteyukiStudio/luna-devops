@@ -6,10 +6,14 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/api"
 	"github.com/LiteyukiStudio/devops/internal/config"
 	"github.com/LiteyukiStudio/devops/internal/database"
+	"github.com/LiteyukiStudio/devops/internal/secret"
 )
 
 func main() {
 	cfg := config.Load()
+	if err := secret.ValidateEncryptionConfig(); err != nil {
+		log.Fatalf("%v; set SECRET_ENCRYPTION_KEY or run local development with APP_ENV=development", err)
+	}
 
 	db, err := database.Open(cfg.DatabaseURL)
 	if err != nil {

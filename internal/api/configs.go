@@ -59,7 +59,7 @@ var configDefinitions = []configDefinition{
 	{
 		Key:         "security.egress.domainAllowList",
 		Label:       "SSRF 域名特许白名单",
-		Description: "每行一个域名或通配符域名。命中后允许该域名解析到私网/保留地址，但仍会受显式 IP 黑名单约束。",
+		Description: "每行一个域名或通配符域名。命中后直接允许该域名，适合本地 FakeIP、内网镜像站等明确可信目标。",
 		Type:        "textarea",
 		Public:      false,
 		Default:     "",
@@ -83,7 +83,7 @@ var configDefinitions = []configDefinition{
 	{
 		Key:         "security.egress.ipBlockList",
 		Label:       "SSRF IP 黑名单",
-		Description: "每行一个 IP 或 CIDR。默认预置 IPv4/IPv6 私网、环回、链路本地、文档、多播和保留地址；保存后以用户编辑内容为准。",
+		Description: "每行一个 IP 或 CIDR。用于拦截直连 IP 或非白名单域名的解析结果；域名白名单命中时不再二次检查 IP 黑名单。",
 		Type:        "textarea",
 		Public:      false,
 		Default:     security.ReservedIPBlockListText(),
@@ -208,8 +208,8 @@ func (h *Handlers) UpdateConfigs(ctx *gin.Context) {
 			writeError(ctx, http.StatusBadRequest, err.Error())
 			return
 		}
-		h.configs.set(key, value)
 	}
+	h.configs.reload(h.db)
 
 	ctx.JSON(http.StatusOK, h.configs.get(knownConfigKeys()))
 }

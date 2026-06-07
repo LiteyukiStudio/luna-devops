@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	builderagent "github.com/LiteyukiStudio/devops/internal/builder"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	dnsprovider "github.com/LiteyukiStudio/devops/internal/provider/dns"
@@ -17,8 +18,10 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/secret"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
 	"github.com/hibiken/asynq"
+	"github.com/redis/go-redis/v9"
 	"golang.org/x/oauth2"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type Runner struct {
@@ -59,6 +62,11 @@ func Run(redisAddr string, db *gorm.DB, options Options) error {
 	mux.HandleFunc(tasks.TypeGatewayApply, runner.withTaskEvents(runner.handleGatewayApply))
 	mux.HandleFunc(tasks.TypeGitAccountRefresh, runner.withTaskEvents(runner.handleGitAccountRefresh))
 	mux.HandleFunc(tasks.TypeSyncStatus, runner.withTaskEvents(logTask))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go runner.consumeBuilderEvents(ctx, redisAddr)
+	go runner.syncBuilderAgentStatus(ctx)
 
 	return server.Run(mux)
 }
@@ -113,6 +121,363 @@ func (r *Runner) recordTaskEvent(envelope tasks.TaskEnvelope, status string, mes
 		Message:     message,
 		Attempt:     envelope.Attempt,
 	}).Error
+}
+
+func (r *Runner) consumeBuilderEvents(ctx context.Context, redisAddr string) {
+	client := builderagent.NewRedisClient(redisAddr)
+	defer func() {
+		if err := client.Close(); err != nil {
+			log.Printf("builder event redis close failed: %v", err)
+		}
+	}()
+	if err := ensureRedisGroup(ctx, client, builderagent.RedisEventStream, builderagent.RedisEventGroup); err != nil {
+		log.Printf("builder event group init failed: %v", err)
+		return
+	}
+	consumer := "worker-" + id.New("bev")
+	for {
+		streams, err := client.XReadGroup(ctx, &redis.XReadGroupArgs{
+			Group:    builderagent.RedisEventGroup,
+			Consumer: consumer,
+			Streams:  []string{builderagent.RedisEventStream, ">"},
+			Count:    8,
+			Block:    5 * time.Second,
+		}).Result()
+		if errors.Is(err, redis.Nil) {
+			continue
+		}
+		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			log.Printf("builder event read failed: %v", err)
+			time.Sleep(2 * time.Second)
+			continue
+		}
+		for _, stream := range streams {
+			for _, message := range stream.Messages {
+				if err := r.handleBuilderEvent(message); err != nil {
+					log.Printf("builder event handle failed: id=%s err=%v", message.ID, err)
+					continue
+				}
+				if err := client.XAck(ctx, builderagent.RedisEventStream, builderagent.RedisEventGroup, message.ID).Err(); err != nil {
+					log.Printf("builder event ack failed: id=%s err=%v", message.ID, err)
+				}
+				if err := client.XDel(ctx, builderagent.RedisEventStream, message.ID).Err(); err != nil {
+					log.Printf("builder event delete failed: id=%s err=%v", message.ID, err)
+				}
+			}
+		}
+	}
+}
+
+func ensureRedisGroup(ctx context.Context, client *redis.Client, stream string, group string) error {
+	err := client.XGroupCreateMkStream(ctx, stream, group, "0").Err()
+	if err != nil && !strings.Contains(err.Error(), "BUSYGROUP") {
+		return err
+	}
+	return nil
+}
+
+func (r *Runner) handleBuilderEvent(message redis.XMessage) error {
+	eventType, _ := message.Values["type"].(string)
+	agentID, _ := message.Values["agentId"].(string)
+	jobID, _ := message.Values["jobId"].(string)
+	payload, _ := message.Values["payload"].(string)
+	switch strings.TrimSpace(eventType) {
+	case "heartbeat":
+		var raw struct {
+			Heartbeat builderagent.Heartbeat `json:"heartbeat"`
+		}
+		if err := json.Unmarshal([]byte(payload), &raw); err != nil {
+			return err
+		}
+		return r.recordBuilderHeartbeat(raw.Heartbeat)
+	case "claimed":
+		var raw struct {
+			BuildRunID string `json:"buildRunId"`
+			ProjectID  string `json:"projectId"`
+		}
+		if err := json.Unmarshal([]byte(payload), &raw); err != nil {
+			return err
+		}
+		return r.markBuilderJobClaimed(jobID, agentID, raw.BuildRunID, raw.ProjectID)
+	case "log":
+		var raw struct {
+			Content string `json:"content"`
+		}
+		if err := json.Unmarshal([]byte(payload), &raw); err != nil {
+			return err
+		}
+		return r.appendBuilderLog(jobID, agentID, raw.Content)
+	case "complete":
+		var raw struct {
+			Result builderagent.Result `json:"result"`
+		}
+		if err := json.Unmarshal([]byte(payload), &raw); err != nil {
+			return err
+		}
+		return r.completeBuilderJob(jobID, agentID, raw.Result)
+	case "fail":
+		var raw struct {
+			Message string `json:"message"`
+		}
+		if err := json.Unmarshal([]byte(payload), &raw); err != nil {
+			return err
+		}
+		return r.failBuilderJob(jobID, agentID, raw.Message)
+	default:
+		return fmt.Errorf("unknown builder event type: %s", eventType)
+	}
+}
+
+func (r *Runner) recordBuilderHeartbeat(heartbeat builderagent.Heartbeat) error {
+	agentID := strings.TrimSpace(heartbeat.AgentID)
+	if agentID == "" {
+		return errors.New("builder agent id is required")
+	}
+	now := time.Now()
+	agent := model.BuilderAgent{
+		ID:                 agentID,
+		Name:               fallbackString(strings.TrimSpace(heartbeat.Name), agentID),
+		Labels:             strings.Join(normalizeWorkerStringList(heartbeat.Labels), ","),
+		Scopes:             strings.Join(normalizeWorkerStringList(heartbeat.Scopes), ","),
+		Executor:           fallbackString(strings.TrimSpace(heartbeat.Executor), "docker"),
+		Status:             "online",
+		MaxConcurrency:     fallbackWorkerInt(heartbeat.MaxConcurrency, 1),
+		CurrentConcurrency: heartbeat.CurrentConcurrency,
+		LastHeartbeatAt:    &now,
+	}
+	return r.db.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "id"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"name", "labels", "scopes", "executor", "status", "max_concurrency", "current_concurrency", "last_heartbeat_at", "updated_at",
+		}),
+	}).Create(&agent).Error
+}
+
+func (r *Runner) syncBuilderAgentStatus(ctx context.Context) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for {
+		if err := r.markStaleBuilderAgentsOffline(); err != nil {
+			log.Printf("builder agent status sync failed: %v", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func (r *Runner) markStaleBuilderAgentsOffline() error {
+	if r.db == nil {
+		return nil
+	}
+	staleBefore := time.Now().Add(-90 * time.Second)
+	return r.db.Model(&model.BuilderAgent{}).
+		Where("status = ? and (last_heartbeat_at is null or last_heartbeat_at < ?)", "online", staleBefore).
+		Updates(map[string]any{
+			"status":              "offline",
+			"current_concurrency": 0,
+		}).Error
+}
+
+func (r *Runner) markBuilderJobClaimed(jobID string, agentID string, buildRunID string, projectID string) error {
+	now := time.Now()
+	leaseUntil := now.Add(5 * time.Minute)
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var job model.BuildJob
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&job, "id = ?", jobID).Error; err != nil {
+			return err
+		}
+		if job.Status != "queued" && job.BuilderID != agentID {
+			return fmt.Errorf("build job %s is already claimed by %s", job.ID, job.BuilderID)
+		}
+		if projectID == "" {
+			projectID = job.ProjectID
+		}
+		if buildRunID == "" {
+			buildRunID = job.BuildRunID
+		}
+		if err := tx.Model(&model.BuildJob{}).Where("id = ?", job.ID).Updates(map[string]any{
+			"status":      "running",
+			"builder_id":  agentID,
+			"lease_until": &leaseUntil,
+			"log_ref":     "builder:" + agentID + "/" + job.ID,
+			"message":     "builder task claimed",
+			"attempts":    job.Attempts + 1,
+			"started_at":  nullableWorkerStartTime(job.StartedAt, now),
+			"finished_at": nil,
+		}).Error; err != nil {
+			return err
+		}
+		runUpdates := map[string]any{"status": "running"}
+		var run model.BuildRun
+		if err := tx.First(&run, "id = ? and project_id = ?", buildRunID, projectID).Error; err != nil {
+			return err
+		}
+		if run.StartedAt == nil {
+			runUpdates["started_at"] = &now
+		}
+		return tx.Model(&model.BuildRun{}).Where("id = ?", run.ID).Updates(runUpdates).Error
+	})
+}
+
+func (r *Runner) appendBuilderLog(jobID string, agentID string, content string) error {
+	content = trimWorkerBuildLogContent(content)
+	if content == "" {
+		return nil
+	}
+	var job model.BuildJob
+	if err := r.db.First(&job, "id = ? and builder_id = ?", jobID, agentID).Error; err != nil {
+		return err
+	}
+	var existing model.BuildLog
+	err := r.db.First(&existing, "build_job_id = ?", job.ID).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return r.db.Create(&model.BuildLog{
+			ID:         id.New("blog"),
+			BuildRunID: job.BuildRunID,
+			BuildJobID: job.ID,
+			ProjectID:  job.ProjectID,
+			Content:    content,
+		}).Error
+	}
+	if err != nil {
+		return err
+	}
+	existing.Content = trimWorkerBuildLogContent(existing.Content + "\n" + content)
+	return r.db.Save(&existing).Error
+}
+
+func (r *Runner) completeBuilderJob(jobID string, agentID string, result builderagent.Result) error {
+	var job model.BuildJob
+	if err := r.db.First(&job, "id = ? and builder_id = ?", jobID, agentID).Error; err != nil {
+		return err
+	}
+	var run model.BuildRun
+	if err := r.db.First(&run, "id = ? and project_id = ?", job.BuildRunID, job.ProjectID).Error; err != nil {
+		return err
+	}
+	finishedAt := time.Now()
+	imageRef := fallbackString(strings.TrimSpace(result.ImageRef), run.ImageRef)
+	imageDigest := strings.TrimSpace(result.ImageDigest)
+	sourceCommit := fallbackString(strings.TrimSpace(result.SourceCommit), run.SourceCommit)
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&model.BuildJob{}).Where("id = ?", job.ID).Updates(map[string]any{
+			"status":      "succeeded",
+			"message":     fallbackString(strings.TrimSpace(result.Message), "builder task succeeded"),
+			"lease_until": nil,
+			"finished_at": &finishedAt,
+		}).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&model.BuildRun{}).Where("id = ?", run.ID).Updates(map[string]any{
+			"status":        "succeeded",
+			"image_ref":     imageRef,
+			"image_digest":  imageDigest,
+			"source_commit": sourceCommit,
+			"finished_at":   &finishedAt,
+		}).Error; err != nil {
+			return err
+		}
+		if imageRef != "" {
+			image := containerImageFromWorkerBuildRun(run, imageRef, imageDigest, sourceCommit)
+			if image.ID != "" {
+				return tx.Create(&image).Error
+			}
+		}
+		return nil
+	})
+}
+
+func (r *Runner) failBuilderJob(jobID string, agentID string, message string) error {
+	var job model.BuildJob
+	if err := r.db.First(&job, "id = ? and builder_id = ?", jobID, agentID).Error; err != nil {
+		return err
+	}
+	finishedAt := time.Now()
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&model.BuildJob{}).Where("id = ?", job.ID).Updates(map[string]any{
+			"status":      "failed",
+			"message":     fallbackString(strings.TrimSpace(message), "builder task failed"),
+			"lease_until": nil,
+			"finished_at": &finishedAt,
+		}).Error; err != nil {
+			return err
+		}
+		return tx.Model(&model.BuildRun{}).Where("id = ?", job.BuildRunID).Updates(map[string]any{
+			"status":      "failed",
+			"finished_at": &finishedAt,
+		}).Error
+	})
+}
+
+func nullableWorkerStartTime(existing *time.Time, now time.Time) any {
+	if existing != nil {
+		return existing
+	}
+	return &now
+}
+
+func fallbackString(value string, fallback string) string {
+	if strings.TrimSpace(value) != "" {
+		return value
+	}
+	return fallback
+}
+
+func fallbackWorkerInt(value int, fallback int) int {
+	if value != 0 {
+		return value
+	}
+	return fallback
+}
+
+func normalizeWorkerStringList(values []string) []string {
+	seen := map[string]bool{}
+	output := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		output = append(output, value)
+	}
+	return output
+}
+
+func trimWorkerBuildLogContent(content string) string {
+	const maxLogBytes = 2 * 1024 * 1024
+	content = strings.TrimRight(content, "\n")
+	if len(content) <= maxLogBytes {
+		return content
+	}
+	return content[len(content)-maxLogBytes:]
+}
+
+func containerImageFromWorkerBuildRun(run model.BuildRun, imageRef string, digest string, sourceCommit string) model.ContainerImage {
+	if strings.TrimSpace(run.TargetRegistryID) == "" || strings.TrimSpace(run.TargetRepository) == "" {
+		return model.ContainerImage{}
+	}
+	return model.ContainerImage{
+		ID:            id.New("img"),
+		ProjectID:     run.ProjectID,
+		ApplicationID: run.ApplicationID,
+		RegistryID:    run.TargetRegistryID,
+		Repository:    strings.Trim(strings.TrimSpace(run.TargetRepository), "/"),
+		Tag:           fallbackString(strings.TrimSpace(run.TargetTag), "latest"),
+		Digest:        strings.TrimSpace(digest),
+		ImageRef:      strings.TrimSpace(imageRef),
+		SourceType:    "build",
+		BuildRunID:    run.ID,
+		SourceCommit:  strings.TrimSpace(sourceCommit),
+		ScanStatus:    "unknown",
+		CreatedBy:     run.CreatedBy,
+	}
 }
 
 type periodicTaskSpec struct {

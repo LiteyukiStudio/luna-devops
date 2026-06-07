@@ -52,6 +52,18 @@ func paginatedResponse[T any](items []T, total int64, pagination paginationParam
 	}
 }
 
+func paginateSlice[T any](items []T, pagination paginationParams) []T {
+	start := pagination.Offset()
+	if start >= len(items) {
+		return []T{}
+	}
+	end := start + pagination.PageSize
+	if end > len(items) {
+		end = len(items)
+	}
+	return items[start:end]
+}
+
 func orderByClause(pagination paginationParams, allowedFields map[string]string, defaultColumn string) string {
 	column := allowedFields[pagination.SortBy]
 	if column == "" {

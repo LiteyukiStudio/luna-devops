@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -21,12 +19,16 @@ import (
 
 type Options struct {
 	APIURL            string
+	RedisAddr         string
 	Token             string
+	Transport         string
 	AgentID           string
 	Name              string
 	Executor          string
 	ExecutorImage     string
+	Labels            []string
 	MaxConcurrency    int
+	Scopes            []string
 	PollInterval      time.Duration
 	WorkspaceRoot     string
 	WorkspaceHostRoot string
@@ -35,8 +37,8 @@ type Options struct {
 }
 
 type Agent struct {
-	options Options
-	client  *http.Client
+	options   Options
+	transport Transport
 }
 
 func New(options Options) *Agent {
@@ -49,28 +51,39 @@ func New(options Options) *Agent {
 	if strings.TrimSpace(options.Executor) == "" {
 		options.Executor = "docker"
 	}
+	if strings.TrimSpace(options.Transport) == "" {
+		options.Transport = TransportRedis
+	}
 	if strings.TrimSpace(options.ExecutorImage) == "" {
 		options.ExecutorImage = "moby/buildkit:v0.24.0-rootless"
 	}
 	if strings.TrimSpace(options.WorkspaceRoot) == "" {
-		options.WorkspaceRoot = filepath.Join(os.TempDir(), "liteyuki-builder")
+		options.WorkspaceRoot = "/builder-workspace"
 	}
 	if strings.TrimSpace(options.DockerBinary) == "" {
 		options.DockerBinary = "docker"
 	}
-	return &Agent{options: options, client: &http.Client{Timeout: 30 * time.Second}}
+	return &Agent{options: options}
 }
 
 func (a *Agent) Run(ctx context.Context) error {
-	if strings.TrimSpace(a.options.APIURL) == "" {
-		return errors.New("builder api url is required")
+	agentName := strings.TrimSpace(a.options.Name)
+	if agentName == "" {
+		agentName = "local-builder"
 	}
-	if strings.TrimSpace(a.options.Token) == "" {
-		return errors.New("builder token is required")
+	a.options.Name = agentName
+	a.options.AgentID = agentName
+	a.options.Transport = TransportRedis
+	transport, err := NewTransport(a.options)
+	if err != nil {
+		return err
 	}
-	if strings.TrimSpace(a.options.AgentID) == "" {
-		a.options.AgentID = defaultAgentID()
-	}
+	a.transport = transport
+	defer func() {
+		if err := a.transport.Close(); err != nil {
+			log.Printf("builder transport close failed: %v", err)
+		}
+	}()
 	if err := os.MkdirAll(a.options.WorkspaceRoot, 0o700); err != nil {
 		return err
 	}
@@ -120,18 +133,19 @@ func (a *Agent) runTask(ctx context.Context, task Task) {
 }
 
 func (a *Agent) heartbeat(ctx context.Context, current int) error {
-	return a.post(ctx, "/api/v1/builder/heartbeat", map[string]any{
-		"agentId":            a.options.AgentID,
-		"name":               a.options.Name,
-		"executor":           a.options.Executor,
-		"maxConcurrency":     a.options.MaxConcurrency,
-		"currentConcurrency": current,
-	}, nil)
+	return a.transport.Heartbeat(ctx, Heartbeat{
+		AgentID:            a.options.AgentID,
+		Name:               a.options.Name,
+		Labels:             a.options.Labels,
+		Scopes:             a.options.Scopes,
+		Executor:           a.options.Executor,
+		MaxConcurrency:     a.options.MaxConcurrency,
+		CurrentConcurrency: current,
+	})
 }
 
 func (a *Agent) claim(ctx context.Context) (Task, bool, error) {
-	var task Task
-	err := a.post(ctx, "/api/v1/builder/tasks/claim", map[string]any{"agentId": a.options.AgentID}, &task)
+	task, err := a.transport.Claim(ctx)
 	if errors.Is(err, errNoTask) {
 		return Task{}, false, nil
 	}
@@ -139,15 +153,15 @@ func (a *Agent) claim(ctx context.Context) (Task, bool, error) {
 }
 
 func (a *Agent) appendLogs(ctx context.Context, jobID string, content string) error {
-	return a.post(ctx, fmt.Sprintf("/api/v1/builder/tasks/%s/logs?agentId=%s", jobID, url.QueryEscape(a.options.AgentID)), map[string]string{"content": content}, nil)
+	return a.transport.AppendLogs(ctx, jobID, content)
 }
 
 func (a *Agent) complete(ctx context.Context, jobID string, result Result) error {
-	return a.post(ctx, fmt.Sprintf("/api/v1/builder/tasks/%s/complete?agentId=%s", jobID, url.QueryEscape(a.options.AgentID)), result, nil)
+	return a.transport.Complete(ctx, jobID, result)
 }
 
 func (a *Agent) fail(ctx context.Context, jobID string, message string) error {
-	return a.post(ctx, fmt.Sprintf("/api/v1/builder/tasks/%s/fail?agentId=%s", jobID, url.QueryEscape(a.options.AgentID)), map[string]string{"message": message}, nil)
+	return a.transport.Fail(ctx, jobID, message)
 }
 
 func (a *Agent) executeDockerTask(ctx context.Context, task Task, onLog func(string) error) (Result, string, error) {
@@ -184,6 +198,8 @@ func (a *Agent) executeDockerTask(ctx context.Context, task Task, onLog func(str
 		"-e", "REGISTRY_USERNAME=" + task.Registry.Username,
 		"-e", "REGISTRY_PASSWORD=" + task.Registry.Password,
 		"-e", "IMAGE_REF=" + task.Registry.ImageRef,
+		"-e", "IMAGE_NAME_PREFIX=" + task.Registry.ImageNamePrefix,
+		"-e", "IMAGE_TAG_TEMPLATE=" + task.Registry.ImageTagTemplate,
 	}
 	buildEnv := normalizedBuildEnv(task.Build.Env)
 	if strings.TrimSpace(a.options.NPMRegistry) != "" {
@@ -231,38 +247,6 @@ func (a *Agent) executorVolumeWorkspace(workspace string) string {
 	return filepath.Join(hostRoot, rel)
 }
 
-func (a *Agent) post(ctx context.Context, path string, payload any, output any) error {
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(a.options.APIURL, "/")+path, bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", "Bearer "+a.options.Token)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := a.client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusNoContent && output != nil {
-		return errNoTask
-	}
-	if resp.StatusCode == http.StatusNoContent {
-		return nil
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return fmt.Errorf("builder api returned %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))
-	}
-	if output == nil {
-		return nil
-	}
-	return json.NewDecoder(resp.Body).Decode(output)
-}
-
 func executorScript() string {
 	return `set -eu
 cd /workspace
@@ -298,6 +282,61 @@ if [ -n "${SOURCE_TAG:-}" ]; then git checkout "$SOURCE_TAG"; fi
 if [ -n "${SOURCE_BRANCH:-}" ]; then git checkout "$SOURCE_BRANCH"; fi
 if [ -n "${SOURCE_COMMIT:-}" ]; then git checkout "$SOURCE_COMMIT"; fi
 CHECKED_OUT_COMMIT="$(git rev-parse HEAD)"
+short_commit() {
+  value="$1"
+  printf "%s" "$(printf "%.12s" "$value")"
+}
+sanitize_tag() {
+  printf "%s" "$1" \
+    | sed -E 's/[^A-Za-z0-9_.-]+/-/g; s/^[.-]+//; s/[.-]+$//' \
+    | cut -c 1-128
+}
+escape_sed_pattern() {
+  printf "%s" "$1" | sed 's/[][\/.^$*+?{}()|]/\\&/g'
+}
+escape_sed_replacement() {
+  printf "%s" "$1" | sed 's/[\/&]/\\&/g'
+}
+replace_token() {
+  pattern="$(escape_sed_pattern "$1")"
+  replacement="$(escape_sed_replacement "$2")"
+  printf "%s" "$3" | sed -E "s/$pattern/$replacement/g"
+}
+render_image_tag() {
+  template="${IMAGE_TAG_TEMPLATE:-latest}"
+  ref_name="${SOURCE_TAG:-$SOURCE_BRANCH}"
+  ref_type="branch"
+  ref_value=""
+  if [ -n "${SOURCE_TAG:-}" ]; then
+    ref_type="tag"
+    ref_value="refs/tags/$SOURCE_TAG"
+  elif [ -n "${SOURCE_BRANCH:-}" ]; then
+    ref_value="refs/heads/$SOURCE_BRANCH"
+  fi
+  rendered="$template"
+  short_sha="$(short_commit "$CHECKED_OUT_COMMIT")"
+  rendered="$(replace_token '${{ github.sha }}' "$CHECKED_OUT_COMMIT" "$rendered")"
+  rendered="$(replace_token '${{ github.ref_name }}' "$ref_name" "$rendered")"
+  rendered="$(replace_token '${{ github.ref_type }}' "$ref_type" "$rendered")"
+  rendered="$(replace_token '${{ github.ref }}' "$ref_value" "$rendered")"
+  rendered="$(replace_token '${{ github.head_ref }}' "$SOURCE_BRANCH" "$rendered")"
+  rendered="$(replace_token '${{ github.base_ref }}' "" "$rendered")"
+  rendered="$(replace_token '{sha}' "$CHECKED_OUT_COMMIT" "$rendered")"
+  rendered="$(replace_token '{commit}' "$CHECKED_OUT_COMMIT" "$rendered")"
+  rendered="$(replace_token '{short_sha}' "$short_sha" "$rendered")"
+  rendered="$(replace_token '{commit_short}' "$short_sha" "$rendered")"
+  rendered="$(replace_token '{branch}' "$SOURCE_BRANCH" "$rendered")"
+  rendered="$(replace_token '{tag}' "$SOURCE_TAG" "$rendered")"
+  rendered="$(replace_token '{ref_name}' "$ref_name" "$rendered")"
+  sanitized="$(sanitize_tag "$rendered")"
+  if [ -z "$sanitized" ]; then
+    sanitized="latest"
+  fi
+  printf "%s" "$sanitized"
+}
+if [ -n "${IMAGE_NAME_PREFIX:-}" ]; then
+  IMAGE_REF="${IMAGE_NAME_PREFIX}:$(render_image_tag)"
+fi
 if [ -n "${NPM_REGISTRY:-}" ]; then
   mkdir -p "$PWD/$BUILD_CONTEXT"
   printf "registry=%s\n" "$NPM_REGISTRY" > "$PWD/$BUILD_CONTEXT/.npmrc"
@@ -388,8 +427,6 @@ func isBuildEnvKey(value string) bool {
 	}
 	return true
 }
-
-var errNoTask = errors.New("no builder task")
 
 type concurrentBuffer struct {
 	mu     sync.Mutex
@@ -492,7 +529,9 @@ func (s *logStreamer) flush() {
 }
 
 type Task struct {
+	StreamID      string            `json:"-"`
 	JobID         string            `json:"jobId"`
+	TargetBuilder string            `json:"targetBuilder"`
 	BuildRunID    string            `json:"buildRunId"`
 	ProjectID     string            `json:"projectId"`
 	ApplicationID string            `json:"applicationId"`
@@ -519,10 +558,12 @@ type BuildPayload struct {
 }
 
 type RegistryPayload struct {
-	Endpoint string `json:"endpoint"`
-	Username string `json:"username"`
-	Password string `json:"password"`
-	ImageRef string `json:"imageRef"`
+	Endpoint         string `json:"endpoint"`
+	Username         string `json:"username"`
+	Password         string `json:"password"`
+	ImageRef         string `json:"imageRef"`
+	ImageNamePrefix  string `json:"imageNamePrefix"`
+	ImageTagTemplate string `json:"imageTagTemplate"`
 }
 
 type Result struct {

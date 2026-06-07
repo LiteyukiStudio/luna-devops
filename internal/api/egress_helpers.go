@@ -16,6 +16,9 @@ func (h *Handlers) egressPolicyForUser(user model.User) security.EgressPolicy {
 	if user.Role == "platform_admin" {
 		policy.AllowPrivateNetwork = true
 	}
+	if h.db != nil {
+		h.configs.reload(h.db)
+	}
 
 	values := h.configs.get([]string{
 		"security.egress.domainAllowList",

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"sort"
@@ -577,7 +578,31 @@ type UserResponse struct {
 }
 
 func (u UserResponse) ExternalID() string {
-	return strings.TrimSpace(fmt.Sprint(u.ID))
+	switch value := u.ID.(type) {
+	case json.Number:
+		return strings.TrimSpace(value.String())
+	case float64:
+		if math.Trunc(value) == value {
+			return strconv.FormatInt(int64(value), 10)
+		}
+		return strings.TrimSpace(strconv.FormatFloat(value, 'f', -1, 64))
+	case float32:
+		floatValue := float64(value)
+		if math.Trunc(floatValue) == floatValue {
+			return strconv.FormatInt(int64(floatValue), 10)
+		}
+		return strings.TrimSpace(strconv.FormatFloat(floatValue, 'f', -1, 32))
+	case int:
+		return strconv.Itoa(value)
+	case int64:
+		return strconv.FormatInt(value, 10)
+	case int32:
+		return strconv.FormatInt(int64(value), 10)
+	case string:
+		return strings.TrimSpace(value)
+	default:
+		return strings.TrimSpace(fmt.Sprint(value))
+	}
 }
 
 func (u UserResponse) Username() string {

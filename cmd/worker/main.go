@@ -5,11 +5,15 @@ import (
 
 	"github.com/LiteyukiStudio/devops/internal/config"
 	"github.com/LiteyukiStudio/devops/internal/database"
+	"github.com/LiteyukiStudio/devops/internal/secret"
 	"github.com/LiteyukiStudio/devops/internal/worker"
 )
 
 func main() {
 	cfg := config.Load()
+	if err := secret.ValidateEncryptionConfig(); err != nil {
+		log.Fatalf("%v; set SECRET_ENCRYPTION_KEY or run local development with APP_ENV=development", err)
+	}
 
 	if cfg.RedisAddr == "" {
 		log.Println("worker idle: REDIS_ADDR is empty")

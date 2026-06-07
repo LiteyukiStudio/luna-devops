@@ -3,7 +3,7 @@ import type { Application, GitAccount, GitProvider, GitRepository, GitRepository
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import i18next from 'i18next'
-import { Box, GitBranch, Plus, Save, Search, Trash2 } from 'lucide-react'
+import { Box, GitBranch, LayoutDashboard, Plus, Save, Search, Trash2 } from 'lucide-react'
 import { useEffect, useImperativeHandle, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -21,6 +21,7 @@ import { PageHeader } from '@/components/common/page-header'
 import { SearchSelect } from '@/components/common/search-select'
 import { Alert as UiAlert, AlertDescription as UiAlertDescription, AlertTitle as UiAlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { buttonVariants } from '@/components/ui/button-variants'
 import { Card } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -32,8 +33,10 @@ const schema = z.object({
   sourceType: z.enum(['repository', 'image']),
   repositoryUrl: z.string().optional(),
   imageReference: z.string().optional(),
+  targetImageRef: z.string().optional(),
   dockerfilePath: z.string().optional(),
   buildContext: z.string().optional(),
+  buildLabels: z.string().optional(),
   servicePort: z.coerce.number().int(i18next.t('apps.integerPort')).positive(i18next.t('apps.positivePort')),
   gitAccountId: z.string().optional(),
   repositoryOwner: z.string().optional(),
@@ -116,6 +119,7 @@ export function ApplicationsPage({ embedded = false, projectId: projectIdProp, r
     queryFn: () => api.listApplications(projectId),
     enabled: Boolean(projectId),
   })
+  const project = useQuery({ queryKey: ['project', projectId], queryFn: () => api.getProject(projectId), enabled: Boolean(projectId) })
   const repositoryBindings = useQuery({
     queryKey: ['repository-bindings', projectId],
     queryFn: () => api.listRepositoryBindings(projectId),
@@ -133,8 +137,10 @@ export function ApplicationsPage({ embedded = false, projectId: projectIdProp, r
       sourceType: 'repository',
       repositoryUrl: '',
       imageReference: '',
+      targetImageRef: '',
       dockerfilePath: 'Dockerfile',
       buildContext: '.',
+      buildLabels: '',
       servicePort: 8080,
       gitAccountId: '',
       repositoryOwner: '',
@@ -208,8 +214,10 @@ export function ApplicationsPage({ embedded = false, projectId: projectIdProp, r
       sourceType: application?.sourceType ?? 'repository',
       repositoryUrl: application?.repositoryUrl ?? '',
       imageReference: application?.imageReference ?? '',
+      targetImageRef: application?.targetImageRef ?? defaultTargetImageRef(project.data?.slug ?? '', application?.slug ?? ''),
       dockerfilePath: application?.dockerfilePath ?? 'Dockerfile',
       buildContext: application?.buildContext ?? '.',
+      buildLabels: application?.buildLabels ?? '',
       servicePort: application?.servicePort ?? 8080,
       gitAccountId: binding?.gitAccountId ?? application?.gitAccountId ?? '',
       repositoryOwner: binding?.owner ?? parseRepositoryReference(application?.repositoryUrl).owner,
@@ -266,8 +274,10 @@ export function ApplicationsPage({ embedded = false, projectId: projectIdProp, r
           gitAccountId: payload.sourceType === 'repository' ? (payload.gitAccountId ?? '') : '',
           repositoryUrl: payload.sourceType === 'repository' ? (payload.cloneUrl ?? '') : '',
           imageReference: payload.imageReference ?? '',
+          targetImageRef: payload.targetImageRef ?? defaultTargetImageRef(project.data?.slug ?? '', payload.slug),
           dockerfilePath: payload.dockerfilePath ?? 'Dockerfile',
           buildContext: payload.buildContext ?? '.',
+          buildLabels: payload.buildLabels ?? '',
           servicePort: payload.servicePort,
         }
         const application = await api.createApplication(projectId, appPayload)
@@ -299,8 +309,10 @@ export function ApplicationsPage({ embedded = false, projectId: projectIdProp, r
           gitAccountId: payload.sourceType === 'repository' ? (payload.gitAccountId ?? '') : '',
           repositoryUrl: payload.sourceType === 'repository' ? (payload.cloneUrl ?? '') : '',
           imageReference: payload.imageReference ?? '',
+          targetImageRef: payload.targetImageRef ?? defaultTargetImageRef(project.data?.slug ?? '', payload.slug),
           dockerfilePath: payload.dockerfilePath ?? 'Dockerfile',
           buildContext: payload.buildContext ?? '.',
+          buildLabels: payload.buildLabels ?? '',
           servicePort: payload.servicePort,
         }
         const result = await api.updateApplication(projectId, editingApplication.id, appPayload)
@@ -371,6 +383,7 @@ export function ApplicationsPage({ embedded = false, projectId: projectIdProp, r
                 application={application}
                 binding={(repositoryBindings.data ?? []).find(binding => binding.applicationId === application.id)}
                 deletePending={deleteApplication.isPending}
+                projectId={projectId}
                 onDelete={() => deleteApplication.mutate(application.id)}
                 onEdit={() => {
                   const binding = (repositoryBindings.data ?? []).find(item => item.applicationId === application.id) ?? null
@@ -578,6 +591,13 @@ export function ApplicationsPage({ embedded = false, projectId: projectIdProp, r
                         </datalist>
                       </Field>
                     </div>
+                    <Field error={form.formState.errors.targetImageRef?.message} hint={t('apps.targetImageRefHint')} label={t('apps.targetImageRef')}>
+                      <Input
+                        {...form.register('targetImageRef')}
+                        aria-invalid={Boolean(form.formState.errors.targetImageRef)}
+                        placeholder={t('apps.targetImageRefPlaceholder')}
+                      />
+                    </Field>
                   </div>
                 )
               : (
@@ -587,6 +607,13 @@ export function ApplicationsPage({ embedded = false, projectId: projectIdProp, r
                         {...form.register('imageReference')}
                         aria-invalid={Boolean(form.formState.errors.imageReference)}
                         placeholder={t('apps.imageReferencePlaceholder')}
+                      />
+                    </Field>
+                    <Field error={form.formState.errors.targetImageRef?.message} hint={t('apps.targetImageRefHint')} label={t('apps.targetImageRef')}>
+                      <Input
+                        {...form.register('targetImageRef')}
+                        aria-invalid={Boolean(form.formState.errors.targetImageRef)}
+                        placeholder={t('apps.targetImageRefPlaceholder')}
                       />
                     </Field>
                     <Field error={form.formState.errors.dockerfilePath?.message} hint={t('apps.dockerfileHint')} label={t('apps.dockerfile')}>
@@ -605,6 +632,13 @@ export function ApplicationsPage({ embedded = false, projectId: projectIdProp, r
                     </Field>
                   </>
                 )}
+            <Field error={form.formState.errors.buildLabels?.message} hint={t('apps.buildLabelsHint')} label={t('apps.buildLabels')}>
+              <Input
+                {...form.register('buildLabels')}
+                aria-invalid={Boolean(form.formState.errors.buildLabels)}
+                placeholder={t('apps.buildLabelsPlaceholder')}
+              />
+            </Field>
             <Field error={form.formState.errors.servicePort?.message} hint={t('apps.servicePortHint')} label={t('apps.servicePort')} required>
               <Input type="number" {...form.register('servicePort')} aria-invalid={Boolean(form.formState.errors.servicePort)} />
             </Field>
@@ -630,10 +664,12 @@ function ApplicationRow({
   deletePending,
   onDelete,
   onEdit,
+  projectId,
 }: {
   application: Application
   binding?: RepositoryBinding
   deletePending?: boolean
+  projectId: string
   onDelete: () => void
   onEdit: () => void
 }) {
@@ -672,6 +708,14 @@ function ApplicationRow({
             /tcp
           </span>
         </Button>
+        <Link
+          aria-label={t('apps.openDetailAria')}
+          className={buttonVariants({ size: 'sm', variant: 'secondary' })}
+          to={`/projects/${projectId}/apps/${application.id}`}
+        >
+          <LayoutDashboard size={16} />
+          {t('apps.openDetail')}
+        </Link>
         <EditActionButton aria-label={t('apps.editAria')} onClick={onEdit} label={t('edit')} />
         <ConfirmDialog
           confirmText={t('apps.deleteConfirm')}
@@ -708,6 +752,15 @@ function dockerfileBuildContext(path: string) {
   if (!normalized || !normalized.includes('/'))
     return '.'
   return normalized.split('/').slice(0, -1).join('/')
+}
+
+function defaultTargetImageRef(projectSlug: string, appSlug: string) {
+  const imageName = [slugSegment(projectSlug), slugSegment(appSlug)].filter(Boolean).join('-')
+  return imageName ? `${imageName}:latest` : ''
+}
+
+function slugSegment(value: string) {
+  return value.trim().replace(/^\/+|\/+$/g, '').toLowerCase()
 }
 
 function dockerfileOptions(options?: GitRepositoryBuildOptions, current?: string) {

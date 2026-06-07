@@ -25,6 +25,7 @@ type BuildRun struct {
 	ProjectID           string         `gorm:"index;not null" json:"projectId"`
 	ApplicationID       string         `gorm:"index" json:"applicationId"`
 	BuildProviderID     string         `gorm:"index" json:"buildProviderId"`
+	BuildLabels         string         `json:"buildLabels"`
 	BuildVariableSetIDs string         `gorm:"type:text" json:"buildVariableSetIds"`
 	Status              string         `gorm:"index;not null;default:queued" json:"status"`
 	TriggerType         string         `gorm:"not null;default:manual" json:"triggerType"`
@@ -96,6 +97,7 @@ type BuilderAgent struct {
 	ID                 string     `gorm:"primaryKey" json:"id"`
 	Name               string     `gorm:"not null" json:"name"`
 	Labels             string     `json:"labels"`
+	Scopes             string     `json:"scopes"`
 	Executor           string     `json:"executor"`
 	Status             string     `gorm:"index;not null;default:online" json:"status"`
 	MaxConcurrency     int        `gorm:"not null;default:1" json:"maxConcurrency"`

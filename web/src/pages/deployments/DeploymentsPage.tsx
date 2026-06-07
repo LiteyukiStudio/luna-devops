@@ -12,6 +12,7 @@ import { DataList } from '@/components/common/data-list'
 import { EditActionButton } from '@/components/common/edit-action-button'
 import { FormField as Field } from '@/components/common/form-field'
 import { ProjectSpaceSelect } from '@/components/common/project-space-select'
+import { StatusValueBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -82,9 +83,9 @@ export function DeploymentsPage() {
     mutationFn: api.testRuntimeCluster,
     onSuccess: () => {
       toast.success(t('deploymentsPage.clusterTested'))
-      queryClient.invalidateQueries({ queryKey: ['runtime-clusters'] })
     },
     onError: error => toast.error(error.message),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['runtime-clusters'] }),
   })
   const saveEnvironment = useMutation({
     mutationFn: (values: EnvironmentForm) => editingEnvironment ? api.updateEnvironment(selectedProjectId, editingEnvironment.id, values) : api.createEnvironment(selectedProjectId, values),
@@ -176,7 +177,7 @@ export function DeploymentsPage() {
             columns={[
               { key: 'name', header: t('common.name'), render: item => item.name },
               { key: 'type', header: t('common.type'), render: item => item.type },
-              { key: 'status', header: t('common.status'), render: item => item.status },
+              { key: 'status', header: t('common.status'), render: item => <StatusValueBadge value={item.status} /> },
               { key: 'actions', header: t('common.actions'), className: 'text-right whitespace-nowrap', render: item => (
                 <div className="flex justify-end gap-2">
                   <Button size="sm" variant="ghost" onClick={() => testCluster.mutate(item.id)}>{t('common.test')}</Button>
@@ -223,7 +224,7 @@ export function DeploymentsPage() {
               { key: 'id', header: t('common.id'), render: item => item.id },
               { key: 'image', header: t('deploymentsPage.image'), render: item => item.imageRef },
               { key: 'branch', header: t('deploymentsPage.sourceBranch'), render: item => buildRunMap[item.buildRunId]?.sourceBranch || '-' },
-              { key: 'status', header: t('common.status'), render: item => item.status },
+              { key: 'status', header: t('common.status'), render: item => <StatusValueBadge labelKeyPrefix="buildsPage.statuses" value={item.status} /> },
               { key: 'actions', header: t('common.actions'), className: 'text-right whitespace-nowrap', render: item => (
                 <Button size="sm" variant="ghost" onClick={() => rollbackRelease.mutate(item.id)}>
                   <RotateCcw className="size-4" />
@@ -252,7 +253,6 @@ export function DeploymentsPage() {
                 <option value="kubernetes">{t('deploymentsPage.typeKubernetes')}</option>
               </Select>
             </Field>
-            <Field label={t('deploymentsPage.endpoint')}><Input {...clusterForm.register('endpoint')} /></Field>
             <Field label={t('deploymentsPage.kubeconfig')}><Input {...clusterForm.register('kubeconfig')} type="password" /></Field>
             <DialogFooter><Button disabled={!clusterForm.formState.isValid || saveCluster.isPending} type="submit">{t('common.save')}</Button></DialogFooter>
           </form>

@@ -42,7 +42,7 @@ func (h *Handlers) ListArtifactRegistries(ctx *gin.Context) {
 	}
 	query = query.Where(strings.Join(conditions, " or "), args...)
 
-	query = applySearch(ctx, query, "name", "endpoint", "namespace")
+	query = applySearch(ctx, query, "name", "endpoint")
 	if err := query.Find(&registries).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
@@ -200,7 +200,7 @@ func (h *Handlers) registryFromInput(ctx *gin.Context, user model.User, input ar
 		Name:         strings.TrimSpace(input.Name),
 		Provider:     normalizeRegistryProvider(input.Provider),
 		Endpoint:     endpoint,
-		Namespace:    strings.Trim(strings.TrimSpace(input.Namespace), "/"),
+		Namespace:    "",
 		Scope:        scope,
 		OwnerRef:     ownerRef,
 		IsDefault:    input.IsDefault,

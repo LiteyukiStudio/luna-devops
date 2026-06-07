@@ -1,4 +1,4 @@
-import type { ArtifactRegistry, BuildJob, BuildProvider, BuildRun, BuildVariableSet, GitRepositoryBuildOptions } from '@/api/client'
+import type { ArtifactRegistry, BuildJob, BuildProvider, BuildRun, BuildVariableSet } from '@/api/client'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Eye, Play, Plus, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
@@ -14,7 +14,8 @@ import { EmptyState } from '@/components/common/empty-state'
 import { FormField as Field } from '@/components/common/form-field'
 import { ProjectSpaceSelect } from '@/components/common/project-space-select'
 import { SearchSelect } from '@/components/common/search-select'
-import { StatusBadge } from '@/components/common/status-badge'
+import { StatusValueBadge } from '@/components/common/status-badge'
+import { TargetImageRefInput } from '@/components/common/target-image-ref-input'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -33,7 +34,8 @@ type TriggerForm = Partial<BuildRun>
 
 const providerDefaults: ProviderForm = { config: '{}', enabled: true, name: '', ownerRef: '', scope: 'global', type: 'platform' }
 const variableSetDefaults: VariableSetForm = { enabled: true, name: '', ownerRef: '', scope: 'user', variablesText: '' }
-const triggerDefaults: TriggerForm = { applicationId: '', buildContext: '.', buildVariableSetIds: [], dockerfilePath: 'Dockerfile', sourceBranch: '', targetRegistryId: '', targetTag: 'latest', triggerType: 'manual' }
+const triggerDefaults: TriggerForm = { applicationId: '', buildVariableSetIds: [], sourceBranch: '', targetImageRef: '', targetRegistryId: '', triggerType: 'manual' }
+const PAGE_SIZE_OPTIONS = [10, 20, 50]
 
 export function BuildsPage() {
   const { t } = useTranslation()
@@ -49,14 +51,28 @@ export function BuildsPage() {
   const [variableSetToDelete, setVariableSetToDelete] = useState<BuildVariableSet | null>(null)
   const [logJob, setLogJob] = useState<BuildJob | null>(null)
   const [branchSearch, setBranchSearch] = useState('')
+  const [runsPage, setRunsPage] = useState(1)
+  const [runsPageSize, setRunsPageSize] = useState(10)
+  const [jobsPage, setJobsPage] = useState(1)
+  const [jobsPageSize, setJobsPageSize] = useState(10)
   const projects = useQuery({ queryKey: ['projects'], queryFn: api.listProjects })
   const applications = useQuery({ queryKey: ['applications', selectedProjectId], queryFn: () => api.listApplications(selectedProjectId), enabled: Boolean(selectedProjectId) })
   const repositoryBindings = useQuery({ queryKey: ['repository-bindings', selectedProjectId], queryFn: () => api.listRepositoryBindings(selectedProjectId), enabled: Boolean(selectedProjectId) })
   const registries = useQuery({ queryKey: ['registries', selectedProjectId], queryFn: () => api.listRegistries(selectedProjectId), enabled: Boolean(selectedProjectId) })
   const providers = useQuery({ queryKey: ['build-providers', selectedProjectId], queryFn: () => api.listBuildProviders(selectedProjectId || undefined) })
   const variableSets = useQuery({ queryKey: ['build-variable-sets', selectedProjectId], queryFn: () => api.listBuildVariableSets(selectedProjectId || undefined) })
-  const runs = useQuery({ queryKey: ['build-runs', selectedProjectId], queryFn: () => api.listBuildRuns(selectedProjectId), enabled: Boolean(selectedProjectId), refetchInterval: selectedProjectId ? 5000 : false })
-  const jobs = useQuery({ queryKey: ['build-jobs', selectedProjectId], queryFn: () => api.listBuildJobs(selectedProjectId), enabled: Boolean(selectedProjectId), refetchInterval: selectedProjectId ? 5000 : false })
+  const runs = useQuery({
+    queryKey: ['build-runs-page', selectedProjectId, runsPage, runsPageSize],
+    queryFn: () => api.listBuildRunsPage(selectedProjectId, { page: runsPage, pageSize: runsPageSize, sortBy: 'createdAt', sortOrder: 'desc' }),
+    enabled: Boolean(selectedProjectId),
+    refetchInterval: selectedProjectId ? 5000 : false,
+  })
+  const jobs = useQuery({
+    queryKey: ['build-jobs-page', selectedProjectId, jobsPage, jobsPageSize],
+    queryFn: () => api.listBuildJobsPage(selectedProjectId, { page: jobsPage, pageSize: jobsPageSize, sortBy: 'createdAt', sortOrder: 'desc' }),
+    enabled: Boolean(selectedProjectId),
+    refetchInterval: selectedProjectId ? 5000 : false,
+  })
   const selectedLog = useQuery({ queryKey: ['build-job-log', selectedProjectId, logJob?.id], queryFn: () => api.getBuildJobLogs(selectedProjectId, logJob?.id ?? ''), enabled: Boolean(selectedProjectId && logJob), refetchInterval: logJob?.status === 'running' ? 3000 : false })
   const projectOptions = useMemo(() => projects.data ?? [], [projects.data])
   const projectMap = useMemo(() => Object.fromEntries(projectOptions.map(project => [project.id, project])), [projectOptions])
@@ -66,7 +82,11 @@ export function BuildsPage() {
   const variableSetForm = useForm<VariableSetForm>({ defaultValues: variableSetDefaults, mode: 'onChange' })
   const triggerForm = useForm<TriggerForm>({ defaultValues: triggerDefaults, mode: 'onChange' })
   const selectedApplicationId = triggerForm.watch('applicationId') ?? ''
-  const selectedBranch = triggerForm.watch('sourceBranch') ?? ''
+  const selectedApplication = applicationMap[selectedApplicationId]
+  const selectedRegistry = (registries.data ?? []).find(registry => registry.id === triggerForm.watch('targetRegistryId'))
+  const selectedProject = projectMap[selectedProjectId]
+  const targetImagePrefix = selectedRegistry ? registryInputPrefix(selectedRegistry) : ''
+  const imagePreview = selectedRegistry && selectedApplication ? buildImageRefPreview(selectedRegistry, triggerForm.watch('targetImageRef') || defaultTargetImageRef(selectedRegistry, selectedProject?.slug ?? '', selectedApplication.slug)) : ''
   const selectedBinding = useMemo(
     () => (repositoryBindings.data ?? []).find(binding => binding.applicationId === selectedApplicationId),
     [repositoryBindings.data, selectedApplicationId],
@@ -75,11 +95,6 @@ export function BuildsPage() {
     queryKey: ['git-branches', selectedBinding?.gitAccountId, selectedBinding?.owner, selectedBinding?.repo, branchSearch],
     queryFn: () => api.listGitBranches(selectedBinding?.gitAccountId ?? '', selectedBinding?.owner ?? '', selectedBinding?.repo ?? '', { search: branchSearch, limit: 50 }),
     enabled: Boolean(selectedBinding),
-  })
-  const buildOptions = useQuery({
-    queryKey: ['git-build-options', selectedBinding?.gitAccountId, selectedBinding?.owner, selectedBinding?.repo, selectedBranch],
-    queryFn: () => api.getGitRepositoryBuildOptions(selectedBinding?.gitAccountId ?? '', selectedBinding?.owner ?? '', selectedBinding?.repo ?? '', selectedBranch || selectedBinding?.defaultBranch || 'main'),
-    enabled: Boolean(selectedBinding && (selectedBranch || selectedBinding.defaultBranch)),
   })
 
   useEffect(() => {
@@ -90,18 +105,6 @@ export function BuildsPage() {
   }, [selectedBinding, triggerForm])
 
   useEffect(() => {
-    if (!buildOptions.data)
-      return
-    const currentDockerfile = triggerForm.getValues('dockerfilePath')?.trim()
-    const dockerfiles = dockerfileOptions(buildOptions.data, currentDockerfile)
-    if (!currentDockerfile && dockerfiles.length > 0)
-      triggerForm.setValue('dockerfilePath', dockerfiles[0].value, { shouldDirty: true, shouldValidate: true })
-    const currentContext = triggerForm.getValues('buildContext')?.trim()
-    if (!currentContext)
-      triggerForm.setValue('buildContext', dockerfileBuildContext(triggerForm.getValues('dockerfilePath') || ''), { shouldDirty: true, shouldValidate: true })
-  }, [buildOptions.data, triggerForm])
-
-  useEffect(() => {
     if (!triggerDialogOpen || !registries.data?.length || triggerForm.getValues('targetRegistryId'))
       return
     const defaultRegistry = registries.data.find(registry => registry.credentialSet && registry.isDefault)
@@ -109,7 +112,10 @@ export function BuildsPage() {
       ?? registries.data.find(registry => registry.isDefault)
       ?? registries.data[0]
     triggerForm.setValue('targetRegistryId', defaultRegistry.id, { shouldDirty: true, shouldValidate: true })
-  }, [registries.data, triggerDialogOpen, triggerForm])
+    if (selectedApplication && !selectedApplication.targetImageRef) {
+      triggerForm.setValue('targetImageRef', defaultTargetImageRef(defaultRegistry, selectedProject?.slug ?? '', selectedApplication.slug), { shouldDirty: true, shouldValidate: true })
+    }
+  }, [registries.data, selectedApplication, selectedProject?.slug, triggerDialogOpen, triggerForm])
 
   const saveProvider = useMutation({
     mutationFn: (values: ProviderForm) => editingProvider ? api.updateBuildProvider(editingProvider.id, values) : api.createBuildProvider(values),
@@ -168,6 +174,9 @@ export function BuildsPage() {
       triggerForm.reset(triggerDefaults)
       queryClient.invalidateQueries({ queryKey: ['build-runs', selectedProjectId] })
       queryClient.invalidateQueries({ queryKey: ['build-jobs', selectedProjectId] })
+      queryClient.invalidateQueries({ queryKey: ['build-runs-page', selectedProjectId] })
+      queryClient.invalidateQueries({ queryKey: ['build-jobs-page', selectedProjectId] })
+      queryClient.invalidateQueries({ queryKey: ['applications', selectedProjectId] })
     },
     onError: error => toast.error(error.message),
   })
@@ -197,7 +206,15 @@ export function BuildsPage() {
         ]}
         tools={(
           <>
-            <ProjectSpaceSelect projects={projectOptions} value={selectedProjectId} onChange={setSelectedProjectId} />
+            <ProjectSpaceSelect
+              projects={projectOptions}
+              value={selectedProjectId}
+              onChange={(projectId) => {
+                setSelectedProjectId(projectId)
+                setRunsPage(1)
+                setJobsPage(1)
+              }}
+            />
             {activeTab === 'providers' && (
               <Button onClick={() => openProviderDialog()}>
                 <Plus className="size-4" />
@@ -227,7 +244,7 @@ export function BuildsPage() {
               { key: 'name', header: t('common.name'), render: item => item.name },
               { key: 'type', header: t('common.type'), render: item => item.type },
               { key: 'scope', header: t('common.scope'), render: item => item.scope === 'project' ? projectMap[item.ownerRef]?.name ?? item.ownerRef : item.scope },
-              { key: 'enabled', header: t('common.status'), render: item => item.enabled ? t('common.enabled') : t('common.disabled') },
+              { key: 'enabled', header: t('common.status'), render: item => <StatusValueBadge value={item.enabled ? 'enabled' : 'disabled'} /> },
               { key: 'actions', header: t('common.actions'), className: 'text-right whitespace-nowrap', render: item => (
                 <div className="flex justify-end gap-2">
                   <EditActionButton label={t('common.edit')} onClick={() => openProviderDialog(item)} />
@@ -250,12 +267,29 @@ export function BuildsPage() {
                 <DataList
                   columns={[
                     { key: 'id', header: t('common.id'), render: item => item.id },
-                    { key: 'status', header: t('common.status'), render: item => <BuildStatusBadge status={item.status} /> },
+                    { key: 'status', header: t('common.status'), render: item => <StatusValueBadge labelKeyPrefix="buildsPage.statuses" value={item.status} /> },
                     { key: 'target', header: t('buildsPage.targetImage'), render: item => item.imageRef || `${item.targetRepository}:${item.targetTag}` },
                     { key: 'commit', header: t('buildsPage.sourceCommit'), render: item => item.sourceCommit || '-' },
                   ]}
                   emptyTitle={t('buildsPage.emptyRuns')}
-                  items={runs.data ?? []}
+                  items={runs.data?.items ?? []}
+                  pagination={{
+                    page: runs.data?.page ?? runsPage,
+                    pageSize: runs.data?.pageSize ?? runsPageSize,
+                    pageSizeOptions: PAGE_SIZE_OPTIONS,
+                    total: runs.data?.total ?? 0,
+                    totalPages: runs.data?.totalPages ?? 0,
+                    pageInfoLabel: t('pagination.pageInfo', {
+                      page: runs.data?.page ?? runsPage,
+                      totalPages: runs.data?.totalPages ?? 0,
+                      total: runs.data?.total ?? 0,
+                    }),
+                    onPageChange: setRunsPage,
+                    onPageSizeChange: (nextPageSize) => {
+                      setRunsPageSize(nextPageSize)
+                      setRunsPage(1)
+                    },
+                  }}
                   rowKey={item => item.id}
                   variant="plain"
                 />
@@ -267,7 +301,7 @@ export function BuildsPage() {
             columns={[
               { key: 'id', header: t('common.id'), render: item => item.id },
               { key: 'run', header: t('buildsPage.buildRun'), render: item => item.buildRunId },
-              { key: 'status', header: t('common.status'), render: item => <BuildStatusBadge status={item.status} /> },
+              { key: 'status', header: t('common.status'), render: item => <StatusValueBadge labelKeyPrefix="buildsPage.statuses" value={item.status} /> },
               { key: 'attempts', header: t('buildsPage.attempts'), render: item => item.attempts },
               { key: 'actions', header: t('common.actions'), className: 'text-right whitespace-nowrap', render: item => (
                 <div className="flex justify-end">
@@ -279,7 +313,24 @@ export function BuildsPage() {
               ) },
             ]}
             emptyTitle={t('buildsPage.emptyJobs')}
-            items={jobs.data ?? []}
+            items={jobs.data?.items ?? []}
+            pagination={{
+              page: jobs.data?.page ?? jobsPage,
+              pageSize: jobs.data?.pageSize ?? jobsPageSize,
+              pageSizeOptions: PAGE_SIZE_OPTIONS,
+              total: jobs.data?.total ?? 0,
+              totalPages: jobs.data?.totalPages ?? 0,
+              pageInfoLabel: t('pagination.pageInfo', {
+                page: jobs.data?.page ?? jobsPage,
+                totalPages: jobs.data?.totalPages ?? 0,
+                total: jobs.data?.total ?? 0,
+              }),
+              onPageChange: setJobsPage,
+              onPageSizeChange: (nextPageSize) => {
+                setJobsPageSize(nextPageSize)
+                setJobsPage(1)
+              },
+            }}
             rowKey={item => item.id}
             variant="plain"
           />
@@ -290,7 +341,7 @@ export function BuildsPage() {
               { key: 'name', header: t('common.name'), render: item => item.name },
               { key: 'scope', header: t('common.scope'), render: item => item.scope === 'project' ? projectMap[item.ownerRef]?.name ?? item.ownerRef : t(`codeRepositoriesView.scope${capitalizeScope(item.scope)}`) },
               { key: 'variables', header: t('buildsPage.variables'), render: item => t('buildsPage.variableCount', { count: variableCount(item.variables) }) },
-              { key: 'enabled', header: t('common.status'), render: item => item.enabled ? t('common.enabled') : t('common.disabled') },
+              { key: 'enabled', header: t('common.status'), render: item => <StatusValueBadge value={item.enabled ? 'enabled' : 'disabled'} /> },
               { key: 'actions', header: t('common.actions'), className: 'text-right whitespace-nowrap', render: item => (
                 <div className="flex justify-end gap-2">
                   <EditActionButton label={t('common.edit')} onClick={() => openVariableSetDialog(item)} />
@@ -393,10 +444,9 @@ export function BuildsPage() {
                 {...triggerForm.register('applicationId', {
                   required: true,
                   onChange: (event: { target: { value: string } }) => {
-                    const application = applicationMap[event.target.value]
                     triggerForm.setValue('sourceBranch', '', { shouldDirty: true, shouldValidate: true })
-                    triggerForm.setValue('dockerfilePath', application?.dockerfilePath || 'Dockerfile', { shouldDirty: true, shouldValidate: true })
-                    triggerForm.setValue('buildContext', application?.buildContext || '.', { shouldDirty: true, shouldValidate: true })
+                    const application = applicationMap[event.target.value]
+                    triggerForm.setValue('targetImageRef', application?.targetImageRef || defaultTargetImageRef(selectedRegistry, selectedProject?.slug ?? '', application?.slug ?? ''), { shouldDirty: true, shouldValidate: true })
                     setBranchSearch('')
                   },
                 })}
@@ -454,19 +504,23 @@ export function BuildsPage() {
                 {(registries.data ?? []).map(registry => <option key={registry.id} value={registry.id}>{registryOptionLabel(registry)}</option>)}
               </Select>
             </Field>
-            <Field label={t('buildsPage.targetRepository')} required><Input {...triggerForm.register('targetRepository', { required: true })} /></Field>
-            <Field label={t('buildsPage.targetTag')}><Input {...triggerForm.register('targetTag')} /></Field>
-            <Field hint={t('buildsPage.dockerfileLookupHint')} label={t('buildsPage.dockerfilePath')}>
-              <Input {...triggerForm.register('dockerfilePath')} list="build-run-dockerfile-options" />
-              <datalist id="build-run-dockerfile-options">
-                {dockerfileOptions(buildOptions.data, triggerForm.watch('dockerfilePath')).map(option => <option key={option.value} value={option.value} />)}
-              </datalist>
+            <Field hint={t('buildsPage.targetImageRefHint')} label={t('buildsPage.targetImageRef')} required>
+              <TargetImageRefInput
+                placeholder={t('buildsPage.targetImageRefPlaceholder')}
+                prefix={targetImagePrefix}
+                register={triggerForm.register('targetImageRef', { required: true })}
+              />
             </Field>
-            <Field hint={t('buildsPage.buildContextLookupHint')} label={t('buildsPage.buildContext')}>
-              <Input {...triggerForm.register('buildContext')} list="build-run-context-options" />
-              <datalist id="build-run-context-options">
-                {buildContextOptions(buildOptions.data, triggerForm.watch('buildContext')).map(option => <option key={option.value} value={option.value} />)}
-              </datalist>
+            {imagePreview && (
+              <Field hint={t('buildsPage.targetImagePreviewHint')} label={t('buildsPage.targetImagePreview')}>
+                <Input readOnly value={imagePreview} />
+              </Field>
+            )}
+            <Field hint={t('buildsPage.inheritedBuildConfigHint')} label={t('buildsPage.dockerfilePath')}>
+              <Input readOnly value={selectedApplication?.dockerfilePath || 'Dockerfile'} />
+            </Field>
+            <Field hint={t('buildsPage.inheritedBuildConfigHint')} label={t('buildsPage.buildContext')}>
+              <Input readOnly value={selectedApplication?.buildContext || '.'} />
             </Field>
             <DialogFooter><Button disabled={!selectedProjectId || !triggerForm.formState.isValid || triggerBuild.isPending} type="submit">{t('buildsPage.queueBuild')}</Button></DialogFooter>
           </form>
@@ -511,27 +565,74 @@ function branchOptions(branches: Array<{ name: string }>, current?: string) {
   return withCurrentOption(branches.map(branch => branch.name), current)
 }
 
-function dockerfileBuildContext(path: string) {
-  const normalized = path.trim().replace(/^\/+|\/+$/g, '')
-  if (!normalized || !normalized.includes('/'))
-    return '.'
-  return normalized.split('/').slice(0, -1).join('/')
-}
-
-function dockerfileOptions(options?: GitRepositoryBuildOptions, current?: string) {
-  return withCurrentOption(options?.dockerfiles ?? [], current)
-}
-
-function buildContextOptions(options?: GitRepositoryBuildOptions, current?: string) {
-  return withCurrentOption(options?.directories ?? ['.'], current)
-}
-
 function registryOptionLabel(registry: ArtifactRegistry) {
   return [
     registry.name,
     registry.provider,
-    registry.namespace ? `/${registry.namespace}` : '',
   ].filter(Boolean).join(' · ')
+}
+
+function registryInputPrefix(registry: ArtifactRegistry) {
+  if (isDockerHubRegistry(registry))
+    return ''
+  const host = registryHost(registry.endpoint)
+  return host ? `${host}/` : ''
+}
+
+function buildImageRefPreview(registry: ArtifactRegistry, targetImageRef: string) {
+  const { repository, tag } = splitTargetImageRef(targetImageRef)
+  if (!repository)
+    return ''
+  if (hasRegistryHost(repository) || isDockerHubRegistry(registry))
+    return `${repository}:${tag}`
+  const host = registryHost(registry.endpoint)
+  return host ? `${host}/${repository}:${tag}` : `${repository}:${tag}`
+}
+
+function splitTargetImageRef(value: string) {
+  const normalized = value.trim().replace(/^\/+|\/+$/g, '')
+  const lastSlash = normalized.lastIndexOf('/')
+  const lastColon = normalized.lastIndexOf(':')
+  if (lastColon > lastSlash) {
+    return {
+      repository: normalized.slice(0, lastColon).replace(/^\/+|\/+$/g, ''),
+      tag: normalized.slice(lastColon + 1).trim() || 'latest',
+    }
+  }
+  return { repository: normalized, tag: 'latest' }
+}
+
+function defaultTargetImageRef(registry: ArtifactRegistry | undefined, projectSlug: string, appSlug: string) {
+  const imageName = [slugSegment(projectSlug), slugSegment(appSlug)].filter(Boolean).join('-')
+  if (!imageName)
+    return ''
+  const namespace = registry?.namespace?.trim().replace(/^\/+|\/+$/g, '')
+  return `${namespace ? `${namespace}/` : ''}${imageName}:latest`
+}
+
+function hasRegistryHost(repository: string) {
+  const first = repository.trim().replace(/^\/+|\/+$/g, '').split('/')[0] ?? ''
+  return first === 'localhost' || first.includes('.') || first.includes(':')
+}
+
+function isDockerHubRegistry(registry: ArtifactRegistry) {
+  if (registry.provider === 'dockerhub')
+    return true
+  const host = registryHost(registry.endpoint)
+  return ['docker.io', 'registry-1.docker.io', 'index.docker.io'].includes(host)
+}
+
+function registryHost(endpoint: string) {
+  try {
+    return new URL(endpoint).host.toLowerCase()
+  }
+  catch {
+    return endpoint.replace(/^https?:\/\//, '').replace(/\/.*$/, '').toLowerCase()
+  }
+}
+
+function slugSegment(value: string) {
+  return value.trim().replace(/^\/+|\/+$/g, '').toLowerCase()
 }
 
 function variableTextToRecord(value: string) {
@@ -586,33 +687,6 @@ function selectedBuildVariableSetIds(value: BuildRun['buildVariableSetIds'] | un
 
 function capitalizeScope(scope: string) {
   return scope.charAt(0).toUpperCase() + scope.slice(1)
-}
-
-function BuildStatusBadge({ status }: { status: string }) {
-  const { t } = useTranslation()
-  return (
-    <StatusBadge className={buildStatusClassName(status)}>
-      {t(`buildsPage.statuses.${status}`, { defaultValue: status })}
-    </StatusBadge>
-  )
-}
-
-function buildStatusClassName(status: string) {
-  switch (status) {
-    case 'queued':
-    case 'pending':
-      return 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900/60 dark:bg-sky-950/40 dark:text-sky-300'
-    case 'running':
-      return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300'
-    case 'succeeded':
-      return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300'
-    case 'failed':
-      return 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300'
-    case 'canceled':
-      return 'border-zinc-200 bg-zinc-50 text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-300'
-    default:
-      return 'border-border bg-muted text-muted-foreground'
-  }
 }
 
 function withCurrentOption(values: string[], current?: string) {

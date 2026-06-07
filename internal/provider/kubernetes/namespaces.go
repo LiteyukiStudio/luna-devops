@@ -18,6 +18,7 @@ import (
 )
 
 type NamespaceManager interface {
+	Ping(ctx context.Context) error
 	EnsureNamespace(ctx context.Context, name string, labels map[string]string) error
 	EnsureBuildNetworkPolicy(ctx context.Context, spec BuildNetworkPolicySpec) error
 	EnsureBuildPolicy(ctx context.Context, policy networkpolicy.BuildPolicy) error
@@ -59,6 +60,11 @@ func NewClientForInterface(client clientset.Interface) *Client {
 
 func NewClientForInterfaces(client clientset.Interface, dynamicClient dynamic.Interface) *Client {
 	return &Client{client: client, dynamic: dynamicClient}
+}
+
+func (c *Client) Ping(ctx context.Context) error {
+	_, err := c.client.Discovery().ServerVersion()
+	return err
 }
 
 func (c *Client) EnsureNamespace(ctx context.Context, name string, labels map[string]string) error {

@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"io"
 	"os"
 	"strings"
@@ -21,12 +22,18 @@ const (
 	storedSecretIDPrefix     = "secret-id:"
 )
 
+var ErrMissingEncryptionKey = errors.New("SECRET_ENCRYPTION_KEY is required in production")
+
 func Encrypt(secret string) string {
 	secret = strings.TrimSpace(secret)
 	if secret == "" {
 		return ""
 	}
-	block, err := aes.NewCipher(secretRefKey())
+	key, err := secretRefKey()
+	if err != nil {
+		return ""
+	}
+	block, err := aes.NewCipher(key)
 	if err != nil {
 		return ""
 	}
@@ -49,7 +56,11 @@ func ResolveInline(ref string) string {
 		if err != nil {
 			return ""
 		}
-		block, err := aes.NewCipher(secretRefKey())
+		key, err := secretRefKey()
+		if err != nil {
+			return ""
+		}
+		block, err := aes.NewCipher(key)
 		if err != nil {
 			return ""
 		}
@@ -122,14 +133,19 @@ func SafeClientSecretRef(ref string) string {
 	return ""
 }
 
-func secretRefKey() []byte {
+func ValidateEncryptionConfig() error {
+	_, err := secretRefKey()
+	return err
+}
+
+func secretRefKey() ([]byte, error) {
 	keyMaterial := strings.TrimSpace(os.Getenv("SECRET_ENCRYPTION_KEY"))
 	if keyMaterial == "" {
 		if config.RuntimeMode() == "production" {
-			panic("SECRET_ENCRYPTION_KEY is required in production")
+			return nil, ErrMissingEncryptionKey
 		}
 		keyMaterial = "liteyuki-devops-local-secret"
 	}
 	sum := sha256.Sum256([]byte(keyMaterial))
-	return sum[:]
+	return sum[:], nil
 }

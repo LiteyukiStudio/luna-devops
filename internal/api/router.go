@@ -11,6 +11,10 @@ import (
 )
 
 func NewRouter(db *gorm.DB) *gin.Engine {
+	if debugLogEnabled() {
+		gin.SetMode(gin.DebugMode)
+		debugLog("api log level set to debug")
+	}
 	router := gin.New()
 	router.Use(gin.Logger(), recoveryMiddleware(), errorResponseMiddleware(), securityHeaders(), cors(), csrfOriginGuard())
 
@@ -77,16 +81,11 @@ func NewRouter(db *gorm.DB) *gin.Engine {
 		v1.GET("/container-images", handlers.ListContainerImages)
 		v1.POST("/container-images", handlers.CreateContainerImage)
 
-		v1.POST("/builder/heartbeat", handlers.BuilderHeartbeat)
-		v1.POST("/builder/tasks/claim", handlers.ClaimBuilderTask)
-		v1.POST("/builder/tasks/:jobId/logs", handlers.AppendBuilderTaskLogs)
-		v1.POST("/builder/tasks/:jobId/complete", handlers.CompleteBuilderTask)
-		v1.POST("/builder/tasks/:jobId/fail", handlers.FailBuilderTask)
-
 		v1.GET("/build/providers", handlers.ListBuildProviders)
 		v1.POST("/build/providers", handlers.CreateBuildProvider)
 		v1.PUT("/build/providers/:providerId", handlers.UpdateBuildProvider)
 		v1.DELETE("/build/providers/:providerId", handlers.DeleteBuildProvider)
+		v1.GET("/build/builders", handlers.ListBuilderAgents)
 		v1.GET("/build/variable-sets", handlers.ListBuildVariableSets)
 		v1.POST("/build/variable-sets", handlers.CreateBuildVariableSet)
 		v1.PUT("/build/variable-sets/:setId", handlers.UpdateBuildVariableSet)
@@ -121,6 +120,7 @@ func NewRouter(db *gorm.DB) *gin.Engine {
 		v1.GET("/projects/:projectId/build-runs", handlers.ListBuildRuns)
 		v1.POST("/projects/:projectId/build-runs/trigger", handlers.TriggerBuildRun)
 		v1.GET("/projects/:projectId/build-runs/:runId", handlers.GetBuildRun)
+		v1.POST("/projects/:projectId/build-runs/:runId/retry", handlers.RetryBuildRun)
 		v1.GET("/projects/:projectId/build-jobs", handlers.ListBuildJobs)
 		v1.GET("/projects/:projectId/build-jobs/:jobId", handlers.GetBuildJob)
 		v1.GET("/projects/:projectId/build-jobs/:jobId/logs", handlers.GetBuildJobLogs)

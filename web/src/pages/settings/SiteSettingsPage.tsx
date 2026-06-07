@@ -1,21 +1,23 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Save } from 'lucide-react'
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { api } from '@/api/client'
+import { ContentTabs } from '@/components/common/content-tabs'
 import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
-import { PageHeader } from '@/components/common/page-header'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { TabsContent } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 
 export function SiteSettingsPage() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
+  const [activeTab, setActiveTab] = useState('brand')
   const form = useForm<Record<string, unknown>>({ mode: 'onChange', defaultValues: {} })
   const definitions = useQuery({ queryKey: ['config-definitions'], queryFn: api.listConfigDefinitions })
   const keys = useMemo(() => (definitions.data ?? []).map(definition => definition.key), [definitions.data])
@@ -50,28 +52,39 @@ export function SiteSettingsPage() {
   })
 
   return (
-    <div className="grid gap-6">
-      <PageHeader
-        description={t('settings.siteDescription')}
-        title={t('siteSettings')}
-      />
-
+    <div className="grid gap-4">
       {definitions.isError && <ErrorState title={t('settings.configDefinitionsFailedTitle')} description={t('settings.configDefinitionsFailedDescription')} />}
 
-      <Card className="max-w-3xl">
-        <form
-          className="grid gap-4"
-          onSubmit={form.handleSubmit(formValues => save.mutate(flattenConfigValues(formValues)))}
+      <form
+        id="site-settings-form"
+        onSubmit={form.handleSubmit(formValues => save.mutate(flattenConfigValues(formValues)))}
+      >
+        <ContentTabs
+          tabs={[
+            { value: 'brand', label: t('settings.siteConfigTitle') },
+            { value: 'security', label: t('settings.securityEgressTitle') },
+          ]}
+          tools={(
+            <Button disabled={save.isPending || !form.formState.isValid} form="site-settings-form" type="submit">
+              <Save size={16} />
+              {t('settings.saveConfig')}
+            </Button>
+          )}
+          value={activeTab}
+          onValueChange={setActiveTab}
         >
-          <ConfigSection definitions={siteDefinitions} form={form} title={t('settings.siteConfigTitle')} />
-          <ConfigSection definitions={securityDefinitions} form={form} title={t('settings.securityEgressTitle')} />
-
-          <Button className="w-fit" disabled={save.isPending || !form.formState.isValid} type="submit">
-            <Save size={16} />
-            {t('settings.saveConfig')}
-          </Button>
-        </form>
-      </Card>
+          <TabsContent value="brand">
+            <Card className="max-w-3xl p-4">
+              <ConfigSection definitions={siteDefinitions} form={form} />
+            </Card>
+          </TabsContent>
+          <TabsContent value="security">
+            <Card className="max-w-3xl p-4">
+              <ConfigSection definitions={securityDefinitions} form={form} />
+            </Card>
+          </TabsContent>
+        </ContentTabs>
+      </form>
     </div>
   )
 }
@@ -79,16 +92,14 @@ export function SiteSettingsPage() {
 interface ConfigSectionProps {
   definitions: Array<{ key: string, label: string, description: string, type: 'string' | 'textarea' }>
   form: ReturnType<typeof useForm<Record<string, unknown>>>
-  title: string
 }
 
-function ConfigSection({ definitions, form, title }: ConfigSectionProps) {
+function ConfigSection({ definitions, form }: ConfigSectionProps) {
   if (definitions.length === 0)
     return null
 
   return (
-    <section className="grid gap-4">
-      <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+    <div className="grid gap-4">
       {definitions.map(definition => (
         <Field key={definition.key} hint={definition.description} label={definition.label}>
           {definition.type === 'textarea'
@@ -101,7 +112,7 @@ function ConfigSection({ definitions, form, title }: ConfigSectionProps) {
           </p>
         </Field>
       ))}
-    </section>
+    </div>
   )
 }
 

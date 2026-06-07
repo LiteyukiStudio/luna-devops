@@ -27,6 +27,14 @@ func TestEnsureNamespaceCreatesNamespace(t *testing.T) {
 	}
 }
 
+func TestPingReadsServerVersion(t *testing.T) {
+	client := NewClientForInterface(fake.NewSimpleClientset())
+
+	if err := client.Ping(context.Background()); err != nil {
+		t.Fatalf("Ping returned error: %v", err)
+	}
+}
+
 func TestEnsureNamespaceIsIdempotentAndMergesLabels(t *testing.T) {
 	client := NewClientForInterface(fake.NewSimpleClientset())
 	ctx := context.Background()

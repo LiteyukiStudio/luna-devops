@@ -10,6 +10,7 @@ import (
 )
 
 func TestLoadEnvFile(t *testing.T) {
+	resetEnvLoader(t)
 	unsetEnv(t, "API_ADDR")
 	unsetEnv(t, "DATABASE_URL")
 	unsetEnv(t, "REDIS_ADDR")
@@ -51,7 +52,14 @@ func unsetEnv(t *testing.T, key string) {
 	})
 }
 
+func resetEnvLoader(t *testing.T) {
+	t.Helper()
+	resetEnvLoaderForTest()
+	t.Cleanup(resetEnvLoaderForTest)
+}
+
 func TestEnvOverridesEnvFile(t *testing.T) {
+	resetEnvLoader(t)
 	envFile := filepath.Join(t.TempDir(), ".env.local")
 	if err := os.WriteFile(envFile, []byte("API_ADDR=:19090\n"), 0o600); err != nil {
 		t.Fatalf("write env file: %v", err)
@@ -67,6 +75,7 @@ func TestEnvOverridesEnvFile(t *testing.T) {
 }
 
 func TestLoadBuildPrivateEgressCIDRs(t *testing.T) {
+	resetEnvLoader(t)
 	t.Setenv("BUILD_PRIVATE_EGRESS_CIDRS", "10.20.0.0/16, fd00::/8 ,,")
 
 	cfg := Load()
@@ -79,6 +88,7 @@ func TestLoadBuildPrivateEgressCIDRs(t *testing.T) {
 }
 
 func TestLoadBuildBlockedEgressCIDRsIncludesMetadataDefault(t *testing.T) {
+	resetEnvLoader(t)
 	t.Setenv("BUILD_BLOCKED_EGRESS_CIDRS", "10.96.0.0/12")
 
 	cfg := Load()
@@ -91,6 +101,7 @@ func TestLoadBuildBlockedEgressCIDRsIncludesMetadataDefault(t *testing.T) {
 }
 
 func TestLoadDeployRolloutTimeoutSeconds(t *testing.T) {
+	resetEnvLoader(t)
 	t.Setenv("DEPLOY_ROLLOUT_TIMEOUT_SECONDS", "120")
 
 	cfg := Load()
@@ -100,6 +111,7 @@ func TestLoadDeployRolloutTimeoutSeconds(t *testing.T) {
 }
 
 func TestLoadCertManagerClusterIssuer(t *testing.T) {
+	resetEnvLoader(t)
 	t.Setenv("CERT_MANAGER_CLUSTER_ISSUER", "letsencrypt-staging")
 
 	cfg := Load()
@@ -108,7 +120,16 @@ func TestLoadCertManagerClusterIssuer(t *testing.T) {
 	}
 }
 
+func TestRuntimeModeDefaultsToProduction(t *testing.T) {
+	unsetEnv(t, "APP_ENV")
+
+	if got := RuntimeMode(); got != "production" {
+		t.Fatalf("RuntimeMode() = %q, want production", got)
+	}
+}
+
 func TestLoadEnvFileLogsPathInDevelopment(t *testing.T) {
+	resetEnvLoader(t)
 	unsetEnv(t, "API_ADDR")
 	unsetEnv(t, "DATABASE_URL")
 	unsetEnv(t, "REDIS_ADDR")
@@ -136,7 +157,8 @@ func TestLoadEnvFileLogsPathInDevelopment(t *testing.T) {
 	}
 }
 
-func TestLoadDefaultsToEnvDevInDevelopment(t *testing.T) {
+func TestLoadDefaultsToEnvDevelopmentInDevelopment(t *testing.T) {
+	resetEnvLoader(t)
 	unsetEnv(t, "API_ADDR")
 	unsetEnv(t, "DATABASE_URL")
 	unsetEnv(t, "REDIS_ADDR")
@@ -154,7 +176,7 @@ func TestLoadDefaultsToEnvDevInDevelopment(t *testing.T) {
 		_ = os.Chdir(oldDir)
 	})
 
-	if err := os.WriteFile(filepath.Join(workDir, ".env.dev"), []byte("API_ADDR=:19091\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(workDir, ".env.development"), []byte("API_ADDR=:19091\n"), 0o600); err != nil {
 		t.Fatalf("write env file: %v", err)
 	}
 
@@ -166,7 +188,39 @@ func TestLoadDefaultsToEnvDevInDevelopment(t *testing.T) {
 	}
 }
 
-func TestLoadMissingDefaultEnvDevLogsFallback(t *testing.T) {
+func TestLoadReadsEnvBeforeModeSpecificEnv(t *testing.T) {
+	resetEnvLoader(t)
+	unsetEnv(t, "APP_ENV")
+	unsetEnv(t, "API_ADDR")
+	unsetEnv(t, "ENV_FILE")
+
+	workDir := t.TempDir()
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get working directory: %v", err)
+	}
+	if err := os.Chdir(workDir); err != nil {
+		t.Fatalf("change working directory: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(oldDir)
+	})
+
+	if err := os.WriteFile(filepath.Join(workDir, ".env"), []byte("APP_ENV=development\n"), 0o600); err != nil {
+		t.Fatalf("write .env: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workDir, ".env.development"), []byte("API_ADDR=:19092\n"), 0o600); err != nil {
+		t.Fatalf("write .env.development: %v", err)
+	}
+
+	cfg := Load()
+	if cfg.APIAddr != ":19092" {
+		t.Fatalf("APIAddr = %q", cfg.APIAddr)
+	}
+}
+
+func TestLoadMissingDefaultEnvDevelopmentLogsFallback(t *testing.T) {
+	resetEnvLoader(t)
 	unsetEnv(t, "API_ADDR")
 	unsetEnv(t, "ENV_FILE")
 
@@ -197,7 +251,7 @@ func TestLoadMissingDefaultEnvDevLogsFallback(t *testing.T) {
 	}
 
 	got := output.String()
-	if !strings.Contains(got, ".env.dev") || !strings.Contains(got, "using process environment") {
-		t.Fatalf("log output %q does not include .env.dev fallback message", got)
+	if !strings.Contains(got, ".env.development") || !strings.Contains(got, "using process environment") {
+		t.Fatalf("log output %q does not include .env.development fallback message", got)
 	}
 }

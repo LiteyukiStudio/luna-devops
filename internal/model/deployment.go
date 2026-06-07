@@ -15,6 +15,7 @@ type RuntimeCluster struct {
 	OwnerRef      string         `gorm:"index" json:"ownerRef"`
 	KubeconfigRef string         `json:"-"`
 	KubeconfigSet bool           `gorm:"-" json:"kubeconfigSet"`
+	Kubeconfig    string         `gorm:"-" json:"kubeconfig,omitempty"`
 	IsDefault     bool           `gorm:"not null;default:false" json:"isDefault"`
 	Status        string         `gorm:"not null;default:unknown" json:"status"`
 	LastCheckedAt *time.Time     `json:"lastCheckedAt"`

@@ -40,6 +40,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setRecentLoginUsers(cacheRecentLoginUser(user))
       return user
     },
+    retry: false,
   })
   const effectiveUser = useMemo(() => applyDebugOverride(currentUser.data, debugSessionOverride), [currentUser.data, debugSessionOverride])
 

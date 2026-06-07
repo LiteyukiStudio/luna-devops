@@ -12,18 +12,18 @@ import (
 )
 
 func main() {
-	cfg := config.Load()
+	cfg := config.LoadBuilder()
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	agent := builder.New(builder.Options{
-		APIURL:            cfg.BuilderAPIURL,
-		Token:             cfg.BuilderSharedToken,
-		AgentID:           cfg.BuilderAgentID,
+		RedisAddr:         cfg.RedisAddr,
 		Name:              cfg.BuilderAgentName,
 		Executor:          cfg.BuilderExecutor,
 		ExecutorImage:     cfg.BuilderExecutorImage,
+		Labels:            cfg.BuilderLabels,
 		MaxConcurrency:    cfg.BuilderMaxConcurrency,
+		Scopes:            cfg.BuilderScopes,
 		PollInterval:      time.Duration(cfg.BuilderPollIntervalSeconds) * time.Second,
 		WorkspaceRoot:     cfg.BuilderWorkspaceRoot,
 		WorkspaceHostRoot: cfg.BuilderWorkspaceHostRoot,

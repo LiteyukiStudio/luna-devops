@@ -9,7 +9,6 @@ import (
 	"github.com/redis/go-redis/v9"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -172,58 +171,29 @@ func rememberCookieNameForUser(userID string) string {
 }
 
 type rateLimiter struct {
-	mu    sync.Mutex
-	hits  map[string][]time.Time
 	redis *redis.Client
 }
 
 func newRateLimiter(redisAddr ...string) *rateLimiter {
-	limiter := &rateLimiter{hits: map[string][]time.Time{}}
-	if len(redisAddr) == 0 || strings.TrimSpace(redisAddr[0]) == "" {
-		return limiter
+	addr := ""
+	if len(redisAddr) > 0 {
+		addr = strings.TrimSpace(redisAddr[0])
 	}
-	client := redis.NewClient(&redis.Options{Addr: strings.TrimSpace(redisAddr[0])})
-	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
-	defer cancel()
-	if err := client.Ping(ctx).Err(); err != nil {
-		_ = client.Close()
-		return limiter
-	}
-	limiter.redis = client
-	return limiter
+	return &rateLimiter{redis: redis.NewClient(&redis.Options{Addr: addr})}
 }
 
-func (l *rateLimiter) allow(key string, limit int, window time.Duration, now time.Time) bool {
-	if l.redis != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
-		defer cancel()
-		redisKey := "rate_limit:" + key
-		count, err := l.redis.Incr(ctx, redisKey).Result()
-		if err == nil {
-			if count == 1 {
-				_ = l.redis.Expire(ctx, redisKey, window).Err()
-			}
-			return count <= int64(limit)
-		}
-	}
-
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	cutoff := now.Add(-window)
-	recent := l.hits[key][:0]
-	for _, hit := range l.hits[key] {
-		if hit.After(cutoff) {
-			recent = append(recent, hit)
-		}
-	}
-	if len(recent) >= limit {
-		l.hits[key] = recent
+func (l *rateLimiter) allow(key string, limit int, window time.Duration) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	defer cancel()
+	redisKey := "rate_limit:" + key
+	count, err := l.redis.Incr(ctx, redisKey).Result()
+	if err != nil {
 		return false
 	}
-	recent = append(recent, now)
-	l.hits[key] = recent
-	return true
+	if count == 1 {
+		_ = l.redis.Expire(ctx, redisKey, window).Err()
+	}
+	return count <= int64(limit)
 }
 
 func (h *Handlers) allowSensitiveAuthAttempt(ctx *gin.Context, action string, limit int, window time.Duration) bool {
@@ -231,7 +201,7 @@ func (h *Handlers) allowSensitiveAuthAttempt(ctx *gin.Context, action string, li
 		h.rateLimiter = newRateLimiter()
 	}
 	key := action + ":" + ctx.ClientIP()
-	if h.rateLimiter.allow(key, limit, window, time.Now()) {
+	if h.rateLimiter.allow(key, limit, window) {
 		return true
 	}
 	writeError(ctx, http.StatusTooManyRequests, "请求过于频繁，请稍后再试")

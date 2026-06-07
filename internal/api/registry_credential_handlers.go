@@ -1,11 +1,13 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/LiteyukiStudio/devops/internal/secret"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -45,6 +47,17 @@ func (h *Handlers) CreateRegistryCredential(ctx *gin.Context) {
 	var input registryCredentialInput
 	if !bindJSON(ctx, &input) {
 		return
+	}
+	if strings.TrimSpace(input.Password) != "" || strings.TrimSpace(input.Token) != "" {
+		if err := secret.ValidateEncryptionConfig(); err != nil {
+			status := http.StatusInternalServerError
+			message := err.Error()
+			if errors.Is(err, secret.ErrMissingEncryptionKey) {
+				message = "SECRET_ENCRYPTION_KEY is required to save registry credentials in production"
+			}
+			writeError(ctx, status, message)
+			return
+		}
 	}
 	accessScope := normalizeCredentialAccessScope(input.AccessScope)
 	if accessScope == "registry" {

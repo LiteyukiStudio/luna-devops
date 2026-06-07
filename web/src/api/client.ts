@@ -40,8 +40,10 @@ export interface Application {
   gitAccountId: string
   repositoryUrl: string
   imageReference: string
+  targetImageRef: string
   dockerfilePath: string
   buildContext: string
+  buildLabels: string
   servicePort: number
   createdAt: string
 }
@@ -150,6 +152,8 @@ export interface ArtifactRegistry {
   createdAt: string
 }
 
+export type ArtifactRegistryPayload = Omit<ArtifactRegistry, 'id' | 'namespace' | 'credentialSet' | 'createdBy' | 'createdAt'>
+
 export interface RegistryCredential {
   id: string
   registryId: string
@@ -209,6 +213,20 @@ export interface BuildProvider {
   createdAt: string
 }
 
+export interface BuilderAgent {
+  id: string
+  name: string
+  labels: string
+  scopes: string
+  executor: string
+  status: 'online' | 'offline' | string
+  maxConcurrency: number
+  currentConcurrency: number
+  lastHeartbeatAt?: string | null
+  createdAt: string
+  updatedAt: string
+}
+
 export interface BuildVariableSet {
   id: string
   name: string
@@ -225,9 +243,10 @@ export interface BuildRun {
   projectId: string
   applicationId: string
   buildProviderId: string
+  buildLabels: string
   buildVariableSetIds: string | string[]
   status: 'queued' | 'running' | 'succeeded' | 'failed' | 'canceled'
-  triggerType: 'manual' | 'webhook' | 'push' | 'tag' | 'api'
+  triggerType: 'manual' | 'webhook' | 'push' | 'tag' | 'api' | 'retry'
   sourceBranch: string
   sourceTag: string
   sourceCommit: string
@@ -235,6 +254,7 @@ export interface BuildRun {
   buildContext: string
   buildDirectory: string
   targetRegistryId: string
+  targetImageRef?: string
   targetRepository: string
   targetTag: string
   imageRef: string
@@ -276,6 +296,7 @@ export interface RuntimeCluster {
   endpoint: string
   scope: 'global' | 'project' | 'user'
   ownerRef: string
+  kubeconfig?: string
   kubeconfigSet: boolean
   isDefault: boolean
   status: string
@@ -461,8 +482,8 @@ export function apiBaseOrigin() {
   }
 }
 
-export function gitOAuthStartUrl(providerId: string, redirect = '/projects', frontendOrigin = window.location.origin) {
-  const params = new URLSearchParams({ redirect, frontendOrigin })
+export function gitOAuthStartUrl(providerId: string, redirect = '/projects', frontendOrigin = window.location.origin, callbackOrigin = apiBaseOrigin()) {
+  const params = new URLSearchParams({ callbackOrigin, frontendOrigin, redirect })
   return `${API_BASE_URL}/git/providers/${providerId}/oauth/start?${params.toString()}`
 }
 
@@ -642,9 +663,9 @@ export const api = {
 
   listRegistries: (projectId?: string) =>
     request<ArtifactRegistry[]>(`/registries${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`),
-  createRegistry: (payload: Omit<ArtifactRegistry, 'id' | 'credentialSet' | 'createdBy' | 'createdAt'>) =>
+  createRegistry: (payload: ArtifactRegistryPayload) =>
     request<ArtifactRegistry>('/registries', { method: 'POST', body: JSON.stringify(payload) }),
-  updateRegistry: (registryId: string, payload: Omit<ArtifactRegistry, 'id' | 'credentialSet' | 'createdBy' | 'createdAt'>) =>
+  updateRegistry: (registryId: string, payload: ArtifactRegistryPayload) =>
     request<ArtifactRegistry>(`/registries/${registryId}`, { method: 'PUT', body: JSON.stringify(payload) }),
   deleteRegistry: (registryId: string) =>
     request<void>(`/registries/${registryId}`, { method: 'DELETE' }),
@@ -675,6 +696,8 @@ export const api = {
 
   listBuildProviders: (projectId?: string) =>
     request<BuildProvider[]>(`/build/providers${optionalProjectQuery(projectId)}`),
+  listBuilderAgents: (params: PaginationParams = { page: 1, pageSize: 100 }) =>
+    request<PaginatedResponse<BuilderAgent>>(`/build/builders?${paginationQuery(params)}`),
   createBuildProvider: (payload: Omit<BuildProvider, 'id' | 'createdBy' | 'createdAt'>) =>
     request<BuildProvider>('/build/providers', { method: 'POST', body: JSON.stringify(payload) }),
   updateBuildProvider: (providerId: string, payload: Omit<BuildProvider, 'id' | 'createdBy' | 'createdAt'>) =>
@@ -691,10 +714,20 @@ export const api = {
     request<void>(`/build/variable-sets/${setId}`, { method: 'DELETE' }),
   listBuildRuns: (projectId: string) =>
     request<BuildRun[]>(`/projects/${projectId}/build-runs`),
+  listBuildRunsPage: (projectId: string, params: PaginationParams) =>
+    request<PaginatedResponse<BuildRun>>(`/projects/${projectId}/build-runs?${paginationQuery(params)}`),
   triggerBuildRun: (projectId: string, payload: Partial<BuildRun>) =>
     request<BuildRun>(`/projects/${projectId}/build-runs/trigger`, { method: 'POST', body: JSON.stringify(payload) }),
+  retryBuildRun: (projectId: string, runId: string) =>
+    request<BuildRun>(`/projects/${projectId}/build-runs/${runId}/retry`, { method: 'POST' }),
   listBuildJobs: (projectId: string, buildRunId?: string) =>
     request<BuildJob[]>(`/projects/${projectId}/build-jobs${buildRunId ? `?buildRunId=${encodeURIComponent(buildRunId)}` : ''}`),
+  listBuildJobsPage: (projectId: string, params: PaginationParams, buildRunId?: string) => {
+    const query = new URLSearchParams(paginationQuery(params))
+    if (buildRunId)
+      query.set('buildRunId', buildRunId)
+    return request<PaginatedResponse<BuildJob>>(`/projects/${projectId}/build-jobs?${query.toString()}`)
+  },
   getBuildJobLogs: (projectId: string, jobId: string) =>
     request<BuildLog>(`/projects/${projectId}/build-jobs/${jobId}/logs`),
 

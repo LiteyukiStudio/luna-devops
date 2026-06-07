@@ -9,6 +9,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import { api, oidcStartUrl } from '@/api/client'
+import { useDocumentTitle } from '@/app/document-title'
 import { usePublicConfig } from '@/app/public-config-context'
 import { useSession } from '@/app/session-context'
 import { FormField as Field } from '@/components/common/form-field'
@@ -32,6 +33,7 @@ export function LoginPage() {
   const [searchParams] = useSearchParams()
   const session = useSession()
   const configs = usePublicConfig()
+  const redirectTo = safeRedirect(searchParams.get('redirect'))
   const status = useQuery({ queryKey: ['bootstrap-status'], queryFn: api.getBootstrapStatus })
   const providers = useQuery({ queryKey: ['auth-providers'], queryFn: () => api.listAuthProviders(false) })
   const form = useForm<LoginForm>({
@@ -42,11 +44,12 @@ export function LoginPage() {
       password: '',
     },
   })
+  useDocumentTitle(t('login'))
 
   useEffect(() => {
     if (session.user)
-      navigate('/projects', { replace: true })
-  }, [navigate, session.user])
+      navigate(redirectTo, { replace: true })
+  }, [navigate, redirectTo, session.user])
 
   useEffect(() => {
     if (status.data && !status.data.initialized)
@@ -63,7 +66,7 @@ export function LoginPage() {
     session.login(values)
       .then(() => {
         toast.success(t('loginPage.success'))
-        navigate('/projects')
+        navigate(redirectTo)
       })
       .catch(error => toast.error(error.message))
   })
@@ -77,7 +80,7 @@ export function LoginPage() {
     session.resumeLogin(user.id)
       .then(() => {
         toast.success(t('loginPage.success'))
-        navigate('/projects')
+        navigate(redirectTo)
       })
       .catch((error) => {
         prefillRecentUser(user.email)
@@ -184,6 +187,14 @@ export function LoginPage() {
       </PageMotion>
     </div>
   )
+}
+
+function safeRedirect(value: string | null) {
+  if (!value || !value.startsWith('/') || value.startsWith('//'))
+    return '/projects'
+  if (value === '/login' || value.startsWith('/login?') || value === '/bootstrap' || value.startsWith('/bootstrap?'))
+    return '/projects'
+  return value
 }
 
 function authErrorMessage(code: string, t: ReturnType<typeof useTranslation>['t']) {

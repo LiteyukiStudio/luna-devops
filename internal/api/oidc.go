@@ -56,17 +56,14 @@ func (h *Handlers) StartOIDC(ctx *gin.Context) {
 		return
 	}
 
-	authState := model.OIDCAuthState{
-		ID:           id.New("ost"),
-		StateHash:    hashToken(state),
+	authState := oidcAuthStateValue{
 		Nonce:        nonce,
 		ProviderID:   provider.ID,
 		UserID:       userID,
 		Mode:         mode,
 		RedirectPath: redirectPath,
-		ExpiresAt:    time.Now().Add(oidcStateTTL),
 	}
-	if err := h.db.Create(&authState).Error; err != nil {
+	if err := h.oauthStates.SaveOIDC(ctx.Request.Context(), state, authState, oidcStateTTL); err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -88,14 +85,17 @@ func (h *Handlers) CompleteOIDC(ctx *gin.Context) {
 		return
 	}
 
-	var authState model.OIDCAuthState
-	err := h.db.First(&authState, "state_hash = ? and expires_at > ?", hashToken(plainState), time.Now()).Error
+	authState, ok, err := h.oauthStates.ConsumeOIDC(ctx.Request.Context(), plainState)
 	if err != nil {
 		h.audit("", "oidc.callback", "oidc_state", false, "state missing or expired")
 		h.redirectAuthError(ctx, "oidc_state_invalid")
 		return
 	}
-	_ = h.db.Delete(&authState).Error
+	if !ok {
+		h.audit("", "oidc.callback", "oidc_state", false, "state missing or expired")
+		h.redirectAuthError(ctx, "oidc_state_invalid")
+		return
+	}
 
 	provider, ok := h.enabledAuthProvider(authState.ProviderID)
 	if !ok {
@@ -167,7 +167,7 @@ func (h *Handlers) CompleteOIDC(ctx *gin.Context) {
 	ctx.Redirect(http.StatusFound, authState.RedirectPath)
 }
 
-func (h *Handlers) completeOIDCBind(ctx *gin.Context, authState model.OIDCAuthState, provider model.AuthProvider, claims oidcIdentityClaims) {
+func (h *Handlers) completeOIDCBind(ctx *gin.Context, authState oidcAuthStateValue, provider model.AuthProvider, claims oidcIdentityClaims) {
 	var user model.User
 	if err := h.db.First(&user, "id = ? and disabled = ?", authState.UserID, false).Error; err != nil {
 		h.audit(authState.UserID, "oidc.bind", provider.ID, false, "user not found")

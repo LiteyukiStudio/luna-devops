@@ -18,7 +18,7 @@ import { EmptyState } from '@/components/common/empty-state'
 import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
 import { MotionItem, MotionList } from '@/components/common/motion'
-import { StatusBadge } from '@/components/common/status-badge'
+import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -542,7 +542,7 @@ function ProvidersPanel({
                   <h3 className="truncate font-medium">{provider.name}</h3>
                   <StatusBadge>{provider.type}</StatusBadge>
                   <StatusBadge>{provider.authType}</StatusBadge>
-                  <StatusBadge>{provider.enabled ? t('common.enabled') : t('common.disabled')}</StatusBadge>
+                  <StatusValueBadge value={provider.enabled ? 'enabled' : 'disabled'} />
                   <StatusBadge>{provider.scope}</StatusBadge>
                   {provider.scope === 'project' && provider.ownerRef && (
                     <StatusBadge>{projectMap[provider.ownerRef] ?? provider.ownerRef}</StatusBadge>
@@ -622,7 +622,7 @@ function CredentialsPanel({
                     {credential.scope === 'project' && credential.ownerRef && (
                       <StatusBadge>{projectMap[credential.ownerRef] ?? credential.ownerRef}</StatusBadge>
                     )}
-                    <StatusBadge>{t(`common.${credential.status}`)}</StatusBadge>
+                    <StatusValueBadge value={credential.status} />
                   </div>
                   <p className="truncate text-sm text-muted-foreground">{credential.scopes || t('codeRepositoriesView.noScopes')}</p>
                   <p className="truncate text-xs text-muted-foreground">

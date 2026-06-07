@@ -18,7 +18,7 @@ import { FormField as Field } from '@/components/common/form-field'
 import { MotionItem, MotionList } from '@/components/common/motion'
 import { PageHeader } from '@/components/common/page-header'
 import { SearchSelect } from '@/components/common/search-select'
-import { StatusBadge } from '@/components/common/status-badge'
+import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -379,7 +379,7 @@ function BindingRow({
               {binding.repo}
             </h3>
             <StatusBadge>{binding.defaultBranch}</StatusBadge>
-            <StatusBadge>{binding.webhookStatus}</StatusBadge>
+            <StatusValueBadge value={binding.webhookStatus} />
           </div>
           <p className="truncate text-sm text-muted-foreground">
             {binding.applicationName ?? binding.applicationId}

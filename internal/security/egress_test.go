@@ -2,6 +2,7 @@ package security
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -51,12 +52,23 @@ func TestEgressPolicySupportsDomainAndPortControls(t *testing.T) {
 func TestDomainAllowListBypassesReservedIPBlock(t *testing.T) {
 	policy := PublicEgressPolicy()
 	policy.DomainAllowList = []string{"localhost"}
+	policy.IPBlockList = []string{"127.0.0.0/8", "::1/128"}
 
 	if _, err := PublicEgressPolicy().ValidateURL("http://localhost:8080"); !errors.Is(err, ErrBlockedByPolicy) {
 		t.Fatalf("localhost should be blocked by default, got %v", err)
 	}
 	if _, err := policy.ValidateURL("http://localhost:8080"); err != nil {
 		t.Fatalf("domain allowlist should permit reserved resolved ip: %v", err)
+	}
+}
+
+func TestDomainAllowListMatchesSubdomains(t *testing.T) {
+	policy := PublicEgressPolicy()
+	policy.DomainAllowList = []string{"github.com"}
+	policy.IPBlockList = []string{"198.18.0.0/15"}
+
+	if err := policy.ValidateHostPort("api.github.com", 443); err != nil {
+		t.Fatalf("domain allowlist should permit subdomain and skip fake-ip blocklist: %v", err)
 	}
 }
 
@@ -72,6 +84,19 @@ func TestIPAllowAndBlockLists(t *testing.T) {
 	blockPolicy.IPBlockList = []string{"127.0.0.1"}
 	if _, err := blockPolicy.ValidateURL("http://127.0.0.1:8080"); !errors.Is(err, ErrBlockedByPolicy) {
 		t.Fatalf("explicit ip blocklist should win, got %v", err)
+	}
+}
+
+func TestIPBlockErrorIncludesMatchedRule(t *testing.T) {
+	policy := PublicEgressPolicy()
+	policy.IPBlockList = []string{"198.18.0.0/15"}
+
+	_, err := policy.ValidateURL("http://198.18.0.67")
+	if !errors.Is(err, ErrBlockedByPolicy) {
+		t.Fatalf("expected blocked fake ip, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "198.18.0.0/15") {
+		t.Fatalf("expected matched cidr in error, got %v", err)
 	}
 }
 

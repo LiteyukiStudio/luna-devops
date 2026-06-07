@@ -43,7 +43,8 @@ export function CodeEditor({
   return (
     <div
       className={cn(
-        'overflow-hidden rounded-md border border-input bg-surface shadow-xs transition-[border-color,box-shadow]',
+        'min-w-0 max-w-full overflow-hidden rounded-md border border-input bg-surface shadow-xs transition-[border-color,box-shadow]',
+        '[&_.cm-content]:min-w-0 [&_.cm-editor]:max-w-full [&_.cm-scroller]:max-w-full [&_.cm-scroller]:overflow-auto',
         'focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50',
         ariaInvalid && 'border-destructive ring-destructive/20 dark:ring-destructive/40',
         className,

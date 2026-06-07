@@ -8,7 +8,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -82,6 +81,59 @@ func TestOrderByClauseUsesWhitelist(t *testing.T) {
 	orderBy = orderByClause(pagination, map[string]string{"name": "name"}, "created_at")
 	if orderBy != "created_at desc" {
 		t.Fatalf("fallback orderBy = %q", orderBy)
+	}
+}
+
+func TestBuildImageRefOmitsDockerHubDomainAndRendersTagTemplate(t *testing.T) {
+	registry := model.ArtifactRegistry{Provider: "dockerhub", Endpoint: "https://registry-1.docker.io", Namespace: "snowykami"}
+	project := model.Project{Slug: "demo"}
+	application := model.Application{Slug: "blog"}
+	run := model.BuildRun{
+		TargetRepository: buildTargetImageRepository(registry, project, application),
+		TargetTag:        "${{ github.ref_name }}-{short_sha}",
+		SourceBranch:     "main",
+		SourceCommit:     "1234567890abcdef",
+	}
+
+	if ref := buildImageRef(registry, run); ref != "snowykami/demo-blog:main-1234567890ab" {
+		t.Fatalf("dockerhub image ref = %q", ref)
+	}
+}
+
+func TestBuildImageRefAddsNonDockerHubDomainPrefix(t *testing.T) {
+	registry := model.ArtifactRegistry{Provider: "harbor", Endpoint: "https://harbor.example.com", Namespace: "team"}
+	project := model.Project{Slug: "demo"}
+	application := model.Application{Slug: "api"}
+	run := model.BuildRun{
+		TargetRepository: buildTargetImageRepository(registry, project, application),
+		TargetTag:        "release/{branch}",
+		SourceBranch:     "feature/login",
+	}
+
+	if ref := buildImageRef(registry, run); ref != "harbor.example.com/team/demo-api:release-feature-login" {
+		t.Fatalf("harbor image ref = %q", ref)
+	}
+}
+
+func TestSplitTargetImageRef(t *testing.T) {
+	tests := []struct {
+		name       string
+		value      string
+		repository string
+		tag        string
+	}{
+		{name: "repository and tag", value: "snowykami/neo-blog-front:latest", repository: "snowykami/neo-blog-front", tag: "latest"},
+		{name: "template tag", value: "team/api:${{ github.ref_name }}-{short_sha}", repository: "team/api", tag: "${{ github.ref_name }}-{short_sha}"},
+		{name: "no tag", value: "team/api", repository: "team/api", tag: "latest"},
+		{name: "registry host", value: "registry.example.com/team/api:dev", repository: "registry.example.com/team/api", tag: "dev"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			repository, tag := splitTargetImageRef(test.value)
+			if repository != test.repository || tag != test.tag {
+				t.Fatalf("splitTargetImageRef(%q) = %q/%q", test.value, repository, tag)
+			}
+		})
 	}
 }
 
@@ -327,15 +379,6 @@ func TestUserCannotCreateAdministrativeAccessTokenScope(t *testing.T) {
 	}
 }
 
-func TestOAuthStateTableNamesMatchMigrations(t *testing.T) {
-	if got := (model.GitOAuthState{}).TableName(); got != "git_oauth_states" {
-		t.Fatalf("git oauth state table = %q", got)
-	}
-	if got := (model.OIDCAuthState{}).TableName(); got != "oidc_auth_states" {
-		t.Fatalf("oidc auth state table = %q", got)
-	}
-}
-
 func TestRegistryResponseExposesCredentialSetOnly(t *testing.T) {
 	output := registryResponse(model.ArtifactRegistry{CredentialRef: "regc_secret"})
 	if !output.CredentialSet {
@@ -435,6 +478,12 @@ func TestBuildFrontendRedirect(t *testing.T) {
 	}
 }
 
+func TestGitOAuthCallbackURL(t *testing.T) {
+	if got := gitOAuthCallbackURL("http://localhost:5173/"); got != "http://localhost:5173/api/v1/git/oauth/callback" {
+		t.Fatalf("callback url = %q", got)
+	}
+}
+
 func TestGitExternalBaseURLPrefersPublicEnv(t *testing.T) {
 	h := &Handlers{}
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
@@ -491,21 +540,10 @@ func TestRequestOriginAllowedRejectsUntrustedOrigin(t *testing.T) {
 	}
 }
 
-func TestRateLimiterBlocksAfterLimit(t *testing.T) {
-	limiter := newRateLimiter()
-	now := time.Date(2026, 6, 7, 0, 0, 0, 0, time.UTC)
-
-	if !limiter.allow("login:127.0.0.1", 2, time.Minute, now) {
-		t.Fatal("expected first attempt to pass")
-	}
-	if !limiter.allow("login:127.0.0.1", 2, time.Minute, now.Add(time.Second)) {
-		t.Fatal("expected second attempt to pass")
-	}
-	if limiter.allow("login:127.0.0.1", 2, time.Minute, now.Add(2*time.Second)) {
-		t.Fatal("expected third attempt to be blocked")
-	}
-	if !limiter.allow("login:127.0.0.1", 2, time.Minute, now.Add(2*time.Minute)) {
-		t.Fatal("expected attempts after window to pass")
+func TestRateLimiterUsesRedisOnly(t *testing.T) {
+	limiter := newRateLimiter("localhost:6379")
+	if limiter.redis == nil {
+		t.Fatal("expected redis client")
 	}
 }
 
