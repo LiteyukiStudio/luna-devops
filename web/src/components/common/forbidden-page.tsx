@@ -1,16 +1,22 @@
+import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
-import { Card } from '../ui/card'
+import { Card } from '@/components/ui/card'
 
+/**
+ * 全屏无权限页面。
+ * 用于路由级 403 或后端确认用户无访问权限的页面兜底；按钮级权限隐藏和局部提示不要跳转到这里。
+ */
 export function ForbiddenPage() {
+  const { t } = useTranslation()
   return (
     <div className="grid min-h-screen place-items-center bg-background px-4 text-foreground">
       <Card className="w-full max-w-md">
-        <h1 className="text-xl font-semibold">没有访问权限</h1>
+        <h1 className="text-xl font-semibold">{t('common.forbiddenTitle')}</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          你当前不是该项目成员，或没有执行此操作的权限。请返回项目列表，或联系项目管理员授予权限。
+          {t('common.forbiddenDescription')}
         </p>
-        <Link className="mt-5 inline-flex h-9 items-center justify-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:bg-primary/90" to="/projects">
-          返回项目
+        <Link className="mt-5 inline-flex h-9 items-center justify-center rounded-full bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:bg-primary/90" to="/projects">
+          {t('backToProjectSpaces')}
         </Link>
       </Card>
     </div>

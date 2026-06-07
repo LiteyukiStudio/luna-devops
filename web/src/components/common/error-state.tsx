@@ -1,16 +1,16 @@
 import { AlertTriangle } from 'lucide-react'
-import { Card } from '../ui/card'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 
+/**
+ * 局部内容加载失败时的统一错误提示。
+ * 用于列表、详情块、表单辅助数据等局部失败；整页 403 使用 ForbiddenPage，认证失败使用 AuthErrorPage。
+ */
 export function ErrorState({ title, description }: { title: string, description?: string }) {
   return (
-    <Card className="flex items-start gap-3 border-danger/30 bg-danger/5">
-      <span className="mt-0.5 text-danger">
-        <AlertTriangle size={18} />
-      </span>
-      <div>
-        <p className="font-medium text-foreground">{title}</p>
-        {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
-      </div>
-    </Card>
+    <Alert variant="destructive">
+      <AlertTriangle />
+      <AlertTitle>{title}</AlertTitle>
+      {description && <AlertDescription>{description}</AlertDescription>}
+    </Alert>
   )
 }

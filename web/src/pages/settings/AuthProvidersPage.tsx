@@ -1,26 +1,33 @@
-import type { AuthAdmissionPolicy, AuthProvider } from '../../api/client'
+import type { AuthAdmissionPolicy, AuthProvider } from '@/api/client'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Save, ShieldCheck } from 'lucide-react'
+import { Plus, Save, ShieldCheck } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
+import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { z } from 'zod'
-import { api } from '../../api/client'
-import { ErrorState } from '../../components/common/error-state'
-import { MotionItem, MotionList } from '../../components/common/motion'
-import { PageHeader } from '../../components/common/page-header'
-import { StatusBadge } from '../../components/common/status-badge'
-import { Button } from '../../components/ui/button'
-import { Card } from '../../components/ui/card'
-import { Field, Input, Select, Textarea } from '../../components/ui/input'
+import { api } from '@/api/client'
+import { ContentTabs } from '@/components/common/content-tabs'
+import { EditActionButton } from '@/components/common/edit-action-button'
+import { ErrorState } from '@/components/common/error-state'
+import { FormField as Field } from '@/components/common/form-field'
+import { MotionItem, MotionList } from '@/components/common/motion'
+import { StatusBadge } from '@/components/common/status-badge'
+import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { NativeSelect as Select } from '@/components/ui/native-select'
+import { TabsContent } from '@/components/ui/tabs'
+import { Textarea } from '@/components/ui/textarea'
 
 const providerSchema = z.object({
   name: z.string().min(1),
   enabled: z.boolean(),
   issuerUrl: z.string().url(),
   clientId: z.string().min(1),
-  clientSecretRef: z.string(),
+  clientSecret: z.string(),
   scopes: z.string().min(1),
   groupClaim: z.string().min(1),
   emailClaim: z.string().min(1),
@@ -45,7 +52,7 @@ const providerDefaults: ProviderForm = {
   enabled: true,
   issuerUrl: '',
   clientId: '',
-  clientSecretRef: 'env:OIDC_CLIENT_SECRET',
+  clientSecret: '',
   scopes: 'openid profile email',
   groupClaim: 'groups',
   emailClaim: 'email',
@@ -54,8 +61,11 @@ const providerDefaults: ProviderForm = {
 }
 
 export function AuthProvidersPage() {
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [editingProvider, setEditingProvider] = useState<AuthProvider | null>(null)
+  const [providerDialogOpen, setProviderDialogOpen] = useState(false)
+  const [activeTab, setActiveTab] = useState('providers')
   const providers = useQuery({ queryKey: ['auth-providers', 'admin'], queryFn: () => api.listAuthProviders(true) })
   const policy = useQuery({ queryKey: ['auth-admission-policy'], queryFn: api.getAuthAdmissionPolicy })
   const providerForm = useForm<ProviderForm>({ resolver: zodResolver(providerSchema), mode: 'onChange', defaultValues: providerDefaults })
@@ -82,7 +92,7 @@ export function AuthProvidersPage() {
       enabled: editingProvider.enabled,
       issuerUrl: editingProvider.issuerUrl,
       clientId: editingProvider.clientId,
-      clientSecretRef: editingProvider.clientSecretRef,
+      clientSecret: '',
       scopes: editingProvider.scopes,
       groupClaim: editingProvider.groupClaim,
       emailClaim: editingProvider.emailClaim,
@@ -112,8 +122,10 @@ export function AuthProvidersPage() {
       return api.createAuthProvider(payload)
     },
     onSuccess: () => {
-      toast.success(editingProvider ? '身份源已更新' : '身份源已创建')
+      toast.success(editingProvider ? t('authProvidersPage.updated') : t('authProvidersPage.created'))
       setEditingProvider(null)
+      setProviderDialogOpen(false)
+      providerForm.reset(providerDefaults)
       queryClient.invalidateQueries({ queryKey: ['auth-providers'] })
     },
     onError: error => toast.error(error.message),
@@ -129,7 +141,7 @@ export function AuthProvidersPage() {
       defaultRole: values.defaultRole,
     }),
     onSuccess: (result: AuthAdmissionPolicy) => {
-      toast.success('准入策略已保存')
+      toast.success(t('authProvidersPage.policySaved'))
       queryClient.setQueryData(['auth-admission-policy'], result)
     },
     onError: error => toast.error(error.message),
@@ -137,116 +149,52 @@ export function AuthProvidersPage() {
 
   return (
     <div className="grid gap-6">
-      <PageHeader
-        description="配置多个 OIDC Provider，并用准入策略控制谁能进入平台。"
-        title="身份源"
-      />
-
-      <div className="grid gap-4 xl:grid-cols-[420px_1fr]">
-        <Card>
-          <form className="grid gap-3" onSubmit={providerForm.handleSubmit(values => saveProvider.mutate(values))}>
-            <h2 className="text-base font-semibold">{editingProvider ? '编辑 OIDC Provider' : '创建 OIDC Provider'}</h2>
-            <Field error={providerForm.formState.errors.name?.message} label="名称" required>
-              <Input {...providerForm.register('name')} aria-invalid={Boolean(providerForm.formState.errors.name)} placeholder="Casdoor" />
-            </Field>
-            <Field error={providerForm.formState.errors.issuerUrl?.message} label="Issuer URL" required>
-              <Input {...providerForm.register('issuerUrl')} aria-invalid={Boolean(providerForm.formState.errors.issuerUrl)} placeholder="https://sso.example.com" />
-            </Field>
-            <Field error={providerForm.formState.errors.clientId?.message} label="Client ID" required>
-              <Input {...providerForm.register('clientId')} aria-invalid={Boolean(providerForm.formState.errors.clientId)} />
-            </Field>
-            <Field error={providerForm.formState.errors.clientSecretRef?.message} label="Client Secret 引用">
-              <Input {...providerForm.register('clientSecretRef')} aria-invalid={Boolean(providerForm.formState.errors.clientSecretRef)} placeholder="env:OIDC_CLIENT_SECRET" />
-            </Field>
-            <Field error={providerForm.formState.errors.scopes?.message} label="Scopes" required>
-              <Input {...providerForm.register('scopes')} aria-invalid={Boolean(providerForm.formState.errors.scopes)} />
-            </Field>
-            <div className="grid grid-cols-3 gap-3">
-              <Field error={providerForm.formState.errors.groupClaim?.message} label="Group Claim" required>
-                <Input {...providerForm.register('groupClaim')} aria-invalid={Boolean(providerForm.formState.errors.groupClaim)} />
-              </Field>
-              <Field error={providerForm.formState.errors.emailClaim?.message} label="Email Claim" required>
-                <Input {...providerForm.register('emailClaim')} aria-invalid={Boolean(providerForm.formState.errors.emailClaim)} />
-              </Field>
-              <Field error={providerForm.formState.errors.usernameClaim?.message} label="Username Claim" required>
-                <Input {...providerForm.register('usernameClaim')} aria-invalid={Boolean(providerForm.formState.errors.usernameClaim)} />
-              </Field>
-            </div>
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" {...providerForm.register('enabled')} />
-              启用
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" {...providerForm.register('isDefault')} />
-              默认身份源
-            </label>
-            <div className="flex gap-2">
-              <Button disabled={saveProvider.isPending || !providerForm.formState.isValid} type="submit">
-                <Save size={16} />
-                {editingProvider ? '保存身份源' : '创建身份源'}
+      <ContentTabs
+        tabs={[
+          { value: 'providers', label: t('authProvidersPage.providersTab') },
+          { value: 'policy', label: t('authProvidersPage.policyTab') },
+        ]}
+        tools={activeTab === 'providers'
+          ? (
+              <Button
+                onClick={() => {
+                  setEditingProvider(null)
+                  providerForm.reset(providerDefaults)
+                  setProviderDialogOpen(true)
+                }}
+              >
+                <Plus size={16} />
+                {t('authProvidersPage.createTitle')}
               </Button>
-              {editingProvider && (
-                <Button type="button" variant="secondary" onClick={() => setEditingProvider(null)}>取消</Button>
-              )}
-            </div>
-          </form>
-        </Card>
-
-        <div className="grid gap-4">
+            )
+          : undefined}
+        value={activeTab}
+        onValueChange={setActiveTab}
+      >
+        <TabsContent value="providers">
           <Card>
-            <form className="grid gap-3" onSubmit={policyForm.handleSubmit(values => savePolicy.mutate(values))}>
-              <h2 className="text-base font-semibold">准入策略</h2>
-              {policy.isError && <ErrorState title="准入策略加载失败" description="请确认当前账号具有平台管理员权限。" />}
-              <div className="grid gap-3 md:grid-cols-2">
-                <label className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" {...policyForm.register('allowLocalLogin')} />
-                  允许本地账号登录
-                </label>
-                <label className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" {...policyForm.register('allowOidcLogin')} />
-                  允许 OIDC 登录
-                </label>
-              </div>
-              <Field error={policyForm.formState.errors.allowedEmailDomains?.message} label="允许邮箱域">
-                <Textarea {...policyForm.register('allowedEmailDomains')} aria-invalid={Boolean(policyForm.formState.errors.allowedEmailDomains)} placeholder="example.com, liteyuki.dev" />
-              </Field>
-              <Field error={policyForm.formState.errors.allowedOidcGroups?.message} label="允许 OIDC 组">
-                <Textarea {...policyForm.register('allowedOidcGroups')} aria-invalid={Boolean(policyForm.formState.errors.allowedOidcGroups)} placeholder="devops-admins, platform-users" />
-              </Field>
-              <Field error={policyForm.formState.errors.invitedEmails?.message} label="邀请邮箱">
-                <Textarea {...policyForm.register('invitedEmails')} aria-invalid={Boolean(policyForm.formState.errors.invitedEmails)} placeholder="user@example.com" />
-              </Field>
-              <Field error={policyForm.formState.errors.defaultRole?.message} label="默认全局角色" required>
-                <Select {...policyForm.register('defaultRole')} aria-invalid={Boolean(policyForm.formState.errors.defaultRole)}>
-                  <option value="user">普通用户</option>
-                  <option value="platform_admin">平台管理员</option>
-                </Select>
-              </Field>
-              <Button disabled={savePolicy.isPending || !policyForm.formState.isValid} type="submit">
-                <ShieldCheck size={16} />
-                保存准入策略
-              </Button>
-            </form>
-          </Card>
-
-          <Card>
-            {providers.isError && <ErrorState title="身份源加载失败" description="请确认当前账号具有平台管理员权限。" />}
+            {providers.isError && <ErrorState title={t('authProvidersPage.loadFailedTitle')} description={t('common.platformAdminPermissionRequired')} />}
             <MotionList className="grid gap-3">
               {(providers.data ?? []).map(provider => (
                 <MotionItem key={provider.id}>
-                  <button
-                    className="grid w-full gap-2 rounded-md border border-border bg-background p-3 text-left transition duration-150 hover:border-primary hover:shadow-sm"
-                    type="button"
-                    onClick={() => setEditingProvider(provider)}
-                  >
+                  <div className="grid gap-2 rounded-md border border-border bg-background p-3 transition duration-150 hover:border-primary hover:shadow-sm">
                     <div className="flex items-center justify-between gap-3">
-                      <div>
+                      <div className="min-w-0">
                         <p className="font-medium">{provider.name}</p>
-                        <p className="text-sm text-muted-foreground">{provider.issuerUrl}</p>
+                        <p className="truncate text-sm text-muted-foreground">{provider.issuerUrl}</p>
                       </div>
-                      <div className="flex gap-2">
-                        {provider.isDefault && <StatusBadge>default</StatusBadge>}
-                        <StatusBadge>{provider.enabled ? 'enabled' : 'disabled'}</StatusBadge>
+                      <div className="flex shrink-0 items-center gap-2">
+                        {provider.isDefault && <StatusBadge>{t('common.default')}</StatusBadge>}
+                        <StatusBadge>{provider.enabled ? t('common.enabled') : t('common.disabled')}</StatusBadge>
+                        <EditActionButton
+                          aria-label={t('edit')}
+                          type="button"
+                          label={t('edit')}
+                          onClick={() => {
+                            setEditingProvider(provider)
+                            setProviderDialogOpen(true)
+                          }}
+                        />
                       </div>
                     </div>
                     <p className="text-xs text-muted-foreground">
@@ -256,13 +204,116 @@ export function AuthProvidersPage() {
                       {' '}
                       {provider.scopes}
                     </p>
-                  </button>
+                  </div>
                 </MotionItem>
               ))}
             </MotionList>
           </Card>
-        </div>
-      </div>
+        </TabsContent>
+
+        <Dialog
+          open={providerDialogOpen}
+          onOpenChange={(open) => {
+            setProviderDialogOpen(open)
+            if (!open) {
+              setEditingProvider(null)
+              providerForm.reset(providerDefaults)
+            }
+          }}
+        >
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>{editingProvider ? t('authProvidersPage.editTitle') : t('authProvidersPage.createTitle')}</DialogTitle>
+              <DialogDescription>{t('authProvidersPage.description')}</DialogDescription>
+            </DialogHeader>
+            <form className="grid gap-3" onSubmit={providerForm.handleSubmit(values => saveProvider.mutate(values))}>
+              <Field error={providerForm.formState.errors.name?.message} hint={t('authProvidersPage.nameHint')} label={t('authProvidersPage.name')} required>
+                <Input {...providerForm.register('name')} aria-invalid={Boolean(providerForm.formState.errors.name)} placeholder={t('authProvidersPage.namePlaceholder')} />
+              </Field>
+              <Field error={providerForm.formState.errors.issuerUrl?.message} hint={t('authProvidersPage.issuerUrlHint')} label={t('authProvidersPage.issuerUrl')} required>
+                <Input {...providerForm.register('issuerUrl')} aria-invalid={Boolean(providerForm.formState.errors.issuerUrl)} placeholder={t('authProvidersPage.issuerUrlPlaceholder')} />
+              </Field>
+              <Field error={providerForm.formState.errors.clientId?.message} hint={t('authProvidersPage.clientIdHint')} label={t('authProvidersPage.clientId')} required>
+                <Input {...providerForm.register('clientId')} aria-invalid={Boolean(providerForm.formState.errors.clientId)} />
+              </Field>
+              <Field error={providerForm.formState.errors.clientSecret?.message} hint={t('authProvidersPage.clientSecretHint')} label={t('authProvidersPage.clientSecret')}>
+                <Input
+                  {...providerForm.register('clientSecret')}
+                  aria-invalid={Boolean(providerForm.formState.errors.clientSecret)}
+                  placeholder={editingProvider?.clientSecretSet ? t('authProvidersPage.secretSetPlaceholder') : t('authProvidersPage.secretPlaceholder')}
+                  type="password"
+                />
+              </Field>
+              <Field error={providerForm.formState.errors.scopes?.message} hint={t('authProvidersPage.scopesHint')} label={t('authProvidersPage.scopes')} required>
+                <Input {...providerForm.register('scopes')} aria-invalid={Boolean(providerForm.formState.errors.scopes)} />
+              </Field>
+              <div className="grid grid-cols-3 gap-3">
+                <Field error={providerForm.formState.errors.groupClaim?.message} hint={t('authProvidersPage.groupClaimHint')} label={t('authProvidersPage.groupClaim')} required>
+                  <Input {...providerForm.register('groupClaim')} aria-invalid={Boolean(providerForm.formState.errors.groupClaim)} />
+                </Field>
+                <Field error={providerForm.formState.errors.emailClaim?.message} hint={t('authProvidersPage.emailClaimHint')} label={t('authProvidersPage.emailClaim')} required>
+                  <Input {...providerForm.register('emailClaim')} aria-invalid={Boolean(providerForm.formState.errors.emailClaim)} />
+                </Field>
+                <Field error={providerForm.formState.errors.usernameClaim?.message} hint={t('authProvidersPage.usernameClaimHint')} label={t('authProvidersPage.usernameClaim')} required>
+                  <Input {...providerForm.register('usernameClaim')} aria-invalid={Boolean(providerForm.formState.errors.usernameClaim)} />
+                </Field>
+              </div>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" {...providerForm.register('enabled')} />
+                {t('authProvidersPage.enabled')}
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" {...providerForm.register('isDefault')} />
+                {t('authProvidersPage.defaultProvider')}
+              </label>
+              <DialogFooter>
+                <Button disabled={saveProvider.isPending || !providerForm.formState.isValid} type="submit">
+                  <Save size={16} />
+                  {editingProvider ? t('authProvidersPage.save') : t('authProvidersPage.create')}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+
+        <TabsContent value="policy">
+          <Card>
+            <form className="grid gap-3" onSubmit={policyForm.handleSubmit(values => savePolicy.mutate(values))}>
+              <h2 className="text-base font-semibold">{t('authProvidersPage.admissionPolicy')}</h2>
+              {policy.isError && <ErrorState title={t('authProvidersPage.policyLoadFailedTitle')} description={t('common.platformAdminPermissionRequired')} />}
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" {...policyForm.register('allowLocalLogin')} />
+                  {t('authProvidersPage.allowLocalLogin')}
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" {...policyForm.register('allowOidcLogin')} />
+                  {t('authProvidersPage.allowOidcLogin')}
+                </label>
+              </div>
+              <Field error={policyForm.formState.errors.allowedEmailDomains?.message} hint={t('authProvidersPage.allowedEmailDomainsHint')} label={t('authProvidersPage.allowedEmailDomains')}>
+                <Textarea {...policyForm.register('allowedEmailDomains')} aria-invalid={Boolean(policyForm.formState.errors.allowedEmailDomains)} placeholder={t('authProvidersPage.allowedEmailDomainsPlaceholder')} />
+              </Field>
+              <Field error={policyForm.formState.errors.allowedOidcGroups?.message} hint={t('authProvidersPage.allowedOidcGroupsHint')} label={t('authProvidersPage.allowedOidcGroups')}>
+                <Textarea {...policyForm.register('allowedOidcGroups')} aria-invalid={Boolean(policyForm.formState.errors.allowedOidcGroups)} placeholder={t('authProvidersPage.allowedOidcGroupsPlaceholder')} />
+              </Field>
+              <Field error={policyForm.formState.errors.invitedEmails?.message} hint={t('authProvidersPage.invitedEmailsHint')} label={t('authProvidersPage.invitedEmails')}>
+                <Textarea {...policyForm.register('invitedEmails')} aria-invalid={Boolean(policyForm.formState.errors.invitedEmails)} placeholder={t('authProvidersPage.invitedEmailsPlaceholder')} />
+              </Field>
+              <Field error={policyForm.formState.errors.defaultRole?.message} hint={t('authProvidersPage.defaultRoleHint')} label={t('authProvidersPage.defaultRole')} required>
+                <Select {...policyForm.register('defaultRole')} aria-invalid={Boolean(policyForm.formState.errors.defaultRole)}>
+                  <option value="user">{t('usersPage.normalUser')}</option>
+                  <option value="platform_admin">{t('usersPage.platformAdmin')}</option>
+                </Select>
+              </Field>
+              <Button disabled={savePolicy.isPending || !policyForm.formState.isValid} type="submit">
+                <ShieldCheck size={16} />
+                {t('authProvidersPage.savePolicy')}
+              </Button>
+            </form>
+          </Card>
+        </TabsContent>
+      </ContentTabs>
     </div>
   )
 }

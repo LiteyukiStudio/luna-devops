@@ -4,11 +4,16 @@
     "target": "es2023",
     "jsx": "react-jsx",
     "lib": ["ES2023", "DOM"],
+    "ignoreDeprecations": "6.0",
     "moduleDetection": "force",
+    "baseUrl": ".",
     "module": "esnext",
 
     /* Bundler mode */
     "moduleResolution": "bundler",
+    "paths": {
+      "@/*": ["src/*"]
+    },
     "types": ["vite/client"],
     "allowImportingTsExtensions": true,
 

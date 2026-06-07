@@ -1,44 +1,30 @@
-import type { ThemeMode } from '../../app/theme-context'
+import type { ThemeMode } from '@/app/theme-context'
 import { Monitor, Moon, Sun } from 'lucide-react'
-import { motion } from 'motion/react'
-import { cn } from '../../lib/utils'
+import { useTranslation } from 'react-i18next'
+import { SegmentedControl } from './segmented-control'
 
-const modes: Array<{ value: ThemeMode, label: string, icon: typeof Sun }> = [
-  { value: 'light', label: 'Light', icon: Sun },
-  { value: 'system', label: 'System', icon: Monitor },
-  { value: 'dark', label: 'Dark', icon: Moon },
+const modes: Array<{ value: ThemeMode, labelKey: string, icon: typeof Sun }> = [
+  { value: 'light', labelKey: 'theme.light', icon: Sun },
+  { value: 'system', labelKey: 'theme.system', icon: Monitor },
+  { value: 'dark', labelKey: 'theme.dark', icon: Moon },
 ]
 
+/**
+ * light/system/dark 三态主题切换器。
+ * 用于设置页或侧边栏主题入口，文案走 i18n；不要用于业务状态或资源筛选。
+ */
 export function ThemeModeSegmented({ mode, setMode }: { mode: ThemeMode, setMode: (mode: ThemeMode) => void }) {
+  const { t } = useTranslation()
+
   return (
-    <div className="relative grid grid-cols-3 gap-1 rounded-full bg-muted p-1">
-      {modes.map((item) => {
-        const Icon = item.icon
-        const active = mode === item.value
-        return (
-          <button
-            key={item.value}
-            aria-label={item.label}
-            aria-pressed={active}
-            className={cn(
-              'relative z-10 flex h-8 items-center justify-center rounded-full text-muted-foreground transition-colors duration-150',
-              active && 'text-primary',
-              !active && 'hover:bg-surface/70 hover:text-foreground',
-            )}
-            type="button"
-            onClick={() => setMode(item.value)}
-          >
-            {active && (
-              <motion.span
-                className="absolute inset-0 -z-10 rounded-full bg-surface shadow-sm"
-                layoutId="theme-mode-active"
-                transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-              />
-            )}
-            <Icon size={15} />
-          </button>
-        )
-      })}
-    </div>
+    <SegmentedControl
+      ariaLabel={t('theme.mode')}
+      equalColumns
+      items={modes.map(item => ({ value: item.value, label: t(item.labelKey), icon: item.icon }))}
+      layoutId="theme-mode-active"
+      showLabels={false}
+      value={mode}
+      onValueChange={setMode}
+    />
   )
 }

@@ -1,25 +1,31 @@
-import type { ProjectMember } from '../../api/client'
+import type { Ref } from 'react'
+import type { ProjectMember } from '@/api/client'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import i18next from 'i18next'
 import { Trash2, UserPlus } from 'lucide-react'
-import { useState } from 'react'
+import { useImperativeHandle, useState } from 'react'
 import { useForm } from 'react-hook-form'
+import { useTranslation } from 'react-i18next'
 import { Link, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { z } from 'zod'
-import { api } from '../../api/client'
-import { ConfirmDialog } from '../../components/common/confirm-dialog'
-import { EmptyState } from '../../components/common/empty-state'
-import { ErrorState } from '../../components/common/error-state'
-import { MotionItem, MotionList } from '../../components/common/motion'
-import { PageHeader } from '../../components/common/page-header'
-import { StatusBadge } from '../../components/common/status-badge'
-import { Button } from '../../components/ui/button'
-import { Card } from '../../components/ui/card'
-import { Field, Input, Select } from '../../components/ui/input'
+import { api } from '@/api/client'
+import { ConfirmDialog } from '@/components/common/confirm-dialog'
+import { EmptyState } from '@/components/common/empty-state'
+import { ErrorState } from '@/components/common/error-state'
+import { FormField as Field } from '@/components/common/form-field'
+import { MotionItem, MotionList } from '@/components/common/motion'
+import { PageHeader } from '@/components/common/page-header'
+import { StatusBadge } from '@/components/common/status-badge'
+import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { NativeSelect as Select } from '@/components/ui/native-select'
 
 const schema = z.object({
-  email: z.string().email('请输入有效邮箱'),
+  email: z.string().email(i18next.t('common.validEmailRequired')),
   role: z.enum(['owner', 'admin', 'developer', 'viewer']),
 })
 
@@ -32,10 +38,22 @@ const roleLabels: Record<ProjectMember['role'], string> = {
   viewer: 'Viewer',
 }
 
-export function ProjectMembersPage() {
-  const { projectId = '' } = useParams()
+export interface ProjectMembersPageHandle {
+  openAddMemberDialog: () => void
+}
+
+interface ProjectMembersPageProps {
+  embedded?: boolean
+  projectId?: string
+  ref?: Ref<ProjectMembersPageHandle>
+}
+
+export function ProjectMembersPage({ embedded = false, projectId: projectIdProp, ref }: ProjectMembersPageProps = {}) {
+  const { t } = useTranslation()
+  const { projectId: routeProjectId = '' } = useParams()
+  const projectId = projectIdProp ?? routeProjectId
   const queryClient = useQueryClient()
-  const [memberToDelete, setMemberToDelete] = useState<ProjectMember | null>(null)
+  const [dialogOpen, setDialogOpen] = useState(false)
   const members = useQuery({
     queryKey: ['project-members', projectId],
     queryFn: () => api.listProjectMembers(projectId),
@@ -50,8 +68,9 @@ export function ProjectMembersPage() {
   const createMember = useMutation({
     mutationFn: (values: MemberForm) => api.createProjectMember(projectId, values),
     onSuccess: () => {
-      toast.success('成员已添加')
+      toast.success(t('projectMembers.added'))
       form.reset({ email: '', role: 'viewer' })
+      setDialogOpen(false)
       queryClient.invalidateQueries({ queryKey: ['project-members', projectId] })
     },
     onError: error => toast.error(error.message),
@@ -61,7 +80,7 @@ export function ProjectMembersPage() {
     mutationFn: ({ memberId, role }: { memberId: string, role: ProjectMember['role'] }) =>
       api.updateProjectMember(projectId, memberId, { role }),
     onSuccess: () => {
-      toast.success('成员角色已更新')
+      toast.success(t('projectMembers.updated'))
       queryClient.invalidateQueries({ queryKey: ['project-members', projectId] })
     },
     onError: error => toast.error(error.message),
@@ -70,46 +89,41 @@ export function ProjectMembersPage() {
   const deleteMember = useMutation({
     mutationFn: (memberId: string) => api.deleteProjectMember(projectId, memberId),
     onSuccess: () => {
-      toast.success('成员已移除')
-      setMemberToDelete(null)
+      toast.success(t('projectMembers.removed'))
       queryClient.invalidateQueries({ queryKey: ['project-members', projectId] })
     },
     onError: error => toast.error(error.message),
   })
 
+  const openAddMemberDialog = () => {
+    form.reset({ email: '', role: 'viewer' })
+    setDialogOpen(true)
+  }
+
+  useImperativeHandle(ref, () => ({ openAddMemberDialog }))
+
   return (
     <div className="grid gap-6">
-      <PageHeader
-        actions={<Link className="text-sm text-primary hover:underline" to="/projects">返回项目</Link>}
-        description="Owner/Admin 可以维护成员，Developer 可管理应用，Viewer 只读。"
-        title="项目成员"
-      />
+      {!embedded && (
+        <PageHeader
+          actions={(
+            <div className="flex items-center gap-3">
+              <Button onClick={openAddMemberDialog}>
+                <UserPlus size={16} />
+                {t('projectMembers.addTitle')}
+              </Button>
+              <Link className="text-sm text-primary hover:underline" to="/projects">{t('backToProjectSpaces')}</Link>
+            </div>
+          )}
+          description={t('projectMembers.description')}
+          title={t('projectMembers.title')}
+        />
+      )}
 
-      <div className="grid gap-4 lg:grid-cols-[360px_1fr]">
-        <Card>
-          <form className="grid gap-3" onSubmit={form.handleSubmit(values => createMember.mutate(values))}>
-            <h2 className="text-base font-semibold">添加成员</h2>
-            <Field error={form.formState.errors.email?.message} label="用户邮箱" required>
-              <Input {...form.register('email')} aria-invalid={Boolean(form.formState.errors.email)} placeholder="user@example.com" />
-            </Field>
-            <Field error={form.formState.errors.role?.message} label="项目角色" required>
-              <Select {...form.register('role')} aria-invalid={Boolean(form.formState.errors.role)}>
-                <option value="viewer">Viewer</option>
-                <option value="developer">Developer</option>
-                <option value="admin">Admin</option>
-                <option value="owner">Owner</option>
-              </Select>
-            </Field>
-            <Button disabled={createMember.isPending || !form.formState.isValid} type="submit">
-              <UserPlus size={16} />
-              添加成员
-            </Button>
-          </form>
-        </Card>
-
+      <div className="grid gap-4">
         <MotionList className="grid gap-3">
-          {members.isError && <ErrorState title="成员加载失败" description="请确认项目存在，并且你有项目访问权限。" />}
-          {members.data?.length === 0 && <EmptyState title="还没有成员" description="至少需要保留一个 Owner。" />}
+          {members.isError && <ErrorState title={t('projectMembers.loadFailedTitle')} description={t('projectMembers.loadFailedDescription')} />}
+          {members.data?.length === 0 && <EmptyState title={t('projectMembers.emptyTitle')} description={t('projectMembers.emptyDescription')} />}
           {(members.data ?? []).map(member => (
             <MotionItem key={member.id}>
               <Card className="flex items-center justify-between gap-4">
@@ -126,14 +140,22 @@ export function ProjectMembersPage() {
                     value={member.role}
                     onChange={event => updateMember.mutate({ memberId: member.id, role: event.target.value as ProjectMember['role'] })}
                   >
-                    <option value="viewer">Viewer</option>
-                    <option value="developer">Developer</option>
-                    <option value="admin">Admin</option>
-                    <option value="owner">Owner</option>
+                    <option value="viewer">{t('projectMembers.roleViewer')}</option>
+                    <option value="developer">{t('projectMembers.roleDeveloper')}</option>
+                    <option value="admin">{t('projectMembers.roleAdmin')}</option>
+                    <option value="owner">{t('projectMembers.roleOwner')}</option>
                   </Select>
-                  <Button aria-label="移除成员" variant="ghost" onClick={() => setMemberToDelete(member)}>
-                    <Trash2 size={16} />
-                  </Button>
+                  <ConfirmDialog
+                    confirmText={t('projectMembers.removeConfirm')}
+                    description={t('projectMembers.removeDescription', { email: member.email })}
+                    pending={deleteMember.isPending}
+                    title={t('projectMembers.removeTitle')}
+                    onConfirm={() => deleteMember.mutate(member.id)}
+                  >
+                    <Button aria-label={t('projectMembers.removeAria')} variant="ghost">
+                      <Trash2 size={16} />
+                    </Button>
+                  </ConfirmDialog>
                 </div>
               </Card>
             </MotionItem>
@@ -141,15 +163,40 @@ export function ProjectMembersPage() {
         </MotionList>
       </div>
 
-      <ConfirmDialog
-        confirmText="移除成员"
-        description={`成员 ${memberToDelete?.email ?? ''} 将失去该项目访问权限。`}
-        open={Boolean(memberToDelete)}
-        pending={deleteMember.isPending}
-        title="移除项目成员"
-        onConfirm={() => memberToDelete && deleteMember.mutate(memberToDelete.id)}
-        onOpenChange={open => !open && setMemberToDelete(null)}
-      />
+      <Dialog
+        open={dialogOpen}
+        onOpenChange={(open) => {
+          setDialogOpen(open)
+          if (!open)
+            form.reset({ email: '', role: 'viewer' })
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('projectMembers.addTitle')}</DialogTitle>
+            <DialogDescription>{t('projectMembers.description')}</DialogDescription>
+          </DialogHeader>
+          <form className="grid gap-3" onSubmit={form.handleSubmit(values => createMember.mutate(values))}>
+            <Field error={form.formState.errors.email?.message} hint={t('projectMembers.emailHint')} label={t('projectMembers.email')} required>
+              <Input {...form.register('email')} aria-invalid={Boolean(form.formState.errors.email)} placeholder={t('projectMembers.emailPlaceholder')} />
+            </Field>
+            <Field error={form.formState.errors.role?.message} hint={t('projectMembers.roleHint')} label={t('projectMembers.role')} required>
+              <Select {...form.register('role')} aria-invalid={Boolean(form.formState.errors.role)}>
+                <option value="viewer">{t('projectMembers.roleViewer')}</option>
+                <option value="developer">{t('projectMembers.roleDeveloper')}</option>
+                <option value="admin">{t('projectMembers.roleAdmin')}</option>
+                <option value="owner">{t('projectMembers.roleOwner')}</option>
+              </Select>
+            </Field>
+            <DialogFooter>
+              <Button disabled={createMember.isPending || !form.formState.isValid} type="submit">
+                <UserPlus size={16} />
+                {t('projectMembers.add')}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

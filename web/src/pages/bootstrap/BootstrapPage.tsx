@@ -1,29 +1,34 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { Box, ShieldPlus } from 'lucide-react'
 import { useEffect } from 'react'
 import { useForm } from 'react-hook-form'
+import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { z } from 'zod'
-import { api } from '../../api/client'
-import { usePublicConfig } from '../../app/public-config-context'
-import { PageMotion } from '../../components/common/motion'
-import { Button } from '../../components/ui/button'
-import { Card } from '../../components/ui/card'
-import { Field, Input } from '../../components/ui/input'
+import { api } from '@/api/client'
+import { usePublicConfig } from '@/app/public-config-context'
+import { useSession } from '@/app/session-context'
+import { FormField as Field } from '@/components/common/form-field'
+import { PageMotion } from '@/components/common/motion'
+import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import i18next from '@/i18n'
 
 const schema = z.object({
-  email: z.string().email('请输入有效邮箱'),
-  name: z.string().min(1, '请输入管理员名称'),
-  password: z.string().min(8, '密码至少 8 位'),
+  email: z.string().email(i18next.t('common.validEmailRequired')),
+  name: z.string().min(1, i18next.t('bootstrap.nameRequired')),
+  password: z.string().min(8, i18next.t('usersPage.passwordMin')),
 })
 
 type BootstrapForm = z.infer<typeof schema>
 
 export function BootstrapPage() {
+  const { t, i18n } = useTranslation()
   const navigate = useNavigate()
-  const queryClient = useQueryClient()
+  const session = useSession()
   const configs = usePublicConfig()
   const status = useQuery({ queryKey: ['bootstrap-status'], queryFn: api.getBootstrapStatus })
   const form = useForm<BootstrapForm>({
@@ -41,15 +46,13 @@ export function BootstrapPage() {
       navigate('/login', { replace: true })
   }, [navigate, status.data?.initialized])
 
-  const initialize = useMutation({
-    mutationFn: (values: BootstrapForm) => api.initializeAdmin({ ...values, language: 'zh-CN' }),
-    onSuccess: () => {
-      toast.success('平台管理员已初始化')
-      queryClient.invalidateQueries({ queryKey: ['current-user'] })
-      queryClient.invalidateQueries({ queryKey: ['bootstrap-status'] })
-      navigate('/projects')
-    },
-    onError: error => toast.error(error.message),
+  const handleInitialize = form.handleSubmit((values) => {
+    session.initializeAdmin({ ...values, language: i18n.language === 'en-US' ? 'en-US' : 'zh-CN' })
+      .then(() => {
+        toast.success(t('bootstrap.success'))
+        navigate('/projects')
+      })
+      .catch(error => toast.error(error.message))
   })
 
   return (
@@ -64,29 +67,30 @@ export function BootstrapPage() {
             </span>
             <div>
               <h1 className="text-lg font-semibold">
-                初始化
+                {t('bootstrap.title')}
+                {' '}
                 {configs['site.title'] || 'Liteyuki DevOps'}
               </h1>
-              <p className="text-sm text-muted-foreground">创建第一个平台管理员账号。</p>
+              <p className="text-sm text-muted-foreground">{t('bootstrap.description')}</p>
             </div>
           </div>
 
-          <form className="grid gap-3" onSubmit={form.handleSubmit(values => initialize.mutate(values))}>
-            <Field error={form.formState.errors.email?.message} label="管理员邮箱" required>
+          <form className="grid gap-3" onSubmit={handleInitialize}>
+            <Field error={form.formState.errors.email?.message} hint={t('bootstrap.emailHint')} label={t('bootstrap.email')} required>
               <Input {...form.register('email')} aria-invalid={Boolean(form.formState.errors.email)} autoComplete="email" />
             </Field>
-            <Field error={form.formState.errors.name?.message} label="管理员名称" required>
+            <Field error={form.formState.errors.name?.message} hint={t('bootstrap.nameHint')} label={t('bootstrap.name')} required>
               <Input {...form.register('name')} aria-invalid={Boolean(form.formState.errors.name)} autoComplete="name" />
             </Field>
-            <Field error={form.formState.errors.password?.message} label="密码" required>
+            <Field error={form.formState.errors.password?.message} hint={t('bootstrap.passwordHint')} label={t('loginPage.password')} required>
               <Input {...form.register('password')} aria-invalid={Boolean(form.formState.errors.password)} autoComplete="new-password" type="password" />
             </Field>
-            <Button disabled={initialize.isPending || status.isLoading || !form.formState.isValid} type="submit">
+            <Button disabled={session.isLoggingIn || status.isLoading || !form.formState.isValid} type="submit">
               <ShieldPlus size={16} />
-              创建管理员
+              {t('bootstrap.create')}
             </Button>
             <p className="text-xs text-muted-foreground">
-              仅当平台没有任何 PlatformAdmin 时允许初始化。生产环境不会显示开发默认账号。
+              {t('bootstrap.note')}
             </p>
           </form>
         </Card>

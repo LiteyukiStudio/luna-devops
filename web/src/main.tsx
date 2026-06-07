@@ -5,6 +5,7 @@ import { BrowserRouter } from 'react-router-dom'
 import { Toaster } from 'sonner'
 import App from './App.tsx'
 import { PublicConfigProvider } from './app/public-config'
+import { SessionProvider } from './app/session'
 import { ThemeProvider } from './app/theme'
 import './index.css'
 import './i18n'
@@ -17,8 +18,10 @@ createRoot(document.getElementById('root')!).render(
       <ThemeProvider>
         <PublicConfigProvider>
           <BrowserRouter>
-            <App />
-            <Toaster richColors duration={4000} position="top-right" />
+            <SessionProvider>
+              <App />
+              <Toaster richColors duration={4000} position="top-right" />
+            </SessionProvider>
           </BrowserRouter>
         </PublicConfigProvider>
       </ThemeProvider>
