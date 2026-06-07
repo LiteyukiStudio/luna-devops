@@ -91,6 +91,27 @@ func (h *Handlers) ListBuilderAgents(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, paginatedResponse(paginateSlice(visible, pagination), total, pagination))
 }
 
+func (h *Handlers) DeleteBuilderAgent(ctx *gin.Context) {
+	user, ok := h.currentUser(ctx)
+	if !ok {
+		return
+	}
+	if user.Role != "platform_admin" {
+		writeError(ctx, http.StatusForbidden, "只有平台管理员可以删除构建器注册记录")
+		return
+	}
+	var builder model.BuilderAgent
+	if err := h.db.First(&builder, "id = ?", ctx.Param("builderId")).Error; err != nil {
+		writeError(ctx, http.StatusNotFound, "builder not found")
+		return
+	}
+	if err := h.db.Delete(&builder).Error; err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
+		return
+	}
+	ctx.Status(http.StatusNoContent)
+}
+
 func (h *Handlers) CreateBuildProvider(ctx *gin.Context) {
 	user, ok := h.currentUser(ctx)
 	if !ok {

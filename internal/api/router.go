@@ -86,6 +86,7 @@ func NewRouter(db *gorm.DB) *gin.Engine {
 		v1.PUT("/build/providers/:providerId", handlers.UpdateBuildProvider)
 		v1.DELETE("/build/providers/:providerId", handlers.DeleteBuildProvider)
 		v1.GET("/build/builders", handlers.ListBuilderAgents)
+		v1.DELETE("/build/builders/:builderId", handlers.DeleteBuilderAgent)
 		v1.GET("/build/variable-sets", handlers.ListBuildVariableSets)
 		v1.POST("/build/variable-sets", handlers.CreateBuildVariableSet)
 		v1.PUT("/build/variable-sets/:setId", handlers.UpdateBuildVariableSet)

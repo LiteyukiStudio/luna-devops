@@ -100,6 +100,7 @@ export function RegistriesPage() {
   const [buildProviderDialogOpen, setBuildProviderDialogOpen] = useState(false)
   const [editingBuildProvider, setEditingBuildProvider] = useState<BuildProvider | null>(null)
   const [buildProviderToDelete, setBuildProviderToDelete] = useState<BuildProvider | null>(null)
+  const [builderAgentToDelete, setBuilderAgentToDelete] = useState<BuilderAgent | null>(null)
   const [imageRepositorySearch, setImageRepositorySearch] = useState('')
   const [imageRepositoryResultsOpen, setImageRepositoryResultsOpen] = useState(false)
   const projects = useQuery({ queryKey: ['projects'], queryFn: api.listProjects })
@@ -291,6 +292,15 @@ export function RegistriesPage() {
     },
     onError: error => toast.error(error.message),
   })
+  const deleteBuilderAgent = useMutation({
+    mutationFn: api.deleteBuilderAgent,
+    onSuccess: () => {
+      toast.success(t('registriesPage.builderDeleted'))
+      setBuilderAgentToDelete(null)
+      queryClient.invalidateQueries({ queryKey: ['builder-agents'] })
+    },
+    onError: error => toast.error(error.message),
+  })
 
   const beginEdit = (registry: ArtifactRegistry) => {
     setEditingRegistry(registry)
@@ -464,7 +474,7 @@ export function RegistriesPage() {
             <MotionList className="grid gap-3">
               {(builderAgents.data?.items ?? []).map(builder => (
                 <MotionItem key={builder.id}>
-                  <BuilderAgentRow builder={builder} />
+                  <BuilderAgentRow builder={builder} onDelete={() => setBuilderAgentToDelete(builder)} />
                 </MotionItem>
               ))}
               {builderAgents.data?.items.length === 0 && <EmptyState title={t('registriesPage.emptyBuilderAgentsTitle')} description={t('registriesPage.emptyBuilderAgentsDescription')} />}
@@ -825,6 +835,15 @@ export function RegistriesPage() {
         onConfirm={() => buildProviderToDelete && deleteBuildProvider.mutate(buildProviderToDelete.id)}
         onOpenChange={open => !open && setBuildProviderToDelete(null)}
       />
+      <ConfirmDialog
+        confirmText={t('common.delete')}
+        description={t('registriesPage.deleteBuilderDescription', { name: builderAgentToDelete?.name ?? '' })}
+        open={Boolean(builderAgentToDelete)}
+        pending={deleteBuilderAgent.isPending}
+        title={t('registriesPage.deleteBuilderTitle')}
+        onConfirm={() => builderAgentToDelete && deleteBuilderAgent.mutate(builderAgentToDelete.id)}
+        onOpenChange={open => !open && setBuilderAgentToDelete(null)}
+      />
     </div>
   )
 }
@@ -920,7 +939,7 @@ function ImageRow({ image, registry }: { image: ContainerImage, registry?: Artif
   )
 }
 
-function BuilderAgentRow({ builder }: { builder: BuilderAgent }) {
+function BuilderAgentRow({ builder, onDelete }: { builder: BuilderAgent, onDelete: () => void }) {
   const { t } = useTranslation()
   const labels = splitText(builder.labels)
   const scopes = splitText(builder.scopes)
@@ -951,6 +970,9 @@ function BuilderAgentRow({ builder }: { builder: BuilderAgent }) {
         {labels.map(label => (
           <StatusBadge key={label}>{label}</StatusBadge>
         ))}
+        <Button aria-label={t('registriesPage.deleteBuilderAria')} variant="ghost" onClick={onDelete}>
+          <Trash2 size={16} />
+        </Button>
       </div>
     </div>
   )

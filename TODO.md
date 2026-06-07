@@ -306,6 +306,7 @@
 - [x] Builder 通信收敛为 Redis-only：API 投递任务到 Redis stream，Builder 消费任务并写事件，worker 消费事件落库。
 - [x] Builder 使用 `BUILDER_AGENT_NAME` 作为唯一标识自动注册，worker 定时同步 agent online/offline 状态到数据库。
 - [x] Builder 支持 `BUILDER_SCOPES` 和 `BUILDER_LABELS` 上报；API 触发构建时按应用构建标签、builder scope 和在线状态随机选择可用 Builder，并投递到 Builder 专属 Redis stream。
+- [x] 构建器页面支持删除已注册 Builder Agent 记录，便于清理已移除或长期离线的构建器。
 - [x] 构建运行支持重试，应用构建列表行操作菜单提供重试和右侧日志/日志流侧栏。
 - [x] 修复容器内 Builder 使用宿主机 Docker socket 时 workspace host path 误指向容器内路径导致 Docker Desktop mounts denied 的问题，并验证 neo-blog 前端镜像成功构建推送。
 - [ ] HTTP Builder 接入暂缓：后续如需外部 Builder，再设计平台生成 token、hash 存储、明文只展示一次、吊销/过期和 agent 绑定。

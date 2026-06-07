@@ -698,6 +698,8 @@ export const api = {
     request<BuildProvider[]>(`/build/providers${optionalProjectQuery(projectId)}`),
   listBuilderAgents: (params: PaginationParams = { page: 1, pageSize: 100 }) =>
     request<PaginatedResponse<BuilderAgent>>(`/build/builders?${paginationQuery(params)}`),
+  deleteBuilderAgent: (builderId: string) =>
+    request<void>(`/build/builders/${encodeURIComponent(builderId)}`, { method: 'DELETE' }),
   createBuildProvider: (payload: Omit<BuildProvider, 'id' | 'createdBy' | 'createdAt'>) =>
     request<BuildProvider>('/build/providers', { method: 'POST', body: JSON.stringify(payload) }),
   updateBuildProvider: (providerId: string, payload: Omit<BuildProvider, 'id' | 'createdBy' | 'createdAt'>) =>
