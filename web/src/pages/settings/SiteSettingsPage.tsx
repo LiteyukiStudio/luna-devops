@@ -11,7 +11,7 @@ import { FormField as Field } from '@/components/common/form-field'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Select } from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { TabsContent } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 
@@ -98,7 +98,7 @@ export function SiteSettingsPage() {
 }
 
 interface ConfigSectionProps {
-  definitions: Array<{ key: string, label: string, description: string, type: 'string' | 'textarea' | 'select', options?: string[] }>
+  definitions: Array<{ key: string, label: string, description: string, type: 'string' | 'textarea' | 'select', default: string, options?: string[] }>
   form: ReturnType<typeof useForm<Record<string, unknown>>>
 }
 
@@ -113,13 +113,7 @@ function ConfigSection({ definitions, form }: ConfigSectionProps) {
           {definition.type === 'textarea'
             ? <Textarea className="min-h-28 resize-y font-mono text-sm" {...form.register(definition.key)} />
             : definition.type === 'select'
-              ? (
-                  <Select {...form.register(definition.key)}>
-                    {(definition.options ?? []).map(option => (
-                      <option key={option} value={option}>{option}</option>
-                    ))}
-                  </Select>
-                )
+              ? <ConfigSelect definition={definition} form={form} />
               : <Input {...form.register(definition.key)} />}
           <p className="text-xs font-normal text-muted-foreground">
             {definition.key}
@@ -129,6 +123,23 @@ function ConfigSection({ definitions, form }: ConfigSectionProps) {
         </Field>
       ))}
     </div>
+  )
+}
+
+function ConfigSelect({ definition, form }: { definition: ConfigSectionProps['definitions'][number], form: ConfigSectionProps['form'] }) {
+  const value = form.watch(definition.key) as string | undefined
+
+  return (
+    <Select value={value || definition.default} onValueChange={nextValue => form.setValue(definition.key, nextValue, { shouldDirty: true, shouldValidate: true })}>
+      <SelectTrigger className="w-full">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {(definition.options ?? []).map(option => (
+          <SelectItem key={option} value={option}>{option}</SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   )
 }
 
