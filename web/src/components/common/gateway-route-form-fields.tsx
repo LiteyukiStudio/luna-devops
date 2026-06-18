@@ -9,6 +9,7 @@ export function GatewayRouteFormFields({
   applications = [],
   deploymentTargetIdField,
   deploymentTargets,
+  enabledField,
   hostField,
   pathField,
   servicePortField,
@@ -19,6 +20,7 @@ export function GatewayRouteFormFields({
   applications?: Array<{ id: string, name: string }>
   deploymentTargetIdField: UseFormRegisterReturn<'deploymentTargetId'>
   deploymentTargets: Array<{ id: string, label: string }>
+  enabledField: UseFormRegisterReturn<'enabled'>
   hostField: UseFormRegisterReturn<'host'>
   pathField: UseFormRegisterReturn<'path'>
   servicePortField: UseFormRegisterReturn<'servicePort'>
@@ -59,6 +61,13 @@ export function GatewayRouteFormFields({
           <option value="manual-cert">{t('gatewayRoutesPage.tlsManualCert')}</option>
         </Select>
       </Field>
+      <label className="flex items-start gap-3 rounded-md border border-border bg-muted/20 px-3 py-2 text-sm">
+        <input className="mt-1 size-4 accent-primary" type="checkbox" {...enabledField} />
+        <span className="grid gap-1">
+          <span className="font-medium text-foreground">{t('gatewayRoutesPage.enabled')}</span>
+          <span className="text-muted-foreground">{t('gatewayRoutesPage.enabledHint')}</span>
+        </span>
+      </label>
     </>
   )
 }

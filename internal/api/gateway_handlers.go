@@ -31,6 +31,7 @@ func (h *Handlers) ListGatewayRoutes(ctx *gin.Context) {
 		if err := query.Order(orderByClause(pagination, map[string]string{
 			"host":      "host",
 			"status":    "status",
+			"enabled":   "enabled",
 			"createdAt": "created_at",
 		}, "created_at")).Limit(pagination.PageSize).Offset(pagination.Offset()).Find(&routes).Error; err != nil {
 			writeError(ctx, http.StatusInternalServerError, err.Error())
@@ -114,6 +115,7 @@ func (h *Handlers) UpdateGatewayRoute(ctx *gin.Context) {
 	route.CNAMETarget = next.CNAMETarget
 	route.DNSStatus = next.DNSStatus
 	route.Status = next.Status
+	route.Enabled = next.Enabled
 	route.IsDefault = next.IsDefault
 	if err := h.db.Save(&route).Error; err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
@@ -259,6 +261,7 @@ func (h *Handlers) gatewayRouteFromInput(ctx *gin.Context, project model.Project
 		CNAMETarget:        h.gatewayCNAMETarget(project),
 		DNSStatus:          fallback(strings.TrimSpace(input.DNSStatus), "pending"),
 		Status:             fallback(strings.TrimSpace(input.Status), "pending"),
+		Enabled:            gatewayRouteInputEnabled(input.Enabled),
 		IsDefault:          input.IsDefault,
 		CreatedBy:          userID,
 	}, true
@@ -395,5 +398,13 @@ type gatewayRouteInput struct {
 	CertificateStatus  string `json:"certificateStatus"`
 	DNSStatus          string `json:"dnsStatus"`
 	Status             string `json:"status"`
+	Enabled            *bool  `json:"enabled"`
 	IsDefault          bool   `json:"isDefault"`
+}
+
+func gatewayRouteInputEnabled(value *bool) bool {
+	if value == nil {
+		return true
+	}
+	return *value
 }

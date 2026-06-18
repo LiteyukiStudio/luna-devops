@@ -15,6 +15,8 @@ const gatewayRoutesPage = {
   path: '路径',
   servicePort: '服务端口',
   tlsMode: 'TLS 模式',
+  enabled: '启用访问',
+  enabledHint: '关闭后会保留域名配置，但会撤销对应访问入口；重新启用后平台会再次下发。',
   cnameTarget: 'CNAME 目标',
   optionalGatewayConfig: '访问入口',
   optionalGatewayConfigDescription: '可选配置当前应用的访问入口；留空域名时平台会按项目空间、应用和部署环境自动生成唯一默认域名。',

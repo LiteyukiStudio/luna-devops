@@ -30,6 +30,8 @@ A deployment target answers how an application should ship:
 
 When build variables or runtime config sets are deleted, the platform removes those references from deployment targets that still point to them, so deployment targets do not keep stale configuration IDs.
 
+Gateway routes are enabled by default when created. To temporarily stop public access without losing the domain config, disable the route; the platform keeps the config and removes the runtime Ingress, then reapplies it when enabled again.
+
 ## Builds and releases
 
 Builds create images. Releases deploy images to runtime clusters.

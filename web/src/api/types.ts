@@ -560,7 +560,8 @@ export interface GatewayRoute {
   cnameName: string
   cnameTarget: string
   dnsStatus: 'pending' | 'verified' | 'failed'
-  status: 'pending' | 'ready' | 'failed'
+  status: 'pending' | 'ready' | 'active' | 'disabled' | 'failed'
+  enabled: boolean
   deleteStatus: 'active' | 'deleting' | 'delete_failed' | 'deleted' | string
   deleteMessage: string
   deleteStartedAt?: string | null

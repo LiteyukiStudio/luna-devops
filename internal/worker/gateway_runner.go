@@ -38,6 +38,13 @@ func (r *Runner) handleGatewayApply(ctx context.Context, task *asynq.Task) error
 	if err := r.db.First(&environment, "id = ? and project_id = ?", route.EnvironmentID, payload.ProjectID).Error; err != nil {
 		return err
 	}
+	if !route.Enabled {
+		if err := r.cleanupGatewayRuntimeResources(ctx, route); err != nil {
+			_ = r.db.Model(&route).Updates(map[string]any{"status": "failed"}).Error
+			return err
+		}
+		return r.db.Model(&route).Updates(map[string]any{"status": "disabled"}).Error
+	}
 
 	namespace := deploymentNamespace(project, environment)
 	if err := r.ensureProjectNamespace(ctx, namespace, project, environment); err != nil {

@@ -18,7 +18,7 @@ import { gatewayDeploymentTargetLabel } from './application-config-utils'
 
 type RouteForm = Omit<GatewayRoute, 'id' | 'projectId' | 'createdBy' | 'createdAt' | 'cnameName' | 'cnameTarget' | 'deleteStatus' | 'deleteMessage' | 'deleteStartedAt' | 'deleteFinishedAt'>
 
-const routeDefaults: RouteForm = { applicationId: '', certificateStatus: 'disabled', deploymentTargetId: '', dnsStatus: 'pending', environmentId: '', host: '', isDefault: false, path: '/', servicePort: 8080, status: 'pending', tlsMode: 'http-only' }
+const routeDefaults: RouteForm = { applicationId: '', certificateStatus: 'disabled', deploymentTargetId: '', dnsStatus: 'pending', enabled: true, environmentId: '', host: '', isDefault: false, path: '/', servicePort: 8080, status: 'pending', tlsMode: 'http-only' }
 
 export interface ApplicationGatewayPanelHandle {
   openCreateDialog: (environmentId?: string, deploymentTargetId?: string) => void
@@ -99,7 +99,12 @@ export function ApplicationGatewayPanel({ applicationId, deploymentTargets, envi
           { key: 'host', header: t('gatewayRoutesPage.host'), render: item => <GatewayRouteSummary item={item} /> },
           { key: 'path', header: t('gatewayRoutesPage.path'), render: item => item.path },
           { key: 'tls', header: t('gatewayRoutesPage.tlsMode'), render: item => item.tlsMode },
-          { key: 'status', header: t('common.status'), render: item => <StatusValueBadge value={item.status} /> },
+          { key: 'status', header: t('common.status'), render: item => (
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusValueBadge value={item.enabled ? 'enabled' : 'disabled'} />
+              <StatusValueBadge value={item.status} />
+            </div>
+          ) },
           { key: 'actions', header: t('common.actions'), className: 'text-right whitespace-nowrap', render: (item) => {
             const deleting = item.deleteStatus === 'deleting'
             return (
@@ -138,6 +143,7 @@ export function ApplicationGatewayPanel({ applicationId, deploymentTargets, envi
                 },
               })}
               deploymentTargets={deploymentTargetOptions}
+              enabledField={form.register('enabled')}
               hostField={form.register('host')}
               pathField={form.register('path')}
               servicePortField={form.register('servicePort', { valueAsNumber: true })}

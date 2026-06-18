@@ -698,6 +698,7 @@ CREATE TABLE IF NOT EXISTS gateway_routes (
   cname_target text NOT NULL DEFAULT '',
   dns_status text NOT NULL DEFAULT 'pending',
   status text NOT NULL DEFAULT 'pending',
+  enabled boolean NOT NULL DEFAULT true,
   delete_status text NOT NULL DEFAULT 'active',
   delete_message text NOT NULL DEFAULT '',
   delete_started_at timestamptz,

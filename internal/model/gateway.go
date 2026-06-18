@@ -21,6 +21,7 @@ type GatewayRoute struct {
 	CNAMETarget        string         `json:"cnameTarget"`
 	DNSStatus          string         `gorm:"not null;default:pending" json:"dnsStatus"`
 	Status             string         `gorm:"not null;default:pending" json:"status"`
+	Enabled            bool           `gorm:"not null;default:true" json:"enabled"`
 	DeleteStatus       string         `gorm:"index;not null;default:active" json:"deleteStatus"`
 	DeleteMessage      string         `gorm:"type:text;not null;default:''" json:"deleteMessage"`
 	DeleteStartedAt    *time.Time     `json:"deleteStartedAt"`

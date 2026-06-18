@@ -98,7 +98,15 @@ func (h *Handlers) CreateProject(ctx *gin.Context) {
 		UserID:    user.ID,
 		Role:      "owner",
 	}
-	_ = h.db.Create(&member).Error
+	if err := h.db.Create(&member).Error; err != nil {
+		writeError(ctx, http.StatusBadRequest, err.Error())
+		return
+	}
+	environment := defaultProductionEnvironment(project.ID, user.ID)
+	if err := h.db.Create(&environment).Error; err != nil {
+		writeError(ctx, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	ctx.JSON(http.StatusCreated, project)
 }

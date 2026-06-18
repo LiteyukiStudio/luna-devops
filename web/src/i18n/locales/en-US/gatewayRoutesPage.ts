@@ -15,6 +15,8 @@ const gatewayRoutesPage = {
   path: 'Path',
   servicePort: 'Service port',
   tlsMode: 'TLS mode',
+  enabled: 'Enable access',
+  enabledHint: 'When disabled, the domain config stays but the runtime entrypoint is removed. Re-enable it to apply the route again.',
   cnameTarget: 'CNAME target',
   optionalGatewayConfig: 'Gateway route',
   optionalGatewayConfigDescription: 'Optionally configure the application entrypoint. Leaving the domain empty generates a unique default domain from project, app, and deploy environment.',

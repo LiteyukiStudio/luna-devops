@@ -162,6 +162,21 @@ func environmentFromInput(projectID, userID string, input environmentInput, envi
 	}
 }
 
+func defaultProductionEnvironment(projectID, userID string) model.Environment {
+	return model.Environment{
+		ID:            id.New("env"),
+		ProjectID:     projectID,
+		Name:          "Production",
+		Slug:          "prod",
+		Stage:         "prod",
+		Replicas:      1,
+		CPURequest:    "500m",
+		MemoryRequest: "512Mi",
+		EnvVars:       "{}",
+		CreatedBy:     userID,
+	}
+}
+
 func validateEnvironmentSlug(ctx *gin.Context, slug string) bool {
 	slug = strings.TrimSpace(slug)
 	if len(slug) > environmentSlugMaxLength {
