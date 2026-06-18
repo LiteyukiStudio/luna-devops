@@ -1,6 +1,8 @@
 services:
   postgres:
     image: postgres:17-alpine
+    networks:
+      - devops-internal
     environment:
       POSTGRES_DB: devops
       POSTGRES_USER: devops
@@ -15,6 +17,8 @@ services:
 
   redis:
     image: redis:8-alpine
+    networks:
+      - devops-internal
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -28,6 +32,8 @@ services:
       target: runtime-embed-web
       args:
         TARGET: api
+    networks:
+      - devops-internal
     extra_hosts:
       - "dev.minikube.local:host-gateway"
     environment:
@@ -53,6 +59,8 @@ services:
       dockerfile: Dockerfile
       args:
         TARGET: worker
+    networks:
+      - devops-internal
     extra_hosts:
       - "dev.minikube.local:host-gateway"
     environment:
@@ -79,3 +87,6 @@ services:
 
 volumes:
   postgres-data:
+
+networks:
+  devops-internal:

@@ -37,13 +37,14 @@ type ExternalIdentity struct {
 }
 
 type AuthAdmissionPolicy struct {
-	ID                  string    `gorm:"primaryKey" json:"id"`
-	AllowLocalLogin     bool      `gorm:"not null;default:true" json:"allowLocalLogin"`
-	AllowOIDCLogin      bool      `gorm:"not null;default:true" json:"allowOidcLogin"`
-	AllowedEmailDomains string    `json:"allowedEmailDomains"`
-	AllowedOIDCGroups   string    `json:"allowedOidcGroups"`
-	InvitedEmails       string    `json:"invitedEmails"`
-	DefaultRole         string    `gorm:"not null;default:user" json:"defaultRole"`
-	CreatedAt           time.Time `json:"createdAt"`
-	UpdatedAt           time.Time `json:"updatedAt"`
+	ID                       string    `gorm:"primaryKey" json:"id"`
+	AllowLocalLogin          bool      `gorm:"not null;default:true" json:"allowLocalLogin"`
+	AllowOIDCLogin           bool      `gorm:"not null;default:true" json:"allowOidcLogin"`
+	RequireVerifiedOIDCEmail bool      `gorm:"not null;default:true" json:"requireVerifiedOidcEmail"`
+	AllowedEmailDomains      string    `json:"allowedEmailDomains"`
+	AllowedOIDCGroups        string    `json:"allowedOidcGroups"`
+	InvitedEmails            string    `json:"invitedEmails"`
+	DefaultRole              string    `gorm:"not null;default:user" json:"defaultRole"`
+	CreatedAt                time.Time `json:"createdAt"`
+	UpdatedAt                time.Time `json:"updatedAt"`
 }

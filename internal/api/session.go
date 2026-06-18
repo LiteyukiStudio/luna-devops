@@ -12,6 +12,8 @@ import (
 	"time"
 )
 
+const developmentRateLimit = 10000
+
 func (h *Handlers) currentUser(ctx *gin.Context) (model.User, bool) {
 	if strings.HasPrefix(strings.ToLower(ctx.GetHeader("Authorization")), "bearer ") {
 		return h.currentUserFromAccessToken(ctx)
@@ -182,26 +184,33 @@ func newRateLimiter(redisAddr ...string) *rateLimiter {
 	return &rateLimiter{redis: redis.NewClient(&redis.Options{Addr: addr})}
 }
 
-func (l *rateLimiter) allow(key string, limit int, window time.Duration) bool {
+func (l *rateLimiter) allow(key string, limit int, window time.Duration) (bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
 	defer cancel()
 	redisKey := "rate_limit:" + key
 	count, err := l.redis.Incr(ctx, redisKey).Result()
 	if err != nil {
-		return false
+		return false, err
 	}
 	if count == 1 {
 		_ = l.redis.Expire(ctx, redisKey, window).Err()
 	}
-	return count <= int64(limit)
+	return count <= int64(limit), nil
 }
 
 func (h *Handlers) allowSensitiveAuthAttempt(ctx *gin.Context, action string, limit int, window time.Duration) bool {
 	if h.rateLimiter == nil {
 		h.rateLimiter = newRateLimiter()
 	}
+	if h.mode == "development" && limit < developmentRateLimit {
+		limit = developmentRateLimit
+	}
 	key := action + ":" + ctx.ClientIP()
-	if h.rateLimiter.allow(key, limit, window) {
+	allowed, err := h.rateLimiter.allow(key, limit, window)
+	if allowed {
+		return true
+	}
+	if err != nil && h.mode == "development" {
 		return true
 	}
 	writeError(ctx, http.StatusTooManyRequests, "请求过于频繁，请稍后再试")

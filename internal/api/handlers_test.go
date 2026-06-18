@@ -715,6 +715,34 @@ func TestGitOAuthCallbackURL(t *testing.T) {
 	}
 }
 
+func TestOIDCCallbackURL(t *testing.T) {
+	if got := oidcCallbackURL("https://studio.example.com/"); got != "https://studio.example.com/api/v1/auth/oidc/callback" {
+		t.Fatalf("callback url = %q", got)
+	}
+	if got := oidcCallbackURL(""); got != "" {
+		t.Fatalf("empty callback url = %q", got)
+	}
+}
+
+func TestOIDCAdmissionEmailHonorsVerifiedRequirement(t *testing.T) {
+	claims := oidcIdentityClaims{Email: "USER@example.com", EmailVerified: false}
+	if _, ok := oidcAdmissionEmail(claims, true); ok {
+		t.Fatal("expected unverified email to be rejected when verification is required")
+	}
+
+	email, ok := oidcAdmissionEmail(claims, false)
+	if !ok {
+		t.Fatal("expected unverified email to be accepted when verification is optional")
+	}
+	if email != "user@example.com" {
+		t.Fatalf("email = %q", email)
+	}
+
+	if _, ok := oidcAdmissionEmail(oidcIdentityClaims{}, false); ok {
+		t.Fatal("expected empty email to be rejected")
+	}
+}
+
 func TestGitExternalBaseURLPrefersPublicEnv(t *testing.T) {
 	h := &Handlers{}
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())

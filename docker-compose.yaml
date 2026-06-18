@@ -1,6 +1,8 @@
 services:
   postgres:
     image: postgres:17-alpine
+    networks:
+      - devops-internal
     environment:
       POSTGRES_DB: devops
       POSTGRES_USER: devops
@@ -15,6 +17,8 @@ services:
 
   redis:
     image: redis:8-alpine
+    networks:
+      - devops-internal
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -23,6 +27,8 @@ services:
 
   api:
     image: liteyukistudio/devops-api:${DEVOPS_IMAGE_TAG:-nightly}
+    networks:
+      - devops-internal
     environment:
       API_ADDR: :8080
       APP_ENV: ${APP_ENV:-development}
@@ -42,6 +48,8 @@ services:
 
   worker:
     image: liteyukistudio/devops-worker:${DEVOPS_IMAGE_TAG:-nightly}
+    networks:
+      - devops-internal
     environment:
       APP_ENV: ${APP_ENV:-development}
       LOG_LEVEL: ${LOG_LEVEL:-debug}
@@ -66,3 +74,6 @@ services:
 
 volumes:
   postgres-data:
+
+networks:
+  devops-internal:

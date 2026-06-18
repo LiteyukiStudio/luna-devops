@@ -30,6 +30,22 @@ func (h *Handlers) ListAuthProviders(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, authProviderResponses(providers))
 }
 
+func (h *Handlers) GetOIDCCallbackURL(ctx *gin.Context) {
+	if !h.requirePlatformAdmin(ctx) {
+		return
+	}
+	publicBaseURL := externalBaseURL()
+	callbackURL := ""
+	if publicBaseURL != "" {
+		callbackURL = oidcCallbackURL(publicBaseURL)
+	}
+	ctx.JSON(http.StatusOK, gin.H{
+		"publicBaseUrl": publicBaseURL,
+		"callbackUrl":   callbackURL,
+		"configured":    callbackURL != "",
+	})
+}
+
 func (h *Handlers) CreateAuthProvider(ctx *gin.Context) {
 	if !h.requirePlatformAdmin(ctx) {
 		return

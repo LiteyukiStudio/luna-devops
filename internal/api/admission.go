@@ -41,6 +41,7 @@ func (h *Handlers) UpdateAuthAdmissionPolicy(ctx *gin.Context) {
 	policy := h.ensureAdmissionPolicy()
 	policy.AllowLocalLogin = input.AllowLocalLogin
 	policy.AllowOIDCLogin = input.AllowOIDCLogin
+	policy.RequireVerifiedOIDCEmail = input.RequireVerifiedOIDCEmail
 	policy.AllowedEmailDomains = strings.Join(normalizeList(input.AllowedEmailDomains, false), ",")
 	policy.AllowedOIDCGroups = strings.Join(normalizeList(input.AllowedOIDCGroups, true), ",")
 	policy.InvitedEmails = strings.Join(normalizeList(input.InvitedEmails, false), ",")
@@ -59,8 +60,8 @@ func (h *Handlers) evaluateAdmission(claims oidcIdentityClaims) error {
 		return errOIDCDisabled
 	}
 
-	email := normalizeEmail(claims.Email)
-	if email == "" || !claims.EmailVerified {
+	email, ok := oidcAdmissionEmail(claims, policy.RequireVerifiedOIDCEmail)
+	if !ok {
 		return errOIDCEmailRequired
 	}
 
@@ -94,18 +95,20 @@ func (h *Handlers) ensureAdmissionPolicy() model.AuthAdmissionPolicy {
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return model.AuthAdmissionPolicy{
-			ID:              defaultAdmissionPolicyID,
-			AllowLocalLogin: true,
-			AllowOIDCLogin:  true,
-			DefaultRole:     "user",
+			ID:                       defaultAdmissionPolicyID,
+			AllowLocalLogin:          true,
+			AllowOIDCLogin:           true,
+			RequireVerifiedOIDCEmail: true,
+			DefaultRole:              "user",
 		}
 	}
 
 	policy = model.AuthAdmissionPolicy{
-		ID:              defaultAdmissionPolicyID,
-		AllowLocalLogin: true,
-		AllowOIDCLogin:  true,
-		DefaultRole:     "user",
+		ID:                       defaultAdmissionPolicyID,
+		AllowLocalLogin:          true,
+		AllowOIDCLogin:           true,
+		RequireVerifiedOIDCEmail: true,
+		DefaultRole:              "user",
 	}
 	_ = h.db.Create(&policy).Error
 	return policy
@@ -113,13 +116,14 @@ func (h *Handlers) ensureAdmissionPolicy() model.AuthAdmissionPolicy {
 
 func admissionPolicyResponse(policy model.AuthAdmissionPolicy) gin.H {
 	return gin.H{
-		"id":                  policy.ID,
-		"allowLocalLogin":     policy.AllowLocalLogin,
-		"allowOidcLogin":      policy.AllowOIDCLogin,
-		"allowedEmailDomains": jsonList(splitCSV(policy.AllowedEmailDomains)),
-		"allowedOidcGroups":   jsonList(splitCSV(policy.AllowedOIDCGroups)),
-		"invitedEmails":       jsonList(splitCSV(policy.InvitedEmails)),
-		"defaultRole":         policy.DefaultRole,
+		"id":                       policy.ID,
+		"allowLocalLogin":          policy.AllowLocalLogin,
+		"allowOidcLogin":           policy.AllowOIDCLogin,
+		"requireVerifiedOidcEmail": policy.RequireVerifiedOIDCEmail,
+		"allowedEmailDomains":      jsonList(splitCSV(policy.AllowedEmailDomains)),
+		"allowedOidcGroups":        jsonList(splitCSV(policy.AllowedOIDCGroups)),
+		"invitedEmails":            jsonList(splitCSV(policy.InvitedEmails)),
+		"defaultRole":              policy.DefaultRole,
 	}
 }
 
@@ -199,11 +203,23 @@ func emailDomain(email string) string {
 	return strings.ToLower(domain)
 }
 
+func oidcAdmissionEmail(claims oidcIdentityClaims, requireVerified bool) (string, bool) {
+	email := normalizeEmail(claims.Email)
+	if email == "" {
+		return "", false
+	}
+	if requireVerified && !claims.EmailVerified {
+		return "", false
+	}
+	return email, true
+}
+
 type authAdmissionPolicyInput struct {
-	AllowLocalLogin     bool     `json:"allowLocalLogin"`
-	AllowOIDCLogin      bool     `json:"allowOidcLogin"`
-	AllowedEmailDomains []string `json:"allowedEmailDomains"`
-	AllowedOIDCGroups   []string `json:"allowedOidcGroups"`
-	InvitedEmails       []string `json:"invitedEmails"`
-	DefaultRole         string   `json:"defaultRole"`
+	AllowLocalLogin          bool     `json:"allowLocalLogin"`
+	AllowOIDCLogin           bool     `json:"allowOidcLogin"`
+	RequireVerifiedOIDCEmail bool     `json:"requireVerifiedOidcEmail"`
+	AllowedEmailDomains      []string `json:"allowedEmailDomains"`
+	AllowedOIDCGroups        []string `json:"allowedOidcGroups"`
+	InvitedEmails            []string `json:"invitedEmails"`
+	DefaultRole              string   `json:"defaultRole"`
 }

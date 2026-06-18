@@ -76,6 +76,7 @@ CREATE TABLE IF NOT EXISTS auth_admission_policies (
   id text PRIMARY KEY,
   allow_local_login boolean NOT NULL DEFAULT true,
   allow_oidc_login boolean NOT NULL DEFAULT true,
+  require_verified_oidc_email boolean NOT NULL DEFAULT true,
   allowed_email_domains text NOT NULL DEFAULT '',
   allowed_oidc_groups text NOT NULL DEFAULT '',
   invited_emails text NOT NULL DEFAULT '',

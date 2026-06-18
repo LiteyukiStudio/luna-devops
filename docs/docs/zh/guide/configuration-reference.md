@@ -12,10 +12,12 @@
 | 基本 | `SECRET_ENCRYPTION_KEY` | 空 | 加密密钥；生产环境必须设置稳定随机值。 |
 | 基本 | `DATABASE_URL` | `postgres://devops:devops@postgres:5432/devops?sslmode=disable` | PostgreSQL 连接串；换数据库或账号时改。 |
 | 基本 | `REDIS_ADDR` | `redis:6379` | Redis 地址；使用外部 Redis 时改。 |
-| 基本 | `PUBLIC_BASE_URL` | `http://localhost:8088` | 平台外部地址；有公网域名、HTTPS、反代时改。 |
+| 基本 | `PUBLIC_BASE_URL` | `http://localhost:8088` | 平台外部地址；有公网域名、HTTPS、反代时改。OIDC Redirect URI 会按 `{PUBLIC_BASE_URL}/api/v1/auth/oidc/callback` 生成。 |
 | 进阶 | `API_ADDR` | `:8080` | API 容器监听地址；自定义端口时改。 |
 | 进阶 | `APP_CORS_ORIGINS` | `http://localhost:8088` | 允许访问 API 的前端 Origin；前后端不同域时改。 |
 | 进阶 | `LOG_LEVEL` | `debug` | 日志级别；生产通常改为 `info`。 |
+
+OIDC 身份源的 Redirect URI 由 `PUBLIC_BASE_URL` 生成，后台“身份源”表单会直接展示可复制地址。准入策略默认要求 OIDC 返回非空邮箱且 `email_verified=true`；如果接入的是可信内部身份源，但无法返回标准 `email_verified`，可以在准入策略里关闭“要求 OIDC 邮箱已验证”，平台仍会要求邮箱非空。
 
 ## Worker 配置项
 

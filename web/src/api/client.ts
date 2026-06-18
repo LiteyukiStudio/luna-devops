@@ -34,6 +34,7 @@ import type {
   GitRepositoryBuildOptions,
   HookRun,
   HookRunLog,
+  OIDCCallbackConfig,
   PaginatedResponse,
   PaginationParams,
   Project,
@@ -98,6 +99,7 @@ export type {
   HookPhase,
   HookRun,
   HookRunLog,
+  OIDCCallbackConfig,
   PaginatedResponse,
   PaginationParams,
   Project,
@@ -330,6 +332,7 @@ export const api = {
   resumeLogin: (payload: { userId: string }) =>
     request<{ user: CurrentUser }>('/auth/login/resume', { method: 'POST', body: JSON.stringify(payload) }),
   logout: () => request<void>('/auth/logout', { method: 'POST' }),
+  getOIDCCallbackConfig: () => request<OIDCCallbackConfig>('/auth/oidc/callback-url'),
   listAuthProviders: (includeDisabled = false) =>
     request<AuthProvider[]>(`/auth/providers${includeDisabled ? '?includeDisabled=true' : ''}`),
   createAuthProvider: (payload: Omit<AuthProvider, 'id' | 'type' | 'createdAt' | 'clientSecretSet'> & { type?: 'oidc', clientSecret?: string }) =>

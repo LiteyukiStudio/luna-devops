@@ -1,7 +1,7 @@
 import type { AuthAdmissionPolicy, AuthProvider } from '@/api/client'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, Save, ShieldCheck } from 'lucide-react'
+import { Copy, Plus, Save, ShieldCheck } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -38,6 +38,7 @@ const providerSchema = z.object({
 const policySchema = z.object({
   allowLocalLogin: z.boolean(),
   allowOidcLogin: z.boolean(),
+  requireVerifiedOidcEmail: z.boolean(),
   allowedEmailDomains: z.string(),
   allowedOidcGroups: z.string(),
   invitedEmails: z.string(),
@@ -67,6 +68,7 @@ export function AuthProvidersPage() {
   const [providerDialogOpen, setProviderDialogOpen] = useState(false)
   const [activeTab, setActiveTab] = useState('providers')
   const providers = useQuery({ queryKey: ['auth-providers', 'admin'], queryFn: () => api.listAuthProviders(true) })
+  const oidcCallbackConfig = useQuery({ queryKey: ['auth-oidc-callback-config'], queryFn: api.getOIDCCallbackConfig })
   const policy = useQuery({ queryKey: ['auth-admission-policy'], queryFn: api.getAuthAdmissionPolicy })
   const providerForm = useForm<ProviderForm>({ resolver: zodResolver(providerSchema), mode: 'onChange', defaultValues: providerDefaults })
   const policyForm = useForm<PolicyForm>({
@@ -75,6 +77,7 @@ export function AuthProvidersPage() {
     defaultValues: {
       allowLocalLogin: true,
       allowOidcLogin: true,
+      requireVerifiedOidcEmail: true,
       allowedEmailDomains: '',
       allowedOidcGroups: '',
       invitedEmails: '',
@@ -107,6 +110,7 @@ export function AuthProvidersPage() {
     policyForm.reset({
       allowLocalLogin: policy.data.allowLocalLogin,
       allowOidcLogin: policy.data.allowOidcLogin,
+      requireVerifiedOidcEmail: policy.data.requireVerifiedOidcEmail,
       allowedEmailDomains: (policy.data.allowedEmailDomains ?? []).join(', '),
       allowedOidcGroups: (policy.data.allowedOidcGroups ?? []).join(', '),
       invitedEmails: (policy.data.invitedEmails ?? []).join(', '),
@@ -135,6 +139,7 @@ export function AuthProvidersPage() {
     mutationFn: (values: PolicyForm) => api.updateAuthAdmissionPolicy({
       allowLocalLogin: values.allowLocalLogin,
       allowOidcLogin: values.allowOidcLogin,
+      requireVerifiedOidcEmail: values.requireVerifiedOidcEmail,
       allowedEmailDomains: splitText(values.allowedEmailDomains),
       allowedOidcGroups: splitText(values.allowedOidcGroups),
       invitedEmails: splitText(values.invitedEmails),
@@ -146,6 +151,14 @@ export function AuthProvidersPage() {
     },
     onError: error => toast.error(error.message),
   })
+
+  const copyOIDCCallbackURL = () => {
+    const value = oidcCallbackConfig.data?.callbackUrl
+    if (!value)
+      return
+    navigator.clipboard.writeText(value)
+    toast.success(t('common.copied'))
+  }
 
   return (
     <div className="grid gap-6">
@@ -227,6 +240,22 @@ export function AuthProvidersPage() {
               <DialogDescription>{t('authProvidersPage.description')}</DialogDescription>
             </DialogHeader>
             <form className="grid gap-3" onSubmit={providerForm.handleSubmit(values => saveProvider.mutate(values))}>
+              <div className="grid gap-2 rounded-md border border-border bg-muted/40 p-3">
+                <p className="text-sm font-medium">{t('authProvidersPage.callbackUrl')}</p>
+                {oidcCallbackConfig.data?.configured
+                  ? (
+                      <div className="flex min-w-0 items-center gap-2">
+                        <code className="min-w-0 flex-1 truncate rounded bg-background px-2 py-1.5 text-xs text-muted-foreground">
+                          {oidcCallbackConfig.data.callbackUrl}
+                        </code>
+                        <Button aria-label={t('authProvidersPage.copyCallbackUrl')} size="icon" type="button" variant="outline" onClick={copyOIDCCallbackURL}>
+                          <Copy size={14} />
+                        </Button>
+                      </div>
+                    )
+                  : <p className="text-sm text-danger">{t('authProvidersPage.callbackUrlMissing')}</p>}
+                <p className="text-xs text-muted-foreground">{t('authProvidersPage.callbackUrlHint')}</p>
+              </div>
               <Field error={providerForm.formState.errors.name?.message} hint={t('authProvidersPage.nameHint')} label={t('authProvidersPage.name')} required>
                 <Input {...providerForm.register('name')} aria-invalid={Boolean(providerForm.formState.errors.name)} placeholder={t('authProvidersPage.namePlaceholder')} />
               </Field>
@@ -290,7 +319,12 @@ export function AuthProvidersPage() {
                   <input type="checkbox" {...policyForm.register('allowOidcLogin')} />
                   {t('authProvidersPage.allowOidcLogin')}
                 </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" {...policyForm.register('requireVerifiedOidcEmail')} />
+                  {t('authProvidersPage.requireVerifiedOidcEmail')}
+                </label>
               </div>
+              <p className="text-sm text-muted-foreground">{t('authProvidersPage.requireVerifiedOidcEmailHint')}</p>
               <Field error={policyForm.formState.errors.allowedEmailDomains?.message} hint={t('authProvidersPage.allowedEmailDomainsHint')} label={t('authProvidersPage.allowedEmailDomains')}>
                 <Textarea {...policyForm.register('allowedEmailDomains')} aria-invalid={Boolean(policyForm.formState.errors.allowedEmailDomains)} placeholder={t('authProvidersPage.allowedEmailDomainsPlaceholder')} />
               </Field>

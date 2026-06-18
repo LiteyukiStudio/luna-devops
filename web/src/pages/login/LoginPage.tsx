@@ -1,8 +1,8 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery } from '@tanstack/react-query'
 import i18next from 'i18next'
-import { LogIn } from 'lucide-react'
-import { useEffect } from 'react'
+import { LogIn, TriangleAlert } from 'lucide-react'
+import { useEffect, useMemo } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useSearchParams } from 'react-router-dom'
@@ -15,6 +15,7 @@ import { useSession } from '@/app/session-context'
 import { FormField as Field } from '@/components/common/form-field'
 import { PageMotion } from '@/components/common/motion'
 import { UserAvatar } from '@/components/common/user-avatar'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -34,6 +35,8 @@ export function LoginPage() {
   const session = useSession()
   const configs = usePublicConfig()
   const redirectTo = safeRedirect(searchParams.get('redirect'))
+  const authErrorCode = searchParams.get('auth_error')
+  const authError = useMemo(() => authErrorCode ? authErrorMessage(authErrorCode, t) : null, [authErrorCode, t])
   const status = useQuery({ queryKey: ['bootstrap-status'], queryFn: api.getBootstrapStatus })
   const providers = useQuery({ queryKey: ['auth-providers'], queryFn: () => api.listAuthProviders(false) })
   const form = useForm<LoginForm>({
@@ -57,10 +60,9 @@ export function LoginPage() {
   }, [navigate, status.data])
 
   useEffect(() => {
-    const errorCode = searchParams.get('auth_error')
-    if (errorCode)
-      toast.error(authErrorMessage(errorCode, t))
-  }, [searchParams, t])
+    if (authError)
+      toast.error(authError.title, { id: `auth-error-${authErrorCode}`, description: authError.description })
+  }, [authError, authErrorCode])
 
   const handleLogin = form.handleSubmit((values) => {
     session.login(values)
@@ -91,16 +93,16 @@ export function LoginPage() {
   return (
     <div className="grid min-h-screen place-items-center bg-background px-4 py-8 text-foreground">
       <PageMotion className="w-full max-w-5xl">
-        <Card className="overflow-hidden p-0">
+        <Card className="relative overflow-visible p-0">
           <div className="grid lg:min-h-[620px] lg:grid-cols-[1.08fr_0.92fr]">
-            <div className="relative hidden overflow-hidden bg-gradient-to-br from-[#eef5ff] via-[#f8fbff] to-[#e8fbf7] lg:block">
-              <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(47,123,244,0.12)_0,transparent_36%),linear-gradient(45deg,rgba(34,199,169,0.12)_0,transparent_42%)]" />
+            <div className="relative hidden overflow-visible rounded-l-[inherit] bg-gradient-to-br from-[#eef5ff] via-[#f8fbff] to-[#e8fbf7] lg:block">
+              <div className="absolute inset-0 rounded-l-[inherit] bg-[linear-gradient(135deg,rgba(47,123,244,0.12)_0,transparent_36%),linear-gradient(45deg,rgba(34,199,169,0.12)_0,transparent_42%)]" />
               <img
                 alt=""
-                className="pointer-events-none absolute bottom-0 left-1/2 h-[94%] w-auto max-w-none -translate-x-1/2 select-none object-contain object-bottom drop-shadow-[0_28px_42px_rgba(47,123,244,0.22)]"
+                className="pointer-events-none absolute bottom-0 left-[51.5%] z-10 h-[112%] w-auto max-w-none -translate-x-1/2 select-none object-contain object-bottom drop-shadow-[0_28px_42px_rgba(47,123,244,0.22)]"
                 src="/brand/mascot-liteyuki-catgirl-login-alpha.png"
               />
-              <div className="absolute inset-0 bg-gradient-to-r from-background/10 via-transparent to-background/30" />
+              <div className="absolute inset-0 z-20 rounded-l-[inherit] bg-gradient-to-r from-background/10 via-transparent to-background/30" />
             </div>
             <div className="flex min-w-0 items-center justify-center p-6 sm:p-8 lg:p-10">
               <div className="w-full max-w-sm">
@@ -115,6 +117,13 @@ export function LoginPage() {
                     <p className="text-sm text-muted-foreground">{configs['site.loginSubtitle'] || t('loginPage.subtitle')}</p>
                   </div>
                 </div>
+                {authError && (
+                  <Alert className="mb-4" variant="destructive">
+                    <TriangleAlert />
+                    <AlertTitle>{authError.title}</AlertTitle>
+                    <AlertDescription>{authError.description}</AlertDescription>
+                  </Alert>
+                )}
                 <form className="grid gap-3" onSubmit={handleLogin}>
                   {session.recentLoginUsers.length > 0 && (
                     <div className="grid gap-2">
@@ -199,14 +208,20 @@ function safeRedirect(value: string | null) {
 }
 
 function authErrorMessage(code: string, t: ReturnType<typeof useTranslation>['t']) {
-  const messages: Record<string, string> = {
-    oidc_state_invalid: t('loginPage.oidcStateInvalid'),
-    oidc_group_denied: t('loginPage.oidcGroupDenied'),
-    oidc_email_required: t('loginPage.oidcEmailRequired'),
-    oidc_admission_denied: t('loginPage.oidcAdmissionDenied'),
-    oidc_provider_disabled: t('loginPage.oidcProviderDisabled'),
-    oidc_bind_failed: t('loginPage.oidcBindFailed'),
-    auth_forbidden: t('loginPage.authForbidden'),
+  const messages: Record<string, { description: string, title: string }> = {
+    oidc_callback_invalid: { title: t('loginPage.oidcCallbackInvalidTitle'), description: t('loginPage.oidcCallbackInvalid') },
+    oidc_state_invalid: { title: t('loginPage.oidcStateInvalidTitle'), description: t('loginPage.oidcStateInvalid') },
+    oidc_group_denied: { title: t('loginPage.oidcGroupDeniedTitle'), description: t('loginPage.oidcGroupDenied') },
+    oidc_email_required: { title: t('loginPage.oidcEmailRequiredTitle'), description: t('loginPage.oidcEmailRequired') },
+    oidc_admission_denied: { title: t('loginPage.oidcAdmissionDeniedTitle'), description: t('loginPage.oidcAdmissionDenied') },
+    oidc_provider_disabled: { title: t('loginPage.oidcProviderDisabledTitle'), description: t('loginPage.oidcProviderDisabled') },
+    oidc_disabled: { title: t('loginPage.oidcDisabledTitle'), description: t('loginPage.oidcDisabled') },
+    oidc_discovery_failed: { title: t('loginPage.oidcDiscoveryFailedTitle'), description: t('loginPage.oidcDiscoveryFailed') },
+    oidc_code_invalid: { title: t('loginPage.oidcCodeInvalidTitle'), description: t('loginPage.oidcCodeInvalid') },
+    oidc_token_invalid: { title: t('loginPage.oidcTokenInvalidTitle'), description: t('loginPage.oidcTokenInvalid') },
+    oidc_bind_failed: { title: t('loginPage.oidcBindFailedTitle'), description: t('loginPage.oidcBindFailed') },
+    oidc_login_failed: { title: t('loginPage.oidcFallbackTitle'), description: t('loginPage.oidcFallback') },
+    auth_forbidden: { title: t('loginPage.authForbiddenTitle'), description: t('loginPage.authForbidden') },
   }
-  return messages[code] ?? t('loginPage.oidcFallback')
+  return messages[code] ?? { title: t('loginPage.oidcFallbackTitle'), description: t('loginPage.oidcFallback') }
 }

@@ -191,7 +191,7 @@ func (h *Handlers) oauth2Config(provider model.AuthProvider, oidcProvider *oidc.
 		ClientID:     provider.ClientID,
 		ClientSecret: h.resolveSecret(provider.ClientSecretRef),
 		Endpoint:     oidcProvider.Endpoint(),
-		RedirectURL:  externalBaseURL() + "/api/v1/auth/oidc/callback",
+		RedirectURL:  oidcCallbackURL(externalBaseURL()),
 		Scopes:       normalizeScopes(provider.Scopes),
 	}
 }
@@ -301,6 +301,14 @@ func (h *Handlers) redirectAuthError(ctx *gin.Context, code string) {
 
 func externalBaseURL() string {
 	return strings.TrimRight(os.Getenv("PUBLIC_BASE_URL"), "/")
+}
+
+func oidcCallbackURL(publicBaseURL string) string {
+	publicBaseURL = strings.TrimRight(strings.TrimSpace(publicBaseURL), "/")
+	if publicBaseURL == "" {
+		return ""
+	}
+	return publicBaseURL + "/api/v1/auth/oidc/callback"
 }
 
 func (h *Handlers) resolveSecret(ref string) string {

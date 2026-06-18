@@ -656,6 +656,12 @@ export interface AuthProvider {
   createdAt: string
 }
 
+export interface OIDCCallbackConfig {
+  publicBaseUrl: string
+  callbackUrl: string
+  configured: boolean
+}
+
 export interface ExternalIdentity {
   id: string
   userId: string
@@ -673,6 +679,7 @@ export interface AuthAdmissionPolicy {
   id: string
   allowLocalLogin: boolean
   allowOidcLogin: boolean
+  requireVerifiedOidcEmail: boolean
   allowedEmailDomains: string[]
   allowedOidcGroups: string[]
   invitedEmails: string[]

@@ -86,7 +86,15 @@ func (h *Handlers) registryCredentialInput(user model.User, registry model.Artif
 }
 
 func (h *Handlers) allowRegistrySearch(ctx *gin.Context, userID string) bool {
-	if h.rateLimiter.allow("registry_search:"+userID, 60, time.Minute) {
+	limit := 60
+	if h.mode == "development" {
+		limit = developmentRateLimit
+	}
+	allowed, err := h.rateLimiter.allow("registry_search:"+userID, limit, time.Minute)
+	if allowed {
+		return true
+	}
+	if err != nil && h.mode == "development" {
 		return true
 	}
 	writeError(ctx, http.StatusTooManyRequests, "镜像搜索请求过于频繁，请稍后再试")

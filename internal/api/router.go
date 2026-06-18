@@ -39,6 +39,7 @@ func NewRouterWithStaticFS(db *gorm.DB, staticFS fs.FS) *gin.Engine {
 		v1.POST("/auth/login/resume", handlers.ResumeLogin)
 		v1.POST("/auth/logout", handlers.Logout)
 		v1.GET("/auth/providers", handlers.ListAuthProviders)
+		v1.GET("/auth/oidc/callback-url", handlers.GetOIDCCallbackURL)
 		v1.POST("/auth/providers", handlers.CreateAuthProvider)
 		v1.PUT("/auth/providers/:providerId", handlers.UpdateAuthProvider)
 		v1.GET("/auth/admission-policy", handlers.GetAuthAdmissionPolicy)
