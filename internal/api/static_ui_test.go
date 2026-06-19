@@ -19,6 +19,9 @@ func TestStaticUIServesIndexWithoutRedirect(t *testing.T) {
 		"assets/app.js": {
 			Data: []byte("console.log('ok')"),
 		},
+		"liteyuki-logo.svg": {
+			Data: []byte("<svg></svg>"),
+		},
 	}
 	router := gin.New()
 	registerStaticUI(router, files)
@@ -37,6 +40,9 @@ func TestStaticUIServesIndexWithoutRedirect(t *testing.T) {
 		if !strings.Contains(rec.Body.String(), "Liteyuki DevOps") {
 			t.Fatalf("GET %s expected index body, got %q", path, rec.Body.String())
 		}
+		if got := rec.Header().Get("Cache-Control"); got != "no-cache, must-revalidate" {
+			t.Fatalf("GET %s Cache-Control = %q", path, got)
+		}
 	}
 }
 
@@ -48,6 +54,9 @@ func TestStaticUIServesAssetsAndSkipsAPI(t *testing.T) {
 		},
 		"assets/app.js": {
 			Data: []byte("console.log('ok')"),
+		},
+		"liteyuki-logo.svg": {
+			Data: []byte("<svg></svg>"),
 		},
 	}
 	router := gin.New()
@@ -61,6 +70,19 @@ func TestStaticUIServesAssetsAndSkipsAPI(t *testing.T) {
 	}
 	if !strings.Contains(assetRec.Body.String(), "console.log") {
 		t.Fatalf("asset expected file body, got %q", assetRec.Body.String())
+	}
+	if got := assetRec.Header().Get("Cache-Control"); got != "public, max-age=31536000, immutable" {
+		t.Fatalf("asset Cache-Control = %q", got)
+	}
+
+	publicReq := httptest.NewRequest(http.MethodGet, "/liteyuki-logo.svg", nil)
+	publicRec := httptest.NewRecorder()
+	router.ServeHTTP(publicRec, publicReq)
+	if publicRec.Code != http.StatusOK {
+		t.Fatalf("public asset expected 200, got %d", publicRec.Code)
+	}
+	if got := publicRec.Header().Get("Cache-Control"); got != "public, max-age=3600" {
+		t.Fatalf("public asset Cache-Control = %q", got)
 	}
 
 	apiReq := httptest.NewRequest(http.MethodGet, "/api/unknown", nil)

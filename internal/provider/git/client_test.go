@@ -2,6 +2,7 @@ package gitprovider
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -58,6 +59,22 @@ func TestDiscoverBuildOptionsUsesRecursiveTree(t *testing.T) {
 					{"path": "README.md", "type": "blob", "sha": "e"},
 				},
 			})
+		case "/api/v3/repos/snowykami/neo-blog/contents/Dockerfile":
+			writeJSON(t, w, map[string]any{
+				"path":     "Dockerfile",
+				"name":     "Dockerfile",
+				"sha":      "a",
+				"encoding": "base64",
+				"content":  base64.StdEncoding.EncodeToString([]byte("FROM nginx\nEXPOSE 8080/tcp 8443\n")),
+			})
+		case "/api/v3/repos/snowykami/neo-blog/contents/web/Dockerfile":
+			writeJSON(t, w, map[string]any{
+				"path":     "web/Dockerfile",
+				"name":     "Dockerfile",
+				"sha":      "c",
+				"encoding": "base64",
+				"content":  base64.StdEncoding.EncodeToString([]byte("FROM node\nEXPOSE 3000\n")),
+			})
 		default:
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
@@ -77,6 +94,25 @@ func TestDiscoverBuildOptionsUsesRecursiveTree(t *testing.T) {
 	}
 	if !reflect.DeepEqual(options.Directories, []string{".", "web", "web/src"}) {
 		t.Fatalf("directories = %#v", options.Directories)
+	}
+	if !reflect.DeepEqual(options.ExposedPorts["Dockerfile"], []int{8080, 8443}) {
+		t.Fatalf("root ports = %#v", options.ExposedPorts["Dockerfile"])
+	}
+	if !reflect.DeepEqual(options.ExposedPorts["web/Dockerfile"], []int{3000}) {
+		t.Fatalf("web ports = %#v", options.ExposedPorts["web/Dockerfile"])
+	}
+}
+
+func TestParseDockerfileExposedPorts(t *testing.T) {
+	ports := parseDockerfileExposedPorts(`
+FROM alpine
+# EXPOSE 9999
+EXPOSE 80/tcp 443
+expose 3000/udp 80
+EXPOSE $PORT
+`)
+	if !reflect.DeepEqual(ports, []int{80, 443, 3000}) {
+		t.Fatalf("ports = %#v", ports)
 	}
 }
 

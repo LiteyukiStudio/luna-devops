@@ -66,10 +66,11 @@ type ContentItem struct {
 }
 
 type BuildOptions struct {
-	Dockerfiles []string `json:"dockerfiles"`
-	Directories []string `json:"directories"`
-	Strategy    string   `json:"strategy"`
-	Truncated   bool     `json:"truncated"`
+	Dockerfiles  []string         `json:"dockerfiles"`
+	Directories  []string         `json:"directories"`
+	ExposedPorts map[string][]int `json:"exposedPorts"`
+	Strategy     string           `json:"strategy"`
+	Truncated    bool             `json:"truncated"`
 }
 
 type WebhookCreateResult struct {
@@ -270,6 +271,7 @@ func (c Client) DiscoverBuildOptions(ctx context.Context, owner, repo, ref strin
 	}
 	options, err := c.discoverBuildOptionsByTree(ctx, owner, repo, ref)
 	if err == nil && !options.Truncated {
+		c.populateDockerfileExposedPorts(ctx, owner, repo, ref, &options)
 		return options, nil
 	}
 	fallbackOptions, fallbackErr := c.discoverBuildOptionsByContents(ctx, owner, repo, ref)
@@ -282,7 +284,28 @@ func (c Client) DiscoverBuildOptions(ctx context.Context, owner, repo, ref strin
 	if err == nil && options.Truncated {
 		fallbackOptions.Truncated = true
 	}
+	c.populateDockerfileExposedPorts(ctx, owner, repo, ref, &fallbackOptions)
 	return fallbackOptions, nil
+}
+
+func (c Client) populateDockerfileExposedPorts(ctx context.Context, owner, repo, ref string, options *BuildOptions) {
+	if options == nil || len(options.Dockerfiles) == 0 {
+		return
+	}
+	exposedPorts := make(map[string][]int)
+	for _, dockerfile := range options.Dockerfiles {
+		content, err := c.ReadFile(ctx, owner, repo, dockerfile, ref)
+		if err != nil {
+			continue
+		}
+		ports := parseDockerfileExposedPorts(content.Content)
+		if len(ports) > 0 {
+			exposedPorts[dockerfile] = ports
+		}
+	}
+	if len(exposedPorts) > 0 {
+		options.ExposedPorts = exposedPorts
+	}
 }
 
 func (c Client) discoverBuildOptionsByTree(ctx context.Context, owner, repo, ref string) (BuildOptions, error) {
@@ -652,6 +675,31 @@ func PathEscapePath(value string) string {
 
 func isDockerfileName(name string) bool {
 	return name == "Dockerfile" || strings.HasPrefix(name, "Dockerfile.") || strings.HasSuffix(name, ".Dockerfile")
+}
+
+func parseDockerfileExposedPorts(content string) []int {
+	seen := map[int]bool{}
+	ports := []int{}
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 2 || !strings.EqualFold(fields[0], "EXPOSE") {
+			continue
+		}
+		for _, field := range fields[1:] {
+			value := strings.TrimSpace(strings.SplitN(field, "/", 2)[0])
+			port, err := strconv.Atoi(value)
+			if err != nil || port < 1 || port > 65535 || seen[port] {
+				continue
+			}
+			seen[port] = true
+			ports = append(ports, port)
+		}
+	}
+	return ports
 }
 
 func sortedPathSet(paths map[string]struct{}) []string {

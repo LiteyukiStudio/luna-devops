@@ -84,3 +84,25 @@ func TestEnsureBuildPolicyTranslatesPublicSourceIPBlocks(t *testing.T) {
 		t.Fatalf("expected CIDR exceptions in public rule")
 	}
 }
+
+func TestEnsureBuildPolicyTranslatesDNSSelectorPeer(t *testing.T) {
+	client := NewClientForInterface(fake.NewSimpleClientset())
+	if err := client.EnsureBuildPolicy(context.Background(), networkpolicy.RestrictedBuildPolicy("liteyuki-build")); err != nil {
+		t.Fatalf("EnsureBuildPolicy returned error: %v", err)
+	}
+
+	policy, err := client.client.NetworkingV1().NetworkPolicies("liteyuki-build").Get(context.Background(), "liteyuki-build-egress", metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get policy: %v", err)
+	}
+	if len(policy.Spec.Egress) != 1 || len(policy.Spec.Egress[0].To) != 3 {
+		t.Fatalf("dns egress = %#v", policy.Spec.Egress)
+	}
+	peer := policy.Spec.Egress[0].To[2]
+	if peer.NamespaceSelector == nil || peer.NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"] != "kube-system" {
+		t.Fatalf("namespace selector = %#v", peer.NamespaceSelector)
+	}
+	if peer.PodSelector == nil || peer.PodSelector.MatchLabels["k8s-app"] != "kube-dns" {
+		t.Fatalf("pod selector = %#v", peer.PodSelector)
+	}
+}

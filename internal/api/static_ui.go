@@ -25,6 +25,7 @@ func registerStaticUI(router *gin.Engine, staticFS fs.FS) {
 			return
 		}
 		if staticUIFileExists(staticFS, target) {
+			setStaticUICacheHeaders(ctx, target)
 			ctx.Request.URL.Path = "/" + target
 			fileServer.ServeHTTP(ctx.Writer, ctx.Request)
 			return
@@ -60,5 +61,18 @@ func serveStaticUIIndex(ctx *gin.Context, staticFS fs.FS) {
 		ctx.Status(http.StatusNotFound)
 		return
 	}
+	setStaticUICacheHeaders(ctx, "index.html")
 	ctx.Data(http.StatusOK, "text/html; charset=utf-8", data)
+}
+
+func setStaticUICacheHeaders(ctx *gin.Context, target string) {
+	header := ctx.Writer.Header()
+	switch {
+	case target == "index.html":
+		header.Set("Cache-Control", "no-cache, must-revalidate")
+	case strings.HasPrefix(target, "assets/"):
+		header.Set("Cache-Control", "public, max-age=31536000, immutable")
+	default:
+		header.Set("Cache-Control", "public, max-age=3600")
+	}
 }

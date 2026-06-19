@@ -113,15 +113,23 @@ func kubernetesEgressRules(rules []networkpolicy.EgressRule) []networkingv1.Netw
 		}
 		peers := make([]networkingv1.NetworkPolicyPeer, 0, len(rule.To))
 		for _, peer := range rule.To {
-			if strings.TrimSpace(peer.CIDR) == "" {
-				continue
-			}
-			peers = append(peers, networkingv1.NetworkPolicyPeer{
-				IPBlock: &networkingv1.IPBlock{
+			kubePeer := networkingv1.NetworkPolicyPeer{}
+			if strings.TrimSpace(peer.CIDR) != "" {
+				kubePeer.IPBlock = &networkingv1.IPBlock{
 					CIDR:   strings.TrimSpace(peer.CIDR),
 					Except: peer.Except,
-				},
-			})
+				}
+			}
+			if len(peer.NamespaceLabels) > 0 {
+				kubePeer.NamespaceSelector = &metav1.LabelSelector{MatchLabels: peer.NamespaceLabels}
+			}
+			if len(peer.PodLabels) > 0 {
+				kubePeer.PodSelector = &metav1.LabelSelector{MatchLabels: peer.PodLabels}
+			}
+			if kubePeer.IPBlock == nil && kubePeer.NamespaceSelector == nil && kubePeer.PodSelector == nil {
+				continue
+			}
+			peers = append(peers, kubePeer)
 		}
 		result = append(result, networkingv1.NetworkPolicyEgressRule{To: peers, Ports: ports})
 	}

@@ -212,6 +212,7 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
   })
   const dockerfileSuggestions = useMemo(() => targetBuildOptions.data?.dockerfiles ?? [], [targetBuildOptions.data?.dockerfiles])
   const buildContextSuggestions = useMemo(() => targetBuildOptions.data?.directories ?? [], [targetBuildOptions.data?.directories])
+  const dockerfileExposedPorts = useMemo(() => targetBuildOptions.data?.exposedPorts ?? {}, [targetBuildOptions.data?.exposedPorts])
   const buildDirectorySuggestions = buildContextSuggestions.filter(option => option !== '.')
   const dockerfilePathField = targetForm.register('dockerfilePath', { required: true })
   const releaseReadyTargets = useMemo(() => deploymentTargets.filter(target => deploymentTargetCanRelease(target, deployableBuildRuns)), [deployableBuildRuns, deploymentTargets])
@@ -428,8 +429,8 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
     const currentDockerfile = targetForm.getValues('dockerfilePath')?.trim()
     if (currentDockerfile && currentDockerfile !== 'Dockerfile')
       return
-    applyDockerfileBuildDefaults(targetForm, dockerfilePath, buildContextSuggestions)
-  }, [buildContextSuggestions, dockerfileSuggestions, editingTarget, targetDialogOpen, targetForm, targetSourceType])
+    applyDockerfileBuildDefaults(targetForm, dockerfilePath, buildContextSuggestions, dockerfileExposedPorts)
+  }, [buildContextSuggestions, dockerfileExposedPorts, dockerfileSuggestions, editingTarget, targetDialogOpen, targetForm, targetSourceType])
   const createRelease = useMutation({
     mutationFn: (values: ReleaseForm) => api.createRelease(projectId, values),
     onSuccess: () => {
@@ -763,7 +764,7 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
                           placeholder="Dockerfile"
                           onChange={(event) => {
                             dockerfilePathField.onChange(event)
-                            applyDockerfileBuildDefaults(targetForm, event.target.value, buildContextSuggestions)
+                            applyDockerfileBuildDefaults(targetForm, event.target.value, buildContextSuggestions, dockerfileExposedPorts)
                           }}
                         />
                         <datalist id="deployment-target-dockerfile-options">
@@ -1450,7 +1451,7 @@ function normalizeRuntimeConfigPayload(values: ProjectRuntimeConfigSetPayload): 
   }
 }
 
-function applyDockerfileBuildDefaults(form: UseFormReturn<DeploymentTargetPayload>, dockerfilePath: string, directories: string[]) {
+function applyDockerfileBuildDefaults(form: UseFormReturn<DeploymentTargetPayload>, dockerfilePath: string, directories: string[], exposedPorts: Record<string, number[]> = {}) {
   const normalizedDockerfile = dockerfilePath.trim()
   if (!normalizedDockerfile)
     return
@@ -1458,6 +1459,9 @@ function applyDockerfileBuildDefaults(form: UseFormReturn<DeploymentTargetPayloa
   form.setValue('dockerfilePath', normalizedDockerfile, { shouldDirty: true, shouldValidate: true })
   form.setValue('buildContext', buildContext, { shouldDirty: true, shouldValidate: true })
   form.setValue('buildDirectory', buildContext === '.' ? '' : buildContext, { shouldDirty: true, shouldValidate: true })
+  const detectedPort = exposedPorts[normalizedDockerfile]?.find(port => Number.isInteger(port) && port > 0 && port <= 65535)
+  if (detectedPort)
+    form.setValue('servicePort', detectedPort, { shouldDirty: true, shouldValidate: true })
 }
 
 function defaultBuildContextForDockerfile(dockerfilePath: string, directories: string[]) {

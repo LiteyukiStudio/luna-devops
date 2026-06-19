@@ -23,8 +23,10 @@ type EgressRule struct {
 }
 
 type Peer struct {
-	CIDR   string
-	Except []string
+	CIDR            string
+	Except          []string
+	NamespaceLabels map[string]string
+	PodLabels       map[string]string
 }
 
 type Port struct {
@@ -62,6 +64,14 @@ func RestrictedBuildPolicy(namespace string) BuildPolicy {
 				To: []Peer{
 					{CIDR: "0.0.0.0/0"},
 					{CIDR: "::/0"},
+					{
+						NamespaceLabels: map[string]string{
+							"kubernetes.io/metadata.name": "kube-system",
+						},
+						PodLabels: map[string]string{
+							"k8s-app": "kube-dns",
+						},
+					},
 				},
 				Ports: []Port{
 					{Protocol: "UDP", Number: 53},

@@ -116,11 +116,12 @@ func (h *Handlers) GetGitRepositoryBuildOptions(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, gin.H{
-		"dockerfiles": options.Dockerfiles,
-		"directories": options.Directories,
-		"strategy":    options.Strategy,
-		"truncated":   options.Truncated,
-		"durationMs":  time.Since(started).Milliseconds(),
+		"dockerfiles":  options.Dockerfiles,
+		"directories":  options.Directories,
+		"exposedPorts": options.ExposedPorts,
+		"strategy":     options.Strategy,
+		"truncated":    options.Truncated,
+		"durationMs":   time.Since(started).Milliseconds(),
 	})
 }
 

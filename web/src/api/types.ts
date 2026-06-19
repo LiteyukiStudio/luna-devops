@@ -141,6 +141,7 @@ export interface GitContentItem {
 export interface GitRepositoryBuildOptions {
   dockerfiles: string[]
   directories: string[]
+  exposedPorts?: Record<string, number[]>
   strategy: string
   truncated: boolean
   durationMs: number

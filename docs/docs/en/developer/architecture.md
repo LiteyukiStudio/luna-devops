@@ -38,6 +38,8 @@ Handlers parse parameters and shape responses. Business logic belongs in service
 
 Shared modules under `web/src` must use `@/` root imports. User-visible copy must go through i18n.
 
+Production images embed the frontend build into the API. `index.html` uses revalidation, Vite `assets/` files use one-year immutable caching, and non-hashed public assets use short caching.
+
 ## Docs site
 
 `docs/` is the Rspress documentation site. When a feature, flow, or user experience changes, update the user docs here as part of the change.
