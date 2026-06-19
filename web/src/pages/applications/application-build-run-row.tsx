@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { buildRunImageRef } from '@/components/common/deployment-build-runs'
+import { HoverText } from '@/components/common/hover-text'
 import { StatusValueBadge } from '@/components/common/status-badge'
 import { formatElapsedDuration, formatSmartDateTime } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
@@ -23,6 +24,8 @@ const buildJobProgressKeys = new Set([
   'push_image_manifest',
   'registry_auth',
 ])
+
+const buildFailedStatuses = new Set(['failed', 'lost', 'timeout'])
 
 export function ApplicationBuildRunRow({ binding, deploymentTargetName, canceling, deleting, jobs, latestJob, onCancel, onDelete, onOpenLogs, onRetry, retrying, run }: {
   binding: { cloneUrl?: string, defaultBranch: string, gitAccountId: string, owner: string, repo: string }
@@ -46,6 +49,7 @@ export function ApplicationBuildRunRow({ binding, deploymentTargetName, cancelin
   const sourceAuthor = buildRunSourceAuthor(run)
   const imageReady = run.status === 'succeeded' && Boolean(targetImage)
   const liveState = buildRunLiveState(run, latestJob, t)
+  const failureMessage = buildRunFailureMessage(run, latestJob, t)
   const duration = formatBuildDuration(run, t)
   const commitUrl = buildCommitUrl(binding, run.sourceCommit)
   const authorUrl = buildAuthorUrl(binding, run)
@@ -110,16 +114,29 @@ export function ApplicationBuildRunRow({ binding, deploymentTargetName, cancelin
             <button
               className="inline-flex max-w-full min-w-0 items-center gap-1.5 rounded-md border border-border bg-muted/60 px-2 py-1 text-left transition-colors hover:border-primary/50 hover:text-primary disabled:hover:border-border disabled:hover:text-muted-foreground"
               disabled={!imageReady}
-              title={imageReady ? targetImage : liveState}
+              title={imageReady ? targetImage : failureMessage ? undefined : liveState}
               type="button"
               onClick={copyImageRef}
             >
-              {imageReady
-                ? <Package className="size-3.5 shrink-0 text-muted-foreground" />
-                : <BuildRunStatusIcon compact status={run.status} />}
-              <span className="min-w-0 truncate font-mono">
-                {imageReady ? targetImage : liveState}
-              </span>
+              {failureMessage
+                ? (
+                    <HoverText className="max-w-full" value={failureMessage}>
+                      <span className="inline-flex min-w-0 items-center gap-1.5">
+                        <BuildRunStatusIcon compact status={run.status} />
+                        <span className="min-w-0 truncate font-mono">{liveState}</span>
+                      </span>
+                    </HoverText>
+                  )
+                : (
+                    <>
+                      {imageReady
+                        ? <Package className="size-3.5 shrink-0 text-muted-foreground" />
+                        : <BuildRunStatusIcon compact status={run.status} />}
+                      <span className="min-w-0 truncate font-mono">
+                        {imageReady ? targetImage : liveState}
+                      </span>
+                    </>
+                  )}
             </button>
           </div>
         </div>
@@ -298,6 +315,15 @@ function buildRunLiveState(run: BuildRun, latestJob: BuildJob | undefined, t: Re
   if (latestJob?.status === 'running' && progress)
     return progress
   return t(`buildsPage.statuses.${run.status}`)
+}
+
+function buildRunFailureMessage(run: BuildRun, latestJob: BuildJob | undefined, t: ReturnType<typeof useTranslation>['t']) {
+  if (!buildFailedStatuses.has(run.status) && !buildFailedStatuses.has(latestJob?.status ?? ''))
+    return ''
+  const message = latestJob?.message?.trim()
+  if (message && !buildJobProgressKeys.has(message))
+    return message
+  return latestJob ? t('buildsPage.failureReasonUnavailable') : t('buildsPage.failureReasonNoJob')
 }
 
 function buildJobProgressLabel(message: string | undefined, t: ReturnType<typeof useTranslation>['t']) {

@@ -102,6 +102,7 @@ export function BillingPage() {
     ? t('billingPage.selectedProjects', { count: selectedProjectIds.length })
     : t('billingPage.allRelatedProjects')
   const summary = summaryQuery.data
+  const balanceStatus = normalizeBalanceStatus(summary?.balanceStatus)
 
   const ledgerColumns = useMemo<DataListColumn<BillingLedgerEntry>[]>(() => [
     {
@@ -203,10 +204,10 @@ export function BillingPage() {
 
   return (
     <div className="grid min-w-0 gap-5">
-      {summary && summary.balanceStatus !== 'ok' && (
+      {summary && balanceStatus !== 'ok' && (
         <Card className={cn(
           'flex min-w-0 items-start gap-3 rounded-2xl border p-4',
-          summary.balanceStatus === 'insufficient'
+          balanceStatus === 'insufficient'
             ? 'border-destructive/30 bg-destructive/5 text-destructive'
             : 'border-amber-300/60 bg-amber-50 text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200',
         )}
@@ -214,8 +215,8 @@ export function BillingPage() {
           <AlertTriangle className="mt-0.5 size-5 shrink-0" />
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <p className="font-medium">{t(`billingPage.balanceStatuses.${summary.balanceStatus}`)}</p>
-              <StatusBadge tone={summary.balanceStatus === 'insufficient' ? 'danger' : 'warning'}>
+              <p className="font-medium">{t(`billingPage.balanceStatuses.${balanceStatus}`)}</p>
+              <StatusBadge tone={balanceStatus === 'insufficient' ? 'danger' : 'warning'}>
                 {billingDisplay.formatAmountWithUnit(summary.availableCredits)}
               </StatusBadge>
             </div>
@@ -262,8 +263,8 @@ export function BillingPage() {
             <h3 className="text-base font-semibold text-foreground">{t('billingPage.monthlyCategoriesTitle')}</h3>
             <p className="text-sm text-muted-foreground">{t('billingPage.monthlyCategoriesDescription')}</p>
           </div>
-          <StatusBadge tone={balanceStatusTone(summary?.balanceStatus)}>
-            {t(`billingPage.balanceStatuses.${summary?.balanceStatus ?? 'ok'}`)}
+          <StatusBadge tone={balanceStatusTone(balanceStatus)}>
+            {t(`billingPage.balanceStatuses.${balanceStatus}`)}
           </StatusBadge>
         </div>
         <div className="mt-4 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
@@ -492,7 +493,15 @@ function amountToneClass(value: string) {
   return 'text-muted-foreground'
 }
 
-function balanceStatusTone(status: string | undefined): StatusTone {
+type BalanceStatus = 'ok' | 'low' | 'insufficient'
+
+function normalizeBalanceStatus(status: string | undefined): BalanceStatus {
+  if (status === 'low' || status === 'insufficient')
+    return status
+  return 'ok'
+}
+
+function balanceStatusTone(status: BalanceStatus): StatusTone {
   if (status === 'insufficient')
     return 'danger'
   if (status === 'low')

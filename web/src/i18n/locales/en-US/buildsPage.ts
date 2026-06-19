@@ -73,6 +73,8 @@ const buildsPage = {
   logsUpdated: 'Logs loaded',
   imageRefCopied: 'Image reference copied',
   noLogs: 'No build logs yet',
+  failureReasonUnavailable: 'The latest job did not record a clear failure reason. Open logs to inspect the last output.',
+  failureReasonNoJob: 'This build run is not linked to a build job. Refresh and try again.',
   workflowRunCount: '{{count}} build runs',
   applicationRunsDescription: 'Showing build records, branches, images, and latest job status for this application.',
   filterRuns: 'Filter build runs',

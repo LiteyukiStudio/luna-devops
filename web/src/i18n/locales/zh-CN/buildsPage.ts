@@ -73,6 +73,8 @@ const buildsPage = {
   logsUpdated: '日志已加载',
   imageRefCopied: '镜像标签已复制',
   noLogs: '暂无构建日志',
+  failureReasonUnavailable: '最近任务未记录明确失败原因，请打开日志查看最后输出。',
+  failureReasonNoJob: '构建运行未关联到构建任务，请刷新后重试。',
   workflowRunCount: '{{count}} 次构建运行',
   applicationRunsDescription: '显示当前应用的构建记录、分支、镜像和最近任务状态。',
   filterRuns: '筛选构建运行',
