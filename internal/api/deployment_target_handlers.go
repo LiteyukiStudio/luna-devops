@@ -79,6 +79,9 @@ func (h *Handlers) CreateDeploymentTarget(ctx *gin.Context) {
 	if !bindJSON(ctx, &input) {
 		return
 	}
+	if !h.ensureBillingAllowsDeployChange(ctx, project.ID) {
+		return
+	}
 	input.Enabled = true
 	target, ok := h.deploymentTargetFromInput(ctx, user, app, input, id.New("dplt"), nil)
 	if !ok {
@@ -121,6 +124,9 @@ func (h *Handlers) UpdateDeploymentTarget(ctx *gin.Context) {
 	}
 	var input deploymentTargetInput
 	if !bindJSON(ctx, &input) {
+		return
+	}
+	if !h.ensureBillingAllowsDeployChange(ctx, project.ID) {
 		return
 	}
 	target, ok := h.deploymentTargetFromInput(ctx, user, app, input, existing.ID, decodeSecretRefs(existing.SecretFiles))

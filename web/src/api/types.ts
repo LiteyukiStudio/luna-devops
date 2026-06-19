@@ -611,6 +611,13 @@ export interface BillingRateRulePayload {
   enabled: boolean
 }
 
+export interface BillingWalletTransactionPayload {
+  projectId: string
+  amountCredits: string
+  type: 'credit' | 'adjustment'
+  description: string
+}
+
 export interface BillingLedgerEntry {
   id: string
   projectId: string

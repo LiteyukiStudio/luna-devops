@@ -1,33 +1,48 @@
 import type { ReactNode } from 'react'
 import type { BillingLedgerEntry, BillingUsageRecord, Project } from '@/api/client'
 import type { DataListColumn } from '@/components/common/data-list'
-import { useQuery } from '@tanstack/react-query'
-import { Coins, CreditCard, TrendingDown } from 'lucide-react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Coins, CreditCard, Plus, TrendingDown } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { api } from '@/api/client'
+import { useSession } from '@/app/session-context'
 import { ContentTabs } from '@/components/common/content-tabs'
 import { DataList } from '@/components/common/data-list'
+import { FormField as Field } from '@/components/common/form-field'
 import { ProjectSpaceMultiSelect } from '@/components/common/project-space-select'
 import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
 import { formatSmartDateTime } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { TabsContent } from '@/components/ui/tabs'
+import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 
 const PAGE_SIZE = 10
 
 export function BillingPage() {
   const { i18n, t } = useTranslation()
+  const { user } = useSession()
+  const queryClient = useQueryClient()
   const [activeTab, setActiveTab] = useState('ledger')
   const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([])
   const [ledgerPage, setLedgerPage] = useState(1)
   const [usagePage, setUsagePage] = useState(1)
+  const [transactionOpen, setTransactionOpen] = useState(false)
+  const [transactionProjectId, setTransactionProjectId] = useState('')
+  const [transactionType, setTransactionType] = useState<'credit' | 'adjustment'>('credit')
+  const [transactionAmount, setTransactionAmount] = useState('')
+  const [transactionDescription, setTransactionDescription] = useState('')
+  const canManageBilling = user?.role === 'platform_admin'
 
   const projectsQuery = useQuery({
-    queryKey: ['billing', 'projects'],
-    queryFn: () => api.listProjectsPage({ page: 1, pageSize: 100, scope: 'related', sortBy: 'lastUsedAt', sortOrder: 'desc' }),
+    queryKey: ['billing', 'projects', canManageBilling],
+    queryFn: () => api.listProjectsPage({ page: 1, pageSize: 100, scope: canManageBilling ? 'all' : 'related', sortBy: 'lastUsedAt', sortOrder: 'desc' }),
   })
   const projectItems = useMemo(() => projectsQuery.data?.items ?? [], [projectsQuery.data?.items])
   const projectMap = useMemo(() => new Map(projectItems.map(project => [project.id, project])), [projectItems])
@@ -56,6 +71,22 @@ export function BillingPage() {
       sortBy: 'createdAt',
       sortOrder: 'desc',
     }),
+  })
+  const createTransaction = useMutation({
+    mutationFn: () => api.createBillingWalletTransaction({
+      projectId: transactionProjectId,
+      amountCredits: transactionAmount,
+      type: transactionType,
+      description: transactionDescription,
+    }),
+    onSuccess: () => {
+      toast.success(t('billingPage.walletTransactionCreated'))
+      setTransactionOpen(false)
+      setTransactionAmount('')
+      setTransactionDescription('')
+      queryClient.invalidateQueries({ queryKey: ['billing'] })
+    },
+    onError: error => toast.error(error.message),
   })
 
   function handleProjectFilterChange(projectIds: string[]) {
@@ -209,6 +240,19 @@ export function BillingPage() {
                 {t('billingPage.clearProjectFilter')}
               </Button>
             )}
+            {canManageBilling && (
+              <Button
+                className="h-11 rounded-2xl"
+                type="button"
+                onClick={() => {
+                  setTransactionProjectId(selectedProjectIds[0] ?? projectItems[0]?.id ?? '')
+                  setTransactionOpen(true)
+                }}
+              >
+                <Plus size={16} />
+                {t('billingPage.createWalletTransaction')}
+              </Button>
+            )}
           </div>
         )}
         value={activeTab}
@@ -264,6 +308,72 @@ export function BillingPage() {
           />
         </TabsContent>
       </ContentTabs>
+
+      <Dialog open={transactionOpen} onOpenChange={setTransactionOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('billingPage.walletTransactionTitle')}</DialogTitle>
+            <DialogDescription>{t('billingPage.walletTransactionDescription')}</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <Field label={t('billingPage.project')}>
+              <Select value={transactionProjectId} onValueChange={setTransactionProjectId}>
+                <SelectTrigger>
+                  <SelectValue placeholder={t('billingPage.selectProject')} />
+                </SelectTrigger>
+                <SelectContent>
+                  {projectItems.map(project => (
+                    <SelectItem key={project.id} value={project.id}>
+                      {project.name}
+                      {' · '}
+                      {project.slug}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field hint={t('billingPage.walletTransactionTypeHint')} label={t('billingPage.walletTransactionType')}>
+              <Select value={transactionType} onValueChange={value => setTransactionType(value as 'credit' | 'adjustment')}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="credit">{t('billingPage.walletTransactionTypes.credit')}</SelectItem>
+                  <SelectItem value="adjustment">{t('billingPage.walletTransactionTypes.adjustment')}</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field hint={t('billingPage.walletTransactionAmountHint')} label={t('billingPage.amount')}>
+              <Input
+                inputMode="decimal"
+                placeholder={t('billingPage.walletTransactionAmountPlaceholder')}
+                value={transactionAmount}
+                onChange={event => setTransactionAmount(event.target.value)}
+              />
+            </Field>
+            <Field label={t('billingPage.descriptionLabel')}>
+              <Textarea
+                className="min-h-24"
+                placeholder={t('billingPage.walletTransactionDescriptionPlaceholder')}
+                value={transactionDescription}
+                onChange={event => setTransactionDescription(event.target.value)}
+              />
+            </Field>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setTransactionOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              disabled={createTransaction.isPending || !transactionProjectId || !transactionAmount.trim()}
+              type="button"
+              onClick={() => createTransaction.mutate()}
+            >
+              {t('common.confirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

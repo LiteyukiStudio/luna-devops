@@ -156,6 +156,53 @@ func (h *Handlers) UpdateBillingRateRules(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, rules)
 }
 
+func (h *Handlers) CreateBillingWalletTransaction(ctx *gin.Context) {
+	user, ok := h.currentUser(ctx)
+	if !ok {
+		return
+	}
+	if user.Role != "platform_admin" {
+		writeErrorKey(ctx, http.StatusForbidden, user.Language, "config.admin.required")
+		return
+	}
+	var input billingWalletTransactionInput
+	if !bindJSON(ctx, &input) {
+		return
+	}
+	projectID := strings.TrimSpace(input.ProjectID)
+	if projectID == "" {
+		writeErrorCode(ctx, http.StatusBadRequest, "billing.project_required", "project is required")
+		return
+	}
+	var project model.Project
+	if err := h.db.First(&project, "id = ?", projectID).Error; err != nil {
+		writeError(ctx, http.StatusNotFound, "project not found")
+		return
+	}
+	amount, err := decimal.NewFromString(strings.TrimSpace(input.AmountCredits))
+	if err != nil || amount.IsZero() {
+		writeErrorCode(ctx, http.StatusBadRequest, "billing.transaction_invalid_amount", "billing transaction amount must be a non-zero decimal")
+		return
+	}
+	transactionType := strings.TrimSpace(input.Type)
+	if transactionType == "" {
+		transactionType = "credit"
+	}
+	entry, err := (billing.Service{DB: h.db}).ApplyWalletTransaction(billing.WalletTransactionInput{
+		ProjectID:     project.ID,
+		AmountCredits: amount,
+		Type:          transactionType,
+		Description:   strings.TrimSpace(input.Description),
+		ActorID:       user.ID,
+	})
+	if err != nil {
+		writeErrorCode(ctx, http.StatusBadRequest, "billing.transaction_invalid", err.Error())
+		return
+	}
+	h.audit(user.ID, "billing.wallet_transaction", entry.ID, true, "")
+	ctx.JSON(http.StatusCreated, entry)
+}
+
 func (h *Handlers) billingProjectIDsForUser(ctx *gin.Context, user model.User) ([]string, bool) {
 	var memberships []model.ProjectMember
 	if err := h.db.Find(&memberships, "user_id = ?", user.ID).Error; err != nil {
@@ -197,4 +244,11 @@ type updateBillingRateRuleInput struct {
 	Meter          string `json:"meter"`
 	CreditsPerUnit string `json:"creditsPerUnit"`
 	Enabled        bool   `json:"enabled"`
+}
+
+type billingWalletTransactionInput struct {
+	ProjectID     string `json:"projectId"`
+	AmountCredits string `json:"amountCredits"`
+	Type          string `json:"type"`
+	Description   string `json:"description"`
 }

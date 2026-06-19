@@ -17,8 +17,11 @@ const (
 	MeterBuildJob        = "build.job"
 	ReasonBuildUsage     = "build.usage"
 	ReasonRuntimeUsage   = "runtime.usage"
+	ReasonManualRecharge = "billing.recharge"
+	ReasonManualAdjust   = "billing.adjustment"
 	ResourceTypeBuildRun = "build_run"
 	ResourceTypeRuntime  = "runtime_target"
+	ResourceTypeWallet   = "project_wallet"
 	defaultCPURequest    = "500m"
 	defaultMemoryRequest = "512Mi"
 )
@@ -44,6 +47,15 @@ type RuntimeUsageInput struct {
 	PeriodStart        time.Time
 	PeriodEnd          time.Time
 	ActorID            string
+}
+
+type WalletTransactionInput struct {
+	ProjectID     string
+	AmountCredits decimal.Decimal
+	Type          string
+	Reason        string
+	Description   string
+	ActorID       string
 }
 
 type ProjectBillingSummary struct {
@@ -254,6 +266,62 @@ func (s Service) SettleRuntimeTargetWindow(input RuntimeUsageInput) error {
 		},
 	}
 	return s.debitUsages(records, ReasonRuntimeUsage, "Runtime resource usage", input.ActorID)
+}
+
+func (s Service) ApplyWalletTransaction(input WalletTransactionInput) (model.BillingLedgerEntry, error) {
+	entry := model.BillingLedgerEntry{}
+	if input.ProjectID == "" {
+		return entry, errors.New("project id is required")
+	}
+	if input.AmountCredits.IsZero() {
+		return entry, errors.New("amount credits cannot be zero")
+	}
+	entryType := input.Type
+	if entryType == "" {
+		entryType = "credit"
+	}
+	if entryType != "credit" && entryType != "adjustment" {
+		return entry, errors.New("unsupported billing transaction type")
+	}
+	amount := input.AmountCredits
+	if entryType == "credit" && amount.IsNegative() {
+		return entry, errors.New("recharge amount must be positive")
+	}
+	reason := input.Reason
+	if reason == "" {
+		if entryType == "adjustment" {
+			reason = ReasonManualAdjust
+		} else {
+			reason = ReasonManualRecharge
+		}
+	}
+	err := s.DB.Transaction(func(tx *gorm.DB) error {
+		if err := ensureWallet(tx, input.ProjectID); err != nil {
+			return err
+		}
+		var wallet model.ProjectWallet
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&wallet, "project_id = ?", input.ProjectID).Error; err != nil {
+			return err
+		}
+		balanceAfter := wallet.BalanceCredits.Add(amount)
+		entry = model.BillingLedgerEntry{
+			ID:                  id.New("bled"),
+			ProjectID:           input.ProjectID,
+			Type:                entryType,
+			AmountCredits:       amount,
+			BalanceAfterCredits: balanceAfter,
+			Reason:              reason,
+			ResourceType:        ResourceTypeWallet,
+			ResourceID:          input.ProjectID,
+			Description:         input.Description,
+			CreatedBy:           input.ActorID,
+		}
+		if err := tx.Create(&entry).Error; err != nil {
+			return err
+		}
+		return tx.Model(&model.ProjectWallet{}).Where("id = ?", wallet.ID).Update("balance_credits", balanceAfter).Error
+	})
+	return entry, err
 }
 
 func runtimeUsageResourceID(deploymentTargetID string, periodStart time.Time) string {

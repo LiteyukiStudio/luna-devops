@@ -46,6 +46,9 @@ func (h *Handlers) CreateRelease(ctx *gin.Context) {
 	if !h.validateReleaseForCreate(ctx, &release) {
 		return
 	}
+	if !h.ensureBillingAllowsDeployChange(ctx, project.ID) {
+		return
+	}
 	release.ID = id.New("rel")
 	if err := h.db.Create(&release).Error; err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
@@ -82,6 +85,9 @@ func (h *Handlers) RollbackRelease(ctx *gin.Context) {
 		return
 	}
 	if !h.ensureDeploymentTargetCanMutate(ctx, sourceTarget) {
+		return
+	}
+	if !h.ensureBillingAllowsDeployChange(ctx, project.ID) {
 		return
 	}
 	target, ok := h.findPreviousSuccessfulRelease(ctx, source)

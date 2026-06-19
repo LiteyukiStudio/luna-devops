@@ -13,10 +13,14 @@ const errors = {
     delete_in_progress: '应用正在删除中，请等待资源清理完成或删除失败后重试。',
   },
   billing: {
+    insufficient_balance: '项目空间余额不足，当前操作已被计费风控拦截。请充值或联系平台管理员处理。',
     project_forbidden: '没有访问该项目空间账单的权限',
+    project_required: '请选择项目空间',
     rate_rule_invalid_price: '计费规则单价必须是非负数',
     rate_rule_meter_required: '计费规则缺少 Meter',
     rate_rule_unknown: '未知的计费规则 Meter',
+    transaction_invalid: '余额调整请求不正确',
+    transaction_invalid_amount: '余额调整金额必须是非零数字',
   },
   config: {
     admin: { required: '请确认当前账号具有平台管理员权限。' },

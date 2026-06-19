@@ -12,6 +12,7 @@ import type {
   BillingRateRulePayload,
   BillingSummary,
   BillingUsageRecord,
+  BillingWalletTransactionPayload,
   BootstrapStatus,
   BuildJob,
   BuildLog,
@@ -81,6 +82,7 @@ export type {
   BillingRateRulePayload,
   BillingSummary,
   BillingUsageRecord,
+  BillingWalletTransactionPayload,
   BootstrapStatus,
   BuildJob,
   BuildLog,
@@ -465,6 +467,8 @@ export const api = {
   listBillingRateRules: () => request<BillingRateRule[]>('/billing/rate-rules'),
   updateBillingRateRules: (rules: BillingRateRulePayload[]) =>
     request<BillingRateRule[]>('/billing/rate-rules', { method: 'PUT', body: JSON.stringify({ rules }) }),
+  createBillingWalletTransaction: (payload: BillingWalletTransactionPayload) =>
+    request<BillingLedgerEntry>('/billing/wallet-transactions', { method: 'POST', body: JSON.stringify(payload) }),
   listProjectPins: () => request<ProjectPin[]>('/projects/pins'),
   updateProjectOrder: (projectIds: string[]) =>
     request<{ projectIds: string[] }>('/projects/order', { method: 'PUT', body: JSON.stringify({ projectIds }) }),

@@ -117,6 +117,9 @@ func (h *Handlers) TriggerBuildRun(ctx *gin.Context) {
 	if !bindJSON(ctx, &input) {
 		return
 	}
+	if !h.ensureBillingAllowsNewBuild(ctx, ctx.Param("projectId")) {
+		return
+	}
 	run := h.buildRunFromInput(ctx.Param("projectId"), user, input)
 	run.ID = id.New("bldr")
 	run.Status = "queued"
@@ -131,6 +134,9 @@ func (h *Handlers) RetryBuildRun(ctx *gin.Context) {
 	}
 	previous, ok := h.findBuildRun(ctx)
 	if !ok {
+		return
+	}
+	if !h.ensureBillingAllowsNewBuild(ctx, previous.ProjectID) {
 		return
 	}
 	run := model.BuildRun{
