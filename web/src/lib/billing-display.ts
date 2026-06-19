@@ -4,6 +4,7 @@ import { api } from '@/api/client'
 import { usePublicConfig } from '@/app/public-config-context'
 
 const DEFAULT_CURRENCY_UNIT = 'Credits'
+const CREDIT_NUMBER_FORMAT_OPTIONS = { maximumFractionDigits: 2, minimumFractionDigits: 0 } as const
 
 export function useBillingDisplay(locale: string) {
   const configs = usePublicConfig()
@@ -23,22 +24,26 @@ export function useBillingDisplay(locale: string) {
 }
 
 export function formatBillingNumber(value: string | number | undefined, locale: string) {
-  const numeric = typeof value === 'number' ? value : Number.parseFloat(value ?? '0')
+  const numeric = parseBillingNumber(value)
   if (!Number.isFinite(numeric))
     return '0'
-  return numeric.toLocaleString(locale, { maximumFractionDigits: 4, minimumFractionDigits: 0 })
+  return numeric.toLocaleString(locale, CREDIT_NUMBER_FORMAT_OPTIONS)
 }
 
 function formatSignedBillingNumber(value: string | number | undefined, locale: string, currencyUnit: string) {
-  const numeric = typeof value === 'number' ? value : Number.parseFloat(value ?? '0')
+  const numeric = parseBillingNumber(value)
   if (!Number.isFinite(numeric))
     return `${value ?? '0'} ${currencyUnit}`
-  const formatted = Math.abs(numeric).toLocaleString(locale, { maximumFractionDigits: 4, minimumFractionDigits: 0 })
+  const formatted = Math.abs(numeric).toLocaleString(locale, CREDIT_NUMBER_FORMAT_OPTIONS)
   if (numeric > 0)
     return `+${formatted} ${currencyUnit}`
   if (numeric < 0)
     return `-${formatted} ${currencyUnit}`
   return `${formatted} ${currencyUnit}`
+}
+
+function parseBillingNumber(value: string | number | undefined) {
+  return typeof value === 'number' ? value : Number.parseFloat(value ?? '0')
 }
 
 function estimateBuildMinuteCost(rules: BillingRateRule[], cpuRequest: string | undefined, memoryRequest: string | undefined) {
