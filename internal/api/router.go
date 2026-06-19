@@ -179,6 +179,7 @@ func NewRouterWithStaticFS(db *gorm.DB, staticFS fs.FS) *gin.Engine {
 		v1.GET("/billing/rate-rules", handlers.ListBillingRateRules)
 		v1.PUT("/billing/rate-rules", handlers.UpdateBillingRateRules)
 		v1.POST("/billing/wallet-transactions", handlers.CreateBillingWalletTransaction)
+		v1.POST("/billing/external-transactions", handlers.CreateExternalBillingTransaction)
 
 		v1.GET("/access-tokens", handlers.ListAccessTokens)
 		v1.POST("/access-tokens", handlers.CreateAccessToken)

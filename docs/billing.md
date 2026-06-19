@@ -105,10 +105,26 @@ storage credits = capacity_gib * duration_days * storage.gib_day
 
 后续如需接入在线支付，由第三方支付/运营系统负责订单、支付渠道、退款、发票和对账；平台只提供受信任服务端调用的充值接口。充值接口必须支持幂等键，例如使用第三方订单号作为 `idempotencyKey`，确保支付平台重复回调时同一笔订单只入账一次。退款或撤销同样不修改原充值流水，而是通过补偿/扣减接口写入反向流水。
 
+外部系统通过平台管理员创建的 `billing:write` Access Token 调用：
+
+```bash
+curl -X POST "$DEVOPS_BASE_URL/api/v1/billing/external-transactions" \
+  -H "Authorization: Bearer $DEVOPS_BILLING_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "projectId": "prj_xxx",
+    "amountCredits": "100.5",
+    "type": "credit",
+    "idempotencyKey": "payment-order-20260620-0001",
+    "description": "第三方订单 payment-order-20260620-0001 入账"
+  }'
+```
+
+`type=credit` 表示充值，金额必须为正数；`type=adjustment` 可用于补偿、扣减或退款，金额可以为正数或负数。同一个项目空间内重复提交相同 `idempotencyKey`、相同金额和类型时会返回第一次生成的账本流水，不会重复入账；同一个幂等键被不同金额或类型复用会被拒绝。
+
 当站点设置开启 `billing.blockNewBuildsWhenInsufficient` 时，项目空间余额小于等于 `0` 会阻止新构建和重试构建。当开启 `billing.blockDeployChangesWhenInsufficient` 时，项目空间余额小于等于 `0` 会阻止新发布、回滚发布和部署配置变更。运行中的资源先继续保留，后续可基于欠费宽限期做通知、暂停或清理策略。
 
 ## 待补齐
 
 - 入口访问次数按时间窗口聚合计费。
-- 外部充值 API、服务令牌权限和幂等键防重复入账。
 - 基于欠费宽限期处理运行中资源的通知、暂停和清理策略。

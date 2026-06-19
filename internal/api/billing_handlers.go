@@ -207,6 +207,68 @@ func (h *Handlers) CreateBillingWalletTransaction(ctx *gin.Context) {
 	ctx.JSON(http.StatusCreated, entry)
 }
 
+func (h *Handlers) CreateExternalBillingTransaction(ctx *gin.Context) {
+	if !strings.HasPrefix(strings.ToLower(ctx.GetHeader("Authorization")), "bearer ") {
+		writeErrorCode(ctx, http.StatusUnauthorized, "billing.bearer_token_required", "external billing API requires a bearer access token")
+		return
+	}
+	user, ok := h.currentUser(ctx)
+	if !ok {
+		return
+	}
+	if user.Role != "platform_admin" {
+		writeErrorKey(ctx, http.StatusForbidden, user.Language, "config.admin.required")
+		return
+	}
+	var input externalBillingTransactionInput
+	if !bindJSON(ctx, &input) {
+		return
+	}
+	projectID := strings.TrimSpace(input.ProjectID)
+	if projectID == "" {
+		writeErrorCode(ctx, http.StatusBadRequest, "billing.project_required", "project is required")
+		return
+	}
+	idempotencyKey := strings.TrimSpace(input.IdempotencyKey)
+	if len(idempotencyKey) < 8 || len(idempotencyKey) > 160 {
+		writeErrorCode(ctx, http.StatusBadRequest, "billing.idempotency_key_invalid", "idempotency key must be 8 to 160 characters")
+		return
+	}
+	var project model.Project
+	if err := h.db.First(&project, "id = ?", projectID).Error; err != nil {
+		writeError(ctx, http.StatusNotFound, "project not found")
+		return
+	}
+	amount, err := decimal.NewFromString(strings.TrimSpace(input.AmountCredits))
+	if err != nil || amount.IsZero() {
+		writeErrorCode(ctx, http.StatusBadRequest, "billing.transaction_invalid_amount", "billing transaction amount must be a non-zero decimal")
+		return
+	}
+	transactionType := strings.TrimSpace(input.Type)
+	if transactionType == "" {
+		transactionType = "credit"
+	}
+	reason := billing.ReasonExternalRecharge
+	if transactionType == "adjustment" {
+		reason = billing.ReasonExternalAdjust
+	}
+	entry, err := (billing.Service{DB: h.db}).ApplyWalletTransaction(billing.WalletTransactionInput{
+		ProjectID:      project.ID,
+		AmountCredits:  amount,
+		Type:           transactionType,
+		Reason:         reason,
+		Description:    strings.TrimSpace(input.Description),
+		IdempotencyKey: idempotencyKey,
+		ActorID:        user.ID,
+	})
+	if err != nil {
+		writeErrorCode(ctx, http.StatusBadRequest, "billing.transaction_invalid", err.Error())
+		return
+	}
+	h.audit(user.ID, "billing.external_transaction", entry.ID, true, idempotencyKey)
+	ctx.JSON(http.StatusOK, entry)
+}
+
 func (h *Handlers) billingProjectIDsForUser(ctx *gin.Context, user model.User) ([]string, bool) {
 	var memberships []model.ProjectMember
 	if err := h.db.Find(&memberships, "user_id = ?", user.ID).Error; err != nil {
@@ -255,4 +317,12 @@ type billingWalletTransactionInput struct {
 	AmountCredits string `json:"amountCredits"`
 	Type          string `json:"type"`
 	Description   string `json:"description"`
+}
+
+type externalBillingTransactionInput struct {
+	ProjectID      string `json:"projectId"`
+	AmountCredits  string `json:"amountCredits"`
+	Type           string `json:"type"`
+	Description    string `json:"description"`
+	IdempotencyKey string `json:"idempotencyKey"`
 }

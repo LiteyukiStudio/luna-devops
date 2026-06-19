@@ -58,6 +58,8 @@ const billingPage = {
     'storage.usage': 'Storage usage',
     'billing.recharge': 'Manual recharge',
     'billing.adjustment': 'Manual compensation',
+    'billing.external_recharge': 'External recharge',
+    'billing.external_adjustment': 'External adjustment',
   },
   meters: {
     'build.job': 'Build job',

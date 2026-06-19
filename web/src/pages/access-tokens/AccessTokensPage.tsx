@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import { api } from '@/api/client'
+import { useSession } from '@/app/session-context'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { DataList } from '@/components/common/data-list'
 import { FormField as Field } from '@/components/common/form-field'
@@ -47,6 +48,7 @@ export function AccessTokensPage() {
 
 export function AccessTokensPanel() {
   const { t } = useTranslation()
+  const { user } = useSession()
   const queryClient = useQueryClient()
   const [createdToken, setCreatedToken] = useState('')
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -221,6 +223,7 @@ export function AccessTokensPanel() {
                 <option value="build:trigger">{t('accessTokens.scopeBuildTrigger')}</option>
                 <option value="deploy:trigger">{t('accessTokens.scopeDeployTrigger')}</option>
                 <option value="project:read">{t('accessTokens.scopeProjectRead')}</option>
+                {user?.role === 'platform_admin' && <option value="billing:write">{t('accessTokens.scopeBillingWrite')}</option>}
               </Select>
             </Field>
             <Field error={form.formState.errors.expiresInDays?.message} hint={t('accessTokens.expiresInDaysHint')} label={t('accessTokens.expiresInDays')} required>

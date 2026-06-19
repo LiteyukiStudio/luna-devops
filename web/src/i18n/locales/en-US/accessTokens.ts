@@ -18,6 +18,7 @@ const accessTokens = {
   scopeBuildTrigger: 'Trigger builds',
   scopeDeployTrigger: 'Trigger deployments',
   scopeProjectRead: 'Read projects',
+  scopeBillingWrite: 'Write billing transactions',
   expiresInDays: 'Validity',
   expiresInDaysHint: 'Choose a fixed validity period. Unlimited tokens should only be used for trusted automation.',
   expiresIn7Days: '7 days',

@@ -10,6 +10,7 @@ const accessTokens = {
   scopeBuildTrigger: 'build:trigger',
   scopeDeployTrigger: 'deploy:trigger',
   scopeProjectRead: 'project:read',
+  scopeBillingWrite: 'billing:write',
   nameHint: '用于区分这个 Token 的用途，例如本地脚本、CI 触发器或某个自动化工具。',
   scopeHint: 'Token 的权限范围。MVP 先用字符串表达，后续会收敛成可勾选权限；不要给自动化 Token 过大的权限。',
   expiresInDays: '有效期天数',

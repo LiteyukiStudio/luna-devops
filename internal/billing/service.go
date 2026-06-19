@@ -15,19 +15,21 @@ import (
 )
 
 const (
-	MeterBuildJob        = "build.job"
-	ReasonBuildUsage     = "build.usage"
-	ReasonRuntimeUsage   = "runtime.usage"
-	ReasonStorageUsage   = "storage.usage"
-	ReasonManualRecharge = "billing.recharge"
-	ReasonManualAdjust   = "billing.adjustment"
-	ResourceTypeBuildRun = "build_run"
-	ResourceTypeRuntime  = "runtime_target"
-	ResourceTypeStorage  = "storage_volume"
-	ResourceTypeWallet   = "project_wallet"
-	defaultCPURequest    = "500m"
-	defaultMemoryRequest = "512Mi"
-	defaultDataCapacity  = "1Gi"
+	MeterBuildJob          = "build.job"
+	ReasonBuildUsage       = "build.usage"
+	ReasonRuntimeUsage     = "runtime.usage"
+	ReasonStorageUsage     = "storage.usage"
+	ReasonExternalRecharge = "billing.external_recharge"
+	ReasonExternalAdjust   = "billing.external_adjustment"
+	ReasonManualRecharge   = "billing.recharge"
+	ReasonManualAdjust     = "billing.adjustment"
+	ResourceTypeBuildRun   = "build_run"
+	ResourceTypeRuntime    = "runtime_target"
+	ResourceTypeStorage    = "storage_volume"
+	ResourceTypeWallet     = "project_wallet"
+	defaultCPURequest      = "500m"
+	defaultMemoryRequest   = "512Mi"
+	defaultDataCapacity    = "1Gi"
 )
 
 var ErrAlreadySettled = errors.New("billing usage already settled")
@@ -61,12 +63,13 @@ type StorageUsageInput struct {
 }
 
 type WalletTransactionInput struct {
-	ProjectID     string
-	AmountCredits decimal.Decimal
-	Type          string
-	Reason        string
-	Description   string
-	ActorID       string
+	ProjectID      string
+	AmountCredits  decimal.Decimal
+	Type           string
+	Reason         string
+	Description    string
+	IdempotencyKey string
+	ActorID        string
 }
 
 type ProjectBillingSummary struct {
@@ -362,6 +365,7 @@ func (s Service) ApplyWalletTransaction(input WalletTransactionInput) (model.Bil
 			reason = ReasonManualRecharge
 		}
 	}
+	idempotencyKey := strings.TrimSpace(input.IdempotencyKey)
 	err := s.DB.Transaction(func(tx *gorm.DB) error {
 		if err := ensureWallet(tx, input.ProjectID); err != nil {
 			return err
@@ -369,6 +373,20 @@ func (s Service) ApplyWalletTransaction(input WalletTransactionInput) (model.Bil
 		var wallet model.ProjectWallet
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&wallet, "project_id = ?", input.ProjectID).Error; err != nil {
 			return err
+		}
+		if idempotencyKey != "" {
+			var existing model.BillingLedgerEntry
+			err := tx.First(&existing, "project_id = ? and idempotency_key = ?", input.ProjectID, idempotencyKey).Error
+			if err == nil {
+				if existing.Type != entryType || !existing.AmountCredits.Equal(amount) {
+					return errors.New("idempotency key has been used by a different billing transaction")
+				}
+				entry = existing
+				return nil
+			}
+			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
 		}
 		balanceAfter := wallet.BalanceCredits.Add(amount)
 		entry = model.BillingLedgerEntry{
@@ -380,6 +398,7 @@ func (s Service) ApplyWalletTransaction(input WalletTransactionInput) (model.Bil
 			Reason:              reason,
 			ResourceType:        ResourceTypeWallet,
 			ResourceID:          input.ProjectID,
+			IdempotencyKey:      idempotencyKey,
 			Description:         input.Description,
 			CreatedBy:           input.ActorID,
 		}

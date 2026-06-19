@@ -55,6 +55,7 @@ type BillingLedgerEntry struct {
 	UsageRecordID       string          `gorm:"index" json:"usageRecordId"`
 	ResourceType        string          `gorm:"index" json:"resourceType"`
 	ResourceID          string          `gorm:"index" json:"resourceId"`
+	IdempotencyKey      string          `gorm:"index;not null;default:''" json:"idempotencyKey"`
 	Description         string          `json:"description"`
 	CreatedBy           string          `gorm:"index" json:"createdBy"`
 	CreatedAt           time.Time       `json:"createdAt"`

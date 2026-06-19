@@ -560,6 +560,9 @@ func TestNormalizeAccessTokenScopeRejectsWildcardAndUnknownScopes(t *testing.T) 
 	if scope := normalizeAccessTokenScope("project:read,git:read"); scope != "project:read,git:read" {
 		t.Fatalf("expected normalized scope list, got %q", scope)
 	}
+	if scope := normalizeAccessTokenScope("billing:write"); scope != "billing:write" {
+		t.Fatalf("expected billing write scope, got %q", scope)
+	}
 	if scope := normalizeAccessTokenScope("project:read,unknown:write"); scope != "" {
 		t.Fatalf("expected unknown scope to be rejected, got %q", scope)
 	}
@@ -576,8 +579,14 @@ func TestUserCannotCreateAdministrativeAccessTokenScope(t *testing.T) {
 	if userCanCreateAccessTokenScope(user, "project:write") {
 		t.Fatal("expected normal user to be blocked from project:write without project role context")
 	}
+	if userCanCreateAccessTokenScope(user, "billing:write") {
+		t.Fatal("expected normal user to be blocked from billing:write")
+	}
 	if !userCanCreateAccessTokenScope(user, "project:read,git:read") {
 		t.Fatal("expected normal user to create read scopes")
+	}
+	if !userCanCreateAccessTokenScope(user, "billing:read") {
+		t.Fatal("expected normal user to create billing:read")
 	}
 }
 

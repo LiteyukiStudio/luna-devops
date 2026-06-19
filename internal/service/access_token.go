@@ -25,6 +25,10 @@ func RequiredAccessTokenScope(path, method string) string {
 		return "project:write"
 	case strings.HasPrefix(path, "/api/v1/access-tokens"):
 		return "token:manage"
+	case strings.HasPrefix(path, "/api/v1/billing") && method == http.MethodGet:
+		return "billing:read"
+	case strings.HasPrefix(path, "/api/v1/billing") && method != http.MethodGet:
+		return "billing:write"
 	case strings.HasPrefix(path, "/api/v1/git") && method == http.MethodGet:
 		return "git:read"
 	case strings.HasPrefix(path, "/api/v1/git") && method != http.MethodGet:
@@ -85,6 +89,9 @@ func NormalizeAccessTokenScope(scopeText string) string {
 		"config:*":       true,
 		"auth:manage":    true,
 		"token:manage":   true,
+		"billing:read":   true,
+		"billing:write":  true,
+		"billing:*":      true,
 	}
 	for _, scope := range scopes {
 		if scope == "*" || !allowed[scope] {
@@ -100,7 +107,7 @@ func UserCanCreateAccessTokenScope(userRole, scopeText string) bool {
 	}
 	for _, scope := range splitCSV(scopeText) {
 		switch scope {
-		case "project:read", "git:read", "registry:read", "image:read", "user:read":
+		case "project:read", "git:read", "registry:read", "image:read", "user:read", "billing:read":
 			continue
 		default:
 			return false

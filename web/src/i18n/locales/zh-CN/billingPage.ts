@@ -58,6 +58,8 @@ const billingPage = {
     'storage.usage': '存储用量',
     'billing.recharge': '手动充值',
     'billing.adjustment': '手动补偿',
+    'billing.external_recharge': '外部充值',
+    'billing.external_adjustment': '外部调账',
   },
   meters: {
     'build.job': '构建任务',
