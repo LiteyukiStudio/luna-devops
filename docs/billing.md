@@ -6,6 +6,7 @@ Liteyuki DevOps 的计费主体是项目空间。每个项目空间拥有一个 
 
 - 内部货币统一为 `credits`，金额使用 decimal 高精度数值存储，不使用浮点数表示费用。
 - 面向普通用户的页面使用站点配置 `billing.creditsDisplayName` 展示货币单位；站点设置里的计费规则仍显示内部 credits，避免管理员误解底层结算单位。
+- 站点设置可配置 `billing.fiatCurrencyUnit` 和 `billing.creditsPerFiatUnit`，用于平台管理员在账单概览中查看现实货币折算金额；该换算只用于展示，底层账本仍只存储 credits。
 - `project_wallets` 记录项目空间余额。
 - `billing_usage_records` 记录已结算的原始用量。
 - `billing_ledger_entries` 记录 append-only 账本流水，余额变动只通过新增流水体现。

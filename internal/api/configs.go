@@ -123,6 +123,22 @@ var configDefinitions = []configDefinition{
 		Default:     "Credits",
 	},
 	{
+		Key:         "billing.fiatCurrencyUnit",
+		Label:       "现实货币单位",
+		Description: "平台管理员在账单概览中查看 credits 折算金额时使用的现实货币单位，例如 CNY、USD 或 元。",
+		Type:        "string",
+		Public:      true,
+		Default:     "CNY",
+	},
+	{
+		Key:         "billing.creditsPerFiatUnit",
+		Label:       "每 1 现实货币对应 Credits",
+		Description: "用于管理员账单概览展示换算金额。例：1000 表示 1 个现实货币单位可兑换 1000 credits。",
+		Type:        "string",
+		Public:      true,
+		Default:     "1000",
+	},
+	{
 		Key:         "billing.freeQuotaCredits",
 		Label:       "默认免费额度",
 		Description: "新项目空间可获得的默认 credits 额度。当前用于后续充值与额度策略，已创建项目空间不会自动补发。",

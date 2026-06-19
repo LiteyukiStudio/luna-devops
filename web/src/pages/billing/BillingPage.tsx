@@ -336,24 +336,28 @@ export function BillingPage() {
 
       <div className="grid gap-3 md:grid-cols-4">
         <MetricCard
+          fiatValue={canManageBilling ? billingDisplay.formatFiatAmount(summary?.balanceCredits) : ''}
           icon={<Coins className="size-5" />}
           label={t('billingPage.balance')}
           loading={summaryQuery.isLoading}
           value={billingDisplay.formatAmountWithUnit(summary?.balanceCredits)}
         />
         <MetricCard
+          fiatValue={canManageBilling ? billingDisplay.formatFiatAmount(summary?.todaySpend) : ''}
           icon={<TrendingDown className="size-5" />}
           label={t('billingPage.todaySpend')}
           loading={summaryQuery.isLoading}
           value={billingDisplay.formatAmountWithUnit(summary?.todaySpend)}
         />
         <MetricCard
+          fiatValue={canManageBilling ? billingDisplay.formatFiatAmount(summary?.monthSpend) : ''}
           icon={<CreditCard className="size-5" />}
           label={t('billingPage.monthSpend')}
           loading={summaryQuery.isLoading}
           value={billingDisplay.formatAmountWithUnit(summary?.monthSpend)}
         />
         <MetricCard
+          fiatValue={canManageBilling ? billingDisplay.formatFiatAmount(summary?.pendingSpend) : ''}
           icon={<WalletCards className="size-5" />}
           label={t('billingPage.pendingSpend')}
           loading={summaryQuery.isLoading}
@@ -534,7 +538,7 @@ export function BillingPage() {
   )
 }
 
-function MetricCard({ icon, label, loading, value }: { icon: ReactNode, label: string, loading: boolean, value: string }) {
+function MetricCard({ fiatValue, icon, label, loading, value }: { fiatValue?: string, icon: ReactNode, label: string, loading: boolean, value: string }) {
   return (
     <Card className="flex min-w-0 items-center gap-4 rounded-2xl p-5">
       <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
@@ -542,9 +546,18 @@ function MetricCard({ icon, label, loading, value }: { icon: ReactNode, label: s
       </div>
       <div className="min-w-0">
         <p className="text-sm text-muted-foreground">{label}</p>
-        <p className="mt-1 truncate text-2xl font-semibold tabular-nums">
-          {loading ? '-' : value}
-        </p>
+        <div className="mt-1 flex min-w-0 items-baseline gap-2">
+          <span className="min-w-0 truncate text-2xl font-semibold tabular-nums">
+            {loading ? '-' : value}
+          </span>
+          {!loading && fiatValue && (
+            <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+              (
+              {fiatValue}
+              )
+            </span>
+          )}
+        </div>
       </div>
     </Card>
   )

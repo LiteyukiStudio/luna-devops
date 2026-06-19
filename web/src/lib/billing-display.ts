@@ -4,23 +4,38 @@ import { api } from '@/api/client'
 import { usePublicConfig } from '@/app/public-config-context'
 
 const DEFAULT_CURRENCY_UNIT = 'Credits'
+const DEFAULT_FIAT_CURRENCY_UNIT = 'CNY'
 const CREDIT_NUMBER_FORMAT_OPTIONS = { maximumFractionDigits: 2, minimumFractionDigits: 0 } as const
 
 export function useBillingDisplay(locale: string) {
   const configs = usePublicConfig()
   const rateRules = useQuery({ queryKey: ['billing-rate-rules'], queryFn: api.listBillingRateRules })
   const currencyUnit = configs['billing.creditsDisplayName']?.trim() || DEFAULT_CURRENCY_UNIT
+  const fiatCurrencyUnit = configs['billing.fiatCurrencyUnit']?.trim() || DEFAULT_FIAT_CURRENCY_UNIT
+  const creditsPerFiatUnit = parsePositiveNumber(configs['billing.creditsPerFiatUnit']?.trim() || '0')
 
   return {
+    creditsPerFiatUnit,
     currencyUnit,
+    fiatCurrencyUnit,
     buildMinuteCost: (cpuRequest: string | undefined, memoryRequest: string | undefined) =>
       estimateBuildMinuteCost(rateRules.data ?? [], cpuRequest, memoryRequest),
+    formatFiatAmount: (value: string | number | undefined) =>
+      formatFiatAmount(value, locale, fiatCurrencyUnit, creditsPerFiatUnit),
     formatAmount: (value: string | number | undefined) => formatBillingNumber(value, locale),
     formatAmountWithUnit: (value: string | number | undefined) => `${formatBillingNumber(value, locale)} ${currencyUnit}`,
     formatSignedAmountWithUnit: (value: string | number | undefined) => formatSignedBillingNumber(value, locale, currencyUnit),
     runtimeHourCost: (replicas: number | undefined, cpuRequest: string | undefined, memoryRequest: string | undefined) =>
       estimateRuntimeHourCost(rateRules.data ?? [], replicas, cpuRequest, memoryRequest),
   }
+}
+
+function formatFiatAmount(value: string | number | undefined, locale: string, fiatCurrencyUnit: string, creditsPerFiatUnit: number) {
+  const numeric = parseBillingNumber(value)
+  if (!Number.isFinite(numeric) || !Number.isFinite(creditsPerFiatUnit) || creditsPerFiatUnit <= 0)
+    return ''
+  const converted = numeric / creditsPerFiatUnit
+  return `${converted.toLocaleString(locale, CREDIT_NUMBER_FORMAT_OPTIONS)} ${fiatCurrencyUnit}`
 }
 
 export function formatBillingNumber(value: string | number | undefined, locale: string) {
