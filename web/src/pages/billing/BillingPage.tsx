@@ -235,7 +235,7 @@ export function BillingPage() {
     },
     {
       key: 'status',
-      header: t('clustersPage.status'),
+      header: t('common.status'),
       className: 'w-28',
       render: item => <StatusValueBadge value={item.status} />,
     },
