@@ -4,7 +4,7 @@ import { useEffect, useMemo } from 'react'
 import { api } from '@/api/client'
 import { defaultPublicConfigs, PublicConfigContext } from './public-config-context'
 
-const publicConfigKeys = ['site.title', 'site.logoUrl', 'site.faviconUrl', 'site.loginSubtitle', 'billing.creditsDisplayName']
+const publicConfigKeys = ['site.title', 'site.logoUrl', 'site.faviconUrl', 'site.loginSubtitle', 'billing.creditsDisplayName', 'billing.fiatCurrencyUnit', 'billing.creditsPerFiatUnit']
 
 export function PublicConfigProvider({ children }: { children: ReactNode }) {
   const configs = useQuery({
