@@ -52,6 +52,7 @@ const buildsPage = {
   triggerDialogDescription: '创建构建运行并加入构建队列，Worker 会在部署集群中创建 Kubernetes Job 拉取源码、构建镜像并推送到目标镜像站。',
   buildConfig: '部署配置',
   buildConfigHint: '选择本次构建要使用的部署配置，包含代码仓库、Dockerfile、构建上下文、目标镜像和调度策略。',
+  buildEnvironmentOverrideHint: '默认沿用部署配置里的构建环境；这里的修改只影响本次手动构建。',
   queueBuild: '加入构建队列',
   buildQueued: '构建已排队',
   retry: '重试',

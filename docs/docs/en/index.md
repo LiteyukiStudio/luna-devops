@@ -14,7 +14,7 @@ hero:
       text: See Features
       link: /operations/deployment
   image:
-    src: /brand/mascot-liteyuki-catgirl-alpha.png
+    src: /brand/mascot-liteyuki-catgirl-alpha.webp
     alt: Liteyuki DevOps mascot
 features:
   - title: "Start: Docker Compose deploy"

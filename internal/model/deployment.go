@@ -84,6 +84,9 @@ type DeploymentTarget struct {
 	DockerfilePath       string                        `gorm:"not null;default:Dockerfile" json:"dockerfilePath"`
 	BuildContext         string                        `gorm:"not null;default:." json:"buildContext"`
 	BuildDirectory       string                        `json:"buildDirectory"`
+	BuildEnvironmentID   string                        `gorm:"index;not null;default:''" json:"buildEnvironmentId"`
+	BuildCPURequest      string                        `gorm:"not null;default:'1'" json:"buildCpuRequest"`
+	BuildMemoryRequest   string                        `gorm:"not null;default:'1Gi'" json:"buildMemoryRequest"`
 	TargetRegistryID     string                        `gorm:"index" json:"targetRegistryId"`
 	TargetRepository     string                        `json:"targetRepository"`
 	TargetTag            string                        `json:"targetTag"`

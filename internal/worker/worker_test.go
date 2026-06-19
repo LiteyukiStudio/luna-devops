@@ -85,6 +85,16 @@ func TestRuntimeBillingEffectivePeriodProratesWindowStart(t *testing.T) {
 	}
 }
 
+func TestStorageBillingEffectivePeriodProratesWindowStart(t *testing.T) {
+	windowStart := time.Date(2026, 6, 19, 6, 0, 0, 0, time.UTC)
+	windowEnd := windowStart.Add(time.Hour)
+	targetCreatedAt := windowStart.Add(10 * time.Minute)
+	start, end, ok := storageBillingEffectivePeriod(windowStart, windowEnd, targetCreatedAt)
+	if !ok || !start.Equal(targetCreatedAt) || !end.Equal(windowEnd) {
+		t.Fatalf("period = %s %s %v", start, end, ok)
+	}
+}
+
 func TestExpiredBuildJobUpdatesClearLease(t *testing.T) {
 	finishedAt := time.Date(2026, 6, 9, 12, 0, 0, 0, time.UTC)
 	updates := expiredBuildJobUpdates(finishedAt)
@@ -182,6 +192,7 @@ func TestBuildJobSpecUsesRestrictedServiceAccountAndBuildScope(t *testing.T) {
 		"build-job-1",
 		"build-job-1-secret",
 		model.Environment{ID: "env_dev"},
+		model.BuildRun{BuildCPURequest: "750m", BuildMemoryRequest: "768Mi"},
 		builder.Task{ProjectID: "prj_demo", ApplicationID: "app_api", DeploymentTargetID: "dplt_api", BuildRunID: "brn_1", JobID: "bjb_1"},
 		"moby/buildkit:v0.24.0-rootless",
 		"",
@@ -201,6 +212,9 @@ func TestBuildJobSpecUsesRestrictedServiceAccountAndBuildScope(t *testing.T) {
 		t.Fatalf("automount service account token = %#v", pod.Spec.AutomountServiceAccountToken)
 	}
 	container := pod.Spec.Containers[0]
+	if container.Resources.Requests.Cpu().String() != "750m" || container.Resources.Limits.Memory().String() != "768Mi" {
+		t.Fatalf("resources = %#v", container.Resources)
+	}
 	if container.SecurityContext == nil {
 		t.Fatal("container security context is nil")
 	}
@@ -238,6 +252,7 @@ func TestBuildJobSpecCopiesOnlyProjectedExecutorFiles(t *testing.T) {
 		"build-job-1",
 		"build-job-1-secret",
 		model.Environment{ID: "env_dev"},
+		model.BuildRun{},
 		builder.Task{
 			ProjectID:          "prj_demo",
 			ApplicationID:      "app_api",

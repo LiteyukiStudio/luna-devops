@@ -153,6 +153,9 @@ func (h *Handlers) RetryBuildRun(ctx *gin.Context) {
 		DockerfilePath:      previous.DockerfilePath,
 		BuildContext:        previous.BuildContext,
 		BuildDirectory:      previous.BuildDirectory,
+		BuildEnvironmentID:  previous.BuildEnvironmentID,
+		BuildCPURequest:     previous.BuildCPURequest,
+		BuildMemoryRequest:  previous.BuildMemoryRequest,
 		TargetRegistryID:    previous.TargetRegistryID,
 		TargetRepository:    previous.TargetRepository,
 		TargetTag:           previous.TargetTag,
@@ -359,6 +362,9 @@ func (h *Handlers) buildRunFromInput(projectID string, user model.User, input bu
 		DockerfilePath:      fallback(strings.TrimSpace(input.DockerfilePath), "Dockerfile"),
 		BuildContext:        fallback(strings.TrimSpace(input.BuildContext), "."),
 		BuildDirectory:      strings.TrimSpace(input.BuildDirectory),
+		BuildEnvironmentID:  strings.TrimSpace(input.BuildEnvironmentID),
+		BuildCPURequest:     strings.TrimSpace(input.BuildCPURequest),
+		BuildMemoryRequest:  strings.TrimSpace(input.BuildMemoryRequest),
 		TargetRegistryID:    strings.TrimSpace(input.TargetRegistryID),
 		TargetRepository:    targetRepository,
 		TargetTag:           fallback(targetTag, "latest"),
@@ -400,6 +406,9 @@ type buildRunInput struct {
 	DockerfilePath      string   `json:"dockerfilePath"`
 	BuildContext        string   `json:"buildContext"`
 	BuildDirectory      string   `json:"buildDirectory"`
+	BuildEnvironmentID  string   `json:"buildEnvironmentId"`
+	BuildCPURequest     string   `json:"buildCpuRequest"`
+	BuildMemoryRequest  string   `json:"buildMemoryRequest"`
 	TargetRegistryID    string   `json:"targetRegistryId"`
 	TargetImageRef      string   `json:"targetImageRef"`
 	TargetRepository    string   `json:"targetRepository"`

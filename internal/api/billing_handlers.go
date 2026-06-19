@@ -22,7 +22,11 @@ func (h *Handlers) GetBillingSummary(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	summary, err := (billing.Service{DB: h.db}).Summary(projectIDs, time.Now())
+	lowBalanceLimit := decimal.RequireFromString("100")
+	if configuredLimit, err := decimal.NewFromString(strings.TrimSpace(h.configs.get([]string{"billing.lowBalanceThresholdCredits"})["billing.lowBalanceThresholdCredits"])); err == nil && !configuredLimit.IsNegative() {
+		lowBalanceLimit = configuredLimit
+	}
+	summary, err := (billing.Service{DB: h.db}).Summary(projectIDs, time.Now(), lowBalanceLimit)
 	if err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return

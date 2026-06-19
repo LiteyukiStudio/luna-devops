@@ -3,6 +3,7 @@ package billing
 import (
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/id"
@@ -17,13 +18,16 @@ const (
 	MeterBuildJob        = "build.job"
 	ReasonBuildUsage     = "build.usage"
 	ReasonRuntimeUsage   = "runtime.usage"
+	ReasonStorageUsage   = "storage.usage"
 	ReasonManualRecharge = "billing.recharge"
 	ReasonManualAdjust   = "billing.adjustment"
 	ResourceTypeBuildRun = "build_run"
 	ResourceTypeRuntime  = "runtime_target"
+	ResourceTypeStorage  = "storage_volume"
 	ResourceTypeWallet   = "project_wallet"
 	defaultCPURequest    = "500m"
 	defaultMemoryRequest = "512Mi"
+	defaultDataCapacity  = "1Gi"
 )
 
 var ErrAlreadySettled = errors.New("billing usage already settled")
@@ -49,6 +53,13 @@ type RuntimeUsageInput struct {
 	ActorID            string
 }
 
+type StorageUsageInput struct {
+	Target      model.DeploymentTarget
+	PeriodStart time.Time
+	PeriodEnd   time.Time
+	ActorID     string
+}
+
 type WalletTransactionInput struct {
 	ProjectID     string
 	AmountCredits decimal.Decimal
@@ -59,9 +70,19 @@ type WalletTransactionInput struct {
 }
 
 type ProjectBillingSummary struct {
-	BalanceCredits decimal.Decimal `json:"balanceCredits"`
-	TodaySpend     decimal.Decimal `json:"todaySpend"`
-	MonthSpend     decimal.Decimal `json:"monthSpend"`
+	BalanceCredits    decimal.Decimal        `json:"balanceCredits"`
+	TodaySpend        decimal.Decimal        `json:"todaySpend"`
+	MonthSpend        decimal.Decimal        `json:"monthSpend"`
+	PendingSpend      decimal.Decimal        `json:"pendingSpend"`
+	AvailableCredits  decimal.Decimal        `json:"availableCredits"`
+	LowBalanceLimit   decimal.Decimal        `json:"lowBalanceLimit"`
+	BalanceStatus     string                 `json:"balanceStatus"`
+	MonthlyCategories []BillingSpendCategory `json:"monthlyCategories"`
+}
+
+type BillingSpendCategory struct {
+	Category      string          `json:"category"`
+	AmountCredits decimal.Decimal `json:"amountCredits"`
 }
 
 type RateRuleUpdate struct {
@@ -162,21 +183,24 @@ func (s Service) SettleBuildRun(input BuildUsageInput) error {
 	if durationMinutes.LessThan(decimal.NewFromInt(1)) {
 		durationMinutes = decimal.NewFromInt(1)
 	}
-	cpuCores := cpuCoresFromQuantity(input.Environment.CPURequest)
-	memoryGiB := memoryGiBFromQuantity(input.Environment.MemoryRequest)
+	cpuCores := cpuCoresFromQuantity(input.Run.BuildCPURequest)
+	memoryGiB := memoryGiBFromQuantity(input.Run.BuildMemoryRequest)
 	cpuAmount, memoryAmount, amount, err := s.buildAmount(cpuCores, memoryGiB, durationMinutes)
 	if err != nil {
 		return err
 	}
 	metadata, _ := json.Marshal(map[string]string{
-		"buildJobId":      input.Job.ID,
-		"durationMinutes": durationMinutes.String(),
-		"cpuCores":        cpuCores.String(),
-		"memoryGiB":       memoryGiB.String(),
-		"cpuCredits":      cpuAmount.String(),
-		"memoryCredits":   memoryAmount.String(),
-		"buildStatus":     input.Run.Status,
-		"environmentId":   input.Environment.ID,
+		"buildJobId":         input.Job.ID,
+		"durationMinutes":    durationMinutes.String(),
+		"cpuCores":           cpuCores.String(),
+		"memoryGiB":          memoryGiB.String(),
+		"cpuCredits":         cpuAmount.String(),
+		"memoryCredits":      memoryAmount.String(),
+		"buildStatus":        input.Run.Status,
+		"environmentId":      input.Environment.ID,
+		"buildEnvironmentId": input.Environment.ID,
+		"buildCPU":           input.Run.BuildCPURequest,
+		"buildMemory":        input.Run.BuildMemoryRequest,
 	})
 	now := time.Now()
 	usage := model.BillingUsageRecord{
@@ -268,6 +292,49 @@ func (s Service) SettleRuntimeTargetWindow(input RuntimeUsageInput) error {
 	return s.debitUsages(records, ReasonRuntimeUsage, "Runtime resource usage", input.ActorID)
 }
 
+func (s Service) SettleStorageTargetWindow(input StorageUsageInput) error {
+	if input.Target.ProjectID == "" || input.Target.ID == "" || !input.Target.DataRetentionEnabled || !input.PeriodEnd.After(input.PeriodStart) {
+		return nil
+	}
+	capacityGiB := deploymentTargetStorageGiB(input.Target)
+	if capacityGiB.LessThanOrEqual(decimal.Zero) {
+		return nil
+	}
+	durationDays := decimal.NewFromInt(int64(input.PeriodEnd.Sub(input.PeriodStart) / time.Second)).Div(decimal.NewFromInt(86400))
+	if durationDays.LessThanOrEqual(decimal.Zero) {
+		return nil
+	}
+	quantity := capacityGiB.Mul(durationDays)
+	rate, err := s.rate("storage.gib_day")
+	if err != nil {
+		return err
+	}
+	metadata, _ := json.Marshal(map[string]string{
+		"deploymentTargetId": input.Target.ID,
+		"dataRetention":      "true",
+		"capacityGiB":        capacityGiB.String(),
+		"durationDays":       durationDays.String(),
+	})
+	now := time.Now()
+	usage := model.BillingUsageRecord{
+		ID:            id.New("busg"),
+		ProjectID:     input.Target.ProjectID,
+		ApplicationID: input.Target.ApplicationID,
+		Meter:         "storage.gib_day",
+		Quantity:      quantity,
+		Unit:          "gib_day",
+		AmountCredits: quantity.Mul(rate),
+		ResourceType:  ResourceTypeStorage,
+		ResourceID:    storageUsageResourceID(input.Target.ID, input.PeriodStart),
+		PeriodStart:   input.PeriodStart,
+		PeriodEnd:     input.PeriodEnd,
+		Status:        "settled",
+		Metadata:      string(metadata),
+		SettledAt:     &now,
+	}
+	return s.debitUsage(usage, ReasonStorageUsage, "Persistent storage usage", input.ActorID)
+}
+
 func (s Service) ApplyWalletTransaction(input WalletTransactionInput) (model.BillingLedgerEntry, error) {
 	entry := model.BillingLedgerEntry{}
 	if input.ProjectID == "" {
@@ -326,6 +393,41 @@ func (s Service) ApplyWalletTransaction(input WalletTransactionInput) (model.Bil
 
 func runtimeUsageResourceID(deploymentTargetID string, periodStart time.Time) string {
 	return deploymentTargetID + ":" + periodStart.UTC().Format("2006010215")
+}
+
+func storageUsageResourceID(deploymentTargetID string, periodStart time.Time) string {
+	return deploymentTargetID + ":" + periodStart.UTC().Format("2006010215")
+}
+
+func deploymentTargetStorageGiB(target model.DeploymentTarget) decimal.Decimal {
+	total := decimal.Zero
+	for _, volume := range deploymentTargetBillingVolumes(target) {
+		total = total.Add(storageGiBFromQuantity(volume.Capacity))
+	}
+	if total.GreaterThan(decimal.Zero) {
+		return total
+	}
+	return storageGiBFromQuantity(target.DataCapacity)
+}
+
+type deploymentTargetBillingVolume struct {
+	Name      string `json:"name"`
+	MountPath string `json:"mountPath"`
+	Capacity  string `json:"capacity"`
+}
+
+func deploymentTargetBillingVolumes(target model.DeploymentTarget) []deploymentTargetBillingVolume {
+	var volumes []deploymentTargetBillingVolume
+	if err := json.Unmarshal([]byte(target.DataVolumes), &volumes); err != nil {
+		return nil
+	}
+	output := make([]deploymentTargetBillingVolume, 0, len(volumes))
+	for _, volume := range volumes {
+		if volume.Capacity != "" {
+			output = append(output, volume)
+		}
+	}
+	return output
 }
 
 func (s Service) buildAmount(cpuCores decimal.Decimal, memoryGiB decimal.Decimal, durationMinutes decimal.Decimal) (decimal.Decimal, decimal.Decimal, decimal.Decimal, error) {
@@ -433,8 +535,8 @@ func (s Service) EnsureWallet(projectID string) (model.ProjectWallet, error) {
 	return wallet, err
 }
 
-func (s Service) Summary(projectIDs []string, now time.Time) (ProjectBillingSummary, error) {
-	summary := ProjectBillingSummary{}
+func (s Service) Summary(projectIDs []string, now time.Time, lowBalanceLimit decimal.Decimal) (ProjectBillingSummary, error) {
+	summary := ProjectBillingSummary{LowBalanceLimit: lowBalanceLimit, BalanceStatus: "ok"}
 	if len(projectIDs) == 0 {
 		return summary, nil
 	}
@@ -449,6 +551,10 @@ func (s Service) Summary(projectIDs []string, now time.Time) (ProjectBillingSumm
 	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
 	summary.TodaySpend = s.spendSince(projectIDs, dayStart)
 	summary.MonthSpend = s.spendSince(projectIDs, monthStart)
+	summary.PendingSpend = s.pendingSpend(projectIDs)
+	summary.AvailableCredits = summary.BalanceCredits.Sub(summary.PendingSpend)
+	summary.BalanceStatus = balanceStatus(summary.AvailableCredits, lowBalanceLimit)
+	summary.MonthlyCategories = s.monthlyCategories(projectIDs, monthStart)
 	return summary, nil
 }
 
@@ -462,6 +568,71 @@ func (s Service) spendSince(projectIDs []string, since time.Time) decimal.Decima
 		total = total.Add(entry.AmountCredits.Abs())
 	}
 	return total
+}
+
+func (s Service) pendingSpend(projectIDs []string) decimal.Decimal {
+	var records []model.BillingUsageRecord
+	if err := s.DB.Where("project_id in ? and status = ?", projectIDs, "pending").Find(&records).Error; err != nil {
+		return decimal.Zero
+	}
+	total := decimal.Zero
+	for _, record := range records {
+		total = total.Add(record.AmountCredits)
+	}
+	return total
+}
+
+func (s Service) monthlyCategories(projectIDs []string, monthStart time.Time) []BillingSpendCategory {
+	var entries []model.BillingLedgerEntry
+	if err := s.DB.Where("project_id in ? and type = ? and created_at >= ?", projectIDs, "debit", monthStart).Find(&entries).Error; err != nil {
+		return nil
+	}
+	amounts := map[string]decimal.Decimal{}
+	for _, entry := range entries {
+		category := billingCategory(entry.Reason, entry.Meter)
+		amounts[category] = amounts[category].Add(entry.AmountCredits.Abs())
+	}
+	order := []string{"build", "runtime", "storage", "gateway", "adjustment", "other"}
+	categories := make([]BillingSpendCategory, 0, len(order))
+	for _, category := range order {
+		amount := amounts[category]
+		if amount.IsZero() {
+			continue
+		}
+		categories = append(categories, BillingSpendCategory{Category: category, AmountCredits: amount})
+	}
+	return categories
+}
+
+func billingCategory(reason string, meter string) string {
+	value := strings.TrimSpace(reason)
+	if value == "" {
+		value = strings.TrimSpace(meter)
+	}
+	switch {
+	case strings.HasPrefix(value, "build."):
+		return "build"
+	case strings.HasPrefix(value, "runtime."):
+		return "runtime"
+	case strings.HasPrefix(value, "storage."):
+		return "storage"
+	case strings.HasPrefix(value, "gateway."):
+		return "gateway"
+	case strings.HasPrefix(value, "billing."):
+		return "adjustment"
+	default:
+		return "other"
+	}
+}
+
+func balanceStatus(available decimal.Decimal, lowBalanceLimit decimal.Decimal) string {
+	if available.IsNegative() || available.IsZero() {
+		return "insufficient"
+	}
+	if lowBalanceLimit.IsPositive() && available.LessThanOrEqual(lowBalanceLimit) {
+		return "low"
+	}
+	return "ok"
 }
 
 func cpuCoresFromQuantity(value string) decimal.Decimal {
@@ -482,6 +653,17 @@ func memoryGiBFromQuantity(value string) decimal.Decimal {
 	quantity, err := resource.ParseQuantity(value)
 	if err != nil {
 		quantity = resource.MustParse(defaultMemoryRequest)
+	}
+	return decimal.NewFromInt(quantity.Value()).Div(decimal.NewFromInt(1024 * 1024 * 1024))
+}
+
+func storageGiBFromQuantity(value string) decimal.Decimal {
+	if value == "" {
+		value = defaultDataCapacity
+	}
+	quantity, err := resource.ParseQuantity(value)
+	if err != nil {
+		quantity = resource.MustParse(defaultDataCapacity)
 	}
 	return decimal.NewFromInt(quantity.Value()).Div(decimal.NewFromInt(1024 * 1024 * 1024))
 }

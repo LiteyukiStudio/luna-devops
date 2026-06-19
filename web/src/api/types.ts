@@ -319,6 +319,9 @@ export interface BuildRun {
   dockerfilePath: string
   buildContext: string
   buildDirectory: string
+  buildEnvironmentId: string
+  buildCpuRequest: string
+  buildMemoryRequest: string
   targetRegistryId: string
   targetImageRef?: string
   targetRepository: string
@@ -363,6 +366,9 @@ export interface DeploymentTarget {
   dockerfilePath: string
   buildContext: string
   buildDirectory: string
+  buildEnvironmentId: string
+  buildCpuRequest: string
+  buildMemoryRequest: string
   targetRegistryId: string
   targetRepository: string
   targetTag: string
@@ -592,6 +598,16 @@ export interface BillingSummary {
   balanceCredits: string
   todaySpend: string
   monthSpend: string
+  pendingSpend: string
+  availableCredits: string
+  lowBalanceLimit: string
+  balanceStatus: 'ok' | 'low' | 'insufficient' | string
+  monthlyCategories: BillingSpendCategory[]
+}
+
+export interface BillingSpendCategory {
+  category: 'build' | 'runtime' | 'storage' | 'gateway' | 'adjustment' | 'other' | string
+  amountCredits: string
 }
 
 export interface BillingRateRule {

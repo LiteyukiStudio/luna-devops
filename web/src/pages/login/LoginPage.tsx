@@ -100,7 +100,7 @@ export function LoginPage() {
               <img
                 alt=""
                 className="pointer-events-none absolute bottom-0 left-[51.5%] z-10 h-[112%] w-auto max-w-none -translate-x-1/2 select-none object-contain object-bottom drop-shadow-[0_28px_42px_rgba(47,123,244,0.22)]"
-                src="https://devops-docs.liteyuki.org/brand/mascot-liteyuki-catgirl-alpha.png"
+                src="https://devops-docs.liteyuki.org/brand/mascot-liteyuki-catgirl-alpha.webp"
               />
               <div className="absolute inset-0 z-20 rounded-l-[inherit] bg-gradient-to-r from-background/10 via-transparent to-background/30" />
             </div>

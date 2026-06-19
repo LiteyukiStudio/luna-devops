@@ -19,6 +19,9 @@ type deploymentTargetResponse struct {
 	DockerfilePath       string                              `json:"dockerfilePath"`
 	BuildContext         string                              `json:"buildContext"`
 	BuildDirectory       string                              `json:"buildDirectory"`
+	BuildEnvironmentID   string                              `json:"buildEnvironmentId"`
+	BuildCPURequest      string                              `json:"buildCpuRequest"`
+	BuildMemoryRequest   string                              `json:"buildMemoryRequest"`
 	TargetRegistryID     string                              `json:"targetRegistryId"`
 	TargetRepository     string                              `json:"targetRepository"`
 	TargetTag            string                              `json:"targetTag"`
@@ -72,6 +75,9 @@ func deploymentTargetResponseFromModel(target model.DeploymentTarget) deployment
 		DockerfilePath:       target.DockerfilePath,
 		BuildContext:         target.BuildContext,
 		BuildDirectory:       target.BuildDirectory,
+		BuildEnvironmentID:   fallback(strings.TrimSpace(target.BuildEnvironmentID), target.EnvironmentID),
+		BuildCPURequest:      fallback(strings.TrimSpace(target.BuildCPURequest), defaultBuildCPURequest),
+		BuildMemoryRequest:   fallback(strings.TrimSpace(target.BuildMemoryRequest), defaultBuildMemoryRequest),
 		TargetRegistryID:     target.TargetRegistryID,
 		TargetRepository:     target.TargetRepository,
 		TargetTag:            target.TargetTag,
@@ -114,6 +120,9 @@ type deploymentTargetInput struct {
 	DockerfilePath       string                             `json:"dockerfilePath"`
 	BuildContext         string                             `json:"buildContext"`
 	BuildDirectory       string                             `json:"buildDirectory"`
+	BuildEnvironmentID   string                             `json:"buildEnvironmentId"`
+	BuildCPURequest      string                             `json:"buildCpuRequest"`
+	BuildMemoryRequest   string                             `json:"buildMemoryRequest"`
 	TargetRegistryID     string                             `json:"targetRegistryId"`
 	TargetImageRef       string                             `json:"targetImageRef"`
 	TargetRepository     string                             `json:"targetRepository"`

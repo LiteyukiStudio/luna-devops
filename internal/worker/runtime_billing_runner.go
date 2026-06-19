@@ -38,6 +38,7 @@ func (r *Runner) settleRuntimeUsageWindows(ctx context.Context, now time.Time) e
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+		r.settleStorageUsageForTarget(ctx, service, target, windows)
 		environment, release, ok := r.runtimeBillingTargetContext(target)
 		if !ok {
 			continue
@@ -63,6 +64,30 @@ func (r *Runner) settleRuntimeUsageWindows(ctx context.Context, now time.Time) e
 		}
 	}
 	return nil
+}
+
+func (r *Runner) settleStorageUsageForTarget(ctx context.Context, service billing.Service, target model.DeploymentTarget, windows []hourlyWindow) {
+	if !target.DataRetentionEnabled {
+		return
+	}
+	for _, window := range windows {
+		if err := ctx.Err(); err != nil {
+			return
+		}
+		periodStart, periodEnd, ok := storageBillingEffectivePeriod(window.Start, window.End, target.CreatedAt)
+		if !ok {
+			continue
+		}
+		err := service.SettleStorageTargetWindow(billing.StorageUsageInput{
+			Target:      target,
+			PeriodStart: periodStart,
+			PeriodEnd:   periodEnd,
+			ActorID:     "system",
+		})
+		if err != nil && !errors.Is(err, billing.ErrAlreadySettled) {
+			log.Printf("storage billing settlement skipped target=%s window=%s: %v", target.ID, window.Start.Format(time.RFC3339), err)
+		}
+	}
 }
 
 func (r *Runner) runtimeBillingTargetContext(target model.DeploymentTarget) (model.Environment, model.Release, bool) {
@@ -115,6 +140,17 @@ func runtimeBillingEffectivePeriod(windowStart time.Time, windowEnd time.Time, t
 	}
 	if releaseStart.After(start) {
 		start = releaseStart
+	}
+	if !windowEnd.After(start) {
+		return time.Time{}, time.Time{}, false
+	}
+	return start, windowEnd, true
+}
+
+func storageBillingEffectivePeriod(windowStart time.Time, windowEnd time.Time, targetCreatedAt time.Time) (time.Time, time.Time, bool) {
+	start := windowStart
+	if targetCreatedAt.After(start) {
+		start = targetCreatedAt
 	}
 	if !windowEnd.After(start) {
 		return time.Time{}, time.Time{}, false

@@ -1,8 +1,9 @@
 import type { ReactNode } from 'react'
 import type { BillingLedgerEntry, BillingUsageRecord, Project } from '@/api/client'
 import type { DataListColumn } from '@/components/common/data-list'
+import type { StatusTone } from '@/components/common/status-tone'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Coins, CreditCard, Plus, TrendingDown } from 'lucide-react'
+import { AlertTriangle, Coins, CreditCard, Plus, TrendingDown, WalletCards } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -21,6 +22,7 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { TabsContent } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
+import { formatBillingNumber, useBillingDisplay } from '@/lib/billing-display'
 import { cn } from '@/lib/utils'
 
 const PAGE_SIZE = 10
@@ -29,6 +31,7 @@ export function BillingPage() {
   const { i18n, t } = useTranslation()
   const { user } = useSession()
   const queryClient = useQueryClient()
+  const billingDisplay = useBillingDisplay(i18n.language)
   const [activeTab, setActiveTab] = useState('ledger')
   const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([])
   const [ledgerPage, setLedgerPage] = useState(1)
@@ -98,6 +101,7 @@ export function BillingPage() {
   const scopeLabel = selectedProjectIds.length > 0
     ? t('billingPage.selectedProjects', { count: selectedProjectIds.length })
     : t('billingPage.allRelatedProjects')
+  const summary = summaryQuery.data
 
   const ledgerColumns = useMemo<DataListColumn<BillingLedgerEntry>[]>(() => [
     {
@@ -122,7 +126,7 @@ export function BillingPage() {
       className: 'w-40',
       render: item => (
         <span className={cn('font-medium tabular-nums', amountToneClass(item.amountCredits))}>
-          {formatSignedCredits(item.amountCredits, i18n.language)}
+          {billingDisplay.formatSignedAmountWithUnit(item.amountCredits)}
         </span>
       ),
     },
@@ -130,7 +134,7 @@ export function BillingPage() {
       key: 'balance',
       header: t('billingPage.balanceAfter'),
       className: 'w-40',
-      render: item => <span className="tabular-nums">{formatCredits(item.balanceAfterCredits, i18n.language)}</span>,
+      render: item => <span className="tabular-nums">{billingDisplay.formatAmountWithUnit(item.balanceAfterCredits)}</span>,
     },
     {
       key: 'reason',
@@ -150,7 +154,7 @@ export function BillingPage() {
       className: 'w-44',
       render: item => formatSmartDateTime(item.createdAt, t),
     },
-  ], [i18n.language, projectMap, t])
+  ], [billingDisplay, projectMap, t])
 
   const usageColumns = useMemo<DataListColumn<BillingUsageRecord>[]>(() => [
     {
@@ -181,7 +185,7 @@ export function BillingPage() {
       key: 'amount',
       header: t('billingPage.amount'),
       className: 'w-40',
-      render: item => <span className="font-medium tabular-nums text-destructive">{formatCredits(item.amountCredits, i18n.language)}</span>,
+      render: item => <span className="font-medium tabular-nums text-destructive">{billingDisplay.formatAmountWithUnit(item.amountCredits)}</span>,
     },
     {
       key: 'resource',
@@ -195,30 +199,92 @@ export function BillingPage() {
       className: 'w-44',
       render: item => formatSmartDateTime(item.createdAt, t),
     },
-  ], [i18n.language, projectMap, t])
+  ], [billingDisplay, i18n.language, projectMap, t])
 
   return (
     <div className="grid min-w-0 gap-5">
-      <div className="grid gap-3 md:grid-cols-3">
+      {summary && summary.balanceStatus !== 'ok' && (
+        <Card className={cn(
+          'flex min-w-0 items-start gap-3 rounded-2xl border p-4',
+          summary.balanceStatus === 'insufficient'
+            ? 'border-destructive/30 bg-destructive/5 text-destructive'
+            : 'border-amber-300/60 bg-amber-50 text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200',
+        )}
+        >
+          <AlertTriangle className="mt-0.5 size-5 shrink-0" />
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="font-medium">{t(`billingPage.balanceStatuses.${summary.balanceStatus}`)}</p>
+              <StatusBadge tone={summary.balanceStatus === 'insufficient' ? 'danger' : 'warning'}>
+                {billingDisplay.formatAmountWithUnit(summary.availableCredits)}
+              </StatusBadge>
+            </div>
+            <p className="mt-1 text-sm opacity-80">
+              {t('billingPage.balanceWarningDescription', {
+                pending: billingDisplay.formatAmountWithUnit(summary.pendingSpend),
+                threshold: billingDisplay.formatAmountWithUnit(summary.lowBalanceLimit),
+              })}
+            </p>
+          </div>
+        </Card>
+      )}
+
+      <div className="grid gap-3 md:grid-cols-4">
         <MetricCard
           icon={<Coins className="size-5" />}
           label={t('billingPage.balance')}
           loading={summaryQuery.isLoading}
-          value={formatCredits(summaryQuery.data?.balanceCredits, i18n.language)}
+          value={billingDisplay.formatAmountWithUnit(summary?.balanceCredits)}
         />
         <MetricCard
           icon={<TrendingDown className="size-5" />}
           label={t('billingPage.todaySpend')}
           loading={summaryQuery.isLoading}
-          value={formatCredits(summaryQuery.data?.todaySpend, i18n.language)}
+          value={billingDisplay.formatAmountWithUnit(summary?.todaySpend)}
         />
         <MetricCard
           icon={<CreditCard className="size-5" />}
           label={t('billingPage.monthSpend')}
           loading={summaryQuery.isLoading}
-          value={formatCredits(summaryQuery.data?.monthSpend, i18n.language)}
+          value={billingDisplay.formatAmountWithUnit(summary?.monthSpend)}
+        />
+        <MetricCard
+          icon={<WalletCards className="size-5" />}
+          label={t('billingPage.pendingSpend')}
+          loading={summaryQuery.isLoading}
+          value={billingDisplay.formatAmountWithUnit(summary?.pendingSpend)}
         />
       </div>
+
+      <Card className="rounded-2xl p-5">
+        <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <h3 className="text-base font-semibold text-foreground">{t('billingPage.monthlyCategoriesTitle')}</h3>
+            <p className="text-sm text-muted-foreground">{t('billingPage.monthlyCategoriesDescription')}</p>
+          </div>
+          <StatusBadge tone={balanceStatusTone(summary?.balanceStatus)}>
+            {t(`billingPage.balanceStatuses.${summary?.balanceStatus ?? 'ok'}`)}
+          </StatusBadge>
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+          {(summary?.monthlyCategories?.length ?? 0) > 0
+            ? (summary?.monthlyCategories ?? []).map(category => (
+                <div key={category.category} className="min-w-0 rounded-xl border border-border bg-muted/20 p-3">
+                  <p className="truncate text-xs text-muted-foreground">
+                    {t(`billingPage.categories.${category.category}`, { defaultValue: category.category })}
+                  </p>
+                  <p className="mt-1 truncate text-lg font-semibold tabular-nums text-foreground">
+                    {billingDisplay.formatAmountWithUnit(category.amountCredits)}
+                  </p>
+                </div>
+              ))
+            : (
+                <p className="text-sm text-muted-foreground md:col-span-3 xl:col-span-6">
+                  {summaryQuery.isLoading ? t('common.loading') : t('billingPage.emptyMonthlyCategories')}
+                </p>
+              )}
+        </div>
+      </Card>
 
       <ContentTabs
         tabs={[
@@ -343,7 +409,7 @@ export function BillingPage() {
                 </SelectContent>
               </Select>
             </Field>
-            <Field hint={t('billingPage.walletTransactionAmountHint')} label={t('billingPage.amount')}>
+            <Field hint={t('billingPage.walletTransactionAmountHint', { unit: billingDisplay.currencyUnit })} label={t('billingPage.amount')}>
               <Input
                 inputMode="decimal"
                 placeholder={t('billingPage.walletTransactionAmountPlaceholder')}
@@ -379,7 +445,6 @@ export function BillingPage() {
 }
 
 function MetricCard({ icon, label, loading, value }: { icon: ReactNode, label: string, loading: boolean, value: string }) {
-  const { t } = useTranslation()
   return (
     <Card className="flex min-w-0 items-center gap-4 rounded-2xl p-5">
       <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
@@ -389,7 +454,6 @@ function MetricCard({ icon, label, loading, value }: { icon: ReactNode, label: s
         <p className="text-sm text-muted-foreground">{label}</p>
         <p className="mt-1 truncate text-2xl font-semibold tabular-nums">
           {loading ? '-' : value}
-          <span className="ml-2 text-sm font-normal text-muted-foreground">{t('billingPage.creditsUnit')}</span>
         </p>
       </div>
     </Card>
@@ -414,27 +478,8 @@ function ResourceCell({ resourceId, resourceType }: { resourceId: string, resour
   )
 }
 
-function formatCredits(value: string | undefined, locale: string) {
-  const numeric = Number.parseFloat(value ?? '0')
-  if (!Number.isFinite(numeric))
-    return '0'
-  return numeric.toLocaleString(locale, { maximumFractionDigits: 4, minimumFractionDigits: 0 })
-}
-
-function formatSignedCredits(value: string, locale: string) {
-  const numeric = Number.parseFloat(value)
-  if (!Number.isFinite(numeric))
-    return value
-  const formatted = Math.abs(numeric).toLocaleString(locale, { maximumFractionDigits: 4, minimumFractionDigits: 0 })
-  if (numeric > 0)
-    return `+${formatted}`
-  if (numeric < 0)
-    return `-${formatted}`
-  return formatted
-}
-
 function formatQuantity(value: string, unit: string, locale: string) {
-  const formatted = formatCredits(value, locale)
+  const formatted = formatBillingNumber(value, locale)
   return unit ? `${formatted} ${unit}` : formatted
 }
 
@@ -445,4 +490,12 @@ function amountToneClass(value: string) {
   if (numeric > 0)
     return 'text-emerald-600 dark:text-emerald-400'
   return 'text-muted-foreground'
+}
+
+function balanceStatusTone(status: string | undefined): StatusTone {
+  if (status === 'insufficient')
+    return 'danger'
+  if (status === 'low')
+    return 'warning'
+  return 'success'
 }

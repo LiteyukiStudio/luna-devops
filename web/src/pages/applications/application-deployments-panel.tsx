@@ -31,9 +31,10 @@ import { NativeSelect as Select } from '@/components/ui/native-select'
 import { Tabs, TabsContent } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { useBillingDisplay } from '@/lib/billing-display'
 import { WORKFLOW_STATUS_REFETCH_INTERVAL_MS } from '@/lib/polling'
 import { emptyRuntimeDataVolumeRow, parseRuntimeDataVolumes, serializeRuntimeDataVolumes } from '@/lib/runtime-data-volumes'
-import { branchOptions, defaultTargetImageRef, deploymentReleaseKey, deploymentTargetCanRelease, deploymentTargetImageRef, formatReleaseTime, registryInputPrefix, registryOptionLabel, releaseEnvironmentLabel } from './application-config-utils'
+import { branchOptions, buildEnvironmentOptionLabel, defaultTargetImageRef, deploymentReleaseKey, deploymentTargetCanRelease, deploymentTargetImageRef, formatReleaseTime, registryInputPrefix, registryOptionLabel, releaseEnvironmentLabel } from './application-config-utils'
 import { DeploymentRuntimeStatusBadge, InternalServiceEndpoint } from './application-deployment-runtime'
 import { buildDeploymentRuntimeStatus, buildInternalServiceEndpoint } from './application-deployment-runtime-utils'
 import { ApplicationRuntimeTerminalPanel } from './application-runtime-terminal-panel'
@@ -67,6 +68,9 @@ const deploymentTargetDefaults: DeploymentTargetPayload = {
   dockerfilePath: 'Dockerfile',
   buildContext: '.',
   buildDirectory: '',
+  buildEnvironmentId: '',
+  buildCpuRequest: '1',
+  buildMemoryRequest: '1Gi',
   targetRegistryId: '',
   targetRepository: '',
   targetTag: 'latest',
@@ -124,8 +128,9 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
   repositoryBindings: RepositoryBinding[]
   releases: Release[]
 }) {
-  const { t } = useTranslation()
+  const { i18n, t } = useTranslation()
   const queryClient = useQueryClient()
+  const billingDisplay = useBillingDisplay(i18n.language)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [targetDialogOpen, setTargetDialogOpen] = useState(false)
   const [editingTarget, setEditingTarget] = useState<DeploymentTarget | null>(null)
@@ -154,6 +159,10 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
     resolver: zodResolver(repositoryBindingSchema),
   })
   const environmentMap = useMemo(() => Object.fromEntries(environments.map(environment => [environment.id, environment])), [environments])
+  const targetRuntimeEnvironment = environmentMap[targetForm.watch('environmentId')]
+  const targetBuildEnvironment = environmentMap[targetForm.watch('buildEnvironmentId')] ?? targetRuntimeEnvironment
+  const runtimeHourCost = billingDisplay.runtimeHourCost(targetRuntimeEnvironment?.replicas, targetRuntimeEnvironment?.cpuRequest, targetRuntimeEnvironment?.memoryRequest)
+  const buildMinuteCost = billingDisplay.buildMinuteCost(targetBuildEnvironment?.cpuRequest, targetBuildEnvironment?.memoryRequest)
   const buildRunMap = useMemo(() => Object.fromEntries(buildRuns.map(run => [run.id, run])), [buildRuns])
   const latestReleaseByTarget = useMemo(() => {
     const output: Record<string, Release> = {}
@@ -328,6 +337,7 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
       ...target,
       sourceType,
       environmentId: target?.environmentId ?? defaultEnvironment?.id ?? '',
+      buildEnvironmentId: target?.buildEnvironmentId || target?.environmentId || defaultEnvironment?.id || '',
       repositoryBindingId: target?.repositoryBindingId ?? defaultBinding?.id ?? '',
       targetRegistryId: target?.targetRegistryId ?? defaultRegistry?.id ?? '',
       targetImageRef: deploymentTargetImageRef(target ?? undefined) || defaultTargetImageRef(defaultRegistry, projectSlug, appSlug),
@@ -538,7 +548,13 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
   })
   const saveTarget = useMutation({
     mutationFn: async ({ redeploy, values }: { redeploy: boolean, values: DeploymentTargetPayload }) => {
-      const payload = normalizeDeploymentTargetPayload(values)
+      const buildEnvironment = environmentMap[values.buildEnvironmentId || values.environmentId]
+      const payload = normalizeDeploymentTargetPayload({
+        ...values,
+        buildEnvironmentId: buildEnvironment?.id || values.buildEnvironmentId || values.environmentId,
+        buildCpuRequest: buildEnvironment?.cpuRequest || values.buildCpuRequest || '1',
+        buildMemoryRequest: buildEnvironment?.memoryRequest || values.buildMemoryRequest || '1Gi',
+      })
       const savedTarget = editingTarget
         ? api.updateDeploymentTarget(projectId, applicationId, editingTarget.id, payload)
         : api.createDeploymentTarget(projectId, applicationId, payload)
@@ -709,11 +725,16 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
                 <Field hint={t('deploymentsPage.deploymentConfigNameHint')} label={t('common.name')} required>
                   <Input {...targetForm.register('name', { required: true })} placeholder={t('deploymentsPage.deploymentConfigNamePattern')} />
                 </Field>
-                <Field label={t('deploymentsPage.environment')} required>
+                <Field hint={t('deploymentsPage.runtimeEnvironmentHint')} label={t('deploymentsPage.runtimeEnvironment')} required>
                   <Select {...targetForm.register('environmentId', { required: true })}>
                     <option value="">{t('common.select')}</option>
                     {environments.map(environment => <option key={environment.id} value={environment.id}>{releaseEnvironmentLabel(environment, environment.id, t)}</option>)}
                   </Select>
+                  {targetRuntimeEnvironment && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {t('deploymentsPage.runtimeEstimatedPrice', { price: billingDisplay.formatAmountWithUnit(runtimeHourCost) })}
+                    </p>
+                  )}
                 </Field>
                 <Field hint={t('apps.sourceTypeHint')} label={t('apps.sourceType')} required>
                   <Select {...targetForm.register('sourceType', { required: true })}>
@@ -733,66 +754,85 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
               </div>
               {targetSourceType === 'repository'
                 ? (
-                    <div className="grid gap-3 md:grid-cols-2">
-                      <Field label={t('apps.repository')} required>
-                        <div className="flex flex-col gap-2 sm:flex-row">
-                          <Select containerClassName="min-w-0 flex-1" {...targetForm.register('repositoryBindingId', { required: targetSourceType === 'repository' })}>
+                    <div className="grid gap-4">
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <Field label={t('apps.repository')} required>
+                          <div className="flex flex-col gap-2 sm:flex-row">
+                            <Select containerClassName="min-w-0 flex-1" {...targetForm.register('repositoryBindingId', { required: targetSourceType === 'repository' })}>
+                              <option value="">{t('common.select')}</option>
+                              {repositoryBindings.map(binding => (
+                                <option key={binding.id} value={binding.id}>
+                                  {binding.owner}
+                                  /
+                                  {binding.repo}
+                                </option>
+                              ))}
+                            </Select>
+                            <Button className="shrink-0" type="button" variant="secondary" onClick={openRepositoryBindingDialog}>
+                              <Plus className="size-4" />
+                              {t('deploymentsPage.bindRepositoryInTarget')}
+                            </Button>
+                          </div>
+                        </Field>
+                        <Field label={t('buildsPage.targetRegistry')} required>
+                          <Select {...targetForm.register('targetRegistryId', { required: targetSourceType === 'repository' })}>
                             <option value="">{t('common.select')}</option>
-                            {repositoryBindings.map(binding => (
-                              <option key={binding.id} value={binding.id}>
-                                {binding.owner}
-                                /
-                                {binding.repo}
-                              </option>
-                            ))}
+                            {registries.map(registry => <option key={registry.id} value={registry.id}>{registryOptionLabel(registry)}</option>)}
                           </Select>
-                          <Button className="shrink-0" type="button" variant="secondary" onClick={openRepositoryBindingDialog}>
-                            <Plus className="size-4" />
-                            {t('deploymentsPage.bindRepositoryInTarget')}
-                          </Button>
+                        </Field>
+                        <Field hint={t('buildsPage.dockerfileLookupHint')} label={t('buildsPage.dockerfilePath')} required>
+                          <Input
+                            {...dockerfilePathField}
+                            list="deployment-target-dockerfile-options"
+                            placeholder="Dockerfile"
+                            onChange={(event) => {
+                              dockerfilePathField.onChange(event)
+                              applyDockerfileBuildDefaults(targetForm, event.target.value, buildContextSuggestions, dockerfileExposedPorts)
+                            }}
+                          />
+                          <datalist id="deployment-target-dockerfile-options">
+                            {dockerfileSuggestions.map(option => <option key={option} value={option} />)}
+                          </datalist>
+                          {targetBuildOptions.isFetching && <p className="mt-1 text-xs text-muted-foreground">{t('apps.detectingRepository')}</p>}
+                          {targetBuildOptions.isError && <p className="mt-1 text-xs text-destructive">{t('deploymentsPage.buildOptionsLoadFailed')}</p>}
+                        </Field>
+                        <Field hint={t('buildsPage.buildContextLookupHint')} label={t('buildsPage.buildContext')} required>
+                          <Input {...targetForm.register('buildContext', { required: true })} list="deployment-target-build-context-options" placeholder="." />
+                          <datalist id="deployment-target-build-context-options">
+                            {buildContextSuggestions.map(option => <option key={option} value={option} />)}
+                          </datalist>
+                        </Field>
+                        <Field hint={t('buildsPage.buildDirectoryHint')} label={t('buildsPage.buildDirectory')}>
+                          <Input {...targetForm.register('buildDirectory')} list="deployment-target-build-directory-options" placeholder={t('buildsPage.buildDirectoryPlaceholder')} />
+                          <datalist id="deployment-target-build-directory-options">
+                            {buildDirectorySuggestions.map(option => <option key={option} value={option} />)}
+                          </datalist>
+                        </Field>
+                        <Field hint={t('buildsPage.targetImageRefHint')} label={t('buildsPage.targetImageRef')} required>
+                          <TargetImageRefInput
+                            placeholder={t('buildsPage.targetImageRefPlaceholder')}
+                            prefix={targetImagePrefix}
+                            register={targetForm.register('targetImageRef', { required: targetSourceType === 'repository' })}
+                          />
+                        </Field>
+                      </div>
+                      <div className="grid gap-3">
+                        <div>
+                          <h3 className="text-sm font-semibold">{t('deploymentsPage.buildEnvironment')}</h3>
+                          <p className="mt-1 text-sm text-muted-foreground">{t('deploymentsPage.buildEnvironmentDescription')}</p>
                         </div>
-                      </Field>
-                      <Field label={t('buildsPage.targetRegistry')} required>
-                        <Select {...targetForm.register('targetRegistryId', { required: targetSourceType === 'repository' })}>
-                          <option value="">{t('common.select')}</option>
-                          {registries.map(registry => <option key={registry.id} value={registry.id}>{registryOptionLabel(registry)}</option>)}
-                        </Select>
-                      </Field>
-                      <Field hint={t('buildsPage.dockerfileLookupHint')} label={t('buildsPage.dockerfilePath')} required>
-                        <Input
-                          {...dockerfilePathField}
-                          list="deployment-target-dockerfile-options"
-                          placeholder="Dockerfile"
-                          onChange={(event) => {
-                            dockerfilePathField.onChange(event)
-                            applyDockerfileBuildDefaults(targetForm, event.target.value, buildContextSuggestions, dockerfileExposedPorts)
-                          }}
-                        />
-                        <datalist id="deployment-target-dockerfile-options">
-                          {dockerfileSuggestions.map(option => <option key={option} value={option} />)}
-                        </datalist>
-                        {targetBuildOptions.isFetching && <p className="mt-1 text-xs text-muted-foreground">{t('apps.detectingRepository')}</p>}
-                        {targetBuildOptions.isError && <p className="mt-1 text-xs text-destructive">{t('deploymentsPage.buildOptionsLoadFailed')}</p>}
-                      </Field>
-                      <Field hint={t('buildsPage.buildContextLookupHint')} label={t('buildsPage.buildContext')} required>
-                        <Input {...targetForm.register('buildContext', { required: true })} list="deployment-target-build-context-options" placeholder="." />
-                        <datalist id="deployment-target-build-context-options">
-                          {buildContextSuggestions.map(option => <option key={option} value={option} />)}
-                        </datalist>
-                      </Field>
-                      <Field hint={t('buildsPage.buildDirectoryHint')} label={t('buildsPage.buildDirectory')}>
-                        <Input {...targetForm.register('buildDirectory')} list="deployment-target-build-directory-options" placeholder={t('buildsPage.buildDirectoryPlaceholder')} />
-                        <datalist id="deployment-target-build-directory-options">
-                          {buildDirectorySuggestions.map(option => <option key={option} value={option} />)}
-                        </datalist>
-                      </Field>
-                      <Field hint={t('buildsPage.targetImageRefHint')} label={t('buildsPage.targetImageRef')} required>
-                        <TargetImageRefInput
-                          placeholder={t('buildsPage.targetImageRefPlaceholder')}
-                          prefix={targetImagePrefix}
-                          register={targetForm.register('targetImageRef', { required: targetSourceType === 'repository' })}
-                        />
-                      </Field>
+                        <Field hint={t('deploymentsPage.buildEnvironmentHint')} label={t('deploymentsPage.buildEnvironment')} required>
+                          <Select {...targetForm.register('buildEnvironmentId', { required: true })}>
+                            <option value="">{t('common.select')}</option>
+                            {environments.map(environment => <option key={environment.id} value={environment.id}>{buildEnvironmentOptionLabel(environment, t)}</option>)}
+                          </Select>
+                          {targetBuildEnvironment && (
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {t('deploymentsPage.buildEstimatedPrice', { price: billingDisplay.formatAmountWithUnit(buildMinuteCost) })}
+                            </p>
+                          )}
+                        </Field>
+                      </div>
                     </div>
                   )
                 : (
@@ -1461,6 +1501,9 @@ function normalizeDeploymentTargetPayload(values: DeploymentTargetPayload): Depl
     targetRegistryId: sourceType === 'repository' ? values.targetRegistryId : '',
     targetImageRef: sourceType === 'repository' ? values.targetImageRef : '',
     imageRef: sourceType === 'image' ? values.imageRef : '',
+    buildEnvironmentId: values.buildEnvironmentId || values.environmentId,
+    buildCpuRequest: values.buildCpuRequest || '1',
+    buildMemoryRequest: values.buildMemoryRequest || '1Gi',
     targetTag: values.targetTag || 'latest',
     buildVariableSetIds: normalizeStringIds(values.buildVariableSetIds),
     runtimeConfigSetIds: normalizeStringIds(values.runtimeConfigSetIds),

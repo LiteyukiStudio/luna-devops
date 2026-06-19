@@ -222,6 +222,7 @@ export function ApplicationConfigPage() {
             repositoryBindings={appRepositoryBindings}
             buildJobs={appBuildJobs}
             deploymentTargets={deploymentTargetRows}
+            environments={environments.data ?? []}
             buildRuns={appBuildRuns}
             projectId={projectId}
             projectSlug={project.data?.slug ?? ''}

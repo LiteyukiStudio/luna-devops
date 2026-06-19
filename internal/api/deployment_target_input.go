@@ -2,11 +2,18 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/gin-gonic/gin"
+	"k8s.io/apimachinery/pkg/api/resource"
+)
+
+const (
+	defaultBuildCPURequest    = "1"
+	defaultBuildMemoryRequest = "1Gi"
 )
 
 func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, app model.Application, input deploymentTargetInput, targetID string, existingSecretFiles map[string]string) (model.DeploymentTarget, bool) {
@@ -58,6 +65,23 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 		writeError(ctx, http.StatusBadRequest, "服务端口必须在 1 到 65535 之间")
 		return model.DeploymentTarget{}, false
 	}
+	buildEnvironmentID := strings.TrimSpace(input.BuildEnvironmentID)
+	if buildEnvironmentID == "" {
+		buildEnvironmentID = environment.ID
+	}
+	var buildEnvironment model.Environment
+	if err := h.db.First(&buildEnvironment, "id = ? and project_id = ?", buildEnvironmentID, app.ProjectID).Error; err != nil {
+		writeError(ctx, http.StatusBadRequest, "构建环境不存在或不属于当前项目空间")
+		return model.DeploymentTarget{}, false
+	}
+	buildCPURequest, ok := normalizeBuildResourceQuantity(ctx, buildEnvironment.CPURequest, defaultBuildCPURequest, "构建 CPU")
+	if !ok {
+		return model.DeploymentTarget{}, false
+	}
+	buildMemoryRequest, ok := normalizeBuildResourceQuantity(ctx, buildEnvironment.MemoryRequest, defaultBuildMemoryRequest, "构建内存")
+	if !ok {
+		return model.DeploymentTarget{}, false
+	}
 	runtimeConfigSetIDs := normalizeStringList(input.RuntimeConfigSetIDs)
 	if len(runtimeConfigSetIDs) > 0 {
 		var count int64
@@ -105,6 +129,9 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 		DockerfilePath:       fallback(strings.TrimSpace(input.DockerfilePath), "Dockerfile"),
 		BuildContext:         fallback(strings.TrimSpace(input.BuildContext), "."),
 		BuildDirectory:       strings.TrimSpace(input.BuildDirectory),
+		BuildEnvironmentID:   buildEnvironment.ID,
+		BuildCPURequest:      buildCPURequest,
+		BuildMemoryRequest:   buildMemoryRequest,
 		TargetRegistryID:     strings.TrimSpace(input.TargetRegistryID),
 		TargetRepository:     targetRepository,
 		TargetTag:            fallback(targetTag, "latest"),
@@ -139,6 +166,24 @@ func normalizeDeploymentSourceType(value string) string {
 	default:
 		return "repository"
 	}
+}
+
+func normalizeBuildResourceQuantity(ctx *gin.Context, value string, fallbackValue string, label string) (string, bool) {
+	normalized, err := normalizeBuildResourceQuantityValue(value, fallbackValue, label)
+	if err != nil {
+		writeError(ctx, http.StatusBadRequest, err.Error())
+		return "", false
+	}
+	return normalized, true
+}
+
+func normalizeBuildResourceQuantityValue(value string, fallbackValue string, label string) (string, error) {
+	normalized := fallback(strings.TrimSpace(value), fallbackValue)
+	quantity, err := resource.ParseQuantity(normalized)
+	if err != nil || quantity.Sign() <= 0 {
+		return "", fmt.Errorf("%s必须是有效的正数资源规格", label)
+	}
+	return normalized, nil
 }
 
 func normalizeSecretRefsInput(value string) string {

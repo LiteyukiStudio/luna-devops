@@ -69,6 +69,25 @@ func (h *Handlers) prepareBuildRunRequest(user model.User, run *model.BuildRun) 
 	run.DockerfilePath = fallback(strings.TrimSpace(config.DockerfilePath), "Dockerfile")
 	run.BuildContext = fallback(strings.TrimSpace(config.BuildContext), ".")
 	run.BuildDirectory = strings.TrimSpace(config.BuildDirectory)
+	buildEnvironmentID := strings.TrimSpace(run.BuildEnvironmentID)
+	if buildEnvironmentID == "" {
+		buildEnvironmentID = fallback(strings.TrimSpace(config.BuildEnvironmentID), config.EnvironmentID)
+	}
+	var buildEnvironment model.Environment
+	if err := h.db.First(&buildEnvironment, "id = ? and project_id = ?", buildEnvironmentID, run.ProjectID).Error; err != nil {
+		return buildRunBadRequest("构建环境不存在或不属于当前项目空间")
+	}
+	run.BuildEnvironmentID = buildEnvironment.ID
+	buildCPURequest, err := normalizeBuildResourceQuantityValue(buildEnvironment.CPURequest, defaultBuildCPURequest, "构建 CPU")
+	if err != nil {
+		return buildRunBadRequest(err.Error())
+	}
+	buildMemoryRequest, err := normalizeBuildResourceQuantityValue(buildEnvironment.MemoryRequest, defaultBuildMemoryRequest, "构建内存")
+	if err != nil {
+		return buildRunBadRequest(err.Error())
+	}
+	run.BuildCPURequest = buildCPURequest
+	run.BuildMemoryRequest = buildMemoryRequest
 	run.BuildLabels = strings.Join(normalizeBuildSelectorList(strings.Split(config.BuildLabels, ",")), ",")
 	if strings.TrimSpace(config.RepositoryBindingID) != "" {
 		var binding model.RepositoryBinding

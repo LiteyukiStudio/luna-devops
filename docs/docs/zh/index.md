@@ -14,7 +14,7 @@ hero:
       text: 查看功能
       link: /operations/deployment
   image:
-    src: /brand/mascot-liteyuki-catgirl-alpha.png
+    src: /brand/mascot-liteyuki-catgirl-alpha.webp
     alt: Liteyuki DevOps mascot
 features:
   - title: 开始：Docker Compose 部署

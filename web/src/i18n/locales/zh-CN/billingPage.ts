@@ -1,9 +1,13 @@
 const billingPage = {
-  description: '查看项目空间 Credits 余额、消费概览和账单流水。',
+  description: '查看项目空间余额、消费概览和账单流水。',
   balance: '余额',
   todaySpend: '今日花费',
   monthSpend: '本月花费',
-  creditsUnit: 'Credits',
+  pendingSpend: '待结算',
+  monthlyCategoriesTitle: '本月分类消耗',
+  monthlyCategoriesDescription: '按构建、运行、存储和访问等计量项聚合已结算扣费。',
+  emptyMonthlyCategories: '本月暂无已结算消耗。',
+  balanceWarningDescription: '待结算 {{pending}}，低余额阈值 {{threshold}}。请关注后续构建、运行和存储扣费。',
   filters: '账单范围',
   projectScopeHint: '未选择时展示与你相关的全部项目空间。',
   clearProjectFilter: '查看全部相关项目空间',
@@ -12,7 +16,7 @@ const billingPage = {
   walletTransactionDescription: '为指定项目空间写入一条充值或补偿流水，余额会在同一事务中更新。',
   walletTransactionType: '操作类型',
   walletTransactionTypeHint: '充值金额必须为正数；补偿可以填写正数或负数。',
-  walletTransactionAmountHint: '支持小数。负数仅用于补偿扣减。',
+  walletTransactionAmountHint: '支持小数，单位为 {{unit}}。负数仅用于补偿扣减。',
   walletTransactionAmountPlaceholder: '例如 100 或 -20',
   walletTransactionDescriptionPlaceholder: '填写本次调整原因，便于后续审计。',
   walletTransactionCreated: '余额调整已写入账本',
@@ -51,6 +55,7 @@ const billingPage = {
   reasons: {
     'build.usage': '构建用量',
     'runtime.usage': '运行用量',
+    'storage.usage': '存储用量',
     'billing.recharge': '手动充值',
     'billing.adjustment': '手动补偿',
   },
@@ -62,6 +67,19 @@ const billingPage = {
     'runtime.memory_gib_hour': '运行内存',
     'storage.gib_day': '存储容量',
     'gateway.requests_1000': '访问请求',
+  },
+  categories: {
+    build: '构建',
+    runtime: '运行',
+    storage: '存储',
+    gateway: '访问',
+    adjustment: '调账',
+    other: '其他',
+  },
+  balanceStatuses: {
+    ok: '余额正常',
+    low: '余额偏低',
+    insufficient: '余额不足',
   },
 }
 

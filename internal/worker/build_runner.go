@@ -25,6 +25,7 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
@@ -34,6 +35,8 @@ const (
 	buildJobAppName            = "liteyuki-build-job"
 	buildJobServiceAccountName = "liteyuki-build-job"
 	buildJobScope              = "build"
+	defaultBuildCPURequest     = "1"
+	defaultBuildMemoryRequest  = "1Gi"
 )
 
 func (r *Runner) handleBuildRun(ctx context.Context, task *asynq.Task) error {
@@ -100,7 +103,7 @@ func (r *Runner) handleBuildRun(ctx context.Context, task *asynq.Task) error {
 	taskPayload := resolved.Task
 	jobName := buildKubernetesJobName(job.ID)
 	secretName := jobName + "-secret"
-	if err := r.startBuildJob(ctx, client, namespace, secretName, jobName, environment, taskPayload); err != nil {
+	if err := r.startBuildJob(ctx, client, namespace, secretName, jobName, environment, run, taskPayload); err != nil {
 		_ = r.failBuildJob(job, run, err.Error())
 		return err
 	}
@@ -163,10 +166,17 @@ func (r *Runner) settleBuildUsage(jobID string, runID string, projectID string, 
 	if run.FinishedAt != nil {
 		finishedAt = *run.FinishedAt
 	}
+	buildEnvironment := environment
+	if strings.TrimSpace(run.BuildEnvironmentID) != "" && run.BuildEnvironmentID != environment.ID {
+		var selectedEnvironment model.Environment
+		if err := r.db.First(&selectedEnvironment, "id = ? and project_id = ?", run.BuildEnvironmentID, projectID).Error; err == nil {
+			buildEnvironment = selectedEnvironment
+		}
+	}
 	err := (billing.Service{DB: r.db}).SettleBuildRun(billing.BuildUsageInput{
 		Run:         run,
 		Job:         job,
-		Environment: environment,
+		Environment: buildEnvironment,
 		FinishedAt:  finishedAt,
 	})
 	if err != nil && !errors.Is(err, billing.ErrAlreadySettled) {
@@ -195,7 +205,7 @@ func (r *Runner) kubernetesClient(environment model.Environment) (kubernetes.Int
 	return kubernetes.NewForConfig(restConfig)
 }
 
-func (r *Runner) startBuildJob(ctx context.Context, client kubernetes.Interface, namespace string, secretName string, jobName string, environment model.Environment, task builder.Task) error {
+func (r *Runner) startBuildJob(ctx context.Context, client kubernetes.Interface, namespace string, secretName string, jobName string, environment model.Environment, run model.BuildRun, task builder.Task) error {
 	if err := ensureBuildJobServiceAccount(ctx, client, namespace); err != nil {
 		return err
 	}
@@ -215,7 +225,7 @@ func (r *Runner) startBuildJob(ctx context.Context, client kubernetes.Interface,
 	cleanupSecret := func() {
 		_ = secrets.Delete(context.Background(), secretName, metav1.DeleteOptions{})
 	}
-	job := buildJobSpec(jobName, secretName, environment, task, r.buildExecutorImage, r.buildNPMRegistry, r.buildCacheEnabled, r.buildCacheTag, r.buildJobTTLSeconds)
+	job := buildJobSpec(jobName, secretName, environment, run, task, r.buildExecutorImage, r.buildNPMRegistry, r.buildCacheEnabled, r.buildCacheTag, r.buildJobTTLSeconds)
 	jobs := client.BatchV1().Jobs(namespace)
 	if _, err := jobs.Create(ctx, job, metav1.CreateOptions{}); err != nil {
 		if !apierrors.IsAlreadyExists(err) {
@@ -350,7 +360,7 @@ func buildJobSecret(name string, task builder.Task, npmRegistry string, cacheEna
 	}
 }
 
-func buildJobSpec(jobName string, secretName string, environment model.Environment, task builder.Task, image string, npmRegistry string, cacheEnabled bool, cacheTag string, ttlSeconds int64) *batchv1.Job {
+func buildJobSpec(jobName string, secretName string, environment model.Environment, run model.BuildRun, task builder.Task, image string, npmRegistry string, cacheEnabled bool, cacheTag string, ttlSeconds int64) *batchv1.Job {
 	backoffLimit := int32(0)
 	ttl := int32(ttlSeconds)
 	runAsUser := int64(1000)
@@ -379,6 +389,7 @@ func buildJobSpec(jobName string, secretName string, environment model.Environme
 		{Name: "HOME", Value: "/workspace/home"},
 		{Name: "BUILDKITD_FLAGS", Value: "--oci-worker-no-process-sandbox"},
 	}
+	resources := buildJobResourceRequirements(run)
 	for key := range buildJobSecret("", task, npmRegistry, cacheEnabled, cacheTag).StringData {
 		if strings.HasPrefix(key, "env-") {
 			env = append(env, corev1.EnvVar{
@@ -410,6 +421,7 @@ func buildJobSpec(jobName string, secretName string, environment model.Environme
 						ImagePullPolicy: corev1.PullIfNotPresent,
 						Command:         []string{"/bin/sh", "-ec", "mkdir -p /workspace/hooks /workspace/home; cp /executor/run.sh /workspace/run.sh; if [ -d /executor/hooks ]; then cp -R /executor/hooks/. /workspace/hooks/; fi; chmod +x /workspace/run.sh /workspace/hooks/*.sh 2>/dev/null || true; /workspace/run.sh"},
 						Env:             env,
+						Resources:       resources,
 						SecurityContext: &corev1.SecurityContext{
 							RunAsUser:                &runAsUser,
 							RunAsGroup:               &runAsGroup,
@@ -434,6 +446,27 @@ func buildJobSpec(jobName string, secretName string, environment model.Environme
 					},
 				},
 			},
+		},
+	}
+}
+
+func buildJobResourceRequirements(run model.BuildRun) corev1.ResourceRequirements {
+	cpu := strings.TrimSpace(run.BuildCPURequest)
+	if cpu == "" {
+		cpu = defaultBuildCPURequest
+	}
+	memory := strings.TrimSpace(run.BuildMemoryRequest)
+	if memory == "" {
+		memory = defaultBuildMemoryRequest
+	}
+	return corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse(cpu),
+			corev1.ResourceMemory: resource.MustParse(memory),
+		},
+		Limits: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse(cpu),
+			corev1.ResourceMemory: resource.MustParse(memory),
 		},
 	}
 }

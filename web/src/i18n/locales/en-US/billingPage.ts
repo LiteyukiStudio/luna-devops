@@ -1,9 +1,13 @@
 const billingPage = {
-  description: 'Review project space credit balances, spend summary, and billing ledger.',
+  description: 'Review project space balances, spend summary, and billing ledger.',
   balance: 'Balance',
   todaySpend: 'Today spend',
   monthSpend: 'Month spend',
-  creditsUnit: 'Credits',
+  pendingSpend: 'Pending',
+  monthlyCategoriesTitle: 'Month spend by category',
+  monthlyCategoriesDescription: 'Settled debits grouped by build, runtime, storage, gateway, and other meters.',
+  emptyMonthlyCategories: 'No settled spend this month yet.',
+  balanceWarningDescription: 'Pending spend is {{pending}} and the low-balance threshold is {{threshold}}. Watch upcoming build, runtime, and storage charges.',
   filters: 'Billing scope',
   projectScopeHint: 'When no project space is selected, all related project spaces are included.',
   clearProjectFilter: 'View all related project spaces',
@@ -12,7 +16,7 @@ const billingPage = {
   walletTransactionDescription: 'Write a recharge or compensation ledger entry for a project space. The balance is updated in the same transaction.',
   walletTransactionType: 'Operation type',
   walletTransactionTypeHint: 'Recharge amount must be positive. Compensation can be positive or negative.',
-  walletTransactionAmountHint: 'Decimals are supported. Negative values are only allowed for compensation.',
+  walletTransactionAmountHint: 'Decimals are supported. Unit: {{unit}}. Negative values are only allowed for compensation.',
   walletTransactionAmountPlaceholder: 'For example 100 or -20',
   walletTransactionDescriptionPlaceholder: 'Describe why this adjustment is being made for auditability.',
   walletTransactionCreated: 'Balance adjustment was written to the ledger',
@@ -51,6 +55,7 @@ const billingPage = {
   reasons: {
     'build.usage': 'Build usage',
     'runtime.usage': 'Runtime usage',
+    'storage.usage': 'Storage usage',
     'billing.recharge': 'Manual recharge',
     'billing.adjustment': 'Manual compensation',
   },
@@ -62,6 +67,19 @@ const billingPage = {
     'runtime.memory_gib_hour': 'Runtime memory',
     'storage.gib_day': 'Storage',
     'gateway.requests_1000': 'Gateway requests',
+  },
+  categories: {
+    build: 'Build',
+    runtime: 'Runtime',
+    storage: 'Storage',
+    gateway: 'Gateway',
+    adjustment: 'Adjustment',
+    other: 'Other',
+  },
+  balanceStatuses: {
+    ok: 'Balance healthy',
+    low: 'Low balance',
+    insufficient: 'Insufficient balance',
   },
 }
 

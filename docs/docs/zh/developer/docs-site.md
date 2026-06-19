@@ -28,7 +28,7 @@ docs/
 ## 资源
 
 - Logo：`docs/docs/public/liteyuki-logo.svg`
-- 吉祥物：`docs/docs/public/brand/mascot-liteyuki-catgirl-alpha.png`
+- 吉祥物：`docs/docs/public/brand/mascot-liteyuki-catgirl-alpha.webp`
 
 资源来自主项目前端的品牌素材，文档站构建时以静态资源发布。
 

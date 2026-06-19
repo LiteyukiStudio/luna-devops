@@ -28,7 +28,7 @@ docs/
 ## Assets
 
 - Logo: `docs/docs/public/liteyuki-logo.svg`
-- Mascot: `docs/docs/public/brand/mascot-liteyuki-catgirl-alpha.png`
+- Mascot: `docs/docs/public/brand/mascot-liteyuki-catgirl-alpha.webp`
 
 Assets come from the main frontend brand resources and are published as static docs assets.
 

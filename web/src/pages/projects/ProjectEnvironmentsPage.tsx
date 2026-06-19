@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { NativeSelect as Select } from '@/components/ui/native-select'
+import { useBillingDisplay } from '@/lib/billing-display'
 import { ENVIRONMENT_SLUG_MAX_LENGTH } from '@/lib/slug-limits'
 
 export interface ProjectEnvironmentsPageHandle {
@@ -38,8 +39,9 @@ const environmentDefaults: EnvironmentForm = {
 }
 
 export function ProjectEnvironmentsPage({ projectId, ref }: { projectId: string, ref?: React.Ref<ProjectEnvironmentsPageHandle> }) {
-  const { t } = useTranslation()
+  const { i18n, t } = useTranslation()
   const queryClient = useQueryClient()
+  const billingDisplay = useBillingDisplay(i18n.language)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingEnvironment, setEditingEnvironment] = useState<Environment | null>(null)
   const [environmentToDelete, setEnvironmentToDelete] = useState<Environment | null>(null)
@@ -47,6 +49,7 @@ export function ProjectEnvironmentsPage({ projectId, ref }: { projectId: string,
   const clusters = useQuery({ queryKey: ['runtime-clusters', projectId], queryFn: () => api.listRuntimeClusters(projectId), enabled: Boolean(projectId) })
   const clusterMap = useMemo(() => Object.fromEntries((clusters.data ?? []).map(cluster => [cluster.id, cluster])), [clusters.data])
   const form = useForm<EnvironmentForm>({ defaultValues: environmentDefaults, mode: 'onChange' })
+  const runtimeHourCost = billingDisplay.runtimeHourCost(form.watch('replicas'), form.watch('cpuRequest'), form.watch('memoryRequest'))
 
   useImperativeHandle(ref, () => ({
     openCreateDialog: () => openDialog(),
@@ -155,6 +158,9 @@ export function ProjectEnvironmentsPage({ projectId, ref }: { projectId: string,
                 />
               </Field>
             </div>
+            <p className="text-xs text-muted-foreground">
+              {t('deploymentsPage.runtimeEstimatedPrice', { price: billingDisplay.formatAmountWithUnit(runtimeHourCost) })}
+            </p>
             <DialogFooter><Button disabled={!projectId || !form.formState.isValid || saveEnvironment.isPending} type="submit">{t('common.save')}</Button></DialogFooter>
           </form>
         </DialogContent>

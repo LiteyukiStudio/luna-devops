@@ -2,6 +2,7 @@ import { createContext, use } from 'react'
 import i18next from '@/i18n'
 
 export const defaultPublicConfigs: Record<string, string> = {
+  'billing.creditsDisplayName': 'Credits',
   'site.title': 'Liteyuki DevOps',
   'site.logoUrl': '/liteyuki-logo.svg',
   'site.faviconUrl': '/liteyuki-logo.svg',
