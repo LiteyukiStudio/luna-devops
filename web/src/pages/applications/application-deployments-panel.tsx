@@ -1,5 +1,5 @@
 import type { UseFormReturn } from 'react-hook-form'
-import type { ArtifactRegistry, BuildRun, DeploymentTarget, DeploymentTargetPayload, Environment, ProjectRuntimeConfigSet, ProjectRuntimeConfigSetPayload, Release, RepositoryBinding } from '@/api/client'
+import type { ArtifactRegistry, BuildRun, DeploymentTarget, DeploymentTargetMetrics, DeploymentTargetPayload, Environment, ProjectRuntimeConfigSet, ProjectRuntimeConfigSetPayload, Release, RepositoryBinding } from '@/api/client'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import i18next from 'i18next'
@@ -9,7 +9,7 @@ import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { z } from 'zod'
-import { api, deploymentTargetDataExportUrl } from '@/api/client'
+import { api, deploymentTargetDataExportUrl, deploymentTargetMetricsStreamUrl } from '@/api/client'
 import { AutoFollowLog } from '@/components/common/auto-follow-log'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { DataList } from '@/components/common/data-list'
@@ -588,6 +588,7 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
           { key: 'runtimeData', header: t('deploymentsPage.runtimeData'), className: 'w-[1%] whitespace-nowrap px-4 py-3 align-middle', render: item => item.target.dataRetentionEnabled ? (item.target.dataCapacity || '1Gi') : t('common.disabled') },
           { key: 'auto', header: t('deploymentsPage.autoDeploy'), className: 'w-[1%] whitespace-nowrap px-4 py-3 align-middle', render: item => <StatusValueBadge value={item.target.autoDeploy ? 'enabled' : 'disabled'} /> },
           { key: 'runtimeStatus', header: t('deploymentsPage.runtimeStatus'), className: 'w-[1%] whitespace-nowrap px-4 py-3 align-middle', render: item => <DeploymentRuntimeStatusBadge status={item.runtimeStatus} /> },
+          { key: 'runtimeMetrics', header: t('deploymentsPage.runtimeMetrics'), className: 'w-[1%] whitespace-nowrap px-4 py-3 align-middle', render: item => <DeploymentTargetMetricsCell applicationId={applicationId} enabled={item.target.enabled && Boolean(item.release)} projectId={projectId} targetId={item.target.id} /> },
           { key: 'internalEndpoint', header: t('deploymentsPage.internalEndpoint'), className: 'min-w-56 px-4 py-3 align-middle', render: item => <InternalServiceEndpoint endpoint={item.internalEndpoint} onCopy={copyDeploymentText} /> },
           { key: 'revision', header: t('deploymentsPage.revision'), className: 'w-[1%] whitespace-nowrap px-4 py-3 align-middle', render: item => item.release ? `#${item.release.revision}` : '-' },
           { key: 'image', header: t('deploymentsPage.image'), className: 'min-w-48 px-4 py-3 align-middle', render: item => item.release ? <CopyableTruncatedText className="max-w-60 rounded bg-background px-2 py-1 font-mono text-xs" display={shortImageRef(item.release.imageRef)} value={item.release.imageRef} onCopy={copyDeploymentText} /> : '-' },
@@ -1439,6 +1440,69 @@ function DeploymentTargetSummary({ target }: { target: DeploymentTarget }) {
       )}
     </div>
   )
+}
+
+function DeploymentTargetMetricsCell({ applicationId, enabled, projectId, targetId }: { applicationId: string, enabled: boolean, projectId: string, targetId: string }) {
+  const { i18n, t } = useTranslation()
+  const [metricsState, setMetricsState] = useState<{ metrics: DeploymentTargetMetrics | null, targetId: string } | null>(null)
+  const metrics = metricsState?.targetId === targetId ? metricsState.metrics : null
+
+  useEffect(() => {
+    if (!enabled || !projectId || !applicationId || !targetId)
+      return
+    const source = new EventSource(deploymentTargetMetricsStreamUrl(projectId, applicationId, targetId), { withCredentials: true })
+    const handleMetrics = (event: MessageEvent) => {
+      try {
+        setMetricsState({ metrics: JSON.parse(event.data) as DeploymentTargetMetrics, targetId })
+      }
+      catch {
+        setMetricsState({ metrics: null, targetId })
+      }
+    }
+    source.addEventListener('metrics', handleMetrics)
+    return () => {
+      source.removeEventListener('metrics', handleMetrics)
+      source.close()
+    }
+  }, [applicationId, enabled, projectId, targetId])
+
+  if (!enabled)
+    return <span className="text-muted-foreground">-</span>
+  if (!metrics)
+    return <span className="text-xs text-muted-foreground">{t('deploymentsPage.metricsConnecting')}</span>
+  if (!metrics.available)
+    return <span className="text-xs text-muted-foreground">{t('deploymentsPage.metricsUnavailable')}</span>
+
+  const memoryLabel = `${formatMetricsBytes(metrics.memoryUsageBytes, i18n.language)} / ${formatMetricsBytes(metrics.memoryCapacityBytes, i18n.language)}`
+
+  return (
+    <div className="grid min-w-36 gap-1 text-xs">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-muted-foreground">{t('deploymentsPage.metricsCpu')}</span>
+        <span className="font-medium tabular-nums">{formatMetricsPercent(metrics.cpuUsagePercent, i18n.language)}</span>
+      </div>
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-muted-foreground">{t('deploymentsPage.metricsMemory')}</span>
+        <span className="font-medium tabular-nums">{memoryLabel}</span>
+      </div>
+    </div>
+  )
+}
+
+function formatMetricsPercent(value: number, locale: string) {
+  if (!Number.isFinite(value) || value <= 0)
+    return '0%'
+  return `${value.toLocaleString(locale, { maximumFractionDigits: 1 })}%`
+}
+
+function formatMetricsBytes(value: number, locale: string) {
+  if (!Number.isFinite(value) || value <= 0)
+    return '-'
+  const gib = 1024 ** 3
+  const mib = 1024 ** 2
+  if (value >= gib)
+    return `${(value / gib).toLocaleString(locale, { maximumFractionDigits: 1 })}Gi`
+  return `${(value / mib).toLocaleString(locale, { maximumFractionDigits: 1 })}Mi`
 }
 
 function normalizedComparable(value: unknown) {

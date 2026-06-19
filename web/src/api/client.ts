@@ -100,6 +100,7 @@ export type {
   CurrentUser,
   DeploymentTarget,
   DeploymentTargetHookBinding,
+  DeploymentTargetMetrics,
   DeploymentTargetPayload,
   Environment,
   ExternalIdentity,
@@ -342,6 +343,10 @@ export function buildJobLogsStreamUrl(projectId: string, jobId: string, after = 
 
 export function deploymentTargetDataExportUrl(projectId: string, applicationId: string, targetId: string) {
   return `${API_BASE_URL}/projects/${encodeURIComponent(projectId)}/applications/${encodeURIComponent(applicationId)}/deployment-targets/${encodeURIComponent(targetId)}/data-export`
+}
+
+export function deploymentTargetMetricsStreamUrl(projectId: string, applicationId: string, targetId: string) {
+  return `${API_BASE_URL}/projects/${encodeURIComponent(projectId)}/applications/${encodeURIComponent(applicationId)}/deployment-targets/${encodeURIComponent(targetId)}/metrics/stream`
 }
 
 export function releaseRuntimeTerminalUrl(projectId: string, releaseId: string, container = '') {

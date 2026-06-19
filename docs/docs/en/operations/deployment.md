@@ -42,6 +42,8 @@ Builds create images. Releases deploy images to runtime clusters.
 
 For a first run, deploy an existing image before wiring Git providers and automated builds.
 
+The application deployment list refreshes runtime metrics every second through SSE. Metrics come from the Kubernetes standard `metrics.k8s.io` Pod Metrics API, so the runtime cluster needs metrics-server installed. CPU percentage and memory usage are calculated from current usage divided by “environment size × replicas”. If the cluster does not expose metrics, the page shows metrics unavailable.
+
 ## Routes
 
 Routes connect domain, path, TLS, and backend service. After creating one, the platform shows apply status and checks so you can verify the service is reachable.

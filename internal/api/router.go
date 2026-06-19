@@ -138,6 +138,7 @@ func NewRouterWithStaticFS(db *gorm.DB, staticFS fs.FS) *gin.Engine {
 		v1.POST("/projects/:projectId/applications/:applicationId/deployment-targets", handlers.CreateDeploymentTarget)
 		v1.PUT("/projects/:projectId/applications/:applicationId/deployment-targets/:targetId", handlers.UpdateDeploymentTarget)
 		v1.POST("/projects/:projectId/applications/:applicationId/deployment-targets/:targetId/restart", handlers.RestartDeploymentTarget)
+		v1.GET("/projects/:projectId/applications/:applicationId/deployment-targets/:targetId/metrics/stream", handlers.StreamDeploymentTargetMetrics)
 		v1.GET("/projects/:projectId/applications/:applicationId/deployment-targets/:targetId/data-export", handlers.ExportDeploymentTargetData)
 		v1.DELETE("/projects/:projectId/applications/:applicationId/deployment-targets/:targetId", handlers.DeleteDeploymentTarget)
 		v1.GET("/projects/:projectId/build-runs", handlers.ListBuildRuns)

@@ -402,6 +402,20 @@ export interface DeploymentTarget {
   createdAt: string
 }
 
+export interface DeploymentTargetMetrics {
+  available: boolean
+  reason?: string
+  podCount: number
+  containerCount: number
+  cpuUsageMilli: number
+  cpuCapacityMilli: number
+  cpuUsagePercent: number
+  memoryUsageBytes: number
+  memoryCapacityBytes: number
+  memoryUsagePercent: number
+  updatedAt: string
+}
+
 export type DeploymentTargetPayload = Omit<DeploymentTarget, 'id' | 'projectId' | 'applicationId' | 'createdBy' | 'createdAt' | 'buildVariableSetIds' | 'runtimeConfigSetIds' | 'secretRefsSet' | 'secretFilesSet' | 'deleteStatus' | 'deleteMessage' | 'deleteStartedAt' | 'deleteFinishedAt'> & {
   buildVariableSetIds: string | string[]
   runtimeConfigSetIds: string | string[]

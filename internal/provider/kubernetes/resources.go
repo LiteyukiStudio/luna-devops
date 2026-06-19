@@ -13,8 +13,11 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/remotecommand"
 	"sigs.k8s.io/yaml"
@@ -96,6 +99,21 @@ type RuntimeTerminalOptions struct {
 	SizeQueue          remotecommand.TerminalSizeQueue
 }
 
+type RuntimeMetricsOptions struct {
+	Namespace          string
+	DeploymentTargetID string
+}
+
+type RuntimeMetricsSnapshot struct {
+	Available        bool      `json:"available"`
+	Reason           string    `json:"reason,omitempty"`
+	PodCount         int       `json:"podCount"`
+	ContainerCount   int       `json:"containerCount"`
+	CPUUsageMilli    int64     `json:"cpuUsageMilli"`
+	MemoryUsageBytes int64     `json:"memoryUsageBytes"`
+	UpdatedAt        time.Time `json:"updatedAt"`
+}
+
 func (c *Client) ListManagedResources(ctx context.Context, options ResourceListOptions) ([]ResourceSnapshot, error) {
 	switch normalizeResourceKind(options.Kind) {
 	case "namespaces":
@@ -111,6 +129,56 @@ func (c *Client) ListManagedResources(ctx context.Context, options ResourceListO
 	default:
 		return nil, fmt.Errorf("unsupported resource kind: %s", options.Kind)
 	}
+}
+
+func (c *Client) RuntimeMetrics(ctx context.Context, options RuntimeMetricsOptions) (RuntimeMetricsSnapshot, error) {
+	if c.dynamic == nil {
+		return RuntimeMetricsSnapshot{Available: false, Reason: "metrics_unavailable", UpdatedAt: time.Now()}, nil
+	}
+	namespace := strings.TrimSpace(options.Namespace)
+	deploymentTargetID := strings.TrimSpace(options.DeploymentTargetID)
+	if namespace == "" {
+		return RuntimeMetricsSnapshot{}, fmt.Errorf("resource namespace is required")
+	}
+	if deploymentTargetID == "" {
+		return RuntimeMetricsSnapshot{}, fmt.Errorf("deployment target is required")
+	}
+	selector := strings.Join([]string{
+		ManagedByLabel + "=" + ManagedByValue,
+		DeploymentTargetIDLabel + "=" + deploymentTargetID,
+		ScopeLabel + "!=build",
+	}, ",")
+	gvr := schema.GroupVersionResource{Group: "metrics.k8s.io", Version: "v1beta1", Resource: "pods"}
+	list, err := c.dynamic.Resource(gvr).Namespace(namespace).List(ctx, metav1.ListOptions{LabelSelector: selector})
+	if err != nil {
+		return RuntimeMetricsSnapshot{Available: false, Reason: "metrics_unavailable", UpdatedAt: time.Now()}, nil
+	}
+	snapshot := RuntimeMetricsSnapshot{Available: true, PodCount: len(list.Items), UpdatedAt: time.Now()}
+	for _, item := range list.Items {
+		containers, _, _ := unstructured.NestedSlice(item.Object, "containers")
+		for _, rawContainer := range containers {
+			container, ok := rawContainer.(map[string]any)
+			if !ok {
+				continue
+			}
+			usage, ok, _ := unstructured.NestedStringMap(container, "usage")
+			if !ok {
+				continue
+			}
+			snapshot.ContainerCount++
+			if value := strings.TrimSpace(usage["cpu"]); value != "" {
+				if quantity, err := resource.ParseQuantity(value); err == nil {
+					snapshot.CPUUsageMilli += quantity.MilliValue()
+				}
+			}
+			if value := strings.TrimSpace(usage["memory"]); value != "" {
+				if quantity, err := resource.ParseQuantity(value); err == nil {
+					snapshot.MemoryUsageBytes += quantity.Value()
+				}
+			}
+		}
+	}
+	return snapshot, nil
 }
 
 func (c *Client) RuntimePodLogs(ctx context.Context, options RuntimePodLogsOptions) (RuntimePodLogsResult, error) {
