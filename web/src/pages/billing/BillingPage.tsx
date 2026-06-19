@@ -26,6 +26,7 @@ import { formatBillingNumber, useBillingDisplay } from '@/lib/billing-display'
 import { cn } from '@/lib/utils'
 
 const PAGE_SIZE = 10
+const BILLING_PROJECT_SCOPE_CACHE_KEY = 'liteyuki.billing.projectScope'
 
 export function BillingPage() {
   const { i18n, t } = useTranslation()
@@ -33,7 +34,7 @@ export function BillingPage() {
   const queryClient = useQueryClient()
   const billingDisplay = useBillingDisplay(i18n.language)
   const [activeTab, setActiveTab] = useState('application-spend')
-  const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([])
+  const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>(readCachedBillingProjectScope)
   const [applicationSpendPage, setApplicationSpendPage] = useState(1)
   const [ledgerPage, setLedgerPage] = useState(1)
   const [usagePage, setUsagePage] = useState(1)
@@ -105,6 +106,7 @@ export function BillingPage() {
 
   function handleProjectFilterChange(projectIds: string[]) {
     setSelectedProjectIds(projectIds)
+    writeCachedBillingProjectScope(projectIds)
     setApplicationSpendPage(1)
     setLedgerPage(1)
     setUsagePage(1)
@@ -644,4 +646,37 @@ function balanceStatusTone(status: BalanceStatus): StatusTone {
   if (status === 'low')
     return 'warning'
   return 'success'
+}
+
+function readCachedBillingProjectScope() {
+  if (typeof window === 'undefined')
+    return []
+  try {
+    const cached = window.sessionStorage.getItem(BILLING_PROJECT_SCOPE_CACHE_KEY)
+    if (!cached)
+      return []
+    const parsed = JSON.parse(cached)
+    if (!Array.isArray(parsed))
+      return []
+    return parsed.map(item => String(item).trim()).filter(Boolean)
+  }
+  catch {
+    return []
+  }
+}
+
+function writeCachedBillingProjectScope(projectIds: string[]) {
+  if (typeof window === 'undefined')
+    return
+  try {
+    const normalized = projectIds.map(item => item.trim()).filter(Boolean)
+    if (normalized.length === 0) {
+      window.sessionStorage.removeItem(BILLING_PROJECT_SCOPE_CACHE_KEY)
+      return
+    }
+    window.sessionStorage.setItem(BILLING_PROJECT_SCOPE_CACHE_KEY, JSON.stringify(normalized))
+  }
+  catch {
+    // Ignore storage errors so private mode or quota issues do not break billing.
+  }
 }
