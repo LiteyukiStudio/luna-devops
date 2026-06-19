@@ -331,6 +331,10 @@ func (h *Handlers) ReceiveGitWebhook(ctx *gin.Context) {
 	}
 	event := gitWebhookEvent(ctx.Request.Header)
 	commitSHA := gitWebhookCommitSHA(body)
+	pushPayload, isPush := parseGitWebhookPushPayload(ctx.Request.Header, body)
+	if pushPayload.CommitSHA != "" {
+		commitSHA = pushPayload.CommitSHA
+	}
 	now := time.Now()
 	binding.WebhookStatus = "created"
 	binding.LastEvent = event
@@ -340,7 +344,119 @@ func (h *Handlers) ReceiveGitWebhook(ctx *gin.Context) {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	ctx.JSON(http.StatusOK, gin.H{"accepted": true, "event": event, "commitSha": commitSHA})
+	result := h.enqueueBuildRunsForWebhook(ctx, binding, pushPayload, isPush)
+	ctx.JSON(http.StatusOK, gin.H{
+		"accepted":      true,
+		"event":         event,
+		"commitSha":     commitSHA,
+		"matched":       result.Matched,
+		"queued":        result.Queued,
+		"queuedRunIds":  result.QueuedRunIDs,
+		"failed":        result.Failed,
+		"skipped":       result.Skipped,
+		"ignoredReason": result.IgnoredReason,
+	})
+}
+
+type webhookBuildTriggerResult struct {
+	Matched       int
+	Queued        int
+	Failed        int
+	Skipped       int
+	QueuedRunIDs  []string
+	IgnoredReason string
+}
+
+func (h *Handlers) enqueueBuildRunsForWebhook(ctx *gin.Context, binding model.RepositoryBinding, payload gitWebhookPushPayload, isPush bool) webhookBuildTriggerResult {
+	result := webhookBuildTriggerResult{QueuedRunIDs: []string{}}
+	if !isPush {
+		result.IgnoredReason = "unsupported_event"
+		return result
+	}
+	if payload.Deleted {
+		result.IgnoredReason = "deleted_ref"
+		return result
+	}
+	var account model.GitAccount
+	if err := h.db.First(&account, "id = ?", binding.GitAccountID).Error; err != nil {
+		result.IgnoredReason = "git_account_missing"
+		return result
+	}
+	var actor model.User
+	if err := h.db.First(&actor, "id = ?", account.UserID).Error; err != nil {
+		result.IgnoredReason = "actor_missing"
+		return result
+	}
+	var targets []model.DeploymentTarget
+	if err := h.db.Where(
+		"project_id = ? and application_id = ? and repository_binding_id = ? and enabled = ? and delete_status in ?",
+		binding.ProjectID,
+		binding.ApplicationID,
+		binding.ID,
+		true,
+		[]string{"", "active"},
+	).Where("(source_type = ? or source_type = '')", "repository").
+		Order("created_at asc").
+		Find(&targets).Error; err != nil {
+		result.IgnoredReason = "deployment_targets_unavailable"
+		return result
+	}
+	for _, target := range targets {
+		run := webhookBuildRunFromTarget(binding, target, actor, payload)
+		if !deploymentTargetMatchesBuildRun(target, run) {
+			result.Skipped++
+			continue
+		}
+		result.Matched++
+		if err := h.prepareBuildRunRequest(actor, &run); err != nil {
+			result.Failed++
+			continue
+		}
+		queuedRun, err := h.queueBuildRun(ctx.Request.Context(), actor, run)
+		if err != nil {
+			result.Failed++
+			continue
+		}
+		result.Queued++
+		result.QueuedRunIDs = append(result.QueuedRunIDs, queuedRun.ID)
+	}
+	if result.Matched == 0 && result.IgnoredReason == "" {
+		result.IgnoredReason = "no_matching_deployment_target"
+	}
+	return result
+}
+
+func webhookBuildRunFromTarget(binding model.RepositoryBinding, target model.DeploymentTarget, actor model.User, payload gitWebhookPushPayload) model.BuildRun {
+	triggeredByName := firstNonEmpty(payload.TriggeredByName, buildRunActorName(actor), "Git webhook")
+	triggeredByEmail := firstNonEmpty(payload.TriggeredByEmail, actor.Email)
+	triggerType := "push"
+	if payload.SourceTag != "" && payload.SourceBranch == "" {
+		triggerType = "tag"
+	}
+	return model.BuildRun{
+		ID:                  id.New("bldr"),
+		ProjectID:           binding.ProjectID,
+		ApplicationID:       binding.ApplicationID,
+		DeploymentTargetID:  target.ID,
+		BuildVariableSetIDs: strings.TrimSpace(target.BuildVariableSetIDs),
+		Status:              "queued",
+		TriggerType:         triggerType,
+		SourceBranch:        payload.SourceBranch,
+		SourceTag:           payload.SourceTag,
+		SourceCommit:        payload.CommitSHA,
+		DockerfilePath:      fallback(strings.TrimSpace(target.DockerfilePath), "Dockerfile"),
+		BuildContext:        fallback(strings.TrimSpace(target.BuildContext), "."),
+		BuildDirectory:      strings.TrimSpace(target.BuildDirectory),
+		TargetRegistryID:    strings.TrimSpace(target.TargetRegistryID),
+		TargetRepository:    strings.Trim(strings.TrimSpace(target.TargetRepository), "/"),
+		TargetTag:           fallback(strings.TrimSpace(target.TargetTag), "latest"),
+		CacheConfig:         "",
+		CreatedBy:           actor.ID,
+		TriggeredByName:     triggeredByName,
+		TriggeredByEmail:    triggeredByEmail,
+		SourceAuthorName:    payload.SourceAuthorName,
+		SourceAuthorEmail:   payload.SourceAuthorEmail,
+	}
 }
 
 func (h *Handlers) repositoryBindingFromInput(ctx *gin.Context, userID string, input repositoryBindingInput) (model.RepositoryBinding, bool) {

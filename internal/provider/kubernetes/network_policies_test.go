@@ -35,7 +35,7 @@ func TestEnsureBuildNetworkPolicyCreatesDefaultDenyPolicy(t *testing.T) {
 	if len(policy.Spec.Egress) != 0 {
 		t.Fatalf("expected default deny egress, got %#v", policy.Spec.Egress)
 	}
-	if len(policy.Spec.PolicyTypes) != 2 || policy.Spec.PolicyTypes[0] != networkingv1.PolicyTypeIngress || policy.Spec.PolicyTypes[1] != networkingv1.PolicyTypeEgress {
+	if len(policy.Spec.PolicyTypes) != 1 || policy.Spec.PolicyTypes[0] != networkingv1.PolicyTypeEgress {
 		t.Fatalf("policy types = %#v", policy.Spec.PolicyTypes)
 	}
 }

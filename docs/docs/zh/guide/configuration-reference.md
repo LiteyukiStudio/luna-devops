@@ -40,5 +40,5 @@ OIDC 身份源的 Redirect URI 由 `PUBLIC_BASE_URL` 生成，后台“身份源
 | 进阶 | `BUILD_CACHE_ENABLED` | `false` | 构建缓存开关；需要加速重复构建时开启。 |
 | 进阶 | `BUILD_CACHE_TAG` | `buildcache` | 构建缓存 tag；需要隔离缓存时改。 |
 | 进阶 | `BUILD_NPM_REGISTRY` | 空 | npm 镜像源；需要内部源时设置。 |
-| 进阶 | `BUILD_PRIVATE_EGRESS_CIDRS` | 空 | 构建可访问的内网 CIDR；需要访问内网镜像源时设。 |
-| 进阶 | `BUILD_BLOCKED_EGRESS_CIDRS` | 空 | 构建禁访 CIDR；需要更严格隔离时设。 |
+| 进阶 | `BUILD_PRIVATE_EGRESS_CIDRS` | 空 | 额外允许的内网 HTTPS CIDR；内网镜像源时设。 |
+| 进阶 | `BUILD_BLOCKED_EGRESS_CIDRS` | 空 | 额外禁止的 CIDR；需要更严格隔离时设。 |

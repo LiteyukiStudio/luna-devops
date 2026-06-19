@@ -288,12 +288,13 @@
 - [x] 提供 RepositoryBinding Webhook 重新配置 API，复用后端 provider 创建逻辑和权限校验。
 - [x] 校验 webhook 签名 API。
 - [x] 处理 push/tag webhook 事件 API。
-- [ ] 调整 Webhook 与构建触发边界：Webhook 直接绑定应用仓库，Git 事件统一进入平台；平台按应用下的部署配置触发规则判断要创建哪些 BuildRun/部署任务，部署配置不单独拥有外部 Git webhook。
+- [x] 调整 Webhook 与构建触发边界：Webhook 直接绑定应用仓库，Git 事件统一进入平台；平台按应用下的部署配置触发规则判断要创建哪些 BuildRun/部署任务，部署配置不单独拥有外部 Git webhook。
 - [x] RepositoryBinding 列表排除软删除 GitProvider/GitAccount/Application，并展示 Git 凭据 owner 信息。
 - [x] 删除 GitAccount 前检查 RepositoryBinding 引用，禁止删除仍被绑定引用的凭据。
 - [x] Debug 角色预览状态下禁止触发 Git OAuth 授权，避免真实 session 归属混淆。
 - [x] Git 上游接口错误对前端脱敏，不再透传上游响应体。
 - [x] Git webhook 创建失败按上游状态和 validation 细节映射友好错误码，明确提示 PUBLIC_BASE_URL 不可公网访问、权限不足、仓库不存在、重复 webhook 和平台限流等原因。
+- [ ] Webhook 状态改为实时检测/同步：仓库绑定列表不只展示本地 `webhookStatus`，后端按 Git Provider 适配 GitHub/Gitea 查询当前仓库 Webhook 是否存在、回调 URL 是否匹配、是否启用，并将检测结果回写或作为实时状态返回；前端提供“检测 Webhook”入口，避免用户在上游手动删除后平台仍显示成功。
 - [x] Git 外部请求网络失败映射为稳定错误码 `git.network_failed`，提示检查服务端网络、代理/VPN、DNS 解析或 FakeIP 设置。
 - [x] 收紧 Git 个人凭据访问：`personal` 凭据仅所有者可见可用，`provider` 凭据才按作用域共享。
 - [x] 收紧普通业务列表中的用户空间资源：管理员不再混看他人的 user-scope Git Provider、镜像站和 personal Registry/Git 凭据，后续单独建设管理视图。

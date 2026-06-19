@@ -27,6 +27,9 @@ func TestRestrictedBuildPolicyAllowsOnlyDNSByDefault(t *testing.T) {
 	if policy.Egress[0].Ports[0].Protocol != "UDP" || policy.Egress[0].Ports[0].Number != 53 {
 		t.Fatalf("first port = %#v", policy.Egress[0].Ports[0])
 	}
+	if len(policy.Egress[0].To) != 2 || policy.Egress[0].To[0].CIDR != "0.0.0.0/0" || policy.Egress[0].To[1].CIDR != "::/0" {
+		t.Fatalf("dns peers = %#v", policy.Egress[0].To)
+	}
 }
 
 func TestBuildPolicyWithPublicSourcesAllowsPublicHTTPAndHTTPS(t *testing.T) {

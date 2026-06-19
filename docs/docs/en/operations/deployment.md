@@ -28,6 +28,8 @@ A deployment target answers how an application should ship:
 - Listen on which service port.
 - Auto release after a successful build or not.
 
+Repository webhooks belong to application repository bindings. When the Git platform sends a push/tag event, the platform finds enabled, active deployment targets under the same application that use that repository binding, then creates build runs according to their branch and tag patterns. Deployment targets do not create separate external webhooks, so each repository event enters the platform once.
+
 When build variables or runtime config sets are deleted, the platform removes those references from deployment targets that still point to them, so deployment targets do not keep stale configuration IDs.
 
 Gateway routes are enabled by default when created. To temporarily stop public access without losing the domain config, disable the route; the platform keeps the config and removes the runtime Ingress, then reapplies it when enabled again.

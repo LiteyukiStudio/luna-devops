@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
@@ -14,6 +15,7 @@ import (
 )
 
 var errBuildRunNotCancelable = errors.New("build run is not cancelable")
+var errBuildQueueUnavailable = errors.New("构建任务队列未配置")
 
 func (h *Handlers) ListBuildRuns(ctx *gin.Context) {
 	if _, ok := h.findProjectForCurrentUser(ctx); !ok {
@@ -268,6 +270,19 @@ func (h *Handlers) createQueuedBuildRun(ctx *gin.Context, user model.User, run m
 		return
 	}
 	_ = targetImageRef
+	queuedRun, err := h.queueBuildRun(ctx.Request.Context(), user, run)
+	if err != nil {
+		if errors.Is(err, errBuildQueueUnavailable) || strings.Contains(err.Error(), "投递失败") {
+			writeError(ctx, http.StatusServiceUnavailable, err.Error())
+			return
+		}
+		writeError(ctx, http.StatusBadRequest, err.Error())
+		return
+	}
+	ctx.JSON(statusCode, queuedRun)
+}
+
+func (h *Handlers) queueBuildRun(ctx context.Context, user model.User, run model.BuildRun) (model.BuildRun, error) {
 	job := model.BuildJob{
 		ID:         id.New("bldj"),
 		BuildRunID: run.ID,
@@ -281,25 +296,22 @@ func (h *Handlers) createQueuedBuildRun(ctx *gin.Context, user model.User, run m
 		}
 		return tx.Create(&job).Error
 	}); err != nil {
-		writeError(ctx, http.StatusBadRequest, err.Error())
-		return
+		return run, err
 	}
 	if h.taskClient == nil {
 		h.markBuildRunDispatchFailed(run, job, "构建任务队列未配置")
-		writeError(ctx, http.StatusServiceUnavailable, "构建任务队列未配置")
-		return
+		return run, errBuildQueueUnavailable
 	}
-	if _, err := h.taskClient.EnqueueBuildRun(ctx.Request.Context(), tasks.BuildRunPayload{
+	if _, err := h.taskClient.EnqueueBuildRun(ctx, tasks.BuildRunPayload{
 		BuildRunID: run.ID,
 		BuildJobID: job.ID,
 		ProjectID:  run.ProjectID,
 		ActorID:    user.ID,
 	}); err != nil {
 		h.markBuildRunDispatchFailed(run, job, "构建任务投递失败: "+err.Error())
-		writeError(ctx, http.StatusServiceUnavailable, "构建任务投递失败")
-		return
+		return run, errors.New("构建任务投递失败")
 	}
-	ctx.JSON(statusCode, run)
+	return run, nil
 }
 
 func (h *Handlers) markBuildRunDispatchFailed(run model.BuildRun, job model.BuildJob, message string) {

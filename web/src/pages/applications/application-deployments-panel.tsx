@@ -522,8 +522,8 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
     }),
     onSuccess: (binding) => {
       toast.success(t('repositories.bindingSaved'))
-      queryClient.setQueryData<RepositoryBinding[]>(['repository-bindings', projectId], (items = []) => [
-        ...items.filter(item => item.id !== binding.id),
+      queryClient.setQueryData<RepositoryBinding[]>(['repository-bindings', projectId], items => [
+        ...repositoryBindingItems(items).filter(item => item.id !== binding.id),
         binding,
       ])
       targetForm.setValue('repositoryBindingId', binding.id, { shouldDirty: true, shouldValidate: true })
@@ -1397,6 +1397,10 @@ function normalizeStringIds(value: unknown): string[] {
     return trimmed.split(',').map(item => item.trim()).filter(Boolean)
   }
   return []
+}
+
+function repositoryBindingItems(items: RepositoryBinding[] | null | undefined) {
+  return Array.isArray(items) ? items : []
 }
 
 function normalizeDeploymentTargetPayload(values: DeploymentTargetPayload): DeploymentTargetPayload {

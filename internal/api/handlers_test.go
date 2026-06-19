@@ -646,6 +646,41 @@ func TestGitWebhookCommitSHAReadsAfterField(t *testing.T) {
 	}
 }
 
+func TestParseGitWebhookPushPayloadReadsBranchAndAuthor(t *testing.T) {
+	headers := http.Header{}
+	headers.Set("X-GitHub-Event", "push")
+	payload, ok := parseGitWebhookPushPayload(headers, []byte(`{
+		"ref":"refs/heads/main",
+		"after":"abc123",
+		"pusher":{"name":"snowy","email":"snowy@example.com"},
+		"head_commit":{"author":{"name":"Author","email":"author@example.com"}}
+	}`))
+	if !ok {
+		t.Fatal("expected push payload to parse")
+	}
+	if payload.SourceBranch != "main" || payload.SourceTag != "" || payload.CommitSHA != "abc123" {
+		t.Fatalf("payload source = %#v", payload)
+	}
+	if payload.TriggeredByName != "snowy" || payload.SourceAuthorEmail != "author@example.com" {
+		t.Fatalf("payload actor = %#v", payload)
+	}
+}
+
+func TestParseGitWebhookPushPayloadReadsTagAndDeletion(t *testing.T) {
+	headers := http.Header{}
+	headers.Set("X-Gitea-Event", "push")
+	payload, ok := parseGitWebhookPushPayload(headers, []byte(`{
+		"ref":"refs/tags/v1.0.0",
+		"after":"0000000000000000000000000000000000000000"
+	}`))
+	if !ok {
+		t.Fatal("expected tag push payload to parse")
+	}
+	if payload.SourceTag != "v1.0.0" || !payload.Deleted {
+		t.Fatalf("payload = %#v", payload)
+	}
+}
+
 func TestPathEscapePathPreservesPathSegments(t *testing.T) {
 	escaped := gitprovider.PathEscapePath("docs/app yaml.yml")
 	if escaped != "docs/app%20yaml.yml" {

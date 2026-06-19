@@ -83,6 +83,90 @@ func gitWebhookCommitSHA(body []byte) string {
 	return strings.TrimSpace(payload.SHA)
 }
 
+type gitWebhookPushPayload struct {
+	Event             string
+	CommitSHA         string
+	SourceBranch      string
+	SourceTag         string
+	Deleted           bool
+	SourceAuthorName  string
+	SourceAuthorEmail string
+	TriggeredByName   string
+	TriggeredByEmail  string
+}
+
+func parseGitWebhookPushPayload(header http.Header, body []byte) (gitWebhookPushPayload, bool) {
+	event := gitWebhookEvent(header)
+	payload := gitWebhookPushPayload{Event: event}
+	if event != "push" {
+		return payload, false
+	}
+	var raw struct {
+		Ref     string `json:"ref"`
+		After   string `json:"after"`
+		SHA     string `json:"sha"`
+		Deleted bool   `json:"deleted"`
+		Pusher  struct {
+			Name  string `json:"name"`
+			Email string `json:"email"`
+		} `json:"pusher"`
+		Sender struct {
+			Login string `json:"login"`
+			Name  string `json:"name"`
+			Email string `json:"email"`
+		} `json:"sender"`
+		HeadCommit struct {
+			ID     string `json:"id"`
+			Author struct {
+				Name  string `json:"name"`
+				Email string `json:"email"`
+			} `json:"author"`
+			Committer struct {
+				Name  string `json:"name"`
+				Email string `json:"email"`
+			} `json:"committer"`
+		} `json:"head_commit"`
+	}
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return payload, false
+	}
+	payload.CommitSHA = firstNonEmpty(raw.After, raw.SHA, raw.HeadCommit.ID)
+	payload.Deleted = raw.Deleted || isZeroGitSHA(payload.CommitSHA)
+	if branch, ok := strings.CutPrefix(strings.TrimSpace(raw.Ref), "refs/heads/"); ok {
+		payload.SourceBranch = strings.TrimSpace(branch)
+	}
+	if tag, ok := strings.CutPrefix(strings.TrimSpace(raw.Ref), "refs/tags/"); ok {
+		payload.SourceTag = strings.TrimSpace(tag)
+	}
+	payload.SourceAuthorName = firstNonEmpty(raw.HeadCommit.Author.Name, raw.HeadCommit.Committer.Name)
+	payload.SourceAuthorEmail = firstNonEmpty(raw.HeadCommit.Author.Email, raw.HeadCommit.Committer.Email)
+	payload.TriggeredByName = firstNonEmpty(raw.Pusher.Name, raw.Sender.Name, raw.Sender.Login)
+	payload.TriggeredByEmail = firstNonEmpty(raw.Pusher.Email, raw.Sender.Email)
+	return payload, payload.SourceBranch != "" || payload.SourceTag != ""
+}
+
+func isZeroGitSHA(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return false
+	}
+	for _, char := range value {
+		if char != '0' {
+			return false
+		}
+	}
+	return true
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
 func positiveInt(value string, fallbackValue int) int {
 	parsed, err := strconv.Atoi(strings.TrimSpace(value))
 	if err != nil || parsed < 1 {

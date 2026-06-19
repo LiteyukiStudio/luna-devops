@@ -59,6 +59,10 @@ func RestrictedBuildPolicy(namespace string) BuildPolicy {
 		},
 		Egress: []EgressRule{
 			{
+				To: []Peer{
+					{CIDR: "0.0.0.0/0"},
+					{CIDR: "::/0"},
+				},
 				Ports: []Port{
 					{Protocol: "UDP", Number: 53},
 					{Protocol: "TCP", Number: 53},

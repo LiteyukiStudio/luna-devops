@@ -40,5 +40,5 @@ The public route link scheme is managed in Admin Settings / Gateway as `gateway.
 | Advanced | `BUILD_CACHE_ENABLED` | `false` | Build cache switch; enable for faster repeated builds. |
 | Advanced | `BUILD_CACHE_TAG` | `buildcache` | Build cache tag; change to isolate cache. |
 | Advanced | `BUILD_NPM_REGISTRY` | Empty | npm registry; set when using an internal mirror. |
-| Advanced | `BUILD_PRIVATE_EGRESS_CIDRS` | Empty | Private CIDRs builds may access; set for internal registries or mirrors. |
-| Advanced | `BUILD_BLOCKED_EGRESS_CIDRS` | Empty | CIDRs builds must not access; set for stricter isolation. |
+| Advanced | `BUILD_PRIVATE_EGRESS_CIDRS` | Empty | Extra private HTTPS CIDRs builds may access; set for internal registries or mirrors. |
+| Advanced | `BUILD_BLOCKED_EGRESS_CIDRS` | Empty | Extra CIDRs builds must not access; set for stricter isolation. |

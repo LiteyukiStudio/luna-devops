@@ -41,7 +41,6 @@ func (c *Client) EnsureBuildNetworkPolicy(ctx context.Context, spec BuildNetwork
 				MatchLabels: spec.Labels,
 			},
 			PolicyTypes: []networkingv1.PolicyType{
-				networkingv1.PolicyTypeIngress,
 				networkingv1.PolicyTypeEgress,
 			},
 			Egress: spec.Egress,
