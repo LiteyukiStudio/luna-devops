@@ -58,7 +58,7 @@ type RepositoryBindingFormInput = z.input<typeof repositoryBindingSchema>
 type RepositoryBindingForm = z.output<typeof repositoryBindingSchema>
 type ReleaseForm = Omit<Release, 'id' | 'projectId' | 'createdBy' | 'createdAt' | 'rollbackFromId'>
 
-const releaseDefaults: ReleaseForm = { applicationId: '', buildRunId: '', deploymentTargetId: '', environmentId: '', imageRef: '', message: '', revision: 1, status: 'pending', type: 'deploy' }
+const releaseDefaults: ReleaseForm = { applicationId: '', buildRunId: '', deploymentTargetId: '', environmentId: '', forceImagePull: false, imageRef: '', message: '', revision: 1, status: 'pending', type: 'deploy' }
 const deploymentTargetDefaults: DeploymentTargetPayload = {
   name: '',
   environmentId: '',
@@ -468,6 +468,19 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
     },
     onError: error => toast.error(error.message),
   })
+  const pullLatestImageDeploy = useMutation({
+    mutationFn: async (target: DeploymentTarget) => {
+      const releasePayload = redeployReleasePayload(target, latestReleaseByTarget[deploymentReleaseKey(target.environmentId, target.id)], { forceImagePull: true })
+      if (!releasePayload)
+        throw new Error(t('deploymentsPage.redeployUnavailable'))
+      return api.createRelease(projectId, releasePayload)
+    },
+    onSuccess: () => {
+      toast.success(t('deploymentsPage.pullLatestImageDeployQueued'))
+      queryClient.invalidateQueries({ queryKey: ['releases', projectId] })
+    },
+    onError: error => toast.error(error.message),
+  })
   const deleteTarget = useMutation({
     mutationFn: (target: DeploymentTarget) => api.deleteDeploymentTarget(projectId, applicationId, target.id),
     onSuccess: () => {
@@ -649,6 +662,10 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
                       <DropdownMenuItem disabled={deleting || !item.release || restartTarget.isPending} onSelect={() => restartTarget.mutate(item.target)}>
                         <RefreshCw className="size-4" />
                         {t('deploymentsPage.restart')}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem disabled={deleting || !item.release || pullLatestImageDeploy.isPending} onSelect={() => pullLatestImageDeploy.mutate(item.target)}>
+                        <Package className="size-4" />
+                        {t('deploymentsPage.pullLatestImageDeploy')}
                       </DropdownMenuItem>
                       {item.target.dataRetentionEnabled && (
                         <DropdownMenuItem onSelect={() => window.open(deploymentTargetDataExportUrl(projectId, applicationId, item.target.id), '_blank', 'noopener,noreferrer')}>
@@ -1378,7 +1395,7 @@ function CopyableTruncatedText({ className, display, value, onCopy }: {
     </Tooltip>
   )
 }
-function redeployReleasePayload(target: DeploymentTarget, latestRelease?: Release): ReleaseForm | null {
+function redeployReleasePayload(target: DeploymentTarget, latestRelease?: Release, options: { forceImagePull?: boolean } = {}): ReleaseForm | null {
   const imageRef = target.sourceType === 'image'
     ? (target.imageRef?.trim() || latestRelease?.imageRef?.trim() || '')
     : (latestRelease?.imageRef?.trim() || '')
@@ -1391,6 +1408,7 @@ function redeployReleasePayload(target: DeploymentTarget, latestRelease?: Releas
     buildRunId,
     deploymentTargetId: target.id,
     environmentId: target.environmentId,
+    forceImagePull: options.forceImagePull ?? false,
     imageRef,
     revision: (latestRelease?.revision ?? 0) + 1,
     status: 'pending',

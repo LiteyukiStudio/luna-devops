@@ -122,6 +122,7 @@ func releaseFromInput(projectID, userID string, input releaseInput, releaseID st
 		DeploymentTargetID: strings.TrimSpace(input.DeploymentTargetID),
 		BuildRunID:         strings.TrimSpace(input.BuildRunID),
 		ImageRef:           strings.TrimSpace(input.ImageRef),
+		ForceImagePull:     input.ForceImagePull,
 		Type:               normalizeReleaseType(input.Type),
 		Status:             fallback(strings.TrimSpace(input.Status), "pending"),
 		Revision:           fallbackInt(input.Revision, 1),
@@ -159,6 +160,7 @@ type releaseInput struct {
 	DeploymentTargetID string `json:"deploymentTargetId" binding:"required"`
 	BuildRunID         string `json:"buildRunId"`
 	ImageRef           string `json:"imageRef"`
+	ForceImagePull     bool   `json:"forceImagePull"`
 	Type               string `json:"type"`
 	Status             string `json:"status"`
 	Revision           int    `json:"revision"`

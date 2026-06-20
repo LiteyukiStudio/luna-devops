@@ -533,6 +533,7 @@ export interface Release {
   deploymentTargetId: string
   buildRunId: string
   imageRef: string
+  forceImagePull: boolean
   type: 'deploy' | 'rollback'
   status: 'pending' | 'running' | 'succeeded' | 'failed'
   revision: number

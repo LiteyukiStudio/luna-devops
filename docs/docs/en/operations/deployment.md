@@ -40,6 +40,10 @@ Gateway routes are enabled by default when created. To temporarily stop public a
 
 Builds create images. Releases deploy images to runtime clusters.
 
+Every new Release updates the Kubernetes Pod Template release fingerprint, so a rollout is triggered even when the target image tag stays the same. By default, config-only changes restart Pods without forcing an image pull. When a Release comes from a new build artifact and the image tag stays the same, the platform temporarily uses `imagePullPolicy: Always` to avoid stale node cache issues with fixed tags.
+
+If the remote image content changed but the tag did not, choose “Pull latest image and deploy” from the deploy config actions menu. This creates a new Release and forces an image pull for that rollout.
+
 For a first run, deploy an existing image before wiring Git providers and automated builds.
 
 The application deployment list refreshes runtime metrics every second through SSE. Metrics come from the Kubernetes standard `metrics.k8s.io` Pod Metrics API, so the runtime cluster needs metrics-server installed. CPU percentage and memory usage are calculated from current usage divided by “environment size × replicas”. If the cluster does not expose metrics, the page shows metrics unavailable.

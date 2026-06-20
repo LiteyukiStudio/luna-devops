@@ -55,6 +55,8 @@ const deploymentsPage = {
   targetDeleted: 'Deploy config deleted',
   restart: 'Restart',
   restartQueued: 'Restart triggered',
+  pullLatestImageDeploy: 'Pull latest image and deploy',
+  pullLatestImageDeployQueued: 'Pull-latest-image deploy queued',
   saveAndRedeploy: 'Save and redeploy',
   redeployUnavailable: 'This deploy config has no reusable release image yet, so it cannot be redeployed.',
   buildOptionsLoadFailed: 'Repository structure detection failed. You can still enter build paths manually.',

@@ -600,6 +600,7 @@ CREATE TABLE IF NOT EXISTS releases (
   deployment_target_id text NOT NULL DEFAULT '',
   build_run_id text NOT NULL DEFAULT '',
   image_ref text NOT NULL,
+  force_image_pull boolean NOT NULL DEFAULT false,
   type text NOT NULL DEFAULT 'deploy',
   status text NOT NULL DEFAULT 'pending',
   revision integer NOT NULL DEFAULT 1,

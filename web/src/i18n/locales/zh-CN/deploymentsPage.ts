@@ -55,6 +55,8 @@ const deploymentsPage = {
   targetDeleted: '部署配置已删除',
   restart: '重启',
   restartQueued: '重启已触发',
+  pullLatestImageDeploy: '拉取最新镜像部署',
+  pullLatestImageDeployQueued: '已创建拉取最新镜像部署任务',
   saveAndRedeploy: '保存并重新部署',
   redeployUnavailable: '当前部署配置还没有可复用的发布镜像，无法重新部署。',
   buildOptionsLoadFailed: '仓库结构探测失败，可手动填写构建路径。',

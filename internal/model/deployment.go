@@ -55,6 +55,7 @@ type Release struct {
 	DeploymentTargetID string         `gorm:"index;not null;default:''" json:"deploymentTargetId"`
 	BuildRunID         string         `gorm:"index" json:"buildRunId"`
 	ImageRef           string         `gorm:"not null" json:"imageRef"`
+	ForceImagePull     bool           `gorm:"not null;default:false" json:"forceImagePull"`
 	Type               string         `gorm:"not null;default:deploy" json:"type"`
 	Status             string         `gorm:"index;not null;default:pending" json:"status"`
 	Revision           int            `gorm:"not null;default:1" json:"revision"`

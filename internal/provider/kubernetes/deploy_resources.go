@@ -42,6 +42,7 @@ type ApplicationResourcesSpec struct {
 	DataCapacity          string
 	DataMountPath         string
 	DataVolumes           []ApplicationDataVolume
+	ForceImagePull        bool
 }
 
 type ApplicationConfigFile struct {
@@ -332,9 +333,10 @@ func (c *Client) applyDeployment(ctx context.Context, spec ApplicationResourcesS
 		progressDeadlineSeconds = 600
 	}
 	container := corev1.Container{
-		Name:  "app",
-		Image: spec.Image,
-		Ports: []corev1.ContainerPort{{ContainerPort: spec.ServicePort}},
+		Name:            "app",
+		Image:           spec.Image,
+		ImagePullPolicy: applicationImagePullPolicy(spec),
+		Ports:           []corev1.ContainerPort{{ContainerPort: spec.ServicePort}},
 		EnvFrom: []corev1.EnvFromSource{
 			{ConfigMapRef: &corev1.ConfigMapEnvSource{LocalObjectReference: corev1.LocalObjectReference{Name: spec.Name + "-config"}}},
 			{SecretRef: &corev1.SecretEnvSource{LocalObjectReference: corev1.LocalObjectReference{Name: spec.Name + "-secret"}}},
@@ -383,7 +385,7 @@ func (c *Client) applyDeployment(ctx context.Context, spec ApplicationResourcesS
 			Selector:                &metav1.LabelSelector{MatchLabels: selectorLabels},
 			ProgressDeadlineSeconds: &progressDeadlineSeconds,
 			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{Labels: selectorLabels},
+				ObjectMeta: metav1.ObjectMeta{Labels: selectorLabels, Annotations: appPodTemplateAnnotations(spec)},
 				Spec:       corev1.PodSpec{Containers: []corev1.Container{container}, Volumes: volumes},
 			},
 		},
@@ -688,6 +690,19 @@ func appObjectLabels(spec ApplicationResourcesSpec) map[string]string {
 	labels := appSelectorLabels(spec)
 	setLabel(labels, ReleaseIDLabel, spec.ReleaseID)
 	return labels
+}
+
+func appPodTemplateAnnotations(spec ApplicationResourcesSpec) map[string]string {
+	annotations := map[string]string{}
+	setLabel(annotations, ReleaseIDLabel, spec.ReleaseID)
+	return annotations
+}
+
+func applicationImagePullPolicy(spec ApplicationResourcesSpec) corev1.PullPolicy {
+	if spec.ForceImagePull {
+		return corev1.PullAlways
+	}
+	return corev1.PullIfNotPresent
 }
 
 func persistentDataVolumes(spec ApplicationResourcesSpec) []ApplicationDataVolume {

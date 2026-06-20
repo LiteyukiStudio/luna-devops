@@ -46,6 +46,9 @@ func TestApplyApplicationResourcesCreatesWorkloadResources(t *testing.T) {
 	if deployment.Spec.Template.Spec.Containers[0].Image != spec.Image {
 		t.Fatalf("image = %q", deployment.Spec.Template.Spec.Containers[0].Image)
 	}
+	if deployment.Spec.Template.Spec.Containers[0].ImagePullPolicy != corev1.PullIfNotPresent {
+		t.Fatalf("image pull policy = %q", deployment.Spec.Template.Spec.Containers[0].ImagePullPolicy)
+	}
 	if deployment.Spec.ProgressDeadlineSeconds == nil || *deployment.Spec.ProgressDeadlineSeconds != 120 {
 		t.Fatalf("progress deadline = %#v", deployment.Spec.ProgressDeadlineSeconds)
 	}
@@ -58,6 +61,9 @@ func TestApplyApplicationResourcesCreatesWorkloadResources(t *testing.T) {
 	assertManagedLabels(t, deployment.Labels, spec.Name, spec.ProjectID, spec.ApplicationID, spec.EnvironmentID, spec.DeploymentTargetID, spec.ReleaseID)
 	assertSelectorLabels(t, deployment.Spec.Selector.MatchLabels, spec.Name, spec.ProjectID, spec.ApplicationID, spec.EnvironmentID, spec.DeploymentTargetID)
 	assertSelectorLabels(t, deployment.Spec.Template.Labels, spec.Name, spec.ProjectID, spec.ApplicationID, spec.EnvironmentID, spec.DeploymentTargetID)
+	if deployment.Spec.Template.Annotations[ReleaseIDLabel] != spec.ReleaseID {
+		t.Fatalf("template release annotation = %q", deployment.Spec.Template.Annotations[ReleaseIDLabel])
+	}
 
 	service, err := client.client.CoreV1().Services(spec.Namespace).Get(context.Background(), spec.Name, metav1.GetOptions{})
 	if err != nil {
@@ -115,7 +121,7 @@ func TestApplyApplicationResourcesKeepsDeploymentSelectorStableAcrossReleases(t 
 	}
 
 	spec.ReleaseID = "rel_2"
-	spec.Image = "registry.example.com/acme/api:v2"
+	spec.Image = "registry.example.com/acme/api:v1"
 	if err := client.ApplyApplicationResources(context.Background(), spec); err != nil {
 		t.Fatalf("second apply returned error: %v", err)
 	}
@@ -129,6 +135,39 @@ func TestApplyApplicationResourcesKeepsDeploymentSelectorStableAcrossReleases(t 
 	}
 	if deployment.Labels[ReleaseIDLabel] != "rel_2" {
 		t.Fatalf("deployment release label = %q", deployment.Labels[ReleaseIDLabel])
+	}
+	if deployment.Spec.Template.Annotations[ReleaseIDLabel] != "rel_2" {
+		t.Fatalf("template release annotation = %q", deployment.Spec.Template.Annotations[ReleaseIDLabel])
+	}
+	if deployment.Spec.Template.Spec.Containers[0].ImagePullPolicy != corev1.PullIfNotPresent {
+		t.Fatalf("image pull policy = %q", deployment.Spec.Template.Spec.Containers[0].ImagePullPolicy)
+	}
+}
+
+func TestApplyApplicationResourcesCanForceImagePull(t *testing.T) {
+	client := NewClientForInterface(fake.NewSimpleClientset())
+	spec := ApplicationResourcesSpec{
+		Name:               "api-backend-dev",
+		Namespace:          "project-demo",
+		ProjectID:          "prj_demo",
+		ApplicationID:      "app_api",
+		EnvironmentID:      "env_dev",
+		DeploymentTargetID: "dplt_backend",
+		ReleaseID:          "rel_1",
+		Image:              "registry.example.com/acme/api:prod",
+		ServicePort:        8080,
+		ForceImagePull:     true,
+	}
+	if err := client.ApplyApplicationResources(context.Background(), spec); err != nil {
+		t.Fatalf("apply returned error: %v", err)
+	}
+
+	deployment, err := client.client.AppsV1().Deployments(spec.Namespace).Get(context.Background(), spec.Name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get deployment: %v", err)
+	}
+	if deployment.Spec.Template.Spec.Containers[0].ImagePullPolicy != corev1.PullAlways {
+		t.Fatalf("image pull policy = %q", deployment.Spec.Template.Spec.Containers[0].ImagePullPolicy)
 	}
 }
 

@@ -122,6 +122,7 @@ func (r *Runner) applyApplicationResources(ctx context.Context, release model.Re
 	if err != nil {
 		return err
 	}
+	spec.ForceImagePull = r.releaseShouldForceImagePull(release)
 	return manager.ApplyApplicationResources(ctx, spec)
 }
 
@@ -164,6 +165,30 @@ func (r *Runner) runtimeConfigSetsForTarget(projectID string, deploymentTarget m
 		}
 	}
 	return ordered, nil
+}
+
+func (r *Runner) releaseShouldForceImagePull(release model.Release) bool {
+	if release.ForceImagePull {
+		return true
+	}
+	if strings.TrimSpace(release.BuildRunID) == "" || strings.TrimSpace(release.ImageRef) == "" {
+		return false
+	}
+	var previous model.Release
+	err := r.db.Where(
+		"project_id = ? and application_id = ? and deployment_target_id = ? and environment_id = ? and status = ? and revision < ?",
+		release.ProjectID,
+		release.ApplicationID,
+		release.DeploymentTargetID,
+		release.EnvironmentID,
+		"succeeded",
+		release.Revision,
+	).Order("revision desc, created_at desc").First(&previous).Error
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(previous.BuildRunID) != strings.TrimSpace(release.BuildRunID) &&
+		strings.TrimSpace(previous.ImageRef) == strings.TrimSpace(release.ImageRef)
 }
 
 func (r *Runner) resolveRuntimeSecretRefsRaw(raw string) string {
