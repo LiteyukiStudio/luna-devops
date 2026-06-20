@@ -10,6 +10,8 @@ const (
 	EnvironmentIDLabel      = "liteyuki.devops/environment-id"
 	DeploymentTargetIDLabel = "liteyuki.devops/deployment-target-id"
 	ReleaseIDLabel          = "liteyuki.devops/release-id"
+	BuildRunIDLabel         = "liteyuki.devops/build-run-id"
+	ImageDigestLabel        = "liteyuki.devops/image-digest"
 	GatewayRouteIDLabel     = "liteyuki.devops/gateway-route-id"
 	HookRunIDLabel          = "liteyuki.devops/hook-run-id"
 	HookPhaseLabel          = "liteyuki.devops/hook-phase"

@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
@@ -59,8 +60,8 @@ func TestApplyApplicationResourcesCreatesWorkloadResources(t *testing.T) {
 		t.Fatalf("deployment data mount = %#v", deployment.Spec.Template.Spec.Containers[0].VolumeMounts)
 	}
 	assertManagedLabels(t, deployment.Labels, spec.Name, spec.ProjectID, spec.ApplicationID, spec.EnvironmentID, spec.DeploymentTargetID, spec.ReleaseID)
-	assertSelectorLabels(t, deployment.Spec.Selector.MatchLabels, spec.Name, spec.ProjectID, spec.ApplicationID, spec.EnvironmentID, spec.DeploymentTargetID)
-	assertSelectorLabels(t, deployment.Spec.Template.Labels, spec.Name, spec.ProjectID, spec.ApplicationID, spec.EnvironmentID, spec.DeploymentTargetID)
+	assertSelectorLabels(t, deployment.Spec.Selector.MatchLabels, spec.Name, spec.DeploymentTargetID)
+	assertManagedLabels(t, deployment.Spec.Template.Labels, spec.Name, spec.ProjectID, spec.ApplicationID, spec.EnvironmentID, spec.DeploymentTargetID, spec.ReleaseID)
 	if deployment.Spec.Template.Annotations[ReleaseIDLabel] != spec.ReleaseID {
 		t.Fatalf("template release annotation = %q", deployment.Spec.Template.Annotations[ReleaseIDLabel])
 	}
@@ -133,6 +134,7 @@ func TestApplyApplicationResourcesKeepsDeploymentSelectorStableAcrossReleases(t 
 	if deployment.Spec.Selector.MatchLabels[ReleaseIDLabel] != "" {
 		t.Fatalf("selector should not include release label: %#v", deployment.Spec.Selector.MatchLabels)
 	}
+	assertSelectorLabels(t, deployment.Spec.Selector.MatchLabels, spec.Name, spec.DeploymentTargetID)
 	if deployment.Labels[ReleaseIDLabel] != "rel_2" {
 		t.Fatalf("deployment release label = %q", deployment.Labels[ReleaseIDLabel])
 	}
@@ -141,6 +143,68 @@ func TestApplyApplicationResourcesKeepsDeploymentSelectorStableAcrossReleases(t 
 	}
 	if deployment.Spec.Template.Spec.Containers[0].ImagePullPolicy != corev1.PullIfNotPresent {
 		t.Fatalf("image pull policy = %q", deployment.Spec.Template.Spec.Containers[0].ImagePullPolicy)
+	}
+}
+
+func TestApplyApplicationResourcesPreservesExistingDeploymentSelector(t *testing.T) {
+	oldSelector := map[string]string{
+		ManagedByLabel:     ManagedByValue,
+		ApplicationNameKey: "api-backend-dev",
+		ProjectIDLabel:     "prj_old",
+	}
+	existing := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Name: "api-backend-dev", Namespace: "project-demo"},
+		Spec: appsv1.DeploymentSpec{
+			Selector: &metav1.LabelSelector{MatchLabels: oldSelector},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{Labels: oldSelector},
+				Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "app", Image: "registry.example.com/acme/api:old"}}},
+			},
+		},
+	}
+	client := NewClientForInterface(fake.NewSimpleClientset(existing))
+	spec := ApplicationResourcesSpec{
+		Name:               "api-backend-dev",
+		Namespace:          "project-demo",
+		ProjectID:          "prj_new",
+		ApplicationID:      "app_api",
+		EnvironmentID:      "env_dev",
+		DeploymentTargetID: "dplt_backend",
+		ReleaseID:          "rel_2",
+		BuildRunID:         "bldr_2",
+		Image:              "registry.example.com/acme/api:latest",
+		ServicePort:        8080,
+	}
+
+	if err := client.ApplyApplicationResources(context.Background(), spec); err != nil {
+		t.Fatalf("apply returned error: %v", err)
+	}
+
+	deployment, err := client.client.AppsV1().Deployments(spec.Namespace).Get(context.Background(), spec.Name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get deployment: %v", err)
+	}
+	if deployment.Spec.Selector.MatchLabels[ProjectIDLabel] != "prj_old" {
+		t.Fatalf("selector was changed: %#v", deployment.Spec.Selector.MatchLabels)
+	}
+	if deployment.Labels[ProjectIDLabel] != "prj_new" {
+		t.Fatalf("object project label = %q", deployment.Labels[ProjectIDLabel])
+	}
+	if deployment.Spec.Template.Labels[ProjectIDLabel] != "prj_old" {
+		t.Fatalf("template selector label should be preserved: %#v", deployment.Spec.Template.Labels)
+	}
+	if deployment.Spec.Template.Labels[ReleaseIDLabel] != "rel_2" {
+		t.Fatalf("template release label = %q", deployment.Spec.Template.Labels[ReleaseIDLabel])
+	}
+	if deployment.Spec.Template.Annotations[BuildRunIDLabel] != "bldr_2" {
+		t.Fatalf("template build run annotation = %q", deployment.Spec.Template.Annotations[BuildRunIDLabel])
+	}
+	service, err := client.client.CoreV1().Services(spec.Namespace).Get(context.Background(), spec.Name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get service: %v", err)
+	}
+	if service.Spec.Selector[ProjectIDLabel] != "prj_old" {
+		t.Fatalf("service selector should follow deployment selector: %#v", service.Spec.Selector)
 	}
 }
 
@@ -189,14 +253,11 @@ func assertManagedLabels(t *testing.T, labels map[string]string, name string, pr
 	}
 }
 
-func assertSelectorLabels(t *testing.T, labels map[string]string, name string, projectID string, applicationID string, environmentID string, deploymentTargetID string) {
+func assertSelectorLabels(t *testing.T, labels map[string]string, name string, deploymentTargetID string) {
 	t.Helper()
 	expected := map[string]string{
 		ManagedByLabel:          ManagedByValue,
 		ApplicationNameKey:      name,
-		ProjectIDLabel:          projectID,
-		ApplicationIDLabel:      applicationID,
-		EnvironmentIDLabel:      environmentID,
 		DeploymentTargetIDLabel: deploymentTargetID,
 	}
 	for key, value := range expected {
@@ -206,5 +267,10 @@ func assertSelectorLabels(t *testing.T, labels map[string]string, name string, p
 	}
 	if labels[ReleaseIDLabel] != "" {
 		t.Fatalf("selector labels must not include release id: %#v", labels)
+	}
+	for _, key := range []string{ProjectIDLabel, ApplicationIDLabel, EnvironmentIDLabel} {
+		if labels[key] != "" {
+			t.Fatalf("selector labels must not include ownership label %s: %#v", key, labels)
+		}
 	}
 }

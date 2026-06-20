@@ -44,6 +44,8 @@ Every new Release updates the Kubernetes Pod Template release fingerprint, so a 
 
 If the remote image content changed but the tag did not, choose “Pull latest image and deploy” from the deploy config actions menu. This creates a new Release and forces an image pull for that rollout.
 
+When the platform creates a Kubernetes Deployment, the selector only identifies the workload for the current deploy config and remains stable across later releases. Project, application, environment, and Release ownership metadata is written to resource labels or Pod Template annotations instead of changing the selector. This avoids update failures caused by Kubernetes `spec.selector` immutability.
+
 For a first run, deploy an existing image before wiring Git providers and automated builds.
 
 The application deployment list refreshes runtime metrics every second through SSE. Metrics come from the Kubernetes standard `metrics.k8s.io` Pod Metrics API, so the runtime cluster needs metrics-server installed. CPU percentage and memory usage are calculated from current usage divided by “environment size × replicas”. If the cluster does not expose metrics, the page shows metrics unavailable.

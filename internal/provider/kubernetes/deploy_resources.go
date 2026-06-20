@@ -28,6 +28,8 @@ type ApplicationResourcesSpec struct {
 	EnvironmentID         string
 	DeploymentTargetID    string
 	ReleaseID             string
+	BuildRunID            string
+	ImageDigest           string
 	Image                 string
 	Replicas              int32
 	ServicePort           int32
@@ -119,10 +121,11 @@ func (c *Client) ApplyApplicationResources(ctx context.Context, spec Application
 			}
 		}
 	}
-	if err := c.applyDeployment(ctx, spec, objectLabels, selectorLabels); err != nil {
+	effectiveSelectorLabels, err := c.applyDeployment(ctx, spec, objectLabels, selectorLabels)
+	if err != nil {
 		return err
 	}
-	return c.applyService(ctx, spec, objectLabels, selectorLabels)
+	return c.applyService(ctx, spec, objectLabels, effectiveSelectorLabels)
 }
 
 func (c *Client) ApplyApplicationRuntimeConfig(ctx context.Context, spec ApplicationResourcesSpec) error {
@@ -323,7 +326,7 @@ func (c *Client) applyPersistentDataVolume(ctx context.Context, spec Application
 	return err
 }
 
-func (c *Client) applyDeployment(ctx context.Context, spec ApplicationResourcesSpec, objectLabels map[string]string, selectorLabels map[string]string) error {
+func (c *Client) applyDeployment(ctx context.Context, spec ApplicationResourcesSpec, objectLabels map[string]string, selectorLabels map[string]string) (map[string]string, error) {
 	replicas := spec.Replicas
 	if replicas <= 0 {
 		replicas = 1
@@ -385,7 +388,7 @@ func (c *Client) applyDeployment(ctx context.Context, spec ApplicationResourcesS
 			Selector:                &metav1.LabelSelector{MatchLabels: selectorLabels},
 			ProgressDeadlineSeconds: &progressDeadlineSeconds,
 			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{Labels: selectorLabels, Annotations: appPodTemplateAnnotations(spec)},
+				ObjectMeta: metav1.ObjectMeta{Labels: appPodTemplateLabels(objectLabels, selectorLabels), Annotations: appPodTemplateAnnotations(spec)},
 				Spec:       corev1.PodSpec{Containers: []corev1.Container{container}, Volumes: volumes},
 			},
 		},
@@ -393,15 +396,18 @@ func (c *Client) applyDeployment(ctx context.Context, spec ApplicationResourcesS
 	existing, err := c.client.AppsV1().Deployments(spec.Namespace).Get(ctx, spec.Name, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
 		_, err = c.client.AppsV1().Deployments(spec.Namespace).Create(ctx, deployment, metav1.CreateOptions{})
-		return err
+		return selectorLabels, err
 	}
 	if err != nil {
-		return err
+		return nil, err
 	}
+	effectiveSelectorLabels := deploymentSelectorLabels(existing, selectorLabels)
 	existing.Labels = objectLabels
 	existing.Spec = deployment.Spec
+	existing.Spec.Selector = &metav1.LabelSelector{MatchLabels: effectiveSelectorLabels}
+	existing.Spec.Template.Labels = appPodTemplateLabels(objectLabels, effectiveSelectorLabels)
 	_, err = c.client.AppsV1().Deployments(spec.Namespace).Update(ctx, existing, metav1.UpdateOptions{})
-	return err
+	return effectiveSelectorLabels, err
 }
 
 func configFileKeyPaths(files []ApplicationConfigFile) []corev1.KeyToPath {
@@ -679,15 +685,16 @@ func (c *Client) hookJobLogs(ctx context.Context, namespace string, jobName stri
 
 func appSelectorLabels(spec ApplicationResourcesSpec) map[string]string {
 	labels := baseManagedLabels(spec.Name)
-	setLabel(labels, ProjectIDLabel, spec.ProjectID)
-	setLabel(labels, ApplicationIDLabel, spec.ApplicationID)
-	setLabel(labels, EnvironmentIDLabel, spec.EnvironmentID)
 	setLabel(labels, DeploymentTargetIDLabel, spec.DeploymentTargetID)
 	return labels
 }
 
 func appObjectLabels(spec ApplicationResourcesSpec) map[string]string {
 	labels := appSelectorLabels(spec)
+	setLabel(labels, ProjectIDLabel, spec.ProjectID)
+	setLabel(labels, ApplicationIDLabel, spec.ApplicationID)
+	setLabel(labels, EnvironmentIDLabel, spec.EnvironmentID)
+	setLabel(labels, DeploymentTargetIDLabel, spec.DeploymentTargetID)
 	setLabel(labels, ReleaseIDLabel, spec.ReleaseID)
 	return labels
 }
@@ -695,7 +702,32 @@ func appObjectLabels(spec ApplicationResourcesSpec) map[string]string {
 func appPodTemplateAnnotations(spec ApplicationResourcesSpec) map[string]string {
 	annotations := map[string]string{}
 	setLabel(annotations, ReleaseIDLabel, spec.ReleaseID)
+	setLabel(annotations, BuildRunIDLabel, spec.BuildRunID)
+	setLabel(annotations, ImageDigestLabel, spec.ImageDigest)
 	return annotations
+}
+
+func appPodTemplateLabels(objectLabels map[string]string, selectorLabels map[string]string) map[string]string {
+	labels := cloneStringMap(objectLabels)
+	for key, value := range selectorLabels {
+		labels[key] = value
+	}
+	return labels
+}
+
+func deploymentSelectorLabels(existing *appsv1.Deployment, fallback map[string]string) map[string]string {
+	if existing != nil && existing.Spec.Selector != nil && len(existing.Spec.Selector.MatchLabels) > 0 {
+		return cloneStringMap(existing.Spec.Selector.MatchLabels)
+	}
+	return cloneStringMap(fallback)
+}
+
+func cloneStringMap(values map[string]string) map[string]string {
+	cloned := make(map[string]string, len(values))
+	for key, value := range values {
+		cloned[key] = value
+	}
+	return cloned
 }
 
 func applicationImagePullPolicy(spec ApplicationResourcesSpec) corev1.PullPolicy {

@@ -229,6 +229,7 @@ func applicationResourcesSpec(release model.Release, project model.Project, appl
 		EnvironmentID:         environment.ID,
 		DeploymentTargetID:    deploymentTarget.ID,
 		ReleaseID:             release.ID,
+		BuildRunID:            release.BuildRunID,
 		Image:                 strings.TrimSpace(release.ImageRef),
 		Replicas:              int32(replicas),
 		ServicePort:           int32(servicePort),
