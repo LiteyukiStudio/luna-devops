@@ -178,6 +178,10 @@ export function ApplicationBuildRunRow({ binding, deploymentTargetName, cancelin
               <RotateCcw className="size-4 shrink-0" />
               <span className="min-w-0">{t('buildsPage.retry')}</span>
             </Button>
+            <Button className="h-auto w-full justify-start gap-2 whitespace-normal text-left" disabled={!latestJob} variant="ghost" onClick={() => latestJob && onOpenLogs(latestJob)}>
+              <ScrollText className="size-4 shrink-0" />
+              <span className="min-w-0">{t('buildsPage.viewLogsStream')}</span>
+            </Button>
             {canCancel && (
               <ConfirmDialog
                 confirmText={t('buildsPage.cancelBuildConfirm')}
@@ -206,10 +210,6 @@ export function ApplicationBuildRunRow({ binding, deploymentTargetName, cancelin
                 </Button>
               </ConfirmDialog>
             )}
-            <Button className="h-auto w-full justify-start gap-2 whitespace-normal text-left" disabled={!latestJob} variant="ghost" onClick={() => latestJob && onOpenLogs(latestJob)}>
-              <ScrollText className="size-4 shrink-0" />
-              <span className="min-w-0">{t('buildsPage.viewLogsStream')}</span>
-            </Button>
           </PopoverContent>
         </Popover>
       </div>
