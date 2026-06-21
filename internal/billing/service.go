@@ -19,6 +19,7 @@ const (
 	ReasonBuildUsage       = "build.usage"
 	ReasonRuntimeUsage     = "runtime.usage"
 	ReasonStorageUsage     = "storage.usage"
+	ReasonGatewayUsage     = "gateway.usage"
 	ReasonExternalRecharge = "billing.external_recharge"
 	ReasonExternalAdjust   = "billing.external_adjustment"
 	ReasonManualRecharge   = "billing.recharge"
@@ -26,7 +27,8 @@ const (
 	ResourceTypeBuildRun   = "build_run"
 	ResourceTypeRuntime    = "runtime_target"
 	ResourceTypeStorage    = "storage_volume"
-	ResourceTypeWallet     = "project_wallet"
+	ResourceTypeGateway    = "gateway_route"
+	ResourceTypeWallet     = "user_wallet"
 	defaultCPURequest      = "500m"
 	defaultMemoryRequest   = "512Mi"
 	defaultDataCapacity    = "1Gi"
@@ -62,7 +64,17 @@ type StorageUsageInput struct {
 	ActorID     string
 }
 
+type GatewayTrafficUsageInput struct {
+	Route         model.GatewayRoute
+	ResponseBytes int64
+	RequestCount  int64
+	PeriodStart   time.Time
+	PeriodEnd     time.Time
+	ActorID       string
+}
+
 type WalletTransactionInput struct {
+	UserID         string
 	ProjectID      string
 	AmountCredits  decimal.Decimal
 	Type           string
@@ -154,7 +166,8 @@ func defaultRateRules() []model.BillingRateRule {
 		{ID: id.New("brte"), Meter: "runtime.cpu_vcpu_hour", Unit: "vcpu_hour", CreditsPerUnit: decimal.NewFromInt(30), Enabled: true, Description: "Runtime CPU usage", CreatedAt: now, UpdatedAt: now},
 		{ID: id.New("brte"), Meter: "runtime.memory_gib_hour", Unit: "gib_hour", CreditsPerUnit: decimal.NewFromInt(6), Enabled: true, Description: "Runtime memory usage", CreatedAt: now, UpdatedAt: now},
 		{ID: id.New("brte"), Meter: "storage.gib_day", Unit: "gib_day", CreditsPerUnit: decimal.NewFromInt(1), Enabled: true, Description: "Persistent storage usage", CreatedAt: now, UpdatedAt: now},
-		{ID: id.New("brte"), Meter: "gateway.requests_1000", Unit: "1000_requests", CreditsPerUnit: decimal.NewFromInt(1), Enabled: true, Description: "Gateway request usage", CreatedAt: now, UpdatedAt: now},
+		{ID: id.New("brte"), Meter: "gateway.egress_gib", Unit: "gib", CreditsPerUnit: decimal.NewFromInt(1), Enabled: true, Description: "Gateway response egress traffic", CreatedAt: now, UpdatedAt: now},
+		{ID: id.New("brte"), Meter: "gateway.requests_1000", Unit: "1000_requests", CreditsPerUnit: decimal.Zero, Enabled: false, Description: "Gateway request count", CreatedAt: now, UpdatedAt: now},
 	}
 }
 
@@ -338,10 +351,50 @@ func (s Service) SettleStorageTargetWindow(input StorageUsageInput) error {
 	return s.debitUsage(usage, ReasonStorageUsage, "Persistent storage usage", input.ActorID)
 }
 
+func (s Service) SettleGatewayTrafficWindow(input GatewayTrafficUsageInput) error {
+	if input.Route.ID == "" || input.Route.ProjectID == "" || input.ResponseBytes <= 0 || !input.PeriodEnd.After(input.PeriodStart) {
+		return nil
+	}
+	responseGiB := decimal.NewFromInt(input.ResponseBytes).Div(decimal.NewFromInt(1024 * 1024 * 1024))
+	if responseGiB.LessThanOrEqual(decimal.Zero) {
+		return nil
+	}
+	rate, err := s.rate("gateway.egress_gib")
+	if err != nil {
+		return err
+	}
+	metadata, _ := json.Marshal(map[string]string{
+		"gatewayRouteId": input.Route.ID,
+		"host":           input.Route.Host,
+		"path":           input.Route.Path,
+		"responseBytes":  decimal.NewFromInt(input.ResponseBytes).String(),
+		"responseGiB":    responseGiB.String(),
+		"requestCount":   decimal.NewFromInt(input.RequestCount).String(),
+	})
+	now := time.Now()
+	usage := model.BillingUsageRecord{
+		ID:            id.New("busg"),
+		ProjectID:     input.Route.ProjectID,
+		ApplicationID: input.Route.ApplicationID,
+		Meter:         "gateway.egress_gib",
+		Quantity:      responseGiB,
+		Unit:          "gib",
+		AmountCredits: responseGiB.Mul(rate),
+		ResourceType:  ResourceTypeGateway,
+		ResourceID:    gatewayTrafficUsageResourceID(input.Route.ID, input.PeriodStart),
+		PeriodStart:   input.PeriodStart,
+		PeriodEnd:     input.PeriodEnd,
+		Status:        "settled",
+		Metadata:      string(metadata),
+		SettledAt:     &now,
+	}
+	return s.debitUsage(usage, ReasonGatewayUsage, "Gateway response traffic usage", input.ActorID)
+}
+
 func (s Service) ApplyWalletTransaction(input WalletTransactionInput) (model.BillingLedgerEntry, error) {
 	entry := model.BillingLedgerEntry{}
-	if input.ProjectID == "" {
-		return entry, errors.New("project id is required")
+	if input.UserID == "" {
+		return entry, errors.New("user id is required")
 	}
 	if input.AmountCredits.IsZero() {
 		return entry, errors.New("amount credits cannot be zero")
@@ -367,16 +420,16 @@ func (s Service) ApplyWalletTransaction(input WalletTransactionInput) (model.Bil
 	}
 	idempotencyKey := strings.TrimSpace(input.IdempotencyKey)
 	err := s.DB.Transaction(func(tx *gorm.DB) error {
-		if err := ensureWallet(tx, input.ProjectID); err != nil {
+		if err := ensureWallet(tx, input.UserID); err != nil {
 			return err
 		}
-		var wallet model.ProjectWallet
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&wallet, "project_id = ?", input.ProjectID).Error; err != nil {
+		var wallet model.UserWallet
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&wallet, "user_id = ?", input.UserID).Error; err != nil {
 			return err
 		}
 		if idempotencyKey != "" {
 			var existing model.BillingLedgerEntry
-			err := tx.First(&existing, "project_id = ? and idempotency_key = ?", input.ProjectID, idempotencyKey).Error
+			err := tx.First(&existing, "user_id = ? and idempotency_key = ?", input.UserID, idempotencyKey).Error
 			if err == nil {
 				if existing.Type != entryType || !existing.AmountCredits.Equal(amount) {
 					return errors.New("idempotency key has been used by a different billing transaction")
@@ -391,13 +444,14 @@ func (s Service) ApplyWalletTransaction(input WalletTransactionInput) (model.Bil
 		balanceAfter := wallet.BalanceCredits.Add(amount)
 		entry = model.BillingLedgerEntry{
 			ID:                  id.New("bled"),
-			ProjectID:           input.ProjectID,
+			UserID:              input.UserID,
+			ProjectID:           strings.TrimSpace(input.ProjectID),
 			Type:                entryType,
 			AmountCredits:       amount,
 			BalanceAfterCredits: balanceAfter,
 			Reason:              reason,
 			ResourceType:        ResourceTypeWallet,
-			ResourceID:          input.ProjectID,
+			ResourceID:          input.UserID,
 			IdempotencyKey:      idempotencyKey,
 			Description:         input.Description,
 			CreatedBy:           input.ActorID,
@@ -405,7 +459,7 @@ func (s Service) ApplyWalletTransaction(input WalletTransactionInput) (model.Bil
 		if err := tx.Create(&entry).Error; err != nil {
 			return err
 		}
-		return tx.Model(&model.ProjectWallet{}).Where("id = ?", wallet.ID).Update("balance_credits", balanceAfter).Error
+		return tx.Model(&model.UserWallet{}).Where("id = ?", wallet.ID).Update("balance_credits", balanceAfter).Error
 	})
 	return entry, err
 }
@@ -416,6 +470,10 @@ func runtimeUsageResourceID(deploymentTargetID string, periodStart time.Time) st
 
 func storageUsageResourceID(deploymentTargetID string, periodStart time.Time) string {
 	return deploymentTargetID + ":" + periodStart.UTC().Format("2006010215")
+}
+
+func gatewayTrafficUsageResourceID(routeID string, periodStart time.Time) string {
+	return routeID + ":" + periodStart.UTC().Format("200601021504")
 }
 
 func deploymentTargetStorageGiB(target model.DeploymentTarget) decimal.Decimal {
@@ -489,11 +547,15 @@ func (s Service) debitUsages(usages []model.BillingUsageRecord, reason string, d
 	}
 	return s.DB.Transaction(func(tx *gorm.DB) error {
 		projectID := usages[0].ProjectID
-		if err := ensureWallet(tx, projectID); err != nil {
+		billedUserID, err := billingOwnerUserID(tx, projectID)
+		if err != nil {
 			return err
 		}
-		var wallet model.ProjectWallet
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&wallet, "project_id = ?", projectID).Error; err != nil {
+		if err := ensureWallet(tx, billedUserID); err != nil {
+			return err
+		}
+		var wallet model.UserWallet
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&wallet, "user_id = ?", billedUserID).Error; err != nil {
 			return err
 		}
 		balanceAfter := wallet.BalanceCredits
@@ -510,12 +572,14 @@ func (s Service) debitUsages(usages []model.BillingUsageRecord, reason string, d
 			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 				return err
 			}
+			usage.BilledUserID = billedUserID
 			balanceAfter = balanceAfter.Sub(usage.AmountCredits)
 			if err := tx.Create(&usage).Error; err != nil {
 				return err
 			}
 			entry := model.BillingLedgerEntry{
 				ID:                  id.New("bled"),
+				UserID:              billedUserID,
 				ProjectID:           usage.ProjectID,
 				Type:                "debit",
 				AmountCredits:       usage.AmountCredits.Neg(),
@@ -536,31 +600,47 @@ func (s Service) debitUsages(usages []model.BillingUsageRecord, reason string, d
 		if created == 0 {
 			return ErrAlreadySettled
 		}
-		return tx.Model(&model.ProjectWallet{}).Where("id = ?", wallet.ID).Update("balance_credits", balanceAfter).Error
+		return tx.Model(&model.UserWallet{}).Where("id = ?", wallet.ID).Update("balance_credits", balanceAfter).Error
 	})
 }
 
-func ensureWallet(tx *gorm.DB, projectID string) error {
-	wallet := model.ProjectWallet{ID: id.New("wlt"), ProjectID: projectID, BalanceCredits: decimal.Zero}
-	return tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "project_id"}}, DoNothing: true}).Create(&wallet).Error
+func billingOwnerUserID(tx *gorm.DB, projectID string) (string, error) {
+	var project model.Project
+	if err := tx.Select("billing_owner_user_id").First(&project, "id = ?", projectID).Error; err != nil {
+		return "", err
+	}
+	ownerID := strings.TrimSpace(project.BillingOwnerUserID)
+	if ownerID != "" {
+		return ownerID, nil
+	}
+	var member model.ProjectMember
+	if err := tx.Select("user_id").First(&member, "project_id = ? and role = ?", projectID, "owner").Error; err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(member.UserID), nil
 }
 
-func (s Service) EnsureWallet(projectID string) (model.ProjectWallet, error) {
-	if err := s.DB.Transaction(func(tx *gorm.DB) error { return ensureWallet(tx, projectID) }); err != nil {
-		return model.ProjectWallet{}, err
+func ensureWallet(tx *gorm.DB, userID string) error {
+	wallet := model.UserWallet{ID: id.New("wlt"), UserID: userID, BalanceCredits: decimal.Zero}
+	return tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "user_id"}}, DoNothing: true}).Create(&wallet).Error
+}
+
+func (s Service) EnsureWallet(userID string) (model.UserWallet, error) {
+	if err := s.DB.Transaction(func(tx *gorm.DB) error { return ensureWallet(tx, userID) }); err != nil {
+		return model.UserWallet{}, err
 	}
-	var wallet model.ProjectWallet
-	err := s.DB.First(&wallet, "project_id = ?", projectID).Error
+	var wallet model.UserWallet
+	err := s.DB.First(&wallet, "user_id = ?", userID).Error
 	return wallet, err
 }
 
-func (s Service) Summary(projectIDs []string, now time.Time, lowBalanceLimit decimal.Decimal) (ProjectBillingSummary, error) {
+func (s Service) Summary(userIDs []string, projectIDs []string, now time.Time, lowBalanceLimit decimal.Decimal) (ProjectBillingSummary, error) {
 	summary := ProjectBillingSummary{LowBalanceLimit: lowBalanceLimit, BalanceStatus: "ok"}
-	if len(projectIDs) == 0 {
+	if len(userIDs) == 0 {
 		return summary, nil
 	}
-	for _, projectID := range projectIDs {
-		wallet, err := s.EnsureWallet(projectID)
+	for _, userID := range userIDs {
+		wallet, err := s.EnsureWallet(userID)
 		if err != nil {
 			return summary, err
 		}
@@ -568,18 +648,22 @@ func (s Service) Summary(projectIDs []string, now time.Time, lowBalanceLimit dec
 	}
 	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
-	summary.TodaySpend = s.spendSince(projectIDs, dayStart)
-	summary.MonthSpend = s.spendSince(projectIDs, monthStart)
-	summary.PendingSpend = s.pendingSpend(projectIDs)
+	summary.TodaySpend = s.spendSince(userIDs, projectIDs, dayStart)
+	summary.MonthSpend = s.spendSince(userIDs, projectIDs, monthStart)
+	summary.PendingSpend = s.pendingSpend(userIDs, projectIDs)
 	summary.AvailableCredits = summary.BalanceCredits.Sub(summary.PendingSpend)
 	summary.BalanceStatus = balanceStatus(summary.AvailableCredits, lowBalanceLimit)
-	summary.MonthlyCategories = s.monthlyCategories(projectIDs, monthStart)
+	summary.MonthlyCategories = s.monthlyCategories(userIDs, projectIDs, monthStart)
 	return summary, nil
 }
 
-func (s Service) spendSince(projectIDs []string, since time.Time) decimal.Decimal {
+func (s Service) spendSince(userIDs []string, projectIDs []string, since time.Time) decimal.Decimal {
 	var entries []model.BillingLedgerEntry
-	if err := s.DB.Where("project_id in ? and type = ? and created_at >= ?", projectIDs, "debit", since).Find(&entries).Error; err != nil {
+	query := s.DB.Where("user_id in ? and type = ? and created_at >= ?", userIDs, "debit", since)
+	if len(projectIDs) > 0 {
+		query = query.Where("project_id in ?", projectIDs)
+	}
+	if err := query.Find(&entries).Error; err != nil {
 		return decimal.Zero
 	}
 	total := decimal.Zero
@@ -589,9 +673,13 @@ func (s Service) spendSince(projectIDs []string, since time.Time) decimal.Decima
 	return total
 }
 
-func (s Service) pendingSpend(projectIDs []string) decimal.Decimal {
+func (s Service) pendingSpend(userIDs []string, projectIDs []string) decimal.Decimal {
 	var records []model.BillingUsageRecord
-	if err := s.DB.Where("project_id in ? and status = ?", projectIDs, "pending").Find(&records).Error; err != nil {
+	query := s.DB.Where("billed_user_id in ? and status = ?", userIDs, "pending")
+	if len(projectIDs) > 0 {
+		query = query.Where("project_id in ?", projectIDs)
+	}
+	if err := query.Find(&records).Error; err != nil {
 		return decimal.Zero
 	}
 	total := decimal.Zero
@@ -601,9 +689,13 @@ func (s Service) pendingSpend(projectIDs []string) decimal.Decimal {
 	return total
 }
 
-func (s Service) monthlyCategories(projectIDs []string, monthStart time.Time) []BillingSpendCategory {
+func (s Service) monthlyCategories(userIDs []string, projectIDs []string, monthStart time.Time) []BillingSpendCategory {
 	var entries []model.BillingLedgerEntry
-	if err := s.DB.Where("project_id in ? and type = ? and created_at >= ?", projectIDs, "debit", monthStart).Find(&entries).Error; err != nil {
+	query := s.DB.Where("user_id in ? and type = ? and created_at >= ?", userIDs, "debit", monthStart)
+	if len(projectIDs) > 0 {
+		query = query.Where("project_id in ?", projectIDs)
+	}
+	if err := query.Find(&entries).Error; err != nil {
 		return nil
 	}
 	amounts := map[string]decimal.Decimal{}

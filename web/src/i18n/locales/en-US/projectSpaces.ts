@@ -86,7 +86,7 @@ const projectSpaces = {
   slugMaxLength: 'Project space slug can be at most {{count}} characters',
   slugPlaceholder: 'liteyuki-workbench',
   descriptionLabel: 'Description',
-  descriptionHint: 'Describe services, environments, or owners in this project space for collaboration.',
+  descriptionHint: 'Describe services, owners, or collaboration notes in this project space.',
   descriptionPlaceholder: 'What applications does this project space own?',
   maxConcurrentBuilds: 'Max build concurrency',
   maxConcurrentBuildsHint: 'Maximum builds that can run at the same time in this project space. Extra builds wait in the queue. Small-team default is 2.',

@@ -1,7 +1,8 @@
 const clustersPage = {
-  description: '管理运行集群和平台自有 Kubernetes 资源；普通开发用户通过环境和部署使用集群，不直接维护集群配置。',
+  description: '管理运行集群和平台自有 Kubernetes 资源；普通开发用户通过部署配置和发布使用集群，不直接维护集群配置。',
   dialogDescription: '保存集群基础信息、作用域和 kubeconfig，密钥只会写入后端。',
   defaultCluster: '默认集群',
+  runtimeCluster: '运行集群',
   runtimeClustersTab: '运行集群',
   namespacesTab: '命名空间',
   workloadsTab: '工作负载',

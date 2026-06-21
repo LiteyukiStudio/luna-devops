@@ -638,8 +638,14 @@ CREATE TABLE IF NOT EXISTS deployment_targets (
   id text PRIMARY KEY,
   project_id text NOT NULL,
   application_id text NOT NULL,
-  environment_id text NOT NULL,
+  environment_id text NOT NULL DEFAULT '',
   name text NOT NULL,
+  stage text NOT NULL DEFAULT 'prod',
+  cluster_id text NOT NULL DEFAULT '',
+  namespace text NOT NULL DEFAULT '',
+  replicas integer NOT NULL DEFAULT 1,
+  cpu_request text NOT NULL DEFAULT '1',
+  memory_request text NOT NULL DEFAULT '1Gi',
   service_port integer NOT NULL DEFAULT 8080,
   delete_status text NOT NULL DEFAULT 'active',
   delete_message text NOT NULL DEFAULT '',
@@ -650,6 +656,9 @@ CREATE TABLE IF NOT EXISTS deployment_targets (
   dockerfile_path text NOT NULL DEFAULT 'Dockerfile',
   build_context text NOT NULL DEFAULT '.',
   build_directory text NOT NULL DEFAULT '',
+  build_environment_id text NOT NULL DEFAULT '',
+  build_cpu_request text NOT NULL DEFAULT '1',
+  build_memory_request text NOT NULL DEFAULT '1Gi',
   target_registry_id text NOT NULL DEFAULT '',
   target_repository text NOT NULL DEFAULT '',
   target_tag text NOT NULL DEFAULT '',
@@ -678,6 +687,8 @@ CREATE TABLE IF NOT EXISTS deployment_targets (
 CREATE INDEX IF NOT EXISTS idx_deployment_targets_project_id ON deployment_targets(project_id);
 CREATE INDEX IF NOT EXISTS idx_deployment_targets_application_id ON deployment_targets(application_id);
 CREATE INDEX IF NOT EXISTS idx_deployment_targets_environment_id ON deployment_targets(environment_id);
+CREATE INDEX IF NOT EXISTS idx_deployment_targets_cluster_id ON deployment_targets(cluster_id);
+CREATE INDEX IF NOT EXISTS idx_deployment_targets_build_environment_id ON deployment_targets(build_environment_id);
 CREATE INDEX IF NOT EXISTS idx_deployment_targets_repository_binding_id ON deployment_targets(repository_binding_id);
 CREATE INDEX IF NOT EXISTS idx_deployment_targets_target_registry_id ON deployment_targets(target_registry_id);
 CREATE INDEX IF NOT EXISTS idx_deployment_targets_created_by ON deployment_targets(created_by);

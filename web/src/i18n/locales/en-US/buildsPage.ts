@@ -52,7 +52,7 @@ const buildsPage = {
   triggerDialogDescription: 'Create a build run and queue it. Worker creates a Kubernetes Job in the deploy cluster to clone source, build the image, and push it to the target registry.',
   buildConfig: 'Deploy config',
   buildConfigHint: 'Select the deploy config for this build, including repository, Dockerfile, build context, target image, and scheduling policy.',
-  buildEnvironmentOverrideHint: 'Defaults to the build environment in the deploy config. Changes here only affect this manual build.',
+  buildEnvironmentOverrideHint: 'Defaults to the build spec in the deploy config. Changes here only affect this manual build.',
   queueBuild: 'Queue build',
   buildQueued: 'Build queued',
   retry: 'Retry',

@@ -34,10 +34,11 @@ func (r *Runner) handleGatewayApply(ctx context.Context, task *asynq.Task) error
 	if !applicationRuntimeCanMutate(application) {
 		return nil
 	}
-	var environment model.Environment
-	if err := r.db.First(&environment, "id = ? and project_id = ?", route.EnvironmentID, payload.ProjectID).Error; err != nil {
+	var target model.DeploymentTarget
+	if err := r.db.First(&target, "id = ? and project_id = ?", route.DeploymentTargetID, payload.ProjectID).Error; err != nil {
 		return err
 	}
+	environment := deploymentTargetEnvironment(target)
 	if !route.Enabled {
 		if err := r.cleanupGatewayRuntimeResources(ctx, route); err != nil {
 			_ = r.db.Model(&route).Updates(map[string]any{"status": "failed"}).Error
@@ -91,7 +92,7 @@ func (r *Runner) applyGatewayIngress(ctx context.Context, route model.GatewayRou
 
 func (r *Runner) gatewayServiceName(route model.GatewayRoute, application model.Application, environment model.Environment) string {
 	var target model.DeploymentTarget
-	query := r.db.Where("project_id = ? and application_id = ? and environment_id = ? and enabled = ?", route.ProjectID, application.ID, environment.ID, true)
+	query := r.db.Where("project_id = ? and application_id = ? and enabled = ?", route.ProjectID, application.ID, true)
 	if strings.TrimSpace(route.DeploymentTargetID) != "" {
 		query = query.Where("id = ?", strings.TrimSpace(route.DeploymentTargetID))
 	} else {

@@ -85,6 +85,7 @@ func (h *Handlers) CreateProject(ctx *gin.Context) {
 		Description:         input.Description,
 		NamespaceStrategy:   fallback(input.NamespaceStrategy, "project"),
 		MaxConcurrentBuilds: normalizeBuildConcurrency(input.MaxConcurrentBuilds, defaultProjectBuildConcurrency),
+		BillingOwnerUserID:  user.ID,
 	}
 
 	if err := h.db.Create(&project).Error; err != nil {
@@ -102,12 +103,6 @@ func (h *Handlers) CreateProject(ctx *gin.Context) {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	environment := defaultProductionEnvironment(project.ID, user.ID)
-	if err := h.db.Create(&environment).Error; err != nil {
-		writeError(ctx, http.StatusBadRequest, err.Error())
-		return
-	}
-
 	ctx.JSON(http.StatusCreated, project)
 }
 

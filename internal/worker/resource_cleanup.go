@@ -99,16 +99,16 @@ func (r *Runner) cleanupProject(ctx context.Context, payload tasks.ResourceClean
 }
 
 func (r *Runner) cleanupProjectNamespaces(ctx context.Context, project model.Project) error {
-	environments, err := r.projectCleanupEnvironments(project.ID)
+	targets, err := r.projectCleanupDeploymentTargets(project.ID)
 	if err != nil {
 		return err
 	}
-	return r.cleanupProjectNamespacesForEnvironments(ctx, project, environments)
+	return r.cleanupProjectNamespacesForDeploymentTargets(ctx, project, targets)
 }
 
-func (r *Runner) cleanupProjectNamespacesForEnvironments(ctx context.Context, project model.Project, environments []model.Environment) error {
+func (r *Runner) cleanupProjectNamespacesForDeploymentTargets(ctx context.Context, project model.Project, targets []model.DeploymentTarget) error {
 	namespace := projectNamespace(project)
-	if len(environments) == 0 {
+	if len(targets) == 0 {
 		manager, err := r.kubernetesManager(model.Environment{})
 		if err != nil {
 			return err
@@ -116,7 +116,8 @@ func (r *Runner) cleanupProjectNamespacesForEnvironments(ctx context.Context, pr
 		return deleteManagedNamespace(ctx, manager, namespace)
 	}
 	seen := map[string]bool{}
-	for _, environment := range environments {
+	for _, target := range targets {
+		environment := deploymentTargetEnvironment(target)
 		key := projectCleanupEnvironmentKey(environment)
 		if seen[key] {
 			continue
@@ -133,12 +134,12 @@ func (r *Runner) cleanupProjectNamespacesForEnvironments(ctx context.Context, pr
 	return nil
 }
 
-func (r *Runner) projectCleanupEnvironments(projectID string) ([]model.Environment, error) {
-	var environments []model.Environment
-	if err := r.db.Where("project_id = ?", projectID).Order("created_at asc").Find(&environments).Error; err != nil {
+func (r *Runner) projectCleanupDeploymentTargets(projectID string) ([]model.DeploymentTarget, error) {
+	var targets []model.DeploymentTarget
+	if err := r.db.Where("project_id = ?", projectID).Order("created_at asc").Find(&targets).Error; err != nil {
 		return nil, err
 	}
-	return environments, nil
+	return targets, nil
 }
 
 func projectCleanupEnvironmentKey(environment model.Environment) string {
@@ -216,10 +217,7 @@ func (r *Runner) cleanupDeploymentTargetRuntimeResources(ctx context.Context, ta
 	if err := r.db.First(&project, "id = ?", target.ProjectID).Error; err != nil {
 		return fmt.Errorf("project not found: %w", err)
 	}
-	var environment model.Environment
-	if err := r.db.First(&environment, "id = ? and project_id = ?", target.EnvironmentID, target.ProjectID).Error; err != nil {
-		return fmt.Errorf("environment not found: %w", err)
-	}
+	environment := deploymentTargetEnvironment(target)
 	manager, err := r.kubernetesManager(environment)
 	if err != nil {
 		return err
@@ -261,10 +259,11 @@ func (r *Runner) cleanupGatewayRuntimeResources(ctx context.Context, route model
 	if err := r.db.First(&project, "id = ?", route.ProjectID).Error; err != nil {
 		return fmt.Errorf("project not found: %w", err)
 	}
-	var environment model.Environment
-	if err := r.db.First(&environment, "id = ? and project_id = ?", route.EnvironmentID, route.ProjectID).Error; err != nil {
-		return fmt.Errorf("environment not found: %w", err)
+	var target model.DeploymentTarget
+	if err := r.db.First(&target, "id = ? and project_id = ?", route.DeploymentTargetID, route.ProjectID).Error; err != nil {
+		return fmt.Errorf("deployment target not found: %w", err)
 	}
+	environment := deploymentTargetEnvironment(target)
 	manager, err := r.kubernetesManager(environment)
 	if err != nil {
 		return err

@@ -27,3 +27,21 @@ func (h *Handlers) kubernetesClientForEnvironment(ctx *gin.Context, project mode
 	namespace := runtimeProjectNamespace(project)
 	return client, namespace, true
 }
+
+func (h *Handlers) kubernetesClientForDeploymentTarget(ctx *gin.Context, project model.Project, target model.DeploymentTarget, errorMessage string) (*kubeprovider.Client, string, bool) {
+	managerCluster, ok := h.runtimeClusterForDeploymentTarget(ctx, target)
+	if !ok {
+		return nil, "", false
+	}
+	kubeconfig := h.secrets.Resolve(managerCluster.KubeconfigRef)
+	if strings.TrimSpace(kubeconfig) == "" {
+		writeError(ctx, http.StatusBadRequest, errorMessage)
+		return nil, "", false
+	}
+	client, err := kubeprovider.NewClientFromKubeconfig(kubeconfig)
+	if err != nil {
+		writeError(ctx, http.StatusBadRequest, "运行集群 kubeconfig 无效")
+		return nil, "", false
+	}
+	return client, deploymentTargetNamespace(project, target), true
+}

@@ -29,6 +29,28 @@ func (r *Runner) kubernetesManager(environment model.Environment) (kubeprovider.
 	return manager, nil
 }
 
+func deploymentTargetEnvironment(target model.DeploymentTarget) model.Environment {
+	environmentID := strings.TrimSpace(target.EnvironmentID)
+	if environmentID == "" {
+		environmentID = target.ID
+	}
+	replicas := target.Replicas
+	if replicas <= 0 {
+		replicas = 1
+	}
+	return model.Environment{
+		ID:            environmentID,
+		ProjectID:     target.ProjectID,
+		Name:          firstNonEmpty(target.Name, target.Stage, target.ID),
+		Slug:          firstNonEmpty(target.Stage, target.Name, "prod"),
+		ClusterID:     strings.TrimSpace(target.ClusterID),
+		Namespace:     strings.TrimSpace(target.Namespace),
+		Replicas:      replicas,
+		CPURequest:    firstNonEmpty(target.CPURequest, "1"),
+		MemoryRequest: firstNonEmpty(target.MemoryRequest, "1Gi"),
+	}
+}
+
 func (r *Runner) kubeconfigForEnvironment(environment model.Environment) (string, error) {
 	cluster, err := r.runtimeClusterForEnvironment(environment)
 	if err != nil {

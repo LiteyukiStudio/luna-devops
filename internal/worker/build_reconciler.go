@@ -100,15 +100,12 @@ func (r *Runner) syncReleaseRuntimeSnapshot(ctx context.Context, release model.R
 	if err := r.db.First(&application, "id = ? and project_id = ?", release.ApplicationID, release.ProjectID).Error; err != nil {
 		return err
 	}
-	var environment model.Environment
-	if err := r.db.First(&environment, "id = ? and project_id = ?", release.EnvironmentID, release.ProjectID).Error; err != nil {
-		return err
-	}
-	manager, err := r.kubernetesManager(environment)
+	deploymentTarget, err := r.releaseDeploymentTarget(release)
 	if err != nil {
 		return err
 	}
-	deploymentTarget, err := r.releaseDeploymentTarget(release)
+	environment := deploymentTargetEnvironment(deploymentTarget)
+	manager, err := r.kubernetesManager(environment)
 	if err != nil {
 		return err
 	}

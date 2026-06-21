@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/LiteyukiStudio/devops/internal/billing"
+	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/gin-gonic/gin"
 )
 
@@ -23,13 +24,23 @@ func (h *Handlers) ensureBillingAllowsDeployChange(ctx *gin.Context, projectID s
 }
 
 func (h *Handlers) ensureProjectBalanceNonNegative(ctx *gin.Context, projectID string) bool {
-	wallet, err := (billing.Service{DB: h.db}).EnsureWallet(projectID)
+	var project model.Project
+	if err := h.db.Select("billing_owner_user_id").First(&project, "id = ?", projectID).Error; err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
+		return false
+	}
+	ownerID := strings.TrimSpace(project.BillingOwnerUserID)
+	if ownerID == "" {
+		writeErrorCode(ctx, http.StatusPaymentRequired, "billing.owner_required", "project billing owner is required")
+		return false
+	}
+	wallet, err := (billing.Service{DB: h.db}).EnsureWallet(ownerID)
 	if err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return false
 	}
 	if !wallet.BalanceCredits.IsPositive() {
-		writeErrorCode(ctx, http.StatusPaymentRequired, "billing.insufficient_balance", "project balance is insufficient")
+		writeErrorCode(ctx, http.StatusPaymentRequired, "billing.insufficient_balance", "billing owner balance is insufficient")
 		return false
 	}
 	return true

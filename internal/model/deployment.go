@@ -32,7 +32,6 @@ type Environment struct {
 	ProjectID     string         `gorm:"index;not null" json:"projectId"`
 	Name          string         `gorm:"not null" json:"name"`
 	Slug          string         `gorm:"index;not null" json:"slug"`
-	Stage         string         `gorm:"not null;default:dev" json:"stage"`
 	ClusterID     string         `gorm:"index" json:"clusterId"`
 	Namespace     string         `json:"namespace"`
 	Replicas      int            `gorm:"not null;default:1" json:"replicas"`
@@ -73,8 +72,14 @@ type DeploymentTarget struct {
 	ID                   string                        `gorm:"primaryKey" json:"id"`
 	ProjectID            string                        `gorm:"index;not null" json:"projectId"`
 	ApplicationID        string                        `gorm:"index;not null" json:"applicationId"`
-	EnvironmentID        string                        `gorm:"index;not null" json:"environmentId"`
+	EnvironmentID        string                        `gorm:"index;not null;default:''" json:"environmentId"`
 	Name                 string                        `gorm:"not null" json:"name"`
+	Stage                string                        `gorm:"not null;default:prod" json:"stage"`
+	ClusterID            string                        `gorm:"index;not null;default:''" json:"clusterId"`
+	Namespace            string                        `gorm:"not null;default:''" json:"namespace"`
+	Replicas             int                           `gorm:"not null;default:1" json:"replicas"`
+	CPURequest           string                        `gorm:"not null;default:'1'" json:"cpuRequest"`
+	MemoryRequest        string                        `gorm:"not null;default:'1Gi'" json:"memoryRequest"`
 	ServicePort          int                           `gorm:"not null;default:8080" json:"servicePort"`
 	DeleteStatus         string                        `gorm:"index;not null;default:active" json:"deleteStatus"`
 	DeleteMessage        string                        `gorm:"type:text;not null;default:''" json:"deleteMessage"`

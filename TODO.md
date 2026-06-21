@@ -120,7 +120,7 @@
 - [x] 应用详情页移除旧交付详情入口，将部署配置维护收敛到应用概览、构建、部署和访问工作流。
 - [x] 统一构建和部署列表状态短轮询间隔，应用构建页、应用部署页和看板近期构建复用同一常量刷新运行态数据。
 - [x] 应用部署页目标镜像和部署进度保持常规截断，hover 展示完整内容，点击文本可复制完整值并提示复制成功。
-- [x] 为 Project/Application/Environment 关键命名片段增加长度防呆，提示用户使用短 slug；DeploymentTarget 名称改为纯展示名，Kubernetes 资源名由内部 ID 派生。
+- [x] 为 Project/Application 关键命名片段增加长度防呆，提示用户使用短 slug；DeploymentTarget 名称改为纯展示名，Kubernetes 资源名由内部 ID 派生。
 - [x] 修正 Kubernetes 资源名生成：部署配置不再使用用户填写名称生成运行态资源名，避免中文名称或长名称影响 Deployment/Service；前后端允许部署配置名称作为可读展示名自由填写。
 - [x] Kubernetes 运行态资源命名改为内部 ID 派生：namespace 使用 `ns-{projectIdShort}`，Deployment/Service/ConfigMap/Secret 使用 `dplt-{deploymentTargetIdShort}`，平台识别依赖稳定 ID labels。
 - [x] 部署配置支持维护运行时 ConfigMap/Secret 覆盖项：入口挂靠到模块的部署配置，按“环境默认 + 部署配置覆盖”生成运行态资源，Secret 不回显原文。
@@ -403,7 +403,7 @@
 
 ### 7.1 计费系统 MVP
 
-- [x] 计费主体统一为项目空间：每个项目空间拥有一个 credits 钱包，所有构建、运行、访问、存储等消耗都归属到项目空间；个人项目空间也走同一套模型。
+- [x] 计费主体统一为用户钱包：项目空间记录当前计费归属人，构建、运行、访问、存储等消耗在结算时扣到当时的归属人；项目空间转移后只影响新费用，历史流水不迁移。
 - [x] 全平台只使用 `credits` 作为内部货币，底层金额使用高精度 decimal 存储并支持小数，禁止使用 `float32/float64` 表示金额；展示单位由站点管理员在站点设置中配置，平台本体不内置支付渠道。
 - [x] 费用相关写操作必须使用数据库事务保证原子性：账本流水、钱包余额、用量结算状态和补偿/退款流水必须在同一个事务内完成，任一步失败都整体回滚。
 - [x] 建立 append-only 账本：所有扣费、充值、赠送、补偿和退款都写入不可变流水，历史流水不修改；修正通过反向流水完成。
@@ -413,14 +413,14 @@
 - [x] 构建 Job 粗略计量系数先按 decimal 估算：`1 vCPU-minute = 10 credits`，`1 GiB-memory-minute = 2 credits`，最小计费粒度 1 分钟；最终系数不写死，放入站点配置或计费规则表。
 - [x] 容器运行计费：按项目空间内已发布部署配置的 `replicas * cpu_request * duration`、`replicas * memory_request * duration` 累计 credits；数据卷容量和访问次数独立实现。
 - [x] 容器运行粗略计量系数先按 decimal 估算：`1 vCPU-hour = 30 credits`，`1 GiB-memory-hour = 6 credits`；MVP 按整点小时窗口聚合并对首个窗口按发布时间截断。
-- [ ] 访问计费先按入口请求次数聚合，不在第一版区分公网流量、带宽、地域和 TLS；后续需要时再增加 `egress_gib`、`cdn_request` 等 meter。
+- [x] 访问计费改为按平台访问入口的响应出站流量聚合：新增 `gateway.egress_gib` meter 和网关用量上报接口；请求次数 `gateway.requests_1000` 默认关闭并保留为观测/防滥用扩展。
 - [x] 存储计费按声明容量计费，不按实际使用量计费；数据卷保留期间持续计费。导出数据卷作为一次性操作账单项后续再补。
-- [x] 站点管理员可配置计费规则启停、credits 单位展示名、免费额度、项目空间欠费宽限期和是否允许欠费继续运行。
+- [x] 站点管理员可配置计费规则启停、credits 单位展示名、免费额度、计费归属人欠费宽限期和是否允许欠费继续运行。
 - [x] 用户侧账单与环境选择页面使用 `billing.creditsDisplayName` 展示货币单位，并在运行环境、构建环境表单中按当前计费规则前端估算单价。
-- [x] 站点管理员可在账单页写入项目空间充值和补偿流水；余额更新和账本记录必须在同一个事务内完成。
-- [x] 对外提供幂等充值 API：允许受信任第三方支付/运营系统按项目空间写入充值、补偿或扣减流水，并支持按幂等键防止重复入账；平台本体不对接支付宝、微信、Stripe 等支付渠道。
+- [x] 站点管理员可在账单页为指定用户账户写入充值和补偿流水；余额更新和账本记录必须在同一个事务内完成。
+- [x] 对外提供幂等充值 API：允许受信任第三方支付/运营系统按用户账户写入充值、补偿或扣减流水，支持按用户钱包和幂等键防止重复入账；平台本体不对接支付宝、微信、Stripe 等支付渠道。
 - [x] 余额不足风控：按站点开关禁止新构建、新发布、回滚发布和部署配置变更；运行中资源先进入欠费/宽限状态，不默认立即删除数据，避免误伤用户业务。
-- [x] 前端提供项目空间账单视图：展示余额、今日花费、本月花费、近期待扣、构建/运行/访问/存储分类消耗、低余额提示、账本流水和用量记录。
+- [x] 前端提供账单视图：展示用户余额、今日花费、本月花费、近期待扣、构建/运行/访问/存储分类消耗、低余额提示、账本流水和用量记录，并支持按项目空间筛选费用来源。
 
 ### 7.2 Worker + Kubernetes Job 构建执行链路
 
@@ -563,7 +563,7 @@
 - [x] 集群创建/编辑前端支持多 context kubeconfig 选择：粘贴多 context 配置时必须选择一个 context，提交前只保留该 context 及其引用的 cluster/user。
 - [x] Kubernetes 和 K3s 接入选项合并为 Kubernetes / K3s，后端兼容旧 k3s 输入并归一到 kubernetes。
 - [ ] 设计 Docker 运行时接入模型：支持 Docker host、Unix socket、TCP TLS CA/cert/key、连接测试、权限边界和部署适配，不复用 kubeconfig 字段。
-- [x] 实现 Environment 模型、迁移和 CRUD API。
+- [x] 实现早期 Environment 模型、迁移和 CRUD API；后续已将用户侧运行/构建规格收敛到 DeploymentTarget。
 - [x] 实现 Release 模型、迁移和列表/详情 API。
 - [x] 实现部署配置 API：镜像来源、环境变量、ConfigMap/Secret 引用、资源规格、副本数。
 - [x] 实现手动部署 API，先创建 pending 状态 Release。
@@ -651,7 +651,7 @@
 ### 10.1 前端 CRUD 联调优先
 
 - [x] 实现构建页，并与 BuildProvider、BuildRun、BuildJob CRUD 联调。
-- [x] 实现部署环境页，并与 RuntimeCluster、Environment、Release CRUD 联调。
+- [x] 实现部署配置页，并与 RuntimeCluster、DeploymentTarget、Release CRUD 联调。
 - [x] 实现网关域名页，并与 GatewayRoute CRUD 联调。
 - [x] 将构建、部署、访问从顶层菜单收敛到应用详情页 `ContentTabs`，并新增独立集群页。
 - [x] 侧边栏项目空间支持项目下钻应用快捷入口，应用详情页承载概览、模块、构建、部署和访问。

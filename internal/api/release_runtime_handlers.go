@@ -187,17 +187,12 @@ func (h *Handlers) releaseRuntimeClient(ctx *gin.Context, release model.Release)
 		writeError(ctx, http.StatusNotFound, "project not found")
 		return nil, "", model.DeploymentTarget{}, false
 	}
-	var environment model.Environment
-	if err := h.db.First(&environment, "id = ? and project_id = ?", release.EnvironmentID, release.ProjectID).Error; err != nil {
-		writeError(ctx, http.StatusNotFound, "environment not found")
-		return nil, "", model.DeploymentTarget{}, false
-	}
 	var target model.DeploymentTarget
 	if err := h.db.First(&target, "id = ? and project_id = ? and application_id = ?", release.DeploymentTargetID, release.ProjectID, release.ApplicationID).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "deployment target not found")
 		return nil, "", model.DeploymentTarget{}, false
 	}
-	cluster, ok := h.runtimeClusterForEnvironment(ctx, environment)
+	cluster, ok := h.runtimeClusterForDeploymentTarget(ctx, target)
 	if !ok {
 		return nil, "", model.DeploymentTarget{}, false
 	}
@@ -211,5 +206,5 @@ func (h *Handlers) releaseRuntimeClient(ctx *gin.Context, release model.Release)
 		writeError(ctx, http.StatusBadRequest, "运行集群 kubeconfig 无效")
 		return nil, "", model.DeploymentTarget{}, false
 	}
-	return client, runtimeProjectNamespace(project), target, true
+	return client, deploymentTargetNamespace(project, target), target, true
 }

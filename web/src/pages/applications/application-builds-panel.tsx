@@ -1,5 +1,5 @@
 import type { Ref } from 'react'
-import type { ArtifactRegistry, BuildJob, BuildRun, DeploymentTarget, Environment, RepositoryBinding } from '@/api/client'
+import type { ArtifactRegistry, BuildJob, BuildRun, DeploymentTarget, RepositoryBinding } from '@/api/client'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Search } from 'lucide-react'
 import { useEffect, useImperativeHandle, useMemo, useState } from 'react'
@@ -12,6 +12,7 @@ import { FormField as Field } from '@/components/common/form-field'
 import { PaginationController } from '@/components/common/pagination'
 import { SearchSelect } from '@/components/common/search-select'
 import { TargetImageRefInput } from '@/components/common/target-image-ref-input'
+import { UnitInput } from '@/components/common/unit-input'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -21,7 +22,7 @@ import { WORKFLOW_STATUS_REFETCH_INTERVAL_MS } from '@/lib/polling'
 import { ApplicationBuildLogPanel } from './application-build-log-panel'
 import { ApplicationBuildRunFilterBar } from './application-build-run-filter-bar'
 import { ApplicationBuildRunRow } from './application-build-run-row'
-import { branchOptions, buildEnvironmentOptionLabel, defaultTargetImageRef, deploymentTargetImageRef, firstSelectableDeploymentTarget, registryInputPrefix, registryOptionLabel } from './application-config-utils'
+import { branchOptions, defaultTargetImageRef, deploymentTargetImageRef, firstSelectableDeploymentTarget, registryInputPrefix, registryOptionLabel } from './application-config-utils'
 
 export interface BuildsPanelHandle {
   openTriggerDrawer: () => void
@@ -36,13 +37,12 @@ function uniqueBuildFilterValues(values: Array<string | undefined>) {
     .sort((left, right) => left.localeCompare(right))
 }
 
-export function ApplicationBuildsPanel({ applicationId, appSlug, binding, deploymentTargets, environments, buildJobs, buildRuns, projectId, projectSlug, ref, registries, repositoryBindings }: {
+export function ApplicationBuildsPanel({ applicationId, appSlug, binding, deploymentTargets, buildJobs, buildRuns, projectId, projectSlug, ref, registries, repositoryBindings }: {
   applicationId: string
   appSlug: string
   binding?: { defaultBranch: string, gitAccountId: string, owner: string, repo: string }
   repositoryBindings: RepositoryBinding[]
   deploymentTargets: DeploymentTarget[]
-  environments: Environment[]
   buildJobs: BuildJob[]
   buildRuns: BuildRun[]
   projectId: string
@@ -67,12 +67,10 @@ export function ApplicationBuildsPanel({ applicationId, appSlug, binding, deploy
   const [logStreaming, setLogStreaming] = useState(false)
   const form = useForm<TriggerForm>({ defaultValues: triggerDefaults, mode: 'onChange' })
   const selectedDeploymentTarget = deploymentTargets.find(config => config.id === form.watch('deploymentTargetId')) ?? firstSelectableDeploymentTarget(deploymentTargets)
-  const environmentMap = useMemo(() => Object.fromEntries(environments.map(environment => [environment.id, environment])), [environments])
-  const selectedBuildEnvironment = environmentMap[form.watch('buildEnvironmentId') || selectedDeploymentTarget?.buildEnvironmentId || selectedDeploymentTarget?.environmentId || '']
   const selectedBinding = repositoryBindings.find(item => item.id === selectedDeploymentTarget?.repositoryBindingId) ?? binding
   const selectedRegistry = registries.find(registry => registry.id === form.watch('targetRegistryId'))
   const targetImagePrefix = selectedRegistry ? registryInputPrefix(selectedRegistry) : ''
-  const buildMinuteCost = billingDisplay.buildMinuteCost(selectedBuildEnvironment?.cpuRequest, selectedBuildEnvironment?.memoryRequest)
+  const buildMinuteCost = billingDisplay.buildMinuteCost(form.watch('buildCpuRequest'), form.watch('buildMemoryRequest'))
   const buildJobMap = useMemo(() => {
     const grouped = new Map<string, BuildJob[]>()
     for (const job of buildJobs) {
@@ -231,14 +229,14 @@ export function ApplicationBuildsPanel({ applicationId, appSlug, binding, deploy
       ...triggerDefaults,
       applicationId,
       deploymentTargetId: defaultConfig?.id ?? '',
-      buildEnvironmentId: defaultConfig?.buildEnvironmentId || defaultConfig?.environmentId || '',
-      buildCpuRequest: environmentMap[defaultConfig?.buildEnvironmentId || defaultConfig?.environmentId || '']?.cpuRequest || defaultConfig?.buildCpuRequest || '1',
-      buildMemoryRequest: environmentMap[defaultConfig?.buildEnvironmentId || defaultConfig?.environmentId || '']?.memoryRequest || defaultConfig?.buildMemoryRequest || '1Gi',
+      buildEnvironmentId: defaultConfig?.buildEnvironmentId || '',
+      buildCpuRequest: defaultConfig?.buildCpuRequest || '1',
+      buildMemoryRequest: defaultConfig?.buildMemoryRequest || '1Gi',
       sourceBranch: (repositoryBindings.find(item => item.id === defaultConfig?.repositoryBindingId) ?? binding)?.defaultBranch || 'main',
       targetImageRef: deploymentTargetImageRef(defaultConfig) || defaultTargetImageRef(undefined, projectSlug, appSlug),
       targetRegistryId: defaultConfig?.targetRegistryId ?? '',
     })
-  }, [applicationId, appSlug, binding, deploymentTargets, dialogOpen, environmentMap, form, projectSlug, repositoryBindings])
+  }, [applicationId, appSlug, binding, deploymentTargets, dialogOpen, form, projectSlug, repositoryBindings])
 
   useEffect(() => {
     if (!dialogOpen || !selectedDeploymentTarget)
@@ -251,12 +249,10 @@ export function ApplicationBuildsPanel({ applicationId, appSlug, binding, deploy
     const configTargetImageRef = deploymentTargetImageRef(selectedDeploymentTarget)
     if (configTargetImageRef)
       form.setValue('targetImageRef', configTargetImageRef, { shouldDirty: true, shouldValidate: true })
-    const nextBuildEnvironmentId = selectedDeploymentTarget.buildEnvironmentId || selectedDeploymentTarget.environmentId
-    const nextBuildEnvironment = environmentMap[nextBuildEnvironmentId]
-    form.setValue('buildEnvironmentId', nextBuildEnvironmentId, { shouldDirty: true, shouldValidate: true })
-    form.setValue('buildCpuRequest', nextBuildEnvironment?.cpuRequest || selectedDeploymentTarget.buildCpuRequest || '1', { shouldDirty: true, shouldValidate: true })
-    form.setValue('buildMemoryRequest', nextBuildEnvironment?.memoryRequest || selectedDeploymentTarget.buildMemoryRequest || '1Gi', { shouldDirty: true, shouldValidate: true })
-  }, [binding, dialogOpen, environmentMap, form, repositoryBindings, selectedDeploymentTarget])
+    form.setValue('buildEnvironmentId', selectedDeploymentTarget.buildEnvironmentId || '', { shouldDirty: true, shouldValidate: true })
+    form.setValue('buildCpuRequest', selectedDeploymentTarget.buildCpuRequest || '1', { shouldDirty: true, shouldValidate: true })
+    form.setValue('buildMemoryRequest', selectedDeploymentTarget.buildMemoryRequest || '1Gi', { shouldDirty: true, shouldValidate: true })
+  }, [binding, dialogOpen, form, repositoryBindings, selectedDeploymentTarget])
 
   useEffect(() => {
     if (!dialogOpen || !registries.length || form.getValues('targetRegistryId'))
@@ -400,25 +396,33 @@ export function ApplicationBuildsPanel({ applicationId, appSlug, binding, deploy
                 <h3 className="text-sm font-semibold">{t('deploymentsPage.buildEnvironment')}</h3>
                 <p className="mt-1 text-sm text-muted-foreground">{t('buildsPage.buildEnvironmentOverrideHint')}</p>
               </div>
-              <Field hint={t('deploymentsPage.buildEnvironmentHint')} label={t('deploymentsPage.buildEnvironment')} required>
-                <Select
-                  {...form.register('buildEnvironmentId', { required: true })}
-                  onChange={(event) => {
-                    const nextEnvironment = environmentMap[event.target.value]
-                    form.setValue('buildEnvironmentId', event.target.value, { shouldDirty: true, shouldValidate: true })
-                    form.setValue('buildCpuRequest', nextEnvironment?.cpuRequest || '1', { shouldDirty: true, shouldValidate: true })
-                    form.setValue('buildMemoryRequest', nextEnvironment?.memoryRequest || '1Gi', { shouldDirty: true, shouldValidate: true })
-                  }}
-                >
-                  <option value="">{t('common.select')}</option>
-                  {environments.map(environment => <option key={environment.id} value={environment.id}>{buildEnvironmentOptionLabel(environment, t)}</option>)}
-                </Select>
-                {selectedBuildEnvironment && (
+              <div className="grid gap-3 md:grid-cols-2">
+                <Field label={t('deploymentsPage.buildCpuRequest')} required>
+                  <UnitInput
+                    unitSelectLabel={t('deploymentsPage.buildCpuRequest')}
+                    units={[
+                      { label: 'm', value: 'm' },
+                      { label: t('deploymentsPage.cpuUnits.core'), value: '' },
+                    ]}
+                    value={form.watch('buildCpuRequest') || '1'}
+                    onChange={value => form.setValue('buildCpuRequest', value, { shouldDirty: true, shouldValidate: true })}
+                  />
+                </Field>
+                <Field label={t('deploymentsPage.buildMemoryRequest')} required>
+                  <UnitInput
+                    unitSelectLabel={t('deploymentsPage.buildMemoryRequest')}
+                    units={[
+                      { label: 'Mi', value: 'Mi' },
+                      { label: 'Gi', value: 'Gi' },
+                    ]}
+                    value={form.watch('buildMemoryRequest') || '1Gi'}
+                    onChange={value => form.setValue('buildMemoryRequest', value, { shouldDirty: true, shouldValidate: true })}
+                  />
                   <p className="mt-1 text-xs text-muted-foreground">
                     {t('deploymentsPage.buildEstimatedPrice', { price: billingDisplay.formatAmountWithUnit(buildMinuteCost) })}
                   </p>
-                )}
-              </Field>
+                </Field>
+              </div>
             </div>
             <DialogFooter><Button disabled={!form.formState.isValid || triggerBuild.isPending} type="submit">{t('buildsPage.queueBuild')}</Button></DialogFooter>
           </form>

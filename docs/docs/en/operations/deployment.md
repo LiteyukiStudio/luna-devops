@@ -4,7 +4,7 @@ Liteyuki DevOps connects code, images, clusters, and routes into one delivery pa
 
 ## Project spaces
 
-A project space is the boundary for teams and resources. Members, environments, applications, build records, releases, and routes all belong to a project space.
+A project space is the boundary for teams and resources. Members, applications, deploy configs, build records, releases, and routes all belong to a project space.
 
 Common patterns:
 
@@ -24,6 +24,7 @@ A deployment target answers how an application should ship:
 
 - Build from a repository or use an existing image.
 - Publish to which environment.
+- Stage for this deployment target, such as development, test, staging, or production.
 - Use which registry.
 - Listen on which service port.
 - Auto release after a successful build or not.

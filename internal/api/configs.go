@@ -141,7 +141,7 @@ var configDefinitions = []configDefinition{
 	{
 		Key:         "billing.freeQuotaCredits",
 		Label:       "默认免费额度",
-		Description: "新项目空间可获得的默认 credits 额度。当前用于后续充值与额度策略，已创建项目空间不会自动补发。",
+		Description: "新用户钱包可获得的默认 credits 额度。当前用于后续充值与额度策略，已创建用户不会自动补发。",
 		Type:        "string",
 		Public:      false,
 		Default:     "0",
@@ -149,7 +149,7 @@ var configDefinitions = []configDefinition{
 	{
 		Key:         "billing.lowBalanceThresholdCredits",
 		Label:       "低余额提醒阈值",
-		Description: "项目空间余额低于该 credits 数值时，后续可用于展示提醒或触发通知。",
+		Description: "计费归属人余额低于该 credits 数值时，后续可用于展示提醒或触发通知。",
 		Type:        "string",
 		Public:      false,
 		Default:     "100",
@@ -157,7 +157,7 @@ var configDefinitions = []configDefinition{
 	{
 		Key:         "billing.overdueGracePeriodHours",
 		Label:       "欠费宽限期",
-		Description: "项目空间余额不足后允许继续运行的小时数。限制策略启用后会使用该值。",
+		Description: "计费归属人余额不足后允许继续运行的小时数。限制策略启用后会使用该值。",
 		Type:        "string",
 		Public:      false,
 		Default:     "72",
@@ -174,7 +174,7 @@ var configDefinitions = []configDefinition{
 	{
 		Key:         "billing.blockNewBuildsWhenInsufficient",
 		Label:       "余额不足阻止新构建",
-		Description: "开启后，项目空间余额不足时不再接受新的构建任务。已经开始的任务仍会完成结算。",
+		Description: "开启后，计费归属人余额不足时不再接受新的构建任务。已经开始的任务仍会完成结算。",
 		Type:        "select",
 		Public:      false,
 		Default:     "false",
@@ -183,7 +183,7 @@ var configDefinitions = []configDefinition{
 	{
 		Key:         "billing.blockDeployChangesWhenInsufficient",
 		Label:       "余额不足阻止部署变更",
-		Description: "开启后，项目空间余额不足时会阻止新发布、扩容和新增数据卷等付费变更。",
+		Description: "开启后，计费归属人余额不足时会阻止新发布、扩容和新增数据卷等付费变更。",
 		Type:        "select",
 		Public:      false,
 		Default:     "false",

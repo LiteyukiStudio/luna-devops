@@ -1,5 +1,5 @@
 import type { UseFormReturn } from 'react-hook-form'
-import type { ArtifactRegistry, BuildRun, DeploymentTarget, DeploymentTargetMetrics, DeploymentTargetPayload, Environment, ProjectRuntimeConfigSet, ProjectRuntimeConfigSetPayload, Release, RepositoryBinding } from '@/api/client'
+import type { ArtifactRegistry, BuildRun, DeploymentTarget, DeploymentTargetMetrics, DeploymentTargetPayload, ProjectRuntimeConfigSet, ProjectRuntimeConfigSetPayload, Release, RepositoryBinding } from '@/api/client'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import i18next from 'i18next'
@@ -34,7 +34,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useBillingDisplay } from '@/lib/billing-display'
 import { WORKFLOW_STATUS_REFETCH_INTERVAL_MS } from '@/lib/polling'
 import { emptyRuntimeDataVolumeRow, parseRuntimeDataVolumes, serializeRuntimeDataVolumes } from '@/lib/runtime-data-volumes'
-import { branchOptions, buildEnvironmentOptionLabel, defaultTargetImageRef, deploymentReleaseKey, deploymentTargetCanRelease, deploymentTargetImageRef, formatReleaseTime, registryInputPrefix, registryOptionLabel, releaseEnvironmentLabel } from './application-config-utils'
+import { branchOptions, defaultTargetImageRef, deploymentReleaseKey, deploymentTargetCanRelease, deploymentTargetImageRef, formatReleaseTime, registryInputPrefix, registryOptionLabel } from './application-config-utils'
 import { DeploymentRuntimeStatusBadge, InternalServiceEndpoint } from './application-deployment-runtime'
 import { buildDeploymentRuntimeStatus, buildInternalServiceEndpoint } from './application-deployment-runtime-utils'
 import { ApplicationRuntimeTerminalPanel } from './application-runtime-terminal-panel'
@@ -62,6 +62,12 @@ const releaseDefaults: ReleaseForm = { applicationId: '', buildRunId: '', deploy
 const deploymentTargetDefaults: DeploymentTargetPayload = {
   name: '',
   environmentId: '',
+  stage: 'prod',
+  clusterId: '',
+  namespace: '',
+  replicas: 1,
+  cpuRequest: '1',
+  memoryRequest: '1Gi',
   servicePort: 8080,
   sourceType: 'repository',
   repositoryBindingId: '',
@@ -115,12 +121,11 @@ const runtimeConfigDefaults: ProjectRuntimeConfigSetPayload = {
   secretRefs: '',
 }
 
-export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns, deploymentTargets, environments, projectId, projectSlug, ref, registries, releases, repositoryBindings }: {
+export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns, deploymentTargets, projectId, projectSlug, ref, registries, releases, repositoryBindings }: {
   applicationId: string
   appSlug: string
   buildRuns: BuildRun[]
   deploymentTargets: DeploymentTarget[]
-  environments: Environment[]
   projectId: string
   projectSlug: string
   ref?: React.Ref<DeploymentsPanelHandle>
@@ -158,16 +163,13 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
     mode: 'onChange',
     resolver: zodResolver(repositoryBindingSchema),
   })
-  const environmentMap = useMemo(() => Object.fromEntries(environments.map(environment => [environment.id, environment])), [environments])
-  const targetRuntimeEnvironment = environmentMap[targetForm.watch('environmentId')]
-  const targetBuildEnvironment = environmentMap[targetForm.watch('buildEnvironmentId')] ?? targetRuntimeEnvironment
-  const runtimeHourCost = billingDisplay.runtimeHourCost(targetRuntimeEnvironment?.replicas, targetRuntimeEnvironment?.cpuRequest, targetRuntimeEnvironment?.memoryRequest)
-  const buildMinuteCost = billingDisplay.buildMinuteCost(targetBuildEnvironment?.cpuRequest, targetBuildEnvironment?.memoryRequest)
+  const runtimeHourCost = billingDisplay.runtimeHourCost(targetForm.watch('replicas'), targetForm.watch('cpuRequest'), targetForm.watch('memoryRequest'))
+  const buildMinuteCost = billingDisplay.buildMinuteCost(targetForm.watch('buildCpuRequest'), targetForm.watch('buildMemoryRequest'))
   const buildRunMap = useMemo(() => Object.fromEntries(buildRuns.map(run => [run.id, run])), [buildRuns])
   const latestReleaseByTarget = useMemo(() => {
     const output: Record<string, Release> = {}
     for (const release of releases) {
-      const key = deploymentReleaseKey(release.environmentId, release.deploymentTargetId)
+      const key = deploymentReleaseKey(release.deploymentTargetId)
       const existing = output[key]
       if (!existing || new Date(release.createdAt).getTime() > new Date(existing.createdAt).getTime())
         output[key] = release
@@ -227,7 +229,7 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
   const dockerfilePathField = targetForm.register('dockerfilePath', { required: true })
   const releaseReadyTargets = useMemo(() => deploymentTargets.filter(target => deploymentTargetCanRelease(target, deployableBuildRuns)), [deployableBuildRuns, deploymentTargets])
   const selectedBuildRun = buildRunMap[form.watch('buildRunId')]
-  const latestEditingTargetRelease = editingTarget ? latestReleaseByTarget[deploymentReleaseKey(editingTarget.environmentId, editingTarget.id)] : undefined
+  const latestEditingTargetRelease = editingTarget ? latestReleaseByTarget[deploymentReleaseKey(editingTarget.id)] : undefined
   const targetHasRuntimeChanges = editingTarget ? deploymentTargetRuntimeChanged(editingTarget, normalizeDeploymentTargetPayload(watchedTargetValues)) : false
   const targetCanRedeploy = Boolean(editingTarget && latestEditingTargetRelease && normalizeBoolean(watchedTargetValues.enabled, editingTarget.enabled))
   const targetRuntimeFilesValid = targetConfigFilesValid && targetSecretFilesValid
@@ -259,7 +261,7 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
   const runtimeClusters = useQuery({
     queryKey: ['runtime-clusters', projectId],
     queryFn: () => api.listRuntimeClusters(projectId),
-    enabled: Boolean(projectId && deploymentTargets.length > 0),
+    enabled: Boolean(projectId),
   })
   const runtimeClusterMap = useMemo(() => Object.fromEntries((runtimeClusters.data ?? []).map(cluster => [cluster.id, cluster])), [runtimeClusters.data])
   const defaultRuntimeCluster = useMemo(() => {
@@ -269,13 +271,12 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
   const workloadClusterIds = useMemo(() => {
     const ids = new Set<string>()
     for (const target of deploymentTargets) {
-      const environment = environmentMap[target.environmentId]
-      const clusterId = environment?.clusterId?.trim() || defaultRuntimeCluster?.id
+      const clusterId = target.clusterId?.trim() || defaultRuntimeCluster?.id
       if (clusterId)
         ids.add(clusterId)
     }
     return [...ids].sort()
-  }, [defaultRuntimeCluster?.id, deploymentTargets, environmentMap])
+  }, [defaultRuntimeCluster?.id, deploymentTargets])
   const workloadResourceQueries = useQueries({
     queries: workloadClusterIds.map(clusterId => ({
       enabled: Boolean(projectId && applicationId && clusterId),
@@ -300,16 +301,13 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
   const workloadErrorByCluster = useMemo(() => Object.fromEntries(workloadClusterIds.map((clusterId, index) => [clusterId, Boolean(workloadResourceQueries[index]?.isError)] as const)), [workloadClusterIds, workloadResourceQueries])
   const serviceResourcesByCluster = useMemo(() => Object.fromEntries(workloadClusterIds.map((clusterId, index) => [clusterId, serviceResourceQueries[index]?.data ?? []] as const)), [serviceResourceQueries, workloadClusterIds])
   const deploymentRows = useMemo(() => deploymentTargets.map((target) => {
-    const environment = environmentMap[target.environmentId]
-    const runtimeCluster = environment?.clusterId ? runtimeClusterMap[environment.clusterId] : defaultRuntimeCluster
-    const clusterId = environment?.clusterId?.trim() || runtimeCluster?.id || defaultRuntimeCluster?.id || ''
+    const runtimeCluster = target.clusterId ? runtimeClusterMap[target.clusterId] : defaultRuntimeCluster
+    const clusterId = target.clusterId?.trim() || runtimeCluster?.id || defaultRuntimeCluster?.id || ''
     return {
-      environment,
       internalEndpoint: buildInternalServiceEndpoint(target, serviceResourcesByCluster[clusterId] ?? []),
-      release: latestReleaseByTarget[deploymentReleaseKey(target.environmentId, target.id)],
+      release: latestReleaseByTarget[deploymentReleaseKey(target.id)],
       runtimeStatus: buildDeploymentRuntimeStatus(
         target,
-        environment,
         runtimeCluster ?? defaultRuntimeCluster,
         workloadResourcesByCluster,
         workloadLoadingByCluster,
@@ -317,27 +315,33 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
       ),
       target,
     }
-  }), [defaultRuntimeCluster, deploymentTargets, environmentMap, latestReleaseByTarget, runtimeClusterMap, serviceResourcesByCluster, workloadErrorByCluster, workloadLoadingByCluster, workloadResourcesByCluster])
+  }), [defaultRuntimeCluster, deploymentTargets, latestReleaseByTarget, runtimeClusterMap, serviceResourcesByCluster, workloadErrorByCluster, workloadLoadingByCluster, workloadResourcesByCluster])
   const runtimeConfigRestartTargets = useMemo(() => {
     if (!runtimeConfigRestartSetId)
       return []
     return deploymentTargets.filter(target => normalizeStringIds(target.runtimeConfigSetIds).includes(runtimeConfigRestartSetId))
   }, [deploymentTargets, runtimeConfigRestartSetId])
   const runtimeConfigRedeployableTargets = useMemo(() => runtimeConfigRestartTargets.filter((target) => {
-    const latestRelease = latestReleaseByTarget[deploymentReleaseKey(target.environmentId, target.id)]
+    const latestRelease = latestReleaseByTarget[deploymentReleaseKey(target.id)]
     return Boolean(redeployReleasePayload(target, latestRelease))
   }), [latestReleaseByTarget, runtimeConfigRestartTargets])
   const resetTargetForm = (target?: DeploymentTarget | null) => {
     const defaultRegistry = registries.find(registry => registry.credentialSet && registry.isDefault) ?? registries.find(registry => registry.credentialSet) ?? registries.find(registry => registry.isDefault) ?? registries[0]
-    const defaultEnvironment = environments[0]
     const defaultBinding = repositoryBindings[0]
     const sourceType = target?.sourceType ?? 'repository'
     targetForm.reset({
       ...deploymentTargetDefaults,
       ...target,
       sourceType,
-      environmentId: target?.environmentId ?? defaultEnvironment?.id ?? '',
-      buildEnvironmentId: target?.buildEnvironmentId || target?.environmentId || defaultEnvironment?.id || '',
+      environmentId: target?.environmentId ?? '',
+      clusterId: target?.clusterId ?? defaultRuntimeCluster?.id ?? '',
+      replicas: target?.replicas ?? 1,
+      cpuRequest: target?.cpuRequest || '1',
+      memoryRequest: target?.memoryRequest || '1Gi',
+      stage: target?.stage || 'prod',
+      buildEnvironmentId: target?.buildEnvironmentId || '',
+      buildCpuRequest: target?.buildCpuRequest || '1',
+      buildMemoryRequest: target?.buildMemoryRequest || '1Gi',
       repositoryBindingId: target?.repositoryBindingId ?? defaultBinding?.id ?? '',
       targetRegistryId: target?.targetRegistryId ?? defaultRegistry?.id ?? '',
       targetImageRef: deploymentTargetImageRef(target ?? undefined) || defaultTargetImageRef(defaultRegistry, projectSlug, appSlug),
@@ -399,7 +403,7 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
     resetRepositoryBindingForm()
     setRepositoryBindingDialogOpen(true)
   }
-  const openReleaseDialog = (environmentId = '', deploymentTargetId = '') => {
+  const openReleaseDialog = (_environmentId = '', deploymentTargetId = '') => {
     const defaultTarget = deploymentTargetId
       ? deploymentTargets.find(target => target.id === deploymentTargetId)
       : releaseReadyTargets[0]
@@ -410,7 +414,7 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
       applicationId: matchedRun?.applicationId ?? applicationId,
       deploymentTargetId: targetId ?? '',
       buildRunId: matchedRun?.id ?? '',
-      environmentId: defaultTarget?.environmentId ?? environmentId,
+      environmentId: defaultTarget?.environmentId ?? '',
       imageRef: matchedRun ? buildRunImageRef(matchedRun) : defaultTarget?.imageRef ?? '',
     })
     setDialogOpen(true)
@@ -470,7 +474,7 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
   })
   const pullLatestImageDeploy = useMutation({
     mutationFn: async (target: DeploymentTarget) => {
-      const releasePayload = redeployReleasePayload(target, latestReleaseByTarget[deploymentReleaseKey(target.environmentId, target.id)], { forceImagePull: true })
+      const releasePayload = redeployReleasePayload(target, latestReleaseByTarget[deploymentReleaseKey(target.id)], { forceImagePull: true })
       if (!releasePayload)
         throw new Error(t('deploymentsPage.redeployUnavailable'))
       return api.createRelease(projectId, releasePayload)
@@ -516,7 +520,7 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
       let queued = 0
       let skipped = 0
       for (const target of runtimeConfigRestartTargets) {
-        const releasePayload = redeployReleasePayload(target, latestReleaseByTarget[deploymentReleaseKey(target.environmentId, target.id)])
+        const releasePayload = redeployReleasePayload(target, latestReleaseByTarget[deploymentReleaseKey(target.id)])
         if (!releasePayload) {
           skipped++
           continue
@@ -561,13 +565,7 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
   })
   const saveTarget = useMutation({
     mutationFn: async ({ redeploy, values }: { redeploy: boolean, values: DeploymentTargetPayload }) => {
-      const buildEnvironment = environmentMap[values.buildEnvironmentId || values.environmentId]
-      const payload = normalizeDeploymentTargetPayload({
-        ...values,
-        buildEnvironmentId: buildEnvironment?.id || values.buildEnvironmentId || values.environmentId,
-        buildCpuRequest: buildEnvironment?.cpuRequest || values.buildCpuRequest || '1',
-        buildMemoryRequest: buildEnvironment?.memoryRequest || values.buildMemoryRequest || '1Gi',
-      })
+      const payload = normalizeDeploymentTargetPayload(values)
       const savedTarget = editingTarget
         ? api.updateDeploymentTarget(projectId, applicationId, editingTarget.id, payload)
         : api.createDeploymentTarget(projectId, applicationId, payload)
@@ -597,7 +595,8 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
         columns={[
           { key: 'name', header: t('common.name'), className: 'w-[1%] whitespace-nowrap px-4 py-3 align-middle', render: item => <DeploymentTargetSummary target={item.target} /> },
           { key: 'deploymentTarget', header: t('buildsPage.buildConfig'), className: 'w-[1%] whitespace-nowrap px-4 py-3 align-middle', render: item => <span className="block max-w-32 truncate" title={item.target.name}>{item.target.name}</span> },
-          { key: 'environment', header: t('deploymentsPage.environment'), className: 'w-[1%] whitespace-nowrap px-4 py-3 align-middle', render: item => <span className="block max-w-40 truncate" title={releaseEnvironmentLabel(item.environment, item.target.environmentId, t)}>{releaseEnvironmentLabel(item.environment, item.target.environmentId, t)}</span> },
+          { key: 'stage', header: t('deploymentsPage.stage'), className: 'w-[1%] whitespace-nowrap px-4 py-3 align-middle', render: item => t(`deploymentsPage.stageLabels.${item.target.stage}`, { defaultValue: item.target.stage }) },
+          { key: 'runtimeSize', header: t('deploymentsPage.runtimeEnvironment'), className: 'w-[1%] whitespace-nowrap px-4 py-3 align-middle', render: item => formatTargetRuntimeSize(item.target, t) },
           { key: 'runtimeData', header: t('deploymentsPage.runtimeData'), className: 'w-[1%] whitespace-nowrap px-4 py-3 align-middle', render: item => item.target.dataRetentionEnabled ? (item.target.dataCapacity || '1Gi') : t('common.disabled') },
           { key: 'auto', header: t('deploymentsPage.autoDeploy'), className: 'w-[1%] whitespace-nowrap px-4 py-3 align-middle', render: item => <StatusValueBadge value={item.target.autoDeploy ? 'enabled' : 'disabled'} /> },
           { key: 'runtimeStatus', header: t('deploymentsPage.runtimeStatus'), className: 'w-[1%] whitespace-nowrap px-4 py-3 align-middle', render: item => <DeploymentRuntimeStatusBadge status={item.runtimeStatus} /> },
@@ -711,12 +710,6 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
                 {releaseReadyTargets.map(target => <option key={target.id} value={target.id}>{target.name}</option>)}
               </Select>
             </Field>
-            <Field label={t('deploymentsPage.environment')} required>
-              <Select {...form.register('environmentId', { required: true })}>
-                <option value="">{t('common.select')}</option>
-                {environments.map(environment => <option key={environment.id} value={environment.id}>{environment.name}</option>)}
-              </Select>
-            </Field>
             <Field label={t('deploymentsPage.image')} required><Input {...form.register('imageRef', { required: true })} /></Field>
             <DialogFooter><Button disabled={!form.formState.isValid || createRelease.isPending} type="submit">{t('common.save')}</Button></DialogFooter>
           </form>
@@ -743,16 +736,19 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
                 <Field hint={t('deploymentsPage.deploymentConfigNameHint')} label={t('common.name')} required>
                   <Input {...targetForm.register('name', { required: true })} placeholder={t('deploymentsPage.deploymentConfigNamePattern')} />
                 </Field>
-                <Field hint={t('deploymentsPage.runtimeEnvironmentHint')} label={t('deploymentsPage.runtimeEnvironment')} required>
-                  <Select {...targetForm.register('environmentId', { required: true })}>
-                    <option value="">{t('common.select')}</option>
-                    {environments.map(environment => <option key={environment.id} value={environment.id}>{releaseEnvironmentLabel(environment, environment.id, t)}</option>)}
+                <Field label={t('deploymentsPage.stage')}>
+                  <Select {...targetForm.register('stage')}>
+                    <option value="dev">{t('deploymentsPage.stageDev')}</option>
+                    <option value="test">{t('deploymentsPage.stageTest')}</option>
+                    <option value="staging">{t('deploymentsPage.stageStaging')}</option>
+                    <option value="prod">{t('deploymentsPage.stageProd')}</option>
                   </Select>
-                  {targetRuntimeEnvironment && (
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {t('deploymentsPage.runtimeEstimatedPrice', { price: billingDisplay.formatAmountWithUnit(runtimeHourCost) })}
-                    </p>
-                  )}
+                </Field>
+                <Field hint={t('deploymentsPage.runtimeEnvironmentHint')} label={t('clustersPage.runtimeCluster')}>
+                  <Select {...targetForm.register('clusterId')}>
+                    <option value="">{defaultRuntimeCluster ? t('deploymentsPage.clusterDefaultOption', { name: defaultRuntimeCluster.name }) : t('common.select')}</option>
+                    {(runtimeClusters.data ?? []).map(cluster => <option key={cluster.id} value={cluster.id}>{cluster.name}</option>)}
+                  </Select>
                 </Field>
                 <Field hint={t('apps.sourceTypeHint')} label={t('apps.sourceType')} required>
                   <Select {...targetForm.register('sourceType', { required: true })}>
@@ -769,6 +765,38 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
                 <Field hint={t('deploymentsPage.servicePortHint')} label={t('deploymentsPage.servicePort')} required>
                   <Input {...targetForm.register('servicePort', { valueAsNumber: true })} min={1} max={65535} type="number" />
                 </Field>
+                <div className="grid gap-3 md:col-span-2">
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <Field label={t('deploymentsPage.replicas')} required>
+                      <Input {...targetForm.register('replicas', { valueAsNumber: true })} min={1} type="number" />
+                    </Field>
+                    <Field label={t('deploymentsPage.cpuRequest')} required>
+                      <UnitInput
+                        unitSelectLabel={t('deploymentsPage.cpuRequest')}
+                        units={[
+                          { label: 'm', value: 'm' },
+                          { label: t('deploymentsPage.cpuUnits.core'), value: '' },
+                        ]}
+                        value={targetForm.watch('cpuRequest')}
+                        onChange={value => targetForm.setValue('cpuRequest', value, { shouldDirty: true, shouldValidate: true })}
+                      />
+                    </Field>
+                    <Field label={t('deploymentsPage.memoryRequest')} required>
+                      <UnitInput
+                        unitSelectLabel={t('deploymentsPage.memoryRequest')}
+                        units={[
+                          { label: 'Mi', value: 'Mi' },
+                          { label: 'Gi', value: 'Gi' },
+                        ]}
+                        value={targetForm.watch('memoryRequest')}
+                        onChange={value => targetForm.setValue('memoryRequest', value, { shouldDirty: true, shouldValidate: true })}
+                      />
+                    </Field>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {t('deploymentsPage.runtimeEstimatedPrice', { price: billingDisplay.formatAmountWithUnit(runtimeHourCost) })}
+                  </p>
+                </div>
               </div>
               {targetSourceType === 'repository'
                 ? (
@@ -839,17 +867,33 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
                           <h3 className="text-sm font-semibold">{t('deploymentsPage.buildEnvironment')}</h3>
                           <p className="mt-1 text-sm text-muted-foreground">{t('deploymentsPage.buildEnvironmentDescription')}</p>
                         </div>
-                        <Field hint={t('deploymentsPage.buildEnvironmentHint')} label={t('deploymentsPage.buildEnvironment')} required>
-                          <Select {...targetForm.register('buildEnvironmentId', { required: true })}>
-                            <option value="">{t('common.select')}</option>
-                            {environments.map(environment => <option key={environment.id} value={environment.id}>{buildEnvironmentOptionLabel(environment, t)}</option>)}
-                          </Select>
-                          {targetBuildEnvironment && (
+                        <div className="grid gap-3 md:grid-cols-2">
+                          <Field label={t('deploymentsPage.buildCpuRequest')} required>
+                            <UnitInput
+                              unitSelectLabel={t('deploymentsPage.buildCpuRequest')}
+                              units={[
+                                { label: 'm', value: 'm' },
+                                { label: t('deploymentsPage.cpuUnits.core'), value: '' },
+                              ]}
+                              value={targetForm.watch('buildCpuRequest')}
+                              onChange={value => targetForm.setValue('buildCpuRequest', value, { shouldDirty: true, shouldValidate: true })}
+                            />
+                          </Field>
+                          <Field label={t('deploymentsPage.buildMemoryRequest')} required>
+                            <UnitInput
+                              unitSelectLabel={t('deploymentsPage.buildMemoryRequest')}
+                              units={[
+                                { label: 'Mi', value: 'Mi' },
+                                { label: 'Gi', value: 'Gi' },
+                              ]}
+                              value={targetForm.watch('buildMemoryRequest')}
+                              onChange={value => targetForm.setValue('buildMemoryRequest', value, { shouldDirty: true, shouldValidate: true })}
+                            />
                             <p className="mt-1 text-xs text-muted-foreground">
                               {t('deploymentsPage.buildEstimatedPrice', { price: billingDisplay.formatAmountWithUnit(buildMinuteCost) })}
                             </p>
-                          )}
-                        </Field>
+                          </Field>
+                        </div>
                       </div>
                     </div>
                   )
@@ -1371,6 +1415,25 @@ function compactReleaseMessage(message?: string) {
   return value
 }
 
+function formatTargetRuntimeSize(target: DeploymentTarget, t: (key: string, options?: Record<string, unknown>) => string) {
+  const replicas = target.replicas > 0 ? target.replicas : 1
+  return t('deploymentsPage.runtimeSizeValue', {
+    cpu: formatCPU(target.cpuRequest),
+    memory: formatMemoryGi(target.memoryRequest),
+    replicas,
+  })
+}
+
+function formatCPU(value: string) {
+  const normalized = value?.trim() || '1'
+  return normalized.endsWith('m') ? normalized : `${normalized}c`
+}
+
+function formatMemoryGi(value: string) {
+  const normalized = value?.trim() || '1Gi'
+  return normalized.endsWith('Gi') ? normalized.replace('Gi', 'g') : normalized
+}
+
 function CopyableTruncatedText({ className, display, value, onCopy }: {
   className?: string
   display: string
@@ -1424,7 +1487,12 @@ function deploymentTargetRuntimeChanged(current: DeploymentTarget, next: Deploym
   })
   const nextPayload = normalizeDeploymentTargetPayload(next)
   const fields: Array<keyof DeploymentTargetPayload> = [
-    'environmentId',
+    'clusterId',
+    'namespace',
+    'replicas',
+    'cpuRequest',
+    'memoryRequest',
+    'stage',
     'servicePort',
     'sourceType',
     'runtimeConfigSetIds',
@@ -1570,6 +1638,12 @@ function normalizeDeploymentTargetPayload(values: DeploymentTargetPayload): Depl
   return {
     ...values,
     sourceType,
+    clusterId: values.clusterId?.trim() ?? '',
+    namespace: values.namespace?.trim() ?? '',
+    replicas: normalizePositiveInteger(values.replicas, 1),
+    cpuRequest: values.cpuRequest || '1',
+    memoryRequest: values.memoryRequest || '1Gi',
+    stage: normalizeDeploymentStage(values.stage),
     servicePort: normalizePositiveInteger(values.servicePort, 8080),
     enabled,
     autoDeploy,
@@ -1583,7 +1657,7 @@ function normalizeDeploymentTargetPayload(values: DeploymentTargetPayload): Depl
     targetRegistryId: sourceType === 'repository' ? values.targetRegistryId : '',
     targetImageRef: sourceType === 'repository' ? values.targetImageRef : '',
     imageRef: sourceType === 'image' ? values.imageRef : '',
-    buildEnvironmentId: values.buildEnvironmentId || values.environmentId,
+    buildEnvironmentId: values.buildEnvironmentId || '',
     buildCpuRequest: values.buildCpuRequest || '1',
     buildMemoryRequest: values.buildMemoryRequest || '1Gi',
     targetTag: values.targetTag || 'latest',
@@ -1593,6 +1667,12 @@ function normalizeDeploymentTargetPayload(values: DeploymentTargetPayload): Depl
     secretFiles: values.secretFiles?.trim() ?? '',
     buildHookBindings: values.buildHookBindings ?? [],
   }
+}
+
+function normalizeDeploymentStage(value: string) {
+  if (value === 'dev' || value === 'test' || value === 'staging' || value === 'prod')
+    return value
+  return 'prod'
 }
 
 function normalizeRuntimeConfigPayload(values: ProjectRuntimeConfigSetPayload): ProjectRuntimeConfigSetPayload {

@@ -12,6 +12,7 @@ type Project struct {
 	Description         string         `json:"description"`
 	NamespaceStrategy   string         `gorm:"not null" json:"namespaceStrategy"`
 	MaxConcurrentBuilds int            `gorm:"not null;default:2" json:"maxConcurrentBuilds"`
+	BillingOwnerUserID  string         `gorm:"index;not null;default:''" json:"billingOwnerUserId"`
 	DeleteStatus        string         `gorm:"index;not null;default:active" json:"deleteStatus"`
 	DeleteMessage       string         `gorm:"type:text;not null;default:''" json:"deleteMessage"`
 	DeleteStartedAt     *time.Time     `json:"deleteStartedAt"`

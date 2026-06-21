@@ -37,16 +37,13 @@ func (r *Runner) handleDeployRun(ctx context.Context, task *asynq.Task) error {
 		r.appendReleaseLog(release, message)
 		return r.finishDeployRelease(release, "failed", message)
 	}
-	var environment model.Environment
-	if err := r.db.First(&environment, "id = ? and project_id = ?", release.EnvironmentID, payload.ProjectID).Error; err != nil {
-		return err
-	}
 	deploymentTarget, err := r.releaseDeploymentTarget(release)
 	if err != nil {
 		message := "部署配置不存在或已被删除，无法部署"
 		r.appendReleaseLog(release, message)
 		return r.finishDeployRelease(release, "failed", message)
 	}
+	environment := deploymentTargetEnvironment(deploymentTarget)
 
 	now := time.Now()
 	if release.StartedAt == nil {
@@ -54,7 +51,7 @@ func (r *Runner) handleDeployRun(ctx context.Context, task *asynq.Task) error {
 			return err
 		}
 	}
-	r.appendReleaseLog(release, fmt.Sprintf("开始部署 release=%s application=%s environment=%s image=%s", release.ID, application.Slug, environment.Slug, release.ImageRef))
+	r.appendReleaseLog(release, fmt.Sprintf("开始部署 release=%s application=%s target=%s image=%s", release.ID, application.Slug, deploymentTarget.Name, release.ImageRef))
 
 	namespace := deploymentNamespace(project, environment)
 	r.appendReleaseLog(release, fmt.Sprintf("确保命名空间 %s 存在", namespace))
@@ -176,11 +173,10 @@ func (r *Runner) releaseShouldForceImagePull(release model.Release) bool {
 	}
 	var previous model.Release
 	err := r.db.Where(
-		"project_id = ? and application_id = ? and deployment_target_id = ? and environment_id = ? and status = ? and revision < ?",
+		"project_id = ? and application_id = ? and deployment_target_id = ? and status = ? and revision < ?",
 		release.ProjectID,
 		release.ApplicationID,
 		release.DeploymentTargetID,
-		release.EnvironmentID,
 		"succeeded",
 		release.Revision,
 	).Order("revision desc, created_at desc").First(&previous).Error

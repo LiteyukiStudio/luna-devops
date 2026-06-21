@@ -454,8 +454,7 @@ func createDefaultUserProject(tx *gorm.DB, user model.User) error {
 	if err := tx.Create(&member).Error; err != nil {
 		return err
 	}
-	environment := defaultProductionEnvironment(project.ID, user.ID)
-	return tx.Create(&environment).Error
+	return nil
 }
 
 func defaultUserProjectName(user model.User) string {

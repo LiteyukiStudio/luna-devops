@@ -67,7 +67,6 @@ export function ApplicationConfigPage() {
     enabled: Boolean(projectId),
     refetchInterval: shouldPollWorkflowStatus ? WORKFLOW_STATUS_REFETCH_INTERVAL_MS : false,
   })
-  const environments = useQuery({ queryKey: ['environments', projectId], queryFn: () => api.listEnvironments(projectId), enabled: Boolean(projectId) })
   const releases = useQuery({
     queryKey: ['releases', projectId],
     queryFn: () => api.listReleases(projectId),
@@ -147,7 +146,7 @@ export function ApplicationConfigPage() {
                   <Plus size={16} />
                   {t('deploymentsPage.createDeploymentTarget')}
                 </Button>
-                <Button disabled={!releaseReadyTarget || !environments.data?.length} onClick={() => releaseReadyTarget && deploymentsPanelRef.current?.openReleaseDialog(releaseReadyTarget.environmentId, releaseReadyTarget.id)}>
+                <Button disabled={!releaseReadyTarget} onClick={() => releaseReadyTarget && deploymentsPanelRef.current?.openReleaseDialog('', releaseReadyTarget.id)}>
                   <Package size={16} />
                   {t('deploymentsPage.createRelease')}
                 </Button>
@@ -222,7 +221,6 @@ export function ApplicationConfigPage() {
             repositoryBindings={appRepositoryBindings}
             buildJobs={appBuildJobs}
             deploymentTargets={deploymentTargetRows}
-            environments={environments.data ?? []}
             buildRuns={appBuildRuns}
             projectId={projectId}
             projectSlug={project.data?.slug ?? ''}
@@ -236,7 +234,6 @@ export function ApplicationConfigPage() {
             appSlug={application.data?.slug ?? ''}
             buildRuns={appBuildRuns}
             deploymentTargets={deploymentTargetRows}
-            environments={environments.data ?? []}
             projectId={projectId}
             projectSlug={project.data?.slug ?? ''}
             registries={registries.data ?? []}
@@ -249,7 +246,6 @@ export function ApplicationConfigPage() {
             ref={gatewayPanelRef}
             applicationId={applicationId}
             deploymentTargets={deploymentTargetRows}
-            environments={environments.data ?? []}
             projectId={projectId}
             routes={appRoutes}
           />

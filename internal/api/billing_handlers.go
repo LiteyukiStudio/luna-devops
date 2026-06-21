@@ -18,7 +18,7 @@ func (h *Handlers) GetBillingSummary(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	projectIDs, ok := h.billingProjectIDsForUser(ctx, user)
+	scope, ok := h.billingScopeForUser(ctx, user)
 	if !ok {
 		return
 	}
@@ -26,7 +26,7 @@ func (h *Handlers) GetBillingSummary(ctx *gin.Context) {
 	if configuredLimit, err := decimal.NewFromString(strings.TrimSpace(h.configs.get([]string{"billing.lowBalanceThresholdCredits"})["billing.lowBalanceThresholdCredits"])); err == nil && !configuredLimit.IsNegative() {
 		lowBalanceLimit = configuredLimit
 	}
-	summary, err := (billing.Service{DB: h.db}).Summary(projectIDs, time.Now(), lowBalanceLimit)
+	summary, err := (billing.Service{DB: h.db}).Summary(scope.UserIDs, scope.ProjectIDs, time.Now(), lowBalanceLimit)
 	if err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
@@ -39,27 +39,54 @@ func (h *Handlers) ListBillingLedgerEntries(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	projectIDs, ok := h.billingProjectIDsForUser(ctx, user)
+	scope, ok := h.billingScopeForUser(ctx, user)
 	if !ok {
 		return
 	}
 	pagination := paginationFromQuery(ctx)
-	query := h.db.Where("project_id in ?", projectIDs)
+	query := h.db.Table("billing_ledger_entries as ledger").Where("ledger.user_id in ?", scope.UserIDs)
+	if scope.FilterProjectIDs {
+		query = query.Where("ledger.project_id in ?", scope.ProjectIDs)
+	}
 	if entryType := strings.TrimSpace(ctx.Query("type")); entryType != "" {
-		query = query.Where("type = ?", entryType)
+		query = query.Where("ledger.type = ?", entryType)
 	}
 	var total int64
-	if err := query.Model(&model.BillingLedgerEntry{}).Count(&total).Error; err != nil {
+	if err := query.Count(&total).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	var entries []model.BillingLedgerEntry
+	var entries []billingLedgerEntryItem
 	orderBy := orderByClause(pagination, map[string]string{
-		"createdAt":     "created_at",
-		"amountCredits": "amount_credits",
-		"reason":        "reason",
-	}, "created_at")
-	if err := query.Order(orderBy).Limit(pagination.PageSize).Offset(pagination.Offset()).Find(&entries).Error; err != nil {
+		"createdAt":     "ledger.created_at",
+		"amountCredits": "ledger.amount_credits",
+		"reason":        "ledger.reason",
+	}, "ledger.created_at")
+	if err := query.Select(`
+			ledger.id,
+			ledger.user_id,
+			ledger.project_id,
+			ledger.type,
+			ledger.amount_credits,
+			ledger.balance_after_credits,
+			ledger.reason,
+			ledger.meter,
+			ledger.usage_record_id,
+			ledger.resource_type,
+			ledger.resource_id,
+			ledger.description,
+			ledger.created_by,
+			ledger.created_at,
+			COALESCE(usage.application_id, '') AS application_id,
+			COALESCE(applications.name, '') AS application_name,
+			COALESCE(applications.slug, '') AS application_slug
+		`).
+		Joins("LEFT JOIN billing_usage_records AS usage ON usage.id = ledger.usage_record_id").
+		Joins("LEFT JOIN applications ON applications.id = usage.application_id").
+		Order(orderBy).
+		Limit(pagination.PageSize).
+		Offset(pagination.Offset()).
+		Find(&entries).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -71,27 +98,55 @@ func (h *Handlers) ListBillingUsageRecords(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	projectIDs, ok := h.billingProjectIDsForUser(ctx, user)
+	scope, ok := h.billingScopeForUser(ctx, user)
 	if !ok {
 		return
 	}
 	pagination := paginationFromQuery(ctx)
-	query := h.db.Where("project_id in ?", projectIDs)
+	query := h.db.Table("billing_usage_records as usage").Where("usage.billed_user_id in ?", scope.UserIDs)
+	if scope.FilterProjectIDs {
+		query = query.Where("usage.project_id in ?", scope.ProjectIDs)
+	}
 	if meter := strings.TrimSpace(ctx.Query("meter")); meter != "" {
-		query = query.Where("meter = ?", meter)
+		query = query.Where("usage.meter = ?", meter)
 	}
 	var total int64
-	if err := query.Model(&model.BillingUsageRecord{}).Count(&total).Error; err != nil {
+	if err := query.Count(&total).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	var records []model.BillingUsageRecord
+	var records []billingUsageRecordItem
 	orderBy := orderByClause(pagination, map[string]string{
-		"createdAt":     "created_at",
-		"amountCredits": "amount_credits",
-		"meter":         "meter",
-	}, "created_at")
-	if err := query.Order(orderBy).Limit(pagination.PageSize).Offset(pagination.Offset()).Find(&records).Error; err != nil {
+		"createdAt":     "usage.created_at",
+		"amountCredits": "usage.amount_credits",
+		"meter":         "usage.meter",
+	}, "usage.created_at")
+	if err := query.Select(`
+			usage.id,
+			usage.project_id,
+			usage.billed_user_id,
+			usage.application_id,
+			COALESCE(applications.name, '') AS application_name,
+			COALESCE(applications.slug, '') AS application_slug,
+			usage.meter,
+			usage.quantity,
+			usage.unit,
+			usage.amount_credits,
+			usage.resource_type,
+			usage.resource_id,
+			usage.period_start,
+			usage.period_end,
+			usage.status,
+			usage.metadata,
+			usage.settled_at,
+			usage.created_at,
+			usage.updated_at
+		`).
+		Joins("LEFT JOIN applications ON applications.id = usage.application_id").
+		Order(orderBy).
+		Limit(pagination.PageSize).
+		Offset(pagination.Offset()).
+		Find(&records).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -103,20 +158,23 @@ func (h *Handlers) ListBillingApplicationSpend(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	projectIDs, ok := h.billingProjectIDsForUser(ctx, user)
+	scope, ok := h.billingScopeForUser(ctx, user)
 	if !ok {
 		return
 	}
 	pagination := paginationFromQuery(ctx)
-	if len(projectIDs) == 0 {
+	if len(scope.UserIDs) == 0 {
 		ctx.JSON(http.StatusOK, paginatedResponse([]billingApplicationSpendItem{}, 0, pagination))
 		return
 	}
 
 	grouped := h.db.Table("billing_usage_records as usage").
 		Select("usage.project_id, usage.application_id").
-		Where("usage.project_id in ? AND usage.status = ?", projectIDs, "settled").
+		Where("usage.billed_user_id in ? AND usage.status = ?", scope.UserIDs, "settled").
 		Group("usage.project_id, usage.application_id")
+	if scope.FilterProjectIDs {
+		grouped = grouped.Where("usage.project_id in ?", scope.ProjectIDs)
+	}
 	var total int64
 	if err := h.db.Table("(?) as grouped", grouped).Count(&total).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
@@ -141,8 +199,11 @@ func (h *Handlers) ListBillingApplicationSpend(ctx *gin.Context) {
 		`).
 		Joins("JOIN projects ON projects.id = usage.project_id").
 		Joins("LEFT JOIN applications ON applications.id = usage.application_id").
-		Where("usage.project_id in ? AND usage.status = ?", projectIDs, "settled").
+		Where("usage.billed_user_id in ? AND usage.status = ?", scope.UserIDs, "settled").
 		Group("usage.project_id, projects.name, projects.slug, usage.application_id, applications.name, applications.slug")
+	if scope.FilterProjectIDs {
+		query = query.Where("usage.project_id in ?", scope.ProjectIDs)
+	}
 	orderBy := orderByClause(pagination, map[string]string{
 		"amountCredits":   "amount_credits",
 		"projectName":     "project_name",
@@ -230,14 +291,14 @@ func (h *Handlers) CreateBillingWalletTransaction(ctx *gin.Context) {
 	if !bindJSON(ctx, &input) {
 		return
 	}
-	projectID := strings.TrimSpace(input.ProjectID)
-	if projectID == "" {
-		writeErrorCode(ctx, http.StatusBadRequest, "billing.project_required", "project is required")
+	userID := strings.TrimSpace(input.UserID)
+	if userID == "" {
+		writeErrorCode(ctx, http.StatusBadRequest, "billing.user_required", "user is required")
 		return
 	}
-	var project model.Project
-	if err := h.db.First(&project, "id = ?", projectID).Error; err != nil {
-		writeError(ctx, http.StatusNotFound, "project not found")
+	var targetUser model.User
+	if err := h.db.First(&targetUser, "id = ?", userID).Error; err != nil {
+		writeError(ctx, http.StatusNotFound, "user not found")
 		return
 	}
 	amount, err := decimal.NewFromString(strings.TrimSpace(input.AmountCredits))
@@ -250,7 +311,7 @@ func (h *Handlers) CreateBillingWalletTransaction(ctx *gin.Context) {
 		transactionType = "credit"
 	}
 	entry, err := (billing.Service{DB: h.db}).ApplyWalletTransaction(billing.WalletTransactionInput{
-		ProjectID:     project.ID,
+		UserID:        targetUser.ID,
 		AmountCredits: amount,
 		Type:          transactionType,
 		Description:   strings.TrimSpace(input.Description),
@@ -281,9 +342,9 @@ func (h *Handlers) CreateExternalBillingTransaction(ctx *gin.Context) {
 	if !bindJSON(ctx, &input) {
 		return
 	}
-	projectID := strings.TrimSpace(input.ProjectID)
-	if projectID == "" {
-		writeErrorCode(ctx, http.StatusBadRequest, "billing.project_required", "project is required")
+	userID := strings.TrimSpace(input.UserID)
+	if userID == "" {
+		writeErrorCode(ctx, http.StatusBadRequest, "billing.user_required", "user is required")
 		return
 	}
 	idempotencyKey := strings.TrimSpace(input.IdempotencyKey)
@@ -291,9 +352,9 @@ func (h *Handlers) CreateExternalBillingTransaction(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusBadRequest, "billing.idempotency_key_invalid", "idempotency key must be 8 to 160 characters")
 		return
 	}
-	var project model.Project
-	if err := h.db.First(&project, "id = ?", projectID).Error; err != nil {
-		writeError(ctx, http.StatusNotFound, "project not found")
+	var targetUser model.User
+	if err := h.db.First(&targetUser, "id = ?", userID).Error; err != nil {
+		writeError(ctx, http.StatusNotFound, "user not found")
 		return
 	}
 	amount, err := decimal.NewFromString(strings.TrimSpace(input.AmountCredits))
@@ -310,7 +371,7 @@ func (h *Handlers) CreateExternalBillingTransaction(ctx *gin.Context) {
 		reason = billing.ReasonExternalAdjust
 	}
 	entry, err := (billing.Service{DB: h.db}).ApplyWalletTransaction(billing.WalletTransactionInput{
-		ProjectID:      project.ID,
+		UserID:         targetUser.ID,
 		AmountCredits:  amount,
 		Type:           transactionType,
 		Reason:         reason,
@@ -326,48 +387,138 @@ func (h *Handlers) CreateExternalBillingTransaction(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, entry)
 }
 
-func (h *Handlers) billingProjectIDsForUser(ctx *gin.Context, user model.User) ([]string, bool) {
-	allowed := map[string]bool{}
-	if user.Role == "platform_admin" {
-		var projects []model.Project
-		if err := h.db.Select("id").Find(&projects).Error; err != nil {
-			writeError(ctx, http.StatusInternalServerError, err.Error())
-			return nil, false
-		}
-		for _, project := range projects {
-			allowed[project.ID] = true
-		}
-	} else {
-		var memberships []model.ProjectMember
-		if err := h.db.Find(&memberships, "user_id = ?", user.ID).Error; err != nil {
-			writeError(ctx, http.StatusInternalServerError, err.Error())
-			return nil, false
-		}
-		for _, membership := range memberships {
-			allowed[membership.ProjectID] = true
-		}
+func (h *Handlers) CreateGatewayTrafficUsage(ctx *gin.Context) {
+	user, ok := h.currentUser(ctx)
+	if !ok {
+		return
 	}
+	if user.Role != "platform_admin" {
+		writeErrorKey(ctx, http.StatusForbidden, user.Language, "config.admin.required")
+		return
+	}
+	var input gatewayTrafficUsageInput
+	if !bindJSON(ctx, &input) {
+		return
+	}
+	routeID := strings.TrimSpace(input.RouteID)
+	if routeID == "" {
+		writeErrorCode(ctx, http.StatusBadRequest, "billing.gateway_route_required", "gateway route is required")
+		return
+	}
+	if input.ResponseBytes <= 0 {
+		writeErrorCode(ctx, http.StatusBadRequest, "billing.gateway_response_bytes_invalid", "gateway response bytes must be positive")
+		return
+	}
+	periodStart, err := time.Parse(time.RFC3339, strings.TrimSpace(input.PeriodStart))
+	if err != nil {
+		writeErrorCode(ctx, http.StatusBadRequest, "billing.period_start_invalid", "periodStart must be RFC3339 time")
+		return
+	}
+	periodEnd, err := time.Parse(time.RFC3339, strings.TrimSpace(input.PeriodEnd))
+	if err != nil || !periodEnd.After(periodStart) {
+		writeErrorCode(ctx, http.StatusBadRequest, "billing.period_end_invalid", "periodEnd must be RFC3339 time after periodStart")
+		return
+	}
+	var route model.GatewayRoute
+	if err := h.db.First(&route, "id = ? and delete_status = ?", routeID, "active").Error; err != nil {
+		writeError(ctx, http.StatusNotFound, "gateway route not found")
+		return
+	}
+	err = (billing.Service{DB: h.db}).SettleGatewayTrafficWindow(billing.GatewayTrafficUsageInput{
+		Route:         route,
+		ResponseBytes: input.ResponseBytes,
+		RequestCount:  input.RequestCount,
+		PeriodStart:   periodStart,
+		PeriodEnd:     periodEnd,
+		ActorID:       user.ID,
+	})
+	if errors.Is(err, billing.ErrAlreadySettled) {
+		ctx.JSON(http.StatusOK, gin.H{"status": "already_settled"})
+		return
+	}
+	if err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
+		return
+	}
+	h.audit(user.ID, "billing.gateway_traffic", route.ID, true, "")
+	ctx.JSON(http.StatusCreated, gin.H{"status": "settled"})
+}
+
+func (h *Handlers) billingScopeForUser(ctx *gin.Context, user model.User) (billingScope, bool) {
+	scope := billingScope{}
 	requested := make([]string, 0)
 	for _, rawProjectIDs := range ctx.QueryArray("projectIds") {
 		requested = append(requested, strings.Split(rawProjectIDs, ",")...)
 	}
 	requested = normalizeStringList(requested)
+	if user.Role == "platform_admin" {
+		scope.ProjectIDs = requested
+		scope.FilterProjectIDs = len(requested) > 0
+		var wallets []model.UserWallet
+		if err := h.db.Select("user_id").Find(&wallets).Error; err != nil {
+			writeError(ctx, http.StatusInternalServerError, err.Error())
+			return scope, false
+		}
+		for _, wallet := range wallets {
+			if strings.TrimSpace(wallet.UserID) != "" {
+				scope.UserIDs = append(scope.UserIDs, wallet.UserID)
+			}
+		}
+		if len(scope.UserIDs) == 0 {
+			var users []model.User
+			if err := h.db.Select("id").Find(&users).Error; err != nil {
+				writeError(ctx, http.StatusInternalServerError, err.Error())
+				return scope, false
+			}
+			for _, item := range users {
+				scope.UserIDs = append(scope.UserIDs, item.ID)
+			}
+		}
+		if scope.FilterProjectIDs && !h.ensureBillingProjectsExist(ctx, requested) {
+			return scope, false
+		}
+		return scope, true
+	}
+	scope.UserIDs = []string{user.ID}
 	if len(requested) == 0 {
-		ids := make([]string, 0, len(allowed))
-		for projectID := range allowed {
-			ids = append(ids, projectID)
-		}
-		return ids, true
+		return scope, true
 	}
-	ids := make([]string, 0, len(requested))
+	scope.FilterProjectIDs = true
+	scope.ProjectIDs = requested
 	for _, projectID := range requested {
-		if !allowed[projectID] {
-			writeErrorCode(ctx, http.StatusForbidden, "billing.project_forbidden", "current user cannot access the requested project billing")
-			return nil, false
+		var count int64
+		if err := h.db.Model(&model.Project{}).Where("id = ? and billing_owner_user_id = ?", projectID, user.ID).Count(&count).Error; err != nil {
+			writeError(ctx, http.StatusInternalServerError, err.Error())
+			return scope, false
 		}
-		ids = append(ids, projectID)
+		if count == 0 {
+			writeErrorCode(ctx, http.StatusForbidden, "billing.project_forbidden", "current user cannot access the requested project billing")
+			return scope, false
+		}
 	}
-	return ids, true
+	return scope, true
+}
+
+func (h *Handlers) ensureBillingProjectsExist(ctx *gin.Context, projectIDs []string) bool {
+	if len(projectIDs) == 0 {
+		return true
+	}
+	var count int64
+	if err := h.db.Model(&model.Project{}).Where("id in ?", projectIDs).Count(&count).Error; err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
+		return false
+	}
+	if count != int64(len(projectIDs)) {
+		writeErrorCode(ctx, http.StatusNotFound, "billing.project_not_found", "project not found")
+		return false
+	}
+	return true
+}
+
+type billingScope struct {
+	UserIDs          []string
+	ProjectIDs       []string
+	FilterProjectIDs bool
 }
 
 type updateBillingRateRulesInput struct {
@@ -378,6 +529,48 @@ type updateBillingRateRuleInput struct {
 	Meter          string `json:"meter"`
 	CreditsPerUnit string `json:"creditsPerUnit"`
 	Enabled        bool   `json:"enabled"`
+}
+
+type billingLedgerEntryItem struct {
+	ID                  string          `json:"id"`
+	UserID              string          `json:"userId"`
+	ProjectID           string          `json:"projectId"`
+	ApplicationID       string          `json:"applicationId"`
+	ApplicationName     string          `json:"applicationName"`
+	ApplicationSlug     string          `json:"applicationSlug"`
+	Type                string          `json:"type"`
+	AmountCredits       decimal.Decimal `json:"amountCredits"`
+	BalanceAfterCredits decimal.Decimal `json:"balanceAfterCredits"`
+	Reason              string          `json:"reason"`
+	Meter               string          `json:"meter"`
+	UsageRecordID       string          `json:"usageRecordId"`
+	ResourceType        string          `json:"resourceType"`
+	ResourceID          string          `json:"resourceId"`
+	Description         string          `json:"description"`
+	CreatedBy           string          `json:"createdBy"`
+	CreatedAt           time.Time       `json:"createdAt"`
+}
+
+type billingUsageRecordItem struct {
+	ID              string          `json:"id"`
+	ProjectID       string          `json:"projectId"`
+	BilledUserID    string          `json:"billedUserId"`
+	ApplicationID   string          `json:"applicationId"`
+	ApplicationName string          `json:"applicationName"`
+	ApplicationSlug string          `json:"applicationSlug"`
+	Meter           string          `json:"meter"`
+	Quantity        decimal.Decimal `json:"quantity"`
+	Unit            string          `json:"unit"`
+	AmountCredits   decimal.Decimal `json:"amountCredits"`
+	ResourceType    string          `json:"resourceType"`
+	ResourceID      string          `json:"resourceId"`
+	PeriodStart     time.Time       `json:"periodStart"`
+	PeriodEnd       time.Time       `json:"periodEnd"`
+	Status          string          `json:"status"`
+	Metadata        string          `json:"metadata"`
+	SettledAt       *time.Time      `json:"settledAt"`
+	CreatedAt       time.Time       `json:"createdAt"`
+	UpdatedAt       time.Time       `json:"updatedAt"`
 }
 
 type billingApplicationSpendItem struct {
@@ -396,16 +589,24 @@ type billingApplicationSpendItem struct {
 }
 
 type billingWalletTransactionInput struct {
-	ProjectID     string `json:"projectId"`
 	AmountCredits string `json:"amountCredits"`
 	Type          string `json:"type"`
 	Description   string `json:"description"`
+	UserID        string `json:"userId"`
 }
 
 type externalBillingTransactionInput struct {
-	ProjectID      string `json:"projectId"`
 	AmountCredits  string `json:"amountCredits"`
 	Type           string `json:"type"`
 	Description    string `json:"description"`
 	IdempotencyKey string `json:"idempotencyKey"`
+	UserID         string `json:"userId"`
+}
+
+type gatewayTrafficUsageInput struct {
+	RouteID       string `json:"routeId"`
+	ResponseBytes int64  `json:"responseBytes"`
+	RequestCount  int64  `json:"requestCount"`
+	PeriodStart   string `json:"periodStart"`
+	PeriodEnd     string `json:"periodEnd"`
 }

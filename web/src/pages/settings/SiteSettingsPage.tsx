@@ -243,7 +243,9 @@ function BillingRateRuleRow({ rule, value, onChange }: {
           </SelectContent>
         </Select>
       </td>
-      <td className="px-3 py-3 text-muted-foreground">{rule.description}</td>
+      <td className="px-3 py-3 text-muted-foreground">
+        {t(`settings.billingRateRuleDescriptions.${rule.meter}`, { defaultValue: rule.description })}
+      </td>
     </tr>
   )
 }

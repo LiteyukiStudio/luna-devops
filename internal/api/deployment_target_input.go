@@ -17,11 +17,6 @@ const (
 )
 
 func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, app model.Application, input deploymentTargetInput, targetID string, existingSecretFiles map[string]string) (model.DeploymentTarget, bool) {
-	var environment model.Environment
-	if err := h.db.First(&environment, "id = ? and project_id = ?", strings.TrimSpace(input.EnvironmentID), app.ProjectID).Error; err != nil {
-		writeError(ctx, http.StatusBadRequest, "环境不存在或不属于当前项目空间")
-		return model.DeploymentTarget{}, false
-	}
 	sourceType := normalizeDeploymentSourceType(input.SourceType)
 	repositoryBindingID := strings.TrimSpace(input.RepositoryBindingID)
 	if sourceType == "repository" {
@@ -65,22 +60,37 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 		writeError(ctx, http.StatusBadRequest, "服务端口必须在 1 到 65535 之间")
 		return model.DeploymentTarget{}, false
 	}
-	buildEnvironmentID := strings.TrimSpace(input.BuildEnvironmentID)
-	if buildEnvironmentID == "" {
-		buildEnvironmentID = environment.ID
+	replicas := input.Replicas
+	if replicas <= 0 {
+		replicas = 1
 	}
-	var buildEnvironment model.Environment
-	if err := h.db.First(&buildEnvironment, "id = ? and project_id = ?", buildEnvironmentID, app.ProjectID).Error; err != nil {
-		writeError(ctx, http.StatusBadRequest, "构建环境不存在或不属于当前项目空间")
-		return model.DeploymentTarget{}, false
-	}
-	buildCPURequest, ok := normalizeBuildResourceQuantity(ctx, buildEnvironment.CPURequest, defaultBuildCPURequest, "构建 CPU")
+	runtimeCPURequest, ok := normalizeBuildResourceQuantity(ctx, input.CPURequest, "1", "运行 CPU")
 	if !ok {
 		return model.DeploymentTarget{}, false
 	}
-	buildMemoryRequest, ok := normalizeBuildResourceQuantity(ctx, buildEnvironment.MemoryRequest, defaultBuildMemoryRequest, "构建内存")
+	runtimeMemoryRequest, ok := normalizeBuildResourceQuantity(ctx, input.MemoryRequest, "1Gi", "运行内存")
 	if !ok {
 		return model.DeploymentTarget{}, false
+	}
+	buildCPURequest, ok := normalizeBuildResourceQuantity(ctx, input.BuildCPURequest, defaultBuildCPURequest, "构建 CPU")
+	if !ok {
+		return model.DeploymentTarget{}, false
+	}
+	buildMemoryRequest, ok := normalizeBuildResourceQuantity(ctx, input.BuildMemoryRequest, defaultBuildMemoryRequest, "构建内存")
+	if !ok {
+		return model.DeploymentTarget{}, false
+	}
+	clusterID := strings.TrimSpace(input.ClusterID)
+	if clusterID != "" {
+		var count int64
+		if err := h.db.Model(&model.RuntimeCluster{}).Where("id = ? and type in ?", clusterID, []string{"kubernetes", "k3s"}).Count(&count).Error; err != nil {
+			writeError(ctx, http.StatusInternalServerError, err.Error())
+			return model.DeploymentTarget{}, false
+		}
+		if count == 0 {
+			writeError(ctx, http.StatusBadRequest, "运行集群不存在")
+			return model.DeploymentTarget{}, false
+		}
 	}
 	runtimeConfigSetIDs := normalizeStringList(input.RuntimeConfigSetIDs)
 	if len(runtimeConfigSetIDs) > 0 {
@@ -115,21 +125,27 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 	}
 	name := strings.TrimSpace(input.Name)
 	if name == "" {
-		name = environment.Name
+		name = normalizeStage(input.Stage)
 	}
 	return model.DeploymentTarget{
 		ID:                   targetID,
 		ProjectID:            app.ProjectID,
 		ApplicationID:        app.ID,
-		EnvironmentID:        environment.ID,
+		EnvironmentID:        strings.TrimSpace(input.EnvironmentID),
 		Name:                 name,
+		Stage:                normalizeStage(input.Stage),
+		ClusterID:            clusterID,
+		Namespace:            strings.TrimSpace(input.Namespace),
+		Replicas:             replicas,
+		CPURequest:           runtimeCPURequest,
+		MemoryRequest:        runtimeMemoryRequest,
 		ServicePort:          servicePort,
 		SourceType:           sourceType,
 		RepositoryBindingID:  repositoryBindingID,
 		DockerfilePath:       fallback(strings.TrimSpace(input.DockerfilePath), "Dockerfile"),
 		BuildContext:         fallback(strings.TrimSpace(input.BuildContext), "."),
 		BuildDirectory:       strings.TrimSpace(input.BuildDirectory),
-		BuildEnvironmentID:   buildEnvironment.ID,
+		BuildEnvironmentID:   strings.TrimSpace(input.BuildEnvironmentID),
 		BuildCPURequest:      buildCPURequest,
 		BuildMemoryRequest:   buildMemoryRequest,
 		TargetRegistryID:     strings.TrimSpace(input.TargetRegistryID),

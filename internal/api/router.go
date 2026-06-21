@@ -151,10 +151,6 @@ func NewRouterWithStaticFS(db *gorm.DB, staticFS fs.FS) *gin.Engine {
 		v1.GET("/projects/:projectId/build-jobs/:jobId", handlers.GetBuildJob)
 		v1.GET("/projects/:projectId/build-jobs/:jobId/logs", handlers.GetBuildJobLogs)
 		v1.GET("/projects/:projectId/build-jobs/:jobId/logs/stream", handlers.StreamBuildJobLogs)
-		v1.GET("/projects/:projectId/environments", handlers.ListEnvironments)
-		v1.POST("/projects/:projectId/environments", handlers.CreateEnvironment)
-		v1.PUT("/projects/:projectId/environments/:environmentId", handlers.UpdateEnvironment)
-		v1.DELETE("/projects/:projectId/environments/:environmentId", handlers.DeleteEnvironment)
 		v1.GET("/projects/:projectId/releases", handlers.ListReleases)
 		v1.POST("/projects/:projectId/releases", handlers.CreateRelease)
 		v1.GET("/projects/:projectId/releases/:releaseId/logs", handlers.GetReleaseLogs)
@@ -182,6 +178,7 @@ func NewRouterWithStaticFS(db *gorm.DB, staticFS fs.FS) *gin.Engine {
 		v1.PUT("/billing/rate-rules", handlers.UpdateBillingRateRules)
 		v1.POST("/billing/wallet-transactions", handlers.CreateBillingWalletTransaction)
 		v1.POST("/billing/external-transactions", handlers.CreateExternalBillingTransaction)
+		v1.POST("/billing/gateway-traffic", handlers.CreateGatewayTrafficUsage)
 
 		v1.GET("/access-tokens", handlers.ListAccessTokens)
 		v1.POST("/access-tokens", handlers.CreateAccessToken)

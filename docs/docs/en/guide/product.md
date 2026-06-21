@@ -16,7 +16,7 @@ Use it to create the first administrator account.
 
 ## Create a project space
 
-A project space is a workspace for teams, applications, and environments.
+A project space is a workspace for teams, applications, deploy configs, and runtime resources.
 
 The project space list defaults to spaces related to the current user. Platform administrators can switch the scope to all project spaces from the top-right control when they need global maintenance.
 

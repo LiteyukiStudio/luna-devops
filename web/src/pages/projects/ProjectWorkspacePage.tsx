@@ -2,12 +2,11 @@ import type { ReactNode } from 'react'
 import type { Application, BuildRun, GatewayRoute, Project, ProjectMember, Release } from '@/api/client'
 import type { ApplicationsPageHandle } from '@/pages/applications/ApplicationsPage'
 import type { ProjectBuildVariableSetsPageHandle } from '@/pages/projects/ProjectBuildVariableSetsPage'
-import type { ProjectEnvironmentsPageHandle } from '@/pages/projects/ProjectEnvironmentsPage'
 import type { ProjectHooksPageHandle } from '@/pages/projects/ProjectHooksPage'
 import type { ProjectMembersPageHandle } from '@/pages/projects/ProjectMembersPage'
 import type { ProjectRuntimeConfigSetsPageHandle } from '@/pages/projects/ProjectRuntimeConfigSetsPage'
 import { useQuery } from '@tanstack/react-query'
-import { Activity, Boxes, FileCode2, Globe2, KeyRound, Package, Plus, Rocket, ScrollText, UserPlus } from 'lucide-react'
+import { Activity, FileCode2, Globe2, KeyRound, Package, Plus, Rocket, ScrollText, UserPlus } from 'lucide-react'
 import { motion } from 'motion/react'
 import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -22,7 +21,6 @@ import { Card } from '@/components/ui/card'
 import { TabsContent } from '@/components/ui/tabs'
 import { ApplicationsPage } from '@/pages/applications/ApplicationsPage'
 import { ProjectBuildVariableSetsPage } from '@/pages/projects/ProjectBuildVariableSetsPage'
-import { ProjectEnvironmentsPage } from '@/pages/projects/ProjectEnvironmentsPage'
 import { ProjectHooksPage } from '@/pages/projects/ProjectHooksPage'
 import { ProjectMembersPage } from '@/pages/projects/ProjectMembersPage'
 import { ProjectRuntimeConfigSetsPage } from '@/pages/projects/ProjectRuntimeConfigSetsPage'
@@ -33,7 +31,6 @@ export function ProjectWorkspacePage() {
   const [activeTab, setActiveTab] = useState('overview')
   const applicationsPageRef = useRef<ApplicationsPageHandle>(null)
   const buildVariableSetsPageRef = useRef<ProjectBuildVariableSetsPageHandle>(null)
-  const environmentsPageRef = useRef<ProjectEnvironmentsPageHandle>(null)
   const hooksPageRef = useRef<ProjectHooksPageHandle>(null)
   const membersPageRef = useRef<ProjectMembersPageHandle>(null)
   const runtimeConfigSetsPageRef = useRef<ProjectRuntimeConfigSetsPageHandle>(null)
@@ -54,8 +51,6 @@ export function ProjectWorkspacePage() {
     switch (activeTab) {
       case 'apps':
         return <ApplicationsPage ref={applicationsPageRef} embedded projectId={projectId} projectName={currentProject?.name} />
-      case 'environments':
-        return <ProjectEnvironmentsPage ref={environmentsPageRef} projectId={projectId} />
       case 'build-variables':
         return <ProjectBuildVariableSetsPage ref={buildVariableSetsPageRef} projectId={projectId} />
       case 'runtime-configs':
@@ -99,15 +94,6 @@ export function ProjectWorkspacePage() {
       )
     }
 
-    if (activeTab === 'environments') {
-      return (
-        <Button type="button" onClick={() => environmentsPageRef.current?.openCreateDialog()}>
-          <Boxes size={16} />
-          {t('deploymentsPage.createEnvironment')}
-        </Button>
-      )
-    }
-
     if (activeTab === 'build-variables') {
       return (
         <Button type="button" onClick={() => buildVariableSetsPageRef.current?.openCreateDialog()}>
@@ -144,7 +130,6 @@ export function ProjectWorkspacePage() {
         tabs={[
           { value: 'overview', label: t('projectSpaces.overviewTab') },
           { value: 'apps', label: t('projectSpaces.apps') },
-          { value: 'environments', label: t('deploymentsPage.environments') },
           { value: 'build-variables', label: t('buildsPage.variablesAndSecrets') },
           { value: 'runtime-configs', label: t('runtimeConfigSets.tab') },
           { value: 'hooks', label: t('projectHooks.tab') },

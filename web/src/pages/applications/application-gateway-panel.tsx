@@ -23,10 +23,9 @@ const routeDefaults: RouteForm = { applicationId: '', certificateStatus: 'disabl
 export interface ApplicationGatewayPanelHandle {
   openCreateDialog: (environmentId?: string, deploymentTargetId?: string) => void
 }
-export function ApplicationGatewayPanel({ applicationId, deploymentTargets, environments, projectId, ref, routes }: {
+export function ApplicationGatewayPanel({ applicationId, deploymentTargets, projectId, ref, routes }: {
   applicationId: string
   deploymentTargets: DeploymentTarget[]
-  environments: Array<{ id: string, name: string }>
   projectId: string
   ref?: React.Ref<ApplicationGatewayPanelHandle>
   routes: GatewayRoute[]
@@ -39,8 +38,8 @@ export function ApplicationGatewayPanel({ applicationId, deploymentTargets, envi
   const form = useForm<RouteForm>({ defaultValues: routeDefaults, mode: 'onChange' })
   const deploymentTargetOptions = useMemo(() => deploymentTargets.map(target => ({
     id: target.id,
-    label: gatewayDeploymentTargetLabel(target, environments, t),
-  })), [deploymentTargets, environments, t])
+    label: gatewayDeploymentTargetLabel(target, t),
+  })), [deploymentTargets, t])
   const saveRoute = useMutation({
     mutationFn: (values: RouteForm) => {
       const target = deploymentTargets.find(item => item.id === values.deploymentTargetId)

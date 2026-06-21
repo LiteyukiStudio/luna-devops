@@ -1,5 +1,5 @@
 import type { TFunction } from 'i18next'
-import type { ArtifactRegistry, BuildRun, DeploymentTarget, Environment, Release } from '@/api/client'
+import type { ArtifactRegistry, BuildRun, DeploymentTarget, Release } from '@/api/client'
 import { latestDeployableBuildRuns } from '@/components/common/deployment-build-runs'
 import { formatSmartDateTime } from '@/components/common/time-format'
 
@@ -11,34 +11,12 @@ export function formatReleaseTime(release: Release, t: TFunction) {
   return formatSmartDateTime(release.createdAt, t)
 }
 
-export function releaseEnvironmentLabel(environment: { name: string, stage?: string } | undefined, environmentID: string, t: TFunction) {
-  if (!environment)
-    return environmentID || '-'
-  const stage = environment.stage ? t(`deploymentsPage.stageLabels.${environment.stage}`, { defaultValue: environment.stage }) : ''
-  return stage ? `${environment.name} · ${stage}` : environment.name
+export function gatewayDeploymentTargetLabel(target: DeploymentTarget, t: TFunction) {
+  return `${target.name} · ${t(`deploymentsPage.stages.${target.stage}`, { defaultValue: target.stage })}`
 }
 
-export function buildEnvironmentOptionLabel(environment: Environment, t: TFunction) {
-  const resource = `${formatEnvironmentCPU(environment.cpuRequest)} / ${environment.memoryRequest || '1Gi'}`
-  return `${releaseEnvironmentLabel(environment, environment.id, t)} · ${resource}`
-}
-
-function formatEnvironmentCPU(value: string) {
-  const normalized = value.trim()
-  if (!normalized)
-    return '1c'
-  if (normalized.endsWith('m'))
-    return normalized
-  return `${normalized}c`
-}
-
-export function gatewayDeploymentTargetLabel(target: DeploymentTarget, environments: Array<{ id: string, name: string, stage?: string }>, t: TFunction) {
-  const environment = environments.find(item => item.id === target.environmentId)
-  return `${target.name} · ${releaseEnvironmentLabel(environment, target.environmentId, t)}`
-}
-
-export function deploymentReleaseKey(environmentId: string, deploymentTargetId: string) {
-  return `${environmentId}:${deploymentTargetId}`
+export function deploymentReleaseKey(deploymentTargetId: string) {
+  return deploymentTargetId
 }
 
 export function firstReleaseReadyTarget(targets: DeploymentTarget[], runs: BuildRun[]) {

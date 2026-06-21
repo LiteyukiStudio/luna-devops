@@ -55,12 +55,11 @@ func (r *Runner) runningClusterBuilds(clusterID string, environment model.Enviro
 	query := r.db.Table("build_jobs").
 		Joins("join build_runs on build_runs.id = build_jobs.build_run_id and build_runs.project_id = build_jobs.project_id").
 		Joins("join deployment_targets on deployment_targets.id = build_runs.deployment_target_id and deployment_targets.project_id = build_runs.project_id and deployment_targets.application_id = build_runs.application_id").
-		Joins("join environments on environments.id = deployment_targets.environment_id and environments.project_id = deployment_targets.project_id").
 		Where("build_jobs.status = ?", "running")
 	if strings.TrimSpace(environment.ClusterID) == "" {
-		query = query.Where("environments.cluster_id = '' or environments.cluster_id = ?", clusterID)
+		query = query.Where("deployment_targets.cluster_id = '' or deployment_targets.cluster_id = ?", clusterID)
 	} else {
-		query = query.Where("environments.cluster_id = ?", clusterID)
+		query = query.Where("deployment_targets.cluster_id = ?", clusterID)
 	}
 	var count int64
 	err := query.Count(&count).Error

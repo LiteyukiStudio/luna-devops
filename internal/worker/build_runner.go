@@ -64,10 +64,7 @@ func (r *Runner) handleBuildRun(ctx context.Context, task *asynq.Task) error {
 	if err := r.db.First(&target, "id = ? and project_id = ? and application_id = ?", run.DeploymentTargetID, run.ProjectID, run.ApplicationID).Error; err != nil {
 		return err
 	}
-	var environment model.Environment
-	if err := r.db.First(&environment, "id = ? and project_id = ?", target.EnvironmentID, run.ProjectID).Error; err != nil {
-		return err
-	}
+	environment := deploymentTargetEnvironment(target)
 	cluster, err := r.runtimeClusterForEnvironment(environment)
 	if err != nil {
 		_ = r.failBuildJob(job, run, err.Error())
@@ -168,12 +165,6 @@ func (r *Runner) settleBuildUsage(jobID string, runID string, projectID string, 
 		finishedAt = *run.FinishedAt
 	}
 	buildEnvironment := environment
-	if strings.TrimSpace(run.BuildEnvironmentID) != "" && run.BuildEnvironmentID != environment.ID {
-		var selectedEnvironment model.Environment
-		if err := r.db.First(&selectedEnvironment, "id = ? and project_id = ?", run.BuildEnvironmentID, projectID).Error; err == nil {
-			buildEnvironment = selectedEnvironment
-		}
-	}
 	err := (billing.Service{DB: r.db}).SettleBuildRun(billing.BuildUsageInput{
 		Run:         run,
 		Job:         job,

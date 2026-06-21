@@ -27,12 +27,7 @@ func (h *Handlers) StreamDeploymentTargetMetrics(ctx *gin.Context) {
 		writeError(ctx, http.StatusNotFound, "deployment target not found")
 		return
 	}
-	var environment model.Environment
-	if err := h.db.First(&environment, "id = ? and project_id = ?", target.EnvironmentID, project.ID).Error; err != nil {
-		writeError(ctx, http.StatusNotFound, "environment not found")
-		return
-	}
-	client, unavailableReason := h.deploymentTargetMetricsClient(environment)
+	client, unavailableReason := h.deploymentTargetMetricsClient(target)
 
 	writer := ctx.Writer
 	writer.Header().Set("Content-Type", "text/event-stream")
@@ -47,7 +42,7 @@ func (h *Handlers) StreamDeploymentTargetMetrics(ctx *gin.Context) {
 	sequence := 0
 	for {
 		sequence++
-		h.writeDeploymentTargetMetricsEvent(ctx, client, unavailableReason, project, environment, target, sequence)
+		h.writeDeploymentTargetMetricsEvent(ctx, client, unavailableReason, project, target, sequence)
 		flushSSE(writer)
 		select {
 		case <-ctx.Request.Context().Done():
@@ -57,7 +52,7 @@ func (h *Handlers) StreamDeploymentTargetMetrics(ctx *gin.Context) {
 	}
 }
 
-func (h *Handlers) writeDeploymentTargetMetricsEvent(ctx *gin.Context, client *kubeprovider.Client, unavailableReason string, project model.Project, environment model.Environment, target model.DeploymentTarget, sequence int) {
+func (h *Handlers) writeDeploymentTargetMetricsEvent(ctx *gin.Context, client *kubeprovider.Client, unavailableReason string, project model.Project, target model.DeploymentTarget, sequence int) {
 	if client == nil {
 		writeSSE(ctx.Writer, "metrics", strconv.Itoa(sequence), deploymentTargetMetricsResponse{
 			Available: false,
@@ -69,7 +64,7 @@ func (h *Handlers) writeDeploymentTargetMetricsEvent(ctx *gin.Context, client *k
 	requestCtx, cancel := context.WithTimeout(ctx.Request.Context(), 8*time.Second)
 	defer cancel()
 	snapshot, err := client.RuntimeMetrics(requestCtx, kubeprovider.RuntimeMetricsOptions{
-		Namespace:          runtimeProjectNamespace(project),
+		Namespace:          deploymentTargetNamespace(project, target),
 		DeploymentTargetID: target.ID,
 	})
 	if err != nil {
@@ -80,14 +75,14 @@ func (h *Handlers) writeDeploymentTargetMetricsEvent(ctx *gin.Context, client *k
 		})
 		return
 	}
-	response := deploymentTargetMetricsResponseFromSnapshot(snapshot, environment)
+	response := deploymentTargetMetricsResponseFromSnapshot(snapshot, target)
 	writeSSE(ctx.Writer, "metrics", strconv.Itoa(sequence), response)
 }
 
-func (h *Handlers) deploymentTargetMetricsClient(environment model.Environment) (*kubeprovider.Client, string) {
+func (h *Handlers) deploymentTargetMetricsClient(target model.DeploymentTarget) (*kubeprovider.Client, string) {
 	var cluster model.RuntimeCluster
 	var err error
-	if clusterID := strings.TrimSpace(environment.ClusterID); clusterID != "" {
+	if clusterID := strings.TrimSpace(target.ClusterID); clusterID != "" {
 		err = h.db.First(&cluster, "id = ? and type in ?", clusterID, []string{"kubernetes", "k3s"}).Error
 	} else {
 		err = h.db.Where("scope = ? and type in ?", "global", []string{"kubernetes", "k3s"}).Order("is_default desc, created_at asc").First(&cluster).Error
@@ -120,13 +115,13 @@ type deploymentTargetMetricsResponse struct {
 	UpdatedAt           time.Time `json:"updatedAt"`
 }
 
-func deploymentTargetMetricsResponseFromSnapshot(snapshot kubeprovider.RuntimeMetricsSnapshot, environment model.Environment) deploymentTargetMetricsResponse {
-	replicas := environment.Replicas
+func deploymentTargetMetricsResponseFromSnapshot(snapshot kubeprovider.RuntimeMetricsSnapshot, target model.DeploymentTarget) deploymentTargetMetricsResponse {
+	replicas := target.Replicas
 	if replicas <= 0 {
 		replicas = 1
 	}
-	cpuCapacityMilli := quantityMilliValue(environment.CPURequest) * int64(replicas)
-	memoryCapacityBytes := quantityValue(environment.MemoryRequest) * int64(replicas)
+	cpuCapacityMilli := quantityMilliValue(target.CPURequest) * int64(replicas)
+	memoryCapacityBytes := quantityValue(target.MemoryRequest) * int64(replicas)
 	return deploymentTargetMetricsResponse{
 		Available:           snapshot.Available,
 		Reason:              snapshot.Reason,

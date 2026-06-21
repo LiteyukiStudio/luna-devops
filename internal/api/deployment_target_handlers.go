@@ -177,12 +177,7 @@ func (h *Handlers) ExportDeploymentTargetData(ctx *gin.Context) {
 		writeError(ctx, http.StatusBadRequest, "该部署配置未启用运行数据保留")
 		return
 	}
-	var environment model.Environment
-	if err := h.db.First(&environment, "id = ? and project_id = ?", target.EnvironmentID, target.ProjectID).Error; err != nil {
-		writeError(ctx, http.StatusNotFound, "environment not found")
-		return
-	}
-	client, namespace, ok := h.kubernetesClientForEnvironment(ctx, project, environment, "运行集群不可用，无法导出运行数据")
+	client, namespace, ok := h.kubernetesClientForDeploymentTarget(ctx, project, target, "运行集群不可用，无法导出运行数据")
 	if !ok {
 		return
 	}
@@ -228,12 +223,7 @@ func (h *Handlers) RestartDeploymentTarget(ctx *gin.Context) {
 	if !h.ensureDeploymentTargetCanMutate(ctx, target) {
 		return
 	}
-	var environment model.Environment
-	if err := h.db.First(&environment, "id = ? and project_id = ?", target.EnvironmentID, target.ProjectID).Error; err != nil {
-		writeError(ctx, http.StatusNotFound, "environment not found")
-		return
-	}
-	client, namespace, ok := h.kubernetesClientForEnvironment(ctx, project, environment, "运行集群不可用，无法重启部署")
+	client, namespace, ok := h.kubernetesClientForDeploymentTarget(ctx, project, target, "运行集群不可用，无法重启部署")
 	if !ok {
 		return
 	}

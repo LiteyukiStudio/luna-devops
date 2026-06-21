@@ -226,7 +226,7 @@ func (h *Handlers) gatewayRouteFromInput(ctx *gin.Context, project model.Project
 	}
 	host := h.normalizeGatewayHost(input.Host)
 	if host == "" {
-		host = h.defaultGatewayHost(project, environment.Stage, application.Slug)
+		host = h.defaultGatewayHost(project, target.Stage, application.Slug)
 	}
 	if host == "" {
 		writeError(ctx, http.StatusBadRequest, "请输入域名或选择部署配置")
@@ -291,12 +291,7 @@ func (h *Handlers) gatewayRouteTargetContext(ctx *gin.Context, projectID string,
 		writeErrorCode(ctx, http.StatusConflict, "application.delete_in_progress", "应用正在删除中，不能维护访问入口")
 		return model.DeploymentTarget{}, model.Application{}, model.Environment{}, false
 	}
-	var environment model.Environment
-	if err := h.db.First(&environment, "id = ? and project_id = ?", target.EnvironmentID, projectID).Error; err != nil {
-		writeError(ctx, http.StatusBadRequest, "环境不存在或不属于当前项目空间")
-		return model.DeploymentTarget{}, model.Application{}, model.Environment{}, false
-	}
-	return target, application, environment, true
+	return target, application, deploymentTargetEnvironmentProfile(target), true
 }
 
 func (h *Handlers) defaultGatewayHost(project model.Project, stage, applicationSlug string) string {

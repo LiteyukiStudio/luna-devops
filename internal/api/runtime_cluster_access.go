@@ -32,6 +32,34 @@ func (h *Handlers) runtimeClusterForEnvironment(ctx *gin.Context, environment mo
 	return cluster, true
 }
 
+func (h *Handlers) runtimeClusterForDeploymentTarget(ctx *gin.Context, target model.DeploymentTarget) (model.RuntimeCluster, bool) {
+	var cluster model.RuntimeCluster
+	if clusterID := strings.TrimSpace(target.ClusterID); clusterID != "" {
+		err := h.db.First(&cluster, "id = ? and type in ?", clusterID, []string{"kubernetes", "k3s"}).Error
+		if err != nil {
+			writeError(ctx, http.StatusNotFound, "runtime cluster not found")
+			return cluster, false
+		}
+		return cluster, true
+	}
+	err := h.db.Where("scope = ? and is_default = ? and type in ?", "global", true, []string{"kubernetes", "k3s"}).First(&cluster).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		err = h.db.Where("scope = ? and type in ?", "global", []string{"kubernetes", "k3s"}).Order("created_at asc").First(&cluster).Error
+	}
+	if err != nil {
+		writeError(ctx, http.StatusNotFound, "runtime cluster not found")
+		return cluster, false
+	}
+	return cluster, true
+}
+
+func deploymentTargetNamespace(project model.Project, target model.DeploymentTarget) string {
+	if namespace := strings.TrimSpace(target.Namespace); namespace != "" {
+		return namespace
+	}
+	return runtimeProjectNamespace(project)
+}
+
 func (h *Handlers) runtimeClusterResponseForUser(user model.User, cluster model.RuntimeCluster) model.RuntimeCluster {
 	cluster.ProjectIDs = h.scopedResourceProjectIDs(scopedResourceRuntimeCluster, cluster.ID)
 	cluster.KubeconfigSet = cluster.KubeconfigRef != ""

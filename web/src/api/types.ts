@@ -7,6 +7,7 @@ export interface Project {
   description: string
   namespaceStrategy: string
   maxConcurrentBuilds: number
+  billingOwnerUserId: string
   deleteStatus: 'active' | 'deleting' | 'delete_failed' | 'deleted' | string
   deleteMessage: string
   deleteStartedAt?: string | null
@@ -360,6 +361,12 @@ export interface DeploymentTarget {
   applicationId: string
   environmentId: string
   name: string
+  stage: 'dev' | 'test' | 'staging' | 'prod'
+  clusterId: string
+  namespace: string
+  replicas: number
+  cpuRequest: string
+  memoryRequest: string
   servicePort: number
   sourceType: 'repository' | 'image'
   repositoryBindingId: string
@@ -507,24 +514,6 @@ export interface ClusterResourceYAML {
   yaml: string
 }
 
-export interface Environment {
-  id: string
-  projectId: string
-  name: string
-  slug: string
-  stage: 'dev' | 'test' | 'staging' | 'prod'
-  clusterId: string
-  namespace: string
-  replicas: number
-  cpuRequest: string
-  memoryRequest: string
-  envVars: string
-  configRefs: string
-  secretRefs: string
-  createdBy: string
-  createdAt: string
-}
-
 export interface Release {
   id: string
   projectId: string
@@ -658,15 +647,31 @@ export interface BillingRateRulePayload {
 }
 
 export interface BillingWalletTransactionPayload {
-  projectId: string
   amountCredits: string
   type: 'credit' | 'adjustment'
   description: string
+  userId: string
+}
+
+export interface GatewayTrafficUsagePayload {
+  routeId: string
+  responseBytes: number
+  requestCount?: number
+  periodStart: string
+  periodEnd: string
+}
+
+export interface BillingUsageSettlementResult {
+  status: 'settled' | 'already_settled' | string
 }
 
 export interface BillingLedgerEntry {
   id: string
+  userId: string
   projectId: string
+  applicationId: string
+  applicationName: string
+  applicationSlug: string
   type: 'debit' | 'credit' | 'adjustment' | string
   amountCredits: string
   balanceAfterCredits: string
@@ -683,7 +688,10 @@ export interface BillingLedgerEntry {
 export interface BillingUsageRecord {
   id: string
   projectId: string
+  billedUserId: string
   applicationId: string
+  applicationName: string
+  applicationSlug: string
   meter: string
   quantity: string
   unit: string

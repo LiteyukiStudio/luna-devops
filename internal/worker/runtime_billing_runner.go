@@ -91,10 +91,7 @@ func (r *Runner) settleStorageUsageForTarget(ctx context.Context, service billin
 }
 
 func (r *Runner) runtimeBillingTargetContext(target model.DeploymentTarget) (model.Environment, model.Release, bool) {
-	var environment model.Environment
-	if err := r.db.First(&environment, "id = ? and project_id = ?", target.EnvironmentID, target.ProjectID).Error; err != nil {
-		return environment, model.Release{}, false
-	}
+	environment := deploymentTargetEnvironment(target)
 	var release model.Release
 	if err := r.db.
 		Where("project_id = ? and application_id = ? and deployment_target_id = ? and status in ?", target.ProjectID, target.ApplicationID, target.ID, []string{"running", "succeeded"}).

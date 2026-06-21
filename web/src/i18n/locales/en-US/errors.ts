@@ -13,9 +13,11 @@ const errors = {
     delete_in_progress: 'The application is being deleted. Wait for resource cleanup to finish, or retry after deletion fails.',
   },
   billing: {
-    insufficient_balance: 'The project space balance is insufficient. Billing controls blocked this operation. Recharge or contact a platform administrator.',
+    insufficient_balance: 'The billing owner balance is insufficient. Billing controls blocked this operation. Recharge or contact a platform administrator.',
+    owner_required: 'This project space has no billing owner. Contact a platform administrator.',
     project_forbidden: 'You do not have access to this project space billing data',
     project_required: 'Select a project space',
+    user_required: 'Select a user account',
     rate_rule_invalid_price: 'Billing rule price must be a non-negative number',
     rate_rule_meter_required: 'Billing rule meter is required',
     rate_rule_unknown: 'Unknown billing rule meter',

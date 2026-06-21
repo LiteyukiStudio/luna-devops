@@ -13,10 +13,10 @@ import (
 func (h *Handlers) findPreviousSuccessfulRelease(ctx *gin.Context, source model.Release) (model.Release, bool) {
 	var target model.Release
 	err := h.db.Where(
-		"project_id = ? and application_id = ? and environment_id = ? and status = ? and revision < ?",
+		"project_id = ? and application_id = ? and deployment_target_id = ? and status = ? and revision < ?",
 		source.ProjectID,
 		source.ApplicationID,
-		source.EnvironmentID,
+		source.DeploymentTargetID,
 		"succeeded",
 		source.Revision,
 	).Order("revision desc, created_at desc").First(&target).Error
@@ -28,7 +28,7 @@ func (h *Handlers) findPreviousSuccessfulRelease(ctx *gin.Context, source model.
 }
 
 func (h *Handlers) nextReleaseRevision(source model.Release) (int, error) {
-	return nextReleaseRevisionFor(h.db, source.ProjectID, source.ApplicationID, source.EnvironmentID)
+	return nextReleaseRevisionFor(h.db, source.ProjectID, source.ApplicationID, source.DeploymentTargetID)
 }
 
 func (h *Handlers) enqueueDeployRun(ctx context.Context, release model.Release) bool {

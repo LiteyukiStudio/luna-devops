@@ -58,7 +58,7 @@ func (r *Runner) createAutoDeployRelease(run model.BuildRun, target model.Deploy
 	release := model.Release{}
 	err := r.db.Transaction(func(tx *gorm.DB) error {
 		var existing model.Release
-		err := tx.First(&existing, "project_id = ? and application_id = ? and environment_id = ? and build_run_id = ?", run.ProjectID, run.ApplicationID, target.EnvironmentID, run.ID).Error
+		err := tx.First(&existing, "project_id = ? and application_id = ? and deployment_target_id = ? and build_run_id = ?", run.ProjectID, run.ApplicationID, target.ID, run.ID).Error
 		if err == nil {
 			release = existing
 			return nil
@@ -66,7 +66,7 @@ func (r *Runner) createAutoDeployRelease(run model.BuildRun, target model.Deploy
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
-		revision, err := nextReleaseRevisionFor(tx, run.ProjectID, run.ApplicationID, target.EnvironmentID)
+		revision, err := nextReleaseRevisionFor(tx, run.ProjectID, run.ApplicationID, target.ID)
 		if err != nil {
 			return err
 		}
@@ -117,10 +117,10 @@ func matchesDeploymentPattern(patterns string, value string) bool {
 	return false
 }
 
-func nextReleaseRevisionFor(tx *gorm.DB, projectID string, applicationID string, environmentID string) (int, error) {
+func nextReleaseRevisionFor(tx *gorm.DB, projectID string, applicationID string, deploymentTargetID string) (int, error) {
 	var maxRevision int
 	err := tx.Model(&model.Release{}).
-		Where("project_id = ? and application_id = ? and environment_id = ?", projectID, applicationID, environmentID).
+		Where("project_id = ? and application_id = ? and deployment_target_id = ?", projectID, applicationID, deploymentTargetID).
 		Select("coalesce(max(revision), 0)").
 		Scan(&maxRevision).Error
 	if err != nil {

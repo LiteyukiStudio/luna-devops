@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import type { BillingApplicationSpend, BillingLedgerEntry, BillingUsageRecord, Project } from '@/api/client'
+import type { BillingApplicationSpend, BillingLedgerEntry, BillingUsageRecord, Project, User } from '@/api/client'
 import type { DataListColumn } from '@/components/common/data-list'
 import type { StatusTone } from '@/components/common/status-tone'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -39,7 +39,7 @@ export function BillingPage() {
   const [ledgerPage, setLedgerPage] = useState(1)
   const [usagePage, setUsagePage] = useState(1)
   const [transactionOpen, setTransactionOpen] = useState(false)
-  const [transactionProjectId, setTransactionProjectId] = useState('')
+  const [transactionUserId, setTransactionUserId] = useState('')
   const [transactionType, setTransactionType] = useState<'credit' | 'adjustment'>('credit')
   const [transactionAmount, setTransactionAmount] = useState('')
   const [transactionDescription, setTransactionDescription] = useState('')
@@ -52,9 +52,19 @@ export function BillingPage() {
   const projectItems = useMemo(() => projectsQuery.data?.items ?? [], [projectsQuery.data?.items])
   const projectMap = useMemo(() => new Map(projectItems.map(project => [project.id, project])), [projectItems])
   const projectIds = selectedProjectIds.length > 0 ? selectedProjectIds : undefined
+  const usersQuery = useQuery({
+    enabled: canManageBilling,
+    queryKey: ['billing', 'users'],
+    queryFn: () => api.listUsers({ page: 1, pageSize: 100, sortBy: 'email', sortOrder: 'asc' }),
+  })
+  const userItems = useMemo(() => usersQuery.data?.items ?? [], [usersQuery.data?.items])
 
-  const summaryQuery = useQuery({
-    queryKey: ['billing', 'summary', selectedProjectIds],
+  const accountSummaryQuery = useQuery({
+    queryKey: ['billing', 'summary', 'account'],
+    queryFn: () => api.getBillingSummary(),
+  })
+  const scopedSummaryQuery = useQuery({
+    queryKey: ['billing', 'summary', 'scope', selectedProjectIds],
     queryFn: () => api.getBillingSummary(projectIds),
   })
   const applicationSpendQuery = useQuery({
@@ -89,10 +99,10 @@ export function BillingPage() {
   })
   const createTransaction = useMutation({
     mutationFn: () => api.createBillingWalletTransaction({
-      projectId: transactionProjectId,
       amountCredits: transactionAmount,
       type: transactionType,
       description: transactionDescription,
+      userId: transactionUserId,
     }),
     onSuccess: () => {
       toast.success(t('billingPage.walletTransactionCreated'))
@@ -112,11 +122,41 @@ export function BillingPage() {
     setUsagePage(1)
   }
 
-  const scopeLabel = selectedProjectIds.length > 0
-    ? t('billingPage.selectedProjects', { count: selectedProjectIds.length })
-    : t(canManageBilling ? 'billingPage.allProjectSpaces' : 'billingPage.allRelatedProjects')
-  const summary = summaryQuery.data
-  const balanceStatus = normalizeBalanceStatus(summary?.balanceStatus)
+  const accountSummary = accountSummaryQuery.data
+  const scopedSummary = scopedSummaryQuery.data
+  const balanceStatus = normalizeBalanceStatus(accountSummary?.balanceStatus)
+
+  const billingScopeTools = (
+    <>
+      <div className="w-full sm:w-80">
+        <ProjectSpaceMultiSelect
+          disabled={projectsQuery.isLoading}
+          projects={projectItems}
+          value={selectedProjectIds}
+          onChange={handleProjectFilterChange}
+        />
+      </div>
+      {selectedProjectIds.length > 0 && (
+        <Button className="h-11 rounded-2xl" type="button" variant="outline" onClick={() => handleProjectFilterChange([])}>
+          {t('billingPage.clearProjectFilter')}
+        </Button>
+      )}
+      {canManageBilling && (
+        <Button
+          className="h-11 rounded-2xl"
+          disabled={usersQuery.isLoading || userItems.length === 0}
+          type="button"
+          onClick={() => {
+            setTransactionUserId(userItems[0]?.id ?? '')
+            setTransactionOpen(true)
+          }}
+        >
+          <Plus size={16} />
+          {t('billingPage.createWalletTransaction')}
+        </Button>
+      )}
+    </>
+  )
 
   const applicationSpendColumns = useMemo<DataListColumn<BillingApplicationSpend>[]>(() => [
     {
@@ -174,7 +214,17 @@ export function BillingPage() {
       key: 'project',
       header: t('billingPage.project'),
       className: 'min-w-56',
-      render: item => <ProjectCell project={projectMap.get(item.projectId)} unknownLabel={t('billingPage.unknownProject')} />,
+      render: item => item.projectId
+        ? <ProjectCell project={projectMap.get(item.projectId)} unknownLabel={t('billingPage.unknownProject')} />
+        : <span className="text-sm text-muted-foreground">{t('billingPage.accountTransaction')}</span>,
+    },
+    {
+      key: 'application',
+      header: t('billingPage.application'),
+      className: 'min-w-52',
+      render: item => item.projectId
+        ? <ApplicationCell item={item} unassignedLabel={t('billingPage.unassignedApplication')} />
+        : <span className="text-sm text-muted-foreground">-</span>,
     },
     {
       key: 'type',
@@ -230,6 +280,12 @@ export function BillingPage() {
       render: item => <ProjectCell project={projectMap.get(item.projectId)} unknownLabel={t('billingPage.unknownProject')} />,
     },
     {
+      key: 'application',
+      header: t('billingPage.application'),
+      className: 'min-w-52',
+      render: item => <ApplicationCell item={item} unassignedLabel={t('billingPage.unassignedApplication')} />,
+    },
+    {
       key: 'meter',
       header: t('billingPage.meter'),
       className: 'min-w-40',
@@ -269,7 +325,7 @@ export function BillingPage() {
 
   return (
     <div className="grid min-w-0 gap-5">
-      {summary && balanceStatus !== 'ok' && (
+      {accountSummary && balanceStatus !== 'ok' && (
         <Card className={cn(
           'flex min-w-0 items-start gap-3 rounded-2xl border p-4',
           balanceStatus === 'insufficient'
@@ -282,88 +338,47 @@ export function BillingPage() {
             <div className="flex flex-wrap items-center gap-2">
               <p className="font-medium">{t(`billingPage.balanceStatuses.${balanceStatus}`)}</p>
               <StatusBadge tone={balanceStatus === 'insufficient' ? 'danger' : 'warning'}>
-                {billingDisplay.formatAmountWithUnit(summary.availableCredits)}
+                {billingDisplay.formatAmountWithUnit(accountSummary.availableCredits)}
               </StatusBadge>
             </div>
             <p className="mt-1 text-sm opacity-80">
               {t('billingPage.balanceWarningDescription', {
-                pending: billingDisplay.formatAmountWithUnit(summary.pendingSpend),
-                threshold: billingDisplay.formatAmountWithUnit(summary.lowBalanceLimit),
+                pending: billingDisplay.formatAmountWithUnit(accountSummary.pendingSpend),
+                threshold: billingDisplay.formatAmountWithUnit(accountSummary.lowBalanceLimit),
               })}
             </p>
           </div>
         </Card>
       )}
 
-      <Card className="rounded-2xl p-4">
-        <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-foreground">{t('billingPage.scopeTitle')}</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {scopeLabel}
-              {' · '}
-              {t('billingPage.projectScopeHint')}
-            </p>
-          </div>
-          <div className="flex w-full min-w-0 flex-col gap-2 sm:flex-row sm:items-center lg:w-auto">
-            <div className="w-full sm:w-80">
-              <ProjectSpaceMultiSelect
-                disabled={projectsQuery.isLoading}
-                projects={projectItems}
-                value={selectedProjectIds}
-                onChange={handleProjectFilterChange}
-              />
-            </div>
-            {selectedProjectIds.length > 0 && (
-              <Button className="h-11 rounded-2xl" type="button" variant="outline" onClick={() => handleProjectFilterChange([])}>
-                {t('billingPage.clearProjectFilter')}
-              </Button>
-            )}
-            {canManageBilling && (
-              <Button
-                className="h-11 rounded-2xl"
-                type="button"
-                onClick={() => {
-                  setTransactionProjectId(selectedProjectIds[0] ?? projectItems[0]?.id ?? '')
-                  setTransactionOpen(true)
-                }}
-              >
-                <Plus size={16} />
-                {t('billingPage.createWalletTransaction')}
-              </Button>
-            )}
-          </div>
-        </div>
-      </Card>
-
       <div className="grid gap-3 md:grid-cols-4">
         <MetricCard
-          fiatValue={canManageBilling ? billingDisplay.formatFiatAmount(summary?.balanceCredits) : ''}
+          fiatValue={canManageBilling ? billingDisplay.formatFiatAmount(accountSummary?.balanceCredits) : ''}
           icon={<Coins className="size-5" />}
           label={t('billingPage.balance')}
-          loading={summaryQuery.isLoading}
-          value={billingDisplay.formatAmountWithUnit(summary?.balanceCredits)}
+          loading={accountSummaryQuery.isLoading}
+          value={billingDisplay.formatAmountWithUnit(accountSummary?.balanceCredits)}
         />
         <MetricCard
-          fiatValue={canManageBilling ? billingDisplay.formatFiatAmount(summary?.todaySpend) : ''}
+          fiatValue={canManageBilling ? billingDisplay.formatFiatAmount(accountSummary?.todaySpend) : ''}
           icon={<TrendingDown className="size-5" />}
           label={t('billingPage.todaySpend')}
-          loading={summaryQuery.isLoading}
-          value={billingDisplay.formatAmountWithUnit(summary?.todaySpend)}
+          loading={accountSummaryQuery.isLoading}
+          value={billingDisplay.formatAmountWithUnit(accountSummary?.todaySpend)}
         />
         <MetricCard
-          fiatValue={canManageBilling ? billingDisplay.formatFiatAmount(summary?.monthSpend) : ''}
+          fiatValue={canManageBilling ? billingDisplay.formatFiatAmount(accountSummary?.monthSpend) : ''}
           icon={<CreditCard className="size-5" />}
           label={t('billingPage.monthSpend')}
-          loading={summaryQuery.isLoading}
-          value={billingDisplay.formatAmountWithUnit(summary?.monthSpend)}
+          loading={accountSummaryQuery.isLoading}
+          value={billingDisplay.formatAmountWithUnit(accountSummary?.monthSpend)}
         />
         <MetricCard
-          fiatValue={canManageBilling ? billingDisplay.formatFiatAmount(summary?.pendingSpend) : ''}
+          fiatValue={canManageBilling ? billingDisplay.formatFiatAmount(accountSummary?.pendingSpend) : ''}
           icon={<WalletCards className="size-5" />}
           label={t('billingPage.pendingSpend')}
-          loading={summaryQuery.isLoading}
-          value={billingDisplay.formatAmountWithUnit(summary?.pendingSpend)}
+          loading={accountSummaryQuery.isLoading}
+          value={billingDisplay.formatAmountWithUnit(accountSummary?.pendingSpend)}
         />
       </div>
 
@@ -378,8 +393,8 @@ export function BillingPage() {
           </StatusBadge>
         </div>
         <div className="mt-4 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
-          {(summary?.monthlyCategories?.length ?? 0) > 0
-            ? (summary?.monthlyCategories ?? []).map(category => (
+          {(scopedSummary?.monthlyCategories?.length ?? 0) > 0
+            ? (scopedSummary?.monthlyCategories ?? []).map(category => (
                 <div key={category.category} className="min-w-0 rounded-xl border border-border bg-muted/20 p-3">
                   <p className="truncate text-xs text-muted-foreground">
                     {t(`billingPage.categories.${category.category}`, { defaultValue: category.category })}
@@ -391,7 +406,7 @@ export function BillingPage() {
               ))
             : (
                 <p className="text-sm text-muted-foreground md:col-span-3 xl:col-span-6">
-                  {summaryQuery.isLoading ? t('common.loading') : t('billingPage.emptyMonthlyCategories')}
+                  {scopedSummaryQuery.isLoading ? t('common.loading') : t('billingPage.emptyMonthlyCategories')}
                 </p>
               )}
         </div>
@@ -403,6 +418,7 @@ export function BillingPage() {
           { label: t('billingPage.ledgerTitle'), value: 'ledger' },
           { label: t('billingPage.usageTitle'), value: 'usage' },
         ]}
+        tools={billingScopeTools}
         value={activeTab}
         onValueChange={setActiveTab}
       >
@@ -478,17 +494,15 @@ export function BillingPage() {
             <DialogDescription>{t('billingPage.walletTransactionDescription')}</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-2">
-            <Field label={t('billingPage.project')}>
-              <Select value={transactionProjectId} onValueChange={setTransactionProjectId}>
+            <Field label={t('billingPage.user')}>
+              <Select value={transactionUserId} onValueChange={setTransactionUserId}>
                 <SelectTrigger>
-                  <SelectValue placeholder={t('billingPage.selectProject')} />
+                  <SelectValue placeholder={t('billingPage.selectUser')} />
                 </SelectTrigger>
                 <SelectContent>
-                  {projectItems.map(project => (
-                    <SelectItem key={project.id} value={project.id}>
-                      {project.name}
-                      {' · '}
-                      {project.slug}
+                  {userItems.map(item => (
+                    <SelectItem key={item.id} value={item.id}>
+                      {userLabel(item)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -527,7 +541,7 @@ export function BillingPage() {
               {t('common.cancel')}
             </Button>
             <Button
-              disabled={createTransaction.isPending || !transactionProjectId || !transactionAmount.trim()}
+              disabled={createTransaction.isPending || !transactionUserId || !transactionAmount.trim()}
               type="button"
               onClick={() => createTransaction.mutate()}
             >
@@ -538,6 +552,10 @@ export function BillingPage() {
       </Dialog>
     </div>
   )
+}
+
+function userLabel(user: User) {
+  return `${user.name || user.email} · ${user.email}`
 }
 
 function MetricCard({ fiatValue, icon, label, loading, value }: { fiatValue?: string, icon: ReactNode, label: string, loading: boolean, value: string }) {
@@ -584,7 +602,11 @@ function ProjectCell({
   )
 }
 
-function ApplicationCell({ item, unassignedLabel }: { item: BillingApplicationSpend, unassignedLabel: string }) {
+type BillingApplicationRef = Pick<BillingApplicationSpend, 'applicationName' | 'applicationSlug'> & {
+  applicationId?: string
+}
+
+function ApplicationCell({ item, unassignedLabel }: { item: BillingApplicationRef, unassignedLabel: string }) {
   return (
     <span className="block min-w-0">
       <span className="block truncate font-medium">{item.applicationName || unassignedLabel}</span>

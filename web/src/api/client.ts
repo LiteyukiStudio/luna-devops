@@ -12,6 +12,7 @@ import type {
   BillingRateRule,
   BillingRateRulePayload,
   BillingSummary,
+  BillingUsageSettlementResult,
   BillingUsageRecord,
   BillingWalletTransactionPayload,
   BootstrapStatus,
@@ -29,10 +30,10 @@ import type {
   CurrentUser,
   DeploymentTarget,
   DeploymentTargetPayload,
-  Environment,
   ExternalIdentity,
   GatewayDomainCheckResult,
   GatewayRoute,
+  GatewayTrafficUsagePayload,
   GitAccount,
   GitBranch,
   GitContentItem,
@@ -83,6 +84,7 @@ export type {
   BillingRateRule,
   BillingRateRulePayload,
   BillingSummary,
+  BillingUsageSettlementResult,
   BillingUsageRecord,
   BillingWalletTransactionPayload,
   BootstrapStatus,
@@ -102,10 +104,10 @@ export type {
   DeploymentTargetHookBinding,
   DeploymentTargetMetrics,
   DeploymentTargetPayload,
-  Environment,
   ExternalIdentity,
   GatewayDomainCheckResult,
   GatewayRoute,
+  GatewayTrafficUsagePayload,
   GitAccount,
   GitBranch,
   GitContentItem,
@@ -478,6 +480,8 @@ export const api = {
     request<BillingRateRule[]>('/billing/rate-rules', { method: 'PUT', body: JSON.stringify({ rules }) }),
   createBillingWalletTransaction: (payload: BillingWalletTransactionPayload) =>
     request<BillingLedgerEntry>('/billing/wallet-transactions', { method: 'POST', body: JSON.stringify(payload) }),
+  createGatewayTrafficUsage: (payload: GatewayTrafficUsagePayload) =>
+    request<BillingUsageSettlementResult>('/billing/gateway-traffic', { method: 'POST', body: JSON.stringify(payload) }),
   listProjectPins: () => request<ProjectPin[]>('/projects/pins'),
   updateProjectOrder: (projectIds: string[]) =>
     request<{ projectIds: string[] }>('/projects/order', { method: 'PUT', body: JSON.stringify({ projectIds }) }),
@@ -685,14 +689,6 @@ export const api = {
       search.set('namespace', params.namespace)
     return request<void>(`/runtime/clusters/${clusterId}/resources?${search.toString()}`, { method: 'DELETE' })
   },
-  listEnvironments: (projectId: string) =>
-    request<Environment[]>(`/projects/${projectId}/environments`),
-  createEnvironment: (projectId: string, payload: Omit<Environment, 'id' | 'projectId' | 'createdBy' | 'createdAt'>) =>
-    request<Environment>(`/projects/${projectId}/environments`, { method: 'POST', body: JSON.stringify(payload) }),
-  updateEnvironment: (projectId: string, environmentId: string, payload: Omit<Environment, 'id' | 'projectId' | 'createdBy' | 'createdAt'>) =>
-    request<Environment>(`/projects/${projectId}/environments/${environmentId}`, { method: 'PUT', body: JSON.stringify(payload) }),
-  deleteEnvironment: (projectId: string, environmentId: string) =>
-    request<void>(`/projects/${projectId}/environments/${environmentId}`, { method: 'DELETE' }),
   listReleases: (projectId: string) =>
     request<Release[]>(`/projects/${projectId}/releases`),
   createRelease: (projectId: string, payload: Omit<Release, 'id' | 'projectId' | 'createdBy' | 'createdAt' | 'rollbackFromId'>) =>

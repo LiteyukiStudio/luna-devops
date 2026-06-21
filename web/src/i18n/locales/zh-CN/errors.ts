@@ -13,9 +13,11 @@ const errors = {
     delete_in_progress: '应用正在删除中，请等待资源清理完成或删除失败后重试。',
   },
   billing: {
-    insufficient_balance: '项目空间余额不足，当前操作已被计费风控拦截。请充值或联系平台管理员处理。',
+    insufficient_balance: '计费归属人余额不足，当前操作已被计费风控拦截。请充值或联系平台管理员处理。',
+    owner_required: '项目空间缺少计费归属人，请联系平台管理员处理。',
     project_forbidden: '没有访问该项目空间账单的权限',
     project_required: '请选择项目空间',
+    user_required: '请选择用户账户',
     rate_rule_invalid_price: '计费规则单价必须是非负数',
     rate_rule_meter_required: '计费规则缺少 Meter',
     rate_rule_unknown: '未知的计费规则 Meter',

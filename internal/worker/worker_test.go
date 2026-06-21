@@ -660,15 +660,15 @@ func TestCleanupProjectNamespacesCoversDistinctClusters(t *testing.T) {
 	}
 
 	project := model.Project{ID: "prj_abcdef1234567890", Slug: "demo"}
-	environments := []model.Environment{
-		{ID: "env_dev", ClusterID: "rcl_one"},
-		{ID: "env_prod", ClusterID: "rcl_two"},
-		{ID: "env_stage", ClusterID: "rcl_one"},
-		{ID: "env_default"},
+	targets := []model.DeploymentTarget{
+		{ID: "dplt_dev", ClusterID: "rcl_one"},
+		{ID: "dplt_prod", ClusterID: "rcl_two"},
+		{ID: "dplt_stage", ClusterID: "rcl_one"},
+		{ID: "dplt_default"},
 	}
 
-	if err := runner.cleanupProjectNamespacesForEnvironments(context.Background(), project, environments); err != nil {
-		t.Fatalf("cleanupProjectNamespacesForEnvironments returned error: %v", err)
+	if err := runner.cleanupProjectNamespacesForDeploymentTargets(context.Background(), project, targets); err != nil {
+		t.Fatalf("cleanupProjectNamespacesForDeploymentTargets returned error: %v", err)
 	}
 	for _, key := range []string{"cluster:rcl_one", "cluster:rcl_two", "default"} {
 		manager := managers[key]

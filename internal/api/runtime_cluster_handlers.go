@@ -115,13 +115,13 @@ func (h *Handlers) DeleteRuntimeCluster(ctx *gin.Context) {
 	if !h.canManageScopedResourceByID(ctx, user, cluster.Scope, cluster.OwnerRef, scopedResourceRuntimeCluster, cluster.ID, "无权维护该运行集群") {
 		return
 	}
-	var environmentCount int64
-	if err := h.db.Model(&model.Environment{}).Where("cluster_id = ?", cluster.ID).Count(&environmentCount).Error; err != nil {
+	var targetCount int64
+	if err := h.db.Model(&model.DeploymentTarget{}).Where("cluster_id = ?", cluster.ID).Count(&targetCount).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if environmentCount > 0 {
-		writeError(ctx, http.StatusConflict, "运行集群仍被环境引用，请先迁移或删除相关环境")
+	if targetCount > 0 {
+		writeError(ctx, http.StatusConflict, "运行集群仍被部署配置引用，请先迁移或删除相关部署配置")
 		return
 	}
 	if err := h.db.Transaction(func(tx *gorm.DB) error {

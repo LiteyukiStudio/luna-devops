@@ -1,7 +1,8 @@
 const clustersPage = {
-  description: 'Manage runtime clusters and Liteyuki-managed Kubernetes resources. Developers use clusters through environments and releases instead of maintaining cluster config directly.',
+  description: 'Manage runtime clusters and Liteyuki-managed Kubernetes resources. Developers use clusters through deploy configs and releases instead of maintaining cluster config directly.',
   dialogDescription: 'Save cluster basics, scope, and kubeconfig. Secrets are only stored by the backend.',
   defaultCluster: 'Default cluster',
+  runtimeCluster: 'Runtime cluster',
   runtimeClustersTab: 'Runtime clusters',
   namespacesTab: 'Namespaces',
   workloadsTab: 'Workloads',

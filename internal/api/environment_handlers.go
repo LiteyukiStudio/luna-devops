@@ -15,7 +15,7 @@ func (h *Handlers) ListEnvironments(ctx *gin.Context) {
 	}
 	var environments []model.Environment
 	query := h.db.Where("project_id = ?", ctx.Param("projectId")).Order("created_at desc")
-	query = applySearch(ctx, query, "name", "slug", "stage", "namespace")
+	query = applySearch(ctx, query, "name", "slug", "namespace")
 	if err := query.Find(&environments).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
@@ -69,7 +69,6 @@ func (h *Handlers) UpdateEnvironment(ctx *gin.Context) {
 	next := environmentFromInput(ctx.Param("projectId"), environment.CreatedBy, input, environment.ID)
 	environment.Name = next.Name
 	environment.Slug = next.Slug
-	environment.Stage = next.Stage
 	environment.ClusterID = next.ClusterID
 	environment.Namespace = next.Namespace
 	environment.Replicas = next.Replicas
@@ -149,7 +148,6 @@ func environmentFromInput(projectID, userID string, input environmentInput, envi
 		ProjectID:     projectID,
 		Name:          strings.TrimSpace(input.Name),
 		Slug:          slug,
-		Stage:         normalizeStage(input.Stage),
 		ClusterID:     strings.TrimSpace(input.ClusterID),
 		Namespace:     strings.TrimSpace(input.Namespace),
 		Replicas:      fallbackInt(input.Replicas, 1),
@@ -168,7 +166,6 @@ func defaultProductionEnvironment(projectID, userID string) model.Environment {
 		ProjectID:     projectID,
 		Name:          "Production",
 		Slug:          "prod",
-		Stage:         "prod",
 		Replicas:      1,
 		CPURequest:    "500m",
 		MemoryRequest: "512Mi",
@@ -200,7 +197,6 @@ func normalizeStage(value string) string {
 type environmentInput struct {
 	Name          string `json:"name" binding:"required"`
 	Slug          string `json:"slug" binding:"required"`
-	Stage         string `json:"stage"`
 	ClusterID     string `json:"clusterId"`
 	Namespace     string `json:"namespace"`
 	Replicas      int    `json:"replicas"`

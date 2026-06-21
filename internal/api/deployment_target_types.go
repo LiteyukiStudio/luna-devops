@@ -13,6 +13,12 @@ type deploymentTargetResponse struct {
 	ApplicationID        string                              `json:"applicationId"`
 	EnvironmentID        string                              `json:"environmentId"`
 	Name                 string                              `json:"name"`
+	Stage                string                              `json:"stage"`
+	ClusterID            string                              `json:"clusterId"`
+	Namespace            string                              `json:"namespace"`
+	Replicas             int                                 `json:"replicas"`
+	CPURequest           string                              `json:"cpuRequest"`
+	MemoryRequest        string                              `json:"memoryRequest"`
 	ServicePort          int                                 `json:"servicePort"`
 	SourceType           string                              `json:"sourceType"`
 	RepositoryBindingID  string                              `json:"repositoryBindingId"`
@@ -69,13 +75,19 @@ func deploymentTargetResponseFromModel(target model.DeploymentTarget) deployment
 		ApplicationID:        target.ApplicationID,
 		EnvironmentID:        target.EnvironmentID,
 		Name:                 target.Name,
+		Stage:                normalizeStage(target.Stage),
+		ClusterID:            target.ClusterID,
+		Namespace:            target.Namespace,
+		Replicas:             fallbackInt(target.Replicas, 1),
+		CPURequest:           fallback(strings.TrimSpace(target.CPURequest), "1"),
+		MemoryRequest:        fallback(strings.TrimSpace(target.MemoryRequest), "1Gi"),
 		ServicePort:          fallbackInt(target.ServicePort, 8080),
 		SourceType:           normalizeDeploymentSourceType(target.SourceType),
 		RepositoryBindingID:  target.RepositoryBindingID,
 		DockerfilePath:       target.DockerfilePath,
 		BuildContext:         target.BuildContext,
 		BuildDirectory:       target.BuildDirectory,
-		BuildEnvironmentID:   fallback(strings.TrimSpace(target.BuildEnvironmentID), target.EnvironmentID),
+		BuildEnvironmentID:   strings.TrimSpace(target.BuildEnvironmentID),
 		BuildCPURequest:      fallback(strings.TrimSpace(target.BuildCPURequest), defaultBuildCPURequest),
 		BuildMemoryRequest:   fallback(strings.TrimSpace(target.BuildMemoryRequest), defaultBuildMemoryRequest),
 		TargetRegistryID:     target.TargetRegistryID,
@@ -111,9 +123,37 @@ func deploymentTargetResponseFromModel(target model.DeploymentTarget) deployment
 	}
 }
 
+func deploymentTargetEnvironmentProfile(target model.DeploymentTarget) model.Environment {
+	environmentID := strings.TrimSpace(target.EnvironmentID)
+	if environmentID == "" {
+		environmentID = target.ID
+	}
+	replicas := target.Replicas
+	if replicas <= 0 {
+		replicas = 1
+	}
+	return model.Environment{
+		ID:            environmentID,
+		ProjectID:     target.ProjectID,
+		Name:          firstNonEmpty(strings.TrimSpace(target.Name), strings.TrimSpace(target.Stage), target.ID),
+		Slug:          firstNonEmpty(strings.TrimSpace(target.Stage), strings.TrimSpace(target.Name), "prod"),
+		ClusterID:     strings.TrimSpace(target.ClusterID),
+		Namespace:     strings.TrimSpace(target.Namespace),
+		Replicas:      replicas,
+		CPURequest:    fallback(strings.TrimSpace(target.CPURequest), "1"),
+		MemoryRequest: fallback(strings.TrimSpace(target.MemoryRequest), "1Gi"),
+	}
+}
+
 type deploymentTargetInput struct {
 	Name                 string                             `json:"name"`
-	EnvironmentID        string                             `json:"environmentId" binding:"required"`
+	EnvironmentID        string                             `json:"environmentId"`
+	Stage                string                             `json:"stage"`
+	ClusterID            string                             `json:"clusterId"`
+	Namespace            string                             `json:"namespace"`
+	Replicas             int                                `json:"replicas"`
+	CPURequest           string                             `json:"cpuRequest"`
+	MemoryRequest        string                             `json:"memoryRequest"`
 	ServicePort          int                                `json:"servicePort"`
 	SourceType           string                             `json:"sourceType"`
 	RepositoryBindingID  string                             `json:"repositoryBindingId"`

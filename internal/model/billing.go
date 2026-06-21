@@ -6,9 +6,9 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-type ProjectWallet struct {
+type UserWallet struct {
 	ID             string          `gorm:"primaryKey" json:"id"`
-	ProjectID      string          `gorm:"uniqueIndex;not null" json:"projectId"`
+	UserID         string          `gorm:"uniqueIndex;not null" json:"userId"`
 	BalanceCredits decimal.Decimal `gorm:"type:numeric(24,8);not null;default:0" json:"balanceCredits"`
 	CreatedAt      time.Time       `json:"createdAt"`
 	UpdatedAt      time.Time       `json:"updatedAt"`
@@ -28,6 +28,7 @@ type BillingRateRule struct {
 type BillingUsageRecord struct {
 	ID            string          `gorm:"primaryKey" json:"id"`
 	ProjectID     string          `gorm:"index;not null" json:"projectId"`
+	BilledUserID  string          `gorm:"index;not null;default:''" json:"billedUserId"`
 	ApplicationID string          `gorm:"index" json:"applicationId"`
 	Meter         string          `gorm:"uniqueIndex:idx_billing_usage_resource_meter;index;not null" json:"meter"`
 	Quantity      decimal.Decimal `gorm:"type:numeric(24,8);not null;default:0" json:"quantity"`
@@ -46,7 +47,8 @@ type BillingUsageRecord struct {
 
 type BillingLedgerEntry struct {
 	ID                  string          `gorm:"primaryKey" json:"id"`
-	ProjectID           string          `gorm:"index;not null" json:"projectId"`
+	UserID              string          `gorm:"index;not null;default:''" json:"userId"`
+	ProjectID           string          `gorm:"index;not null;default:''" json:"projectId"`
 	Type                string          `gorm:"index;not null" json:"type"`
 	AmountCredits       decimal.Decimal `gorm:"type:numeric(24,8);not null;default:0" json:"amountCredits"`
 	BalanceAfterCredits decimal.Decimal `gorm:"type:numeric(24,8);not null;default:0" json:"balanceAfterCredits"`

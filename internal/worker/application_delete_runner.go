@@ -46,15 +46,16 @@ func (r *Runner) cleanupApplicationRuntimeResources(ctx context.Context, payload
 	if err := r.db.First(&project, "id = ?", payload.ProjectID).Error; err != nil {
 		return fmt.Errorf("project not found: %w", err)
 	}
-	var environments []model.Environment
-	if err := r.db.Where("project_id = ?", payload.ProjectID).Find(&environments).Error; err != nil {
+	var targets []model.DeploymentTarget
+	if err := r.db.Where("project_id = ? and application_id = ?", payload.ProjectID, payload.ApplicationID).Find(&targets).Error; err != nil {
 		return err
 	}
 	kinds := []string{"services", "workloads", "configs"}
 	if payload.DeleteData {
 		kinds = append(kinds, "storage")
 	}
-	for _, environment := range environments {
+	for _, target := range targets {
+		environment := deploymentTargetEnvironment(target)
 		manager, err := r.kubernetesManager(environment)
 		if err != nil {
 			return err

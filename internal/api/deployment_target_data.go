@@ -168,12 +168,7 @@ func (h *Handlers) syncDeploymentTargetDataVolume(ctx *gin.Context, target model
 		writeError(ctx, http.StatusNotFound, "project not found")
 		return false
 	}
-	var environment model.Environment
-	if err := h.db.First(&environment, "id = ? and project_id = ?", target.EnvironmentID, target.ProjectID).Error; err != nil {
-		writeError(ctx, http.StatusNotFound, "environment not found")
-		return false
-	}
-	client, namespace, ok := h.kubernetesClientForEnvironment(ctx, project, environment, "运行集群不可用，无法同步运行数据容量")
+	client, namespace, ok := h.kubernetesClientForDeploymentTarget(ctx, project, target, "运行集群不可用，无法同步运行数据容量")
 	if !ok {
 		return false
 	}

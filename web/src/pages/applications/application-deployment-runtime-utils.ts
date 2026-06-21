@@ -1,4 +1,4 @@
-import type { ClusterResource, DeploymentTarget, Environment, RuntimeCluster } from '@/api/client'
+import type { ClusterResource, DeploymentTarget, RuntimeCluster } from '@/api/client'
 
 export interface DeploymentRuntimeStatus {
   clusterName?: string
@@ -15,13 +15,12 @@ export interface InternalServiceEndpointValue {
 
 export function buildDeploymentRuntimeStatus(
   target: DeploymentTarget,
-  environment: Environment | undefined,
   runtimeCluster: RuntimeCluster | undefined,
   resourcesByCluster: Record<string, ClusterResource[]>,
   loadingByCluster: Record<string, boolean>,
   errorByCluster: Record<string, boolean>,
 ): DeploymentRuntimeStatus {
-  const clusterId = environment?.clusterId?.trim() || runtimeCluster?.id
+  const clusterId = target.clusterId?.trim() || runtimeCluster?.id
   const clusterName = runtimeCluster?.name
   if (!clusterId)
     return { clusterName, podCount: 0, summary: '', value: 'not-configured' }
