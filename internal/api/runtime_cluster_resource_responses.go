@@ -1,6 +1,7 @@
 package api
 
 import (
+	"sort"
 	"strings"
 	"time"
 
@@ -163,6 +164,87 @@ func (h *Handlers) projectNamesByID(ids map[string]bool) (map[string]string, err
 		}
 	}
 	return names, nil
+}
+
+func sortClusterResourceResponses(items []clusterResourceResponse, pagination paginationParams) {
+	sortBy := normalizeClusterResourceSortBy(pagination.SortBy)
+	desc := pagination.SortOrder != "asc"
+	sort.SliceStable(items, func(i, j int) bool {
+		result := compareClusterResourceResponse(items[i], items[j], sortBy)
+		if result != 0 {
+			if desc {
+				return result > 0
+			}
+			return result < 0
+		}
+		return compareClusterResourceTieBreaker(items[i], items[j]) < 0
+	})
+}
+
+func normalizeClusterResourceSortBy(sortBy string) string {
+	switch strings.ToLower(strings.TrimSpace(sortBy)) {
+	case "kind", "name", "namespace", "status", "owner", "summary":
+		return strings.ToLower(strings.TrimSpace(sortBy))
+	case "createdat":
+		return "createdAt"
+	case "updatedat":
+		return "updatedAt"
+	default:
+		return "updatedAt"
+	}
+}
+
+func compareClusterResourceResponse(left clusterResourceResponse, right clusterResourceResponse, sortBy string) int {
+	switch sortBy {
+	case "kind":
+		return compareFold(left.Kind, right.Kind)
+	case "name":
+		return compareFold(left.Name, right.Name)
+	case "namespace":
+		return compareFold(left.Namespace, right.Namespace)
+	case "status":
+		return compareFold(left.Status, right.Status)
+	case "owner":
+		return compareFold(clusterResourceOwnerSortValue(left), clusterResourceOwnerSortValue(right))
+	case "summary":
+		return compareFold(left.Summary, right.Summary)
+	case "createdAt":
+		return compareTime(left.CreatedAt, right.CreatedAt)
+	default:
+		return compareTime(left.UpdatedAt, right.UpdatedAt)
+	}
+}
+
+func compareClusterResourceTieBreaker(left clusterResourceResponse, right clusterResourceResponse) int {
+	for _, result := range []int{
+		compareFold(left.Kind, right.Kind),
+		compareFold(left.Namespace, right.Namespace),
+		compareFold(left.Name, right.Name),
+	} {
+		if result != 0 {
+			return result
+		}
+	}
+	return 0
+}
+
+func clusterResourceOwnerSortValue(item clusterResourceResponse) string {
+	parts := []string{item.ProjectName, item.ApplicationName, item.DeploymentTargetName}
+	return strings.Join(parts, "/")
+}
+
+func compareFold(left string, right string) int {
+	return strings.Compare(strings.ToLower(strings.TrimSpace(left)), strings.ToLower(strings.TrimSpace(right)))
+}
+
+func compareTime(left time.Time, right time.Time) int {
+	if left.Before(right) {
+		return -1
+	}
+	if left.After(right) {
+		return 1
+	}
+	return 0
 }
 
 func (h *Handlers) applicationNamesByID(ids map[string]bool) (map[string]string, error) {

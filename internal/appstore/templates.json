@@ -6,6 +6,8 @@
     "description": "Relational database for application data, metadata, and transactional workloads.",
     "category": "database",
     "icon": "/app-templates/icons/postgresql.svg",
+    "officialWebsite": "https://www.postgresql.org/",
+    "officialRepository": "https://github.com/postgres/postgres",
     "popularityWeight": 100,
     "image": "postgres:16-alpine",
     "version": "16-alpine",
@@ -24,9 +26,25 @@
       "POSTGRES_PASSWORD": "{{password}}"
     },
     "values": [
-      { "key": "username", "label": "Username", "default": "app", "required": true },
-      { "key": "database", "label": "Database", "default": "app", "required": true },
-      { "key": "password", "label": "Password", "secret": true, "autoGenerate": true, "required": true }
+      {
+        "key": "username",
+        "label": "Username",
+        "default": "app",
+        "required": true
+      },
+      {
+        "key": "database",
+        "label": "Database",
+        "default": "app",
+        "required": true
+      },
+      {
+        "key": "password",
+        "label": "Password",
+        "secret": true,
+        "autoGenerate": true,
+        "required": true
+      }
     ]
   },
   {
@@ -36,6 +54,8 @@
     "description": "In-memory data store for cache, queues, and lightweight coordination.",
     "category": "database",
     "icon": "/app-templates/icons/redis.svg",
+    "officialWebsite": "https://redis.io/",
+    "officialRepository": "https://github.com/redis/redis",
     "popularityWeight": 95,
     "image": "redis:7-alpine",
     "version": "7-alpine",
@@ -55,6 +75,8 @@
     "description": "Redis-compatible in-memory data store for cache and lightweight queues.",
     "category": "cache",
     "icon": "/app-templates/icons/valkey.svg",
+    "officialWebsite": "https://valkey.io/",
+    "officialRepository": "https://github.com/valkey-io/valkey",
     "popularityWeight": 88,
     "image": "valkey/valkey:8-alpine",
     "version": "8-alpine",
@@ -74,6 +96,8 @@
     "description": "Classic relational database with a simple single-container setup.",
     "category": "database",
     "icon": "/app-templates/icons/mysql.svg",
+    "officialWebsite": "https://www.mysql.com/",
+    "officialRepository": "https://github.com/mysql/mysql-server",
     "popularityWeight": 90,
     "image": "mysql:8.4",
     "version": "8.4",
@@ -93,10 +117,32 @@
       "MYSQL_PASSWORD": "{{password}}"
     },
     "values": [
-      { "key": "database", "label": "Database", "default": "app", "required": true },
-      { "key": "username", "label": "Username", "default": "app", "required": true },
-      { "key": "rootPassword", "label": "Root password", "secret": true, "autoGenerate": true, "required": true },
-      { "key": "password", "label": "Password", "secret": true, "autoGenerate": true, "required": true }
+      {
+        "key": "database",
+        "label": "Database",
+        "default": "app",
+        "required": true
+      },
+      {
+        "key": "username",
+        "label": "Username",
+        "default": "app",
+        "required": true
+      },
+      {
+        "key": "rootPassword",
+        "label": "Root password",
+        "secret": true,
+        "autoGenerate": true,
+        "required": true
+      },
+      {
+        "key": "password",
+        "label": "Password",
+        "secret": true,
+        "autoGenerate": true,
+        "required": true
+      }
     ]
   },
   {
@@ -106,6 +152,8 @@
     "description": "Document database for JSON-like application data and flexible schemas.",
     "category": "database",
     "icon": "/app-templates/icons/mongodb.svg",
+    "officialWebsite": "https://www.mongodb.com/",
+    "officialRepository": "https://github.com/mongodb/mongo",
     "popularityWeight": 86,
     "image": "mongo:7",
     "version": "7",
@@ -123,8 +171,19 @@
       "MONGO_INITDB_ROOT_PASSWORD": "{{password}}"
     },
     "values": [
-      { "key": "username", "label": "Username", "default": "root", "required": true },
-      { "key": "password", "label": "Password", "secret": true, "autoGenerate": true, "required": true }
+      {
+        "key": "username",
+        "label": "Username",
+        "default": "root",
+        "required": true
+      },
+      {
+        "key": "password",
+        "label": "Password",
+        "secret": true,
+        "autoGenerate": true,
+        "required": true
+      }
     ]
   },
   {
@@ -134,6 +193,8 @@
     "description": "MySQL-compatible relational database with a lightweight single-container setup.",
     "category": "database",
     "icon": "/app-templates/icons/mariadb.svg",
+    "officialWebsite": "https://mariadb.org/",
+    "officialRepository": "https://github.com/MariaDB/server",
     "popularityWeight": 82,
     "image": "mariadb:11.4",
     "version": "11.4",
@@ -153,10 +214,32 @@
       "MARIADB_PASSWORD": "{{password}}"
     },
     "values": [
-      { "key": "database", "label": "Database", "default": "app", "required": true },
-      { "key": "username", "label": "Username", "default": "app", "required": true },
-      { "key": "rootPassword", "label": "Root password", "secret": true, "autoGenerate": true, "required": true },
-      { "key": "password", "label": "Password", "secret": true, "autoGenerate": true, "required": true }
+      {
+        "key": "database",
+        "label": "Database",
+        "default": "app",
+        "required": true
+      },
+      {
+        "key": "username",
+        "label": "Username",
+        "default": "app",
+        "required": true
+      },
+      {
+        "key": "rootPassword",
+        "label": "Root password",
+        "secret": true,
+        "autoGenerate": true,
+        "required": true
+      },
+      {
+        "key": "password",
+        "label": "Password",
+        "secret": true,
+        "autoGenerate": true,
+        "required": true
+      }
     ]
   },
   {
@@ -166,6 +249,8 @@
     "description": "Tiny memory cache service for simple high-speed key-value caching.",
     "category": "cache",
     "icon": "/app-templates/icons/memcached.svg",
+    "officialWebsite": "https://memcached.org/",
+    "officialRepository": "https://github.com/memcached/memcached",
     "popularityWeight": 74,
     "image": "memcached:1.6-alpine",
     "version": "1.6-alpine",
@@ -185,6 +270,8 @@
     "description": "Message broker for asynchronous jobs, events, and lightweight queues.",
     "category": "middleware",
     "icon": "/app-templates/icons/rabbitmq.svg",
+    "officialWebsite": "https://www.rabbitmq.com/",
+    "officialRepository": "https://github.com/rabbitmq/rabbitmq-server",
     "popularityWeight": 76,
     "image": "rabbitmq:3-management-alpine",
     "version": "3-management-alpine",
@@ -202,8 +289,19 @@
       "RABBITMQ_DEFAULT_PASS": "{{password}}"
     },
     "values": [
-      { "key": "username", "label": "Username", "default": "app", "required": true },
-      { "key": "password", "label": "Password", "secret": true, "autoGenerate": true, "required": true }
+      {
+        "key": "username",
+        "label": "Username",
+        "default": "app",
+        "required": true
+      },
+      {
+        "key": "password",
+        "label": "Password",
+        "secret": true,
+        "autoGenerate": true,
+        "required": true
+      }
     ]
   },
   {
@@ -213,6 +311,8 @@
     "description": "Lightweight full-text search engine with simple API-driven indexing.",
     "category": "search",
     "icon": "/app-templates/icons/meilisearch.svg",
+    "officialWebsite": "https://www.meilisearch.com/",
+    "officialRepository": "https://github.com/meilisearch/meilisearch",
     "popularityWeight": 72,
     "image": "getmeili/meilisearch:v1.13",
     "version": "v1.13",
@@ -227,7 +327,13 @@
       "MEILI_MASTER_KEY": "{{masterKey}}"
     },
     "values": [
-      { "key": "masterKey", "label": "Master key", "secret": true, "autoGenerate": true, "required": true }
+      {
+        "key": "masterKey",
+        "label": "Master key",
+        "secret": true,
+        "autoGenerate": true,
+        "required": true
+      }
     ]
   },
   {
@@ -237,6 +343,8 @@
     "description": "Metrics dashboard and visualization platform for observability data.",
     "category": "observability",
     "icon": "/app-templates/icons/grafana.svg",
+    "officialWebsite": "https://grafana.com/",
+    "officialRepository": "https://github.com/grafana/grafana",
     "popularityWeight": 84,
     "image": "grafana/grafana:latest",
     "version": "latest",
@@ -254,8 +362,19 @@
       "GF_SECURITY_ADMIN_PASSWORD": "{{password}}"
     },
     "values": [
-      { "key": "username", "label": "Username", "default": "admin", "required": true },
-      { "key": "password", "label": "Password", "secret": true, "autoGenerate": true, "required": true }
+      {
+        "key": "username",
+        "label": "Username",
+        "default": "admin",
+        "required": true
+      },
+      {
+        "key": "password",
+        "label": "Password",
+        "secret": true,
+        "autoGenerate": true,
+        "required": true
+      }
     ]
   },
   {
@@ -265,6 +384,8 @@
     "description": "Self-hosted uptime monitor for websites, APIs, and internal services.",
     "category": "observability",
     "icon": "/app-templates/icons/uptime-kuma.svg",
+    "officialWebsite": "https://github.com/louislam/uptime-kuma",
+    "officialRepository": "https://github.com/louislam/uptime-kuma",
     "popularityWeight": 80,
     "image": "louislam/uptime-kuma:1",
     "version": "1",
@@ -284,6 +405,8 @@
     "description": "Lightweight self-hosted notes and knowledge snippets for small teams.",
     "category": "collaboration",
     "icon": "/app-templates/icons/memos.svg",
+    "officialWebsite": "https://www.usememos.com/",
+    "officialRepository": "https://github.com/usememos/memos",
     "popularityWeight": 70,
     "image": "ghcr.io/usememos/memos:stable",
     "version": "stable",
@@ -303,6 +426,8 @@
     "description": "Handy browser-based utility toolbox for developers and operators.",
     "category": "developerTool",
     "icon": "/app-templates/icons/it-tools.svg",
+    "officialWebsite": "https://it-tools.tech/",
+    "officialRepository": "https://github.com/CorentinTh/it-tools",
     "popularityWeight": 68,
     "image": "corentinth/it-tools:latest",
     "version": "latest",
@@ -322,6 +447,8 @@
     "description": "Simple collaborative whiteboard for diagrams, sketches, and product notes.",
     "category": "collaboration",
     "icon": "/app-templates/icons/excalidraw.svg",
+    "officialWebsite": "https://excalidraw.com/",
+    "officialRepository": "https://github.com/excalidraw/excalidraw",
     "popularityWeight": 67,
     "image": "excalidraw/excalidraw:latest",
     "version": "latest",
@@ -341,6 +468,8 @@
     "description": "Private npm-compatible package registry for internal JavaScript packages.",
     "category": "registry",
     "icon": "/app-templates/icons/verdaccio.svg",
+    "officialWebsite": "https://verdaccio.org/",
+    "officialRepository": "https://github.com/verdaccio/verdaccio",
     "popularityWeight": 66,
     "image": "verdaccio/verdaccio:6",
     "version": "6",
@@ -360,6 +489,8 @@
     "description": "Private OCI image registry for internal container image distribution.",
     "category": "registry",
     "icon": "/app-templates/icons/docker-registry.svg",
+    "officialWebsite": "https://distribution.github.io/distribution/",
+    "officialRepository": "https://github.com/distribution/distribution",
     "popularityWeight": 65,
     "image": "registry:2",
     "version": "2",
@@ -379,6 +510,8 @@
     "description": "Web management console for PostgreSQL servers and databases.",
     "category": "databaseTool",
     "icon": "/app-templates/icons/pgadmin4.svg",
+    "officialWebsite": "https://www.pgadmin.org/",
+    "officialRepository": "https://github.com/pgadmin-org/pgadmin4",
     "popularityWeight": 64,
     "image": "dpage/pgadmin4:latest",
     "version": "latest",
@@ -396,8 +529,19 @@
       "PGADMIN_DEFAULT_PASSWORD": "{{password}}"
     },
     "values": [
-      { "key": "email", "label": "Email", "default": "admin@example.com", "required": true },
-      { "key": "password", "label": "Password", "secret": true, "autoGenerate": true, "required": true }
+      {
+        "key": "email",
+        "label": "Email",
+        "default": "admin@example.com",
+        "required": true
+      },
+      {
+        "key": "password",
+        "label": "Password",
+        "secret": true,
+        "autoGenerate": true,
+        "required": true
+      }
     ]
   },
   {
@@ -407,6 +551,8 @@
     "description": "Database schema change and review workflow for small engineering teams.",
     "category": "databaseTool",
     "icon": "/app-templates/icons/bytebase.svg",
+    "officialWebsite": "https://www.bytebase.com/",
+    "officialRepository": "https://github.com/bytebase/bytebase",
     "popularityWeight": 62,
     "image": "bytebase/bytebase:latest",
     "version": "latest",
@@ -426,6 +572,8 @@
     "description": "Lightweight S3-compatible object storage for project files and artifacts.",
     "category": "objectStorage",
     "icon": "/app-templates/icons/garage.svg",
+    "officialWebsite": "https://garagehq.deuxfleurs.fr/",
+    "officialRepository": "https://git.deuxfleurs.fr/Deuxfleurs/garage",
     "popularityWeight": 58,
     "image": "dxflrs/garage:v1.1.0",
     "version": "v1.1.0",
@@ -443,9 +591,27 @@
       }
     ],
     "values": [
-      { "key": "rpcSecret", "label": "RPC secret", "secret": true, "autoGenerate": true, "required": true },
-      { "key": "adminToken", "label": "Admin token", "secret": true, "autoGenerate": true, "required": true },
-      { "key": "metricsToken", "label": "Metrics token", "secret": true, "autoGenerate": true, "required": true }
+      {
+        "key": "rpcSecret",
+        "label": "RPC secret",
+        "secret": true,
+        "autoGenerate": true,
+        "required": true
+      },
+      {
+        "key": "adminToken",
+        "label": "Admin token",
+        "secret": true,
+        "autoGenerate": true,
+        "required": true
+      },
+      {
+        "key": "metricsToken",
+        "label": "Metrics token",
+        "secret": true,
+        "autoGenerate": true,
+        "required": true
+      }
     ]
   }
 ]

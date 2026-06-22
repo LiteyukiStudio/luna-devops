@@ -40,6 +40,19 @@ const clusterDefaults: ClusterForm = {
   type: 'kubernetes',
 }
 
+const RESOURCE_PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
+
+type ClusterResourcePagination = {
+  page: number
+  pageSize: number
+  total: number
+  totalPages: number
+  pageInfoLabel: string
+  pageSizeOptions: number[]
+  onPageChange: (page: number) => void
+  onPageSizeChange: (pageSize: number) => void
+}
+
 export function ClustersPage() {
   const { t } = useTranslation()
   const { user } = useSession()
@@ -54,6 +67,8 @@ export function ClustersPage() {
   const [yamlResource, setYamlResource] = useState<ClusterResource | null>(null)
   const [selectedResourceClusterId, setSelectedResourceClusterId] = useState('')
   const [selectedResourceKeys, setSelectedResourceKeys] = useState<string[]>([])
+  const [resourcePage, setResourcePage] = useState(1)
+  const [resourcePageSize, setResourcePageSize] = useState(10)
   const [selectedKubeconfigContext, setSelectedKubeconfigContext] = useState('')
   const projects = useQuery({ queryKey: ['projects'], queryFn: api.listProjects })
   const clusters = useQuery({ queryKey: ['runtime-clusters'], queryFn: () => api.listRuntimeClusters() })
@@ -63,11 +78,17 @@ export function ClustersPage() {
   const selectedResourceCluster = manageableClusters.find(cluster => cluster.id === effectiveResourceClusterId)
   const resourceKind = activeTab === 'clusters' ? 'namespaces' : activeTab
   const clusterResources = useQuery({
-    queryKey: ['runtime-cluster-resources', selectedResourceCluster?.id, resourceKind],
-    queryFn: () => api.listRuntimeClusterResources(selectedResourceCluster?.id ?? '', { kind: resourceKind }),
+    queryKey: ['runtime-cluster-resources', selectedResourceCluster?.id, resourceKind, resourcePage, resourcePageSize],
+    queryFn: () => api.listRuntimeClusterResourcesPage(selectedResourceCluster?.id ?? '', {
+      kind: resourceKind,
+      page: resourcePage,
+      pageSize: resourcePageSize,
+      sortBy: 'updatedAt',
+      sortOrder: 'desc',
+    }),
     enabled: activeTab !== 'clusters' && Boolean(selectedResourceCluster?.id),
   })
-  const activeResourceItems = useMemo(() => activeTab === 'clusters' ? [] : clusterResources.data ?? [], [activeTab, clusterResources.data])
+  const activeResourceItems = useMemo(() => activeTab === 'clusters' ? [] : clusterResources.data?.items ?? [], [activeTab, clusterResources.data?.items])
   const activeResourceKeySet = useMemo(() => new Set(activeResourceItems.map(item => item.id)), [activeResourceItems])
   const visibleSelectedResourceKeys = useMemo(() => selectedResourceKeys.filter(key => activeResourceKeySet.has(key)), [activeResourceKeySet, selectedResourceKeys])
   const selectedDeletableResources = useMemo(() => {
@@ -114,6 +135,11 @@ export function ClustersPage() {
     if (scope !== 'project')
       form.setValue('projectIds', [], { shouldDirty: true, shouldValidate: true })
   }, [form, scope])
+
+  useEffect(() => {
+    setResourcePage(1)
+    setSelectedResourceKeys([])
+  }, [activeTab, effectiveResourceClusterId])
 
   const saveCluster = useMutation({
     mutationFn: (values: ClusterForm) => {
@@ -229,6 +255,30 @@ export function ClustersPage() {
     saveCluster.mutate({ ...values, kubeconfig, maxConcurrentBuilds })
   }
 
+  const resourcePagination: ClusterResourcePagination | undefined = activeTab === 'clusters'
+    ? undefined
+    : {
+        page: clusterResources.data?.page ?? resourcePage,
+        pageSize: clusterResources.data?.pageSize ?? resourcePageSize,
+        pageInfoLabel: t('pagination.pageInfo', {
+          page: clusterResources.data?.page ?? resourcePage,
+          total: clusterResources.data?.total ?? 0,
+          totalPages: clusterResources.data?.totalPages ?? 0,
+        }),
+        pageSizeOptions: RESOURCE_PAGE_SIZE_OPTIONS,
+        total: clusterResources.data?.total ?? 0,
+        totalPages: clusterResources.data?.totalPages ?? 0,
+        onPageChange: (page) => {
+          setResourcePage(page)
+          setSelectedResourceKeys([])
+        },
+        onPageSizeChange: (pageSize) => {
+          setResourcePageSize(pageSize)
+          setResourcePage(1)
+          setSelectedResourceKeys([])
+        },
+      }
+
   return (
     <div className="grid gap-4">
       <ContentTabs
@@ -261,6 +311,7 @@ export function ClustersPage() {
                       value={effectiveResourceClusterId}
                       onChange={(event) => {
                         setSelectedResourceClusterId(event.target.value)
+                        setResourcePage(1)
                         setSelectedResourceKeys([])
                       }}
                     >
@@ -292,6 +343,7 @@ export function ClustersPage() {
         value={activeTab}
         onValueChange={(value) => {
           setActiveTab(value)
+          setResourcePage(1)
           setSelectedResourceKeys([])
         }}
       >
@@ -327,8 +379,9 @@ export function ClustersPage() {
         {['namespaces', 'workloads', 'services', 'configs', 'storage'].map(tab => (
           <TabsContent key={tab} value={tab}>
             <ClusterResourcesPanel
-              items={activeTab === tab ? clusterResources.data ?? [] : []}
+              items={activeTab === tab ? activeResourceItems : []}
               loading={activeTab === tab && clusterResources.isFetching}
+              pagination={activeTab === tab ? resourcePagination : undefined}
               selectedCluster={selectedResourceCluster}
               selectedResourceKeys={activeTab === tab ? selectedResourceKeys : []}
               tab={tab}
@@ -515,9 +568,10 @@ export function ClustersPage() {
   )
 }
 
-function ClusterResourcesPanel({ items, loading, selectedCluster, selectedResourceKeys, tab, user, onDeleteResource, onOpenEvents, onOpenYAML, onSelectionChange }: {
+function ClusterResourcesPanel({ items, loading, pagination, selectedCluster, selectedResourceKeys, tab, user, onDeleteResource, onOpenEvents, onOpenYAML, onSelectionChange }: {
   items: ClusterResource[]
   loading: boolean
+  pagination?: ClusterResourcePagination
   selectedCluster?: RuntimeCluster
   selectedResourceKeys: string[]
   tab: string
@@ -579,6 +633,7 @@ function ClusterResourcesPanel({ items, loading, selectedCluster, selectedResour
       emptyDescription={loading ? t('common.loading') : t('clustersPage.resourceEmptyDescription')}
       emptyTitle={loading ? t('common.loading') : t(`clustersPage.${tab}EmptyTitle`)}
       items={items}
+      pagination={pagination}
       rowKey={item => item.id}
       selection={{
         isRowSelectable: item => canDeleteClusterResource(user, item),

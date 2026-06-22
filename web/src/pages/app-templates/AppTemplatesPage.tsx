@@ -1,6 +1,7 @@
+import type { ReactNode } from 'react'
 import type { AppTemplate, AppTemplateInstallPayload, Project, RuntimeCluster } from '@/api/client'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Box, Database, PackageOpen, Rocket, Search } from 'lucide-react'
+import { Box, Database, ExternalLink, PackageOpen, Rocket, Search } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
@@ -65,7 +66,7 @@ export function AppTemplatesPage() {
       ? items
       : items.filter(template => template.category === category)
     const filtered = keyword
-      ? categoryFiltered.filter(template => [template.name, template.slug, template.image]
+      ? categoryFiltered.filter(template => [template.name, template.slug, template.image, template.officialWebsite, template.officialRepository]
           .some(value => value.toLowerCase().includes(keyword)))
       : categoryFiltered
     const direction = sortOrder === 'asc' ? 1 : -1
@@ -223,17 +224,63 @@ function TemplateCard({ template, onInstall }: { template: AppTemplate, onInstal
         <TemplateFact label={t('appTemplatesPage.port')} value={String(template.servicePort)} />
         <TemplateFact label={t('appTemplatesPage.resources')} value={`${template.defaultCPU} / ${template.defaultMemory}`} />
       </div>
-      <div className="mt-auto flex items-center justify-between gap-3">
-        <span className="inline-flex min-w-0 flex-1 items-center gap-1.5 text-xs text-muted-foreground" title={template.image}>
-          <CategoryIcon className="size-4 shrink-0" />
-          <span className="min-w-0 break-all font-mono">{template.image}</span>
-        </span>
-        <Button className="rounded-full" type="button" onClick={onInstall}>
-          <Rocket className="size-4" />
-          {t('appTemplatesPage.install')}
-        </Button>
+      <div className="mt-auto flex items-end justify-between gap-4">
+        <div className="grid min-w-0 flex-1 gap-1.5">
+          <div className="flex items-center gap-2">
+            <TemplateSourceLink
+              href={template.officialWebsite}
+              icon={<ExternalLink className="size-4" />}
+              label={t('appTemplatesPage.officialWebsite')}
+            />
+            <TemplateSourceLink
+              href={template.officialRepository}
+              icon={<GithubMark className="size-4" />}
+              label={t('appTemplatesPage.officialRepository')}
+            />
+          </div>
+          <span className="inline-flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground" title={template.image}>
+            <CategoryIcon className="size-4 shrink-0" />
+            <span className="min-w-0 truncate font-mono">{template.image}</span>
+          </span>
+        </div>
+        <div className="shrink-0">
+          <Button className="rounded-full" type="button" onClick={onInstall}>
+            <Rocket className="size-4" />
+            {t('appTemplatesPage.install')}
+          </Button>
+        </div>
       </div>
     </Card>
+  )
+}
+
+function TemplateSourceLink({ href, icon, label }: { href: string, icon: ReactNode, label: string }) {
+  if (!href)
+    return null
+  return (
+    <a
+      aria-label={label}
+      className="inline-flex size-4 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:text-primary focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      href={href}
+      rel="noreferrer"
+      target="_blank"
+      title={label}
+    >
+      {icon}
+    </a>
+  )
+}
+
+function GithubMark({ className }: { className?: string }) {
+  return (
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.84 9.72.5.09.68-.22.68-.49v-1.9c-2.78.62-3.37-1.22-3.37-1.22-.45-1.19-1.11-1.5-1.11-1.5-.91-.64.07-.63.07-.63 1 .07 1.53 1.06 1.53 1.06.89 1.56 2.34 1.11 2.91.85.09-.66.35-1.11.63-1.37-2.22-.26-4.56-1.14-4.56-5.06 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.28 2.75 1.05A9.3 9.3 0 0 1 12 6.98c.85 0 1.7.12 2.5.34 1.91-1.33 2.75-1.05 2.75-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.93-2.34 4.79-4.57 5.05.36.32.68.95.68 1.91v2.79c0 .27.18.59.69.49A10.12 10.12 0 0 0 22 12.25C22 6.58 17.52 2 12 2Z" />
+    </svg>
   )
 }
 

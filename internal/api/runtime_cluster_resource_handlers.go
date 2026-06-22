@@ -57,6 +57,13 @@ func (h *Handlers) ListRuntimeClusterResources(ctx *gin.Context) {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
+	if paginationRequested(ctx) {
+		pagination := paginationFromQuery(ctx)
+		pagination.SortBy = normalizeClusterResourceSortBy(pagination.SortBy)
+		sortClusterResourceResponses(responses, pagination)
+		ctx.JSON(http.StatusOK, paginatedResponse(paginateSlice(responses, pagination), int64(len(responses)), pagination))
+		return
+	}
 	ctx.JSON(http.StatusOK, responses)
 }
 

@@ -68,6 +68,7 @@ import type {
   RepositoryBinding,
   RepositoryBindingPayload,
   RuntimeCluster,
+  RuntimeClusterResourceListParams,
   User,
 } from './types'
 
@@ -147,6 +148,7 @@ export type {
   RepositoryBinding,
   RepositoryBindingPayload,
   RuntimeCluster,
+  RuntimeClusterResourceListParams,
   User,
 } from './types'
 
@@ -218,6 +220,20 @@ function buildRunListQuery(params: BuildRunListParams) {
     search.set('sourceBranch', params.sourceBranch)
   if (params.createdBy)
     search.set('createdBy', params.createdBy)
+  return search.toString()
+}
+
+function runtimeClusterResourceListQuery(params: RuntimeClusterResourceListParams) {
+  const search = new URLSearchParams(paginationQuery(params))
+  search.set('kind', params.kind)
+  if (params.namespace)
+    search.set('namespace', params.namespace)
+  if (params.projectId)
+    search.set('projectId', params.projectId)
+  if (params.applicationId)
+    search.set('applicationId', params.applicationId)
+  if (params.environmentId)
+    search.set('environmentId', params.environmentId)
   return search.toString()
 }
 
@@ -680,6 +696,8 @@ export const api = {
       search.set('environmentId', params.environmentId)
     return request<ClusterResource[]>(`/runtime/clusters/${clusterId}/resources?${search.toString()}`)
   },
+  listRuntimeClusterResourcesPage: (clusterId: string, params: RuntimeClusterResourceListParams) =>
+    request<PaginatedResponse<ClusterResource>>(`/runtime/clusters/${clusterId}/resources?${runtimeClusterResourceListQuery(params)}`),
   listRuntimeClusterResourceEvents: (clusterId: string, params: { kind: string, namespace?: string, name: string }) => {
     const search = new URLSearchParams({ kind: params.kind, name: params.name })
     if (params.namespace)

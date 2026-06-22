@@ -20,6 +20,8 @@ type Template struct {
 	Description          string            `json:"description"`
 	Category             string            `json:"category"`
 	Icon                 string            `json:"icon"`
+	OfficialWebsite      string            `json:"officialWebsite"`
+	OfficialRepository   string            `json:"officialRepository"`
 	PopularityWeight     int               `json:"popularityWeight"`
 	Image                string            `json:"image"`
 	Version              string            `json:"version"`
@@ -70,6 +72,13 @@ func Catalog() ([]Template, error) {
 	var templates []Template
 	if err := json.Unmarshal(content, &templates); err != nil {
 		return nil, err
+	}
+	for index := range templates {
+		templates[index].OfficialWebsite = strings.TrimSpace(templates[index].OfficialWebsite)
+		templates[index].OfficialRepository = strings.TrimSpace(templates[index].OfficialRepository)
+		if templates[index].OfficialWebsite == "" {
+			templates[index].OfficialWebsite = templates[index].OfficialRepository
+		}
 	}
 	return templates, nil
 }

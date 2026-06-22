@@ -37,6 +37,8 @@ const appTemplatesPage = {
   installNow: 'Deploy after install',
   installNowDescription: 'When disabled, the application and deployment target are created only. You can release manually from the application deployment page.',
   image: 'Image',
+  officialWebsite: 'Official Website',
+  officialRepository: 'Official Repository',
   port: 'Port',
   resources: 'Resources',
   categories: {
@@ -69,61 +71,61 @@ const appTemplatesPage = {
     email: 'Email',
   },
   templates: {
-    redis: {
+    'redis': {
       description: 'In-memory data store for cache, queues, and lightweight coordination.',
     },
-    postgresql: {
+    'postgresql': {
       description: 'Relational database for application data, metadata, and transactional workloads.',
     },
-    mysql: {
+    'mysql': {
       description: 'Classic relational database with a simple single-container setup.',
     },
-    mongodb: {
+    'mongodb': {
       description: 'Document database for JSON-like application data and flexible schemas.',
     },
-    mariadb: {
+    'mariadb': {
       description: 'MySQL-compatible relational database with a lightweight single-container setup.',
     },
-    valkey: {
+    'valkey': {
       description: 'Redis-compatible in-memory data store for cache and lightweight queues.',
     },
-    memcached: {
+    'memcached': {
       description: 'Tiny memory cache service for simple high-speed key-value caching.',
     },
-    rabbitmq: {
+    'rabbitmq': {
       description: 'Message broker for asynchronous jobs, events, and lightweight queues.',
     },
-    meilisearch: {
+    'meilisearch': {
       description: 'Lightweight full-text search engine for application search and indexing.',
     },
-    grafana: {
+    'grafana': {
       description: 'Metrics dashboard and visualization platform for observability data.',
     },
     'uptime-kuma': {
       description: 'Self-hosted uptime monitor for websites, APIs, and internal services.',
     },
-    memos: {
+    'memos': {
       description: 'Lightweight self-hosted notes and knowledge snippets for small teams.',
     },
     'it-tools': {
       description: 'Handy browser-based utility toolbox for developers and operators.',
     },
-    excalidraw: {
+    'excalidraw': {
       description: 'Simple whiteboard for diagrams, sketches, and product notes.',
     },
-    verdaccio: {
+    'verdaccio': {
       description: 'Private npm-compatible package registry for internal JavaScript packages.',
     },
     'docker-registry': {
       description: 'Private OCI image registry for internal container image distribution.',
     },
-    pgadmin4: {
+    'pgadmin4': {
       description: 'Web management console for PostgreSQL servers and databases.',
     },
-    bytebase: {
+    'bytebase': {
       description: 'Database schema change and review workflow for small engineering teams.',
     },
-    garage: {
+    'garage': {
       description: 'Lightweight S3-compatible object storage for project files and artifacts.',
     },
   },

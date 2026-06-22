@@ -10,6 +10,8 @@ Installing a template creates:
 - Template-defined config files and secret files; sensitive files are written into Kubernetes Secrets.
 - An optional first Release; deployment is enabled by default.
 
+Template cards show the image, official website, and official repository together so you can quickly verify the source before installing. Apps without a separate website use their official repository as the website link.
+
 Secret parameters are written to the platform secret store. Deployment targets keep secret references only, and plaintext values are not echoed back to the frontend.
 
 ## Install Flow
@@ -22,7 +24,7 @@ Secret parameters are written to the platform secret store. Deployment targets k
 
 After a successful install, the page navigates to the new application's deployment tab.
 
-The template list supports category filtering, template name or image search, and sorting by popularity weight or name in ascending or descending order. The default view sorts by platform-defined popularity weight descending. Built-in templates intentionally skip PHP applications such as Adminer and phpMyAdmin for now.
+The template list supports category filtering, search by template name, image, website, or repository, and sorting by popularity weight or name. Built-in templates intentionally skip PHP applications such as Adminer and phpMyAdmin for now.
 
 ## Current Limits
 

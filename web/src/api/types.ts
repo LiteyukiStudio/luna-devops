@@ -63,6 +63,8 @@ export interface AppTemplate {
   description: string
   category: string
   icon: string
+  officialWebsite: string
+  officialRepository: string
   popularityWeight: number
   image: string
   version: string
@@ -581,6 +583,14 @@ export interface ClusterResourceEvent {
 
 export interface ClusterResourceYAML {
   yaml: string
+}
+
+export interface RuntimeClusterResourceListParams extends PaginationParams {
+  kind: string
+  namespace?: string
+  projectId?: string
+  applicationId?: string
+  environmentId?: string
 }
 
 export interface Release {

@@ -37,6 +37,8 @@ const appTemplatesPage = {
   installNow: '安装后立即部署',
   installNowDescription: '关闭后只创建应用和部署配置，之后可在应用部署页手动发布。',
   image: '镜像',
+  officialWebsite: '官方网站',
+  officialRepository: '官方仓库',
   port: '端口',
   resources: '资源',
   categories: {
@@ -69,61 +71,61 @@ const appTemplatesPage = {
     email: '邮箱',
   },
   templates: {
-    redis: {
+    'redis': {
       description: '用于缓存、队列和轻量协调的内存数据存储。',
     },
-    postgresql: {
+    'postgresql': {
       description: '适合应用数据、元数据和事务型场景的关系型数据库。',
     },
-    mysql: {
+    'mysql': {
       description: '经典关系型数据库，使用单容器快速安装。',
     },
-    mongodb: {
+    'mongodb': {
       description: '面向 JSON 类数据和灵活 schema 的文档数据库。',
     },
-    mariadb: {
+    'mariadb': {
       description: '兼容 MySQL 的关系型数据库，适合轻量单容器运行。',
     },
-    valkey: {
+    'valkey': {
       description: '兼容 Redis 的内存数据存储，适合缓存和轻量队列。',
     },
-    memcached: {
+    'memcached': {
       description: '极简高速内存缓存服务，适合简单 key-value 缓存。',
     },
-    rabbitmq: {
+    'rabbitmq': {
       description: '用于异步任务、事件和轻量消息队列的消息中间件。',
     },
-    meilisearch: {
+    'meilisearch': {
       description: '轻量全文搜索引擎，适合应用内搜索和索引场景。',
     },
-    grafana: {
+    'grafana': {
       description: '指标仪表盘和可视化平台，适合监控数据展示。',
     },
     'uptime-kuma': {
       description: '自托管可用性监控，用于站点、API 和内部服务巡检。',
     },
-    memos: {
+    'memos': {
       description: '小团队自托管笔记和知识片段工具。',
     },
     'it-tools': {
       description: '浏览器里的开发和运维小工具集合。',
     },
-    excalidraw: {
+    'excalidraw': {
       description: '简单易用的白板工具，适合画图、草图和产品说明。',
     },
-    verdaccio: {
+    'verdaccio': {
       description: '私有 npm 兼容包仓库，适合内部 JavaScript 包分发。',
     },
     'docker-registry': {
       description: '私有 OCI 镜像仓库，适合内部容器镜像分发。',
     },
-    pgadmin4: {
+    'pgadmin4': {
       description: 'PostgreSQL 的 Web 管理控制台。',
     },
-    bytebase: {
+    'bytebase': {
       description: '面向小团队的数据库变更、评审和发布工作流。',
     },
-    garage: {
+    'garage': {
       description: '轻量 S3 兼容对象存储，适合项目文件和构建产物存放。',
     },
   },
