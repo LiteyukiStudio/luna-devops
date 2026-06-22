@@ -58,6 +58,17 @@ FROM projects
 WHERE usage.project_id = projects.id
   AND usage.billed_user_id = '';
 
+UPDATE billing_usage_records AS usage
+SET billed_user_id = owners.user_id
+FROM (
+  SELECT DISTINCT ON (project_id) project_id, user_id
+  FROM project_members
+  WHERE role = 'owner'
+  ORDER BY project_id, created_at ASC
+) AS owners
+WHERE usage.project_id = owners.project_id
+  AND usage.billed_user_id = '';
+
 ALTER TABLE billing_ledger_entries
   ADD COLUMN IF NOT EXISTS user_id text NOT NULL DEFAULT '';
 
@@ -72,6 +83,17 @@ UPDATE billing_ledger_entries AS ledger
 SET user_id = projects.billing_owner_user_id
 FROM projects
 WHERE ledger.project_id = projects.id
+  AND ledger.user_id = '';
+
+UPDATE billing_ledger_entries AS ledger
+SET user_id = owners.user_id
+FROM (
+  SELECT DISTINCT ON (project_id) project_id, user_id
+  FROM project_members
+  WHERE role = 'owner'
+  ORDER BY project_id, created_at ASC
+) AS owners
+WHERE ledger.project_id = owners.project_id
   AND ledger.user_id = '';
 
 DROP INDEX IF EXISTS idx_billing_ledger_entries_project_idempotency;

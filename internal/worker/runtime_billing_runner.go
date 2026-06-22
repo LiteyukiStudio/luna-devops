@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/billing"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/hibiken/asynq"
+	"gorm.io/gorm"
 )
 
 const runtimeBillingLookbackHours = 6
@@ -97,9 +99,35 @@ func (r *Runner) runtimeBillingTargetContext(target model.DeploymentTarget) (mod
 		Where("project_id = ? and application_id = ? and deployment_target_id = ? and status in ?", target.ProjectID, target.ApplicationID, target.ID, []string{"running", "succeeded"}).
 		Order("created_at desc").
 		First(&release).Error; err != nil {
-		return environment, release, false
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return environment, release, false
+		}
+		if !r.canUseLegacyReleaseForRuntimeBilling(target) {
+			return environment, release, false
+		}
+		query := r.db.
+			Where("project_id = ? and application_id = ? and deployment_target_id = ? and status in ?", target.ProjectID, target.ApplicationID, "", []string{"running", "succeeded"})
+		if strings.TrimSpace(target.EnvironmentID) != "" {
+			query = query.Where("environment_id = ?", strings.TrimSpace(target.EnvironmentID))
+		}
+		if err := query.Order("created_at desc").First(&release).Error; err != nil {
+			return environment, release, false
+		}
 	}
 	return environment, release, true
+}
+
+func (r *Runner) canUseLegacyReleaseForRuntimeBilling(target model.DeploymentTarget) bool {
+	query := r.db.Model(&model.DeploymentTarget{}).
+		Where("project_id = ? and application_id = ? and enabled = ? and delete_status = ?", target.ProjectID, target.ApplicationID, true, "active")
+	if strings.TrimSpace(target.EnvironmentID) != "" {
+		query = query.Where("environment_id = ?", strings.TrimSpace(target.EnvironmentID))
+	}
+	var count int64
+	if err := query.Count(&count).Error; err != nil {
+		return false
+	}
+	return count == 1
 }
 
 func runtimeBillingReleaseStart(release model.Release) time.Time {

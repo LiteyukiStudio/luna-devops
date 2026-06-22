@@ -70,6 +70,9 @@ func Migrate(db *gorm.DB) error {
 	if err := migrateUserBillingOwnership(db); err != nil {
 		return err
 	}
+	if err := backfillReleaseDeploymentTargets(db); err != nil {
+		return err
+	}
 	return (billing.Service{DB: db}).EnsureDefaultRateRules()
 }
 
@@ -137,10 +140,30 @@ SET billed_user_id = projects.billing_owner_user_id
 FROM projects
 WHERE usage.project_id = projects.id
   AND usage.billed_user_id = ''`,
+		`UPDATE billing_usage_records AS usage
+SET billed_user_id = owners.user_id
+FROM (
+  SELECT DISTINCT ON (project_id) project_id, user_id
+  FROM project_members
+  WHERE role = 'owner'
+  ORDER BY project_id, created_at ASC
+) AS owners
+WHERE usage.project_id = owners.project_id
+  AND usage.billed_user_id = ''`,
 		`UPDATE billing_ledger_entries AS ledger
 SET user_id = projects.billing_owner_user_id
 FROM projects
 WHERE ledger.project_id = projects.id
+  AND ledger.user_id = ''`,
+		`UPDATE billing_ledger_entries AS ledger
+SET user_id = owners.user_id
+FROM (
+  SELECT DISTINCT ON (project_id) project_id, user_id
+  FROM project_members
+  WHERE role = 'owner'
+  ORDER BY project_id, created_at ASC
+) AS owners
+WHERE ledger.project_id = owners.project_id
   AND ledger.user_id = ''`,
 		`ALTER TABLE billing_ledger_entries
 ALTER COLUMN project_id DROP NOT NULL`,
@@ -151,4 +174,29 @@ ALTER COLUMN project_id SET DEFAULT ''`,
 ON billing_ledger_entries(user_id, idempotency_key)
 WHERE idempotency_key <> ''`,
 	}
+}
+
+func backfillReleaseDeploymentTargets(db *gorm.DB) error {
+	statement := `UPDATE releases AS rel
+SET deployment_target_id = target.id
+FROM deployment_targets AS target
+WHERE rel.deployment_target_id = ''
+  AND rel.project_id = target.project_id
+  AND rel.application_id = target.application_id
+  AND rel.environment_id = target.environment_id
+  AND target.enabled = true
+  AND target.delete_status = 'active'
+  AND (
+    SELECT COUNT(*)
+    FROM deployment_targets AS candidate
+    WHERE candidate.project_id = rel.project_id
+      AND candidate.application_id = rel.application_id
+      AND candidate.environment_id = rel.environment_id
+      AND candidate.enabled = true
+      AND candidate.delete_status = 'active'
+  ) = 1`
+	if err := db.Exec(statement).Error; err != nil {
+		return fmt.Errorf("backfill release deployment targets: %w", err)
+	}
+	return nil
 }
