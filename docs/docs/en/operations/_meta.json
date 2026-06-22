@@ -6,6 +6,11 @@
   },
   {
     "type": "file",
+    "name": "deploy-web-project",
+    "label": "Deploy a Web Project"
+  },
+  {
+    "type": "file",
     "name": "configuration",
     "label": "Settings and Connections"
   },

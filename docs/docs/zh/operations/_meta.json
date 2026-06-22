@@ -6,6 +6,11 @@
   },
   {
     "type": "file",
+    "name": "deploy-web-project",
+    "label": "部署上线一个 Web 项目"
+  },
+  {
+    "type": "file",
     "name": "configuration",
     "label": "配置与连接"
   },

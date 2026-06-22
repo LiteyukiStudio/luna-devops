@@ -2,6 +2,8 @@
 
 Liteyuki DevOps connects code, images, clusters, and routes into one delivery path. You do not need to understand every underlying component before using it.
 
+For a click-through walkthrough, see [Deploy a Web Project](/en/operations/deploy-web-project). It uses `snowykami/neo-blog` as the example and covers project space, applications, deployment targets, builds, releases, and the public route.
+
 ## Project spaces
 
 A project space is the boundary for teams and resources. Members, applications, deploy configs, build records, releases, and routes all belong to a project space.
