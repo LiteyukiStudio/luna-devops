@@ -31,6 +31,8 @@ const clusterDefaults: ClusterForm = {
   endpoint: '',
   isDefault: false,
   kubeconfig: '',
+  gatewayPublicScheme: 'http',
+  gatewayRootDomain: 'apps.local',
   maxConcurrentBuilds: 4,
   name: '',
   ownerRef: '',
@@ -42,7 +44,7 @@ const clusterDefaults: ClusterForm = {
 
 const RESOURCE_PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
 
-type ClusterResourcePagination = {
+interface ClusterResourcePagination {
   page: number
   pageSize: number
   total: number
@@ -224,6 +226,8 @@ export function ClustersPage() {
           endpoint: cluster.endpoint,
           isDefault: cluster.isDefault,
           kubeconfig: '',
+          gatewayPublicScheme: cluster.gatewayPublicScheme || 'http',
+          gatewayRootDomain: cluster.gatewayRootDomain || 'apps.local',
           maxConcurrentBuilds: cluster.maxConcurrentBuilds || 4,
           name: cluster.name,
           ownerRef: cluster.ownerRef,
@@ -361,6 +365,8 @@ export function ClustersPage() {
               { key: 'scope', header: t('common.scope'), render: item => scopeLabel(item, projectMap, t) },
               { key: 'default', header: t('clustersPage.defaultCluster'), render: item => item.isDefault ? t('common.yes') : t('common.no') },
               { key: 'buildConcurrency', header: t('clustersPage.maxConcurrentBuilds'), render: item => item.maxConcurrentBuilds || 4 },
+              { key: 'gatewayRootDomain', header: t('clustersPage.gatewayRootDomain'), render: item => item.gatewayRootDomain || 'apps.local' },
+              { key: 'gatewayPublicScheme', header: t('clustersPage.gatewayPublicScheme'), render: item => item.gatewayPublicScheme || 'http' },
               { key: 'status', header: t('common.status'), render: item => <StatusValueBadge value={item.status} /> },
               { key: 'actions', header: t('common.actions'), className: 'text-right whitespace-nowrap', render: item => (
                 canManageCluster(item, user?.id, user?.role)
@@ -440,6 +446,15 @@ export function ClustersPage() {
                     placeholder="4"
                     type="number"
                   />
+                </Field>
+                <Field hint={t('clustersPage.gatewayRootDomainHint')} label={t('clustersPage.gatewayRootDomain')} required>
+                  <Input {...form.register('gatewayRootDomain', { required: true })} placeholder="apps.example.com" />
+                </Field>
+                <Field hint={t('clustersPage.gatewayPublicSchemeHint')} label={t('clustersPage.gatewayPublicScheme')} required>
+                  <Select {...form.register('gatewayPublicScheme')}>
+                    <option value="http">http</option>
+                    <option value="https">https</option>
+                  </Select>
                 </Field>
                 <Field hint={canEditKubeconfig ? t('clustersPage.kubeconfigHint') : t('clustersPage.kubeconfigRestrictedHint')} label={t('deploymentsPage.kubeconfig')} required={!editingCluster}>
                   <Controller

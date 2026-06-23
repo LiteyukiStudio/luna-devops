@@ -94,6 +94,8 @@ func (h *Handlers) UpdateRuntimeCluster(ctx *gin.Context) {
 	}
 	existing.IsDefault = next.IsDefault
 	existing.MaxConcurrentBuilds = next.MaxConcurrentBuilds
+	existing.GatewayRootDomain = next.GatewayRootDomain
+	existing.GatewayPublicScheme = next.GatewayPublicScheme
 	existing.Status = next.Status
 	if err := h.saveRuntimeClusterWithDefault(existing); err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())

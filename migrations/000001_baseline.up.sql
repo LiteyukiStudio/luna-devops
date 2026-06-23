@@ -555,6 +555,8 @@ CREATE TABLE IF NOT EXISTS runtime_clusters (
   kubeconfig_ref text NOT NULL DEFAULT '',
   is_default boolean NOT NULL DEFAULT false,
   max_concurrent_builds integer NOT NULL DEFAULT 4,
+  gateway_root_domain text NOT NULL DEFAULT 'apps.local',
+  gateway_public_scheme text NOT NULL DEFAULT 'http',
   status text NOT NULL DEFAULT 'unknown',
   last_checked_at timestamptz,
   created_by text NOT NULL DEFAULT '',

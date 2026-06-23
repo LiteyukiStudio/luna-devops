@@ -29,3 +29,20 @@ func TestGatewayRouteAccessURLOmitsRootPath(t *testing.T) {
 		t.Fatalf("access url = %q", got)
 	}
 }
+
+func TestNormalizeGatewayHostUsesClusterRootDomain(t *testing.T) {
+	h := &Handlers{configs: &configCache{values: map[string]string{}}}
+	cluster := model.RuntimeCluster{GatewayRootDomain: "Apps.Example.Com."}
+
+	if got := h.normalizeGatewayHost("demo", cluster); got != "demo.apps.example.com" {
+		t.Fatalf("host = %q", got)
+	}
+}
+
+func TestGatewayRootDomainFallsBackToLegacyConfig(t *testing.T) {
+	h := &Handlers{configs: &configCache{values: map[string]string{"gateway.rootDomain": "legacy.example.com"}}}
+
+	if got := h.gatewayRootDomain(model.RuntimeCluster{}); got != "legacy.example.com" {
+		t.Fatalf("root domain = %q", got)
+	}
+}

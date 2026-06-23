@@ -21,7 +21,7 @@ OIDC identity provider Redirect URI is generated from `PUBLIC_BASE_URL`, and the
 
 Before login, the frontend picks the first supported language from the browser language preference list. The supported languages are currently `zh-CN` and `en-US`. After login, the account language preference wins and is cached locally so the next page load uses the same language immediately.
 
-The public route link scheme is managed in Admin Settings / Gateway as `gateway.publicScheme`, defaulting to `http`. Set it to `https` when an outer CDN or reverse proxy already terminates HTTPS. It only changes console display and link targets; it does not request certificates.
+Default access-route domain suffixes and public link schemes are managed on runtime clusters. Different clusters can use different ingress domain suffixes. A deployment target's cluster decides how default domains, short-host expansion, and console access links are generated. Set a cluster's public link scheme to `https` when an outer CDN or reverse proxy already terminates HTTPS; this only changes console display and link targets, and does not request certificates.
 
 ## Worker Settings
 

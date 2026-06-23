@@ -543,6 +543,8 @@ export interface RuntimeCluster {
   kubeconfigSet: boolean
   isDefault: boolean
   maxConcurrentBuilds: number
+  gatewayRootDomain: string
+  gatewayPublicScheme: 'http' | 'https'
   status: string
   lastCheckedAt?: string
   createdBy: string

@@ -42,6 +42,8 @@ func (h *Handlers) runtimeClusterFromInput(ctx *gin.Context, user model.User, in
 		KubeconfigRef:       kubeconfigRef,
 		IsDefault:           input.IsDefault,
 		MaxConcurrentBuilds: normalizeBuildConcurrency(input.MaxConcurrentBuilds, defaultClusterBuildConcurrency),
+		GatewayRootDomain:   normalizeGatewayRootDomain(input.GatewayRootDomain, h.legacyGatewayRootDomain()),
+		GatewayPublicScheme: normalizeGatewayPublicScheme(input.GatewayPublicScheme),
 		Status:              fallback(strings.TrimSpace(input.Status), "unknown"),
 		CreatedBy:           user.ID,
 	}, true
@@ -100,5 +102,25 @@ type runtimeClusterInput struct {
 	Kubeconfig          string   `json:"kubeconfig"`
 	IsDefault           bool     `json:"isDefault"`
 	MaxConcurrentBuilds int      `json:"maxConcurrentBuilds"`
+	GatewayRootDomain   string   `json:"gatewayRootDomain"`
+	GatewayPublicScheme string   `json:"gatewayPublicScheme"`
 	Status              string   `json:"status"`
+}
+
+func normalizeGatewayRootDomain(value string, fallbackValue string) string {
+	rootDomain := strings.Trim(strings.ToLower(strings.TrimSpace(value)), ".")
+	if rootDomain == "" {
+		rootDomain = strings.Trim(strings.ToLower(strings.TrimSpace(fallbackValue)), ".")
+	}
+	if rootDomain == "" {
+		return "apps.local"
+	}
+	return rootDomain
+}
+
+func normalizeGatewayPublicScheme(value string) string {
+	if strings.ToLower(strings.TrimSpace(value)) == "https" {
+		return "https"
+	}
+	return "http"
 }

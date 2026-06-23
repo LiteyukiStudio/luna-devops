@@ -2,7 +2,6 @@ const settings = {
   siteDescription: '管理公开站点配置和后端出网安全策略。',
   siteSaved: '站点配置已保存',
   siteConfigTitle: '品牌信息',
-  gatewayConfigTitle: '网关配置',
   securityEgressTitle: '安全策略',
   billingConfigTitle: '计费配置',
   configDefinitionsFailedTitle: '配置定义加载失败',

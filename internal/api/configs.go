@@ -58,23 +58,6 @@ var configDefinitions = []configDefinition{
 		Default:     "使用本地账号登录控制台",
 	},
 	{
-		Key:         "gateway.rootDomain",
-		Label:       "默认域名后缀",
-		Description: "平台生成默认应用域名时使用的根域名后缀，例如 apps.example.com。用户也可以在域名表单中填写完整自定义域名。",
-		Type:        "string",
-		Public:      false,
-		Default:     "apps.local",
-	},
-	{
-		Key:         "gateway.publicScheme",
-		Label:       "访问链接协议",
-		Description: "控制台展示和打开访问入口时使用的默认协议。外层 CDN 已经提供 HTTPS 时可选择 https；这不会让平台自动申请证书。",
-		Type:        "select",
-		Public:      false,
-		Default:     "http",
-		Options:     []string{"http", "https"},
-	},
-	{
 		Key:         "security.egress.domainAllowList",
 		Label:       "SSRF 域名特许白名单",
 		Description: "每行一个域名或通配符域名。命中后直接允许该域名，适合本地 FakeIP、内网镜像站等明确可信目标。",

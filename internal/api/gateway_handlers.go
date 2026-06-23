@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -171,7 +172,8 @@ func (h *Handlers) CheckGatewayDomain(ctx *gin.Context) {
 	if _, ok := h.findProjectForCurrentUser(ctx); !ok {
 		return
 	}
-	host := h.normalizeGatewayHost(strings.TrimSpace(ctx.Query("host")))
+	cluster := h.gatewayClusterForDomainCheck(ctx)
+	host := h.normalizeGatewayHost(strings.TrimSpace(ctx.Query("host")), cluster)
 	if host == "" {
 		writeError(ctx, http.StatusBadRequest, "请输入域名")
 		return
@@ -220,13 +222,13 @@ func (h *Handlers) enqueueGatewayApply(ctx context.Context, route model.GatewayR
 }
 
 func (h *Handlers) gatewayRouteFromInput(ctx *gin.Context, project model.Project, userID string, input gatewayRouteInput, routeID string) (model.GatewayRoute, bool) {
-	target, application, environment, ok := h.gatewayRouteTargetContext(ctx, project.ID, input)
+	target, application, environment, cluster, ok := h.gatewayRouteTargetContext(ctx, project.ID, input)
 	if !ok {
 		return model.GatewayRoute{}, false
 	}
-	host := h.normalizeGatewayHost(input.Host)
+	host := h.normalizeGatewayHost(input.Host, cluster)
 	if host == "" {
-		host = h.defaultGatewayHost(project, target.Stage, application.Slug)
+		host = h.defaultGatewayHost(project, target.Stage, application.Slug, cluster)
 	}
 	if host == "" {
 		writeError(ctx, http.StatusBadRequest, "请输入域名或选择部署配置")
@@ -259,7 +261,7 @@ func (h *Handlers) gatewayRouteFromInput(ctx *gin.Context, project model.Project
 		TLSMode:            tlsMode,
 		CertificateStatus:  certStatus,
 		CNAMEName:          host,
-		CNAMETarget:        h.gatewayCNAMETarget(project),
+		CNAMETarget:        h.gatewayCNAMETarget(cluster),
 		DNSStatus:          fallback(strings.TrimSpace(input.DNSStatus), "pending"),
 		Status:             fallback(strings.TrimSpace(input.Status), "pending"),
 		Enabled:            gatewayRouteInputEnabled(input.Enabled),
@@ -272,30 +274,76 @@ func deploymentTargetServicePort(target model.DeploymentTarget) int {
 	return fallbackInt(target.ServicePort, 8080)
 }
 
-func (h *Handlers) gatewayRouteTargetContext(ctx *gin.Context, projectID string, input gatewayRouteInput) (model.DeploymentTarget, model.Application, model.Environment, bool) {
+func (h *Handlers) gatewayRouteTargetContext(ctx *gin.Context, projectID string, input gatewayRouteInput) (model.DeploymentTarget, model.Application, model.Environment, model.RuntimeCluster, bool) {
 	var target model.DeploymentTarget
 	if err := h.db.First(&target, "id = ? and project_id = ? and enabled = ?", strings.TrimSpace(input.DeploymentTargetID), projectID, true).Error; err != nil {
 		writeError(ctx, http.StatusBadRequest, "部署配置不存在或不属于当前项目空间")
-		return model.DeploymentTarget{}, model.Application{}, model.Environment{}, false
+		return model.DeploymentTarget{}, model.Application{}, model.Environment{}, model.RuntimeCluster{}, false
 	}
 	if applicationID := strings.TrimSpace(input.ApplicationID); applicationID != "" && applicationID != target.ApplicationID {
 		writeError(ctx, http.StatusBadRequest, "部署配置不属于当前应用")
-		return model.DeploymentTarget{}, model.Application{}, model.Environment{}, false
+		return model.DeploymentTarget{}, model.Application{}, model.Environment{}, model.RuntimeCluster{}, false
 	}
 	var application model.Application
 	if err := h.db.First(&application, "id = ? and project_id = ?", target.ApplicationID, projectID).Error; err != nil {
 		writeError(ctx, http.StatusBadRequest, "应用不存在或不属于当前项目空间")
-		return model.DeploymentTarget{}, model.Application{}, model.Environment{}, false
+		return model.DeploymentTarget{}, model.Application{}, model.Environment{}, model.RuntimeCluster{}, false
 	}
 	if !applicationCanMutate(application) {
 		writeErrorCode(ctx, http.StatusConflict, "application.delete_in_progress", "应用正在删除中，不能维护访问入口")
-		return model.DeploymentTarget{}, model.Application{}, model.Environment{}, false
+		return model.DeploymentTarget{}, model.Application{}, model.Environment{}, model.RuntimeCluster{}, false
 	}
-	return target, application, deploymentTargetEnvironmentProfile(target), true
+	cluster, err := h.runtimeClusterForDeploymentTargetValue(target)
+	if err != nil {
+		writeError(ctx, http.StatusBadRequest, "部署配置运行集群不存在，不能创建访问入口")
+		return model.DeploymentTarget{}, model.Application{}, model.Environment{}, model.RuntimeCluster{}, false
+	}
+	return target, application, deploymentTargetEnvironmentProfile(target), cluster, true
 }
 
-func (h *Handlers) defaultGatewayHost(project model.Project, stage, applicationSlug string) string {
-	rootDomain := h.gatewayRootDomain()
+func (h *Handlers) gatewayClusterForDomainCheck(ctx *gin.Context) model.RuntimeCluster {
+	if routeID := strings.TrimSpace(ctx.Query("routeId")); routeID != "" {
+		var route model.GatewayRoute
+		if err := h.db.First(&route, "id = ? and project_id = ?", routeID, ctx.Param("projectId")).Error; err == nil {
+			if cluster, err := h.runtimeClusterForGatewayRoute(route); err == nil {
+				return cluster
+			}
+		}
+	}
+	if targetID := strings.TrimSpace(ctx.Query("deploymentTargetId")); targetID != "" {
+		var target model.DeploymentTarget
+		if err := h.db.First(&target, "id = ? and project_id = ?", targetID, ctx.Param("projectId")).Error; err == nil {
+			if cluster, err := h.runtimeClusterForDeploymentTargetValue(target); err == nil {
+				return cluster
+			}
+		}
+	}
+	return model.RuntimeCluster{}
+}
+
+func (h *Handlers) runtimeClusterForGatewayRoute(route model.GatewayRoute) (model.RuntimeCluster, error) {
+	var target model.DeploymentTarget
+	if err := h.db.First(&target, "id = ? and project_id = ?", route.DeploymentTargetID, route.ProjectID).Error; err != nil {
+		return model.RuntimeCluster{}, err
+	}
+	return h.runtimeClusterForDeploymentTargetValue(target)
+}
+
+func (h *Handlers) runtimeClusterForDeploymentTargetValue(target model.DeploymentTarget) (model.RuntimeCluster, error) {
+	var cluster model.RuntimeCluster
+	if clusterID := strings.TrimSpace(target.ClusterID); clusterID != "" {
+		err := h.db.First(&cluster, "id = ? and type in ?", clusterID, []string{"kubernetes", "k3s"}).Error
+		return cluster, err
+	}
+	err := h.db.Where("scope = ? and is_default = ? and type in ?", "global", true, []string{"kubernetes", "k3s"}).First(&cluster).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		err = h.db.Where("scope = ? and type in ?", "global", []string{"kubernetes", "k3s"}).Order("created_at asc").First(&cluster).Error
+	}
+	return cluster, err
+}
+
+func (h *Handlers) defaultGatewayHost(project model.Project, stage, applicationSlug string, cluster model.RuntimeCluster) string {
+	rootDomain := h.gatewayRootDomain(cluster)
 	if rootDomain == "" {
 		return ""
 	}
@@ -319,20 +367,20 @@ func (h *Handlers) defaultGatewayHost(project model.Project, stage, applicationS
 	return fmt.Sprintf("%s-%s.%s", base, id.New("gw"), rootDomain)
 }
 
-func (h *Handlers) gatewayCNAMETarget(project model.Project) string {
-	rootDomain := h.gatewayRootDomain()
+func (h *Handlers) gatewayCNAMETarget(cluster model.RuntimeCluster) string {
+	rootDomain := h.gatewayRootDomain(cluster)
 	if rootDomain == "" {
 		return ""
 	}
 	return fmt.Sprintf("*.%s", rootDomain)
 }
 
-func (h *Handlers) normalizeGatewayHost(value string) string {
+func (h *Handlers) normalizeGatewayHost(value string, cluster model.RuntimeCluster) string {
 	host := strings.Trim(strings.ToLower(strings.TrimSpace(value)), ".")
 	if host == "" {
 		return ""
 	}
-	rootDomain := h.gatewayRootDomain()
+	rootDomain := h.gatewayRootDomain(cluster)
 	if rootDomain != "" && !strings.Contains(host, ".") {
 		prefix := gatewayHostSegment(host)
 		if prefix == "" {
@@ -343,25 +391,25 @@ func (h *Handlers) normalizeGatewayHost(value string) string {
 	return host
 }
 
-func (h *Handlers) gatewayRootDomain() string {
-	rootDomain := strings.Trim(strings.ToLower(strings.TrimSpace(h.configValue("gateway.rootDomain"))), ".")
-	if rootDomain == "" {
-		rootDomain = "apps.local"
-	}
-	return rootDomain
+func (h *Handlers) gatewayRootDomain(cluster model.RuntimeCluster) string {
+	return normalizeGatewayRootDomain(cluster.GatewayRootDomain, h.legacyGatewayRootDomain())
 }
 
-func (h *Handlers) gatewayPublicScheme() string {
-	switch strings.ToLower(strings.TrimSpace(h.configValue("gateway.publicScheme"))) {
-	case "https":
-		return "https"
-	default:
-		return "http"
-	}
+func (h *Handlers) gatewayPublicScheme(cluster model.RuntimeCluster) string {
+	return normalizeGatewayPublicScheme(cluster.GatewayPublicScheme)
+}
+
+func (h *Handlers) legacyGatewayRootDomain() string {
+	return strings.Trim(strings.ToLower(strings.TrimSpace(h.configValue("gateway.rootDomain"))), ".")
 }
 
 func (h *Handlers) gatewayRouteWithAccessURL(route model.GatewayRoute) model.GatewayRoute {
-	route.AccessURL = gatewayRouteAccessURL(route, h.gatewayPublicScheme())
+	cluster, err := h.runtimeClusterForGatewayRoute(route)
+	if err != nil {
+		route.AccessURL = gatewayRouteAccessURL(route, normalizeGatewayPublicScheme(h.configValue("gateway.publicScheme")))
+		return route
+	}
+	route.AccessURL = gatewayRouteAccessURL(route, h.gatewayPublicScheme(cluster))
 	return route
 }
 

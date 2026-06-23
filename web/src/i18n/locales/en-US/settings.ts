@@ -2,7 +2,6 @@ const settings = {
   siteDescription: 'Manage public site settings and backend egress security policy.',
   siteSaved: 'Site settings saved',
   siteConfigTitle: 'Branding',
-  gatewayConfigTitle: 'Gateway',
   securityEgressTitle: 'Security policy',
   billingConfigTitle: 'Billing',
   configDefinitionsFailedTitle: 'Config definitions failed to load',

@@ -19,6 +19,8 @@ type RuntimeCluster struct {
 	Kubeconfig          string         `gorm:"-" json:"kubeconfig,omitempty"`
 	IsDefault           bool           `gorm:"not null;default:false" json:"isDefault"`
 	MaxConcurrentBuilds int            `gorm:"not null;default:4" json:"maxConcurrentBuilds"`
+	GatewayRootDomain   string         `gorm:"not null;default:apps.local" json:"gatewayRootDomain"`
+	GatewayPublicScheme string         `gorm:"not null;default:http" json:"gatewayPublicScheme"`
 	Status              string         `gorm:"not null;default:unknown" json:"status"`
 	LastCheckedAt       *time.Time     `json:"lastCheckedAt"`
 	CreatedBy           string         `gorm:"index" json:"createdBy"`
