@@ -1,4 +1,4 @@
-import type { BuildRun } from '@/api/client'
+import type { BuildRun } from '@/api'
 
 export function buildRunImageRef(run: BuildRun) {
   if (run.imageRef)

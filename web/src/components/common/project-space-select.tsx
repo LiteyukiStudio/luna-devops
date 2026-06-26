@@ -1,4 +1,4 @@
-import type { Project } from '@/api/client'
+import type { Project } from '@/api'
 import { Check, ChevronDown } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'

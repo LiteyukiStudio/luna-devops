@@ -1,9 +1,9 @@
-import type { Release } from '@/api/client'
+import type { Release } from '@/api'
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal as XTerm } from '@xterm/xterm'
 import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { releaseRuntimeTerminalUrl } from '@/api/client'
+import { releaseRuntimeTerminalUrl } from '@/api'
 import '@xterm/xterm/css/xterm.css'
 
 export function ApplicationRuntimeTerminalPanel({

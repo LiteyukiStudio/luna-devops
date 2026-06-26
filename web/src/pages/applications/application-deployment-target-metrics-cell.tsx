@@ -1,7 +1,7 @@
-import type { DeploymentTargetMetrics } from '@/api/client'
+import type { DeploymentTargetMetrics } from '@/api'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { deploymentTargetMetricsStreamUrl } from '@/api/client'
+import { deploymentTargetMetricsStreamUrl } from '@/api'
 import { formatMetricsBytes, formatMetricsPercent } from './application-deployments-panel-utils'
 
 export function DeploymentTargetMetricsCell({ applicationId, enabled, projectId, targetId }: {

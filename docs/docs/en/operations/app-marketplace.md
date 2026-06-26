@@ -1,6 +1,6 @@
 # App Marketplace
 
-The app marketplace installs common infrastructure apps into project spaces from templates. The MVP includes Redis, Valkey, Memcached, PostgreSQL, MySQL, MariaDB, MongoDB, RabbitMQ, Garage, Grafana, Uptime Kuma, Memos, IT-Tools, Excalidraw, Verdaccio, Docker Registry, pgAdmin4, Meilisearch, and Bytebase for quick cache, database, queue, object storage, observability, and small-team tooling setup.
+The app marketplace installs common infrastructure apps into project spaces from templates. The MVP includes Redis, Valkey, Memcached, PostgreSQL, MySQL, MariaDB, MongoDB, RabbitMQ, Garage, Prometheus, Grafana, Uptime Kuma, Memos, IT-Tools, Excalidraw, Verdaccio, Docker Registry, pgAdmin4, Meilisearch, and Bytebase for quick cache, database, queue, object storage, observability, and small-team tooling setup.
 
 Installing a template creates:
 
@@ -28,6 +28,6 @@ The template list supports category filtering, search by template name, image, w
 
 ## Current Limits
 
-The MVP only enables templates whose images can run with their default command. Garage is provided as a single-node lightweight object storage template; the platform generates its base config file. Multi-node layout initialization, bucket/key outputs, and richer connection details will be added with the later template outputs work.
+The MVP only enables templates whose images can run with their default command. Prometheus currently ships with a minimal config that scrapes its own `/metrics`; Grafana and Prometheus remain independent single-app templates, so the platform does not auto-create Grafana data sources or discover application workloads. Garage is provided as a single-node lightweight object storage template; the platform generates its base config file. Multi-node layout initialization, bucket/key outputs, and richer connection details will be added with the later template outputs work.
 
 Marketplace templates are loaded from backend-embedded JSON. Future third-party marketplaces can reuse the same schema, with backend-side fetching, validation, and caching.

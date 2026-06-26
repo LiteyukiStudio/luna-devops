@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import type { BuildRun } from '@/api/client'
+import type { BuildRun } from '@/api'
 import { useTranslation } from 'react-i18next'
 import { NativeSelect as Select } from '@/components/ui/native-select'
 

@@ -1,4 +1,4 @@
-import type { BuildVariableSet } from '@/api/client'
+import type { BuildVariableSet } from '@/api'
 
 interface KeyValueRow {
   id: string

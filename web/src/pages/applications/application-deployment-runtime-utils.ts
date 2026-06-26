@@ -1,4 +1,4 @@
-import type { ClusterResource, DeploymentTarget, RuntimeCluster } from '@/api/client'
+import type { ClusterResource, DeploymentTarget, RuntimeCluster } from '@/api'
 
 export interface DeploymentRuntimeStatus {
   clusterName?: string

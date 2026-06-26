@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useMemo } from 'react'
-import { api } from '@/api/client'
+import { api } from '@/api'
 import { defaultPublicConfigs, PublicConfigContext } from './public-config-context'
 
 const publicConfigKeys = ['site.title', 'site.logoUrl', 'site.faviconUrl', 'site.loginSubtitle', 'billing.creditsDisplayName', 'billing.fiatCurrencyUnit', 'billing.creditsPerFiatUnit']

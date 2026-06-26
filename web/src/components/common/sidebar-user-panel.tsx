@@ -1,4 +1,4 @@
-import type { CurrentUser } from '@/api/client'
+import type { CurrentUser } from '@/api'
 import { LogOut } from 'lucide-react'
 import { UserAvatar } from '@/components/common/user-avatar'
 import { Button } from '@/components/ui/button'

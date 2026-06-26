@@ -1,4 +1,4 @@
-import type { Release } from '@/api/client'
+import type { Release } from '@/api'
 import { Maximize2, Minimize2 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'

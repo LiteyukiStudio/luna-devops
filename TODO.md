@@ -289,6 +289,7 @@
 - [x] 内置 Garage 模板：镜像 `dxflrs/garage:v1.1.0`，端口 `3900`，单节点轻量对象存储，敏感配置通过 Secret 文件挂载到 `/etc/garage.toml`。
 - [x] 内置 RabbitMQ 模板：镜像 `rabbitmq:3-management-alpine`，输入默认用户和密码；公网管理入口默认关闭。
 - [x] 扩充非 PHP 容器应用模板：参考 1Panel 应用商店收录范围，新增 MongoDB、Valkey、Memcached、pgAdmin4、Meilisearch、Grafana、Uptime Kuma、Memos、IT-Tools、Excalidraw、Verdaccio、Docker Registry 和 Bytebase。
+- [x] 新增 Prometheus 应用模板：镜像 `prom/prometheus:v3.12.0`，端口 `9090`，默认持久化 `/prometheus`，内置抓取自身 `/metrics` 的最小配置，并在文档中说明 Grafana/Prometheus 暂不自动联动。
 - [x] 前端新增“应用市场”入口：支持查看模板、展示图标、描述、完整镜像名称、默认资源和持久化容量；支持分类筛选、按热度权重或名称排序，并支持顺序/倒序；安装时默认预填模板镜像，并允许用户替换为 Harbor、DockerHub 代理或私有镜像地址；安装后的应用默认使用模板图标，应用图标字段兼容内置图标名、站内资源路径和 `http(s)` 图片地址；模板图标缺失或加载失败时展示无图标 fallback。
 - [ ] 项目空间内新增“从模板安装”入口：安装弹窗只展示模板 schema 里的必要字段，默认短名按 `{templateSlug}-{随机字符}` 生成，密码支持自动生成和复制。
 - [ ] 安装完成页展示连接信息：按模板 outputs 展示内网服务域名、端口和建议环境变量，敏感字段默认隐藏并提供复制按钮。
@@ -732,13 +733,13 @@
 - [x] 拆分并退场旧 `internal/api/builder_handlers.go` 主路径：Builder 认证与心跳、任务 claim/lease、日志/进度回写等旧 Agent API 已不再注册路由；构建 payload 组装迁入 Worker 可复用运行时，镜像引用和 tag 渲染 helper 继续复用。验收：构建主路径走 `build:run` + Kubernetes Job，`go test ./...` 通过。
 - [x] 拆分 `internal/api/deployment_handlers.go`：按运行集群、项目环境、部署配置、发布/回滚、自动部署匹配拆为独立文件；集群 kubeconfig flatten、环境 slug 校验和自动部署匹配规则迁入独立 helper/service。验收：每个 handler 文件只处理一个资源族，自动部署匹配规则有单测覆盖，`go test ./...` 通过。
 - [x] 后端热点第二轮拆分：继续拆分部署配置、发布运行时和运行集群资源文件；`deployment_target_handlers.go` 只保留部署配置 HTTP 入口，发布运行时日志/exec/terminal 独立到 `release_runtime_handlers.go`，运行集群资源浏览/权限/响应/kubeconfig helper 独立成文件。验收：`go test ./...` 通过。
-- [ ] 拆分 `web/src/api/client.ts`：保留 `request`、错误处理和分页类型在 API core，将 `Application/Project/Build/Deployment/Gateway/Git/Registry/Auth` 类型和方法分别迁入 `web/src/api/domains/*.ts` 或 `web/src/api/types/*.ts`；一次性更新业务页面 import，不保留旧路径兼容层。验收：业务页面不再依赖一个千行 client 文件，`pnpm --dir web lint` 和 `pnpm --dir web build` 通过。
-- [ ] 拆分 `web/src/pages/registries/RegistriesPage.tsx`：将镜像站列表、凭据列表和镜像记录拆成独立 panel 和 form 组件；镜像 tag 分页和凭据状态展示逻辑迁入局部 utils。验收：主页面只负责 tab 和数据聚合，列表组件继续复用 `DataList`，`pnpm --dir web lint` 和 `pnpm --dir web build` 通过。
-- [ ] 拆分 `internal/builder/agent.go` 遗留 executor 工具：移除 Agent 生命周期与 Docker executor 代码，保留并拆分脚本、Hook 控制行、日志流、BuildKit plain/raw progress 解析、payload/result types 到更中性的 build executor 包。验收：executor 与 progress parser 可独立测试，构建日志和 Hook 控制行解析行为不变，`go test ./...` 通过。
-- [ ] 拆分 `web/src/pages/code-repositories/CodeRepositoriesPage.tsx`：按 Git Provider、Git Account、OAuth 指引、Provider/Account 表单拆为独立组件；账号作用域、授权状态和跳转授权 helper 迁入局部 utils。验收：代码库页面主文件降到 300 行左右，provider/account 子功能可独立维护，`pnpm --dir web lint` 和 `pnpm --dir web build` 通过。
-- [ ] 拆分 i18n locale 文件：将 `web/src/i18n/locales/zh-CN.ts` 和 `en-US.ts` 按 namespace 拆为 `common`、`apps`、`builds`、`deployments`、`gateway`、`registries`、`settings` 等文件，并一次性更新调用方 key 路径，不保留旧 key 兼容层。验收：单个 locale 文件不再超过 400 行，新增文案能按领域定位，`pnpm --dir web lint` 和 `pnpm --dir web build` 通过。
-- [ ] 拆分 Git provider client：将 `internal/provider/git/client.go` 按 GitHub/Gitea/GitLab 实现、公共接口、错误映射和分页/search DTO 拆分；保持前端只调用平台后端 API 的边界不变。验收：provider 行为单测继续通过，新增 Git 平台适配时无需修改一个超大 client 文件。
-- [ ] 拆分大测试文件：将 `internal/api/handlers_test.go` 按 build、deployment、git、gateway、pagination/response helper 等领域拆分；共享 test fixture 放入 `internal/api/test_helpers_test.go`。验收：测试命名能直接定位业务域，`go test ./internal/api` 通过。
+- [x] 拆分 `web/src/api/client.ts`：已拆为 `web/src/api/core.ts`、`urls.ts`、`types.ts` 和 `web/src/api/domains/*`，入口只组合领域 API；业务页面统一改从 `@/api` 引入。验收：`pnpm --dir web lint`、`pnpm --dir web build` 通过。
+- [x] 拆分 `web/src/pages/registries/RegistriesPage.tsx`：已拆出 `registry-form-model.ts`、`registry-list-panels.tsx`、`registry-dialogs.tsx`；主页面保留 tab、查询和 mutation 编排。验收：`pnpm --dir web lint`、`pnpm --dir web build` 通过。
+- [x] 拆分 `internal/builder/agent.go` 遗留 executor 工具：旧 `agent.go` 已不存在，现有 builder 已收敛为 `executor/run.sh`、`logs.go`、`payload.go`、`types.go` 等中性模块；无 Docker executor/Agent 生命周期残留。验收：`go test ./...` 通过。
+- [x] 拆分 `web/src/pages/code-repositories/CodeRepositoriesPage.tsx`：已拆出 `code-repositories-panels.tsx`、`code-repositories-dialogs.tsx`、`code-repositories-form-model.ts`、`code-repositories-utils.ts`；主页面降到约 300 行，仅保留 tab、查询和 mutation 编排。验收：`pnpm --dir web lint`、`pnpm --dir web build` 通过。
+- [x] 拆分 i18n locale 文件：`web/src/i18n/locales/zh-CN.ts` 和 `en-US.ts` 已是 namespace 聚合入口，实际文案位于 `web/src/i18n/locales/<locale>/*`。验收：单个入口文件不超过 400 行，`pnpm --dir web lint`、`pnpm --dir web build` 通过。
+- [x] 拆分 Git provider client：已按错误映射、OAuth、类型、仓库/分支/文件/Webhook、构建选项发现等职责拆分 `internal/provider/git/*`；前端仍只调用平台后端 API。验收：`go test ./internal/provider/git` 和 `go test ./...` 通过。
+- [x] 拆分大测试文件：`internal/api/handlers_test.go` 已拆为 core/auth/tasks/git-security 等领域测试文件，原文件仅保留 package 声明。验收：`go test ./internal/api` 和 `go test ./...` 通过。
 
 ## 100.优化需求
 

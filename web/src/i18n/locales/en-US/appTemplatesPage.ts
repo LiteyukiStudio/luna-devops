@@ -101,6 +101,9 @@ const appTemplatesPage = {
     'grafana': {
       description: 'Metrics dashboard and visualization platform for observability data.',
     },
+    'prometheus': {
+      description: 'Time-series metrics database and scraping engine for observability pipelines.',
+    },
     'uptime-kuma': {
       description: 'Self-hosted uptime monitor for websites, APIs, and internal services.',
     },

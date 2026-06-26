@@ -1,11 +1,11 @@
 import type { ReactNode } from 'react'
 import type { DebugSessionOverride, InitializeAdminInput, LoginInput, RecentLoginUser, SessionContextValue } from './session-context'
-import type { CurrentUser } from '@/api/client'
+import type { CurrentUser } from '@/api'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
-import { api } from '@/api/client'
+import { api } from '@/api'
 import { SessionContext } from './session-context'
 
 const currentUserQueryKey = ['current-user'] as const

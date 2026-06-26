@@ -1,4 +1,4 @@
-import type { BuildJob } from '@/api/client'
+import type { BuildJob } from '@/api'
 import { X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { AutoFollowLog } from '@/components/common/auto-follow-log'

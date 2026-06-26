@@ -1,4 +1,4 @@
-import type { BuildJob, BuildRun } from '@/api/client'
+import type { BuildJob, BuildRun } from '@/api'
 import { CalendarClock, CircleCheck, CircleX, Clock3, LoaderCircle, MoreHorizontal, Package, RotateCcw, ScrollText, Square, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'

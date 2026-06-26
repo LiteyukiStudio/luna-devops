@@ -1,5 +1,5 @@
 import type { UseFormReturn } from 'react-hook-form'
-import type { ProjectRuntimeConfigSet, ProjectRuntimeConfigSetPayload } from '@/api/client'
+import type { ProjectRuntimeConfigSet, ProjectRuntimeConfigSetPayload } from '@/api'
 import { FileCode2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { CheckboxField } from '@/components/common/checkbox-field'

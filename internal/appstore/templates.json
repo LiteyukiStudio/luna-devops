@@ -378,6 +378,33 @@
     ]
   },
   {
+    "id": "prometheus",
+    "slug": "prometheus",
+    "name": "Prometheus",
+    "description": "Time-series metrics database and scraping engine for observability pipelines.",
+    "category": "observability",
+    "icon": "/app-templates/icons/prometheus.svg",
+    "officialWebsite": "https://prometheus.io/",
+    "officialRepository": "https://github.com/prometheus/prometheus",
+    "popularityWeight": 86,
+    "image": "prom/prometheus:v3.12.0",
+    "version": "v3.12.0",
+    "servicePort": 9090,
+    "defaultReplicas": 1,
+    "defaultCPU": "500m",
+    "defaultMemory": "512Mi",
+    "dataRetentionEnabled": true,
+    "dataMountPath": "/prometheus",
+    "dataCapacity": "5Gi",
+    "configFiles": [
+      {
+        "path": "/etc/prometheus/prometheus.yml",
+        "content": "global:\n  scrape_interval: 15s\n  evaluation_interval: 15s\n\nscrape_configs:\n  - job_name: prometheus\n    static_configs:\n      - targets:\n          - localhost:9090\n"
+      }
+    ],
+    "values": []
+  },
+  {
     "id": "uptime-kuma",
     "slug": "uptime-kuma",
     "name": "Uptime Kuma",

@@ -1,4 +1,4 @@
-import type { CurrentUser } from '@/api/client'
+import type { CurrentUser } from '@/api'
 import { createContext, use } from 'react'
 
 export interface LoginInput {

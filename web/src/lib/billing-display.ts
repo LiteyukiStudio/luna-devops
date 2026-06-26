@@ -1,6 +1,6 @@
-import type { BillingRateRule } from '@/api/client'
+import type { BillingRateRule } from '@/api'
 import { useQuery } from '@tanstack/react-query'
-import { api } from '@/api/client'
+import { api } from '@/api'
 import { usePublicConfig } from '@/app/public-config-context'
 
 const DEFAULT_CURRENCY_UNIT = 'Credits'

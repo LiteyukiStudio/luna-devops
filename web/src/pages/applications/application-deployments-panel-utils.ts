@@ -1,5 +1,5 @@
 import type { UseFormReturn } from 'react-hook-form'
-import type { DeploymentTarget, DeploymentTargetPayload, ProjectRuntimeConfigSetPayload, Release, RepositoryBinding } from '@/api/client'
+import type { DeploymentTarget, DeploymentTargetPayload, ProjectRuntimeConfigSetPayload, Release, RepositoryBinding } from '@/api'
 import { emptyRuntimeDataVolumeRow, parseRuntimeDataVolumes, serializeRuntimeDataVolumes } from '@/lib/runtime-data-volumes'
 
 export type ReleaseForm = Omit<Release, 'id' | 'projectId' | 'createdBy' | 'createdAt' | 'rollbackFromId'>

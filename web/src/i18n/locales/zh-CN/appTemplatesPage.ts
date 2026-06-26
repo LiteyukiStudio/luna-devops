@@ -101,6 +101,9 @@ const appTemplatesPage = {
     'grafana': {
       description: '指标仪表盘和可视化平台，适合监控数据展示。',
     },
+    'prometheus': {
+      description: '时序指标数据库和抓取引擎，适合作为可观测数据底座。',
+    },
     'uptime-kuma': {
       description: '自托管可用性监控，用于站点、API 和内部服务巡检。',
     },

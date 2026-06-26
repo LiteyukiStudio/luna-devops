@@ -1,5 +1,5 @@
 import type { TFunction } from 'i18next'
-import type { ArtifactRegistry, BuildRun, DeploymentTarget, Release } from '@/api/client'
+import type { ArtifactRegistry, BuildRun, DeploymentTarget, Release } from '@/api'
 import { latestDeployableBuildRuns } from '@/components/common/deployment-build-runs'
 import { formatSmartDateTime } from '@/components/common/time-format'
 

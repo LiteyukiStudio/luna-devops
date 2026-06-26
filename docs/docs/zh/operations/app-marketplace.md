@@ -1,6 +1,6 @@
 # 应用市场
 
-应用市场用于把常见基础设施按模板安装到项目空间。第一版内置 Redis、Valkey、Memcached、PostgreSQL、MySQL、MariaDB、MongoDB、RabbitMQ、Garage、Grafana、Uptime Kuma、Memos、IT-Tools、Excalidraw、Verdaccio、Docker Registry、pgAdmin4、Meilisearch 和 Bytebase，适合快速准备缓存、数据库、消息队列、对象存储、监控和小团队工具。
+应用市场用于把常见基础设施按模板安装到项目空间。第一版内置 Redis、Valkey、Memcached、PostgreSQL、MySQL、MariaDB、MongoDB、RabbitMQ、Garage、Prometheus、Grafana、Uptime Kuma、Memos、IT-Tools、Excalidraw、Verdaccio、Docker Registry、pgAdmin4、Meilisearch 和 Bytebase，适合快速准备缓存、数据库、消息队列、对象存储、监控和小团队工具。
 
 模板安装会创建：
 
@@ -28,6 +28,6 @@
 
 ## 当前限制
 
-MVP 模板只支持镜像默认启动即可运行的应用。Garage 当前作为单节点轻量对象存储模板提供，平台会生成基础配置文件；多节点 layout 初始化、bucket/key 输出和更完整的连接信息会在后续模板 outputs 能力中补齐。
+MVP 模板只支持镜像默认启动即可运行的应用。Prometheus 当前提供抓取自身 `/metrics` 的最小配置，Grafana 和 Prometheus 仍是独立单应用模板，不会自动创建 Grafana 数据源或发现业务工作负载。Garage 当前作为单节点轻量对象存储模板提供，平台会生成基础配置文件；多节点 layout 初始化、bucket/key 输出和更完整的连接信息会在后续模板 outputs 能力中补齐。
 
 应用市场模板来自后端内置 JSON。后续第三方模板市场可以继续复用同一份 schema，由后端负责拉取、校验和缓存。

@@ -1,6 +1,6 @@
 import type { TFunction } from 'i18next'
 import type { ReactNode } from 'react'
-import type { Application, BuildRun, DeploymentTarget, GatewayRoute, Release } from '@/api/client'
+import type { Application, BuildRun, DeploymentTarget, GatewayRoute, Release } from '@/api'
 import { Activity, Globe2, Package, Rocket } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { ApplicationIcon } from '@/components/common/application-icon-picker'
