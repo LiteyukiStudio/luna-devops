@@ -61,15 +61,17 @@ func credentialResponses(credentials []model.RegistryCredential) []registryCrede
 
 func credentialResponse(credential model.RegistryCredential) registryCredentialOutput {
 	return registryCredentialOutput{
-		ID:          credential.ID,
-		RegistryID:  credential.RegistryID,
-		Name:        credential.Name,
-		Username:    credential.Username,
-		Scope:       credential.Scope,
-		AccessScope: credential.AccessScope,
-		PasswordSet: secret.HasValue(credential.PasswordRef),
-		TokenSet:    secret.HasValue(credential.TokenRef),
-		CreatedAt:   credential.CreatedAt,
+		ID:                 credential.ID,
+		RegistryID:         credential.RegistryID,
+		Name:               credential.Name,
+		Username:           credential.Username,
+		Scope:              credential.Scope,
+		AccessScope:        credential.AccessScope,
+		RepositoryTemplate: normalizeImageRepositoryTemplate(credential.RepositoryTemplate),
+		TagTemplate:        normalizeImageTagTemplate(credential.TagTemplate),
+		PasswordSet:        secret.HasValue(credential.PasswordRef),
+		TokenSet:           secret.HasValue(credential.TokenRef),
+		CreatedAt:          credential.CreatedAt,
 	}
 }
 
@@ -166,24 +168,28 @@ type artifactRegistryOutput struct {
 }
 
 type registryCredentialInput struct {
-	Name        string `json:"name"`
-	Username    string `json:"username"`
-	Password    string `json:"password"`
-	Token       string `json:"token"`
-	Scope       string `json:"scope"`
-	AccessScope string `json:"accessScope"`
+	Name               string `json:"name"`
+	Username           string `json:"username"`
+	Password           string `json:"password"`
+	Token              string `json:"token"`
+	Scope              string `json:"scope"`
+	AccessScope        string `json:"accessScope"`
+	RepositoryTemplate string `json:"repositoryTemplate"`
+	TagTemplate        string `json:"tagTemplate"`
 }
 
 type registryCredentialOutput struct {
-	ID          string    `json:"id"`
-	RegistryID  string    `json:"registryId"`
-	Name        string    `json:"name"`
-	Username    string    `json:"username"`
-	Scope       string    `json:"scope"`
-	AccessScope string    `json:"accessScope"`
-	PasswordSet bool      `json:"passwordSet"`
-	TokenSet    bool      `json:"tokenSet"`
-	CreatedAt   time.Time `json:"createdAt"`
+	ID                 string    `json:"id"`
+	RegistryID         string    `json:"registryId"`
+	Name               string    `json:"name"`
+	Username           string    `json:"username"`
+	Scope              string    `json:"scope"`
+	AccessScope        string    `json:"accessScope"`
+	RepositoryTemplate string    `json:"repositoryTemplate"`
+	TagTemplate        string    `json:"tagTemplate"`
+	PasswordSet        bool      `json:"passwordSet"`
+	TokenSet           bool      `json:"tokenSet"`
+	CreatedAt          time.Time `json:"createdAt"`
 }
 
 type containerImageInput struct {

@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { NativeSelect as Select } from '@/components/ui/native-select'
-import { registryDefaults } from './registry-form-model'
+import { credentialDefaults, registryDefaults } from './registry-form-model'
 
 interface RegistryDialogProps {
   open: boolean
@@ -112,7 +112,7 @@ export function CredentialDialog({ open, form, registries, selectedRegistryId, p
       onOpenChange={(nextOpen) => {
         onOpenChange(nextOpen)
         if (!nextOpen)
-          form.reset({ accessScope: 'personal', registryId: selectedRegistryId, name: 'default', username: '', password: '', token: '', scope: 'push-pull' })
+          form.reset({ ...credentialDefaults, registryId: selectedRegistryId })
       }}
     >
       <DialogContent>
@@ -157,6 +157,14 @@ export function CredentialDialog({ open, form, registries, selectedRegistryId, p
               {!credentialRegistryIsGlobal && <option value="registry">{t('registriesPage.credentialAccessScopeRegistry')}</option>}
             </Select>
           </Field>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field error={form.formState.errors.repositoryTemplate?.message} hint={t('registriesPage.repositoryTemplateHint')} label={t('registriesPage.repositoryTemplate')} required>
+              <Input {...form.register('repositoryTemplate')} aria-invalid={Boolean(form.formState.errors.repositoryTemplate)} placeholder={t('registriesPage.repositoryTemplatePlaceholder')} />
+            </Field>
+            <Field error={form.formState.errors.tagTemplate?.message} hint={t('registriesPage.tagTemplateHint')} label={t('registriesPage.tagTemplate')} required>
+              <Input {...form.register('tagTemplate')} aria-invalid={Boolean(form.formState.errors.tagTemplate)} placeholder={t('registriesPage.tagTemplatePlaceholder')} />
+            </Field>
+          </div>
           <Field error={form.formState.errors.username?.message} hint={t('registriesPage.usernameHint')} label={t('registriesPage.username')}>
             <Input {...form.register('username')} aria-invalid={Boolean(form.formState.errors.username)} />
           </Field>

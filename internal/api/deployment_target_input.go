@@ -13,8 +13,8 @@ import (
 )
 
 const (
-	defaultBuildCPURequest    = "1"
-	defaultBuildMemoryRequest = "1Gi"
+	defaultBuildCPURequest    = "2"
+	defaultBuildMemoryRequest = "4Gi"
 )
 
 func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, app model.Application, input deploymentTargetInput, targetID string, existingSecretFiles map[string]string) (model.DeploymentTarget, bool) {
@@ -35,6 +35,11 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 	if targetRepository == "" {
 		targetRepository = strings.Trim(strings.TrimSpace(input.TargetRepository), "/")
 		targetTag = strings.TrimSpace(input.TargetTag)
+	}
+	stage := normalizeStage(input.Stage)
+	name := strings.TrimSpace(input.Name)
+	if name == "" {
+		name = stage
 	}
 	buildHooksEnabled := true
 	if input.BuildHooksEnabled != nil {
@@ -82,6 +87,7 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 		return model.DeploymentTarget{}, false
 	}
 	clusterID := strings.TrimSpace(input.ClusterID)
+	targetRegistryID := strings.TrimSpace(input.TargetRegistryID)
 	if clusterID != "" {
 		var count int64
 		if err := h.db.Model(&model.RuntimeCluster{}).Where("id = ? and type in ?", clusterID, []string{"kubernetes", "k3s"}).Count(&count).Error; err != nil {
@@ -92,6 +98,14 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 			writeError(ctx, http.StatusBadRequest, "运行集群不存在")
 			return model.DeploymentTarget{}, false
 		}
+	}
+	targetRepository, targetTag, ok = h.applyRegistryCredentialImageTemplate(ctx, user, app, sourceType, targetRegistryID, targetRepository, targetTag, model.DeploymentTarget{
+		ID:    targetID,
+		Name:  name,
+		Stage: stage,
+	})
+	if !ok {
+		return model.DeploymentTarget{}, false
 	}
 	runtimeConfigSetIDs := normalizeStringList(input.RuntimeConfigSetIDs)
 	if len(runtimeConfigSetIDs) > 0 {
@@ -124,17 +138,13 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 			return model.DeploymentTarget{}, false
 		}
 	}
-	name := strings.TrimSpace(input.Name)
-	if name == "" {
-		name = normalizeStage(input.Stage)
-	}
 	return model.DeploymentTarget{
 		ID:                   targetID,
 		ProjectID:            app.ProjectID,
 		ApplicationID:        app.ID,
 		EnvironmentID:        strings.TrimSpace(input.EnvironmentID),
 		Name:                 name,
-		Stage:                normalizeStage(input.Stage),
+		Stage:                stage,
 		ClusterID:            clusterID,
 		Namespace:            strings.TrimSpace(input.Namespace),
 		Replicas:             replicas,
@@ -150,7 +160,7 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 		BuildEnvironmentID:   strings.TrimSpace(input.BuildEnvironmentID),
 		BuildCPURequest:      buildCPURequest,
 		BuildMemoryRequest:   buildMemoryRequest,
-		TargetRegistryID:     strings.TrimSpace(input.TargetRegistryID),
+		TargetRegistryID:     targetRegistryID,
 		TargetRepository:     targetRepository,
 		TargetTag:            fallback(targetTag, "latest"),
 		ImageRef:             strings.TrimSpace(input.ImageRef),
@@ -184,6 +194,33 @@ func normalizeDeploymentSourceType(value string) string {
 	default:
 		return "repository"
 	}
+}
+
+func (h *Handlers) applyRegistryCredentialImageTemplate(ctx *gin.Context, user model.User, app model.Application, sourceType string, registryID string, repository string, tag string, target model.DeploymentTarget) (string, string, bool) {
+	if sourceType != "repository" || strings.TrimSpace(registryID) == "" {
+		return repository, tag, true
+	}
+	var project model.Project
+	if err := h.db.First(&project, "id = ?", app.ProjectID).Error; err != nil {
+		writeError(ctx, http.StatusBadRequest, "项目空间不存在")
+		return repository, tag, false
+	}
+	var registry model.ArtifactRegistry
+	if err := h.db.First(&registry, "id = ?", registryID).Error; err != nil {
+		writeError(ctx, http.StatusBadRequest, "目标镜像站不存在")
+		return repository, tag, false
+	}
+	credential, ok := h.registryPushCredentialFor(user, registry)
+	if !ok {
+		return repository, tag, true
+	}
+	if strings.TrimSpace(repository) == "" || isDefaultImageRepository(registry, project, app, repository) {
+		repository, _ = splitTargetImageRef(buildTargetImageRepositoryForCredential(registry, credential, project, app, target))
+	}
+	if strings.TrimSpace(tag) == "" || (strings.TrimSpace(tag) == "latest" && strings.TrimSpace(credential.TagTemplate) != "") {
+		tag = buildTargetImageTagTemplateForCredential(credential)
+	}
+	return strings.Trim(strings.TrimSpace(repository), "/"), strings.TrimSpace(tag), true
 }
 
 func normalizeDeploymentServicePorts(ctx *gin.Context, input []model.DeploymentServicePort, fallbackPort int) ([]model.DeploymentServicePort, bool) {

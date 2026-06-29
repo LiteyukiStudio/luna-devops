@@ -29,6 +29,8 @@ export const credentialSchema = z.object({
   token: z.string(),
   scope: z.enum(['push-pull', 'push', 'pull']),
   accessScope: z.enum(['personal', 'registry']),
+  repositoryTemplate: z.string().min(1, i18next.t('registriesPage.repositoryTemplateRequired')),
+  tagTemplate: z.string().min(1, i18next.t('registriesPage.tagTemplateRequired')),
 }).refine(values => values.password.trim() !== '' || values.token.trim() !== '', {
   message: i18next.t('registriesPage.passwordOrTokenRequired'),
   path: ['password'],
@@ -61,6 +63,18 @@ export const registryDefaults: RegistryForm = {
   projectIds: [],
   isDefault: false,
   capabilitiesText: 'push,pull,tags,digest',
+}
+
+export const credentialDefaults: CredentialForm = {
+  accessScope: 'personal',
+  registryId: '',
+  name: 'default',
+  username: '',
+  password: '',
+  token: '',
+  scope: 'push-pull',
+  repositoryTemplate: '{registryNamespace}/{projectSlug}-{appSlug}',
+  tagTemplate: 'latest',
 }
 
 export function splitText(value: string) {

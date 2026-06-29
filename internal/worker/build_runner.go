@@ -36,8 +36,8 @@ const (
 	buildJobAppName            = "liteyuki-build-job"
 	buildJobServiceAccountName = "liteyuki-build-job"
 	buildJobScope              = "build"
-	defaultBuildCPURequest     = "1"
-	defaultBuildMemoryRequest  = "1Gi"
+	defaultBuildCPURequest     = "2"
+	defaultBuildMemoryRequest  = "4Gi"
 )
 
 func (r *Runner) handleBuildRun(ctx context.Context, task *asynq.Task) error {

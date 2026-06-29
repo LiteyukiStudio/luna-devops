@@ -20,7 +20,7 @@ export const registriesApi = {
     request<RegistryCredential[]>(`/registries/${registryId}/credentials`),
   listRegistryCredentialsPage: (registryId: string, params: PaginationParams) =>
     request<PaginatedResponse<RegistryCredential>>(`/registries/${registryId}/credentials?${paginationQuery(params)}`),
-  createRegistryCredential: (registryId: string, payload: { name: string, username: string, password?: string, token?: string, scope: RegistryCredential['scope'], accessScope: RegistryCredential['accessScope'] }) =>
+  createRegistryCredential: (registryId: string, payload: { name: string, username: string, password?: string, token?: string, scope: RegistryCredential['scope'], accessScope: RegistryCredential['accessScope'], repositoryTemplate: string, tagTemplate: string }) =>
     request<RegistryCredential>(`/registries/${registryId}/credentials`, { method: 'POST', body: JSON.stringify(payload) }),
   deleteRegistryCredential: (registryId: string, credentialId: string) =>
     request<void>(`/registries/${registryId}/credentials/${credentialId}`, { method: 'DELETE' }),

@@ -168,11 +168,45 @@ func (r *Runner) cleanupDeploymentTarget(ctx context.Context, payload tasks.Reso
 	if !resourceCleanupCanRun(target.DeleteStatus) {
 		return nil
 	}
+	if err := r.cleanupDeploymentTargetGatewayRoutes(ctx, target); err != nil {
+		_ = r.markDeploymentTargetDeleteFailed(target.ID, err)
+		return err
+	}
 	if err := r.cleanupDeploymentTargetRuntimeResources(ctx, target, payload.DeleteData); err != nil {
 		_ = r.markDeploymentTargetDeleteFailed(target.ID, err)
 		return err
 	}
 	return r.finishDeploymentTargetDelete(target)
+}
+
+func (r *Runner) cleanupDeploymentTargetGatewayRoutes(ctx context.Context, target model.DeploymentTarget) error {
+	var routes []model.GatewayRoute
+	if err := r.db.Where("project_id = ? and application_id = ? and deployment_target_id = ?", target.ProjectID, target.ApplicationID, target.ID).Find(&routes).Error; err != nil {
+		return err
+	}
+	startedAt := time.Now()
+	for _, route := range routes {
+		status := strings.TrimSpace(route.DeleteStatus)
+		if status != "deleting" && status != "delete_failed" {
+			if err := r.db.Model(&model.GatewayRoute{}).Where("id = ?", route.ID).Updates(map[string]any{
+				"delete_status":      "deleting",
+				"delete_message":     "",
+				"delete_started_at":  &startedAt,
+				"delete_finished_at": nil,
+			}).Error; err != nil {
+				return err
+			}
+			route.DeleteStatus = "deleting"
+		}
+		if err := r.cleanupGatewayRuntimeResources(ctx, route); err != nil {
+			_ = r.markGatewayRouteDeleteFailed(route.ID, err)
+			return err
+		}
+		if err := r.finishGatewayRouteDelete(route); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *Runner) cleanupGatewayRoute(ctx context.Context, payload tasks.ResourceCleanupPayload) error {
@@ -261,6 +295,9 @@ func (r *Runner) cleanupGatewayRuntimeResources(ctx context.Context, route model
 	}
 	var target model.DeploymentTarget
 	if err := r.db.First(&target, "id = ? and project_id = ?", route.DeploymentTargetID, route.ProjectID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
 		return fmt.Errorf("deployment target not found: %w", err)
 	}
 	environment := deploymentTargetEnvironment(target)
@@ -338,6 +375,18 @@ func (r *Runner) finishDeploymentTargetDelete(target model.DeploymentTarget) err
 	finishedAt := time.Now()
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("target_id = ?", target.ID).Delete(&model.DeploymentTargetHookBinding{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&model.GatewayRoute{}).
+			Where("project_id = ? and application_id = ? and deployment_target_id = ?", target.ProjectID, target.ApplicationID, target.ID).
+			Updates(map[string]any{
+				"delete_status":      "deleted",
+				"delete_message":     "",
+				"delete_finished_at": &finishedAt,
+			}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("project_id = ? and application_id = ? and deployment_target_id = ?", target.ProjectID, target.ApplicationID, target.ID).Delete(&model.GatewayRoute{}).Error; err != nil {
 			return err
 		}
 		if err := tx.Model(&model.DeploymentTarget{}).Where("id = ?", target.ID).Updates(map[string]any{

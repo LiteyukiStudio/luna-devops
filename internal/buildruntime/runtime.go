@@ -4,11 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"strings"
 
 	"github.com/LiteyukiStudio/devops/internal/builder"
 	"github.com/LiteyukiStudio/devops/internal/id"
+	"github.com/LiteyukiStudio/devops/internal/imageref"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/secret"
 	"github.com/LiteyukiStudio/devops/internal/variables"
@@ -73,7 +73,14 @@ func (r Resolver) ResolveBuildTask(tx *gorm.DB, run model.BuildRun, job model.Bu
 		return ResolvedTask{}, fmt.Errorf("application not found: %w", err)
 	}
 	if strings.TrimSpace(run.TargetRepository) == "" {
-		run.TargetRepository = BuildTargetImageRepository(registry, project, application)
+		var target model.DeploymentTarget
+		if strings.TrimSpace(run.DeploymentTargetID) != "" {
+			_ = tx.First(&target, "id = ? and project_id = ? and application_id = ?", run.DeploymentTargetID, run.ProjectID, run.ApplicationID).Error
+		}
+		run.TargetRepository = BuildTargetImageRepositoryForCredential(registry, credential, project, application, target)
+	}
+	if strings.TrimSpace(run.TargetTag) == "" {
+		run.TargetTag = BuildTargetImageTagTemplateForCredential(credential)
 	}
 	imageRef := fallback(strings.TrimSpace(run.ImageRef), BuildImageRef(registry, run))
 	var actor model.User
@@ -402,99 +409,39 @@ func isBuildEnvKey(value string) bool {
 }
 
 func RegistryAuthEndpoint(endpoint string) string {
-	parsed, err := url.Parse(strings.TrimSpace(endpoint))
-	if err != nil || parsed.Host == "" {
-		return strings.TrimSpace(endpoint)
-	}
-	host := strings.ToLower(parsed.Host)
-	if host == "registry-1.docker.io" || host == "docker.io" || host == "index.docker.io" {
-		return "https://index.docker.io/v1/"
-	}
-	return parsed.Host
+	return imageref.RegistryAuthEndpoint(endpoint)
 }
 
 func BuildImageRef(registry model.ArtifactRegistry, run model.BuildRun) string {
-	repository := strings.Trim(strings.TrimSpace(run.TargetRepository), "/")
-	if repository == "" {
-		return ""
-	}
-	tag := RenderBuildTagTemplate(fallback(strings.TrimSpace(run.TargetTag), "latest"), variables.Context{SourceBranch: run.SourceBranch, SourceTag: run.SourceTag, SourceCommit: run.SourceCommit})
-	if hasRegistryHost(repository) || isDockerHubRegistry(registry) {
-		return repository + ":" + tag
-	}
-	endpoint := registryImageHost(registry.Endpoint)
-	if endpoint != "" {
-		return endpoint + "/" + repository + ":" + tag
-	}
-	return repository + ":" + tag
+	return imageref.BuildImageRef(registry, run)
 }
 
 func BuildTargetImageRepository(registry model.ArtifactRegistry, project model.Project, application model.Application) string {
-	projectSlug := dnsSafeSegment(project.Slug)
-	appSlug := dnsSafeSegment(application.Slug)
-	if strings.TrimSpace(application.Slug) == "" {
-		appSlug = dnsSafeSegment(application.Name)
-	}
-	repository := projectSlug + "-" + appSlug
-	namespace := strings.Trim(strings.TrimSpace(registry.Namespace), "/")
-	if namespace == "" {
-		namespace = projectSlug
-	}
-	if namespace != "" {
-		repository = namespace + "/" + repository
-	}
-	return BuildImageNamePrefix(registry, repository)
+	return imageref.BuildTargetImageRepository(registry, project, application)
+}
+
+func BuildTargetImageRepositoryForCredential(registry model.ArtifactRegistry, credential model.RegistryCredential, project model.Project, application model.Application, target model.DeploymentTarget) string {
+	return imageref.BuildTargetImageRepositoryForCredential(registry, credential, project, application, target)
+}
+
+func BuildTargetImageTagTemplateForCredential(credential model.RegistryCredential) string {
+	return imageref.BuildTargetImageTagTemplateForCredential(credential)
 }
 
 func BuildImageNamePrefix(registry model.ArtifactRegistry, repository string) string {
-	repository = strings.Trim(strings.TrimSpace(repository), "/")
-	if repository == "" {
-		return ""
-	}
-	if hasRegistryHost(repository) || isDockerHubRegistry(registry) {
-		return repository
-	}
-	host := registryImageHost(registry.Endpoint)
-	if host == "" {
-		return repository
-	}
-	return strings.TrimRight(host, "/") + "/" + repository
+	return imageref.BuildImageNamePrefix(registry, repository)
 }
 
 func RenderBuildTagTemplate(template string, ctx variables.Context) string {
-	return sanitizeImageTag(variables.Render(fallback(strings.TrimSpace(template), "latest"), ctx))
+	return imageref.RenderBuildTagTemplate(template, ctx)
 }
 
 func sanitizeImageTag(value string) string {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return "latest"
-	}
-	var builder strings.Builder
-	for _, char := range value {
-		if char >= 'A' && char <= 'Z' || char >= 'a' && char <= 'z' || char >= '0' && char <= '9' || char == '_' || char == '.' || char == '-' {
-			builder.WriteRune(char)
-			continue
-		}
-		builder.WriteByte('-')
-	}
-	output := strings.Trim(builder.String(), ".-")
-	if output == "" {
-		return "latest"
-	}
-	if len(output) > 128 {
-		output = output[:128]
-	}
-	return output
+	return imageref.RenderBuildTagTemplate(value, variables.Context{})
 }
 
 func isDockerHubRegistry(registry model.ArtifactRegistry) bool {
-	provider := strings.ToLower(strings.TrimSpace(registry.Provider))
-	if provider == "dockerhub" || provider == "docker-hub" {
-		return true
-	}
-	host := registryImageHost(registry.Endpoint)
-	return host == "docker.io" || host == "registry-1.docker.io" || host == "index.docker.io"
+	return imageref.IsDockerHubRegistry(registry)
 }
 
 func hasRegistryHost(repository string) bool {
@@ -503,15 +450,7 @@ func hasRegistryHost(repository string) bool {
 }
 
 func registryImageHost(endpoint string) string {
-	parsed, err := url.Parse(strings.TrimSpace(endpoint))
-	if err != nil || parsed.Host == "" {
-		return strings.TrimSpace(endpoint)
-	}
-	host := strings.ToLower(parsed.Host)
-	if host == "registry-1.docker.io" || host == "index.docker.io" {
-		return "docker.io"
-	}
-	return parsed.Host
+	return imageref.RegistryImageHost(endpoint)
 }
 
 func dnsSafeSegment(value string) string {

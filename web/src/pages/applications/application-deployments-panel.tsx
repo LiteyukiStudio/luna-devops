@@ -25,6 +25,7 @@ import { Input } from '@/components/ui/input'
 import { NativeSelect as Select } from '@/components/ui/native-select'
 import { useBillingDisplay } from '@/lib/billing-display'
 import { WORKFLOW_STATUS_REFETCH_INTERVAL_MS } from '@/lib/polling'
+import { defaultBuildCpuRequest, defaultBuildMemoryRequest } from './application-build-defaults'
 import { branchOptions, defaultTargetImageRef, deploymentReleaseKey, deploymentTargetCanRelease, deploymentTargetImageRef, registryInputPrefix, registryOptionLabel } from './application-config-utils'
 import { buildDeploymentRuntimeStatus, buildInternalServiceEndpoint } from './application-deployment-runtime-utils'
 import { ApplicationDeploymentTargetsList } from './application-deployment-targets-list'
@@ -266,8 +267,8 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
       memoryRequest: target?.memoryRequest || '1Gi',
       stage: target?.stage || 'prod',
       buildEnvironmentId: target?.buildEnvironmentId || '',
-      buildCpuRequest: target?.buildCpuRequest || '1',
-      buildMemoryRequest: target?.buildMemoryRequest || '1Gi',
+      buildCpuRequest: target?.buildCpuRequest || defaultBuildCpuRequest,
+      buildMemoryRequest: target?.buildMemoryRequest || defaultBuildMemoryRequest,
       repositoryBindingId: target?.repositoryBindingId ?? defaultBinding?.id ?? '',
       targetRegistryId: target?.targetRegistryId ?? defaultRegistry?.id ?? '',
       targetImageRef: deploymentTargetImageRef(target ?? undefined) || defaultTargetImageRef(defaultRegistry, projectSlug, appSlug),

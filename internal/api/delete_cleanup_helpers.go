@@ -64,6 +64,23 @@ func markResourceDeleting(tx *gorm.DB, model any, id string) error {
 	}).Error
 }
 
+func markDeploymentTargetGatewayRoutesDeleting(tx *gorm.DB, target model.DeploymentTarget) error {
+	startedAt := time.Now()
+	return tx.Model(&model.GatewayRoute{}).
+		Where("project_id = ? and application_id = ? and deployment_target_id = ? and delete_status in ?",
+			target.ProjectID,
+			target.ApplicationID,
+			target.ID,
+			[]string{"", "active", "delete_failed"},
+		).
+		Updates(map[string]any{
+			"delete_status":      "deleting",
+			"delete_message":     "",
+			"delete_started_at":  &startedAt,
+			"delete_finished_at": nil,
+		}).Error
+}
+
 func markResourceDeleteFailed(db *gorm.DB, model any, id string, message string) error {
 	finishedAt := time.Now()
 	return db.Model(model).Where("id = ?", id).Updates(map[string]any{
@@ -71,6 +88,22 @@ func markResourceDeleteFailed(db *gorm.DB, model any, id string, message string)
 		"delete_message":     strings.TrimSpace(message),
 		"delete_finished_at": &finishedAt,
 	}).Error
+}
+
+func markDeploymentTargetGatewayRoutesDeleteFailed(db *gorm.DB, target model.DeploymentTarget, message string) error {
+	finishedAt := time.Now()
+	return db.Model(&model.GatewayRoute{}).
+		Where("project_id = ? and application_id = ? and deployment_target_id = ? and delete_status = ?",
+			target.ProjectID,
+			target.ApplicationID,
+			target.ID,
+			"deleting",
+		).
+		Updates(map[string]any{
+			"delete_status":      "delete_failed",
+			"delete_message":     strings.TrimSpace(message),
+			"delete_finished_at": &finishedAt,
+		}).Error
 }
 
 func (h *Handlers) enqueueResourceCleanup(ctx context.Context, payload tasks.ResourceCleanupPayload) bool {

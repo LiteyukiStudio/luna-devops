@@ -29,6 +29,10 @@ Deleting a registry also deletes all credentials that belong to it. Confirm that
 
 Automated builds need push credentials. Existing-image deployments mainly need the runtime cluster to pull the target image.
 
+Registry credentials can define an image repository template and an image tag template. When a deployment target is created, the platform renders the default push repository from the project space, application, and `stage`; when a build is triggered, it renders the final image tag from branch, tag, and commit variables. For example, repository template `devopsns/{project}-{app}-{stage}` plus tag template `{commit}` produces image refs like `devopsns/blog-api-prod:1a2b3c...`.
+
+Repository templates support `{registryNamespace}`, `{project}`, `{projectSlug}`, `{app}`, `{appSlug}`, `{stage}`, and `{target}`. Tag templates additionally support `{commit}`, `{shortSha}`, `{branch}`, `{branchSlug}`, `{tag}`, and `{tagSlug}`, and remain compatible with existing forms such as `${{ github.sha }}`, `${{ github.ref_name }}`, and `{short_sha}`.
+
 ## Runtime clusters
 
 Runtime clusters are release targets. The platform turns Releases into Kubernetes resources, then shows status, logs, and diagnostics.

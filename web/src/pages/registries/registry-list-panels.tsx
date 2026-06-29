@@ -2,6 +2,7 @@ import type { CredentialWithRegistry } from './registry-form-model'
 import type { ArtifactRegistry, ContainerImage, PaginatedResponse } from '@/api'
 import { CheckCircle2, RefreshCw, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { CopyableHoverText } from '@/components/common/copyable-hover-text'
 import { DataList } from '@/components/common/data-list'
 import { EditActionButton } from '@/components/common/edit-action-button'
 import { ErrorState } from '@/components/common/error-state'
@@ -128,6 +129,17 @@ export function CredentialsPanel({ items, selectedRegistryId, pagination, onDele
           ),
         },
         { key: 'registry', header: t('registries'), render: credential => credential.registryName },
+        {
+          key: 'template',
+          header: t('registriesPage.imageTemplate'),
+          className: 'min-w-56',
+          render: credential => (
+            <CopyableHoverText
+              className="max-w-72 rounded bg-background px-2 py-1 font-mono text-xs"
+              value={`${credential.repositoryTemplate}:${credential.tagTemplate}`}
+            />
+          ),
+        },
         { key: 'usage', header: t('registriesPage.usage'), render: credential => <StatusBadge>{credential.scope}</StatusBadge> },
         { key: 'access', header: t('registriesPage.credentialAccessScope'), render: credential => <StatusBadge>{credential.accessScope === 'registry' ? t('registriesPage.credentialAccessScopeRegistry') : t('registriesPage.credentialAccessScopePersonal')}</StatusBadge> },
         {

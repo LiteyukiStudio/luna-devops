@@ -25,18 +25,20 @@ type ArtifactRegistry struct {
 }
 
 type RegistryCredential struct {
-	ID          string         `gorm:"primaryKey" json:"id"`
-	RegistryID  string         `gorm:"index;not null" json:"registryId"`
-	Name        string         `gorm:"not null" json:"name"`
-	Username    string         `json:"username"`
-	PasswordRef string         `json:"-"`
-	TokenRef    string         `json:"-"`
-	Scope       string         `gorm:"not null;default:push-pull" json:"scope"`
-	AccessScope string         `gorm:"not null;default:personal" json:"accessScope"`
-	CreatedBy   string         `gorm:"index" json:"createdBy"`
-	CreatedAt   time.Time      `json:"createdAt"`
-	UpdatedAt   time.Time      `json:"updatedAt"`
-	DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
+	ID                 string         `gorm:"primaryKey" json:"id"`
+	RegistryID         string         `gorm:"index;not null" json:"registryId"`
+	Name               string         `gorm:"not null" json:"name"`
+	Username           string         `json:"username"`
+	PasswordRef        string         `json:"-"`
+	TokenRef           string         `json:"-"`
+	Scope              string         `gorm:"not null;default:push-pull" json:"scope"`
+	AccessScope        string         `gorm:"not null;default:personal" json:"accessScope"`
+	RepositoryTemplate string         `gorm:"type:text;not null;default:''" json:"repositoryTemplate"`
+	TagTemplate        string         `gorm:"type:text;not null;default:''" json:"tagTemplate"`
+	CreatedBy          string         `gorm:"index" json:"createdBy"`
+	CreatedAt          time.Time      `json:"createdAt"`
+	UpdatedAt          time.Time      `json:"updatedAt"`
+	DeletedAt          gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
 type ContainerImage struct {

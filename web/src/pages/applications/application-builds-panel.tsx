@@ -19,6 +19,7 @@ import { Input } from '@/components/ui/input'
 import { NativeSelect as Select } from '@/components/ui/native-select'
 import { useBillingDisplay } from '@/lib/billing-display'
 import { WORKFLOW_STATUS_REFETCH_INTERVAL_MS } from '@/lib/polling'
+import { defaultBuildCpuRequest, defaultBuildMemoryRequest } from './application-build-defaults'
 import { ApplicationBuildLogPanel } from './application-build-log-panel'
 import { ApplicationBuildRunFilterBar } from './application-build-run-filter-bar'
 import { ApplicationBuildRunRow } from './application-build-run-row'
@@ -30,7 +31,7 @@ export interface BuildsPanelHandle {
 
 type TriggerForm = Partial<BuildRun>
 
-const triggerDefaults: TriggerForm = { applicationId: '', buildEnvironmentId: '', buildCpuRequest: '1', buildMemoryRequest: '1Gi', deploymentTargetId: '', sourceBranch: '', targetImageRef: '', targetRegistryId: '', triggerType: 'manual' }
+const triggerDefaults: TriggerForm = { applicationId: '', buildEnvironmentId: '', buildCpuRequest: defaultBuildCpuRequest, buildMemoryRequest: defaultBuildMemoryRequest, deploymentTargetId: '', sourceBranch: '', targetImageRef: '', targetRegistryId: '', triggerType: 'manual' }
 
 function uniqueBuildFilterValues(values: Array<string | undefined>) {
   return [...new Set(values.map(value => value?.trim()).filter((value): value is string => Boolean(value)))]
@@ -230,8 +231,8 @@ export function ApplicationBuildsPanel({ applicationId, appSlug, binding, deploy
       applicationId,
       deploymentTargetId: defaultConfig?.id ?? '',
       buildEnvironmentId: defaultConfig?.buildEnvironmentId || '',
-      buildCpuRequest: defaultConfig?.buildCpuRequest || '1',
-      buildMemoryRequest: defaultConfig?.buildMemoryRequest || '1Gi',
+      buildCpuRequest: defaultConfig?.buildCpuRequest || defaultBuildCpuRequest,
+      buildMemoryRequest: defaultConfig?.buildMemoryRequest || defaultBuildMemoryRequest,
       sourceBranch: (repositoryBindings.find(item => item.id === defaultConfig?.repositoryBindingId) ?? binding)?.defaultBranch || 'main',
       targetImageRef: deploymentTargetImageRef(defaultConfig) || defaultTargetImageRef(undefined, projectSlug, appSlug),
       targetRegistryId: defaultConfig?.targetRegistryId ?? '',
@@ -250,8 +251,8 @@ export function ApplicationBuildsPanel({ applicationId, appSlug, binding, deploy
     if (configTargetImageRef)
       form.setValue('targetImageRef', configTargetImageRef, { shouldDirty: true, shouldValidate: true })
     form.setValue('buildEnvironmentId', selectedDeploymentTarget.buildEnvironmentId || '', { shouldDirty: true, shouldValidate: true })
-    form.setValue('buildCpuRequest', selectedDeploymentTarget.buildCpuRequest || '1', { shouldDirty: true, shouldValidate: true })
-    form.setValue('buildMemoryRequest', selectedDeploymentTarget.buildMemoryRequest || '1Gi', { shouldDirty: true, shouldValidate: true })
+    form.setValue('buildCpuRequest', selectedDeploymentTarget.buildCpuRequest || defaultBuildCpuRequest, { shouldDirty: true, shouldValidate: true })
+    form.setValue('buildMemoryRequest', selectedDeploymentTarget.buildMemoryRequest || defaultBuildMemoryRequest, { shouldDirty: true, shouldValidate: true })
   }, [binding, dialogOpen, form, repositoryBindings, selectedDeploymentTarget])
 
   useEffect(() => {
@@ -404,7 +405,7 @@ export function ApplicationBuildsPanel({ applicationId, appSlug, binding, deploy
                       { label: 'm', value: 'm' },
                       { label: t('deploymentsPage.cpuUnits.core'), value: '' },
                     ]}
-                    value={form.watch('buildCpuRequest') || '1'}
+                    value={form.watch('buildCpuRequest') || defaultBuildCpuRequest}
                     onChange={value => form.setValue('buildCpuRequest', value, { shouldDirty: true, shouldValidate: true })}
                   />
                 </Field>
@@ -415,7 +416,7 @@ export function ApplicationBuildsPanel({ applicationId, appSlug, binding, deploy
                       { label: 'Mi', value: 'Mi' },
                       { label: 'Gi', value: 'Gi' },
                     ]}
-                    value={form.watch('buildMemoryRequest') || '1Gi'}
+                    value={form.watch('buildMemoryRequest') || defaultBuildMemoryRequest}
                     onChange={value => form.setValue('buildMemoryRequest', value, { shouldDirty: true, shouldValidate: true })}
                   />
                   <p className="mt-1 text-xs text-muted-foreground">

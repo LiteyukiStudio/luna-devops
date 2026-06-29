@@ -264,7 +264,12 @@ func (h *Handlers) DeleteDeploymentTarget(ctx *gin.Context) {
 		writeError(ctx, http.StatusConflict, "部署配置正在删除中，请等待资源清理完成")
 		return
 	}
-	if err := markResourceDeleting(h.db, &model.DeploymentTarget{}, target.ID); err != nil {
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := markResourceDeleting(tx, &model.DeploymentTarget{}, target.ID); err != nil {
+			return err
+		}
+		return markDeploymentTargetGatewayRoutesDeleting(tx, target)
+	}); err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -276,6 +281,7 @@ func (h *Handlers) DeleteDeploymentTarget(ctx *gin.Context) {
 		DeleteData:   !target.DataRetentionEnabled,
 	}) {
 		_ = markResourceDeleteFailed(h.db, &model.DeploymentTarget{}, target.ID, "资源清理任务投递失败，请稍后重试")
+		_ = markDeploymentTargetGatewayRoutesDeleteFailed(h.db, target, "资源清理任务投递失败，请稍后重试")
 		writeError(ctx, http.StatusServiceUnavailable, "资源清理任务投递失败，请稍后重试")
 		return
 	}

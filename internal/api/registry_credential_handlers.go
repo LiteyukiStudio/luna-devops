@@ -92,15 +92,17 @@ func (h *Handlers) CreateRegistryCredential(ctx *gin.Context) {
 	}
 
 	credential := model.RegistryCredential{
-		ID:          id.New("regc"),
-		RegistryID:  registry.ID,
-		Name:        fallback(strings.TrimSpace(input.Name), "default"),
-		Username:    strings.TrimSpace(input.Username),
-		PasswordRef: h.secrets.Store(input.Password, user.ID, "registry_credential:"+registry.ID+":password"),
-		TokenRef:    h.secrets.Store(input.Token, user.ID, "registry_credential:"+registry.ID+":token"),
-		Scope:       normalizeCredentialScope(input.Scope),
-		AccessScope: accessScope,
-		CreatedBy:   user.ID,
+		ID:                 id.New("regc"),
+		RegistryID:         registry.ID,
+		Name:               fallback(strings.TrimSpace(input.Name), "default"),
+		Username:           strings.TrimSpace(input.Username),
+		PasswordRef:        h.secrets.Store(input.Password, user.ID, "registry_credential:"+registry.ID+":password"),
+		TokenRef:           h.secrets.Store(input.Token, user.ID, "registry_credential:"+registry.ID+":token"),
+		Scope:              normalizeCredentialScope(input.Scope),
+		AccessScope:        accessScope,
+		RepositoryTemplate: normalizeImageRepositoryTemplate(input.RepositoryTemplate),
+		TagTemplate:        normalizeImageTagTemplate(input.TagTemplate),
+		CreatedBy:          user.ID,
 	}
 	if credential.PasswordRef == "" && credential.TokenRef == "" {
 		writeError(ctx, http.StatusBadRequest, "请填写 Registry 密码或 Token")
@@ -164,6 +166,23 @@ func (h *Handlers) registryCredentialFor(user model.User, registry model.Artifac
 		return credential, true
 	}
 	if registry.Scope != "global" && h.db.Where("registry_id = ? and access_scope = ?", registry.ID, "registry").Order("created_at desc").First(&credential).Error == nil {
+		return credential, true
+	}
+	return credential, false
+}
+
+func (h *Handlers) registryPushCredentialFor(user model.User, registry model.ArtifactRegistry) (model.RegistryCredential, bool) {
+	scopes := []string{"push", "push-pull"}
+	var credential model.RegistryCredential
+	if registry.CredentialRef != "" {
+		if err := h.db.First(&credential, "id = ? and registry_id = ? and scope in ? and (access_scope = ? or created_by = ?)", registry.CredentialRef, registry.ID, scopes, "registry", user.ID).Error; err == nil {
+			return credential, true
+		}
+	}
+	if err := h.db.Where("registry_id = ? and access_scope = ? and created_by = ? and scope in ?", registry.ID, "personal", user.ID, scopes).Order("created_at desc").First(&credential).Error; err == nil {
+		return credential, true
+	}
+	if registry.Scope != "global" && h.db.Where("registry_id = ? and access_scope = ? and scope in ?", registry.ID, "registry", scopes).Order("created_at desc").First(&credential).Error == nil {
 		return credential, true
 	}
 	return credential, false

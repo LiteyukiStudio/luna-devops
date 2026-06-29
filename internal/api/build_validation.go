@@ -99,14 +99,22 @@ func (h *Handlers) prepareBuildRunRequest(user model.User, run *model.BuildRun) 
 	if err := h.db.First(&registry, "id = ?", run.TargetRegistryID).Error; err != nil {
 		return buildRunBadRequest("目标镜像站不存在")
 	}
+	credential, hasCredential := h.registryPushCredentialFor(user, registry)
 	if strings.TrimSpace(run.TargetRepository) == "" {
 		run.TargetRepository = strings.Trim(strings.TrimSpace(config.TargetRepository), "/")
 		run.TargetTag = strings.TrimSpace(config.TargetTag)
 	}
 	if strings.TrimSpace(run.TargetRepository) == "" {
-		repository, tag := splitTargetImageRef(buildTargetImageRepository(registry, project, app))
+		repositoryRef := buildTargetImageRepository(registry, project, app)
+		if hasCredential {
+			repositoryRef = buildTargetImageRepositoryForCredential(registry, credential, project, app, config)
+			run.TargetTag = buildTargetImageTagTemplateForCredential(credential)
+		}
+		repository, tag := splitTargetImageRef(repositoryRef)
 		run.TargetRepository = repository
-		run.TargetTag = tag
+		if strings.TrimSpace(run.TargetTag) == "" {
+			run.TargetTag = tag
+		}
 	}
 	run.TargetRepository = strings.Trim(strings.TrimSpace(run.TargetRepository), "/")
 	run.TargetTag = fallback(strings.TrimSpace(run.TargetTag), "latest")

@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button'
 import { NativeSelect as Select } from '@/components/ui/native-select'
 import { TabsContent } from '@/components/ui/tabs'
 import { CredentialDialog, ImageDialog, RegistryDialog } from './registry-dialogs'
-import { credentialSchema, imageSchema, registryDefaults, registrySchema, splitText } from './registry-form-model'
+import { credentialDefaults, credentialSchema, imageSchema, registryDefaults, registrySchema, splitText } from './registry-form-model'
 import { CredentialsPanel, ImagesPanel, RegistriesPanel } from './registry-list-panels'
 
 export function RegistriesPage() {
@@ -78,7 +78,7 @@ export function RegistriesPage() {
   const credentialForm = useForm<CredentialForm>({
     resolver: zodResolver(credentialSchema),
     mode: 'onChange',
-    defaultValues: { accessScope: 'personal', registryId: '', name: 'default', username: '', password: '', token: '', scope: 'push-pull' },
+    defaultValues: credentialDefaults,
   })
   const imageForm = useForm<ImageForm>({
     resolver: zodResolver(imageSchema),
@@ -147,7 +147,7 @@ export function RegistriesPage() {
       toast.success(t('registriesPage.credentialSaved'))
       setCredentialDialogOpen(false)
       setSelectedRegistryId(values.registryId)
-      credentialForm.reset({ accessScope: 'personal', registryId: values.registryId, name: 'default', username: '', password: '', token: '', scope: 'push-pull' })
+      credentialForm.reset({ ...credentialDefaults, registryId: values.registryId })
       queryClient.invalidateQueries({ queryKey: ['registry-credentials', values.registryId] })
       queryClient.invalidateQueries({ queryKey: ['registry-credentials', 'all'] })
       queryClient.invalidateQueries({ queryKey: ['registries'] })

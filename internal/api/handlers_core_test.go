@@ -11,6 +11,7 @@ import (
 
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/security"
+	"github.com/LiteyukiStudio/devops/internal/variables"
 )
 
 func TestBootstrapStatusHidesDevLoginHintInProduction(t *testing.T) {
@@ -190,6 +191,30 @@ func TestBuildTargetImageRepositoryFallsBackToProjectSlugNamespace(t *testing.T)
 
 	if repository := buildTargetImageRepository(registry, project, application); repository != "harbor.example.com/demo/demo-api" {
 		t.Fatalf("repository = %q", repository)
+	}
+}
+
+func TestCredentialRepositoryTemplateUsesStage(t *testing.T) {
+	registry := model.ArtifactRegistry{Provider: "dockerhub", Endpoint: "https://registry-1.docker.io", Namespace: "snowykami"}
+	credential := model.RegistryCredential{RepositoryTemplate: "devopsns/{project}-{app}-{stage}", TagTemplate: "{commit}"}
+	project := model.Project{Slug: "neo-blog"}
+	application := model.Application{Slug: "frontend"}
+	target := model.DeploymentTarget{Name: "prod", Stage: "production"}
+
+	repository, tag := splitTargetImageRef(buildTargetImageRepositoryForCredential(registry, credential, project, application, target) + ":" + buildTargetImageTagTemplateForCredential(credential))
+	if repository != "devopsns/neo-blog-frontend-production" || tag != "{commit}" {
+		t.Fatalf("templated image = %q:%q", repository, tag)
+	}
+}
+
+func TestBuildTagTemplateSupportsFriendlyVariables(t *testing.T) {
+	got := renderBuildTagTemplate("{branchSlug}-{shortSha}-{commit}", variables.Context{
+		SourceBranch: "feature/Login Page",
+		SourceCommit: "1234567890abcdef",
+	})
+	want := "feature-login-page-1234567890ab-1234567890abcdef"
+	if got != want {
+		t.Fatalf("tag = %q, want %q", got, want)
 	}
 }
 

@@ -245,6 +245,8 @@ export interface RegistryCredential {
   username: string
   scope: 'push-pull' | 'push' | 'pull'
   accessScope: 'personal' | 'registry'
+  repositoryTemplate: string
+  tagTemplate: string
   passwordSet: boolean
   tokenSet: boolean
   createdAt: string
