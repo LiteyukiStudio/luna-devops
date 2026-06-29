@@ -1,4 +1,4 @@
-import type { AppTemplate, AppTemplateInstallPayload, AppTemplateInstallResponse, BillingDeploymentSpend, BillingLedgerEntry, BillingListParams, BillingRateRule, BillingRateRulePayload, BillingSummary, BillingUsageRecord, BillingUsageSettlementResult, BillingWalletTransactionPayload, GatewayTrafficUsagePayload, PaginatedResponse, PaginationParams, Project, ProjectListParams, ProjectMember, ProjectPin } from '../types'
+import type { AppTemplate, AppTemplateInstallPayload, AppTemplateInstallResponse, BillingDeploymentSpend, BillingLedgerEntry, BillingListParams, BillingRateRule, BillingRateRulePayload, BillingSummary, BillingUsageRecord, BillingUsageSettlementResult, BillingWalletTransactionPayload, GatewayTrafficUsagePayload, PaginatedResponse, PaginationParams, Project, ProjectListParams, ProjectMember, ProjectMemberCandidate, ProjectPin } from '../types'
 import { billingQuery, billingSummaryQuery, paginationQuery, request } from '../core'
 
 export const projectsApi = {
@@ -40,7 +40,13 @@ export const projectsApi = {
   listProjectMembers: (projectId: string) => request<ProjectMember[]>(`/projects/${projectId}/members`),
   listProjectMembersPage: (projectId: string, params: PaginationParams) =>
     request<PaginatedResponse<ProjectMember>>(`/projects/${projectId}/members?${paginationQuery(params)}`),
-  createProjectMember: (projectId: string, payload: { email: string, role: ProjectMember['role'] }) =>
+  searchProjectMemberCandidates: (projectId: string, params: { search: string, limit?: number }) => {
+    const search = new URLSearchParams({ search: params.search })
+    if (params.limit)
+      search.set('limit', String(params.limit))
+    return request<ProjectMemberCandidate[]>(`/projects/${projectId}/member-candidates?${search.toString()}`)
+  },
+  createProjectMember: (projectId: string, payload: { userId: string, role: ProjectMember['role'] }) =>
     request<ProjectMember>(`/projects/${projectId}/members`, { method: 'POST', body: JSON.stringify(payload) }),
   updateProjectMember: (projectId: string, memberId: string, payload: { role: ProjectMember['role'] }) =>
     request<ProjectMember>(`/projects/${projectId}/members/${memberId}`, { method: 'PUT', body: JSON.stringify(payload) }),

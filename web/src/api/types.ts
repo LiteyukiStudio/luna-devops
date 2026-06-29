@@ -32,6 +32,13 @@ export interface ProjectMember {
   name: string
 }
 
+export interface ProjectMemberCandidate {
+  id: string
+  email: string
+  name: string
+  avatarUrl: string
+}
+
 export interface Application {
   id: string
   projectId: string

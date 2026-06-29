@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -356,6 +357,42 @@ func (h *Handlers) ListProjectMembers(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, members)
 }
 
+func (h *Handlers) SearchProjectMemberCandidates(ctx *gin.Context) {
+	_, project, ok := h.projectAndCurrentUserWithRoles(ctx, "owner", "admin")
+	if !ok {
+		return
+	}
+
+	search := strings.TrimSpace(ctx.Query("search"))
+	if search == "" {
+		ctx.JSON(http.StatusOK, []projectMemberCandidateResponse{})
+		return
+	}
+
+	limit := 20
+	if rawLimit := strings.TrimSpace(ctx.Query("limit")); rawLimit != "" {
+		if parsed, err := strconv.Atoi(rawLimit); err == nil {
+			limit = min(max(parsed, 1), 50)
+		}
+	}
+
+	like := "%" + strings.ToLower(search) + "%"
+	var users []projectMemberCandidateResponse
+	err := h.db.Table("users").
+		Select("users.id, users.email, users.name, users.avatar_url").
+		Where("users.disabled = ?", false).
+		Where("(lower(users.email) like ? or lower(users.name) like ?)", like, like).
+		Where("not exists (select 1 from project_members where project_members.project_id = ? and project_members.user_id = users.id)", project.ID).
+		Order("users.email asc").
+		Limit(limit).
+		Scan(&users).Error
+	if err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
+		return
+	}
+	ctx.JSON(http.StatusOK, users)
+}
+
 func (h *Handlers) CreateProjectMember(ctx *gin.Context) {
 	actor, project, ok := h.projectAndCurrentUserWithRoles(ctx, "owner", "admin")
 	if !ok {
@@ -371,9 +408,21 @@ func (h *Handlers) CreateProjectMember(ctx *gin.Context) {
 	}
 
 	var targetUser model.User
+	userID := strings.TrimSpace(input.UserID)
 	email := strings.ToLower(strings.TrimSpace(input.Email))
-	if err := h.db.First(&targetUser, "email = ? and disabled = ?", email, false).Error; err != nil {
-		writeError(ctx, http.StatusNotFound, "user not found")
+	switch {
+	case userID != "":
+		if err := h.db.First(&targetUser, "id = ? and disabled = ?", userID, false).Error; err != nil {
+			writeError(ctx, http.StatusNotFound, "user not found")
+			return
+		}
+	case email != "":
+		if err := h.db.First(&targetUser, "email = ? and disabled = ?", email, false).Error; err != nil {
+			writeError(ctx, http.StatusNotFound, "user not found")
+			return
+		}
+	default:
+		writeError(ctx, http.StatusBadRequest, "user is required")
 		return
 	}
 
@@ -668,8 +717,9 @@ func normalizedProjectOrderIDs(values []string) []string {
 }
 
 type projectMemberInput struct {
-	Email string `json:"email"`
-	Role  string `json:"role" binding:"required"`
+	UserID string `json:"userId"`
+	Email  string `json:"email"`
+	Role   string `json:"role" binding:"required"`
 }
 
 type projectMemberResponse struct {
@@ -679,6 +729,13 @@ type projectMemberResponse struct {
 	Role      string `json:"role"`
 	Email     string `json:"email"`
 	Name      string `json:"name"`
+}
+
+type projectMemberCandidateResponse struct {
+	ID        string `json:"id"`
+	Email     string `json:"email"`
+	Name      string `json:"name"`
+	AvatarURL string `json:"avatarUrl"`
 }
 
 func normalizeProjectRole(role string) string {

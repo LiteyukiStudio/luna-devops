@@ -8,6 +8,8 @@ For a click-through walkthrough, see [Deploy a Web Project](/en/operations/deplo
 
 A project space is the boundary for teams and resources. Members, applications, deploy configs, build records, releases, and routes all belong to a project space.
 
+When adding project space members, Owner/Admin users search platform users by name or email, select one or more suggestions, and then add them. Free-form email text is not submitted as a member by itself.
+
 Common patterns:
 
 - One product per project space.

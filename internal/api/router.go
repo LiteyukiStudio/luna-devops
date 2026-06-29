@@ -128,6 +128,7 @@ func NewRouterWithStaticFS(db *gorm.DB, staticFS fs.FS) *gin.Engine {
 		v1.POST("/projects/:projectId/app-templates/:templateId/install", handlers.InstallAppTemplate)
 
 		v1.GET("/projects/:projectId/members", handlers.ListProjectMembers)
+		v1.GET("/projects/:projectId/member-candidates", handlers.SearchProjectMemberCandidates)
 		v1.POST("/projects/:projectId/members", handlers.CreateProjectMember)
 		v1.PUT("/projects/:projectId/members/:memberId", handlers.UpdateProjectMember)
 		v1.DELETE("/projects/:projectId/members/:memberId", handlers.DeleteProjectMember)
