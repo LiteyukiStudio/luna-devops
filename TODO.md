@@ -118,6 +118,7 @@
 - [x] 应用构建运行列表接入后端分页，并支持 Event、Status、Branch、Actor 筛选；全局分页组件调整为 GitHub 风格页码。
 - [x] 构建运行行压缩信息密度：代码来源和运行/镜像状态分别用 badge 分组展示，并区分平台触发人与 Git 提交者。
 - [x] 构建运行 badge 支持操作：仓库/提交跳转到 Git commit，Git 提交者跳转 Git 平台主页，镜像标签点击复制并 toast 提示。
+- [x] 部署配置支持构建超时时间：默认 30 分钟，创建 BuildRun 时快照到构建记录，Worker 创建 Kubernetes Job 时写入 `activeDeadlineSeconds` 并按该值终止超时构建。
 - [x] 构建页操作收敛到 ContentTabs 工具区：触发构建按钮提升到页签工具栏，触发表单继续使用 Dialog；构建记录支持删除终态记录并清理关联任务日志和 HookRun 记录。
 - [x] 构建运行进度改为后端回传原始 key、前端 i18n 展示，并移除右侧时间区域的阶段文案。
 - [x] 构建日志接入 SSE stream，支持按 offset / Last-Event-ID 从已落库日志继续读取；前端日志抽屉从轮询改为 EventSource。

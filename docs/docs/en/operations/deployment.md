@@ -31,6 +31,7 @@ A deployment target answers how an application should ship:
 - Stage for this deployment target, such as development, test, staging, or production.
 - Use which registry.
 - Listen on which service ports. A deployment target can expose multiple service ports; the first port is the default, for example `8080` for HTTP traffic and `9001` for Prometheus metrics.
+- Build spec and timeout. The default build timeout is 30 minutes, and it can be adjusted on the deployment target or temporarily overridden for a manual build.
 - Auto release after a successful build or not.
 
 Repository webhooks belong to application repository bindings. When the Git platform sends a push/tag event, the platform finds enabled, active deployment targets under the same application that use that repository binding, then creates build runs according to their branch and tag patterns. Deployment targets do not create separate external webhooks, so each repository event enters the platform once.

@@ -36,7 +36,7 @@ OIDC 身份源的 Redirect URI 由 `PUBLIC_BASE_URL` 生成，后台“身份源
 | 进阶 | `DEPLOY_ROLLOUT_TIMEOUT_SECONDS` | `600` | 发布等待超时；应用启动慢时调大。 |
 | 进阶 | `CERT_MANAGER_CLUSTER_ISSUER` | `letsencrypt-http01` | 证书 Issuer 名称；集群名称不同时改。 |
 | 进阶 | `BUILD_EGRESS_MODE` | `permissive` | 构建出站模式；需要强隔离时改为 `restricted`。 |
-| 进阶 | `BUILD_JOB_TIMEOUT_SECONDS` | `5400` | 构建超时；大型项目构建慢时调大。 |
+| 进阶 | `BUILD_JOB_TIMEOUT_SECONDS` | `1800` | 构建超时兜底；部署配置未设置超时时使用。大型项目构建慢时调大。 |
 | 进阶 | `BUILD_JOB_TTL_SECONDS` | `3600` | 构建 Pod 保留时间；想看更久日志时调大。 |
 | 进阶 | `BUILD_CACHE_ENABLED` | `false` | 构建缓存开关；需要加速重复构建时开启。 |
 | 进阶 | `BUILD_CACHE_TAG` | `buildcache` | 构建缓存 tag；需要隔离缓存时改。 |

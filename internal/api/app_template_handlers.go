@@ -281,6 +281,7 @@ func (h *Handlers) buildTemplateInstallPlan(ctx *gin.Context, user model.User, p
 		ImageRef:             imageRef,
 		BuildCPURequest:      defaultBuildCPURequest,
 		BuildMemoryRequest:   defaultBuildMemoryRequest,
+		BuildTimeoutSeconds:  defaultBuildTimeoutSeconds,
 		ConcurrencyPolicy:    "queue",
 		EnvVars:              string(envContent),
 		SecretRefs:           string(secretRefsContent),

@@ -1,7 +1,7 @@
 import type { UseFormReturn } from 'react-hook-form'
 import type { DeploymentTarget, DeploymentTargetPayload, ProjectRuntimeConfigSetPayload, Release, RepositoryBinding } from '@/api'
 import { emptyRuntimeDataVolumeRow, parseRuntimeDataVolumes, serializeRuntimeDataVolumes } from '@/lib/runtime-data-volumes'
-import { defaultBuildCpuRequest, defaultBuildMemoryRequest } from './application-build-defaults'
+import { defaultBuildCpuRequest, defaultBuildMemoryRequest, defaultBuildTimeoutSeconds } from './application-build-defaults'
 
 export type ReleaseForm = Omit<Release, 'id' | 'projectId' | 'createdBy' | 'createdAt' | 'rollbackFromId'>
 
@@ -26,6 +26,7 @@ export const deploymentTargetDefaults: DeploymentTargetPayload = {
   buildEnvironmentId: '',
   buildCpuRequest: defaultBuildCpuRequest,
   buildMemoryRequest: defaultBuildMemoryRequest,
+  buildTimeoutSeconds: defaultBuildTimeoutSeconds,
   targetRegistryId: '',
   targetRepository: '',
   targetTag: 'latest',
@@ -190,6 +191,7 @@ export function normalizeDeploymentTargetPayload(values: DeploymentTargetPayload
     buildEnvironmentId: values.buildEnvironmentId || '',
     buildCpuRequest: values.buildCpuRequest || defaultBuildCpuRequest,
     buildMemoryRequest: values.buildMemoryRequest || defaultBuildMemoryRequest,
+    buildTimeoutSeconds: normalizePositiveInteger(values.buildTimeoutSeconds, defaultBuildTimeoutSeconds),
     targetTag: values.targetTag || 'latest',
     buildVariableSetIds: normalizeStringIds(values.buildVariableSetIds),
     runtimeConfigSetIds: normalizeStringIds(values.runtimeConfigSetIds),

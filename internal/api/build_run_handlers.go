@@ -156,6 +156,7 @@ func (h *Handlers) RetryBuildRun(ctx *gin.Context) {
 		BuildEnvironmentID:  previous.BuildEnvironmentID,
 		BuildCPURequest:     previous.BuildCPURequest,
 		BuildMemoryRequest:  previous.BuildMemoryRequest,
+		BuildTimeoutSeconds: previous.BuildTimeoutSeconds,
 		TargetRegistryID:    previous.TargetRegistryID,
 		TargetRepository:    previous.TargetRepository,
 		TargetTag:           previous.TargetTag,
@@ -365,6 +366,7 @@ func (h *Handlers) buildRunFromInput(projectID string, user model.User, input bu
 		BuildEnvironmentID:  strings.TrimSpace(input.BuildEnvironmentID),
 		BuildCPURequest:     strings.TrimSpace(input.BuildCPURequest),
 		BuildMemoryRequest:  strings.TrimSpace(input.BuildMemoryRequest),
+		BuildTimeoutSeconds: input.BuildTimeoutSeconds,
 		TargetRegistryID:    strings.TrimSpace(input.TargetRegistryID),
 		TargetRepository:    targetRepository,
 		TargetTag:           fallback(targetTag, "latest"),
@@ -409,6 +411,7 @@ type buildRunInput struct {
 	BuildEnvironmentID  string   `json:"buildEnvironmentId"`
 	BuildCPURequest     string   `json:"buildCpuRequest"`
 	BuildMemoryRequest  string   `json:"buildMemoryRequest"`
+	BuildTimeoutSeconds int      `json:"buildTimeoutSeconds"`
 	TargetRegistryID    string   `json:"targetRegistryId"`
 	TargetImageRef      string   `json:"targetImageRef"`
 	TargetRepository    string   `json:"targetRepository"`

@@ -26,6 +26,15 @@ func buildRunConflict(code string, message string) error {
 	return buildRunRequestError{status: http.StatusConflict, code: code, message: message}
 }
 
+func firstPositiveInt(values ...int) int {
+	for _, value := range values {
+		if value > 0 {
+			return value
+		}
+	}
+	return 0
+}
+
 func (h *Handlers) validateBuildRunRequest(ctx *gin.Context, user model.User, run *model.BuildRun) bool {
 	if err := h.prepareBuildRunRequest(user, run); err != nil {
 		var requestErr buildRunRequestError
@@ -80,6 +89,11 @@ func (h *Handlers) prepareBuildRunRequest(user model.User, run *model.BuildRun) 
 	}
 	run.BuildCPURequest = buildCPURequest
 	run.BuildMemoryRequest = buildMemoryRequest
+	buildTimeoutSeconds := normalizeBuildTimeoutSecondsValue(firstPositiveInt(run.BuildTimeoutSeconds, config.BuildTimeoutSeconds))
+	if buildTimeoutSeconds < minBuildTimeoutSeconds || buildTimeoutSeconds > maxBuildTimeoutSeconds {
+		return buildRunBadRequest("构建超时时间必须在 1 分钟到 24 小时之间")
+	}
+	run.BuildTimeoutSeconds = buildTimeoutSeconds
 	run.BuildLabels = strings.Join(normalizeBuildSelectorList(strings.Split(config.BuildLabels, ",")), ",")
 	if strings.TrimSpace(config.RepositoryBindingID) != "" {
 		var binding model.RepositoryBinding

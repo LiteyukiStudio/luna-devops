@@ -198,9 +198,13 @@ func TestBuildJobSpecUsesRestrictedServiceAccountAndBuildScope(t *testing.T) {
 		"",
 		false,
 		"buildcache",
+		1800,
 		3600,
 	)
 
+	if spec.Spec.ActiveDeadlineSeconds == nil || *spec.Spec.ActiveDeadlineSeconds != 1800 {
+		t.Fatalf("active deadline seconds = %#v", spec.Spec.ActiveDeadlineSeconds)
+	}
 	pod := spec.Spec.Template
 	if pod.Labels[kubeprovider.ScopeLabel] != buildJobScope {
 		t.Fatalf("pod labels = %#v", pod.Labels)
@@ -268,6 +272,7 @@ func TestBuildJobSpecCopiesOnlyProjectedExecutorFiles(t *testing.T) {
 		"",
 		false,
 		"buildcache",
+		1800,
 		3600,
 	)
 

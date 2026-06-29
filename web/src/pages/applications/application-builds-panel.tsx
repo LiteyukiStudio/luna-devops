@@ -19,7 +19,7 @@ import { Input } from '@/components/ui/input'
 import { NativeSelect as Select } from '@/components/ui/native-select'
 import { useBillingDisplay } from '@/lib/billing-display'
 import { WORKFLOW_STATUS_REFETCH_INTERVAL_MS } from '@/lib/polling'
-import { defaultBuildCpuRequest, defaultBuildMemoryRequest } from './application-build-defaults'
+import { defaultBuildCpuRequest, defaultBuildMemoryRequest, defaultBuildTimeoutSeconds } from './application-build-defaults'
 import { ApplicationBuildLogPanel } from './application-build-log-panel'
 import { ApplicationBuildRunFilterBar } from './application-build-run-filter-bar'
 import { ApplicationBuildRunRow } from './application-build-run-row'
@@ -31,7 +31,7 @@ export interface BuildsPanelHandle {
 
 type TriggerForm = Partial<BuildRun>
 
-const triggerDefaults: TriggerForm = { applicationId: '', buildEnvironmentId: '', buildCpuRequest: defaultBuildCpuRequest, buildMemoryRequest: defaultBuildMemoryRequest, deploymentTargetId: '', sourceBranch: '', targetImageRef: '', targetRegistryId: '', triggerType: 'manual' }
+const triggerDefaults: TriggerForm = { applicationId: '', buildEnvironmentId: '', buildCpuRequest: defaultBuildCpuRequest, buildMemoryRequest: defaultBuildMemoryRequest, buildTimeoutSeconds: defaultBuildTimeoutSeconds, deploymentTargetId: '', sourceBranch: '', targetImageRef: '', targetRegistryId: '', triggerType: 'manual' }
 
 function uniqueBuildFilterValues(values: Array<string | undefined>) {
   return [...new Set(values.map(value => value?.trim()).filter((value): value is string => Boolean(value)))]
@@ -72,6 +72,7 @@ export function ApplicationBuildsPanel({ applicationId, appSlug, binding, deploy
   const selectedRegistry = registries.find(registry => registry.id === form.watch('targetRegistryId'))
   const targetImagePrefix = selectedRegistry ? registryInputPrefix(selectedRegistry) : ''
   const buildMinuteCost = billingDisplay.buildMinuteCost(form.watch('buildCpuRequest'), form.watch('buildMemoryRequest'))
+  const buildTimeoutMinutes = Math.max(1, Math.round((Number(form.watch('buildTimeoutSeconds')) || defaultBuildTimeoutSeconds) / 60))
   const buildJobMap = useMemo(() => {
     const grouped = new Map<string, BuildJob[]>()
     for (const job of buildJobs) {
@@ -233,6 +234,7 @@ export function ApplicationBuildsPanel({ applicationId, appSlug, binding, deploy
       buildEnvironmentId: defaultConfig?.buildEnvironmentId || '',
       buildCpuRequest: defaultConfig?.buildCpuRequest || defaultBuildCpuRequest,
       buildMemoryRequest: defaultConfig?.buildMemoryRequest || defaultBuildMemoryRequest,
+      buildTimeoutSeconds: defaultConfig?.buildTimeoutSeconds || defaultBuildTimeoutSeconds,
       sourceBranch: (repositoryBindings.find(item => item.id === defaultConfig?.repositoryBindingId) ?? binding)?.defaultBranch || 'main',
       targetImageRef: deploymentTargetImageRef(defaultConfig) || defaultTargetImageRef(undefined, projectSlug, appSlug),
       targetRegistryId: defaultConfig?.targetRegistryId ?? '',
@@ -253,6 +255,7 @@ export function ApplicationBuildsPanel({ applicationId, appSlug, binding, deploy
     form.setValue('buildEnvironmentId', selectedDeploymentTarget.buildEnvironmentId || '', { shouldDirty: true, shouldValidate: true })
     form.setValue('buildCpuRequest', selectedDeploymentTarget.buildCpuRequest || defaultBuildCpuRequest, { shouldDirty: true, shouldValidate: true })
     form.setValue('buildMemoryRequest', selectedDeploymentTarget.buildMemoryRequest || defaultBuildMemoryRequest, { shouldDirty: true, shouldValidate: true })
+    form.setValue('buildTimeoutSeconds', selectedDeploymentTarget.buildTimeoutSeconds || defaultBuildTimeoutSeconds, { shouldDirty: true, shouldValidate: true })
   }, [binding, dialogOpen, form, repositoryBindings, selectedDeploymentTarget])
 
   useEffect(() => {
@@ -397,7 +400,7 @@ export function ApplicationBuildsPanel({ applicationId, appSlug, binding, deploy
                 <h3 className="text-sm font-semibold">{t('deploymentsPage.buildEnvironment')}</h3>
                 <p className="mt-1 text-sm text-muted-foreground">{t('buildsPage.buildEnvironmentOverrideHint')}</p>
               </div>
-              <div className="grid gap-3 md:grid-cols-2">
+              <div className="grid gap-3 md:grid-cols-3">
                 <Field label={t('deploymentsPage.buildCpuRequest')} required>
                   <UnitInput
                     unitSelectLabel={t('deploymentsPage.buildCpuRequest')}
@@ -422,6 +425,14 @@ export function ApplicationBuildsPanel({ applicationId, appSlug, binding, deploy
                   <p className="mt-1 text-xs text-muted-foreground">
                     {t('deploymentsPage.buildEstimatedPrice', { price: billingDisplay.formatAmountWithUnit(buildMinuteCost) })}
                   </p>
+                </Field>
+                <Field hint={t('deploymentsPage.buildTimeoutHint')} label={t('deploymentsPage.buildTimeoutMinutes')} required>
+                  <Input
+                    min={1}
+                    type="number"
+                    value={buildTimeoutMinutes}
+                    onChange={event => form.setValue('buildTimeoutSeconds', Math.max(1, Number(event.target.value) || 1) * 60, { shouldDirty: true, shouldValidate: true })}
+                  />
                 </Field>
               </div>
             </div>

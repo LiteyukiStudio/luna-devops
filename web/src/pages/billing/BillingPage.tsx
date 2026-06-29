@@ -398,7 +398,7 @@ export function BillingPage() {
             {t(`billingPage.balanceStatuses.${balanceStatus}`)}
           </StatusBadge>
         </div>
-        <div className="mt-4 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+        <div className="mt-4 grid min-h-[5.75rem] gap-3 md:grid-cols-3 xl:grid-cols-6">
           {(scopedSummary?.monthlyCategories?.length ?? 0) > 0
             ? (scopedSummary?.monthlyCategories ?? []).map(category => (
                 <div key={category.category} className="min-w-0 rounded-md border border-border bg-muted/20 p-3">
@@ -411,9 +411,9 @@ export function BillingPage() {
                 </div>
               ))
             : (
-                <p className="text-sm text-muted-foreground md:col-span-3 xl:col-span-6">
-                  {scopedSummaryQuery.isLoading ? t('common.loading') : t('billingPage.emptyMonthlyCategories')}
-                </p>
+                <div className="flex min-h-[5.75rem] items-center rounded-md border border-dashed border-border bg-muted/10 px-4 text-sm text-muted-foreground md:col-span-3 xl:col-span-6">
+                  {scopedSummaryQuery.isFetching ? t('common.loading') : t('billingPage.emptyMonthlyCategories')}
+                </div>
               )}
         </div>
       </Card>

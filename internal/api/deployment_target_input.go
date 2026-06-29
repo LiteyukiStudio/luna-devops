@@ -13,8 +13,11 @@ import (
 )
 
 const (
-	defaultBuildCPURequest    = "2"
-	defaultBuildMemoryRequest = "4Gi"
+	defaultBuildCPURequest     = "2"
+	defaultBuildMemoryRequest  = "4Gi"
+	defaultBuildTimeoutSeconds = 1800
+	minBuildTimeoutSeconds     = 60
+	maxBuildTimeoutSeconds     = 24 * 60 * 60
 )
 
 func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, app model.Application, input deploymentTargetInput, targetID string, existingSecretFiles map[string]string) (model.DeploymentTarget, bool) {
@@ -83,6 +86,10 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 		return model.DeploymentTarget{}, false
 	}
 	buildMemoryRequest, ok := normalizeBuildResourceQuantity(ctx, input.BuildMemoryRequest, defaultBuildMemoryRequest, "构建内存")
+	if !ok {
+		return model.DeploymentTarget{}, false
+	}
+	buildTimeoutSeconds, ok := normalizeBuildTimeoutSeconds(ctx, input.BuildTimeoutSeconds)
 	if !ok {
 		return model.DeploymentTarget{}, false
 	}
@@ -160,6 +167,7 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 		BuildEnvironmentID:   strings.TrimSpace(input.BuildEnvironmentID),
 		BuildCPURequest:      buildCPURequest,
 		BuildMemoryRequest:   buildMemoryRequest,
+		BuildTimeoutSeconds:  buildTimeoutSeconds,
 		TargetRegistryID:     targetRegistryID,
 		TargetRepository:     targetRepository,
 		TargetTag:            fallback(targetTag, "latest"),
@@ -194,6 +202,22 @@ func normalizeDeploymentSourceType(value string) string {
 	default:
 		return "repository"
 	}
+}
+
+func normalizeBuildTimeoutSeconds(ctx *gin.Context, value int) (int, bool) {
+	normalized := normalizeBuildTimeoutSecondsValue(value)
+	if normalized < minBuildTimeoutSeconds || normalized > maxBuildTimeoutSeconds {
+		writeError(ctx, http.StatusBadRequest, "构建超时时间必须在 1 分钟到 24 小时之间")
+		return 0, false
+	}
+	return normalized, true
+}
+
+func normalizeBuildTimeoutSecondsValue(value int) int {
+	if value <= 0 {
+		return defaultBuildTimeoutSeconds
+	}
+	return value
 }
 
 func (h *Handlers) applyRegistryCredentialImageTemplate(ctx *gin.Context, user model.User, app model.Application, sourceType string, registryID string, repository string, tag string, target model.DeploymentTarget) (string, string, bool) {

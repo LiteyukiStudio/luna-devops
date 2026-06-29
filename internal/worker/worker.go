@@ -175,7 +175,7 @@ func NewRunner(db *gorm.DB, options Options) *Runner {
 	}
 	buildJobTimeoutSeconds := options.BuildJobTimeoutSeconds
 	if buildJobTimeoutSeconds <= 0 {
-		buildJobTimeoutSeconds = 5400
+		buildJobTimeoutSeconds = 1800
 	}
 	buildJobTTLSeconds := options.BuildJobTTLSeconds
 	if buildJobTTLSeconds <= 0 {

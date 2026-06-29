@@ -42,7 +42,7 @@ func Load() Config {
 		BuildEgressMode:             buildEgressMode(env("BUILD_EGRESS_MODE", "permissive")),
 		BuildCacheEnabled:           envBool("BUILD_CACHE_ENABLED", false),
 		BuildCacheTag:               env("BUILD_CACHE_TAG", "buildcache"),
-		BuildJobTimeoutSeconds:      int64(envInt("BUILD_JOB_TIMEOUT_SECONDS", 5400)),
+		BuildJobTimeoutSeconds:      int64(envInt("BUILD_JOB_TIMEOUT_SECONDS", 1800)),
 		BuildJobTTLSeconds:          int64(envInt("BUILD_JOB_TTL_SECONDS", 3600)),
 		BuildPrivateEgressCIDRs:     envList("BUILD_PRIVATE_EGRESS_CIDRS"),
 		BuildPrivateEgressPorts:     envPortList("BUILD_PRIVATE_EGRESS_PORTS", []int{443}),

@@ -36,7 +36,7 @@ Default access-route domain suffixes and public link schemes are managed on runt
 | Advanced | `DEPLOY_ROLLOUT_TIMEOUT_SECONDS` | `600` | Release wait timeout; increase for slow-starting apps. |
 | Advanced | `CERT_MANAGER_CLUSTER_ISSUER` | `letsencrypt-http01` | Certificate Issuer name; change when your cluster uses another name. |
 | Advanced | `BUILD_EGRESS_MODE` | `permissive` | Build egress mode; set to `restricted` when strong isolation is required. |
-| Advanced | `BUILD_JOB_TIMEOUT_SECONDS` | `5400` | Build timeout; increase for large projects. |
+| Advanced | `BUILD_JOB_TIMEOUT_SECONDS` | `1800` | Build timeout fallback used when a deployment target does not set one; increase for large projects. |
 | Advanced | `BUILD_JOB_TTL_SECONDS` | `3600` | Completed build Pod retention; increase for a longer log window. |
 | Advanced | `BUILD_CACHE_ENABLED` | `false` | Build cache switch; enable for faster repeated builds. |
 | Advanced | `BUILD_CACHE_TAG` | `buildcache` | Build cache tag; change to isolate cache. |

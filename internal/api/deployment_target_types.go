@@ -29,6 +29,7 @@ type deploymentTargetResponse struct {
 	BuildEnvironmentID   string                              `json:"buildEnvironmentId"`
 	BuildCPURequest      string                              `json:"buildCpuRequest"`
 	BuildMemoryRequest   string                              `json:"buildMemoryRequest"`
+	BuildTimeoutSeconds  int                                 `json:"buildTimeoutSeconds"`
 	TargetRegistryID     string                              `json:"targetRegistryId"`
 	TargetRepository     string                              `json:"targetRepository"`
 	TargetTag            string                              `json:"targetTag"`
@@ -92,6 +93,7 @@ func deploymentTargetResponseFromModel(target model.DeploymentTarget) deployment
 		BuildEnvironmentID:   strings.TrimSpace(target.BuildEnvironmentID),
 		BuildCPURequest:      fallback(strings.TrimSpace(target.BuildCPURequest), defaultBuildCPURequest),
 		BuildMemoryRequest:   fallback(strings.TrimSpace(target.BuildMemoryRequest), defaultBuildMemoryRequest),
+		BuildTimeoutSeconds:  normalizeBuildTimeoutSecondsValue(target.BuildTimeoutSeconds),
 		TargetRegistryID:     target.TargetRegistryID,
 		TargetRepository:     target.TargetRepository,
 		TargetTag:            target.TargetTag,
@@ -166,6 +168,7 @@ type deploymentTargetInput struct {
 	BuildEnvironmentID   string                             `json:"buildEnvironmentId"`
 	BuildCPURequest      string                             `json:"buildCpuRequest"`
 	BuildMemoryRequest   string                             `json:"buildMemoryRequest"`
+	BuildTimeoutSeconds  int                                `json:"buildTimeoutSeconds"`
 	TargetRegistryID     string                             `json:"targetRegistryId"`
 	TargetImageRef       string                             `json:"targetImageRef"`
 	TargetRepository     string                             `json:"targetRepository"`

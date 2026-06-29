@@ -36,8 +36,15 @@ func (r *Runner) markExpiredBuildJobsLost() error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		var jobs []model.BuildJob
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
-			Where("status = ? and ((lease_until is not null and lease_until < ?) or (lease_until is null and started_at is not null and started_at < ?))", "running", now, now.Add(-time.Duration(r.buildJobTimeoutSeconds)*time.Second)).
-			Order("started_at asc, lease_until asc").
+			Joins("join build_runs on build_runs.id = build_jobs.build_run_id").
+			Where("build_jobs.status = ?", "running").
+			Where(
+				"(build_jobs.lease_until is not null and build_jobs.lease_until < ?) or (build_jobs.lease_until is null and build_jobs.started_at is not null and build_jobs.started_at < (?::timestamptz - (coalesce(nullif(build_runs.build_timeout_seconds, 0), ?) * interval '1 second')))",
+				now,
+				now,
+				effectiveBuildTimeoutSeconds(0, r.buildJobTimeoutSeconds),
+			).
+			Order("build_jobs.started_at asc, build_jobs.lease_until asc").
 			Limit(50).
 			Find(&jobs).Error; err != nil {
 			return err

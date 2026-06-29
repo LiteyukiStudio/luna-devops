@@ -403,6 +403,7 @@ export interface BuildRun {
   buildEnvironmentId: string
   buildCpuRequest: string
   buildMemoryRequest: string
+  buildTimeoutSeconds: number
   targetRegistryId: string
   targetImageRef?: string
   targetRepository: string
@@ -457,6 +458,7 @@ export interface DeploymentTarget {
   buildEnvironmentId: string
   buildCpuRequest: string
   buildMemoryRequest: string
+  buildTimeoutSeconds: number
   targetRegistryId: string
   targetRepository: string
   targetTag: string
