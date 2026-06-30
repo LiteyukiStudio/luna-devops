@@ -19,6 +19,11 @@ import { gatewayDeploymentTargetLabel } from './application-config-utils'
 type RouteForm = Omit<GatewayRoute, 'id' | 'projectId' | 'createdBy' | 'createdAt' | 'cnameName' | 'cnameTarget' | 'accessUrl' | 'deleteStatus' | 'deleteMessage' | 'deleteStartedAt' | 'deleteFinishedAt'>
 
 const routeDefaults: RouteForm = { applicationId: '', certificateStatus: 'disabled', deploymentTargetId: '', dnsStatus: 'pending', enabled: true, environmentId: '', host: '', isDefault: false, path: '/', servicePort: 8080, status: 'pending', tlsMode: 'http-only' }
+const gatewayRouteTlsModeLabels: Record<GatewayRoute['tlsMode'], string> = {
+  'http-challenge': 'gatewayRoutesPage.tlsHttpChallenge',
+  'http-only': 'gatewayRoutesPage.tlsHttpOnly',
+  'manual-cert': 'gatewayRoutesPage.tlsManualCert',
+}
 
 export interface ApplicationGatewayPanelHandle {
   openCreateDialog: (environmentId?: string, deploymentTargetId?: string) => void
@@ -97,17 +102,16 @@ export function ApplicationGatewayPanel({ applicationId, deploymentTargets, proj
     <div className="grid gap-4">
       <DataList
         columns={[
-          { key: 'host', header: t('gatewayRoutesPage.host'), render: item => <GatewayRouteSummary item={item} /> },
-          { key: 'path', header: t('gatewayRoutesPage.path'), render: item => item.path },
-          { key: 'servicePort', header: t('gatewayRoutesPage.targetPort'), className: 'whitespace-nowrap', render: item => item.servicePort || '-' },
-          { key: 'tls', header: t('gatewayRoutesPage.tlsMode'), render: item => item.tlsMode },
+          { key: 'host', header: t('gatewayRoutesPage.host'), width: 'primary', render: item => <GatewayRouteSummary item={item} /> },
+          { key: 'path', header: t('gatewayRoutesPage.path'), width: 'compact', render: item => item.path },
+          { key: 'servicePort', header: t('gatewayRoutesPage.targetPort'), className: 'whitespace-nowrap', width: 'number', render: item => item.servicePort || '-' },
+          { key: 'tls', header: t('gatewayRoutesPage.tlsMode'), width: 'status', render: item => t(gatewayRouteTlsModeLabels[item.tlsMode]) },
           { key: 'status', header: t('common.status'), render: item => (
             <div className="flex flex-wrap items-center gap-2">
-              <StatusValueBadge value={item.enabled ? 'enabled' : 'disabled'} />
-              <StatusValueBadge value={item.status} />
+              <StatusValueBadge labelKeyPrefix="gatewayRoutesPage.statuses" value={gatewayRouteEffectiveStatus(item)} />
             </div>
-          ) },
-          { key: 'actions', header: t('common.actions'), className: 'text-right whitespace-nowrap', render: (item) => {
+          ), width: 'status' },
+          { key: 'actions', header: t('common.actions'), className: 'text-right whitespace-nowrap', maxWidth: 360, minWidth: 300, sticky: 'right', width: 'actions', render: (item) => {
             const deleting = item.deleteStatus === 'deleting'
             return (
               <div className="flex justify-end gap-2">
@@ -159,6 +163,10 @@ export function ApplicationGatewayPanel({ applicationId, deploymentTargets, proj
       <ConfirmDialog cancelText={t('common.cancel')} confirmText={t('common.delete')} description={t('gatewayRoutesPage.deleteRouteDescription')} open={Boolean(routeToDelete)} title={t('gatewayRoutesPage.deleteRouteTitle')} onConfirm={() => routeToDelete && deleteRoute.mutate(routeToDelete.id)} onOpenChange={open => !open && setRouteToDelete(null)} />
     </div>
   )
+}
+
+function gatewayRouteEffectiveStatus(item: GatewayRoute) {
+  return item.enabled ? item.status : 'disabled'
 }
 
 function GatewayRouteSummary({ item }: { item: GatewayRoute }) {

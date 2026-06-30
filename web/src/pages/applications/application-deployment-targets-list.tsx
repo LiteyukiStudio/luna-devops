@@ -11,11 +11,12 @@ import { HoverText } from '@/components/common/hover-text'
 import { StatusValueBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { deploymentTargetCanRelease, formatReleaseTime } from './application-config-utils'
 import { DeploymentRuntimeStatusBadge, InternalServiceEndpoint } from './application-deployment-runtime'
 import { DeploymentTargetMetricsCell } from './application-deployment-target-metrics-cell'
-import { compactReleaseMessage, formatTargetRuntimeSize, shortImageRef } from './application-deployments-panel-utils'
+import { formatTargetRuntimeSize, shortImageRef } from './application-deployments-panel-utils'
 
 export interface DeploymentTargetRow {
   internalEndpoint?: InternalServiceEndpointValue
@@ -70,18 +71,20 @@ export function ApplicationDeploymentTargetsList({
       <div className="hidden md:block">
         <DataList
           columns={[
-            { key: 'name', header: t('common.name'), className: 'min-w-64 px-4 py-3 align-middle', render: item => <DeploymentTargetSummary applicationId={applicationId} item={item} projectId={projectId} onCopy={onCopy} /> },
-            { key: 'stage', header: t('deploymentsPage.stage'), className: 'w-[1%] whitespace-nowrap px-4 py-3 align-middle', render: item => t(`deploymentsPage.stageLabels.${item.target.stage}`, { defaultValue: item.target.stage }) },
-            { key: 'runtimeSize', header: t('deploymentsPage.runtimeEnvironment'), className: 'w-[1%] whitespace-nowrap px-4 py-3 align-middle', render: item => formatTargetRuntimeSize(item.target, t) },
-            { key: 'runtimeStatus', header: t('deploymentsPage.runtimeStatus'), className: 'w-[1%] whitespace-nowrap px-4 py-3 align-middle', render: item => <DeploymentRuntimeStatusBadge status={item.runtimeStatus} /> },
-            { key: 'status', header: t('deploymentsPage.releaseStatus'), className: 'min-w-44 px-4 py-3 align-middle', render: item => <ReleaseStatusSummary release={item.release} /> },
-            { key: 'image', header: t('deploymentsPage.imageSummary'), className: 'min-w-48 px-4 py-3 align-middle', render: item => <DeploymentImageSummary release={item.release} /> },
+            { key: 'name', header: t('common.name'), width: 'primary', render: item => <DeploymentTargetSummary applicationId={applicationId} item={item} projectId={projectId} onCopy={onCopy} /> },
+            { key: 'stage', header: t('deploymentsPage.stage'), width: 'compact', render: item => t(`deploymentsPage.stageLabels.${item.target.stage}`, { defaultValue: item.target.stage }) },
+            { key: 'runtimeSize', header: t('deploymentsPage.runtimeEnvironment'), width: 'secondary', render: item => formatTargetRuntimeSize(item.target, t) },
+            { key: 'runtimeStatus', header: t('deploymentsPage.runtimeStatus'), width: 'status', render: item => <DeploymentRuntimeStatusBadge status={item.runtimeStatus} /> },
+            { key: 'status', header: t('deploymentsPage.releaseStatus'), width: 'status', render: item => <ReleaseStatusSummary release={item.release} /> },
+            { key: 'image', header: t('deploymentsPage.imageSummary'), width: 'normal', render: item => <DeploymentImageSummary release={item.release} /> },
             {
               key: 'actions',
               header: t('common.actions'),
               cellClassName: 'bg-card',
-              className: 'sticky right-0 z-10 w-[1%] whitespace-nowrap px-4 py-3 text-right align-middle shadow-[-10px_0_16px_-16px_rgba(15,23,42,0.6)]',
+              className: 'text-right shadow-[-10px_0_16px_-16px_rgba(15,23,42,0.6)]',
               headerClassName: 'z-20 bg-muted/95',
+              sticky: 'right',
+              width: 'actions',
               render: item => (
                 <DeploymentTargetActions
                   applicationId={applicationId}
@@ -280,17 +283,24 @@ function DeploymentTargetSummary({ applicationId, item, onCopy, projectId }: { a
 function ReleaseStatusSummary({ release }: { release?: Release }) {
   const { t } = useTranslation()
   const message = release?.message?.trim()
+  const badge = release
+    ? <StatusValueBadge labelKeyPrefix="buildsPage.statuses" value={release.status} />
+    : <StatusValueBadge label={t('deploymentsPage.notDeployed')} value="pending" />
+
+  if (!message)
+    return badge
+
   return (
-    <div className="grid min-w-0 gap-1">
-      {release ? <StatusValueBadge labelKeyPrefix="buildsPage.statuses" value={release.status} /> : <StatusValueBadge label={t('deploymentsPage.notDeployed')} value="pending" />}
-      {message && (
-        <CopyableHoverText
-          className="max-w-48 text-xs text-muted-foreground"
-          display={compactReleaseMessage(message)}
-          value={message}
-        />
-      )}
-    </div>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-flex max-w-full" tabIndex={0}>
+          {badge}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-96 whitespace-pre-wrap break-words leading-5">
+        {message}
+      </TooltipContent>
+    </Tooltip>
   )
 }
 

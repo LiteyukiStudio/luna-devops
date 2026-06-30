@@ -1,9 +1,11 @@
-import type { ReactNode } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { EmptyState } from './empty-state'
 import { PaginationController } from './pagination'
+
+type DataListColumnWidth = 'actions' | 'compact' | 'normal' | 'number' | 'primary' | 'secondary' | 'status'
 
 export interface DataListColumn<T> {
   key: string
@@ -11,7 +13,10 @@ export interface DataListColumn<T> {
   className?: string
   headerClassName?: string
   cellClassName?: string
+  maxWidth?: number | string
+  minWidth?: number | string
   sticky?: 'left' | 'right'
+  width?: DataListColumnWidth
   render: (item: T) => ReactNode
 }
 
@@ -61,9 +66,54 @@ function stickyColumnClass(sticky: DataListColumn<unknown>['sticky'], surface: '
   )
 }
 
+const columnWidthProfiles: Record<DataListColumnWidth, { max: number, min: number }> = {
+  actions: { min: 64, max: 96 },
+  compact: { min: 96, max: 144 },
+  normal: { min: 144, max: 288 },
+  number: { min: 80, max: 128 },
+  primary: { min: 224, max: 448 },
+  secondary: { min: 128, max: 224 },
+  status: { min: 112, max: 176 },
+}
+
+function inferredColumnWidth(column: DataListColumn<unknown>): DataListColumnWidth {
+  if (column.width)
+    return column.width
+  const key = column.key.toLowerCase()
+  if (column.sticky === 'right' || key.includes('action'))
+    return 'actions'
+  if (key.includes('status') || key.includes('scope') || key.includes('state') || key.includes('enabled'))
+    return 'status'
+  if (key.includes('count') || key.includes('size') || key.includes('total') || key.includes('amount') || key.includes('cost'))
+    return 'number'
+  if (key.includes('time') || key.includes('date') || key.includes('stage') || key.includes('role'))
+    return 'compact'
+  if (key.includes('description') || key.includes('message') || key.includes('image') || key.includes('url') || key.includes('endpoint'))
+    return 'normal'
+  if (key.includes('name') || key.includes('project') || key.includes('application') || key.includes('repository'))
+    return 'primary'
+  return 'secondary'
+}
+
+function widthValue(value: number | string | undefined, fallback: number) {
+  if (typeof value === 'number')
+    return `${value}px`
+  return value ?? `${fallback}px`
+}
+
+function columnWidthStyle(column: DataListColumn<unknown>): CSSProperties {
+  const profile = columnWidthProfiles[inferredColumnWidth(column)]
+  return {
+    maxWidth: widthValue(column.maxWidth, profile.max),
+    minWidth: widthValue(column.minWidth, profile.min),
+  }
+}
+
 /**
  * 管理台列表和表格的统一展示组件。
  * 用于资源列表、用户列表、凭据列表等需要列、空状态和分页的场景；布局型页面或少量指标卡片不应套用它。
+ * 列宽采用“内容自适应 + 画像上限”策略：浏览器先按每列最宽内容分配宽度，未填满容器时由 min-w-full 均摊剩余空间；
+ * 超过容器时按列画像限制最大宽度，让次要列先收缩，主列保留更高的最小宽度。
  */
 export function DataList<T>({
   items,
@@ -162,7 +212,9 @@ export function DataList<T>({
                           column.headerClassName,
                         )}
                       >
-                        {column.header}
+                        <div className="min-w-0 truncate" style={columnWidthStyle(column as DataListColumn<unknown>)}>
+                          {column.header}
+                        </div>
                       </th>
                     ))}
                   </tr>
@@ -195,7 +247,9 @@ export function DataList<T>({
                               column.cellClassName,
                             )}
                           >
-                            {column.render(item)}
+                            <div className="min-w-0 overflow-hidden" style={columnWidthStyle(column as DataListColumn<unknown>)}>
+                              {column.render(item)}
+                            </div>
                           </td>
                         ))}
                       </tr>
