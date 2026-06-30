@@ -4,6 +4,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/gin-gonic/gin"
+	"github.com/shopspring/decimal"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 	"net/http"
@@ -228,11 +229,36 @@ func (h *Handlers) ListUsers(ctx *gin.Context) {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
+	balances, err := h.userWalletBalances(users)
+	if err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
+		return
+	}
 	responses := make([]gin.H, 0, len(users))
 	for _, user := range users {
-		responses = append(responses, userListResponse(user))
+		responses = append(responses, userListResponse(user, balances[user.ID]))
 	}
 	ctx.JSON(http.StatusOK, paginatedResponse(responses, total, pagination))
+}
+
+func (h *Handlers) userWalletBalances(users []model.User) (map[string]decimal.Decimal, error) {
+	balances := make(map[string]decimal.Decimal, len(users))
+	if len(users) == 0 {
+		return balances, nil
+	}
+	userIDs := make([]string, 0, len(users))
+	for _, user := range users {
+		userIDs = append(userIDs, user.ID)
+		balances[user.ID] = decimal.Zero
+	}
+	var wallets []model.UserWallet
+	if err := h.db.Select("user_id", "balance_credits").Where("user_id in ?", userIDs).Find(&wallets).Error; err != nil {
+		return nil, err
+	}
+	for _, wallet := range wallets {
+		balances[wallet.UserID] = wallet.BalanceCredits
+	}
+	return balances, nil
 }
 
 func (h *Handlers) CreateUser(ctx *gin.Context) {
@@ -543,17 +569,18 @@ func currentUserResponse(user model.User) gin.H {
 	}
 }
 
-func userListResponse(user model.User) gin.H {
+func userListResponse(user model.User, balanceCredits decimal.Decimal) gin.H {
 	return gin.H{
-		"id":        user.ID,
-		"email":     user.Email,
-		"name":      user.Name,
-		"avatarUrl": user.AvatarURL,
-		"authType":  user.AuthType,
-		"role":      user.Role,
-		"language":  normalizeLanguage(user.Language),
-		"disabled":  user.Disabled,
-		"createdAt": user.CreatedAt,
+		"id":             user.ID,
+		"email":          user.Email,
+		"name":           user.Name,
+		"avatarUrl":      user.AvatarURL,
+		"authType":       user.AuthType,
+		"role":           user.Role,
+		"language":       normalizeLanguage(user.Language),
+		"disabled":       user.Disabled,
+		"balanceCredits": balanceCredits.String(),
+		"createdAt":      user.CreatedAt,
 	}
 }
 

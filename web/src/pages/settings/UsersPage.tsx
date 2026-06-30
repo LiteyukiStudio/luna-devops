@@ -23,6 +23,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input'
 import { NativeSelect as Select } from '@/components/ui/native-select'
 import i18next from '@/i18n'
+import { useBillingAmountDisplay } from '@/lib/billing-display'
 
 const schema = z.object({
   email: z.string().email(i18next.t('common.validEmailRequired')),
@@ -47,8 +48,9 @@ const defaultValues: UserForm = {
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
 
 export function UsersPage() {
-  const { t } = useTranslation()
+  const { i18n, t } = useTranslation()
   const queryClient = useQueryClient()
+  const billingDisplay = useBillingAmountDisplay(i18n.language)
   const [editingUser, setEditingUser] = useState<User | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [page, setPage] = useState(1)
@@ -137,9 +139,15 @@ export function UsersPage() {
       render: user => <StatusValueBadge value={user.disabled ? 'disabled' : 'active'} />,
     },
     {
+      key: 'balance',
+      header: t('usersPage.balance'),
+      className: 'w-[14%] px-4 py-3 align-middle font-medium tabular-nums',
+      render: user => billingDisplay.formatAmountWithUnit(user.balanceCredits),
+    },
+    {
       key: 'createdAt',
       header: t('usersPage.createdAt'),
-      className: 'w-[18%] px-4 py-3 align-middle text-muted-foreground',
+      className: 'w-[14%] px-4 py-3 align-middle text-muted-foreground',
       render: user => formatAbsoluteDateTime(user.createdAt),
     },
     {

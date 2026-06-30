@@ -12,6 +12,8 @@ The top balance, today spend, month spend, and pending spend cards are user-acco
 
 Platform administrators can also configure a real-world currency unit and conversion ratio in site settings. The top summary cards show the converted amount after credits, for example `1,012.24 Credits (1.01 CNY)`. This is display-only conversion; the ledger still settles in credits.
 
+When platform administrators open user management, the user list shows each user's wallet balance for quick account checks. Users without a wallet record are displayed as 0 credits.
+
 ## Spend analysis
 
 Spend analysis groups settled usage by project space, application, and deployment config. It shows total spend plus build, runtime, storage, gateway, and other spend.

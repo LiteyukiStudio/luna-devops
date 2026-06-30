@@ -32,6 +32,7 @@ const usersPage = {
   normalUser: 'Normal user',
   authType: 'Auth type',
   status: 'Status',
+  balance: 'Balance',
   createdAt: 'Created at',
   actions: 'Actions',
 }

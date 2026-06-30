@@ -32,6 +32,7 @@ const usersPage = {
   normalUser: '普通用户',
   authType: '认证方式',
   status: '状态',
+  balance: '余额',
   createdAt: '创建时间',
   actions: '操作',
 }

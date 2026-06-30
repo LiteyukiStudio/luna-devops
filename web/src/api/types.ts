@@ -868,6 +868,7 @@ export interface User {
   role: 'platform_admin' | 'user'
   language: 'zh-CN' | 'en-US'
   disabled: boolean
+  balanceCredits: string
   createdAt: string
 }
 
