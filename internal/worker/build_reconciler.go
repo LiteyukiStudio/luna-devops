@@ -33,7 +33,8 @@ func (r *Runner) markExpiredBuildJobsLost() error {
 		return nil
 	}
 	now := time.Now()
-	return r.db.Transaction(func(tx *gorm.DB) error {
+	var lostRuns []model.BuildRun
+	err := r.db.Transaction(func(tx *gorm.DB) error {
 		var jobs []model.BuildJob
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
 			Joins("join build_runs on build_runs.id = build_jobs.build_run_id").
@@ -50,6 +51,10 @@ func (r *Runner) markExpiredBuildJobsLost() error {
 			return err
 		}
 		for _, job := range jobs {
+			var run model.BuildRun
+			if err := tx.First(&run, "id = ? and project_id = ?", job.BuildRunID, job.ProjectID).Error; err != nil {
+				return err
+			}
 			finishedAt := now
 			if err := tx.Model(&model.BuildJob{}).
 				Where("id = ? and status = ?", job.ID, "running").
@@ -64,9 +69,18 @@ func (r *Runner) markExpiredBuildJobsLost() error {
 				}).Error; err != nil {
 				return err
 			}
+			run.Status = "lost"
+			run.FinishedAt = &finishedAt
+			lostRuns = append(lostRuns, run)
 		}
 		return nil
 	})
+	if err == nil {
+		for _, run := range lostRuns {
+			r.recordBuildRunMetrics(run)
+		}
+	}
+	return err
 }
 
 func (r *Runner) handleSyncStatus(ctx context.Context, task *asynq.Task) error {
@@ -74,6 +88,7 @@ func (r *Runner) handleSyncStatus(ctx context.Context, task *asynq.Task) error {
 	if err := r.syncReleaseRuntimeStatus(ctx); err != nil {
 		return err
 	}
+	r.refreshGatewayRouteMetrics()
 	r.retryPendingResourceCleanups(ctx)
 	return nil
 }
@@ -126,6 +141,7 @@ func (r *Runner) syncReleaseRuntimeSnapshot(ctx context.Context, release model.R
 		}
 		return err
 	}
+	r.recordDeploymentRuntimeMetric(deploymentTarget, environment, snapshot)
 	if snapshot.Phase == kubeprovider.DeploymentFailed {
 		return r.markReleaseRuntimeDrift(release, firstNonEmpty(snapshot.Message, "Deployment runtime check failed"))
 	}
@@ -143,8 +159,7 @@ func (r *Runner) syncReleaseRuntimeSnapshot(ctx context.Context, release model.R
 }
 
 func (r *Runner) markReleaseRuntimeDrift(release model.Release, message string) error {
-	finishedAt := time.Now()
-	if err := r.db.Model(&model.Release{}).Where("id = ?", release.ID).Updates(releaseFinishUpdates("failed", message, finishedAt)).Error; err != nil {
+	if err := r.finishDeployRelease(release, "failed", message); err != nil {
 		return err
 	}
 	r.appendReleaseLog(release, "运行态漂移: "+message)

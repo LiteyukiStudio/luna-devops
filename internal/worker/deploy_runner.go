@@ -56,28 +56,24 @@ func (r *Runner) handleDeployRun(ctx context.Context, task *asynq.Task) error {
 	namespace := deploymentNamespace(project, environment)
 	r.appendReleaseLog(release, fmt.Sprintf("确保命名空间 %s 存在", namespace))
 	if err := r.ensureProjectNamespace(ctx, namespace, project, environment); err != nil {
-		finishedAt := time.Now()
-		_ = r.db.Model(&release).Updates(map[string]any{"status": "failed", "message": err.Error(), "finished_at": &finishedAt}).Error
+		_ = r.finishDeployRelease(release, "failed", err.Error())
 		r.appendReleaseLog(release, "命名空间准备失败: "+err.Error())
 		return err
 	}
 	r.appendReleaseLog(release, "下发 ConfigMap/Secret")
 	if err := r.applyApplicationRuntimeConfig(ctx, release, project, application, environment, deploymentTarget, namespace); err != nil {
-		finishedAt := time.Now()
-		_ = r.db.Model(&release).Updates(map[string]any{"status": "failed", "message": err.Error(), "finished_at": &finishedAt}).Error
+		_ = r.finishDeployRelease(release, "failed", err.Error())
 		r.appendReleaseLog(release, "运行配置下发失败: "+err.Error())
 		return err
 	}
 	if err := r.runDeploymentHooks(ctx, hookPhasePreDeployment, release, project, application, environment, deploymentTarget, namespace); err != nil {
-		finishedAt := time.Now()
-		_ = r.db.Model(&release).Updates(map[string]any{"status": "failed", "message": err.Error(), "finished_at": &finishedAt}).Error
+		_ = r.finishDeployRelease(release, "failed", err.Error())
 		r.appendReleaseLog(release, "preDeployment Hook 失败: "+err.Error())
 		return err
 	}
 	r.appendReleaseLog(release, "下发 Deployment/Service/ConfigMap/Secret")
 	if err := r.applyApplicationResources(ctx, release, project, application, environment, deploymentTarget, namespace); err != nil {
-		finishedAt := time.Now()
-		_ = r.db.Model(&release).Updates(map[string]any{"status": "failed", "message": err.Error(), "finished_at": &finishedAt}).Error
+		_ = r.finishDeployRelease(release, "failed", err.Error())
 		r.appendReleaseLog(release, "资源下发失败: "+err.Error())
 		return err
 	}
@@ -90,15 +86,13 @@ func (r *Runner) handleDeployRun(ctx context.Context, task *asynq.Task) error {
 	r.appendReleaseLog(release, "等待 Deployment rollout 完成")
 	message, err := r.waitForDeploymentRollout(ctx, release, application, environment, deploymentTarget, namespace)
 	if err != nil {
-		finishedAt := time.Now()
-		_ = r.db.Model(&release).Updates(releaseFinishUpdates("failed", err.Error(), finishedAt)).Error
+		_ = r.finishDeployRelease(release, "failed", err.Error())
 		r.appendReleaseLog(release, "部署失败: "+err.Error())
 		return err
 	}
 	r.appendReleaseLog(release, firstNonEmpty(message, "Deployment rollout completed"))
 	if err := r.runDeploymentHooks(ctx, hookPhasePostDeployment, release, project, application, environment, deploymentTarget, namespace); err != nil {
-		finishedAt := time.Now()
-		_ = r.db.Model(&release).Updates(releaseFinishUpdates("failed", err.Error(), finishedAt)).Error
+		_ = r.finishDeployRelease(release, "failed", err.Error())
 		r.appendReleaseLog(release, "postDeployment Hook 失败: "+err.Error())
 		return err
 	}
@@ -280,7 +274,14 @@ func (r *Runner) waitForDeploymentRollout(ctx context.Context, release model.Rel
 
 func (r *Runner) finishDeployRelease(release model.Release, status string, message string) error {
 	finishedAt := time.Now()
-	return r.db.Model(&model.Release{}).Where("id = ?", release.ID).Updates(releaseFinishUpdates(status, message, finishedAt)).Error
+	err := r.db.Model(&model.Release{}).Where("id = ?", release.ID).Updates(releaseFinishUpdates(status, message, finishedAt)).Error
+	if err == nil {
+		release.Status = status
+		release.Message = firstNonEmpty(message, "Deployment "+status)
+		release.FinishedAt = &finishedAt
+		r.recordReleaseMetrics(release)
+	}
+	return err
 }
 
 func releaseFinishUpdates(status string, message string, finishedAt time.Time) map[string]any {

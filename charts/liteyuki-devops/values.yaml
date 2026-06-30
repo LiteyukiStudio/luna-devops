@@ -41,6 +41,11 @@ metrics:
     interval: 30s
     scrapeTimeout: 10s
     labels: {}
+  grafanaDashboard:
+    enabled: false
+    labels:
+      grafana_dashboard: "1"
+    annotations: {}
   api:
     addr: ":9090"
     port: 9090

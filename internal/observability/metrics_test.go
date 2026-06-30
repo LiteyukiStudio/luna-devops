@@ -32,6 +32,16 @@ func TestMetricsConfigActiveRequiresEnabledAndAddr(t *testing.T) {
 	}
 }
 
+func TestMetricsConfigWithDefaultAddr(t *testing.T) {
+	config := MetricsConfig{Enabled: true, Path: "/metrics", Service: "api"}.WithDefaultAddr(":9090")
+	if !config.Active() {
+		t.Fatalf("config should be active after applying default addr")
+	}
+	if config.Addr != ":9090" {
+		t.Fatalf("Addr = %q, want :9090", config.Addr)
+	}
+}
+
 func TestStartMetricsServerDisabledDoesNotListen(t *testing.T) {
 	server, err := StartMetricsServer(MetricsConfig{Enabled: false, Addr: "127.0.0.1:0", Path: "/metrics", Service: "test"}, NewRegistry("test"))
 	if err != nil {
@@ -85,6 +95,87 @@ func TestWorkerMetricsMiddlewareExportsTask(t *testing.T) {
 	}
 }
 
+func TestWorkerMetricsExportsBusinessMetrics(t *testing.T) {
+	registry := NewRegistry("worker")
+	metrics := NewWorkerMetrics(registry, "worker")
+	startedAt := time.Now().Add(-2 * time.Minute)
+	finishedAt := time.Now()
+
+	metrics.RecordBuildRun(BusinessRunMetric{
+		Status:     "succeeded",
+		Type:       "manual",
+		StartedAt:  &startedAt,
+		FinishedAt: &finishedAt,
+		CreatedAt:  startedAt.Add(-time.Minute),
+	})
+	metrics.RecordRelease(BusinessRunMetric{
+		Status:     "failed",
+		Type:       "deploy",
+		StartedAt:  &startedAt,
+		FinishedAt: &finishedAt,
+		CreatedAt:  startedAt,
+	})
+	metrics.RecordGatewaySync("apply", "succeeded", 150*time.Millisecond)
+	metrics.SetGatewayRoutes([]GatewayRouteMetric{{
+		Status:            "active",
+		TLSMode:           "http-only",
+		DNSStatus:         "verified",
+		CertificateStatus: "disabled",
+	}})
+	metrics.SetDeploymentRuntime(DeploymentRuntimeMetric{
+		DeploymentTargetID: "dplt-1",
+		EnvironmentID:      "env-1",
+		DesiredReplicas:    3,
+		ReadyReplicas:      2,
+		AvailableReplicas:  2,
+		UpdatedReplicas:    2,
+	})
+
+	metricsRecorder := httptest.NewRecorder()
+	NewMetricsHandler(registry).ServeHTTP(metricsRecorder, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	body := metricsRecorder.Body.String()
+	for _, expected := range []string{
+		`liteyuki_build_runs_total{service="worker",status="succeeded",trigger_type="manual"} 1`,
+		`liteyuki_releases_total{service="worker",status="failed",type="deploy"} 1`,
+		`liteyuki_gateway_sync_total{operation="apply",result="succeeded",service="worker"} 1`,
+		`liteyuki_gateway_routes_total{certificate_status="disabled",dns_status="verified",service="worker",status="active",tls_mode="http_only"} 1`,
+		`liteyuki_deployment_unavailable_replicas{deployment_target_id="dplt_1",environment_id="env_1",service="worker"} 1`,
+	} {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("metrics body did not contain %q:\n%s", expected, body)
+		}
+	}
+}
+
+func TestAsynqQueueCollectorExportsQueueInfo(t *testing.T) {
+	registry := NewRegistry("worker")
+	registry.MustRegister(NewAsynqQueueCollector("worker", fakeQueueInspector{
+		"build": &asynq.QueueInfo{
+			Queue:          "build",
+			Pending:        2,
+			Retry:          1,
+			Latency:        3 * time.Second,
+			ProcessedTotal: 10,
+			FailedTotal:    4,
+		},
+	}, []string{"build"}))
+
+	metricsRecorder := httptest.NewRecorder()
+	NewMetricsHandler(registry).ServeHTTP(metricsRecorder, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	body := metricsRecorder.Body.String()
+	for _, expected := range []string{
+		`liteyuki_asynq_queue_depth{queue="build",service="worker",state="pending"} 2`,
+		`liteyuki_asynq_queue_depth{queue="build",service="worker",state="retry"} 1`,
+		`liteyuki_asynq_queue_latency_seconds{queue="build",service="worker"} 3`,
+		`liteyuki_asynq_queue_processed_total{queue="build",service="worker"} 10`,
+		`liteyuki_asynq_queue_failed_total{queue="build",service="worker"} 4`,
+	} {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("metrics body did not contain %q:\n%s", expected, body)
+		}
+	}
+}
+
 func TestStartMetricsServerServesMetrics(t *testing.T) {
 	registry := NewRegistry("api")
 	server, err := StartMetricsServer(MetricsConfig{Enabled: true, Addr: "127.0.0.1:0", Path: "/metrics", Service: "api"}, registry)
@@ -106,4 +197,10 @@ func TestStartMetricsServerServesMetrics(t *testing.T) {
 	if !strings.Contains(string(body), "liteyuki_up") {
 		t.Fatalf("metrics body did not contain liteyuki_up:\n%s", body)
 	}
+}
+
+type fakeQueueInspector map[string]*asynq.QueueInfo
+
+func (f fakeQueueInspector) GetQueueInfo(queue string) (*asynq.QueueInfo, error) {
+	return f[queue], nil
 }

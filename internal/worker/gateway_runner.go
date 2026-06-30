@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/model"
 	dnsprovider "github.com/LiteyukiStudio/devops/internal/provider/dns"
@@ -13,7 +14,18 @@ import (
 	"github.com/hibiken/asynq"
 )
 
-func (r *Runner) handleGatewayApply(ctx context.Context, task *asynq.Task) error {
+func (r *Runner) handleGatewayApply(ctx context.Context, task *asynq.Task) (err error) {
+	startedAt := time.Now()
+	operation := "apply"
+	defer func() {
+		result := "succeeded"
+		if err != nil {
+			result = "failed"
+		}
+		r.recordGatewaySyncMetric(operation, result, startedAt)
+		r.refreshGatewayRouteMetrics()
+	}()
+
 	var payload tasks.GatewayApplyPayload
 	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
 		return err
@@ -40,6 +52,7 @@ func (r *Runner) handleGatewayApply(ctx context.Context, task *asynq.Task) error
 	}
 	environment := deploymentTargetEnvironment(target)
 	if !route.Enabled {
+		operation = "disable"
 		if err := r.cleanupGatewayRuntimeResources(ctx, route); err != nil {
 			_ = r.db.Model(&route).Updates(map[string]any{"status": "failed"}).Error
 			return err

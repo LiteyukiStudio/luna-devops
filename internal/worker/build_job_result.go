@@ -198,12 +198,15 @@ func (r *Runner) completeBuildJob(job model.BuildJob, run model.BuildRun, result
 		completedRun = lockedRun
 		return nil
 	})
+	if err == nil && completedRun.ID != "" {
+		r.recordBuildRunMetrics(completedRun)
+	}
 	return completedRun, err
 }
 
 func (r *Runner) failBuildJob(job model.BuildJob, run model.BuildRun, message string) error {
 	finishedAt := time.Now()
-	return r.db.Transaction(func(tx *gorm.DB) error {
+	err := r.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&model.BuildJob{}).Where("id = ? and project_id = ? and status in ?", job.ID, job.ProjectID, []string{"queued", "running"}).Updates(map[string]any{
 			"status":      "failed",
 			"message":     firstNonEmpty(message, "builder task failed"),
@@ -218,6 +221,12 @@ func (r *Runner) failBuildJob(job model.BuildJob, run model.BuildRun, message st
 			"finished_at": &finishedAt,
 		}).Error
 	})
+	if err == nil {
+		run.Status = "failed"
+		run.FinishedAt = &finishedAt
+		r.recordBuildRunMetrics(run)
+	}
+	return err
 }
 func (r *Runner) cleanupBuildJobSecrets(ctx context.Context, client kubernetes.Interface, namespace string, secretName string) error {
 	err := client.CoreV1().Secrets(namespace).Delete(ctx, secretName, metav1.DeleteOptions{})

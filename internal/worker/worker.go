@@ -36,6 +36,7 @@ type Runner struct {
 	taskClient                  *tasks.Client
 	namespaceFactory            func(kubeconfig string) (kubeprovider.NamespaceManager, error)
 	kubernetesManagerFactory    func(environment model.Environment) (kubeprovider.NamespaceManager, error)
+	workerMetrics               *observability.WorkerMetrics
 }
 
 const (
@@ -202,6 +203,7 @@ func NewRunner(db *gorm.DB, options Options) *Runner {
 		buildPrivateEgressPorts:     append([]int(nil), options.BuildPrivateEgressPorts...),
 		buildBlockedEgressCIDRs:     append([]string(nil), options.BuildBlockedEgressCIDRs...),
 		dnsResolver:                 dnsprovider.NewNetResolver(),
+		workerMetrics:               options.WorkerMetrics,
 		namespaceFactory: func(kubeconfig string) (kubeprovider.NamespaceManager, error) {
 			return kubeprovider.NewClientFromKubeconfig(kubeconfig)
 		},

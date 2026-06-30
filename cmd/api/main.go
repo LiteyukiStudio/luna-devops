@@ -11,6 +11,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/observability"
 	"github.com/LiteyukiStudio/devops/internal/secret"
 	"github.com/LiteyukiStudio/devops/internal/webui"
+	"github.com/redis/go-redis/v9"
 )
 
 func main() {
@@ -33,18 +34,33 @@ func main() {
 		Addr:    cfg.MetricsAddr,
 		Path:    cfg.MetricsPath,
 		Service: "api",
-	}
+	}.WithDefaultAddr(":9090")
 	var httpMetrics *observability.HTTPMetrics
 	if metricsConfig.Active() {
 		metricsRegistry := observability.NewRegistry("api")
+		sqlDB, err := db.DB()
+		if err != nil {
+			log.Fatalf("open database metrics handle: %v", err)
+		}
+		observability.RegisterDBStats(metricsRegistry, sqlDB, "postgres")
+		dependencyChecks := map[string]observability.DependencyCheck{
+			"postgres": sqlDB.PingContext,
+		}
+		var redisClient *redis.Client
+		if cfg.RedisAddr != "" {
+			redisClient = redis.NewClient(&redis.Options{Addr: cfg.RedisAddr})
+			defer redisClient.Close()
+			dependencyChecks["redis"] = func(ctx context.Context) error {
+				return redisClient.Ping(ctx).Err()
+			}
+		}
+		metricsRegistry.MustRegister(observability.NewDependencyCollector("api", dependencyChecks))
 		metricsServer, err := observability.StartMetricsServer(metricsConfig, metricsRegistry)
 		if err != nil {
 			log.Fatalf("start api metrics server: %v", err)
 		}
 		defer observability.ShutdownMetricsServer(shutdownContext(), metricsServer)
 		httpMetrics = observability.NewHTTPMetrics(metricsRegistry, "api")
-	} else if cfg.MetricsEnabled {
-		log.Println("api metrics disabled: METRICS_ADDR is empty")
 	}
 
 	router := api.NewRouterWithStaticFSAndMetrics(db, webui.FS, httpMetrics)

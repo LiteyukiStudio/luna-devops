@@ -749,28 +749,28 @@
 
 ## 12. 可观测性
 
-原则：所有可观测能力默认关闭，只有对应显式开关为 `true` 且所需环境变量完整时才启用；metrics 只有 `METRICS_ENABLED=true` 且 `METRICS_ADDR`、`METRICS_PATH` 均已配置时才启动独立 listener。未配置时不注册外部导出器、不暴露外部查询入口、不在 UI 展示不可用的 Grafana/Trace/Log 跳转。平台状态仍以数据库业务记录为准，Prometheus、Tempo、Loki 只作为观测与排障数据源。
+原则：所有可观测能力默认关闭，只有对应显式开关为 `true` 才启用；metrics 属于本地暴露类能力，`METRICS_ENABLED=true` 后使用 API `:9090`、Worker `:9091` 和 `/metrics` 默认值启动独立 listener。外部上报、查询和跳转类能力必须同时具备真实 endpoint/base URL，未配置时不注册外部导出器、不暴露外部查询入口、不在 UI 展示不可用的 Grafana/Trace/Log 跳转。平台状态仍以数据库业务记录为准，Prometheus、Tempo、Loki 只作为观测与排障数据源。
 
 ### 12.1 配置开关与安全边界
 
-- [x] Metrics MVP 配置闭环：新增 `METRICS_ENABLED`、`METRICS_ADDR`、`METRICS_PATH` 配置读取，默认关闭；API/Worker 只有显式开启且地址非空时才启动独立 metrics listener。
+- [x] Metrics MVP 配置闭环：新增 `METRICS_ENABLED`、`METRICS_ADDR`、`METRICS_PATH` 配置读取，默认关闭；API/Worker 显式开启后会用进程默认地址启动独立 metrics listener，配置项可覆盖监听地址和路径。
 - [x] Metrics MVP 部署闭环：`.env*` 示例、Docker Compose 和 Helm Chart 均补齐 API `:9090` / Worker `:9091` 独立 metrics 端口；Compose 仅 `expose` 容器内端口，Helm metrics Service/ServiceMonitor 默认关闭且不配置 Ingress。
-- [ ] 定义可观测配置模型和环境变量读取：`METRICS_ENABLED`、`METRICS_ADDR`、`METRICS_PATH`、`PROMETHEUS_QUERY_ENABLED`、`PROMETHEUS_BASE_URL`、`GRAFANA_LINKS_ENABLED`、`GRAFANA_BASE_URL`、`OTEL_TRACING_ENABLED`、`OTEL_EXPORTER_OTLP_ENDPOINT`、`OTEL_TRACES_SAMPLER`、`STRUCTURED_LOG_ENABLED`、`LOG_EXPORT_ENABLED`、`LOG_EXPORT_OTLP_ENDPOINT`、`LOKI_LINKS_ENABLED`、`LOKI_BASE_URL`、`ALERT_LINKS_ENABLED`、`ALERTMANAGER_BASE_URL`；每项必须有显式开关，metrics 必须同时具备 `METRICS_ENABLED=true`、`METRICS_ADDR` 和 `METRICS_PATH`，依赖 URL/endpoint/path 缺失时强制禁用并输出一次启动日志。
+- [ ] 定义可观测配置模型和环境变量读取：`METRICS_ENABLED`、`METRICS_ADDR`、`METRICS_PATH`、`PROMETHEUS_QUERY_ENABLED`、`PROMETHEUS_BASE_URL`、`GRAFANA_LINKS_ENABLED`、`GRAFANA_BASE_URL`、`OTEL_TRACING_ENABLED`、`OTEL_EXPORTER_OTLP_ENDPOINT`、`OTEL_TRACES_SAMPLER`、`STRUCTURED_LOG_ENABLED`、`LOG_EXPORT_ENABLED`、`LOG_EXPORT_OTLP_ENDPOINT`、`LOKI_LINKS_ENABLED`、`LOKI_BASE_URL`、`ALERT_LINKS_ENABLED`、`ALERTMANAGER_BASE_URL`；每项必须有显式开关，metrics 可使用进程默认地址和路径，外部依赖 URL/endpoint 缺失时强制禁用并输出一次启动日志。
 - [ ] 在 `.env.example`、`.env.development.example`、`.env.worker.example`、Docker Compose、Helm values 和配置参考文档中补齐可观测环境变量；默认值全部关闭，示例配置必须标明“配置后才启用”。
-- [ ] 收紧可观测安全边界：API/Worker metrics 仅在 `METRICS_ENABLED=true` 且 `METRICS_ADDR`、`METRICS_PATH` 均已配置时使用独立 `METRICS_ADDR` listener，不挂在业务 API 端口；生产环境 metrics Service 默认只在集群内暴露，不配置 Ingress；Prometheus/Loki/Tempo/Grafana 查询和外链由后端生成或聚合，前端不得直接拼底层平台 API；日志、trace attribute 和 metric label 禁止记录 Secret、Token、Cookie、Authorization header 和用户输入原文。
+- [ ] 收紧可观测安全边界：API/Worker metrics 仅在 `METRICS_ENABLED=true` 时使用独立 listener，不挂在业务 API 端口；默认 API `:9090/metrics`、Worker `:9091/metrics`，生产环境 metrics Service 默认只在集群内暴露，不配置 Ingress；Prometheus/Loki/Tempo/Grafana 查询和外链由后端生成或聚合，前端不得直接拼底层平台 API；日志、trace attribute 和 metric label 禁止记录 Secret、Token、Cookie、Authorization header 和用户输入原文。
 - [ ] 增加配置自检与系统设置展示：管理员可以看到每个可观测模块的启用状态、缺失配置键、采集端点和最后一次导出/查询错误；普通用户只看到可用的业务状态和受控跳转。
 
 ### 12.2 指标与 Prometheus/Grafana
 
 - [x] API/Worker metrics MVP：接入 Prometheus client，独立 registry 注册 Go/process/up 指标；API 记录 HTTP 请求量、延迟和 inflight；Worker 记录任务 started/completed、耗时和 inflight，并按 `build/deploy/light` 队列打标签。
-- [ ] API 在 `METRICS_ENABLED=true` 且 `METRICS_ADDR`、`METRICS_PATH` 均已配置时启动独立 metrics HTTP server 并注册 `METRICS_PATH`，暴露 HTTP 请求量、延迟、错误码、登录、限流、外部 provider 调用和依赖健康指标；未启用时不监听 metrics 端口。
-- [ ] Worker 在 `METRICS_ENABLED=true` 且 `METRICS_ADDR`、`METRICS_PATH` 均已配置时启动独立 metrics HTTP server 并注册 `METRICS_PATH`，暴露任务启动/完成、耗时、重试、inflight、队列深度、队列等待和幂等冲突指标；多副本指标必须可聚合，不能依赖进程内全局状态表达分布式事实。
-- [ ] 构建链路补齐 Prometheus 指标：构建结果、构建耗时、阶段耗时、Kubernetes Job 事件、镜像推送结果和超时原因；标签只允许稳定低基数字段。
-- [ ] 发布与运行态补齐 Prometheus 指标：发布结果、发布耗时、rollout 状态、ready/desired/unavailable 副本、重启次数、CPU、内存和网络摘要；运行态资源指标优先从 Kubernetes/Prometheus 查询，不把 worker 内存状态当真相源。
-- [ ] 访问入口补齐 Prometheus 指标：路由状态、网关同步耗时、DNS 检查结果、证书状态和网关请求摘要；入口流量优先复用 Traefik/Ingress Controller 指标。
+- [x] API 在 `METRICS_ENABLED=true` 时启动独立 metrics HTTP server，默认监听 `:9090/metrics`，并暴露 HTTP 请求量、延迟、错误响应、PostgreSQL 连接池、PostgreSQL/Redis 依赖健康指标；未启用时不监听 metrics 端口。
+- [x] Worker 在 `METRICS_ENABLED=true` 时启动独立 metrics HTTP server，默认监听 `:9091/metrics`，并暴露任务启动/完成、耗时、重试、inflight、队列深度、队列等待和依赖健康指标；多副本指标可按 Prometheus 维度聚合，不依赖进程内全局状态表达分布式事实。
+- [x] 构建链路补齐 Prometheus 指标：构建结果、构建耗时和超时/lost 结果；标签只允许稳定低基数字段。阶段耗时和镜像推送细分需等待 builder 结构化阶段事件后再补。
+- [x] 发布与运行态补齐 Prometheus 指标：发布结果、发布耗时、ready/desired/available/updated/unavailable 副本；运行态资源指标优先从 Kubernetes/Prometheus 查询，不把 worker 内存状态当真相源。
+- [x] 访问入口补齐 Prometheus 指标：路由状态、TLS/DNS/证书状态分布、网关同步结果和耗时；入口真实流量优先复用 Traefik/Ingress Controller 指标。
 - [ ] 在 `PROMETHEUS_QUERY_ENABLED=true` 且 `PROMETHEUS_BASE_URL` 已配置时，后端提供受控查询 API，为看板、项目空间概览、应用概览和部署页返回聚合后的轻量趋势；未配置时 UI 隐藏趋势图并保留业务状态。
 - [ ] 在 `GRAFANA_LINKS_ENABLED=true` 且 `GRAFANA_BASE_URL` 已配置时，按页面上下文生成 Grafana dashboard 深链；未配置时不展示 Grafana 入口。
-- [ ] 提供 Grafana dashboard JSON 或 Helm ConfigMap：Liteyuki Overview、API、Worker、Build、Release、Gateway、Runtime、Dependencies；dashboard 变量支持 project/application/deployment target 过滤。
+- [x] 提供 Grafana dashboard JSON 或 Helm ConfigMap：Liteyuki Overview、API、Worker、Build、Release、Gateway、Runtime、Dependencies；不同指标按 stat、time series、bar gauge、table 选择合适图表。
 
 ### 12.3 链路追踪
 

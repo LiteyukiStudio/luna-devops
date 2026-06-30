@@ -11,6 +11,8 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/secret"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
 	"github.com/LiteyukiStudio/devops/internal/worker"
+	"github.com/hibiken/asynq"
+	"github.com/redis/go-redis/v9"
 )
 
 func main() {
@@ -34,10 +36,30 @@ func main() {
 		Addr:    cfg.MetricsAddr,
 		Path:    cfg.MetricsPath,
 		Service: "worker",
-	}
+	}.WithDefaultAddr(":9091")
 	var workerMetrics *observability.WorkerMetrics
 	if metricsConfig.Active() {
 		metricsRegistry := observability.NewRegistry("worker")
+		sqlDB, err := db.DB()
+		if err != nil {
+			log.Fatalf("open database metrics handle: %v", err)
+		}
+		observability.RegisterDBStats(metricsRegistry, sqlDB, "postgres")
+		redisClient := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr})
+		defer redisClient.Close()
+		metricsRegistry.MustRegister(observability.NewDependencyCollector("worker", map[string]observability.DependencyCheck{
+			"postgres": sqlDB.PingContext,
+			"redis": func(ctx context.Context) error {
+				return redisClient.Ping(ctx).Err()
+			},
+		}))
+		queueInspector := asynq.NewInspector(asynq.RedisClientOpt{Addr: cfg.RedisAddr})
+		defer queueInspector.Close()
+		metricsRegistry.MustRegister(observability.NewAsynqQueueCollector("worker", queueInspector, []string{
+			tasks.QueueBuild,
+			tasks.QueueDeploy,
+			tasks.QueueLight,
+		}))
 		metricsServer, err := observability.StartMetricsServer(metricsConfig, metricsRegistry)
 		if err != nil {
 			log.Fatalf("start worker metrics server: %v", err)
@@ -46,8 +68,6 @@ func main() {
 		workerMetrics = observability.NewWorkerMetrics(metricsRegistry, "worker").WithQueueResolver(func(taskType string) string {
 			return tasks.PolicyForType(taskType).Queue
 		})
-	} else if cfg.MetricsEnabled {
-		log.Println("worker metrics disabled: METRICS_ADDR is empty")
 	}
 
 	options := worker.Options{

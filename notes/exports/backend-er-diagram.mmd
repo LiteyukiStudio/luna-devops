@@ -1,0 +1,354 @@
+erDiagram
+  USERS {
+    string id PK
+    string email UK
+    string name
+    string role
+    string auth_type
+    bool disabled
+  }
+
+  AUTH_PROVIDERS {
+    string id PK
+    string type
+    string name
+    string issuer_url
+    string client_id
+  }
+
+  EXTERNAL_IDENTITIES {
+    string id PK
+    string user_id FK
+    string provider_id FK
+    string subject
+    string email
+  }
+
+  PROJECTS {
+    string id PK
+    string slug UK
+    string name
+    string namespace_strategy
+    string billing_owner_user_id
+    string delete_status
+  }
+
+  PROJECT_MEMBERS {
+    string id PK
+    string project_id FK
+    string user_id FK
+    string role
+  }
+
+  APPLICATIONS {
+    string id PK
+    string project_id FK
+    string slug
+    string name
+    string icon
+    string delete_status
+  }
+
+  GIT_PROVIDERS {
+    string id PK
+    string type
+    string name
+    string base_url
+    string scope
+    string auth_type
+  }
+
+  GIT_ACCOUNTS {
+    string id PK
+    string user_id FK
+    string provider_id FK
+    string username
+    string status
+  }
+
+  REPOSITORY_BINDINGS {
+    string id PK
+    string project_id FK
+    string application_id FK
+    string git_provider_id FK
+    string git_account_id FK
+    string owner
+    string repo
+    string webhook_status
+  }
+
+  ARTIFACT_REGISTRIES {
+    string id PK
+    string name
+    string provider
+    string endpoint
+    string scope
+    bool is_default
+  }
+
+  REGISTRY_CREDENTIALS {
+    string id PK
+    string registry_id FK
+    string name
+    string username
+    string scope
+  }
+
+  CONTAINER_IMAGES {
+    string id PK
+    string project_id
+    string application_id
+    string registry_id FK
+    string repository
+    string tag
+    string image_ref
+    string build_run_id
+  }
+
+  RUNTIME_CLUSTERS {
+    string id PK
+    string name
+    string type
+    string endpoint
+    string scope
+    string status
+  }
+
+  ENVIRONMENTS {
+    string id PK
+    string project_id FK
+    string cluster_id
+    string name
+    string slug
+    string namespace
+  }
+
+  DEPLOYMENT_TARGETS {
+    string id PK
+    string project_id FK
+    string application_id FK
+    string environment_id
+    string cluster_id
+    string repository_binding_id
+    string target_registry_id
+    string name
+    string stage
+    string source_type
+    string image_ref
+    bool auto_deploy
+    bool enabled
+  }
+
+  BUILD_RUNS {
+    string id PK
+    string project_id
+    string application_id
+    string deployment_target_id
+    string target_registry_id
+    string status
+    string trigger_type
+    string image_ref
+    string image_digest
+  }
+
+  BUILD_JOBS {
+    string id PK
+    string build_run_id
+    string project_id
+    string status
+    string builder_id
+  }
+
+  BUILD_LOGS {
+    string id PK
+    string build_run_id
+    string build_job_id UK
+    string project_id
+  }
+
+  BUILD_VARIABLE_SETS {
+    string id PK
+    string name
+    string scope
+    string owner_ref
+    bool enabled
+  }
+
+  RELEASES {
+    string id PK
+    string project_id
+    string application_id
+    string environment_id
+    string deployment_target_id
+    string build_run_id
+    string image_ref
+    string status
+    int revision
+  }
+
+  RELEASE_LOGS {
+    string id PK
+    string release_id UK
+    string project_id
+  }
+
+  GATEWAY_ROUTES {
+    string id PK
+    string project_id
+    string application_id
+    string environment_id
+    string deployment_target_id
+    string host
+    string path
+    int service_port
+    string status
+    bool enabled
+  }
+
+  PROJECT_RUNTIME_CONFIG_SETS {
+    string id PK
+    string project_id FK
+    string name
+    string env_vars
+    string config_files
+    bool enabled
+  }
+
+  PROJECT_HOOK_CONFIGS {
+    string id PK
+    string project_id FK
+    string name
+    string phase
+    string failure_policy
+  }
+
+  DEPLOYMENT_TARGET_HOOK_BINDINGS {
+    string id PK
+    string project_id
+    string application_id
+    string target_id
+    string hook_config_id
+    string phase
+    int run_order
+  }
+
+  HOOK_RUNS {
+    string id PK
+    string project_id
+    string hook_config_id
+    string build_run_id
+    string build_job_id
+    string release_id
+    string application_id
+    string deployment_target_id
+    string phase
+    string status
+  }
+
+  HOOK_RUN_LOGS {
+    string id PK
+    string hook_run_id UK
+    string project_id
+  }
+
+  USER_WALLETS {
+    string id PK
+    string user_id UK
+    decimal balance_credits
+  }
+
+  BILLING_USAGE_RECORDS {
+    string id PK
+    string project_id
+    string billed_user_id
+    string application_id
+    string meter
+    string resource_type
+    string resource_id
+    decimal amount_credits
+  }
+
+  BILLING_LEDGER_ENTRIES {
+    string id PK
+    string user_id
+    string project_id
+    string usage_record_id
+    string type
+    decimal amount_credits
+    decimal balance_after_credits
+  }
+
+  APP_TEMPLATE_INSTALLATIONS {
+    string id PK
+    string template_id
+    string project_id FK
+    string application_id FK
+    string deployment_target_id
+    string release_id
+    string status
+  }
+
+  USERS ||--o{ EXTERNAL_IDENTITIES : binds
+  AUTH_PROVIDERS ||--o{ EXTERNAL_IDENTITIES : provides
+  USERS ||--o{ PROJECT_MEMBERS : joins
+  USERS ||--o| USER_WALLETS : has
+  USERS ||--o{ GIT_ACCOUNTS : owns
+  USERS ||--o{ BILLING_USAGE_RECORDS : billed
+  USERS ||--o{ BILLING_LEDGER_ENTRIES : owns
+
+  PROJECTS ||--o{ PROJECT_MEMBERS : has
+  PROJECTS ||--o{ APPLICATIONS : contains
+  PROJECTS ||--o{ ENVIRONMENTS : has
+  PROJECTS ||--o{ REPOSITORY_BINDINGS : has
+  PROJECTS ||--o{ DEPLOYMENT_TARGETS : has
+  PROJECTS ||--o{ BUILD_RUNS : has
+  PROJECTS ||--o{ RELEASES : has
+  PROJECTS ||--o{ GATEWAY_ROUTES : has
+  PROJECTS ||--o{ PROJECT_RUNTIME_CONFIG_SETS : has
+  PROJECTS ||--o{ PROJECT_HOOK_CONFIGS : has
+  PROJECTS ||--o{ BILLING_USAGE_RECORDS : charged
+  PROJECTS ||--o{ BILLING_LEDGER_ENTRIES : references
+
+  APPLICATIONS ||--o{ REPOSITORY_BINDINGS : binds
+  APPLICATIONS ||--o{ DEPLOYMENT_TARGETS : deploys_as
+  APPLICATIONS ||--o{ BUILD_RUNS : builds
+  APPLICATIONS ||--o{ RELEASES : releases
+  APPLICATIONS ||--o{ GATEWAY_ROUTES : exposes
+  APPLICATIONS ||--o{ APP_TEMPLATE_INSTALLATIONS : installed_by
+
+  GIT_PROVIDERS ||--o{ GIT_ACCOUNTS : accounts
+  GIT_PROVIDERS ||--o{ REPOSITORY_BINDINGS : source
+  GIT_ACCOUNTS ||--o{ REPOSITORY_BINDINGS : authorizes
+
+  ARTIFACT_REGISTRIES ||--o{ REGISTRY_CREDENTIALS : has
+  ARTIFACT_REGISTRIES ||--o{ CONTAINER_IMAGES : stores
+  ARTIFACT_REGISTRIES ||--o{ DEPLOYMENT_TARGETS : target_registry
+  ARTIFACT_REGISTRIES ||--o{ BUILD_RUNS : target_registry
+
+  RUNTIME_CLUSTERS ||--o{ ENVIRONMENTS : runs
+  RUNTIME_CLUSTERS ||--o{ DEPLOYMENT_TARGETS : runs
+  ENVIRONMENTS ||--o{ DEPLOYMENT_TARGETS : defaults
+  ENVIRONMENTS ||--o{ RELEASES : receives
+  ENVIRONMENTS ||--o{ GATEWAY_ROUTES : routes
+
+  REPOSITORY_BINDINGS ||--o{ DEPLOYMENT_TARGETS : source
+  DEPLOYMENT_TARGETS ||--o{ BUILD_RUNS : triggers
+  DEPLOYMENT_TARGETS ||--o{ RELEASES : deployed_by
+  DEPLOYMENT_TARGETS ||--o{ GATEWAY_ROUTES : exposed_by
+  DEPLOYMENT_TARGETS ||--o{ DEPLOYMENT_TARGET_HOOK_BINDINGS : hooks
+  DEPLOYMENT_TARGETS ||--o{ APP_TEMPLATE_INSTALLATIONS : installed_target
+
+  BUILD_RUNS ||--o{ BUILD_JOBS : creates
+  BUILD_RUNS ||--o{ BUILD_LOGS : logs
+  BUILD_RUNS ||--o{ RELEASES : produces
+  BUILD_JOBS ||--o| BUILD_LOGS : has_log
+
+  RELEASES ||--o| RELEASE_LOGS : has_log
+  RELEASES ||--o{ HOOK_RUNS : invokes
+  RELEASES ||--o{ APP_TEMPLATE_INSTALLATIONS : installed_release
+
+  PROJECT_HOOK_CONFIGS ||--o{ DEPLOYMENT_TARGET_HOOK_BINDINGS : bound
+  PROJECT_HOOK_CONFIGS ||--o{ HOOK_RUNS : runs
+  HOOK_RUNS ||--o| HOOK_RUN_LOGS : has_log
+
+  BILLING_USAGE_RECORDS ||--o{ BILLING_LEDGER_ENTRIES : settles

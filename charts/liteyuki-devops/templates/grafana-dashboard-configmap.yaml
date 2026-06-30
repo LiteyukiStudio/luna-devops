@@ -1,0 +1,18 @@
+{{- if .Values.metrics.grafanaDashboard.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "liteyuki-devops.fullname" . }}-grafana-dashboard
+  labels:
+    {{- include "liteyuki-devops.labels" . | nindent 4 }}
+    {{- with .Values.metrics.grafanaDashboard.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.metrics.grafanaDashboard.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+data:
+  liteyuki-devops-overview.json: |-
+{{ .Files.Get "dashboards/liteyuki-devops-overview.json" | indent 4 }}
+{{- end }}
