@@ -111,7 +111,7 @@ export function ApplicationGatewayPanel({ applicationId, deploymentTargets, proj
               <StatusValueBadge labelKeyPrefix="gatewayRoutesPage.statuses" value={gatewayRouteEffectiveStatus(item)} />
             </div>
           ), width: 'status' },
-          { key: 'actions', header: t('common.actions'), className: 'text-right whitespace-nowrap', maxWidth: 360, minWidth: 300, sticky: 'right', width: 'actions', render: (item) => {
+          { key: 'actions', header: t('common.actions'), className: 'text-right whitespace-nowrap', sticky: 'right', width: 'actions', render: (item) => {
             const deleting = item.deleteStatus === 'deleting'
             return (
               <div className="flex justify-end gap-2">
