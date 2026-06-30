@@ -1,0 +1,51 @@
+{{- if and .Values.metrics.enabled .Values.metrics.service.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "liteyuki-devops.apiMetricsName" . }}
+  labels:
+    {{- include "liteyuki-devops.componentLabels" (dict "root" . "component" "api") | nindent 4 }}
+    liteyuki-devops.io/metrics: "true"
+    {{- with .Values.metrics.service.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.metrics.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.metrics.api.port }}
+      targetPort: metrics
+      protocol: TCP
+      name: metrics
+  selector:
+    {{- include "liteyuki-devops.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "liteyuki-devops.workerMetricsName" . }}
+  labels:
+    {{- include "liteyuki-devops.componentLabels" (dict "root" . "component" "worker") | nindent 4 }}
+    liteyuki-devops.io/metrics: "true"
+    {{- with .Values.metrics.service.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.metrics.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.metrics.worker.port }}
+      targetPort: metrics
+      protocol: TCP
+      name: metrics
+  selector:
+    {{- include "liteyuki-devops.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+{{- end }}

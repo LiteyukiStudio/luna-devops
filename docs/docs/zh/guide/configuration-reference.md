@@ -16,6 +16,9 @@
 | 进阶 | `API_ADDR` | `:8080` | API 容器监听地址；自定义端口时改。 |
 | 进阶 | `APP_CORS_ORIGINS` | `http://localhost:8088` | 允许访问 API 的前端 Origin；前后端不同域时改。 |
 | 进阶 | `LOG_LEVEL` | `debug` | 日志级别；生产通常改为 `info`。 |
+| 进阶 | `METRICS_ENABLED` | `false` | 是否启用独立 Prometheus metrics listener；默认关闭。 |
+| 进阶 | `METRICS_ADDR` | 空 | metrics 监听地址；API 示例为 `:9090`。只有 `METRICS_ENABLED=true` 且该值非空时才监听。 |
+| 进阶 | `METRICS_PATH` | `/metrics` | Prometheus 抓取路径；只注册在独立 metrics listener 上。 |
 
 OIDC 身份源的 Redirect URI 由 `PUBLIC_BASE_URL` 生成，后台“身份源”表单会直接展示可复制地址。准入策略默认要求 OIDC 返回非空邮箱且 `email_verified=true`；如果接入的是可信内部身份源，但无法返回标准 `email_verified`，可以在准入策略里关闭“要求 OIDC 邮箱已验证”，平台仍会要求邮箱非空。
 
@@ -33,6 +36,9 @@ OIDC 身份源的 Redirect URI 由 `PUBLIC_BASE_URL` 生成，后台“身份源
 | 基本 | `REDIS_ADDR` | `redis:6379` | Redis 地址；和 API 指向同实例。 |
 | 基本 | `BUILD_EXECUTOR_IMAGE` | `moby/buildkit:v0.24.0-rootless` | BuildKit 镜像；构建集群拉不到默认镜像时改。 |
 | 进阶 | `LOG_LEVEL` | `debug` | 日志级别；生产通常改为 `info`。 |
+| 进阶 | `METRICS_ENABLED` | `false` | 是否启用独立 Prometheus metrics listener；默认关闭。 |
+| 进阶 | `METRICS_ADDR` | 空 | metrics 监听地址；Worker 示例为 `:9091`。只有 `METRICS_ENABLED=true` 且该值非空时才监听。 |
+| 进阶 | `METRICS_PATH` | `/metrics` | Prometheus 抓取路径；只注册在独立 metrics listener 上。 |
 | 进阶 | `DEPLOY_ROLLOUT_TIMEOUT_SECONDS` | `600` | 发布等待超时；应用启动慢时调大。 |
 | 进阶 | `CERT_MANAGER_CLUSTER_ISSUER` | `letsencrypt-http01` | 证书 Issuer 名称；集群名称不同时改。 |
 | 进阶 | `BUILD_EGRESS_MODE` | `permissive` | 构建出站模式；需要强隔离时改为 `restricted`。 |

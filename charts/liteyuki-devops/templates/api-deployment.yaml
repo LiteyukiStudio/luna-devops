@@ -41,8 +41,15 @@ spec:
             - name: http
               containerPort: 8080
               protocol: TCP
+            {{- if .Values.metrics.enabled }}
+            - name: metrics
+              containerPort: {{ .Values.metrics.api.port }}
+              protocol: TCP
+            {{- end }}
           env:
             {{- include "liteyuki-devops.commonEnv" . | nindent 12 }}
+            - name: METRICS_ADDR
+              value: {{ .Values.metrics.api.addr | quote }}
           envFrom:
             - configMapRef:
                 name: {{ include "liteyuki-devops.fullname" . }}-config

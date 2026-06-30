@@ -78,6 +78,14 @@ app.kubernetes.io/component: {{ .component }}
 {{- printf "%s-worker" (include "liteyuki-devops.fullname" .) | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
+{{- define "liteyuki-devops.apiMetricsName" -}}
+{{- printf "%s-api-metrics" (include "liteyuki-devops.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "liteyuki-devops.workerMetricsName" -}}
+{{- printf "%s-worker-metrics" (include "liteyuki-devops.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
 {{- define "liteyuki-devops.imageTag" -}}
 {{- default .Chart.AppVersion .tag -}}
 {{- end -}}
@@ -134,6 +142,10 @@ redis-addr
     secretKeyRef:
       name: {{ include "liteyuki-devops.redisAddrSecretName" . }}
       key: {{ include "liteyuki-devops.redisAddrSecretKey" . }}
+- name: METRICS_ENABLED
+  value: {{ .Values.metrics.enabled | quote }}
+- name: METRICS_PATH
+  value: {{ .Values.metrics.path | quote }}
 {{- range $name, $value := .Values.app.extraEnv }}
 - name: {{ $name }}
   value: {{ $value | quote }}

@@ -29,6 +29,25 @@ api:
   podAnnotations: {}
   podLabels: {}
 
+metrics:
+  enabled: false
+  path: /metrics
+  service:
+    enabled: false
+    annotations: {}
+    labels: {}
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    scrapeTimeout: 10s
+    labels: {}
+  api:
+    addr: ":9090"
+    port: 9090
+  worker:
+    addr: ":9091"
+    port: 9091
+
 worker:
   replicaCount: 1
   image:

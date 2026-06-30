@@ -8,6 +8,7 @@ import (
 
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/LiteyukiStudio/devops/internal/observability"
 	dnsprovider "github.com/LiteyukiStudio/devops/internal/provider/dns"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/LiteyukiStudio/devops/internal/secret"
@@ -45,6 +46,7 @@ const (
 type Options struct {
 	DeployRolloutTimeoutSeconds int64
 	CertManagerClusterIssuer    string
+	WorkerMetrics               *observability.WorkerMetrics
 	BuildExecutorImage          string
 	BuildNPMRegistry            string
 	BuildEgressMode             string
@@ -78,6 +80,9 @@ func Run(redisAddr string, db *gorm.DB, options Options) error {
 	)
 
 	mux := asynq.NewServeMux()
+	if options.WorkerMetrics != nil {
+		mux.Use(options.WorkerMetrics.Middleware)
+	}
 	mux.HandleFunc(tasks.TypeBuildRun, runner.withTaskEvents(runner.handleBuildRun))
 	mux.HandleFunc(tasks.TypeDeployRun, runner.withTaskEvents(runner.handleDeployRun))
 	mux.HandleFunc(tasks.TypeGatewayApply, runner.withTaskEvents(runner.handleGatewayApply))

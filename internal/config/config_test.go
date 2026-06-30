@@ -107,6 +107,42 @@ func TestLoadBuildEgressModeSupportsRestricted(t *testing.T) {
 	}
 }
 
+func TestLoadMetricsConfigDefaultsDisabled(t *testing.T) {
+	resetEnvLoaderForTest()
+	unsetEnv(t, "METRICS_ENABLED")
+	unsetEnv(t, "METRICS_ADDR")
+	unsetEnv(t, "METRICS_PATH")
+
+	cfg := Load()
+	if cfg.MetricsEnabled {
+		t.Fatalf("MetricsEnabled = true, want false")
+	}
+	if cfg.MetricsAddr != "" {
+		t.Fatalf("MetricsAddr = %q, want empty", cfg.MetricsAddr)
+	}
+	if cfg.MetricsPath != "/metrics" {
+		t.Fatalf("MetricsPath = %q, want /metrics", cfg.MetricsPath)
+	}
+}
+
+func TestLoadMetricsConfigNormalizesPath(t *testing.T) {
+	resetEnvLoaderForTest()
+	t.Setenv("METRICS_ENABLED", "true")
+	t.Setenv("METRICS_ADDR", ":19090")
+	t.Setenv("METRICS_PATH", "metrics")
+
+	cfg := Load()
+	if !cfg.MetricsEnabled {
+		t.Fatalf("MetricsEnabled = false, want true")
+	}
+	if cfg.MetricsAddr != ":19090" {
+		t.Fatalf("MetricsAddr = %q", cfg.MetricsAddr)
+	}
+	if cfg.MetricsPath != "/metrics" {
+		t.Fatalf("MetricsPath = %q, want /metrics", cfg.MetricsPath)
+	}
+}
+
 func TestLoadBuildPrivateEgressPortsDefaultsTo443(t *testing.T) {
 	resetEnvLoader(t)
 	unsetEnv(t, "BUILD_PRIVATE_EGRESS_PORTS")

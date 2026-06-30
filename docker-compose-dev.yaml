@@ -37,6 +37,8 @@ services:
       - .env.worker
     extra_hosts:
       - "dev.minikube.local:host-gateway"
+    expose:
+      - "9091"
     depends_on:
       postgres:
         condition: service_healthy

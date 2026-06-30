@@ -28,5 +28,10 @@
     "type": "file",
     "name": "diagnostics",
     "label": "状态与排障"
+  },
+  {
+    "type": "file",
+    "name": "observability",
+    "label": "可观测方案"
   }
 ]

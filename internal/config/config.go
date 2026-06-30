@@ -16,6 +16,9 @@ type Config struct {
 	APIAddr                     string
 	DatabaseURL                 string
 	RedisAddr                   string
+	MetricsEnabled              bool
+	MetricsAddr                 string
+	MetricsPath                 string
 	BuildExecutorImage          string
 	BuildNPMRegistry            string
 	BuildEgressMode             string
@@ -37,6 +40,9 @@ func Load() Config {
 		APIAddr:                     env("API_ADDR", ":8080"),
 		DatabaseURL:                 env("DATABASE_URL", "postgres://devops:devops@localhost:5432/devops?sslmode=disable"),
 		RedisAddr:                   env("REDIS_ADDR", "localhost:6379"),
+		MetricsEnabled:              envBool("METRICS_ENABLED", false),
+		MetricsAddr:                 env("METRICS_ADDR", ""),
+		MetricsPath:                 normalizeMetricsPath(env("METRICS_PATH", "/metrics")),
 		BuildExecutorImage:          env("BUILD_EXECUTOR_IMAGE", "moby/buildkit:v0.24.0-rootless"),
 		BuildNPMRegistry:            env("BUILD_NPM_REGISTRY", ""),
 		BuildEgressMode:             buildEgressMode(env("BUILD_EGRESS_MODE", "permissive")),

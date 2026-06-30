@@ -16,6 +16,9 @@ Read Basic first. Use Advanced only when you need it.
 | Advanced | `API_ADDR` | `:8080` | API listen address; change for custom container ports. |
 | Advanced | `APP_CORS_ORIGINS` | `http://localhost:8088` | Allowed frontend origins; change when frontend and API use different origins. |
 | Advanced | `LOG_LEVEL` | `debug` | Log level; production usually uses `info`. |
+| Advanced | `METRICS_ENABLED` | `false` | Enables the dedicated Prometheus metrics listener; disabled by default. |
+| Advanced | `METRICS_ADDR` | Empty | Metrics listen address; API example: `:9090`. The listener starts only when `METRICS_ENABLED=true` and this value is set. |
+| Advanced | `METRICS_PATH` | `/metrics` | Prometheus scrape path; registered only on the dedicated metrics listener. |
 
 OIDC identity provider Redirect URI is generated from `PUBLIC_BASE_URL`, and the admin identity provider form shows a copyable value. Admission policy requires OIDC to return a non-empty email and `email_verified=true` by default. For trusted internal identity providers that cannot return the standard `email_verified` claim, disable “Require verified OIDC email” in the admission policy; the platform still requires a non-empty email.
 
@@ -33,6 +36,9 @@ Default access-route domain suffixes and public link schemes are managed on runt
 | Basic | `REDIS_ADDR` | `redis:6379` | Redis address; point to the same Redis as API. |
 | Basic | `BUILD_EXECUTOR_IMAGE` | `moby/buildkit:v0.24.0-rootless` | BuildKit image; change when the build cluster cannot pull the default image. |
 | Advanced | `LOG_LEVEL` | `debug` | Log level; production usually uses `info`. |
+| Advanced | `METRICS_ENABLED` | `false` | Enables the dedicated Prometheus metrics listener; disabled by default. |
+| Advanced | `METRICS_ADDR` | Empty | Metrics listen address; worker example: `:9091`. The listener starts only when `METRICS_ENABLED=true` and this value is set. |
+| Advanced | `METRICS_PATH` | `/metrics` | Prometheus scrape path; registered only on the dedicated metrics listener. |
 | Advanced | `DEPLOY_ROLLOUT_TIMEOUT_SECONDS` | `600` | Release wait timeout; increase for slow-starting apps. |
 | Advanced | `CERT_MANAGER_CLUSTER_ISSUER` | `letsencrypt-http01` | Certificate Issuer name; change when your cluster uses another name. |
 | Advanced | `BUILD_EGRESS_MODE` | `permissive` | Build egress mode; set to `restricted` when strong isolation is required. |

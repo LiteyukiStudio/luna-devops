@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/LiteyukiStudio/devops/internal/config"
+	"github.com/LiteyukiStudio/devops/internal/observability"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -17,12 +18,20 @@ func NewRouter(db *gorm.DB) *gin.Engine {
 }
 
 func NewRouterWithStaticFS(db *gorm.DB, staticFS fs.FS) *gin.Engine {
+	return NewRouterWithStaticFSAndMetrics(db, staticFS, nil)
+}
+
+func NewRouterWithStaticFSAndMetrics(db *gorm.DB, staticFS fs.FS, httpMetrics *observability.HTTPMetrics) *gin.Engine {
 	if debugLogEnabled() {
 		gin.SetMode(gin.DebugMode)
 		debugLog("api log level set to debug")
 	}
 	router := gin.New()
-	router.Use(gin.Logger(), recoveryMiddleware(), errorResponseMiddleware(), securityHeaders(), cors(), csrfOriginGuard())
+	middlewares := []gin.HandlerFunc{gin.Logger(), recoveryMiddleware(), errorResponseMiddleware(), securityHeaders(), cors(), csrfOriginGuard()}
+	if httpMetrics != nil {
+		middlewares = append(middlewares, httpMetrics.GinMiddleware())
+	}
+	router.Use(middlewares...)
 
 	handlers := NewHandlers(db)
 

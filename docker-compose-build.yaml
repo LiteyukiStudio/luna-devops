@@ -45,11 +45,16 @@ services:
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8088}
       APP_CORS_ORIGINS: ${APP_CORS_ORIGINS:-http://localhost:8088}
       REDIS_ADDR: redis:6379
+      METRICS_ENABLED: ${API_METRICS_ENABLED:-${METRICS_ENABLED:-false}}
+      METRICS_ADDR: ${API_METRICS_ADDR:-:9090}
+      METRICS_PATH: ${API_METRICS_PATH:-${METRICS_PATH:-/metrics}}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    expose:
+      - "9090"
     ports:
       - "8088:8080"
 
@@ -81,11 +86,16 @@ services:
       BUILD_PRIVATE_EGRESS_CIDRS: ${BUILD_PRIVATE_EGRESS_CIDRS:-}
       BUILD_PRIVATE_EGRESS_PORTS: ${BUILD_PRIVATE_EGRESS_PORTS:-443}
       BUILD_BLOCKED_EGRESS_CIDRS: ${BUILD_BLOCKED_EGRESS_CIDRS:-}
+      METRICS_ENABLED: ${WORKER_METRICS_ENABLED:-${METRICS_ENABLED:-false}}
+      METRICS_ADDR: ${WORKER_METRICS_ADDR:-:9091}
+      METRICS_PATH: ${WORKER_METRICS_PATH:-${METRICS_PATH:-/metrics}}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    expose:
+      - "9091"
 
 volumes:
   postgres-data:

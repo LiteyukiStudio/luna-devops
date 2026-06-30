@@ -747,6 +747,58 @@
 - [x] 拆分 Git provider client：已按错误映射、OAuth、类型、仓库/分支/文件/Webhook、构建选项发现等职责拆分 `internal/provider/git/*`；前端仍只调用平台后端 API。验收：`go test ./internal/provider/git` 和 `go test ./...` 通过。
 - [x] 拆分大测试文件：`internal/api/handlers_test.go` 已拆为 core/auth/tasks/git-security 等领域测试文件，原文件仅保留 package 声明。验收：`go test ./internal/api` 和 `go test ./...` 通过。
 
+## 12. 可观测性
+
+原则：所有可观测能力默认关闭，只有对应显式开关为 `true` 且所需环境变量完整时才启用；metrics 只有 `METRICS_ENABLED=true` 且 `METRICS_ADDR`、`METRICS_PATH` 均已配置时才启动独立 listener。未配置时不注册外部导出器、不暴露外部查询入口、不在 UI 展示不可用的 Grafana/Trace/Log 跳转。平台状态仍以数据库业务记录为准，Prometheus、Tempo、Loki 只作为观测与排障数据源。
+
+### 12.1 配置开关与安全边界
+
+- [x] Metrics MVP 配置闭环：新增 `METRICS_ENABLED`、`METRICS_ADDR`、`METRICS_PATH` 配置读取，默认关闭；API/Worker 只有显式开启且地址非空时才启动独立 metrics listener。
+- [x] Metrics MVP 部署闭环：`.env*` 示例、Docker Compose 和 Helm Chart 均补齐 API `:9090` / Worker `:9091` 独立 metrics 端口；Compose 仅 `expose` 容器内端口，Helm metrics Service/ServiceMonitor 默认关闭且不配置 Ingress。
+- [ ] 定义可观测配置模型和环境变量读取：`METRICS_ENABLED`、`METRICS_ADDR`、`METRICS_PATH`、`PROMETHEUS_QUERY_ENABLED`、`PROMETHEUS_BASE_URL`、`GRAFANA_LINKS_ENABLED`、`GRAFANA_BASE_URL`、`OTEL_TRACING_ENABLED`、`OTEL_EXPORTER_OTLP_ENDPOINT`、`OTEL_TRACES_SAMPLER`、`STRUCTURED_LOG_ENABLED`、`LOG_EXPORT_ENABLED`、`LOG_EXPORT_OTLP_ENDPOINT`、`LOKI_LINKS_ENABLED`、`LOKI_BASE_URL`、`ALERT_LINKS_ENABLED`、`ALERTMANAGER_BASE_URL`；每项必须有显式开关，metrics 必须同时具备 `METRICS_ENABLED=true`、`METRICS_ADDR` 和 `METRICS_PATH`，依赖 URL/endpoint/path 缺失时强制禁用并输出一次启动日志。
+- [ ] 在 `.env.example`、`.env.development.example`、`.env.worker.example`、Docker Compose、Helm values 和配置参考文档中补齐可观测环境变量；默认值全部关闭，示例配置必须标明“配置后才启用”。
+- [ ] 收紧可观测安全边界：API/Worker metrics 仅在 `METRICS_ENABLED=true` 且 `METRICS_ADDR`、`METRICS_PATH` 均已配置时使用独立 `METRICS_ADDR` listener，不挂在业务 API 端口；生产环境 metrics Service 默认只在集群内暴露，不配置 Ingress；Prometheus/Loki/Tempo/Grafana 查询和外链由后端生成或聚合，前端不得直接拼底层平台 API；日志、trace attribute 和 metric label 禁止记录 Secret、Token、Cookie、Authorization header 和用户输入原文。
+- [ ] 增加配置自检与系统设置展示：管理员可以看到每个可观测模块的启用状态、缺失配置键、采集端点和最后一次导出/查询错误；普通用户只看到可用的业务状态和受控跳转。
+
+### 12.2 指标与 Prometheus/Grafana
+
+- [x] API/Worker metrics MVP：接入 Prometheus client，独立 registry 注册 Go/process/up 指标；API 记录 HTTP 请求量、延迟和 inflight；Worker 记录任务 started/completed、耗时和 inflight，并按 `build/deploy/light` 队列打标签。
+- [ ] API 在 `METRICS_ENABLED=true` 且 `METRICS_ADDR`、`METRICS_PATH` 均已配置时启动独立 metrics HTTP server 并注册 `METRICS_PATH`，暴露 HTTP 请求量、延迟、错误码、登录、限流、外部 provider 调用和依赖健康指标；未启用时不监听 metrics 端口。
+- [ ] Worker 在 `METRICS_ENABLED=true` 且 `METRICS_ADDR`、`METRICS_PATH` 均已配置时启动独立 metrics HTTP server 并注册 `METRICS_PATH`，暴露任务启动/完成、耗时、重试、inflight、队列深度、队列等待和幂等冲突指标；多副本指标必须可聚合，不能依赖进程内全局状态表达分布式事实。
+- [ ] 构建链路补齐 Prometheus 指标：构建结果、构建耗时、阶段耗时、Kubernetes Job 事件、镜像推送结果和超时原因；标签只允许稳定低基数字段。
+- [ ] 发布与运行态补齐 Prometheus 指标：发布结果、发布耗时、rollout 状态、ready/desired/unavailable 副本、重启次数、CPU、内存和网络摘要；运行态资源指标优先从 Kubernetes/Prometheus 查询，不把 worker 内存状态当真相源。
+- [ ] 访问入口补齐 Prometheus 指标：路由状态、网关同步耗时、DNS 检查结果、证书状态和网关请求摘要；入口流量优先复用 Traefik/Ingress Controller 指标。
+- [ ] 在 `PROMETHEUS_QUERY_ENABLED=true` 且 `PROMETHEUS_BASE_URL` 已配置时，后端提供受控查询 API，为看板、项目空间概览、应用概览和部署页返回聚合后的轻量趋势；未配置时 UI 隐藏趋势图并保留业务状态。
+- [ ] 在 `GRAFANA_LINKS_ENABLED=true` 且 `GRAFANA_BASE_URL` 已配置时，按页面上下文生成 Grafana dashboard 深链；未配置时不展示 Grafana 入口。
+- [ ] 提供 Grafana dashboard JSON 或 Helm ConfigMap：Liteyuki Overview、API、Worker、Build、Release、Gateway、Runtime、Dependencies；dashboard 变量支持 project/application/deployment target 过滤。
+
+### 12.3 链路追踪
+
+- [ ] 接入 OpenTelemetry SDK：仅当 `OTEL_TRACING_ENABLED=true` 且 `OTEL_EXPORTER_OTLP_ENDPOINT` 已配置时初始化 tracer provider 和 OTLP exporter；未配置时使用 no-op tracer，不影响主流程。
+- [ ] 为 Gin 请求、GORM 查询、Redis/Asynq 投递、外部 Git/Registry/Kubernetes provider 调用建立 span，span 命名使用稳定路由模板和操作名，不包含用户输入原文。
+- [ ] Asynq 任务 envelope 透传 W3C Trace Context；API 创建 BuildRun/Release 后投递任务，Worker 继续同一 trace，构建/部署/网关任务默认全量保留错误和慢任务 trace。
+- [ ] 为构建和发布阶段增加业务 span：checkout、build、push、apply、rollout wait、gateway sync；BuildRun/Release 详情保存 trace_id，用于 UI 生成受控 trace 跳转。
+- [ ] 支持采样配置：`OTEL_TRACES_SAMPLER` 和采样比例环境变量；错误 trace、慢任务 trace 和构建/发布任务优先保留。
+- [ ] 在 `GRAFANA_LINKS_ENABLED=true` 且 `GRAFANA_BASE_URL` 已配置时，为构建详情、发布详情和访问入口生成 Tempo/Trace 深链；未配置时不展示 trace 入口。
+
+### 12.4 日志上报与查询
+
+- [ ] 将 API/Worker 日志统一为可选结构化输出：仅当 `STRUCTURED_LOG_ENABLED=true` 时使用 JSON slog，默认保持当前开发友好输出；JSON 字段包含 service、component、trace_id、request_id、task_id、project_id、application_id、build_run_id、release_id、operation 和 error_code。
+- [ ] 日志导出显式开关：仅当 `LOG_EXPORT_ENABLED=true` 且 `LOG_EXPORT_OTLP_ENDPOINT` 或 `LOKI_BASE_URL` 已配置时启用日志导出；未配置时只输出到 stdout，不初始化远端日志客户端。
+- [ ] 构建日志、Hook 日志、发布日志和运行 Pod 日志继续按业务权限在平台内展示；同时在启用日志导出时附加 trace_id、build_run_id、release_id 和 deployment_target_id，便于 Loki 聚合检索。
+- [ ] 在 `LOKI_LINKS_ENABLED=true` 且 `LOKI_BASE_URL`/`GRAFANA_BASE_URL` 已配置时，后端为构建、发布、运行日志生成受控 Loki/Grafana Explore 深链；未配置时仅展示平台内日志。
+- [ ] 增加日志脱敏统一组件验收：Secret、Token、Authorization header、Cookie、Registry 凭据、Git 凭据和 URL 内敏感参数不得进入平台日志、导出日志或 trace attribute。
+- [ ] 规划大日志归档：对象存储归档仍独立于 Loki，启用归档需要单独显式开关和存储配置；未配置时只保留数据库日志窗口。
+
+### 12.5 告警与用户体验闭环
+
+- [ ] 提供 Prometheus alert rules：API 5xx、API P95 延迟、Worker 队列积压、构建失败率、发布失败率、Redis/PostgreSQL/Kubernetes 不可用、证书失败过多；规则文件随 Helm/Compose 示例提供，但不默认启用外部告警发送。
+- [ ] 在 `ALERT_LINKS_ENABLED=true` 且 `ALERTMANAGER_BASE_URL` 已配置时，管理员页面展示 Alertmanager 入口和当前告警摘要；未配置时不展示告警入口。
+- [ ] 平台看板增加可观测摘要：平台健康、队列积压、近期失败构建/发布、运行集群异常；所有摘要缺少 Prometheus 查询配置时回退到数据库业务记录。
+- [ ] 项目空间和应用概览增加用户友好的可观测卡片：构建成功率、最近发布状态、副本健康、访问入口状态、资源趋势；趋势依赖 Prometheus 查询开关，状态依赖平台业务记录。
+- [ ] 构建/发布失败自动关联最近日志、Kubernetes Events 和 trace_id，前端优先展示“可能原因 + 下一步操作”，深度日志和 trace 作为辅助入口。
+- [ ] 完成可观测 MVP 验收：不开任何可观测环境变量时平台行为与当前一致；只开 metrics 时 Prometheus 可 scrape API/Worker；只开 tracing 时构建/发布 trace 可在 Tempo 查看；只开日志导出时 Loki 可按 trace_id/build_run_id 查询；只开 Grafana 链接时 UI 展示受控 dashboard/trace/log 跳转。
+
 ## 100.优化需求
 
 - [ ] 智能引导：例如用户在创建APP选择Git账号时发现没有账号，旁边用一个按钮引导去授权页面。这样的场景还有很多，不一定是Git账号，后续可以总结一批这样的场景进行统一优化。
