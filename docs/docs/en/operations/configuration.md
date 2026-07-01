@@ -44,6 +44,8 @@ Gateway ports are split into two layers:
 - Gateway listener ports are the internal Gateway/Controller ports that receive traffic inside the cluster. The defaults are `web:8080` and `websecure:8443`. Access routes automatically bind to the listener that matches the cluster access scheme, so project users do not choose ports or listeners.
 - The access port is the external port shown to end users in generated access URLs. Each cluster configures one access port for the current access scheme. HTTP `80` and HTTPS `443` are omitted from URLs; non-standard ports are shown as `:port`.
 
+The `websecure` listener protocol follows the external TLS mode. "TLS terminates at Gateway" emits `protocol: HTTPS`, which matches Traefik `websecure` entryPoints with TLS enabled. "TLS terminates upstream" emits `protocol: HTTP`, which matches CDN/Nginx chains that decrypt TLS before forwarding cleartext HTTP to Traefik.
+
 If an outer Nginx/CDN/load balancer already owns host ports `80/443`, point it to the cluster Gateway's internal `8080/8443` ports. The platform still renders access URLs from the runtime cluster's access scheme and access port settings.
 
 The cluster resource page lists platform-managed namespaces, workloads, services, configs, secrets, and storage with server-side pagination. Only resources visible to the current user are counted in the page total. The workload tab uses Deployment rows as the top level; expanding a Deployment shows its Pods as child rows, and those Pod rows are not counted by pagination.

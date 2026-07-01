@@ -155,10 +155,14 @@ func gatewayObject(spec GatewaySpec) *gatewayv1.Gateway {
 		},
 	}}
 	if string(httpsListenerName) != string(httpListenerName) || httpsListenerPort != httpListenerPort {
+		httpsProtocol := gatewayv1.HTTPProtocolType
+		if strings.TrimSpace(spec.ExternalTLSMode) == "gateway" {
+			httpsProtocol = gatewayv1.HTTPSProtocolType
+		}
 		listeners = append(listeners, gatewayv1.Listener{
 			Name:     httpsListenerName,
 			Port:     gatewayv1.PortNumber(httpsListenerPort),
-			Protocol: gatewayv1.HTTPProtocolType,
+			Protocol: httpsProtocol,
 			AllowedRoutes: &gatewayv1.AllowedRoutes{
 				Namespaces: &gatewayv1.RouteNamespaces{From: &from},
 			},

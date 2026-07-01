@@ -18,7 +18,7 @@
 | Metrics Server | `metrics.k8s.io/v1beta1` Pod metrics | 与所用 Kubernetes 版本兼容的 Metrics Server | 集群发行版推荐版本 | 缺失时资源实时指标降级，不影响构建和发布主流程。 |
 | Kubernetes Gateway API | `gateway.networking.k8s.io/v1` 的 GatewayClass、Gateway、HTTPRoute、HTTPRoute filters | Gateway API `1.0.0 ~ 1.6.x` | 安装与代码依赖接近的 `v1.6.x` CRD | 当前代码依赖 `sigs.k8s.io/gateway-api v1.6.0`，主路径不再创建 Ingress。 |
 | Traefik Gateway API Provider | Kubernetes Gateway provider、Gateway/HTTPRoute 调谐 | Traefik `3.x` | Traefik `3.x` 最新稳定版 | 需要启用 `providers.kubernetesGateway` 并安装 Gateway API CRD。Traefik v2 的 Gateway API 支持不作为当前支持目标。 |
-| cert-manager | `cert-manager.io/v1` Certificate | cert-manager `>= 1.0`；与当前 Kubernetes 搭配时按 cert-manager 官方支持矩阵选择 | cert-manager 当前维护版 | 当前 Gateway API 第一阶段主要创建 HTTP 协议 listeners；HTTPS 证书引用自动化仍是后续项。 |
+| cert-manager | `cert-manager.io/v1` Certificate | cert-manager `>= 1.0`；与当前 Kubernetes 搭配时按 cert-manager 官方支持矩阵选择 | cert-manager 当前维护版 | 当前 Gateway API 会按外部 TLS 模式创建 HTTP 或 HTTPS listener；HTTPS 证书引用自动化仍是后续项。 |
 | OpenID Connect Provider | OIDC Core 1.0、Discovery 1.0、OAuth2 Authorization Code、ID Token 校验 | 支持 OIDC Core 1.0 + Discovery 1.0 的 provider | Logto、Keycloak、Auth0、GitHub Enterprise OIDC 等标准实现 | `issuer` 必须能被 API 服务端访问；回调地址必须等于平台展示的 callback URL。 |
 | PostgreSQL | PostgreSQL wire protocol、GORM、golang-migrate | PostgreSQL `14 ~ 18` | `17`，与 compose/Helm 默认一致 | 项目不支持 SQLite；生产环境建议启用备份和连接池限制。 |
 | Redis | Redis 单实例、go-redis、Asynq 队列 | Redis `7.x ~ 8.x` | `8`，与 compose/Helm 默认一致 | 当前配置模型是单地址 Redis；Redis Cluster/Sentinel 不是第一阶段支持目标。 |

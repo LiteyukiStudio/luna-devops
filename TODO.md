@@ -686,7 +686,7 @@
 - [x] 访问入口补齐高级 Gateway API 配置：支持 Parent Gateway 覆盖、路径匹配、请求/响应头、URL rewrite、redirect、后端权重和备用域名字段，并按项目/平台管理员收紧高风险 header。
 - [x] 破坏性迁移访问入口底层：未发版阶段清空旧 GatewayRoute 数据，Worker 主路径从 Kubernetes Ingress 切换到 Gateway API HTTPRoute，并新增 Gateway API CRD 探测和 HTTPRoute 状态读取。
 - [x] 运行集群支持 Gateway listener 端口规则和公网访问端口分离：每个集群配置一个 HTTP listener 端口、一个 HTTPS listener 端口和一个当前访问协议的公网访问端口；访问入口自动选择 listener，URL 对 HTTP 80 / HTTPS 443 省略标准端口，非标端口显式展示。
-- [ ] Gateway API HTTPS 协议 listener 与证书引用自动化：当前第一阶段只创建 HTTP 协议 listener（可用 web/websecure 区分内部端口），HTTP Challenge 证书申请状态保留，后续补齐 Gateway TLS certificateRefs。
+- [ ] Gateway API HTTPS 证书引用自动化：当前已按外部 TLS 模式生成 HTTP/HTTPS listener，HTTP Challenge 证书申请状态保留，后续补齐 Gateway TLS certificateRefs。
 - [ ] 收紧 Gateway `allowedRoutes`：当前 MVP 使用 `namespaces.from=All` 方便跨命名空间绑定，后续改为项目 namespace label selector。
 - [x] 实现证书状态字段：disabled、pending、issued、failed、expired。
 

@@ -64,7 +64,7 @@ func TestApplyGatewayAPIResourcesCreatesGatewayAndHTTPRoute(t *testing.T) {
 	}
 	firstListener := listeners[0].(map[string]any)
 	secondListener := listeners[1].(map[string]any)
-	if firstListener["name"] != "web" || firstListener["port"] != int64(8080) || secondListener["name"] != "websecure" || secondListener["port"] != int64(8443) {
+	if firstListener["name"] != "web" || firstListener["port"] != int64(8080) || firstListener["protocol"] != "HTTP" || secondListener["name"] != "websecure" || secondListener["port"] != int64(8443) || secondListener["protocol"] != "HTTP" {
 		t.Fatalf("listeners = %#v", listeners)
 	}
 
@@ -91,6 +91,35 @@ func TestApplyGatewayAPIResourcesCreatesGatewayAndHTTPRoute(t *testing.T) {
 	filters := rule["filters"].([]any)
 	if len(filters) != 3 {
 		t.Fatalf("filters = %#v", filters)
+	}
+}
+
+func TestGatewayAPIWebsecureListenerUsesHTTPSWhenGatewayTerminatesTLS(t *testing.T) {
+	client := newGatewayAPITestClient()
+
+	if err := client.EnsureGateway(context.Background(), GatewaySpec{
+		Name:              "liteyuki-gateway",
+		Namespace:         "kube-system",
+		GatewayClassName:  "traefik",
+		ExternalTLSMode:   "gateway",
+		HTTPSListenerName: "websecure",
+		HTTPSListenerPort: 30443,
+		ProjectID:         "prj_demo",
+	}); err != nil {
+		t.Fatalf("EnsureGateway returned error: %v", err)
+	}
+
+	gateway, err := client.dynamic.Resource(gatewayGVR).Namespace("kube-system").Get(context.Background(), "liteyuki-gateway", metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get gateway: %v", err)
+	}
+	listeners, _, _ := unstructured.NestedSlice(gateway.Object, "spec", "listeners")
+	if len(listeners) != 2 {
+		t.Fatalf("listeners = %#v", listeners)
+	}
+	websecure := listeners[1].(map[string]any)
+	if websecure["name"] != "websecure" || websecure["port"] != int64(30443) || websecure["protocol"] != "HTTPS" {
+		t.Fatalf("websecure listener = %#v", websecure)
 	}
 }
 
