@@ -14,6 +14,7 @@ import (
 
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -69,6 +70,9 @@ func (h *Handlers) CreateGatewayRoute(ctx *gin.Context) {
 		return
 	}
 	route.ID = id.New("gwr")
+	if !h.ensureGatewayRouteBackendAvailable(ctx, route) {
+		return
+	}
 	if err := h.db.Create(&route).Error; err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
@@ -106,6 +110,9 @@ func (h *Handlers) UpdateGatewayRoute(ctx *gin.Context) {
 	}
 	next, ok := h.gatewayRouteFromInput(ctx, project, user, route.CreatedBy, input, route.ID)
 	if !ok {
+		return
+	}
+	if !h.ensureGatewayRouteBackendAvailable(ctx, next) {
 		return
 	}
 	route.ApplicationID = next.ApplicationID
@@ -299,6 +306,52 @@ func (h *Handlers) gatewayRouteFromInput(ctx *gin.Context, project model.Project
 		HostnameAliases:        advanced.HostnameAliases,
 		CreatedBy:              creatorID,
 	}, true
+}
+
+func (h *Handlers) ensureGatewayRouteBackendAvailable(ctx *gin.Context, route model.GatewayRoute) bool {
+	if !route.Enabled {
+		return true
+	}
+	var target model.DeploymentTarget
+	if err := h.db.First(&target, "id = ? and project_id = ?", route.DeploymentTargetID, route.ProjectID).Error; err != nil {
+		writeErrorCode(ctx, http.StatusBadRequest, "gateway_route.deployment_target_missing", "部署配置不存在，不能创建访问入口")
+		return false
+	}
+	cluster, err := h.runtimeClusterForDeploymentTargetValue(target)
+	if err != nil {
+		writeErrorCode(ctx, http.StatusBadRequest, "gateway_route.runtime_cluster_missing", "部署配置运行集群不存在，不能创建访问入口")
+		return false
+	}
+	if strings.TrimSpace(cluster.KubeconfigRef) == "" {
+		writeErrorCode(ctx, http.StatusBadRequest, "gateway_route.runtime_cluster_kubeconfig_missing", "运行集群缺少 kubeconfig，无法检查访问入口后端服务")
+		return false
+	}
+	kubeconfig := h.secrets.Resolve(cluster.KubeconfigRef)
+	if strings.TrimSpace(kubeconfig) == "" {
+		writeErrorCode(ctx, http.StatusBadRequest, "gateway_route.runtime_cluster_kubeconfig_missing", "运行集群缺少 kubeconfig，无法检查访问入口后端服务")
+		return false
+	}
+	client, err := kubeprovider.NewClientFromKubeconfig(kubeconfig)
+	if err != nil {
+		writeErrorCode(ctx, http.StatusBadRequest, "gateway_route.runtime_cluster_kubeconfig_invalid", "运行集群 kubeconfig 无效，无法检查访问入口后端服务")
+		return false
+	}
+	namespace := apiProjectNamespace(route.ProjectID)
+	serviceName := apiApplicationResourceName(target)
+	snapshot, err := client.GetServiceBackendSnapshot(ctx.Request.Context(), namespace, serviceName, int32(route.ServicePort))
+	if err != nil {
+		writeErrorCode(ctx, http.StatusBadGateway, "gateway_route.backend_check_failed", "访问入口后端服务检查失败，请确认运行集群连接和权限")
+		return false
+	}
+	if !snapshot.ServiceExists {
+		writeErrorCode(ctx, http.StatusConflict, "gateway_route.backend_service_missing", fmt.Sprintf("后端 Service %s/%s 不存在，请先重新发布部署配置以恢复 Service 后再创建访问入口", namespace, serviceName))
+		return false
+	}
+	if !snapshot.PortExists {
+		writeErrorCode(ctx, http.StatusConflict, "gateway_route.backend_service_port_missing", fmt.Sprintf("后端 Service %s/%s 未暴露端口 %d，请调整部署配置并重新发布后再创建访问入口", namespace, serviceName, route.ServicePort))
+		return false
+	}
+	return true
 }
 
 type gatewayRouteAdvancedConfig struct {
@@ -623,6 +676,34 @@ func gatewayHostSegment(value string) string {
 	segment = gatewayHostSegmentPattern.ReplaceAllString(segment, "-")
 	segment = strings.Join(strings.FieldsFunc(segment, func(char rune) bool { return char == '-' }), "-")
 	return strings.Trim(segment, "-")
+}
+
+func apiProjectNamespace(projectID string) string {
+	return apiIDResourceName("ns", projectID)
+}
+
+func apiApplicationResourceName(target model.DeploymentTarget) string {
+	return apiIDResourceName("dplt", target.ID)
+}
+
+func apiIDResourceName(prefix string, value string) string {
+	suffix := apiShortID(value)
+	if suffix == "" {
+		return gatewayHostSegment(prefix)
+	}
+	return gatewayHostSegment(prefix + "-" + suffix)
+}
+
+func apiShortID(value string) string {
+	value = strings.TrimSpace(value)
+	if index := strings.Index(value, "_"); index >= 0 {
+		value = value[index+1:]
+	}
+	value = gatewayHostSegment(value)
+	if len(value) > 10 {
+		return value[:10]
+	}
+	return value
 }
 
 func (h *Handlers) configValue(key string) string {

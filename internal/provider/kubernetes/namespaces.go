@@ -31,6 +31,7 @@ type NamespaceManager interface {
 	ApplyHTTPRoute(ctx context.Context, spec HTTPRouteSpec) error
 	DeleteHTTPRoute(ctx context.Context, namespace, name string) error
 	GetHTTPRouteStatus(ctx context.Context, namespace, name string) (HTTPRouteStatusSnapshot, error)
+	GetServiceBackendSnapshot(ctx context.Context, namespace, name string, servicePort int32) (ServiceBackendSnapshot, error)
 	ApplyCertificate(ctx context.Context, spec CertificateSpec) error
 	GetCertificateSnapshot(ctx context.Context, namespace, name string) (CertificateSnapshot, error)
 	ListManagedResources(ctx context.Context, options ResourceListOptions) ([]ResourceSnapshot, error)

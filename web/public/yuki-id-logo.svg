@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" fill="none" viewBox="0 0 512 512" role="img" aria-labelledby="yuki-id-logo-title yuki-id-logo-desc">
+  <title id="yuki-id-logo-title">Yuki ID Logo</title>
+  <desc id="yuki-id-logo-desc">An abstract snow crystal identity seal with a keyhole core and Liteyuki aurora colors.</desc>
+  <defs>
+    <linearGradient id="aurora-shell" x1="112" x2="402" y1="76" y2="436" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#24C7B0"/>
+      <stop offset="0.48" stop-color="#2F7BF4"/>
+      <stop offset="1" stop-color="#6B5FF2"/>
+    </linearGradient>
+    <linearGradient id="frost-panel" x1="160" x2="352" y1="134" y2="368" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="0.54" stop-color="#EAF6FF"/>
+      <stop offset="1" stop-color="#D8E7FF"/>
+    </linearGradient>
+    <linearGradient id="snow-stroke" x1="152" x2="360" y1="156" y2="356" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#BDF7EE"/>
+      <stop offset="0.46" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#CFE1FF"/>
+    </linearGradient>
+    <linearGradient id="orbit-stroke" x1="76" x2="436" y1="342" y2="156" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F7B83D"/>
+      <stop offset="0.36" stop-color="#22C7A9"/>
+      <stop offset="0.72" stop-color="#2F7BF4"/>
+      <stop offset="1" stop-color="#6B5FF2"/>
+    </linearGradient>
+    <radialGradient id="soft-glow" cx="0" cy="0" r="1" gradientTransform="matrix(0 190 -190 0 256 250)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity="0.9"/>
+      <stop offset="0.62" stop-color="#E8F2FF" stop-opacity="0.56"/>
+      <stop offset="1" stop-color="#E8F2FF" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="mark-shadow" width="432" height="432" x="40" y="52" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse">
+      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+      <feColorMatrix in="SourceAlpha" result="hardAlpha" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0"/>
+      <feOffset dy="16"/>
+      <feGaussianBlur stdDeviation="20"/>
+      <feComposite in2="hardAlpha" operator="out"/>
+      <feColorMatrix values="0 0 0 0 0.047 0 0 0 0 0.078 0 0 0 0 0.157 0 0 0 0.2 0"/>
+      <feBlend in2="BackgroundImageFix" result="shadow"/>
+      <feBlend in="SourceGraphic" in2="shadow" result="shape"/>
+    </filter>
+    <filter id="core-shadow" width="272" height="272" x="120" y="118" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#0C1532" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="#F8FAFC"/>
+  <circle cx="256" cy="250" r="190" fill="url(#soft-glow)"/>
+  <g filter="url(#mark-shadow)">
+    <path fill="url(#aurora-shell)" d="M244 76.33a24 24 0 0 1 24 0l137.603 79.443a24 24 0 0 1 12 20.784v158.886a24 24 0 0 1-12 20.784L268 435.67a24 24 0 0 1-24 0l-137.603-79.443a24 24 0 0 1-12-20.784V176.557a24 24 0 0 1 12-20.784z"/>
+    <path stroke="#FFFFFF" stroke-opacity="0.93" stroke-width="12" d="M244 76.33a24 24 0 0 1 24 0l137.603 79.443a24 24 0 0 1 12 20.784v158.886a24 24 0 0 1-12 20.784L268 435.67a24 24 0 0 1-24 0l-137.603-79.443a24 24 0 0 1-12-20.784V176.557a24 24 0 0 1 12-20.784z"/>
+    <path stroke="#DDE9FF" stroke-opacity="0.36" stroke-width="2" d="M256 98 390 175v162l-134 77-134-77V175z"/>
+  </g>
+  <g opacity="0.13">
+    <path stroke="#FFFFFF" stroke-linejoin="round" stroke-width="16" d="M256 132 363.387 194v124L256 380l-107.387-62V194z"/>
+    <circle cx="256" cy="256" r="36" stroke="#FFFFFF" stroke-width="15"/>
+    <path stroke="#FFFFFF" stroke-linecap="round" stroke-width="18" d="M256 220v-82M288 238l71-41M288 274l71 41M256 292v82M224 274l-71 41M224 238l-71-41"/>
+  </g>
+  <path stroke="url(#orbit-stroke)" stroke-linecap="round" stroke-linejoin="round" stroke-width="17" d="M78 336c74 0 84-150 178-150 84 0 98 116 178 116"/>
+  <circle cx="78" cy="336" r="23" fill="#F7B83D" stroke="#FFFFFF" stroke-width="12"/>
+  <circle cx="256" cy="186" r="23" fill="#22C7A9" stroke="#FFFFFF" stroke-width="12"/>
+  <circle cx="434" cy="302" r="23" fill="#3478F6" stroke="#FFFFFF" stroke-width="12"/>
+  <g filter="url(#core-shadow)">
+    <path fill="#FFFFFF" fill-opacity="0.9" d="M256 126 354.727 183v114L256 354l-98.727-57V183z"/>
+    <path fill="url(#frost-panel)" d="M256 143 340.005 191.5v97L256 337l-84.005-48.5v-97z"/>
+    <path stroke="#FFFFFF" stroke-opacity="0.8" stroke-width="8" d="M256 143 340.005 191.5v97L256 337l-84.005-48.5v-97z"/>
+    <path stroke="#2F7BF4" stroke-linecap="round" stroke-opacity="0.23" stroke-width="18" d="M256 164v184"/>
+    <path stroke="#2F7BF4" stroke-linecap="round" stroke-opacity="0.18" stroke-width="18" d="M176 210l160 92M336 210l-160 92"/>
+    <path stroke="url(#snow-stroke)" stroke-linecap="round" stroke-linejoin="round" stroke-width="16" d="M256 156v64M256 292v64M169 206l55 32M288 274l55 32M343 206l-55 32M224 274l-55 32"/>
+    <path stroke="#FFFFFF" stroke-linecap="round" stroke-linejoin="round" stroke-width="8" d="M235 176 256 195l21-19M235 336l21-19 21 19M184 231l27-7 7-27M328 197l7 27 27 7M184 281l27 7 7 27M328 315l7-27 27-7"/>
+    <circle cx="256" cy="256" r="48" fill="#F8FAFC" stroke="#FFFFFF" stroke-width="10"/>
+    <path fill="#1D4ED8" d="M256 221c-19.33 0-35 15.67-35 35 0 13.525 7.67 25.257 18.891 31.083V323a8 8 0 0 0 8 8h16.218a8 8 0 0 0 8-8v-35.917C283.33 281.257 291 269.525 291 256c0-19.33-15.67-35-35-35z"/>
+    <circle cx="256" cy="254" r="15" fill="#FFFFFF" opacity="0.95"/>
+    <rect width="32" height="44" x="240" y="278" fill="#1D4ED8" rx="16"/>
+    <path stroke="#BDF7EE" stroke-linecap="round" stroke-width="8" d="M218 256h-29M323 256h-29M256 218v-29M256 323v-29"/>
+  </g>
+  <path stroke="#FFFFFF" stroke-linecap="round" stroke-width="10" d="M210 392h92"/>
+  <path stroke="#FFFFFF" stroke-linecap="round" stroke-opacity="0.52" stroke-width="10" d="M178 411h156"/>
+</svg>

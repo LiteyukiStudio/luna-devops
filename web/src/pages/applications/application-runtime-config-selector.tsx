@@ -51,8 +51,8 @@ export function ApplicationRuntimeConfigSelector({
                 const selectedRef = selectedById.get(set.id)
                 const selected = Boolean(selectedRef)
                 return (
-                  <div key={set.id} className="flex items-center justify-between gap-3 rounded-md px-2 py-1.5 text-sm hover:bg-muted/60">
-                    <label className="flex min-w-0 flex-1 items-center gap-3">
+                  <div key={set.id} className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 rounded-md px-2 py-1.5 text-sm hover:bg-muted/60">
+                    <label className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-3">
                       <input
                         checked={selected}
                         className="size-4 shrink-0 accent-primary"
@@ -60,7 +60,7 @@ export function ApplicationRuntimeConfigSelector({
                         type="checkbox"
                         onChange={event => onToggle(set.id, event.target.checked)}
                       />
-                      <span className="min-w-0">
+                      <span className="min-w-0 leading-tight">
                         <span className="block truncate font-medium" title={set.name}>{set.name}</span>
                         <span className="block truncate text-xs text-muted-foreground">{set.enabled ? t('common.enabled') : t('common.disabled')}</span>
                       </span>
@@ -69,6 +69,7 @@ export function ApplicationRuntimeConfigSelector({
                       <Select
                         aria-label={t('deploymentsPage.runtimeConfigRefMode')}
                         className="h-8 w-32 text-xs"
+                        containerClassName="w-32 shrink-0"
                         value={selectedRef?.mode ?? 'live'}
                         onChange={event => onModeChange(set.id, event.target.value as RuntimeConfigRefMode)}
                       >
@@ -76,7 +77,7 @@ export function ApplicationRuntimeConfigSelector({
                         <option value="snapshot">{t('deploymentsPage.runtimeConfigRefModes.snapshot')}</option>
                       </Select>
                     )}
-                    <Button aria-label={t('runtimeConfigSets.editTitle')} size="sm" type="button" variant="ghost" onClick={() => onEdit(set)}>
+                    <Button aria-label={t('runtimeConfigSets.editTitle')} className="shrink-0" size="sm" type="button" variant="ghost" onClick={() => onEdit(set)}>
                       <Pencil className="size-4" />
                     </Button>
                   </div>

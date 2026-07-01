@@ -686,7 +686,11 @@
 - [x] 访问入口补齐高级 Gateway API 配置：支持 Parent Gateway 覆盖、路径匹配、请求/响应头、URL rewrite、redirect、后端权重和备用域名字段，并按项目/平台管理员收紧高风险 header。
 - [x] 破坏性迁移访问入口底层：未发版阶段清空旧 GatewayRoute 数据，Worker 主路径从 Kubernetes Ingress 切换到 Gateway API HTTPRoute，并新增 Gateway API CRD 探测和 HTTPRoute 状态读取。
 - [x] 运行集群支持 Gateway listener 端口规则和外层访问端口分离：每个集群配置一个内部 HTTP listener、一个内部 HTTPS listener，以及一个外层访问协议/端口；访问入口按 TLS 终止位置自动选择内部 listener，URL 对 HTTP 80 / HTTPS 443 省略标准端口，非标端口显式展示。
-- [ ] Gateway API HTTPS 证书引用自动化：当前已按外部 TLS 模式生成 HTTP/HTTPS listener，HTTP Challenge 证书申请状态保留，后续补齐 Gateway TLS certificateRefs。
+- [x] 访问入口启用前预检后端 Service：创建/更新访问入口和 worker 下发 HTTPRoute 前检查部署配置对应 Service 与端口是否存在，缺失时提示用户重新发布部署配置，不在访问入口链路里自动创建 Service。
+- [ ] Gateway API HTTPS 证书能力第一阶段：运行集群支持手动 TLS Secret 绑定，管理员配置 Gateway TLS Secret 名称/命名空间后，worker 为 HTTPS listener 生成 `tls.certificateRefs`，用于已有证书或外部同步证书的生产过渡场景。
+- [ ] Gateway API HTTPS 证书能力第二阶段：接入 cert-manager，运行集群支持配置 `ClusterIssuer`/`Issuer`、证书命名策略和证书命名空间，worker 检测 cert-manager CRD、创建/更新 `Certificate`，等待 Ready 后把 Secret 挂到 Gateway listener。
+- [ ] Gateway API HTTPS 证书能力第三阶段：优先支持 cert-manager DNS-01 wildcard 证书，适配不暴露宿主机 80/443、外层网关转发到集群内部 listener 的部署方式，并在诊断中展示 DNS-01 / Certificate / Secret / Gateway certificateRefs 状态。
+- [ ] Gateway API HTTPS 证书能力第四阶段：把 cert-manager HTTP-01 作为高级可选能力，明确要求公网 HTTP 入口可达且 Gateway 存在 port 80 listener；校验不满足时给出友好错误，避免误导用户在非 80 内部端口场景使用 HTTP-01。
 - [ ] 收紧 Gateway `allowedRoutes`：当前 MVP 使用 `namespaces.from=All` 方便跨命名空间绑定，后续改为项目 namespace label selector。
 - [x] 实现证书状态字段：disabled、pending、issued、failed、expired。
 

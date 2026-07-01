@@ -655,6 +655,10 @@ func (fakeNamespaceManager) GetHTTPRouteStatus(context.Context, string, string) 
 	return kubeprovider.HTTPRouteStatusSnapshot{}, nil
 }
 
+func (fakeNamespaceManager) GetServiceBackendSnapshot(context.Context, string, string, int32) (kubeprovider.ServiceBackendSnapshot, error) {
+	return kubeprovider.ServiceBackendSnapshot{ServiceExists: true, PortExists: true, ReadyEndpoints: 1}, nil
+}
+
 func (fakeNamespaceManager) ApplyCertificate(context.Context, kubeprovider.CertificateSpec) error {
 	return nil
 }

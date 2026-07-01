@@ -105,17 +105,37 @@ func (r *Runner) applyGatewayAPIResources(ctx context.Context, route model.Gatew
 	if err != nil {
 		return err
 	}
-	if err := manager.EnsureGateway(ctx, gatewaySpec(cluster, project.ID)); err != nil {
-		return err
-	}
 	spec, err := httpRouteSpec(route, project, application, environment, cluster, namespace, r.gatewayServiceName(route, application, environment))
 	if err != nil {
+		return err
+	}
+	if err := ensureGatewayBackendAvailable(ctx, manager, spec); err != nil {
+		return err
+	}
+	if err := manager.EnsureGateway(ctx, gatewaySpec(cluster, project.ID)); err != nil {
 		return err
 	}
 	if err := manager.ApplyHTTPRoute(ctx, spec); err != nil {
 		return err
 	}
 	return r.waitForHTTPRouteAccepted(ctx, manager, spec.Namespace, spec.Name)
+}
+
+func ensureGatewayBackendAvailable(ctx context.Context, manager kubeprovider.NamespaceManager, spec kubeprovider.HTTPRouteSpec) error {
+	if strings.TrimSpace(spec.RequestRedirect) != "" {
+		return nil
+	}
+	snapshot, err := manager.GetServiceBackendSnapshot(ctx, spec.Namespace, spec.ServiceName, spec.ServicePort)
+	if err != nil {
+		return fmt.Errorf("访问入口后端服务检查失败: %w", err)
+	}
+	if !snapshot.ServiceExists {
+		return fmt.Errorf("后端 Service %s/%s 不存在，请先重新发布部署配置以恢复 Service 后再重新启用访问入口", spec.Namespace, spec.ServiceName)
+	}
+	if !snapshot.PortExists {
+		return fmt.Errorf("后端 Service %s/%s 未暴露端口 %d，请调整部署配置并重新发布后再重新启用访问入口", spec.Namespace, spec.ServiceName, spec.ServicePort)
+	}
+	return nil
 }
 
 func (r *Runner) waitForHTTPRouteAccepted(ctx context.Context, manager kubeprovider.NamespaceManager, namespace string, name string) error {
