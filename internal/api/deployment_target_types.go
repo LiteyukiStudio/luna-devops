@@ -8,58 +8,59 @@ import (
 )
 
 type deploymentTargetResponse struct {
-	ID                   string                              `json:"id"`
-	ProjectID            string                              `json:"projectId"`
-	ApplicationID        string                              `json:"applicationId"`
-	EnvironmentID        string                              `json:"environmentId"`
-	Name                 string                              `json:"name"`
-	Stage                string                              `json:"stage"`
-	ClusterID            string                              `json:"clusterId"`
-	Namespace            string                              `json:"namespace"`
-	Replicas             int                                 `json:"replicas"`
-	CPURequest           string                              `json:"cpuRequest"`
-	MemoryRequest        string                              `json:"memoryRequest"`
-	ServicePort          int                                 `json:"servicePort"`
-	ServicePorts         []model.DeploymentServicePort       `json:"servicePorts"`
-	SourceType           string                              `json:"sourceType"`
-	RepositoryBindingID  string                              `json:"repositoryBindingId"`
-	DockerfilePath       string                              `json:"dockerfilePath"`
-	BuildContext         string                              `json:"buildContext"`
-	BuildDirectory       string                              `json:"buildDirectory"`
-	BuildEnvironmentID   string                              `json:"buildEnvironmentId"`
-	BuildCPURequest      string                              `json:"buildCpuRequest"`
-	BuildMemoryRequest   string                              `json:"buildMemoryRequest"`
-	BuildTimeoutSeconds  int                                 `json:"buildTimeoutSeconds"`
-	TargetRegistryID     string                              `json:"targetRegistryId"`
-	TargetRepository     string                              `json:"targetRepository"`
-	TargetTag            string                              `json:"targetTag"`
-	ImageRef             string                              `json:"imageRef"`
-	BuildLabels          string                              `json:"buildLabels"`
-	BuildVariableSetIDs  string                              `json:"buildVariableSetIds"`
-	BuildHooksEnabled    bool                                `json:"buildHooksEnabled"`
-	BuildHookBindings    []model.DeploymentTargetHookBinding `json:"buildHookBindings"`
-	AutoDeploy           bool                                `json:"autoDeploy"`
-	BranchPattern        string                              `json:"branchPattern"`
-	TagPattern           string                              `json:"tagPattern"`
-	ConcurrencyPolicy    string                              `json:"concurrencyPolicy"`
-	RuntimeConfigSetIDs  string                              `json:"runtimeConfigSetIds"`
-	EnvVars              string                              `json:"envVars"`
-	ConfigRefs           string                              `json:"configRefs"`
-	SecretRefsSet        bool                                `json:"secretRefsSet"`
-	ConfigFiles          string                              `json:"configFiles"`
-	SecretFilesSet       bool                                `json:"secretFilesSet"`
-	DataRetentionEnabled bool                                `json:"dataRetentionEnabled"`
-	DataCapacity         string                              `json:"dataCapacity"`
-	DataMountPath        string                              `json:"dataMountPath"`
-	DataVolumes          string                              `json:"dataVolumes"`
-	RequireApproval      bool                                `json:"requireApproval"`
-	Enabled              bool                                `json:"enabled"`
-	DeleteStatus         string                              `json:"deleteStatus"`
-	DeleteMessage        string                              `json:"deleteMessage"`
-	DeleteStartedAt      *time.Time                          `json:"deleteStartedAt"`
-	DeleteFinishedAt     *time.Time                          `json:"deleteFinishedAt"`
-	CreatedBy            string                              `json:"createdBy"`
-	CreatedAt            time.Time                           `json:"createdAt"`
+	ID                   string                               `json:"id"`
+	ProjectID            string                               `json:"projectId"`
+	ApplicationID        string                               `json:"applicationId"`
+	EnvironmentID        string                               `json:"environmentId"`
+	Name                 string                               `json:"name"`
+	Stage                string                               `json:"stage"`
+	ClusterID            string                               `json:"clusterId"`
+	Namespace            string                               `json:"namespace"`
+	Replicas             int                                  `json:"replicas"`
+	CPURequest           string                               `json:"cpuRequest"`
+	MemoryRequest        string                               `json:"memoryRequest"`
+	ServicePort          int                                  `json:"servicePort"`
+	ServicePorts         []model.DeploymentServicePort        `json:"servicePorts"`
+	SourceType           string                               `json:"sourceType"`
+	RepositoryBindingID  string                               `json:"repositoryBindingId"`
+	DockerfilePath       string                               `json:"dockerfilePath"`
+	BuildContext         string                               `json:"buildContext"`
+	BuildDirectory       string                               `json:"buildDirectory"`
+	BuildEnvironmentID   string                               `json:"buildEnvironmentId"`
+	BuildCPURequest      string                               `json:"buildCpuRequest"`
+	BuildMemoryRequest   string                               `json:"buildMemoryRequest"`
+	BuildTimeoutSeconds  int                                  `json:"buildTimeoutSeconds"`
+	TargetRegistryID     string                               `json:"targetRegistryId"`
+	TargetRepository     string                               `json:"targetRepository"`
+	TargetTag            string                               `json:"targetTag"`
+	ImageRef             string                               `json:"imageRef"`
+	BuildLabels          string                               `json:"buildLabels"`
+	BuildVariableSetIDs  string                               `json:"buildVariableSetIds"`
+	BuildHooksEnabled    bool                                 `json:"buildHooksEnabled"`
+	BuildHookBindings    []model.DeploymentTargetHookBinding  `json:"buildHookBindings"`
+	AutoDeploy           bool                                 `json:"autoDeploy"`
+	BranchPattern        string                               `json:"branchPattern"`
+	TagPattern           string                               `json:"tagPattern"`
+	ConcurrencyPolicy    string                               `json:"concurrencyPolicy"`
+	RuntimeConfigSetIDs  string                               `json:"runtimeConfigSetIds"`
+	RuntimeConfigRefs    []deploymentRuntimeConfigRefResponse `json:"runtimeConfigRefs"`
+	EnvVars              string                               `json:"envVars"`
+	ConfigRefs           string                               `json:"configRefs"`
+	SecretRefsSet        bool                                 `json:"secretRefsSet"`
+	ConfigFiles          string                               `json:"configFiles"`
+	SecretFilesSet       bool                                 `json:"secretFilesSet"`
+	DataRetentionEnabled bool                                 `json:"dataRetentionEnabled"`
+	DataCapacity         string                               `json:"dataCapacity"`
+	DataMountPath        string                               `json:"dataMountPath"`
+	DataVolumes          string                               `json:"dataVolumes"`
+	RequireApproval      bool                                 `json:"requireApproval"`
+	Enabled              bool                                 `json:"enabled"`
+	DeleteStatus         string                               `json:"deleteStatus"`
+	DeleteMessage        string                               `json:"deleteMessage"`
+	DeleteStartedAt      *time.Time                           `json:"deleteStartedAt"`
+	DeleteFinishedAt     *time.Time                           `json:"deleteFinishedAt"`
+	CreatedBy            string                               `json:"createdBy"`
+	CreatedAt            time.Time                            `json:"createdAt"`
 }
 
 func deploymentTargetResponses(targets []model.DeploymentTarget) []deploymentTargetResponse {
@@ -107,6 +108,7 @@ func deploymentTargetResponseFromModel(target model.DeploymentTarget) deployment
 		TagPattern:           target.TagPattern,
 		ConcurrencyPolicy:    target.ConcurrencyPolicy,
 		RuntimeConfigSetIDs:  target.RuntimeConfigSetIDs,
+		RuntimeConfigRefs:    deploymentRuntimeConfigRefsResponse(target),
 		EnvVars:              target.EnvVars,
 		ConfigRefs:           target.ConfigRefs,
 		SecretRefsSet:        strings.TrimSpace(target.SecretRefs) != "",
@@ -183,6 +185,7 @@ type deploymentTargetInput struct {
 	TagPattern           string                             `json:"tagPattern"`
 	ConcurrencyPolicy    string                             `json:"concurrencyPolicy"`
 	RuntimeConfigSetIDs  []string                           `json:"runtimeConfigSetIds"`
+	RuntimeConfigRefs    []deploymentRuntimeConfigRefInput  `json:"runtimeConfigRefs"`
 	EnvVars              string                             `json:"envVars"`
 	ConfigRefs           string                             `json:"configRefs"`
 	SecretRefs           string                             `json:"secretRefs"`
@@ -206,4 +209,31 @@ type deploymentTargetHookBindingInput struct {
 	HookConfigID string `json:"hookConfigId"`
 	Phase        string `json:"phase"`
 	RunOrder     int    `json:"runOrder"`
+}
+
+type deploymentRuntimeConfigRefInput struct {
+	SetID string `json:"setId"`
+	Mode  string `json:"mode"`
+}
+
+type deploymentRuntimeConfigRefResponse struct {
+	SetID string `json:"setId"`
+	Mode  string `json:"mode"`
+}
+
+func deploymentRuntimeConfigRefsResponse(target model.DeploymentTarget) []deploymentRuntimeConfigRefResponse {
+	refs := model.DecodeDeploymentRuntimeConfigRefs(target.RuntimeConfigRefs)
+	if len(refs) == 0 {
+		for _, setID := range buildVariableSetIDs(target.RuntimeConfigSetIDs) {
+			refs = append(refs, model.DeploymentRuntimeConfigRef{SetID: setID, Mode: model.RuntimeConfigRefModeLive})
+		}
+	}
+	output := make([]deploymentRuntimeConfigRefResponse, 0, len(refs))
+	for _, ref := range refs {
+		output = append(output, deploymentRuntimeConfigRefResponse{
+			SetID: ref.SetID,
+			Mode:  model.RuntimeConfigRefMode(ref.Mode),
+		})
+	}
+	return output
 }

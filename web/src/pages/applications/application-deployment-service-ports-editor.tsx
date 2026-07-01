@@ -1,5 +1,6 @@
 import type { DeploymentTargetPayload } from '@/api'
 import { Plus, X } from 'lucide-react'
+import { useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FormField as Field } from '@/components/common/form-field'
 import { Button } from '@/components/ui/button'
@@ -10,14 +11,31 @@ interface ServicePortsEditorProps {
   onChange: (ports: NonNullable<DeploymentTargetPayload['servicePorts']>) => void
 }
 
+let nextServicePortRowId = 0
+
+function createServicePortRowId() {
+  nextServicePortRowId += 1
+  return `service-port-row-${nextServicePortRowId}`
+}
+
 export function ServicePortsEditor({ onChange, ports }: ServicePortsEditorProps) {
   const { t } = useTranslation()
+  const rowIdsRef = useRef<string[]>([])
+  if (rowIdsRef.current.length < ports.length) {
+    rowIdsRef.current = [
+      ...rowIdsRef.current,
+      ...Array.from({ length: ports.length - rowIdsRef.current.length }, createServicePortRowId),
+    ]
+  }
+  else if (rowIdsRef.current.length > ports.length) {
+    rowIdsRef.current = rowIdsRef.current.slice(0, ports.length)
+  }
 
   return (
     <Field hint={t('deploymentsPage.servicePortsHint')} label={t('deploymentsPage.servicePorts')} required>
       <div className="grid gap-2">
         {ports.map((item, index) => (
-          <div key={`${item.name || 'port'}-${item.port || 'empty'}`} className="grid gap-2 md:grid-cols-[1fr_180px_auto]">
+          <div key={rowIdsRef.current[index]} className="grid gap-2 md:grid-cols-[1fr_180px_auto]">
             <Input
               aria-label={t('deploymentsPage.servicePortName')}
               placeholder={index === 0 ? 'http' : 'metrics'}
@@ -29,8 +47,8 @@ export function ServicePortsEditor({ onChange, ports }: ServicePortsEditorProps)
               max={65535}
               min={1}
               type="number"
-              value={item.port}
-              onChange={event => onChange(ports.map((row, rowIndex) => rowIndex === index ? { ...row, port: Number(event.target.value) } : row))}
+              value={item.port || ''}
+              onChange={event => onChange(ports.map((row, rowIndex) => rowIndex === index ? { ...row, port: Number(event.target.value) || 0 } : row))}
             />
             <Button
               aria-label={t('common.delete')}

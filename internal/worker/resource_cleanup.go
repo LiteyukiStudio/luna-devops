@@ -418,13 +418,17 @@ func (r *Runner) finishRuntimeConfigSetDelete(set model.ProjectRuntimeConfigSet)
 	finishedAt := time.Now()
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		var targets []model.DeploymentTarget
-		if err := tx.Select("id", "runtime_config_set_ids").Where("project_id = ?", set.ProjectID).Find(&targets).Error; err != nil {
+		if err := tx.Select("id", "runtime_config_set_ids", "runtime_config_refs").Where("project_id = ?", set.ProjectID).Find(&targets).Error; err != nil {
 			return err
 		}
 		for _, target := range targets {
+			nextRefs := removeLiveRuntimeConfigRef(target.RuntimeConfigRefs, set.ID)
 			nextIDs := removeRuntimeConfigSetID(target.RuntimeConfigSetIDs, set.ID)
-			if nextIDs != target.RuntimeConfigSetIDs {
-				if err := tx.Model(&model.DeploymentTarget{}).Where("id = ?", target.ID).Update("runtime_config_set_ids", nextIDs).Error; err != nil {
+			if nextIDs != target.RuntimeConfigSetIDs || nextRefs != target.RuntimeConfigRefs {
+				if err := tx.Model(&model.DeploymentTarget{}).Where("id = ?", target.ID).Updates(map[string]any{
+					"runtime_config_set_ids": nextIDs,
+					"runtime_config_refs":    nextRefs,
+				}).Error; err != nil {
 					return err
 				}
 			}
@@ -438,6 +442,21 @@ func (r *Runner) finishRuntimeConfigSetDelete(set model.ProjectRuntimeConfigSet)
 		}
 		return tx.Delete(&set).Error
 	})
+}
+
+func removeLiveRuntimeConfigRef(raw string, setID string) string {
+	refs := model.DecodeDeploymentRuntimeConfigRefs(raw)
+	if len(refs) == 0 {
+		return raw
+	}
+	next := make([]model.DeploymentRuntimeConfigRef, 0, len(refs))
+	for _, ref := range refs {
+		if ref.SetID == setID && ref.Mode == model.RuntimeConfigRefModeLive {
+			continue
+		}
+		next = append(next, ref)
+	}
+	return model.EncodeDeploymentRuntimeConfigRefs(next)
 }
 
 func removeRuntimeConfigSetID(raw string, setID string) string {

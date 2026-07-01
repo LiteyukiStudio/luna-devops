@@ -83,7 +83,7 @@ func (h *Handlers) CreateDeploymentTarget(ctx *gin.Context) {
 		return
 	}
 	input.Enabled = true
-	target, ok := h.deploymentTargetFromInput(ctx, user, app, input, id.New("dplt"), nil)
+	target, ok := h.deploymentTargetFromInput(ctx, user, app, input, id.New("dplt"), nil, "")
 	if !ok {
 		return
 	}
@@ -129,7 +129,7 @@ func (h *Handlers) UpdateDeploymentTarget(ctx *gin.Context) {
 	if !h.ensureBillingAllowsDeployChange(ctx, project.ID) {
 		return
 	}
-	target, ok := h.deploymentTargetFromInput(ctx, user, app, input, existing.ID, decodeSecretRefs(existing.SecretFiles))
+	target, ok := h.deploymentTargetFromInput(ctx, user, app, input, existing.ID, decodeSecretRefs(existing.SecretFiles), existing.RuntimeConfigRefs)
 	if !ok {
 		return
 	}

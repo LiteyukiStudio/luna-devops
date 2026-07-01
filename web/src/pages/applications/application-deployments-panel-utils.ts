@@ -1,5 +1,5 @@
 import type { UseFormReturn } from 'react-hook-form'
-import type { DeploymentTarget, DeploymentTargetPayload, ProjectRuntimeConfigSetPayload, Release, RepositoryBinding } from '@/api'
+import type { DeploymentRuntimeConfigRef, DeploymentTarget, DeploymentTargetPayload, ProjectRuntimeConfigSetPayload, Release, RepositoryBinding } from '@/api'
 import { emptyRuntimeDataVolumeRow, parseRuntimeDataVolumes, serializeRuntimeDataVolumes } from '@/lib/runtime-data-volumes'
 import { defaultBuildCpuRequest, defaultBuildMemoryRequest, defaultBuildTimeoutSeconds } from './application-build-defaults'
 
@@ -41,6 +41,7 @@ export const deploymentTargetDefaults: DeploymentTargetPayload = {
   tagPattern: '',
   concurrencyPolicy: 'queue',
   runtimeConfigSetIds: [],
+  runtimeConfigRefs: [],
   envVars: '',
   configRefs: '',
   secretRefs: '',
@@ -133,7 +134,7 @@ export function deploymentTargetRuntimeChanged(current: DeploymentTarget, next: 
     'servicePort',
     'servicePorts',
     'sourceType',
-    'runtimeConfigSetIds',
+    'runtimeConfigRefs',
     'envVars',
     'configRefs',
     'configFiles',
@@ -165,6 +166,7 @@ export function normalizeDeploymentTargetPayload(values: DeploymentTargetPayload
   const primaryDataVolume = dataVolumes[0]
   const sourceType = values.sourceType === 'image' ? 'image' : 'repository'
   const servicePorts = normalizeDeploymentServicePorts(values.servicePorts, values.servicePort)
+  const runtimeConfigRefs = normalizeRuntimeConfigRefs(values.runtimeConfigRefs, values.runtimeConfigSetIds)
   return {
     ...values,
     sourceType,
@@ -194,11 +196,43 @@ export function normalizeDeploymentTargetPayload(values: DeploymentTargetPayload
     buildTimeoutSeconds: normalizePositiveInteger(values.buildTimeoutSeconds, defaultBuildTimeoutSeconds),
     targetTag: values.targetTag || 'latest',
     buildVariableSetIds: normalizeStringIds(values.buildVariableSetIds),
-    runtimeConfigSetIds: normalizeStringIds(values.runtimeConfigSetIds),
+    runtimeConfigRefs,
+    runtimeConfigSetIds: runtimeConfigLiveSetIds(runtimeConfigRefs),
     configFiles: values.configFiles?.trim() ?? '',
     secretFiles: values.secretFiles?.trim() ?? '',
     buildHookBindings: values.buildHookBindings ?? [],
   }
+}
+
+export function normalizeRuntimeConfigRefs(value: unknown, fallbackIds: unknown = []): DeploymentRuntimeConfigRef[] {
+  const rawRefs = Array.isArray(value) ? value : []
+  const refs = rawRefs
+    .map((item) => {
+      const ref = item as Partial<DeploymentRuntimeConfigRef>
+      return {
+        mode: ref.mode === 'snapshot' ? 'snapshot' : 'live',
+        setId: String(ref.setId ?? '').trim(),
+      } satisfies DeploymentRuntimeConfigRef
+    })
+    .filter(ref => ref.setId)
+  const source = refs.length > 0
+    ? refs
+    : normalizeStringIds(fallbackIds).map(setId => ({ mode: 'live', setId }) satisfies DeploymentRuntimeConfigRef)
+  const seen = new Set<string>()
+  return source.filter((ref) => {
+    if (seen.has(ref.setId))
+      return false
+    seen.add(ref.setId)
+    return true
+  })
+}
+
+export function runtimeConfigRefIds(refs: DeploymentRuntimeConfigRef[]) {
+  return normalizeRuntimeConfigRefs(refs).map(ref => ref.setId)
+}
+
+export function runtimeConfigLiveSetIds(refs: DeploymentRuntimeConfigRef[]) {
+  return normalizeRuntimeConfigRefs(refs).filter(ref => ref.mode === 'live').map(ref => ref.setId)
 }
 
 export function normalizeRuntimeConfigPayload(values: ProjectRuntimeConfigSetPayload): ProjectRuntimeConfigSetPayload {
@@ -306,7 +340,7 @@ function normalizedComparable(value: unknown) {
   if (typeof value === 'string')
     return value.trim()
   if (Array.isArray(value))
-    return value.map(item => String(item).trim()).filter(Boolean).join(',')
+    return JSON.stringify(value)
   return String(value ?? '').trim()
 }
 

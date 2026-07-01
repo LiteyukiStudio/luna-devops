@@ -672,6 +672,7 @@ CREATE TABLE IF NOT EXISTS deployment_targets (
   branch_pattern text NOT NULL DEFAULT '',
   tag_pattern text NOT NULL DEFAULT '',
   concurrency_policy text NOT NULL DEFAULT 'queue',
+  runtime_config_refs text NOT NULL DEFAULT '',
   env_vars text NOT NULL DEFAULT '',
   config_refs text NOT NULL DEFAULT '',
   secret_refs text NOT NULL DEFAULT '',

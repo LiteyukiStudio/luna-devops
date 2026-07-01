@@ -1,6 +1,6 @@
 import type { ReleaseForm } from './application-deployments-panel-utils'
 import type { RepositoryBindingDialogForm, RepositoryBindingDialogFormInput } from './application-repository-binding-dialog'
-import type { ArtifactRegistry, BuildRun, DeploymentTarget, DeploymentTargetPayload, ProjectRuntimeConfigSet, ProjectRuntimeConfigSetPayload, Release, RepositoryBinding } from '@/api'
+import type { ArtifactRegistry, BuildRun, DeploymentRuntimeConfigRef, DeploymentTarget, DeploymentTargetPayload, ProjectRuntimeConfigSet, ProjectRuntimeConfigSetPayload, Release, RepositoryBinding, RuntimeConfigRefMode } from '@/api'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import i18next from 'i18next'
@@ -31,7 +31,7 @@ import { buildDeploymentRuntimeStatus, buildInternalServiceEndpoint } from './ap
 import { ServicePortsEditor } from './application-deployment-service-ports-editor'
 import { ApplicationDeploymentBuildSettingsFields, ApplicationDeploymentSourceFields } from './application-deployment-source-fields'
 import { ApplicationDeploymentTargetsList } from './application-deployment-targets-list'
-import { applyDockerfileBuildDefaults, deploymentTargetDefaults, deploymentTargetRuntimeChanged, normalizeBoolean, normalizeDeploymentTargetPayload, normalizeRuntimeConfigPayload, normalizeStringIds, parseRuntimeDataVolumes, redeployReleasePayload, releaseDefaults, repositoryBindingItems, runtimeConfigDefaults, serializeRuntimeDataVolumes } from './application-deployments-panel-utils'
+import { applyDockerfileBuildDefaults, deploymentTargetDefaults, deploymentTargetRuntimeChanged, normalizeBoolean, normalizeDeploymentTargetPayload, normalizeRuntimeConfigPayload, normalizeRuntimeConfigRefs, normalizeStringIds, parseRuntimeDataVolumes, redeployReleasePayload, releaseDefaults, repositoryBindingItems, runtimeConfigDefaults, runtimeConfigLiveSetIds, runtimeConfigRefIds, serializeRuntimeDataVolumes } from './application-deployments-panel-utils'
 import { ApplicationReleaseLogsDialog } from './application-release-logs-dialog'
 import { ApplicationRepositoryBindingDialog } from './application-repository-binding-dialog'
 import { ApplicationRuntimeConfigSelector } from './application-runtime-config-selector'
@@ -64,6 +64,11 @@ const repositoryBindingDefaults: RepositoryBindingFormInput = {
   owner: '',
   repo: '',
   webhookStatus: 'pending',
+}
+
+function upsertRuntimeConfigRef(refs: DeploymentRuntimeConfigRef[], nextRef: DeploymentRuntimeConfigRef) {
+  const next = normalizeRuntimeConfigRefs(refs).filter(ref => ref.setId !== nextRef.setId)
+  return [...next, nextRef]
 }
 
 export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns, deploymentTargets, projectId, projectSlug, ref, registries, releases, repositoryBindings }: {
@@ -140,7 +145,7 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
   )
   const watchedTargetValues = targetForm.watch()
   const targetImageRefDirty = Boolean(targetForm.formState.dirtyFields.targetImageRef)
-  const selectedRuntimeConfigSetIds = normalizeStringIds(targetForm.watch('runtimeConfigSetIds'))
+  const selectedRuntimeConfigRefs = normalizeRuntimeConfigRefs(targetForm.watch('runtimeConfigRefs'), targetForm.watch('runtimeConfigSetIds'))
   const selectedTargetRepositoryBinding = repositoryBindings.find(binding => binding.id === targetRepositoryBindingId)
   const targetRegistry = registries.find(registry => registry.id === targetRegistryId)
   const targetImagePrefix = targetRegistry ? registryInputPrefix(targetRegistry) : ''
@@ -271,7 +276,10 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
   const runtimeConfigRestartTargets = useMemo(() => {
     if (!runtimeConfigRestartSetId)
       return []
-    return deploymentTargets.filter(target => normalizeStringIds(target.runtimeConfigSetIds).includes(runtimeConfigRestartSetId))
+    return deploymentTargets.filter((target) => {
+      const refs = normalizeRuntimeConfigRefs(target.runtimeConfigRefs, target.runtimeConfigSetIds)
+      return runtimeConfigLiveSetIds(refs).includes(runtimeConfigRestartSetId)
+    })
   }, [deploymentTargets, runtimeConfigRestartSetId])
   const runtimeConfigRedeployableTargets = useMemo(() => runtimeConfigRestartTargets.filter((target) => {
     const latestRelease = latestReleaseByTarget[deploymentReleaseKey(target.id)]
@@ -303,7 +311,8 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
       servicePort: target?.servicePort ?? 8080,
       servicePorts: target?.servicePorts?.length ? target.servicePorts : [{ name: 'http', port: target?.servicePort ?? 8080 }],
       buildVariableSetIds: normalizeStringIds(target?.buildVariableSetIds),
-      runtimeConfigSetIds: normalizeStringIds(target?.runtimeConfigSetIds),
+      runtimeConfigRefs: normalizeRuntimeConfigRefs(target?.runtimeConfigRefs, target?.runtimeConfigSetIds),
+      runtimeConfigSetIds: runtimeConfigLiveSetIds(normalizeRuntimeConfigRefs(target?.runtimeConfigRefs, target?.runtimeConfigSetIds)),
       secretRefs: '',
       secretFiles: '',
       dataRetentionEnabled: target?.dataRetentionEnabled ?? false,
@@ -312,6 +321,11 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
       dataVolumes: target?.dataVolumes || serializeRuntimeDataVolumes(parseRuntimeDataVolumes('', target?.dataMountPath || '/data', target?.dataCapacity || '1Gi')),
       enabled: target?.enabled ?? true,
     })
+  }
+  const setTargetRuntimeConfigRefs = (refs: DeploymentRuntimeConfigRef[]) => {
+    const normalizedRefs = normalizeRuntimeConfigRefs(refs)
+    targetForm.setValue('runtimeConfigRefs', normalizedRefs, { shouldDirty: true, shouldValidate: true })
+    targetForm.setValue('runtimeConfigSetIds', runtimeConfigLiveSetIds(normalizedRefs), { shouldDirty: true, shouldValidate: true })
   }
   const openTargetDialog = (target?: DeploymentTarget) => {
     setEditingTarget(target ?? null)
@@ -323,12 +337,15 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
     setTargetDialogOpen(true)
   }
   const toggleRuntimeConfigSet = (setId: string, checked: boolean) => {
-    const current = new Set(normalizeStringIds(targetForm.getValues('runtimeConfigSetIds')))
-    if (checked)
-      current.add(setId)
-    else
-      current.delete(setId)
-    targetForm.setValue('runtimeConfigSetIds', Array.from(current), { shouldDirty: true, shouldValidate: true })
+    const current = normalizeRuntimeConfigRefs(targetForm.getValues('runtimeConfigRefs'), targetForm.getValues('runtimeConfigSetIds'))
+    const next = checked
+      ? upsertRuntimeConfigRef(current, { mode: 'live', setId })
+      : current.filter(ref => ref.setId !== setId)
+    setTargetRuntimeConfigRefs(next)
+  }
+  const changeRuntimeConfigRefMode = (setId: string, mode: RuntimeConfigRefMode) => {
+    const current = normalizeRuntimeConfigRefs(targetForm.getValues('runtimeConfigRefs'), targetForm.getValues('runtimeConfigSetIds'))
+    setTargetRuntimeConfigRefs(upsertRuntimeConfigRef(current, { mode, setId }))
   }
   const updateTargetDataVolumes = (rows: typeof targetDataVolumes) => {
     targetForm.setValue('dataVolumes', serializeRuntimeDataVolumes(rows), { shouldDirty: true, shouldValidate: true })
@@ -390,7 +407,7 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
     || editingTarget?.secretFilesSet,
   )
   const targetConfigSummary = t('deploymentsPage.progressiveConfigSummary', {
-    count: selectedRuntimeConfigSetIds.length,
+    count: runtimeConfigRefIds(selectedRuntimeConfigRefs).length,
     overrides: t(targetHasAdvancedConfig ? 'deploymentsPage.advancedOverridesEnabled' : 'deploymentsPage.advancedOverridesDisabled'),
   })
   const openRuntimeConfigDialog = (set?: ProjectRuntimeConfigSet) => {
@@ -779,7 +796,7 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
                   redeployableCount={runtimeConfigRedeployableTargets.length}
                   redeployPending={redeployRuntimeConfigTargets.isPending}
                   restartAffectedCount={runtimeConfigRestartAffectedCount}
-                  selectedIds={selectedRuntimeConfigSetIds}
+                  selectedRefs={selectedRuntimeConfigRefs}
                   sets={runtimeConfigSets.data ?? []}
                   onCreate={() => openRuntimeConfigDialog()}
                   onDismissRestart={() => {
@@ -787,6 +804,7 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
                     setRuntimeConfigRestartAffectedCount(0)
                   }}
                   onEdit={openRuntimeConfigDialog}
+                  onModeChange={changeRuntimeConfigRefMode}
                   onRedeployAffected={() => redeployRuntimeConfigTargets.mutate()}
                   onToggle={toggleRuntimeConfigSet}
                 />

@@ -335,6 +335,13 @@ export interface ProjectRuntimeConfigSet {
   affectedDeploymentTargetCount?: number
 }
 
+export type RuntimeConfigRefMode = 'live' | 'snapshot'
+
+export interface DeploymentRuntimeConfigRef {
+  setId: string
+  mode: RuntimeConfigRefMode
+}
+
 export type ProjectRuntimeConfigSetPayload = Omit<ProjectRuntimeConfigSet, 'id' | 'projectId' | 'createdBy' | 'createdAt' | 'secretRefsSet' | 'secretFilesSet' | 'deleteStatus' | 'deleteMessage'> & {
   secretRefs?: string
   secretFiles?: string
@@ -479,6 +486,7 @@ export interface DeploymentTarget {
   tagPattern: string
   concurrencyPolicy: 'queue' | 'parallel'
   runtimeConfigSetIds: string | string[]
+  runtimeConfigRefs: DeploymentRuntimeConfigRef[]
   envVars: string
   configRefs: string
   secretRefsSet: boolean
@@ -517,9 +525,10 @@ export interface DeploymentTargetMetrics {
   updatedAt: string
 }
 
-export type DeploymentTargetPayload = Omit<DeploymentTarget, 'id' | 'projectId' | 'applicationId' | 'createdBy' | 'createdAt' | 'buildVariableSetIds' | 'runtimeConfigSetIds' | 'secretRefsSet' | 'secretFilesSet' | 'deleteStatus' | 'deleteMessage' | 'deleteStartedAt' | 'deleteFinishedAt'> & {
+export type DeploymentTargetPayload = Omit<DeploymentTarget, 'id' | 'projectId' | 'applicationId' | 'createdBy' | 'createdAt' | 'buildVariableSetIds' | 'runtimeConfigSetIds' | 'runtimeConfigRefs' | 'secretRefsSet' | 'secretFilesSet' | 'deleteStatus' | 'deleteMessage' | 'deleteStartedAt' | 'deleteFinishedAt'> & {
   buildVariableSetIds: string | string[]
   runtimeConfigSetIds: string | string[]
+  runtimeConfigRefs: DeploymentRuntimeConfigRef[]
   secretRefs?: string
   secretFiles?: string
 }

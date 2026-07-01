@@ -9,7 +9,7 @@ const runtimeConfigSets = {
   loadFailedDescription: 'Refresh the page or check project space permissions, then try again.',
   created: 'Config created',
   updated: 'Config updated',
-  updatedNeedsRestart: 'Config updated. {{count}} deploy configs that reference it need a redeploy before it takes effect.',
+  updatedNeedsRestart: 'Config updated. {{count}} deploy configs that live-reference it need a redeploy before it takes effect.',
   deleted: 'Config deleted',
   deleteTitle: 'Delete config',
   deleteDescription: 'This config will be deleted. Existing release history is not deleted automatically.',

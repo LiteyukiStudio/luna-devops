@@ -137,13 +137,21 @@ func (r *Runner) applyApplicationRuntimeConfig(ctx context.Context, release mode
 }
 
 func (r *Runner) runtimeConfigSetsForTarget(projectID string, deploymentTarget model.DeploymentTarget) ([]model.ProjectRuntimeConfigSet, error) {
-	ids := runtimeConfigSetIDs(deploymentTarget.RuntimeConfigSetIDs)
-	if len(ids) == 0 {
+	refs := model.DecodeDeploymentRuntimeConfigRefs(deploymentTarget.RuntimeConfigRefs)
+	if len(refs) == 0 {
+		for _, setID := range runtimeConfigSetIDs(deploymentTarget.RuntimeConfigSetIDs) {
+			refs = append(refs, model.DeploymentRuntimeConfigRef{SetID: setID, Mode: model.RuntimeConfigRefModeLive})
+		}
+	}
+	if len(refs) == 0 {
 		return nil, nil
 	}
+	liveIDs := model.DeploymentRuntimeConfigLiveSetIDs(refs)
 	var sets []model.ProjectRuntimeConfigSet
-	if err := r.db.Where("project_id = ? and enabled = ? and id in ?", projectID, true, ids).Find(&sets).Error; err != nil {
-		return nil, err
+	if len(liveIDs) > 0 {
+		if err := r.db.Where("project_id = ? and enabled = ? and id in ?", projectID, true, liveIDs).Find(&sets).Error; err != nil {
+			return nil, err
+		}
 	}
 	byID := make(map[string]model.ProjectRuntimeConfigSet, len(sets))
 	for _, set := range sets {
@@ -151,9 +159,26 @@ func (r *Runner) runtimeConfigSetsForTarget(projectID string, deploymentTarget m
 		set.SecretFiles = r.resolveRuntimeSecretFileRefsRaw(set.SecretFiles)
 		byID[set.ID] = set
 	}
-	ordered := make([]model.ProjectRuntimeConfigSet, 0, len(sets))
-	for _, item := range ids {
-		if set, ok := byID[item]; ok {
+	ordered := make([]model.ProjectRuntimeConfigSet, 0, len(refs))
+	for _, ref := range refs {
+		if ref.Mode == model.RuntimeConfigRefModeSnapshot {
+			if ref.Snapshot == nil || !ref.Snapshot.Enabled {
+				continue
+			}
+			set := model.ProjectRuntimeConfigSet{
+				ID:          ref.SetID,
+				ProjectID:   projectID,
+				Name:        ref.Snapshot.Name,
+				EnvVars:     ref.Snapshot.EnvVars,
+				ConfigFiles: ref.Snapshot.ConfigFiles,
+				SecretRefs:  r.resolveRuntimeSecretRefsRaw(ref.Snapshot.SecretRefs),
+				SecretFiles: r.resolveRuntimeSecretFileRefsRaw(ref.Snapshot.SecretFiles),
+				Enabled:     ref.Snapshot.Enabled,
+			}
+			ordered = append(ordered, set)
+			continue
+		}
+		if set, ok := byID[ref.SetID]; ok {
 			ordered = append(ordered, set)
 		}
 	}

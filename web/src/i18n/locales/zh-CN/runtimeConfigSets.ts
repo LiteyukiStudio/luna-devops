@@ -9,7 +9,7 @@ const runtimeConfigSets = {
   loadFailedDescription: '请刷新页面或检查项目空间权限后重试。',
   created: '配置已创建',
   updated: '配置已更新',
-  updatedNeedsRestart: '配置已更新，{{count}} 个引用它的部署配置需要重新部署后生效。',
+  updatedNeedsRestart: '配置已更新，{{count}} 个跟随引用它的部署配置需要重新部署后生效。',
   deleted: '配置已删除',
   deleteTitle: '删除配置',
   deleteDescription: '该配置会被删除，已发布的历史记录不会被自动删除。',

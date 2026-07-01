@@ -414,12 +414,16 @@ func projectRuntimeConfigSetResponseFor(set model.ProjectRuntimeConfigSet) proje
 
 func (h *Handlers) countRuntimeConfigSetDeploymentTargets(projectID string, setID string) int {
 	var targets []model.DeploymentTarget
-	if err := h.db.Select("runtime_config_set_ids").Where("project_id = ?", projectID).Find(&targets).Error; err != nil {
+	if err := h.db.Select("runtime_config_set_ids", "runtime_config_refs").Where("project_id = ?", projectID).Find(&targets).Error; err != nil {
 		return 0
 	}
 	count := 0
 	for _, target := range targets {
-		for _, id := range buildVariableSetIDs(target.RuntimeConfigSetIDs) {
+		liveIDs := model.DeploymentRuntimeConfigLiveSetIDs(model.DecodeDeploymentRuntimeConfigRefs(target.RuntimeConfigRefs))
+		if len(liveIDs) == 0 && strings.TrimSpace(target.RuntimeConfigRefs) == "" {
+			liveIDs = buildVariableSetIDs(target.RuntimeConfigSetIDs)
+		}
+		for _, id := range liveIDs {
 			if id == setID {
 				count++
 				break

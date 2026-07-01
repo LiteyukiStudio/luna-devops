@@ -1,18 +1,20 @@
-import type { ProjectRuntimeConfigSet } from '@/api'
+import type { DeploymentRuntimeConfigRef, ProjectRuntimeConfigSet, RuntimeConfigRefMode } from '@/api'
 import { FileCode2, Pencil, Rocket } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { FormField as Field } from '@/components/common/form-field'
 import { Button } from '@/components/ui/button'
+import { NativeSelect as Select } from '@/components/ui/native-select'
 
 interface ApplicationRuntimeConfigSelectorProps {
   redeployableCount: number
   redeployPending: boolean
   restartAffectedCount: number
-  selectedIds: string[]
+  selectedRefs: DeploymentRuntimeConfigRef[]
   sets: ProjectRuntimeConfigSet[]
   onCreate: () => void
   onDismissRestart: () => void
   onEdit: (set: ProjectRuntimeConfigSet) => void
+  onModeChange: (id: string, mode: RuntimeConfigRefMode) => void
   onRedeployAffected: () => void
   onToggle: (id: string, checked: boolean) => void
 }
@@ -21,15 +23,17 @@ export function ApplicationRuntimeConfigSelector({
   onCreate,
   onDismissRestart,
   onEdit,
+  onModeChange,
   onRedeployAffected,
   onToggle,
   redeployableCount,
   redeployPending,
   restartAffectedCount,
-  selectedIds,
+  selectedRefs,
   sets,
 }: ApplicationRuntimeConfigSelectorProps) {
   const { t } = useTranslation()
+  const selectedById = new Map(selectedRefs.map(ref => [ref.setId, ref]))
 
   return (
     <>
@@ -43,26 +47,41 @@ export function ApplicationRuntimeConfigSelector({
             </Button>
           </div>
           {sets.length > 0
-            ? sets.map(set => (
-                <div key={set.id} className="flex items-center justify-between gap-3 rounded-md px-2 py-1.5 text-sm hover:bg-muted/60">
-                  <label className="flex min-w-0 flex-1 items-center gap-3">
-                    <input
-                      checked={selectedIds.includes(set.id)}
-                      className="size-4 shrink-0 accent-primary"
-                      disabled={!set.enabled}
-                      type="checkbox"
-                      onChange={event => onToggle(set.id, event.target.checked)}
-                    />
-                    <span className="min-w-0">
-                      <span className="block truncate font-medium" title={set.name}>{set.name}</span>
-                      <span className="block truncate text-xs text-muted-foreground">{set.enabled ? t('common.enabled') : t('common.disabled')}</span>
-                    </span>
-                  </label>
-                  <Button aria-label={t('runtimeConfigSets.editTitle')} size="sm" type="button" variant="ghost" onClick={() => onEdit(set)}>
-                    <Pencil className="size-4" />
-                  </Button>
-                </div>
-              ))
+            ? sets.map((set) => {
+                const selectedRef = selectedById.get(set.id)
+                const selected = Boolean(selectedRef)
+                return (
+                  <div key={set.id} className="flex items-center justify-between gap-3 rounded-md px-2 py-1.5 text-sm hover:bg-muted/60">
+                    <label className="flex min-w-0 flex-1 items-center gap-3">
+                      <input
+                        checked={selected}
+                        className="size-4 shrink-0 accent-primary"
+                        disabled={!set.enabled}
+                        type="checkbox"
+                        onChange={event => onToggle(set.id, event.target.checked)}
+                      />
+                      <span className="min-w-0">
+                        <span className="block truncate font-medium" title={set.name}>{set.name}</span>
+                        <span className="block truncate text-xs text-muted-foreground">{set.enabled ? t('common.enabled') : t('common.disabled')}</span>
+                      </span>
+                    </label>
+                    {selected && (
+                      <Select
+                        aria-label={t('deploymentsPage.runtimeConfigRefMode')}
+                        className="h-8 w-32 text-xs"
+                        value={selectedRef?.mode ?? 'live'}
+                        onChange={event => onModeChange(set.id, event.target.value as RuntimeConfigRefMode)}
+                      >
+                        <option value="live">{t('deploymentsPage.runtimeConfigRefModes.live')}</option>
+                        <option value="snapshot">{t('deploymentsPage.runtimeConfigRefModes.snapshot')}</option>
+                      </Select>
+                    )}
+                    <Button aria-label={t('runtimeConfigSets.editTitle')} size="sm" type="button" variant="ghost" onClick={() => onEdit(set)}>
+                      <Pencil className="size-4" />
+                    </Button>
+                  </div>
+                )
+              })
             : <p className="text-sm text-muted-foreground">{t('deploymentsPage.emptyRuntimeConfigSets')}</p>}
         </div>
       </Field>

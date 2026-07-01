@@ -112,6 +112,7 @@ type DeploymentTarget struct {
 	TagPattern           string                        `json:"tagPattern"`
 	ConcurrencyPolicy    string                        `gorm:"not null;default:queue" json:"concurrencyPolicy"`
 	RuntimeConfigSetIDs  string                        `gorm:"type:text;not null;default:''" json:"runtimeConfigSetIds"`
+	RuntimeConfigRefs    string                        `gorm:"type:text;not null;default:''" json:"runtimeConfigRefs"`
 	EnvVars              string                        `gorm:"type:text;not null;default:''" json:"envVars"`
 	ConfigRefs           string                        `gorm:"type:text;not null;default:''" json:"configRefs"`
 	SecretRefs           string                        `gorm:"type:text;not null;default:''" json:"-"`
@@ -127,6 +128,102 @@ type DeploymentTarget struct {
 	CreatedAt            time.Time                     `json:"createdAt"`
 	UpdatedAt            time.Time                     `json:"updatedAt"`
 	DeletedAt            gorm.DeletedAt                `gorm:"index" json:"-"`
+}
+
+const (
+	RuntimeConfigRefModeLive     = "live"
+	RuntimeConfigRefModeSnapshot = "snapshot"
+)
+
+type DeploymentRuntimeConfigRef struct {
+	SetID    string                           `json:"setId"`
+	Mode     string                           `json:"mode"`
+	Snapshot *DeploymentRuntimeConfigSnapshot `json:"snapshot,omitempty"`
+}
+
+type DeploymentRuntimeConfigSnapshot struct {
+	Name        string    `json:"name"`
+	EnvVars     string    `json:"envVars"`
+	ConfigFiles string    `json:"configFiles"`
+	SecretRefs  string    `json:"secretRefs"`
+	SecretFiles string    `json:"secretFiles"`
+	Enabled     bool      `json:"enabled"`
+	CapturedAt  time.Time `json:"capturedAt"`
+}
+
+func RuntimeConfigRefMode(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case RuntimeConfigRefModeSnapshot:
+		return RuntimeConfigRefModeSnapshot
+	default:
+		return RuntimeConfigRefModeLive
+	}
+}
+
+func EncodeDeploymentRuntimeConfigRefs(refs []DeploymentRuntimeConfigRef) string {
+	normalized := NormalizeDeploymentRuntimeConfigRefs(refs)
+	if len(normalized) == 0 {
+		return ""
+	}
+	content, err := json.Marshal(normalized)
+	if err != nil {
+		return ""
+	}
+	return string(content)
+}
+
+func DecodeDeploymentRuntimeConfigRefs(raw string) []DeploymentRuntimeConfigRef {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	var refs []DeploymentRuntimeConfigRef
+	if err := json.Unmarshal([]byte(raw), &refs); err != nil {
+		return nil
+	}
+	return NormalizeDeploymentRuntimeConfigRefs(refs)
+}
+
+func NormalizeDeploymentRuntimeConfigRefs(refs []DeploymentRuntimeConfigRef) []DeploymentRuntimeConfigRef {
+	seen := map[string]bool{}
+	normalized := make([]DeploymentRuntimeConfigRef, 0, len(refs))
+	for _, ref := range refs {
+		setID := strings.TrimSpace(ref.SetID)
+		if setID == "" || seen[setID] {
+			continue
+		}
+		seen[setID] = true
+		mode := RuntimeConfigRefMode(ref.Mode)
+		next := DeploymentRuntimeConfigRef{SetID: setID, Mode: mode}
+		if mode == RuntimeConfigRefModeSnapshot && ref.Snapshot != nil {
+			snapshot := *ref.Snapshot
+			next.Snapshot = &snapshot
+		}
+		normalized = append(normalized, next)
+	}
+	return normalized
+}
+
+func DeploymentRuntimeConfigLiveSetIDs(refs []DeploymentRuntimeConfigRef) []string {
+	ids := make([]string, 0, len(refs))
+	for _, ref := range NormalizeDeploymentRuntimeConfigRefs(refs) {
+		if ref.Mode == RuntimeConfigRefModeLive {
+			ids = append(ids, ref.SetID)
+		}
+	}
+	return ids
+}
+
+func ProjectRuntimeConfigSetSnapshot(set ProjectRuntimeConfigSet, capturedAt time.Time) DeploymentRuntimeConfigSnapshot {
+	return DeploymentRuntimeConfigSnapshot{
+		Name:        set.Name,
+		EnvVars:     set.EnvVars,
+		ConfigFiles: set.ConfigFiles,
+		SecretRefs:  set.SecretRefs,
+		SecretFiles: set.SecretFiles,
+		Enabled:     set.Enabled,
+		CapturedAt:  capturedAt,
+	}
 }
 
 type DeploymentServicePort struct {
