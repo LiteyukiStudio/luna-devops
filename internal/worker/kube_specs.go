@@ -229,7 +229,7 @@ func gatewayRouteSectionName(route model.GatewayRoute, cluster model.RuntimeClus
 	if sectionName := strings.TrimSpace(route.SectionName); sectionName != "" {
 		return sectionName
 	}
-	if strings.TrimSpace(cluster.GatewayPublicScheme) == "https" {
+	if strings.TrimSpace(cluster.GatewayExternalTLSMode) == "gateway" {
 		return firstNonEmpty(cluster.GatewayHTTPSListenerName, "websecure")
 	}
 	return firstNonEmpty(cluster.GatewayHTTPListenerName, "web")

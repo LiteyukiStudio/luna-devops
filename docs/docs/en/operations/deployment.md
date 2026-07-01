@@ -70,7 +70,7 @@ The application deployment list refreshes runtime metrics every second through S
 
 Routes connect domain, path, TLS, and backend service. After creating one, the platform shows apply status and checks so you can verify the service is reachable.
 
-The site-level “public route link scheme” only controls whether the console displays and opens route links with `http` or `https`. If an outer CDN or reverse proxy already terminates HTTPS, set it to `https` while keeping the route TLS mode as HTTP-only, so the platform does not request an in-cluster certificate.
+The runtime cluster's external access scheme and external access port only control the URLs the console displays and opens. If an outer CDN or reverse proxy already terminates HTTPS, set the external access scheme to `https` and choose upstream TLS termination; the platform will bind HTTPRoutes to the internal HTTP listener and will not request an in-cluster certificate just because the displayed URL is HTTPS.
 
 Access routes are backed by Kubernetes Gateway API. A runtime cluster owns one platform-managed `Gateway`, and each access route creates an `HTTPRoute` in the project namespace that forwards to the deployment target `Service`. Install the Gateway API CRDs before enabling routes. Traefik clusters also need `--providers.kubernetesGateway`.
 

@@ -501,8 +501,8 @@ export function ClustersPage() {
                 </ProgressiveSection>
                 <ProgressiveSection
                   defaultOpen
-                  description={t('clustersPage.gatewayClusterConfigDescription')}
-                  title={t('clustersPage.gatewayClusterConfig')}
+                  description={t('clustersPage.gatewayExternalAccessConfigDescription')}
+                  title={t('clustersPage.gatewayExternalAccessConfig')}
                 >
                   <div className="grid gap-3 md:grid-cols-2">
                     <Field hint={t('clustersPage.gatewayRootDomainHint')} label={t('clustersPage.gatewayRootDomain')} required>
@@ -526,6 +526,28 @@ export function ClustersPage() {
                     <Field hint={t('clustersPage.gatewayPublicPortHint')} label={t('clustersPage.gatewayPublicPort')} required>
                       <Input {...form.register('gatewayPublicPort', { min: 1, required: true, valueAsNumber: true })} inputMode="numeric" max={65535} min={1} placeholder={String(defaultGatewayPublicPort(form.watch('gatewayPublicScheme')))} type="number" />
                     </Field>
+                    <Field hint={t('clustersPage.gatewayExternalTLSModeHint')} label={t('clustersPage.gatewayExternalTLSMode')}>
+                      <Select {...form.register('gatewayExternalTLSMode')}>
+                        <option value="none">{t('clustersPage.gatewayTLSNone')}</option>
+                        <option value="gateway">{t('clustersPage.gatewayTLSGateway')}</option>
+                        <option value="upstream">{t('clustersPage.gatewayTLSUpstream')}</option>
+                      </Select>
+                    </Field>
+                    <Field hint={t('clustersPage.gatewayForwardedHeadersModeHint')} label={t('clustersPage.gatewayForwardedHeadersMode')}>
+                      <Select {...form.register('gatewayForwardedHeadersMode')}>
+                        <option value="preserve">{t('clustersPage.gatewayForwardedPreserve')}</option>
+                        <option value="overwrite">{t('clustersPage.gatewayForwardedOverwrite')}</option>
+                        <option value="none">{t('clustersPage.gatewayForwardedNone')}</option>
+                      </Select>
+                    </Field>
+                  </div>
+                </ProgressiveSection>
+                <ProgressiveSection
+                  defaultOpen
+                  description={t('clustersPage.gatewayInternalConfigDescription')}
+                  title={t('clustersPage.gatewayInternalConfig')}
+                >
+                  <div className="grid gap-3 md:grid-cols-2">
                     <Field hint={t('clustersPage.gatewayControllerTypeHint')} label={t('clustersPage.gatewayControllerType')}>
                       <Select {...form.register('gatewayControllerType')}>
                         <option value="traefik">Traefik</option>
@@ -557,20 +579,6 @@ export function ClustersPage() {
                     </Field>
                     <Field hint={t('clustersPage.gatewayHttpsListenerPortHint')} label={t('clustersPage.gatewayHttpsListenerPort')} required>
                       <Input {...form.register('gatewayHttpsListenerPort', { min: 1, required: true, valueAsNumber: true })} inputMode="numeric" max={65535} min={1} placeholder="8443" type="number" />
-                    </Field>
-                    <Field hint={t('clustersPage.gatewayExternalTLSModeHint')} label={t('clustersPage.gatewayExternalTLSMode')}>
-                      <Select {...form.register('gatewayExternalTLSMode')}>
-                        <option value="none">{t('clustersPage.gatewayTLSNone')}</option>
-                        <option value="gateway">{t('clustersPage.gatewayTLSGateway')}</option>
-                        <option value="upstream">{t('clustersPage.gatewayTLSUpstream')}</option>
-                      </Select>
-                    </Field>
-                    <Field hint={t('clustersPage.gatewayForwardedHeadersModeHint')} label={t('clustersPage.gatewayForwardedHeadersMode')}>
-                      <Select {...form.register('gatewayForwardedHeadersMode')}>
-                        <option value="preserve">{t('clustersPage.gatewayForwardedPreserve')}</option>
-                        <option value="overwrite">{t('clustersPage.gatewayForwardedOverwrite')}</option>
-                        <option value="none">{t('clustersPage.gatewayForwardedNone')}</option>
-                      </Select>
                     </Field>
                   </div>
                 </ProgressiveSection>

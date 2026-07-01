@@ -37,16 +37,16 @@ Repository and tag templates both render only static values known when the deplo
 
 Runtime clusters are release targets. The platform turns Releases into Kubernetes resources, then shows status, logs, and diagnostics.
 
-Runtime clusters also own access-route default domain suffixes, public link schemes, and Gateway API defaults. Access routes use the deployment target's cluster to generate default domains, expand short host prefixes, and return console access links, so multiple clusters can use different GatewayClasses, shared Gateways, or root domains.
+Runtime clusters also own access-route default domain suffixes, external access schemes, external access ports, and Gateway API defaults. Access routes use the deployment target's cluster to generate default domains, expand short host prefixes, and return console access links, so multiple clusters can use different GatewayClasses, shared Gateways, or root domains.
 
-Gateway ports are split into two layers:
+Gateway config is split into external display and internal cluster layers:
 
-- Gateway listener ports are the internal Gateway/Controller ports that receive traffic inside the cluster. The defaults are `web:8080` and `websecure:8443`. Access routes automatically bind to the listener that matches the cluster access scheme, so project users do not choose ports or listeners.
-- The access port is the external port shown to end users in generated access URLs. Each cluster configures one access port for the current access scheme. HTTP `80` and HTTPS `443` are omitted from URLs; non-standard ports are shown as `:port`.
+- The external access scheme and external access port only affect generated access URLs. HTTP `80` and HTTPS `443` are omitted from URLs; non-standard ports are shown as `:port`. They do not change Kubernetes Gateway listeners or request certificates.
+- Gateway listener names and ports are the internal Gateway/Controller settings that receive traffic inside the cluster. The defaults are `web:8080` and `websecure:8443`. Project users do not choose ports or listeners.
 
-The `websecure` listener protocol follows the external TLS mode. "TLS terminates at Gateway" emits `protocol: HTTPS`, which matches Traefik `websecure` entryPoints with TLS enabled. "TLS terminates upstream" emits `protocol: HTTP`, which matches CDN/Nginx chains that decrypt TLS before forwarding cleartext HTTP to Traefik.
+The external TLS mode decides which listener access routes bind to by default. "TLS terminates at Gateway" binds routes to the HTTPS listener, such as `websecure`; "TLS terminates upstream" binds routes to the HTTP listener, such as `web`, because traffic entering the Gateway is already cleartext HTTP. The HTTPS listener is always emitted as an HTTPS/TLS entrypoint to match Traefik `websecure` entryPoints with TLS enabled.
 
-If an outer Nginx/CDN/load balancer already owns host ports `80/443`, point it to the cluster Gateway's internal `8080/8443` ports. The platform still renders access URLs from the runtime cluster's access scheme and access port settings.
+If an outer Nginx/CDN/load balancer already owns host ports `80/443`, point it to the cluster Gateway's internal ports: upstream TLS termination should forward to the HTTP listener, such as `8080`; Gateway TLS termination should forward to the HTTPS listener, such as `8443`. The platform still renders access URLs from the runtime cluster's external access scheme and external access port settings.
 
 The cluster resource page lists platform-managed namespaces, workloads, services, configs, secrets, and storage with server-side pagination. Only resources visible to the current user are counted in the page total. The workload tab uses Deployment rows as the top level; expanding a Deployment shows its Pods as child rows, and those Pod rows are not counted by pagination.
 

@@ -26,7 +26,7 @@ OIDC identity provider Redirect URI is generated from `PUBLIC_BASE_URL`, and the
 
 Before login, the frontend picks the first supported language from the browser language preference list. The supported languages are currently `zh-CN` and `en-US`. After login, the account language preference wins and is cached locally so the next page load uses the same language immediately.
 
-Default access-route domain suffixes, public link schemes, and Gateway API defaults are managed on runtime clusters. Different clusters can use different gateway domain suffixes, GatewayClasses, and shared Gateways. A deployment target's cluster decides how default domains, short-host expansion, and console access links are generated. Set a cluster's public link scheme to `https` when an outer CDN or reverse proxy already terminates HTTPS; this only changes console display and link targets, and does not request certificates.
+Default access-route domain suffixes, external access schemes, external access ports, and Gateway API defaults are managed on runtime clusters. Different clusters can use different gateway domain suffixes, GatewayClasses, and shared Gateways. A deployment target's cluster decides how default domains, short-host expansion, and console access links are generated. Set a cluster's external access scheme to `https` when an outer CDN or reverse proxy already terminates HTTPS; this only changes console display and link targets, does not change internal Gateway listeners, and does not request certificates.
 
 ## Worker Settings
 

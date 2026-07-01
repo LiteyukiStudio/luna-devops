@@ -64,7 +64,7 @@ func TestApplyGatewayAPIResourcesCreatesGatewayAndHTTPRoute(t *testing.T) {
 	}
 	firstListener := listeners[0].(map[string]any)
 	secondListener := listeners[1].(map[string]any)
-	if firstListener["name"] != "web" || firstListener["port"] != int64(8080) || firstListener["protocol"] != "HTTP" || secondListener["name"] != "websecure" || secondListener["port"] != int64(8443) || secondListener["protocol"] != "HTTP" {
+	if firstListener["name"] != "web" || firstListener["port"] != int64(8080) || firstListener["protocol"] != "HTTP" || secondListener["name"] != "websecure" || secondListener["port"] != int64(8443) || secondListener["protocol"] != "HTTPS" {
 		t.Fatalf("listeners = %#v", listeners)
 	}
 

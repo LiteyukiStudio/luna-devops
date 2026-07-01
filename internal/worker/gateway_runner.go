@@ -115,11 +115,46 @@ func (r *Runner) applyGatewayAPIResources(ctx context.Context, route model.Gatew
 	if err := manager.ApplyHTTPRoute(ctx, spec); err != nil {
 		return err
 	}
-	status, err := manager.GetHTTPRouteStatus(ctx, spec.Namespace, spec.Name)
-	if err == nil && strings.TrimSpace(status.Summary) == "failed" {
-		return fmt.Errorf("HTTPRoute was applied but Gateway API reported failed status")
+	return r.waitForHTTPRouteAccepted(ctx, manager, spec.Namespace, spec.Name)
+}
+
+func (r *Runner) waitForHTTPRouteAccepted(ctx context.Context, manager kubeprovider.NamespaceManager, namespace string, name string) error {
+	timeout := time.NewTimer(4 * time.Second)
+	defer timeout.Stop()
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		status, err := manager.GetHTTPRouteStatus(ctx, namespace, name)
+		if err == nil {
+			switch strings.TrimSpace(status.Summary) {
+			case "accepted":
+				return nil
+			case "failed":
+				return fmt.Errorf("HTTPRoute was applied but Gateway API reported failed status: %s", routeConditionSummary(status.Conditions))
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-timeout.C:
+			return nil
+		case <-ticker.C:
+		}
 	}
-	return nil
+}
+
+func routeConditionSummary(conditions []kubeprovider.RouteConditionSnapshot) string {
+	parts := make([]string, 0, len(conditions))
+	for _, condition := range conditions {
+		if condition.Type == "" {
+			continue
+		}
+		parts = append(parts, strings.TrimSpace(fmt.Sprintf("%s=%s reason=%s message=%s", condition.Type, condition.Status, condition.Reason, condition.Message)))
+	}
+	if len(parts) == 0 {
+		return "no conditions"
+	}
+	return strings.Join(parts, "; ")
 }
 
 func (r *Runner) gatewayServiceName(route model.GatewayRoute, application model.Application, environment model.Environment) string {
