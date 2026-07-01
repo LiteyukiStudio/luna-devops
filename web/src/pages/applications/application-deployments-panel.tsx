@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import { api } from '@/api'
+import { CheckboxField } from '@/components/common/checkbox-field'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { buildRunImageRef, latestDeployableBuildRuns } from '@/components/common/deployment-build-runs'
 import { FormField as Field } from '@/components/common/form-field'
@@ -26,12 +27,13 @@ import { defaultBuildCpuRequest, defaultBuildMemoryRequest, defaultBuildTimeoutS
 import { defaultTargetImageRef, deploymentReleaseKey, deploymentTargetCanRelease, deploymentTargetImageRef, registryInputPrefix } from './application-config-utils'
 import { ApplicationCreateReleaseDialog } from './application-create-release-dialog'
 import { RuntimeDataVolumesEditor } from './application-deployment-data-volumes-editor'
+import { ApplicationDeploymentHooksEditor } from './application-deployment-hooks-editor'
 import { RuntimeResourceFields } from './application-deployment-resource-fields'
 import { buildDeploymentRuntimeStatus, buildInternalServiceEndpoint } from './application-deployment-runtime-utils'
 import { ServicePortsEditor } from './application-deployment-service-ports-editor'
 import { ApplicationDeploymentBuildSettingsFields, ApplicationDeploymentSourceFields } from './application-deployment-source-fields'
 import { ApplicationDeploymentTargetsList } from './application-deployment-targets-list'
-import { applyDockerfileBuildDefaults, deploymentTargetDefaults, deploymentTargetRuntimeChanged, normalizeBoolean, normalizeDeploymentTargetPayload, normalizeRuntimeConfigPayload, normalizeRuntimeConfigRefs, normalizeStringIds, parseRuntimeDataVolumes, redeployReleasePayload, releaseDefaults, repositoryBindingItems, runtimeConfigDefaults, runtimeConfigLiveSetIds, runtimeConfigRefIds, serializeRuntimeDataVolumes } from './application-deployments-panel-utils'
+import { applyDockerfileBuildDefaults, deploymentTargetDefaults, deploymentTargetRuntimeChanged, normalizeBoolean, normalizeDeploymentHookBindings, normalizeDeploymentTargetPayload, normalizeRuntimeConfigPayload, normalizeRuntimeConfigRefs, normalizeStringIds, parseRuntimeDataVolumes, redeployReleasePayload, releaseDefaults, repositoryBindingItems, runtimeConfigDefaults, runtimeConfigLiveSetIds, runtimeConfigRefIds, serializeRuntimeDataVolumes } from './application-deployments-panel-utils'
 import { ApplicationReleaseLogsDialog } from './application-release-logs-dialog'
 import { ApplicationRepositoryBindingDialog } from './application-repository-binding-dialog'
 import { ApplicationRuntimeConfigSelector } from './application-runtime-config-selector'
@@ -146,6 +148,8 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
   const watchedTargetValues = targetForm.watch()
   const targetImageRefDirty = Boolean(targetForm.formState.dirtyFields.targetImageRef)
   const selectedRuntimeConfigRefs = normalizeRuntimeConfigRefs(targetForm.watch('runtimeConfigRefs'), targetForm.watch('runtimeConfigSetIds'))
+  const selectedDeploymentHookBindings = normalizeDeploymentHookBindings(targetForm.watch('buildHookBindings'))
+  const targetBuildHooksEnabled = normalizeBoolean(targetForm.watch('buildHooksEnabled'), true)
   const selectedTargetRepositoryBinding = repositoryBindings.find(binding => binding.id === targetRepositoryBindingId)
   const targetRegistry = registries.find(registry => registry.id === targetRegistryId)
   const targetImagePrefix = targetRegistry ? registryInputPrefix(targetRegistry) : ''
@@ -214,6 +218,11 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
     queryKey: ['runtime-config-sets', projectId],
     queryFn: () => api.listProjectRuntimeConfigSets(projectId),
     enabled: Boolean(projectId),
+  })
+  const projectHooks = useQuery({
+    queryKey: ['project-hooks', projectId],
+    queryFn: () => api.listProjectHooks(projectId),
+    enabled: Boolean(projectId && targetDialogOpen),
   })
   const runtimeClusters = useQuery({
     queryKey: ['runtime-clusters', projectId],
@@ -347,6 +356,9 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
     const current = normalizeRuntimeConfigRefs(targetForm.getValues('runtimeConfigRefs'), targetForm.getValues('runtimeConfigSetIds'))
     setTargetRuntimeConfigRefs(upsertRuntimeConfigRef(current, { mode, setId }))
   }
+  const setTargetHookBindings = (bindings: DeploymentTargetPayload['buildHookBindings']) => {
+    targetForm.setValue('buildHookBindings', normalizeDeploymentHookBindings(bindings), { shouldDirty: true, shouldValidate: true })
+  }
   const updateTargetDataVolumes = (rows: typeof targetDataVolumes) => {
     targetForm.setValue('dataVolumes', serializeRuntimeDataVolumes(rows), { shouldDirty: true, shouldValidate: true })
   }
@@ -394,6 +406,9 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
     autoDeploy: t(normalizeBoolean(targetForm.watch('autoDeploy'), true) ? 'common.enabled' : 'common.disabled'),
     concurrency: t(`apps.buildConcurrencyPolicies.${targetForm.watch('concurrencyPolicy') || 'queue'}`),
   })
+  const targetHooksSummary = targetBuildHooksEnabled
+    ? t('deploymentsPage.progressiveHooksSummary', { count: selectedDeploymentHookBindings.length })
+    : t('deploymentsPage.progressiveHooksDisabledSummary')
   const targetDataSummary = targetDataRetentionEnabled
     ? t('deploymentsPage.progressiveDataEnabledSummary', { count: targetDataVolumes.length })
     : t('deploymentsPage.progressiveDataDisabledSummary')
@@ -766,6 +781,29 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
                       <option value="true">{t('common.enabled')}</option>
                     </Select>
                   </Field>
+                </div>
+              </ProgressiveSection>
+              <ProgressiveSection
+                description={t('deploymentsPage.deploymentHooksDescription')}
+                storageKey="liteyuki.deployments.targetDialog.hooks"
+                summary={targetHooksSummary}
+                title={t('deploymentsPage.deploymentHooks')}
+              >
+                <div className="grid gap-4">
+                  <CheckboxField description={t('deploymentsPage.deploymentHooksEnabledHint')} {...targetForm.register('buildHooksEnabled')}>
+                    {t('deploymentsPage.deploymentHooksEnabled')}
+                  </CheckboxField>
+                  {projectHooks.isError && (
+                    <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                      {t('projectHooks.loadFailedDescription')}
+                    </p>
+                  )}
+                  <ApplicationDeploymentHooksEditor
+                    bindings={selectedDeploymentHookBindings}
+                    disabled={!targetBuildHooksEnabled || projectHooks.isLoading}
+                    hooks={projectHooks.data ?? []}
+                    onChange={setTargetHookBindings}
+                  />
                 </div>
               </ProgressiveSection>
               <ProgressiveSection

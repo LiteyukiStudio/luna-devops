@@ -1,5 +1,5 @@
 import type { UseFormReturn } from 'react-hook-form'
-import type { DeploymentRuntimeConfigRef, DeploymentTarget, DeploymentTargetPayload, ProjectRuntimeConfigSetPayload, Release, RepositoryBinding } from '@/api'
+import type { DeploymentRuntimeConfigRef, DeploymentTarget, DeploymentTargetHookBinding, DeploymentTargetPayload, HookPhase, ProjectRuntimeConfigSetPayload, Release, RepositoryBinding } from '@/api'
 import { emptyRuntimeDataVolumeRow, parseRuntimeDataVolumes, serializeRuntimeDataVolumes } from '@/lib/runtime-data-volumes'
 import { defaultBuildCpuRequest, defaultBuildMemoryRequest, defaultBuildTimeoutSeconds } from './application-build-defaults'
 
@@ -200,8 +200,43 @@ export function normalizeDeploymentTargetPayload(values: DeploymentTargetPayload
     runtimeConfigSetIds: runtimeConfigLiveSetIds(runtimeConfigRefs),
     configFiles: values.configFiles?.trim() ?? '',
     secretFiles: values.secretFiles?.trim() ?? '',
-    buildHookBindings: values.buildHookBindings ?? [],
+    buildHookBindings: normalizeDeploymentHookBindings(values.buildHookBindings),
   }
+}
+
+const deploymentHookPhases = new Set<HookPhase>([
+  'prePull',
+  'postPull',
+  'preBuild',
+  'postBuild',
+  'prePush',
+  'postPush',
+  'preDeployment',
+  'postDeployment',
+])
+
+export function normalizeDeploymentHookBindings(value: unknown): DeploymentTargetHookBinding[] {
+  const rows = Array.isArray(value) ? value : []
+  const seen = new Set<string>()
+  const output: DeploymentTargetHookBinding[] = []
+  for (const item of rows) {
+    const binding = item as Partial<DeploymentTargetHookBinding>
+    const hookConfigId = String(binding.hookConfigId ?? '').trim()
+    const phase = binding.phase
+    if (!hookConfigId || !phase || !deploymentHookPhases.has(phase))
+      continue
+    const key = `${phase}\x00${hookConfigId}`
+    if (seen.has(key))
+      continue
+    seen.add(key)
+    output.push({
+      ...binding,
+      hookConfigId,
+      phase,
+      runOrder: output.length + 1,
+    })
+  }
+  return output
 }
 
 export function normalizeRuntimeConfigRefs(value: unknown, fallbackIds: unknown = []): DeploymentRuntimeConfigRef[] {

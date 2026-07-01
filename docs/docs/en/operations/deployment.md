@@ -44,6 +44,8 @@ When build variables or runtime config sets are deleted, the platform removes th
 
 When a deployment target attaches a project-space runtime config set, it can use two modes. A live reference reads the latest shared config on the next release and prompts redeploys after the shared config changes. A snapshot freezes the shared config when the deployment target is saved, so later shared config updates do not affect that deployment target. Secrets remain in the platform secret store in both modes; deployment targets only store secret references or frozen secret references.
 
+Project-space hooks are reusable script definitions. They only run after a deployment target binds them in its “Deployment hooks” section. A deployment target can bind the same project hook to build, image push, pre-deployment, or post-deployment phases and control the execution order locally. Pre-deployment hooks run after runtime ConfigMap/Secret resources are written and before the application Deployment rolls out, which fits database migrations, seed commands, or one-shot repair commands that must complete before the app container starts.
+
 When deleting a deployment target, the platform first deletes routes bound to that target, then cleans up the Kubernetes workload, Service, and optional data volumes. This prevents routes from pointing at a service that no longer exists.
 
 Gateway routes are enabled by default when created. To temporarily stop public access without losing the domain config, disable the route; the platform keeps the config and removes the runtime Ingress, then reapplies it when enabled again.

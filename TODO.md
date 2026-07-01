@@ -423,6 +423,7 @@
 - [x] 构建变量和密钥提升为项目空间级资源，在项目工作台集中维护；构建时默认注入项目空间启用的变量和密钥。
 - [x] 实现项目空间级构建/部署钩子 MVP：项目 Hook 页面只维护通用脚本库，不维护阶段、启停状态或执行顺序；部署配置把通用 Hook 绑定到构建/部署阶段并在部署配置内拖拽排序；运行时按部署配置绑定快照执行，并支持脚本快照、超时、失败策略、运行记录、日志和审计。
 - [x] 扩展部署配置阶段 Hook：支持 `prePull` / `postPull`（仓库拉取前后）、`preBuild` / `postBuild`（镜像构建前后）、`prePush` / `postPush`（镜像推送前后）以及 `preDeployment` / `postDeployment`；部署配置的 Hook 选择与排序 UI、Build Job 阶段调用点、Worker 部署阶段调用点、HookRun 展示和文档同步覆盖这些阶段。
+- [x] 补齐部署配置 Hook 消费入口：应用部署配置弹窗可加载项目空间 Hook，显式启用/停用 Hook，按阶段绑定脚本并调整执行顺序，提交前规范化 `DeploymentTargetHookBinding`。
 - [x] 收敛构建模板变量命名：同一个值只保留一个变量名，前端说明、后端预览渲染和 Build Job executor 渲染保持一致。
 - [x] 部署配置支持同配置并行策略：默认同一部署配置排队，不同部署配置可并行；配置为并行时同一部署配置也允许多个构建任务同时运行。
 - [x] Kubernetes 构建 Job 支持 BuildKit registry 镜像层缓存：通过 `BUILD_CACHE_ENABLED` / `BUILD_CACHE_TAG` 统一控制，启用后按目标镜像同仓库默认推送 `:buildcache`，executor 自动 import/export cache。
