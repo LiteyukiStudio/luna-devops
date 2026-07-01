@@ -21,11 +21,15 @@ var (
 )
 
 type GatewaySpec struct {
-	Name             string
-	Namespace        string
-	GatewayClassName string
-	ExternalTLSMode  string
-	ProjectID        string
+	Name              string
+	Namespace         string
+	GatewayClassName  string
+	ExternalTLSMode   string
+	HTTPListenerName  string
+	HTTPListenerPort  int32
+	HTTPSListenerName string
+	HTTPSListenerPort int32
+	ProjectID         string
 }
 
 type HTTPRouteSpec struct {
@@ -132,7 +136,34 @@ func (c *Client) GetHTTPRouteStatus(ctx context.Context, namespace, name string)
 
 func gatewayObject(spec GatewaySpec) *gatewayv1.Gateway {
 	from := gatewayv1.NamespacesFromAll
-	listenerName := gatewayv1.SectionName("web")
+	httpListenerName := gatewayv1.SectionName(firstNonEmpty(spec.HTTPListenerName, "web"))
+	httpListenerPort := spec.HTTPListenerPort
+	if httpListenerPort <= 0 {
+		httpListenerPort = 8080
+	}
+	httpsListenerName := gatewayv1.SectionName(firstNonEmpty(spec.HTTPSListenerName, "websecure"))
+	httpsListenerPort := spec.HTTPSListenerPort
+	if httpsListenerPort <= 0 {
+		httpsListenerPort = 8443
+	}
+	listeners := []gatewayv1.Listener{{
+		Name:     httpListenerName,
+		Port:     gatewayv1.PortNumber(httpListenerPort),
+		Protocol: gatewayv1.HTTPProtocolType,
+		AllowedRoutes: &gatewayv1.AllowedRoutes{
+			Namespaces: &gatewayv1.RouteNamespaces{From: &from},
+		},
+	}}
+	if string(httpsListenerName) != string(httpListenerName) || httpsListenerPort != httpListenerPort {
+		listeners = append(listeners, gatewayv1.Listener{
+			Name:     httpsListenerName,
+			Port:     gatewayv1.PortNumber(httpsListenerPort),
+			Protocol: gatewayv1.HTTPProtocolType,
+			AllowedRoutes: &gatewayv1.AllowedRoutes{
+				Namespaces: &gatewayv1.RouteNamespaces{From: &from},
+			},
+		})
+	}
 	return &gatewayv1.Gateway{
 		TypeMeta: metav1.TypeMeta{APIVersion: gatewayv1.GroupVersion.String(), Kind: "Gateway"},
 		ObjectMeta: metav1.ObjectMeta{
@@ -142,14 +173,7 @@ func gatewayObject(spec GatewaySpec) *gatewayv1.Gateway {
 		},
 		Spec: gatewayv1.GatewaySpec{
 			GatewayClassName: gatewayv1.ObjectName(spec.GatewayClassName),
-			Listeners: []gatewayv1.Listener{{
-				Name:     listenerName,
-				Port:     gatewayv1.PortNumber(80),
-				Protocol: gatewayv1.HTTPProtocolType,
-				AllowedRoutes: &gatewayv1.AllowedRoutes{
-					Namespaces: &gatewayv1.RouteNamespaces{From: &from},
-				},
-			}},
+			Listeners:        listeners,
 		},
 	}
 }
@@ -407,6 +431,9 @@ func validateGatewayAPISpec(spec GatewaySpec) error {
 	}
 	if strings.TrimSpace(spec.GatewayClassName) == "" {
 		return fmt.Errorf("GatewayClass name is required")
+	}
+	if spec.HTTPListenerPort < 0 || spec.HTTPListenerPort > 65535 || spec.HTTPSListenerPort < 0 || spec.HTTPSListenerPort > 65535 {
+		return fmt.Errorf("Gateway listener ports must be between 1 and 65535")
 	}
 	return nil
 }

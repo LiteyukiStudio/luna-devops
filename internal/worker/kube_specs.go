@@ -173,11 +173,15 @@ func gatewayTLSSecretName(route model.GatewayRoute) string {
 
 func gatewaySpec(cluster model.RuntimeCluster, projectID string) kubeprovider.GatewaySpec {
 	return kubeprovider.GatewaySpec{
-		Name:             firstNonEmpty(cluster.GatewayName, "liteyuki-gateway"),
-		Namespace:        firstNonEmpty(cluster.GatewayNamespace, "kube-system"),
-		GatewayClassName: firstNonEmpty(cluster.GatewayClassName, "traefik"),
-		ExternalTLSMode:  firstNonEmpty(cluster.GatewayExternalTLSMode, "none"),
-		ProjectID:        projectID,
+		Name:              firstNonEmpty(cluster.GatewayName, "liteyuki-gateway"),
+		Namespace:         firstNonEmpty(cluster.GatewayNamespace, "kube-system"),
+		GatewayClassName:  firstNonEmpty(cluster.GatewayClassName, "traefik"),
+		ExternalTLSMode:   firstNonEmpty(cluster.GatewayExternalTLSMode, "none"),
+		HTTPListenerName:  firstNonEmpty(cluster.GatewayHTTPListenerName, "web"),
+		HTTPListenerPort:  int32(normalizePositive(cluster.GatewayHTTPListenerPort, 8080)),
+		HTTPSListenerName: firstNonEmpty(cluster.GatewayHTTPSListenerName, "websecure"),
+		HTTPSListenerPort: int32(normalizePositive(cluster.GatewayHTTPSListenerPort, 8443)),
+		ProjectID:         projectID,
 	}
 }
 
@@ -210,7 +214,7 @@ func httpRouteSpec(route model.GatewayRoute, project model.Project, application 
 		PathMatchType:          firstNonEmpty(route.PathMatchType, "PathPrefix"),
 		ParentGatewayName:      firstNonEmpty(route.ParentGatewayName, cluster.GatewayName, "liteyuki-gateway"),
 		ParentGatewayNamespace: firstNonEmpty(route.ParentGatewayNamespace, cluster.GatewayNamespace, "kube-system"),
-		SectionName:            route.SectionName,
+		SectionName:            gatewayRouteSectionName(route, cluster),
 		ServiceName:            firstNonEmpty(serviceName, dnsLabel(application.Slug)),
 		ServicePort:            int32(servicePort),
 		BackendWeight:          int32(normalizePositive(route.BackendWeight, 1)),
@@ -219,6 +223,16 @@ func httpRouteSpec(route model.GatewayRoute, project model.Project, application 
 		URLRewrite:             route.URLRewrite,
 		RequestRedirect:        route.RequestRedirect,
 	}, nil
+}
+
+func gatewayRouteSectionName(route model.GatewayRoute, cluster model.RuntimeCluster) string {
+	if sectionName := strings.TrimSpace(route.SectionName); sectionName != "" {
+		return sectionName
+	}
+	if strings.TrimSpace(cluster.GatewayPublicScheme) == "https" {
+		return firstNonEmpty(cluster.GatewayHTTPSListenerName, "websecure")
+	}
+	return firstNonEmpty(cluster.GatewayHTTPListenerName, "web")
 }
 
 func forwardedHeaderOverrides(cluster model.RuntimeCluster) map[string]string {

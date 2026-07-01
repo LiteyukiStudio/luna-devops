@@ -24,10 +24,15 @@ type RuntimeCluster struct {
 	GatewayProvider               string         `gorm:"not null;default:gateway-api" json:"gatewayProvider"`
 	GatewayRootDomain             string         `gorm:"not null;default:apps.local" json:"gatewayRootDomain"`
 	GatewayPublicScheme           string         `gorm:"not null;default:http" json:"gatewayPublicScheme"`
+	GatewayPublicPort             int            `gorm:"not null;default:80" json:"gatewayPublicPort"`
 	GatewayControllerType         string         `gorm:"not null;default:traefik" json:"gatewayControllerType"`
 	GatewayClassName              string         `gorm:"not null;default:traefik" json:"gatewayClassName"`
 	GatewayName                   string         `gorm:"not null;default:liteyuki-gateway" json:"gatewayName"`
 	GatewayNamespace              string         `gorm:"not null;default:kube-system" json:"gatewayNamespace"`
+	GatewayHTTPListenerName       string         `gorm:"not null;default:web" json:"gatewayHttpListenerName"`
+	GatewayHTTPListenerPort       int            `gorm:"not null;default:8080" json:"gatewayHttpListenerPort"`
+	GatewayHTTPSListenerName      string         `gorm:"not null;default:websecure" json:"gatewayHttpsListenerName"`
+	GatewayHTTPSListenerPort      int            `gorm:"not null;default:8443" json:"gatewayHttpsListenerPort"`
 	GatewayExternalTLSMode        string         `gorm:"not null;default:none" json:"gatewayExternalTLSMode"`
 	GatewayForwardedHeadersMode   string         `gorm:"not null;default:preserve" json:"gatewayForwardedHeadersMode"`
 	GatewayTrustedProxyCIDRs      string         `gorm:"column:gateway_trusted_proxy_cidrs;type:text;not null;default:''" json:"gatewayTrustedProxyCIDRs"`

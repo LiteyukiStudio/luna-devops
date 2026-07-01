@@ -21,6 +21,11 @@
   },
   {
     "type": "file",
+    "name": "external-compatibility",
+    "label": "外部组件兼容矩阵"
+  },
+  {
+    "type": "file",
     "name": "billing",
     "label": "账单与费用"
   },

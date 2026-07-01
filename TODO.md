@@ -11,6 +11,7 @@
 - [x] 删除过期产品原型和暂不启用的 AI 能力提案文档，README 与 AGENTS 只保留当前有效文档入口。
 - [x] 删除独立品牌说明和旧 Builder 构建验收复盘文档；构建后续计划已由 TODO 中的细分条目承接。
 - [x] 将旧 `docs/` 内容迁移到 `notes/`，并使用 Rspress 建立支持中英双语、响应式和多主题的文档站。
+- [x] 补充外部组件兼容矩阵文档，覆盖 GitHub/Gitea、镜像仓库、Kubernetes/Gateway API、OIDC、PostgreSQL、Redis、BuildKit、Prometheus/Grafana 和通知适配器的接口与版本范围。
 
 ## 2. 项目基础与前后端脚手架
 
@@ -684,7 +685,8 @@
 - [x] 运行集群补齐 Gateway API 默认配置：Gateway Provider、控制器类型、GatewayClass、Gateway 名称/命名空间、外部 TLS 模式、转发头策略、可信代理 CIDR 和默认请求/响应头。
 - [x] 访问入口补齐高级 Gateway API 配置：支持 Parent Gateway 覆盖、路径匹配、请求/响应头、URL rewrite、redirect、后端权重和备用域名字段，并按项目/平台管理员收紧高风险 header。
 - [x] 破坏性迁移访问入口底层：未发版阶段清空旧 GatewayRoute 数据，Worker 主路径从 Kubernetes Ingress 切换到 Gateway API HTTPRoute，并新增 Gateway API CRD 探测和 HTTPRoute 状态读取。
-- [ ] Gateway API HTTPS listener 与证书引用自动化：当前第一阶段只创建 HTTP listener，HTTP Challenge 证书申请状态保留，后续补齐 Gateway TLS certificateRefs。
+- [x] 运行集群支持 Gateway listener 端口规则和公网访问端口分离：每个集群配置一个 HTTP listener 端口、一个 HTTPS listener 端口和一个当前访问协议的公网访问端口；访问入口自动选择 listener，URL 对 HTTP 80 / HTTPS 443 省略标准端口，非标端口显式展示。
+- [ ] Gateway API HTTPS 协议 listener 与证书引用自动化：当前第一阶段只创建 HTTP 协议 listener（可用 web/websecure 区分内部端口），HTTP Challenge 证书申请状态保留，后续补齐 Gateway TLS certificateRefs。
 - [ ] 收紧 Gateway `allowedRoutes`：当前 MVP 使用 `namespaces.from=All` 方便跨命名空间绑定，后续改为项目 namespace label selector。
 - [x] 实现证书状态字段：disabled、pending、issued、failed、expired。
 

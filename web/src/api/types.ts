@@ -577,11 +577,16 @@ export interface RuntimeCluster {
   maxConcurrentBuilds: number
   gatewayRootDomain: string
   gatewayPublicScheme: 'http' | 'https'
+  gatewayPublicPort: number
   gatewayProvider: 'gateway-api'
   gatewayControllerType: 'traefik' | 'generic'
   gatewayClassName: string
   gatewayName: string
   gatewayNamespace: string
+  gatewayHttpListenerName: string
+  gatewayHttpListenerPort: number
+  gatewayHttpsListenerName: string
+  gatewayHttpsListenerPort: number
   gatewayExternalTLSMode: 'none' | 'gateway' | 'upstream'
   gatewayForwardedHeadersMode: 'preserve' | 'overwrite' | 'none'
   gatewayTrustedProxyCIDRs: string

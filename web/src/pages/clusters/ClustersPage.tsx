@@ -43,8 +43,13 @@ const clusterDefaults: ClusterForm = {
   gatewayName: 'liteyuki-gateway',
   gatewayNamespace: 'kube-system',
   gatewayProvider: 'gateway-api',
+  gatewayPublicPort: 80,
   gatewayPublicScheme: 'http',
   gatewayRootDomain: 'apps.local',
+  gatewayHttpListenerName: 'web',
+  gatewayHttpListenerPort: 8080,
+  gatewayHttpsListenerName: 'websecure',
+  gatewayHttpsListenerPort: 8443,
   gatewayTrustedProxyCIDRs: '',
   maxConcurrentBuilds: 4,
   name: '',
@@ -248,8 +253,13 @@ export function ClustersPage() {
           gatewayName: cluster.gatewayName || 'liteyuki-gateway',
           gatewayNamespace: cluster.gatewayNamespace || 'kube-system',
           gatewayProvider: cluster.gatewayProvider || 'gateway-api',
+          gatewayPublicPort: cluster.gatewayPublicPort || defaultGatewayPublicPort(cluster.gatewayPublicScheme || 'http'),
           gatewayPublicScheme: cluster.gatewayPublicScheme || 'http',
           gatewayRootDomain: cluster.gatewayRootDomain || 'apps.local',
+          gatewayHttpListenerName: cluster.gatewayHttpListenerName || 'web',
+          gatewayHttpListenerPort: cluster.gatewayHttpListenerPort || 8080,
+          gatewayHttpsListenerName: cluster.gatewayHttpsListenerName || 'websecure',
+          gatewayHttpsListenerPort: cluster.gatewayHttpsListenerPort || 8443,
           gatewayTrustedProxyCIDRs: cluster.gatewayTrustedProxyCIDRs || '',
           maxConcurrentBuilds: cluster.maxConcurrentBuilds || 4,
           name: cluster.name,
@@ -285,7 +295,14 @@ export function ClustersPage() {
     const maxConcurrentBuilds = Number.isFinite(values.maxConcurrentBuilds) && values.maxConcurrentBuilds > 0
       ? Math.floor(values.maxConcurrentBuilds)
       : 4
-    saveCluster.mutate({ ...values, kubeconfig, maxConcurrentBuilds })
+    saveCluster.mutate({
+      ...values,
+      gatewayHttpListenerPort: normalizeFormPort(values.gatewayHttpListenerPort, 8080),
+      gatewayHttpsListenerPort: normalizeFormPort(values.gatewayHttpsListenerPort, 8443),
+      gatewayPublicPort: normalizeFormPort(values.gatewayPublicPort, defaultGatewayPublicPort(values.gatewayPublicScheme)),
+      kubeconfig,
+      maxConcurrentBuilds,
+    })
   }
 
   const resourcePagination: ClusterResourcePagination | undefined = activeTab === 'clusters'
@@ -383,15 +400,16 @@ export function ClustersPage() {
         <TabsContent value="clusters">
           <DataList
             columns={[
-              { key: 'name', header: t('common.name'), render: item => item.name },
-              { key: 'type', header: t('common.type'), render: item => clusterTypeLabel(item.type, t) },
-              { key: 'scope', header: t('common.scope'), render: item => scopeLabel(item, projectMap, t) },
-              { key: 'default', header: t('clustersPage.defaultCluster'), render: item => item.isDefault ? t('common.yes') : t('common.no') },
-              { key: 'buildConcurrency', header: t('clustersPage.maxConcurrentBuilds'), render: item => item.maxConcurrentBuilds || 4 },
-              { key: 'gatewayRootDomain', header: t('clustersPage.gatewayRootDomain'), render: item => item.gatewayRootDomain || 'apps.local' },
-              { key: 'gatewayPublicScheme', header: t('clustersPage.gatewayPublicScheme'), render: item => item.gatewayPublicScheme || 'http' },
-              { key: 'status', header: t('common.status'), render: item => <StatusValueBadge value={item.status} /> },
-              { key: 'actions', header: t('common.actions'), className: 'text-right whitespace-nowrap', render: item => (
+              { key: 'name', header: t('common.name'), width: 'primary', render: item => item.name },
+              { key: 'type', header: t('common.type'), width: 'secondary', render: item => clusterTypeLabel(item.type, t) },
+              { key: 'scope', header: t('common.scope'), width: 'status', render: item => scopeLabel(item, projectMap, t) },
+              { key: 'default', header: t('clustersPage.defaultCluster'), width: 'status', render: item => item.isDefault ? t('common.yes') : t('common.no') },
+              { key: 'buildConcurrency', header: t('clustersPage.maxConcurrentBuilds'), width: 'number', render: item => item.maxConcurrentBuilds || 4 },
+              { key: 'gatewayRootDomain', header: t('clustersPage.gatewayRootDomain'), width: 'secondary', render: item => item.gatewayRootDomain || 'apps.local' },
+              { key: 'gatewayPublicScheme', header: t('clustersPage.gatewayPublicScheme'), width: 'compact', render: item => item.gatewayPublicScheme || 'http' },
+              { key: 'gatewayPublicPort', header: t('clustersPage.gatewayPublicPort'), width: 'compact', render: item => gatewayPublicPortSummary(item) },
+              { key: 'status', header: t('common.status'), width: 'status', render: item => <StatusValueBadge value={item.status} /> },
+              { key: 'actions', header: t('common.actions'), className: 'text-right whitespace-nowrap', sticky: 'right', width: 'actions', render: item => (
                 canManageCluster(item, user?.id, user?.role)
                   ? (
                       <div className="flex justify-end gap-2">
@@ -491,10 +509,22 @@ export function ClustersPage() {
                       <Input {...form.register('gatewayRootDomain', { required: true })} placeholder={t('clustersPage.gatewayRootDomainPlaceholder')} />
                     </Field>
                     <Field hint={t('clustersPage.gatewayPublicSchemeHint')} label={t('clustersPage.gatewayPublicScheme')} required>
-                      <Select {...form.register('gatewayPublicScheme')}>
+                      <Select {...form.register('gatewayPublicScheme', {
+                        onChange: (event) => {
+                          const nextScheme = event.target.value as RuntimeCluster['gatewayPublicScheme']
+                          const currentPort = form.getValues('gatewayPublicPort')
+                          if (currentPort === 80 || currentPort === 443 || !currentPort) {
+                            form.setValue('gatewayPublicPort', defaultGatewayPublicPort(nextScheme), { shouldDirty: true, shouldValidate: true })
+                          }
+                        },
+                      })}
+                      >
                         <option value="http">http</option>
                         <option value="https">https</option>
                       </Select>
+                    </Field>
+                    <Field hint={t('clustersPage.gatewayPublicPortHint')} label={t('clustersPage.gatewayPublicPort')} required>
+                      <Input {...form.register('gatewayPublicPort', { min: 1, required: true, valueAsNumber: true })} inputMode="numeric" max={65535} min={1} placeholder={String(defaultGatewayPublicPort(form.watch('gatewayPublicScheme')))} type="number" />
                     </Field>
                     <Field hint={t('clustersPage.gatewayControllerTypeHint')} label={t('clustersPage.gatewayControllerType')}>
                       <Select {...form.register('gatewayControllerType')}>
@@ -515,6 +545,18 @@ export function ClustersPage() {
                     </Field>
                     <Field hint={t('clustersPage.gatewayNamespaceHint')} label={t('clustersPage.gatewayNamespace')}>
                       <Input {...form.register('gatewayNamespace')} placeholder={t('clustersPage.gatewayNamespacePlaceholder')} />
+                    </Field>
+                    <Field hint={t('clustersPage.gatewayHttpListenerNameHint')} label={t('clustersPage.gatewayHttpListenerName')}>
+                      <Input {...form.register('gatewayHttpListenerName')} placeholder={t('clustersPage.gatewayHttpListenerNamePlaceholder')} />
+                    </Field>
+                    <Field hint={t('clustersPage.gatewayHttpListenerPortHint')} label={t('clustersPage.gatewayHttpListenerPort')} required>
+                      <Input {...form.register('gatewayHttpListenerPort', { min: 1, required: true, valueAsNumber: true })} inputMode="numeric" max={65535} min={1} placeholder="8080" type="number" />
+                    </Field>
+                    <Field hint={t('clustersPage.gatewayHttpsListenerNameHint')} label={t('clustersPage.gatewayHttpsListenerName')}>
+                      <Input {...form.register('gatewayHttpsListenerName')} placeholder={t('clustersPage.gatewayHttpsListenerNamePlaceholder')} />
+                    </Field>
+                    <Field hint={t('clustersPage.gatewayHttpsListenerPortHint')} label={t('clustersPage.gatewayHttpsListenerPort')} required>
+                      <Input {...form.register('gatewayHttpsListenerPort', { min: 1, required: true, valueAsNumber: true })} inputMode="numeric" max={65535} min={1} placeholder="8443" type="number" />
                     </Field>
                     <Field hint={t('clustersPage.gatewayExternalTLSModeHint')} label={t('clustersPage.gatewayExternalTLSMode')}>
                       <Select {...form.register('gatewayExternalTLSMode')}>
@@ -913,6 +955,20 @@ function canManageCluster(cluster: RuntimeCluster, userID?: string, role?: strin
 
 function canInspectClusterKubeconfig(cluster: RuntimeCluster, userID?: string, role?: string) {
   return role === 'platform_admin' || cluster.createdBy === userID
+}
+
+function normalizeFormPort(value: number, fallback: number) {
+  return Number.isFinite(value) && value >= 1 && value <= 65535 ? Math.floor(value) : fallback
+}
+
+function gatewayPublicPortSummary(cluster: RuntimeCluster) {
+  const scheme = cluster.gatewayPublicScheme || 'http'
+  const port = cluster.gatewayPublicPort || defaultGatewayPublicPort(scheme)
+  return `${scheme}:${port}`
+}
+
+function defaultGatewayPublicPort(scheme: RuntimeCluster['gatewayPublicScheme']) {
+  return scheme === 'https' ? 443 : 80
 }
 
 function clusterTypeLabel(type: RuntimeCluster['type'], t: (key: string, options?: Record<string, unknown>) => string) {

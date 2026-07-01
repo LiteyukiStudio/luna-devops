@@ -82,6 +82,7 @@ export function ApplicationGatewayPanel({ applicationId, deploymentTargets, proj
         ...values,
         applicationId,
         environmentId: target?.environmentId ?? values.environmentId,
+        sectionName: '',
         servicePort: Number(values.servicePort) || deploymentTargetPrimaryServicePort(target),
       }
       return editingRoute ? api.updateGatewayRoute(projectId, editingRoute.id, payload) : api.createGatewayRoute(projectId, payload)
@@ -201,9 +202,6 @@ export function ApplicationGatewayPanel({ applicationId, deploymentTargets, proj
                 </Field>
                 <Field hint={t('gatewayRoutesPage.parentGatewayNamespaceHint')} label={t('gatewayRoutesPage.parentGatewayNamespace')}>
                   <Input {...form.register('parentGatewayNamespace')} placeholder={t('gatewayRoutesPage.parentGatewayNamespacePlaceholder')} />
-                </Field>
-                <Field hint={t('gatewayRoutesPage.sectionNameHint')} label={t('gatewayRoutesPage.sectionName')}>
-                  <Input {...form.register('sectionName')} placeholder={t('gatewayRoutesPage.sectionNamePlaceholder')} />
                 </Field>
                 <Field hint={t('gatewayRoutesPage.pathMatchTypeHint')} label={t('gatewayRoutesPage.pathMatchType')}>
                   <Select {...form.register('pathMatchType')}>

@@ -21,6 +21,11 @@
   },
   {
     "type": "file",
+    "name": "external-compatibility",
+    "label": "External Compatibility"
+  },
+  {
+    "type": "file",
     "name": "billing",
     "label": "Billing and Spend"
   },

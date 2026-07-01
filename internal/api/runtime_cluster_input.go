@@ -59,10 +59,15 @@ func (h *Handlers) runtimeClusterFromInput(ctx *gin.Context, user model.User, in
 		GatewayProvider:               normalizeGatewayProvider(input.GatewayProvider),
 		GatewayRootDomain:             normalizeGatewayRootDomain(input.GatewayRootDomain, h.legacyGatewayRootDomain()),
 		GatewayPublicScheme:           normalizeGatewayPublicScheme(input.GatewayPublicScheme),
+		GatewayPublicPort:             normalizeGatewayPublicPort(input.GatewayPublicPort, input.GatewayPublicScheme),
 		GatewayControllerType:         normalizeGatewayControllerType(input.GatewayControllerType),
 		GatewayClassName:              fallback(strings.TrimSpace(input.GatewayClassName), "traefik"),
 		GatewayName:                   fallback(dnsLabelName(input.GatewayName), "liteyuki-gateway"),
 		GatewayNamespace:              fallback(dnsLabelName(input.GatewayNamespace), "kube-system"),
+		GatewayHTTPListenerName:       fallback(dnsLabelName(input.GatewayHTTPListenerName), "web"),
+		GatewayHTTPListenerPort:       normalizePort(input.GatewayHTTPListenerPort, 8080),
+		GatewayHTTPSListenerName:      fallback(dnsLabelName(input.GatewayHTTPSListenerName), "websecure"),
+		GatewayHTTPSListenerPort:      normalizePort(input.GatewayHTTPSListenerPort, 8443),
 		GatewayExternalTLSMode:        normalizeGatewayExternalTLSMode(input.GatewayExternalTLSMode),
 		GatewayForwardedHeadersMode:   normalizeGatewayForwardedHeadersMode(input.GatewayForwardedHeadersMode),
 		GatewayTrustedProxyCIDRs:      strings.TrimSpace(input.GatewayTrustedProxyCIDRs),
@@ -129,10 +134,15 @@ type runtimeClusterInput struct {
 	GatewayProvider               string   `json:"gatewayProvider"`
 	GatewayRootDomain             string   `json:"gatewayRootDomain"`
 	GatewayPublicScheme           string   `json:"gatewayPublicScheme"`
+	GatewayPublicPort             int      `json:"gatewayPublicPort"`
 	GatewayControllerType         string   `json:"gatewayControllerType"`
 	GatewayClassName              string   `json:"gatewayClassName"`
 	GatewayName                   string   `json:"gatewayName"`
 	GatewayNamespace              string   `json:"gatewayNamespace"`
+	GatewayHTTPListenerName       string   `json:"gatewayHttpListenerName"`
+	GatewayHTTPListenerPort       int      `json:"gatewayHttpListenerPort"`
+	GatewayHTTPSListenerName      string   `json:"gatewayHttpsListenerName"`
+	GatewayHTTPSListenerPort      int      `json:"gatewayHttpsListenerPort"`
 	GatewayExternalTLSMode        string   `json:"gatewayExternalTLSMode"`
 	GatewayForwardedHeadersMode   string   `json:"gatewayForwardedHeadersMode"`
 	GatewayTrustedProxyCIDRs      string   `json:"gatewayTrustedProxyCIDRs"`
@@ -157,6 +167,20 @@ func normalizeGatewayPublicScheme(value string) string {
 		return "https"
 	}
 	return "http"
+}
+
+func normalizePort(value int, fallbackValue int) int {
+	if value >= 1 && value <= 65535 {
+		return value
+	}
+	return fallbackValue
+}
+
+func normalizeGatewayPublicPort(value int, scheme string) int {
+	if normalizeGatewayPublicScheme(scheme) == "https" {
+		return normalizePort(value, 443)
+	}
+	return normalizePort(value, 80)
 }
 
 func normalizeGatewayProvider(value string) string {

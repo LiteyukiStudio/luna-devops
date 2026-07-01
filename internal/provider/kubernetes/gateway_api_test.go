@@ -58,6 +58,15 @@ func TestApplyGatewayAPIResourcesCreatesGatewayAndHTTPRoute(t *testing.T) {
 	if gatewaySpec["gatewayClassName"] != "traefik" {
 		t.Fatalf("gateway spec = %#v", gatewaySpec)
 	}
+	listeners := gatewaySpec["listeners"].([]any)
+	if len(listeners) != 2 {
+		t.Fatalf("listeners = %#v", listeners)
+	}
+	firstListener := listeners[0].(map[string]any)
+	secondListener := listeners[1].(map[string]any)
+	if firstListener["name"] != "web" || firstListener["port"] != int64(8080) || secondListener["name"] != "websecure" || secondListener["port"] != int64(8443) {
+		t.Fatalf("listeners = %#v", listeners)
+	}
 
 	route, err := client.dynamic.Resource(httpRouteGVR).Namespace("ns-demo").Get(context.Background(), "liteyuki-gateway-gwr-demo", metav1.GetOptions{})
 	if err != nil {

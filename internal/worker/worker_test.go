@@ -451,6 +451,27 @@ func TestHTTPRouteSpecTargetsApplicationService(t *testing.T) {
 	if spec.ParentGatewayName != "liteyuki-gateway" || spec.ParentGatewayNamespace != "kube-system" {
 		t.Fatalf("parent gateway = %s/%s", spec.ParentGatewayNamespace, spec.ParentGatewayName)
 	}
+	if spec.SectionName != "web" {
+		t.Fatalf("section name = %q", spec.SectionName)
+	}
+}
+
+func TestHTTPRouteSpecDefaultsHTTPSSectionNameFromCluster(t *testing.T) {
+	spec, err := httpRouteSpec(
+		model.GatewayRoute{ID: "gwr_1", Host: "api.example.com", ServicePort: 3000},
+		model.Project{ID: "prj_demo"},
+		model.Application{Slug: "api"},
+		model.Environment{Slug: "dev"},
+		model.RuntimeCluster{GatewayPublicScheme: "https", GatewayHTTPSListenerName: "secure-internal"},
+		"project-demo",
+		"",
+	)
+	if err != nil {
+		t.Fatalf("httpRouteSpec returned error: %v", err)
+	}
+	if spec.SectionName != "secure-internal" {
+		t.Fatalf("section name = %q", spec.SectionName)
+	}
 }
 
 func TestHTTPRouteSpecDefaultsBackendWeight(t *testing.T) {

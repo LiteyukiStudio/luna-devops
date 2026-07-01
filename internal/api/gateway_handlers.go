@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -259,7 +260,7 @@ func (h *Handlers) gatewayRouteFromInput(ctx *gin.Context, project model.Project
 		writeError(ctx, http.StatusBadRequest, "访问入口端口必须来自部署配置的服务端口列表")
 		return model.GatewayRoute{}, false
 	}
-	advanced, ok := h.gatewayRouteAdvancedConfig(ctx, project.ID, user, input)
+	advanced, ok := h.gatewayRouteAdvancedConfig(ctx, project.ID, user, cluster, input)
 	if !ok {
 		return model.GatewayRoute{}, false
 	}
@@ -313,11 +314,16 @@ type gatewayRouteAdvancedConfig struct {
 	HostnameAliases        string
 }
 
-func (h *Handlers) gatewayRouteAdvancedConfig(ctx *gin.Context, projectID string, user model.User, input gatewayRouteInput) (gatewayRouteAdvancedConfig, bool) {
+func (h *Handlers) gatewayRouteAdvancedConfig(ctx *gin.Context, projectID string, user model.User, cluster model.RuntimeCluster, input gatewayRouteInput) (gatewayRouteAdvancedConfig, bool) {
+	sectionName, err := normalizeGatewayRouteSectionName(input.SectionName, cluster)
+	if err != nil {
+		writeError(ctx, http.StatusBadRequest, err.Error())
+		return gatewayRouteAdvancedConfig{}, false
+	}
 	config := gatewayRouteAdvancedConfig{
 		ParentGatewayName:      dnsLabelName(input.ParentGatewayName),
 		ParentGatewayNamespace: dnsLabelName(input.ParentGatewayNamespace),
-		SectionName:            strings.TrimSpace(input.SectionName),
+		SectionName:            sectionName,
 		PathMatchType:          normalizeHTTPRoutePathMatchType(input.PathMatchType),
 		RequestHeaders:         strings.TrimSpace(input.RequestHeaders),
 		ResponseHeaders:        strings.TrimSpace(input.ResponseHeaders),
@@ -330,7 +336,7 @@ func (h *Handlers) gatewayRouteAdvancedConfig(ctx *gin.Context, projectID string
 		return config, true
 	}
 	projectAdmin := user.Role == "platform_admin" || h.currentProjectRoleAllows(ctx, projectID, user.ID, "owner", "admin")
-	if !projectAdmin {
+	if gatewayAdvancedConfigRequiresProjectAdmin(config) && !projectAdmin {
 		writeError(ctx, http.StatusForbidden, "只有项目 Owner/Admin 可以维护访问入口高级配置")
 		return gatewayRouteAdvancedConfig{}, false
 	}
@@ -356,6 +362,34 @@ func (h *Handlers) gatewayRouteAdvancedConfig(ctx *gin.Context, projectID string
 		return gatewayRouteAdvancedConfig{}, false
 	}
 	return config, true
+}
+
+func normalizeGatewayRouteSectionName(value string, cluster model.RuntimeCluster) (string, error) {
+	sectionName := dnsLabelName(value)
+	if sectionName == "" {
+		return "", nil
+	}
+	for _, allowed := range []string{
+		fallback(dnsLabelName(cluster.GatewayHTTPListenerName), "web"),
+		fallback(dnsLabelName(cluster.GatewayHTTPSListenerName), "websecure"),
+	} {
+		if sectionName == allowed {
+			return sectionName, nil
+		}
+	}
+	return "", fmt.Errorf("Listener Section 只能选择当前集群的 %s 或 %s", fallback(cluster.GatewayHTTPListenerName, "web"), fallback(cluster.GatewayHTTPSListenerName, "websecure"))
+}
+
+func gatewayAdvancedConfigRequiresProjectAdmin(config gatewayRouteAdvancedConfig) bool {
+	return config.ParentGatewayName != "" ||
+		config.ParentGatewayNamespace != "" ||
+		config.PathMatchType != "PathPrefix" ||
+		config.RequestHeaders != "" ||
+		config.ResponseHeaders != "" ||
+		config.URLRewrite != "" ||
+		config.RequestRedirect != "" ||
+		config.BackendWeight != 1 ||
+		config.HostnameAliases != ""
 }
 
 func gatewayAdvancedConfigPresent(config gatewayRouteAdvancedConfig) bool {
@@ -513,6 +547,13 @@ func (h *Handlers) gatewayPublicScheme(cluster model.RuntimeCluster) string {
 	return normalizeGatewayPublicScheme(cluster.GatewayPublicScheme)
 }
 
+func (h *Handlers) gatewayPublicPort(cluster model.RuntimeCluster) int {
+	if h.gatewayPublicScheme(cluster) == "https" {
+		return normalizePort(cluster.GatewayPublicPort, 443)
+	}
+	return normalizePort(cluster.GatewayPublicPort, 80)
+}
+
 func (h *Handlers) legacyGatewayRootDomain() string {
 	return strings.Trim(strings.ToLower(strings.TrimSpace(h.configValue("gateway.rootDomain"))), ".")
 }
@@ -520,10 +561,10 @@ func (h *Handlers) legacyGatewayRootDomain() string {
 func (h *Handlers) gatewayRouteWithAccessURL(route model.GatewayRoute) model.GatewayRoute {
 	cluster, err := h.runtimeClusterForGatewayRoute(route)
 	if err != nil {
-		route.AccessURL = gatewayRouteAccessURL(route, normalizeGatewayPublicScheme(h.configValue("gateway.publicScheme")))
+		route.AccessURL = gatewayRouteAccessURL(route, normalizeGatewayPublicScheme(h.configValue("gateway.publicScheme")), 0)
 		return route
 	}
-	route.AccessURL = gatewayRouteAccessURL(route, h.gatewayPublicScheme(cluster))
+	route.AccessURL = gatewayRouteAccessURL(route, h.gatewayPublicScheme(cluster), h.gatewayPublicPort(cluster))
 	return route
 }
 
@@ -535,7 +576,7 @@ func (h *Handlers) gatewayRoutesWithAccessURL(routes []model.GatewayRoute) []mod
 	return result
 }
 
-func gatewayRouteAccessURL(route model.GatewayRoute, scheme string) string {
+func gatewayRouteAccessURL(route model.GatewayRoute, scheme string, publicPort int) string {
 	host := strings.TrimSpace(route.Host)
 	if host == "" {
 		return ""
@@ -553,7 +594,17 @@ func gatewayRouteAccessURL(route model.GatewayRoute, scheme string) string {
 	if pathValue == "/" {
 		pathValue = ""
 	}
+	if shouldShowGatewayPublicPort(scheme, publicPort) {
+		host = net.JoinHostPort(host, strconv.Itoa(publicPort))
+	}
 	return (&url.URL{Scheme: scheme, Host: host, Path: pathValue}).String()
+}
+
+func shouldShowGatewayPublicPort(scheme string, publicPort int) bool {
+	if publicPort <= 0 {
+		return false
+	}
+	return !(scheme == "https" && publicPort == 443) && !(scheme == "http" && publicPort == 80)
 }
 
 func (h *Handlers) gatewayHostExists(host, routeID string) bool {

@@ -97,10 +97,15 @@ func (h *Handlers) UpdateRuntimeCluster(ctx *gin.Context) {
 	existing.GatewayProvider = next.GatewayProvider
 	existing.GatewayRootDomain = next.GatewayRootDomain
 	existing.GatewayPublicScheme = next.GatewayPublicScheme
+	existing.GatewayPublicPort = next.GatewayPublicPort
 	existing.GatewayControllerType = next.GatewayControllerType
 	existing.GatewayClassName = next.GatewayClassName
 	existing.GatewayName = next.GatewayName
 	existing.GatewayNamespace = next.GatewayNamespace
+	existing.GatewayHTTPListenerName = next.GatewayHTTPListenerName
+	existing.GatewayHTTPListenerPort = next.GatewayHTTPListenerPort
+	existing.GatewayHTTPSListenerName = next.GatewayHTTPSListenerName
+	existing.GatewayHTTPSListenerPort = next.GatewayHTTPSListenerPort
 	existing.GatewayExternalTLSMode = next.GatewayExternalTLSMode
 	existing.GatewayForwardedHeadersMode = next.GatewayForwardedHeadersMode
 	existing.GatewayTrustedProxyCIDRs = next.GatewayTrustedProxyCIDRs
