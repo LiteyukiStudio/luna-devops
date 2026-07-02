@@ -3,7 +3,7 @@ import type { BillingDeploymentSpend, BillingLedgerEntry, BillingUsageRecord, Pr
 import type { DataListColumn } from '@/components/common/data-list'
 import type { StatusTone } from '@/components/common/status-tone'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, Coins, CreditCard, Plus, TrendingDown, WalletCards } from 'lucide-react'
+import { AlertTriangle, CalendarDays, Coins, CreditCard, Plus, TrendingDown, WalletCards } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -27,6 +27,13 @@ import { cn } from '@/lib/utils'
 
 const PAGE_SIZE = 10
 const BILLING_PROJECT_SCOPE_CACHE_KEY = 'liteyuki.billing.projectScope'
+type BillingPeriodPreset = 'thisWeek' | 'last7Days' | 'thisMonth' | 'last30Days' | 'thisYear' | 'lastYear' | 'custom'
+
+interface BillingPeriodSelection {
+  endDate: string
+  preset: BillingPeriodPreset
+  startDate: string
+}
 
 export function BillingPage() {
   const { i18n, t } = useTranslation()
@@ -35,6 +42,7 @@ export function BillingPage() {
   const billingDisplay = useBillingDisplay(i18n.language)
   const [activeTab, setActiveTab] = useState('deployment-spend')
   const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>(readCachedBillingProjectScope)
+  const [billingPeriod, setBillingPeriod] = useState<BillingPeriodSelection>(() => periodSelectionForPreset('thisMonth'))
   const [deploymentSpendPage, setDeploymentSpendPage] = useState(1)
   const [ledgerPage, setLedgerPage] = useState(1)
   const [usagePage, setUsagePage] = useState(1)
@@ -52,6 +60,7 @@ export function BillingPage() {
   const projectItems = useMemo(() => projectsQuery.data?.items ?? [], [projectsQuery.data?.items])
   const projectMap = useMemo(() => new Map(projectItems.map(project => [project.id, project])), [projectItems])
   const projectIds = selectedProjectIds.length > 0 ? selectedProjectIds : undefined
+  const billingPeriodQuery = useMemo(() => billingPeriodToQuery(billingPeriod), [billingPeriod])
   const usersQuery = useQuery({
     enabled: canManageBilling,
     queryKey: ['billing', 'users'],
@@ -60,38 +69,41 @@ export function BillingPage() {
   const userItems = useMemo(() => usersQuery.data?.items ?? [], [usersQuery.data?.items])
 
   const accountSummaryQuery = useQuery({
-    queryKey: ['billing', 'summary', 'account'],
-    queryFn: () => api.getBillingSummary(),
+    queryKey: ['billing', 'summary', 'account', billingPeriodQuery],
+    queryFn: () => api.getBillingSummary(undefined, billingPeriodQuery),
   })
   const scopedSummaryQuery = useQuery({
-    queryKey: ['billing', 'summary', 'scope', selectedProjectIds],
-    queryFn: () => api.getBillingSummary(projectIds),
+    queryKey: ['billing', 'summary', 'scope', selectedProjectIds, billingPeriodQuery],
+    queryFn: () => api.getBillingSummary(projectIds, billingPeriodQuery),
   })
   const deploymentSpendQuery = useQuery({
-    queryKey: ['billing', 'deployment-spend', selectedProjectIds, deploymentSpendPage],
+    queryKey: ['billing', 'deployment-spend', selectedProjectIds, billingPeriodQuery, deploymentSpendPage],
     queryFn: () => api.listBillingDeploymentSpend({
       page: deploymentSpendPage,
       pageSize: PAGE_SIZE,
+      ...billingPeriodQuery,
       projectIds,
       sortBy: 'amountCredits',
       sortOrder: 'desc',
     }),
   })
   const ledgerQuery = useQuery({
-    queryKey: ['billing', 'ledger', selectedProjectIds, ledgerPage],
+    queryKey: ['billing', 'ledger', selectedProjectIds, billingPeriodQuery, ledgerPage],
     queryFn: () => api.listBillingLedgerEntries({
       page: ledgerPage,
       pageSize: PAGE_SIZE,
+      ...billingPeriodQuery,
       projectIds,
       sortBy: 'createdAt',
       sortOrder: 'desc',
     }),
   })
   const usageQuery = useQuery({
-    queryKey: ['billing', 'usage', selectedProjectIds, usagePage],
+    queryKey: ['billing', 'usage', selectedProjectIds, billingPeriodQuery, usagePage],
     queryFn: () => api.listBillingUsageRecords({
       page: usagePage,
       pageSize: PAGE_SIZE,
+      ...billingPeriodQuery,
       projectIds,
       sortBy: 'createdAt',
       sortOrder: 'desc',
@@ -122,12 +134,20 @@ export function BillingPage() {
     setUsagePage(1)
   }
 
+  function handlePeriodChange(period: BillingPeriodSelection) {
+    setBillingPeriod(period)
+    setDeploymentSpendPage(1)
+    setLedgerPage(1)
+    setUsagePage(1)
+  }
+
   const accountSummary = accountSummaryQuery.data
   const scopedSummary = scopedSummaryQuery.data
   const balanceStatus = normalizeBalanceStatus(accountSummary?.balanceStatus)
 
   const billingScopeTools = (
     <>
+      <BillingPeriodPicker period={billingPeriod} onChange={handlePeriodChange} />
       <div className="w-full sm:w-80">
         <ProjectSpaceMultiSelect
           disabled={projectsQuery.isLoading}
@@ -366,41 +386,41 @@ export function BillingPage() {
           value={billingDisplay.formatAmountWithUnit(accountSummary?.balanceCredits)}
         />
         <MetricCard
-          fiatValue={canManageBilling ? billingDisplay.formatFiatAmount(accountSummary?.todaySpend) : ''}
+          fiatValue={canManageBilling ? billingDisplay.formatFiatAmount(scopedSummary?.periodSpend) : ''}
           icon={<TrendingDown className="size-5" />}
-          label={t('billingPage.todaySpend')}
-          loading={accountSummaryQuery.isLoading}
-          value={billingDisplay.formatAmountWithUnit(accountSummary?.todaySpend)}
+          label={t('billingPage.periodSpend')}
+          loading={scopedSummaryQuery.isLoading}
+          value={billingDisplay.formatAmountWithUnit(scopedSummary?.periodSpend)}
         />
         <MetricCard
-          fiatValue={canManageBilling ? billingDisplay.formatFiatAmount(accountSummary?.monthSpend) : ''}
+          fiatValue={canManageBilling ? billingDisplay.formatFiatAmount(scopedSummary?.todaySpend) : ''}
           icon={<CreditCard className="size-5" />}
-          label={t('billingPage.monthSpend')}
-          loading={accountSummaryQuery.isLoading}
-          value={billingDisplay.formatAmountWithUnit(accountSummary?.monthSpend)}
+          label={t('billingPage.todaySpend')}
+          loading={scopedSummaryQuery.isLoading}
+          value={billingDisplay.formatAmountWithUnit(scopedSummary?.todaySpend)}
         />
         <MetricCard
-          fiatValue={canManageBilling ? billingDisplay.formatFiatAmount(accountSummary?.pendingSpend) : ''}
+          fiatValue={canManageBilling ? billingDisplay.formatFiatAmount(scopedSummary?.pendingSpend) : ''}
           icon={<WalletCards className="size-5" />}
           label={t('billingPage.pendingSpend')}
-          loading={accountSummaryQuery.isLoading}
-          value={billingDisplay.formatAmountWithUnit(accountSummary?.pendingSpend)}
+          loading={scopedSummaryQuery.isLoading}
+          value={billingDisplay.formatAmountWithUnit(scopedSummary?.pendingSpend)}
         />
       </div>
 
       <Card className="rounded-lg p-5">
         <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
-            <h3 className="text-base font-semibold text-foreground">{t('billingPage.monthlyCategoriesTitle')}</h3>
-            <p className="text-sm text-muted-foreground">{t('billingPage.monthlyCategoriesDescription')}</p>
+            <h3 className="text-base font-semibold text-foreground">{t('billingPage.periodCategoriesTitle')}</h3>
+            <p className="text-sm text-muted-foreground">{t('billingPage.periodCategoriesDescription', { period: periodRangeLabel(billingPeriod, i18n.language) })}</p>
           </div>
           <StatusBadge tone={balanceStatusTone(balanceStatus)}>
             {t(`billingPage.balanceStatuses.${balanceStatus}`)}
           </StatusBadge>
         </div>
         <div className="mt-4 grid min-h-[5.75rem] gap-3 md:grid-cols-3 xl:grid-cols-6">
-          {(scopedSummary?.monthlyCategories?.length ?? 0) > 0
-            ? (scopedSummary?.monthlyCategories ?? []).map(category => (
+          {(scopedSummary?.periodCategories?.length ?? 0) > 0
+            ? (scopedSummary?.periodCategories ?? []).map(category => (
                 <div key={category.category} className="min-w-0 rounded-md border border-border bg-muted/20 p-3">
                   <p className="truncate text-xs text-muted-foreground">
                     {t(`billingPage.categories.${category.category}`, { defaultValue: category.category })}
@@ -412,7 +432,7 @@ export function BillingPage() {
               ))
             : (
                 <div className="flex min-h-[5.75rem] items-center rounded-md border border-dashed border-border bg-muted/10 px-4 text-sm text-muted-foreground md:col-span-3 xl:col-span-6">
-                  {scopedSummaryQuery.isFetching ? t('common.loading') : t('billingPage.emptyMonthlyCategories')}
+                  {scopedSummaryQuery.isFetching ? t('common.loading') : t('billingPage.emptyPeriodCategories')}
                 </div>
               )}
         </div>
@@ -556,6 +576,79 @@ export function BillingPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  )
+}
+
+function BillingPeriodPicker({
+  period,
+  onChange,
+}: {
+  period: BillingPeriodSelection
+  onChange: (period: BillingPeriodSelection) => void
+}) {
+  const { i18n, t } = useTranslation()
+  const presets: BillingPeriodPreset[] = ['thisWeek', 'last7Days', 'thisMonth', 'last30Days', 'thisYear', 'lastYear']
+
+  const updateDate = (field: 'startDate' | 'endDate', value: string) => {
+    if (!value)
+      return
+    const next = { ...period, [field]: value, preset: 'custom' as const }
+    if (next.startDate > next.endDate) {
+      if (field === 'startDate')
+        next.endDate = value
+      else
+        next.startDate = value
+    }
+    onChange(next)
+  }
+
+  return (
+    <div className="flex w-full min-w-0 flex-col gap-2 rounded-lg border border-border bg-surface/80 p-2 sm:w-auto sm:min-w-[28rem]">
+      <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
+        <Select
+          value={period.preset}
+          onValueChange={(value) => {
+            if (value === 'custom')
+              onChange({ ...period, preset: 'custom' })
+            else
+              onChange(periodSelectionForPreset(value as BillingPeriodPreset))
+          }}
+        >
+          <SelectTrigger className="h-9 rounded-lg sm:w-44">
+            <CalendarDays className="size-4 shrink-0 text-muted-foreground" />
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {presets.map(preset => (
+              <SelectItem key={preset} value={preset}>{t(`billingPage.periodPresets.${preset}`)}</SelectItem>
+            ))}
+            <SelectItem value="custom">{t('billingPage.periodPresets.custom')}</SelectItem>
+          </SelectContent>
+        </Select>
+        <div className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
+          <Input
+            aria-label={t('billingPage.periodStartDate')}
+            className="h-9 rounded-lg px-3"
+            max={period.endDate}
+            type="date"
+            value={period.startDate}
+            onChange={event => updateDate('startDate', event.target.value)}
+          />
+          <span className="text-xs text-muted-foreground">{t('billingPage.periodSeparator')}</span>
+          <Input
+            aria-label={t('billingPage.periodEndDate')}
+            className="h-9 rounded-lg px-3"
+            min={period.startDate}
+            type="date"
+            value={period.endDate}
+            onChange={event => updateDate('endDate', event.target.value)}
+          />
+        </div>
+      </div>
+      <p className="truncate px-1 text-xs text-muted-foreground">
+        {t('billingPage.selectedPeriod', { period: periodRangeLabel(period, i18n.language) })}
+      </p>
     </div>
   )
 }
@@ -727,4 +820,87 @@ function writeCachedBillingProjectScope(projectIds: string[]) {
   catch {
     // Ignore storage errors so private mode or quota issues do not break billing.
   }
+}
+
+function periodSelectionForPreset(preset: BillingPeriodPreset): BillingPeriodSelection {
+  const today = startOfLocalDay(new Date())
+  const tomorrow = addDays(today, 1)
+  switch (preset) {
+    case 'thisWeek':
+      return periodSelection(preset, startOfLocalWeek(today), today)
+    case 'last7Days':
+      return periodSelection(preset, addDays(today, -6), today)
+    case 'last30Days':
+      return periodSelection(preset, addDays(today, -29), today)
+    case 'thisYear':
+      return periodSelection(preset, new Date(today.getFullYear(), 0, 1), today)
+    case 'lastYear':
+      return periodSelection(preset, new Date(today.getFullYear() - 1, 0, 1), addDays(new Date(today.getFullYear(), 0, 1), -1))
+    case 'custom':
+    case 'thisMonth':
+    default:
+      return {
+        endDate: formatDateInput(addDays(tomorrow, -1)),
+        preset: 'thisMonth',
+        startDate: formatDateInput(new Date(today.getFullYear(), today.getMonth(), 1)),
+      }
+  }
+}
+
+function periodSelection(preset: BillingPeriodPreset, start: Date, endInclusive: Date): BillingPeriodSelection {
+  return {
+    endDate: formatDateInput(endInclusive),
+    preset,
+    startDate: formatDateInput(start),
+  }
+}
+
+function billingPeriodToQuery(period: BillingPeriodSelection) {
+  const start = parseDateInput(period.startDate)
+  const endInclusive = parseDateInput(period.endDate)
+  if (!start || !endInclusive)
+    return {}
+  const endExclusive = addDays(endInclusive, 1)
+  return {
+    periodEnd: endExclusive.toISOString(),
+    periodStart: start.toISOString(),
+  }
+}
+
+function periodRangeLabel(period: BillingPeriodSelection, locale: string) {
+  const start = parseDateInput(period.startDate)
+  const end = parseDateInput(period.endDate)
+  if (!start || !end)
+    return ''
+  const formatter = new Intl.DateTimeFormat(locale, { day: '2-digit', month: 'short', year: 'numeric' })
+  return `${formatter.format(start)} - ${formatter.format(end)}`
+}
+
+function startOfLocalDay(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate())
+}
+
+function startOfLocalWeek(date: Date) {
+  const dayOffset = (date.getDay() + 6) % 7
+  return addDays(startOfLocalDay(date), -dayOffset)
+}
+
+function addDays(date: Date, days: number) {
+  const next = new Date(date)
+  next.setDate(next.getDate() + days)
+  return next
+}
+
+function formatDateInput(date: Date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function parseDateInput(value: string) {
+  const [year, month, day] = value.split('-').map(part => Number.parseInt(part, 10))
+  if (!year || !month || !day)
+    return undefined
+  return new Date(year, month - 1, day)
 }

@@ -88,11 +88,13 @@ type ProjectBillingSummary struct {
 	BalanceCredits    decimal.Decimal        `json:"balanceCredits"`
 	TodaySpend        decimal.Decimal        `json:"todaySpend"`
 	MonthSpend        decimal.Decimal        `json:"monthSpend"`
+	PeriodSpend       decimal.Decimal        `json:"periodSpend"`
 	PendingSpend      decimal.Decimal        `json:"pendingSpend"`
 	AvailableCredits  decimal.Decimal        `json:"availableCredits"`
 	LowBalanceLimit   decimal.Decimal        `json:"lowBalanceLimit"`
 	BalanceStatus     string                 `json:"balanceStatus"`
 	MonthlyCategories []BillingSpendCategory `json:"monthlyCategories"`
+	PeriodCategories  []BillingSpendCategory `json:"periodCategories"`
 }
 
 type BillingSpendCategory struct {
@@ -634,7 +636,7 @@ func (s Service) EnsureWallet(userID string) (model.UserWallet, error) {
 	return wallet, err
 }
 
-func (s Service) Summary(userIDs []string, projectIDs []string, now time.Time, lowBalanceLimit decimal.Decimal) (ProjectBillingSummary, error) {
+func (s Service) Summary(userIDs []string, projectIDs []string, now time.Time, lowBalanceLimit decimal.Decimal, periodStart *time.Time, periodEnd *time.Time) (ProjectBillingSummary, error) {
 	summary := ProjectBillingSummary{LowBalanceLimit: lowBalanceLimit, BalanceStatus: "ok"}
 	if len(userIDs) == 0 {
 		return summary, nil
@@ -653,15 +655,36 @@ func (s Service) Summary(userIDs []string, projectIDs []string, now time.Time, l
 	summary.PendingSpend = s.pendingSpend(userIDs, projectIDs)
 	summary.AvailableCredits = summary.BalanceCredits.Sub(summary.PendingSpend)
 	summary.BalanceStatus = balanceStatus(summary.AvailableCredits, lowBalanceLimit)
-	summary.MonthlyCategories = s.monthlyCategories(userIDs, projectIDs, monthStart)
+	summary.MonthlyCategories = s.spendCategories(userIDs, projectIDs, &monthStart, nil)
+	if periodStart != nil && periodEnd != nil {
+		summary.PeriodSpend = s.spendBetween(userIDs, projectIDs, *periodStart, *periodEnd)
+		summary.PeriodCategories = s.spendCategories(userIDs, projectIDs, periodStart, periodEnd)
+	} else {
+		summary.PeriodSpend = summary.MonthSpend
+		summary.PeriodCategories = summary.MonthlyCategories
+	}
 	return summary, nil
 }
 
 func (s Service) spendSince(userIDs []string, projectIDs []string, since time.Time) decimal.Decimal {
+	return s.spendWithPeriod(userIDs, projectIDs, &since, nil)
+}
+
+func (s Service) spendBetween(userIDs []string, projectIDs []string, start time.Time, end time.Time) decimal.Decimal {
+	return s.spendWithPeriod(userIDs, projectIDs, &start, &end)
+}
+
+func (s Service) spendWithPeriod(userIDs []string, projectIDs []string, start *time.Time, end *time.Time) decimal.Decimal {
 	var entries []model.BillingLedgerEntry
-	query := s.DB.Where("user_id in ? and type = ? and created_at >= ?", userIDs, "debit", since)
+	query := s.DB.Where("user_id in ? and type = ?", userIDs, "debit")
 	if len(projectIDs) > 0 {
 		query = query.Where("project_id in ?", projectIDs)
+	}
+	if start != nil {
+		query = query.Where("created_at >= ?", *start)
+	}
+	if end != nil {
+		query = query.Where("created_at < ?", *end)
 	}
 	if err := query.Find(&entries).Error; err != nil {
 		return decimal.Zero
@@ -689,11 +712,17 @@ func (s Service) pendingSpend(userIDs []string, projectIDs []string) decimal.Dec
 	return total
 }
 
-func (s Service) monthlyCategories(userIDs []string, projectIDs []string, monthStart time.Time) []BillingSpendCategory {
+func (s Service) spendCategories(userIDs []string, projectIDs []string, start *time.Time, end *time.Time) []BillingSpendCategory {
 	var entries []model.BillingLedgerEntry
-	query := s.DB.Where("user_id in ? and type = ? and created_at >= ?", userIDs, "debit", monthStart)
+	query := s.DB.Where("user_id in ? and type = ?", userIDs, "debit")
 	if len(projectIDs) > 0 {
 		query = query.Where("project_id in ?", projectIDs)
+	}
+	if start != nil {
+		query = query.Where("created_at >= ?", *start)
+	}
+	if end != nil {
+		query = query.Where("created_at < ?", *end)
 	}
 	if err := query.Find(&entries).Error; err != nil {
 		return nil

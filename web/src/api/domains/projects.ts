@@ -1,4 +1,4 @@
-import type { AppTemplate, AppTemplateInstallPayload, AppTemplateInstallResponse, BillingDeploymentSpend, BillingLedgerEntry, BillingListParams, BillingRateRule, BillingRateRulePayload, BillingSummary, BillingUsageRecord, BillingUsageSettlementResult, BillingWalletTransactionPayload, GatewayTrafficUsagePayload, PaginatedResponse, PaginationParams, Project, ProjectListParams, ProjectMember, ProjectMemberCandidate, ProjectPin } from '../types'
+import type { AppTemplate, AppTemplateInstallPayload, AppTemplateInstallResponse, BillingDeploymentSpend, BillingLedgerEntry, BillingListParams, BillingPeriodParams, BillingRateRule, BillingRateRulePayload, BillingSummary, BillingUsageRecord, BillingUsageSettlementResult, BillingWalletTransactionPayload, GatewayTrafficUsagePayload, PaginatedResponse, PaginationParams, Project, ProjectListParams, ProjectMember, ProjectMemberCandidate, ProjectPin } from '../types'
 import { billingQuery, billingSummaryQuery, paginationQuery, request } from '../core'
 
 export const projectsApi = {
@@ -8,8 +8,8 @@ export const projectsApi = {
   listAppTemplates: () => request<AppTemplate[]>('/app-templates'),
   installAppTemplate: (projectId: string, templateId: string, payload: AppTemplateInstallPayload) =>
     request<AppTemplateInstallResponse>(`/projects/${projectId}/app-templates/${encodeURIComponent(templateId)}/install`, { method: 'POST', body: JSON.stringify(payload) }),
-  getBillingSummary: (projectIds?: string[]) =>
-    request<BillingSummary>(`/billing/summary${billingSummaryQuery(projectIds)}`),
+  getBillingSummary: (projectIds?: string[], period?: BillingPeriodParams) =>
+    request<BillingSummary>(`/billing/summary${billingSummaryQuery(projectIds, period)}`),
   listBillingDeploymentSpend: (params: BillingListParams) =>
     request<PaginatedResponse<BillingDeploymentSpend>>(`/billing/deployment-spend?${billingQuery(params)}`),
   listBillingLedgerEntries: (params: BillingListParams) =>

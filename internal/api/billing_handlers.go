@@ -26,7 +26,11 @@ func (h *Handlers) GetBillingSummary(ctx *gin.Context) {
 	if configuredLimit, err := decimal.NewFromString(strings.TrimSpace(h.configs.get([]string{"billing.lowBalanceThresholdCredits"})["billing.lowBalanceThresholdCredits"])); err == nil && !configuredLimit.IsNegative() {
 		lowBalanceLimit = configuredLimit
 	}
-	summary, err := (billing.Service{DB: h.db}).Summary(scope.UserIDs, scope.ProjectIDs, time.Now(), lowBalanceLimit)
+	period, ok := billingPeriodFromQuery(ctx)
+	if !ok {
+		return
+	}
+	summary, err := (billing.Service{DB: h.db}).Summary(scope.UserIDs, scope.ProjectIDs, time.Now(), lowBalanceLimit, period.Start, period.End)
 	if err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
@@ -44,6 +48,10 @@ func (h *Handlers) ListBillingLedgerEntries(ctx *gin.Context) {
 		return
 	}
 	pagination := paginationFromQuery(ctx)
+	period, ok := billingPeriodFromQuery(ctx)
+	if !ok {
+		return
+	}
 	query := h.db.Table("billing_ledger_entries as ledger").Where("ledger.user_id in ?", scope.UserIDs)
 	if scope.FilterProjectIDs {
 		query = query.Where("ledger.project_id in ?", scope.ProjectIDs)
@@ -51,6 +59,7 @@ func (h *Handlers) ListBillingLedgerEntries(ctx *gin.Context) {
 	if entryType := strings.TrimSpace(ctx.Query("type")); entryType != "" {
 		query = query.Where("ledger.type = ?", entryType)
 	}
+	query = applyBillingCreatedPeriod(query, "ledger.created_at", period)
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
@@ -103,6 +112,10 @@ func (h *Handlers) ListBillingUsageRecords(ctx *gin.Context) {
 		return
 	}
 	pagination := paginationFromQuery(ctx)
+	period, ok := billingPeriodFromQuery(ctx)
+	if !ok {
+		return
+	}
 	query := h.db.Table("billing_usage_records as usage").Where("usage.billed_user_id in ?", scope.UserIDs)
 	if scope.FilterProjectIDs {
 		query = query.Where("usage.project_id in ?", scope.ProjectIDs)
@@ -110,6 +123,7 @@ func (h *Handlers) ListBillingUsageRecords(ctx *gin.Context) {
 	if meter := strings.TrimSpace(ctx.Query("meter")); meter != "" {
 		query = query.Where("usage.meter = ?", meter)
 	}
+	query = applyBillingUsagePeriod(query, period)
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
@@ -163,6 +177,10 @@ func (h *Handlers) ListBillingDeploymentSpend(ctx *gin.Context) {
 		return
 	}
 	pagination := paginationFromQuery(ctx)
+	period, ok := billingPeriodFromQuery(ctx)
+	if !ok {
+		return
+	}
 	if len(scope.UserIDs) == 0 {
 		ctx.JSON(http.StatusOK, paginatedResponse([]billingDeploymentSpendItem{}, 0, pagination))
 		return
@@ -178,6 +196,7 @@ func (h *Handlers) ListBillingDeploymentSpend(ctx *gin.Context) {
 	if scope.FilterProjectIDs {
 		grouped = grouped.Where("usage.project_id in ?", scope.ProjectIDs)
 	}
+	grouped = applyBillingUsagePeriod(grouped, period)
 	var total int64
 	if err := h.db.Table("(?) as grouped", grouped).Count(&total).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
@@ -213,6 +232,7 @@ func (h *Handlers) ListBillingDeploymentSpend(ctx *gin.Context) {
 	if scope.FilterProjectIDs {
 		query = query.Where("usage.project_id in ?", scope.ProjectIDs)
 	}
+	query = applyBillingUsagePeriod(query, period)
 	orderBy := orderByClause(pagination, map[string]string{
 		"amountCredits":        "amount_credits",
 		"projectName":          "project_name",
@@ -224,6 +244,58 @@ func (h *Handlers) ListBillingDeploymentSpend(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, paginatedResponse(items, total, pagination))
+}
+
+type billingPeriodQuery struct {
+	Start *time.Time
+	End   *time.Time
+}
+
+func billingPeriodFromQuery(ctx *gin.Context) (billingPeriodQuery, bool) {
+	rawStart := strings.TrimSpace(ctx.Query("periodStart"))
+	rawEnd := strings.TrimSpace(ctx.Query("periodEnd"))
+	if rawStart == "" && rawEnd == "" {
+		return billingPeriodQuery{}, true
+	}
+	if rawStart == "" || rawEnd == "" {
+		writeErrorCode(ctx, http.StatusBadRequest, "billing.period_required", "periodStart and periodEnd must be provided together")
+		return billingPeriodQuery{}, false
+	}
+	start, err := time.Parse(time.RFC3339, rawStart)
+	if err != nil {
+		writeErrorCode(ctx, http.StatusBadRequest, "billing.period_start_invalid", "periodStart must be RFC3339 time")
+		return billingPeriodQuery{}, false
+	}
+	end, err := time.Parse(time.RFC3339, rawEnd)
+	if err != nil {
+		writeErrorCode(ctx, http.StatusBadRequest, "billing.period_end_invalid", "periodEnd must be RFC3339 time after periodStart")
+		return billingPeriodQuery{}, false
+	}
+	if !end.After(start) {
+		writeErrorCode(ctx, http.StatusBadRequest, "billing.period_end_invalid", "periodEnd must be RFC3339 time after periodStart")
+		return billingPeriodQuery{}, false
+	}
+	return billingPeriodQuery{Start: &start, End: &end}, true
+}
+
+func applyBillingCreatedPeriod(query *gorm.DB, column string, period billingPeriodQuery) *gorm.DB {
+	if period.Start != nil {
+		query = query.Where(column+" >= ?", *period.Start)
+	}
+	if period.End != nil {
+		query = query.Where(column+" < ?", *period.End)
+	}
+	return query
+}
+
+func applyBillingUsagePeriod(query *gorm.DB, period billingPeriodQuery) *gorm.DB {
+	if period.Start != nil {
+		query = query.Where("usage.period_end > ?", *period.Start)
+	}
+	if period.End != nil {
+		query = query.Where("usage.period_start < ?", *period.End)
+	}
+	return query
 }
 
 func billingDeploymentTargetIDSQL() string {

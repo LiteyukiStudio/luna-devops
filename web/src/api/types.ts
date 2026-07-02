@@ -782,11 +782,13 @@ export interface BillingSummary {
   balanceCredits: string
   todaySpend: string
   monthSpend: string
+  periodSpend: string
   pendingSpend: string
   availableCredits: string
   lowBalanceLimit: string
   balanceStatus: 'ok' | 'low' | 'insufficient' | string
   monthlyCategories: BillingSpendCategory[]
+  periodCategories: BillingSpendCategory[]
 }
 
 export interface BillingSpendCategory {
@@ -917,6 +919,13 @@ export interface BillingListParams extends PaginationParams {
   projectIds?: string[]
   type?: string
   meter?: string
+  periodStart?: string
+  periodEnd?: string
+}
+
+export interface BillingPeriodParams {
+  periodStart?: string
+  periodEnd?: string
 }
 
 export interface PaginatedResponse<T> {
