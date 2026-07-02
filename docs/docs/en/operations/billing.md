@@ -8,7 +8,7 @@ For legacy releases without a deployment target reference, the platform backfill
 
 Legacy deployment targets without a delete status are normalized as active when they are not deleted.
 
-The top balance card is a user-account summary. Period spend, today spend, and pending spend follow the current project-space scope. The detail toolbar lets users choose both a billing period and a project-space scope. Period presets include this week, last 7 days, this month, last 30 days, this year, and last year, and users can also pick a custom date range. Spend analysis, ledger entries, usage records, and period categories are filtered by the selected period. With no project-space selection, regular users see their own billed ledger; platform administrators see all billing data.
+The top balance card is a user-account summary. Period spend, today spend, and pending spend follow the current project-space scope. The top page toolbar lets users choose both a billing period and a project-space scope. Period presets include this week, last 7 days, this month, last 30 days, this year, and last year, and users can also pick a custom date range. Spend analysis, ledger entries, usage records, and period categories are filtered by the selected period. With no project-space selection, regular users see their own billed ledger; platform administrators see all billing data.
 
 Platform administrators can also configure a real-world currency unit and conversion ratio in site settings. The top summary cards show the converted amount after credits, for example `1,012.24 Credits (1.01 CNY)`. This is display-only conversion; the ledger still settles in credits.
 

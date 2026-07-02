@@ -146,24 +146,26 @@ export function BillingPage() {
   const balanceStatus = normalizeBalanceStatus(accountSummary?.balanceStatus)
 
   const billingScopeTools = (
-    <>
-      <BillingPeriodPicker period={billingPeriod} onChange={handlePeriodChange} />
-      <div className="w-full sm:w-80">
-        <ProjectSpaceMultiSelect
-          disabled={projectsQuery.isLoading}
-          projects={projectItems}
-          value={selectedProjectIds}
-          onChange={handleProjectFilterChange}
-        />
+    <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex min-w-0 flex-1 flex-col gap-2 xl:flex-row xl:items-center">
+        <BillingPeriodPicker period={billingPeriod} onChange={handlePeriodChange} />
+        <div className="w-full sm:w-80">
+          <ProjectSpaceMultiSelect
+            disabled={projectsQuery.isLoading}
+            projects={projectItems}
+            value={selectedProjectIds}
+            onChange={handleProjectFilterChange}
+          />
+        </div>
+        {selectedProjectIds.length > 0 && (
+          <Button className="h-11 shrink-0 rounded-2xl" type="button" variant="outline" onClick={() => handleProjectFilterChange([])}>
+            {t('billingPage.clearProjectFilter')}
+          </Button>
+        )}
       </div>
-      {selectedProjectIds.length > 0 && (
-        <Button className="h-10 rounded-lg" type="button" variant="outline" onClick={() => handleProjectFilterChange([])}>
-          {t('billingPage.clearProjectFilter')}
-        </Button>
-      )}
       {canManageBilling && (
         <Button
-          className="h-10 rounded-lg"
+          className="h-11 shrink-0 rounded-2xl"
           disabled={usersQuery.isLoading || userItems.length === 0}
           type="button"
           onClick={() => {
@@ -175,7 +177,7 @@ export function BillingPage() {
           {t('billingPage.createWalletTransaction')}
         </Button>
       )}
-    </>
+    </div>
   )
 
   const deploymentSpendColumns = useMemo<DataListColumn<BillingDeploymentSpend>[]>(() => [
@@ -377,6 +379,8 @@ export function BillingPage() {
         </Card>
       )}
 
+      {billingScopeTools}
+
       <div className="grid gap-3 md:grid-cols-4">
         <MetricCard
           fiatValue={canManageBilling ? billingDisplay.formatFiatAmount(accountSummary?.balanceCredits) : ''}
@@ -444,7 +448,6 @@ export function BillingPage() {
           { label: t('billingPage.ledgerTitle'), value: 'ledger' },
           { label: t('billingPage.usageTitle'), value: 'usage' },
         ]}
-        tools={billingScopeTools}
         value={activeTab}
         onValueChange={setActiveTab}
       >
@@ -580,14 +583,8 @@ export function BillingPage() {
   )
 }
 
-function BillingPeriodPicker({
-  period,
-  onChange,
-}: {
-  period: BillingPeriodSelection
-  onChange: (period: BillingPeriodSelection) => void
-}) {
-  const { i18n, t } = useTranslation()
+function BillingPeriodPicker({ period, onChange }: { period: BillingPeriodSelection, onChange: (period: BillingPeriodSelection) => void }) {
+  const { t } = useTranslation()
   const presets: BillingPeriodPreset[] = ['thisWeek', 'last7Days', 'thisMonth', 'last30Days', 'thisYear', 'lastYear']
 
   const updateDate = (field: 'startDate' | 'endDate', value: string) => {
@@ -604,51 +601,46 @@ function BillingPeriodPicker({
   }
 
   return (
-    <div className="flex w-full min-w-0 flex-col gap-2 rounded-lg border border-border bg-surface/80 p-2 sm:w-auto sm:min-w-[28rem]">
-      <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
-        <Select
-          value={period.preset}
-          onValueChange={(value) => {
-            if (value === 'custom')
-              onChange({ ...period, preset: 'custom' })
-            else
-              onChange(periodSelectionForPreset(value as BillingPeriodPreset))
-          }}
-        >
-          <SelectTrigger className="h-9 rounded-lg sm:w-44">
-            <CalendarDays className="size-4 shrink-0 text-muted-foreground" />
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {presets.map(preset => (
-              <SelectItem key={preset} value={preset}>{t(`billingPage.periodPresets.${preset}`)}</SelectItem>
-            ))}
-            <SelectItem value="custom">{t('billingPage.periodPresets.custom')}</SelectItem>
-          </SelectContent>
-        </Select>
-        <div className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
-          <Input
-            aria-label={t('billingPage.periodStartDate')}
-            className="h-9 rounded-lg px-3"
-            max={period.endDate}
-            type="date"
-            value={period.startDate}
-            onChange={event => updateDate('startDate', event.target.value)}
-          />
-          <span className="text-xs text-muted-foreground">{t('billingPage.periodSeparator')}</span>
-          <Input
-            aria-label={t('billingPage.periodEndDate')}
-            className="h-9 rounded-lg px-3"
-            min={period.startDate}
-            type="date"
-            value={period.endDate}
-            onChange={event => updateDate('endDate', event.target.value)}
-          />
-        </div>
+    <div className="flex w-full min-w-0 flex-col gap-2 md:flex-row md:items-center xl:w-auto">
+      <Select
+        value={period.preset}
+        onValueChange={(value) => {
+          if (value === 'custom')
+            onChange({ ...period, preset: 'custom' })
+          else
+            onChange(periodSelectionForPreset(value as BillingPeriodPreset))
+        }}
+      >
+        <SelectTrigger className="!h-11 rounded-2xl md:w-40">
+          <CalendarDays className="size-4 shrink-0 text-muted-foreground" />
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {presets.map(preset => (
+            <SelectItem key={preset} value={preset}>{t(`billingPage.periodPresets.${preset}`)}</SelectItem>
+          ))}
+          <SelectItem value="custom">{t('billingPage.periodPresets.custom')}</SelectItem>
+        </SelectContent>
+      </Select>
+      <div className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 xl:w-[26rem] xl:flex-none">
+        <Input
+          aria-label={t('billingPage.periodStartDate')}
+          className="h-11 rounded-2xl px-3"
+          max={period.endDate}
+          type="date"
+          value={period.startDate}
+          onChange={event => updateDate('startDate', event.target.value)}
+        />
+        <span className="text-xs text-muted-foreground">{t('billingPage.periodSeparator')}</span>
+        <Input
+          aria-label={t('billingPage.periodEndDate')}
+          className="h-11 rounded-2xl px-3"
+          min={period.startDate}
+          type="date"
+          value={period.endDate}
+          onChange={event => updateDate('endDate', event.target.value)}
+        />
       </div>
-      <p className="truncate px-1 text-xs text-muted-foreground">
-        {t('billingPage.selectedPeriod', { period: periodRangeLabel(period, i18n.language) })}
-      </p>
     </div>
   )
 }
