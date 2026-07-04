@@ -39,13 +39,13 @@ func TestRequiredAccessTokenScopeRequiresDeploymentExecForReleaseRuntimeExec(t *
 	}
 }
 
-func TestRequiredAccessTokenScopeKeepsReleaseRuntimeLogsReadOnly(t *testing.T) {
+func TestRequiredAccessTokenScopeKeepsReleaseRuntimeLogsDeploymentReadOnly(t *testing.T) {
 	required := RequiredAccessTokenScope("/api/v1/projects/:projectId/releases/:releaseId/runtime-logs", http.MethodGet)
 
-	if required != "project:read" {
-		t.Fatalf("runtime logs required scope = %q, want project:read", required)
+	if required != "deployment:read" {
+		t.Fatalf("runtime logs required scope = %q, want deployment:read", required)
 	}
-	if !AccessTokenAllows("project:read", required) {
-		t.Fatal("expected project:read token to read runtime logs")
+	if !AccessTokenAllows("deployment:read", required) {
+		t.Fatal("expected deployment:read token to read runtime logs")
 	}
 }

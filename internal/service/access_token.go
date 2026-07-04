@@ -17,3 +17,7 @@ func NormalizeAccessTokenScope(scopeText string) string {
 func UserCanCreateAccessTokenScope(userRole, scopeText string) bool {
 	return authz.UserCanCreateAccessTokenScope(userRole, scopeText)
 }
+
+func AccessTokenScopeCatalog(userRole string) []authz.AccessTokenScopeDefinition {
+	return authz.AccessTokenScopeCatalog(userRole)
+}

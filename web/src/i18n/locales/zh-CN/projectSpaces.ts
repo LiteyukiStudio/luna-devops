@@ -63,6 +63,8 @@ const projectSpaces = {
   recentBuildsDescription: '项目空间下最近触发的构建运行。',
   noRecentBuilds: '暂无构建记录',
   projectOperations: '项目运营摘要',
+  billingOwner: '计费归属账户',
+  billingOwnerUnknown: '未设置计费归属账户',
   variableSetCount: '{{count}} 组构建变量',
   runtimeConfigSetCount: '{{count}} 组配置',
   repositoryBindingsEntry: '在仓库 tab 管理代码仓库',

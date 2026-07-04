@@ -4,6 +4,8 @@ The billing page shows user balance, spend summaries, spend analysis, and ledger
 
 Project spaces are the source of spend. Charges are deducted from the current billing owner's user wallet. If ownership is transferred later, new charges go to the new owner; old ledger entries stay with the original billed user.
 
+The project-space overview shows the billing owner account with avatar, name, and email so users can confirm which user account future charges are linked to.
+
 For legacy releases without a deployment target reference, the platform backfills or bills them only when the matching deployment target is unambiguous.
 
 Legacy deployment targets without a delete status are normalized as active when they are not deleted.

@@ -105,7 +105,7 @@ func (h *Handlers) CreateProject(ctx *gin.Context) {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	ctx.JSON(http.StatusCreated, project)
+	ctx.JSON(http.StatusCreated, h.projectResponse(project))
 }
 
 func (h *Handlers) GetProject(ctx *gin.Context) {
@@ -114,7 +114,7 @@ func (h *Handlers) GetProject(ctx *gin.Context) {
 		return
 	}
 	h.recordProjectUsage(user.ID, project.ID)
-	ctx.JSON(http.StatusOK, project)
+	ctx.JSON(http.StatusOK, h.projectResponse(project))
 }
 
 func (h *Handlers) UpdateProject(ctx *gin.Context) {
@@ -149,7 +149,7 @@ func (h *Handlers) UpdateProject(ctx *gin.Context) {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	ctx.JSON(http.StatusOK, project)
+	ctx.JSON(http.StatusOK, h.projectResponse(project))
 }
 
 func (h *Handlers) DeleteProject(ctx *gin.Context) {
@@ -638,6 +638,37 @@ type projectPinResponse struct {
 	LastUsedAt        *time.Time `json:"lastUsedAt"`
 	UseCount          int        `json:"useCount"`
 	PinnedAt          time.Time  `json:"pinnedAt"`
+}
+
+type projectResponse struct {
+	model.Project
+	BillingOwner *projectBillingOwnerResponse `json:"billingOwner,omitempty"`
+}
+
+type projectBillingOwnerResponse struct {
+	ID        string `json:"id"`
+	Email     string `json:"email"`
+	Name      string `json:"name"`
+	AvatarURL string `json:"avatarUrl"`
+}
+
+func (h *Handlers) projectResponse(project model.Project) projectResponse {
+	response := projectResponse{Project: project}
+	if strings.TrimSpace(project.BillingOwnerUserID) == "" {
+		return response
+	}
+
+	var user model.User
+	if err := h.db.Select("id", "email", "name", "avatar_url").First(&user, "id = ?", project.BillingOwnerUserID).Error; err != nil {
+		return response
+	}
+	response.BillingOwner = &projectBillingOwnerResponse{
+		ID:        user.ID,
+		Email:     user.Email,
+		Name:      user.Name,
+		AvatarURL: user.AvatarURL,
+	}
+	return response
 }
 
 func projectPinResponseFrom(project model.Project, pin model.ProjectPin, dashboardOrder int) projectPinResponse {

@@ -195,6 +195,7 @@ func NewRouterWithStaticFSAndMetrics(db *gorm.DB, staticFS fs.FS, httpMetrics *o
 		v1.POST("/billing/external-transactions", handlers.CreateExternalBillingTransaction)
 		v1.POST("/billing/gateway-traffic", handlers.CreateGatewayTrafficUsage)
 
+		v1.GET("/access-tokens/scopes", handlers.ListAccessTokenScopes)
 		v1.GET("/access-tokens", handlers.ListAccessTokens)
 		v1.POST("/access-tokens", handlers.CreateAccessToken)
 		v1.DELETE("/access-tokens/:tokenId", handlers.RevokeAccessToken)

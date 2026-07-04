@@ -26,6 +26,8 @@ const projectSpaces = {
   recentBuildsDescription: 'Latest build runs triggered in this project space.',
   noRecentBuilds: 'No build records yet',
   projectOperations: 'Project operations',
+  billingOwner: 'Billing owner account',
+  billingOwnerUnknown: 'Billing owner account is not set',
   variableSetCount: '{{count}} build variable sets',
   runtimeConfigSetCount: '{{count}} config sets',
   repositoryBindingsEntry: 'Manage code repositories in the repositories tab',

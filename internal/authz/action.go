@@ -185,8 +185,46 @@ func RequiredAccessTokenScope(path, method string) string {
 		return string(ActionConfigRead)
 	case strings.HasPrefix(path, "/api/v1/configs") && method != http.MethodGet:
 		return string(ActionConfigWrite)
+	case strings.HasPrefix(path, "/api/v1/runtime/clusters") && method == http.MethodGet:
+		return string(ActionClusterRead)
+	case strings.HasPrefix(path, "/api/v1/runtime/clusters") && method != http.MethodGet:
+		return runtimeClusterWriteScope(path, method)
+	case strings.HasPrefix(path, "/api/v1/build/variable-sets") && method == http.MethodGet:
+		return string(ActionSecretReadSummary)
+	case strings.HasPrefix(path, "/api/v1/build/variable-sets") && method != http.MethodGet:
+		return string(ActionSecretUpdate)
 	case isReleaseRuntimeExecPath(path):
 		return string(ActionDeploymentExec)
+	case isProjectRuntimeConfigPath(path) && method == http.MethodGet:
+		return string(ActionSecretReadSummary)
+	case isProjectRuntimeConfigPath(path) && method != http.MethodGet:
+		return string(ActionSecretUpdate)
+	case isProjectMemberPath(path) && method == http.MethodGet:
+		return string(ActionProjectRead)
+	case isProjectMemberPath(path) && method != http.MethodGet:
+		return string(ActionProjectManage)
+	case isProjectApplicationPath(path) && method == http.MethodGet:
+		return string(ActionApplicationRead)
+	case isProjectApplicationPath(path) && method == http.MethodPost:
+		return string(ActionApplicationCreate)
+	case isProjectApplicationPath(path) && method == http.MethodDelete:
+		return string(ActionApplicationDelete)
+	case isProjectApplicationPath(path) && method != http.MethodGet:
+		return string(ActionApplicationUpdate)
+	case isDeploymentTargetPath(path):
+		return deploymentTargetScope(path, method)
+	case isProjectBuildPath(path):
+		return projectBuildScope(path, method)
+	case isProjectReleasePath(path):
+		return projectReleaseScope(path, method)
+	case isProjectGatewayRoutePath(path) && method == http.MethodGet:
+		return string(ActionGatewayRead)
+	case isProjectGatewayRoutePath(path) && method != http.MethodGet:
+		return string(ActionGatewayManage)
+	case isProjectRepositoryBindingPath(path) && method == http.MethodGet:
+		return string(ActionGitRead)
+	case isProjectRepositoryBindingPath(path) && method != http.MethodGet:
+		return string(ActionGitWrite)
 	case strings.HasPrefix(path, "/api/v1/projects") && method == http.MethodGet:
 		return string(ActionProjectRead)
 	case strings.HasPrefix(path, "/api/v1/projects") && method != http.MethodGet:
@@ -211,6 +249,57 @@ func RequiredAccessTokenScope(path, method string) string {
 		return string(ActionImageWrite)
 	default:
 		return string(ActionSystemUnmapped)
+	}
+}
+
+func runtimeClusterWriteScope(path, method string) string {
+	if method == http.MethodDelete && strings.HasSuffix(path, "/resources") {
+		return string(ActionClusterManage)
+	}
+	if strings.HasSuffix(path, "/test") {
+		return string(ActionClusterUse)
+	}
+	return string(ActionClusterManage)
+}
+
+func deploymentTargetScope(path, method string) string {
+	switch {
+	case strings.HasSuffix(path, "/restart"):
+		return string(ActionDeploymentRestart)
+	case strings.Contains(path, "/metrics/stream") || strings.Contains(path, "/data-export"):
+		return string(ActionDeploymentRead)
+	case method == http.MethodGet:
+		return string(ActionDeploymentRead)
+	case method == http.MethodDelete:
+		return string(ActionDeploymentDelete)
+	default:
+		return string(ActionDeploymentUpdate)
+	}
+}
+
+func projectBuildScope(path, method string) string {
+	switch {
+	case strings.HasSuffix(path, "/trigger") || strings.HasSuffix(path, "/retry"):
+		return string(ActionBuildTrigger)
+	case strings.HasSuffix(path, "/cancel"):
+		return string(ActionBuildCancel)
+	case method == http.MethodDelete:
+		return string(ActionBuildDelete)
+	default:
+		return string(ActionBuildRead)
+	}
+}
+
+func projectReleaseScope(path, method string) string {
+	switch {
+	case strings.HasSuffix(path, "/rollback"):
+		return string(ActionDeploymentRollback)
+	case isReleaseRuntimeExecPath(path):
+		return string(ActionDeploymentExec)
+	case method == http.MethodPost:
+		return string(ActionDeploymentRelease)
+	default:
+		return string(ActionDeploymentRead)
 	}
 }
 
@@ -262,6 +351,38 @@ func isReleaseRuntimeExecPath(path string) bool {
 	default:
 		return false
 	}
+}
+
+func isProjectRuntimeConfigPath(path string) bool {
+	return strings.Contains(path, "/runtime-config-sets")
+}
+
+func isProjectMemberPath(path string) bool {
+	return strings.Contains(path, "/members") || strings.Contains(path, "/member-candidates")
+}
+
+func isProjectApplicationPath(path string) bool {
+	return strings.Contains(path, "/applications") && !strings.Contains(path, "/deployment-targets")
+}
+
+func isDeploymentTargetPath(path string) bool {
+	return strings.Contains(path, "/deployment-targets")
+}
+
+func isProjectBuildPath(path string) bool {
+	return strings.Contains(path, "/build-runs") || strings.Contains(path, "/build-jobs")
+}
+
+func isProjectReleasePath(path string) bool {
+	return strings.Contains(path, "/releases")
+}
+
+func isProjectGatewayRoutePath(path string) bool {
+	return strings.Contains(path, "/gateway-routes")
+}
+
+func isProjectRepositoryBindingPath(path string) bool {
+	return strings.Contains(path, "/repository-bindings")
 }
 
 func normalizedRoleSetKey(roles []string) string {

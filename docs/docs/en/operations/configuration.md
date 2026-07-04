@@ -56,6 +56,14 @@ If the API or worker runs in a container, kubeconfig server addresses must be re
 
 Runtime clusters also host Kubernetes build Jobs. The small-team default allows 4 concurrent build Jobs per runtime cluster and 2 concurrent builds per project space. Extra builds stay queued and retry automatically instead of being marked failed immediately.
 
+## Personal tokens
+
+Personal tokens are used by scripts, CI, or external automation to call the platform API. The plain token is shown only once after creation, and the backend stores only a hash. Revoked tokens stop working immediately and are hidden from the list.
+
+Tokens can include multiple scopes. The scope catalog is served by the backend and periodically synchronized by the frontend, so future scope changes do not require hardcoded page updates. Regular users can create read scopes and explicit automation trigger scopes, such as reading project spaces, reading deployments, triggering builds, and creating releases. Platform administrators can create higher-risk scopes such as write, delete, Web Console, secret value access, user management, and site configuration scopes.
+
+Prefer least privilege. CI that only triggers builds should use `build:trigger`; automation that only creates releases should use `deployment:release`; log readers should add `build:read` or `deployment:read` only when needed. Avoid granting unnecessary write or management scopes to long-lived tokens.
+
 ## Secrets
 
 Secrets, tokens, and registry credentials are not echoed back. When editing, an empty value means "keep the existing value". Enter a new value only when replacing it.

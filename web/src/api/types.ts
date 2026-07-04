@@ -8,6 +8,7 @@ export interface Project {
   namespaceStrategy: string
   maxConcurrentBuilds: number
   billingOwnerUserId: string
+  billingOwner?: ProjectBillingOwner
   deleteStatus: 'active' | 'deleting' | 'delete_failed' | 'deleted' | string
   deleteMessage: string
   deleteStartedAt?: string | null
@@ -17,6 +18,13 @@ export interface Project {
   useCount: number
   createdAt: string
   updatedAt: string
+}
+
+export interface ProjectBillingOwner {
+  id: string
+  email: string
+  name: string
+  avatarUrl: string
 }
 
 export interface ProjectPin extends Project {
@@ -776,6 +784,18 @@ export interface AccessToken {
   expiresAt?: string
   revokedAt?: string
   createdAt: string
+}
+
+export interface AccessTokenScopeDefinition {
+  value: string
+  group: string
+  recommended: boolean
+  creatableByUser: boolean
+  requiresAdminRole: boolean
+}
+
+export interface AccessTokenScopeCatalog {
+  items: AccessTokenScopeDefinition[]
 }
 
 export interface BillingSummary {

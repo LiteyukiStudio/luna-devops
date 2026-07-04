@@ -1,4 +1,4 @@
-import type { AccessToken, GatewayDomainCheckResult, GatewayRoute, PaginatedResponse, PaginationParams } from '../types'
+import type { AccessToken, AccessTokenScopeCatalog, GatewayDomainCheckResult, GatewayRoute, PaginatedResponse, PaginationParams } from '../types'
 import { paginationQuery, request } from '../core'
 
 type GatewayRoutePayload = Omit<GatewayRoute, 'id' | 'projectId' | 'createdBy' | 'createdAt' | 'cnameName' | 'cnameTarget' | 'accessUrl' | 'routeSummary' | 'conditions' | 'deleteStatus' | 'deleteMessage' | 'deleteStartedAt' | 'deleteFinishedAt'>
@@ -19,6 +19,8 @@ export const gatewayApi = {
 
   listAccessTokens: (params: PaginationParams) =>
     request<PaginatedResponse<AccessToken>>(`/access-tokens?${paginationQuery(params)}`),
+  listAccessTokenScopes: () =>
+    request<AccessTokenScopeCatalog>('/access-tokens/scopes'),
   createAccessToken: (payload: { name: string, scope: string, expiresInDays: number }) =>
     request<{ token: AccessToken, accessToken: string }>('/access-tokens', { method: 'POST', body: JSON.stringify(payload) }),
   revokeAccessToken: (tokenId: string) =>

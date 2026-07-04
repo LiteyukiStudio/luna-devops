@@ -16,6 +16,7 @@ import { ContentTabs } from '@/components/common/content-tabs'
 import { ErrorState } from '@/components/common/error-state'
 import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
 import { formatSmartDateTime } from '@/components/common/time-format'
+import { UserAvatar } from '@/components/common/user-avatar'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { TabsContent } from '@/components/ui/tabs'
@@ -224,6 +225,7 @@ function ProjectOverviewDashboard({ applications, builds, members, project, rele
         <Card className="min-w-0 p-4">
           <h3 className="text-sm font-semibold">{t('projectSpaces.projectOperations')}</h3>
           <div className="mt-3 grid gap-3">
+            <ProjectBillingOwnerItem owner={project?.billingOwner} />
             <ProjectOverviewItem label={t('buildsPage.variablesAndSecrets')} value={t('projectSpaces.variableSetCount', { count: variableSetCount })} />
             <ProjectOverviewItem label={t('runtimeConfigSets.tab')} value={t('projectSpaces.runtimeConfigSetCount', { count: runtimeConfigSetCount })} />
             <ProjectOverviewItem label={t('projectSpaces.members')} value={t('projectSpaces.memberRoleMeta', { members: members.length, owners: ownerCount })} />
@@ -245,6 +247,26 @@ function ProjectMetric({ icon, label, meta, value }: { icon: ReactNode, label: s
       </div>
       <p className="mt-3 text-2xl font-semibold">{value}</p>
       <p className="mt-1 text-xs text-muted-foreground">{meta}</p>
+    </div>
+  )
+}
+
+function ProjectBillingOwnerItem({ owner }: { owner?: Project['billingOwner'] }) {
+  const { t } = useTranslation()
+  return (
+    <div className="rounded-md border border-border bg-background px-3 py-2">
+      <p className="text-xs text-muted-foreground">{t('projectSpaces.billingOwner')}</p>
+      {owner
+        ? (
+            <div className="mt-2 flex min-w-0 items-center gap-3">
+              <UserAvatar className="size-8" user={owner} />
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium" title={owner.name || owner.email}>{owner.name || owner.email}</p>
+                <p className="truncate text-xs text-muted-foreground" title={owner.email}>{owner.email}</p>
+              </div>
+            </div>
+          )
+        : <p className="mt-1 truncate text-sm font-medium">{t('projectSpaces.billingOwnerUnknown')}</p>}
     </div>
   )
 }

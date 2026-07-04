@@ -1,4 +1,5 @@
-import type { AccessToken } from '@/api'
+import type { TFunction } from 'i18next'
+import type { AccessToken, AccessTokenScopeDefinition } from '@/api'
 import type { DataListColumn } from '@/components/common/data-list'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -9,7 +10,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import { api } from '@/api'
-import { useSession } from '@/app/session-context'
+import { CheckboxField } from '@/components/common/checkbox-field'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { DataList } from '@/components/common/data-list'
 import { FormField as Field } from '@/components/common/form-field'
@@ -24,7 +25,7 @@ import { NativeSelect as Select } from '@/components/ui/native-select'
 
 const schema = z.object({
   name: z.string().min(1),
-  scope: z.string().min(1),
+  scopes: z.array(z.string()).min(1),
   expiresInDays: z.coerce.number().int().refine(value => [0, 7, 15, 30, 90].includes(value)),
 })
 
@@ -32,6 +33,11 @@ type TokenFormInput = z.input<typeof schema>
 type TokenForm = z.output<typeof schema>
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
+const DEFAULT_TOKEN_FORM: TokenFormInput = {
+  name: '',
+  scopes: ['build:trigger'],
+  expiresInDays: 30,
+}
 
 export function AccessTokensPage() {
   const { t } = useTranslation()
@@ -49,7 +55,6 @@ export function AccessTokensPage() {
 
 export function AccessTokensPanel() {
   const { t } = useTranslation()
-  const { user } = useSession()
   const queryClient = useQueryClient()
   const [createdToken, setCreatedToken] = useState('')
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -60,22 +65,30 @@ export function AccessTokensPanel() {
     queryKey: ['access-tokens', page, pageSize, search],
     queryFn: () => api.listAccessTokens({ page, pageSize, search, sortBy: 'createdAt', sortOrder: 'desc' }),
   })
+  const scopeCatalog = useQuery({
+    queryKey: ['access-token-scopes'],
+    queryFn: api.listAccessTokenScopes,
+    refetchInterval: 10 * 60 * 1000,
+    staleTime: 5 * 60 * 1000,
+  })
   const form = useForm<TokenFormInput, undefined, TokenForm>({
     resolver: zodResolver(schema),
     mode: 'onChange',
-    defaultValues: {
-      name: '',
-      scope: 'build:trigger',
-      expiresInDays: 30,
-    },
+    defaultValues: DEFAULT_TOKEN_FORM,
   })
+  const selectedScopes = form.watch('scopes') ?? []
+  const scopeGroups = groupAccessTokenScopes(scopeCatalog.data?.items ?? [])
 
   const createToken = useMutation({
-    mutationFn: api.createAccessToken,
+    mutationFn: (values: TokenForm) => api.createAccessToken({
+      name: values.name,
+      scope: values.scopes.join(','),
+      expiresInDays: values.expiresInDays,
+    }),
     onSuccess: (result) => {
       setCreatedToken(result.accessToken)
       toast.success(t('accessTokens.created'))
-      form.reset()
+      form.reset(DEFAULT_TOKEN_FORM)
       setDialogOpen(false)
       setPage(1)
       queryClient.invalidateQueries({ queryKey: ['access-tokens'] })
@@ -96,6 +109,13 @@ export function AccessTokensPanel() {
       .then(() => toast.success(t('common.copied')))
       .catch(error => toast.error(error.message))
   }
+  const toggleScope = (scope: string, checked: boolean) => {
+    const current = form.getValues('scopes') ?? []
+    const next = checked
+      ? Array.from(new Set([...current, scope]))
+      : current.filter(item => item !== scope)
+    form.setValue('scopes', next, { shouldDirty: true, shouldValidate: true })
+  }
 
   const tokenItems = tokens.data?.items ?? []
   const columns: DataListColumn<AccessToken>[] = [
@@ -108,8 +128,16 @@ export function AccessTokensPanel() {
     {
       key: 'scope',
       header: t('accessTokens.scope'),
-      className: 'w-[18%] px-4 py-3 align-middle',
-      render: token => <Badge>{token.scope}</Badge>,
+      className: 'w-[26%] px-4 py-3 align-middle',
+      render: token => (
+        <div className="flex max-w-md flex-wrap gap-1">
+          {splitAccessTokenScopes(token.scope).map(scope => (
+            <Badge key={scope} title={scope} variant="secondary">
+              {accessTokenScopeLabel(t, scope)}
+            </Badge>
+          ))}
+        </div>
+      ),
     },
     {
       key: 'createdAt',
@@ -155,7 +183,7 @@ export function AccessTokensPanel() {
       <div className="flex justify-end">
         <Button
           onClick={() => {
-            form.reset()
+            form.reset(DEFAULT_TOKEN_FORM)
             setDialogOpen(true)
           }}
         >
@@ -212,7 +240,7 @@ export function AccessTokensPanel() {
         onOpenChange={(open) => {
           setDialogOpen(open)
           if (!open)
-            form.reset()
+            form.reset(DEFAULT_TOKEN_FORM)
         }}
       >
         <DialogContent>
@@ -224,13 +252,39 @@ export function AccessTokensPanel() {
             <Field error={form.formState.errors.name?.message} hint={t('accessTokens.nameHint')} label={t('accessTokens.name')} required>
               <Input {...form.register('name')} aria-invalid={Boolean(form.formState.errors.name)} placeholder={t('accessTokens.namePlaceholder')} />
             </Field>
-            <Field error={form.formState.errors.scope?.message} hint={t('accessTokens.scopeHint')} label={t('accessTokens.scope')} required>
-              <Select {...form.register('scope')} aria-invalid={Boolean(form.formState.errors.scope)}>
-                <option value="build:trigger">{t('accessTokens.scopeBuildTrigger')}</option>
-                <option value="deployment:release">{t('accessTokens.scopeDeployTrigger')}</option>
-                <option value="project:read">{t('accessTokens.scopeProjectRead')}</option>
-                {user?.role === 'platform_admin' && <option value="billing:write">{t('accessTokens.scopeBillingWrite')}</option>}
-              </Select>
+            <Field error={form.formState.errors.scopes?.message} hint={t('accessTokens.scopeHint')} label={t('accessTokens.scope')} required>
+              <div className="max-h-[22rem] overflow-y-auto rounded-md border border-border bg-card">
+                {scopeCatalog.isLoading && (
+                  <p className="px-3 py-2 text-sm text-muted-foreground">{t('common.loading')}</p>
+                )}
+                {!scopeCatalog.isLoading && scopeGroups.length === 0 && (
+                  <p className="px-3 py-2 text-sm text-muted-foreground">{t('accessTokens.emptyScopes')}</p>
+                )}
+                {scopeGroups.map(group => (
+                  <div key={group.group} className="border-b border-border last:border-b-0">
+                    <div className="bg-muted/60 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      {t(`accessTokens.scopeGroups.${group.group}`)}
+                    </div>
+                    <div className="grid gap-3 p-3 sm:grid-cols-2">
+                      {group.items.map(scope => (
+                        <CheckboxField
+                          key={scope.value}
+                          checked={selectedScopes.includes(scope.value)}
+                          description={t(`accessTokens.scopeDescriptions.${scopeKey(scope.value)}`)}
+                          disabled={scope.requiresAdminRole}
+                          onChange={event => toggleScope(scope.value, event.target.checked)}
+                        >
+                          <span className="flex items-center gap-2">
+                            {accessTokenScopeLabel(t, scope.value)}
+                            {scope.recommended && <Badge variant="secondary">{t('accessTokens.recommended')}</Badge>}
+                            {scope.requiresAdminRole && <Badge variant="outline">{t('accessTokens.adminOnly')}</Badge>}
+                          </span>
+                        </CheckboxField>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </Field>
             <Field error={form.formState.errors.expiresInDays?.message} hint={t('accessTokens.expiresInDaysHint')} label={t('accessTokens.expiresInDays')} required>
               <Select {...form.register('expiresInDays')} aria-invalid={Boolean(form.formState.errors.expiresInDays)}>
@@ -260,4 +314,31 @@ function tokenStatusValue(token: AccessToken) {
   if (token.expiresAt && new Date(token.expiresAt).getTime() < Date.now())
     return 'expired'
   return 'active'
+}
+
+function splitAccessTokenScopes(scopeText: string) {
+  return scopeText.split(',').map(scope => scope.trim()).filter(Boolean)
+}
+
+function groupAccessTokenScopes(items: AccessTokenScopeDefinition[]) {
+  const groups = new Map<string, AccessTokenScopeDefinition[]>()
+  for (const item of items) {
+    const current = groups.get(item.group) ?? []
+    current.push(item)
+    groups.set(item.group, current)
+  }
+  return Array.from(groups.entries()).map(([group, groupItems]) => ({
+    group,
+    items: groupItems,
+  }))
+}
+
+function accessTokenScopeLabel(t: TFunction, scope: string) {
+  const key = `accessTokens.scopeLabels.${scopeKey(scope)}`
+  const label = t(key)
+  return label === key ? scope : label
+}
+
+function scopeKey(scope: string) {
+  return scope.replaceAll(':', '.').replaceAll('_', '-')
 }

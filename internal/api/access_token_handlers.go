@@ -37,6 +37,17 @@ func (h *Handlers) ListAccessTokens(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, paginatedResponse(tokens, total, pagination))
 }
 
+func (h *Handlers) ListAccessTokenScopes(ctx *gin.Context) {
+	user, ok := h.currentUser(ctx)
+	if !ok {
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"items": service.AccessTokenScopeCatalog(user.Role),
+	})
+}
+
 func (h *Handlers) CreateAccessToken(ctx *gin.Context) {
 	user, ok := h.currentUser(ctx)
 	if !ok {
