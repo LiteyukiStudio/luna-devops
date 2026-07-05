@@ -37,6 +37,8 @@
 
 未安装 Gateway Traffic Probe 时，账单页会把访问流量显示为不可用，并引导平台管理员从应用市场安装。组件安装后，探针首次成功上报一个时间窗口，账单页才会认为访问流量可用。
 
+Gateway Traffic Probe 作为独立镜像 `liteyukistudio/devops-gateway-traffic-probe` 发布。安装时平台会注入 `API_BASE_URL`、`REPORT_TOKEN`、`RUNTIME_CLUSTER_ID`、`TRAEFIK_METRICS_URL` 等环境变量；其中 `REPORT_TOKEN` 只保存哈希到平台数据库，Pod 内 Secret 保存明文 token 用于上报。
+
 模板列表支持按分类筛选、按模板名称、镜像、官网或仓库搜索，也可以按热度权重或名称排序。当前内置模板暂不收录 PHP 应用，例如 Adminer 和 phpMyAdmin。
 
 ## 当前限制

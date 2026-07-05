@@ -37,6 +37,8 @@ Platform components are still installed from “App Marketplace”, but they fol
 
 When Gateway Traffic Probe is not installed, the billing page shows gateway traffic as unavailable and guides platform administrators to install it from the marketplace. After installation, gateway traffic becomes available only after the probe successfully reports its first time window.
 
+Gateway Traffic Probe is published as the standalone `liteyukistudio/devops-gateway-traffic-probe` image. During installation, the platform injects `API_BASE_URL`, `REPORT_TOKEN`, `RUNTIME_CLUSTER_ID`, `TRAEFIK_METRICS_URL`, and related environment variables. The platform database stores only the report token hash, while the Pod Secret stores the plaintext token used for reporting.
+
 The template list supports category filtering, search by template name, image, website, or repository, and sorting by popularity weight or name. Built-in templates intentionally skip PHP applications such as Adminer and phpMyAdmin for now.
 
 ## Current Limits

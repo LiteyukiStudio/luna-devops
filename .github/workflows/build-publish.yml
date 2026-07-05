@@ -14,6 +14,7 @@ env:
   DOCKERHUB_NAMESPACE: liteyukistudio
   IMAGE_API: devops-api
   IMAGE_WORKER: devops-worker
+  IMAGE_GATEWAY_TRAFFIC_PROBE: devops-gateway-traffic-probe
 
 concurrency:
   group: build-publish-${{ github.ref }}
@@ -38,6 +39,10 @@ jobs:
             image: devops-worker
             target: runtime
             build_args: TARGET=worker
+          - title: Gateway Traffic Probe
+            image: devops-gateway-traffic-probe
+            target: runtime-probe
+            build_args: TARGET=gateway-traffic-probe
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

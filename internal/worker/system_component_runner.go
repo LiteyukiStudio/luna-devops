@@ -20,8 +20,9 @@ const (
 )
 
 type systemComponentConfig struct {
-	APIBaseURL string `json:"apiBaseUrl"`
-	Image      string `json:"image"`
+	APIBaseURL        string `json:"apiBaseUrl"`
+	Image             string `json:"image"`
+	TraefikMetricsURL string `json:"traefikMetricsUrl"`
 }
 
 func (r *Runner) handleSystemComponentApply(ctx context.Context, task *asynq.Task) error {
@@ -67,15 +68,16 @@ func (r *Runner) handleSystemComponentApply(ctx context.Context, task *asynq.Tas
 	switch installation.ComponentID {
 	case systemComponentGatewayTrafficProbe:
 		err = manager.ApplyGatewayTrafficProbe(ctx, kubeprovider.GatewayTrafficProbeSpec{
-			Name:             "liteyuki-gateway-traffic-probe",
-			Namespace:        firstNonEmpty(installation.Namespace, systemComponentNamespaceDefault),
-			RuntimeClusterID: installation.RuntimeClusterID,
-			Image:            cfg.Image,
-			APIBaseURL:       cfg.APIBaseURL,
-			ReportToken:      payload.ReportToken,
-			ControllerType:   firstNonEmpty(installation.ControllerType, cluster.GatewayControllerType, "traefik"),
-			Mode:             firstNonEmpty(installation.Mode, "traefik-metrics"),
-			GatewayNamespace: firstNonEmpty(cluster.GatewayNamespace, "kube-system"),
+			Name:              "liteyuki-gateway-traffic-probe",
+			Namespace:         firstNonEmpty(installation.Namespace, systemComponentNamespaceDefault),
+			RuntimeClusterID:  installation.RuntimeClusterID,
+			Image:             cfg.Image,
+			APIBaseURL:        cfg.APIBaseURL,
+			ReportToken:       payload.ReportToken,
+			ControllerType:    firstNonEmpty(installation.ControllerType, cluster.GatewayControllerType, "traefik"),
+			Mode:              firstNonEmpty(installation.Mode, "traefik-metrics"),
+			GatewayNamespace:  firstNonEmpty(cluster.GatewayNamespace, "kube-system"),
+			TraefikMetricsURL: cfg.TraefikMetricsURL,
 		})
 	default:
 		err = fmt.Errorf("unsupported system component %s", installation.ComponentID)

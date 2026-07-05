@@ -14,15 +14,16 @@ import (
 )
 
 type GatewayTrafficProbeSpec struct {
-	Name             string
-	Namespace        string
-	RuntimeClusterID string
-	Image            string
-	APIBaseURL       string
-	ReportToken      string
-	ControllerType   string
-	Mode             string
-	GatewayNamespace string
+	Name              string
+	Namespace         string
+	RuntimeClusterID  string
+	Image             string
+	APIBaseURL        string
+	ReportToken       string
+	ControllerType    string
+	Mode              string
+	GatewayNamespace  string
+	TraefikMetricsURL string
 }
 
 func (c *Client) ApplyGatewayTrafficProbe(ctx context.Context, spec GatewayTrafficProbeSpec) error {
@@ -42,6 +43,9 @@ func (c *Client) ApplyGatewayTrafficProbe(ctx context.Context, spec GatewayTraff
 	}
 	if strings.TrimSpace(spec.GatewayNamespace) == "" {
 		spec.GatewayNamespace = "kube-system"
+	}
+	if strings.TrimSpace(spec.TraefikMetricsURL) == "" {
+		spec.TraefikMetricsURL = "http://traefik." + spec.GatewayNamespace + ".svc.cluster.local:9100/metrics"
 	}
 	labels := SystemComponentLabels("gateway-traffic-probe", spec.RuntimeClusterID)
 	if err := c.EnsureNamespace(ctx, spec.Namespace, labels); err != nil {
@@ -121,10 +125,13 @@ func (c *Client) applyGatewayTrafficProbeRBAC(ctx context.Context, spec GatewayT
 
 func (c *Client) applyGatewayTrafficProbeConfigMap(ctx context.Context, spec GatewayTrafficProbeSpec, labels map[string]string) error {
 	data := map[string]string{
-		"API_BASE_URL":      strings.TrimRight(spec.APIBaseURL, "/"),
-		"CONTROLLER_TYPE":   spec.ControllerType,
-		"MODE":              spec.Mode,
-		"GATEWAY_NAMESPACE": spec.GatewayNamespace,
+		"API_BASE_URL":        strings.TrimRight(spec.APIBaseURL, "/"),
+		"CONTROLLER_TYPE":     spec.ControllerType,
+		"MODE":                spec.Mode,
+		"GATEWAY_NAMESPACE":   spec.GatewayNamespace,
+		"TRAEFIK_METRICS_URL": spec.TraefikMetricsURL,
+		"PROBE_ADDR":          ":9090",
+		"SCRAPE_INTERVAL":     "60s",
 	}
 	configMap := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: spec.Name, Namespace: spec.Namespace, Labels: labels}, Data: data}
 	existing, err := c.client.CoreV1().ConfigMaps(spec.Namespace).Get(ctx, spec.Name, metav1.GetOptions{})

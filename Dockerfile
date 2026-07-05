@@ -65,3 +65,17 @@ USER app
 EXPOSE 8080
 
 ENTRYPOINT ["/app/app"]
+
+# Gateway Traffic Probe 运行镜像：只需要证书和独立 9090 健康/指标端口。
+FROM alpine:3.22 AS runtime-probe
+
+RUN apk add --no-cache ca-certificates && addgroup -S app && adduser -S app -G app
+
+WORKDIR /app
+
+COPY --from=build /out/app /app/app
+
+USER app
+EXPOSE 9090
+
+ENTRYPOINT ["/app/app"]
