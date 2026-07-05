@@ -75,7 +75,7 @@ const appTemplatesPage = {
     metricsToken: '指标 Token',
     masterKey: '主密钥',
     email: '邮箱',
-    apiBaseUrl: 'DevOps API 地址',
+    apiBaseUrl: '探针回报地址',
   },
   templates: {
     'liteyuki-gateway-traffic-probe': {

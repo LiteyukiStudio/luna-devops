@@ -137,6 +137,15 @@ export function AppTemplatesPage() {
     setForm(payloadFromTemplate(template))
   }
 
+  function closeInstallDialog() {
+    setSelectedTemplate(null)
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current)
+      next.delete('template')
+      return next
+    }, { replace: true })
+  }
+
   function updateForm<K extends keyof AppTemplateInstallPayload>(key: K, value: AppTemplateInstallPayload[K]) {
     setForm(current => ({ ...current, [key]: value }))
   }
@@ -239,7 +248,7 @@ export function AppTemplatesPage() {
         projectId={projectId}
         projects={projectItems}
         template={selectedTemplate}
-        onClose={() => setSelectedTemplate(null)}
+        onClose={closeInstallDialog}
         onProjectChange={setProjectId}
         onSubmit={submitInstall}
         onTemplateValueChange={updateTemplateValue}

@@ -75,7 +75,7 @@ const appTemplatesPage = {
     metricsToken: 'Metrics Token',
     masterKey: 'Master Key',
     email: 'Email',
-    apiBaseUrl: 'DevOps API URL',
+    apiBaseUrl: 'Probe report URL',
   },
   templates: {
     'liteyuki-gateway-traffic-probe': {
