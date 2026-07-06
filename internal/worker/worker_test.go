@@ -665,6 +665,10 @@ func (fakeNamespaceManager) ApplyGatewayTrafficProbe(context.Context, kubeprovid
 	return nil
 }
 
+func (fakeNamespaceManager) EnsureGatewayTrafficProbeAccess(context.Context, kubeprovider.GatewayTrafficProbeSpec) error {
+	return nil
+}
+
 func (fakeNamespaceManager) RunHookJob(context.Context, kubeprovider.HookJobSpec) (kubeprovider.HookJobResult, error) {
 	return kubeprovider.HookJobResult{}, nil
 }

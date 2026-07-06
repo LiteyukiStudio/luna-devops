@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" fill="none" viewBox="0 0 512 512" role="img" aria-labelledby="sso-favicon-title sso-favicon-desc">
+  <title id="sso-favicon-title">SSO Platform Favicon</title>
+  <desc id="sso-favicon-desc">A compact blue single sign-on mark with connected identity nodes, a verified hub, and an access arrow.</desc>
+  <defs>
+    <linearGradient id="favicon-bg" x1="82" x2="426" y1="62" y2="448" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#EFF8FF"/>
+      <stop offset="1" stop-color="#DCEBFF"/>
+    </linearGradient>
+    <linearGradient id="favicon-hub" x1="172" x2="348" y1="126" y2="386" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#3B82F6"/>
+      <stop offset="0.5" stop-color="#2563EB"/>
+      <stop offset="1" stop-color="#1D4ED8"/>
+    </linearGradient>
+    <linearGradient id="favicon-route" x1="96" x2="414" y1="308" y2="198" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#38BDF8"/>
+      <stop offset="0.58" stop-color="#2563EB"/>
+      <stop offset="1" stop-color="#1D4ED8"/>
+    </linearGradient>
+    <filter id="favicon-shadow" width="390" height="390" x="61" y="66" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse">
+      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+      <feColorMatrix in="SourceAlpha" result="hardAlpha" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0"/>
+      <feOffset dy="18"/>
+      <feGaussianBlur stdDeviation="22"/>
+      <feComposite in2="hardAlpha" operator="out"/>
+      <feColorMatrix values="0 0 0 0 0.034 0 0 0 0 0.102 0 0 0 0 0.247 0 0 0 0.18 0"/>
+      <feBlend in2="BackgroundImageFix" result="shadow"/>
+      <feBlend in="SourceGraphic" in2="shadow" result="shape"/>
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="104" fill="url(#favicon-bg)"/>
+  <circle cx="256" cy="256" r="198" fill="#BFDBFE" opacity="0.32"/>
+  <path stroke="url(#favicon-route)" stroke-linecap="round" stroke-width="30" d="M118 294h276"/>
+  <circle cx="118" cy="294" r="34" fill="#38BDF8" stroke="#FFFFFF" stroke-width="15"/>
+  <circle cx="394" cy="294" r="34" fill="#1D4ED8" stroke="#FFFFFF" stroke-width="15"/>
+  <g filter="url(#favicon-shadow)">
+    <circle cx="256" cy="256" r="124" fill="url(#favicon-hub)"/>
+    <circle cx="256" cy="256" r="101" stroke="#FFFFFF" stroke-opacity="0.9" stroke-width="15"/>
+    <circle cx="256" cy="220" r="35" fill="#EFF8FF"/>
+    <path fill="#EFF8FF" d="M193 315c9.8-47 33.7-70 63-70s53.2 23 63 70z"/>
+    <path stroke="#FFFFFF" stroke-linecap="round" stroke-linejoin="round" stroke-width="29" d="m210 337 40 40 79-96"/>
+  </g>
+  <path stroke="#FFFFFF" stroke-linecap="round" stroke-linejoin="round" stroke-width="24" d="m374 264 30 30-30 30"/>
+</svg>

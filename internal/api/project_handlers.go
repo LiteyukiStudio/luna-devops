@@ -20,6 +20,12 @@ func (h *Handlers) ListProjects(ctx *gin.Context) {
 	if !ok {
 		return
 	}
+	if authz.IsPlatformAdmin(user.Role) {
+		if _, err := h.ensurePlatformSystemProject(user); err != nil {
+			writeError(ctx, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
 
 	baseQuery := h.db.
 		Table("projects").
@@ -27,7 +33,9 @@ func (h *Handlers) ListProjects(ctx *gin.Context) {
 		Joins("left join project_members on project_members.project_id = projects.id and project_members.user_id = ?", user.ID).
 		Joins("left join project_pins on project_pins.project_id = projects.id and project_pins.user_id = project_members.user_id").
 		Where("projects.deleted_at is null")
-	if user.Role != "platform_admin" || projectListScope(ctx.Query("scope")) == "related" {
+	if user.Role == "platform_admin" && projectListScope(ctx.Query("scope")) == "related" {
+		baseQuery = baseQuery.Where("(project_members.user_id = ? or projects.system_key <> '')", user.ID)
+	} else if user.Role != "platform_admin" {
 		baseQuery = baseQuery.Where("project_members.user_id = ?", user.ID)
 	}
 	baseQuery = applySearch(ctx, baseQuery, "projects.name", "projects.slug")
@@ -163,6 +171,10 @@ func (h *Handlers) DeleteProject(ctx *gin.Context) {
 	}
 	if !deleteStatusCanStart(project.DeleteStatus) {
 		writeErrorCode(ctx, http.StatusConflict, "project.delete_in_progress", "项目空间正在删除中，请等待资源清理完成")
+		return
+	}
+	if isSystemProject(project) {
+		writeErrorCode(ctx, http.StatusForbidden, "project.system_protected", "平台系统项目空间不能删除")
 		return
 	}
 	if err := markResourceDeleting(h.db, &model.Project{}, project.ID); err != nil {

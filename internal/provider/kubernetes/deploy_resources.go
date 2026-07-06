@@ -51,6 +51,8 @@ type ApplicationResourcesSpec struct {
 	Affinity                     string
 	TopologySpreadConstraints    string
 	PriorityClassName            string
+	ServiceAccountName           string
+	AutomountServiceAccountToken string
 	ServiceType                  string
 	ServiceAnnotations           string
 	ServiceExternalTrafficPolicy string

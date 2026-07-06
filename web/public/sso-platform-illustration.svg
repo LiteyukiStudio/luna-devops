@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" fill="none" viewBox="0 0 512 512" role="img" aria-labelledby="sso-platform-title sso-platform-desc">
+  <title id="sso-platform-title">SSO Platform Illustration</title>
+  <desc id="sso-platform-desc">A minimal blue authentication and authorization mark with an identity node, shield lock, and access gate.</desc>
+  <defs>
+    <linearGradient id="sso-bg" x1="84" x2="430" y1="70" y2="440" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#EFF8FF"/>
+      <stop offset="1" stop-color="#F8FBFF"/>
+    </linearGradient>
+    <linearGradient id="sso-orbit" x1="112" x2="418" y1="330" y2="188" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#38BDF8"/>
+      <stop offset="0.54" stop-color="#2563EB"/>
+      <stop offset="1" stop-color="#1D4ED8"/>
+    </linearGradient>
+    <linearGradient id="sso-shield" x1="183" x2="328" y1="140" y2="382" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="0.58" stop-color="#EAF4FF"/>
+      <stop offset="1" stop-color="#CFE4FF"/>
+    </linearGradient>
+    <linearGradient id="sso-gate" x1="334" x2="412" y1="174" y2="334" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#60A5FA"/>
+      <stop offset="1" stop-color="#1D4ED8"/>
+    </linearGradient>
+    <filter id="sso-soft-shadow" width="380" height="380" x="66" y="72" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse">
+      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+      <feColorMatrix in="SourceAlpha" result="hardAlpha" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0"/>
+      <feOffset dy="18"/>
+      <feGaussianBlur stdDeviation="24"/>
+      <feComposite in2="hardAlpha" operator="out"/>
+      <feColorMatrix values="0 0 0 0 0.038 0 0 0 0 0.085 0 0 0 0 0.18 0 0 0 0.14 0"/>
+      <feBlend in2="BackgroundImageFix" result="shadow"/>
+      <feBlend in="SourceGraphic" in2="shadow" result="shape"/>
+    </filter>
+    <filter id="sso-card-shadow" width="144" height="144" x="52" y="206" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#0F2A5F" flood-opacity="0.14"/>
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#sso-bg)"/>
+  <circle cx="256" cy="256" r="178" fill="#DBEAFE" opacity="0.38"/>
+  <circle cx="256" cy="256" r="130" stroke="#BFDBFE" stroke-dasharray="12 18" stroke-linecap="round" stroke-width="4" opacity="0.72"/>
+  <path stroke="url(#sso-orbit)" stroke-linecap="round" stroke-width="18" d="M114 292c50 0 63-70 118-70 66 0 70 92 149 92"/>
+  <circle cx="114" cy="292" r="25" fill="#38BDF8" stroke="#FFFFFF" stroke-width="10"/>
+  <circle cx="381" cy="314" r="25" fill="#1D4ED8" stroke="#FFFFFF" stroke-width="10"/>
+  <g filter="url(#sso-card-shadow)">
+    <rect width="90" height="90" x="73" y="230" fill="#FFFFFF" rx="24"/>
+    <circle cx="118" cy="269" r="16" fill="#2563EB"/>
+    <path fill="#BAE6FD" d="M91 306c4.731-18.602 15.098-28 27-28s22.269 9.398 27 28z"/>
+  </g>
+  <g filter="url(#sso-soft-shadow)">
+    <path fill="#1D4ED8" d="M340 166h38c27.614 0 50 22.386 50 50v80c0 27.614-22.386 50-50 50h-38v-42h38a8 8 0 0 0 8-8v-80a8 8 0 0 0-8-8h-38z" opacity="0.16"/>
+    <path fill="url(#sso-gate)" d="M348 178h35c18.225 0 33 14.775 33 33v90c0 18.225-14.775 33-33 33h-35v-36h35a5 5 0 0 0 5-5v-74a5 5 0 0 0-5-5h-35z"/>
+    <path stroke="#DBEAFE" stroke-linecap="round" stroke-width="10" d="M359 226h35M359 256h35M359 286h35"/>
+    <path fill="url(#sso-shield)" d="M256 134c18.427 18.978 38.947 21.013 62 7.9 7.953-4.524 17.916.319 18.885 9.414l10.492 98.463c5.017 47.074-21.786 91.981-65.588 109.893l-6.313 2.581a51.999 51.999 0 0 1-38.952 0l-6.313-2.581c-43.802-17.912-70.605-62.819-65.588-109.893l10.492-98.463c.969-9.095 10.932-13.938 18.885-9.414 23.053 13.113 43.573 11.078 62-7.9z"/>
+    <path stroke="#FFFFFF" stroke-width="10" d="M256 134c18.427 18.978 38.947 21.013 62 7.9 7.953-4.524 17.916.319 18.885 9.414l10.492 98.463c5.017 47.074-21.786 91.981-65.588 109.893l-6.313 2.581a51.999 51.999 0 0 1-38.952 0l-6.313-2.581c-43.802-17.912-70.605-62.819-65.588-109.893l10.492-98.463c.969-9.095 10.932-13.938 18.885-9.414 23.053 13.113 43.573 11.078 62-7.9z"/>
+    <path stroke="#93C5FD" stroke-linecap="round" stroke-opacity="0.45" stroke-width="10" d="M256 182v150"/>
+    <circle cx="256" cy="247" r="43" fill="#2563EB"/>
+    <circle cx="256" cy="242" r="13" fill="#FFFFFF"/>
+    <rect width="26" height="58" x="243" y="263" fill="#2563EB" rx="13"/>
+    <path stroke="#FFFFFF" stroke-linecap="round" stroke-linejoin="round" stroke-width="13" d="m223 313 24 24 48-58"/>
+  </g>
+</svg>

@@ -337,6 +337,8 @@ func applicationResourcesSpec(release model.Release, project model.Project, appl
 		Affinity:                     strings.TrimSpace(deploymentTarget.Affinity),
 		TopologySpreadConstraints:    strings.TrimSpace(deploymentTarget.TopologySpreadConstraints),
 		PriorityClassName:            strings.TrimSpace(deploymentTarget.PriorityClassName),
+		ServiceAccountName:           strings.TrimSpace(deploymentTarget.ServiceAccountName),
+		AutomountServiceAccountToken: strings.TrimSpace(deploymentTarget.AutomountServiceAccountToken),
 		ServiceType:                  strings.TrimSpace(deploymentTarget.ServiceType),
 		ServiceAnnotations:           strings.TrimSpace(deploymentTarget.ServiceAnnotations),
 		ServiceExternalTrafficPolicy: strings.TrimSpace(deploymentTarget.ServiceExternalTrafficPolicy),

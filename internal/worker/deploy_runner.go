@@ -72,9 +72,16 @@ func (r *Runner) handleDeployRun(ctx context.Context, task *asynq.Task) error {
 		return err
 	}
 	r.appendReleaseLog(release, "下发 Deployment/Service/ConfigMap/Secret")
+	if err := r.ensurePlatformApplicationDependencies(ctx, release, project, application, deploymentTarget, namespace); err != nil {
+		_ = r.finishDeployRelease(release, "failed", err.Error())
+		r.appendReleaseLog(release, "平台组件依赖准备失败: "+err.Error())
+		r.markSystemComponentDeployment(release, "failed", err.Error())
+		return err
+	}
 	if err := r.applyApplicationResources(ctx, release, project, application, environment, deploymentTarget, namespace); err != nil {
 		_ = r.finishDeployRelease(release, "failed", err.Error())
 		r.appendReleaseLog(release, "资源下发失败: "+err.Error())
+		r.markSystemComponentDeployment(release, "failed", err.Error())
 		return err
 	}
 	if err := r.db.Model(&release).Updates(map[string]any{
@@ -88,15 +95,61 @@ func (r *Runner) handleDeployRun(ctx context.Context, task *asynq.Task) error {
 	if err != nil {
 		_ = r.finishDeployRelease(release, "failed", err.Error())
 		r.appendReleaseLog(release, "部署失败: "+err.Error())
+		r.markSystemComponentDeployment(release, "failed", err.Error())
 		return err
 	}
 	r.appendReleaseLog(release, firstNonEmpty(message, "Deployment rollout completed"))
 	if err := r.runDeploymentHooks(ctx, hookPhasePostDeployment, release, project, application, environment, deploymentTarget, namespace); err != nil {
 		_ = r.finishDeployRelease(release, "failed", err.Error())
 		r.appendReleaseLog(release, "postDeployment Hook 失败: "+err.Error())
+		r.markSystemComponentDeployment(release, "failed", err.Error())
 		return err
 	}
-	return r.finishDeployRelease(release, "succeeded", firstNonEmpty(message, "Deployment rollout completed"))
+	if err := r.finishDeployRelease(release, "succeeded", firstNonEmpty(message, "Deployment rollout completed")); err != nil {
+		return err
+	}
+	r.markSystemComponentDeployment(release, "deployed", "system component application deployed")
+	return nil
+}
+
+func (r *Runner) ensurePlatformApplicationDependencies(ctx context.Context, release model.Release, project model.Project, application model.Application, target model.DeploymentTarget, namespace string) error {
+	if strings.TrimSpace(project.SystemKey) != "platform" || strings.TrimSpace(application.Slug) != "gateway-traffic-probe" {
+		return nil
+	}
+	serviceAccountName := strings.TrimSpace(target.ServiceAccountName)
+	if serviceAccountName == "" {
+		return nil
+	}
+	manager, err := r.kubernetesManager(deploymentTargetEnvironment(target))
+	if err != nil {
+		return err
+	}
+	return manager.EnsureGatewayTrafficProbeAccess(ctx, kubeprovider.GatewayTrafficProbeSpec{
+		Name:             serviceAccountName,
+		Namespace:        namespace,
+		RuntimeClusterID: strings.TrimSpace(target.ClusterID),
+	})
+}
+
+func (r *Runner) markSystemComponentDeployment(release model.Release, status string, message string) {
+	if strings.TrimSpace(release.ID) == "" {
+		return
+	}
+	_ = r.db.Model(&model.SystemComponentInstallation{}).
+		Where("release_id = ?", release.ID).
+		Updates(map[string]any{
+			"status":     status,
+			"message":    strings.TrimSpace(message),
+			"last_error": systemComponentLastError(status, message),
+			"updated_at": time.Now(),
+		}).Error
+}
+
+func systemComponentLastError(status string, message string) string {
+	if status == "failed" {
+		return strings.TrimSpace(message)
+	}
+	return ""
 }
 
 func (r *Runner) applyApplicationResources(ctx context.Context, release model.Release, project model.Project, application model.Application, environment model.Environment, deploymentTarget model.DeploymentTarget, namespace string) error {

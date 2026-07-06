@@ -2,7 +2,7 @@
 
 应用市场用于把常见基础设施按模板安装到项目空间。第一版内置 Redis、Valkey、Memcached、PostgreSQL、MySQL、MariaDB、MongoDB、RabbitMQ、Garage、Prometheus、Grafana、Uptime Kuma、Memos、IT-Tools、Excalidraw、Verdaccio、Docker Registry、pgAdmin4、Meilisearch 和 Bytebase，适合快速准备缓存、数据库、消息队列、对象存储、监控和小团队工具。
 
-应用市场也可以承载少量平台组件模板。平台组件只允许平台管理员安装到运行集群，不会创建普通项目空间应用，也不会参与用户项目账单。当前内置的 `Liteyuki Gateway Traffic Probe` 用于可选开启访问流量计费采集。
+应用市场也可以承载少量平台组件模板。平台组件只允许平台管理员安装，会进入平台自有项目空间 `platform-system`，并像普通应用一样创建应用、部署配置和 Release；平台自有项目空间仅平台管理员可见，不允许删除，也不会参与用户项目账单。当前内置的 `Liteyuki Gateway Traffic Probe` 用于可选开启访问流量计费采集。
 
 模板安装会创建：
 
@@ -28,16 +28,17 @@
 
 ## 平台组件
 
-平台组件的安装入口仍在“应用市场”，但流程和普通应用不同：
+平台组件的安装入口仍在“应用市场”，但会落到平台自有项目空间：
 
 1. 平台管理员选择带有“平台组件”标识的模板。
 2. 选择目标运行集群。
 3. 填写组件需要的少量参数，例如 DevOps API 地址。
-4. 平台创建系统组件安装记录，生成独立上报 Token，并由 Worker 在目标集群下发 `liteyuki-system` 命名空间、只读 RBAC、Secret、ConfigMap 和组件 Deployment。
+4. 平台创建或复用 `platform-system` 项目空间下的组件应用，为目标运行集群创建部署配置和 Release，并生成独立上报 Token。
+5. Worker 使用普通应用部署链路下发 ConfigMap、Secret、Deployment 和 Service；平台额外确保探针 ServiceAccount 与只读 RBAC，因此组件可以在应用部署页查看发布日志、运行日志和 Web Console。
 
 未安装 Gateway Traffic Probe 时，账单页会把访问流量显示为不可用，并引导平台管理员从应用市场安装。组件安装后，探针首次成功上报一个时间窗口，账单页才会认为访问流量可用。
 
-Gateway Traffic Probe 作为独立镜像 `liteyukistudio/devops-gateway-traffic-probe` 发布。安装时平台会注入 `API_BASE_URL`、`REPORT_TOKEN`、`RUNTIME_CLUSTER_ID`、`TRAEFIK_METRICS_URL` 等环境变量；其中 `REPORT_TOKEN` 只保存哈希到平台数据库，Pod 内 Secret 保存明文 token 用于上报。
+Gateway Traffic Probe 作为独立镜像 `liteyukistudio/devops-gateway-traffic-probe` 发布。安装时平台会注入 `API_BASE_URL`、`REPORT_TOKEN`、`RUNTIME_CLUSTER_ID`、`TRAEFIK_METRICS_URL` 等环境变量；其中 `REPORT_TOKEN` 只保存哈希到平台数据库，普通部署 Secret 保存明文 token 用于上报。
 
 模板列表支持按分类筛选、按模板名称、镜像、官网或仓库搜索，也可以按热度权重或名称排序。当前内置模板暂不收录 PHP 应用，例如 Adminer 和 phpMyAdmin。
 

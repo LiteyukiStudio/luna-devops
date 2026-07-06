@@ -30,8 +30,9 @@ func (r *Runner) settleRuntimeUsageWindows(ctx context.Context, now time.Time) e
 	}
 	var targets []model.DeploymentTarget
 	if err := r.db.
-		Where("enabled = ? and delete_status in ?", true, []string{"active", ""}).
-		Order("created_at asc").
+		Joins("join projects on projects.id = deployment_targets.project_id").
+		Where("deployment_targets.enabled = ? and deployment_targets.delete_status in ? and projects.system_key = ?", true, []string{"active", ""}, "").
+		Order("deployment_targets.created_at asc").
 		Find(&targets).Error; err != nil {
 		return err
 	}

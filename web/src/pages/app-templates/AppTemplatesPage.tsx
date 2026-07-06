@@ -117,9 +117,8 @@ export function AppTemplatesPage() {
         apiBaseUrl: payload.apiBaseUrl,
         clusterId: payload.clusterId,
         mode: 'traefik-metrics',
-        namespace: 'liteyuki-system',
       }),
-    onSuccess: async () => {
+    onSuccess: async (result) => {
       toast.success(t('appTemplatesPage.systemInstallStarted'))
       setSelectedTemplate(null)
       setSearchParams((current) => {
@@ -127,8 +126,13 @@ export function AppTemplatesPage() {
         next.delete('template')
         return next
       }, { replace: true })
-      await queryClient.invalidateQueries({ queryKey: ['system-components'] })
-      await queryClient.invalidateQueries({ queryKey: ['billing', 'gateway-traffic-status'] })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['projects'] }),
+        queryClient.invalidateQueries({ queryKey: ['system-components'] }),
+        queryClient.invalidateQueries({ queryKey: ['billing', 'gateway-traffic-status'] }),
+      ])
+      if (result.application)
+        navigate(`/projects/${result.application.projectId}/apps/${result.application.id}#tab=deployments`)
     },
     onError: error => toast.error(error.message),
   })

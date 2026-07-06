@@ -126,6 +126,8 @@ type DeploymentTarget struct {
 	Affinity                     string                        `gorm:"type:text;not null;default:''" json:"affinity"`
 	TopologySpreadConstraints    string                        `gorm:"type:text;not null;default:''" json:"topologySpreadConstraints"`
 	PriorityClassName            string                        `gorm:"not null;default:''" json:"priorityClassName"`
+	ServiceAccountName           string                        `gorm:"not null;default:''" json:"serviceAccountName,omitempty"`
+	AutomountServiceAccountToken string                        `gorm:"not null;default:''" json:"automountServiceAccountToken,omitempty"`
 	ServiceType                  string                        `gorm:"not null;default:''" json:"serviceType"`
 	ServiceAnnotations           string                        `gorm:"type:text;not null;default:''" json:"serviceAnnotations"`
 	ServiceExternalTrafficPolicy string                        `gorm:"not null;default:''" json:"serviceExternalTrafficPolicy"`

@@ -66,6 +66,19 @@ func (c *Client) ApplyGatewayTrafficProbe(ctx context.Context, spec GatewayTraff
 	return c.applyGatewayTrafficProbeDeployment(ctx, spec, labels)
 }
 
+func (c *Client) EnsureGatewayTrafficProbeAccess(ctx context.Context, spec GatewayTrafficProbeSpec) error {
+	spec.Name = dnsLabel(firstNonEmpty(spec.Name, "liteyuki-gateway-traffic-probe"))
+	spec.Namespace = dnsLabel(firstNonEmpty(spec.Namespace, "liteyuki-system"))
+	if strings.TrimSpace(spec.RuntimeClusterID) == "" {
+		return fmt.Errorf("gateway traffic probe access requires runtime cluster id")
+	}
+	labels := SystemComponentLabels("gateway-traffic-probe", spec.RuntimeClusterID)
+	if err := c.applyGatewayTrafficProbeServiceAccount(ctx, spec, labels); err != nil {
+		return err
+	}
+	return c.applyGatewayTrafficProbeRBAC(ctx, spec, labels)
+}
+
 func (c *Client) applyGatewayTrafficProbeServiceAccount(ctx context.Context, spec GatewayTrafficProbeSpec, labels map[string]string) error {
 	account := &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Name: spec.Name, Namespace: spec.Namespace, Labels: labels}}
 	existing, err := c.client.CoreV1().ServiceAccounts(spec.Namespace).Get(ctx, spec.Name, metav1.GetOptions{})

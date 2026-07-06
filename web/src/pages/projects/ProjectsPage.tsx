@@ -217,7 +217,10 @@ export function ProjectsPage() {
             sticky: 'right',
             render: (project) => {
               const deleting = project.deleteStatus === 'deleting'
+              const systemProject = Boolean(project.systemKey)
               const openEditDialog = () => {
+                if (systemProject)
+                  return
                 setEditingProject(project)
                 form.reset({
                   name: project.name,
@@ -228,6 +231,8 @@ export function ProjectsPage() {
                 setDialogOpen(true)
               }
               const openDeleteDialog = () => {
+                if (systemProject)
+                  return
                 setProjectToDelete(project)
                 setDeleteConfirmation('')
               }
@@ -239,13 +244,13 @@ export function ProjectsPage() {
                     </Link>
                     <EditActionButton
                       aria-label={t('projectSpaces.editAria')}
-                      disabled={deleting}
+                      disabled={deleting || systemProject}
                       label={t('edit')}
                       onClick={openEditDialog}
                     />
                     <Button
                       aria-label={t('projectSpaces.deleteAria')}
-                      disabled={deleting}
+                      disabled={deleting || systemProject}
                       variant="ghost"
                       onClick={openDeleteDialog}
                     >
@@ -265,12 +270,12 @@ export function ProjectsPage() {
                           {t('projectSpaces.openWorkspace')}
                         </Link>
                       </DropdownMenuItem>
-                      <DropdownMenuItem disabled={deleting} onSelect={openEditDialog}>
+                      <DropdownMenuItem disabled={deleting || systemProject} onSelect={openEditDialog}>
                         <Pencil size={16} />
                         {t('edit')}
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem disabled={deleting} variant="destructive" onSelect={openDeleteDialog}>
+                      <DropdownMenuItem disabled={deleting || systemProject} variant="destructive" onSelect={openDeleteDialog}>
                         <Trash2 size={16} />
                         {t('common.delete')}
                       </DropdownMenuItem>

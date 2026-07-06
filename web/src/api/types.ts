@@ -9,6 +9,7 @@ export interface Project {
   maxConcurrentBuilds: number
   billingOwnerUserId: string
   billingOwner?: ProjectBillingOwner
+  systemKey: string
   deleteStatus: 'active' | 'deleting' | 'delete_failed' | 'deleted' | string
   deleteMessage: string
   deleteStartedAt?: string | null
@@ -139,6 +140,10 @@ export interface SystemComponentInstallation {
   componentId: string
   componentVersion: string
   runtimeClusterId: string
+  projectId: string
+  applicationId: string
+  deploymentTargetId: string
+  releaseId: string
   namespace: string
   status: string
   message: string
@@ -168,6 +173,9 @@ export interface SystemComponentInstallPayload {
 
 export interface SystemComponentInstallResponse {
   installation: SystemComponentInstallation
+  application?: Application
+  deploymentTarget?: DeploymentTarget
+  release?: Release
 }
 
 export interface GatewayTrafficStatus {
@@ -661,6 +669,8 @@ export interface DeploymentTarget {
   affinity: string
   topologySpreadConstraints: string
   priorityClassName: string
+  serviceAccountName?: string
+  automountServiceAccountToken?: string
   serviceType: '' | 'ClusterIP' | 'NodePort' | 'LoadBalancer' | string
   serviceAnnotations: string
   serviceExternalTrafficPolicy: '' | 'Cluster' | 'Local' | string

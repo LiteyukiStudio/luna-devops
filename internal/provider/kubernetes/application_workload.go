@@ -163,8 +163,20 @@ func applicationPodTemplate(spec ApplicationResourcesSpec, objectLabels map[stri
 			Affinity:                     mustApplicationAffinity(spec),
 			TopologySpreadConstraints:    mustApplicationTopologySpreadConstraints(spec),
 			PriorityClassName:            strings.TrimSpace(spec.PriorityClassName),
-			AutomountServiceAccountToken: nil,
+			ServiceAccountName:           strings.TrimSpace(spec.ServiceAccountName),
+			AutomountServiceAccountToken: applicationAutomountServiceAccountToken(spec),
 		},
+	}
+}
+
+func applicationAutomountServiceAccountToken(spec ApplicationResourcesSpec) *bool {
+	switch strings.ToLower(strings.TrimSpace(spec.AutomountServiceAccountToken)) {
+	case "true":
+		return boolPtr(true)
+	case "false":
+		return boolPtr(false)
+	default:
+		return nil
 	}
 }
 
