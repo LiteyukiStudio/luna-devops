@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	systemComponentGatewayTrafficProbe = "gateway-traffic-probe"
+	systemComponentGatewayTrafficProbe = model.GatewayTrafficProbeApplicationSlug
 	systemComponentNamespaceDefault    = "liteyuki-system"
 )
 
@@ -68,7 +68,7 @@ func (r *Runner) handleSystemComponentApply(ctx context.Context, task *asynq.Tas
 	switch installation.ComponentID {
 	case systemComponentGatewayTrafficProbe:
 		err = manager.ApplyGatewayTrafficProbe(ctx, kubeprovider.GatewayTrafficProbeSpec{
-			Name:              "liteyuki-gateway-traffic-probe",
+			Name:              model.GatewayTrafficProbeServiceAccountName,
 			Namespace:         firstNonEmpty(installation.Namespace, systemComponentNamespaceDefault),
 			RuntimeClusterID:  installation.RuntimeClusterID,
 			Image:             cfg.Image,

@@ -43,6 +43,7 @@ func (r *Runner) handleDeployRun(ctx context.Context, task *asynq.Task) error {
 		r.appendReleaseLog(release, message)
 		return r.finishDeployRelease(release, "failed", message)
 	}
+	deploymentTarget = r.applyPlatformDeploymentTargetDefaults(project, application, deploymentTarget)
 	environment := deploymentTargetEnvironment(deploymentTarget)
 
 	now := time.Now()
@@ -113,7 +114,7 @@ func (r *Runner) handleDeployRun(ctx context.Context, task *asynq.Task) error {
 }
 
 func (r *Runner) ensurePlatformApplicationDependencies(ctx context.Context, release model.Release, project model.Project, application model.Application, target model.DeploymentTarget, namespace string) error {
-	if strings.TrimSpace(project.SystemKey) != "platform" || strings.TrimSpace(application.Slug) != "gateway-traffic-probe" {
+	if !model.IsGatewayTrafficProbeApplication(project, application) {
 		return nil
 	}
 	serviceAccountName := strings.TrimSpace(target.ServiceAccountName)
@@ -129,6 +130,20 @@ func (r *Runner) ensurePlatformApplicationDependencies(ctx context.Context, rele
 		Namespace:        namespace,
 		RuntimeClusterID: strings.TrimSpace(target.ClusterID),
 	})
+}
+
+func (r *Runner) applyPlatformDeploymentTargetDefaults(project model.Project, application model.Application, target model.DeploymentTarget) model.DeploymentTarget {
+	next := model.ApplyPlatformDeploymentTargetDefaults(project, application, target)
+	if next.ServiceAccountName == target.ServiceAccountName && next.AutomountServiceAccountToken == target.AutomountServiceAccountToken {
+		return next
+	}
+	_ = r.db.Model(&model.DeploymentTarget{}).
+		Where("id = ?", target.ID).
+		Updates(map[string]any{
+			"service_account_name":            next.ServiceAccountName,
+			"automount_service_account_token": next.AutomountServiceAccountToken,
+		}).Error
+	return next
 }
 
 func (r *Runner) markSystemComponentDeployment(release model.Release, status string, message string) {

@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	systemComponentGatewayTrafficProbe = "gateway-traffic-probe"
+	systemComponentGatewayTrafficProbe = model.GatewayTrafficProbeApplicationSlug
 )
 
 type systemComponentInstallInput struct {
@@ -227,8 +227,8 @@ func (h *Handlers) systemComponentApplicationPlan(ctx *gin.Context, user model.U
 		DataRetentionEnabled:         false,
 		Enabled:                      true,
 		DeleteStatus:                 "active",
-		ServiceAccountName:           "liteyuki-gateway-traffic-probe",
-		AutomountServiceAccountToken: "true",
+		ServiceAccountName:           model.GatewayTrafficProbeServiceAccountName,
+		AutomountServiceAccountToken: model.GatewayTrafficProbeAutomountServiceToken,
 		CreatedBy:                    user.ID,
 	}
 	var existingTarget model.DeploymentTarget

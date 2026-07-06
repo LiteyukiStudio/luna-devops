@@ -1,6 +1,16 @@
 package model
 
-import "time"
+import (
+	"strings"
+	"time"
+)
+
+const (
+	PlatformSystemProjectKey                 = "platform"
+	GatewayTrafficProbeApplicationSlug       = "gateway-traffic-probe"
+	GatewayTrafficProbeServiceAccountName    = "liteyuki-gateway-traffic-probe"
+	GatewayTrafficProbeAutomountServiceToken = "true"
+)
 
 type SystemComponentInstallation struct {
 	ID                 string     `gorm:"primaryKey" json:"id"`
@@ -25,4 +35,17 @@ type SystemComponentInstallation struct {
 	InstalledBy        string     `gorm:"index;not null;default:''" json:"installedBy"`
 	CreatedAt          time.Time  `json:"createdAt"`
 	UpdatedAt          time.Time  `json:"updatedAt"`
+}
+
+func IsGatewayTrafficProbeApplication(project Project, application Application) bool {
+	return strings.TrimSpace(project.SystemKey) == PlatformSystemProjectKey &&
+		strings.TrimSpace(application.Slug) == GatewayTrafficProbeApplicationSlug
+}
+
+func ApplyPlatformDeploymentTargetDefaults(project Project, application Application, target DeploymentTarget) DeploymentTarget {
+	if IsGatewayTrafficProbeApplication(project, application) {
+		target.ServiceAccountName = GatewayTrafficProbeServiceAccountName
+		target.AutomountServiceAccountToken = GatewayTrafficProbeAutomountServiceToken
+	}
+	return target
 }

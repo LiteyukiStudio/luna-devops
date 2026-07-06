@@ -90,6 +90,7 @@ func (h *Handlers) CreateDeploymentTarget(ctx *gin.Context) {
 	if !ok {
 		return
 	}
+	target = model.ApplyPlatformDeploymentTargetDefaults(project, app, target)
 	if err := h.saveDeploymentTarget(target, input.BuildHookBindings); err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
@@ -141,6 +142,7 @@ func (h *Handlers) UpdateDeploymentTarget(ctx *gin.Context) {
 	if strings.TrimSpace(input.SecretRefs) == "" {
 		target.SecretRefs = existing.SecretRefs
 	}
+	target = model.ApplyPlatformDeploymentTargetDefaults(project, app, target)
 	if err := h.saveDeploymentTarget(target, input.BuildHookBindings); err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
