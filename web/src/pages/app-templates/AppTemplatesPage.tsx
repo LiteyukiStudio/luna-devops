@@ -112,11 +112,12 @@ export function AppTemplatesPage() {
   })
 
   const installSystemTemplate = useMutation({
-    mutationFn: (payload: { templateId: string, clusterId: string, apiBaseUrl: string }) =>
+    mutationFn: (payload: { templateId: string, clusterId: string, apiBaseUrl: string, traefikMetricsUrl?: string }) =>
       api.installSystemAppTemplate(payload.templateId, {
         apiBaseUrl: payload.apiBaseUrl,
         clusterId: payload.clusterId,
         mode: 'traefik-metrics',
+        traefikMetricsUrl: payload.traefikMetricsUrl,
       }),
     onSuccess: async (result) => {
       toast.success(t('appTemplatesPage.systemInstallStarted'))
@@ -169,6 +170,7 @@ export function AppTemplatesPage() {
         apiBaseUrl: form.values.apiBaseUrl ?? '',
         clusterId: form.clusterId,
         templateId: selectedTemplate.id,
+        traefikMetricsUrl: form.values.traefikMetricsUrl ?? '',
       })
       return
     }
@@ -615,11 +617,15 @@ function Field({ children, hint, label, required }: { children: React.ReactNode,
 function templateValueHint(key: string, t: ReturnType<typeof useTranslation>['t']) {
   if (key === 'apiBaseUrl')
     return t('appTemplatesPage.valueHints.apiBaseUrl')
+  if (key === 'traefikMetricsUrl')
+    return t('appTemplatesPage.valueHints.traefikMetricsUrl')
 }
 
 function templateValuePlaceholder(key: string, autoGenerate: boolean, defaultValue: string, t: ReturnType<typeof useTranslation>['t']) {
   if (key === 'apiBaseUrl')
     return t('appTemplatesPage.valuePlaceholders.apiBaseUrl')
+  if (key === 'traefikMetricsUrl')
+    return t('appTemplatesPage.valuePlaceholders.traefikMetricsUrl')
   if (autoGenerate)
     return t('appTemplatesPage.autoGeneratePlaceholder')
   return defaultValue

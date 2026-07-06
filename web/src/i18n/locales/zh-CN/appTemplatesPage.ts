@@ -76,12 +76,15 @@ const appTemplatesPage = {
     masterKey: '主密钥',
     email: '邮箱',
     apiBaseUrl: 'DevOps API 基础地址',
+    traefikMetricsUrl: 'Traefik Metrics 地址',
   },
   valueHints: {
     apiBaseUrl: '填写平台对探针可访问的基础地址，例如 https://devops.liteyuki.org；不要填写 /api/v1/billing/gateway-traffic 这类具体接口路径，探针会自动拼接上报接口。',
+    traefikMetricsUrl: '填写探针 Pod 在集群内可访问的 Traefik Prometheus metrics 地址。留空时默认使用 http://traefik.<Gateway 命名空间>.svc.cluster.local:9100/metrics。',
   },
   valuePlaceholders: {
     apiBaseUrl: 'https://devops.liteyuki.org',
+    traefikMetricsUrl: 'http://traefik.kube-system.svc.cluster.local:9100/metrics',
   },
   templates: {
     'liteyuki-gateway-traffic-probe': {

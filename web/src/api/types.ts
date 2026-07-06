@@ -169,6 +169,7 @@ export interface SystemComponentInstallPayload {
   namespace?: string
   mode?: string
   apiBaseUrl: string
+  traefikMetricsUrl?: string
 }
 
 export interface SystemComponentInstallResponse {

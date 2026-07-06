@@ -620,6 +620,13 @@
         "description": "Public or cluster-reachable Liteyuki DevOps API endpoint used by the probe to report traffic windows.",
         "default": "",
         "required": true
+      },
+      {
+        "key": "traefikMetricsUrl",
+        "label": "Traefik metrics URL",
+        "description": "Optional Prometheus metrics endpoint reachable from the probe Pod. Leave blank to use http://traefik.<Gateway namespace>.svc.cluster.local:9100/metrics.",
+        "default": "",
+        "required": false
       }
     ]
   },

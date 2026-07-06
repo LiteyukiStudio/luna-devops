@@ -76,12 +76,15 @@ const appTemplatesPage = {
     masterKey: 'Master Key',
     email: 'Email',
     apiBaseUrl: 'DevOps API Base URL',
+    traefikMetricsUrl: 'Traefik Metrics URL',
   },
   valueHints: {
     apiBaseUrl: 'Enter the platform base URL reachable from the probe, for example https://devops.liteyuki.org. Do not enter a concrete path such as /api/v1/billing/gateway-traffic; the probe appends the reporting endpoint automatically.',
+    traefikMetricsUrl: 'Enter the Traefik Prometheus metrics endpoint reachable from the probe Pod. Leave blank to use http://traefik.<Gateway namespace>.svc.cluster.local:9100/metrics.',
   },
   valuePlaceholders: {
     apiBaseUrl: 'https://devops.liteyuki.org',
+    traefikMetricsUrl: 'http://traefik.kube-system.svc.cluster.local:9100/metrics',
   },
   templates: {
     'liteyuki-gateway-traffic-probe': {

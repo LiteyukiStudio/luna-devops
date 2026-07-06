@@ -3,7 +3,9 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/LiteyukiStudio/devops/internal/appstore"
@@ -20,10 +22,11 @@ const (
 )
 
 type systemComponentInstallInput struct {
-	ClusterID  string `json:"clusterId"`
-	Namespace  string `json:"namespace"`
-	Mode       string `json:"mode"`
-	APIBaseURL string `json:"apiBaseUrl"`
+	ClusterID         string `json:"clusterId"`
+	Namespace         string `json:"namespace"`
+	Mode              string `json:"mode"`
+	APIBaseURL        string `json:"apiBaseUrl"`
+	TraefikMetricsURL string `json:"traefikMetricsUrl"`
 }
 
 type systemComponentInstallResponse struct {
@@ -114,7 +117,12 @@ func (h *Handlers) InstallSystemAppTemplate(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusBadRequest, "system_component.api_base_url_required", "API base URL is required")
 		return
 	}
-	configJSON, err := json.Marshal(map[string]string{"apiBaseUrl": apiBaseURL})
+	traefikMetricsURL := strings.TrimSpace(input.TraefikMetricsURL)
+	if err := validateOptionalHTTPURL(traefikMetricsURL, "Traefik metrics URL"); err != nil {
+		writeErrorCode(ctx, http.StatusBadRequest, "system_component.traefik_metrics_url_invalid", err.Error())
+		return
+	}
+	configJSON, err := json.Marshal(map[string]string{"apiBaseUrl": apiBaseURL, "traefikMetricsUrl": traefikMetricsURL})
 	if err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
@@ -128,7 +136,7 @@ func (h *Handlers) InstallSystemAppTemplate(ctx *gin.Context) {
 		return
 	}
 
-	plan, ok := h.systemComponentApplicationPlan(ctx, user, platformProject, cluster, template, componentID, mode, string(configJSON), apiBaseURL, reportToken)
+	plan, ok := h.systemComponentApplicationPlan(ctx, user, platformProject, cluster, template, componentID, mode, string(configJSON), apiBaseURL, traefikMetricsURL, reportToken)
 	if !ok {
 		return
 	}
@@ -169,7 +177,7 @@ type systemComponentApplicationPlan struct {
 	SecretValue      model.SecretValue
 }
 
-func (h *Handlers) systemComponentApplicationPlan(ctx *gin.Context, user model.User, project model.Project, cluster model.RuntimeCluster, template appstore.Template, componentID string, mode string, configJSON string, apiBaseURL string, reportToken string) (systemComponentApplicationPlan, bool) {
+func (h *Handlers) systemComponentApplicationPlan(ctx *gin.Context, user model.User, project model.Project, cluster model.RuntimeCluster, template appstore.Template, componentID string, mode string, configJSON string, apiBaseURL string, traefikMetricsURL string, reportToken string) (systemComponentApplicationPlan, bool) {
 	applicationSlug := strings.TrimSpace(template.Slug)
 	if applicationSlug == "" {
 		applicationSlug = componentID
@@ -215,7 +223,7 @@ func (h *Handlers) systemComponentApplicationPlan(ctx *gin.Context, user model.U
 		BuildMemoryRequest:           defaultBuildMemoryRequest,
 		BuildTimeoutSeconds:          defaultBuildTimeoutSeconds,
 		ConcurrencyPolicy:            "queue",
-		EnvVars:                      systemComponentProbeEnv(cluster, componentID, mode, apiBaseURL),
+		EnvVars:                      systemComponentProbeEnv(cluster, componentID, mode, apiBaseURL, traefikMetricsURL),
 		DataRetentionEnabled:         false,
 		Enabled:                      true,
 		DeleteStatus:                 "active",
@@ -331,15 +339,16 @@ func (h *Handlers) persistSystemComponentApplicationPlan(plan systemComponentApp
 	})
 }
 
-func systemComponentProbeEnv(cluster model.RuntimeCluster, componentID string, mode string, apiBaseURL string) string {
+func systemComponentProbeEnv(cluster model.RuntimeCluster, componentID string, mode string, apiBaseURL string, traefikMetricsURL string) string {
+	gatewayNamespace := firstNonEmpty(cluster.GatewayNamespace, "kube-system")
 	values := map[string]string{
 		"API_BASE_URL":        strings.TrimRight(apiBaseURL, "/"),
 		"COMPONENT_ID":        componentID,
 		"RUNTIME_CLUSTER_ID":  cluster.ID,
 		"CONTROLLER_TYPE":     firstNonEmpty(cluster.GatewayControllerType, "traefik"),
 		"MODE":                firstNonEmpty(mode, "traefik-metrics"),
-		"GATEWAY_NAMESPACE":   firstNonEmpty(cluster.GatewayNamespace, "kube-system"),
-		"TRAEFIK_METRICS_URL": "http://traefik." + firstNonEmpty(cluster.GatewayNamespace, "kube-system") + ".svc.cluster.local:9100/metrics",
+		"GATEWAY_NAMESPACE":   gatewayNamespace,
+		"TRAEFIK_METRICS_URL": firstNonEmpty(traefikMetricsURL, "http://traefik."+gatewayNamespace+".svc.cluster.local:9100/metrics"),
 		"PROBE_ADDR":          ":9090",
 		"SCRAPE_INTERVAL":     "60s",
 	}
@@ -348,6 +357,20 @@ func systemComponentProbeEnv(cluster model.RuntimeCluster, componentID string, m
 		return "{}"
 	}
 	return string(content)
+}
+
+func validateOptionalHTTPURL(value string, label string) error {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	parsed, err := url.ParseRequestURI(value)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return fmt.Errorf("%s must be a valid URL", label)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return fmt.Errorf("%s must use http or https", label)
+	}
+	return nil
 }
 
 func (h *Handlers) systemComponentForBearerToken(token string, componentID string) (model.SystemComponentInstallation, bool) {
