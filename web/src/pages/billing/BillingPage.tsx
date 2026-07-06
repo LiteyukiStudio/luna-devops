@@ -70,7 +70,7 @@ export function BillingPage() {
 
   const accountSummaryQuery = useQuery({
     queryKey: ['billing', 'summary', 'account', billingPeriodQuery],
-    queryFn: () => api.getBillingSummary(undefined, billingPeriodQuery),
+    queryFn: () => api.getBillingSummary(undefined, { ...billingPeriodQuery, accountScope: 'current' }),
   })
   const scopedSummaryQuery = useQuery({
     queryKey: ['billing', 'summary', 'scope', selectedProjectIds, billingPeriodQuery],

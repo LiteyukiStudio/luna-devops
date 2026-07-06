@@ -1127,6 +1127,7 @@ export interface BillingListParams extends PaginationParams {
 export interface BillingPeriodParams {
   periodStart?: string
   periodEnd?: string
+  accountScope?: 'current'
 }
 
 export interface PaginatedResponse<T> {

@@ -103,7 +103,7 @@ export function billingQuery(params: BillingListParams) {
   return search.toString()
 }
 
-export function billingSummaryQuery(projectIds?: string[], period?: { periodStart?: string, periodEnd?: string }) {
+export function billingSummaryQuery(projectIds?: string[], period?: { periodStart?: string, periodEnd?: string, accountScope?: string }) {
   const search = new URLSearchParams()
   for (const projectId of projectIds ?? []) {
     if (projectId)
@@ -113,6 +113,8 @@ export function billingSummaryQuery(projectIds?: string[], period?: { periodStar
     search.set('periodStart', period.periodStart)
   if (period?.periodEnd)
     search.set('periodEnd', period.periodEnd)
+  if (period?.accountScope)
+    search.set('accountScope', period.accountScope)
   const query = search.toString()
   return query ? `?${query}` : ''
 }

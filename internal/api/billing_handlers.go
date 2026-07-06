@@ -22,6 +22,11 @@ func (h *Handlers) GetBillingSummary(ctx *gin.Context) {
 	if !ok {
 		return
 	}
+	if strings.TrimSpace(ctx.Query("accountScope")) == "current" {
+		scope.UserIDs = []string{user.ID}
+		scope.ProjectIDs = nil
+		scope.FilterProjectIDs = false
+	}
 	lowBalanceLimit := decimal.RequireFromString("100")
 	if configuredLimit, err := decimal.NewFromString(strings.TrimSpace(h.configs.get([]string{"billing.lowBalanceThresholdCredits"})["billing.lowBalanceThresholdCredits"])); err == nil && !configuredLimit.IsNegative() {
 		lowBalanceLimit = configuredLimit
