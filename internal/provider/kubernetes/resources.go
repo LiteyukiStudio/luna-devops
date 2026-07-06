@@ -90,6 +90,15 @@ type RuntimeTerminalOptions struct {
 	SizeQueue          remotecommand.TerminalSizeQueue
 }
 
+type PodTerminalOptions struct {
+	Namespace string
+	PodName   string
+	Container string
+	Stdin     io.Reader
+	Stdout    io.Writer
+	SizeQueue remotecommand.TerminalSizeQueue
+}
+
 type RuntimeMetricsOptions struct {
 	Namespace          string
 	DeploymentTargetID string

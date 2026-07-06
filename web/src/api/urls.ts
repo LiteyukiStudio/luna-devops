@@ -30,14 +30,28 @@ export function deploymentTargetMetricsStreamUrl(projectId: string, applicationI
   return `${API_BASE_URL}/projects/${encodeURIComponent(projectId)}/applications/${encodeURIComponent(applicationId)}/deployment-targets/${encodeURIComponent(targetId)}/metrics/stream`
 }
 
-export function releaseRuntimeTerminalUrl(projectId: string, releaseId: string, container = '') {
+function apiWebSocketUrl(path: string) {
   const base = API_BASE_URL.startsWith('http://') || API_BASE_URL.startsWith('https://')
     ? API_BASE_URL
     : `${window.location.origin}${API_BASE_URL.startsWith('/') ? '' : '/'}${API_BASE_URL}`
-  const url = new URL(`${base}/projects/${encodeURIComponent(projectId)}/releases/${encodeURIComponent(releaseId)}/terminal`)
+  const url = new URL(`${base}${path}`)
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+  return url
+}
+
+export function releaseRuntimeTerminalUrl(projectId: string, releaseId: string, container = '') {
+  const url = apiWebSocketUrl(`/projects/${encodeURIComponent(projectId)}/releases/${encodeURIComponent(releaseId)}/terminal`)
   if (container.trim())
     url.searchParams.set('container', container.trim())
-  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+  return url.toString()
+}
+
+export function runtimeClusterPodTerminalUrl(clusterId: string, namespace: string, podName: string, container = '') {
+  const url = apiWebSocketUrl(`/runtime/clusters/${encodeURIComponent(clusterId)}/pods/terminal`)
+  url.searchParams.set('namespace', namespace)
+  url.searchParams.set('name', podName)
+  if (container.trim())
+    url.searchParams.set('container', container.trim())
   return url.toString()
 }
 

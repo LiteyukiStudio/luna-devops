@@ -9,4 +9,5 @@ export {
   gitOAuthStartUrl,
   oidcStartUrl,
   releaseRuntimeTerminalUrl,
+  runtimeClusterPodTerminalUrl,
 } from './urls'

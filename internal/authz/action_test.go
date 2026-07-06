@@ -80,6 +80,7 @@ func TestRequiredAccessTokenScopeUsesFineGrainedProjectRoutes(t *testing.T) {
 		want   string
 	}{
 		{"/api/v1/runtime/clusters/:clusterId/resources", "DELETE", string(ActionClusterManage)},
+		{"/api/v1/runtime/clusters/:clusterId/pods/terminal", "GET", string(ActionClusterManage)},
 		{"/api/v1/build/variable-sets", "POST", string(ActionSecretUpdate)},
 		{"/api/v1/projects/:projectId/runtime-config-sets", "GET", string(ActionSecretReadSummary)},
 		{"/api/v1/projects/:projectId/members", "POST", string(ActionProjectManage)},

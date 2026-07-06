@@ -44,6 +44,8 @@ const clustersPage = {
   selectedResources: '{{count}} deletable resources selected',
   expandWorkloadPods: 'Expand Pods',
   collapseWorkloadPods: 'Collapse Pods',
+  webConsole: 'Web Console',
+  webConsoleDescription: 'Connect to the selected Pod with a real interactive terminal. This action is written to the audit log.',
   viewEvents: 'Events',
   viewYaml: 'YAML',
   resourceYamlTitle: 'Resource YAML',

@@ -62,6 +62,8 @@ If an outer Nginx/CDN/load balancer already owns host ports `80/443`, point it t
 
 The cluster resource page lists platform-managed namespaces, workloads, services, configs, secrets, and storage with server-side pagination. Only resources visible to the current user are counted in the page total. The workload tab uses Deployment rows as the top level; expanding a Deployment shows its Pods as child rows, and those Pod rows are not counted by pagination.
 
+Platform administrators can open Web Console from Pod child rows in the workload tab to enter an interactive terminal for that Pod. The entry reuses the application deployment Web Console terminal, verifies that the Pod is still a platform-managed resource, and writes audit logs. If sensitive-operation Step-up verification is enabled, the same `runtime_terminal` assertion is required before the console opens.
+
 If the API or worker runs in a container, kubeconfig server addresses must be reachable from that container. Avoid host-only `127.0.0.1`.
 
 Runtime clusters also host Kubernetes build Jobs. The small-team default allows 4 concurrent build Jobs per runtime cluster and 2 concurrent builds per project space. Extra builds stay queued and retry automatically instead of being marked failed immediately.

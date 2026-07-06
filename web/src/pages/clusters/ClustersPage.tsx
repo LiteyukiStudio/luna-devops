@@ -27,6 +27,7 @@ import { TabsContent } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { inspectKubeconfig, selectSingleKubeconfigContext } from '@/lib/kubeconfig'
 import { canDeleteClusterResource } from './cluster-resource-utils'
+import { ClusterResourceWebConsoleDialog } from './cluster-resource-web-console-dialog'
 import { ClusterResourceEventsList, ClusterResourcesPanel } from './cluster-resources-panel'
 
 type ClusterForm = Omit<RuntimeCluster, 'gatewayDomainSuffixes' | 'id' | 'createdBy' | 'createdAt' | 'kubeconfigSet' | 'lastCheckedAt'> & {
@@ -78,6 +79,7 @@ export function ClustersPage() {
   const [resourceToDelete, setResourceToDelete] = useState<ClusterResource | null>(null)
   const [resourcesToDelete, setResourcesToDelete] = useState<ClusterResource[]>([])
   const [eventResource, setEventResource] = useState<ClusterResource | null>(null)
+  const [consoleResource, setConsoleResource] = useState<ClusterResource | null>(null)
   const [yamlResource, setYamlResource] = useState<ClusterResource | null>(null)
   const [selectedResourceClusterId, setSelectedResourceClusterId] = useState('')
   const [selectedResourceKeys, setSelectedResourceKeys] = useState<string[]>([])
@@ -434,6 +436,7 @@ export function ClustersPage() {
               tab={tab}
               user={user}
               onDeleteResource={setResourceToDelete}
+              onOpenConsole={setConsoleResource}
               onOpenEvents={setEventResource}
               onOpenYAML={setYamlResource}
               onSelectionChange={setSelectedResourceKeys}
@@ -691,6 +694,11 @@ export function ClustersPage() {
           </div>
         </DialogContent>
       </Dialog>
+      <ClusterResourceWebConsoleDialog
+        cluster={selectedResourceCluster ?? null}
+        pod={consoleResource}
+        onOpenChange={open => !open && setConsoleResource(null)}
+      />
       <Dialog open={Boolean(yamlResource)} onOpenChange={open => !open && setYamlResource(null)}>
         <DialogContent className="flex max-h-[min(88vh,46rem)] w-[min(92vw,64rem)] max-w-[92vw] min-w-0 flex-col overflow-hidden p-0">
           <DialogHeader className="shrink-0 border-b border-border p-5 pb-4">

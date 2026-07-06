@@ -11,17 +11,23 @@ export function ApplicationRuntimeTerminalPanel({
   fullscreen = false,
   projectId,
   release,
+  ready,
+  socketUrl,
 }: {
   container: string
   fullscreen?: boolean
   projectId: string
+  ready?: boolean
   release: Release | null
+  socketUrl?: string
 }) {
   const { t } = useTranslation()
   const terminalRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
-    if (!release || !projectId || !terminalRef.current)
+    const terminalSocketUrl = socketUrl ?? (release && projectId ? releaseRuntimeTerminalUrl(projectId, release.id, container) : '')
+    const shouldConnect = ready ?? Boolean(release && projectId)
+    if (!shouldConnect || !terminalSocketUrl || !terminalRef.current)
       return
 
     const terminal = new XTerm({
@@ -58,7 +64,7 @@ export function ApplicationRuntimeTerminalPanel({
     terminal.writeln(t('deploymentsPage.webConsoleConnecting'))
     terminal.focus()
 
-    const socket = new WebSocket(releaseRuntimeTerminalUrl(projectId, release.id, container))
+    const socket = new WebSocket(terminalSocketUrl)
     socket.binaryType = 'arraybuffer'
 
     const sendResize = () => {
@@ -119,7 +125,7 @@ export function ApplicationRuntimeTerminalPanel({
       socket.close()
       terminal.dispose()
     }
-  }, [container, projectId, release, t])
+  }, [container, projectId, ready, release, socketUrl, t])
 
   return (
     <div className={fullscreen ? 'flex h-full min-h-0 p-3 pt-2' : 'p-3'}>

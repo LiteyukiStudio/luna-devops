@@ -185,6 +185,8 @@ func RequiredAccessTokenScope(path, method string) string {
 		return string(ActionConfigRead)
 	case strings.HasPrefix(path, "/api/v1/configs") && method != http.MethodGet:
 		return string(ActionConfigWrite)
+	case isRuntimeClusterPodTerminalPath(path):
+		return string(ActionClusterManage)
 	case strings.HasPrefix(path, "/api/v1/runtime/clusters") && method == http.MethodGet:
 		return string(ActionClusterRead)
 	case strings.HasPrefix(path, "/api/v1/runtime/clusters") && method != http.MethodGet:
@@ -351,6 +353,10 @@ func isReleaseRuntimeExecPath(path string) bool {
 	default:
 		return false
 	}
+}
+
+func isRuntimeClusterPodTerminalPath(path string) bool {
+	return path == "/api/v1/runtime/clusters/:clusterId/pods/terminal"
 }
 
 func isProjectRuntimeConfigPath(path string) bool {

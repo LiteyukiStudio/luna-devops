@@ -44,6 +44,8 @@ const clustersPage = {
   selectedResources: '已选择 {{count}} 个可删除资源',
   expandWorkloadPods: '展开 Pod',
   collapseWorkloadPods: '收起 Pod',
+  webConsole: 'Web Console',
+  webConsoleDescription: '连接当前 Pod 的真实交互式终端。该操作会写入审计日志。',
   viewEvents: '事件',
   viewYaml: 'YAML',
   resourceYamlTitle: '资源 YAML',

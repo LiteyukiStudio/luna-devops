@@ -178,6 +178,63 @@ func (c *Client) RuntimeTerminal(ctx context.Context, options RuntimeTerminalOpt
 	})
 }
 
+func (c *Client) PodTerminal(ctx context.Context, options PodTerminalOptions) error {
+	if c.restConfig == nil {
+		return fmt.Errorf("pod terminal requires a REST config")
+	}
+	if options.Stdin == nil || options.Stdout == nil {
+		return fmt.Errorf("pod terminal streams are required")
+	}
+	pod, container, err := c.namedPod(ctx, options.Namespace, options.PodName, options.Container)
+	if err != nil {
+		return err
+	}
+	req := c.client.CoreV1().RESTClient().Post().
+		Resource("pods").
+		Name(pod.Name).
+		Namespace(pod.Namespace).
+		SubResource("exec").
+		VersionedParams(&corev1.PodExecOptions{
+			Container: container,
+			Command:   []string{"/bin/sh"},
+			Stdin:     true,
+			Stdout:    true,
+			Stderr:    true,
+			TTY:       true,
+		}, scheme.ParameterCodec)
+	executor, err := remotecommand.NewSPDYExecutor(c.restConfig, "POST", req.URL())
+	if err != nil {
+		return err
+	}
+	return executor.StreamWithContext(ctx, remotecommand.StreamOptions{
+		Stdin:             options.Stdin,
+		Stdout:            options.Stdout,
+		Stderr:            options.Stdout,
+		Tty:               true,
+		TerminalSizeQueue: options.SizeQueue,
+	})
+}
+
+func (c *Client) namedPod(ctx context.Context, namespace string, podName string, container string) (corev1.Pod, string, error) {
+	namespace = strings.TrimSpace(namespace)
+	podName = strings.TrimSpace(podName)
+	if namespace == "" {
+		return corev1.Pod{}, "", fmt.Errorf("resource namespace is required")
+	}
+	if podName == "" {
+		return corev1.Pod{}, "", fmt.Errorf("pod name is required")
+	}
+	pod, err := c.client.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
+	if err != nil {
+		return corev1.Pod{}, "", err
+	}
+	selectedContainer, err := selectPodContainer(*pod, container)
+	if err != nil {
+		return corev1.Pod{}, "", err
+	}
+	return *pod, selectedContainer, nil
+}
+
 func (c *Client) runtimePod(ctx context.Context, namespace string, deploymentTargetID string, container string) (corev1.Pod, string, error) {
 	namespace = strings.TrimSpace(namespace)
 	deploymentTargetID = strings.TrimSpace(deploymentTargetID)
@@ -213,17 +270,25 @@ func (c *Client) runtimePod(ctx context.Context, namespace string, deploymentTar
 		return pods.Items[left].CreationTimestamp.After(pods.Items[right].CreationTimestamp.Time)
 	})
 	pod := pods.Items[0]
+	selectedContainer, err := selectPodContainer(pod, container)
+	if err != nil {
+		return corev1.Pod{}, "", err
+	}
+	return pod, selectedContainer, nil
+}
+
+func selectPodContainer(pod corev1.Pod, container string) (string, error) {
 	selectedContainer := strings.TrimSpace(container)
 	if selectedContainer == "" && len(pod.Spec.Containers) > 0 {
 		selectedContainer = pod.Spec.Containers[0].Name
 	}
 	if selectedContainer == "" {
-		return corev1.Pod{}, "", fmt.Errorf("runtime container not found")
+		return "", fmt.Errorf("runtime container not found")
 	}
 	for _, item := range pod.Spec.Containers {
 		if item.Name == selectedContainer {
-			return pod, selectedContainer, nil
+			return selectedContainer, nil
 		}
 	}
-	return corev1.Pod{}, "", fmt.Errorf("runtime container %q not found", selectedContainer)
+	return "", fmt.Errorf("runtime container %q not found", selectedContainer)
 }

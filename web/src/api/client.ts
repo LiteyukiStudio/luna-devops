@@ -18,6 +18,7 @@ export {
   gitOAuthStartUrl,
   oidcStartUrl,
   releaseRuntimeTerminalUrl,
+  runtimeClusterPodTerminalUrl,
 } from './urls'
 
 export const api = {

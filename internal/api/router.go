@@ -113,6 +113,7 @@ func NewRouterWithStaticFSAndMetrics(db *gorm.DB, staticFS fs.FS, httpMetrics *o
 		v1.DELETE("/runtime/clusters/:clusterId/resources", handlers.DeleteRuntimeClusterResource)
 		v1.GET("/runtime/clusters/:clusterId/resource-yaml", handlers.GetRuntimeClusterResourceYAML)
 		v1.GET("/runtime/clusters/:clusterId/resource-events", handlers.ListRuntimeClusterResourceEvents)
+		v1.GET("/runtime/clusters/:clusterId/pods/terminal", handlers.StreamRuntimeClusterPodTerminal)
 		v1.GET("/system-components", handlers.ListSystemComponents)
 		v1.POST("/app-templates/:templateId/system-install", handlers.InstallSystemAppTemplate)
 		v1.GET("/notifications/presets", handlers.ListNotificationPresets)

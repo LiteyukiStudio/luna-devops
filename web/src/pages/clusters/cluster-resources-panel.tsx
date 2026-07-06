@@ -1,5 +1,5 @@
 import type { ClusterResource, ClusterResourceEvent, CurrentUser, RuntimeCluster } from '@/api'
-import { ChevronDown, ChevronRight, FileCode2, ScrollText, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, FileCode2, ScrollText, SquareTerminal, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CopyableHoverText } from '@/components/common/copyable-hover-text'
@@ -26,7 +26,7 @@ type ClusterResourceRow = ClusterResource & {
   hasChildren?: boolean
   parentId?: string
 }
-export function ClusterResourcesPanel({ items, loading, pagination, selectedCluster, selectedResourceKeys, tab, user, onDeleteResource, onOpenEvents, onOpenYAML, onSelectionChange }: {
+export function ClusterResourcesPanel({ items, loading, pagination, selectedCluster, selectedResourceKeys, tab, user, onDeleteResource, onOpenConsole, onOpenEvents, onOpenYAML, onSelectionChange }: {
   items: ClusterResource[]
   loading: boolean
   pagination?: ClusterResourcePagination
@@ -35,6 +35,7 @@ export function ClusterResourcesPanel({ items, loading, pagination, selectedClus
   tab: string
   user?: CurrentUser
   onDeleteResource: (resource: ClusterResource) => void
+  onOpenConsole: (resource: ClusterResource) => void
   onOpenEvents: (resource: ClusterResource) => void
   onOpenYAML: (resource: ClusterResource) => void
   onSelectionChange: (keys: string[]) => void
@@ -65,6 +66,9 @@ export function ClusterResourcesPanel({ items, loading, pagination, selectedClus
   const itemKeys = new Set(rowItems.map(item => item.id))
   const visibleSelectedResourceKeys = selectedResourceKeys.filter(key => itemKeys.has(key))
   const selectedResources = rowItems.filter(item => visibleSelectedResourceKeys.includes(item.id) && canDeleteClusterResource(user, item) && !item.parentId)
+  const canOpenWebConsole = (item: ClusterResourceRow) => {
+    return tab === 'workloads' && user?.role === 'platform_admin' && item.kind.toLowerCase() === 'pod' && Boolean(item.namespace && item.name)
+  }
   const toggleResourceExpansion = (resource: ClusterResourceRow) => {
     setExpandedResourceKeys((keys) => {
       if (keys.includes(resource.id))
@@ -123,10 +127,16 @@ export function ClusterResourcesPanel({ items, loading, pagination, selectedClus
         {
           key: 'actions',
           header: t('common.actions'),
-          className: 'w-52 min-w-52 whitespace-nowrap text-right',
+          className: 'w-72 min-w-72 whitespace-nowrap text-right',
           sticky: 'right',
           render: item => (
             <div className="flex justify-end gap-2">
+              {canOpenWebConsole(item) && (
+                <Button size="sm" variant="ghost" onClick={() => onOpenConsole(item)}>
+                  <SquareTerminal className="size-4" />
+                  {t('clustersPage.webConsole')}
+                </Button>
+              )}
               <Button size="sm" variant="ghost" onClick={() => onOpenEvents(item)}>
                 <ScrollText className="size-4" />
                 {t('clustersPage.viewEvents')}
