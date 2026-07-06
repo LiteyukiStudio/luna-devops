@@ -9,6 +9,24 @@ import (
 	"time"
 )
 
+func TestAPIReporterSendsHello(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer token" {
+			t.Fatalf("authorization = %q", r.Header.Get("Authorization"))
+		}
+		if r.URL.Path != "/api/v1/billing/gateway-traffic/hello" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	reporter := NewAPIReporter(server.URL, "token", time.Second)
+	if err := reporter.Hello(context.Background()); err != nil {
+		t.Fatalf("Hello returned error: %v", err)
+	}
+}
+
 func TestAPIReporterSendsGatewayTrafficPayload(t *testing.T) {
 	var got gatewayTrafficPayload
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -24,6 +24,7 @@ type Handlers struct {
 	secrets             secret.Store
 	branchCache         *gitBranchCache
 	registrySearchCache *registrySearchCache
+	gatewayTrafficState gatewayTrafficRuntimeStateStore
 	taskClient          taskEnqueuer
 }
 
@@ -43,10 +44,17 @@ func NewHandlers(db *gorm.DB) *Handlers {
 		ensureDevelopmentAdmin(db)
 	}
 	cfg := config.Load()
-	handlers := &Handlers{db: db, configs: newConfigCache(db), mode: mode, rateLimiter: newRateLimiter(cfg.RedisAddr), oauthStates: newOAuthStateStore(cfg.RedisAddr), projects: repository.NewProjectRepository(db), branchCache: newGitBranchCache(), registrySearchCache: newRegistrySearchCache()}
+	handlers := &Handlers{db: db, configs: newConfigCache(db), mode: mode, rateLimiter: newRateLimiter(cfg.RedisAddr), oauthStates: newOAuthStateStore(cfg.RedisAddr), projects: repository.NewProjectRepository(db), branchCache: newGitBranchCache(), registrySearchCache: newRegistrySearchCache(), gatewayTrafficState: newGatewayTrafficRuntimeStateStore(cfg.RedisAddr)}
 	if cfg.RedisAddr != "" {
 		handlers.taskClient = tasks.NewClient(cfg.RedisAddr)
 	}
 	handlers.secrets = secret.NewStore(db, handlers.audit)
 	return handlers
+}
+
+func (h *Handlers) gatewayTrafficRuntimeStore() gatewayTrafficRuntimeStateStore {
+	if h.gatewayTrafficState == nil {
+		h.gatewayTrafficState = newMemoryGatewayTrafficRuntimeStateStore()
+	}
+	return h.gatewayTrafficState
 }

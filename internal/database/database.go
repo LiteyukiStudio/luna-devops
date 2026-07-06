@@ -1,8 +1,10 @@
 package database
 
 import (
+	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/billing"
 	"github.com/LiteyukiStudio/devops/internal/model"
@@ -10,12 +12,113 @@ import (
 	"gorm.io/gorm"
 )
 
-func Open(databaseURL string) (*gorm.DB, error) {
-	if strings.HasPrefix(databaseURL, "postgres://") || strings.HasPrefix(databaseURL, "postgresql://") {
-		return gorm.Open(postgres.Open(databaseURL), &gorm.Config{})
+const (
+	defaultMaxOpenConns         = 20
+	defaultMaxIdleConns         = 5
+	defaultConnMaxLifetime      = 30 * time.Minute
+	defaultConnMaxIdleTime      = 5 * time.Minute
+	defaultConnectRetryAttempts = 12
+	defaultConnectRetryInterval = 5 * time.Second
+	defaultConnectPingTimeout   = 5 * time.Second
+)
+
+type Options struct {
+	MaxOpenConns         int
+	MaxIdleConns         int
+	ConnMaxLifetime      time.Duration
+	ConnMaxIdleTime      time.Duration
+	ConnectRetryAttempts int
+	ConnectRetryInterval time.Duration
+}
+
+func (options Options) withDefaults() Options {
+	if options.MaxOpenConns <= 0 {
+		options.MaxOpenConns = defaultMaxOpenConns
+	}
+	if options.MaxIdleConns < 0 {
+		options.MaxIdleConns = 0
+	}
+	if options.MaxIdleConns > options.MaxOpenConns {
+		options.MaxIdleConns = options.MaxOpenConns
+	}
+	if options.ConnMaxLifetime <= 0 {
+		options.ConnMaxLifetime = defaultConnMaxLifetime
+	}
+	if options.ConnMaxIdleTime <= 0 {
+		options.ConnMaxIdleTime = defaultConnMaxIdleTime
+	}
+	if options.ConnectRetryAttempts <= 0 {
+		options.ConnectRetryAttempts = defaultConnectRetryAttempts
+	}
+	if options.ConnectRetryInterval <= 0 {
+		options.ConnectRetryInterval = defaultConnectRetryInterval
+	}
+	return options
+}
+
+func Open(databaseURL string, optionList ...Options) (*gorm.DB, error) {
+	if !isPostgresURL(databaseURL) {
+		return nil, fmt.Errorf("unsupported database url: %s", databaseURL)
 	}
 
-	return nil, fmt.Errorf("unsupported database url: %s", databaseURL)
+	options := defaultOptions()
+	if len(optionList) > 0 {
+		options = optionList[0].withDefaults()
+	}
+
+	var lastErr error
+	for attempt := 1; attempt <= options.ConnectRetryAttempts; attempt++ {
+		db, err := openPostgres(databaseURL, options)
+		if err == nil {
+			return db, nil
+		}
+		lastErr = err
+		if attempt < options.ConnectRetryAttempts {
+			time.Sleep(options.ConnectRetryInterval)
+		}
+	}
+
+	return nil, fmt.Errorf("connect database after %d attempts: %w", options.ConnectRetryAttempts, lastErr)
+}
+
+func defaultOptions() Options {
+	return Options{
+		MaxOpenConns:         defaultMaxOpenConns,
+		MaxIdleConns:         defaultMaxIdleConns,
+		ConnMaxLifetime:      defaultConnMaxLifetime,
+		ConnMaxIdleTime:      defaultConnMaxIdleTime,
+		ConnectRetryAttempts: defaultConnectRetryAttempts,
+		ConnectRetryInterval: defaultConnectRetryInterval,
+	}
+}
+
+func isPostgresURL(databaseURL string) bool {
+	return strings.HasPrefix(databaseURL, "postgres://") || strings.HasPrefix(databaseURL, "postgresql://")
+}
+
+func openPostgres(databaseURL string, options Options) (*gorm.DB, error) {
+	db, err := gorm.Open(postgres.Open(databaseURL), &gorm.Config{})
+	if err != nil {
+		return nil, err
+	}
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, err
+	}
+	sqlDB.SetMaxOpenConns(options.MaxOpenConns)
+	sqlDB.SetMaxIdleConns(options.MaxIdleConns)
+	sqlDB.SetConnMaxLifetime(options.ConnMaxLifetime)
+	sqlDB.SetConnMaxIdleTime(options.ConnMaxIdleTime)
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultConnectPingTimeout)
+	defer cancel()
+	if err := sqlDB.PingContext(ctx); err != nil {
+		_ = sqlDB.Close()
+		return nil, err
+	}
+
+	return db, nil
 }
 
 func Migrate(db *gorm.DB) error {

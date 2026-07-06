@@ -26,7 +26,14 @@ func main() {
 		select {}
 	}
 
-	db, err := database.Open(cfg.DatabaseURL)
+	db, err := database.Open(cfg.DatabaseURL, database.Options{
+		MaxOpenConns:         cfg.DatabaseMaxOpenConns,
+		MaxIdleConns:         cfg.DatabaseMaxIdleConns,
+		ConnMaxLifetime:      cfg.DatabaseConnMaxLifetime,
+		ConnMaxIdleTime:      cfg.DatabaseConnMaxIdleTime,
+		ConnectRetryAttempts: cfg.DatabaseConnectRetryAttempts,
+		ConnectRetryInterval: cfg.DatabaseConnectRetryInterval,
+	})
 	if err != nil {
 		log.Fatalf("open database: %v", err)
 	}

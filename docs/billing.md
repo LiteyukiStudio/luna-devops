@@ -89,7 +89,7 @@ storage credits = capacity_gib * duration_days * storage.gib_day
 
 ## 访问流量计费
 
-访问费用按平台访问入口的响应出站流量计费，不读取 Pod 网卡总流量，也不把集群内服务互访计入公网访问费用。访问流量采集默认不安装；未安装 Gateway Traffic Probe 或探针尚未成功上报时，账单页会显示访问流量不可用，并引导平台管理员从应用市场安装平台组件。所有外部 HTTP/HTTPS 访问都应经过平台创建的 GatewayRoute/HTTPRoute，再由网关日志或外部采集器上报用量：
+访问费用按平台访问入口的响应出站流量计费，不读取 Pod 网卡总流量，也不把集群内服务互访计入公网访问费用。访问流量采集默认不安装；账单页通过探针 hello/heartbeat 和成功上报窗口判断运行态，不再把系统组件安装表里的历史状态当作在线事实。未收到有效 heartbeat 时显示未部署，收到 heartbeat 但尚未成功上报正向流量窗口时显示等待上报，并引导平台管理员从应用市场安装或检查平台组件。所有外部 HTTP/HTTPS 访问都应经过平台创建的 GatewayRoute/HTTPRoute，再由网关日志或外部采集器上报用量：
 
 ```text
 gateway credits = response_bytes / 1024 / 1024 / 1024 * gateway.egress_gib

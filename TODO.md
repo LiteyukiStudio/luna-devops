@@ -142,6 +142,7 @@
 - [x] 将 compose 场景收敛为三份：`docker-compose-dev.yaml` 启动 PG/Redis/worker 用于开发联调，`docker-compose.yaml` 使用 DockerHub 镜像启动完整部署栈，`docker-compose-build.yaml` 从当前源码构建完整部署栈。
 - [x] 新增 Helm Chart：支持一键在 Kubernetes / K3s 中部署 API、worker、PostgreSQL 和 Redis，并支持切换外部数据库、外部 Redis、Ingress 和固定镜像版本。
 - [x] 环境文件按运行边界拆分：`.env` 只保留基础模式开关，`.env.development` 面向宿主机进程，`.env.worker` 面向 worker 容器，并提供对应 `.example` 模板。
+- [x] API/Worker 数据库连接增强：启动时对 PostgreSQL 做可配置重试，统一限制每进程连接池大小、空闲连接和连接生命周期，避免多副本部署或数据库短暂满连接时直接崩溃。
 - [x] `docker-compose.yaml` 和 `docker-compose-build.yaml` 内联 API / worker 运行环境变量，生产密钥、域名和镜像 tag 通过宿主机环境变量覆盖；`docker-compose-dev.yaml` 继续使用 `.env.worker` 服务开发联调。
 - [x] 新增 GitHub Actions 容器发布工作流：仅构建 `linux/amd64` 容器镜像，发布 DockerHub `liteyukistudio/devops-api`、`liteyukistudio/devops-worker`；分支发布 `nightly`，`v*` tag 发布版本 tag，稳定版本 tag 额外发布 `latest`；`devops-api` 使用 `embed_web` 内嵌前端静态文件，不额外构建或上传 GitHub Release 二进制产物。
 - [x] 修复内嵌 SPA 根路径和 fallback 被 Go FileServer 重定向到 `./` 的问题：`index.html` 改为直接返回，避免服务端根路径出现不必要 301。
@@ -477,7 +478,7 @@
 
 - [x] 设计平台系统项目空间模型：新增或约定 `platform-system` 系统项目空间，用于承载平台自有探针、采集器和诊断组件；仅平台管理员可见，不参与普通用户账单，不允许普通用户删除或修改；平台管理员可以像维护普通项目空间一样进入查看应用、部署、发布和运行态。
 - [x] 将 Gateway Traffic Probe 从“特殊系统组件安装”迁移为平台系统项目空间下的普通应用：创建 Application、DeploymentTarget、Release 和运行态资源，复用正常部署、日志、Web Console、资源列表和审计链路；系统组件安装记录仅作为应用市场安装入口、状态索引或兼容迁移层。
-- [x] 为平台系统项目空间增加保护规则：禁止删除平台系统项目空间；探针相关运行费用不进入普通用户账单，运行集群维度保留安装状态和最近上报摘要。
+- [x] 为平台系统项目空间增加保护规则：禁止删除平台系统项目空间；探针相关运行费用不进入普通用户账单，系统组件安装记录仅保留安装索引，最近 heartbeat / 上报窗口改为 Redis 或进程内短 TTL 运行态。
 - [ ] 为平台组件实例增加卸载/重装二次确认：平台管理员删除或重装探针应用/部署配置时需要明确确认，并同步清理或更新系统组件安装记录。
 - [x] 为系统组件资源建立统一标记：平台自有集群组件写入 `liteyuki.devops/system=true`、组件类型、运行集群 ID 和版本等 labels/annotations，便于集群资源页过滤、审计和后续升级。
 - [x] 设计系统组件部署 API/Worker：由平台按运行集群下发或升级探针组件，支持版本记录、部署状态回写和失败原因展示；组件部署失败不能影响用户业务发布。

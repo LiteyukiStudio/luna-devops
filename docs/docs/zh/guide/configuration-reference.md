@@ -16,6 +16,12 @@
 | 进阶 | `API_ADDR` | `:8080` | API 容器监听地址；自定义端口时改。 |
 | 进阶 | `APP_CORS_ORIGINS` | `http://localhost:8088` | 允许访问 API 的前端 Origin；前后端不同域时改。 |
 | 进阶 | `LOG_LEVEL` | `debug` | 日志级别；生产通常改为 `info`。 |
+| 进阶 | `DB_MAX_OPEN_CONNS` | `20` | 当前 API 进程最多打开的 PostgreSQL 连接数；多副本部署时按总副本数一起控制，避免打满数据库。 |
+| 进阶 | `DB_MAX_IDLE_CONNS` | `5` | 当前 API 进程保留的空闲 PostgreSQL 连接数；连接紧张时调小。 |
+| 进阶 | `DB_CONN_MAX_LIFETIME` | `30m` | 单个数据库连接最长复用时间；负载均衡、连接代理或数据库滚动维护时可适当调短。 |
+| 进阶 | `DB_CONN_MAX_IDLE_TIME` | `5m` | 空闲数据库连接保留时间；连接紧张时调短。 |
+| 进阶 | `DB_CONNECT_RETRY_ATTEMPTS` | `12` | 启动时连接 PostgreSQL 的重试次数；数据库启动慢或短暂满连接时调大。 |
+| 进阶 | `DB_CONNECT_RETRY_INTERVAL` | `5s` | 启动连接重试间隔，支持 `5s`、`1m` 或纯数字秒数。 |
 | 进阶 | `METRICS_ENABLED` | `false` | 是否启用独立 Prometheus metrics listener；默认关闭。设为 `true` 后 API 会使用默认监听地址 `:9090`。 |
 | 进阶 | `METRICS_ADDR` | `:9090` | metrics 监听地址；只在需要调整 API metrics 端口或绑定地址时修改。 |
 | 进阶 | `METRICS_PATH` | `/metrics` | Prometheus 抓取路径；只注册在独立 metrics listener 上。 |
@@ -38,6 +44,12 @@ OIDC 身份源的 Redirect URI 由 `PUBLIC_BASE_URL` 生成，后台“身份源
 | 基本 | `REDIS_ADDR` | `redis:6379` | Redis 地址；和 API 指向同实例。 |
 | 基本 | `BUILD_EXECUTOR_IMAGE` | `moby/buildkit:v0.24.0-rootless` | BuildKit 镜像；构建集群拉不到默认镜像时改。 |
 | 进阶 | `LOG_LEVEL` | `debug` | 日志级别；生产通常改为 `info`。 |
+| 进阶 | `DB_MAX_OPEN_CONNS` | `20` | 当前 Worker 进程最多打开的 PostgreSQL 连接数；多副本部署时按总副本数一起控制，避免打满数据库。 |
+| 进阶 | `DB_MAX_IDLE_CONNS` | `5` | 当前 Worker 进程保留的空闲 PostgreSQL 连接数；连接紧张时调小。 |
+| 进阶 | `DB_CONN_MAX_LIFETIME` | `30m` | 单个数据库连接最长复用时间；负载均衡、连接代理或数据库滚动维护时可适当调短。 |
+| 进阶 | `DB_CONN_MAX_IDLE_TIME` | `5m` | 空闲数据库连接保留时间；连接紧张时调短。 |
+| 进阶 | `DB_CONNECT_RETRY_ATTEMPTS` | `12` | 启动时连接 PostgreSQL 的重试次数；数据库启动慢或短暂满连接时调大。 |
+| 进阶 | `DB_CONNECT_RETRY_INTERVAL` | `5s` | 启动连接重试间隔，支持 `5s`、`1m` 或纯数字秒数。 |
 | 进阶 | `METRICS_ENABLED` | `false` | 是否启用独立 Prometheus metrics listener；默认关闭。设为 `true` 后 Worker 会使用默认监听地址 `:9091`。 |
 | 进阶 | `METRICS_ADDR` | `:9091` | metrics 监听地址；只在需要调整 Worker metrics 端口或绑定地址时修改。 |
 | 进阶 | `METRICS_PATH` | `/metrics` | Prometheus 抓取路径；只注册在独立 metrics listener 上。 |

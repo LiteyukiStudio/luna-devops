@@ -36,7 +36,7 @@
 4. 平台创建或复用 `platform-system` 项目空间下的组件应用，为目标运行集群创建部署配置和 Release，并生成独立上报 Token。
 5. Worker 使用普通应用部署链路下发 ConfigMap、Secret、Deployment 和 Service；平台额外确保探针 ServiceAccount 与只读 RBAC，因此组件可以在应用部署页查看发布日志、运行日志和 Web Console。
 
-未安装 Gateway Traffic Probe 时，账单页会把访问流量显示为不可用，并引导平台管理员从应用市场安装。组件安装后，探针首次成功上报一个时间窗口，账单页才会认为访问流量可用。
+未安装 Gateway Traffic Probe 时，账单页会把访问流量显示为不可用，并引导平台管理员从应用市场安装。组件安装后，探针启动会先向平台发送 hello，并在每轮采集前刷新 heartbeat；账单页据此显示“已部署 / 等待上报”。探针首次成功上报一个正向流量时间窗口后，账单页才会认为访问流量可用。该在线状态保存在 Redis 或 API 进程内存的短 TTL 运行态中，不写入系统组件安装表，避免手动删除 Kubernetes 资源后留下过期状态。
 
 Gateway Traffic Probe 作为独立镜像 `liteyukistudio/devops-gateway-traffic-probe` 发布。安装时平台会注入 `API_BASE_URL`、`REPORT_TOKEN`、`RUNTIME_CLUSTER_ID`、`TRAEFIK_METRICS_URL` 等环境变量；其中 `REPORT_TOKEN` 只保存哈希到平台数据库，普通部署 Secret 保存明文 token 用于上报。`TRAEFIK_METRICS_URL` 默认按运行集群的 Gateway 命名空间推导，也可以在安装模板中显式填写集群内可访问的 Traefik Prometheus metrics 地址。
 

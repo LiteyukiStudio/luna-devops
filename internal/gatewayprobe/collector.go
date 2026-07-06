@@ -92,6 +92,11 @@ func (c *Collector) Metrics(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (c *Collector) scrapeAndReport(ctx context.Context) error {
+	if c.reporter != nil {
+		if err := c.reporter.Hello(ctx); err != nil {
+			return fmt.Errorf("send probe hello: %w", err)
+		}
+	}
 	if time.Since(c.routeLoaded) >= c.config.RouteRefreshInterval || len(c.routesSnapshot()) == 0 {
 		if err := c.refreshRoutes(ctx); err != nil {
 			return err

@@ -212,6 +212,7 @@ func NewRouterWithStaticFSAndMetrics(db *gorm.DB, staticFS fs.FS, httpMetrics *o
 		v1.PUT("/billing/rate-rules", handlers.UpdateBillingRateRules)
 		v1.POST("/billing/wallet-transactions", handlers.CreateBillingWalletTransaction)
 		v1.POST("/billing/external-transactions", handlers.CreateExternalBillingTransaction)
+		v1.POST("/billing/gateway-traffic/hello", handlers.CreateGatewayTrafficProbeHello)
 		v1.POST("/billing/gateway-traffic", handlers.CreateGatewayTrafficUsage)
 		v1.GET("/billing/gateway-traffic-status", handlers.GetGatewayTrafficStatus)
 

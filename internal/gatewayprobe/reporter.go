@@ -12,6 +12,7 @@ import (
 )
 
 type Reporter interface {
+	Hello(ctx context.Context) error
 	Report(ctx context.Context, window RouteUsageWindow) error
 }
 
@@ -30,6 +31,25 @@ func NewAPIReporter(baseURL string, token string, timeout time.Duration) *APIRep
 		token:   strings.TrimSpace(token),
 		client:  &http.Client{Timeout: timeout},
 	}
+}
+
+func (r *APIReporter) Hello(ctx context.Context) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, r.baseURL+"/api/v1/billing/gateway-traffic/hello", strings.NewReader("{}"))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+r.token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := r.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusOK {
+		return nil
+	}
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	return fmt.Errorf("send gateway traffic hello returned %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 }
 
 func (r *APIReporter) Report(ctx context.Context, window RouteUsageWindow) error {

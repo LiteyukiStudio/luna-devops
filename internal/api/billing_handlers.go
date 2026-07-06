@@ -49,6 +49,7 @@ type gatewayTrafficStatusResponse struct {
 	Status                string     `json:"status"`
 	ComponentID           string     `json:"componentId"`
 	InstallableTemplateID string     `json:"installableTemplateId"`
+	LastHeartbeatAt       *time.Time `json:"lastHeartbeatAt"`
 	LastReportedAt        *time.Time `json:"lastReportedAt"`
 	LastWindowStart       *time.Time `json:"lastWindowStart"`
 	LastWindowEnd         *time.Time `json:"lastWindowEnd"`
@@ -59,33 +60,32 @@ func (h *Handlers) GetGatewayTrafficStatus(ctx *gin.Context) {
 	if _, ok := h.currentUser(ctx); !ok {
 		return
 	}
-	var installation model.SystemComponentInstallation
-	err := h.db.Where("component_id = ?", systemComponentGatewayTrafficProbe).
-		Order("case when status = 'ready' then 0 when status = 'deployed' then 1 when status = 'pending' then 2 else 3 end, updated_at desc").
-		First(&installation).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
+	state, ok, err := h.gatewayTrafficRuntimeStore().Summary(ctx.Request.Context())
+	if err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !ok {
 		ctx.JSON(http.StatusOK, gatewayTrafficStatusResponse{
 			Available:             false,
 			Installed:             false,
+			Status:                "not_installed",
 			ComponentID:           systemComponentGatewayTrafficProbe,
 			InstallableTemplateID: "liteyuki-gateway-traffic-probe",
 		})
 		return
 	}
-	if err != nil {
-		writeError(ctx, http.StatusInternalServerError, err.Error())
-		return
-	}
 	ctx.JSON(http.StatusOK, gatewayTrafficStatusResponse{
-		Available:             installation.Status == "ready",
+		Available:             state.Status == "ready",
 		Installed:             true,
-		Status:                installation.Status,
-		ComponentID:           installation.ComponentID,
+		Status:                state.Status,
+		ComponentID:           systemComponentGatewayTrafficProbe,
 		InstallableTemplateID: "liteyuki-gateway-traffic-probe",
-		LastReportedAt:        installation.LastReportedAt,
-		LastWindowStart:       installation.LastWindowStart,
-		LastWindowEnd:         installation.LastWindowEnd,
-		LastError:             installation.LastError,
+		LastHeartbeatAt:       &state.LastHeartbeatAt,
+		LastReportedAt:        state.LastReportedAt,
+		LastWindowStart:       state.LastWindowStart,
+		LastWindowEnd:         state.LastWindowEnd,
+		LastError:             state.LastError,
 	})
 }
 
@@ -592,6 +592,9 @@ func (h *Handlers) CreateGatewayTrafficUsage(ctx *gin.Context) {
 		ActorID:       actorID,
 	})
 	if errors.Is(err, billing.ErrAlreadySettled) {
+		if componentAuthenticated {
+			h.markGatewayTrafficReported(ctx, component.RuntimeClusterID, periodStart, periodEnd)
+		}
 		ctx.JSON(http.StatusOK, gin.H{"status": "already_settled"})
 		return
 	}
@@ -600,18 +603,30 @@ func (h *Handlers) CreateGatewayTrafficUsage(ctx *gin.Context) {
 		return
 	}
 	if componentAuthenticated {
-		now := time.Now()
-		_ = h.db.Model(&component).Updates(map[string]any{
-			"status":            "ready",
-			"message":           "gateway traffic probe reported usage",
-			"last_reported_at":  &now,
-			"last_window_start": &periodStart,
-			"last_window_end":   &periodEnd,
-			"last_error":        "",
-		}).Error
+		h.markGatewayTrafficReported(ctx, component.RuntimeClusterID, periodStart, periodEnd)
 	}
 	h.audit(actorID, "billing.gateway_traffic", route.ID, true, "")
 	ctx.JSON(http.StatusCreated, gin.H{"status": "settled"})
+}
+
+func (h *Handlers) CreateGatewayTrafficProbeHello(ctx *gin.Context) {
+	token := bearerTokenFromHeader(ctx.GetHeader("Authorization"))
+	component, ok := h.systemComponentForBearerToken(token, systemComponentGatewayTrafficProbe)
+	if !ok {
+		writeError(ctx, http.StatusUnauthorized, "gateway traffic probe token is invalid")
+		return
+	}
+	if err := h.gatewayTrafficRuntimeStore().MarkHello(ctx.Request.Context(), component.RuntimeClusterID); err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+func (h *Handlers) markGatewayTrafficReported(ctx *gin.Context, runtimeClusterID string, periodStart time.Time, periodEnd time.Time) {
+	if err := h.gatewayTrafficRuntimeStore().MarkReport(ctx.Request.Context(), runtimeClusterID, periodStart, periodEnd); err != nil {
+		h.audit("", "billing.gateway_traffic_status", runtimeClusterID, false, err.Error())
+	}
 }
 
 func bearerTokenFromHeader(header string) string {

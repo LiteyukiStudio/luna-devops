@@ -150,9 +150,6 @@ export interface SystemComponentInstallation {
   controllerType: string
   mode: string
   config: string
-  lastReportedAt?: string | null
-  lastWindowStart?: string | null
-  lastWindowEnd?: string | null
   lastError: string
   installedBy: string
   createdAt: string
@@ -185,6 +182,7 @@ export interface GatewayTrafficStatus {
   status: string
   componentId: string
   installableTemplateId: string
+  lastHeartbeatAt?: string | null
   lastReportedAt?: string | null
   lastWindowStart?: string | null
   lastWindowEnd?: string | null
