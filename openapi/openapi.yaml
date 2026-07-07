@@ -844,6 +844,23 @@ paths:
         "204":
           description: Deleted application.
 
+  /api/v1/projects/{projectId}/applications/{applicationId}/deployment-targets/{targetId}/release-image-candidates:
+    get:
+      tags: [Applications]
+      summary: List release image candidates
+      description: Reads tags from the target registry first and falls back to saved build records when the registry is unavailable.
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/ApplicationId"
+        - $ref: "#/components/parameters/TargetId"
+      responses:
+        "200":
+          description: Release image candidates.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReleaseImageCandidates"
+
   /api/v1/projects/{projectId}/repository-bindings:
     get:
       tags: [Git]
@@ -1035,6 +1052,11 @@ components:
         type: string
         enum: [asc, desc]
         default: desc
+    TargetId:
+      name: targetId
+      in: path
+      required: true
+      schema: { type: string }
     TokenId:
       name: tokenId
       in: path
@@ -1126,6 +1148,28 @@ components:
         sourceType: { type: string }
         scanStatus: { type: string }
       required: [registryId, repository, tag]
+    ReleaseImageCandidate:
+      type: object
+      properties:
+        key: { type: string }
+        source: { type: string, enum: [registry, build, target] }
+        label: { type: string }
+        imageRef: { type: string }
+        buildRunId: { type: string }
+        tag: { type: string }
+        digest: { type: string }
+        sourceCommit: { type: string }
+        createdAt: { type: string, format: date-time }
+    ReleaseImageCandidates:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReleaseImageCandidate"
+        registryAvailable: { type: boolean }
+        registryError: { type: string }
+        fallbackUsed: { type: boolean }
     GitAccountInput:
       type: object
       properties:

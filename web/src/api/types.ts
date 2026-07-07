@@ -481,6 +481,25 @@ export interface RegistryTagItem {
   digest: string
 }
 
+export interface ReleaseImageCandidate {
+  key: string
+  source: 'registry' | 'build' | 'target' | string
+  label: string
+  imageRef: string
+  buildRunId: string
+  tag: string
+  digest: string
+  sourceCommit: string
+  createdAt: string
+}
+
+export interface ReleaseImageCandidates {
+  items: ReleaseImageCandidate[]
+  registryAvailable: boolean
+  registryError: string
+  fallbackUsed: boolean
+}
+
 export interface BuildVariableSet {
   id: string
   name: string

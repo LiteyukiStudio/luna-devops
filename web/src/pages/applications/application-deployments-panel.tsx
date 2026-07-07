@@ -704,9 +704,11 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
         onViewLogs={setLogRelease}
       />
       <ApplicationCreateReleaseDialog
+        applicationId={applicationId}
         form={form}
         open={dialogOpen}
         pending={createRelease.isPending}
+        projectId={projectId}
         releaseReadyTargets={releaseReadyTargets}
         selectableBuildRuns={selectableBuildRuns}
         selectedTarget={selectedReleaseTarget}

@@ -29,7 +29,8 @@ export function deploymentTargetCanRelease(target: DeploymentTarget, deployableR
     return false
   if (target.sourceType === 'image')
     return Boolean(target.imageRef?.trim())
-  return deployableRuns.some(run => run.deploymentTargetId === target.id)
+  return Boolean(target.targetRegistryId?.trim() && target.targetRepository?.trim())
+    || deployableRuns.some(run => run.deploymentTargetId === target.id)
 }
 
 export function shortBuildId(value: string) {

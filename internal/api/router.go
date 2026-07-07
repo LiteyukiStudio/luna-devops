@@ -186,6 +186,7 @@ func NewRouterWithStaticFSAndMetrics(db *gorm.DB, staticFS fs.FS, httpMetrics *o
 		v1.GET("/projects/:projectId/build-jobs/:jobId/logs", handlers.GetBuildJobLogs)
 		v1.GET("/projects/:projectId/build-jobs/:jobId/logs/stream", handlers.StreamBuildJobLogs)
 		v1.GET("/projects/:projectId/releases", handlers.ListReleases)
+		v1.GET("/projects/:projectId/applications/:applicationId/deployment-targets/:targetId/release-image-candidates", handlers.ListReleaseImageCandidates)
 		v1.POST("/projects/:projectId/releases", handlers.CreateRelease)
 		v1.GET("/projects/:projectId/releases/:releaseId/logs", handlers.GetReleaseLogs)
 		v1.GET("/projects/:projectId/releases/:releaseId/runtime-logs", handlers.GetReleaseRuntimeLogs)

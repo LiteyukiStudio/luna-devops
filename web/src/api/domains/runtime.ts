@@ -1,4 +1,4 @@
-import type { ClusterResource, ClusterResourceEvent, ClusterResourceYAML, PaginatedResponse, Release, ReleaseLog, ReleaseRuntimeExecResult, ReleaseRuntimeLog, RuntimeCluster, RuntimeClusterResourceListParams } from '../types'
+import type { ClusterResource, ClusterResourceEvent, ClusterResourceYAML, PaginatedResponse, Release, ReleaseImageCandidates, ReleaseLog, ReleaseRuntimeExecResult, ReleaseRuntimeLog, RuntimeCluster, RuntimeClusterResourceListParams } from '../types'
 import { optionalProjectQuery, request, runtimeClusterResourceListQuery } from '../core'
 
 export const runtimeApi = {
@@ -45,6 +45,8 @@ export const runtimeApi = {
   },
   listReleases: (projectId: string) =>
     request<Release[]>(`/projects/${projectId}/releases`),
+  listReleaseImageCandidates: (projectId: string, applicationId: string, targetId: string) =>
+    request<ReleaseImageCandidates>(`/projects/${projectId}/applications/${applicationId}/deployment-targets/${targetId}/release-image-candidates`),
   createRelease: (projectId: string, payload: Omit<Release, 'id' | 'projectId' | 'createdBy' | 'createdAt' | 'rollbackFromId'>) =>
     request<Release>(`/projects/${projectId}/releases`, { method: 'POST', body: JSON.stringify(payload) }),
   getReleaseLogs: (projectId: string, releaseId: string) =>

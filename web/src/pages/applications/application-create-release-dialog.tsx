@@ -1,7 +1,10 @@
 import type { UseFormReturn } from 'react-hook-form'
 import type { ReleaseForm } from './application-deployments-panel-utils'
-import type { BuildRun, DeploymentTarget } from '@/api'
+import type { BuildRun, DeploymentTarget, ReleaseImageCandidate } from '@/api'
+import { useQuery } from '@tanstack/react-query'
+import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
+import { api } from '@/api'
 import { CopyableHoverText } from '@/components/common/copyable-hover-text'
 import { buildRunImageRef, buildRunOptionLabel } from '@/components/common/deployment-build-runs'
 import { FormField as Field } from '@/components/common/form-field'
@@ -13,9 +16,11 @@ import { NativeSelect as Select } from '@/components/ui/native-select'
 import { shortImageRef } from './application-deployments-panel-utils'
 
 interface ApplicationCreateReleaseDialogProps {
+  applicationId: string
   form: UseFormReturn<ReleaseForm>
   open: boolean
   pending: boolean
+  projectId: string
   releaseReadyTargets: DeploymentTarget[]
   selectableBuildRuns: BuildRun[]
   selectedTarget?: DeploymentTarget
@@ -24,11 +29,13 @@ interface ApplicationCreateReleaseDialogProps {
 }
 
 export function ApplicationCreateReleaseDialog({
+  applicationId,
   form,
   onOpenChange,
   onSubmit,
   open,
   pending,
+  projectId,
   releaseReadyTargets,
   selectableBuildRuns,
   selectedTarget,
@@ -36,7 +43,36 @@ export function ApplicationCreateReleaseDialog({
   const { t } = useTranslation()
   const imageRef = form.watch('imageRef')
   const selectedBuildRun = selectableBuildRuns.find(run => run.id === form.watch('buildRunId'))
+  const imageCandidates = useQuery({
+    queryKey: ['release-image-candidates', projectId, applicationId, selectedTarget?.id],
+    queryFn: () => api.listReleaseImageCandidates(projectId, applicationId, selectedTarget!.id),
+    enabled: open && Boolean(projectId && applicationId && selectedTarget?.id),
+  })
+  const fallbackCandidates = useMemo(
+    () => selectableBuildRuns.map(buildRunCandidate),
+    [selectableBuildRuns],
+  )
+  const candidates = imageCandidates.data?.items.length ? imageCandidates.data.items : fallbackCandidates
+  const selectedCandidateKey = selectedCandidateValue(candidates, form.watch('buildRunId'), imageRef)
   const imageSummary = imageRef || (selectedBuildRun ? buildRunImageRef(selectedBuildRun) : '')
+  const registryHint = imageCandidates.data?.registryAvailable
+    ? t('deploymentsPage.releaseImageCandidateRegistryHint')
+    : imageCandidates.data?.fallbackUsed || imageCandidates.isError
+      ? t('deploymentsPage.releaseImageCandidateFallbackHint')
+      : t('deploymentsPage.releaseImageCandidateLoadingHint')
+
+  const applyCandidate = (key: string) => {
+    const candidate = candidates.find(item => item.key === key)
+    if (!candidate)
+      return
+    form.setValue('buildRunId', candidate.buildRunId || '', { shouldDirty: true, shouldValidate: true })
+    form.setValue('imageRef', candidate.imageRef, { shouldDirty: true, shouldValidate: true })
+    form.setValue('applicationId', applicationId, { shouldDirty: true, shouldValidate: true })
+    if (selectedTarget) {
+      form.setValue('deploymentTargetId', selectedTarget.id, { shouldDirty: true, shouldValidate: true })
+      form.setValue('environmentId', selectedTarget.environmentId, { shouldDirty: true, shouldValidate: true })
+    }
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -48,10 +84,10 @@ export function ApplicationCreateReleaseDialog({
         <form className="grid gap-3" onSubmit={form.handleSubmit(onSubmit)}>
           <input type="hidden" {...form.register('imageRef', { required: true })} />
           {selectedTarget?.sourceType !== 'image' && (
-            <Field hint={t('deploymentsPage.buildRunHint')} label={t('deploymentsPage.buildRun')} required>
-              <Select {...form.register('buildRunId', { required: true })}>
+            <Field hint={registryHint} label={t('deploymentsPage.releaseImageCandidate')} required>
+              <Select value={selectedCandidateKey} onChange={event => applyCandidate(event.target.value)}>
                 <option value="">{t('common.select')}</option>
-                {selectableBuildRuns.map(run => <option key={run.id} value={run.id}>{buildRunOptionLabel(run)}</option>)}
+                {candidates.map(candidate => <option key={candidate.key} value={candidate.key}>{candidate.label}</option>)}
               </Select>
             </Field>
           )}
@@ -101,4 +137,33 @@ export function ApplicationCreateReleaseDialog({
       </DialogContent>
     </Dialog>
   )
+}
+
+function buildRunCandidate(run: BuildRun): ReleaseImageCandidate {
+  const imageRef = buildRunImageRef(run)
+  return {
+    buildRunId: run.id,
+    createdAt: run.finishedAt || run.createdAt || '',
+    digest: run.imageDigest,
+    imageRef,
+    key: `build:${run.id}`,
+    label: buildRunOptionLabel(run),
+    source: 'build',
+    sourceCommit: run.sourceCommit,
+    tag: run.targetTag,
+  }
+}
+
+function selectedCandidateValue(candidates: ReleaseImageCandidate[], buildRunId: string, imageRef: string) {
+  if (buildRunId) {
+    const byBuild = candidates.find(candidate => candidate.buildRunId === buildRunId)
+    if (byBuild)
+      return byBuild.key
+  }
+  if (imageRef) {
+    const byImage = candidates.find(candidate => candidate.imageRef === imageRef)
+    if (byImage)
+      return byImage.key
+  }
+  return ''
 }
