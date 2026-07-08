@@ -59,8 +59,6 @@ OIDC 身份源的 Redirect URI 由 `PUBLIC_BASE_URL` 生成，后台“身份源
 | 进阶 | `METRICS_ENABLED` | `false` | 是否启用独立 Prometheus metrics listener；默认关闭。设为 `true` 后 Worker 会使用默认监听地址 `:9091`。 |
 | 进阶 | `METRICS_ADDR` | `:9091` | metrics 监听地址；只在需要调整 Worker metrics 端口或绑定地址时修改。 |
 | 进阶 | `METRICS_PATH` | `/metrics` | Prometheus 抓取路径；只注册在独立 metrics listener 上。 |
-
-启用 metrics 后会暴露 worker 任务、重试、队列深度、队列延迟、构建/发布结果与耗时、运行副本、网关同步和依赖健康指标。Helm 部署可通过 `metrics.grafanaDashboard.enabled=true` 生成 Grafana dashboard ConfigMap。
 | 进阶 | `DEPLOY_ROLLOUT_TIMEOUT_SECONDS` | `600` | 发布等待超时；应用启动慢时调大。 |
 | 进阶 | `CERT_MANAGER_CLUSTER_ISSUER` | `letsencrypt-http01` | 证书 Issuer 名称；集群名称不同时改。 |
 | 进阶 | `BUILD_EGRESS_MODE` | `permissive` | 构建出站模式；需要强隔离时改为 `restricted`。 |
@@ -72,3 +70,5 @@ OIDC 身份源的 Redirect URI 由 `PUBLIC_BASE_URL` 生成，后台“身份源
 | 进阶 | `BUILD_PRIVATE_EGRESS_CIDRS` | 空 | `restricted` 模式下额外允许的内网 CIDR。 |
 | 进阶 | `BUILD_PRIVATE_EGRESS_PORTS` | `443` | `restricted` 模式下的内网白名单端口；非标镜像站常用 `5000`、`8081`。 |
 | 进阶 | `BUILD_BLOCKED_EGRESS_CIDRS` | 空 | `restricted` 模式下额外禁止的 CIDR。 |
+
+启用 metrics 后会暴露 worker 任务、重试、队列深度、队列延迟、构建/发布结果与耗时、运行副本、网关同步和依赖健康指标。Helm 部署可通过 `metrics.grafanaDashboard.enabled=true` 生成 Grafana dashboard ConfigMap。

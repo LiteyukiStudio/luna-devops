@@ -59,8 +59,6 @@ Available access-route domain suffixes, external access schemes, external access
 | Advanced | `METRICS_ENABLED` | `false` | Enables the dedicated Prometheus metrics listener; disabled by default. When set to `true`, the worker uses `:9091` by default. |
 | Advanced | `METRICS_ADDR` | `:9091` | Metrics listen address; change only when overriding the worker metrics port or bind address. |
 | Advanced | `METRICS_PATH` | `/metrics` | Prometheus scrape path; registered only on the dedicated metrics listener. |
-
-When metrics are enabled, the worker exports task, retry, queue depth, queue latency, build/release result and duration, runtime replica, gateway sync, and dependency health metrics. Helm deployments can render the Grafana dashboard ConfigMap with `metrics.grafanaDashboard.enabled=true`.
 | Advanced | `DEPLOY_ROLLOUT_TIMEOUT_SECONDS` | `600` | Release wait timeout; increase for slow-starting apps. |
 | Advanced | `CERT_MANAGER_CLUSTER_ISSUER` | `letsencrypt-http01` | Certificate Issuer name; change when your cluster uses another name. |
 | Advanced | `BUILD_EGRESS_MODE` | `permissive` | Build egress mode; set to `restricted` when strong isolation is required. |
@@ -72,3 +70,5 @@ When metrics are enabled, the worker exports task, retry, queue depth, queue lat
 | Advanced | `BUILD_PRIVATE_EGRESS_CIDRS` | Empty | Extra private CIDRs in `restricted` mode. |
 | Advanced | `BUILD_PRIVATE_EGRESS_PORTS` | `443` | Private allowlist ports in `restricted` mode; use ports like `5000` or `8081` for non-standard registries. |
 | Advanced | `BUILD_BLOCKED_EGRESS_CIDRS` | Empty | Extra blocked CIDRs in `restricted` mode. |
+
+When metrics are enabled, the worker exports task, retry, queue depth, queue latency, build/release result and duration, runtime replica, gateway sync, and dependency health metrics. Helm deployments can render the Grafana dashboard ConfigMap with `metrics.grafanaDashboard.enabled=true`.
