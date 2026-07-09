@@ -92,6 +92,12 @@ PVC 的 `storageClassName` 和 `accessMode` 只会在首次创建数据卷时写
 
 运行集群里的“外层访问协议”和“外层访问端口”只影响控制台展示和打开访问入口时使用的 URL。如果外层 CDN 或反向代理已经提供 HTTPS，可以把外层访问协议设为 `https`，同时外部 TLS 模式选择“上游代理已终止 TLS”，平台会让 HTTPRoute 绑定内部 HTTP listener，不会因此额外申请集群内证书。
 
+如果 HTTPS 由集群 Gateway 自己终止，管理员需要把运行集群的外部 TLS 模式设为“Gateway 终止 TLS”，并配置已有 Kubernetes TLS Secret。平台会在下发访问入口时确保共享 Gateway 的 HTTPS listener 引用该 Secret，访问入口对应的 HTTPRoute 会默认绑定 HTTPS listener。
+
+访问入口的“HTTP Challenge 证书”模式依赖运行集群 cert-manager 配置。平台会创建 Certificate，并把 Certificate 生成的 Secret 引用到共享 Gateway HTTPS listener；证书状态会按 cert-manager Ready 条件显示为 pending、issued、failed 或 expired。
+
+如果运行集群启用了 DNS-01 通配符证书，平台会优先把通配符证书 Secret 一起挂到 HTTPS listener。此模式适合外层网关转发到集群内部端口、没有公网 HTTP-01 入口或希望同一域名后缀复用一张证书的场景。
+
 平台访问入口底层使用 Kubernetes Gateway API：运行集群维护一个平台管理的 `Gateway`，每条访问入口在项目命名空间下生成一个 `HTTPRoute` 并转发到部署配置对应的 `Service`。集群需要先安装 Gateway API CRD；Traefik 集群需要启用 `--providers.kubernetesGateway`。
 
 创建或启用访问入口时，平台会先检查部署配置对应的 Kubernetes `Service` 和端口是否存在。若管理员手动删除了 Service，平台会提示先重新发布部署配置来恢复运行态资源，而不会在访问入口链路里自动创建 Service。这样可以避免访问入口使用过期的部署配置偷偷修复运行态漂移。

@@ -92,6 +92,12 @@ Domain suffixes come from the deployment target's runtime cluster. Administrator
 
 The runtime cluster's external access scheme and external access port only control the URLs the console displays and opens. If an outer CDN or reverse proxy already terminates HTTPS, set the external access scheme to `https` and choose upstream TLS termination; the platform will bind HTTPRoutes to the internal HTTP listener and will not request an in-cluster certificate just because the displayed URL is HTTPS.
 
+If HTTPS terminates on the cluster Gateway itself, set the runtime cluster's external TLS mode to Gateway termination and configure an existing Kubernetes TLS Secret. When access routes are applied, the platform ensures the shared Gateway HTTPS listener references that Secret, and HTTPRoutes bind to the HTTPS listener by default.
+
+The "HTTP Challenge certificate" route mode depends on the runtime cluster's cert-manager settings. The platform creates a Certificate and references the Secret produced by that Certificate from the shared Gateway HTTPS listener. Certificate status is shown from cert-manager Ready conditions as pending, issued, failed, or expired.
+
+If DNS-01 wildcard certificates are enabled on the runtime cluster, the platform also attaches the wildcard certificate Secret to the HTTPS listener. This fits clusters where an outer gateway forwards traffic to internal ports, public HTTP-01 ingress is unavailable, or one certificate should cover a whole domain suffix.
+
 Access routes are backed by Kubernetes Gateway API. A runtime cluster owns one platform-managed `Gateway`, and each access route creates an `HTTPRoute` in the project namespace that forwards to the deployment target `Service`. Install the Gateway API CRDs before enabling routes. Traefik clusters also need `--providers.kubernetesGateway`.
 
 When an access route is created or enabled, the platform checks that the deployment target's Kubernetes `Service` and selected port already exist. If an administrator manually deleted the Service, the platform asks the user to redeploy the deployment target to restore runtime resources instead of creating the Service from the access-route flow. This keeps routing separate from workload reconciliation and avoids silently repairing drift from stale deploy config.

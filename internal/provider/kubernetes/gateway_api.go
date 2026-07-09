@@ -21,15 +21,23 @@ var (
 )
 
 type GatewaySpec struct {
-	Name              string
-	Namespace         string
-	GatewayClassName  string
-	ExternalTLSMode   string
-	HTTPListenerName  string
-	HTTPListenerPort  int32
-	HTTPSListenerName string
-	HTTPSListenerPort int32
-	ProjectID         string
+	Name               string
+	Namespace          string
+	GatewayClassName   string
+	ExternalTLSMode    string
+	HTTPListenerName   string
+	HTTPListenerPort   int32
+	HTTPSListenerName  string
+	HTTPSListenerPort  int32
+	TLSSecretName      string
+	TLSSecretNamespace string
+	TLSSecretRefs      []GatewayTLSSecretRef
+	ProjectID          string
+}
+
+type GatewayTLSSecretRef struct {
+	Name      string
+	Namespace string
 }
 
 type HTTPRouteSpec struct {
@@ -155,14 +163,22 @@ func gatewayObject(spec GatewaySpec) *gatewayv1.Gateway {
 		},
 	}}
 	if string(httpsListenerName) != string(httpListenerName) || httpsListenerPort != httpListenerPort {
-		listeners = append(listeners, gatewayv1.Listener{
+		listener := gatewayv1.Listener{
 			Name:     httpsListenerName,
 			Port:     gatewayv1.PortNumber(httpsListenerPort),
 			Protocol: gatewayv1.HTTPSProtocolType,
 			AllowedRoutes: &gatewayv1.AllowedRoutes{
 				Namespaces: &gatewayv1.RouteNamespaces{From: &from},
 			},
-		})
+		}
+		if refs := gatewayTLSSecretRefs(spec); strings.TrimSpace(spec.ExternalTLSMode) == "gateway" && len(refs) > 0 {
+			mode := gatewayv1.TLSModeTerminate
+			listener.TLS = &gatewayv1.ListenerTLSConfig{
+				Mode:            &mode,
+				CertificateRefs: refs,
+			}
+		}
+		listeners = append(listeners, listener)
 	}
 	return &gatewayv1.Gateway{
 		TypeMeta: metav1.TypeMeta{APIVersion: gatewayv1.GroupVersion.String(), Kind: "Gateway"},
@@ -176,6 +192,34 @@ func gatewayObject(spec GatewaySpec) *gatewayv1.Gateway {
 			Listeners:        listeners,
 		},
 	}
+}
+
+func gatewayTLSSecretRefs(spec GatewaySpec) []gatewayv1.SecretObjectReference {
+	seen := map[string]bool{}
+	refs := make([]gatewayv1.SecretObjectReference, 0, len(spec.TLSSecretRefs)+1)
+	appendRef := func(name string, namespace string) {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return
+		}
+		namespace = strings.TrimSpace(namespace)
+		key := namespace + "/" + name
+		if seen[key] {
+			return
+		}
+		seen[key] = true
+		ref := gatewayv1.SecretObjectReference{Name: gatewayv1.ObjectName(name)}
+		if namespace != "" && namespace != spec.Namespace {
+			value := gatewayv1.Namespace(namespace)
+			ref.Namespace = &value
+		}
+		refs = append(refs, ref)
+	}
+	appendRef(spec.TLSSecretName, spec.TLSSecretNamespace)
+	for _, ref := range spec.TLSSecretRefs {
+		appendRef(ref.Name, ref.Namespace)
+	}
+	return refs
 }
 
 func httpRouteObject(spec HTTPRouteSpec) (*gatewayv1.HTTPRoute, error) {
@@ -336,9 +380,85 @@ func (c *Client) applyGatewayObject(ctx context.Context, item *gatewayv1.Gateway
 	if err != nil {
 		return err
 	}
+	mergeGatewayListenerCertificateRefs(unstructuredItem, existing)
 	unstructuredItem.SetResourceVersion(existing.GetResourceVersion())
 	_, err = resource.Update(ctx, unstructuredItem, metav1.UpdateOptions{})
 	return err
+}
+
+func mergeGatewayListenerCertificateRefs(next *unstructured.Unstructured, existing *unstructured.Unstructured) {
+	nextListeners, _, _ := unstructured.NestedSlice(next.Object, "spec", "listeners")
+	existingListeners, _, _ := unstructured.NestedSlice(existing.Object, "spec", "listeners")
+	if len(nextListeners) == 0 || len(existingListeners) == 0 {
+		return
+	}
+	existingRefs := map[string][]any{}
+	for _, item := range existingListeners {
+		listener, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		name := strings.TrimSpace(fmt.Sprint(listener["name"]))
+		refs, _, _ := unstructured.NestedSlice(listener, "tls", "certificateRefs")
+		if name != "" && len(refs) > 0 {
+			existingRefs[name] = refs
+		}
+	}
+	changed := false
+	for index, item := range nextListeners {
+		listener, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		name := strings.TrimSpace(fmt.Sprint(listener["name"]))
+		refs := mergeCertificateRefSlices(nestedSlice(listener, "tls", "certificateRefs"), existingRefs[name])
+		if len(refs) == 0 {
+			continue
+		}
+		tls, _ := listener["tls"].(map[string]any)
+		if tls == nil {
+			tls = map[string]any{"mode": string(gatewayv1.TLSModeTerminate)}
+			listener["tls"] = tls
+		}
+		tls["certificateRefs"] = refs
+		nextListeners[index] = listener
+		changed = true
+	}
+	if changed {
+		_ = unstructured.SetNestedSlice(next.Object, nextListeners, "spec", "listeners")
+	}
+}
+
+func nestedSlice(values map[string]any, fields ...string) []any {
+	items, _, _ := unstructured.NestedSlice(values, fields...)
+	return items
+}
+
+func mergeCertificateRefSlices(primary []any, secondary []any) []any {
+	seen := map[string]bool{}
+	merged := make([]any, 0, len(primary)+len(secondary))
+	appendRefs := func(items []any) {
+		for _, item := range items {
+			ref, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			name := strings.TrimSpace(fmt.Sprint(ref["name"]))
+			if name == "" {
+				continue
+			}
+			namespace := strings.TrimSpace(fmt.Sprint(ref["namespace"]))
+			key := namespace + "/" + name
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			merged = append(merged, ref)
+		}
+	}
+	appendRefs(primary)
+	appendRefs(secondary)
+	return merged
 }
 
 func (c *Client) applyHTTPRouteObject(ctx context.Context, item *gatewayv1.HTTPRoute) error {

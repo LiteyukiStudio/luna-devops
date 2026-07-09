@@ -56,6 +56,14 @@ const clusterDefaults: ClusterForm = {
   gatewayHttpListenerPort: 8080,
   gatewayHttpsListenerName: 'websecure',
   gatewayHttpsListenerPort: 8443,
+  gatewayTlsSecretName: '',
+  gatewayTlsSecretNamespace: '',
+  gatewayCertIssuerKind: 'ClusterIssuer',
+  gatewayCertIssuerName: '',
+  gatewayCertificateNamespace: '',
+  gatewayWildcardCertEnabled: false,
+  gatewayWildcardCertDomain: '',
+  gatewayWildcardCertSecretName: '',
   gatewayTrustedProxyCIDRs: '',
   maxConcurrentBuilds: 4,
   name: '',
@@ -255,6 +263,14 @@ export function ClustersPage() {
           gatewayHttpListenerPort: cluster.gatewayHttpListenerPort || 8080,
           gatewayHttpsListenerName: cluster.gatewayHttpsListenerName || 'websecure',
           gatewayHttpsListenerPort: cluster.gatewayHttpsListenerPort || 8443,
+          gatewayTlsSecretName: cluster.gatewayTlsSecretName || '',
+          gatewayTlsSecretNamespace: cluster.gatewayTlsSecretNamespace || '',
+          gatewayCertIssuerKind: cluster.gatewayCertIssuerKind || 'ClusterIssuer',
+          gatewayCertIssuerName: cluster.gatewayCertIssuerName || '',
+          gatewayCertificateNamespace: cluster.gatewayCertificateNamespace || '',
+          gatewayWildcardCertEnabled: cluster.gatewayWildcardCertEnabled || false,
+          gatewayWildcardCertDomain: cluster.gatewayWildcardCertDomain || '',
+          gatewayWildcardCertSecretName: cluster.gatewayWildcardCertSecretName || '',
           gatewayTrustedProxyCIDRs: cluster.gatewayTrustedProxyCIDRs || '',
           maxConcurrentBuilds: cluster.maxConcurrentBuilds || 4,
           name: cluster.name,
@@ -576,6 +592,35 @@ export function ClustersPage() {
                     </Field>
                     <Field hint={t('clustersPage.gatewayHttpsListenerPortHint')} label={t('clustersPage.gatewayHttpsListenerPort')} required>
                       <Input {...form.register('gatewayHttpsListenerPort', { min: 1, required: true, valueAsNumber: true })} inputMode="numeric" max={65535} min={1} placeholder="8443" type="number" />
+                    </Field>
+                    <Field hint={t('clustersPage.gatewayTlsSecretNameHint')} label={t('clustersPage.gatewayTlsSecretName')}>
+                      <Input {...form.register('gatewayTlsSecretName')} placeholder={t('clustersPage.gatewayTlsSecretNamePlaceholder')} />
+                    </Field>
+                    <Field hint={t('clustersPage.gatewayTlsSecretNamespaceHint')} label={t('clustersPage.gatewayTlsSecretNamespace')}>
+                      <Input {...form.register('gatewayTlsSecretNamespace')} placeholder={t('clustersPage.gatewayTlsSecretNamespacePlaceholder')} />
+                    </Field>
+                    <Field hint={t('clustersPage.gatewayCertIssuerKindHint')} label={t('clustersPage.gatewayCertIssuerKind')}>
+                      <Select {...form.register('gatewayCertIssuerKind')}>
+                        <option value="ClusterIssuer">ClusterIssuer</option>
+                        <option value="Issuer">Issuer</option>
+                      </Select>
+                    </Field>
+                    <Field hint={t('clustersPage.gatewayCertIssuerNameHint')} label={t('clustersPage.gatewayCertIssuerName')}>
+                      <Input {...form.register('gatewayCertIssuerName')} placeholder={t('clustersPage.gatewayCertIssuerNamePlaceholder')} />
+                    </Field>
+                    <Field hint={t('clustersPage.gatewayCertificateNamespaceHint')} label={t('clustersPage.gatewayCertificateNamespace')}>
+                      <Input {...form.register('gatewayCertificateNamespace')} placeholder={t('clustersPage.gatewayCertificateNamespacePlaceholder')} />
+                    </Field>
+                    <div className="md:col-span-2">
+                      <CheckboxField {...form.register('gatewayWildcardCertEnabled')}>
+                        {t('clustersPage.gatewayWildcardCertEnabled')}
+                      </CheckboxField>
+                    </div>
+                    <Field hint={t('clustersPage.gatewayWildcardCertDomainHint')} label={t('clustersPage.gatewayWildcardCertDomain')}>
+                      <Input {...form.register('gatewayWildcardCertDomain')} placeholder={t('clustersPage.gatewayWildcardCertDomainPlaceholder')} />
+                    </Field>
+                    <Field hint={t('clustersPage.gatewayWildcardCertSecretNameHint')} label={t('clustersPage.gatewayWildcardCertSecretName')}>
+                      <Input {...form.register('gatewayWildcardCertSecretName')} placeholder={t('clustersPage.gatewayWildcardCertSecretNamePlaceholder')} />
                     </Field>
                   </div>
                 </ProgressiveSection>

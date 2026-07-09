@@ -8,12 +8,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 )
 
 func TestApplyCertificateCreatesCertManagerCertificate(t *testing.T) {
-	client := NewClientForInterfaces(kubefake.NewSimpleClientset(), dynamicfake.NewSimpleDynamicClient(runtime.NewScheme()))
+	client := NewClientForInterfaces(kubefake.NewSimpleClientset(), newCertificateDynamicClient())
 	spec := CertificateSpec{
 		Name:          "api-dev",
 		Namespace:     "project-demo",
@@ -46,6 +47,61 @@ func TestApplyCertificateCreatesCertManagerCertificate(t *testing.T) {
 	issuer := certSpec["issuerRef"].(map[string]any)
 	if issuer["name"] != spec.ClusterIssuer || issuer["kind"] != "ClusterIssuer" {
 		t.Fatalf("issuerRef = %#v", issuer)
+	}
+}
+
+func TestApplyCertificateSupportsNamespacedIssuer(t *testing.T) {
+	client := NewClientForInterfaces(kubefake.NewSimpleClientset(), newCertificateDynamicClient())
+	spec := CertificateSpec{
+		Name:          "api-dev",
+		Namespace:     "project-demo",
+		ProjectID:     "prj_demo",
+		RouteID:       "gwr_api",
+		Host:          "api.example.com",
+		SecretName:    "api-dev-tls",
+		IssuerKind:    "Issuer",
+		ClusterIssuer: "letsencrypt-http01",
+	}
+
+	if err := client.ApplyCertificate(context.Background(), spec); err != nil {
+		t.Fatalf("ApplyCertificate returned error: %v", err)
+	}
+
+	certificate, err := client.dynamic.Resource(certificateResource).Namespace(spec.Namespace).Get(context.Background(), spec.Name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get certificate: %v", err)
+	}
+	certSpec := certificate.Object["spec"].(map[string]any)
+	issuer := certSpec["issuerRef"].(map[string]any)
+	if issuer["kind"] != "Issuer" {
+		t.Fatalf("issuerRef = %#v", issuer)
+	}
+}
+
+func TestApplyCertificateSupportsMultipleDNSNames(t *testing.T) {
+	client := NewClientForInterfaces(kubefake.NewSimpleClientset(), newCertificateDynamicClient())
+	spec := CertificateSpec{
+		Name:          "wildcard-apps-example-com",
+		Namespace:     "certs",
+		ProjectID:     "prj_demo",
+		Host:          "apps.example.com",
+		DNSNames:      []string{"*.apps.example.com"},
+		SecretName:    "wildcard-apps-example-com",
+		ClusterIssuer: "letsencrypt-dns01",
+	}
+
+	if err := client.ApplyCertificate(context.Background(), spec); err != nil {
+		t.Fatalf("ApplyCertificate returned error: %v", err)
+	}
+
+	certificate, err := client.dynamic.Resource(certificateResource).Namespace(spec.Namespace).Get(context.Background(), spec.Name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get certificate: %v", err)
+	}
+	certSpec := certificate.Object["spec"].(map[string]any)
+	dnsNames := certSpec["dnsNames"].([]any)
+	if len(dnsNames) != 2 || dnsNames[0] != "apps.example.com" || dnsNames[1] != "*.apps.example.com" {
+		t.Fatalf("dnsNames = %#v", dnsNames)
 	}
 }
 
@@ -97,4 +153,11 @@ func TestCertificateSnapshotMapsExpiredCertificate(t *testing.T) {
 
 func certificateWithStatus(status map[string]any) *unstructured.Unstructured {
 	return &unstructured.Unstructured{Object: map[string]any{"status": status}}
+}
+
+func newCertificateDynamicClient(objects ...runtime.Object) *dynamicfake.FakeDynamicClient {
+	listKinds := map[schema.GroupVersionResource]string{
+		certificateResource: "CertificateList",
+	}
+	return dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), listKinds, objects...)
 }

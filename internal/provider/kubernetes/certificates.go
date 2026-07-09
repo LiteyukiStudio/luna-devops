@@ -24,7 +24,9 @@ type CertificateSpec struct {
 	ProjectID     string
 	RouteID       string
 	Host          string
+	DNSNames      []string
 	SecretName    string
+	IssuerKind    string
 	ClusterIssuer string
 }
 
@@ -48,6 +50,9 @@ func (c *Client) ApplyCertificate(ctx context.Context, spec CertificateSpec) err
 	if c.dynamic == nil {
 		return fmt.Errorf("dynamic kubernetes client is required")
 	}
+	if err := c.DetectCertManagerSupport(ctx); err != nil {
+		return err
+	}
 	certificate := certificateObject(spec)
 	resource := c.dynamic.Resource(certificateResource).Namespace(spec.Namespace)
 	existing, err := resource.Get(ctx, spec.Name, metav1.GetOptions{})
@@ -64,6 +69,19 @@ func (c *Client) ApplyCertificate(ctx context.Context, spec CertificateSpec) err
 	}
 	_, err = resource.Update(ctx, existing, metav1.UpdateOptions{})
 	return err
+}
+
+func (c *Client) DetectCertManagerSupport(ctx context.Context) error {
+	if c.dynamic == nil {
+		return fmt.Errorf("dynamic kubernetes client is required")
+	}
+	if _, err := c.dynamic.Resource(certificateResource).List(ctx, metav1.ListOptions{Limit: 1}); err != nil {
+		if apierrors.IsNotFound(err) {
+			return fmt.Errorf("cert-manager CRDs are not installed: install cert-manager.io/v1 Certificate before enabling automatic gateway certificates")
+		}
+		return err
+	}
+	return nil
 }
 
 func (c *Client) GetCertificateSnapshot(ctx context.Context, namespace, name string) (CertificateSnapshot, error) {
@@ -113,16 +131,20 @@ func validateCertificateSpec(spec CertificateSpec) error {
 	if strings.TrimSpace(spec.Name) == "" || strings.TrimSpace(spec.Namespace) == "" {
 		return fmt.Errorf("certificate name and namespace are required")
 	}
-	if strings.TrimSpace(spec.Host) == "" || strings.TrimSpace(spec.SecretName) == "" {
+	if len(certificateDNSNames(spec)) == 0 || strings.TrimSpace(spec.SecretName) == "" {
 		return fmt.Errorf("certificate host and secret name are required")
 	}
 	if strings.TrimSpace(spec.ClusterIssuer) == "" {
-		return fmt.Errorf("certificate cluster issuer is required")
+		return fmt.Errorf("certificate issuer is required")
 	}
 	return nil
 }
 
 func certificateObject(spec CertificateSpec) *unstructured.Unstructured {
+	dnsNames := make([]any, 0, len(certificateDNSNames(spec)))
+	for _, name := range certificateDNSNames(spec) {
+		dnsNames = append(dnsNames, name)
+	}
 	return &unstructured.Unstructured{Object: map[string]any{
 		"apiVersion": "cert-manager.io/v1",
 		"kind":       "Certificate",
@@ -137,11 +159,36 @@ func certificateObject(spec CertificateSpec) *unstructured.Unstructured {
 		},
 		"spec": map[string]any{
 			"secretName": spec.SecretName,
-			"dnsNames":   []any{spec.Host},
+			"dnsNames":   dnsNames,
 			"issuerRef": map[string]any{
 				"name": spec.ClusterIssuer,
-				"kind": "ClusterIssuer",
+				"kind": certificateIssuerKind(spec.IssuerKind),
 			},
 		},
 	}}
+}
+
+func certificateDNSNames(spec CertificateSpec) []string {
+	seen := map[string]bool{}
+	names := make([]string, 0, len(spec.DNSNames)+1)
+	appendName := func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			return
+		}
+		seen[value] = true
+		names = append(names, value)
+	}
+	appendName(spec.Host)
+	for _, name := range spec.DNSNames {
+		appendName(name)
+	}
+	return names
+}
+
+func certificateIssuerKind(value string) string {
+	if strings.EqualFold(strings.TrimSpace(value), "Issuer") {
+		return "Issuer"
+	}
+	return "ClusterIssuer"
 }

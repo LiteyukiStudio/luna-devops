@@ -74,6 +74,14 @@ func (h *Handlers) runtimeClusterFromInput(ctx *gin.Context, user model.User, in
 		GatewayHTTPListenerPort:       normalizePort(input.GatewayHTTPListenerPort, 8080),
 		GatewayHTTPSListenerName:      fallback(dnsLabelName(input.GatewayHTTPSListenerName), "websecure"),
 		GatewayHTTPSListenerPort:      normalizePort(input.GatewayHTTPSListenerPort, 8443),
+		GatewayTLSSecretName:          dnsLabelName(input.GatewayTLSSecretName),
+		GatewayTLSSecretNamespace:     dnsLabelName(input.GatewayTLSSecretNamespace),
+		GatewayCertIssuerKind:         normalizeGatewayCertIssuerKind(input.GatewayCertIssuerKind),
+		GatewayCertIssuerName:         dnsLabelName(input.GatewayCertIssuerName),
+		GatewayCertificateNamespace:   dnsLabelName(input.GatewayCertificateNamespace),
+		GatewayWildcardCertEnabled:    input.GatewayWildcardCertEnabled,
+		GatewayWildcardCertDomain:     normalizeGatewayDomainSuffixValue(input.GatewayWildcardCertDomain),
+		GatewayWildcardCertSecretName: dnsLabelName(input.GatewayWildcardCertSecretName),
 		GatewayExternalTLSMode:        normalizeGatewayExternalTLSMode(input.GatewayExternalTLSMode),
 		GatewayForwardedHeadersMode:   normalizeGatewayForwardedHeadersMode(input.GatewayForwardedHeadersMode),
 		GatewayTrustedProxyCIDRs:      strings.TrimSpace(input.GatewayTrustedProxyCIDRs),
@@ -150,6 +158,14 @@ type runtimeClusterInput struct {
 	GatewayHTTPListenerPort       int      `json:"gatewayHttpListenerPort"`
 	GatewayHTTPSListenerName      string   `json:"gatewayHttpsListenerName"`
 	GatewayHTTPSListenerPort      int      `json:"gatewayHttpsListenerPort"`
+	GatewayTLSSecretName          string   `json:"gatewayTlsSecretName"`
+	GatewayTLSSecretNamespace     string   `json:"gatewayTlsSecretNamespace"`
+	GatewayCertIssuerKind         string   `json:"gatewayCertIssuerKind"`
+	GatewayCertIssuerName         string   `json:"gatewayCertIssuerName"`
+	GatewayCertificateNamespace   string   `json:"gatewayCertificateNamespace"`
+	GatewayWildcardCertEnabled    bool     `json:"gatewayWildcardCertEnabled"`
+	GatewayWildcardCertDomain     string   `json:"gatewayWildcardCertDomain"`
+	GatewayWildcardCertSecretName string   `json:"gatewayWildcardCertSecretName"`
 	GatewayExternalTLSMode        string   `json:"gatewayExternalTLSMode"`
 	GatewayForwardedHeadersMode   string   `json:"gatewayForwardedHeadersMode"`
 	GatewayTrustedProxyCIDRs      string   `json:"gatewayTrustedProxyCIDRs"`
@@ -254,6 +270,13 @@ func normalizeGatewayExternalTLSMode(value string) string {
 	default:
 		return "none"
 	}
+}
+
+func normalizeGatewayCertIssuerKind(value string) string {
+	if strings.EqualFold(strings.TrimSpace(value), "Issuer") {
+		return "Issuer"
+	}
+	return "ClusterIssuer"
 }
 
 func dnsLabelName(value string) string {

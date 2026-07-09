@@ -98,13 +98,15 @@ func TestGatewayAPIWebsecureListenerUsesHTTPSWhenGatewayTerminatesTLS(t *testing
 	client := newGatewayAPITestClient()
 
 	if err := client.EnsureGateway(context.Background(), GatewaySpec{
-		Name:              "liteyuki-gateway",
-		Namespace:         "kube-system",
-		GatewayClassName:  "traefik",
-		ExternalTLSMode:   "gateway",
-		HTTPSListenerName: "websecure",
-		HTTPSListenerPort: 30443,
-		ProjectID:         "prj_demo",
+		Name:               "liteyuki-gateway",
+		Namespace:          "kube-system",
+		GatewayClassName:   "traefik",
+		ExternalTLSMode:    "gateway",
+		HTTPSListenerName:  "websecure",
+		HTTPSListenerPort:  30443,
+		TLSSecretName:      "wildcard-apps-tls",
+		TLSSecretNamespace: "certs",
+		ProjectID:          "prj_demo",
 	}); err != nil {
 		t.Fatalf("EnsureGateway returned error: %v", err)
 	}
@@ -120,6 +122,68 @@ func TestGatewayAPIWebsecureListenerUsesHTTPSWhenGatewayTerminatesTLS(t *testing
 	websecure := listeners[1].(map[string]any)
 	if websecure["name"] != "websecure" || websecure["port"] != int64(30443) || websecure["protocol"] != "HTTPS" {
 		t.Fatalf("websecure listener = %#v", websecure)
+	}
+	tls := websecure["tls"].(map[string]any)
+	refs := tls["certificateRefs"].([]any)
+	ref := refs[0].(map[string]any)
+	if tls["mode"] != "Terminate" || ref["name"] != "wildcard-apps-tls" || ref["namespace"] != "certs" {
+		t.Fatalf("tls = %#v", tls)
+	}
+}
+
+func TestGatewayAPIWebsecureListenerOmitsTLSSecretWhenNotGatewayTLS(t *testing.T) {
+	client := newGatewayAPITestClient()
+
+	if err := client.EnsureGateway(context.Background(), GatewaySpec{
+		Name:              "liteyuki-gateway",
+		Namespace:         "kube-system",
+		GatewayClassName:  "traefik",
+		ExternalTLSMode:   "upstream",
+		HTTPSListenerName: "websecure",
+		TLSSecretName:     "wildcard-apps-tls",
+		ProjectID:         "prj_demo",
+	}); err != nil {
+		t.Fatalf("EnsureGateway returned error: %v", err)
+	}
+
+	gateway, err := client.dynamic.Resource(gatewayGVR).Namespace("kube-system").Get(context.Background(), "liteyuki-gateway", metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get gateway: %v", err)
+	}
+	listeners, _, _ := unstructured.NestedSlice(gateway.Object, "spec", "listeners")
+	websecure := listeners[1].(map[string]any)
+	if _, ok := websecure["tls"]; ok {
+		t.Fatalf("websecure listener should not include tls config: %#v", websecure)
+	}
+}
+
+func TestGatewayAPIWebsecureListenerSupportsMultipleTLSSecrets(t *testing.T) {
+	client := newGatewayAPITestClient()
+
+	if err := client.EnsureGateway(context.Background(), GatewaySpec{
+		Name:              "liteyuki-gateway",
+		Namespace:         "kube-system",
+		GatewayClassName:  "traefik",
+		ExternalTLSMode:   "gateway",
+		HTTPSListenerName: "websecure",
+		TLSSecretRefs: []GatewayTLSSecretRef{
+			{Name: "wildcard-apps-tls", Namespace: "certs"},
+			{Name: "api-example-tls", Namespace: "certs"},
+		},
+		ProjectID: "prj_demo",
+	}); err != nil {
+		t.Fatalf("EnsureGateway returned error: %v", err)
+	}
+
+	gateway, err := client.dynamic.Resource(gatewayGVR).Namespace("kube-system").Get(context.Background(), "liteyuki-gateway", metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get gateway: %v", err)
+	}
+	listeners, _, _ := unstructured.NestedSlice(gateway.Object, "spec", "listeners")
+	websecure := listeners[1].(map[string]any)
+	refs, _, _ := unstructured.NestedSlice(websecure, "tls", "certificateRefs")
+	if len(refs) != 2 {
+		t.Fatalf("certificateRefs = %#v", refs)
 	}
 }
 

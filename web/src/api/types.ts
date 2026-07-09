@@ -831,6 +831,14 @@ export interface RuntimeCluster {
   gatewayHttpListenerPort: number
   gatewayHttpsListenerName: string
   gatewayHttpsListenerPort: number
+  gatewayTlsSecretName: string
+  gatewayTlsSecretNamespace: string
+  gatewayCertIssuerKind: 'ClusterIssuer' | 'Issuer'
+  gatewayCertIssuerName: string
+  gatewayCertificateNamespace: string
+  gatewayWildcardCertEnabled: boolean
+  gatewayWildcardCertDomain: string
+  gatewayWildcardCertSecretName: string
   gatewayExternalTLSMode: 'none' | 'gateway' | 'upstream'
   gatewayForwardedHeadersMode: 'preserve' | 'overwrite' | 'none'
   gatewayTrustedProxyCIDRs: string

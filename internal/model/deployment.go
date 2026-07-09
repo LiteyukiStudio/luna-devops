@@ -35,6 +35,14 @@ type RuntimeCluster struct {
 	GatewayHTTPListenerPort       int            `gorm:"not null;default:8080" json:"gatewayHttpListenerPort"`
 	GatewayHTTPSListenerName      string         `gorm:"not null;default:websecure" json:"gatewayHttpsListenerName"`
 	GatewayHTTPSListenerPort      int            `gorm:"not null;default:8443" json:"gatewayHttpsListenerPort"`
+	GatewayTLSSecretName          string         `gorm:"not null;default:''" json:"gatewayTlsSecretName"`
+	GatewayTLSSecretNamespace     string         `gorm:"not null;default:''" json:"gatewayTlsSecretNamespace"`
+	GatewayCertIssuerKind         string         `gorm:"not null;default:ClusterIssuer" json:"gatewayCertIssuerKind"`
+	GatewayCertIssuerName         string         `gorm:"not null;default:''" json:"gatewayCertIssuerName"`
+	GatewayCertificateNamespace   string         `gorm:"not null;default:''" json:"gatewayCertificateNamespace"`
+	GatewayWildcardCertEnabled    bool           `gorm:"not null;default:false" json:"gatewayWildcardCertEnabled"`
+	GatewayWildcardCertDomain     string         `gorm:"not null;default:''" json:"gatewayWildcardCertDomain"`
+	GatewayWildcardCertSecretName string         `gorm:"not null;default:''" json:"gatewayWildcardCertSecretName"`
 	GatewayExternalTLSMode        string         `gorm:"not null;default:none" json:"gatewayExternalTLSMode"`
 	GatewayForwardedHeadersMode   string         `gorm:"not null;default:preserve" json:"gatewayForwardedHeadersMode"`
 	GatewayTrustedProxyCIDRs      string         `gorm:"column:gateway_trusted_proxy_cidrs;type:text;not null;default:''" json:"gatewayTrustedProxyCIDRs"`

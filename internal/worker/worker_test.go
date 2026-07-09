@@ -526,6 +526,18 @@ func TestHTTPRouteSpecUsesHTTPSectionNameWhenTLSTerminatesUpstream(t *testing.T)
 	}
 }
 
+func TestGatewaySpecIncludesManualTLSSecret(t *testing.T) {
+	spec := gatewaySpec(model.RuntimeCluster{
+		GatewayExternalTLSMode:    "gateway",
+		GatewayTLSSecretName:      "wildcard-apps-tls",
+		GatewayTLSSecretNamespace: "certs",
+	}, "prj_demo")
+
+	if spec.TLSSecretName != "wildcard-apps-tls" || spec.TLSSecretNamespace != "certs" {
+		t.Fatalf("spec = %#v", spec)
+	}
+}
+
 func TestHTTPRouteSpecDefaultsBackendWeight(t *testing.T) {
 	spec, err := httpRouteSpec(
 		model.GatewayRoute{ID: "gwr_1", Host: "api.example.com", ServicePort: 3000, TLSMode: "http-only"},
@@ -589,9 +601,50 @@ func TestGatewayCertificateSpecUsesRouteTLSSecret(t *testing.T) {
 		model.GatewayRoute{ID: "gwr_1", Host: "api.example.com", TLSMode: "http-challenge"},
 		model.Project{ID: "prj_demo"},
 		"project-demo",
+		"ClusterIssuer",
 		"letsencrypt-staging",
 	)
 	if spec.Name != "liteyuki-gateway-gwr-1" || spec.SecretName != "tls-api-example-com" || spec.ClusterIssuer != "letsencrypt-staging" {
+		t.Fatalf("spec = %#v", spec)
+	}
+}
+
+func TestGatewayCertificateSpecUsesRuntimeClusterIssuerConfig(t *testing.T) {
+	cluster := model.RuntimeCluster{
+		GatewayNamespace:            "kube-system",
+		GatewayCertificateNamespace: "certs",
+		GatewayCertIssuerKind:       "Issuer",
+		GatewayCertIssuerName:       "tenant-issuer",
+	}
+	spec := gatewayCertificateSpec(
+		model.GatewayRoute{ID: "gwr_1", Host: "api.example.com", TLSMode: "http-challenge"},
+		model.Project{ID: "prj_demo"},
+		gatewayCertificateNamespace(cluster, "project-demo"),
+		gatewayCertificateIssuerKind(cluster),
+		gatewayCertificateIssuerName(cluster, "letsencrypt-staging"),
+	)
+	if spec.Namespace != "certs" || spec.IssuerKind != "Issuer" || spec.ClusterIssuer != "tenant-issuer" {
+		t.Fatalf("spec = %#v", spec)
+	}
+}
+
+func TestGatewayWildcardCertificateSpecUsesClusterDomain(t *testing.T) {
+	spec, ok := gatewayWildcardCertificateSpec(
+		model.RuntimeCluster{
+			GatewayRootDomain:             "apps.example.com",
+			GatewayWildcardCertEnabled:    true,
+			GatewayWildcardCertSecretName: "apps-wildcard-tls",
+			GatewayCertificateNamespace:   "certs",
+			GatewayCertIssuerKind:         "ClusterIssuer",
+		},
+		model.Project{ID: "prj_demo"},
+		"project-demo",
+		"letsencrypt-dns01",
+	)
+	if !ok {
+		t.Fatal("wildcard certificate spec was not generated")
+	}
+	if spec.Namespace != "certs" || spec.SecretName != "apps-wildcard-tls" || spec.Host != "apps.example.com" || len(spec.DNSNames) != 1 || spec.DNSNames[0] != "*.apps.example.com" || spec.ClusterIssuer != "letsencrypt-dns01" {
 		t.Fatalf("spec = %#v", spec)
 	}
 }

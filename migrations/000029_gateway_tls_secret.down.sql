@@ -1,0 +1,9 @@
+ALTER TABLE IF EXISTS runtime_clusters
+    DROP COLUMN IF EXISTS gateway_tls_secret_name,
+    DROP COLUMN IF EXISTS gateway_tls_secret_namespace,
+    DROP COLUMN IF EXISTS gateway_cert_issuer_kind,
+    DROP COLUMN IF EXISTS gateway_cert_issuer_name,
+    DROP COLUMN IF EXISTS gateway_certificate_namespace,
+    DROP COLUMN IF EXISTS gateway_wildcard_cert_enabled,
+    DROP COLUMN IF EXISTS gateway_wildcard_cert_domain,
+    DROP COLUMN IF EXISTS gateway_wildcard_cert_secret_name;

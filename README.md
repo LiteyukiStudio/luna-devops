@@ -9,6 +9,10 @@
 </p>
 
 <p align="center">
+  <img src="web/public/images/liteyuki-devops-banner-v4.png" alt="Liteyuki DevOps automated delivery pipeline banner" />
+</p>
+
+<p align="center">
   <a href="https://devops-docs.liteyuki.org">文档站</a>
   ·
   <a href="Doc/devops/README.md">工程文档</a>

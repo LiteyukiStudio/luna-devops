@@ -173,16 +173,70 @@ func gatewayTLSSecretName(route model.GatewayRoute) string {
 
 func gatewaySpec(cluster model.RuntimeCluster, projectID string) kubeprovider.GatewaySpec {
 	return kubeprovider.GatewaySpec{
-		Name:              firstNonEmpty(cluster.GatewayName, "liteyuki-gateway"),
-		Namespace:         firstNonEmpty(cluster.GatewayNamespace, "kube-system"),
-		GatewayClassName:  firstNonEmpty(cluster.GatewayClassName, "traefik"),
-		ExternalTLSMode:   firstNonEmpty(cluster.GatewayExternalTLSMode, "none"),
-		HTTPListenerName:  firstNonEmpty(cluster.GatewayHTTPListenerName, "web"),
-		HTTPListenerPort:  int32(normalizePositive(cluster.GatewayHTTPListenerPort, 8080)),
-		HTTPSListenerName: firstNonEmpty(cluster.GatewayHTTPSListenerName, "websecure"),
-		HTTPSListenerPort: int32(normalizePositive(cluster.GatewayHTTPSListenerPort, 8443)),
-		ProjectID:         projectID,
+		Name:               firstNonEmpty(cluster.GatewayName, "liteyuki-gateway"),
+		Namespace:          firstNonEmpty(cluster.GatewayNamespace, "kube-system"),
+		GatewayClassName:   firstNonEmpty(cluster.GatewayClassName, "traefik"),
+		ExternalTLSMode:    firstNonEmpty(cluster.GatewayExternalTLSMode, "none"),
+		HTTPListenerName:   firstNonEmpty(cluster.GatewayHTTPListenerName, "web"),
+		HTTPListenerPort:   int32(normalizePositive(cluster.GatewayHTTPListenerPort, 8080)),
+		HTTPSListenerName:  firstNonEmpty(cluster.GatewayHTTPSListenerName, "websecure"),
+		HTTPSListenerPort:  int32(normalizePositive(cluster.GatewayHTTPSListenerPort, 8443)),
+		TLSSecretName:      strings.TrimSpace(cluster.GatewayTLSSecretName),
+		TLSSecretNamespace: strings.TrimSpace(cluster.GatewayTLSSecretNamespace),
+		ProjectID:          projectID,
 	}
+}
+
+func gatewayCertificateNamespace(cluster model.RuntimeCluster, fallbackNamespace string) string {
+	return firstNonEmpty(cluster.GatewayCertificateNamespace, cluster.GatewayNamespace, fallbackNamespace)
+}
+
+func gatewayCertificateIssuerKind(cluster model.RuntimeCluster) string {
+	if strings.EqualFold(strings.TrimSpace(cluster.GatewayCertIssuerKind), "Issuer") {
+		return "Issuer"
+	}
+	return "ClusterIssuer"
+}
+
+func gatewayCertificateIssuerName(cluster model.RuntimeCluster, fallbackIssuer string) string {
+	return firstNonEmpty(cluster.GatewayCertIssuerName, fallbackIssuer)
+}
+
+func gatewayWildcardCertificateDomain(cluster model.RuntimeCluster) string {
+	return firstNonEmpty(cluster.GatewayWildcardCertDomain, cluster.GatewayRootDomain)
+}
+
+func gatewayWildcardCertificateSecretName(cluster model.RuntimeCluster) string {
+	if name := strings.TrimSpace(cluster.GatewayWildcardCertSecretName); name != "" {
+		return name
+	}
+	domain := strings.TrimPrefix(gatewayWildcardCertificateDomain(cluster), "*.")
+	if domain == "" {
+		return ""
+	}
+	return dnsLabel("wildcard-" + domain)
+}
+
+func gatewayWildcardCertificateSpec(cluster model.RuntimeCluster, project model.Project, namespace string, issuerName string) (kubeprovider.CertificateSpec, bool) {
+	if !cluster.GatewayWildcardCertEnabled {
+		return kubeprovider.CertificateSpec{}, false
+	}
+	domain := gatewayWildcardCertificateDomain(cluster)
+	secretName := gatewayWildcardCertificateSecretName(cluster)
+	if domain == "" || secretName == "" {
+		return kubeprovider.CertificateSpec{}, false
+	}
+	domain = strings.TrimPrefix(domain, "*.")
+	return kubeprovider.CertificateSpec{
+		Name:          secretName,
+		Namespace:     gatewayCertificateNamespace(cluster, namespace),
+		ProjectID:     project.ID,
+		Host:          domain,
+		DNSNames:      []string{"*." + domain},
+		SecretName:    secretName,
+		IssuerKind:    gatewayCertificateIssuerKind(cluster),
+		ClusterIssuer: issuerName,
+	}, true
 }
 
 func httpRouteSpec(route model.GatewayRoute, project model.Project, application model.Application, environment model.Environment, cluster model.RuntimeCluster, namespace string, serviceName string) (kubeprovider.HTTPRouteSpec, error) {
@@ -245,7 +299,7 @@ func forwardedHeaderOverrides(cluster model.RuntimeCluster) map[string]string {
 	}
 }
 
-func gatewayCertificateSpec(route model.GatewayRoute, project model.Project, namespace string, clusterIssuer string) kubeprovider.CertificateSpec {
+func gatewayCertificateSpec(route model.GatewayRoute, project model.Project, namespace string, issuerKind string, issuerName string) kubeprovider.CertificateSpec {
 	return kubeprovider.CertificateSpec{
 		Name:          gatewayRuntimeName(route),
 		Namespace:     namespace,
@@ -253,7 +307,8 @@ func gatewayCertificateSpec(route model.GatewayRoute, project model.Project, nam
 		RouteID:       route.ID,
 		Host:          strings.TrimSpace(route.Host),
 		SecretName:    gatewayTLSSecretName(route),
-		ClusterIssuer: strings.TrimSpace(clusterIssuer),
+		IssuerKind:    strings.TrimSpace(issuerKind),
+		ClusterIssuer: strings.TrimSpace(issuerName),
 	}
 }
 

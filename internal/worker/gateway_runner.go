@@ -73,7 +73,7 @@ func (r *Runner) handleGatewayApply(ctx context.Context, task *asynq.Task) (err 
 		_ = r.db.Model(&route).Updates(map[string]any{"status": "failed"}).Error
 		return err
 	}
-	certificateStatus, err := r.applyGatewayCertificate(ctx, route, project, namespace)
+	certificateStatus, err := r.gatewayCertificateStatus(ctx, route, project, environment, namespace)
 	if err != nil {
 		_ = r.db.Model(&route).Updates(map[string]any{"status": "failed", "certificate_status": "failed"}).Error
 		return err
@@ -115,7 +115,24 @@ func (r *Runner) applyGatewayAPIResources(ctx context.Context, route model.Gatew
 	if err := ensureGatewayBackendAvailable(ctx, manager, spec); err != nil {
 		return err
 	}
-	if err := manager.EnsureGateway(ctx, gatewaySpec(cluster, project.ID)); err != nil {
+	gateway := gatewaySpec(cluster, project.ID)
+	if certificate, ok, err := r.ensureGatewayWildcardCertificate(ctx, manager, project, cluster, namespace); err != nil {
+		return err
+	} else if ok {
+		gateway.TLSSecretRefs = append(gateway.TLSSecretRefs, kubeprovider.GatewayTLSSecretRef{
+			Name:      certificate.SecretName,
+			Namespace: certificate.Namespace,
+		})
+	}
+	if certificate, ok, err := r.ensureGatewayCertificate(ctx, manager, route, project, cluster, namespace); err != nil {
+		return err
+	} else if ok {
+		gateway.TLSSecretRefs = append(gateway.TLSSecretRefs, kubeprovider.GatewayTLSSecretRef{
+			Name:      certificate.SecretName,
+			Namespace: certificate.Namespace,
+		})
+	}
+	if err := manager.EnsureGateway(ctx, gateway); err != nil {
 		return err
 	}
 	if err := manager.ApplyHTTPRoute(ctx, spec); err != nil {
@@ -139,6 +156,20 @@ func ensureGatewayBackendAvailable(ctx context.Context, manager kubeprovider.Nam
 		return fmt.Errorf("后端 Service %s/%s 未暴露端口 %d，请调整部署配置并重新发布后再重新启用访问入口", spec.Namespace, spec.ServiceName, spec.ServicePort)
 	}
 	return nil
+}
+
+func (r *Runner) ensureGatewayWildcardCertificate(ctx context.Context, manager kubeprovider.NamespaceManager, project model.Project, cluster model.RuntimeCluster, namespace string) (kubeprovider.CertificateSpec, bool, error) {
+	if strings.TrimSpace(cluster.GatewayExternalTLSMode) != "gateway" {
+		return kubeprovider.CertificateSpec{}, false, nil
+	}
+	spec, ok := gatewayWildcardCertificateSpec(cluster, project, namespace, gatewayCertificateIssuerName(cluster, r.certManagerClusterIssuer))
+	if !ok {
+		return kubeprovider.CertificateSpec{}, false, nil
+	}
+	if err := manager.ApplyCertificate(ctx, spec); err != nil {
+		return kubeprovider.CertificateSpec{}, false, err
+	}
+	return spec, true, nil
 }
 
 func (r *Runner) waitForHTTPRouteAccepted(ctx context.Context, manager kubeprovider.NamespaceManager, namespace string, name string) error {
@@ -202,18 +233,42 @@ func (r *Runner) gatewayDNSStatus(ctx context.Context, route model.GatewayRoute)
 	return "verified"
 }
 
-func (r *Runner) applyGatewayCertificate(ctx context.Context, route model.GatewayRoute, project model.Project, namespace string) (string, error) {
+func (r *Runner) ensureGatewayCertificate(ctx context.Context, manager kubeprovider.NamespaceManager, route model.GatewayRoute, project model.Project, cluster model.RuntimeCluster, namespace string) (kubeprovider.CertificateSpec, bool, error) {
+	if strings.TrimSpace(route.TLSMode) != "http-challenge" {
+		return kubeprovider.CertificateSpec{}, false, nil
+	}
+	spec := gatewayCertificateSpec(
+		route,
+		project,
+		gatewayCertificateNamespace(cluster, namespace),
+		gatewayCertificateIssuerKind(cluster),
+		gatewayCertificateIssuerName(cluster, r.certManagerClusterIssuer),
+	)
+	if err := manager.ApplyCertificate(ctx, spec); err != nil {
+		return kubeprovider.CertificateSpec{}, false, err
+	}
+	return spec, true, nil
+}
+
+func (r *Runner) gatewayCertificateStatus(ctx context.Context, route model.GatewayRoute, project model.Project, environment model.Environment, namespace string) (string, error) {
 	if strings.TrimSpace(route.TLSMode) != "http-challenge" {
 		return "", nil
 	}
-	manager, err := r.kubernetesManager(model.Environment{})
+	manager, err := r.kubernetesManager(environment)
 	if err != nil {
 		return "", err
 	}
-	spec := gatewayCertificateSpec(route, project, namespace, r.certManagerClusterIssuer)
-	if err := manager.ApplyCertificate(ctx, spec); err != nil {
+	cluster, err := r.runtimeClusterForEnvironment(environment)
+	if err != nil {
 		return "", err
 	}
+	spec := gatewayCertificateSpec(
+		route,
+		project,
+		gatewayCertificateNamespace(cluster, namespace),
+		gatewayCertificateIssuerKind(cluster),
+		gatewayCertificateIssuerName(cluster, r.certManagerClusterIssuer),
+	)
 	snapshot, err := manager.GetCertificateSnapshot(ctx, spec.Namespace, spec.Name)
 	if err != nil {
 		return "", err
