@@ -159,6 +159,17 @@ func DefaultTemplateFor(adapterKind string, eventType string, locale string) mod
 	return template
 }
 
+func DefaultTemplateForChannel(channel model.NotificationChannel, event Event, locale string) model.NotificationTemplate {
+	template := DefaultTemplateFor(channel.AdapterKind, event.Type, locale)
+	if channel.AdapterKind == AdapterKindWebhook {
+		cfg, err := parseWebhookConfig(json.RawMessage(channel.ConfigJSON))
+		if err == nil && strings.TrimSpace(cfg.TestJSONBodyTemplate) != "" {
+			template.JSONBodyTemplate = cfg.TestJSONBodyTemplate
+		}
+	}
+	return template
+}
+
 func TemplateFromModel(template model.NotificationTemplate) Template {
 	return Template{
 		Subject: template.SubjectTemplate,

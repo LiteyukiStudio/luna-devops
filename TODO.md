@@ -728,6 +728,7 @@
 - [ ] Gateway API HTTPS 证书能力第四阶段：把 cert-manager HTTP-01 作为高级可选能力，明确要求公网 HTTP 入口可达且 Gateway 存在 port 80 listener；校验不满足时给出友好错误，避免误导用户在非 80 内部端口场景使用 HTTP-01。
 - [ ] 收紧 Gateway `allowedRoutes`：当前 MVP 使用 `namespaces.from=All` 方便跨命名空间绑定，后续改为项目 namespace label selector。
 - [x] 实现证书状态字段：disabled、pending、issued、failed、expired。
+- [x] 应用访问列表展示证书运行态：Worker 周期同步 cert-manager Ready 信息、失败原因、到期时间和 Issuer，TLS 列使用状态 Badge 并在悬停时展示详情。
 
 ### 9.2 网关 Worker/控制链路
 
@@ -869,6 +870,7 @@
 - [x] 通知渠道测试发送增加二次确认，测试事件使用预设模板变量渲染，覆盖项目空间、应用、部署配置、构建、发布、Hook 和访问入口等常用字段。
 - [x] 补充通知文档与验收：说明适配器边界、模板变量 schema、安全限制、Webhook 预设快照行为和 SMTP 配置示例。
 - [x] 优化内置通知模板信息密度：Webhook 预设模板统一输出事件摘要、资源上下文、构建/发布/Hook/访问入口详情，并在配置 `PUBLIC_BASE_URL` 后附带可直达应用对应 tab 的详情链接。
+- [x] 修复预设 Webhook 渠道默认投递模板不匹配的问题：规则未显式选择模板时复用渠道预设消息体，并对模板错误和非 429 的 4xx Webhook 响应跳过无意义重试。
 
 ## 100.优化需求
 

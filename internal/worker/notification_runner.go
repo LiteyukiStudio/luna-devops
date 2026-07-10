@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -26,13 +27,13 @@ func (r *Runner) handleNotificationDeliver(ctx context.Context, task *asynq.Task
 	}
 	var channel model.NotificationChannel
 	if err := r.db.First(&channel, "id = ? and enabled = ?", delivery.ChannelID, true).Error; err != nil {
-		_ = r.markNotificationDeliveryFailed(delivery, err, 0, "")
-		return err
+		_ = r.markNotificationDeliveryFailed(delivery, err, 0, "", "")
+		return fmt.Errorf("%w: %v", asynq.SkipRetry, err)
 	}
 	var event notification.Event
 	if err := json.Unmarshal([]byte(delivery.EventJSON), &event); err != nil {
-		_ = r.markNotificationDeliveryFailed(delivery, err, 0, "")
-		return err
+		_ = r.markNotificationDeliveryFailed(delivery, err, 0, "", "")
+		return fmt.Errorf("%w: %v", asynq.SkipRetry, err)
 	}
 	template := notification.Template{}
 	if delivery.TemplateID != "" {
@@ -42,13 +43,13 @@ func (r *Runner) handleNotificationDeliver(ctx context.Context, task *asynq.Task
 		}
 	}
 	if template == (notification.Template{}) {
-		template = notification.TemplateFromModel(notification.DefaultTemplateFor(channel.AdapterKind, event.Type, event.Locale))
+		template = notification.TemplateFromModel(notification.DefaultTemplateForChannel(channel, event, event.Locale))
 	}
 	registry := notification.DefaultRegistry()
 	adapter, err := registry.Adapter(channel.AdapterKind)
 	if err != nil {
-		_ = r.markNotificationDeliveryFailed(delivery, err, 0, "")
-		return err
+		_ = r.markNotificationDeliveryFailed(delivery, err, 0, "", "")
+		return fmt.Errorf("%w: %v", asynq.SkipRetry, err)
 	}
 	startedAt := time.Now()
 	_ = r.db.Model(&delivery).Updates(map[string]any{
@@ -58,13 +59,16 @@ func (r *Runner) handleNotificationDeliver(ctx context.Context, task *asynq.Task
 	}).Error
 	message, err := adapter.Render(ctx, event, template, json.RawMessage(channel.ConfigJSON), json.RawMessage(channel.SecretRefsJSON), r.secrets, event.Locale)
 	if err != nil {
-		_ = r.markNotificationDeliveryFailed(delivery, err, time.Since(startedAt), "")
-		return err
+		_ = r.markNotificationDeliveryFailed(delivery, err, time.Since(startedAt), "", "")
+		return fmt.Errorf("%w: %v", asynq.SkipRetry, err)
 	}
 	requestSnapshot := r.notificationRequestSnapshot(message, channel.SecretRefsJSON)
 	result, err := adapter.Send(ctx, json.RawMessage(channel.ConfigJSON), json.RawMessage(channel.SecretRefsJSON), message, r.secrets)
 	if err != nil {
-		_ = r.markNotificationDeliveryFailed(delivery, err, time.Since(startedAt), requestSnapshot)
+		_ = r.markNotificationDeliveryFailed(delivery, err, time.Since(startedAt), requestSnapshot, result.ResponseSnippet)
+		if notificationSendErrorShouldSkipRetry(result) {
+			return fmt.Errorf("%w: %v", asynq.SkipRetry, err)
+		}
 		return err
 	}
 	finishedAt := time.Now()
@@ -87,7 +91,7 @@ func (r *Runner) handleNotificationDeliver(ctx context.Context, task *asynq.Task
 	}).Error
 }
 
-func (r *Runner) markNotificationDeliveryFailed(delivery model.NotificationDelivery, err error, duration time.Duration, requestSnapshot string) error {
+func (r *Runner) markNotificationDeliveryFailed(delivery model.NotificationDelivery, err error, duration time.Duration, requestSnapshot string, responseSnippet string) error {
 	finishedAt := time.Now()
 	updates := map[string]any{
 		"status":          "failed",
@@ -98,6 +102,9 @@ func (r *Runner) markNotificationDeliveryFailed(delivery model.NotificationDeliv
 	if requestSnapshot != "" {
 		updates["request_snapshot"] = requestSnapshot
 	}
+	if responseSnippet != "" {
+		updates["response_snippet"] = responseSnippet
+	}
 	if updateErr := r.db.Model(&delivery).Updates(updates).Error; updateErr != nil {
 		return updateErr
 	}
@@ -105,6 +112,10 @@ func (r *Runner) markNotificationDeliveryFailed(delivery model.NotificationDeliv
 		"last_delivery_status": "failed",
 		"last_delivery_error":  err.Error(),
 	}).Error
+}
+
+func notificationSendErrorShouldSkipRetry(result notification.SendResult) bool {
+	return result.StatusCode >= 400 && result.StatusCode < 500 && result.StatusCode != 429
 }
 
 func (r *Runner) notificationRequestSnapshot(message notification.RenderedMessage, secretRefsJSON string) string {

@@ -94,7 +94,9 @@ The runtime cluster's external access scheme and external access port only contr
 
 If HTTPS terminates on the cluster Gateway itself, set the runtime cluster's external TLS mode to Gateway termination and configure an existing Kubernetes TLS Secret. When access routes are applied, the platform ensures the shared Gateway HTTPS listener references that Secret, and HTTPRoutes bind to the HTTPS listener by default.
 
-The "HTTP Challenge certificate" route mode depends on the runtime cluster's cert-manager settings. The platform creates a Certificate and references the Secret produced by that Certificate from the shared Gateway HTTPS listener. Certificate status is shown from cert-manager Ready conditions as pending, issued, failed, or expired.
+The "HTTP Challenge certificate" route mode depends on the runtime cluster's cert-manager settings. The platform creates a Certificate and references the Secret produced by that Certificate from the shared Gateway HTTPS listener. The Worker periodically synchronizes the cert-manager Ready condition, failure message, and `notAfter`. The application Routes list shows none, applying, enabled, failed, or expired beside the TLS mode; hover the status to inspect the failure reason, expiry, and referenced Issuer.
+
+The platform only references the runtime cluster's `Issuer` or `ClusterIssuer`; it does not create an ACME account. The default name `letsencrypt-http01` is only an Issuer resource name. The actual CA, ACME email, account Secret, and HTTP-01 solver are defined by that Issuer's `spec.acme` configuration.
 
 If DNS-01 wildcard certificates are enabled on the runtime cluster, the platform also attaches the wildcard certificate Secret to the HTTPS listener. This fits clusters where an outer gateway forwards traffic to internal ports, public HTTP-01 ingress is unavailable, or one certificate should cover a whole domain suffix.
 

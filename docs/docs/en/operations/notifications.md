@@ -42,7 +42,7 @@ Built-in presets:
 | Slack Incoming Webhook | `WebhookPath` | `mrkdwn` blocks | Enter only the path after `hooks.slack.com/services/`, so the full Webhook URL is not stored as plain business data; the block includes the detail link. |
 | Discord Webhook | `WebhookID`, `WebhookToken` | embeds | Uses the Discord Webhook execute API embed payload, with full event details in the description. |
 
-Webhook channels support `testJsonBodyTemplate`. Presets write a platform-specific test body into the channel config, so after a second confirmation the test action renders a test event with preset template variables and sends a valid payload for that platform instead of one generic JSON shape.
+Webhook channels support `testJsonBodyTemplate`. Presets write a platform-specific test body into the channel config, so after a second confirmation the test action renders a test event with preset template variables and sends a valid payload for that platform instead of one generic JSON shape. When a rule does not explicitly select a template, preset channels also reuse this platform-compatible body as the default delivery template, so Feishu, Lark, WeCom, and similar bots do not receive an incompatible generic Webhook JSON payload.
 
 References:
 
@@ -94,6 +94,8 @@ Rules must select at least one channel. Supported failure events:
 - `release.failed`
 - `hook.failed`
 - `gateway.apply_failed`
+
+Delivery failures are recorded in the delivery list. Template rendering errors, invalid channel configuration, and Webhook platform 4xx responses except 429 are marked as failed without retrying. Network errors, 429, and 5xx responses still follow the queue retry policy.
 
 Filter JSON example:
 

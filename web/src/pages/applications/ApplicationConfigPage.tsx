@@ -85,7 +85,14 @@ export function ApplicationConfigPage() {
     refetchInterval: activeTab === 'deployments' ? WORKFLOW_STATUS_REFETCH_INTERVAL_MS : false,
   })
   const deploymentTargets = useQuery({ queryKey: ['deployment-targets', projectId, applicationId], queryFn: () => api.listDeploymentTargets(projectId, applicationId), enabled: Boolean(projectId && applicationId) })
-  const routes = useQuery({ queryKey: ['gateway-routes', projectId], queryFn: () => api.listGatewayRoutes(projectId), enabled: Boolean(projectId) })
+  const routes = useQuery({
+    queryKey: ['gateway-routes', projectId],
+    queryFn: () => api.listGatewayRoutes(projectId),
+    enabled: Boolean(projectId),
+    refetchInterval: query => activeTab === 'gateway' && (query.state.data ?? []).some(route => route.certificateStatus === 'pending')
+      ? WORKFLOW_STATUS_REFETCH_INTERVAL_MS
+      : false,
+  })
   const deploymentTargetRows = deploymentTargets.data ?? []
 
   const binding = useMemo(() => (repositoryBindings.data ?? []).find(item => item.applicationId === applicationId), [applicationId, repositoryBindings.data])

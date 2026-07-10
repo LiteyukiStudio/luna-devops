@@ -64,6 +64,18 @@ const gatewayRoutesPage = {
   tlsHttpOnly: '仅 HTTP',
   tlsHttpChallenge: 'HTTP Challenge 证书',
   tlsManualCert: '手动证书',
+  certificateStatuses: {
+    disabled: '无',
+    pending: '申请中',
+    issued: '已启用',
+    failed: '失败',
+    expired: '已过期',
+    manual: '手动管理',
+  },
+  certificateFailure: 'cert-manager 失败信息',
+  certificateExpiresAt: '证书过期时间',
+  certificateIssuerKind: 'Issuer 类型',
+  certificateIssuerName: 'Issuer 名称',
 }
 
 export default gatewayRoutesPage

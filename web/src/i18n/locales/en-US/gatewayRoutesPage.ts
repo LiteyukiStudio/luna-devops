@@ -64,6 +64,18 @@ const gatewayRoutesPage = {
   tlsHttpOnly: 'HTTP only',
   tlsHttpChallenge: 'HTTP Challenge certificate',
   tlsManualCert: 'Manual certificate',
+  certificateStatuses: {
+    disabled: 'None',
+    pending: 'Applying',
+    issued: 'Enabled',
+    failed: 'Failed',
+    expired: 'Expired',
+    manual: 'Manually managed',
+  },
+  certificateFailure: 'cert-manager failure',
+  certificateExpiresAt: 'Certificate expiry',
+  certificateIssuerKind: 'Issuer kind',
+  certificateIssuerName: 'Issuer name',
 }
 
 export default gatewayRoutesPage

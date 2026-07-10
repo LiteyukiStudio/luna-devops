@@ -89,9 +89,56 @@ func (r *Runner) handleSyncStatus(ctx context.Context, task *asynq.Task) error {
 	if err := r.syncReleaseRuntimeStatus(ctx); err != nil {
 		return err
 	}
+	if err := r.syncGatewayCertificateStatus(ctx); err != nil {
+		return err
+	}
 	r.refreshGatewayRouteMetrics()
 	r.retryPendingResourceCleanups(ctx)
 	return nil
+}
+
+func (r *Runner) syncGatewayCertificateStatus(ctx context.Context) error {
+	if r.db == nil {
+		return nil
+	}
+	var routes []model.GatewayRoute
+	if err := r.db.
+		Where("tls_mode = ? and enabled = ? and delete_status = ?", "http-challenge", true, "active").
+		Order("updated_at asc").
+		Limit(200).
+		Find(&routes).Error; err != nil {
+		return err
+	}
+	for _, route := range routes {
+		if err := r.syncGatewayCertificateSnapshot(ctx, route); err != nil {
+			log.Printf("gateway certificate status sync skipped route=%s: %v", route.ID, err)
+		}
+	}
+	return nil
+}
+
+func (r *Runner) syncGatewayCertificateSnapshot(ctx context.Context, route model.GatewayRoute) error {
+	var project model.Project
+	if err := r.db.First(&project, "id = ?", route.ProjectID).Error; err != nil {
+		return err
+	}
+	var target model.DeploymentTarget
+	if err := r.db.First(&target, "id = ? and project_id = ?", route.DeploymentTargetID, route.ProjectID).Error; err != nil {
+		return err
+	}
+	environment := deploymentTargetEnvironment(target)
+	snapshot, configured, err := r.gatewayCertificateSnapshot(ctx, route, project, environment, deploymentNamespace(project, environment))
+	if err != nil {
+		return err
+	}
+	if !configured {
+		return nil
+	}
+	cluster, err := r.runtimeClusterForEnvironment(environment)
+	if err != nil {
+		return err
+	}
+	return r.db.Model(&model.GatewayRoute{}).Where("id = ?", route.ID).Updates(gatewayCertificateRuntimeUpdates(snapshot, cluster, r.certManagerClusterIssuer)).Error
 }
 
 func (r *Runner) syncReleaseRuntimeStatus(ctx context.Context) error {

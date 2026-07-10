@@ -94,7 +94,9 @@ PVC 的 `storageClassName` 和 `accessMode` 只会在首次创建数据卷时写
 
 如果 HTTPS 由集群 Gateway 自己终止，管理员需要把运行集群的外部 TLS 模式设为“Gateway 终止 TLS”，并配置已有 Kubernetes TLS Secret。平台会在下发访问入口时确保共享 Gateway 的 HTTPS listener 引用该 Secret，访问入口对应的 HTTPRoute 会默认绑定 HTTPS listener。
 
-访问入口的“HTTP Challenge 证书”模式依赖运行集群 cert-manager 配置。平台会创建 Certificate，并把 Certificate 生成的 Secret 引用到共享 Gateway HTTPS listener；证书状态会按 cert-manager Ready 条件显示为 pending、issued、failed 或 expired。
+访问入口的“HTTP Challenge 证书”模式依赖运行集群 cert-manager 配置。平台会创建 Certificate，并把 Certificate 生成的 Secret 引用到共享 Gateway HTTPS listener。Worker 会周期同步 cert-manager Ready 条件、失败信息和 `notAfter`：应用“访问”列表在 TLS 模式旁展示无、申请中、已启用、失败或已过期，悬停状态可查看失败原因、过期时间和实际引用的 Issuer。
+
+平台只引用运行集群配置的 `Issuer` 或 `ClusterIssuer`，不会自行创建 ACME 账号。默认名称 `letsencrypt-http01` 只是 Issuer 资源名；实际 CA、ACME 邮箱、账号 Secret 和 HTTP-01 solver 均由该 Issuer 的 `spec.acme` 配置决定。
 
 如果运行集群启用了 DNS-01 通配符证书，平台会优先把通配符证书 Secret 一起挂到 HTTPS listener。此模式适合外层网关转发到集群内部端口、没有公网 HTTP-01 入口或希望同一域名后缀复用一张证书的场景。
 

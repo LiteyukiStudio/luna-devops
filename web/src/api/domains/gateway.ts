@@ -1,7 +1,7 @@
 import type { AccessToken, AccessTokenScopeCatalog, GatewayDomainCheckResult, GatewayRoute, PaginatedResponse, PaginationParams } from '../types'
 import { paginationQuery, request } from '../core'
 
-type GatewayRoutePayload = Omit<GatewayRoute, 'id' | 'projectId' | 'createdBy' | 'createdAt' | 'cnameName' | 'cnameTarget' | 'accessUrl' | 'routeSummary' | 'conditions' | 'deleteStatus' | 'deleteMessage' | 'deleteStartedAt' | 'deleteFinishedAt'>
+type GatewayRoutePayload = Omit<GatewayRoute, 'id' | 'projectId' | 'createdBy' | 'createdAt' | 'certificateStatus' | 'certificateMessage' | 'certificateNotAfter' | 'certificateIssuerKind' | 'certificateIssuerName' | 'cnameName' | 'cnameTarget' | 'accessUrl' | 'routeSummary' | 'conditions' | 'deleteStatus' | 'deleteMessage' | 'deleteStartedAt' | 'deleteFinishedAt'>
 interface GatewayDomainCheckParams {
   deploymentTargetId?: string
   domainSuffix?: string

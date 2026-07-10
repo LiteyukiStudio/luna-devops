@@ -28,6 +28,10 @@ type GatewayRoute struct {
 	BackendWeight          int              `gorm:"not null;default:1" json:"backendWeight"`
 	HostnameAliases        string           `gorm:"type:text;not null;default:''" json:"hostnameAliases"`
 	CertificateStatus      string           `gorm:"not null;default:disabled" json:"certificateStatus"`
+	CertificateMessage     string           `gorm:"type:text;not null;default:''" json:"certificateMessage"`
+	CertificateNotAfter    *time.Time       `json:"certificateNotAfter"`
+	CertificateIssuerKind  string           `gorm:"not null;default:''" json:"certificateIssuerKind"`
+	CertificateIssuerName  string           `gorm:"not null;default:''" json:"certificateIssuerName"`
 	CNAMEName              string           `json:"cnameName"`
 	CNAMETarget            string           `json:"cnameTarget"`
 	DNSStatus              string           `gorm:"not null;default:pending" json:"dnsStatus"`

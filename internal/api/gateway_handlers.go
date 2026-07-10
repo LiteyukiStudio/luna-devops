@@ -124,6 +124,10 @@ func (h *Handlers) UpdateGatewayRoute(ctx *gin.Context) {
 	route.ServicePort = next.ServicePort
 	route.TLSMode = next.TLSMode
 	route.CertificateStatus = next.CertificateStatus
+	route.CertificateMessage = ""
+	route.CertificateNotAfter = nil
+	route.CertificateIssuerKind = ""
+	route.CertificateIssuerName = ""
 	route.CNAMEName = next.CNAMEName
 	route.CNAMETarget = next.CNAMETarget
 	route.DNSStatus = next.DNSStatus
@@ -284,7 +288,7 @@ func (h *Handlers) gatewayRouteFromInput(ctx *gin.Context, project model.Project
 	tlsMode := normalizeTLSMode(input.TLSMode)
 	certStatus := "disabled"
 	if tlsMode != "http-only" {
-		certStatus = fallback(strings.TrimSpace(input.CertificateStatus), "pending")
+		certStatus = "pending"
 	}
 	return model.GatewayRoute{
 		ID:                     routeID,
@@ -776,7 +780,6 @@ type gatewayRouteInput struct {
 	Path                   string `json:"path"`
 	ServicePort            int    `json:"servicePort"`
 	TLSMode                string `json:"tlsMode"`
-	CertificateStatus      string `json:"certificateStatus"`
 	DNSStatus              string `json:"dnsStatus"`
 	Status                 string `json:"status"`
 	Enabled                *bool  `json:"enabled"`

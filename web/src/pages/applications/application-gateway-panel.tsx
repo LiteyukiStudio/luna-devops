@@ -14,19 +14,20 @@ import { GatewayRouteFormFields } from '@/components/common/gateway-route-form-f
 import { HoverText } from '@/components/common/hover-text'
 import { ProgressiveSection } from '@/components/common/progressive-section'
 import { StatusValueBadge } from '@/components/common/status-badge'
+import { formatAbsoluteDateTime } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { NativeSelect as Select } from '@/components/ui/native-select'
 import { Textarea } from '@/components/ui/textarea'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { gatewayDeploymentTargetLabel } from './application-config-utils'
 
-type RouteForm = Omit<GatewayRoute, 'id' | 'projectId' | 'createdBy' | 'createdAt' | 'cnameName' | 'cnameTarget' | 'accessUrl' | 'deleteStatus' | 'deleteMessage' | 'deleteStartedAt' | 'deleteFinishedAt' | 'routeSummary' | 'conditions'>
+type RouteForm = Omit<GatewayRoute, 'id' | 'projectId' | 'createdBy' | 'createdAt' | 'certificateStatus' | 'certificateMessage' | 'certificateNotAfter' | 'certificateIssuerKind' | 'certificateIssuerName' | 'cnameName' | 'cnameTarget' | 'accessUrl' | 'deleteStatus' | 'deleteMessage' | 'deleteStartedAt' | 'deleteFinishedAt' | 'routeSummary' | 'conditions'>
 
 const routeDefaults: RouteForm = {
   applicationId: '',
   backendWeight: 1,
-  certificateStatus: 'disabled',
   deploymentTargetId: '',
   dnsStatus: 'pending',
   domainSuffix: '',
@@ -159,7 +160,7 @@ export function ApplicationGatewayPanel({ applicationId, appSlug, deploymentTarg
           { key: 'host', header: t('gatewayRoutesPage.host'), width: 'primary', render: item => <GatewayRouteSummary item={item} /> },
           { key: 'path', header: t('gatewayRoutesPage.path'), width: 'compact', render: item => item.path },
           { key: 'servicePort', header: t('gatewayRoutesPage.targetPort'), className: 'whitespace-nowrap', width: 'number', render: item => item.servicePort || '-' },
-          { key: 'tls', header: t('gatewayRoutesPage.tlsMode'), width: 'status', render: item => t(gatewayRouteTlsModeLabels[item.tlsMode]) },
+          { key: 'tls', header: t('gatewayRoutesPage.tlsMode'), width: 'status', render: item => <GatewayRouteTlsSummary item={item} /> },
           { key: 'parentGateway', header: t('gatewayRoutesPage.parentGateway'), width: 'secondary', render: item => gatewayRouteParentGateway(item) },
           { key: 'status', header: t('common.status'), render: item => (
             <div className="flex flex-wrap items-center gap-2">
@@ -277,6 +278,65 @@ function gatewayRouteParentGateway(item: GatewayRoute) {
   if (!name && !namespace)
     return '-'
   return namespace ? `${namespace}/${name || '-'}` : name
+}
+
+function GatewayRouteTlsSummary({ item }: { item: GatewayRoute }) {
+  const { t } = useTranslation()
+  const displayStatus = item.tlsMode === 'manual-cert' ? 'manual' : item.certificateStatus
+  const failureMessage = item.certificateStatus === 'failed' ? item.certificateMessage?.trim() : ''
+  const expiresAt = (item.certificateStatus === 'issued' || item.certificateStatus === 'expired') && item.certificateNotAfter
+    ? formatAbsoluteDateTime(item.certificateNotAfter)
+    : ''
+  const issuerKind = item.certificateIssuerKind?.trim()
+  const issuerName = item.certificateIssuerName?.trim()
+  const hasDetails = Boolean(failureMessage || expiresAt || issuerKind || issuerName)
+  const summary = (
+    <span className="inline-flex items-center gap-2 whitespace-nowrap">
+      <span>{t(gatewayRouteTlsModeLabels[item.tlsMode])}</span>
+      <StatusValueBadge labelKeyPrefix="gatewayRoutesPage.certificateStatuses" value={displayStatus} />
+    </span>
+  )
+
+  if (!hasDetails)
+    return summary
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-flex max-w-full" tabIndex={0}>
+          {summary}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-96 whitespace-pre-wrap break-words leading-5" side="top">
+        <dl className="grid gap-2">
+          {failureMessage && (
+            <div>
+              <dt className="font-medium">{t('gatewayRoutesPage.certificateFailure')}</dt>
+              <dd>{failureMessage}</dd>
+            </div>
+          )}
+          {expiresAt && (
+            <div>
+              <dt className="font-medium">{t('gatewayRoutesPage.certificateExpiresAt')}</dt>
+              <dd>{expiresAt}</dd>
+            </div>
+          )}
+          {issuerKind && (
+            <div>
+              <dt className="font-medium">{t('gatewayRoutesPage.certificateIssuerKind')}</dt>
+              <dd>{issuerKind}</dd>
+            </div>
+          )}
+          {issuerName && (
+            <div>
+              <dt className="font-medium">{t('gatewayRoutesPage.certificateIssuerName')}</dt>
+              <dd>{issuerName}</dd>
+            </div>
+          )}
+        </dl>
+      </TooltipContent>
+    </Tooltip>
+  )
 }
 
 function GatewayRouteSummary({ item }: { item: GatewayRoute }) {

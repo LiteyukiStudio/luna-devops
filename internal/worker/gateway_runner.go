@@ -73,16 +73,52 @@ func (r *Runner) handleGatewayApply(ctx context.Context, task *asynq.Task) (err 
 		_ = r.db.Model(&route).Updates(map[string]any{"status": "failed"}).Error
 		return err
 	}
-	certificateStatus, err := r.gatewayCertificateStatus(ctx, route, project, environment, namespace)
+	certificateSnapshot, certificateConfigured, err := r.gatewayCertificateSnapshot(ctx, route, project, environment, namespace)
 	if err != nil {
-		_ = r.db.Model(&route).Updates(map[string]any{"status": "failed", "certificate_status": "failed"}).Error
+		failureUpdates := gatewayCertificateFailureUpdates(err)
+		failureUpdates["status"] = "failed"
+		_ = r.db.Model(&route).Updates(failureUpdates).Error
 		return err
 	}
 	updates := map[string]any{"status": "active", "dns_status": r.gatewayDNSStatus(ctx, route)}
-	if certificateStatus != "" {
-		updates["certificate_status"] = certificateStatus
+	if certificateConfigured {
+		cluster, clusterErr := r.runtimeClusterForEnvironment(environment)
+		if clusterErr != nil {
+			return clusterErr
+		}
+		for key, value := range gatewayCertificateRuntimeUpdates(certificateSnapshot, cluster, r.certManagerClusterIssuer) {
+			updates[key] = value
+		}
+	} else {
+		updates["certificate_status"] = "disabled"
+		updates["certificate_message"] = ""
+		updates["certificate_not_after"] = nil
+		updates["certificate_issuer_kind"] = ""
+		updates["certificate_issuer_name"] = ""
 	}
 	return r.db.Model(&route).Updates(updates).Error
+}
+
+func gatewayCertificateFailureUpdates(err error) map[string]any {
+	message := ""
+	if err != nil {
+		message = err.Error()
+	}
+	return map[string]any{
+		"certificate_status":    "failed",
+		"certificate_message":   message,
+		"certificate_not_after": nil,
+	}
+}
+
+func gatewayCertificateRuntimeUpdates(snapshot kubeprovider.CertificateSnapshot, cluster model.RuntimeCluster, fallbackIssuer string) map[string]any {
+	return map[string]any{
+		"certificate_status":      snapshot.Phase,
+		"certificate_message":     snapshot.Message,
+		"certificate_not_after":   snapshot.NotAfter,
+		"certificate_issuer_kind": gatewayCertificateIssuerKind(cluster),
+		"certificate_issuer_name": gatewayCertificateIssuerName(cluster, fallbackIssuer),
+	}
 }
 
 func (r *Runner) ensureProjectNamespace(ctx context.Context, namespace string, project model.Project, environment model.Environment) error {
@@ -250,17 +286,17 @@ func (r *Runner) ensureGatewayCertificate(ctx context.Context, manager kubeprovi
 	return spec, true, nil
 }
 
-func (r *Runner) gatewayCertificateStatus(ctx context.Context, route model.GatewayRoute, project model.Project, environment model.Environment, namespace string) (string, error) {
+func (r *Runner) gatewayCertificateSnapshot(ctx context.Context, route model.GatewayRoute, project model.Project, environment model.Environment, namespace string) (kubeprovider.CertificateSnapshot, bool, error) {
 	if strings.TrimSpace(route.TLSMode) != "http-challenge" {
-		return "", nil
+		return kubeprovider.CertificateSnapshot{}, false, nil
 	}
 	manager, err := r.kubernetesManager(environment)
 	if err != nil {
-		return "", err
+		return kubeprovider.CertificateSnapshot{}, true, err
 	}
 	cluster, err := r.runtimeClusterForEnvironment(environment)
 	if err != nil {
-		return "", err
+		return kubeprovider.CertificateSnapshot{}, true, err
 	}
 	spec := gatewayCertificateSpec(
 		route,
@@ -271,7 +307,7 @@ func (r *Runner) gatewayCertificateStatus(ctx context.Context, route model.Gatew
 	)
 	snapshot, err := manager.GetCertificateSnapshot(ctx, spec.Namespace, spec.Name)
 	if err != nil {
-		return "", err
+		return kubeprovider.CertificateSnapshot{}, true, err
 	}
-	return snapshot.Phase, nil
+	return snapshot, true, nil
 }

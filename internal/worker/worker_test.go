@@ -628,6 +628,33 @@ func TestGatewayCertificateSpecUsesRuntimeClusterIssuerConfig(t *testing.T) {
 	}
 }
 
+func TestGatewayCertificateRuntimeUpdatesIncludeDetails(t *testing.T) {
+	notAfter := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	updates := gatewayCertificateRuntimeUpdates(kubeprovider.CertificateSnapshot{
+		Phase:    kubeprovider.CertificateIssued,
+		Message:  "Certificate is ready",
+		NotAfter: &notAfter,
+	}, model.RuntimeCluster{
+		GatewayCertIssuerKind: "Issuer",
+		GatewayCertIssuerName: "tenant-acme",
+	}, "letsencrypt-http01")
+
+	if updates["certificate_status"] != kubeprovider.CertificateIssued || updates["certificate_message"] != "Certificate is ready" {
+		t.Fatalf("updates = %#v", updates)
+	}
+	if updates["certificate_not_after"] != &notAfter || updates["certificate_issuer_kind"] != "Issuer" || updates["certificate_issuer_name"] != "tenant-acme" {
+		t.Fatalf("updates = %#v", updates)
+	}
+}
+
+func TestGatewayCertificateRuntimeUpdatesUseDefaultIssuer(t *testing.T) {
+	updates := gatewayCertificateRuntimeUpdates(kubeprovider.CertificateSnapshot{Phase: kubeprovider.CertificatePending}, model.RuntimeCluster{}, "letsencrypt-staging")
+
+	if updates["certificate_issuer_kind"] != "ClusterIssuer" || updates["certificate_issuer_name"] != "letsencrypt-staging" {
+		t.Fatalf("updates = %#v", updates)
+	}
+}
+
 func TestGatewayWildcardCertificateSpecUsesClusterDomain(t *testing.T) {
 	spec, ok := gatewayWildcardCertificateSpec(
 		model.RuntimeCluster{

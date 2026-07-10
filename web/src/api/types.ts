@@ -950,6 +950,10 @@ export interface GatewayRoute {
   servicePort: number
   tlsMode: 'http-only' | 'http-challenge' | 'manual-cert'
   certificateStatus: 'disabled' | 'pending' | 'issued' | 'failed' | 'expired'
+  certificateMessage?: string
+  certificateNotAfter?: string | null
+  certificateIssuerKind?: string
+  certificateIssuerName?: string
   cnameName: string
   cnameTarget: string
   accessUrl: string
