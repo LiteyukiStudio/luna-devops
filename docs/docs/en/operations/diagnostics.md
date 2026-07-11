@@ -6,7 +6,7 @@ Do not start by retrying everything. First decide whether the failure is in buil
 
 When the first question is "what just happened?", open **Events** from the sidebar. It presents build, release, deployment hook, access-route, and certificate state changes in time order.
 
-Filter by project space, application, deployment target, category, severity, result, and time range. Event details show the failure summary, related resources, actor, and direct links to the relevant build, release, or access page. Regular users only see events from project spaces they can access. Platform administrators can switch between **Related to me** and **All events**.
+Select multiple project spaces, applications, deployment targets, categories, severities, and results, then combine them with a time range. Application and deployment-target options follow the selected parent resources, and stale child filters are removed when their parent is deselected. Event details show the failure summary, related resources, actor, and direct links to the relevant build, release, or access page. Regular users only see events from project spaces they can access. Platform administrators can switch between **Related to me** and **All events**.
 
 ## Build did not succeed
 

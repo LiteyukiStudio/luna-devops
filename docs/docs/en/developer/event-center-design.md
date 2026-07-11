@@ -95,9 +95,9 @@ Status reconcilers must compare the previous and next state. A certificate may b
 Use compact filters at the top:
 
 - Time: today, last 7 days, last 30 days, or a custom range.
-- Project space, application, and deployment target.
-- Category, event type, and severity.
-- Result: in progress, succeeded, or failed.
+- Project space, application, and deployment target support multiple selections. Application options come from the selected project spaces, and deployment-target options come from the selected applications.
+- Category, event type, and severity support multiple selections. Selecting categories narrows the event-type options to those categories.
+- Result supports multiple selections, such as viewing in-progress and failed events together.
 
 The list is ordered newest first. Each row shows a summary, resource, status, and time. A details panel shows:
 
@@ -135,10 +135,12 @@ The list endpoint supports pagination, sorting, and these filters:
 
 ```text
 page, pageSize, sortOrder
-projectId, applicationId, deploymentTargetId
-category, type, severity
-status, dateFrom, dateTo
+projectIds, applicationIds, deploymentTargetIds
+categories, types, severities
+statuses, dateFrom, dateTo
 ```
+
+Plural filters can be repeated, for example `projectIds=prj_a&projectIds=prj_b`. The API still accepts singular parameters such as `projectId` and `applicationId` so existing links from project overviews remain valid.
 
 `catalog` is shared by frontend filters and notification rules. It returns event type, category, default severity, whether notification is recommended, and available detail fields. The frontend localizes stable keys rather than hardcoding display names.
 

@@ -2,8 +2,8 @@ import type { Ref } from 'react'
 import type { ProjectMember, ProjectMemberCandidate } from '@/api'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Trash2, UserPlus, X } from 'lucide-react'
-import { useImperativeHandle, useState } from 'react'
+import { Trash2, UserPlus } from 'lucide-react'
+import { useImperativeHandle, useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { Link, useParams } from 'react-router-dom'
@@ -15,11 +15,11 @@ import { DataList } from '@/components/common/data-list'
 import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
 import { PageHeader } from '@/components/common/page-header'
+import { SearchMultiSelect } from '@/components/common/search-select'
 import { StatusBadge } from '@/components/common/status-badge'
 import { UserAvatar } from '@/components/common/user-avatar'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
 import { NativeSelect as Select } from '@/components/ui/native-select'
 
 const schema = z.object({
@@ -72,7 +72,17 @@ export function ProjectMembersPage({ embedded = false, projectId: projectIdProp,
     mode: 'onChange',
     defaultValues: { role: 'viewer' },
   })
-  const candidateItems = (memberCandidates.data ?? []).filter(candidate => !selectedUsers.some(user => user.id === candidate.id))
+  const candidateUsers = useMemo(() => {
+    const candidates = [...selectedUsers, ...(memberCandidates.data ?? [])]
+    return [...new Map(candidates.map(candidate => [candidate.id, candidate])).values()]
+  }, [memberCandidates.data, selectedUsers])
+  const candidateOptions = useMemo(() => candidateUsers.map(candidate => ({
+    description: candidate.email,
+    icon: <UserAvatar className="size-7" user={candidate} />,
+    keywords: candidate.email,
+    label: candidate.name || candidate.email,
+    value: candidate.id,
+  })), [candidateUsers])
 
   const createMember = useMutation({
     mutationFn: (values: MemberForm) =>
@@ -112,15 +122,6 @@ export function ProjectMembersPage({ embedded = false, projectId: projectIdProp,
     setMemberSearch('')
     setSelectedUsers([])
     setDialogOpen(true)
-  }
-
-  function selectUser(user: ProjectMemberCandidate) {
-    setSelectedUsers(current => current.some(item => item.id === user.id) ? current : [...current, user])
-    setMemberSearch('')
-  }
-
-  function removeSelectedUser(userId: string) {
-    setSelectedUsers(current => current.filter(user => user.id !== userId))
   }
 
   useImperativeHandle(ref, () => ({ openAddMemberDialog }))
@@ -237,58 +238,24 @@ export function ProjectMembersPage({ embedded = false, projectId: projectIdProp,
           </DialogHeader>
           <form className="grid gap-3" onSubmit={form.handleSubmit(values => createMember.mutate(values))}>
             <Field hint={t('projectMembers.userSearchHint')} label={t('projectMembers.userSearch')} required>
-              <div className="grid gap-2">
-                {selectedUsers.length > 0 && (
-                  <div className="flex flex-wrap gap-2 rounded-md border border-border bg-muted/30 p-2">
-                    {selectedUsers.map(user => (
-                      <span key={user.id} className="inline-flex max-w-full items-center gap-2 rounded-full border border-border bg-background px-2 py-1 text-sm">
-                        <UserAvatar className="size-5" user={user} />
-                        <span className="min-w-0 truncate">{user.name || user.email}</span>
-                        <button
-                          aria-label={t('projectMembers.removeSelectedUser', { name: user.name || user.email })}
-                          className="text-muted-foreground hover:text-foreground"
-                          type="button"
-                          onClick={() => removeSelectedUser(user.id)}
-                        >
-                          <X size={14} />
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                )}
-                <Input
-                  placeholder={t('projectMembers.userSearchPlaceholder')}
-                  value={memberSearch}
-                  onChange={event => setMemberSearch(event.target.value)}
-                />
-                {memberSearch.trim().length > 0 && (
-                  <div className="grid max-h-56 gap-1 overflow-y-auto rounded-md border border-border bg-background p-2 shadow-sm">
-                    {memberCandidates.isFetching && (
-                      <p className="px-3 py-2 text-sm text-muted-foreground">{t('projectMembers.searchingUsers')}</p>
-                    )}
-                    {!memberCandidates.isFetching && candidateItems.map(user => (
-                      <button
-                        key={user.id}
-                        className="flex min-w-0 items-center gap-3 rounded-md px-3 py-2 text-left hover:bg-muted"
-                        type="button"
-                        onClick={() => selectUser(user)}
-                      >
-                        <UserAvatar className="size-8" user={user} />
-                        <span className="min-w-0">
-                          <span className="block truncate text-sm font-medium">{user.name || user.email}</span>
-                          <span className="block truncate text-xs text-muted-foreground">{user.email}</span>
-                        </span>
-                      </button>
-                    ))}
-                    {!memberCandidates.isFetching && memberCandidates.isSuccess && candidateItems.length === 0 && (
-                      <p className="px-3 py-2 text-sm text-muted-foreground">{t('projectMembers.noUserResults')}</p>
-                    )}
-                  </div>
-                )}
-                {selectedUsers.length > 0 && (
-                  <p className="text-xs text-muted-foreground">{t('projectMembers.selectedUsers', { count: selectedUsers.length })}</p>
-                )}
-              </div>
+              <SearchMultiSelect
+                className="h-11 rounded-2xl"
+                emptyLabel={t('projectMembers.noUserResults')}
+                filterLocally={false}
+                limited={(memberCandidates.data?.length ?? 0) >= 20}
+                loading={memberCandidates.isFetching}
+                options={candidateOptions}
+                placeholder={t('projectMembers.userSearchPlaceholder')}
+                search={memberSearch}
+                searchPlaceholder={t('projectMembers.userSearchPlaceholder')}
+                selectedLabel={options => options.map(option => option.label).join(', ')}
+                value={selectedUsers.map(user => user.id)}
+                onSearchChange={setMemberSearch}
+                onValueChange={(userIds) => {
+                  const usersById = new Map(candidateUsers.map(user => [user.id, user]))
+                  setSelectedUsers(userIds.flatMap(userId => usersById.get(userId) ?? []))
+                }}
+              />
             </Field>
             <Field error={form.formState.errors.role?.message} hint={t('projectMembers.roleHint')} label={t('projectMembers.role')} required>
               <Select {...form.register('role')} aria-invalid={Boolean(form.formState.errors.role)}>

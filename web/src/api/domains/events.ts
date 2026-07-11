@@ -18,6 +18,21 @@ function platformEventQuery(params: PlatformEventListParams) {
     if (value)
       search.set(key, value)
   }
+  const multiFilters: Array<[string, string[] | undefined]> = [
+    ['projectIds', params.projectIds],
+    ['applicationIds', params.applicationIds],
+    ['deploymentTargetIds', params.deploymentTargetIds],
+    ['categories', params.categories],
+    ['types', params.types],
+    ['severities', params.severities],
+    ['statuses', params.statuses],
+  ]
+  for (const [key, values] of multiFilters) {
+    for (const value of values ?? []) {
+      if (value)
+        search.append(key, value)
+    }
+  }
   return search.toString()
 }
 

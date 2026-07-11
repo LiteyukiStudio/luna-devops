@@ -332,12 +332,19 @@ export interface PlatformEventCatalogEntry {
 export interface PlatformEventListParams extends PaginationParams {
   scope?: 'mine' | 'all'
   projectId?: string
+  projectIds?: string[]
   applicationId?: string
+  applicationIds?: string[]
   deploymentTargetId?: string
+  deploymentTargetIds?: string[]
   category?: string
+  categories?: string[]
   type?: string
+  types?: string[]
   severity?: string
+  severities?: string[]
   status?: string
+  statuses?: string[]
   dateFrom?: string
   dateTo?: string
 }

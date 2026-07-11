@@ -1,11 +1,13 @@
 package api
 
 import (
+	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/gin-gonic/gin"
 )
 
 func TestCanReadPlatformEventForUser(t *testing.T) {
@@ -23,6 +25,23 @@ func TestCanReadPlatformEventForUser(t *testing.T) {
 	admin := model.User{ID: "usr_admin", Role: authz.PlatformRoleAdmin}
 	if !canReadPlatformEventForUser(admin, model.PlatformEvent{ProjectID: "prj_other"}, nil) {
 		t.Fatal("expected platform admin to read all events")
+	}
+}
+
+func TestPlatformEventFilterValuesSupportsSingleRepeatedAndCommaSeparatedValues(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Request = httptest.NewRequest("GET", "/events?projectId=legacy&projectIds=first&projectIds=second,third&projectIds=first", nil)
+
+	values := platformEventFilterValues(ctx, "projectId", "projectIds")
+	want := []string{"first", "second", "third", "legacy"}
+	if len(values) != len(want) {
+		t.Fatalf("filter values = %v, want %v", values, want)
+	}
+	for index := range want {
+		if values[index] != want[index] {
+			t.Fatalf("filter values = %v, want %v", values, want)
+		}
 	}
 }
 

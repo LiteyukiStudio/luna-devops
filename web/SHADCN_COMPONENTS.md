@@ -105,6 +105,17 @@
 - `Skeleton`、`Spinner`：统一加载状态。
 - `Combobox`、`Command`：用于 Git 仓库、镜像站、项目空间、用户等资源搜索选择。
 
+## 资源选择组件
+
+shadcn/ui 没有直接提供满足平台资源筛选需求的完整单选和多选组件。项目统一在 `web/src/components/common/search-select.tsx` 中组合 `Popover`、`Input`、`Button` 和选择状态，提供：
+
+- `SearchSelect`：可搜索单选，适用于项目空间、用户、Git 分支等资源。
+- `SearchMultiSelect`：可搜索多选，适用于跨项目空间筛选、批量选择用户、事件维度筛选等场景。
+- 两者共用候选项结构、搜索、空状态、加载状态、最大展示数量和无障碍触发器。
+- 项目空间、用户等领域对象应通过 `components/common` 下的薄包装器转换为统一候选项，不要在页面内重新实现 Popover 候选列表。
+- 少量且固定的互斥枚举，例如启用状态、TLS 模式、语言和角色，继续使用 shadcn `Select` 或 `NativeSelect`；不要为了统一外观强行改成可搜索资源选择器。
+- 某个选中项还带独立策略、编辑按钮或额外字段时，应保留专门的业务编辑器，例如部署配置的运行配置集引用策略。
+
 低优先级：
 
 - `Chart`、`Calendar`、`Date Picker`、`Resizable`、`Carousel`：等对应业务需要出现后再引入。

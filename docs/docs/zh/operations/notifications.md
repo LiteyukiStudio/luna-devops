@@ -104,7 +104,7 @@ docker compose exec worker printenv PUBLIC_BASE_URL
 - `hook.failed`
 - `gateway.apply_failed`
 
-投递失败会记录到投递记录。模板渲染错误、渠道配置错误和 Webhook 平台返回的非 429 的 4xx 错误会直接标记为失败，不再重复重试；网络错误、429 和 5xx 错误仍按队列策略重试。
+投递失败会记录到投递记录。Webhook 请求返回 HTTP 2xx 时视为发送成功，平台随后把单条投递标记为 `succeeded`，并更新渠道的最近成功时间。模板渲染错误、渠道配置错误和 Webhook 平台返回的非 429 的 4xx 错误会直接标记为失败，不再重复重试；网络错误、429 和 5xx 错误仍按队列策略重试。通知任务最多重试 5 次，因此一次持续失败的投递最多会尝试 6 次。
 
 过滤条件 JSON 示例：
 

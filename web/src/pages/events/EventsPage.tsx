@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react'
 import type { PlatformEvent, PlatformEventSnapshot } from '@/api'
 import type { DataListColumn } from '@/components/common/data-list'
-import { useQuery } from '@tanstack/react-query'
+import type { SearchSelectOption } from '@/components/common/search-select'
+import { useQueries, useQuery } from '@tanstack/react-query'
 import { Activity, ExternalLink, Eye, Globe2, Hammer, RefreshCw, Rocket, ShieldCheck, Workflow } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -10,6 +11,7 @@ import { api } from '@/api'
 import { useSession } from '@/app/session-context'
 import { DataList } from '@/components/common/data-list'
 import { ErrorState } from '@/components/common/error-state'
+import { SearchMultiSelect } from '@/components/common/search-select'
 import { StatusValueBadge } from '@/components/common/status-badge'
 import { formatAbsoluteDateTime, formatSmartDateTime } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
@@ -17,8 +19,6 @@ import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
-
-const allValue = '__all__'
 
 export function EventsPage() {
   const { t } = useTranslation()
@@ -29,31 +29,45 @@ export function EventsPage() {
   const [pageSize, setPageSize] = useState(20)
   const [search, setSearch] = useState('')
   const [scope, setScope] = useState<'mine' | 'all'>('mine')
-  const [projectId, setProjectId] = useState(() => searchParams.get('projectId') ?? '')
-  const [applicationId, setApplicationId] = useState(() => searchParams.get('applicationId') ?? '')
-  const [deploymentTargetId, setDeploymentTargetId] = useState(() => searchParams.get('deploymentTargetId') ?? '')
-  const [category, setCategory] = useState('')
-  const [eventType, setEventType] = useState('')
-  const [severity, setSeverity] = useState('')
-  const [status, setStatus] = useState('')
+  const [projectIds, setProjectIds] = useState(() => initialFilterValues(searchParams, 'projectIds', 'projectId'))
+  const [applicationIds, setApplicationIds] = useState(() => initialFilterValues(searchParams, 'applicationIds', 'applicationId'))
+  const [deploymentTargetIds, setDeploymentTargetIds] = useState(() => initialFilterValues(searchParams, 'deploymentTargetIds', 'deploymentTargetId'))
+  const [categories, setCategories] = useState(() => initialFilterValues(searchParams, 'categories', 'category'))
+  const [eventTypes, setEventTypes] = useState(() => initialFilterValues(searchParams, 'types', 'type'))
+  const [severities, setSeverities] = useState(() => initialFilterValues(searchParams, 'severities', 'severity'))
+  const [statuses, setStatuses] = useState(() => initialFilterValues(searchParams, 'statuses', 'status'))
   const [dateFrom, setDateFrom] = useState(() => dateDaysAgo(7))
   const [dateTo, setDateTo] = useState(() => dateDaysAgo(0))
   const [selectedEventId, setSelectedEventId] = useState('')
 
   const projects = useQuery({ queryKey: ['projects'], queryFn: api.listProjects })
-  const applications = useQuery({
-    queryKey: ['applications', projectId],
-    queryFn: () => api.listApplications(projectId),
-    enabled: Boolean(projectId),
+  const applicationQueries = useQueries({
+    queries: projectIds.map(projectId => ({
+      queryKey: ['applications', projectId],
+      queryFn: () => api.listApplications(projectId),
+    })),
   })
-  const deploymentTargets = useQuery({
-    queryKey: ['deployment-targets', projectId, applicationId],
-    queryFn: () => api.listDeploymentTargets(projectId, applicationId),
-    enabled: Boolean(projectId && applicationId),
+  const applications = useMemo(
+    () => uniqueById(applicationQueries.flatMap(query => query.data ?? [])),
+    [applicationQueries],
+  )
+  const selectedApplications = useMemo(
+    () => applications.filter(application => applicationIds.includes(application.id)),
+    [applicationIds, applications],
+  )
+  const deploymentTargetQueries = useQueries({
+    queries: selectedApplications.map(application => ({
+      queryKey: ['deployment-targets', application.projectId, application.id],
+      queryFn: () => api.listDeploymentTargets(application.projectId, application.id),
+    })),
   })
+  const deploymentTargets = useMemo(
+    () => uniqueById(deploymentTargetQueries.flatMap(query => query.data ?? [])),
+    [deploymentTargetQueries],
+  )
   const catalog = useQuery({ queryKey: ['platform-event-catalog'], queryFn: api.listPlatformEventCatalog })
   const events = useQuery({
-    queryKey: ['platform-events', page, pageSize, search, scope, projectId, applicationId, deploymentTargetId, category, eventType, severity, status, dateFrom, dateTo],
+    queryKey: ['platform-events', page, pageSize, search, scope, projectIds, applicationIds, deploymentTargetIds, categories, eventTypes, severities, statuses, dateFrom, dateTo],
     queryFn: () => api.listPlatformEvents({
       page,
       pageSize,
@@ -61,13 +75,13 @@ export function EventsPage() {
       sortBy: 'occurredAt',
       sortOrder: 'desc',
       scope: isPlatformAdmin ? scope : 'mine',
-      projectId: projectId || undefined,
-      applicationId: applicationId || undefined,
-      deploymentTargetId: deploymentTargetId || undefined,
-      category: category || undefined,
-      type: eventType || undefined,
-      severity: severity || undefined,
-      status: status || undefined,
+      projectIds,
+      applicationIds,
+      deploymentTargetIds,
+      categories,
+      types: eventTypes,
+      severities,
+      statuses,
       dateFrom: dateFrom || undefined,
       dateTo: dateTo || undefined,
     }),
@@ -78,7 +92,42 @@ export function EventsPage() {
     enabled: Boolean(selectedEventId),
   })
 
-  const categories = useMemo(() => [...new Set((catalog.data ?? []).map(item => item.category))], [catalog.data])
+  const categoryValues = useMemo(() => [...new Set((catalog.data ?? []).map(item => item.category))], [catalog.data])
+  const projectOptions = useMemo<SearchSelectOption[]>(() => (projects.data ?? []).map(project => ({
+    description: project.slug,
+    keywords: project.description,
+    label: project.name,
+    value: project.id,
+  })), [projects.data])
+  const applicationOptions = useMemo<SearchSelectOption[]>(() => applications.map(application => ({
+    description: application.slug,
+    label: application.name,
+    value: application.id,
+  })), [applications])
+  const deploymentTargetOptions = useMemo<SearchSelectOption[]>(() => deploymentTargets.map(target => ({
+    description: target.stage,
+    label: target.name,
+    value: target.id,
+  })), [deploymentTargets])
+  const categoryOptions = useMemo<SearchSelectOption[]>(() => categoryValues.map(value => ({
+    label: t(`eventsPage.categories.${value}`, { defaultValue: value }),
+    value,
+  })), [categoryValues, t])
+  const eventTypeOptions = useMemo<SearchSelectOption[]>(() => (catalog.data ?? [])
+    .filter(item => categories.length === 0 || categories.includes(item.category))
+    .map(item => ({
+      description: t(`eventsPage.categories.${item.category}`, { defaultValue: item.category }),
+      label: eventTypeLabel(t, item.type),
+      value: item.type,
+    })), [catalog.data, categories, t])
+  const severityOptions = useMemo<SearchSelectOption[]>(() => ['info', 'warning', 'error'].map(value => ({
+    label: t(`eventsPage.severities.${value}`),
+    value,
+  })), [t])
+  const statusOptions = useMemo<SearchSelectOption[]>(() => ['in_progress', 'succeeded', 'failed', 'canceled'].map(value => ({
+    label: t(`eventsPage.statuses.${value}`),
+    value,
+  })), [t])
   const resetPage = () => setPage(1)
   const columns = useMemo<DataListColumn<PlatformEvent>[]>(() => [
     {
@@ -160,91 +209,100 @@ export function EventsPage() {
               <SelectItem value="all">{t('eventsPage.scopes.all')}</SelectItem>
             </EventFilterSelect>
           )}
-          <EventFilterSelect
+          <EventFilterMultiSelect
             label={t('eventsPage.filters.project')}
-            value={projectId || allValue}
-            onChange={(value) => {
-              setProjectId(value === allValue ? '' : value)
-              setApplicationId('')
-              setDeploymentTargetId('')
+            loading={projects.isLoading}
+            options={projectOptions}
+            placeholder={t('eventsPage.filters.allProjects')}
+            value={projectIds}
+            onChange={(values) => {
+              const retainedApplicationIds = applicationIds.filter((applicationId) => {
+                const application = applications.find(item => item.id === applicationId)
+                return application && values.includes(application.projectId)
+              })
+              const retainedTargetIds = deploymentTargetIds.filter((targetId) => {
+                const target = deploymentTargets.find(item => item.id === targetId)
+                return target && retainedApplicationIds.includes(target.applicationId)
+              })
+              setProjectIds(values)
+              setApplicationIds(retainedApplicationIds)
+              setDeploymentTargetIds(retainedTargetIds)
               resetPage()
             }}
-          >
-            <SelectItem value={allValue}>{t('eventsPage.filters.allProjects')}</SelectItem>
-            {(projects.data ?? []).map(project => <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>)}
-          </EventFilterSelect>
-          <EventFilterSelect
-            disabled={!projectId}
+          />
+          <EventFilterMultiSelect
+            disabled={projectIds.length === 0}
             label={t('eventsPage.filters.application')}
-            value={applicationId || allValue}
-            onChange={(value) => {
-              setApplicationId(value === allValue ? '' : value)
-              setDeploymentTargetId('')
+            loading={applicationQueries.some(query => query.isLoading)}
+            options={applicationOptions}
+            placeholder={t('eventsPage.filters.allApplications')}
+            value={applicationIds}
+            onChange={(values) => {
+              const retainedTargetIds = deploymentTargetIds.filter((targetId) => {
+                const target = deploymentTargets.find(item => item.id === targetId)
+                return target && values.includes(target.applicationId)
+              })
+              setApplicationIds(values)
+              setDeploymentTargetIds(retainedTargetIds)
               resetPage()
             }}
-          >
-            <SelectItem value={allValue}>{t('eventsPage.filters.allApplications')}</SelectItem>
-            {(applications.data ?? []).map(application => <SelectItem key={application.id} value={application.id}>{application.name}</SelectItem>)}
-          </EventFilterSelect>
-          <EventFilterSelect
-            disabled={!applicationId}
+          />
+          <EventFilterMultiSelect
+            disabled={applicationIds.length === 0}
             label={t('eventsPage.filters.deploymentTarget')}
-            value={deploymentTargetId || allValue}
-            onChange={(value) => {
-              setDeploymentTargetId(value === allValue ? '' : value)
+            loading={deploymentTargetQueries.some(query => query.isLoading)}
+            options={deploymentTargetOptions}
+            placeholder={t('eventsPage.filters.allDeploymentTargets')}
+            value={deploymentTargetIds}
+            onChange={(values) => {
+              setDeploymentTargetIds(values)
               resetPage()
             }}
-          >
-            <SelectItem value={allValue}>{t('eventsPage.filters.allDeploymentTargets')}</SelectItem>
-            {(deploymentTargets.data ?? []).map(target => <SelectItem key={target.id} value={target.id}>{target.name}</SelectItem>)}
-          </EventFilterSelect>
-          <EventFilterSelect
+          />
+          <EventFilterMultiSelect
             label={t('eventsPage.filters.category')}
-            value={category || allValue}
-            onChange={(value) => {
-              setCategory(value === allValue ? '' : value)
-              setEventType('')
+            options={categoryOptions}
+            placeholder={t('eventsPage.filters.allCategories')}
+            value={categories}
+            onChange={(values) => {
+              const allowedTypes = new Set((catalog.data ?? [])
+                .filter(item => values.length === 0 || values.includes(item.category))
+                .map(item => item.type))
+              setCategories(values)
+              setEventTypes(current => current.filter(value => allowedTypes.has(value)))
               resetPage()
             }}
-          >
-            <SelectItem value={allValue}>{t('eventsPage.filters.allCategories')}</SelectItem>
-            {categories.map(value => <SelectItem key={value} value={value}>{t(`eventsPage.categories.${value}`, { defaultValue: value })}</SelectItem>)}
-          </EventFilterSelect>
-          <EventFilterSelect
+          />
+          <EventFilterMultiSelect
             label={t('eventsPage.filters.type')}
-            value={eventType || allValue}
-            onChange={(value) => {
-              setEventType(value === allValue ? '' : value)
+            options={eventTypeOptions}
+            placeholder={t('eventsPage.filters.allTypes')}
+            value={eventTypes}
+            onChange={(values) => {
+              setEventTypes(values)
               resetPage()
             }}
-          >
-            <SelectItem value={allValue}>{t('eventsPage.filters.allTypes')}</SelectItem>
-            {(catalog.data ?? []).filter(item => !category || item.category === category).map(item => (
-              <SelectItem key={item.type} value={item.type}>{eventTypeLabel(t, item.type)}</SelectItem>
-            ))}
-          </EventFilterSelect>
-          <EventFilterSelect
+          />
+          <EventFilterMultiSelect
             label={t('eventsPage.filters.severity')}
-            value={severity || allValue}
-            onChange={(value) => {
-              setSeverity(value === allValue ? '' : value)
+            options={severityOptions}
+            placeholder={t('eventsPage.filters.allSeverities')}
+            value={severities}
+            onChange={(values) => {
+              setSeverities(values)
               resetPage()
             }}
-          >
-            <SelectItem value={allValue}>{t('eventsPage.filters.allSeverities')}</SelectItem>
-            {['info', 'warning', 'error'].map(value => <SelectItem key={value} value={value}>{t(`eventsPage.severities.${value}`)}</SelectItem>)}
-          </EventFilterSelect>
-          <EventFilterSelect
+          />
+          <EventFilterMultiSelect
             label={t('eventsPage.filters.status')}
-            value={status || allValue}
-            onChange={(value) => {
-              setStatus(value === allValue ? '' : value)
+            options={statusOptions}
+            placeholder={t('eventsPage.filters.allStatuses')}
+            value={statuses}
+            onChange={(values) => {
+              setStatuses(values)
               resetPage()
             }}
-          >
-            <SelectItem value={allValue}>{t('eventsPage.filters.allStatuses')}</SelectItem>
-            {['in_progress', 'succeeded', 'failed', 'canceled'].map(value => <SelectItem key={value} value={value}>{t(`eventsPage.statuses.${value}`)}</SelectItem>)}
-          </EventFilterSelect>
+          />
           <label className="grid gap-1.5 text-xs text-muted-foreground">
             {t('eventsPage.filters.dateFrom')}
             <Input
@@ -328,6 +386,30 @@ function EventFilterSelect({ children, disabled, label, onChange, value }: { chi
         <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
         <SelectContent>{children}</SelectContent>
       </Select>
+    </label>
+  )
+}
+
+function EventFilterMultiSelect({ disabled, label, loading, options, placeholder, value, onChange }: {
+  disabled?: boolean
+  label: string
+  loading?: boolean
+  options: SearchSelectOption[]
+  placeholder: string
+  value: string[]
+  onChange: (value: string[]) => void
+}) {
+  return (
+    <label className="grid gap-1.5 text-xs text-muted-foreground">
+      {label}
+      <SearchMultiSelect
+        disabled={disabled}
+        loading={loading}
+        options={options}
+        placeholder={placeholder}
+        value={value}
+        onValueChange={onChange}
+      />
     </label>
   )
 }
@@ -461,4 +543,16 @@ function dateDaysAgo(days: number) {
   const date = new Date()
   date.setDate(date.getDate() - days)
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+function initialFilterValues(searchParams: URLSearchParams, plural: string, singular: string) {
+  const values = [...searchParams.getAll(plural), ...searchParams.getAll(singular)]
+    .flatMap(value => value.split(','))
+    .map(value => value.trim())
+    .filter(Boolean)
+  return [...new Set(values)]
+}
+
+function uniqueById<T extends { id: string }>(items: T[]) {
+  return [...new Map(items.map(item => [item.id, item])).values()]
 }

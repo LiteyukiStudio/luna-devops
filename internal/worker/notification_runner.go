@@ -72,15 +72,7 @@ func (r *Runner) handleNotificationDeliver(ctx context.Context, task *asynq.Task
 		return err
 	}
 	finishedAt := time.Now()
-	updates := map[string]any{
-		"status":            "succeeded",
-		"duration_millis":   time.Since(startedAt).Milliseconds(),
-		"error_message":     "",
-		"request_snapshot":  requestSnapshot,
-		"response_snippet":  result.ResponseSnippet,
-		"finished_at":       &finishedAt,
-		"last_delivered_at": &finishedAt,
-	}
+	updates := notificationDeliverySucceededUpdates(time.Since(startedAt), requestSnapshot, result.ResponseSnippet, finishedAt)
 	if err := r.db.Model(&delivery).Updates(updates).Error; err != nil {
 		return err
 	}
@@ -89,6 +81,17 @@ func (r *Runner) handleNotificationDeliver(ctx context.Context, task *asynq.Task
 		"last_delivery_error":  "",
 		"last_delivered_at":    &finishedAt,
 	}).Error
+}
+
+func notificationDeliverySucceededUpdates(duration time.Duration, requestSnapshot string, responseSnippet string, finishedAt time.Time) map[string]any {
+	return map[string]any{
+		"status":           "succeeded",
+		"duration_millis":  duration.Milliseconds(),
+		"error_message":    "",
+		"request_snapshot": requestSnapshot,
+		"response_snippet": responseSnippet,
+		"finished_at":      &finishedAt,
+	}
 }
 
 func (r *Runner) markNotificationDeliveryFailed(delivery model.NotificationDelivery, err error, duration time.Duration, requestSnapshot string, responseSnippet string) error {

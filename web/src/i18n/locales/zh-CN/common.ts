@@ -24,6 +24,8 @@ const common = {
   select: '请选择',
   search: '搜索',
   noOptions: '没有可选项',
+  selectedCount: '已选择 {{count}} 项',
+  clearSelection: '清除选择',
   searchSelectLimited: '仅显示前 {{count}} 项，请继续搜索缩小范围。',
   none: '无',
   yes: '是',

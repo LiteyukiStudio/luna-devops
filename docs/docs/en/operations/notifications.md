@@ -104,7 +104,7 @@ Rules must select at least one channel. Supported failure events:
 - `hook.failed`
 - `gateway.apply_failed`
 
-Delivery failures are recorded in the delivery list. Template rendering errors, invalid channel configuration, and Webhook platform 4xx responses except 429 are marked as failed without retrying. Network errors, 429, and 5xx responses still follow the queue retry policy.
+Delivery failures are recorded in the delivery list. An HTTP 2xx Webhook response is treated as a successful send; the platform then marks the delivery as `succeeded` and updates the channel's latest successful delivery time. Template rendering errors, invalid channel configuration, and Webhook platform 4xx responses except 429 are marked as failed without retrying. Network errors, 429, and 5xx responses still follow the queue retry policy. Notification tasks allow five retries, so a continuously failing delivery can be attempted up to six times including the initial send.
 
 Filter JSON example:
 

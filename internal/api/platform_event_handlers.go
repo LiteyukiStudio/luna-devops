@@ -121,18 +121,25 @@ func canReadPlatformEventForUser(user model.User, event model.PlatformEvent, pro
 }
 
 func applyPlatformEventFilters(ctx *gin.Context, query *gorm.DB) *gorm.DB {
-	filters := map[string]string{
-		"projectId":          "project_id",
-		"applicationId":      "application_id",
-		"deploymentTargetId": "deployment_target_id",
-		"category":           "category",
-		"type":               "type",
-		"severity":           "severity",
-		"status":             "status",
+	filters := []struct {
+		singular string
+		plural   string
+		column   string
+	}{
+		{singular: "projectId", plural: "projectIds", column: "project_id"},
+		{singular: "applicationId", plural: "applicationIds", column: "application_id"},
+		{singular: "deploymentTargetId", plural: "deploymentTargetIds", column: "deployment_target_id"},
+		{singular: "category", plural: "categories", column: "category"},
+		{singular: "type", plural: "types", column: "type"},
+		{singular: "severity", plural: "severities", column: "severity"},
+		{singular: "status", plural: "statuses", column: "status"},
 	}
-	for param, column := range filters {
-		if value := strings.TrimSpace(ctx.Query(param)); value != "" {
-			query = query.Where(column+" = ?", value)
+	for _, filter := range filters {
+		values := platformEventFilterValues(ctx, filter.singular, filter.plural)
+		if len(values) == 1 {
+			query = query.Where(filter.column+" = ?", values[0])
+		} else if len(values) > 1 {
+			query = query.Where(filter.column+" in ?", values)
 		}
 	}
 	if value, ok := parsePlatformEventTime(ctx.Query("dateFrom"), false); ok {
@@ -142,6 +149,27 @@ func applyPlatformEventFilters(ctx *gin.Context, query *gorm.DB) *gorm.DB {
 		query = query.Where("occurred_at <= ?", value)
 	}
 	return query
+}
+
+func platformEventFilterValues(ctx *gin.Context, singular, plural string) []string {
+	rawValues := append([]string{}, ctx.QueryArray(plural)...)
+	rawValues = append(rawValues, ctx.QueryArray(singular)...)
+	values := make([]string, 0, len(rawValues))
+	seen := make(map[string]struct{}, len(rawValues))
+	for _, rawValue := range rawValues {
+		for value := range strings.SplitSeq(rawValue, ",") {
+			value = strings.TrimSpace(value)
+			if value == "" {
+				continue
+			}
+			if _, exists := seen[value]; exists {
+				continue
+			}
+			seen[value] = struct{}{}
+			values = append(values, value)
+		}
+	}
+	return values
 }
 
 func parsePlatformEventTime(raw string, endOfDay bool) (time.Time, bool) {

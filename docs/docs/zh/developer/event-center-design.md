@@ -95,9 +95,9 @@
 页面顶部使用一组紧凑筛选器：
 
 - 时间范围：今天、最近 7 天、最近 30 天和自定义范围。
-- 项目空间、应用和部署配置。
-- 分类、事件类型和严重级别。
-- 结果：进行中、成功、失败。
+- 项目空间、应用和部署配置都支持多选。应用候选来自已选项目空间，部署配置候选来自已选应用。
+- 分类、事件类型和严重级别支持多选；选择分类后，事件类型只展示对应分类中的选项。
+- 结果支持多选，例如同时查看进行中和失败事件。
 
 列表按时间倒序展示，主行包含事件摘要、资源、状态和时间。点击详情按钮后展开或打开侧边面板，展示：
 
@@ -135,10 +135,12 @@ GET /api/v1/events/catalog
 
 ```text
 page, pageSize, sortOrder
-projectId, applicationId, deploymentTargetId
-category, type, severity
-status, dateFrom, dateTo
+projectIds, applicationIds, deploymentTargetIds
+categories, types, severities
+statuses, dateFrom, dateTo
 ```
+
+复数筛选参数可以重复传递，例如 `projectIds=prj_a&projectIds=prj_b`。为兼容项目空间概览等已有跳转，接口仍接受 `projectId`、`applicationId` 等单值参数。
 
 `catalog` 返回前端筛选器和通知规则共同使用的事件类型目录，包括类型、分类、默认严重级别、是否推荐通知和可用详情字段。前端只按稳定 key 做 i18n，不硬编码事件名称。
 

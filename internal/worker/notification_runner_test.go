@@ -2,6 +2,7 @@ package worker
 
 import (
 	"testing"
+	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/notification"
 )
@@ -26,5 +27,20 @@ func TestNotificationSendErrorShouldSkipRetry(t *testing.T) {
 				t.Fatalf("notificationSendErrorShouldSkipRetry(%d) = %v, want %v", tt.status, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestNotificationDeliverySucceededUpdatesOnlyUsesDeliveryColumns(t *testing.T) {
+	finishedAt := time.Date(2026, 7, 11, 12, 56, 40, 0, time.UTC)
+	updates := notificationDeliverySucceededUpdates(1250*time.Millisecond, `{"method":"POST"}`, `{"code":0}`, finishedAt)
+
+	if _, exists := updates["last_delivered_at"]; exists {
+		t.Fatal("delivery updates must not write channel-only last_delivered_at column")
+	}
+	if updates["status"] != "succeeded" || updates["duration_millis"] != int64(1250) {
+		t.Fatalf("unexpected delivery updates: %#v", updates)
+	}
+	if got, ok := updates["finished_at"].(*time.Time); !ok || !got.Equal(finishedAt) {
+		t.Fatalf("finished_at = %#v, want %s", updates["finished_at"], finishedAt)
 	}
 }
