@@ -46,6 +46,25 @@ func TestRateLimiterAtomicallyIncrementsAndSetsTTL(t *testing.T) {
 	}
 }
 
+func TestRateLimiterResetClearsCounter(t *testing.T) {
+	server := miniredis.RunT(t)
+	limiter := newRateLimiter(server.Addr())
+	t.Cleanup(func() { _ = limiter.redis.Close() })
+
+	if allowed, err := limiter.allow("resettable", 1, time.Minute); err != nil || !allowed {
+		t.Fatalf("first attempt: allowed=%v err=%v", allowed, err)
+	}
+	if allowed, err := limiter.allow("resettable", 1, time.Minute); err != nil || allowed {
+		t.Fatalf("second attempt: allowed=%v err=%v", allowed, err)
+	}
+	if err := limiter.reset("resettable"); err != nil {
+		t.Fatalf("reset: %v", err)
+	}
+	if allowed, err := limiter.allow("resettable", 1, time.Minute); err != nil || !allowed {
+		t.Fatalf("attempt after reset: allowed=%v err=%v", allowed, err)
+	}
+}
+
 func TestLoginAccountRateLimitKeyDoesNotExposeAccount(t *testing.T) {
 	server := miniredis.RunT(t)
 	h := &Handlers{mode: "production", rateLimiter: newRateLimiter(server.Addr())}

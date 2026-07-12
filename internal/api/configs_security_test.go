@@ -1,11 +1,39 @@
 package api
 
 import (
+	"net/http"
 	"testing"
+	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"gorm.io/gorm"
 )
+
+func TestFullConfigPayloadWithUnchangedStepUpValuesDoesNotRequireAssertion(t *testing.T) {
+	db := newMFAIntegrationDB(t)
+	limitMFAIntegrationConnections(t, db, 1)
+	now := time.Now()
+	user := model.User{ID: "usr_config_admin", Email: "config-admin@example.com", Name: "Config Admin", AuthType: "local", Role: "platform_admin", Language: "en-US"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	sessionToken := "sess_config_admin"
+	if err := db.Create(&model.UserSession{ID: "ses_config_admin", UserID: user.ID, TokenHash: hashToken(sessionToken), ExpiresAt: now.Add(time.Hour)}).Error; err != nil {
+		t.Fatal(err)
+	}
+	handlers := &Handlers{db: db, configs: newConfigCache(db), mode: "development"}
+	recorder, ctx := newMFAIntegrationContext(http.MethodPut, "/api/v1/configs", map[string]any{"values": map[string]any{
+		"site.title":                                "Updated Luna DevOps",
+		"security.stepUpMfa.enabled":                "false",
+		"security.stepUpMfa.idleTimeoutMinutes":     "10",
+		"security.stepUpMfa.absoluteTimeoutMinutes": "60",
+	}}, sessionToken)
+	handlers.UpdateConfigs(ctx)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("full config update = %d %s", recorder.Code, recorder.Body.String())
+	}
+	assertAppConfigValue(t, db, "site.title", "Updated Luna DevOps")
+}
 
 func TestStepUpSecurityConfigReadsSharedDatabase(t *testing.T) {
 	db := newMFAIntegrationDB(t)

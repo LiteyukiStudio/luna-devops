@@ -17,6 +17,16 @@ const (
 	mfaSecretResourcePrefix = "mfa:"
 	// OIDC enrollment requires a browser session created by primary login within this server-side window.
 	mfaEnrollmentOIDCSessionMaxAge = 5 * time.Minute
+
+	mfaRateLimitKeyVersion       = "v2"
+	mfaEnrollmentAttemptLimit    = 10
+	mfaEnrollmentAttemptWindow   = time.Hour
+	mfaConfirmationAttemptLimit  = 20
+	mfaConfirmationAttemptWindow = 5 * time.Minute
+	mfaVerificationAttemptLimit  = 20
+	mfaVerificationAttemptWindow = 5 * time.Minute
+	mfaMinimumIPAttemptLimit     = 200
+	mfaIPAttemptMultiplier       = 20
 )
 
 type mfaEnrollInput struct {
@@ -64,7 +74,7 @@ func (h *Handlers) GetMFAStatus(ctx *gin.Context) {
 
 func (h *Handlers) EnrollMFA(ctx *gin.Context) {
 	user, session, ok := h.currentMFAUserSession(ctx)
-	if !ok || !h.allowMFAAttempt(ctx, user.ID, "enroll", 3, time.Hour) {
+	if !ok || !h.allowMFAAttempt(ctx, user.ID, "enroll", mfaEnrollmentAttemptLimit, mfaEnrollmentAttemptWindow) {
 		return
 	}
 	var input mfaEnrollInput
@@ -126,6 +136,7 @@ func (h *Handlers) EnrollMFA(ctx *gin.Context) {
 	}
 	_ = h.db.Where("user_id = ?", user.ID).Delete(&model.MFARecoveryCode{}).Error
 	_ = h.db.Where("user_id = ?", user.ID).Delete(&model.StepUpAssertion{}).Error
+	h.clearMFAUserAttempts(user.ID, "enroll")
 	h.audit(user.ID, "mfa.enroll", user.ID, true, "TOTP enrollment created")
 	ctx.JSON(http.StatusCreated, gin.H{
 		"secret":        enrollment.Secret,
@@ -136,7 +147,7 @@ func (h *Handlers) EnrollMFA(ctx *gin.Context) {
 
 func (h *Handlers) ConfirmMFA(ctx *gin.Context) {
 	user, _, ok := h.currentMFAUserSession(ctx)
-	if !ok || !h.allowMFAAttempt(ctx, user.ID, "confirm", 6, 5*time.Minute) {
+	if !ok || !h.allowMFAAttempt(ctx, user.ID, "confirm", mfaConfirmationAttemptLimit, mfaConfirmationAttemptWindow) {
 		return
 	}
 	var input mfaConfirmInput
@@ -203,13 +214,14 @@ func (h *Handlers) ConfirmMFA(ctx *gin.Context) {
 		writeMFAError(ctx, err)
 		return
 	}
+	h.clearMFAUserAttempts(user.ID, "confirm")
 	h.audit(user.ID, "mfa.confirm", user.ID, true, "TOTP enrollment confirmed")
 	ctx.JSON(http.StatusOK, gin.H{"enabled": true, "recoveryCodes": codes})
 }
 
 func (h *Handlers) VerifyMFA(ctx *gin.Context) {
 	user, session, ok := h.currentMFAUserSession(ctx)
-	if !ok || !h.allowMFAAttempt(ctx, user.ID, "verify", 6, 5*time.Minute) {
+	if !ok || !h.allowMFAAttempt(ctx, user.ID, "verify", mfaVerificationAttemptLimit, mfaVerificationAttemptWindow) {
 		return
 	}
 	var input mfaVerifyInput
@@ -260,6 +272,7 @@ func (h *Handlers) VerifyMFA(ctx *gin.Context) {
 	if usedRecoveryCode {
 		h.audit(user.ID, "mfa.recovery_code_used", purpose, true, "one-time recovery code consumed")
 	}
+	h.clearMFAUserAttempts(user.ID, "verify")
 	h.audit(user.ID, "mfa.verify", purpose, true, "step-up assertion created")
 	ctx.JSON(http.StatusOK, gin.H{"verified": true, "purpose": purpose})
 }
@@ -494,8 +507,8 @@ func (h *Handlers) allowMFAAttempt(ctx *gin.Context, userID, action string, limi
 		key   string
 		limit int
 	}{
-		{key: "mfa:" + action + ":user:" + strings.TrimSpace(userID), limit: limit},
-		{key: "mfa:" + action + ":ip:" + ctx.ClientIP(), limit: maxInt(limit*5, 20)},
+		{key: mfaRateLimitKey(action, "user", userID), limit: limit},
+		{key: mfaRateLimitKey(action, "ip", ctx.ClientIP()), limit: maxInt(limit*mfaIPAttemptMultiplier, mfaMinimumIPAttemptLimit)},
 	}
 	for _, item := range keys {
 		allowed, err := h.rateLimiter.allow(item.key, item.limit, window)
@@ -514,6 +527,19 @@ func (h *Handlers) allowMFAAttempt(ctx *gin.Context, userID, action string, limi
 		}
 	}
 	return true
+}
+
+func (h *Handlers) clearMFAUserAttempts(userID, action string) {
+	if h.rateLimiter == nil {
+		return
+	}
+	if err := h.rateLimiter.reset(mfaRateLimitKey(action, "user", userID)); err != nil && h.mode != "development" {
+		h.audit(userID, "mfa.rate_limit_reset_failed", strings.TrimSpace(action), false, "failed to reset successful MFA attempt counter")
+	}
+}
+
+func mfaRateLimitKey(action, scope, subject string) string {
+	return "mfa:" + mfaRateLimitKeyVersion + ":" + strings.TrimSpace(action) + ":" + strings.TrimSpace(scope) + ":" + strings.TrimSpace(subject)
 }
 
 func maxInt(left, right int) int {

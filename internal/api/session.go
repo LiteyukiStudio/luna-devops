@@ -516,6 +516,12 @@ func (l *rateLimiter) allow(key string, limit int, window time.Duration) (bool, 
 	return count <= int64(limit), nil
 }
 
+func (l *rateLimiter) reset(key string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	defer cancel()
+	return l.redis.Del(ctx, "rate_limit:"+key).Err()
+}
+
 func (h *Handlers) allowSensitiveAuthAttempt(ctx *gin.Context, action string, limit int, window time.Duration) bool {
 	return h.allowSensitiveAuthKey(ctx, action, ctx.ClientIP(), limit, window)
 }

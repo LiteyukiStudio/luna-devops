@@ -336,7 +336,11 @@ func (h *Handlers) UpdateConfigs(ctx *gin.Context) {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	stepUpConfigChanged := containsStepUpConfig(values)
+	stepUpConfigChanged := false
+	if containsStepUpConfig(values) {
+		currentStepUpValues := h.configs.get(stepUpSecurityConfigKeys(knownConfigKeys()))
+		stepUpConfigChanged = stepUpConfigValuesChanged(values, currentStepUpValues)
+	}
 	targetStepUpEnabled := false
 	actorSessionID := ""
 	if stepUpConfigChanged {
@@ -409,6 +413,15 @@ func (h *Handlers) UpdateConfigs(ctx *gin.Context) {
 func containsStepUpConfig[T any](values map[string]T) bool {
 	for key := range values {
 		if strings.HasPrefix(key, "security.stepUpMfa.") {
+			return true
+		}
+	}
+	return false
+}
+
+func stepUpConfigValuesChanged(values, current map[string]string) bool {
+	for key, value := range values {
+		if strings.HasPrefix(key, "security.stepUpMfa.") && value != current[key] {
 			return true
 		}
 	}

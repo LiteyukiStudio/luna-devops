@@ -48,6 +48,8 @@ const errors = {
     admin_enrollment_required: '开启全局二次验证前，至少需要一名可用的平台管理员先绑定 MFA。',
     last_admin_required: '全局二次验证开启时，必须保留至少一名已绑定 MFA 的平台管理员。',
     not_enabled: '当前账号尚未启用两步验证。',
+    rate_limited: '动态验证码连续尝试次数较多，请等待几分钟后再试。',
+    rate_limit_unavailable: '两步验证安全限流暂时不可用，请稍后重试。',
     secret_store_failed: '无法安全保存两步验证密钥。',
     session_required: '两步验证管理仅支持有效的浏览器会话。',
   },

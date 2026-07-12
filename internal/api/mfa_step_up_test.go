@@ -194,6 +194,22 @@ func TestStepUpPolicyConfigValidation(t *testing.T) {
 	if containsStepUpConfig(map[string]any{"site.title": "Luna DevOps"}) {
 		t.Fatal("unrelated config must not trigger MFA policy validation")
 	}
+	current := map[string]string{
+		"security.stepUpMfa.enabled":                "false",
+		"security.stepUpMfa.idleTimeoutMinutes":     "10",
+		"security.stepUpMfa.absoluteTimeoutMinutes": "60",
+	}
+	if stepUpConfigValuesChanged(map[string]string{
+		"site.title":                                "Updated",
+		"security.stepUpMfa.enabled":                "false",
+		"security.stepUpMfa.idleTimeoutMinutes":     "10",
+		"security.stepUpMfa.absoluteTimeoutMinutes": "60",
+	}, current) {
+		t.Fatal("unchanged step-up values in a full form payload must not trigger policy verification")
+	}
+	if !stepUpConfigValuesChanged(map[string]string{"security.stepUpMfa.idleTimeoutMinutes": "11"}, current) {
+		t.Fatal("changed step-up timeout must trigger policy verification")
+	}
 	if _, err := configMinuteValue("0", 10, 1, 120); err == nil {
 		t.Fatal("expected zero idle timeout to be rejected")
 	}

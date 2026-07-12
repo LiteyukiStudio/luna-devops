@@ -18,6 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { TabsContent } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { configDefinitionText } from './config-definition-text'
+import { changedConfigValues } from './site-settings-values'
 
 export function SiteSettingsPage() {
   const { t } = useTranslation()
@@ -57,13 +58,19 @@ export function SiteSettingsPage() {
     onError: error => toast.error(error.message),
   })
 
+  const submitChangedValues = (formValues: Record<string, unknown>) => {
+    const changedValues = changedConfigValues(flattenConfigValues(formValues), resolvedValues)
+    if (Object.keys(changedValues).length > 0)
+      save.mutate(changedValues)
+  }
+
   return (
     <div className="grid gap-4">
       {definitions.isError && <ErrorState title={t('settings.configDefinitionsFailedTitle')} description={t('settings.configDefinitionsFailedDescription')} />}
 
       <form
         id="site-settings-form"
-        onSubmit={form.handleSubmit(formValues => save.mutate(flattenConfigValues(formValues)))}
+        onSubmit={form.handleSubmit(submitChangedValues)}
       >
         <ContentTabs
           tabs={[
@@ -72,7 +79,7 @@ export function SiteSettingsPage() {
             { value: 'billing', label: t('settings.billingConfigTitle') },
           ]}
           tools={(
-            <Button disabled={save.isPending || !form.formState.isValid} form="site-settings-form" type="submit">
+            <Button disabled={save.isPending || !form.formState.isValid || !form.formState.isDirty} form="site-settings-form" type="submit">
               <Save size={16} />
               {t('settings.saveConfig')}
             </Button>

@@ -225,7 +225,7 @@
 - [x] MFA challenge/assertion 状态后端化：按 user/session/purpose 记录验证状态并由数据库共享；敏感操作通过后刷新 last activity，超过无操作时间或绝对有效期后重新要求 OTP。
 - [x] Step-up MFA 后端第一阶段：新增 `security.stepUpMfa.enabled` 开关、`step_up_assertions` 共享表和 `requireStepUp` 统一检查点；已接入 runtime exec/terminal、数据导出、Secret/Registry Credential 写入、kubeconfig 更新、Auth Provider 更新和管理员用户变更，未通过时返回 `mfa_required`。
 - [x] 前端统一 MFA Dialog：敏感操作遇到 `mfa_required` 后弹出 OTP/恢复码输入框，验证通过后自动继续原操作，所有文案走 i18n。
-- [x] MFA 安全控制：OTP 校验允许一个时间步漂移且拒绝同一/更早计数器重放，验证接口按用户和可信来源 IP 限流；本地绑定前校验当前密码，OIDC 绑定要求 5 分钟内非模拟登录的主认证时间，remember 恢复不会刷新该时间；OTP/恢复码不写日志，密码变更、禁用账号、角色变化和 MFA 解绑/重新绑定后清理已有 assertion；策略修改、管理员 MFA 解绑/重置及管理员禁用/降级通过共享 PostgreSQL 事务锁串行化，并在事务内重读策略和复核 actor/session/assertion，保证并发后仍有可用管理员且旧请求不能越权继续。
+- [x] MFA 安全控制：OTP 校验允许一个时间步漂移且拒绝同一/更早计数器重放，验证接口按用户和可信来源 IP 限流；连续验证额度按操作分级，验证成功后清空用户计数，共享出口 IP 使用独立高阈值，避免正常敏感操作或 NAT 用户被误限流；本地绑定前校验当前密码，OIDC 绑定要求 5 分钟内非模拟登录的主认证时间，remember 恢复不会刷新该时间；OTP/恢复码不写日志，密码变更、禁用账号、角色变化和 MFA 解绑/重新绑定后清理已有 assertion；策略修改、管理员 MFA 解绑/重置及管理员禁用/降级通过共享 PostgreSQL 事务锁串行化，并在事务内重读策略和复核 actor/session/assertion，保证并发后仍有可用管理员且旧请求不能越权继续。
 - [x] 补齐管理员重置用户 MFA：用户解绑、重新生成恢复码、使用恢复码、敏感操作 MFA 通过/失败已写入 AuditLog；平台管理员完成 `user_admin_update` 二次验证后可重置他人 MFA，但不能重置自己或移除全局策略下最后一名 MFA 管理员，也不能查看 TOTP secret 或恢复码明文。
 
 ## 4. 项目、应用与前端主工作区
@@ -258,6 +258,7 @@
 - [x] 支持自定义站点 title、logo、favicon、登录页副标题。
 - [x] 修复站点设置保存结构化值时报 `cannot unmarshal object into string` 的兼容问题。
 - [x] 使用浏览器验收站点设置保存、公开配置刷新和语言切换流程。
+- [x] 修复站点设置全量提交未变化的 `security.stepUpMfa.*` 字段导致平台管理员被误判无权限：前端只提交 dirty values，后端按共享数据库当前值判断安全策略是否真实变化。
 - [x] 使用浏览器验收项目页、应用页和 sourceType 切换流程。
 - [x] 使用 PostgreSQL 集成环境验收项目创建和应用创建流程。
 

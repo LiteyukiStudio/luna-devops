@@ -48,6 +48,8 @@ const errors = {
     admin_enrollment_required: 'At least one available platform administrator must enroll MFA before global step-up verification can be enabled.',
     last_admin_required: 'At least one MFA-enabled platform administrator must remain while the global policy is enabled.',
     not_enabled: 'Two-step verification is not enabled for this account.',
+    rate_limited: 'There have been several consecutive verification attempts. Wait a few minutes and try again.',
+    rate_limit_unavailable: 'The two-step verification safety limit is temporarily unavailable. Try again later.',
     secret_store_failed: 'The two-step verification secret could not be stored securely.',
     session_required: 'Two-step verification management requires a valid browser session.',
   },
