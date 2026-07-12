@@ -12,6 +12,7 @@ type Project struct {
 	Description         string         `json:"description"`
 	NamespaceStrategy   string         `gorm:"not null" json:"namespaceStrategy"`
 	MaxConcurrentBuilds int            `gorm:"not null;default:2" json:"maxConcurrentBuilds"`
+	WebConsoleEnabled   bool           `gorm:"not null;default:true" json:"webConsoleEnabled"`
 	BillingOwnerUserID  string         `gorm:"index;not null;default:''" json:"billingOwnerUserId"`
 	SystemKey           string         `gorm:"index;not null;default:''" json:"systemKey"`
 	DeleteStatus        string         `gorm:"index;not null;default:active" json:"deleteStatus"`

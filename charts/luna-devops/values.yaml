@@ -8,6 +8,7 @@ app:
   logLevel: info
   publicBaseUrl: http://localhost:8088
   corsOrigins: ""
+  trustedProxyCidrs: ""
   secretEncryptionKey: ""
   existingSecret: ""
   secretEncryptionKeyKey: secret-encryption-key

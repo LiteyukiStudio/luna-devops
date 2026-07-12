@@ -82,6 +82,7 @@ pnpm --dir web install --frozen-lockfile
 pnpm --dir docs install --frozen-lockfile
 
 section "Linting and building the frontend"
+pnpm --dir web test
 pnpm --dir web lint
 pnpm --dir web build
 

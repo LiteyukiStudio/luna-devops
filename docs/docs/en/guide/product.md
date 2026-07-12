@@ -6,13 +6,17 @@ After the platform starts, complete the few settings you actually need. There is
 
 Compose starts the API in development mode by default. Open the sign-in page and follow the account hint shown there.
 
+Local-account sign-in and first-administrator bootstrap both create a 24-hour browser session. "Keep me signed in" is off by default. Enabling it on a trusted device adds a per-user, 30-day HttpOnly remember cookie. After the session expires, choosing that recent account rotates the remember token and creates a new session. The browser keeps display metadata for at most three recent accounts, but never stores passwords, tokens, or session cookies. Signing out, disabling the account, changing its password, or changing its role revokes the related sessions and remember tokens.
+
 If you switch to production mode, visit this page the first time:
 
 ```text
 http://localhost:8088/bootstrap
 ```
 
-Create the first administrator account on this page.
+Production mode requires a strong random `BOOTSTRAP_TOKEN` in the API process environment. Enter the same Bootstrap Token on this page to create the first administrator. Bootstrap is unavailable when the environment value is missing and rejects mismatched values; development mode does not validate this field. After initialization, rotate or remove this one-time credential from the deployment configuration or secret manager.
+
+The first administrator can also choose "Keep me signed in"; its session and remember-login behavior is the same as a normal local sign-in.
 
 ## Create the first project space
 

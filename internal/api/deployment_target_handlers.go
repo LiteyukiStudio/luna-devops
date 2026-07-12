@@ -151,40 +151,63 @@ func (h *Handlers) UpdateDeploymentTarget(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, deploymentTargetResponseFromModel(target))
 }
 
-func (h *Handlers) ExportDeploymentTargetData(ctx *gin.Context) {
+type deploymentTargetDataExportAuthorization struct {
+	user    model.User
+	project model.Project
+	app     model.Application
+	target  model.DeploymentTarget
+}
+
+func (h *Handlers) authorizeDeploymentTargetDataExport(ctx *gin.Context) (deploymentTargetDataExportAuthorization, bool) {
 	if !requireInteractiveSession(ctx) {
-		return
+		return deploymentTargetDataExportAuthorization{}, false
 	}
 	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, "owner", "admin")
 	if !ok {
-		return
+		return deploymentTargetDataExportAuthorization{}, false
 	}
 	if !h.ensureProjectCanMutate(ctx, project) {
-		return
+		return deploymentTargetDataExportAuthorization{}, false
 	}
 	if !h.requireStepUp(ctx, user, stepUpPurposeDataExport) {
-		return
+		return deploymentTargetDataExportAuthorization{}, false
 	}
 	app, ok := h.findApplication(ctx)
 	if !ok {
-		return
+		return deploymentTargetDataExportAuthorization{}, false
 	}
 	if !applicationCanMutate(app) {
-		writeErrorCode(ctx, http.StatusConflict, "application.delete_in_progress", "应用正在删除中，不能删除部署配置")
-		return
+		writeErrorCode(ctx, http.StatusConflict, "application.delete_in_progress", "应用正在删除中，不能导出运行数据")
+		return deploymentTargetDataExportAuthorization{}, false
 	}
 	var target model.DeploymentTarget
 	if err := h.db.First(&target, "id = ? and project_id = ? and application_id = ?", ctx.Param("targetId"), app.ProjectID, app.ID).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "deployment target not found")
-		return
+		return deploymentTargetDataExportAuthorization{}, false
 	}
 	if !h.ensureDeploymentTargetCanMutate(ctx, target) {
-		return
+		return deploymentTargetDataExportAuthorization{}, false
 	}
 	if !target.DataRetentionEnabled {
 		writeError(ctx, http.StatusBadRequest, "该部署配置未启用运行数据保留")
+		return deploymentTargetDataExportAuthorization{}, false
+	}
+	return deploymentTargetDataExportAuthorization{user: user, project: project, app: app, target: target}, true
+}
+
+func (h *Handlers) AuthorizeDeploymentTargetDataExport(ctx *gin.Context) {
+	if _, ok := h.authorizeDeploymentTargetDataExport(ctx); !ok {
 		return
 	}
+	ctx.Status(http.StatusNoContent)
+}
+
+func (h *Handlers) ExportDeploymentTargetData(ctx *gin.Context) {
+	authorization, ok := h.authorizeDeploymentTargetDataExport(ctx)
+	if !ok {
+		return
+	}
+	user, project, app, target := authorization.user, authorization.project, authorization.app, authorization.target
 	client, namespace, ok := h.kubernetesClientForDeploymentTarget(ctx, project, target, "运行集群不可用，无法导出运行数据")
 	if !ok {
 		return

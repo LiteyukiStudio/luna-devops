@@ -291,6 +291,7 @@ export function ApplicationConfigPage() {
               deploymentTargets={deploymentTargetRows}
               projectId={projectId}
               projectSlug={project.data?.slug ?? ''}
+              projectWebConsoleEnabled={project.data?.webConsoleEnabled ?? true}
               registries={registries.data ?? []}
               repositoryBindings={appRepositoryBindings}
               releases={appReleases}

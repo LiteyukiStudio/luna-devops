@@ -17,7 +17,7 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { TabsContent } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
-import i18next from '@/i18n'
+import { configDefinitionText } from './config-definition-text'
 
 export function SiteSettingsPage() {
   const { t } = useTranslation()
@@ -270,18 +270,6 @@ function ConfigSelect({ definition, form, options }: { definition: ConfigSection
       </SelectContent>
     </Select>
   )
-}
-
-function configDefinitionText(
-  definition: ConfigDefinition,
-  kind: 'label' | 'description',
-  t: ReturnType<typeof useTranslation>['t'],
-) {
-  const requestedKey = kind === 'label' ? definition.labelKey : definition.descriptionKey
-  const conventionalKey = `settings.configDefinitions.${definition.key}.${kind}`
-  const fallback = (kind === 'label' ? definition.label : definition.description) || (kind === 'label' ? definition.key : '')
-  const key = requestedKey && i18next.exists(requestedKey) ? requestedKey : conventionalKey
-  return t(key, { defaultValue: fallback })
 }
 
 function unflattenConfigValues(values: Record<string, string>) {

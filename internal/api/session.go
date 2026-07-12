@@ -25,6 +25,7 @@ const (
 
 var (
 	errRememberTokenInvalid = errors.New("remember token is invalid or expired")
+	errRememberTokenReused  = errors.New("remember token reuse detected")
 	errRememberUserDisabled = errors.New("remember token user is unavailable")
 )
 
@@ -144,98 +145,198 @@ func (h *Handlers) createSessionWithImpersonation(ctx *gin.Context, userID strin
 		return false
 	}
 
-	setSessionCookie(ctx, plainToken, h.mode == "production")
+	setSessionCookie(ctx, plainToken, h.mode == "production", false)
 	return true
 }
 
 func newUserSession(userID, impersonatorID string, now time.Time) (model.UserSession, string) {
+	return newUserSessionInFamily(userID, impersonatorID, "", now)
+}
+
+func newUserSessionInFamily(userID, impersonatorID, familyID string, now time.Time) (model.UserSession, string) {
 	plainToken := "sess_" + randomHex(32)
 	return model.UserSession{
-		ID:             id.New("ses"),
-		UserID:         userID,
-		ImpersonatorID: impersonatorID,
-		TokenHash:      hashToken(plainToken),
-		ExpiresAt:      now.Add(sessionDuration),
+		ID:               id.New("ses"),
+		UserID:           userID,
+		ImpersonatorID:   impersonatorID,
+		RememberFamilyID: familyID,
+		TokenHash:        hashToken(plainToken),
+		ExpiresAt:        now.Add(sessionDuration),
 	}, plainToken
 }
 
 func newUserRememberToken(userID string, now time.Time) (model.UserRememberToken, string) {
+	return newUserRememberTokenInFamily(userID, id.New("remf"), now.Add(rememberDuration))
+}
+
+func newUserRememberTokenInFamily(userID, familyID string, expiresAt time.Time) (model.UserRememberToken, string) {
 	plainToken := "rem_" + randomHex(32)
 	return model.UserRememberToken{
 		ID:        id.New("rem"),
 		UserID:    userID,
+		FamilyID:  familyID,
 		TokenHash: hashToken(plainToken),
-		ExpiresAt: now.Add(rememberDuration),
+		ExpiresAt: expiresAt,
 	}, plainToken
 }
 
-// Calls that omit requested default to no persistent login. This keeps older
-// authentication flows secure until they expose an explicit remember choice.
-func (h *Handlers) createRememberToken(ctx *gin.Context, userID string, requested ...bool) bool {
-	if len(requested) == 0 || !requested[0] {
-		return true
+func (h *Handlers) createLoginCredentials(ctx *gin.Context, userID string, remember bool) bool {
+	if !remember {
+		return h.createSession(ctx, userID)
 	}
-	_ = h.db.Where("expires_at <= ?", time.Now()).Delete(&model.UserRememberToken{}).Error
 
-	token, plainToken := newUserRememberToken(userID, time.Now())
-	if err := h.db.Create(&token).Error; err != nil {
+	now := time.Now()
+	rememberToken, rememberPlainToken := newUserRememberToken(userID, now)
+	session, sessionPlainToken := newUserSessionInFamily(userID, "", rememberToken.FamilyID, now)
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&rememberToken).Error; err != nil {
+			return err
+		}
+		return tx.Create(&session).Error
+	}); err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return false
 	}
 
-	setRememberCookie(ctx, userID, plainToken, h.mode == "production")
+	setSessionCookie(ctx, sessionPlainToken, h.mode == "production", true)
+	setRememberCookie(ctx, userID, rememberPlainToken, h.mode == "production")
+	return true
+}
+
+// Calls that omit requested default to no persistent login. OIDC currently
+// uses that default until it exposes an explicit remember choice.
+func (h *Handlers) createRememberToken(ctx *gin.Context, userID string, requested ...bool) bool {
+	if len(requested) == 0 || !requested[0] {
+		return true
+	}
+	plainSessionToken, err := ctx.Cookie(sessionCookieName)
+	if err != nil {
+		writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.session.missing")
+		return false
+	}
+	now := time.Now()
+	rememberToken, rememberPlainToken := newUserRememberToken(userID, now)
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&model.UserSession{}).
+			Where("user_id = ? and token_hash = ?", userID, hashToken(plainSessionToken)).
+			Update("remember_family_id", rememberToken.FamilyID)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return gorm.ErrRecordNotFound
+		}
+		return tx.Create(&rememberToken).Error
+	}); err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
+		return false
+	}
+	setSessionCookie(ctx, plainSessionToken, h.mode == "production", true)
+	setRememberCookie(ctx, userID, rememberPlainToken, h.mode == "production")
 	return true
 }
 
 func (h *Handlers) rotateRememberLogin(userID, plainToken string) (model.User, string, string, error) {
 	now := time.Now()
-	newSession, newSessionToken := newUserSession(userID, "", now)
-	newRemember, newRememberToken := newUserRememberToken(userID, now)
+	var newSessionToken string
+	var newRememberToken string
 	var user model.User
+	reused := false
 
 	err := h.db.Transaction(func(tx *gorm.DB) error {
+		var lockedUser model.User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedUser, "id = ?", userID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errRememberTokenInvalid
+			}
+			return err
+		}
 		var current model.UserRememberToken
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(
 			&current,
-			"token_hash = ? and user_id = ? and expires_at > ?",
+			"token_hash = ? and user_id = ?",
 			hashToken(plainToken),
 			userID,
-			now,
 		).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return errRememberTokenInvalid
 			}
 			return err
 		}
-		if err := tx.First(&user, "id = ? and disabled = ?", current.UserID, false).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return errRememberUserDisabled
-			}
-			return err
+		if current.RevokedAt != nil || !current.ExpiresAt.After(now) {
+			return errRememberTokenInvalid
 		}
-		result := tx.Where("id = ? and token_hash = ?", current.ID, current.TokenHash).Delete(&model.UserRememberToken{})
+		if current.ConsumedAt != nil {
+			if err := revokeRememberFamily(tx, current.UserID, current.FamilyID, now); err != nil {
+				return err
+			}
+			reused = true
+			return nil
+		}
+		if lockedUser.Disabled {
+			return errRememberUserDisabled
+		}
+		user = lockedUser
+		result := tx.Model(&model.UserRememberToken{}).
+			Where("id = ? and consumed_at is null and revoked_at is null", current.ID).
+			Update("consumed_at", now)
 		if result.Error != nil {
 			return result.Error
 		}
 		if result.RowsAffected != 1 {
 			return errRememberTokenInvalid
 		}
+		newRemember, plainRemember := newUserRememberTokenInFamily(current.UserID, current.FamilyID, current.ExpiresAt)
+		newSession, plainSession := newUserSessionInFamily(current.UserID, "", current.FamilyID, now)
 		if err := tx.Create(&newRemember).Error; err != nil {
 			return err
 		}
-		return tx.Create(&newSession).Error
+		if err := tx.Create(&newSession).Error; err != nil {
+			return err
+		}
+		newRememberToken = plainRemember
+		newSessionToken = plainSession
+		return nil
 	})
 	if err != nil {
 		return model.User{}, "", "", err
 	}
+	if reused {
+		return model.User{}, "", "", errRememberTokenReused
+	}
 	return user, newSessionToken, newRememberToken, nil
+}
+
+func revokeRememberFamily(tx *gorm.DB, userID, familyID string, revokedAt time.Time) error {
+	if strings.TrimSpace(familyID) == "" {
+		return errRememberTokenInvalid
+	}
+	if err := tx.Model(&model.UserRememberToken{}).
+		Where("user_id = ? and family_id = ? and revoked_at is null", userID, familyID).
+		Update("revoked_at", revokedAt).Error; err != nil {
+		return err
+	}
+	var sessionIDs []string
+	if err := tx.Model(&model.UserSession{}).
+		Where("user_id = ? and remember_family_id = ?", userID, familyID).
+		Pluck("id", &sessionIDs).Error; err != nil {
+		return err
+	}
+	if len(sessionIDs) > 0 {
+		if err := tx.Where("session_id in ?", sessionIDs).Delete(&model.StepUpAssertion{}).Error; err != nil {
+			return err
+		}
+	}
+	return tx.Where("user_id = ? and remember_family_id = ?", userID, familyID).Delete(&model.UserSession{}).Error
 }
 
 func revokeUserAuthentication(tx *gorm.DB, userID string) error {
 	if err := tx.Where("user_id = ?", userID).Delete(&model.StepUpAssertion{}).Error; err != nil {
 		return err
 	}
-	if err := tx.Where("user_id = ?", userID).Delete(&model.UserRememberToken{}).Error; err != nil {
+	if err := tx.Model(&model.UserRememberToken{}).
+		Where("user_id = ? and revoked_at is null", userID).
+		Update("revoked_at", time.Now()).Error; err != nil {
 		return err
 	}
 	return tx.Where("user_id = ?", userID).Delete(&model.UserSession{}).Error
@@ -255,7 +356,9 @@ func (h *Handlers) revokeCurrentSessionAndRememberTokens(plainToken string) (str
 		if err := tx.Where("session_id = ?", session.ID).Delete(&model.StepUpAssertion{}).Error; err != nil {
 			return err
 		}
-		if err := tx.Where("user_id = ?", session.UserID).Delete(&model.UserRememberToken{}).Error; err != nil {
+		if err := tx.Model(&model.UserRememberToken{}).
+			Where("user_id = ? and revoked_at is null", session.UserID).
+			Update("revoked_at", time.Now()).Error; err != nil {
 			return err
 		}
 		return tx.Where("id = ?", session.ID).Delete(&model.UserSession{}).Error
@@ -263,9 +366,13 @@ func (h *Handlers) revokeCurrentSessionAndRememberTokens(plainToken string) (str
 	return userID, err
 }
 
-func setSessionCookie(ctx *gin.Context, token string, secure bool) {
+func setSessionCookie(ctx *gin.Context, token string, secure bool, persistent bool) {
+	maxAge := 0
+	if persistent {
+		maxAge = int(sessionDuration / time.Second)
+	}
 	ctx.SetSameSite(http.SameSiteLaxMode)
-	ctx.SetCookie(sessionCookieName, token, 86400, "/", "", secure, true)
+	ctx.SetCookie(sessionCookieName, token, maxAge, "/", "", secure, true)
 }
 
 func setRememberCookie(ctx *gin.Context, userID string, token string, secure bool) {
@@ -294,6 +401,14 @@ type rateLimiter struct {
 	redis *redis.Client
 }
 
+var incrementRateLimitScript = redis.NewScript(`
+local count = redis.call("INCR", KEYS[1])
+if redis.call("PTTL", KEYS[1]) < 0 then
+  redis.call("PEXPIRE", KEYS[1], ARGV[1])
+end
+return count
+`)
+
 func newRateLimiter(redisAddr ...string) *rateLimiter {
 	addr := ""
 	if len(redisAddr) > 0 {
@@ -303,27 +418,36 @@ func newRateLimiter(redisAddr ...string) *rateLimiter {
 }
 
 func (l *rateLimiter) allow(key string, limit int, window time.Duration) (bool, error) {
+	if limit < 1 || window <= 0 {
+		return false, errors.New("rate limit and window must be positive")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
 	defer cancel()
 	redisKey := "rate_limit:" + key
-	count, err := l.redis.Incr(ctx, redisKey).Result()
+	count, err := incrementRateLimitScript.Run(ctx, l.redis, []string{redisKey}, window.Milliseconds()).Int64()
 	if err != nil {
 		return false, err
-	}
-	if count == 1 {
-		_ = l.redis.Expire(ctx, redisKey, window).Err()
 	}
 	return count <= int64(limit), nil
 }
 
 func (h *Handlers) allowSensitiveAuthAttempt(ctx *gin.Context, action string, limit int, window time.Duration) bool {
+	return h.allowSensitiveAuthKey(ctx, action, ctx.ClientIP(), limit, window)
+}
+
+func (h *Handlers) allowLoginAccountAttempt(ctx *gin.Context, account string, limit int, window time.Duration) bool {
+	normalizedAccount := strings.ToLower(strings.TrimSpace(account))
+	return h.allowSensitiveAuthKey(ctx, "login_account", hashToken(normalizedAccount), limit, window)
+}
+
+func (h *Handlers) allowSensitiveAuthKey(ctx *gin.Context, action, subject string, limit int, window time.Duration) bool {
 	if h.rateLimiter == nil {
 		h.rateLimiter = newRateLimiter()
 	}
 	if h.mode == "development" && limit < developmentRateLimit {
 		limit = developmentRateLimit
 	}
-	key := action + ":" + ctx.ClientIP()
+	key := action + ":" + subject
 	allowed, err := h.rateLimiter.allow(key, limit, window)
 	if allowed {
 		return true

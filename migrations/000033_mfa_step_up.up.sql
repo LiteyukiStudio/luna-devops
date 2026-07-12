@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS user_mfa_configs (
   enabled boolean NOT NULL DEFAULT false,
   confirmed_at timestamptz,
   recovery_codes_generated_at timestamptz,
+  last_totp_counter bigint,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );

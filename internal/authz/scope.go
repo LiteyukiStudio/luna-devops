@@ -28,7 +28,6 @@ var accessTokenScopeCatalog = []AccessTokenScopeDefinition{
 	scopeDef(ActionDeploymentRollback, "deployment", false, false),
 	scopeDef(ActionDeploymentDelete, "deployment", false, false),
 	scopeDef(ActionDeploymentExec, "deployment", false, false),
-	scopeDef(ActionDeploymentDataExport, "deployment", false, false),
 
 	scopeDef(ActionBuildRead, "build", true, true),
 	scopeDef(ActionBuildTrigger, "build", true, true),

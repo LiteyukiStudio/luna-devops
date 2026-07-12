@@ -27,6 +27,7 @@ func NewRouterWithStaticFSAndMetrics(db *gorm.DB, staticFS fs.FS, httpMetrics *o
 		debugLog("api log level set to debug")
 	}
 	router := gin.New()
+	configureTrustedProxies(router, config.Load().TrustedProxyCIDRs)
 	middlewares := []gin.HandlerFunc{gin.Logger(), recoveryMiddleware(), errorResponseMiddleware(), securityHeaders(), cors(), csrfOriginGuard()}
 	if httpMetrics != nil {
 		middlewares = append(middlewares, httpMetrics.GinMiddleware())
@@ -68,6 +69,7 @@ func NewRouterWithStaticFSAndMetrics(db *gorm.DB, staticFS fs.FS, httpMetrics *o
 		v1.GET("/users", handlers.ListUsers)
 		v1.POST("/users", handlers.CreateUser)
 		v1.PUT("/users/:userId", handlers.UpdateUser)
+		v1.DELETE("/users/:userId/mfa", handlers.AdminResetUserMFA)
 		v1.GET("/configs/definitions", handlers.ListConfigDefinitions)
 		v1.GET("/configs", handlers.GetConfigs)
 		v1.PUT("/configs", handlers.UpdateConfigs)
@@ -119,6 +121,7 @@ func NewRouterWithStaticFSAndMetrics(db *gorm.DB, staticFS fs.FS, httpMetrics *o
 		v1.DELETE("/runtime/clusters/:clusterId/resources", handlers.DeleteRuntimeClusterResource)
 		v1.GET("/runtime/clusters/:clusterId/resource-yaml", handlers.GetRuntimeClusterResourceYAML)
 		v1.GET("/runtime/clusters/:clusterId/resource-events", handlers.ListRuntimeClusterResourceEvents)
+		v1.POST("/runtime/clusters/:clusterId/pods/terminal/authorize", handlers.AuthorizeRuntimeClusterPodTerminal)
 		v1.GET("/runtime/clusters/:clusterId/pods/terminal", handlers.StreamRuntimeClusterPodTerminal)
 		v1.GET("/system-components", handlers.ListSystemComponents)
 		v1.POST("/app-templates/:templateId/system-install", handlers.InstallSystemAppTemplate)
@@ -182,6 +185,7 @@ func NewRouterWithStaticFSAndMetrics(db *gorm.DB, staticFS fs.FS, httpMetrics *o
 		v1.PUT("/projects/:projectId/applications/:applicationId/deployment-targets/:targetId", handlers.UpdateDeploymentTarget)
 		v1.POST("/projects/:projectId/applications/:applicationId/deployment-targets/:targetId/restart", handlers.RestartDeploymentTarget)
 		v1.GET("/projects/:projectId/applications/:applicationId/deployment-targets/:targetId/metrics/stream", handlers.StreamDeploymentTargetMetrics)
+		v1.POST("/projects/:projectId/applications/:applicationId/deployment-targets/:targetId/data-export/authorize", handlers.AuthorizeDeploymentTargetDataExport)
 		v1.GET("/projects/:projectId/applications/:applicationId/deployment-targets/:targetId/data-export", handlers.ExportDeploymentTargetData)
 		v1.DELETE("/projects/:projectId/applications/:applicationId/deployment-targets/:targetId", handlers.DeleteDeploymentTarget)
 		v1.GET("/projects/:projectId/build-runs", handlers.ListBuildRuns)
@@ -200,6 +204,7 @@ func NewRouterWithStaticFSAndMetrics(db *gorm.DB, staticFS fs.FS, httpMetrics *o
 		v1.GET("/projects/:projectId/releases/:releaseId/logs", handlers.GetReleaseLogs)
 		v1.GET("/projects/:projectId/releases/:releaseId/runtime-logs", handlers.GetReleaseRuntimeLogs)
 		v1.POST("/projects/:projectId/releases/:releaseId/exec", handlers.ExecReleaseRuntimeCommand)
+		v1.POST("/projects/:projectId/releases/:releaseId/terminal/authorize", handlers.AuthorizeReleaseRuntimeTerminal)
 		v1.GET("/projects/:projectId/releases/:releaseId/terminal", handlers.StreamReleaseRuntimeTerminal)
 		v1.POST("/projects/:projectId/releases/:releaseId/rollback", handlers.RollbackRelease)
 		v1.GET("/projects/:projectId/gateway-routes", handlers.ListGatewayRoutes)
@@ -235,6 +240,15 @@ func NewRouterWithStaticFSAndMetrics(db *gorm.DB, staticFS fs.FS, httpMetrics *o
 	registerSwaggerUI(router)
 	registerStaticUI(router, staticFS)
 	return router
+}
+
+func configureTrustedProxies(router *gin.Engine, cidrs []string) {
+	if err := router.SetTrustedProxies(cidrs); err == nil {
+		return
+	}
+	// Config parsing already validates CIDRs. Keep this boundary fail-closed if
+	// a future Gin version rejects a previously accepted representation.
+	_ = router.SetTrustedProxies(nil)
 }
 
 func cors() gin.HandlerFunc {

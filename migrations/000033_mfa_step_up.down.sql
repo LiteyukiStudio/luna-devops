@@ -13,5 +13,7 @@ ALTER TABLE step_up_assertions DROP COLUMN IF EXISTS idle_expires_at;
 ALTER TABLE step_up_assertions DROP COLUMN IF EXISTS last_activity_at;
 ALTER TABLE step_up_assertions DROP COLUMN IF EXISTS verified_at;
 
+DELETE FROM secret_values WHERE resource LIKE 'mfa:%:totp';
+
 DROP TABLE IF EXISTS mfa_recovery_codes;
 DROP TABLE IF EXISTS user_mfa_configs;

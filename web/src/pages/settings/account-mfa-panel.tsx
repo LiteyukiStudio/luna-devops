@@ -1,4 +1,4 @@
-import type { MFAEnrollment } from '@/api'
+import type { ApiError, MFAEnrollment, MFAEnrollmentRequest } from '@/api'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Copy, KeyRound, RefreshCw, ShieldCheck, ShieldOff } from 'lucide-react'
 import { useState } from 'react'
@@ -20,6 +20,9 @@ export function AccountMFAPanel() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [enrollment, setEnrollment] = useState<MFAEnrollment>()
+  const [reauthOpen, setReauthOpen] = useState(false)
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [enrollmentError, setEnrollmentError] = useState('')
   const [confirmationCode, setConfirmationCode] = useState('')
   const [recoveryCodes, setRecoveryCodes] = useState<string[]>([])
   const status = useQuery({ queryKey: mfaStatusQueryKey, queryFn: api.getMFAStatus })
@@ -27,10 +30,23 @@ export function AccountMFAPanel() {
   const enroll = useMutation({
     mutationFn: api.enrollMFA,
     onSuccess: (result) => {
+      setCurrentPassword('')
+      setEnrollmentError('')
+      setReauthOpen(false)
       setConfirmationCode('')
       setEnrollment(result)
     },
-    onError: error => toast.error(error.message),
+    onError: (error: ApiError) => {
+      const message = error.code === 'mfa.reauth_required'
+        ? status.data?.enrollmentReauthMode === 'password'
+          ? t('accountPage.mfa.currentPasswordInvalid')
+          : t('accountPage.mfa.freshSessionRequired')
+        : error.message
+      if (status.data?.enrollmentReauthMode === 'password')
+        setEnrollmentError(message)
+      else
+        toast.error(message)
+    },
   })
 
   const confirm = useMutation({
@@ -70,6 +86,20 @@ export function AccountMFAPanel() {
       .catch(error => toast.error(error.message))
   }
 
+  const startEnrollment = () => {
+    setEnrollmentError('')
+    if (status.data?.enrollmentReauthMode === 'password') {
+      setReauthOpen(true)
+      return
+    }
+    enroll.mutate({})
+  }
+
+  const submitEnrollmentReauth = (payload: MFAEnrollmentRequest) => {
+    setEnrollmentError('')
+    enroll.mutate(payload)
+  }
+
   return (
     <>
       <Card className="grid gap-4">
@@ -91,9 +121,9 @@ export function AccountMFAPanel() {
             </div>
           </div>
           {!status.data?.enabled && (
-            <Button disabled={status.isLoading || status.isError || enroll.isPending} onClick={() => enroll.mutate()}>
+            <Button disabled={status.isLoading || status.isError || enroll.isPending} onClick={startEnrollment}>
               <KeyRound size={16} />
-              {t('accountPage.mfa.enable')}
+              {enroll.isPending ? t('accountPage.mfa.startingEnrollment') : t('accountPage.mfa.enable')}
             </Button>
           )}
         </div>
@@ -125,6 +155,54 @@ export function AccountMFAPanel() {
           </div>
         )}
       </Card>
+
+      <Dialog
+        open={reauthOpen}
+        onOpenChange={(open) => {
+          if (enroll.isPending)
+            return
+          setReauthOpen(open)
+          if (!open) {
+            setCurrentPassword('')
+            setEnrollmentError('')
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('accountPage.mfa.reauthTitle')}</DialogTitle>
+            <DialogDescription>{t('accountPage.mfa.reauthDescription')}</DialogDescription>
+          </DialogHeader>
+          <form
+            className="grid gap-4"
+            onSubmit={(event) => {
+              event.preventDefault()
+              submitEnrollmentReauth({ currentPassword })
+            }}
+          >
+            <Field error={enrollmentError} hint={t('accountPage.mfa.currentPasswordHint')} label={t('accountPage.mfa.currentPassword')} required>
+              <Input
+                aria-invalid={Boolean(enrollmentError)}
+                autoComplete="current-password"
+                autoFocus
+                type="password"
+                value={currentPassword}
+                onChange={(event) => {
+                  setCurrentPassword(event.target.value)
+                  setEnrollmentError('')
+                }}
+              />
+            </Field>
+            <DialogFooter>
+              <Button disabled={enroll.isPending} type="button" variant="secondary" onClick={() => setReauthOpen(false)}>{t('cancel')}</Button>
+              <Button disabled={enroll.isPending || currentPassword.length === 0} type="submit">
+                <KeyRound size={16} />
+                {enroll.isPending ? t('accountPage.mfa.reauthenticating') : t('accountPage.mfa.continueEnrollment')}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={Boolean(enrollment)} onOpenChange={open => !open && setEnrollment(undefined)}>
         <DialogContent>

@@ -1,5 +1,6 @@
-import type { BillingListParams, BuildRunListParams, PaginationParams, RuntimeClusterResourceListParams } from './types'
+import type { BillingListParams, BuildRunListParams, MFAChallenge, MFAPurpose, PaginationParams, RuntimeClusterResourceListParams } from './types'
 import i18next from '@/i18n'
+import { mfaPurposes } from './types'
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1'
 
@@ -8,10 +9,6 @@ interface ApiErrorBody {
   detail?: unknown
   error?: unknown
   purpose?: unknown
-}
-
-interface MFAChallenge {
-  purpose?: string
 }
 
 type MFAChallengeHandler = (challenge: MFAChallenge) => Promise<void>
@@ -24,10 +21,10 @@ export class ApiError extends Error {
   code: string
   detail?: string
   path: string
-  purpose?: string
+  purpose?: MFAPurpose
   status: number
 
-  constructor(message: string, options: { code?: string, detail?: string, path: string, purpose?: string, status: number }) {
+  constructor(message: string, options: { code?: string, detail?: string, path: string, purpose?: MFAPurpose, status: number }) {
     super(message)
     this.name = 'ApiError'
     this.code = options.code || 'request.failed'
@@ -47,7 +44,7 @@ export function registerMFAChallengeHandler(handler: MFAChallengeHandler) {
 }
 
 function resolveMFAChallenge(challenge: MFAChallenge) {
-  const key = challenge.purpose || 'unknown'
+  const key = challenge.purpose
   const activeChallenge = activeMfaChallenges.get(key)
   if (activeChallenge)
     return activeChallenge
@@ -202,7 +199,9 @@ async function apiErrorFromResponse(response: Response, path: string) {
   const code = typeof body.code === 'string' && body.code.trim() ? body.code.trim() : ''
   const detail = typeof body.detail === 'string' && body.detail.trim() ? body.detail.trim() : ''
   const bodyError = typeof body.error === 'string' && body.error.trim() ? body.error.trim() : ''
-  const purpose = typeof body.purpose === 'string' && body.purpose.trim() ? body.purpose.trim() : ''
+  const purpose = typeof body.purpose === 'string' && mfaPurposes.includes(body.purpose.trim() as MFAPurpose)
+    ? body.purpose.trim() as MFAPurpose
+    : undefined
   const message = translatedErrorMessage(code) || detail || bodyError || fallbackMessageForStatus(response.status) || response.statusText
   return new ApiError(message, {
     code: code || `http.${response.status}`,
@@ -257,7 +256,7 @@ export async function request<T>(path: string, options?: RequestInit): Promise<T
     return await requestOnce<T>(path, options)
   }
   catch (error) {
-    if (!(error instanceof ApiError) || error.code !== 'mfa_required' || path === '/auth/mfa/verify' || !mfaChallengeHandler)
+    if (!(error instanceof ApiError) || error.code !== 'mfa_required' || !error.purpose || path === '/auth/mfa/verify' || !mfaChallengeHandler)
       throw error
 
     try {

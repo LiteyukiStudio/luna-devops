@@ -68,6 +68,16 @@ Deployment-phase hooks run as Kubernetes Jobs. The platform stores hook run reco
 
 When deleting a deployment target, the platform first deletes routes bound to that target, then cleans up the Kubernetes workload, Service, and optional data volumes. This prevents routes from pointing at a service that no longer exists.
 
+## Web Console and data export
+
+The project-space Web Console default is enabled when a project space is created. Project Owners and Admins can enable or disable it for the whole space. Each deployment target can inherit that default, explicitly enable Web Console, or explicitly disable it; an explicit deployment-target value wins over the project default. This switch only decides whether the deployment target allows terminal access. It does not relax roles or MFA: the application release console remains limited to project Owners, Admins, and Developers, while Pod terminals on the cluster resource page remain platform-administrator only.
+
+Runtime-command audits store only a command summary, length, container, and exit code, not the original command body. Interactive-terminal audits store the connection target and result, not terminal input or output. With Step-up verification enabled, commands use the `runtime_exec` purpose and interactive terminals use `runtime_terminal`.
+
+Before opening an interactive terminal from an application release, the frontend calls the normal HTTP terminal authorize preflight. The preflight checks project role, project/deployment-target state, the effective Web Console switch, and the MFA assertion, so `mfa_required` can be handled by the shared dialog and retried after verification. Only after a 204 does the frontend open the WebSocket. The WebSocket endpoint repeats the session, role, resource-state, switch, and MFA checks; preflight success is not a reusable authorization ticket.
+
+Deployment-target data export requires an interactive cookie-authenticated session and project Owner or Admin role. A personal access token is rejected with `auth.interactive_session_required` even if it has a data-export scope. When the global MFA policy is enabled, the session must also verify the `data_export` purpose; the console handles `mfa_required`, verifies, and retries the download. Exports include platform-managed or existing PVCs; `emptyDir` is never exported.
+
 Gateway routes are enabled by default when created. To temporarily stop public access without losing the domain config, disable the route; the platform keeps the config and removes the runtime HTTPRoute, then reapplies it when enabled again.
 
 ## Builds and releases

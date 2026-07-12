@@ -273,7 +273,7 @@ func deploymentTargetScope(path, method string) string {
 	switch {
 	case strings.HasSuffix(path, "/restart"):
 		return string(ActionDeploymentRestart)
-	case strings.HasSuffix(path, "/data-export"):
+	case strings.HasSuffix(path, "/data-export") || strings.HasSuffix(path, "/data-export/authorize"):
 		return string(ActionDeploymentDataExport)
 	case strings.Contains(path, "/metrics/stream"):
 		return string(ActionDeploymentRead)
@@ -355,7 +355,8 @@ func UserCanCreateAccessTokenScope(userRole, scopeText string) bool {
 func isReleaseRuntimeExecPath(path string) bool {
 	switch path {
 	case "/api/v1/projects/:projectId/releases/:releaseId/exec",
-		"/api/v1/projects/:projectId/releases/:releaseId/terminal":
+		"/api/v1/projects/:projectId/releases/:releaseId/terminal",
+		"/api/v1/projects/:projectId/releases/:releaseId/terminal/authorize":
 		return true
 	default:
 		return false

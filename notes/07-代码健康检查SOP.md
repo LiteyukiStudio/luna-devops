@@ -448,3 +448,33 @@ rg -n "TODO|FIXME|临时|兼容|fallback|special case|module|Builder|builder" in
 - 进入 TODO：无，本轮未发现需要拆分成后续任务的问题。
 - 暂不处理：非表单展示列表中使用业务字段作为 key 的场景不影响输入焦点，本轮不扩大范围。
 - 文档同步：已在本 SOP 记录本次表单焦点问题、扫描范围和处理结论。
+
+## 12. 2026-07-12 认证与发布文档同步复查
+
+### 范围
+
+- 检查模块：登录会话与生产初始化、TOTP/恢复码/Step-up MFA、Web Console 项目/部署配置策略与 terminal authorize 预检、数据导出授权、发布质量门禁。
+- 检查原因：认证与发布安全实现已扩展，OpenAPI、双语文档和 TODO 存在滞后口径。
+- 当前变更：仅同步 OpenAPI、中文/英文文档、TODO 和本健康记录，不修改生产 Go/TypeScript 代码。
+
+### 验证结果
+
+- `go test ./...`：本轮为文档同步，未重复执行。
+- `pnpm --dir web lint` / `pnpm --dir web build`：本轮未修改前端代码，未重复执行。
+- `pnpm --dir docs build`：通过。
+- 其他针对性验证：Ruby Psych 成功解析 `openapi/openapi.yaml`，识别 OpenAPI `3.1.0`、62 个 path 和 38 个 schema；中英文标题结构与过期 MFA TODO 文案复扫通过。
+
+### 发现
+
+| 模块 | 问题 | 风险 | 分级 | 处理 |
+| --- | --- | --- | --- | --- |
+| OpenAPI / 双语文档 | remember login、生产 Bootstrap Token、完整 MFA、Web Console 继承策略、terminal authorize 预检与数据导出授权未同步 | 客户端实现和运维操作可能依赖过期契约 | 局部重构 | 已按当前实现补齐并保持中英文一致 |
+| TODO | MFA 聚合任务把已完成和未覆盖范围混在同一项 | 发布判断会把部分完成误认为全量完成 | 保持观察 | 已拆明完成项；资源删除、高风险部署和管理员重置 MFA 继续保持未完成 |
+| 发布门禁 | Go 版本和发布检查前置条件缺少文档入口 | RC 可能使用错误工具链或跳过质量检查 | 局部重构 | 已记录 Go `1.26.5` 与 `scripts/release-check.sh` 完整门禁 |
+
+### 本轮结论
+
+- 立即处理：完成 OpenAPI、双语文档、TODO 和健康记录同步。
+- 进入 TODO：保留资源删除/高风险部署 Step-up 覆盖和管理员重置 MFA 两项未完成工作。
+- 暂不处理：共享工作区中的生产代码改动及完整发布门禁执行；门禁要求干净 Git 工作区。
+- 文档同步：通过。

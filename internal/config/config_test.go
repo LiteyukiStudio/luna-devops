@@ -273,6 +273,37 @@ func TestLoadBootstrapToken(t *testing.T) {
 	}
 }
 
+func TestParseTrustedProxyCIDRsNormalizesAndDeduplicates(t *testing.T) {
+	got, err := parseTrustedProxyCIDRs(" 10.0.1.7/8,fd00::1234/8,10.0.0.0/8,, ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"10.0.0.0/8", "fd00::/8"}
+	if len(got) != len(want) {
+		t.Fatalf("trusted proxy CIDRs = %#v", got)
+	}
+	for index := range want {
+		if got[index] != want[index] {
+			t.Fatalf("trusted proxy CIDRs = %#v", got)
+		}
+	}
+}
+
+func TestTrustedProxyCIDRsFailClosedOnInvalidEntry(t *testing.T) {
+	if got := trustedProxyCIDRs("10.0.0.0/8,not-a-cidr"); len(got) != 0 {
+		t.Fatalf("trusted proxy CIDRs = %#v, want none", got)
+	}
+}
+
+func TestLoadTrustedProxyCIDRsDefaultsToNone(t *testing.T) {
+	resetEnvLoader(t)
+	unsetEnv(t, "TRUSTED_PROXY_CIDRS")
+
+	if got := Load().TrustedProxyCIDRs; len(got) != 0 {
+		t.Fatalf("TrustedProxyCIDRs = %#v, want none", got)
+	}
+}
+
 func TestRuntimeModeDefaultsToProduction(t *testing.T) {
 	unsetEnv(t, "APP_ENV")
 

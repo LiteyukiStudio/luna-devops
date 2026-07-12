@@ -93,7 +93,11 @@ func (h *Handlers) CreateProject(ctx *gin.Context) {
 		Description:         input.Description,
 		NamespaceStrategy:   fallback(input.NamespaceStrategy, "project"),
 		MaxConcurrentBuilds: normalizeBuildConcurrency(input.MaxConcurrentBuilds, defaultProjectBuildConcurrency),
+		WebConsoleEnabled:   true,
 		BillingOwnerUserID:  user.ID,
+	}
+	if input.WebConsoleEnabled != nil {
+		project.WebConsoleEnabled = *input.WebConsoleEnabled
 	}
 
 	if err := h.db.Create(&project).Error; err != nil {
@@ -150,6 +154,9 @@ func (h *Handlers) UpdateProject(ctx *gin.Context) {
 	project.Description = input.Description
 	project.NamespaceStrategy = fallback(input.NamespaceStrategy, "project")
 	project.MaxConcurrentBuilds = normalizeBuildConcurrency(input.MaxConcurrentBuilds, defaultProjectBuildConcurrency)
+	if input.WebConsoleEnabled != nil {
+		project.WebConsoleEnabled = *input.WebConsoleEnabled
+	}
 
 	if err := h.db.Save(&project).Error; err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
@@ -631,6 +638,7 @@ type projectInput struct {
 	Description         string `json:"description"`
 	NamespaceStrategy   string `json:"namespaceStrategy"`
 	MaxConcurrentBuilds int    `json:"maxConcurrentBuilds"`
+	WebConsoleEnabled   *bool  `json:"webConsoleEnabled"`
 }
 
 type projectOrderInput struct {

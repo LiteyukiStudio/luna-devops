@@ -8,6 +8,7 @@ data:
   API_ADDR: ":8080"
   PUBLIC_BASE_URL: {{ .Values.app.publicBaseUrl | quote }}
   APP_CORS_ORIGINS: {{ default .Values.app.publicBaseUrl .Values.app.corsOrigins | quote }}
+  TRUSTED_PROXY_CIDRS: {{ .Values.app.trustedProxyCidrs | quote }}
   DEPLOY_ROLLOUT_TIMEOUT_SECONDS: {{ .Values.worker.deployRolloutTimeoutSeconds | quote }}
   CERT_MANAGER_CLUSTER_ISSUER: {{ .Values.worker.certManagerClusterIssuer | quote }}
   BUILD_EXECUTOR_IMAGE: {{ .Values.worker.buildExecutorImage | quote }}

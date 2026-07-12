@@ -11,8 +11,10 @@ tags:
   - name: Configs
   - name: Git
   - name: Registries
+  - name: Runtime
   - name: Projects
   - name: Applications
+  - name: Deployments
   - name: AccessTokens
 paths:
   /healthz:
@@ -44,6 +46,10 @@ paths:
       responses:
         "200":
           description: Bootstrap status. devLoginHint is returned only in development mode.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BootstrapStatus"
 
   /api/v1/auth/bootstrap/admin:
     post:
@@ -58,8 +64,30 @@ paths:
       responses:
         "201":
           description: Created platform admin and session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSessionResponse"
+        "400":
+          description: Invalid email, password, language, or JSON (`bootstrap.invalid_input` or `request.invalid_json`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "403":
+          description: The production bootstrap token is invalid (`bootstrap.token_invalid`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
         "409":
           description: Platform admin already exists.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "503":
+          description: Production bootstrap is unavailable because `BOOTSTRAP_TOKEN` is not configured (`bootstrap.unavailable`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
 
   /api/v1/auth/login:
     post:
@@ -74,8 +102,39 @@ paths:
       responses:
         "200":
           description: Login succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSessionResponse"
         "401":
           description: Login failed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/auth/login/resume:
+    post:
+      tags: [Auth]
+      summary: Resume login with a remembered account
+      description: Rotates the per-user remember token, creates a new 24-hour session, and refreshes the 30-day remember cookie. Browser cookies are required.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResumeLoginInput"
+      responses:
+        "200":
+          description: Remembered login resumed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSessionResponse"
+        "401":
+          description: Remember token missing, expired, revoked, or the account is disabled.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
 
   /api/v1/auth/logout:
     post:
@@ -84,6 +143,252 @@ paths:
       responses:
         "204":
           description: Logged out.
+
+  /api/v1/auth/mfa/status:
+    get:
+      tags: [Auth]
+      summary: Get current user's MFA status
+      description: Requires an interactive browser session. Personal access tokens cannot manage or verify MFA.
+      security:
+        - SessionCookie: []
+      responses:
+        "200":
+          description: Current enrollment, policy, and recovery-code status.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MFAStatus" }
+        "401":
+          description: Browser session is missing or invalid (`mfa.session_required` or an authentication error).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "403":
+          description: Personal access tokens cannot access MFA session endpoints (`mfa.session_required`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "500":
+          description: MFA status could not be loaded.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/auth/mfa/totp/enroll:
+    post:
+      tags: [Auth]
+      summary: Start TOTP enrollment
+      description: Replaces any pending enrollment, stores the TOTP secret in the encrypted secret store, and returns the secret only for the current enrollment flow.
+      security:
+        - SessionCookie: []
+      responses:
+        "201":
+          description: Pending TOTP enrollment created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MFAEnrollment" }
+        "401":
+          description: Browser session is missing or invalid.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "403":
+          description: Personal access tokens cannot enroll MFA (`mfa.session_required`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "409":
+          description: MFA is already enabled (`mfa.already_enabled`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "429":
+          description: Enrollment attempts exceeded the user or IP rate limit (`mfa.rate_limited`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "500":
+          description: The TOTP secret could not be stored (`mfa.secret_store_failed`) or enrollment persistence failed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "503":
+          description: MFA rate limiting is unavailable in production (`mfa.rate_limit_unavailable`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/auth/mfa/totp/confirm:
+    post:
+      tags: [Auth]
+      summary: Confirm pending TOTP enrollment
+      description: Accepts the current or adjacent 30-second TOTP window. On success, enables MFA and returns ten one-time recovery codes that are shown only once.
+      security:
+        - SessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MFAConfirmInput" }
+      responses:
+        "200":
+          description: MFA enabled and recovery codes generated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MFAConfirmResult" }
+        "400":
+          description: Invalid request body (`request.invalid_json`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "401":
+          description: Browser session is invalid or the TOTP code is invalid (`mfa.invalid_code`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "403":
+          description: Personal access tokens cannot confirm MFA (`mfa.session_required`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "409":
+          description: Enrollment is missing, changed, or already enabled (`mfa.enrollment_required`, `mfa.enrollment_changed`, or `mfa.already_enabled`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "429":
+          description: Confirmation attempts exceeded the user or IP rate limit (`mfa.rate_limited`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "500":
+          description: Recovery codes or enrollment state could not be persisted.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "503":
+          description: MFA rate limiting is unavailable in production (`mfa.rate_limit_unavailable`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/auth/mfa/verify:
+    post:
+      tags: [Auth]
+      summary: Verify MFA for a sensitive-operation purpose
+      description: Accepts exactly one TOTP code or one recovery code. A successful recovery code is consumed atomically. The resulting assertion is bound to the current user, browser session, and purpose.
+      security:
+        - SessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MFAVerifyInput" }
+      responses:
+        "200":
+          description: Step-up assertion created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MFAVerifyResult" }
+        "400":
+          description: Unsupported purpose or both/neither credentials were supplied (`mfa.invalid_purpose` or `mfa.credential_required`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "401":
+          description: Browser session or MFA credential is invalid (`mfa.invalid_code`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "403":
+          description: Personal access tokens cannot create MFA assertions (`mfa.session_required`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "409":
+          description: MFA is not enabled for the current user (`mfa.not_enabled`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "429":
+          description: Verification attempts exceeded the user or IP rate limit (`mfa.rate_limited`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "500":
+          description: The Step-up assertion could not be persisted.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "503":
+          description: MFA rate limiting is unavailable in production (`mfa.rate_limit_unavailable`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/auth/mfa/recovery-codes:
+    post:
+      tags: [Auth]
+      summary: Regenerate MFA recovery codes
+      description: Requires a valid `mfa_manage` assertion. Replaces and invalidates all previous recovery codes; the new plaintext codes are returned only once.
+      security:
+        - SessionCookie: []
+      responses:
+        "200":
+          description: Recovery codes replaced.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MFARecoveryCodes" }
+        "401":
+          description: Browser session is missing or invalid.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "403":
+          description: MFA management assertion is missing or expired (`mfa_required`), or a personal access token was used (`mfa.session_required`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "409":
+          description: MFA is not enabled (`mfa.not_enabled`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "500":
+          description: Recovery codes could not be generated or persisted.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/auth/mfa:
+    delete:
+      tags: [Auth]
+      summary: Disable current user's MFA
+      description: Requires a valid `mfa_manage` assertion. Deletes the TOTP secret, recovery codes, and all current step-up assertions. While the global policy is enabled, the last MFA-enabled platform administrator cannot disable MFA.
+      security:
+        - SessionCookie: []
+      responses:
+        "204":
+          description: MFA disabled and assertions revoked.
+        "401":
+          description: Browser session is missing or invalid.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "403":
+          description: MFA management assertion is missing or expired (`mfa_required`), or a personal access token was used (`mfa.session_required`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "409":
+          description: The global policy requires another MFA-enabled platform administrator (`mfa.last_admin_required`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "500":
+          description: MFA state or encrypted secret data could not be deleted.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
 
   /api/v1/auth/providers:
     get:
@@ -264,6 +569,11 @@ paths:
       responses:
         "200":
           description: Config definitions.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ConfigDefinition" }
 
   /api/v1/configs:
     put:
@@ -278,6 +588,47 @@ paths:
       responses:
         "200":
           description: Updated config dictionary.
+
+  /api/v1/runtime/clusters/{clusterId}/pods/terminal/authorize:
+    post:
+      tags: [Runtime]
+      summary: Authorize a runtime-cluster Pod terminal connection
+      description: Normal HTTP preflight used before opening the Pod terminal WebSocket. It verifies the interactive session, platform-administrator role, target cluster, and `runtime_terminal` Step-up assertion. A missing assertion returns `mfa_required`, allowing the frontend to show the MFA dialog and retry. A 204 authorizes only the preflight; the subsequent WebSocket endpoint rechecks authentication, role, MFA assertion, Pod identity, and platform ownership before upgrading.
+      security:
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/ClusterId"
+        - name: namespace
+          in: query
+          required: true
+          schema: { type: string }
+        - name: name
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: Terminal preflight authorized. The WebSocket endpoint must still perform its own authorization checks.
+        "400":
+          description: Pod namespace or name is empty.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "401":
+          description: Interactive browser session is missing or invalid.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "403":
+          description: The current user is not a platform administrator, a personal access token was used (`mfa.session_required`), or Step-up verification is required (`mfa_required` with purpose `runtime_terminal`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: Runtime cluster was not found.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
 
   /api/v1/git/providers:
     get:
@@ -844,6 +1195,150 @@ paths:
         "204":
           description: Deleted application.
 
+  /api/v1/projects/{projectId}/applications/{applicationId}/deployment-targets:
+    get:
+      tags: [Deployments]
+      summary: List deployment targets for an application
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/ApplicationId"
+      responses:
+        "200":
+          description: Deployment target list.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/DeploymentTarget" }
+    post:
+      tags: [Deployments]
+      summary: Create a deployment target
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/ApplicationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DeploymentTargetInput" }
+      responses:
+        "201":
+          description: Created deployment target.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeploymentTarget" }
+
+  /api/v1/projects/{projectId}/applications/{applicationId}/deployment-targets/{targetId}:
+    put:
+      tags: [Deployments]
+      summary: Update a deployment target
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/ApplicationId"
+        - $ref: "#/components/parameters/TargetId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DeploymentTargetInput" }
+      responses:
+        "200":
+          description: Updated deployment target.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeploymentTarget" }
+    delete:
+      tags: [Deployments]
+      summary: Delete a deployment target
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/ApplicationId"
+        - $ref: "#/components/parameters/TargetId"
+      responses:
+        "204":
+          description: Deployment target deletion accepted and queued for asynchronous runtime cleanup.
+
+  /api/v1/projects/{projectId}/applications/{applicationId}/deployment-targets/{targetId}/data-export:
+    get:
+      tags: [Deployments]
+      summary: Export persistent runtime data
+      description: Requires an interactive cookie-authenticated browser session and project Owner or Admin role. Personal access tokens are rejected even if they carry a data-export scope. When Step-up MFA is enabled, the current session must also hold an active `data_export` assertion; the API returns `mfa_required` with purpose `data_export` so the console can verify and retry.
+      security:
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/ApplicationId"
+        - $ref: "#/components/parameters/TargetId"
+      responses:
+        "200":
+          description: Gzip-compressed tar archive streamed as an attachment.
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+              description: Attachment filename in the form `<app-slug>-<target-id>-data.tar.gz`.
+          content:
+            application/gzip:
+              schema: { type: string, format: binary }
+        "400":
+          description: Runtime data retention is disabled or the runtime cluster cannot export the target data.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "401":
+          description: Interactive session cookie is missing or invalid (`auth.session.missing` or another authentication error).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "403":
+          description: A personal access token was used (`auth.interactive_session_required`), the role is insufficient, or MFA is required (`mfa_required` / `mfa.session_required`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: Project, application, deployment target, or runtime dependency was not found.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "409":
+          description: The project, application, or deployment target is being deleted and cannot be exported.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/projects/{projectId}/releases/{releaseId}/terminal/authorize:
+    post:
+      tags: [Deployments]
+      summary: Authorize a release Web Console terminal connection
+      description: Normal HTTP preflight used before opening the release terminal WebSocket. It verifies project Owner/Admin/Developer access, project and deployment-target mutation state, the effective project/deployment `webConsoleEnabled` policy, and the `runtime_terminal` Step-up assertion. A missing assertion returns `mfa_required`, allowing the frontend to show the MFA dialog and retry. A 204 authorizes only the preflight; the subsequent WebSocket endpoint repeats the session, role, resource-state, effective Web Console policy, and MFA assertion checks before upgrading.
+      security:
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/ReleaseId"
+      responses:
+        "204":
+          description: Terminal preflight authorized. The WebSocket endpoint must still perform its own authorization checks.
+        "401":
+          description: Interactive browser session is missing or invalid.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "403":
+          description: Project role is insufficient, Web Console is disabled (`runtime.web_console_disabled`), a personal access token was used (`mfa.session_required`), or Step-up verification is required (`mfa_required` with purpose `runtime_terminal`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "404":
+          description: Project, release, or deployment target was not found.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "409":
+          description: Project or deployment target is being deleted and cannot open Web Console.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
   /api/v1/projects/{projectId}/applications/{applicationId}/deployment-targets/{targetId}/release-image-candidates:
     get:
       tags: [Applications]
@@ -964,6 +1459,17 @@ paths:
           description: Revoked access token.
 
 components:
+  securitySchemes:
+    SessionCookie:
+      type: apiKey
+      in: cookie
+      name: lyd_session
+      description: HttpOnly browser session cookie. Sensitive interactive operations do not accept personal access tokens as a substitute.
+    BearerToken:
+      type: http
+      scheme: bearer
+      bearerFormat: Luna personal access token
+
   parameters:
     AccountId:
       name: accountId
@@ -977,6 +1483,11 @@ components:
       schema: { type: string }
     BindingId:
       name: bindingId
+      in: path
+      required: true
+      schema: { type: string }
+    ClusterId:
+      name: clusterId
       in: path
       required: true
       schema: { type: string }
@@ -1045,6 +1556,11 @@ components:
       in: path
       required: true
       schema: { type: string }
+    ReleaseId:
+      name: releaseId
+      in: path
+      required: true
+      schema: { type: string }
     SortOrder:
       name: sortOrder
       in: query
@@ -1069,6 +1585,141 @@ components:
       schema: { type: string }
 
   schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        code:
+          type: string
+          description: Stable machine-readable error code.
+        error:
+          type: string
+          description: Safe user-facing error message.
+        detail:
+          type: string
+          description: Development-only diagnostic detail.
+        purpose:
+          type: string
+          description: Step-up purpose returned with `mfa_required`.
+      required: [code, error]
+    AuthSessionResponse:
+      type: object
+      properties:
+        user:
+          type: object
+          additionalProperties: true
+      required: [user]
+    BootstrapStatus:
+      type: object
+      properties:
+        mode:
+          type: string
+          enum: [development, production]
+          description: Production initialization requires the API process to have `BOOTSTRAP_TOKEN` configured and the same value supplied as `bootstrapToken`.
+        initialized: { type: boolean }
+        devLoginEnabled: { type: boolean }
+        devLoginHint:
+          type: object
+          description: Present only in development mode.
+          properties:
+            email: { type: string, format: email }
+            password: { type: string }
+          required: [email, password]
+      required: [mode, initialized, devLoginEnabled]
+    ConfigDefinition:
+      type: object
+      properties:
+        key: { type: string }
+        labelKey:
+          type: string
+          description: Stable frontend i18n key for the setting label; the backend does not localize labels.
+        descriptionKey:
+          type: string
+          description: Stable frontend i18n key for the setting description; the backend does not localize descriptions.
+        type: { type: string, enum: [string, textarea, select, boolean, number] }
+        public: { type: boolean }
+        default: { type: string }
+        options:
+          type: array
+          items: { type: string }
+      required: [key, labelKey, descriptionKey, type, public, default]
+    MFAStatus:
+      type: object
+      properties:
+        enabled: { type: boolean }
+        pending: { type: boolean }
+        policyEnabled: { type: boolean }
+        confirmedAt:
+          type: [string, "null"]
+          format: date-time
+        recoveryCodesRemaining: { type: integer, minimum: 0 }
+      required: [enabled, pending, policyEnabled, confirmedAt, recoveryCodesRemaining]
+    MFAEnrollment:
+      type: object
+      properties:
+        secret:
+          type: string
+          description: Base32 TOTP secret returned only while enrolling.
+        otpauthUrl: { type: string, format: uri }
+        qrCodeDataUrl:
+          type: string
+          description: PNG data URL for the enrollment QR code.
+      required: [secret, otpauthUrl, qrCodeDataUrl]
+    MFAConfirmInput:
+      type: object
+      properties:
+        code: { type: string, pattern: "^[0-9]{6}$" }
+      required: [code]
+    MFARecoveryCodes:
+      type: object
+      properties:
+        recoveryCodes:
+          type: array
+          minItems: 10
+          maxItems: 10
+          items:
+            type: string
+            pattern: "^[A-Z2-7]{4}(?:-[A-Z2-7]{4}){3}$"
+      required: [recoveryCodes]
+    MFAConfirmResult:
+      allOf:
+        - $ref: "#/components/schemas/MFARecoveryCodes"
+        - type: object
+          properties:
+            enabled: { type: boolean, const: true }
+          required: [enabled]
+    MFAPurpose:
+      type: string
+      enum:
+        - runtime_exec
+        - runtime_terminal
+        - data_export
+        - secret_update
+        - registry_credential_update
+        - kubeconfig_update
+        - auth_provider_update
+        - user_admin_update
+        - mfa_manage
+        - security_settings_update
+    MFAVerifyInput:
+      type: object
+      properties:
+        purpose: { $ref: "#/components/schemas/MFAPurpose" }
+        code: { type: string, pattern: "^[0-9]{6}$" }
+        recoveryCode:
+          type: string
+          description: One-time recovery code. Hyphens and case are normalized before verification.
+      required: [purpose]
+      oneOf:
+        - required: [code]
+          not: { required: [recoveryCode] }
+        - required: [recoveryCode]
+          not: { required: [code] }
+    MFAVerifyResult:
+      type: object
+      properties:
+        verified: { type: boolean, const: true }
+        purpose: { $ref: "#/components/schemas/MFAPurpose" }
+      required: [verified, purpose]
     AccessTokenInput:
       type: object
       properties:
@@ -1201,17 +1852,36 @@ components:
     InitializeAdminInput:
       type: object
       properties:
-        email: { type: string }
+        email: { type: string, format: email }
         name: { type: string }
         password: { type: string, minLength: 8 }
         language: { type: string, enum: [zh-CN, en-US] }
+        bootstrapToken:
+          type: string
+          writeOnly: true
+          description: Required when `mode` is `production`; must exactly match the API process `BOOTSTRAP_TOKEN`. Ignored in development.
+        rememberMe:
+          type: boolean
+          default: false
+          description: When true, also creates a rotating, per-user 30-day HttpOnly remember cookie. The regular session remains valid for 24 hours.
       required: [email, password]
     LoginInput:
       type: object
       properties:
-        email: { type: string }
+        email: { type: string, format: email }
         password: { type: string }
+        rememberMe:
+          type: boolean
+          default: false
+          description: When true, also creates a rotating, per-user 30-day HttpOnly remember cookie. The regular session remains valid for 24 hours.
       required: [email, password]
+    ResumeLoginInput:
+      type: object
+      properties:
+        userId:
+          type: string
+          description: User selected from locally stored recent-account display metadata; authentication still requires that user's HttpOnly remember cookie.
+      required: [userId]
     ProjectInput:
       type: object
       properties:
@@ -1219,6 +1889,11 @@ components:
         slug: { type: string }
         description: { type: string }
         namespaceStrategy: { type: string, enum: [project] }
+        maxConcurrentBuilds: { type: integer, minimum: 1 }
+        webConsoleEnabled:
+          type: boolean
+          default: true
+          description: Project-space default for release Web Console and runtime exec access. Omission on create defaults to true; omission on update preserves the current value. Project roles and Step-up MFA still apply.
       required: [name, slug]
     Project:
       type: object
@@ -1228,7 +1903,32 @@ components:
         slug: { type: string }
         description: { type: string }
         namespaceStrategy: { type: string, enum: [project] }
+        maxConcurrentBuilds: { type: integer }
+        webConsoleEnabled:
+          type: boolean
+          description: Project-space default Web Console policy used when a deployment target has no override.
         createdAt: { type: string, format: date-time }
+      required: [id, name, slug, namespaceStrategy, maxConcurrentBuilds, webConsoleEnabled, createdAt]
+    DeploymentTargetInput:
+      type: object
+      description: Deployment target create/update payload. Other build and Kubernetes fields are accepted by the implemented endpoint; `webConsoleEnabled` is documented here because it has inherited policy semantics.
+      additionalProperties: true
+      properties:
+        webConsoleEnabled:
+          type: [boolean, "null"]
+          default: null
+          description: "`null` inherits the project-space default; `true` explicitly enables and `false` explicitly disables Web Console for this deployment target. An explicit target value takes precedence over the project value."
+    DeploymentTarget:
+      type: object
+      additionalProperties: true
+      properties:
+        id: { type: string }
+        projectId: { type: string }
+        applicationId: { type: string }
+        webConsoleEnabled:
+          type: [boolean, "null"]
+          description: Nullable override. Effective policy is this value when non-null, otherwise the project's `webConsoleEnabled` value.
+      required: [id, projectId, applicationId, webConsoleEnabled]
     PaginatedProjectList:
       type: object
       properties:

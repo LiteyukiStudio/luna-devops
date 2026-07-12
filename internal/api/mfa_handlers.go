@@ -13,7 +13,15 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-const mfaSecretResourcePrefix = "mfa:"
+const (
+	mfaSecretResourcePrefix = "mfa:"
+	// OIDC enrollment requires a browser session created by primary login within this server-side window.
+	mfaEnrollmentOIDCSessionMaxAge = 5 * time.Minute
+)
+
+type mfaEnrollInput struct {
+	CurrentPassword string `json:"currentPassword"`
+}
 
 type mfaConfirmInput struct {
 	Code string `json:"code" binding:"required"`
@@ -48,14 +56,22 @@ func (h *Handlers) GetMFAStatus(ctx *gin.Context) {
 		"enabled":                config.Enabled,
 		"pending":                config.ID != "" && !config.Enabled,
 		"policyEnabled":          h.stepUpMFAEnabled(),
+		"enrollmentReauthMode":   mfaEnrollmentReauthMode(user),
 		"confirmedAt":            config.ConfirmedAt,
 		"recoveryCodesRemaining": remaining,
 	})
 }
 
 func (h *Handlers) EnrollMFA(ctx *gin.Context) {
-	user, _, ok := h.currentMFAUserSession(ctx)
+	user, session, ok := h.currentMFAUserSession(ctx)
 	if !ok || !h.allowMFAAttempt(ctx, user.ID, "enroll", 3, time.Hour) {
+		return
+	}
+	var input mfaEnrollInput
+	if !bindJSON(ctx, &input) {
+		return
+	}
+	if !h.reauthenticateMFAEnrollment(ctx, user, session, input.CurrentPassword, time.Now()) {
 		return
 	}
 
@@ -98,6 +114,7 @@ func (h *Handlers) EnrollMFA(ctx *gin.Context) {
 			"enabled":                     false,
 			"confirmed_at":                nil,
 			"recovery_codes_generated_at": nil,
+			"last_totp_counter":           nil,
 			"updated_at":                  time.Now(),
 		}),
 	}).Create(&config).Error
@@ -140,7 +157,8 @@ func (h *Handlers) ConfirmMFA(ctx *gin.Context) {
 		return
 	}
 	secretValue := h.secrets.Resolve(pending.TOTPSecretRef)
-	if secretValue == "" || !validateTOTPCode(secretValue, input.Code, now) {
+	counter, valid := matchTOTPCounter(secretValue, input.Code, now)
+	if !valid {
 		h.audit(user.ID, "mfa.confirm", user.ID, false, mfaAuditFailure(errMFAInvalidCode))
 		writeMFAError(ctx, errMFAInvalidCode)
 		return
@@ -162,6 +180,9 @@ func (h *Handlers) ConfirmMFA(ctx *gin.Context) {
 		if config.TOTPSecretRef != pending.TOTPSecretRef {
 			return errMFAEnrollmentChanged
 		}
+		if config.LastTOTPCounter != nil && counter <= *config.LastTOTPCounter {
+			return errMFAInvalidCode
+		}
 		if err := tx.Where("user_id = ?", user.ID).Delete(&model.MFARecoveryCode{}).Error; err != nil {
 			return err
 		}
@@ -173,6 +194,7 @@ func (h *Handlers) ConfirmMFA(ctx *gin.Context) {
 			"enabled":                     true,
 			"confirmed_at":                now,
 			"recovery_codes_generated_at": now,
+			"last_totp_counter":           counter,
 			"updated_at":                  now,
 		}).Error
 	})
@@ -219,7 +241,7 @@ func (h *Handlers) VerifyMFA(ctx *gin.Context) {
 	valid := false
 	if code != "" {
 		secretValue := h.secrets.Resolve(config.TOTPSecretRef)
-		valid = secretValue != "" && validateTOTPCode(secretValue, code, time.Now())
+		valid = secretValue != "" && h.consumeTOTPCode(user.ID, config.TOTPSecretRef, secretValue, code, time.Now())
 	} else {
 		valid = h.consumeRecoveryCode(user.ID, recoveryCode)
 		usedRecoveryCode = valid
@@ -293,16 +315,7 @@ func (h *Handlers) DisableMFA(ctx *gin.Context) {
 	}
 	resource := mfaSecretResource(user.ID)
 	err := h.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("user_id = ?", user.ID).Delete(&model.StepUpAssertion{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("user_id = ?", user.ID).Delete(&model.MFARecoveryCode{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("user_id = ?", user.ID).Delete(&model.UserMFAConfig{}).Error; err != nil {
-			return err
-		}
-		return tx.Where("resource = ?", resource).Delete(&model.SecretValue{}).Error
+		return deleteUserMFAState(tx, user.ID, resource)
 	})
 	if err != nil {
 		h.audit(user.ID, "mfa.disable", user.ID, false, "failed to disable MFA")
@@ -311,6 +324,104 @@ func (h *Handlers) DisableMFA(ctx *gin.Context) {
 	}
 	h.audit(user.ID, "mfa.disable", user.ID, true, "MFA disabled and assertions revoked")
 	ctx.Status(http.StatusNoContent)
+}
+
+func (h *Handlers) AdminResetUserMFA(ctx *gin.Context) {
+	actor, ok := h.currentUser(ctx)
+	if !ok {
+		return
+	}
+	if actor.Role != "platform_admin" {
+		writeErrorKey(ctx, http.StatusForbidden, actor.Language, "config.admin.required")
+		return
+	}
+	if !h.requireMFAAssertion(ctx, actor, stepUpPurposeUserAdminUpdate) {
+		return
+	}
+
+	targetID := strings.TrimSpace(ctx.Param("userId"))
+	if targetID == actor.ID {
+		h.audit(actor.ID, "mfa.admin_reset", targetID, false, "administrators must manage their own MFA from account settings")
+		writeErrorCode(ctx, http.StatusConflict, "mfa.admin_reset_self_forbidden", "请从个人安全设置管理当前账号的 MFA")
+		return
+	}
+
+	err := h.db.Transaction(func(tx *gorm.DB) error {
+		var target model.User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&target, "id = ?", targetID).Error; err != nil {
+			return err
+		}
+		var config model.UserMFAConfig
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&config, "user_id = ?", target.ID).Error; err != nil {
+			return err
+		}
+		if h.stepUpMFAEnabled() && target.Role == "platform_admin" && config.Enabled {
+			var enabledAdmins []model.UserMFAConfig
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Table("user_mfa_configs").
+				Select("user_mfa_configs.*").
+				Joins("join users on users.id = user_mfa_configs.user_id").
+				Where("users.role = ? and users.disabled = ? and users.deleted_at is null and user_mfa_configs.enabled = ?", "platform_admin", false, true).
+				Find(&enabledAdmins).Error; err != nil {
+				return err
+			}
+			otherEnabledAdmin := false
+			for _, adminConfig := range enabledAdmins {
+				if adminConfig.UserID != target.ID {
+					otherEnabledAdmin = true
+					break
+				}
+			}
+			if !otherEnabledAdmin {
+				return errMFALastAdminRequired
+			}
+		}
+		return deleteUserMFAState(tx, target.ID, mfaSecretResource(target.ID))
+	})
+	if err != nil {
+		h.audit(actor.ID, "mfa.admin_reset", targetID, false, mfaAuditFailure(err))
+		switch err {
+		case errMFALastAdminRequired:
+			writeErrorCode(ctx, http.StatusConflict, "mfa.last_admin_required", "全局二次验证开启时必须保留至少一名已绑定 MFA 的平台管理员")
+		case gorm.ErrRecordNotFound:
+			writeErrorCode(ctx, http.StatusNotFound, "mfa.reset_target_not_found", "用户或 MFA 配置不存在")
+		default:
+			writeError(ctx, http.StatusInternalServerError, err.Error())
+		}
+		return
+	}
+
+	h.audit(actor.ID, "mfa.admin_reset", targetID, true, "target MFA credentials and assertions deleted")
+	ctx.Status(http.StatusNoContent)
+}
+
+func mfaEnrollmentReauthMode(user model.User) string {
+	if strings.EqualFold(strings.TrimSpace(user.AuthType), "local") {
+		return "password"
+	}
+	return "fresh_session"
+}
+
+func (h *Handlers) reauthenticateMFAEnrollment(ctx *gin.Context, user model.User, session model.UserSession, currentPassword string, now time.Time) bool {
+	if mfaEnrollmentReauthenticated(user, session, currentPassword, now) {
+		return true
+	}
+	if mfaEnrollmentReauthMode(user) == "password" {
+		h.audit(user.ID, "mfa.enroll", user.ID, false, "local primary reauthentication failed")
+		writeErrorCode(ctx, http.StatusUnauthorized, "mfa.reauth_required", "请输入当前密码后重新验证")
+		return false
+	}
+	h.audit(user.ID, "mfa.enroll", user.ID, false, "OIDC session is not fresh enough for enrollment")
+	writeErrorCode(ctx, http.StatusUnauthorized, "mfa.reauth_required", "请重新完成 OIDC 登录后再绑定 MFA")
+	return false
+}
+
+func mfaEnrollmentReauthenticated(user model.User, session model.UserSession, currentPassword string, now time.Time) bool {
+	if mfaEnrollmentReauthMode(user) == "password" {
+		return strings.TrimSpace(currentPassword) != "" && bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(currentPassword)) == nil
+	}
+	age := now.Sub(session.CreatedAt)
+	return session.ImpersonatorID == "" && !session.CreatedAt.IsZero() && age >= 0 && age <= mfaEnrollmentOIDCSessionMaxAge
 }
 
 func (h *Handlers) currentMFAUserSession(ctx *gin.Context) (model.User, model.UserSession, bool) {
@@ -419,6 +530,43 @@ func (h *Handlers) consumeRecoveryCode(userID, normalizedCode string) bool {
 	return err == nil && consumed
 }
 
+func (h *Handlers) consumeTOTPCode(userID, expectedSecretRef, secretValue, code string, now time.Time) bool {
+	counter, valid := matchTOTPCounter(secretValue, code, now)
+	if !valid {
+		return false
+	}
+	consumed := false
+	err := h.db.Transaction(func(tx *gorm.DB) error {
+		var config model.UserMFAConfig
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&config, "user_id = ? and enabled = ?", userID, true).Error; err != nil {
+			return err
+		}
+		if config.TOTPSecretRef != expectedSecretRef || (config.LastTOTPCounter != nil && counter <= *config.LastTOTPCounter) {
+			return nil
+		}
+		result := tx.Model(&config).Updates(map[string]any{"last_totp_counter": counter, "updated_at": now})
+		if result.Error != nil {
+			return result.Error
+		}
+		consumed = result.RowsAffected == 1
+		return nil
+	})
+	return err == nil && consumed
+}
+
+func deleteUserMFAState(tx *gorm.DB, userID, secretResource string) error {
+	if err := tx.Where("user_id = ?", userID).Delete(&model.StepUpAssertion{}).Error; err != nil {
+		return err
+	}
+	if err := tx.Where("user_id = ?", userID).Delete(&model.MFARecoveryCode{}).Error; err != nil {
+		return err
+	}
+	if err := tx.Where("user_id = ?", userID).Delete(&model.UserMFAConfig{}).Error; err != nil {
+		return err
+	}
+	return tx.Where("resource = ?", secretResource).Delete(&model.SecretValue{}).Error
+}
+
 func (h *Handlers) hasMFAEnabledPlatformAdmin() bool {
 	var count int64
 	_ = h.db.Table("users").
@@ -457,6 +605,7 @@ const (
 	errMFAInvalidCode       = mfaSentinelError("invalid MFA code")
 	errMFAAlreadyEnabled    = mfaSentinelError("MFA already enabled")
 	errMFAEnrollmentChanged = mfaSentinelError("MFA enrollment changed")
+	errMFALastAdminRequired = mfaSentinelError("last MFA-enabled platform admin is required")
 )
 
 func writeMFAError(ctx *gin.Context, err error) {
@@ -482,6 +631,8 @@ func mfaAuditFailure(err error) string {
 		return "MFA already enabled"
 	case errMFAEnrollmentChanged:
 		return "MFA enrollment changed while confirming"
+	case errMFALastAdminRequired:
+		return "last MFA-enabled platform admin cannot be reset"
 	case gorm.ErrRecordNotFound:
 		return "MFA enrollment not found"
 	default:

@@ -28,6 +28,19 @@ func TestMFAMigrationBackfillsLegacyAssertionBeforeDroppingExpiresAt(t *testing.
 	if !(backfill < setNotNull && setNotNull < dropLegacy) {
 		t.Fatalf("legacy expires_at must be backfilled before constraints and removal")
 	}
+	if !strings.Contains(sql, "last_totp_counter bigint") {
+		t.Fatal("MFA migration must persist the last accepted TOTP counter")
+	}
+	downData, err := sqlmigrations.FS.ReadFile("000033_mfa_step_up.down.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	downSQL := string(downData)
+	deleteSecrets := strings.Index(downSQL, "DELETE FROM secret_values WHERE resource LIKE 'mfa:%:totp'")
+	dropConfigs := strings.Index(downSQL, "DROP TABLE IF EXISTS user_mfa_configs")
+	if deleteSecrets < 0 || dropConfigs < 0 || deleteSecrets > dropConfigs {
+		t.Fatal("MFA secret rows must be deleted before MFA tables are dropped")
+	}
 }
 
 func TestMFAMigrationUpgradesAndRollsBackLegacyAssertionInPostgres(t *testing.T) {
@@ -67,7 +80,7 @@ func TestMFAMigrationUpgradesAndRollsBackLegacyAssertionInPostgres(t *testing.T)
 		}
 	}()
 
-	if err := db.Exec(`CREATE TABLE users (id text PRIMARY KEY); CREATE TABLE user_sessions (id text PRIMARY KEY); INSERT INTO users(id) VALUES ('usr_test'); INSERT INTO user_sessions(id) VALUES ('ses_test')`).Error; err != nil {
+	if err := db.Exec(`CREATE TABLE users (id text PRIMARY KEY); CREATE TABLE user_sessions (id text PRIMARY KEY); CREATE TABLE secret_values (id text PRIMARY KEY, resource text NOT NULL); INSERT INTO users(id) VALUES ('usr_test'); INSERT INTO user_sessions(id) VALUES ('ses_test')`).Error; err != nil {
 		t.Fatalf("create migration prerequisites: %v", err)
 	}
 	legacyMigration, err := sqlmigrations.FS.ReadFile("000023_step_up_assertions.up.sql")
@@ -104,6 +117,9 @@ func TestMFAMigrationUpgradesAndRollsBackLegacyAssertionInPostgres(t *testing.T)
 	if upgraded.VerifiedAt.IsZero() || upgraded.LastActivityAt.IsZero() {
 		t.Fatalf("legacy activity timestamps were not backfilled: %#v", upgraded)
 	}
+	if err := db.Exec(`INSERT INTO secret_values(id, resource) VALUES ('sec_mfa', 'mfa:usr_test:totp'), ('sec_other', 'registry:usr_test')`).Error; err != nil {
+		t.Fatalf("insert migration secrets: %v", err)
+	}
 
 	downMigration, err := sqlmigrations.FS.ReadFile("000033_mfa_step_up.down.sql")
 	if err != nil {
@@ -118,5 +134,12 @@ func TestMFAMigrationUpgradesAndRollsBackLegacyAssertionInPostgres(t *testing.T)
 	}
 	if !rolledBackExpiry.Equal(legacyExpiry) {
 		t.Fatalf("rollback expiry = %s, want %s", rolledBackExpiry, legacyExpiry)
+	}
+	var mfaSecretCount, otherSecretCount int64
+	if err := db.Raw(`SELECT count(*) FROM secret_values WHERE id = 'sec_mfa'`).Scan(&mfaSecretCount).Error; err != nil || mfaSecretCount != 0 {
+		t.Fatalf("MFA secret cleanup count=%d err=%v", mfaSecretCount, err)
+	}
+	if err := db.Raw(`SELECT count(*) FROM secret_values WHERE id = 'sec_other'`).Scan(&otherSecretCount).Error; err != nil || otherSecretCount != 1 {
+		t.Fatalf("unrelated secret cleanup count=%d err=%v", otherSecretCount, err)
 	}
 }

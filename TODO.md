@@ -147,6 +147,7 @@
 - [x] `docker-compose.yaml` 和 `docker-compose-build.yaml` 内联 API / worker 运行环境变量，生产密钥、域名和镜像 tag 通过宿主机环境变量覆盖；`docker-compose-dev.yaml` 继续使用 `.env.worker` 服务开发联调。
 - [x] 新增 GitHub Actions 容器发布工作流：仅构建 `linux/amd64` 容器镜像，发布 DockerHub `liteyukistudio/devops-api`、`liteyukistudio/devops-worker`；分支发布 `nightly`，`v*` tag 发布版本 tag，稳定版本 tag 额外发布 `latest`；`devops-api` 使用 `embed_web` 内嵌前端静态文件，不额外构建或上传 GitHub Release 二进制产物。
 - [x] 修复内嵌 SPA 根路径和 fallback 被 Go FileServer 重定向到 `./` 的问题：`index.html` 改为直接返回，避免服务端根路径出现不必要 301。
+- [x] 新增发布质量门禁 `scripts/release-check.sh`：要求干净工作区和精确 Go `1.26.5`，统一执行 Go test/vet/race、前端测试/lint/build、文档构建、pnpm audit、govulncheck 与 Helm lint/render。
 
 ## 3. 认证、权限与登录
 
@@ -216,15 +217,15 @@
 - [x] 抽离统一分页组件，并将列表 API 改造为支持分页、排序、搜索和可选批量选择。
 - [x] 使用浏览器验收本地登录、退出和 Access Token 创建/撤销流程。
 - [x] 使用浏览器验收权限隐藏流程。
-- [ ] 设计并实现敏感操作 Step-up MFA：管理员可在全局安全设置中开启/关闭敏感操作二次验证，并配置验证有效期、无操作重新验证时间和最大持续有效期。
-- [ ] 用户账号安全页支持绑定离线 TOTP 身份验证器：后端生成加密存储的 TOTP secret，前端展示二维码和手动密钥，用户输入 OTP 校验成功后才正式启用。
-- [ ] 为用户生成一次性恢复码：恢复码只展示一次、仅存 hash、单个恢复码只能使用一次，支持用户重新生成并作废旧码。
-- [ ] 敏感操作 API 增加 MFA step-up 校验：Web Console、Secret/Registry Credential 查看或修改、kubeconfig/数据导出、删除资源、修改 OIDC/Git Provider/站点安全设置、管理员账号变更和高风险部署操作在策略开启后必须先完成 MFA。
-- [ ] MFA challenge/assertion 状态后端化：按 user/session/purpose 记录验证状态，支持 Redis 或数据库存储，多副本部署下共享；敏感操作通过后刷新 last activity，超过无操作时间或绝对有效期后重新要求 OTP。
+- [x] 设计并实现敏感操作 Step-up MFA：管理员可在全局安全设置中开启/关闭敏感操作二次验证，并配置无操作重新验证时间和最大持续有效期。
+- [x] 用户账号安全页支持绑定离线 TOTP 身份验证器：后端生成加密存储的 TOTP secret，前端展示二维码和手动密钥，用户输入 OTP 校验成功后才正式启用。
+- [x] 为用户生成一次性恢复码：恢复码只展示一次、仅存 hash、单个恢复码只能使用一次，支持用户重新生成并作废旧码。
+- [ ] 补齐剩余敏感操作 API 的 MFA step-up 校验：Web Console、运行命令、Secret/Registry Credential 写入、kubeconfig/数据导出、OIDC Provider/站点安全设置和管理员账号变更已接入；删除资源和高风险部署操作仍需统一纳入策略。
+- [x] MFA challenge/assertion 状态后端化：按 user/session/purpose 记录验证状态并由数据库共享；敏感操作通过后刷新 last activity，超过无操作时间或绝对有效期后重新要求 OTP。
 - [x] Step-up MFA 后端第一阶段：新增 `security.stepUpMfa.enabled` 开关、`step_up_assertions` 共享表和 `requireStepUp` 统一检查点；已接入 runtime exec/terminal、数据导出、Secret/Registry Credential 写入、kubeconfig 更新、Auth Provider 更新和管理员用户变更，未通过时返回 `mfa_required`。
-- [ ] 前端统一 MFA Dialog：敏感操作遇到 `mfa_required` 后弹出 OTP/恢复码输入框，验证通过后自动继续原操作，所有文案走 i18n。
-- [ ] MFA 安全控制：OTP 校验允许小时间漂移，验证接口按用户和 IP 限流，OTP/恢复码不写日志，密码重置、禁用账号、角色变化和 MFA 重置后清理已有 assertion。
-- [ ] MFA 管理与审计：用户解绑 MFA、重新生成恢复码、使用恢复码、管理员重置用户 MFA、敏感操作 MFA 通过/失败均写入 AuditLog；管理员不可查看用户 TOTP secret 或恢复码明文。
+- [x] 前端统一 MFA Dialog：敏感操作遇到 `mfa_required` 后弹出 OTP/恢复码输入框，验证通过后自动继续原操作，所有文案走 i18n。
+- [x] MFA 安全控制：OTP 校验允许一个时间步漂移，验证接口按用户和 IP 限流，OTP/恢复码不写日志，密码变更、禁用账号、角色变化和 MFA 解绑/重新绑定后清理已有 assertion。
+- [ ] 补齐管理员重置用户 MFA：用户解绑、重新生成恢复码、使用恢复码、敏感操作 MFA 通过/失败已写入 AuditLog，管理员不可查看 TOTP secret 或恢复码明文；仍需增加受审计的管理员重置入口。
 
 ## 4. 项目、应用与前端主工作区
 
@@ -512,7 +513,7 @@
 - [x] 禁止私有网段非 443 端口访问。
 - [x] 禁止元数据地址、Kubernetes API Server 和 Service CIDR 访问。
 - [x] 为构建网络拒绝事件记录审计日志。
-- [ ] Web Console 增加项目/部署配置级开关：真实终端默认面向可信开发者，公开 RC 前需要能按项目或部署配置关闭，并在权限说明中明确审计范围。
+- [x] Web Console 增加项目/部署配置级开关：项目空间默认开启，部署配置可继承或显式覆盖；真实终端仅面向授权角色，并在设置和文档中明确命令/交互终端审计范围。
 - [ ] 细化 Access Token scope：将应用、部署配置、发布、构建和网关接口从粗粒度 `project:read/write` 拆到稳定业务 scope，避免自动化授权语义模糊。
 - [x] 构建日志和 Hook 日志统一脱敏验收：Git Token、Registry 密码/Token、构建密钥、常见 Authorization header 和 URL 内 token 不应落入 BuildLog/HookRunLog。
 - [x] Kubernetes 构建 Job 默认不使用 privileged，不挂载宿主机 Docker socket；rootless BuildKit executor 使用非 root UID/GID、`--oci-worker-no-process-sandbox`、允许 `newuidmap/newgidmap` 所需的 privilege escalation，并放开 seccomp/AppArmor 兼容 Kubernetes 用户命名空间限制。

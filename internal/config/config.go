@@ -2,6 +2,7 @@ package config
 
 import (
 	"log"
+	"net/netip"
 	"os"
 	"strconv"
 	"strings"
@@ -24,6 +25,7 @@ type Config struct {
 	DatabaseConnectRetryAttempts int
 	DatabaseConnectRetryInterval time.Duration
 	RedisAddr                    string
+	TrustedProxyCIDRs            []string
 	BootstrapToken               string
 	MetricsEnabled               bool
 	MetricsAddr                  string
@@ -56,6 +58,7 @@ func Load() Config {
 		DatabaseConnectRetryAttempts: envInt("DB_CONNECT_RETRY_ATTEMPTS", 12),
 		DatabaseConnectRetryInterval: envDuration("DB_CONNECT_RETRY_INTERVAL", 5*time.Second),
 		RedisAddr:                    env("REDIS_ADDR", "localhost:6379"),
+		TrustedProxyCIDRs:            trustedProxyCIDRs(env("TRUSTED_PROXY_CIDRS", "")),
 		BootstrapToken:               strings.TrimSpace(env("BOOTSTRAP_TOKEN", "")),
 		MetricsEnabled:               envBool("METRICS_ENABLED", false),
 		MetricsAddr:                  env("METRICS_ADDR", ""),
@@ -73,6 +76,38 @@ func Load() Config {
 		DeployRolloutTimeoutSeconds:  int64(envInt("DEPLOY_ROLLOUT_TIMEOUT_SECONDS", 600)),
 		CertManagerClusterIssuer:     env("CERT_MANAGER_CLUSTER_ISSUER", "letsencrypt-http01"),
 	}
+}
+
+func trustedProxyCIDRs(raw string) []string {
+	values, err := parseTrustedProxyCIDRs(raw)
+	if err != nil {
+		log.Printf("invalid TRUSTED_PROXY_CIDRS: %v; forwarded client addresses will not be trusted", err)
+		return nil
+	}
+	return values
+}
+
+func parseTrustedProxyCIDRs(raw string) ([]string, error) {
+	parts := strings.Split(raw, ",")
+	values := make([]string, 0, len(parts))
+	seen := make(map[netip.Prefix]struct{}, len(parts))
+	for _, part := range parts {
+		value := strings.TrimSpace(part)
+		if value == "" {
+			continue
+		}
+		prefix, err := netip.ParsePrefix(value)
+		if err != nil {
+			return nil, err
+		}
+		prefix = prefix.Masked()
+		if _, exists := seen[prefix]; exists {
+			continue
+		}
+		seen[prefix] = struct{}{}
+		values = append(values, prefix.String())
+	}
+	return values, nil
 }
 
 func RuntimeMode() string {

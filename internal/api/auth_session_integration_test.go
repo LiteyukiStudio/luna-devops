@@ -72,6 +72,7 @@ func TestRotateRememberLoginConsumesTokenOnce(t *testing.T) {
 	original := model.UserRememberToken{
 		ID:        "rem_original",
 		UserID:    user.ID,
+		FamilyID:  "remf_concurrent",
 		TokenHash: hashToken(plainToken),
 		ExpiresAt: time.Now().Add(time.Hour),
 	}
@@ -102,7 +103,7 @@ func TestRotateRememberLoginConsumesTokenOnce(t *testing.T) {
 		switch {
 		case err == nil:
 			succeeded++
-		case errors.Is(err, errRememberTokenInvalid):
+		case errors.Is(err, errRememberTokenReused):
 			rejected++
 		default:
 			t.Fatalf("unexpected rotation error: %v", err)
@@ -120,9 +121,58 @@ func TestRotateRememberLoginConsumesTokenOnce(t *testing.T) {
 	if err := db.Model(&model.UserSession{}).Where("user_id = ?", user.ID).Count(&sessionCount).Error; err != nil {
 		t.Fatalf("count sessions: %v", err)
 	}
-	if rememberCount != 1 || sessionCount != 1 {
+	if rememberCount != 2 || sessionCount != 0 {
 		t.Fatalf("credential counts: remember=%d session=%d", rememberCount, sessionCount)
 	}
+	assertRecordCount(t, db, &model.UserRememberToken{}, "user_id = ? and consumed_at is not null", []any{user.ID}, 1)
+	assertRecordCount(t, db, &model.UserRememberToken{}, "user_id = ? and revoked_at is not null", []any{user.ID}, 2)
+}
+
+func TestRememberTokenReplayRevokesCompromisedFamilyOnly(t *testing.T) {
+	db := authIntegrationDB(t)
+	user := model.User{ID: "usr_replay", Email: "replay@example.com", Name: "Replay", AuthType: "local", Role: "user", Language: "en-US", Password: "hash"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	now := time.Now()
+	plainToken := "rem_replay_original"
+	compromised := model.UserRememberToken{
+		ID:        "rem_replay_original",
+		UserID:    user.ID,
+		FamilyID:  "remf_compromised",
+		TokenHash: hashToken(plainToken),
+		ExpiresAt: now.Add(time.Hour),
+	}
+	unrelatedToken, _ := newUserRememberTokenInFamily(user.ID, "remf_unrelated", now.Add(time.Hour))
+	unrelatedSession, _ := newUserSessionInFamily(user.ID, "", unrelatedToken.FamilyID, now)
+	if err := db.Create(&[]model.UserRememberToken{compromised, unrelatedToken}).Error; err != nil {
+		t.Fatalf("create remember tokens: %v", err)
+	}
+	if err := db.Create(&unrelatedSession).Error; err != nil {
+		t.Fatalf("create unrelated session: %v", err)
+	}
+
+	h := &Handlers{db: db, mode: "production"}
+	if _, _, _, err := h.rotateRememberLogin(user.ID, plainToken); err != nil {
+		t.Fatalf("rotate remember token: %v", err)
+	}
+	var rotatedSession model.UserSession
+	if err := db.First(&rotatedSession, "user_id = ? and remember_family_id = ?", user.ID, compromised.FamilyID).Error; err != nil {
+		t.Fatalf("find rotated session: %v", err)
+	}
+	assertion := newTestStepUpAssertion("sua_replayed_family", user.ID, rotatedSession.ID)
+	if err := db.Create(&assertion).Error; err != nil {
+		t.Fatalf("create family assertion: %v", err)
+	}
+
+	if _, _, _, err := h.rotateRememberLogin(user.ID, plainToken); !errors.Is(err, errRememberTokenReused) {
+		t.Fatalf("replay error = %v", err)
+	}
+	assertRecordCount(t, db, &model.UserSession{}, "user_id = ? and remember_family_id = ?", []any{user.ID, compromised.FamilyID}, 0)
+	assertRecordCount(t, db, &model.StepUpAssertion{}, "id = ?", []any{assertion.ID}, 0)
+	assertRecordCount(t, db, &model.UserRememberToken{}, "user_id = ? and family_id = ? and revoked_at is null", []any{user.ID, compromised.FamilyID}, 0)
+	assertRecordCount(t, db, &model.UserSession{}, "id = ?", []any{unrelatedSession.ID}, 1)
+	assertRecordCount(t, db, &model.UserRememberToken{}, "id = ? and revoked_at is null", []any{unrelatedToken.ID}, 1)
 }
 
 func TestLogoutRevokesCurrentSessionAndAllRememberTokens(t *testing.T) {
@@ -159,7 +209,8 @@ func TestLogoutRevokesCurrentSessionAndAllRememberTokens(t *testing.T) {
 	}
 
 	assertRecordCount(t, db, &model.UserSession{}, "user_id = ?", []any{user.ID}, 1)
-	assertRecordCount(t, db, &model.UserRememberToken{}, "user_id = ?", []any{user.ID}, 0)
+	assertRecordCount(t, db, &model.UserRememberToken{}, "user_id = ?", []any{user.ID}, 2)
+	assertRecordCount(t, db, &model.UserRememberToken{}, "user_id = ? and revoked_at is not null", []any{user.ID}, 2)
 	assertRecordCount(t, db, &model.StepUpAssertion{}, "session_id = ?", []any{currentSession.ID}, 0)
 	assertRecordCount(t, db, &model.StepUpAssertion{}, "session_id = ?", []any{otherSession.ID}, 1)
 }
@@ -191,7 +242,8 @@ func TestRevokeUserAuthenticationClearsEverySession(t *testing.T) {
 	}
 
 	assertRecordCount(t, db, &model.UserSession{}, "user_id = ?", []any{user.ID}, 0)
-	assertRecordCount(t, db, &model.UserRememberToken{}, "user_id = ?", []any{user.ID}, 0)
+	assertRecordCount(t, db, &model.UserRememberToken{}, "user_id = ?", []any{user.ID}, 1)
+	assertRecordCount(t, db, &model.UserRememberToken{}, "user_id = ? and revoked_at is not null", []any{user.ID}, 1)
 	assertRecordCount(t, db, &model.StepUpAssertion{}, "user_id = ?", []any{user.ID}, 0)
 }
 

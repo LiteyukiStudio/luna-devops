@@ -100,10 +100,7 @@ func (h *Handlers) InitializeAdmin(ctx *gin.Context) {
 		return
 	}
 
-	if !h.createSession(ctx, user.ID) {
-		return
-	}
-	if !h.createRememberToken(ctx, user.ID, input.RememberMe) {
+	if !h.createLoginCredentials(ctx, user.ID, input.RememberMe) {
 		return
 	}
 
@@ -130,7 +127,7 @@ func initializeAdminWithLock(db *gorm.DB, user model.User) error {
 }
 
 func (h *Handlers) Login(ctx *gin.Context) {
-	if !h.allowSensitiveAuthAttempt(ctx, "login", 10, time.Minute) {
+	if !h.allowSensitiveAuthAttempt(ctx, "login_ip", 10, time.Minute) {
 		return
 	}
 	if !h.ensureAdmissionPolicy().AllowLocalLogin {
@@ -142,18 +139,19 @@ func (h *Handlers) Login(ctx *gin.Context) {
 	if !bindJSON(ctx, &input) {
 		return
 	}
+	email := strings.ToLower(strings.TrimSpace(input.Email))
+	if !h.allowLoginAccountAttempt(ctx, email, 10, time.Minute) {
+		return
+	}
 
 	var user model.User
-	err := h.db.First(&user, "email = ? and auth_type = ?", strings.ToLower(input.Email), "local").Error
+	err := h.db.First(&user, "email = ? and auth_type = ?", email, "local").Error
 	if err != nil || user.Disabled || bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(input.Password)) != nil {
 		writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.login.invalid")
 		return
 	}
 
-	if !h.createSession(ctx, user.ID) {
-		return
-	}
-	if !h.createRememberToken(ctx, user.ID, input.RememberMe) {
+	if !h.createLoginCredentials(ctx, user.ID, input.RememberMe) {
 		return
 	}
 
@@ -174,7 +172,7 @@ func (h *Handlers) ResumeLogin(ctx *gin.Context) {
 	}
 
 	user, sessionToken, rememberToken, err := h.rotateRememberLogin(userID, plainToken)
-	if errors.Is(err, errRememberTokenInvalid) {
+	if errors.Is(err, errRememberTokenInvalid) || errors.Is(err, errRememberTokenReused) {
 		clearRememberCookie(ctx, userID)
 		writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.session.expired")
 		return
@@ -188,7 +186,7 @@ func (h *Handlers) ResumeLogin(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusInternalServerError, "auth.session.resume_failed", err.Error())
 		return
 	}
-	setSessionCookie(ctx, sessionToken, h.mode == "production")
+	setSessionCookie(ctx, sessionToken, h.mode == "production", true)
 	setRememberCookie(ctx, user.ID, rememberToken, h.mode == "production")
 
 	ctx.JSON(http.StatusOK, gin.H{"user": currentUserResponse(user)})
@@ -273,11 +271,35 @@ func (h *Handlers) ListUsers(ctx *gin.Context) {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
+	mfaEnabled, err := h.userMFAEnabled(users)
+	if err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
+		return
+	}
 	responses := make([]gin.H, 0, len(users))
 	for _, user := range users {
-		responses = append(responses, userListResponse(user, balances[user.ID]))
+		responses = append(responses, userListResponse(user, balances[user.ID], mfaEnabled[user.ID]))
 	}
 	ctx.JSON(http.StatusOK, paginatedResponse(responses, total, pagination))
+}
+
+func (h *Handlers) userMFAEnabled(users []model.User) (map[string]bool, error) {
+	enabled := make(map[string]bool, len(users))
+	if len(users) == 0 {
+		return enabled, nil
+	}
+	userIDs := make([]string, 0, len(users))
+	for _, user := range users {
+		userIDs = append(userIDs, user.ID)
+	}
+	var configs []model.UserMFAConfig
+	if err := h.db.Select("user_id").Where("user_id in ? and enabled = ?", userIDs, true).Find(&configs).Error; err != nil {
+		return nil, err
+	}
+	for _, config := range configs {
+		enabled[config.UserID] = true
+	}
+	return enabled, nil
 }
 
 func (h *Handlers) userWalletBalances(users []model.User) (map[string]decimal.Decimal, error) {
@@ -643,7 +665,7 @@ func currentUserResponse(user model.User) gin.H {
 	}
 }
 
-func userListResponse(user model.User, balanceCredits decimal.Decimal) gin.H {
+func userListResponse(user model.User, balanceCredits decimal.Decimal, mfaEnabled bool) gin.H {
 	return gin.H{
 		"id":             user.ID,
 		"email":          user.Email,
@@ -653,6 +675,7 @@ func userListResponse(user model.User, balanceCredits decimal.Decimal) gin.H {
 		"role":           user.Role,
 		"language":       normalizeLanguage(user.Language),
 		"disabled":       user.Disabled,
+		"mfaEnabled":     mfaEnabled,
 		"balanceCredits": balanceCredits.String(),
 		"createdAt":      user.CreatedAt,
 	}

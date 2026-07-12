@@ -30,6 +30,14 @@
 
 Run only the directly relevant checks for a small change. When work crosses business domains or touches authentication, authorization, secrets, migrations, or deployment runtime, run the complete verification set and, whenever possible, walk through the real interaction in a browser.
 
+Backend development and release checks require exactly Go `1.26.5`; the version is pinned in `.go-version`, `go.mod`, and the Dockerfile builder image. Run the release-candidate gate from a clean Git worktree:
+
+```bash
+./scripts/release-check.sh
+```
+
+The release-quality gate verifies the Go version and `gofmt`, then runs all Go tests, `go vet`, race tests for critical packages, frontend tests/lint/build, the documentation build, high-severity pnpm dependency audits, `govulncheck`, and Helm lint/render. Any failure blocks the release. The script also refuses a worktree with modified or untracked files so the verified source matches the release candidate.
+
 ## Documentation experience
 
 Documentation should save users from unnecessary work. Start by answering:

@@ -43,6 +43,10 @@ export const runtimeApi = {
       search.set('namespace', params.namespace)
     return request<void>(`/runtime/clusters/${clusterId}/resources?${search.toString()}`, { method: 'DELETE' })
   },
+  authorizeRuntimeClusterPodTerminal: (clusterId: string, namespace: string, name: string) => {
+    const search = new URLSearchParams({ namespace, name })
+    return request<void>(`/runtime/clusters/${clusterId}/pods/terminal/authorize?${search.toString()}`, { method: 'POST' })
+  },
   listReleases: (projectId: string) =>
     request<Release[]>(`/projects/${projectId}/releases`),
   listReleaseImageCandidates: (projectId: string, applicationId: string, targetId: string) =>
@@ -62,6 +66,8 @@ export const runtimeApi = {
   },
   execReleaseRuntimeCommand: (projectId: string, releaseId: string, payload: { command: string, container?: string }) =>
     request<ReleaseRuntimeExecResult>(`/projects/${projectId}/releases/${releaseId}/exec`, { method: 'POST', body: JSON.stringify(payload) }),
+  authorizeReleaseRuntimeTerminal: (projectId: string, releaseId: string) =>
+    request<void>(`/projects/${projectId}/releases/${releaseId}/terminal/authorize`, { method: 'POST' }),
   rollbackRelease: (projectId: string, releaseId: string) =>
     request<Release>(`/projects/${projectId}/releases/${releaseId}/rollback`, { method: 'POST' }),
 }

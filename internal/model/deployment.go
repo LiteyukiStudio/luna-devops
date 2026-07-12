@@ -189,6 +189,7 @@ type DeploymentTarget struct {
 	DataAccessMode               string                        `gorm:"not null;default:''" json:"dataAccessMode"`
 	DataVolumeMode               string                        `gorm:"not null;default:''" json:"dataVolumeMode"`
 	RequireApproval              bool                          `gorm:"not null;default:false" json:"requireApproval"`
+	WebConsoleEnabled            *bool                         `json:"webConsoleEnabled"`
 	Enabled                      bool                          `gorm:"not null;default:true" json:"enabled"`
 	CreatedBy                    string                        `gorm:"index" json:"createdBy"`
 	CreatedAt                    time.Time                     `json:"createdAt"`

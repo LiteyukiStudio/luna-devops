@@ -167,38 +167,12 @@ func (h *Handlers) StreamRuntimeClusterPodTerminal(ctx *gin.Context) {
 		writeError(ctx, http.StatusForbidden, "只有平台管理员可以打开集群 Pod 终端")
 		return
 	}
-	if !h.requireStepUp(ctx, user, stepUpPurposeRuntimeTerminal) {
+	cluster, client, snapshot, ok := h.runtimeClusterPodTerminalTarget(ctx, user)
+	if !ok {
 		return
 	}
-	var cluster model.RuntimeCluster
-	if err := h.db.First(&cluster, "id = ?", ctx.Param("clusterId")).Error; err != nil {
-		writeError(ctx, http.StatusNotFound, "runtime cluster not found")
-		return
-	}
-	kubeconfig := h.secrets.Resolve(cluster.KubeconfigRef)
-	if strings.TrimSpace(kubeconfig) == "" {
-		writeError(ctx, http.StatusBadRequest, "运行集群缺少 kubeconfig，无法打开 Pod 终端")
-		return
-	}
-	client, err := kubeprovider.NewClientFromKubeconfig(kubeconfig)
-	if err != nil {
-		writeError(ctx, http.StatusBadRequest, "运行集群 kubeconfig 无效")
-		return
-	}
-	namespace := strings.TrimSpace(ctx.Query("namespace"))
-	name := strings.TrimSpace(ctx.Query("name"))
-	if namespace == "" || name == "" {
-		writeError(ctx, http.StatusBadRequest, "Pod 命名空间和名称不能为空")
-		return
-	}
-	checkCtx, cancelCheck := context.WithTimeout(ctx.Request.Context(), 10*time.Second)
-	defer cancelCheck()
-	snapshot, err := client.GetManagedResource(checkCtx, "pod", namespace, name)
-	if err != nil {
-		writeError(ctx, http.StatusBadGateway, "集群 Pod 读取失败，请确认 Pod 仍存在且归属平台管理")
-		return
-	}
-	if !h.canInspectClusterResourceSnapshot(ctx, user, snapshot) {
+	authorization, ok := h.requireRuntimeTerminalAuthorization(ctx, user)
+	if !ok {
 		return
 	}
 	upgrader := websocket.Upgrader{
@@ -212,33 +186,100 @@ func (h *Handlers) StreamRuntimeClusterPodTerminal(ctx *gin.Context) {
 	}
 	conn, err := upgrader.Upgrade(ctx.Writer, ctx.Request, nil)
 	if err != nil {
-		h.audit(user.ID, "runtime_cluster.pod_terminal", cluster.ID+":"+namespace+"/"+name, false, err.Error())
+		h.audit(user.ID, "runtime_cluster.pod_terminal", cluster.ID+":"+snapshot.Namespace+"/"+snapshot.Name, false, err.Error())
 		return
 	}
 	defer conn.Close()
 
-	sessionCtx, cancel := context.WithCancel(ctx.Request.Context())
+	sessionCtx, cancel := context.WithDeadline(ctx.Request.Context(), authorization.Deadline)
 	defer cancel()
 	stdinReader, stdinWriter := io.Pipe()
 	defer stdinReader.Close()
 	defer stdinWriter.Close()
 	sizeQueue := newRuntimeTerminalSizeQueue()
 	wsWriter := &runtimeTerminalWebSocketWriter{conn: conn}
+	reference := runtimeClusterPodTerminalReference(cluster, snapshot)
+	authorizationRevoked := h.monitorRuntimeTerminalAuthorization(sessionCtx, authorization, func(checkCtx context.Context, currentUser model.User) bool {
+		return h.runtimeClusterPodTerminalAuthorizationAllowed(checkCtx, currentUser, client, reference)
+	}, cancel)
 
 	go h.readRuntimeTerminalMessages(sessionCtx, conn, stdinWriter, sizeQueue, cancel)
 	err = client.PodTerminal(sessionCtx, kubeprovider.PodTerminalOptions{
-		Namespace: namespace,
-		PodName:   name,
+		Namespace: snapshot.Namespace,
+		PodName:   snapshot.Name,
 		Container: strings.TrimSpace(ctx.Query("container")),
 		Stdin:     stdinReader,
 		Stdout:    wsWriter,
 		SizeQueue: sizeQueue,
 	})
-	resourceID := cluster.ID + ":" + namespace + "/" + name
+	resourceID := cluster.ID + ":" + snapshot.Namespace + "/" + snapshot.Name
 	if err != nil && sessionCtx.Err() == nil {
 		_, _ = wsWriter.Write([]byte("\r\nterminal disconnected: " + err.Error() + "\r\n"))
 		h.audit(user.ID, "runtime_cluster.pod_terminal", resourceID, false, err.Error())
 		return
 	}
+	select {
+	case <-authorizationRevoked:
+		h.audit(user.ID, "runtime_cluster.pod_terminal", resourceID, false, "authorization expired or was revoked")
+		return
+	default:
+	}
+	if sessionCtx.Err() == context.DeadlineExceeded {
+		h.audit(user.ID, "runtime_cluster.pod_terminal", resourceID, false, "authorization deadline reached")
+		return
+	}
 	h.audit(user.ID, "runtime_cluster.pod_terminal", resourceID, true, strings.TrimSpace(ctx.Query("container")))
+}
+
+func (h *Handlers) AuthorizeRuntimeClusterPodTerminal(ctx *gin.Context) {
+	user, ok := h.currentUser(ctx)
+	if !ok {
+		return
+	}
+	if user.Role != "platform_admin" {
+		writeError(ctx, http.StatusForbidden, "只有平台管理员可以打开集群 Pod 终端")
+		return
+	}
+	if _, _, _, ok := h.runtimeClusterPodTerminalTarget(ctx, user); !ok {
+		return
+	}
+	if _, ok := h.requireRuntimeTerminalAuthorization(ctx, user); !ok {
+		return
+	}
+	ctx.Status(http.StatusNoContent)
+}
+
+func (h *Handlers) runtimeClusterPodTerminalTarget(ctx *gin.Context, user model.User) (model.RuntimeCluster, *kubeprovider.Client, kubeprovider.ResourceSnapshot, bool) {
+	namespace := strings.TrimSpace(ctx.Query("namespace"))
+	name := strings.TrimSpace(ctx.Query("name"))
+	if namespace == "" || name == "" {
+		writeError(ctx, http.StatusBadRequest, "Pod 命名空间和名称不能为空")
+		return model.RuntimeCluster{}, nil, kubeprovider.ResourceSnapshot{}, false
+	}
+	var cluster model.RuntimeCluster
+	if err := h.db.First(&cluster, "id = ? and type in ?", ctx.Param("clusterId"), []string{"kubernetes", "k3s"}).Error; err != nil {
+		writeError(ctx, http.StatusNotFound, "runtime cluster not found")
+		return model.RuntimeCluster{}, nil, kubeprovider.ResourceSnapshot{}, false
+	}
+	kubeconfig := h.secrets.Resolve(cluster.KubeconfigRef)
+	if strings.TrimSpace(kubeconfig) == "" {
+		writeError(ctx, http.StatusBadRequest, "运行集群缺少 kubeconfig，无法打开 Pod 终端")
+		return model.RuntimeCluster{}, nil, kubeprovider.ResourceSnapshot{}, false
+	}
+	client, err := kubeprovider.NewClientFromKubeconfig(kubeconfig)
+	if err != nil {
+		writeError(ctx, http.StatusBadRequest, "运行集群 kubeconfig 无效")
+		return model.RuntimeCluster{}, nil, kubeprovider.ResourceSnapshot{}, false
+	}
+	checkCtx, cancelCheck := context.WithTimeout(ctx.Request.Context(), 10*time.Second)
+	defer cancelCheck()
+	snapshot, err := client.GetManagedResource(checkCtx, "pod", namespace, name)
+	if err != nil {
+		writeError(ctx, http.StatusBadGateway, "集群 Pod 读取失败，请确认 Pod 仍存在且归属平台管理")
+		return model.RuntimeCluster{}, nil, kubeprovider.ResourceSnapshot{}, false
+	}
+	if !h.canInspectClusterResourceSnapshot(ctx, user, snapshot) || !h.ensureRuntimeClusterPodWebConsoleEnabled(ctx, snapshot) {
+		return model.RuntimeCluster{}, nil, kubeprovider.ResourceSnapshot{}, false
+	}
+	return cluster, client, snapshot, true
 }

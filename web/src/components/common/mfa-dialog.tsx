@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import type { ApiError } from '@/api'
+import type { ApiError, MFAPurpose } from '@/api'
 import { KeyRound, ShieldCheck } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 interface PendingChallenge {
-  purpose?: string
+  purpose: MFAPurpose
   reject: (reason?: unknown) => void
   resolve: () => void
 }
@@ -60,7 +60,7 @@ export function MFADialogProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  const purposeLabel = challenge?.purpose
+  const purposeLabel = challenge
     ? t(`accountPage.mfa.purposes.${challenge.purpose}`, { defaultValue: t('accountPage.mfa.sensitiveOperation') })
     : t('accountPage.mfa.sensitiveOperation')
 

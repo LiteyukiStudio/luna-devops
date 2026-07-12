@@ -1,4 +1,4 @@
-import type { AuthAdmissionPolicy, AuthProvider, BootstrapStatus, ConfigDefinition, CurrentUser, ExternalIdentity, MFAEnrollment, MFARecoveryCodes, MFAStatus, OIDCCallbackConfig, PaginatedResponse, PaginationParams, User } from '../types'
+import type { AuthAdmissionPolicy, AuthProvider, BootstrapStatus, ConfigDefinition, CurrentUser, ExternalIdentity, MFAEnrollment, MFAEnrollmentRequest, MFARecoveryCodes, MFAStatus, MFAVerifyPayload, MFAVerifyResponse, OIDCCallbackConfig, PaginatedResponse, PaginationParams, User } from '../types'
 import { paginationQuery, request } from '../core'
 
 export const authApi = {
@@ -13,11 +13,11 @@ export const authApi = {
     request<{ user: CurrentUser }>('/auth/login/resume', { method: 'POST', body: JSON.stringify(payload) }),
   logout: () => request<void>('/auth/logout', { method: 'POST' }),
   getMFAStatus: () => request<MFAStatus>('/auth/mfa/status'),
-  enrollMFA: () => request<MFAEnrollment>('/auth/mfa/totp/enroll', { method: 'POST' }),
+  enrollMFA: (payload: MFAEnrollmentRequest) => request<MFAEnrollment>('/auth/mfa/totp/enroll', { method: 'POST', body: JSON.stringify(payload) }),
   confirmMFAEnrollment: (payload: { code: string }) =>
     request<MFARecoveryCodes>('/auth/mfa/totp/confirm', { method: 'POST', body: JSON.stringify(payload) }),
-  verifyMFA: (payload: { code: string, purpose?: string } | { recoveryCode: string, purpose?: string }) =>
-    request<void>('/auth/mfa/verify', { method: 'POST', body: JSON.stringify(payload) }),
+  verifyMFA: (payload: MFAVerifyPayload) =>
+    request<MFAVerifyResponse>('/auth/mfa/verify', { method: 'POST', body: JSON.stringify(payload) }),
   regenerateMFARecoveryCodes: () =>
     request<MFARecoveryCodes>('/auth/mfa/recovery-codes', { method: 'POST' }),
   disableMFA: () => request<void>('/auth/mfa', { method: 'DELETE' }),
@@ -43,6 +43,7 @@ export const authApi = {
     request<User>('/users', { method: 'POST', body: JSON.stringify(payload) }),
   updateUser: (userId: string, payload: { email: string, name: string, password?: string, role: 'platform_admin' | 'user', language: 'zh-CN' | 'en-US', disabled: boolean }) =>
     request<User>(`/users/${userId}`, { method: 'PUT', body: JSON.stringify(payload) }),
+  resetUserMFA: (userId: string) => request<void>(`/users/${userId}/mfa`, { method: 'DELETE' }),
   listConfigDefinitions: () => request<ConfigDefinition[]>('/configs/definitions'),
   getConfigs: () => request<Record<string, string>>('/configs'),
   updateConfigs: (values: Record<string, unknown>) =>

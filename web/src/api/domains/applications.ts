@@ -24,6 +24,8 @@ export const applicationsApi = {
     request<DeploymentTarget>(`/projects/${projectId}/applications/${applicationId}/deployment-targets/${targetId}`, { method: 'PUT', body: JSON.stringify(payload) }),
   restartDeploymentTarget: (projectId: string, applicationId: string, targetId: string) =>
     request<void>(`/projects/${projectId}/applications/${applicationId}/deployment-targets/${targetId}/restart`, { method: 'POST' }),
+  authorizeDeploymentTargetDataExport: (projectId: string, applicationId: string, targetId: string) =>
+    request<void>(`/projects/${projectId}/applications/${applicationId}/deployment-targets/${targetId}/data-export/authorize`, { method: 'POST' }),
   deleteDeploymentTarget: (projectId: string, applicationId: string, targetId: string) =>
     request<void>(`/projects/${projectId}/applications/${applicationId}/deployment-targets/${targetId}`, { method: 'DELETE' }),
   listRepositoryBindings: (projectId: string) =>

@@ -324,6 +324,42 @@ func TestRateLimiterUsesRedisOnly(t *testing.T) {
 	}
 }
 
+func TestTrustedProxyConfigurationIgnoresForwardedAddressByDefault(t *testing.T) {
+	router := gin.New()
+	configureTrustedProxies(router, nil)
+	router.GET("/client-ip", func(ctx *gin.Context) {
+		ctx.String(http.StatusOK, ctx.ClientIP())
+	})
+
+	request := httptest.NewRequest(http.MethodGet, "/client-ip", nil)
+	request.RemoteAddr = "192.0.2.10:1234"
+	request.Header.Set("X-Forwarded-For", "203.0.113.9")
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Body.String() != "192.0.2.10" {
+		t.Fatalf("client IP = %q", recorder.Body.String())
+	}
+}
+
+func TestTrustedProxyConfigurationAcceptsForwardedAddressFromConfiguredCIDR(t *testing.T) {
+	router := gin.New()
+	configureTrustedProxies(router, []string{"192.0.2.0/24"})
+	router.GET("/client-ip", func(ctx *gin.Context) {
+		ctx.String(http.StatusOK, ctx.ClientIP())
+	})
+
+	request := httptest.NewRequest(http.MethodGet, "/client-ip", nil)
+	request.RemoteAddr = "192.0.2.10:1234"
+	request.Header.Set("X-Forwarded-For", "203.0.113.9")
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Body.String() != "203.0.113.9" {
+		t.Fatalf("client IP = %q", recorder.Body.String())
+	}
+}
+
 func TestWriteErrorCodeHidesDetailInProduction(t *testing.T) {
 	t.Setenv("APP_ENV", "production")
 	recorder := httptest.NewRecorder()

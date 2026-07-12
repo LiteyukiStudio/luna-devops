@@ -15,11 +15,15 @@ func TestProjectRoleAllowsAction(t *testing.T) {
 	if ProjectRoleAllows(ProjectRoleDeveloper, ActionSecretViewValue) {
 		t.Fatal("expected developer to be blocked from secret values")
 	}
-	if !ProjectRoleAllows(ProjectRoleAdmin, ActionDeploymentDataExport) {
-		t.Fatal("expected project admin to export deployment data")
+	for _, role := range []string{ProjectRoleOwner, ProjectRoleAdmin} {
+		if !ProjectRoleAllows(role, ActionDeploymentDataExport) {
+			t.Fatalf("expected project %s to export deployment data", role)
+		}
 	}
-	if ProjectRoleAllows(ProjectRoleDeveloper, ActionDeploymentDataExport) {
-		t.Fatal("expected project developer to be blocked from deployment data export")
+	for _, role := range []string{ProjectRoleDeveloper, ProjectRoleViewer} {
+		if ProjectRoleAllows(role, ActionDeploymentDataExport) {
+			t.Fatalf("expected project %s to be blocked from deployment data export", role)
+		}
 	}
 }
 
@@ -62,6 +66,9 @@ func TestAccessTokenScopeRules(t *testing.T) {
 	if !UserCanCreateAccessTokenScope(PlatformRoleUser, "project:read,build:read") {
 		t.Fatal("expected regular user to create read scopes")
 	}
+	if scope := NormalizeAccessTokenScope(string(ActionDeploymentDataExport)); scope != "" {
+		t.Fatalf("deployment data export must not be accepted as a personal access token scope, got %q", scope)
+	}
 }
 
 func TestAccessTokenScopeCatalogMarksAdminOnlyScopes(t *testing.T) {
@@ -71,18 +78,24 @@ func TestAccessTokenScopeCatalogMarksAdminOnlyScopes(t *testing.T) {
 	if !catalogScopeRequiresAdmin(userCatalog, string(ActionDeploymentExec)) {
 		t.Fatal("expected deployment exec to require admin for regular users")
 	}
-	if !catalogScopeRequiresAdmin(userCatalog, string(ActionDeploymentDataExport)) {
-		t.Fatal("expected deployment data export scope to require admin for regular users")
-	}
 	if catalogScopeRequiresAdmin(adminCatalog, string(ActionDeploymentExec)) {
 		t.Fatal("expected deployment exec to be available for platform admins")
 	}
-	if catalogScopeRequiresAdmin(adminCatalog, string(ActionDeploymentDataExport)) {
-		t.Fatal("expected deployment data export scope to be available for platform admins")
+	if catalogContainsScope(userCatalog, string(ActionDeploymentDataExport)) || catalogContainsScope(adminCatalog, string(ActionDeploymentDataExport)) {
+		t.Fatal("deployment data export must not be exposed as a personal access token scope")
 	}
 	if catalogScopeRequiresAdmin(userCatalog, string(ActionBuildTrigger)) {
 		t.Fatal("expected build trigger to be creatable by regular users")
 	}
+}
+
+func catalogContainsScope(catalog []AccessTokenScopeDefinition, value string) bool {
+	for _, scope := range catalog {
+		if scope.Value == value {
+			return true
+		}
+	}
+	return false
 }
 
 func TestRequiredAccessTokenScopeUsesFineGrainedProjectRoutes(t *testing.T) {
@@ -93,15 +106,18 @@ func TestRequiredAccessTokenScopeUsesFineGrainedProjectRoutes(t *testing.T) {
 	}{
 		{"/api/v1/runtime/clusters/:clusterId/resources", "DELETE", string(ActionClusterManage)},
 		{"/api/v1/runtime/clusters/:clusterId/pods/terminal", "GET", string(ActionClusterManage)},
+		{"/api/v1/runtime/clusters/:clusterId/pods/terminal/authorize", "POST", string(ActionClusterManage)},
 		{"/api/v1/build/variable-sets", "POST", string(ActionSecretUpdate)},
 		{"/api/v1/projects/:projectId/runtime-config-sets", "GET", string(ActionSecretReadSummary)},
 		{"/api/v1/projects/:projectId/members", "POST", string(ActionProjectManage)},
 		{"/api/v1/projects/:projectId/applications", "POST", string(ActionApplicationCreate)},
 		{"/api/v1/projects/:projectId/applications/:applicationId/deployment-targets/:targetId/restart", "POST", string(ActionDeploymentRestart)},
 		{"/api/v1/projects/:projectId/applications/:applicationId/deployment-targets/:targetId/data-export", "GET", string(ActionDeploymentDataExport)},
+		{"/api/v1/projects/:projectId/applications/:applicationId/deployment-targets/:targetId/data-export/authorize", "POST", string(ActionDeploymentDataExport)},
 		{"/api/v1/projects/:projectId/build-runs/trigger", "POST", string(ActionBuildTrigger)},
 		{"/api/v1/projects/:projectId/build-runs/:runId/cancel", "POST", string(ActionBuildCancel)},
 		{"/api/v1/projects/:projectId/releases", "POST", string(ActionDeploymentRelease)},
+		{"/api/v1/projects/:projectId/releases/:releaseId/terminal/authorize", "POST", string(ActionDeploymentExec)},
 		{"/api/v1/projects/:projectId/releases/:releaseId/rollback", "POST", string(ActionDeploymentRollback)},
 		{"/api/v1/projects/:projectId/gateway-routes", "POST", string(ActionGatewayManage)},
 		{"/api/v1/projects/:projectId/repository-bindings", "POST", string(ActionGitWrite)},

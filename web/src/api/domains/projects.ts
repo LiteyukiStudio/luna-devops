@@ -38,10 +38,10 @@ export const projectsApi = {
   listProjectPins: () => request<ProjectPin[]>('/projects/pins'),
   updateProjectOrder: (projectIds: string[]) =>
     request<{ projectIds: string[] }>('/projects/order', { method: 'PUT', body: JSON.stringify({ projectIds }) }),
-  createProject: (payload: Pick<Project, 'slug' | 'name' | 'description' | 'maxConcurrentBuilds'>) =>
+  createProject: (payload: Pick<Project, 'slug' | 'name' | 'description' | 'maxConcurrentBuilds' | 'webConsoleEnabled'>) =>
     request<Project>('/projects', { method: 'POST', body: JSON.stringify(payload) }),
   getProject: (projectId: string) => request<Project>(`/projects/${projectId}`),
-  updateProject: (projectId: string, payload: Pick<Project, 'slug' | 'name' | 'description' | 'maxConcurrentBuilds'>) =>
+  updateProject: (projectId: string, payload: Pick<Project, 'slug' | 'name' | 'description' | 'maxConcurrentBuilds' | 'webConsoleEnabled'>) =>
     request<Project>(`/projects/${projectId}`, { method: 'PUT', body: JSON.stringify(payload) }),
   deleteProject: (projectId: string) =>
     request<void>(`/projects/${projectId}`, { method: 'DELETE' }),

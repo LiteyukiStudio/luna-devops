@@ -18,6 +18,7 @@ import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
 import { HoverText } from '@/components/common/hover-text'
 import { PageHeader } from '@/components/common/page-header'
+import { ProgressiveSection } from '@/components/common/progressive-section'
 import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
 import { formatSmartDateTime } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
@@ -35,6 +36,7 @@ const schema = z.object({
   slug: z.string().min(1, i18next.t('projectSpaces.slugRequired')).max(PROJECT_SLUG_MAX_LENGTH, i18next.t('projectSpaces.slugMaxLength', { count: PROJECT_SLUG_MAX_LENGTH })).regex(/^[a-z0-9-]+$/, i18next.t('common.lowercaseSlugOnly')),
   description: z.string().optional(),
   maxConcurrentBuilds: z.number().int().min(1, i18next.t('projectSpaces.maxConcurrentBuildsMin')),
+  webConsoleEnabled: z.boolean(),
 })
 
 type ProjectForm = z.infer<typeof schema>
@@ -76,7 +78,7 @@ export function ProjectsPage() {
   const form = useForm<ProjectForm>({
     resolver: zodResolver(schema),
     mode: 'onChange',
-    defaultValues: { name: '', slug: '', description: '', maxConcurrentBuilds: 2 },
+    defaultValues: { name: '', slug: '', description: '', maxConcurrentBuilds: 2, webConsoleEnabled: true },
   })
 
   const createProject = useMutation({
@@ -105,7 +107,7 @@ export function ProjectsPage() {
   })
 
   const updateProject = useMutation({
-    mutationFn: ({ projectId, payload }: { projectId: string, payload: Pick<Project, 'slug' | 'name' | 'description' | 'maxConcurrentBuilds'> }) =>
+    mutationFn: ({ projectId, payload }: { projectId: string, payload: Pick<Project, 'slug' | 'name' | 'description' | 'maxConcurrentBuilds' | 'webConsoleEnabled'> }) =>
       api.updateProject(projectId, payload),
     onSuccess: () => {
       toast.success(t('projectSpaces.updated'))
@@ -166,7 +168,7 @@ export function ProjectsPage() {
             <Button
               onClick={() => {
                 setEditingProject(null)
-                form.reset({ name: '', slug: '', description: '', maxConcurrentBuilds: 2 })
+                form.reset({ name: '', slug: '', description: '', maxConcurrentBuilds: 2, webConsoleEnabled: true })
                 setDialogOpen(true)
               }}
             >
@@ -227,6 +229,7 @@ export function ProjectsPage() {
                   slug: project.slug,
                   description: project.description,
                   maxConcurrentBuilds: project.maxConcurrentBuilds || 2,
+                  webConsoleEnabled: project.webConsoleEnabled ?? true,
                 })
                 setDialogOpen(true)
               }
@@ -346,7 +349,7 @@ export function ProjectsPage() {
           setDialogOpen(open)
           if (!open) {
             setEditingProject(null)
-            form.reset({ name: '', slug: '', description: '', maxConcurrentBuilds: 2 })
+            form.reset({ name: '', slug: '', description: '', maxConcurrentBuilds: 2, webConsoleEnabled: true })
           }
         }}
       >
@@ -385,6 +388,19 @@ export function ProjectsPage() {
                 type="number"
               />
             </Field>
+            <ProgressiveSection
+              description={t('projectSpaces.webConsoleSettingsDescription')}
+              storageKey="luna.projects.form.webConsole"
+              summary={t(form.watch('webConsoleEnabled') ? 'projectSpaces.webConsoleEnabledSummary' : 'projectSpaces.webConsoleDisabledSummary')}
+              title={t('projectSpaces.webConsoleSettingsTitle')}
+            >
+              <Field hint={t('projectSpaces.webConsoleEnabledHint')} label={t('projectSpaces.webConsoleEnabled')}>
+                <Select {...form.register('webConsoleEnabled', { setValueAs: value => String(value) !== 'false' })}>
+                  <option value="true">{t('common.enabled')}</option>
+                  <option value="false">{t('common.disabled')}</option>
+                </Select>
+              </Field>
+            </ProgressiveSection>
             <DialogFooter>
               <Button disabled={createProject.isPending || updateProject.isPending || !form.formState.isValid} type="submit">
                 <Plus size={16} />

@@ -1,7 +1,6 @@
 package api
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -9,7 +8,6 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/model"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 type gatewayRouteInput struct {
@@ -312,16 +310,7 @@ func (h *Handlers) runtimeClusterForGatewayRoute(route model.GatewayRoute) (mode
 }
 
 func (h *Handlers) runtimeClusterForDeploymentTargetValue(target model.DeploymentTarget) (model.RuntimeCluster, error) {
-	var cluster model.RuntimeCluster
-	if clusterID := strings.TrimSpace(target.ClusterID); clusterID != "" {
-		err := h.db.First(&cluster, "id = ? and type in ?", clusterID, []string{"kubernetes", "k3s"}).Error
-		return cluster, err
-	}
-	err := h.db.Where("scope = ? and is_default = ? and type in ?", "global", true, []string{"kubernetes", "k3s"}).First(&cluster).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		err = h.db.Where("scope = ? and type in ?", "global", []string{"kubernetes", "k3s"}).Order("created_at asc").First(&cluster).Error
-	}
-	return cluster, err
+	return runtimeClusterForDeploymentTargetDB(h.db, target)
 }
 
 func gatewayRouteInputEnabled(value *bool) bool {

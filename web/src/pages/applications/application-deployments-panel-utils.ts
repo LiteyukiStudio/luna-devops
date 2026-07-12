@@ -2,6 +2,7 @@ import type { UseFormReturn } from 'react-hook-form'
 import type { DeploymentRuntimeConfigRef, DeploymentTarget, DeploymentTargetHookBinding, DeploymentTargetPayload, HookPhase, ProjectRuntimeConfigSetPayload, Release, RepositoryBinding } from '@/api'
 import { emptyRuntimeDataVolumeRow, parseRuntimeDataVolumes, serializeRuntimeDataVolumes } from '@/lib/runtime-data-volumes'
 import { defaultBuildCpuRequest, defaultBuildMemoryRequest, defaultBuildTimeoutSeconds } from './application-build-defaults'
+import { normalizeWebConsoleOverride } from './web-console-policy'
 
 export type ReleaseForm = Omit<Release, 'id' | 'projectId' | 'createdBy' | 'createdAt' | 'rollbackFromId'>
 
@@ -91,6 +92,7 @@ export const deploymentTargetDefaults: DeploymentTargetPayload = {
   dataAccessMode: '',
   dataVolumeMode: '',
   requireApproval: false,
+  webConsoleEnabled: null,
   enabled: true,
 }
 
@@ -294,6 +296,7 @@ export function normalizeDeploymentTargetPayload(values: DeploymentTargetPayload
     enabled,
     autoDeploy,
     requireApproval,
+    webConsoleEnabled: normalizeWebConsoleOverride(values.webConsoleEnabled),
     buildHooksEnabled,
     dataRetentionEnabled,
     dataCapacity: dataRetentionEnabled ? (primaryDataVolume?.capacity?.trim() || '1Gi') : '',

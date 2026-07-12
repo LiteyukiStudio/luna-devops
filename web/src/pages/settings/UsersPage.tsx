@@ -2,14 +2,16 @@ import type { User } from '@/api'
 import type { DataListColumn } from '@/components/common/data-list'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Save, UserPlus } from 'lucide-react'
+import { Save, ShieldOff, UserPlus } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import { api } from '@/api'
+import { useSession } from '@/app/session-context'
 import { CheckboxField } from '@/components/common/checkbox-field'
+import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { DataList } from '@/components/common/data-list'
 import { EditActionButton } from '@/components/common/edit-action-button'
 import { ErrorState } from '@/components/common/error-state'
@@ -50,6 +52,7 @@ const PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
 export function UsersPage() {
   const { i18n, t } = useTranslation()
   const queryClient = useQueryClient()
+  const { user: currentUser } = useSession()
   const billingDisplay = useBillingAmountDisplay(i18n.language)
   const [editingUser, setEditingUser] = useState<User | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -98,12 +101,21 @@ export function UsersPage() {
     onError: error => toast.error(error.message),
   })
 
+  const resetMFA = useMutation({
+    mutationFn: api.resetUserMFA,
+    onSuccess: () => {
+      toast.success(t('usersPage.mfaResetSuccess'))
+      queryClient.invalidateQueries({ queryKey: ['users'] })
+    },
+    onError: error => toast.error(error.message),
+  })
+
   const userItems = users.data?.items ?? []
   const columns: DataListColumn<User>[] = [
     {
       key: 'name',
       header: t('usersPage.name'),
-      className: 'w-[24%] px-4 py-3 align-middle',
+      className: 'w-[20%] px-4 py-3 align-middle',
       render: user => (
         <div className="flex min-w-0 items-center gap-3">
           <UserAvatar className="size-9" user={user} />
@@ -117,37 +129,47 @@ export function UsersPage() {
     {
       key: 'role',
       header: t('usersPage.globalRole'),
-      className: 'w-[16%] px-4 py-3 align-middle',
+      className: 'w-[13%] px-4 py-3 align-middle',
       render: user => <StatusBadge>{user.role === 'platform_admin' ? t('usersPage.platformAdmin') : t('usersPage.normalUser')}</StatusBadge>,
     },
     {
       key: 'authType',
       header: t('usersPage.authType'),
-      className: 'w-[12%] px-4 py-3 align-middle',
+      className: 'w-[10%] px-4 py-3 align-middle',
       render: user => <StatusBadge>{user.authType}</StatusBadge>,
+    },
+    {
+      key: 'mfa',
+      header: t('usersPage.mfa'),
+      className: 'w-[10%] px-4 py-3 align-middle',
+      render: user => (
+        <StatusBadge tone={user.mfaEnabled ? 'success' : 'neutral'}>
+          {user.mfaEnabled ? t('common.enabled') : t('common.disabled')}
+        </StatusBadge>
+      ),
     },
     {
       key: 'language',
       header: t('language'),
-      className: 'w-[12%] px-4 py-3 align-middle text-muted-foreground',
+      className: 'w-[10%] px-4 py-3 align-middle text-muted-foreground',
       render: user => user.language === 'en-US' ? t('languages.enUS') : t('languages.zhCN'),
     },
     {
       key: 'status',
       header: t('usersPage.status'),
-      className: 'w-[12%] px-4 py-3 align-middle',
+      className: 'w-[10%] px-4 py-3 align-middle',
       render: user => <StatusValueBadge value={user.disabled ? 'disabled' : 'active'} />,
     },
     {
       key: 'balance',
       header: t('usersPage.balance'),
-      className: 'w-[14%] px-4 py-3 align-middle font-medium tabular-nums',
+      className: 'w-[12%] px-4 py-3 align-middle font-medium tabular-nums',
       render: user => billingDisplay.formatAmountWithUnit(user.balanceCredits),
     },
     {
       key: 'createdAt',
       header: t('usersPage.createdAt'),
-      className: 'w-[14%] px-4 py-3 align-middle text-muted-foreground',
+      className: 'w-[13%] px-4 py-3 align-middle text-muted-foreground',
       render: user => formatAbsoluteDateTime(user.createdAt),
     },
     {
@@ -155,14 +177,30 @@ export function UsersPage() {
       header: t('usersPage.actions'),
       className: 'w-[1%] whitespace-nowrap px-4 py-3 align-middle text-right',
       render: user => (
-        <EditActionButton
-          type="button"
-          label={t('edit')}
-          onClick={() => {
-            setEditingUser(user)
-            setDialogOpen(true)
-          }}
-        />
+        <div className="flex justify-end gap-1">
+          <EditActionButton
+            type="button"
+            label={t('edit')}
+            onClick={() => {
+              setEditingUser(user)
+              setDialogOpen(true)
+            }}
+          />
+          {user.mfaEnabled && user.id !== currentUser?.id && (
+            <ConfirmDialog
+              confirmText={t('usersPage.resetMFA')}
+              description={t('usersPage.resetMFADescription', { name: user.name })}
+              pending={resetMFA.isPending && resetMFA.variables === user.id}
+              title={t('usersPage.resetMFATitle')}
+              onConfirm={() => resetMFA.mutateAsync(user.id)}
+            >
+              <Button className="text-danger hover:text-danger" variant="ghost">
+                <ShieldOff size={16} />
+                {t('usersPage.resetMFA')}
+              </Button>
+            </ConfirmDialog>
+          )}
+        </div>
       ),
     },
   ]

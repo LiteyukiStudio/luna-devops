@@ -68,6 +68,16 @@ PVC 的 `storageClassName` 和 `accessMode` 只会在首次创建数据卷时写
 
 删除部署配置时，平台会先删除绑定到该部署配置的访问入口，再清理对应的 Kubernetes 工作负载、Service 和可选数据卷，避免入口继续指向不存在的服务。
 
+## Web Console 与数据导出
+
+Web Console 的项目空间默认策略在创建项目空间时为开启。项目 Owner/Admin 可以在项目空间设置中整体开启或关闭；每个部署配置还可以选择“继承项目空间”“单独开启”或“单独关闭”，部署配置的显式选择优先于项目空间默认值。开关只决定该部署配置是否允许进入终端，不会放宽角色权限或 MFA：应用发布页仍只允许项目 Owner、Admin、Developer 使用，集群资源页的 Pod 终端仍只允许平台管理员。
+
+运行命令审计只保存命令摘要、长度、容器和退出码，不记录原始命令正文；交互终端审计保存连接目标和结果，不记录终端输入输出。开启敏感操作二次验证后，运行命令使用 `runtime_exec` purpose，交互终端使用 `runtime_terminal` purpose。
+
+应用发布页打开交互终端前会先调用普通 HTTP terminal authorize 预检。预检会检查项目角色、项目/部署配置状态、有效 Web Console 开关和 MFA assertion，使 `mfa_required` 能由统一 Dialog 处理并在验证后自动重试。预检返回 204 后前端才建立 WebSocket；WebSocket 端点仍会再次执行同一组会话、权限、资源状态、开关和 MFA 检查，预检结果不是可复用的授权票据。
+
+部署配置的数据导出只支持交互式 cookie 登录会话和项目 Owner/Admin。即使个人令牌带有数据导出权限，也会返回 `auth.interactive_session_required`，不能直接下载运行数据。全局 MFA 策略开启时还必须完成 `data_export` purpose 验证；控制台收到 `mfa_required` 后完成验证并重试下载。导出只包含平台托管 PVC 或已有 PVC，`emptyDir` 不参与导出。
+
 访问域名创建时默认启用；如果只是想暂时停止公网入口，可以关闭访问，平台会保留域名配置并撤销对应 HTTPRoute，之后重新启用即可恢复下发。
 
 ## 构建与发布

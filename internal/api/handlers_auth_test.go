@@ -58,8 +58,33 @@ func TestGeneratedSessionCredentialsUseExpectedLifetimeAndHash(t *testing.T) {
 	if !strings.HasPrefix(rememberToken, "rem_") || remember.TokenHash != hashToken(rememberToken) {
 		t.Fatalf("invalid remember token metadata: token=%q hash=%q", rememberToken, remember.TokenHash)
 	}
+	if remember.FamilyID == "" {
+		t.Fatal("remember token family must be set")
+	}
 	if !remember.ExpiresAt.Equal(now.Add(rememberDuration)) {
 		t.Fatalf("remember expiry = %v", remember.ExpiresAt)
+	}
+}
+
+func TestSessionCookiePersistenceMatchesRememberChoice(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		persistent bool
+		wantMaxAge int
+	}{
+		{name: "browser session", persistent: false, wantMaxAge: 0},
+		{name: "remembered session", persistent: true, wantMaxAge: int(sessionDuration / time.Second)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(recorder)
+			setSessionCookie(ctx, "sess_test", true, tc.persistent)
+
+			cookies := recorder.Result().Cookies()
+			if len(cookies) != 1 || cookies[0].MaxAge != tc.wantMaxAge {
+				t.Fatalf("cookies = %#v, want Max-Age %d", cookies, tc.wantMaxAge)
+			}
+		})
 	}
 }
 

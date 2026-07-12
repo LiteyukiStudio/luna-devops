@@ -3,7 +3,7 @@ import type { DeploymentRuntimeStatus, InternalServiceEndpointValue } from './ap
 import type { BuildRun, DeploymentTarget, Release } from '@/api'
 import { Download, Eye, MoreHorizontal, Package, Pencil, RefreshCw, RotateCcw, Terminal, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { deploymentTargetDataExportUrl } from '@/api'
+import { toast } from 'sonner'
 import { CopyableHoverText } from '@/components/common/copyable-hover-text'
 import { DataList } from '@/components/common/data-list'
 import { EmptyState } from '@/components/common/empty-state'
@@ -17,12 +17,14 @@ import { deploymentTargetCanRelease, formatReleaseTime } from './application-con
 import { DeploymentRuntimeStatusBadge, InternalServiceEndpoint } from './application-deployment-runtime'
 import { DeploymentTargetMetricsCell } from './application-deployment-target-metrics-cell'
 import { formatTargetRuntimeSize, shortImageRef } from './application-deployments-panel-utils'
+import { openDeploymentTargetDataExport } from './deployment-target-data-export'
 
 export interface DeploymentTargetRow {
   internalEndpoint?: InternalServiceEndpointValue
   release?: Release
   runtimeStatus: DeploymentRuntimeStatus
   target: DeploymentTarget
+  webConsoleEnabled: boolean
 }
 
 export function ApplicationDeploymentTargetsList({
@@ -188,6 +190,10 @@ function DeploymentTargetActions({
 }) {
   const { t } = useTranslation()
   const deleting = item.target.deleteStatus === 'deleting'
+  const exportData = () => {
+    void openDeploymentTargetDataExport(projectId, applicationId, item.target.id)
+      .catch(() => toast.error(t('deploymentsPage.dataExportFailed')))
+  }
 
   return (
     <div className="flex justify-end">
@@ -214,7 +220,8 @@ function DeploymentTargetActions({
           )}
           {item.release && (
             <DropdownMenuItem
-              disabled={item.release.status !== 'succeeded' && item.release.status !== 'running'}
+              disabled={!item.webConsoleEnabled || (item.release.status !== 'succeeded' && item.release.status !== 'running')}
+              title={!item.webConsoleEnabled ? t('deploymentsPage.webConsoleDisabledHint') : undefined}
               onSelect={() => item.release && onOpenConsole(item.release)}
             >
               <Terminal className="size-4" />
@@ -236,7 +243,7 @@ function DeploymentTargetActions({
             {t('deploymentsPage.pullLatestImageDeploy')}
           </DropdownMenuItem>
           {item.target.dataRetentionEnabled && (
-            <DropdownMenuItem onSelect={() => window.open(deploymentTargetDataExportUrl(projectId, applicationId, item.target.id), '_blank', 'noopener,noreferrer')}>
+            <DropdownMenuItem onSelect={exportData}>
               <Download className="size-4" />
               {t('deploymentsPage.exportData')}
             </DropdownMenuItem>

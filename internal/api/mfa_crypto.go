@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/base32"
 	"encoding/base64"
 	"fmt"
@@ -55,13 +56,36 @@ func generateTOTPEnrollment(accountName string) (mfaTOTPEnrollment, error) {
 }
 
 func validateTOTPCode(secret, code string, at time.Time) bool {
-	valid, err := totp.ValidateCustom(strings.TrimSpace(code), strings.TrimSpace(secret), at, totp.ValidateOpts{
+	_, valid := matchTOTPCounter(secret, code, at)
+	return valid
+}
+
+func matchTOTPCounter(secret, code string, at time.Time) (int64, bool) {
+	const period int64 = 30
+	code = strings.TrimSpace(code)
+	secret = strings.TrimSpace(secret)
+	if len(code) != 6 || secret == "" {
+		return 0, false
+	}
+	opts := totp.ValidateOpts{
 		Period:    30,
 		Skew:      1,
 		Digits:    otp.DigitsSix,
 		Algorithm: otp.AlgorithmSHA1,
-	})
-	return err == nil && valid
+	}
+	currentCounter := at.Unix() / period
+	matchedCounter := int64(-1)
+	for offset := int64(-1); offset <= 1; offset++ {
+		counter := currentCounter + offset
+		if counter < 0 {
+			continue
+		}
+		candidate, err := totp.GenerateCodeCustom(secret, time.Unix(counter*period, 0), opts)
+		if err == nil && subtle.ConstantTimeCompare([]byte(candidate), []byte(code)) == 1 && counter > matchedCounter {
+			matchedCounter = counter
+		}
+	}
+	return matchedCounter, matchedCounter >= 0
 }
 
 func generateRecoveryCodes() ([]string, []string, error) {

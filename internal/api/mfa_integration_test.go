@@ -16,6 +16,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/secret"
 	"github.com/gin-gonic/gin"
 	"github.com/pquerna/otp/totp"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -26,12 +27,17 @@ func TestMFAEnrollmentVerificationRecoveryAndDisableFlow(t *testing.T) {
 	t.Setenv("SECRET_ENCRYPTION_KEY", "mfa-integration-test-key")
 
 	testSuffix := randomHex(4)
-	user := model.User{ID: "usr_mfa_" + testSuffix, Email: "mfa-" + testSuffix + "@example.com", Name: "MFA User", Role: "platform_admin", Language: "zh-CN"}
+	password := "mfa-integration-password"
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.MinCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	user := model.User{ID: "usr_mfa_" + testSuffix, Email: "mfa-" + testSuffix + "@example.com", Name: "MFA User", AuthType: "local", Role: "platform_admin", Language: "zh-CN", Password: string(passwordHash)}
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatal(err)
 	}
 	sessionToken := "sess_mfa_integration_" + testSuffix
-	session := model.UserSession{ID: "ses_mfa_" + testSuffix, UserID: user.ID, TokenHash: hashToken(sessionToken), ExpiresAt: time.Now().Add(time.Hour)}
+	session := model.UserSession{ID: "ses_mfa_" + testSuffix, UserID: user.ID, TokenHash: hashToken(sessionToken), ExpiresAt: time.Now().Add(time.Hour), CreatedAt: time.Now()}
 	if err := db.Create(&session).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +56,13 @@ func TestMFAEnrollmentVerificationRecoveryAndDisableFlow(t *testing.T) {
 		t.Fatalf("initial status = %d %s", statusRecorder.Code, statusRecorder.Body.String())
 	}
 
-	enrollRecorder, enrollContext := newMFAIntegrationContext(http.MethodPost, "/api/v1/auth/mfa/totp/enroll", nil, sessionToken)
+	wrongPasswordRecorder, wrongPasswordContext := newMFAIntegrationContext(http.MethodPost, "/api/v1/auth/mfa/totp/enroll", map[string]string{"currentPassword": "wrong"}, sessionToken)
+	handlers.EnrollMFA(wrongPasswordContext)
+	if wrongPasswordRecorder.Code != http.StatusUnauthorized || jsonString(t, wrongPasswordRecorder.Body.Bytes(), "code") != "mfa.reauth_required" {
+		t.Fatalf("wrong-password enroll = %d %s", wrongPasswordRecorder.Code, wrongPasswordRecorder.Body.String())
+	}
+
+	enrollRecorder, enrollContext := newMFAIntegrationContext(http.MethodPost, "/api/v1/auth/mfa/totp/enroll", map[string]string{"currentPassword": password}, sessionToken)
 	handlers.EnrollMFA(enrollContext)
 	if enrollRecorder.Code != http.StatusCreated {
 		t.Fatalf("enroll = %d %s", enrollRecorder.Code, enrollRecorder.Body.String())
@@ -95,8 +107,13 @@ func TestMFAEnrollmentVerificationRecoveryAndDisableFlow(t *testing.T) {
 	if !handlers.hasMFAEnabledPlatformAdmin() {
 		t.Fatal("confirmed platform administrator was not recognized as MFA-enabled")
 	}
+	reusedConfirmationRecorder, reusedConfirmationContext := newMFAIntegrationContext(http.MethodPost, "/api/v1/auth/mfa/verify", map[string]string{"purpose": stepUpPurposeRuntimeExec, "code": confirmationCode}, sessionToken)
+	handlers.VerifyMFA(reusedConfirmationContext)
+	if reusedConfirmationRecorder.Code != http.StatusUnauthorized {
+		t.Fatalf("confirmation code reuse = %d %s", reusedConfirmationRecorder.Code, reusedConfirmationRecorder.Body.String())
+	}
 
-	verificationCode, err := totp.GenerateCode(enrollment.Secret, time.Now())
+	verificationCode, err := totp.GenerateCode(enrollment.Secret, time.Now().Add(30*time.Second))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +128,13 @@ func TestMFAEnrollmentVerificationRecoveryAndDisableFlow(t *testing.T) {
 		t.Fatalf("policy enable = %d %s", policyEnableRecorder.Code, policyEnableRecorder.Body.String())
 	}
 
-	verifyRecorder, verifyContext := newMFAIntegrationContext(http.MethodPost, "/api/v1/auth/mfa/verify", map[string]string{"purpose": stepUpPurposeMFAManage, "code": verificationCode}, sessionToken)
+	reusedVerifyRecorder, reusedVerifyContext := newMFAIntegrationContext(http.MethodPost, "/api/v1/auth/mfa/verify", map[string]string{"purpose": stepUpPurposeMFAManage, "code": verificationCode}, sessionToken)
+	handlers.VerifyMFA(reusedVerifyContext)
+	if reusedVerifyRecorder.Code != http.StatusUnauthorized {
+		t.Fatalf("verification code reuse = %d %s", reusedVerifyRecorder.Code, reusedVerifyRecorder.Body.String())
+	}
+
+	verifyRecorder, verifyContext := newMFAIntegrationContext(http.MethodPost, "/api/v1/auth/mfa/verify", map[string]string{"purpose": stepUpPurposeMFAManage, "recoveryCode": initialRecovery.RecoveryCodes[0]}, sessionToken)
 	handlers.VerifyMFA(verifyContext)
 	if verifyRecorder.Code != http.StatusOK {
 		t.Fatalf("verify = %d %s", verifyRecorder.Code, verifyRecorder.Body.String())
@@ -207,6 +230,125 @@ func TestMFAEnrollmentVerificationRecoveryAndDisableFlow(t *testing.T) {
 	}
 }
 
+func TestAdminResetUserMFAFlowAndLastAdminProtection(t *testing.T) {
+	db := newMFAIntegrationDB(t)
+	t.Setenv("APP_ENV", "development")
+	t.Setenv("SECRET_ENCRYPTION_KEY", "mfa-admin-reset-test-key")
+	now := time.Now()
+	suffix := randomHex(4)
+	actor := model.User{ID: "usr_actor_" + suffix, Email: "actor-" + suffix + "@example.com", Name: "Actor", AuthType: "local", Role: "platform_admin", Language: "en-US"}
+	target := model.User{ID: "usr_target_" + suffix, Email: "target-" + suffix + "@example.com", Name: "Target", AuthType: "local", Role: "user", Language: "en-US"}
+	lastAdmin := model.User{ID: "usr_last_admin_" + suffix, Email: "last-admin-" + suffix + "@example.com", Name: "Last Admin", AuthType: "local", Role: "platform_admin", Language: "en-US"}
+	if err := db.Create(&[]model.User{actor, target, lastAdmin}).Error; err != nil {
+		t.Fatal(err)
+	}
+	sessionToken := "sess_admin_reset_" + suffix
+	actorSession := model.UserSession{ID: "ses_actor_" + suffix, UserID: actor.ID, TokenHash: hashToken(sessionToken), ExpiresAt: now.Add(time.Hour), CreatedAt: now}
+	if err := db.Create(&actorSession).Error; err != nil {
+		t.Fatal(err)
+	}
+	actorAssertion := model.StepUpAssertion{ID: "mfaas_actor_" + suffix, UserID: actor.ID, SessionID: actorSession.ID, Purpose: stepUpPurposeUserAdminUpdate, VerifiedAt: now, LastActivityAt: now, IdleExpiresAt: now.Add(10 * time.Minute), AbsoluteExpiresAt: now.Add(time.Hour)}
+	if err := db.Create(&actorAssertion).Error; err != nil {
+		t.Fatal(err)
+	}
+	handlers := &Handlers{db: db, configs: newConfigCache(db), mode: "development", rateLimiter: newRateLimiter()}
+	handlers.secrets = secret.NewStore(db, handlers.audit)
+
+	targetSecretRef := handlers.secrets.Store("TARGETSECRET", actor.ID, mfaSecretResource(target.ID))
+	confirmedAt := now
+	if err := db.Create(&model.UserMFAConfig{ID: "mfa_target_" + suffix, UserID: target.ID, TOTPSecretRef: targetSecretRef, Enabled: true, ConfirmedAt: &confirmedAt}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&model.MFARecoveryCode{ID: "mfr_target_" + suffix, UserID: target.ID, CodeHash: "hash"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	targetAssertion := model.StepUpAssertion{ID: "mfaas_target_" + suffix, UserID: target.ID, SessionID: "ses_target_" + suffix, Purpose: stepUpPurposeRuntimeExec, VerifiedAt: now, LastActivityAt: now, IdleExpiresAt: now.Add(time.Minute), AbsoluteExpiresAt: now.Add(time.Hour)}
+	if err := db.Create(&targetAssertion).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	resetRecorder, resetContext := newMFAIntegrationContext(http.MethodDelete, "/api/v1/users/"+target.ID+"/mfa", nil, sessionToken)
+	resetContext.Params = gin.Params{{Key: "userId", Value: target.ID}}
+	handlers.AdminResetUserMFA(resetContext)
+	resetContext.Writer.WriteHeaderNow()
+	if resetRecorder.Code != http.StatusNoContent {
+		t.Fatalf("admin reset = %d %s", resetRecorder.Code, resetRecorder.Body.String())
+	}
+	for table, value := range map[string]any{
+		"user_mfa_configs":   &model.UserMFAConfig{},
+		"mfa_recovery_codes": &model.MFARecoveryCode{},
+		"step_up_assertions": &model.StepUpAssertion{},
+		"secret_values":      &model.SecretValue{},
+	} {
+		var count int64
+		query := db.Table(table)
+		if table == "secret_values" {
+			query = query.Where("resource = ?", mfaSecretResource(target.ID))
+		} else {
+			query = query.Where("user_id = ?", target.ID)
+		}
+		if err := query.Model(value).Count(&count).Error; err != nil || count != 0 {
+			t.Fatalf("%s remained after admin reset: count=%d err=%v", table, count, err)
+		}
+	}
+	var resetAudit model.AuditLog
+	if err := db.First(&resetAudit, "user_id = ? and action = ? and resource = ? and success = ?", actor.ID, "mfa.admin_reset", target.ID, true).Error; err != nil {
+		t.Fatalf("missing successful admin reset audit: %v", err)
+	}
+
+	lastAdminSecretRef := handlers.secrets.Store("LASTADMINSECRET", actor.ID, mfaSecretResource(lastAdmin.ID))
+	if err := db.Create(&model.UserMFAConfig{ID: "mfa_last_admin_" + suffix, UserID: lastAdmin.ID, TOTPSecretRef: lastAdminSecretRef, Enabled: true, ConfirmedAt: &confirmedAt}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Save(&model.AppConfig{Key: "security.stepUpMfa.enabled", Value: "true"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	handlers.configs.reload(db)
+	blockedRecorder, blockedContext := newMFAIntegrationContext(http.MethodDelete, "/api/v1/users/"+lastAdmin.ID+"/mfa", nil, sessionToken)
+	blockedContext.Params = gin.Params{{Key: "userId", Value: lastAdmin.ID}}
+	handlers.AdminResetUserMFA(blockedContext)
+	if blockedRecorder.Code != http.StatusConflict || jsonString(t, blockedRecorder.Body.Bytes(), "code") != "mfa.last_admin_required" {
+		t.Fatalf("last-admin reset = %d %s", blockedRecorder.Code, blockedRecorder.Body.String())
+	}
+	var lastAdminConfigCount int64
+	if err := db.Model(&model.UserMFAConfig{}).Where("user_id = ?", lastAdmin.ID).Count(&lastAdminConfigCount).Error; err != nil || lastAdminConfigCount != 1 {
+		t.Fatalf("last admin MFA was removed: count=%d err=%v", lastAdminConfigCount, err)
+	}
+}
+
+func TestOIDCMFAEnrollmentRequiresFreshBrowserSession(t *testing.T) {
+	db := newMFAIntegrationDB(t)
+	t.Setenv("APP_ENV", "development")
+	t.Setenv("SECRET_ENCRYPTION_KEY", "mfa-oidc-reauth-test-key")
+	now := time.Now()
+	suffix := randomHex(4)
+	user := model.User{ID: "usr_oidc_mfa_" + suffix, Email: "oidc-mfa-" + suffix + "@example.com", Name: "OIDC MFA", AuthType: "oidc", Role: "user", Language: "en-US"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	sessionToken := "sess_oidc_mfa_" + suffix
+	session := model.UserSession{ID: "ses_oidc_mfa_" + suffix, UserID: user.ID, TokenHash: hashToken(sessionToken), ExpiresAt: now.Add(time.Hour), CreatedAt: now.Add(-mfaEnrollmentOIDCSessionMaxAge - time.Second)}
+	if err := db.Create(&session).Error; err != nil {
+		t.Fatal(err)
+	}
+	handlers := &Handlers{db: db, configs: newConfigCache(db), mode: "development", rateLimiter: newRateLimiter()}
+	handlers.secrets = secret.NewStore(db, handlers.audit)
+
+	staleRecorder, staleContext := newMFAIntegrationContext(http.MethodPost, "/api/v1/auth/mfa/totp/enroll", map[string]any{}, sessionToken)
+	handlers.EnrollMFA(staleContext)
+	if staleRecorder.Code != http.StatusUnauthorized || jsonString(t, staleRecorder.Body.Bytes(), "code") != "mfa.reauth_required" {
+		t.Fatalf("stale OIDC enroll = %d %s", staleRecorder.Code, staleRecorder.Body.String())
+	}
+	if err := db.Model(&session).Update("created_at", time.Now()).Error; err != nil {
+		t.Fatal(err)
+	}
+	freshRecorder, freshContext := newMFAIntegrationContext(http.MethodPost, "/api/v1/auth/mfa/totp/enroll", map[string]any{}, sessionToken)
+	handlers.EnrollMFA(freshContext)
+	if freshRecorder.Code != http.StatusCreated {
+		t.Fatalf("fresh OIDC enroll = %d %s", freshRecorder.Code, freshRecorder.Body.String())
+	}
+}
+
 func newMFAIntegrationDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	databaseURL := os.Getenv("AUTH_TEST_DATABASE_URL")
@@ -277,5 +419,15 @@ func jsonBool(t *testing.T, data []byte, key string) bool {
 		t.Fatal(err)
 	}
 	value, _ := body[key].(bool)
+	return value
+}
+
+func jsonString(t *testing.T, data []byte, key string) string {
+	t.Helper()
+	var body map[string]any
+	if err := json.Unmarshal(data, &body); err != nil {
+		t.Fatal(err)
+	}
+	value, _ := body[key].(string)
 	return value
 }

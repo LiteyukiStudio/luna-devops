@@ -1,8 +1,9 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import type { Release } from '@/api'
 import { Maximize2, Minimize2, Minus, X } from 'lucide-react'
-import { lazy, Suspense, useState } from 'react'
+import { lazy, Suspense, useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { api } from '@/api'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 
@@ -24,6 +25,11 @@ export function ApplicationWebConsoleDialog({
   const [containerState, setContainerState] = useState({ releaseId: '', value: '' })
   const [fullscreen, setFullscreen] = useState(false)
   const container = containerState.releaseId === releaseId ? containerState.value : ''
+  const authorizeTerminal = useCallback(async () => {
+    if (!releaseId)
+      return
+    await api.authorizeReleaseRuntimeTerminal(projectId, releaseId)
+  }, [projectId, releaseId])
   const closeDialog = () => {
     setContainerState({ releaseId: '', value: '' })
     setFullscreen(false)
@@ -89,7 +95,7 @@ export function ApplicationWebConsoleDialog({
           </div>
           <div className={fullscreen ? 'min-h-0 flex-1' : undefined}>
             <Suspense fallback={<div className={fullscreen ? 'h-full min-h-[28rem] bg-slate-950' : 'h-[29.5rem] bg-slate-950'} />}>
-              <ApplicationRuntimeTerminalPanel fullscreen={fullscreen} container={container} projectId={projectId} release={release} />
+              <ApplicationRuntimeTerminalPanel authorize={authorizeTerminal} fullscreen={fullscreen} container={container} projectId={projectId} release={release} />
             </Suspense>
           </div>
         </div>

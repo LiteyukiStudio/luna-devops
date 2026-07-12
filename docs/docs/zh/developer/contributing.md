@@ -30,6 +30,14 @@
 
 小改动只跑与它直接相关的检查。改动跨越多个业务域，或者涉及认证、权限、Secret、数据库迁移和部署运行时，就要执行完整验证，并尽量在浏览器里走一遍真实交互。
 
+后端开发和发布检查必须使用精确的 Go `1.26.5`；版本同时记录在 `.go-version`、`go.mod` 和 Dockerfile builder 镜像中。发布候选需要在干净 Git 工作区执行：
+
+```bash
+./scripts/release-check.sh
+```
+
+发布质量门禁会校验 Go 版本和 `gofmt`，执行全量 Go 测试、`go vet`、关键包 race test、前端测试/lint/build、文档构建、pnpm 高危依赖审计、`govulncheck`，并 lint/render Helm Chart。任一项失败都不能继续发布；脚本也会拒绝在有未提交或未跟踪文件的工作区运行，避免验证结果和待发布源码不一致。
+
 ## 文档体验
 
 文档的作用是让用户少走弯路。动笔时先回答：

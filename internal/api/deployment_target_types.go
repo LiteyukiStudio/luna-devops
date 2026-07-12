@@ -94,6 +94,7 @@ type deploymentTargetResponse struct {
 	DataAccessMode               string                               `json:"dataAccessMode"`
 	DataVolumeMode               string                               `json:"dataVolumeMode"`
 	RequireApproval              bool                                 `json:"requireApproval"`
+	WebConsoleEnabled            *bool                                `json:"webConsoleEnabled"`
 	Enabled                      bool                                 `json:"enabled"`
 	DeleteStatus                 string                               `json:"deleteStatus"`
 	DeleteMessage                string                               `json:"deleteMessage"`
@@ -198,6 +199,7 @@ func deploymentTargetResponseFromModel(target model.DeploymentTarget) deployment
 		DataAccessMode:               normalizePersistentVolumeAccessMode(target.DataAccessMode),
 		DataVolumeMode:               normalizePersistentVolumeMode(target.DataVolumeMode),
 		RequireApproval:              target.RequireApproval,
+		WebConsoleEnabled:            target.WebConsoleEnabled,
 		Enabled:                      target.Enabled,
 		DeleteStatus:                 target.DeleteStatus,
 		DeleteMessage:                target.DeleteMessage,
@@ -331,6 +333,7 @@ type deploymentTargetInput struct {
 	DataAccessMode               string                             `json:"dataAccessMode"`
 	DataVolumeMode               string                             `json:"dataVolumeMode"`
 	RequireApproval              bool                               `json:"requireApproval"`
+	WebConsoleEnabled            *bool                              `json:"webConsoleEnabled"`
 	Enabled                      bool                               `json:"enabled"`
 }
 

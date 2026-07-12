@@ -21,22 +21,26 @@ type User struct {
 }
 
 type UserSession struct {
-	ID             string    `gorm:"primaryKey" json:"id"`
-	UserID         string    `gorm:"index;not null" json:"userId"`
-	ImpersonatorID string    `gorm:"index" json:"impersonatorId"`
-	TokenHash      string    `gorm:"uniqueIndex;not null" json:"-"`
-	ExpiresAt      time.Time `gorm:"index;not null" json:"expiresAt"`
-	CreatedAt      time.Time `json:"createdAt"`
-	UpdatedAt      time.Time `json:"updatedAt"`
+	ID               string    `gorm:"primaryKey" json:"id"`
+	UserID           string    `gorm:"index;not null" json:"userId"`
+	ImpersonatorID   string    `gorm:"index" json:"impersonatorId"`
+	RememberFamilyID string    `gorm:"index;not null;default:''" json:"-"`
+	TokenHash        string    `gorm:"uniqueIndex;not null" json:"-"`
+	ExpiresAt        time.Time `gorm:"index;not null" json:"expiresAt"`
+	CreatedAt        time.Time `json:"createdAt"`
+	UpdatedAt        time.Time `json:"updatedAt"`
 }
 
 type UserRememberToken struct {
-	ID        string    `gorm:"primaryKey" json:"id"`
-	UserID    string    `gorm:"index;not null" json:"userId"`
-	TokenHash string    `gorm:"uniqueIndex;not null" json:"-"`
-	ExpiresAt time.Time `gorm:"index;not null" json:"expiresAt"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	ID         string     `gorm:"primaryKey" json:"id"`
+	UserID     string     `gorm:"index;not null" json:"userId"`
+	FamilyID   string     `gorm:"index;not null" json:"-"`
+	TokenHash  string     `gorm:"uniqueIndex;not null" json:"-"`
+	ExpiresAt  time.Time  `gorm:"index;not null" json:"expiresAt"`
+	ConsumedAt *time.Time `gorm:"index" json:"-"`
+	RevokedAt  *time.Time `gorm:"index" json:"-"`
+	CreatedAt  time.Time  `json:"createdAt"`
+	UpdatedAt  time.Time  `json:"updatedAt"`
 }
 
 type AccessToken struct {

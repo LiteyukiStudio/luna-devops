@@ -25,6 +25,7 @@ import { ApplicationReleaseLogsDialog } from './application-release-logs-dialog'
 import { ApplicationRepositoryBindingDialog } from './application-repository-binding-dialog'
 import { ApplicationRuntimeConfigSetDialog } from './application-runtime-config-set-dialog'
 import { ApplicationWebConsoleDialog } from './application-web-console-dialog'
+import { effectiveWebConsoleEnabled, normalizeWebConsoleOverride } from './web-console-policy'
 
 export interface DeploymentsPanelHandle {
   openReleaseDialog: (environmentId?: string, deploymentTargetId?: string) => void
@@ -74,13 +75,14 @@ function buildArgLineCount(raw?: string) {
   return value.split('\n').map(line => line.trim()).filter(line => line && !line.startsWith('#')).length
 }
 
-export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns, deploymentTargets, projectId, projectSlug, ref, registries, releases, repositoryBindings }: {
+export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns, deploymentTargets, projectId, projectSlug, projectWebConsoleEnabled, ref, registries, releases, repositoryBindings }: {
   applicationId: string
   appSlug: string
   buildRuns: BuildRun[]
   deploymentTargets: DeploymentTarget[]
   projectId: string
   projectSlug: string
+  projectWebConsoleEnabled: boolean
   ref?: React.Ref<DeploymentsPanelHandle>
   registries: ArtifactRegistry[]
   repositoryBindings: RepositoryBinding[]
@@ -281,8 +283,9 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
         workloadErrorByCluster,
       ),
       target,
+      webConsoleEnabled: effectiveWebConsoleEnabled(projectWebConsoleEnabled, target.webConsoleEnabled),
     }
-  }), [defaultRuntimeCluster, deploymentTargets, latestReleaseByTarget, runtimeClusterMap, serviceResourcesByCluster, workloadErrorByCluster, workloadLoadingByCluster, workloadResourcesByCluster])
+  }), [defaultRuntimeCluster, deploymentTargets, latestReleaseByTarget, projectWebConsoleEnabled, runtimeClusterMap, serviceResourcesByCluster, workloadErrorByCluster, workloadLoadingByCluster, workloadResourcesByCluster])
   const runtimeConfigRestartTargets = useMemo(() => {
     if (!runtimeConfigRestartSetId)
       return []
@@ -330,6 +333,7 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
       dataCapacity: target?.dataCapacity || '1Gi',
       dataMountPath: target?.dataMountPath || '/data',
       dataVolumes: target?.dataVolumes || serializeRuntimeDataVolumes(parseRuntimeDataVolumes('', target?.dataMountPath || '/data', target?.dataCapacity || '1Gi')),
+      webConsoleEnabled: normalizeWebConsoleOverride(target?.webConsoleEnabled),
       enabled: target?.enabled ?? true,
     })
   }
@@ -464,6 +468,7 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
     'dataStorageClassName',
     'dataAccessMode',
     'dataVolumeMode',
+    'webConsoleEnabled',
   ].filter(key => String(targetForm.watch(key as keyof DeploymentTargetPayload) ?? '').trim()).length
   + (targetForm.watch('workloadType') === 'StatefulSet' ? 1 : 0)
   + (normalizeBoolean(targetForm.watch('readOnlyRootFilesystem'), false) ? 1 : 0)

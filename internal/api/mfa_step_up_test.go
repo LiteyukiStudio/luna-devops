@@ -56,8 +56,38 @@ func TestGenerateTOTPEnrollmentAndValidateWithOneStepSkew(t *testing.T) {
 	if !validateTOTPCode(enrollment.Secret, code, now.Add(30*time.Second)) {
 		t.Fatal("expected code from the adjacent time step to be accepted")
 	}
+	wantCounter := now.Unix() / 30
+	if counter, valid := matchTOTPCounter(enrollment.Secret, code, now.Add(30*time.Second)); !valid || counter != wantCounter {
+		t.Fatalf("matched counter = %d, valid=%v, want %d", counter, valid, wantCounter)
+	}
 	if validateTOTPCode(enrollment.Secret, code, now.Add(90*time.Second)) {
 		t.Fatal("expected code outside the configured skew to be rejected")
+	}
+}
+
+func TestMFAEnrollmentRequiresPasswordOrFreshOIDCSession(t *testing.T) {
+	now := time.Now()
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte("correct-password"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	localUser := model.User{AuthType: "local", Password: string(passwordHash)}
+	if !mfaEnrollmentReauthenticated(localUser, model.UserSession{}, "correct-password", now) {
+		t.Fatal("expected current local password to reauthenticate enrollment")
+	}
+	if mfaEnrollmentReauthenticated(localUser, model.UserSession{}, "wrong-password", now) {
+		t.Fatal("wrong local password must not reauthenticate enrollment")
+	}
+
+	oidcUser := model.User{AuthType: "oidc"}
+	if !mfaEnrollmentReauthenticated(oidcUser, model.UserSession{CreatedAt: now.Add(-mfaEnrollmentOIDCSessionMaxAge)}, "", now) {
+		t.Fatal("session at the documented OIDC freshness boundary should be accepted")
+	}
+	if mfaEnrollmentReauthenticated(oidcUser, model.UserSession{CreatedAt: now.Add(-mfaEnrollmentOIDCSessionMaxAge - time.Second)}, "", now) {
+		t.Fatal("stale OIDC session must not reauthenticate enrollment")
+	}
+	if mfaEnrollmentReauthenticated(oidcUser, model.UserSession{CreatedAt: now, ImpersonatorID: "usr_admin"}, "", now) {
+		t.Fatal("impersonated session must not reauthenticate enrollment")
 	}
 }
 

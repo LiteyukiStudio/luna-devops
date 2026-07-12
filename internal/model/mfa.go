@@ -9,6 +9,7 @@ type UserMFAConfig struct {
 	Enabled                  bool       `gorm:"index;not null;default:false" json:"enabled"`
 	ConfirmedAt              *time.Time `json:"confirmedAt"`
 	RecoveryCodesGeneratedAt *time.Time `json:"recoveryCodesGeneratedAt"`
+	LastTOTPCounter          *int64     `json:"-"`
 	CreatedAt                time.Time  `json:"createdAt"`
 	UpdatedAt                time.Time  `json:"updatedAt"`
 }

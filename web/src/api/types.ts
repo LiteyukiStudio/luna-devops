@@ -7,6 +7,7 @@ export interface Project {
   description: string
   namespaceStrategy: string
   maxConcurrentBuilds: number
+  webConsoleEnabled: boolean
   billingOwnerUserId: string
   billingOwner?: ProjectBillingOwner
   systemKey: string
@@ -812,6 +813,7 @@ export interface DeploymentTarget {
   dataAccessMode: '' | 'ReadWriteOnce' | 'ReadWriteMany' | 'ReadOnlyMany' | string
   dataVolumeMode: '' | 'Filesystem' | 'Block' | string
   requireApproval: boolean
+  webConsoleEnabled: boolean | null
   enabled: boolean
   deleteStatus: 'active' | 'deleting' | 'delete_failed' | 'deleted' | string
   deleteMessage: string
@@ -1264,6 +1266,7 @@ export interface User {
   role: 'platform_admin' | 'user'
   language: 'zh-CN' | 'en-US'
   disabled: boolean
+  mfaEnabled: boolean
   balanceCredits: string
   createdAt: string
 }
@@ -1330,8 +1333,32 @@ export interface MFAStatus {
   enabled: boolean
   pending: boolean
   policyEnabled: boolean
+  enrollmentReauthMode: 'password' | 'fresh_session'
   confirmedAt?: string | null
   recoveryCodesRemaining: number
+}
+
+export const mfaPurposes = [
+  'runtime_exec',
+  'runtime_terminal',
+  'data_export',
+  'secret_update',
+  'registry_credential_update',
+  'kubeconfig_update',
+  'auth_provider_update',
+  'user_admin_update',
+  'mfa_manage',
+  'security_settings_update',
+] as const
+
+export type MFAPurpose = typeof mfaPurposes[number]
+
+export interface MFAChallenge {
+  purpose: MFAPurpose
+}
+
+export interface MFAEnrollmentRequest {
+  currentPassword?: string
 }
 
 export interface MFAEnrollment {
@@ -1342,6 +1369,15 @@ export interface MFAEnrollment {
 
 export interface MFARecoveryCodes {
   recoveryCodes: string[]
+}
+
+export type MFAVerifyPayload
+  = | { code: string, purpose: MFAPurpose }
+    | { recoveryCode: string, purpose: MFAPurpose }
+
+export interface MFAVerifyResponse {
+  verified: boolean
+  purpose: MFAPurpose
 }
 
 export interface BootstrapStatus {

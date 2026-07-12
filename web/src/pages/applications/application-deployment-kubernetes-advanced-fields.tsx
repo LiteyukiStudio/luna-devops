@@ -103,6 +103,12 @@ export function KubernetesAdvancedFields({ dataRetentionEnabled, form }: Kuberne
 
       <div className="grid gap-3 rounded-md border border-dashed border-border p-3">
         <p className="text-sm font-medium text-foreground">{t('deploymentsPage.kubernetesAdvancedSecurity')}</p>
+        <Field hint={t('deploymentsPage.webConsoleOverrideHint')} label={t('deploymentsPage.webConsoleOverride')}>
+          <Select {...form.register('webConsoleEnabled')}>
+            <option value="">{t('deploymentsPage.webConsoleInheritProject')}</option>
+            <option value="false">{t('deploymentsPage.webConsoleDisableForTarget')}</option>
+          </Select>
+        </Field>
         <div className="grid gap-3 md:grid-cols-3">
           <Field hint={t('deploymentsPage.runAsUserHint')} label={t('deploymentsPage.runAsUser')}>
             <Input {...form.register('runAsUser')} inputMode="numeric" placeholder="1001" />

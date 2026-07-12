@@ -1,4 +1,4 @@
-import type { Release } from '@/api'
+import type { ApiError, Release } from '@/api'
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal as XTerm } from '@xterm/xterm'
 import { useEffect, useRef } from 'react'
@@ -7,6 +7,7 @@ import { releaseRuntimeTerminalUrl } from '@/api'
 import '@xterm/xterm/css/xterm.css'
 
 export function ApplicationRuntimeTerminalPanel({
+  authorize,
   container,
   fullscreen = false,
   projectId,
@@ -14,6 +15,7 @@ export function ApplicationRuntimeTerminalPanel({
   ready,
   socketUrl,
 }: {
+  authorize?: () => Promise<void>
   container: string
   fullscreen?: boolean
   projectId: string
@@ -64,11 +66,11 @@ export function ApplicationRuntimeTerminalPanel({
     terminal.writeln(t('deploymentsPage.webConsoleConnecting'))
     terminal.focus()
 
-    const socket = new WebSocket(terminalSocketUrl)
-    socket.binaryType = 'arraybuffer'
+    let cancelled = false
+    let socket: WebSocket | undefined
 
     const sendResize = () => {
-      if (socket.readyState !== WebSocket.OPEN)
+      if (!socket || socket.readyState !== WebSocket.OPEN)
         return
       socket.send(JSON.stringify({ type: 'resize', cols: terminal.cols, rows: terminal.rows }))
     }
@@ -79,7 +81,7 @@ export function ApplicationRuntimeTerminalPanel({
     }
 
     const dataSubscription = terminal.onData((data) => {
-      if (socket.readyState === WebSocket.OPEN)
+      if (socket?.readyState === WebSocket.OPEN)
         socket.send(data)
     })
     const resizeObserver = new ResizeObserver(fitAndResize)
@@ -105,10 +107,27 @@ export function ApplicationRuntimeTerminalPanel({
       terminal.writeln(t('deploymentsPage.webConsoleConnectionFailed'))
     }
 
-    socket.addEventListener('open', handleOpen)
-    socket.addEventListener('message', handleMessage)
-    socket.addEventListener('close', handleClose)
-    socket.addEventListener('error', handleError)
+    const connect = async () => {
+      try {
+        await authorize?.()
+      }
+      catch (error) {
+        if (!cancelled) {
+          terminal.writeln('')
+          terminal.writeln((error as ApiError).message || t('deploymentsPage.webConsoleAuthorizationFailed'))
+        }
+        return
+      }
+      if (cancelled)
+        return
+      socket = new WebSocket(terminalSocketUrl)
+      socket.binaryType = 'arraybuffer'
+      socket.addEventListener('open', handleOpen)
+      socket.addEventListener('message', handleMessage)
+      socket.addEventListener('close', handleClose)
+      socket.addEventListener('error', handleError)
+    }
+    void connect()
 
     const fitTimer = window.setTimeout(fitAndResize, 50)
     window.addEventListener('resize', fitAndResize)
@@ -116,16 +135,17 @@ export function ApplicationRuntimeTerminalPanel({
     return () => {
       window.clearTimeout(fitTimer)
       window.removeEventListener('resize', fitAndResize)
-      socket.removeEventListener('open', handleOpen)
-      socket.removeEventListener('message', handleMessage)
-      socket.removeEventListener('close', handleClose)
-      socket.removeEventListener('error', handleError)
+      cancelled = true
+      socket?.removeEventListener('open', handleOpen)
+      socket?.removeEventListener('message', handleMessage)
+      socket?.removeEventListener('close', handleClose)
+      socket?.removeEventListener('error', handleError)
       resizeObserver.disconnect()
       dataSubscription.dispose()
-      socket.close()
+      socket?.close()
       terminal.dispose()
     }
-  }, [container, projectId, ready, release, socketUrl, t])
+  }, [authorize, container, projectId, ready, release, socketUrl, t])
 
   return (
     <div className={fullscreen ? 'flex h-full min-h-0 p-3 pt-2' : 'p-3'}>
