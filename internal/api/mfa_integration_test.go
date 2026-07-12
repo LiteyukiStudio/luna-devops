@@ -627,6 +627,61 @@ func TestLastMFAEnabledAdminCannotBeDisabledOrDemoted(t *testing.T) {
 	}
 }
 
+func TestUserUpdateDoesNotRequireAssertionWhenStepUpPolicyIsDisabled(t *testing.T) {
+	db := newMFAIntegrationDB(t)
+	limitMFAIntegrationConnections(t, db, 1)
+	now := time.Now()
+	suffix := randomHex(4)
+	actor := model.User{
+		ID:       "usr_policy_off_actor_" + suffix,
+		Email:    "policy-off-actor-" + suffix + "@example.com",
+		Name:     "Policy Off Actor",
+		AuthType: "local",
+		Role:     "platform_admin",
+		Language: "en-US",
+	}
+	target := model.User{
+		ID:       "usr_policy_off_target_" + suffix,
+		Email:    "policy-off-target-" + suffix + "@example.com",
+		Name:     "Policy Off Target",
+		AuthType: "local",
+		Role:     "user",
+		Language: "en-US",
+	}
+	if err := db.Create(&[]model.User{actor, target}).Error; err != nil {
+		t.Fatal(err)
+	}
+	sessionToken := "sess_policy_off_actor_" + suffix
+	if err := db.Create(&model.UserSession{
+		ID:        "ses_policy_off_actor_" + suffix,
+		UserID:    actor.ID,
+		TokenHash: hashToken(sessionToken),
+		ExpiresAt: now.Add(time.Hour),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	handlers := &Handlers{db: db, configs: newConfigCache(db), mode: "development", rateLimiter: newRateLimiter()}
+	recorder, ctx := newMFAIntegrationContext(http.MethodPut, "/api/v1/users/"+target.ID, map[string]any{
+		"email":    target.Email,
+		"name":     "Updated without Step-up",
+		"role":     target.Role,
+		"language": target.Language,
+		"disabled": false,
+	}, sessionToken)
+	ctx.Params = gin.Params{{Key: "userId", Value: target.ID}}
+	handlers.UpdateUser(ctx)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("policy-disabled user update = %d %s", recorder.Code, recorder.Body.String())
+	}
+	var stored model.User
+	if err := db.First(&stored, "id = ?", target.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.Name != "Updated without Step-up" {
+		t.Fatalf("user name = %q", stored.Name)
+	}
+}
+
 func TestDisableMFARollsBackWhenSuccessAuditCannotBeWritten(t *testing.T) {
 	db := newMFAIntegrationDB(t)
 	t.Setenv("APP_ENV", "development")
