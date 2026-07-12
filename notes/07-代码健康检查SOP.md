@@ -480,7 +480,7 @@ rg -n "TODO|FIXME|临时|兼容|fallback|special case|module|Builder|builder" in
 | 审计日志 | GORM `default:true` 可能让失败审计落成成功，写入错误被静默忽略 | 安全审计结论失真或缺失 | 立即修复 | 审计写入改为显式字段 map，失败至少输出带上下文日志；MFA 解绑与管理员重置的成功审计和业务变更位于同一事务 |
 | OpenAPI / 双语文档 | remember login、MFA 重认证与重置、持续终端授权、数据导出预检和 Web Console 硬上限未同步 | 客户端实现和运维操作可能依赖过期契约 | 局部重构 | 已按当前实现补齐并保持中英文一致 |
 | TODO | MFA 聚合任务把已完成和未覆盖范围混在同一项 | 发布判断会把部分完成误认为全量完成 | 保持观察 | 已拆明完成项；资源删除和高风险部署 Step-up 仍作为后续范围保留 |
-| 发布门禁 | Go 版本和发布检查前置条件缺少文档入口，CI 未提供 PostgreSQL 导致认证/迁移集成测试被 skip | RC 可能使用错误工具链或绕过真实数据库测试 | 立即修复 | 已固定 Go `1.26.5`，Quality Job 启动 PostgreSQL 并显式执行非缓存集成测试；`release-check.sh` 缺少 `AUTH_TEST_DATABASE_URL` 时拒绝继续 |
+| 发布门禁 | Go 版本和发布检查前置条件缺少文档入口，CI 未提供 PostgreSQL 导致认证/迁移集成测试被 skip | RC 可能使用错误工具链或绕过真实数据库测试 | 立即修复 | 已固定 Go `1.26.5`，Quality Job 启动 PostgreSQL，`release-check.sh` 缺少 `AUTH_TEST_DATABASE_URL` 时拒绝继续；普通 Go/race 与非缓存 PostgreSQL 集成套件分开执行，避免同一测试在 CI 重复三次 |
 
 ### 本轮结论
 

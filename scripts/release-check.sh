@@ -74,7 +74,7 @@ if [[ -n "${unformatted_files}" ]]; then
 fi
 
 section "Running Go tests"
-go test ./...
+AUTH_TEST_DATABASE_URL="" go test ./...
 
 section "Running PostgreSQL integration and migration tests without cache"
 go test -count=1 ./internal/api ./internal/database
@@ -83,7 +83,7 @@ section "Running Go vet"
 go vet ./...
 
 section "Running race tests for critical packages"
-go test -race ./internal/api ./internal/worker ./internal/provider/kubernetes ./internal/secret
+AUTH_TEST_DATABASE_URL="" go test -race ./internal/api ./internal/worker ./internal/provider/kubernetes ./internal/secret
 
 section "Installing locked frontend dependencies"
 pnpm --dir web install --frozen-lockfile

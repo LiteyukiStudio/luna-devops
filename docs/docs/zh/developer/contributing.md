@@ -36,7 +36,7 @@
 ./scripts/release-check.sh
 ```
 
-发布质量门禁会校验 Go 版本和 `gofmt`，执行全量 Go 测试、`go vet`、关键包 race test、前端测试/lint/build、文档构建、pnpm 高危依赖审计、`govulncheck`，并 lint/render Helm Chart。运行前必须通过 `AUTH_TEST_DATABASE_URL` 提供可创建临时 schema 的 PostgreSQL 测试库，CI 已自动启动 PostgreSQL；缺少该变量时脚本会拒绝继续，避免迁移和并发认证集成测试被静默跳过。任一项失败都不能继续发布；脚本也会拒绝在有未提交或未跟踪文件的工作区运行，避免验证结果和待发布源码不一致。
+发布质量门禁会校验 Go 版本和 `gofmt`，执行全量 Go 测试、`go vet`、关键包 race test、前端测试/lint/build、文档构建、pnpm 高危依赖审计、`govulncheck`，并 lint/render Helm Chart。运行前必须通过 `AUTH_TEST_DATABASE_URL` 提供可创建临时 schema 的 PostgreSQL 测试库，CI 已自动启动 PostgreSQL；缺少该变量时脚本会拒绝继续，避免迁移和并发认证集成测试被静默跳过。普通 Go/race 套件不会重复注入该数据库地址，认证与迁移集成测试只以 `-count=1` 单独执行一次。任一项失败都不能继续发布；脚本也会拒绝在有未提交或未跟踪文件的工作区运行，避免验证结果和待发布源码不一致。
 
 ## 文档体验
 

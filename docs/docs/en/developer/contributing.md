@@ -36,7 +36,7 @@ Backend development and release checks require exactly Go `1.26.5`; the version 
 ./scripts/release-check.sh
 ```
 
-The release-quality gate verifies the Go version and `gofmt`, then runs all Go tests, `go vet`, race tests for critical packages, frontend tests/lint/build, the documentation build, high-severity pnpm dependency audits, `govulncheck`, and Helm lint/render. Before running it, set `AUTH_TEST_DATABASE_URL` to a PostgreSQL test database where temporary schemas can be created; CI starts PostgreSQL automatically. The script refuses to continue without that variable so migration and concurrent-authentication integration tests cannot be skipped silently. Any failure blocks the release. The script also refuses a worktree with modified or untracked files so the verified source matches the release candidate.
+The release-quality gate verifies the Go version and `gofmt`, then runs all Go tests, `go vet`, race tests for critical packages, frontend tests/lint/build, the documentation build, high-severity pnpm dependency audits, `govulncheck`, and Helm lint/render. Before running it, set `AUTH_TEST_DATABASE_URL` to a PostgreSQL test database where temporary schemas can be created; CI starts PostgreSQL automatically. The script refuses to continue without that variable so migration and concurrent-authentication integration tests cannot be skipped silently. The regular Go and race suites run without that database variable, while the authentication and migration integration suites run once with `-count=1`. Any failure blocks the release. The script also refuses a worktree with modified or untracked files so the verified source matches the release candidate.
 
 ## Documentation experience
 

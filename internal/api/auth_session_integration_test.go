@@ -208,7 +208,7 @@ func TestRememberRotationPreservesPrimaryAuthenticationAndSingleSession(t *testi
 	if err := db.First(&firstRotated, "user_id = ? and remember_family_id = ?", user.ID, remember.FamilyID).Error; err != nil {
 		t.Fatalf("read first rotated session: %v", err)
 	}
-	if firstRotated.PrimaryAuthenticatedAt == nil || !firstRotated.PrimaryAuthenticatedAt.Equal(primaryAuthenticatedAt) {
+	if !postgresTimestampEqual(firstRotated.PrimaryAuthenticatedAt, primaryAuthenticatedAt) {
 		t.Fatalf("primary authentication changed: got=%v want=%v", firstRotated.PrimaryAuthenticatedAt, primaryAuthenticatedAt)
 	}
 	if firstRotated.ExpiresAt.After(familyExpiresAt) {
@@ -223,7 +223,7 @@ func TestRememberRotationPreservesPrimaryAuthenticationAndSingleSession(t *testi
 	if err := db.First(&secondRotated, "user_id = ? and remember_family_id = ?", user.ID, remember.FamilyID).Error; err != nil {
 		t.Fatalf("read second rotated session: %v", err)
 	}
-	if secondRotated.PrimaryAuthenticatedAt == nil || !secondRotated.PrimaryAuthenticatedAt.Equal(primaryAuthenticatedAt) {
+	if !postgresTimestampEqual(secondRotated.PrimaryAuthenticatedAt, primaryAuthenticatedAt) {
 		t.Fatalf("primary authentication refreshed after second rotation: got=%v want=%v", secondRotated.PrimaryAuthenticatedAt, primaryAuthenticatedAt)
 	}
 }
@@ -397,6 +397,10 @@ func assertRecordCount(t *testing.T, db *gorm.DB, value any, query string, args 
 	if count != expected {
 		t.Fatalf("%T record count = %d, want %d", value, count, expected)
 	}
+}
+
+func postgresTimestampEqual(actual *time.Time, expected time.Time) bool {
+	return actual != nil && actual.UTC().Truncate(time.Microsecond).Equal(expected.UTC().Truncate(time.Microsecond))
 }
 
 func authIntegrationDB(t *testing.T) *gorm.DB {
