@@ -146,6 +146,9 @@
 - [x] 环境文件按运行边界拆分：`.env` 只保留基础模式开关，`.env.development` 面向宿主机进程，`.env.worker` 面向 worker 容器，并提供对应 `.example` 模板。
 - [x] API/Worker 数据库连接增强：启动时对 PostgreSQL 做可配置重试，统一限制每进程连接池大小、空闲连接和连接生命周期，避免多副本部署或数据库短暂满连接时直接崩溃。
 - [x] `docker-compose.yaml` 和 `docker-compose-build.yaml` 内联 API / worker 运行环境变量，生产密钥、域名和镜像 tag 通过宿主机环境变量覆盖；`docker-compose-dev.yaml` 继续使用 `.env.worker` 服务开发联调。
+- [x] 完整 Compose 固定使用生产模式，不再回退到开发管理员；启动前必须显式配置加密密钥、首次初始化 Token 和 Redis 密码，并新增 `.env.production.example`。
+- [x] Redis 连接统一支持 `REDIS_USERNAME`、`REDIS_PASSWORD` 和 `REDIS_DB`：API、Worker、任务命令及 Asynq 调度共用同一配置；完整 Compose 默认启用 `requirepass`，Helm 内置 Redis 自动生成并复用密码，也支持外部 Redis Secret。
+- [x] 完整 Compose 的 Worker 等待 API `/healthz` 通过后再启动，避免全新数据库首次 migration 尚未完成时提前访问业务表。
 - [x] 新增 GitHub Actions 容器发布工作流：仅构建 `linux/amd64` 容器镜像，发布 DockerHub `liteyukistudio/devops-api`、`liteyukistudio/devops-worker`；分支发布 `nightly`，`v*` tag 发布版本 tag，稳定版本 tag 额外发布 `latest`；`devops-api` 使用 `embed_web` 内嵌前端静态文件，不额外构建或上传 GitHub Release 二进制产物。
 - [x] 修复内嵌 SPA 根路径和 fallback 被 Go FileServer 重定向到 `./` 的问题：`index.html` 改为直接返回，避免服务端根路径出现不必要 301。
 - [x] 新增发布质量门禁 `scripts/release-check.sh`：要求干净工作区、精确 Go `1.26.5` 和 `AUTH_TEST_DATABASE_URL`，统一执行 Go test/vet/race、不可缓存的 PostgreSQL 认证/迁移集成测试、前端测试/lint/build、文档构建、pnpm audit、govulncheck 与 Helm lint/render；GitHub Quality Job 自动启动 PostgreSQL。普通 Go/race 套件不注入数据库地址，真实 PostgreSQL 集成测试只执行一次，避免同一批用例在 CI 中重复三次。
@@ -388,6 +391,8 @@
 - [x] 抽离统一 SSRF/出站访问控制组件，并接入 Git、OIDC 和 Registry 外部请求链路。
 - [x] SSRF/egress 组件接入管理员安全配置，支持域名黑名单、域名特许白名单、IP/CIDR 黑白名单和端口规则。
 - [x] 修复 egress CIDR 地址族匹配，避免 `::ffff:0:0/96` 误拦截 GitHub 等普通公网 IPv4。
+- [x] 修复空 PostgreSQL 数据库启动迁移：baseline 在后续 ALTER 前创建计费基础表，并用真实空 schema 测试覆盖完整 migration、非 dirty 状态和重复启动。
+- [x] 收紧用户提交 kubeconfig：保存和运行时统一拒绝 exec/auth-provider、tokenFile、proxy-url、本机证书文件、HTTP API Server 和跳过 TLS 校验，仅接受内联凭据与合法 HTTPS API Server。
 - [x] 封装统一错误响应层，开发模式返回调试细节，生产模式仅返回稳定错误码和业务化文案。
 - [x] 持续补充业务错误码枚举和前端按错误码 i18n 展示。
 - [x] 多实例部署时将登录限流从进程内存迁移到 Redis/Asynq 统一限流能力。

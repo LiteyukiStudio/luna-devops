@@ -14,7 +14,6 @@ import (
 	"k8s.io/client-go/dynamic"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
 )
 
 type NamespaceManager interface {
@@ -47,7 +46,7 @@ type Client struct {
 }
 
 func NewClientFromKubeconfig(kubeconfig string) (*Client, error) {
-	config, err := clientcmd.RESTConfigFromKubeConfig([]byte(kubeconfig))
+	config, err := SafeRESTConfigFromKubeconfig(kubeconfig)
 	if err != nil {
 		return nil, err
 	}

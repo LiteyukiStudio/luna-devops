@@ -17,7 +17,7 @@ WHERE projects.id = owners.project_id
 
 CREATE TABLE IF NOT EXISTS user_wallets (
   id text PRIMARY KEY,
-  user_id text NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+  user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   balance_credits numeric(24,8) NOT NULL DEFAULT 0,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()

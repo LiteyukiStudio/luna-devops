@@ -8,15 +8,18 @@ For a first deployment, configure the Basic values only. Once the platform is ru
 
 | Type | Key | Default | Purpose and when to change |
 | --- | --- | --- | --- |
-| Basic | `APP_ENV` | `development` | Runtime mode; set `production` when going live. |
+| Basic | `APP_ENV` | `production` | Runtime mode; set `development` explicitly only for local development. |
 | Basic | `SECRET_ENCRYPTION_KEY` | Empty | Secret encryption key; required and stable in production. |
 | Basic | `DATABASE_URL` | `postgres://devops:devops@postgres:5432/devops?sslmode=disable` | PostgreSQL URL; change when using another database or credential. |
 | Basic | `REDIS_ADDR` | `redis:6379` | Redis address; change when using external Redis. |
+| Basic | `REDIS_USERNAME` | Empty | Redis ACL username; leave empty when using password-only `requirepass`. |
+| Basic | `REDIS_PASSWORD` | Empty | Redis password; required by the complete Compose stack and built-in Helm Redis. |
+| Basic | `REDIS_DB` | `0` | Redis logical database; keep it identical across API, Worker, and task tools. |
 | Basic | `PUBLIC_BASE_URL` | `http://localhost:8088` | Public platform URL; change for public domain, HTTPS, or reverse proxy. OIDC Redirect URI is generated as `{PUBLIC_BASE_URL}/api/v1/auth/oidc/callback`. |
 | Advanced | `API_ADDR` | `:8080` | API listen address; change for custom container ports. |
 | Advanced | `APP_CORS_ORIGINS` | `http://localhost:8088` | Allowed frontend origins; change when frontend and API use different origins. |
 | Advanced | `TRUSTED_PROXY_CIDRS` | Empty | Reverse-proxy CIDRs allowed to provide the real client address, comma-separated. No proxy is trusted by default. Configure only controlled proxies so a forged `X-Forwarded-For` cannot bypass per-IP rate limits. |
-| Advanced | `LOG_LEVEL` | `debug` | Log level; production usually uses `info`. |
+| Advanced | `LOG_LEVEL` | `info` | Log level; temporarily use `debug` for local troubleshooting. |
 | Advanced | `DB_MAX_OPEN_CONNS` | `20` | Maximum PostgreSQL connections opened by this API process; size it across all API and worker replicas to avoid exhausting the database. |
 | Advanced | `DB_MAX_IDLE_CONNS` | `5` | Idle PostgreSQL connections kept by this API process; lower it when database connections are tight. |
 | Advanced | `DB_CONN_MAX_LIFETIME` | `30m` | Maximum lifetime of a reused database connection; shorten it for load balancers, connection proxies, or database rolling maintenance. |
@@ -45,12 +48,15 @@ Available access-route domain suffixes, external access schemes, external access
 
 | Type | Key | Default | Purpose and when to change |
 | --- | --- | --- | --- |
-| Basic | `APP_ENV` | `development` | Runtime mode; keep it aligned with API. |
+| Basic | `APP_ENV` | `production` | Runtime mode; keep it aligned with API. |
 | Basic | `SECRET_ENCRYPTION_KEY` | Empty | Decrypts saved secrets; must match API. |
 | Basic | `DATABASE_URL` | `postgres://devops:devops@postgres:5432/devops?sslmode=disable` | PostgreSQL URL; point to the same database as API. |
 | Basic | `REDIS_ADDR` | `redis:6379` | Redis address; point to the same Redis as API. |
+| Basic | `REDIS_USERNAME` | Empty | Redis ACL username; must match API. |
+| Basic | `REDIS_PASSWORD` | Empty | Redis password; must match API. |
+| Basic | `REDIS_DB` | `0` | Redis logical database; must match API. |
 | Basic | `BUILD_EXECUTOR_IMAGE` | `moby/buildkit:v0.24.0-rootless` | BuildKit image; change when the build cluster cannot pull the default image. |
-| Advanced | `LOG_LEVEL` | `debug` | Log level; production usually uses `info`. |
+| Advanced | `LOG_LEVEL` | `info` | Log level; temporarily use `debug` for local troubleshooting. |
 | Advanced | `DB_MAX_OPEN_CONNS` | `20` | Maximum PostgreSQL connections opened by this worker process; size it across all API and worker replicas to avoid exhausting the database. |
 | Advanced | `DB_MAX_IDLE_CONNS` | `5` | Idle PostgreSQL connections kept by this worker process; lower it when database connections are tight. |
 | Advanced | `DB_CONN_MAX_LIFETIME` | `30m` | Maximum lifetime of a reused database connection; shorten it for load balancers, connection proxies, or database rolling maintenance. |

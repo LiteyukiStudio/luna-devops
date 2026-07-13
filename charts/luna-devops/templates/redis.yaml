@@ -39,10 +39,22 @@ spec:
         - name: redis
           image: "{{ .Values.redis.image.repository }}:{{ .Values.redis.image.tag }}"
           imagePullPolicy: {{ .Values.redis.image.pullPolicy }}
+          command:
+            - /bin/sh
+            - -ec
           args:
-            - redis-server
-            - --appendonly
-            - "yes"
+            - exec redis-server --appendonly yes --requirepass "$REDIS_PASSWORD"
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "luna-devops.redisCredentialSecretName" . }}
+                  key: {{ include "luna-devops.redisPasswordSecretKey" . }}
+            - name: REDISCLI_AUTH
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "luna-devops.redisCredentialSecretName" . }}
+                  key: {{ include "luna-devops.redisPasswordSecretKey" . }}
           ports:
             - name: redis
               containerPort: 6379

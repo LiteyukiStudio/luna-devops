@@ -9,6 +9,7 @@ import (
 
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/LiteyukiStudio/devops/internal/redisconfig"
 	"github.com/LiteyukiStudio/devops/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
@@ -499,7 +500,11 @@ func newRateLimiter(redisAddr ...string) *rateLimiter {
 	if len(redisAddr) > 0 {
 		addr = strings.TrimSpace(redisAddr[0])
 	}
-	return &rateLimiter{redis: redis.NewClient(&redis.Options{Addr: addr})}
+	return newRateLimiterWithRedis(redisconfig.Options{Addr: addr})
+}
+
+func newRateLimiterWithRedis(options redisconfig.Options) *rateLimiter {
+	return &rateLimiter{redis: redis.NewClient(options.GoRedis())}
 }
 
 func (l *rateLimiter) allow(key string, limit int, window time.Duration) (bool, error) {

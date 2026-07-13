@@ -4,11 +4,11 @@ After the platform starts, complete the few settings you actually need. There is
 
 ## Sign in or bootstrap
 
-Compose starts the API in development mode by default. Open the sign-in page and follow the account hint shown there.
+The complete Compose stack starts the API in production mode and does not create a fixed development administrator. On the first visit, initialize an administrator with the deployment's `BOOTSTRAP_TOKEN`. Development account hints appear only when a local environment explicitly sets `APP_ENV=development`.
 
 Local-account sign-in and first-administrator bootstrap both create a server-side session that lasts at most 24 hours. "Keep me signed in" is off by default, so the session cookie has no persistent lifetime and disappears when the browser closes. Enabling it on a trusted device adds a per-user HttpOnly remember cookie with an absolute 30-day lifetime. After the session expires, choosing that recent account rotates the token inside the same token family and creates a new session, but rotation never extends the family's original 30-day deadline or treats remember recovery as a new password/OIDC primary authentication. Each family keeps only its latest session. Reuse of an old token is treated as replay and revokes the entire family's remember tokens, sessions, and Step-up assertions; signing out from a remembered session revokes that family as well. The browser keeps display metadata for at most three recent accounts, but never stores passwords, tokens, or session cookies. Disabling the account, changing its password, or changing its role revokes the account's related authentication state.
 
-If you switch to production mode, visit this page the first time:
+For the first visit to the complete Compose stack, open:
 
 ```text
 http://localhost:8088/bootstrap

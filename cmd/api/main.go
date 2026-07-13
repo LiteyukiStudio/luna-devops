@@ -55,7 +55,7 @@ func main() {
 		}
 		var redisClient *redis.Client
 		if cfg.RedisAddr != "" {
-			redisClient = redis.NewClient(&redis.Options{Addr: cfg.RedisAddr})
+			redisClient = redis.NewClient(cfg.RedisOptions().GoRedis())
 			defer redisClient.Close()
 			dependencyChecks["redis"] = func(ctx context.Context) error {
 				return redisClient.Ping(ctx).Err()

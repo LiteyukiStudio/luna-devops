@@ -80,7 +80,7 @@ The cluster resource page lists platform-managed namespaces, workloads, services
 
 Platform administrators can open Web Console from Pod child rows in the workload tab. The frontend first calls the Pod terminal authorize preflight through the normal HTTP API. If it returns `mfa_required`, the shared MFA dialog verifies the `runtime_terminal` purpose and retries. A successful preflight only allows the connection attempt to continue. The WebSocket rechecks the session, platform-administrator role, MFA assertion, Pod identity, and platform ownership before upgrading and every three seconds while connected; losing any condition closes the shell. Only real terminal input refreshes the idle deadline, with writes throttled; resize, ping, and background polling do not keep it alive, and the absolute deadline never moves. Terminal activity is audited.
 
-If the API or worker runs in a container, kubeconfig server addresses must be reachable from that container. Avoid host-only `127.0.0.1`.
+If the API or worker runs in a container, kubeconfig server addresses must be reachable from that container. Avoid host-only `127.0.0.1`. The platform accepts only HTTPS API servers with inline CA, client certificate/private key, or token data. It rejects `exec` credential plugins, `auth-provider`, `tokenFile`, `proxy-url`, and local certificate file paths. Run `kubectl config view --raw --minify --flatten` before saving so platform processes never execute external commands or read host files.
 
 Runtime clusters also host Kubernetes build Jobs. The small-team default allows 4 concurrent build Jobs per runtime cluster and 2 concurrent builds per project space. Extra builds stay queued and retry automatically instead of being marked failed immediately.
 

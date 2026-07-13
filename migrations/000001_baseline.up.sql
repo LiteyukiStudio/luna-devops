@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS users (
   id text PRIMARY KEY,
-  email text NOT NULL UNIQUE,
+  email text NOT NULL,
   name text NOT NULL,
   avatar_url text NOT NULL DEFAULT '',
   auth_type text NOT NULL DEFAULT 'local',
@@ -12,30 +12,33 @@ CREATE TABLE IF NOT EXISTS users (
   updated_at timestamptz NOT NULL DEFAULT now(),
   deleted_at timestamptz
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_deleted_at ON users(deleted_at);
 
 CREATE TABLE IF NOT EXISTS user_sessions (
   id text PRIMARY KEY,
   user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   impersonator_id text NOT NULL DEFAULT '',
-  token_hash text NOT NULL UNIQUE,
+  token_hash text NOT NULL,
   expires_at timestamptz NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_user_sessions_user_id ON user_sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_sessions_impersonator_id ON user_sessions(impersonator_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_user_sessions_token_hash ON user_sessions(token_hash);
 CREATE INDEX IF NOT EXISTS idx_user_sessions_expires_at ON user_sessions(expires_at);
 
 CREATE TABLE IF NOT EXISTS user_remember_tokens (
   id text PRIMARY KEY,
   user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  token_hash text NOT NULL UNIQUE,
+  token_hash text NOT NULL,
   expires_at timestamptz NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_user_remember_tokens_user_id ON user_remember_tokens(user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_user_remember_tokens_token_hash ON user_remember_tokens(token_hash);
 CREATE INDEX IF NOT EXISTS idx_user_remember_tokens_expires_at ON user_remember_tokens(expires_at);
 
 CREATE TABLE IF NOT EXISTS auth_providers (
@@ -545,6 +548,71 @@ CREATE TABLE IF NOT EXISTS build_logs (
 CREATE INDEX IF NOT EXISTS idx_build_logs_build_run_id ON build_logs(build_run_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_build_logs_build_job_id ON build_logs(build_job_id);
 CREATE INDEX IF NOT EXISTS idx_build_logs_project_id ON build_logs(project_id);
+
+CREATE TABLE IF NOT EXISTS billing_rate_rules (
+  id text PRIMARY KEY,
+  meter text NOT NULL,
+  unit text NOT NULL,
+  credits_per_unit numeric(24,8) NOT NULL DEFAULT 0,
+  enabled boolean NOT NULL DEFAULT true,
+  description text NOT NULL DEFAULT '',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_billing_rate_rules_meter ON billing_rate_rules(meter);
+
+CREATE TABLE IF NOT EXISTS billing_usage_records (
+  id text PRIMARY KEY,
+  project_id text NOT NULL,
+  application_id text NOT NULL DEFAULT '',
+  meter text NOT NULL,
+  quantity numeric(24,8) NOT NULL DEFAULT 0,
+  unit text NOT NULL,
+  amount_credits numeric(24,8) NOT NULL DEFAULT 0,
+  resource_type text NOT NULL,
+  resource_id text NOT NULL,
+  period_start timestamptz NOT NULL,
+  period_end timestamptz NOT NULL,
+  status text NOT NULL DEFAULT 'settled',
+  metadata text NOT NULL DEFAULT '',
+  settled_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_billing_usage_records_project_id ON billing_usage_records(project_id);
+CREATE INDEX IF NOT EXISTS idx_billing_usage_records_application_id ON billing_usage_records(application_id);
+CREATE INDEX IF NOT EXISTS idx_billing_usage_records_meter ON billing_usage_records(meter);
+CREATE INDEX IF NOT EXISTS idx_billing_usage_records_resource_type ON billing_usage_records(resource_type);
+CREATE INDEX IF NOT EXISTS idx_billing_usage_records_resource_id ON billing_usage_records(resource_id);
+CREATE INDEX IF NOT EXISTS idx_billing_usage_records_period_start ON billing_usage_records(period_start);
+CREATE INDEX IF NOT EXISTS idx_billing_usage_records_period_end ON billing_usage_records(period_end);
+CREATE INDEX IF NOT EXISTS idx_billing_usage_records_status ON billing_usage_records(status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_billing_usage_resource_meter
+  ON billing_usage_records(meter, resource_type, resource_id);
+
+CREATE TABLE IF NOT EXISTS billing_ledger_entries (
+  id text PRIMARY KEY,
+  project_id text NOT NULL,
+  type text NOT NULL,
+  amount_credits numeric(24,8) NOT NULL DEFAULT 0,
+  balance_after_credits numeric(24,8) NOT NULL DEFAULT 0,
+  reason text NOT NULL,
+  meter text NOT NULL DEFAULT '',
+  usage_record_id text NOT NULL DEFAULT '',
+  resource_type text NOT NULL DEFAULT '',
+  resource_id text NOT NULL DEFAULT '',
+  description text NOT NULL DEFAULT '',
+  created_by text NOT NULL DEFAULT '',
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_billing_ledger_entries_project_id ON billing_ledger_entries(project_id);
+CREATE INDEX IF NOT EXISTS idx_billing_ledger_entries_type ON billing_ledger_entries(type);
+CREATE INDEX IF NOT EXISTS idx_billing_ledger_entries_reason ON billing_ledger_entries(reason);
+CREATE INDEX IF NOT EXISTS idx_billing_ledger_entries_meter ON billing_ledger_entries(meter);
+CREATE INDEX IF NOT EXISTS idx_billing_ledger_entries_usage_record_id ON billing_ledger_entries(usage_record_id);
+CREATE INDEX IF NOT EXISTS idx_billing_ledger_entries_resource_type ON billing_ledger_entries(resource_type);
+CREATE INDEX IF NOT EXISTS idx_billing_ledger_entries_resource_id ON billing_ledger_entries(resource_id);
+CREATE INDEX IF NOT EXISTS idx_billing_ledger_entries_created_by ON billing_ledger_entries(created_by);
 
 CREATE TABLE IF NOT EXISTS runtime_clusters (
   id text PRIMARY KEY,

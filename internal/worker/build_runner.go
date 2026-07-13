@@ -10,11 +10,11 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/billing"
 	"github.com/LiteyukiStudio/devops/internal/buildruntime"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
 	"github.com/hibiken/asynq"
 	"gorm.io/gorm"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/clientcmd"
 )
 
 const (
@@ -181,7 +181,7 @@ func (r *Runner) kubernetesClient(environment model.Environment) (kubernetes.Int
 	if err != nil {
 		return nil, err
 	}
-	restConfig, err := clientcmd.RESTConfigFromKubeConfig([]byte(kubeconfig))
+	restConfig, err := kubeprovider.SafeRESTConfigFromKubeconfig(kubeconfig)
 	if err != nil {
 		return nil, runtimeClusterKubeconfigError(err)
 	}

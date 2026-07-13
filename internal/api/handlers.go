@@ -44,9 +44,10 @@ func NewHandlers(db *gorm.DB) *Handlers {
 		ensureDevelopmentAdmin(db)
 	}
 	cfg := config.Load()
-	handlers := &Handlers{db: db, configs: newConfigCache(db), mode: mode, rateLimiter: newRateLimiter(cfg.RedisAddr), oauthStates: newOAuthStateStore(cfg.RedisAddr), projects: repository.NewProjectRepository(db), branchCache: newGitBranchCache(), registrySearchCache: newRegistrySearchCache(), gatewayTrafficState: newGatewayTrafficRuntimeStateStore(cfg.RedisAddr)}
+	redisOptions := cfg.RedisOptions()
+	handlers := &Handlers{db: db, configs: newConfigCache(db), mode: mode, rateLimiter: newRateLimiterWithRedis(redisOptions), oauthStates: newOAuthStateStoreWithRedis(redisOptions), projects: repository.NewProjectRepository(db), branchCache: newGitBranchCache(), registrySearchCache: newRegistrySearchCache(), gatewayTrafficState: newGatewayTrafficRuntimeStateStoreWithRedis(redisOptions)}
 	if cfg.RedisAddr != "" {
-		handlers.taskClient = tasks.NewClient(cfg.RedisAddr)
+		handlers.taskClient = tasks.NewClientWithRedis(redisOptions)
 	}
 	handlers.secrets = secret.NewStore(db, handlers.audit)
 	return handlers

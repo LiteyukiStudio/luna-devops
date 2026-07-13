@@ -36,6 +36,23 @@ func TestLoadEnvFile(t *testing.T) {
 	}
 }
 
+func TestLoadRedisAuthentication(t *testing.T) {
+	resetEnvLoader(t)
+	unsetEnv(t, "REDIS_ADDR")
+	unsetEnv(t, "REDIS_USERNAME")
+	unsetEnv(t, "REDIS_PASSWORD")
+	unsetEnv(t, "REDIS_DB")
+	t.Setenv("REDIS_ADDR", "redis.example.com:6379")
+	t.Setenv("REDIS_USERNAME", "luna")
+	t.Setenv("REDIS_PASSWORD", "secret")
+	t.Setenv("REDIS_DB", "4")
+
+	options := Load().RedisOptions()
+	if options.Addr != "redis.example.com:6379" || options.Username != "luna" || options.Password != "secret" || options.DB != 4 {
+		t.Fatalf("RedisOptions() = %#v", options)
+	}
+}
+
 func unsetEnv(t *testing.T, key string) {
 	t.Helper()
 

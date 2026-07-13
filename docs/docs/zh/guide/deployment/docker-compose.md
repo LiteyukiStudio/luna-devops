@@ -30,13 +30,21 @@ DEVOPS_IMAGE_TAG=v0.1.0-rc.1 docker compose up -d
 
 ## 启动
 
+先准备生产配置：
+
+```bash
+cp .env.production.example .env
+```
+
+编辑 `.env`，替换 `SECRET_ENCRYPTION_KEY`、`BOOTSTRAP_TOKEN` 和 `REDIS_PASSWORD` 的占位值。完整 Compose 默认以生产模式启动，不会暴露固定开发管理员；Redis 也会强制校验密码。
+
 在仓库根目录执行：
 
 ```bash
 docker compose up -d
 ```
 
-这会启动 PostgreSQL、Redis、API 和 Worker。API 镜像已经内嵌前端页面，不需要单独启动 Vite。
+这会启动 PostgreSQL、带密码认证的 Redis、API 和 Worker。API 会先完成数据库 migration；只有 `/healthz` 通过后 Compose 才启动 Worker，因此全新数据库不会被 Worker 提前访问。API 镜像已经内嵌前端页面，不需要单独启动 Vite。第一次进入时打开 `/bootstrap`，使用 `.env` 中的 `BOOTSTRAP_TOKEN` 创建首个管理员，完成后轮换或移除该一次性 Token。
 
 如果想从当前源码构建镜像：
 

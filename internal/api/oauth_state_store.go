@@ -6,6 +6,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/redisconfig"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -38,7 +39,11 @@ type oauthStateStore interface {
 }
 
 func newOAuthStateStore(redisAddr string) oauthStateStore {
-	return &redisOAuthStateStore{client: redis.NewClient(&redis.Options{Addr: redisAddr})}
+	return newOAuthStateStoreWithRedis(redisconfig.Options{Addr: redisAddr})
+}
+
+func newOAuthStateStoreWithRedis(options redisconfig.Options) oauthStateStore {
+	return &redisOAuthStateStore{client: redis.NewClient(options.GoRedis())}
 }
 
 type redisOAuthStateStore struct {

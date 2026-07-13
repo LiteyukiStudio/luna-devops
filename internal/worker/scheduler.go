@@ -4,6 +4,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/redisconfig"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
 	"github.com/hibiken/asynq"
 )
@@ -28,7 +29,11 @@ func periodicTaskSpecs() ([]periodicTaskSpec, error) {
 }
 
 func startScheduler(redisAddr string) (*asynq.Scheduler, error) {
-	scheduler := asynq.NewScheduler(asynq.RedisClientOpt{Addr: redisAddr}, &asynq.SchedulerOpts{})
+	return startSchedulerWithRedis(redisconfig.Options{Addr: redisAddr})
+}
+
+func startSchedulerWithRedis(options redisconfig.Options) (*asynq.Scheduler, error) {
+	scheduler := asynq.NewScheduler(options.Asynq(), &asynq.SchedulerOpts{})
 	specs, err := periodicTaskSpecs()
 	if err != nil {
 		return nil, err

@@ -8,10 +8,9 @@ import (
 	"strings"
 
 	"github.com/LiteyukiStudio/devops/internal/model"
+	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/client-go/tools/clientcmd/api"
 )
 
 func (h *Handlers) runtimeClusterFromInput(ctx *gin.Context, user model.User, input runtimeClusterInput, clusterID string) (model.RuntimeCluster, bool) {
@@ -93,18 +92,11 @@ func (h *Handlers) runtimeClusterFromInput(ctx *gin.Context, user model.User, in
 }
 
 func flattenKubeconfig(kubeconfig string) (string, error) {
-	config, err := clientcmd.Load([]byte(kubeconfig))
+	output, err := kubeprovider.NormalizeSafeKubeconfig(kubeconfig)
 	if err != nil {
-		return "", fmt.Errorf("kubeconfig 无效，请检查格式")
+		return "", fmt.Errorf("kubeconfig 不安全或格式无效，请仅使用内联凭据和 HTTPS API Server: %w", err)
 	}
-	if err := api.FlattenConfig(config); err != nil {
-		return "", fmt.Errorf("kubeconfig 引用了当前 API 无法读取的证书文件，请导入已内联证书的 kubeconfig: %w", err)
-	}
-	output, err := clientcmd.Write(*config)
-	if err != nil {
-		return "", fmt.Errorf("kubeconfig 序列化失败")
-	}
-	return string(output), nil
+	return output, nil
 }
 
 func (h *Handlers) saveRuntimeClusterWithDefault(cluster model.RuntimeCluster) error {

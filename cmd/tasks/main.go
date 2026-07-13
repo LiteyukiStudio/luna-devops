@@ -29,7 +29,7 @@ func run(args []string) error {
 	}
 
 	cfg := config.Load()
-	inspector := asynq.NewInspector(asynq.RedisClientOpt{Addr: cfg.RedisAddr})
+	inspector := asynq.NewInspector(cfg.RedisOptions().Asynq())
 	defer inspector.Close()
 
 	switch flags.Arg(0) {

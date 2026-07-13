@@ -84,7 +84,12 @@ redis:
   enabled: false
 externalRedis:
   addr: redis.example.com:6379
+  username: default
+  password: replace-with-a-strong-password
+  db: 0
 ```
+
+内置 Redis 会在首次安装时生成密码，并通过 Kubernetes Secret 同时注入 Redis、API 和 Worker；后续升级会复用已有 Secret。接入外部 Redis 时，可以直接填写上述字段，也可以使用 `externalRedis.existingSecret`，其中密码 key 必填，用户名和 DB key 可选。
 
 然后安装：
 

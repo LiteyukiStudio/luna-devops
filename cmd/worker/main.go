@@ -52,7 +52,8 @@ func main() {
 			log.Fatalf("open database metrics handle: %v", err)
 		}
 		observability.RegisterDBStats(metricsRegistry, sqlDB, "postgres")
-		redisClient := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr})
+		redisOptions := cfg.RedisOptions()
+		redisClient := redis.NewClient(redisOptions.GoRedis())
 		defer redisClient.Close()
 		metricsRegistry.MustRegister(observability.NewDependencyCollector("worker", map[string]observability.DependencyCheck{
 			"postgres": sqlDB.PingContext,
@@ -60,7 +61,7 @@ func main() {
 				return redisClient.Ping(ctx).Err()
 			},
 		}))
-		queueInspector := asynq.NewInspector(asynq.RedisClientOpt{Addr: cfg.RedisAddr})
+		queueInspector := asynq.NewInspector(redisOptions.Asynq())
 		defer queueInspector.Close()
 		metricsRegistry.MustRegister(observability.NewAsynqQueueCollector("worker", queueInspector, []string{
 			tasks.QueueBuild,
@@ -97,7 +98,7 @@ func main() {
 		BuildPrivateEgressPorts:     cfg.BuildPrivateEgressPorts,
 		BuildBlockedEgressCIDRs:     cfg.BuildBlockedEgressCIDRs,
 	}
-	if err := worker.Run(cfg.RedisAddr, db, options); err != nil {
+	if err := worker.RunWithRedis(cfg.RedisOptions(), db, options); err != nil {
 		log.Fatalf("run worker: %v", err)
 	}
 }

@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"os"
 	"strings"
 	"testing"
 
@@ -89,10 +88,7 @@ func TestDeploymentTargetMatchesBuildRunUsesTargetPatterns(t *testing.T) {
 	}
 }
 
-func TestFlattenKubeconfigEmbedsCertificateFiles(t *testing.T) {
-	caFile := writeTempKubeconfigFile(t, "ca.crt", "ca-data")
-	certFile := writeTempKubeconfigFile(t, "client.crt", "cert-data")
-	keyFile := writeTempKubeconfigFile(t, "client.key", "key-data")
+func TestFlattenKubeconfigRejectsLocalCertificateFiles(t *testing.T) {
 	input := `
 apiVersion: v1
 kind: Config
@@ -100,12 +96,64 @@ clusters:
 - name: local
   cluster:
     server: https://127.0.0.1:6443
-    certificate-authority: ` + caFile + `
+    certificate-authority: /etc/kubernetes/ca.crt
 users:
 - name: local
   user:
-    client-certificate: ` + certFile + `
-    client-key: ` + keyFile + `
+    client-certificate: /etc/kubernetes/client.crt
+    client-key: /etc/kubernetes/client.key
+contexts:
+- name: local
+  context:
+    cluster: local
+    user: local
+current-context: local
+`
+
+	if _, err := flattenKubeconfig(input); err == nil || !strings.Contains(err.Error(), "kubeconfig 不安全") {
+		t.Fatalf("flattenKubeconfig error = %v, want unsafe kubeconfig error", err)
+	}
+}
+
+func TestFlattenKubeconfigRejectsExecCredentialPlugin(t *testing.T) {
+	input := `
+apiVersion: v1
+kind: Config
+clusters:
+- name: local
+  cluster:
+    server: https://127.0.0.1:6443
+users:
+- name: local
+  user:
+    exec:
+      apiVersion: client.authentication.k8s.io/v1
+      command: sh
+contexts:
+- name: local
+  context:
+    cluster: local
+    user: local
+current-context: local
+`
+
+	if _, err := flattenKubeconfig(input); err == nil || !strings.Contains(err.Error(), "kubeconfig 不安全") {
+		t.Fatalf("flattenKubeconfig error = %v, want unsafe kubeconfig error", err)
+	}
+}
+
+func TestFlattenKubeconfigAcceptsInlineTokenAndHTTPSServer(t *testing.T) {
+	input := `
+apiVersion: v1
+kind: Config
+clusters:
+- name: local
+  cluster:
+    server: https://kubernetes.example.com:6443
+users:
+- name: local
+  user:
+    token: inline-token
 contexts:
 - name: local
   context:
@@ -118,21 +166,9 @@ current-context: local
 	if err != nil {
 		t.Fatalf("flattenKubeconfig returned error: %v", err)
 	}
-	if strings.Contains(output, caFile) || strings.Contains(output, certFile) || strings.Contains(output, keyFile) {
-		t.Fatalf("expected file paths to be removed, got %s", output)
+	if !strings.Contains(output, "https://kubernetes.example.com:6443") || !strings.Contains(output, "inline-token") {
+		t.Fatalf("flattenKubeconfig output = %s", output)
 	}
-	if !strings.Contains(output, "certificate-authority-data") || !strings.Contains(output, "client-certificate-data") || !strings.Contains(output, "client-key-data") {
-		t.Fatalf("expected certificate data to be embedded, got %s", output)
-	}
-}
-
-func writeTempKubeconfigFile(t *testing.T, name string, content string) string {
-	t.Helper()
-	path := t.TempDir() + "/" + name
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write temp file: %v", err)
-	}
-	return path
 }
 
 type fakeBuildTaskEnqueuer struct {

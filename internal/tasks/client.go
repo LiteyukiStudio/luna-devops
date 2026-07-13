@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/redisconfig"
 	"github.com/hibiken/asynq"
 )
 
@@ -110,8 +111,12 @@ type EnqueuePolicy struct {
 }
 
 func NewClient(redisAddr string) *Client {
+	return NewClientWithRedis(redisconfig.Options{Addr: redisAddr})
+}
+
+func NewClientWithRedis(options redisconfig.Options) *Client {
 	return &Client{
-		client: asynq.NewClient(asynq.RedisClientOpt{Addr: redisAddr}),
+		client: asynq.NewClient(options.Asynq()),
 	}
 }
 

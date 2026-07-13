@@ -11,6 +11,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/observability"
 	dnsprovider "github.com/LiteyukiStudio/devops/internal/provider/dns"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
+	"github.com/LiteyukiStudio/devops/internal/redisconfig"
 	"github.com/LiteyukiStudio/devops/internal/secret"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
 	"github.com/hibiken/asynq"
@@ -63,15 +64,19 @@ type Options struct {
 }
 
 func Run(redisAddr string, db *gorm.DB, options Options) error {
+	return RunWithRedis(redisconfig.Options{Addr: redisAddr}, db, options)
+}
+
+func RunWithRedis(redisOptions redisconfig.Options, db *gorm.DB, options Options) error {
 	runner := NewRunner(db, options)
-	scheduler, err := startScheduler(redisAddr)
+	scheduler, err := startSchedulerWithRedis(redisOptions)
 	if err != nil {
 		return err
 	}
 	defer scheduler.Shutdown()
 
 	server := asynq.NewServer(
-		asynq.RedisClientOpt{Addr: redisAddr},
+		redisOptions.Asynq(),
 		asynq.Config{
 			Concurrency: 4,
 			Queues: map[string]int{
@@ -99,7 +104,7 @@ func Run(redisAddr string, db *gorm.DB, options Options) error {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	runner.taskClient = tasks.NewClient(redisAddr)
+	runner.taskClient = tasks.NewClientWithRedis(redisOptions)
 	defer runner.taskClient.Close()
 	go runner.syncBuildJobStatus(ctx)
 

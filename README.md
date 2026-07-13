@@ -179,6 +179,8 @@ docker compose -f docker-compose-dev.yaml up -d --build
 docker compose -f docker-compose-dev.yaml up -d --build
 
 # 使用 DockerHub 镜像启动完整平台
+cp .env.production.example .env
+# 修改 .env 中的三个 replace-with-* 占位值
 docker compose up -d
 
 # 从当前源码构建完整平台
@@ -197,8 +199,12 @@ helm install luna-devops ./charts/luna-devops \
 使用 DockerHub 镜像启动完整平台：
 
 ```bash
+cp .env.production.example .env
+# 修改 .env 中的 SECRET_ENCRYPTION_KEY、BOOTSTRAP_TOKEN 和 REDIS_PASSWORD
 docker compose up -d
 ```
+
+完整平台默认使用 `APP_ENV=production`，不会创建或展示固定开发管理员。`SECRET_ENCRYPTION_KEY`、首次初始化使用的 `BOOTSTRAP_TOKEN` 和 Redis 密码必须在启动前设置；完成首个管理员初始化后，应轮换或移除一次性的 `BOOTSTRAP_TOKEN`。
 
 默认使用 `liteyukistudio/devops-api:${DEVOPS_IMAGE_TAG:-nightly}` 和 `liteyukistudio/devops-worker:${DEVOPS_IMAGE_TAG:-nightly}`。需要验证指定版本时可以覆盖镜像 tag：
 
@@ -212,7 +218,7 @@ DEVOPS_IMAGE_TAG=v0.1.0-rc.1 docker compose up -d
 docker compose -f docker-compose-build.yaml up -d --build
 ```
 
-完整平台 compose 内置 PostgreSQL / Redis 只在容器网络内访问，不占用宿主机 `5432` / `6379`，避免和开发依赖冲突；对外只暴露 API 的 `8088`。API 镜像内嵌前端 SPA 静态文件，根路径和前端路由由后端 fallback 到 `index.html`，`/api/*` 和 `/healthz` 继续走后端接口。
+完整平台 compose 内置 PostgreSQL / Redis 只在容器网络内访问，不占用宿主机 `5432` / `6379`，避免和开发依赖冲突；Redis 默认要求密码，API、Worker 和任务工具读取同一组 `REDIS_USERNAME`、`REDIS_PASSWORD`、`REDIS_DB` 配置。API 完成数据库 migration 且 `/healthz` 通过后，Compose 才启动 Worker，避免空库初始化期间提前访问业务表。对外只暴露 API 的 `8088`。API 镜像内嵌前端 SPA 静态文件，根路径和前端路由由后端 fallback 到 `index.html`，`/api/*` 和 `/healthz` 继续走后端接口。
 
 发布工作流只构建 `linux/amd64` 容器镜像，并发布到 DockerHub：`liteyukistudio/devops-api`、`liteyukistudio/devops-worker`。`devops-api` 使用 Go `embed` 内嵌前端构建产物，不再维护独立前端 Dockerfile 或 nginx 前端镜像，也不额外发布 GitHub Release 二进制产物。推送 `main` / `dev` 时发布 `nightly`；推送 `v*` tag 时发布版本 tag；只有稳定版本 tag（如 `v0.1.0`）额外发布 `latest`。
 

@@ -107,7 +107,9 @@ database-url
 {{- end -}}
 
 {{- define "luna-devops.redisAddrSecretName" -}}
-{{- if .Values.externalRedis.existingSecret -}}
+{{- if .Values.redis.enabled -}}
+{{- include "luna-devops.connectionSecretName" . -}}
+{{- else if .Values.externalRedis.existingSecret -}}
 {{- .Values.externalRedis.existingSecret -}}
 {{- else -}}
 {{- include "luna-devops.connectionSecretName" . -}}
@@ -115,10 +117,42 @@ database-url
 {{- end -}}
 
 {{- define "luna-devops.redisAddrSecretKey" -}}
-{{- if .Values.externalRedis.existingSecret -}}
+{{- if .Values.redis.enabled -}}
+redis-addr
+{{- else if .Values.externalRedis.existingSecret -}}
 {{- .Values.externalRedis.addrKey -}}
 {{- else -}}
 redis-addr
+{{- end -}}
+{{- end -}}
+
+{{- define "luna-devops.redisCredentialSecretName" -}}
+{{- if and .Values.redis.enabled .Values.redis.auth.existingSecret -}}
+{{- .Values.redis.auth.existingSecret -}}
+{{- else if and (not .Values.redis.enabled) .Values.externalRedis.existingSecret -}}
+{{- .Values.externalRedis.existingSecret -}}
+{{- else -}}
+{{- include "luna-devops.connectionSecretName" . -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "luna-devops.redisUsernameSecretKey" -}}
+{{- .Values.externalRedis.usernameKey -}}
+{{- end -}}
+
+{{- define "luna-devops.redisPasswordSecretKey" -}}
+{{- if .Values.redis.enabled -}}
+{{- .Values.redis.auth.passwordKey -}}
+{{- else -}}
+{{- .Values.externalRedis.passwordKey -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "luna-devops.redisDBSecretKey" -}}
+{{- if .Values.redis.enabled -}}
+redis-db
+{{- else -}}
+{{- .Values.externalRedis.dbKey -}}
 {{- end -}}
 {{- end -}}
 
@@ -142,6 +176,31 @@ redis-addr
     secretKeyRef:
       name: {{ include "luna-devops.redisAddrSecretName" . }}
       key: {{ include "luna-devops.redisAddrSecretKey" . }}
+- name: REDIS_USERNAME
+  {{- if .Values.redis.enabled }}
+  value: "default"
+  {{- else }}
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "luna-devops.redisCredentialSecretName" . }}
+      key: {{ include "luna-devops.redisUsernameSecretKey" . }}
+      optional: true
+  {{- end }}
+- name: REDIS_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "luna-devops.redisCredentialSecretName" . }}
+      key: {{ include "luna-devops.redisPasswordSecretKey" . }}
+- name: REDIS_DB
+  {{- if .Values.redis.enabled }}
+  value: "0"
+  {{- else }}
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "luna-devops.redisCredentialSecretName" . }}
+      key: {{ include "luna-devops.redisDBSecretKey" . }}
+      optional: true
+  {{- end }}
 - name: METRICS_ENABLED
   value: {{ .Values.metrics.enabled | quote }}
 - name: METRICS_PATH

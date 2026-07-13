@@ -30,13 +30,21 @@ DEVOPS_IMAGE_TAG=v0.1.0-rc.1 docker compose up -d
 
 ## Start
 
+Prepare production settings first:
+
+```bash
+cp .env.production.example .env
+```
+
+Edit `.env` and replace the placeholders for `SECRET_ENCRYPTION_KEY`, `BOOTSTRAP_TOKEN`, and `REDIS_PASSWORD`. The complete Compose stack defaults to production mode, does not expose a fixed development administrator, and requires Redis authentication.
+
 Run this from the repository root:
 
 ```bash
 docker compose up -d
 ```
 
-This starts PostgreSQL, Redis, API, and Worker. The API image already embeds the web console, so you do not need to start Vite separately.
+This starts PostgreSQL, password-protected Redis, API, and Worker. API completes database migrations first, and Compose starts Worker only after `/healthz` passes, so Worker cannot access a fresh schema too early. The API image already embeds the web console, so you do not need to start Vite separately. On the first visit, open `/bootstrap` and use the `BOOTSTRAP_TOKEN` from `.env` to create the first administrator, then rotate or remove that one-time token.
 
 To build images from the current source tree:
 

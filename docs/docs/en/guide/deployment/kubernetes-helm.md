@@ -84,7 +84,12 @@ redis:
   enabled: false
 externalRedis:
   addr: redis.example.com:6379
+  username: default
+  password: replace-with-a-strong-password
+  db: 0
 ```
+
+The built-in Redis password is generated on first install and injected into Redis, API, and Worker through a Kubernetes Secret; upgrades reuse the existing Secret. For external Redis, set the fields above directly or use `externalRedis.existingSecret`. Its password key is required, while username and DB keys are optional.
 
 Then install:
 

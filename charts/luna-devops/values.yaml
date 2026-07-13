@@ -108,6 +108,10 @@ redis:
     repository: redis
     tag: 8-alpine
     pullPolicy: IfNotPresent
+  auth:
+    password: ""
+    existingSecret: ""
+    passwordKey: redis-password
   persistence:
     enabled: true
     size: 2Gi
@@ -121,8 +125,14 @@ redis:
 
 externalRedis:
   addr: ""
+  username: ""
+  password: ""
+  db: 0
   existingSecret: ""
   addrKey: redis-addr
+  usernameKey: redis-username
+  passwordKey: redis-password
+  dbKey: redis-db
 
 ingress:
   enabled: false

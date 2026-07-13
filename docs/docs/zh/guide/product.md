@@ -4,11 +4,11 @@
 
 ## 登录或初始化
 
-Compose 默认以开发模式启动 API。打开登录页后，按页面提示进入控制台。
+完整 Compose 默认以生产模式启动 API，不会创建固定开发管理员。第一次进入时需要使用部署环境中的 `BOOTSTRAP_TOKEN` 初始化首个管理员；只有本地开发环境显式设置 `APP_ENV=development` 时，才会显示开发账号提示。
 
 本地账号登录和首次管理员初始化都会创建最长 24 小时的服务端会话。“保持登录”默认关闭，此时 session cookie 不写持久化期限，关闭浏览器后即失效；只有在可信设备上主动勾选后，平台才会额外创建按用户隔离、绝对有效期 30 天的 HttpOnly remember cookie。会话过期后，从最近账号中选择用户会轮换同一 token family 内的 remember token 并创建新会话，但轮换不会延长最初的 30 天期限，也不会把 remember 恢复时间当成一次新的密码/OIDC 主认证。每个 family 只保留最新 session；旧 token 被再次使用时，平台会把它视为重放并撤销整个 family 关联的 remember token、会话和 Step-up assertion，从 remembered session 退出也会撤销该 family。浏览器本地最多只保存 3 个账号的头像和展示信息，不保存密码、Token 或 session cookie。账号禁用、密码变更或角色变化会撤销该账号的相关认证状态。
 
-如果你改成生产模式运行，第一次进入时访问：
+第一次进入完整 Compose 时访问：
 
 ```text
 http://localhost:8088/bootstrap

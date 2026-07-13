@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/redisconfig"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -40,12 +41,16 @@ type gatewayTrafficRuntimeStateStoreWithFallback struct {
 }
 
 func newGatewayTrafficRuntimeStateStore(redisAddr string) gatewayTrafficRuntimeStateStore {
+	return newGatewayTrafficRuntimeStateStoreWithRedis(redisconfig.Options{Addr: redisAddr})
+}
+
+func newGatewayTrafficRuntimeStateStoreWithRedis(options redisconfig.Options) gatewayTrafficRuntimeStateStore {
 	fallback := newMemoryGatewayTrafficRuntimeStateStore()
-	if strings.TrimSpace(redisAddr) == "" {
+	if options.Normalized().Addr == "" {
 		return fallback
 	}
 	return &gatewayTrafficRuntimeStateStoreWithFallback{
-		primary:  newRedisGatewayTrafficRuntimeStateStore(redisAddr),
+		primary:  newRedisGatewayTrafficRuntimeStateStoreWithRedis(options),
 		fallback: fallback,
 	}
 }
@@ -77,7 +82,11 @@ type redisGatewayTrafficRuntimeStateStore struct {
 }
 
 func newRedisGatewayTrafficRuntimeStateStore(redisAddr string) *redisGatewayTrafficRuntimeStateStore {
-	return &redisGatewayTrafficRuntimeStateStore{client: redis.NewClient(&redis.Options{Addr: strings.TrimSpace(redisAddr)})}
+	return newRedisGatewayTrafficRuntimeStateStoreWithRedis(redisconfig.Options{Addr: redisAddr})
+}
+
+func newRedisGatewayTrafficRuntimeStateStoreWithRedis(options redisconfig.Options) *redisGatewayTrafficRuntimeStateStore {
+	return &redisGatewayTrafficRuntimeStateStore{client: redis.NewClient(options.GoRedis())}
 }
 
 func (s *redisGatewayTrafficRuntimeStateStore) MarkHello(ctx context.Context, runtimeClusterID string) error {

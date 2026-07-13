@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/redisconfig"
 	"github.com/joho/godotenv"
 )
 
@@ -25,6 +26,9 @@ type Config struct {
 	DatabaseConnectRetryAttempts int
 	DatabaseConnectRetryInterval time.Duration
 	RedisAddr                    string
+	RedisUsername                string
+	RedisPassword                string
+	RedisDB                      int
 	TrustedProxyCIDRs            []string
 	BootstrapToken               string
 	MetricsEnabled               bool
@@ -58,6 +62,9 @@ func Load() Config {
 		DatabaseConnectRetryAttempts: envInt("DB_CONNECT_RETRY_ATTEMPTS", 12),
 		DatabaseConnectRetryInterval: envDuration("DB_CONNECT_RETRY_INTERVAL", 5*time.Second),
 		RedisAddr:                    env("REDIS_ADDR", "localhost:6379"),
+		RedisUsername:                strings.TrimSpace(env("REDIS_USERNAME", "")),
+		RedisPassword:                env("REDIS_PASSWORD", ""),
+		RedisDB:                      envInt("REDIS_DB", 0),
 		TrustedProxyCIDRs:            trustedProxyCIDRs(env("TRUSTED_PROXY_CIDRS", "")),
 		BootstrapToken:               strings.TrimSpace(env("BOOTSTRAP_TOKEN", "")),
 		MetricsEnabled:               envBool("METRICS_ENABLED", false),
@@ -76,6 +83,15 @@ func Load() Config {
 		DeployRolloutTimeoutSeconds:  int64(envInt("DEPLOY_ROLLOUT_TIMEOUT_SECONDS", 600)),
 		CertManagerClusterIssuer:     env("CERT_MANAGER_CLUSTER_ISSUER", "letsencrypt-http01"),
 	}
+}
+
+func (c Config) RedisOptions() redisconfig.Options {
+	return redisconfig.Options{
+		Addr:     c.RedisAddr,
+		Username: c.RedisUsername,
+		Password: c.RedisPassword,
+		DB:       c.RedisDB,
+	}.Normalized()
 }
 
 func trustedProxyCIDRs(raw string) []string {

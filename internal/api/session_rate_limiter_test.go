@@ -7,9 +7,25 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/redisconfig"
 	"github.com/alicebob/miniredis/v2"
 	"github.com/gin-gonic/gin"
 )
+
+func TestRateLimiterUsesRedisPassword(t *testing.T) {
+	server := miniredis.RunT(t)
+	server.RequireAuth("secret")
+	limiter := newRateLimiterWithRedis(redisconfig.Options{Addr: server.Addr(), Password: "secret"})
+	t.Cleanup(func() { _ = limiter.redis.Close() })
+
+	allowed, err := limiter.allow("authenticated", 1, time.Minute)
+	if err != nil {
+		t.Fatalf("allow returned error: %v", err)
+	}
+	if !allowed {
+		t.Fatal("authenticated Redis request was unexpectedly denied")
+	}
+}
 
 func TestRateLimiterAtomicallyIncrementsAndSetsTTL(t *testing.T) {
 	server := miniredis.RunT(t)
