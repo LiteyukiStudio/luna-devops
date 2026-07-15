@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
@@ -36,6 +37,7 @@ type Runner struct {
 	buildBlockedEgressCIDRs     []string
 	dnsResolver                 dnsprovider.Resolver
 	taskClient                  *tasks.Client
+	runAutomaticRetention       func(context.Context, time.Time) error
 	namespaceFactory            func(kubeconfig string) (kubeprovider.NamespaceManager, error)
 	kubernetesManagerFactory    func(environment model.Environment) (kubeprovider.NamespaceManager, error)
 	workerMetrics               *observability.WorkerMetrics
@@ -91,6 +93,18 @@ func RunWithRedis(redisOptions redisconfig.Options, db *gorm.DB, options Options
 	if options.WorkerMetrics != nil {
 		mux.Use(options.WorkerMetrics.Middleware)
 	}
+	registerTaskHandlers(mux, runner)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	runner.taskClient = tasks.NewClientWithRedis(redisOptions)
+	defer runner.taskClient.Close()
+	go runner.syncBuildJobStatus(ctx)
+
+	return server.Run(mux)
+}
+
+func registerTaskHandlers(mux *asynq.ServeMux, runner *Runner) {
 	mux.HandleFunc(tasks.TypeBuildRun, runner.withTaskEvents(runner.handleBuildRun))
 	mux.HandleFunc(tasks.TypeDeployRun, runner.withTaskEvents(runner.handleDeployRun))
 	mux.HandleFunc(tasks.TypeGatewayApply, runner.withTaskEvents(runner.handleGatewayApply))
@@ -101,14 +115,7 @@ func RunWithRedis(redisOptions redisconfig.Options, db *gorm.DB, options Options
 	mux.HandleFunc(tasks.TypeGitAccountRefresh, runner.withTaskEvents(runner.handleGitAccountRefresh))
 	mux.HandleFunc(tasks.TypeSyncStatus, runner.withTaskEvents(runner.handleSyncStatus))
 	mux.HandleFunc(tasks.TypeBillingRuntime, runner.withTaskEvents(runner.handleBillingRuntime))
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	runner.taskClient = tasks.NewClientWithRedis(redisOptions)
-	defer runner.taskClient.Close()
-	go runner.syncBuildJobStatus(ctx)
-
-	return server.Run(mux)
+	mux.HandleFunc(tasks.TypeRetentionRun, runner.withTaskEvents(runner.handleRetentionRun))
 }
 
 func (r *Runner) withTaskEvents(handler func(context.Context, *asynq.Task) error) func(context.Context, *asynq.Task) error {
@@ -214,6 +221,7 @@ func NewRunner(db *gorm.DB, options Options) *Runner {
 		buildBlockedEgressCIDRs:     append([]string(nil), options.BuildBlockedEgressCIDRs...),
 		dnsResolver:                 dnsprovider.NewNetResolver(),
 		workerMetrics:               options.WorkerMetrics,
+		runAutomaticRetention:       newAutomaticRetentionRunner(db),
 		namespaceFactory: func(kubeconfig string) (kubeprovider.NamespaceManager, error) {
 			return kubeprovider.NewClientFromKubeconfig(kubeconfig)
 		},

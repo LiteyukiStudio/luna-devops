@@ -1328,10 +1328,36 @@ export interface ConfigDefinition {
   description?: string
   labelKey?: string
   descriptionKey?: string
-  type: 'string' | 'textarea' | 'select' | 'boolean'
+  type: 'string' | 'textarea' | 'select' | 'boolean' | 'number'
   public: boolean
   default: string
   options?: string[]
+}
+
+export interface DataRetentionDataset {
+  key: string
+  configKey: string
+  defaultDays: number
+}
+
+export interface DataRetentionCatalogResponse {
+  items: DataRetentionDataset[]
+}
+
+export interface DataRetentionPayload {
+  datasets: string[]
+  startAt: string
+  endAt: string
+}
+
+export interface DataRetentionResult {
+  dataset: string
+  matched: number
+  deleted: number
+}
+
+export interface DataRetentionResultResponse {
+  items: DataRetentionResult[]
 }
 
 export interface MFAStatus {
@@ -1354,6 +1380,7 @@ export const mfaPurposes = [
   'user_admin_update',
   'mfa_manage',
   'security_settings_update',
+  'data_retention_cleanup',
 ] as const
 
 export type MFAPurpose = typeof mfaPurposes[number]

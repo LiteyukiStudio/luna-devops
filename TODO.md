@@ -147,7 +147,7 @@
 - [x] API/Worker 数据库连接增强：启动时对 PostgreSQL 做可配置重试，统一限制每进程连接池大小、空闲连接和连接生命周期，避免多副本部署或数据库短暂满连接时直接崩溃。
 - [x] `docker-compose.yaml` 和 `docker-compose-build.yaml` 内联 API / worker 运行环境变量，生产密钥、域名和镜像 tag 通过宿主机环境变量覆盖；`docker-compose-dev.yaml` 继续使用 `.env.worker` 服务开发联调。
 - [x] 完整 Compose 固定使用生产模式，不再回退到开发管理员；启动前必须显式配置加密密钥、首次初始化 Token 和 Redis 密码，并新增 `.env.production.example`。
-- [x] Redis 连接收敛为唯一的 `REDIS_ADDR` URI：用户名、密码、域名、端口、逻辑数据库和 TLS scheme 由同一连接串表达，API、Worker、任务命令及 Asynq 调度共用解析结果；完整 Compose 默认启用 `requirepass`，Helm 内置 Redis 自动生成并复用 URI，也支持外部 Redis URI Secret。
+- [x] Redis 客户端连接收敛为唯一的 `REDIS_ADDR` URI：API、Worker、任务命令及 Asynq 调度共用解析结果；部署层不再从 URI 反向拆密码，完整 Compose 用 `REDIS_PASSWORD` 直接启动内置 Redis，并组装内部 URI；Helm 分别保存内置密码与客户端 URI，外部 Redis 继续使用完整 URI Secret。
 - [x] 完整 Compose 的 Worker 等待 API `/healthz` 通过后再启动，避免全新数据库首次 migration 尚未完成时提前访问业务表。
 - [x] 新增 GitHub Actions 容器发布工作流：仅构建 `linux/amd64` 容器镜像，发布 DockerHub `liteyukistudio/devops-api`、`liteyukistudio/devops-worker`；分支发布 `nightly`，`v*` tag 发布版本 tag，稳定版本 tag 额外发布 `latest`；`devops-api` 使用 `embed_web` 内嵌前端静态文件，不额外构建或上传 GitHub Release 二进制产物。
 - [x] 修复内嵌 SPA 根路径和 fallback 被 Go FileServer 重定向到 `./` 的问题：`index.html` 改为直接返回，避免服务端根路径出现不必要 301。
@@ -896,6 +896,14 @@
 - [x] 修复旧事件 JSON `null` 导致事件页崩溃：API 将空详情和链接归一化为空对象，前端 API 边界与详情组件增加运行时兜底。
 - [x] 在 DevOps 侧边栏新增所有用户可见的“事件”页面；项目空间概览展示最近事件，并通过筛选链接复用全局事件页。
 - [x] 完成事件权限、脱敏、90 天默认保留、批量清理、通知投递关联和跨项目越权测试。
+
+## 15. 数据生命周期
+
+- [x] 建立统一数据保留目录：平台事件、通知投递、Worker 任务事件、构建日志、发布日志、Hook 日志和过期认证数据分别配置保留天数，`0` 表示停用对应自动清理。
+- [x] 将自动清理拆为独立的每日 Worker 任务，按固定白名单和小批次执行，不再阻塞每分钟状态同步。
+- [x] 提供仅平台管理员可用的按时间段预览和手动清理入口；修改范围后必须重新预览，启用安全策略时要求 `data_retention_cleanup` Step-up MFA，执行结果只把汇总写入审计日志。
+- [x] 保护审计、计费账本、构建/发布/Hook 元数据、Secret 与 Kubernetes 运行数据，不允许通过数据保留入口删除。
+- [x] 在站点设置中提供渐进式数据保留配置和手动清理界面，并同步中英文文档与 OpenAPI。
 
 ## 100.优化需求
 

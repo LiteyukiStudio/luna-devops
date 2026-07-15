@@ -111,6 +111,7 @@ redis:
   auth:
     existingSecret: ""
     urlKey: redis-url
+    passwordKey: redis-password
   persistence:
     enabled: true
     size: 2Gi

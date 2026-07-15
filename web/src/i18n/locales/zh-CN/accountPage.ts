@@ -71,6 +71,7 @@ const accountPage = {
       user_admin_update: '修改用户账号',
       mfa_manage: '管理两步验证',
       security_settings_update: '修改安全设置',
+      data_retention_cleanup: '永久清理平台数据',
     },
   },
 }

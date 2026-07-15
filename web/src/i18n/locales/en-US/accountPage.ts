@@ -71,6 +71,7 @@ const accountPage = {
       user_admin_update: 'update a user account',
       mfa_manage: 'manage two-step verification',
       security_settings_update: 'update security settings',
+      data_retention_cleanup: 'permanently clean up platform data',
     },
   },
 }

@@ -156,6 +156,9 @@ func TestStepUpPurposeAndBearerTokenValidation(t *testing.T) {
 	if got := normalizeStepUpPurpose(" RUNTIME_EXEC "); got != stepUpPurposeRuntimeExec {
 		t.Fatalf("purpose = %q", got)
 	}
+	if got := normalizeStepUpPurpose(stepUpPurposeDataRetentionCleanup); got != stepUpPurposeDataRetentionCleanup {
+		t.Fatalf("data retention purpose = %q", got)
+	}
 	if got := normalizeStepUpPurpose("arbitrary_admin_action"); got != "" {
 		t.Fatalf("unknown purpose should be rejected, got %q", got)
 	}

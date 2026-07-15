@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/LiteyukiStudio/devops/internal/retention"
 	"github.com/LiteyukiStudio/devops/internal/security"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -142,6 +143,62 @@ var configDefinitions = []configDefinition{
 		Type:        "number",
 		Public:      false,
 		Default:     "60",
+	},
+	{
+		Key:         "retention.platformEventsDays",
+		Label:       "平台事件保留天数",
+		Description: "平台事件明细的保留天数，0 表示不自动清理。",
+		Type:        "number",
+		Public:      false,
+		Default:     "90",
+	},
+	{
+		Key:         "retention.notificationDeliveriesDays",
+		Label:       "通知投递记录保留天数",
+		Description: "通知投递记录的保留天数，0 表示不自动清理。",
+		Type:        "number",
+		Public:      false,
+		Default:     "90",
+	},
+	{
+		Key:         "retention.workerTaskEventsDays",
+		Label:       "Worker 任务事件保留天数",
+		Description: "Worker 任务事件的保留天数，0 表示不自动清理。",
+		Type:        "number",
+		Public:      false,
+		Default:     "30",
+	},
+	{
+		Key:         "retention.buildLogsDays",
+		Label:       "构建日志保留天数",
+		Description: "构建日志内容的保留天数，0 表示不自动清理。",
+		Type:        "number",
+		Public:      false,
+		Default:     "30",
+	},
+	{
+		Key:         "retention.releaseLogsDays",
+		Label:       "发布日志保留天数",
+		Description: "发布日志内容的保留天数，0 表示不自动清理。",
+		Type:        "number",
+		Public:      false,
+		Default:     "90",
+	},
+	{
+		Key:         "retention.hookRunLogsDays",
+		Label:       "Hook 运行日志保留天数",
+		Description: "Hook 运行日志内容的保留天数，0 表示不自动清理。",
+		Type:        "number",
+		Public:      false,
+		Default:     "90",
+	},
+	{
+		Key:         "retention.expiredAuthDataDays",
+		Label:       "过期认证数据保留天数",
+		Description: "过期认证会话与临时数据的保留天数，0 表示不自动清理。",
+		Type:        "number",
+		Public:      false,
+		Default:     "30",
 	},
 	{
 		Key:         "billing.creditsDisplayName",
@@ -484,6 +541,12 @@ func validateConfigValues(input map[string]any) (map[string]string, error) {
 		}
 		if len(definition.Options) > 0 && !configOptionAllowed(value, definition.Options) {
 			return nil, fmt.Errorf("invalid config value for %s", key)
+		}
+		if strings.HasPrefix(key, "retention.") {
+			days, err := strconv.Atoi(strings.TrimSpace(value))
+			if err != nil || days < 0 || days > retention.MaxRetentionDays {
+				return nil, fmt.Errorf("invalid config value for %s: must be an integer between 0 and %d", key, retention.MaxRetentionDays)
+			}
 		}
 		values[key] = value
 	}

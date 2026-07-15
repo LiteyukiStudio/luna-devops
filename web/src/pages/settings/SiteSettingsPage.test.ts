@@ -38,4 +38,13 @@ describe('config definition translations', () => {
       descriptionKey: 'missing.requested.key',
     }, 'description', i18next.t)).toBe('fallback.description.token')
   })
+
+  it('localizes data retention config definitions and catalog labels', () => {
+    expect(configDefinitionText({
+      ...baseDefinition,
+      key: 'retention.buildLogsDays',
+      type: 'number',
+    }, 'label', i18next.t)).toBe(i18next.t('settings.configDefinitions.retention.buildLogsDays.label'))
+    expect(i18next.t('settings.retentionDatasetLabels.build_logs')).toBe('Build logs')
+  })
 })

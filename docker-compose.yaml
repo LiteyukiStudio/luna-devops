@@ -20,21 +20,13 @@ services:
     networks:
       - devops-internal
     environment:
-      REDIS_ADDR: ${REDIS_ADDR:?REDIS_ADDR is required}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
     command:
       - /bin/sh
       - -ec
-      - |
-        case "$$REDIS_ADDR" in redis://*) ;; *) echo "built-in Redis requires a redis:// REDIS_ADDR" >&2; exit 1 ;; esac
-        authority="$${REDIS_ADDR#redis://}"
-        authority="$${authority%%/*}"
-        credentials="$${authority%@*}"
-        encoded_password="$${credentials#*:}"
-        [ "$$credentials" != "$$authority" ] && [ "$$encoded_password" != "$$credentials" ] && [ -n "$$encoded_password" ] || { echo "REDIS_ADDR must include a password" >&2; exit 1; }
-        password="$$(printf '%b' "$$(printf '%s' "$$encoded_password" | sed 's/%/\\x/g')")"
-        exec redis-server --appendonly yes --requirepass "$$password"
+      - exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli -u \"$$REDIS_ADDR\" ping"]
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli ping"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -52,7 +44,7 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgres://devops:devops@postgres:5432/devops?sslmode=disable}
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8088}
       APP_CORS_ORIGINS: ${APP_CORS_ORIGINS:-http://localhost:8088}
-      REDIS_ADDR: ${REDIS_ADDR:?REDIS_ADDR is required}
+      REDIS_ADDR: redis://default:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/0
       METRICS_ENABLED: ${API_METRICS_ENABLED:-${METRICS_ENABLED:-false}}
       METRICS_ADDR: ${API_METRICS_ADDR:-:9090}
       METRICS_PATH: ${API_METRICS_PATH:-${METRICS_PATH:-/metrics}}
@@ -82,7 +74,7 @@ services:
       SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY:?SECRET_ENCRYPTION_KEY is required}
       DATABASE_URL: ${DATABASE_URL:-postgres://devops:devops@postgres:5432/devops?sslmode=disable}
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8088}
-      REDIS_ADDR: ${REDIS_ADDR:?REDIS_ADDR is required}
+      REDIS_ADDR: redis://default:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/0
       DEPLOY_ROLLOUT_TIMEOUT_SECONDS: ${DEPLOY_ROLLOUT_TIMEOUT_SECONDS:-600}
       CERT_MANAGER_CLUSTER_ISSUER: ${CERT_MANAGER_CLUSTER_ISSUER:-letsencrypt-http01}
       BUILD_EXECUTOR_IMAGE: ${BUILD_EXECUTOR_IMAGE:-moby/buildkit:v0.24.0-rootless}

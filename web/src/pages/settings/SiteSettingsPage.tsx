@@ -1,16 +1,19 @@
-import type { BillingRateRule, BillingRateRulePayload, ConfigDefinition } from '@/api/types'
+import type { TFunction } from 'i18next'
+import type { BillingRateRule, BillingRateRulePayload, ConfigDefinition, DataRetentionPayload, DataRetentionResult } from '@/api/types'
 import type { DataListColumn } from '@/components/common/data-list'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Save } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { Eye, Save, Trash2 } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { api } from '@/api'
+import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { ContentTabs } from '@/components/common/content-tabs'
 import { DataList } from '@/components/common/data-list'
 import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
+import { SearchMultiSelect } from '@/components/common/search-select'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -35,6 +38,7 @@ export function SiteSettingsPage() {
   const siteDefinitions = useMemo(() => (definitions.data ?? []).filter(definition => definition.key.startsWith('site.')), [definitions.data])
   const securityDefinitions = useMemo(() => (definitions.data ?? []).filter(definition => definition.key.startsWith('security.')), [definitions.data])
   const billingDefinitions = useMemo(() => (definitions.data ?? []).filter(definition => definition.key.startsWith('billing.')), [definitions.data])
+  const retentionDefinitions = useMemo(() => (definitions.data ?? []).filter(definition => definition.key.startsWith('retention.')), [definitions.data])
   const resolvedValues = useMemo(() => {
     const nextValues: Record<string, string> = {}
     for (const definition of definitions.data ?? [])
@@ -77,6 +81,7 @@ export function SiteSettingsPage() {
             { value: 'brand', label: t('settings.siteConfigTitle') },
             { value: 'security', label: t('settings.securityEgressTitle') },
             { value: 'billing', label: t('settings.billingConfigTitle') },
+            { value: 'retention', label: t('settings.retentionConfigTitle') },
           ]}
           tools={(
             <Button disabled={save.isPending || !form.formState.isValid || !form.formState.isDirty} form="site-settings-form" type="submit">
@@ -105,6 +110,18 @@ export function SiteSettingsPage() {
               <BillingRateRulesSection />
             </div>
           </TabsContent>
+          <TabsContent value="retention">
+            <div className="grid max-w-5xl gap-4">
+              <Card className="grid gap-4 p-4">
+                <div className="grid gap-1">
+                  <h3 className="text-base font-semibold text-foreground">{t('settings.retentionAutomaticTitle')}</h3>
+                  <p className="text-sm text-muted-foreground">{t('settings.retentionAutomaticDescription')}</p>
+                </div>
+                <ConfigSection definitions={retentionDefinitions} form={form} />
+              </Card>
+              <DataRetentionSection />
+            </div>
+          </TabsContent>
         </ContentTabs>
       </form>
     </div>
@@ -127,16 +144,238 @@ function ConfigSection({ definitions, form }: ConfigSectionProps) {
       {definitions.map((definition) => {
         const label = configDefinitionText(definition, 'label', t)
         const description = configDefinitionText(definition, 'description', t)
+        const retentionDays = definition.type === 'number' && definition.key.startsWith('retention.')
+        const error = form.getFieldState(definition.key, form.formState).error?.message
         return (
-          <Field key={definition.key} hint={description} label={label}>
+          <Field key={definition.key} error={error} hint={description} label={label}>
             {definition.type === 'textarea'
               ? <Textarea className="min-h-28 resize-y font-mono text-sm" {...form.register(definition.key)} />
               : definition.type === 'select' || definition.type === 'boolean'
                 ? <ConfigSelect definition={definition} form={form} options={definition.type === 'boolean' ? ['true', 'false'] : definition.options} />
-                : <Input {...form.register(definition.key)} />}
+                : (
+                    <Input
+                      aria-invalid={Boolean(error)}
+                      inputMode={definition.type === 'number' ? 'numeric' : undefined}
+                      max={retentionDays ? 3650 : undefined}
+                      min={retentionDays ? 0 : undefined}
+                      step={retentionDays ? 1 : undefined}
+                      type={definition.type === 'number' ? 'number' : 'text'}
+                      {...form.register(definition.key, retentionDays
+                        ? { validate: value => validRetentionDays(value) || t('settings.retentionDaysInvalid') }
+                        : undefined)}
+                    />
+                  )}
           </Field>
         )
       })}
+    </div>
+  )
+}
+
+interface DataRetentionInputs {
+  datasets: string[]
+  startAt: string
+  endAt: string
+}
+
+interface DataRetentionResultView {
+  kind: 'preview' | 'cleanup'
+  payload: DataRetentionPayload
+  items: DataRetentionResult[]
+}
+
+function DataRetentionSection() {
+  const { i18n, t } = useTranslation()
+  const catalog = useQuery({ queryKey: ['data-retention-catalog'], queryFn: api.getDataRetentionCatalog })
+  const [inputs, setInputs] = useState<DataRetentionInputs>({ datasets: [], startAt: '', endAt: '' })
+  const [result, setResult] = useState<DataRetentionResultView | null>(null)
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const previewRequestIdRef = useRef(0)
+  const payload = useMemo(() => createDataRetentionPayload(inputs), [inputs])
+  const payloadKey = payload ? dataRetentionPayloadKey(payload) : ''
+  const previewResult = result?.kind === 'preview' && dataRetentionPayloadKey(result.payload) === payloadKey ? result : null
+  const previewTotal = previewResult ? sumDataRetentionResults(previewResult.items, 'matched') : 0
+  const resultTotal = result ? sumDataRetentionResults(result.items, result.kind === 'preview' ? 'matched' : 'deleted') : 0
+  const invalidRange = Boolean(inputs.startAt && inputs.endAt && !validDataRetentionRange(inputs.startAt, inputs.endAt))
+
+  const catalogOptions = useMemo(() => (catalog.data?.items ?? []).map(dataset => ({
+    label: t(`settings.retentionDatasetLabels.${dataset.key}`, { defaultValue: dataset.key }),
+    value: dataset.key,
+  })), [catalog.data, t])
+  const resultColumns = useMemo<DataListColumn<DataRetentionResult>[]>(() => [
+    {
+      key: 'dataset',
+      header: t('settings.retentionDatasetColumn'),
+      width: 'primary',
+      render: item => <span className="font-medium text-foreground">{t(`settings.retentionDatasetLabels.${item.dataset}`, { defaultValue: item.dataset })}</span>,
+    },
+    {
+      key: 'matchedCount',
+      header: t('settings.retentionMatchedColumn'),
+      width: 'number',
+      render: item => item.matched.toLocaleString(i18n.resolvedLanguage),
+    },
+    {
+      key: 'deletedCount',
+      header: t('settings.retentionDeletedColumn'),
+      width: 'number',
+      render: item => item.deleted.toLocaleString(i18n.resolvedLanguage),
+    },
+  ], [i18n.resolvedLanguage, t])
+
+  const preview = useMutation({
+    mutationFn: ({ requestPayload }: { requestId: number, requestPayload: DataRetentionPayload }) => api.previewDataRetention(requestPayload),
+    onSuccess: (response, variables) => {
+      if (variables.requestId === previewRequestIdRef.current)
+        setResult({ kind: 'preview', payload: variables.requestPayload, items: response.items })
+    },
+    onError: (error, variables) => {
+      if (variables.requestId === previewRequestIdRef.current)
+        toast.error(dataRetentionErrorMessage(error, t, 'preview'))
+    },
+  })
+  const cleanup = useMutation({
+    mutationFn: api.cleanupDataRetention,
+    onSuccess: (response, requestPayload) => {
+      const deleted = sumDataRetentionResults(response.items, 'deleted')
+      toast.success(t('settings.retentionDeletedTotal', { count: deleted }))
+      setResult({ kind: 'cleanup', payload: requestPayload, items: response.items })
+      setConfirmOpen(false)
+    },
+    onError: error => toast.error(dataRetentionErrorMessage(error, t, 'cleanup')),
+  })
+
+  const updateInputs = (nextInputs: DataRetentionInputs) => {
+    previewRequestIdRef.current += 1
+    setInputs(nextInputs)
+    setResult(null)
+    setConfirmOpen(false)
+  }
+  const runPreview = () => {
+    if (!payload)
+      return
+    const requestId = previewRequestIdRef.current + 1
+    previewRequestIdRef.current = requestId
+    setResult(null)
+    preview.mutate({ requestId, requestPayload: payload })
+  }
+
+  if (catalog.isError)
+    return <ErrorState title={t('settings.retentionCatalogFailedTitle')} description={t('settings.retentionCatalogFailedDescription')} />
+
+  return (
+    <div className="grid gap-4">
+      <Card className="grid gap-4 p-4">
+        <div className="grid gap-1">
+          <h3 className="text-base font-semibold text-foreground">{t('settings.retentionManualTitle')}</h3>
+          <p className="text-sm text-muted-foreground">{t('settings.retentionManualDescription')}</p>
+        </div>
+        <p className="rounded-md bg-muted px-3 py-2 text-sm leading-6 text-muted-foreground">
+          {t('settings.retentionProtectedNote')}
+        </p>
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="md:col-span-2">
+            <Field hint={t('settings.retentionDatasetsHint')} label={t('settings.retentionDatasets')} required>
+              <SearchMultiSelect
+                ariaLabel={t('settings.retentionDatasets')}
+                disabled={catalog.isLoading || cleanup.isPending}
+                emptyLabel={t('settings.retentionDatasetsEmpty')}
+                loading={catalog.isLoading}
+                options={catalogOptions}
+                placeholder={t('settings.retentionDatasetsPlaceholder')}
+                searchPlaceholder={t('settings.retentionDatasetsSearchPlaceholder')}
+                selectedLabel={options => t('settings.retentionDatasetsSelected', { count: options.length })}
+                value={inputs.datasets}
+                onValueChange={datasets => updateInputs({ ...inputs, datasets })}
+              />
+            </Field>
+          </div>
+          <Field label={t('settings.retentionStartAt')} required>
+            <Input
+              aria-label={t('settings.retentionStartAt')}
+              disabled={cleanup.isPending}
+              step="60"
+              type="datetime-local"
+              value={inputs.startAt}
+              onChange={event => updateInputs({ ...inputs, startAt: event.target.value })}
+            />
+          </Field>
+          <Field error={invalidRange ? t('settings.retentionRangeInvalid') : undefined} label={t('settings.retentionEndAt')} required>
+            <Input
+              aria-label={t('settings.retentionEndAt')}
+              disabled={cleanup.isPending}
+              step="60"
+              type="datetime-local"
+              value={inputs.endAt}
+              onChange={event => updateInputs({ ...inputs, endAt: event.target.value })}
+            />
+          </Field>
+        </div>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <Button disabled={!payload || preview.isPending || cleanup.isPending} type="button" variant="secondary" onClick={runPreview}>
+            <Eye size={16} />
+            {t('settings.retentionPreview')}
+          </Button>
+          <Button disabled={!previewResult || preview.isPending || cleanup.isPending} type="button" variant="destructive" onClick={() => setConfirmOpen(true)}>
+            <Trash2 size={16} />
+            {t('settings.retentionCleanup')}
+          </Button>
+        </div>
+      </Card>
+
+      {result && (
+        <div className="grid gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h3 className="text-base font-semibold text-foreground">
+              {t(result.kind === 'preview' ? 'settings.retentionPreviewResults' : 'settings.retentionCleanupResults')}
+            </h3>
+            <span className="text-sm text-muted-foreground">
+              {result.kind === 'preview'
+                ? t('settings.retentionPreviewTotal', { count: resultTotal })
+                : t('settings.retentionDeletedTotal', { count: resultTotal })}
+            </span>
+          </div>
+          <DataList
+            columns={resultColumns}
+            emptyTitle={t(result.kind === 'preview' ? 'settings.retentionPreviewResults' : 'settings.retentionCleanupResults')}
+            items={result.items}
+            rowKey={item => item.dataset}
+          />
+        </div>
+      )}
+
+      <ConfirmDialog
+        cancelText={t('common.cancel')}
+        closeOnConfirm={false}
+        confirmDisabled={!previewResult}
+        confirmText={t('settings.retentionCleanup')}
+        content={previewResult && (
+          <dl className="grid gap-3 rounded-md border border-border p-3 text-sm">
+            <div className="grid gap-1">
+              <dt className="text-muted-foreground">{t('settings.retentionConfirmRange')}</dt>
+              <dd className="font-medium text-foreground">
+                {t('settings.retentionRangeValue', {
+                  start: formatDataRetentionDateTime(previewResult.payload.startAt, i18n.resolvedLanguage),
+                  end: formatDataRetentionDateTime(previewResult.payload.endAt, i18n.resolvedLanguage),
+                })}
+              </dd>
+            </div>
+            <div className="grid gap-1">
+              <dt className="text-muted-foreground">{t('settings.retentionConfirmTotal')}</dt>
+              <dd className="font-medium text-foreground">{previewTotal.toLocaleString(i18n.resolvedLanguage)}</dd>
+            </div>
+          </dl>
+        )}
+        description={t('settings.retentionConfirmDescription')}
+        open={confirmOpen}
+        pending={cleanup.isPending}
+        title={t('settings.retentionConfirmTitle')}
+        onConfirm={() => {
+          if (previewResult)
+            cleanup.mutate(previewResult.payload)
+        }}
+        onOpenChange={setConfirmOpen}
+      />
     </div>
   )
 }
@@ -312,4 +551,50 @@ function flattenConfigValues(values: Record<string, unknown>, prefix = '') {
   }
 
   return result
+}
+
+function validRetentionDays(value: unknown) {
+  const normalized = String(value ?? '').trim()
+  if (!/^\d+$/.test(normalized))
+    return false
+  const days = Number.parseInt(normalized, 10)
+  return days >= 0 && days <= 3650
+}
+
+function validDataRetentionRange(startAt: string, endAt: string) {
+  const start = new Date(startAt)
+  const end = new Date(endAt)
+  return Number.isFinite(start.getTime()) && Number.isFinite(end.getTime()) && start < end
+}
+
+function createDataRetentionPayload(inputs: DataRetentionInputs): DataRetentionPayload | null {
+  if (inputs.datasets.length === 0 || !validDataRetentionRange(inputs.startAt, inputs.endAt))
+    return null
+
+  return {
+    datasets: [...new Set(inputs.datasets)],
+    startAt: new Date(inputs.startAt).toISOString(),
+    endAt: new Date(inputs.endAt).toISOString(),
+  }
+}
+
+function dataRetentionPayloadKey(payload: DataRetentionPayload) {
+  return JSON.stringify(payload)
+}
+
+function sumDataRetentionResults(items: DataRetentionResult[], field: 'matched' | 'deleted') {
+  return items.reduce((total, item) => total + item[field], 0)
+}
+
+function formatDataRetentionDateTime(value: string, locale?: string) {
+  return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
+}
+
+function dataRetentionErrorMessage(error: unknown, t: TFunction, operation: 'preview' | 'cleanup') {
+  const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : ''
+  if (code === 'retention.invalid_range')
+    return t('settings.retentionRangeInvalid')
+  if (code === 'retention.invalid_dataset')
+    return t('settings.retentionInvalidDataset')
+  return t(operation === 'preview' ? 'settings.retentionPreviewFailed' : 'settings.retentionCleanupFailed')
 }

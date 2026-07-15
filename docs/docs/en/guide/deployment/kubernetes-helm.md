@@ -86,7 +86,7 @@ externalRedis:
   url: redis://default:replace-with-a-strong-password@redis.example.com:6379/0
 ```
 
-The built-in Redis URI is generated on first install and injected into Redis, API, and Worker through a Kubernetes Secret; upgrades reuse the existing Secret. For external Redis, set `externalRedis.url` directly or use `externalRedis.existingSecret`; by default that Secret only needs a `redis-url` key. When `redis.auth.existingSecret` supplies credentials for the built-in Redis, that Secret also needs `redis-url`. The URI format is `redis://username:password@host:port/database`; use `rediss://` for TLS. URL-encode reserved characters such as `@`, `:`, and `/` inside credentials.
+The chart generates the built-in Redis password on first install and stores `redis-password` separately from the `redis-url` consumed by API and Worker; upgrades reuse the existing Secret. A `redis.auth.existingSecret` for the built-in service must contain both keys. For external Redis, set `externalRedis.url` directly or use an `externalRedis.existingSecret` containing only `redis-url`. External URIs use `redis://username:password@host:port/database`; use `rediss://` for TLS.
 
 Then install:
 

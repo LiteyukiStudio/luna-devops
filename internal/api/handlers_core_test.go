@@ -342,6 +342,37 @@ func TestConfigDefinitionResponseUsesI18nKeys(t *testing.T) {
 	}
 }
 
+func TestRetentionConfigDefinitionsAndBounds(t *testing.T) {
+	expectedDefaults := map[string]string{
+		"retention.platformEventsDays":         "90",
+		"retention.notificationDeliveriesDays": "90",
+		"retention.workerTaskEventsDays":       "30",
+		"retention.buildLogsDays":              "30",
+		"retention.releaseLogsDays":            "90",
+		"retention.hookRunLogsDays":            "90",
+		"retention.expiredAuthDataDays":        "30",
+	}
+	for key, expectedDefault := range expectedDefaults {
+		definition := configDefinitionByKey(key)
+		if definition == nil {
+			t.Fatalf("config definition %q not found", key)
+		}
+		if definition.Type != "number" || definition.Default != expectedDefault {
+			t.Fatalf("config definition %q = type %q default %q", key, definition.Type, definition.Default)
+		}
+		for _, value := range []any{0, 3650, "90"} {
+			if _, err := validateConfigValues(map[string]any{key: value}); err != nil {
+				t.Fatalf("expected %q=%v to be valid: %v", key, value, err)
+			}
+		}
+		for _, value := range []any{-1, 3651, "1.5", "invalid"} {
+			if _, err := validateConfigValues(map[string]any{key: value}); err == nil {
+				t.Fatalf("expected %q=%v to be rejected", key, value)
+			}
+		}
+	}
+}
+
 func TestDefaultIPBlockListOverridesAdminPrivateNetworkAccess(t *testing.T) {
 	h := &Handlers{
 		configs: &configCache{values: map[string]string{

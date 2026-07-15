@@ -1,0 +1,11 @@
+DROP INDEX IF EXISTS idx_user_remember_tokens_retention_expiry;
+DROP INDEX IF EXISTS idx_user_sessions_retention_expiry;
+DROP INDEX IF EXISTS idx_step_up_assertions_retention_expiry;
+DROP INDEX IF EXISTS idx_hook_runs_retention_terminal;
+DROP INDEX IF EXISTS idx_hook_run_logs_retention_parent;
+DROP INDEX IF EXISTS idx_releases_retention_terminal;
+DROP INDEX IF EXISTS idx_release_logs_retention_parent;
+DROP INDEX IF EXISTS idx_build_runs_retention_terminal;
+DROP INDEX IF EXISTS idx_worker_task_events_retention;
+DROP INDEX IF EXISTS idx_notification_deliveries_retention_terminal;
+DROP INDEX IF EXISTS idx_platform_events_retention;

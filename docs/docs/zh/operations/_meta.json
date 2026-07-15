@@ -36,6 +36,11 @@
   },
   {
     "type": "file",
+    "name": "data-retention",
+    "label": "数据保留与清理"
+  },
+  {
+    "type": "file",
     "name": "diagnostics",
     "label": "状态与排障"
   }

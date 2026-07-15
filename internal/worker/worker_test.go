@@ -13,6 +13,7 @@ import (
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/LiteyukiStudio/devops/internal/provider/networkpolicy"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
+	"github.com/hibiken/asynq"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -50,6 +51,7 @@ func TestPeriodicTaskSpecsIncludeGitRefresh(t *testing.T) {
 	}
 	foundGitRefresh := false
 	foundRuntimeBilling := false
+	foundRetentionRun := false
 	for _, spec := range specs {
 		if spec.Task.Type() == tasks.TypeGitAccountRefresh {
 			foundGitRefresh = spec.Cron == "@every 5m" && spec.Queue == tasks.QueueLight
@@ -57,9 +59,56 @@ func TestPeriodicTaskSpecsIncludeGitRefresh(t *testing.T) {
 		if spec.Task.Type() == tasks.TypeBillingRuntime {
 			foundRuntimeBilling = spec.Cron == "@every 10m" && spec.Queue == tasks.QueueLight
 		}
+		if spec.Task.Type() == tasks.TypeRetentionRun {
+			foundRetentionRun = spec.Cron == "@every 24h" && spec.Queue == tasks.QueueLight
+		}
 	}
-	if !foundGitRefresh || !foundRuntimeBilling {
+	if !foundGitRefresh || !foundRuntimeBilling || !foundRetentionRun {
 		t.Fatalf("specs = %#v", specs)
+	}
+}
+
+func TestRetentionHandlerIsRegisteredWithTaskEvents(t *testing.T) {
+	runner := NewRunner(nil, Options{})
+	called := false
+	runner.runAutomaticRetention = func(_ context.Context, _ time.Time) error {
+		called = true
+		return nil
+	}
+
+	mux := asynq.NewServeMux()
+	registerTaskHandlers(mux, runner)
+	if err := mux.ProcessTask(context.Background(), asynq.NewTask(tasks.TypeRetentionRun, []byte("{}"))); err != nil {
+		t.Fatalf("retention handler returned error: %v", err)
+	}
+	if !called {
+		t.Fatal("retention runner was not called")
+	}
+}
+
+func TestRetentionHandlerReturnsRunnerError(t *testing.T) {
+	wantErr := errors.New("retention failed")
+	runner := NewRunner(nil, Options{})
+	runner.runAutomaticRetention = func(_ context.Context, _ time.Time) error {
+		return wantErr
+	}
+
+	handler := runner.withTaskEvents(runner.handleRetentionRun)
+	err := handler(context.Background(), asynq.NewTask(tasks.TypeRetentionRun, []byte("{}")))
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("retention handler error = %v", err)
+	}
+}
+
+func TestSyncStatusDoesNotRunAutomaticRetention(t *testing.T) {
+	runner := NewRunner(nil, Options{})
+	runner.runAutomaticRetention = func(_ context.Context, _ time.Time) error {
+		return errors.New("retention failed")
+	}
+
+	err := runner.handleSyncStatus(context.Background(), asynq.NewTask(tasks.TypeSyncStatus, []byte("{}")))
+	if err != nil {
+		t.Fatalf("sync status error = %v", err)
 	}
 }
 

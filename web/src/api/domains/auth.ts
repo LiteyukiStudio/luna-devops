@@ -1,4 +1,4 @@
-import type { AuthAdmissionPolicy, AuthProvider, BootstrapStatus, ConfigDefinition, CurrentUser, ExternalIdentity, MFAEnrollment, MFAEnrollmentRequest, MFARecoveryCodes, MFAStatus, MFAVerifyPayload, MFAVerifyResponse, OIDCCallbackConfig, PaginatedResponse, PaginationParams, User } from '../types'
+import type { AuthAdmissionPolicy, AuthProvider, BootstrapStatus, ConfigDefinition, CurrentUser, DataRetentionCatalogResponse, DataRetentionPayload, DataRetentionResultResponse, ExternalIdentity, MFAEnrollment, MFAEnrollmentRequest, MFARecoveryCodes, MFAStatus, MFAVerifyPayload, MFAVerifyResponse, OIDCCallbackConfig, PaginatedResponse, PaginationParams, User } from '../types'
 import { paginationQuery, request } from '../core'
 
 export const authApi = {
@@ -48,4 +48,9 @@ export const authApi = {
   getConfigs: () => request<Record<string, string>>('/configs'),
   updateConfigs: (values: Record<string, unknown>) =>
     request<Record<string, string>>('/configs', { method: 'PUT', body: JSON.stringify({ values }) }),
+  getDataRetentionCatalog: () => request<DataRetentionCatalogResponse>('/data-retention/catalog'),
+  previewDataRetention: (payload: DataRetentionPayload) =>
+    request<DataRetentionResultResponse>('/data-retention/preview', { method: 'POST', body: JSON.stringify(payload) }),
+  cleanupDataRetention: (payload: DataRetentionPayload) =>
+    request<DataRetentionResultResponse>('/data-retention/cleanup', { method: 'POST', body: JSON.stringify(payload) }),
 }

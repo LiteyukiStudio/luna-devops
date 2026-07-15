@@ -9,6 +9,7 @@ tags:
   - name: Auth
   - name: Users
   - name: Configs
+  - name: DataRetention
   - name: Git
   - name: Registries
   - name: Runtime
@@ -626,6 +627,88 @@ paths:
       responses:
         "200":
           description: Updated config dictionary.
+
+  /api/v1/data-retention/catalog:
+    get:
+      tags: [DataRetention]
+      summary: List supported data-retention datasets
+      description: Returns the fixed cleanup catalog. Audit logs, billing data, and build, release, or Hook metadata are intentionally excluded.
+      security:
+        - SessionCookie: []
+      responses:
+        "200":
+          description: Retention dataset catalog.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DataRetentionCatalogResponse" }
+        "403":
+          description: Platform-administrator role is required.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/data-retention/preview:
+    post:
+      tags: [DataRetention]
+      summary: Preview data matching a retention range
+      description: Counts rows without changing data. The selected range is left-closed and right-open (`startAt <= timestamp < endAt`). Active runtime records and protected datasets are never matched.
+      security:
+        - SessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DataRetentionRequest" }
+      responses:
+        "200":
+          description: Matching counts by dataset. `deleted` is zero for a preview.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DataRetentionResultResponse" }
+        "400":
+          description: Invalid range or unknown dataset (`retention.invalid_range` or `retention.invalid_dataset`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "403":
+          description: Platform-administrator role is required.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/data-retention/cleanup:
+    post:
+      tags: [DataRetention]
+      summary: Permanently remove data matching a retention range
+      description: Runs the same fixed whitelist and protection rules as preview, then writes only the aggregate result to the audit log. The operation does not accept table names or SQL expressions. When Step-up MFA is enabled, a valid `data_retention_cleanup` assertion is also required.
+      security:
+        - SessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DataRetentionRequest" }
+      responses:
+        "200":
+          description: Matched and deleted counts by dataset.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DataRetentionResultResponse" }
+        "400":
+          description: Invalid range or unknown dataset (`retention.invalid_range` or `retention.invalid_dataset`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "403":
+          description: Platform-administrator role or Step-up MFA assertion is required.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "500":
+          description: Cleanup failed (`retention.cleanup_failed`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
 
   /api/v1/runtime/clusters/{clusterId}/pods/terminal/authorize:
     post:
@@ -1823,6 +1906,7 @@ components:
         - user_admin_update
         - mfa_manage
         - security_settings_update
+        - data_retention_cleanup
     MFAVerifyInput:
       type: object
       properties:
@@ -2116,6 +2200,49 @@ components:
               - type: object
               - type: array
       required: [values]
+    DataRetentionDataset:
+      type: object
+      properties:
+        key:
+          type: string
+          enum: [platform_events, notification_deliveries, worker_task_events, build_logs, release_logs, hook_run_logs, expired_auth_data]
+        configKey: { type: string }
+        defaultDays: { type: integer, minimum: 0, maximum: 3650 }
+      required: [key, configKey, defaultDays]
+    DataRetentionCatalogResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/DataRetentionDataset" }
+      required: [items]
+    DataRetentionRequest:
+      type: object
+      properties:
+        datasets:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            enum: [platform_events, notification_deliveries, worker_task_events, build_logs, release_logs, hook_run_logs, expired_auth_data]
+        startAt: { type: string, format: date-time }
+        endAt: { type: string, format: date-time }
+      required: [datasets, startAt, endAt]
+    DataRetentionResult:
+      type: object
+      properties:
+        dataset: { type: string }
+        matched: { type: integer, format: int64, minimum: 0 }
+        deleted: { type: integer, format: int64, minimum: 0 }
+      required: [dataset, matched, deleted]
+    DataRetentionResultResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/DataRetentionResult" }
+      required: [items]
     UpdateCurrentUserInput:
       type: object
       properties:

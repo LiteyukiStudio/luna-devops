@@ -202,7 +202,16 @@ export function ImagesPanel({ images, registries, pagination }: ImagesPanelProps
   return (
     <DataList
       columns={[
-        { key: 'image', header: t('registriesPage.image'), render: image => <code className="block max-w-xl truncate rounded bg-background px-2 py-1 text-xs" title={image.imageRef}>{image.imageRef}</code> },
+        {
+          key: 'image',
+          header: t('registriesPage.image'),
+          render: image => (
+            <CopyableHoverText
+              className="max-w-xl rounded bg-background px-2 py-1 font-mono text-xs"
+              value={image.imageRef}
+            />
+          ),
+        },
         { key: 'registry', header: t('registries'), render: image => registries.find(registry => registry.id === image.registryId)?.name ?? image.registryId },
         { key: 'source', header: t('common.type'), render: image => <StatusBadge>{image.sourceType}</StatusBadge> },
         { key: 'scan', header: t('common.status'), render: image => <StatusValueBadge value={image.scanStatus} /> },

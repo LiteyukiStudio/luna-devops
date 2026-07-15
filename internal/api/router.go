@@ -73,6 +73,9 @@ func NewRouterWithStaticFSAndMetrics(db *gorm.DB, staticFS fs.FS, httpMetrics *o
 		v1.GET("/configs/definitions", handlers.ListConfigDefinitions)
 		v1.GET("/configs", handlers.GetConfigs)
 		v1.PUT("/configs", handlers.UpdateConfigs)
+		v1.GET("/data-retention/catalog", handlers.ListDataRetentionCatalog)
+		v1.POST("/data-retention/preview", handlers.PreviewDataRetention)
+		v1.POST("/data-retention/cleanup", handlers.CleanupDataRetention)
 
 		v1.GET("/git/providers", handlers.ListGitProviders)
 		v1.POST("/git/providers", handlers.CreateGitProvider)

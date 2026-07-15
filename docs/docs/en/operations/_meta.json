@@ -36,6 +36,11 @@
   },
   {
     "type": "file",
+    "name": "data-retention",
+    "label": "Data Retention and Cleanup"
+  },
+  {
+    "type": "file",
     "name": "diagnostics",
     "label": "Status and Troubleshooting"
   }

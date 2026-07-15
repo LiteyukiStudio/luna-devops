@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/model"
-	"github.com/LiteyukiStudio/devops/internal/platformevent"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/hibiken/asynq"
 	"gorm.io/gorm"
@@ -91,9 +90,6 @@ func (r *Runner) handleSyncStatus(ctx context.Context, task *asynq.Task) error {
 		return err
 	}
 	if err := r.syncGatewayCertificateStatus(ctx); err != nil {
-		return err
-	}
-	if _, err := (platformevent.Service{DB: r.db}).CleanupBefore(ctx, platformevent.DefaultRetentionCutoff(time.Now()), platformevent.DefaultCleanupBatch); err != nil {
 		return err
 	}
 	r.refreshGatewayRouteMetrics()

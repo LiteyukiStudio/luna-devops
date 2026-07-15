@@ -157,7 +157,7 @@ Every event type may be selected by a notification rule, but the catalog can mar
 
 ## Retention and cleanup
 
-Events are currently kept for 90 days. During periodic status synchronization, the worker deletes at most 1,000 expired rows per batch to avoid long transactions. Notification delivery and audit retention remain independent. Configurable retention can be added later as an administrative option.
+Events are retained for 90 days by default. An independent daily worker task removes expired events in batches of at most 1,000 rows, so cleanup failures do not block status synchronization. Platform administrators can change the retention period or preview and remove a selected time range. Notification deliveries use their own retention period, while audit logs are excluded from general cleanup.
 
 ## What appears after an upgrade
 

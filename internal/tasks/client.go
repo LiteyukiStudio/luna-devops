@@ -22,6 +22,7 @@ const (
 	TypeGitAccountRefresh    = "git:accounts:refresh"
 	TypeSyncStatus           = "sync:status"
 	TypeBillingRuntime       = "billing:runtime"
+	TypeRetentionRun         = "retention:run"
 
 	QueueDeploy = "deploy"
 	QueueBuild  = "build"

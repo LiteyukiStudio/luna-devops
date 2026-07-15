@@ -86,7 +86,7 @@ externalRedis:
   url: redis://default:replace-with-a-strong-password@redis.example.com:6379/0
 ```
 
-内置 Redis 会在首次安装时生成完整连接 URI，并通过 Kubernetes Secret 同时注入 Redis、API 和 Worker；后续升级会复用已有 Secret。接入外部 Redis 时，可以直接填写 `externalRedis.url`，也可以使用 `externalRedis.existingSecret`；Secret 默认只需提供一个 `redis-url` key。为内置 Redis 指定 `redis.auth.existingSecret` 时，该 Secret 同样需要提供 `redis-url`。Redis URI 格式为 `redis://用户名:密码@域名:端口/数据库`，TLS 连接使用 `rediss://`。密码包含 `@`、`:`、`/` 等保留字符时需要进行 URL 编码。
+内置 Redis 会在首次安装时生成密码，并在 Kubernetes Secret 中分别保存 `redis-password` 和供 API/Worker 使用的 `redis-url`，后续升级会复用已有 Secret。为内置 Redis 指定 `redis.auth.existingSecret` 时，该 Secret 需要同时提供这两个 key。接入外部 Redis 时，可以直接填写 `externalRedis.url`，也可以使用只包含 `redis-url` 的 `externalRedis.existingSecret`。外部 Redis URI 格式为 `redis://用户名:密码@域名:端口/数据库`，TLS 连接使用 `rediss://`。
 
 然后安装：
 
