@@ -24,7 +24,7 @@ export function RegistriesPage() {
   const [editingCredential, setEditingCredential] = useState<CredentialWithRegistry | null>(null)
   const [registryToDelete, setRegistryToDelete] = useState<ArtifactRegistry | null>(null)
   const [credentialToDelete, setCredentialToDelete] = useState<RegistryCredential | null>(null)
-  const [selectedRegistryId, setSelectedRegistryId] = useState('')
+  const [credentialRegistryFilterId, setCredentialRegistryFilterId] = useState('')
   const [activeTab, setActiveTab] = useState('registries')
   const [registryDialogOpen, setRegistryDialogOpen] = useState(false)
   const [credentialDialogOpen, setCredentialDialogOpen] = useState(false)
@@ -44,15 +44,16 @@ export function RegistriesPage() {
   })
   const registryItems = registries.data?.items ?? []
   const registryOptions = useQuery({ queryKey: ['registries', 'options'], queryFn: () => api.listRegistries() })
+  const registryOptionItems = useMemo(() => registryOptions.data ?? [], [registryOptions.data])
   const images = useQuery({
     queryKey: ['container-images', imagePage, imagePageSize],
     queryFn: () => api.listContainerImages({ page: imagePage, pageSize: imagePageSize, sortBy: 'createdAt', sortOrder: 'desc' }),
   })
   const projectMap = useMemo(() => Object.fromEntries((projects.data ?? []).map(project => [project.id, project])), [projects.data])
   const allCredentials = useQuery({
-    queryKey: ['registry-credentials', 'all', registryItems.map(registry => registry.id).join(',')],
+    queryKey: ['registry-credentials', 'all', registryOptionItems.map(registry => registry.id).join(',')],
     queryFn: async () => {
-      const results = await Promise.all(registryItems.map(async (registry) => {
+      const results = await Promise.all(registryOptionItems.map(async (registry) => {
         try {
           const items = await api.listRegistryCredentials(registry.id)
           return items.map(credential => ({ ...credential, registryName: registry.name }))
@@ -63,12 +64,12 @@ export function RegistriesPage() {
       }))
       return results.flat().sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
     },
-    enabled: registries.isSuccess,
+    enabled: registryOptions.isSuccess,
   })
   const credentials = useQuery({
-    queryKey: ['registry-credentials', selectedRegistryId, credentialPage, credentialPageSize],
-    queryFn: () => api.listRegistryCredentialsPage(selectedRegistryId, { page: credentialPage, pageSize: credentialPageSize, sortBy: 'createdAt', sortOrder: 'desc' }),
-    enabled: Boolean(selectedRegistryId),
+    queryKey: ['registry-credentials', credentialRegistryFilterId, credentialPage, credentialPageSize],
+    queryFn: () => api.listRegistryCredentialsPage(credentialRegistryFilterId, { page: credentialPage, pageSize: credentialPageSize, sortBy: 'createdAt', sortOrder: 'desc' }),
+    enabled: Boolean(credentialRegistryFilterId),
   })
 
   const registryForm = useForm<RegistryForm>({
@@ -151,7 +152,6 @@ export function RegistriesPage() {
       toast.success(t('registriesPage.credentialSaved'))
       setCredentialDialogOpen(false)
       setEditingCredential(null)
-      setSelectedRegistryId(values.registryId)
       credentialForm.reset({ ...credentialDefaults, registryId: values.registryId })
       queryClient.invalidateQueries({ queryKey: ['registry-credentials', values.registryId] })
       queryClient.invalidateQueries({ queryKey: ['registry-credentials', 'all'] })
@@ -221,7 +221,6 @@ export function RegistriesPage() {
 
   const beginEditCredential = (credential: CredentialWithRegistry) => {
     setEditingCredential(credential)
-    setSelectedRegistryId(credential.registryId)
     credentialForm.reset({
       accessScope: credential.accessScope,
       registryId: credential.registryId,
@@ -236,8 +235,8 @@ export function RegistriesPage() {
     setCredentialDialogOpen(true)
   }
 
-  const selectedRegistry = (registryOptions.data ?? registryItems).find(registry => registry.id === selectedRegistryId)
-  const visibleCredentials: CredentialWithRegistry[] = selectedRegistryId
+  const selectedRegistry = registryOptionItems.find(registry => registry.id === credentialRegistryFilterId)
+  const visibleCredentials: CredentialWithRegistry[] = credentialRegistryFilterId
     ? (credentials.data?.items ?? []).map(credential => ({ ...credential, registryName: selectedRegistry?.name ?? '' }))
     : (allCredentials.data ?? [])
 
@@ -272,7 +271,16 @@ export function RegistriesPage() {
             )}
             {activeTab === 'credentials' && (
               <div className="flex flex-nowrap items-center justify-end gap-2">
-                <Select className="h-9" containerClassName="w-40 shrink-0" value={selectedRegistryId} aria-label={t('registriesPage.selectRegistryTitle')} onChange={event => setSelectedRegistryId(event.target.value)}>
+                <Select
+                  className="h-9"
+                  containerClassName="w-40 shrink-0"
+                  value={credentialRegistryFilterId}
+                  aria-label={t('registriesPage.selectRegistryTitle')}
+                  onChange={(event) => {
+                    setCredentialRegistryFilterId(event.target.value)
+                    setCredentialPage(1)
+                  }}
+                >
                   <option value="">{t('registriesPage.allRegistries')}</option>
                   {(registryOptions.data ?? registryItems).map(registry => (
                     <option key={registry.id} value={registry.id}>{registry.name}</option>
@@ -282,8 +290,8 @@ export function RegistriesPage() {
                   className="shrink-0 whitespace-nowrap"
                   onClick={() => {
                     setEditingCredential(null)
-                    credentialForm.reset({ ...credentialDefaults, registryId: selectedRegistryId })
-                    credentialForm.setValue('registryId', selectedRegistryId, { shouldValidate: true })
+                    credentialForm.reset({ ...credentialDefaults, registryId: credentialRegistryFilterId })
+                    credentialForm.setValue('registryId', credentialRegistryFilterId, { shouldValidate: true })
                     credentialForm.setValue('accessScope', 'personal', { shouldValidate: true })
                     setCredentialDialogOpen(true)
                   }}
@@ -296,7 +304,7 @@ export function RegistriesPage() {
             {activeTab === 'images' && (
               <Button
                 onClick={() => {
-                  imageForm.setValue('registryId', selectedRegistryId, { shouldValidate: true })
+                  imageForm.setValue('registryId', credentialRegistryFilterId, { shouldValidate: true })
                   setImageDialogOpen(true)
                 }}
               >
@@ -327,7 +335,7 @@ export function RegistriesPage() {
             }}
             testing={testRegistry.isPending}
             onSelectCredentials={(registryId) => {
-              setSelectedRegistryId(registryId)
+              setCredentialRegistryFilterId(registryId)
               setCredentialPage(1)
               setActiveTab('credentials')
             }}
@@ -340,8 +348,8 @@ export function RegistriesPage() {
         <TabsContent value="credentials">
           <CredentialsPanel
             items={visibleCredentials}
-            selectedRegistryId={selectedRegistryId}
-            pagination={selectedRegistryId
+            registryFilterId={credentialRegistryFilterId}
+            pagination={credentialRegistryFilterId
               ? {
                   data: credentials.data
                     ? {
@@ -408,13 +416,12 @@ export function RegistriesPage() {
         form={credentialForm}
         pending={saveCredential.isPending}
         registries={registryOptions.data ?? registryItems}
-        selectedRegistryId={selectedRegistryId}
+        defaultRegistryId={credentialRegistryFilterId}
         onOpenChange={(open) => {
           setCredentialDialogOpen(open)
           if (!open)
             setEditingCredential(null)
         }}
-        onRegistryChange={setSelectedRegistryId}
         onSubmit={values => saveCredential.mutate(values)}
       />
 

@@ -35,7 +35,6 @@ type GitAccount struct {
 	AccessTokenRef  string         `json:"accessTokenRef"`
 	RefreshTokenRef string         `json:"refreshTokenRef"`
 	Scopes          string         `json:"scopes"`
-	AccessScope     string         `gorm:"not null;default:personal" json:"accessScope"`
 	ExpiresAt       *time.Time     `json:"expiresAt"`
 	Status          string         `gorm:"not null;default:connected" json:"status"`
 	CreatedAt       time.Time      `json:"createdAt"`

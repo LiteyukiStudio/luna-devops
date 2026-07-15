@@ -616,11 +616,7 @@ func (h *Handlers) gitClientForUserBinding(ctx *gin.Context, user model.User, bi
 	if err := h.db.First(&account, "id = ?", strings.TrimSpace(binding.GitAccountID)).Error; err != nil {
 		return gitprovider.Client{}, fmt.Errorf("git account unavailable: %w", err)
 	}
-	if normalizeGitAccessScope(account.AccessScope) == "personal" {
-		if account.UserID != user.ID {
-			return gitprovider.Client{}, fmt.Errorf("git account forbidden")
-		}
-	} else if !h.canUseScopedResourceByID(user, account.Scope, account.OwnerRef, scopedResourceGitAccount, account.ID) {
+	if !h.canUseScopedResourceByID(user, account.Scope, account.OwnerRef, scopedResourceGitAccount, account.ID) {
 		return gitprovider.Client{}, fmt.Errorf("git account forbidden")
 	}
 	if account.Status != "connected" {

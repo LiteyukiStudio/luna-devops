@@ -53,7 +53,7 @@ export function GitRepositoryPicker({
 
   function gitAccountLabel(account: GitAccount) {
     const provider = providers.find(item => item.id === account.providerId)
-    const scope = account.accessScope === 'provider' ? t('codeRepositoriesView.providerScope') : t('codeRepositoriesView.personalScope')
+    const scope = t(`codeRepositoriesView.scope${account.scope.charAt(0).toUpperCase()}${account.scope.slice(1)}`)
     return `${provider?.name ?? account.providerId} / ${account.username} (${scope})`
   }
 

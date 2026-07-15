@@ -10,7 +10,6 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/model"
 	gitprovider "github.com/LiteyukiStudio/devops/internal/provider/git"
 	"github.com/LiteyukiStudio/devops/internal/secret"
-	"github.com/LiteyukiStudio/devops/internal/service"
 	"github.com/gin-gonic/gin"
 	"net"
 	"net/http"
@@ -208,10 +207,8 @@ func (h *Handlers) findGitAccountForUser(ctx *gin.Context, userID, accountID str
 	if !ok {
 		return account, false
 	}
-	if account.AccessScope == "provider" {
-		if !h.canUseGitProvider(ctx, provider) {
-			return account, false
-		}
+	if !h.canUseGitProvider(ctx, provider) {
+		return account, false
 	}
 
 	if account.Status != "connected" {
@@ -238,13 +235,6 @@ func (h *Handlers) canManageGitProvider(ctx *gin.Context, user model.User, provi
 }
 
 func (h *Handlers) canUseGitAccount(ctx *gin.Context, user model.User, account model.GitAccount) bool {
-	if normalizeGitAccessScope(account.AccessScope) == "personal" {
-		if account.UserID == user.ID {
-			return true
-		}
-		writeError(ctx, http.StatusForbidden, "无权访问该 Git 凭据")
-		return false
-	}
 	if h.canUseScopedResourceByID(user, account.Scope, account.OwnerRef, scopedResourceGitAccount, account.ID) {
 		return true
 	}
@@ -253,19 +243,7 @@ func (h *Handlers) canUseGitAccount(ctx *gin.Context, user model.User, account m
 }
 
 func (h *Handlers) canManageGitAccount(ctx *gin.Context, user model.User, account model.GitAccount) bool {
-	switch normalizeGitAccessScope(account.AccessScope) {
-	case "personal":
-		if account.UserID == user.ID {
-			return true
-		}
-		writeError(ctx, http.StatusForbidden, "无权维护该个人 Git 凭据")
-		return false
-	case "provider":
-		return h.canManageScopedResourceByID(ctx, user, account.Scope, account.OwnerRef, scopedResourceGitAccount, account.ID, "无权维护该 Git 凭据")
-	default:
-		writeError(ctx, http.StatusBadRequest, "无效的凭据范围")
-		return false
-	}
+	return h.canManageScopedResourceByID(ctx, user, account.Scope, account.OwnerRef, scopedResourceGitAccount, account.ID, "无权维护该 Git 凭据")
 }
 
 func (h *Handlers) findApplicationByID(ctx *gin.Context, applicationID string) (model.Application, bool) {
@@ -479,10 +457,6 @@ func normalizeGitAccountStatus(value string) string {
 	}
 }
 
-func normalizeGitAccessScope(value string) string {
-	return service.NormalizeGitAccessScope(strings.ToLower(strings.TrimSpace(value)))
-}
-
 func gitProviderResponses(providers []model.GitProvider) []gin.H {
 	responses := make([]gin.H, 0, len(providers))
 	for _, provider := range providers {
@@ -542,7 +516,6 @@ func gitAccountResponse(account model.GitAccount) gin.H {
 		"username":        account.Username,
 		"avatarUrl":       account.AvatarURL,
 		"scopes":          account.Scopes,
-		"accessScope":     normalizeGitAccessScope(account.AccessScope),
 		"accessTokenSet":  secret.HasValue(account.AccessTokenRef),
 		"refreshTokenSet": secret.HasValue(account.RefreshTokenRef),
 		"expiresAt":       account.ExpiresAt,
@@ -616,7 +589,6 @@ type gitAccountInput struct {
 	AccessToken    string   `json:"accessToken"`
 	RefreshToken   string   `json:"refreshToken"`
 	Scopes         []string `json:"scopes"`
-	AccessScope    string   `json:"accessScope"`
 	Status         string   `json:"status"`
 }
 

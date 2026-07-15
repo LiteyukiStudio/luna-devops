@@ -121,13 +121,13 @@ function registryProviderLabel(provider: ArtifactRegistry['provider'], t: Return
 
 interface CredentialsPanelProps {
   items: CredentialWithRegistry[]
-  selectedRegistryId: string
+  registryFilterId: string
   pagination: PageState<CredentialWithRegistry>
   onEdit: (credential: CredentialWithRegistry) => void
   onDelete: (credential: CredentialWithRegistry) => void
 }
 
-export function CredentialsPanel({ items, selectedRegistryId, pagination, onDelete, onEdit }: CredentialsPanelProps) {
+export function CredentialsPanel({ items, registryFilterId, pagination, onDelete, onEdit }: CredentialsPanelProps) {
   const { t } = useTranslation()
 
   return (
@@ -184,7 +184,7 @@ export function CredentialsPanel({ items, selectedRegistryId, pagination, onDele
       emptyTitle={t('registriesPage.noCredentialsTitle')}
       emptyDescription={t('registriesPage.noCredentialsDescription')}
       items={items}
-      pagination={selectedRegistryId ? dataListPagination(t, pagination) : undefined}
+      pagination={registryFilterId ? dataListPagination(t, pagination) : undefined}
       rowKey={credential => credential.id}
     />
   )

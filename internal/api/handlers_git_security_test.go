@@ -395,23 +395,22 @@ func TestWriteErrorCodeIncludesDetailInDevelopment(t *testing.T) {
 	}
 }
 
-func TestPersonalGitAccountIsOnlyUsableByOwner(t *testing.T) {
+func TestUserScopedGitAccountIsOnlyUsableByOwner(t *testing.T) {
 	h := &Handlers{}
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
 	account := model.GitAccount{
-		UserID:      "usr_owner",
-		Scope:       "project",
-		OwnerRef:    "prj_demo",
-		AccessScope: "personal",
+		UserID:   "usr_owner",
+		Scope:    "user",
+		OwnerRef: "usr_owner",
 	}
 
 	if !h.canUseGitAccount(ctx, model.User{ID: "usr_owner", Role: "user"}, account) {
-		t.Fatal("expected owner to use personal Git account")
+		t.Fatal("expected owner to use user-scoped Git account")
 	}
 	if h.canUseGitAccount(ctx, model.User{ID: "usr_other", Role: "user"}, account) {
-		t.Fatal("expected another project member to be blocked from personal Git account")
+		t.Fatal("expected another user to be blocked from user-scoped Git account")
 	}
 	if h.canUseGitAccount(ctx, model.User{ID: "usr_admin", Role: "platform_admin"}, account) {
-		t.Fatal("expected platform admin to be blocked from using another user's personal Git account")
+		t.Fatal("expected platform admin to be blocked from using another user's user-scoped Git account")
 	}
 }

@@ -157,7 +157,6 @@ export function CodeRepositoriesPage() {
 
   const createCredential = useMutation({
     mutationFn: (payload: CredentialForm) => api.createGitAccount({
-      accessScope: payload.accessScope,
       accessToken: payload.accessToken ?? '',
       avatarUrl: payload.avatarUrl ?? '',
       ownerRef: '',

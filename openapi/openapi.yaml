@@ -2040,7 +2040,6 @@ components:
         accessToken: { type: string, writeOnly: true }
         refreshToken: { type: string, writeOnly: true }
         scopes: { type: array, items: { type: string } }
-        accessScope: { type: string, enum: [personal, provider] }
         status: { type: string, enum: [connected, expired, revoked] }
       required: [providerId, username]
     GitProviderInput:

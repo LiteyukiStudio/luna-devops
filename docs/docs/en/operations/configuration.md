@@ -33,6 +33,8 @@ Enrollment, confirmation, and verification are rate-limited by user and source I
 
 Git providers connect GitHub or Gitea. After setup, users can bind repositories, receive webhooks, and trigger builds by branch or tag.
 
+A Git credential's scope is its Luna DevOps usage boundary: personal credentials are available only to their creator, project-scoped credentials can be used by members of the selected project spaces in platform jobs, and global credentials are available to all projects. “Scopes” are the upstream API permissions granted by GitHub, Gitea, or GitLab, such as `repo` and `read:user`; they do not change ownership inside Luna DevOps. Apply least privilege to both layers when creating long-lived credentials.
+
 Deleting a Git provider also deletes all Git credentials that belong to it. Confirm that repository bindings and build flows no longer depend on those credentials before deleting.
 
 If you only want to verify the deployment path, skip Git providers and start with an existing image. Connect the repository after the application runs successfully so early failures are easier to isolate.

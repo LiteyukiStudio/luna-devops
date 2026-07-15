@@ -34,7 +34,6 @@ export const credentialSchema = z.object({
   accessToken: z.string().optional(),
   refreshToken: z.string().optional(),
   scopesText: z.string().optional(),
-  accessScope: z.enum(['personal', 'provider']),
   status: z.enum(['connected', 'expired', 'revoked']),
 }).superRefine((value, ctx) => {
   if (value.scope === 'project' && value.projectIds.length === 0) {
@@ -63,7 +62,6 @@ export const providerDefaults: ProviderForm = {
 }
 
 export const credentialDefaults: CredentialForm = {
-  accessScope: 'personal',
   accessToken: '',
   avatarUrl: '',
   externalUserId: '',

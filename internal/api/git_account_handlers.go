@@ -23,23 +23,22 @@ func (h *Handlers) ListGitAccounts(ctx *gin.Context) {
 	projectID := strings.TrimSpace(ctx.Query("projectId"))
 	query := h.db.Model(&model.GitAccount{})
 	conditions := []string{
-		"(coalesce(access_scope, 'personal') = 'personal' and user_id = ?)",
-		"(access_scope = 'provider' and scope = 'global')",
-		"(access_scope = 'provider' and scope = 'user' and owner_ref = ?)",
+		"scope = 'global'",
+		"(scope = 'user' and owner_ref = ?)",
 	}
-	args := []any{user.ID, user.ID}
+	args := []any{user.ID}
 	if projectID != "" {
 		if _, ok := h.findProjectForCurrentUserByID(ctx, projectID); !ok {
 			return
 		}
-		conditions = append(conditions, "(access_scope = 'provider' and scope = 'project' and exists (select 1 from scoped_resource_project_bindings srpb where srpb.resource_type = ? and srpb.resource_id = git_accounts.id and srpb.project_id = ?))")
+		conditions = append(conditions, "(scope = 'project' and exists (select 1 from scoped_resource_project_bindings srpb where srpb.resource_type = ? and srpb.resource_id = git_accounts.id and srpb.project_id = ?))")
 		args = append(args, scopedResourceGitAccount, projectID)
 	} else if user.Role == "platform_admin" {
-		conditions = append(conditions, "(access_scope = 'provider' and scope = 'project')")
+		conditions = append(conditions, "scope = 'project'")
 	} else {
 		projectIDs := h.projectIDsForUser(user.ID)
 		if len(projectIDs) > 0 {
-			conditions = append(conditions, "(access_scope = 'provider' and scope = 'project' and exists (select 1 from scoped_resource_project_bindings srpb where srpb.resource_type = ? and srpb.resource_id = git_accounts.id and srpb.project_id in ?))")
+			conditions = append(conditions, "(scope = 'project' and exists (select 1 from scoped_resource_project_bindings srpb where srpb.resource_type = ? and srpb.resource_id = git_accounts.id and srpb.project_id in ?))")
 			args = append(args, scopedResourceGitAccount, projectIDs)
 		}
 	}
@@ -92,12 +91,6 @@ func (h *Handlers) CreateGitAccount(ctx *gin.Context) {
 	if !scopeOK {
 		return
 	}
-	accessScope := normalizeGitAccessScope(input.AccessScope)
-	if accessScope == "provider" && user.Role != "platform_admin" {
-		writeError(ctx, http.StatusForbidden, "only platform admin can create provider scoped Git credential")
-		return
-	}
-
 	account := model.GitAccount{
 		ID:             id.New("gita"),
 		UserID:         user.ID,
@@ -109,7 +102,6 @@ func (h *Handlers) CreateGitAccount(ctx *gin.Context) {
 		Username:       strings.TrimSpace(input.Username),
 		AvatarURL:      strings.TrimSpace(input.AvatarURL),
 		Scopes:         strings.Join(normalizeList(input.Scopes, false), ","),
-		AccessScope:    accessScope,
 		Status:         normalizeGitAccountStatus(input.Status),
 	}
 	if strings.TrimSpace(input.AccessToken) != "" {
@@ -158,12 +150,6 @@ func (h *Handlers) UpdateGitAccount(ctx *gin.Context) {
 	if !scopeOK {
 		return
 	}
-	accessScope := normalizeGitAccessScope(input.AccessScope)
-	if accessScope == "provider" && user.Role != "platform_admin" {
-		writeError(ctx, http.StatusForbidden, "only platform admin can share Git credential")
-		return
-	}
-
 	account.ProviderID = strings.TrimSpace(input.ProviderID)
 	account.Scope = scope
 	account.OwnerRef = ownerRef
@@ -178,7 +164,6 @@ func (h *Handlers) UpdateGitAccount(ctx *gin.Context) {
 		account.RefreshTokenRef = h.secrets.Store(input.RefreshToken, user.ID, "git_account:"+account.ID+":refresh")
 	}
 	account.Scopes = strings.Join(normalizeList(input.Scopes, false), ",")
-	account.AccessScope = accessScope
 	account.Status = normalizeGitAccountStatus(input.Status)
 	if account.Username == "" {
 		writeError(ctx, http.StatusBadRequest, "请输入 Git 账号用户名")

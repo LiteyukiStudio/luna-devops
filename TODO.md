@@ -331,6 +331,7 @@
 - [x] 实现 GitProvider / GitAccount OAuth 回调和 token 刷新 API。
 - [x] 统一 Git/OIDC OAuth state 运行时表名与迁移表名，并迁移历史 AutoMigrate 错误表数据。
 - [x] Git Provider / Git 凭据表单作用域交互与镜像站一致：global/user 不展示具体项目，project 支持选择多个项目空间。
+- [x] 收敛 Git 凭据权限模型：移除与 `scope` 重叠的 `accessScope`，统一由 global/project/user 表达平台内使用边界；上游 Token `scopes` 仅表达 Git API 权限。
 - [x] 统一 scoped 资源项目空间绑定模型：Git Provider、Git 凭据、镜像站、运行集群、BuildProvider 和 BuildVariableSet 的 project scope 使用 `scoped_resource_project_bindings`，不再把单个项目 ID 塞进 `ownerRef`。
 - [x] 实现仓库列表、分支、文件读取和 Dockerfile/构建目录探测 API。
 - [x] 应用/仓库绑定选择仓库时优先搜索当前 Git 凭据可访问仓库；无匹配且有搜索词时由平台后端搜索公开仓库，并继续复用后端结构探测 API。

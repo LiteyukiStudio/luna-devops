@@ -194,7 +194,6 @@ async function main() {
     username: runId,
     avatarUrl: '',
     scopes: ['repo'],
-    accessScope: 'personal',
     accessToken: 'dummy-token',
     refreshToken: 'dummy-refresh',
     status: 'connected',

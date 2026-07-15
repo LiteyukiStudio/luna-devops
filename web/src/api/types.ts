@@ -410,7 +410,6 @@ export interface GitAccount {
   username: string
   avatarUrl: string
   scopes: string
-  accessScope: 'personal' | 'provider'
   accessTokenSet: boolean
   refreshTokenSet: boolean
   status: 'connected' | 'expired' | 'revoked'

@@ -200,15 +200,7 @@ export function CredentialDialog({ open, form, projects, providers, pending, onO
               />
             </Field>
           )}
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field error={form.formState.errors.username?.message} hint={t('codeRepositoriesView.usernameHint')} label={t('codeRepositoriesView.username')} required><Input {...form.register('username')} aria-invalid={Boolean(form.formState.errors.username)} placeholder={t('codeRepositoriesView.usernamePlaceholder')} /></Field>
-            <Field error={form.formState.errors.accessScope?.message} hint={t('codeRepositoriesView.accessScopeHint')} label={t('codeRepositoriesView.accessScope')} required>
-              <Select {...form.register('accessScope')} aria-invalid={Boolean(form.formState.errors.accessScope)}>
-                <option value="personal">{t('codeRepositoriesView.personalScope')}</option>
-                <option value="provider">{t('codeRepositoriesView.providerScope')}</option>
-              </Select>
-            </Field>
-          </div>
+          <Field error={form.formState.errors.username?.message} hint={t('codeRepositoriesView.usernameHint')} label={t('codeRepositoriesView.username')} required><Input {...form.register('username')} aria-invalid={Boolean(form.formState.errors.username)} placeholder={t('codeRepositoriesView.usernamePlaceholder')} /></Field>
           <Field error={form.formState.errors.accessToken?.message} hint={t('codeRepositoriesView.accessTokenHint')} label={t('codeRepositoriesView.accessToken')}>
             <Input {...form.register('accessToken')} aria-invalid={Boolean(form.formState.errors.accessToken)} type="password" />
           </Field>

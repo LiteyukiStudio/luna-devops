@@ -97,14 +97,13 @@ interface CredentialDialogProps {
   editingCredential: RegistryCredential | null
   form: UseFormReturn<CredentialForm>
   registries: ArtifactRegistry[]
-  selectedRegistryId: string
+  defaultRegistryId: string
   pending: boolean
   onOpenChange: (open: boolean) => void
-  onRegistryChange: (registryId: string) => void
   onSubmit: (values: CredentialForm) => void
 }
 
-export function CredentialDialog({ editingCredential, open, form, registries, selectedRegistryId, pending, onOpenChange, onRegistryChange, onSubmit }: CredentialDialogProps) {
+export function CredentialDialog({ editingCredential, open, form, registries, defaultRegistryId, pending, onOpenChange, onSubmit }: CredentialDialogProps) {
   const { t } = useTranslation()
   const credentialRegistry = registries.find(registry => registry.id === form.watch('registryId'))
   const credentialRegistryIsGlobal = credentialRegistry?.scope === 'global'
@@ -123,7 +122,7 @@ export function CredentialDialog({ editingCredential, open, form, registries, se
       onOpenChange={(nextOpen) => {
         onOpenChange(nextOpen)
         if (!nextOpen)
-          form.reset({ ...credentialDefaults, registryId: selectedRegistryId })
+          form.reset({ ...credentialDefaults, registryId: defaultRegistryId })
       }}
     >
       <DialogContent>
@@ -142,7 +141,6 @@ export function CredentialDialog({ editingCredential, open, form, registries, se
                 const registry = registries.find(item => item.id === event.target.value)
                 if (registry?.scope === 'global')
                   form.setValue('accessScope', 'personal', { shouldValidate: true })
-                onRegistryChange(event.target.value)
               }}
             >
               <option value="">{t('registriesPage.selectRegistry')}</option>

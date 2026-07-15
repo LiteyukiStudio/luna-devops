@@ -177,8 +177,7 @@ export function CredentialsPanel({
             header: t('common.scope'),
             render: credential => (
               <div className="flex flex-wrap gap-2">
-                <StatusBadge>{credential.accessScope === 'provider' ? t('codeRepositoriesView.providerScope') : t('codeRepositoriesView.personalScope')}</StatusBadge>
-                <StatusBadge>{credential.scope}</StatusBadge>
+                <StatusBadge>{t(`codeRepositoriesView.scope${credential.scope.charAt(0).toUpperCase()}${credential.scope.slice(1)}`)}</StatusBadge>
                 {projectScopeBadges(credential.projectIds, projectMap)}
               </div>
             ),
