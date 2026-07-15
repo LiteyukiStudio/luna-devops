@@ -31,6 +31,7 @@ export interface BuildsPanelHandle {
 }
 
 type TriggerForm = Partial<BuildRun>
+interface BuildLogStreamState { jobId: string, content: string, streaming: boolean }
 
 const triggerDefaults: TriggerForm = { applicationId: '', buildEnvironmentId: '', buildCpuRequest: defaultBuildCpuRequest, buildMemoryRequest: defaultBuildMemoryRequest, buildTimeoutSeconds: defaultBuildTimeoutSeconds, deploymentTargetId: '', sourceBranch: '', targetImageRef: '', targetRegistryId: '', triggerType: 'manual' }
 
@@ -65,8 +66,10 @@ export function ApplicationBuildsPanel({ applicationId, appSlug, binding, deploy
   const [branchFilter, setBranchFilter] = useState('')
   const [actorFilter, setActorFilter] = useState('')
   const [logJob, setLogJob] = useState<BuildJob | null>(null)
-  const [logContent, setLogContent] = useState('')
-  const [logStreaming, setLogStreaming] = useState(false)
+  const [logStreamState, setLogStreamState] = useState<BuildLogStreamState>({ jobId: '', content: '', streaming: false })
+  const logJobId = logJob?.id ?? ''
+  const logContent = logStreamState.jobId === logJobId ? logStreamState.content : ''
+  const logStreaming = Boolean(logJobId) && (logStreamState.jobId !== logJobId || logStreamState.streaming)
   const form = useForm<TriggerForm>({ defaultValues: triggerDefaults, mode: 'onChange' })
   const selectedDeploymentTarget = deploymentTargets.find(config => config.id === form.watch('deploymentTargetId')) ?? firstSelectableDeploymentTarget(deploymentTargets)
   const selectedBinding = repositoryBindings.find(item => item.id === selectedDeploymentTarget?.repositoryBindingId) ?? binding
@@ -187,26 +190,32 @@ export function ApplicationBuildsPanel({ applicationId, appSlug, binding, deploy
     openTriggerDrawer: () => setDialogOpen(true),
   }))
   useEffect(() => {
-    const logJobId = logJob?.id
-    if (!logJobId) {
-      setLogContent('')
-      setLogStreaming(false)
+    if (!logJobId)
       return
-    }
-    setLogContent('')
-    setLogStreaming(true)
+    let active = true
     const stream = new EventSource(buildJobLogsStreamUrl(projectId, logJobId, 0), { withCredentials: true })
     const handleChunk = (event: Event) => {
       try {
         const payload = JSON.parse((event as MessageEvent).data) as { content?: string }
-        if (payload.content)
-          setLogContent(current => current + payload.content)
+        if (active && payload.content) {
+          setLogStreamState(current => ({
+            jobId: logJobId,
+            content: (current.jobId === logJobId ? current.content : '') + payload.content,
+            streaming: true,
+          }))
+        }
       }
       catch {
       }
     }
     const handleDone = () => {
-      setLogStreaming(false)
+      if (!active)
+        return
+      setLogStreamState(current => ({
+        jobId: logJobId,
+        content: current.jobId === logJobId ? current.content : '',
+        streaming: false,
+      }))
       stream.close()
       queryClient.invalidateQueries({ queryKey: ['build-runs-page', projectId] })
       queryClient.invalidateQueries({ queryKey: ['build-jobs', projectId] })
@@ -214,15 +223,22 @@ export function ApplicationBuildsPanel({ applicationId, appSlug, binding, deploy
     stream.addEventListener('chunk', handleChunk)
     stream.addEventListener('done', handleDone)
     stream.onerror = () => {
-      setLogStreaming(false)
+      if (!active)
+        return
+      setLogStreamState(current => ({
+        jobId: logJobId,
+        content: current.jobId === logJobId ? current.content : '',
+        streaming: false,
+      }))
       stream.close()
     }
     return () => {
+      active = false
       stream.removeEventListener('chunk', handleChunk)
       stream.removeEventListener('done', handleDone)
       stream.close()
     }
-  }, [logJob, projectId, queryClient])
+  }, [logJobId, projectId, queryClient])
 
   useEffect(() => {
     if (!dialogOpen)

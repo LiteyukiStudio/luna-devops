@@ -16,6 +16,9 @@
 - User-visible text must go through i18n.
 - Lists should reuse the shared list component.
 - Status must use semantic badges.
+- Derive values from props, query results, and existing state during render, using `useMemo` when needed. Do not use synchronous effects to copy controlled props or reset defaults, pagination, or selection state.
+- Reserve `useEffect` for external synchronization such as EventSource, WebSocket, timers, and DOM APIs. Scope subscription state to the current resource ID and prevent stale callbacks from writing after cleanup.
+- Keep frontend lint and production builds free of new warnings. If a warning is intentional, document the reason at the narrowest scope instead of disabling the rule globally.
 
 ## Backend
 

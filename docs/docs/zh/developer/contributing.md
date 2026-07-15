@@ -16,6 +16,9 @@
 - 用户可见文本必须走 i18n。
 - 列表优先使用统一列表组件。
 - 状态展示使用语义化 Badge。
+- 能由 props、查询结果或现有 state 算出的值直接派生，必要时使用 `useMemo`；不要用同步 `useEffect` 回填默认选项、页码、选择项或受控属性。
+- `useEffect` 只负责 EventSource、WebSocket、定时器、DOM 等外部系统同步。订阅状态按资源 ID 隔离，并在 cleanup 中阻止旧回调继续写入。
+- 提交前保持前端 lint 和 production build 无新增 warning。确属刻意行为的告警只允许在最小范围说明原因，不要全局关闭规则。
 
 ## 后端
 

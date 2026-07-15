@@ -1,6 +1,6 @@
 import type { ClusterResource, ClusterResourceEvent, CurrentUser, RuntimeCluster } from '@/api'
 import { ChevronDown, ChevronRight, FileCode2, ScrollText, SquareTerminal, Trash2 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CopyableHoverText } from '@/components/common/copyable-hover-text'
 import { DataList } from '@/components/common/data-list'
@@ -42,7 +42,14 @@ export function ClusterResourcesPanel({ items, loading, pagination, selectedClus
 }) {
   const { t } = useTranslation()
   const [expandedResourceKeys, setExpandedResourceKeys] = useState<string[]>([])
-  const expandedResourceKeySet = useMemo(() => new Set(expandedResourceKeys), [expandedResourceKeys])
+  const expandableResourceKeySet = useMemo(
+    () => new Set(tab === 'workloads' ? items.filter(item => (item.children?.length ?? 0) > 0).map(item => item.id) : []),
+    [items, tab],
+  )
+  const expandedResourceKeySet = useMemo(
+    () => new Set(expandedResourceKeys.filter(key => expandableResourceKeySet.has(key))),
+    [expandableResourceKeySet, expandedResourceKeys],
+  )
   const rowItems = useMemo<ClusterResourceRow[]>(() => {
     if (tab !== 'workloads')
       return items
@@ -57,12 +64,6 @@ export function ClusterResourcesPanel({ items, loading, pagination, selectedClus
       ]
     })
   }, [expandedResourceKeySet, items, tab])
-  useEffect(() => {
-    if (tab !== 'workloads')
-      return
-    const validKeys = new Set(items.map(item => item.id))
-    setExpandedResourceKeys(keys => keys.filter(key => validKeys.has(key)))
-  }, [items, tab])
   const itemKeys = new Set(rowItems.map(item => item.id))
   const visibleSelectedResourceKeys = selectedResourceKeys.filter(key => itemKeys.has(key))
   const selectedResources = rowItems.filter(item => visibleSelectedResourceKeys.includes(item.id) && canDeleteClusterResource(user, item) && !item.parentId)
@@ -71,9 +72,10 @@ export function ClusterResourcesPanel({ items, loading, pagination, selectedClus
   }
   const toggleResourceExpansion = (resource: ClusterResourceRow) => {
     setExpandedResourceKeys((keys) => {
-      if (keys.includes(resource.id))
-        return keys.filter(key => key !== resource.id)
-      return [...keys, resource.id]
+      const validKeys = keys.filter(key => expandableResourceKeySet.has(key))
+      if (validKeys.includes(resource.id))
+        return validKeys.filter(key => key !== resource.id)
+      return [...validKeys, resource.id]
     })
   }
   if (!selectedCluster) {

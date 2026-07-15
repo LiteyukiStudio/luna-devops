@@ -56,8 +56,8 @@ export function PaginationController({
     () => Math.max(1, Math.ceil(total / Math.max(1, effectivePageSize))),
     [effectivePageSize, total],
   )
-  const [currentPage, setCurrentPage] = useState(() => clampPage(initialPage, totalPages))
-
+  const [uncontrolledPage, setUncontrolledPage] = useState(() => clampPage(initialPage, totalPages))
+  const currentPage = onPageChange ? initialPage : uncontrolledPage
   const effectivePage = clampPage(currentPage, totalPages)
   const normalizedPageSizeOptions = useMemo(() => {
     const options = [...new Set([...pageSizeOptions, effectivePageSize])]
@@ -67,10 +67,6 @@ export function PaginationController({
   }, [effectivePageSize, pageSizeOptions])
 
   const lastReportedRef = useRef<number | null>(null)
-  useEffect(() => {
-    setCurrentPage(clampPage(initialPage, totalPages))
-  }, [initialPage, totalPages])
-
   useEffect(() => {
     if (!onPageChange)
       return
@@ -85,8 +81,14 @@ export function PaginationController({
   const handleSetPage = useCallback((page: number) => {
     if (disabled)
       return
-    setCurrentPage(() => clampPage(page, totalPages))
-  }, [disabled, totalPages])
+    const nextPage = clampPage(page, totalPages)
+    if (onPageChange) {
+      lastReportedRef.current = nextPage
+      onPageChange(nextPage)
+      return
+    }
+    setUncontrolledPage(nextPage)
+  }, [disabled, onPageChange, totalPages])
 
   const pages = useMemo(() => {
     if (totalPages <= maxBtns)
@@ -112,7 +114,7 @@ export function PaginationController({
   const renderPage = (page: number) => (
     <PaginationItem key={page}>
       <PaginationLink
-        aria-current={page === currentPage ? 'page' : undefined}
+        aria-current={page === effectivePage ? 'page' : undefined}
         aria-label={t('pagination.goToPage', { page })}
         className={cn(
           'h-9 min-w-9 rounded-md px-3 text-sm',

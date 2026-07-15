@@ -1,13 +1,14 @@
 import type { ClusterResourcePagination } from './cluster-resources-panel'
 import type { ClusterResource, CurrentUser, RuntimeCluster } from '@/api'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { api } from '@/api'
 import { canDeleteClusterResource } from './cluster-resource-utils'
 
 const RESOURCE_PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
+interface ResourceViewState { scope: string, page: number, selectedKeys: string[] }
 
 export function useClusterResources({ activeTab, manageableClusters, user }: {
   activeTab: string
@@ -17,8 +18,7 @@ export function useClusterResources({ activeTab, manageableClusters, user }: {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [selectedResourceClusterId, setSelectedResourceClusterId] = useState('')
-  const [selectedResourceKeys, setSelectedResourceKeys] = useState<string[]>([])
-  const [resourcePage, setResourcePage] = useState(1)
+  const [resourceViewState, setResourceViewState] = useState<ResourceViewState>({ scope: '', page: 1, selectedKeys: [] })
   const [resourcePageSize, setResourcePageSize] = useState(10)
   const [resourceToDelete, setResourceToDelete] = useState<ClusterResource | null>(null)
   const [resourcesToDelete, setResourcesToDelete] = useState<ClusterResource[]>([])
@@ -31,6 +31,21 @@ export function useClusterResources({ activeTab, manageableClusters, user }: {
     : manageableClusters[0]?.id ?? ''
   const selectedResourceCluster = manageableClusters.find(cluster => cluster.id === effectiveResourceClusterId)
   const resourceKind = activeTab === 'clusters' ? 'namespaces' : activeTab
+  const resourceScope = `${effectiveResourceClusterId}:${resourceKind}`
+  const currentResourceView = resourceViewState.scope === resourceScope
+    ? resourceViewState
+    : { scope: resourceScope, page: 1, selectedKeys: [] }
+  const resourcePage = currentResourceView.page
+  const selectedResourceKeys = currentResourceView.selectedKeys
+  const updateResourceView = (update: (current: ResourceViewState) => ResourceViewState) => {
+    setResourceViewState(current => update(current.scope === resourceScope ? current : { scope: resourceScope, page: 1, selectedKeys: [] }))
+  }
+  const setSelectedResourceKeys = (selectedKeys: string[]) => {
+    updateResourceView(current => ({ ...current, selectedKeys }))
+  }
+  const setResourcePage = (page: number) => {
+    updateResourceView(current => ({ ...current, page }))
+  }
   const clusterResources = useQuery({
     queryKey: ['runtime-cluster-resources', selectedResourceCluster?.id, resourceKind, resourcePage, resourcePageSize],
     queryFn: () => api.listRuntimeClusterResourcesPage(selectedResourceCluster?.id ?? '', {
@@ -74,11 +89,6 @@ export function useClusterResources({ activeTab, manageableClusters, user }: {
     enabled: Boolean(selectedResourceCluster?.id && yamlResource),
   })
 
-  useEffect(() => {
-    setResourcePage(1)
-    setSelectedResourceKeys([])
-  }, [activeTab, effectiveResourceClusterId])
-
   const deleteResource = useMutation({
     mutationFn: (resource: ClusterResource) => api.deleteRuntimeClusterResource(effectiveResourceClusterId, {
       kind: resource.kind,
@@ -114,12 +124,10 @@ export function useClusterResources({ activeTab, manageableClusters, user }: {
   })
 
   const resetPageAndSelection = () => {
-    setResourcePage(1)
-    setSelectedResourceKeys([])
+    setResourceViewState({ scope: resourceScope, page: 1, selectedKeys: [] })
   }
   const selectResourceCluster = (clusterId: string) => {
     setSelectedResourceClusterId(clusterId)
-    resetPageAndSelection()
   }
   const resourcePagination: ClusterResourcePagination | undefined = activeTab === 'clusters'
     ? undefined

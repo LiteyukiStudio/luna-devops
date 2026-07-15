@@ -35,6 +35,7 @@ pnpm --dir docs build
 - 最近一周重复出现的 bug 类型。
 - TODO 中是否出现相同模块的连续修复项。
 - 是否新增硬编码 UI 文案、绕过 i18n、绕过 DataList 或状态 Badge。
+- 前端 lint/build 是否出现新的 warning；重点检查同步 effect 回填派生状态、受控/非受控状态混用、订阅回调写入已切换资源等问题。可保留的刻意告警必须有最小范围说明，不允许全局关闭规则。
 - 是否有本地运行产物、日志、构建目录进入 `git status`。
 - 代码改动是否同步更新文档站；用户流程、配置项、部署链路变更必须能在 `docs/` 中找到入口。
 - 是否出现新的 `.env` 依赖、明文 Secret、Token 回显或后端原始错误直出。
@@ -529,7 +530,7 @@ rg -n "TODO|FIXME|临时|兼容|fallback|special case|module|Builder|builder" in
 | 领域 | 最低门禁 |
 | --- | --- |
 | 后端 | `gofmt` 无差异；`go test ./...`；上述 PostgreSQL 非缓存测试；`go vet ./...`；关键包 `go test -race` |
-| 前端 | `pnpm --dir web install --frozen-lockfile`；`pnpm --dir web test`；`pnpm --dir web lint`；`pnpm --dir web build`；对登录、账号安全、管理员用户和项目空间路由做 production preview smoke |
+| 前端 | `pnpm --dir web install --frozen-lockfile`；`pnpm --dir web test`；`pnpm --dir web lint`；`pnpm --dir web build`；lint/build 不得有未解释的 warning；对登录、账号安全、管理员用户和项目空间路由做 production preview smoke |
 | 契约/文档 | 解析 OpenAPI，核对 code/枚举、请求响应与前端类型；`pnpm --dir docs install --frozen-lockfile`；`pnpm --dir docs build`；用户可见流程中英文同步 |
 | 依赖 | 审查 `go.mod`/`go.sum` 与 pnpm lockfile 差异；`govulncheck ./...`；`pnpm --dir web audit --audit-level=high`；`pnpm --dir docs audit --audit-level=high`；高危可达漏洞阻断发布 |
 | Helm | `helm lint charts/luna-devops`；`helm template luna-devops charts/luna-devops` 结果非空；复核 Secret/RBAC、安全上下文、探针、资源限制、非浮动镜像 tag 和生产 values 覆盖 |

@@ -102,6 +102,9 @@ web/src/i18n
 - shadcn/ui 基础组件放 `web/src/components/ui`，组件清单见 `web/SHADCN_COMPONENTS.md`。
 - 两个及以上页面稳定复用的业务组件必须抽到 `web/src/components/common` 或更合适共享目录。
 - 表单统一使用 React Hook Form + Zod。
+- React 中能由 props、查询结果或现有 state 直接计算出的值必须在渲染阶段派生，必要时使用 `useMemo`；禁止用同步 `useEffect` 调用 `setState` 回填默认选项、修剪选择项、重置页码或复制受控属性。资源切换后的局部状态应按资源 ID/作用域隔离，用户操作导致的重置应放在对应事件入口。
+- `useEffect` 只用于 EventSource、WebSocket、定时器、DOM 和其他外部系统同步。订阅状态必须绑定当前资源 ID，并在 cleanup 中关闭连接、阻止旧回调写入新资源状态；函数调用形式的初始 state 使用惰性初始化。
+- 前端交付前必须保证 `pnpm --dir web lint` 和 `pnpm --dir web build` 无新增 error 或 warning。确属外部同步或工具链刻意行为的告警必须先确认语义，在最小代码范围注明原因；禁止通过全局关闭规则、批量 `eslint-disable` 或降低门禁掩盖告警。
 - 必填项使用主题色 `*`，不可用红色强警告风格。
 - 未满足要求前提交按钮保持 disabled/弱化；字段错误在对应字段附近展示。
 - 复杂字段必须提供可 hover/focus 的说明图标。

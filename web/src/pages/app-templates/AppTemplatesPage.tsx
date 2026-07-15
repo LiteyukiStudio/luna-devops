@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import type { AppTemplate, AppTemplateInstallPayload, Project, RuntimeCluster } from '@/api'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Box, CircleHelp, Database, Link2, PackageOpen, Rocket, Search, ShieldCheck } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -35,35 +35,34 @@ export function AppTemplatesPage() {
   const [category, setCategory] = useState('all')
   const [sortBy, setSortBy] = useState<'popularity' | 'name'>('popularity')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
-  const [selectedTemplate, setSelectedTemplate] = useState<AppTemplate | null>(null)
-  const [projectId, setProjectId] = useState('')
-  const [form, setForm] = useState<AppTemplateInstallPayload>(emptyInstallPayload())
-  const selectedTemplateIsSystem = isSystemComponentTemplate(selectedTemplate)
-  const canInstallSystemComponent = user?.role === 'platform_admin'
-
+  const [selectedTemplateOverride, setSelectedTemplateOverride] = useState<AppTemplate | null>(null)
+  const [selectedProjectId, setSelectedProjectId] = useState('')
+  const [formState, setFormState] = useState<{ templateId: string, value: AppTemplateInstallPayload } | null>(null)
+  const requestedTemplateId = searchParams.get('template')
   const templates = useQuery({ queryKey: ['app-templates'], queryFn: api.listAppTemplates })
   const projects = useQuery({ queryKey: ['projects'], queryFn: api.listProjects })
+  const projectItems = useMemo(() => projects.data ?? [], [projects.data])
+  const projectId = projectItems.some(project => project.id === selectedProjectId)
+    ? selectedProjectId
+    : projectItems[0]?.id ?? ''
+  const requestedTemplate = useMemo(
+    () => templates.data?.find(template => template.id === requestedTemplateId) ?? null,
+    [requestedTemplateId, templates.data],
+  )
+  const selectedTemplate = selectedTemplateOverride ?? requestedTemplate
+  const selectedTemplateIsSystem = isSystemComponentTemplate(selectedTemplate)
+  const canInstallSystemComponent = user?.role === 'platform_admin'
+  const defaultForm = useMemo(
+    () => selectedTemplate ? payloadFromTemplate(selectedTemplate) : emptyInstallPayload(),
+    [selectedTemplate],
+  )
+  const form = formState && formState.templateId === selectedTemplate?.id ? formState.value : defaultForm
   const clusters = useQuery({
     queryKey: ['runtime-clusters', selectedTemplateIsSystem ? 'system' : projectId],
     queryFn: () => api.listRuntimeClusters(selectedTemplateIsSystem ? undefined : projectId),
     enabled: selectedTemplateIsSystem || Boolean(projectId),
   })
-  const projectItems = projects.data ?? []
   const clusterItems = clusters.data ?? []
-
-  useEffect(() => {
-    if (!projectId && projectItems.length > 0)
-      setProjectId(projectItems[0].id)
-  }, [projectId, projectItems])
-
-  useEffect(() => {
-    const templateID = searchParams.get('template')
-    if (!templateID || selectedTemplate || !templates.data)
-      return
-    const template = templates.data.find(item => item.id === templateID)
-    if (template)
-      openInstallDialog(template)
-  }, [searchParams, selectedTemplate, templates.data])
 
   const categoryOptions = useMemo(() => {
     const categories = new Set((templates.data ?? []).map(template => template.category).filter(Boolean))
@@ -101,7 +100,7 @@ export function AppTemplatesPage() {
       api.installAppTemplate(payload.projectId, payload.templateId, payload),
     onSuccess: async (result) => {
       toast.success(t('appTemplatesPage.installStarted'))
-      setSelectedTemplate(null)
+      setSelectedTemplateOverride(null)
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['projects'] }),
         queryClient.invalidateQueries({ queryKey: ['applications', result.application.projectId] }),
@@ -121,7 +120,7 @@ export function AppTemplatesPage() {
       }),
     onSuccess: async (result) => {
       toast.success(t('appTemplatesPage.systemInstallStarted'))
-      setSelectedTemplate(null)
+      setSelectedTemplateOverride(null)
       setSearchParams((current) => {
         const next = new URLSearchParams(current)
         next.delete('template')
@@ -139,12 +138,13 @@ export function AppTemplatesPage() {
   })
 
   function openInstallDialog(template: AppTemplate) {
-    setSelectedTemplate(template)
-    setForm(payloadFromTemplate(template))
+    setSelectedTemplateOverride(template)
+    setFormState({ templateId: template.id, value: payloadFromTemplate(template) })
   }
 
   function closeInstallDialog() {
-    setSelectedTemplate(null)
+    setSelectedTemplateOverride(null)
+    setFormState(null)
     setSearchParams((current) => {
       const next = new URLSearchParams(current)
       next.delete('template')
@@ -153,11 +153,27 @@ export function AppTemplatesPage() {
   }
 
   function updateForm<K extends keyof AppTemplateInstallPayload>(key: K, value: AppTemplateInstallPayload[K]) {
-    setForm(current => ({ ...current, [key]: value }))
+    if (!selectedTemplate)
+      return
+    setFormState(current => ({
+      templateId: selectedTemplate.id,
+      value: {
+        ...(current?.templateId === selectedTemplate.id ? current.value : payloadFromTemplate(selectedTemplate)),
+        [key]: value,
+      },
+    }))
   }
 
   function updateTemplateValue(key: string, value: string) {
-    setForm(current => ({ ...current, values: { ...current.values, [key]: value } }))
+    if (!selectedTemplate)
+      return
+    setFormState((current) => {
+      const currentForm = current?.templateId === selectedTemplate.id ? current.value : payloadFromTemplate(selectedTemplate)
+      return {
+        templateId: selectedTemplate.id,
+        value: { ...currentForm, values: { ...currentForm.values, [key]: value } },
+      }
+    })
   }
 
   function submitInstall() {
@@ -257,7 +273,7 @@ export function AppTemplatesPage() {
         projects={projectItems}
         template={selectedTemplate}
         onClose={closeInstallDialog}
-        onProjectChange={setProjectId}
+        onProjectChange={setSelectedProjectId}
         onSubmit={submitInstall}
         onTemplateValueChange={updateTemplateValue}
         onUpdate={updateForm}
