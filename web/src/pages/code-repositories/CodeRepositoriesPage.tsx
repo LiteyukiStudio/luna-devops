@@ -31,6 +31,7 @@ export function CodeRepositoriesPage() {
   const [providerDialogOpen, setProviderDialogOpen] = useState(false)
   const [credentialDialogOpen, setCredentialDialogOpen] = useState(false)
   const [editingProvider, setEditingProvider] = useState<GitProvider | null>(null)
+  const [editingCredential, setEditingCredential] = useState<GitAccount | null>(null)
   const [providerToDelete, setProviderToDelete] = useState<GitProvider | null>(null)
   const [credentialToDelete, setCredentialToDelete] = useState<GitAccount | null>(null)
   const [providerPage, setProviderPage] = useState(1)
@@ -46,7 +47,6 @@ export function CodeRepositoriesPage() {
     queryFn: () => api.listGitAccountsPage({ page: credentialPage, pageSize: credentialPageSize, sortBy: 'createdAt', sortOrder: 'desc' }),
   })
   const providerOptions = useQuery({ queryKey: ['git-providers', 'options'], queryFn: () => api.listGitProviders() })
-  const providerItems = useMemo(() => providers.data?.items ?? [], [providers.data?.items])
   const providerOptionItems = useMemo(() => providerOptions.data ?? [], [providerOptions.data])
   const credentialItems = useMemo(() => credentials.data?.items ?? [], [credentials.data?.items])
   const projects = useQuery({ queryKey: ['projects'], queryFn: api.listProjects })
@@ -97,6 +97,26 @@ export function CodeRepositoriesPage() {
       type: editingProvider.type,
     })
   }, [editingProvider, providerForm])
+
+  useEffect(() => {
+    if (!editingCredential) {
+      credentialForm.reset(credentialDefaults)
+      return
+    }
+    credentialForm.reset({
+      accessToken: '',
+      avatarUrl: editingCredential.avatarUrl ?? '',
+      externalUserId: editingCredential.externalUserId ?? '',
+      ownerRef: editingCredential.ownerRef,
+      projectIds: editingCredential.projectIds ?? [],
+      providerId: editingCredential.providerId,
+      refreshToken: '',
+      scope: editingCredential.scope,
+      scopesText: editingCredential.scopes,
+      status: editingCredential.status,
+      username: editingCredential.username,
+    })
+  }, [credentialForm, editingCredential])
 
   useEffect(() => {
     if (isGithubProvider) {
@@ -155,23 +175,29 @@ export function CodeRepositoriesPage() {
     onError: error => toast.error(error.message),
   })
 
-  const createCredential = useMutation({
-    mutationFn: (payload: CredentialForm) => api.createGitAccount({
-      accessToken: payload.accessToken ?? '',
-      avatarUrl: payload.avatarUrl ?? '',
-      ownerRef: '',
-      projectIds: payload.scope === 'project' ? payload.projectIds : [],
-      externalUserId: payload.externalUserId ?? '',
-      providerId: payload.providerId,
-      refreshToken: payload.refreshToken ?? '',
-      scope: payload.scope,
-      scopes: splitText(payload.scopesText),
-      status: payload.status,
-      username: payload.username,
-    }),
+  const saveCredential = useMutation({
+    mutationFn: (payload: CredentialForm) => {
+      const accountPayload = {
+        accessToken: payload.accessToken ?? '',
+        avatarUrl: payload.avatarUrl ?? '',
+        ownerRef: '',
+        projectIds: payload.scope === 'project' ? payload.projectIds : [],
+        externalUserId: payload.externalUserId ?? '',
+        providerId: payload.providerId,
+        refreshToken: payload.refreshToken ?? '',
+        scope: payload.scope,
+        scopes: splitText(payload.scopesText),
+        status: payload.status,
+        username: payload.username,
+      }
+      if (editingCredential)
+        return api.updateGitAccount(editingCredential.id, accountPayload)
+      return api.createGitAccount(accountPayload)
+    },
     onSuccess: () => {
-      toast.success(t('codeRepositoriesView.credentialCreated'))
+      toast.success(t(editingCredential ? 'codeRepositoriesView.credentialUpdated' : 'codeRepositoriesView.credentialCreated'))
       setCredentialDialogOpen(false)
+      setEditingCredential(null)
       credentialForm.reset(credentialDefaults)
       queryClient.invalidateQueries({ queryKey: ['git-accounts'] })
     },
@@ -227,7 +253,13 @@ export function CodeRepositoriesPage() {
                   : undefined
               )
             : (
-                <Button onClick={() => setCredentialDialogOpen(true)}>
+                <Button
+                  onClick={() => {
+                    setEditingCredential(null)
+                    credentialForm.reset(credentialDefaults)
+                    setCredentialDialogOpen(true)
+                  }}
+                >
                   <Plus size={16} />
                   {t('codeRepositoriesView.createCredential')}
                 </Button>
@@ -270,12 +302,16 @@ export function CodeRepositoriesPage() {
                     credentials={credentialItems}
                     page={credentials.data?.page ?? credentialPage}
                     pageSize={credentials.data?.pageSize ?? credentialPageSize}
-                    providers={providerItems}
+                    providers={providerOptionItems}
                     projectMap={projectMap}
                     refreshPending={refreshCredential.isPending}
                     total={credentials.data?.total ?? 0}
                     totalPages={credentials.data?.totalPages ?? 0}
                     onDelete={setCredentialToDelete}
+                    onEdit={(credential) => {
+                      setEditingCredential(credential)
+                      setCredentialDialogOpen(true)
+                    }}
                     onPageChange={setCredentialPage}
                     onPageSizeChange={(pageSize) => {
                       setCredentialPageSize(pageSize)
@@ -305,12 +341,17 @@ export function CodeRepositoriesPage() {
 
       <CredentialDialog
         open={credentialDialogOpen}
+        editingCredential={editingCredential}
         form={credentialForm}
-        pending={createCredential.isPending}
+        pending={saveCredential.isPending}
         projects={projects.data ?? []}
         providers={providerOptionItems}
-        onOpenChange={setCredentialDialogOpen}
-        onSubmit={values => createCredential.mutate(values)}
+        onOpenChange={(open) => {
+          setCredentialDialogOpen(open)
+          if (!open)
+            setEditingCredential(null)
+        }}
+        onSubmit={values => saveCredential.mutate(values)}
       />
 
       <ConfirmDialog

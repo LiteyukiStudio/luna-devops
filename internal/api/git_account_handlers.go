@@ -83,11 +83,12 @@ func (h *Handlers) CreateGitAccount(ctx *gin.Context) {
 	if !bindJSON(ctx, &input) {
 		return
 	}
-	if _, ok := h.findEnabledGitProvider(ctx, input.ProviderID); !ok {
+	provider, ok := h.findEnabledGitProvider(ctx, input.ProviderID)
+	if !ok {
 		return
 	}
 	scope := normalizeGitScope(input.Scope)
-	scope, ownerRef, projectIDs, scopeOK := h.normalizeScopedOwnerWithProjects(ctx, user, scope, input.OwnerRef, input.ProjectIDs, "只有平台管理员可以创建全局 Git 凭据")
+	scope, ownerRef, projectIDs, scopeOK := h.normalizeCredentialScopeWithinParent(ctx, user, scope, input.ProjectIDs, provider.Scope, provider.ProjectIDs, "只有平台管理员可以创建全局 Git 凭据")
 	if !scopeOK {
 		return
 	}
@@ -142,11 +143,12 @@ func (h *Handlers) UpdateGitAccount(ctx *gin.Context) {
 	if !bindJSON(ctx, &input) {
 		return
 	}
-	if _, ok := h.findEnabledGitProvider(ctx, input.ProviderID); !ok {
+	provider, ok := h.findEnabledGitProvider(ctx, input.ProviderID)
+	if !ok {
 		return
 	}
 	scope := normalizeGitScope(input.Scope)
-	scope, ownerRef, projectIDs, scopeOK := h.normalizeScopedOwnerWithProjects(ctx, user, scope, input.OwnerRef, input.ProjectIDs, "只有平台管理员可以创建全局 Git 凭据")
+	scope, ownerRef, projectIDs, scopeOK := h.normalizeCredentialScopeWithinParent(ctx, user, scope, input.ProjectIDs, provider.Scope, provider.ProjectIDs, "只有平台管理员可以创建全局 Git 凭据")
 	if !scopeOK {
 		return
 	}

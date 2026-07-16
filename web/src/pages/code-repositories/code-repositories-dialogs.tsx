@@ -1,6 +1,6 @@
 import type { UseFormReturn } from 'react-hook-form'
 import type { CredentialForm, ProviderForm } from './code-repositories-form-model'
-import type { GitProvider, Project } from '@/api'
+import type { GitAccount, GitProvider, Project } from '@/api'
 import { Info, Plus, Save } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { FormField as Field } from '@/components/common/form-field'
@@ -147,6 +147,7 @@ export function ProviderDialog({
 
 interface CredentialDialogProps {
   open: boolean
+  editingCredential: GitAccount | null
   form: UseFormReturn<CredentialForm>
   projects: Project[]
   providers: GitProvider[]
@@ -155,10 +156,13 @@ interface CredentialDialogProps {
   onSubmit: (values: CredentialForm) => void
 }
 
-export function CredentialDialog({ open, form, projects, providers, pending, onOpenChange, onSubmit }: CredentialDialogProps) {
+export function CredentialDialog({ open, editingCredential, form, projects, providers, pending, onOpenChange, onSubmit }: CredentialDialogProps) {
   const { t } = useTranslation()
   const selectedProvider = providers.find(provider => provider.id === form.watch('providerId'))
   const credentialScope = form.watch('scope')
+  const allowedProjects = selectedProvider?.scope === 'project'
+    ? projects.filter(project => selectedProvider.projectIds.includes(project.id))
+    : projects
 
   return (
     <Dialog
@@ -171,12 +175,21 @@ export function CredentialDialog({ open, form, projects, providers, pending, onO
     >
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{t('codeRepositoriesView.createCredential')}</DialogTitle>
-          <DialogDescription>{t('codeRepositoriesView.credentialDialogDescription')}</DialogDescription>
+          <DialogTitle>{editingCredential ? t('codeRepositoriesView.editCredential') : t('codeRepositoriesView.createCredential')}</DialogTitle>
+          <DialogDescription>{t(editingCredential ? 'codeRepositoriesView.editCredentialDialogDescription' : 'codeRepositoriesView.credentialDialogDescription')}</DialogDescription>
         </DialogHeader>
         <form className="grid gap-3" onSubmit={form.handleSubmit(onSubmit)}>
           <Field error={form.formState.errors.providerId?.message} label={t('codeRepositoriesView.provider')} required>
-            <Select {...form.register('providerId')} aria-invalid={Boolean(form.formState.errors.providerId)}>
+            <Select
+              {...form.register('providerId')}
+              aria-invalid={Boolean(form.formState.errors.providerId)}
+              disabled={Boolean(editingCredential)}
+              onChange={(event) => {
+                form.setValue('providerId', event.target.value, { shouldValidate: true })
+                form.setValue('scope', 'user', { shouldValidate: true })
+                form.setValue('projectIds', [], { shouldValidate: true })
+              }}
+            >
               <option value="">{t('codeRepositoriesView.selectProvider')}</option>
               {providers.map(provider => (
                 <option key={provider.id} value={provider.id}>{provider.name}</option>
@@ -186,22 +199,22 @@ export function CredentialDialog({ open, form, projects, providers, pending, onO
           {selectedProvider && <CredentialOAuthGuide provider={selectedProvider} />}
           <Field error={form.formState.errors.scope?.message} hint={t('codeRepositoriesView.scopeHint')} label={t('codeRepositoriesView.scope')} required>
             <Select {...form.register('scope')} aria-invalid={Boolean(form.formState.errors.scope)}>
-              <option value="global">{t('codeRepositoriesView.scopeGlobal')}</option>
-              <option value="project">{t('codeRepositoriesView.scopeProject')}</option>
+              {selectedProvider?.scope === 'global' && <option value="global">{t('codeRepositoriesView.scopeGlobal')}</option>}
+              {selectedProvider?.scope !== 'user' && <option value="project">{t('codeRepositoriesView.scopeProject')}</option>}
               <option value="user">{t('codeRepositoriesView.scopeUser')}</option>
             </Select>
           </Field>
           {credentialScope === 'project' && (
             <Field error={form.formState.errors.projectIds?.message} hint={t('codeRepositoriesView.ownerProjectHint')} label={t('codeRepositoriesView.ownerProject')} required>
               <ProjectSpaceMultiSelect
-                projects={projects}
+                projects={allowedProjects}
                 value={form.watch('projectIds')}
                 onChange={value => form.setValue('projectIds', value, { shouldDirty: true, shouldValidate: true })}
               />
             </Field>
           )}
           <Field error={form.formState.errors.username?.message} hint={t('codeRepositoriesView.usernameHint')} label={t('codeRepositoriesView.username')} required><Input {...form.register('username')} aria-invalid={Boolean(form.formState.errors.username)} placeholder={t('codeRepositoriesView.usernamePlaceholder')} /></Field>
-          <Field error={form.formState.errors.accessToken?.message} hint={t('codeRepositoriesView.accessTokenHint')} label={t('codeRepositoriesView.accessToken')}>
+          <Field error={form.formState.errors.accessToken?.message} hint={t(editingCredential ? 'codeRepositoriesView.accessTokenEditHint' : 'codeRepositoriesView.accessTokenHint')} label={t('codeRepositoriesView.accessToken')}>
             <Input {...form.register('accessToken')} aria-invalid={Boolean(form.formState.errors.accessToken)} type="password" />
           </Field>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -218,8 +231,8 @@ export function CredentialDialog({ open, form, projects, providers, pending, onO
           </div>
           <DialogFooter>
             <Button disabled={pending || !form.formState.isValid} type="submit">
-              <Plus size={16} />
-              {t('codeRepositoriesView.createCredential')}
+              {editingCredential ? <Save size={16} /> : <Plus size={16} />}
+              {editingCredential ? t('codeRepositoriesView.saveCredential') : t('codeRepositoriesView.createCredential')}
             </Button>
           </DialogFooter>
         </form>

@@ -123,11 +123,12 @@ interface CredentialsPanelProps {
   items: CredentialWithRegistry[]
   registryFilterId: string
   pagination: PageState<CredentialWithRegistry>
+  projectMap: Record<string, { name: string }>
   onEdit: (credential: CredentialWithRegistry) => void
   onDelete: (credential: CredentialWithRegistry) => void
 }
 
-export function CredentialsPanel({ items, registryFilterId, pagination, onDelete, onEdit }: CredentialsPanelProps) {
+export function CredentialsPanel({ items, registryFilterId, pagination, projectMap, onDelete, onEdit }: CredentialsPanelProps) {
   const { t } = useTranslation()
 
   return (
@@ -155,8 +156,17 @@ export function CredentialsPanel({ items, registryFilterId, pagination, onDelete
             />
           ),
         },
-        { key: 'usage', header: t('registriesPage.usage'), render: credential => <StatusBadge>{credential.scope}</StatusBadge> },
-        { key: 'access', header: t('registriesPage.credentialAccessScope'), render: credential => <StatusBadge>{credential.accessScope === 'registry' ? t('registriesPage.credentialAccessScopeRegistry') : t('registriesPage.credentialAccessScopePersonal')}</StatusBadge> },
+        { key: 'usage', header: t('registriesPage.usage'), render: credential => <StatusBadge>{credential.usage}</StatusBadge> },
+        {
+          key: 'access',
+          header: t('registriesPage.credentialAccessScope'),
+          render: credential => (
+            <div className="flex flex-wrap gap-2">
+              <StatusBadge>{t(`registriesPage.scope${credential.scope.charAt(0).toUpperCase()}${credential.scope.slice(1)}`)}</StatusBadge>
+              {projectScopeBadges(credential.projectIds, projectMap)}
+            </div>
+          ),
+        },
         {
           key: 'secret',
           header: t('registriesPage.credential'),

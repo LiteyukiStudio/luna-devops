@@ -65,8 +65,10 @@ func credentialResponse(credential model.RegistryCredential) registryCredentialO
 		RegistryID:         credential.RegistryID,
 		Name:               credential.Name,
 		Username:           credential.Username,
+		Usage:              credential.Usage,
 		Scope:              credential.Scope,
-		AccessScope:        credential.AccessScope,
+		OwnerRef:           credential.OwnerRef,
+		ProjectIDs:         jsonList(credential.ProjectIDs),
 		RepositoryTemplate: normalizeImageRepositoryTemplate(credential.RepositoryTemplate),
 		TagTemplate:        normalizeImageTagTemplate(credential.TagTemplate),
 		PasswordSet:        secret.HasValue(credential.PasswordRef),
@@ -98,21 +100,12 @@ func normalizeRegistryScope(value string) string {
 	}
 }
 
-func normalizeCredentialScope(value string) string {
+func normalizeCredentialUsage(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "push", "pull":
 		return strings.ToLower(strings.TrimSpace(value))
 	default:
 		return "push-pull"
-	}
-}
-
-func normalizeCredentialAccessScope(value string) string {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "registry":
-		return "registry"
-	default:
-		return "personal"
 	}
 }
 
@@ -173,14 +166,15 @@ type artifactRegistryOutput struct {
 }
 
 type registryCredentialInput struct {
-	Name               string `json:"name"`
-	Username           string `json:"username"`
-	Password           string `json:"password"`
-	Token              string `json:"token"`
-	Scope              string `json:"scope"`
-	AccessScope        string `json:"accessScope"`
-	RepositoryTemplate string `json:"repositoryTemplate"`
-	TagTemplate        string `json:"tagTemplate"`
+	Name               string   `json:"name"`
+	Username           string   `json:"username"`
+	Password           string   `json:"password"`
+	Token              string   `json:"token"`
+	Usage              string   `json:"usage"`
+	Scope              string   `json:"scope"`
+	ProjectIDs         []string `json:"projectIds"`
+	RepositoryTemplate string   `json:"repositoryTemplate"`
+	TagTemplate        string   `json:"tagTemplate"`
 }
 
 type registryCredentialOutput struct {
@@ -188,8 +182,10 @@ type registryCredentialOutput struct {
 	RegistryID         string    `json:"registryId"`
 	Name               string    `json:"name"`
 	Username           string    `json:"username"`
+	Usage              string    `json:"usage"`
 	Scope              string    `json:"scope"`
-	AccessScope        string    `json:"accessScope"`
+	OwnerRef           string    `json:"ownerRef"`
+	ProjectIDs         []string  `json:"projectIds"`
 	RepositoryTemplate string    `json:"repositoryTemplate"`
 	TagTemplate        string    `json:"tagTemplate"`
 	PasswordSet        bool      `json:"passwordSet"`

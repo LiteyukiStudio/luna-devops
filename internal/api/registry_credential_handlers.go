@@ -17,17 +17,9 @@ func (h *Handlers) ListRegistryCredentials(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if !h.canManageRegistryCredentials(ctx, user, registry) {
-		return
-	}
-
 	var credentials []model.RegistryCredential
 	query := h.db.Model(&model.RegistryCredential{}).Where("registry_id = ?", registry.ID)
-	if registry.Scope == "global" {
-		query = query.Where("created_by = ? and access_scope = ?", user.ID, "personal")
-	} else {
-		query = query.Where("access_scope = ? or (access_scope = ? and created_by = ?)", "registry", "personal", user.ID)
-	}
+	query = h.applyScopedResourceVisibilityForUser(query, scopedResourceRegistryCredential, user)
 	query = applySearch(ctx, query, "name", "username")
 	if paginationRequested(ctx) {
 		pagination := paginationFromQuery(ctx)
@@ -44,6 +36,7 @@ func (h *Handlers) ListRegistryCredentials(ctx *gin.Context) {
 			writeError(ctx, http.StatusInternalServerError, err.Error())
 			return
 		}
+		h.attachRegistryCredentialProjects(credentials)
 		ctx.JSON(http.StatusOK, paginatedResponse(credentialResponses(credentials), total, pagination))
 		return
 	}
@@ -51,6 +44,7 @@ func (h *Handlers) ListRegistryCredentials(ctx *gin.Context) {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
+	h.attachRegistryCredentialProjects(credentials)
 	ctx.JSON(http.StatusOK, credentialResponses(credentials))
 }
 
@@ -59,10 +53,6 @@ func (h *Handlers) CreateRegistryCredential(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if !h.canManageRegistry(ctx, user, registry) {
-		return
-	}
-
 	var input registryCredentialInput
 	if !bindJSON(ctx, &input) {
 		return
@@ -81,16 +71,8 @@ func (h *Handlers) CreateRegistryCredential(ctx *gin.Context) {
 			return
 		}
 	}
-	accessScope := normalizeCredentialAccessScope(input.AccessScope)
-	if accessScope == "registry" {
-		if registry.Scope == "global" {
-			writeError(ctx, http.StatusBadRequest, "全局镜像站凭据只能设为个人使用")
-			return
-		}
-		if !h.canManageRegistry(ctx, user, registry) {
-			return
-		}
-	} else if registry.Scope != "global" && !h.canManageRegistryCredentials(ctx, user, registry) {
+	scope, ownerRef, projectIDs, scopeOK := h.normalizeCredentialScopeWithinParent(ctx, user, input.Scope, input.ProjectIDs, registry.Scope, registry.ProjectIDs, "只有平台管理员可以创建全局镜像凭据")
+	if !scopeOK {
 		return
 	}
 
@@ -101,8 +83,10 @@ func (h *Handlers) CreateRegistryCredential(ctx *gin.Context) {
 		Username:           strings.TrimSpace(input.Username),
 		PasswordRef:        h.secrets.Store(input.Password, user.ID, "registry_credential:"+registry.ID+":password"),
 		TokenRef:           h.secrets.Store(input.Token, user.ID, "registry_credential:"+registry.ID+":token"),
-		Scope:              normalizeCredentialScope(input.Scope),
-		AccessScope:        accessScope,
+		Usage:              normalizeCredentialUsage(input.Usage),
+		Scope:              scope,
+		OwnerRef:           ownerRef,
+		ProjectIDs:         projectIDs,
 		RepositoryTemplate: normalizeImageRepositoryTemplate(input.RepositoryTemplate),
 		TagTemplate:        normalizeImageTagTemplate(input.TagTemplate),
 		CreatedBy:          user.ID,
@@ -116,6 +100,9 @@ func (h *Handlers) CreateRegistryCredential(ctx *gin.Context) {
 		if err := tx.Create(&credential).Error; err != nil {
 			return err
 		}
+		if err := h.replaceScopedResourceProjectBindings(tx, scopedResourceRegistryCredential, credential.ID, sortedProjectIDs(credential.ProjectIDs), nil); err != nil {
+			return err
+		}
 		if registry.CredentialRef == "" {
 			return tx.Model(&registry).Update("credential_ref", credential.ID).Error
 		}
@@ -124,7 +111,7 @@ func (h *Handlers) CreateRegistryCredential(ctx *gin.Context) {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	h.audit(user.ID, "registry_credential.create", credential.ID, true, credential.AccessScope)
+	h.audit(user.ID, "registry_credential.create", credential.ID, true, credential.Scope)
 	ctx.JSON(http.StatusCreated, credentialResponse(credential))
 }
 
@@ -162,16 +149,8 @@ func (h *Handlers) UpdateRegistryCredential(ctx *gin.Context) {
 		}
 	}
 
-	accessScope := normalizeCredentialAccessScope(input.AccessScope)
-	if accessScope == "registry" {
-		if registry.Scope == "global" {
-			writeError(ctx, http.StatusBadRequest, "全局镜像站凭据只能设为个人使用")
-			return
-		}
-		if !h.canManageRegistry(ctx, user, registry) {
-			return
-		}
-	} else if credential.CreatedBy != user.ID && registry.Scope != "global" && !h.canManageRegistryCredentials(ctx, user, registry) {
+	scope, ownerRef, projectIDs, scopeOK := h.normalizeCredentialScopeWithinParent(ctx, user, input.Scope, input.ProjectIDs, registry.Scope, registry.ProjectIDs, "只有平台管理员可以创建全局镜像凭据")
+	if !scopeOK {
 		return
 	}
 
@@ -192,16 +171,23 @@ func (h *Handlers) UpdateRegistryCredential(ctx *gin.Context) {
 	credential.Username = strings.TrimSpace(input.Username)
 	credential.PasswordRef = passwordRef
 	credential.TokenRef = tokenRef
-	credential.Scope = normalizeCredentialScope(input.Scope)
-	credential.AccessScope = accessScope
+	credential.Usage = normalizeCredentialUsage(input.Usage)
+	credential.Scope = scope
+	credential.OwnerRef = ownerRef
+	credential.ProjectIDs = projectIDs
 	credential.RepositoryTemplate = normalizeImageRepositoryTemplate(input.RepositoryTemplate)
 	credential.TagTemplate = normalizeImageTagTemplate(input.TagTemplate)
 
-	if err := h.db.Save(&credential).Error; err != nil {
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(&credential).Error; err != nil {
+			return err
+		}
+		return h.replaceScopedResourceProjectBindings(tx, scopedResourceRegistryCredential, credential.ID, sortedProjectIDs(credential.ProjectIDs), nil)
+	}); err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	h.audit(user.ID, "registry_credential.update", credential.ID, true, credential.AccessScope)
+	h.audit(user.ID, "registry_credential.update", credential.ID, true, credential.Scope)
 	ctx.JSON(http.StatusOK, credentialResponse(credential))
 }
 
@@ -220,6 +206,9 @@ func (h *Handlers) DeleteRegistryCredential(ctx *gin.Context) {
 		return
 	}
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("resource_type = ? and resource_id = ?", scopedResourceRegistryCredential, credential.ID).Delete(&model.ScopedResourceProjectBinding{}).Error; err != nil {
+			return err
+		}
 		if err := tx.Delete(&credential).Error; err != nil {
 			return err
 		}
@@ -231,39 +220,59 @@ func (h *Handlers) DeleteRegistryCredential(ctx *gin.Context) {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	h.audit(user.ID, "registry_credential.delete", credential.ID, true, credential.AccessScope)
+	h.audit(user.ID, "registry_credential.delete", credential.ID, true, credential.Scope)
 	ctx.Status(http.StatusNoContent)
 }
 
 func (h *Handlers) registryCredentialFor(user model.User, registry model.ArtifactRegistry) (model.RegistryCredential, bool) {
 	var credential model.RegistryCredential
 	if registry.CredentialRef != "" {
-		if err := h.db.First(&credential, "id = ? and registry_id = ? and (access_scope = ? or created_by = ?)", registry.CredentialRef, registry.ID, "registry", user.ID).Error; err == nil {
+		query := h.applyScopedResourceVisibilityForUser(h.db.Model(&model.RegistryCredential{}), scopedResourceRegistryCredential, user)
+		if err := query.First(&credential, "id = ? and registry_id = ?", registry.CredentialRef, registry.ID).Error; err == nil {
 			return credential, true
 		}
 	}
-	if err := h.db.Where("registry_id = ? and access_scope = ? and created_by = ?", registry.ID, "personal", user.ID).Order("created_at desc").First(&credential).Error; err == nil {
-		return credential, true
-	}
-	if registry.Scope != "global" && h.db.Where("registry_id = ? and access_scope = ?", registry.ID, "registry").Order("created_at desc").First(&credential).Error == nil {
+	query := h.applyScopedResourceVisibilityForUser(h.db.Model(&model.RegistryCredential{}), scopedResourceRegistryCredential, user)
+	if query.Where("registry_id = ?", registry.ID).Order("case scope when 'user' then 0 when 'project' then 1 else 2 end, created_at desc").First(&credential).Error == nil {
 		return credential, true
 	}
 	return credential, false
 }
 
 func (h *Handlers) registryPushCredentialFor(user model.User, registry model.ArtifactRegistry) (model.RegistryCredential, bool) {
-	scopes := []string{"push", "push-pull"}
+	return h.registryPushCredentialForProject(user, registry, "")
+}
+
+func (h *Handlers) registryPushCredentialForProject(user model.User, registry model.ArtifactRegistry, projectID string) (model.RegistryCredential, bool) {
+	usages := []string{"push", "push-pull"}
 	var credential model.RegistryCredential
+	visibleCredentials := func() *gorm.DB {
+		query := h.db.Model(&model.RegistryCredential{})
+		if strings.TrimSpace(projectID) != "" {
+			return h.applyScopedResourceVisibilityForProject(query, scopedResourceRegistryCredential, user, projectID)
+		}
+		return h.applyScopedResourceVisibilityForUser(query, scopedResourceRegistryCredential, user)
+	}
 	if registry.CredentialRef != "" {
-		if err := h.db.First(&credential, "id = ? and registry_id = ? and scope in ? and (access_scope = ? or created_by = ?)", registry.CredentialRef, registry.ID, scopes, "registry", user.ID).Error; err == nil {
+		query := visibleCredentials()
+		if err := query.First(&credential, "id = ? and registry_id = ? and usage in ?", registry.CredentialRef, registry.ID, usages).Error; err == nil {
 			return credential, true
 		}
 	}
-	if err := h.db.Where("registry_id = ? and access_scope = ? and created_by = ? and scope in ?", registry.ID, "personal", user.ID, scopes).Order("created_at desc").First(&credential).Error; err == nil {
-		return credential, true
-	}
-	if registry.Scope != "global" && h.db.Where("registry_id = ? and access_scope = ? and scope in ?", registry.ID, "registry", scopes).Order("created_at desc").First(&credential).Error == nil {
+	query := visibleCredentials()
+	if query.Where("registry_id = ? and usage in ?", registry.ID, usages).Order("case scope when 'user' then 0 when 'project' then 1 else 2 end, created_at desc").First(&credential).Error == nil {
 		return credential, true
 	}
 	return credential, false
+}
+
+func (h *Handlers) attachRegistryCredentialProjects(credentials []model.RegistryCredential) {
+	ids := make([]string, 0, len(credentials))
+	for _, credential := range credentials {
+		ids = append(ids, credential.ID)
+	}
+	projectMap := h.scopedResourceProjectIDMap(scopedResourceRegistryCredential, ids)
+	for index := range credentials {
+		credentials[index].ProjectIDs = projectMap[credentials[index].ID]
+	}
 }

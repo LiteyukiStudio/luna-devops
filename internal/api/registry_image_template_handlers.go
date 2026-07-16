@@ -28,7 +28,7 @@ func (h *Handlers) GetRegistryImageTemplateDefault(ctx *gin.Context) {
 	}
 	repository := repositoryWithoutRegistryHost(registry, buildTargetImageRepository(registry, project, app))
 	tag := "latest"
-	if credential, ok := h.registryPushCredentialFor(user, registry); ok {
+	if credential, ok := h.registryPushCredentialForProject(user, registry, project.ID); ok {
 		templatedRepository, _ := splitTargetImageRef(buildTargetImageRepositoryForCredential(registry, credential, project, app, target))
 		repository = repositoryWithoutRegistryHost(registry, templatedRepository)
 		tag = buildStaticTargetImageTagForCredential(registry, credential, project, app, target)

@@ -29,8 +29,22 @@ func CanManageRegistry(user model.User, registry model.ArtifactRegistry, project
 }
 
 func CanManageRegistryCredential(user model.User, registry model.ArtifactRegistry, credential model.RegistryCredential, projectRoleAllows func(projectID string, roles ...string) bool) bool {
-	if credential.AccessScope == "personal" {
-		return credential.CreatedBy == user.ID
+	switch credential.Scope {
+	case "global":
+		return user.Role == "platform_admin"
+	case "user":
+		return credential.OwnerRef == user.ID
+	case "project":
+		if user.Role == "platform_admin" {
+			return true
+		}
+		for _, projectID := range credential.ProjectIDs {
+			if !projectRoleAllows(projectID, "owner", "admin") {
+				return false
+			}
+		}
+		return len(credential.ProjectIDs) > 0
+	default:
+		return false
 	}
-	return CanManageRegistry(user, registry, projectRoleAllows)
 }

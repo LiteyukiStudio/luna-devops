@@ -35,6 +35,8 @@ Git providers connect GitHub or Gitea. After setup, users can bind repositories,
 
 A Git credential's scope is its Luna DevOps usage boundary: personal credentials are available only to their creator, project-scoped credentials can be used by members of the selected project spaces in platform jobs, and global credentials are available to all projects. “Scopes” are the upstream API permissions granted by GitHub, Gitea, or GitLab, such as `repo` and `read:user`; they do not change ownership inside Luna DevOps. Apply least privilege to both layers when creating long-lived credentials.
 
+You can edit a Git credential's scope and project bindings after creation, but it cannot exceed its Git Provider: a user provider only allows user credentials, a project provider allows user credentials or a subset of its projects, and only a global provider allows global credentials. Leaving access and refresh tokens empty while editing keeps their current values.
+
 Deleting a Git provider also deletes all Git credentials that belong to it. Confirm that repository bindings and build flows no longer depend on those credentials before deleting.
 
 If you only want to verify the deployment path, skip Git providers and start with an existing image. Connect the repository after the application runs successfully so early failures are easier to isolate.
@@ -97,3 +99,5 @@ Prefer least privilege. CI that only triggers builds should use `build:trigger`;
 ## Secrets
 
 Secrets, tokens, and registry credentials are not echoed back. When editing, an empty value means "keep the existing value". Enter a new value only when replacing it.
+
+Registry credentials have two independent controls: `usage` selects pull, push, or both, while `scope` selects personal, multiple project spaces, or global platform use. A credential cannot exceed its registry scope, and sharing never exposes the stored secret value.

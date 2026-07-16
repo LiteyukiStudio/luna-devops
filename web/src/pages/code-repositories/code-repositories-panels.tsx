@@ -115,6 +115,7 @@ export function CredentialsPanel({
   total,
   totalPages,
   onDelete,
+  onEdit,
   onPageChange,
   onPageSizeChange,
   onRefresh,
@@ -128,6 +129,7 @@ export function CredentialsPanel({
   total: number
   totalPages: number
   onDelete: (credential: GitAccount) => void
+  onEdit: (credential: GitAccount) => void
   onPageChange: (page: number) => void
   onPageSizeChange: (pageSize: number) => void
   onRefresh: (credential: GitAccount) => void
@@ -200,6 +202,7 @@ export function CredentialsPanel({
             className: 'text-right whitespace-nowrap',
             render: credential => (
               <div className="flex justify-end gap-2">
+                <EditActionButton type="button" label={t('edit')} onClick={() => onEdit(credential)} />
                 <Button disabled={refreshPending || !credential.refreshTokenSet} type="button" variant="ghost" onClick={() => onRefresh(credential)}>
                   <RefreshCw size={16} />
                   {t('codeRepositoriesView.refreshCredential')}

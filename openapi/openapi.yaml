@@ -2171,10 +2171,45 @@ components:
         username: { type: string }
         password: { type: string }
         token: { type: string }
-        scope: { type: string, enum: [pull, push, push-pull] }
-        accessScope: { type: string, enum: [personal, registry] }
+        usage: { type: string, enum: [pull, push, push-pull] }
+        scope: { type: string, enum: [user, project, global] }
+        projectIds:
+          type: array
+          items: { type: string }
         repositoryTemplate: { type: string }
         tagTemplate: { type: string }
+    RegistryCredential:
+      type: object
+      properties:
+        id: { type: string }
+        registryId: { type: string }
+        name: { type: string }
+        username: { type: string }
+        usage: { type: string, enum: [pull, push, push-pull] }
+        scope: { type: string, enum: [user, project, global] }
+        ownerRef: { type: string }
+        projectIds:
+          type: array
+          items: { type: string }
+        repositoryTemplate: { type: string }
+        tagTemplate: { type: string }
+        passwordSet: { type: boolean }
+        tokenSet: { type: boolean }
+        createdAt: { type: string, format: date-time }
+      required:
+        - id
+        - registryId
+        - name
+        - username
+        - usage
+        - scope
+        - ownerRef
+        - projectIds
+        - repositoryTemplate
+        - tagTemplate
+        - passwordSet
+        - tokenSet
+        - createdAt
     RepositoryBindingInput:
       type: object
       properties:

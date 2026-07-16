@@ -113,14 +113,16 @@ function registry(id: string, name: string): ArtifactRegistry {
 
 function credential(id: string, registryId: string, name: string): RegistryCredential {
   return {
-    accessScope: 'personal',
     createdAt: '2026-07-15T00:00:00Z',
     id,
     name,
     passwordSet: true,
     registryId,
     repositoryTemplate: '{registryNamespace}/{projectSlug}-{appSlug}',
-    scope: 'push-pull',
+    usage: 'push-pull',
+    scope: 'user',
+    ownerRef: 'user_test',
+    projectIds: [],
     tagTemplate: 'latest',
     tokenSet: false,
     username: 'test-user',

@@ -26,6 +26,7 @@ func (h *Handlers) findAccessibleRegistry(ctx *gin.Context, user model.User, reg
 	if !h.canUseRegistry(ctx, user, registry) {
 		return registry, false
 	}
+	registry.ProjectIDs = h.scopedResourceProjectIDs(scopedResourceArtifactRegistry, registry.ID)
 	return registry, true
 }
 
@@ -44,26 +45,8 @@ func (h *Handlers) canManageRegistry(ctx *gin.Context, user model.User, registry
 	return false
 }
 
-func (h *Handlers) canManageRegistryCredentials(ctx *gin.Context, user model.User, registry model.ArtifactRegistry) bool {
-	if registry.Scope == "global" {
-		return true
-	}
-	return h.canManageRegistry(ctx, user, registry)
-}
-
 func (h *Handlers) canManageRegistryCredential(ctx *gin.Context, user model.User, registry model.ArtifactRegistry, credential model.RegistryCredential) bool {
-	if credential.AccessScope == "personal" && credential.CreatedBy == user.ID {
-		return true
-	}
-	if credential.AccessScope != "personal" && h.canManageScopedResourceByID(ctx, user, registry.Scope, registry.OwnerRef, scopedResourceArtifactRegistry, registry.ID, "无权维护该镜像站") {
-		return true
-	}
-	if credential.AccessScope == "personal" {
-		writeError(ctx, http.StatusForbidden, "无权维护该个人凭据")
-		return false
-	}
-	writeError(ctx, http.StatusForbidden, "无权维护该镜像站")
-	return false
+	return h.canManageScopedResourceByID(ctx, user, credential.Scope, credential.OwnerRef, scopedResourceRegistryCredential, credential.ID, "无权维护该镜像凭据")
 }
 
 func (h *Handlers) defaultRegistryFor(userID, projectID string) (model.ArtifactRegistry, bool) {

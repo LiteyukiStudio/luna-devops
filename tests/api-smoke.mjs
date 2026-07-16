@@ -133,7 +133,7 @@ async function main() {
   }) })
   await ok('/registries')
   await ok(`/projects/${project.id}/registries/default`)
-  const credential = await ok(`/registries/${registry.id}/credentials`, { method: 'POST', ...json({ name: runId, username: runId, token: 'dummy-token', scope: 'push-pull', accessScope: 'registry' }) })
+  const credential = await ok(`/registries/${registry.id}/credentials`, { method: 'POST', ...json({ name: runId, username: runId, token: 'dummy-token', usage: 'push-pull', scope: 'user', projectIds: [] }) })
   await ok(`/registries/${registry.id}/credentials`)
   const registryTest = await request(`/registries/${registry.id}/test`, { method: 'POST' })
   assert(registryTest.response.status >= 200 && registryTest.response.status < 500, `registry test unexpected ${registryTest.response.status}`)

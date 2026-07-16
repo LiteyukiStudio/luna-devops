@@ -139,10 +139,9 @@ export function RegistriesPage() {
 
   const saveCredential = useMutation({
     mutationFn: (values: CredentialForm) => {
-      const registry = (registryOptions.data ?? []).find(item => item.id === values.registryId)
       const payload = {
         ...values,
-        accessScope: registry?.scope === 'global' ? 'personal' : values.accessScope,
+        projectIds: values.scope === 'project' ? values.projectIds : [],
       }
       if (editingCredential)
         return api.updateRegistryCredential(values.registryId, editingCredential.id, payload)
@@ -222,13 +221,14 @@ export function RegistriesPage() {
   const beginEditCredential = (credential: CredentialWithRegistry) => {
     setEditingCredential(credential)
     credentialForm.reset({
-      accessScope: credential.accessScope,
       registryId: credential.registryId,
       name: credential.name,
       username: credential.username,
       password: '',
       token: '',
+      usage: credential.usage,
       scope: credential.scope,
+      projectIds: credential.projectIds ?? [],
       repositoryTemplate: credential.repositoryTemplate,
       tagTemplate: credential.tagTemplate,
     })
@@ -292,7 +292,7 @@ export function RegistriesPage() {
                     setEditingCredential(null)
                     credentialForm.reset({ ...credentialDefaults, registryId: credentialRegistryFilterId })
                     credentialForm.setValue('registryId', credentialRegistryFilterId, { shouldValidate: true })
-                    credentialForm.setValue('accessScope', 'personal', { shouldValidate: true })
+                    credentialForm.setValue('scope', 'user', { shouldValidate: true })
                     setCredentialDialogOpen(true)
                   }}
                 >
@@ -349,6 +349,7 @@ export function RegistriesPage() {
           <CredentialsPanel
             items={visibleCredentials}
             registryFilterId={credentialRegistryFilterId}
+            projectMap={projectMap}
             pagination={credentialRegistryFilterId
               ? {
                   data: credentials.data
@@ -416,6 +417,7 @@ export function RegistriesPage() {
         form={credentialForm}
         pending={saveCredential.isPending}
         registries={registryOptions.data ?? registryItems}
+        projects={projects.data ?? []}
         defaultRegistryId={credentialRegistryFilterId}
         onOpenChange={(open) => {
           setCredentialDialogOpen(open)

@@ -183,6 +183,7 @@ func (h *Handlers) findEnabledGitProvider(ctx *gin.Context, providerID string) (
 	if !h.canUseGitProvider(ctx, provider) {
 		return provider, false
 	}
+	provider.ProjectIDs = h.scopedResourceProjectIDs(scopedResourceGitProvider, provider.ID)
 	return provider, true
 }
 

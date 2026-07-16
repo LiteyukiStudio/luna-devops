@@ -136,6 +136,15 @@ func (h *Handlers) DeleteArtifactRegistry(ctx *gin.Context) {
 		return
 	}
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		var credentialIDs []string
+		if err := tx.Model(&model.RegistryCredential{}).Where("registry_id = ?", registry.ID).Pluck("id", &credentialIDs).Error; err != nil {
+			return err
+		}
+		if len(credentialIDs) > 0 {
+			if err := tx.Where("resource_type = ? and resource_id in ?", scopedResourceRegistryCredential, credentialIDs).Delete(&model.ScopedResourceProjectBinding{}).Error; err != nil {
+				return err
+			}
+		}
 		if err := tx.Where("registry_id = ?", registry.ID).Delete(&model.RegistryCredential{}).Error; err != nil {
 			return err
 		}

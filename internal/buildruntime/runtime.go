@@ -53,7 +53,7 @@ func (r Resolver) ResolveBuildTask(tx *gorm.DB, run model.BuildRun, job model.Bu
 	if err := tx.First(&registry, "id = ?", run.TargetRegistryID).Error; err != nil {
 		return ResolvedTask{}, fmt.Errorf("target registry not found: %w", err)
 	}
-	credential, err := r.registryCredentialForBuild(tx, run.CreatedBy, registry)
+	credential, err := r.registryCredentialForBuild(tx, run.CreatedBy, run.ProjectID, registry)
 	if err != nil {
 		return ResolvedTask{}, err
 	}
@@ -166,26 +166,23 @@ func repositoryBindingLooksPublic(binding model.RepositoryBinding) bool {
 		strings.HasPrefix(cloneURL, "https://gitlab.com/")
 }
 
-func (r Resolver) registryCredentialForBuild(tx *gorm.DB, actorID string, registry model.ArtifactRegistry) (model.RegistryCredential, error) {
+func (r Resolver) registryCredentialForBuild(tx *gorm.DB, actorID, projectID string, registry model.ArtifactRegistry) (model.RegistryCredential, error) {
 	var credential model.RegistryCredential
+	visible := func(query *gorm.DB) *gorm.DB {
+		return query.Where("scope = ? and owner_ref = ? or scope = ? or (scope = ? and exists (select 1 from scoped_resource_project_bindings srpb where srpb.resource_type = ? and srpb.resource_id = registry_credentials.id and srpb.project_id = ?))",
+			"user", actorID, "global", "project", "registry_credential", projectID)
+	}
 	if strings.TrimSpace(registry.CredentialRef) != "" {
-		err := tx.First(&credential, "id = ? and registry_id = ? and scope in ? and (access_scope = ? or created_by = ?)",
-			registry.CredentialRef, registry.ID, []string{"push", "push-pull"}, "registry", actorID).Error
+		err := visible(tx.Model(&model.RegistryCredential{})).First(&credential, "id = ? and registry_id = ? and usage in ?",
+			registry.CredentialRef, registry.ID, []string{"push", "push-pull"}).Error
 		if err == nil {
 			return credential, nil
 		}
 	}
-	err := tx.Where("registry_id = ? and access_scope = ? and created_by = ? and scope in ?",
-		registry.ID, "personal", actorID, []string{"push", "push-pull"}).Order("created_at desc").First(&credential).Error
+	err := visible(tx.Model(&model.RegistryCredential{})).Where("registry_id = ? and usage in ?", registry.ID, []string{"push", "push-pull"}).
+		Order("case scope when 'user' then 0 when 'project' then 1 else 2 end, created_at desc").First(&credential).Error
 	if err == nil {
 		return credential, nil
-	}
-	if registry.Scope != "global" {
-		err = tx.Where("registry_id = ? and access_scope = ? and scope in ?",
-			registry.ID, "registry", []string{"push", "push-pull"}).Order("created_at desc").First(&credential).Error
-		if err == nil {
-			return credential, nil
-		}
 	}
 	return model.RegistryCredential{}, errors.New("usable registry credential not found")
 }

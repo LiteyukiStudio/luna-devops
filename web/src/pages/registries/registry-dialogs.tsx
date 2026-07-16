@@ -97,24 +97,25 @@ interface CredentialDialogProps {
   editingCredential: RegistryCredential | null
   form: UseFormReturn<CredentialForm>
   registries: ArtifactRegistry[]
+  projects: Project[]
   defaultRegistryId: string
   pending: boolean
   onOpenChange: (open: boolean) => void
   onSubmit: (values: CredentialForm) => void
 }
 
-export function CredentialDialog({ editingCredential, open, form, registries, defaultRegistryId, pending, onOpenChange, onSubmit }: CredentialDialogProps) {
+export function CredentialDialog({ editingCredential, open, form, registries, projects, defaultRegistryId, pending, onOpenChange, onSubmit }: CredentialDialogProps) {
   const { t } = useTranslation()
   const credentialRegistry = registries.find(registry => registry.id === form.watch('registryId'))
-  const credentialRegistryIsGlobal = credentialRegistry?.scope === 'global'
+  const allowedProjects = credentialRegistry?.scope === 'project'
+    ? projects.filter(project => credentialRegistry.projectIds.includes(project.id))
+    : projects
   const secretProvided = (form.watch('password') ?? '').trim() !== '' || (form.watch('token') ?? '').trim() !== ''
   const secretRequired = !editingCredential
   const repositoryTemplate = form.watch('repositoryTemplate') || credentialDefaults.repositoryTemplate
   const tagTemplate = form.watch('tagTemplate') || credentialDefaults.tagTemplate
-  const accessScope = form.watch('accessScope')
-  const accessScopeSummary = accessScope === 'registry'
-    ? t('registriesPage.credentialAccessScopeRegistry')
-    : t('registriesPage.credentialAccessScopePersonal')
+  const credentialScope = form.watch('scope')
+  const credentialScopeSummary = t(`registriesPage.scope${credentialScope.charAt(0).toUpperCase()}${credentialScope.slice(1)}`)
 
   return (
     <Dialog
@@ -138,9 +139,8 @@ export function CredentialDialog({ editingCredential, open, form, registries, de
               disabled={Boolean(editingCredential)}
               onChange={(event) => {
                 form.setValue('registryId', event.target.value, { shouldValidate: true })
-                const registry = registries.find(item => item.id === event.target.value)
-                if (registry?.scope === 'global')
-                  form.setValue('accessScope', 'personal', { shouldValidate: true })
+                form.setValue('scope', 'user', { shouldValidate: true })
+                form.setValue('projectIds', [], { shouldValidate: true })
               }}
             >
               <option value="">{t('registriesPage.selectRegistry')}</option>
@@ -153,8 +153,8 @@ export function CredentialDialog({ editingCredential, open, form, registries, de
             <Field error={form.formState.errors.name?.message} hint={t('registriesPage.credentialNameHint')} label={t('registriesPage.name')} required>
               <Input {...form.register('name')} aria-invalid={Boolean(form.formState.errors.name)} />
             </Field>
-            <Field error={form.formState.errors.scope?.message} hint={t('registriesPage.credentialScopeHint')} label={t('registriesPage.usage')} required>
-              <Select {...form.register('scope')} aria-invalid={Boolean(form.formState.errors.scope)}>
+            <Field error={form.formState.errors.usage?.message} hint={t('registriesPage.credentialScopeHint')} label={t('registriesPage.usage')} required>
+              <Select {...form.register('usage')} aria-invalid={Boolean(form.formState.errors.usage)}>
                 <option value="push-pull">{t('registriesPage.credentialScopePushPull')}</option>
                 <option value="push">{t('registriesPage.credentialScopePush')}</option>
                 <option value="pull">{t('registriesPage.credentialScopePull')}</option>
@@ -173,16 +173,34 @@ export function CredentialDialog({ editingCredential, open, form, registries, de
             </Field>
           </div>
           <ProgressiveSection
-            description={credentialRegistryIsGlobal ? t('registriesPage.credentialAccessScopeGlobalHint') : t('registriesPage.credentialAccessScopeHint')}
-            summary={accessScopeSummary}
+            description={t('registriesPage.credentialAccessScopeHint')}
+            summary={credentialScopeSummary}
             title={t('registriesPage.credentialAccessScope')}
           >
-            <Field error={form.formState.errors.accessScope?.message} hint={credentialRegistryIsGlobal ? t('registriesPage.credentialAccessScopeGlobalHint') : t('registriesPage.credentialAccessScopeHint')} label={t('registriesPage.credentialAccessScope')} required>
-              <Select {...form.register('accessScope')} aria-invalid={Boolean(form.formState.errors.accessScope)} disabled={credentialRegistryIsGlobal}>
-                <option value="personal">{t('registriesPage.credentialAccessScopePersonal')}</option>
-                {!credentialRegistryIsGlobal && <option value="registry">{t('registriesPage.credentialAccessScopeRegistry')}</option>}
+            <Field error={form.formState.errors.scope?.message} hint={t('registriesPage.credentialAccessScopeHint')} label={t('registriesPage.credentialAccessScope')} required>
+              <Select
+                {...form.register('scope')}
+                aria-invalid={Boolean(form.formState.errors.scope)}
+                onChange={(event) => {
+                  form.setValue('scope', event.target.value as CredentialForm['scope'], { shouldDirty: true, shouldValidate: true })
+                  if (event.target.value !== 'project')
+                    form.setValue('projectIds', [], { shouldValidate: true })
+                }}
+              >
+                {credentialRegistry?.scope === 'global' && <option value="global">{t('registriesPage.scopeGlobal')}</option>}
+                {credentialRegistry?.scope !== 'user' && <option value="project">{t('registriesPage.scopeProject')}</option>}
+                <option value="user">{t('registriesPage.scopeUser')}</option>
               </Select>
             </Field>
+            {credentialScope === 'project' && (
+              <Field error={form.formState.errors.projectIds?.message} hint={t('registriesPage.ownerProjectHint')} label={t('registriesPage.ownerProject')} required>
+                <ProjectSpaceMultiSelect
+                  projects={allowedProjects}
+                  value={form.watch('projectIds')}
+                  onChange={value => form.setValue('projectIds', value, { shouldDirty: true, shouldValidate: true })}
+                />
+              </Field>
+            )}
           </ProgressiveSection>
           <ProgressiveSection
             summary={t('registriesPage.credentialNamingRulesSummary', { repositoryTemplate, tagTemplate })}

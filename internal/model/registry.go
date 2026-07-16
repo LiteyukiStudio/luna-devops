@@ -31,8 +31,10 @@ type RegistryCredential struct {
 	Username           string         `json:"username"`
 	PasswordRef        string         `json:"-"`
 	TokenRef           string         `json:"-"`
-	Scope              string         `gorm:"not null;default:push-pull" json:"scope"`
-	AccessScope        string         `gorm:"not null;default:personal" json:"accessScope"`
+	Usage              string         `gorm:"not null;default:push-pull" json:"usage"`
+	Scope              string         `gorm:"index;not null;default:user" json:"scope"`
+	OwnerRef           string         `gorm:"index" json:"ownerRef"`
+	ProjectIDs         []string       `gorm:"-" json:"projectIds"`
 	RepositoryTemplate string         `gorm:"type:text;not null;default:''" json:"repositoryTemplate"`
 	TagTemplate        string         `gorm:"type:text;not null;default:''" json:"tagTemplate"`
 	CreatedBy          string         `gorm:"index" json:"createdBy"`

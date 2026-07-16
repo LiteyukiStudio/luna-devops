@@ -332,6 +332,7 @@
 - [x] 统一 Git/OIDC OAuth state 运行时表名与迁移表名，并迁移历史 AutoMigrate 错误表数据。
 - [x] Git Provider / Git 凭据表单作用域交互与镜像站一致：global/user 不展示具体项目，project 支持选择多个项目空间。
 - [x] 收敛 Git 凭据权限模型：移除与 `scope` 重叠的 `accessScope`，统一由 global/project/user 表达平台内使用边界；上游 Token `scopes` 仅表达 Git API 权限。
+- [x] Git 凭据支持编辑使用范围和项目空间绑定；凭据范围不能超过所属 Git Provider，编辑时 Token 留空保留原值。
 - [x] 统一 scoped 资源项目空间绑定模型：Git Provider、Git 凭据、镜像站、运行集群、BuildProvider 和 BuildVariableSet 的 project scope 使用 `scoped_resource_project_bindings`，不再把单个项目 ID 塞进 `ownerRef`。
 - [x] 实现仓库列表、分支、文件读取和 Dockerfile/构建目录探测 API。
 - [x] 应用/仓库绑定选择仓库时优先搜索当前 Git 凭据可访问仓库；无匹配且有搜索词时由平台后端搜索公开仓库，并继续复用后端结构探测 API。
@@ -348,8 +349,8 @@
 - [x] Git webhook 创建失败按上游状态和 validation 细节映射友好错误码，明确提示 PUBLIC_BASE_URL 不可公网访问、权限不足、仓库不存在、重复 webhook 和平台限流等原因。
 - [ ] Webhook 状态改为实时检测/同步：仓库绑定列表不只展示本地 `webhookStatus`，后端按 Git Provider 适配 GitHub/Gitea 查询当前仓库 Webhook 是否存在、回调 URL 是否匹配、是否启用，并将检测结果回写或作为实时状态返回；前端提供“检测 Webhook”入口，避免用户在上游手动删除后平台仍显示成功。
 - [x] Git 外部请求网络失败映射为稳定错误码 `git.network_failed`，提示检查服务端网络、代理/VPN、DNS 解析或 FakeIP 设置。
-- [x] 收紧 Git 个人凭据访问：`personal` 凭据仅所有者可见可用，`provider` 凭据才按作用域共享。
-- [x] 收紧普通业务列表中的用户空间资源：管理员不再混看他人的 user-scope Git Provider、镜像站和 personal Registry/Git 凭据，后续单独建设管理视图。
+- [x] 收紧 Git 个人凭据访问：`user` 凭据仅所有者可见可用，`project` 和 `global` 凭据按明确作用域共享。
+- [x] 收紧普通业务列表中的用户空间资源：管理员不再混看他人的 user-scope Git Provider、镜像站和 Registry/Git 凭据，后续单独建设管理视图。
 - [x] 全局 Git Provider、镜像站、集群对普通用户只返回可用资源摘要，不返回管理员维护的连接配置或密钥明文。
 - [x] 将 Git OAuth 凭据自动刷新放入后期 Worker：扫描即将过期的 GitAccount，使用 refresh token 刷新 access token，失败时标记 expired 并记录审计事件。
 - [x] 在 Git API 调用前增加兜底刷新：当 access token 已过期或即将过期时同步触发一次刷新，避免用户必须手动点击刷新。
@@ -410,7 +411,7 @@
 - [x] 支持 global/project/user scope。
 - [x] 项目 scope 镜像站支持绑定多个项目空间，项目默认镜像站按绑定项目空间分别保存。
 - [x] 实现 RegistryCredential 加密引用。
-- [x] 明确 RegistryCredential 隔离：`scope` 表示 pull/push 用途，`accessScope` 表示 personal/跟随镜像站；global 镜像站凭据强制 personal。
+- [x] 收敛 RegistryCredential 权限模型：`usage` 表示 pull/push 用途，`scope` 统一使用 global/project/user；项目范围支持多选，且不能超过所属镜像站范围。
 - [x] Registry response 不再暴露默认 `credentialRef`，仅返回 `credentialSet`。
 - [x] 项目级镜像站管理收紧为 Owner/Admin，Developer 不再能新增、修改或删除项目镜像站。
 - [x] 实现 registry 凭据测试。

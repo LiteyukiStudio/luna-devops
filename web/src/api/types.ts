@@ -509,8 +509,10 @@ export interface RegistryCredential {
   registryId: string
   name: string
   username: string
-  scope: 'push-pull' | 'push' | 'pull'
-  accessScope: 'personal' | 'registry'
+  usage: 'push-pull' | 'push' | 'pull'
+  scope: 'global' | 'project' | 'user'
+  ownerRef: string
+  projectIds: string[]
   repositoryTemplate: string
   tagTemplate: string
   passwordSet: boolean

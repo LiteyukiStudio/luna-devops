@@ -27,10 +27,19 @@ export const credentialSchema = z.object({
   username: z.string(),
   password: z.string(),
   token: z.string(),
-  scope: z.enum(['push-pull', 'push', 'pull']),
-  accessScope: z.enum(['personal', 'registry']),
+  usage: z.enum(['push-pull', 'push', 'pull']),
+  scope: z.enum(['global', 'project', 'user']),
+  projectIds: z.array(z.string()),
   repositoryTemplate: z.string().min(1, i18next.t('registriesPage.repositoryTemplateRequired')),
   tagTemplate: z.string().min(1, i18next.t('registriesPage.tagTemplateRequired')),
+}).superRefine((values, ctx) => {
+  if (values.scope === 'project' && values.projectIds.length === 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['projectIds'],
+      message: i18next.t('projectSpaces.selectProject'),
+    })
+  }
 })
 
 export const imageSchema = z.object({
@@ -63,13 +72,14 @@ export const registryDefaults: RegistryForm = {
 }
 
 export const credentialDefaults: CredentialForm = {
-  accessScope: 'personal',
   registryId: '',
   name: 'default',
   username: '',
   password: '',
   token: '',
-  scope: 'push-pull',
+  usage: 'push-pull',
+  scope: 'user',
+  projectIds: [],
   repositoryTemplate: '{registryNamespace}/{projectSlug}-{appSlug}',
   tagTemplate: 'latest',
 }

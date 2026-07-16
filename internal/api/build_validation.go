@@ -4,6 +4,7 @@ import (
 	"errors"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 	"net/http"
 	"strings"
 )
@@ -114,7 +115,7 @@ func (h *Handlers) prepareBuildRunRequest(user model.User, run *model.BuildRun) 
 	if err := h.db.First(&registry, "id = ?", run.TargetRegistryID).Error; err != nil {
 		return buildRunBadRequest("目标镜像站不存在")
 	}
-	credential, hasCredential := h.registryPushCredentialFor(user, registry)
+	credential, hasCredential := h.registryPushCredentialForProject(user, registry, run.ProjectID)
 	if strings.TrimSpace(run.TargetRepository) == "" {
 		run.TargetRepository = strings.Trim(strings.TrimSpace(config.TargetRepository), "/")
 		run.TargetTag = strings.TrimSpace(config.TargetTag)
@@ -134,7 +135,7 @@ func (h *Handlers) prepareBuildRunRequest(user model.User, run *model.BuildRun) 
 	run.TargetRepository = strings.Trim(strings.TrimSpace(run.TargetRepository), "/")
 	run.TargetTag = fallback(strings.TrimSpace(run.TargetTag), "latest")
 	run.ImageRef = fallback(strings.TrimSpace(run.ImageRef), buildImageRef(registry, *run))
-	if !h.usableRegistryCredentialExists(user.ID, registry) {
+	if !h.usableRegistryCredentialExists(user.ID, run.ProjectID, registry) {
 		return buildRunBadRequest("目标镜像站缺少可用推送凭据")
 	}
 	if _, err := h.buildVariablesForRunByIDs(h.db, user, run.ProjectID, buildVariableSetIDs(run.BuildVariableSetIDs)); err != nil {
@@ -163,21 +164,24 @@ func (h *Handlers) deploymentTargetForRun(ctx *gin.Context, app model.Applicatio
 	return config, true
 }
 
-func (h *Handlers) usableRegistryCredentialExists(userID string, registry model.ArtifactRegistry) bool {
+func (h *Handlers) usableRegistryCredentialExists(userID, projectID string, registry model.ArtifactRegistry) bool {
+	visible := func(query *gorm.DB) *gorm.DB {
+		return query.Where("scope = ? and owner_ref = ? or scope = ? or (scope = ? and exists (select 1 from scoped_resource_project_bindings srpb where srpb.resource_type = ? and srpb.resource_id = registry_credentials.id and srpb.project_id = ?))",
+			"user", userID, "global", "project", scopedResourceRegistryCredential, projectID)
+	}
 	if strings.TrimSpace(registry.CredentialRef) != "" {
 		var count int64
-		h.db.Model(&model.RegistryCredential{}).
-			Where("registry_id = ? and scope in ?", registry.ID, []string{"push", "push-pull"}).
-			Where("id = ? and (access_scope = ? or created_by = ?)", registry.CredentialRef, "registry", userID).
+		visible(h.db.Model(&model.RegistryCredential{})).
+			Where("registry_id = ? and usage in ?", registry.ID, []string{"push", "push-pull"}).
+			Where("id = ?", registry.CredentialRef).
 			Count(&count)
 		if count > 0 {
 			return true
 		}
 	}
 	var count int64
-	h.db.Model(&model.RegistryCredential{}).
-		Where("registry_id = ? and scope in ?", registry.ID, []string{"push", "push-pull"}).
-		Where("(access_scope = ? and created_by = ?) or access_scope = ?", "personal", userID, "registry").
+	visible(h.db.Model(&model.RegistryCredential{})).
+		Where("registry_id = ? and usage in ?", registry.ID, []string{"push", "push-pull"}).
 		Count(&count)
 	return count > 0
 }

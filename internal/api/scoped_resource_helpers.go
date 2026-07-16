@@ -13,11 +13,12 @@ import (
 )
 
 const (
-	scopedResourceGitProvider      = "git_provider"
-	scopedResourceGitAccount       = "git_account"
-	scopedResourceArtifactRegistry = "artifact_registry"
-	scopedResourceBuildVariableSet = "build_variable_set"
-	scopedResourceRuntimeCluster   = "runtime_cluster"
+	scopedResourceGitProvider        = "git_provider"
+	scopedResourceGitAccount         = "git_account"
+	scopedResourceArtifactRegistry   = "artifact_registry"
+	scopedResourceRegistryCredential = "registry_credential"
+	scopedResourceBuildVariableSet   = "build_variable_set"
+	scopedResourceRuntimeCluster     = "runtime_cluster"
 )
 
 func (h *Handlers) normalizeScopedOwnerWithProjects(ctx *gin.Context, user model.User, rawScope, rawOwnerRef string, rawProjectIDs []string, globalError string) (string, string, []string, bool) {
@@ -45,6 +46,37 @@ func (h *Handlers) normalizeScopedOwnerWithProjects(ctx *gin.Context, user model
 	default:
 		return scope, ownerRef, nil, true
 	}
+}
+
+func (h *Handlers) normalizeCredentialScopeWithinParent(ctx *gin.Context, user model.User, rawScope string, rawProjectIDs []string, parentScope string, parentProjectIDs []string, globalError string) (string, string, []string, bool) {
+	scope, ownerRef, projectIDs, ok := h.normalizeScopedOwnerWithProjects(ctx, user, rawScope, "", rawProjectIDs, globalError)
+	if !ok {
+		return "", "", nil, false
+	}
+	parentScope = normalizeOwnerScope(parentScope)
+	if parentScope == "user" && scope != "user" {
+		writeError(ctx, http.StatusBadRequest, "个人级资源下的凭据只能设为个人使用")
+		return "", "", nil, false
+	}
+	if parentScope == "project" {
+		if scope == "global" {
+			writeError(ctx, http.StatusBadRequest, "项目级资源下的凭据不能设为全局使用")
+			return "", "", nil, false
+		}
+		if scope == "project" {
+			allowed := make(map[string]struct{}, len(parentProjectIDs))
+			for _, projectID := range normalizeStringList(parentProjectIDs) {
+				allowed[projectID] = struct{}{}
+			}
+			for _, projectID := range projectIDs {
+				if _, exists := allowed[projectID]; !exists {
+					writeError(ctx, http.StatusBadRequest, "凭据不能共享给父级资源范围之外的项目空间")
+					return "", "", nil, false
+				}
+			}
+		}
+	}
+	return scope, ownerRef, projectIDs, true
 }
 
 func (h *Handlers) canManageScopedResourceByID(ctx *gin.Context, user model.User, scope, ownerRef, resourceType, resourceID, errorMessage string) bool {
@@ -151,6 +183,33 @@ func (h *Handlers) applyScopedResourceVisibility(ctx *gin.Context, query *gorm.D
 		}
 	}
 	return query.Where(strings.Join(conditions, " or "), args...), true
+}
+
+func (h *Handlers) applyScopedResourceVisibilityForUser(query *gorm.DB, resourceType string, user model.User) *gorm.DB {
+	conditions := []string{"scope = 'global'", "(scope = 'user' and owner_ref = ?)"}
+	args := []any{user.ID}
+	projectSubquery := h.db.Model(&model.ScopedResourceProjectBinding{}).
+		Select("resource_id").
+		Where("resource_type = ?", resourceType)
+	if authz.IsPlatformAdmin(user.Role) {
+		conditions = append(conditions, "(scope = 'project' and id in (?))")
+		args = append(args, projectSubquery)
+	} else if projectIDs := h.projectIDsForUser(user.ID); len(projectIDs) > 0 {
+		conditions = append(conditions, "(scope = 'project' and id in (?))")
+		args = append(args, projectSubquery.Where("project_id in ?", projectIDs))
+	}
+	return query.Where(strings.Join(conditions, " or "), args...)
+}
+
+func (h *Handlers) applyScopedResourceVisibilityForProject(query *gorm.DB, resourceType string, user model.User, projectID string) *gorm.DB {
+	projectSubquery := h.db.Model(&model.ScopedResourceProjectBinding{}).
+		Select("resource_id").
+		Where("resource_type = ? and project_id = ?", resourceType, strings.TrimSpace(projectID))
+	return query.Where(
+		"scope = 'global' or (scope = 'user' and owner_ref = ?) or (scope = 'project' and id in (?))",
+		user.ID,
+		projectSubquery,
+	)
 }
 
 func (h *Handlers) replaceScopedResourceProjectBindings(tx *gorm.DB, resourceType, resourceID string, projectIDs []string, defaultProjectIDs []string) error {
