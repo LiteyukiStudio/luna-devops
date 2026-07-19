@@ -135,6 +135,34 @@ tool descriptor
 
 内部 ADK tools 直接调用 Tool Kernel。未来 MCP tools 通过 MCP adapter 调用同一个 Tool Kernel。
 
+## Skill 加载策略
+
+内部助手不要在每次会话里一次性加载全部平台能力。第一步只加载 `luna-devops-router` 和很短的系统约束，由 router 根据用户意图选择后续模块。
+
+推荐流程：
+
+```text
+用户消息
+  -> 加载 luna-devops-router
+  -> 判断模块和风险等级
+  -> 加载 1 到 3 个相关模块 skill
+  -> 选择 Tool Kernel tools
+  -> 执行 read / preflight / confirmation / mutation
+```
+
+模块 skill 只描述操作边界、必要入参、风险分级和诊断顺序，不承载业务权限。实际权限仍由 Tool Kernel 和后端 service 判断。
+
+当用户目标跨多个模块时，优先加载：
+
+| 场景 | 推荐 skill |
+| --- | --- |
+| 从代码到上线 | `luna-devops-source`、`luna-devops-build`、`luna-devops-deployment`、`luna-devops-gateway` |
+| 构建失败 | `luna-devops-build`、`luna-devops-debugging` |
+| 应用不能访问 | `luna-devops-deployment`、`luna-devops-gateway`、`luna-devops-runtime`、`luna-devops-debugging` |
+| 服务间调用失败 | `luna-devops-topology`、`luna-devops-runtime`、`luna-devops-debugging` |
+| 费用异常 | `luna-devops-billing`、`luna-devops-deployment`、`luna-devops-debugging` |
+| 登录或权限异常 | `luna-devops-security`、`luna-devops-debugging` |
+
 ## 确认交互
 
 内部助手的确认应发生在平台 UI 内。
