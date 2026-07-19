@@ -12,9 +12,11 @@ const gitBuildOptionsMaxDirectories = 80
 const gitBuildOptionsMaxDepth = 3
 
 var buildTemplateDetectionFiles = map[string]bool{
-	"Cargo.lock": true, "Cargo.toml": true, "go.mod": true, "index.html": true,
-	"package.json": true, "pnpm-lock.yaml": true, "pyproject.toml": true,
-	"uv.lock": true, "vite.config.js": true, "vite.config.ts": true, "yarn.lock": true,
+	"Cargo.lock": true, "Cargo.toml": true, "Gemfile": true, "Gemfile.lock": true,
+	"build.gradle": true, "build.gradle.kts": true, "bun.lock": true, "bun.lockb": true,
+	"go.mod": true, "gradlew": true, "index.html": true, "package.json": true,
+	"pnpm-lock.yaml": true, "pom.xml": true, "pyproject.toml": true, "uv.lock": true,
+	"vite.config.js": true, "vite.config.ts": true, "yarn.lock": true,
 }
 
 func (c Client) DiscoverBuildOptions(ctx context.Context, owner, repo, ref string) (BuildOptions, error) {
@@ -96,7 +98,7 @@ func (c Client) discoverBuildOptionsByTree(ctx context.Context, owner, repo, ref
 			if isDockerfileName(name) {
 				dockerfiles[path] = struct{}{}
 			}
-			if buildTemplateDetectionFiles[name] {
+			if isBuildTemplateDetectionFile(name) {
 				detectedFiles[path] = struct{}{}
 			}
 		}
@@ -139,7 +141,7 @@ func (c Client) discoverBuildOptionsByContents(ctx context.Context, owner, repo,
 				if isDockerfileName(item.Name) {
 					dockerfiles[item.Path] = struct{}{}
 				}
-				if buildTemplateDetectionFiles[item.Name] {
+				if isBuildTemplateDetectionFile(item.Name) {
 					detectedFiles[item.Path] = struct{}{}
 				}
 			}
@@ -156,6 +158,10 @@ func (c Client) discoverBuildOptionsByContents(ctx context.Context, owner, repo,
 
 func isDockerfileName(name string) bool {
 	return name == "Dockerfile" || strings.HasPrefix(name, "Dockerfile.") || strings.HasSuffix(name, ".Dockerfile")
+}
+
+func isBuildTemplateDetectionFile(name string) bool {
+	return buildTemplateDetectionFiles[name] || strings.HasSuffix(strings.ToLower(name), ".csproj")
 }
 
 func parseDockerfileExposedPorts(content string) []int {

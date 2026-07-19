@@ -68,3 +68,20 @@ func TestRecommendPrefersMoreSpecificTemplate(t *testing.T) {
 		t.Fatalf("Recommend() = %#v", got)
 	}
 }
+
+func TestRecommendRecognizesAdditionalRuntimes(t *testing.T) {
+	for name, files := range map[string][]string{
+		"bun-service":    {"package.json", "bun.lock"},
+		"dotnet-service": {"src/WebApp/WebApp.csproj"},
+		"java-gradle":    {"build.gradle.kts", "gradlew"},
+		"java-maven":     {"pom.xml"},
+		"ruby-service":   {"Gemfile", "Gemfile.lock"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := Recommend(files)
+			if len(got) == 0 || got[0] != name {
+				t.Fatalf("Recommend() = %#v, want %q first", got, name)
+			}
+		})
+	}
+}

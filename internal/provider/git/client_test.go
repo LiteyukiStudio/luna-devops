@@ -53,6 +53,7 @@ func TestDiscoverBuildOptionsUsesRecursiveTree(t *testing.T) {
 				"truncated": false,
 				"tree": []map[string]any{
 					{"path": "Dockerfile", "type": "blob", "sha": "a"},
+					{"path": "WebApp.csproj", "type": "blob", "sha": "f"},
 					{"path": "web", "type": "tree", "sha": "b"},
 					{"path": "web/Dockerfile", "type": "blob", "sha": "c"},
 					{"path": "web/src", "type": "tree", "sha": "d"},
@@ -94,6 +95,9 @@ func TestDiscoverBuildOptionsUsesRecursiveTree(t *testing.T) {
 	}
 	if !reflect.DeepEqual(options.Directories, []string{".", "web", "web/src"}) {
 		t.Fatalf("directories = %#v", options.Directories)
+	}
+	if !reflect.DeepEqual(options.DetectedFiles, []string{"WebApp.csproj"}) {
+		t.Fatalf("detected files = %#v", options.DetectedFiles)
 	}
 	if !reflect.DeepEqual(options.ExposedPorts["Dockerfile"], []int{8080, 8443}) {
 		t.Fatalf("root ports = %#v", options.ExposedPorts["Dockerfile"])

@@ -64,7 +64,18 @@ Deployment targets support two build definition modes:
 - **Repository Dockerfile** uses a Dockerfile already maintained in the repository.
 - **Platform build template** generates the Dockerfile used by the current build from a small set of parameters.
 
-The first release includes templates for Node.js services, Node.js static sites, Python with uv, Go, Rust, and plain static sites. You can adjust the runtime version, dependency installation, build and start commands, and service port where applicable, then preview the generated Dockerfile before saving.
+The platform includes templates for:
+
+- Go services
+- Node.js services, Node.js static sites, and Bun services
+- Python services using uv
+- Rust services
+- Ruby services
+- Java services using Maven or Gradle
+- .NET services
+- Plain static sites
+
+You can adjust dependency installation, build and start commands, service ports, and other required parameters, then preview the generated Dockerfile before saving. Java templates use JDK/JRE 21 by default, while the .NET template uses .NET 8. Adjust the parameters when your project uses a different version or artifact name.
 
 Templates never modify the repository. The Worker mounts the generated Dockerfile as a separate file in the Kubernetes build Job and asks BuildKit to use it with the original repository build context. When a platform template is selected, it overrides a Dockerfile that may already exist in the repository.
 
@@ -78,4 +89,4 @@ Each build snapshots the template ID, immutable template version, parameter valu
 4. Choose a template, review its parameters, and preview the Dockerfile.
 5. Save the deployment target and create a build.
 
-Recommendations only use files such as `package.json`, `pyproject.toml`, `go.mod`, `Cargo.toml`, and `index.html`. The platform does not guess project-specific start commands; verify them against the project's documentation.
+Recommendations only use files such as `package.json`, `bun.lock`, `pyproject.toml`, `go.mod`, `Cargo.toml`, `Gemfile`, `pom.xml`, `build.gradle`, `*.csproj`, and `index.html`. The platform does not guess project-specific start commands; verify them against the project's documentation.

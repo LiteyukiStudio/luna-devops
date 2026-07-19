@@ -1,7 +1,7 @@
 import type { UseFormReturn } from 'react-hook-form'
 import type { BuildTemplate, BuildTemplatePreview, DeploymentTargetPayload } from '@/api'
 import { useMutation } from '@tanstack/react-query'
-import { FileCode2, Sparkles } from 'lucide-react'
+import { Binary, Boxes, Braces, Coffee, Cog, FileCode2, Gem, Globe2, Sparkles, Zap } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -13,7 +13,8 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { NativeSelect as Select } from '@/components/ui/native-select'
+import { NativeSelect } from '@/components/ui/native-select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 export function ApplicationBuildTemplateFields({
   dockerfileSuggestions,
@@ -71,10 +72,10 @@ export function ApplicationBuildTemplateFields({
   return (
     <div className="grid gap-3 md:col-span-2">
       <Field hint={t('buildTemplates.modeHint')} label={t('buildTemplates.mode')} required>
-        <Select value={mode} onChange={event => switchMode(event.target.value as DeploymentTargetPayload['buildDefinitionMode'])}>
+        <NativeSelect value={mode} onChange={event => switchMode(event.target.value as DeploymentTargetPayload['buildDefinitionMode'])}>
           <option value="repository_dockerfile">{t('buildTemplates.repositoryDockerfile')}</option>
           <option value="template">{t('buildTemplates.platformTemplate')}</option>
-        </Select>
+        </NativeSelect>
       </Field>
 
       {mode === 'repository_dockerfile' && dockerfileSuggestions.length === 0 && (
@@ -93,14 +94,21 @@ export function ApplicationBuildTemplateFields({
       {mode === 'template' && (
         <>
           <Field hint={t('buildTemplates.templateHint')} label={t('buildTemplates.template')} required>
-            <Select value={templateID} onChange={event => selectTemplate(event.target.value)}>
-              <option value="">{t('common.select')}</option>
-              {orderedTemplates.map(item => (
-                <option key={`${item.id}:${item.version}`} value={item.id}>
-                  {t(`buildTemplates.names.${item.id}`)}
-                  {recommendedTemplateIds.includes(item.id) ? ` · ${t('buildTemplates.recommended')}` : ''}
-                </option>
-              ))}
+            <Select value={templateID || undefined} onValueChange={selectTemplate}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder={t('common.select')} />
+              </SelectTrigger>
+              <SelectContent position="popper">
+                {orderedTemplates.map((item) => {
+                  return (
+                    <SelectItem key={`${item.id}:${item.version}`} value={item.id}>
+                      {buildTemplateIcon(item)}
+                      <span>{t(`buildTemplates.names.${item.id}`)}</span>
+                      {recommendedTemplateIds.includes(item.id) && <Badge className="ml-auto" variant="secondary">{t('buildTemplates.recommended')}</Badge>}
+                    </SelectItem>
+                  )
+                })}
+              </SelectContent>
             </Select>
           </Field>
           {selectedTemplate && (
@@ -125,9 +133,9 @@ export function ApplicationBuildTemplateFields({
             <Field key={parameter.key} label={t(`buildTemplates.parameters.${parameter.key}`)} required={parameter.required}>
               {parameter.type === 'select'
                 ? (
-                    <Select value={templateValues[parameter.key] ?? parameter.defaultValue} onChange={event => updateValue(parameter.key, event.target.value)}>
+                    <NativeSelect value={templateValues[parameter.key] ?? parameter.defaultValue} onChange={event => updateValue(parameter.key, event.target.value)}>
                       {(parameter.options ?? []).map(option => <option key={option} value={option}>{option}</option>)}
-                    </Select>
+                    </NativeSelect>
                   )
                 : (
                     <Input
@@ -166,5 +174,30 @@ function parseTemplateValues(raw?: string) {
   }
   catch {
     return {}
+  }
+}
+
+function buildTemplateIcon(template: BuildTemplate) {
+  if (template.category === 'static')
+    return <Globe2 className="size-4" />
+  switch (template.runtime) {
+    case 'bun':
+      return <Zap className="size-4" />
+    case 'dotnet':
+      return <Boxes className="size-4" />
+    case 'go':
+      return <Binary className="size-4" />
+    case 'java':
+      return <Coffee className="size-4" />
+    case 'node':
+      return <Braces className="size-4" />
+    case 'python':
+      return <FileCode2 className="size-4" />
+    case 'ruby':
+      return <Gem className="size-4" />
+    case 'rust':
+      return <Cog className="size-4" />
+    default:
+      return <FileCode2 className="size-4" />
   }
 }

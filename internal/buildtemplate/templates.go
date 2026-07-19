@@ -97,6 +97,29 @@ EXPOSE 8080
 `,
 	},
 	{
+		ID: "bun-service", Version: "1.0.0", Runtime: "bun", Category: "service", DefaultServicePort: 3000,
+		Parameters: []Parameter{
+			{Key: "installCommand", Type: "command", Required: true, DefaultValue: "bun install --frozen-lockfile"},
+			{Key: "buildCommand", Type: "command", Required: true, DefaultValue: "bun run build"},
+			{Key: "startCommand", Type: "command", Required: true, DefaultValue: "bun run start"},
+			{Key: "port", Type: "port", Required: true, DefaultValue: "3000"},
+		},
+		detectionFiles: []string{"package.json", "bun.lock", "bun.lockb"},
+		dockerfile: `FROM oven/bun:1-alpine AS build
+WORKDIR /app
+COPY . .
+RUN {{.installCommand}}
+RUN {{.buildCommand}}
+
+FROM oven/bun:1-alpine AS runtime
+WORKDIR /app
+ENV NODE_ENV=production
+COPY --from=build /app /app
+EXPOSE {{.port}}
+CMD ["sh", "-c", {{json .startCommand}}]
+`,
+	},
+	{
 		ID: "python-uv", Version: "1.0.0", Runtime: "python", Category: "service", DefaultServicePort: 8000,
 		Parameters: []Parameter{
 			{Key: "pythonVersion", Type: "select", Required: true, DefaultValue: "3.13", Options: []string{"3.11", "3.12", "3.13"}},
@@ -108,6 +131,23 @@ EXPOSE 8080
 		dockerfile: `FROM ghcr.io/astral-sh/uv:python{{.pythonVersion}}-bookworm-slim
 WORKDIR /app
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
+COPY . .
+RUN {{.installCommand}}
+EXPOSE {{.port}}
+CMD ["sh", "-c", {{json .startCommand}}]
+`,
+	},
+	{
+		ID: "ruby-service", Version: "1.0.0", Runtime: "ruby", Category: "service", DefaultServicePort: 3000,
+		Parameters: []Parameter{
+			{Key: "installCommand", Type: "command", Required: true, DefaultValue: "bundle install"},
+			{Key: "startCommand", Type: "command", Required: true, DefaultValue: "bundle exec rackup --host 0.0.0.0 --port 3000"},
+			{Key: "port", Type: "port", Required: true, DefaultValue: "3000"},
+		},
+		detectionFiles: []string{"Gemfile", "Gemfile.lock"},
+		dockerfile: `FROM ruby:3.4-alpine
+WORKDIR /app
+RUN apk add --no-cache build-base
 COPY . .
 RUN {{.installCommand}}
 EXPOSE {{.port}}
@@ -159,6 +199,71 @@ ENTRYPOINT ["/usr/local/bin/app"]
 `,
 	},
 	{
+		ID: "java-maven", Version: "1.0.0", Runtime: "java", Category: "service", DefaultServicePort: 8080,
+		Parameters: []Parameter{
+			{Key: "buildCommand", Type: "command", Required: true, DefaultValue: "mvn -B -DskipTests package"},
+			{Key: "port", Type: "port", Required: true, DefaultValue: "8080"},
+		},
+		detectionFiles: []string{"pom.xml"},
+		dockerfile: `FROM maven:3.9-eclipse-temurin-21-alpine AS build
+WORKDIR /src
+COPY . .
+RUN {{.buildCommand}}
+RUN artifact="$(find target -maxdepth 1 -type f -name '*.jar' ! -name 'original-*' | head -n 1)" \
+    && test -n "$artifact" \
+    && cp "$artifact" /tmp/app.jar
+
+FROM eclipse-temurin:21-jre-alpine
+WORKDIR /app
+COPY --from=build /tmp/app.jar /app/app.jar
+EXPOSE {{.port}}
+ENTRYPOINT ["java", "-jar", "/app/app.jar"]
+`,
+	},
+	{
+		ID: "java-gradle", Version: "1.0.0", Runtime: "java", Category: "service", DefaultServicePort: 8080,
+		Parameters: []Parameter{
+			{Key: "buildCommand", Type: "command", Required: true, DefaultValue: "gradle --no-daemon build -x test"},
+			{Key: "port", Type: "port", Required: true, DefaultValue: "8080"},
+		},
+		detectionFiles: []string{"build.gradle", "build.gradle.kts", "gradlew"},
+		dockerfile: `FROM gradle:8-jdk21-alpine AS build
+WORKDIR /home/gradle/project
+COPY --chown=gradle:gradle . .
+RUN {{.buildCommand}}
+RUN artifact="$(find build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*-plain.jar' | head -n 1)" \
+    && test -n "$artifact" \
+    && cp "$artifact" /tmp/app.jar
+
+FROM eclipse-temurin:21-jre-alpine
+WORKDIR /app
+COPY --from=build /tmp/app.jar /app/app.jar
+EXPOSE {{.port}}
+ENTRYPOINT ["java", "-jar", "/app/app.jar"]
+`,
+	},
+	{
+		ID: "dotnet-service", Version: "1.0.0", Runtime: "dotnet", Category: "service", DefaultServicePort: 8080,
+		Parameters: []Parameter{
+			{Key: "projectPath", Type: "path", Required: true, DefaultValue: "."},
+			{Key: "assemblyFile", Type: "identifier", Required: true, DefaultValue: "app.dll"},
+			{Key: "port", Type: "port", Required: true, DefaultValue: "8080"},
+		},
+		detectionFiles: []string{".csproj"},
+		dockerfile: `FROM mcr.microsoft.com/dotnet/sdk:8.0-alpine3.21 AS build
+WORKDIR /src
+COPY . .
+RUN dotnet publish {{.projectPath}} -c Release -o /out --no-self-contained
+
+FROM mcr.microsoft.com/dotnet/aspnet:8.0-alpine3.21
+WORKDIR /app
+ENV ASPNETCORE_HTTP_PORTS={{.port}}
+COPY --from=build /out /app
+EXPOSE {{.port}}
+ENTRYPOINT ["dotnet", {{json .assemblyFile}}]
+`,
+	},
+	{
 		ID: "static-site", Version: "1.0.0", Runtime: "static", Category: "static", DefaultServicePort: 8080,
 		Parameters: []Parameter{
 			{Key: "sourceDirectory", Type: "path", Required: true, DefaultValue: "."},
@@ -200,7 +305,7 @@ func Recommend(files []string) []string {
 		score := 0
 		for _, wanted := range definition.detectionFiles {
 			for file := range normalized {
-				if file == wanted || strings.HasSuffix(file, "/"+wanted) {
+				if file == wanted || strings.HasSuffix(file, "/"+wanted) || (strings.HasPrefix(wanted, ".") && strings.HasSuffix(strings.ToLower(file), strings.ToLower(wanted))) {
 					score++
 					break
 				}

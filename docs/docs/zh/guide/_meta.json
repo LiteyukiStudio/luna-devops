@@ -22,6 +22,6 @@
   {
     "type": "file",
     "name": "build-and-release",
-    "label": "启动排障"
+    "label": "构建与发布"
   }
 ]

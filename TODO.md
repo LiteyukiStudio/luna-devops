@@ -438,7 +438,7 @@
 - [x] 实现构建触发器配置 API：manual、webhook、push branch、tag、API token。
 - [x] 实现构建参数配置 API：Dockerfile 路径、构建上下文、Dockerfile Build Args、目标镜像、目标镜像站凭据、构建目录。
 - [x] 构建触发只允许用户填写目标镜像 Tag 模板；目标镜像名前缀由平台按镜像站和应用标识固定生成，DockerHub 不带域名前缀，其他镜像站强制带 registry domain；镜像站不再承载 repository namespace。
-- [x] 支持平台构建模板：部署配置可选择“仓库 Dockerfile”或“平台模板”，内置 Go、Node.js、Python + uv、Rust 和静态站点模板及运行参数；Kubernetes 构建 Job 克隆仓库后，通过只读 Secret 挂载平台渲染的临时 Dockerfile，并按部署配置中的构建上下文执行 BuildKit 构建；仓库没有 Dockerfile 时前端主动推荐模板，用户显式选择模板时则覆盖仓库原有 Dockerfile；BuildRun 保存模板版本、参数、渲染结果和校验和快照。
+- [x] 支持平台构建模板：部署配置可选择“仓库 Dockerfile”或“平台模板”，内置 Go、Node.js、Bun、Python + uv、Rust、Ruby、Java Maven、Java Gradle、.NET 和静态站点模板及运行参数；模板选择器统一展示技术图标与名称，仓库文件探测会优先推荐匹配模板；Kubernetes 构建 Job 克隆仓库后，通过只读 Secret 挂载平台渲染的临时 Dockerfile，并按部署配置中的构建上下文执行 BuildKit 构建；仓库没有 Dockerfile 时前端主动推荐模板，用户显式选择模板时则覆盖仓库原有 Dockerfile；BuildRun 保存模板版本、参数、渲染结果和校验和快照。
 - [x] 部署配置表单维护代码仓库、Dockerfile、构建上下文、目标镜像站、镜像引用模板和构建策略；应用配置只保留名称、标识、图标和服务默认端口，不再维护单一仓库或镜像来源。
 - [x] 创建/编辑应用弹窗只保留名称、标识和图标，仓库、镜像、端口、Webhook 等来源与交付入口统一由部署配置维护，避免应用被误解为只能绑定一个仓库。
 - [x] 应用详情概览改为看板式运行摘要，展示部署配置、构建、部署和访问入口关键状态；应用基础模型移除来源类型、仓库、镜像和构建字段，交付配置统一归属部署配置和访问配置。
