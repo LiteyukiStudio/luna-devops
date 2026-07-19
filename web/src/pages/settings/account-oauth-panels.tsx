@@ -1,6 +1,6 @@
 import type { TFunction } from 'i18next'
 import type { UseFormReturn } from 'react-hook-form'
-import type { OAuthApplication, OAuthApplicationInput, OAuthGrant } from '@/api'
+import type { AccessTokenScopeDefinition, OAuthApplication, OAuthApplicationInput, OAuthGrant } from '@/api'
 import type { DataListColumn } from '@/components/common/data-list'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -12,13 +12,13 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import { api } from '@/api'
-import { CheckboxField } from '@/components/common/checkbox-field'
+import { splitAccessTokenScopes } from '@/components/common/access-token-scope'
+import { AccessTokenScopeBadges, AccessTokenScopeSelector } from '@/components/common/access-token-scope-selector'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { DataList } from '@/components/common/data-list'
 import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
 import { formatAbsoluteDateTime } from '@/components/common/time-format'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -116,7 +116,7 @@ export function OAuthApplicationsPanel() {
       homepageUrl: application.homepageUrl,
       logoUrl: application.logoUrl,
       redirectUrisText: application.redirectUris.join('\n'),
-      scopes: splitScopes(application.allowedScopes),
+      scopes: splitAccessTokenScopes(application.allowedScopes),
       accessTokenLifetimeDays: application.accessTokenLifetimeDays,
     })
     setDialogOpen(true)
@@ -149,7 +149,7 @@ export function OAuthApplicationsPanel() {
     {
       key: 'scope',
       header: t('oauthApps.scopes'),
-      render: application => <ScopeBadges scope={application.allowedScopes} t={t} />,
+      render: application => <AccessTokenScopeBadges scope={application.allowedScopes} />,
     },
     {
       key: 'lifetime',
@@ -267,7 +267,7 @@ export function OAuthGrantsPanel() {
         </div>
       ),
     },
-    { key: 'scope', header: t('oauthApps.authorizedScopes'), render: grant => <ScopeBadges scope={grant.scope} t={t} /> },
+    { key: 'scope', header: t('oauthApps.authorizedScopes'), render: grant => <AccessTokenScopeBadges scope={grant.scope} /> },
     { key: 'updatedAt', header: t('oauthApps.authorizedAt'), render: grant => formatAbsoluteDateTime(grant.updatedAt) },
     {
       key: 'actions',
@@ -309,16 +309,12 @@ function OAuthApplicationDialog({ application, form, open, pending, scopeItems, 
   form: UseFormReturn<OAuthApplicationForm>
   open: boolean
   pending: boolean
-  scopeItems: Array<{ value: string, group: string, recommended: boolean, requiresAdminRole: boolean }>
+  scopeItems: AccessTokenScopeDefinition[]
   onClose: () => void
   onSubmit: (values: OAuthApplicationForm) => void
 }) {
   const { t } = useTranslation()
   const selectedScopes = form.watch('scopes') ?? []
-  const toggleScope = (scope: string, checked: boolean) => {
-    const next = checked ? [...new Set([...selectedScopes, scope])] : selectedScopes.filter(item => item !== scope)
-    form.setValue('scopes', next, { shouldDirty: true, shouldValidate: true })
-  }
   return (
     <Dialog open={open} onOpenChange={nextOpen => !nextOpen && onClose()}>
       <DialogContent className="max-w-3xl">
@@ -337,15 +333,11 @@ function OAuthApplicationDialog({ application, form, open, pending, scopeItems, 
             <Textarea {...form.register('redirectUrisText')} className="font-mono" rows={3} placeholder="https://example.com/oauth/callback" />
           </Field>
           <Field error={form.formState.errors.scopes?.message} hint={t('oauthApps.scopesHint')} label={t('oauthApps.scopes')} required>
-            <div className="max-h-64 overflow-y-auto rounded-md border border-border p-3">
-              <div className="grid gap-3 sm:grid-cols-2">
-                {scopeItems.map(scope => (
-                  <CheckboxField key={scope.value} checked={selectedScopes.includes(scope.value)} disabled={scope.requiresAdminRole} onChange={event => toggleScope(scope.value, event.target.checked)}>
-                    {scopeLabel(t, scope.value)}
-                  </CheckboxField>
-                ))}
-              </div>
-            </div>
+            <AccessTokenScopeSelector
+              items={scopeItems}
+              value={selectedScopes}
+              onChange={value => form.setValue('scopes', value, { shouldDirty: true, shouldValidate: true })}
+            />
           </Field>
           <Field label={t('oauthApps.tokenLifetime')} required>
             <Select {...form.register('accessTokenLifetimeDays', { valueAsNumber: true })}>
@@ -366,20 +358,6 @@ function OAuthApplicationDialog({ application, form, open, pending, scopeItems, 
       </DialogContent>
     </Dialog>
   )
-}
-
-function ScopeBadges({ scope, t }: { scope: string, t: TFunction }) {
-  return <div className="flex max-w-md flex-wrap gap-1">{splitScopes(scope).map(item => <Badge key={item} variant="secondary">{scopeLabel(t, item)}</Badge>)}</div>
-}
-
-function scopeLabel(t: TFunction, scope: string) {
-  const key = `accessTokens.scopeLabels.${scope.replaceAll(':', '.').replaceAll('_', '-')}`
-  const translated = t(key)
-  return translated === key ? scope : translated
-}
-
-function splitScopes(value: string) {
-  return value.split(/[\s,]+/).map(item => item.trim()).filter(Boolean)
 }
 
 function applicationPayload(values: OAuthApplicationForm): OAuthApplicationInput {

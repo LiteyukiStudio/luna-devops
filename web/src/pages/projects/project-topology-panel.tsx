@@ -36,19 +36,17 @@ interface RelationDialogState {
 interface ProjectTopologyPanelProps {
   applications: Application[]
   canManage: boolean
-  initialCreate?: boolean
   projectId: string
-  onInitialCreateHandled?: () => void
 }
 
-export function ProjectTopologyPanel({ applications, canManage, initialCreate = false, projectId, onInitialCreateHandled }: ProjectTopologyPanelProps) {
+export function ProjectTopologyPanel({ applications, canManage, projectId }: ProjectTopologyPanelProps) {
   const { t } = useTranslation()
   const [stage, setStage] = useState('')
   const [origin, setOrigin] = useState<'all' | ProjectTopologyOrigin>('all')
   const [search, setSearch] = useState('')
   const [fitVersion, setFitVersion] = useState(0)
   const [selectedEdgeId, setSelectedEdgeId] = useState('')
-  const [dialog, setDialog] = useState<RelationDialogState | null>(() => initialCreate && canManage ? { mode: 'service_binding' } : null)
+  const [dialog, setDialog] = useState<RelationDialogState | null>(null)
   const [pendingReleaseApplicationId, setPendingReleaseApplicationId] = useState('')
   const topology = useQuery({
     queryKey: projectTopologyKeys.graph(projectId, '', allOrigins),
@@ -98,8 +96,6 @@ export function ProjectTopologyPanel({ applications, canManage, initialCreate = 
     if (open)
       return
     setDialog(null)
-    if (initialCreate)
-      onInitialCreateHandled?.()
   }
   const openEdit = () => {
     if (selectedBinding)

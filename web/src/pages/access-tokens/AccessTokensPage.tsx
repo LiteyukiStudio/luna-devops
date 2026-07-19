@@ -1,5 +1,4 @@
-import type { TFunction } from 'i18next'
-import type { AccessToken, AccessTokenScopeDefinition } from '@/api'
+import type { AccessToken } from '@/api'
 import type { DataListColumn } from '@/components/common/data-list'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -10,13 +9,12 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import { api } from '@/api'
-import { CheckboxField } from '@/components/common/checkbox-field'
+import { AccessTokenScopeBadges, AccessTokenScopeSelector } from '@/components/common/access-token-scope-selector'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { DataList } from '@/components/common/data-list'
 import { FormField as Field } from '@/components/common/form-field'
 import { StatusValueBadge } from '@/components/common/status-badge'
 import { formatAbsoluteDateTime } from '@/components/common/time-format'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -77,7 +75,6 @@ export function AccessTokensPanel() {
     defaultValues: DEFAULT_TOKEN_FORM,
   })
   const selectedScopes = form.watch('scopes') ?? []
-  const scopeGroups = groupAccessTokenScopes(scopeCatalog.data?.items ?? [])
 
   const createToken = useMutation({
     mutationFn: (values: TokenForm) => api.createAccessToken({
@@ -109,14 +106,6 @@ export function AccessTokensPanel() {
       .then(() => toast.success(t('common.copied')))
       .catch(error => toast.error(error.message))
   }
-  const toggleScope = (scope: string, checked: boolean) => {
-    const current = form.getValues('scopes') ?? []
-    const next = checked
-      ? Array.from(new Set([...current, scope]))
-      : current.filter(item => item !== scope)
-    form.setValue('scopes', next, { shouldDirty: true, shouldValidate: true })
-  }
-
   const tokenItems = tokens.data?.items ?? []
   const columns: DataListColumn<AccessToken>[] = [
     {
@@ -129,15 +118,7 @@ export function AccessTokensPanel() {
       key: 'scope',
       header: t('accessTokens.scope'),
       className: 'w-[26%] px-4 py-3 align-middle',
-      render: token => (
-        <div className="flex max-w-md flex-wrap gap-1">
-          {splitAccessTokenScopes(token.scope).map(scope => (
-            <Badge key={scope} title={scope} variant="secondary">
-              {accessTokenScopeLabel(t, scope)}
-            </Badge>
-          ))}
-        </div>
-      ),
+      render: token => <AccessTokenScopeBadges scope={token.scope} />,
     },
     {
       key: 'createdAt',
@@ -252,38 +233,12 @@ export function AccessTokensPanel() {
               <Input {...form.register('name')} aria-invalid={Boolean(form.formState.errors.name)} placeholder={t('accessTokens.namePlaceholder')} />
             </Field>
             <Field error={form.formState.errors.scopes?.message} hint={t('accessTokens.scopeHint')} label={t('accessTokens.scope')} required>
-              <div className="max-h-[22rem] overflow-y-auto rounded-md border border-border bg-card">
-                {scopeCatalog.isLoading && (
-                  <p className="px-3 py-2 text-sm text-muted-foreground">{t('common.loading')}</p>
-                )}
-                {!scopeCatalog.isLoading && scopeGroups.length === 0 && (
-                  <p className="px-3 py-2 text-sm text-muted-foreground">{t('accessTokens.emptyScopes')}</p>
-                )}
-                {scopeGroups.map(group => (
-                  <div key={group.group} className="border-b border-border last:border-b-0">
-                    <div className="bg-muted/60 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      {t(`accessTokens.scopeGroups.${group.group}`)}
-                    </div>
-                    <div className="grid gap-3 p-3 sm:grid-cols-2">
-                      {group.items.map(scope => (
-                        <CheckboxField
-                          key={scope.value}
-                          checked={selectedScopes.includes(scope.value)}
-                          description={t(`accessTokens.scopeDescriptions.${scopeKey(scope.value)}`)}
-                          disabled={scope.requiresAdminRole}
-                          onChange={event => toggleScope(scope.value, event.target.checked)}
-                        >
-                          <span className="flex items-center gap-2">
-                            {accessTokenScopeLabel(t, scope.value)}
-                            {scope.recommended && <Badge variant="secondary">{t('accessTokens.recommended')}</Badge>}
-                            {scope.requiresAdminRole && <Badge variant="outline">{t('accessTokens.adminOnly')}</Badge>}
-                          </span>
-                        </CheckboxField>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <AccessTokenScopeSelector
+                items={scopeCatalog.data?.items ?? []}
+                loading={scopeCatalog.isLoading}
+                value={selectedScopes}
+                onChange={value => form.setValue('scopes', value, { shouldDirty: true, shouldValidate: true })}
+              />
             </Field>
             <Field error={form.formState.errors.expiresInDays?.message} hint={t('accessTokens.expiresInDaysHint')} label={t('accessTokens.expiresInDays')} required>
               <Select {...form.register('expiresInDays')} aria-invalid={Boolean(form.formState.errors.expiresInDays)}>
@@ -313,31 +268,4 @@ function tokenStatusValue(token: AccessToken) {
   if (token.expiresAt && new Date(token.expiresAt).getTime() < Date.now())
     return 'expired'
   return 'active'
-}
-
-function splitAccessTokenScopes(scopeText: string) {
-  return scopeText.split(',').map(scope => scope.trim()).filter(Boolean)
-}
-
-function groupAccessTokenScopes(items: AccessTokenScopeDefinition[]) {
-  const groups = new Map<string, AccessTokenScopeDefinition[]>()
-  for (const item of items) {
-    const current = groups.get(item.group) ?? []
-    current.push(item)
-    groups.set(item.group, current)
-  }
-  return Array.from(groups.entries()).map(([group, groupItems]) => ({
-    group,
-    items: groupItems,
-  }))
-}
-
-function accessTokenScopeLabel(t: TFunction, scope: string) {
-  const key = `accessTokens.scopeLabels.${scopeKey(scope)}`
-  const label = t(key)
-  return label === key ? scope : label
-}
-
-function scopeKey(scope: string) {
-  return scope.replaceAll(':', '.').replaceAll('_', '-')
 }

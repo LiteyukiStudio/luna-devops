@@ -86,9 +86,6 @@ export function BuildEnvironmentFields({ buildTimeoutMinutes, form, priceText }:
             value={form.watch('buildMemoryRequest')}
             onChange={value => form.setValue('buildMemoryRequest', value, { shouldDirty: true, shouldValidate: true })}
           />
-          <p className="mt-1 text-xs text-muted-foreground">
-            {t('deploymentsPage.buildEstimatedPrice', { price: priceText })}
-          </p>
         </Field>
         <Field hint={t('deploymentsPage.buildTimeoutHint')} label={t('deploymentsPage.buildTimeoutMinutes')} required>
           <Input
@@ -99,6 +96,9 @@ export function BuildEnvironmentFields({ buildTimeoutMinutes, form, priceText }:
           />
         </Field>
       </div>
+      <p className="mt-1 text-xs text-muted-foreground">
+        {t('deploymentsPage.buildEstimatedPrice', { price: priceText })}
+      </p>
     </div>
   )
 }

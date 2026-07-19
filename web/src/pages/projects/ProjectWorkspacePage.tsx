@@ -6,7 +6,7 @@ import type { ProjectHooksPageHandle } from '@/pages/projects/ProjectHooksPage'
 import type { ProjectMembersPageHandle } from '@/pages/projects/ProjectMembersPage'
 import type { ProjectRuntimeConfigSetsPageHandle } from '@/pages/projects/ProjectRuntimeConfigSetsPage'
 import { useQuery } from '@tanstack/react-query'
-import { Activity, ArrowRight, FileCode2, Globe2, KeyRound, Network, Package, Plus, Rocket, ScrollText, UserPlus } from 'lucide-react'
+import { Activity, ArrowRight, FileCode2, Globe2, KeyRound, Package, Plus, Rocket, ScrollText, UserPlus } from 'lucide-react'
 import { motion } from 'motion/react'
 import { lazy, Suspense, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -22,7 +22,6 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { TabsContent } from '@/components/ui/tabs'
 import { ApplicationsPage } from '@/pages/applications/ApplicationsPage'
-import { projectTopologyKeys } from '@/pages/projects/project-topology-query'
 import { ProjectBuildVariableSetsPage } from '@/pages/projects/ProjectBuildVariableSetsPage'
 import { ProjectHooksPage } from '@/pages/projects/ProjectHooksPage'
 import { ProjectMembersPage } from '@/pages/projects/ProjectMembersPage'
@@ -36,7 +35,6 @@ export function ProjectWorkspacePage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const { user } = useSession()
   const [activeTab, setActiveTab] = useState(() => searchParams.get('tab') || 'overview')
-  const [topologyCreateRequested, setTopologyCreateRequested] = useState(false)
   const applicationsPageRef = useRef<ApplicationsPageHandle>(null)
   const buildVariableSetsPageRef = useRef<ProjectBuildVariableSetsPageHandle>(null)
   const hooksPageRef = useRef<ProjectHooksPageHandle>(null)
@@ -51,19 +49,12 @@ export function ProjectWorkspacePage() {
   const recentEvents = useQuery({ queryKey: ['project-overview-events', projectId], queryFn: () => api.listPlatformEvents({ page: 1, pageSize: 5, projectId, sortBy: 'occurredAt', sortOrder: 'desc' }), enabled: Boolean(projectId) })
   const releases = useQuery({ queryKey: ['project-overview-releases', projectId], queryFn: () => api.listReleases(projectId), enabled: Boolean(projectId) })
   const routes = useQuery({ queryKey: ['project-overview-gateway-routes', projectId], queryFn: () => api.listGatewayRoutes(projectId), enabled: Boolean(projectId) })
-  const topology = useQuery({
-    queryKey: projectTopologyKeys.graph(projectId, '', ['service_binding', 'manual']),
-    queryFn: () => api.getProjectTopology(projectId, { origins: ['service_binding', 'manual'] }),
-    enabled: Boolean(projectId),
-  })
-
   if (project.isError)
     return <ErrorState title={t('projectSpaces.workspaceLoadFailedTitle')} description={t('projectSpaces.workspaceLoadFailedDescription')} />
 
   const currentProject = project.data
   const currentMember = members.data?.find(member => member.userId === user?.id)
   const canManageTopology = user?.role === 'platform_admin' || currentMember?.role === 'owner' || currentMember?.role === 'admin'
-  const hasTopologyRelations = (topology.data?.edges.length ?? 0) > 0
   const activeContent = (() => {
     switch (activeTab) {
       case 'apps':
@@ -83,9 +74,7 @@ export function ProjectWorkspacePage() {
               key={projectId}
               applications={applications.data ?? []}
               canManage={Boolean(canManageTopology)}
-              initialCreate={topologyCreateRequested}
               projectId={projectId}
-              onInitialCreateHandled={() => setTopologyCreateRequested(false)}
             />
           </Suspense>
         )
@@ -152,23 +141,6 @@ export function ProjectWorkspacePage() {
       )
     }
 
-    if (activeTab === 'overview' && canManageTopology && !hasTopologyRelations) {
-      return (
-        <Button
-          aria-label={t('projectTopology.advancedEntryAria')}
-          type="button"
-          variant="ghost"
-          onClick={() => {
-            setTopologyCreateRequested(true)
-            setActiveTab('topology')
-          }}
-        >
-          <Network size={16} />
-          {t('projectTopology.advancedEntry')}
-        </Button>
-      )
-    }
-
     return null
   })()
 
@@ -182,7 +154,7 @@ export function ProjectWorkspacePage() {
           { value: 'runtime-configs', label: t('runtimeConfigSets.tab') },
           { value: 'hooks', label: t('projectHooks.tab') },
           { value: 'members', label: t('projectSpaces.members') },
-          ...((hasTopologyRelations || activeTab === 'topology') ? [{ value: 'topology', label: t('projectTopology.tab') }] : []),
+          { value: 'topology', label: t('projectTopology.tab') },
         ]}
         tools={contentTools}
         value={activeTab}

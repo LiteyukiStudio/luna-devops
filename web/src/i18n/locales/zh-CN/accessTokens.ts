@@ -10,6 +10,9 @@ const accessTokens = {
   nameHint: '用于区分这个 Token 的用途，例如本地脚本、CI 触发器或某个自动化工具。',
   scopeHint: '选择这个 Token 需要的最小权限。权限目录由后端同步，普通用户只能勾选读类和明确自动化触发类权限。',
   emptyScopes: '暂无可用权限范围。',
+  noMatchingScopes: '没有匹配的权限范围。',
+  scopeSearchPlaceholder: '搜索权限名称、分组或说明',
+  addRecommended: '添加推荐项',
   recommended: '推荐',
   adminOnly: '管理员',
   scopeGroups: {

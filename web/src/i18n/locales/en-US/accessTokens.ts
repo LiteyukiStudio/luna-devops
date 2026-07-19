@@ -16,6 +16,9 @@ const accessTokens = {
   scope: 'Scope',
   scopeHint: 'Choose the least privilege this token needs. The scope catalog is synchronized from the API; regular users can only select read scopes and explicit automation trigger scopes.',
   emptyScopes: 'No scopes are available.',
+  noMatchingScopes: 'No matching scopes.',
+  scopeSearchPlaceholder: 'Search scopes, groups, or descriptions',
+  addRecommended: 'Add recommended',
   recommended: 'Recommended',
   adminOnly: 'Admin',
   scopeGroups: {
