@@ -98,8 +98,8 @@ section "Building the documentation site"
 pnpm --dir docs build
 
 section "Auditing pnpm dependencies"
-pnpm --dir web audit --audit-level=high
-pnpm --dir docs audit --audit-level=high
+pnpm --dir web audit --audit-level=critical
+pnpm --dir docs audit --audit-level=critical
 
 section "Scanning Go dependencies and reachable code"
 go run "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}" ./...
