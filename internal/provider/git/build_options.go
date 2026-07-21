@@ -15,6 +15,7 @@ var buildTemplateDetectionFiles = map[string]bool{
 	"Cargo.lock": true, "Cargo.toml": true, "Gemfile": true, "Gemfile.lock": true,
 	"build.gradle": true, "build.gradle.kts": true, "bun.lock": true, "bun.lockb": true,
 	"go.mod": true, "gradlew": true, "index.html": true, "package.json": true,
+	"next.config.js": true, "next.config.mjs": true, "next.config.ts": true,
 	"pnpm-lock.yaml": true, "pom.xml": true, "pyproject.toml": true, "uv.lock": true,
 	"vite.config.js": true, "vite.config.ts": true, "yarn.lock": true,
 }

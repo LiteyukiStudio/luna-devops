@@ -67,7 +67,7 @@ Deployment targets support two build definition modes:
 The platform includes templates for:
 
 - Go services
-- Node.js services, Node.js static sites, and Bun services
+- Node.js services, Node.js static sites, Next.js services, and Bun services
 - Python services using uv
 - Rust services
 - Ruby services
@@ -92,3 +92,21 @@ Each build snapshots the template ID, immutable template version, parameter valu
 5. Save the deployment target and create a build.
 
 Recommendations only use files such as `package.json`, `bun.lock`, `pyproject.toml`, `go.mod`, `Cargo.toml`, `Gemfile`, `pom.xml`, `build.gradle`, `*.csproj`, and `index.html`. The platform does not guess project-specific start commands; verify them against the project's documentation.
+
+### Next.js service template
+
+The Next.js service template follows the official Next.js Docker standalone example and separates dependency installation, compilation, and runtime into three stages. It selects npm, pnpm, or Yarn from `package-lock.json`, `pnpm-lock.yaml`, or `yarn.lock`. The runtime image only receives the standalone output, `public`, and `.next/static`, then starts `server.js` as a non-root user.
+
+Enable standalone output in `next.config.js`, `next.config.mjs`, or `next.config.ts` before using the template:
+
+```ts
+const nextConfig = {
+  output: 'standalone',
+}
+
+export default nextConfig
+```
+
+The platform does not rewrite repository configuration. When standalone output is missing, the build fails with an explicit message instead of producing an image that cannot start. Repositories containing `next.config.js`, `next.config.mjs`, or `next.config.ts` receive the Next.js service recommendation first.
+
+The platform Gateway API access entry remains the reverse proxy in production. Before running multiple Next.js replicas, review shared ISR/data caches, cache-tag coordination, `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY`, and version skew so replicas do not serve inconsistent results. See the official [Next.js deployment guide](https://nextjs.org/docs/app/getting-started/deploying), [standalone output reference](https://nextjs.org/docs/app/api-reference/config/next-config-js/output), and [self-hosting guide](https://nextjs.org/docs/app/guides/self-hosting).

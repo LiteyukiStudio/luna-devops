@@ -97,6 +97,50 @@ EXPOSE 8080
 `,
 	},
 	{
+		ID: "nextjs-service", Version: "1.0.0", Runtime: "nextjs", Category: "service", DefaultServicePort: 3000,
+		Parameters: []Parameter{
+			{Key: "nodeVersion", Type: "select", Required: true, DefaultValue: "24", Options: []string{"20", "22", "24"}},
+			{Key: "port", Type: "port", Required: true, DefaultValue: "3000"},
+		},
+		detectionFiles: []string{"package.json", "next.config.js", "next.config.mjs", "next.config.ts"},
+		dockerfile: `FROM node:{{.nodeVersion}}-slim AS dependencies
+WORKDIR /app
+COPY package.json yarn.lock* package-lock.json* pnpm-lock.yaml* .npmrc* ./
+RUN --mount=type=cache,target=/root/.npm \
+    --mount=type=cache,target=/usr/local/share/.cache/yarn \
+    --mount=type=cache,target=/root/.local/share/pnpm/store \
+    if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; \
+    elif [ -f yarn.lock ]; then corepack enable yarn && yarn install --frozen-lockfile; \
+    elif [ -f pnpm-lock.yaml ]; then corepack enable pnpm && pnpm install --frozen-lockfile; \
+    else echo "A package-lock.json, yarn.lock, or pnpm-lock.yaml file is required." >&2; exit 1; fi
+
+FROM node:{{.nodeVersion}}-slim AS builder
+WORKDIR /app
+COPY --from=dependencies /app/node_modules ./node_modules
+COPY . .
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1
+RUN mkdir -p public
+RUN if [ -f package-lock.json ]; then npm run build; \
+    elif [ -f yarn.lock ]; then corepack enable yarn && yarn build; \
+    elif [ -f pnpm-lock.yaml ]; then corepack enable pnpm && pnpm build; \
+    else echo "A package-lock.json, yarn.lock, or pnpm-lock.yaml file is required." >&2; exit 1; fi
+RUN test -f .next/standalone/server.js || \
+    (echo "Next.js standalone output is missing. Set output: 'standalone' in next.config.js, next.config.mjs, or next.config.ts." >&2; exit 1)
+
+FROM node:{{.nodeVersion}}-slim AS runner
+WORKDIR /app
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 HOSTNAME=0.0.0.0 PORT={{.port}}
+RUN groupadd --system --gid 1001 nodejs && useradd --system --uid 1001 --gid nodejs nextjs
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+RUN mkdir .next && chown nextjs:nodejs .next
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+USER nextjs
+EXPOSE {{.port}}
+CMD ["node", "server.js"]
+`,
+	},
+	{
 		ID: "bun-service", Version: "1.0.0", Runtime: "bun", Category: "service", DefaultServicePort: 3000,
 		Parameters: []Parameter{
 			{Key: "installCommand", Type: "command", Required: true, DefaultValue: "bun install --frozen-lockfile"},

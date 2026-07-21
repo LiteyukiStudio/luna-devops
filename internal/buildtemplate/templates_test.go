@@ -69,6 +69,32 @@ func TestRecommendPrefersMoreSpecificTemplate(t *testing.T) {
 	}
 }
 
+func TestRecommendPrefersNextJSService(t *testing.T) {
+	got := Recommend([]string{"package.json", "pnpm-lock.yaml", "next.config.ts", "app/page.tsx"})
+	if len(got) < 2 || got[0] != "nextjs-service" {
+		t.Fatalf("Recommend() = %#v", got)
+	}
+}
+
+func TestNextJSServiceUsesOfficialStandaloneContainerPattern(t *testing.T) {
+	preview, err := Render("nextjs-service", "", nil)
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	for _, wanted := range []string{
+		"FROM node:24-slim AS dependencies",
+		"pnpm install --frozen-lockfile",
+		"/app/.next/standalone",
+		"/app/.next/static",
+		"USER nextjs",
+		`CMD ["node", "server.js"]`,
+	} {
+		if !strings.Contains(preview.Dockerfile, wanted) {
+			t.Fatalf("Dockerfile does not contain %q:\n%s", wanted, preview.Dockerfile)
+		}
+	}
+}
+
 func TestRecommendRecognizesAdditionalRuntimes(t *testing.T) {
 	for name, files := range map[string][]string{
 		"bun-service":    {"package.json", "bun.lock"},

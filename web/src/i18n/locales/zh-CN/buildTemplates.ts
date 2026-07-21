@@ -14,10 +14,13 @@ export default {
   previewTitle: '构建定义预览',
   previewDescription: '本次预览校验和：{{checksum}}',
   previewFailed: '无法生成构建定义预览',
+  nextjsStandaloneTitle: '需要启用 Next.js standalone 输出',
+  nextjsStandaloneDescription: '请在 next.config.js、next.config.mjs 或 next.config.ts 中设置 output: \'standalone\'。平台不会修改仓库配置，缺少该设置时构建会给出明确错误。',
   overrideNotice: '选择平台模板后，即使仓库中存在 Dockerfile，本次构建也只使用平台生成的 Dockerfile。保存部署配置后，模板版本、参数和生成结果会随构建记录保存。',
   names: {
     'node-service': 'Node.js 服务',
     'node-static': 'Node.js 静态站点',
+    'nextjs-service': 'Next.js 服务',
     'bun-service': 'Bun 服务',
     'python-uv': 'Python + uv 服务',
     'ruby-service': 'Ruby 服务',
@@ -31,6 +34,7 @@ export default {
   descriptions: {
     'node-service': '构建并运行 Node.js Web 服务',
     'node-static': '构建前端资源并由非特权 Nginx 提供服务',
+    'nextjs-service': '按官方 standalone 模式构建并以非 root 用户运行 Next.js 服务',
     'bun-service': '使用 Bun 安装依赖、构建并运行 Web 服务',
     'python-uv': '使用 uv 安装依赖并运行 Python 服务',
     'ruby-service': '使用 Bundler 安装依赖并运行 Ruby Web 服务',

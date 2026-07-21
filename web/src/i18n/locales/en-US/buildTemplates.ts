@@ -14,10 +14,13 @@ export default {
   previewTitle: 'Build definition preview',
   previewDescription: 'Preview checksum: {{checksum}}',
   previewFailed: 'Could not generate the build definition preview',
+  nextjsStandaloneTitle: 'Next.js standalone output is required',
+  nextjsStandaloneDescription: 'Set output: \'standalone\' in next.config.js, next.config.mjs, or next.config.ts. The platform does not modify repository configuration and the build reports a clear error when this setting is missing.',
   overrideNotice: 'When a platform template is selected, the build uses only the generated Dockerfile even if the repository contains one. The template version, parameters, and generated result are saved with each build record.',
   names: {
     'node-service': 'Node.js service',
     'node-static': 'Node.js static site',
+    'nextjs-service': 'Next.js service',
     'bun-service': 'Bun service',
     'python-uv': 'Python + uv service',
     'ruby-service': 'Ruby service',
@@ -31,6 +34,7 @@ export default {
   descriptions: {
     'node-service': 'Build and run a Node.js web service',
     'node-static': 'Build frontend assets and serve them with unprivileged Nginx',
+    'nextjs-service': 'Build a Next.js service in the official standalone mode and run it as a non-root user',
     'bun-service': 'Install, build, and run a web service with Bun',
     'python-uv': 'Install dependencies with uv and run a Python service',
     'ruby-service': 'Install dependencies with Bundler and run a Ruby web service',

@@ -111,6 +111,13 @@ export function ApplicationBuildTemplateFields({
               </SelectContent>
             </Select>
           </Field>
+          {selectedTemplate?.id === 'nextjs-service' && (
+            <Alert className="md:col-span-2">
+              <FileCode2 className="size-4" />
+              <AlertTitle>{t('buildTemplates.nextjsStandaloneTitle')}</AlertTitle>
+              <AlertDescription>{t('buildTemplates.nextjsStandaloneDescription')}</AlertDescription>
+            </Alert>
+          )}
           {selectedTemplate && (
             <div className="flex min-w-0 items-end gap-2">
               <div className="grid min-w-0 flex-1 gap-1">
@@ -182,6 +189,7 @@ const buildTemplateLogoByRuntime: Partial<Record<BuildTemplate['runtime'], strin
   dotnet: '/build-templates/icons/dotnet.svg',
   go: '/build-templates/icons/go.svg',
   java: '/build-templates/icons/java.png',
+  nextjs: '/build-templates/icons/nextjs.svg',
   node: '/build-templates/icons/nodejs.svg',
   python: '/build-templates/icons/python.png',
   ruby: '/build-templates/icons/ruby.svg',
@@ -196,8 +204,12 @@ function buildTemplateIcon(template: BuildTemplate) {
   if (!source)
     return null
 
+  const containerClassName = template.id === 'nextjs-service'
+    ? 'flex h-5 w-12 shrink-0 items-center justify-center rounded-sm bg-white p-0.5 ring-1 ring-border/60'
+    : 'flex size-5 shrink-0 items-center justify-center rounded-sm bg-white p-0.5 ring-1 ring-border/60'
+
   return (
-    <span aria-hidden="true" className="flex size-5 shrink-0 items-center justify-center rounded-sm bg-white p-0.5 ring-1 ring-border/60">
+    <span aria-hidden="true" className={containerClassName}>
       <img alt="" className="max-h-full max-w-full object-contain" src={source} />
     </span>
   )
