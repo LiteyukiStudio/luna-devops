@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/LiteyukiStudio/devops/internal/buildenv"
 	"github.com/LiteyukiStudio/devops/internal/builder"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/imageref"
@@ -83,14 +84,10 @@ func (r Resolver) ResolveBuildTask(tx *gorm.DB, run model.BuildRun, job model.Bu
 		run.TargetTag = BuildTargetImageTagTemplateForCredential(credential)
 	}
 	imageRef := fallback(strings.TrimSpace(run.ImageRef), BuildImageRef(registry, run))
-	var actor model.User
-	if err := tx.First(&actor, "id = ?", run.CreatedBy).Error; err != nil {
-		return ResolvedTask{}, fmt.Errorf("build actor not found: %w", err)
-	}
-	buildEnv, secretValues, err := r.buildVariablesForRunByIDs(tx, actor, run.ProjectID, BuildVariableSetIDs(run.BuildVariableSetIDs))
-	if err != nil {
-		return ResolvedTask{}, fmt.Errorf("build variables are unavailable: %w", err)
-	}
+	buildEnv, secretValues := buildenv.Resolve(buildenv.Snapshot{
+		Variables:  buildenv.Decode(run.BuildVariablesSnapshot),
+		SecretRefs: buildenv.Decode(run.BuildSecretRefsSnapshot),
+	}, r.Secrets.Resolve)
 	buildArgs := model.BuildArgs(run.BuildArgs)
 	hooks, err := r.hookPayloadsForRun(tx, run, job)
 	if err != nil {

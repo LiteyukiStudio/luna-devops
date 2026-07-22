@@ -45,6 +45,8 @@ const deploymentsPage = {
   progressiveBuildDescription: 'Dockerfile、构建上下文、Build Args、目标镜像和构建资源都有默认值，只有仓库结构特殊或需要调整资源时再修改。',
   progressiveBuildSummary: '{{dockerfile}} · {{context}} · {{cpu}} / {{memory}} · {{timeout}} 分钟 · {{args}} Args',
   progressiveBuildSkippedSummary: '已有镜像来源会跳过源码构建',
+  deploymentBuildEnvironment: '部署级构建环境',
+  deploymentBuildEnvironmentDescription: '变量和密钥仅用于当前部署配置，并覆盖应用、项目空间和全局中的同名键。',
   progressiveRuntimeTitle: '运行规格',
   progressiveRuntimeDescription: '控制应用发布后的副本数、CPU 和内存。普通 Web 项目通常可以先使用默认值。',
   progressiveRuntimeSummary: '{{replicas}} 副本 · {{cpu}} · {{memory}}',

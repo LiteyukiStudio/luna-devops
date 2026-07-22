@@ -145,6 +145,8 @@ func (h *Handlers) RetryBuildRun(ctx *gin.Context) {
 		ApplicationID:           previous.ApplicationID,
 		DeploymentTargetID:      previous.DeploymentTargetID,
 		BuildVariableSetIDs:     previous.BuildVariableSetIDs,
+		BuildVariablesSnapshot:  previous.BuildVariablesSnapshot,
+		BuildSecretRefsSnapshot: previous.BuildSecretRefsSnapshot,
 		Status:                  "queued",
 		TriggerType:             "retry",
 		SourceBranch:            previous.SourceBranch,

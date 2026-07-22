@@ -27,11 +27,12 @@ const buildJobProgressKeys = new Set([
 
 const buildFailedStatuses = new Set(['failed', 'lost', 'timeout'])
 
-export function ApplicationBuildRunRow({ binding, deploymentTargetName, canceling, deleting, jobs, latestJob, onCancel, onDelete, onOpenLogs, onRetry, retrying, run }: {
+export function ApplicationBuildRunRow({ binding, deploymentTargetName, canceling, deleting, focused = false, jobs, latestJob, onCancel, onDelete, onOpenLogs, onRetry, retrying, run }: {
   binding: { cloneUrl?: string, defaultBranch: string, gitAccountId: string, owner: string, repo: string }
   deploymentTargetName?: string
   canceling: boolean
   deleting: boolean
+  focused?: boolean
   jobs: BuildJob[]
   latestJob?: BuildJob
   onCancel: () => void
@@ -63,7 +64,10 @@ export function ApplicationBuildRunRow({ binding, deploymentTargetName, cancelin
       .catch(error => toast.error(error.message))
   }
   return (
-    <div className="grid gap-2 px-4 py-3 transition-colors hover:bg-muted/35 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+    <div
+      id={`build-run-${run.id}`}
+      className={`grid gap-2 px-4 py-3 transition-colors hover:bg-muted/35 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center ${focused ? 'bg-primary/5 ring-1 ring-inset ring-primary/40' : ''}`}
+    >
       <div className="flex min-w-0 gap-2.5">
         <BuildRunStatusIcon status={run.status} />
         <div className="min-w-0">

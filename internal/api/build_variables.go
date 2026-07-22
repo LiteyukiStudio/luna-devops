@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/buildenv"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -103,22 +104,7 @@ func validateBuildArgs(values map[string]string) (map[string]string, error) {
 }
 
 func isBuildEnvKey(value string) bool {
-	if value == "" || len(value) > 128 {
-		return false
-	}
-	for index, char := range value {
-		if index == 0 {
-			if char == '_' || char >= 'A' && char <= 'Z' || char >= 'a' && char <= 'z' {
-				continue
-			}
-			return false
-		}
-		if char == '_' || char >= 'A' && char <= 'Z' || char >= 'a' && char <= 'z' || char >= '0' && char <= '9' {
-			continue
-		}
-		return false
-	}
-	return true
+	return buildenv.IsKey(value)
 }
 
 func encodeBuildVariableSetIDs(ids []string) string {
@@ -249,6 +235,33 @@ func (h *Handlers) buildVariablesForRunByIDs(db *gorm.DB, user model.User, proje
 		applyBuildVariableSetValues(output, set, h.secrets.Resolve)
 	}
 	return output, nil
+}
+
+func (h *Handlers) buildEnvironmentSnapshotForRun(db *gorm.DB, user model.User, run model.BuildRun) (buildenv.Snapshot, error) {
+	snapshot := buildenv.NewSnapshot()
+	if config, err := h.findBuildEnvironmentConfig(db, model.BuildEnvironmentScopeGlobal, model.BuildEnvironmentGlobalRef); err == nil {
+		buildenv.Apply(&snapshot, config.Variables, config.SecretRefs)
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return snapshot, err
+	}
+	sets, err := h.buildVariableSetsForRun(db, user, run.ProjectID, buildVariableSetIDs(run.BuildVariableSetIDs))
+	if err != nil {
+		return snapshot, err
+	}
+	for _, set := range sets {
+		buildenv.Apply(&snapshot, set.Variables, set.SecretRefs)
+	}
+	if config, err := h.findBuildEnvironmentConfig(db, model.BuildEnvironmentScopeApplication, run.ApplicationID); err == nil {
+		buildenv.Apply(&snapshot, config.Variables, config.SecretRefs)
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return snapshot, err
+	}
+	if config, err := h.findBuildEnvironmentConfig(db, model.BuildEnvironmentScopeDeployment, run.DeploymentTargetID); err == nil {
+		buildenv.Apply(&snapshot, config.Variables, config.SecretRefs)
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return snapshot, err
+	}
+	return snapshot, nil
 }
 
 func (h *Handlers) buildVariableSetsForRun(db *gorm.DB, user model.User, projectID string, setIDs []string) ([]model.BuildVariableSet, error) {

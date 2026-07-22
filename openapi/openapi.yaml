@@ -76,6 +76,41 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/BuildTemplatePreview" }
 
+  /api/v1/build/environment-config:
+    get:
+      tags: [Builds]
+      summary: Get one global, application, or deployment build environment
+      parameters:
+        - $ref: "#/components/parameters/BuildEnvironmentScope"
+        - { name: projectId, in: query, schema: { type: string } }
+        - { name: applicationId, in: query, schema: { type: string } }
+        - { name: deploymentTargetId, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Public values and boolean secret presence. Secret values and references are never returned.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BuildEnvironmentConfig" }
+    put:
+      tags: [Builds]
+      summary: Replace one global, application, or deployment build environment
+      parameters:
+        - $ref: "#/components/parameters/BuildEnvironmentScope"
+        - { name: projectId, in: query, schema: { type: string } }
+        - { name: applicationId, in: query, schema: { type: string } }
+        - { name: deploymentTargetId, in: query, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BuildEnvironmentConfigInput" }
+      responses:
+        "200":
+          description: Updated build environment with secret presence only.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BuildEnvironmentConfig" }
+
   /api/v1/auth/bootstrap:
     get:
       tags: [Auth]
@@ -1737,6 +1772,11 @@ components:
       bearerFormat: Luna personal access token
 
   parameters:
+    BuildEnvironmentScope:
+      name: scope
+      in: query
+      required: true
+      schema: { type: string, enum: [global, application, deployment] }
     AccountId:
       name: accountId
       in: path
@@ -2367,6 +2407,15 @@ components:
         buildTemplateValues:
           type: string
           description: JSON object containing validated template parameters.
+        buildVariables:
+          type: object
+          additionalProperties: { type: string }
+          description: Optional deployment-level values that override matching application, project, and global keys.
+        buildSecrets:
+          type: object
+          additionalProperties: { type: string }
+          writeOnly: true
+          description: Optional deployment-level secret updates. Existing keys with an empty value are retained; omitted keys are removed. Values are encrypted and never returned.
         webConsoleEnabled:
           type: [boolean, "null"]
           default: null
@@ -2397,6 +2446,31 @@ components:
           type: array
           items: { type: string }
       required: [key, type, required, defaultValue]
+    BuildEnvironmentConfigInput:
+      type: object
+      properties:
+        variables:
+          type: object
+          additionalProperties: { type: string }
+        secrets:
+          type: object
+          additionalProperties: { type: string }
+          writeOnly: true
+          description: Existing keys may use an empty value to retain their encrypted value. Omitted keys are removed.
+      required: [variables, secrets]
+    BuildEnvironmentConfig:
+      type: object
+      properties:
+        scope: { type: string, enum: [global, application, deployment] }
+        scopeRef: { type: string }
+        variables:
+          type: object
+          additionalProperties: { type: string }
+        secrets:
+          type: object
+          additionalProperties: { type: boolean }
+          description: Secret presence by key. Plaintext and storage references are never returned.
+      required: [scope, scopeRef, variables, secrets]
     BuildTemplate:
       type: object
       properties:

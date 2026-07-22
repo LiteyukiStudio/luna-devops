@@ -9,12 +9,18 @@ import (
 	"gorm.io/gorm"
 )
 
-func (h *Handlers) saveDeploymentTarget(target model.DeploymentTarget, hookInputs []deploymentTargetHookBindingInput) error {
+func (h *Handlers) saveDeploymentTarget(target model.DeploymentTarget, hookInputs []deploymentTargetHookBindingInput, buildEnvironment *model.BuildEnvironmentConfig) error {
 	return h.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Save(&target).Error; err != nil {
 			return err
 		}
-		return h.replaceDeploymentTargetHookBindings(tx, target, hookInputs)
+		if err := h.replaceDeploymentTargetHookBindings(tx, target, hookInputs); err != nil {
+			return err
+		}
+		if buildEnvironment != nil {
+			return tx.Save(buildEnvironment).Error
+		}
+		return nil
 	})
 }
 

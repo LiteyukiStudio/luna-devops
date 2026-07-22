@@ -123,6 +123,8 @@ func NewRouterWithStaticFSAndMetrics(db *gorm.DB, staticFS fs.FS, httpMetrics *o
 		v1.POST("/container-images", handlers.CreateContainerImage)
 
 		v1.GET("/build/variable-sets", handlers.ListBuildVariableSets)
+		v1.GET("/build/environment-config", handlers.GetBuildEnvironmentConfig)
+		v1.PUT("/build/environment-config", handlers.UpdateBuildEnvironmentConfig)
 		v1.GET("/build/templates", handlers.ListBuildTemplates)
 		v1.POST("/build/templates/:templateId/preview", handlers.PreviewBuildTemplate)
 		v1.POST("/build/variable-sets", handlers.CreateBuildVariableSet)

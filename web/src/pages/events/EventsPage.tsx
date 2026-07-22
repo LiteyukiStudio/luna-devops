@@ -19,6 +19,7 @@ import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { initialEventFilterValues, initialEventSeverityFilters } from './event-filter-defaults'
 
 export function EventsPage() {
   const { t } = useTranslation()
@@ -29,13 +30,13 @@ export function EventsPage() {
   const [pageSize, setPageSize] = useState(20)
   const [search, setSearch] = useState('')
   const [scope, setScope] = useState<'mine' | 'all'>('mine')
-  const [projectIds, setProjectIds] = useState(() => initialFilterValues(searchParams, 'projectIds', 'projectId'))
-  const [applicationIds, setApplicationIds] = useState(() => initialFilterValues(searchParams, 'applicationIds', 'applicationId'))
-  const [deploymentTargetIds, setDeploymentTargetIds] = useState(() => initialFilterValues(searchParams, 'deploymentTargetIds', 'deploymentTargetId'))
-  const [categories, setCategories] = useState(() => initialFilterValues(searchParams, 'categories', 'category'))
-  const [eventTypes, setEventTypes] = useState(() => initialFilterValues(searchParams, 'types', 'type'))
-  const [severities, setSeverities] = useState(() => initialFilterValues(searchParams, 'severities', 'severity'))
-  const [statuses, setStatuses] = useState(() => initialFilterValues(searchParams, 'statuses', 'status'))
+  const [projectIds, setProjectIds] = useState(() => initialEventFilterValues(searchParams, 'projectIds', 'projectId'))
+  const [applicationIds, setApplicationIds] = useState(() => initialEventFilterValues(searchParams, 'applicationIds', 'applicationId'))
+  const [deploymentTargetIds, setDeploymentTargetIds] = useState(() => initialEventFilterValues(searchParams, 'deploymentTargetIds', 'deploymentTargetId'))
+  const [categories, setCategories] = useState(() => initialEventFilterValues(searchParams, 'categories', 'category'))
+  const [eventTypes, setEventTypes] = useState(() => initialEventFilterValues(searchParams, 'types', 'type'))
+  const [severities, setSeverities] = useState(() => initialEventSeverityFilters(searchParams))
+  const [statuses, setStatuses] = useState(() => initialEventFilterValues(searchParams, 'statuses', 'status'))
   const [dateFrom, setDateFrom] = useState(() => dateDaysAgo(7))
   const [dateTo, setDateTo] = useState(() => dateDaysAgo(0))
   const [selectedEventId, setSelectedEventId] = useState('')
@@ -544,14 +545,6 @@ function dateDaysAgo(days: number) {
   const date = new Date()
   date.setDate(date.getDate() - days)
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-}
-
-function initialFilterValues(searchParams: URLSearchParams, plural: string, singular: string) {
-  const values = [...searchParams.getAll(plural), ...searchParams.getAll(singular)]
-    .flatMap(value => value.split(','))
-    .map(value => value.trim())
-    .filter(Boolean)
-  return [...new Set(values)]
 }
 
 function uniqueById<T extends { id: string }>(items: T[]) {

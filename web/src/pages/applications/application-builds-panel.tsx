@@ -1,12 +1,14 @@
 import type { Ref } from 'react'
 import type { ArtifactRegistry, BuildJob, BuildRun, DeploymentTarget, RepositoryBinding } from '@/api'
+import type { KeyValueRow } from '@/components/common/key-value-rows-editor'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Search } from 'lucide-react'
+import { Search, Settings2 } from 'lucide-react'
 import { useEffect, useImperativeHandle, useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { api, buildJobLogsStreamUrl } from '@/api'
+import { BuildEnvironmentEditorDialog } from '@/components/common/build-environment-editor-dialog'
 import { EmptyState } from '@/components/common/empty-state'
 import { FormField as Field } from '@/components/common/form-field'
 import { PaginationController } from '@/components/common/pagination'
@@ -19,9 +21,11 @@ import { Input } from '@/components/ui/input'
 import { NativeSelect as Select } from '@/components/ui/native-select'
 import { Textarea } from '@/components/ui/textarea'
 import { useBillingDisplay } from '@/lib/billing-display'
+import { buildVariableRecordToRows, buildVariableRowsToRecord, secretStateToRows } from '@/lib/build-variables'
 import { WORKFLOW_STATUS_REFETCH_INTERVAL_MS } from '@/lib/polling'
 import { defaultBuildCpuRequest, defaultBuildMemoryRequest, defaultBuildTimeoutSeconds } from './application-build-defaults'
 import { ApplicationBuildLogPanel } from './application-build-log-panel'
+import { buildRunIdFromHash } from './application-build-navigation'
 import { ApplicationBuildRunFilterBar } from './application-build-run-filter-bar'
 import { ApplicationBuildRunRow } from './application-build-run-row'
 import { branchOptions, defaultTargetImageRef, deploymentTargetImageRef, firstSelectableDeploymentTarget, registryInputPrefix, registryOptionLabel } from './application-config-utils'
@@ -58,7 +62,8 @@ export function ApplicationBuildsPanel({ applicationId, appSlug, binding, deploy
   const billingDisplay = useBillingDisplay(i18n.language)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [branchSearch, setBranchSearch] = useState('')
-  const [runSearch, setRunSearch] = useState('')
+  const [focusedBuildRunId, setFocusedBuildRunId] = useState(() => buildRunIdFromHash(window.location.hash))
+  const [runSearch, setRunSearch] = useState(() => buildRunIdFromHash(window.location.hash))
   const [runsPage, setRunsPage] = useState(1)
   const [runsPageSize, setRunsPageSize] = useState(10)
   const [eventFilter, setEventFilter] = useState('')
@@ -66,6 +71,9 @@ export function ApplicationBuildsPanel({ applicationId, appSlug, binding, deploy
   const [branchFilter, setBranchFilter] = useState('')
   const [actorFilter, setActorFilter] = useState('')
   const [logJob, setLogJob] = useState<BuildJob | null>(null)
+  const [environmentDialogOpen, setEnvironmentDialogOpen] = useState(false)
+  const [environmentVariableRows, setEnvironmentVariableRows] = useState<KeyValueRow[]>([])
+  const [environmentSecretRows, setEnvironmentSecretRows] = useState<KeyValueRow[]>([])
   const [logStreamState, setLogStreamState] = useState<BuildLogStreamState>({ jobId: '', content: '', streaming: false })
   const logJobId = logJob?.id ?? ''
   const logContent = logStreamState.jobId === logJobId ? logStreamState.content : ''
@@ -106,7 +114,36 @@ export function ApplicationBuildsPanel({ applicationId, appSlug, binding, deploy
     enabled: Boolean(projectId && applicationId),
     refetchInterval: projectId && applicationId ? WORKFLOW_STATUS_REFETCH_INTERVAL_MS : false,
   })
-  const pagedRuns = buildRunsPage.data?.items ?? []
+  const saveApplicationEnvironment = useMutation({
+    mutationFn: () => api.updateBuildEnvironmentConfig(
+      { scope: 'application', projectId, applicationId },
+      {
+        variables: buildVariableRowsToRecord(environmentVariableRows),
+        secrets: buildVariableRowsToRecord(environmentSecretRows),
+      },
+    ),
+    onSuccess: (config) => {
+      queryClient.setQueryData(['build-environment-config', 'application', projectId, applicationId], config)
+      setEnvironmentDialogOpen(false)
+      toast.success(t('buildsPage.buildEnvironmentSaved'))
+    },
+    onError: error => toast.error(error.message),
+  })
+  const openApplicationEnvironment = async () => {
+    try {
+      const config = await queryClient.fetchQuery({
+        queryKey: ['build-environment-config', 'application', projectId, applicationId],
+        queryFn: () => api.getBuildEnvironmentConfig({ scope: 'application', projectId, applicationId }),
+      })
+      setEnvironmentVariableRows(buildVariableRecordToRows(config.variables))
+      setEnvironmentSecretRows(secretStateToRows(config.secrets))
+      setEnvironmentDialogOpen(true)
+    }
+    catch (error) {
+      toast.error(error instanceof Error ? error.message : t('buildsPage.buildEnvironmentLoadFailed'))
+    }
+  }
+  const pagedRuns = useMemo(() => buildRunsPage.data?.items ?? [], [buildRunsPage.data?.items])
   const runsTotal = buildRunsPage.data?.total ?? 0
   const branchFilterOptions = useMemo(() => uniqueBuildFilterValues([
     selectedBinding?.defaultBranch,
@@ -119,6 +156,7 @@ export function ApplicationBuildsPanel({ applicationId, appSlug, binding, deploy
   ]), [actorFilter, buildRuns])
   const updateRunSearch = (value: string) => {
     setRunSearch(value)
+    setFocusedBuildRunId('')
     setRunsPage(1)
   }
   const updateEventFilter = (value: string) => {
@@ -189,6 +227,25 @@ export function ApplicationBuildsPanel({ applicationId, appSlug, binding, deploy
   useImperativeHandle(ref, () => ({
     openTriggerDrawer: () => setDialogOpen(true),
   }))
+  useEffect(() => {
+    const syncBuildRunFromHash = () => {
+      const buildRunId = buildRunIdFromHash(window.location.hash)
+      if (!buildRunId)
+        return
+      setFocusedBuildRunId(buildRunId)
+      setRunSearch(buildRunId)
+      setRunsPage(1)
+    }
+    window.addEventListener('hashchange', syncBuildRunFromHash)
+    return () => window.removeEventListener('hashchange', syncBuildRunFromHash)
+  }, [])
+
+  useEffect(() => {
+    if (!focusedBuildRunId || !pagedRuns.some(run => run.id === focusedBuildRunId))
+      return
+    document.getElementById(`build-run-${focusedBuildRunId}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }, [focusedBuildRunId, pagedRuns])
+
   useEffect(() => {
     if (!logJobId)
       return
@@ -296,6 +353,10 @@ export function ApplicationBuildsPanel({ applicationId, appSlug, binding, deploy
                   <p className="mt-1 text-sm text-muted-foreground">{t('buildsPage.applicationRunsDescription')}</p>
                 </div>
                 <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
+                  <Button type="button" variant="outline" onClick={() => void openApplicationEnvironment()}>
+                    <Settings2 className="size-4" />
+                    {t('buildsPage.applicationBuildEnvironment')}
+                  </Button>
                   <div className="relative min-w-0 sm:w-80">
                     <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
@@ -337,6 +398,7 @@ export function ApplicationBuildsPanel({ applicationId, appSlug, binding, deploy
                             jobs={jobs}
                             latestJob={latestJob}
                             run={run}
+                            focused={run.id === focusedBuildRunId}
                             canceling={cancelBuild.isPending}
                             deleting={deleteBuild.isPending}
                             retrying={retryBuild.isPending}
@@ -365,7 +427,17 @@ export function ApplicationBuildsPanel({ applicationId, appSlug, binding, deploy
               </div>
             </div>
           )
-        : <EmptyState title={t('buildsPage.repositoryBindingRequired')} />}
+        : (
+            <EmptyState
+              actions={(
+                <Button type="button" variant="outline" onClick={() => void openApplicationEnvironment()}>
+                  <Settings2 className="size-4" />
+                  {t('buildsPage.applicationBuildEnvironment')}
+                </Button>
+              )}
+              title={t('buildsPage.repositoryBindingRequired')}
+            />
+          )}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
           <DialogHeader>
@@ -467,6 +539,18 @@ export function ApplicationBuildsPanel({ applicationId, appSlug, binding, deploy
         content={logContent}
         loading={logStreaming}
         onClose={() => setLogJob(null)}
+      />
+      <BuildEnvironmentEditorDialog
+        description={t('buildsPage.applicationBuildEnvironmentDescription')}
+        open={environmentDialogOpen}
+        pending={saveApplicationEnvironment.isPending}
+        secretRows={environmentSecretRows}
+        title={t('buildsPage.applicationBuildEnvironment')}
+        variableRows={environmentVariableRows}
+        onOpenChange={setEnvironmentDialogOpen}
+        onSave={() => saveApplicationEnvironment.mutate()}
+        onSecretRowsChange={setEnvironmentSecretRows}
+        onVariableRowsChange={setEnvironmentVariableRows}
       />
     </div>
   )

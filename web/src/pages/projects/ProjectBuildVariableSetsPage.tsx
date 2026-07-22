@@ -1,7 +1,8 @@
 import type { Ref } from 'react'
 import type { BuildVariableSet } from '@/api'
+import type { KeyValueRow } from '@/components/common/key-value-rows-editor'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, Trash2 } from 'lucide-react'
+import { Trash2 } from 'lucide-react'
 import { useImperativeHandle, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -13,19 +14,13 @@ import { DataList } from '@/components/common/data-list'
 import { EditActionButton } from '@/components/common/edit-action-button'
 import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
+import { KeyValueRowsEditor } from '@/components/common/key-value-rows-editor'
 import { StatusValueBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { buildVariableCount, buildVariableRecordToRows, buildVariableRowsToRecord, secretStateToRows } from '@/lib/build-variables'
-
-interface KeyValueRow {
-  id: string
-  key: string
-  value: string
-  existing?: boolean
-}
+import { buildVariableCount, buildVariableRecordToRows, buildVariableRowsToRecord, emptyKeyValueRow, secretStateToRows } from '@/lib/build-variables'
 
 interface VariableSetForm {
   name: string
@@ -38,8 +33,7 @@ export interface ProjectBuildVariableSetsPageHandle {
   openCreateDialog: () => void
 }
 
-const emptyRow = (): KeyValueRow => ({ id: crypto.randomUUID(), key: '', value: '' })
-const variableSetDefaults: VariableSetForm = { enabled: true, name: '', secrets: [emptyRow()], variables: [emptyRow()] }
+const variableSetDefaults: VariableSetForm = { enabled: true, name: '', secrets: [emptyKeyValueRow()], variables: [emptyKeyValueRow()] }
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
 
 export function ProjectBuildVariableSetsPage({ projectId, ref }: { projectId: string, ref?: Ref<ProjectBuildVariableSetsPageHandle> }) {
@@ -204,50 +198,5 @@ export function ProjectBuildVariableSetsPage({ projectId, ref }: { projectId: st
         onOpenChange={open => !open && setSetToDelete(null)}
       />
     </Card>
-  )
-}
-
-function KeyValueRowsEditor({ onChange, rows, secret = false, title, valuePlaceholder }: {
-  rows: KeyValueRow[]
-  secret?: boolean
-  title: string
-  valuePlaceholder: string
-  onChange: (rows: KeyValueRow[]) => void
-}) {
-  const { t } = useTranslation()
-  const updateRow = (rowId: string, patch: Partial<KeyValueRow>) => {
-    onChange(rows.map(row => row.id === rowId ? { ...row, ...patch } : row))
-  }
-  const removeRow = (rowId: string) => {
-    const nextRows = rows.filter(row => row.id !== rowId)
-    onChange(nextRows.length ? nextRows : [emptyRow()])
-  }
-  return (
-    <div className="grid gap-2 rounded-lg border border-border p-3">
-      <div className="flex items-center justify-between gap-3">
-        <h3 className="text-sm font-medium">{title}</h3>
-        <Button size="sm" type="button" variant="secondary" onClick={() => onChange([...rows, emptyRow()])}>
-          <Plus className="size-4" />
-          {t('buildsPage.addKeyValueRow')}
-        </Button>
-      </div>
-      <div className="grid gap-2">
-        {rows.map(row => (
-          <div key={row.id} className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_auto]">
-            <Input placeholder={t('buildsPage.variableKeyPlaceholder')} value={row.key} onChange={event => updateRow(row.id, { key: event.target.value })} />
-            <Input
-              placeholder={row.existing && secret ? t('common.secretSetPlaceholder') : valuePlaceholder}
-              type={secret ? 'password' : 'text'}
-              value={row.value}
-              onChange={event => updateRow(row.id, { value: event.target.value })}
-            />
-            <Button aria-label={t('common.delete')} size="icon" type="button" variant="ghost" onClick={() => removeRow(row.id)}>
-              <Trash2 className="size-4" />
-            </Button>
-          </div>
-        ))}
-      </div>
-      {secret && <p className="text-xs leading-5 text-muted-foreground">{t('buildsPage.secretEditHint')}</p>}
-    </div>
   )
 }

@@ -1,7 +1,11 @@
-import type { BuildJob, BuildLog, BuildRun, BuildRunListParams, BuildTemplate, BuildTemplatePreview, BuildVariableSet, BuildVariableSetPayload, HookRun, HookRunLog, PaginatedResponse, PaginationParams, ProjectHookConfig, ProjectHookConfigPayload, ProjectRuntimeConfigSet, ProjectRuntimeConfigSetPayload } from '../types'
+import type { BuildEnvironmentConfig, BuildEnvironmentConfigParams, BuildEnvironmentConfigPayload, BuildJob, BuildLog, BuildRun, BuildRunListParams, BuildTemplate, BuildTemplatePreview, BuildVariableSet, BuildVariableSetPayload, HookRun, HookRunLog, PaginatedResponse, PaginationParams, ProjectHookConfig, ProjectHookConfigPayload, ProjectRuntimeConfigSet, ProjectRuntimeConfigSetPayload } from '../types'
 import { buildRunListQuery, optionalProjectQuery, paginationQuery, paginationWithProjectQuery, request } from '../core'
 
 export const buildsApi = {
+  getBuildEnvironmentConfig: (params: BuildEnvironmentConfigParams) =>
+    request<BuildEnvironmentConfig>(`/build/environment-config?${buildEnvironmentConfigQuery(params)}`),
+  updateBuildEnvironmentConfig: (params: BuildEnvironmentConfigParams, payload: BuildEnvironmentConfigPayload) =>
+    request<BuildEnvironmentConfig>(`/build/environment-config?${buildEnvironmentConfigQuery(params)}`, { method: 'PUT', body: JSON.stringify(payload) }),
   listBuildTemplates: () => request<BuildTemplate[]>('/build/templates'),
   previewBuildTemplate: (templateId: string, version: string, values: Record<string, string>) =>
     request<BuildTemplatePreview>(`/build/templates/${templateId}/preview`, { method: 'POST', body: JSON.stringify({ values, version }) }),
@@ -68,4 +72,15 @@ export const buildsApi = {
   },
   getBuildJobLogs: (projectId: string, jobId: string) =>
     request<BuildLog>(`/projects/${projectId}/build-jobs/${jobId}/logs`),
+}
+
+function buildEnvironmentConfigQuery(params: BuildEnvironmentConfigParams) {
+  const query = new URLSearchParams({ scope: params.scope })
+  if (params.projectId)
+    query.set('projectId', params.projectId)
+  if (params.applicationId)
+    query.set('applicationId', params.applicationId)
+  if (params.deploymentTargetId)
+    query.set('deploymentTargetId', params.deploymentTargetId)
+  return query.toString()
 }

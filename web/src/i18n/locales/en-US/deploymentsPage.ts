@@ -45,6 +45,8 @@ const deploymentsPage = {
   progressiveBuildDescription: 'Dockerfile, build context, build args, target image, and build resources have defaults. Change them only for custom repository layouts or resource needs.',
   progressiveBuildSummary: '{{dockerfile}} · {{context}} · {{cpu}} / {{memory}} · {{timeout}} min · {{args}} args',
   progressiveBuildSkippedSummary: 'Existing image sources skip source builds',
+  deploymentBuildEnvironment: 'Deploy config build environment',
+  deploymentBuildEnvironmentDescription: 'These variables and secrets apply only to this deploy config and override application, project, and global entries with the same key.',
   progressiveRuntimeTitle: 'Runtime spec',
   progressiveRuntimeDescription: 'Controls replicas, CPU, and memory after release. Most web apps can start with the defaults.',
   progressiveRuntimeSummary: '{{replicas}} replicas · {{cpu}} · {{memory}}',

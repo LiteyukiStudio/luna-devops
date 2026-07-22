@@ -736,6 +736,27 @@ export type BuildVariableSetPayload = Omit<BuildVariableSet, 'id' | 'createdBy' 
   secrets: Record<string, string>
 }
 
+export type BuildEnvironmentScope = 'global' | 'application' | 'deployment'
+
+export interface BuildEnvironmentConfig {
+  scope: BuildEnvironmentScope
+  scopeRef: string
+  variables: Record<string, string>
+  secrets: Record<string, boolean>
+}
+
+export interface BuildEnvironmentConfigParams {
+  scope: BuildEnvironmentScope
+  projectId?: string
+  applicationId?: string
+  deploymentTargetId?: string
+}
+
+export interface BuildEnvironmentConfigPayload {
+  variables: Record<string, string>
+  secrets: Record<string, string>
+}
+
 export interface ProjectRuntimeConfigSet {
   id: string
   projectId: string
@@ -997,6 +1018,8 @@ export interface DeploymentTargetMetrics {
 
 export type DeploymentTargetPayload = Omit<DeploymentTarget, 'id' | 'projectId' | 'applicationId' | 'createdBy' | 'createdAt' | 'buildVariableSetIds' | 'runtimeConfigSetIds' | 'runtimeConfigRefs' | 'secretRefsSet' | 'secretFilesSet' | 'deleteStatus' | 'deleteMessage' | 'deleteStartedAt' | 'deleteFinishedAt'> & {
   buildVariableSetIds: string | string[]
+  buildVariables?: Record<string, string>
+  buildSecrets?: Record<string, string>
   runtimeConfigSetIds: string | string[]
   runtimeConfigRefs: DeploymentRuntimeConfigRef[]
   secretRefs?: string

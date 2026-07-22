@@ -13,6 +13,8 @@ type BuildRun struct {
 	DeploymentTargetID      string         `gorm:"index" json:"deploymentTargetId"`
 	BuildLabels             string         `json:"buildLabels"`
 	BuildVariableSetIDs     string         `gorm:"type:text" json:"buildVariableSetIds"`
+	BuildVariablesSnapshot  string         `gorm:"type:text;not null;default:'{}'" json:"-"`
+	BuildSecretRefsSnapshot string         `gorm:"type:text;not null;default:'{}'" json:"-"`
 	Status                  string         `gorm:"index;not null;default:queued" json:"status"`
 	TriggerType             string         `gorm:"not null;default:manual" json:"triggerType"`
 	SourceBranch            string         `json:"sourceBranch"`
@@ -51,6 +53,24 @@ type BuildRun struct {
 	CreatedAt               time.Time      `json:"createdAt"`
 	UpdatedAt               time.Time      `json:"updatedAt"`
 	DeletedAt               gorm.DeletedAt `gorm:"index" json:"-"`
+}
+
+const (
+	BuildEnvironmentScopeGlobal      = "global"
+	BuildEnvironmentScopeApplication = "application"
+	BuildEnvironmentScopeDeployment  = "deployment"
+	BuildEnvironmentGlobalRef        = "platform"
+)
+
+type BuildEnvironmentConfig struct {
+	ID         string    `gorm:"primaryKey" json:"id"`
+	Scope      string    `gorm:"uniqueIndex:idx_build_environment_scope_ref;not null" json:"scope"`
+	ScopeRef   string    `gorm:"uniqueIndex:idx_build_environment_scope_ref;not null" json:"scopeRef"`
+	Variables  string    `gorm:"type:text;not null;default:'{}'" json:"variables"`
+	SecretRefs string    `gorm:"type:text;not null;default:'{}'" json:"-"`
+	UpdatedBy  string    `gorm:"index;not null" json:"updatedBy"`
+	CreatedAt  time.Time `json:"createdAt"`
+	UpdatedAt  time.Time `json:"updatedAt"`
 }
 
 type DeploymentTargetHookBinding struct {

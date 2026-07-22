@@ -1,9 +1,11 @@
 import type { UseFormReturn } from 'react-hook-form'
 import type { BuildTemplate, DeploymentRuntimeConfigRef, DeploymentTarget, DeploymentTargetPayload, ProjectHookConfig, ProjectRuntimeConfigSet, RuntimeCluster, RuntimeConfigRefMode } from '@/api'
+import type { KeyValueRow } from '@/components/common/key-value-rows-editor'
 import { Rocket, Save } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { CheckboxField } from '@/components/common/checkbox-field'
 import { FormField as Field } from '@/components/common/form-field'
+import { KeyValueRowsEditor } from '@/components/common/key-value-rows-editor'
 import { ProgressiveSection } from '@/components/common/progressive-section'
 import { RuntimeConfigFilesEditor } from '@/components/common/runtime-config-files-editor'
 import { Button } from '@/components/ui/button'
@@ -22,6 +24,8 @@ import { ApplicationRuntimeConfigSelector } from './application-runtime-config-s
 export function ApplicationDeploymentTargetDialog({
   buildContextSuggestions,
   buildMinutePriceText,
+  buildEnvironmentStatus,
+  buildSecretRows,
   buildTemplates,
   buildTimeoutMinutes,
   defaultRuntimeCluster,
@@ -46,6 +50,7 @@ export function ApplicationDeploymentTargetDialog({
   servicePorts,
   sourceType,
   targetBuildHooksEnabled,
+  buildVariableRows,
   targetBuildOptionsError,
   targetBuildOptionsFetching,
   targetCanRedeploy,
@@ -67,6 +72,8 @@ export function ApplicationDeploymentTargetDialog({
   onRedeployRuntimeConfigTargets,
   onSave,
   onSetConfigFilesValid,
+  onSetBuildSecretRows,
+  onSetBuildVariableRows,
   onSetHookBindings,
   onSetSecretFilesValid,
   onToggleRuntimeConfigSet,
@@ -75,6 +82,8 @@ export function ApplicationDeploymentTargetDialog({
 }: {
   buildContextSuggestions: string[]
   buildMinutePriceText: string
+  buildEnvironmentStatus: 'loading' | 'ready' | 'unavailable'
+  buildSecretRows: KeyValueRow[]
   buildTemplates: BuildTemplate[]
   buildTimeoutMinutes: number
   defaultRuntimeCluster?: RuntimeCluster
@@ -99,6 +108,7 @@ export function ApplicationDeploymentTargetDialog({
   servicePorts: DeploymentTargetPayload['servicePorts']
   sourceType: DeploymentTargetPayload['sourceType']
   targetBuildHooksEnabled: boolean
+  buildVariableRows: KeyValueRow[]
   targetBuildOptionsError: boolean
   targetBuildOptionsFetching: boolean
   targetCanRedeploy: boolean
@@ -129,6 +139,8 @@ export function ApplicationDeploymentTargetDialog({
   onRedeployRuntimeConfigTargets: () => void
   onSave: (values: DeploymentTargetPayload, redeploy: boolean) => void
   onSetConfigFilesValid: (valid: boolean) => void
+  onSetBuildSecretRows: (rows: KeyValueRow[]) => void
+  onSetBuildVariableRows: (rows: KeyValueRow[]) => void
   onSetHookBindings: (bindings: DeploymentTargetPayload['buildHookBindings']) => void
   onSetSecretFilesValid: (valid: boolean) => void
   onToggleRuntimeConfigSet: (setId: string, checked: boolean) => void
@@ -217,6 +229,31 @@ export function ApplicationDeploymentTargetDialog({
                   targetOptionsError={targetBuildOptionsError}
                   targetOptionsFetching={targetBuildOptionsFetching}
                 />
+                <div className="grid gap-3 border-t border-border pt-3">
+                  <div>
+                    <h3 className="text-sm font-semibold">{t('deploymentsPage.deploymentBuildEnvironment')}</h3>
+                    <p className="mt-1 text-sm text-muted-foreground">{t('deploymentsPage.deploymentBuildEnvironmentDescription')}</p>
+                  </div>
+                  {buildEnvironmentStatus === 'ready'
+                    ? (
+                        <>
+                          <KeyValueRowsEditor
+                            rows={buildVariableRows}
+                            title={t('buildsPage.variables')}
+                            valuePlaceholder={t('buildsPage.variableValuePlaceholder')}
+                            onChange={onSetBuildVariableRows}
+                          />
+                          <KeyValueRowsEditor
+                            secret
+                            rows={buildSecretRows}
+                            title={t('buildsPage.secrets')}
+                            valuePlaceholder={t('buildsPage.secretValuePlaceholder')}
+                            onChange={onSetBuildSecretRows}
+                          />
+                        </>
+                      )
+                    : <p className="text-sm text-muted-foreground">{t(buildEnvironmentStatus === 'loading' ? 'buildsPage.buildEnvironmentLoading' : 'buildsPage.buildEnvironmentLoadFailed')}</p>}
+                </div>
               </ProgressiveSection>
             )}
             <ProgressiveSection

@@ -1,10 +1,11 @@
 import type { ReleaseForm } from './application-deployments-panel-utils'
 import type { RepositoryBindingDialogForm, RepositoryBindingDialogFormInput } from './application-repository-binding-dialog'
 import type { ArtifactRegistry, BuildRun, DeploymentRuntimeConfigRef, DeploymentTarget, DeploymentTargetPayload, ProjectRuntimeConfigSet, ProjectRuntimeConfigSetPayload, Release, RepositoryBinding, RuntimeConfigRefMode } from '@/api'
+import type { KeyValueRow } from '@/components/common/key-value-rows-editor'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import i18next from 'i18next'
-import { useEffect, useImperativeHandle, useMemo, useState } from 'react'
+import { useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -13,6 +14,7 @@ import { api } from '@/api'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { buildRunImageRef, latestDeployableBuildRuns } from '@/components/common/deployment-build-runs'
 import { useBillingDisplay } from '@/lib/billing-display'
+import { buildVariableRecordToRows, buildVariableRowsToRecord, secretStateToRows } from '@/lib/build-variables'
 import { WORKFLOW_STATUS_REFETCH_INTERVAL_MS } from '@/lib/polling'
 import { defaultBuildCpuRequest, defaultBuildMemoryRequest, defaultBuildTimeoutSeconds } from './application-build-defaults'
 import { defaultTargetImageRef, deploymentReleaseKey, deploymentTargetCanRelease, deploymentTargetImageRef, registryInputPrefix } from './application-config-utils'
@@ -108,6 +110,11 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
   const [runtimeConfigRestartAffectedCount, setRuntimeConfigRestartAffectedCount] = useState(0)
   const [repositoryBindingDialogOpen, setRepositoryBindingDialogOpen] = useState(false)
   const [repositoryBranchSearch, setRepositoryBranchSearch] = useState('')
+  const [targetBuildVariableRows, setTargetBuildVariableRows] = useState<KeyValueRow[]>([])
+  const [targetBuildSecretRows, setTargetBuildSecretRows] = useState<KeyValueRow[]>([])
+  const [targetBuildEnvironmentDirty, setTargetBuildEnvironmentDirty] = useState(false)
+  const [targetBuildEnvironmentStatus, setTargetBuildEnvironmentStatus] = useState<'loading' | 'ready' | 'unavailable'>('ready')
+  const targetEnvironmentRequestRef = useRef(0)
   const form = useForm<ReleaseForm>({ defaultValues: releaseDefaults, mode: 'onChange' })
   const targetForm = useForm<DeploymentTargetPayload>({ defaultValues: deploymentTargetDefaults, mode: 'onChange' })
   const runtimeConfigForm = useForm<ProjectRuntimeConfigSetPayload>({ defaultValues: runtimeConfigDefaults, mode: 'onChange' })
@@ -349,13 +356,33 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
     targetForm.setValue('runtimeConfigSetIds', runtimeConfigLiveSetIds(normalizedRefs), { shouldDirty: true, shouldValidate: true })
   }
   const openTargetDialog = (target?: DeploymentTarget) => {
+    const requestID = ++targetEnvironmentRequestRef.current
     setEditingTarget(target ?? null)
     setTargetConfigFilesValid(true)
     setTargetSecretFilesValid(true)
     setRuntimeConfigRestartSetId('')
     setRuntimeConfigRestartAffectedCount(0)
     resetTargetForm(target)
+    setTargetBuildVariableRows(buildVariableRecordToRows({}))
+    setTargetBuildSecretRows(secretStateToRows({}))
+    setTargetBuildEnvironmentDirty(false)
+    setTargetBuildEnvironmentStatus(target ? 'loading' : 'ready')
     setTargetDialogOpen(true)
+    if (target) {
+      void queryClient.fetchQuery({
+        queryKey: ['build-environment-config', 'deployment', projectId, applicationId, target.id],
+        queryFn: () => api.getBuildEnvironmentConfig({ scope: 'deployment', projectId, applicationId, deploymentTargetId: target.id }),
+      }).then((config) => {
+        if (targetEnvironmentRequestRef.current !== requestID)
+          return
+        setTargetBuildVariableRows(buildVariableRecordToRows(config.variables))
+        setTargetBuildSecretRows(secretStateToRows(config.secrets))
+        setTargetBuildEnvironmentStatus('ready')
+      }).catch((error) => {
+        setTargetBuildEnvironmentStatus('unavailable')
+        toast.error(error instanceof Error ? error.message : t('buildsPage.buildEnvironmentLoadFailed'))
+      })
+    }
   }
   const toggleRuntimeConfigSet = (setId: string, checked: boolean) => {
     const current = normalizeRuntimeConfigRefs(targetForm.getValues('runtimeConfigRefs'), targetForm.getValues('runtimeConfigSetIds'))
@@ -668,7 +695,14 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
   })
   const saveTarget = useMutation({
     mutationFn: async ({ redeploy, values }: { redeploy: boolean, values: DeploymentTargetPayload }) => {
-      const payload = normalizeDeploymentTargetPayload(values)
+      const normalized = normalizeDeploymentTargetPayload(values)
+      const payload = targetBuildEnvironmentDirty
+        ? {
+            ...normalized,
+            buildVariables: buildVariableRowsToRecord(targetBuildVariableRows),
+            buildSecrets: buildVariableRowsToRecord(targetBuildSecretRows),
+          }
+        : normalized
       const savedTarget = editingTarget
         ? api.updateDeploymentTarget(projectId, applicationId, editingTarget.id, payload)
         : api.createDeploymentTarget(projectId, applicationId, payload)
@@ -685,6 +719,7 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
       toast.success(t(redeploy ? 'deploymentsPage.targetUpdatedAndRedeployQueued' : editingTarget ? 'deploymentsPage.targetUpdated' : 'deploymentsPage.targetCreated'))
       setTargetDialogOpen(false)
       setEditingTarget(null)
+      setTargetBuildEnvironmentDirty(false)
       targetForm.reset(deploymentTargetDefaults)
       queryClient.invalidateQueries({ queryKey: ['deployment-targets', projectId, applicationId] })
       if (redeploy)
@@ -731,6 +766,8 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
         buildMinutePriceText={billingDisplay.formatAmountWithUnit(buildMinuteCost)}
         buildTemplates={buildTemplates.data ?? []}
         buildTimeoutMinutes={buildTimeoutMinutes}
+        buildEnvironmentStatus={targetBuildEnvironmentStatus}
+        buildSecretRows={targetBuildSecretRows}
         defaultRuntimeCluster={defaultRuntimeCluster}
         dockerfileExposedPorts={dockerfileExposedPorts}
         dockerfileSuggestions={dockerfileSuggestions}
@@ -765,6 +802,7 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
           runtime: targetRuntimeSummary,
         }}
         targetBuildHooksEnabled={targetBuildHooksEnabled}
+        buildVariableRows={targetBuildVariableRows}
         targetBuildOptionsError={targetBuildOptions.isError}
         targetBuildOptionsFetching={targetBuildOptions.isFetching}
         targetCanRedeploy={targetCanRedeploy}
@@ -790,6 +828,14 @@ export function ApplicationDeploymentsPanel({ applicationId, appSlug, buildRuns,
         onRedeployRuntimeConfigTargets={() => redeployRuntimeConfigTargets.mutate()}
         onSave={(values, redeploy) => saveTarget.mutate({ redeploy, values })}
         onSetConfigFilesValid={setTargetConfigFilesValid}
+        onSetBuildSecretRows={(rows) => {
+          setTargetBuildSecretRows(rows)
+          setTargetBuildEnvironmentDirty(true)
+        }}
+        onSetBuildVariableRows={(rows) => {
+          setTargetBuildVariableRows(rows)
+          setTargetBuildEnvironmentDirty(true)
+        }}
         onSetHookBindings={setTargetHookBindings}
         onSetSecretFilesValid={setTargetSecretFilesValid}
         onToggleRuntimeConfigSet={toggleRuntimeConfigSet}

@@ -1,21 +1,19 @@
 import type { BuildVariableSet } from '@/api'
+import type { KeyValueRow } from '@/components/common/key-value-rows-editor'
 
-interface KeyValueRow {
-  id: string
-  key: string
-  value: string
-  existing?: boolean
+export function emptyKeyValueRow(): KeyValueRow {
+  return { id: crypto.randomUUID(), key: '', value: '' }
 }
 
 export function buildVariableRecordToRows(value: BuildVariableSet['variables']): KeyValueRow[] {
   const record = buildVariableRecord(value)
   const rows = Object.entries(record).map(([key, raw]) => ({ id: crypto.randomUUID(), key, value: String(raw) }))
-  return rows.length ? rows : [{ id: crypto.randomUUID(), key: '', value: '' }]
+  return rows.length ? rows : [emptyKeyValueRow()]
 }
 
 export function secretStateToRows(value: BuildVariableSet['secrets']): KeyValueRow[] {
   const rows = Object.keys(value ?? {}).map(key => ({ existing: true, id: crypto.randomUUID(), key, value: '' }))
-  return rows.length ? rows : [{ id: crypto.randomUUID(), key: '', value: '' }]
+  return rows.length ? rows : [emptyKeyValueRow()]
 }
 
 export function buildVariableRowsToRecord(rows: KeyValueRow[]) {

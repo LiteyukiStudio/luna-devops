@@ -63,6 +63,15 @@ When creating a release, the platform first reads tags live from the target regi
 
 Deployment targets support Dockerfile Build Args. Users can enter one Dockerfile `ARG` per line as `KEY=value`; the platform snapshots the current config into the BuildRun and passes the values to BuildKit. Build Args support the same build-time templates as image tags: `${{ github.sha }}`, `${{ github.ref_name }}`, `${{ github.ref_type }}`, `${{ github.ref }}`, and `{short_sha}`. Build Args are build parameters and appear in build records, so do not use them for secrets. Put sensitive values in project-space build secret variables.
 
+Build environment variables and secrets support four levels. The platform merges them in `global -> project space -> application -> deployment target` order, and a later level replaces an earlier value with the same key:
+
+- Platform administrators maintain global defaults in Site Settings. They are useful for shared package mirrors or build-tool defaults.
+- Project-space values continue to use Build Variables in the project workspace and may combine multiple variable sets.
+- Application values are edited on the application's Builds page and apply to every deployment target in that application.
+- Deployment-target values are edited in the target's build section and are intended for environment-specific settings.
+
+The merged variables and secret references are snapshotted when a BuildRun is created. Retrying a build uses the original snapshot, so later configuration changes do not alter an existing run. Public values are stored with the build record; secrets remain encrypted references, the API returns only their presence, and the Worker resolves plaintext only while executing the build.
+
 Registry credentials can define an image repository template and an image tag template. They are used only to seed the default push location when a deployment target is created. After the deployment target is saved, the repository and tag are stored as a snapshot and no longer follow credential template changes. For example, repository template `devopsns/{project}-{app}-{stage}` plus tag template `{projectSlug}-{appSlug}-{stage}` seeds image refs like `devopsns/blog-api-prod:blog-api-prod`.
 
 Repository and tag templates both render only static values known when the deployment target is created: `{registryNamespace}`, `{project}`, `{projectSlug}`, `{app}`, `{appSlug}`, `{stage}`, and `{target}`. If the tag template uses build-time variables such as `{commit}` or `{branch}`, the deployment target default falls back to `latest` so future builds are not implicitly rewritten by credential templates.

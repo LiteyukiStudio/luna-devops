@@ -325,6 +325,8 @@ type deploymentTargetInput struct {
 	ImageRef                     string                             `json:"imageRef"`
 	BuildLabels                  string                             `json:"buildLabels"`
 	BuildVariableSetIDs          []string                           `json:"buildVariableSetIds"`
+	BuildVariables               *map[string]string                 `json:"buildVariables"`
+	BuildSecrets                 *map[string]string                 `json:"buildSecrets"`
 	BuildHooksEnabled            *bool                              `json:"buildHooksEnabled"`
 	BuildHookBindings            []deploymentTargetHookBindingInput `json:"buildHookBindings"`
 	AutoDeploy                   bool                               `json:"autoDeploy"`

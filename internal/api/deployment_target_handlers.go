@@ -114,7 +114,11 @@ func (h *Handlers) CreateDeploymentTarget(ctx *gin.Context) {
 		return
 	}
 	target = model.ApplyPlatformDeploymentTargetDefaults(project, app, target)
-	if err := h.saveDeploymentTarget(target, input.BuildHookBindings); err != nil {
+	buildEnvironment, ok := h.deploymentBuildEnvironmentFromInput(ctx, user, project.ID, target.ID, input, nil)
+	if !ok {
+		return
+	}
+	if err := h.saveDeploymentTarget(target, input.BuildHookBindings, buildEnvironment); err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -166,7 +170,16 @@ func (h *Handlers) UpdateDeploymentTarget(ctx *gin.Context) {
 		target.SecretRefs = existing.SecretRefs
 	}
 	target = model.ApplyPlatformDeploymentTargetDefaults(project, app, target)
-	if err := h.saveDeploymentTarget(target, input.BuildHookBindings); err != nil {
+	existingBuildEnvironment, err := h.findBuildEnvironmentConfig(h.db, model.BuildEnvironmentScopeDeployment, target.ID)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
+		return
+	}
+	buildEnvironment, ok := h.deploymentBuildEnvironmentFromInput(ctx, user, project.ID, target.ID, input, &existingBuildEnvironment)
+	if !ok {
+		return
+	}
+	if err := h.saveDeploymentTarget(target, input.BuildHookBindings, buildEnvironment); err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}

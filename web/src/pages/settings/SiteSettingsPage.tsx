@@ -1,14 +1,16 @@
 import type { TFunction } from 'i18next'
 import type { BillingRateRule, BillingRateRulePayload, ConfigDefinition, DataRetentionPayload, DataRetentionResult } from '@/api/types'
 import type { DataListColumn } from '@/components/common/data-list'
+import type { KeyValueRow } from '@/components/common/key-value-rows-editor'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Eye, Save, Trash2 } from 'lucide-react'
+import { Eye, Save, Settings2, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { api } from '@/api'
 import { applySiteBrandColorPreset } from '@/app/brand-theme'
+import { BuildEnvironmentEditorDialog } from '@/components/common/build-environment-editor-dialog'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { ContentTabs } from '@/components/common/content-tabs'
 import { DataList } from '@/components/common/data-list'
@@ -21,6 +23,7 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { TabsContent } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
+import { buildVariableRecordToRows, buildVariableRowsToRecord, secretStateToRows } from '@/lib/build-variables'
 import { BrandColorPresetField } from './brand-color-preset-field'
 import { configDefinitionText } from './config-definition-text'
 import { changedConfigValues } from './site-settings-values'
@@ -31,6 +34,9 @@ export function SiteSettingsPage() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [activeTab, setActiveTab] = useState('brand')
+  const [environmentDialogOpen, setEnvironmentDialogOpen] = useState(false)
+  const [environmentVariableRows, setEnvironmentVariableRows] = useState<KeyValueRow[]>([])
+  const [environmentSecretRows, setEnvironmentSecretRows] = useState<KeyValueRow[]>([])
   const form = useForm<Record<string, unknown>>({ mode: 'onChange', defaultValues: {} })
   const definitions = useQuery({ queryKey: ['config-definitions'], queryFn: api.listConfigDefinitions })
   const keys = useMemo(() => (definitions.data ?? []).map(definition => definition.key), [definitions.data])
@@ -74,6 +80,35 @@ export function SiteSettingsPage() {
     if (Object.keys(changedValues).length > 0)
       save.mutate(changedValues)
   }
+  const saveGlobalEnvironment = useMutation({
+    mutationFn: () => api.updateBuildEnvironmentConfig(
+      { scope: 'global' },
+      {
+        variables: buildVariableRowsToRecord(environmentVariableRows),
+        secrets: buildVariableRowsToRecord(environmentSecretRows),
+      },
+    ),
+    onSuccess: (config) => {
+      queryClient.setQueryData(['build-environment-config', 'global'], config)
+      setEnvironmentDialogOpen(false)
+      toast.success(t('buildsPage.buildEnvironmentSaved'))
+    },
+    onError: error => toast.error(error.message),
+  })
+  const openGlobalEnvironment = async () => {
+    try {
+      const config = await queryClient.fetchQuery({
+        queryKey: ['build-environment-config', 'global'],
+        queryFn: () => api.getBuildEnvironmentConfig({ scope: 'global' }),
+      })
+      setEnvironmentVariableRows(buildVariableRecordToRows(config.variables))
+      setEnvironmentSecretRows(secretStateToRows(config.secrets))
+      setEnvironmentDialogOpen(true)
+    }
+    catch (error) {
+      toast.error(error instanceof Error ? error.message : t('buildsPage.buildEnvironmentLoadFailed'))
+    }
+  }
 
   return (
     <div className="grid gap-4">
@@ -100,9 +135,21 @@ export function SiteSettingsPage() {
           onValueChange={setActiveTab}
         >
           <TabsContent value="brand">
-            <Card className="max-w-3xl p-4">
-              <ConfigSection definitions={siteDefinitions} form={form} />
-            </Card>
+            <div className="grid max-w-3xl gap-4">
+              <Card className="p-4">
+                <ConfigSection definitions={siteDefinitions} form={form} />
+              </Card>
+              <Card className="flex items-center justify-between gap-4 p-4">
+                <div className="min-w-0">
+                  <h3 className="text-base font-semibold">{t('buildsPage.globalBuildEnvironment')}</h3>
+                  <p className="mt-1 text-sm text-muted-foreground">{t('buildsPage.globalBuildEnvironmentDescription')}</p>
+                </div>
+                <Button type="button" variant="outline" onClick={() => void openGlobalEnvironment()}>
+                  <Settings2 className="size-4" />
+                  {t('common.edit')}
+                </Button>
+              </Card>
+            </div>
           </TabsContent>
           <TabsContent value="security">
             <Card className="max-w-3xl p-4">
@@ -131,6 +178,18 @@ export function SiteSettingsPage() {
           </TabsContent>
         </ContentTabs>
       </form>
+      <BuildEnvironmentEditorDialog
+        description={t('buildsPage.globalBuildEnvironmentDescription')}
+        open={environmentDialogOpen}
+        pending={saveGlobalEnvironment.isPending}
+        secretRows={environmentSecretRows}
+        title={t('buildsPage.globalBuildEnvironment')}
+        variableRows={environmentVariableRows}
+        onOpenChange={setEnvironmentDialogOpen}
+        onSave={() => saveGlobalEnvironment.mutate()}
+        onSecretRowsChange={setEnvironmentSecretRows}
+        onVariableRowsChange={setEnvironmentVariableRows}
+      />
     </div>
   )
 }

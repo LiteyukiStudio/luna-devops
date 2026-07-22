@@ -95,6 +95,7 @@ Status reconcilers must compare the previous and next state. A certificate may b
 Use compact filters at the top:
 
 - Time: today, last 7 days, last 30 days, or a custom range.
+- A first visit selects warning and error severities so actionable events appear first. Clearing the severity filter shows all events, and explicit URL filters take precedence.
 - Project space, application, and deployment target support multiple selections. Application options come from the selected project spaces, and deployment-target options come from the selected applications.
 - Category, event type, and severity support multiple selections. Selecting categories narrows the event-type options to those categories.
 - Result supports multiple selections, such as viewing in-progress and failed events together.
@@ -109,6 +110,8 @@ The list is ordered newest first. Each row shows a summary, resource, status, an
 - Earlier and later events with the same `correlation_id`.
 
 Do not add unread counts or “mark all as read” in the first version. This is an activity and diagnostic history, not a message inbox. If actionable acknowledgements become necessary later, model them separately.
+
+The build link for `build.failed` includes the BuildRun ID. Opening it switches to the application's Builds page, filters, scrolls to, and highlights the failed run instead of stopping at the top of the build list. The API also derives this link for historical events.
 
 ## Authorization
 

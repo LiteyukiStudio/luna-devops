@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/LiteyukiStudio/devops/internal/buildenv"
 	"github.com/LiteyukiStudio/devops/internal/buildtemplate"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/gin-gonic/gin"
@@ -168,6 +169,14 @@ func (h *Handlers) prepareBuildRunRequest(user model.User, run *model.BuildRun) 
 	}
 	if _, err := h.buildVariablesForRunByIDs(h.db, user, run.ProjectID, buildVariableSetIDs(run.BuildVariableSetIDs)); err != nil {
 		return buildRunBadRequest(err.Error())
+	}
+	if strings.TrimSpace(run.BuildVariablesSnapshot) == "" && strings.TrimSpace(run.BuildSecretRefsSnapshot) == "" {
+		snapshot, err := h.buildEnvironmentSnapshotForRun(h.db, user, *run)
+		if err != nil {
+			return buildRunBadRequest("构建变量和密钥不可用")
+		}
+		run.BuildVariablesSnapshot = buildenv.Encode(snapshot.Variables)
+		run.BuildSecretRefsSnapshot = buildenv.Encode(snapshot.SecretRefs)
 	}
 	return nil
 }

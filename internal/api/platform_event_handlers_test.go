@@ -73,3 +73,40 @@ func TestPlatformEventResponseNormalizesNullJSONObjects(t *testing.T) {
 		t.Fatalf("links = %#v, want non-nil empty object", response.Links)
 	}
 }
+
+func TestPlatformEventResponseAddsBuildRunDeepLink(t *testing.T) {
+	response := platformEventResponseFor(model.PlatformEvent{
+		Type:          "build.failed",
+		ProjectID:     "prj_1",
+		ApplicationID: "app_1",
+		ResourceType:  "build",
+		ResourceID:    "bldr_1",
+		DetailJSON:    "{}",
+		LinksJSON:     `{"application":"https://devops.example.com/luna/projects/prj_1/apps/app_1"}`,
+	}, 0)
+
+	want := "https://devops.example.com/luna/projects/prj_1/apps/app_1#tab=builds&buildRunId=bldr_1"
+	if response.Links["build"] != want {
+		t.Fatalf("build link = %q, want %q", response.Links["build"], want)
+	}
+	if response.Links["primary"] != want {
+		t.Fatalf("primary link = %q, want %q", response.Links["primary"], want)
+	}
+}
+
+func TestPlatformEventResponseAddsRelativeBuildRunDeepLinkWithoutConfiguredBaseURL(t *testing.T) {
+	response := platformEventResponseFor(model.PlatformEvent{
+		Type:          "build.failed",
+		ProjectID:     "prj_1",
+		ApplicationID: "app_1",
+		ResourceType:  "build",
+		ResourceID:    "bldr_1",
+		DetailJSON:    "{}",
+		LinksJSON:     "{}",
+	}, 0)
+
+	want := "/projects/prj_1/apps/app_1#tab=builds&buildRunId=bldr_1"
+	if response.Links["build"] != want {
+		t.Fatalf("build link = %q, want %q", response.Links["build"], want)
+	}
+}

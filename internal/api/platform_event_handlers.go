@@ -2,7 +2,9 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -199,10 +201,44 @@ func platformEventResponseFor(event model.PlatformEvent, deliveryCount int64) pl
 	if err := json.Unmarshal([]byte(event.LinksJSON), &links); err != nil || links == nil {
 		links = map[string]string{}
 	}
+	links = platformEventLinks(event, links)
 	return platformEventResponse{
 		PlatformEvent: event,
 		Detail:        detail,
 		Links:         links,
 		DeliveryCount: deliveryCount,
 	}
+}
+
+func platformEventLinks(event model.PlatformEvent, links map[string]string) map[string]string {
+	if event.Type != "build.failed" || event.ResourceType != "build" {
+		return links
+	}
+	projectID := strings.TrimSpace(event.ProjectID)
+	applicationID := strings.TrimSpace(event.ApplicationID)
+	buildRunID := strings.TrimSpace(event.ResourceID)
+	if projectID == "" || applicationID == "" || buildRunID == "" {
+		return links
+	}
+
+	detailLink := fmt.Sprintf(
+		"/projects/%s/apps/%s#tab=builds&buildRunId=%s",
+		url.PathEscape(projectID),
+		url.PathEscape(applicationID),
+		url.QueryEscape(buildRunID),
+	)
+	for _, key := range []string{"build", "application"} {
+		candidate := strings.TrimSpace(links[key])
+		parsed, err := url.Parse(candidate)
+		if candidate == "" || err != nil || !parsed.IsAbs() {
+			continue
+		}
+		parsed.RawQuery = ""
+		parsed.Fragment = "tab=builds&buildRunId=" + url.QueryEscape(buildRunID)
+		detailLink = parsed.String()
+		break
+	}
+	links["build"] = detailLink
+	links["primary"] = detailLink
+	return links
 }

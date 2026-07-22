@@ -167,6 +167,7 @@ func Migrate(db *gorm.DB) error {
 		&model.ContainerImage{},
 		&model.DeploymentTargetHookBinding{},
 		&model.BuildVariableSet{},
+		&model.BuildEnvironmentConfig{},
 		&model.BuildRun{},
 		&model.BuildJob{},
 		&model.BuildLog{},
