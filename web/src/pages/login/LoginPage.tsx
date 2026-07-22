@@ -5,7 +5,7 @@ import { LogIn, TriangleAlert } from 'lucide-react'
 import { useEffect, useMemo } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import { api, oidcStartUrl } from '@/api'
@@ -41,6 +41,7 @@ export function LoginPage() {
   const authError = useMemo(() => authErrorCode ? authErrorMessage(authErrorCode, t) : null, [authErrorCode, t])
   const status = useQuery({ queryKey: ['bootstrap-status'], queryFn: api.getBootstrapStatus })
   const providers = useQuery({ queryKey: ['auth-providers'], queryFn: () => api.listAuthProviders(false) })
+  const registration = useQuery({ queryKey: ['auth-registration-status'], queryFn: api.getAuthRegistrationStatus })
   const form = useForm<LoginForm>({
     resolver: zodResolver(schema),
     mode: 'onChange',
@@ -168,6 +169,11 @@ export function LoginPage() {
                     <LogIn size={16} />
                     {t('login')}
                   </Button>
+                  {registration.data?.emailRegistrationEnabled && (
+                    <Button asChild type="button" variant="ghost">
+                      <Link to="/register">{t('loginPage.registration.createAccount')}</Link>
+                    </Button>
+                  )}
                   {status.data?.mode === 'development' && status.data.devLoginEnabled && status.data.devLoginHint && (
                     <p className="text-xs text-muted-foreground">
                       {t('loginPage.devAccount')}
@@ -227,6 +233,7 @@ function authErrorMessage(code: string, t: ReturnType<typeof useTranslation>['t'
     oidc_token_invalid: { title: t('loginPage.oidcTokenInvalidTitle'), description: t('loginPage.oidcTokenInvalid') },
     oidc_bind_failed: { title: t('loginPage.oidcBindFailedTitle'), description: t('loginPage.oidcBindFailed') },
     oidc_login_failed: { title: t('loginPage.oidcFallbackTitle'), description: t('loginPage.oidcFallback') },
+    oidc_registration_disabled: { title: t('loginPage.oidcRegistrationDisabledTitle'), description: t('loginPage.oidcRegistrationDisabled') },
     auth_forbidden: { title: t('loginPage.authForbiddenTitle'), description: t('loginPage.authForbidden') },
   }
   return messages[code] ?? { title: t('loginPage.oidcFallbackTitle'), description: t('loginPage.oidcFallback') }

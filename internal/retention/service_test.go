@@ -82,6 +82,9 @@ func TestStandardQueriesContainTerminalGuardsAndHalfOpenRange(t *testing.T) {
 
 func TestExpiredAuthQueriesUseExpiryAndProtectSessionChildren(t *testing.T) {
 	authPlan := plans[DatasetExpiredAuthData]
+	if len(authPlan.queries) != 4 {
+		t.Fatalf("expired auth query count = %d, want 4", len(authPlan.queries))
+	}
 	assertionCountSQL := authPlan.queries[0].countSQL
 	if strings.Count(assertionCountSQL, "LEAST(idle_expires_at, absolute_expires_at)") != 3 {
 		t.Fatalf("assertion query does not apply range and now to effective expiry:\n%s", assertionCountSQL)
@@ -102,6 +105,9 @@ func TestExpiredAuthQueriesUseExpiryAndProtectSessionChildren(t *testing.T) {
 	}
 	if authPlan.queries[1].windowCount != 2 || len(authPlan.queries[1].rangeArgs(startOfTestRange, endOfTestRange, nowForTestRange)) != 6 {
 		t.Fatal("session relation guard must receive the same range for session and assertion predicates")
+	}
+	if !strings.Contains(authPlan.queries[3].countSQL, "email_registration_challenges") || !strings.Contains(authPlan.queries[3].deleteSQL, "expires_at <= ?") {
+		t.Fatal("expired email registration challenges must be included in authentication cleanup")
 	}
 }
 

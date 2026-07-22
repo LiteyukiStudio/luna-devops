@@ -446,7 +446,7 @@ func (h *Handlers) AdminResetUserMFA(ctx *gin.Context) {
 }
 
 func mfaEnrollmentReauthMode(user model.User) string {
-	if strings.EqualFold(strings.TrimSpace(user.AuthType), "local") {
+	if strings.TrimSpace(user.Password) != "" {
 		return "password"
 	}
 	return "fresh_session"
@@ -461,24 +461,20 @@ func (h *Handlers) reauthenticateMFAEnrollment(ctx *gin.Context, user model.User
 		writeErrorCode(ctx, http.StatusUnauthorized, "mfa.reauth_required", "请输入当前密码后重新验证")
 		return false
 	}
-	h.audit(user.ID, "mfa.enroll", user.ID, false, "OIDC session is not fresh enough for enrollment")
-	writeErrorCode(ctx, http.StatusUnauthorized, "mfa.reauth_required", "请重新完成 OIDC 登录后再绑定 MFA")
+	h.audit(user.ID, "mfa.enroll", user.ID, false, "primary session is not fresh enough for enrollment")
+	writeErrorCode(ctx, http.StatusUnauthorized, "mfa.reauth_required", "请重新登录后再绑定 MFA")
 	return false
 }
 
 func mfaEnrollmentReauthenticated(user model.User, session model.UserSession, currentPassword string, now time.Time) bool {
-	switch strings.ToLower(strings.TrimSpace(user.AuthType)) {
-	case "local":
+	if strings.TrimSpace(user.Password) != "" {
 		return strings.TrimSpace(currentPassword) != "" && bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(currentPassword)) == nil
-	case "oidc":
-		if session.ImpersonatorID != "" || session.PrimaryAuthenticatedAt == nil || session.PrimaryAuthenticatedAt.IsZero() {
-			return false
-		}
-		age := now.Sub(*session.PrimaryAuthenticatedAt)
-		return age >= 0 && age <= mfaEnrollmentOIDCSessionMaxAge
-	default:
+	}
+	if session.ImpersonatorID != "" || session.PrimaryAuthenticatedAt == nil || session.PrimaryAuthenticatedAt.IsZero() {
 		return false
 	}
+	age := now.Sub(*session.PrimaryAuthenticatedAt)
+	return age >= 0 && age <= mfaEnrollmentOIDCSessionMaxAge
 }
 
 func (h *Handlers) currentMFAUserSession(ctx *gin.Context) (model.User, model.UserSession, bool) {

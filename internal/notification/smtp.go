@@ -166,7 +166,11 @@ func sendSMTP(ctx context.Context, cfg SMTPConfig, message RenderedMessage, reso
 			return err
 		}
 	}
-	if err := client.Mail(cfg.From); err != nil {
+	from, err := mail.ParseAddress(cfg.From)
+	if err != nil {
+		return err
+	}
+	if err := client.Mail(from.Address); err != nil {
 		return err
 	}
 	recipients := append(append([]string{}, cfg.To...), append(cfg.Cc, cfg.Bcc...)...)

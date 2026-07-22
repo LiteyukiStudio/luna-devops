@@ -71,7 +71,7 @@ func TestMFAEnrollmentRequiresPasswordOrFreshOIDCSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	localUser := model.User{AuthType: "local", Password: string(passwordHash)}
+	localUser := model.User{Password: string(passwordHash)}
 	if !mfaEnrollmentReauthenticated(localUser, model.UserSession{}, "correct-password", now) {
 		t.Fatal("expected current local password to reauthenticate enrollment")
 	}
@@ -79,19 +79,19 @@ func TestMFAEnrollmentRequiresPasswordOrFreshOIDCSession(t *testing.T) {
 		t.Fatal("wrong local password must not reauthenticate enrollment")
 	}
 
-	oidcUser := model.User{AuthType: "oidc"}
+	passwordlessUser := model.User{}
 	freshBoundary := now.Add(-mfaEnrollmentOIDCSessionMaxAge)
-	if !mfaEnrollmentReauthenticated(oidcUser, model.UserSession{PrimaryAuthenticatedAt: &freshBoundary}, "", now) {
+	if !mfaEnrollmentReauthenticated(passwordlessUser, model.UserSession{PrimaryAuthenticatedAt: &freshBoundary}, "", now) {
 		t.Fatal("session at the documented OIDC freshness boundary should be accepted")
 	}
 	stalePrimaryAuthentication := now.Add(-mfaEnrollmentOIDCSessionMaxAge - time.Second)
-	if mfaEnrollmentReauthenticated(oidcUser, model.UserSession{PrimaryAuthenticatedAt: &stalePrimaryAuthentication}, "", now) {
+	if mfaEnrollmentReauthenticated(passwordlessUser, model.UserSession{PrimaryAuthenticatedAt: &stalePrimaryAuthentication}, "", now) {
 		t.Fatal("stale OIDC session must not reauthenticate enrollment")
 	}
-	if mfaEnrollmentReauthenticated(oidcUser, model.UserSession{PrimaryAuthenticatedAt: &now, ImpersonatorID: "usr_admin"}, "", now) {
+	if mfaEnrollmentReauthenticated(passwordlessUser, model.UserSession{PrimaryAuthenticatedAt: &now, ImpersonatorID: "usr_admin"}, "", now) {
 		t.Fatal("impersonated session must not reauthenticate enrollment")
 	}
-	if mfaEnrollmentReauthenticated(oidcUser, model.UserSession{CreatedAt: now}, "", now) {
+	if mfaEnrollmentReauthenticated(passwordlessUser, model.UserSession{CreatedAt: now}, "", now) {
 		t.Fatal("legacy session without primary authentication time must fail closed")
 	}
 }

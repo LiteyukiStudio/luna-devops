@@ -216,6 +216,65 @@ paths:
         "204":
           description: Logged out.
 
+  /api/v1/auth/registration:
+    get:
+      tags: [Auth]
+      summary: Get public registration capabilities
+      responses:
+        "200":
+          description: Public registration capability flags.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthRegistrationStatus" }
+
+  /api/v1/auth/registration/email/code:
+    post:
+      tags: [Auth]
+      summary: Request an email registration verification code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EmailRegistrationCodeInput" }
+      responses:
+        "202":
+          description: Verification challenge created.
+
+  /api/v1/auth/registration/email:
+    post:
+      tags: [Auth]
+      summary: Complete email registration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EmailRegistrationInput" }
+      responses:
+        "201":
+          description: Account created and signed in.
+
+  /api/v1/auth/registration/settings:
+    get:
+      tags: [Auth]
+      summary: Get registration and SMTP settings
+      responses:
+        "200":
+          description: Registration settings with the write-only SMTP password omitted.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthRegistrationSettings" }
+    put:
+      tags: [Auth]
+      summary: Update registration and SMTP settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AuthRegistrationSettingsInput" }
+      responses:
+        "200":
+          description: Registration settings updated.
+
   /api/v1/auth/mfa/status:
     get:
       tags: [Auth]
@@ -583,6 +642,19 @@ paths:
               schema:
                 $ref: "#/components/schemas/CurrentUser"
 
+  /api/v1/users/me/password:
+    put:
+      tags: [Users]
+      summary: Set or change the current user's local password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateMyPasswordInput" }
+      responses:
+        "204":
+          description: Password updated and all sessions revoked.
+
   /api/v1/users/me/external-identities:
     get:
       tags: [Users]
@@ -612,7 +684,7 @@ paths:
           in: query
           schema:
             type: string
-            enum: [createdAt, email, name, role, authType, status]
+            enum: [createdAt, email, name, role, passwordSet, status]
             default: createdAt
         - $ref: "#/components/parameters/SortOrder"
       responses:
@@ -2651,7 +2723,7 @@ components:
         email: { type: string, format: email }
         name: { type: string }
         avatarUrl: { type: string }
-        authType: { type: string, enum: [local, oidc] }
+        passwordSet: { type: boolean }
         role: { type: string }
         language: { type: string, enum: [zh-CN, en-US] }
         brandColorPreset:
@@ -2661,7 +2733,68 @@ components:
         permissions:
           type: array
           items: { type: string }
-      required: [id, email, name, avatarUrl, authType, role, language, brandColorPreset, permissions]
+      required: [id, email, name, avatarUrl, passwordSet, role, language, brandColorPreset, permissions]
+    AuthRegistrationStatus:
+      type: object
+      properties:
+        emailRegistrationEnabled: { type: boolean }
+        oidcRegistrationEnabled: { type: boolean }
+        externalIdentityPasswordEnabled: { type: boolean }
+      required: [emailRegistrationEnabled, oidcRegistrationEnabled, externalIdentityPasswordEnabled]
+    AuthRegistrationSettings:
+      type: object
+      properties:
+        allowEmailRegistration: { type: boolean }
+        allowOidcRegistration: { type: boolean }
+        allowExternalIdentityPassword: { type: boolean }
+        smtpHost: { type: string }
+        smtpPort: { type: integer, minimum: 1, maximum: 65535 }
+        smtpSecurity: { type: string, enum: [none, starttls, tls] }
+        smtpUsername: { type: string }
+        smtpPasswordSet: { type: boolean }
+        smtpFromAddress: { type: string, format: email }
+        smtpFromName: { type: string }
+      required: [allowEmailRegistration, allowOidcRegistration, allowExternalIdentityPassword, smtpHost, smtpPort, smtpSecurity, smtpUsername, smtpPasswordSet, smtpFromAddress, smtpFromName]
+    AuthRegistrationSettingsInput:
+      type: object
+      properties:
+        allowEmailRegistration: { type: boolean }
+        allowOidcRegistration: { type: boolean }
+        allowExternalIdentityPassword: { type: boolean }
+        smtpHost: { type: string }
+        smtpPort: { type: integer, minimum: 1, maximum: 65535 }
+        smtpSecurity: { type: string, enum: [none, starttls, tls] }
+        smtpUsername: { type: string }
+        smtpPassword:
+          type: string
+          writeOnly: true
+          description: Leave empty to keep the existing Secret Store value.
+        smtpFromAddress: { type: string, format: email }
+        smtpFromName: { type: string }
+      required: [allowEmailRegistration, allowOidcRegistration, allowExternalIdentityPassword, smtpHost, smtpPort, smtpSecurity, smtpUsername, smtpFromAddress, smtpFromName]
+    EmailRegistrationCodeInput:
+      type: object
+      properties:
+        email: { type: string, format: email }
+        language: { type: string, enum: [zh-CN, en-US] }
+      required: [email]
+    EmailRegistrationInput:
+      type: object
+      properties:
+        challengeId: { type: string }
+        code: { type: string, minLength: 6, maxLength: 6 }
+        email: { type: string, format: email }
+        name: { type: string }
+        password: { type: string, minLength: 8, writeOnly: true }
+        language: { type: string, enum: [zh-CN, en-US] }
+        rememberMe: { type: boolean }
+      required: [challengeId, code, email, name, password]
+    UpdateMyPasswordInput:
+      type: object
+      properties:
+        currentPassword: { type: string, writeOnly: true }
+        newPassword: { type: string, minLength: 8, writeOnly: true }
+      required: [newPassword]
     UpdateCurrentUserInput:
       type: object
       properties:

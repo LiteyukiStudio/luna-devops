@@ -133,10 +133,14 @@ export function UsersPage() {
       render: user => <StatusBadge>{user.role === 'platform_admin' ? t('usersPage.platformAdmin') : t('usersPage.normalUser')}</StatusBadge>,
     },
     {
-      key: 'authType',
-      header: t('usersPage.authType'),
+      key: 'passwordSet',
+      header: t('usersPage.passwordLogin'),
       className: 'w-[10%] px-4 py-3 align-middle',
-      render: user => <StatusBadge>{user.authType}</StatusBadge>,
+      render: user => (
+        <StatusBadge tone={user.passwordSet ? 'success' : 'neutral'}>
+          {user.passwordSet ? t('common.enabled') : t('common.disabled')}
+        </StatusBadge>
+      ),
     },
     {
       key: 'mfa',

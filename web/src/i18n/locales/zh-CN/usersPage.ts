@@ -1,7 +1,7 @@
 const usersPage = {
   title: '用户管理',
-  description: '创建和维护本地账号。OIDC 账号绑定会在后续身份源部署配置中补齐。',
-  createTitle: '创建本地用户',
+  description: '创建和维护平台用户，以及用户可使用的登录方式。',
+  createTitle: '创建用户',
   editTitle: '编辑用户',
   listTitle: '用户列表',
   searchPlaceholder: '搜索用户邮箱或名称',
@@ -30,7 +30,7 @@ const usersPage = {
   emptyDescription: '先创建一个本地账号。',
   platformAdmin: '平台管理员',
   normalUser: '普通用户',
-  authType: '认证方式',
+  passwordLogin: '密码登录',
   mfa: '两步验证',
   resetMFA: '重置 MFA',
   resetMFATitle: '确认重置该用户的 MFA？',

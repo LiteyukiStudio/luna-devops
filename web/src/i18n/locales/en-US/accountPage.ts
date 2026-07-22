@@ -16,6 +16,20 @@ const accountPage = {
   followPlatformBrandColor: 'Follow platform',
   saveProfile: 'Save profile',
   profileSaved: 'Profile saved',
+  password: {
+    setTitle: 'Set sign-in password',
+    changeTitle: 'Change sign-in password',
+    disabledTitle: 'Password sign-in is unavailable',
+    disabledDescription: 'The administrator has not allowed external-identity-only users to set a local password.',
+    current: 'Current password',
+    currentRequired: 'Enter the current password.',
+    next: 'New password',
+    confirm: 'Confirm new password',
+    mismatch: 'The new passwords do not match.',
+    sessionNotice: 'Saving revokes every sign-in session for this account. Sign in again with the new password or a bound identity.',
+    save: 'Save password',
+    saved: 'Password updated. Sign in again.',
+  },
   mfa: {
     title: 'Two-step verification',
     description: 'Protect sensitive operations with time-based codes from an authenticator and keep recovery codes for account recovery.',
@@ -75,6 +89,7 @@ const accountPage = {
       mfa_manage: 'manage two-step verification',
       security_settings_update: 'update security settings',
       data_retention_cleanup: 'permanently clean up platform data',
+      password_update: 'change sign-in password',
     },
   },
 }

@@ -38,6 +38,25 @@ const loginPage = {
   oidcBindFailed: '第三方登录绑定失败，请确认该身份未绑定其他账号。',
   authForbiddenTitle: '没有权限',
   authForbidden: '当前账号没有执行此操作的权限。',
+  oidcRegistrationDisabledTitle: 'OIDC 注册已关闭',
+  oidcRegistrationDisabled: '平台当前不允许通过 OIDC 创建新账号。已有绑定账号仍可正常登录。',
+  registration: {
+    title: '创建 Luna DevOps 账号',
+    description: '验证邮箱并设置登录密码。',
+    createAccount: '创建账号',
+    confirmPassword: '确认密码',
+    passwordMismatch: '两次输入的密码不一致。',
+    code: '邮箱验证码',
+    codeRequired: '请输入邮箱验证码。',
+    sendCode: '发送验证码',
+    resendCode: '重新发送',
+    codeSent: '验证码已发送，请检查邮箱。',
+    submit: '注册并登录',
+    success: '账号创建成功',
+    backToLogin: '返回登录',
+    statusFailedTitle: '注册状态加载失败',
+    statusFailedDescription: '暂时无法确认平台是否开放注册，请稍后重试。',
+  },
 }
 
 export default loginPage

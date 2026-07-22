@@ -27,6 +27,7 @@ import { TabsContent } from '@/components/ui/tabs'
 import { AccessTokensPanel } from '@/pages/access-tokens/AccessTokensPage'
 import { AccountMFAPanel } from './account-mfa-panel'
 import { OAuthApplicationsPanel, OAuthGrantsPanel } from './account-oauth-panels'
+import { AccountPasswordPanel } from './account-password-panel'
 import { BrandColorPresetField } from './brand-color-preset-field'
 
 const profileSchema = z.object({
@@ -47,6 +48,7 @@ export function AccountPage() {
       case 'security':
         return (
           <div className="grid gap-4">
+            <AccountPasswordPanel />
             <AccountMFAPanel />
             <IdentityBindingsPanel />
           </div>

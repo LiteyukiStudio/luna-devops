@@ -25,6 +25,7 @@ const (
 	stepUpPurposeMFAManage                = "mfa_manage"
 	stepUpPurposeSecuritySettingsUpdate   = "security_settings_update"
 	stepUpPurposeDataRetentionCleanup     = "data_retention_cleanup"
+	stepUpPurposePasswordUpdate           = "password_update"
 
 	defaultStepUpIdleTimeout     = 10 * time.Minute
 	defaultStepUpAbsoluteTimeout = 60 * time.Minute
@@ -42,6 +43,7 @@ var allowedStepUpPurposes = map[string]struct{}{
 	stepUpPurposeMFAManage:                {},
 	stepUpPurposeSecuritySettingsUpdate:   {},
 	stepUpPurposeDataRetentionCleanup:     {},
+	stepUpPurposePasswordUpdate:           {},
 }
 
 var errStepUpAuthorizationChanged = errors.New("step-up authorization changed")

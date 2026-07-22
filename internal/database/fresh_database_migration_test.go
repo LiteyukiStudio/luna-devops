@@ -91,6 +91,8 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 		"oauth_grants",
 		"oauth_authorization_codes",
 		"oauth_refresh_tokens",
+		"auth_registration_settings",
+		"email_registration_challenges",
 	} {
 		if !db.Migrator().HasTable(table) {
 			t.Fatalf("fresh database is missing table %s", table)
@@ -105,6 +107,7 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 		{table: "billing_ledger_entries", column: "user_id"},
 		{table: "access_tokens", column: "oauth_application_id"},
 		{table: "access_tokens", column: "oauth_grant_id"},
+		{table: "auth_registration_settings", column: "allow_oidc_registration"},
 	} {
 		if !db.Migrator().HasColumn(expected.table, expected.column) {
 			t.Fatalf("fresh database is missing %s.%s", expected.table, expected.column)
@@ -124,6 +127,9 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 		if db.Migrator().HasColumn("access_tokens", column) {
 			t.Fatalf("fresh database contains legacy access_tokens.%s", column)
 		}
+	}
+	if db.Migrator().HasColumn("users", "auth_type") {
+		t.Fatal("fresh database contains obsolete users.auth_type")
 	}
 
 	var defaultRuleCount int64

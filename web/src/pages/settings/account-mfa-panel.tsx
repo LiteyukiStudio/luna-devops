@@ -8,6 +8,7 @@ import { api } from '@/api'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
+import { OneTimeCodeInput } from '@/components/common/one-time-code-input'
 import { StatusBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -221,12 +222,14 @@ export function AccountMFAPanel() {
               <Input className="font-mono" readOnly value={enrollment?.secret ?? ''} />
             </Field>
             <Field label={t('accountPage.mfa.confirmCode')} required>
-              <Input
-                autoComplete="one-time-code"
-                inputMode="numeric"
-                placeholder={t('accountPage.mfa.otpPlaceholder')}
+              <OneTimeCodeInput
+                aria-label={t('accountPage.mfa.otpPlaceholder')}
+                autoFocus
+                disabled={confirm.isPending}
+                name="one-time-code"
                 value={confirmationCode}
-                onChange={event => setConfirmationCode(event.target.value)}
+                onChange={setConfirmationCode}
+                onComplete={value => confirm.mutate({ code: value })}
               />
             </Field>
           </div>

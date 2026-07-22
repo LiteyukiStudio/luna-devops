@@ -87,7 +87,6 @@ func (h *Handlers) InitializeAdmin(ctx *gin.Context) {
 		ID:       id.New("usr"),
 		Email:    email,
 		Name:     name,
-		AuthType: "local",
 		Role:     "platform_admin",
 		Language: normalizeLanguage(input.Language),
 		Password: string(passwordHash),
@@ -146,7 +145,7 @@ func (h *Handlers) Login(ctx *gin.Context) {
 	}
 
 	var user model.User
-	err := h.db.First(&user, "email = ? and auth_type = ?", email, "local").Error
+	err := h.db.First(&user, "email = ?", email).Error
 	if err != nil || user.Disabled || bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(input.Password)) != nil {
 		writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.login.invalid")
 		return
@@ -265,12 +264,12 @@ func (h *Handlers) ListUsers(ctx *gin.Context) {
 		return
 	}
 	if err := query.Order(orderByClause(pagination, map[string]string{
-		"createdAt": "created_at",
-		"email":     "email",
-		"name":      "name",
-		"role":      "role",
-		"authType":  "auth_type",
-		"status":    "disabled",
+		"createdAt":   "created_at",
+		"email":       "email",
+		"name":        "name",
+		"role":        "role",
+		"passwordSet": "CASE WHEN password = '' THEN 0 ELSE 1 END",
+		"status":      "disabled",
 	}, "created_at")).Limit(pagination.PageSize).Offset(pagination.Offset()).Find(&users).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
@@ -365,7 +364,6 @@ func (h *Handlers) CreateUser(ctx *gin.Context) {
 		ID:       id.New("usr"),
 		Email:    email,
 		Name:     name,
-		AuthType: "local",
 		Role:     normalizeUserRole(input.Role),
 		Language: normalizeLanguage(input.Language),
 		Password: string(passwordHash),
@@ -564,13 +562,12 @@ func ensureDevelopmentAdmin(db *gorm.DB) {
 	}
 
 	var user model.User
-	err = db.First(&user, "email = ? and auth_type = ?", email, "local").Error
+	err = db.First(&user, "email = ?", email).Error
 	if err != nil {
 		user = model.User{
 			ID:       "user_admin",
 			Email:    email,
 			Name:     env("LOCAL_ADMIN_NAME", "Platform Admin"),
-			AuthType: "local",
 			Role:     "platform_admin",
 			Language: "zh-CN",
 		}
@@ -720,7 +717,7 @@ func currentUserResponse(user model.User) gin.H {
 		"email":            user.Email,
 		"name":             user.Name,
 		"avatarUrl":        user.AvatarURL,
-		"authType":         user.AuthType,
+		"passwordSet":      strings.TrimSpace(user.Password) != "",
 		"role":             user.Role,
 		"language":         normalizeLanguage(user.Language),
 		"brandColorPreset": user.BrandColorPreset,
@@ -734,7 +731,7 @@ func userListResponse(user model.User, balanceCredits decimal.Decimal, mfaEnable
 		"email":          user.Email,
 		"name":           user.Name,
 		"avatarUrl":      user.AvatarURL,
-		"authType":       user.AuthType,
+		"passwordSet":    strings.TrimSpace(user.Password) != "",
 		"role":           user.Role,
 		"language":       normalizeLanguage(user.Language),
 		"disabled":       user.Disabled,

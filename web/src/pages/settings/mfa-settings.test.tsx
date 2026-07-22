@@ -32,7 +32,7 @@ vi.mock('@/api', async (importOriginal) => {
 vi.mock('@/app/session-context', () => ({
   useSession: () => ({
     user: {
-      authType: 'local',
+      passwordSet: true,
       avatarUrl: '',
       email: 'admin@example.test',
       id: 'usr_admin',
@@ -81,7 +81,7 @@ describe('mfa settings flows', () => {
     mocks.resetUserMFA.mockResolvedValue(undefined)
     mocks.listUsers.mockResolvedValue({
       items: [{
-        authType: 'local',
+        passwordSet: true,
         avatarUrl: '',
         balanceCredits: '0',
         createdAt: '2026-07-12T00:00:00Z',

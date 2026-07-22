@@ -38,6 +38,25 @@ const loginPage = {
   oidcBindFailed: 'Third-party login binding failed. Make sure this identity is not bound to another account.',
   authForbiddenTitle: 'No permission',
   authForbidden: 'This account does not have permission to perform this action.',
+  oidcRegistrationDisabledTitle: 'OIDC registration disabled',
+  oidcRegistrationDisabled: 'The platform does not currently allow new accounts through OIDC. Existing account bindings can still sign in.',
+  registration: {
+    title: 'Create a Luna DevOps account',
+    description: 'Verify your email and set a sign-in password.',
+    createAccount: 'Create account',
+    confirmPassword: 'Confirm password',
+    passwordMismatch: 'The passwords do not match.',
+    code: 'Email verification code',
+    codeRequired: 'Enter the email verification code.',
+    sendCode: 'Send code',
+    resendCode: 'Resend',
+    codeSent: 'Verification code sent. Check your inbox.',
+    submit: 'Register and sign in',
+    success: 'Account created',
+    backToLogin: 'Back to sign in',
+    statusFailedTitle: 'Registration status failed to load',
+    statusFailedDescription: 'The platform registration status is temporarily unavailable. Try again later.',
+  },
 }
 
 export default loginPage

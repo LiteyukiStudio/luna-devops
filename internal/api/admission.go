@@ -14,11 +14,12 @@ import (
 )
 
 var (
-	errOIDCDisabled        = errors.New("OIDC login is disabled")
-	errOIDCEmailRequired   = errors.New("OIDC login requires a non-empty verified email")
-	errOIDCGroupDenied     = errors.New("OIDC groups are not allowed")
-	errOIDCAdmissionDenied = errors.New("OIDC admission denied")
-	errOIDCInvalidIdentity = errors.New("OIDC identity is invalid")
+	errOIDCDisabled             = errors.New("OIDC login is disabled")
+	errOIDCEmailRequired        = errors.New("OIDC login requires a non-empty verified email")
+	errOIDCGroupDenied          = errors.New("OIDC groups are not allowed")
+	errOIDCAdmissionDenied      = errors.New("OIDC admission denied")
+	errOIDCInvalidIdentity      = errors.New("OIDC identity is invalid")
+	errOIDCRegistrationDisabled = errors.New("OIDC registration is disabled")
 )
 
 const defaultAdmissionPolicyID = "auth_admission_policy_default"

@@ -11,7 +11,6 @@ type User struct {
 	Email            string         `gorm:"uniqueIndex;not null" json:"email"`
 	Name             string         `gorm:"not null" json:"name"`
 	AvatarURL        string         `json:"avatarUrl"`
-	AuthType         string         `gorm:"not null;default:local" json:"authType"`
 	Role             string         `gorm:"not null;default:user" json:"role"`
 	Language         string         `gorm:"not null;default:zh-CN" json:"language"`
 	BrandColorPreset string         `gorm:"not null;default:''" json:"brandColorPreset"`
@@ -20,6 +19,34 @@ type User struct {
 	CreatedAt        time.Time      `json:"createdAt"`
 	UpdatedAt        time.Time      `json:"updatedAt"`
 	DeletedAt        gorm.DeletedAt `gorm:"index" json:"-"`
+}
+
+type AuthRegistrationSettings struct {
+	ID                            string    `gorm:"primaryKey" json:"id"`
+	AllowEmailRegistration        bool      `gorm:"not null;default:false" json:"allowEmailRegistration"`
+	AllowOIDCRegistration         bool      `gorm:"column:allow_oidc_registration;not null;default:true" json:"allowOidcRegistration"`
+	AllowExternalIdentityPassword bool      `gorm:"not null;default:false" json:"allowExternalIdentityPassword"`
+	SMTPHost                      string    `gorm:"not null;default:''" json:"smtpHost"`
+	SMTPPort                      int       `gorm:"not null;default:587" json:"smtpPort"`
+	SMTPSecurity                  string    `gorm:"not null;default:starttls" json:"smtpSecurity"`
+	SMTPUsername                  string    `gorm:"not null;default:''" json:"smtpUsername"`
+	SMTPPasswordRef               string    `gorm:"not null;default:''" json:"-"`
+	SMTPFromAddress               string    `gorm:"not null;default:''" json:"smtpFromAddress"`
+	SMTPFromName                  string    `gorm:"not null;default:'Luna DevOps'" json:"smtpFromName"`
+	CreatedAt                     time.Time `json:"createdAt"`
+	UpdatedAt                     time.Time `json:"updatedAt"`
+}
+
+type EmailRegistrationChallenge struct {
+	ID         string     `gorm:"primaryKey" json:"id"`
+	Email      string     `gorm:"index;not null" json:"email"`
+	CodeHash   string     `gorm:"not null" json:"-"`
+	Language   string     `gorm:"not null;default:zh-CN" json:"language"`
+	Attempts   int        `gorm:"not null;default:0" json:"attempts"`
+	ExpiresAt  time.Time  `gorm:"index;not null" json:"expiresAt"`
+	ConsumedAt *time.Time `gorm:"index" json:"-"`
+	CreatedAt  time.Time  `json:"createdAt"`
+	UpdatedAt  time.Time  `json:"updatedAt"`
 }
 
 type UserSession struct {

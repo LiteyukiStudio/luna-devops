@@ -24,6 +24,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { TabsContent } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { buildVariableRecordToRows, buildVariableRowsToRecord, secretStateToRows } from '@/lib/build-variables'
+import { AuthRegistrationSettingsPanel } from './auth-registration-settings-panel'
 import { BrandColorPresetField } from './brand-color-preset-field'
 import { configDefinitionText } from './config-definition-text'
 import { changedConfigValues } from './site-settings-values'
@@ -121,11 +122,13 @@ export function SiteSettingsPage() {
         <ContentTabs
           tabs={[
             { value: 'brand', label: t('settings.siteConfigTitle') },
+            { value: 'registration', label: t('settings.registration.tab') },
             { value: 'security', label: t('settings.securityEgressTitle') },
+            { value: 'build', label: t('settings.buildConfigTitle') },
             { value: 'billing', label: t('settings.billingConfigTitle') },
             { value: 'retention', label: t('settings.retentionConfigTitle') },
           ]}
-          tools={(
+          tools={!['registration', 'build'].includes(activeTab) && (
             <Button disabled={save.isPending || !form.formState.isValid || !form.formState.isDirty} form="site-settings-form" type="submit">
               <Save size={16} />
               {t('settings.saveConfig')}
@@ -135,25 +138,28 @@ export function SiteSettingsPage() {
           onValueChange={setActiveTab}
         >
           <TabsContent value="brand">
-            <div className="grid max-w-3xl gap-4">
-              <Card className="p-4">
-                <ConfigSection definitions={siteDefinitions} form={form} />
-              </Card>
-              <Card className="flex items-center justify-between gap-4 p-4">
-                <div className="min-w-0">
-                  <h3 className="text-base font-semibold">{t('buildsPage.globalBuildEnvironment')}</h3>
-                  <p className="mt-1 text-sm text-muted-foreground">{t('buildsPage.globalBuildEnvironmentDescription')}</p>
-                </div>
-                <Button type="button" variant="outline" onClick={() => void openGlobalEnvironment()}>
-                  <Settings2 className="size-4" />
-                  {t('common.edit')}
-                </Button>
-              </Card>
-            </div>
+            <Card className="max-w-3xl p-4">
+              <ConfigSection definitions={siteDefinitions} form={form} />
+            </Card>
+          </TabsContent>
+          <TabsContent value="registration">
+            <AuthRegistrationSettingsPanel />
           </TabsContent>
           <TabsContent value="security">
             <Card className="max-w-3xl p-4">
               <ConfigSection definitions={securityDefinitions} form={form} />
+            </Card>
+          </TabsContent>
+          <TabsContent value="build">
+            <Card className="flex max-w-3xl items-center justify-between gap-4 p-4">
+              <div className="min-w-0">
+                <h3 className="text-base font-semibold">{t('buildsPage.globalBuildEnvironment')}</h3>
+                <p className="mt-1 text-sm text-muted-foreground">{t('buildsPage.globalBuildEnvironmentDescription')}</p>
+              </div>
+              <Button type="button" variant="outline" onClick={() => void openGlobalEnvironment()}>
+                <Settings2 className="size-4" />
+                {t('common.edit')}
+              </Button>
             </Card>
           </TabsContent>
           <TabsContent value="billing">

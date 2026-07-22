@@ -183,13 +183,11 @@ func (h *Handlers) UnbindMyExternalIdentity(ctx *gin.Context) {
 		return
 	}
 
-	if user.AuthType == "oidc" {
-		var identityCount int64
-		_ = h.db.Model(&model.ExternalIdentity{}).Where("user_id = ?", user.ID).Count(&identityCount).Error
-		if identityCount <= 1 && user.Password == "" {
-			writeError(ctx, http.StatusBadRequest, "请先设置本地密码或绑定另一个第三方登录")
-			return
-		}
+	var identityCount int64
+	_ = h.db.Model(&model.ExternalIdentity{}).Where("user_id = ?", user.ID).Count(&identityCount).Error
+	if identityCount <= 1 && strings.TrimSpace(user.Password) == "" {
+		writeError(ctx, http.StatusBadRequest, "请先设置本地密码或绑定另一个第三方登录")
+		return
 	}
 
 	if err := h.db.Delete(&identity).Error; err != nil {

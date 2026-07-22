@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/api'
 import { registerMFAChallengeHandler } from '@/api/core'
+import { OneTimeCodeInput } from '@/components/common/one-time-code-input'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -38,14 +39,14 @@ export function MFADialogProvider({ children }: { children: ReactNode }) {
     setChallenge(undefined)
   }
 
-  const verify = async () => {
-    if (!challenge || code.trim().length < 6)
+  const verify = async (candidate = code) => {
+    if (!challenge || candidate.trim().length < 6)
       return
 
     try {
       setVerifying(true)
       setError('')
-      const value = code.trim()
+      const value = candidate.trim()
       await api.verifyMFA(method === 'recovery'
         ? { recoveryCode: value, purpose: challenge.purpose }
         : { code: value, purpose: challenge.purpose })
@@ -80,7 +81,14 @@ export function MFADialogProvider({ children }: { children: ReactNode }) {
           </div>
 
           <div className="grid gap-3">
-            <Select value={method} onValueChange={value => setMethod(value as 'otp' | 'recovery')}>
+            <Select
+              value={method}
+              onValueChange={(value) => {
+                setMethod(value as 'otp' | 'recovery')
+                setCode('')
+                setError('')
+              }}
+            >
               <SelectTrigger aria-label={t('accountPage.mfa.verificationMethod')} className="w-full">
                 <SelectValue />
               </SelectTrigger>
@@ -89,16 +97,31 @@ export function MFADialogProvider({ children }: { children: ReactNode }) {
                 <SelectItem value="recovery">{t('accountPage.mfa.recoveryMethod')}</SelectItem>
               </SelectContent>
             </Select>
-            <Input
-              aria-invalid={Boolean(error)}
-              autoComplete="one-time-code"
-              inputMode={method === 'otp' ? 'numeric' : 'text'}
-              placeholder={method === 'otp' ? t('accountPage.mfa.otpPlaceholder') : t('accountPage.mfa.recoveryPlaceholder')}
-              type="text"
-              value={code}
-              onChange={event => setCode(event.target.value)}
-              onKeyDown={event => event.key === 'Enter' && void verify()}
-            />
+            {method === 'otp'
+              ? (
+                  <OneTimeCodeInput
+                    aria-label={t('accountPage.mfa.otpPlaceholder')}
+                    autoFocus
+                    disabled={verifying}
+                    invalid={Boolean(error)}
+                    name="one-time-code"
+                    value={code}
+                    onChange={setCode}
+                    onComplete={value => void verify(value)}
+                  />
+                )
+              : (
+                  <Input
+                    aria-invalid={Boolean(error)}
+                    autoComplete="off"
+                    name="recovery-code"
+                    placeholder={t('accountPage.mfa.recoveryPlaceholder')}
+                    type="text"
+                    value={code}
+                    onChange={event => setCode(event.target.value)}
+                    onKeyDown={event => event.key === 'Enter' && void verify()}
+                  />
+                )}
             {error && <p className="text-sm text-danger">{error}</p>}
           </div>
 

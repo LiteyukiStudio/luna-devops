@@ -1,4 +1,4 @@
-import type { AuthAdmissionPolicy, AuthProvider, BootstrapStatus, ConfigDefinition, CurrentUser, DataRetentionCatalogResponse, DataRetentionPayload, DataRetentionResultResponse, ExternalIdentity, MFAEnrollment, MFAEnrollmentRequest, MFARecoveryCodes, MFAStatus, MFAVerifyPayload, MFAVerifyResponse, OIDCCallbackConfig, PaginatedResponse, PaginationParams, User } from '../types'
+import type { AuthAdmissionPolicy, AuthProvider, AuthRegistrationSettings, AuthRegistrationStatus, BootstrapStatus, ConfigDefinition, CurrentUser, DataRetentionCatalogResponse, DataRetentionPayload, DataRetentionResultResponse, ExternalIdentity, MFAEnrollment, MFAEnrollmentRequest, MFARecoveryCodes, MFAStatus, MFAVerifyPayload, MFAVerifyResponse, OIDCCallbackConfig, PaginatedResponse, PaginationParams, User } from '../types'
 import { paginationQuery, request } from '../core'
 
 export const authApi = {
@@ -12,6 +12,14 @@ export const authApi = {
   resumeLogin: (payload: { userId: string }) =>
     request<{ user: CurrentUser }>('/auth/login/resume', { method: 'POST', body: JSON.stringify(payload) }),
   logout: () => request<void>('/auth/logout', { method: 'POST' }),
+  getAuthRegistrationStatus: () => request<AuthRegistrationStatus>('/auth/registration'),
+  getAuthRegistrationSettings: () => request<AuthRegistrationSettings>('/auth/registration/settings'),
+  updateAuthRegistrationSettings: (payload: Omit<AuthRegistrationSettings, 'smtpPasswordSet'> & { smtpPassword?: string }) =>
+    request<AuthRegistrationSettings>('/auth/registration/settings', { method: 'PUT', body: JSON.stringify(payload) }),
+  requestEmailRegistrationCode: (payload: { email: string, language: 'zh-CN' | 'en-US' }) =>
+    request<{ challengeId: string, expiresAt: string }>('/auth/registration/email/code', { method: 'POST', body: JSON.stringify(payload) }),
+  completeEmailRegistration: (payload: { challengeId: string, code: string, email: string, name: string, password: string, language: 'zh-CN' | 'en-US', rememberMe: boolean }) =>
+    request<{ user: CurrentUser }>('/auth/registration/email', { method: 'POST', body: JSON.stringify(payload) }),
   getMFAStatus: () => request<MFAStatus>('/auth/mfa/status'),
   enrollMFA: (payload: MFAEnrollmentRequest) => request<MFAEnrollment>('/auth/mfa/totp/enroll', { method: 'POST', body: JSON.stringify(payload) }),
   confirmMFAEnrollment: (payload: { code: string }) =>
@@ -34,6 +42,8 @@ export const authApi = {
   getCurrentUser: () => request<CurrentUser>('/users/me'),
   updateCurrentUser: (payload: { name?: string, avatarUrl?: string, language?: 'zh-CN' | 'en-US', brandColorPreset?: CurrentUser['brandColorPreset'] }) =>
     request<CurrentUser>('/users/me', { method: 'PUT', body: JSON.stringify(payload) }),
+  updateMyPassword: (payload: { currentPassword?: string, newPassword: string }) =>
+    request<void>('/users/me/password', { method: 'PUT', body: JSON.stringify(payload) }),
   listMyExternalIdentities: () => request<ExternalIdentity[]>('/users/me/external-identities'),
   unbindMyExternalIdentity: (identityId: string) =>
     request<void>(`/users/me/external-identities/${identityId}`, { method: 'DELETE' }),

@@ -1,7 +1,7 @@
 const usersPage = {
   title: 'User management',
-  description: 'Create and maintain local accounts. OIDC account binding is handled by identity providers.',
-  createTitle: 'Create local user',
+  description: 'Create and maintain platform users and the sign-in methods available to them.',
+  createTitle: 'Create user',
   editTitle: 'Edit user',
   listTitle: 'User list',
   email: 'Email',
@@ -30,7 +30,7 @@ const usersPage = {
   emptyDescription: 'Create a local account first.',
   platformAdmin: 'Platform admin',
   normalUser: 'Normal user',
-  authType: 'Auth type',
+  passwordLogin: 'Password login',
   mfa: 'Two-step verification',
   resetMFA: 'Reset MFA',
   resetMFATitle: 'Reset this user’s MFA?',

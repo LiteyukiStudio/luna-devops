@@ -91,6 +91,7 @@ CREATE TABLE step_up_assertions (
     absolute_expires_at timestamptz NOT NULL
 );
 CREATE TABLE user_remember_tokens (id text PRIMARY KEY, expires_at timestamptz NOT NULL);
+CREATE TABLE email_registration_challenges (id text PRIMARY KEY, expires_at timestamptz NOT NULL);
 `).Error; err != nil {
 		t.Fatalf("create auth retention tables: %v", err)
 	}
@@ -110,6 +111,10 @@ CREATE TABLE user_remember_tokens (id text PRIMARY KEY, expires_at timestamptz N
 		"remember_old", old, "remember_future", future).Error; err != nil {
 		t.Fatal(err)
 	}
+	if err := db.Exec("INSERT INTO email_registration_challenges(id, expires_at) VALUES (?, ?), (?, ?)",
+		"registration_old", old, "registration_future", future).Error; err != nil {
+		t.Fatal(err)
+	}
 
 	service := NewService(db)
 	start := now.AddDate(0, 0, -60)
@@ -118,24 +123,26 @@ CREATE TABLE user_remember_tokens (id text PRIMARY KEY, expires_at timestamptz N
 	if err != nil {
 		t.Fatalf("preview auth cleanup: %v", err)
 	}
-	if len(preview) != 1 || preview[0].Matched != 3 || preview[0].Deleted != 0 {
-		t.Fatalf("auth preview = %#v, want 3 matched", preview)
+	if len(preview) != 1 || preview[0].Matched != 4 || preview[0].Deleted != 0 {
+		t.Fatalf("auth preview = %#v, want 4 matched", preview)
 	}
 	results, err := service.Cleanup(t.Context(), []string{DatasetExpiredAuthData}, start, end, now)
 	if err != nil {
 		t.Fatalf("cleanup auth data: %v", err)
 	}
-	if len(results) != 1 || results[0].Matched != 3 || results[0].Deleted != 3 {
-		t.Fatalf("auth cleanup = %#v, want 3 matched/deleted", results)
+	if len(results) != 1 || results[0].Matched != 4 || results[0].Deleted != 4 {
+		t.Fatalf("auth cleanup = %#v, want 4 matched/deleted", results)
 	}
 
 	assertRowCount(t, db, "step_up_assertions", 1)
 	assertRowCount(t, db, "user_sessions", 2)
 	assertRowCount(t, db, "user_remember_tokens", 1)
+	assertRowCount(t, db, "email_registration_challenges", 1)
 	assertIDExists(t, db, "step_up_assertions", "assertion_future")
 	assertIDExists(t, db, "user_sessions", "session_blocked")
 	assertIDExists(t, db, "user_sessions", "session_future")
 	assertIDExists(t, db, "user_remember_tokens", "remember_future")
+	assertIDExists(t, db, "email_registration_challenges", "registration_future")
 }
 
 func TestRunAutomaticReadsConfigsAndHonorsZeroInPostgres(t *testing.T) {

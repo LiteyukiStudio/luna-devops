@@ -17,7 +17,7 @@ const root = {
   authProviders: 'Auth Providers',
   notifications: 'Notifications',
   operationsDashboard: 'Operations Dashboard',
-  siteSettings: 'Site Settings',
+  siteSettings: 'Global Settings',
   users: 'Users',
   login: 'Login',
   logout: 'Logout',

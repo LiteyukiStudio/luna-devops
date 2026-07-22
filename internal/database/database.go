@@ -142,6 +142,8 @@ func Migrate(db *gorm.DB) error {
 		&model.AuthProvider{},
 		&model.ExternalIdentity{},
 		&model.AuthAdmissionPolicy{},
+		&model.AuthRegistrationSettings{},
+		&model.EmailRegistrationChallenge{},
 		&model.Project{},
 		&model.ProjectMember{},
 		&model.ProjectPin{},

@@ -34,7 +34,7 @@ func TestMFAEnrollmentVerificationRecoveryAndDisableFlow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	user := model.User{ID: "usr_mfa_" + testSuffix, Email: "mfa-" + testSuffix + "@example.com", Name: "MFA User", AuthType: "local", Role: "platform_admin", Language: "zh-CN", Password: string(passwordHash)}
+	user := model.User{ID: "usr_mfa_" + testSuffix, Email: "mfa-" + testSuffix + "@example.com", Name: "MFA User", Role: "platform_admin", Language: "zh-CN", Password: string(passwordHash)}
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -239,9 +239,9 @@ func TestAdminResetUserMFAFlowAndLastAdminProtection(t *testing.T) {
 	t.Setenv("SECRET_ENCRYPTION_KEY", "mfa-admin-reset-test-key")
 	now := time.Now()
 	suffix := randomHex(4)
-	actor := model.User{ID: "usr_actor_" + suffix, Email: "actor-" + suffix + "@example.com", Name: "Actor", AuthType: "local", Role: "platform_admin", Language: "en-US"}
-	target := model.User{ID: "usr_target_" + suffix, Email: "target-" + suffix + "@example.com", Name: "Target", AuthType: "local", Role: "user", Language: "en-US"}
-	lastAdmin := model.User{ID: "usr_last_admin_" + suffix, Email: "last-admin-" + suffix + "@example.com", Name: "Last Admin", AuthType: "local", Role: "platform_admin", Language: "en-US"}
+	actor := model.User{ID: "usr_actor_" + suffix, Email: "actor-" + suffix + "@example.com", Name: "Actor", Role: "platform_admin", Language: "en-US"}
+	target := model.User{ID: "usr_target_" + suffix, Email: "target-" + suffix + "@example.com", Name: "Target", Role: "user", Language: "en-US"}
+	lastAdmin := model.User{ID: "usr_last_admin_" + suffix, Email: "last-admin-" + suffix + "@example.com", Name: "Last Admin", Role: "platform_admin", Language: "en-US"}
 	if err := db.Create(&[]model.User{actor, target, lastAdmin}).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -340,7 +340,7 @@ func TestOIDCMFAEnrollmentRequiresFreshBrowserSession(t *testing.T) {
 	t.Setenv("SECRET_ENCRYPTION_KEY", "mfa-oidc-reauth-test-key")
 	now := time.Now()
 	suffix := randomHex(4)
-	user := model.User{ID: "usr_oidc_mfa_" + suffix, Email: "oidc-mfa-" + suffix + "@example.com", Name: "OIDC MFA", AuthType: "oidc", Role: "user", Language: "en-US"}
+	user := model.User{ID: "usr_oidc_mfa_" + suffix, Email: "oidc-mfa-" + suffix + "@example.com", Name: "OIDC MFA", Role: "user", Language: "en-US"}
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -375,8 +375,8 @@ func TestConcurrentPlatformAdminMFADisableKeepsOneEnabledAdmin(t *testing.T) {
 	now := time.Now()
 	suffix := randomHex(4)
 	users := []model.User{
-		{ID: "usr_disable_a_" + suffix, Email: "disable-a-" + suffix + "@example.com", Name: "Disable A", AuthType: "local", Role: "platform_admin", Language: "en-US"},
-		{ID: "usr_disable_b_" + suffix, Email: "disable-b-" + suffix + "@example.com", Name: "Disable B", AuthType: "local", Role: "platform_admin", Language: "en-US"},
+		{ID: "usr_disable_a_" + suffix, Email: "disable-a-" + suffix + "@example.com", Name: "Disable A", Role: "platform_admin", Language: "en-US"},
+		{ID: "usr_disable_b_" + suffix, Email: "disable-b-" + suffix + "@example.com", Name: "Disable B", Role: "platform_admin", Language: "en-US"},
 	}
 	if err := db.Create(&users).Error; err != nil {
 		t.Fatal(err)
@@ -451,10 +451,10 @@ func TestConcurrentStepUpEnableAndLastAdminDisableRemainRecoverable(t *testing.T
 	now := time.Now()
 	suffix := randomHex(4)
 	user := model.User{
-		ID:       "usr_policy_race_" + suffix,
-		Email:    "policy-race-" + suffix + "@example.com",
-		Name:     "Policy Race Admin",
-		AuthType: "local",
+		ID:    "usr_policy_race_" + suffix,
+		Email: "policy-race-" + suffix + "@example.com",
+		Name:  "Policy Race Admin",
+
 		Role:     "platform_admin",
 		Language: "en-US",
 	}
@@ -555,10 +555,10 @@ func TestLastMFAEnabledAdminCannotBeDisabledOrDemoted(t *testing.T) {
 	now := time.Now()
 	suffix := randomHex(4)
 	user := model.User{
-		ID:       "usr_admin_role_guard_" + suffix,
-		Email:    "admin-role-guard-" + suffix + "@example.com",
-		Name:     "Admin Role Guard",
-		AuthType: "local",
+		ID:    "usr_admin_role_guard_" + suffix,
+		Email: "admin-role-guard-" + suffix + "@example.com",
+		Name:  "Admin Role Guard",
+
 		Role:     "platform_admin",
 		Language: "en-US",
 	}
@@ -633,18 +633,18 @@ func TestUserUpdateDoesNotRequireAssertionWhenStepUpPolicyIsDisabled(t *testing.
 	now := time.Now()
 	suffix := randomHex(4)
 	actor := model.User{
-		ID:       "usr_policy_off_actor_" + suffix,
-		Email:    "policy-off-actor-" + suffix + "@example.com",
-		Name:     "Policy Off Actor",
-		AuthType: "local",
+		ID:    "usr_policy_off_actor_" + suffix,
+		Email: "policy-off-actor-" + suffix + "@example.com",
+		Name:  "Policy Off Actor",
+
 		Role:     "platform_admin",
 		Language: "en-US",
 	}
 	target := model.User{
-		ID:       "usr_policy_off_target_" + suffix,
-		Email:    "policy-off-target-" + suffix + "@example.com",
-		Name:     "Policy Off Target",
-		AuthType: "local",
+		ID:    "usr_policy_off_target_" + suffix,
+		Email: "policy-off-target-" + suffix + "@example.com",
+		Name:  "Policy Off Target",
+
 		Role:     "user",
 		Language: "en-US",
 	}
@@ -688,7 +688,7 @@ func TestDisableMFARollsBackWhenSuccessAuditCannotBeWritten(t *testing.T) {
 	t.Setenv("SECRET_ENCRYPTION_KEY", "mfa-audit-rollback-test-key")
 	now := time.Now()
 	suffix := randomHex(4)
-	user := model.User{ID: "usr_audit_rollback_" + suffix, Email: "audit-rollback-" + suffix + "@example.com", Name: "Audit Rollback", AuthType: "local", Role: "user", Language: "en-US"}
+	user := model.User{ID: "usr_audit_rollback_" + suffix, Email: "audit-rollback-" + suffix + "@example.com", Name: "Audit Rollback", Role: "user", Language: "en-US"}
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatal(err)
 	}

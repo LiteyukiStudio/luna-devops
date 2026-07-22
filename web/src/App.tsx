@@ -15,6 +15,7 @@ const CodeRepositoriesPage = lazyNamed(() => import('./pages/code-repositories/C
 const DashboardPage = lazyNamed(() => import('./pages/dashboard/DashboardPage'), 'DashboardPage')
 const EventsPage = lazyNamed(() => import('./pages/events/EventsPage'), 'EventsPage')
 const LoginPage = lazyNamed(() => import('./pages/login/LoginPage'), 'LoginPage')
+const RegisterPage = lazyNamed(() => import('./pages/login/RegisterPage'), 'RegisterPage')
 const NotificationsPage = lazyNamed(() => import('./pages/settings/NotificationsPage'), 'NotificationsPage')
 const OAuthAuthorizePage = lazyNamed(() => import('./pages/oauth/OAuthAuthorizePage'), 'OAuthAuthorizePage')
 const OperationsDashboardPage = lazyNamed(() => import('./pages/settings/OperationsDashboardPage'), 'OperationsDashboardPage')
@@ -31,6 +32,7 @@ export default function App() {
         <Routes>
           <Route path="/bootstrap" element={<BootstrapPage />} />
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
           <Route path="/oauth/authorize" element={<OAuthAuthorizePage />} />
           <Route element={<AppLayout />}>
             <Route index element={<Navigate to="/dashboard" replace />} />

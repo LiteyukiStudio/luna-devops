@@ -16,6 +16,20 @@ const accountPage = {
   followPlatformBrandColor: '跟随平台',
   saveProfile: '保存个人资料',
   profileSaved: '个人资料已保存',
+  password: {
+    setTitle: '设置登录密码',
+    changeTitle: '修改登录密码',
+    disabledTitle: '密码登录未开放',
+    disabledDescription: '管理员尚未允许仅使用外部身份的用户设置本地密码。',
+    current: '当前密码',
+    currentRequired: '请输入当前密码。',
+    next: '新密码',
+    confirm: '确认新密码',
+    mismatch: '两次输入的新密码不一致。',
+    sessionNotice: '保存后会撤销当前账号的所有登录会话，需要使用新密码或已绑定身份重新登录。',
+    save: '保存密码',
+    saved: '密码已更新，请重新登录。',
+  },
   mfa: {
     title: '两步验证',
     description: '使用身份验证器的一次性验证码保护敏感操作，并准备恢复码用于无法访问验证器时恢复。',
@@ -75,6 +89,7 @@ const accountPage = {
       mfa_manage: '管理两步验证',
       security_settings_update: '修改安全设置',
       data_retention_cleanup: '永久清理平台数据',
+      password_update: '修改登录密码',
     },
   },
 }

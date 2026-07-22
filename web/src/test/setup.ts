@@ -30,6 +30,11 @@ Object.defineProperty(globalThis, 'ResizeObserver', {
   value: ResizeObserverMock,
 })
 
+Object.defineProperty(document, 'elementFromPoint', {
+  configurable: true,
+  value: () => null,
+})
+
 afterEach(() => {
   cleanup()
   testLocalStorage.clear()

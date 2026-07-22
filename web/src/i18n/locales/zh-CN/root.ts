@@ -17,7 +17,7 @@ const root = {
   authProviders: '身份源',
   notifications: '通知',
   operationsDashboard: '运营面板',
-  siteSettings: '站点设置',
+  siteSettings: '全局设置',
   users: '用户',
   login: '登录',
   logout: '退出',

@@ -3,7 +3,6 @@ CREATE TABLE IF NOT EXISTS users (
   email text NOT NULL,
   name text NOT NULL,
   avatar_url text NOT NULL DEFAULT '',
-  auth_type text NOT NULL DEFAULT 'local',
   role text NOT NULL DEFAULT 'user',
   language text NOT NULL DEFAULT 'zh-CN',
   password text NOT NULL DEFAULT '',

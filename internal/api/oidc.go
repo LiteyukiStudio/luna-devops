@@ -240,6 +240,9 @@ func (h *Handlers) findOrCreateOIDCUser(provider model.AuthProvider, claims oidc
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return model.User{}, err
 	}
+	if !h.ensureAuthRegistrationSettings().AllowOIDCRegistration {
+		return model.User{}, errOIDCRegistrationDisabled
+	}
 
 	now := time.Now()
 	policy := h.ensureAdmissionPolicy()
@@ -247,7 +250,6 @@ func (h *Handlers) findOrCreateOIDCUser(provider model.AuthProvider, claims oidc
 		ID:       id.New("usr"),
 		Email:    email,
 		Name:     fallback(strings.TrimSpace(claims.Name), email),
-		AuthType: "oidc",
 		Role:     normalizeUserRole(policy.DefaultRole),
 		Language: "zh-CN",
 	}
@@ -266,7 +268,10 @@ func (h *Handlers) findOrCreateOIDCUser(provider model.AuthProvider, claims oidc
 		if err := tx.Create(&user).Error; err != nil {
 			return err
 		}
-		return tx.Create(&identity).Error
+		if err := tx.Create(&identity).Error; err != nil {
+			return err
+		}
+		return createDefaultUserProject(tx, user)
 	}); err != nil {
 		return model.User{}, err
 	}
@@ -382,6 +387,8 @@ func authErrorCode(err error) string {
 		return "oidc_group_denied"
 	case errors.Is(err, errOIDCAdmissionDenied):
 		return "oidc_admission_denied"
+	case errors.Is(err, errOIDCRegistrationDisabled):
+		return "oidc_registration_disabled"
 	default:
 		return "oidc_login_failed"
 	}

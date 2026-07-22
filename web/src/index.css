@@ -2,6 +2,7 @@
 @import "tailwindcss";
 
 @theme {
+  --animate-caret-blink: caret-blink 1s ease-out infinite;
   --color-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));
   --color-muted: hsl(var(--muted));
@@ -29,6 +30,19 @@
   --color-primary-foreground: var(--primary-foreground);
   --color-danger: hsl(var(--danger));
   --color-destructive: hsl(var(--danger));
+}
+
+@keyframes caret-blink {
+  0%,
+  70%,
+  100% {
+    opacity: 1;
+  }
+
+  20%,
+  50% {
+    opacity: 0;
+  }
 }
 
 :root {

@@ -1477,7 +1477,7 @@ export interface CurrentUser {
   email: string
   name: string
   avatarUrl: string
-  authType: 'local' | 'oidc'
+  passwordSet: boolean
   role: string
   language: 'zh-CN' | 'en-US'
   brandColorPreset: '' | 'gold' | 'bronze' | 'brown' | 'yellow' | 'amber' | 'orange' | 'tomato' | 'red' | 'ruby' | 'crimson' | 'pink' | 'plum' | 'purple' | 'violet' | 'iris' | 'indigo' | 'blue' | 'cyan' | 'teal' | 'jade' | 'green' | 'grass' | 'lime' | 'mint' | 'sky'
@@ -1489,13 +1489,32 @@ export interface User {
   email: string
   name: string
   avatarUrl: string
-  authType: 'local' | 'oidc'
+  passwordSet: boolean
   role: 'platform_admin' | 'user'
   language: 'zh-CN' | 'en-US'
   disabled: boolean
   mfaEnabled: boolean
   balanceCredits: string
   createdAt: string
+}
+
+export interface AuthRegistrationStatus {
+  emailRegistrationEnabled: boolean
+  oidcRegistrationEnabled: boolean
+  externalIdentityPasswordEnabled: boolean
+}
+
+export interface AuthRegistrationSettings {
+  allowEmailRegistration: boolean
+  allowOidcRegistration: boolean
+  allowExternalIdentityPassword: boolean
+  smtpHost: string
+  smtpPort: number
+  smtpSecurity: 'none' | 'starttls' | 'tls'
+  smtpUsername: string
+  smtpPasswordSet: boolean
+  smtpFromAddress: string
+  smtpFromName: string
 }
 
 export interface AuthProvider {

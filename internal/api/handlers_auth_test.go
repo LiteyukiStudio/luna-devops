@@ -50,9 +50,49 @@ func TestUpdateCurrentUserInputDistinguishesThemeInheritance(t *testing.T) {
 }
 
 func TestCurrentUserResponseIncludesBrandColorPreference(t *testing.T) {
-	response := currentUserResponse(model.User{BrandColorPreset: "teal"})
+	response := currentUserResponse(model.User{BrandColorPreset: "teal", Password: "hash"})
 	if response["brandColorPreset"] != "teal" {
 		t.Fatalf("brandColorPreset = %v, want teal", response["brandColorPreset"])
+	}
+	if response["passwordSet"] != true {
+		t.Fatalf("passwordSet = %v, want true", response["passwordSet"])
+	}
+}
+
+func TestAuthRegistrationSettingsValidation(t *testing.T) {
+	valid := model.AuthRegistrationSettings{
+		AllowEmailRegistration: true,
+		SMTPHost:               "smtp.example.com",
+		SMTPPort:               587,
+		SMTPSecurity:           "starttls",
+		SMTPUsername:           "mailer",
+		SMTPPasswordRef:        "secret:stored",
+		SMTPFromAddress:        "noreply@example.com",
+	}
+	if err := validateAuthRegistrationSettings(valid, false); err != nil {
+		t.Fatalf("valid registration settings rejected: %v", err)
+	}
+
+	invalid := valid
+	invalid.SMTPHost = ""
+	if err := validateAuthRegistrationSettings(invalid, false); err == nil {
+		t.Fatal("email registration without an SMTP host must be rejected")
+	}
+
+	invalid = valid
+	invalid.SMTPSecurity = "implicit-starttls"
+	if err := validateAuthRegistrationSettings(invalid, false); err == nil {
+		t.Fatal("unsupported SMTP security mode must be rejected")
+	}
+}
+
+func TestAuthRegistrationSettingsResponseDoesNotExposePasswordReference(t *testing.T) {
+	response := authRegistrationSettingsResponse(model.AuthRegistrationSettings{SMTPPasswordRef: "secret:private"})
+	if _, exposed := response["smtpPasswordRef"]; exposed {
+		t.Fatal("SMTP password reference must not be exposed")
+	}
+	if response["smtpPasswordSet"] != true {
+		t.Fatalf("smtpPasswordSet = %v, want true", response["smtpPasswordSet"])
 	}
 }
 
