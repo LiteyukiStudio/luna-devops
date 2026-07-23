@@ -14,6 +14,8 @@ import (
 )
 
 const (
+	stepUpPurposeContextKey = "luna.devops.step_up_purpose"
+
 	stepUpPurposeRuntimeExec              = "runtime_exec"
 	stepUpPurposeRuntimeTerminal          = "runtime_terminal"
 	stepUpPurposeDataExport               = "data_export"
@@ -52,7 +54,33 @@ func (h *Handlers) requireStepUp(ctx *gin.Context, user model.User, purpose stri
 	if !h.stepUpMFAEnabled() {
 		return true
 	}
+	purpose = normalizeStepUpPurpose(purpose)
+	if verifiedPurpose, ok := ctx.Get(stepUpPurposeContextKey); ok && verifiedPurpose == purpose && purpose != "" {
+		return true
+	}
 	return h.requireMFAAssertion(ctx, user, purpose)
+}
+
+// stepUpMiddleware is used after authentication and coarse route authorization.
+// Resource-level and payload-conditional checks stay in handlers so MFA never replaces authorization.
+func (h *Handlers) stepUpMiddleware(purpose string) gin.HandlerFunc {
+	purpose = normalizeStepUpPurpose(purpose)
+	if purpose == "" {
+		panic("invalid step-up MFA purpose")
+	}
+	return func(ctx *gin.Context) {
+		user, ok := h.currentUser(ctx)
+		if !ok {
+			ctx.Abort()
+			return
+		}
+		if !h.requireStepUp(ctx, user, purpose) {
+			ctx.Abort()
+			return
+		}
+		ctx.Set(stepUpPurposeContextKey, purpose)
+		ctx.Next()
+	}
 }
 
 func (h *Handlers) requireMFAAssertion(ctx *gin.Context, user model.User, purpose string) bool {

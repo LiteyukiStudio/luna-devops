@@ -16,6 +16,8 @@ import { DataList } from '@/components/common/data-list'
 import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
 import { HoverText } from '@/components/common/hover-text'
+import { PageShell } from '@/components/common/page-shell'
+import { PageToolbar } from '@/components/common/page-toolbar'
 import { ProgressiveSection } from '@/components/common/progressive-section'
 import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
 import { formatSmartDateTime } from '@/components/common/time-format'
@@ -119,9 +121,24 @@ export function ProjectsPage() {
   })
 
   return (
-    <div className="grid gap-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative min-w-0 flex-1 sm:max-w-sm">
+    <PageShell spacing="compact" width="full">
+      <PageToolbar
+        actions={(
+          <Button
+            className="shrink-0"
+            onClick={() => {
+              setEditingProject(null)
+              form.reset({ name: '', slug: '', description: '', maxConcurrentBuilds: 2, webConsoleEnabled: true })
+              setDialogOpen(true)
+            }}
+          >
+            <Plus size={16} />
+            <span className="hidden sm:inline">{t('projectSpaces.createTitle')}</span>
+            <span className="sm:hidden">{t('create')}</span>
+          </Button>
+        )}
+      >
+        <div className="relative min-w-0 flex-1 sm:max-w-sm sm:basis-72">
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             aria-label={t('projectSpaces.searchProjects')}
@@ -135,62 +152,48 @@ export function ProjectsPage() {
             }}
           />
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          {canViewAllProjects && (
-            <Select
-              aria-label={t('projectSpaces.scope')}
-              containerClassName="min-w-32 flex-1 sm:w-40 sm:flex-none"
-              value={scope}
-              onChange={(event) => {
-                setScope(event.target.value as ProjectListScope)
-                setPage(1)
-              }}
-            >
-              {PROJECT_SCOPE_OPTIONS.map(option => (
-                <option key={option} value={option}>{t(`projectSpaces.scopeOptions.${option}`)}</option>
-              ))}
-            </Select>
-          )}
+        {canViewAllProjects && (
           <Select
-            aria-label={t('projectSpaces.sortBy')}
+            aria-label={t('projectSpaces.scope')}
             containerClassName="min-w-32 flex-1 sm:w-40 sm:flex-none"
-            value={sortBy}
+            value={scope}
             onChange={(event) => {
-              setSortBy(event.target.value as ProjectSortBy)
+              setScope(event.target.value as ProjectListScope)
               setPage(1)
             }}
           >
-            {PROJECT_SORT_OPTIONS.map(option => (
-              <option key={option} value={option}>{t(`projectSpaces.sort.${option}`)}</option>
+            {PROJECT_SCOPE_OPTIONS.map(option => (
+              <option key={option} value={option}>{t(`projectSpaces.scopeOptions.${option}`)}</option>
             ))}
           </Select>
-          <Button
-            aria-label={t('projectSpaces.sortOrder')}
-            size="icon"
-            title={t(`projectSpaces.sortOrderOptions.${sortOrder}`)}
-            variant="outline"
-            onClick={() => {
-              setSortOrder(current => current === 'desc' ? 'asc' : 'desc')
-              setPage(1)
-            }}
-          >
-            {sortOrder === 'desc' ? <ArrowDownWideNarrow size={16} /> : <ArrowUpNarrowWide size={16} />}
-            <span className="sr-only">{t(`projectSpaces.sortOrderOptions.${sortOrder}`)}</span>
-          </Button>
-          <Button
-            className="shrink-0"
-            onClick={() => {
-              setEditingProject(null)
-              form.reset({ name: '', slug: '', description: '', maxConcurrentBuilds: 2, webConsoleEnabled: true })
-              setDialogOpen(true)
-            }}
-          >
-            <Plus size={16} />
-            <span className="hidden sm:inline">{t('projectSpaces.createTitle')}</span>
-            <span className="sm:hidden">{t('create')}</span>
-          </Button>
-        </div>
-      </div>
+        )}
+        <Select
+          aria-label={t('projectSpaces.sortBy')}
+          containerClassName="min-w-32 flex-1 sm:w-40 sm:flex-none"
+          value={sortBy}
+          onChange={(event) => {
+            setSortBy(event.target.value as ProjectSortBy)
+            setPage(1)
+          }}
+        >
+          {PROJECT_SORT_OPTIONS.map(option => (
+            <option key={option} value={option}>{t(`projectSpaces.sort.${option}`)}</option>
+          ))}
+        </Select>
+        <Button
+          aria-label={t('projectSpaces.sortOrder')}
+          size="icon"
+          title={t(`projectSpaces.sortOrderOptions.${sortOrder}`)}
+          variant="outline"
+          onClick={() => {
+            setSortOrder(current => current === 'desc' ? 'asc' : 'desc')
+            setPage(1)
+          }}
+        >
+          {sortOrder === 'desc' ? <ArrowDownWideNarrow size={16} /> : <ArrowUpNarrowWide size={16} />}
+          <span className="sr-only">{t(`projectSpaces.sortOrderOptions.${sortOrder}`)}</span>
+        </Button>
+      </PageToolbar>
       {projects.isError && <ErrorState title={t('projectSpaces.loadFailedTitle')} description={t('projectSpaces.loadFailedDescription')} />}
       <DataList
         columns={[
@@ -409,7 +412,7 @@ export function ProjectsPage() {
           </form>
         </DialogContent>
       </Dialog>
-    </div>
+    </PageShell>
   )
 }
 

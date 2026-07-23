@@ -16,9 +16,11 @@ import { ContentTabs } from '@/components/common/content-tabs'
 import { DataList } from '@/components/common/data-list'
 import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
+import { PageShell } from '@/components/common/page-shell'
 import { SearchMultiSelect } from '@/components/common/search-select'
+import { Section } from '@/components/common/section'
+import { Surface } from '@/components/common/surface'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { TabsContent } from '@/components/ui/tabs'
@@ -112,7 +114,7 @@ export function SiteSettingsPage() {
   }
 
   return (
-    <div className="grid gap-4">
+    <PageShell spacing="compact" width="settings">
       {definitions.isError && <ErrorState title={t('settings.configDefinitionsFailedTitle')} description={t('settings.configDefinitionsFailedDescription')} />}
 
       <form
@@ -120,6 +122,7 @@ export function SiteSettingsPage() {
         onSubmit={form.handleSubmit(submitChangedValues)}
       >
         <ContentTabs
+          headerClassName={['billing', 'retention'].includes(activeTab) ? undefined : 'max-w-3xl'}
           tabs={[
             { value: 'brand', label: t('settings.siteConfigTitle') },
             { value: 'registration', label: t('settings.registration.tab') },
@@ -138,47 +141,45 @@ export function SiteSettingsPage() {
           onValueChange={setActiveTab}
         >
           <TabsContent value="brand">
-            <Card className="max-w-3xl p-4">
+            <Surface className="max-w-3xl p-4" variant="bordered">
               <ConfigSection definitions={siteDefinitions} form={form} />
-            </Card>
+            </Surface>
           </TabsContent>
           <TabsContent value="registration">
             <AuthRegistrationSettingsPanel />
           </TabsContent>
           <TabsContent value="security">
-            <Card className="max-w-3xl p-4">
+            <Surface className="max-w-3xl p-4" variant="bordered">
               <ConfigSection definitions={securityDefinitions} form={form} />
-            </Card>
+            </Surface>
           </TabsContent>
           <TabsContent value="build">
-            <Card className="flex max-w-3xl items-center justify-between gap-4 p-4">
-              <div className="min-w-0">
-                <h3 className="text-base font-semibold">{t('buildsPage.globalBuildEnvironment')}</h3>
-                <p className="mt-1 text-sm text-muted-foreground">{t('buildsPage.globalBuildEnvironmentDescription')}</p>
-              </div>
-              <Button type="button" variant="outline" onClick={() => void openGlobalEnvironment()}>
-                <Settings2 className="size-4" />
-                {t('common.edit')}
-              </Button>
-            </Card>
+            <Section
+              className="max-w-3xl"
+              description={t('buildsPage.globalBuildEnvironmentDescription')}
+              title={t('buildsPage.globalBuildEnvironment')}
+              tools={(
+                <Button type="button" variant="outline" onClick={() => void openGlobalEnvironment()}>
+                  <Settings2 className="size-4" />
+                  {t('common.edit')}
+                </Button>
+              )}
+              variant="bordered"
+            />
           </TabsContent>
           <TabsContent value="billing">
-            <div className="grid max-w-5xl gap-4">
-              <Card className="p-4">
+            <div className="grid gap-4">
+              <Surface className="p-4" variant="bordered">
                 <ConfigSection definitions={billingDefinitions} form={form} />
-              </Card>
+              </Surface>
               <BillingRateRulesSection />
             </div>
           </TabsContent>
           <TabsContent value="retention">
-            <div className="grid max-w-5xl gap-4">
-              <Card className="grid gap-4 p-4">
-                <div className="grid gap-1">
-                  <h3 className="text-base font-semibold text-foreground">{t('settings.retentionAutomaticTitle')}</h3>
-                  <p className="text-sm text-muted-foreground">{t('settings.retentionAutomaticDescription')}</p>
-                </div>
+            <div className="grid gap-4">
+              <Section description={t('settings.retentionAutomaticDescription')} title={t('settings.retentionAutomaticTitle')} variant="bordered">
                 <ConfigSection definitions={retentionDefinitions} form={form} />
-              </Card>
+              </Section>
               <DataRetentionSection />
             </div>
           </TabsContent>
@@ -196,7 +197,7 @@ export function SiteSettingsPage() {
         onSecretRowsChange={setEnvironmentSecretRows}
         onVariableRowsChange={setEnvironmentVariableRows}
       />
-    </div>
+    </PageShell>
   )
 }
 
@@ -346,12 +347,8 @@ function DataRetentionSection() {
 
   return (
     <div className="grid gap-4">
-      <Card className="grid gap-4 p-4">
-        <div className="grid gap-1">
-          <h3 className="text-base font-semibold text-foreground">{t('settings.retentionManualTitle')}</h3>
-          <p className="text-sm text-muted-foreground">{t('settings.retentionManualDescription')}</p>
-        </div>
-        <p className="rounded-md bg-muted px-3 py-2 text-sm leading-6 text-muted-foreground">
+      <Section description={t('settings.retentionManualDescription')} title={t('settings.retentionManualTitle')} variant="bordered">
+        <p className="rounded-md bg-surface-inset px-3 py-2 text-sm leading-6 text-muted-foreground">
           {t('settings.retentionProtectedNote')}
         </p>
         <div className="grid gap-4 md:grid-cols-2">
@@ -402,7 +399,7 @@ function DataRetentionSection() {
             {t('settings.retentionCleanup')}
           </Button>
         </div>
-      </Card>
+      </Section>
 
       {result && (
         <div className="grid gap-3">
@@ -553,21 +550,22 @@ function BillingRateRulesSection() {
     .filter((rule): rule is BillingRateRulePayload => Boolean(rule))
 
   return (
-    <div className="grid gap-3">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <h3 className="text-base font-semibold text-foreground">{t('settings.billingRateRulesTitle')}</h3>
+    <Section
+      title={t('settings.billingRateRulesTitle')}
+      tools={(
         <Button disabled={save.isPending || rules.length === 0} type="button" onClick={() => save.mutate(payload)}>
           <Save size={16} />
           {t('settings.saveBillingRateRules')}
         </Button>
-      </div>
+      )}
+    >
       <DataList
         columns={columns}
         emptyTitle={t('settings.billingRateRulesTitle')}
         items={rules}
         rowKey={rule => rule.meter}
       />
-    </div>
+    </Section>
   )
 }
 

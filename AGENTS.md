@@ -22,7 +22,7 @@
 - 当一次改动满足任一条件时，必须执行完整验证并优先用浏览器验收前端交互：修改文件数超过 8 个、同时跨 3 个及以上业务域、涉及认证/权限/Secret/SSRF/数据库迁移/构建部署运行时、或用户明确要求验收。验收通过后再把 `TODO.md` 对应项标记完成。
 - **MUST i18n**：前端任何用户可见文本常量必须走 `i18next/react-i18next`，不可硬编码。包括标题、描述、按钮、菜单、表单 label、hint、placeholder、toast、错误/空状态、确认弹窗、aria-label、schema 校验文案和状态 badge。产品名、文件名、API enum 原始值、URL/slug 示例可以保留为数据或示例；只要作为 UI 文案展示，就必须用 i18n label。
 - **MUST i18n 边界**：能在前端本地化的内容必须由前端按稳定 `code`、枚举值或状态 key 映射 i18n 文案；后端只返回稳定 key、原始枚举和必要的原始 message/remark 备注，不返回面向用户的本地化文案。日志正文、第三方原始文本和用户输入内容作为数据展示时例外，但不能冒充 UI 文案。
-- **MUST 品牌命名边界**：用户可见品牌统一使用 `Luna DevOps`；项目自有运行标识统一使用 `luna-devops`、`luna.devops`、`luna-gateway` 或 `luna_devops_`（metrics/代码中需要下划线时）。项目尚未发版，不保留旧品牌技术标识兼容层，也不要把品牌技术标识做成用户可配置项。开发者、仓库、文档站和镜像发布地址仍使用真实可达的 Liteyuki Studio 资源：`github.com/LiteyukiStudio/devops`、`https://devops-docs.liteyuki.org`、`liteyukistudio/devops-*`。
+- **MUST 品牌命名边界**：用户可见品牌统一使用 `Luna DevOps`；项目自有运行标识统一使用 `luna-devops`、`luna.devops`、`luna-gateway` 或 `luna_devops_`（metrics/代码中需要下划线时）。项目尚未发版，不保留旧品牌技术标识兼容层，也不要把品牌技术标识做成用户可配置项。开发者、仓库、文档站和镜像发布地址仍使用真实可达的 Liteyuki Studio 资源：`github.com/LiteyukiStudio/devops`、`https://luna-devops.liteyuki.org`、`liteyukistudio/devops-*`。
 - **MUST 后端适配外部平台**：涉及 GitHub、Gitea、GitLab、Harbor、DockerHub、OIDC、Kubernetes、Traefik、AI Provider 等第三方/外部平台的读取、探测、搜索、状态同步和写操作，必须由后端 provider/service/API 适配、聚合或反代。前端只调用平台后端 API，不允许在前端编排第三方平台 API、暴露底层外部平台能力，或用多个底层代理接口拼出业务流程。
 - Secret、Token、Registry Credential 不允许明文落业务表；密钥类字段不回显给前端。
 
@@ -101,6 +101,10 @@ web/src/i18n
 - **MUST shadcn/ui**：前端基础 UI 必须优先使用 shadcn/ui。凡 shadcn/ui 已提供的基础组件、布局组件、表单组件、反馈组件、表格/分页组件，不允许手写同类轮子；只能在业务组合层做薄封装。
 - shadcn/ui 基础组件放 `web/src/components/ui`，组件清单见 `web/SHADCN_COMPONENTS.md`。
 - 两个及以上页面稳定复用的业务组件必须抽到 `web/src/components/common` 或更合适共享目录。
+- 新页面必须归入资源列表、看板/概览、设置或工具工作区，并使用对应的 `PageShell` 宽度；不要在页面内自由维护根宽度与根间距。
+- 业务页面优先使用 `Surface`、`Section`、`MetricGroup` 等语义布局；`DataList` 是列表唯一外壳，禁止无业务含义的 Card 嵌套。
+- 状态色必须使用语义 token 或公共状态组件，不得在业务页面直接拼写 `red-*`、`amber-*`、`green-*` 等状态样式；第三方品牌色、终端和集中维护的图表色板除外。
+- 页面主要区块、相关区块、表单工具和行内元素优先使用 `gap-6`、`gap-4`、`gap-3`、`gap-2`；优先使用 Tailwind 标准 token，不新增任意像素间距。
 - 表单统一使用 React Hook Form + Zod。
 - React 中能由 props、查询结果或现有 state 直接计算出的值必须在渲染阶段派生，必要时使用 `useMemo`；禁止用同步 `useEffect` 调用 `setState` 回填默认选项、修剪选择项、重置页码或复制受控属性。资源切换后的局部状态应按资源 ID/作用域隔离，用户操作导致的重置应放在对应事件入口。
 - `useEffect` 只用于 EventSource、WebSocket、定时器、DOM 和其他外部系统同步。订阅状态必须绑定当前资源 ID，并在 cleanup 中关闭连接、阻止旧回调写入新资源状态；函数调用形式的初始 state 使用惰性初始化。

@@ -104,7 +104,7 @@ export function LoginPage() {
               <img
                 alt=""
                 className="pointer-events-none absolute bottom-0 left-[51.5%] z-10 h-[112%] w-auto max-w-none -translate-x-1/2 select-none object-contain object-bottom drop-shadow-xl"
-                src="https://devops-docs.liteyuki.org/brand/mascot-luna-catgirl-alpha.webp"
+                src="https://luna-devops.liteyuki.org/brand/mascot-luna-catgirl-alpha.webp"
               />
               <div className="absolute inset-0 z-20 rounded-l-[inherit] bg-gradient-to-r from-background/10 via-transparent to-background/30" />
             </div>

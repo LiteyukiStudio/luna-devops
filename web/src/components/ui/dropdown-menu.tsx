@@ -25,7 +25,7 @@ function DropdownMenuContent({
     <DropdownMenuPortal>
       <DropdownMenuPrimitive.Content
         className={cn(
-          'z-50 min-w-44 overflow-hidden rounded-md border border-border bg-surface p-1 text-foreground shadow-md data-[state=closed]:animate-out data-[state=open]:animate-in data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
+          'z-50 min-w-44 overflow-hidden rounded-md border border-border bg-surface p-1 text-foreground shadow-overlay data-[state=closed]:animate-out data-[state=open]:animate-in data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
           className,
         )}
         data-slot="dropdown-menu-content"
@@ -181,7 +181,7 @@ function DropdownMenuSubContent({
   return (
     <DropdownMenuPrimitive.SubContent
       className={cn(
-        'z-50 min-w-44 overflow-hidden rounded-md border border-border bg-surface p-1 text-foreground shadow-lg data-[state=closed]:animate-out data-[state=open]:animate-in data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
+        'z-50 min-w-44 overflow-hidden rounded-md border border-border bg-surface p-1 text-foreground shadow-overlay data-[state=closed]:animate-out data-[state=open]:animate-in data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
         className,
       )}
       data-slot="dropdown-menu-sub-content"

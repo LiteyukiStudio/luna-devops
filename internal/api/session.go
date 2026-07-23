@@ -19,6 +19,8 @@ import (
 
 const developmentRateLimit = 10000
 
+const currentUserContextKey = "luna.devops.current_user"
+
 const (
 	sessionDuration  = 24 * time.Hour
 	rememberDuration = 30 * 24 * time.Hour
@@ -31,8 +33,15 @@ var (
 )
 
 func (h *Handlers) currentUser(ctx *gin.Context) (model.User, bool) {
+	if user, ok := currentUserFromContext(ctx); ok {
+		return user, true
+	}
 	if strings.HasPrefix(strings.ToLower(ctx.GetHeader("Authorization")), "bearer ") {
-		return h.currentUserFromAccessToken(ctx)
+		user, ok := h.currentUserFromAccessToken(ctx)
+		if ok {
+			ctx.Set(currentUserContextKey, user)
+		}
+		return user, ok
 	}
 
 	plainToken, err := ctx.Cookie(sessionCookieName)
@@ -56,7 +65,33 @@ func (h *Handlers) currentUser(ctx *gin.Context) (model.User, bool) {
 		return model.User{}, false
 	}
 
+	ctx.Set(currentUserContextKey, user)
 	return user, true
+}
+
+func currentUserFromContext(ctx *gin.Context) (model.User, bool) {
+	value, exists := ctx.Get(currentUserContextKey)
+	if !exists {
+		return model.User{}, false
+	}
+	user, ok := value.(model.User)
+	return user, ok && user.ID != ""
+}
+
+func (h *Handlers) platformAdminMiddleware() gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		user, ok := h.currentUser(ctx)
+		if !ok {
+			ctx.Abort()
+			return
+		}
+		if user.Role != "platform_admin" {
+			writeErrorKey(ctx, http.StatusForbidden, user.Language, "config.admin.required")
+			ctx.Abort()
+			return
+		}
+		ctx.Next()
+	}
 }
 
 func (h *Handlers) currentSessionFromCookie(ctx *gin.Context) (model.UserSession, bool) {

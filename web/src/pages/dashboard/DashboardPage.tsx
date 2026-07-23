@@ -1,15 +1,19 @@
 import type { ReactNode } from 'react'
 import type { DashboardActivity, DashboardAttentionItem, DashboardProjectShortcut, DashboardReadinessItem } from '@/api'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Activity, AppWindow, Boxes, CheckCircle2, Container, FileKey2, FolderKanban, Globe2, Hammer, Pin, Rocket, ScrollText, Server, ShieldAlert, Workflow } from 'lucide-react'
+import { Activity, AppWindow, Boxes, Container, FileKey2, FolderKanban, Globe2, Hammer, Pin, Rocket, ScrollText, Server, ShieldAlert, Workflow } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { api } from '@/api'
 import { ErrorState } from '@/components/common/error-state'
+import { MetricGroup, MetricItem } from '@/components/common/metric-group'
+import { Notice } from '@/components/common/notice'
+import { PageShell } from '@/components/common/page-shell'
+import { Section } from '@/components/common/section'
 import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
+import { Surface } from '@/components/common/surface'
 import { formatCompactDateTime } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
 import { WORKFLOW_STATUS_REFETCH_INTERVAL_MS } from '@/lib/polling'
 
 export function DashboardPage() {
@@ -44,7 +48,7 @@ export function DashboardPage() {
   }
 
   if (!dashboard.data) {
-    return <Card className="p-4 text-sm text-muted-foreground">{t('common.loading')}</Card>
+    return <Surface className="p-4 text-sm text-muted-foreground" variant="bordered">{t('common.loading')}</Surface>
   }
 
   const overview = dashboard.data
@@ -52,19 +56,39 @@ export function DashboardPage() {
   const hasMoreProjects = overview.summary.projects > overview.projects.length
 
   return (
-    <div className="grid min-w-0 gap-4">
-      <section className="min-w-0 max-w-full">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <SectionTitle icon={<FolderKanban size={18} />} title={t('dashboardPage.projectShortcuts')} />
-          {hasMoreProjects && (
-            <Link className="text-sm font-medium text-muted-foreground transition hover:text-primary-text" to="/projects">
-              {t('dashboardPage.viewAllProjects')}
-            </Link>
+    <PageShell width="content">
+      {overview.attention.length > 0 && <AttentionPanel items={overview.attention} />}
+
+      <section className="grid gap-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <StatusBadge tone={overview.summary.attentionItems ? 'warning' : 'success'}>
+            {overview.summary.attentionItems ? t('dashboardPage.needsAttention') : t('dashboardPage.healthy')}
+          </StatusBadge>
+          <StatusBadge>{t('dashboardPage.resourceTotals', { applications: overview.summary.applications, projects: overview.summary.projects })}</StatusBadge>
+          {activeTasks > 0 && (
+            <span className="text-xs text-muted-foreground">{t('dashboardPage.activeTasksTotal', { count: activeTasks })}</span>
           )}
         </div>
+        <MetricGroup>
+          <MetricItem emphasis={overview.summary.activeBuilds > 0} href="/events?categories=build&statuses=in_progress" icon={<Hammer size={18} />} label={t('dashboardPage.activeBuilds')} value={overview.summary.activeBuilds} />
+          <MetricItem emphasis={overview.summary.activeReleases > 0} href="/events?categories=release&statuses=in_progress" icon={<Rocket size={18} />} label={t('dashboardPage.activeReleases')} value={overview.summary.activeReleases} />
+          <MetricItem emphasis={overview.summary.attentionItems > 0} href="/events?severities=error&severities=warning" icon={<ShieldAlert size={18} />} label={t('dashboardPage.attentionItems')} tone={overview.summary.attentionItems ? 'danger' : 'neutral'} value={overview.summary.attentionItems} />
+          <MetricItem emphasis={overview.summary.totalClusters > 0} href="/clusters" icon={<Server size={18} />} label={t('dashboardPage.healthyClusters')} tone={overview.summary.healthyClusters < overview.summary.totalClusters ? 'warning' : 'neutral'} value={`${overview.summary.healthyClusters}/${overview.summary.totalClusters}`} />
+        </MetricGroup>
+      </section>
+
+      <Section
+        icon={<FolderKanban size={18} />}
+        title={t('dashboardPage.projectShortcuts')}
+        tools={hasMoreProjects && (
+          <Link className="text-sm font-medium text-muted-foreground transition hover:text-primary-text" to="/projects">
+            {t('dashboardPage.viewAllProjects')}
+          </Link>
+        )}
+      >
         {overview.projects.length
           ? (
-              <div className="mt-3 min-w-0 max-w-full overflow-x-auto overflow-y-hidden pb-2">
+              <div className="min-w-0 max-w-full overflow-x-auto overflow-y-hidden pb-2">
                 <div className="inline-flex min-w-max gap-3">
                   {overview.projects.map(project => (
                     <ProjectShortcutCard
@@ -78,37 +102,20 @@ export function DashboardPage() {
               </div>
             )
           : <p className="py-4 text-sm text-muted-foreground">{t('projectSpaces.emptyTitle')}</p>}
-      </section>
+      </Section>
 
-      <section className="grid gap-3">
-        <h2 className="sr-only">{t('dashboardPage.workOverview')}</h2>
-        <div className="flex flex-wrap items-center gap-2">
-          <StatusBadge tone={overview.summary.attentionItems ? 'warning' : 'success'}>
-            {overview.summary.attentionItems ? t('dashboardPage.needsAttention') : t('dashboardPage.healthy')}
-          </StatusBadge>
-          <StatusBadge>{t('dashboardPage.resourceTotals', { applications: overview.summary.applications, projects: overview.summary.projects })}</StatusBadge>
-          {activeTasks > 0 && (
-            <span className="text-xs text-muted-foreground">{t('dashboardPage.activeTasksTotal', { count: activeTasks })}</span>
-          )}
-        </div>
-        <div className="grid gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-2 xl:grid-cols-4">
-          <DashboardMetric icon={<Hammer size={18} />} label={t('dashboardPage.activeBuilds')} to="/events?categories=build&statuses=in_progress" value={overview.summary.activeBuilds} />
-          <DashboardMetric icon={<Rocket size={18} />} label={t('dashboardPage.activeReleases')} to="/events?categories=release&statuses=in_progress" value={overview.summary.activeReleases} />
-          <DashboardMetric icon={<ShieldAlert size={18} />} label={t('dashboardPage.attentionItems')} tone={overview.summary.attentionItems ? 'danger' : 'neutral'} to="/events?severities=error&severities=warning" value={overview.summary.attentionItems} />
-          <DashboardMetric icon={<Server size={18} />} label={t('dashboardPage.healthyClusters')} tone={overview.summary.healthyClusters < overview.summary.totalClusters ? 'warning' : 'neutral'} to="/clusters" value={`${overview.summary.healthyClusters}/${overview.summary.totalClusters}`} />
-        </div>
-        <AttentionPanel items={overview.attention} />
-      </section>
-
-      <Card className="grid min-w-0 overflow-hidden p-0 xl:grid-cols-3">
-        <section className="min-w-0 p-4 xl:col-span-2">
-          <div className="flex items-center justify-between gap-3">
-            <SectionTitle icon={<ScrollText size={18} />} title={t('dashboardPage.recentActivity')} />
+      <Surface className="grid min-w-0 overflow-hidden xl:grid-cols-3" variant="bordered">
+        <Section
+          className="min-w-0 p-4 xl:col-span-2"
+          icon={<ScrollText size={18} />}
+          title={t('dashboardPage.recentActivity')}
+          tools={(
             <Link className="text-sm font-medium text-muted-foreground transition hover:text-primary-text" to="/events">
               {t('dashboardPage.viewAllEvents')}
             </Link>
-          </div>
-          <div className="mt-3 h-72 overflow-y-auto pr-1">
+          )}
+        >
+          <div className="h-72 overflow-y-auto pr-1">
             {overview.activities.length
               ? (
                   <div className="divide-y divide-border">
@@ -117,17 +124,16 @@ export function DashboardPage() {
                 )
               : <p className="py-4 text-sm text-muted-foreground">{t('dashboardPage.noActivity')}</p>}
           </div>
-        </section>
+        </Section>
 
-        <section className="border-t border-border p-4 xl:border-l xl:border-t-0">
-          <SectionTitle icon={<Boxes size={18} />} title={t('dashboardPage.platformReadiness')} />
-          <div className="mt-3 grid gap-2">
+        <Section className="border-t border-border p-4 xl:border-l xl:border-t-0" icon={<Boxes size={18} />} title={t('dashboardPage.platformReadiness')}>
+          <div className="grid gap-2">
             <ReadinessRow icon={<Container size={16} />} item={overview.readiness.registries} kind="registries" label={t('registries')} to="/registries" />
             <ReadinessRow icon={<Server size={16} />} item={overview.readiness.clusters} kind="clusters" label={t('clusters')} to="/clusters" />
           </div>
-        </section>
-      </Card>
-    </div>
+        </Section>
+      </Surface>
+    </PageShell>
   )
 }
 
@@ -135,7 +141,7 @@ function ProjectShortcutCard({ isPinPending, onTogglePin, project }: { isPinPend
   const { t } = useTranslation()
   return (
     <Link
-      className="group relative grid min-h-28 w-64 flex-none gap-3 rounded-md border border-border bg-background p-3 transition-all duration-150 hover:border-primary/50 hover:bg-muted/35"
+      className="group relative grid min-h-28 w-64 flex-none gap-3 rounded-md border border-border bg-surface-raised p-3 transition-colors hover:border-primary-border hover:bg-surface-subtle"
       to={`/projects/${project.id}`}
     >
       <div className="min-w-0">
@@ -168,47 +174,22 @@ function ProjectShortcutCard({ isPinPending, onTogglePin, project }: { isPinPend
   )
 }
 
-function DashboardMetric({ icon, label, to, tone = 'neutral', value }: { icon: ReactNode, label: string, to: string, tone?: 'danger' | 'neutral' | 'warning', value: number | string }) {
-  const toneClass = tone === 'danger' ? 'text-red-600 dark:text-red-400' : tone === 'warning' ? 'text-amber-700 dark:text-amber-400' : ''
-  return (
-    <Link className={`group bg-surface p-3 transition-colors hover:bg-muted/40 ${toneClass}`} to={to}>
-      <div className="flex items-center gap-2 text-sm text-muted-foreground transition-colors group-hover:text-primary-text">
-        {icon}
-        <span>{label}</span>
-      </div>
-      <p className="mt-2 text-2xl font-semibold">{value}</p>
-    </Link>
-  )
-}
-
 function AttentionPanel({ items }: { items: DashboardAttentionItem[] }) {
   const { t } = useTranslation()
+  const tone = items.some(item => item.severity === 'error') ? 'danger' : 'warning'
   return (
-    <div className="grid gap-2 border-t border-border pt-3 lg:grid-cols-4 lg:items-start lg:gap-3">
-      <div className="flex min-h-8 items-center gap-2 text-sm font-medium">
-        <ShieldAlert size={16} />
-        {t('dashboardPage.attention')}
+    <Notice icon={<ShieldAlert size={18} />} title={t('dashboardPage.attention')} tone={tone}>
+      <div className="flex min-w-0 flex-wrap gap-2">
+        {items.slice(0, 4).map(item => (
+          <Link key={item.key} className="group flex min-h-8 min-w-0 max-w-full items-center gap-2 rounded-md bg-surface-raised/70 px-2 py-1.5 transition-colors hover:bg-surface-raised" to={activityTarget(item.latest)}>
+            <span className="shrink-0 transition-colors group-hover:text-primary-text">{categoryIcon(item.category)}</span>
+            <span className="truncate text-sm text-foreground">{eventTypeLabel(t, item.latest.type)}</span>
+            {item.occurrences > 1 && <StatusBadge tone={item.severity === 'error' ? 'danger' : 'warning'}>{t('dashboardPage.occurrences', { count: item.occurrences })}</StatusBadge>}
+          </Link>
+        ))}
+        {items.length > 4 && <Link className="flex min-h-8 items-center px-2 text-sm font-medium text-primary-text" to="/events?severities=error&severities=warning">{t('dashboardPage.moreAttention', { count: items.length - 4 })}</Link>}
       </div>
-      {items.length
-        ? (
-            <div className="flex min-w-0 flex-wrap gap-2 lg:col-span-3">
-              {items.slice(0, 4).map(item => (
-                <Link key={item.key} className="group flex min-h-8 min-w-0 max-w-full items-center gap-2 rounded-md bg-muted/40 px-2 py-1.5 transition-colors hover:bg-muted" to={activityTarget(item.latest)}>
-                  <span className="shrink-0 text-muted-foreground transition-colors group-hover:text-primary-text">{categoryIcon(item.category)}</span>
-                  <span className="truncate text-sm">{eventTypeLabel(t, item.latest.type)}</span>
-                  {item.occurrences > 1 && <StatusBadge tone={item.severity === 'error' ? 'danger' : 'warning'}>{t('dashboardPage.occurrences', { count: item.occurrences })}</StatusBadge>}
-                </Link>
-              ))}
-              {items.length > 4 && <Link className="flex min-h-8 items-center px-2 text-sm font-medium text-primary-text" to="/events?severities=error&severities=warning">{t('dashboardPage.moreAttention', { count: items.length - 4 })}</Link>}
-            </div>
-          )
-        : (
-            <div className="flex min-h-8 items-center gap-2 text-sm text-muted-foreground lg:col-span-3">
-              <CheckCircle2 className="text-emerald-600" size={16} />
-              {t('dashboardPage.noIssues')}
-            </div>
-          )}
-    </div>
+    </Notice>
   )
 }
 
@@ -239,7 +220,7 @@ function ReadinessRow({ icon, item, kind, label, to }: { icon: ReactNode, item: 
   const { t } = useTranslation()
   const value = kind === 'clusters' ? `${item.available}/${item.total}` : item.total
   return (
-    <Link className="group flex items-center justify-between gap-3 rounded-md bg-muted/30 px-3 py-3 transition-colors hover:bg-muted" to={to}>
+    <Link className="group flex items-center justify-between gap-3 rounded-md bg-surface-subtle px-3 py-3 transition-colors hover:bg-surface-inset" to={to}>
       <div className="flex min-w-0 items-center gap-2 text-sm font-medium">
         <span className="text-muted-foreground">{icon}</span>
         <span className="truncate">{label}</span>
@@ -249,15 +230,6 @@ function ReadinessRow({ icon, item, kind, label, to }: { icon: ReactNode, item: 
         <span className="text-sm tabular-nums text-muted-foreground" title={t('dashboardPage.availableCount')}>{value}</span>
       </div>
     </Link>
-  )
-}
-
-function SectionTitle({ icon, title }: { icon: ReactNode, title: string }) {
-  return (
-    <div className="flex items-center gap-2">
-      <span className="text-muted-foreground">{icon}</span>
-      <h3 className="text-base font-semibold">{title}</h3>
-    </div>
   )
 }
 

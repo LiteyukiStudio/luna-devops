@@ -2191,6 +2191,7 @@ components:
         - mfa_manage
         - security_settings_update
         - data_retention_cleanup
+        - password_update
     MFAVerifyInput:
       type: object
       properties:

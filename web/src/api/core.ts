@@ -1,6 +1,5 @@
-import type { BillingListParams, BuildRunListParams, MFAChallenge, MFAPurpose, PaginationParams, RuntimeClusterResourceListParams } from './types'
+import type { BillingListParams, BuildRunListParams, MFAChallenge, PaginationParams, RuntimeClusterResourceListParams } from './types'
 import i18next from '@/i18n'
-import { mfaPurposes } from './types'
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1'
 
@@ -21,10 +20,10 @@ export class ApiError extends Error {
   code: string
   detail?: string
   path: string
-  purpose?: MFAPurpose
+  purpose?: string
   status: number
 
-  constructor(message: string, options: { code?: string, detail?: string, path: string, purpose?: MFAPurpose, status: number }) {
+  constructor(message: string, options: { code?: string, detail?: string, path: string, purpose?: string, status: number }) {
     super(message)
     this.name = 'ApiError'
     this.code = options.code || 'request.failed'
@@ -199,8 +198,8 @@ async function apiErrorFromResponse(response: Response, path: string) {
   const code = typeof body.code === 'string' && body.code.trim() ? body.code.trim() : ''
   const detail = typeof body.detail === 'string' && body.detail.trim() ? body.detail.trim() : ''
   const bodyError = typeof body.error === 'string' && body.error.trim() ? body.error.trim() : ''
-  const purpose = typeof body.purpose === 'string' && mfaPurposes.includes(body.purpose.trim() as MFAPurpose)
-    ? body.purpose.trim() as MFAPurpose
+  const purpose = typeof body.purpose === 'string' && /^[a-z][a-z0-9_]{0,63}$/.test(body.purpose.trim())
+    ? body.purpose.trim()
     : undefined
   const message = translatedErrorMessage(code) || detail || bodyError || fallbackMessageForStatus(response.status) || response.statusText
   return new ApiError(message, {

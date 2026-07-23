@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import type { ApiError, MFAPurpose } from '@/api'
+import type { ApiError } from '@/api'
 import { KeyRound, ShieldCheck } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 interface PendingChallenge {
-  purpose: MFAPurpose
+  purpose: string
   reject: (reason?: unknown) => void
   resolve: () => void
 }

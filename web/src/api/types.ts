@@ -1622,12 +1622,13 @@ export const mfaPurposes = [
   'mfa_manage',
   'security_settings_update',
   'data_retention_cleanup',
+  'password_update',
 ] as const
 
 export type MFAPurpose = typeof mfaPurposes[number]
 
 export interface MFAChallenge {
-  purpose: MFAPurpose
+  purpose: string
 }
 
 export interface MFAEnrollmentRequest {
@@ -1645,12 +1646,12 @@ export interface MFARecoveryCodes {
 }
 
 export type MFAVerifyPayload
-  = | { code: string, purpose: MFAPurpose }
-    | { recoveryCode: string, purpose: MFAPurpose }
+  = | { code: string, purpose: string }
+    | { recoveryCode: string, purpose: string }
 
 export interface MFAVerifyResponse {
   verified: boolean
-  purpose: MFAPurpose
+  purpose: string
 }
 
 export interface BootstrapStatus {

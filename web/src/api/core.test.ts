@@ -1,4 +1,4 @@
-import type { MFAChallenge, MFAPurpose } from './types'
+import type { MFAChallenge } from './types'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { registerMFAChallengeHandler, request } from './core'
 
@@ -35,6 +35,42 @@ describe('mfa request retry flow', () => {
       await expect(request('/secrets', { method: 'POST' })).resolves.toEqual({ ok: true })
       expect(challengeHandler).toHaveBeenCalledOnce()
       expect(challengeHandler).toHaveBeenCalledWith({ purpose: 'secret_update' })
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+    }
+    finally {
+      unregister()
+    }
+  })
+
+  it('opens a challenge and retries password updates', async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ code: 'mfa_required', purpose: 'password_update' }, 403))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+    const challengeHandler = vi.fn(async () => undefined)
+    const unregister = registerMFAChallengeHandler(challengeHandler)
+    vi.stubGlobal('fetch', fetchMock)
+
+    try {
+      await expect(request('/users/me/password', { method: 'PUT' })).resolves.toBeUndefined()
+      expect(challengeHandler).toHaveBeenCalledWith({ purpose: 'password_update' })
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+    }
+    finally {
+      unregister()
+    }
+  })
+
+  it('does not discard a stable purpose added by a newer backend', async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ code: 'mfa_required', purpose: 'future_sensitive_action' }, 403))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+    const challengeHandler = vi.fn(async () => undefined)
+    const unregister = registerMFAChallengeHandler(challengeHandler)
+    vi.stubGlobal('fetch', fetchMock)
+
+    try {
+      await expect(request('/future-sensitive-action', { method: 'POST' })).resolves.toBeUndefined()
+      expect(challengeHandler).toHaveBeenCalledWith({ purpose: 'future_sensitive_action' })
       expect(fetchMock).toHaveBeenCalledTimes(2)
     }
     finally {
@@ -101,7 +137,7 @@ describe('mfa request retry flow', () => {
         ? jsonResponse({ code: 'mfa_required', purpose: 'data_export' }, 403)
         : jsonResponse({ code: 'mfa_required', purpose: 'secret_update' }, 403)
     })
-    const purposes: MFAPurpose[] = []
+    const purposes: string[] = []
     const challengeHandler = vi.fn((challenge: MFAChallenge) => {
       purposes.push(challenge.purpose)
       return challenge.purpose === 'data_export' ? firstGate.promise : secondGate.promise

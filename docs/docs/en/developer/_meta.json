@@ -16,6 +16,11 @@
   },
   {
     "type": "file",
+    "name": "frontend-visual-system",
+    "label": "Console Visual System"
+  },
+  {
+    "type": "file",
     "name": "docs-site",
     "label": "Docs Site"
   }

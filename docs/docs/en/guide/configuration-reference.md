@@ -39,7 +39,7 @@ Available access-route domain suffixes, external access schemes, external access
 
 | Type | Key | Default | Purpose and when to change |
 | --- | --- | --- | --- |
-| Advanced | `VITE_DOCS_BASE_URL` | `https://devops-docs.liteyuki.org` | Documentation site base URL. Help links on pages such as Billing are generated from it. Set it before building the frontend when the docs site uses another domain or path. |
+| Advanced | `VITE_DOCS_BASE_URL` | `https://luna-devops.liteyuki.org` | Documentation site base URL. Help links on pages such as Billing are generated from it. Set it before building the frontend when the docs site uses another domain or path. |
 
 ## Worker Settings
 

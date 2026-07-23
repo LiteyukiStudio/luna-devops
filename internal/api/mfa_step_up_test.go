@@ -171,6 +171,87 @@ func TestStepUpPurposeAndBearerTokenValidation(t *testing.T) {
 	}
 }
 
+func TestStepUpMiddlewareRejectsUnknownPurposeAtRegistration(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected an invalid route purpose to panic during registration")
+		}
+	}()
+	(&Handlers{}).stepUpMiddleware("unknown_sensitive_action")
+}
+
+func TestAuthenticationMiddlewaresReuseCurrentUserContext(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	admin := model.User{ID: "usr_admin", Role: "platform_admin", Language: "zh-CN"}
+	handlers := &Handlers{configs: &configCache{values: map[string]string{
+		"security.stepUpMfa.enabled": "false",
+	}}}
+	router := gin.New()
+	router.POST(
+		"/sensitive",
+		func(ctx *gin.Context) {
+			ctx.Set(currentUserContextKey, admin)
+			ctx.Next()
+		},
+		handlers.platformAdminMiddleware(),
+		handlers.stepUpMiddleware(stepUpPurposeUserAdminUpdate),
+		func(ctx *gin.Context) {
+			user, ok := handlers.currentUser(ctx)
+			if !ok || user.ID != admin.ID {
+				t.Fatalf("unexpected current user: %#v, ok=%v", user, ok)
+			}
+			ctx.Status(http.StatusNoContent)
+		},
+	)
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/sensitive", nil))
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestPlatformAdminMiddlewareStopsNonAdminBeforeStepUp(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	user := model.User{ID: "usr_member", Role: "user", Language: "zh-CN"}
+	handlers := &Handlers{configs: &configCache{values: map[string]string{
+		"security.stepUpMfa.enabled": "true",
+	}}}
+	handlerCalled := false
+	router := gin.New()
+	router.POST(
+		"/admin-sensitive",
+		func(ctx *gin.Context) {
+			ctx.Set(currentUserContextKey, user)
+			ctx.Next()
+		},
+		handlers.platformAdminMiddleware(),
+		handlers.stepUpMiddleware(stepUpPurposeUserAdminUpdate),
+		func(ctx *gin.Context) {
+			handlerCalled = true
+			ctx.Status(http.StatusNoContent)
+		},
+	)
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/admin-sensitive", nil))
+	if recorder.Code != http.StatusForbidden || handlerCalled {
+		t.Fatalf("status = %d, handlerCalled = %v", recorder.Code, handlerCalled)
+	}
+}
+
+func TestRequireStepUpReusesMiddlewareAssertion(t *testing.T) {
+	user := model.User{ID: "usr_admin", Role: "platform_admin"}
+	handlers := &Handlers{configs: &configCache{values: map[string]string{
+		"security.stepUpMfa.enabled": "true",
+	}}}
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Set(stepUpPurposeContextKey, stepUpPurposeUserAdminUpdate)
+	if !handlers.requireStepUp(ctx, user, stepUpPurposeUserAdminUpdate) {
+		t.Fatal("expected middleware assertion to be reused by the handler guard")
+	}
+}
+
 func TestMFASessionEndpointsRejectPersonalAccessTokensBeforeDatabaseAccess(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)

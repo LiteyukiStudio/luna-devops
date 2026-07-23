@@ -245,7 +245,7 @@ export function AppLayout() {
   }
 
   return (
-    <div className="h-dvh overflow-hidden bg-background text-foreground">
+    <div className="h-dvh overflow-hidden bg-surface-base text-foreground">
       <div className="flex h-full w-full min-w-0 overflow-hidden">
         <Sidebar>
           {renderSidebarContent()}
@@ -258,7 +258,7 @@ export function AppLayout() {
         </Sheet>
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <header className="z-10 flex h-16 shrink-0 items-center justify-between border-b border-border bg-background/90 px-4 py-2 backdrop-blur lg:px-5 xl:px-6">
+          <header className="z-10 flex h-16 shrink-0 items-center justify-between border-b border-border bg-surface-raised/90 px-4 py-2 backdrop-blur lg:px-5 xl:px-6">
             <Button
               aria-label={t('nav.openSidebar')}
               className="mr-2 shrink-0 lg:hidden"

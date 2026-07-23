@@ -39,7 +39,7 @@ OIDC 身份源的 Redirect URI 由 `PUBLIC_BASE_URL` 生成，后台“身份源
 
 | 类型 | 配置项 | 默认值 | 用途与修改时机 |
 | --- | --- | --- | --- |
-| 进阶 | `VITE_DOCS_BASE_URL` | `https://devops-docs.liteyuki.org` | 文档站基础地址；账单页等帮助链接会基于它生成。文档站独立域名或路径变化时，在构建前设置。 |
+| 进阶 | `VITE_DOCS_BASE_URL` | `https://luna-devops.liteyuki.org` | 文档站基础地址；账单页等帮助链接会基于它生成。文档站独立域名或路径变化时，在构建前设置。 |
 
 ## Worker 配置项
 

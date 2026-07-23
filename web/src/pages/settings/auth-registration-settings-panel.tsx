@@ -12,8 +12,9 @@ import { api } from '@/api'
 import { CheckboxField } from '@/components/common/checkbox-field'
 import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
+import { Section } from '@/components/common/section'
+import { Surface } from '@/components/common/surface'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
 
@@ -82,7 +83,7 @@ export function AuthRegistrationSettingsPanel() {
 
   return (
     <div className="grid max-w-3xl gap-4">
-      <Card className="grid gap-4 p-4">
+      <Surface className="grid gap-4 p-4" variant="bordered">
         <div className="grid gap-3">
           <CheckboxField description={t('settings.registration.emailRegistrationDescription')} {...form.register('allowEmailRegistration')}>
             {t('settings.registration.emailRegistration')}
@@ -94,10 +95,9 @@ export function AuthRegistrationSettingsPanel() {
             {t('settings.registration.externalPassword')}
           </CheckboxField>
         </div>
-      </Card>
+      </Surface>
 
-      <Card className="grid gap-4 p-4">
-        <h3 className="text-base font-semibold text-foreground">{t('settings.registration.smtpTitle')}</h3>
+      <Section title={t('settings.registration.smtpTitle')} variant="bordered">
         <div className="grid gap-4 sm:grid-cols-2">
           <Field error={form.formState.errors.smtpHost?.message} label={t('settings.registration.smtpHost')} required={emailEnabled}>
             <Input {...form.register('smtpHost')} aria-invalid={Boolean(form.formState.errors.smtpHost)} placeholder="smtp.example.com" />
@@ -130,7 +130,7 @@ export function AuthRegistrationSettingsPanel() {
             <Input {...form.register('smtpFromName')} />
           </Field>
         </div>
-      </Card>
+      </Section>
 
       <div className="flex justify-end">
         <Button

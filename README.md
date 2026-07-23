@@ -17,7 +17,7 @@
 </p>
 
 <p align="center">
-  <a href="https://devops-docs.liteyuki.org">文档站</a>
+  <a href="https://luna-devops.liteyuki.org/">文档站</a>
   ·
   <a href="https://github.com/LiteyukiStudio/devops">GitHub</a>
   ·
@@ -183,7 +183,7 @@ pnpm --dir web build
 
 ## 文档
 
-- 在线文档：[devops-docs.liteyuki.org](https://devops-docs.liteyuki.org)
+- 在线文档：[luna-devops.liteyuki.org](https://luna-devops.liteyuki.org/)
 - 产品方案：[`notes/01-产品与一体化方案.md`](notes/01-产品与一体化方案.md)
 - 代码健康检查 SOP：[`notes/07-代码健康检查SOP.md`](notes/07-代码健康检查SOP.md)
 - 开发计划：[`TODO.md`](TODO.md)

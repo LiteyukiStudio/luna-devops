@@ -17,7 +17,7 @@
 </p>
 
 <p align="center">
-  <a href="https://devops-docs.liteyuki.org/en/">Documentation</a>
+  <a href="https://luna-devops.liteyuki.org/en/">Documentation</a>
   ·
   <a href="https://github.com/LiteyukiStudio/devops">GitHub</a>
   ·
@@ -183,7 +183,7 @@ Project conventions:
 
 ## Documentation
 
-- Public documentation: [devops-docs.liteyuki.org](https://devops-docs.liteyuki.org/en/)
+- Public documentation: [luna-devops.liteyuki.org](https://luna-devops.liteyuki.org/en/)
 - Product notes: [`notes/01-产品与一体化方案.md`](notes/01-产品与一体化方案.md)
 - Code health SOP: [`notes/07-代码健康检查SOP.md`](notes/07-代码健康检查SOP.md)
 - Development plan: [`TODO.md`](TODO.md)

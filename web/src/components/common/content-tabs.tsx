@@ -3,6 +3,7 @@ import { motion, useReducedMotion } from 'motion/react'
 import { useCallback, useEffect, useId, useMemo } from 'react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { cn } from '@/lib/utils'
 
 interface ContentTabItem {
   hash?: string
@@ -14,6 +15,7 @@ interface ContentTabsProps {
   children: ReactNode
   hashKey?: string
   hashRouting?: boolean
+  headerClassName?: string
   tabs: ContentTabItem[]
   tools?: ReactNode
   value: string
@@ -29,6 +31,7 @@ export function ContentTabs({
   children,
   hashKey = 'tab',
   hashRouting = true,
+  headerClassName,
   tabs,
   tools,
   value,
@@ -104,7 +107,7 @@ export function ContentTabs({
 
   return (
     <Tabs value={effectiveValue} onValueChange={handleValueChange}>
-      <div className="flex min-w-0 flex-col gap-3 md:flex-row md:items-center md:justify-between">
+      <div className={cn('flex min-w-0 flex-col gap-3 md:flex-row md:items-center md:justify-between', headerClassName)}>
         <div className="min-w-0 md:hidden">
           <Select value={effectiveValue} onValueChange={handleValueChange}>
             <SelectTrigger className="h-10 w-full min-w-0 justify-between bg-muted text-base shadow-none">

@@ -45,13 +45,13 @@ function statusI18nKey(value: string) {
 function statusToneClassName(tone: StatusTone) {
   switch (tone) {
     case 'success':
-      return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300'
+      return 'border-success-border bg-success-subtle text-success'
     case 'warning':
-      return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300'
+      return 'border-warning-border bg-warning-subtle text-warning'
     case 'danger':
-      return 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300'
+      return 'border-danger-border bg-danger-subtle text-danger'
     case 'info':
-      return 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900/60 dark:bg-sky-950/40 dark:text-sky-300'
+      return 'border-info-border bg-info-subtle text-info'
     case 'neutral':
       return 'border-zinc-200 bg-zinc-50 text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-300'
   }
