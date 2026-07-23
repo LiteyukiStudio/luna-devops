@@ -9,7 +9,7 @@ import { Card } from '@/components/ui/card'
 export function ForbiddenPage() {
   const { t } = useTranslation()
   return (
-    <div className="grid min-h-screen place-items-center bg-background px-4 text-foreground">
+    <div className="grid min-h-screen place-items-center bg-primary-subtle px-4 text-foreground">
       <Card className="w-full max-w-md">
         <h1 className="text-xl font-semibold">{t('common.forbiddenTitle')}</h1>
         <p className="mt-2 text-sm text-muted-foreground">

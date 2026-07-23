@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
 import { useCallback, useEffect, useId, useMemo } from 'react'
+import { PageChromeTabs, PageChromeTools } from '@/components/common/page-chrome'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
@@ -25,7 +26,8 @@ interface ContentTabsProps {
 /**
  * 页面正文区域的二级内容切换容器。
  * 用于项目详情、设置页等同一页面内的 tab 分区。
- * 当前 tab 的新增、刷新、导出、保存等全局按钮尽量提升到 tools，形成统一操作区，不要散落在嵌入子页或表单底部。
+ * 组件只负责 tab 导航和内容切换。当前 tab 的新增、刷新、导出等页面级操作通过 tools
+ * 提升到桌面端标题行；设置表单的保存操作统一放在对应表单底部。
  */
 export function ContentTabs({
   children,
@@ -107,22 +109,22 @@ export function ContentTabs({
 
   return (
     <Tabs value={effectiveValue} onValueChange={handleValueChange}>
-      <div className={cn('flex min-w-0 flex-col gap-3 md:flex-row md:items-center md:justify-between', headerClassName)}>
-        <div className="min-w-0 md:hidden">
-          <Select value={effectiveValue} onValueChange={handleValueChange}>
-            <SelectTrigger className="h-10 w-full min-w-0 justify-between bg-muted text-base shadow-none">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent align="start" className="min-w-[var(--radix-select-trigger-width)]" position="popper">
-              {tabs.map(tab => (
-                <SelectItem key={tab.value} value={tab.value}>
-                  {tab.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="-mx-1 hidden min-w-0 overflow-x-auto px-1 md:block">
+      <div className={cn('min-w-0 lg:hidden', headerClassName)}>
+        <Select value={effectiveValue} onValueChange={handleValueChange}>
+          <SelectTrigger className="h-10 w-full min-w-0 justify-between bg-muted text-base shadow-none">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent align="start" className="min-w-[var(--radix-select-trigger-width)]" position="popper">
+            {tabs.map(tab => (
+              <SelectItem key={tab.value} value={tab.value}>
+                {tab.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <PageChromeTabs className={headerClassName}>
+        <div className="-mx-1 min-w-0 overflow-x-auto px-1">
           <TabsList className="w-max max-w-none flex-nowrap">
             {tabs.map(tab => (
               <TabsTrigger key={tab.value} className="relative data-[state=active]:border-transparent" value={tab.value}>
@@ -139,12 +141,8 @@ export function ContentTabs({
             ))}
           </TabsList>
         </div>
-        {tools && (
-          <div className="flex min-w-0 flex-wrap items-center gap-2 md:justify-end">
-            {tools}
-          </div>
-        )}
-      </div>
+      </PageChromeTabs>
+      <PageChromeTools>{tools}</PageChromeTools>
       {children}
     </Tabs>
   )

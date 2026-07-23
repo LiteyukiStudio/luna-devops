@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils'
 function Sidebar({ className, ...props }: ComponentProps<'aside'>) {
   return (
     <aside
-      className={cn('sticky top-0 hidden h-screen w-64 min-w-64 max-w-64 shrink-0 flex-col overflow-x-hidden border-r border-border bg-surface lg:flex', className)}
+      className={cn('sticky top-0 hidden h-screen w-64 min-w-64 max-w-64 shrink-0 flex-col overflow-x-hidden bg-transparent lg:flex', className)}
       data-slot="sidebar"
       {...props}
     />
@@ -21,7 +21,7 @@ function SidebarContent({ className, ...props }: ComponentProps<'nav'>) {
 }
 
 function SidebarFooter({ className, ...props }: ComponentProps<'div'>) {
-  return <div className={cn('grid w-full min-w-0 max-w-full shrink-0 gap-3 overflow-hidden border-t border-border p-3', className)} data-slot="sidebar-footer" {...props} />
+  return <div className={cn('grid w-full min-w-0 max-w-full shrink-0 gap-3 overflow-hidden border-t border-primary-border/30 p-3', className)} data-slot="sidebar-footer" {...props} />
 }
 
 function SidebarGroup({ className, ...props }: ComponentProps<'section'>) {
@@ -31,7 +31,7 @@ function SidebarGroup({ className, ...props }: ComponentProps<'section'>) {
 function SidebarGroupLabel({ className, ...props }: ComponentProps<'p'>) {
   return (
     <p
-      className={cn('px-3 text-xs font-medium uppercase tracking-normal text-muted-foreground', className)}
+      className={cn('px-3 text-[0.6875rem] font-normal uppercase tracking-wide text-muted-foreground/80', className)}
       data-slot="sidebar-group-label"
       {...props}
     />

@@ -95,7 +95,7 @@ export function LoginPage() {
   }
 
   return (
-    <div className="grid min-h-screen place-items-center bg-background px-4 py-8 text-foreground">
+    <div className="grid min-h-screen place-items-center bg-primary-subtle px-4 py-8 text-foreground">
       <PageMotion className="w-full max-w-5xl">
         <Card className="relative overflow-visible p-0">
           <div className="grid lg:min-h-160 lg:grid-cols-[1.08fr_0.92fr]">

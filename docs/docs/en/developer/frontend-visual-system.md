@@ -40,6 +40,10 @@ Use `StatusBadge`, `StatusValueBadge`, or `Notice` for status. Business pages sh
 
 ## Spacing and density
 
+- The authenticated content canvas uses spacious horizontal and compact vertical responsive padding: `px-8 py-4` on mobile, `px-12 py-6` on medium screens, and `px-16 py-8` on desktop. The topbar uses the same horizontal padding. `PageShell` owns only maximum width and section gaps; it must not add `mx-auto` or horizontal padding, so titles, dashboards, the marketplace, lists, and settings share one left baseline. Tool workspaces that need to fill available space should do so inside their viewport structure rather than overriding global page breathing room.
+- On desktop, the page title belongs to the content workspace instead of a separate full-width topbar. It shares the global content-padding baseline with the body, tabs, and tools, using compact vertical spacing to read as one navigation group. Mobile retains a topbar containing the sidebar trigger and page title.
+- Desktop page headers consistently use `PageChrome`: the first row places the title on the left and page tools on the right, while an optional second row appears only when tabs are provided. Pages without tabs retain no empty navigation row. `ContentTabs` owns tab state and content switching and delegates its optional navigation and tools to `PageChrome`; on smaller screens, tools fall back into the document flow to avoid crowding the mobile title bar.
+- Primary forms, settings panels, and account panels use `p-6` by default. Catalog cards and compact metric cards may use `p-4` or `p-5`. `DataList`, logs, topology, terminals, and iframe shells use `p-0` and let their internal structure own spacing. Do not combine parent padding with compensating child margins in the same container.
 - Use `gap-6` between major page sections.
 - Use `gap-4` between related sections.
 - Use `gap-3` for fields and tool groups.
@@ -54,6 +58,9 @@ Prefer standard Tailwind spacing and width tokens. Do not introduce arbitrary pi
 - Related switches may use lightly inset option groups. Group longer forms by business meaning instead of placing every field at equal weight inside one large Card.
 - Page-level submit and cancel actions use `FormActions`. Buttons keep their natural width and align right on desktop, becoming full width only on mobile.
 - Tabs within the same settings page must place save actions consistently. The default position is the end of the current form; do not mix toolbar saves in some tabs with bottom saves in others.
+- The authenticated console uses a layout-level `primary-subtle` background across every page header and full content canvas. Page components must not imitate full bleed with negative spacing or oversized decorative wrappers. Regular business `Surface` and `Card` containers use transparent borders and solid flat surfaces without persistent shadows. Shadows are reserved for dialogs, overlays, explicit raised surfaces, and interaction hover. Table rows, form controls, status feedback, and local ownership boundaries retain semantic borders where clarity requires them.
+- The authenticated app root uses the `primary-subtle` theme background, while the desktop sidebar remains transparent and directly inherits that global canvas without its own fill, right divider, or menu-group rules. Group labels and vertical spacing distinguish navigation categories, while hover and active states use `primary-subtle-*` and `primary-text-*` semantic tokens. The mobile drawer remains an opaque themed overlay.
+- Sidebar group labels use a smaller supporting type size, regular weight, and lower contrast than actionable navigation items. Category labels such as Workbench, Resources, System Management, and Personal must not compete with clickable destinations.
 - Long forms use a top divider before the action area. Dialogs continue to use `DialogFooter`; focused login and registration flows may retain full-width submit buttons.
 - A button must not stretch across the form merely because its parent uses CSS Grid.
 

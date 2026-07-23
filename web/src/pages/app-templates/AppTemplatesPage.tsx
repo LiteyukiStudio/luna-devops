@@ -198,9 +198,7 @@ export function AppTemplatesPage() {
 
   return (
     <PageShell width="content">
-      <section className="relative overflow-hidden rounded-2xl border border-primary/15 bg-gradient-to-br from-primary/10 via-surface-raised to-surface-raised px-5 py-8 sm:px-8 sm:py-10">
-        <div className="pointer-events-none absolute -right-20 -top-28 size-80 rounded-full bg-primary/15 blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-32 left-1/3 size-64 rounded-full bg-primary/5 blur-3xl" />
+      <section className="relative overflow-hidden rounded-2xl border border-transparent bg-surface-raised px-5 py-8 sm:px-8 sm:py-10">
         <div className="relative grid gap-7 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
           <div className="max-w-3xl">
             <div className="mb-4 inline-flex items-center gap-2 text-sm font-medium text-primary-text">
@@ -211,7 +209,7 @@ export function AppTemplatesPage() {
             <div className="relative mt-5 max-w-2xl">
               <Search className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
-                className="h-12 rounded-xl border-border/80 bg-background/90 pl-11 pr-4 shadow-raised backdrop-blur focus-visible:ring-2"
+                className="h-12 rounded-xl border-transparent bg-surface-subtle pl-11 pr-4 shadow-none focus-visible:border-primary-border focus-visible:ring-2"
                 placeholder={t('appTemplatesPage.searchPlaceholder')}
                 value={search}
                 onChange={event => setSearch(event.target.value)}

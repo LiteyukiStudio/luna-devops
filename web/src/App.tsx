@@ -72,7 +72,7 @@ function lazyNamed<T extends Record<string, ComponentType<object>>, K extends ke
 }
 
 function RouteFallback() {
-  return <div className="min-h-screen bg-background" />
+  return <div className="min-h-screen bg-primary-subtle" />
 }
 
 function ProjectRootRedirect() {

@@ -49,10 +49,10 @@ export function OAuthAuthorizePage() {
   }, [location.pathname, location.search, navigate, session.initialized, session.user])
 
   if (!session.initialized || !session.user || request.isLoading)
-    return <div className="min-h-screen bg-background" />
+    return <div className="min-h-screen bg-primary-subtle" />
 
   return (
-    <div className="grid min-h-screen place-items-center bg-muted/30 p-4 text-foreground">
+    <div className="grid min-h-screen place-items-center bg-primary-subtle p-4 text-foreground">
       <PageMotion className="w-full max-w-xl">
         <Card className="grid gap-5 p-6 sm:p-8">
           <div className="flex items-center gap-3 border-b border-border pb-5">

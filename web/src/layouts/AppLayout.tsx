@@ -13,10 +13,11 @@ import { useTheme } from '@/app/theme-context'
 import { DebugFloatingPanel } from '@/components/common/debug-floating-panel'
 import { AppLoadingState } from '@/components/common/loading-states'
 import { PageMotion } from '@/components/common/motion'
+import { PageChrome } from '@/components/common/page-chrome'
+import { PageChromeTargetsProvider } from '@/components/common/page-chrome-context'
 import { SidebarUserPanel } from '@/components/common/sidebar-user-panel'
 import { ThemeModeSegmented } from '@/components/common/theme-mode-segmented'
 import { Button } from '@/components/ui/button'
-import { Separator } from '@/components/ui/separator'
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
 import {
   Sidebar,
@@ -108,8 +109,8 @@ const pageMetaRules = [
 
 function sidebarMenuButtonClassName(active?: boolean) {
   return cn(
-    'flex h-10 w-full min-w-0 max-w-full items-center gap-3 overflow-hidden rounded-lg px-3 text-sm font-normal leading-none text-muted-foreground transition-all duration-150 hover:bg-muted hover:text-foreground',
-    active && 'bg-muted text-foreground',
+    'flex h-10 w-full min-w-0 max-w-full items-center gap-3 overflow-hidden rounded-lg px-3 text-sm font-normal leading-none text-muted-foreground transition-all duration-150 hover:bg-primary-subtle-hover hover:text-primary-text-strong',
+    active && 'bg-primary-subtle-active text-primary-text-strong',
   )
 }
 
@@ -120,6 +121,8 @@ export function AppLayout() {
   const configs = usePublicConfig()
   const location = useLocation()
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
+  const [pageTabsTarget, setPageTabsTarget] = useState<HTMLDivElement | null>(null)
+  const [pageToolsTarget, setPageToolsTarget] = useState<HTMLDivElement | null>(null)
   const projects = useQuery({ queryKey: ['projects'], queryFn: api.listProjects, enabled: Boolean(user) })
   const projectRouteMatch = location.pathname.match(/^\/projects\/([^/]+)/)
   const appRouteMatch = location.pathname.match(/^\/projects\/([^/]+)\/apps\/([^/]+)$/)
@@ -193,7 +196,6 @@ export function AppLayout() {
 
             return (
               <SidebarGroup key={section.titleKey} className={index > 0 ? 'mt-4' : undefined}>
-                {index > 0 && <Separator className="mb-4" />}
                 <SidebarGroupLabel>{t(section.titleKey)}</SidebarGroupLabel>
                 <SidebarMenu>
                   {items.map(item => (
@@ -242,20 +244,22 @@ export function AppLayout() {
   }
 
   return (
-    <div className="h-dvh overflow-hidden bg-surface-base text-foreground">
+    <div className="h-dvh overflow-hidden bg-primary-subtle text-foreground">
       <div className="flex h-full w-full min-w-0 overflow-hidden">
         <Sidebar>
           {renderSidebarContent()}
         </Sidebar>
         <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
-          <SheetContent className="flex h-full w-72 max-w-[86vw] flex-col gap-0 overflow-hidden bg-surface p-0 sm:max-w-80" side="left">
+          <SheetContent className="flex h-full w-72 max-w-[86vw] flex-col gap-0 overflow-hidden bg-primary-subtle p-0 sm:max-w-80" side="left">
             <SheetTitle className="sr-only">{configs['site.title'] || t('appName')}</SheetTitle>
             {renderSidebarContent(() => setMobileSidebarOpen(false))}
           </SheetContent>
         </Sheet>
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <header className="z-10 flex h-14 shrink-0 items-center justify-between border-b border-border bg-surface-raised/90 px-4 py-2 backdrop-blur lg:px-5 xl:px-6">
+          <header
+            className="z-10 flex h-14 shrink-0 items-center justify-between bg-primary-subtle/90 px-8 py-2 backdrop-blur sm:px-12 lg:hidden"
+          >
             <Button
               aria-label={t('nav.openSidebar')}
               className="mr-2 shrink-0 lg:hidden"
@@ -269,12 +273,25 @@ export function AppLayout() {
               <TopbarTitle crumbs={pageMeta.titleCrumbs} prefix={pageMeta.titlePrefix} title={pageMeta.title} />
             </div>
           </header>
-          <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-4">
-            <AnimatePresence mode="wait">
-              <PageMotion key={pageMotionKey}>
-                <Outlet />
-              </PageMotion>
-            </AnimatePresence>
+          <main
+            className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-primary-subtle px-8 py-4 transition-colors sm:px-12 sm:py-6 lg:px-16 lg:py-8"
+          >
+            <div className="flex min-h-full min-w-0 flex-col gap-5">
+              <PageChrome
+                tabsTargetRef={setPageTabsTarget}
+                title={(
+                  <TopbarTitle crumbs={pageMeta.titleCrumbs} prefix={pageMeta.titlePrefix} title={pageMeta.title} />
+                )}
+                toolsTargetRef={setPageToolsTarget}
+              />
+              <PageChromeTargetsProvider value={{ tabs: pageTabsTarget, tools: pageToolsTarget }}>
+                <AnimatePresence mode="wait">
+                  <PageMotion key={pageMotionKey}>
+                    <Outlet />
+                  </PageMotion>
+                </AnimatePresence>
+              </PageChromeTargetsProvider>
+            </div>
           </main>
         </div>
       </div>

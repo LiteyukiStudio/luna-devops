@@ -84,7 +84,7 @@ export function AuthRegistrationSettingsPanel() {
 
   return (
     <div className="grid max-w-3xl gap-4">
-      <Surface className="grid gap-4 p-4" variant="bordered">
+      <Surface className="grid gap-4 rounded-xl p-6" variant="bordered">
         <div className="grid gap-3">
           <CheckboxField description={t('settings.registration.emailRegistrationDescription')} {...form.register('allowEmailRegistration')}>
             {t('settings.registration.emailRegistration')}
@@ -98,7 +98,7 @@ export function AuthRegistrationSettingsPanel() {
         </div>
       </Surface>
 
-      <Section title={t('settings.registration.smtpTitle')} variant="bordered">
+      <Section className="rounded-xl" title={t('settings.registration.smtpTitle')} variant="bordered">
         <div className="grid gap-4 sm:grid-cols-2">
           <Field error={form.formState.errors.smtpHost?.message} label={t('settings.registration.smtpHost')} required={emailEnabled}>
             <Input {...form.register('smtpHost')} aria-invalid={Boolean(form.formState.errors.smtpHost)} placeholder="smtp.example.com" />

@@ -80,14 +80,14 @@ export function RegisterPage() {
   })
 
   if (status.isLoading)
-    return <div className="min-h-screen bg-background" />
+    return <div className="min-h-screen bg-primary-subtle" />
   if (status.isError)
     return <div className="grid min-h-screen place-items-center p-4"><ErrorState title={t('loginPage.registration.statusFailedTitle')} description={t('loginPage.registration.statusFailedDescription')} /></div>
   if (!status.data?.emailRegistrationEnabled)
     return <Navigate to="/login" replace />
 
   return (
-    <div className="grid min-h-screen place-items-center bg-background px-4 py-8 text-foreground">
+    <div className="grid min-h-screen place-items-center bg-primary-subtle px-4 py-8 text-foreground">
       <PageMotion className="w-full max-w-lg">
         <Card className="grid gap-5 p-6 sm:p-8">
           <div className="flex items-center gap-3">

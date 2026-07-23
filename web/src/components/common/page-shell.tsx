@@ -17,8 +17,8 @@ export function PageShell({ className, spacing = 'normal', width = 'full', ...pr
       className={cn(
         'grid min-w-0 w-full',
         spacing === 'normal' ? 'gap-6' : 'gap-4',
-        width === 'content' && 'mx-auto max-w-7xl',
-        width === 'settings' && 'mx-auto max-w-6xl',
+        width === 'content' && 'max-w-7xl',
+        width === 'settings' && 'max-w-6xl',
         width === 'tool' && 'min-h-0',
         className,
       )}

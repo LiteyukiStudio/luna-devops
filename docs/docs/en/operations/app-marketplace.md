@@ -14,6 +14,8 @@ Installing a template creates:
 
 The marketplace organizes discovery around search and overview, use-case categories, and a single template directory. All templates remain in the same directory and can be sorted by popularity or name. Categories are available as quick filters. Search covers application names, images, websites, and official repositories. Template cards show only the application icon, name, category, purpose, source links, and install action. Resource defaults and image references are confirmed in the install dialog.
 
+The top hero uses a clean raised surface without gradients or ambient glows for search and template metrics, preserving stable separation from the global themed canvas in both light and dark modes.
+
 Template cards provide official website and repository links so you can quickly verify the source before installing. Apps without a separate website use their official repository as the website link. The “Install” action opens the configuration dialog and does not create resources immediately.
 
 Secret parameters are written to the platform secret store. Deployment targets keep secret references only, and plaintext values are not echoed back to the frontend.

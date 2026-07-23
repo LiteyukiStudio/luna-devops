@@ -145,7 +145,7 @@ export function SiteSettingsPage() {
           onValueChange={setActiveTab}
         >
           <TabsContent value="brand">
-            <Surface className="max-w-3xl p-4" variant="bordered">
+            <Surface className="max-w-3xl rounded-xl p-6" variant="bordered">
               <ConfigSection definitions={siteDefinitions} form={form} />
             </Surface>
           </TabsContent>
@@ -153,7 +153,7 @@ export function SiteSettingsPage() {
             <AuthRegistrationSettingsPanel />
           </TabsContent>
           <TabsContent value="security">
-            <Surface className="max-w-3xl p-4" variant="bordered">
+            <Surface className="max-w-3xl rounded-xl p-6" variant="bordered">
               <ConfigSection definitions={securityDefinitions} form={form} />
             </Surface>
           </TabsContent>
@@ -173,7 +173,7 @@ export function SiteSettingsPage() {
           </TabsContent>
           <TabsContent value="billing">
             <div className="grid gap-4">
-              <Surface className="p-4" variant="bordered">
+              <Surface className="p-6" variant="bordered">
                 <ConfigSection definitions={billingDefinitions} form={form} />
               </Surface>
               <BillingRateRulesSection />
@@ -189,7 +189,7 @@ export function SiteSettingsPage() {
           </TabsContent>
         </ContentTabs>
         {!['registration', 'build'].includes(activeTab) && (
-          <FormActions className={['brand', 'security'].includes(activeTab) ? 'mt-4 max-w-3xl' : 'mt-4'}>
+          <FormActions className={['brand', 'security'].includes(activeTab) ? 'mt-4 max-w-3xl' : 'mt-4'} separated={false}>
             <Button disabled={save.isPending || !form.formState.isValid || !form.formState.isDirty} type="submit">
               <Save size={16} />
               {t('settings.saveConfig')}

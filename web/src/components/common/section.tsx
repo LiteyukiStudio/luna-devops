@@ -14,7 +14,7 @@ export function Section({ children, className, description, icon, title, tools, 
   variant?: SurfaceVariant
 }) {
   return (
-    <Surface className={cn('grid gap-4', variant !== 'plain' && 'p-4', className)} variant={variant}>
+    <Surface className={cn('grid gap-4', variant !== 'plain' && 'p-6', className)} variant={variant}>
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-2">
           {icon && <span className="mt-0.5 shrink-0 text-muted-foreground">{icon}</span>}

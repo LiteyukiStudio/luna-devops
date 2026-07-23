@@ -68,7 +68,7 @@ export function BootstrapPage() {
   })
 
   return (
-    <div className="grid min-h-screen place-items-center bg-background px-4 text-foreground">
+    <div className="grid min-h-screen place-items-center bg-primary-subtle px-4 text-foreground">
       <PageMotion className="w-full max-w-md">
         <Card>
           <div className="mb-6 flex items-center gap-3">
