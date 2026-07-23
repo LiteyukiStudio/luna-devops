@@ -14,8 +14,10 @@ import { ContentTabs } from '@/components/common/content-tabs'
 import { DataList } from '@/components/common/data-list'
 import { EditActionButton } from '@/components/common/edit-action-button'
 import { ErrorState } from '@/components/common/error-state'
+import { FormActions } from '@/components/common/form-actions'
 import { FormField as Field } from '@/components/common/form-field'
 import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
+import { Surface } from '@/components/common/surface'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -332,30 +334,38 @@ export function AuthProvidersPage() {
         </Dialog>
 
         <TabsContent value="policy">
-          <Card>
-            <form className="grid gap-3" onSubmit={policyForm.handleSubmit(values => savePolicy.mutate(values))}>
-              <h2 className="text-base font-semibold">{t('authProvidersPage.admissionPolicy')}</h2>
+          <Surface className="max-w-4xl p-5 sm:p-6" variant="bordered">
+            <form className="grid gap-5" onSubmit={policyForm.handleSubmit(values => savePolicy.mutate(values))}>
+              <div>
+                <h2 className="text-base font-semibold">{t('authProvidersPage.admissionPolicy')}</h2>
+                <p className="mt-1 text-sm text-muted-foreground">{t('authProvidersPage.policyDescription')}</p>
+              </div>
               {policy.isError && <ErrorState title={t('authProvidersPage.policyLoadFailedTitle')} description={t('common.platformAdminPermissionRequired')} />}
               <div className="grid gap-3 md:grid-cols-2">
-                <CheckboxField {...policyForm.register('allowLocalLogin')}>
+                <CheckboxField className="rounded-lg border border-border bg-surface-inset p-3" {...policyForm.register('allowLocalLogin')}>
                   {t('authProvidersPage.allowLocalLogin')}
                 </CheckboxField>
-                <CheckboxField {...policyForm.register('allowOidcLogin')}>
+                <CheckboxField className="rounded-lg border border-border bg-surface-inset p-3" {...policyForm.register('allowOidcLogin')}>
                   {t('authProvidersPage.allowOidcLogin')}
                 </CheckboxField>
-                <CheckboxField {...policyForm.register('requireVerifiedOidcEmail')}>
+                <CheckboxField
+                  className="rounded-lg border border-border bg-surface-inset p-3 md:col-span-2"
+                  description={t('authProvidersPage.requireVerifiedOidcEmailHint')}
+                  {...policyForm.register('requireVerifiedOidcEmail')}
+                >
                   {t('authProvidersPage.requireVerifiedOidcEmail')}
                 </CheckboxField>
               </div>
-              <p className="text-sm text-muted-foreground">{t('authProvidersPage.requireVerifiedOidcEmailHint')}</p>
-              <Field error={policyForm.formState.errors.allowedEmailDomains?.message} hint={t('authProvidersPage.allowedEmailDomainsHint')} label={t('authProvidersPage.allowedEmailDomains')}>
-                <Textarea {...policyForm.register('allowedEmailDomains')} aria-invalid={Boolean(policyForm.formState.errors.allowedEmailDomains)} placeholder={t('authProvidersPage.allowedEmailDomainsPlaceholder')} />
-              </Field>
-              <Field error={policyForm.formState.errors.allowedOidcGroups?.message} hint={t('authProvidersPage.allowedOidcGroupsHint')} label={t('authProvidersPage.allowedOidcGroups')}>
-                <Textarea {...policyForm.register('allowedOidcGroups')} aria-invalid={Boolean(policyForm.formState.errors.allowedOidcGroups)} placeholder={t('authProvidersPage.allowedOidcGroupsPlaceholder')} />
-              </Field>
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field error={policyForm.formState.errors.allowedEmailDomains?.message} hint={t('authProvidersPage.allowedEmailDomainsHint')} label={t('authProvidersPage.allowedEmailDomains')}>
+                  <Textarea {...policyForm.register('allowedEmailDomains')} aria-invalid={Boolean(policyForm.formState.errors.allowedEmailDomains)} placeholder={t('authProvidersPage.allowedEmailDomainsPlaceholder')} rows={2} />
+                </Field>
+                <Field error={policyForm.formState.errors.allowedOidcGroups?.message} hint={t('authProvidersPage.allowedOidcGroupsHint')} label={t('authProvidersPage.allowedOidcGroups')}>
+                  <Textarea {...policyForm.register('allowedOidcGroups')} aria-invalid={Boolean(policyForm.formState.errors.allowedOidcGroups)} placeholder={t('authProvidersPage.allowedOidcGroupsPlaceholder')} rows={2} />
+                </Field>
+              </div>
               <Field error={policyForm.formState.errors.invitedEmails?.message} hint={t('authProvidersPage.invitedEmailsHint')} label={t('authProvidersPage.invitedEmails')}>
-                <Textarea {...policyForm.register('invitedEmails')} aria-invalid={Boolean(policyForm.formState.errors.invitedEmails)} placeholder={t('authProvidersPage.invitedEmailsPlaceholder')} />
+                <Textarea {...policyForm.register('invitedEmails')} aria-invalid={Boolean(policyForm.formState.errors.invitedEmails)} placeholder={t('authProvidersPage.invitedEmailsPlaceholder')} rows={2} />
               </Field>
               <Field error={policyForm.formState.errors.defaultRole?.message} hint={t('authProvidersPage.defaultRoleHint')} label={t('authProvidersPage.defaultRole')} required>
                 <Select {...policyForm.register('defaultRole')} aria-invalid={Boolean(policyForm.formState.errors.defaultRole)}>
@@ -363,12 +373,14 @@ export function AuthProvidersPage() {
                   <option value="platform_admin">{t('usersPage.platformAdmin')}</option>
                 </Select>
               </Field>
-              <Button disabled={savePolicy.isPending || !policyForm.formState.isValid} type="submit">
-                <Save size={16} />
-                {t('authProvidersPage.savePolicy')}
-              </Button>
+              <FormActions>
+                <Button disabled={savePolicy.isPending || !policyForm.formState.isValid} type="submit">
+                  <Save size={16} />
+                  {t('authProvidersPage.savePolicy')}
+                </Button>
+              </FormActions>
             </form>
-          </Card>
+          </Surface>
         </TabsContent>
       </ContentTabs>
     </div>

@@ -48,6 +48,15 @@ Use `StatusBadge`, `StatusValueBadge`, or `Notice` for status. Business pages sh
 
 Prefer standard Tailwind spacing and width tokens. Do not introduce arbitrary pixel values for local visual adjustments.
 
+## Forms and action areas
+
+- Settings forms should normally stay within `max-w-3xl` to `max-w-4xl`; short fields must not expand indefinitely with the content region.
+- Related switches may use lightly inset option groups. Group longer forms by business meaning instead of placing every field at equal weight inside one large Card.
+- Page-level submit and cancel actions use `FormActions`. Buttons keep their natural width and align right on desktop, becoming full width only on mobile.
+- Tabs within the same settings page must place save actions consistently. The default position is the end of the current form; do not mix toolbar saves in some tabs with bottom saves in others.
+- Long forms use a top divider before the action area. Dialogs continue to use `DialogFooter`; focused login and registration flows may retain full-width submit buttons.
+- A button must not stretch across the form merely because its parent uses CSS Grid.
+
 ## Loading and empty states
 
 Choose a shared skeleton that matches the page structure:

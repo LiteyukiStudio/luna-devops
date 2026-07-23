@@ -12,7 +12,9 @@ Installing a template creates:
 - Template-defined config files and secret files; sensitive files are written into Kubernetes Secrets.
 - An optional first Release; deployment is enabled by default.
 
-Template cards show the image, official website, and official repository together so you can quickly verify the source before installing. Apps without a separate website use their official repository as the website link.
+The marketplace organizes discovery around search and overview, use-case categories, and a single template directory. All templates remain in the same directory and can be sorted by popularity or name. Categories are available as quick filters. Search covers application names, images, websites, and official repositories. Template cards show only the application icon, name, category, purpose, source links, and install action. Resource defaults and image references are confirmed in the install dialog.
+
+Template cards provide official website and repository links so you can quickly verify the source before installing. Apps without a separate website use their official repository as the website link. The “Install” action opens the configuration dialog and does not create resources immediately.
 
 Secret parameters are written to the platform secret store. Deployment targets keep secret references only, and plaintext values are not echoed back to the frontend.
 

@@ -35,6 +35,7 @@ const authProvidersPage = {
   created: 'Identity provider created',
   updated: 'Identity provider updated',
   admissionPolicy: 'Admission policy',
+  policyDescription: 'Control the sign-in methods available to the platform and the requirements for first-time OIDC users.',
   policySaved: 'Admission policy saved',
   policyLoadFailedTitle: 'Admission policy failed to load',
   allowLocalLogin: 'Allow local login',

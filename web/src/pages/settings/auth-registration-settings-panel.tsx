@@ -11,6 +11,7 @@ import { z } from 'zod'
 import { api } from '@/api'
 import { CheckboxField } from '@/components/common/checkbox-field'
 import { ErrorState } from '@/components/common/error-state'
+import { FormActions } from '@/components/common/form-actions'
 import { FormField as Field } from '@/components/common/form-field'
 import { Section } from '@/components/common/section'
 import { Surface } from '@/components/common/surface'
@@ -132,7 +133,7 @@ export function AuthRegistrationSettingsPanel() {
         </div>
       </Section>
 
-      <div className="flex justify-end">
+      <FormActions separated={false}>
         <Button
           disabled={save.isPending || settings.isLoading || !form.formState.isValid || !form.formState.isDirty}
           type="button"
@@ -141,7 +142,7 @@ export function AuthRegistrationSettingsPanel() {
           <Save className="size-4" />
           {t('settings.registration.save')}
         </Button>
-      </div>
+      </FormActions>
     </div>
   )
 }

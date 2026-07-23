@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import type { AppTemplate, AppTemplateInstallPayload, Project, RuntimeCluster } from '@/api'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Box, CircleHelp, Database, ExternalLink, PackagePlus, Search } from 'lucide-react'
+import { ArrowRight, CircleHelp, ExternalLink, PackagePlus, Search, Sparkles } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useSearchParams } from 'react-router-dom'
@@ -12,11 +12,12 @@ import { CheckboxField } from '@/components/common/checkbox-field'
 import { EmptyState } from '@/components/common/empty-state'
 import { ErrorState } from '@/components/common/error-state'
 import { TemplateGridSkeleton } from '@/components/common/loading-states'
+import { PageShell } from '@/components/common/page-shell'
 import { ProjectSpaceSelect } from '@/components/common/project-space-select'
 import { StatusBadge } from '@/components/common/status-badge'
+import { Surface } from '@/components/common/surface'
 import { UnitInput } from '@/components/common/unit-input'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -95,7 +96,6 @@ export function AppTemplatesPage() {
       return popularityResult === 0 ? a.name.localeCompare(b.name, i18n.language) : direction * popularityResult
     })
   }, [category, i18n.language, search, sortBy, sortOrder, templates.data])
-
   const installTemplate = useMutation({
     mutationFn: (payload: AppTemplateInstallPayload & { templateId: string, projectId: string }) =>
       api.installAppTemplate(payload.projectId, payload.templateId, payload),
@@ -197,68 +197,104 @@ export function AppTemplatesPage() {
   }
 
   return (
-    <div className="grid gap-4 sm:gap-5">
-      <Card className="grid gap-3 p-3 sm:gap-4 sm:p-4 xl:grid-cols-[minmax(16rem,1fr)_12rem_10rem_10rem] xl:items-center">
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            className="h-11 rounded-md pl-10"
-            placeholder={t('appTemplatesPage.searchPlaceholder')}
-            value={search}
-            onChange={event => setSearch(event.target.value)}
-          />
+    <PageShell width="content">
+      <section className="relative overflow-hidden rounded-2xl border border-primary/15 bg-gradient-to-br from-primary/10 via-surface-raised to-surface-raised px-5 py-8 sm:px-8 sm:py-10">
+        <div className="pointer-events-none absolute -right-20 -top-28 size-80 rounded-full bg-primary/15 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-32 left-1/3 size-64 rounded-full bg-primary/5 blur-3xl" />
+        <div className="relative grid gap-7 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+          <div className="max-w-3xl">
+            <div className="mb-4 inline-flex items-center gap-2 text-sm font-medium text-primary-text">
+              <Sparkles className="size-4" />
+              {t('appTemplatesPage.heroEyebrow')}
+            </div>
+            <h1 className="max-w-2xl text-2xl font-semibold tracking-tight sm:text-3xl">{t('appTemplatesPage.heroTitle')}</h1>
+            <div className="relative mt-5 max-w-2xl">
+              <Search className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                className="h-12 rounded-xl border-border/80 bg-background/90 pl-11 pr-4 shadow-raised backdrop-blur focus-visible:ring-2"
+                placeholder={t('appTemplatesPage.searchPlaceholder')}
+                value={search}
+                onChange={event => setSearch(event.target.value)}
+              />
+            </div>
+          </div>
+          <div className="flex gap-8 border-t border-border/70 pt-5 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
+            <MarketplaceMetric label={t('appTemplatesPage.templateCount')} value={templates.data?.length ?? 0} />
+            <MarketplaceMetric label={t('appTemplatesPage.categoryCount')} value={categoryOptions.length} />
+          </div>
         </div>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:contents">
-          <Select
-            aria-label={t('appTemplatesPage.categoryFilter')}
-            className="h-11 min-w-0 rounded-md"
-            value={category}
-            onChange={event => setCategory(event.target.value)}
+      </section>
+
+      <div className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1">
+        <Button
+          className="shrink-0 rounded-full px-4"
+          size="sm"
+          variant={category === 'all' ? 'secondary' : 'ghost'}
+          onClick={() => setCategory('all')}
+        >
+          {t('appTemplatesPage.allCategories')}
+        </Button>
+        {categoryOptions.map(item => (
+          <Button
+            key={item}
+            className="shrink-0 rounded-full px-4 text-muted-foreground data-[active=true]:text-foreground"
+            data-active={category === item}
+            size="sm"
+            variant={category === item ? 'secondary' : 'ghost'}
+            onClick={() => setCategory(item)}
           >
-            <option value="all">{t('appTemplatesPage.allCategories')}</option>
-            {categoryOptions.map(item => (
-              <option key={item} value={item}>
-                {t(`appTemplatesPage.categories.${item}`, { defaultValue: item })}
-              </option>
-            ))}
-          </Select>
-          <Select
-            aria-label={t('appTemplatesPage.sortBy')}
-            className="h-11 min-w-0 rounded-md"
-            value={sortBy}
-            onChange={event => setSortBy(event.target.value as typeof sortBy)}
-          >
-            <option value="popularity">{t('appTemplatesPage.sortByPopularity')}</option>
-            <option value="name">{t('appTemplatesPage.sortByName')}</option>
-          </Select>
-          <Select
-            aria-label={t('appTemplatesPage.sortOrder')}
-            className="col-span-2 h-11 min-w-0 rounded-md sm:col-span-1"
-            value={sortOrder}
-            onChange={event => setSortOrder(event.target.value as typeof sortOrder)}
-          >
-            <option value="desc">{t('appTemplatesPage.sortDesc')}</option>
-            <option value="asc">{t('appTemplatesPage.sortAsc')}</option>
-          </Select>
-        </div>
-      </Card>
+            {t(`appTemplatesPage.categories.${item}`, { defaultValue: item })}
+          </Button>
+        ))}
+      </div>
 
       {templates.isError && <ErrorState title={templates.error.message} />}
       {templates.isLoading && <TemplateGridSkeleton />}
       {templates.isSuccess && sortedTemplates.length === 0 && (
         <EmptyState description={t('appTemplatesPage.emptyDescription')} title={t('appTemplatesPage.emptyTitle')} />
       )}
+
       {sortedTemplates.length > 0 && (
-        <div className="grid gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-3">
-          {sortedTemplates.map(template => (
-            <TemplateCard
-              key={template.id}
-              canInstallSystemComponent={canInstallSystemComponent}
-              template={template}
-              onInstall={() => openInstallDialog(template)}
-            />
-          ))}
-        </div>
+        <section className="grid gap-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold">{t('appTemplatesPage.browseTitle')}</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {t('appTemplatesPage.resultCount', { count: sortedTemplates.length })}
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Select
+                aria-label={t('appTemplatesPage.sortBy')}
+                className="h-9 min-w-32 border-0 bg-surface-inset shadow-none"
+                value={sortBy}
+                onChange={event => setSortBy(event.target.value as typeof sortBy)}
+              >
+                <option value="popularity">{t('appTemplatesPage.sortByPopularity')}</option>
+                <option value="name">{t('appTemplatesPage.sortByName')}</option>
+              </Select>
+              <Select
+                aria-label={t('appTemplatesPage.sortOrder')}
+                className="h-9 min-w-24 border-0 bg-surface-inset shadow-none"
+                value={sortOrder}
+                onChange={event => setSortOrder(event.target.value as typeof sortOrder)}
+              >
+                <option value="desc">{t('appTemplatesPage.sortDesc')}</option>
+                <option value="asc">{t('appTemplatesPage.sortAsc')}</option>
+              </Select>
+            </div>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {sortedTemplates.map(template => (
+              <TemplateCard
+                key={template.id}
+                canInstallSystemComponent={canInstallSystemComponent}
+                template={template}
+                onInstall={() => openInstallDialog(template)}
+              />
+            ))}
+          </div>
+        </section>
       )}
 
       <InstallTemplateDialog
@@ -276,22 +312,21 @@ export function AppTemplatesPage() {
         onTemplateValueChange={updateTemplateValue}
         onUpdate={updateForm}
       />
-    </div>
+    </PageShell>
   )
 }
 
 function TemplateCard({ canInstallSystemComponent, template, onInstall }: { canInstallSystemComponent: boolean, template: AppTemplate, onInstall: () => void }) {
   const { t } = useTranslation()
-  const CategoryIcon = template.category === 'database' ? Database : Box
   const systemComponent = isSystemComponentTemplate(template)
   const installDisabled = systemComponent && !canInstallSystemComponent
   return (
-    <Card className="flex min-h-0 flex-col gap-3 p-4 sm:min-h-56 sm:gap-4 sm:p-5">
-      <div className="flex items-start gap-3 sm:gap-4">
-        <div className="flex size-12 shrink-0 items-center justify-center rounded-lg border border-border bg-surface sm:size-14 sm:rounded-xl">
+    <Surface className="group flex min-h-48 flex-col rounded-xl p-5 transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-raised">
+      <div className="flex items-start gap-4">
+        <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-surface-inset">
           <img
             alt=""
-            className="size-8 object-contain sm:size-9"
+            className="size-8 object-contain transition-transform duration-200 group-hover:scale-105"
             src={template.icon || FALLBACK_ICON}
             onError={(event) => {
               event.currentTarget.src = FALLBACK_ICON
@@ -299,47 +334,53 @@ function TemplateCard({ canInstallSystemComponent, template, onInstall }: { canI
           />
         </div>
         <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 flex-wrap items-center gap-1.5 sm:gap-2">
-            <h2 className="min-w-0 max-w-full truncate text-base font-semibold sm:text-lg">{template.name}</h2>
-            <StatusBadge tone="neutral">{t(`appTemplatesPage.categories.${template.category}`, { defaultValue: template.category })}</StatusBadge>
+          <div className="flex min-w-0 items-start justify-between gap-2">
+            <h3 className="min-w-0 truncate text-base font-semibold tracking-tight">{template.name}</h3>
+            <TemplateSourceLinks template={template} />
+          </div>
+          <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+            <span>{t(`appTemplatesPage.categories.${template.category}`, { defaultValue: template.category })}</span>
             {systemComponent && <StatusBadge tone="info">{t('appTemplatesPage.platformComponent')}</StatusBadge>}
           </div>
-          <p className="mt-1 line-clamp-3 text-sm text-muted-foreground sm:line-clamp-2">
-            {t(`appTemplatesPage.templates.${template.id}.description`, { defaultValue: template.description || t('common.noDescription') })}
-          </p>
         </div>
       </div>
-      <div className="grid gap-2 text-sm text-muted-foreground">
-        <TemplateFact label={t('appTemplatesPage.port')} value={String(template.servicePort)} />
-        <TemplateFact label={t('appTemplatesPage.resources')} value={`${template.defaultCPU} / ${template.defaultMemory}`} />
+      <p className="mt-4 line-clamp-2 min-h-10 text-sm leading-5 text-muted-foreground">
+        {t(`appTemplatesPage.templates.${template.id}.description`, { defaultValue: template.description || t('common.noDescription') })}
+      </p>
+      <div className="mt-auto flex justify-end pt-4">
+        <Button disabled={installDisabled} size="sm" type="button" variant="ghost" onClick={onInstall}>
+          {t('appTemplatesPage.install')}
+          <ArrowRight className="size-4" />
+        </Button>
       </div>
-      <div className="mt-auto flex min-w-0 flex-col gap-3 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
-        <div className="grid min-w-0 flex-1 gap-1.5">
-          <div className="flex min-w-0 items-center gap-2">
-            <TemplateSourceLink
-              href={template.officialWebsite}
-              icon={<ExternalLink className="size-4" />}
-              label={t('appTemplatesPage.officialWebsite')}
-            />
-            <TemplateSourceLink
-              href={template.officialRepository}
-              icon={<GithubMark className="size-4" />}
-              label={t('appTemplatesPage.officialRepository')}
-            />
-          </div>
-          <span className="inline-flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground" title={template.image}>
-            <CategoryIcon className="size-4 shrink-0" />
-            <span className="min-w-0 truncate font-mono">{template.image}</span>
-          </span>
-        </div>
-        <div className="shrink-0 sm:self-end">
-          <Button className="w-full sm:w-auto" disabled={installDisabled} type="button" onClick={onInstall}>
-            <PackagePlus className="size-4" />
-            {t('appTemplatesPage.install')}
-          </Button>
-        </div>
-      </div>
-    </Card>
+    </Surface>
+  )
+}
+
+function MarketplaceMetric({ label, value }: { label: string, value: number }) {
+  return (
+    <div>
+      <div className="text-2xl font-semibold tabular-nums">{value}</div>
+      <div className="mt-0.5 text-xs text-muted-foreground">{label}</div>
+    </div>
+  )
+}
+
+function TemplateSourceLinks({ template }: { template: AppTemplate }) {
+  const { t } = useTranslation()
+  return (
+    <div className="flex shrink-0 items-center gap-2">
+      <TemplateSourceLink
+        href={template.officialWebsite}
+        icon={<ExternalLink className="size-4" />}
+        label={t('appTemplatesPage.officialWebsite')}
+      />
+      <TemplateSourceLink
+        href={template.officialRepository}
+        icon={<GithubMark className="size-4" />}
+        label={t('appTemplatesPage.officialRepository')}
+      />
+    </div>
   )
 }
 
@@ -370,15 +411,6 @@ function GithubMark({ className }: { className?: string }) {
     >
       <path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.84 9.72.5.09.68-.22.68-.49v-1.9c-2.78.62-3.37-1.22-3.37-1.22-.45-1.19-1.11-1.5-1.11-1.5-.91-.64.07-.63.07-.63 1 .07 1.53 1.06 1.53 1.06.89 1.56 2.34 1.11 2.91.85.09-.66.35-1.11.63-1.37-2.22-.26-4.56-1.14-4.56-5.06 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.28 2.75 1.05A9.3 9.3 0 0 1 12 6.98c.85 0 1.7.12 2.5.34 1.91-1.33 2.75-1.05 2.75-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.93-2.34 4.79-4.57 5.05.36.32.68.95.68 1.91v2.79c0 .27.18.59.69.49A10.12 10.12 0 0 0 22 12.25C22 6.58 17.52 2 12 2Z" />
     </svg>
-  )
-}
-
-function TemplateFact({ label, value }: { label: string, value: string }) {
-  return (
-    <div className="flex min-w-0 items-center justify-between gap-3">
-      <span className="shrink-0">{label}</span>
-      <span className="min-w-0 truncate font-mono text-foreground">{value}</span>
-    </div>
   )
 }
 

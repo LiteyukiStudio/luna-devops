@@ -8,6 +8,7 @@ import { toast } from 'sonner'
 import { z } from 'zod'
 import { api } from '@/api'
 import { useSession } from '@/app/session-context'
+import { FormActions } from '@/components/common/form-actions'
 import { FormField as Field } from '@/components/common/form-field'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -72,12 +73,12 @@ export function AccountPasswordPanel() {
                 <Input {...form.register('confirmPassword')} autoComplete="new-password" type="password" />
               </Field>
               <p className="text-xs text-muted-foreground">{t('accountPage.password.sessionNotice')}</p>
-              <div className="flex justify-end">
+              <FormActions>
                 <Button disabled={save.isPending || !form.formState.isValid} type="submit">
                   <Save className="size-4" />
                   {t('accountPage.password.save')}
                 </Button>
-              </div>
+              </FormActions>
             </form>
           )}
     </Card>

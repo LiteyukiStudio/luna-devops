@@ -15,6 +15,7 @@ import { useSession } from '@/app/session-context'
 import { ContentTabs } from '@/components/common/content-tabs'
 import { EmptyState } from '@/components/common/empty-state'
 import { ErrorState } from '@/components/common/error-state'
+import { FormActions } from '@/components/common/form-actions'
 import { FormField as Field } from '@/components/common/form-field'
 import { MotionItem, MotionList } from '@/components/common/motion'
 import { StatusValueBadge } from '@/components/common/status-badge'
@@ -163,12 +164,12 @@ function ProfilePanel() {
             onValueChange={nextValue => form.setValue('brandColorPreset', nextValue, { shouldDirty: true, shouldValidate: true })}
           />
         </Field>
-        <div className="flex justify-end">
+        <FormActions>
           <Button disabled={saveProfile.isPending || !form.formState.isValid || !form.formState.isDirty} type="submit">
             <Save size={16} />
             {t('accountPage.saveProfile')}
           </Button>
-        </div>
+        </FormActions>
       </form>
     </Card>
   )

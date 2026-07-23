@@ -15,6 +15,7 @@ import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { ContentTabs } from '@/components/common/content-tabs'
 import { DataList } from '@/components/common/data-list'
 import { ErrorState } from '@/components/common/error-state'
+import { FormActions } from '@/components/common/form-actions'
 import { FormField as Field } from '@/components/common/form-field'
 import { SettingsSkeleton } from '@/components/common/loading-states'
 import { PageShell } from '@/components/common/page-shell'
@@ -140,12 +141,6 @@ export function SiteSettingsPage() {
             { value: 'billing', label: t('settings.billingConfigTitle') },
             { value: 'retention', label: t('settings.retentionConfigTitle') },
           ]}
-          tools={!['registration', 'build'].includes(activeTab) && (
-            <Button disabled={save.isPending || !form.formState.isValid || !form.formState.isDirty} form="site-settings-form" type="submit">
-              <Save size={16} />
-              {t('settings.saveConfig')}
-            </Button>
-          )}
           value={activeTab}
           onValueChange={setActiveTab}
         >
@@ -193,6 +188,14 @@ export function SiteSettingsPage() {
             </div>
           </TabsContent>
         </ContentTabs>
+        {!['registration', 'build'].includes(activeTab) && (
+          <FormActions className={['brand', 'security'].includes(activeTab) ? 'mt-4 max-w-3xl' : 'mt-4'}>
+            <Button disabled={save.isPending || !form.formState.isValid || !form.formState.isDirty} type="submit">
+              <Save size={16} />
+              {t('settings.saveConfig')}
+            </Button>
+          </FormActions>
+        )}
       </form>
       <BuildEnvironmentEditorDialog
         description={t('buildsPage.globalBuildEnvironmentDescription')}

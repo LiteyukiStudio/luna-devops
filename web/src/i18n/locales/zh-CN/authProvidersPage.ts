@@ -35,6 +35,7 @@ const authProvidersPage = {
   created: '身份源已创建',
   updated: '身份源已更新',
   admissionPolicy: '准入策略',
+  policyDescription: '控制平台允许的登录方式，以及 OIDC 用户首次进入平台时需要满足的条件。',
   policySaved: '准入策略已保存',
   policyLoadFailedTitle: '准入策略加载失败',
   allowLocalLogin: '允许本地账号登录',
