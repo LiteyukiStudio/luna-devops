@@ -1,11 +1,30 @@
-import type { ComponentProps } from 'react'
+import type { ComponentProps, ReactNode } from 'react'
 
 import { cn } from '@/lib/utils'
 import { TableFrame } from './table-frame'
 
-function Table({ className, ...props }: ComponentProps<'table'>) {
+type TableProps = ComponentProps<'table'> & {
+  footer?: ReactNode
+  footerClassName?: string
+  frameClassName?: string
+}
+
+function Table({
+  className,
+  footer,
+  footerClassName,
+  frameClassName,
+  ...props
+}: TableProps) {
   return (
-    <TableFrame className="w-full" data-slot="table-container" scrollbars="horizontal" scrollType="auto">
+    <TableFrame
+      className={cn('w-full', frameClassName)}
+      data-slot="table-container"
+      footer={footer}
+      footerClassName={footerClassName}
+      scrollbars="horizontal"
+      scrollType="auto"
+    >
       <table className={cn('w-max min-w-full bg-transparent caption-bottom text-sm', className)} data-slot="table" {...props} />
     </TableFrame>
   )

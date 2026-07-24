@@ -80,7 +80,12 @@ describe('data list layout', () => {
   it('renders query controls in the list header toolbar', () => {
     render(
       <DataList
-        columns={[{ key: 'name', header: 'Name', render: item => item.name }]}
+        columns={[{
+          key: 'name',
+          header: 'Name',
+          className: 'px-4 py-3 align-middle',
+          render: item => item.name,
+        }]}
         emptyTitle="Empty"
         items={[{ id: 'one', name: 'One' }]}
         rowKey={item => item.id}
@@ -117,11 +122,10 @@ describe('data list layout', () => {
       '[&>td:first-child]:rounded-l-container',
       '[&>td:last-child]:rounded-r-container',
     )
-    expect(screen.getByRole('button', { name: 'Sort projects' }).closest('[data-slot="data-list-tools"]')).toHaveClass('px-0', 'sm:px-4')
+    expect(screen.getByRole('button', { name: 'Sort projects' }).closest('[data-slot="data-list-tools"]')).toHaveClass('pb-4')
     expect(screen.getByRole('button', { name: 'Sort projects' }).closest('[data-slot="data-list-tools"]')?.className).not.toContain('after:')
     expect(screen.getByRole('table').closest('[data-slot="table-frame"]')).toHaveClass(
-      'mx-0',
-      'sm:mx-group',
+      'w-full',
       'rounded-container',
       'border',
       'border-border',
@@ -135,7 +139,8 @@ describe('data list layout', () => {
     const search = screen.getByPlaceholderText('Search projects')
     expect(search.parentElement).not.toHaveClass('sm:justify-end')
     expect(search.parentElement).toContainElement(screen.getByRole('button', { name: 'Sort projects' }))
-    expect(screen.getByRole('table').closest('[data-slot="card"]')).not.toHaveClass('p-section')
+    expect(screen.getByRole('table').closest('[data-slot="card"]')).not.toBeInTheDocument()
+    expect(screen.getByRole('table').closest('[data-slot="data-list"]')).toBeInTheDocument()
   })
 
   it('uses the table frame as the only boundary below the toolbar', () => {
@@ -158,15 +163,48 @@ describe('data list layout', () => {
     )
 
     const titleBar = screen.getByText('Projects').parentElement?.parentElement
-    const pagination = screen.getByText('1 item').parentElement?.parentElement
+    const pagination = screen.getByText('1 item').closest<HTMLElement>('[data-slot="table-frame-footer"]')
     expect(titleBar?.className).not.toContain('after:')
-    expect(pagination?.className).not.toContain('before:')
+    expect(pagination).toHaveClass('border-t', 'border-border', 'bg-card')
     expect(screen.getByRole('table').closest('[data-slot="table-frame"]')).toHaveClass(
       'rounded-container',
       'border',
       'border-border',
     )
+    expect(screen.getByRole('table').closest('[data-slot="table-frame"]')).toContainElement(pagination)
+    expect(screen.getByRole('table').closest('[data-slot="card"]')).not.toBeInTheDocument()
     expect(screen.getByRole('row', { name: 'One' })).toHaveClass('border-t', 'border-border')
+    expect(screen.queryByRole('navigation')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('pagination.pageSizeAria')).not.toBeInTheDocument()
+  })
+
+  it('uses compact mobile cells and keeps responsive controls for multiple pages', () => {
+    render(
+      <DataList
+        columns={[{ key: 'name', header: 'Name', render: item => item.name }]}
+        emptyTitle="Empty"
+        items={[{ id: 'one', name: 'One' }]}
+        pagination={{
+          page: 1,
+          pageInfoLabel: 'Page 1',
+          pageSize: 10,
+          total: 20,
+          totalPages: 2,
+          onPageChange: () => undefined,
+          onPageSizeChange: () => undefined,
+        }}
+        rowKey={item => item.id}
+      />,
+    )
+
+    expect(screen.getByRole('cell', { name: 'One' })).toHaveClass('px-3', 'sm:px-4')
+    expect(screen.getByRole('cell', { name: 'One' })).not.toHaveClass('px-4')
+    expect(screen.getByRole('navigation').parentElement).toHaveClass(
+      'w-full',
+      'justify-between',
+      'sm:w-auto',
+      'sm:justify-center',
+    )
   })
 
   it('uses the same top border for the header-to-row and row-to-row separators', () => {

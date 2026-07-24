@@ -179,7 +179,6 @@ export function ProjectRuntimeConfigSetsPage({ projectId, ref }: { projectId: st
           },
         }}
         rowKey={item => item.id}
-        variant="plain"
       />
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="flex max-h-[88vh] max-w-3xl flex-col overflow-hidden p-0">

@@ -5,6 +5,8 @@ import { ScrollArea } from './scroll-area'
 
 type TableFrameProps = ComponentProps<'div'> & {
   children: ReactNode
+  footer?: ReactNode
+  footerClassName?: string
   framed?: boolean
   scrollAreaClassName?: string
   scrollbars?: ComponentProps<typeof ScrollArea>['scrollbars']
@@ -19,6 +21,8 @@ type TableFrameProps = ComponentProps<'div'> & {
 function TableFrame({
   children,
   className,
+  footer,
+  footerClassName,
   framed = true,
   scrollAreaClassName,
   scrollbars = 'horizontal',
@@ -28,7 +32,7 @@ function TableFrame({
   return (
     <div
       className={cn(
-        'relative min-h-0 min-w-0 max-w-full overflow-hidden',
+        'relative flex min-h-0 min-w-0 max-w-full flex-col overflow-hidden',
         framed
           ? 'rounded-container border border-border bg-card'
           : 'border-0 bg-transparent',
@@ -38,12 +42,23 @@ function TableFrame({
       {...props}
     >
       <ScrollArea
-        className={cn('min-h-0 w-full min-w-0 max-w-full bg-transparent', scrollAreaClassName)}
+        className={cn('min-h-0 w-full min-w-0 max-w-full flex-1 bg-transparent', scrollAreaClassName)}
         scrollbars={scrollbars}
         type={scrollType}
       >
         {children}
       </ScrollArea>
+      {footer && (
+        <div
+          className={cn(
+            'shrink-0 border-t border-border bg-card',
+            footerClassName,
+          )}
+          data-slot="table-frame-footer"
+        >
+          {footer}
+        </div>
+      )}
     </div>
   )
 }

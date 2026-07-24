@@ -51,8 +51,10 @@ For the first target, focus on:
 - Stage: development, test, staging, or production.
 - Registry: where build output is pushed.
 - Service ports: multiple ports are supported, and the first port is the default.
-- Runtime size: replicas, CPU, memory, and data volume.
+- Runtime configuration: replicas, CPU, memory, project-level shared configuration, and deployment-level overrides.
 - Build policy: timeout and whether a successful build should auto release.
+
+The deployment target form follows a clear order: Basic deployment, Build settings, Runtime configuration, Release policy, Deployment hooks, Runtime data, and Advanced Kubernetes configuration. Build settings appear only for repository sources. Runtime resources and injected configuration are managed together immediately after build settings, while longer guidance is available from the help control beside each section title.
 
 For a new service, it is often easier to create the first Release from an existing image. After the Pod and route are healthy, connect a Git provider and enable automated builds.
 

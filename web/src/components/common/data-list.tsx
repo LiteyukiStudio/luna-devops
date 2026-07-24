@@ -3,7 +3,6 @@ import { MoreHorizontal } from 'lucide-react'
 import { useState, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { TableFrame } from '@/components/ui/table-frame'
@@ -35,7 +34,6 @@ interface DataListProps<T> {
   rowKey: (item: T) => string
   title?: ReactNode
   toolbar?: ReactNode
-  variant?: 'card' | 'plain'
   emptyTitle: string
   emptyActions?: ReactNode
   emptyDescription?: ReactNode
@@ -207,7 +205,6 @@ export function DataList<T>({
   rowKey,
   title,
   toolbar,
-  variant = 'card',
   emptyTitle,
   emptyActions,
   emptyDescription,
@@ -255,20 +252,39 @@ export function DataList<T>({
     }
     selection.onSelectionChange([...next])
   }
+  const tableFooter = pagination && pagination.total > 0 && !loading
+    ? (
+        <div className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
+          <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <span>{pagination.pageInfoLabel}</span>
+            <PaginationController
+              className="w-full justify-between sm:w-auto sm:justify-center"
+              hideOnSinglePage
+              initialPage={pagination.page}
+              pageSize={pagination.pageSize}
+              defaultPageSize={pagination.defaultPageSize}
+              pageSizeOptions={pagination.pageSizeOptions}
+              total={pagination.total}
+              onPageChange={pagination.onPageChange}
+              onPageSizeChange={pagination.onPageSizeChange}
+            />
+          </div>
+        </div>
+      )
+    : undefined
 
   return (
-    <Card
+    <div
       className={cn(
-        'flex w-full min-w-0 max-w-full max-h-none flex-col overflow-hidden border-0 md:max-h-[calc(100vh-15rem)]',
+        'flex w-full min-w-0 max-w-full max-h-none flex-col md:max-h-[calc(100vh-15rem)]',
         constrainedHeight && 'md:h-[calc(100vh-15rem)]',
-        variant === 'plain' && 'rounded-none bg-transparent shadow-none',
       )}
-      padding="none"
+      data-slot="data-list"
     >
       {hasTools && (
         <div
           className={cn(
-            'flex shrink-0 flex-col gap-3 px-0 py-4 sm:flex-row sm:flex-wrap sm:items-center sm:px-4',
+            'flex shrink-0 flex-col gap-3 pb-4 sm:flex-row sm:flex-wrap sm:items-center',
             title ? 'sm:justify-between' : 'sm:justify-start',
           )}
           data-slot="data-list-tools"
@@ -299,9 +315,10 @@ export function DataList<T>({
       )}
       <TableFrame
         className={cn(
-          'mx-0 w-auto flex-1 sm:mx-group',
+          'w-full flex-1',
           !hasTools && showTableFrame && 'mt-group',
         )}
+        footer={tableFooter}
         framed={showTableFrame}
         scrollAreaClassName="h-full"
         scrollbars="both"
@@ -325,7 +342,7 @@ export function DataList<T>({
                   <thead className="sticky top-0 z-10 [background:var(--data-list-header-surface)]">
                     <tr>
                       {selectable && (
-                        <th className="h-11 w-10 px-4 py-3 text-left align-middle text-sm font-medium whitespace-nowrap text-foreground">
+                        <th className="h-11 w-10 px-3 py-3 text-left align-middle text-sm font-medium whitespace-nowrap text-foreground sm:px-4">
                           <input
                             aria-label={selection?.selectAllLabel}
                             checked={allRowsSelected}
@@ -344,8 +361,8 @@ export function DataList<T>({
                         <th
                           key={column.key}
                           className={cn(
-                            'h-11 px-4 py-3 text-left align-middle text-sm font-medium whitespace-nowrap text-foreground',
                             column.className,
+                            'h-11 px-3 py-3 text-left align-middle text-sm font-medium whitespace-nowrap text-foreground sm:px-4',
                             stickyColumnClass(column.sticky, 'header'),
                             column.headerClassName,
                             column.mobile === 'hidden' && 'hidden md:table-cell',
@@ -369,7 +386,7 @@ export function DataList<T>({
                           className="group border-t border-border transition-colors hover:[&>td]:[background:var(--data-list-row-hover)] [&>td]:transition-colors"
                         >
                           {selectable && (
-                            <td className="w-10 px-4 py-3 align-middle">
+                            <td className="w-10 px-3 py-3 align-middle sm:px-4">
                               <input
                                 aria-label={selection?.selectRowLabel(item)}
                                 checked={selectedKeySet.has(itemKey)}
@@ -389,8 +406,8 @@ export function DataList<T>({
                               <td
                                 key={column.key}
                                 className={cn(
-                                  'px-4 py-3 align-middle',
                                   column.className,
+                                  'px-3 py-3 align-middle sm:px-4',
                                   stickyColumnClass(column.sticky, 'cell'),
                                   column.cellClassName,
                                   column.mobile === 'hidden' && 'hidden md:table-cell',
@@ -412,23 +429,6 @@ export function DataList<T>({
                 </table>
               )}
       </TableFrame>
-
-      {pagination && pagination.total > 0 && !loading && (
-        <div className="shrink-0 px-0 py-3 text-sm text-muted-foreground sm:px-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <span>{pagination.pageInfoLabel}</span>
-            <PaginationController
-              initialPage={pagination.page}
-              pageSize={pagination.pageSize}
-              defaultPageSize={pagination.defaultPageSize}
-              pageSizeOptions={pagination.pageSizeOptions}
-              total={pagination.total}
-              onPageChange={pagination.onPageChange}
-              onPageSizeChange={pagination.onPageSizeChange}
-            />
-          </div>
-        </div>
-      )}
-    </Card>
+    </div>
   )
 }

@@ -158,7 +158,6 @@ export function ProjectBuildVariableSetsPage({ projectId, ref }: { projectId: st
           },
         }}
         rowKey={item => item.id}
-        variant="plain"
       />
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-3xl">

@@ -167,7 +167,7 @@ export function ApplicationDeploymentTargetDialog({
           <div className="grid gap-3 overflow-y-auto px-6 py-4 pb-6">
             <ProgressiveSection
               defaultOpen
-              description={t('deploymentsPage.progressiveBasicDescription')}
+              hint={t('deploymentsPage.progressiveBasicDescription')}
               storageKey="luna.deployments.targetDialog.basic"
               summary={summaries.basic}
               title={t('deploymentsPage.progressiveBasicTitle')}
@@ -210,7 +210,7 @@ export function ApplicationDeploymentTargetDialog({
             </ProgressiveSection>
             {sourceType === 'repository' && (
               <ProgressiveSection
-                description={t('deploymentsPage.progressiveBuildDescription')}
+                hint={t('deploymentsPage.progressiveBuildDescription')}
                 storageKey="luna.deployments.targetDialog.build"
                 summary={summaries.build}
                 title={t('deploymentsPage.progressiveBuildTitle')}
@@ -257,109 +257,28 @@ export function ApplicationDeploymentTargetDialog({
               </ProgressiveSection>
             )}
             <ProgressiveSection
-              description={t('deploymentsPage.progressiveRuntimeDescription')}
+              hint={t('deploymentsPage.progressiveRuntimeConfigDescription')}
               storageKey="luna.deployments.targetDialog.runtime"
-              summary={summaries.runtime}
-              title={t('deploymentsPage.progressiveRuntimeTitle')}
-            >
-              <RuntimeResourceFields form={form} priceText={runtimeCostText} />
-            </ProgressiveSection>
-            <ProgressiveSection
-              description={t('deploymentsPage.progressivePolicyDescription')}
-              storageKey="luna.deployments.targetDialog.policy"
-              summary={summaries.policy}
-              title={t('deploymentsPage.progressivePolicyTitle')}
-            >
-              <div className="grid gap-3 md:grid-cols-2">
-                <Field hint={t('deploymentsPage.branchPatternHint')} label={t('deploymentsPage.branchPattern')}>
-                  <Input {...form.register('branchPattern')} placeholder={t('deploymentsPage.branchPatternPlaceholder')} />
-                </Field>
-                <Field hint={t('deploymentsPage.tagPatternHint')} label={t('deploymentsPage.tagPattern')}>
-                  <Input {...form.register('tagPattern')} placeholder={t('deploymentsPage.tagPatternPlaceholder')} />
-                </Field>
-                <Field hint={t('apps.buildConcurrencyPolicyHint')} label={t('apps.buildConcurrencyPolicy')}>
-                  <Select {...form.register('concurrencyPolicy')}>
-                    <option value="queue">{t('apps.buildConcurrencyPolicies.queue')}</option>
-                    <option value="parallel">{t('apps.buildConcurrencyPolicies.parallel')}</option>
-                  </Select>
-                </Field>
-                <Field label={t('deploymentsPage.autoDeploy')}>
-                  <Select {...form.register('autoDeploy')}>
-                    <option value="false">{t('common.disabled')}</option>
-                    <option value="true">{t('common.enabled')}</option>
-                  </Select>
-                </Field>
-              </div>
-            </ProgressiveSection>
-            <ProgressiveSection
-              description={t('deploymentsPage.deploymentHooksDescription')}
-              storageKey="luna.deployments.targetDialog.hooks"
-              summary={summaries.hooks}
-              title={t('deploymentsPage.deploymentHooks')}
-            >
-              <div className="grid gap-4">
-                <CheckboxField description={t('deploymentsPage.deploymentHooksEnabledHint')} {...form.register('buildHooksEnabled')}>
-                  {t('deploymentsPage.deploymentHooksEnabled')}
-                </CheckboxField>
-                {hooksError && (
-                  <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                    {t('projectHooks.loadFailedDescription')}
-                  </p>
-                )}
-                <ApplicationDeploymentHooksEditor
-                  bindings={selectedHookBindings}
-                  disabled={!targetBuildHooksEnabled || hooksLoading}
-                  hooks={hooks}
-                  onChange={onSetHookBindings}
-                />
-              </div>
-            </ProgressiveSection>
-            <ProgressiveSection
-              description={t('deploymentsPage.runtimeDataDescription')}
-              storageKey="luna.deployments.targetDialog.data"
-              summary={summaries.data}
-              title={t('deploymentsPage.runtimeData')}
-            >
-              <div className="grid gap-3">
-                <Field hint={t('deploymentsPage.dataRetentionHint')} label={t('deploymentsPage.dataRetention')}>
-                  <Select {...form.register('dataRetentionEnabled')}>
-                    <option value="false">{t('common.disabled')}</option>
-                    <option value="true">{t('common.enabled')}</option>
-                  </Select>
-                </Field>
-                {targetDataRetentionEnabled && (
-                  <RuntimeDataVolumesEditor enabled={targetDataRetentionEnabled} rows={targetDataVolumes} onChange={onUpdateDataVolumes} />
-                )}
-              </div>
-            </ProgressiveSection>
-            <ProgressiveSection
-              description={t('deploymentsPage.progressiveKubernetesAdvancedDescription')}
-              storageKey="luna.deployments.targetDialog.kubernetesAdvanced"
-              summary={summaries.kubernetesAdvanced}
-              title={t('deploymentsPage.progressiveKubernetesAdvancedTitle')}
-            >
-              <KubernetesAdvancedFields dataRetentionEnabled={targetDataRetentionEnabled} form={form} />
-            </ProgressiveSection>
-            <ProgressiveSection
-              description={t('deploymentsPage.runtimeConfigDescription')}
-              storageKey="luna.deployments.targetDialog.config"
-              summary={summaries.config}
+              summary={t('deploymentsPage.progressiveRuntimeConfigSummary', { config: summaries.config, runtime: summaries.runtime })}
               title={t('deploymentsPage.runtimeConfig')}
             >
-              <ApplicationRuntimeConfigSelector
-                redeployableCount={runtimeConfigRedeployableCount}
-                redeployPending={runtimeConfigRedeployPending}
-                restartAffectedCount={runtimeConfigRestartAffectedCount}
-                selectedRefs={selectedRuntimeConfigRefs}
-                sets={runtimeConfigSets}
-                onCreate={() => onEditRuntimeConfigSet()}
-                onDismissRestart={onDismissRuntimeConfigRestart}
-                onEdit={onEditRuntimeConfigSet}
-                onModeChange={onChangeRuntimeConfigMode}
-                onRedeployAffected={onRedeployRuntimeConfigTargets}
-                onToggle={onToggleRuntimeConfigSet}
-              />
-              <div className="grid gap-3 rounded-md border border-dashed border-border p-3">
+              <RuntimeResourceFields form={form} priceText={runtimeCostText} />
+              <div className="grid gap-4 border-t border-border pt-4">
+                <ApplicationRuntimeConfigSelector
+                  redeployableCount={runtimeConfigRedeployableCount}
+                  redeployPending={runtimeConfigRedeployPending}
+                  restartAffectedCount={runtimeConfigRestartAffectedCount}
+                  selectedRefs={selectedRuntimeConfigRefs}
+                  sets={runtimeConfigSets}
+                  onCreate={() => onEditRuntimeConfigSet()}
+                  onDismissRestart={onDismissRuntimeConfigRestart}
+                  onEdit={onEditRuntimeConfigSet}
+                  onModeChange={onChangeRuntimeConfigMode}
+                  onRedeployAffected={onRedeployRuntimeConfigTargets}
+                  onToggle={onToggleRuntimeConfigSet}
+                />
+              </div>
+              <div className="grid gap-3 border-t border-border pt-4">
                 <p className="text-sm font-medium text-foreground">{t('deploymentsPage.advancedRuntimeOverrides')}</p>
                 <Field hint={t('deploymentsPage.runtimeEnvVarsHint')} label={t('deploymentsPage.runtimeEnvVars')}>
                   <textarea className="min-h-24 rounded-md border border-input bg-background px-3 py-2 text-sm outline-none transition focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/20" {...form.register('envVars')} placeholder={t('deploymentsPage.runtimeEnvVarsPlaceholder')} />
@@ -388,6 +307,82 @@ export function ApplicationDeploymentTargetDialog({
                   />
                 </Field>
               </div>
+            </ProgressiveSection>
+            <ProgressiveSection
+              hint={t('deploymentsPage.progressivePolicyDescription')}
+              storageKey="luna.deployments.targetDialog.policy"
+              summary={summaries.policy}
+              title={t('deploymentsPage.progressivePolicyTitle')}
+            >
+              <div className="grid gap-3 md:grid-cols-2">
+                <Field hint={t('deploymentsPage.branchPatternHint')} label={t('deploymentsPage.branchPattern')}>
+                  <Input {...form.register('branchPattern')} placeholder={t('deploymentsPage.branchPatternPlaceholder')} />
+                </Field>
+                <Field hint={t('deploymentsPage.tagPatternHint')} label={t('deploymentsPage.tagPattern')}>
+                  <Input {...form.register('tagPattern')} placeholder={t('deploymentsPage.tagPatternPlaceholder')} />
+                </Field>
+                <Field hint={t('apps.buildConcurrencyPolicyHint')} label={t('apps.buildConcurrencyPolicy')}>
+                  <Select {...form.register('concurrencyPolicy')}>
+                    <option value="queue">{t('apps.buildConcurrencyPolicies.queue')}</option>
+                    <option value="parallel">{t('apps.buildConcurrencyPolicies.parallel')}</option>
+                  </Select>
+                </Field>
+                <Field label={t('deploymentsPage.autoDeploy')}>
+                  <Select {...form.register('autoDeploy')}>
+                    <option value="false">{t('common.disabled')}</option>
+                    <option value="true">{t('common.enabled')}</option>
+                  </Select>
+                </Field>
+              </div>
+            </ProgressiveSection>
+            <ProgressiveSection
+              hint={t('deploymentsPage.deploymentHooksDescription')}
+              storageKey="luna.deployments.targetDialog.hooks"
+              summary={summaries.hooks}
+              title={t('deploymentsPage.deploymentHooks')}
+            >
+              <div className="grid gap-4">
+                <CheckboxField description={t('deploymentsPage.deploymentHooksEnabledHint')} {...form.register('buildHooksEnabled')}>
+                  {t('deploymentsPage.deploymentHooksEnabled')}
+                </CheckboxField>
+                {hooksError && (
+                  <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                    {t('projectHooks.loadFailedDescription')}
+                  </p>
+                )}
+                <ApplicationDeploymentHooksEditor
+                  bindings={selectedHookBindings}
+                  disabled={!targetBuildHooksEnabled || hooksLoading}
+                  hooks={hooks}
+                  onChange={onSetHookBindings}
+                />
+              </div>
+            </ProgressiveSection>
+            <ProgressiveSection
+              hint={t('deploymentsPage.runtimeDataDescription')}
+              storageKey="luna.deployments.targetDialog.data"
+              summary={summaries.data}
+              title={t('deploymentsPage.runtimeData')}
+            >
+              <div className="grid gap-3">
+                <Field hint={t('deploymentsPage.dataRetentionHint')} label={t('deploymentsPage.dataRetention')}>
+                  <Select {...form.register('dataRetentionEnabled')}>
+                    <option value="false">{t('common.disabled')}</option>
+                    <option value="true">{t('common.enabled')}</option>
+                  </Select>
+                </Field>
+                {targetDataRetentionEnabled && (
+                  <RuntimeDataVolumesEditor enabled={targetDataRetentionEnabled} rows={targetDataVolumes} onChange={onUpdateDataVolumes} />
+                )}
+              </div>
+            </ProgressiveSection>
+            <ProgressiveSection
+              hint={t('deploymentsPage.progressiveKubernetesAdvancedDescription')}
+              storageKey="luna.deployments.targetDialog.kubernetesAdvanced"
+              summary={summaries.kubernetesAdvanced}
+              title={t('deploymentsPage.progressiveKubernetesAdvancedTitle')}
+            >
+              <KubernetesAdvancedFields dataRetentionEnabled={targetDataRetentionEnabled} form={form} />
             </ProgressiveSection>
             {targetHasRuntimeChanges && (
               <div className="flex gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-amber-950 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100">

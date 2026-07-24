@@ -47,4 +47,26 @@ describe('table layout', () => {
       'hover:[background:var(--data-list-row-hover)]',
     )
   })
+
+  it('renders an optional footer inside the same framed boundary', () => {
+    render(
+      <Table footer={<div>Table footer</div>}>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Name</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          <TableRow>
+            <TableCell>Example</TableCell>
+          </TableRow>
+        </TableBody>
+      </Table>,
+    )
+
+    const frame = screen.getByRole('table').closest('[data-slot="table-container"]')
+    const footer = screen.getByText('Table footer').closest<HTMLElement>('[data-slot="table-frame-footer"]')
+    expect(frame).toContainElement(footer)
+    expect(footer).toHaveClass('border-t', 'border-border', 'bg-card')
+  })
 })

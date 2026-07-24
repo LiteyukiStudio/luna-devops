@@ -28,12 +28,12 @@ Tailwind v4 token 集中维护在 `web/src/styles/design-tokens.css`，品牌色
 
 | 页面类型 | `PageShell` 宽度 | 推荐结构 |
 | --- | --- | --- |
-| 资源列表 | `full` | `PageToolbar` + `DataList` |
+| 资源列表 | `full` | `PageChrome` + `DataList` |
 | 看板与概览 | `content` | 待处理事项 + `MetricGroup` + `Section` |
 | 设置 | `settings` | `ContentTabs` + `Section` / `Surface` |
 | 日志、终端、拓扑 | `tool` | 工具栏 + 内嵌工作区 |
 
-`DataList` 本身就是列表外壳，不需要额外套一层 Card。列表外壳使用 `Card padding="none"`，工具区、表头、正文与分页各自维护内部留白，避免默认 `p-section` 在表格四周形成重复空白。页面默认只保留一个实心主操作，搜索、筛选、排序和刷新应放入 `PageToolbar` 或 `ContentTabs.tools`。
+`DataList` 本身就是完整列表，不需要额外套一层 Card。公共 `TableFrame` 使用同一个边框和圆角容纳可滚动表体与可选表尾，分页位于表尾，不在表格外再生成独立容器。工具区、表头、正文与表尾各自维护内部留白，避免在表格四周形成重复空白。页面默认只保留一个实心主操作，搜索、筛选、排序和刷新应放入 `DataList.toolbar` 或 `ContentTabs.tools`。
 
 ## 表面层级
 
@@ -71,7 +71,7 @@ Tailwind v4 token 集中维护在 `web/src/styles/design-tokens.css`，品牌色
 - 侧栏品牌区使用 72px 高度，40px Logo 与品牌区顶部、左侧均保持 16px 留白，避免横纵边距失衡。
 - 内容 Tab 的灰色基线与主题色高亮线共享同一底部坐标，两条线均使用圆角端点；Tab Trigger 不再额外绘制下边框，避免高亮线与基线产生悬空间隙。
 - `SearchSelect` 与 `SearchMultiSelect` 通过 `size="default" | "sm"` 统一控制触发器、搜索栏、选项字号、纵向间距、图标和勾选框尺寸；密集筛选区使用 `sm`，普通表单保持 `default`，业务页面不要分别覆盖内部元素 class。
-- `DataList` 的 Card 外壳不绘制边框；表格滚动视口由公共 `TableFrame` 使用单层原生语义边框和圆角裁剪明确局部归属。禁止用嵌套背景与内边距模拟边框，避免 sticky 表头在圆角处产生抗锯齿接缝。表格内部仅保留数据行之间的必要结构线，工具区、末行与分页区不重复画线。列表没有标题、搜索、筛选或批量操作工具区时，`DataList` 自动在表格上方保留一个 `spacing-group`，业务页面不需要另加补偿间距。
+- `DataList` 不创建 Card 外壳；表格滚动视口和可选表尾由公共 `TableFrame` 使用单层原生语义边框与圆角裁剪共同持有。分页属于表尾，并固定在横向滚动区域之外，宽表格滚动时仍保持可见。禁止用嵌套背景与内边距模拟边框，避免 sticky 表头在圆角处产生抗锯齿接缝。表格内部仅保留数据行之间的必要结构线，表体与表尾之间只保留一条分隔线。列表没有标题、搜索、筛选或批量操作工具区时，`DataList` 自动在表格上方保留一个 `spacing-group`，业务页面不需要另加补偿间距。移动端表格单元格使用紧凑横向留白；单页列表只显示条目摘要，不展示无效的每页条数与翻页控件，多页列表再按响应式两层布局展示分页。
 - 列表页的搜索、筛选、排序和刷新控件统一放入 `DataList` 表头工具区，并从左侧开始排列。页面标题已经表达列表上下文时，不要再显示“XX 列表”这类重复标题；只有同一页面存在多个需要区分的独立列表时才使用 `DataList.title`。创建等页面级主操作放在 `PageChrome` 标题右侧。不要在列表外再增加独立查询工具栏。`DataList.toolbar` 用于搜索框之外的筛选、排序和刷新组合。
 - 主表单、设置面板和账号面板默认使用 `p-6`；目录卡片、指标卡片等高频扫描内容可以使用 `p-4` 或 `p-5`；`DataList`、日志、拓扑、终端和 iframe 外壳使用 `p-0`，由内部结构控制留白。不要在同一个容器同时叠加父级 padding 与子级补偿 margin。
 - 页面主要区块使用 `gap-6`。

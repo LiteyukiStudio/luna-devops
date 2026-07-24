@@ -130,7 +130,6 @@ export function ProjectHooksPage({ projectId, ref }: { projectId: string, ref?: 
               emptyTitle={t('projectHooks.emptyTitle')}
               items={hookItems}
               rowKey={item => item.id}
-              variant="plain"
             />
           )
         : <EmptyState description={t('projectHooks.emptyDescription')} title={t('projectHooks.emptyTitle')} variant="plain" />}
