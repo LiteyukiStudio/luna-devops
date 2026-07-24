@@ -37,7 +37,7 @@ export function DataListSkeleton({ columns = 4, rows = 6 }: { columns?: number, 
       </div>
       <div>
         {Array.from({ length: rows }, (_, row) => (
-          <div key={row} className="grid min-h-14 items-center gap-4 border-t border-separator-strong px-4 py-3" style={{ gridTemplateColumns: `repeat(${columns}, minmax(7rem, 1fr))` }}>
+          <div key={row} className="grid min-h-14 items-center gap-4 border-t border-border px-4 py-3" style={{ gridTemplateColumns: `repeat(${columns}, minmax(7rem, 1fr))` }}>
             {Array.from({ length: columns }, (_, column) => (
               <Skeleton key={column} className={cn('h-4 max-w-full', column === 0 ? 'w-32' : 'w-20')} />
             ))}

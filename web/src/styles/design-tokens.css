@@ -35,8 +35,12 @@
   --color-theme-secondary: var(--theme-secondary, var(--primary));
   --color-theme-supporting: var(--theme-supporting, var(--primary));
   --color-theme-highlight: var(--theme-highlight, var(--primary));
+  --color-theme-navigation: var(--theme-navigation, var(--primary));
+  --color-theme-navigation-text: var(--theme-navigation-text, var(--primary-text));
+  --color-theme-emphasis: var(--theme-emphasis, var(--primary));
   --color-sidebar-nav-hover: var(--sidebar-nav-hover);
   --color-sidebar-nav-active: var(--sidebar-nav-active);
+  --color-sidebar-nav-active-text: var(--sidebar-nav-active-text, var(--primary-text));
   --color-danger: hsl(var(--danger));
   --color-danger-subtle: var(--red-3);
   --color-danger-border: var(--red-7);
@@ -99,6 +103,6 @@
 @media (width >= 64rem) {
   :root {
     --layout-page-inline: 4rem;
-    --layout-page-block: 4rem;
+    --layout-page-block: 2rem;
   }
 }

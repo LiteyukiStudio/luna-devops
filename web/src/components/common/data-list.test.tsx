@@ -17,8 +17,17 @@ describe('data list layout', () => {
     )
 
     const table = screen.getByRole('table')
-    expect(table).toHaveClass('w-max', 'min-w-full')
+    expect(table).toHaveClass('w-max', 'min-w-full', 'bg-transparent')
+    expect(screen.getAllByRole('rowgroup')[1]).toHaveClass('bg-card')
     expect(table.closest('[data-scrollbars="both"]')).toHaveAttribute('data-scroll-area-type', 'auto')
+    expect(table.closest('[data-slot="table-frame"]')).toHaveClass(
+      'rounded-container',
+      'border',
+      'border-border',
+      'overflow-hidden',
+      'bg-card',
+    )
+    expect(table.closest('[data-slot="table-frame-clip"]')).not.toBeInTheDocument()
   })
 
   it('uses content width even when a page supplies a legacy fixed width', () => {
@@ -63,7 +72,8 @@ describe('data list layout', () => {
     )
 
     expect(screen.getByRole('columnheader', { name: 'Actions' })).toHaveClass('sticky', 'right-0')
-    expect(screen.getByRole('cell', { name: '...' })).toHaveClass('sticky', 'right-0', 'border-separator-strong')
+    expect(screen.getByRole('cell', { name: '...' })).toHaveClass('sticky', 'right-0', 'border-l-0')
+    expect(screen.getByRole('cell', { name: '...' })).not.toHaveClass('border-separator-strong')
   })
 
   it('renders query controls in the list header toolbar', () => {
@@ -94,31 +104,39 @@ describe('data list layout', () => {
       />,
     )
 
-    expect(screen.getAllByRole('rowgroup')[0]).toHaveClass('bg-card/95')
+    expect(screen.getAllByRole('rowgroup')[0]).toHaveClass('[background:var(--data-list-header-surface)]')
     expect(screen.getAllByRole('rowgroup')[0]).not.toHaveClass('border-separator-strong')
     expect(screen.getByRole('row', { name: 'One' })).toHaveClass(
-      'border-separator-strong',
+      'border-border',
       'border-t',
+      'hover:[&>td]:[background:var(--data-list-row-hover)]',
+    )
+    expect(screen.getByRole('row', { name: 'One' })).not.toHaveClass(
       'hover:border-surface-subtle',
-      'hover:[&>td]:bg-surface-subtle',
       '[&>td:first-child]:rounded-l-container',
       '[&>td:last-child]:rounded-r-container',
     )
-    expect(screen.getByRole('button', { name: 'Sort projects' }).closest('[data-slot="data-list-tools"]')).toHaveClass(
-      'after:border-separator-strong',
-      'after:inset-x-0',
-      'sm:after:inset-x-4',
-      'px-0',
-      'sm:px-4',
+    expect(screen.getByRole('button', { name: 'Sort projects' }).closest('[data-slot="data-list-tools"]')).toHaveClass('px-0', 'sm:px-4')
+    expect(screen.getByRole('button', { name: 'Sort projects' }).closest('[data-slot="data-list-tools"]')?.className).not.toContain('after:')
+    expect(screen.getByRole('table').closest('[data-slot="table-frame"]')).toHaveClass(
+      'mx-0',
+      'sm:mx-group',
+      'rounded-container',
+      'border',
+      'border-border',
     )
-    expect(screen.getByRole('table').closest('[data-slot="scroll-area"]')).toHaveClass('mx-0', 'sm:mx-group')
+    expect(screen.getByRole('table').closest('[data-slot="scroll-area"]')).not.toHaveClass(
+      'rounded-container',
+      'border',
+      'after:ring-1',
+    )
     const search = screen.getByPlaceholderText('Search projects')
     expect(search.parentElement).not.toHaveClass('sm:justify-end')
     expect(search.parentElement).toContainElement(screen.getByRole('button', { name: 'Sort projects' }))
     expect(screen.getByRole('table').closest('[data-slot="card"]')).not.toHaveClass('p-section')
   })
 
-  it('only draws a toolbar separator when tools are present', () => {
+  it('uses the table frame as the only boundary below the toolbar', () => {
     render(
       <DataList
         columns={[{ key: 'name', header: 'Name', render: item => item.name }]}
@@ -141,7 +159,12 @@ describe('data list layout', () => {
     const pagination = screen.getByText('1 item').parentElement?.parentElement
     expect(titleBar?.className).not.toContain('after:')
     expect(pagination?.className).not.toContain('before:')
-    expect(screen.getByRole('row', { name: 'One' })).toHaveClass('border-t', 'border-separator-strong')
+    expect(screen.getByRole('table').closest('[data-slot="table-frame"]')).toHaveClass(
+      'rounded-container',
+      'border',
+      'border-border',
+    )
+    expect(screen.getByRole('row', { name: 'One' })).toHaveClass('border-t', 'border-border')
   })
 
   it('uses the same top border for the header-to-row and row-to-row separators', () => {
@@ -160,7 +183,7 @@ describe('data list layout', () => {
     const rows = screen.getAllByRole('row').slice(1)
     expect(rows).toHaveLength(2)
     for (const row of rows)
-      expect(row).toHaveClass('border-t', 'border-separator-strong')
+      expect(row).toHaveClass('border-t', 'border-border')
   })
 
   it('does not render pagination controls for an empty result', () => {
@@ -183,6 +206,12 @@ describe('data list layout', () => {
 
     expect(screen.queryByText('0 items')).not.toBeInTheDocument()
     expect(screen.queryByRole('navigation')).not.toBeInTheDocument()
+    expect(screen.getByText('Empty').closest('[data-slot="table-frame"]')).toHaveClass('border-0', 'bg-transparent')
+    expect(screen.getByText('Empty').closest('[data-slot="table-frame"]')).not.toHaveClass(
+      'rounded-container',
+      'border',
+      'border-border',
+    )
   })
 
   it('renders a structured loading state instead of the empty state', () => {
@@ -197,6 +226,11 @@ describe('data list layout', () => {
     )
 
     expect(screen.getByRole('status')).toHaveAttribute('aria-busy', 'true')
+    expect(screen.getByRole('status').closest('[data-slot="table-frame"]')).toHaveClass(
+      'rounded-container',
+      'border',
+      'border-border',
+    )
     expect(screen.queryByText('Empty')).not.toBeInTheDocument()
   })
 

@@ -121,7 +121,7 @@ export function PaginationController({
         aria-label={t('pagination.goToPage', { page })}
         className={cn(
           'h-9 min-w-9 rounded-md px-3 text-sm',
-          page === effectivePage && 'border-primary/25 bg-primary/10 text-primary-text shadow-none hover:bg-primary/15 hover:text-primary-text',
+          page === effectivePage && 'border-theme-emphasis/35 bg-theme-emphasis/12 text-foreground shadow-none hover:bg-theme-emphasis/18 hover:text-foreground',
         )}
         isActive={page === effectivePage}
         tabIndex={disabled ? -1 : 0}

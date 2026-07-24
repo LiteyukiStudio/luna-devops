@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { ScrollArea } from '@/components/ui/scroll-area'
+import { TableFrame } from '@/components/ui/table-frame'
 import { cn } from '@/lib/utils'
 import { EmptyState } from './empty-state'
 import { DataListSkeleton } from './loading-states'
@@ -76,9 +76,9 @@ function stickyColumnClass(sticky: DataListColumn<unknown>['sticky'], surface: '
 
   return cn(
     'sticky',
-    surface === 'cell' && (sticky === 'right' ? 'right-0 border-l border-separator-strong group-hover:border-surface-subtle' : 'left-0 border-r border-separator-strong group-hover:border-surface-subtle'),
+    surface === 'cell' && (sticky === 'right' ? 'right-0 border-l-0' : 'left-0 border-r-0'),
     surface === 'header' && (sticky === 'right' ? 'right-0' : 'left-0'),
-    surface === 'header' ? 'z-30 bg-card' : 'z-20 bg-card group-hover:bg-surface-subtle',
+    surface === 'header' ? 'z-30 [background:var(--data-list-header-surface)]' : 'z-20 bg-card group-hover:[background:var(--data-list-row-hover)]',
   )
 }
 
@@ -229,7 +229,7 @@ export function DataList<T>({
   const rowKeys = items.map(rowKey)
   const selectableRowKeys = selection ? items.filter(item => selection.isRowSelectable?.(item) ?? true).map(rowKey) : rowKeys
   const selectable = Boolean(selection)
-  const hasHeaderTools = Boolean(toolbar || search || selection?.bulkActions)
+  const showTableFrame = loading || items.length > 0
   const allRowsSelected = selectableRowKeys.length > 0 && selectableRowKeys.every(key => selectedKeySet.has(key))
   const someRowsSelected = selectableRowKeys.some(key => selectedKeySet.has(key))
   const updateRowSelection = (key: string, selected: boolean) => {
@@ -267,9 +267,8 @@ export function DataList<T>({
       {(title || toolbar || search || selection?.bulkActions) && (
         <div
           className={cn(
-            'relative flex shrink-0 flex-col gap-3 px-0 py-4 sm:flex-row sm:flex-wrap sm:items-center sm:px-4',
+            'flex shrink-0 flex-col gap-3 px-0 py-4 sm:flex-row sm:flex-wrap sm:items-center sm:px-4',
             title ? 'sm:justify-between' : 'sm:justify-start',
-            hasHeaderTools && 'after:absolute after:inset-x-0 after:bottom-0 after:border-b after:border-separator-strong sm:after:inset-x-4',
           )}
           data-slot="data-list-tools"
         >
@@ -297,7 +296,13 @@ export function DataList<T>({
           </div>
         </div>
       )}
-      <ScrollArea className="mx-0 min-h-0 w-auto min-w-0 max-w-full flex-1 sm:mx-group" scrollbars="both" type="auto">
+      <TableFrame
+        className="mx-0 w-auto flex-1 sm:mx-group"
+        framed={showTableFrame}
+        scrollAreaClassName="h-full"
+        scrollbars="both"
+        scrollType="auto"
+      >
         {loading
           ? <DataListSkeleton columns={Math.max(2, Math.min(columns.length + (selectable ? 1 : 0), 6))} />
           : items.length === 0
@@ -312,8 +317,8 @@ export function DataList<T>({
                 />
               )
             : (
-                <table className="w-max min-w-full table-auto caption-bottom text-sm" data-slot="data-list-table">
-                  <thead className="sticky top-0 z-10 bg-card/95 backdrop-blur">
+                <table className="w-max min-w-full table-auto bg-transparent caption-bottom text-sm" data-slot="data-list-table">
+                  <thead className="sticky top-0 z-10 [background:var(--data-list-header-surface)]">
                     <tr>
                       {selectable && (
                         <th className="h-11 w-10 px-4 py-3 text-left align-middle text-sm font-medium whitespace-nowrap text-foreground">
@@ -350,14 +355,14 @@ export function DataList<T>({
                       ))}
                     </tr>
                   </thead>
-                  <tbody className="[&_tr:hover+tr]:border-surface-subtle">
+                  <tbody className="bg-card">
                     {items.map((item) => {
                       const itemKey = rowKey(item)
                       const rowSelectable = selection?.isRowSelectable?.(item) ?? true
                       return (
                         <tr
                           key={itemKey}
-                          className="group border-t border-separator-strong transition-colors hover:border-surface-subtle hover:[&>td]:bg-surface-subtle [&>td]:transition-colors [&>td:first-child]:rounded-l-container [&>td:last-child]:rounded-r-container"
+                          className="group border-t border-border transition-colors hover:[&>td]:[background:var(--data-list-row-hover)] [&>td]:transition-colors"
                         >
                           {selectable && (
                             <td className="w-10 px-4 py-3 align-middle">
@@ -402,7 +407,7 @@ export function DataList<T>({
                   </tbody>
                 </table>
               )}
-      </ScrollArea>
+      </TableFrame>
 
       {pagination && pagination.total > 0 && !loading && (
         <div className="shrink-0 px-0 py-3 text-sm text-muted-foreground sm:px-4">

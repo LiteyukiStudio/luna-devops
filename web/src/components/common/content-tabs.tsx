@@ -114,7 +114,7 @@ export function ContentTabs({
             {tab.value === effectiveValue && (
               <motion.span
                 aria-hidden="true"
-                className="absolute inset-x-0 bottom-0 z-10 h-0.5 rounded-full bg-primary"
+                className="absolute inset-x-0 bottom-0 z-10 h-0.5 rounded-full bg-theme-navigation"
                 layoutId={`${indicatorLayoutId}-${scope}`}
                 transition={reducedMotion ? { duration: 0 } : { duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
               />

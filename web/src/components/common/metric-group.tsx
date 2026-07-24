@@ -43,8 +43,8 @@ export function MetricItem({ emphasis = true, href, icon, label, meta, surface =
   )
 
   return href
-    ? <Link className={className} data-slot="metric-item" data-surface={surface} to={href}>{content}</Link>
-    : <div className={className} data-slot="metric-item" data-surface={surface}>{content}</div>
+    ? <Link className={className} data-slot="metric-item" data-surface={surface} data-tone={tone} to={href}>{content}</Link>
+    : <div className={className} data-slot="metric-item" data-surface={surface} data-tone={tone}>{content}</div>
 }
 
 function metricToneClassName(tone: MetricTone) {

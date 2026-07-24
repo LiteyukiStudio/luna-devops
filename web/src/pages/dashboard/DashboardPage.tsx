@@ -75,50 +75,54 @@ export function DashboardPage() {
             <span className="text-xs text-muted-foreground">{t('dashboardPage.activeTasksTotal', { count: activeTasks })}</span>
           )}
         </div>
-        <MetricGroup>
-          <MetricItem emphasis={overview.summary.activeBuilds > 0} href="/events?categories=build&statuses=in_progress" icon={<Hammer size={18} />} label={t('dashboardPage.activeBuilds')} surface="neutral" value={overview.summary.activeBuilds} />
-          <MetricItem emphasis={overview.summary.activeReleases > 0} href="/events?categories=release&statuses=in_progress" icon={<Rocket size={18} />} label={t('dashboardPage.activeReleases')} surface="neutral" value={overview.summary.activeReleases} />
-          <MetricItem emphasis={overview.summary.attentionItems > 0} href="/events?severities=error&severities=warning" icon={<ShieldAlert size={18} />} label={t('dashboardPage.attentionItems')} surface="neutral" tone={overview.summary.attentionItems ? 'danger' : 'neutral'} value={overview.summary.attentionItems} />
-          <MetricItem emphasis={overview.summary.totalClusters > 0} href="/clusters" icon={<Server size={18} />} label={t('dashboardPage.healthyClusters')} surface="neutral" tone={overview.summary.healthyClusters < overview.summary.totalClusters ? 'warning' : 'neutral'} value={`${overview.summary.healthyClusters}/${overview.summary.totalClusters}`} />
-        </MetricGroup>
+        <Surface className="overflow-hidden" data-slot="dashboard-overview" variant="bordered">
+          <div className="p-4 sm:p-6">
+            <MetricGroup>
+              <MetricItem emphasis={overview.summary.activeBuilds > 0} href="/events?categories=build&statuses=in_progress" icon={<Hammer size={18} />} label={t('dashboardPage.activeBuilds')} surface="neutral" value={overview.summary.activeBuilds} />
+              <MetricItem emphasis={overview.summary.activeReleases > 0} href="/events?categories=release&statuses=in_progress" icon={<Rocket size={18} />} label={t('dashboardPage.activeReleases')} surface="neutral" value={overview.summary.activeReleases} />
+              <MetricItem emphasis={overview.summary.attentionItems > 0} href="/events?severities=error&severities=warning" icon={<ShieldAlert size={18} />} label={t('dashboardPage.attentionItems')} surface="neutral" tone={overview.summary.attentionItems ? 'danger' : 'neutral'} value={overview.summary.attentionItems} />
+              <MetricItem emphasis={overview.summary.totalClusters > 0} href="/clusters" icon={<Server size={18} />} label={t('dashboardPage.healthyClusters')} surface="neutral" tone={overview.summary.healthyClusters < overview.summary.totalClusters ? 'warning' : 'neutral'} value={`${overview.summary.healthyClusters}/${overview.summary.totalClusters}`} />
+            </MetricGroup>
+          </div>
+
+          <div className="grid min-w-0 border-t border-border xl:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
+            <Section
+              className="min-w-0 p-5 sm:p-6"
+              icon={<ScrollText size={18} />}
+              title={t('dashboardPage.recentActivity')}
+              tools={(
+                <Link className="text-sm font-medium text-muted-foreground transition hover:text-primary-text" to="/events">
+                  {t('dashboardPage.viewAllEvents')}
+                </Link>
+              )}
+            >
+              <div className={overview.activities.length > 5 ? 'max-h-80 overflow-y-auto pr-1' : ''}>
+                {overview.activities.length
+                  ? (
+                      <div className="divide-y divide-border">
+                        {overview.activities.map(activity => <ActivityRow key={activity.id} activity={activity} />)}
+                      </div>
+                    )
+                  : (
+                      <EmptyState
+                        description={t('dashboardPage.noActivityDescription')}
+                        icon={<Activity className="size-5" />}
+                        title={t('dashboardPage.noActivity')}
+                        variant="plain"
+                      />
+                    )}
+              </div>
+            </Section>
+
+            <Section className="border-t border-border p-5 sm:p-6 xl:border-l xl:border-t-0" icon={<Boxes size={18} />} title={t('dashboardPage.platformReadiness')}>
+              <div className="grid gap-3">
+                <ReadinessRow icon={<Container size={16} />} item={overview.readiness.registries} kind="registries" label={t('registries')} to="/registries" />
+                <ReadinessRow icon={<Server size={16} />} item={overview.readiness.clusters} kind="clusters" label={t('clusters')} to="/clusters" />
+              </div>
+            </Section>
+          </div>
+        </Surface>
       </section>
-
-      <Surface className="grid min-w-0 overflow-hidden xl:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]" variant="bordered">
-        <Section
-          className="min-w-0 p-5 sm:p-6"
-          icon={<ScrollText size={18} />}
-          title={t('dashboardPage.recentActivity')}
-          tools={(
-            <Link className="text-sm font-medium text-muted-foreground transition hover:text-primary-text" to="/events">
-              {t('dashboardPage.viewAllEvents')}
-            </Link>
-          )}
-        >
-          <div className={overview.activities.length > 5 ? 'max-h-80 overflow-y-auto pr-1' : ''}>
-            {overview.activities.length
-              ? (
-                  <div className="divide-y divide-border">
-                    {overview.activities.map(activity => <ActivityRow key={activity.id} activity={activity} />)}
-                  </div>
-                )
-              : (
-                  <EmptyState
-                    description={t('dashboardPage.noActivityDescription')}
-                    icon={<Activity className="size-5" />}
-                    title={t('dashboardPage.noActivity')}
-                    variant="plain"
-                  />
-                )}
-          </div>
-        </Section>
-
-        <Section className="border-t border-border p-5 sm:p-6 xl:border-l xl:border-t-0" icon={<Boxes size={18} />} title={t('dashboardPage.platformReadiness')}>
-          <div className="grid gap-3">
-            <ReadinessRow icon={<Container size={16} />} item={overview.readiness.registries} kind="registries" label={t('registries')} to="/registries" />
-            <ReadinessRow icon={<Server size={16} />} item={overview.readiness.clusters} kind="clusters" label={t('clusters')} to="/clusters" />
-          </div>
-        </Section>
-      </Surface>
 
       <Section
         icon={<FolderKanban size={18} />}

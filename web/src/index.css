@@ -30,8 +30,18 @@
   --separator-subtle: color-mix(in oklab, hsl(var(--border)) 48%, hsl(var(--surface)) 52%);
   --workspace-background: hsl(var(--surface-base));
   --theme-selection-surface: hsl(var(--muted));
+  --theme-navigation: var(--primary);
+  --theme-navigation-text: var(--primary-text);
+  --theme-emphasis: var(--primary);
   --sidebar-nav-hover: hsl(var(--surface-subtle));
   --sidebar-nav-active: hsl(var(--muted));
+  --sidebar-nav-active-text: var(--primary-text);
+  --data-list-header-surface: hsl(var(--surface));
+  --data-list-row-hover: hsl(var(--surface-subtle));
+  --metric-neutral-surface-1: hsl(var(--surface-raised));
+  --metric-neutral-surface-2: hsl(var(--surface-raised));
+  --metric-neutral-surface-3: hsl(var(--surface-raised));
+  --metric-neutral-surface-4: hsl(var(--surface-raised));
   --danger: 0 74% 48%;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   background: hsl(var(--background));
@@ -65,8 +75,14 @@
     color-mix(in oklab, var(--primary) 13%, hsl(var(--surface-base))),
     color-mix(in oklab, var(--theme-secondary) 12%, hsl(var(--surface-base)))
   );
+  --theme-navigation: var(--theme-secondary);
+  --theme-navigation-text: color-mix(in oklab, var(--theme-secondary) 62%, hsl(var(--foreground)));
+  --theme-emphasis: var(--theme-highlight);
   --sidebar-nav-hover: color-mix(in oklab, var(--primary) 14%, hsl(var(--surface-base)));
-  --sidebar-nav-active: color-mix(in oklab, var(--primary) 26%, color-mix(in oklab, var(--theme-secondary) 4%, hsl(var(--surface-base))));
+  --sidebar-nav-active: color-mix(in oklab, var(--primary) 32%, color-mix(in oklab, var(--theme-secondary) 5%, hsl(var(--surface-base))));
+  --sidebar-nav-active-text: var(--primary-text);
+  --data-list-header-surface: color-mix(in oklab, var(--theme-supporting) 5%, hsl(var(--surface)));
+  --data-list-row-hover: color-mix(in oklab, var(--theme-supporting) 6%, hsl(var(--surface-subtle)));
   --workspace-background: color-mix(in oklab, var(--primary-border) 7%, hsl(var(--surface-base)));
 }
 
@@ -76,8 +92,11 @@
   --primary-subtle-active: color-mix(in oklab, var(--primary-border) 18%, color-mix(in oklab, var(--theme-secondary) 7%, hsl(var(--surface-base))));
   --separator-strong: color-mix(in oklab, hsl(var(--border)) 76%, var(--theme-secondary) 24%);
   --separator-subtle: color-mix(in oklab, hsl(var(--border)) 86%, var(--theme-supporting) 14%);
+  --theme-navigation-text: color-mix(in oklab, var(--theme-secondary) 74%, hsl(var(--foreground)));
   --sidebar-nav-hover: color-mix(in oklab, var(--primary) 13%, hsl(var(--surface-base)));
-  --sidebar-nav-active: color-mix(in oklab, var(--primary) 24%, color-mix(in oklab, var(--theme-secondary) 4%, hsl(var(--surface-base))));
+  --sidebar-nav-active: color-mix(in oklab, var(--primary) 30%, color-mix(in oklab, var(--theme-secondary) 5%, hsl(var(--surface-base))));
+  --data-list-header-surface: color-mix(in oklab, var(--theme-supporting) 4%, hsl(var(--surface)));
+  --data-list-row-hover: color-mix(in oklab, var(--theme-supporting) 5%, hsl(var(--surface-subtle)));
   --workspace-background: color-mix(in oklab, var(--primary-border) 6%, hsl(var(--surface-base)));
 }
 
@@ -91,14 +110,21 @@
 )[data-interface-style="themed"] {
   --sidebar-nav-active: linear-gradient(
     115deg,
-    color-mix(in oklab, var(--primary) 28%, hsl(var(--surface-base))),
-    color-mix(in oklab, var(--theme-secondary) 24%, hsl(var(--surface-base)))
+    color-mix(in oklab, var(--primary) 36%, hsl(var(--surface-base))),
+    color-mix(in oklab, var(--theme-secondary) 32%, hsl(var(--surface-base)))
   );
+  --sidebar-nav-active-text: color-mix(in oklab, var(--primary-text) 82%, var(--theme-secondary));
+  --data-list-header-surface: color-mix(in oklab, var(--theme-supporting) 10%, hsl(var(--surface)));
+  --data-list-row-hover: color-mix(in oklab, var(--theme-supporting) 9%, hsl(var(--surface-subtle)));
+  --metric-neutral-surface-1: color-mix(in oklab, var(--primary) 7%, hsl(var(--surface-raised)));
+  --metric-neutral-surface-2: color-mix(in oklab, var(--theme-secondary) 7%, hsl(var(--surface-raised)));
+  --metric-neutral-surface-3: color-mix(in oklab, var(--theme-supporting) 7%, hsl(var(--surface-raised)));
+  --metric-neutral-surface-4: color-mix(in oklab, var(--theme-highlight) 7%, hsl(var(--surface-raised)));
   --workspace-background: linear-gradient(
     135deg,
-    color-mix(in oklab, var(--primary) 8%, hsl(var(--surface-base))) 0%,
-    color-mix(in oklab, var(--theme-secondary) 7%, hsl(var(--surface-base))) 50%,
-    color-mix(in oklab, var(--theme-supporting) 6%, hsl(var(--surface-base))) 100%
+    color-mix(in oklab, var(--primary) 5%, hsl(var(--surface-base))) 0%,
+    color-mix(in oklab, var(--theme-secondary) 4%, hsl(var(--surface-base))) 52%,
+    color-mix(in oklab, var(--theme-supporting) 5%, hsl(var(--surface-base))) 100%
   );
 }
 
@@ -112,15 +138,33 @@
 )[data-interface-style="themed"] {
   --sidebar-nav-active: linear-gradient(
     115deg,
-    color-mix(in oklab, var(--primary) 28%, hsl(var(--surface-base))),
-    color-mix(in oklab, var(--theme-secondary) 22%, hsl(var(--surface-base)))
+    color-mix(in oklab, var(--primary) 34%, hsl(var(--surface-base))),
+    color-mix(in oklab, var(--theme-secondary) 28%, hsl(var(--surface-base)))
   );
+  --data-list-header-surface: color-mix(in oklab, var(--theme-supporting) 8%, hsl(var(--surface)));
+  --data-list-row-hover: color-mix(in oklab, var(--theme-supporting) 7%, hsl(var(--surface-subtle)));
   --workspace-background: linear-gradient(
     135deg,
-    color-mix(in oklab, var(--primary) 7%, hsl(var(--surface-base))) 0%,
-    color-mix(in oklab, var(--theme-secondary) 6%, hsl(var(--surface-base))) 50%,
-    color-mix(in oklab, var(--theme-supporting) 5%, hsl(var(--surface-base))) 100%
+    color-mix(in oklab, var(--primary) 5%, hsl(var(--surface-base))) 0%,
+    color-mix(in oklab, var(--theme-secondary) 4%, hsl(var(--surface-base))) 52%,
+    color-mix(in oklab, var(--theme-supporting) 4%, hsl(var(--surface-base))) 100%
   );
+}
+
+:root [data-slot="metric-group"] > [data-slot="metric-item"][data-tone="neutral"]:nth-child(4n + 1) {
+  background: var(--metric-neutral-surface-1);
+}
+
+:root [data-slot="metric-group"] > [data-slot="metric-item"][data-tone="neutral"]:nth-child(4n + 2) {
+  background: var(--metric-neutral-surface-2);
+}
+
+:root [data-slot="metric-group"] > [data-slot="metric-item"][data-tone="neutral"]:nth-child(4n + 3) {
+  background: var(--metric-neutral-surface-3);
+}
+
+:root [data-slot="metric-group"] > [data-slot="metric-item"][data-tone="neutral"]:nth-child(4n) {
+  background: var(--metric-neutral-surface-4);
 }
 
 :root[data-interface-style="minimal"] {
@@ -131,8 +175,18 @@
   --separator-subtle: color-mix(in oklab, hsl(var(--border)) 48%, hsl(var(--surface)) 52%);
   --workspace-background: hsl(var(--surface-base));
   --theme-selection-surface: hsl(var(--muted));
+  --theme-navigation: var(--primary);
+  --theme-navigation-text: var(--primary-text);
+  --theme-emphasis: var(--primary);
   --sidebar-nav-hover: hsl(var(--surface-subtle));
   --sidebar-nav-active: hsl(var(--muted));
+  --sidebar-nav-active-text: var(--primary-text);
+  --data-list-header-surface: hsl(var(--surface));
+  --data-list-row-hover: hsl(var(--surface-subtle));
+  --metric-neutral-surface-1: hsl(var(--surface-raised));
+  --metric-neutral-surface-2: hsl(var(--surface-raised));
+  --metric-neutral-surface-3: hsl(var(--surface-raised));
+  --metric-neutral-surface-4: hsl(var(--surface-raised));
 }
 
 .workspace-canvas {

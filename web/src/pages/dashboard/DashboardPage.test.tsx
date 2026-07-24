@@ -39,6 +39,9 @@ describe('dashboard page', () => {
     expect(screen.getByText('Partially available')).toBeInTheDocument()
     expect(screen.getByText('Attention').closest('[data-slot="notice"]')).toHaveAttribute('data-variant', 'neutral')
     expect(screen.getByText('Active builds').closest('[data-slot="metric-item"]')).toHaveAttribute('data-surface', 'neutral')
+    const overview = screen.getByText('Active builds').closest('[data-slot="dashboard-overview"]')
+    expect(overview).toContainElement(screen.getByText('Recent activity'))
+    expect(overview).toContainElement(screen.getByText('Platform readiness'))
     expect(mocks.getDashboard).toHaveBeenCalledTimes(1)
   })
 

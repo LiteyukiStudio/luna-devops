@@ -108,7 +108,7 @@ const pageMetaRules = [
 function sidebarMenuButtonClassName(active?: boolean) {
   return cn(
     'flex h-10 w-full min-w-0 max-w-full items-center gap-3 overflow-hidden rounded-lg px-3 text-sm font-normal leading-none text-muted-foreground transition-all duration-150 hover:bg-sidebar-nav-hover hover:text-primary-text-strong',
-    active && '[background:var(--sidebar-nav-active)] text-primary-text-strong hover:[background:var(--sidebar-nav-active)]',
+    active && 'font-semibold [background:var(--sidebar-nav-active)] text-sidebar-nav-active-text hover:font-semibold hover:[background:var(--sidebar-nav-active)] hover:text-sidebar-nav-active-text',
   )
 }
 
@@ -219,7 +219,7 @@ export function AppLayout() {
                         onClick={onNavigate}
                       >
                         <item.icon className="size-4 shrink-0" />
-                        <span className="min-w-0 flex-1 truncate text-sm font-normal leading-none">{t(item.labelKey)}</span>
+                        <span className="min-w-0 flex-1 truncate text-sm leading-none">{t(item.labelKey)}</span>
                       </NavLink>
                     </SidebarMenuItem>
                   ))}

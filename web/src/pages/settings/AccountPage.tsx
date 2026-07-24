@@ -84,7 +84,7 @@ export function AccountPage() {
         <motion.div
           key={activeTab}
           animate={{ opacity: 1, y: 0 }}
-          className={activeTab === 'profile' || activeTab === 'security' ? 'mx-auto w-full max-w-3xl' : undefined}
+          className={activeTab === 'profile' || activeTab === 'security' ? 'w-full max-w-3xl' : undefined}
           initial={{ opacity: 0, y: 6 }}
           transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
         >
