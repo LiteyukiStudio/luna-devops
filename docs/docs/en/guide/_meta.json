@@ -23,5 +23,10 @@
     "type": "file",
     "name": "build-and-release",
     "label": "Build and Release"
+  },
+  {
+    "type": "dir",
+    "name": "cli",
+    "label": "Luna CLI"
   }
 ]

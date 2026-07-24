@@ -7,15 +7,15 @@
 Stable channel:
 
 ```bash
-npm install --global @liteyukistudio/luna-cli
-pnpm add --global @liteyukistudio/luna-cli
+npm install --global @liteyuki/luna-cli
+pnpm add --global @liteyuki/luna-cli
 ```
 
 Prereleases require an explicit channel:
 
 ```bash
-npm install --global @liteyukistudio/luna-cli@next
-pnpm add --global @liteyukistudio/luna-cli@beta
+npm install --global @liteyuki/luna-cli@next
+pnpm add --global @liteyuki/luna-cli@beta
 ```
 
 Verify the installation:
@@ -29,7 +29,7 @@ The npm distribution requires Node.js `22.14.0` or later. Use a Node.js version 
 
 ## Standalone binaries
 
-Stable releases currently include Linux x64, Linux arm64, and Linux x64 musl binaries. Download the matching asset and `SHA256SUMS`:
+The first stable release is planned to include Linux x64, Linux arm64, and Linux x64 musl binaries. After a release is available, download the matching asset and `SHA256SUMS`:
 
 ```bash
 version="cli-vX.Y.Z"
@@ -73,8 +73,8 @@ The command registry supports Bash, Zsh, Fish, and PowerShell completion generat
 ## Uninstall
 
 ```bash
-npm uninstall --global @liteyukistudio/luna-cli
-pnpm remove --global @liteyukistudio/luna-cli
+npm uninstall --global @liteyuki/luna-cli
+pnpm remove --global @liteyuki/luna-cli
 rm "${HOME}/.local/bin/luna"
 ```
 

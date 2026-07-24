@@ -1,22 +1,23 @@
 ---
 name: luna-devops-registry
-description: 使用已安装的 Luna DevOps CLI 管理 OCI 镜像站、镜像凭据、镜像仓库、标签、镜像记录和镜像模板；CLI 可用前仅用于规划。
+description: 通过 Luna CLI 管理 OCI 镜像站、凭据元数据、连接测试、镜像记录和项目默认镜像站；执行前以机器 Help 确认具体工具。
 ---
 
 # 镜像站 Skill
 
-先遵循 `luna-devops-cli`，并从机器可读 Help 发现 registry 和 image 命令。
+先遵循 `luna-devops-cli`。当前 `registry` 分类覆盖镜像站与凭据 CRUD、连接测试、镜像记录和项目默认镜像站读取。
 
-## 操作流程
+## 工作流
 
-1. 读取镜像站、作用域、凭据元数据和健康状态。
-2. 添加或更新凭据时通过安全输入提供 secret，不使用命令参数。
-3. 变更后使用 CLI 暴露的连接测试。
-4. 构建前确认 push 权限和镜像模板。
-5. 发布前确认 repository、tag 或 digest 确实存在。
+1. 读取镜像站、作用域、健康状态和脱敏凭据元数据。
+2. 写入凭据前确认个人、项目空间或全局作用域。
+3. 使用 Help 指定的安全输入提交 Secret。
+4. 变更后执行已登记的连接测试。
+5. 删除前检查项目默认值、构建与部署引用。
 
-## 安全边界
+## 边界
 
-- 凭据变更是高风险操作，由 CLI 和服务端执行 MFA、权限和审计。
-- 不返回 password、token、robot account secret。
-- 删除镜像站前检查 build、release 和默认镜像站引用并确认影响。
+- 不返回 password、token 或 robot secret。
+- 镜像站连接测试成功不代表某个 tag 一定存在。
+- 镜像记录是平台记录；需要远端实时数据时仅使用目录中明确提供的工具。
+- 凭据和镜像站删除受后端权限、MFA 与审计约束。

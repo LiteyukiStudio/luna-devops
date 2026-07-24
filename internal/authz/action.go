@@ -59,6 +59,10 @@ const (
 	ActionBillingAdjust Action = "billing:write"
 	ActionEventRead     Action = "event:read"
 
+	ActionDashboardRead       Action = "dashboard:read"
+	ActionDataRetentionRead   Action = "retention:read"
+	ActionDataRetentionManage Action = "retention:manage"
+
 	ActionGitRead  Action = "git:read"
 	ActionGitWrite Action = "git:write"
 
@@ -244,6 +248,14 @@ func RequiredAccessTokenScope(path, method string) string {
 		return string(ActionBillingAdjust)
 	case strings.HasPrefix(path, "/api/v1/events") && method == http.MethodGet:
 		return string(ActionEventRead)
+	case path == "/api/v1/dashboard" && method == http.MethodGet:
+		return string(ActionDashboardRead)
+	case path == "/api/v1/data-retention/catalog" && method == http.MethodGet:
+		return string(ActionDataRetentionRead)
+	case path == "/api/v1/data-retention/preview" && method == http.MethodPost:
+		return string(ActionDataRetentionRead)
+	case path == "/api/v1/data-retention/cleanup" && method == http.MethodPost:
+		return string(ActionDataRetentionManage)
 	case strings.HasPrefix(path, "/api/v1/git") && method == http.MethodGet:
 		return string(ActionGitRead)
 	case strings.HasPrefix(path, "/api/v1/git") && method != http.MethodGet:

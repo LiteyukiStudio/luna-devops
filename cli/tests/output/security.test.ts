@@ -23,6 +23,35 @@ describe("output safety", () => {
     expect(redactSensitiveText("Authorization: Bearer abc.def")).not.toContain("abc.def");
   });
 
+  it("preserves capability flags and scope names while redacting token values", () => {
+    expect(redactValue({
+      features: {
+        accessToken: true,
+        oauthAuthorization: true,
+      },
+      scopes: ["access_token:read", "token:read"],
+      accessToken: "secret",
+    })).toEqual({
+      features: {
+        accessToken: true,
+        oauthAuthorization: true,
+      },
+      scopes: ["access_token:read", "token:read"],
+      accessToken: "[REDACTED]",
+    });
+  });
+
+  it("only treats objects on the current recursion path as circular", () => {
+    const shared = { enabled: true };
+    expect(redactValue({ first: shared, second: shared })).toEqual({
+      first: { enabled: true },
+      second: { enabled: true },
+    });
+    const circular: { self?: unknown } = {};
+    circular.self = circular;
+    expect(redactValue(circular)).toEqual({ self: "[CIRCULAR]" });
+  });
+
   it("keeps JSON parseable while escaping unsafe terminal characters", () => {
     const output = stringifyJson({ message: "safe\u202Etext", token: "secret" });
     expect(output).toContain("\\u202e");

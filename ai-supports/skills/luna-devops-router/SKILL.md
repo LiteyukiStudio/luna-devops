@@ -1,34 +1,34 @@
 ---
 name: luna-devops-router
-description: 将 Luna DevOps 请求路由到最小必要的 CLI 领域 Skills；适用于跨越或无法明确归类到项目空间、代码源、镜像站、构建、部署、拓扑、运行时、网关、账单、通知、安全、系统或诊断的任务。
+description: 将 Luna DevOps 请求路由到最少必要的领域 Skills；适用于跨模块任务或尚不能明确归类的 CLI 请求。
 ---
 
 # Luna DevOps Skill 路由器
 
 ## 前置条件
 
-- 先加载 `luna-devops-cli` 并通过 CLI 可用性检查。
-- CLI 不可用时，只能规划或审阅流程，不能直接调用 REST API、Kubernetes API 或第三方 Provider API。
+- 先加载 `luna-devops-cli`，完成 CLI、实例和认证检查。
+- CLI 不可用时只能分析或规划，不能直接调用 REST、Kubernetes 或第三方 API。
+- 领域 Skill 描述的是工作顺序，不保证相关命令已经进入目录；执行前仍须查询机器 Help。
 
 ## 路由规则
 
-- 提到“项目空间、成员、概览、项目列表”：加载 `luna-devops-workspace`。
-- 提到“Git、GitHub、Gitea、仓库、分支、Webhook、绑定”：加载 `luna-devops-source`。
-- 提到“镜像站、Harbor、DockerHub、OCI、镜像 tag、凭据”：加载 `luna-devops-registry`。
-- 提到“构建、BuildKit、Dockerfile、构建日志、变量、模板”：加载 `luna-devops-build`。
-- 提到“应用、部署配置、发布、回滚、重启、副本、资源限制”：加载 `luna-devops-deployment`。
-- 提到“服务依赖、拓扑、ServiceBinding、服务引用、环境变量注入”：加载 `luna-devops-topology`。
-- 提到“集群、Kubernetes、Pod、Service、YAML、事件、终端”：加载 `luna-devops-runtime`。
-- 提到“域名、访问入口、Gateway、HTTPRoute、证书、TLS”：加载 `luna-devops-gateway`。
-- 提到“余额、账单、用量、credits、费率、充值、补偿”：加载 `luna-devops-billing`。
-- 提到“通知、渠道、模板、规则、投递”：加载 `luna-devops-notifications`。
-- 提到“登录、MFA、OIDC、OAuth、用户、Access Token、scope”：加载 `luna-devops-security`。
-- 提到“站点设置、应用市场、系统组件、数据保留”：加载 `luna-devops-system`。
-- 提到“为什么失败、怎么排查、日志、状态异常”：加载 `luna-devops-debugging`，并按故障域追加对应模块。
+- 项目空间、成员、概览、看板：`luna-devops-workspace`
+- Git、GitHub、Gitea、仓库、分支、Webhook、绑定：`luna-devops-source`
+- 镜像站、Harbor、DockerHub、OCI、镜像、凭据：`luna-devops-registry`
+- 构建、BuildKit、Dockerfile、构建日志、变量、模板：`luna-devops-build`
+- 应用、部署配置、发布、回滚、重启、资源规格：`luna-devops-deployment`
+- 服务依赖、拓扑、ServiceBinding：`luna-devops-topology`
+- 集群、Kubernetes、Pod、Service、YAML、事件、终端：`luna-devops-runtime`
+- 域名、访问入口、Gateway、HTTPRoute、证书、TLS：`luna-devops-gateway`
+- 余额、账单、用量、Credits、费率：`luna-devops-billing`
+- 通知、渠道、模板、规则、投递：`luna-devops-notifications`
+- 登录、MFA、OIDC、OAuth、用户、Access Token、Scope：`luna-devops-security`
+- 全局设置、数据保留、应用市场、系统组件：`luna-devops-system`
+- 失败、异常、日志或状态诊断：`luna-devops-debugging` 加对应领域 Skill
 
 ## 加载策略
 
-- 每次只加载当前任务需要的模块 skill。
-- 跨模块任务先加载主模块，再按需要加载辅助模块。
-- 故障排查加载 `luna-devops-debugging` 和受影响的领域 Skill。
-- 不要为了“可能会用到”提前加载所有 skills。
+- 单领域任务只加载根 CLI Skill 和一个领域 Skill。
+- 跨领域任务先加载主领域，再按实际依赖追加。
+- 命令缺失时记录能力缺口并停在规划层，不加载更多 Skill 试图绕过。

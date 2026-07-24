@@ -95,21 +95,24 @@ export function LoginPage() {
   }
 
   return (
-    <div className="grid min-h-screen place-items-center bg-primary-subtle px-4 py-8 text-foreground">
+    <div className="grid min-h-screen place-items-center bg-primary-subtle px-3 py-4 text-foreground sm:px-6 sm:py-6 lg:px-4 lg:py-8">
       <PageMotion className="w-full max-w-5xl">
-        <Card className="relative overflow-visible p-0">
+        <Card
+          className="relative overflow-visible rounded-container bg-surface p-4 sm:p-6 lg:bg-[image:var(--auth-card-background)] lg:p-0"
+          padding="none"
+        >
           <div className="grid lg:min-h-160 lg:grid-cols-[1.08fr_0.92fr]">
-            <div className="relative hidden overflow-visible rounded-l-[inherit] bg-gradient-to-br from-[#eef5ff] via-[#f8fbff] to-[#e8fbf7] lg:block">
-              <div className="absolute inset-0 rounded-l-[inherit] bg-[linear-gradient(135deg,rgba(47,123,244,0.12)_0,transparent_36%),linear-gradient(45deg,rgba(34,199,169,0.12)_0,transparent_42%)]" />
+            <div className="relative hidden overflow-visible rounded-l-container lg:block">
+              <div className="absolute inset-0 rounded-l-container bg-[linear-gradient(135deg,rgba(47,123,244,0.12)_0,transparent_36%),linear-gradient(45deg,rgba(34,199,169,0.12)_0,transparent_42%)]" />
               <img
                 alt=""
                 className="pointer-events-none absolute bottom-0 left-[51.5%] z-10 h-[112%] w-auto max-w-none -translate-x-1/2 select-none object-contain object-bottom drop-shadow-xl"
                 src="https://luna-devops.liteyuki.org/brand/mascot-luna-catgirl-alpha.webp"
               />
-              <div className="absolute inset-0 z-20 rounded-l-[inherit] bg-gradient-to-r from-background/10 via-transparent to-background/30" />
+              <div className="absolute inset-0 z-20 rounded-l-container bg-gradient-to-r from-background/10 via-transparent to-background/15" />
             </div>
-            <div className="flex min-w-0 items-center justify-center p-6 sm:p-8 lg:p-10">
-              <div className="w-full max-w-sm">
+            <div className="flex min-w-0 items-center justify-center bg-transparent lg:rounded-r-container lg:bg-[image:var(--auth-form-scrim)] lg:p-10">
+              <div className="w-full max-w-lg lg:max-w-sm">
                 <div className="mb-6 flex items-center gap-3">
                   <img
                     alt=""

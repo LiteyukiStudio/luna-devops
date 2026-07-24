@@ -91,6 +91,33 @@
 :root {
   --layout-page-inline: 1rem;
   --layout-page-block: 1rem;
+  --auth-card-background: linear-gradient(
+    135deg,
+    color-mix(in oklab, var(--primary) 10%, hsl(var(--surface))) 0%,
+    hsl(var(--surface)) 52%,
+    color-mix(in oklab, var(--theme-supporting) 9%, hsl(var(--surface))) 100%
+  );
+  --auth-form-scrim: linear-gradient(
+    90deg,
+    transparent 0%,
+    hsl(var(--surface) / 0.2) 38%,
+    hsl(var(--surface) / 0.58) 100%
+  );
+}
+
+:root[data-theme="dark"] {
+  --auth-card-background: linear-gradient(
+    135deg,
+    color-mix(in oklab, var(--primary) 16%, hsl(var(--surface))) 0%,
+    hsl(var(--surface)) 52%,
+    color-mix(in oklab, var(--theme-supporting) 13%, hsl(var(--surface))) 100%
+  );
+  --auth-form-scrim: linear-gradient(
+    90deg,
+    transparent 0%,
+    hsl(var(--surface) / 0.28) 38%,
+    hsl(var(--surface) / 0.7) 100%
+  );
 }
 
 @media (width >= 40rem) {

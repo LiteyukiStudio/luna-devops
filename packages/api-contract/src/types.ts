@@ -15,10 +15,35 @@ export type OpenApiParameterLocation = "query" | "header" | "path" | "cookie";
 
 export interface SchemaReferenceSummary {
   readonly ref?: string;
-  readonly type?: string;
+  readonly type?: string | readonly string[];
   readonly format?: string;
+  readonly title?: string;
+  readonly description?: string;
   readonly enum?: readonly unknown[];
+  readonly const?: unknown;
+  readonly default?: unknown;
   readonly nullable?: boolean;
+  readonly readOnly?: boolean;
+  readonly writeOnly?: boolean;
+  readonly required?: readonly string[];
+  readonly properties?: Readonly<Record<string, SchemaReferenceSummary>>;
+  readonly items?: SchemaReferenceSummary;
+  readonly additionalProperties?: boolean | SchemaReferenceSummary;
+  readonly allOf?: readonly SchemaReferenceSummary[];
+  readonly anyOf?: readonly SchemaReferenceSummary[];
+  readonly oneOf?: readonly SchemaReferenceSummary[];
+  readonly not?: SchemaReferenceSummary;
+  readonly circular?: boolean;
+  readonly truncated?: boolean;
+  readonly allowed?: boolean;
+  readonly minLength?: number;
+  readonly maxLength?: number;
+  readonly pattern?: string;
+  readonly minimum?: number;
+  readonly maximum?: number;
+  readonly minItems?: number;
+  readonly maxItems?: number;
+  readonly uniqueItems?: boolean;
 }
 
 export interface OpenApiParameterSnapshot {
@@ -98,6 +123,7 @@ export interface OpenApiOperationSnapshot {
   readonly security: readonly OpenApiSecurityRequirement[];
   readonly parameters: readonly OpenApiParameterSnapshot[];
   readonly requestBody?: OpenApiRequestBodySnapshot;
+  readonly inputSchema?: SchemaReferenceSummary;
   readonly responses: readonly OpenApiResponseSnapshot[];
   readonly xLunaCli?: LunaCliExtensionSnapshot;
 }

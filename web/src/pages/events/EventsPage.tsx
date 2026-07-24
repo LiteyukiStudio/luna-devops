@@ -426,7 +426,14 @@ export function EventsPage() {
           },
         }}
         toolbar={(
-          <Button aria-label={t('common.refresh')} disabled={events.isFetching} size="icon" variant="ghost" onClick={() => events.refetch()}>
+          <Button
+            aria-label={t('common.refresh')}
+            className="hidden lg:inline-flex"
+            disabled={events.isFetching}
+            size="icon"
+            variant="ghost"
+            onClick={() => events.refetch()}
+          >
             <RefreshCw className={`size-4 ${events.isFetching ? 'animate-spin' : ''}`} />
           </Button>
         )}

@@ -535,6 +535,8 @@ rg -n "TODO|FIXME|临时|兼容|fallback|special case|module|Builder|builder" in
 | 依赖 | 审查 `go.mod`/`go.sum` 与 pnpm lockfile 差异；`govulncheck ./...`；`pnpm --dir web audit --prod --audit-level=high`；`pnpm --dir docs audit --prod --audit-level=high`；Go 可达漏洞和生产 pnpm 依赖 high/critical 漏洞阻断发布，开发工具链告警单独升级处理但不阻断 RC |
 | Helm | `helm lint charts/luna-devops`；`helm template luna-devops charts/luna-devops` 结果非空；复核 Secret/RBAC、安全上下文、探针、资源限制、非浮动镜像 tag 和生产 values 覆盖 |
 
+依赖审计只允许对单条 advisory 做显式豁免，并且必须同时记录 advisory ID、官方影响条件、当前项目不可达该路径的代码或架构证据，以及移除豁免的复查条件；不得使用 `--ignore-unfixable`、降低整体严重级别或关闭审计来绕过门禁。当前 `GHSA-qwww-vcr4-c8h2` 仅影响 React Router 的 unstable RSC APIs，Luna DevOps 的 Vite SPA 与 Rspress 文档站均未启用 RSC，因此在升级到兼容的修复版本前由发布脚本按 advisory ID 窄范围忽略。
+
 干净工作区的 RC 最终执行 `AUTH_TEST_DATABASE_URL=... ./scripts/release-check.sh`。聚合脚本通过不代替针对本轮发现的业务回归、并发测试和独立复审。
 
 ### 13.7 完成口径

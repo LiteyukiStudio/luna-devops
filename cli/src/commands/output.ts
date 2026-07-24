@@ -49,7 +49,7 @@ export class CommandOutput implements OutputPort {
         requestId: stringMeta(result.meta, 'requestId') ?? globals.requestId,
         server: globals.server,
         context: globals.context,
-        projectId: globals.project,
+        projectId: stringMeta(result.meta, 'projectId') ?? globals.project,
         cliVersion: this.#version,
         openapiDigest: metadata.schemaDigest,
       },

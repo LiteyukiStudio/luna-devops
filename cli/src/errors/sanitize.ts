@@ -13,11 +13,12 @@ const ANSI_SEQUENCE_PATTERN = new RegExp(
 )
 const BIDI_CONTROL_PATTERN = /[\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/gu
 const SENSITIVE_KEY_PATTERN
-  = /(?:authorization|cookie|credential|kubeconfig|otp|pass(?:word|phrase|wd)?|private[-_]?key|recovery[-_]?code|refresh[-_]?token|secret|session[-_]?id|token)$/iu
+  = /(?:authorization|cookie|credential|kubeconfig|otp|pass(?:word|phrase|wd)?|private[-_]?key|recovery[-_]?code|refresh[-_]?token|secret|session[-_]?id)$/iu
+const VALUE_SENSITIVE_KEY_PATTERN = /(?:access[-_]?token|id[-_]?token|token)$/iu
 const URL_PATTERN = /\bhttps?:\/\/[^\s"'<>]+/giu
 const AUTHORIZATION_PATTERN = /\b(Bearer|Basic)\s+[\w.~+/=-]+/giu
 const ASSIGNMENT_PATTERN
-  = /\b(access[_-]?token|api[_-]?key|client[_-]?secret|password|refresh[_-]?token|secret|token)\s*([=:])\s*([^\s,;]+)/giu
+  = /\b(access[_-]?token|api[_-]?key|client[_-]?secret|password|refresh[_-]?token|secret|token)(?:[ \t]*=[ \t]*|[ \t]*:[ \t]+)([^\s,;]+)/giu
 
 const SENSITIVE_QUERY_KEYS = new Set([
   'access_token',
@@ -59,26 +60,37 @@ export function redactValue(value: unknown, options: RedactionOptions = {}): unk
     entries += 1
     if (entries > maxEntries)
       return '[TRUNCATED]'
-    if (key && isSensitiveKey(key, options.sensitiveKeys))
+    if (
+      key
+      && (
+        (typeof current !== 'boolean' && isSensitiveKey(key, options.sensitiveKeys))
+        || (typeof current === 'string' && VALUE_SENSITIVE_KEY_PATTERN.test(key))
+      )
+    ) {
       return REDACTED_VALUE
+    }
     if (typeof current === 'string')
       return redactSensitiveText(current)
     if (typeof current !== 'object' || current === null)
       return current
     if (depth >= maxDepth)
       return '[MAX_DEPTH]'
-    if (seen.has(current))
+    if (seen.has(current)) {
       return '[CIRCULAR]'
+    }
     seen.add(current)
 
     if (Array.isArray(current)) {
-      return current.map(item => visit(item, depth + 1))
+      const result = current.map(item => visit(item, depth + 1))
+      seen.delete(current)
+      return result
     }
 
     const result: Record<string, unknown> = {}
     for (const [childKey, childValue] of Object.entries(current)) {
       result[childKey] = visit(childValue, depth + 1, childKey)
     }
+    seen.delete(current)
     return result
   }
 
@@ -88,7 +100,7 @@ export function redactValue(value: unknown, options: RedactionOptions = {}): unk
 export function redactSensitiveText(value: string): string {
   return value
     .replace(AUTHORIZATION_PATTERN, '$1 [REDACTED]')
-    .replace(ASSIGNMENT_PATTERN, '$1$2[REDACTED]')
+    .replace(ASSIGNMENT_PATTERN, '$1=[REDACTED]')
     .replace(URL_PATTERN, redactUrl)
 }
 

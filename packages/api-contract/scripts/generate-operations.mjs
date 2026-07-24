@@ -4,12 +4,18 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 
+import {
+  createSchemaSummarizer,
+  resolveLocalReference,
+} from "./schema-summary.mjs";
+
 const packageDirectory = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const repositoryRoot = resolve(packageDirectory, "../..");
 const sourcePath = resolve(repositoryRoot, "openapi/openapi.yaml");
 const outputPath = resolve(packageDirectory, "src/generated/operations.ts");
 const source = await readFile(sourcePath, "utf8");
 const document = parse(source);
+const summarizeSchema = createSchemaSummarizer(document);
 const methods = ["get", "put", "post", "delete", "options", "head", "patch", "trace"];
 const snapshots = [];
 
@@ -21,6 +27,9 @@ for (const [path, pathItem] of Object.entries(document.paths ?? {})) {
       ...(pathItem.parameters ?? []),
       ...(operation.parameters ?? []),
     ].map(parameterSnapshot);
+    const requestBodyDetails = operation.requestBody
+      ? requestBodyDetailsSnapshot(operation.requestBody)
+      : undefined;
     const responses = Object.entries(operation.responses ?? {}).map(
       ([status, response]) => responseSnapshot(status, response),
     );
@@ -35,9 +44,12 @@ for (const [path, pathItem] of Object.entries(document.paths ?? {})) {
       summary: operation.summary,
       description: operation.description,
       operationId: operation.operationId,
-      requestBody: operation.requestBody
-        ? requestBodySnapshot(operation.requestBody)
-        : undefined,
+      requestBody: requestBodyDetails?.snapshot,
+      inputSchema: inputSchemaSnapshot(
+        parameters,
+        requestBodyDetails?.snapshot,
+        requestBodyDetails?.schema,
+      ),
       xLunaCli: operation["x-luna-cli"],
     }));
   }
@@ -69,17 +81,28 @@ function parameterSnapshot(parameter) {
     required: resolved?.required,
     description: resolved?.description,
     ref: parameter?.$ref,
-    schema: schemaSummary(resolveReference(resolved?.schema)),
+    schema: schemaSummary(resolved?.schema),
   });
 }
 
-function requestBodySnapshot(requestBody) {
+function requestBodyDetailsSnapshot(requestBody) {
   const resolved = resolveReference(requestBody) ?? {};
   const content = resolved.content ?? {};
+  const schemas = Object.fromEntries(
+    Object.entries(content)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .flatMap(([contentType, media]) => {
+        const schema = summarizeSchema(media?.schema);
+        return schema ? [[contentType, schema]] : [];
+      }),
+  );
   return {
-    required: resolved.required ?? false,
-    contentTypes: Object.keys(content),
-    schemaRefs: schemaReferences(content),
+    snapshot: {
+      required: resolved.required ?? false,
+      contentTypes: Object.keys(content).sort(),
+      schemaRefs: schemaReferences(content),
+    },
+    schema: combinedContentSchema(schemas),
   };
 }
 
@@ -115,24 +138,53 @@ function collectSchemaReferences(schema, refs = []) {
 }
 
 function schemaSummary(schema) {
-  if (!schema || typeof schema !== "object") return undefined;
-  return compact({
-    ref: schema.$ref,
-    type: schema.type,
-    format: schema.format,
-    enum: schema.enum,
-    nullable: schema.nullable,
-  });
+  return summarizeSchema(schema);
 }
 
 function resolveReference(value) {
   if (!value?.$ref) return value;
-  if (!value.$ref.startsWith("#/")) return value;
-  return value.$ref
-    .slice(2)
-    .split("/")
-    .map(part => part.replaceAll("~1", "/").replaceAll("~0", "~"))
-    .reduce((current, part) => current?.[part], document);
+  return resolveLocalReference(document, value.$ref) ?? value;
+}
+
+function inputSchemaSnapshot(parameters, requestBody, requestBodySchema) {
+  const properties = Object.fromEntries([
+    ...parameters
+      .filter(parameter => parameter.name)
+      .map(parameter => [parameter.name, parameter.schema ?? {}]),
+    ...(requestBodySchema ? [["body", requestBodySchema]] : []),
+  ]);
+  if (Object.keys(properties).length === 0) {
+    return undefined;
+  }
+
+  const required = [...new Set([
+    ...parameters
+      .filter(parameter => parameter.required && parameter.name)
+      .map(parameter => parameter.name),
+    ...(requestBody?.required && requestBodySchema ? ["body"] : []),
+  ])].sort();
+
+  return compact({
+    type: "object",
+    properties,
+    required: required.length > 0 ? required : undefined,
+    additionalProperties: false,
+  });
+}
+
+function combinedContentSchema(schemas) {
+  const uniqueSchemas = [
+    ...new Map(
+      Object.values(schemas).map(schema => [JSON.stringify(schema), schema]),
+    ).values(),
+  ];
+  if (uniqueSchemas.length === 0) {
+    return undefined;
+  }
+  if (uniqueSchemas.length === 1) {
+    return uniqueSchemas[0];
+  }
+  return { oneOf: uniqueSchemas };
 }
 
 function compact(value) {

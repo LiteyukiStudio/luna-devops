@@ -6,6 +6,9 @@ on:
       - "cli/**"
       - "packages/api-*/**"
       - "openapi/**"
+      - "ai-supports/**"
+      - "docs/docs/en/guide/cli/**"
+      - "docs/docs/zh/guide/cli/**"
       - "scripts/cli/**"
       - "package.json"
       - "pnpm-workspace.yaml"
@@ -20,6 +23,9 @@ on:
       - "cli/**"
       - "packages/api-*/**"
       - "openapi/**"
+      - "ai-supports/**"
+      - "docs/docs/en/guide/cli/**"
+      - "docs/docs/zh/guide/cli/**"
       - "scripts/cli/**"
       - "package.json"
       - "pnpm-workspace.yaml"
@@ -70,17 +76,20 @@ jobs:
       - name: Check generated API contract drift
         run: node scripts/cli/verify-contract-drift.mjs
 
+      - name: Check CLI and Skills synchronization
+        run: node scripts/cli/verify-skills-sync.mjs
+
       - name: Type-check CLI
-        run: pnpm --filter @liteyukistudio/luna-cli typecheck
+        run: pnpm --filter @liteyuki/luna-cli typecheck
 
       - name: Lint CLI
-        run: pnpm --filter @liteyukistudio/luna-cli lint
+        run: pnpm --filter @liteyuki/luna-cli lint
 
       - name: Test CLI
-        run: pnpm --filter @liteyukistudio/luna-cli test
+        run: pnpm --filter @liteyuki/luna-cli test
 
       - name: Build npm distribution
-        run: pnpm --filter @liteyukistudio/luna-cli build
+        run: pnpm --filter @liteyuki/luna-cli build
 
       - name: Pack npm tarball
         id: pack

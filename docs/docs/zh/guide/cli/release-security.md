@@ -10,16 +10,33 @@ Luna CLI 与 Luna DevOps 平台使用独立的版本和 tag 命名空间：
 
 普通 `v*` tag 仍用于平台发布，不会触发 CLI 发布。
 
+## 首次创建 npm 包
+
+npm 不需要提前创建一个空包。首次执行下面的发布命令时，会创建 public scoped package `@liteyuki/luna-cli`：
+
+```bash
+npm publish <已验证的-tarball.tgz> --access public --tag next
+```
+
+首次发布前需要确认：
+
+1. npm 组织 `@liteyuki` 已存在，当前维护者拥有创建 public package 的权限；
+2. 维护者已启用 2FA，并在干净环境中使用仓库脚本完成构建、打包和 smoke test；
+3. 首次发布使用预发布版本和 `next` 标签，不直接占用稳定版；
+4. 首次发布成功后，再在包设置中配置 GitHub Actions Trusted Publisher；
+5. 配置完成后必须提升到一个尚未发布的新版本，再通过 `cli-v*` tag 验证 OIDC 发布。复用首次发布的版本只会触发幂等校验，不会真正执行 `npm publish`。
+
 ## CI 门禁
 
 CLI 相关变更会执行：
 
 1. 使用锁文件安装 pnpm 工作区依赖。
 2. 重新生成 API 契约并检查 drift。
-3. TypeScript typecheck、ESLint、单元测试和构建。
-4. 生成真实 npm tarball，并检查文件白名单。
-5. 在干净临时目录中分别使用 npm 与 pnpm 全局安装同一个 tarball。
-6. 构建当前 Linux host 的 Bun baseline 二进制并运行 smoke test。
+3. 读取机器 Help，校验配套 Skills 引用的命令、Agent 参数和能力边界。
+4. TypeScript typecheck、ESLint、单元测试和构建。
+5. 生成真实 npm tarball，并检查文件白名单。
+6. 在干净临时目录中分别使用 npm 与 pnpm 全局安装同一个 tarball。
+7. 构建当前 Linux host 的 Bun baseline 二进制并运行 smoke test。
 
 发布工作流在这些门禁之外，还会构建明确的平台矩阵：
 

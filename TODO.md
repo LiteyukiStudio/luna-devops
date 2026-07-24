@@ -65,7 +65,7 @@
 - [x] 为项目空间、应用等层级页面补充统一返回导航：由 `PageChrome` 在标题下方展示“← 返回上级”，并由布局集中维护路由目标和移动端回落。
 - [x] 将明暗模式收敛到账号个人设置，移除侧边栏常驻切换器；配色主题改为统一圆形色盘，并新增极光、海港、日落三套多色主题，同时保留精选单色主题。
 - [x] 让多色主题的辅助色、支持色与强调色实际参与导航选中态和列表结构线，工作区背景保持低饱和单色平面；新增植物园、青柠草甸、柑橘三套多色主题，并将选择器中的单色主题收敛为金、橙、红、粉、紫、蓝、青、蓝绿、绿、青柠十套代表色。
-- [x] 建立独立的 `sidebar-nav-hover` 主题 token，使用实心主色提高侧边栏菜单 hover 与同色画布的对比度，同时保持选中态层级独立。
+- [x] 建立独立的侧边栏交互 token：hover 使用轻量主题染色，选中态仅提高一档混合比例并降低文字饱和度；多色主题同步使用克制渐变，避免导航选中态接近实心主操作。
 - [x] 为公共 `SearchSelect` / `SearchMultiSelect` 增加 `sm` 与 `default` 尺寸变体，统一控制触发器、搜索栏、选项文字、间距和勾选框；事件筛选使用紧凑尺寸。
 - [x] 将应用市场横向分类胶囊栏收敛为下拉筛选器，并放入列表工具区的热度排序左侧；筛选结果为空时仍保留工具区以便恢复条件。
 - [x] 将账号页“个人设置 / 安全设置”等二级 Tab 明确左对齐，避免窄内容卡片造成居中错觉。
@@ -233,6 +233,7 @@
 - [x] 实现运行模式检测，开发模式支持开发账号快捷登录，生产模式禁用。
 - [x] 收紧开发默认账号提示边界，仅 development 模式由后端下发并展示。
 - [x] 登录页支持最近登录账号头像选择，浏览器本地最多持久化 3 个账号展示信息，不保存密码、Token 或 session cookie；直接恢复登录使用后端 HttpOnly remember cookie。
+- [x] 统一登录页响应式视觉：桌面端将低饱和品牌渐变应用到唯一双栏卡片并使用标准容器圆角，表单侧使用连续轻遮罩保持可读性；移动端保留一张纯色、小边距紧凑 Card 和宽版单列表单；亮色与暗色模式共用 `auth-card-*` 语义 token。
 - [x] 受保护路由未登录直接跳转 `/login?redirect=...`，当前用户查询对未登录错误不重试，移除中间“需要登录”页面体验。
 - [x] 封装统一用户头像组件，按平台头像、Gravatar 真实头像、字母头像顺序回退。
 - [x] 实现生产模式首个平台管理员初始化流程。
@@ -994,7 +995,7 @@
 详细规格见 [`notes/cli-spec.md`](notes/cli-spec.md)。
 
 - [x] 确定 CLI 技术栈、两级工具命令、`key=value` 与多行/复杂输入规范、参数校验、多实例上下文、context 级默认项目空间、版本化 JSON Envelope、OAuth、Device Code、Access Token、Step-up MFA、i18n、AI 输出契约、npm/pnpm 安装、独立 `cli-v*` 发版、npm Trusted Publishing 和 Bun 单二进制方案。
-- [x] 完成 CLI spec 与 AI Agent 可实施性审计：按 `method + normalizedPath` 确认当前 222 条 Gin 路由中 OpenAPI 已覆盖 108 条、缺失 114 条；明确业务命令、协议适配、浏览器入口、服务端入口和内部可观测五类路由，`api request` 不计入覆盖；补齐 Agent 模式、复杂参数、受限工具发现、服务端计划、并发保护、版本化事件流、不可信内容和资源边界；第一版要求每项公开能力成功主路径和关键旅程 100%、完整操作场景矩阵不低于 95%。
+- [x] 完成 CLI spec 与 AI Agent 可实施性审计：按 `method + normalizedPath` 确认当前 223 条 Gin 路由中 OpenAPI 已覆盖 110 条、缺失 113 条；明确业务命令、协议适配、浏览器入口、服务端入口和内部可观测五类路由，`api request` 不计入覆盖；补齐 Agent 模式、复杂参数、受限工具发现、服务端计划、并发保护、版本化事件流、不可信内容和资源边界；第一版要求每项公开能力成功主路径和关键旅程 100%、完整操作场景矩阵不低于 95%。
 - [x] 移除旧 MCP 与内嵌 Assistant 设计，将 `ai-supports` 收敛为仅通过未来 `luna` CLI 工作的预发布 Skills。
 - [x] 建立根 pnpm workspace，抽取环境无关的 `@luna-devops/api-contract` 与 `@luna-devops/api-client`，CLI 从生成契约注册命令并复用统一 HTTP 客户端。
 - [ ] 将 Web 现有 API Client 渐进迁移到共享 contract/client；保持浏览器 Session、CSRF 和页面状态只属于 Web，不进入共享包。
@@ -1011,11 +1012,12 @@
 - [ ] 实现由平台固定初始化、无需动态注册的内置 OAuth 公共 CLI Client：Token Endpoint 支持 `token_endpoint_auth_method=none`，仅允许严格 loopback redirect，完成 Authorization Code + PKCE、刷新和吊销；拆分 OAuth 与个人访问令牌 Scope 策略，使第一方 CLI 可在明确授权和 Step-up 保护下申请敏感 Scope，但不自动授予通配权限。
 - [ ] 实现 RFC 8628 Device Authorization Grant，包括设备授权端点、浏览器 GET/POST 确认接口、CSRF 防护、哈希状态、批准/拒绝、轮询限流、过期清理和一次性兑换。
 - [ ] 改造 Step-up MFA 与交互认证上下文：OAuth Bearer 可验证 OTP/恢复码并按 OAuth Grant/Token Family + purpose 读取 assertion；终端预授权、终端存活监控和数据导出票据同时支持绑定 Web Session 或 OAuth Grant/Token Family；个人访问令牌仍不得绕过 MFA 保护。
-- [ ] 按业务域覆盖全部公开控制面 API；当前 CLI 已从 OpenAPI 注册全部 109 个已登记操作，并提供统一 JSON HTTP 传输和诊断用 `api request`，但 Gin Router 中尚未进入 OpenAPI 的公开路由、SSE、WebSocket 终端、二进制下载、异步任务等待和批量部分成功仍需补齐。
+- [ ] 按业务域覆盖全部公开控制面 API；当前 CLI 已从 OpenAPI 注册全部 110 个已登记操作，并提供统一 JSON HTTP 传输；`api request` 仅供人类诊断已知相对 API 路径且在 Agent 模式固定禁用。Gin Router 中尚未进入 OpenAPI 的公开路由、SSE、WebSocket 终端、二进制下载、异步任务等待和批量部分成功仍需补齐。
 - [ ] 为 Git Provider OAuth 增加短时授权事务创建/查询接口，回调写入事务终态；`luna git authorize` 打开浏览器并返回确定的 Git Account ID，不通过轮询账号列表猜测授权结果。
 - [ ] 建立干净测试实例的全 operation 场景矩阵：关键登录/CRUD/构建/发布/日志/终端/导出/MFA 旅程 100% 通过，完整可执行场景通过率不低于 95%。
 - [x] 新增 CLI CI 与 Release 工作流；平台项目继续由 `v*` 发版，CLI 仅由 `cli-v*` 发版；工作流验证契约 drift、CLI 类型/规范/测试、npm/pnpm 全局安装和 Bun 二进制 smoke，并按正式版、RC、Beta 维护 npm dist-tag。
-- [ ] 在 npm 配置 `@liteyukistudio/luna-cli` Trusted Publisher 和 GitHub `npm` Environment，完成首次真实 OIDC 发布验收。
+- [x] 完善中英文 CLI 文档入口、源码开发说明与配套 Skills；Skills 以机器可读 Help 为命令事实来源，准确标注尚未完成的服务端能力，并在 CLI CI/Release 中通过同步检查阻止命令和能力描述漂移。
+- [ ] 确认 npm `@liteyuki` 组织权限，使用 2FA 手动发布首个 `@liteyuki/luna-cli` public 预发布包；随后配置 Trusted Publisher 和 GitHub `npm` Environment，并以新的未发布版本完成真实 OIDC 发布验收。
 - [x] 使用固定 Bun 版本构建 Linux x64/arm64/musl、macOS arm64/x64 和 Windows x64 制品，生成 checksum、SBOM 和 provenance，并对 Linux host/musl 完成无 Node.js smoke。
 - [ ] 接入 Apple Developer ID、公证和 Windows Authenticode；稳定矩阵中的 macOS/Windows 制品必须完成平台代码签名后才可发布。
 - [ ] CLI 完成后生成 Skills 发布元数据，执行结构校验和真实实例的只读、变更、失败、权限、MFA 与脱敏评估，再标记 Skills 可用。

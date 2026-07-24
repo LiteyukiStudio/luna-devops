@@ -82,11 +82,14 @@ jobs:
       - name: Check generated API contract drift
         run: node scripts/cli/verify-contract-drift.mjs
 
+      - name: Check CLI and Skills synchronization
+        run: node scripts/cli/verify-skills-sync.mjs
+
       - name: Type-check, lint and test CLI
         run: |
-          pnpm --filter @liteyukistudio/luna-cli typecheck
-          pnpm --filter @liteyukistudio/luna-cli lint
-          pnpm --filter @liteyukistudio/luna-cli test
+          pnpm --filter @liteyuki/luna-cli typecheck
+          pnpm --filter @liteyuki/luna-cli lint
+          pnpm --filter @liteyuki/luna-cli test
 
   binary:
     name: Binary ${{ matrix.asset }}
@@ -214,7 +217,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build npm distribution
-        run: pnpm --filter @liteyukistudio/luna-cli build
+        run: pnpm --filter @liteyuki/luna-cli build
 
       - name: Pack npm tarball
         id: pack

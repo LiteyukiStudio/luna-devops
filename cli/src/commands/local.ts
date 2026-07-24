@@ -74,8 +74,9 @@ function registerAuth(registry: CommandRegistry): void {
         'server',
       )
     }
-    const token = optionalString(invocation.params.token)
+    const token = optionalString(invocation.params.token)?.trim()
       ?? optionalString(ports.env?.LUNA_TOKEN)
+        ?.trim()
     if (!token) {
       throw invalidArguments(
         'auth.login requires token=@- or the LUNA_TOKEN environment variable.',
@@ -486,7 +487,7 @@ function registerApiDiagnostic(registry: CommandRegistry): void {
       summary: 'Send a diagnostic request to a Luna API path.',
       schemaVersion: 'api.request/v1',
       risk: 'medium',
-      agentAllowed: true,
+      agentAllowed: false,
       transport: 'http',
       parameters: [
         parameter('method', { required: true }),
@@ -501,13 +502,6 @@ function registerApiDiagnostic(registry: CommandRegistry): void {
     }),
     source: 'local',
   }, async (invocation, ports) => {
-    if (invocation.globals.agent && invocation.params.allowDiagnostic !== true) {
-      throw new CliCommandError(
-        'diagnostic_command_forbidden',
-        'Agent mode requires allowDiagnostic=true for api.request.',
-        { status: 403 },
-      )
-    }
     const method = requiredString(invocation.params.method, 'method').toUpperCase()
     if (!['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
       throw invalidArguments(`Unsupported HTTP method "${method}".`, 'method')

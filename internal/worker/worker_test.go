@@ -1022,6 +1022,23 @@ func TestCleanupProjectNamespacesCoversDistinctClusters(t *testing.T) {
 	}
 }
 
+func TestCleanupProjectNamespacesWithoutDeploymentTargetsDoesNotRequireCluster(t *testing.T) {
+	runner := NewRunner(nil, Options{})
+	managerCalls := 0
+	runner.kubernetesManagerFactory = func(model.Environment) (kubeprovider.NamespaceManager, error) {
+		managerCalls++
+		return nil, errors.New("unexpected manager call")
+	}
+
+	project := model.Project{ID: "prj_empty", Identifier: "empty"}
+	if err := runner.cleanupProjectNamespacesForDeploymentTargets(context.Background(), project, nil); err != nil {
+		t.Fatalf("cleanupProjectNamespacesForDeploymentTargets returned error: %v", err)
+	}
+	if managerCalls != 0 {
+		t.Fatalf("manager calls = %d, want 0", managerCalls)
+	}
+}
+
 func TestDeleteManagedNamespaceIgnoresKubernetesNotFound(t *testing.T) {
 	manager := &recordingNamespaceManager{
 		err: apierrors.NewNotFound(schema.GroupResource{Resource: "namespaces"}, "ns-demo"),

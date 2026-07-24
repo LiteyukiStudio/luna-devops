@@ -1838,35 +1838,7 @@ export interface paths {
          * List supported data-retention datasets
          * @description Returns the fixed cleanup catalog. Audit logs, billing data, and build, release, or Hook metadata are intentionally excluded.
          */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Retention dataset catalog. */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["DataRetentionCatalogResponse"];
-                    };
-                };
-                /** @description Platform-administrator role is required. */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorResponse"];
-                    };
-                };
-            };
-        };
+        get: operations["listDataRetentionCatalog"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1888,48 +1860,7 @@ export interface paths {
          * Preview data matching a retention range
          * @description Counts rows without changing data. The selected range is left-closed and right-open (`startAt <= timestamp < endAt`). Active runtime records and protected datasets are never matched.
          */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": components["schemas"]["DataRetentionRequest"];
-                };
-            };
-            responses: {
-                /** @description Matching counts by dataset. `deleted` is zero for a preview. */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["DataRetentionResultResponse"];
-                    };
-                };
-                /** @description Invalid range or unknown dataset (`retention.invalid_range` or `retention.invalid_dataset`). */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorResponse"];
-                    };
-                };
-                /** @description Platform-administrator role is required. */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorResponse"];
-                    };
-                };
-            };
-        };
+        post: operations["previewDataRetention"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1949,57 +1880,7 @@ export interface paths {
          * Permanently remove data matching a retention range
          * @description Runs the same fixed whitelist and protection rules as preview, then writes only the aggregate result to the audit log. The operation does not accept table names or SQL expressions. When Step-up MFA is enabled, a valid `data_retention_cleanup` assertion is also required.
          */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": components["schemas"]["DataRetentionRequest"];
-                };
-            };
-            responses: {
-                /** @description Matched and deleted counts by dataset. */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["DataRetentionResultResponse"];
-                    };
-                };
-                /** @description Invalid range or unknown dataset (`retention.invalid_range` or `retention.invalid_dataset`). */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorResponse"];
-                    };
-                };
-                /** @description Platform-administrator role or Step-up MFA assertion is required. */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorResponse"];
-                    };
-                };
-                /** @description Cleanup failed (`retention.cleanup_failed`). */
-                500: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorResponse"];
-                    };
-                };
-            };
-        };
+        post: operations["cleanupDataRetention"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3034,44 +2915,7 @@ export interface paths {
          * Get the current user's dashboard overview
          * @description Returns the task-oriented dashboard aggregation in one response. Future dashboard read models are added to this contract instead of being composed from multiple browser requests.
          */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Dashboard overview scoped to the current user's visible project spaces and resources. */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["DashboardOverview"];
-                    };
-                };
-                /** @description Authentication is required. */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorResponse"];
-                    };
-                };
-                /** @description Dashboard aggregation failed (`dashboard.load_failed`). */
-                500: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorResponse"];
-                    };
-                };
-            };
-        };
+        get: operations["getDashboard"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3491,7 +3335,13 @@ export interface paths {
         /** List applications */
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    page?: components["parameters"]["Page"];
+                    pageSize?: components["parameters"]["PageSize"];
+                    search?: string;
+                    sortBy?: "createdAt" | "name" | "identifier";
+                    sortOrder?: components["parameters"]["SortOrder"];
+                };
                 header?: never;
                 path: {
                     projectId: components["parameters"]["ProjectId"];
@@ -3500,7 +3350,7 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Application list. */
+                /** @description Application list or paginated application list. */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -4281,6 +4131,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/access-tokens/scopes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List access-token scope definitions
+         * @description Returns the canonical scope catalog and the current user's scope-creation constraints.
+         */
+        get: operations["listAccessTokenScopes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/access-tokens": {
         parameters: {
             query?: never;
@@ -4563,6 +4433,13 @@ export interface components {
              * @enum {integer}
              */
             expiresInDays?: 0 | 7 | 15 | 30 | 90;
+        };
+        AccessTokenScopeDefinition: {
+            value: string;
+            group: string;
+            recommended: boolean;
+            creatableByUser: boolean;
+            requiresAdminRole: boolean;
         };
         ApplicationTopology: {
             /** Format: date-time */
@@ -5140,6 +5017,197 @@ export interface operations {
                             openapiOperations: boolean;
                         };
                     };
+                };
+            };
+        };
+    };
+    listDataRetentionCatalog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Retention dataset catalog. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DataRetentionCatalogResponse"];
+                };
+            };
+            /** @description Platform-administrator role is required. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    previewDataRetention: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DataRetentionRequest"];
+            };
+        };
+        responses: {
+            /** @description Matching counts by dataset. `deleted` is zero for a preview. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DataRetentionResultResponse"];
+                };
+            };
+            /** @description Invalid range or unknown dataset (`retention.invalid_range` or `retention.invalid_dataset`). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Platform-administrator role is required. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    cleanupDataRetention: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DataRetentionRequest"];
+            };
+        };
+        responses: {
+            /** @description Matched and deleted counts by dataset. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DataRetentionResultResponse"];
+                };
+            };
+            /** @description Invalid range or unknown dataset (`retention.invalid_range` or `retention.invalid_dataset`). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Platform-administrator role or Step-up MFA assertion is required. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Cleanup failed (`retention.cleanup_failed`). */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getDashboard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Dashboard overview scoped to the current user's visible project spaces and resources. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DashboardOverview"];
+                };
+            };
+            /** @description Authentication is required. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Dashboard aggregation failed (`dashboard.load_failed`). */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAccessTokenScopes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Access-token scope catalog. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["AccessTokenScopeDefinition"][];
+                    };
+                };
+            };
+            /** @description Authentication is required. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };

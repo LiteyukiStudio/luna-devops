@@ -11,6 +11,11 @@
   },
   {
     "type": "file",
+    "name": "development",
+    "label": "Source Development"
+  },
+  {
+    "type": "file",
     "name": "release-security",
     "label": "Release Security"
   }

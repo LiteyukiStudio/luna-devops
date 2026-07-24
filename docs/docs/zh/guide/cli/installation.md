@@ -7,15 +7,15 @@
 稳定版：
 
 ```bash
-npm install --global @liteyukistudio/luna-cli
-pnpm add --global @liteyukistudio/luna-cli
+npm install --global @liteyuki/luna-cli
+pnpm add --global @liteyuki/luna-cli
 ```
 
 预发布版必须显式选择通道：
 
 ```bash
-npm install --global @liteyukistudio/luna-cli@next
-pnpm add --global @liteyukistudio/luna-cli@beta
+npm install --global @liteyuki/luna-cli@next
+pnpm add --global @liteyuki/luna-cli@beta
 ```
 
 安装后验证：
@@ -29,7 +29,7 @@ npm 包要求 Node.js `22.14.0` 或更高版本。建议使用 Node.js 版本管
 
 ## 使用独立二进制
 
-稳定版当前只发布 Linux x64、Linux arm64 和 Linux x64 musl 制品。下载与系统匹配的文件和 `SHA256SUMS`：
+首次稳定版计划只发布 Linux x64、Linux arm64 和 Linux x64 musl 制品。版本发布后，下载与系统匹配的文件和 `SHA256SUMS`：
 
 ```bash
 version="cli-vX.Y.Z"
@@ -73,8 +73,8 @@ output=json interactive=false
 ## 卸载
 
 ```bash
-npm uninstall --global @liteyukistudio/luna-cli
-pnpm remove --global @liteyukistudio/luna-cli
+npm uninstall --global @liteyuki/luna-cli
+pnpm remove --global @liteyuki/luna-cli
 rm "${HOME}/.local/bin/luna"
 ```
 

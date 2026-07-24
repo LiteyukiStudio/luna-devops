@@ -809,9 +809,15 @@ paths:
 
   /api/v1/data-retention/catalog:
     get:
+      operationId: listDataRetentionCatalog
       tags: [DataRetention]
       summary: List supported data-retention datasets
       description: Returns the fixed cleanup catalog. Audit logs, billing data, and build, release, or Hook metadata are intentionally excluded.
+      x-luna-cli:
+        command: retention.catalog
+        classification: business-command
+        risk: low
+        requiredScopes: [retention:read]
       security:
         - SessionCookie: []
       responses:
@@ -828,9 +834,15 @@ paths:
 
   /api/v1/data-retention/preview:
     post:
+      operationId: previewDataRetention
       tags: [DataRetention]
       summary: Preview data matching a retention range
       description: Counts rows without changing data. The selected range is left-closed and right-open (`startAt <= timestamp < endAt`). Active runtime records and protected datasets are never matched.
+      x-luna-cli:
+        command: retention.preview
+        classification: business-command
+        risk: low
+        requiredScopes: [retention:read]
       security:
         - SessionCookie: []
       requestBody:
@@ -857,9 +869,15 @@ paths:
 
   /api/v1/data-retention/cleanup:
     post:
+      operationId: cleanupDataRetention
       tags: [DataRetention]
       summary: Permanently remove data matching a retention range
       description: Runs the same fixed whitelist and protection rules as preview, then writes only the aggregate result to the audit log. The operation does not accept table names or SQL expressions. When Step-up MFA is enabled, a valid `data_retention_cleanup` assertion is also required.
+      x-luna-cli:
+        command: retention.cleanup
+        classification: business-command
+        risk: critical
+        requiredScopes: [retention:manage]
       security:
         - SessionCookie: []
       requestBody:
@@ -1337,9 +1355,15 @@ paths:
 
   /api/v1/dashboard:
     get:
+      operationId: getDashboard
       tags: [Dashboard]
       summary: Get the current user's dashboard overview
       description: Returns the task-oriented dashboard aggregation in one response. Future dashboard read models are added to this contract instead of being composed from multiple browser requests.
+      x-luna-cli:
+        command: dashboard.show
+        classification: business-command
+        risk: low
+        requiredScopes: [dashboard:read]
       responses:
         "200":
           description: Dashboard overview scoped to the current user's visible project spaces and resources.
@@ -1523,9 +1547,21 @@ paths:
       summary: List applications
       parameters:
         - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: search
+          in: query
+          schema: { type: string }
+        - name: sortBy
+          in: query
+          schema:
+            type: string
+            enum: [createdAt, name, identifier]
+            default: createdAt
+        - $ref: "#/components/parameters/SortOrder"
       responses:
         "200":
-          description: Application list.
+          description: Application list or paginated application list.
     post:
       tags: [Applications]
       summary: Create application
@@ -1875,6 +1911,35 @@ paths:
       responses:
         "200":
           description: Created repository webhook.
+
+  /api/v1/access-tokens/scopes:
+    get:
+      operationId: listAccessTokenScopes
+      tags: [AccessTokens]
+      summary: List access-token scope definitions
+      description: Returns the canonical scope catalog and the current user's scope-creation constraints.
+      x-luna-cli:
+        command: access-token.scope-list
+        classification: business-command
+        risk: low
+        requiredScopes: [token:manage]
+      responses:
+        "200":
+          description: Access-token scope catalog.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/AccessTokenScopeDefinition" }
+        "401":
+          description: Authentication is required.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
 
   /api/v1/access-tokens:
     get:
@@ -2308,6 +2373,15 @@ components:
           description: "Comma-separated scopes. Wildcard and unknown scopes are rejected. Normal users can create read scopes only."
         expiresInDays: { type: integer, enum: [0, 7, 15, 30, 90], description: "0 means never expires." }
       required: [name, scope]
+    AccessTokenScopeDefinition:
+      type: object
+      properties:
+        value: { type: string }
+        group: { type: string }
+        recommended: { type: boolean }
+        creatableByUser: { type: boolean }
+        requiresAdminRole: { type: boolean }
+      required: [value, group, recommended, creatableByUser, requiresAdminRole]
     ApplicationTopology:
       type: object
       properties:

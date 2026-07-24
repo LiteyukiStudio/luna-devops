@@ -6,6 +6,7 @@
     "build": "pnpm -r --if-present build",
     "lint": "pnpm -r --if-present lint",
     "test": "pnpm -r --if-present test",
-    "cli": "pnpm --filter @liteyukistudio/luna-cli dev"
+    "cli": "pnpm --filter @liteyuki/luna-cli dev",
+    "check:cli-skills": "node scripts/cli/verify-skills-sync.mjs"
   }
 }

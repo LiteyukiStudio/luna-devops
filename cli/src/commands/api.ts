@@ -74,12 +74,14 @@ export class LunaApiAdapter implements ApiPort {
       }
     }
     const result = await this.#send(planned, request.globals)
+    const projectId = requestProjectId(request)
     return {
       schemaVersion: request.metadata.schemaVersion,
       data: result.data,
       meta: {
         requestId: result.requestId,
         status: result.status,
+        ...(projectId ? { projectId } : {}),
       },
     }
   }
@@ -249,6 +251,17 @@ export class LunaApiAdapter implements ApiPort {
   }
 }
 
+function requestProjectId(request: ApiExecutionRequest): string | undefined {
+  for (const parameter of request.metadata.parameters) {
+    if (!PROJECT_PARAMETER_NAMES.has(parameter.name))
+      continue
+    const value = request.params[parameter.name]
+    if (typeof value === 'string' && value.trim())
+      return value
+  }
+  return undefined
+}
+
 export function planOpenApiRequest(request: ApiExecutionRequest): PlannedApiRequest {
   const method = normalizeMethod(request.metadata.method)
   const pathParameters: Record<string, unknown> = {}
@@ -259,7 +272,7 @@ export function planOpenApiRequest(request: ApiExecutionRequest): PlannedApiRequ
   let explicitBody: unknown
 
   for (const parameter of request.metadata.parameters) {
-    const value = parameterValue(parameter.name, request.params, request.globals)
+    const value = parameterValue(parameter, request.params, request.globals)
     if (value === undefined)
       continue
     consumed.add(parameter.name)
@@ -342,13 +355,14 @@ function assertSupportedTransport(metadata: NormalizedCommandMetadata): void {
 }
 
 function parameterValue(
-  name: string,
+  parameter: NormalizedCommandMetadata['parameters'][number],
   params: Readonly<Record<string, unknown>>,
   globals: CommandExecutionGlobals,
 ): unknown {
+  const { name } = parameter
   if (Object.hasOwn(params, name))
     return params[name]
-  if (PROJECT_PARAMETER_NAMES.has(name))
+  if (parameter.required && PROJECT_PARAMETER_NAMES.has(name))
     return globals.project
   return undefined
 }

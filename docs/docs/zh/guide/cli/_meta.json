@@ -11,6 +11,11 @@
   },
   {
     "type": "file",
+    "name": "development",
+    "label": "源码开发"
+  },
+  {
+    "type": "file",
     "name": "release-security",
     "label": "发布与制品验证"
   }

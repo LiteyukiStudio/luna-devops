@@ -75,8 +75,8 @@
   --theme-navigation-text: color-mix(in oklab, var(--theme-secondary) 62%, hsl(var(--foreground)));
   --theme-emphasis: var(--theme-highlight);
   --sidebar-nav-hover: color-mix(in oklab, var(--primary) 14%, hsl(var(--surface-base)));
-  --sidebar-nav-active: color-mix(in oklab, var(--primary) 32%, color-mix(in oklab, var(--theme-secondary) 5%, hsl(var(--surface-base))));
-  --sidebar-nav-active-text: var(--primary-text);
+  --sidebar-nav-active: color-mix(in oklab, var(--primary) 19%, color-mix(in oklab, var(--theme-secondary) 3%, hsl(var(--surface-base))));
+  --sidebar-nav-active-text: color-mix(in oklab, var(--primary-text) 58%, hsl(var(--foreground)));
   --data-list-header-surface: color-mix(in oklab, var(--theme-supporting) 5%, hsl(var(--surface)));
   --data-list-row-hover: color-mix(in oklab, var(--theme-supporting) 6%, hsl(var(--surface-subtle)));
   --workspace-background: color-mix(in oklab, var(--primary-border) 7%, hsl(var(--surface-base)));
@@ -90,7 +90,7 @@
   --separator-subtle: color-mix(in oklab, hsl(var(--border)) 86%, var(--theme-supporting) 14%);
   --theme-navigation-text: color-mix(in oklab, var(--theme-secondary) 74%, hsl(var(--foreground)));
   --sidebar-nav-hover: color-mix(in oklab, var(--primary) 13%, hsl(var(--surface-base)));
-  --sidebar-nav-active: color-mix(in oklab, var(--primary) 30%, color-mix(in oklab, var(--theme-secondary) 5%, hsl(var(--surface-base))));
+  --sidebar-nav-active: color-mix(in oklab, var(--primary) 18%, color-mix(in oklab, var(--theme-secondary) 3%, hsl(var(--surface-base))));
   --data-list-header-surface: color-mix(in oklab, var(--theme-supporting) 4%, hsl(var(--surface)));
   --data-list-row-hover: color-mix(in oklab, var(--theme-supporting) 5%, hsl(var(--surface-subtle)));
   --workspace-background: color-mix(in oklab, var(--primary-border) 6%, hsl(var(--surface-base)));
@@ -106,10 +106,10 @@
 )[data-interface-style="themed"] {
   --sidebar-nav-active: linear-gradient(
     115deg,
-    color-mix(in oklab, var(--primary) 36%, hsl(var(--surface-base))),
-    color-mix(in oklab, var(--theme-secondary) 32%, hsl(var(--surface-base)))
+    color-mix(in oklab, var(--primary) 20%, hsl(var(--surface-base))),
+    color-mix(in oklab, var(--theme-secondary) 17%, hsl(var(--surface-base)))
   );
-  --sidebar-nav-active-text: color-mix(in oklab, var(--primary-text) 82%, var(--theme-secondary));
+  --sidebar-nav-active-text: color-mix(in oklab, var(--primary-text) 56%, hsl(var(--foreground)));
   --data-list-header-surface: color-mix(in oklab, var(--theme-supporting) 10%, hsl(var(--surface)));
   --data-list-row-hover: color-mix(in oklab, var(--theme-supporting) 9%, hsl(var(--surface-subtle)));
   --workspace-background: linear-gradient(
@@ -130,8 +130,8 @@
 )[data-interface-style="themed"] {
   --sidebar-nav-active: linear-gradient(
     115deg,
-    color-mix(in oklab, var(--primary) 34%, hsl(var(--surface-base))),
-    color-mix(in oklab, var(--theme-secondary) 28%, hsl(var(--surface-base)))
+    color-mix(in oklab, var(--primary) 19%, hsl(var(--surface-base))),
+    color-mix(in oklab, var(--theme-secondary) 16%, hsl(var(--surface-base)))
   );
   --data-list-header-surface: color-mix(in oklab, var(--theme-supporting) 8%, hsl(var(--surface)));
   --data-list-row-hover: color-mix(in oklab, var(--theme-supporting) 7%, hsl(var(--surface-subtle)));

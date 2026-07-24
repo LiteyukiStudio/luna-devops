@@ -52,9 +52,28 @@ describe('auth commands', () => {
     expect(harness.config.credentials).toEqual({})
     expect(harness.config.contexts).toEqual({})
   })
+
+  it('trims surrounding whitespace before validating and storing a token', async () => {
+    const harness = createHarness({ token: 'test-token\n' })
+    const result = await runCli(harness.program, [
+      'node',
+      'luna',
+      'auth',
+      'login',
+      'server=https://luna.example.com',
+      'context=work',
+    ], harness.ports.output)
+
+    expect(result.exitCode).toBe(0)
+    expect(harness.validations).toEqual([{
+      server: 'https://luna.example.com',
+      token: 'test-token',
+    }])
+    expect(harness.config.credentials['work-access-token']?.token).toBe('test-token')
+  })
 })
 
-function createHarness(options: { validationError?: Error } = {}) {
+function createHarness(options: { validationError?: Error, token?: string } = {}) {
   let config: LunaConfigDocument = {
     version: 1,
     currentContext: null,
@@ -92,7 +111,7 @@ function createHarness(options: { validationError?: Error } = {}) {
         return { id: 'user-1', name: 'Test User' }
       },
     },
-    env: { LUNA_TOKEN: 'test-token' },
+    env: { LUNA_TOKEN: options.token ?? 'test-token' },
     isTTY: false,
     version: 'test',
     distribution: 'source',

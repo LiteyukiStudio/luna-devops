@@ -60,8 +60,8 @@ CLI 与 Web 控制台共用后端能力和 API 契约，但不直接复用浏览
 本次审计直接对照 `internal/api/router.go` 与当前 OpenAPI：
 
 - Gin Router 当前注册 222 个唯一 HTTP 路由；
-- OpenAPI 当前记录 108 个 operation。按 `method + normalizedPath` 核对后，108 个 operation 均能对应现有路由，另有 114 个 Gin 路由尚未进入 OpenAPI，没有孤立 operation；当前实际路由覆盖率为 48.6%；
-- 114 个缺失 operation 主要分布在项目空间及其子资源 48 个、通知 16 个、计费 11 个、OAuth 11 个、运行集群 9 个，其余分布在构建、事件、镜像站、Git、应用模板、Access Token、认证元数据和系统组件；因此 Phase 0 必须按业务域批量补契约，不能依靠实现 CLI 命令时顺手补接口；
+- OpenAPI 当前记录 110 个 operation。按 `method + normalizedPath` 核对后，110 个 operation 均能对应现有路由，另有 113 个 Gin 路由尚未进入 OpenAPI，没有孤立 operation；当前实际路由覆盖率约为 49.3%；
+- 113 个缺失 operation 主要分布在项目空间及其子资源、通知、计费、OAuth、运行集群，其余分布在构建、事件、镜像站、Git、应用模板、认证元数据和系统组件；因此 Phase 0 必须按业务域批量补契约，不能依靠实现 CLI 命令时顺手补接口；
 - 当前 OpenAPI 没有稳定 `operationId`，也没有 `x-luna-cli` 元数据；
 - 公开接口中同时存在普通 JSON、SSE、WebSocket、二进制下载和 OAuth 协议端点，不能共用一个普通 CRUD 调用模板；
 - 当前错误响应由多种 helper 和直接 JSON 写入共同产生，尚未形成覆盖全部业务与协议接口的稳定错误 Envelope；仅生成成功响应类型不足以保证 CLI 的机器输出稳定；
@@ -96,7 +96,7 @@ Phase 0 至 Phase 4 只是实施顺序，任何一个 Phase 未完成时都不�
 
 以下项目是 `v0.1.0` 的 P0 发布阻断项：
 
-1. 路由、OpenAPI、`operationId`、Scope 和 CLI 元数据形成单一可校验清单，消除当前 114 个未进入 OpenAPI 的路由缺口。
+1. 路由、OpenAPI、`operationId`、Scope 和 CLI 元数据形成单一可校验清单，消除当前 113 个未进入 OpenAPI 的路由缺口。
 2. 所有公开 JSON 与协议握手错误收敛到稳定 Error Envelope，并从语言无关的错误目录生成或校验 Go、OpenAPI、Web 和 CLI 定义。
 3. OAuth consent、OpenAPI security、Bearer 路由鉴权和 CLI Help 使用同一份 Scope 目录；任何允许 Bearer 调用的路由不得落入 `system:unmapped`。
 4. 服务端提供不含 Client Secret 的内置第一方公共 CLI Client、PKCE、Device Code、Refresh 和 Revoke 完整流程。
@@ -1399,9 +1399,14 @@ Skills 不负责：
 
 每次执行前必须先通过 `luna version show agent=true` 检查 CLI 可用性，再按当前意图使用带 `query/category/risk/scope/limit` 的 `luna help catalog agent=true` 检索少量候选命令，并读取对应工具的机器可读 Help。Help 中没有的命令视为尚未支持，Agent 不得根据 endpoint 名称猜测，也不得把完整命令目录一次性注入上下文。
 
-Skills 调用每一条 CLI 命令时都必须显式附带 `agent=true`，不能依赖 context、环境变量、TTY 或用户偏好决定输出模式。复杂对象统一使用 `params=@file` 或 `params=@-`；生成参数前先读取 command 输入 Schema，禁止发送未知字段。
+Skills 调用每一条 CLI 命令时都必须显式附带 `agent=true`，不能依赖 context、环境变量、TTY 或用户偏好决定输出模式。完整参数映射使用 `params=@file` 或 `params=@-`；Help Schema 将请求体暴露为 `body` 参数时使用 `body=@file` 或 `body=@-`，文件内容就是请求体本身，不再额外包裹 `body`。生成参数前先读取 command 输入 Schema，禁止发送未知字段。
 
-对 `projectContext: required` 的命令，Skills 默认还必须显式传入 `project=<immutable-id>`。只有用户已经明确要求使用当前 context 项目，且 Skill 先通过 `luna project current agent=true` 校验过解析结果时，才允许省略；Skills 不得自行执行 `project use` 修改用户共享的持久 context。
+对 `projectContext: required` 的命令，Skills 默认还必须显式传入全局
+`project=<immutable-id>`，或按机器 Help 使用命令自身的
+`projectId=<immutable-id>` / `projectID=<immutable-id>` 参数。只有低风险读取命令、
+用户已经明确要求使用当前 context 项目，且 Skill 先通过
+`luna project current agent=true` 校验过解析结果时，才允许省略；Skills
+不得自行执行 `project use` 修改用户共享的持久 context。
 
 Skills 的标准变更流程固定为：
 
@@ -1442,13 +1447,13 @@ CLI 完成前，仓库中的 Skills 仅用于规格审阅和工作流设计，�
 
 ### 15.1 安装方式
 
-公开 npm 包名固定为 `@liteyukistudio/luna-cli`。实现前必须确认 npm 组织 `@liteyukistudio` 已创建且发布账号拥有权限；不使用容易被抢注的无 Scope 包名。
+公开 npm 包名固定为 `@liteyuki/luna-cli`。发布前必须确认 npm 组织 `@liteyuki` 已创建且发布账号拥有权限；不使用容易被抢注的无 Scope 包名。
 
 #### npm 与 pnpm 全局安装
 
 ```bash
-npm install --global @liteyukistudio/luna-cli
-pnpm add --global @liteyukistudio/luna-cli
+npm install --global @liteyuki/luna-cli
+pnpm add --global @liteyuki/luna-cli
 ```
 
 安装后统一提供 `luna` 命令：
@@ -1461,15 +1466,15 @@ luna help catalog output=json interactive=false
 一次性运行用于试用或固定版本的 CI：
 
 ```bash
-npx --yes @liteyukistudio/luna-cli@latest --version
-pnpm dlx @liteyukistudio/luna-cli@latest --version
+npx --yes @liteyuki/luna-cli@latest --version
+pnpm dlx @liteyuki/luna-cli@latest --version
 ```
 
 预发布版本必须显式指定 dist-tag 或版本，不能污染稳定安装：
 
 ```bash
-npm install --global @liteyukistudio/luna-cli@next
-pnpm add --global @liteyukistudio/luna-cli@beta
+npm install --global @liteyuki/luna-cli@next
+pnpm add --global @liteyuki/luna-cli@beta
 ```
 
 npm 全局安装通过 `package.json.bin` 将 `luna` 链接到全局可执行目录。Unix 入口必须有 `#!/usr/bin/env node`，Windows 由 npm/pnpm 生成命令包装器。遇到全局目录权限问题时，文档引导使用 Node.js 版本管理器或用户级 pnpm home，不推荐对安装命令使用 `sudo`。
@@ -1494,8 +1499,8 @@ mv luna "${HOME}/.local/bin/luna"
 卸载时：
 
 ```bash
-npm uninstall --global @liteyukistudio/luna-cli
-pnpm remove --global @liteyukistudio/luna-cli
+npm uninstall --global @liteyuki/luna-cli
+pnpm remove --global @liteyuki/luna-cli
 rm "${HOME}/.local/bin/luna"
 ```
 
@@ -1507,7 +1512,7 @@ rm "${HOME}/.local/bin/luna"
 
 ```json
 {
-  "name": "@liteyukistudio/luna-cli",
+  "name": "@liteyuki/luna-cli",
   "version": "0.0.0",
   "description": "Command-line client for Luna DevOps",
   "type": "module",
@@ -1650,17 +1655,17 @@ jobs:
         with:
           bun-version-file: ".bun-version"
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @liteyukistudio/luna-cli typecheck
-      - run: pnpm --filter @liteyukistudio/luna-cli lint
-      - run: pnpm --filter @liteyukistudio/luna-cli test
+      - run: pnpm --filter @liteyuki/luna-cli typecheck
+      - run: pnpm --filter @liteyuki/luna-cli lint
+      - run: pnpm --filter @liteyuki/luna-cli test
       - run: pnpm cli:openapi-check
       - run: pnpm cli:command-coverage
-      - run: pnpm --filter @liteyukistudio/luna-cli build:npm
+      - run: pnpm --filter @liteyuki/luna-cli build:npm
       - run: npm pack --workspace cli --dry-run --json
-      - run: pnpm --filter @liteyukistudio/luna-cli pack:verify
-      - run: pnpm --filter @liteyukistudio/luna-cli smoke:npm
-      - run: pnpm --filter @liteyukistudio/luna-cli build:binary:native
-      - run: pnpm --filter @liteyukistudio/luna-cli smoke:binary
+      - run: pnpm --filter @liteyuki/luna-cli pack:verify
+      - run: pnpm --filter @liteyuki/luna-cli smoke:npm
+      - run: pnpm --filter @liteyuki/luna-cli build:binary:native
+      - run: pnpm --filter @liteyuki/luna-cli smoke:binary
 ```
 
 `smoke:npm` 必须从实际生成的 `.tgz` 分别执行：
@@ -1738,13 +1743,13 @@ jobs:
         with:
           bun-version-file: ".bun-version"
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @liteyukistudio/luna-cli typecheck
-      - run: pnpm --filter @liteyukistudio/luna-cli lint
-      - run: pnpm --filter @liteyukistudio/luna-cli test
+      - run: pnpm --filter @liteyuki/luna-cli typecheck
+      - run: pnpm --filter @liteyuki/luna-cli lint
+      - run: pnpm --filter @liteyuki/luna-cli test
       - run: pnpm cli:openapi-check
       - run: pnpm cli:command-coverage
-      - run: pnpm --filter @liteyukistudio/luna-cli test:security
-      - run: pnpm --filter @liteyukistudio/luna-cli test:auth-integration
+      - run: pnpm --filter @liteyuki/luna-cli test:security
+      - run: pnpm --filter @liteyuki/luna-cli test:auth-integration
 
   binary:
     needs: [metadata, quality]
@@ -1787,10 +1792,10 @@ jobs:
           bun-version-file: ".bun-version"
       - run: pnpm install --frozen-lockfile
       - run: >
-          pnpm --filter @liteyukistudio/luna-cli build:binary
+          pnpm --filter @liteyuki/luna-cli build:binary
           --target=${{ matrix.target }}
           --outfile=${{ matrix.asset }}
-      - run: pnpm --filter @liteyukistudio/luna-cli smoke:asset --asset=${{ matrix.asset }}
+      - run: pnpm --filter @liteyuki/luna-cli smoke:asset --asset=${{ matrix.asset }}
       - uses: actions/upload-artifact@v6
         with:
           name: unsigned-${{ matrix.asset }}
@@ -1813,9 +1818,9 @@ jobs:
           node-version: "24"
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @liteyukistudio/luna-cli build:npm
-      - run: pnpm --filter @liteyukistudio/luna-cli pack:release
-      - run: pnpm --filter @liteyukistudio/luna-cli smoke:npm
+      - run: pnpm --filter @liteyuki/luna-cli build:npm
+      - run: pnpm --filter @liteyuki/luna-cli pack:release
+      - run: pnpm --filter @liteyuki/luna-cli smoke:npm
       - uses: actions/upload-artifact@v6
         with:
           name: luna-cli-npm
@@ -1895,18 +1900,19 @@ Linux musl 制品必须额外在 Alpine 容器中执行 smoke test。交叉编�
 
 npm 正式发布采用 Trusted Publishing，不在 GitHub Secret 中保存长期 `NPM_TOKEN`：
 
-1. 在 npm 组织中确认 `@liteyukistudio/luna-cli` 为 public scoped package。
-2. 如果 npm 要求包先存在才能配置 Trusted Publisher，首次发布由维护者在干净环境中使用 2FA 手动执行 `npm publish <tarball> --access public --tag next`；首次发布不创建自动化 Token。
-3. 在 npm 包设置中添加 GitHub Actions Trusted Publisher：
+1. 确认 npm 组织 `@liteyuki` 已存在，发布维护者拥有创建 public package 的权限并已启用 2FA。
+2. 在干净环境中使用仓库发布脚本生成并验证 tarball，再由维护者使用 2FA 手动执行 `npm publish <tarball> --access public --tag next`。这次发布会创建 `@liteyuki/luna-cli`，不需要提前在 npm 单独创建包，也不创建自动化 Token。
+3. 首次发布成功后，在 npm 包设置中添加 GitHub Actions Trusted Publisher：
    - Organization or user：`LiteyukiStudio`
    - Repository：`devops`
    - Workflow filename：`cli-release.yml`
    - Environment：`npm`
    - Allowed actions：`npm publish`
 4. GitHub `npm` Environment 启用保护规则，只允许受保护 tag，经指定维护者审批后发布。
-5. `publish-npm` Job 必须在 GitHub-hosted runner 上执行，权限只增加 `id-token: write`，不得设置 `NPM_TOKEN` 或 `NODE_AUTH_TOKEN`。
-6. 发布环境使用 Node.js `>=22.14.0` 和 npm CLI `>=11.5.1`。完成 Trusted Publishing 验证后，在 npm 包设置中要求发布使用 2FA，并禁止传统写入 Token。
-7. `package.json.repository.url` 与 GitHub 仓库精确匹配。公开 GitHub 仓库向公开 npm 包发布时由 npm 自动生成 provenance，不额外传入 `--provenance`。
+5. 将 `cli/package.json` 提升到一个尚未发布的新预发布版本，再创建对应的 `cli-v*` tag 验证 OIDC 发布。不能复用首次手动发布的版本做认证验收，因为幂等发布逻辑发现远端内容一致时会跳过 `npm publish`。
+6. `publish-npm` Job 必须在 GitHub-hosted runner 上执行，权限只增加 `id-token: write`，不得设置 `NPM_TOKEN` 或 `NODE_AUTH_TOKEN`。
+7. 发布环境使用 Node.js `>=22.14.0` 和 npm CLI `>=11.5.1`。完成 Trusted Publishing 验证后，在 npm 包设置中要求发布使用 2FA，并禁止传统写入 Token。
+8. `package.json.repository.url` 与 GitHub 仓库精确匹配。公开 GitHub 仓库向公开 npm 包发布时由 npm 自动生成 provenance，不额外传入 `--provenance`。
 
 Trusted Publisher 只允许绑定一个工作流。不要把 `npm publish` 抽进另一个 reusable workflow；若未来确需使用 `workflow_call`，npm 侧仍配置最外层调用工作流文件名，并保持 `id-token: write` 传递链清晰。
 

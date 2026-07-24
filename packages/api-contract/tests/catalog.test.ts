@@ -68,6 +68,32 @@ describe("OpenAPI operation catalog", () => {
     }
   });
 
+  it("publishes expanded request input schemas for agent help", () => {
+    const operation = OPERATION_CATALOG.find(
+      ({ method, path }) =>
+        method === "post" && path === "/api/v1/public/configs",
+    );
+
+    expect(operation?.inputSchema).toMatchObject({
+      type: "object",
+      required: ["body"],
+      additionalProperties: false,
+      properties: {
+        body: {
+          ref: "#/components/schemas/ConfigKeysInput",
+          type: "object",
+          required: ["keys"],
+          properties: {
+            keys: {
+              type: "array",
+              items: { type: "string" },
+            },
+          },
+        },
+      },
+    });
+  });
+
   it("normalizes route syntax and resolves all lookup forms", () => {
     expect(normalizeOpenApiPath("api/v1/projects/:projectId/")).toBe(
       "/api/v1/projects/{projectId}",
@@ -136,6 +162,29 @@ describe("OpenAPI operation catalog", () => {
         transport: "download",
         requiredScopes: ["project:read", "widget:read"],
       },
+    });
+  });
+
+  it("publishes explicit CLI contracts for dashboard and retention operations", () => {
+    expect(findOperationByCommand("dashboard.show")?.command).toMatchObject({
+      risk: "low",
+      requiredScopes: ["dashboard:read"],
+    });
+    expect(findOperationByCommand("retention.catalog")?.command).toMatchObject({
+      risk: "low",
+      requiredScopes: ["retention:read"],
+    });
+    expect(findOperationByCommand("retention.preview")?.command).toMatchObject({
+      risk: "low",
+      requiredScopes: ["retention:read"],
+    });
+    expect(findOperationByCommand("retention.cleanup")?.command).toMatchObject({
+      risk: "critical",
+      requiredScopes: ["retention:manage"],
+    });
+    expect(findOperationByCommand("access-token.scope-list")?.command).toMatchObject({
+      risk: "low",
+      requiredScopes: ["token:manage"],
     });
   });
 

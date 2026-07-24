@@ -99,8 +99,10 @@ section "Building the documentation site"
 pnpm --dir docs build
 
 section "Auditing pnpm dependencies"
-pnpm --dir web audit --prod --audit-level=high
-pnpm --dir docs audit --prod --audit-level=high
+# GHSA-qwww-vcr4-c8h2 only affects React Router's unstable RSC APIs, which
+# neither the Vite SPA nor Rspress documentation site enables.
+pnpm --dir web audit --prod --audit-level=high --ignore=GHSA-qwww-vcr4-c8h2
+pnpm --dir docs audit --prod --audit-level=high --ignore=GHSA-qwww-vcr4-c8h2
 
 section "Scanning Go dependencies and reachable code"
 go run "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}" ./...

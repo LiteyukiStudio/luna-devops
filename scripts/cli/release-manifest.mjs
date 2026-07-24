@@ -78,14 +78,14 @@ ${channel}
 
 ## 中文
 
-- npm：\`npm install --global @liteyukistudio/luna-cli@${npmTag}\`
+- npm：\`npm install --global @liteyuki/luna-cli@${npmTag}\`
 - Linux 独立二进制已在目标 runner 完成 smoke test。
 - macOS 与 Windows 尚未接入代码签名；仅预发布版本提供带 \`-unsigned\` 后缀的测试制品，正式版不发布这些制品。
 - 请使用 \`SHA256SUMS\` 校验下载文件，并在 GitHub Release 的 Attestations 页面验证 OIDC provenance。
 
 ## English
 
-- npm: \`npm install --global @liteyukistudio/luna-cli@${npmTag}\`
+- npm: \`npm install --global @liteyuki/luna-cli@${npmTag}\`
 - Standalone Linux binaries were smoke-tested on their target runners.
 - macOS and Windows code signing is not configured. Only prereleases contain explicitly named \`-unsigned\` test artifacts; stable releases omit them.
 - Verify downloads with \`SHA256SUMS\` and check the GitHub OIDC provenance on the release Attestations page.

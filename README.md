@@ -62,6 +62,7 @@ Luna DevOps 将代码仓库、镜像站、BuildKit、Kubernetes、访问入口�
 | 前端 | Vite、React、TypeScript、Tailwind CSS、shadcn/ui、TanStack Query |
 | 表单与交互 | React Hook Form、Zod、i18next、react-i18next、Sonner |
 | 交付 | Docker Compose、Helm、Kubernetes Job、BuildKit、Gateway API |
+| CLI | TypeScript、Commander、Zod、i18next、npm / pnpm、Bun |
 | 工具链 | pnpm、uv、golang-migrate、OpenAPI |
 
 ## 快速开始
@@ -93,6 +94,22 @@ pnpm --dir web dev
 ```
 
 Vite 开发服务器会将 `/api/v1` 代理到 `http://localhost:8080`。
+
+## Luna CLI
+
+仓库内的 `luna` CLI 使用稳定的两级命令结构，支持多实例上下文、人类可读输出和面向 Agent 的版本化 JSON 输出：
+
+```bash
+pnpm --silent --dir cli exec tsx src/entry.ts version show agent=true
+pnpm --silent --dir cli exec tsx src/entry.ts help catalog query=project limit=5 agent=true
+```
+
+CLI 源码已经可以用于开发和本地验证；公开 npm 包与独立二进制需要等首次 `cli-v*` 发版后才能安装。当前 CLI 只执行机器 Help 中存在的命令，尚未进入 OpenAPI 或尚未完成专用传输的能力不会由通用 HTTP 请求兜底。
+
+- [CLI 文档](https://luna-devops.liteyuki.org/guide/cli/)
+- [源码开发与验证](docs/docs/zh/guide/cli/development.md)
+- [CLI 包说明](cli/README.md)
+- [Agent Skills](ai-supports/README.md)
 
 ## 部署
 
@@ -151,6 +168,9 @@ cmd/worker              异步 Worker 入口
 internal/               后端业务域、Provider、Service 和数据模型
 migrations/             PostgreSQL 数据库迁移
 openapi/                OpenAPI 定义
+cli/                    TypeScript CLI
+packages/api-*/         CLI 共享 API Client 与契约
+ai-supports/            与 CLI 配套的 Agent Skills
 web/                    Vite + React 控制台
 web/public/             公共资源、标志、吉祥物和 favicon
 docs/                   Rspress 文档站

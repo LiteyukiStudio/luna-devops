@@ -1,22 +1,30 @@
 ---
 name: luna-devops-system
-description: 使用已安装的 Luna DevOps CLI 管理全局设置、公开配置、数据保留、应用模板、系统组件和平台诊断；CLI 可用前仅用于规划。
+description: 通过 Luna CLI 读取或更新全局配置，并预览或执行数据保留清理；应用市场和系统组件仅在机器 Help 出现对应工具后执行。
 ---
 
 # 系统管理 Skill
 
-先遵循 `luna-devops-cli`，并从机器可读 Help 发现 config、data retention、app template 和 system component 命令。
+先遵循 `luna-devops-cli`。当前 `config` 与 `data-retention` 分类已进入目录。
 
-## 操作流程
+## 全局配置
 
-1. 先确认是否需要平台管理员权限。
-2. 修改站点配置前读取当前值并给出差异。
-3. 数据保留 cleanup 前必须先 preview。
-4. 应用市场安装前确认目标 project/application/runtime 配置。
-5. 系统组件安装前检查已有安装状态。
+1. 读取配置定义与当前值。
+2. 仅更新用户明确指定的键。
+3. Secret 配置不回显；留空语义以 Help 为准。
+4. 高风险配置更新当前受服务端计划协议门禁，遇到 `server_plan_required` 时停止。
 
-## 风险边界
+## 数据保留
 
-- data retention cleanup 是 critical，必须 confirmation + MFA step-up。
-- 系统组件安装可能修改集群资源，至少 high risk。
-- 站点配置会影响所有用户，至少 medium risk。
+1. 读取支持的数据集目录。
+2. 先按同一时间范围执行预览。
+3. 向用户展示数据集、时间范围和预计条数。
+4. 用户确认后执行清理，并重新查询结果。
+
+## 尚未进入 CLI
+
+- 应用市场模板与安装
+- 平台系统组件安装状态
+- 完整站点设置聚合工作流
+
+这些能力不得用 `api request` 代替。

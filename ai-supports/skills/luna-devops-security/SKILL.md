@@ -1,23 +1,29 @@
 ---
 name: luna-devops-security
-description: 使用已安装的 Luna DevOps CLI 管理认证、MFA、OIDC、OAuth 应用与授权、用户、访问令牌、Scope、准入策略和二次验证；CLI 可用前仅用于规划。
+description: 通过 Luna CLI 管理认证策略、OIDC Provider、TOTP MFA、用户、外部身份和 Access Token；执行前确认会话与 Bearer 能力边界。
 ---
 
-# 安全与身份 Skill
+# 安全与账号 Skill
 
-先遵循 `luna-devops-cli`，并从机器可读 Help 发现 auth、user、OAuth app 和 access token 命令。
+先遵循 `luna-devops-cli`。当前目录覆盖 `auth`、`user` 和 `access-token` 的部分 HTTP 操作，以及 CLI 本地 Access Token 登录。
 
-## 操作流程
+## 工作流
 
-1. 先确认 actor 是否是本人操作、项目成员操作还是平台管理员操作。
-2. 用户管理前确认平台管理员权限。
-3. OIDC/Auth provider 变更前检查 callback URL 和 step-up。
-4. Access Token 创建时使用最小 scopes，并显式确认有效期或无限期风险。
-5. OAuth Device Code 会话可按 CLI 流程完成 Step-up MFA；静态 Access Token 不可满足 Step-up。
+1. 读取当前实例、认证状态和 `/meta` 能力。
+2. 区分本地 CLI 凭据、Web Session、OAuth Token 和个人 Access Token。
+3. 用户、Provider、注册策略、密码、MFA 或 Token 变更前读取当前状态。
+4. 按 Help Schema 执行一次变更，再重新读取验证。
 
-## 风险边界
+## 协议入口
 
-- MFA、Auth provider、用户管理、security settings 都是 high risk。
-- Access Token 只显示一次，之后不回显。
-- recovery codes 只在刚生成的安全展示流程中返回，不能写入日志或摘要。
-- OAuth callback、token endpoint 和设备授权轮询由 CLI 实现，不由 Agent 手工编排。
+- OIDC callback 不是 Agent 可直接调用的业务工具。
+- 登录、注册和 TOTP 端点可能依赖 Cookie、CSRF、临时事务或用户在场；命令存在不代表 Access Token 可以完成该流程。
+- 当前 Device Code 与 OAuth Bearer Step-up MFA 未实现。
+- 遇到 `mfa_required` 时停止，不向用户索取 OTP 或恢复码，不重复使用同一 Token。
+
+## Secret 与权限
+
+- 密码、Token、OTP、恢复码和 Provider Secret 不进入对话或内联参数。
+- 创建 Access Token 时使用最小 Scope；明文只可在一次性安全输出中交付。
+- Token 吊销、MFA 重置和用户管理按 Help 风险处理。
+- 不通过管理员上下文绕过用户在场要求。

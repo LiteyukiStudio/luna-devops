@@ -16,17 +16,19 @@ luna help catalog query=project limit=5 output=json interactive=false
 
 ## Current development status
 
-The CLI is under active `0.1.0` development. The source tree includes:
+The CLI is under active `0.1.0` development. The source CLI is runnable and testable. Its current catalog contains 131 commands: 21 local commands and 110 commands generated from OpenAPI. The source tree includes:
 
 - multi-instance contexts and a default project context;
 - Access Token login, validation, and local credential storage;
 - `key=value`, JSON, file, and standard-input parameters;
 - human-readable output and a versioned JSON envelope;
 - local help, context, project, and completion command registration;
-- all 109 operations currently documented by OpenAPI;
+- all 110 operations currently documented by OpenAPI;
 - a shared npm/Bun entry point, packaging, global-install smoke tests, and release gates.
 
 Shared contracts and the API client are bundled safely into npm and Bun artifacts, so users do not need the monorepo workspace. No public package has been published yet; installation commands become available after the first `cli-v*` release.
+
+See [Source Development and Verification](./development) for repository commands, OpenAPI regeneration, and validation.
 
 ## Design boundaries
 
@@ -36,6 +38,26 @@ Shared contracts and the API client are bundled safely into npm and Bun artifact
 - Medium-risk operations use the shared interactive confirmation flow. Non-interactive callers must set `yes=true`.
 - High-risk API operations fail closed until the server-issued plan protocol exists; `yes=true` cannot bypass it.
 - CLI and platform versions are independent. Compatibility is negotiated through server capabilities rather than a version-string comparison alone.
+- A command in `help catalog` means that the current CLI registers it. Until capability negotiation is complete, `serverSupported` may still be `null`.
+- Agents must pass `agent=true` to every command. This locks JSON output, disables interaction and colors, and applies safe pagination, polling, and response-size limits.
+- When a context has a default project, project-scoped commands may omit a required
+  `project`, `projectId`, or `projectID`; the CLI injects that immutable project ID without granting additional permissions.
+- `api request` is limited to human diagnostics against a known relative API path and is always disabled in Agent mode. It must not impersonate a business capability that is absent from OpenAPI or still requires a dedicated transport.
+
+## Agent Skills
+
+The paired Skills live in the repository's [`ai-supports/skills`](https://github.com/LiteyukiStudio/devops/tree/main/ai-supports/skills) directory. They define intent routing, operation order, and safety boundaries. Machine-readable Help remains the source of truth for commands, parameters, risk, and output.
+
+```bash
+luna help catalog query=project limit=20 agent=true
+luna help command path=project.get-projects agent=true
+```
+
+After changing the command catalog or a capability boundary, update the Skills and run:
+
+```bash
+node scripts/cli/verify-skills-sync.mjs
+```
 
 ## Remaining release blockers
 
@@ -47,4 +69,4 @@ Before the first public release, the project must:
 4. Configure an npm Trusted Publisher and protect the GitHub `npm` Environment.
 5. Add Apple Developer ID/notarization and Windows Authenticode before desktop binaries enter stable releases.
 
-See [Install and Use](./installation) and [Release Security](./release-security) for details.
+See [Install and Use](./installation), [Source Development and Verification](./development), and [Release Security](./release-security) for details.

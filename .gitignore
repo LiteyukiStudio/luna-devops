@@ -40,6 +40,7 @@ web/node_modules/
 tests/node_modules/
 web/dist/
 web/dist-ssr/
+release/
 web/.vite/
 web/*.local
 

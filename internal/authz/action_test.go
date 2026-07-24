@@ -66,6 +66,17 @@ func TestAccessTokenScopeRules(t *testing.T) {
 	if !UserCanCreateAccessTokenScope(PlatformRoleUser, "project:read,build:read") {
 		t.Fatal("expected regular user to create read scopes")
 	}
+	if !UserCanCreateAccessTokenScope(PlatformRoleUser, string(ActionDashboardRead)) {
+		t.Fatal("expected regular user to create dashboard read scope")
+	}
+	if UserCanCreateAccessTokenScope(PlatformRoleUser, string(ActionDataRetentionRead)) {
+		t.Fatal("expected regular user to be blocked from creating retention scopes")
+	}
+	for _, action := range []Action{ActionDashboardRead, ActionDataRetentionRead, ActionDataRetentionManage} {
+		if !AccessTokenAllows("*", string(action)) {
+			t.Fatalf("expected full scope token to allow %s", action)
+		}
+	}
 	if scope := NormalizeAccessTokenScope(string(ActionDeploymentDataExport)); scope != "" {
 		t.Fatalf("deployment data export must not be accepted as a personal access token scope, got %q", scope)
 	}
@@ -86,6 +97,17 @@ func TestAccessTokenScopeCatalogMarksAdminOnlyScopes(t *testing.T) {
 	}
 	if catalogScopeRequiresAdmin(userCatalog, string(ActionBuildTrigger)) {
 		t.Fatal("expected build trigger to be creatable by regular users")
+	}
+	if catalogScopeRequiresAdmin(userCatalog, string(ActionDashboardRead)) {
+		t.Fatal("expected dashboard read to be creatable by regular users")
+	}
+	for _, scope := range []Action{ActionDataRetentionRead, ActionDataRetentionManage} {
+		if !catalogScopeRequiresAdmin(userCatalog, string(scope)) {
+			t.Fatalf("expected %s to require a platform administrator", scope)
+		}
+		if catalogScopeRequiresAdmin(adminCatalog, string(scope)) {
+			t.Fatalf("expected %s to be available to platform administrators", scope)
+		}
 	}
 }
 
@@ -123,6 +145,10 @@ func TestRequiredAccessTokenScopeUsesFineGrainedProjectRoutes(t *testing.T) {
 		{"/api/v1/projects/:projectId/repository-bindings", "POST", string(ActionGitWrite)},
 		{"/api/v1/events", "GET", string(ActionEventRead)},
 		{"/api/v1/events/:eventId", "GET", string(ActionEventRead)},
+		{"/api/v1/dashboard", "GET", string(ActionDashboardRead)},
+		{"/api/v1/data-retention/catalog", "GET", string(ActionDataRetentionRead)},
+		{"/api/v1/data-retention/preview", "POST", string(ActionDataRetentionRead)},
+		{"/api/v1/data-retention/cleanup", "POST", string(ActionDataRetentionManage)},
 	}
 
 	for _, test := range tests {

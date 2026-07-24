@@ -74,7 +74,7 @@ test("manifest records hashes and unsigned prerelease limitations", () => {
     );
     assert.match(
       readFileSync(join(output, "RELEASE_NOTES.md"), "utf8"),
-      /@liteyukistudio\/luna-cli@beta/,
+      /@liteyuki\/luna-cli@beta/,
     );
   } finally {
     rmSync(root, { recursive: true, force: true });

@@ -62,6 +62,7 @@ Repository
 | Frontend | Vite, React, TypeScript, Tailwind CSS, shadcn/ui, TanStack Query |
 | Forms and UX | React Hook Form, Zod, i18next, react-i18next, Sonner |
 | Delivery | Docker Compose, Helm, Kubernetes Job, BuildKit, Gateway API |
+| CLI | TypeScript, Commander, Zod, i18next, npm / pnpm, Bun |
 | Tooling | pnpm, uv, golang-migrate, OpenAPI |
 
 ## Quick Start
@@ -93,6 +94,22 @@ pnpm --dir web dev
 ```
 
 The Vite dev server proxies `/api/v1` to `http://localhost:8080`.
+
+## Luna CLI
+
+The repository includes the `luna` CLI with a stable two-level command structure, multi-instance contexts, human-readable output, and versioned JSON output for agents:
+
+```bash
+pnpm --silent --dir cli exec tsx src/entry.ts version show agent=true
+pnpm --silent --dir cli exec tsx src/entry.ts help catalog query=project limit=5 agent=true
+```
+
+The source CLI is ready for development and local verification. Public npm packages and standalone binaries become installable after the first `cli-v*` release. The CLI executes commands exposed by machine-readable Help only; it does not use a generic HTTP request as a substitute for capabilities that are absent from OpenAPI or still need a dedicated transport.
+
+- [CLI documentation](https://luna-devops.liteyuki.org/en/guide/cli/)
+- [Source development and verification](docs/docs/en/guide/cli/development.md)
+- [CLI package README](cli/README.md)
+- [Agent Skills](ai-supports/README.md)
 
 ## Deployment
 
@@ -151,6 +168,9 @@ cmd/worker              Async Worker entry point
 internal/               Backend domains, providers, services, and models
 migrations/             PostgreSQL migrations
 openapi/                OpenAPI definitions
+cli/                    TypeScript CLI
+packages/api-*/         Shared API client and contracts for the CLI
+ai-supports/            Agent Skills paired with the CLI
 web/                    Vite + React console
 web/public/             Public assets, logo, mascot, and favicon
 docs/                   Rspress documentation site

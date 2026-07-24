@@ -90,7 +90,13 @@ export async function runCli(
   argv: readonly string[] = process.argv,
   fallbackOutput?: RuntimePorts['output'],
 ): Promise<CliRunResult> {
-  program.exitOverride()
+  const fallbackGlobals = inferFallbackGlobals(argv)
+  const restoreCommanderOutput = suppressCommanderOutput(
+    program,
+    isMachineOutput(fallbackGlobals),
+  )
+  for (const command of commandTree(program))
+    command.exitOverride()
   try {
     await program.parseAsync([...argv], { from: 'node' })
     return { exitCode: 0 }
@@ -100,8 +106,11 @@ export async function runCli(
       return { exitCode: 0 }
     }
     const normalized = commanderFailure(error)
-    fallbackOutput?.writeError(normalized, inferFallbackGlobals(argv))
+    await fallbackOutput?.writeError(normalized, fallbackGlobals)
     return { exitCode: normalized.exitCode, error: normalized }
+  }
+  finally {
+    restoreCommanderOutput()
   }
 }
 
@@ -127,8 +136,17 @@ async function executeRegistered(
     streaming: registered.metadata.streaming ?? false,
   })
 
-  enforceExecutionScope(registered, invokedPath, globals, parsed.explicitGlobalKeys)
-  const params = await ports.input.parse(parsed.businessTokens, registered.metadata)
+  const inputMetadata = metadataWithResolvedProjectRequirement(registered, globals)
+  const parsedParams = await ports.input.parse(parsed.businessTokens, inputMetadata)
+  const params = resolveProjectParameters(parsedParams, registered, globals)
+  enforceExecutionScope(
+    registered,
+    invokedPath,
+    globals,
+    parsed.explicitGlobalKeys,
+    parsedParams,
+    params,
+  )
   await enforceRiskPolicy(registered, invokedPath, globals, ports)
   const invocation: CommandInvocation = {
     metadata: registered.metadata,
@@ -144,11 +162,69 @@ async function executeRegistered(
   await ports.output.writeSuccess(registered.metadata, result, globals)
 }
 
+function metadataWithResolvedProjectRequirement(
+  registered: RegisteredCommand,
+  globals: CommandExecutionGlobals,
+): RegisteredCommand['metadata'] {
+  if (!globals.project)
+    return registered.metadata
+  const parameters = registered.metadata.parameters.map(parameter =>
+    parameter.required && isProjectParameter(parameter.name)
+      ? { ...parameter, required: false }
+      : parameter,
+  )
+  return { ...registered.metadata, parameters }
+}
+
+function resolveProjectParameters(
+  parsedParams: Readonly<Record<string, unknown>>,
+  registered: RegisteredCommand,
+  globals: CommandExecutionGlobals,
+): Readonly<Record<string, unknown>> {
+  const requiredProjectParameters = registered.metadata.parameters
+    .filter(parameter => parameter.required && isProjectParameter(parameter.name))
+  if (requiredProjectParameters.length === 0)
+    return parsedParams
+
+  const params = { ...parsedParams }
+  const structured = isRecord(params.params) ? { ...params.params } : undefined
+  for (const parameter of requiredProjectParameters) {
+    const explicitValue = params[parameter.name] ?? structured?.[parameter.name]
+    const value = explicitValue ?? globals.project
+    if (value === undefined || value === null || value === '') {
+      throw new CliCommandError(
+        'invalid_arguments',
+        'Input validation failed.',
+        {
+          status: 400,
+          exitCode: 2,
+          details: {
+            command: registered.metadata.canonicalPath,
+            fields: [{ key: parameter.name, code: 'required' }],
+          },
+        },
+      )
+    }
+    params[parameter.name] = value
+    if (structured)
+      delete structured[parameter.name]
+  }
+  if (structured)
+    params.params = structured
+  return params
+}
+
+function isProjectParameter(name: string): boolean {
+  return name === 'project' || name === 'projectId' || name === 'projectID'
+}
+
 function enforceExecutionScope(
   registered: RegisteredCommand,
   requestedPath: string,
   globals: CommandExecutionGlobals,
   explicitGlobalKeys: ReadonlySet<string>,
+  explicitParams: Readonly<Record<string, unknown>>,
+  params: Readonly<Record<string, unknown>>,
 ): void {
   if (globals.agent && requestedPath !== registered.metadata.canonicalPath) {
     throw new CliCommandError(
@@ -171,7 +247,10 @@ function enforceExecutionScope(
       { status: 403, details: { command: requestedPath } },
     )
   }
-  if (registered.metadata.projectContext === 'required' && !globals.project) {
+  if (
+    registered.metadata.projectContext === 'required'
+    && !hasProjectSelection(globals, params)
+  ) {
     throw new CliCommandError(
       'project_required',
       `Command "${requestedPath}" requires a project.`,
@@ -192,7 +271,7 @@ function enforceExecutionScope(
     globals.agent
     && registered.metadata.projectContext === 'required'
     && registered.metadata.risk !== 'low'
-    && !explicitGlobalKeys.has('project')
+    && !hasExplicitProjectSelection(explicitGlobalKeys, explicitParams)
   ) {
     throw new CliCommandError(
       'explicit_project_required',
@@ -207,6 +286,30 @@ function enforceExecutionScope(
       { status: 400, exitCode: 2 },
     )
   }
+}
+
+function hasProjectSelection(
+  globals: CommandExecutionGlobals,
+  params: Readonly<Record<string, unknown>>,
+): boolean {
+  return Boolean(globals.project) || projectValue(params) !== undefined
+}
+
+function hasExplicitProjectSelection(
+  explicitGlobalKeys: ReadonlySet<string>,
+  params: Readonly<Record<string, unknown>>,
+): boolean {
+  return explicitGlobalKeys.has('project') || projectValue(params) !== undefined
+}
+
+function projectValue(params: Readonly<Record<string, unknown>>): unknown {
+  const structured = isRecord(params.params) ? params.params : undefined
+  for (const name of ['project', 'projectId', 'projectID']) {
+    const value = params[name] ?? structured?.[name]
+    if (value !== undefined && value !== null && value !== '')
+      return value
+  }
+  return undefined
 }
 
 async function enforceRiskPolicy(
@@ -355,6 +458,37 @@ function inferFallbackGlobals(argv: readonly string[]): Partial<CommandExecution
     agent,
     output: isOutput(output) ? output : agent ? 'json' : 'table',
   }
+}
+
+function suppressCommanderOutput(program: Command, suppress: boolean): () => void {
+  if (!suppress)
+    return () => undefined
+
+  const snapshots = commandTree(program).map(command => ({
+    command,
+    output: command.configureOutput(),
+  }))
+  for (const snapshot of snapshots) {
+    snapshot.command.configureOutput({
+      writeOut: () => undefined,
+      writeErr: () => undefined,
+      outputError: () => undefined,
+    })
+  }
+  return () => {
+    for (const snapshot of snapshots)
+      snapshot.command.configureOutput(snapshot.output)
+  }
+}
+
+function commandTree(root: Command): Command[] {
+  return [root, ...root.commands.flatMap(commandTree)]
+}
+
+function isMachineOutput(
+  globals: Partial<CommandExecutionGlobals>,
+): boolean {
+  return Boolean(globals.agent || globals.output !== 'table')
 }
 
 function isExpectedCommanderExit(error: CommanderError): boolean {

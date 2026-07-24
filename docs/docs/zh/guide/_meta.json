@@ -23,5 +23,10 @@
     "type": "file",
     "name": "build-and-release",
     "label": "构建与发布"
+  },
+  {
+    "type": "dir",
+    "name": "cli",
+    "label": "Luna CLI"
   }
 ]

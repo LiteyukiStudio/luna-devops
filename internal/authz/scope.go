@@ -58,6 +58,10 @@ var accessTokenScopeCatalog = []AccessTokenScopeDefinition{
 	scopeDef(ActionBillingAdjust, "billing", false, false),
 	scopeDef(ActionEventRead, "event", true, true),
 
+	scopeDef(ActionDashboardRead, "dashboard", true, true),
+	scopeDef(ActionDataRetentionRead, "retention", false, false),
+	scopeDef(ActionDataRetentionManage, "retention", false, false),
+
 	scopeDef(ActionUserRead, "user", true, true),
 	scopeDef(ActionUserWrite, "user", false, false),
 	scopeDef(ActionUserManage, "user", false, false),

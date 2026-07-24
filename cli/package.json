@@ -1,5 +1,5 @@
 {
-  "name": "@liteyukistudio/luna-cli",
+  "name": "@liteyuki/luna-cli",
   "version": "0.1.0",
   "description": "Command-line client for Luna DevOps",
   "type": "module",

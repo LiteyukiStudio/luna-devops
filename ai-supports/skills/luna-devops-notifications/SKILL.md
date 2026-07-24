@@ -1,22 +1,22 @@
 ---
 name: luna-devops-notifications
-description: 使用已安装的 Luna DevOps CLI 管理通知预设、渠道、模板、规则、投递、测试通知、投递诊断和事件订阅；CLI 可用前仅用于规划。
+description: 规划通知渠道、模板、规则、投递与测试通知；当前机器 Help 没有 notification 分类时不得执行平台查询或变更。
 ---
 
 # 通知 Skill
 
-先遵循 `luna-devops-cli`，并从机器可读 Help 发现 notification 命令。
+先遵循 `luna-devops-cli`。当前命令目录没有 `notification` 分类，因此本 Skill 只用于整理通知需求和排障证据。
 
-## 操作流程
+## 规划清单
 
-1. 先确认用户想通知哪些事件。
-2. 选择 channel preset 或自定义 channel。
-3. 配置 template 和 rule。
-4. 保存后发送 test notification。
-5. 投递失败时检查 delivery status、channel 配置、外部 webhook/SMTP 响应。
+1. 事件类型、项目范围和接收目标。
+2. 渠道预设或适配器、模板、变量与国际化。
+3. 规则、启停、去重与重试策略。
+4. 投递状态、外部响应和最终成功判定。
 
-## 风险边界
+## 边界
 
-- Webhook URL 和 SMTP secret 不回显。
-- 删除 channel/template/rule 会影响告警，应要求 confirmation。
-- 测试通知可能触达外部系统，执行前说明目标。
+- 不用 `api request` 创建渠道或发送测试通知。
+- Webhook URL、SMTP 密码和签名 Secret 不回显。
+- 测试通知会触达外部系统，命令进入目录后仍需明确确认目标。
+- 外部 HTTP 2xx 不一定代表业务平台接收成功，应以后端适配器判定为准。

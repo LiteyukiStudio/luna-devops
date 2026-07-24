@@ -109,11 +109,7 @@ func (r *Runner) cleanupProjectNamespaces(ctx context.Context, project model.Pro
 func (r *Runner) cleanupProjectNamespacesForDeploymentTargets(ctx context.Context, project model.Project, targets []model.DeploymentTarget) error {
 	namespace := projectNamespace(project)
 	if len(targets) == 0 {
-		manager, err := r.kubernetesManager(model.Environment{})
-		if err != nil {
-			return err
-		}
-		return deleteManagedNamespace(ctx, manager, namespace)
+		return nil
 	}
 	seen := map[string]bool{}
 	for _, target := range targets {
