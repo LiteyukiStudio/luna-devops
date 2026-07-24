@@ -21,6 +21,8 @@ logs/
 
 # Go build outputs
 bin/
+!cli/bin/
+!cli/bin/luna.js
 tmp/
 *.test
 coverage.out
