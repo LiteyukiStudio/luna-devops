@@ -6,6 +6,18 @@ Current development-line recommendation: Luna CLI Skills `0.1.0-beta.1`.
 
 Install or download releases from [GitHub Releases](https://github.com/LiteyukiStudio/luna-devops/releases).
 
+## 0.0.1-beta.1
+
+Release date: 2026-07-26
+
+[GitHub Release](https://github.com/LiteyukiStudio/luna-devops/releases/tag/cli-v0.0.1-beta.1) · [View tag source](https://github.com/LiteyukiStudio/luna-devops/tree/cli-v0.0.1-beta.1)
+
+**Recommended Luna CLI Skills:** `0.1.0-beta.1`
+
+### Docs
+
+- docs 📝: 固化 CLI 与 Skills 预发布兼容版本 ([cd2145d](https://github.com/LiteyukiStudio/luna-devops/commit/cd2145db18a4484570349086f9f08ee1ff1b235b))
+
 ## 0.0.0-beta.8
 
 Release date: 2026-07-26
