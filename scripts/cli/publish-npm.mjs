@@ -11,8 +11,48 @@ import {
   run,
   sha512Integrity,
 } from "./lib.mjs";
+import { validateCliVersion } from "./release-metadata.mjs";
 
 const REGISTRY = "https://registry.npmjs.org/";
+
+export function resolvePublishIdentity({
+  sourcePackageJson,
+  packedPackageJson,
+  expectedVersion,
+}) {
+  if (packedPackageJson.name !== sourcePackageJson.name) {
+    throw new Error(
+      `Expected package ${sourcePackageJson.name}, found ${packedPackageJson.name ?? "<missing>"}`,
+    );
+  }
+  if (packedPackageJson.private === true) {
+    throw new Error("Packed npm package must not be private");
+  }
+
+  const version = String(packedPackageJson.version ?? "");
+  validateCliVersion(version);
+  if (expectedVersion && version !== expectedVersion) {
+    throw new Error(`Expected version ${expectedVersion}, found ${version}`);
+  }
+
+  return {
+    name: packedPackageJson.name,
+    version,
+  };
+}
+
+export function readPackedManifest(path) {
+  const result = run(
+    "tar",
+    ["-xOf", path, "package/package.json"],
+    { timeout: 30_000 },
+  );
+  try {
+    return JSON.parse(result.stdout);
+  } catch {
+    throw new Error("Unable to parse package/package.json from npm tarball");
+  }
+}
 
 export function publishNpm({ tarball, npmTag, expectedVersion }) {
   const path = resolve(tarball);
@@ -20,14 +60,15 @@ export function publishNpm({ tarball, npmTag, expectedVersion }) {
     throw new Error(`npm tarball does not exist: ${path}`);
   }
 
-  const packageJson = readJson(resolve(repositoryRoot, "cli/package.json"));
-  if (expectedVersion && packageJson.version !== expectedVersion) {
-    throw new Error(
-      `Expected version ${expectedVersion}, found ${packageJson.version}`,
-    );
-  }
+  const sourcePackageJson = readJson(resolve(repositoryRoot, "cli/package.json"));
+  const packedPackageJson = readPackedManifest(path);
+  const identity = resolvePublishIdentity({
+    sourcePackageJson,
+    packedPackageJson,
+    expectedVersion,
+  });
 
-  const packageVersion = `${packageJson.name}@${packageJson.version}`;
+  const packageVersion = `${identity.name}@${identity.version}`;
   const localIntegrity = sha512Integrity(path);
   const remote = run(
     "npm",

@@ -10,7 +10,7 @@ Luna CLI 与 Luna DevOps 平台使用独立的版本和 tag 命名空间：
 
 普通 `v*` tag 仍用于平台发布，不会触发 CLI 发布。
 
-仓库中的 `cli/package.json.version` 固定为 `0.0.0-development`，只表示源码开发态，并通过 `private: true` 阻止从源码目录误发布。发布版本只来自 `cli-v*` tag：工作流校验 tag 中的 SemVer，在临时 npm 打包目录移除 `private` 标记、写入版本，并把同一版本注入 npm JavaScript 制品和 Bun 二进制，因此发版前不需要手动修改或提交 `package.json`。
+仓库中的 `cli/package.json.version` 固定为 `0.0.0-development`，只表示源码开发态，并通过 `private: true` 阻止从源码目录误发布。发布版本只来自 `cli-v*` tag：工作流校验 tag 中的 SemVer，在临时 npm 打包目录移除 `private` 标记、写入版本，并把同一版本注入 npm JavaScript 制品和 Bun 二进制，因此发版前不需要手动修改或提交 `package.json`。发布阶段直接读取待发布 tarball 内的 `package/package.json` 校验包名、版本和 `private` 状态，不使用源码占位版本判断制品版本。
 
 ## 首次创建 npm 包
 
