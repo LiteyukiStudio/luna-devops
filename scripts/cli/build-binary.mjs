@@ -5,12 +5,15 @@ import {
   fail,
   isMainModule,
   parseArguments,
+  readJson,
   repositoryRoot,
   requiredArgument,
   run,
 } from "./lib.mjs";
+import { validateCliVersion } from "./release-metadata.mjs";
 
-export function buildBinary({ target, output }) {
+export function buildBinary({ target, output, version }) {
+  validateCliVersion(version);
   const outputPath = resolve(repositoryRoot, output);
   mkdirSync(dirname(outputPath), { recursive: true });
 
@@ -22,8 +25,13 @@ export function buildBinary({ target, output }) {
       "--compile",
       `--target=${target}`,
       `--outfile=${outputPath}`,
+      "--define",
+      `__LUNA_CLI_VERSION__:${JSON.stringify(version)}`,
     ],
-    { stdio: "inherit", timeout: 300_000 },
+    {
+      stdio: "inherit",
+      timeout: 300_000,
+    },
   );
 
   if (process.platform !== "win32") {
@@ -34,9 +42,11 @@ export function buildBinary({ target, output }) {
 
 async function main() {
   const args = parseArguments(process.argv.slice(2));
+  const packageJson = readJson(resolve(repositoryRoot, "cli/package.json"));
   buildBinary({
     target: requiredArgument(args, "target"),
     output: requiredArgument(args, "output"),
+    version: args.get("version") ?? packageJson.version,
   });
 }
 

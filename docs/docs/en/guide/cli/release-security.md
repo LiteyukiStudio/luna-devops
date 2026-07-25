@@ -10,6 +10,8 @@ Luna CLI and the Luna DevOps platform use separate version and tag namespaces:
 
 Plain `v*` tags remain reserved for platform releases and do not trigger CLI publishing.
 
+The source `cli/package.json.version` stays at `0.0.0-development` and only identifies a development checkout. The source manifest also uses `private: true` to prevent accidental publication from the working tree. A `cli-v*` tag is the sole release-version source: the workflow validates its SemVer, removes the private marker and writes that version into a temporary npm package manifest, then injects the same value into the npm JavaScript build and every Bun binary. A release therefore does not require a package manifest version commit.
+
 ## Bootstrapping the npm package
 
 npm does not require an empty package to be created in advance. The first publish command creates the public scoped package `@liteyuki/luna-cli`:
@@ -24,7 +26,7 @@ Before the bootstrap publish:
 2. enable 2FA and build, pack, and smoke-test the tarball from a clean environment;
 3. use a prerelease version with the `next` tag instead of claiming the first stable version;
 4. configure the GitHub Actions Trusted Publisher in the package settings after the package exists;
-5. bump to a new unpublished version and use its `cli-v*` tag to verify OIDC publishing. Reusing the bootstrap version only exercises the idempotency check and does not call `npm publish`.
+5. create a `cli-v*` tag for a new unpublished version to verify OIDC publishing. Reusing the bootstrap tag version only exercises the idempotency check and does not call `npm publish`.
 
 ## CI gates
 
@@ -37,6 +39,8 @@ CLI changes run these checks:
 5. Create a real npm tarball and validate its file allowlist.
 6. Install the same tarball globally with npm and pnpm in clean temporary directories.
 7. Build a Bun baseline binary for the Linux CI host and run command smoke tests.
+
+The release gate additionally asserts that the tarball manifest, the npm-installed `luna --version`, and every standalone binary report the tag version.
 
 The release workflow also builds an explicit target matrix:
 

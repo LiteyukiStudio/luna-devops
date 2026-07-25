@@ -10,7 +10,7 @@ English documentation follows the Chinese section.
 
 ## 当前状态
 
-CLI 目前处于 `0.1.0` 开发阶段。仓库中已经实现：
+CLI 目前处于开发阶段。源码清单使用 `0.0.0-development` 占位版本和 `private: true` 防误发布，正式版本由 `cli-v*` tag 在发布时注入。仓库中已经实现：
 
 - 多实例和项目空间上下文的数据模型、解析与本地存储；
 - Access Token 登录、校验和本地凭据存储基础能力；
@@ -69,7 +69,7 @@ luna <category> <tool> key=value
 
 ### Current status
 
-The CLI is under active `0.1.0` development. It includes contexts, Access Token authentication, structured input and output, command discovery, all 110 operations currently documented by OpenAPI, and release validation.
+The CLI is under active development. The source manifest uses the `0.0.0-development` placeholder and `private: true` to prevent accidental publication; release versions are injected from `cli-v*` tags. It includes contexts, Access Token authentication, structured input and output, command discovery, all 110 operations currently documented by OpenAPI, and release validation.
 
 `cli/src/entry.ts` is the shared npm and Bun entry point, and workspace packages are bundled safely into the distribution. Local npm/pnpm global-install and standalone-binary smoke tests pass. The first public package has not been published yet.
 

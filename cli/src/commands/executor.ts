@@ -9,6 +9,7 @@ import type {
 } from './types.js'
 import process from 'node:process'
 import { Command, CommanderError, Option } from 'commander'
+import { CLI_VERSION } from '../version.js'
 import { resolveGlobalOptions, splitGlobalTokens } from './arguments.js'
 import { CliCommandError, toCliCommandError } from './errors.js'
 
@@ -40,7 +41,7 @@ export function createCliProgram(options: CliProgramOptions): Command {
   const program = new Command()
     .name(options.name ?? 'luna')
     .description(options.description ?? 'Luna DevOps command-line client')
-    .version(options.ports.version ?? '0.1.0', '-V, --version')
+    .version(options.ports.version ?? CLI_VERSION, '-V, --version')
     .showHelpAfterError()
     .allowExcessArguments(false)
     .allowUnknownOption(false)

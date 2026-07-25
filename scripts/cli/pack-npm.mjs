@@ -1,10 +1,13 @@
 import {
+  cpSync,
   existsSync,
   mkdirSync,
-  readFileSync,
+  mkdtempSync,
   rmSync,
+  writeFileSync,
 } from "node:fs";
-import { basename, resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { basename, join, resolve } from "node:path";
 
 import {
   fail,
@@ -15,6 +18,7 @@ import {
   run,
   writeGithubOutput,
 } from "./lib.mjs";
+import { validateCliVersion } from "./release-metadata.mjs";
 
 const ALLOWED_TOP_LEVEL = new Set([
   "LICENSE",
@@ -62,10 +66,20 @@ export function validatePackFiles(files) {
   }
 }
 
-export function packNpm(outputDirectory) {
+export function createPublishManifest(packageJson, version) {
+  validateCliVersion(version);
+  const { private: _private, ...publishablePackage } = packageJson;
+  return {
+    ...publishablePackage,
+    version,
+  };
+}
+
+export function packNpm(outputDirectory, version) {
   const cliDirectory = resolve(repositoryRoot, "cli");
   const packageJson = readJson(resolve(cliDirectory, "package.json"));
-  validatePublishManifest(packageJson);
+  const publishManifest = createPublishManifest(packageJson, version);
+  validatePublishManifest(publishManifest);
 
   for (const required of ["bin/luna.js", "dist"]) {
     if (!existsSync(resolve(cliDirectory, required))) {
@@ -75,18 +89,34 @@ export function packNpm(outputDirectory) {
 
   const destination = resolve(repositoryRoot, outputDirectory);
   mkdirSync(destination, { recursive: true });
-  for (const name of ["package.json"]) {
-    rmSync(resolve(destination, name), { force: true });
+  const stagingDirectory = mkdtempSync(join(tmpdir(), "luna-cli-pack-"));
+  let packed;
+  try {
+    for (const name of ["LICENSE", "README.md", "bin", "dist"]) {
+      cpSync(resolve(cliDirectory, name), resolve(stagingDirectory, name), {
+        recursive: true,
+      });
+    }
+    writeFileSync(
+      resolve(stagingDirectory, "package.json"),
+      `${JSON.stringify(publishManifest, null, 2)}\n`,
+    );
+    packed = run(
+      "npm",
+      ["pack", "--json", `--pack-destination=${destination}`],
+      { cwd: stagingDirectory, timeout: 120_000 },
+    );
+  } finally {
+    rmSync(stagingDirectory, { recursive: true, force: true });
   }
-
-  const packed = run(
-    "npm",
-    ["pack", "--json", `--pack-destination=${destination}`],
-    { cwd: cliDirectory, timeout: 120_000 },
-  );
   const result = JSON.parse(packed.stdout);
   if (!Array.isArray(result) || result.length !== 1) {
     throw new Error(`npm pack returned an unexpected result: ${packed.stdout}`);
+  }
+  if (result[0].version !== version) {
+    throw new Error(
+      `npm pack produced version ${result[0].version ?? "<missing>"}; expected ${version}`,
+    );
   }
 
   validatePackFiles(result[0].files ?? []);
@@ -98,6 +128,7 @@ export function packNpm(outputDirectory) {
   return {
     tarball,
     filename: basename(tarball),
+    version,
     integrity: result[0].integrity,
     packageSize: result[0].size,
     unpackedSize: result[0].unpackedSize,
@@ -106,7 +137,11 @@ export function packNpm(outputDirectory) {
 
 async function main() {
   const args = parseArguments(process.argv.slice(2));
-  const result = packNpm(args.get("output") ?? "release/npm");
+  const packageJson = readJson(resolve(repositoryRoot, "cli/package.json"));
+  const result = packNpm(
+    args.get("output") ?? "release/npm",
+    args.get("version") ?? packageJson.version,
+  );
   writeGithubOutput({
     tarball: result.tarball,
     filename: result.filename,

@@ -2,9 +2,24 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  createPublishManifest,
   validatePackFiles,
   validatePublishManifest,
 } from "../pack-npm.mjs";
+
+test("injects the release version without changing the source manifest", () => {
+  const source = {
+    name: "@liteyuki/luna-cli",
+    version: "0.0.0-development",
+    private: true,
+  };
+  const published = createPublishManifest(source, "1.2.3-beta.1");
+
+  assert.equal(source.version, "0.0.0-development");
+  assert.equal(source.private, true);
+  assert.equal(published.version, "1.2.3-beta.1");
+  assert.equal("private" in published, false);
+});
 
 test("accepts the public npm package file whitelist", () => {
   assert.doesNotThrow(() => validatePackFiles([

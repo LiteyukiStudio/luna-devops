@@ -1015,7 +1015,7 @@
 - [ ] 按业务域覆盖全部公开控制面 API；当前 CLI 已从 OpenAPI 注册全部 110 个已登记操作，并提供统一 JSON HTTP 传输；`api request` 仅供人类诊断已知相对 API 路径且在 Agent 模式固定禁用。Gin Router 中尚未进入 OpenAPI 的公开路由、SSE、WebSocket 终端、二进制下载、异步任务等待和批量部分成功仍需补齐。
 - [ ] 为 Git Provider OAuth 增加短时授权事务创建/查询接口，回调写入事务终态；`luna git authorize` 打开浏览器并返回确定的 Git Account ID，不通过轮询账号列表猜测授权结果。
 - [ ] 建立干净测试实例的全 operation 场景矩阵：关键登录/CRUD/构建/发布/日志/终端/导出/MFA 旅程 100% 通过，完整可执行场景通过率不低于 95%。
-- [x] 新增 CLI CI 与 Release 工作流；平台项目继续由 `v*` 发版，CLI 仅由 `cli-v*` 发版；工作流验证契约 drift、CLI 类型/规范/测试、npm/pnpm 全局安装和 Bun 二进制 smoke，并按正式版、RC、Beta 维护 npm dist-tag。
+- [x] 新增 CLI CI 与 Release 工作流；平台项目继续由 `v*` 发版，CLI 仅由 `cli-v*` 发版且 tag 是唯一发布版本源；工作流验证契约 drift、CLI 类型/规范/测试、npm/pnpm 全局安装和 Bun 二进制 smoke，并按正式版、RC、Beta 维护 npm dist-tag。
 - [x] 完善中英文 CLI 文档入口、源码开发说明与配套 Skills；Skills 以机器可读 Help 为命令事实来源，准确标注尚未完成的服务端能力，并在 CLI CI/Release 中通过同步检查阻止命令和能力描述漂移。
 - [ ] 确认 npm `@liteyuki` 组织权限，使用 2FA 手动发布首个 `@liteyuki/luna-cli` public 预发布包；随后配置 Trusted Publisher 和 GitHub `npm` Environment，并以新的未发布版本完成真实 OIDC 发布验收。
 - [x] 使用固定 Bun 版本构建 Linux x64/arm64/musl、macOS arm64/x64 和 Windows x64 制品，生成 checksum、SBOM 和 provenance，并对 Linux host/musl 完成无 Node.js smoke。

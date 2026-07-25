@@ -11969,6 +11969,11 @@ Register-ArgumentCompleter -Native -CommandName luna -ScriptBlock {
 // src/commands/executor.ts
 import process8 from "process";
 import { Command, CommanderError, Option } from "commander";
+
+// src/version.ts
+var CLI_VERSION = true ? "0.0.0-development" : CLI_DEVELOPMENT_VERSION;
+
+// src/commands/executor.ts
 var DEFAULT_GLOBALS = Object.freeze({
   output: "table",
   color: true,
@@ -11981,7 +11986,7 @@ var DEFAULT_GLOBALS = Object.freeze({
   insecureSkipTlsVerify: false
 });
 function createCliProgram(options) {
-  const program = new Command().name(options.name ?? "luna").description(options.description ?? "Luna DevOps command-line client").version(options.ports.version ?? "0.1.0", "-V, --version").showHelpAfterError().allowExcessArguments(false).allowUnknownOption(false).addHelpCommand(false).helpOption("-h, --help", "Show command help");
+  const program = new Command().name(options.name ?? "luna").description(options.description ?? "Luna DevOps command-line client").version(options.ports.version ?? CLI_VERSION, "-V, --version").showHelpAfterError().allowExcessArguments(false).allowUnknownOption(false).addHelpCommand(false).helpOption("-h, --help", "Show command help");
   addGlobalOptions(program);
   for (const category of options.registry.categories()) {
     const categoryCommand = program.command(category).description(`${category} commands`).addHelpCommand(false);
@@ -12772,7 +12777,7 @@ function registerVersion(registry) {
   }), async (_invocation, ports) => ({
     schemaVersion: "version.show/v1",
     data: {
-      version: ports.version ?? "0.1.0",
+      version: ports.version ?? CLI_VERSION,
       distribution: ports.distribution ?? (typeof process10.versions.bun === "string" ? "binary" : "source"),
       runtime: typeof process10.versions.bun === "string" ? `bun-${process10.versions.bun}` : `node-${process10.versions.node}`,
       platform: process10.platform,
@@ -13761,7 +13766,7 @@ var CommandOutput = class {
       stdout: process11.stdout,
       stderr: process11.stderr
     };
-    this.#version = options.version ?? "0.1.0";
+    this.#version = options.version ?? CLI_VERSION;
     this.#translate = options.translate;
   }
   writeSuccess(metadata, result, globals) {
@@ -13948,7 +13953,7 @@ async function createCliI18n(options = {}) {
 
 // src/entry.ts
 function createLunaCli(options = {}) {
-  const version = options.version ?? process13.env.LUNA_CLI_VERSION ?? "0.1.0";
+  const version = options.version ?? CLI_VERSION;
   const env = options.ports?.env ?? process13.env;
   const config = options.ports?.config ?? new FileConfigStore();
   const translate = options.ports?.translate;

@@ -13,6 +13,7 @@ import {
   createSuccessEnvelope,
   OutputChannels,
 } from '../output/index.js'
+import { CLI_VERSION } from '../version.js'
 
 export interface CommandOutputOptions {
   readonly streams?: OutputStreams
@@ -30,7 +31,7 @@ export class CommandOutput implements OutputPort {
       stdout: process.stdout,
       stderr: process.stderr,
     }
-    this.#version = options.version ?? '0.1.0'
+    this.#version = options.version ?? CLI_VERSION
     this.#translate = options.translate
   }
 

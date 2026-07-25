@@ -1545,7 +1545,8 @@ rm "${HOME}/.local/bin/luna"
 - `bin/luna.js` 只做稳定入口和运行时版本检查，实际实现位于 `dist/`，不得复制第二套命令逻辑。
 - `files` 使用白名单；发布包不得包含源码映射中的本机路径、测试夹具、凭据、`.env`、缓存、仓库锁文件或 CI 文件。
 - `repository.url` 必须与 npm Trusted Publisher 配置的 GitHub 仓库完全一致，`repository.directory` 指向 monorepo 中的 `cli`。
-- `version` 是发布版本的唯一来源之一，必须与 CLI Git tag 去掉 `cli-v` 后完全相同。发布流程不得临时执行 `npm version` 修改工作树。
+- 仓库中的 `version` 固定为 `0.0.0-development`，只表示源码开发态，不参与正式版本决策；源码清单使用 `private: true` 阻止绕过发布工作流直接发布。
+- `cli-v*` Git tag 是发布版本的唯一来源。工作流去掉 `cli-v` 后校验 SemVer，在临时 npm 打包目录移除 `private` 标记并写入发布版本，同时在构建时把同一版本注入 npm JavaScript 制品和 Bun 二进制；不得修改或提交源工作树中的版本。
 - npm tarball 与独立二进制必须注入相同的版本、Git SHA、构建时间和 OpenAPI 契约版本。
 - npm 包不包含 `preinstall`、`install` 或 `postinstall` 脚本，不在安装阶段执行网络请求或本机修改。
 - `npm pack --dry-run --json` 的文件清单要进入 CI 断言；真实发布使用经过测试的同一 `.tgz`，不在发布 Job 重新构建。
@@ -1890,7 +1891,8 @@ jobs:
 
 蓝图中的 `release-metadata.mjs`、`publish-npm.mjs`、`release-manifest.mjs` 是发布逻辑的唯一实现位置，不能把版本判断、远端幂等检查和 checksum 规则散落到 YAML shell 片段中：
 
-- `release-metadata.mjs` 先校验 tag 符合 `cli-v<semver>`，再去掉 `cli-v` 前缀并校验 `package.json.version`、预发布标识和 npm dist-tag；
+- `release-metadata.mjs` 先校验 tag 符合 `cli-v<semver>`，再去掉 `cli-v` 前缀并生成发布版本、预发布标识和 npm dist-tag；
+- `pack-npm.mjs` 只在临时目录把 tag 版本写入发布清单，校验 `npm pack` 返回版本和文件白名单，源 `cli/package.json` 始终保留开发占位版本；
 - `publish-npm.mjs` 查询 npm 远端版本，未发布时执行 `npm publish <tarball> --access public --tag <tag>`，已发布时校验完整性；
 - `release-manifest.mjs` 生成 `SHA256SUMS`、SBOM、签名输入和中英文 Release 清单。
 
@@ -1909,7 +1911,7 @@ npm 正式发布采用 Trusted Publishing，不在 GitHub Secret 中保存长期
    - Environment：`npm`
    - Allowed actions：`npm publish`
 4. GitHub `npm` Environment 启用保护规则，只允许受保护 tag，经指定维护者审批后发布。
-5. 将 `cli/package.json` 提升到一个尚未发布的新预发布版本，再创建对应的 `cli-v*` tag 验证 OIDC 发布。不能复用首次手动发布的版本做认证验收，因为幂等发布逻辑发现远端内容一致时会跳过 `npm publish`。
+5. 创建一个指向目标提交、且版本尚未发布的 `cli-v*` tag 验证 OIDC 发布。无需修改 `cli/package.json`；不能复用首次手动发布的 tag 版本做认证验收，因为幂等发布逻辑发现远端内容一致时会跳过 `npm publish`。
 6. `publish-npm` Job 必须在 GitHub-hosted runner 上执行，权限只增加 `id-token: write`，不得设置 `NPM_TOKEN` 或 `NODE_AUTH_TOKEN`。
 7. 发布环境使用 Node.js `>=22.14.0` 和 npm CLI `>=11.5.1`。完成 Trusted Publishing 验证后，在 npm 包设置中要求发布使用 2FA，并禁止传统写入 Token。
 8. `package.json.repository.url` 与 GitHub 仓库精确匹配。公开 GitHub 仓库向公开 npm 包发布时由 npm 自动生成 provenance，不额外传入 `--provenance`。
@@ -1938,7 +1940,7 @@ Trusted Publisher 只允许绑定一个工作流。不要把 `npm publish` 抽�
 
 - 同一 tag、同一源码和同一依赖锁必须生成可复现的 npm tarball；integrity 不一致直接失败。
 - 已存在 GitHub Release 时，仅可补上传内容一致的缺失制品，不能静默覆盖同名附件。
-- tag 与 `package.json.version` 不一致、tag 不指向当前 checkout、工作树生成结果漂移时立即失败。
+- tag 版本非法、tag 不指向当前 checkout、工作树生成结果漂移时立即失败；源码 `package.json.version` 固定为开发态占位值，不参与发布版本判定。
 - `latest`、`next`、`beta` 只能由版本解析脚本映射，手动重跑不能修改 dist-tag。
 - npm 发布成功后不得通过删除版本重发；修复必须提升版本号。
 

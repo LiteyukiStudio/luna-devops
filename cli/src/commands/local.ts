@@ -16,6 +16,7 @@ import {
   logoutLocal,
   storeValidatedAccessToken,
 } from '../auth/index.js'
+import { CLI_VERSION } from '../version.js'
 import { generateCompletion } from './completion.js'
 import { CliCommandError } from './errors.js'
 import { catalogResult, commandHelpResult } from './help.js'
@@ -151,7 +152,7 @@ function registerVersion(registry: CommandRegistry): void {
   }), async (_invocation, ports) => ({
     schemaVersion: 'version.show/v1',
     data: {
-      version: ports.version ?? '0.1.0',
+      version: ports.version ?? CLI_VERSION,
       distribution:
         ports.distribution
         ?? (typeof process.versions.bun === 'string' ? 'binary' : 'source'),

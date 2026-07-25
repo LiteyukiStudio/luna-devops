@@ -13,6 +13,7 @@ import {
 } from './commands/index.js'
 import { FileConfigStore } from './config/index.js'
 import { createCliI18n, normalizeLocale } from './i18n/index.js'
+import { CLI_VERSION } from './version.js'
 
 export interface LunaCliOptions {
   readonly ports?: Partial<RuntimePorts>
@@ -21,7 +22,7 @@ export interface LunaCliOptions {
 }
 
 export function createLunaCli(options: LunaCliOptions = {}) {
-  const version = options.version ?? process.env.LUNA_CLI_VERSION ?? '0.1.0'
+  const version = options.version ?? CLI_VERSION
   const env = options.ports?.env ?? process.env
   const config = options.ports?.config ?? new FileConfigStore()
   const translate = options.ports?.translate

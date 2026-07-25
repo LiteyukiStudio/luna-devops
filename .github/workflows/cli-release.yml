@@ -36,7 +36,7 @@ jobs:
           fetch-depth: 0
           ref: ${{ inputs.tag || github.ref }}
 
-      - name: Parse tag and package version
+      - name: Parse release version from tag
         id: metadata
         run: >-
           node scripts/cli/release-metadata.mjs
@@ -157,6 +157,7 @@ jobs:
           node scripts/cli/build-binary.mjs
           --target="${{ matrix.target }}"
           --output="release/binaries/${{ matrix.asset }}"
+          --version="${{ needs.metadata.outputs.version }}"
 
       - name: Smoke-test binary on native runner
         shell: bash
@@ -217,11 +218,16 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build npm distribution
+        env:
+          LUNA_CLI_VERSION: ${{ needs.metadata.outputs.version }}
         run: pnpm --filter @liteyuki/luna-cli build
 
       - name: Pack npm tarball
         id: pack
-        run: node scripts/cli/pack-npm.mjs --output=release/npm
+        run: >-
+          node scripts/cli/pack-npm.mjs
+          --output=release/npm
+          --version="${{ needs.metadata.outputs.version }}"
 
       - name: Smoke-test npm and pnpm global installs
         run: >-
@@ -256,9 +262,11 @@ jobs:
           ref: ${{ needs.metadata.outputs.tag }}
 
       - name: Set up Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: "24"
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
 
       - name: Install OIDC-capable npm CLI
         run: npm install --global npm@11.6.2
