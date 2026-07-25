@@ -107,7 +107,7 @@ Phase 0 至 Phase 4 只是实施顺序，任何一个 Phase 未完成时都不�
 以下项目属于 P1，但缺失时对应能力不得宣称可用：
 
 - Git Provider OAuth 使用短时授权事务闭环，而不是通过账号列表变化猜测结果。
-- macOS 与 Windows 稳定二进制进入正式下载矩阵前具备对应签名、安装和真实 smoke test。
+- macOS 稳定二进制进入正式下载矩阵前具备对应签名、安装和真实 smoke test；Windows 与 Alpine/musl 第一阶段使用 npm/pnpm + Node.js。
 - 第三方 Provider 每个 operation 具备确定性 fixture，每个 Provider 家族至少保留一个真实环境 smoke。
 
 因此，推荐实施顺序是“契约和认证底座 -> 共享 Client 与 Transport -> CLI 命令 -> 协议适配 -> 发布门禁”。任何阶段都不允许用 `api request`、原始 Cookie、浏览器 Session 或直接访问第三方 API 绕过尚未完成的正式能力。
@@ -1494,7 +1494,7 @@ mkdir -p "${HOME}/.local/bin"
 mv luna "${HOME}/.local/bin/luna"
 ```
 
-用户负责将 `${HOME}/.local/bin` 加入 `PATH`。Windows 使用 PowerShell 下载 `luna-windows-x64.exe`，通过 `Get-FileHash -Algorithm SHA256` 校验后放入 `%LOCALAPPDATA%\Luna\bin`，并把该目录加入用户级 `PATH`。第一版不提供自动修改 shell profile 或系统级 `PATH` 的安装脚本，避免静默改写用户环境。
+用户负责将 `${HOME}/.local/bin` 加入 `PATH`。Windows 与 Alpine/musl 第一阶段不提供独立二进制，统一使用 npm 或 pnpm 安装，并由 Node.js `22.14.0` 或更高版本运行。第一版不提供自动修改 shell profile 或系统级 `PATH` 的安装脚本，避免静默改写用户环境。
 
 卸载时：
 
@@ -1559,10 +1559,10 @@ rm "${HOME}/.local/bin/luna"
 | macOS | x64 | `luna-darwin-x64` |
 | Linux glibc | x64 | `luna-linux-x64` |
 | Linux glibc | arm64 | `luna-linux-arm64` |
-| Linux musl | x64 | `luna-linux-x64-musl` |
-| Windows | x64 | `luna-windows-x64.exe` |
 
 所有 x64 二进制默认使用 Bun 的 `baseline` target，避免普通 x64 构建对 AVX2 的要求导致旧服务器启动失败；性能优先的现代 x64 制品只有在后续确有需求时再单独发布。macOS 二进制最低系统版本遵循所固定 Bun 版本的官方支持范围，第一版按 macOS 13 及以上验证并在 Release 中明确标注。
+
+Windows 与 Alpine/musl 作为明确的 Node.js 降级目标，不进入第一阶段 Bun 二进制矩阵。npm/pnpm 是全平台主渠道；只有目标 runner 能真实执行且维护成本可控的 Bun 制品才进入 GitHub Release。
 
 每个 Release 提供：
 
@@ -1575,7 +1575,7 @@ rm "${HOME}/.local/bin/luna"
 
 CLI 使用独立 SemVer，不要求与平台项目版本同步。CLI 与服务端通过 API capability endpoint 协商能力，不只比较版本字符串。
 
-“可验证签名”必须落实为具体平台流程：macOS 使用 Developer ID 签名并 notarize，Windows 使用 Authenticode，Linux 和通用 Release 清单使用 GitHub OIDC provenance/签名。若第一版暂时拿不到某个平台的代码签名凭据，该平台独立二进制不得进入稳定下载矩阵，只能标记为预发布；npm 安装不受此限制。
+“可验证签名”必须落实为具体平台流程：macOS 使用 Developer ID 签名并 notarize，Linux 和通用 Release 清单使用 GitHub OIDC provenance/签名。若第一版暂时拿不到 macOS 代码签名凭据，该平台独立二进制不得进入稳定下载矩阵，只能标记为预发布；npm 安装不受此限制。
 
 ### 15.4 版本与发布通道
 
@@ -1680,13 +1680,13 @@ jobs:
 
 发布工作流只接受仓库中已经存在且符合 `cli-v<semver>` 的 tag。`workflow_dispatch` 仅用于重跑指定 CLI tag，不允许输入任意版本并在工作流内创建 tag。普通 `v*` 继续由项目发布工作流处理。正式实现应把第三方 Action 主版本替换为审核后的完整 commit SHA。
 
-下面 YAML 只展示构建、测试、npm 发布和 Release 编排，不包含与具体证书供应商绑定的 Apple notarization、Windows Authenticode 命令，不能原样作为稳定发布工作流投入使用。实现时必须在 `binary` 与 `github-release` 之间增加独立签名阶段：
+下面 YAML 只展示构建、测试、npm 发布和 Release 编排，不包含与具体证书供应商绑定的 Apple notarization 命令，不能原样作为 macOS 稳定发布工作流投入使用。实现时必须在 `binary` 与 `github-release` 之间增加独立签名阶段：
 
 1. macOS 产物在 macOS runner 使用 Developer ID 签名，提交 notarization 并完成 stapling，再做签名验证和 smoke test；
-2. Windows 产物在 Windows runner 使用组织确定的 Authenticode 证书服务签名，校验签名链和时间戳后再上传；
+2. Windows 与 Alpine/musl 不生成独立二进制，统一验证 npm/pnpm 安装后的 Node.js 制品；
 3. Linux 产物、checksum、SBOM 和最终 Release manifest 使用 GitHub OIDC provenance/签名；
 4. `github-release` 只能下载签名阶段输出的最终 artifact，不能回退使用未签名的构建 artifact；
-5. 没有对应签名凭据时，workflow 必须让稳定版本失败；只有预发布版本可以按明确命名上传未验证制品。
+5. 没有 Apple 签名凭据时，workflow 必须让稳定版本失败；只有预发布版本可以按明确命名上传未验证的 macOS 制品。
 
 ```yaml
 name: CLI Release
@@ -1770,12 +1770,6 @@ jobs:
           - runner: ubuntu-24.04-arm
             target: bun-linux-arm64
             asset: luna-linux-arm64
-          - runner: ubuntu-24.04
-            target: bun-linux-x64-musl
-            asset: luna-linux-x64-musl
-          - runner: windows-2025
-            target: bun-windows-x64
-            asset: luna-windows-x64.exe
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
@@ -1896,7 +1890,7 @@ jobs:
 - `publish-npm.mjs` 查询 npm 远端版本，未发布时执行 `npm publish <tarball> --access public --tag <tag>`，已发布时校验完整性；
 - `release-manifest.mjs` 生成 `SHA256SUMS`、SBOM、签名输入和中英文 Release 清单。
 
-Linux musl 制品必须额外在 Alpine 容器中执行 smoke test。交叉编译只能证明生成成功，不能替代目标运行时验证；原生 runner 不可用的平台必须记录验证环境和限制。
+Windows 与 Alpine/musl 不进入该二进制 Job，发布与 smoke 均复用已经过 npm/pnpm 全局安装验证的 Node.js 制品。交叉编译只能证明生成成功，不能替代目标运行时验证；原生 runner 不可用的平台不应被加入已支持的二进制矩阵。
 
 ### 15.8 npm Trusted Publishing 配置
 
@@ -2146,7 +2140,7 @@ criticalJourneyPassed
 | CLI 是否支持站点账号密码登录 | 不支持。CLI 只提供 Luna OAuth 浏览器登录、Device Code 和个人访问令牌 | 避免 CLI 收集密码、保存 Cookie Session 或复制 Web OIDC 流程；本地账号仍可在浏览器中登录后授权 CLI |
 | Git Provider OAuth 如何闭环 | 新增短时授权事务 API，并由 `git authorize` 轮询事务状态 | 轮询 Git Account 列表无法可靠区分并发授权、更新账号和失败状态 |
 | 第三方 Provider 是否每次发版都跑全部真实平台 | 每个 operation 使用确定性 fixture/模拟器；每个 Provider 家族至少一个真实集成 smoke | 对每个 Git/Registry/OIDC/SMTP 厂商建立永久真实环境成本过高且不稳定，但完全不做真实 smoke 又容易遗漏协议差异 |
-| 未取得 Apple/Windows 签名凭据时如何发布 | 对应独立二进制只作为预发布或标记未验证，不进入稳定下载矩阵；npm 与已签名平台可正常发布 | 避免规格宣称“可验证签名”但实际分发未签名稳定制品 |
+| 未取得 Apple 签名凭据时如何发布 | macOS 独立二进制只作为预发布或标记未验证，不进入稳定下载矩阵；npm 与 Linux 制品可正常发布 | 避免规格宣称“可验证签名”但实际分发未签名稳定制品 |
 
 签名资源、真实 Provider smoke 的具体账号和凭据仍在建立 CI 时配置，但不改变表中的发布边界。
 

@@ -46,17 +46,17 @@ CLI 相关变更会执行：
 
 - Linux x64 baseline；
 - Linux arm64；
-- Linux x64 musl baseline，并在 Alpine 中执行额外 smoke；
-- macOS arm64 和 x64 测试制品；
-- Windows x64 测试制品。
+- macOS arm64 和 x64 预发布测试制品。
+
+Windows 与 Alpine/musl 不进入独立二进制矩阵，统一通过 npm 或 pnpm 安装，在 Node.js `22.14.0` 或更高版本上运行。这样发布门禁只承诺能够在目标 runner 真实执行的制品，不依赖构建阶段临时下载 Bun 目标运行时，也不要求用户补装 musl 平台的额外动态库。
 
 ## 签名边界
 
-当前仓库没有 Apple Developer ID、公证和 Windows Authenticode 凭据。工作流不会假装这些制品已经签名：
+当前仓库没有 Apple Developer ID 和公证凭据。工作流不会假装 macOS 制品已经签名：
 
 - 正式版只包含经过目标环境 smoke 的 Linux 独立二进制；
-- 预发布版可以包含名称带 `-unsigned` 的 macOS/Windows 测试制品；
-- 未签名桌面制品不应进入生产环境；
+- 预发布版可以包含名称带 `-unsigned` 的 macOS 测试制品；
+- 未签名 macOS 制品不应进入生产环境；
 - 接入对应签名和验证阶段后，才会扩展稳定制品矩阵。
 
 ## npm Trusted Publishing

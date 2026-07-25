@@ -18,7 +18,7 @@ CLI 目前处于开发阶段。源码清单使用 `0.0.0-development` 占位版�
 - 人类可读输出与稳定 JSON Envelope；
 - 本地命令注册、帮助目录、Shell Completion 和 OpenAPI 命令注册器；
 - 从 OpenAPI 生成并注册全部 110 个已登记操作；
-- npm 包、Bun 独立二进制的 CI、打包、安装 smoke 与发布门禁。
+- npm 包、Linux/macOS Bun 独立二进制的 CI、打包、安装 smoke 与发布门禁。
 
 `cli/src/entry.ts` 已作为 npm 与 Bun 二进制的统一入口，共享契约和客户端会被安全打包进发布产物。本地已经通过 npm/pnpm 全局安装和 Bun 独立二进制 smoke。项目尚未完成首次公开发布，因此 npm 安装命令要等 `cli-v*` 版本正式发布后才可使用。
 
@@ -33,7 +33,7 @@ npm install --global @liteyuki/luna-cli
 pnpm add --global @liteyuki/luna-cli
 ```
 
-也可以从 GitHub Release 下载独立二进制。稳定版当前只计划发布经过目标环境 smoke test 的 Linux 制品；macOS 和 Windows 在接入代码签名与公证之前，只会在预发布版本提供名称带 `-unsigned` 的测试制品。
+也可以从 GitHub Release 下载独立二进制。稳定版当前只计划发布经过目标环境 smoke test 的 Linux glibc 制品；macOS 在接入代码签名与公证之前，只会在预发布版本提供名称带 `-unsigned` 的测试制品。Windows 与 Alpine/musl 请使用 npm 或 pnpm 安装，并通过 Node.js `22.14.0` 或更高版本运行。
 
 详细说明：
 
@@ -84,6 +84,6 @@ npm install --global @liteyuki/luna-cli
 pnpm add --global @liteyuki/luna-cli
 ```
 
-Standalone binaries will also be attached to GitHub Releases. Stable releases currently include only Linux binaries that pass target-environment smoke tests. Until Apple and Windows signing are configured, desktop binaries are available only on prereleases and are explicitly suffixed with `-unsigned`.
+Standalone binaries will also be attached to GitHub Releases. Stable releases currently include only Linux glibc binaries that pass target-environment smoke tests. Until Apple signing is configured, macOS binaries are available only on prereleases and are explicitly suffixed with `-unsigned`. Windows and Alpine/musl use the npm or pnpm distribution on Node.js `22.14.0` or later.
 
 See the documentation links above for installation, release channels, checksums, SBOMs, provenance, and current limitations.

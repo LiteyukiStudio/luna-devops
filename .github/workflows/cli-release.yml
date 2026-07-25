@@ -105,27 +105,15 @@ jobs:
           - runner: ubuntu-24.04
             target: bun-linux-x64-baseline
             asset: luna-linux-x64
-            musl: false
           - runner: ubuntu-24.04-arm
             target: bun-linux-arm64
             asset: luna-linux-arm64
-            musl: false
-          - runner: ubuntu-24.04
-            target: bun-linux-x64-musl-baseline
-            asset: luna-linux-x64-musl
-            musl: true
           - runner: macos-14
             target: bun-darwin-arm64
             asset: luna-darwin-arm64-unsigned
-            musl: false
           - runner: macos-15-intel
             target: bun-darwin-x64-baseline
             asset: luna-darwin-x64-unsigned
-            musl: false
-          - runner: windows-2025
-            target: bun-windows-x64-baseline
-            asset: luna-windows-x64-unsigned.exe
-            musl: false
     steps:
       - name: Check out release tag
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -165,22 +153,6 @@ jobs:
           node scripts/cli/smoke-command.mjs
           --command="release/binaries/${{ matrix.asset }}"
           --version="${{ needs.metadata.outputs.version }}"
-
-      - name: Smoke-test musl binary in Alpine
-        if: matrix.musl
-        shell: bash
-        run: |
-          docker run --rm \
-            -v "$PWD/release/binaries:/release:ro" \
-            alpine:3.21 \
-            /release/luna-linux-x64-musl --version
-          docker run --rm \
-            -v "$PWD/release/binaries:/release:ro" \
-            -e LUNA_HOME=/tmp/luna \
-            alpine:3.21 \
-            /release/luna-linux-x64-musl \
-            help catalog query=project limit=5 output=json interactive=false \
-            | node -e "JSON.parse(require('fs').readFileSync(0, 'utf8'))"
 
       - name: Upload tested binary
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -340,7 +312,6 @@ jobs:
           subject-path: |
             release/final/luna-linux-*
             release/final/luna-darwin-*
-            release/final/luna-windows-*
             release/final/*.tgz
 
       - name: Preserve provenance bundle
@@ -353,7 +324,6 @@ jobs:
           subject-path: |
             release/final/luna-linux-*
             release/final/luna-darwin-*
-            release/final/luna-windows-*
             release/final/*.tgz
           sbom-path: release/final/luna-cli.spdx.json
 

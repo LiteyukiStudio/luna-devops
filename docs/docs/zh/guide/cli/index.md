@@ -67,6 +67,6 @@ node scripts/cli/verify-skills-sync.mjs
 2. 接入服务端能力协商、Authorization Code + PKCE、Device Code 和 Bearer Step-up MFA。
 3. 完成 SSE、WebSocket、下载和服务端执行计划协议。
 4. 在 npm 配置 Trusted Publisher，并保护 GitHub `npm` Environment。
-5. 接入 Apple Developer ID、公证和 Windows Authenticode 后，再把桌面二进制加入稳定版本。
+5. 接入 Apple Developer ID 和公证后，再把 macOS 二进制加入稳定版本；Windows 继续使用 npm/pnpm 安装。
 
 具体安装方式见[安装与使用](./installation)，源码开发见[源码开发与验证](./development)，制品校验见[发布与制品验证](./release-security)。

@@ -18,13 +18,11 @@ import {
 const STABLE_BINARIES = new Set([
   "luna-linux-arm64",
   "luna-linux-x64",
-  "luna-linux-x64-musl",
 ]);
 const PRERELEASE_BINARIES = new Set([
   ...STABLE_BINARIES,
   "luna-darwin-arm64-unsigned",
   "luna-darwin-x64-unsigned",
-  "luna-windows-x64-unsigned.exe",
 ]);
 
 function walk(directory) {

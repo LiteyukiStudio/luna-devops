@@ -27,9 +27,11 @@ luna help catalog output=json interactive=false
 
 The npm distribution requires Node.js `22.14.0` or later. Use a Node.js version manager or a user-owned pnpm home instead of running a global install with `sudo`.
 
+npm/pnpm is the universal installation path for Windows, macOS, conventional Linux distributions, and Alpine/musl. It runs on the local Node.js runtime and does not depend on a Bun standalone executable.
+
 ## Standalone binaries
 
-The first stable release is planned to include Linux x64, Linux arm64, and Linux x64 musl binaries. After a release is available, download the matching asset and `SHA256SUMS`:
+The first stable release includes only target-smoked Linux glibc x64 and arm64 binaries. After a release is available, download the matching asset and `SHA256SUMS`:
 
 ```bash
 version="cli-vX.Y.Z"
@@ -43,7 +45,9 @@ chmod +x luna
 install -m 0755 luna "${HOME}/.local/bin/luna"
 ```
 
-On macOS, use `shasum -a 256` instead of `sha256sum`. Until Apple Developer ID/notarization and Windows Authenticode are configured, desktop binaries are available only on prereleases, are explicitly suffixed with `-unsigned`, and are not recommended for production.
+On macOS, use `shasum -a 256` instead of `sha256sum`. Until Apple Developer ID signing and notarization are configured, macOS binaries are available only on prereleases, are explicitly suffixed with `-unsigned`, and are not recommended for production.
+
+Windows and Alpine/musl standalone binaries are not published yet. Install through npm or pnpm instead; this keeps Bun target-runtime downloads, Windows signing, and musl dynamic-library differences out of the supported release path.
 
 ## Multi-instance contexts
 

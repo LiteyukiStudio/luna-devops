@@ -27,9 +27,11 @@ luna help catalog output=json interactive=false
 
 npm 包要求 Node.js `22.14.0` 或更高版本。建议使用 Node.js 版本管理器或用户级 pnpm home，不要用 `sudo` 解决全局目录权限问题。
 
+npm/pnpm 是 Windows、macOS、常规 Linux 发行版以及 Alpine/musl 的统一安装方式。它直接使用本机 Node.js 运行，不依赖 Bun 独立二进制。
+
 ## 使用独立二进制
 
-首次稳定版计划只发布 Linux x64、Linux arm64 和 Linux x64 musl 制品。版本发布后，下载与系统匹配的文件和 `SHA256SUMS`：
+首次稳定版只发布经过目标 runner 验证的 Linux glibc x64 和 arm64 制品。版本发布后，下载与系统匹配的文件和 `SHA256SUMS`：
 
 ```bash
 version="cli-vX.Y.Z"
@@ -43,7 +45,9 @@ chmod +x luna
 install -m 0755 luna "${HOME}/.local/bin/luna"
 ```
 
-macOS 可把最后一步的 `sha256sum` 换成 `shasum -a 256`。不过在 Apple Developer ID 签名和公证接入前，macOS 与 Windows 只会在预发布版本提供带 `-unsigned` 后缀的测试制品，不建议用于生产环境。
+macOS 可把最后一步的 `sha256sum` 换成 `shasum -a 256`。不过在 Apple Developer ID 签名和公证接入前，macOS 只会在预发布版本提供带 `-unsigned` 后缀的测试制品，不建议用于生产环境。
+
+Windows 与 Alpine/musl 暂不发布独立二进制。请使用 npm 或 pnpm 安装；这避免把 Bun 目标运行时下载、Windows 签名和 musl 动态库差异转嫁给用户。
 
 ## 多实例上下文
 

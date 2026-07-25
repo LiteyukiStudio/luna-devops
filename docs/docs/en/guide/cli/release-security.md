@@ -46,17 +46,17 @@ The release workflow also builds an explicit target matrix:
 
 - Linux x64 baseline;
 - Linux arm64;
-- Linux x64 musl baseline, with an additional Alpine smoke test;
-- macOS arm64 and x64 test artifacts;
-- Windows x64 test artifacts.
+- macOS arm64 and x64 prerelease test artifacts.
+
+Windows and Alpine/musl are intentionally outside the standalone-binary matrix. They use the npm or pnpm distribution on Node.js `22.14.0` or later. The release gate therefore promises only artifacts that execute on their target runner, without relying on a build-time Bun target-runtime download or extra musl dynamic libraries on the user's machine.
 
 ## Signing boundary
 
-The repository does not currently have Apple Developer ID/notarization or Windows Authenticode credentials. The workflow does not claim that these artifacts are signed:
+The repository does not currently have Apple Developer ID signing and notarization credentials. The workflow does not claim that macOS artifacts are signed:
 
 - stable releases contain only target-smoked Linux standalone binaries;
-- prereleases may contain macOS and Windows test artifacts suffixed with `-unsigned`;
-- unsigned desktop artifacts are not intended for production;
+- prereleases may contain macOS test artifacts suffixed with `-unsigned`;
+- unsigned macOS artifacts are not intended for production;
 - desktop binaries enter the stable matrix only after platform signing and verification are integrated.
 
 ## npm Trusted Publishing

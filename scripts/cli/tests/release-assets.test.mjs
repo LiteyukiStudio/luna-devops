@@ -21,10 +21,8 @@ function fixture() {
   for (const name of [
     "luna-linux-arm64",
     "luna-linux-x64",
-    "luna-linux-x64-musl",
     "luna-darwin-arm64-unsigned",
     "luna-darwin-x64-unsigned",
-    "luna-windows-x64-unsigned.exe",
     "liteyukistudio-luna-cli-1.2.3.tgz",
   ]) {
     writeFileSync(join(input, name), name);
@@ -44,7 +42,6 @@ test("stable releases omit unsigned desktop binaries", () => {
       "liteyukistudio-luna-cli-1.2.3.tgz",
       "luna-linux-arm64",
       "luna-linux-x64",
-      "luna-linux-x64-musl",
     ]);
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -63,10 +60,10 @@ test("manifest records hashes and unsigned prerelease limitations", () => {
       prerelease: true,
       npmTag: "beta",
     });
-    assert.equal(manifest.files.length, 7);
+    assert.equal(manifest.files.length, 5);
     assert.equal(
       manifest.verification.unsignedDesktopArtifacts.length,
-      3,
+      2,
     );
     assert.match(
       readFileSync(join(output, "SHA256SUMS"), "utf8"),

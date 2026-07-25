@@ -67,6 +67,6 @@ Before the first public release, the project must:
 2. Add client capability negotiation, Authorization Code + PKCE, Device Code, and Bearer step-up MFA.
 3. Complete SSE, WebSocket, download, and server-issued plan transports.
 4. Configure an npm Trusted Publisher and protect the GitHub `npm` Environment.
-5. Add Apple Developer ID/notarization and Windows Authenticode before desktop binaries enter stable releases.
+5. Add Apple Developer ID signing and notarization before macOS binaries enter stable releases; Windows continues to use npm/pnpm.
 
 See [Install and Use](./installation), [Source Development and Verification](./development), and [Release Security](./release-security) for details.
