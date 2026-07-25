@@ -70,6 +70,8 @@ See [Source Development and Verification](./development) for repository commands
 ## Agent Skills
 
 The paired Skills live in the repository's [`ai-supports/skills`](https://github.com/LiteyukiStudio/luna-devops/tree/main/ai-supports/skills) directory. They define intent routing, operation order, and safety boundaries. Machine-readable Help remains the source of truth for commands, parameters, risk, and output.
+The current prerelease pairing is Luna CLI `0.0.1-beta.1` with Luna CLI Skills
+`0.1.0-beta.1`; the Skills require Luna CLI `>=0.0.1-beta.1 <0.1.0`.
 
 ```bash
 luna help catalog query=project limit=20 agent=true

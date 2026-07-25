@@ -70,12 +70,11 @@ the documentation site does not mirror release binaries.
 
 After any of the three release workflows succeeds, `changelog-sync.yml`
 regenerates the Chinese and English Luna DevOps, Luna CLI, and Luna CLI Skills
-changelogs from immutable tags and opens a documentation pull request. This
-preserves branch protection and keeps release jobs from rewriting developer
-branches.
-The repository must allow GitHub Actions to create pull requests. If an
-organization policy forbids that permission, release artifacts still complete,
-but a maintainer must run the generator and submit the changelog update manually.
+changelogs from immutable tags. The synchronization job serially commits generated
+content to `main`, rebases and retries when concurrent updates occur, then
+explicitly dispatches `Build & Publish Containers`. This explicit dispatch makes
+sure a commit created with `GITHUB_TOKEN` still rebuilds the documentation site.
+When there is no content change, the job exits without creating a workflow loop.
 
 The release workflow also builds an explicit target matrix:
 

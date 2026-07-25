@@ -70,6 +70,8 @@ luna --lang zh-CN project get-projects --help
 ## Agent Skills
 
 配套 Skills 位于仓库的 [`ai-supports/skills`](https://github.com/LiteyukiStudio/luna-devops/tree/main/ai-supports/skills) 目录。Skills 负责意图路由、操作顺序和安全边界，具体命令、参数、风险与输出结构始终以机器 Help 为准。
+当前预发布组合为 Luna CLI `0.0.1-beta.1` 与 Luna CLI Skills
+`0.1.0-beta.1`；Skills 要求 CLI 版本位于 `>=0.0.1-beta.1 <0.1.0`。
 
 ```bash
 luna help catalog query=project limit=20 agent=true

@@ -3,7 +3,7 @@
 本目录存放与 `luna` CLI 配套的 AI Skills。Agent 只能通过 CLI 使用 Luna DevOps，不直接调用平台 REST API、Kubernetes API 或第三方 Provider API。
 
 Skills 强依赖 Luna CLI；当前源码要求的 CLI 版本范围为
-`>=0.0.0-beta.8 <0.1.0`。CLI 本身自带分层 Help，可以不安装 Skills
+`>=0.0.1-beta.1 <0.1.0`。CLI 本身自带分层 Help，可以不安装 Skills
 独立使用。版本关系的唯一机器可读来源是仓库根目录的
 `release-compatibility.json`。
 

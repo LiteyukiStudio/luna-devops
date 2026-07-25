@@ -67,10 +67,10 @@ CLI 相关变更会执行：
 ## 更新日志同步
 
 三条 Release 工作流成功后会触发 `changelog-sync.yml`。它从不可变 tag
-重新生成中英文 Luna DevOps、Luna CLI 和 Luna CLI Skills 更新日志，并创建
-文档 PR。这样既能保持主分支保护，也避免发布任务直接改写开发者分支。
-仓库需要在 Actions 设置中允许工作流创建 Pull Request；如果组织策略禁止该
-权限，发布制品仍会完成，但需要维护者手动运行生成脚本并提交更新日志。
+重新生成中英文 Luna DevOps、Luna CLI 和 Luna CLI Skills 更新日志。同步任务
+串行提交生成结果到 `main`，遇到并发更新时会重新变基并重试；提交成功后显式
+启动 `Build & Publish Containers`，确保由 `GITHUB_TOKEN` 产生的提交也能重建
+文档站。没有内容变化时任务直接结束，不会形成工作流循环。
 
 发布工作流在这些门禁之外，还会构建明确的平台矩阵：
 
