@@ -3,7 +3,7 @@
 set -euo pipefail
 
 readonly ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-readonly REPO_URL="https://github.com/LiteyukiStudio/devops"
+readonly REPO_URL="https://github.com/LiteyukiStudio/luna-devops"
 readonly ZH_FILE="${ROOT_DIR}/docs/docs/zh/changelog.md"
 readonly EN_FILE="${ROOT_DIR}/docs/docs/en/changelog.md"
 

@@ -19,7 +19,7 @@
 <p align="center">
   <a href="https://luna-devops.liteyuki.org/en/">Documentation</a>
   ·
-  <a href="https://github.com/LiteyukiStudio/devops">GitHub</a>
+  <a href="https://github.com/LiteyukiStudio/luna-devops">GitHub</a>
   ·
   <a href="docs/docs/en/guide/deployment/kubernetes-helm.md">Helm</a>
   ·

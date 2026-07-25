@@ -1486,8 +1486,8 @@ GitHub Release 是无 Node.js/Bun 环境的首选安装方式。用户必须同�
 ```bash
 version="cli-vX.Y.Z"
 asset="luna-darwin-arm64"
-curl -fL -o luna "https://github.com/LiteyukiStudio/devops/releases/download/${version}/${asset}"
-curl -fL -o SHA256SUMS "https://github.com/LiteyukiStudio/devops/releases/download/${version}/SHA256SUMS"
+curl -fL -o luna "https://github.com/LiteyukiStudio/luna-devops/releases/download/${version}/${asset}"
+curl -fL -o SHA256SUMS "https://github.com/LiteyukiStudio/luna-devops/releases/download/${version}/SHA256SUMS"
 grep " ${asset}$" SHA256SUMS | sed "s# ${asset}$# luna#" | shasum -a 256 -c -
 chmod +x luna
 mkdir -p "${HOME}/.local/bin"
@@ -1530,7 +1530,7 @@ rm "${HOME}/.local/bin/luna"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/LiteyukiStudio/devops.git",
+    "url": "https://github.com/LiteyukiStudio/luna-devops.git",
     "directory": "cli"
   },
   "publishConfig": {

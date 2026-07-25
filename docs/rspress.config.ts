@@ -30,7 +30,7 @@ export default defineConfig({
       {
         icon: 'github',
         mode: 'link',
-        content: 'https://github.com/LiteyukiStudio/devops',
+        content: 'https://github.com/LiteyukiStudio/luna-devops',
       },
     ],
   },

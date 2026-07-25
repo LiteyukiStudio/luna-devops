@@ -7,6 +7,11 @@ const sourcePackageJson = {
   name: "@liteyuki/luna-cli",
   version: "0.0.0-development",
   private: true,
+  repository: {
+    type: "git",
+    url: "https://github.com/LiteyukiStudio/luna-devops.git",
+    directory: "cli",
+  },
 };
 
 test("uses the packed manifest as the npm release version source", () => {
@@ -15,14 +20,53 @@ test("uses the packed manifest as the npm release version source", () => {
     packedPackageJson: {
       name: "@liteyuki/luna-cli",
       version: "0.0.0-beta.4",
+      repository: sourcePackageJson.repository,
     },
     expectedVersion: "0.0.0-beta.4",
+    githubRepository: "LiteyukiStudio/luna-devops",
   });
 
   assert.deepEqual(identity, {
     name: "@liteyuki/luna-cli",
     version: "0.0.0-beta.4",
   });
+});
+
+test("accepts the packed repository when it matches GitHub provenance", () => {
+  assert.doesNotThrow(() => resolvePublishIdentity({
+    sourcePackageJson,
+    packedPackageJson: {
+      name: "@liteyuki/luna-cli",
+      version: "0.0.0-beta.4",
+      repository: {
+        type: "git",
+        url: "git+https://github.com/LiteyukiStudio/luna-devops.git",
+        directory: "cli",
+      },
+    },
+    expectedVersion: "0.0.0-beta.4",
+    githubRepository: "LiteyukiStudio/luna-devops",
+  }));
+});
+
+test("rejects a packed repository that would fail npm provenance", () => {
+  assert.throws(
+    () => resolvePublishIdentity({
+      sourcePackageJson,
+      packedPackageJson: {
+        name: "@liteyuki/luna-cli",
+        version: "0.0.0-beta.4",
+        repository: {
+          type: "git",
+          url: "https://github.com/LiteyukiStudio/devops.git",
+          directory: "cli",
+        },
+      },
+      expectedVersion: "0.0.0-beta.4",
+      githubRepository: "LiteyukiStudio/luna-devops",
+    }),
+    /npm provenance would reject this release/,
+  );
 });
 
 test("rejects a tarball with an unexpected package identity or version", () => {

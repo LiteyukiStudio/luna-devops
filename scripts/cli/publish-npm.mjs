@@ -15,10 +15,21 @@ import { validateCliVersion } from "./release-metadata.mjs";
 
 const REGISTRY = "https://registry.npmjs.org/";
 
+function normalizeRepositoryUrl(value) {
+  const url = typeof value === "string" ? value : value?.url;
+  return String(url ?? "")
+    .trim()
+    .replace(/^git\+/, "")
+    .replace(/\.git$/, "")
+    .replace(/\/$/, "")
+    .toLowerCase();
+}
+
 export function resolvePublishIdentity({
   sourcePackageJson,
   packedPackageJson,
   expectedVersion,
+  githubRepository,
 }) {
   if (packedPackageJson.name !== sourcePackageJson.name) {
     throw new Error(
@@ -33,6 +44,19 @@ export function resolvePublishIdentity({
   validateCliVersion(version);
   if (expectedVersion && version !== expectedVersion) {
     throw new Error(`Expected version ${expectedVersion}, found ${version}`);
+  }
+
+  if (githubRepository) {
+    const actualRepository = normalizeRepositoryUrl(packedPackageJson.repository);
+    const expectedRepository = normalizeRepositoryUrl(
+      `https://github.com/${githubRepository}`,
+    );
+    if (actualRepository !== expectedRepository) {
+      throw new Error(
+        `Packed package repository ${actualRepository || "<missing>"} does not match `
+        + `GitHub Actions repository ${expectedRepository}. npm provenance would reject this release.`,
+      );
+    }
   }
 
   return {
@@ -54,7 +78,12 @@ export function readPackedManifest(path) {
   }
 }
 
-export function publishNpm({ tarball, npmTag, expectedVersion }) {
+export function publishNpm({
+  tarball,
+  npmTag,
+  expectedVersion,
+  githubRepository = process.env.GITHUB_REPOSITORY,
+}) {
   const path = resolve(tarball);
   if (!existsSync(path)) {
     throw new Error(`npm tarball does not exist: ${path}`);
@@ -66,6 +95,7 @@ export function publishNpm({ tarball, npmTag, expectedVersion }) {
     sourcePackageJson,
     packedPackageJson,
     expectedVersion,
+    githubRepository,
   });
 
   const packageVersion = `${identity.name}@${identity.version}`;
