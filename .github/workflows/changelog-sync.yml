@@ -12,7 +12,6 @@ on:
 
 permissions:
   contents: write
-  pull-requests: write
 
 concurrency:
   group: changelog-sync-main
@@ -40,30 +39,29 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: "24"
-          package-manager-cache: false
 
       - name: Generate all changelog tracks
         run: scripts/generate-changelog.sh
 
-      - name: Open changelog update pull request
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RUN_ID: ${{ github.event.workflow_run.id || github.run_id }}
+      - name: Commit synchronized changelogs
         run: |
           if git diff --quiet -- docs/docs/zh/changelog docs/docs/en/changelog; then
             echo "Changelogs are already synchronized."
             exit 0
           fi
 
-          branch="automation/changelog-${RUN_ID}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git switch --create "$branch"
           git add docs/docs/zh/changelog docs/docs/en/changelog
           git commit -m "docs 📝: 同步发布更新日志"
-          git push --set-upstream origin "$branch"
-          gh pr create \
-            --base main \
-            --head "$branch" \
-            --title "docs 📝: 同步发布更新日志" \
-            --body "由发布工作流自动同步 Luna DevOps、Luna CLI 与 Luna CLI Skills 更新日志。"
+
+          for attempt in 1 2 3; do
+            git pull --rebase origin main
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            sleep $((attempt * 2))
+          done
+
+          echo "Failed to synchronize changelogs after 3 attempts." >&2
+          exit 1
