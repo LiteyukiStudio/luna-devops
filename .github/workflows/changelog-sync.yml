@@ -11,6 +11,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: write
   contents: write
 
 concurrency:
@@ -44,6 +45,8 @@ jobs:
         run: scripts/generate-changelog.sh
 
       - name: Commit synchronized changelogs
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           if git diff --quiet -- docs/docs/zh/changelog docs/docs/en/changelog; then
             echo "Changelogs are already synchronized."
@@ -58,6 +61,7 @@ jobs:
           for attempt in 1 2 3; do
             git pull --rebase origin main
             if git push origin HEAD:main; then
+              gh workflow run build-publish.yml --ref main
               exit 0
             fi
             sleep $((attempt * 2))
