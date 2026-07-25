@@ -149,3 +149,28 @@ jobs:
             ${{ matrix.build_args }}
           tags: |
             ${{ steps.meta.outputs.image_tags }}
+
+  release:
+    name: Publish Luna DevOps GitHub Release
+    needs:
+      - quality
+      - container
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Create release if it does not exist
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "GitHub Release $TAG already exists."
+            exit 0
+          fi
+          gh release create "$TAG" \
+            --repo "${{ github.repository }}" \
+            --verify-tag \
+            --title "Luna DevOps ${TAG#v}" \
+            --generate-notes

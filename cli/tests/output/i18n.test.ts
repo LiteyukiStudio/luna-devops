@@ -24,10 +24,17 @@ describe("CLI locale selection", () => {
       env: { LC_ALL: "en_US.UTF-8" },
     })).toBe("zh-CN");
     expect(detectLocale({
+      context: "en-US",
+      env: { LUNA_LANG: "zh_CN.UTF-8" },
+    })).toBe("zh-CN");
+    expect(detectLocale({
       explicit: "fr-FR",
       context: "zh-CN",
       env: {},
     })).toBe("en-US");
+    expect(detectLocale({
+      env: { LC_ALL: "C", LANG: "zh_CN.UTF-8" },
+    })).toBe("zh-CN");
     expect(detectLocale({ env: {}, runtimeLocale: "fr-FR" })).toBe("en-US");
   });
 

@@ -16,7 +16,7 @@ luna help catalog query=project limit=5 output=json interactive=false
 
 ## Current development status
 
-The CLI is under active `0.1.0` development. The source CLI is runnable and testable. Its current catalog contains 131 commands: 21 local commands and 110 commands generated from OpenAPI. The source tree includes:
+The CLI is in prerelease and is runnable and testable. Its current catalog contains 131 commands: 21 local commands and 110 commands generated from OpenAPI. The source tree includes:
 
 - multi-instance contexts and a default project context;
 - Access Token login, validation, and local credential storage;
@@ -26,7 +26,30 @@ The CLI is under active `0.1.0` development. The source CLI is runnable and test
 - all 110 operations currently documented by OpenAPI;
 - a shared npm/Bun entry point, packaging, global-install smoke tests, and release gates.
 
-Shared contracts and the API client are bundled safely into npm and Bun artifacts, so users do not need the monorepo workspace. No public package has been published yet; installation commands become available after the first `cli-v*` release.
+Shared contracts and the API client are bundled safely into npm and Bun artifacts, so users do not need the monorepo workspace. Prereleases are available through the npm `beta` channel.
+
+## Built-in Help and locale selection
+
+The CLI supports command discovery and basic operation without Skills:
+
+```bash
+luna --help
+luna project --help
+luna project get-projects --help
+```
+
+Each level progressively exposes categories, tools, scopes, risk, parameters, input sources, and examples. Locale precedence is:
+
+1. command-line `--lang`;
+2. `LUNA_LANG`;
+3. the current context's `language`;
+4. `LC_ALL`, `LC_MESSAGES`, `LANG`, and the runtime locale;
+5. English fallback.
+
+```bash
+LUNA_LANG=zh-CN luna --help
+luna --lang zh-CN project get-projects --help
+```
 
 See [Source Development and Verification](./development) for repository commands, OpenAPI regeneration, and validation.
 
@@ -61,7 +84,7 @@ node scripts/cli/verify-skills-sync.mjs
 
 ## Remaining release blockers
 
-Before the first public release, the project must:
+Before the first stable release, the project must:
 
 1. Document the remaining public backend routes in OpenAPI and complete command-coverage tests.
 2. Add client capability negotiation, Authorization Code + PKCE, Device Code, and Bearer step-up MFA.

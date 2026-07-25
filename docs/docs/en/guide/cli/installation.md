@@ -1,6 +1,9 @@
 # Install and Use
 
-> Luna CLI has not completed its first public release. The package-manager commands below become available after a corresponding release. If npm returns 404, use the repository development workflow and do not download a similarly named package from an unofficial source.
+> The official Luna CLI npm package is `@liteyuki/luna-cli`. Stable and
+> prerelease channels use separate dist-tags. Install only from the official npm
+> registry or the project GitHub Releases, not from similarly named third-party
+> packages.
 
 ## npm or pnpm
 
@@ -22,6 +25,7 @@ Verify the installation:
 
 ```bash
 luna --version
+luna --help
 luna help catalog output=json interactive=false
 ```
 
@@ -69,6 +73,33 @@ output=json interactive=false
 ```
 
 Do not parse colored tables, column widths, or localized human output.
+
+## Help and language
+
+For human use, discover commands progressively:
+
+```bash
+luna --help
+luna project --help
+luna project get-projects --help
+```
+
+Command Help lists required parameters, types, input sources, risk, scopes, endpoint, and examples. Business parameters use `key=value`; use `key=@file` or `key=@-` for files, JSON, and multiline input.
+
+Select Chinese for one command:
+
+```bash
+LUNA_LANG=zh-CN luna --help
+luna --lang zh-CN project get-projects --help
+```
+
+Persist a language on a context:
+
+```bash
+luna context set name=production server=https://devops.example.com language=zh-CN
+```
+
+Precedence is `--lang` > `LUNA_LANG` > context `language` > system locale > English. Upgrade an older prerelease to the latest `beta` to receive the complete locale detection behavior.
 
 ## Shell completion
 

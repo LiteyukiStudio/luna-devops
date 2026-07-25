@@ -16,7 +16,7 @@ luna help catalog query=project limit=5 output=json interactive=false
 
 ## 当前开发状态
 
-CLI 目前处于 `0.1.0` 开发阶段。源码已经可以运行和验证，当前命令目录共有 131 条命令，其中 21 条由 CLI 本地实现，110 条由 OpenAPI 契约生成。源码已经包含：
+CLI 目前处于预发布阶段。源码已经可以运行和验证，当前命令目录共有 131 条命令，其中 21 条由 CLI 本地实现，110 条由 OpenAPI 契约生成。源码已经包含：
 
 - 多实例、上下文和默认项目空间的配置模型；
 - Access Token 登录、校验和本地凭据存储基础能力；
@@ -26,7 +26,30 @@ CLI 目前处于 `0.1.0` 开发阶段。源码已经可以运行和验证，当�
 - 根据 OpenAPI 契约注册全部 110 个已登记操作；
 - npm 包与 Bun 独立二进制的统一入口、CI、打包、全局安装 smoke 和发布门禁。
 
-共享契约和 API Client 会被打包进 npm 与 Bun 制品，不要求用户安装 monorepo 工作区。项目尚未完成首次公开发布，因此文档中的安装命令要等 `cli-v*` 版本发布后才可使用。
+共享契约和 API Client 会被打包进 npm 与 Bun 制品，不要求用户安装 monorepo 工作区。预发布版本已经可以从 npm 的 `beta` 通道安装。
+
+## 自带帮助与语言
+
+CLI 不依赖 Skills 也能完成命令发现和基本操作：
+
+```bash
+luna --help
+luna project --help
+luna project get-projects --help
+```
+
+帮助会逐级展示分类、工具、权限、风险、参数、输入来源和示例。语言优先级为：
+
+1. 命令行 `--lang`；
+2. 环境变量 `LUNA_LANG`；
+3. 当前 context 的 `language`；
+4. `LC_ALL`、`LC_MESSAGES`、`LANG` 和运行时语言；
+5. 英文回退。
+
+```bash
+LUNA_LANG=zh-CN luna --help
+luna --lang zh-CN project get-projects --help
+```
 
 从仓库运行 CLI、更新 OpenAPI 命令和执行验证的方法见[源码开发与验证](./development)。
 
@@ -61,7 +84,7 @@ node scripts/cli/verify-skills-sync.mjs
 
 ## 下一步
 
-首次公开发布前还需要完成：
+稳定版发布前还需要完成：
 
 1. 补齐尚未进入 OpenAPI 的公开后端路由，并完成完整命令覆盖率测试。
 2. 接入服务端能力协商、Authorization Code + PKCE、Device Code 和 Bearer Step-up MFA。

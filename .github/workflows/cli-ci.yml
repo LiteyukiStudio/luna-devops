@@ -71,7 +71,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Check release helper scripts
-        run: node --test scripts/cli/tests/*.test.mjs
+        run: node --test scripts/cli/tests/*.test.mjs scripts/skills/tests/*.test.mjs
 
       - name: Check generated API contract drift
         run: node scripts/cli/verify-contract-drift.mjs

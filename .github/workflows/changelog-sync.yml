@@ -1,0 +1,69 @@
+name: Changelog Sync
+
+on:
+  workflow_run:
+    workflows:
+      - Build & Publish Containers
+      - CLI Release
+      - CLI Skills Release
+    types:
+      - completed
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: changelog-sync-main
+  cancel-in-progress: false
+
+jobs:
+  synchronize:
+    name: Synchronize release changelogs
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out main with release tags
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Fetch immutable release tags
+        run: git fetch --force --tags origin
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      - name: Generate all changelog tracks
+        run: scripts/generate-changelog.sh
+
+      - name: Open changelog update pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id || github.run_id }}
+        run: |
+          if git diff --quiet -- docs/docs/zh/changelog docs/docs/en/changelog; then
+            echo "Changelogs are already synchronized."
+            exit 0
+          fi
+
+          branch="automation/changelog-${RUN_ID}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch --create "$branch"
+          git add docs/docs/zh/changelog docs/docs/en/changelog
+          git commit -m "docs 📝: 同步发布更新日志"
+          git push --set-upstream origin "$branch"
+          gh pr create \
+            --base main \
+            --head "$branch" \
+            --title "docs 📝: 同步发布更新日志" \
+            --body "由发布工作流自动同步 Luna DevOps、Luna CLI 与 Luna CLI Skills 更新日志。"

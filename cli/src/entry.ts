@@ -57,9 +57,18 @@ export function createLunaCli(options: LunaCliOptions = {}) {
 }
 
 export async function main(argv: readonly string[] = process.argv): Promise<number> {
-  const i18n = await createCliI18n({ env: process.env })
+  const env = process.env
+  const config = new FileConfigStore()
+  const contextLanguage = await startupContextLanguage(config, argv, env)
+  const i18n = await createCliI18n({
+    explicit: startupOptionValue(argv, 'lang'),
+    context: contextLanguage,
+    env,
+  })
   const cli = createLunaCli({
     ports: {
+      config,
+      env,
       translate(key, fallback, locale) {
         return i18n.getFixedT(normalizeLocale(locale) ?? i18n.language)(key, {
           defaultValue: fallback,
@@ -70,6 +79,43 @@ export async function main(argv: readonly string[] = process.argv): Promise<numb
   const result = await runCli(cli.program, argv, cli.ports.output)
   process.exitCode = result.exitCode
   return result.exitCode
+}
+
+export function startupOptionValue(
+  argv: readonly string[],
+  name: string,
+): string | undefined {
+  const flag = `--${name}`
+  const canonical = `${name}=`
+  for (let index = 0; index < argv.length; index += 1) {
+    const token = argv[index]
+    if (token === flag)
+      return argv[index + 1]
+    if (token?.startsWith(`${flag}=`))
+      return token.slice(flag.length + 1)
+    if (token?.startsWith(canonical))
+      return token.slice(canonical.length)
+  }
+  return undefined
+}
+
+async function startupContextLanguage(
+  configStore: FileConfigStore,
+  argv: readonly string[],
+  env: Readonly<Record<string, string | undefined>>,
+): Promise<string | undefined> {
+  try {
+    const config = await configStore.read()
+    const contextName = startupOptionValue(argv, 'context')
+      ?? env.LUNA_CONTEXT
+      ?? config.currentContext
+      ?? undefined
+    return contextName ? config.contexts[contextName]?.language : undefined
+  }
+  catch {
+    // Help and recovery commands must remain usable when local config is malformed.
+    return undefined
+  }
 }
 
 function runtimeDistribution(): RuntimePorts['distribution'] {

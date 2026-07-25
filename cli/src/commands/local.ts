@@ -48,6 +48,10 @@ function registerAuth(registry: CommandRegistry): void {
       }),
       parameter('scope', { repeated: true }),
     ],
+    examples: [
+      'printf \'%s\' "$LUNA_TOKEN" | luna auth login token=@-',
+      'luna auth login mode=device-code scope=project:read',
+    ],
   }), async (invocation, ports) => {
     const mode = optionalString(invocation.params.mode) ?? 'access-token'
     if (mode === 'device-code') {
@@ -122,6 +126,7 @@ function registerAuth(registry: CommandRegistry): void {
     summary: 'Show authentication status without exposing credentials.',
     schemaVersion: 'auth.status/v1',
     parameters: [parameter('all', { schema: booleanSchema })],
+    examples: ['luna auth status', 'luna auth status all=true'],
   }), async (invocation, ports) => ({
     schemaVersion: 'auth.status/v1',
     data: await getAuthStatus(ports.config, {
@@ -136,6 +141,7 @@ function registerAuth(registry: CommandRegistry): void {
     schemaVersion: 'auth.logout/v1',
     risk: 'medium',
     parameters: [parameter('all', { schema: booleanSchema })],
+    examples: ['luna auth logout', 'luna auth logout all=true'],
   }), async (invocation, ports) => ({
     schemaVersion: 'auth.logout/v1',
     data: await logoutLocal(ports.config, {
@@ -179,12 +185,17 @@ function registerHelp(registry: CommandRegistry): void {
       parameter('cursor'),
       parameter('all', { schema: booleanSchema }),
     ],
+    examples: [
+      'luna help catalog query=project limit=10',
+      'luna help catalog category=deployment output=json interactive=false',
+    ],
   }), async invocation => catalogResult(registry, invocation.params))
 
   registry.register(localMetadata('help', 'command', {
     summary: 'Show the complete machine-readable contract for one command.',
     schemaVersion: 'help.command/v1',
     parameters: [parameter('path', { required: true })],
+    examples: ['luna help command path=project.get-projects output=json'],
   }), async invocation => commandHelpResult(registry, invocation.params))
 }
 
@@ -207,6 +218,7 @@ function registerContext(registry: CommandRegistry): void {
   registry.register(localMetadata('context', 'list', {
     summary: 'List configured Luna contexts.',
     schemaVersion: 'context.list/v1',
+    examples: ['luna context list'],
   }), async (_invocation, ports) => {
     const config = await ports.config.read()
     return {
@@ -220,6 +232,7 @@ function registerContext(registry: CommandRegistry): void {
   registry.register(localMetadata('context', 'current', {
     summary: 'Show the current Luna context.',
     schemaVersion: 'context.current/v1',
+    examples: ['luna context current'],
   }), async (_invocation, ports) => {
     const config = await ports.config.read()
     if (!config.currentContext) {
@@ -243,6 +256,7 @@ function registerContext(registry: CommandRegistry): void {
     summary: 'Switch the current Luna context.',
     schemaVersion: 'context.use/v1',
     parameters: [parameter('name', { required: true })],
+    examples: ['luna context use name=production'],
   }), async (invocation, ports) => {
     const name = requiredString(invocation.params.name, 'name')
     const config = await ports.config.read()
@@ -269,6 +283,10 @@ function registerContext(registry: CommandRegistry): void {
       parameter('projectName'),
       parameter('projectIdentifier'),
       parameter('language'),
+    ],
+    examples: [
+      'luna context set name=local server=https://luna.example.com language=zh-CN',
+      'luna context set name=production server=https://luna.example.com project=prj_example output=json',
     ],
   }), async (invocation, ports) => {
     const name = requiredString(invocation.params.name, 'name')
@@ -334,6 +352,7 @@ function registerContext(registry: CommandRegistry): void {
       parameter('name', { required: true }),
       parameter('newName', { required: true }),
     ],
+    examples: ['luna context rename name=old newName=production'],
   }), async (invocation, ports) => {
     const name = requiredString(invocation.params.name, 'name')
     const newName = requiredString(invocation.params.newName, 'newName')
@@ -367,6 +386,7 @@ function registerContext(registry: CommandRegistry): void {
     schemaVersion: 'context.delete/v1',
     risk: 'high',
     parameters: [parameter('name', { required: true })],
+    examples: ['luna context delete name=staging --yes'],
   }), async (invocation, ports) => {
     const name = requiredString(invocation.params.name, 'name')
     const config = await ports.config.read()
@@ -392,6 +412,7 @@ function registerContext(registry: CommandRegistry): void {
   registry.register(localMetadata('context', 'view', {
     summary: 'Show the redacted Luna configuration.',
     schemaVersion: 'context.view/v1',
+    examples: ['luna context view'],
   }), async (_invocation, ports) => ({
     schemaVersion: 'context.view/v1',
     data: redactConfig(await ports.config.read()),
@@ -403,6 +424,7 @@ function registerProjectContext(registry: CommandRegistry): void {
     summary: 'Show the project selected by the current context.',
     schemaVersion: 'project.current/v1',
     projectContext: 'optional',
+    examples: ['luna project current'],
   }), async (invocation, ports) => {
     const config = await ports.config.read()
     const selected = selectedContext(config, invocation.globals.context)
@@ -431,6 +453,7 @@ function registerProjectContext(registry: CommandRegistry): void {
     summary: 'Set the current context project after server validation.',
     schemaVersion: 'project.use/v1',
     projectContext: 'optional',
+    examples: ['luna project use project=prj_example'],
   }), async (invocation, ports) => {
     if (!invocation.explicitGlobalKeys.has('project')) {
       throw invalidArguments('project.use requires an explicit project=<id-or-identifier>.', 'project')
@@ -464,6 +487,7 @@ function registerProjectContext(registry: CommandRegistry): void {
   registry.register(localMetadata('project', 'unset', {
     summary: 'Clear the project selected by the current context.',
     schemaVersion: 'project.unset/v1',
+    examples: ['luna project unset'],
   }), async (invocation, ports) => {
     const config = await ports.config.read()
     const selected = selectedContext(config, invocation.globals.context)
@@ -500,6 +524,10 @@ function registerApiDiagnostic(registry: CommandRegistry): void {
         parameter('allowDiagnostic', { schema: booleanSchema }),
       ],
       inputSchema: { type: 'object', additionalProperties: true },
+      examples: [
+        'luna api request method=GET path=/api/v1/health allowDiagnostic=true',
+        'luna api request method=POST path=/api/v1/example body=@request.json allowDiagnostic=true',
+      ],
     }),
     source: 'local',
   }, async (invocation, ports) => {

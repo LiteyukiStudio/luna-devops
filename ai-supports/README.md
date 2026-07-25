@@ -1,12 +1,18 @@
-# Luna DevOps AI Skills
+# Luna CLI Skills
 
 本目录存放与 `luna` CLI 配套的 AI Skills。Agent 只能通过 CLI 使用 Luna DevOps，不直接调用平台 REST API、Kubernetes API 或第三方 Provider API。
+
+Skills 强依赖 Luna CLI；当前源码要求的 CLI 版本范围为
+`>=0.0.0-beta.8 <0.1.0`。CLI 本身自带分层 Help，可以不安装 Skills
+独立使用。版本关系的唯一机器可读来源是仓库根目录的
+`release-compatibility.json`。
 
 ## 当前状态
 
 - CLI 源码已经可以运行，当前命令目录包含 21 条本地命令和 110 条 OpenAPI 命令。
-- npm 包和独立二进制尚未完成首次公开发布；从仓库执行 Agent 任务时使用
-  `pnpm --silent --dir cli exec tsx src/entry.ts ...`，保证 stdout 只包含 JSON Envelope。
+- npm 包可通过 `npm install --global @liteyuki/luna-cli` 安装；从源码执行 Agent
+  任务时使用 `pnpm --silent --dir cli exec tsx src/entry.ts ...`，保证 stdout 只包含
+  JSON Envelope。
 - 项目空间、Git、镜像站、应用、部署配置、认证、用户、配置和数据保留已有部分命令。
 - 构建运行、发布生命周期、Gateway、账单、通知、完整运行时诊断等能力尚未完整进入 CLI。
 - Device Code、Bearer Step-up MFA、SSE、WebSocket、二进制下载和服务端高风险计划协议仍未完成。
@@ -85,9 +91,24 @@ node scripts/cli/verify-skills-sync.mjs
 
 CLI CI 与 Release 质量门会执行同一检查。
 
+## 发布与安装
+
+Luna CLI Skills 使用独立的 `cli-skills-v<SemVer>` tag 发布，不与平台的 `v*` 或
+CLI 的 `cli-v*` 共用版本号。发布工作流会：
+
+1. 校验所有 Skill 的 `SKILL.md`、目录名、命令引用和安全边界；
+2. 为每个 Skill 生成只包含一个同名根目录的标准 `.skill` ZIP；
+3. 生成整套 `luna-cli-skills-<version>.zip`、兼容 manifest 和
+   `SHA256SUMS`；
+4. 生成 GitHub OIDC provenance，并把制品上传到
+   [GitHub Releases](https://github.com/LiteyukiStudio/luna-devops/releases)。
+
+每个 Skills Release 都会声明必需的 Luna CLI 版本范围。安装或升级 Skills
+前应先检查该范围；不能满足时，Agent 必须停止执行，而不是尝试绕过版本约束。
+
 ## 发布门禁
 
-源码可用不等于所有 Skills 已完成真实实例验收。首次正式标记 Skills 可发布前仍需：
+源码可打包不等于所有 Skills 已完成真实实例验收。首次稳定版 Skills 发布前仍需：
 
 1. 补齐公开 API、专用传输和服务端能力协商。
 2. 完成 OAuth PKCE、Device Code 与 Bearer Step-up MFA。

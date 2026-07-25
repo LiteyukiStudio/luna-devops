@@ -18,8 +18,14 @@ export function normalizeLocale(locale: string | undefined): SupportedLocale | u
   if (!normalized)
     return undefined
   const lower = normalized.toLocaleLowerCase()
-  if (lower === 'zh' || lower.startsWith('zh-cn') || lower.startsWith('zh-hans'))
+  if (
+    lower === 'cn'
+    || lower === 'zh'
+    || lower.startsWith('zh-cn')
+    || lower.startsWith('zh-hans')
+  ) {
     return 'zh-CN'
+  }
   if (lower === 'en' || lower.startsWith('en-'))
     return 'en-US'
   return undefined
@@ -27,17 +33,26 @@ export function normalizeLocale(locale: string | undefined): SupportedLocale | u
 
 export function detectLocale(options: LocaleDetectionOptions = {}): SupportedLocale {
   const env = options.env ?? process.env
-  const candidates = [
+  const preferredCandidates = [
     options.explicit,
+    env.LUNA_LANG,
     options.context,
+  ]
+  for (const candidate of preferredCandidates) {
+    if (candidate?.trim())
+      return normalizeLocale(candidate) ?? 'en-US'
+  }
+
+  const runtimeCandidates = [
     env.LC_ALL,
     env.LC_MESSAGES,
     env.LANG,
     options.runtimeLocale ?? runtimeLocale(),
   ]
-  for (const candidate of candidates) {
-    if (candidate?.trim())
-      return normalizeLocale(candidate) ?? 'en-US'
+  for (const candidate of runtimeCandidates) {
+    const locale = normalizeLocale(candidate)
+    if (locale)
+      return locale
   }
   return 'en-US'
 }

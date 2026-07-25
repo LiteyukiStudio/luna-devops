@@ -65,6 +65,10 @@ test("manifest records hashes and unsigned prerelease limitations", () => {
       manifest.verification.unsignedDesktopArtifacts.length,
       2,
     );
+    assert.equal(
+      manifest.recommended.lunaCliSkills,
+      "0.1.0-beta.1",
+    );
     assert.match(
       readFileSync(join(output, "SHA256SUMS"), "utf8"),
       /luna-linux-x64/,

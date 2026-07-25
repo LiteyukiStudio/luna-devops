@@ -1,14 +1,19 @@
 # 发布与制品验证
 
-Luna CLI 与 Luna DevOps 平台使用独立的版本和 tag 命名空间：
+Luna DevOps、Luna CLI 与 Luna CLI Skills 使用独立的版本和 tag 命名空间：
 
-| Git tag | npm dist-tag | GitHub Release |
+| 产品 | Git tag | 发布渠道 |
 | --- | --- | --- |
-| `cli-v1.2.3` | `latest` | 正式版 |
-| `cli-v1.2.3-rc.1` | `next` | 预发布 |
-| `cli-v1.2.3-beta.1` | `beta` | 预发布 |
+| Luna DevOps | `v1.2.3` | 容器镜像与 GitHub Release |
+| Luna CLI | `cli-v1.2.3` | npm `latest`、二进制与 GitHub Release |
+| Luna CLI | `cli-v1.2.3-rc.1` | npm `next` 与 GitHub Prerelease |
+| Luna CLI | `cli-v1.2.3-beta.1` | npm `beta` 与 GitHub Prerelease |
+| Luna CLI Skills | `cli-skills-v1.2.3` | `.skill`、整套 ZIP 与 GitHub Release |
+| Luna CLI Skills | `cli-skills-v1.2.3-beta.1` | `.skill`、整套 ZIP 与 GitHub Prerelease |
 
-普通 `v*` tag 仍用于平台发布，不会触发 CLI 发布。
+三个前缀由不同工作流消费，互不触发。版本关系在
+`release-compatibility.json` 中维护：Skills 必须声明可用的 CLI SemVer
+范围；CLI 只给出建议配套的 Skills 版本，不会因为缺少 Skills 而拒绝运行。
 
 仓库中的 `cli/package.json.version` 固定为 `0.0.0-development`，只表示源码开发态，并通过 `private: true` 阻止从源码目录误发布。发布版本只来自 `cli-v*` tag：工作流校验 tag 中的 SemVer，在临时 npm 打包目录移除 `private` 标记、写入版本，并把同一版本注入 npm JavaScript 制品和 Bun 二进制，因此发版前不需要手动修改或提交 `package.json`。发布阶段直接读取待发布 tarball 内的 `package/package.json` 校验包名、版本和 `private` 状态，不使用源码占位版本判断制品版本。
 
@@ -42,6 +47,31 @@ CLI 相关变更会执行：
 
 发布门禁还会断言 tarball 中的 `package.json.version`、npm 安装后的 `luna --version` 和独立二进制的 `luna --version` 都等于 tag 版本。
 
+## Luna CLI Skills 发版
+
+`cli-skills-v*` tag 触发 `cli-skills-release.yml`。该工作流读取 tag 版本和
+`release-compatibility.json` 中的 `cliSkills.requiresCli`，执行 Skill
+结构校验与 CLI 命令同步检查，然后发布：
+
+- 每个 Skill 一个 `<skill-name>-<version>.skill`；
+- 一个 `luna-cli-skills-<version>.zip` 整套压缩包；
+- `LUNA-CLI-SKILLS-MANIFEST.json`，包含必需 CLI 版本范围和各制品 SHA-256；
+- `SHA256SUMS` 与 GitHub OIDC build provenance。
+
+`.skill` 是 ZIP 格式，每个文件只包含一个与 Skill `name` 相同的根目录和其中的
+`SKILL.md`、脚本与引用资料。打包脚本固定文件顺序和时间戳，同一 tag
+重跑会得到相同哈希。所有制品都从
+[GitHub Releases](https://github.com/LiteyukiStudio/luna-devops/releases)
+下载，不从文档站复制一份。
+
+## 更新日志同步
+
+三条 Release 工作流成功后会触发 `changelog-sync.yml`。它从不可变 tag
+重新生成中英文 Luna DevOps、Luna CLI 和 Luna CLI Skills 更新日志，并创建
+文档 PR。这样既能保持主分支保护，也避免发布任务直接改写开发者分支。
+仓库需要在 Actions 设置中允许工作流创建 Pull Request；如果组织策略禁止该
+权限，发布制品仍会完成，但需要维护者手动运行生成脚本并提交更新日志。
+
 发布工作流在这些门禁之外，还会构建明确的平台矩阵：
 
 - Linux x64 baseline；
@@ -64,7 +94,7 @@ Windows 与 Alpine/musl 不进入独立二进制矩阵，统一通过 npm 或 pn
 npm 发布使用 GitHub OIDC Trusted Publishing，不保存长期写入 Token。维护者需要在 npm 包设置中绑定：
 
 - Organization or user：`LiteyukiStudio`
-- Repository：`devops`
+- Repository：`luna-devops`
 - Workflow：`cli-release.yml`
 - Environment：`npm`
 
@@ -91,4 +121,6 @@ GitHub `npm` Environment 应配置保护规则和维护者审批。发布 Job �
 grep " luna-linux-x64$" SHA256SUMS | sha256sum -c -
 ```
 
-还应在 GitHub Release 的 Attestations 页面确认制品来自 `LiteyukiStudio/devops` 的 `cli-release.yml`，并检查 tag、commit 和制品名称是否与预期一致。
+还应在 GitHub Release 的 Attestations 页面确认制品来自
+`LiteyukiStudio/luna-devops` 的对应发布工作流，并检查 tag、commit
+和制品名称是否与预期一致。

@@ -9,6 +9,8 @@ import {
   fail,
   isMainModule,
   parseArguments,
+  readJson,
+  repositoryRoot,
   requiredArgument,
   sha256,
 } from "./lib.mjs";
@@ -57,7 +59,11 @@ export function generateReleaseManifest({
     commit,
     prerelease,
     npmTag,
-    generatedAt: new Date().toISOString(),
+    recommended: {
+      lunaCliSkills: readJson(
+        join(repositoryRoot, "release-compatibility.json"),
+      ).cli.recommendedSkills,
+    },
     files,
     verification: {
       checksums: "SHA256SUMS",
@@ -72,6 +78,7 @@ export function generateReleaseManifest({
   );
 
   const channel = prerelease ? "预发布 / Prerelease" : "正式版 / Stable";
+  const recommendedSkills = manifest.recommended.lunaCliSkills;
   const notes = `# Luna CLI ${version}
 
 ${channel}
@@ -79,6 +86,7 @@ ${channel}
 ## 中文
 
 - npm：\`npm install --global @liteyuki/luna-cli@${npmTag}\`
+- 建议配套 Luna CLI Skills：\`${recommendedSkills}\`。CLI 可以不安装 Skills 独立使用。
 - Linux 独立二进制已在目标 runner 完成 smoke test。
 - macOS 尚未接入代码签名；仅预发布版本提供带 \`-unsigned\` 后缀的测试制品，正式版不发布这些制品。
 - Windows 与 Alpine/musl 请通过 npm 或 pnpm 安装，并使用 Node.js 22.14.0 或更高版本运行。
@@ -87,6 +95,7 @@ ${channel}
 ## English
 
 - npm: \`npm install --global @liteyuki/luna-cli@${npmTag}\`
+- Recommended Luna CLI Skills: \`${recommendedSkills}\`. The CLI works without Skills.
 - Standalone Linux binaries were smoke-tested on their target runners.
 - macOS code signing is not configured. Only prereleases contain explicitly named \`-unsigned\` test artifacts; stable releases omit them.
 - On Windows and Alpine/musl, install with npm or pnpm and run the CLI on Node.js 22.14.0 or later.

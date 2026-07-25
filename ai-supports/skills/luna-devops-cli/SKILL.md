@@ -19,6 +19,9 @@ JSON Envelope 前输出脚本提示，破坏 stdout 单 JSON 契约。
 
 ## 命令发现
 
+- 人类可以直接使用 `luna --help`、`luna <category> --help` 和
+  `luna <category> <tool> --help` 完成基本命令发现；Skills 不应假设 CLI
+  离开 Skills 就不可使用。
 - 使用 `luna help catalog query=<关键词> category=<领域> limit=20 agent=true` 检索候选命令。
 - 执行具体工具前，使用 `luna help command path=<category.tool> agent=true` 读取完整契约。
 - 机器 Help 是参数、输入 Schema、输出、Scope、风险和错误码的事实来源。

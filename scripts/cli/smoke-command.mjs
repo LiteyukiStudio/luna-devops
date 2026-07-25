@@ -37,6 +37,21 @@ export function smokeCommand(command, {
       );
     }
 
+    const localizedHelp = run(command, [...commandPrefix, "--help"], {
+      env: {
+        ...environment,
+        LUNA_LANG: "zh-CN",
+      },
+      timeout: 30_000,
+    }).stdout;
+    for (const expectedText of ["用法：", "快速开始：", "输入规则："]) {
+      if (!localizedHelp.includes(expectedText)) {
+        throw new Error(
+          `Localized help smoke did not contain ${JSON.stringify(expectedText)}`,
+        );
+      }
+    }
+
     const help = run(
       command,
       [

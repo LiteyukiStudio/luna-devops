@@ -1,14 +1,20 @@
 # Release Security
 
-Luna CLI and the Luna DevOps platform use separate version and tag namespaces:
+Luna DevOps, Luna CLI, and Luna CLI Skills use separate version and tag namespaces:
 
-| Git tag | npm dist-tag | GitHub Release |
+| Product | Git tag | Distribution |
 | --- | --- | --- |
-| `cli-v1.2.3` | `latest` | Stable |
-| `cli-v1.2.3-rc.1` | `next` | Prerelease |
-| `cli-v1.2.3-beta.1` | `beta` | Prerelease |
+| Luna DevOps | `v1.2.3` | Container images and GitHub Release |
+| Luna CLI | `cli-v1.2.3` | npm `latest`, binaries, and GitHub Release |
+| Luna CLI | `cli-v1.2.3-rc.1` | npm `next` and GitHub Prerelease |
+| Luna CLI | `cli-v1.2.3-beta.1` | npm `beta` and GitHub Prerelease |
+| Luna CLI Skills | `cli-skills-v1.2.3` | `.skill`, bundle ZIP, and GitHub Release |
+| Luna CLI Skills | `cli-skills-v1.2.3-beta.1` | `.skill`, bundle ZIP, and GitHub Prerelease |
 
-Plain `v*` tags remain reserved for platform releases and do not trigger CLI publishing.
+Each prefix is consumed by a different workflow. Compatibility is maintained in
+`release-compatibility.json`: Skills must declare a supported Luna CLI SemVer
+range, while Luna CLI only recommends a Skills version and continues to work
+without Skills.
 
 The source `cli/package.json.version` stays at `0.0.0-development` and only identifies a development checkout. The source manifest also uses `private: true` to prevent accidental publication from the working tree. A `cli-v*` tag is the sole release-version source: the workflow validates its SemVer, removes the private marker and writes that version into a temporary npm package manifest, then injects the same value into the npm JavaScript build and every Bun binary. A release therefore does not require a package manifest version commit. The publishing stage reads `package/package.json` directly from the tested tarball to validate its name, version, and private state instead of comparing the tag with the source placeholder version.
 
@@ -42,6 +48,35 @@ CLI changes run these checks:
 
 The release gate additionally asserts that the tarball manifest, the npm-installed `luna --version`, and every standalone binary report the tag version.
 
+## Luna CLI Skills releases
+
+A `cli-skills-v*` tag triggers `cli-skills-release.yml`. The workflow reads the
+tag version and `cliSkills.requiresCli` from `release-compatibility.json`,
+validates Skill structure and CLI command synchronization, and publishes:
+
+- one `<skill-name>-<version>.skill` archive per Skill;
+- one complete `luna-cli-skills-<version>.zip` bundle;
+- `LUNA-CLI-SKILLS-MANIFEST.json` with the required CLI range and artifact hashes;
+- `SHA256SUMS` and GitHub OIDC build provenance.
+
+A `.skill` is a ZIP archive with exactly one root directory matching the Skill
+`name`, containing its `SKILL.md`, scripts, and references. Packaging fixes file
+ordering and timestamps, so rebuilding the same tag produces the same hashes.
+Download all artifacts from
+[GitHub Releases](https://github.com/LiteyukiStudio/luna-devops/releases);
+the documentation site does not mirror release binaries.
+
+## Changelog synchronization
+
+After any of the three release workflows succeeds, `changelog-sync.yml`
+regenerates the Chinese and English Luna DevOps, Luna CLI, and Luna CLI Skills
+changelogs from immutable tags and opens a documentation pull request. This
+preserves branch protection and keeps release jobs from rewriting developer
+branches.
+The repository must allow GitHub Actions to create pull requests. If an
+organization policy forbids that permission, release artifacts still complete,
+but a maintainer must run the generator and submit the changelog update manually.
+
 The release workflow also builds an explicit target matrix:
 
 - Linux x64 baseline;
@@ -64,7 +99,7 @@ The repository does not currently have Apple Developer ID signing and notarizati
 npm publishing uses GitHub OIDC Trusted Publishing without a long-lived write token. Maintainers configure the npm package with:
 
 - Organization or user: `LiteyukiStudio`
-- Repository: `devops`
+- Repository: `luna-devops`
 - Workflow: `cli-release.yml`
 - Environment: `npm`
 
@@ -91,4 +126,6 @@ At minimum, verify SHA-256:
 grep " luna-linux-x64$" SHA256SUMS | sha256sum -c -
 ```
 
-Also inspect GitHub Release Attestations and confirm that the artifact was produced by `LiteyukiStudio/devops`, the `cli-release.yml` workflow, and the expected tag and commit.
+Also inspect GitHub Release Attestations and confirm that the artifact was
+produced by `LiteyukiStudio/luna-devops`, the expected release workflow, tag,
+and commit.

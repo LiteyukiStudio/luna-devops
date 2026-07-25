@@ -80,7 +80,7 @@ describe('commander command execution', () => {
     expect(streams.stderr()).not.toContain('Commands:')
   })
 
-  it('keeps friendly Commander help for unknown tools in human mode', async () => {
+  it('renders one actionable error for unknown tools in human mode', async () => {
     const registry = new CommandRegistry()
     registry.register({
       category: 'version',
@@ -103,8 +103,60 @@ describe('commander command execution', () => {
     )
 
     expect(result.exitCode).toBeGreaterThan(0)
-    expect(streams.stderr()).toContain('Usage:')
+    expect(streams.stderr()).not.toContain('Usage:')
     expect(streams.stderr()).toContain('unknown_command:')
+    expect(streams.stderr()).toContain('luna version --help')
+    expect(streams.stderr()).not.toContain('undefined')
+  })
+
+  it('localizes unknown-command suggestions in human mode', async () => {
+    const registry = new CommandRegistry()
+    registry.register({
+      category: 'project',
+      tool: 'get-projects',
+      source: 'local',
+    }, async () => ({ data: {} }))
+    const streams = memoryOutputStreams()
+    const output = new CommandOutput({
+      streams: streams.streams,
+      version: 'test',
+      translate(key, fallback) {
+        const messages: Record<string, string> = {
+          'help.errors.unknownCommand': '未知命令',
+          'help.errors.didYouMean': '你是否想输入',
+          'help.errors.nextStep': '下一步',
+        }
+        return messages[key] ?? fallback
+      },
+    })
+    const captures = capturePorts()
+    const ports = {
+      ...captures.ports,
+      output,
+      translate(key: string, fallback: string) {
+        const messages: Record<string, string> = {
+          'help.errors.unknownCommand': '未知命令',
+          'help.errors.didYouMean': '你是否想输入',
+          'help.errors.nextStep': '下一步',
+        }
+        return messages[key] ?? fallback
+      },
+    }
+    const program = createCliProgram({ registry, ports })
+    routeCommanderOutput(program, streams.streams)
+
+    const result = await runCli(
+      program,
+      ['node', 'luna', 'projec', 'get-projects'],
+      output,
+    )
+
+    expect(result.exitCode).toBe(2)
+    expect(streams.stderr()).toContain('unknown_command: 未知命令: projec')
+    expect(streams.stderr()).toContain('你是否想输入: project')
+    expect(streams.stderr()).toContain('下一步: luna --help')
+    expect(streams.stderr()).not.toContain('Did you mean')
+    expect(streams.stderr()).not.toContain('undefined')
   })
 
   it('rejects an explicit project for a project-independent command', async () => {

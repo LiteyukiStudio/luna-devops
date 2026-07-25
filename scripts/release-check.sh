@@ -28,7 +28,7 @@ if [[ -n "${worktree_status}" ]]; then
   exit 1
 fi
 
-for command_name in go pnpm helm; do
+for command_name in go pnpm node helm zip unzip; do
   require_command "${command_name}"
 done
 
@@ -88,6 +88,10 @@ AUTH_TEST_DATABASE_URL="" go test -race ./internal/api ./internal/worker ./inter
 section "Installing locked frontend dependencies"
 pnpm --dir web install --frozen-lockfile
 pnpm --dir docs install --frozen-lockfile
+
+section "Checking CLI and Skills release tooling"
+pnpm check:release-scripts
+pnpm check:cli-skills
 
 section "Linting and building the frontend"
 pnpm --dir web test

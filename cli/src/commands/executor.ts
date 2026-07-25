@@ -12,6 +12,14 @@ import { Command, CommanderError, Option } from 'commander'
 import { CLI_VERSION } from '../version.js'
 import { resolveGlobalOptions, splitGlobalTokens } from './arguments.js'
 import { CliCommandError, toCliCommandError } from './errors.js'
+import {
+  categoryHelpText,
+  commandHelpText,
+  localizedCategoryDescription,
+  localizedCommandSummary,
+  localizeHelp,
+  rootHelpText,
+} from './human-help.js'
 
 export interface CliProgramOptions {
   readonly registry: CommandRegistry
@@ -37,33 +45,57 @@ const DEFAULT_GLOBALS: CommandExecutionGlobals = Object.freeze({
   insecureSkipTlsVerify: false,
 })
 
+const PROGRAM_PORTS = new WeakMap<Command, RuntimePorts>()
+
 export function createCliProgram(options: CliProgramOptions): Command {
-  const program = new Command()
+  const program = localizeHelp(new Command()
     .name(options.name ?? 'luna')
     .description(options.description ?? 'Luna DevOps command-line client')
-    .version(options.ports.version ?? CLI_VERSION, '-V, --version')
+    .version(
+      options.ports.version ?? CLI_VERSION,
+      '-V, --version',
+      translate(options.ports, 'help.options.version', 'Show the CLI version'),
+    )
     .showHelpAfterError()
+    .showSuggestionAfterError()
     .allowExcessArguments(false)
     .allowUnknownOption(false)
     .addHelpCommand(false)
-    .helpOption('-h, --help', 'Show command help')
+    .helpOption(
+      '-h, --help',
+      translate(options.ports, 'help.options.help', 'Show command help'),
+    ), options.ports)
+  PROGRAM_PORTS.set(program, options.ports)
 
-  addGlobalOptions(program)
+  addGlobalOptions(program, options.ports)
+  program.addHelpText('after', () => rootHelpText(options.registry, options.ports))
   for (const category of options.registry.categories()) {
-    const categoryCommand = program
+    const categoryCommand = localizeHelp(program
       .command(category)
-      .description(`${category} commands`)
-      .addHelpCommand(false)
+      .description(localizedCategoryDescription(category, options.ports))
+      .addHelpCommand(false), options.ports)
+      .helpOption(
+        '-h, --help',
+        translate(options.ports, 'help.options.help', 'Show command help'),
+      )
+      .addHelpText('after', () => categoryHelpText(category, options.ports))
     for (const categoryAlias of options.registry.categoryAliases(category)) {
       categoryCommand.alias(categoryAlias)
     }
 
     const commands = options.registry.list({ category, includeHidden: true })
     for (const registered of commands) {
-      const tool = categoryCommand
+      const tool = localizeHelp(categoryCommand
         .command(registered.metadata.tool, { hidden: registered.metadata.hidden })
-        .description(registered.metadata.summary ?? registered.metadata.canonicalPath)
-        .argument('[arguments...]', 'Business arguments in key=value form')
+        .description(localizedCommandSummary(registered.metadata, options.ports))
+        .argument(
+          '[arguments...]',
+          translate(
+            options.ports,
+            'help.businessArguments',
+            'Business parameters in key=value form',
+          ),
+        )
         .addHelpCommand(false)
         .allowUnknownOption(false)
         .action(async (
@@ -79,7 +111,15 @@ export function createCliProgram(options: CliProgramOptions): Command {
             options.ports,
             invokedPath,
           )
-        })
+        }), options.ports)
+        .helpOption(
+          '-h, --help',
+          translate(options.ports, 'help.options.help', 'Show command help'),
+        )
+        .addHelpText(
+          'after',
+          () => commandHelpText(registered.metadata, options.ports),
+        )
       for (const alias of registered.metadata.aliases) tool.alias(alias)
     }
   }
@@ -92,7 +132,7 @@ export async function runCli(
   fallbackOutput?: RuntimePorts['output'],
 ): Promise<CliRunResult> {
   const fallbackGlobals = inferFallbackGlobals(argv)
-  const restoreCommanderOutput = suppressCommanderOutput(
+  const restoreCommanderOutput = configureCommanderOutput(
     program,
     isMachineOutput(fallbackGlobals),
   )
@@ -106,7 +146,7 @@ export async function runCli(
     if (error instanceof CommanderError && isExpectedCommanderExit(error)) {
       return { exitCode: 0 }
     }
-    const normalized = commanderFailure(error)
+    const normalized = commanderFailure(error, program, argv)
     await fallbackOutput?.writeError(normalized, fallbackGlobals)
     return { exitCode: normalized.exitCode, error: normalized }
   }
@@ -388,26 +428,34 @@ function normalizeResult(value: unknown, schemaVersion?: string): CommandResult 
   return { data: value, schemaVersion }
 }
 
-function addGlobalOptions(program: Command): void {
+function addGlobalOptions(program: Command, ports: RuntimePorts): void {
   program
-    .option('--context <name>', 'Select a saved context')
-    .option('--server <url>', 'Override the Luna server origin')
-    .option('--project <id>', 'Select a project for this command')
-    .addOption(new Option('-o, --output <format>', 'Output format')
+    .option('--context <name>', translate(ports, 'help.options.context', 'Select a saved context'))
+    .option('--server <url>', translate(ports, 'help.options.server', 'Override the Luna server origin'))
+    .option('--project <id>', translate(ports, 'help.options.project', 'Select a project for this command'))
+    .addOption(new Option('-o, --output <format>', translate(ports, 'help.options.output', 'Output format'))
       .choices(['table', 'json', 'raw-json', 'yaml', 'jsonl', 'name']))
-    .option('--lang <locale>', 'Output language')
-    .option('--no-color', 'Disable terminal colors')
-    .option('--no-interactive', 'Disable prompts')
-    .option('-y, --yes', 'Approve supported confirmation prompts')
-    .option('--quiet', 'Suppress informational diagnostics')
-    .option('--agent', 'Enable strict machine-readable agent mode')
-    .addOption(new Option('--dry-run <mode>', 'Preview without applying')
+    .option('--lang <locale>', translate(ports, 'help.options.lang', 'Output and help language'))
+    .option('--no-color', translate(ports, 'help.options.noColor', 'Disable terminal colors'))
+    .option('--no-interactive', translate(ports, 'help.options.noInteractive', 'Disable prompts'))
+    .option('-y, --yes', translate(ports, 'help.options.yes', 'Approve supported confirmation prompts'))
+    .option('--quiet', translate(ports, 'help.options.quiet', 'Suppress informational diagnostics'))
+    .option('--agent', translate(ports, 'help.options.agent', 'Enable strict machine-readable agent mode'))
+    .addOption(new Option('--dry-run <mode>', translate(ports, 'help.options.dryRun', 'Preview without applying'))
       .choices(['client', 'server']))
-    .option('--timeout <duration>', 'Request timeout')
-    .option('--debug', 'Enable debug diagnostics')
-    .option('--request-id <id>', 'Use a request correlation ID')
-    .option('--idempotency-key <key>', 'Use an idempotency key')
-    .option('--insecure-skip-tls-verify', 'Disable TLS verification when supported')
+    .option('--timeout <duration>', translate(ports, 'help.options.timeout', 'Request timeout'))
+    .option('--debug', translate(ports, 'help.options.debug', 'Enable debug diagnostics'))
+    .option('--request-id <id>', translate(ports, 'help.options.requestId', 'Use a request correlation ID'))
+    .option('--idempotency-key <key>', translate(ports, 'help.options.idempotencyKey', 'Use an idempotency key'))
+    .option('--insecure-skip-tls-verify', translate(ports, 'help.options.insecureTls', 'Disable TLS verification when supported'))
+}
+
+function translate(
+  ports: RuntimePorts | undefined,
+  key: string,
+  fallback: string,
+): string {
+  return ports?.translate?.(key, fallback) ?? fallback
 }
 
 function invokedCommandPath(command: Command): string {
@@ -431,14 +479,23 @@ function explicitCommanderOptions(command: Command): CommanderGlobalOptions {
   ) as CommanderGlobalOptions
 }
 
-function commanderFailure(error: unknown): CliCommandError {
+function commanderFailure(
+  error: unknown,
+  program: Command,
+  argv: readonly string[],
+): CliCommandError {
   if (!(error instanceof CommanderError))
     return toCliCommandError(error)
+  const ports = PROGRAM_PORTS.get(program)
+  const helpCommand = commanderHelpCommand(program, argv)
+  const rawMessage = cleanCommanderMessage(error.message)
+  const unknown = error.code === 'commander.unknownCommand'
+  const message = unknown
+    ? localizedUnknownCommandMessage(rawMessage, helpCommand, ports)
+    : localizedInvalidArgumentsMessage(helpCommand, ports)
   return new CliCommandError(
-    error.code === 'commander.unknownCommand'
-      ? 'unknown_command'
-      : 'invalid_arguments',
-    cleanCommanderMessage(error.message),
+    unknown ? 'unknown_command' : 'invalid_arguments',
+    message,
     {
       status: 400,
       exitCode: 2,
@@ -461,17 +518,14 @@ function inferFallbackGlobals(argv: readonly string[]): Partial<CommandExecution
   }
 }
 
-function suppressCommanderOutput(program: Command, suppress: boolean): () => void {
-  if (!suppress)
-    return () => undefined
-
+function configureCommanderOutput(program: Command, machine: boolean): () => void {
   const snapshots = commandTree(program).map(command => ({
     command,
     output: command.configureOutput(),
   }))
   for (const snapshot of snapshots) {
     snapshot.command.configureOutput({
-      writeOut: () => undefined,
+      writeOut: machine ? () => undefined : snapshot.output.writeOut,
       writeErr: () => undefined,
       outputError: () => undefined,
     })
@@ -498,6 +552,55 @@ function isExpectedCommanderExit(error: CommanderError): boolean {
 
 function cleanCommanderMessage(value: string): string {
   return value.replace(/^error:\s*/i, '').trim() || 'Invalid command arguments.'
+}
+
+function localizedUnknownCommandMessage(
+  rawMessage: string,
+  helpCommand: string,
+  ports: RuntimePorts | undefined,
+): string {
+  const command = /unknown command ['"]([^'"]+)['"]/i.exec(rawMessage)?.[1]
+  const suggestion = /did you mean ([^)]+)\?/i.exec(rawMessage)?.[1]?.trim()
+  const lines = [
+    command
+      ? `${translate(ports, 'help.errors.unknownCommand', 'Unknown command')}: ${command}`
+      : translate(ports, 'help.errors.unknownCommand', 'Unknown command.'),
+  ]
+  if (suggestion) {
+    lines.push(
+      `${translate(ports, 'help.errors.didYouMean', 'Did you mean')}: ${suggestion}`,
+    )
+  }
+  lines.push(
+    `${translate(ports, 'help.errors.nextStep', 'View available commands')}: ${helpCommand}`,
+  )
+  return lines.join('\n')
+}
+
+function localizedInvalidArgumentsMessage(
+  helpCommand: string,
+  ports: RuntimePorts | undefined,
+): string {
+  return [
+    translate(ports, 'help.errors.invalidArguments', 'Invalid command arguments.'),
+    `${translate(ports, 'help.errors.nextStep', 'View command parameters')}: ${helpCommand}`,
+  ].join('\n')
+}
+
+function commanderHelpCommand(program: Command, argv: readonly string[]): string {
+  const rootName = program.name()
+  const operands = argv.slice(2).filter(token =>
+    token.length > 0
+    && !token.startsWith('-')
+    && !token.includes('='),
+  )
+  const category = operands[0]
+  if (!category || !program.commands.some(command =>
+    command.name() === category || command.aliases().includes(category),
+  )) {
+    return `${rootName} --help`
+  }
+  return `${rootName} ${category} --help`
 }
 
 function isOutput(value: unknown): value is CommandExecutionGlobals['output'] {

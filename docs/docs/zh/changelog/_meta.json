@@ -1,0 +1,17 @@
+[
+  {
+    "type": "file",
+    "name": "index",
+    "label": "Luna DevOps"
+  },
+  {
+    "type": "file",
+    "name": "cli",
+    "label": "Luna CLI"
+  },
+  {
+    "type": "file",
+    "name": "cli-skills",
+    "label": "Luna CLI Skills"
+  }
+]

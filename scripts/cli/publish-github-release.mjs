@@ -93,6 +93,7 @@ async function uploadAsset(release, path, token) {
 export async function publishGithubRelease({
   repository,
   tag,
+  name,
   directory,
   prerelease,
   token,
@@ -112,7 +113,7 @@ export async function publishGithubRelease({
         method: "POST",
         body: JSON.stringify({
           tag_name: tag,
-          name: `Luna CLI ${tag.slice("cli-v".length)}`,
+          name,
           body: readFileSync(notesPath, "utf8"),
           draft: false,
           prerelease,
@@ -160,6 +161,7 @@ async function main() {
   await publishGithubRelease({
     repository: requiredArgument(args, "repository"),
     tag: requiredArgument(args, "tag"),
+    name: requiredArgument(args, "name"),
     directory: requiredArgument(args, "directory"),
     prerelease: args.get("prerelease") === "true",
     token,

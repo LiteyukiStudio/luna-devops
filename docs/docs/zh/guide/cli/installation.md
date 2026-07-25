@@ -1,6 +1,7 @@
 # 安装与使用
 
-> Luna CLI 尚未完成首次公开发布。下面的包管理器命令会在对应版本发布后可用；如果 npm 返回 404，请使用仓库开发流程，不要从非官方来源下载同名包。
+> Luna CLI 的官方 npm 包是 `@liteyuki/luna-cli`。预发布版与正式版使用不同
+> dist-tag；请只从 npm 官方仓库或项目 GitHub Releases 安装，不要下载非官方同名包。
 
 ## 使用 npm 或 pnpm
 
@@ -22,6 +23,7 @@ pnpm add --global @liteyuki/luna-cli@beta
 
 ```bash
 luna --version
+luna --help
 luna help catalog output=json interactive=false
 ```
 
@@ -69,6 +71,33 @@ output=json interactive=false
 ```
 
 不要依赖彩色文本、列宽或本地化的人类输出。
+
+## 帮助与语言
+
+面向人类使用时，从以下三级帮助逐步查找命令：
+
+```bash
+luna --help
+luna project --help
+luna project get-projects --help
+```
+
+第三级帮助会列出业务参数是否必填、类型、输入来源、风险、Scope、接口和示例。业务参数使用 `key=value`；文件、JSON 和多行内容使用 `key=@file` 或 `key=@-`。
+
+临时切换中文：
+
+```bash
+LUNA_LANG=zh-CN luna --help
+luna --lang zh-CN project get-projects --help
+```
+
+为上下文保存语言：
+
+```bash
+luna context set name=production server=https://devops.example.com language=zh-CN
+```
+
+优先级为 `--lang` > `LUNA_LANG` > context `language` > 系统语言 > 英文。修改环境变量后应重新启动当前命令；已经安装的旧预发布版本需要升级到最新 `beta` 才能获得完整语言检测。
 
 ## Shell Completion
 
