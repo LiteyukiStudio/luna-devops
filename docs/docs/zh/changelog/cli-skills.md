@@ -6,6 +6,16 @@
 
 标准 `.skill` 压缩包和整套 Skills 压缩包请前往 [GitHub Releases](https://github.com/LiteyukiStudio/luna-devops/releases) 下载。
 
+## 0.0.0-beta.3
+
+发布日期：2026-07-26
+
+[GitHub Release](https://github.com/LiteyukiStudio/luna-devops/releases/tag/cli-skills-v0.0.0-beta.3) · [查看版本代码](https://github.com/LiteyukiStudio/luna-devops/tree/cli-skills-v0.0.0-beta.3)
+
+**必需 Luna CLI 版本：** `>=0.0.0-beta.8 <0.1.0`
+
+此版本没有匹配当前产品轨道的提交记录。
+
 ## 0.0.0-beta.2
 
 发布日期：2026-07-26

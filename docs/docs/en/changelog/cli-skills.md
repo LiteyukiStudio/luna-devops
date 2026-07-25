@@ -6,6 +6,16 @@ Current development-line requirement: Luna CLI `>=0.0.0-beta.8 <0.1.0`.
 
 Download standard `.skill` archives or the complete Skills bundle from [GitHub Releases](https://github.com/LiteyukiStudio/luna-devops/releases).
 
+## 0.0.0-beta.3
+
+Release date: 2026-07-26
+
+[GitHub Release](https://github.com/LiteyukiStudio/luna-devops/releases/tag/cli-skills-v0.0.0-beta.3) · [View tag source](https://github.com/LiteyukiStudio/luna-devops/tree/cli-skills-v0.0.0-beta.3)
+
+**Required Luna CLI version:** `>=0.0.0-beta.8 <0.1.0`
+
+No commits matched this product release track.
+
 ## 0.0.0-beta.2
 
 Release date: 2026-07-26
