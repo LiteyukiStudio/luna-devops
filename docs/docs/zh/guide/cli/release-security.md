@@ -71,7 +71,8 @@ CLI 相关变更会执行：
 ## 更新日志同步
 
 平台或 CLI Release 工作流成功后会触发 `changelog-sync.yml`。它从不可变 tag
-重新生成中英文 Luna DevOps、Luna CLI 和 Luna DevOps Skill 三个更新日志视图。同步任务
+重新生成中英文 Luna DevOps 和 Luna CLI 两个更新日志视图；配套 Skill 与历史独立
+Skill 版本一并记录在 Luna CLI 页面中。同步任务
 串行提交生成结果到 `main`，遇到并发更新时会重新变基并重试；提交成功后显式
 启动 `Build & Publish Containers`，确保由 `GITHUB_TOKEN` 产生的提交也能重建
 文档站。没有内容变化时任务直接结束，不会形成工作流循环。

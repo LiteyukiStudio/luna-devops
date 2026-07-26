@@ -8,10 +8,5 @@
     "type": "file",
     "name": "cli",
     "label": "Luna CLI"
-  },
-  {
-    "type": "file",
-    "name": "cli-skills",
-    "label": "Luna DevOps Skill"
   }
 ]

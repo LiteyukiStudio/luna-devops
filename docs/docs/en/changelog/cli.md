@@ -2,9 +2,21 @@
 
 Public release notes for Luna CLI. The CLI works independently; each new release must include the exact same version of the Luna DevOps Skill in the same GitHub Release.
 
-The current development line binds the CLI and Skill to one version, tag, and release.
+The current development line binds the CLI and Skill to one version, tag, and release. Each version publishes one `luna-devops` Skill whose root `SKILL.md` routes tasks to domain guidance loaded on demand from `references/`.
 
-Install or download releases from [GitHub Releases](https://github.com/LiteyukiStudio/luna-devops/releases).
+CLI packages, binaries, and the paired `luna-devops-<version>.skill` are available from [GitHub Releases](https://github.com/LiteyukiStudio/luna-devops/releases).
+
+## 0.0.6
+
+Release date: 2026-07-27
+
+[GitHub Release](https://github.com/LiteyukiStudio/luna-devops/releases/tag/cli-v0.0.6) · [View tag source](https://github.com/LiteyukiStudio/luna-devops/tree/cli-v0.0.6)
+
+**Pairing:** Luna CLI and the Luna DevOps Skill are both `0.0.6` and must match exactly.
+
+### Added
+
+- feat: Refactor Luna CLI Skills to Luna DevOps Skill ([8b18c6a](https://github.com/LiteyukiStudio/luna-devops/commit/8b18c6ae8c071ce6d3ed6613196883a6a21616f0))
 
 ## 0.0.5
 
@@ -173,3 +185,56 @@ Release date: 2026-07-25
 ### Fixed
 
 - fix 🐛: 修复 CLI 干净环境打包入口缺失 ([e6ffba4](https://github.com/LiteyukiStudio/luna-devops/commit/e6ffba49d36fccf26ae634413baf148c09b4129f))
+
+## Historical standalone Skill releases
+
+These versions belong to the retired standalone Skill release track and remain for traceability. Current Skill releases are bundled with the matching Luna CLI release above.
+
+## 0.1.0-beta.1
+
+Release date: 2026-07-26
+
+[GitHub Release](https://github.com/LiteyukiStudio/luna-devops/releases/tag/cli-skills-v0.1.0-beta.1) · [View tag source](https://github.com/LiteyukiStudio/luna-devops/tree/cli-skills-v0.1.0-beta.1)
+
+**Required Luna CLI version:** `>=0.0.1-beta.1 <0.1.0`
+
+### Docs
+
+- docs 📝: 固化 CLI 与 Skills 预发布兼容版本 ([cd2145d](https://github.com/LiteyukiStudio/luna-devops/commit/cd2145db18a4484570349086f9f08ee1ff1b235b))
+
+## 0.0.0-beta.3
+
+Release date: 2026-07-26
+
+[GitHub Release](https://github.com/LiteyukiStudio/luna-devops/releases/tag/cli-skills-v0.0.0-beta.3) · [View tag source](https://github.com/LiteyukiStudio/luna-devops/tree/cli-skills-v0.0.0-beta.3)
+
+**Required Luna CLI version:** `>=0.0.0-beta.8 <0.1.0`
+
+No commits matched this product release track.
+
+## 0.0.0-beta.2
+
+Release date: 2026-07-26
+
+[GitHub Release](https://github.com/LiteyukiStudio/luna-devops/releases/tag/cli-skills-v0.0.0-beta.2) · [View tag source](https://github.com/LiteyukiStudio/luna-devops/tree/cli-skills-v0.0.0-beta.2)
+
+**Required Luna CLI version:** `>=0.0.0-beta.8 <0.1.0`
+
+No commits matched this product release track.
+
+## 0.0.0-beta.1
+
+Release date: 2026-07-26
+
+[GitHub Release](https://github.com/LiteyukiStudio/luna-devops/releases/tag/cli-skills-v0.0.0-beta.1) · [View tag source](https://github.com/LiteyukiStudio/luna-devops/tree/cli-skills-v0.0.0-beta.1)
+
+**Required Luna CLI version:** `>=0.0.0-beta.8 <0.1.0`
+
+### Added
+
+- feat ✨: 完善 CLI 本地化帮助与配套发布流程 ([1e44356](https://github.com/LiteyukiStudio/luna-devops/commit/1e443563f1efee9671743d92006525df5b33ab29))
+- feat ✨: 完善 Luna CLI 回归与发布链路 ([ecdd091](https://github.com/LiteyukiStudio/luna-devops/commit/ecdd091004a10d0122b3fc636713d27118ab1aab))
+- feat: add CLI build and packaging scripts ([7101600](https://github.com/LiteyukiStudio/luna-devops/commit/710160049a78a2b363b27e8eabd6e6f1750475ca))
+- feat: 添加 Luna DevOps 各模块技能文档，优化技能加载策略和操作流程 ([d13dbf6](https://github.com/LiteyukiStudio/luna-devops/commit/d13dbf6ec8f8d99410ea2062779083d67ab18283))
+- feat: implement brand color presets and theme management ([828f249](https://github.com/LiteyukiStudio/luna-devops/commit/828f24942e55b1161ec4510d3742f1881b50ebd6))
+- feat: Enhance UI and functionality across various pages ([971b00f](https://github.com/LiteyukiStudio/luna-devops/commit/971b00fd94a1e9831c24a33cba8615ac6842e192))

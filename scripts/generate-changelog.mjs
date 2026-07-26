@@ -40,17 +40,17 @@ const tracks = {
       compatibilityFile,
     ],
   },
-  "cli-skills": {
-    title: "Luna DevOps Skill",
-    tagPatterns: ["cli-v*", "cli-skills-v*"],
-    prefixes: ["cli-v", "cli-skills-v"],
-    output: "cli-skills.md",
-    paths: [
-      "ai-supports",
-      "scripts/skills",
-      compatibilityFile,
-    ],
-  },
+};
+
+const legacyCliSkillsTrack = {
+  title: "Luna DevOps Skill",
+  tagPattern: "cli-skills-v*",
+  prefix: "cli-skills-v",
+  paths: [
+    "ai-supports",
+    "scripts/skills",
+    compatibilityFile,
+  ],
 };
 
 const categoryOrder = [
@@ -114,7 +114,7 @@ function escapeMarkdown(value) {
   return value.replaceAll("\\", "\\\\").replaceAll("[", "\\[").replaceAll("]", "\\]");
 }
 
-function trackTags(trackName, track) {
+function trackTags(track) {
   const patterns = track.tagPatterns ?? [track.tagPattern];
   const output = git([
     "tag",
@@ -122,18 +122,7 @@ function trackTags(trackName, track) {
     ...patterns,
     "--sort=-v:refname",
   ]);
-  const tags = output ? output.split("\n").filter(Boolean) : [];
-  if (trackName !== "cli-skills") return tags;
-  return tags.filter((tag) => {
-    if (tag.startsWith("cli-skills-v")) return true;
-    return isPairedSkillsRelease(compatibilityAtTag(tag));
-  });
-}
-
-function isPairedSkillsRelease(metadata) {
-  return ["bundled", "single-progressive-skill"].includes(
-    metadata?.cliSkills?.release,
-  );
+  return output ? output.split("\n").filter(Boolean) : [];
 }
 
 function commitsForRange(track, range) {
@@ -256,18 +245,9 @@ function pageIntroduction(trackName, lang) {
       return [
         "这里记录 Luna CLI 的公开版本变化。CLI 可以独立使用；新版本会在同一个 Release 中强制附带完全同版本的 Luna DevOps Skill。",
         "",
-        "当前开发线采用 CLI 与 Skill 同版本、同 tag、同 Release 的绑定策略。",
+        "当前开发线采用 CLI 与 Skill 同版本、同 tag、同 Release 的绑定策略。每个版本只发布一个 `luna-devops` Skill，由根 `SKILL.md` 将任务路由到 `references/` 中按需加载的领域说明。",
         "",
-        `安装与下载请前往 [GitHub Releases](${repositoryUrl}/releases)。`,
-      ];
-    }
-    if (trackName === "cli-skills") {
-      return [
-        "这里记录 Luna DevOps Skill 的公开版本变化。新版本不再独立发版，而是随同版本 Luna CLI 一起发布。",
-        "",
-        "当前只发布一个 `luna-devops` Skill；根 `SKILL.md` 负责领域路由，具体说明从 `references/` 按需加载。Skill 强依赖完全相同版本的 Luna CLI，历史独立 Skills Release 仍保留用于追溯。",
-        "",
-        `标准 \`luna-devops-<version>.skill\` 请前往 [GitHub Releases](${repositoryUrl}/releases) 下载。`,
+        `CLI 安装包、二进制文件和配套 \`luna-devops-<version>.skill\` 均可从 [GitHub Releases](${repositoryUrl}/releases) 获取。`,
       ];
     }
     return [
@@ -281,18 +261,9 @@ function pageIntroduction(trackName, lang) {
     return [
       "Public release notes for Luna CLI. The CLI works independently; each new release must include the exact same version of the Luna DevOps Skill in the same GitHub Release.",
       "",
-      "The current development line binds the CLI and Skill to one version, tag, and release.",
+      "The current development line binds the CLI and Skill to one version, tag, and release. Each version publishes one `luna-devops` Skill whose root `SKILL.md` routes tasks to domain guidance loaded on demand from `references/`.",
       "",
-      `Install or download releases from [GitHub Releases](${repositoryUrl}/releases).`,
-    ];
-  }
-  if (trackName === "cli-skills") {
-    return [
-      "Public release notes for the Luna DevOps Skill. New Skill versions are published together with the exact same Luna CLI version.",
-      "",
-      "Only one `luna-devops` Skill is published. Its root `SKILL.md` routes tasks and loads domain guidance from `references/` on demand. The Skill requires the exact same Luna CLI version, while historical standalone Skills releases remain available for traceability.",
-      "",
-      `Download \`luna-devops-<version>.skill\` from [GitHub Releases](${repositoryUrl}/releases).`,
+      `CLI packages, binaries, and the paired \`luna-devops-<version>.skill\` are available from [GitHub Releases](${repositoryUrl}/releases).`,
     ];
   }
   return [
@@ -303,7 +274,7 @@ function pageIntroduction(trackName, lang) {
 }
 
 function generatePage(trackName, track, lang) {
-  const tags = trackTags(trackName, track);
+  const tags = trackTags(track);
   const lines = [
     `# ${track.title}${lang === "zh" ? " 更新日志" : " Changelog"}`,
     "",
@@ -322,6 +293,33 @@ function generatePage(trackName, track, lang) {
         releaseSection(trackName, track, tag, tags[index + 1] ?? "", lang),
       );
     });
+  }
+
+  if (trackName === "cli") {
+    const legacyTags = trackTags(legacyCliSkillsTrack);
+    if (legacyTags.length > 0) {
+      lines.push(
+        lang === "zh"
+          ? "## 历史独立 Skill 发布"
+          : "## Historical standalone Skill releases",
+        "",
+        lang === "zh"
+          ? "以下版本来自旧的独立 Skill 发布轨道，仅用于历史追溯。当前版本已经并入上方对应的 Luna CLI Release。"
+          : "These versions belong to the retired standalone Skill release track and remain for traceability. Current Skill releases are bundled with the matching Luna CLI release above.",
+        "",
+      );
+      legacyTags.forEach((tag, index) => {
+        lines.push(
+          releaseSection(
+            "cli-skills",
+            legacyCliSkillsTrack,
+            tag,
+            legacyTags[index + 1] ?? "",
+            lang,
+          ),
+        );
+      });
+    }
   }
 
   const output = join(root, "docs", "docs", lang, "changelog", track.output);

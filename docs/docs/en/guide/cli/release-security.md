@@ -76,7 +76,8 @@ the documentation site does not mirror release binaries.
 
 After the platform or CLI release workflow succeeds, `changelog-sync.yml`
 regenerates three Chinese and English changelog views for Luna DevOps, Luna CLI,
-and the Luna DevOps Skill from immutable tags. The synchronization job serially commits generated
+from immutable tags. The Luna CLI page also includes its paired Skill and historical standalone
+Skill releases. The synchronization job serially commits generated
 content to `main`, rebases and retries when concurrent updates occur, then
 explicitly dispatches `Build & Publish Containers`. This explicit dispatch makes
 sure a commit created with `GITHUB_TOKEN` still rebuilds the documentation site.
