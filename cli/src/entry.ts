@@ -27,19 +27,26 @@ export function createLunaCli(options: LunaCliOptions = {}) {
   const config = options.ports?.config ?? new FileConfigStore()
   const translate = options.ports?.translate
   const output = options.ports?.output ?? new CommandOutput({ version, translate })
+  const registry = createRegistryFromContract(apiContract)
+  registerLocalCommands(registry)
   const ports: RuntimePorts = {
     config,
     input: options.ports?.input ?? new DefaultInputPort(),
     output,
-    api: options.ports?.api ?? new LunaApiAdapter({ config, env }),
+    api: options.ports?.api ?? new LunaApiAdapter({
+      config,
+      env,
+      compatibility: {
+        cliVersion: version,
+        openapiDigest: registry.catalogMetadata.openapiDigest,
+      },
+    }),
     env,
     isTTY: options.ports?.isTTY ?? Boolean(process.stdout.isTTY),
     version,
     distribution: options.distribution ?? options.ports?.distribution ?? runtimeDistribution(),
     translate,
   }
-  const registry = createRegistryFromContract(apiContract)
-  registerLocalCommands(registry)
   const programOptions: CliProgramOptions = {
     registry,
     ports,
@@ -59,10 +66,10 @@ export function createLunaCli(options: LunaCliOptions = {}) {
 export async function main(argv: readonly string[] = process.argv): Promise<number> {
   const env = process.env
   const config = new FileConfigStore()
-  const contextLanguage = await startupContextLanguage(config, argv, env)
+  const configuredLanguage = await startupConfiguredLanguage(config)
   const i18n = await createCliI18n({
     explicit: startupOptionValue(argv, 'lang'),
-    context: contextLanguage,
+    configured: configuredLanguage,
     env,
   })
   const cli = createLunaCli({
@@ -99,18 +106,12 @@ export function startupOptionValue(
   return undefined
 }
 
-async function startupContextLanguage(
+async function startupConfiguredLanguage(
   configStore: FileConfigStore,
-  argv: readonly string[],
-  env: Readonly<Record<string, string | undefined>>,
 ): Promise<string | undefined> {
   try {
     const config = await configStore.read()
-    const contextName = startupOptionValue(argv, 'context')
-      ?? env.LUNA_CONTEXT
-      ?? config.currentContext
-      ?? undefined
-    return contextName ? config.contexts[contextName]?.language : undefined
+    return config.language || undefined
   }
   catch {
     // Help and recovery commands must remain usable when local config is malformed.

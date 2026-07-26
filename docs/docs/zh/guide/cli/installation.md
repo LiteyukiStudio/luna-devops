@@ -51,20 +51,26 @@ macOS 可把最后一步的 `sha256sum` 换成 `shasum -a 256`。不过在 Apple
 
 Windows 与 Alpine/musl 暂不发布独立二进制。请使用 npm 或 pnpm 安装；这避免把 Bun 目标运行时下载、Windows 签名和 musl 动态库差异转嫁给用户。
 
-## 多实例上下文
+## 登录实例
 
-CLI 设计为同时管理多个 Luna DevOps 实例。上下文保存实例地址、凭据引用、默认项目空间、语言和输出偏好，配置默认位于 `~/.luna/`。
+CLI 在 `~/.luna/auth.json` 中只保存一个活动实例和账号凭据，行为接近
+`docker login`。重新登录其他实例或账号时，原有活动登录和默认项目空间会被覆盖，
+不需要也不提供 context 切换。
 
-可以使用以下命令管理上下文：
+未指定地址时登录官方实例：
 
 ```bash
-luna context set name=production server=https://devops.example.com
-luna context list output=json interactive=false
-luna context use name=production
-luna context current
+printf '%s' "$LUNA_TOKEN" | luna login token=@-
 ```
 
-自动化脚本应显式指定上下文或实例，并使用：
+这等价于登录 `https://devops.liteyuki.org`。登录其他实例必须显式提供地址：
+
+```bash
+printf '%s' "$LUNA_TOKEN" | luna login server=https://devops.example.com token=@-
+```
+
+`luna whoami` 查看当前登录，`luna logout` 撤销并清理它。自动化脚本应明确提供
+凭据，并使用：
 
 ```text
 output=json interactive=false
@@ -92,13 +98,9 @@ LUNA_LANG=zh-CN luna --help
 luna --lang zh-CN project get-projects --help
 ```
 
-为上下文保存语言：
-
-```bash
-luna context set name=production server=https://devops.example.com language=zh-CN
-```
-
-优先级为 `--lang` > `LUNA_LANG` > context `language` > 系统语言 > 英文。修改环境变量后应重新启动当前命令；已经安装的旧预发布版本需要升级到最新 `beta` 才能获得完整语言检测。
+优先级为 `--lang` > `LUNA_LANG` > 本地配置的 `language` > 系统语言 > 英文。
+修改环境变量后应重新启动当前命令；已经安装的旧预发布版本需要升级到最新
+`beta` 才能获得完整语言检测。
 
 `latest` 与 `beta` 是两个独立的 npm 更新通道。`pnpm update --global
 @liteyuki/luna-cli` 只会跟随当前稳定通道，不会自动切换到预发布版。需要测试
@@ -127,4 +129,5 @@ pnpm remove --global @liteyuki/luna-cli
 rm "${HOME}/.local/bin/luna"
 ```
 
-卸载不会自动删除 `~/.luna/`。凭据应通过 CLI 登出命令显式撤销并清理；只有确认不再需要任何上下文时，才手动删除该目录。
+卸载不会自动删除 `~/.luna/`。凭据应通过 `luna logout` 显式撤销并清理；
+只有确认不再需要本地登录信息时，才手动删除该目录。

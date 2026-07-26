@@ -53,24 +53,21 @@ describe('fileConfigStore', () => {
     const configPath = path.join(directory, '.luna', 'auth.json')
     const store = new FileConfigStore({ configPath })
     const config = emptyConfigDocument()
-    config.instances.local = {
-      server: 'https://devops.example.com',
-      tls: { caFile: '', insecureSkipVerify: false },
-      network: { proxy: '', noProxy: '' },
+    config.server = 'https://devops.example.com'
+    config.credential = {
+      type: 'access_token',
+      token: 'secret',
+      scopes: [],
     }
-    config.contexts.local = {
-      instance: 'local',
-      output: '',
-      language: '',
-    }
-    config.currentContext = 'local'
 
     await store.write(config)
 
     expect(await store.read()).toEqual(config)
     expect((await lstat(path.dirname(configPath))).mode & 0o777).toBe(0o700)
     expect((await lstat(configPath)).mode & 0o777).toBe(0o600)
-    expect(await readFile(configPath, 'utf8')).toContain('"currentContext": "local"')
+    expect(await readFile(configPath, 'utf8')).toContain(
+      '"server": "https://devops.example.com"',
+    )
   })
 
   it('serializes concurrent read-modify-write operations with a lock', async () => {
@@ -82,15 +79,11 @@ describe('fileConfigStore', () => {
     await Promise.all(
       Array.from({ length: 8 }, (_, index) =>
         store.update((config) => {
-          config.instances[`server-${index}`] = {
-            server: `https://server-${index}.example.com`,
-            tls: { caFile: '', insecureSkipVerify: false },
-            network: { proxy: '', noProxy: '' },
-          }
+          config.language = `language-${index}`
         })),
     )
 
-    expect(Object.keys((await store.read()).instances)).toHaveLength(8)
+    expect((await store.read()).language).toMatch(/^language-\d$/u)
   })
 
   it('refuses to follow a symbolic-link config file', async () => {

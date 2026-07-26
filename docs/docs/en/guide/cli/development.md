@@ -26,7 +26,7 @@ The normal location is `~/.luna`. Development, tests, and CI must use a temporar
 | --- | --- |
 | `cli/src/commands` | Command registration, parsing, risk gates, and execution |
 | `cli/src/auth` | Access Tokens, local credentials, and authentication status |
-| `cli/src/config` | Multi-instance contexts and the default project |
+| `cli/src/config` | Active server, credential, and default project |
 | `cli/src/input` | `key=value`, JSON, files, and standard input |
 | `cli/src/output` | Human output, JSON envelopes, and redaction |
 | `packages/api-contract` | Environment-neutral contracts generated from OpenAPI |
@@ -42,7 +42,7 @@ Add public control-plane APIs to OpenAPI first, including a stable `operationId`
 luna <category> <tool> key=value
 ```
 
-Purely local capabilities such as contexts, help, and completion are registered in `cli/src/commands/local.ts`. Do not create a parallel command implementation for an existing HTTP API.
+Purely local capabilities such as authentication, projects, help, and completion are registered in `cli/src/commands/local.ts`. Do not create a parallel command implementation for an existing HTTP API.
 
 After changing OpenAPI, run:
 
@@ -68,7 +68,7 @@ node scripts/cli/verify-skills-sync.mjs
 
 The check rejects unknown literal commands, Agent commands without `agent=true`, and known stale capability claims.
 
-When a context defines a default project, the executor injects its immutable ID into
+After `project use` defines a default project, the executor injects its immutable ID into
 required `project`, `projectId`, or `projectID` parameters. Explicit command values
 take precedence. Optional project parameters are not injected, which keeps global and
 cross-project requests free from accidental filters.
@@ -78,7 +78,9 @@ Agent mode always rejects it and exposes no configuration or parameter bypass.
 
 ## Current boundaries
 
-The source tree currently contains 21 local commands and 110 OpenAPI commands. A Skill must not guess capabilities missing from the machine-readable catalog or use `api request` to pretend that they are supported.
+The source tree currently contains 14 local commands, one protocol command, and
+110 OpenAPI commands. A Skill must not guess capabilities missing from the
+machine-readable catalog or use `api request` to pretend that they are supported.
 
 Release work still includes:
 

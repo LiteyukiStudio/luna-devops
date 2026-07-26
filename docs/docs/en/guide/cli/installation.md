@@ -53,20 +53,27 @@ On macOS, use `shasum -a 256` instead of `sha256sum`. Until Apple Developer ID s
 
 Windows and Alpine/musl standalone binaries are not published yet. Install through npm or pnpm instead; this keeps Bun target-runtime downloads, Windows signing, and musl dynamic-library differences out of the supported release path.
 
-## Multi-instance contexts
+## Server login
 
-Luna CLI is designed to manage more than one Luna DevOps instance. A context stores the instance URL, credential reference, default project, language, and output preference under `~/.luna/`.
+Luna CLI stores one active server/account credential in `~/.luna/auth.json`,
+similar to `docker login`. Signing in to another server or account replaces the
+active login and default project. There is no context-switching layer.
 
-Context commands use this form:
+Without an explicit server, login targets the official instance:
 
 ```bash
-luna context set name=production server=https://devops.example.com
-luna context list output=json interactive=false
-luna context use name=production
-luna context current
+printf '%s' "$LUNA_TOKEN" | luna login token=@-
 ```
 
-Automation should select its context or server explicitly and set:
+This uses `https://devops.liteyuki.org`. Pass the server explicitly to log in
+elsewhere:
+
+```bash
+printf '%s' "$LUNA_TOKEN" | luna login server=https://devops.example.com token=@-
+```
+
+Use `luna whoami` to inspect the active login and `luna logout` to revoke and
+remove it. Automation should provide its credential explicitly and set:
 
 ```text
 output=json interactive=false
@@ -94,13 +101,9 @@ LUNA_LANG=zh-CN luna --help
 luna --lang zh-CN project get-projects --help
 ```
 
-Persist a language on a context:
-
-```bash
-luna context set name=production server=https://devops.example.com language=zh-CN
-```
-
-Precedence is `--lang` > `LUNA_LANG` > context `language` > system locale > English. Upgrade an older prerelease to the latest `beta` to receive the complete locale detection behavior.
+Precedence is `--lang` > `LUNA_LANG` > configured `language` > system locale >
+English. Upgrade an older prerelease to the latest `beta` to receive the
+complete locale detection behavior.
 
 `latest` and `beta` are separate npm update channels. A regular
 `pnpm update --global @liteyuki/luna-cli` does not switch a stable installation
@@ -129,4 +132,6 @@ pnpm remove --global @liteyuki/luna-cli
 rm "${HOME}/.local/bin/luna"
 ```
 
-Uninstalling does not silently delete `~/.luna/`. Revoke and remove credentials through the CLI logout flow. Delete the directory manually only after confirming that no contexts are needed.
+Uninstalling does not silently delete `~/.luna/`. Revoke and remove credentials
+with `luna logout`. Delete the directory manually only after confirming that no
+local login data is needed.

@@ -8,27 +8,23 @@ import {
 import { MemoryConfigStore } from '../config/memory-store.js'
 
 describe('access-token authentication', () => {
-  it('stores validated access tokens and normalizes context metadata', async () => {
+  it('stores one validated credential bound to its normalized server', async () => {
     const store = new MemoryConfigStore()
 
     await storeValidatedAccessToken(store, {
-      context: ' work ',
       server: 'https://devops.example.com/',
       token: ' secret-token ',
       scopes: ['project:read', ' project:read ', 'build:write'],
       user: { id: 'usr_1', name: 'Luna' },
       project: { id: 'prj_1', identifier: 'platform' },
-      makeCurrent: true,
     })
 
-    expect(store.value.currentContext).toBe('work')
-    expect(store.value.contexts.work.project).toEqual({
+    expect(store.value.server).toBe('https://devops.example.com')
+    expect(store.value.project).toEqual({
       id: 'prj_1',
       identifier: 'platform',
     })
-    const credentialName = store.value.contexts.work.credential
-    expect(credentialName).toBe('work-access-token')
-    expect(store.value.credentials[credentialName!]).toMatchObject({
+    expect(store.value.credential).toMatchObject({
       type: 'access_token',
       token: 'secret-token',
       scopes: ['build:write', 'project:read'],
@@ -39,7 +35,6 @@ describe('access-token authentication', () => {
   it('keeps LUNA_TOKEN process-local and reports it as an environment override', async () => {
     const store = new MemoryConfigStore()
     await storeValidatedAccessToken(store, {
-      context: 'work',
       server: 'https://devops.example.com',
       token: 'stored-token',
     })
@@ -50,12 +45,11 @@ describe('access-token authentication', () => {
       token: 'temporary-token',
       scopes: [],
     })
-    const [status] = await getAuthStatus(store, {
+    const status = await getAuthStatus(store, {
       env: { LUNA_TOKEN: 'temporary-token' },
     })
 
     expect(status.credential).toMatchObject({
-      name: 'LUNA_TOKEN',
       source: 'environment',
       type: 'access_token',
     })
@@ -66,13 +60,12 @@ describe('access-token authentication', () => {
   it('does not expose stored token values through auth status', async () => {
     const store = new MemoryConfigStore()
     await storeValidatedAccessToken(store, {
-      context: 'work',
       server: 'https://devops.example.com',
       token: 'stored-secret',
       scopes: ['project:read'],
     })
 
-    const [status] = await getAuthStatus(store, { env: {} })
+    const status = await getAuthStatus(store, { env: {} })
 
     expect(status.authenticated).toBe(true)
     expect(status.credential).toMatchObject({

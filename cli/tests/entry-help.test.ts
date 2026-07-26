@@ -29,7 +29,9 @@ describe('cli startup and human help', () => {
     ].join('\n')
     expect(rootHelp).toContain('快速开始：')
     expect(rootHelp).toContain('业务参数统一使用 key=value')
-    expect(rootHelp).toContain('当前共有 19 个分类、131 条命令')
+    expect(rootHelp).toContain('当前共有 18 个分类、125 条命令')
+    expect(rootHelp).toContain('login')
+    expect(rootHelp).toContain('doctor')
 
     const helpCategory = cli.program.commands.find(command => command.name() === 'help')
     const command = helpCategory?.commands.find(item => item.name() === 'command')
@@ -41,6 +43,11 @@ describe('cli startup and human help', () => {
     expect(commandHelp).toContain('业务参数：')
     expect(commandHelp).toContain('path=<value>  [必填, string')
     expect(commandHelp).toContain('luna help command path=project.get-projects output=json')
+
+    const login = cli.registry.get('auth.login')?.metadata
+    const loginHelp = login ? commandHelpText(login, cli.ports) : ''
+    expect(loginHelp).toContain('printf \'%s\' "$LUNA_TOKEN" | luna auth login token=@-')
+    expect(loginHelp).not.toContain('luna printf')
   })
 
   it('shows localized root help when invoked without a command', async () => {

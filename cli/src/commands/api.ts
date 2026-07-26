@@ -1,11 +1,15 @@
 import type { HttpMethod, QueryInput, QueryPrimitive, QueryValue } from '@luna-devops/api-client'
 import type {
+  ServerCompatibilityRequirements,
+} from './compatibility.js'
+import type {
   ApiDiagnosticRequest,
   ApiExecutionRequest,
   ApiPort,
   CommandExecutionGlobals,
   CommandResult,
   ConfigPort,
+  LunaApiMeta,
   NormalizedCommandMetadata,
   ProjectContextSnapshot,
 } from './types.js'
@@ -14,7 +18,10 @@ import {
   LunaClient,
 } from '@luna-devops/api-client'
 import { resolveRuntimeContext } from '../config/index.js'
-import { CliCommandError } from './errors.js'
+import {
+  assertServerCompatibility,
+} from './compatibility.js'
+import { CliCommandError, toCliCommandError } from './errors.js'
 
 const HTTP_METHODS = new Set<HttpMethod>([
   'DELETE',
@@ -32,6 +39,7 @@ export interface ApiAdapterOptions {
   readonly config: ConfigPort
   readonly env?: Readonly<Record<string, string | undefined>>
   readonly clientFactory?: (options: ConstructorParameters<typeof LunaClient>[0]) => LunaClient
+  readonly compatibility?: ServerCompatibilityRequirements
 }
 
 export interface PlannedApiRequest {
@@ -46,11 +54,14 @@ export class LunaApiAdapter implements ApiPort {
   readonly #config: ConfigPort
   readonly #env: Readonly<Record<string, string | undefined>>
   readonly #clientFactory: (options: ConstructorParameters<typeof LunaClient>[0]) => LunaClient
+  readonly #compatibility?: ServerCompatibilityRequirements
+  readonly #compatibleServers = new Set<string>()
 
   constructor(options: ApiAdapterOptions) {
     this.#config = options.config
     this.#env = options.env ?? process.env
     this.#clientFactory = options.clientFactory ?? (clientOptions => new LunaClient(clientOptions))
+    this.#compatibility = options.compatibility
   }
 
   async execute(request: ApiExecutionRequest): Promise<CommandResult> {
@@ -73,6 +84,7 @@ export class LunaApiAdapter implements ApiPort {
         },
       }
     }
+    await this.#ensureServerCompatibility(request.globals)
     const result = await this.#send(planned, request.globals)
     const projectId = requestProjectId(request)
     return {
@@ -135,6 +147,38 @@ export class LunaApiAdapter implements ApiPort {
     if (!result.ok)
       throw apiFailure(result.error)
     return asRecord(result.data)
+  }
+
+  async getMeta(
+    server: string | undefined,
+    globals: CommandExecutionGlobals,
+  ): Promise<LunaApiMeta> {
+    const baseUrl = server ?? await this.#configuredServer(globals)
+    const client = this.#clientFactory({
+      baseUrl,
+      timeoutMs: globals.timeoutMs,
+    })
+    const result = await client.request<unknown>({
+      method: 'GET',
+      path: '/api/v1/meta',
+      requestId: globals.requestId,
+      timeoutMs: globals.timeoutMs,
+    })
+    if (!result.ok)
+      throw apiFailure(result.error)
+
+    const data = asRecord(result.data)
+    const features = asRecord(data.features)
+    return {
+      apiVersion: requiredMetaString(data.apiVersion, 'apiVersion'),
+      serverVersion: requiredMetaString(data.serverVersion, 'serverVersion'),
+      openapiDigest: requiredMetaString(data.openapiDigest, 'openapiDigest'),
+      minimumCliVersion: requiredMetaString(data.minimumCliVersion, 'minimumCliVersion'),
+      features: Object.fromEntries(
+        Object.entries(features)
+          .filter((entry): entry is [string, boolean] => typeof entry[1] === 'boolean'),
+      ),
+    }
   }
 
   async resolveProject(
@@ -206,6 +250,41 @@ export class LunaApiAdapter implements ApiPort {
     return result
   }
 
+  async #ensureServerCompatibility(
+    globals: CommandExecutionGlobals,
+  ): Promise<void> {
+    if (!this.#compatibility)
+      return
+    const server = await this.#configuredServer(globals)
+    const cacheKey = new URL(server).origin
+    if (this.#compatibleServers.has(cacheKey))
+      return
+
+    let meta: LunaApiMeta
+    try {
+      meta = await this.getMeta(server, globals)
+    }
+    catch (error) {
+      const normalized = toCliCommandError(error)
+      throw new CliCommandError(
+        'server_capability_negotiation_failed',
+        'The Luna server compatibility metadata could not be verified.',
+        {
+          status: 502,
+          retryable: normalized.retryable,
+          details: {
+            server,
+            causeCode: normalized.code,
+            causeStatus: normalized.status,
+          },
+          cause: error,
+        },
+      )
+    }
+    assertServerCompatibility(meta, this.#compatibility)
+    this.#compatibleServers.add(cacheKey)
+  }
+
   async #client(globals: CommandExecutionGlobals): Promise<LunaClient> {
     if (globals.insecureSkipTlsVerify) {
       throw new CliCommandError(
@@ -221,20 +300,12 @@ export class LunaApiAdapter implements ApiPort {
     }
     const config = await this.#config.read()
     const runtime = resolveRuntimeContext(config, {
-      context: globals.context,
       server: globals.server,
       project: globals.project,
       output: globals.output,
       language: globals.lang,
       env: this.#env,
     })
-    if (!runtime.server) {
-      throw new CliCommandError(
-        'server_required',
-        'No Luna server is configured. Use context set with --server or set LUNA_SERVER.',
-        { status: 400, exitCode: 2 },
-      )
-    }
     const credential = runtime.credential
     const token = credential?.type === 'oauth'
       ? credential.accessToken
@@ -249,6 +320,31 @@ export class LunaApiAdapter implements ApiPort {
         : undefined,
     })
   }
+
+  async #configuredServer(globals: CommandExecutionGlobals): Promise<string> {
+    const config = await this.#config.read()
+    const runtime = resolveRuntimeContext(config, {
+      server: globals.server,
+      project: globals.project,
+      output: globals.output,
+      language: globals.lang,
+      env: this.#env,
+    })
+    return runtime.server
+  }
+}
+
+function requiredMetaString(
+  value: unknown,
+  field: string,
+): string {
+  if (typeof value === 'string' && value.trim())
+    return value
+  throw new CliCommandError(
+    'server_meta_invalid',
+    `Server metadata field "${field}" is missing or invalid.`,
+    { status: 502, details: { field } },
+  )
 }
 
 function requestProjectId(request: ApiExecutionRequest): string | undefined {

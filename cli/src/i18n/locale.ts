@@ -3,7 +3,7 @@ import process from 'node:process'
 
 export interface LocaleDetectionOptions {
   readonly explicit?: string
-  readonly context?: string
+  readonly configured?: string
   readonly env?: Readonly<Record<string, string | undefined>>
   readonly runtimeLocale?: string
 }
@@ -36,7 +36,7 @@ export function detectLocale(options: LocaleDetectionOptions = {}): SupportedLoc
   const preferredCandidates = [
     options.explicit,
     env.LUNA_LANG,
-    options.context,
+    options.configured,
   ]
   for (const candidate of preferredCandidates) {
     if (candidate?.trim())

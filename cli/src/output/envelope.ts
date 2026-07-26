@@ -7,7 +7,6 @@ export const CLI_STREAM_VERSION = "cli.luna.devops/events/v1";
 export interface EnvelopeMeta {
   readonly requestId?: string;
   readonly server?: string;
-  readonly context?: string;
   readonly projectId?: string;
   readonly actorId?: string;
   readonly authType?: string;

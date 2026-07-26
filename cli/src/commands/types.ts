@@ -83,7 +83,6 @@ export interface CommandCatalogEntry extends CommandMetadata {
 }
 
 export interface CommandExecutionGlobals {
-  readonly context?: string
   readonly server?: string
   readonly project?: string
   readonly output: OutputFormat
@@ -119,28 +118,16 @@ export interface ProjectContextSnapshot {
   readonly id: string
   readonly name?: string
   readonly identifier?: string
-}
-
-export interface LunaContext {
-  readonly instance: string
-  readonly credential?: string
-  readonly project?: ProjectContextSnapshot | null
-  readonly language?: string
-  readonly output?: OutputFormat | ''
-  readonly [key: string]: unknown
-}
-
-export interface LunaInstance {
-  readonly server: string
   readonly [key: string]: unknown
 }
 
 export interface LunaConfigDocument {
   readonly version: number
-  readonly currentContext?: string | null
-  readonly instances: Readonly<Record<string, LunaInstance>>
-  readonly credentials: Readonly<Record<string, Readonly<Record<string, unknown>>>>
-  readonly contexts: Readonly<Record<string, LunaContext>>
+  readonly server: string
+  readonly credential?: LunaCredentialRecord | null
+  readonly project?: ProjectContextSnapshot | null
+  readonly language?: string
+  readonly output?: OutputFormat | ''
 }
 
 export interface LunaCredentialRecord {
@@ -187,6 +174,14 @@ export interface ApiDiagnosticRequest {
   readonly globals: CommandExecutionGlobals
 }
 
+export interface LunaApiMeta {
+  readonly apiVersion: string
+  readonly serverVersion: string
+  readonly openapiDigest: string
+  readonly minimumCliVersion: string
+  readonly features: Readonly<Record<string, boolean>>
+}
+
 export interface ApiPort {
   execute: (request: ApiExecutionRequest) => Promise<CommandResult | unknown>
   request: (request: ApiDiagnosticRequest) => Promise<CommandResult | unknown>
@@ -199,6 +194,10 @@ export interface ApiPort {
     value: string,
     globals: CommandExecutionGlobals,
   ) => Promise<ProjectContextSnapshot>
+  getMeta?: (
+    server: string | undefined,
+    globals: CommandExecutionGlobals,
+  ) => Promise<LunaApiMeta>
 }
 
 export interface RuntimePorts {

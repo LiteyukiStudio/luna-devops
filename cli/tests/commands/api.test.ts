@@ -1,10 +1,8 @@
 import type { ApiExecutionRequest, CommandExecutionGlobals } from '../../src/commands/index.js'
 import { describe, expect, it } from 'vitest'
 import {
-
   CliCommandError,
   LunaApiAdapter,
-
   normalizeMetadata,
   planOpenApiRequest,
 } from '../../src/commands/index.js'
@@ -27,11 +25,12 @@ describe('openAPI request planning', () => {
     const adapter = new LunaApiAdapter({
       config: {
         read: async () => ({
-          version: 1,
-          currentContext: null,
-          instances: {},
-          credentials: {},
-          contexts: {},
+          version: 2,
+          server: 'https://devops.liteyuki.org',
+          credential: null,
+          project: null,
+          language: '',
+          output: '',
         }),
         write: async () => {},
       },
@@ -149,3 +148,100 @@ describe('openAPI request planning', () => {
     })
   })
 })
+
+describe('automatic server compatibility negotiation', () => {
+  it('validates metadata once before canonical remote commands', async () => {
+    const paths: string[] = []
+    const adapter = compatibleAdapter(paths)
+    const request = listApplicationsRequest()
+
+    await adapter.execute(request)
+    await adapter.execute(request)
+
+    expect(paths).toEqual([
+      '/api/v1/meta',
+      '/api/v1/projects/project%20explicit/applications',
+      '/api/v1/projects/project%20explicit/applications',
+    ])
+  })
+
+  it('fails closed before sending a command with a mismatched contract', async () => {
+    const paths: string[] = []
+    const adapter = compatibleAdapter(paths, 'sha256:different')
+
+    await expect(adapter.execute(listApplicationsRequest()))
+      .rejects
+      .toMatchObject({ code: 'openapi_digest_mismatch' })
+    expect(paths).toEqual(['/api/v1/meta'])
+  })
+
+  it('keeps the generic diagnostic request available as an escape hatch', async () => {
+    const paths: string[] = []
+    const adapter = compatibleAdapter(paths, 'sha256:different')
+
+    await adapter.request({
+      method: 'GET',
+      path: '/api/v1/health',
+      params: {},
+      globals: { ...globals, server: 'https://luna.example.test' },
+    })
+
+    expect(paths).toEqual(['/api/v1/health'])
+  })
+})
+
+function compatibleAdapter(paths: string[], serverDigest = 'sha256:contract') {
+  return new LunaApiAdapter({
+    config: {
+      read: async () => ({
+        version: 2,
+        server: 'https://devops.liteyuki.org',
+        credential: null,
+        project: null,
+        language: '',
+        output: '',
+      }),
+      write: async () => {},
+    },
+    compatibility: {
+      cliVersion: '0.0.7',
+      openapiDigest: 'sha256:contract',
+    },
+    clientFactory: () => ({
+      request: async ({ path }: { path: string }) => {
+        paths.push(path)
+        return {
+          ok: true,
+          status: 200,
+          data: path === '/api/v1/meta'
+            ? {
+                apiVersion: 'v1',
+                serverVersion: '0.1.0',
+                openapiDigest: serverDigest,
+                minimumCliVersion: '0.0.7',
+                features: {},
+              }
+            : { items: [] },
+          requestId: `request-${paths.length}`,
+        }
+      },
+    }) as never,
+  })
+}
+
+function listApplicationsRequest(): ApiExecutionRequest {
+  return {
+    operationId: 'listApplications',
+    globals: { ...globals, server: 'https://luna.example.test' },
+    params: { projectId: 'project explicit' },
+    metadata: normalizeMetadata({
+      category: 'application',
+      tool: 'list',
+      source: 'openapi',
+      operationId: 'listApplications',
+      method: 'get',
+      path: '/api/v1/projects/{projectId}/applications',
+      parameters: [{ name: 'projectId', location: 'path', required: true }],
+    }),
+  }
+}

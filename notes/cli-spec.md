@@ -4,13 +4,13 @@
 >
 > 目标版本：CLI v0.1.0
 >
-> 最后更新：2026-07-25
+> 最后更新：2026-07-27
 >
 > 命令名：`luna`
 
 ## 1. 背景
 
-Luna DevOps 需要一个同时面向开发者、平台管理员、CI 和 AI Agent 的命令行客户端。CLI 应覆盖平台公开 API，提供稳定、可脚本化的输出，并允许用户在多个 Luna DevOps 实例和账号之间切换。
+Luna DevOps 需要一个同时面向开发者、平台管理员、CI 和 AI Agent 的命令行客户端。CLI 应覆盖平台公开 API，提供稳定、可脚本化的输出，并使用一次活动登录表示当前 Luna DevOps 实例和账号。切换实例或账号时重新登录，不引入额外的命名上下文。
 
 CLI 与 Web 控制台共用后端能力和 API 契约，但不直接复用浏览器环境中的 `web/src/api`。现有前端 Client 依赖 `import.meta.env`、Cookie、i18next 单例和 MFA Dialog，不适合直接运行在命令行环境。CLI 与 Web 应共同依赖一个环境无关的 API Client 包。
 
@@ -23,7 +23,7 @@ CLI 与 Web 控制台共用后端能力和 API 契约，但不直接复用浏览
 - 同时发布公开 npm 包，支持通过 npm、pnpm 全局安装或一次性执行。
 - 支持从 GitHub Release 直接下载二进制并放入用户自己的 `PATH`。
 - 支持 macOS、Linux 和 Windows 的主流 CPU 架构。
-- 支持多个 Luna DevOps 实例、多个账号和项目空间默认值。
+- 支持登录任意 Luna DevOps 实例，并保存一个活动实例、账号凭据和项目空间默认值。
 - 支持 OAuth 浏览器登录、OAuth Device Authorization Grant 和个人访问令牌登录。
 - 支持 OAuth Token 刷新、吊销、登出和敏感操作的 Step-up MFA。
 - 覆盖所有面向用户和管理员的公开平台 API。
@@ -51,7 +51,7 @@ CLI 与 Web 控制台共用后端能力和 API 契约，但不直接复用浏览
 | Step-up MFA | 已有统一错误与 Web 交互 | 增加绑定 OAuth 授权会话的 CLI 验证流程 |
 | OpenAPI | 已有但覆盖不完整 | 除内部可观测白名单外，补齐全部 HTTP API、`operationId` 和 CLI 元数据 |
 | 前端 API Client | 已模块化但依赖浏览器环境 | 抽取环境无关的共享 Client |
-| 多实例上下文 | 未实现 | 由 CLI 本地配置提供 |
+| 活动实例与账号 | 未实现 | 由 CLI 本地配置保存一个活动登录，重新登录时整体替换 |
 
 当前路由数量明显高于 OpenAPI 已记录的接口数量，并且 OpenAPI 缺少稳定的 `operationId`。因此，在 OpenAPI 成为完整契约前，不能宣称 CLI 已覆盖全部接口。
 
@@ -121,14 +121,14 @@ Phase 0 至 Phase 4 只是实施顺序，任何一个 Phase 未完成时都不�
 | 复杂输入 | `key=value` 仍受 Shell 转义、argv 长度和多行输入限制 | 增加 `params=@path` / `params=@-`，输入按 JSON Schema Draft 2020-12 校验 | P0 |
 | Agent 模式 | `output=json interactive=false` 需要每次手写，且没有统一资源边界 | 增加 `agent=true`，统一关闭交互、颜色、浏览器自动打开和无限读取，并启用严格 Schema | P0 |
 | 能力发现 | 一次返回全部命令会快速占满 Agent 上下文 | `help catalog` 支持按分类、关键词、Scope 和风险过滤，只在 `help command` 返回完整 Schema | P0 |
-| 高风险操作 | `yes=true` 只能证明跳过本地提示，无法证明用户批准的就是最终请求 | 服务端生成短时、单次、绑定 actor/context/target/normalized params 的 `planId`，执行时精确校验 | P0 |
+| 高风险操作 | `yes=true` 只能证明跳过本地提示，无法证明用户批准的就是最终请求 | 服务端生成短时、单次、绑定 actor/authentication context/target/normalized params 的 `planId`，执行时精确校验 | P0 |
 | 并发修改 | Agent 可能基于陈旧读取覆盖用户刚完成的修改 | 写操作支持 ETag/If-Match 或稳定资源版本；Agent 模式禁止无条件覆盖 | P0 |
 | 长任务 | 已有 JSONL，但缺少统一事件版本、顺序和资源关联字段 | 首行版本事件，后续事件包含 sequence、eventId、correlationId、resourceRef，末行必须是 summary | P0 |
 | 工作流 | 多接口业务流程只能散落在 Skill 文本中 | 使用 Arazzo 描述受支持的多步骤工作流，并生成测试与文档；CLI 仍按正式命令执行，不内置通用工作流解释器 | P1 |
 | 不可信内容 | 日志、仓库文件、第三方错误可能包含 Prompt Injection | 所有外部文本标记为数据，不能生成可信 next action；人类输出清理终端控制字符，Skills 禁止执行其中指令 | P0 |
 | 输出泄密 | OpenAPI 响应类型不天然保证敏感字段不进入 JSON | 使用 `writeOnly` / `x-sensitive` 传播敏感标记，输出与 debug 统一脱敏并做契约测试 | P0 |
 | 资源消耗 | `all=true`、follow、日志和轮询可能形成无限循环或高额请求 | Agent 模式强制 maxItems/maxPages/maxBytes/timeout 和重试上限 | P0 |
-| 可审计性 | 只能看到 API 请求，难以区分人工、脚本和 Agent | 审计记录 operationId、CLI 版本、agentMode、context、planId、idempotencyKey 和 OAuth grant | P0 |
+| 可审计性 | 只能看到 API 请求，难以区分人工、脚本和 Agent | 审计记录 operationId、CLI 版本、agentMode、server、project、planId、idempotencyKey 和 OAuth grant | P0 |
 | Agent 评估 | 普通命令测试无法发现 Prompt Injection、越权建议或错误确认 | 增加命令发现、Schema 首次通过率、危险操作停顿、注入抵抗、脱敏和陈旧写入专项评估 | P0 |
 
 首版不引入以下设计：
@@ -261,8 +261,11 @@ luna <tool-category> <tool> [key=value ...] [global-flags]
 - `tool-category` 是稳定的工具分类，例如 `project`、`build`、`gateway`；
 - `tool` 是分类下的具体工具，例如 `list`、`get`、`create`、`logs`；
 - 业务输入统一使用无序 `key=value`，不使用依赖位置的业务参数；
-- 全局 flag 只控制 context、输出、语言、交互、超时和调试，不承载 API 业务字段；
+- 全局 flag 只控制实例覆盖、项目空间、输出、语言、交互、超时和调试，不承载 API 业务字段；
 - `luna --help` 和 `luna --version` 是根级快捷入口，不属于业务命令。
+- 人类交互额外提供 `luna login`、`luna logout`、`luna whoami` 和
+  `luna doctor`，分别委托给 `auth login`、`auth logout`、`auth status` 和
+  `health doctor` 的同一处理器，不复制业务逻辑。
 
 示例：
 
@@ -283,6 +286,10 @@ luna gateway route-create application=my-app hostname=example.com
 - ID、固定标识和唯一名称均可作为资源定位值；存在歧义时返回候选项并要求使用 `id=<stable-id>`。
 
 同一个 API operation 只能有一个 canonical command path。别名只用于人工输入，机器可读 Help、审计和 Skills 始终返回 canonical path。
+
+顶层短命令同样只允许人工输入。启用 `agent=true` 时必须返回
+`agent_alias_forbidden`；自动化、文档中的机器示例、审计和 Skills 始终记录
+canonical 两级命令。
 
 ### 6.2 `key=value` 输入语法
 
@@ -362,7 +369,7 @@ printf '%s' '{"project":"prj_example","identifier":"api","name":"API"}' \
 
 - `params` 只接受 JSON object；文件扩展名为 `.yaml` / `.yml` 时允许 YAML，并在校验前转换成 JSON 数据模型。
 - 参数对象使用 `help command` 返回的 JSON Schema Draft 2020-12 Schema 校验，Schema 必须具有稳定 `$id`、`schemaVersion` 和 digest。
-- `params` 与业务 `key=value` 不得混用，避免同一字段出现两套覆盖顺序；`context`、`server`、`output`、`agent`、`timeout` 等全局控制仍可同时使用。
+- `params` 与业务 `key=value` 不得混用，避免同一字段出现两套覆盖顺序；`server`、`project`、`output`、`agent`、`timeout` 等全局控制仍可同时使用。
 - `params=@-` 占用 stdin 后，Schema 中的 Secret、二进制或第二个多行字段必须改用文件引用，不能再次读取 stdin。
 - JSON 中的未知字段默认拒绝；只有 Schema 显式声明 `additionalProperties: true` 的开放映射允许额外 key。
 - 命令历史、进程列表和错误不得包含参数对象原文。含 `writeOnly` 或 `x-sensitive: true` 字段的对象在 debug、plan 和审计中统一脱敏。
@@ -406,7 +413,6 @@ CLI 必须一次返回当前输入中全部可确定的本地校验错误，而�
 
 | Canonical 参数 | 快捷 flag | 含义 |
 | --- | --- | --- |
-| `context=<name>` | `--context <name>` | 本次命令使用指定上下文，不修改默认上下文 |
 | `server=<url>` | `--server <url>` | 临时覆盖实例地址 |
 | `project=<id-or-identifier>` | `--project <value>` | 临时覆盖项目空间 |
 | `output=<format>` | `-o, --output <format>` | `table`、`json`、`raw-json`、`yaml`、`jsonl`、`name` |
@@ -426,7 +432,7 @@ CLI 必须一次返回当前输入中全部可确定的本地校验错误，而�
 优先级固定为：
 
 ```text
-命令内 canonical 参数或快捷 flag > LUNA_* 环境变量 > 当前 context > TTY 自动模式 > 内置默认值
+命令内 canonical 参数或快捷 flag > LUNA_* 环境变量 > 活动登录配置 > TTY 自动模式 > 内置默认值
 ```
 
 同一个全局控制同时使用 canonical 参数和 flag 且值不一致时，直接报参数冲突，不按顺序覆盖。
@@ -437,7 +443,7 @@ CLI 必须一次返回当前输入中全部可确定的本地校验错误，而�
 
 - 普通命令固定使用 `output=json`，流式命令固定使用 `output=jsonl`；
 - 固定 `interactive=false`、`color=false`、`quiet=true`，不打开浏览器、不读取 `/dev/tty`；
-- 变更项目级资源时必须显式传入不可变 `project` ID，不允许仅依赖持久 context 的默认项目；
+- 变更项目级资源时必须显式传入不可变 `project` ID，不允许仅依赖持久活动登录的默认项目；
 - `all=true`、follow、日志、轮询和异步等待必须设置或接受命令元数据声明的硬上限；
 - 禁止 `raw-json`，禁止把 debug 输出当作机器契约；
 - 成功输出、错误输出或事件流出现不符合声明 Schema 的内容时 fail closed；
@@ -452,7 +458,7 @@ CLI 必须一次返回当前输入中全部可确定的本地校验错误，而�
 ```text
 project=<value> / --project <value>
 > LUNA_PROJECT
-> 当前 context.project.id
+> 活动登录的 project.id
 > project_required
 ```
 
@@ -468,8 +474,7 @@ project=<value> / --project <value>
 
 | 分类 | 具体工具 |
 | --- | --- |
-| `auth` | `login`、`logout`、`status`、`refresh`、`switch`、`bootstrap-status`、`bootstrap-admin`、`registration-status`、`registration-code-request`、`registration-complete`、`registration-settings-get`、`registration-settings-update`、`mfa-status`、`mfa-enroll`、`mfa-confirm`、`mfa-verify`、`mfa-recovery-regenerate`、`mfa-disable`、`provider-list`、`provider-callback-url`、`provider-create`、`provider-update`、`admission-get`、`admission-update` |
-| `context` | `list`、`current`、`use`、`set`、`rename`、`delete`、`view` |
+| `auth` | `login`、`logout`、`status`、`refresh`、`bootstrap-status`、`bootstrap-admin`、`registration-status`、`registration-code-request`、`registration-complete`、`registration-settings-get`、`registration-settings-update`、`mfa-status`、`mfa-enroll`、`mfa-confirm`、`mfa-verify`、`mfa-recovery-regenerate`、`mfa-disable`、`provider-list`、`provider-callback-url`、`provider-create`、`provider-update`、`admission-get`、`admission-update` |
 | `user` | `me`、`profile-update`、`password-update`、`identity-list`、`identity-unbind`、`list`、`create`、`update`、`mfa-reset` |
 | `oauth` | `app-list`、`app-create`、`app-update`、`app-secret-rotate`、`app-delete`、`grant-list`、`grant-revoke` |
 | `config` | `public-get`、`definition-list`、`get`、`update` |
@@ -508,7 +513,7 @@ project=<value> / --project <value>
 - 命令注册表的来源必须标记为 `openapi`、`protocol` 或 `local`：
   - `openapi`：一个业务命令绑定一个 OpenAPI operation；
   - `protocol`：OAuth 登录、SSE 跟随、WebSocket 终端、二进制下载等由多个 operation 或协议步骤组成的高层命令；
-  - `local`：context、help、completion 和 version 等不调用服务端的命令。
+  - `local`：项目默认值、help、completion 和 version 等不调用服务端的命令。
 - 同一 `category.tool` 只能有一个注册项；`openapi` 来源必须绑定唯一 operation，`protocol` 来源必须列出其消费的全部 operation，发生冲突时生成阶段直接失败。
 - path、query、header 和 body 字段统一扁平映射为 `key=value`；重名字段必须在 OpenAPI 元数据中显式重命名。
 - 请求体对象可按字段展开，也可由一个声明为 object 的参数通过 `@file` 或 `@-` 整体传入，两种方式不能混用。
@@ -584,11 +589,11 @@ x-luna-cli:
 
 | 值 | 行为 |
 | --- | --- |
-| `required` | 命令必须解析出项目空间；没有显式值、环境变量或 context 默认值时返回 `project_required` |
+| `required` | 命令必须解析出项目空间；没有显式值、环境变量或活动登录默认值时返回 `project_required` |
 | `optional` | 有项目空间时作为筛选或作用域注入，没有时保持接口原本的跨项目语义 |
 | `none` | 命令不接受项目空间上下文；传入 `project` 时返回参数不支持错误，避免制造已限定作用域的错觉 |
 
-`projectContext` 不能只声明枚举，还必须声明解析结果注入到 `path`、`query`、`body` 的具体字段，或者声明为 `resolve-only`。命令生成器根据该元数据统一注入项目参数、Help 和校验，不允许各业务命令自行读取 context，也不能向原本没有项目参数的接口凭空追加 query。
+`projectContext` 不能只声明枚举，还必须声明解析结果注入到 `path`、`query`、`body` 的具体字段，或者声明为 `resolve-only`。命令生成器根据该元数据统一注入项目参数、Help 和校验，不允许各业务命令自行读取活动登录配置，也不能向原本没有项目参数的接口凭空追加 query。
 
 `api request` 只用于诊断和新接口开发期间的临时验证：
 
@@ -736,7 +741,7 @@ luna cluster update planId=plan_123 yes=true agent=true
   "planId": "plan_123",
   "intentHash": "sha256:...",
   "actor": {"userId": "usr_1", "authContextId": "grant_1"},
-  "context": {"server": "https://devops.example.com", "projectId": "prj_1"},
+  "executionScope": {"server": "https://devops.example.com", "projectId": "prj_1"},
   "target": {"kind": "RuntimeCluster", "id": "cluster_1"},
   "normalizedParams": {},
   "resourceVersions": {"cluster_1": "42"},
@@ -749,7 +754,7 @@ luna cluster update planId=plan_123 yes=true agent=true
 }
 ```
 
-执行时服务端必须重新校验 actor、授权上下文、context、目标、规范化参数、资源版本、策略、Scope、MFA、过期时间和单次使用状态，并验证 `intentHash`。任一字段变化都使旧计划失效；计划不能跨账号、实例、项目空间或 Token Family 复用，也不能只依靠 CLI 本地保存的摘要保护。
+执行时服务端必须重新校验 actor、授权上下文、执行作用域、目标、规范化参数、资源版本、策略、Scope、MFA、过期时间和单次使用状态，并验证 `intentHash`。任一字段变化都使旧计划失效；计划不能跨账号、实例、项目空间或 Token Family 复用，也不能只依靠 CLI 本地保存的摘要保护。
 
 中高风险更新不得盲写。资源支持 ETag 时使用 `If-Match`，否则使用稳定 `version` 或 Kubernetes `resourceVersion`；冲突返回退出码 `6`，并在结构化错误中给出 `expectedVersion`、`currentVersion` 和重新读取建议。Agent 必须重新读取、重新生成计划并再次征得批准，不能自动覆盖。
 
@@ -817,7 +822,7 @@ luna completion powershell
 
 资源名称动态补全必须设置短超时，失败时静默回退到静态补全，不能阻塞 Shell。
 
-## 8. 多实例与凭据
+## 8. 活动登录与凭据
 
 ### 8.1 配置文件
 
@@ -827,85 +832,63 @@ luna completion powershell
 ~/.luna/auth.json
 ```
 
-可通过 `LUNA_CONFIG` 覆盖。第一版按用户要求将实例、凭据和上下文放在同一文件中，但数据模型必须拆分，允许同一实例配置多个账号。
+可通过 `LUNA_CONFIG` 覆盖。CLI 只保存一个活动实例和账号凭据，不维护命名
+context、实例列表或账号列表。切换实例或账号时重新执行 `luna login`，新登录会
+原子覆盖旧登录和默认项目空间。
 
 ```json
 {
-  "version": 1,
-  "currentContext": "work-admin",
-  "instances": {
-    "work": {
-      "server": "https://devops.example.com",
-      "tls": {
-        "caFile": "",
-        "insecureSkipVerify": false
-      },
-      "network": {
-        "proxy": "",
-        "noProxy": ""
-      }
+  "version": 2,
+  "server": "https://devops.liteyuki.org",
+  "credential": {
+    "type": "oauth",
+    "accessToken": "<secret>",
+    "refreshToken": "<secret>",
+    "expiresAt": "2026-07-24T12:00:00Z",
+    "scopes": ["project:read", "application:update"],
+    "user": {
+      "id": "usr_example",
+      "name": "Platform Admin"
     }
   },
-  "credentials": {
-    "work-oauth-admin": {
-      "type": "oauth",
-      "accessToken": "<secret>",
-      "refreshToken": "<secret>",
-      "expiresAt": "2026-07-24T12:00:00Z",
-      "scopes": ["project:read", "application:update"],
-      "user": {
-        "id": "usr_example",
-        "name": "Platform Admin"
-      }
-    },
-    "ci-token": {
-      "type": "access_token",
-      "token": "<secret>"
-    }
+  "project": {
+    "id": "prj_example",
+    "identifier": "team-platform",
+    "name": "Platform Team"
   },
-  "contexts": {
-    "work-admin": {
-      "instance": "work",
-      "credential": "work-oauth-admin",
-      "project": {
-        "id": "prj_example",
-        "identifier": "team-platform",
-        "name": "Platform Team"
-      },
-      "language": "",
-      "output": ""
-    }
-  }
+  "language": "",
+  "output": ""
 }
 ```
 
-`language` 和 `output` 为空表示继续跟随系统与 CLI 默认值。`project` 为 `null` 或缺失表示当前 context 不设置默认项目空间。
+`language` 和 `output` 为空表示继续跟随系统与 CLI 默认值。`credential` 或
+`project` 为 `null` 或缺失时分别表示尚未登录或未设置默认项目空间。服务端地址
+始终规范化为 origin。
 
-### 8.2 上下文命令
+### 8.2 登录与切换
 
 ```bash
-luna context list
-luna context current
-luna context use name=work-admin
-luna context set name=work-admin server=https://devops.example.com project=prj_example output=json
-luna context rename name=work-admin newName=work-owner
-luna context delete name=work-owner
-luna context view
+luna login
+luna login server=https://devops.example.com
+luna auth status
+luna logout
 ```
 
 行为要求：
 
-- `context use` 只修改 `currentContext`。
-- `context=<name>` 只影响当前进程。
-- 删除当前 context 前必须确认，并清除或切换 `currentContext`。
-- `context view` 默认隐藏 Token，只显示类型、到期时间、用户和 Scope。
+- 裸 `luna login` 固定登录官方实例 `https://devops.liteyuki.org`，不沿用上一次
+  自定义实例。
+- `server=<url>` 可显式登录其他实例；登录成功后覆盖原活动实例、凭据和默认项目。
+- 切换账号同样重新执行登录，不提供 `context use` 或 `auth switch`。
+- `auth status` 默认隐藏 Token，只显示实例、凭据类型、到期时间、用户和 Scope。
 - 服务端 URL 规范化为 origin，不允许携带用户名、密码、fragment 或非根路径，除非未来明确支持子路径部署。
-- context 引用独立的 instance。修改已有 context 的 `server` 时，CLI 创建或复用规范化 origin 完全相同的 instance，不得修改被其他 context 共享的 instance。
-- context 切换到不同 origin 时，必须清除该 context 原有的凭据和默认项目空间，并要求重新登录或显式绑定该 origin 下的凭据；不得把旧实例 Token 静默迁移到新实例。
+- 读取旧版 version 1 多 context 配置时不选择或迁移任一凭据，直接初始化为空的
+  version 2 官方实例配置并要求重新登录，避免选错账号或跨源迁移 Token。
 
 ### 8.3 当前项目空间
 
-项目空间是 context 级默认值，不是跨实例共享的全局状态。切换 context 时，实例、凭据和默认项目空间一起切换：
+项目空间是当前活动登录的可选默认值。重新登录会清除它，避免把旧实例项目 ID
+带到新实例：
 
 ```bash
 luna project current
@@ -918,16 +901,16 @@ luna project unset
 
 行为要求：
 
-- `project use` 先通过当前实例查询并校验项目空间可见性，再把不可变项目 ID 和名称、标识快照写入当前 context。
+- `project use` 先通过当前实例查询并校验项目空间可见性，再把不可变项目 ID 和名称、标识快照写入活动登录配置。
 - 项目名称或标识变化不影响已保存的不可变 ID；下一次成功解析时刷新本地展示快照。
 - 项目被删除或当前凭据失去访问权时返回稳定错误 `project_context_invalid`，不得回退到其他项目空间；用户必须重新执行 `project use` 或 `project unset`。
-- `project=<value>`、`--project <value>` 和 `LUNA_PROJECT` 只覆盖单次命令或当前进程，不修改 context。
-- `project current` 输出当前实例、context、项目 ID、展示名称和来源 `argument|environment|context|none`。
+- `project=<value>`、`--project <value>` 和 `LUNA_PROJECT` 只覆盖单次命令或当前进程，不修改活动登录配置。
+- `project current` 输出当前实例、项目 ID、展示名称和来源 `argument|environment|config|none`。
 - 人类模式执行写操作或危险操作时，预览和确认区域必须明确展示最终解析出的项目空间。
-- CI 使用显式 `project=<id>` 或进程级 `LUNA_PROJECT`，不依赖持久 context。
+- CI 使用显式 `project=<id>` 或进程级 `LUNA_PROJECT`，不依赖持久默认项目。
 - CLI 不实现额外常驻 REPL 或后台会话；临时“会话默认项目空间”由 Shell 作用域内的 `LUNA_PROJECT` 表达。
 
-这个设计与 Kubernetes context 保存默认 namespace 的思路一致，但 Luna 使用平台项目空间 ID 作为稳定边界，并由服务端继续执行最终权限判断。
+默认项目只减少重复参数，不授予额外权限；服务端继续执行最终权限判断。
 
 ### 8.4 本地文件安全
 
@@ -938,12 +921,12 @@ luna project unset
 - 拒绝跟随指向其他用户可写位置的符号链接。
 - 日志、错误、Shell Completion 和遥测不得输出 Token。
 - 调试输出中的 `Authorization`、Cookie、Token、Secret 和敏感 URL 参数统一脱敏。
-- Token 只发送到 context 配置的同源地址。跨源重定向不得携带 `Authorization`。
-- 临时 `server=<url>` 先规范化为 origin。只有其与当前 context instance 的 origin 完全一致时才可复用当前凭据；不同 origin 必须显式提供 `LUNA_TOKEN`、`token=@-` 或先创建对应 context，CLI 不得尝试发送当前 Token。
+- Token 只发送到活动登录配置的同源地址。跨源重定向不得携带 `Authorization`。
+- 临时 `server=<url>` 先规范化为 origin。只有其与活动登录的 origin 完全一致时才可复用当前凭据；不同 origin 必须显式提供 `LUNA_TOKEN` 或 `token=@-`，CLI 不得尝试发送当前 Token。
 - 默认遵循 `HTTP_PROXY`、`HTTPS_PROXY` 和 `NO_PROXY`；实例级 `network.proxy` 只覆盖该实例，`network.noProxy` 可追加无需代理的地址。
 - 企业自签 CA 使用实例级 `tls.caFile` 或运行时支持的系统 CA 配置，不得用 `insecureSkipTlsVerify` 代替长期 CA 配置。
 
-第一版按约定保存到 `auth.json`。后续可以增加系统 Keychain 作为可选 Secret Backend，但不能改变 context 数据模型。
+第一版按约定保存到 `auth.json`。后续可以增加系统 Keychain 作为可选 Secret Backend，但不能重新引入命名 context 或隐式多账号切换。
 
 ### 8.5 服务端能力协商
 
@@ -966,11 +949,17 @@ GET /api/v1/meta
     "terminal": true,
     "gitOauthAuthorizationTransaction": true
   },
-  "minCliVersion": "0.1.0"
+  "minimumCliVersion": "0.0.7"
 }
 ```
 
 CLI 在登录和首次调用实例时缓存非敏感能力快照，但每次遇到 `unsupported_feature`、契约摘要变化或缓存过期时重新读取。命令不受当前实例支持时，必须在发请求前返回稳定错误和服务端升级建议，不能发送一个已知会失败的请求。`help catalog` 仍展示当前 CLI 的完整能力，并可通过 `serverSupported` 标记当前实例是否支持。
+
+当前实现会在每个 OpenAPI 业务命令第一次访问实例时读取该接口，同时校验
+`apiVersion`、`minimumCliVersion` 和 `openapiDigest`；校验成功后按实例 origin
+缓存到当前 CLI 进程。缺少元数据接口、未知 API 代际、CLI 版本过低或契约摘要不一致
+都会在发送业务请求前 fail closed。通用 `api request` 作为人类诊断逃生口不执行该
+预检，也不能用于 Agent 业务编排。
 
 `/api/v1/meta` 必须允许未登录客户端读取，并配置独立限流；响应不得包含内部地址、密钥、Provider 配置或其他敏感部署信息。第一版 CLI 连接到缺少该接口、返回未知 `apiVersion` 或不满足 `minCliVersion` 的实例时必须 fail closed，返回 `server_too_old` 或 `unsupported_api_version`，不得通过试探业务接口猜测能力。
 
@@ -989,7 +978,7 @@ luna auth login server=https://devops.example.com
 3. 打开系统浏览器进入 Luna DevOps 授权页。
 4. 用户登录、完成必要 MFA 并确认 Scope。
 5. CLI 校验 state，使用 authorization code + verifier 换取 Token。
-6. CLI 获取当前用户信息并保存 context。
+6. CLI 获取当前用户信息并保存为活动登录。
 7. callback server 立即关闭。
 
 后端要求：
@@ -1063,19 +1052,16 @@ LUNA_TOKEN="$TOKEN" luna project list output=json interactive=false
 - 如需保存环境变量中的 Token，必须显式设置 `store=true` 并在 TTY 中确认。
 - 登录时调用当前用户和 Scope 查询验证 Token，不接受无法验证的凭据。
 
-### 9.4 状态、切换与登出
+### 9.4 状态与登出
 
 ```bash
 luna auth status
-luna auth status all=true
-luna auth switch context=work-admin
 luna auth refresh
 luna auth logout
-luna auth logout all=true
 luna auth logout localOnly=true
 ```
 
-OAuth 登出时先调用 revoke，服务端不可达时询问是否仅删除本地凭据。个人访问令牌默认只从本地移除；吊销远端令牌必须使用明确的 `access-token revoke`。
+`auth status` 只展示当前活动登录，不维护或枚举历史实例、账号和凭据。OAuth 登出时先调用 revoke，服务端不可达时询问是否仅删除本地凭据。个人访问令牌默认只从本地移除；吊销远端令牌必须使用明确的 `access-token revoke`。
 
 ### 9.5 Git Provider OAuth 授权
 
@@ -1174,8 +1160,7 @@ CLI 不依赖服务端尚不存在的 `challengeId`。如果未来增加一次�
 - `output=json interactive=false` 时，非结果诊断默认静默；仅在 `debug=true` 时将脱敏诊断写入 stderr，并且调用方不能把 debug 模式当作稳定机器协议。
 - TTY 默认使用 `table`。
 - 非 TTY 默认使用 JSON，避免管道中混入装饰文本。
-- `output=<format>` 或 `--output <format>` 始终覆盖 context 和自动选择。
-- 使用 `luna context set name=<context> output=<format>` 修改指定 context 的默认输出模式；设置 `output=` 恢复自动选择。
+- `output=<format>` 或 `--output <format>` 始终覆盖本地配置和自动选择。
 - `LUNA_OUTPUT` 可设置当前进程默认输出模式。
 - `quiet=true` 可关闭非必要 stderr 信息，但不能吞掉错误。
 
@@ -1184,7 +1169,7 @@ CLI 不依赖服务端尚不存在的 `challengeId`。如果未来增加一次�
 ```text
 命令 output / --output
 > LUNA_OUTPUT
-> context.output
+> config.output
 > TTY 自动选择
 ```
 
@@ -1194,7 +1179,7 @@ AI 和自动化不得依赖默认值。Skills 执行的每条命令必须显式�
 agent=true
 ```
 
-`agent=true` 是 `output=json interactive=false color=false` 和资源边界检查的规范入口；即使用户 context 默认使用 `table`，Skills 也不能省略。普通脚本仍可显式使用单独参数。
+`agent=true` 是 `output=json interactive=false color=false` 和资源边界检查的规范入口；即使用户本地配置默认使用 `table`，Skills 也不能省略。普通脚本仍可显式使用单独参数。
 
 ### 11.2 稳定格式
 
@@ -1216,7 +1201,6 @@ agent=true
   "meta": {
     "requestId": "req_example",
     "server": "https://devops.example.com",
-    "context": "work-admin",
     "projectId": "",
     "actorId": "usr_example",
     "authType": "oauth",
@@ -1334,7 +1318,8 @@ HTTP API 可以采用 RFC 9457 `application/problem+json` 表达 `type`、`title
 
 ```text
 --lang
-> context.language
+> LUNA_LANG
+> config.language
 > LC_ALL
 > LC_MESSAGES
 > LANG
@@ -1369,7 +1354,7 @@ HTTP API 可以采用 RFC 9457 `application/problem+json` 表达 `type`、`title
 - OTP、恢复码和站点密码属于用户在场凭据。Agent 收到 MFA 挑战后只能暂停并引导用户在浏览器或受控 TTY 中完成，不能要求用户把验证码发进对话，也不能代替用户完成 Step-up。
 - 高风险批准必须绑定 §6.10 的精确计划和短时认证上下文，防止批准被重放到不同目标或修改后的参数。
 - Agent 模式必须限制并行数、分页数量、重试次数、等待时间和输出字节，避免失控循环、Denial of Wallet 和对平台形成意外负载。
-- 每次 Agent 调用都生成 `correlationId`，审计记录至少包含 actor、auth context、context、project、operationId、目标、计划 ID、幂等键、结果、请求 ID 和客户端版本。服务端不得信任客户端自报的 actor、风险级别或授权结论。
+- 每次 Agent 调用都生成 `correlationId`，审计记录至少包含 actor、认证上下文、server、project、operationId、目标、计划 ID、幂等键、结果、请求 ID 和客户端版本。服务端不得信任客户端自报的 actor、风险级别或授权结论。
 - CLI 不提供任意 Shell、JavaScript、模板表达式或“执行服务器返回命令”的通用入口；`api request` 也受认证、Scope、目标实例和输出边界约束。
 
 ## 14. 配套 AI Skills
@@ -1399,14 +1384,14 @@ Skills 不负责：
 
 每次执行前必须先通过 `luna version show agent=true` 检查 CLI 可用性，再按当前意图使用带 `query/category/risk/scope/limit` 的 `luna help catalog agent=true` 检索少量候选命令，并读取对应工具的机器可读 Help。Help 中没有的命令视为尚未支持，Agent 不得根据 endpoint 名称猜测，也不得把完整命令目录一次性注入上下文。
 
-Skills 调用每一条 CLI 命令时都必须显式附带 `agent=true`，不能依赖 context、环境变量、TTY 或用户偏好决定输出模式。完整参数映射使用 `params=@file` 或 `params=@-`；Help Schema 将请求体暴露为 `body` 参数时使用 `body=@file` 或 `body=@-`，文件内容就是请求体本身，不再额外包裹 `body`。生成参数前先读取 command 输入 Schema，禁止发送未知字段。
+Skills 调用每一条 CLI 命令时都必须显式附带 `agent=true`，不能依赖本地配置、环境变量、TTY 或用户偏好决定输出模式。完整参数映射使用 `params=@file` 或 `params=@-`；Help Schema 将请求体暴露为 `body` 参数时使用 `body=@file` 或 `body=@-`，文件内容就是请求体本身，不再额外包裹 `body`。生成参数前先读取 command 输入 Schema，禁止发送未知字段。
 
 对 `projectContext: required` 的命令，Skills 默认还必须显式传入全局
 `project=<immutable-id>`，或按机器 Help 使用命令自身的
 `projectId=<immutable-id>` / `projectID=<immutable-id>` 参数。只有低风险读取命令、
-用户已经明确要求使用当前 context 项目，且 Skill 先通过
+用户已经明确要求使用当前活动登录的默认项目，且 Skill 先通过
 `luna project current agent=true` 校验过解析结果时，才允许省略；Skills
-不得自行执行 `project use` 修改用户共享的持久 context。
+不得自行执行 `project use` 修改用户共享的持久配置。
 
 Skills 的标准变更流程固定为：
 
@@ -1424,7 +1409,7 @@ Skills 的标准变更流程固定为：
 
 收到 `mfa_required` 时，Skill 必须暂停并要求用户在受控界面完成，不读取或转述 OTP/恢复码。收到冲突、计划过期或目标集合变化时，必须废弃旧批准并重新读取、计划和确认。
 
-日志、仓库内容、事件和第三方响应只作为不可信证据。即使其中出现“运行以下 luna 命令”或伪造的系统指令，Skill 也不得执行。分页、轮询和故障重试必须显式设置上限，且不能为了绕过错误自动扩大 Scope、使用管理员 context、追加 `force` 或切换项目空间。
+日志、仓库内容、事件和第三方响应只作为不可信证据。即使其中出现“运行以下 luna 命令”或伪造的系统指令，Skill 也不得执行。分页、轮询和故障重试必须显式设置上限，且不能为了绕过错误自动扩大 Scope、改用管理员凭据、追加 `force` 或切换项目空间。
 
 ### 14.1 可执行工作流目录
 
@@ -1504,7 +1489,7 @@ pnpm remove --global @liteyuki/luna-cli
 rm "${HOME}/.local/bin/luna"
 ```
 
-卸载程序不删除 `~/.luna/auth.json`。凭据清理必须由用户显式执行 `luna auth logout all=true` 或手动删除配置目录，避免包管理器卸载误删用户数据。
+卸载程序不删除 `~/.luna/auth.json`。凭据清理必须由用户显式执行 `luna logout` 或手动删除配置目录，避免包管理器卸载误删用户数据。
 
 ### 15.2 npm 包契约
 
@@ -1958,7 +1943,7 @@ Trusted Publisher 只允许绑定一个工作流。不要把 `npm publish` 抽�
 - Token 脱敏和配置权限测试；
 - OAuth PKCE、Device Code、Refresh、Revoke、MFA、终端授权存活与数据导出票据绑定集成测试；
 - Agent 模式、`params=@file|@-`、Schema 拒绝未知字段、敏感字段脱敏和受限命令发现契约测试；
-- 服务端计划的 actor/context/target/params/version 绑定、过期、单次使用、重放和集合漂移安全测试；
+- 服务端计划的 actor/authentication-context/target/params/version 绑定、过期、单次使用、重放和集合漂移安全测试；
 - JSONL 版本首帧、事件关联、恢复去重、资源上限与唯一终态摘要协议测试；
 - 提示注入、终端控制字符、恶意日志、越权工具选择、无限分页/轮询和 MFA 用户在场安全评估；
 - Arazzo 关键工作流的 operationId、输入输出映射、批准点和后置条件校验；
@@ -1985,7 +1970,7 @@ Trusted Publisher 只允许绑定一个工作流。不要把 `npm publish` 抽�
 | `step-up-mfa` | 受保护操作 | OAuth 可完成验证并只重试一次，PAT 不能绕过 |
 | `protocol-lifecycle` | SSE、WebSocket、下载、OAuth | 连接、取消、恢复、终态与本地资源清理完整 |
 | `agent-schema` | 可由 Agent 调用的命令 | 受限发现、复杂参数、未知字段拒绝和输出 Schema 一致 |
-| `server-plan` | 高风险操作 | 计划精确绑定 actor/context/目标/参数/版本，过期和重放失败 |
+| `server-plan` | 高风险操作 | 计划精确绑定 actor/认证上下文/目标/参数/版本，过期和重放失败 |
 | `optimistic-concurrency` | 中高风险更新 | 陈旧版本返回冲突，不发生盲覆盖或自动强制写入 |
 | `untrusted-output` | 日志、事件、仓库和第三方内容 | 提示注入和控制字符不触发命令、越权或终端控制 |
 | `resource-bounds` | 分页、重试、轮询和流式命令 | 达到数量、时间或字节上限后确定性停止 |
@@ -2038,7 +2023,7 @@ criticalJourneyPassed
 ### Phase 1：CLI 基础
 
 - Commander 命令树、全局参数和帮助。
-- context/auth.json、多实例切换、context 级默认项目空间和原子写入。
+- 单活动登录 auth.json、默认项目空间和原子写入。
 - i18n、输出渲染、稳定错误和退出码。
 - 统一 `HttpTransport` 及 Node/Bun 网络适配，覆盖代理、自定义 CA、重定向、取消、SSE 和 WebSocket fixture。
 - 两级命令解析、`key=value` 类型转换、多行/文件/stdin 输入和聚合校验错误。
@@ -2082,7 +2067,7 @@ criticalJourneyPassed
 
 ## 17. 验收场景
 
-1. 用户在公司和个人两个 Luna 实例登录，并用 `luna context use name=<context>` 切换。
+1. 用户不指定服务端执行 `luna login` 时连接官方实例；登录自定义实例或其他账号时，新活动登录原子覆盖旧凭据并清除默认项目。
 2. 用户在无本地浏览器的服务器使用 `luna auth login deviceCode=true` 登录。
 3. CI 通过 `LUNA_TOKEN` 调用命令，凭据不落盘。
 4. OAuth Access Token 到期后自动刷新，原命令只重试一次。
@@ -2095,14 +2080,14 @@ criticalJourneyPassed
 11. AI Skills 只使用机器可读 Help 中存在的 CLI 命令，CLI 缺失时明确停止而不绕过到 REST API。
 12. 字符串、布尔值、数字、枚举、数组、对象、空值、文件和 stdin 输入均有成功与失败契约测试。
 13. 多行输入不会丢失换行，超过内联限制时返回稳定错误并提示使用 `@file` 或 `@-`。
-14. 用户可在 context 中切换默认可读/JSON 输出；Skills 仍对每条命令显式指定 `agent=true`。
+14. 用户可通过命令参数、环境变量或本地配置选择默认可读/JSON 输出；Skills 仍对每条命令显式指定 `agent=true`。
 15. npm 与 pnpm 从发布 tarball 全局安装后都提供相同的 `luna` 命令、版本和 Help。
 16. GitHub Release 独立二进制在没有 Node.js 和 Bun 的目标环境中可以运行，并通过 `SHA256SUMS` 校验。
 17. `latest` 只指向正式版本，`next` 和 `beta` 只指向对应预发布版本。
 18. npm 发布使用 GitHub OIDC Trusted Publishing，仓库和 Environment 中不存在长期 npm 写入 Token。
-19. 用户在两个 context 中分别设置不同默认项目空间，切换 context 后命令解析到对应项目；单次 `project=` 和 `LUNA_PROJECT` 覆盖均不修改持久配置。
+19. 用户设置活动登录默认项目后命令解析到该项目；重新登录其他实例或账号会清除默认项目，单次 `project=` 和 `LUNA_PROJECT` 覆盖均不修改持久配置。
 20. 默认项目空间被删除或失去权限时返回 `project_context_invalid`，不会自动选择其他项目空间。
-21. AI Skills 对项目级变更默认显式传入不可变项目 ID，不会修改用户当前 context。
+21. AI Skills 对项目级变更默认显式传入不可变项目 ID，不会修改用户活动登录的默认项目。
 22. 普通 `v*` 只触发平台项目发版，`cli-v*` 只触发 CLI 发版；两套工作流都拒绝对方的 tag 命名空间。
 23. Gin 新增路由但没有路由分类时，CI 明确失败并列出路由；新增非内部可观测白名单路由但没有 OpenAPI、operationId 或对应命令、协议适配、服务端入口登记时同样失败。
 24. 构建日志 SSE 能正常跟随和被 SIGINT 终止；断线时根据服务端是否支持游标决定恢复或提示重新读取。
@@ -2121,7 +2106,7 @@ criticalJourneyPassed
 37. Device Code 的浏览器确认页只能批准当前登录用户可见的请求，具备 CSRF、过期、单次兑换和轮询限流保护。
 38. `params=@payload.json` 与 `params=@-` 按 JSON Schema 校验，未知字段、类型错误和敏感字段错误在请求前被拒绝。
 39. Agent 使用带 query/category/risk/limit 的目录发现少量命令，再获取单命令完整 Schema；命令目录摘要变化后不会继续使用旧参数。
-40. 高风险命令先返回绑定 actor、context、目标、参数、资源版本和过期时间的 `planId`；参数变化、跨账号复用、过期和二次执行均被拒绝。
+40. 高风险命令先返回绑定 actor、认证上下文、执行作用域、目标、参数、资源版本和过期时间的 `planId`；参数变化、跨账号复用、过期和二次执行均被拒绝。
 41. 两个客户端并发修改同一资源时，陈旧版本返回退出码 `6`，不会覆盖较新的更改。
 42. JSONL 长任务首行声明协议版本、每条事件可关联，且只在收到唯一终态摘要后报告成功。
 43. Agent 分页、轮询和流式读取达到 `maxItems`、`timeout`、`maxEvents` 或 `maxBytes` 时确定性停止，不形成无限循环。
@@ -2151,12 +2136,9 @@ criticalJourneyPassed
 - [oclif Introduction](https://oclif.io/docs/introduction/)
 - [openapi-typescript 与 openapi-fetch](https://openapi-ts.dev/openapi-fetch/)
 - [OAuth 2.0 Device Authorization Grant, RFC 8628](https://www.rfc-editor.org/rfc/rfc8628)
-- [kubectl config set-context（context 可保存默认 namespace）](https://kubernetes.io/docs/reference/kubectl/generated/kubectl_config/kubectl_config_set-context/)
 - [Proof Key for Code Exchange, RFC 7636](https://www.rfc-editor.org/rfc/rfc7636)
 - [OAuth 2.0 for Native Apps, RFC 8252](https://www.rfc-editor.org/rfc/rfc8252)
 - [GitHub CLI `gh auth login`](https://cli.github.com/manual/gh_auth_login)
-- [GitHub CLI `gh auth switch`](https://cli.github.com/manual/gh_auth_switch)
-- [kubectl context 与 `use-context`](https://kubernetes.io/docs/reference/kubectl/generated/kubectl_config/kubectl_config_use-context/)
 - [i18next Getting Started](https://www.i18next.com/overview/getting-started)
 - [npm：全局安装包](https://docs.npmjs.com/downloading-and-installing-packages-globally/)
 - [npm：`package.json` 与 `bin`](https://docs.npmjs.com/files/package.json/)

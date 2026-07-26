@@ -10,30 +10,21 @@ import {
 
 function configFixture() {
   const config = emptyConfigDocument()
-  config.instances.work = {
-    server: 'https://work.example.com',
-    tls: { caFile: '', insecureSkipVerify: false },
-    network: { proxy: '', noProxy: '' },
-  }
-  config.credentials.admin = {
+  config.server = 'https://work.example.com'
+  config.credential = {
     type: 'oauth',
     accessToken: 'access-secret',
     refreshToken: 'refresh-secret',
     scopes: ['project:read'],
   }
-  config.contexts.work = {
-    instance: 'work',
-    credential: 'admin',
-    project: { id: 'prj_context', name: 'Context Project' },
-    output: 'table',
-    language: 'zh-CN',
-  }
-  config.currentContext = 'work'
+  config.project = { id: 'prj_config', name: 'Configured Project' }
+  config.output = 'table'
+  config.language = 'zh-CN'
   return config
 }
 
 describe('resolveRuntimeContext', () => {
-  it('uses deterministic argument, environment, and context precedence', () => {
+  it('uses deterministic argument, environment, and config precedence', () => {
     const resolved = resolveRuntimeContext(configFixture(), {
       project: 'prj_argument',
       env: {
@@ -50,7 +41,7 @@ describe('resolveRuntimeContext', () => {
       project: 'argument',
       output: 'environment',
       language: 'environment',
-      credential: 'context',
+      credential: 'config',
     })
   })
 
@@ -76,6 +67,13 @@ describe('resolveRuntimeContext', () => {
       token: 'temporary-secret',
     })
     expect(resolved.sources.credential).toBe('environment')
+  })
+
+  it('uses the official server for a new configuration', () => {
+    const resolved = resolveRuntimeContext(emptyConfigDocument(), { env: {} })
+
+    expect(resolved.server).toBe('https://devops.liteyuki.org')
+    expect(resolved.credential).toBeUndefined()
   })
 })
 

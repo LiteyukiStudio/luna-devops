@@ -9466,8 +9466,30 @@ var LunaClient = class {
   }
 };
 
-// src/config/context.ts
-import { createHash } from "crypto";
+// src/config/paths.ts
+import os from "os";
+import path from "path";
+import process2 from "process";
+function resolveConfigPath(options = {}) {
+  const env = options.env ?? process2.env;
+  const explicitPath = options.configPath ?? env.LUNA_CONFIG;
+  if (explicitPath?.trim()) {
+    return path.resolve(expandHome(explicitPath.trim(), options.homeDir));
+  }
+  const home = options.homeDir ?? env.LUNA_HOME ?? os.homedir();
+  return path.join(path.resolve(home), ".luna", "auth.json");
+}
+function expandHome(value, homeDir) {
+  if (value === "~")
+    return homeDir ?? os.homedir();
+  if (value.startsWith("~/") || value.startsWith("~\\")) {
+    return path.join(homeDir ?? os.homedir(), value.slice(2));
+  }
+  return value;
+}
+
+// src/config/resolve.ts
+import process3 from "process";
 
 // src/commands/errors.ts
 var CliCommandError = class extends Error {
@@ -9544,6 +9566,7 @@ var OUTPUT_FORMATS = [
   "jsonl",
   "name"
 ];
+var DEFAULT_LUNA_SERVER = "https://devops.liteyuki.org";
 var userSnapshotSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1).optional()
@@ -9568,71 +9591,136 @@ var credentialSchema = z.discriminatedUnion("type", [
   oauthCredentialSchema,
   accessTokenCredentialSchema
 ]);
-var instanceSchema = z.object({
-  server: z.string().min(1),
-  tls: z.object({
-    caFile: z.string().default(""),
-    insecureSkipVerify: z.boolean().default(false)
-  }).passthrough().default({ caFile: "", insecureSkipVerify: false }),
-  network: z.object({
-    proxy: z.string().default(""),
-    noProxy: z.string().default("")
-  }).passthrough().default({ proxy: "", noProxy: "" })
-}).passthrough();
 var projectSnapshotSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1).optional(),
   identifier: z.string().min(1).optional()
 }).passthrough();
-var contextSchema = z.object({
-  instance: z.string().min(1),
-  credential: z.string().min(1).optional(),
+var configDocumentSchema = z.object({
+  version: z.literal(2),
+  server: z.string().min(1).default(DEFAULT_LUNA_SERVER),
+  credential: credentialSchema.nullish(),
   project: projectSnapshotSchema.nullish(),
   language: z.string().default(""),
   output: z.union([z.enum(OUTPUT_FORMATS), z.literal("")]).default("")
 }).passthrough();
-var configDocumentSchema = z.object({
-  version: z.literal(1),
-  currentContext: z.string().min(1).nullable().optional(),
-  instances: z.record(z.string().min(1), instanceSchema),
-  credentials: z.record(z.string().min(1), credentialSchema),
-  contexts: z.record(z.string().min(1), contextSchema)
-}).superRefine((document, context) => {
-  if (document.currentContext && !Object.hasOwn(document.contexts, document.currentContext)) {
-    context.addIssue({
-      code: "custom",
-      path: ["currentContext"],
-      message: `Unknown current context "${document.currentContext}".`
-    });
-  }
-  for (const [name, value] of Object.entries(document.contexts)) {
-    if (!Object.hasOwn(document.instances, value.instance)) {
-      context.addIssue({
-        code: "custom",
-        path: ["contexts", name, "instance"],
-        message: `Context "${name}" references an unknown instance.`
-      });
-    }
-    if (value.credential && !Object.hasOwn(document.credentials, value.credential)) {
-      context.addIssue({
-        code: "custom",
-        path: ["contexts", name, "credential"],
-        message: `Context "${name}" references an unknown credential.`
-      });
-    }
-  }
-});
 function emptyConfigDocument() {
   return {
-    version: 1,
-    currentContext: null,
-    instances: {},
-    credentials: {},
-    contexts: {}
+    version: 2,
+    server: DEFAULT_LUNA_SERVER,
+    credential: null,
+    project: null,
+    language: "",
+    output: ""
   };
 }
 function parseConfigDocument(value) {
+  const current = configDocumentSchema.safeParse(value);
+  if (current.success)
+    return current.data;
+  if (isRecord2(value) && value.version === 1)
+    return emptyConfigDocument();
   return configDocumentSchema.parse(value);
+}
+function isRecord2(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+// src/config/server.ts
+function normalizeServerOrigin(server) {
+  let url;
+  try {
+    url = new URL(server);
+  } catch (error) {
+    throw new CliCommandError(
+      "server_url_invalid",
+      `Server "${server}" is not a valid absolute URL.`,
+      { status: 422, cause: error }
+    );
+  }
+  if (!["http:", "https:"].includes(url.protocol)) {
+    throw new CliCommandError(
+      "server_url_invalid",
+      "Server URL must use http or https.",
+      { status: 422 }
+    );
+  }
+  if (url.username || url.password || url.hash || url.search) {
+    throw new CliCommandError(
+      "server_url_invalid",
+      "Server URL cannot contain credentials, query parameters, or a fragment.",
+      { status: 422 }
+    );
+  }
+  if (url.pathname !== "/" && url.pathname !== "") {
+    throw new CliCommandError(
+      "server_url_subpath_unsupported",
+      "Server URL must not contain a path.",
+      { status: 422 }
+    );
+  }
+  return url.origin;
+}
+
+// src/config/resolve.ts
+function resolveRuntimeContext(rawConfig, options = {}) {
+  const config = parseConfigDocument(rawConfig);
+  const env = options.env ?? process3.env;
+  const configuredServer = normalizeServerOrigin(config.server || DEFAULT_LUNA_SERVER);
+  const explicitServer = nonEmpty(options.server);
+  const environmentServer = nonEmpty(env.LUNA_SERVER);
+  const serverOverride = explicitServer ?? environmentServer;
+  const server = serverOverride ? normalizeServerOrigin(serverOverride) : configuredServer;
+  const sameOrigin2 = server === configuredServer;
+  const environmentToken = nonEmpty(env.LUNA_TOKEN);
+  const credential = environmentToken ? {
+    type: "access_token",
+    token: environmentToken,
+    scopes: []
+  } : sameOrigin2 ? config.credential ?? void 0 : void 0;
+  const explicitProject = nonEmpty(options.project);
+  const environmentProject = nonEmpty(env.LUNA_PROJECT);
+  const projectOverride = explicitProject ?? environmentProject;
+  const project = projectOverride ? { id: projectOverride } : sameOrigin2 ? config.project ?? void 0 : void 0;
+  const explicitOutput = options.output === "" ? void 0 : options.output;
+  const environmentOutput = outputValue(env.LUNA_OUTPUT);
+  const configuredOutput = config.output || void 0;
+  const output = explicitOutput ?? environmentOutput ?? configuredOutput;
+  const explicitLanguage = nonEmpty(options.language);
+  const environmentLanguage = nonEmpty(env.LUNA_LANG);
+  const configuredLanguage = nonEmpty(config.language);
+  const language = explicitLanguage ?? environmentLanguage ?? configuredLanguage;
+  return {
+    server,
+    project,
+    credential,
+    output,
+    language,
+    sources: {
+      server: explicitServer ? "argument" : environmentServer ? "environment" : config.server ? "config" : "default",
+      project: explicitProject ? "argument" : environmentProject ? "environment" : project ? "config" : "none",
+      credential: environmentToken ? "environment" : credential ? "config" : "none",
+      output: explicitOutput ? "argument" : environmentOutput ? "environment" : configuredOutput ? "config" : "default",
+      language: explicitLanguage ? "argument" : environmentLanguage ? "environment" : configuredLanguage ? "config" : "default"
+    }
+  };
+}
+function nonEmpty(value) {
+  const normalized = value?.trim();
+  return normalized || void 0;
+}
+function outputValue(value) {
+  const normalized = nonEmpty(value);
+  if (!normalized)
+    return void 0;
+  if (!OUTPUT_FORMATS.includes(normalized)) {
+    throw new CliCommandError(
+      "output_format_invalid",
+      `Unsupported output format "${normalized}".`,
+      { status: 422 }
+    );
+  }
+  return normalized;
 }
 
 // src/config/store.ts
@@ -9647,31 +9735,7 @@ import {
   rm
 } from "fs/promises";
 import path2 from "path";
-import process3 from "process";
-
-// src/config/paths.ts
-import os from "os";
-import path from "path";
-import process2 from "process";
-function resolveConfigPath(options = {}) {
-  const env = options.env ?? process2.env;
-  const explicitPath = options.configPath ?? env.LUNA_CONFIG;
-  if (explicitPath?.trim()) {
-    return path.resolve(expandHome(explicitPath.trim(), options.homeDir));
-  }
-  const home = options.homeDir ?? env.LUNA_HOME ?? os.homedir();
-  return path.join(path.resolve(home), ".luna", "auth.json");
-}
-function expandHome(value, homeDir) {
-  if (value === "~")
-    return homeDir ?? os.homedir();
-  if (value.startsWith("~/") || value.startsWith("~\\")) {
-    return path.join(homeDir ?? os.homedir(), value.slice(2));
-  }
-  return value;
-}
-
-// src/config/store.ts
+import process4 from "process";
 var FileConfigStore = class {
   path;
   #lockTimeoutMs;
@@ -9685,7 +9749,7 @@ var FileConfigStore = class {
     this.#lockTimeoutMs = options.lockTimeoutMs ?? 5e3;
     this.#lockRetryMs = options.lockRetryMs ?? 25;
     this.#staleLockMs = options.staleLockMs ?? 3e4;
-    this.#platform = options.platform ?? process3.platform;
+    this.#platform = options.platform ?? process4.platform;
     this.#now = options.now ?? Date.now;
     this.#randomId = options.randomId ?? randomUUID;
   }
@@ -9778,7 +9842,7 @@ var FileConfigStore = class {
     const directory = path2.dirname(this.path);
     const temporaryPath = path2.join(
       directory,
-      `.${path2.basename(this.path)}.${process3.pid}.${this.#randomId()}.tmp`
+      `.${path2.basename(this.path)}.${process4.pid}.${this.#randomId()}.tmp`
     );
     const flags = fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY | (fsConstants.O_NOFOLLOW ?? 0);
     let handle;
@@ -9809,7 +9873,7 @@ var FileConfigStore = class {
         const flags = fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY | (fsConstants.O_NOFOLLOW ?? 0);
         handle = await open(lockPath, flags, 384);
         await handle.writeFile(
-          JSON.stringify({ pid: process3.pid, createdAt: new Date(this.#now()).toISOString() }),
+          JSON.stringify({ pid: process4.pid, createdAt: new Date(this.#now()).toISOString() }),
           "utf8"
         );
         await handle.sync();
@@ -9916,7 +9980,7 @@ var FileConfigStore = class {
   async #tightenPermissions(target, currentMode, owner, requiredMode) {
     if (this.#platform === "win32")
       return;
-    const currentUser = typeof process3.getuid === "function" ? process3.getuid() : void 0;
+    const currentUser = typeof process4.getuid === "function" ? process4.getuid() : void 0;
     if (currentUser !== void 0 && owner !== currentUser) {
       throw new CliCommandError(
         "config_owner_mismatch",
@@ -9993,202 +10057,97 @@ function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-// src/config/context.ts
-function upsertContext(config, input) {
-  const existing = config.contexts[input.name];
-  let instanceName = existing?.instance;
-  let originChanged = false;
-  if (input.server !== void 0) {
-    const origin = normalizeServerOrigin(input.server);
-    const previousOrigin = existing ? normalizeServerOrigin(config.instances[existing.instance].server) : void 0;
-    instanceName = ensureInstance(config, origin);
-    originChanged = previousOrigin !== void 0 && previousOrigin !== origin;
-  }
-  if (!instanceName) {
+// src/commands/compatibility.ts
+var SUPPORTED_SERVER_API_VERSIONS = Object.freeze(["v1"]);
+function assertServerCompatibility(meta, requirements) {
+  const supportedApiVersions = requirements.supportedApiVersions ?? SUPPORTED_SERVER_API_VERSIONS;
+  if (!supportedApiVersions.includes(meta.apiVersion)) {
     throw new CliCommandError(
-      "context_server_required",
-      `Context "${input.name}" requires a server.`,
-      { status: 422 }
+      "server_api_version_unsupported",
+      `Server API version "${meta.apiVersion}" is not supported by this CLI.`,
+      {
+        status: 412,
+        details: {
+          serverApiVersion: meta.apiVersion,
+          supportedApiVersions
+        }
+      }
     );
   }
-  const credential = input.credential === null ? void 0 : input.credential ?? (originChanged ? void 0 : existing?.credential);
-  if (credential && !Object.hasOwn(config.credentials, credential)) {
-    throw new CliCommandError(
-      "credential_not_found",
-      `Credential "${credential}" does not exist.`,
-      { status: 404 }
+  if (!isDevelopmentVersion(requirements.cliVersion)) {
+    const supported = isVersionAtLeast(
+      requirements.cliVersion,
+      meta.minimumCliVersion
     );
-  }
-  return {
-    ...existing,
-    instance: instanceName,
-    credential,
-    project: input.project === void 0 ? originChanged ? null : existing?.project : input.project === null ? null : { ...input.project },
-    language: input.language ?? existing?.language ?? "",
-    output: input.output ?? existing?.output ?? ""
-  };
-}
-function normalizeServerOrigin(server) {
-  let url;
-  try {
-    url = new URL(server);
-  } catch (error) {
-    throw new CliCommandError(
-      "server_url_invalid",
-      `Server "${server}" is not a valid absolute URL.`,
-      { status: 422, cause: error }
-    );
-  }
-  if (!["http:", "https:"].includes(url.protocol)) {
-    throw new CliCommandError(
-      "server_url_invalid",
-      "Server URL must use http or https.",
-      { status: 422 }
-    );
-  }
-  if (url.username || url.password || url.hash || url.search) {
-    throw new CliCommandError(
-      "server_url_invalid",
-      "Server URL cannot contain credentials, query parameters, or a fragment.",
-      { status: 422 }
-    );
-  }
-  if (url.pathname !== "/" && url.pathname !== "") {
-    throw new CliCommandError(
-      "server_url_subpath_unsupported",
-      "Server URL must not contain a path.",
-      { status: 422 }
-    );
-  }
-  return url.origin;
-}
-function ensureInstance(config, origin) {
-  const existing = Object.entries(config.instances).find(
-    ([, instance]) => normalizeServerOrigin(instance.server) === origin
-  );
-  if (existing)
-    return existing[0];
-  const base = `instance-${createHash("sha256").update(origin).digest("hex").slice(0, 12)}`;
-  let candidate = base;
-  let suffix = 2;
-  while (Object.hasOwn(config.instances, candidate)) {
-    candidate = `${base}-${suffix}`;
-    suffix += 1;
-  }
-  config.instances[candidate] = defaultInstance(origin);
-  return candidate;
-}
-function defaultInstance(server) {
-  return {
-    server,
-    tls: { caFile: "", insecureSkipVerify: false },
-    network: { proxy: "", noProxy: "" }
-  };
-}
-function normalizeContextName(name) {
-  const normalized = name.trim();
-  if (!/^[A-Z0-9][\w.-]{0,62}$/i.test(normalized)) {
-    throw new CliCommandError(
-      "context_name_invalid",
-      "Context names must be 1-63 characters using letters, numbers, dot, underscore, or hyphen.",
-      { status: 422 }
-    );
-  }
-  return normalized;
-}
-function pruneUnreferencedContextResources(config, references) {
-  removeUnreferencedCredential(config, references.credential);
-  if (references.instance)
-    removeUnreferencedInstance(config, references.instance);
-}
-function removeUnreferencedCredential(config, credential) {
-  if (credential && !Object.values(config.contexts).some((context) => context.credential === credential)) {
-    delete config.credentials[credential];
-  }
-}
-function removeUnreferencedInstance(config, instance) {
-  if (!Object.values(config.contexts).some((context) => context.instance === instance)) {
-    delete config.instances[instance];
-  }
-}
-
-// src/config/resolve.ts
-import process4 from "process";
-function resolveRuntimeContext(rawConfig, options = {}) {
-  const config = parseConfigDocument(rawConfig);
-  const env = options.env ?? process4.env;
-  const explicitContext = nonEmpty(options.context);
-  const environmentContext = nonEmpty(env.LUNA_CONTEXT);
-  const contextName = explicitContext ?? environmentContext ?? config.currentContext ?? void 0;
-  const context = contextName ? config.contexts[contextName] : void 0;
-  if (contextName && !context) {
-    throw new CliCommandError(
-      "context_not_found",
-      `Context "${contextName}" does not exist.`,
-      { status: 404 }
-    );
-  }
-  const contextInstance = context ? config.instances[context.instance] : void 0;
-  const explicitServer = nonEmpty(options.server);
-  const environmentServer = nonEmpty(env.LUNA_SERVER);
-  const serverOverride = explicitServer ?? environmentServer;
-  const server = serverOverride ? normalizeServerOrigin(serverOverride) : contextInstance ? normalizeServerOrigin(contextInstance.server) : void 0;
-  const sameOrigin2 = Boolean(
-    server && contextInstance && server === normalizeServerOrigin(contextInstance.server)
-  );
-  const environmentToken = nonEmpty(env.LUNA_TOKEN);
-  const credential = environmentToken ? {
-    type: "access_token",
-    token: environmentToken,
-    scopes: []
-  } : sameOrigin2 && context?.credential ? config.credentials[context.credential] : void 0;
-  const explicitProject = nonEmpty(options.project);
-  const environmentProject = nonEmpty(env.LUNA_PROJECT);
-  const projectOverride = explicitProject ?? environmentProject;
-  const project = projectOverride ? { id: projectOverride } : sameOrigin2 ? context?.project ?? void 0 : void 0;
-  const explicitOutput = options.output === "" ? void 0 : options.output;
-  const environmentOutput = outputValue(env.LUNA_OUTPUT);
-  const contextOutput = context?.output || void 0;
-  const output = explicitOutput ?? environmentOutput ?? contextOutput;
-  const explicitLanguage = nonEmpty(options.language);
-  const environmentLanguage = nonEmpty(env.LUNA_LANG);
-  const contextLanguage = nonEmpty(context?.language);
-  const language = explicitLanguage ?? environmentLanguage ?? contextLanguage;
-  return {
-    contextName,
-    context,
-    instance: sameOrigin2 ? contextInstance : server ? { server } : void 0,
-    server,
-    project,
-    credential,
-    output,
-    language,
-    sources: {
-      context: explicitContext ? "argument" : environmentContext ? "environment" : contextName ? "context" : "none",
-      server: explicitServer ? "argument" : environmentServer ? "environment" : contextInstance ? "context" : "none",
-      project: explicitProject ? "argument" : environmentProject ? "environment" : project ? "context" : "none",
-      credential: environmentToken ? "environment" : credential ? "context" : "none",
-      output: explicitOutput ? "argument" : environmentOutput ? "environment" : contextOutput ? "context" : "default",
-      language: explicitLanguage ? "argument" : environmentLanguage ? "environment" : contextLanguage ? "context" : "default"
+    if (supported === void 0) {
+      throw new CliCommandError(
+        "cli_version_invalid",
+        "The CLI or server minimum CLI version is not valid SemVer.",
+        {
+          status: 412,
+          details: {
+            current: requirements.cliVersion,
+            minimum: meta.minimumCliVersion
+          }
+        }
+      );
     }
-  };
-}
-function nonEmpty(value) {
-  const normalized = value?.trim();
-  return normalized || void 0;
-}
-function outputValue(value) {
-  const normalized = nonEmpty(value);
-  if (!normalized)
-    return void 0;
-  if (!OUTPUT_FORMATS.includes(normalized)) {
+    if (!supported) {
+      throw new CliCommandError(
+        "cli_version_too_old",
+        `Luna CLI ${meta.minimumCliVersion} or newer is required by this server.`,
+        {
+          status: 412,
+          details: {
+            current: requirements.cliVersion,
+            minimum: meta.minimumCliVersion
+          }
+        }
+      );
+    }
+  }
+  if (requirements.openapiDigest === "unavailable" || !requirements.openapiDigest.startsWith("sha256:")) {
     throw new CliCommandError(
-      "output_format_invalid",
-      `Unsupported output format "${normalized}".`,
-      { status: 422 }
+      "local_openapi_contract_unavailable",
+      "The CLI does not contain a verifiable OpenAPI contract digest.",
+      { status: 500 }
     );
   }
-  return normalized;
+  if (requirements.openapiDigest !== meta.openapiDigest) {
+    throw new CliCommandError(
+      "openapi_digest_mismatch",
+      "The CLI OpenAPI contract does not match the selected Luna server.",
+      {
+        status: 412,
+        details: {
+          local: requirements.openapiDigest,
+          server: meta.openapiDigest
+        }
+      }
+    );
+  }
+}
+function isVersionAtLeast(current, minimum) {
+  const currentVersion = semverCore(current);
+  const minimumVersion = semverCore(minimum);
+  if (!currentVersion || !minimumVersion)
+    return void 0;
+  for (let index = 0; index < currentVersion.length; index += 1) {
+    if (currentVersion[index] > minimumVersion[index])
+      return true;
+    if (currentVersion[index] < minimumVersion[index])
+      return false;
+  }
+  return true;
+}
+function semverCore(value) {
+  const match = value.trim().match(/^v?(\d+)\.(\d+)\.(\d+)(?:[-+][0-9A-Za-z.-]+)?$/);
+  if (!match)
+    return void 0;
+  return [Number(match[1]), Number(match[2]), Number(match[3])];
+}
+function isDevelopmentVersion(value) {
+  return value === "0.0.0-development";
 }
 
 // src/commands/api.ts
@@ -10207,10 +10166,13 @@ var LunaApiAdapter = class {
   #config;
   #env;
   #clientFactory;
+  #compatibility;
+  #compatibleServers = /* @__PURE__ */ new Set();
   constructor(options) {
     this.#config = options.config;
     this.#env = options.env ?? process5.env;
     this.#clientFactory = options.clientFactory ?? ((clientOptions) => new LunaClient(clientOptions));
+    this.#compatibility = options.compatibility;
   }
   async execute(request) {
     if (!request.metadata.path || !request.metadata.method) {
@@ -10232,6 +10194,7 @@ var LunaApiAdapter = class {
         }
       };
     }
+    await this.#ensureServerCompatibility(request.globals);
     const result = await this.#send(planned, request.globals);
     const projectId = requestProjectId(request);
     return {
@@ -10284,6 +10247,32 @@ var LunaApiAdapter = class {
     if (!result.ok)
       throw apiFailure(result.error);
     return asRecord(result.data);
+  }
+  async getMeta(server, globals) {
+    const baseUrl = server ?? await this.#configuredServer(globals);
+    const client = this.#clientFactory({
+      baseUrl,
+      timeoutMs: globals.timeoutMs
+    });
+    const result = await client.request({
+      method: "GET",
+      path: "/api/v1/meta",
+      requestId: globals.requestId,
+      timeoutMs: globals.timeoutMs
+    });
+    if (!result.ok)
+      throw apiFailure(result.error);
+    const data = asRecord(result.data);
+    const features = asRecord(data.features);
+    return {
+      apiVersion: requiredMetaString(data.apiVersion, "apiVersion"),
+      serverVersion: requiredMetaString(data.serverVersion, "serverVersion"),
+      openapiDigest: requiredMetaString(data.openapiDigest, "openapiDigest"),
+      minimumCliVersion: requiredMetaString(data.minimumCliVersion, "minimumCliVersion"),
+      features: Object.fromEntries(
+        Object.entries(features).filter((entry) => typeof entry[1] === "boolean")
+      )
+    };
   }
   async resolveProject(value, globals) {
     const client = await this.#client(globals);
@@ -10341,6 +10330,36 @@ var LunaApiAdapter = class {
       throw apiFailure(result.error);
     return result;
   }
+  async #ensureServerCompatibility(globals) {
+    if (!this.#compatibility)
+      return;
+    const server = await this.#configuredServer(globals);
+    const cacheKey = new URL(server).origin;
+    if (this.#compatibleServers.has(cacheKey))
+      return;
+    let meta;
+    try {
+      meta = await this.getMeta(server, globals);
+    } catch (error) {
+      const normalized = toCliCommandError(error);
+      throw new CliCommandError(
+        "server_capability_negotiation_failed",
+        "The Luna server compatibility metadata could not be verified.",
+        {
+          status: 502,
+          retryable: normalized.retryable,
+          details: {
+            server,
+            causeCode: normalized.code,
+            causeStatus: normalized.status
+          },
+          cause: error
+        }
+      );
+    }
+    assertServerCompatibility(meta, this.#compatibility);
+    this.#compatibleServers.add(cacheKey);
+  }
   async #client(globals) {
     if (globals.insecureSkipTlsVerify) {
       throw new CliCommandError(
@@ -10356,20 +10375,12 @@ var LunaApiAdapter = class {
     }
     const config = await this.#config.read();
     const runtime = resolveRuntimeContext(config, {
-      context: globals.context,
       server: globals.server,
       project: globals.project,
       output: globals.output,
       language: globals.lang,
       env: this.#env
     });
-    if (!runtime.server) {
-      throw new CliCommandError(
-        "server_required",
-        "No Luna server is configured. Use context set with --server or set LUNA_SERVER.",
-        { status: 400, exitCode: 2 }
-      );
-    }
     const credential = runtime.credential;
     const token = credential?.type === "oauth" ? credential.accessToken : credential?.type === "access_token" ? credential.token : void 0;
     return this.#clientFactory({
@@ -10378,7 +10389,27 @@ var LunaApiAdapter = class {
       tokenProvider: token ? { getAccessToken: () => token } : void 0
     });
   }
+  async #configuredServer(globals) {
+    const config = await this.#config.read();
+    const runtime = resolveRuntimeContext(config, {
+      server: globals.server,
+      project: globals.project,
+      output: globals.output,
+      language: globals.lang,
+      env: this.#env
+    });
+    return runtime.server;
+  }
 };
+function requiredMetaString(value, field) {
+  if (typeof value === "string" && value.trim())
+    return value;
+  throw new CliCommandError(
+    "server_meta_invalid",
+    `Server metadata field "${field}" is missing or invalid.`,
+    { status: 502, details: { field } }
+  );
+}
 function requestProjectId(request) {
   for (const parameter2 of request.metadata.parameters) {
     if (!PROJECT_PARAMETER_NAMES.has(parameter2.name))
@@ -10432,7 +10463,7 @@ function planOpenApiRequest(request) {
   for (const [name, value] of Object.entries(request.params)) {
     if (consumed.has(name))
       continue;
-    if (name === "params" && isRecord2(value)) {
+    if (name === "params" && isRecord3(value)) {
       for (const [nestedName, nestedValue] of Object.entries(value)) {
         if (QUERY_METHODS.has(method))
           query[nestedName] = queryValue(nestedValue, nestedName);
@@ -10555,7 +10586,7 @@ function headerValue(value, name) {
   );
 }
 function mergeBody(explicitBody, fields) {
-  if (!isRecord2(explicitBody)) {
+  if (!isRecord3(explicitBody)) {
     throw new CliCommandError(
       "request_body_conflict",
       "A non-object request body cannot be combined with body fields.",
@@ -10579,8 +10610,8 @@ function apiFailure(error) {
   });
 }
 function listItems(value) {
-  const array = Array.isArray(value) ? value : isRecord2(value) && Array.isArray(value.items) ? value.items : [];
-  return array.filter(isRecord2).flatMap((item) => {
+  const array = Array.isArray(value) ? value : isRecord3(value) && Array.isArray(value.items) ? value.items : [];
+  return array.filter(isRecord3).flatMap((item) => {
     if (typeof item.id !== "string")
       return [];
     return [{
@@ -10601,7 +10632,7 @@ function asRecord(value) {
   }
   return value;
 }
-function isRecord2(value) {
+function isRecord3(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
@@ -10810,8 +10841,8 @@ function exitCodeFor(code, status) {
 function normalizeLunaError(error) {
   if (error instanceof LunaError)
     return error;
-  if (isRecord3(error)) {
-    const nested = isRecord3(error.error) ? error.error : error;
+  if (isRecord4(error)) {
+    const nested = isRecord4(error.error) ? error.error : error;
     const status = finiteNumber(nested.status) ?? finiteNumber(nested.statusCode) ?? 500;
     const code = nonEmptyString(nested.code) ?? "internal_error";
     const message = nonEmptyString(nested.message) ?? nonEmptyString(nested.detail) ?? "The command failed.";
@@ -10822,7 +10853,7 @@ function normalizeLunaError(error) {
       retryAfter: finiteNumber(nested.retryAfter),
       purpose: nonEmptyString(nested.purpose),
       fields: normalizeFields2(nested.fields),
-      details: isRecord3(nested.details) ? nested.details : {},
+      details: isRecord4(nested.details) ? nested.details : {},
       cause: error
     });
   }
@@ -10856,7 +10887,7 @@ function toErrorDocument(error) {
 }
 function normalizeFields2(value) {
   if (Array.isArray(value)) {
-    return value.filter(isRecord3).map((field) => ({
+    return value.filter(isRecord4).map((field) => ({
       key: nonEmptyString(field.key) ?? "",
       code: nonEmptyString(field.code) ?? "invalid",
       ...field.expected !== void 0 ? { expected: field.expected } : {},
@@ -10864,17 +10895,17 @@ function normalizeFields2(value) {
       ...nonEmptyString(field.message) ? { message: nonEmptyString(field.message) } : {}
     }));
   }
-  if (!isRecord3(value))
+  if (!isRecord4(value))
     return void 0;
   return Object.fromEntries(
     Object.entries(value).filter((entry) => typeof entry[1] === "string")
   );
 }
-function isRecord3(value) {
+function isRecord4(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function asRecord2(value) {
-  return isRecord3(value) ? value : {};
+  return isRecord4(value) ? value : {};
 }
 function nonEmptyString(value) {
   return typeof value === "string" && value.length > 0 ? value : void 0;
@@ -11066,7 +11097,6 @@ var OUTPUT_FORMATS2 = Object.freeze([
   "name"
 ]);
 var GLOBAL_CONTROL_KEYS = Object.freeze([
-  "context",
   "server",
   "project",
   "output",
@@ -11292,7 +11322,7 @@ function visit(value, schema, path3, errors) {
     if (schema.items)
       value.forEach((item, index) => visit(item, schema.items, `${path3}[${index}]`, errors));
   }
-  if (isRecord4(value)) {
+  if (isRecord5(value)) {
     for (const required of schema.required ?? []) {
       if (!(required in value))
         errors.push({ key: `${path3}.${required}`, code: "required" });
@@ -11303,7 +11333,7 @@ function visit(value, schema, path3, errors) {
         visit(child, childSchema, `${path3}.${key}`, errors);
       } else if (schema.additionalProperties === false) {
         errors.push({ key: `${path3}.${key}`, code: "additionalProperties" });
-      } else if (isRecord4(schema.additionalProperties)) {
+      } else if (isRecord5(schema.additionalProperties)) {
         visit(child, schema.additionalProperties, `${path3}.${key}`, errors);
       }
     }
@@ -11324,7 +11354,7 @@ function matchesAnyType(value, types) {
       case "array":
         return Array.isArray(value);
       case "object":
-        return isRecord4(value);
+        return isRecord5(value);
       case "integer":
         return typeof value === "number" && Number.isSafeInteger(value);
       case "number":
@@ -11349,7 +11379,7 @@ function jsonType(value) {
     return "binary";
   return typeof value;
 }
-function isRecord4(value) {
+function isRecord5(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
@@ -11391,7 +11421,7 @@ async function parseCommandInput(tokens, spec, options = {}) {
         const bytes = source.kind === "stdin" ? await reader.readStdin(limits.paramsBytes) : await reader.readFile(source.path, limits.paramsBytes);
         stdinUsed ||= source.kind === "stdin";
         const params = parseStructuredBytes(bytes, source.path, "params");
-        if (!isRecord5(params)) {
+        if (!isRecord6(params)) {
           throw invalidInput("params_must_be_object", "params must contain a JSON object.", {
             fields: [{ key: "params", code: "type", expected: "object", actual: jsonType2(params) }]
           });
@@ -11492,7 +11522,7 @@ function deduplicateErrors(errors) {
     return true;
   });
 }
-function isRecord5(value) {
+function isRecord6(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function jsonType2(value) {
@@ -11515,7 +11545,6 @@ var OUTPUT_FORMATS3 = /* @__PURE__ */ new Set([
   "name"
 ]);
 var GLOBAL_KEYS = /* @__PURE__ */ new Set([
-  "context",
   "server",
   "project",
   "output",
@@ -11624,7 +11653,7 @@ function resolveGlobalOptions(canonical, flags, options) {
     canonical.output,
     flags.output,
     env.LUNA_OUTPUT,
-    options.context?.output,
+    options.configured?.output,
     options.isTTY ? "table" : "json"
   );
   const output = agent ? options.streaming ? "jsonl" : "json" : outputCandidate;
@@ -11637,16 +11666,15 @@ function resolveGlobalOptions(canonical, flags, options) {
     });
   }
   return {
-    context: first(canonical.context, flags.context, env.LUNA_CONTEXT),
     server: first(canonical.server, flags.server, env.LUNA_SERVER),
     project: first(
       canonical.project,
       flags.project,
       env.LUNA_PROJECT,
-      options.context?.project?.id
+      options.configured?.project?.id
     ),
     output,
-    lang: first(canonical.lang, flags.lang, env.LUNA_LANG, options.context?.language),
+    lang: first(canonical.lang, flags.lang, env.LUNA_LANG, options.configured?.language),
     color: agent ? false : booleanOption(first(canonical.color, flagBoolean(flags.color), env.LUNA_COLOR), true, "color"),
     interactive: agent ? false : booleanOption(
       first(canonical.interactive, flagBoolean(flags.interactive), env.LUNA_INTERACTIVE),
@@ -11803,7 +11831,6 @@ async function readStdin() {
 }
 function assertNoConflicts(canonical, flags) {
   const flagValues = {
-    context: flags.context,
     server: flags.server,
     project: flags.project,
     output: flags.output,
@@ -12011,10 +12038,10 @@ function rootHelpText(registry, ports) {
   return [
     "",
     `${text(ports, "help.quickStart.title", "Quick start:")}`,
-    `  ${text(ports, "help.quickStart.context", "1. Create a context:")}`,
-    "     luna context set name=local server=https://luna.example.com",
-    `  ${text(ports, "help.quickStart.login", "2. Sign in with an access token:")}`,
-    `     printf '%s' "$LUNA_TOKEN" | luna auth login token=@-`,
+    `  ${text(ports, "help.quickStart.login", "1. Sign in with an access token:")}`,
+    `     printf '%s' "$LUNA_TOKEN" | luna login token=@-`,
+    `  ${text(ports, "help.quickStart.customServer", "2. Sign in to another server when needed:")}`,
+    `     printf '%s' "$LUNA_TOKEN" | luna login server=https://luna.example.com token=@-`,
     `  ${text(ports, "help.quickStart.discover", "3. Discover commands:")}`,
     "     luna help catalog query=project limit=10",
     "     luna <category> <command> --help",
@@ -12055,7 +12082,7 @@ function commandHelpText(metadata, ports) {
   const details = [
     `${text(ports, "help.details.command", "Command")}: ${metadata.canonicalPath}`,
     `${text(ports, "help.details.risk", "Risk")}: ${localizedValue(ports, "risk", metadata.risk)}`,
-    `${text(ports, "help.details.project", "Project context")}: ${localizedValue(ports, "projectContext", metadata.projectContext)}`,
+    `${text(ports, "help.details.project", "Project selection")}: ${localizedValue(ports, "projectContext", metadata.projectContext)}`,
     `${text(ports, "help.details.transport", "Transport")}: ${localizedValue(ports, "transport", metadata.transport)}`
   ];
   if (metadata.method && metadata.path)
@@ -12146,7 +12173,10 @@ function sampleValue(parameter2, metadata) {
 }
 function ensureLunaPrefix(example) {
   const trimmed = example.trim();
-  return trimmed.startsWith("luna ") ? trimmed : `luna ${trimmed}`;
+  if (trimmed.startsWith("luna ") || trimmed.startsWith("#") || /\|\s*luna\s/.test(trimmed)) {
+    return trimmed;
+  }
+  return `luna ${trimmed}`;
 }
 function text(ports, key, fallback) {
   return ports.translate?.(key, fallback) ?? fallback;
@@ -12160,6 +12190,34 @@ function format(template, values) {
     template
   );
 }
+
+// src/commands/shortcuts.ts
+var ROOT_COMMAND_SHORTCUTS = Object.freeze([
+  {
+    name: "login",
+    target: "auth.login",
+    descriptionKey: "shortcuts.login",
+    description: "Sign in to a Luna DevOps instance."
+  },
+  {
+    name: "logout",
+    target: "auth.logout",
+    descriptionKey: "shortcuts.logout",
+    description: "Remove the active Luna credential."
+  },
+  {
+    name: "whoami",
+    target: "auth.status",
+    descriptionKey: "shortcuts.whoami",
+    description: "Show the current authentication identity."
+  },
+  {
+    name: "doctor",
+    target: "health.doctor",
+    descriptionKey: "shortcuts.doctor",
+    description: "Check the local CLI, authentication, and server compatibility."
+  }
+]);
 
 // src/commands/executor.ts
 var DEFAULT_GLOBALS = Object.freeze({
@@ -12186,6 +12244,7 @@ function createCliProgram(options) {
   PROGRAM_PORTS.set(program, options.ports);
   addGlobalOptions(program, options.ports);
   program.addHelpText("after", () => rootHelpText(options.registry, options.ports));
+  registerRootShortcuts(program, options.registry, options.ports);
   for (const category of options.registry.categories()) {
     const categoryCommand = localizeHelp(program.command(category).description(localizedCategoryDescription(category, options.ports)).addHelpCommand(false), options.ports).helpOption(
       "-h, --help",
@@ -12223,6 +12282,44 @@ function createCliProgram(options) {
     }
   }
   return program;
+}
+function registerRootShortcuts(program, registry, ports) {
+  for (const shortcut of ROOT_COMMAND_SHORTCUTS) {
+    const registered = registry.get(shortcut.target);
+    if (!registered)
+      continue;
+    localizeHelp(program.command(shortcut.name).description(translate(
+      ports,
+      shortcut.descriptionKey,
+      shortcut.description
+    )).argument(
+      "[arguments...]",
+      translate(
+        ports,
+        "help.businessArguments",
+        "Business parameters in key=value form"
+      )
+    ).addHelpCommand(false).allowUnknownOption(false).action(async (tokens, _localOptions, command) => {
+      await executeRegistered(
+        registered,
+        tokens ?? [],
+        explicitCommanderOptions(command),
+        ports,
+        shortcut.name
+      );
+    }), ports).helpOption(
+      "-h, --help",
+      translate(ports, "help.options.help", "Show command help")
+    ).addHelpText(
+      "after",
+      () => [
+        "",
+        `${translate(ports, "help.canonicalCommand", "Canonical command")}: ${shortcut.target}`,
+        "",
+        commandHelpText(registered.metadata, ports)
+      ].join("\n")
+    );
+  }
 }
 async function runCli(program, argv = process8.argv, fallbackOutput) {
   const fallbackGlobals = inferFallbackGlobals(argv);
@@ -12293,11 +12390,13 @@ function isRootOnlyInvocation(program, argv) {
 async function executeRegistered(registered, tokens, flagOptions, ports, invokedPath) {
   const parsed = splitGlobalTokens(tokens);
   const config = await ports.config.read();
-  const selectedContextName = parsed.canonicalGlobals.context ?? flagOptions.context ?? ports.env?.LUNA_CONTEXT ?? config.currentContext ?? void 0;
-  const context = selectedContextName ? config.contexts[selectedContextName] : void 0;
   const globals = resolveGlobalOptions(parsed.canonicalGlobals, flagOptions, {
     env: ports.env ?? process8.env,
-    context,
+    configured: {
+      output: config.output,
+      project: config.project,
+      language: config.language
+    },
     isTTY: ports.isTTY ?? Boolean(process8.stdout.isTTY),
     streaming: registered.metadata.streaming ?? false
   });
@@ -12339,7 +12438,7 @@ function resolveProjectParameters(parsedParams, registered, globals) {
   if (requiredProjectParameters.length === 0)
     return parsedParams;
   const params = { ...parsedParams };
-  const structured = isRecord6(params.params) ? { ...params.params } : void 0;
+  const structured = isRecord7(params.params) ? { ...params.params } : void 0;
   for (const parameter2 of requiredProjectParameters) {
     const explicitValue = params[parameter2.name] ?? structured?.[parameter2.name];
     const value = explicitValue ?? globals.project;
@@ -12400,7 +12499,7 @@ function enforceExecutionScope(registered, requestedPath, globals, explicitGloba
   if (registered.metadata.projectContext === "none" && explicitGlobalKeys.has("project")) {
     throw new CliCommandError(
       "project_not_supported",
-      `Command "${requestedPath}" does not accept a project context.`,
+      `Command "${requestedPath}" does not accept a project selection.`,
       { status: 400, exitCode: 2, details: { command: requestedPath } }
     );
   }
@@ -12426,7 +12525,7 @@ function hasExplicitProjectSelection(explicitGlobalKeys, params) {
   return explicitGlobalKeys.has("project") || projectValue(params) !== void 0;
 }
 function projectValue(params) {
-  const structured = isRecord6(params.params) ? params.params : void 0;
+  const structured = isRecord7(params.params) ? params.params : void 0;
   for (const name of ["project", "projectId", "projectID"]) {
     const value = params[name] ?? structured?.[name];
     if (value !== void 0 && value !== null && value !== "")
@@ -12489,13 +12588,13 @@ async function enforceRiskPolicy(registered, requestedPath, globals, ports) {
   }
 }
 function normalizeResult(value, schemaVersion) {
-  if (isRecord6(value) && "data" in value && ("schemaVersion" in value || "meta" in value)) {
+  if (isRecord7(value) && "data" in value && ("schemaVersion" in value || "meta" in value)) {
     return value;
   }
   return { data: value, schemaVersion };
 }
 function addGlobalOptions(program, ports) {
-  program.option("--context <name>", translate(ports, "help.options.context", "Select a saved context")).option("--server <url>", translate(ports, "help.options.server", "Override the Luna server origin")).option("--project <id>", translate(ports, "help.options.project", "Select a project for this command")).addOption(new Option("-o, --output <format>", translate(ports, "help.options.output", "Output format")).choices(["table", "json", "raw-json", "yaml", "jsonl", "name"])).option("--lang <locale>", translate(ports, "help.options.lang", "Output and help language")).option("--no-color", translate(ports, "help.options.noColor", "Disable terminal colors")).option("--no-interactive", translate(ports, "help.options.noInteractive", "Disable prompts")).option("-y, --yes", translate(ports, "help.options.yes", "Approve supported confirmation prompts")).option("--quiet", translate(ports, "help.options.quiet", "Suppress informational diagnostics")).option("--agent", translate(ports, "help.options.agent", "Enable strict machine-readable agent mode")).addOption(new Option("--dry-run <mode>", translate(ports, "help.options.dryRun", "Preview without applying")).choices(["client", "server"])).option("--timeout <duration>", translate(ports, "help.options.timeout", "Request timeout")).option("--debug", translate(ports, "help.options.debug", "Enable debug diagnostics")).option("--request-id <id>", translate(ports, "help.options.requestId", "Use a request correlation ID")).option("--idempotency-key <key>", translate(ports, "help.options.idempotencyKey", "Use an idempotency key")).option("--insecure-skip-tls-verify", translate(ports, "help.options.insecureTls", "Disable TLS verification when supported"));
+  program.option("--server <url>", translate(ports, "help.options.server", "Override the Luna server origin")).option("--project <id>", translate(ports, "help.options.project", "Select a project for this command")).addOption(new Option("-o, --output <format>", translate(ports, "help.options.output", "Output format")).choices(["table", "json", "raw-json", "yaml", "jsonl", "name"])).option("--lang <locale>", translate(ports, "help.options.lang", "Output and help language")).option("--no-color", translate(ports, "help.options.noColor", "Disable terminal colors")).option("--no-interactive", translate(ports, "help.options.noInteractive", "Disable prompts")).option("-y, --yes", translate(ports, "help.options.yes", "Approve supported confirmation prompts")).option("--quiet", translate(ports, "help.options.quiet", "Suppress informational diagnostics")).option("--agent", translate(ports, "help.options.agent", "Enable strict machine-readable agent mode")).addOption(new Option("--dry-run <mode>", translate(ports, "help.options.dryRun", "Preview without applying")).choices(["client", "server"])).option("--timeout <duration>", translate(ports, "help.options.timeout", "Request timeout")).option("--debug", translate(ports, "help.options.debug", "Enable debug diagnostics")).option("--request-id <id>", translate(ports, "help.options.requestId", "Use a request correlation ID")).option("--idempotency-key <key>", translate(ports, "help.options.idempotencyKey", "Use an idempotency key")).option("--insecure-skip-tls-verify", translate(ports, "help.options.insecureTls", "Disable TLS verification when supported"));
 }
 function translate(ports, key, fallback) {
   return ports?.translate?.(key, fallback) ?? fallback;
@@ -12611,7 +12710,7 @@ function commanderHelpCommand(program, argv) {
 function isOutput(value) {
   return value === "table" || value === "json" || value === "raw-json" || value === "yaml" || value === "jsonl" || value === "name";
 }
-function isRecord6(value) {
+function isRecord7(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
@@ -12743,17 +12842,6 @@ import process10 from "process";
 import process9 from "process";
 
 // src/auth/validation.ts
-function normalizeCredentialName(name) {
-  const normalized = name.trim();
-  if (!/^[A-Z0-9][\w.-]{0,95}$/i.test(normalized)) {
-    throw new CliCommandError(
-      "credential_name_invalid",
-      "Credential names must be 1-96 characters using letters, numbers, dot, underscore, or hyphen.",
-      { status: 422 }
-    );
-  }
-  return normalized;
-}
 function normalizeScopes(scopes) {
   const normalized = [...new Set(
     (scopes ?? []).map((scope) => scope.trim()).filter(Boolean)
@@ -12793,13 +12881,7 @@ async function storeValidatedAccessToken(store, input) {
     );
   }
   assertIsoDate(input.expiresAt);
-  const contextName = normalizeContextName(input.context);
   return updateConfig(store, (config) => {
-    const origin = normalizeServerOrigin(input.server);
-    ensureInstance(config, origin);
-    const previousContext = config.contexts[contextName];
-    const previousCredential = previousContext?.credential;
-    const credentialName = input.credential ? normalizeCredentialName(input.credential) : reusableCredentialName(config, contextName, previousCredential);
     const credential = {
       type: "access_token",
       token,
@@ -12808,20 +12890,9 @@ async function storeValidatedAccessToken(store, input) {
       expiresAt: input.expiresAt,
       createdAt: (/* @__PURE__ */ new Date()).toISOString()
     };
-    config.credentials[credentialName] = credential;
-    config.contexts[contextName] = upsertContext(config, {
-      name: contextName,
-      server: origin,
-      credential: credentialName,
-      project: input.project
-    });
-    if (input.makeCurrent ?? !config.currentContext) {
-      config.currentContext = contextName;
-    }
-    pruneUnreferencedContextResources(config, {
-      credential: previousCredential === credentialName ? void 0 : previousCredential,
-      instance: previousContext?.instance
-    });
+    config.server = normalizeServerOrigin(input.server);
+    config.credential = credential;
+    config.project = input.project ?? null;
   });
 }
 function accessTokenFromEnvironment(env = process9.env) {
@@ -12834,54 +12905,17 @@ function accessTokenFromEnvironment(env = process9.env) {
     scopes: []
   };
 }
-function reusableCredentialName(config, contextName, previousCredential) {
-  if (previousCredential && config.credentials[previousCredential]?.type === "access_token") {
-    return previousCredential;
-  }
-  const base = normalizeCredentialName(`${contextName}-access-token`);
-  if (!Object.hasOwn(config.credentials, base))
-    return base;
-  let suffix = 2;
-  while (Object.hasOwn(config.credentials, `${base}-${suffix}`)) suffix += 1;
-  return `${base}-${suffix}`;
-}
 
 // src/auth/logout.ts
-async function logoutLocal(store, options = {}) {
-  let result = { contexts: [], removedCredentials: [] };
+async function logoutLocal(store) {
+  let result = { server: "", loggedOut: false };
   await updateConfig(store, (config) => {
-    const contexts = options.all ? Object.keys(config.contexts).sort() : [options.context ?? config.currentContext].filter(
-      (name) => Boolean(name)
-    );
-    if (contexts.length === 0) {
-      result = { contexts: [], removedCredentials: [] };
-      return;
-    }
-    const credentials = /* @__PURE__ */ new Set();
-    for (const name of contexts) {
-      const context = config.contexts[name];
-      if (!context) {
-        throw new CliCommandError(
-          "context_not_found",
-          `Context "${name}" does not exist.`,
-          { status: 404 }
-        );
-      }
-      if (context.credential)
-        credentials.add(context.credential);
-      delete context.credential;
-    }
-    const removed = [];
-    for (const credential of credentials) {
-      const stillReferenced = Object.values(config.contexts).some(
-        (context) => context.credential === credential
-      );
-      if (!stillReferenced) {
-        delete config.credentials[credential];
-        removed.push(credential);
-      }
-    }
-    result = { contexts, removedCredentials: removed.sort() };
+    result = {
+      server: config.server,
+      loggedOut: config.credential !== null && config.credential !== void 0
+    };
+    config.credential = null;
+    config.project = null;
   });
   return result;
 }
@@ -12908,48 +12942,20 @@ function oauthUnavailable(capability) {
 async function getAuthStatus(store, options = {}) {
   const config = parseConfigDocument(await store.read());
   const environmentCredential = accessTokenFromEnvironment(options.env);
-  const names = options.all ? Object.keys(config.contexts).sort() : [options.context ?? config.currentContext].filter(
-    (name) => Boolean(name)
-  );
-  if (names.length === 0)
-    return [];
-  return names.map((name) => {
-    const context = config.contexts[name];
-    if (!context) {
-      throw new CliCommandError(
-        "context_not_found",
-        `Context "${name}" does not exist.`,
-        { status: 404 }
-      );
-    }
-    const instance = config.instances[context.instance];
-    const storedCredential = context.credential ? config.credentials[context.credential] : void 0;
-    const credential = environmentCredential ?? storedCredential;
-    const source = environmentCredential ? "environment" : "stored";
-    return {
-      context: name,
-      current: config.currentContext === name,
-      server: normalizeServerOrigin(instance.server),
-      authenticated: credential !== void 0 && !isExpired(credential, options.now),
-      credential: credential && context.credential ? {
-        name: environmentCredential ? "LUNA_TOKEN" : context.credential,
-        type: credential.type,
-        scopes: [...credential.scopes],
-        user: credential.user,
-        expiresAt: credential.expiresAt,
-        expired: isExpired(credential, options.now),
-        source
-      } : credential ? {
-        name: "LUNA_TOKEN",
-        type: credential.type,
-        scopes: [...credential.scopes],
-        user: credential.user,
-        expiresAt: credential.expiresAt,
-        expired: false,
-        source
-      } : void 0
-    };
-  });
+  const credential = environmentCredential ?? config.credential ?? void 0;
+  const source = environmentCredential ? "environment" : "stored";
+  return {
+    server: normalizeServerOrigin(config.server),
+    authenticated: credential !== void 0 && !isExpired(credential, options.now),
+    credential: credential ? {
+      type: credential.type,
+      scopes: [...credential.scopes],
+      user: credential.user,
+      expiresAt: credential.expiresAt,
+      expired: isExpired(credential, options.now),
+      source
+    } : void 0
+  };
 }
 function isExpired(credential, now = /* @__PURE__ */ new Date()) {
   return credential.expiresAt !== void 0 && Date.parse(credential.expiresAt) <= now.getTime();
@@ -12964,13 +12970,13 @@ function registerLocalCommands(registry) {
   registerHelp(registry);
   registerCompletion(registry);
   registerAuth(registry);
-  registerContext(registry);
-  registerProjectContext(registry);
+  registerProjectSelection(registry);
+  registerDoctor(registry);
   registerApiDiagnostic(registry);
 }
 function registerAuth(registry) {
   registry.register(localMetadata("auth", "login", {
-    summary: "Authenticate a Luna context with an access token.",
+    summary: "Authenticate to one Luna DevOps server with an access token.",
     schemaVersion: "auth.login/v1",
     risk: "medium",
     parameters: [
@@ -12987,10 +12993,27 @@ function registerAuth(registry) {
     ]
   }), async (invocation, ports) => {
     const mode = optionalString(invocation.params.mode) ?? "access-token";
+    const server = invocation.globals.server ?? DEFAULT_LUNA_SERVER;
     if (mode === "device-code") {
+      if (ports.api.getMeta) {
+        const meta = await ports.api.getMeta(server, invocation.globals);
+        if (!meta.features.deviceCode) {
+          throw new CliCommandError(
+            "oauth_server_capability_unavailable",
+            "The selected Luna server does not support device-code login.",
+            {
+              status: 501,
+              details: {
+                server,
+                feature: "deviceCode",
+                fallback: "access-token"
+              }
+            }
+          );
+        }
+      }
       return beginOAuthLogin({
-        server: invocation.globals.server ?? "",
-        context: invocation.globals.context ?? "default",
+        server,
         scopes: stringList(invocation.params.scope),
         mode: "device_code"
       });
@@ -12999,16 +13022,6 @@ function registerAuth(registry) {
       throw invalidArguments2(
         "mode must be access-token or device-code.",
         "mode"
-      );
-    }
-    const config = await ports.config.read();
-    const selected = selectedContext(config, invocation.globals.context);
-    const context = invocation.globals.context ?? selected.name ?? "default";
-    const server = invocation.globals.server ?? selected.instance?.server;
-    if (!server) {
-      throw invalidArguments2(
-        "auth.login requires server=<https://luna.example.com> when no context is configured.",
-        "server"
       );
     }
     const token = optionalString(invocation.params.token)?.trim() ?? optionalString(ports.env?.LUNA_TOKEN)?.trim();
@@ -13028,20 +13041,17 @@ function registerAuth(registry) {
     const user = await ports.api.validateAccessToken(server, token, invocation.globals);
     const userId = optionalString(user.id);
     await storeValidatedAccessToken(ports.config, {
-      context,
       server,
       token,
       scopes: stringList(invocation.params.scope),
       user: userId ? {
         id: userId,
         ...user
-      } : void 0,
-      makeCurrent: true
+      } : void 0
     });
     return {
       schemaVersion: "auth.login/v1",
       data: {
-        context,
         server,
         authenticated: true,
         user
@@ -13051,29 +13061,154 @@ function registerAuth(registry) {
   registry.register(localMetadata("auth", "status", {
     summary: "Show authentication status without exposing credentials.",
     schemaVersion: "auth.status/v1",
-    parameters: [parameter("all", { schema: booleanSchema })],
-    examples: ["luna auth status", "luna auth status all=true"]
+    examples: ["luna auth status"]
   }), async (invocation, ports) => ({
     schemaVersion: "auth.status/v1",
     data: await getAuthStatus(ports.config, {
-      context: invocation.globals.context,
-      all: invocation.params.all === true,
       env: ports.env
     })
   }));
   registry.register(localMetadata("auth", "logout", {
-    summary: "Remove credentials from one or all local Luna contexts.",
+    summary: "Remove the active Luna credential.",
     schemaVersion: "auth.logout/v1",
     risk: "medium",
-    parameters: [parameter("all", { schema: booleanSchema })],
-    examples: ["luna auth logout", "luna auth logout all=true"]
+    examples: ["luna auth logout"]
   }), async (invocation, ports) => ({
     schemaVersion: "auth.logout/v1",
-    data: await logoutLocal(ports.config, {
-      context: invocation.globals.context,
-      all: invocation.params.all === true
-    })
+    data: await logoutLocal(ports.config)
   }));
+}
+function registerDoctor(registry) {
+  registry.register({
+    category: "health",
+    tool: "doctor",
+    source: "protocol",
+    consumedOperations: ["getApiMeta"],
+    summary: "Check local CLI, authentication, and server compatibility.",
+    schemaVersion: "health.doctor/v1",
+    risk: "low",
+    transport: "http",
+    projectContext: "none",
+    examples: [
+      "luna doctor",
+      "luna health doctor output=json",
+      "luna health doctor server=https://luna.example.com"
+    ]
+  }, async (invocation, ports) => {
+    const checks = [];
+    const config = await ports.config.read();
+    const runtime = resolveRuntimeContext(config, {
+      server: invocation.globals.server,
+      project: invocation.globals.project,
+      output: invocation.globals.output,
+      language: invocation.globals.lang,
+      env: ports.env
+    });
+    const server = runtime.server;
+    const auth = await getAuthStatus(ports.config, {
+      env: ports.env
+    });
+    const authEntry = auth;
+    checks.push(doctorCheck("server-config", "ok", "server_configured", { server }));
+    checks.push(authEntry?.authenticated ? doctorCheck("authentication", "ok", "authenticated", {
+      credentialType: authEntry.credential?.type
+    }) : doctorCheck("authentication", "warning", "not_authenticated"));
+    let meta = null;
+    if (server && ports.api.getMeta) {
+      try {
+        meta = await ports.api.getMeta(server, invocation.globals);
+        checks.push(doctorCheck("server", "ok", "server_reachable", {
+          serverVersion: meta.serverVersion,
+          apiVersion: meta.apiVersion
+        }));
+      } catch (error) {
+        const normalized = toCliCommandError(error);
+        checks.push(doctorCheck("server", "error", normalized.code, {
+          status: normalized.status,
+          message: normalized.message
+        }));
+      }
+    } else if (server) {
+      checks.push(doctorCheck("server", "error", "server_meta_unsupported"));
+    }
+    const localVersion = ports.version ?? CLI_VERSION;
+    if (meta) {
+      checks.push(SUPPORTED_SERVER_API_VERSIONS.includes(meta.apiVersion) ? doctorCheck("api-version", "ok", "server_api_version_supported", {
+        server: meta.apiVersion
+      }) : doctorCheck("api-version", "error", "server_api_version_unsupported", {
+        server: meta.apiVersion,
+        supported: SUPPORTED_SERVER_API_VERSIONS
+      }));
+      const compatible = isVersionAtLeast(localVersion, meta.minimumCliVersion);
+      checks.push(compatible === true ? doctorCheck("cli-version", "ok", "cli_version_supported", {
+        current: localVersion,
+        minimum: meta.minimumCliVersion
+      }) : compatible === false ? doctorCheck("cli-version", "error", "cli_version_too_old", {
+        current: localVersion,
+        minimum: meta.minimumCliVersion
+      }) : doctorCheck("cli-version", "warning", "cli_version_unparseable", {
+        current: localVersion,
+        minimum: meta.minimumCliVersion
+      }));
+      const localDigest = registry.catalogMetadata.openapiDigest;
+      if (localDigest === "unavailable") {
+        checks.push(doctorCheck("openapi-contract", "warning", "local_contract_unavailable"));
+      } else if (localDigest === meta.openapiDigest) {
+        checks.push(doctorCheck("openapi-contract", "ok", "openapi_digest_matches"));
+      } else {
+        checks.push(doctorCheck("openapi-contract", "warning", "openapi_digest_mismatch", {
+          local: localDigest,
+          server: meta.openapiDigest
+        }));
+      }
+    }
+    const unsupported = meta ? Object.entries(meta.features).filter(([, supported]) => !supported).map(([feature]) => feature).sort() : [];
+    if (unsupported.length > 0) {
+      checks.push(doctorCheck("capabilities", "warning", "server_features_unavailable", {
+        unsupported
+      }));
+    } else if (meta) {
+      checks.push(doctorCheck("capabilities", "ok", "server_features_available"));
+    }
+    return {
+      schemaVersion: "health.doctor/v1",
+      data: {
+        status: doctorStatus(checks),
+        local: {
+          version: localVersion,
+          distribution: ports.distribution ?? (typeof process10.versions.bun === "string" ? "binary" : "source"),
+          runtime: typeof process10.versions.bun === "string" ? `bun-${process10.versions.bun}` : `node-${process10.versions.node}`,
+          catalogVersion: registry.catalogMetadata.catalogVersion,
+          openapiDigest: registry.catalogMetadata.openapiDigest,
+          schemaDigest: registry.catalogMetadata.schemaDigest
+        },
+        login: {
+          server: server ?? null,
+          authenticated: authEntry?.authenticated ?? false,
+          authType: authEntry?.credential?.type ?? null,
+          project: runtime.project ?? null
+        },
+        server: meta,
+        unsupported,
+        checks
+      }
+    };
+  });
+}
+function doctorCheck(name, status, code, details) {
+  return {
+    name,
+    status,
+    code,
+    ...details ? { details } : {}
+  };
+}
+function doctorStatus(checks) {
+  if (checks.some((check) => check.status === "error"))
+    return "error";
+  if (checks.some((check) => check.status === "warning"))
+    return "warning";
+  return "ok";
 }
 function registerVersion(registry) {
   registry.register(localMetadata("version", "show", {
@@ -13130,209 +13265,30 @@ function registerCompletion(registry) {
     }));
   }
 }
-function registerContext(registry) {
-  registry.register(localMetadata("context", "list", {
-    summary: "List configured Luna contexts.",
-    schemaVersion: "context.list/v1",
-    examples: ["luna context list"]
-  }), async (_invocation, ports) => {
-    const config = await ports.config.read();
-    return {
-      schemaVersion: "context.list/v1",
-      data: Object.entries(config.contexts).sort(([left], [right]) => left.localeCompare(right)).map(([name, context]) => contextView(name, context, config, config.currentContext === name))
-    };
-  });
-  registry.register(localMetadata("context", "current", {
-    summary: "Show the current Luna context.",
-    schemaVersion: "context.current/v1",
-    examples: ["luna context current"]
-  }), async (_invocation, ports) => {
-    const config = await ports.config.read();
-    if (!config.currentContext) {
-      return { schemaVersion: "context.current/v1", data: null };
-    }
-    const context = config.contexts[config.currentContext];
-    if (!context) {
-      throw new CliCommandError(
-        "context_invalid",
-        `Current context "${config.currentContext}" does not exist.`,
-        { status: 409, details: { context: config.currentContext } }
-      );
-    }
-    return {
-      schemaVersion: "context.current/v1",
-      data: contextView(config.currentContext, context, config, true)
-    };
-  });
-  registry.register(localMetadata("context", "use", {
-    summary: "Switch the current Luna context.",
-    schemaVersion: "context.use/v1",
-    parameters: [parameter("name", { required: true })],
-    examples: ["luna context use name=production"]
-  }), async (invocation, ports) => {
-    const name = requiredString(invocation.params.name, "name");
-    const config = await ports.config.read();
-    if (!config.contexts[name]) {
-      throw new CliCommandError("context_not_found", `Context "${name}" was not found.`, {
-        status: 404,
-        details: { name }
-      });
-    }
-    await ports.config.write({ ...config, currentContext: name });
-    return {
-      schemaVersion: "context.use/v1",
-      data: contextView(name, config.contexts[name], config, true)
-    };
-  });
-  registry.register(localMetadata("context", "set", {
-    summary: "Create or update a Luna context.",
-    schemaVersion: "context.set/v1",
-    projectContext: "optional",
-    parameters: [
-      parameter("name", { required: true }),
-      parameter("credential"),
-      parameter("projectName"),
-      parameter("projectIdentifier"),
-      parameter("language")
-    ],
-    examples: [
-      "luna context set name=local server=https://luna.example.com language=zh-CN",
-      "luna context set name=production server=https://luna.example.com project=prj_example output=json"
-    ]
-  }), async (invocation, ports) => {
-    const name = requiredString(invocation.params.name, "name");
-    const config = await ports.config.read();
-    const existing = config.contexts[name];
-    const requestedServer = invocation.explicitGlobalKeys.has("server") ? optionalString(invocation.globals.server) : void 0;
-    const existingInstance = existing ? config.instances[existing.instance] : void 0;
-    const server = requestedServer ? normalizeServer(requestedServer) : existingInstance?.server;
-    if (!server) {
-      throw invalidArguments2("server is required when creating a context.", "server");
-    }
-    const instance = findInstanceName(config.instances, server) ?? uniqueInstanceName(name, config.instances);
-    const serverChanged = Boolean(existingInstance && existingInstance.server !== server);
-    const projectId = invocation.explicitGlobalKeys.has("project") ? optionalString(invocation.globals.project) : void 0;
-    const project = projectId ? {
-      id: projectId,
-      name: optionalString(invocation.params.projectName),
-      identifier: optionalString(invocation.params.projectIdentifier)
-    } : serverChanged ? null : existing?.project;
-    const output = invocation.explicitGlobalKeys.has("output") ? outputFormat(invocation.canonicalGlobalValues.output) : void 0;
-    const context = {
-      ...existing,
-      instance,
-      credential: serverChanged ? void 0 : optionalString(invocation.params.credential) ?? existing?.credential,
-      project,
-      output: output ?? existing?.output,
-      language: optionalString(invocation.params.language) ?? existing?.language
-    };
-    const next = {
-      ...config,
-      currentContext: config.currentContext ?? name,
-      instances: {
-        ...config.instances,
-        [instance]: { ...config.instances[instance] ?? {}, server }
-      },
-      contexts: { ...config.contexts, [name]: context }
-    };
-    await ports.config.write(next);
-    return {
-      schemaVersion: "context.set/v1",
-      data: contextView(name, context, next, next.currentContext === name)
-    };
-  });
-  registry.register(localMetadata("context", "rename", {
-    summary: "Rename a Luna context.",
-    schemaVersion: "context.rename/v1",
-    parameters: [
-      parameter("name", { required: true }),
-      parameter("newName", { required: true })
-    ],
-    examples: ["luna context rename name=old newName=production"]
-  }), async (invocation, ports) => {
-    const name = requiredString(invocation.params.name, "name");
-    const newName = requiredString(invocation.params.newName, "newName");
-    const config = await ports.config.read();
-    const context = config.contexts[name];
-    if (!context)
-      throw notFound(name);
-    if (config.contexts[newName]) {
-      throw new CliCommandError("context_exists", `Context "${newName}" already exists.`, {
-        status: 409,
-        details: { newName }
-      });
-    }
-    const contexts = { ...config.contexts };
-    delete contexts[name];
-    contexts[newName] = context;
-    const next = {
-      ...config,
-      currentContext: config.currentContext === name ? newName : config.currentContext,
-      contexts
-    };
-    await ports.config.write(next);
-    return {
-      schemaVersion: "context.rename/v1",
-      data: contextView(newName, context, next, next.currentContext === newName)
-    };
-  });
-  registry.register(localMetadata("context", "delete", {
-    summary: "Delete a Luna context.",
-    schemaVersion: "context.delete/v1",
-    risk: "high",
-    parameters: [parameter("name", { required: true })],
-    examples: ["luna context delete name=staging --yes"]
-  }), async (invocation, ports) => {
-    const name = requiredString(invocation.params.name, "name");
-    const config = await ports.config.read();
-    if (!config.contexts[name])
-      throw notFound(name);
-    if (config.currentContext === name && !invocation.globals.yes) {
-      throw new CliCommandError(
-        "confirmation_required",
-        "Deleting the current context requires yes=true or --yes.",
-        { status: 409, details: { name } }
-      );
-    }
-    const contexts = { ...config.contexts };
-    delete contexts[name];
-    await ports.config.write({
-      ...config,
-      currentContext: config.currentContext === name ? null : config.currentContext,
-      contexts
-    });
-    return { schemaVersion: "context.delete/v1", data: { name, deleted: true } };
-  });
-  registry.register(localMetadata("context", "view", {
-    summary: "Show the redacted Luna configuration.",
-    schemaVersion: "context.view/v1",
-    examples: ["luna context view"]
-  }), async (_invocation, ports) => ({
-    schemaVersion: "context.view/v1",
-    data: redactConfig(await ports.config.read())
-  }));
-}
-function registerProjectContext(registry) {
+function registerProjectSelection(registry) {
   registry.register(localMetadata("project", "current", {
-    summary: "Show the project selected by the current context.",
+    summary: "Show the active default project.",
     schemaVersion: "project.current/v1",
     projectContext: "optional",
     examples: ["luna project current"]
   }), async (invocation, ports) => {
     const config = await ports.config.read();
-    const selected = selectedContext(config, invocation.globals.context);
+    const runtime = resolveRuntimeContext(config, {
+      server: invocation.globals.server,
+      project: invocation.globals.project,
+      env: ports.env
+    });
     return {
       schemaVersion: "project.current/v1",
       data: {
-        context: selected.name,
-        server: selected.instance?.server ?? invocation.globals.server ?? null,
-        project: invocation.explicitGlobalKeys.has("project") ? invocation.globals.project ? { id: invocation.globals.project } : null : selected.context?.project ?? null,
-        source: invocation.explicitGlobalKeys.has("project") ? "argument" : ports.env?.LUNA_PROJECT ? "environment" : selected.context?.project ? "context" : "none"
+        server: runtime.server,
+        project: runtime.project ?? null,
+        source: runtime.sources.project
       }
     };
   });
   registry.register(localMetadata("project", "use", {
-    summary: "Set the current context project after server validation.",
+    summary: "Set the active default project after server validation.",
     schemaVersion: "project.use/v1",
     projectContext: "optional",
     examples: ["luna project use project=prj_example"]
@@ -13348,42 +13304,19 @@ function registerProjectContext(registry) {
         { status: 501 }
       );
     }
-    const config = await ports.config.read();
-    const selected = selectedContext(config, invocation.globals.context);
-    if (!selected.name || !selected.context) {
-      throw new CliCommandError("context_required", "A current context is required.", {
-        status: 400,
-        exitCode: 2
-      });
-    }
     const project = await ports.api.resolveProject(value, invocation.globals);
-    const context = { ...selected.context, project };
-    const next = {
-      ...config,
-      contexts: { ...config.contexts, [selected.name]: context }
-    };
-    await ports.config.write(next);
+    const config = await ports.config.read();
+    await ports.config.write({ ...config, project: { ...project } });
     return { schemaVersion: "project.use/v1", data: project };
   });
   registry.register(localMetadata("project", "unset", {
-    summary: "Clear the project selected by the current context.",
+    summary: "Clear the active default project.",
     schemaVersion: "project.unset/v1",
     examples: ["luna project unset"]
-  }), async (invocation, ports) => {
+  }), async (_invocation, ports) => {
     const config = await ports.config.read();
-    const selected = selectedContext(config, invocation.globals.context);
-    if (!selected.name || !selected.context) {
-      throw new CliCommandError("context_required", "A current context is required.", {
-        status: 400,
-        exitCode: 2
-      });
-    }
-    const context = { ...selected.context, project: null };
-    await ports.config.write({
-      ...config,
-      contexts: { ...config.contexts, [selected.name]: context }
-    });
-    return { schemaVersion: "project.unset/v1", data: { context: selected.name, project: null } };
+    await ports.config.write({ ...config, project: null });
+    return { schemaVersion: "project.unset/v1", data: { project: null } };
   });
 }
 function registerApiDiagnostic(registry) {
@@ -13438,94 +13371,6 @@ function localMetadata(category, tool, details) {
 function parameter(name, options = {}) {
   return { name, schema: stringSchema, valueSources: ["inline"], ...options };
 }
-function contextView(name, context, config, current) {
-  const instance = config.instances[context.instance];
-  const credential = context.credential ? config.credentials[context.credential] : void 0;
-  return {
-    name,
-    current,
-    instance: context.instance,
-    server: instance?.server ?? null,
-    credential: context.credential ?? null,
-    authType: optionalString(credential?.type) ?? null,
-    userId: optionalString(credential?.userId) ?? null,
-    expiresAt: optionalString(credential?.expiresAt) ?? null,
-    scopes: Array.isArray(credential?.scopes) ? credential.scopes : [],
-    project: context.project ?? null,
-    language: context.language ?? null,
-    output: context.output || null
-  };
-}
-function selectedContext(config, override) {
-  const name = override ?? config.currentContext ?? void 0;
-  const context = name ? config.contexts[name] : void 0;
-  return {
-    name,
-    context,
-    instance: context ? config.instances[context.instance] : void 0
-  };
-}
-function findInstanceName(instances, server) {
-  return Object.entries(instances).find(([, instance]) => instance.server === server)?.[0];
-}
-function uniqueInstanceName(preferred, instances) {
-  if (!instances[preferred])
-    return preferred;
-  let suffix = 2;
-  while (instances[`${preferred}-${suffix}`]) suffix += 1;
-  return `${preferred}-${suffix}`;
-}
-function normalizeServer(value) {
-  let url;
-  try {
-    url = new URL(value);
-  } catch (cause) {
-    throw new CliCommandError("invalid_arguments", "server must be an absolute HTTP(S) URL.", {
-      status: 400,
-      exitCode: 2,
-      details: { key: "server" },
-      cause
-    });
-  }
-  if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.hash || url.pathname !== "/" && url.pathname !== "") {
-    throw invalidArguments2(
-      "server must be an HTTP(S) origin without credentials, path, query, or fragment.",
-      "server"
-    );
-  }
-  if (url.search)
-    throw invalidArguments2("server must not contain a query.", "server");
-  return url.origin;
-}
-function redactConfig(config) {
-  return {
-    ...config,
-    credentials: Object.fromEntries(
-      Object.entries(config.credentials).map(([name, credential]) => [
-        name,
-        redactRecord(credential)
-      ])
-    )
-  };
-}
-function redactRecord(value) {
-  return Object.fromEntries(
-    Object.entries(value).map(([key, entry]) => [
-      key,
-      /token|secret|password|cookie|authorization|recovery/i.test(key) ? entry === void 0 || entry === null || entry === "" ? entry : "******" : typeof entry === "object" && entry !== null && !Array.isArray(entry) ? redactRecord(entry) : entry
-    ])
-  );
-}
-function outputFormat(value) {
-  if (value === "")
-    return "";
-  if (value === "table" || value === "json" || value === "raw-json" || value === "yaml" || value === "jsonl" || value === "name") {
-    return value;
-  }
-  if (value === void 0)
-    return void 0;
-  throw invalidArguments2(`Unsupported output format "${String(value)}".`, "output");
-}
 function asResult(value, schemaVersion) {
   if (typeof value === "object" && value !== null && "data" in value) {
     return value;
@@ -13546,12 +13391,6 @@ function stringList(value) {
     return value.filter((entry) => typeof entry === "string");
   }
   return typeof value === "string" ? [value] : [];
-}
-function notFound(name) {
-  return new CliCommandError("context_not_found", `Context "${name}" was not found.`, {
-    status: 404,
-    details: { name }
-  });
 }
 function invalidArguments2(message, key) {
   return new CliCommandError("invalid_arguments", message, {
@@ -13950,10 +13789,10 @@ function renderFieldView(value, labels = {}) {
 }
 function renderHuman(value, options = {}) {
   if (Array.isArray(value)) {
-    const rows = value.filter(isRecord7);
+    const rows = value.filter(isRecord8);
     return rows.length === value.length ? renderTable(rows, options) : value.map(formatCell).join("\n");
   }
-  if (isRecord7(value)) return renderFieldView(value);
+  if (isRecord8(value)) return renderFieldView(value);
   return formatCell(value);
 }
 function renderYaml(value) {
@@ -13974,7 +13813,7 @@ function inferColumns(rows) {
   return [...keys].map((key) => ({ key }));
 }
 function extractName(value) {
-  if (isRecord7(value)) {
+  if (isRecord8(value)) {
     for (const key of ["name", "id", "identifier"]) {
       if (typeof value[key] === "string") return sanitizeTerminalText(value[key]);
     }
@@ -14005,7 +13844,7 @@ function padDisplay(value, width) {
 function isWideCodePoint(codePoint) {
   return codePoint >= 4352 && (codePoint <= 4447 || codePoint === 9001 || codePoint === 9002 || codePoint >= 11904 && codePoint <= 42191 && codePoint !== 12351 || codePoint >= 44032 && codePoint <= 55203 || codePoint >= 63744 && codePoint <= 64255 || codePoint >= 65040 && codePoint <= 65049 || codePoint >= 65072 && codePoint <= 65135 || codePoint >= 65280 && codePoint <= 65376 || codePoint >= 65504 && codePoint <= 65510 || codePoint >= 127744 && codePoint <= 129791 || codePoint >= 131072 && codePoint <= 262141);
 }
-function isRecord7(value) {
+function isRecord8(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
@@ -14106,7 +13945,6 @@ var CommandOutput = class {
       {
         requestId: stringMeta(result.meta, "requestId") ?? globals.requestId,
         server: globals.server,
-        context: globals.context,
         projectId: stringMeta(result.meta, "projectId") ?? globals.project,
         cliVersion: this.#version,
         openapiDigest: metadata.schemaDigest
@@ -14173,7 +14011,7 @@ function detectLocale(options = {}) {
   const preferredCandidates = [
     options.explicit,
     env.LUNA_LANG,
-    options.context
+    options.configured
   ];
   for (const candidate of preferredCandidates) {
     if (candidate?.trim())
@@ -14223,7 +14061,6 @@ var resources = {
         options: {
           version: "Show the CLI version",
           help: "Show command help",
-          context: "Select a saved context",
           server: "Override the Luna server origin",
           project: "Select a project for this command",
           output: "Output format",
@@ -14241,10 +14078,11 @@ var resources = {
           insecureTls: "Disable TLS verification when supported"
         },
         businessArguments: "Business parameters in key=value form",
+        canonicalCommand: "Canonical command",
         quickStart: {
           title: "Quick start:",
-          context: "1. Create a context:",
-          login: "2. Sign in with an access token:",
+          login: "1. Sign in with an access token:",
+          customServer: "2. Sign in to another server when needed:",
           discover: "3. Discover commands:"
         },
         input: {
@@ -14264,7 +14102,7 @@ var resources = {
           title: "Command details:",
           command: "Command",
           risk: "Risk",
-          project: "Project context",
+          project: "Project selection",
           transport: "Transport",
           endpoint: "Endpoint",
           scopes: "Required scopes"
@@ -14311,6 +14149,12 @@ var resources = {
           nextStep: "Next step"
         }
       },
+      shortcuts: {
+        login: "Sign in to a Luna DevOps instance",
+        logout: "Remove the active Luna credential",
+        whoami: "Show the current authenticated identity",
+        doctor: "Check CLI, authentication, and server compatibility"
+      },
       categories: {
         "access-token": "Personal access tokens",
         "api": "Diagnostic API requests",
@@ -14319,13 +14163,12 @@ var resources = {
         "build": "Builds and build templates",
         "completion": "Shell completion scripts",
         "config": "Project configuration and secrets",
-        "context": "Instances, credentials, and active contexts",
         "dashboard": "Dashboard summaries",
         "deployment": "Deployment targets and releases",
         "git": "Git providers, repositories, and credentials",
         "health": "Service health",
         "help": "Command discovery and machine-readable contracts",
-        "project": "Project spaces and current project context",
+        "project": "Project spaces and the default project",
         "registry": "Container registries, credentials, and images",
         "retention": "Retention policies and cleanup",
         "runtime": "Runtime resources, logs, and terminal operations",
@@ -14339,12 +14182,12 @@ var resources = {
         category: "Filter by command category.",
         credential: "Saved credential name.",
         cursor: "Pagination cursor returned by the previous request.",
-        language: "Context language, such as zh-CN or en-US.",
+        language: "CLI language, such as zh-CN or en-US.",
         limit: "Maximum number of results to return.",
         method: "HTTP request method.",
         mode: "Authentication mode: access-token or device-code.",
-        name: "Resource or context name.",
-        newName: "New context name.",
+        name: "Resource name.",
+        newName: "New resource name.",
         page: "Page number, starting from 1.",
         pageSize: "Number of items per page.",
         path: "Canonical command path or relative Luna API path.",
@@ -14367,8 +14210,8 @@ var resources = {
           request: { summary: "Send a diagnostic request to a Luna API path." }
         },
         auth: {
-          login: { summary: "Authenticate a Luna context with an access token." },
-          logout: { summary: "Remove credentials from one or all local Luna contexts." },
+          login: { summary: "Sign in to one Luna server with an access token." },
+          logout: { summary: "Remove the active local Luna credential." },
           status: { summary: "Show authentication status without exposing credentials." }
         },
         completion: {
@@ -14377,23 +14220,17 @@ var resources = {
           powershell: { summary: "Generate PowerShell completion for Luna CLI." },
           zsh: { summary: "Generate Zsh completion for Luna CLI." }
         },
-        context: {
-          current: { summary: "Show the current Luna context." },
-          delete: { summary: "Delete a Luna context." },
-          list: { summary: "List configured Luna contexts." },
-          rename: { summary: "Rename a Luna context." },
-          set: { summary: "Create or update a Luna context." },
-          use: { summary: "Switch the current Luna context." },
-          view: { summary: "Show the redacted Luna configuration." }
-        },
         help: {
           catalog: { summary: "List commands from the machine-readable command catalog." },
           command: { summary: "Show the complete machine-readable contract for one command." }
         },
+        health: {
+          doctor: { summary: "Check local CLI, authentication, and server compatibility." }
+        },
         project: {
-          current: { summary: "Show the project selected by the current context." },
-          unset: { summary: "Clear the project selected by the current context." },
-          use: { summary: "Set the current context project after server validation." }
+          current: { summary: "Show the default project." },
+          unset: { summary: "Clear the default project." },
+          use: { summary: "Set the default project after server validation." }
         },
         version: {
           show: { summary: "Show Luna CLI version and runtime information." }
@@ -14445,7 +14282,6 @@ var resources = {
         options: {
           version: "\u663E\u793A CLI \u7248\u672C",
           help: "\u663E\u793A\u547D\u4EE4\u5E2E\u52A9",
-          context: "\u9009\u62E9\u5DF2\u4FDD\u5B58\u7684\u4E0A\u4E0B\u6587",
           server: "\u4E34\u65F6\u8986\u76D6 Luna \u670D\u52A1\u5730\u5740",
           project: "\u4E3A\u672C\u6B21\u547D\u4EE4\u9009\u62E9\u9879\u76EE\u7A7A\u95F4",
           output: "\u8F93\u51FA\u683C\u5F0F",
@@ -14463,10 +14299,11 @@ var resources = {
           insecureTls: "\u5728\u652F\u6301\u65F6\u5173\u95ED TLS \u8BC1\u4E66\u6821\u9A8C"
         },
         businessArguments: "\u4F7F\u7528 key=value \u5F62\u5F0F\u4F20\u5165\u4E1A\u52A1\u53C2\u6570",
+        canonicalCommand: "\u6807\u51C6\u547D\u4EE4",
         quickStart: {
           title: "\u5FEB\u901F\u5F00\u59CB\uFF1A",
-          context: "1. \u521B\u5EFA\u4E0A\u4E0B\u6587\uFF1A",
-          login: "2. \u4F7F\u7528\u8BBF\u95EE\u4EE4\u724C\u767B\u5F55\uFF1A",
+          login: "1. \u4F7F\u7528\u8BBF\u95EE\u4EE4\u724C\u767B\u5F55\uFF1A",
+          customServer: "2. \u9700\u8981\u65F6\u767B\u5F55\u5176\u4ED6\u670D\u52A1\uFF1A",
           discover: "3. \u67E5\u627E\u53EF\u7528\u547D\u4EE4\uFF1A"
         },
         input: {
@@ -14486,7 +14323,7 @@ var resources = {
           title: "\u547D\u4EE4\u8BE6\u60C5\uFF1A",
           command: "\u547D\u4EE4",
           risk: "\u98CE\u9669\u7EA7\u522B",
-          project: "\u9879\u76EE\u7A7A\u95F4\u4E0A\u4E0B\u6587",
+          project: "\u9879\u76EE\u7A7A\u95F4\u9009\u62E9",
           transport: "\u4F20\u8F93\u65B9\u5F0F",
           endpoint: "\u63A5\u53E3",
           scopes: "\u6240\u9700\u6743\u9650"
@@ -14533,6 +14370,12 @@ var resources = {
           nextStep: "\u4E0B\u4E00\u6B65"
         }
       },
+      shortcuts: {
+        login: "\u767B\u5F55 Luna DevOps \u5B9E\u4F8B",
+        logout: "\u79FB\u9664\u5F53\u524D Luna \u767B\u5F55\u51ED\u636E",
+        whoami: "\u67E5\u770B\u5F53\u524D\u767B\u5F55\u8EAB\u4EFD",
+        doctor: "\u68C0\u67E5 CLI\u3001\u8BA4\u8BC1\u4E0E\u670D\u52A1\u7AEF\u517C\u5BB9\u6027"
+      },
       categories: {
         "access-token": "\u4E2A\u4EBA\u8BBF\u95EE\u4EE4\u724C",
         "api": "\u8BCA\u65AD API \u8BF7\u6C42",
@@ -14541,13 +14384,12 @@ var resources = {
         "build": "\u6784\u5EFA\u4E0E\u6784\u5EFA\u6A21\u677F",
         "completion": "Shell \u81EA\u52A8\u8865\u5168\u811A\u672C",
         "config": "\u9879\u76EE\u914D\u7F6E\u4E0E\u5BC6\u94A5",
-        "context": "\u5B9E\u4F8B\u3001\u51ED\u636E\u4E0E\u5F53\u524D\u4E0A\u4E0B\u6587",
         "dashboard": "\u770B\u677F\u6458\u8981",
         "deployment": "\u90E8\u7F72\u914D\u7F6E\u4E0E\u53D1\u5E03",
         "git": "Git \u63D0\u4F9B\u65B9\u3001\u4ED3\u5E93\u4E0E\u51ED\u636E",
         "health": "\u670D\u52A1\u5065\u5EB7\u72B6\u6001",
         "help": "\u547D\u4EE4\u53D1\u73B0\u4E0E\u673A\u5668\u53EF\u8BFB\u5951\u7EA6",
-        "project": "\u9879\u76EE\u7A7A\u95F4\u4E0E\u5F53\u524D\u9879\u76EE\u4E0A\u4E0B\u6587",
+        "project": "\u9879\u76EE\u7A7A\u95F4\u4E0E\u9ED8\u8BA4\u9879\u76EE\u7A7A\u95F4",
         "registry": "\u955C\u50CF\u7AD9\u3001\u51ED\u636E\u4E0E\u955C\u50CF",
         "retention": "\u6570\u636E\u4FDD\u7559\u7B56\u7565\u4E0E\u6E05\u7406",
         "runtime": "\u8FD0\u884C\u8D44\u6E90\u3001\u65E5\u5FD7\u4E0E\u7EC8\u7AEF\u64CD\u4F5C",
@@ -14561,12 +14403,12 @@ var resources = {
         category: "\u6309\u547D\u4EE4\u5206\u7C7B\u7B5B\u9009\u3002",
         credential: "\u5DF2\u4FDD\u5B58\u7684\u51ED\u636E\u540D\u79F0\u3002",
         cursor: "\u4E0A\u4E00\u9875\u54CD\u5E94\u8FD4\u56DE\u7684\u5206\u9875\u6E38\u6807\u3002",
-        language: "\u4E0A\u4E0B\u6587\u8BED\u8A00\uFF0C\u4F8B\u5982 zh-CN \u6216 en-US\u3002",
+        language: "CLI \u8BED\u8A00\uFF0C\u4F8B\u5982 zh-CN \u6216 en-US\u3002",
         limit: "\u6700\u591A\u8FD4\u56DE\u591A\u5C11\u6761\u7ED3\u679C\u3002",
         method: "HTTP \u8BF7\u6C42\u65B9\u6CD5\u3002",
         mode: "\u8BA4\u8BC1\u65B9\u5F0F\uFF1Aaccess-token \u6216 device-code\u3002",
-        name: "\u8D44\u6E90\u6216\u4E0A\u4E0B\u6587\u540D\u79F0\u3002",
-        newName: "\u65B0\u7684\u4E0A\u4E0B\u6587\u540D\u79F0\u3002",
+        name: "\u8D44\u6E90\u540D\u79F0\u3002",
+        newName: "\u65B0\u7684\u8D44\u6E90\u540D\u79F0\u3002",
         page: "\u9875\u7801\uFF0C\u4ECE 1 \u5F00\u59CB\u3002",
         pageSize: "\u6BCF\u9875\u8FD4\u56DE\u7684\u6570\u636E\u6761\u6570\u3002",
         path: "\u6807\u51C6\u547D\u4EE4\u8DEF\u5F84\u6216 Luna API \u76F8\u5BF9\u8DEF\u5F84\u3002",
@@ -14589,8 +14431,8 @@ var resources = {
           request: { summary: "\u5411 Luna API \u76F8\u5BF9\u8DEF\u5F84\u53D1\u9001\u8BCA\u65AD\u8BF7\u6C42\u3002" }
         },
         auth: {
-          login: { summary: "\u4F7F\u7528\u8BBF\u95EE\u4EE4\u724C\u767B\u5F55 Luna \u4E0A\u4E0B\u6587\u3002" },
-          logout: { summary: "\u79FB\u9664\u4E00\u4E2A\u6216\u5168\u90E8\u672C\u5730 Luna \u4E0A\u4E0B\u6587\u7684\u51ED\u636E\u3002" },
+          login: { summary: "\u4F7F\u7528\u8BBF\u95EE\u4EE4\u724C\u767B\u5F55\u4E00\u4E2A Luna \u670D\u52A1\u3002" },
+          logout: { summary: "\u79FB\u9664\u5F53\u524D\u672C\u5730 Luna \u767B\u5F55\u51ED\u636E\u3002" },
           status: { summary: "\u67E5\u770B\u8BA4\u8BC1\u72B6\u6001\uFF0C\u4E0D\u4F1A\u5C55\u793A\u51ED\u636E\u5185\u5BB9\u3002" }
         },
         completion: {
@@ -14599,22 +14441,16 @@ var resources = {
           powershell: { summary: "\u751F\u6210 Luna CLI \u7684 PowerShell \u81EA\u52A8\u8865\u5168\u811A\u672C\u3002" },
           zsh: { summary: "\u751F\u6210 Luna CLI \u7684 Zsh \u81EA\u52A8\u8865\u5168\u811A\u672C\u3002" }
         },
-        context: {
-          current: { summary: "\u67E5\u770B\u5F53\u524D Luna \u4E0A\u4E0B\u6587\u3002" },
-          delete: { summary: "\u5220\u9664 Luna \u4E0A\u4E0B\u6587\u3002" },
-          list: { summary: "\u5217\u51FA\u5DF2\u914D\u7F6E\u7684 Luna \u4E0A\u4E0B\u6587\u3002" },
-          rename: { summary: "\u91CD\u547D\u540D Luna \u4E0A\u4E0B\u6587\u3002" },
-          set: { summary: "\u521B\u5EFA\u6216\u66F4\u65B0 Luna \u4E0A\u4E0B\u6587\u3002" },
-          use: { summary: "\u5207\u6362\u5F53\u524D Luna \u4E0A\u4E0B\u6587\u3002" },
-          view: { summary: "\u67E5\u770B\u5DF2\u8131\u654F\u7684 Luna \u672C\u5730\u914D\u7F6E\u3002" }
-        },
         help: {
           catalog: { summary: "\u5217\u51FA\u673A\u5668\u53EF\u8BFB\u547D\u4EE4\u76EE\u5F55\u4E2D\u7684\u547D\u4EE4\u3002" },
           command: { summary: "\u67E5\u770B\u4E00\u6761\u547D\u4EE4\u7684\u5B8C\u6574\u673A\u5668\u53EF\u8BFB\u5951\u7EA6\u3002" }
         },
+        health: {
+          doctor: { summary: "\u68C0\u67E5\u672C\u5730 CLI\u3001\u8BA4\u8BC1\u4E0E\u670D\u52A1\u7AEF\u517C\u5BB9\u6027\u3002" }
+        },
         project: {
-          current: { summary: "\u67E5\u770B\u5F53\u524D\u4E0A\u4E0B\u6587\u9009\u4E2D\u7684\u9879\u76EE\u7A7A\u95F4\u3002" },
-          unset: { summary: "\u6E05\u9664\u5F53\u524D\u4E0A\u4E0B\u6587\u9009\u4E2D\u7684\u9879\u76EE\u7A7A\u95F4\u3002" },
+          current: { summary: "\u67E5\u770B\u9ED8\u8BA4\u9879\u76EE\u7A7A\u95F4\u3002" },
+          unset: { summary: "\u6E05\u9664\u9ED8\u8BA4\u9879\u76EE\u7A7A\u95F4\u3002" },
           use: { summary: "\u7ECF\u670D\u52A1\u7AEF\u6821\u9A8C\u540E\u8BBE\u7F6E\u5F53\u524D\u9879\u76EE\u7A7A\u95F4\u3002" }
         },
         version: {
@@ -14670,19 +14506,26 @@ function createLunaCli(options = {}) {
   const config = options.ports?.config ?? new FileConfigStore();
   const translate2 = options.ports?.translate;
   const output = options.ports?.output ?? new CommandOutput({ version, translate: translate2 });
+  const registry = createRegistryFromContract(src_exports);
+  registerLocalCommands(registry);
   const ports = {
     config,
     input: options.ports?.input ?? new DefaultInputPort(),
     output,
-    api: options.ports?.api ?? new LunaApiAdapter({ config, env }),
+    api: options.ports?.api ?? new LunaApiAdapter({
+      config,
+      env,
+      compatibility: {
+        cliVersion: version,
+        openapiDigest: registry.catalogMetadata.openapiDigest
+      }
+    }),
     env,
     isTTY: options.ports?.isTTY ?? Boolean(process13.stdout.isTTY),
     version,
     distribution: options.distribution ?? options.ports?.distribution ?? runtimeDistribution(),
     translate: translate2
   };
-  const registry = createRegistryFromContract(src_exports);
-  registerLocalCommands(registry);
   const programOptions = {
     registry,
     ports,
@@ -14701,10 +14544,10 @@ function createLunaCli(options = {}) {
 async function main(argv = process13.argv) {
   const env = process13.env;
   const config = new FileConfigStore();
-  const contextLanguage = await startupContextLanguage(config, argv, env);
+  const configuredLanguage = await startupConfiguredLanguage(config);
   const i18n = await createCliI18n({
     explicit: startupOptionValue(argv, "lang"),
-    context: contextLanguage,
+    configured: configuredLanguage,
     env
   });
   const cli = createLunaCli({
@@ -14736,11 +14579,10 @@ function startupOptionValue(argv, name) {
   }
   return void 0;
 }
-async function startupContextLanguage(configStore, argv, env) {
+async function startupConfiguredLanguage(configStore) {
   try {
     const config = await configStore.read();
-    const contextName = startupOptionValue(argv, "context") ?? env.LUNA_CONTEXT ?? config.currentContext ?? void 0;
-    return contextName ? config.contexts[contextName]?.language : void 0;
+    return config.language || void 0;
   } catch {
     return void 0;
   }

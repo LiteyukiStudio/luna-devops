@@ -994,7 +994,7 @@
 
 详细规格见 [`notes/cli-spec.md`](notes/cli-spec.md)。
 
-- [x] 确定 CLI 技术栈、两级工具命令、`key=value` 与多行/复杂输入规范、参数校验、多实例上下文、context 级默认项目空间、版本化 JSON Envelope、OAuth、Device Code、Access Token、Step-up MFA、i18n、AI 输出契约、npm/pnpm 安装、独立 `cli-v*` 发版、npm Trusted Publishing 和 Bun 单二进制方案。
+- [x] 确定 CLI 技术栈、两级工具命令、`key=value` 与多行/复杂输入规范、参数校验、单活动实例与账号凭据、活动登录默认项目空间、版本化 JSON Envelope、OAuth、Device Code、Access Token、Step-up MFA、i18n、AI 输出契约、npm/pnpm 安装、独立 `cli-v*` 发版、npm Trusted Publishing 和 Bun 单二进制方案。
 - [x] 完成 CLI spec 与 AI Agent 可实施性审计：按 `method + normalizedPath` 确认当前 223 条 Gin 路由中 OpenAPI 已覆盖 110 条、缺失 113 条；明确业务命令、协议适配、浏览器入口、服务端入口和内部可观测五类路由，`api request` 不计入覆盖；补齐 Agent 模式、复杂参数、受限工具发现、服务端计划、并发保护、版本化事件流、不可信内容和资源边界；第一版要求每项公开能力成功主路径和关键旅程 100%、完整操作场景矩阵不低于 95%。
 - [x] 移除旧 MCP 与内嵌 Assistant 设计，将 `ai-supports` 收敛为仅通过未来 `luna` CLI 工作的预发布 Skills。
 - [x] 建立根 pnpm workspace，抽取环境无关的 `@luna-devops/api-contract` 与 `@luna-devops/api-client`，CLI 从生成契约注册命令并复用统一 HTTP 客户端。
@@ -1007,8 +1007,10 @@
 - [ ] 为中高风险更新补齐 ETag/version/resourceVersion 乐观并发控制；CLI 和 Skills 遇到冲突时必须重新读取、重新计划并再次确认，不允许盲覆盖或自动追加 `force`。
 - [ ] 定义版本化 JSONL 长任务事件协议：首帧版本、sequence/eventId/correlationId/operationId/resourceRef、恢复游标、资源上限和唯一终态摘要；缺少摘要时不得报告成功。
 - [x] 新增公开且不泄露部署信息的 `/api/v1/meta` 能力接口，返回 API/服务端版本、OpenAPI digest、功能开关和最低 CLI 版本；未实现的 Device Code 与 Bearer MFA 明确返回 `false`。
-- [ ] CLI 接入启动能力协商和版本兼容判断；对缺少接口、未知 API 版本或版本不兼容的实例 fail closed，不通过试探业务接口猜测能力。
-- [x] 实现 CLI 基础框架、`~/.luna/auth.json`、上下文切换、`project current/use/unset`、项目空间解析优先级、稳定输出、完整 Help、机器可读 Help 和 Shell Completion；context 切换实例地址时隔离凭据和默认项目空间，临时跨源 `server=` 不复用当前 Token。
+- [x] 为人类交互提供 `luna login/logout/whoami/doctor` 顶层短命令，复用 canonical 两级命令处理器；严格 Agent 模式拒绝别名，避免机器契约和审计路径分叉。
+- [x] 新增 `luna health doctor` 显式诊断，检查活动登录配置、认证、服务端可达性、最低 CLI 版本、OpenAPI digest 和功能开关；Device Code 未启用时在进入登录流程前返回稳定能力错误。
+- [x] CLI 接入逐实例能力协商和版本兼容判断；OpenAPI 业务命令在首次请求前校验 API 代际、最低 CLI 版本和契约摘要，对缺少接口或不兼容实例 fail closed，不通过试探业务接口猜测能力。
+- [x] 实现 CLI 基础框架、`~/.luna/auth.json` 单活动登录、`project current/use/unset`、项目空间解析优先级、稳定输出、完整 Help、机器可读 Help 和 Shell Completion；重新登录其他实例或账号会覆盖旧凭据并清除默认项目空间，临时跨源 `server=` 不复用当前 Token。
 - [ ] 实现由平台固定初始化、无需动态注册的内置 OAuth 公共 CLI Client：Token Endpoint 支持 `token_endpoint_auth_method=none`，仅允许严格 loopback redirect，完成 Authorization Code + PKCE、刷新和吊销；拆分 OAuth 与个人访问令牌 Scope 策略，使第一方 CLI 可在明确授权和 Step-up 保护下申请敏感 Scope，但不自动授予通配权限。
 - [ ] 实现 RFC 8628 Device Authorization Grant，包括设备授权端点、浏览器 GET/POST 确认接口、CSRF 防护、哈希状态、批准/拒绝、轮询限流、过期清理和一次性兑换。
 - [ ] 改造 Step-up MFA 与交互认证上下文：OAuth Bearer 可验证 OTP/恢复码并按 OAuth Grant/Token Family + purpose 读取 assertion；终端预授权、终端存活监控和数据导出票据同时支持绑定 Web Session 或 OAuth Grant/Token Family；个人访问令牌仍不得绕过 MFA 保护。
@@ -1019,7 +1021,7 @@
 - [x] 建立 Luna DevOps、Luna CLI、Luna DevOps Skill 三个更新日志视图与自动同步工作流；平台使用 `v*`，CLI 与 Skill 由同一个 `cli-v*` tag 配套发版，发布成功后由 CI 生成中英文日志并同步文档。
 - [x] 建立 CLI 与 Skill 强配套契约：Skill 与 CLI 必须使用相同版本、tag 和 commit；CLI Release 缺少 Skill 制品或 manifest 不一致时直接失败，规则由 `release-compatibility.json`、双 manifest 和更新日志共同暴露。
 - [x] 完善中英文 CLI 文档入口、源码开发说明与配套 Skill；Skill 以机器可读 Help 为命令事实来源，准确标注尚未完成的服务端能力，并在 CLI CI/Release 中通过同步检查阻止命令和能力描述漂移。
-- [x] 完善 CLI 人类可读分层帮助与语言检测：支持 `--lang`、`LUNA_LANG`、context 和系统 locale 优先级，命令帮助展示参数来源、风险、Scope、接口与示例，并在发布产物 smoke 中验证中文帮助。
+- [x] 完善 CLI 人类可读分层帮助与语言检测：支持 `--lang`、`LUNA_LANG`、本地配置和系统 locale 优先级，命令帮助展示参数来源、风险、Scope、接口与示例，并在发布产物 smoke 中验证中文帮助。
 - [ ] 确认 npm `@liteyuki` 组织权限，使用 2FA 手动发布首个 `@liteyuki/luna-cli` public 预发布包；随后配置 Trusted Publisher 和 GitHub `npm` Environment，并以新的未发布版本完成真实 OIDC 发布验收。
 - [x] 使用固定 Bun 版本构建 Linux glibc x64/arm64 与 macOS arm64/x64 制品，生成 checksum、SBOM 和 provenance；Linux 制品完成无 Node.js smoke，macOS 未签名制品仅进入预发布；Windows 与 Alpine/musl 使用 npm/pnpm + Node.js 降级渠道。
 - [ ] 接入 Apple Developer ID 和公证；macOS 制品完成平台代码签名后才可进入稳定矩阵。

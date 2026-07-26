@@ -13,7 +13,7 @@ import (
 
 const (
 	apiVersion        = "v1"
-	minimumCLIVersion = "0.1.0"
+	minimumCLIVersion = "0.0.7"
 )
 
 type apiMetaFeatures struct {

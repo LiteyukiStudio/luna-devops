@@ -56,10 +56,10 @@ export function rootHelpText(
   return [
     '',
     `${text(ports, 'help.quickStart.title', 'Quick start:')}`,
-    `  ${text(ports, 'help.quickStart.context', '1. Create a context:')}`,
-    '     luna context set name=local server=https://luna.example.com',
-    `  ${text(ports, 'help.quickStart.login', '2. Sign in with an access token:')}`,
-    '     printf \'%s\' "$LUNA_TOKEN" | luna auth login token=@-',
+    `  ${text(ports, 'help.quickStart.login', '1. Sign in with an access token:')}`,
+    '     printf \'%s\' "$LUNA_TOKEN" | luna login token=@-',
+    `  ${text(ports, 'help.quickStart.customServer', '2. Sign in to another server when needed:')}`,
+    '     printf \'%s\' "$LUNA_TOKEN" | luna login server=https://luna.example.com token=@-',
     `  ${text(ports, 'help.quickStart.discover', '3. Discover commands:')}`,
     '     luna help catalog query=project limit=10',
     '     luna <category> <command> --help',
@@ -107,7 +107,7 @@ export function commandHelpText(
   const details = [
     `${text(ports, 'help.details.command', 'Command')}: ${metadata.canonicalPath}`,
     `${text(ports, 'help.details.risk', 'Risk')}: ${localizedValue(ports, 'risk', metadata.risk)}`,
-    `${text(ports, 'help.details.project', 'Project context')}: ${localizedValue(ports, 'projectContext', metadata.projectContext)}`,
+    `${text(ports, 'help.details.project', 'Project selection')}: ${localizedValue(ports, 'projectContext', metadata.projectContext)}`,
     `${text(ports, 'help.details.transport', 'Transport')}: ${localizedValue(ports, 'transport', metadata.transport)}`,
   ]
   if (metadata.method && metadata.path)
@@ -215,7 +215,14 @@ function sampleValue(
 
 function ensureLunaPrefix(example: string): string {
   const trimmed = example.trim()
-  return trimmed.startsWith('luna ') ? trimmed : `luna ${trimmed}`
+  if (
+    trimmed.startsWith('luna ')
+    || trimmed.startsWith('#')
+    || /\|\s*luna\s/.test(trimmed)
+  ) {
+    return trimmed
+  }
+  return `luna ${trimmed}`
 }
 
 function text(ports: RuntimePorts, key: string, fallback: string): string {

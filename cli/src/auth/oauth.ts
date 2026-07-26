@@ -4,18 +4,13 @@ export type OAuthLoginMode = 'authorization_code_pkce' | 'device_code'
 
 export interface OAuthLoginRequest {
   readonly server: string
-  readonly context: string
   readonly scopes: readonly string[]
   readonly mode: OAuthLoginMode
 }
 
-export interface OAuthRefreshRequest {
-  readonly context: string
-}
+export interface OAuthRefreshRequest {}
 
-export interface OAuthRevokeRequest {
-  readonly context: string
-}
+export interface OAuthRevokeRequest {}
 
 export async function beginOAuthLogin(
   _request: OAuthLoginRequest,

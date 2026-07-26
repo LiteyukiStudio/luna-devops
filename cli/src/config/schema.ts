@@ -11,6 +11,8 @@ export const OUTPUT_FORMATS = [
   'name',
 ] as const
 
+export const DEFAULT_LUNA_SERVER = 'https://devops.liteyuki.org'
+
 const userSnapshotSchema = z
   .object({
     id: z.string().min(1),
@@ -46,26 +48,6 @@ export const credentialSchema = z.discriminatedUnion('type', [
   accessTokenCredentialSchema,
 ])
 
-export const instanceSchema = z
-  .object({
-    server: z.string().min(1),
-    tls: z
-      .object({
-        caFile: z.string().default(''),
-        insecureSkipVerify: z.boolean().default(false),
-      })
-      .passthrough()
-      .default({ caFile: '', insecureSkipVerify: false }),
-    network: z
-      .object({
-        proxy: z.string().default(''),
-        noProxy: z.string().default(''),
-      })
-      .passthrough()
-      .default({ proxy: '', noProxy: '' }),
-  })
-  .passthrough()
-
 export const projectSnapshotSchema = z
   .object({
     id: z.string().min(1),
@@ -74,53 +56,16 @@ export const projectSnapshotSchema = z
   })
   .passthrough()
 
-export const contextSchema = z
+export const configDocumentSchema = z
   .object({
-    instance: z.string().min(1),
-    credential: z.string().min(1).optional(),
+    version: z.literal(2),
+    server: z.string().min(1).default(DEFAULT_LUNA_SERVER),
+    credential: credentialSchema.nullish(),
     project: projectSnapshotSchema.nullish(),
     language: z.string().default(''),
     output: z.union([z.enum(OUTPUT_FORMATS), z.literal('')]).default(''),
   })
   .passthrough()
-
-export const configDocumentSchema = z
-  .object({
-    version: z.literal(1),
-    currentContext: z.string().min(1).nullable().optional(),
-    instances: z.record(z.string().min(1), instanceSchema),
-    credentials: z.record(z.string().min(1), credentialSchema),
-    contexts: z.record(z.string().min(1), contextSchema),
-  })
-  .superRefine((document, context) => {
-    if (
-      document.currentContext
-      && !Object.hasOwn(document.contexts, document.currentContext)
-    ) {
-      context.addIssue({
-        code: 'custom',
-        path: ['currentContext'],
-        message: `Unknown current context "${document.currentContext}".`,
-      })
-    }
-
-    for (const [name, value] of Object.entries(document.contexts)) {
-      if (!Object.hasOwn(document.instances, value.instance)) {
-        context.addIssue({
-          code: 'custom',
-          path: ['contexts', name, 'instance'],
-          message: `Context "${name}" references an unknown instance.`,
-        })
-      }
-      if (value.credential && !Object.hasOwn(document.credentials, value.credential)) {
-        context.addIssue({
-          code: 'custom',
-          path: ['contexts', name, 'credential'],
-          message: `Context "${name}" references an unknown credential.`,
-        })
-      }
-    }
-  })
 
 export type LunaCredential = z.infer<typeof credentialSchema>
 export type OAuthCredential = z.infer<typeof oauthCredentialSchema>
@@ -129,18 +74,29 @@ export type StoredLunaConfig = z.infer<typeof configDocumentSchema>
 
 export function emptyConfigDocument(): StoredLunaConfig {
   return {
-    version: 1,
-    currentContext: null,
-    instances: {},
-    credentials: {},
-    contexts: {},
+    version: 2,
+    server: DEFAULT_LUNA_SERVER,
+    credential: null,
+    project: null,
+    language: '',
+    output: '',
   }
 }
 
 export function parseConfigDocument(value: unknown): StoredLunaConfig {
+  const current = configDocumentSchema.safeParse(value)
+  if (current.success)
+    return current.data
+
+  if (isRecord(value) && value.version === 1)
+    return emptyConfigDocument()
   return configDocumentSchema.parse(value)
 }
 
 export function cloneConfigDocument(config: LunaConfigDocument): StoredLunaConfig {
   return parseConfigDocument(structuredClone(config))
+}
+
+function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }

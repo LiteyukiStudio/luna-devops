@@ -2,17 +2,10 @@ import type { ConfigPort } from '../commands/types.js'
 import type { OAuthCredential, StoredLunaConfig } from '../config/schema.js'
 import type { StoreOAuthCredentialInput } from './types.js'
 import { CliCommandError } from '../commands/errors.js'
-import {
-  ensureInstance,
-  normalizeContextName,
-  normalizeServerOrigin,
-  pruneUnreferencedContextResources,
-  upsertContext,
-} from '../config/context.js'
+import { normalizeServerOrigin } from '../config/server.js'
 import { updateConfig } from '../config/store.js'
 import {
   assertIsoDate,
-  normalizeCredentialName,
   normalizeScopes,
 } from './validation.js'
 
@@ -30,16 +23,8 @@ export async function storeValidatedOAuthCredential(
     )
   }
   assertIsoDate(input.expiresAt)
-  const contextName = normalizeContextName(input.context)
 
   return updateConfig(store, (config) => {
-    const origin = normalizeServerOrigin(input.server)
-    ensureInstance(config, origin)
-    const previousContext = config.contexts[contextName]
-    const previousCredential = previousContext?.credential
-    const credentialName = input.credential
-      ? normalizeCredentialName(input.credential)
-      : reusableCredentialName(config, contextName, previousCredential)
     const credential: OAuthCredential = {
       type: 'oauth',
       accessToken,
@@ -50,37 +35,8 @@ export async function storeValidatedOAuthCredential(
       expiresAt: input.expiresAt,
       createdAt: new Date().toISOString(),
     }
-
-    config.credentials[credentialName] = credential
-    config.contexts[contextName] = upsertContext(config, {
-      name: contextName,
-      server: origin,
-      credential: credentialName,
-      project: input.project,
-    })
-    if (input.makeCurrent ?? !config.currentContext) {
-      config.currentContext = contextName
-    }
-    pruneUnreferencedContextResources(config, {
-      credential: previousCredential === credentialName ? undefined : previousCredential,
-      instance: previousContext?.instance,
-    })
+    config.server = normalizeServerOrigin(input.server)
+    config.credential = credential
+    config.project = input.project ?? null
   })
-}
-
-function reusableCredentialName(
-  config: StoredLunaConfig,
-  contextName: string,
-  previousCredential: string | undefined,
-): string {
-  if (previousCredential && config.credentials[previousCredential]?.type === 'oauth') {
-    return previousCredential
-  }
-
-  const base = normalizeCredentialName(`${contextName}-oauth`)
-  if (!Object.hasOwn(config.credentials, base))
-    return base
-  let suffix = 2
-  while (Object.hasOwn(config.credentials, `${base}-${suffix}`)) suffix += 1
-  return `${base}-${suffix}`
 }

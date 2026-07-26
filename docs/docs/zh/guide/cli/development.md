@@ -18,7 +18,7 @@ pnpm --silent --dir cli exec tsx src/entry.ts version show
 pnpm --silent --dir cli exec tsx src/entry.ts help catalog query=project limit=10 output=json interactive=false
 ```
 
-`LUNA_HOME` 默认是 `~/.luna`。开发、测试和 CI 必须使用临时目录，避免读取或覆盖真实实例上下文。
+`LUNA_HOME` 默认是 `~/.luna`。开发、测试和 CI 必须使用临时目录，避免读取或覆盖真实实例凭据。
 
 ## 目录职责
 
@@ -26,7 +26,7 @@ pnpm --silent --dir cli exec tsx src/entry.ts help catalog query=project limit=1
 | --- | --- |
 | `cli/src/commands` | 命令注册、参数解析、风险门禁和执行器 |
 | `cli/src/auth` | Access Token、本地凭据和认证状态 |
-| `cli/src/config` | 多实例 context 与默认项目空间 |
+| `cli/src/config` | 活动实例、凭据与默认项目空间 |
 | `cli/src/input` | `key=value`、JSON、文件和标准输入 |
 | `cli/src/output` | 人类输出、JSON Envelope 和脱敏 |
 | `packages/api-contract` | 从 OpenAPI 生成的环境无关契约 |
@@ -42,7 +42,7 @@ pnpm --silent --dir cli exec tsx src/entry.ts help catalog query=project limit=1
 luna <category> <tool> key=value
 ```
 
-上下文、帮助、Completion 等纯本地能力在 `cli/src/commands/local.ts` 注册。不要为已经存在的 HTTP API 再写一个旁路命令实现。
+认证、项目空间、帮助、Completion 等纯本地能力在 `cli/src/commands/local.ts` 注册。不要为已经存在的 HTTP API 再写一个旁路命令实现。
 
 修改 OpenAPI 后执行：
 
@@ -68,14 +68,14 @@ node scripts/cli/verify-skills-sync.mjs
 
 校验会拒绝不存在的具体命令、缺少 `agent=true` 的 Agent 命令，以及已知的过时能力声明。
 
-context 设置默认项目后，执行器会为必填的 `project`、`projectId` 或
+使用 `project use` 设置默认项目后，执行器会为必填的 `project`、`projectId` 或
 `projectID` 参数注入该项目的不可变 ID；命令显式传值时以显式值为准。可选项目参数不会被自动注入，避免污染 global 等跨项目请求。
 
 `api request` 只保留给人类诊断已知相对 API 路径。Agent 模式固定拒绝该命令，不提供配置或参数绕过入口。
 
 ## 当前能力边界
 
-当前源码包含 21 个本地命令和 110 个 OpenAPI 命令。没有进入机器可读目录的能力不能由 Skill 猜测或用 `api request` 冒充正式支持。
+当前源码包含 14 个本地命令、1 个协议命令和 110 个 OpenAPI 命令。没有进入机器可读目录的能力不能由 Skill 猜测或用 `api request` 冒充正式支持。
 
 以下能力仍在发布前工作中：
 

@@ -1,27 +1,25 @@
 import type {
-  LunaContext,
-  LunaInstance,
   OutputFormat,
   ProjectContextSnapshot,
 } from '../commands/types.js'
 import type { LunaCredential } from './schema.js'
 import process from 'node:process'
 import { CliCommandError } from '../commands/errors.js'
-import { normalizeServerOrigin } from './context.js'
 import {
+  DEFAULT_LUNA_SERVER,
   OUTPUT_FORMATS,
   parseConfigDocument,
 } from './schema.js'
+import { normalizeServerOrigin } from './server.js'
 
 export type ResolutionSource
   = | 'argument'
     | 'environment'
-    | 'context'
+    | 'config'
     | 'default'
     | 'none'
 
-export interface ResolveContextOptions {
-  readonly context?: string
+export interface ResolveRuntimeOptions {
   readonly server?: string
   readonly project?: string
   readonly output?: OutputFormat | ''
@@ -30,16 +28,12 @@ export interface ResolveContextOptions {
 }
 
 export interface ResolvedRuntimeContext {
-  readonly contextName?: string
-  readonly context?: LunaContext
-  readonly instance?: LunaInstance
-  readonly server?: string
+  readonly server: string
   readonly project?: ProjectContextSnapshot
   readonly credential?: LunaCredential
   readonly output?: OutputFormat | ''
   readonly language?: string
   readonly sources: {
-    readonly context: ResolutionSource
     readonly server: ResolutionSource
     readonly project: ResolutionSource
     readonly credential: ResolutionSource
@@ -50,36 +44,19 @@ export interface ResolvedRuntimeContext {
 
 export function resolveRuntimeContext(
   rawConfig: unknown,
-  options: ResolveContextOptions = {},
+  options: ResolveRuntimeOptions = {},
 ): ResolvedRuntimeContext {
   const config = parseConfigDocument(rawConfig)
   const env = options.env ?? process.env
-  const explicitContext = nonEmpty(options.context)
-  const environmentContext = nonEmpty(env.LUNA_CONTEXT)
-  const contextName = explicitContext ?? environmentContext ?? config.currentContext ?? undefined
-  const context = contextName ? config.contexts[contextName] : undefined
-  if (contextName && !context) {
-    throw new CliCommandError(
-      'context_not_found',
-      `Context "${contextName}" does not exist.`,
-      { status: 404 },
-    )
-  }
-
-  const contextInstance = context ? config.instances[context.instance] : undefined
+  const configuredServer = normalizeServerOrigin(config.server || DEFAULT_LUNA_SERVER)
   const explicitServer = nonEmpty(options.server)
   const environmentServer = nonEmpty(env.LUNA_SERVER)
   const serverOverride = explicitServer ?? environmentServer
   const server = serverOverride
     ? normalizeServerOrigin(serverOverride)
-    : contextInstance
-      ? normalizeServerOrigin(contextInstance.server)
-      : undefined
-  const sameOrigin = Boolean(
-    server
-    && contextInstance
-    && server === normalizeServerOrigin(contextInstance.server),
-  )
+    : configuredServer
+  const sameOrigin = server === configuredServer
+
   const environmentToken = nonEmpty(env.LUNA_TOKEN)
   const credential = environmentToken
     ? {
@@ -87,8 +64,8 @@ export function resolveRuntimeContext(
         token: environmentToken,
         scopes: [],
       }
-    : sameOrigin && context?.credential
-      ? config.credentials[context.credential]
+    : sameOrigin
+      ? config.credential ?? undefined
       : undefined
 
   const explicitProject = nonEmpty(options.project)
@@ -97,67 +74,57 @@ export function resolveRuntimeContext(
   const project = projectOverride
     ? { id: projectOverride }
     : sameOrigin
-      ? context?.project ?? undefined
+      ? config.project ?? undefined
       : undefined
 
   const explicitOutput = options.output === '' ? undefined : options.output
   const environmentOutput = outputValue(env.LUNA_OUTPUT)
-  const contextOutput = context?.output || undefined
-  const output = explicitOutput ?? environmentOutput ?? contextOutput
+  const configuredOutput = config.output || undefined
+  const output = explicitOutput ?? environmentOutput ?? configuredOutput
   const explicitLanguage = nonEmpty(options.language)
   const environmentLanguage = nonEmpty(env.LUNA_LANG)
-  const contextLanguage = nonEmpty(context?.language)
-  const language = explicitLanguage ?? environmentLanguage ?? contextLanguage
+  const configuredLanguage = nonEmpty(config.language)
+  const language = explicitLanguage ?? environmentLanguage ?? configuredLanguage
 
   return {
-    contextName,
-    context,
-    instance: sameOrigin ? contextInstance : server ? { server } : undefined,
     server,
     project,
     credential,
     output,
     language,
     sources: {
-      context: explicitContext
-        ? 'argument'
-        : environmentContext
-          ? 'environment'
-          : contextName
-            ? 'context'
-            : 'none',
       server: explicitServer
         ? 'argument'
         : environmentServer
           ? 'environment'
-          : contextInstance
-            ? 'context'
-            : 'none',
+          : config.server
+            ? 'config'
+            : 'default',
       project: explicitProject
         ? 'argument'
         : environmentProject
           ? 'environment'
           : project
-            ? 'context'
+            ? 'config'
             : 'none',
       credential: environmentToken
         ? 'environment'
         : credential
-          ? 'context'
+          ? 'config'
           : 'none',
       output: explicitOutput
         ? 'argument'
         : environmentOutput
           ? 'environment'
-          : contextOutput
-            ? 'context'
+          : configuredOutput
+            ? 'config'
             : 'default',
       language: explicitLanguage
         ? 'argument'
         : environmentLanguage
           ? 'environment'
-          : contextLanguage
-            ? 'context'
+          : configuredLanguage
+            ? 'config'
             : 'default',
     },
   }

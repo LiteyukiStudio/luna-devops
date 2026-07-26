@@ -10,11 +10,12 @@ import {
 } from '../../src/commands/index.js'
 
 const emptyConfig: LunaConfigDocument = {
-  version: 1,
-  currentContext: null,
-  instances: {},
-  credentials: {},
-  contexts: {},
+  version: 2,
+  server: 'https://devops.liteyuki.org',
+  credential: null,
+  project: null,
+  language: '',
+  output: '',
 }
 
 describe('commander command execution', () => {
@@ -203,7 +204,7 @@ describe('commander command execution', () => {
     expect((captures.errors[0] as { code?: string }).code).toBe('project_not_supported')
   })
 
-  it('uses the current context for required project path parameters', async () => {
+  it('uses the configured default project for required project path parameters', async () => {
     const registry = new CommandRegistry()
     registry.register({
       category: 'application',
@@ -218,13 +219,7 @@ describe('commander command execution', () => {
     const captures = capturePorts()
     captures.ports.config.read = async () => ({
       ...emptyConfig,
-      currentContext: 'local',
-      contexts: {
-        local: {
-          instance: 'local',
-          project: { id: 'prj_context' },
-        },
-      },
+      project: { id: 'prj_configured' },
     })
     const program = createCliProgram({ registry, ports: captures.ports })
 
@@ -235,7 +230,7 @@ describe('commander command execution', () => {
     )
 
     expect(result.exitCode).toBe(0)
-    expect(captures.successes[0]?.result.data).toEqual({ projectId: 'prj_context' })
+    expect(captures.successes[0]?.result.data).toEqual({ projectId: 'prj_configured' })
   })
 
   it('accepts an explicit command project parameter for agent mutations', async () => {
@@ -279,7 +274,7 @@ describe('commander command execution', () => {
     })
   })
 
-  it('rejects an implicit context project for agent mutations', async () => {
+  it('rejects an implicit configured project for agent mutations', async () => {
     const registry = new CommandRegistry()
     registry.register({
       category: 'application',
@@ -300,13 +295,7 @@ describe('commander command execution', () => {
     const captures = capturePorts()
     captures.ports.config.read = async () => ({
       ...emptyConfig,
-      currentContext: 'local',
-      contexts: {
-        local: {
-          instance: 'local',
-          project: { id: 'prj_context' },
-        },
-      },
+      project: { id: 'prj_configured' },
     })
     const program = createCliProgram({ registry, ports: captures.ports })
 
@@ -321,7 +310,7 @@ describe('commander command execution', () => {
       .toBe('explicit_project_required')
   })
 
-  it('reports the effective command project instead of the default context project', () => {
+  it('reports the effective command project instead of the configured default project', () => {
     const streams = memoryOutputStreams()
     const output = new CommandOutput({ streams: streams.streams, version: 'test' })
     const metadata = {
@@ -338,7 +327,7 @@ describe('commander command execution', () => {
         meta: { projectId: 'prj_explicit' },
       },
       {
-        project: 'prj_context',
+        project: 'prj_configured',
         output: 'json',
         color: false,
         interactive: false,
@@ -448,8 +437,8 @@ describe('commander command execution', () => {
   it('uses the shared prompt for high-risk local commands', async () => {
     const registry = new CommandRegistry()
     registry.register({
-      category: 'context',
-      tool: 'delete',
+      category: 'retention',
+      tool: 'purge-local-cache',
       source: 'local',
       risk: 'high',
     }, async () => ({ data: { deleted: true } }))
@@ -472,7 +461,7 @@ describe('commander command execution', () => {
 
     const result = await runCli(
       program,
-      ['node', 'luna', 'context', 'delete'],
+      ['node', 'luna', 'retention', 'purge-local-cache'],
       captures.ports.output,
     )
 

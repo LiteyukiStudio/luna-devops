@@ -16,13 +16,16 @@ luna help catalog query=project limit=5 output=json interactive=false
 
 ## 当前开发状态
 
-CLI 目前处于预发布阶段。源码已经可以运行和验证，当前命令目录共有 131 条命令，其中 21 条由 CLI 本地实现，110 条由 OpenAPI 契约生成。源码已经包含：
+CLI 目前处于预发布阶段。源码已经可以运行和验证，当前命令目录共有 125 条命令，其中 14 条由 CLI 本地实现，1 条由 CLI 协议层实现，110 条由 OpenAPI 契约生成。源码已经包含：
 
-- 多实例、上下文和默认项目空间的配置模型；
+- 单一活动实例、账号凭据和默认项目空间的配置模型；
 - Access Token 登录、校验和本地凭据存储基础能力；
 - `key=value`、JSON、文件和标准输入参数解析；
 - 人类可读输出与版本化 JSON Envelope；
-- 本地帮助、上下文、项目空间和 Completion 命令注册；
+- 本地帮助、项目空间和 Completion 命令注册；
+- `login`、`logout`、`whoami`、`doctor` 人类友好顶层短命令；
+- 检查当前登录、认证、服务端版本、OpenAPI 契约和能力开关的 `health doctor`；
+- 每个 OpenAPI 业务命令执行前自动校验 API 代际、最低 CLI 版本和 OpenAPI 摘要；
 - 根据 OpenAPI 契约注册全部 110 个已登记操作；
 - npm 包与 Bun 独立二进制的统一入口、CI、打包、全局安装 smoke 和发布门禁。
 
@@ -34,15 +37,24 @@ CLI 不依赖 Skills 也能完成命令发现和基本操作：
 
 ```bash
 luna --help
+luna login token=@-
+luna login server=https://devops.example.com token=@-
+luna whoami
+luna doctor
+luna logout
 luna project --help
 luna project get-projects --help
 ```
+
+顶层短命令与 `auth login`、`auth status`、`health doctor`、`auth logout`
+共用处理器，不维护第二套行为。它们只用于人类交互；脚本和 Agent 使用稳定的两级
+canonical 命令，`agent=true` 会拒绝顶层别名。
 
 帮助会逐级展示分类、工具、权限、风险、参数、输入来源和示例。语言优先级为：
 
 1. 命令行 `--lang`；
 2. 环境变量 `LUNA_LANG`；
-3. 当前 context 的 `language`；
+3. 本地配置的 `language`；
 4. `LC_ALL`、`LC_MESSAGES`、`LANG` 和运行时语言；
 5. 英文回退。
 
@@ -61,10 +73,16 @@ luna --lang zh-CN project get-projects --help
 - 中风险操作在交互终端中使用统一确认；非交互模式必须显式传入 `yes=true`。
 - 高风险 API 在服务端执行计划协议完成前直接拒绝执行，`yes=true` 也不能绕过。
 - CLI 和平台使用独立版本。兼容性由服务端能力协商决定，不只比较版本号。
-- `help catalog` 中存在命令只代表当前 CLI 已登记该命令；服务端能力协商完成前，`serverSupported` 可能为 `null`。
+- 普通 OpenAPI 业务命令会在首次访问实例时读取 `/api/v1/meta`，校验 API
+  代际、最低 CLI 版本和 OpenAPI digest；同一进程内会缓存通过结果。
+- `luna health doctor output=json` 会显式展示当前登录、认证、兼容性和服务端功能开关，适合主动诊断。
+- `help catalog` 中存在命令只代表当前 CLI 已登记该命令；`serverSupported`
+  仍可能为 `null`，具体请求是否兼容以执行前协商结果为准。
 - Agent 必须为每条命令传入 `agent=true`。该模式会固定 JSON 输出、关闭交互与颜色，并对分页、轮询和输出体积应用安全限制。
-- context 配置默认项目后，项目级命令可省略必填的
+- 使用 `luna project use project=<id>` 配置默认项目后，项目级命令可省略必填的
   `project`、`projectId` 或 `projectID`；CLI 会注入该不可变项目 ID，但不会因此扩大权限。
+- CLI 只保存一个活动登录。`luna login` 未指定 `server` 时固定使用
+  `https://devops.liteyuki.org`；显式登录其他地址或账号会覆盖现有凭据和默认项目空间。
 - `api request` 只供人类诊断已知相对 API 路径，并在 Agent 模式下固定禁用；它不能拿来伪装平台尚未进入 OpenAPI 或尚未完成专用传输的业务能力。
 
 ## Agent Skill
@@ -93,7 +111,7 @@ node scripts/cli/verify-skills-sync.mjs
 稳定版发布前还需要完成：
 
 1. 补齐尚未进入 OpenAPI 的公开后端路由，并完成完整命令覆盖率测试。
-2. 接入服务端能力协商、Authorization Code + PKCE、Device Code 和 Bearer Step-up MFA。
+2. 实现 Authorization Code + PKCE、Device Code 和 Bearer Step-up MFA 所需的服务端协议。
 3. 完成 SSE、WebSocket、下载和服务端执行计划协议。
 4. 在 npm 配置 Trusted Publisher，并保护 GitHub `npm` Environment。
 5. 接入 Apple Developer ID 和公证后，再把 macOS 二进制加入稳定版本；Windows 继续使用 npm/pnpm 安装。

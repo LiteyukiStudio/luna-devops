@@ -20,6 +20,7 @@ import {
   localizeHelp,
   rootHelpText,
 } from './human-help.js'
+import { ROOT_COMMAND_SHORTCUTS } from './shortcuts.js'
 
 export interface CliProgramOptions {
   readonly registry: CommandRegistry
@@ -69,6 +70,7 @@ export function createCliProgram(options: CliProgramOptions): Command {
 
   addGlobalOptions(program, options.ports)
   program.addHelpText('after', () => rootHelpText(options.registry, options.ports))
+  registerRootShortcuts(program, options.registry, options.ports)
   for (const category of options.registry.categories()) {
     const categoryCommand = localizeHelp(program
       .command(category)
@@ -124,6 +126,62 @@ export function createCliProgram(options: CliProgramOptions): Command {
     }
   }
   return program
+}
+
+function registerRootShortcuts(
+  program: Command,
+  registry: CommandRegistry,
+  ports: RuntimePorts,
+): void {
+  for (const shortcut of ROOT_COMMAND_SHORTCUTS) {
+    const registered = registry.get(shortcut.target)
+    if (!registered)
+      continue
+
+    localizeHelp(program
+      .command(shortcut.name)
+      .description(translate(
+        ports,
+        shortcut.descriptionKey,
+        shortcut.description,
+      ))
+      .argument(
+        '[arguments...]',
+        translate(
+          ports,
+          'help.businessArguments',
+          'Business parameters in key=value form',
+        ),
+      )
+      .addHelpCommand(false)
+      .allowUnknownOption(false)
+      .action(async (
+        tokens: string[] | undefined,
+        _localOptions: unknown,
+        command: Command,
+      ) => {
+        await executeRegistered(
+          registered,
+          tokens ?? [],
+          explicitCommanderOptions(command),
+          ports,
+          shortcut.name,
+        )
+      }), ports)
+      .helpOption(
+        '-h, --help',
+        translate(ports, 'help.options.help', 'Show command help'),
+      )
+      .addHelpText(
+        'after',
+        () => [
+          '',
+          `${translate(ports, 'help.canonicalCommand', 'Canonical command')}: ${shortcut.target}`,
+          '',
+          commandHelpText(registered.metadata, ports),
+        ].join('\n'),
+      )
+  }
 }
 
 export async function runCli(
@@ -211,15 +269,13 @@ async function executeRegistered(
 ): Promise<void> {
   const parsed = splitGlobalTokens(tokens)
   const config = await ports.config.read()
-  const selectedContextName = parsed.canonicalGlobals.context
-    ?? flagOptions.context
-    ?? ports.env?.LUNA_CONTEXT
-    ?? config.currentContext
-    ?? undefined
-  const context = selectedContextName ? config.contexts[selectedContextName] : undefined
   const globals = resolveGlobalOptions(parsed.canonicalGlobals, flagOptions, {
     env: ports.env ?? process.env,
-    context,
+    configured: {
+      output: config.output,
+      project: config.project,
+      language: config.language,
+    },
     isTTY: ports.isTTY ?? Boolean(process.stdout.isTTY),
     streaming: registered.metadata.streaming ?? false,
   })
@@ -351,7 +407,7 @@ function enforceExecutionScope(
   ) {
     throw new CliCommandError(
       'project_not_supported',
-      `Command "${requestedPath}" does not accept a project context.`,
+      `Command "${requestedPath}" does not accept a project selection.`,
       { status: 400, exitCode: 2, details: { command: requestedPath } },
     )
   }
@@ -477,7 +533,6 @@ function normalizeResult(value: unknown, schemaVersion?: string): CommandResult 
 
 function addGlobalOptions(program: Command, ports: RuntimePorts): void {
   program
-    .option('--context <name>', translate(ports, 'help.options.context', 'Select a saved context'))
     .option('--server <url>', translate(ports, 'help.options.server', 'Override the Luna server origin'))
     .option('--project <id>', translate(ports, 'help.options.project', 'Select a project for this command'))
     .addOption(new Option('-o, --output <format>', translate(ports, 'help.options.output', 'Output format'))

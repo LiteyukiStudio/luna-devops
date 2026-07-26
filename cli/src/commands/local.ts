@@ -4,10 +4,7 @@ import type {
   CommandMetadata,
   CommandParameter,
   CommandResult,
-  LunaConfigDocument,
-  LunaContext,
-  LunaInstance,
-  OutputFormat,
+  LunaApiMeta,
 } from './types.js'
 import process from 'node:process'
 import {
@@ -16,9 +13,15 @@ import {
   logoutLocal,
   storeValidatedAccessToken,
 } from '../auth/index.js'
+import { resolveRuntimeContext } from '../config/resolve.js'
+import { DEFAULT_LUNA_SERVER } from '../config/schema.js'
 import { CLI_VERSION } from '../version.js'
+import {
+  isVersionAtLeast,
+  SUPPORTED_SERVER_API_VERSIONS,
+} from './compatibility.js'
 import { generateCompletion } from './completion.js'
-import { CliCommandError } from './errors.js'
+import { CliCommandError, toCliCommandError } from './errors.js'
 import { catalogResult, commandHelpResult } from './help.js'
 
 const stringSchema = { type: 'string' } as const
@@ -30,14 +33,14 @@ export function registerLocalCommands(registry: CommandRegistry): void {
   registerHelp(registry)
   registerCompletion(registry)
   registerAuth(registry)
-  registerContext(registry)
-  registerProjectContext(registry)
+  registerProjectSelection(registry)
+  registerDoctor(registry)
   registerApiDiagnostic(registry)
 }
 
 function registerAuth(registry: CommandRegistry): void {
   registry.register(localMetadata('auth', 'login', {
-    summary: 'Authenticate a Luna context with an access token.',
+    summary: 'Authenticate to one Luna DevOps server with an access token.',
     schemaVersion: 'auth.login/v1',
     risk: 'medium',
     parameters: [
@@ -54,10 +57,27 @@ function registerAuth(registry: CommandRegistry): void {
     ],
   }), async (invocation, ports) => {
     const mode = optionalString(invocation.params.mode) ?? 'access-token'
+    const server = invocation.globals.server ?? DEFAULT_LUNA_SERVER
     if (mode === 'device-code') {
+      if (ports.api.getMeta) {
+        const meta = await ports.api.getMeta(server, invocation.globals)
+        if (!meta.features.deviceCode) {
+          throw new CliCommandError(
+            'oauth_server_capability_unavailable',
+            'The selected Luna server does not support device-code login.',
+            {
+              status: 501,
+              details: {
+                server,
+                feature: 'deviceCode',
+                fallback: 'access-token',
+              },
+            },
+          )
+        }
+      }
       return beginOAuthLogin({
-        server: invocation.globals.server ?? '',
-        context: invocation.globals.context ?? 'default',
+        server,
         scopes: stringList(invocation.params.scope),
         mode: 'device_code',
       })
@@ -69,16 +89,6 @@ function registerAuth(registry: CommandRegistry): void {
       )
     }
 
-    const config = await ports.config.read()
-    const selected = selectedContext(config, invocation.globals.context)
-    const context = invocation.globals.context ?? selected.name ?? 'default'
-    const server = invocation.globals.server ?? selected.instance?.server
-    if (!server) {
-      throw invalidArguments(
-        'auth.login requires server=<https://luna.example.com> when no context is configured.',
-        'server',
-      )
-    }
     const token = optionalString(invocation.params.token)?.trim()
       ?? optionalString(ports.env?.LUNA_TOKEN)
         ?.trim()
@@ -99,7 +109,6 @@ function registerAuth(registry: CommandRegistry): void {
     const user = await ports.api.validateAccessToken(server, token, invocation.globals)
     const userId = optionalString(user.id)
     await storeValidatedAccessToken(ports.config, {
-      context,
       server,
       token,
       scopes: stringList(invocation.params.scope),
@@ -109,12 +118,10 @@ function registerAuth(registry: CommandRegistry): void {
             ...user,
           }
         : undefined,
-      makeCurrent: true,
     })
     return {
       schemaVersion: 'auth.login/v1',
       data: {
-        context,
         server,
         authenticated: true,
         user,
@@ -125,30 +132,201 @@ function registerAuth(registry: CommandRegistry): void {
   registry.register(localMetadata('auth', 'status', {
     summary: 'Show authentication status without exposing credentials.',
     schemaVersion: 'auth.status/v1',
-    parameters: [parameter('all', { schema: booleanSchema })],
-    examples: ['luna auth status', 'luna auth status all=true'],
+    examples: ['luna auth status'],
   }), async (invocation, ports) => ({
     schemaVersion: 'auth.status/v1',
     data: await getAuthStatus(ports.config, {
-      context: invocation.globals.context,
-      all: invocation.params.all === true,
       env: ports.env,
     }),
   }))
 
   registry.register(localMetadata('auth', 'logout', {
-    summary: 'Remove credentials from one or all local Luna contexts.',
+    summary: 'Remove the active Luna credential.',
     schemaVersion: 'auth.logout/v1',
     risk: 'medium',
-    parameters: [parameter('all', { schema: booleanSchema })],
-    examples: ['luna auth logout', 'luna auth logout all=true'],
+    examples: ['luna auth logout'],
   }), async (invocation, ports) => ({
     schemaVersion: 'auth.logout/v1',
-    data: await logoutLocal(ports.config, {
-      context: invocation.globals.context,
-      all: invocation.params.all === true,
-    }),
+    data: await logoutLocal(ports.config),
   }))
+}
+
+function registerDoctor(registry: CommandRegistry): void {
+  registry.register({
+    category: 'health',
+    tool: 'doctor',
+    source: 'protocol',
+    consumedOperations: ['getApiMeta'],
+    summary: 'Check local CLI, authentication, and server compatibility.',
+    schemaVersion: 'health.doctor/v1',
+    risk: 'low',
+    transport: 'http',
+    projectContext: 'none',
+    examples: [
+      'luna doctor',
+      'luna health doctor output=json',
+      'luna health doctor server=https://luna.example.com',
+    ],
+  }, async (invocation, ports) => {
+    const checks: DoctorCheck[] = []
+    const config = await ports.config.read()
+    const runtime = resolveRuntimeContext(config, {
+      server: invocation.globals.server,
+      project: invocation.globals.project,
+      output: invocation.globals.output,
+      language: invocation.globals.lang,
+      env: ports.env,
+    })
+    const server = runtime.server
+    const auth = await getAuthStatus(ports.config, {
+      env: ports.env,
+    })
+    const authEntry = auth
+
+    checks.push(doctorCheck('server-config', 'ok', 'server_configured', { server }))
+    checks.push(authEntry?.authenticated
+      ? doctorCheck('authentication', 'ok', 'authenticated', {
+          credentialType: authEntry.credential?.type,
+        })
+      : doctorCheck('authentication', 'warning', 'not_authenticated'))
+
+    let meta: LunaApiMeta | null = null
+    if (server && ports.api.getMeta) {
+      try {
+        meta = await ports.api.getMeta(server, invocation.globals)
+        checks.push(doctorCheck('server', 'ok', 'server_reachable', {
+          serverVersion: meta.serverVersion,
+          apiVersion: meta.apiVersion,
+        }))
+      }
+      catch (error) {
+        const normalized = toCliCommandError(error)
+        checks.push(doctorCheck('server', 'error', normalized.code, {
+          status: normalized.status,
+          message: normalized.message,
+        }))
+      }
+    }
+    else if (server) {
+      checks.push(doctorCheck('server', 'error', 'server_meta_unsupported'))
+    }
+
+    const localVersion = ports.version ?? CLI_VERSION
+    if (meta) {
+      checks.push(SUPPORTED_SERVER_API_VERSIONS.includes(meta.apiVersion)
+        ? doctorCheck('api-version', 'ok', 'server_api_version_supported', {
+            server: meta.apiVersion,
+          })
+        : doctorCheck('api-version', 'error', 'server_api_version_unsupported', {
+            server: meta.apiVersion,
+            supported: SUPPORTED_SERVER_API_VERSIONS,
+          }))
+
+      const compatible = isVersionAtLeast(localVersion, meta.minimumCliVersion)
+      checks.push(compatible === true
+        ? doctorCheck('cli-version', 'ok', 'cli_version_supported', {
+            current: localVersion,
+            minimum: meta.minimumCliVersion,
+          })
+        : compatible === false
+          ? doctorCheck('cli-version', 'error', 'cli_version_too_old', {
+              current: localVersion,
+              minimum: meta.minimumCliVersion,
+            })
+          : doctorCheck('cli-version', 'warning', 'cli_version_unparseable', {
+              current: localVersion,
+              minimum: meta.minimumCliVersion,
+            }))
+
+      const localDigest = registry.catalogMetadata.openapiDigest
+      if (localDigest === 'unavailable') {
+        checks.push(doctorCheck('openapi-contract', 'warning', 'local_contract_unavailable'))
+      }
+      else if (localDigest === meta.openapiDigest) {
+        checks.push(doctorCheck('openapi-contract', 'ok', 'openapi_digest_matches'))
+      }
+      else {
+        checks.push(doctorCheck('openapi-contract', 'warning', 'openapi_digest_mismatch', {
+          local: localDigest,
+          server: meta.openapiDigest,
+        }))
+      }
+    }
+
+    const unsupported = meta
+      ? Object.entries(meta.features)
+          .filter(([, supported]) => !supported)
+          .map(([feature]) => feature)
+          .sort()
+      : []
+    if (unsupported.length > 0) {
+      checks.push(doctorCheck('capabilities', 'warning', 'server_features_unavailable', {
+        unsupported,
+      }))
+    }
+    else if (meta) {
+      checks.push(doctorCheck('capabilities', 'ok', 'server_features_available'))
+    }
+
+    return {
+      schemaVersion: 'health.doctor/v1',
+      data: {
+        status: doctorStatus(checks),
+        local: {
+          version: localVersion,
+          distribution:
+            ports.distribution
+            ?? (typeof process.versions.bun === 'string' ? 'binary' : 'source'),
+          runtime: typeof process.versions.bun === 'string'
+            ? `bun-${process.versions.bun}`
+            : `node-${process.versions.node}`,
+          catalogVersion: registry.catalogMetadata.catalogVersion,
+          openapiDigest: registry.catalogMetadata.openapiDigest,
+          schemaDigest: registry.catalogMetadata.schemaDigest,
+        },
+        login: {
+          server: server ?? null,
+          authenticated: authEntry?.authenticated ?? false,
+          authType: authEntry?.credential?.type ?? null,
+          project: runtime.project ?? null,
+        },
+        server: meta,
+        unsupported,
+        checks,
+      },
+    }
+  })
+}
+
+type DoctorCheckStatus = 'ok' | 'warning' | 'error'
+
+interface DoctorCheck {
+  readonly name: string
+  readonly status: DoctorCheckStatus
+  readonly code: string
+  readonly details?: Readonly<Record<string, unknown>>
+}
+
+function doctorCheck(
+  name: string,
+  status: DoctorCheckStatus,
+  code: string,
+  details?: Readonly<Record<string, unknown>>,
+): DoctorCheck {
+  return {
+    name,
+    status,
+    code,
+    ...(details ? { details } : {}),
+  }
+}
+
+function doctorStatus(checks: readonly DoctorCheck[]): DoctorCheckStatus {
+  if (checks.some(check => check.status === 'error'))
+    return 'error'
+  if (checks.some(check => check.status === 'warning'))
+    return 'warning'
+  return 'ok'
 }
 
 function registerVersion(registry: CommandRegistry): void {
@@ -214,243 +392,31 @@ function registerCompletion(registry: CommandRegistry): void {
   }
 }
 
-function registerContext(registry: CommandRegistry): void {
-  registry.register(localMetadata('context', 'list', {
-    summary: 'List configured Luna contexts.',
-    schemaVersion: 'context.list/v1',
-    examples: ['luna context list'],
-  }), async (_invocation, ports) => {
-    const config = await ports.config.read()
-    return {
-      schemaVersion: 'context.list/v1',
-      data: Object.entries(config.contexts)
-        .sort(([left], [right]) => left.localeCompare(right))
-        .map(([name, context]) => contextView(name, context, config, config.currentContext === name)),
-    }
-  })
-
-  registry.register(localMetadata('context', 'current', {
-    summary: 'Show the current Luna context.',
-    schemaVersion: 'context.current/v1',
-    examples: ['luna context current'],
-  }), async (_invocation, ports) => {
-    const config = await ports.config.read()
-    if (!config.currentContext) {
-      return { schemaVersion: 'context.current/v1', data: null }
-    }
-    const context = config.contexts[config.currentContext]
-    if (!context) {
-      throw new CliCommandError(
-        'context_invalid',
-        `Current context "${config.currentContext}" does not exist.`,
-        { status: 409, details: { context: config.currentContext } },
-      )
-    }
-    return {
-      schemaVersion: 'context.current/v1',
-      data: contextView(config.currentContext, context, config, true),
-    }
-  })
-
-  registry.register(localMetadata('context', 'use', {
-    summary: 'Switch the current Luna context.',
-    schemaVersion: 'context.use/v1',
-    parameters: [parameter('name', { required: true })],
-    examples: ['luna context use name=production'],
-  }), async (invocation, ports) => {
-    const name = requiredString(invocation.params.name, 'name')
-    const config = await ports.config.read()
-    if (!config.contexts[name]) {
-      throw new CliCommandError('context_not_found', `Context "${name}" was not found.`, {
-        status: 404,
-        details: { name },
-      })
-    }
-    await ports.config.write({ ...config, currentContext: name })
-    return {
-      schemaVersion: 'context.use/v1',
-      data: contextView(name, config.contexts[name]!, config, true),
-    }
-  })
-
-  registry.register(localMetadata('context', 'set', {
-    summary: 'Create or update a Luna context.',
-    schemaVersion: 'context.set/v1',
-    projectContext: 'optional',
-    parameters: [
-      parameter('name', { required: true }),
-      parameter('credential'),
-      parameter('projectName'),
-      parameter('projectIdentifier'),
-      parameter('language'),
-    ],
-    examples: [
-      'luna context set name=local server=https://luna.example.com language=zh-CN',
-      'luna context set name=production server=https://luna.example.com project=prj_example output=json',
-    ],
-  }), async (invocation, ports) => {
-    const name = requiredString(invocation.params.name, 'name')
-    const config = await ports.config.read()
-    const existing = config.contexts[name]
-    const requestedServer = invocation.explicitGlobalKeys.has('server')
-      ? optionalString(invocation.globals.server)
-      : undefined
-    const existingInstance = existing ? config.instances[existing.instance] : undefined
-    const server = requestedServer
-      ? normalizeServer(requestedServer)
-      : existingInstance?.server
-    if (!server) {
-      throw invalidArguments('server is required when creating a context.', 'server')
-    }
-    const instance = findInstanceName(config.instances, server) ?? uniqueInstanceName(name, config.instances)
-    const serverChanged = Boolean(existingInstance && existingInstance.server !== server)
-    const projectId = invocation.explicitGlobalKeys.has('project')
-      ? optionalString(invocation.globals.project)
-      : undefined
-    const project = projectId
-      ? {
-          id: projectId,
-          name: optionalString(invocation.params.projectName),
-          identifier: optionalString(invocation.params.projectIdentifier),
-        }
-      : serverChanged
-        ? null
-        : existing?.project
-    const output = invocation.explicitGlobalKeys.has('output')
-      ? outputFormat(invocation.canonicalGlobalValues.output)
-      : undefined
-    const context: LunaContext = {
-      ...existing,
-      instance,
-      credential: serverChanged
-        ? undefined
-        : optionalString(invocation.params.credential) ?? existing?.credential,
-      project,
-      output: output ?? existing?.output,
-      language: optionalString(invocation.params.language) ?? existing?.language,
-    }
-    const next = {
-      ...config,
-      currentContext: config.currentContext ?? name,
-      instances: {
-        ...config.instances,
-        [instance]: { ...(config.instances[instance] ?? {}), server },
-      },
-      contexts: { ...config.contexts, [name]: context },
-    }
-    await ports.config.write(next)
-    return {
-      schemaVersion: 'context.set/v1',
-      data: contextView(name, context, next, next.currentContext === name),
-    }
-  })
-
-  registry.register(localMetadata('context', 'rename', {
-    summary: 'Rename a Luna context.',
-    schemaVersion: 'context.rename/v1',
-    parameters: [
-      parameter('name', { required: true }),
-      parameter('newName', { required: true }),
-    ],
-    examples: ['luna context rename name=old newName=production'],
-  }), async (invocation, ports) => {
-    const name = requiredString(invocation.params.name, 'name')
-    const newName = requiredString(invocation.params.newName, 'newName')
-    const config = await ports.config.read()
-    const context = config.contexts[name]
-    if (!context)
-      throw notFound(name)
-    if (config.contexts[newName]) {
-      throw new CliCommandError('context_exists', `Context "${newName}" already exists.`, {
-        status: 409,
-        details: { newName },
-      })
-    }
-    const contexts = { ...config.contexts }
-    delete contexts[name]
-    contexts[newName] = context
-    const next = {
-      ...config,
-      currentContext: config.currentContext === name ? newName : config.currentContext,
-      contexts,
-    }
-    await ports.config.write(next)
-    return {
-      schemaVersion: 'context.rename/v1',
-      data: contextView(newName, context, next, next.currentContext === newName),
-    }
-  })
-
-  registry.register(localMetadata('context', 'delete', {
-    summary: 'Delete a Luna context.',
-    schemaVersion: 'context.delete/v1',
-    risk: 'high',
-    parameters: [parameter('name', { required: true })],
-    examples: ['luna context delete name=staging --yes'],
-  }), async (invocation, ports) => {
-    const name = requiredString(invocation.params.name, 'name')
-    const config = await ports.config.read()
-    if (!config.contexts[name])
-      throw notFound(name)
-    if (config.currentContext === name && !invocation.globals.yes) {
-      throw new CliCommandError(
-        'confirmation_required',
-        'Deleting the current context requires yes=true or --yes.',
-        { status: 409, details: { name } },
-      )
-    }
-    const contexts = { ...config.contexts }
-    delete contexts[name]
-    await ports.config.write({
-      ...config,
-      currentContext: config.currentContext === name ? null : config.currentContext,
-      contexts,
-    })
-    return { schemaVersion: 'context.delete/v1', data: { name, deleted: true } }
-  })
-
-  registry.register(localMetadata('context', 'view', {
-    summary: 'Show the redacted Luna configuration.',
-    schemaVersion: 'context.view/v1',
-    examples: ['luna context view'],
-  }), async (_invocation, ports) => ({
-    schemaVersion: 'context.view/v1',
-    data: redactConfig(await ports.config.read()),
-  }))
-}
-
-function registerProjectContext(registry: CommandRegistry): void {
+function registerProjectSelection(registry: CommandRegistry): void {
   registry.register(localMetadata('project', 'current', {
-    summary: 'Show the project selected by the current context.',
+    summary: 'Show the active default project.',
     schemaVersion: 'project.current/v1',
     projectContext: 'optional',
     examples: ['luna project current'],
   }), async (invocation, ports) => {
     const config = await ports.config.read()
-    const selected = selectedContext(config, invocation.globals.context)
+    const runtime = resolveRuntimeContext(config, {
+      server: invocation.globals.server,
+      project: invocation.globals.project,
+      env: ports.env,
+    })
     return {
       schemaVersion: 'project.current/v1',
       data: {
-        context: selected.name,
-        server: selected.instance?.server ?? invocation.globals.server ?? null,
-        project: invocation.explicitGlobalKeys.has('project')
-          ? invocation.globals.project
-            ? { id: invocation.globals.project }
-            : null
-          : selected.context?.project ?? null,
-        source: invocation.explicitGlobalKeys.has('project')
-          ? 'argument'
-          : ports.env?.LUNA_PROJECT
-            ? 'environment'
-            : selected.context?.project
-              ? 'context'
-              : 'none',
+        server: runtime.server,
+        project: runtime.project ?? null,
+        source: runtime.sources.project,
       },
     }
   })
 
   registry.register(localMetadata('project', 'use', {
-    summary: 'Set the current context project after server validation.',
+    summary: 'Set the active default project after server validation.',
     schemaVersion: 'project.use/v1',
     projectContext: 'optional',
     examples: ['luna project use project=prj_example'],
@@ -466,43 +432,20 @@ function registerProjectContext(registry: CommandRegistry): void {
         { status: 501 },
       )
     }
-    const config = await ports.config.read()
-    const selected = selectedContext(config, invocation.globals.context)
-    if (!selected.name || !selected.context) {
-      throw new CliCommandError('context_required', 'A current context is required.', {
-        status: 400,
-        exitCode: 2,
-      })
-    }
     const project = await ports.api.resolveProject(value, invocation.globals)
-    const context = { ...selected.context, project }
-    const next = {
-      ...config,
-      contexts: { ...config.contexts, [selected.name]: context },
-    }
-    await ports.config.write(next)
+    const config = await ports.config.read()
+    await ports.config.write({ ...config, project: { ...project } })
     return { schemaVersion: 'project.use/v1', data: project }
   })
 
   registry.register(localMetadata('project', 'unset', {
-    summary: 'Clear the project selected by the current context.',
+    summary: 'Clear the active default project.',
     schemaVersion: 'project.unset/v1',
     examples: ['luna project unset'],
-  }), async (invocation, ports) => {
+  }), async (_invocation, ports) => {
     const config = await ports.config.read()
-    const selected = selectedContext(config, invocation.globals.context)
-    if (!selected.name || !selected.context) {
-      throw new CliCommandError('context_required', 'A current context is required.', {
-        status: 400,
-        exitCode: 2,
-      })
-    }
-    const context = { ...selected.context, project: null }
-    await ports.config.write({
-      ...config,
-      contexts: { ...config.contexts, [selected.name]: context },
-    })
-    return { schemaVersion: 'project.unset/v1', data: { context: selected.name, project: null } }
+    await ports.config.write({ ...config, project: null })
+    return { schemaVersion: 'project.unset/v1', data: { project: null } }
   })
 }
 
@@ -568,135 +511,6 @@ function parameter(
   return { name, schema: stringSchema, valueSources: ['inline'], ...options }
 }
 
-function contextView(
-  name: string,
-  context: LunaContext,
-  config: LunaConfigDocument,
-  current: boolean,
-): Readonly<Record<string, unknown>> {
-  const instance = config.instances[context.instance]
-  const credential = context.credential ? config.credentials[context.credential] : undefined
-  return {
-    name,
-    current,
-    instance: context.instance,
-    server: instance?.server ?? null,
-    credential: context.credential ?? null,
-    authType: optionalString(credential?.type) ?? null,
-    userId: optionalString(credential?.userId) ?? null,
-    expiresAt: optionalString(credential?.expiresAt) ?? null,
-    scopes: Array.isArray(credential?.scopes) ? credential.scopes : [],
-    project: context.project ?? null,
-    language: context.language ?? null,
-    output: context.output || null,
-  }
-}
-
-function selectedContext(config: LunaConfigDocument, override?: string): {
-  name?: string
-  context?: LunaContext
-  instance?: LunaInstance
-} {
-  const name = override ?? config.currentContext ?? undefined
-  const context = name ? config.contexts[name] : undefined
-  return {
-    name,
-    context,
-    instance: context ? config.instances[context.instance] : undefined,
-  }
-}
-
-function findInstanceName(
-  instances: Readonly<Record<string, LunaInstance>>,
-  server: string,
-): string | undefined {
-  return Object.entries(instances).find(([, instance]) => instance.server === server)?.[0]
-}
-
-function uniqueInstanceName(
-  preferred: string,
-  instances: Readonly<Record<string, LunaInstance>>,
-): string {
-  if (!instances[preferred])
-    return preferred
-  let suffix = 2
-  while (instances[`${preferred}-${suffix}`]) suffix += 1
-  return `${preferred}-${suffix}`
-}
-
-function normalizeServer(value: string): string {
-  let url: URL
-  try {
-    url = new URL(value)
-  }
-  catch (cause) {
-    throw new CliCommandError('invalid_arguments', 'server must be an absolute HTTP(S) URL.', {
-      status: 400,
-      exitCode: 2,
-      details: { key: 'server' },
-      cause,
-    })
-  }
-  if (!['http:', 'https:'].includes(url.protocol)
-    || url.username
-    || url.password
-    || url.hash
-    || (url.pathname !== '/' && url.pathname !== '')) {
-    throw invalidArguments(
-      'server must be an HTTP(S) origin without credentials, path, query, or fragment.',
-      'server',
-    )
-  }
-  if (url.search)
-    throw invalidArguments('server must not contain a query.', 'server')
-  return url.origin
-}
-
-function redactConfig(config: LunaConfigDocument): LunaConfigDocument {
-  return {
-    ...config,
-    credentials: Object.fromEntries(
-      Object.entries(config.credentials).map(([name, credential]) => [
-        name,
-        redactRecord(credential),
-      ]),
-    ),
-  }
-}
-
-function redactRecord(value: Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> {
-  return Object.fromEntries(
-    Object.entries(value).map(([key, entry]) => [
-      key,
-      /token|secret|password|cookie|authorization|recovery/i.test(key)
-        ? entry === undefined || entry === null || entry === ''
-          ? entry
-          : '******'
-        : typeof entry === 'object' && entry !== null && !Array.isArray(entry)
-          ? redactRecord(entry as Readonly<Record<string, unknown>>)
-          : entry,
-    ]),
-  )
-}
-
-function outputFormat(value: unknown): OutputFormat | '' | undefined {
-  if (value === '')
-    return ''
-  if (
-    value === 'table'
-    || value === 'json'
-    || value === 'raw-json'
-    || value === 'yaml'
-    || value === 'jsonl'
-    || value === 'name'
-  ) {
-    return value
-  }
-  if (value === undefined)
-    return undefined
-  throw invalidArguments(`Unsupported output format "${String(value)}".`, 'output')
-}
-
 function asResult(value: unknown, schemaVersion: string): CommandResult {
   if (typeof value === 'object' && value !== null && 'data' in value) {
     return value as CommandResult
@@ -720,13 +534,6 @@ function stringList(value: unknown): string[] {
     return value.filter((entry): entry is string => typeof entry === 'string')
   }
   return typeof value === 'string' ? [value] : []
-}
-
-function notFound(name: string): CliCommandError {
-  return new CliCommandError('context_not_found', `Context "${name}" was not found.`, {
-    status: 404,
-    details: { name },
-  })
 }
 
 function invalidArguments(message: string, key?: string): CliCommandError {

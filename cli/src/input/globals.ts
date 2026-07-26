@@ -12,7 +12,6 @@ export const OUTPUT_FORMATS = Object.freeze([
 export type OutputFormat = (typeof OUTPUT_FORMATS)[number]
 
 export const GLOBAL_CONTROL_KEYS = Object.freeze([
-  'context',
   'server',
   'project',
   'output',
@@ -33,7 +32,6 @@ export const GLOBAL_CONTROL_KEYS = Object.freeze([
 export type GlobalControlKey = (typeof GLOBAL_CONTROL_KEYS)[number]
 
 export interface GlobalControls {
-  readonly context?: string
   readonly server?: string
   readonly project?: string
   readonly output?: OutputFormat

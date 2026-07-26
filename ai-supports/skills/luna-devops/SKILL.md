@@ -32,8 +32,8 @@ description: 使用 Luna CLI 管理和诊断 Luna DevOps 的项目空间、代�
 ## 可用性门禁
 
 1. 执行 `luna version show agent=true`。
-2. 远程操作前执行 `luna auth status agent=true`，确认实例与认证状态。
-3. 判断服务端能力时执行 `luna health get-meta agent=true`。
+2. 远程操作前执行 `luna auth status agent=true`，确认活动实例、账号与认证状态。
+3. OpenAPI 业务命令会自动校验服务端兼容性；需要查看详细能力、诊断失败或首次接入实例时执行 `luna health doctor agent=true`。
 4. CLI 不可用时停止平台操作；不得改用 REST API、Kubernetes API 或第三方 Provider API。
 
 源码环境使用 `pnpm --silent --dir cli exec tsx src/entry.ts` 代替已安装的
@@ -53,12 +53,15 @@ description: 使用 Luna CLI 管理和诊断 Luna DevOps 的项目空间、代�
 - `serverSupported=null` 表示尚未确认服务端能力，不代表已经支持。
 - 命令目录中不存在的工具不得推测，也不得用 `api request` 补成业务能力。
 - OAuth/OIDC 回调与 Webhook 接收端点不是 Agent 可直接调用的业务工具。
+- `luna login`、`luna logout`、`luna whoami`、`luna doctor` 是人类交互短命令。
+  Agent 不使用这些别名，始终调用对应的 canonical 两级命令。
 
 ## 执行契约
 
 - Agent 的每条命令显式包含 `agent=true`，使用
   `luna <category> <tool> key=value` 两级结构。
-- 临时切换实例优先传 `context=<name>`，不要无故修改默认上下文。
+- CLI 只保存一个活动实例和账号凭据，不存在 context 切换。实例或账号不符合任务要求时停止，让用户重新执行登录命令并显式指定 `server=<url>`；Agent 不替用户登录，也不索取凭据。
+- `server=<url>` 只用于明确的单次无凭据请求或 Help 声明的场景；跨源地址不会复用当前 Token，不能把它当作登录切换机制。
 - 默认项目只简化低风险读取，不授予权限。项目级变更和跨项目操作必须显式传入稳定项目 ID。
 - 执行变更前，将有歧义的名称解析为稳定 ID。
 - 使用 `params=@path`、`params=@-`、`body=@path` 或 `body=@-`
@@ -86,7 +89,7 @@ description: 使用 Luna CLI 管理和诊断 Luna DevOps 的项目空间、代�
 - 认证失败时执行 `luna auth status agent=true`，不要自动删除凭据。
 - 当前 Access Token/Bearer 流程不能完成 Step-up MFA。遇到 `mfa_required`
   时停止，让用户在受支持的浏览器流程处理，不索取验证码或自动重试。
-- 不通过扩大 Scope、切换管理员上下文或绕过 CLI 恢复失败操作。
+- 不通过扩大 Scope、改用管理员账号、重新登录其他实例或绕过 CLI 恢复失败操作。
 
 ## 结果报告
 

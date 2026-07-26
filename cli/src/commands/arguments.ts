@@ -25,7 +25,6 @@ const OUTPUT_FORMATS = new Set<OutputFormat>([
   'name',
 ])
 const GLOBAL_KEYS = new Set([
-  'context',
   'server',
   'project',
   'output',
@@ -50,7 +49,6 @@ export interface ParsedCommandTokens {
 }
 
 export interface CommanderGlobalOptions {
-  context?: string
   server?: string
   project?: string
   output?: string
@@ -168,7 +166,7 @@ export function resolveGlobalOptions(
   flags: CommanderGlobalOptions,
   options: {
     env: Readonly<Record<string, string | undefined>>
-    context?: Readonly<{
+    configured?: Readonly<{
       output?: string
       project?: { id?: string } | null
       language?: string
@@ -188,7 +186,7 @@ export function resolveGlobalOptions(
     canonical.output,
     flags.output,
     env.LUNA_OUTPUT,
-    options.context?.output,
+    options.configured?.output,
     options.isTTY ? 'table' : 'json',
   )
   const output = agent ? (options.streaming ? 'jsonl' : 'json') : outputCandidate
@@ -202,16 +200,15 @@ export function resolveGlobalOptions(
   }
 
   return {
-    context: first(canonical.context, flags.context, env.LUNA_CONTEXT),
     server: first(canonical.server, flags.server, env.LUNA_SERVER),
     project: first(
       canonical.project,
       flags.project,
       env.LUNA_PROJECT,
-      options.context?.project?.id,
+      options.configured?.project?.id,
     ),
     output: output as OutputFormat,
-    lang: first(canonical.lang, flags.lang, env.LUNA_LANG, options.context?.language),
+    lang: first(canonical.lang, flags.lang, env.LUNA_LANG, options.configured?.language),
     color: agent
       ? false
       : booleanOption(first(canonical.color, flagBoolean(flags.color), env.LUNA_COLOR), true, 'color'),
@@ -398,7 +395,6 @@ function assertNoConflicts(
   flags: CommanderGlobalOptions,
 ): void {
   const flagValues: Readonly<Record<string, string | undefined>> = {
-    context: flags.context,
     server: flags.server,
     project: flags.project,
     output: flags.output,

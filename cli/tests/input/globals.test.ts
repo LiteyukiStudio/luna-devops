@@ -5,7 +5,7 @@ describe('global controls', () => {
   it('extracts controls without consuming business arguments', () => {
     const parsed = extractGlobalControls([
       'name=demo',
-      'context=prod',
+      'server=https://devops.example.com',
       'output=json',
       'timeout=30s',
       'agent=true',
@@ -13,12 +13,12 @@ describe('global controls', () => {
 
     expect(parsed.businessTokens).toEqual(['name=demo'])
     expect(parsed.controls).toEqual({
-      context: 'prod',
+      server: 'https://devops.example.com',
       output: 'json',
       timeoutMs: 30_000,
       agent: true,
     })
-    expect(parsed.explicitKeys).toEqual(new Set(['context', 'output', 'timeout', 'agent']))
+    expect(parsed.explicitKeys).toEqual(new Set(['server', 'output', 'timeout', 'agent']))
   })
 
   it('rejects duplicate controls and unsupported output formats', () => {

@@ -16,20 +16,20 @@ describe("CLI locale selection", () => {
   it("uses the documented locale priority and English fallback", () => {
     expect(detectLocale({
       explicit: "en-US",
-      context: "zh-CN",
+      configured: "zh-CN",
       env: { LC_ALL: "zh_CN.UTF-8" },
     })).toBe("en-US");
     expect(detectLocale({
-      context: "zh-CN",
+      configured: "zh-CN",
       env: { LC_ALL: "en_US.UTF-8" },
     })).toBe("zh-CN");
     expect(detectLocale({
-      context: "en-US",
+      configured: "en-US",
       env: { LUNA_LANG: "zh_CN.UTF-8" },
     })).toBe("zh-CN");
     expect(detectLocale({
       explicit: "fr-FR",
-      context: "zh-CN",
+      configured: "zh-CN",
       env: {},
     })).toBe("en-US");
     expect(detectLocale({

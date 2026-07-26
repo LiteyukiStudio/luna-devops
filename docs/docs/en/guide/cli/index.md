@@ -16,13 +16,16 @@ luna help catalog query=project limit=5 output=json interactive=false
 
 ## Current development status
 
-The CLI is in prerelease and is runnable and testable. Its current catalog contains 131 commands: 21 local commands and 110 commands generated from OpenAPI. The source tree includes:
+The CLI is in prerelease and is runnable and testable. Its current catalog contains 125 commands: 14 local commands, one CLI protocol command, and 110 commands generated from OpenAPI. The source tree includes:
 
-- multi-instance contexts and a default project context;
+- one active server/account login and a default project;
 - Access Token login, validation, and local credential storage;
 - `key=value`, JSON, file, and standard-input parameters;
 - human-readable output and a versioned JSON envelope;
-- local help, context, project, and completion command registration;
+- local help, project, and completion command registration;
+- human-friendly `login`, `logout`, `whoami`, and `doctor` root shortcuts;
+- `health doctor` checks for the active login, authentication, server version, OpenAPI contract, and feature flags;
+- automatic API generation, minimum CLI version, and OpenAPI digest checks before OpenAPI business commands;
 - all 110 operations currently documented by OpenAPI;
 - a shared npm/Bun entry point, packaging, global-install smoke tests, and release gates.
 
@@ -34,15 +37,25 @@ The CLI supports command discovery and basic operation without Skills:
 
 ```bash
 luna --help
+luna login token=@-
+luna login server=https://devops.example.com token=@-
+luna whoami
+luna doctor
+luna logout
 luna project --help
 luna project get-projects --help
 ```
+
+The root shortcuts reuse the same handlers as `auth login`, `auth status`,
+`health doctor`, and `auth logout`. They are for interactive human use only.
+Scripts and Agents use canonical two-level commands, and `agent=true` rejects
+root aliases.
 
 Each level progressively exposes categories, tools, scopes, risk, parameters, input sources, and examples. Locale precedence is:
 
 1. command-line `--lang`;
 2. `LUNA_LANG`;
-3. the current context's `language`;
+3. the configured `language`;
 4. `LC_ALL`, `LC_MESSAGES`, `LANG`, and the runtime locale;
 5. English fallback.
 
@@ -61,10 +74,20 @@ See [Source Development and Verification](./development) for repository commands
 - Medium-risk operations use the shared interactive confirmation flow. Non-interactive callers must set `yes=true`.
 - High-risk API operations fail closed until the server-issued plan protocol exists; `yes=true` cannot bypass it.
 - CLI and platform versions are independent. Compatibility is negotiated through server capabilities rather than a version-string comparison alone.
-- A command in `help catalog` means that the current CLI registers it. Until capability negotiation is complete, `serverSupported` may still be `null`.
+- Canonical OpenAPI commands read `/api/v1/meta` on the first request to an
+  instance and validate the API generation, minimum CLI version, and OpenAPI
+  digest. Successful checks are cached within the process.
+- `luna health doctor output=json` explicitly displays the active login, authentication,
+  compatibility, and server feature diagnostics.
+- A command in `help catalog` means that the current CLI registers it.
+  `serverSupported` may still be `null`; the execution-time negotiation remains
+  authoritative.
 - Agents must pass `agent=true` to every command. This locks JSON output, disables interaction and colors, and applies safe pagination, polling, and response-size limits.
-- When a context has a default project, project-scoped commands may omit a required
+- After `luna project use project=<id>` sets a default project, project-scoped commands may omit a required
   `project`, `projectId`, or `projectID`; the CLI injects that immutable project ID without granting additional permissions.
+- The CLI stores one active login only. A `luna login` without `server` always uses
+  `https://devops.liteyuki.org`; explicitly signing in to another server or
+  account replaces the stored credential and default project.
 - `api request` is limited to human diagnostics against a known relative API path and is always disabled in Agent mode. It must not impersonate a business capability that is absent from OpenAPI or still requires a dedicated transport.
 
 ## Agent Skill
@@ -96,7 +119,7 @@ node scripts/cli/verify-skills-sync.mjs
 Before the first stable release, the project must:
 
 1. Document the remaining public backend routes in OpenAPI and complete command-coverage tests.
-2. Add client capability negotiation, Authorization Code + PKCE, Device Code, and Bearer step-up MFA.
+2. Implement the server protocols required for Authorization Code + PKCE, Device Code, and Bearer step-up MFA.
 3. Complete SSE, WebSocket, download, and server-issued plan transports.
 4. Configure an npm Trusted Publisher and protect the GitHub `npm` Environment.
 5. Add Apple Developer ID signing and notarization before macOS binaries enter stable releases; Windows continues to use npm/pnpm.
