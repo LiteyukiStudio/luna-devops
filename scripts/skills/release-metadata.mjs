@@ -7,7 +7,7 @@ import {
 } from "../cli/lib.mjs";
 import { validateCliVersion } from "../cli/release-metadata.mjs";
 
-const TAG_PREFIX = "cli-skills-v";
+const TAG_PREFIX = "cli-v";
 
 export function resolveSkillsReleaseMetadata(tag) {
   if (!tag.startsWith(TAG_PREFIX)) {

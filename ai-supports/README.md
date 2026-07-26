@@ -2,10 +2,10 @@
 
 本目录存放与 `luna` CLI 配套的 AI Skills。Agent 只能通过 CLI 使用 Luna DevOps，不直接调用平台 REST API、Kubernetes API 或第三方 Provider API。
 
-Skills 强依赖 Luna CLI；当前源码要求的 CLI 版本范围为
-`>=0.0.1-beta.1 <0.1.0`。CLI 本身自带分层 Help，可以不安装 Skills
-独立使用。版本关系的唯一机器可读来源是仓库根目录的
-`release-compatibility.json`。
+Skills 强依赖 Luna CLI，并与 CLI 使用完全相同的版本号、tag、commit 和
+GitHub Release。CLI 本身自带分层 Help，可以不安装 Skills 独立使用；安装
+Skills 时必须选择与本地 CLI 完全相同的版本。版本策略的唯一机器可读来源是
+仓库根目录的 `release-compatibility.json`。
 
 ## 当前状态
 
@@ -93,18 +93,21 @@ CLI CI 与 Release 质量门会执行同一检查。
 
 ## 发布与安装
 
-Luna CLI Skills 使用独立的 `cli-skills-v<SemVer>` tag 发布，不与平台的 `v*` 或
-CLI 的 `cli-v*` 共用版本号。发布工作流会：
+Luna CLI Skills 跟随 `cli-v<SemVer>` tag 与 CLI 一起发布。平台本体继续使用
+独立的 `v*` tag；不再创建新的 `cli-skills-v*` tag 或独立 Skills Release。
+CLI 发布工作流会：
 
 1. 校验所有 Skill 的 `SKILL.md`、目录名、命令引用和安全边界；
 2. 为每个 Skill 生成只包含一个同名根目录的标准 `.skill` ZIP；
 3. 生成整套 `luna-cli-skills-<version>.zip`、兼容 manifest 和
    `SHA256SUMS`；
-4. 生成 GitHub OIDC provenance，并把制品上传到
+4. 校验 Skills 的版本、tag、commit 和 `requires.lunaCli` 与 CLI 完全一致；
+5. 生成 GitHub OIDC provenance，并把 CLI 与 Skills 制品上传到同一个
    [GitHub Releases](https://github.com/LiteyukiStudio/luna-devops/releases)。
 
-每个 Skills Release 都会声明必需的 Luna CLI 版本范围。安装或升级 Skills
-前应先检查该范围；不能满足时，Agent 必须停止执行，而不是尝试绕过版本约束。
+发布缺少任意 `.skill`、整套 ZIP、manifest，或配套版本不一致时会直接失败。
+安装或升级 Skills 前应先确认其版本与本地 CLI 完全一致；不一致时 Agent
+必须停止执行，而不是尝试绕过版本约束。
 
 ## 发布门禁
 

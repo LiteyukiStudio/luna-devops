@@ -1,8 +1,11 @@
 # Luna CLI Skills Changelog
 
-Public release notes for Luna CLI Skills. Skills require Luna CLI, and each release declares its supported CLI version range.
+Public release notes for Luna CLI Skills. Skills require Luna CLI. Starting
+with the next release, Skills use the exact same version as the CLI and ship in
+the same `cli-v*` Release.
 
-Current development-line requirement: Luna CLI `>=0.0.1-beta.1 <0.1.0`.
+The existing `cli-skills-v*` entries below are historical releases from before
+the paired-release policy.
 
 Download standard `.skill` archives or the complete Skills bundle from [GitHub Releases](https://github.com/LiteyukiStudio/luna-devops/releases).
 

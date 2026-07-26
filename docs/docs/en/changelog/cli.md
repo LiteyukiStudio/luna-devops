@@ -1,8 +1,11 @@
 # Luna CLI Changelog
 
-Public release notes for Luna CLI. The CLI works independently; each release declares a recommended Luna CLI Skills version.
+Public release notes for Luna CLI. The CLI works independently. Starting with
+the next release, every `cli-v*` Release is required to include Luna CLI Skills
+with the exact same version.
 
-Current development-line recommendation: Luna CLI Skills `0.1.0-beta.1`.
+The recommended pairings shown on older releases preserve their historical
+standalone-release relationship.
 
 Install or download releases from [GitHub Releases](https://github.com/LiteyukiStudio/luna-devops/releases).
 

@@ -1,8 +1,9 @@
 # Luna CLI 更新日志
 
-这里记录 Luna CLI 的公开版本变化。CLI 可以独立使用；每个版本会给出建议搭配的 Luna CLI Skills 版本。
+这里记录 Luna CLI 的公开版本变化。CLI 可以独立使用；从下一次发布开始，
+每个 `cli-v*` Release 都强制附带完全相同版本的 Luna CLI Skills。
 
-当前开发线建议配套 Luna CLI Skills：`0.1.0-beta.1`。
+历史版本中的“建议配套”信息仅用于还原当时的独立发版关系。
 
 安装与下载请前往 [GitHub Releases](https://github.com/LiteyukiStudio/luna-devops/releases)。
 

@@ -154,8 +154,10 @@ export function packageSkills({
   requiresCli,
 }) {
   validateCliVersion(version);
-  if (!requiresCli.trim()) {
-    throw new Error("A required Luna CLI version range must be declared");
+  if (requiresCli !== version) {
+    throw new Error(
+      `Luna CLI Skills ${version} must require the exact CLI version ${version}`,
+    );
   }
 
   const outputDirectory = resolve(output);
@@ -235,14 +237,14 @@ export function packageSkills({
 
 ## 中文
 
-- **必需 Luna CLI 版本：** \`${requiresCli}\`
+- **必需 Luna CLI 版本：** \`${requiresCli}\`（必须与 Skills 版本完全一致）
 - 单个 Skill 使用标准 \`.skill\` ZIP 格式，压缩包内只有一个同名 Skill 根目录。
 - 可下载单个 \`.skill\` 文件，也可以下载 \`${bundleName}\` 一次安装整套 Skills。
 - 使用前请通过 \`SHA256SUMS\` 校验下载文件。
 
 ## English
 
-- **Required Luna CLI version:** \`${requiresCli}\`
+- **Required Luna CLI version:** \`${requiresCli}\` (must exactly match the Skills version)
 - Each Skill uses the standard \`.skill\` ZIP format with one matching root Skill directory.
 - Download an individual \`.skill\` archive or install the complete \`${bundleName}\` bundle.
 - Verify downloaded files with \`SHA256SUMS\` before installation.

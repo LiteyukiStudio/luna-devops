@@ -1016,14 +1016,14 @@
 - [ ] 为 Git Provider OAuth 增加短时授权事务创建/查询接口，回调写入事务终态；`luna git authorize` 打开浏览器并返回确定的 Git Account ID，不通过轮询账号列表猜测授权结果。
 - [ ] 建立干净测试实例的全 operation 场景矩阵：关键登录/CRUD/构建/发布/日志/终端/导出/MFA 旅程 100% 通过，完整可执行场景通过率不低于 95%。
 - [x] 新增 CLI CI 与 Release 工作流；平台项目继续由 `v*` 发版，CLI 仅由 `cli-v*` 发版且 tag 是唯一发布版本源；工作流验证契约 drift、CLI 类型/规范/测试、npm/pnpm 全局安装和受支持目标的 Bun 二进制 smoke，并按正式版、RC、Beta 维护 npm dist-tag。
-- [x] 建立 Luna DevOps、Luna CLI、Luna CLI Skills 三条独立更新日志与自动同步工作流；平台使用 `v*`、CLI 使用 `cli-v*`、Skills 使用 `cli-skills-v*`，发布成功后由 CI 生成中英文日志并创建文档更新 PR。
-- [x] 建立 CLI 与 Skills 单向兼容契约：Skills Release 强制声明必需 CLI SemVer 范围，CLI Release 声明建议 Skills 版本；兼容关系由 `release-compatibility.json`、Release manifest 和更新日志共同暴露。
+- [x] 建立 Luna DevOps、Luna CLI、Luna CLI Skills 三个更新日志视图与自动同步工作流；平台使用 `v*`，CLI 与 Skills 由同一个 `cli-v*` tag 配套发版，发布成功后由 CI 生成中英文日志并同步文档。
+- [x] 建立 CLI 与 Skills 强配套契约：Skills 与 CLI 必须使用相同版本、tag 和 commit；CLI Release 缺少 Skills 制品或 manifest 不一致时直接失败，规则由 `release-compatibility.json`、双 manifest 和更新日志共同暴露。
 - [x] 完善中英文 CLI 文档入口、源码开发说明与配套 Skills；Skills 以机器可读 Help 为命令事实来源，准确标注尚未完成的服务端能力，并在 CLI CI/Release 中通过同步检查阻止命令和能力描述漂移。
 - [x] 完善 CLI 人类可读分层帮助与语言检测：支持 `--lang`、`LUNA_LANG`、context 和系统 locale 优先级，命令帮助展示参数来源、风险、Scope、接口与示例，并在发布产物 smoke 中验证中文帮助。
 - [ ] 确认 npm `@liteyuki` 组织权限，使用 2FA 手动发布首个 `@liteyuki/luna-cli` public 预发布包；随后配置 Trusted Publisher 和 GitHub `npm` Environment，并以新的未发布版本完成真实 OIDC 发布验收。
 - [x] 使用固定 Bun 版本构建 Linux glibc x64/arm64 与 macOS arm64/x64 制品，生成 checksum、SBOM 和 provenance；Linux 制品完成无 Node.js smoke，macOS 未签名制品仅进入预发布；Windows 与 Alpine/musl 使用 npm/pnpm + Node.js 降级渠道。
 - [ ] 接入 Apple Developer ID 和公证；macOS 制品完成平台代码签名后才可进入稳定矩阵。
-- [x] 为 Luna CLI Skills 实现独立 `cli-skills-v*` 自动发版：结构与命令同步校验、可重复 `.skill` 标准压缩包、整套 ZIP、SHA-256、兼容 manifest、OIDC provenance 和 GitHub Release。
+- [x] 将 Luna CLI Skills 强制纳入 `cli-v*` 配套发版：结构与命令同步校验、可重复 `.skill` 标准压缩包、整套 ZIP、SHA-256、精确版本 manifest 和 OIDC provenance 与 CLI 一起进入同一 GitHub Release；独立 Skills 工作流仅保留手动打包验证。
 - [ ] 在发布首个稳定版 Luna CLI Skills 前，完成真实实例的只读、变更、失败、权限、MFA 与脱敏评估，再标记 Skills 稳定可用。
 - [ ] 建立 Agent 安全与可靠性评估集：覆盖提示注入、恶意日志/仓库内容、终端控制字符、越权工具选择、计划重放、目标集合漂移、无限分页/轮询、MFA 用户在场、执行后状态验证和审计关联；安全不变量要求 100% 通过。
 

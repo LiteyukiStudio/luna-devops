@@ -1,13 +1,10 @@
-name: CLI Skills Release
+name: CLI Skills Validation
 
 on:
-  push:
-    tags:
-      - "cli-skills-v*"
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing cli-skills-v-prefixed Git tag to rebuild
+        description: Existing cli-v-prefixed Git tag to validate
         required: true
         type: string
 
@@ -15,7 +12,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: cli-skills-release-${{ inputs.tag || github.ref_name }}
+  group: cli-skills-validation-${{ inputs.tag }}
   cancel-in-progress: false
 
 jobs:
@@ -26,21 +23,19 @@ jobs:
     outputs:
       tag: ${{ steps.metadata.outputs.tag }}
       version: ${{ steps.metadata.outputs.version }}
-      prerelease: ${{ steps.metadata.outputs.prerelease }}
       commit: ${{ steps.commit.outputs.sha }}
-      requires_cli: ${{ steps.compatibility.outputs.requires_cli }}
     steps:
       - name: Check out release tag
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           fetch-depth: 0
-          ref: ${{ inputs.tag || github.ref }}
+          ref: ${{ inputs.tag }}
 
       - name: Parse release version from tag
         id: metadata
         run: >-
           node scripts/skills/release-metadata.mjs
-          --tag="${{ inputs.tag || github.ref_name }}"
+          --tag="${{ inputs.tag }}"
 
       - name: Verify tag points at checked-out commit
         env:
@@ -50,18 +45,6 @@ jobs:
       - name: Record release commit
         id: commit
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-
-      - name: Read required Luna CLI range
-        id: compatibility
-        run: |
-          node -e '
-            const fs = require("node:fs");
-            const value = JSON.parse(fs.readFileSync("release-compatibility.json", "utf8")).cliSkills?.requiresCli;
-            if (typeof value !== "string" || !value.trim()) {
-              throw new Error("release-compatibility.json must declare cliSkills.requiresCli");
-            }
-            fs.appendFileSync(process.env.GITHUB_OUTPUT, `requires_cli=${value}\n`);
-          '
 
   quality:
     name: Validate Skills
@@ -93,18 +76,13 @@ jobs:
           node --test scripts/skills/tests/*.test.mjs
           node scripts/cli/verify-skills-sync.mjs
 
-  release:
-    name: Package and publish Skills
+  package:
+    name: Package same-version Skills
     needs:
       - metadata
       - quality
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    permissions:
-      contents: write
-      id-token: write
-      attestations: write
-      artifact-metadata: write
     steps:
       - name: Check out release tag
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -118,35 +96,15 @@ jobs:
           --tag="${{ needs.metadata.outputs.tag }}"
           --version="${{ needs.metadata.outputs.version }}"
           --commit="${{ needs.metadata.outputs.commit }}"
-          --requires-cli="${{ needs.metadata.outputs.requires_cli }}"
-
-      - name: Attest release provenance
-        id: provenance
-        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6
-        with:
-          subject-path: |
-            release/skills/*.skill
-            release/skills/*.zip
-            release/skills/LUNA-CLI-SKILLS-MANIFEST.json
-
-      - name: Preserve provenance bundle
-        run: cp "${{ steps.provenance.outputs.bundle-path }}" release/skills/build-provenance.sigstore.json
+          --requires-cli="${{ needs.metadata.outputs.version }}"
 
       - name: Upload assembled release bundle
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: luna-cli-skills-release-${{ needs.metadata.outputs.version }}
-          path: release/skills/*
+          name: luna-cli-skills-validation-${{ needs.metadata.outputs.version }}
+          path: |
+            release/skills/*.skill
+            release/skills/luna-cli-skills-*.zip
+            release/skills/LUNA-CLI-SKILLS-MANIFEST.json
           if-no-files-found: error
-          retention-days: 30
-
-      - name: Create or complete GitHub Release
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: >-
-          node scripts/cli/publish-github-release.mjs
-          --repository="${{ github.repository }}"
-          --tag="${{ needs.metadata.outputs.tag }}"
-          --name="Luna CLI Skills ${{ needs.metadata.outputs.version }}"
-          --directory=release/skills
-          --prerelease="${{ needs.metadata.outputs.prerelease }}"
+          retention-days: 7

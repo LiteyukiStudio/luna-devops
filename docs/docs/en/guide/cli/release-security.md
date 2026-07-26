@@ -1,20 +1,19 @@
 # Release Security
 
-Luna DevOps, Luna CLI, and Luna CLI Skills use separate version and tag namespaces:
+Luna DevOps has its own release version. Luna CLI and Luna CLI Skills share the
+same version, tag, commit, and GitHub Release:
 
 | Product | Git tag | Distribution |
 | --- | --- | --- |
 | Luna DevOps | `v1.2.3` | Container images and GitHub Release |
-| Luna CLI | `cli-v1.2.3` | npm `latest`, binaries, and GitHub Release |
-| Luna CLI | `cli-v1.2.3-rc.1` | npm `next` and GitHub Prerelease |
-| Luna CLI | `cli-v1.2.3-beta.1` | npm `beta` and GitHub Prerelease |
-| Luna CLI Skills | `cli-skills-v1.2.3` | `.skill`, bundle ZIP, and GitHub Release |
-| Luna CLI Skills | `cli-skills-v1.2.3-beta.1` | `.skill`, bundle ZIP, and GitHub Prerelease |
+| Luna CLI + Skills | `cli-v1.2.3` | npm `latest`, binaries, `.skill` archives, the Skills bundle, and GitHub Release |
+| Luna CLI + Skills | `cli-v1.2.3-rc.1` | npm `next`, CLI/Skills artifacts, and GitHub Prerelease |
+| Luna CLI + Skills | `cli-v1.2.3-beta.1` | npm `beta`, CLI/Skills artifacts, and GitHub Prerelease |
 
-Each prefix is consumed by a different workflow. Compatibility is maintained in
-`release-compatibility.json`: Skills must declare a supported Luna CLI SemVer
-range, while Luna CLI only recommends a Skills version and continues to work
-without Skills.
+The `v*` and `cli-v*` prefixes are consumed by different workflows.
+`release-compatibility.json` declares the release policy: Skills must use the
+exact same version as the CLI, and a release fails when Skills artifacts are
+missing or mismatched. The CLI itself still works without installing Skills.
 
 The source `cli/package.json.version` stays at `0.0.0-development` and only identifies a development checkout. The source manifest also uses `private: true` to prevent accidental publication from the working tree. A `cli-v*` tag is the sole release-version source: the workflow validates its SemVer, removes the private marker and writes that version into a temporary npm package manifest, then injects the same value into the npm JavaScript build and every Bun binary. A release therefore does not require a package manifest version commit. The publishing stage reads `package/package.json` directly from the tested tarball to validate its name, version, and private state instead of comparing the tag with the source placeholder version.
 
@@ -48,16 +47,22 @@ CLI changes run these checks:
 
 The release gate additionally asserts that the tarball manifest, the npm-installed `luna --version`, and every standalone binary report the tag version.
 
-## Luna CLI Skills releases
+## Paired CLI and Skills releases
 
-A `cli-skills-v*` tag triggers `cli-skills-release.yml`. The workflow reads the
-tag version and `cliSkills.requiresCli` from `release-compatibility.json`,
-validates Skill structure and CLI command synchronization, and publishes:
+A `cli-v*` tag triggers `cli-release.yml`. The same workflow builds the CLI,
+validates Skill structure and command synchronization, and publishes into one
+GitHub Release:
 
 - one `<skill-name>-<version>.skill` archive per Skill;
 - one complete `luna-cli-skills-<version>.zip` bundle;
-- `LUNA-CLI-SKILLS-MANIFEST.json` with the required CLI range and artifact hashes;
-- `SHA256SUMS` and GitHub OIDC build provenance.
+- `LUNA-CLI-SKILLS-MANIFEST.json` with the exact matching CLI version and artifact hashes;
+- the npm package, standalone binaries, `SHA256SUMS`, and GitHub OIDC build provenance.
+
+The release gate requires Skills and CLI to have the same version, tag, and
+commit, and `requires.lunaCli` must be that exact version. A missing individual
+Skill, bundle, or manifest aborts the release. `cli-skills-release.yml` remains
+only as a manual packaging validation workflow and no longer creates a separate
+Release.
 
 A `.skill` is a ZIP archive with exactly one root directory matching the Skill
 `name`, containing its `SKILL.md`, scripts, and references. Packaging fixes file
@@ -68,9 +73,9 @@ the documentation site does not mirror release binaries.
 
 ## Changelog synchronization
 
-After any of the three release workflows succeeds, `changelog-sync.yml`
-regenerates the Chinese and English Luna DevOps, Luna CLI, and Luna CLI Skills
-changelogs from immutable tags. The synchronization job serially commits generated
+After the platform or CLI release workflow succeeds, `changelog-sync.yml`
+regenerates three Chinese and English changelog views for Luna DevOps, Luna CLI,
+and Luna CLI Skills from immutable tags. The synchronization job serially commits generated
 content to `main`, rebases and retries when concurrent updates occur, then
 explicitly dispatches `Build & Publish Containers`. This explicit dispatch makes
 sure a commit created with `GITHUB_TOKEN` still rebuilds the documentation site.
@@ -115,6 +120,7 @@ Each GitHub Release contains:
 
 - `SHA256SUMS`;
 - `RELEASE-MANIFEST.json`;
+- same-version individual `.skill` archives, the Skills bundle, and `LUNA-CLI-SKILLS-MANIFEST.json`;
 - an SPDX JSON SBOM;
 - GitHub OIDC build provenance;
 - an SBOM attestation bundle.

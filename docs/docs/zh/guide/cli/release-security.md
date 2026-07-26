@@ -1,19 +1,19 @@
 # 发布与制品验证
 
-Luna DevOps、Luna CLI 与 Luna CLI Skills 使用独立的版本和 tag 命名空间：
+Luna DevOps 使用独立版本；Luna CLI 与 Luna CLI Skills 使用同一版本、tag、
+commit 和 GitHub Release：
 
 | 产品 | Git tag | 发布渠道 |
 | --- | --- | --- |
 | Luna DevOps | `v1.2.3` | 容器镜像与 GitHub Release |
-| Luna CLI | `cli-v1.2.3` | npm `latest`、二进制与 GitHub Release |
-| Luna CLI | `cli-v1.2.3-rc.1` | npm `next` 与 GitHub Prerelease |
-| Luna CLI | `cli-v1.2.3-beta.1` | npm `beta` 与 GitHub Prerelease |
-| Luna CLI Skills | `cli-skills-v1.2.3` | `.skill`、整套 ZIP 与 GitHub Release |
-| Luna CLI Skills | `cli-skills-v1.2.3-beta.1` | `.skill`、整套 ZIP 与 GitHub Prerelease |
+| Luna CLI + Skills | `cli-v1.2.3` | npm `latest`、二进制、`.skill`、整套 ZIP 与 GitHub Release |
+| Luna CLI + Skills | `cli-v1.2.3-rc.1` | npm `next`、CLI/Skills 制品与 GitHub Prerelease |
+| Luna CLI + Skills | `cli-v1.2.3-beta.1` | npm `beta`、CLI/Skills 制品与 GitHub Prerelease |
 
-三个前缀由不同工作流消费，互不触发。版本关系在
-`release-compatibility.json` 中维护：Skills 必须声明可用的 CLI SemVer
-范围；CLI 只给出建议配套的 Skills 版本，不会因为缺少 Skills 而拒绝运行。
+`v*` 和 `cli-v*` 由不同工作流消费，互不触发。版本策略在
+`release-compatibility.json` 中声明：Skills 必须与 CLI 使用完全相同的版本，
+发布时缺少 Skills 制品或版本不一致都会失败。CLI 自身仍可不安装 Skills
+独立运行。
 
 仓库中的 `cli/package.json.version` 固定为 `0.0.0-development`，只表示源码开发态，并通过 `private: true` 阻止从源码目录误发布。发布版本只来自 `cli-v*` tag：工作流校验 tag 中的 SemVer，在临时 npm 打包目录移除 `private` 标记、写入版本，并把同一版本注入 npm JavaScript 制品和 Bun 二进制，因此发版前不需要手动修改或提交 `package.json`。发布阶段直接读取待发布 tarball 内的 `package/package.json` 校验包名、版本和 `private` 状态，不使用源码占位版本判断制品版本。
 
@@ -47,16 +47,20 @@ CLI 相关变更会执行：
 
 发布门禁还会断言 tarball 中的 `package.json.version`、npm 安装后的 `luna --version` 和独立二进制的 `luna --version` 都等于 tag 版本。
 
-## Luna CLI Skills 发版
+## CLI 与 Skills 配套发版
 
-`cli-skills-v*` tag 触发 `cli-skills-release.yml`。该工作流读取 tag 版本和
-`release-compatibility.json` 中的 `cliSkills.requiresCli`，执行 Skill
-结构校验与 CLI 命令同步检查，然后发布：
+`cli-v*` tag 触发 `cli-release.yml`。同一工作流在构建 CLI 的同时执行 Skill
+结构校验、CLI 命令同步检查和确定性打包，然后在同一个 GitHub Release 发布：
 
 - 每个 Skill 一个 `<skill-name>-<version>.skill`；
 - 一个 `luna-cli-skills-<version>.zip` 整套压缩包；
-- `LUNA-CLI-SKILLS-MANIFEST.json`，包含必需 CLI 版本范围和各制品 SHA-256；
-- `SHA256SUMS` 与 GitHub OIDC build provenance。
+- `LUNA-CLI-SKILLS-MANIFEST.json`，包含完全相同的 CLI 版本和各制品 SHA-256；
+- CLI 的 npm 包、独立二进制、`SHA256SUMS` 与 GitHub OIDC build provenance。
+
+发布门禁会校验 Skills 与 CLI 的版本、tag 和 commit 完全一致，并要求
+`requires.lunaCli` 为相同的精确版本。缺少任一单独 Skill、整套 ZIP 或 manifest
+都会中止发布。`cli-skills-release.yml` 只保留为手动打包验证工具，不再创建
+独立 Release。
 
 `.skill` 是 ZIP 格式，每个文件只包含一个与 Skill `name` 相同的根目录和其中的
 `SKILL.md`、脚本与引用资料。打包脚本固定文件顺序和时间戳，同一 tag
@@ -66,8 +70,8 @@ CLI 相关变更会执行：
 
 ## 更新日志同步
 
-三条 Release 工作流成功后会触发 `changelog-sync.yml`。它从不可变 tag
-重新生成中英文 Luna DevOps、Luna CLI 和 Luna CLI Skills 更新日志。同步任务
+平台或 CLI Release 工作流成功后会触发 `changelog-sync.yml`。它从不可变 tag
+重新生成中英文 Luna DevOps、Luna CLI 和 Luna CLI Skills 三个更新日志视图。同步任务
 串行提交生成结果到 `main`，遇到并发更新时会重新变基并重试；提交成功后显式
 启动 `Build & Publish Containers`，确保由 `GITHUB_TOKEN` 产生的提交也能重建
 文档站。没有内容变化时任务直接结束，不会形成工作流循环。
@@ -111,6 +115,7 @@ GitHub `npm` Environment 应配置保护规则和维护者审批。发布 Job �
 
 - `SHA256SUMS`；
 - `RELEASE-MANIFEST.json`；
+- 同版本的单独 `.skill`、Skills 整套 ZIP 和 `LUNA-CLI-SKILLS-MANIFEST.json`；
 - SPDX JSON SBOM；
 - GitHub OIDC build provenance；
 - SBOM attestation bundle。

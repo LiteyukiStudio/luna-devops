@@ -61,6 +61,8 @@ npm 的 `latest` 与 `beta` 是独立更新通道。测试预发布版本时必�
 
 AI Skills 会在此基础上使用 `luna help catalog ... agent=true` 和
 `luna help command ... agent=true` 获取稳定 JSON 契约，让执行更准确；CLI 本身不依赖 Skills。
+Skills 与 CLI 使用相同版本并由同一个 `cli-v*` GitHub Release 发布，安装时
+必须选择与本地 CLI 完全相同版本的 `.skill` 或整套 Skills 压缩包。
 
 详细说明：
 
@@ -82,7 +84,8 @@ node --test scripts/cli/tests/*.test.mjs
 node scripts/cli/verify-skills-sync.mjs
 ```
 
-`cli-v*` tag 只用于 Luna CLI 发布，不会触发平台的 `v*` 发布流程。
+`cli-v*` tag 用于 Luna CLI 与同版本 Skills 的配套发布，不会触发平台的 `v*`
+发布流程。
 
 ---
 
@@ -128,4 +131,5 @@ does not perform a remote operation. Locale precedence is `--lang`,
 `LUNA_LANG=zh-CN luna --help` for Chinese. npm `latest` and `beta` are separate
 update channels, so prerelease testing must explicitly install `@beta`. Skills
 build on the CLI's machine-readable Help for more precise agent operation; the
-CLI does not depend on Skills.
+CLI does not depend on Skills. Skills use the exact same version and ship in the
+same `cli-v*` GitHub Release as the CLI.

@@ -215,12 +215,46 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  skills-package:
+    name: Package paired CLI Skills
+    needs:
+      - metadata
+      - quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ needs.metadata.outputs.tag }}
+
+      - name: Package same-version Skills
+        run: >-
+          node scripts/skills/package-skills.mjs
+          --output=release/skills
+          --tag="${{ needs.metadata.outputs.tag }}"
+          --version="${{ needs.metadata.outputs.version }}"
+          --commit="${{ needs.metadata.outputs.commit }}"
+          --requires-cli="${{ needs.metadata.outputs.version }}"
+
+      - name: Upload paired Skills
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: cli-skills-${{ needs.metadata.outputs.version }}
+          path: |
+            release/skills/*.skill
+            release/skills/luna-cli-skills-*.zip
+            release/skills/LUNA-CLI-SKILLS-MANIFEST.json
+          if-no-files-found: error
+          retention-days: 7
+
   publish-npm:
     name: Publish npm with trusted publishing
     needs:
       - metadata
       - binary
       - npm-package
+      - skills-package
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment: npm
@@ -262,6 +296,7 @@ jobs:
       - metadata
       - binary
       - npm-package
+      - skills-package
       - publish-npm
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -289,6 +324,12 @@ jobs:
           name: cli-npm-${{ needs.metadata.outputs.version }}
           path: release/input
 
+      - name: Download paired Skills
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: cli-skills-${{ needs.metadata.outputs.version }}
+          path: release/input
+
       - name: Select stable or prerelease assets
         run: >-
           node scripts/cli/prepare-release-assets.mjs
@@ -313,6 +354,9 @@ jobs:
             release/final/luna-linux-*
             release/final/luna-darwin-*
             release/final/*.tgz
+            release/final/*.skill
+            release/final/luna-cli-skills-*.zip
+            release/final/LUNA-CLI-SKILLS-MANIFEST.json
 
       - name: Preserve provenance bundle
         run: cp "${{ steps.provenance.outputs.bundle-path }}" release/final/build-provenance.sigstore.json
@@ -325,6 +369,9 @@ jobs:
             release/final/luna-linux-*
             release/final/luna-darwin-*
             release/final/*.tgz
+            release/final/*.skill
+            release/final/luna-cli-skills-*.zip
+            release/final/LUNA-CLI-SKILLS-MANIFEST.json
           sbom-path: release/final/luna-cli.spdx.json
 
       - name: Preserve SBOM attestation bundle

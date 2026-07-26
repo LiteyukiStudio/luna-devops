@@ -1,9 +1,8 @@
 {
-  "schemaVersion": 1,
-  "cli": {
-    "recommendedSkills": "0.1.0-beta.1"
-  },
+  "schemaVersion": 2,
   "cliSkills": {
-    "requiresCli": ">=0.0.1-beta.1 <0.1.0"
+    "release": "bundled",
+    "versionPolicy": "same-as-cli",
+    "requiresCli": "exact-same-version"
   }
 }
