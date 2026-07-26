@@ -216,7 +216,7 @@ jobs:
           retention-days: 7
 
   skills-package:
-    name: Package paired CLI Skills
+    name: Package paired Luna DevOps Skill
     needs:
       - metadata
       - quality
@@ -237,13 +237,12 @@ jobs:
           --commit="${{ needs.metadata.outputs.commit }}"
           --requires-cli="${{ needs.metadata.outputs.version }}"
 
-      - name: Upload paired Skills
+      - name: Upload paired Skill
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: cli-skills-${{ needs.metadata.outputs.version }}
           path: |
-            release/skills/*.skill
-            release/skills/luna-cli-skills-*.zip
+            release/skills/luna-devops-*.skill
             release/skills/LUNA-CLI-SKILLS-MANIFEST.json
           if-no-files-found: error
           retention-days: 7
@@ -324,7 +323,7 @@ jobs:
           name: cli-npm-${{ needs.metadata.outputs.version }}
           path: release/input
 
-      - name: Download paired Skills
+      - name: Download paired Skill
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: cli-skills-${{ needs.metadata.outputs.version }}
@@ -354,8 +353,7 @@ jobs:
             release/final/luna-linux-*
             release/final/luna-darwin-*
             release/final/*.tgz
-            release/final/*.skill
-            release/final/luna-cli-skills-*.zip
+            release/final/luna-devops-*.skill
             release/final/LUNA-CLI-SKILLS-MANIFEST.json
 
       - name: Preserve provenance bundle
@@ -369,8 +367,7 @@ jobs:
             release/final/luna-linux-*
             release/final/luna-darwin-*
             release/final/*.tgz
-            release/final/*.skill
-            release/final/luna-cli-skills-*.zip
+            release/final/luna-devops-*.skill
             release/final/LUNA-CLI-SKILLS-MANIFEST.json
           sbom-path: release/final/luna-cli.spdx.json
 

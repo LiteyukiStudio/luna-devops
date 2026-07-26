@@ -39,7 +39,7 @@ export function generateReleaseManifest({
   const root = resolve(directory);
   const skillsManifestPath = join(root, "LUNA-CLI-SKILLS-MANIFEST.json");
   if (!existsSync(skillsManifestPath)) {
-    throw new Error("Paired Luna CLI Skills manifest is missing");
+    throw new Error("Paired Luna DevOps Skill manifest is missing");
   }
   const skillsManifest = readJson(skillsManifestPath);
   if (skillsManifest.version !== version) {
@@ -55,53 +55,33 @@ export function generateReleaseManifest({
       `Paired Skills must require the exact CLI version ${version}`,
     );
   }
+  const skill = skillsManifest.skill;
+  const expectedSkillArchive = `luna-devops-${version}.skill`;
   if (
-    skillsManifest.bundle?.archive !== `luna-cli-skills-${version}.zip`
+    skill?.name !== "luna-devops"
+    || skill.archive !== expectedSkillArchive
   ) {
-    throw new Error("Paired Skills manifest does not declare a bundle archive");
-  }
-  const bundlePath = join(root, skillsManifest.bundle.archive);
-  if (!existsSync(bundlePath)) {
     throw new Error(
-      `Paired Skills bundle is missing: ${skillsManifest.bundle.archive}`,
+      `Paired Skill manifest must declare ${expectedSkillArchive}`,
     );
   }
-  if (skillsManifest.bundle.sha256 !== sha256(bundlePath)) {
-    throw new Error("Paired Skills bundle checksum does not match its manifest");
+  const skillArchivePath = join(root, skill.archive);
+  if (!existsSync(skillArchivePath)) {
+    throw new Error(`Paired Skill archive is missing: ${skill.archive}`);
   }
-  if (!Array.isArray(skillsManifest.skills) || skillsManifest.skills.length === 0) {
-    throw new Error("Paired Skills manifest does not contain any Skills");
-  }
-
-  const declaredSkillArchives = new Set();
-  for (const skill of skillsManifest.skills) {
-    const expectedArchive = `${skill.name}-${version}.skill`;
-    if (skill.archive !== expectedArchive) {
-      throw new Error(
-        `Paired Skills archive must use the release version: ${skill.archive ?? skill.name ?? "unknown"}`,
-      );
-    }
-    const archivePath = join(root, skill.archive);
-    if (!existsSync(archivePath)) {
-      throw new Error(
-        `Paired Skills archive is missing: ${skill.archive ?? skill.name ?? "unknown"}`,
-      );
-    }
-    if (skill.sha256 !== sha256(archivePath)) {
-      throw new Error(
-        `Paired Skills archive checksum does not match its manifest: ${skill.archive}`,
-      );
-    }
-    declaredSkillArchives.add(skill.archive);
+  if (skill.sha256 !== sha256(skillArchivePath)) {
+    throw new Error(
+      `Paired Skill archive checksum does not match its manifest: ${skill.archive}`,
+    );
   }
   const actualSkillArchives = releaseFiles(root)
     .filter(name => name.endsWith(".skill"));
   if (
-    actualSkillArchives.length !== declaredSkillArchives.size
-    || actualSkillArchives.some(name => !declaredSkillArchives.has(name))
+    actualSkillArchives.length !== 1
+    || actualSkillArchives[0] !== skill.archive
   ) {
     throw new Error(
-      "Paired Skills archives do not match the Skills manifest",
+      "Release must contain exactly the paired luna-devops Skill archive",
     );
   }
 
@@ -132,8 +112,9 @@ export function generateReleaseManifest({
         version,
         requiredCli: version,
         manifest: "LUNA-CLI-SKILLS-MANIFEST.json",
-        bundle: skillsManifest.bundle.archive,
-        skills: skillsManifest.skills.length,
+        archive: skill.archive,
+        skill: skill.name,
+        loading: skill.loading,
       },
     },
     files,
@@ -157,8 +138,8 @@ ${channel}
 ## 中文
 
 - npm：\`npm install --global @liteyuki/luna-cli@${npmTag}\`
-- 本 Release 强制附带同版本 Luna CLI Skills：\`${version}\`，可下载单个 \`.skill\` 或 \`${skillsManifest.bundle.archive}\`。
-- Skills 只与完全相同版本的 CLI 配套；CLI 本身仍可不安装 Skills 独立使用。
+- 本 Release 强制附带同版本 \`${skill.archive}\`，其中只有一个按领域渐进加载的 \`luna-devops\` Skill。
+- Skill 只与完全相同版本的 CLI 配套；CLI 本身仍可不安装 Skill 独立使用。
 - Linux 独立二进制已在目标 runner 完成 smoke test。
 - macOS 尚未接入代码签名；仅预发布版本提供带 \`-unsigned\` 后缀的测试制品，正式版不发布这些制品。
 - Windows 与 Alpine/musl 请通过 npm 或 pnpm 安装，并使用 Node.js 22.14.0 或更高版本运行。
@@ -167,8 +148,8 @@ ${channel}
 ## English
 
 - npm: \`npm install --global @liteyuki/luna-cli@${npmTag}\`
-- This release always includes Luna CLI Skills \`${version}\`; download individual \`.skill\` archives or \`${skillsManifest.bundle.archive}\`.
-- Skills require the exact same CLI version. The CLI itself still works without installing Skills.
+- This release always includes \`${skill.archive}\`, containing one progressively loaded \`luna-devops\` Skill.
+- The Skill requires the exact same CLI version. The CLI itself still works without installing the Skill.
 - Standalone Linux binaries were smoke-tested on their target runners.
 - macOS code signing is not configured. Only prereleases contain explicitly named \`-unsigned\` test artifacts; stable releases omit them.
 - On Windows and Alpine/musl, install with npm or pnpm and run the CLI on Node.js 22.14.0 or later.

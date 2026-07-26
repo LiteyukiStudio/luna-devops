@@ -35,36 +35,33 @@ function fixture({
     "luna-darwin-arm64-unsigned",
     "luna-darwin-x64-unsigned",
     `liteyukistudio-luna-cli-${version}.tgz`,
-    `luna-cli-core-${version}.skill`,
-    `luna-cli-skills-${version}.zip`,
+    `luna-devops-${version}.skill`,
   ]) {
     writeFileSync(join(input, name), name);
   }
-  const skillArchive = `luna-cli-core-${version}.skill`;
-  const bundleArchive = `luna-cli-skills-${version}.zip`;
+  const skillArchive = `luna-devops-${version}.skill`;
   writeFileSync(
     join(input, "LUNA-CLI-SKILLS-MANIFEST.json"),
     `${JSON.stringify({
-      schemaVersion: 1,
-      product: "Luna CLI Skills",
+      schemaVersion: 2,
+      product: "Luna CLI Skill",
       tag,
       version,
       commit,
       requires: {
         lunaCli: version,
       },
-      bundle: {
-        archive: bundleArchive,
-        sha256: hash(join(input, bundleArchive)),
+      skill: {
+        name: "luna-devops",
+        archive: skillArchive,
+        sha256: hash(join(input, skillArchive)),
+        files: [
+          "luna-devops/SKILL.md",
+          "luna-devops/references/workspace.md",
+        ],
+        loading: "progressive-disclosure",
+        references: 1,
       },
-      skills: [
-        {
-          name: "luna-cli-core",
-          archive: skillArchive,
-          sha256: hash(join(input, skillArchive)),
-          files: ["luna-cli-core/SKILL.md"],
-        },
-      ],
     }, null, 2)}\n`,
   );
   return { root, input, output, version, tag, commit };
@@ -81,8 +78,7 @@ test("stable releases omit unsigned desktop binaries", () => {
     assert.deepEqual(files, [
       "LUNA-CLI-SKILLS-MANIFEST.json",
       "liteyukistudio-luna-cli-1.2.3.tgz",
-      "luna-cli-core-1.2.3.skill",
-      "luna-cli-skills-1.2.3.zip",
+      "luna-devops-1.2.3.skill",
       "luna-linux-arm64",
       "luna-linux-x64",
     ]);
@@ -106,7 +102,7 @@ test("manifest records hashes and unsigned prerelease limitations", () => {
       prerelease: true,
       npmTag: "beta",
     });
-    assert.equal(manifest.files.length, 8);
+    assert.equal(manifest.files.length, 7);
     assert.equal(
       manifest.verification.unsignedDesktopArtifacts.length,
       2,
@@ -116,7 +112,11 @@ test("manifest records hashes and unsigned prerelease limitations", () => {
       version,
     );
     assert.equal(manifest.paired.lunaCliSkills.requiredCli, version);
-    assert.equal(manifest.paired.lunaCliSkills.skills, 1);
+    assert.equal(manifest.paired.lunaCliSkills.skill, "luna-devops");
+    assert.equal(
+      manifest.paired.lunaCliSkills.archive,
+      `luna-devops-${version}.skill`,
+    );
     assert.match(
       readFileSync(join(output, "SHA256SUMS"), "utf8"),
       /luna-linux-x64/,
@@ -127,7 +127,7 @@ test("manifest records hashes and unsigned prerelease limitations", () => {
     );
     assert.ok(
       readFileSync(join(output, "RELEASE_NOTES.md"), "utf8")
-        .includes(`Luna CLI Skills：\`${version}\``),
+        .includes(`luna-devops-${version}.skill`),
     );
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -137,10 +137,10 @@ test("manifest records hashes and unsigned prerelease limitations", () => {
 test("release assembly rejects missing paired Skills assets", () => {
   const { root, input, output } = fixture();
   try {
-    rmSync(join(input, "luna-cli-core-1.2.3.skill"));
+    rmSync(join(input, "luna-devops-1.2.3.skill"));
     assert.throws(
       () => prepareReleaseAssets({ input, output, prerelease: false }),
-      /Skills archives are missing/,
+      /exactly one paired luna-devops Skill archive is required/,
     );
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -176,7 +176,7 @@ test("release manifest rejects tampered paired Skills archives", () => {
   try {
     prepareReleaseAssets({ input, output, prerelease: false });
     writeFileSync(
-      join(output, `luna-cli-core-${version}.skill`),
+      join(output, `luna-devops-${version}.skill`),
       "tampered",
     );
     assert.throws(

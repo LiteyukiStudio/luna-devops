@@ -62,7 +62,9 @@ npm 的 `latest` 与 `beta` 是独立更新通道。测试预发布版本时必�
 AI Skills 会在此基础上使用 `luna help catalog ... agent=true` 和
 `luna help command ... agent=true` 获取稳定 JSON 契约，让执行更准确；CLI 本身不依赖 Skills。
 Skills 与 CLI 使用相同版本并由同一个 `cli-v*` GitHub Release 发布，安装时
-必须选择与本地 CLI 完全相同版本的 `.skill` 或整套 Skills 压缩包。
+必须选择与本地 CLI 完全相同版本的
+`luna-devops-<version>.skill`。该文件内部按领域拆分 `references/`，由 Agent
+根据任务按需加载，不需要分别安装多个 Skill。
 
 详细说明：
 

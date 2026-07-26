@@ -1,11 +1,6 @@
----
-name: luna-devops-build
-description: 通过 Luna CLI 管理构建环境、读取构建模板并预览生成的 Dockerfile；构建运行、日志、重试和取消仅在机器 Help 出现对应工具后执行。
----
+# 构建
 
-# 构建 Skill
-
-先遵循 `luna-devops-cli`。当前 `build` 分类只覆盖全局/应用/部署构建环境、平台模板列表和模板预览。
+当前 `build` 分类只覆盖全局、应用和部署构建环境、平台模板列表和模板预览。
 
 ## 已可执行
 

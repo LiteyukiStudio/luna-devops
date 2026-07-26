@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "cliSkills": {
-    "release": "bundled",
+    "release": "single-progressive-skill",
     "versionPolicy": "same-as-cli",
     "requiresCli": "exact-same-version"
   }

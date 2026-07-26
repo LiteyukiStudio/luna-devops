@@ -1,11 +1,6 @@
----
-name: luna-devops-runtime
-description: 通过 Luna CLI 读取运行集群并处理 Pod 终端预授权；资源列表、日志、YAML、事件和交互终端仅在机器 Help 出现对应工具后执行。
----
+# 运行时
 
-# 运行时 Skill
-
-先遵循 `luna-devops-cli`。当前 `runtime` 分类只有运行集群列表和 Pod 终端预授权。
+当前 `runtime` 分类只有运行集群列表和 Pod 终端预授权。
 
 ## 已可执行
 
@@ -21,7 +16,8 @@ description: 通过 Luna CLI 读取运行集群并处理 Pod 终端预授权；�
 - 资源删除、重启和批量操作
 - 数据导出的二进制传输
 
-终端预授权成功不代表终端连接已经建立。当前 Access Token 无法完成 Bearer Step-up MFA 时应停止。
+终端预授权成功不代表终端连接已经建立。Access Token 无法完成 Bearer Step-up
+MFA 时应停止。
 
 ## 安全
 

@@ -1,11 +1,7 @@
----
-name: luna-devops-billing
-description: 规划账单、余额、用量、费率、账本和网关流量操作；当前机器 Help 没有 billing 分类时不得执行平台查询或变更。
----
+# 账单
 
-# 账单 Skill
-
-先遵循 `luna-devops-cli`。当前命令目录没有 `billing` 分类，因此本 Skill 只用于定义查询维度、解释计量单位和规划管理员操作。
+当前命令目录没有 `billing` 分类，本引用只用于定义查询维度、解释计量单位和规划
+管理员操作。
 
 ## 规划清单
 

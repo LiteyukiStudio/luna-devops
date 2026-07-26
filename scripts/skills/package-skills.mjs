@@ -26,6 +26,8 @@ import {
 import { validateCliVersion } from "../cli/release-metadata.mjs";
 
 const skillsRoot = join(repositoryRoot, "ai-supports", "skills");
+const skillName = "luna-devops";
+const skillDirectory = join(skillsRoot, skillName);
 const ignoredEntries = new Set([".DS_Store", "__pycache__"]);
 const archiveTimestamp = new Date("2000-01-01T00:00:00.000Z");
 
@@ -114,11 +116,18 @@ export function validateSkillDirectory(directory) {
   };
 }
 
-export function listSkills() {
-  return readdirSync(skillsRoot, { withFileTypes: true })
+export function loadSkill() {
+  const unexpected = readdirSync(skillsRoot, { withFileTypes: true })
     .filter(entry => entry.isDirectory() && !ignoredEntries.has(entry.name))
-    .map(entry => validateSkillDirectory(join(skillsRoot, entry.name)))
-    .sort((left, right) => left.name.localeCompare(right.name));
+    .filter(entry => entry.name !== skillName)
+    .filter(entry => walk(join(skillsRoot, entry.name)).length > 0)
+    .map(entry => entry.name);
+  if (unexpected.length > 0) {
+    throw new Error(
+      `Luna CLI publishes one Skill; move these domains under ${skillName}/references: ${unexpected.join(", ")}`,
+    );
+  }
+  return validateSkillDirectory(skillDirectory);
 }
 
 function archiveEntries(path) {
@@ -164,89 +173,61 @@ export function packageSkills({
   rmSync(outputDirectory, { recursive: true, force: true });
   mkdirSync(outputDirectory, { recursive: true });
 
-  const skills = listSkills();
+  const skill = loadSkill();
   const stagingDirectory = mkdtempSync(join(tmpdir(), "luna-cli-skills-"));
   try {
-    for (const skill of skills) {
-      copyDirectoryDeterministically(
-        join(skillsRoot, skill.name),
-        join(stagingDirectory, skill.name),
-      );
-    }
+    copyDirectoryDeterministically(
+      skillDirectory,
+      join(stagingDirectory, skill.name),
+    );
 
-    const archives = [];
-    for (const skill of skills) {
-      const archiveName = `${skill.name}-${version}.skill`;
-      const archivePath = join(outputDirectory, archiveName);
-      runArchiveCommand(
-        "zip",
-        ["-X", "-q", "-r", archivePath, skill.name],
-        stagingDirectory,
-      );
-      assertStandardSkillArchive(archivePath, skill.name);
-      archives.push(archiveName);
-    }
-
-    const bundleName = `luna-cli-skills-${version}.zip`;
+    const archiveName = `${skill.name}-${version}.skill`;
+    const archivePath = join(outputDirectory, archiveName);
     runArchiveCommand(
       "zip",
-      [
-        "-X",
-        "-q",
-        "-r",
-        join(outputDirectory, bundleName),
-        ...skills.map(skill => skill.name),
-      ],
+      ["-X", "-q", "-r", archivePath, skill.name],
       stagingDirectory,
     );
-    runArchiveCommand(
-      "unzip",
-      ["-tqq", join(outputDirectory, bundleName)],
-      repositoryRoot,
-    );
-
-    const packagedFiles = [...archives, bundleName].sort();
-    writeChecksums(outputDirectory, packagedFiles);
+    assertStandardSkillArchive(archivePath, skill.name);
+    writeChecksums(outputDirectory, [archiveName]);
 
     const manifest = {
-      schemaVersion: 1,
-      product: "Luna CLI Skills",
+      schemaVersion: 2,
+      product: "Luna CLI Skill",
       tag,
       version,
       commit,
       requires: {
         lunaCli: requiresCli,
       },
-      bundle: {
-        archive: bundleName,
-        sha256: sha256(join(outputDirectory, bundleName)),
-      },
-      skills: skills.map((skill) => ({
+      skill: {
         name: skill.name,
-        archive: `${skill.name}-${version}.skill`,
-        sha256: sha256(join(outputDirectory, `${skill.name}-${version}.skill`)),
+        archive: archiveName,
+        sha256: sha256(archivePath),
         files: skill.files,
-      })),
+        loading: "progressive-disclosure",
+        references: skill.files.filter(path => path.includes("/references/")).length,
+      },
     };
     writeFileSync(
       join(outputDirectory, "LUNA-CLI-SKILLS-MANIFEST.json"),
       `${JSON.stringify(manifest, null, 2)}\n`,
     );
 
-    const notes = `# Luna CLI Skills ${version}
+    const notes = `# Luna CLI Skill ${version}
 
 ## 中文
 
-- **必需 Luna CLI 版本：** \`${requiresCli}\`（必须与 Skills 版本完全一致）
-- 单个 Skill 使用标准 \`.skill\` ZIP 格式，压缩包内只有一个同名 Skill 根目录。
-- 可下载单个 \`.skill\` 文件，也可以下载 \`${bundleName}\` 一次安装整套 Skills。
+- **必需 Luna CLI 版本：** \`${requiresCli}\`（必须与 Skill 版本完全一致）
+- Release 只发布 \`${archiveName}\`，其中只有一个 \`luna-devops\` 根 Skill。
+- 通用契约位于根 \`SKILL.md\`，业务领域位于 \`references/\` 并按任务需要加载。
 - 使用前请通过 \`SHA256SUMS\` 校验下载文件。
 
 ## English
 
-- **Required Luna CLI version:** \`${requiresCli}\` (must exactly match the Skills version)
-- Each Skill uses the standard \`.skill\` ZIP format with one matching root Skill directory.
-- Download an individual \`.skill\` archive or install the complete \`${bundleName}\` bundle.
+- **Required Luna CLI version:** \`${requiresCli}\` (must exactly match the Skill version)
+- The release contains only \`${archiveName}\`, with one \`luna-devops\` root Skill.
+- Shared contracts live in the root \`SKILL.md\`; domain references are loaded on demand.
 - Verify downloaded files with \`SHA256SUMS\` before installation.
 `;
     writeFileSync(join(outputDirectory, "RELEASE_NOTES.md"), notes);

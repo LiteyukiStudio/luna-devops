@@ -1,10 +1,10 @@
-# Luna CLI Skills 更新日志
+# Luna DevOps Skill 更新日志
 
-这里记录 Luna CLI Skills 的公开版本变化。新版本不再独立发版，而是随同版本 Luna CLI 一起发布。
+这里记录 Luna DevOps Skill 的公开版本变化。新版本不再独立发版，而是随同版本 Luna CLI 一起发布。
 
-Skills 强依赖完全相同版本的 Luna CLI；历史独立 Skills Release 仍保留用于追溯。
+当前只发布一个 `luna-devops` Skill；根 `SKILL.md` 负责领域路由，具体说明从 `references/` 按需加载。Skill 强依赖完全相同版本的 Luna CLI，历史独立 Skills Release 仍保留用于追溯。
 
-标准 `.skill` 压缩包和整套 Skills 压缩包请前往 [GitHub Releases](https://github.com/LiteyukiStudio/luna-devops/releases) 下载。
+标准 `luna-devops-<version>.skill` 请前往 [GitHub Releases](https://github.com/LiteyukiStudio/luna-devops/releases) 下载。
 
 ## 0.0.5
 

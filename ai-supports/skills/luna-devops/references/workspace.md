@@ -1,11 +1,7 @@
----
-name: luna-devops-workspace
-description: 通过 Luna CLI 查询看板并管理项目空间、成员、置顶和默认项目上下文；执行前以机器 Help 确认具体工具。
----
+# 项目空间
 
-# 项目空间 Skill
-
-先遵循 `luna-devops-cli`。当前命令目录已覆盖 `dashboard` 与 `project` 分类，包括项目空间 CRUD、成员、置顶和本地默认项目。
+当前命令目录覆盖 `dashboard` 与 `project` 分类，包括项目空间 CRUD、成员、置顶和
+本地默认项目。
 
 ## 工作流
 
@@ -20,4 +16,4 @@ description: 通过 Luna CLI 查询看板并管理项目空间、成员、置顶
 - 不将项目名称、可变标识或 Kubernetes 名称当作项目 ID。
 - 平台自有项目空间不可删除。
 - 成员权限由后端 RBAC 最终判断。
-- 看板只能读取当前目录提供的摘要，不推测未登记的统计接口。
+- 看板只读取命令目录提供的摘要，不推测未登记的统计接口。

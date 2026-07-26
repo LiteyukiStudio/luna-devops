@@ -39,7 +39,14 @@ test("skills package contains standard archives and compatibility metadata", () 
       commit: "0123456789abcdef",
       requiresCli: "1.2.3-beta.4",
     });
-    assert.ok(manifest.skills.length > 1);
+    assert.equal(manifest.schemaVersion, 2);
+    assert.equal(manifest.skill.name, "luna-devops");
+    assert.equal(
+      manifest.skill.archive,
+      "luna-devops-1.2.3-beta.4.skill",
+    );
+    assert.equal(manifest.skill.loading, "progressive-disclosure");
+    assert.ok(manifest.skill.references > 1);
     assert.equal(manifest.requires.lunaCli, "1.2.3-beta.4");
     assert.match(
       readFileSync(join(root, "RELEASE_NOTES.md"), "utf8"),

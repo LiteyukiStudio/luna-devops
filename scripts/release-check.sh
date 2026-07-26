@@ -89,7 +89,7 @@ section "Installing locked frontend dependencies"
 pnpm --dir web install --frozen-lockfile
 pnpm --dir docs install --frozen-lockfile
 
-section "Checking CLI and Skills release tooling"
+section "Checking CLI and Skill release tooling"
 pnpm check:release-scripts
 pnpm check:cli-skills
 

@@ -1,11 +1,7 @@
----
-name: luna-devops-deployment
-description: 通过 Luna CLI 管理应用、部署配置和候选镜像，并处理数据导出或终端预授权边界；发布、回滚和重启仅在机器 Help 出现对应工具后执行。
----
+# 应用与部署
 
-# 应用与部署 Skill
-
-先遵循 `luna-devops-cli`。当前目录覆盖 `application` 与 `deployment` 的 CRUD、候选镜像、拓扑读取、数据导出入口和终端预授权。
+当前目录覆盖 `application` 与 `deployment` 的 CRUD、候选镜像、拓扑读取、数据
+导出入口和终端预授权。
 
 ## 已可执行
 
@@ -27,4 +23,4 @@ description: 通过 Luna CLI 管理应用、部署配置和候选镜像，并处
 
 - 应用和部署配置删除是关键操作。
 - Secret 环境变量不回显、不内联传递。
-- 数据导出和终端需要用户在场与 MFA 时，当前 Bearer 流程可能无法完成；遇到稳定错误后停止。
+- 数据导出和终端需要用户在场与 MFA 时，Bearer 流程无法完成则停止。

@@ -67,19 +67,25 @@ See [Source Development and Verification](./development) for repository commands
   `project`, `projectId`, or `projectID`; the CLI injects that immutable project ID without granting additional permissions.
 - `api request` is limited to human diagnostics against a known relative API path and is always disabled in Agent mode. It must not impersonate a business capability that is absent from OpenAPI or still requires a dedicated transport.
 
-## Agent Skills
+## Agent Skill
 
-The paired Skills live in the repository's [`ai-supports/skills`](https://github.com/LiteyukiStudio/luna-devops/tree/main/ai-supports/skills) directory. They define intent routing, operation order, and safety boundaries. Machine-readable Help remains the source of truth for commands, parameters, risk, and output.
-Skills ship with the CLI and must use the exact same version. Every `cli-v*`
-GitHub Release includes individual `.skill` archives and the complete Skills
-bundle; an Agent must not load a mismatched version.
+The paired `luna-devops` Skill lives in
+[`ai-supports/skills/luna-devops`](https://github.com/LiteyukiStudio/luna-devops/tree/main/ai-supports/skills/luna-devops).
+Its root `SKILL.md` defines intent routing, shared operation order, and safety
+boundaries. Domain material lives under `references/` and is loaded only when
+the task needs it. Machine-readable Help remains the source of truth for
+commands, parameters, risk, and output.
+
+The Skill ships with the CLI and must use the exact same version. Every
+`cli-v*` GitHub Release contains one `luna-devops-<version>.skill`; an Agent
+must not load a mismatched version.
 
 ```bash
 luna help catalog query=project limit=20 agent=true
 luna help command path=project.get-projects agent=true
 ```
 
-After changing the command catalog or a capability boundary, update the Skills and run:
+After changing the command catalog or a capability boundary, update the Skill and run:
 
 ```bash
 node scripts/cli/verify-skills-sync.mjs

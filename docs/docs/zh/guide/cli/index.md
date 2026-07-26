@@ -67,18 +67,22 @@ luna --lang zh-CN project get-projects --help
   `project`、`projectId` 或 `projectID`；CLI 会注入该不可变项目 ID，但不会因此扩大权限。
 - `api request` 只供人类诊断已知相对 API 路径，并在 Agent 模式下固定禁用；它不能拿来伪装平台尚未进入 OpenAPI 或尚未完成专用传输的业务能力。
 
-## Agent Skills
+## Agent Skill
 
-配套 Skills 位于仓库的 [`ai-supports/skills`](https://github.com/LiteyukiStudio/luna-devops/tree/main/ai-supports/skills) 目录。Skills 负责意图路由、操作顺序和安全边界，具体命令、参数、风险与输出结构始终以机器 Help 为准。
-Skills 跟随 CLI 一起发布，版本必须与 CLI 完全相同。每个 `cli-v*` GitHub
-Release 都包含单独 `.skill` 和整套 Skills 压缩包；版本不一致时不得加载。
+配套 `luna-devops` Skill 位于仓库的 [`ai-supports/skills/luna-devops`](https://github.com/LiteyukiStudio/luna-devops/tree/main/ai-supports/skills/luna-devops)
+目录。根 `SKILL.md` 负责意图路由、通用操作顺序和安全边界，领域资料放在
+`references/` 并按任务需要加载。具体命令、参数、风险与输出结构始终以机器 Help
+为准。
+
+Skill 跟随 CLI 一起发布，版本必须与 CLI 完全相同。每个 `cli-v*` GitHub
+Release 只包含一个 `luna-devops-<version>.skill`；版本不一致时不得加载。
 
 ```bash
 luna help catalog query=project limit=20 agent=true
 luna help command path=project.get-projects agent=true
 ```
 
-CLI 命令或能力边界变化后，必须同步更新 Skills，并运行：
+CLI 命令或能力边界变化后，必须同步更新 Skill，并运行：
 
 ```bash
 node scripts/cli/verify-skills-sync.mjs

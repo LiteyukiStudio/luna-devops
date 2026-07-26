@@ -30,8 +30,8 @@ test("GitHub Release requires and downloads paired Skills", () => {
     workflow,
     /name:\s+cli-skills-\$\{\{ needs\.metadata\.outputs\.version \}\}/,
   );
-  assert.match(workflow, /release\/final\/\*\.skill/);
-  assert.match(workflow, /release\/final\/luna-cli-skills-\*\.zip/);
+  assert.match(workflow, /release\/final\/luna-devops-\*\.skill/);
+  assert.doesNotMatch(workflow, /luna-cli-skills-\*\.zip/);
   assert.match(
     workflow,
     /release\/final\/LUNA-CLI-SKILLS-MANIFEST\.json/,

@@ -27,8 +27,7 @@ const PRERELEASE_BINARIES = new Set([
 const SKILLS_MANIFEST = "LUNA-CLI-SKILLS-MANIFEST.json";
 
 function isSkillsAsset(name) {
-  return name.endsWith(".skill")
-    || /^luna-cli-skills-.+\.zip$/.test(name)
+  return /^luna-devops-.+\.skill$/.test(name)
     || name === SKILLS_MANIFEST;
 }
 
@@ -81,14 +80,12 @@ export function prepareReleaseAssets({ input, output, prerelease }) {
   if (![...names].some(name => name.endsWith(".tgz"))) {
     throw new Error("npm tarball is missing from release artifacts");
   }
-  if (![...names].some(name => name.endsWith(".skill"))) {
-    throw new Error("paired CLI Skills archives are missing from release artifacts");
-  }
-  if (![...names].some(name => /^luna-cli-skills-.+\.zip$/.test(name))) {
-    throw new Error("paired CLI Skills bundle is missing from release artifacts");
+  const skillArchives = [...names].filter(name => /^luna-devops-.+\.skill$/.test(name));
+  if (skillArchives.length !== 1) {
+    throw new Error("exactly one paired luna-devops Skill archive is required");
   }
   if (!names.has(SKILLS_MANIFEST)) {
-    throw new Error("paired CLI Skills manifest is missing from release artifacts");
+    throw new Error("paired Luna DevOps Skill manifest is missing from release artifacts");
   }
   if (prerelease) {
     for (const required of PRERELEASE_BINARIES) {

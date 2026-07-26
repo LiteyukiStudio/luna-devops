@@ -1,4 +1,4 @@
-name: CLI Skills Validation
+name: Luna DevOps Skill Validation
 
 on:
   workflow_dispatch:
@@ -89,7 +89,7 @@ jobs:
         with:
           ref: ${{ needs.metadata.outputs.tag }}
 
-      - name: Package standard Skills archives
+      - name: Package the standard progressive Skill
         run: >-
           node scripts/skills/package-skills.mjs
           --output=release/skills
@@ -103,8 +103,7 @@ jobs:
         with:
           name: luna-cli-skills-validation-${{ needs.metadata.outputs.version }}
           path: |
-            release/skills/*.skill
-            release/skills/luna-cli-skills-*.zip
+            release/skills/luna-devops-*.skill
             release/skills/LUNA-CLI-SKILLS-MANIFEST.json
           if-no-files-found: error
           retention-days: 7

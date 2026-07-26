@@ -9,15 +9,6 @@ const skillsRoot = join(root, "ai-supports", "skills");
 const lunaHome = mkdtempSync(join(tmpdir(), "luna-skills-sync-"));
 const errors = [];
 
-function listSkillFiles(directory) {
-  return readdirSync(directory)
-    .flatMap((entry) => {
-      const path = join(directory, entry);
-      return statSync(path).isDirectory() ? listSkillFiles(path) : [path];
-    })
-    .filter((path) => basename(path) === "SKILL.md");
-}
-
 function cliInvocation() {
   const tsx = join(root, "cli", "node_modules", ".bin", "tsx");
   try {
@@ -84,8 +75,28 @@ function validateSkill(path, commandPaths) {
   if (name !== skillDirectory) {
     errors.push(`${displayPath}: frontmatter name must equal directory name "${skillDirectory}"`);
   }
-  if (skillDirectory !== "luna-devops-cli" && !source.includes("luna-devops-cli")) {
-    errors.push(`${displayPath}: domain skills must reference luna-devops-cli`);
+  if (skillDirectory !== "luna-devops") {
+    errors.push(`${displayPath}: only ai-supports/skills/luna-devops may contain SKILL.md`);
+  }
+
+  const referencePattern = /\]\(references\/([a-z0-9-]+\.md)\)/g;
+  const references = new Set(
+    [...source.matchAll(referencePattern)].map(match => match[1]),
+  );
+  const referenceDirectory = join(dirname(path), "references");
+  const availableReferences = new Set(
+    readdirSync(referenceDirectory)
+      .filter(name => name.endsWith(".md")),
+  );
+  for (const reference of references) {
+    if (!availableReferences.has(reference)) {
+      errors.push(`${displayPath}: missing domain reference "${reference}"`);
+    }
+  }
+  for (const reference of availableReferences) {
+    if (!references.has(reference)) {
+      errors.push(`${displayPath}: unreferenced domain file "references/${reference}"`);
+    }
   }
 
   const commandPattern = /`luna\s+([a-z0-9-]+)\s+([a-z0-9-]+)([^`]*)`/g;
@@ -113,20 +124,18 @@ function validateSkill(path, commandPaths) {
 
 try {
   const commandPaths = loadCommandCatalog();
-  const skillFiles = listSkillFiles(skillsRoot);
-  for (const path of skillFiles) {
-    validateSkill(path, commandPaths);
-  }
+  const skillFile = join(skillsRoot, "luna-devops", "SKILL.md");
+  validateSkill(skillFile, commandPaths);
 
   if (errors.length > 0) {
-    console.error("Luna CLI Skills sync check failed:");
+    console.error("Luna DevOps Skill sync check failed:");
     for (const error of errors) {
       console.error(`- ${error}`);
     }
     process.exitCode = 1;
   } else {
     console.log(
-      `Luna CLI Skills sync check passed: ${skillFiles.length} skills, ${commandPaths.size} commands.`,
+      `Luna CLI Skill sync check passed: 1 skill with progressive references, ${commandPaths.size} commands.`,
     );
   }
 } finally {

@@ -41,7 +41,7 @@ const tracks = {
     ],
   },
   "cli-skills": {
-    title: "Luna CLI Skills",
+    title: "Luna DevOps Skill",
     tagPatterns: ["cli-v*", "cli-skills-v*"],
     prefixes: ["cli-v", "cli-skills-v"],
     output: "cli-skills.md",
@@ -126,8 +126,14 @@ function trackTags(trackName, track) {
   if (trackName !== "cli-skills") return tags;
   return tags.filter((tag) => {
     if (tag.startsWith("cli-skills-v")) return true;
-    return compatibilityAtTag(tag)?.cliSkills?.release === "bundled";
+    return isPairedSkillsRelease(compatibilityAtTag(tag));
   });
+}
+
+function isPairedSkillsRelease(metadata) {
+  return ["bundled", "single-progressive-skill"].includes(
+    metadata?.cliSkills?.release,
+  );
 }
 
 function commitsForRange(track, range) {
@@ -159,6 +165,11 @@ function compatibilityAtTag(tag) {
 }
 
 function compatibilityLines(trackName, metadata, version, lang) {
+  if (metadata?.cliSkills?.release === "single-progressive-skill") {
+    return lang === "zh"
+      ? [`**配套关系：** Luna CLI 与 Luna DevOps Skill 均为 \`${version}\`，必须精确同版本使用。`]
+      : [`**Pairing:** Luna CLI and the Luna DevOps Skill are both \`${version}\` and must match exactly.`];
+  }
   if (metadata?.cliSkills?.release === "bundled") {
     return lang === "zh"
       ? [`**配套关系：** Luna CLI 与 Luna CLI Skills 均为 \`${version}\`，必须精确同版本使用。`]
@@ -243,20 +254,20 @@ function pageIntroduction(trackName, lang) {
   if (lang === "zh") {
     if (trackName === "cli") {
       return [
-        "这里记录 Luna CLI 的公开版本变化。CLI 可以独立使用；新版本会在同一个 Release 中强制附带完全同版本的 Luna CLI Skills。",
+        "这里记录 Luna CLI 的公开版本变化。CLI 可以独立使用；新版本会在同一个 Release 中强制附带完全同版本的 Luna DevOps Skill。",
         "",
-        "当前开发线采用 CLI 与 Skills 同版本、同 tag、同 Release 的绑定策略。",
+        "当前开发线采用 CLI 与 Skill 同版本、同 tag、同 Release 的绑定策略。",
         "",
         `安装与下载请前往 [GitHub Releases](${repositoryUrl}/releases)。`,
       ];
     }
     if (trackName === "cli-skills") {
       return [
-        "这里记录 Luna CLI Skills 的公开版本变化。新版本不再独立发版，而是随同版本 Luna CLI 一起发布。",
+        "这里记录 Luna DevOps Skill 的公开版本变化。新版本不再独立发版，而是随同版本 Luna CLI 一起发布。",
         "",
-        "Skills 强依赖完全相同版本的 Luna CLI；历史独立 Skills Release 仍保留用于追溯。",
+        "当前只发布一个 `luna-devops` Skill；根 `SKILL.md` 负责领域路由，具体说明从 `references/` 按需加载。Skill 强依赖完全相同版本的 Luna CLI，历史独立 Skills Release 仍保留用于追溯。",
         "",
-        `标准 \`.skill\` 压缩包和整套 Skills 压缩包请前往 [GitHub Releases](${repositoryUrl}/releases) 下载。`,
+        `标准 \`luna-devops-<version>.skill\` 请前往 [GitHub Releases](${repositoryUrl}/releases) 下载。`,
       ];
     }
     return [
@@ -268,20 +279,20 @@ function pageIntroduction(trackName, lang) {
 
   if (trackName === "cli") {
     return [
-      "Public release notes for Luna CLI. The CLI works independently; each new release must include the exact same version of Luna CLI Skills in the same GitHub Release.",
+      "Public release notes for Luna CLI. The CLI works independently; each new release must include the exact same version of the Luna DevOps Skill in the same GitHub Release.",
       "",
-      "The current development line binds CLI and Skills to one version, tag, and release.",
+      "The current development line binds the CLI and Skill to one version, tag, and release.",
       "",
       `Install or download releases from [GitHub Releases](${repositoryUrl}/releases).`,
     ];
   }
   if (trackName === "cli-skills") {
     return [
-      "Public release notes for Luna CLI Skills. New Skills versions are published together with the exact same Luna CLI version.",
+      "Public release notes for the Luna DevOps Skill. New Skill versions are published together with the exact same Luna CLI version.",
       "",
-      "Skills require the exact same Luna CLI version. Historical standalone Skills releases remain available for traceability.",
+      "Only one `luna-devops` Skill is published. Its root `SKILL.md` routes tasks and loads domain guidance from `references/` on demand. The Skill requires the exact same Luna CLI version, while historical standalone Skills releases remain available for traceability.",
       "",
-      `Download standard \`.skill\` archives or the complete Skills bundle from [GitHub Releases](${repositoryUrl}/releases).`,
+      `Download \`luna-devops-<version>.skill\` from [GitHub Releases](${repositoryUrl}/releases).`,
     ];
   }
   return [

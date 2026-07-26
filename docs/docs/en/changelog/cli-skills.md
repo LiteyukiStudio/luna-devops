@@ -1,10 +1,10 @@
-# Luna CLI Skills Changelog
+# Luna DevOps Skill Changelog
 
-Public release notes for Luna CLI Skills. New Skills versions are published together with the exact same Luna CLI version.
+Public release notes for the Luna DevOps Skill. New Skill versions are published together with the exact same Luna CLI version.
 
-Skills require the exact same Luna CLI version. Historical standalone Skills releases remain available for traceability.
+Only one `luna-devops` Skill is published. Its root `SKILL.md` routes tasks and loads domain guidance from `references/` on demand. The Skill requires the exact same Luna CLI version, while historical standalone Skills releases remain available for traceability.
 
-Download standard `.skill` archives or the complete Skills bundle from [GitHub Releases](https://github.com/LiteyukiStudio/luna-devops/releases).
+Download `luna-devops-<version>.skill` from [GitHub Releases](https://github.com/LiteyukiStudio/luna-devops/releases).
 
 ## 0.0.5
 

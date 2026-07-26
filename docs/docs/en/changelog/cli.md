@@ -1,8 +1,8 @@
 # Luna CLI Changelog
 
-Public release notes for Luna CLI. The CLI works independently; each new release must include the exact same version of Luna CLI Skills in the same GitHub Release.
+Public release notes for Luna CLI. The CLI works independently; each new release must include the exact same version of the Luna DevOps Skill in the same GitHub Release.
 
-The current development line binds CLI and Skills to one version, tag, and release.
+The current development line binds the CLI and Skill to one version, tag, and release.
 
 Install or download releases from [GitHub Releases](https://github.com/LiteyukiStudio/luna-devops/releases).
 
