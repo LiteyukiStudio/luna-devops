@@ -6,6 +6,18 @@
 
 安装与下载请前往 [GitHub Releases](https://github.com/LiteyukiStudio/luna-devops/releases)。
 
+## 0.0.3-beta.2
+
+发布日期：2026-07-26
+
+[GitHub Release](https://github.com/LiteyukiStudio/luna-devops/releases/tag/cli-v0.0.3-beta.2) · [查看版本代码](https://github.com/LiteyukiStudio/luna-devops/tree/cli-v0.0.3-beta.2)
+
+**建议配套 Luna CLI Skills：** `0.1.0-beta.1`
+
+### 新增
+
+- feat: 更新命令行选项处理，确保帮助和版本标志不被解析 ([f62cf4c](https://github.com/LiteyukiStudio/luna-devops/commit/f62cf4cc0036faa461d8cd7928a5a81ac3807f9d))
+
 ## 0.0.3-beta.1
 
 发布日期：2026-07-26
