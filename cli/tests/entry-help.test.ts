@@ -66,4 +66,26 @@ describe('cli startup and human help', () => {
     expect(output.join('')).toContain('用法：')
     expect(output.join('')).toContain('快速开始：')
   })
+
+  it.each([
+    ['--version'],
+    ['-V'],
+    ['--lang', 'zh-CN', '--version'],
+  ])('keeps version flags available to release smoke tests: %s', async (...args) => {
+    const output: string[] = []
+    const cli = createLunaCli({ version: '0.0.3-beta.1' })
+    cli.program.configureOutput({
+      writeOut: chunk => output.push(chunk),
+      writeErr: chunk => output.push(chunk),
+    })
+
+    const result = await runCli(
+      cli.program,
+      ['node', 'luna', ...args],
+      cli.ports.output,
+    )
+
+    expect(result.exitCode).toBe(0)
+    expect(output.join('').trim()).toBe('0.0.3-beta.1')
+  })
 })

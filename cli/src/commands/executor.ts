@@ -190,6 +190,8 @@ function isRootOnlyInvocation(program: Command, argv: readonly string[]): boolea
       candidate.short === flag || candidate.long === flag)
     if (!option)
       return false
+    if (option.long === '--help' || option.long === '--version')
+      return false
     if (!token.includes('=') && (option.required || option.optional)) {
       const value = tokens[index + 1]
       if (!value || value.startsWith('-'))
