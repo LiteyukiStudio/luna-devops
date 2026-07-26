@@ -132,6 +132,7 @@ export async function runCli(
   fallbackOutput?: RuntimePorts['output'],
 ): Promise<CliRunResult> {
   const fallbackGlobals = inferFallbackGlobals(argv)
+  const rootOnly = isRootOnlyInvocation(program, argv)
   const restoreCommanderOutput = configureCommanderOutput(
     program,
     isMachineOutput(fallbackGlobals),
@@ -139,6 +140,24 @@ export async function runCli(
   for (const command of commandTree(program))
     command.exitOverride()
   try {
+    if (rootOnly) {
+      if (isMachineOutput(fallbackGlobals)) {
+        throw new CliCommandError(
+          'command_required',
+          translate(
+            PROGRAM_PORTS.get(program),
+            'errors.command_required',
+            'Choose a command. Run luna --help to see available commands.',
+          ),
+          {
+            status: 400,
+            exitCode: 2,
+          },
+        )
+      }
+      program.outputHelp()
+      return { exitCode: 0 }
+    }
     await program.parseAsync([...argv], { from: 'node' })
     return { exitCode: 0 }
   }
@@ -153,6 +172,32 @@ export async function runCli(
   finally {
     restoreCommanderOutput()
   }
+}
+
+function isRootOnlyInvocation(program: Command, argv: readonly string[]): boolean {
+  const tokens = argv.slice(2)
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index]
+    if (!token)
+      continue
+    if (token === '--')
+      return index === tokens.length - 1
+    if (!token.startsWith('-'))
+      return false
+
+    const flag = token.includes('=') ? token.slice(0, token.indexOf('=')) : token
+    const option = program.options.find(candidate =>
+      candidate.short === flag || candidate.long === flag)
+    if (!option)
+      return false
+    if (!token.includes('=') && (option.required || option.optional)) {
+      const value = tokens[index + 1]
+      if (!value || value.startsWith('-'))
+        return false
+      index += 1
+    }
+  }
+  return true
 }
 
 async function executeRegistered(

@@ -40,6 +40,28 @@ describe('commander command execution', () => {
     })
   })
 
+  it('requires a command with one structured error in agent mode', async () => {
+    const registry = new CommandRegistry()
+    const streams = memoryOutputStreams()
+    const output = new CommandOutput({ streams: streams.streams, version: 'test' })
+    const captures = capturePorts()
+    const program = createCliProgram({
+      registry,
+      ports: { ...captures.ports, output },
+    })
+    routeCommanderOutput(program, streams.streams)
+
+    const result = await runCli(program, ['node', 'luna', '--agent'], output)
+
+    expect(result.exitCode).toBe(2)
+    expect(streams.stdout()).toBe('')
+    expect(JSON.parse(streams.stderr())).toMatchObject({
+      error: {
+        code: 'command_required',
+      },
+    })
+  })
+
   it.each([
     {
       name: 'unknown category',

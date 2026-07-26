@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { commandHelpText, rootHelpText } from '../src/commands/human-help.js'
+import { runCli } from '../src/commands/index.js'
 import { createLunaCli, startupOptionValue } from '../src/entry.js'
 import { createCliI18n, normalizeLocale } from '../src/i18n/index.js'
 
@@ -40,5 +41,29 @@ describe('cli startup and human help', () => {
     expect(commandHelp).toContain('业务参数：')
     expect(commandHelp).toContain('path=<value>  [必填, string')
     expect(commandHelp).toContain('luna help command path=project.get-projects output=json')
+  })
+
+  it('shows localized root help when invoked without a command', async () => {
+    const output: string[] = []
+    const i18n = await createCliI18n({ env: { LUNA_LANG: 'zh-CN' } })
+    const cli = createLunaCli({
+      ports: {
+        translate(key, fallback, locale) {
+          return i18n.getFixedT(normalizeLocale(locale) ?? i18n.language)(key, {
+            defaultValue: fallback,
+          })
+        },
+      },
+    })
+    cli.program.configureOutput({
+      writeOut: chunk => output.push(chunk),
+      writeErr: chunk => output.push(chunk),
+    })
+
+    const result = await runCli(cli.program, ['node', 'luna'], cli.ports.output)
+
+    expect(result.exitCode).toBe(0)
+    expect(output.join('')).toContain('用法：')
+    expect(output.join('')).toContain('快速开始：')
   })
 })

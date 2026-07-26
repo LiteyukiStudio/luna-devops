@@ -40,12 +40,13 @@ pnpm add --global @liteyuki/luna-cli@beta
 CLI 自带面向人类的分层帮助，不需要先安装 AI Skills：
 
 ```bash
+luna
 luna --help
 luna project --help
 luna project get-projects --help
 ```
 
-第一级列出分类和快速开始，第二级列出分类内工具，第三级显示接口、权限、风险、参数来源、必填项和示例。业务参数统一使用 `key=value`；JSON、文件或多行文本使用 `key=@file.json` 或 `key=@-`。
+直接运行 `luna` 且不传子命令时，会显示同一份本地化根帮助，不会执行远程操作。第一级列出分类和快速开始，第二级列出分类内工具，第三级显示接口、权限、风险、参数来源、必填项和示例。业务参数统一使用 `key=value`；JSON、文件或多行文本使用 `key=@file.json` 或 `key=@-`。
 
 语言解析顺序为：`--lang`、`LUNA_LANG`、当前 context 的 `language`、系统 `LC_ALL` / `LC_MESSAGES` / `LANG`、运行时语言，最后回退英文。例如：
 
@@ -54,6 +55,9 @@ LUNA_LANG=zh-CN luna --help
 luna --lang zh-CN project get-projects --help
 luna context set name=production server=https://devops.example.com language=zh-CN
 ```
+
+npm 的 `latest` 与 `beta` 是独立更新通道。测试预发布版本时必须显式安装
+`@beta`，普通的全局更新不会从稳定版自动切换到预发布版。
 
 AI Skills 会在此基础上使用 `luna help catalog ... agent=true` 和
 `luna help command ... agent=true` 获取稳定 JSON 契约，让执行更准确；CLI 本身不依赖 Skills。
@@ -112,9 +116,16 @@ See the documentation links above for installation, release channels, checksums,
 The CLI includes layered human Help without requiring Skills:
 
 ```bash
+luna
 luna --help
 luna project --help
 luna project get-projects --help
 ```
 
-Locale precedence is `--lang`, `LUNA_LANG`, context `language`, system locale, then English. Use `LUNA_LANG=zh-CN luna --help` for Chinese. Skills build on the CLI's machine-readable Help for more precise agent operation; the CLI does not depend on Skills.
+Running `luna` without a subcommand displays the same localized root Help and
+does not perform a remote operation. Locale precedence is `--lang`,
+`LUNA_LANG`, context `language`, system locale, then English. Use
+`LUNA_LANG=zh-CN luna --help` for Chinese. npm `latest` and `beta` are separate
+update channels, so prerelease testing must explicitly install `@beta`. Skills
+build on the CLI's machine-readable Help for more precise agent operation; the
+CLI does not depend on Skills.

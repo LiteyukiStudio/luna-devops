@@ -11971,7 +11971,7 @@ import process8 from "process";
 import { Command, CommanderError, Option } from "commander";
 
 // src/version.ts
-var CLI_VERSION = true ? "0.0.0-beta.8" : CLI_DEVELOPMENT_VERSION;
+var CLI_VERSION = true ? "0.0.0-development" : CLI_DEVELOPMENT_VERSION;
 
 // src/commands/human-help.ts
 var HELP_TITLES = {
@@ -12173,6 +12173,7 @@ var DEFAULT_GLOBALS = Object.freeze({
   debug: false,
   insecureSkipTlsVerify: false
 });
+var PROGRAM_PORTS = /* @__PURE__ */ new WeakMap();
 function createCliProgram(options) {
   const program = localizeHelp(new Command().name(options.name ?? "luna").description(options.description ?? "Luna DevOps command-line client").version(
     options.ports.version ?? CLI_VERSION,
@@ -12182,6 +12183,7 @@ function createCliProgram(options) {
     "-h, --help",
     translate(options.ports, "help.options.help", "Show command help")
   ), options.ports);
+  PROGRAM_PORTS.set(program, options.ports);
   addGlobalOptions(program, options.ports);
   program.addHelpText("after", () => rootHelpText(options.registry, options.ports));
   for (const category of options.registry.categories()) {
@@ -12224,25 +12226,67 @@ function createCliProgram(options) {
 }
 async function runCli(program, argv = process8.argv, fallbackOutput) {
   const fallbackGlobals = inferFallbackGlobals(argv);
-  const restoreCommanderOutput = suppressCommanderOutput(
+  const rootOnly = isRootOnlyInvocation(program, argv);
+  const restoreCommanderOutput = configureCommanderOutput(
     program,
     isMachineOutput(fallbackGlobals)
   );
   for (const command of commandTree(program))
     command.exitOverride();
   try {
+    if (rootOnly) {
+      if (isMachineOutput(fallbackGlobals)) {
+        throw new CliCommandError(
+          "command_required",
+          translate(
+            PROGRAM_PORTS.get(program),
+            "errors.command_required",
+            "Choose a command. Run luna --help to see available commands."
+          ),
+          {
+            status: 400,
+            exitCode: 2
+          }
+        );
+      }
+      program.outputHelp();
+      return { exitCode: 0 };
+    }
     await program.parseAsync([...argv], { from: "node" });
     return { exitCode: 0 };
   } catch (error) {
     if (error instanceof CommanderError && isExpectedCommanderExit(error)) {
       return { exitCode: 0 };
     }
-    const normalized = commanderFailure(error);
+    const normalized = commanderFailure(error, program, argv);
     await fallbackOutput?.writeError(normalized, fallbackGlobals);
     return { exitCode: normalized.exitCode, error: normalized };
   } finally {
     restoreCommanderOutput();
   }
+}
+function isRootOnlyInvocation(program, argv) {
+  const tokens = argv.slice(2);
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (!token)
+      continue;
+    if (token === "--")
+      return index === tokens.length - 1;
+    if (!token.startsWith("-"))
+      return false;
+    const flag = token.includes("=") ? token.slice(0, token.indexOf("=")) : token;
+    const option = program.options.find((candidate) => candidate.short === flag || candidate.long === flag);
+    if (!option)
+      return false;
+    if (!token.includes("=") && (option.required || option.optional)) {
+      const value = tokens[index + 1];
+      if (!value || value.startsWith("-"))
+        return false;
+      index += 1;
+    }
+  }
+  return true;
 }
 async function executeRegistered(registered, tokens, flagOptions, ports, invokedPath) {
   const parsed = splitGlobalTokens(tokens);
@@ -12452,7 +12496,7 @@ function addGlobalOptions(program, ports) {
   program.option("--context <name>", translate(ports, "help.options.context", "Select a saved context")).option("--server <url>", translate(ports, "help.options.server", "Override the Luna server origin")).option("--project <id>", translate(ports, "help.options.project", "Select a project for this command")).addOption(new Option("-o, --output <format>", translate(ports, "help.options.output", "Output format")).choices(["table", "json", "raw-json", "yaml", "jsonl", "name"])).option("--lang <locale>", translate(ports, "help.options.lang", "Output and help language")).option("--no-color", translate(ports, "help.options.noColor", "Disable terminal colors")).option("--no-interactive", translate(ports, "help.options.noInteractive", "Disable prompts")).option("-y, --yes", translate(ports, "help.options.yes", "Approve supported confirmation prompts")).option("--quiet", translate(ports, "help.options.quiet", "Suppress informational diagnostics")).option("--agent", translate(ports, "help.options.agent", "Enable strict machine-readable agent mode")).addOption(new Option("--dry-run <mode>", translate(ports, "help.options.dryRun", "Preview without applying")).choices(["client", "server"])).option("--timeout <duration>", translate(ports, "help.options.timeout", "Request timeout")).option("--debug", translate(ports, "help.options.debug", "Enable debug diagnostics")).option("--request-id <id>", translate(ports, "help.options.requestId", "Use a request correlation ID")).option("--idempotency-key <key>", translate(ports, "help.options.idempotencyKey", "Use an idempotency key")).option("--insecure-skip-tls-verify", translate(ports, "help.options.insecureTls", "Disable TLS verification when supported"));
 }
 function translate(ports, key, fallback) {
-  return ports.translate?.(key, fallback) ?? fallback;
+  return ports?.translate?.(key, fallback) ?? fallback;
 }
 function invokedCommandPath(command) {
   const canonicalCategory = command.parent?.name() ?? "";
@@ -12468,12 +12512,17 @@ function explicitCommanderOptions(command) {
     Object.entries(values).filter(([key]) => command.getOptionValueSourceWithGlobals(key) !== "default")
   );
 }
-function commanderFailure(error) {
+function commanderFailure(error, program, argv) {
   if (!(error instanceof CommanderError))
     return toCliCommandError(error);
+  const ports = PROGRAM_PORTS.get(program);
+  const helpCommand = commanderHelpCommand(program, argv);
+  const rawMessage = cleanCommanderMessage(error.message);
+  const unknown = error.code === "commander.unknownCommand";
+  const message = unknown ? localizedUnknownCommandMessage(rawMessage, helpCommand, ports) : localizedInvalidArgumentsMessage(helpCommand, ports);
   return new CliCommandError(
-    error.code === "commander.unknownCommand" ? "unknown_command" : "invalid_arguments",
-    cleanCommanderMessage(error.message),
+    unknown ? "unknown_command" : "invalid_arguments",
+    message,
     {
       status: 400,
       exitCode: 2,
@@ -12493,16 +12542,14 @@ function inferFallbackGlobals(argv) {
     output: isOutput(output) ? output : agent ? "json" : "table"
   };
 }
-function suppressCommanderOutput(program, suppress) {
-  if (!suppress)
-    return () => void 0;
+function configureCommanderOutput(program, machine) {
   const snapshots = commandTree(program).map((command) => ({
     command,
     output: command.configureOutput()
   }));
   for (const snapshot of snapshots) {
     snapshot.command.configureOutput({
-      writeOut: () => void 0,
+      writeOut: machine ? () => void 0 : snapshot.output.writeOut,
       writeErr: () => void 0,
       outputError: () => void 0
     });
@@ -12523,6 +12570,41 @@ function isExpectedCommanderExit(error) {
 }
 function cleanCommanderMessage(value) {
   return value.replace(/^error:\s*/i, "").trim() || "Invalid command arguments.";
+}
+function localizedUnknownCommandMessage(rawMessage, helpCommand, ports) {
+  const command = /unknown command ['"]([^'"]+)['"]/i.exec(rawMessage)?.[1];
+  const suggestion = /did you mean ([^)]+)\?/i.exec(rawMessage)?.[1]?.trim();
+  const lines = [
+    command ? `${translate(ports, "help.errors.unknownCommand", "Unknown command")}: ${command}` : translate(ports, "help.errors.unknownCommand", "Unknown command.")
+  ];
+  if (suggestion) {
+    lines.push(
+      `${translate(ports, "help.errors.didYouMean", "Did you mean")}: ${suggestion}`
+    );
+  }
+  lines.push(
+    `${translate(ports, "help.errors.nextStep", "View available commands")}: ${helpCommand}`
+  );
+  return lines.join("\n");
+}
+function localizedInvalidArgumentsMessage(helpCommand, ports) {
+  return [
+    translate(ports, "help.errors.invalidArguments", "Invalid command arguments."),
+    `${translate(ports, "help.errors.nextStep", "View command parameters")}: ${helpCommand}`
+  ].join("\n");
+}
+function commanderHelpCommand(program, argv) {
+  const rootName = program.name();
+  const operands = argv.slice(2).filter(
+    (token) => token.length > 0 && !token.startsWith("-") && !token.includes("=")
+  );
+  const category = operands[0];
+  if (!category || !program.commands.some(
+    (command) => command.name() === category || command.aliases().includes(category)
+  )) {
+    return `${rootName} --help`;
+  }
+  return `${rootName} ${category} --help`;
 }
 function isOutput(value) {
   return value === "table" || value === "json" || value === "raw-json" || value === "yaml" || value === "jsonl" || value === "name";
@@ -14219,7 +14301,13 @@ var resources = {
           title: "Examples:",
           fileHint: "# Replace large JSON or multiline values with parameter=@file.json."
         },
-        machineContract: "Complete machine-readable contract:"
+        machineContract: "Complete machine-readable contract:",
+        errors: {
+          unknownCommand: "Unknown command",
+          didYouMean: "Did you mean",
+          invalidArguments: "Invalid command arguments.",
+          nextStep: "Next step"
+        }
       },
       categories: {
         "access-token": "Personal access tokens",
@@ -14313,6 +14401,7 @@ var resources = {
         execute: "Run this command?"
       },
       errors: {
+        command_required: "Choose a command. Run luna --help to see available commands.",
         invalid_arguments: "Input validation failed.",
         unauthenticated: "Authentication is required.",
         forbidden: "You do not have permission to perform this operation.",
@@ -14434,7 +14523,13 @@ var resources = {
           title: "\u793A\u4F8B\uFF1A",
           fileHint: "# \u8F83\u5927\u7684 JSON \u6216\u591A\u884C\u5185\u5BB9\u8BF7\u6539\u7528 parameter=@file.json\u3002"
         },
-        machineContract: "\u5B8C\u6574\u673A\u5668\u53EF\u8BFB\u547D\u4EE4\u5951\u7EA6\uFF1A"
+        machineContract: "\u5B8C\u6574\u673A\u5668\u53EF\u8BFB\u547D\u4EE4\u5951\u7EA6\uFF1A",
+        errors: {
+          unknownCommand: "\u672A\u77E5\u547D\u4EE4",
+          didYouMean: "\u4F60\u662F\u5426\u60F3\u8F93\u5165",
+          invalidArguments: "\u547D\u4EE4\u53C2\u6570\u65E0\u6548\u3002",
+          nextStep: "\u4E0B\u4E00\u6B65"
+        }
       },
       categories: {
         "access-token": "\u4E2A\u4EBA\u8BBF\u95EE\u4EE4\u724C",
@@ -14528,6 +14623,7 @@ var resources = {
         execute: "\u786E\u8BA4\u6267\u884C\u6B64\u547D\u4EE4\u5417\uFF1F"
       },
       errors: {
+        command_required: "\u8BF7\u9009\u62E9\u8981\u6267\u884C\u7684\u547D\u4EE4\u3002\u8FD0\u884C luna --help \u67E5\u770B\u53EF\u7528\u547D\u4EE4\u3002",
         invalid_arguments: "\u8F93\u5165\u53C2\u6570\u6821\u9A8C\u5931\u8D25\u3002",
         unauthenticated: "\u9700\u8981\u5148\u5B8C\u6210\u8EAB\u4EFD\u9A8C\u8BC1\u3002",
         forbidden: "\u5F53\u524D\u8D26\u53F7\u6CA1\u6709\u6267\u884C\u6B64\u64CD\u4F5C\u7684\u6743\u9650\u3002",

@@ -17,7 +17,7 @@ pnpm add --global @liteyuki/luna-cli
 Prereleases require an explicit channel:
 
 ```bash
-npm install --global @liteyuki/luna-cli@next
+npm install --global @liteyuki/luna-cli@beta
 pnpm add --global @liteyuki/luna-cli@beta
 ```
 
@@ -79,12 +79,13 @@ Do not parse colored tables, column widths, or localized human output.
 For human use, discover commands progressively:
 
 ```bash
+luna
 luna --help
 luna project --help
 luna project get-projects --help
 ```
 
-Command Help lists required parameters, types, input sources, risk, scopes, endpoint, and examples. Business parameters use `key=value`; use `key=@file` or `key=@-` for files, JSON, and multiline input.
+Running `luna` without a subcommand displays localized root help and does not perform a remote operation. Command Help lists required parameters, types, input sources, risk, scopes, endpoint, and examples. Business parameters use `key=value`; use `key=@file` or `key=@-` for files, JSON, and multiline input.
 
 Select Chinese for one command:
 
@@ -100,6 +101,21 @@ luna context set name=production server=https://devops.example.com language=zh-C
 ```
 
 Precedence is `--lang` > `LUNA_LANG` > context `language` > system locale > English. Upgrade an older prerelease to the latest `beta` to receive the complete locale detection behavior.
+
+`latest` and `beta` are separate npm update channels. A regular
+`pnpm update --global @liteyuki/luna-cli` does not switch a stable installation
+to a prerelease. Install the beta explicitly when testing it:
+
+```bash
+pnpm add --global @liteyuki/luna-cli@beta
+rehash
+luna --version
+which -a luna
+pnpm list --global @liteyuki/luna-cli
+```
+
+If `luna --help` remains in English, verify the version and executable path
+first. An older `luna` earlier in `PATH` may be shadowing the pnpm installation.
 
 ## Shell completion
 

@@ -200,6 +200,7 @@ export const resources = {
         execute: 'Run this command?',
       },
       errors: {
+        command_required: 'Choose a command. Run luna --help to see available commands.',
         invalid_arguments: 'Input validation failed.',
         unauthenticated: 'Authentication is required.',
         forbidden: 'You do not have permission to perform this operation.',
@@ -421,6 +422,7 @@ export const resources = {
         execute: '确认执行此命令吗？',
       },
       errors: {
+        command_required: '请选择要执行的命令。运行 luna --help 查看可用命令。',
         invalid_arguments: '输入参数校验失败。',
         unauthenticated: '需要先完成身份验证。',
         forbidden: '当前账号没有执行此操作的权限。',

@@ -15,7 +15,7 @@ pnpm add --global @liteyuki/luna-cli
 预发布版必须显式选择通道：
 
 ```bash
-npm install --global @liteyuki/luna-cli@next
+npm install --global @liteyuki/luna-cli@beta
 pnpm add --global @liteyuki/luna-cli@beta
 ```
 
@@ -77,12 +77,13 @@ output=json interactive=false
 面向人类使用时，从以下三级帮助逐步查找命令：
 
 ```bash
+luna
 luna --help
 luna project --help
 luna project get-projects --help
 ```
 
-第三级帮助会列出业务参数是否必填、类型、输入来源、风险、Scope、接口和示例。业务参数使用 `key=value`；文件、JSON 和多行内容使用 `key=@file` 或 `key=@-`。
+直接运行 `luna` 且不传子命令时，会展示本地化的根帮助，不会执行任何远程操作。第三级帮助会列出业务参数是否必填、类型、输入来源、风险、Scope、接口和示例。业务参数使用 `key=value`；文件、JSON 和多行内容使用 `key=@file` 或 `key=@-`。
 
 临时切换中文：
 
@@ -98,6 +99,21 @@ luna context set name=production server=https://devops.example.com language=zh-C
 ```
 
 优先级为 `--lang` > `LUNA_LANG` > context `language` > 系统语言 > 英文。修改环境变量后应重新启动当前命令；已经安装的旧预发布版本需要升级到最新 `beta` 才能获得完整语言检测。
+
+`latest` 与 `beta` 是两个独立的 npm 更新通道。`pnpm update --global
+@liteyuki/luna-cli` 只会跟随当前稳定通道，不会自动切换到预发布版。需要测试
+beta 时请显式执行：
+
+```bash
+pnpm add --global @liteyuki/luna-cli@beta
+rehash
+luna --version
+which -a luna
+pnpm list --global @liteyuki/luna-cli
+```
+
+如果 `luna --help` 仍显示英文，先确认版本和实际命令路径，避免 PATH 中残留的旧
+`luna` 覆盖 pnpm 安装版本。
 
 ## Shell Completion
 
