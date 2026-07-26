@@ -6,6 +6,16 @@ The current development line binds the CLI and Skill to one version, tag, and re
 
 CLI packages, binaries, and the paired `luna-devops-<version>.skill` are available from [GitHub Releases](https://github.com/LiteyukiStudio/luna-devops/releases).
 
+## 0.0.7
+
+Release date: 2026-07-27
+
+[GitHub Release](https://github.com/LiteyukiStudio/luna-devops/releases/tag/cli-v0.0.7) · [View tag source](https://github.com/LiteyukiStudio/luna-devops/tree/cli-v0.0.7)
+
+**Pairing:** Luna CLI and the Luna DevOps Skill are both `0.0.7` and must match exactly.
+
+No commits matched this product release track.
+
 ## 0.0.6
 
 Release date: 2026-07-27

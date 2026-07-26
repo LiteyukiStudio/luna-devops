@@ -6,6 +6,16 @@
 
 CLI 安装包、二进制文件和配套 `luna-devops-<version>.skill` 均可从 [GitHub Releases](https://github.com/LiteyukiStudio/luna-devops/releases) 获取。
 
+## 0.0.7
+
+发布日期：2026-07-27
+
+[GitHub Release](https://github.com/LiteyukiStudio/luna-devops/releases/tag/cli-v0.0.7) · [查看版本代码](https://github.com/LiteyukiStudio/luna-devops/tree/cli-v0.0.7)
+
+**配套关系：** Luna CLI 与 Luna DevOps Skill 均为 `0.0.7`，必须精确同版本使用。
+
+此版本没有匹配当前产品轨道的提交记录。
+
 ## 0.0.6
 
 发布日期：2026-07-27
