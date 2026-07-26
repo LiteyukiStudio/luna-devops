@@ -6,6 +6,18 @@
 
 标准 `luna-devops-<version>.skill` 请前往 [GitHub Releases](https://github.com/LiteyukiStudio/luna-devops/releases) 下载。
 
+## 0.0.6
+
+发布日期：2026-07-27
+
+[GitHub Release](https://github.com/LiteyukiStudio/luna-devops/releases/tag/cli-v0.0.6) · [查看版本代码](https://github.com/LiteyukiStudio/luna-devops/tree/cli-v0.0.6)
+
+**配套关系：** Luna CLI 与 Luna DevOps Skill 均为 `0.0.6`，必须精确同版本使用。
+
+### 新增
+
+- feat: Refactor Luna CLI Skills to Luna DevOps Skill ([8b18c6a](https://github.com/LiteyukiStudio/luna-devops/commit/8b18c6ae8c071ce6d3ed6613196883a6a21616f0))
+
 ## 0.0.5
 
 发布日期：2026-07-26
