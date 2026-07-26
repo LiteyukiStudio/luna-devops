@@ -1,11 +1,22 @@
 # Luna CLI Skills 更新日志
 
-这里记录 Luna CLI Skills 的公开版本变化。Skills 强依赖 Luna CLI；从下一次
-发布开始，Skills 与 CLI 使用完全相同的版本并进入同一个 `cli-v*` Release。
+这里记录 Luna CLI Skills 的公开版本变化。新版本不再独立发版，而是随同版本 Luna CLI 一起发布。
 
-下面已有的 `cli-skills-v*` 条目是切换到配套发版前的历史记录。
+Skills 强依赖完全相同版本的 Luna CLI；历史独立 Skills Release 仍保留用于追溯。
 
 标准 `.skill` 压缩包和整套 Skills 压缩包请前往 [GitHub Releases](https://github.com/LiteyukiStudio/luna-devops/releases) 下载。
+
+## 0.0.5
+
+发布日期：2026-07-26
+
+[GitHub Release](https://github.com/LiteyukiStudio/luna-devops/releases/tag/cli-v0.0.5) · [查看版本代码](https://github.com/LiteyukiStudio/luna-devops/tree/cli-v0.0.5)
+
+**配套关系：** Luna CLI 与 Luna CLI Skills 均为 `0.0.5`，必须精确同版本使用。
+
+### 新增
+
+- feat: enforce paired versioning for Luna CLI and Skills ([b31961e](https://github.com/LiteyukiStudio/luna-devops/commit/b31961e0f542f7aec802beffd5eb2eddadc0f493))
 
 ## 0.1.0-beta.1
 

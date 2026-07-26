@@ -1,13 +1,22 @@
 # Luna CLI Skills Changelog
 
-Public release notes for Luna CLI Skills. Skills require Luna CLI. Starting
-with the next release, Skills use the exact same version as the CLI and ship in
-the same `cli-v*` Release.
+Public release notes for Luna CLI Skills. New Skills versions are published together with the exact same Luna CLI version.
 
-The existing `cli-skills-v*` entries below are historical releases from before
-the paired-release policy.
+Skills require the exact same Luna CLI version. Historical standalone Skills releases remain available for traceability.
 
 Download standard `.skill` archives or the complete Skills bundle from [GitHub Releases](https://github.com/LiteyukiStudio/luna-devops/releases).
+
+## 0.0.5
+
+Release date: 2026-07-26
+
+[GitHub Release](https://github.com/LiteyukiStudio/luna-devops/releases/tag/cli-v0.0.5) · [View tag source](https://github.com/LiteyukiStudio/luna-devops/tree/cli-v0.0.5)
+
+**Pairing:** Luna CLI and Luna CLI Skills are both `0.0.5` and must match exactly.
+
+### Added
+
+- feat: enforce paired versioning for Luna CLI and Skills ([b31961e](https://github.com/LiteyukiStudio/luna-devops/commit/b31961e0f542f7aec802beffd5eb2eddadc0f493))
 
 ## 0.1.0-beta.1
 

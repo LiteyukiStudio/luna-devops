@@ -1,11 +1,22 @@
 # Luna CLI 更新日志
 
-这里记录 Luna CLI 的公开版本变化。CLI 可以独立使用；从下一次发布开始，
-每个 `cli-v*` Release 都强制附带完全相同版本的 Luna CLI Skills。
+这里记录 Luna CLI 的公开版本变化。CLI 可以独立使用；新版本会在同一个 Release 中强制附带完全同版本的 Luna CLI Skills。
 
-历史版本中的“建议配套”信息仅用于还原当时的独立发版关系。
+当前开发线采用 CLI 与 Skills 同版本、同 tag、同 Release 的绑定策略。
 
 安装与下载请前往 [GitHub Releases](https://github.com/LiteyukiStudio/luna-devops/releases)。
+
+## 0.0.5
+
+发布日期：2026-07-26
+
+[GitHub Release](https://github.com/LiteyukiStudio/luna-devops/releases/tag/cli-v0.0.5) · [查看版本代码](https://github.com/LiteyukiStudio/luna-devops/tree/cli-v0.0.5)
+
+**配套关系：** Luna CLI 与 Luna CLI Skills 均为 `0.0.5`，必须精确同版本使用。
+
+### 新增
+
+- feat: enforce paired versioning for Luna CLI and Skills ([b31961e](https://github.com/LiteyukiStudio/luna-devops/commit/b31961e0f542f7aec802beffd5eb2eddadc0f493))
 
 ## 0.0.4
 
@@ -155,6 +166,9 @@
 
 - feat ✨: 完善 Luna CLI 回归与发布链路 ([ecdd091](https://github.com/LiteyukiStudio/luna-devops/commit/ecdd091004a10d0122b3fc636713d27118ab1aab))
 - feat: add CLI build and packaging scripts ([7101600](https://github.com/LiteyukiStudio/luna-devops/commit/710160049a78a2b363b27e8eabd6e6f1750475ca))
+- feat: 添加 Luna DevOps 各模块技能文档，优化技能加载策略和操作流程 ([d13dbf6](https://github.com/LiteyukiStudio/luna-devops/commit/d13dbf6ec8f8d99410ea2062779083d67ab18283))
+- feat: implement brand color presets and theme management ([828f249](https://github.com/LiteyukiStudio/luna-devops/commit/828f24942e55b1161ec4510d3742f1881b50ebd6))
+- feat: Enhance UI and functionality across various pages ([971b00f](https://github.com/LiteyukiStudio/luna-devops/commit/971b00fd94a1e9831c24a33cba8615ac6842e192))
 
 ### 修复
 
