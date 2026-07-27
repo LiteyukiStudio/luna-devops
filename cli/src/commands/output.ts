@@ -88,6 +88,11 @@ export class CommandOutput implements OutputPort {
       },
     ))
   }
+
+  writeInfo(message: string, globals?: Partial<CommandExecutionGlobals>): void {
+    const channels = new OutputChannels(this.#streams, { quiet: globals?.quiet })
+    channels.writeInfo(message)
+  }
 }
 
 export function memoryOutputStreams(): {

@@ -146,6 +146,7 @@ func TestRequiredAccessTokenScopeUsesFineGrainedProjectRoutes(t *testing.T) {
 		{"/api/v1/events", "GET", string(ActionEventRead)},
 		{"/api/v1/events/:eventId", "GET", string(ActionEventRead)},
 		{"/api/v1/dashboard", "GET", string(ActionDashboardRead)},
+		{"/api/v1/auth/mfa/verify", "POST", string(ActionUserRead)},
 		{"/api/v1/data-retention/catalog", "GET", string(ActionDataRetentionRead)},
 		{"/api/v1/data-retention/preview", "POST", string(ActionDataRetentionRead)},
 		{"/api/v1/data-retention/cleanup", "POST", string(ActionDataRetentionManage)},

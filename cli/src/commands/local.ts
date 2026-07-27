@@ -5,13 +5,14 @@ import type {
   CommandParameter,
   CommandResult,
   LunaApiMeta,
+  RuntimePorts,
 } from './types.js'
 import process from 'node:process'
 import {
-  beginOAuthLogin,
   getAuthStatus,
   logoutLocal,
   storeValidatedAccessToken,
+  storeValidatedOAuthCredential,
 } from '../auth/index.js'
 import { resolveRuntimeContext } from '../config/resolve.js'
 import { DEFAULT_LUNA_SERVER } from '../config/schema.js'
@@ -28,6 +29,15 @@ const stringSchema = { type: 'string' } as const
 const booleanSchema = { type: 'boolean' } as const
 const integerSchema = { type: 'integer' } as const
 
+function translate(
+  ports: RuntimePorts,
+  key: string,
+  fallback: string,
+  locale?: string,
+): string {
+  return ports.translate?.(key, fallback, locale) ?? fallback
+}
+
 export function registerLocalCommands(registry: CommandRegistry): void {
   registerVersion(registry)
   registerHelp(registry)
@@ -40,7 +50,7 @@ export function registerLocalCommands(registry: CommandRegistry): void {
 
 function registerAuth(registry: CommandRegistry): void {
   registry.register(localMetadata('auth', 'login', {
-    summary: 'Authenticate to one Luna DevOps server with an access token.',
+    summary: 'Authenticate to one Luna DevOps server with OAuth Device Code.',
     schemaVersion: 'auth.login/v1',
     risk: 'medium',
     parameters: [
@@ -52,16 +62,17 @@ function registerAuth(registry: CommandRegistry): void {
       parameter('scope', { repeated: true }),
     ],
     examples: [
-      'printf \'%s\' "$LUNA_TOKEN" | luna auth login token=@-',
-      'luna auth login mode=device-code scope=project:read',
+      'luna login',
+      'luna login server=https://luna.example.com scope=project:read',
+      'printf \'%s\' "$LUNA_TOKEN" | luna auth login mode=access-token token=@-',
     ],
   }), async (invocation, ports) => {
-    const mode = optionalString(invocation.params.mode) ?? 'access-token'
+    const mode = optionalString(invocation.params.mode) ?? 'device-code'
     const server = invocation.globals.server ?? DEFAULT_LUNA_SERVER
     if (mode === 'device-code') {
       if (ports.api.getMeta) {
         const meta = await ports.api.getMeta(server, invocation.globals)
-        if (!meta.features.deviceCode) {
+        if (meta.features.deviceCode === false) {
           throw new CliCommandError(
             'oauth_server_capability_unavailable',
             'The selected Luna server does not support device-code login.',
@@ -76,11 +87,68 @@ function registerAuth(registry: CommandRegistry): void {
           )
         }
       }
-      return beginOAuthLogin({
+      if (!ports.api.beginOAuthLogin) {
+        throw new CliCommandError(
+          'unsupported_feature',
+          'The API client cannot start OAuth Device Code login.',
+          { status: 501 },
+        )
+      }
+      const result = await ports.api.beginOAuthLogin({
         server,
         scopes: stringList(invocation.params.scope),
         mode: 'device_code',
+        onVerification: async (verification) => {
+          const codePrompt = translate(
+            ports,
+            'auth.deviceCode.code',
+            'Enter this device code to authorize Luna CLI:',
+            invocation.globals.lang,
+          )
+          await ports.output.writeInfo?.(
+            `${codePrompt} ${verification.userCode}`,
+            invocation.globals,
+          )
+          const browserPrompt = translate(
+            ports,
+            verification.browserOpened
+              ? 'auth.deviceCode.browserOpened'
+              : 'auth.deviceCode.browserFallback',
+            verification.browserOpened
+              ? 'A browser was opened. Complete authorization there; manual URL:'
+              : 'Open this URL in a browser to complete authorization:',
+            invocation.globals.lang,
+          )
+          await ports.output.writeInfo?.(
+            `${browserPrompt} ${verification.verificationUri}`,
+            invocation.globals,
+          )
+        },
       })
+      const userId = optionalString(result.user?.id)
+      await storeValidatedOAuthCredential(ports.config, {
+        server: result.server,
+        accessToken: result.accessToken,
+        refreshToken: result.refreshToken,
+        tokenType: result.tokenType,
+        scopes: result.scopes,
+        expiresAt: result.expiresAt,
+        user: userId
+          ? {
+              id: userId,
+              ...result.user,
+            }
+          : undefined,
+      })
+      return {
+        schemaVersion: 'auth.login/v1',
+        data: {
+          server: result.server,
+          authenticated: true,
+          credentialType: 'oauth',
+          user: result.user,
+        },
+      }
     }
     if (mode !== 'access-token') {
       throw invalidArguments(
@@ -94,7 +162,7 @@ function registerAuth(registry: CommandRegistry): void {
         ?.trim()
     if (!token) {
       throw invalidArguments(
-        'auth.login requires token=@- or the LUNA_TOKEN environment variable.',
+        'Access-token login requires token=@- or the LUNA_TOKEN environment variable.',
         'token',
       )
     }
@@ -141,13 +209,15 @@ function registerAuth(registry: CommandRegistry): void {
   }))
 
   registry.register(localMetadata('auth', 'logout', {
-    summary: 'Remove the active Luna credential.',
+    summary: 'Revoke OAuth tokens when possible and remove the local credential.',
     schemaVersion: 'auth.logout/v1',
     risk: 'medium',
     examples: ['luna auth logout'],
   }), async (invocation, ports) => ({
     schemaVersion: 'auth.logout/v1',
-    data: await logoutLocal(ports.config),
+    data: await logoutLocal(ports.config, {
+      revoke: request => ports.api.revokeOAuthCredential!(request),
+    }),
   }))
 }
 

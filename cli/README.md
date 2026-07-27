@@ -13,7 +13,7 @@ English documentation follows the Chinese section.
 CLI 目前处于预发布阶段。源码清单使用 `0.0.0-development` 占位版本和 `private: true` 防误发布，实际版本由 `cli-v*` tag 在发布时注入。仓库中已经实现：
 
 - 单一活动实例、账号凭据和默认项目空间的配置模型与本地存储；
-- Access Token 登录、校验和本地凭据存储基础能力；
+- 默认使用 OAuth Device Code 登录、自动刷新与尽力吊销，并支持显式的个人访问令牌备用登录；
 - `key=value`、JSON、文件和标准输入参数解析；
 - 人类可读输出与稳定 JSON Envelope；
 - 本地命令注册、帮助目录、Shell Completion 和 OpenAPI 命令注册器；
@@ -25,7 +25,7 @@ CLI 目前处于预发布阶段。源码清单使用 `0.0.0-development` 占位�
 
 `cli/src/entry.ts` 已作为 npm 与 Bun 二进制的统一入口，共享契约和客户端会被安全打包进发布产物。预发布版本已经发布到 npm，且发布产物会经过 npm/pnpm 全局安装、中文帮助、机器 Help 和受支持独立二进制的 smoke。
 
-当前明确未完成的能力包括：OpenAPI 尚未覆盖的后端公开路由、Authorization Code + PKCE、Device Code、Bearer Step-up MFA、SSE/WebSocket/下载协议适配和中高风险服务端执行计划。普通 OpenAPI 业务命令会自动读取 `/api/v1/meta` 并在不兼容时 fail closed；`luna doctor` 用于主动查看详细诊断。通用 `api request` 仅保留为人类诊断逃生口，不参与业务能力伪装。高风险 API 在计划协议完成前不会被 `yes=true` 绕过。
+当前明确未完成的能力包括：OpenAPI 尚未覆盖的后端公开路由、Authorization Code + PKCE 的 CLI 入口、SSE/WebSocket/下载协议适配和中高风险服务端执行计划。OAuth Device Code、刷新、吊销和 Bearer Step-up MFA 已接通；普通 OpenAPI 业务命令会自动读取 `/api/v1/meta` 并在不兼容时 fail closed；`luna doctor` 用于主动查看详细诊断。通用 `api request` 仅保留为人类诊断逃生口，不参与业务能力伪装。高风险 API 在计划协议完成前不会被 `yes=true` 绕过。
 
 ## 安装
 
@@ -45,8 +45,9 @@ CLI 自带面向人类的分层帮助，不需要先安装 AI Skills：
 ```bash
 luna
 luna --help
-luna login token=@-
-luna login server=https://devops.example.com token=@-
+luna login
+luna login server=https://devops.example.com
+printf '%s' "$LUNA_TOKEN" | luna login mode=access-token token=@-
 luna whoami
 luna doctor
 luna logout
@@ -118,11 +119,11 @@ luna <category> <tool> key=value
 
 ### Current status
 
-The CLI is in prerelease. The source manifest uses the `0.0.0-development` placeholder and `private: true` to prevent accidental publication; release versions are injected from `cli-v*` tags. It includes one active server/account login, Access Token authentication, a default project, structured input and output, command discovery, 110 OpenAPI operations plus local and protocol commands, and release validation.
+The CLI is in prerelease. The source manifest uses the `0.0.0-development` placeholder and `private: true` to prevent accidental publication; release versions are injected from `cli-v*` tags. It includes one active server/account login, OAuth Device Code authentication with refresh and revocation, an explicit personal-access-token fallback, a default project, structured input and output, command discovery, 110 OpenAPI business operations plus local and protocol commands, and release validation.
 
 `cli/src/entry.ts` is the shared npm and Bun entry point, and workspace packages are bundled safely into the distribution. Prereleases are available on npm and pass npm/pnpm global-install, localized Help, machine Help, and supported standalone-binary smoke tests.
 
-Undocumented server routes, Authorization Code + PKCE, Device Code, Bearer step-up MFA, streaming transports, downloads, and server-issued plans remain release work. Canonical OpenAPI commands automatically negotiate the API generation, minimum CLI version, and OpenAPI digest through `/api/v1/meta`; `luna doctor` exposes the detailed diagnostics. Generic `api request` remains a human-only diagnostic escape hatch. High-risk API operations fail closed until the server-plan protocol exists.
+Undocumented server routes, the CLI entry point for Authorization Code + PKCE, streaming transports, downloads, and server-issued plans remain release work. OAuth Device Code, refresh, revocation, and OAuth Bearer step-up MFA are implemented. Canonical OpenAPI commands automatically negotiate the API generation, minimum CLI version, and OpenAPI digest through `/api/v1/meta`; `luna doctor` exposes the detailed diagnostics. Generic `api request` remains a human-only diagnostic escape hatch. High-risk API operations fail closed until the server-plan protocol exists.
 
 ### Installation
 
@@ -140,8 +141,9 @@ The CLI includes layered human Help without requiring Skills:
 ```bash
 luna
 luna --help
-luna login token=@-
-luna login server=https://devops.example.com token=@-
+luna login
+luna login server=https://devops.example.com
+printf '%s' "$LUNA_TOKEN" | luna login mode=access-token token=@-
 luna whoami
 luna doctor
 luna logout

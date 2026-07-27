@@ -19,7 +19,7 @@ luna help catalog query=project limit=5 output=json interactive=false
 CLI 目前处于预发布阶段。源码已经可以运行和验证，当前命令目录共有 125 条命令，其中 14 条由 CLI 本地实现，1 条由 CLI 协议层实现，110 条由 OpenAPI 契约生成。源码已经包含：
 
 - 单一活动实例、账号凭据和默认项目空间的配置模型；
-- Access Token 登录、校验和本地凭据存储基础能力；
+- 默认使用 OAuth Device Code 登录、自动刷新与尽力吊销，并支持显式的个人访问令牌备用登录；
 - `key=value`、JSON、文件和标准输入参数解析；
 - 人类可读输出与版本化 JSON Envelope；
 - 本地帮助、项目空间和 Completion 命令注册；
@@ -37,8 +37,9 @@ CLI 不依赖 Skills 也能完成命令发现和基本操作：
 
 ```bash
 luna --help
-luna login token=@-
-luna login server=https://devops.example.com token=@-
+luna login
+luna login server=https://devops.example.com
+printf '%s' "$LUNA_TOKEN" | luna login mode=access-token token=@-
 luna whoami
 luna doctor
 luna logout
@@ -111,7 +112,7 @@ node scripts/cli/verify-skills-sync.mjs
 稳定版发布前还需要完成：
 
 1. 补齐尚未进入 OpenAPI 的公开后端路由，并完成完整命令覆盖率测试。
-2. 实现 Authorization Code + PKCE、Device Code 和 Bearer Step-up MFA 所需的服务端协议。
+2. 补充 Authorization Code + PKCE 的 CLI 入口；Device Code、刷新、吊销和 OAuth Bearer Step-up MFA 已可用。
 3. 完成 SSE、WebSocket、下载和服务端执行计划协议。
 4. 在 npm 配置 Trusted Publisher，并保护 GitHub `npm` Environment。
 5. 接入 Apple Developer ID 和公证后，再把 macOS 二进制加入稳定版本；Windows 继续使用 npm/pnpm 安装。

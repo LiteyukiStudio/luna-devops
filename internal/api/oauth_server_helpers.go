@@ -12,6 +12,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -20,6 +21,12 @@ import (
 const (
 	oauthAuthorizationCodeTTL = 5 * time.Minute
 	oauthRefreshTokenTTL      = 365 * 24 * time.Hour
+	oauthDeviceCodeTTL        = 10 * time.Minute
+	oauthDevicePollInterval   = 5 * time.Second
+
+	oauthDeviceCodeGrantType = "urn:ietf:params:oauth:grant-type:device_code"
+	lunaCLIApplicationID     = "oapp_luna_cli"
+	lunaCLIClientID          = "luna-cli"
 )
 
 var allowedOAuthAccessTokenLifetimeDays = map[int]bool{0: true, 1: true, 7: true, 30: true, 90: true}
@@ -202,6 +209,44 @@ func (h *Handlers) authenticateOAuthClient(ctx *gin.Context) (model.OAuthApplica
 	return application, true
 }
 
+func (h *Handlers) authenticateOAuthTokenClient(ctx *gin.Context, allowPublic bool) (model.OAuthApplication, bool) {
+	clientID, clientSecret, basicOK := ctx.Request.BasicAuth()
+	if !basicOK {
+		clientID = strings.TrimSpace(ctx.PostForm("client_id"))
+		clientSecret = ctx.PostForm("client_secret")
+	}
+	if !h.allowOAuthClientAttempt(ctx, clientID) {
+		return model.OAuthApplication{}, false
+	}
+	var application model.OAuthApplication
+	if clientID == "" || h.db.First(&application, "client_id = ? and revoked_at is null", clientID).Error != nil {
+		oauthError(ctx, http.StatusUnauthorized, "invalid_client", "Client authentication failed")
+		return model.OAuthApplication{}, false
+	}
+	if allowPublic && application.ID == lunaCLIApplicationID && application.ClientID == lunaCLIClientID && clientSecret == "" && !basicOK {
+		return application, true
+	}
+	if clientSecret == "" || subtle.ConstantTimeCompare([]byte(application.ClientSecretHash), []byte(hashToken(clientSecret))) != 1 {
+		oauthError(ctx, http.StatusUnauthorized, "invalid_client", "Client authentication failed")
+		return model.OAuthApplication{}, false
+	}
+	return application, true
+}
+
+func recommendedOAuthScope(user model.User) string {
+	values := make([]string, 0)
+	for _, definition := range authz.AccessTokenScopeCatalog(user.Role) {
+		if definition.Recommended && (user.Role == "platform_admin" || definition.CreatableByUser) {
+			values = append(values, definition.Value)
+		}
+	}
+	return normalizeAccessTokenScope(strings.Join(values, ","))
+}
+
+func oauthAssertionSubject(grantID string) string {
+	return "oauth:" + strings.TrimSpace(grantID)
+}
+
 func (h *Handlers) allowOAuthClientAttempt(ctx *gin.Context, clientID string) bool {
 	if h.rateLimiter == nil {
 		h.rateLimiter = newRateLimiter()
@@ -228,6 +273,32 @@ func (h *Handlers) allowOAuthClientAttempt(ctx *gin.Context, clientID string) bo
 	return true
 }
 
+func (h *Handlers) allowOAuthDeviceVerificationAttempt(ctx *gin.Context, userID string) bool {
+	if h.rateLimiter == nil {
+		h.rateLimiter = newRateLimiter()
+	}
+	limit := 30
+	if h.mode == "development" {
+		limit = developmentRateLimit
+	}
+	subjects := []string{
+		"oauth_device_verify_ip:" + ctx.ClientIP(),
+		"oauth_device_verify_user:" + hashToken(strings.TrimSpace(userID)),
+	}
+	for _, subject := range subjects {
+		allowed, err := h.rateLimiter.allow(subject, limit, time.Minute)
+		if allowed {
+			continue
+		}
+		if err != nil && h.mode == "development" {
+			continue
+		}
+		writeErrorCode(ctx, http.StatusTooManyRequests, "oauth.device.rate_limited", "Device verification is temporarily rate limited")
+		return false
+	}
+	return true
+}
+
 func revokeOAuthGrant(tx *gorm.DB, grantID string, now time.Time) error {
 	if err := tx.Model(&model.OAuthGrant{}).Where("id = ? and revoked_at is null", grantID).Update("revoked_at", now).Error; err != nil {
 		return err
@@ -235,7 +306,10 @@ func revokeOAuthGrant(tx *gorm.DB, grantID string, now time.Time) error {
 	if err := tx.Model(&model.AccessToken{}).Where("oauth_grant_id = ? and revoked_at is null", grantID).Update("revoked_at", now).Error; err != nil {
 		return err
 	}
-	return tx.Model(&model.OAuthRefreshToken{}).Where("grant_id = ? and revoked_at is null", grantID).Update("revoked_at", now).Error
+	if err := tx.Model(&model.OAuthRefreshToken{}).Where("grant_id = ? and revoked_at is null", grantID).Update("revoked_at", now).Error; err != nil {
+		return err
+	}
+	return tx.Where("session_id = ?", oauthAssertionSubject(grantID)).Delete(&model.StepUpAssertion{}).Error
 }
 
 func revokeOAuthApplication(tx *gorm.DB, applicationID string, now time.Time) error {

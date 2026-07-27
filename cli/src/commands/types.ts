@@ -158,6 +158,10 @@ export interface OutputPort {
     globals: CommandExecutionGlobals,
   ) => Promise<void> | void
   writeError: (error: unknown, globals?: Partial<CommandExecutionGlobals>) => Promise<void> | void
+  writeInfo?: (
+    message: string,
+    globals?: Partial<CommandExecutionGlobals>,
+  ) => Promise<void> | void
 }
 
 export interface ApiExecutionRequest {
@@ -198,6 +202,15 @@ export interface ApiPort {
     server: string | undefined,
     globals: CommandExecutionGlobals,
   ) => Promise<LunaApiMeta>
+  beginOAuthLogin?: (
+    request: import('../auth/oauth.js').OAuthLoginRequest,
+  ) => Promise<import('../auth/oauth.js').OAuthLoginResult>
+  refreshOAuthCredential?: (
+    request: import('../auth/oauth.js').OAuthRefreshRequest,
+  ) => Promise<import('../auth/oauth.js').OAuthTokenCredential>
+  revokeOAuthCredential?: (
+    request: import('../auth/oauth.js').OAuthRevokeRequest,
+  ) => Promise<void>
 }
 
 export interface RuntimePorts {

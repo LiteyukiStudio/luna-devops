@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"net/url"
 	"strings"
@@ -147,34 +148,63 @@ func (h *Handlers) DecideOAuthAuthorization(ctx *gin.Context) {
 }
 
 func (h *Handlers) ExchangeOAuthToken(ctx *gin.Context) {
-	application, ok := h.authenticateOAuthClient(ctx)
+	grantType := strings.TrimSpace(ctx.PostForm("grant_type"))
+	allowPublicClient := grantType == oauthDeviceCodeGrantType || grantType == "refresh_token"
+	application, ok := h.authenticateOAuthTokenClient(ctx, allowPublicClient)
 	if !ok {
 		return
 	}
-	switch ctx.PostForm("grant_type") {
+	switch grantType {
 	case "authorization_code":
 		h.exchangeOAuthAuthorizationCode(ctx, application)
 	case "refresh_token":
 		h.exchangeOAuthRefreshToken(ctx, application)
+	case oauthDeviceCodeGrantType:
+		h.exchangeOAuthDeviceCode(ctx, application)
 	default:
-		oauthError(ctx, http.StatusBadRequest, "unsupported_grant_type", "Supported grant types are authorization_code and refresh_token")
+		oauthError(ctx, http.StatusBadRequest, "unsupported_grant_type", "Supported grant types are authorization_code, refresh_token, and device_code")
 	}
 }
 
 func (h *Handlers) RevokeOAuthToken(ctx *gin.Context) {
-	application, ok := h.authenticateOAuthClient(ctx)
+	application, ok := h.authenticateOAuthTokenClient(ctx, true)
 	if !ok {
 		return
 	}
-	tokenHash := hashToken(strings.TrimSpace(ctx.PostForm("token")))
-	if strings.TrimSpace(ctx.PostForm("token")) != "" {
-		now := time.Now()
-		_ = h.db.Model(&model.AccessToken{}).
-			Where("token_hash = ? and oauth_application_id = ? and revoked_at is null", tokenHash, application.ID).
-			Update("revoked_at", now).Error
-		_ = h.db.Model(&model.OAuthRefreshToken{}).
-			Where("token_hash = ? and application_id = ? and revoked_at is null", tokenHash, application.ID).
-			Update("revoked_at", now).Error
+	plainToken := strings.TrimSpace(ctx.PostForm("token"))
+	if plainToken != "" {
+		tokenHash := hashToken(plainToken)
+		_ = h.db.Transaction(func(tx *gorm.DB) error {
+			grantID := ""
+			var accessToken model.AccessToken
+			if err := tx.First(
+				&accessToken,
+				"token_hash = ? and oauth_application_id = ?",
+				tokenHash,
+				application.ID,
+			).Error; err == nil {
+				grantID = accessToken.OAuthGrantID
+			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+			if grantID == "" {
+				var refreshToken model.OAuthRefreshToken
+				if err := tx.First(
+					&refreshToken,
+					"token_hash = ? and application_id = ?",
+					tokenHash,
+					application.ID,
+				).Error; err == nil {
+					grantID = refreshToken.GrantID
+				} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+					return err
+				}
+			}
+			if grantID == "" {
+				return nil
+			}
+			return revokeOAuthGrant(tx, grantID, time.Now())
+		})
 	}
 	ctx.Header("Cache-Control", "no-store")
 	ctx.Status(http.StatusOK)
@@ -189,11 +219,12 @@ func (h *Handlers) GetOAuthAuthorizationServerMetadata(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{
 		"issuer":                                baseURL,
 		"authorization_endpoint":                baseURL + "/oauth/authorize",
+		"device_authorization_endpoint":         baseURL + "/api/v1/oauth/device/authorization",
 		"token_endpoint":                        baseURL + "/api/v1/oauth/token",
 		"revocation_endpoint":                   baseURL + "/api/v1/oauth/revoke",
 		"response_types_supported":              []string{"code"},
-		"grant_types_supported":                 []string{"authorization_code", "refresh_token"},
-		"token_endpoint_auth_methods_supported": []string{"client_secret_basic", "client_secret_post"},
+		"grant_types_supported":                 []string{"authorization_code", "refresh_token", oauthDeviceCodeGrantType},
+		"token_endpoint_auth_methods_supported": []string{"client_secret_basic", "client_secret_post", "none"},
 		"code_challenge_methods_supported":      []string{"S256"},
 	})
 }

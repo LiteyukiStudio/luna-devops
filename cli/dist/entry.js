@@ -5,7 +5,7 @@ var __export = (target, all) => {
 };
 
 // src/entry.ts
-import process13 from "process";
+import process14 from "process";
 import { pathToFileURL } from "url";
 
 // ../packages/api-contract/src/index.ts
@@ -41,8 +41,8 @@ var OPENAPI_SNAPSHOT_METADATA = {
   "source": "openapi/openapi.yaml",
   "openapiVersion": "3.1.0",
   "apiVersion": "0.1.0",
-  "sourceDigest": "sha256:6fb5ef6c0ed37ce09f0d7c63b53188c5c956cc1b21a3543df3c1653f0c578bc7",
-  "operationCount": 110
+  "sourceDigest": "sha256:54cb6ef4eb6fd0721c90ecdb109e9f76d424db01aa7b426b81392f75ae4bf09e",
+  "operationCount": 116
 };
 var OPENAPI_OPERATION_SNAPSHOTS = [
   {
@@ -85,6 +85,395 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
     ],
     "summary": "Get API version and CLI capability metadata",
     "operationId": "getApiMeta"
+  },
+  {
+    "method": "get",
+    "path": "/.well-known/oauth-authorization-server",
+    "tags": [
+      "Auth"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [],
+        "description": "OAuth 2.0 authorization server metadata."
+      }
+    ],
+    "summary": "Get OAuth authorization server metadata",
+    "operationId": "getOAuthAuthorizationServerMetadata",
+    "xLunaCli": {
+      "classification": "protocol-adapter",
+      "hidden": true,
+      "exclusionReason": "OAuth discovery is consumed by the CLI authentication adapter."
+    }
+  },
+  {
+    "method": "post",
+    "path": "/api/v1/oauth/device/authorization",
+    "tags": [
+      "Auth"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [],
+        "description": "Device and user codes for the browser verification flow."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/OAuthProtocolError"
+        ],
+        "description": "OAuth protocol error."
+      }
+    ],
+    "summary": "Start an OAuth Device Authorization Grant",
+    "operationId": "startOAuthDeviceAuthorization",
+    "requestBody": {
+      "required": true,
+      "contentTypes": [
+        "application/x-www-form-urlencoded"
+      ],
+      "schemaRefs": []
+    },
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "body": {
+          "type": "object",
+          "required": [
+            "client_id"
+          ],
+          "properties": {
+            "client_id": {
+              "type": "string"
+            },
+            "scope": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "required": [
+        "body"
+      ],
+      "additionalProperties": false
+    },
+    "xLunaCli": {
+      "classification": "protocol-adapter",
+      "hidden": true,
+      "exclusionReason": "Device authorization is exposed through `luna login`."
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/oauth/device/verification",
+    "tags": [
+      "Auth"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "user_code",
+        "in": "query",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/OAuthApplication"
+        ],
+        "description": "Pending device authorization visible to the signed-in user."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "Invalid, expired, or consumed user code."
+      }
+    ],
+    "summary": "Inspect a pending OAuth device authorization",
+    "operationId": "getOAuthDeviceVerification",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "user_code": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "user_code"
+      ],
+      "additionalProperties": false
+    },
+    "xLunaCli": {
+      "classification": "protocol-adapter",
+      "hidden": true,
+      "exclusionReason": "Browser-only Device Code verification endpoint."
+    }
+  },
+  {
+    "method": "post",
+    "path": "/api/v1/oauth/device/verification",
+    "tags": [
+      "Auth"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [],
+        "description": "Device authorization decision accepted."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "Invalid, expired, or consumed user code."
+      }
+    ],
+    "summary": "Approve or deny an OAuth device authorization",
+    "operationId": "decideOAuthDeviceVerification",
+    "requestBody": {
+      "required": true,
+      "contentTypes": [
+        "application/json"
+      ],
+      "schemaRefs": []
+    },
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "body": {
+          "type": "object",
+          "required": [
+            "decision",
+            "userCode"
+          ],
+          "properties": {
+            "decision": {
+              "type": "string",
+              "enum": [
+                "approve",
+                "deny"
+              ]
+            },
+            "userCode": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "required": [
+        "body"
+      ],
+      "additionalProperties": false
+    },
+    "xLunaCli": {
+      "classification": "protocol-adapter",
+      "hidden": true,
+      "exclusionReason": "Browser-only Device Code verification endpoint."
+    }
+  },
+  {
+    "method": "post",
+    "path": "/api/v1/oauth/token",
+    "tags": [
+      "Auth"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/OAuthTokenResponse"
+        ],
+        "description": "OAuth access and refresh tokens."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/OAuthProtocolError"
+        ],
+        "description": "OAuth protocol error."
+      }
+    ],
+    "summary": "Exchange an OAuth authorization grant for tokens",
+    "operationId": "exchangeOAuthToken",
+    "requestBody": {
+      "required": true,
+      "contentTypes": [
+        "application/x-www-form-urlencoded"
+      ],
+      "schemaRefs": []
+    },
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "body": {
+          "type": "object",
+          "required": [
+            "grant_type"
+          ],
+          "properties": {
+            "client_id": {
+              "type": "string"
+            },
+            "client_secret": {
+              "type": "string",
+              "writeOnly": true
+            },
+            "code": {
+              "type": "string"
+            },
+            "code_verifier": {
+              "type": "string"
+            },
+            "device_code": {
+              "type": "string",
+              "writeOnly": true
+            },
+            "grant_type": {
+              "type": "string",
+              "enum": [
+                "authorization_code",
+                "refresh_token",
+                "urn:ietf:params:oauth:grant-type:device_code"
+              ]
+            },
+            "redirect_uri": {
+              "type": "string",
+              "format": "uri"
+            },
+            "refresh_token": {
+              "type": "string",
+              "writeOnly": true
+            }
+          }
+        }
+      },
+      "required": [
+        "body"
+      ],
+      "additionalProperties": false
+    },
+    "xLunaCli": {
+      "classification": "protocol-adapter",
+      "hidden": true,
+      "exclusionReason": "OAuth token exchange is consumed by the CLI authentication adapter."
+    }
+  },
+  {
+    "method": "post",
+    "path": "/api/v1/oauth/revoke",
+    "tags": [
+      "Auth"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [],
+        "schemaRefs": [],
+        "description": "Token is revoked or was already invalid."
+      }
+    ],
+    "summary": "Revoke an OAuth access or refresh token",
+    "operationId": "revokeOAuthToken",
+    "requestBody": {
+      "required": true,
+      "contentTypes": [
+        "application/x-www-form-urlencoded"
+      ],
+      "schemaRefs": []
+    },
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "body": {
+          "type": "object",
+          "required": [
+            "token"
+          ],
+          "properties": {
+            "client_id": {
+              "type": "string"
+            },
+            "client_secret": {
+              "type": "string",
+              "writeOnly": true
+            },
+            "token": {
+              "type": "string",
+              "writeOnly": true
+            },
+            "token_type_hint": {
+              "type": "string",
+              "enum": [
+                "access_token",
+                "refresh_token"
+              ]
+            }
+          }
+        }
+      },
+      "required": [
+        "body"
+      ],
+      "additionalProperties": false
+    },
+    "xLunaCli": {
+      "classification": "protocol-adapter",
+      "hidden": true,
+      "exclusionReason": "OAuth revocation is exposed through `luna logout`."
+    }
   },
   {
     "method": "post",
@@ -8559,7 +8948,7 @@ var HTTP_METHODS = [
 ];
 
 // src/commands/api.ts
-import process5 from "process";
+import process7 from "process";
 
 // ../packages/api-client/src/body.ts
 function isAvailable(name, value) {
@@ -9466,30 +9855,8 @@ var LunaClient = class {
   }
 };
 
-// src/config/paths.ts
-import os from "os";
-import path from "path";
-import process2 from "process";
-function resolveConfigPath(options = {}) {
-  const env = options.env ?? process2.env;
-  const explicitPath = options.configPath ?? env.LUNA_CONFIG;
-  if (explicitPath?.trim()) {
-    return path.resolve(expandHome(explicitPath.trim(), options.homeDir));
-  }
-  const home = options.homeDir ?? env.LUNA_HOME ?? os.homedir();
-  return path.join(path.resolve(home), ".luna", "auth.json");
-}
-function expandHome(value, homeDir) {
-  if (value === "~")
-    return homeDir ?? os.homedir();
-  if (value.startsWith("~/") || value.startsWith("~\\")) {
-    return path.join(homeDir ?? os.homedir(), value.slice(2));
-  }
-  return value;
-}
-
-// src/config/resolve.ts
-import process3 from "process";
+// src/auth/access-token.ts
+import process4 from "process";
 
 // src/commands/errors.ts
 var CliCommandError = class extends Error {
@@ -9554,6 +9921,78 @@ function stringValue(value) {
 }
 function recordValue(value) {
   return isErrorLike(value) ? value : {};
+}
+
+// src/config/server.ts
+function normalizeServerOrigin(server) {
+  let url;
+  try {
+    url = new URL(server);
+  } catch (error) {
+    throw new CliCommandError(
+      "server_url_invalid",
+      `Server "${server}" is not a valid absolute URL.`,
+      { status: 422, cause: error }
+    );
+  }
+  if (!["http:", "https:"].includes(url.protocol)) {
+    throw new CliCommandError(
+      "server_url_invalid",
+      "Server URL must use http or https.",
+      { status: 422 }
+    );
+  }
+  if (url.username || url.password || url.hash || url.search) {
+    throw new CliCommandError(
+      "server_url_invalid",
+      "Server URL cannot contain credentials, query parameters, or a fragment.",
+      { status: 422 }
+    );
+  }
+  if (url.pathname !== "/" && url.pathname !== "") {
+    throw new CliCommandError(
+      "server_url_subpath_unsupported",
+      "Server URL must not contain a path.",
+      { status: 422 }
+    );
+  }
+  return url.origin;
+}
+
+// src/config/store.ts
+import { randomUUID } from "crypto";
+import { constants as fsConstants } from "fs";
+import {
+  chmod,
+  lstat,
+  mkdir,
+  open,
+  rename,
+  rm
+} from "fs/promises";
+import path2 from "path";
+import process3 from "process";
+
+// src/config/paths.ts
+import os from "os";
+import path from "path";
+import process2 from "process";
+function resolveConfigPath(options = {}) {
+  const env = options.env ?? process2.env;
+  const explicitPath = options.configPath ?? env.LUNA_CONFIG;
+  if (explicitPath?.trim()) {
+    return path.resolve(expandHome(explicitPath.trim(), options.homeDir));
+  }
+  const home = options.homeDir ?? env.LUNA_HOME ?? os.homedir();
+  return path.join(path.resolve(home), ".luna", "auth.json");
+}
+function expandHome(value, homeDir) {
+  if (value === "~")
+    return homeDir ?? os.homedir();
+  if (value.startsWith("~/") || value.startsWith("~\\")) {
+    return path.join(homeDir ?? os.homedir(), value.slice(2));
+  }
+  return value;
 }
 
 // src/config/schema.ts
@@ -9626,116 +10065,7 @@ function isRecord2(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-// src/config/server.ts
-function normalizeServerOrigin(server) {
-  let url;
-  try {
-    url = new URL(server);
-  } catch (error) {
-    throw new CliCommandError(
-      "server_url_invalid",
-      `Server "${server}" is not a valid absolute URL.`,
-      { status: 422, cause: error }
-    );
-  }
-  if (!["http:", "https:"].includes(url.protocol)) {
-    throw new CliCommandError(
-      "server_url_invalid",
-      "Server URL must use http or https.",
-      { status: 422 }
-    );
-  }
-  if (url.username || url.password || url.hash || url.search) {
-    throw new CliCommandError(
-      "server_url_invalid",
-      "Server URL cannot contain credentials, query parameters, or a fragment.",
-      { status: 422 }
-    );
-  }
-  if (url.pathname !== "/" && url.pathname !== "") {
-    throw new CliCommandError(
-      "server_url_subpath_unsupported",
-      "Server URL must not contain a path.",
-      { status: 422 }
-    );
-  }
-  return url.origin;
-}
-
-// src/config/resolve.ts
-function resolveRuntimeContext(rawConfig, options = {}) {
-  const config = parseConfigDocument(rawConfig);
-  const env = options.env ?? process3.env;
-  const configuredServer = normalizeServerOrigin(config.server || DEFAULT_LUNA_SERVER);
-  const explicitServer = nonEmpty(options.server);
-  const environmentServer = nonEmpty(env.LUNA_SERVER);
-  const serverOverride = explicitServer ?? environmentServer;
-  const server = serverOverride ? normalizeServerOrigin(serverOverride) : configuredServer;
-  const sameOrigin2 = server === configuredServer;
-  const environmentToken = nonEmpty(env.LUNA_TOKEN);
-  const credential = environmentToken ? {
-    type: "access_token",
-    token: environmentToken,
-    scopes: []
-  } : sameOrigin2 ? config.credential ?? void 0 : void 0;
-  const explicitProject = nonEmpty(options.project);
-  const environmentProject = nonEmpty(env.LUNA_PROJECT);
-  const projectOverride = explicitProject ?? environmentProject;
-  const project = projectOverride ? { id: projectOverride } : sameOrigin2 ? config.project ?? void 0 : void 0;
-  const explicitOutput = options.output === "" ? void 0 : options.output;
-  const environmentOutput = outputValue(env.LUNA_OUTPUT);
-  const configuredOutput = config.output || void 0;
-  const output = explicitOutput ?? environmentOutput ?? configuredOutput;
-  const explicitLanguage = nonEmpty(options.language);
-  const environmentLanguage = nonEmpty(env.LUNA_LANG);
-  const configuredLanguage = nonEmpty(config.language);
-  const language = explicitLanguage ?? environmentLanguage ?? configuredLanguage;
-  return {
-    server,
-    project,
-    credential,
-    output,
-    language,
-    sources: {
-      server: explicitServer ? "argument" : environmentServer ? "environment" : config.server ? "config" : "default",
-      project: explicitProject ? "argument" : environmentProject ? "environment" : project ? "config" : "none",
-      credential: environmentToken ? "environment" : credential ? "config" : "none",
-      output: explicitOutput ? "argument" : environmentOutput ? "environment" : configuredOutput ? "config" : "default",
-      language: explicitLanguage ? "argument" : environmentLanguage ? "environment" : configuredLanguage ? "config" : "default"
-    }
-  };
-}
-function nonEmpty(value) {
-  const normalized = value?.trim();
-  return normalized || void 0;
-}
-function outputValue(value) {
-  const normalized = nonEmpty(value);
-  if (!normalized)
-    return void 0;
-  if (!OUTPUT_FORMATS.includes(normalized)) {
-    throw new CliCommandError(
-      "output_format_invalid",
-      `Unsupported output format "${normalized}".`,
-      { status: 422 }
-    );
-  }
-  return normalized;
-}
-
 // src/config/store.ts
-import { randomUUID } from "crypto";
-import { constants as fsConstants } from "fs";
-import {
-  chmod,
-  lstat,
-  mkdir,
-  open,
-  rename,
-  rm
-} from "fs/promises";
-import path2 from "path";
-import process4 from "process";
 var FileConfigStore = class {
   path;
   #lockTimeoutMs;
@@ -9749,7 +10079,7 @@ var FileConfigStore = class {
     this.#lockTimeoutMs = options.lockTimeoutMs ?? 5e3;
     this.#lockRetryMs = options.lockRetryMs ?? 25;
     this.#staleLockMs = options.staleLockMs ?? 3e4;
-    this.#platform = options.platform ?? process4.platform;
+    this.#platform = options.platform ?? process3.platform;
     this.#now = options.now ?? Date.now;
     this.#randomId = options.randomId ?? randomUUID;
   }
@@ -9842,7 +10172,7 @@ var FileConfigStore = class {
     const directory = path2.dirname(this.path);
     const temporaryPath = path2.join(
       directory,
-      `.${path2.basename(this.path)}.${process4.pid}.${this.#randomId()}.tmp`
+      `.${path2.basename(this.path)}.${process3.pid}.${this.#randomId()}.tmp`
     );
     const flags = fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY | (fsConstants.O_NOFOLLOW ?? 0);
     let handle;
@@ -9873,7 +10203,7 @@ var FileConfigStore = class {
         const flags = fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY | (fsConstants.O_NOFOLLOW ?? 0);
         handle = await open(lockPath, flags, 384);
         await handle.writeFile(
-          JSON.stringify({ pid: process4.pid, createdAt: new Date(this.#now()).toISOString() }),
+          JSON.stringify({ pid: process3.pid, createdAt: new Date(this.#now()).toISOString() }),
           "utf8"
         );
         await handle.sync();
@@ -9980,7 +10310,7 @@ var FileConfigStore = class {
   async #tightenPermissions(target, currentMode, owner, requiredMode) {
     if (this.#platform === "win32")
       return;
-    const currentUser = typeof process4.getuid === "function" ? process4.getuid() : void 0;
+    const currentUser = typeof process3.getuid === "function" ? process3.getuid() : void 0;
     if (currentUser !== void 0 && owner !== currentUser) {
       throw new CliCommandError(
         "config_owner_mismatch",
@@ -10055,6 +10385,529 @@ async function readFileWithoutFollowingLinks(filePath) {
 }
 function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+// src/auth/validation.ts
+function normalizeScopes(scopes) {
+  const normalized = [...new Set(
+    (scopes ?? []).map((scope) => scope.trim()).filter(Boolean)
+  )].sort();
+  for (const scope of normalized) {
+    if (/\s/.test(scope)) {
+      throw new CliCommandError(
+        "credential_scope_invalid",
+        `Credential scope "${scope}" must not contain whitespace.`,
+        { status: 422 }
+      );
+    }
+  }
+  return normalized;
+}
+function assertIsoDate(value) {
+  if (value === void 0)
+    return;
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp) || new Date(timestamp).toISOString() !== value) {
+    throw new CliCommandError(
+      "credential_expiry_invalid",
+      "Credential expiration must be an ISO 8601 UTC timestamp.",
+      { status: 422 }
+    );
+  }
+}
+
+// src/auth/access-token.ts
+async function storeValidatedAccessToken(store, input) {
+  const token = input.token.trim();
+  if (!token) {
+    throw new CliCommandError(
+      "access_token_required",
+      "A validated access token is required.",
+      { status: 422 }
+    );
+  }
+  assertIsoDate(input.expiresAt);
+  return updateConfig(store, (config) => {
+    const credential = {
+      type: "access_token",
+      token,
+      scopes: normalizeScopes(input.scopes),
+      user: input.user,
+      expiresAt: input.expiresAt,
+      createdAt: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    config.server = normalizeServerOrigin(input.server);
+    config.credential = credential;
+    config.project = input.project ?? null;
+  });
+}
+function accessTokenFromEnvironment(env = process4.env) {
+  const token = env.LUNA_TOKEN?.trim();
+  if (!token)
+    return void 0;
+  return {
+    type: "access_token",
+    token,
+    scopes: []
+  };
+}
+
+// src/auth/logout.ts
+async function logoutLocal(store, options = {}) {
+  const current = await store.read();
+  const loggedOut = current.credential !== null && current.credential !== void 0;
+  let remoteRevocation = "not_applicable";
+  if (current.credential?.type === "oauth" && options.revoke) {
+    const tokens = [
+      {
+        token: stringValue2(current.credential.refreshToken),
+        tokenTypeHint: "refresh_token"
+      },
+      {
+        token: stringValue2(current.credential.accessToken),
+        tokenTypeHint: "access_token"
+      }
+    ].filter(
+      (entry) => entry.token !== void 0
+    );
+    const results = await Promise.allSettled(
+      tokens.map((entry) => options.revoke({
+        server: current.server,
+        token: entry.token,
+        tokenTypeHint: entry.tokenTypeHint
+      }))
+    );
+    remoteRevocation = results.some((result) => result.status === "rejected") ? "failed" : "succeeded";
+  }
+  await updateConfig(store, (config) => {
+    config.credential = null;
+    config.project = null;
+  });
+  return {
+    server: current.server,
+    loggedOut,
+    remoteRevocation
+  };
+}
+function stringValue2(value) {
+  return typeof value === "string" && value.trim() ? value : void 0;
+}
+
+// src/auth/oauth-storage.ts
+async function storeValidatedOAuthCredential(store, input) {
+  const accessToken = input.accessToken.trim();
+  const refreshToken = input.refreshToken?.trim() || void 0;
+  if (!accessToken) {
+    throw new CliCommandError(
+      "oauth_access_token_required",
+      "A validated OAuth access token is required.",
+      { status: 422 }
+    );
+  }
+  assertIsoDate(input.expiresAt);
+  return updateConfig(store, (config) => {
+    const credential = {
+      type: "oauth",
+      accessToken,
+      refreshToken,
+      tokenType: input.tokenType?.trim() || void 0,
+      scopes: normalizeScopes(input.scopes),
+      user: input.user,
+      expiresAt: input.expiresAt,
+      createdAt: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    config.server = normalizeServerOrigin(input.server);
+    config.credential = credential;
+    config.project = input.project ?? null;
+  });
+}
+
+// src/auth/oauth.ts
+import { spawn } from "child_process";
+import process5 from "process";
+var DEFAULT_OAUTH_CLIENT_ID = "luna-cli";
+var DEVICE_AUTHORIZATION_PATH = "/api/v1/oauth/device/authorization";
+var OAUTH_TOKEN_PATH = "/api/v1/oauth/token";
+var OAUTH_REVOKE_PATH = "/api/v1/oauth/revoke";
+var DEVICE_CODE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code";
+var DEFAULT_POLL_INTERVAL_SECONDS = 5;
+var SLOW_DOWN_SECONDS = 5;
+async function beginOAuthLogin(request) {
+  if (request.mode !== "device_code") {
+    throw new CliCommandError(
+      "oauth_login_mode_unsupported",
+      "Only OAuth Device Code login is supported by this CLI.",
+      { status: 422, details: { mode: request.mode } }
+    );
+  }
+  const server = normalizeServerOrigin(request.server);
+  const clientId = nonEmpty(request.clientId) ?? DEFAULT_OAUTH_CLIENT_ID;
+  const fetchImpl = request.fetch ?? globalThis.fetch;
+  const sleep = request.sleep ?? delay2;
+  const now = request.now ?? Date.now;
+  const authorization = await requestOAuthForm(
+    fetchImpl,
+    endpoint(server, DEVICE_AUTHORIZATION_PATH),
+    {
+      client_id: clientId,
+      ...request.scopes.length > 0 ? { scope: normalizeScopes2(request.scopes).join(" ") } : {}
+    }
+  );
+  const deviceCode = requiredString(authorization, "device_code");
+  const userCode = requiredString(authorization, "user_code");
+  const verificationUri = requiredString(authorization, "verification_uri");
+  const verificationUriComplete = optionalString(authorization.verification_uri_complete);
+  const expiresIn = positiveNumber(authorization.expires_in, "expires_in");
+  let interval = optionalPositiveNumber(authorization.interval) ?? DEFAULT_POLL_INTERVAL_SECONDS;
+  const browserUrl = verificationUriComplete ?? verificationUri;
+  const browserOpened = await bestEffortOpenBrowser(
+    request.openBrowser ?? openSystemBrowser,
+    browserUrl
+  );
+  const verification = {
+    userCode,
+    verificationUri,
+    verificationUriComplete,
+    expiresIn,
+    interval,
+    browserOpened
+  };
+  await request.onVerification?.(verification);
+  const deadline = now() + expiresIn * 1e3;
+  while (now() < deadline) {
+    await sleep(interval * 1e3);
+    if (now() >= deadline)
+      break;
+    const response = await postOAuthForm(
+      fetchImpl,
+      endpoint(server, OAUTH_TOKEN_PATH),
+      {
+        grant_type: DEVICE_CODE_GRANT_TYPE,
+        device_code: deviceCode,
+        client_id: clientId
+      }
+    );
+    const body = await responseRecord(response);
+    if (response.ok) {
+      return {
+        server,
+        verification,
+        ...parseTokenCredential(body, request.scopes, now)
+      };
+    }
+    const oauthError = optionalString(body.error);
+    if (oauthError === "authorization_pending")
+      continue;
+    if (oauthError === "slow_down") {
+      interval += SLOW_DOWN_SECONDS;
+      continue;
+    }
+    throw oauthProtocolError(oauthError, body, response.status);
+  }
+  throw new CliCommandError(
+    "oauth_device_code_expired",
+    "The OAuth device code expired before authorization completed.",
+    { status: 408, details: { server, verificationUri } }
+  );
+}
+async function refreshOAuthCredential(request) {
+  const refreshToken = nonEmpty(request.refreshToken);
+  if (!refreshToken) {
+    throw new CliCommandError(
+      "oauth_refresh_token_required",
+      "The OAuth credential does not contain a refresh token.",
+      { status: 401 }
+    );
+  }
+  const server = normalizeServerOrigin(request.server);
+  const body = await requestOAuthForm(
+    request.fetch ?? globalThis.fetch,
+    endpoint(server, OAUTH_TOKEN_PATH),
+    {
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+      client_id: nonEmpty(request.clientId) ?? DEFAULT_OAUTH_CLIENT_ID,
+      ...request.scopes?.length ? { scope: normalizeScopes2(request.scopes).join(" ") } : {}
+    }
+  );
+  const credential = parseTokenCredential(body, request.scopes ?? [], request.now ?? Date.now);
+  return {
+    ...credential,
+    refreshToken: credential.refreshToken ?? refreshToken
+  };
+}
+async function revokeOAuthCredential(request) {
+  const token = nonEmpty(request.token);
+  if (!token)
+    return;
+  const response = await postOAuthForm(
+    request.fetch ?? globalThis.fetch,
+    endpoint(normalizeServerOrigin(request.server), OAUTH_REVOKE_PATH),
+    {
+      token,
+      client_id: nonEmpty(request.clientId) ?? DEFAULT_OAUTH_CLIENT_ID,
+      ...request.tokenTypeHint ? { token_type_hint: request.tokenTypeHint } : {}
+    }
+  );
+  if (response.ok)
+    return;
+  const body = await responseRecord(response);
+  throw oauthProtocolError(optionalString(body.error), body, response.status);
+}
+async function openSystemBrowser(url) {
+  const command = process5.platform === "darwin" ? { executable: "open", args: [url] } : process5.platform === "win32" ? { executable: "rundll32", args: ["url.dll,FileProtocolHandler", url] } : { executable: "xdg-open", args: [url] };
+  return new Promise((resolve) => {
+    try {
+      const child = spawn(command.executable, command.args, {
+        detached: true,
+        stdio: "ignore"
+      });
+      let settled = false;
+      child.once("error", () => {
+        if (!settled) {
+          settled = true;
+          resolve(false);
+        }
+      });
+      child.once("spawn", () => {
+        if (!settled) {
+          settled = true;
+          child.unref();
+          resolve(true);
+        }
+      });
+    } catch {
+      resolve(false);
+    }
+  });
+}
+async function requestOAuthForm(fetchImpl, url, fields) {
+  const response = await postOAuthForm(fetchImpl, url, fields);
+  const body = await responseRecord(response);
+  if (!response.ok)
+    throw oauthProtocolError(optionalString(body.error), body, response.status);
+  return body;
+}
+async function postOAuthForm(fetchImpl, url, fields) {
+  try {
+    return await fetchImpl(url, {
+      method: "POST",
+      headers: {
+        "accept": "application/json",
+        "content-type": "application/x-www-form-urlencoded"
+      },
+      body: new URLSearchParams(fields)
+    });
+  } catch (error) {
+    throw new CliCommandError(
+      "oauth_network_error",
+      "The OAuth server could not be reached.",
+      { status: 502, retryable: true, details: { url }, cause: error }
+    );
+  }
+}
+async function responseRecord(response) {
+  try {
+    const value = await response.json();
+    if (isRecord3(value))
+      return value;
+  } catch {
+  }
+  if (!response.ok) {
+    throw new CliCommandError(
+      "oauth_response_invalid",
+      "The OAuth server returned an invalid response.",
+      { status: response.status || 502 }
+    );
+  }
+  return {};
+}
+function parseTokenCredential(body, fallbackScopes, now) {
+  const expiresIn = optionalPositiveNumber(body.expires_in);
+  const user = isRecord3(body.user) ? body.user : void 0;
+  return {
+    accessToken: requiredString(body, "access_token"),
+    refreshToken: optionalString(body.refresh_token),
+    tokenType: optionalString(body.token_type),
+    scopes: tokenScopes(body.scope, fallbackScopes),
+    expiresAt: expiresIn === void 0 ? void 0 : new Date(now() + expiresIn * 1e3).toISOString(),
+    user
+  };
+}
+function oauthProtocolError(error, body, status) {
+  const code = error ? `oauth_${error}` : "oauth_request_failed";
+  const safeDescription = optionalString(body.error_description);
+  return new CliCommandError(
+    code,
+    safeDescription ?? oauthErrorMessage(error),
+    {
+      status: normalizedOAuthStatus(error, status),
+      retryable: error === "temporarily_unavailable" || status >= 500,
+      details: error ? { oauthError: error } : {}
+    }
+  );
+}
+function oauthErrorMessage(error) {
+  switch (error) {
+    case "access_denied":
+      return "OAuth authorization was denied.";
+    case "expired_token":
+      return "The OAuth device code has expired.";
+    case "invalid_client":
+      return "The Luna CLI OAuth client is not accepted by this server.";
+    case "invalid_grant":
+      return "The OAuth grant or refresh token is invalid.";
+    default:
+      return "The OAuth request failed.";
+  }
+}
+function normalizedOAuthStatus(error, status) {
+  if (error === "access_denied")
+    return 403;
+  if (error === "expired_token" || error === "invalid_grant")
+    return 401;
+  return status || 502;
+}
+function endpoint(server, path3) {
+  return new URL(path3, `${server}/`).toString();
+}
+function requiredString(body, field) {
+  const value = optionalString(body[field]);
+  if (value)
+    return value;
+  throw new CliCommandError(
+    "oauth_response_invalid",
+    `The OAuth response is missing "${field}".`,
+    { status: 502, details: { field } }
+  );
+}
+function positiveNumber(value, field) {
+  const normalized = optionalPositiveNumber(value);
+  if (normalized !== void 0)
+    return normalized;
+  throw new CliCommandError(
+    "oauth_response_invalid",
+    `The OAuth response field "${field}" is invalid.`,
+    { status: 502, details: { field } }
+  );
+}
+function optionalPositiveNumber(value) {
+  const normalized = typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN;
+  return Number.isFinite(normalized) && normalized > 0 ? normalized : void 0;
+}
+function tokenScopes(value, fallback) {
+  if (typeof value === "string")
+    return normalizeScopes2(value.split(/\s+/));
+  if (Array.isArray(value))
+    return normalizeScopes2(value.filter((item) => typeof item === "string"));
+  return normalizeScopes2(fallback);
+}
+function normalizeScopes2(scopes) {
+  return [...new Set(scopes.map((scope) => scope.trim()).filter(Boolean))];
+}
+function optionalString(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : void 0;
+}
+function nonEmpty(value) {
+  return value?.trim() || void 0;
+}
+function isRecord3(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function delay2(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+async function bestEffortOpenBrowser(opener, url) {
+  try {
+    return await opener(url);
+  } catch {
+    return false;
+  }
+}
+
+// src/auth/status.ts
+async function getAuthStatus(store, options = {}) {
+  const config = parseConfigDocument(await store.read());
+  const environmentCredential = accessTokenFromEnvironment(options.env);
+  const credential = environmentCredential ?? config.credential ?? void 0;
+  const source = environmentCredential ? "environment" : "stored";
+  return {
+    server: normalizeServerOrigin(config.server),
+    authenticated: credential !== void 0 && !isExpired(credential, options.now),
+    credential: credential ? {
+      type: credential.type,
+      scopes: [...credential.scopes],
+      user: credential.user,
+      expiresAt: credential.expiresAt,
+      expired: isExpired(credential, options.now),
+      source
+    } : void 0
+  };
+}
+function isExpired(credential, now = /* @__PURE__ */ new Date()) {
+  return credential.expiresAt !== void 0 && Date.parse(credential.expiresAt) <= now.getTime();
+}
+
+// src/config/resolve.ts
+import process6 from "process";
+function resolveRuntimeContext(rawConfig, options = {}) {
+  const config = parseConfigDocument(rawConfig);
+  const env = options.env ?? process6.env;
+  const configuredServer = normalizeServerOrigin(config.server || DEFAULT_LUNA_SERVER);
+  const explicitServer = nonEmpty2(options.server);
+  const environmentServer = nonEmpty2(env.LUNA_SERVER);
+  const serverOverride = explicitServer ?? environmentServer;
+  const server = serverOverride ? normalizeServerOrigin(serverOverride) : configuredServer;
+  const sameOrigin2 = server === configuredServer;
+  const environmentToken = nonEmpty2(env.LUNA_TOKEN);
+  const credential = environmentToken ? {
+    type: "access_token",
+    token: environmentToken,
+    scopes: []
+  } : sameOrigin2 ? config.credential ?? void 0 : void 0;
+  const explicitProject = nonEmpty2(options.project);
+  const environmentProject = nonEmpty2(env.LUNA_PROJECT);
+  const projectOverride = explicitProject ?? environmentProject;
+  const project = projectOverride ? { id: projectOverride } : sameOrigin2 ? config.project ?? void 0 : void 0;
+  const explicitOutput = options.output === "" ? void 0 : options.output;
+  const environmentOutput = outputValue(env.LUNA_OUTPUT);
+  const configuredOutput = config.output || void 0;
+  const output = explicitOutput ?? environmentOutput ?? configuredOutput;
+  const explicitLanguage = nonEmpty2(options.language);
+  const environmentLanguage = nonEmpty2(env.LUNA_LANG);
+  const configuredLanguage = nonEmpty2(config.language);
+  const language = explicitLanguage ?? environmentLanguage ?? configuredLanguage;
+  return {
+    server,
+    project,
+    credential,
+    output,
+    language,
+    sources: {
+      server: explicitServer ? "argument" : environmentServer ? "environment" : config.server ? "config" : "default",
+      project: explicitProject ? "argument" : environmentProject ? "environment" : project ? "config" : "none",
+      credential: environmentToken ? "environment" : credential ? "config" : "none",
+      output: explicitOutput ? "argument" : environmentOutput ? "environment" : configuredOutput ? "config" : "default",
+      language: explicitLanguage ? "argument" : environmentLanguage ? "environment" : configuredLanguage ? "config" : "default"
+    }
+  };
+}
+function nonEmpty2(value) {
+  const normalized = value?.trim();
+  return normalized || void 0;
+}
+function outputValue(value) {
+  const normalized = nonEmpty2(value);
+  if (!normalized)
+    return void 0;
+  if (!OUTPUT_FORMATS.includes(normalized)) {
+    throw new CliCommandError(
+      "output_format_invalid",
+      `Unsupported output format "${normalized}".`,
+      { status: 422 }
+    );
+  }
+  return normalized;
 }
 
 // src/commands/compatibility.ts
@@ -10162,17 +11015,36 @@ var HTTP_METHODS2 = /* @__PURE__ */ new Set([
 ]);
 var QUERY_METHODS = /* @__PURE__ */ new Set(["DELETE", "GET", "HEAD", "OPTIONS"]);
 var PROJECT_PARAMETER_NAMES = /* @__PURE__ */ new Set(["project", "projectId", "projectID"]);
+var OAUTH_REFRESH_SKEW_MS = 3e4;
+var defaultOAuthClient = {
+  beginOAuthLogin,
+  refreshOAuthCredential,
+  revokeOAuthCredential
+};
 var LunaApiAdapter = class {
   #config;
   #env;
   #clientFactory;
   #compatibility;
+  #oauthClient;
+  #now;
   #compatibleServers = /* @__PURE__ */ new Set();
   constructor(options) {
     this.#config = options.config;
-    this.#env = options.env ?? process5.env;
+    this.#env = options.env ?? process7.env;
     this.#clientFactory = options.clientFactory ?? ((clientOptions) => new LunaClient(clientOptions));
     this.#compatibility = options.compatibility;
+    this.#oauthClient = options.oauthClient ?? defaultOAuthClient;
+    this.#now = options.now ?? Date.now;
+  }
+  beginOAuthLogin(request) {
+    return this.#oauthClient.beginOAuthLogin(request);
+  }
+  refreshOAuthCredential(request) {
+    return this.#oauthClient.refreshOAuthCredential(request);
+  }
+  revokeOAuthCredential(request) {
+    return this.#oauthClient.revokeOAuthCredential(request);
   }
   async execute(request) {
     if (!request.metadata.path || !request.metadata.method) {
@@ -10373,14 +11245,46 @@ var LunaApiAdapter = class {
         }
       );
     }
-    const config = await this.#config.read();
-    const runtime = resolveRuntimeContext(config, {
+    let config = await this.#config.read();
+    let runtime = resolveRuntimeContext(config, {
       server: globals.server,
       project: globals.project,
       output: globals.output,
       language: globals.lang,
       env: this.#env
     });
+    if (runtime.sources.credential === "config" && runtime.credential?.type === "oauth" && oauthCredentialNeedsRefresh(runtime.credential.expiresAt, this.#now())) {
+      if (!runtime.credential.refreshToken) {
+        throw new CliCommandError(
+          "oauth_refresh_token_required",
+          "The stored OAuth credential expired and does not contain a refresh token.",
+          { status: 401 }
+        );
+      }
+      const refreshed = await this.#oauthClient.refreshOAuthCredential({
+        server: runtime.server,
+        refreshToken: runtime.credential.refreshToken,
+        scopes: runtime.credential.scopes
+      });
+      await storeValidatedOAuthCredential(this.#config, {
+        server: runtime.server,
+        accessToken: refreshed.accessToken,
+        refreshToken: refreshed.refreshToken,
+        tokenType: refreshed.tokenType ?? runtime.credential.tokenType,
+        scopes: refreshed.scopes.length > 0 ? refreshed.scopes : runtime.credential.scopes,
+        user: runtime.credential.user,
+        expiresAt: refreshed.expiresAt,
+        project: runtime.project ?? null
+      });
+      config = await this.#config.read();
+      runtime = resolveRuntimeContext(config, {
+        server: globals.server,
+        project: globals.project,
+        output: globals.output,
+        language: globals.lang,
+        env: this.#env
+      });
+    }
     const credential = runtime.credential;
     const token = credential?.type === "oauth" ? credential.accessToken : credential?.type === "access_token" ? credential.token : void 0;
     return this.#clientFactory({
@@ -10401,6 +11305,12 @@ var LunaApiAdapter = class {
     return runtime.server;
   }
 };
+function oauthCredentialNeedsRefresh(expiresAt, now) {
+  if (!expiresAt)
+    return false;
+  const expiresAtMs = Date.parse(expiresAt);
+  return Number.isFinite(expiresAtMs) && expiresAtMs <= now + OAUTH_REFRESH_SKEW_MS;
+}
 function requiredMetaString(value, field) {
   if (typeof value === "string" && value.trim())
     return value;
@@ -10463,7 +11373,7 @@ function planOpenApiRequest(request) {
   for (const [name, value] of Object.entries(request.params)) {
     if (consumed.has(name))
       continue;
-    if (name === "params" && isRecord3(value)) {
+    if (name === "params" && isRecord4(value)) {
       for (const [nestedName, nestedValue] of Object.entries(value)) {
         if (QUERY_METHODS.has(method))
           query[nestedName] = queryValue(nestedValue, nestedName);
@@ -10586,7 +11496,7 @@ function headerValue(value, name) {
   );
 }
 function mergeBody(explicitBody, fields) {
-  if (!isRecord3(explicitBody)) {
+  if (!isRecord4(explicitBody)) {
     throw new CliCommandError(
       "request_body_conflict",
       "A non-object request body cannot be combined with body fields.",
@@ -10610,8 +11520,8 @@ function apiFailure(error) {
   });
 }
 function listItems(value) {
-  const array = Array.isArray(value) ? value : isRecord3(value) && Array.isArray(value.items) ? value.items : [];
-  return array.filter(isRecord3).flatMap((item) => {
+  const array = Array.isArray(value) ? value : isRecord4(value) && Array.isArray(value.items) ? value.items : [];
+  return array.filter(isRecord4).flatMap((item) => {
     if (typeof item.id !== "string")
       return [];
     return [{
@@ -10632,7 +11542,7 @@ function asRecord(value) {
   }
   return value;
 }
-function isRecord3(value) {
+function isRecord4(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
@@ -10640,7 +11550,7 @@ function isRecord3(value) {
 import { Buffer as Buffer3 } from "buffer";
 import { readFile as readFile2 } from "fs/promises";
 import { extname as extname2 } from "path";
-import process7 from "process";
+import process9 from "process";
 import { confirm } from "@inquirer/prompts";
 import { parse as parseYaml2 } from "yaml";
 
@@ -10841,8 +11751,8 @@ function exitCodeFor(code, status) {
 function normalizeLunaError(error) {
   if (error instanceof LunaError)
     return error;
-  if (isRecord4(error)) {
-    const nested = isRecord4(error.error) ? error.error : error;
+  if (isRecord5(error)) {
+    const nested = isRecord5(error.error) ? error.error : error;
     const status = finiteNumber(nested.status) ?? finiteNumber(nested.statusCode) ?? 500;
     const code = nonEmptyString(nested.code) ?? "internal_error";
     const message = nonEmptyString(nested.message) ?? nonEmptyString(nested.detail) ?? "The command failed.";
@@ -10853,7 +11763,7 @@ function normalizeLunaError(error) {
       retryAfter: finiteNumber(nested.retryAfter),
       purpose: nonEmptyString(nested.purpose),
       fields: normalizeFields2(nested.fields),
-      details: isRecord4(nested.details) ? nested.details : {},
+      details: isRecord5(nested.details) ? nested.details : {},
       cause: error
     });
   }
@@ -10887,7 +11797,7 @@ function toErrorDocument(error) {
 }
 function normalizeFields2(value) {
   if (Array.isArray(value)) {
-    return value.filter(isRecord4).map((field) => ({
+    return value.filter(isRecord5).map((field) => ({
       key: nonEmptyString(field.key) ?? "",
       code: nonEmptyString(field.code) ?? "invalid",
       ...field.expected !== void 0 ? { expected: field.expected } : {},
@@ -10895,17 +11805,17 @@ function normalizeFields2(value) {
       ...nonEmptyString(field.message) ? { message: nonEmptyString(field.message) } : {}
     }));
   }
-  if (!isRecord4(value))
+  if (!isRecord5(value))
     return void 0;
   return Object.fromEntries(
     Object.entries(value).filter((entry) => typeof entry[1] === "string")
   );
 }
-function isRecord4(value) {
+function isRecord5(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function asRecord2(value) {
-  return isRecord4(value) ? value : {};
+  return isRecord5(value) ? value : {};
 }
 function nonEmptyString(value) {
   return typeof value === "string" && value.length > 0 ? value : void 0;
@@ -11119,7 +12029,7 @@ var GLOBAL_KEY_SET = new Set(GLOBAL_CONTROL_KEYS);
 import { Buffer as Buffer2 } from "buffer";
 import { readFile, stat } from "fs/promises";
 import { extname } from "path";
-import process6 from "process";
+import process8 from "process";
 import { parse as parseYaml } from "yaml";
 
 // src/input/types.ts
@@ -11133,7 +12043,7 @@ var DEFAULT_INPUT_LIMITS = Object.freeze({
 // src/input/sources.ts
 var NodeInputSourceReader = class {
   #stdin;
-  constructor(stdin = process6.stdin) {
+  constructor(stdin = process8.stdin) {
     this.#stdin = stdin;
   }
   async readFile(path3, maxBytes) {
@@ -11322,7 +12232,7 @@ function visit(value, schema, path3, errors) {
     if (schema.items)
       value.forEach((item, index) => visit(item, schema.items, `${path3}[${index}]`, errors));
   }
-  if (isRecord5(value)) {
+  if (isRecord6(value)) {
     for (const required of schema.required ?? []) {
       if (!(required in value))
         errors.push({ key: `${path3}.${required}`, code: "required" });
@@ -11333,7 +12243,7 @@ function visit(value, schema, path3, errors) {
         visit(child, childSchema, `${path3}.${key}`, errors);
       } else if (schema.additionalProperties === false) {
         errors.push({ key: `${path3}.${key}`, code: "additionalProperties" });
-      } else if (isRecord5(schema.additionalProperties)) {
+      } else if (isRecord6(schema.additionalProperties)) {
         visit(child, schema.additionalProperties, `${path3}.${key}`, errors);
       }
     }
@@ -11354,7 +12264,7 @@ function matchesAnyType(value, types) {
       case "array":
         return Array.isArray(value);
       case "object":
-        return isRecord5(value);
+        return isRecord6(value);
       case "integer":
         return typeof value === "number" && Number.isSafeInteger(value);
       case "number":
@@ -11379,7 +12289,7 @@ function jsonType(value) {
     return "binary";
   return typeof value;
 }
-function isRecord5(value) {
+function isRecord6(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
@@ -11421,7 +12331,7 @@ async function parseCommandInput(tokens, spec, options = {}) {
         const bytes = source.kind === "stdin" ? await reader.readStdin(limits.paramsBytes) : await reader.readFile(source.path, limits.paramsBytes);
         stdinUsed ||= source.kind === "stdin";
         const params = parseStructuredBytes(bytes, source.path, "params");
-        if (!isRecord6(params)) {
+        if (!isRecord7(params)) {
           throw invalidInput("params_must_be_object", "params must contain a JSON object.", {
             fields: [{ key: "params", code: "type", expected: "object", actual: jsonType2(params) }]
           });
@@ -11522,7 +12432,7 @@ function deduplicateErrors(errors) {
     return true;
   });
 }
-function isRecord6(value) {
+function isRecord7(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function jsonType2(value) {
@@ -11824,7 +12734,7 @@ function appendValue2(target, key, value, repeated) {
 }
 async function readStdin() {
   const chunks = [];
-  for await (const chunk of process7.stdin) {
+  for await (const chunk of process9.stdin) {
     chunks.push(Buffer3.isBuffer(chunk) ? chunk : Buffer3.from(chunk));
   }
   return Buffer3.concat(chunks).toString("utf8");
@@ -11994,7 +12904,7 @@ Register-ArgumentCompleter -Native -CommandName luna -ScriptBlock {
 }
 
 // src/commands/executor.ts
-import process8 from "process";
+import process10 from "process";
 import { Command, CommanderError, Option } from "commander";
 
 // src/version.ts
@@ -12038,10 +12948,10 @@ function rootHelpText(registry, ports) {
   return [
     "",
     `${text(ports, "help.quickStart.title", "Quick start:")}`,
-    `  ${text(ports, "help.quickStart.login", "1. Sign in with an access token:")}`,
-    `     printf '%s' "$LUNA_TOKEN" | luna login token=@-`,
+    `  ${text(ports, "help.quickStart.login", "1. Sign in with OAuth Device Code:")}`,
+    "     luna login",
     `  ${text(ports, "help.quickStart.customServer", "2. Sign in to another server when needed:")}`,
-    `     printf '%s' "$LUNA_TOKEN" | luna login server=https://luna.example.com token=@-`,
+    "     luna login server=https://luna.example.com",
     `  ${text(ports, "help.quickStart.discover", "3. Discover commands:")}`,
     "     luna help catalog query=project limit=10",
     "     luna <category> <command> --help",
@@ -12321,7 +13231,7 @@ function registerRootShortcuts(program, registry, ports) {
     );
   }
 }
-async function runCli(program, argv = process8.argv, fallbackOutput) {
+async function runCli(program, argv = process10.argv, fallbackOutput) {
   const fallbackGlobals = inferFallbackGlobals(argv);
   const rootOnly = isRootOnlyInvocation(program, argv);
   const restoreCommanderOutput = configureCommanderOutput(
@@ -12391,13 +13301,13 @@ async function executeRegistered(registered, tokens, flagOptions, ports, invoked
   const parsed = splitGlobalTokens(tokens);
   const config = await ports.config.read();
   const globals = resolveGlobalOptions(parsed.canonicalGlobals, flagOptions, {
-    env: ports.env ?? process8.env,
+    env: ports.env ?? process10.env,
     configured: {
       output: config.output,
       project: config.project,
       language: config.language
     },
-    isTTY: ports.isTTY ?? Boolean(process8.stdout.isTTY),
+    isTTY: ports.isTTY ?? Boolean(process10.stdout.isTTY),
     streaming: registered.metadata.streaming ?? false
   });
   const inputMetadata = metadataWithResolvedProjectRequirement(registered, globals);
@@ -12438,7 +13348,7 @@ function resolveProjectParameters(parsedParams, registered, globals) {
   if (requiredProjectParameters.length === 0)
     return parsedParams;
   const params = { ...parsedParams };
-  const structured = isRecord7(params.params) ? { ...params.params } : void 0;
+  const structured = isRecord8(params.params) ? { ...params.params } : void 0;
   for (const parameter2 of requiredProjectParameters) {
     const explicitValue = params[parameter2.name] ?? structured?.[parameter2.name];
     const value = explicitValue ?? globals.project;
@@ -12525,7 +13435,7 @@ function hasExplicitProjectSelection(explicitGlobalKeys, params) {
   return explicitGlobalKeys.has("project") || projectValue(params) !== void 0;
 }
 function projectValue(params) {
-  const structured = isRecord7(params.params) ? params.params : void 0;
+  const structured = isRecord8(params.params) ? params.params : void 0;
   for (const name of ["project", "projectId", "projectID"]) {
     const value = params[name] ?? structured?.[name];
     if (value !== void 0 && value !== null && value !== "")
@@ -12588,7 +13498,7 @@ async function enforceRiskPolicy(registered, requestedPath, globals, ports) {
   }
 }
 function normalizeResult(value, schemaVersion) {
-  if (isRecord7(value) && "data" in value && ("schemaVersion" in value || "meta" in value)) {
+  if (isRecord8(value) && "data" in value && ("schemaVersion" in value || "meta" in value)) {
     return value;
   }
   return { data: value, schemaVersion };
@@ -12710,7 +13620,7 @@ function commanderHelpCommand(program, argv) {
 function isOutput(value) {
   return value === "table" || value === "json" || value === "raw-json" || value === "yaml" || value === "jsonl" || value === "name";
 }
-function isRecord7(value) {
+function isRecord8(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
@@ -12836,135 +13746,13 @@ function integerParam(value, fallback, minimum, maximum) {
 }
 
 // src/commands/local.ts
-import process10 from "process";
-
-// src/auth/access-token.ts
-import process9 from "process";
-
-// src/auth/validation.ts
-function normalizeScopes(scopes) {
-  const normalized = [...new Set(
-    (scopes ?? []).map((scope) => scope.trim()).filter(Boolean)
-  )].sort();
-  for (const scope of normalized) {
-    if (/\s/.test(scope)) {
-      throw new CliCommandError(
-        "credential_scope_invalid",
-        `Credential scope "${scope}" must not contain whitespace.`,
-        { status: 422 }
-      );
-    }
-  }
-  return normalized;
-}
-function assertIsoDate(value) {
-  if (value === void 0)
-    return;
-  const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp) || new Date(timestamp).toISOString() !== value) {
-    throw new CliCommandError(
-      "credential_expiry_invalid",
-      "Credential expiration must be an ISO 8601 UTC timestamp.",
-      { status: 422 }
-    );
-  }
-}
-
-// src/auth/access-token.ts
-async function storeValidatedAccessToken(store, input) {
-  const token = input.token.trim();
-  if (!token) {
-    throw new CliCommandError(
-      "access_token_required",
-      "A validated access token is required.",
-      { status: 422 }
-    );
-  }
-  assertIsoDate(input.expiresAt);
-  return updateConfig(store, (config) => {
-    const credential = {
-      type: "access_token",
-      token,
-      scopes: normalizeScopes(input.scopes),
-      user: input.user,
-      expiresAt: input.expiresAt,
-      createdAt: (/* @__PURE__ */ new Date()).toISOString()
-    };
-    config.server = normalizeServerOrigin(input.server);
-    config.credential = credential;
-    config.project = input.project ?? null;
-  });
-}
-function accessTokenFromEnvironment(env = process9.env) {
-  const token = env.LUNA_TOKEN?.trim();
-  if (!token)
-    return void 0;
-  return {
-    type: "access_token",
-    token,
-    scopes: []
-  };
-}
-
-// src/auth/logout.ts
-async function logoutLocal(store) {
-  let result = { server: "", loggedOut: false };
-  await updateConfig(store, (config) => {
-    result = {
-      server: config.server,
-      loggedOut: config.credential !== null && config.credential !== void 0
-    };
-    config.credential = null;
-    config.project = null;
-  });
-  return result;
-}
-
-// src/auth/oauth.ts
-async function beginOAuthLogin(_request) {
-  throw oauthUnavailable("OAuth login");
-}
-function oauthUnavailable(capability) {
-  return new CliCommandError(
-    "oauth_server_capability_unavailable",
-    `${capability} is unavailable until the Luna server exposes the native CLI OAuth endpoints.`,
-    {
-      status: 501,
-      details: {
-        capability,
-        fallback: "Use a personal access token through stdin or LUNA_TOKEN."
-      }
-    }
-  );
-}
-
-// src/auth/status.ts
-async function getAuthStatus(store, options = {}) {
-  const config = parseConfigDocument(await store.read());
-  const environmentCredential = accessTokenFromEnvironment(options.env);
-  const credential = environmentCredential ?? config.credential ?? void 0;
-  const source = environmentCredential ? "environment" : "stored";
-  return {
-    server: normalizeServerOrigin(config.server),
-    authenticated: credential !== void 0 && !isExpired(credential, options.now),
-    credential: credential ? {
-      type: credential.type,
-      scopes: [...credential.scopes],
-      user: credential.user,
-      expiresAt: credential.expiresAt,
-      expired: isExpired(credential, options.now),
-      source
-    } : void 0
-  };
-}
-function isExpired(credential, now = /* @__PURE__ */ new Date()) {
-  return credential.expiresAt !== void 0 && Date.parse(credential.expiresAt) <= now.getTime();
-}
-
-// src/commands/local.ts
+import process11 from "process";
 var stringSchema = { type: "string" };
 var booleanSchema = { type: "boolean" };
 var integerSchema = { type: "integer" };
+function translate2(ports, key, fallback, locale) {
+  return ports.translate?.(key, fallback, locale) ?? fallback;
+}
 function registerLocalCommands(registry) {
   registerVersion(registry);
   registerHelp(registry);
@@ -12976,7 +13764,7 @@ function registerLocalCommands(registry) {
 }
 function registerAuth(registry) {
   registry.register(localMetadata("auth", "login", {
-    summary: "Authenticate to one Luna DevOps server with an access token.",
+    summary: "Authenticate to one Luna DevOps server with OAuth Device Code.",
     schemaVersion: "auth.login/v1",
     risk: "medium",
     parameters: [
@@ -12988,16 +13776,17 @@ function registerAuth(registry) {
       parameter("scope", { repeated: true })
     ],
     examples: [
-      `printf '%s' "$LUNA_TOKEN" | luna auth login token=@-`,
-      "luna auth login mode=device-code scope=project:read"
+      "luna login",
+      "luna login server=https://luna.example.com scope=project:read",
+      `printf '%s' "$LUNA_TOKEN" | luna auth login mode=access-token token=@-`
     ]
   }), async (invocation, ports) => {
-    const mode = optionalString(invocation.params.mode) ?? "access-token";
+    const mode = optionalString2(invocation.params.mode) ?? "device-code";
     const server = invocation.globals.server ?? DEFAULT_LUNA_SERVER;
     if (mode === "device-code") {
       if (ports.api.getMeta) {
         const meta = await ports.api.getMeta(server, invocation.globals);
-        if (!meta.features.deviceCode) {
+        if (meta.features.deviceCode === false) {
           throw new CliCommandError(
             "oauth_server_capability_unavailable",
             "The selected Luna server does not support device-code login.",
@@ -13012,11 +13801,62 @@ function registerAuth(registry) {
           );
         }
       }
-      return beginOAuthLogin({
+      if (!ports.api.beginOAuthLogin) {
+        throw new CliCommandError(
+          "unsupported_feature",
+          "The API client cannot start OAuth Device Code login.",
+          { status: 501 }
+        );
+      }
+      const result = await ports.api.beginOAuthLogin({
         server,
         scopes: stringList(invocation.params.scope),
-        mode: "device_code"
+        mode: "device_code",
+        onVerification: async (verification) => {
+          const codePrompt = translate2(
+            ports,
+            "auth.deviceCode.code",
+            "Enter this device code to authorize Luna CLI:",
+            invocation.globals.lang
+          );
+          await ports.output.writeInfo?.(
+            `${codePrompt} ${verification.userCode}`,
+            invocation.globals
+          );
+          const browserPrompt = translate2(
+            ports,
+            verification.browserOpened ? "auth.deviceCode.browserOpened" : "auth.deviceCode.browserFallback",
+            verification.browserOpened ? "A browser was opened. Complete authorization there; manual URL:" : "Open this URL in a browser to complete authorization:",
+            invocation.globals.lang
+          );
+          await ports.output.writeInfo?.(
+            `${browserPrompt} ${verification.verificationUri}`,
+            invocation.globals
+          );
+        }
       });
+      const userId2 = optionalString2(result.user?.id);
+      await storeValidatedOAuthCredential(ports.config, {
+        server: result.server,
+        accessToken: result.accessToken,
+        refreshToken: result.refreshToken,
+        tokenType: result.tokenType,
+        scopes: result.scopes,
+        expiresAt: result.expiresAt,
+        user: userId2 ? {
+          id: userId2,
+          ...result.user
+        } : void 0
+      });
+      return {
+        schemaVersion: "auth.login/v1",
+        data: {
+          server: result.server,
+          authenticated: true,
+          credentialType: "oauth",
+          user: result.user
+        }
+      };
     }
     if (mode !== "access-token") {
       throw invalidArguments2(
@@ -13024,10 +13864,10 @@ function registerAuth(registry) {
         "mode"
       );
     }
-    const token = optionalString(invocation.params.token)?.trim() ?? optionalString(ports.env?.LUNA_TOKEN)?.trim();
+    const token = optionalString2(invocation.params.token)?.trim() ?? optionalString2(ports.env?.LUNA_TOKEN)?.trim();
     if (!token) {
       throw invalidArguments2(
-        "auth.login requires token=@- or the LUNA_TOKEN environment variable.",
+        "Access-token login requires token=@- or the LUNA_TOKEN environment variable.",
         "token"
       );
     }
@@ -13039,7 +13879,7 @@ function registerAuth(registry) {
       );
     }
     const user = await ports.api.validateAccessToken(server, token, invocation.globals);
-    const userId = optionalString(user.id);
+    const userId = optionalString2(user.id);
     await storeValidatedAccessToken(ports.config, {
       server,
       token,
@@ -13069,13 +13909,15 @@ function registerAuth(registry) {
     })
   }));
   registry.register(localMetadata("auth", "logout", {
-    summary: "Remove the active Luna credential.",
+    summary: "Revoke OAuth tokens when possible and remove the local credential.",
     schemaVersion: "auth.logout/v1",
     risk: "medium",
     examples: ["luna auth logout"]
   }), async (invocation, ports) => ({
     schemaVersion: "auth.logout/v1",
-    data: await logoutLocal(ports.config)
+    data: await logoutLocal(ports.config, {
+      revoke: (request) => ports.api.revokeOAuthCredential(request)
+    })
   }));
 }
 function registerDoctor(registry) {
@@ -13176,8 +14018,8 @@ function registerDoctor(registry) {
         status: doctorStatus(checks),
         local: {
           version: localVersion,
-          distribution: ports.distribution ?? (typeof process10.versions.bun === "string" ? "binary" : "source"),
-          runtime: typeof process10.versions.bun === "string" ? `bun-${process10.versions.bun}` : `node-${process10.versions.node}`,
+          distribution: ports.distribution ?? (typeof process11.versions.bun === "string" ? "binary" : "source"),
+          runtime: typeof process11.versions.bun === "string" ? `bun-${process11.versions.bun}` : `node-${process11.versions.node}`,
           catalogVersion: registry.catalogMetadata.catalogVersion,
           openapiDigest: registry.catalogMetadata.openapiDigest,
           schemaDigest: registry.catalogMetadata.schemaDigest
@@ -13218,10 +14060,10 @@ function registerVersion(registry) {
     schemaVersion: "version.show/v1",
     data: {
       version: ports.version ?? CLI_VERSION,
-      distribution: ports.distribution ?? (typeof process10.versions.bun === "string" ? "binary" : "source"),
-      runtime: typeof process10.versions.bun === "string" ? `bun-${process10.versions.bun}` : `node-${process10.versions.node}`,
-      platform: process10.platform,
-      arch: process10.arch
+      distribution: ports.distribution ?? (typeof process11.versions.bun === "string" ? "binary" : "source"),
+      runtime: typeof process11.versions.bun === "string" ? `bun-${process11.versions.bun}` : `node-${process11.versions.node}`,
+      platform: process11.platform,
+      arch: process11.arch
     }
   }));
 }
@@ -13296,7 +14138,7 @@ function registerProjectSelection(registry) {
     if (!invocation.explicitGlobalKeys.has("project")) {
       throw invalidArguments2("project.use requires an explicit project=<id-or-identifier>.", "project");
     }
-    const value = requiredString(invocation.globals.project, "project");
+    const value = requiredString2(invocation.globals.project, "project");
     if (!ports.api.resolveProject) {
       throw new CliCommandError(
         "unsupported_feature",
@@ -13344,11 +14186,11 @@ function registerApiDiagnostic(registry) {
     }),
     source: "local"
   }, async (invocation, ports) => {
-    const method = requiredString(invocation.params.method, "method").toUpperCase();
+    const method = requiredString2(invocation.params.method, "method").toUpperCase();
     if (!["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"].includes(method)) {
       throw invalidArguments2(`Unsupported HTTP method "${method}".`, "method");
     }
-    const path3 = requiredString(invocation.params.path, "path");
+    const path3 = requiredString2(invocation.params.path, "path");
     if (!path3.startsWith("/api/") || path3.startsWith("//") || /^[a-z][a-z0-9+.-]*:/i.test(path3)) {
       throw invalidArguments2("path must be a relative Luna API path beginning with /api/.", "path");
     }
@@ -13377,13 +14219,13 @@ function asResult(value, schemaVersion) {
   }
   return { data: value, schemaVersion };
 }
-function requiredString(value, key) {
-  const result = optionalString(value);
+function requiredString2(value, key) {
+  const result = optionalString2(value);
   if (!result)
     throw invalidArguments2(`Missing required argument "${key}".`, key);
   return result;
 }
-function optionalString(value) {
+function optionalString2(value) {
   return typeof value === "string" && value.length > 0 ? value : void 0;
 }
 function stringList(value) {
@@ -13587,9 +14429,9 @@ function extractCatalog(contractModule) {
   const entries = Array.isArray(value) ? value : Array.isArray(catalog.commands) ? catalog.commands : Array.isArray(catalog.entries) ? catalog.entries : [];
   return {
     metadata: {
-      catalogVersion: stringValue2(exportedMetadata.catalogVersion) ?? stringValue2(catalog.metadata?.catalogVersion) ?? stringValue2(catalog.catalogVersion),
-      openapiDigest: stringValue2(exportedMetadata.openapiDigest) ?? stringValue2(catalog.metadata?.openapiDigest) ?? stringValue2(catalog.openapiDigest),
-      schemaDigest: stringValue2(exportedMetadata.catalogDigest) ?? stringValue2(exportedMetadata.schemaDigest) ?? stringValue2(catalog.metadata?.schemaDigest) ?? stringValue2(catalog.schemaDigest)
+      catalogVersion: stringValue3(exportedMetadata.catalogVersion) ?? stringValue3(catalog.metadata?.catalogVersion) ?? stringValue3(catalog.catalogVersion),
+      openapiDigest: stringValue3(exportedMetadata.openapiDigest) ?? stringValue3(catalog.metadata?.openapiDigest) ?? stringValue3(catalog.openapiDigest),
+      schemaDigest: stringValue3(exportedMetadata.catalogDigest) ?? stringValue3(exportedMetadata.schemaDigest) ?? stringValue3(catalog.metadata?.schemaDigest) ?? stringValue3(catalog.schemaDigest)
     },
     entries: entries.map(normalizeCatalogEntry)
   };
@@ -13620,8 +14462,8 @@ function normalizeCatalogEntry(value) {
   const entry = asRecord3(value);
   const command = asRecord3(entry.command);
   const extension = asRecord3(entry["x-luna-cli"] ?? entry.cli);
-  const category = requiredString2(entry.category ?? command.category ?? extension.category, "category");
-  const tool = requiredString2(entry.tool ?? command.tool ?? extension.tool, "tool");
+  const category = requiredString3(entry.category ?? command.category ?? extension.category, "category");
+  const tool = requiredString3(entry.tool ?? command.tool ?? extension.tool, "tool");
   const parameters = parameterArray(entry.parameters);
   const requestBody = asRecord3(entry.requestBody);
   if (Object.keys(requestBody).length > 0) {
@@ -13641,24 +14483,24 @@ function normalizeCatalogEntry(value) {
   return {
     category,
     tool,
-    canonicalPath: stringValue2(entry.canonicalPath ?? command.canonicalPath),
+    canonicalPath: stringValue3(entry.canonicalPath ?? command.canonicalPath),
     categoryAliases: stringArray(entry.categoryAliases ?? extension.categoryAliases),
     aliases: stringArray(entry.aliases ?? extension.aliases),
     source: "openapi",
-    operationId: stringValue2(entry.operationId),
+    operationId: stringValue3(entry.operationId),
     consumedOperations: stringArray(entry.consumedOperations),
-    summary: stringValue2(entry.summary),
-    summaryKey: stringValue2(entry.summaryKey),
-    description: stringValue2(entry.description),
-    descriptionKey: stringValue2(entry.descriptionKey),
+    summary: stringValue3(entry.summary),
+    summaryKey: stringValue3(entry.summaryKey),
+    description: stringValue3(entry.description),
+    descriptionKey: stringValue3(entry.descriptionKey),
     parameters,
     inputSchema: schemaValue(entry.inputSchema),
     outputSchema: schemaValue(entry.outputSchema),
     errorSchema: schemaValue(entry.errorSchema),
-    schemaVersion: stringValue2(entry.schemaVersion),
-    schemaDigest: stringValue2(entry.schemaDigest),
+    schemaVersion: stringValue3(entry.schemaVersion),
+    schemaDigest: stringValue3(entry.schemaDigest),
     scopes: stringArray(entry.scopes ?? command.requiredScopes ?? extension.scopes),
-    mfaPurpose: stringValue2(entry.mfaPurpose ?? extension.mfaPurpose),
+    mfaPurpose: stringValue3(entry.mfaPurpose ?? extension.mfaPurpose),
     risk: riskValue(entry.risk ?? command.risk ?? extension.risk),
     transport: transportValue(entry.transport ?? command.transport ?? extension.transport),
     projectContext: projectContextValue(
@@ -13668,8 +14510,8 @@ function normalizeCatalogEntry(value) {
     hidden: booleanValue(entry.hidden ?? command.hidden),
     agentAllowed: typeof entry.agentAllowed === "boolean" ? entry.agentAllowed : void 0,
     examples: stringArray(entry.examples),
-    method: stringValue2(entry.method),
-    path: stringValue2(entry.path)
+    method: stringValue3(entry.method),
+    path: stringValue3(entry.path)
   };
 }
 function parameterArray(value) {
@@ -13678,10 +14520,10 @@ function parameterArray(value) {
   return value.map((item) => {
     const parameter2 = asRecord3(item);
     return {
-      name: requiredString2(parameter2.name, "parameter name"),
+      name: requiredString3(parameter2.name, "parameter name"),
       location: parameterLocation(parameter2.in ?? parameter2.location),
-      description: stringValue2(parameter2.description),
-      descriptionKey: stringValue2(parameter2.descriptionKey),
+      description: stringValue3(parameter2.description),
+      descriptionKey: stringValue3(parameter2.descriptionKey),
       required: booleanValue(parameter2.required),
       repeated: booleanValue(parameter2.repeated),
       sensitive: booleanValue(parameter2.sensitive),
@@ -13727,8 +14569,8 @@ function projectContextValue(value) {
 function schemaValue(value) {
   return typeof value === "object" && value !== null ? value : void 0;
 }
-function requiredString2(value, label) {
-  const result = stringValue2(value);
+function requiredString3(value, label) {
+  const result = stringValue3(value);
   if (!result) {
     throw new CliCommandError("invalid_command_catalog", `Missing ${label}.`, {
       status: 500
@@ -13736,7 +14578,7 @@ function requiredString2(value, label) {
   }
   return result;
 }
-function stringValue2(value) {
+function stringValue3(value) {
   return typeof value === "string" && value.length > 0 ? value : void 0;
 }
 function booleanValue(value) {
@@ -13751,7 +14593,7 @@ function asRecord3(value) {
 
 // src/commands/output.ts
 import { Buffer as Buffer5 } from "buffer";
-import process11 from "process";
+import process12 from "process";
 
 // src/output/json.ts
 function stringifyJson(value, options = {}) {
@@ -13789,10 +14631,10 @@ function renderFieldView(value, labels = {}) {
 }
 function renderHuman(value, options = {}) {
   if (Array.isArray(value)) {
-    const rows = value.filter(isRecord8);
+    const rows = value.filter(isRecord9);
     return rows.length === value.length ? renderTable(rows, options) : value.map(formatCell).join("\n");
   }
-  if (isRecord8(value)) return renderFieldView(value);
+  if (isRecord9(value)) return renderFieldView(value);
   return formatCell(value);
 }
 function renderYaml(value) {
@@ -13813,7 +14655,7 @@ function inferColumns(rows) {
   return [...keys].map((key) => ({ key }));
 }
 function extractName(value) {
-  if (isRecord8(value)) {
+  if (isRecord9(value)) {
     for (const key of ["name", "id", "identifier"]) {
       if (typeof value[key] === "string") return sanitizeTerminalText(value[key]);
     }
@@ -13844,7 +14686,7 @@ function padDisplay(value, width) {
 function isWideCodePoint(codePoint) {
   return codePoint >= 4352 && (codePoint <= 4447 || codePoint === 9001 || codePoint === 9002 || codePoint >= 11904 && codePoint <= 42191 && codePoint !== 12351 || codePoint >= 44032 && codePoint <= 55203 || codePoint >= 63744 && codePoint <= 64255 || codePoint >= 65040 && codePoint <= 65049 || codePoint >= 65072 && codePoint <= 65135 || codePoint >= 65280 && codePoint <= 65376 || codePoint >= 65504 && codePoint <= 65510 || codePoint >= 127744 && codePoint <= 129791 || codePoint >= 131072 && codePoint <= 262141);
 }
-function isRecord8(value) {
+function isRecord9(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
@@ -13929,8 +14771,8 @@ var CommandOutput = class {
   #translate;
   constructor(options = {}) {
     this.#streams = options.streams ?? {
-      stdout: process11.stdout,
-      stderr: process11.stderr
+      stdout: process12.stdout,
+      stderr: process12.stderr
     };
     this.#version = options.version ?? CLI_VERSION;
     this.#translate = options.translate;
@@ -13981,6 +14823,10 @@ var CommandOutput = class {
       }
     ));
   }
+  writeInfo(message, globals) {
+    const channels = new OutputChannels(this.#streams, { quiet: globals?.quiet });
+    channels.writeInfo(message);
+  }
 };
 function stringMeta(meta, key) {
   const value = meta?.[key];
@@ -13991,7 +14837,7 @@ function stringMeta(meta, key) {
 import { createInstance } from "i18next";
 
 // src/i18n/locale.ts
-import process12 from "process";
+import process13 from "process";
 function normalizeLocale(locale) {
   if (!locale)
     return void 0;
@@ -14007,7 +14853,7 @@ function normalizeLocale(locale) {
   return void 0;
 }
 function detectLocale(options = {}) {
-  const env = options.env ?? process12.env;
+  const env = options.env ?? process13.env;
   const preferredCandidates = [
     options.explicit,
     env.LUNA_LANG,
@@ -14081,7 +14927,7 @@ var resources = {
         canonicalCommand: "Canonical command",
         quickStart: {
           title: "Quick start:",
-          login: "1. Sign in with an access token:",
+          login: "1. Sign in with OAuth Device Code:",
           customServer: "2. Sign in to another server when needed:",
           discover: "3. Discover commands:"
         },
@@ -14185,7 +15031,7 @@ var resources = {
         language: "CLI language, such as zh-CN or en-US.",
         limit: "Maximum number of results to return.",
         method: "HTTP request method.",
-        mode: "Authentication mode: access-token or device-code.",
+        mode: "Authentication mode; defaults to device-code. Use access-token explicitly for PAT fallback.",
         name: "Resource name.",
         newName: "New resource name.",
         page: "Page number, starting from 1.",
@@ -14202,7 +15048,7 @@ var resources = {
         sortBy: "Field used to sort the result.",
         sortOrder: "Sort direction: asc or desc.",
         status: "Resource status used as a filter or update value.",
-        token: "Access token; read it from @file, @-, or LUNA_TOKEN.",
+        token: "Access token for mode=access-token; read it from @file, @-, or LUNA_TOKEN.",
         transport: "Filter by command transport."
       },
       commands: {
@@ -14210,8 +15056,8 @@ var resources = {
           request: { summary: "Send a diagnostic request to a Luna API path." }
         },
         auth: {
-          login: { summary: "Sign in to one Luna server with an access token." },
-          logout: { summary: "Remove the active local Luna credential." },
+          login: { summary: "Sign in with OAuth Device Code, or explicitly fall back to an access token." },
+          logout: { summary: "Revoke OAuth tokens when possible and remove the local credential." },
           status: { summary: "Show authentication status without exposing credentials." }
         },
         completion: {
@@ -14238,6 +15084,13 @@ var resources = {
       },
       confirm: {
         execute: "Run this command?"
+      },
+      auth: {
+        deviceCode: {
+          code: "Enter this device code to authorize Luna CLI:",
+          browserOpened: "A browser was opened. Complete authorization there; manual URL:",
+          browserFallback: "Open this URL in a browser to complete authorization:"
+        }
       },
       errors: {
         command_required: "Choose a command. Run luna --help to see available commands.",
@@ -14302,7 +15155,7 @@ var resources = {
         canonicalCommand: "\u6807\u51C6\u547D\u4EE4",
         quickStart: {
           title: "\u5FEB\u901F\u5F00\u59CB\uFF1A",
-          login: "1. \u4F7F\u7528\u8BBF\u95EE\u4EE4\u724C\u767B\u5F55\uFF1A",
+          login: "1. \u4F7F\u7528 OAuth \u8BBE\u5907\u7801\u767B\u5F55\uFF1A",
           customServer: "2. \u9700\u8981\u65F6\u767B\u5F55\u5176\u4ED6\u670D\u52A1\uFF1A",
           discover: "3. \u67E5\u627E\u53EF\u7528\u547D\u4EE4\uFF1A"
         },
@@ -14406,7 +15259,7 @@ var resources = {
         language: "CLI \u8BED\u8A00\uFF0C\u4F8B\u5982 zh-CN \u6216 en-US\u3002",
         limit: "\u6700\u591A\u8FD4\u56DE\u591A\u5C11\u6761\u7ED3\u679C\u3002",
         method: "HTTP \u8BF7\u6C42\u65B9\u6CD5\u3002",
-        mode: "\u8BA4\u8BC1\u65B9\u5F0F\uFF1Aaccess-token \u6216 device-code\u3002",
+        mode: "\u8BA4\u8BC1\u65B9\u5F0F\uFF1B\u9ED8\u8BA4\u4F7F\u7528 device-code\uFF0C\u4EC5\u5728\u515C\u5E95\u65F6\u663E\u5F0F\u4F7F\u7528 access-token\u3002",
         name: "\u8D44\u6E90\u540D\u79F0\u3002",
         newName: "\u65B0\u7684\u8D44\u6E90\u540D\u79F0\u3002",
         page: "\u9875\u7801\uFF0C\u4ECE 1 \u5F00\u59CB\u3002",
@@ -14423,7 +15276,7 @@ var resources = {
         sortBy: "\u7ED3\u679C\u6392\u5E8F\u5B57\u6BB5\u3002",
         sortOrder: "\u6392\u5E8F\u65B9\u5411\uFF1Aasc \u6216 desc\u3002",
         status: "\u7528\u4E8E\u7B5B\u9009\u6216\u66F4\u65B0\u7684\u8D44\u6E90\u72B6\u6001\u3002",
-        token: "\u8BBF\u95EE\u4EE4\u724C\uFF1B\u4ECE @file\u3001@- \u6216 LUNA_TOKEN \u8BFB\u53D6\u3002",
+        token: "mode=access-token \u4F7F\u7528\u7684\u8BBF\u95EE\u4EE4\u724C\uFF1B\u4ECE @file\u3001@- \u6216 LUNA_TOKEN \u8BFB\u53D6\u3002",
         transport: "\u6309\u547D\u4EE4\u4F20\u8F93\u65B9\u5F0F\u7B5B\u9009\u3002"
       },
       commands: {
@@ -14431,8 +15284,8 @@ var resources = {
           request: { summary: "\u5411 Luna API \u76F8\u5BF9\u8DEF\u5F84\u53D1\u9001\u8BCA\u65AD\u8BF7\u6C42\u3002" }
         },
         auth: {
-          login: { summary: "\u4F7F\u7528\u8BBF\u95EE\u4EE4\u724C\u767B\u5F55\u4E00\u4E2A Luna \u670D\u52A1\u3002" },
-          logout: { summary: "\u79FB\u9664\u5F53\u524D\u672C\u5730 Luna \u767B\u5F55\u51ED\u636E\u3002" },
+          login: { summary: "\u4F7F\u7528 OAuth \u8BBE\u5907\u7801\u767B\u5F55\uFF0C\u6216\u663E\u5F0F\u56DE\u9000\u5230\u8BBF\u95EE\u4EE4\u724C\u3002" },
+          logout: { summary: "\u5C3D\u529B\u540A\u9500 OAuth \u4EE4\u724C\u5E76\u79FB\u9664\u672C\u5730\u767B\u5F55\u51ED\u636E\u3002" },
           status: { summary: "\u67E5\u770B\u8BA4\u8BC1\u72B6\u6001\uFF0C\u4E0D\u4F1A\u5C55\u793A\u51ED\u636E\u5185\u5BB9\u3002" }
         },
         completion: {
@@ -14459,6 +15312,13 @@ var resources = {
       },
       confirm: {
         execute: "\u786E\u8BA4\u6267\u884C\u6B64\u547D\u4EE4\u5417\uFF1F"
+      },
+      auth: {
+        deviceCode: {
+          code: "\u8BF7\u4F7F\u7528\u6B64\u8BBE\u5907\u7801\u6388\u6743 Luna CLI\uFF1A",
+          browserOpened: "\u5DF2\u5C1D\u8BD5\u6253\u5F00\u6D4F\u89C8\u5668\uFF0C\u8BF7\u5728\u9875\u9762\u4E2D\u5B8C\u6210\u6388\u6743\uFF1B\u624B\u52A8\u8BBF\u95EE\u5730\u5740\uFF1A",
+          browserFallback: "\u8BF7\u5728\u6D4F\u89C8\u5668\u4E2D\u6253\u5F00\u6B64\u5730\u5740\u5E76\u5B8C\u6210\u6388\u6743\uFF1A"
+        }
       },
       errors: {
         command_required: "\u8BF7\u9009\u62E9\u8981\u6267\u884C\u7684\u547D\u4EE4\u3002\u8FD0\u884C luna --help \u67E5\u770B\u53EF\u7528\u547D\u4EE4\u3002",
@@ -14502,10 +15362,10 @@ async function createCliI18n(options = {}) {
 // src/entry.ts
 function createLunaCli(options = {}) {
   const version = options.version ?? CLI_VERSION;
-  const env = options.ports?.env ?? process13.env;
+  const env = options.ports?.env ?? process14.env;
   const config = options.ports?.config ?? new FileConfigStore();
-  const translate2 = options.ports?.translate;
-  const output = options.ports?.output ?? new CommandOutput({ version, translate: translate2 });
+  const translate3 = options.ports?.translate;
+  const output = options.ports?.output ?? new CommandOutput({ version, translate: translate3 });
   const registry = createRegistryFromContract(src_exports);
   registerLocalCommands(registry);
   const ports = {
@@ -14521,16 +15381,16 @@ function createLunaCli(options = {}) {
       }
     }),
     env,
-    isTTY: options.ports?.isTTY ?? Boolean(process13.stdout.isTTY),
+    isTTY: options.ports?.isTTY ?? Boolean(process14.stdout.isTTY),
     version,
     distribution: options.distribution ?? options.ports?.distribution ?? runtimeDistribution(),
-    translate: translate2
+    translate: translate3
   };
   const programOptions = {
     registry,
     ports,
     name: "luna",
-    description: translate2?.(
+    description: translate3?.(
       "cli.description",
       "Luna DevOps command-line client for people and agents"
     ) ?? "Luna DevOps command-line client for people and agents"
@@ -14541,8 +15401,8 @@ function createLunaCli(options = {}) {
     ports
   };
 }
-async function main(argv = process13.argv) {
-  const env = process13.env;
+async function main(argv = process14.argv) {
+  const env = process14.env;
   const config = new FileConfigStore();
   const configuredLanguage = await startupConfiguredLanguage(config);
   const i18n = await createCliI18n({
@@ -14562,7 +15422,7 @@ async function main(argv = process13.argv) {
     }
   });
   const result = await runCli(cli.program, argv, cli.ports.output);
-  process13.exitCode = result.exitCode;
+  process14.exitCode = result.exitCode;
   return result.exitCode;
 }
 function startupOptionValue(argv, name) {
@@ -14588,15 +15448,15 @@ async function startupConfiguredLanguage(configStore) {
   }
 }
 function runtimeDistribution() {
-  if (typeof process13.versions.bun === "string")
+  if (typeof process14.versions.bun === "string")
     return "binary";
-  return process13.env.npm_package_name ? "npm" : "source";
+  return process14.env.npm_package_name ? "npm" : "source";
 }
 if (isDirectExecution()) {
   void main();
 }
 function isDirectExecution() {
-  const executable = process13.argv[1];
+  const executable = process14.argv[1];
   return Boolean(executable && import.meta.url === pathToFileURL(executable).href);
 }
 export {

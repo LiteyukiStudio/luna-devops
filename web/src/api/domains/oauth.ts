@@ -1,4 +1,4 @@
-import type { OAuthApplication, OAuthApplicationInput, OAuthAuthorizationDecision, OAuthAuthorizationRequest, OAuthGrant, PaginatedResponse, PaginationParams } from '../types'
+import type { OAuthApplication, OAuthApplicationInput, OAuthAuthorizationDecision, OAuthAuthorizationRequest, OAuthDeviceVerification, OAuthDeviceVerificationDecision, OAuthDeviceVerificationResult, OAuthGrant, PaginatedResponse, PaginationParams } from '../types'
 import { paginationQuery, request } from '../core'
 
 export const oauthApi = {
@@ -20,4 +20,8 @@ export const oauthApi = {
     request<OAuthAuthorizationRequest>(`/oauth/authorize?${query}`),
   decideOAuthAuthorization: (payload: OAuthAuthorizationDecision) =>
     request<{ redirectUrl: string }>('/oauth/authorize', { method: 'POST', body: JSON.stringify(payload) }),
+  getOAuthDeviceVerification: (userCode: string) =>
+    request<OAuthDeviceVerification>(`/oauth/device/verification?user_code=${encodeURIComponent(userCode)}`),
+  decideOAuthDeviceVerification: (payload: OAuthDeviceVerificationDecision) =>
+    request<OAuthDeviceVerificationResult>('/oauth/device/verification', { method: 'POST', body: JSON.stringify(payload) }),
 }

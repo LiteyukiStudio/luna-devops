@@ -92,16 +92,15 @@ func (h *Handlers) requireMFAAssertion(ctx *gin.Context, user model.User, purpos
 		writeErrorCode(ctx, http.StatusBadRequest, "mfa.invalid_purpose", "不支持的二次验证用途")
 		return false
 	}
-	if requestUsesBearerToken(ctx) {
-		h.audit(user.ID, "mfa.step_up_required", purpose, false, "personal access tokens cannot satisfy step-up MFA")
-		writeErrorCode(ctx, http.StatusForbidden, "mfa.session_required", "二次验证仅支持浏览器会话")
-		return false
-	}
-
-	session, ok := h.currentSessionFromCookie(ctx)
-	if !ok || session.UserID != user.ID {
-		h.audit(user.ID, "mfa.step_up_required", purpose, false, "missing browser session")
-		writeMFARequired(ctx, purpose)
+	subject, ok := h.currentStepUpSubject(ctx, user)
+	if !ok {
+		if requestUsesBearerToken(ctx) {
+			h.audit(user.ID, "mfa.step_up_required", purpose, false, "personal access tokens cannot satisfy step-up MFA")
+			writeErrorCode(ctx, http.StatusForbidden, "mfa.session_required", "个人令牌不能用于二次验证，请使用 Luna CLI OAuth 登录")
+		} else {
+			h.audit(user.ID, "mfa.step_up_required", purpose, false, "missing browser session")
+			writeMFARequired(ctx, purpose)
+		}
 		return false
 	}
 
@@ -112,7 +111,7 @@ func (h *Handlers) requireMFAAssertion(ctx *gin.Context, user model.User, purpos
 		&assertion,
 		"user_id = ? and session_id = ? and purpose = ? and idle_expires_at > ? and absolute_expires_at > ?",
 		user.ID,
-		session.ID,
+		subject,
 		purpose,
 		now,
 		now,
@@ -134,6 +133,25 @@ func (h *Handlers) requireMFAAssertion(ctx *gin.Context, user model.User, purpos
 		return false
 	}
 	return true
+}
+
+func (h *Handlers) currentStepUpSubject(ctx *gin.Context, user model.User) (string, bool) {
+	if requestUsesBearerToken(ctx) {
+		token, ok := currentAccessTokenFromContext(ctx)
+		if !ok ||
+			token.UserID != user.ID ||
+			token.Source != "oauth" ||
+			token.OAuthApplicationID != lunaCLIApplicationID ||
+			token.OAuthGrantID == "" {
+			return "", false
+		}
+		return oauthAssertionSubject(token.OAuthGrantID), true
+	}
+	session, ok := h.currentSessionFromCookie(ctx)
+	if !ok || session.UserID != user.ID {
+		return "", false
+	}
+	return session.ID, true
 }
 
 func (h *Handlers) cleanupExpiredStepUpAssertions(now time.Time) {
@@ -173,15 +191,38 @@ func lockStepUpActor(tx *gorm.DB, userID, sessionID, purpose, requiredRole strin
 		return model.User{}, err
 	}
 	now := time.Now()
-	var session model.UserSession
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(
-		&session,
-		"id = ? and user_id = ? and expires_at > ?",
-		sessionID,
-		userID,
-		now,
-	).Error; err != nil {
-		return model.User{}, errStepUpAuthorizationChanged
+	if strings.HasPrefix(sessionID, "oauth:") {
+		grantID := strings.TrimPrefix(sessionID, "oauth:")
+		var grant model.OAuthGrant
+		if grantID == "" || tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(
+			&grant,
+			"id = ? and application_id = ? and user_id = ? and revoked_at is null",
+			grantID,
+			lunaCLIApplicationID,
+			userID,
+		).Error != nil {
+			return model.User{}, errStepUpAuthorizationChanged
+		}
+		var application model.OAuthApplication
+		if tx.First(
+			&application,
+			"id = ? and client_id = ? and revoked_at is null",
+			lunaCLIApplicationID,
+			lunaCLIClientID,
+		).Error != nil {
+			return model.User{}, errStepUpAuthorizationChanged
+		}
+	} else {
+		var session model.UserSession
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(
+			&session,
+			"id = ? and user_id = ? and expires_at > ?",
+			sessionID,
+			userID,
+			now,
+		).Error; err != nil {
+			return model.User{}, errStepUpAuthorizationChanged
+		}
 	}
 	var assertion model.StepUpAssertion
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(

@@ -10,7 +10,7 @@ import {
 } from '../../src/commands/index.js'
 
 describe('auth commands', () => {
-  it('supports the root login shortcut and stores a validated token', async () => {
+  it('uses OAuth Device Code for the root login shortcut by default', async () => {
     const harness = createHarness()
     const result = await runCli(harness.program, [
       'node',
@@ -20,19 +20,27 @@ describe('auth commands', () => {
     ], harness.ports.output)
 
     expect(result.exitCode).toBe(0)
-    expect(harness.validations).toEqual([{
+    expect(harness.oauthLogins).toEqual([{
       server: 'https://luna.example.com',
-      token: 'test-token',
+      scopes: [],
+      mode: 'device_code',
     }])
     expect(harness.config.server).toBe('https://luna.example.com')
-    expect(harness.config.credential?.type).toBe('access_token')
-    expect(harness.config.credential && 'token' in harness.config.credential
-      ? harness.config.credential.token
-      : null).toBe('test-token')
+    expect(harness.config.credential).toMatchObject({
+      type: 'oauth',
+      accessToken: 'oauth-access-secret',
+      refreshToken: 'oauth-refresh-secret',
+    })
+    expect(harness.infos).toEqual([
+      'Enter this device code to authorize Luna CLI: LUNA-CODE',
+      'A browser was opened. Complete authorization there; manual URL: https://luna.example.com/device',
+    ])
     expect(harness.successes[0]?.result.data).toMatchObject({
       authenticated: true,
       server: 'https://luna.example.com',
+      credentialType: 'oauth',
     })
+    expect(JSON.stringify(harness.successes[0]?.result)).not.toContain('oauth-access-secret')
   })
 
   it('uses the official server and replaces the previous login when no server is provided', async () => {
@@ -58,15 +66,14 @@ describe('auth commands', () => {
     ], harness.ports.output)
 
     expect(result.exitCode).toBe(0)
-    expect(harness.validations).toEqual([{
+    expect(harness.oauthLogins).toEqual([{
       server: 'https://devops.liteyuki.org',
-      token: 'test-token',
+      scopes: [],
+      mode: 'device_code',
     }])
     expect(harness.config.server).toBe('https://devops.liteyuki.org')
     expect(harness.config.project).toBeNull()
-    expect(harness.config.credential && 'token' in harness.config.credential
-      ? harness.config.credential.token
-      : null).toBe('test-token')
+    expect(harness.config.credential?.type).toBe('oauth')
   })
 
   it('supports whoami and logout shortcuts through the canonical handlers', async () => {
@@ -99,8 +106,44 @@ describe('auth commands', () => {
     expect(harness.successes.at(-1)?.result.data).toMatchObject({
       server: 'https://luna.example.com',
       loggedOut: true,
+      remoteRevocation: 'succeeded',
     })
+    expect(harness.revocations).toEqual([
+      { token: 'oauth-refresh-secret', tokenTypeHint: 'refresh_token' },
+      { token: 'oauth-access-secret', tokenTypeHint: 'access_token' },
+    ])
     expect(harness.config.credential).toBeNull()
+  })
+
+  it('keeps the API adapter receiver when logout revokes OAuth credentials', async () => {
+    const harness = createHarness()
+    const api = harness.ports.api
+    const receivers: unknown[] = []
+    const revoked: string[] = []
+    api.revokeOAuthCredential = async function (this: unknown, request: { token: string }) {
+      receivers.push(this)
+      revoked.push(request.token)
+    }
+
+    await runCli(harness.program, [
+      'node',
+      'luna',
+      'login',
+      'server=https://luna.example.com',
+    ], harness.ports.output)
+    const logout = await runCli(harness.program, [
+      'node',
+      'luna',
+      'logout',
+      'yes=true',
+    ], harness.ports.output)
+
+    expect(logout.exitCode).toBe(0)
+    expect(receivers).toEqual([api, api])
+    expect(revoked).toEqual([
+      'oauth-refresh-secret',
+      'oauth-access-secret',
+    ])
   })
 
   it('fails device-code login before starting OAuth when the server disables it', async () => {
@@ -110,7 +153,6 @@ describe('auth commands', () => {
       'luna',
       'login',
       'server=https://luna.example.com',
-      'mode=device-code',
     ], harness.ports.output)
 
     expect(result.exitCode).not.toBe(0)
@@ -128,6 +170,7 @@ describe('auth commands', () => {
       'auth',
       'login',
       'server=https://luna.example.com',
+      'mode=access-token',
     ], harness.ports.output)
 
     expect(result.exitCode).toBe(8)
@@ -142,6 +185,7 @@ describe('auth commands', () => {
       'auth',
       'login',
       'server=https://luna.example.com',
+      'mode=access-token',
     ], harness.ports.output)
 
     expect(result.exitCode).toBe(0)
@@ -152,6 +196,28 @@ describe('auth commands', () => {
     expect(harness.config.credential && 'token' in harness.config.credential
       ? harness.config.credential.token
       : null).toBe('test-token')
+  })
+
+  it('uses an access token only when the fallback mode is explicit', async () => {
+    const harness = createHarness()
+    const result = await runCli(harness.program, [
+      'node',
+      'luna',
+      'login',
+      'mode=access-token',
+      'server=https://luna.example.com',
+    ], harness.ports.output)
+
+    expect(result.exitCode).toBe(0)
+    expect(harness.oauthLogins).toEqual([])
+    expect(harness.validations).toEqual([{
+      server: 'https://luna.example.com',
+      token: 'test-token',
+    }])
+    expect(harness.config.credential).toMatchObject({
+      type: 'access_token',
+      token: 'test-token',
+    })
   })
 })
 
@@ -175,6 +241,13 @@ function createHarness(options: {
     globals: CommandExecutionGlobals
   }> = []
   const validations: Array<{ server: string, token: string }> = []
+  const oauthLogins: Array<{
+    server: string
+    scopes: readonly string[]
+    mode: string
+  }> = []
+  const revocations: Array<{ token: string, tokenTypeHint?: string }> = []
+  const infos: string[] = []
   const errors: unknown[] = []
   const ports: RuntimePorts = {
     config: {
@@ -190,6 +263,9 @@ function createHarness(options: {
       },
       writeError(error) {
         errors.push(error)
+      },
+      writeInfo(message) {
+        infos.push(message)
       },
     },
     api: {
@@ -208,9 +284,45 @@ function createHarness(options: {
           openapiDigest: 'test',
           minimumCliVersion: '0.1.0',
           features: {
-            deviceCode: options.deviceCode ?? false,
+            deviceCode: options.deviceCode ?? true,
           },
         }
+      },
+      async beginOAuthLogin(request) {
+        oauthLogins.push({
+          server: request.server,
+          scopes: request.scopes,
+          mode: request.mode,
+        })
+        await request.onVerification?.({
+          userCode: 'LUNA-CODE',
+          verificationUri: `${request.server}/device`,
+          expiresIn: 600,
+          interval: 5,
+          browserOpened: true,
+        })
+        return {
+          server: request.server,
+          accessToken: 'oauth-access-secret',
+          refreshToken: 'oauth-refresh-secret',
+          tokenType: 'Bearer',
+          scopes: request.scopes,
+          expiresAt: '2030-01-01T00:00:00.000Z',
+          user: { id: 'user-1', name: 'Test User' },
+          verification: {
+            userCode: 'LUNA-CODE',
+            verificationUri: `${request.server}/device`,
+            expiresIn: 600,
+            interval: 5,
+            browserOpened: true,
+          },
+        }
+      },
+      async revokeOAuthCredential(request) {
+        revocations.push({
+          token: request.token,
+          tokenTypeHint: request.tokenTypeHint,
+        })
       },
     },
     env: { LUNA_TOKEN: options.token ?? 'test-token' },
@@ -226,6 +338,9 @@ function createHarness(options: {
     successes,
     errors,
     validations,
+    oauthLogins,
+    revocations,
+    infos,
     get config() {
       return config
     },

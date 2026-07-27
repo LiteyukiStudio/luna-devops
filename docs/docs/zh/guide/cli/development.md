@@ -81,8 +81,7 @@ node scripts/cli/verify-skills-sync.mjs
 
 - 尚未进入 OpenAPI 的公开后端路由；
 - 服务端能力协商和版本兼容门禁；
-- Authorization Code + PKCE 与 Device Code；
-- OAuth Bearer Step-up MFA；
+- Authorization Code + PKCE 的 CLI 入口；
 - SSE、WebSocket 和二进制下载适配；
 - 高风险操作的服务端短时执行计划。
 

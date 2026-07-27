@@ -56,6 +56,201 @@ paths:
                       oauthAuthorization: { type: boolean }
                       openapiOperations: { type: boolean }
 
+  /.well-known/oauth-authorization-server:
+    get:
+      operationId: getOAuthAuthorizationServerMetadata
+      tags: [Auth]
+      summary: Get OAuth authorization server metadata
+      x-luna-cli:
+        classification: protocol-adapter
+        hidden: true
+        exclusionReason: OAuth discovery is consumed by the CLI authentication adapter.
+      responses:
+        "200":
+          description: OAuth 2.0 authorization server metadata.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /api/v1/oauth/device/authorization:
+    post:
+      operationId: startOAuthDeviceAuthorization
+      tags: [Auth]
+      summary: Start an OAuth Device Authorization Grant
+      x-luna-cli:
+        classification: protocol-adapter
+        hidden: true
+        exclusionReason: Device authorization is exposed through `luna login`.
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [client_id]
+              properties:
+                client_id: { type: string }
+                scope: { type: string }
+      responses:
+        "200":
+          description: Device and user codes for the browser verification flow.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [device_code, user_code, verification_uri, verification_uri_complete, expires_in, interval]
+                properties:
+                  device_code: { type: string }
+                  user_code: { type: string }
+                  verification_uri: { type: string, format: uri }
+                  verification_uri_complete: { type: string, format: uri }
+                  expires_in: { type: integer, minimum: 1 }
+                  interval: { type: integer, minimum: 1 }
+        "400":
+          description: OAuth protocol error.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthProtocolError" }
+
+  /api/v1/oauth/device/verification:
+    get:
+      operationId: getOAuthDeviceVerification
+      tags: [Auth]
+      summary: Inspect a pending OAuth device authorization
+      x-luna-cli:
+        classification: protocol-adapter
+        hidden: true
+        exclusionReason: Browser-only Device Code verification endpoint.
+      parameters:
+        - name: user_code
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Pending device authorization visible to the signed-in user.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [application, userCode, scopes, expiresAt]
+                properties:
+                  application: { $ref: "#/components/schemas/OAuthApplication" }
+                  userCode: { type: string }
+                  scopes:
+                    type: array
+                    items: { type: string }
+                  expiresAt: { type: string, format: date-time }
+        "400":
+          description: Invalid, expired, or consumed user code.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+    post:
+      operationId: decideOAuthDeviceVerification
+      tags: [Auth]
+      summary: Approve or deny an OAuth device authorization
+      x-luna-cli:
+        classification: protocol-adapter
+        hidden: true
+        exclusionReason: Browser-only Device Code verification endpoint.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userCode, decision]
+              properties:
+                userCode: { type: string }
+                decision: { type: string, enum: [approve, deny] }
+      responses:
+        "200":
+          description: Device authorization decision accepted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, enum: [approved, denied] }
+        "400":
+          description: Invalid, expired, or consumed user code.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/oauth/token:
+    post:
+      operationId: exchangeOAuthToken
+      tags: [Auth]
+      summary: Exchange an OAuth authorization grant for tokens
+      x-luna-cli:
+        classification: protocol-adapter
+        hidden: true
+        exclusionReason: OAuth token exchange is consumed by the CLI authentication adapter.
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [grant_type]
+              properties:
+                grant_type:
+                  type: string
+                  enum:
+                    - authorization_code
+                    - refresh_token
+                    - urn:ietf:params:oauth:grant-type:device_code
+                client_id: { type: string }
+                client_secret: { type: string, writeOnly: true }
+                code: { type: string }
+                code_verifier: { type: string }
+                redirect_uri: { type: string, format: uri }
+                refresh_token: { type: string, writeOnly: true }
+                device_code: { type: string, writeOnly: true }
+      responses:
+        "200":
+          description: OAuth access and refresh tokens.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthTokenResponse" }
+        "400":
+          description: OAuth protocol error.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthProtocolError" }
+
+  /api/v1/oauth/revoke:
+    post:
+      operationId: revokeOAuthToken
+      tags: [Auth]
+      summary: Revoke an OAuth access or refresh token
+      x-luna-cli:
+        classification: protocol-adapter
+        hidden: true
+        exclusionReason: OAuth revocation is exposed through `luna logout`.
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string, writeOnly: true }
+                token_type_hint:
+                  type: string
+                  enum: [access_token, refresh_token]
+                client_id: { type: string }
+                client_secret: { type: string, writeOnly: true }
+      responses:
+        "200":
+          description: Token is revoked or was already invalid.
+
   /api/v1/public/configs:
     post:
       tags: [Configs]
@@ -2130,6 +2325,48 @@ components:
           type: string
           description: Step-up purpose returned with `mfa_required`.
       required: [code, error]
+    OAuthApplication:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        clientId: { type: string }
+        redirectUris:
+          type: array
+          items: { type: string, format: uri }
+        scopes:
+          type: array
+          items: { type: string }
+        confidential: { type: boolean }
+        active: { type: boolean }
+      required: [id, name, clientId, redirectUris, scopes, confidential, active]
+    OAuthTokenResponse:
+      type: object
+      properties:
+        access_token: { type: string, writeOnly: true }
+        token_type: { type: string, const: Bearer }
+        expires_in: { type: integer, minimum: 1 }
+        refresh_token: { type: string, writeOnly: true }
+        scope: { type: string }
+      required: [access_token, token_type, expires_in, refresh_token, scope]
+    OAuthProtocolError:
+      type: object
+      properties:
+        error:
+          type: string
+          enum:
+            - invalid_request
+            - invalid_client
+            - invalid_grant
+            - unauthorized_client
+            - unsupported_grant_type
+            - invalid_scope
+            - authorization_pending
+            - slow_down
+            - access_denied
+            - expired_token
+        error_description: { type: string }
+      required: [error]
     DashboardEntityRef:
       type: object
       properties:

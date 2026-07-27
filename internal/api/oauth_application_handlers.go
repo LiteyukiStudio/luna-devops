@@ -63,7 +63,6 @@ func (h *Handlers) CreateOAuthApplication(ctx *gin.Context) {
 	}
 	plainSecret := "lyo_secret_" + randomHex(32)
 	application.ID = id.New("oapp")
-	application.OwnerUserID = user.ID
 	application.ClientID = "lyo_app_" + randomHex(16)
 	application.ClientSecretHash = hashToken(plainSecret)
 	if err := h.db.Create(&application).Error; err != nil {
@@ -244,6 +243,7 @@ func oauthApplicationFromInput(ctx *gin.Context, user model.User, input oauthApp
 		return model.OAuthApplication{}, false
 	}
 	return model.OAuthApplication{
+		OwnerUserID: &user.ID,
 		Name: name, Description: strings.TrimSpace(input.Description), HomepageURL: strings.TrimSpace(input.HomepageURL),
 		LogoURL: strings.TrimSpace(input.LogoURL), RedirectURIs: encodeStringList(redirectURIs), AllowedScopes: scope,
 		AccessTokenLifetimeDays: input.AccessTokenLifetimeDays,

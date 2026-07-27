@@ -62,14 +62,15 @@ active login and default project. There is no context-switching layer.
 Without an explicit server, login targets the official instance:
 
 ```bash
-printf '%s' "$LUNA_TOKEN" | luna login token=@-
+luna login
 ```
 
 This uses `https://devops.liteyuki.org`. Pass the server explicitly to log in
 elsewhere:
 
 ```bash
-printf '%s' "$LUNA_TOKEN" | luna login server=https://devops.example.com token=@-
+luna login server=https://devops.example.com
+printf '%s' "$LUNA_TOKEN" | luna login mode=access-token token=@-
 ```
 
 Use `luna whoami` to inspect the active login and `luna logout` to revoke and

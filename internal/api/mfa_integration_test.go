@@ -758,6 +758,12 @@ func newMFAIntegrationDB(t *testing.T) *gorm.DB {
 		&model.SecretValue{},
 		&model.AuditLog{},
 		&model.AppConfig{},
+		&model.OAuthApplication{},
+		&model.OAuthGrant{},
+		&model.OAuthAuthorizationCode{},
+		&model.OAuthRefreshToken{},
+		&model.OAuthDeviceAuthorization{},
+		&model.AccessToken{},
 	); err != nil {
 		t.Fatalf("migrate integration schema: %v", err)
 	}

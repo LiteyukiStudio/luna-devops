@@ -46,7 +46,10 @@ describe('cli startup and human help', () => {
 
     const login = cli.registry.get('auth.login')?.metadata
     const loginHelp = login ? commandHelpText(login, cli.ports) : ''
-    expect(loginHelp).toContain('printf \'%s\' "$LUNA_TOKEN" | luna auth login token=@-')
+    expect(loginHelp).toContain('luna login')
+    expect(loginHelp).toContain(
+      'printf \'%s\' "$LUNA_TOKEN" | luna auth login mode=access-token token=@-',
+    )
     expect(loginHelp).not.toContain('luna printf')
   })
 

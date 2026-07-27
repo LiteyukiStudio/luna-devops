@@ -1006,14 +1006,15 @@
 - [ ] 为删除、权限、Secret、凭据、kubeconfig、终端、数据导出、账单和用户管理等高风险操作实现短时单次服务端计划；计划精确绑定 actor、认证上下文、项目、目标、规范化参数和资源版本，`yes=true` 不得绕过计划。
 - [ ] 为中高风险更新补齐 ETag/version/resourceVersion 乐观并发控制；CLI 和 Skills 遇到冲突时必须重新读取、重新计划并再次确认，不允许盲覆盖或自动追加 `force`。
 - [ ] 定义版本化 JSONL 长任务事件协议：首帧版本、sequence/eventId/correlationId/operationId/resourceRef、恢复游标、资源上限和唯一终态摘要；缺少摘要时不得报告成功。
-- [x] 新增公开且不泄露部署信息的 `/api/v1/meta` 能力接口，返回 API/服务端版本、OpenAPI digest、功能开关和最低 CLI 版本；未实现的 Device Code 与 Bearer MFA 明确返回 `false`。
+- [x] 新增公开且不泄露部署信息的 `/api/v1/meta` 能力接口，返回 API/服务端版本、OpenAPI digest、功能开关和最低 CLI 版本；Device Code 与 Bearer MFA 按实际能力返回。
 - [x] 为人类交互提供 `luna login/logout/whoami/doctor` 顶层短命令，复用 canonical 两级命令处理器；严格 Agent 模式拒绝别名，避免机器契约和审计路径分叉。
 - [x] 新增 `luna health doctor` 显式诊断，检查活动登录配置、认证、服务端可达性、最低 CLI 版本、OpenAPI digest 和功能开关；Device Code 未启用时在进入登录流程前返回稳定能力错误。
 - [x] CLI 接入逐实例能力协商和版本兼容判断；OpenAPI 业务命令在首次请求前校验 API 代际、最低 CLI 版本和契约摘要，对缺少接口或不兼容实例 fail closed，不通过试探业务接口猜测能力。
 - [x] 实现 CLI 基础框架、`~/.luna/auth.json` 单活动登录、`project current/use/unset`、项目空间解析优先级、稳定输出、完整 Help、机器可读 Help 和 Shell Completion；重新登录其他实例或账号会覆盖旧凭据并清除默认项目空间，临时跨源 `server=` 不复用当前 Token。
 - [ ] 实现由平台固定初始化、无需动态注册的内置 OAuth 公共 CLI Client：Token Endpoint 支持 `token_endpoint_auth_method=none`，仅允许严格 loopback redirect，完成 Authorization Code + PKCE、刷新和吊销；拆分 OAuth 与个人访问令牌 Scope 策略，使第一方 CLI 可在明确授权和 Step-up 保护下申请敏感 Scope，但不自动授予通配权限。
-- [ ] 实现 RFC 8628 Device Authorization Grant，包括设备授权端点、浏览器 GET/POST 确认接口、CSRF 防护、哈希状态、批准/拒绝、轮询限流、过期清理和一次性兑换。
-- [ ] 改造 Step-up MFA 与交互认证上下文：OAuth Bearer 可验证 OTP/恢复码并按 OAuth Grant/Token Family + purpose 读取 assertion；终端预授权、终端存活监控和数据导出票据同时支持绑定 Web Session 或 OAuth Grant/Token Family；个人访问令牌仍不得绕过 MFA 保护。
+- [x] 实现 RFC 8628 Device Authorization Grant，包括设备授权端点、浏览器 GET/POST 确认接口、CSRF 防护、哈希状态、批准/拒绝、轮询限流、过期清理和一次性兑换；`luna login` 默认使用该流程。
+- [x] 改造 Step-up MFA 与交互认证上下文：OAuth Bearer 可验证 OTP/恢复码并按 OAuth Grant + purpose 读取 assertion；终端预授权、终端存活监控和数据导出票据支持绑定 Web Session 或 OAuth Grant；个人访问令牌仍不得绕过 MFA 保护。
+- [x] 将 OAuth Device Code、Token、Revoke 和 Discovery 协议端点纳入 OpenAPI 隐藏协议适配层，并增加 OpenAPI operation 到 Gin Router 的常驻契约测试，防止 CLI 已登记能力落入后端空路由。
 - [ ] 按业务域覆盖全部公开控制面 API；当前 CLI 已从 OpenAPI 注册全部 110 个已登记操作，并提供统一 JSON HTTP 传输；`api request` 仅供人类诊断已知相对 API 路径且在 Agent 模式固定禁用。Gin Router 中尚未进入 OpenAPI 的公开路由、SSE、WebSocket 终端、二进制下载、异步任务等待和批量部分成功仍需补齐。
 - [ ] 为 Git Provider OAuth 增加短时授权事务创建/查询接口，回调写入事务终态；`luna git authorize` 打开浏览器并返回确定的 Git Account ID，不通过轮询账号列表猜测授权结果。
 - [ ] 建立干净测试实例的全 operation 场景矩阵：关键登录/CRUD/构建/发布/日志/终端/导出/MFA 旅程 100% 通过，完整可执行场景通过率不低于 95%。

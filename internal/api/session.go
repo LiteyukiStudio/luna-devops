@@ -19,7 +19,10 @@ import (
 
 const developmentRateLimit = 10000
 
-const currentUserContextKey = "luna.devops.current_user"
+const (
+	currentUserContextKey        = "luna.devops.current_user"
+	currentAccessTokenContextKey = "luna.devops.current_access_token"
+)
 
 const (
 	sessionDuration  = 24 * time.Hour
@@ -127,6 +130,28 @@ func (h *Handlers) currentUserFromAccessToken(ctx *gin.Context) (model.User, boo
 		writeError(ctx, http.StatusForbidden, "Access Token scope 不足或已失效")
 		return model.User{}, false
 	}
+	if token.Source == "oauth" {
+		var grant model.OAuthGrant
+		if token.OAuthGrantID == "" || token.OAuthApplicationID == "" || h.db.First(
+			&grant,
+			"id = ? and application_id = ? and user_id = ? and revoked_at is null",
+			token.OAuthGrantID,
+			token.OAuthApplicationID,
+			token.UserID,
+		).Error != nil {
+			writeError(ctx, http.StatusForbidden, "OAuth 授权已失效")
+			return model.User{}, false
+		}
+		var application model.OAuthApplication
+		if h.db.First(
+			&application,
+			"id = ? and revoked_at is null",
+			token.OAuthApplicationID,
+		).Error != nil {
+			writeError(ctx, http.StatusForbidden, "OAuth 应用已失效")
+			return model.User{}, false
+		}
+	}
 
 	var user model.User
 	if err := h.db.First(&user, "id = ? and disabled = ?", token.UserID, false).Error; err != nil {
@@ -134,7 +159,17 @@ func (h *Handlers) currentUserFromAccessToken(ctx *gin.Context) (model.User, boo
 		return model.User{}, false
 	}
 
+	ctx.Set(currentAccessTokenContextKey, token)
 	return user, true
+}
+
+func currentAccessTokenFromContext(ctx *gin.Context) (model.AccessToken, bool) {
+	value, exists := ctx.Get(currentAccessTokenContextKey)
+	if !exists {
+		return model.AccessToken{}, false
+	}
+	token, ok := value.(model.AccessToken)
+	return token, ok && token.ID != ""
 }
 
 func requiredScopeForRequest(ctx *gin.Context) string {

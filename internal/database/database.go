@@ -139,6 +139,7 @@ func Migrate(db *gorm.DB) error {
 		&model.OAuthGrant{},
 		&model.OAuthAuthorizationCode{},
 		&model.OAuthRefreshToken{},
+		&model.OAuthDeviceAuthorization{},
 		&model.AuthProvider{},
 		&model.ExternalIdentity{},
 		&model.AuthAdmissionPolicy{},

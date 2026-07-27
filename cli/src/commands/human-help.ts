@@ -56,10 +56,10 @@ export function rootHelpText(
   return [
     '',
     `${text(ports, 'help.quickStart.title', 'Quick start:')}`,
-    `  ${text(ports, 'help.quickStart.login', '1. Sign in with an access token:')}`,
-    '     printf \'%s\' "$LUNA_TOKEN" | luna login token=@-',
+    `  ${text(ports, 'help.quickStart.login', '1. Sign in with OAuth Device Code:')}`,
+    '     luna login',
     `  ${text(ports, 'help.quickStart.customServer', '2. Sign in to another server when needed:')}`,
-    '     printf \'%s\' "$LUNA_TOKEN" | luna login server=https://luna.example.com token=@-',
+    '     luna login server=https://luna.example.com',
     `  ${text(ports, 'help.quickStart.discover', '3. Discover commands:')}`,
     '     luna help catalog query=project limit=10',
     '     luna <category> <command> --help',

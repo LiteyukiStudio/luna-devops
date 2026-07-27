@@ -86,8 +86,7 @@ Release work still includes:
 
 - public backend routes not yet documented in OpenAPI;
 - server capability negotiation and compatibility gates;
-- Authorization Code + PKCE and Device Code;
-- OAuth Bearer step-up MFA;
+- the CLI entry point for Authorization Code + PKCE;
 - SSE, WebSocket, and binary download transports;
 - server-issued short-lived plans for high-risk operations.
 

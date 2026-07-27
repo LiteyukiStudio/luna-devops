@@ -1,5 +1,13 @@
 import type { HttpMethod, QueryInput, QueryPrimitive, QueryValue } from '@luna-devops/api-client'
 import type {
+  OAuthClient,
+  OAuthLoginRequest,
+  OAuthLoginResult,
+  OAuthRefreshRequest,
+  OAuthRevokeRequest,
+  OAuthTokenCredential,
+} from '../auth/oauth.js'
+import type {
   ServerCompatibilityRequirements,
 } from './compatibility.js'
 import type {
@@ -17,6 +25,12 @@ import process from 'node:process'
 import {
   LunaClient,
 } from '@luna-devops/api-client'
+import {
+  beginOAuthLogin,
+  refreshOAuthCredential,
+  revokeOAuthCredential,
+  storeValidatedOAuthCredential,
+} from '../auth/index.js'
 import { resolveRuntimeContext } from '../config/index.js'
 import {
   assertServerCompatibility,
@@ -34,12 +48,21 @@ const HTTP_METHODS = new Set<HttpMethod>([
 ])
 const QUERY_METHODS = new Set<HttpMethod>(['DELETE', 'GET', 'HEAD', 'OPTIONS'])
 const PROJECT_PARAMETER_NAMES = new Set(['project', 'projectId', 'projectID'])
+const OAUTH_REFRESH_SKEW_MS = 30_000
+
+const defaultOAuthClient: OAuthClient = {
+  beginOAuthLogin,
+  refreshOAuthCredential,
+  revokeOAuthCredential,
+}
 
 export interface ApiAdapterOptions {
   readonly config: ConfigPort
   readonly env?: Readonly<Record<string, string | undefined>>
   readonly clientFactory?: (options: ConstructorParameters<typeof LunaClient>[0]) => LunaClient
   readonly compatibility?: ServerCompatibilityRequirements
+  readonly oauthClient?: OAuthClient
+  readonly now?: () => number
 }
 
 export interface PlannedApiRequest {
@@ -55,6 +78,8 @@ export class LunaApiAdapter implements ApiPort {
   readonly #env: Readonly<Record<string, string | undefined>>
   readonly #clientFactory: (options: ConstructorParameters<typeof LunaClient>[0]) => LunaClient
   readonly #compatibility?: ServerCompatibilityRequirements
+  readonly #oauthClient: OAuthClient
+  readonly #now: () => number
   readonly #compatibleServers = new Set<string>()
 
   constructor(options: ApiAdapterOptions) {
@@ -62,6 +87,20 @@ export class LunaApiAdapter implements ApiPort {
     this.#env = options.env ?? process.env
     this.#clientFactory = options.clientFactory ?? (clientOptions => new LunaClient(clientOptions))
     this.#compatibility = options.compatibility
+    this.#oauthClient = options.oauthClient ?? defaultOAuthClient
+    this.#now = options.now ?? Date.now
+  }
+
+  beginOAuthLogin(request: OAuthLoginRequest): Promise<OAuthLoginResult> {
+    return this.#oauthClient.beginOAuthLogin(request)
+  }
+
+  refreshOAuthCredential(request: OAuthRefreshRequest): Promise<OAuthTokenCredential> {
+    return this.#oauthClient.refreshOAuthCredential(request)
+  }
+
+  revokeOAuthCredential(request: OAuthRevokeRequest): Promise<void> {
+    return this.#oauthClient.revokeOAuthCredential(request)
   }
 
   async execute(request: ApiExecutionRequest): Promise<CommandResult> {
@@ -298,14 +337,52 @@ export class LunaApiAdapter implements ApiPort {
         },
       )
     }
-    const config = await this.#config.read()
-    const runtime = resolveRuntimeContext(config, {
+    let config = await this.#config.read()
+    let runtime = resolveRuntimeContext(config, {
       server: globals.server,
       project: globals.project,
       output: globals.output,
       language: globals.lang,
       env: this.#env,
     })
+    if (
+      runtime.sources.credential === 'config'
+      && runtime.credential?.type === 'oauth'
+      && oauthCredentialNeedsRefresh(runtime.credential.expiresAt, this.#now())
+    ) {
+      if (!runtime.credential.refreshToken) {
+        throw new CliCommandError(
+          'oauth_refresh_token_required',
+          'The stored OAuth credential expired and does not contain a refresh token.',
+          { status: 401 },
+        )
+      }
+      const refreshed = await this.#oauthClient.refreshOAuthCredential({
+        server: runtime.server,
+        refreshToken: runtime.credential.refreshToken,
+        scopes: runtime.credential.scopes,
+      })
+      await storeValidatedOAuthCredential(this.#config, {
+        server: runtime.server,
+        accessToken: refreshed.accessToken,
+        refreshToken: refreshed.refreshToken,
+        tokenType: refreshed.tokenType ?? runtime.credential.tokenType,
+        scopes: refreshed.scopes.length > 0
+          ? refreshed.scopes
+          : runtime.credential.scopes,
+        user: runtime.credential.user,
+        expiresAt: refreshed.expiresAt,
+        project: runtime.project ?? null,
+      })
+      config = await this.#config.read()
+      runtime = resolveRuntimeContext(config, {
+        server: globals.server,
+        project: globals.project,
+        output: globals.output,
+        language: globals.lang,
+        env: this.#env,
+      })
+    }
     const credential = runtime.credential
     const token = credential?.type === 'oauth'
       ? credential.accessToken
@@ -332,6 +409,16 @@ export class LunaApiAdapter implements ApiPort {
     })
     return runtime.server
   }
+}
+
+function oauthCredentialNeedsRefresh(
+  expiresAt: string | undefined,
+  now: number,
+): boolean {
+  if (!expiresAt)
+    return false
+  const expiresAtMs = Date.parse(expiresAt)
+  return Number.isFinite(expiresAtMs) && expiresAtMs <= now + OAUTH_REFRESH_SKEW_MS
 }
 
 function requiredMetaString(

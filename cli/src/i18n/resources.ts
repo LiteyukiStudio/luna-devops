@@ -40,7 +40,7 @@ export const resources = {
         canonicalCommand: 'Canonical command',
         quickStart: {
           title: 'Quick start:',
-          login: '1. Sign in with an access token:',
+          login: '1. Sign in with OAuth Device Code:',
           customServer: '2. Sign in to another server when needed:',
           discover: '3. Discover commands:',
         },
@@ -144,7 +144,7 @@ export const resources = {
         language: 'CLI language, such as zh-CN or en-US.',
         limit: 'Maximum number of results to return.',
         method: 'HTTP request method.',
-        mode: 'Authentication mode: access-token or device-code.',
+        mode: 'Authentication mode; defaults to device-code. Use access-token explicitly for PAT fallback.',
         name: 'Resource name.',
         newName: 'New resource name.',
         page: 'Page number, starting from 1.',
@@ -161,7 +161,7 @@ export const resources = {
         sortBy: 'Field used to sort the result.',
         sortOrder: 'Sort direction: asc or desc.',
         status: 'Resource status used as a filter or update value.',
-        token: 'Access token; read it from @file, @-, or LUNA_TOKEN.',
+        token: 'Access token for mode=access-token; read it from @file, @-, or LUNA_TOKEN.',
         transport: 'Filter by command transport.',
       },
       commands: {
@@ -169,8 +169,8 @@ export const resources = {
           request: { summary: 'Send a diagnostic request to a Luna API path.' },
         },
         auth: {
-          login: { summary: 'Sign in to one Luna server with an access token.' },
-          logout: { summary: 'Remove the active local Luna credential.' },
+          login: { summary: 'Sign in with OAuth Device Code, or explicitly fall back to an access token.' },
+          logout: { summary: 'Revoke OAuth tokens when possible and remove the local credential.' },
           status: { summary: 'Show authentication status without exposing credentials.' },
         },
         completion: {
@@ -197,6 +197,13 @@ export const resources = {
       },
       confirm: {
         execute: 'Run this command?',
+      },
+      auth: {
+        deviceCode: {
+          code: 'Enter this device code to authorize Luna CLI:',
+          browserOpened: 'A browser was opened. Complete authorization there; manual URL:',
+          browserFallback: 'Open this URL in a browser to complete authorization:',
+        },
       },
       errors: {
         command_required: 'Choose a command. Run luna --help to see available commands.',
@@ -261,7 +268,7 @@ export const resources = {
         canonicalCommand: '标准命令',
         quickStart: {
           title: '快速开始：',
-          login: '1. 使用访问令牌登录：',
+          login: '1. 使用 OAuth 设备码登录：',
           customServer: '2. 需要时登录其他服务：',
           discover: '3. 查找可用命令：',
         },
@@ -365,7 +372,7 @@ export const resources = {
         language: 'CLI 语言，例如 zh-CN 或 en-US。',
         limit: '最多返回多少条结果。',
         method: 'HTTP 请求方法。',
-        mode: '认证方式：access-token 或 device-code。',
+        mode: '认证方式；默认使用 device-code，仅在兜底时显式使用 access-token。',
         name: '资源名称。',
         newName: '新的资源名称。',
         page: '页码，从 1 开始。',
@@ -382,7 +389,7 @@ export const resources = {
         sortBy: '结果排序字段。',
         sortOrder: '排序方向：asc 或 desc。',
         status: '用于筛选或更新的资源状态。',
-        token: '访问令牌；从 @file、@- 或 LUNA_TOKEN 读取。',
+        token: 'mode=access-token 使用的访问令牌；从 @file、@- 或 LUNA_TOKEN 读取。',
         transport: '按命令传输方式筛选。',
       },
       commands: {
@@ -390,8 +397,8 @@ export const resources = {
           request: { summary: '向 Luna API 相对路径发送诊断请求。' },
         },
         auth: {
-          login: { summary: '使用访问令牌登录一个 Luna 服务。' },
-          logout: { summary: '移除当前本地 Luna 登录凭据。' },
+          login: { summary: '使用 OAuth 设备码登录，或显式回退到访问令牌。' },
+          logout: { summary: '尽力吊销 OAuth 令牌并移除本地登录凭据。' },
           status: { summary: '查看认证状态，不会展示凭据内容。' },
         },
         completion: {
@@ -418,6 +425,13 @@ export const resources = {
       },
       confirm: {
         execute: '确认执行此命令吗？',
+      },
+      auth: {
+        deviceCode: {
+          code: '请使用此设备码授权 Luna CLI：',
+          browserOpened: '已尝试打开浏览器，请在页面中完成授权；手动访问地址：',
+          browserFallback: '请在浏览器中打开此地址并完成授权：',
+        },
       },
       errors: {
         command_required: '请选择要执行的命令。运行 luna --help 查看可用命令。',

@@ -220,8 +220,16 @@ func (h *Handlers) ConfirmMFA(ctx *gin.Context) {
 }
 
 func (h *Handlers) VerifyMFA(ctx *gin.Context) {
-	user, session, ok := h.currentMFAUserSession(ctx)
-	if !ok || !h.allowMFAAttempt(ctx, user.ID, "verify", mfaVerificationAttemptLimit, mfaVerificationAttemptWindow) {
+	user, ok := h.currentUser(ctx)
+	if !ok {
+		return
+	}
+	subject, ok := h.currentStepUpSubject(ctx, user)
+	if !ok {
+		writeErrorCode(ctx, http.StatusForbidden, "mfa.session_required", "二次验证需要浏览器会话或 Luna CLI OAuth 登录")
+		return
+	}
+	if !h.allowMFAAttempt(ctx, user.ID, "verify", mfaVerificationAttemptLimit, mfaVerificationAttemptWindow) {
 		return
 	}
 	var input mfaVerifyInput
@@ -264,7 +272,7 @@ func (h *Handlers) VerifyMFA(ctx *gin.Context) {
 		return
 	}
 
-	if err := h.createStepUpAssertion(user.ID, session.ID, purpose, time.Now()); err != nil {
+	if err := h.createStepUpAssertion(user.ID, subject, purpose, time.Now()); err != nil {
 		h.audit(user.ID, "mfa.verify", purpose, false, "failed to persist assertion")
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return

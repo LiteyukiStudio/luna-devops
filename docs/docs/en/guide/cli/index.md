@@ -19,7 +19,7 @@ luna help catalog query=project limit=5 output=json interactive=false
 The CLI is in prerelease and is runnable and testable. Its current catalog contains 125 commands: 14 local commands, one CLI protocol command, and 110 commands generated from OpenAPI. The source tree includes:
 
 - one active server/account login and a default project;
-- Access Token login, validation, and local credential storage;
+- OAuth Device Code login by default, automatic refresh and best-effort revocation, plus an explicit personal-access-token fallback;
 - `key=value`, JSON, file, and standard-input parameters;
 - human-readable output and a versioned JSON envelope;
 - local help, project, and completion command registration;
@@ -37,8 +37,9 @@ The CLI supports command discovery and basic operation without Skills:
 
 ```bash
 luna --help
-luna login token=@-
-luna login server=https://devops.example.com token=@-
+luna login
+luna login server=https://devops.example.com
+printf '%s' "$LUNA_TOKEN" | luna login mode=access-token token=@-
 luna whoami
 luna doctor
 luna logout
@@ -119,7 +120,7 @@ node scripts/cli/verify-skills-sync.mjs
 Before the first stable release, the project must:
 
 1. Document the remaining public backend routes in OpenAPI and complete command-coverage tests.
-2. Implement the server protocols required for Authorization Code + PKCE, Device Code, and Bearer step-up MFA.
+2. Add the CLI entry point for Authorization Code + PKCE; Device Code, refresh, revocation, and OAuth Bearer step-up MFA are available.
 3. Complete SSE, WebSocket, download, and server-issued plan transports.
 4. Configure an npm Trusted Publisher and protect the GitHub `npm` Environment.
 5. Add Apple Developer ID signing and notarization before macOS binaries enter stable releases; Windows continues to use npm/pnpm.

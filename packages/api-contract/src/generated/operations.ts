@@ -5,8 +5,8 @@ export const OPENAPI_SNAPSHOT_METADATA = {
   "source": "openapi/openapi.yaml",
   "openapiVersion": "3.1.0",
   "apiVersion": "0.1.0",
-  "sourceDigest": "sha256:6fb5ef6c0ed37ce09f0d7c63b53188c5c956cc1b21a3543df3c1653f0c578bc7",
-  "operationCount": 110
+  "sourceDigest": "sha256:54cb6ef4eb6fd0721c90ecdb109e9f76d424db01aa7b426b81392f75ae4bf09e",
+  "operationCount": 116
 } as const satisfies OpenApiSnapshotMetadata;
 
 export const OPENAPI_OPERATION_SNAPSHOTS = [
@@ -50,6 +50,395 @@ export const OPENAPI_OPERATION_SNAPSHOTS = [
     ],
     "summary": "Get API version and CLI capability metadata",
     "operationId": "getApiMeta"
+  },
+  {
+    "method": "get",
+    "path": "/.well-known/oauth-authorization-server",
+    "tags": [
+      "Auth"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [],
+        "description": "OAuth 2.0 authorization server metadata."
+      }
+    ],
+    "summary": "Get OAuth authorization server metadata",
+    "operationId": "getOAuthAuthorizationServerMetadata",
+    "xLunaCli": {
+      "classification": "protocol-adapter",
+      "hidden": true,
+      "exclusionReason": "OAuth discovery is consumed by the CLI authentication adapter."
+    }
+  },
+  {
+    "method": "post",
+    "path": "/api/v1/oauth/device/authorization",
+    "tags": [
+      "Auth"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [],
+        "description": "Device and user codes for the browser verification flow."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/OAuthProtocolError"
+        ],
+        "description": "OAuth protocol error."
+      }
+    ],
+    "summary": "Start an OAuth Device Authorization Grant",
+    "operationId": "startOAuthDeviceAuthorization",
+    "requestBody": {
+      "required": true,
+      "contentTypes": [
+        "application/x-www-form-urlencoded"
+      ],
+      "schemaRefs": []
+    },
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "body": {
+          "type": "object",
+          "required": [
+            "client_id"
+          ],
+          "properties": {
+            "client_id": {
+              "type": "string"
+            },
+            "scope": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "required": [
+        "body"
+      ],
+      "additionalProperties": false
+    },
+    "xLunaCli": {
+      "classification": "protocol-adapter",
+      "hidden": true,
+      "exclusionReason": "Device authorization is exposed through `luna login`."
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/oauth/device/verification",
+    "tags": [
+      "Auth"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "user_code",
+        "in": "query",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/OAuthApplication"
+        ],
+        "description": "Pending device authorization visible to the signed-in user."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "Invalid, expired, or consumed user code."
+      }
+    ],
+    "summary": "Inspect a pending OAuth device authorization",
+    "operationId": "getOAuthDeviceVerification",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "user_code": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "user_code"
+      ],
+      "additionalProperties": false
+    },
+    "xLunaCli": {
+      "classification": "protocol-adapter",
+      "hidden": true,
+      "exclusionReason": "Browser-only Device Code verification endpoint."
+    }
+  },
+  {
+    "method": "post",
+    "path": "/api/v1/oauth/device/verification",
+    "tags": [
+      "Auth"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [],
+        "description": "Device authorization decision accepted."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "Invalid, expired, or consumed user code."
+      }
+    ],
+    "summary": "Approve or deny an OAuth device authorization",
+    "operationId": "decideOAuthDeviceVerification",
+    "requestBody": {
+      "required": true,
+      "contentTypes": [
+        "application/json"
+      ],
+      "schemaRefs": []
+    },
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "body": {
+          "type": "object",
+          "required": [
+            "decision",
+            "userCode"
+          ],
+          "properties": {
+            "decision": {
+              "type": "string",
+              "enum": [
+                "approve",
+                "deny"
+              ]
+            },
+            "userCode": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "required": [
+        "body"
+      ],
+      "additionalProperties": false
+    },
+    "xLunaCli": {
+      "classification": "protocol-adapter",
+      "hidden": true,
+      "exclusionReason": "Browser-only Device Code verification endpoint."
+    }
+  },
+  {
+    "method": "post",
+    "path": "/api/v1/oauth/token",
+    "tags": [
+      "Auth"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/OAuthTokenResponse"
+        ],
+        "description": "OAuth access and refresh tokens."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/OAuthProtocolError"
+        ],
+        "description": "OAuth protocol error."
+      }
+    ],
+    "summary": "Exchange an OAuth authorization grant for tokens",
+    "operationId": "exchangeOAuthToken",
+    "requestBody": {
+      "required": true,
+      "contentTypes": [
+        "application/x-www-form-urlencoded"
+      ],
+      "schemaRefs": []
+    },
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "body": {
+          "type": "object",
+          "required": [
+            "grant_type"
+          ],
+          "properties": {
+            "client_id": {
+              "type": "string"
+            },
+            "client_secret": {
+              "type": "string",
+              "writeOnly": true
+            },
+            "code": {
+              "type": "string"
+            },
+            "code_verifier": {
+              "type": "string"
+            },
+            "device_code": {
+              "type": "string",
+              "writeOnly": true
+            },
+            "grant_type": {
+              "type": "string",
+              "enum": [
+                "authorization_code",
+                "refresh_token",
+                "urn:ietf:params:oauth:grant-type:device_code"
+              ]
+            },
+            "redirect_uri": {
+              "type": "string",
+              "format": "uri"
+            },
+            "refresh_token": {
+              "type": "string",
+              "writeOnly": true
+            }
+          }
+        }
+      },
+      "required": [
+        "body"
+      ],
+      "additionalProperties": false
+    },
+    "xLunaCli": {
+      "classification": "protocol-adapter",
+      "hidden": true,
+      "exclusionReason": "OAuth token exchange is consumed by the CLI authentication adapter."
+    }
+  },
+  {
+    "method": "post",
+    "path": "/api/v1/oauth/revoke",
+    "tags": [
+      "Auth"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [],
+        "schemaRefs": [],
+        "description": "Token is revoked or was already invalid."
+      }
+    ],
+    "summary": "Revoke an OAuth access or refresh token",
+    "operationId": "revokeOAuthToken",
+    "requestBody": {
+      "required": true,
+      "contentTypes": [
+        "application/x-www-form-urlencoded"
+      ],
+      "schemaRefs": []
+    },
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "body": {
+          "type": "object",
+          "required": [
+            "token"
+          ],
+          "properties": {
+            "client_id": {
+              "type": "string"
+            },
+            "client_secret": {
+              "type": "string",
+              "writeOnly": true
+            },
+            "token": {
+              "type": "string",
+              "writeOnly": true
+            },
+            "token_type_hint": {
+              "type": "string",
+              "enum": [
+                "access_token",
+                "refresh_token"
+              ]
+            }
+          }
+        }
+      },
+      "required": [
+        "body"
+      ],
+      "additionalProperties": false
+    },
+    "xLunaCli": {
+      "classification": "protocol-adapter",
+      "hidden": true,
+      "exclusionReason": "OAuth revocation is exposed through `luna logout`."
+    }
   },
   {
     "method": "post",

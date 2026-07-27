@@ -40,8 +40,8 @@ func (h *Handlers) GetAPIMeta(ctx *gin.Context) {
 		MinimumCLIVersion: minimumCLIVersion,
 		Features: apiMetaFeatures{
 			AccessToken:        true,
-			DeviceCode:         false,
-			MFABearer:          false,
+			DeviceCode:         true,
+			MFABearer:          true,
 			OAuthAuthorization: true,
 			OpenAPIOperations:  true,
 		},

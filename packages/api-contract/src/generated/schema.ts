@@ -55,6 +55,92 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/.well-known/oauth-authorization-server": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get OAuth authorization server metadata */
+        get: operations["getOAuthAuthorizationServerMetadata"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/oauth/device/authorization": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start an OAuth Device Authorization Grant */
+        post: operations["startOAuthDeviceAuthorization"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/oauth/device/verification": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Inspect a pending OAuth device authorization */
+        get: operations["getOAuthDeviceVerification"];
+        put?: never;
+        /** Approve or deny an OAuth device authorization */
+        post: operations["decideOAuthDeviceVerification"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/oauth/token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Exchange an OAuth authorization grant for tokens */
+        post: operations["exchangeOAuthToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/oauth/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revoke an OAuth access or refresh token */
+        post: operations["revokeOAuthToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/public/configs": {
         parameters: {
             query?: never;
@@ -4265,6 +4351,28 @@ export interface components {
             /** @description Step-up purpose returned with `mfa_required`. */
             purpose?: string;
         };
+        OAuthApplication: {
+            id: string;
+            name: string;
+            clientId: string;
+            redirectUris: string[];
+            scopes: string[];
+            confidential: boolean;
+            active: boolean;
+        };
+        OAuthTokenResponse: {
+            access_token: string;
+            /** @constant */
+            token_type: "Bearer";
+            expires_in: number;
+            refresh_token: string;
+            scope: string;
+        };
+        OAuthProtocolError: {
+            /** @enum {string} */
+            error: "invalid_request" | "invalid_client" | "invalid_grant" | "unauthorized_client" | "unsupported_grant_type" | "invalid_scope" | "authorization_pending" | "slow_down" | "access_denied" | "expired_token";
+            error_description?: string;
+        };
         DashboardEntityRef: {
             id: string;
             name: string;
@@ -5018,6 +5126,222 @@ export interface operations {
                         };
                     };
                 };
+            };
+        };
+    };
+    getOAuthAuthorizationServerMetadata: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OAuth 2.0 authorization server metadata. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    startOAuthDeviceAuthorization: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/x-www-form-urlencoded": {
+                    client_id: string;
+                    scope?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Device and user codes for the browser verification flow. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        device_code: string;
+                        user_code: string;
+                        /** Format: uri */
+                        verification_uri: string;
+                        /** Format: uri */
+                        verification_uri_complete: string;
+                        expires_in: number;
+                        interval: number;
+                    };
+                };
+            };
+            /** @description OAuth protocol error. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OAuthProtocolError"];
+                };
+            };
+        };
+    };
+    getOAuthDeviceVerification: {
+        parameters: {
+            query: {
+                user_code: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pending device authorization visible to the signed-in user. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        application: components["schemas"]["OAuthApplication"];
+                        userCode: string;
+                        scopes: string[];
+                        /** Format: date-time */
+                        expiresAt: string;
+                    };
+                };
+            };
+            /** @description Invalid, expired, or consumed user code. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    decideOAuthDeviceVerification: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    userCode: string;
+                    /** @enum {string} */
+                    decision: "approve" | "deny";
+                };
+            };
+        };
+        responses: {
+            /** @description Device authorization decision accepted. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        status: "approved" | "denied";
+                    };
+                };
+            };
+            /** @description Invalid, expired, or consumed user code. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    exchangeOAuthToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/x-www-form-urlencoded": {
+                    /** @enum {string} */
+                    grant_type: "authorization_code" | "refresh_token" | "urn:ietf:params:oauth:grant-type:device_code";
+                    client_id?: string;
+                    client_secret?: string;
+                    code?: string;
+                    code_verifier?: string;
+                    /** Format: uri */
+                    redirect_uri?: string;
+                    refresh_token?: string;
+                    device_code?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OAuth access and refresh tokens. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OAuthTokenResponse"];
+                };
+            };
+            /** @description OAuth protocol error. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OAuthProtocolError"];
+                };
+            };
+        };
+    };
+    revokeOAuthToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/x-www-form-urlencoded": {
+                    token: string;
+                    /** @enum {string} */
+                    token_type_hint?: "access_token" | "refresh_token";
+                    client_id?: string;
+                    client_secret?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Token is revoked or was already invalid. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

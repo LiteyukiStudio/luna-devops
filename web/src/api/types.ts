@@ -1311,6 +1311,22 @@ export interface OAuthAuthorizationDecision {
   codeChallengeMethod: string
 }
 
+export interface OAuthDeviceVerification {
+  application: OAuthApplication
+  scope: string
+  userCode: string
+  expiresAt: string
+}
+
+export interface OAuthDeviceVerificationDecision {
+  approved: boolean
+  userCode: string
+}
+
+export interface OAuthDeviceVerificationResult {
+  status: 'approved' | 'denied'
+}
+
 export interface BillingSummary {
   balanceCredits: string
   todaySpend: string

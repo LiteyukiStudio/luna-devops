@@ -43,11 +43,12 @@ func TestGetAPIMeta(t *testing.T) {
 	if response.MinimumCLIVersion != minimumCLIVersion {
 		t.Fatalf("minimumCliVersion = %q, want %q", response.MinimumCLIVersion, minimumCLIVersion)
 	}
-	if !response.Features.AccessToken || !response.Features.OAuthAuthorization || !response.Features.OpenAPIOperations {
+	if !response.Features.AccessToken ||
+		!response.Features.OAuthAuthorization ||
+		!response.Features.DeviceCode ||
+		!response.Features.MFABearer ||
+		!response.Features.OpenAPIOperations {
 		t.Fatalf("expected stable CLI features to be enabled: %#v", response.Features)
-	}
-	if response.Features.DeviceCode || response.Features.MFABearer {
-		t.Fatalf("unsupported features must remain disabled: %#v", response.Features)
 	}
 	if len(openapi.SpecYAML) == 0 {
 		t.Fatal("embedded OpenAPI specification is empty")

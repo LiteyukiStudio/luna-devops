@@ -46,7 +46,7 @@ CLI 与 Web 控制台共用后端能力和 API 契约，但不直接复用浏览
 | --- | --- | --- |
 | OAuth Authorization Code + PKCE | 已有 | 增加适合原生 CLI 的公共客户端和 loopback redirect |
 | OAuth Refresh Token / Revoke | 已有 | CLI 自动刷新并在登出时尽力吊销 |
-| OAuth Device Code | 未实现 | 按 RFC 8628 增加授权端点、确认页和轮询 |
+| OAuth Device Code | 已实现 | `luna login` 默认使用内置 `luna-cli` 公共客户端和 RFC 8628 轮询 |
 | 个人访问令牌 | 已有 | 支持从 stdin 或环境变量读取 |
 | Step-up MFA | 已有统一错误与 Web 交互 | 增加绑定 OAuth 授权会话的 CLI 验证流程 |
 | OpenAPI | 已有但覆盖不完整 | 除内部可观测白名单外，补齐全部 HTTP API、`operationId` 和 CLI 元数据 |
@@ -68,8 +68,8 @@ CLI 与 Web 控制台共用后端能力和 API 契约，但不直接复用浏览
 - npm 制品运行在 Node.js，独立二进制运行在 Bun；代理、自定义 CA、SSE 和 WebSocket 的运行时能力并不完全等价，必须经过统一 Transport 接口适配，不能假设浏览器或某个运行时的全局对象在另一端行为一致；
 - 当前 OAuth Token Endpoint 仅支持 `client_secret_basic` 与 `client_secret_post`，还不能安全支持没有 Client Secret 的原生 CLI 公共客户端；
 - 当前后端尚未实现 Device Authorization Grant；
-- 当前 Step-up MFA assertion 绑定浏览器登录 Session，并明确拒绝 Bearer Token；响应中只有 `code` 与 `purpose`，没有 `challengeId`。
-- 当前终端预授权、终端存活监控和数据导出一次性票据也强制绑定浏览器 Session；即使单独放开 Bearer MFA，OAuth CLI 仍然不能使用终端和数据导出。
+- Step-up MFA assertion 已支持绑定浏览器 Session 或内置 CLI OAuth Grant；个人访问令牌仍被明确拒绝。
+- 终端预授权、终端存活监控和数据导出一次性票据已使用统一认证上下文，可绑定浏览器 Session 或 CLI OAuth Grant。
 - 当前 OAuth 授权复用个人访问令牌的可创建 Scope 规则，而数据导出等必须 Step-up 的 Scope 被个人令牌目录刻意排除；不拆分 OAuth 与 PAT Scope 策略时，CLI 无法取得这些敏感能力的授权。
 - 当前 Bearer 鉴权通过 `RequiredAccessTokenScope` 维护独立的路由到 Scope 映射，未映射路由统一得到 `system:unmapped` 并被拒绝；通知、看板、数据保留、构建模板等现有路由仍有落入该分支的风险。只补 OpenAPI 和命令而不补 Scope 映射，CLI 仍会稳定返回 403。
 
@@ -1035,7 +1035,7 @@ client_id=luna-cli
 
 OAuth Metadata 必须新增 `device_authorization_endpoint` 和对应 grant type。
 
-Device Code 是 `v0.1.0` 的发布前置条件，不以“后续能力”降级。后端必须额外实现用户确认页、设备码与用户码哈希存储、批准/拒绝、过期清理、轮询限流和一次性兑换；CLI 只负责展示用户码并遵循服务端轮询契约。
+上述 Device Code 链路已实现：后端提供用户确认页、设备码与用户码哈希存储、批准/拒绝、过期清理、轮询限流和一次性兑换；CLI 默认展示用户码、打开浏览器并遵循服务端轮询契约。
 
 ### 9.3 Access Token 登录
 
@@ -1128,7 +1128,7 @@ luna auth mfa-verify purpose=kubeconfig_update
 
 ### 10.2 后端改造要求
 
-当前 Step-up assertion 绑定 Web 登录 Session，并且服务端会拒绝 Bearer Token。终端和数据导出还通过 `requireInteractiveSession`、`SessionID` 绑定与 Session 存活检查进一步限制为浏览器会话。CLI `v0.1.0` 不能在该契约上执行敏感操作，必须先完成以下后端改造：
+Step-up assertion 已统一绑定 Web Session 或内置 CLI OAuth Grant，终端和数据导出也使用同一认证上下文。以下要求作为已实现行为和后续回归边界保留：
 
 - OAuth access token 可追溯到 OAuth grant 和授权会话；
 - `VerifyMFA` 同时支持浏览器 Session 与 OAuth Bearer 授权上下文；

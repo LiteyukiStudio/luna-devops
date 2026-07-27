@@ -223,14 +223,25 @@ describe("OpenAPI operation catalog", () => {
       ),
     ).toBe(true);
 
+    const visibleCatalog = filterOperationCatalog();
     const page = pageOperationCatalog({}, { offset: 2, limit: 3 });
-    expect(page.items).toEqual(OPERATION_CATALOG.slice(2, 5));
+    expect(page.items).toEqual(visibleCatalog.slice(2, 5));
     expect(page).toMatchObject({
-      total: OPERATION_CATALOG.length,
+      total: visibleCatalog.length,
       offset: 2,
       limit: 3,
       nextOffset: 5,
     });
+
+    const completeCatalog = filterOperationCatalog({ includeHidden: true });
+    expect(completeCatalog).toHaveLength(OPERATION_CATALOG.length);
+    expect(
+      completeCatalog.filter(
+        (entry) =>
+          entry.command.hidden &&
+          entry.command.classification === "protocol-adapter",
+      ),
+    ).toHaveLength(6);
   });
 
   it("rejects duplicate public identifiers", () => {

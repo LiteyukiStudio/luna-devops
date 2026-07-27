@@ -186,6 +186,8 @@ func RequiredAccessTokenScope(path, method string) string {
 		return string(ActionUserWrite)
 	case strings.HasPrefix(path, "/api/v1/users"):
 		return string(ActionUserManage)
+	case path == "/api/v1/auth/mfa/verify" && method == http.MethodPost:
+		return string(ActionUserRead)
 	case strings.HasPrefix(path, "/api/v1/auth"):
 		return string(ActionAuthManage)
 	case strings.HasPrefix(path, "/api/v1/configs") && method == http.MethodGet:

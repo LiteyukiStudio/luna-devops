@@ -138,3 +138,34 @@ func TestOAuthClientRateLimitUsesIPAndHashedClientID(t *testing.T) {
 		}
 	}
 }
+
+func TestOAuthDeviceVerificationRateLimitUsesIPAndHashedUserID(t *testing.T) {
+	server := miniredis.RunT(t)
+	h := &Handlers{mode: "production", rateLimiter: newRateLimiter(server.Addr())}
+	t.Cleanup(func() { _ = h.rateLimiter.redis.Close() })
+
+	for attempt := 0; attempt < 31; attempt++ {
+		recorder := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(recorder)
+		ctx.Request = httptest.NewRequest("POST", "/api/v1/oauth/device/verification", nil)
+		if allowed := h.allowOAuthDeviceVerificationAttempt(ctx, "user-sensitive-id"); attempt < 30 && !allowed {
+			t.Fatalf("attempt %d should be allowed", attempt+1)
+		} else if attempt == 30 {
+			if allowed {
+				t.Fatal("attempt above the limit should be rejected")
+			}
+			var body map[string]any
+			if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+				t.Fatalf("decode rate limit response: %v", err)
+			}
+			if body["code"] != "oauth.device.rate_limited" {
+				t.Fatalf("OAuth device error = %#v", body)
+			}
+		}
+	}
+	for _, key := range server.Keys() {
+		if strings.Contains(key, "user-sensitive-id") {
+			t.Fatalf("rate limit key exposes user ID: %q", key)
+		}
+	}
+}

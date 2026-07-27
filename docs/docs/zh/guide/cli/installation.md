@@ -60,13 +60,14 @@ CLI 在 `~/.luna/auth.json` 中只保存一个活动实例和账号凭据，行�
 未指定地址时登录官方实例：
 
 ```bash
-printf '%s' "$LUNA_TOKEN" | luna login token=@-
+luna login
 ```
 
 这等价于登录 `https://devops.liteyuki.org`。登录其他实例必须显式提供地址：
 
 ```bash
-printf '%s' "$LUNA_TOKEN" | luna login server=https://devops.example.com token=@-
+luna login server=https://devops.example.com
+printf '%s' "$LUNA_TOKEN" | luna login mode=access-token token=@-
 ```
 
 `luna whoami` 查看当前登录，`luna logout` 撤销并清理它。自动化脚本应明确提供

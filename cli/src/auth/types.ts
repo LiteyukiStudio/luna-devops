@@ -43,4 +43,5 @@ export interface AuthStatusEntry {
 export interface LogoutLocalResult {
   readonly server: string
   readonly loggedOut: boolean
+  readonly remoteRevocation: 'not_applicable' | 'succeeded' | 'failed'
 }
