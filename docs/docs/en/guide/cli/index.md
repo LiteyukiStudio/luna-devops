@@ -16,7 +16,16 @@ luna help catalog query=project limit=5 output=json interactive=false
 
 ## Current development status
 
-The CLI is in prerelease and is runnable and testable. Its current catalog contains 125 commands: 14 local commands, one CLI protocol command, and 110 commands generated from OpenAPI. The source tree includes:
+The CLI is in prerelease and is runnable and testable. Its command catalog is
+assembled from three controlled sources. Live totals come from
+`luna help catalog` and the platform coverage gate; this documentation does not
+maintain a second set of counts that can drift:
+
+- ordinary business commands generated from OpenAPI, which is their sole source of truth;
+- protocol adapters for transports such as SSE, WebSocket, and file downloads that cannot preserve their semantics through a normal JSON HTTP command;
+- local commands for login, local configuration, help, and shell completion that do not map to a platform business API.
+
+The source tree includes:
 
 - one active server/account login and a default project;
 - OAuth Device Code login by default, automatic refresh and best-effort revocation, plus an explicit personal-access-token fallback;
@@ -26,7 +35,7 @@ The CLI is in prerelease and is runnable and testable. Its current catalog conta
 - human-friendly `login`, `logout`, `whoami`, and `doctor` root shortcuts;
 - `health doctor` checks for the active login, authentication, server version, OpenAPI contract, and feature flags;
 - automatic API generation, minimum CLI version, and OpenAPI digest checks before OpenAPI business commands;
-- all 110 operations currently documented by OpenAPI;
+- all ordinary business operations currently documented by OpenAPI;
 - a shared npm/Bun entry point, packaging, global-install smoke tests, and release gates.
 
 Shared contracts and the API client are bundled safely into npm and Bun artifacts, so users do not need the monorepo workspace. Prereleases are available through the npm `beta` channel.
@@ -70,10 +79,15 @@ See [Source Development and Verification](./development) for repository commands
 ## Design boundaries
 
 - The CLI calls Luna DevOps backend APIs only. It does not orchestrate Kubernetes, GitHub, Gitea, or registry APIs directly.
+- Ordinary HTTP business commands must be generated from OpenAPI. The CLI must not maintain a second handwritten route or parameter inventory.
+- SSE, WebSocket, binary download, and authorized follow-up transports require explicit protocol adapters. An adapter must not duplicate an ordinary JSON HTTP API and must participate in the route-by-route coverage audit.
+- Browser callbacks, external webhook receivers, and pre-application bootstrap endpoints are not business commands, but each exact `method + path` requires an audited classification and reason. Prefix-wide silent exclusions are not allowed.
 - Automation should use `output=json interactive=false` and parse JSON from `stdout` only. Diagnostics belong on `stderr`.
 - Local state defaults to `~/.luna/`. Tests and CI use a temporary `LUNA_HOME` and never read real user credentials.
-- Medium-risk operations use the shared interactive confirmation flow. Non-interactive callers must set `yes=true`.
-- High-risk API operations fail closed until the server-issued plan protocol exists; `yes=true` cannot bypass it.
+- `high` and `critical` operations require per-operation confirmation in an
+  interactive terminal. Non-interactive and Agent callers must pass `--yes`.
+  `--yes` only suppresses the CLI prompt; it cannot bypass backend permissions,
+  scopes, step-up MFA, or other server policy.
 - CLI and platform versions are independent. Compatibility is negotiated through server capabilities rather than a version-string comparison alone.
 - Canonical OpenAPI commands read `/api/v1/meta` on the first request to an
   instance and validate the API generation, minimum CLI version, and OpenAPI
@@ -83,13 +97,30 @@ See [Source Development and Verification](./development) for repository commands
 - A command in `help catalog` means that the current CLI registers it.
   `serverSupported` may still be `null`; the execution-time negotiation remains
   authoritative.
-- Agents must pass `agent=true` to every command. This locks JSON output, disables interaction and colors, and applies safe pagination, polling, and response-size limits.
+- Agents must explicitly pass
+  `output=json interactive=false agent=true` to every command and must not rely
+  on local output or interaction defaults. Agent mode also disables colors and
+  applies safe pagination, polling, and response-size limits.
 - After `luna project use project=<id>` sets a default project, project-scoped commands may omit a required
   `project`, `projectId`, or `projectID`; the CLI injects that immutable project ID without granting additional permissions.
 - The CLI stores one active login only. A `luna login` without `server` always uses
   `https://devops.liteyuki.org`; explicitly signing in to another server or
   account replaces the stored credential and default project.
 - `api request` is limited to human diagnostics against a known relative API path and is always disabled in Agent mode. It must not impersonate a business capability that is absent from OpenAPI or still requires a dedicated transport.
+- Terminal and data-export operations use dedicated WebSocket/download protocol
+  adapters. They require a CLI OAuth login and step-up MFA for the matching
+  purpose; a personal access token cannot satisfy or bypass that requirement.
+
+Machines and Agents discover capabilities through the machine catalog rather
+than parsing human-oriented help:
+
+```bash
+luna help catalog all=true limit=100 output=json interactive=false agent=true
+luna help command path=project.get-projects output=json interactive=false agent=true
+```
+
+Agent commands always use `output=json interactive=false agent=true`. Callers
+parse the JSON envelope from `stdout` only and treat `stderr` as diagnostics.
 
 ## Agent Skill
 
@@ -105,23 +136,25 @@ The Skill ships with the CLI and must use the exact same version. Every
 must not load a mismatched version.
 
 ```bash
-luna help catalog query=project limit=20 agent=true
-luna help command path=project.get-projects agent=true
+luna help catalog query=project limit=20 output=json interactive=false agent=true
+luna help command path=project.get-projects output=json interactive=false agent=true
 ```
 
-After changing the command catalog or a capability boundary, update the Skill and run:
+When commands, parameters, risks, or capability boundaries change, update the
+Skill in the same change and run:
 
 ```bash
-node scripts/cli/verify-skills-sync.mjs
+pnpm check:cli-skills
 ```
 
 ## Remaining release blockers
 
 Before the first stable release, the project must:
 
-1. Document the remaining public backend routes in OpenAPI and complete command-coverage tests.
+1. Keep the platform route, OpenAPI, CLI command, and protocol-adapter coverage gate passing; its output is the only source for coverage totals and ratios.
 2. Add the CLI entry point for Authorization Code + PKCE; Device Code, refresh, revocation, and OAuth Bearer step-up MFA are available.
-3. Complete SSE, WebSocket, download, and server-issued plan transports.
+3. Complete the clean-instance all-operation and critical-journey validation,
+   including terminals, data export, and step-up MFA.
 4. Configure an npm Trusted Publisher and protect the GitHub `npm` Environment.
 5. Add Apple Developer ID signing and notarization before macOS binaries enter stable releases; Windows continues to use npm/pnpm.
 

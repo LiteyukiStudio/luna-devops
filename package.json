@@ -8,6 +8,7 @@
     "test": "pnpm -r --if-present test",
     "cli": "pnpm --filter @liteyuki/luna-cli dev",
     "check:cli-skills": "node scripts/cli/verify-skills-sync.mjs",
+    "check:platform-cli-coverage": "node scripts/cli/verify-platform-cli-coverage.mjs",
     "check:release-scripts": "node --test scripts/cli/tests/*.test.mjs scripts/skills/tests/*.test.mjs"
   }
 }

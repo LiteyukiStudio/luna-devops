@@ -19,9 +19,19 @@ tags:
   - name: Deployments
   - name: Builds
   - name: AccessTokens
+  - name: OAuthApplications
+  - name: System
+  - name: Notifications
+  - name: Events
+  - name: Billing
+  - name: Gateway
+  - name: Topology
+  - name: Releases
+  - name: AppTemplates
 paths:
   /healthz:
     get:
+      operationId: healthCheck
       tags: [Health]
       summary: Health check
       responses:
@@ -253,6 +263,7 @@ paths:
 
   /api/v1/public/configs:
     post:
+      operationId: getPublicConfigs
       tags: [Configs]
       summary: Get public app configs by keys
       requestBody:
@@ -267,6 +278,7 @@ paths:
 
   /api/v1/build/templates:
     get:
+      operationId: listBuildTemplates
       tags: [Builds]
       summary: List immutable platform build templates
       responses:
@@ -280,6 +292,7 @@ paths:
 
   /api/v1/build/templates/{templateId}/preview:
     post:
+      operationId: previewBuildTemplate
       tags: [Builds]
       summary: Validate template parameters and preview the generated Dockerfile
       parameters:
@@ -301,6 +314,7 @@ paths:
 
   /api/v1/build/environment-config:
     get:
+      operationId: getBuildEnvironmentConfig
       tags: [Builds]
       summary: Get one global, application, or deployment build environment
       parameters:
@@ -315,6 +329,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/BuildEnvironmentConfig" }
     put:
+      operationId: updateBuildEnvironmentConfig
       tags: [Builds]
       summary: Replace one global, application, or deployment build environment
       parameters:
@@ -336,6 +351,7 @@ paths:
 
   /api/v1/auth/bootstrap:
     get:
+      operationId: getBootstrapStatus
       tags: [Auth]
       summary: Get bootstrap and runtime mode status
       responses:
@@ -348,6 +364,7 @@ paths:
 
   /api/v1/auth/bootstrap/admin:
     post:
+      operationId: initializeAdmin
       tags: [Auth]
       summary: Initialize the first platform admin
       requestBody:
@@ -386,6 +403,7 @@ paths:
 
   /api/v1/auth/login:
     post:
+      operationId: login
       tags: [Auth]
       summary: Login with a local account
       requestBody:
@@ -409,6 +427,7 @@ paths:
 
   /api/v1/auth/login/resume:
     post:
+      operationId: resumeLogin
       tags: [Auth]
       summary: Resume login with a remembered account
       description: Rotates the per-user remember token, creates a new 24-hour session, and refreshes the 30-day remember cookie. Browser cookies are required.
@@ -433,6 +452,7 @@ paths:
 
   /api/v1/auth/logout:
     post:
+      operationId: logout
       tags: [Auth]
       summary: Logout current session
       responses:
@@ -441,6 +461,7 @@ paths:
 
   /api/v1/auth/registration:
     get:
+      operationId: getAuthRegistrationStatus
       tags: [Auth]
       summary: Get public registration capabilities
       responses:
@@ -452,6 +473,7 @@ paths:
 
   /api/v1/auth/registration/email/code:
     post:
+      operationId: requestEmailRegistrationCode
       tags: [Auth]
       summary: Request an email registration verification code
       requestBody:
@@ -465,6 +487,7 @@ paths:
 
   /api/v1/auth/registration/email:
     post:
+      operationId: completeEmailRegistration
       tags: [Auth]
       summary: Complete email registration
       requestBody:
@@ -478,6 +501,7 @@ paths:
 
   /api/v1/auth/registration/settings:
     get:
+      operationId: getAuthRegistrationSettings
       tags: [Auth]
       summary: Get registration and SMTP settings
       responses:
@@ -487,6 +511,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/AuthRegistrationSettings" }
     put:
+      operationId: updateAuthRegistrationSettings
       tags: [Auth]
       summary: Update registration and SMTP settings
       requestBody:
@@ -500,6 +525,7 @@ paths:
 
   /api/v1/auth/mfa/status:
     get:
+      operationId: getMFAStatus
       tags: [Auth]
       summary: Get current user's MFA status
       description: Requires an interactive browser session. Personal access tokens cannot manage or verify MFA.
@@ -529,6 +555,7 @@ paths:
 
   /api/v1/auth/mfa/totp/enroll:
     post:
+      operationId: enrollMFA
       tags: [Auth]
       summary: Start TOTP enrollment
       description: Replaces any pending enrollment, stores the TOTP secret in the encrypted secret store, and returns the secret only for the current enrollment flow. Local accounts must re-enter their current password. OIDC accounts require non-impersonated primary authentication within the last five minutes; remember-token recovery does not refresh that timestamp.
@@ -578,6 +605,7 @@ paths:
 
   /api/v1/auth/mfa/totp/confirm:
     post:
+      operationId: confirmMFA
       tags: [Auth]
       summary: Confirm pending TOTP enrollment
       description: Accepts the current or adjacent 30-second TOTP window. On success, enables MFA and returns ten one-time recovery codes that are shown only once.
@@ -632,6 +660,7 @@ paths:
 
   /api/v1/auth/mfa/verify:
     post:
+      operationId: verifyMFA
       tags: [Auth]
       summary: Verify MFA for a sensitive-operation purpose
       description: Accepts exactly one TOTP code or one recovery code. A successful recovery code is consumed atomically. The resulting assertion is bound to the current user, browser session, and purpose.
@@ -686,6 +715,7 @@ paths:
 
   /api/v1/auth/mfa/recovery-codes:
     post:
+      operationId: regenerateMFARecoveryCodes
       tags: [Auth]
       summary: Regenerate MFA recovery codes
       description: Requires a valid `mfa_manage` assertion. Replaces and invalidates all previous recovery codes; the new plaintext codes are returned only once.
@@ -720,6 +750,7 @@ paths:
 
   /api/v1/auth/mfa:
     delete:
+      operationId: disableMFA
       tags: [Auth]
       summary: Disable current user's MFA
       description: Requires a valid `mfa_manage` assertion. Deletes the TOTP secret, recovery codes, and all current step-up assertions. While the global policy is enabled, the last MFA-enabled platform administrator cannot disable MFA.
@@ -751,12 +782,14 @@ paths:
 
   /api/v1/auth/providers:
     get:
+      operationId: listAuthProviders
       tags: [Auth]
       summary: List auth providers
       responses:
         "200":
           description: Auth provider list.
     post:
+      operationId: createAuthProvider
       tags: [Auth]
       summary: Create auth provider
       requestBody:
@@ -771,6 +804,7 @@ paths:
 
   /api/v1/auth/providers/{providerId}:
     put:
+      operationId: updateAuthProvider
       tags: [Auth]
       summary: Update auth provider
       parameters:
@@ -787,12 +821,14 @@ paths:
 
   /api/v1/auth/admission-policy:
     get:
+      operationId: getAuthAdmissionPolicy
       tags: [Auth]
       summary: Get auth admission policy
       responses:
         "200":
           description: Auth admission policy.
     put:
+      operationId: updateAuthAdmissionPolicy
       tags: [Auth]
       summary: Update auth admission policy
       requestBody:
@@ -807,8 +843,12 @@ paths:
 
   /api/v1/auth/oidc/{providerId}/start:
     get:
+      operationId: startOIDC
       tags: [Auth]
       summary: Start OIDC login or binding flow
+      x-luna-cli:
+        hidden: true
+        exclusionReason: Protocol endpoint consumed by a browser, webhook, probe, stream, or terminal adapter instead of a regular CLI command.
       parameters:
         - $ref: "#/components/parameters/ProviderId"
         - name: mode
@@ -828,8 +868,12 @@ paths:
 
   /api/v1/auth/oidc/callback:
     get:
+      operationId: completeOIDC
       tags: [Auth]
       summary: Complete OIDC callback
+      x-luna-cli:
+        hidden: true
+        exclusionReason: Protocol endpoint consumed by a browser, webhook, probe, stream, or terminal adapter instead of a regular CLI command.
       parameters:
         - $ref: "#/components/parameters/OAuthState"
         - $ref: "#/components/parameters/OAuthCode"
@@ -839,6 +883,7 @@ paths:
 
   /api/v1/users/me:
     get:
+      operationId: getCurrentUser
       tags: [Users]
       summary: Get current user
       responses:
@@ -849,6 +894,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/CurrentUser"
     put:
+      operationId: updateCurrentUser
       tags: [Users]
       summary: Update current user preferences
       requestBody:
@@ -867,6 +913,7 @@ paths:
 
   /api/v1/users/me/password:
     put:
+      operationId: updateMyPassword
       tags: [Users]
       summary: Set or change the current user's local password
       requestBody:
@@ -880,6 +927,7 @@ paths:
 
   /api/v1/users/me/external-identities:
     get:
+      operationId: listMyExternalIdentities
       tags: [Users]
       summary: List current user's external identities
       responses:
@@ -888,6 +936,7 @@ paths:
 
   /api/v1/users/me/external-identities/{identityId}:
     delete:
+      operationId: unbindMyExternalIdentity
       tags: [Users]
       summary: Unbind current user's external identity
       parameters:
@@ -898,6 +947,7 @@ paths:
 
   /api/v1/users:
     get:
+      operationId: listUsers
       tags: [Users]
       summary: List users
       parameters:
@@ -914,6 +964,7 @@ paths:
         "200":
           description: Paginated user list.
     post:
+      operationId: createUser
       tags: [Users]
       summary: Create local user
       requestBody:
@@ -928,6 +979,7 @@ paths:
 
   /api/v1/users/{userId}:
     put:
+      operationId: updateUser
       tags: [Users]
       summary: Update user
       parameters:
@@ -944,6 +996,7 @@ paths:
 
   /api/v1/users/{userId}/mfa:
     delete:
+      operationId: adminResetUserMFA
       tags: [Users]
       summary: Reset another user's MFA enrollment
       description: Requires an interactive platform-administrator session and an active `user_admin_update` Step-up assertion. Deletes the target user's authenticator secret, recovery codes, and active Step-up assertions. Administrators cannot reset their own MFA through this endpoint and cannot remove the last enabled administrator MFA while the global policy is active.
@@ -977,6 +1030,7 @@ paths:
 
   /api/v1/configs/definitions:
     get:
+      operationId: listConfigDefinitions
       tags: [Configs]
       summary: List configurable app config definitions
       responses:
@@ -990,6 +1044,7 @@ paths:
 
   /api/v1/configs:
     put:
+      operationId: updateConfigs
       tags: [Configs]
       summary: Update app configs
       requestBody:
@@ -1002,6 +1057,24 @@ paths:
         "200":
           description: Updated config dictionary.
 
+    get:
+      operationId: getConfigs
+      tags:
+        - Configs
+      summary: Get Configs
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
   /api/v1/data-retention/catalog:
     get:
       operationId: listDataRetentionCatalog
@@ -1104,11 +1177,17 @@ paths:
 
   /api/v1/runtime/clusters/{clusterId}/pods/terminal/authorize:
     post:
+      operationId: authorizeRuntimeClusterPodTerminal
       tags: [Runtime]
       summary: Authorize a runtime-cluster Pod terminal connection
-      description: Normal HTTP preflight used before opening the Pod terminal WebSocket. It verifies the interactive session, platform-administrator role, target cluster, and `runtime_terminal` Step-up assertion. A missing assertion returns `mfa_required`, allowing the frontend to show the MFA dialog and retry. A 204 authorizes only the preflight; the WebSocket repeats all checks before upgrading and revalidates session, role, assertion, Pod identity, and platform ownership every three seconds while connected. Revocation or expiry closes the shell.
+      x-luna-cli:
+        classification: protocol-adapter
+        hidden: true
+        exclusionReason: Low-level terminal preflight consumed by the explicit CLI runtime-terminal protocol adapter.
+      description: Normal HTTP preflight used before opening the Pod terminal WebSocket. Browser callers may use their existing session cookie; Luna CLI may use its OAuth bearer token when an active `runtime_terminal` Step-up assertion already exists. Personal access tokens are rejected. The response contains a short-lived random one-time ticket bound to the user, browser session or Luna CLI OAuth grant, assertion, cluster, and Pod. The WebSocket passes this ticket in its query string, consumes it atomically, repeats all authorization checks before upgrading, and revalidates identity, role, assertion, Pod identity, and platform ownership every three seconds while connected. Browser WebSockets that omit a ticket retain the existing cookie-based flow. Revocation or expiry closes the shell.
       security:
         - SessionCookie: []
+        - BearerToken: []
       parameters:
         - $ref: "#/components/parameters/ClusterId"
         - name: namespace
@@ -1120,15 +1199,18 @@ paths:
           required: true
           schema: { type: string }
       responses:
-        "204":
-          description: Terminal preflight authorized. The WebSocket endpoint must still perform its own authorization checks.
+        "200":
+          description: One-time terminal ticket issued. The WebSocket endpoint must still atomically consume it and repeat authorization checks.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RuntimeTerminalAuthorization" }
         "400":
           description: Pod namespace or name is empty.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
         "401":
-          description: Interactive browser session is missing or invalid.
+          description: Browser session or Luna CLI OAuth bearer is missing, invalid, expired, or revoked.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -1142,9 +1224,15 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "503":
+          description: The shared production terminal-ticket store is unavailable (`runtime_terminal.ticket_unavailable`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
 
   /api/v1/runtime/clusters:
     get:
+      operationId: listRuntimeClusters
       tags: [Runtime]
       summary: List runtime clusters
       description: Returns the legacy array response when pagination parameters are omitted, or a paginated response when `page`/`pageSize` is supplied.
@@ -1165,8 +1253,33 @@ paths:
         "200":
           description: Runtime cluster list or paginated runtime cluster list.
 
+    post:
+      operationId: createRuntimeCluster
+      tags:
+        - Runtime
+      summary: Create Runtime Cluster
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuntimeClusterInput"
+      responses:
+        "201":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
   /api/v1/git/providers:
     get:
+      operationId: listGitProviders
       tags: [Git]
       summary: List Git providers
       parameters:
@@ -1178,6 +1291,7 @@ paths:
         "200":
           description: Git provider list.
     post:
+      operationId: createGitProvider
       tags: [Git]
       summary: Create Git provider
       requestBody:
@@ -1192,6 +1306,7 @@ paths:
 
   /api/v1/git/providers/{providerId}:
     put:
+      operationId: updateGitProvider
       tags: [Git]
       summary: Update Git provider
       parameters:
@@ -1206,6 +1321,7 @@ paths:
         "200":
           description: Updated Git provider.
     delete:
+      operationId: deleteGitProvider
       tags: [Git]
       summary: Delete Git provider
       parameters:
@@ -1216,8 +1332,12 @@ paths:
 
   /api/v1/git/providers/{providerId}/oauth/start:
     get:
+      operationId: startGitOAuth
       tags: [Git]
       summary: Start GitHub or Gitea OAuth flow
+      x-luna-cli:
+        hidden: true
+        exclusionReason: Protocol endpoint consumed by a browser, webhook, probe, stream, or terminal adapter instead of a regular CLI command.
       parameters:
         - $ref: "#/components/parameters/ProviderId"
         - name: redirect
@@ -1236,8 +1356,12 @@ paths:
 
   /api/v1/git/oauth/callback:
     get:
+      operationId: completeGitOAuth
       tags: [Git]
       summary: Complete Git OAuth callback
+      x-luna-cli:
+        hidden: true
+        exclusionReason: Protocol endpoint consumed by a browser, webhook, probe, stream, or terminal adapter instead of a regular CLI command.
       parameters:
         - $ref: "#/components/parameters/OAuthState"
         - $ref: "#/components/parameters/OAuthCode"
@@ -1247,8 +1371,12 @@ paths:
 
   /api/v1/git/webhooks/{bindingId}:
     post:
+      operationId: receiveGitWebhook
       tags: [Git]
       summary: Receive Git webhook event
+      x-luna-cli:
+        hidden: true
+        exclusionReason: Protocol endpoint consumed by a browser, webhook, probe, stream, or terminal adapter instead of a regular CLI command.
       parameters:
         - $ref: "#/components/parameters/BindingId"
       responses:
@@ -1259,6 +1387,7 @@ paths:
 
   /api/v1/git/accounts:
     get:
+      operationId: listGitAccounts
       tags: [Git]
       summary: List current user Git accounts
       parameters:
@@ -1270,6 +1399,7 @@ paths:
         "200":
           description: Git account list.
     post:
+      operationId: createGitAccount
       tags: [Git]
       summary: Create current user Git account manually
       requestBody:
@@ -1284,6 +1414,7 @@ paths:
 
   /api/v1/git/accounts/{accountId}:
     put:
+      operationId: updateGitAccount
       tags: [Git]
       summary: Update current user Git account
       parameters:
@@ -1298,6 +1429,7 @@ paths:
         "200":
           description: Updated Git account.
     delete:
+      operationId: deleteGitAccount
       tags: [Git]
       summary: Delete current user Git account
       parameters:
@@ -1308,6 +1440,7 @@ paths:
 
   /api/v1/git/accounts/{accountId}/refresh:
     post:
+      operationId: refreshGitAccount
       tags: [Git]
       summary: Refresh current user Git account token
       parameters:
@@ -1318,6 +1451,7 @@ paths:
 
   /api/v1/git/accounts/{accountId}/repositories:
     get:
+      operationId: listGitRepositories
       tags: [Git]
       summary: List repositories visible to a Git account
       parameters:
@@ -1334,6 +1468,7 @@ paths:
 
   /api/v1/git/accounts/{accountId}/repositories/{owner}/{repo}/branches:
     get:
+      operationId: listGitBranches
       tags: [Git]
       summary: List repository branches
       parameters:
@@ -1346,6 +1481,7 @@ paths:
 
   /api/v1/git/accounts/{accountId}/repositories/{owner}/{repo}/file:
     get:
+      operationId: readGitFile
       tags: [Git]
       summary: Read repository file content
       parameters:
@@ -1368,6 +1504,7 @@ paths:
 
   /api/v1/registries:
     get:
+      operationId: listArtifactRegistries
       tags: [Registries]
       summary: List artifact registries
       parameters:
@@ -1388,6 +1525,7 @@ paths:
         "200":
           description: Artifact registry list.
     post:
+      operationId: createArtifactRegistry
       tags: [Registries]
       summary: Create artifact registry
       requestBody:
@@ -1402,6 +1540,7 @@ paths:
 
   /api/v1/registries/{registryId}:
     put:
+      operationId: updateArtifactRegistry
       tags: [Registries]
       summary: Update artifact registry
       parameters:
@@ -1416,6 +1555,7 @@ paths:
         "200":
           description: Updated artifact registry.
     delete:
+      operationId: deleteArtifactRegistry
       tags: [Registries]
       summary: Delete artifact registry
       parameters:
@@ -1426,6 +1566,7 @@ paths:
 
   /api/v1/registries/{registryId}/test:
     post:
+      operationId: testArtifactRegistry
       tags: [Registries]
       summary: Test artifact registry connectivity
       parameters:
@@ -1436,6 +1577,7 @@ paths:
 
   /api/v1/registries/{registryId}/credentials:
     get:
+      operationId: listRegistryCredentials
       tags: [Registries]
       summary: List registry credentials
       parameters:
@@ -1453,6 +1595,7 @@ paths:
         "200":
           description: Registry credential list.
     post:
+      operationId: createRegistryCredential
       tags: [Registries]
       summary: Create registry credential
       parameters:
@@ -1469,6 +1612,7 @@ paths:
 
   /api/v1/registry-credentials:
     get:
+      operationId: listAllRegistryCredentials
       tags: [Registries]
       summary: List visible registry credentials across registries
       parameters:
@@ -1487,6 +1631,7 @@ paths:
 
   /api/v1/registries/{registryId}/credentials/{credentialId}:
     put:
+      operationId: updateRegistryCredential
       tags: [Registries]
       summary: Update registry credential
       parameters:
@@ -1506,6 +1651,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/RegistryCredential"
     delete:
+      operationId: deleteRegistryCredential
       tags: [Registries]
       summary: Delete registry credential
       parameters:
@@ -1517,6 +1663,7 @@ paths:
 
   /api/v1/container-images:
     get:
+      operationId: listContainerImages
       tags: [Registries]
       summary: List container image records
       parameters:
@@ -1536,6 +1683,7 @@ paths:
         "200":
           description: Container image list.
     post:
+      operationId: createContainerImage
       tags: [Registries]
       summary: Create container image record
       requestBody:
@@ -1579,6 +1727,7 @@ paths:
 
   /api/v1/projects:
     get:
+      operationId: listProjects
       tags: [Projects]
       summary: List projects
       description: Returns the legacy project array when pagination parameters are omitted. Returns a paginated object when page or pageSize is provided.
@@ -1604,6 +1753,7 @@ paths:
                       $ref: "#/components/schemas/Project"
                   - $ref: "#/components/schemas/PaginatedProjectList"
     post:
+      operationId: createProject
       tags: [Projects]
       summary: Create project
       requestBody:
@@ -1618,6 +1768,7 @@ paths:
 
   /api/v1/projects/pins:
     get:
+      operationId: listProjectPins
       tags: [Projects]
       summary: List current user's pinned projects
       responses:
@@ -1626,6 +1777,7 @@ paths:
 
   /api/v1/projects/{projectId}:
     get:
+      operationId: getProject
       tags: [Projects]
       summary: Get project
       parameters:
@@ -1634,6 +1786,7 @@ paths:
         "200":
           description: Project.
     put:
+      operationId: updateProject
       tags: [Projects]
       summary: Update project
       parameters:
@@ -1648,6 +1801,7 @@ paths:
         "200":
           description: Updated project.
     delete:
+      operationId: deleteProject
       tags: [Projects]
       summary: Delete project
       parameters:
@@ -1658,6 +1812,7 @@ paths:
 
   /api/v1/projects/{projectId}/pin:
     put:
+      operationId: pinProject
       tags: [Projects]
       summary: Pin project for current user
       parameters:
@@ -1668,6 +1823,7 @@ paths:
         "201":
           description: Created pinned project.
     delete:
+      operationId: unpinProject
       tags: [Projects]
       summary: Unpin project for current user
       parameters:
@@ -1678,6 +1834,7 @@ paths:
 
   /api/v1/projects/{projectId}/registries/default:
     get:
+      operationId: getDefaultArtifactRegistry
       tags: [Registries]
       summary: Get default artifact registry for a project
       parameters:
@@ -1688,6 +1845,7 @@ paths:
 
   /api/v1/projects/{projectId}/members:
     get:
+      operationId: listProjectMembers
       tags: [Projects]
       summary: List project members
       parameters:
@@ -1696,6 +1854,7 @@ paths:
         "200":
           description: Project member list.
     post:
+      operationId: createProjectMember
       tags: [Projects]
       summary: Create project member
       parameters:
@@ -1712,6 +1871,7 @@ paths:
 
   /api/v1/projects/{projectId}/members/{memberId}:
     put:
+      operationId: updateProjectMember
       tags: [Projects]
       summary: Update project member
       parameters:
@@ -1727,6 +1887,7 @@ paths:
         "200":
           description: Updated project member.
     delete:
+      operationId: deleteProjectMember
       tags: [Projects]
       summary: Delete project member
       parameters:
@@ -1738,6 +1899,7 @@ paths:
 
   /api/v1/projects/{projectId}/applications:
     get:
+      operationId: listApplications
       tags: [Applications]
       summary: List applications
       parameters:
@@ -1758,6 +1920,7 @@ paths:
         "200":
           description: Application list or paginated application list.
     post:
+      operationId: createApplication
       tags: [Applications]
       summary: Create application
       parameters:
@@ -1774,6 +1937,7 @@ paths:
 
   /api/v1/projects/{projectId}/applications/{applicationId}:
     get:
+      operationId: getApplication
       tags: [Applications]
       summary: Get application
       parameters:
@@ -1783,6 +1947,7 @@ paths:
         "200":
           description: Application.
     put:
+      operationId: updateApplication
       tags: [Applications]
       summary: Update application
       parameters:
@@ -1798,6 +1963,7 @@ paths:
         "200":
           description: Updated application.
     delete:
+      operationId: deleteApplication
       tags: [Applications]
       summary: Delete application
       parameters:
@@ -1809,6 +1975,7 @@ paths:
 
   /api/v1/projects/{projectId}/applications/{applicationId}/topology:
     get:
+      operationId: getApplicationTopology
       tags: [Applications]
       summary: Compute the current Kubernetes resource topology for an application
       parameters:
@@ -1824,6 +1991,7 @@ paths:
 
   /api/v1/projects/{projectId}/applications/{applicationId}/deployment-targets:
     get:
+      operationId: listDeploymentTargets
       tags: [Deployments]
       summary: List deployment targets for an application
       parameters:
@@ -1838,6 +2006,7 @@ paths:
                 type: array
                 items: { $ref: "#/components/schemas/DeploymentTarget" }
     post:
+      operationId: createDeploymentTarget
       tags: [Deployments]
       summary: Create a deployment target
       parameters:
@@ -1857,6 +2026,7 @@ paths:
 
   /api/v1/projects/{projectId}/applications/{applicationId}/deployment-targets/{targetId}:
     put:
+      operationId: updateDeploymentTarget
       tags: [Deployments]
       summary: Update a deployment target
       parameters:
@@ -1875,6 +2045,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/DeploymentTarget" }
     delete:
+      operationId: deleteDeploymentTarget
       tags: [Deployments]
       summary: Delete a deployment target
       parameters:
@@ -1887,8 +2058,13 @@ paths:
 
   /api/v1/projects/{projectId}/applications/{applicationId}/deployment-targets/{targetId}/data-export:
     get:
+      operationId: exportDeploymentTargetData
       tags: [Deployments]
       summary: Export persistent runtime data
+      x-luna-cli:
+        classification: protocol-adapter
+        hidden: true
+        exclusionReason: Raw gzip download consumed by the explicit CLI data-export protocol adapter.
       description: Consumes a short-lived, one-time export ticket issued by the authorize endpoint, then repeats the interactive session, project Owner/Admin, resource-state, and `data_export` Step-up checks. Personal access tokens are rejected. Each export uses an isolated temporary Pod and streams a gzip archive without persisting the ticket or archive in business tables.
       security:
         - SessionCookie: []
@@ -1949,8 +2125,13 @@ paths:
 
   /api/v1/projects/{projectId}/applications/{applicationId}/deployment-targets/{targetId}/data-export/authorize:
     post:
+      operationId: authorizeDeploymentTargetDataExport
       tags: [Deployments]
       summary: Authorize a persistent runtime data export
+      x-luna-cli:
+        classification: protocol-adapter
+        hidden: true
+        exclusionReason: Low-level one-time-ticket preflight consumed by the explicit CLI data-export protocol adapter.
       description: Requires an interactive project Owner/Admin session, a mutable project/application/deployment target, exportable runtime data, and an active `data_export` Step-up assertion when the global policy is enabled. Returns a random 60-second one-time ticket bound to the current user, session, project, application, and deployment target. Production uses the shared Redis ticket store and fails closed when Redis is unavailable.
       security:
         - SessionCookie: []
@@ -1997,19 +2178,28 @@ paths:
 
   /api/v1/projects/{projectId}/releases/{releaseId}/terminal/authorize:
     post:
+      operationId: authorizeReleaseRuntimeTerminal
       tags: [Deployments]
       summary: Authorize a release Web Console terminal connection
-      description: Normal HTTP preflight used before opening the release terminal WebSocket. It verifies project Owner/Admin/Developer access, project and deployment-target mutation state, the effective project/deployment `webConsoleEnabled` policy, and the `runtime_terminal` Step-up assertion. A missing assertion returns `mfa_required`, allowing the frontend to show the MFA dialog and retry. A 204 authorizes only the preflight; the WebSocket repeats all checks before upgrading and revalidates session, membership, role, resource state, Web Console policy, and assertion every three seconds while connected. Revocation or expiry closes the shell.
+      x-luna-cli:
+        classification: protocol-adapter
+        hidden: true
+        exclusionReason: Low-level terminal preflight consumed by the explicit CLI release-terminal protocol adapter.
+      description: Normal HTTP preflight used before opening the release terminal WebSocket. Browser callers may use their existing session cookie; Luna CLI may use its OAuth bearer token when an active `runtime_terminal` Step-up assertion already exists. Personal access tokens are rejected. The response contains a short-lived random one-time ticket bound to the user, browser session or Luna CLI OAuth grant, assertion, project, release, deployment target, cluster, and namespace. The WebSocket passes this ticket in its query string, consumes it atomically, repeats all authorization checks before upgrading, and revalidates identity, membership, role, resource state, Web Console policy, and assertion every three seconds while connected. Browser WebSockets that omit a ticket retain the existing cookie-based flow. Revocation or expiry closes the shell.
       security:
         - SessionCookie: []
+        - BearerToken: []
       parameters:
         - $ref: "#/components/parameters/ProjectId"
         - $ref: "#/components/parameters/ReleaseId"
       responses:
-        "204":
-          description: Terminal preflight authorized. The WebSocket endpoint must still perform its own authorization checks.
+        "200":
+          description: One-time terminal ticket issued. The WebSocket endpoint must still atomically consume it and repeat authorization checks.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RuntimeTerminalAuthorization" }
         "401":
-          description: Interactive browser session is missing or invalid.
+          description: Browser session or Luna CLI OAuth bearer is missing, invalid, expired, or revoked.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -2028,9 +2218,15 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "503":
+          description: The shared production terminal-ticket store is unavailable (`runtime_terminal.ticket_unavailable`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
 
   /api/v1/projects/{projectId}/applications/{applicationId}/deployment-targets/{targetId}/release-image-candidates:
     get:
+      operationId: listReleaseImageCandidates
       tags: [Applications]
       summary: List release image candidates
       description: Reads tags from the target registry first and falls back to saved build records when the registry is unavailable.
@@ -2048,6 +2244,7 @@ paths:
 
   /api/v1/projects/{projectId}/repository-bindings:
     get:
+      operationId: listRepositoryBindings
       tags: [Git]
       summary: List repository bindings for a project
       parameters:
@@ -2056,6 +2253,7 @@ paths:
         "200":
           description: Repository binding list.
     post:
+      operationId: createRepositoryBinding
       tags: [Git]
       summary: Bind an application to a Git repository
       parameters:
@@ -2072,6 +2270,7 @@ paths:
 
   /api/v1/projects/{projectId}/repository-bindings/{bindingId}:
     put:
+      operationId: updateRepositoryBinding
       tags: [Git]
       summary: Update repository binding
       parameters:
@@ -2087,6 +2286,7 @@ paths:
         "200":
           description: Updated repository binding.
     delete:
+      operationId: deleteRepositoryBinding
       tags: [Git]
       summary: Delete repository binding
       parameters:
@@ -2098,6 +2298,7 @@ paths:
 
   /api/v1/projects/{projectId}/repository-bindings/{bindingId}/webhook:
     post:
+      operationId: createRepositoryWebhook
       tags: [Git]
       summary: Create webhook for a repository binding
       parameters:
@@ -2138,6 +2339,7 @@ paths:
 
   /api/v1/access-tokens:
     get:
+      operationId: listAccessTokens
       tags: [AccessTokens]
       summary: List access tokens
       description: Returns only non-revoked access tokens.
@@ -2155,6 +2357,7 @@ paths:
         "200":
           description: Paginated access token list.
     post:
+      operationId: createAccessToken
       tags: [AccessTokens]
       summary: Create access token
       requestBody:
@@ -2169,6 +2372,7 @@ paths:
 
   /api/v1/access-tokens/{tokenId}:
     delete:
+      operationId: revokeAccessToken
       tags: [AccessTokens]
       summary: Revoke access token
       parameters:
@@ -2177,6 +2381,3523 @@ paths:
         "204":
           description: Revoked access token.
 
+  /api/v1/auth/oidc/callback-url:
+    get:
+      operationId: getOIDCCallbackURL
+      tags:
+        - Auth
+      summary: Get OIDCCallback URL
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/oauth/applications:
+    get:
+      operationId: listOAuthApplications
+      tags:
+        - OAuthApplications
+      summary: List OAuth Applications
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedOAuthApplications"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      operationId: createOAuthApplication
+      tags:
+        - OAuthApplications
+      summary: Create OAuth Application
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OAuthApplicationInput"
+      responses:
+        "201":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OAuthApplication"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/oauth/applications/{applicationId}:
+    put:
+      operationId: updateOAuthApplication
+      tags:
+        - OAuthApplications
+      summary: Update OAuth Application
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OAuthApplicationInput"
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OAuthApplication"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteOAuthApplication
+      tags:
+        - OAuthApplications
+      summary: Delete OAuth Application
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Resource deleted.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/oauth/applications/{applicationId}/rotate-secret:
+    post:
+      operationId: rotateOAuthApplicationSecret
+      tags:
+        - OAuthApplications
+      summary: Rotate OAuth Application Secret
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OAuthApplicationSecretResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/oauth/grants:
+    get:
+      operationId: listMyOAuthGrants
+      tags:
+        - OAuthApplications
+      summary: List My OAuth Grants
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedOAuthGrants"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/oauth/grants/{grantId}:
+    delete:
+      operationId: revokeMyOAuthGrant
+      tags:
+        - OAuthApplications
+      summary: Revoke My OAuth Grant
+      parameters:
+        - name: grantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Resource deleted.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/oauth/authorize:
+    get:
+      operationId: getOAuthAuthorizationRequest
+      tags:
+        - OAuthApplications
+      summary: Get OAuth Authorization Request
+      x-luna-cli:
+        hidden: true
+        exclusionReason: Protocol endpoint consumed by a browser, webhook, probe, stream, or terminal adapter instead of a regular CLI command.
+      parameters:
+        - name: client_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: redirect_uri
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: scope
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: state
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: code_challenge
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: code_challenge_method
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      operationId: decideOAuthAuthorization
+      tags:
+        - OAuthApplications
+      summary: Decide OAuth Authorization
+      x-luna-cli:
+        hidden: true
+        exclusionReason: Protocol endpoint consumed by a browser, webhook, probe, stream, or terminal adapter instead of a regular CLI command.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OAuthAuthorizationDecisionInput"
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/git/accounts/{accountId}/repositories/{owner}/{repo}/build-options:
+    get:
+      operationId: getGitRepositoryBuildOptions
+      tags:
+        - Git
+      summary: Get Git Repository Build Options
+      parameters:
+        - name: accountId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: owner
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: repo
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: ref
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/git/accounts/{accountId}/repositories/{owner}/{repo}/contents:
+    get:
+      operationId: listGitContents
+      tags:
+        - Git
+      summary: List Git Contents
+      parameters:
+        - name: accountId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: owner
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: repo
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: path
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: ref
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObjectList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/registries/{registryId}/image-template-default:
+    get:
+      operationId: getRegistryImageTemplateDefault
+      tags:
+        - Registries
+      summary: Get Registry Image Template Default
+      parameters:
+        - name: registryId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: projectId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: applicationId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: targetName
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: stage
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/registries/{registryId}/repositories/search:
+    get:
+      operationId: searchRegistryRepositories
+      tags:
+        - Registries
+      summary: Search Registry Repositories
+      parameters:
+        - name: registryId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedBusinessObjects"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/registries/{registryId}/repository-tags:
+    get:
+      operationId: listRegistryRepositoryTags
+      tags:
+        - Registries
+      summary: List Registry Repository Tags
+      parameters:
+        - name: registryId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: repository
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObjectList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/build/variable-sets:
+    get:
+      operationId: listBuildVariableSets
+      tags:
+        - Builds
+      summary: List Build Variable Sets
+      parameters:
+        - name: projectId
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObjectList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      operationId: createBuildVariableSet
+      tags:
+        - Builds
+      summary: Create Build Variable Set
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BuildVariableSetInput"
+      responses:
+        "201":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/build/variable-sets/{setId}:
+    put:
+      operationId: updateBuildVariableSet
+      tags:
+        - Builds
+      summary: Update Build Variable Set
+      parameters:
+        - name: setId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BuildVariableSetInput"
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteBuildVariableSet
+      tags:
+        - Builds
+      summary: Delete Build Variable Set
+      parameters:
+        - name: setId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Resource deleted.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/runtime/clusters/{clusterId}:
+    put:
+      operationId: updateRuntimeCluster
+      tags:
+        - Runtime
+      summary: Update Runtime Cluster
+      parameters:
+        - name: clusterId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuntimeClusterInput"
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteRuntimeCluster
+      tags:
+        - Runtime
+      summary: Delete Runtime Cluster
+      parameters:
+        - name: clusterId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Resource deleted.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/runtime/clusters/{clusterId}/test:
+    post:
+      operationId: testRuntimeCluster
+      tags:
+        - Runtime
+      summary: Test Runtime Cluster
+      parameters:
+        - name: clusterId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/runtime/clusters/{clusterId}/resources:
+    get:
+      operationId: listRuntimeClusterResources
+      tags:
+        - Runtime
+      summary: List Runtime Cluster Resources
+      parameters:
+        - name: clusterId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: kind
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: namespace
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: projectId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: applicationId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: environmentId
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObjectList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteRuntimeClusterResource
+      tags:
+        - Runtime
+      summary: Delete Runtime Cluster Resource
+      parameters:
+        - name: clusterId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: kind
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: namespace
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: name
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Resource deleted.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/runtime/clusters/{clusterId}/resource-yaml:
+    get:
+      operationId: getRuntimeClusterResourceYAML
+      tags:
+        - Runtime
+      summary: Get Runtime Cluster Resource YAML
+      parameters:
+        - name: clusterId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: kind
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: namespace
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: name
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/runtime/clusters/{clusterId}/resource-events:
+    get:
+      operationId: listRuntimeClusterResourceEvents
+      tags:
+        - Runtime
+      summary: List Runtime Cluster Resource Events
+      parameters:
+        - name: clusterId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: kind
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: namespace
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: name
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/runtime/clusters/{clusterId}/pods/terminal:
+    get:
+      operationId: streamRuntimeClusterPodTerminal
+      tags:
+        - Runtime
+      summary: Stream Runtime Cluster Pod Terminal
+      description: Opens the Pod terminal WebSocket. Luna CLI passes the short-lived one-time ticket returned by the authorize endpoint in the `ticket` query parameter; browser callers may omit it and continue using the existing session-cookie flow.
+      x-luna-cli:
+        classification: protocol-adapter
+        hidden: true
+        exclusionReason: WebSocket terminal transport consumed by the explicit CLI runtime-terminal protocol adapter.
+      parameters:
+        - name: clusterId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: namespace
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: name
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: container
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: ticket
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Short-lived one-time ticket returned by `authorizeRuntimeClusterPodTerminal`. Required for Luna CLI; omitted by the existing browser cookie flow.
+      responses:
+        "101":
+          description: WebSocket protocol switch accepted after the ticket or browser session is authorized.
+          content:
+            text/plain:
+              schema:
+                type: string
+  /api/v1/system-components:
+    get:
+      operationId: listSystemComponents
+      tags:
+        - System
+      summary: List System Components
+      parameters:
+        - name: componentId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: clusterId
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObjectList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/app-templates/{templateId}/system-install:
+    post:
+      operationId: installSystemAppTemplate
+      tags:
+        - AppTemplates
+      summary: Install System App Template
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SystemComponentInstallInput"
+      responses:
+        "201":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/notifications/presets:
+    get:
+      operationId: listNotificationPresets
+      tags:
+        - Notifications
+      summary: List Notification Presets
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObjectList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/notifications/presets/{presetId}/channels:
+    post:
+      operationId: createNotificationChannelFromPreset
+      tags:
+        - Notifications
+      summary: Create Notification Channel From Preset
+      parameters:
+        - name: presetId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotificationPresetChannelInput"
+      responses:
+        "201":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/notifications/channels:
+    get:
+      operationId: listNotificationChannels
+      tags:
+        - Notifications
+      summary: List Notification Channels
+      parameters:
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedBusinessObjects"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      operationId: createNotificationChannel
+      tags:
+        - Notifications
+      summary: Create Notification Channel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotificationChannelInput"
+      responses:
+        "201":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/notifications/channels/{channelId}:
+    put:
+      operationId: updateNotificationChannel
+      tags:
+        - Notifications
+      summary: Update Notification Channel
+      parameters:
+        - name: channelId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotificationChannelInput"
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteNotificationChannel
+      tags:
+        - Notifications
+      summary: Delete Notification Channel
+      parameters:
+        - name: channelId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Resource deleted.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/notifications/channels/{channelId}/test:
+    post:
+      operationId: testNotificationChannel
+      tags:
+        - Notifications
+      summary: Test Notification Channel
+      parameters:
+        - name: channelId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/notifications/templates:
+    get:
+      operationId: listNotificationTemplates
+      tags:
+        - Notifications
+      summary: List Notification Templates
+      parameters:
+        - name: eventType
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: adapterKind
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedBusinessObjects"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      operationId: createNotificationTemplate
+      tags:
+        - Notifications
+      summary: Create Notification Template
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotificationTemplateInput"
+      responses:
+        "201":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/notifications/templates/{templateId}:
+    put:
+      operationId: updateNotificationTemplate
+      tags:
+        - Notifications
+      summary: Update Notification Template
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotificationTemplateInput"
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteNotificationTemplate
+      tags:
+        - Notifications
+      summary: Delete Notification Template
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Resource deleted.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/notifications/rules:
+    get:
+      operationId: listNotificationRules
+      tags:
+        - Notifications
+      summary: List Notification Rules
+      parameters:
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedBusinessObjects"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      operationId: createNotificationRule
+      tags:
+        - Notifications
+      summary: Create Notification Rule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotificationRuleInput"
+      responses:
+        "201":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/notifications/rules/{ruleId}:
+    put:
+      operationId: updateNotificationRule
+      tags:
+        - Notifications
+      summary: Update Notification Rule
+      parameters:
+        - name: ruleId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotificationRuleInput"
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteNotificationRule
+      tags:
+        - Notifications
+      summary: Delete Notification Rule
+      parameters:
+        - name: ruleId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Resource deleted.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/notifications/deliveries:
+    get:
+      operationId: listNotificationDeliveries
+      tags:
+        - Notifications
+      summary: List Notification Deliveries
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: eventType
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedBusinessObjects"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/events:
+    get:
+      operationId: listPlatformEvents
+      tags:
+        - Events
+      summary: List Platform Events
+      parameters:
+        - name: scope
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: projectId
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+        - name: applicationId
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+        - name: deploymentTargetId
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+        - name: category
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+        - name: type
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+        - name: severity
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+        - name: status
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+        - name: dateFrom
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: dateTo
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+        - name: sortBy
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: sortOrder
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedBusinessObjects"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/events/catalog:
+    get:
+      operationId: listPlatformEventCatalog
+      tags:
+        - Events
+      summary: List Platform Event Catalog
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObjectList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/events/{eventId}:
+    get:
+      operationId: getPlatformEvent
+      tags:
+        - Events
+      summary: Get Platform Event
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/app-templates:
+    get:
+      operationId: listAppTemplates
+      tags:
+        - AppTemplates
+      summary: List App Templates
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObjectList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/projects/order:
+    put:
+      operationId: updateProjectOrder
+      tags:
+        - Projects
+      summary: Update Project Order
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectOrderInput"
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/projects/{projectId}/runtime-config-sets:
+    get:
+      operationId: listProjectRuntimeConfigSets
+      tags:
+        - Projects
+      summary: List Project Runtime Config Sets
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObjectList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      operationId: createProjectRuntimeConfigSet
+      tags:
+        - Projects
+      summary: Create Project Runtime Config Set
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectRuntimeConfigSetInput"
+      responses:
+        "201":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/projects/{projectId}/runtime-config-sets/{setId}:
+    put:
+      operationId: updateProjectRuntimeConfigSet
+      tags:
+        - Projects
+      summary: Update Project Runtime Config Set
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: setId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectRuntimeConfigSetInput"
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteProjectRuntimeConfigSet
+      tags:
+        - Projects
+      summary: Delete Project Runtime Config Set
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: setId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Resource deleted.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/projects/{projectId}/hooks:
+    get:
+      operationId: listProjectHookConfigs
+      tags:
+        - Projects
+      summary: List Project Hook Configs
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObjectList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      operationId: createProjectHookConfig
+      tags:
+        - Projects
+      summary: Create Project Hook Config
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectHookConfigInput"
+      responses:
+        "201":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/projects/{projectId}/hooks/{hookId}:
+    put:
+      operationId: updateProjectHookConfig
+      tags:
+        - Projects
+      summary: Update Project Hook Config
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: hookId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectHookConfigInput"
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteProjectHookConfig
+      tags:
+        - Projects
+      summary: Delete Project Hook Config
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: hookId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Resource deleted.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/projects/{projectId}/topology:
+    get:
+      operationId: getProjectTopology
+      tags:
+        - Topology
+      summary: Get Project Topology
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: stage
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: applicationId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: origins
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/projects/{projectId}/service-bindings:
+    get:
+      operationId: listServiceBindings
+      tags:
+        - Topology
+      summary: List Service Bindings
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObjectList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      operationId: createServiceBinding
+      tags:
+        - Topology
+      summary: Create Service Binding
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ServiceBindingInput"
+      responses:
+        "201":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/projects/{projectId}/service-bindings/{bindingId}:
+    put:
+      operationId: updateServiceBinding
+      tags:
+        - Topology
+      summary: Update Service Binding
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: bindingId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ServiceBindingInput"
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteServiceBinding
+      tags:
+        - Topology
+      summary: Delete Service Binding
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: bindingId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Resource deleted.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/projects/{projectId}/service-bindings/{bindingId}/check:
+    post:
+      operationId: checkServiceBinding
+      tags:
+        - Topology
+      summary: Check Service Binding
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: bindingId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/projects/{projectId}/topology-edges:
+    get:
+      operationId: listProjectTopologyEdges
+      tags:
+        - Topology
+      summary: List Project Topology Edges
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObjectList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      operationId: createProjectTopologyEdge
+      tags:
+        - Topology
+      summary: Create Project Topology Edge
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TopologyEdgeInput"
+      responses:
+        "201":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/projects/{projectId}/topology-edges/{edgeId}:
+    put:
+      operationId: updateProjectTopologyEdge
+      tags:
+        - Topology
+      summary: Update Project Topology Edge
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: edgeId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TopologyEdgeInput"
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteProjectTopologyEdge
+      tags:
+        - Topology
+      summary: Delete Project Topology Edge
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: edgeId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Resource deleted.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/projects/{projectId}/hook-runs:
+    get:
+      operationId: listProjectHookRuns
+      tags:
+        - Projects
+      summary: List Project Hook Runs
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: phase
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: buildRunId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: releaseId
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObjectList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/projects/{projectId}/hook-runs/{runId}/logs:
+    get:
+      operationId: getProjectHookRunLog
+      tags:
+        - Projects
+      summary: Get Project Hook Run Log
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: runId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/projects/{projectId}/app-templates/{templateId}/install:
+    post:
+      operationId: installAppTemplate
+      tags:
+        - Projects
+      summary: Install App Template
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppTemplateInstallInput"
+      responses:
+        "201":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/projects/{projectId}/member-candidates:
+    get:
+      operationId: searchProjectMemberCandidates
+      tags:
+        - Projects
+      summary: Search Project Member Candidates
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObjectList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/projects/{projectId}/applications/{applicationId}/deployment-targets/{targetId}/restart:
+    post:
+      operationId: restartDeploymentTarget
+      tags:
+        - Deployments
+      summary: Restart Deployment Target
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: applicationId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: targetId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/projects/{projectId}/applications/{applicationId}/deployment-targets/{targetId}/metrics/stream:
+    get:
+      operationId: streamDeploymentTargetMetrics
+      tags:
+        - Deployments
+      summary: Stream Deployment Target Metrics
+      x-luna-cli:
+        classification: protocol-adapter
+        hidden: true
+        exclusionReason: Streaming metrics transport consumed by the explicit CLI deployment-metrics protocol adapter.
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: applicationId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: targetId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: tail
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+      responses:
+        "200":
+          description: Protocol stream established.
+          content:
+            text/plain:
+              schema:
+                type: string
+  /api/v1/projects/{projectId}/build-runs:
+    get:
+      operationId: listBuildRuns
+      tags:
+        - Builds
+      summary: List Build Runs
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: applicationId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: deploymentTargetId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: triggerType
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: sourceBranch
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: createdBy
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedBusinessObjects"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/projects/{projectId}/build-runs/trigger:
+    post:
+      operationId: triggerBuildRun
+      tags:
+        - Builds
+      summary: Trigger Build Run
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BuildRunInput"
+      responses:
+        "201":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/projects/{projectId}/build-runs/{runId}:
+    get:
+      operationId: getBuildRun
+      tags:
+        - Builds
+      summary: Get Build Run
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: runId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteBuildRun
+      tags:
+        - Builds
+      summary: Delete Build Run
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: runId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Resource deleted.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/projects/{projectId}/build-runs/{runId}/retry:
+    post:
+      operationId: retryBuildRun
+      tags:
+        - Builds
+      summary: Retry Build Run
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: runId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/projects/{projectId}/build-runs/{runId}/cancel:
+    post:
+      operationId: cancelBuildRun
+      tags:
+        - Builds
+      summary: Cancel Build Run
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: runId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/projects/{projectId}/build-jobs:
+    get:
+      operationId: listBuildJobs
+      tags:
+        - Builds
+      summary: List Build Jobs
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: buildRunId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedBusinessObjects"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/projects/{projectId}/build-jobs/{jobId}:
+    get:
+      operationId: getBuildJob
+      tags:
+        - Builds
+      summary: Get Build Job
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/projects/{projectId}/build-jobs/{jobId}/logs:
+    get:
+      operationId: getBuildJobLogs
+      tags:
+        - Builds
+      summary: Get Build Job Logs
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/projects/{projectId}/build-jobs/{jobId}/logs/stream:
+    get:
+      operationId: streamBuildJobLogs
+      tags:
+        - Builds
+      summary: Stream Build Job Logs
+      x-luna-cli:
+        classification: protocol-adapter
+        hidden: true
+        exclusionReason: Streaming log transport consumed by the explicit CLI build-log protocol adapter.
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Protocol stream established.
+          content:
+            text/plain:
+              schema:
+                type: string
+  /api/v1/projects/{projectId}/releases:
+    get:
+      operationId: listReleases
+      tags:
+        - Releases
+      summary: List Releases
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: environmentId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: deploymentTargetId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedBusinessObjects"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      operationId: createRelease
+      tags:
+        - Releases
+      summary: Create Release
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReleaseInput"
+      responses:
+        "201":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/projects/{projectId}/releases/{releaseId}/logs:
+    get:
+      operationId: getReleaseLogs
+      tags:
+        - Releases
+      summary: Get Release Logs
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: releaseId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/projects/{projectId}/releases/{releaseId}/runtime-logs:
+    get:
+      operationId: getReleaseRuntimeLogs
+      tags:
+        - Releases
+      summary: Get Release Runtime Logs
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: releaseId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: tailLines
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+        - name: container
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/projects/{projectId}/releases/{releaseId}/exec:
+    post:
+      operationId: execReleaseRuntimeCommand
+      tags:
+        - Releases
+      summary: Exec Release Runtime Command
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: releaseId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReleaseRuntimeExecInput"
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/projects/{projectId}/releases/{releaseId}/terminal:
+    get:
+      operationId: streamReleaseRuntimeTerminal
+      tags:
+        - Releases
+      summary: Stream Release Runtime Terminal
+      description: Opens the release terminal WebSocket. Luna CLI passes the short-lived one-time ticket returned by the authorize endpoint in the `ticket` query parameter; browser callers may omit it and continue using the existing session-cookie flow.
+      x-luna-cli:
+        classification: protocol-adapter
+        hidden: true
+        exclusionReason: WebSocket terminal transport consumed by the explicit CLI release-terminal protocol adapter.
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: releaseId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: container
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: ticket
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Short-lived one-time ticket returned by `authorizeReleaseRuntimeTerminal`. Required for Luna CLI; omitted by the existing browser cookie flow.
+      responses:
+        "101":
+          description: WebSocket protocol switch accepted after the ticket or browser session is authorized.
+          content:
+            text/plain:
+              schema:
+                type: string
+  /api/v1/projects/{projectId}/releases/{releaseId}/rollback:
+    post:
+      operationId: rollbackRelease
+      tags:
+        - Releases
+      summary: Rollback Release
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: releaseId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/projects/{projectId}/gateway-routes:
+    get:
+      operationId: listGatewayRoutes
+      tags:
+        - Gateway
+      summary: List Gateway Routes
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObjectList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      operationId: createGatewayRoute
+      tags:
+        - Gateway
+      summary: Create Gateway Route
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GatewayRouteInput"
+      responses:
+        "201":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/projects/{projectId}/gateway-routes/{routeId}:
+    put:
+      operationId: updateGatewayRoute
+      tags:
+        - Gateway
+      summary: Update Gateway Route
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: routeId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GatewayRouteInput"
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteGatewayRoute
+      tags:
+        - Gateway
+      summary: Delete Gateway Route
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: routeId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Resource deleted.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/projects/{projectId}/gateway-routes/check-domain:
+    get:
+      operationId: checkGatewayDomain
+      tags:
+        - Gateway
+      summary: Check Gateway Domain
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: domainSuffix
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: host
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: routeId
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/projects/{projectId}/repository-bindings/{bindingId}/webhook/reconfigure:
+    post:
+      operationId: reconfigureRepositoryWebhook
+      tags:
+        - Projects
+      summary: Reconfigure Repository Webhook
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: bindingId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/billing/summary:
+    get:
+      operationId: getBillingSummary
+      tags:
+        - Billing
+      summary: Get Billing Summary
+      parameters:
+        - name: accountScope
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: userId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: projectId
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+        - name: periodStart
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: periodEnd
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BillingSummary"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/billing/deployment-spend:
+    get:
+      operationId: listBillingDeploymentSpend
+      tags:
+        - Billing
+      summary: List Billing Deployment Spend
+      parameters:
+        - name: userId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: projectId
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+        - name: periodStart
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: periodEnd
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedBusinessObjects"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/billing/ledger:
+    get:
+      operationId: listBillingLedgerEntries
+      tags:
+        - Billing
+      summary: List Billing Ledger Entries
+      parameters:
+        - name: userId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: projectId
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: periodStart
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: periodEnd
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedBusinessObjects"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/billing/usage-records:
+    get:
+      operationId: listBillingUsageRecords
+      tags:
+        - Billing
+      summary: List Billing Usage Records
+      parameters:
+        - name: userId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: projectId
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+        - name: meter
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: periodStart
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: periodEnd
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedBusinessObjects"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/billing/rate-rules:
+    get:
+      operationId: listBillingRateRules
+      tags:
+        - Billing
+      summary: List Billing Rate Rules
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObjectList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      operationId: updateBillingRateRules
+      tags:
+        - Billing
+      summary: Update Billing Rate Rules
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BillingRateRulesInput"
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/billing/wallet-transactions:
+    post:
+      operationId: createBillingWalletTransaction
+      tags:
+        - Billing
+      summary: Create Billing Wallet Transaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BillingWalletTransactionInput"
+      responses:
+        "201":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/billing/external-transactions:
+    post:
+      operationId: createExternalBillingTransaction
+      tags:
+        - Billing
+      summary: Create External Billing Transaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExternalBillingTransactionInput"
+      responses:
+        "201":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/billing/gateway-traffic/hello:
+    post:
+      operationId: createGatewayTrafficProbeHello
+      tags:
+        - Billing
+      summary: Create Gateway Traffic Probe Hello
+      x-luna-cli:
+        hidden: true
+        exclusionReason: Protocol endpoint consumed by a browser, webhook, probe, stream, or terminal adapter instead of a regular CLI command.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "201":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/billing/gateway-traffic:
+    post:
+      operationId: createGatewayTrafficUsage
+      tags:
+        - Billing
+      summary: Create Gateway Traffic Usage
+      x-luna-cli:
+        hidden: true
+        exclusionReason: Protocol endpoint consumed by a browser, webhook, probe, stream, or terminal adapter instead of a regular CLI command.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GatewayTrafficUsageInput"
+      responses:
+        "201":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/billing/gateway-traffic-status:
+    get:
+      operationId: getGatewayTrafficStatus
+      tags:
+        - Billing
+      summary: Get Gateway Traffic Status
+      responses:
+        "200":
+          description: Successful business response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessObject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
 components:
   securitySchemes:
     SessionCookie:
@@ -2307,6 +6028,26 @@ components:
       in: path
       required: true
       schema: { type: string }
+
+  responses:
+    BadRequest:
+      description: The request is invalid or cannot be processed.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Forbidden:
+      description: The authenticated principal is not allowed to perform this operation.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFound:
+      description: The requested resource was not found.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
 
   schemas:
     ErrorResponse:
@@ -2527,6 +6268,16 @@ components:
         ticket:
           type: string
           description: Random one-time ticket. The backend stores only its hash in production.
+        expiresAt:
+          type: string
+          format: date-time
+      required: [ticket, expiresAt]
+    RuntimeTerminalAuthorization:
+      type: object
+      properties:
+        ticket:
+          type: string
+          description: Random short-lived one-time terminal ticket. Only its hash is stored by the backend.
         expiresAt:
           type: string
           format: date-time
@@ -3241,3 +6992,432 @@ components:
         language: { type: string, enum: [zh-CN, en-US] }
         disabled: { type: boolean }
       required: [email, name]
+    BusinessObject:
+      type: object
+      description: Extensible business object returned by an API whose domain model is not shared across operations.
+      additionalProperties: true
+    BusinessObjectList:
+      type: array
+      items:
+        $ref: "#/components/schemas/BusinessObject"
+    PaginatedBusinessObjects:
+      type: object
+      required: [items, page, pageSize, total, totalPages]
+      properties:
+        items:
+          $ref: "#/components/schemas/BusinessObjectList"
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1 }
+        total: { type: integer, minimum: 0 }
+        totalPages: { type: integer, minimum: 0 }
+      additionalProperties: true
+    OAuthApplicationInput:
+      type: object
+      required: [name, redirectUris]
+      properties:
+        name: { type: string, minLength: 1 }
+        description: { type: string }
+        homepageUrl: { type: string, format: uri }
+        logoUrl: { type: string, format: uri }
+        redirectUris:
+          type: array
+          minItems: 1
+          items: { type: string, format: uri }
+        allowedScopes:
+          type: array
+          items: { type: string }
+        accessTokenLifetimeDays:
+          type: integer
+          minimum: 0
+          description: Zero configures a non-expiring access token.
+    OAuthAuthorizationDecisionInput:
+      type: object
+      required: [approved, clientId, redirectUri]
+      properties:
+        approved: { type: boolean }
+        clientId: { type: string }
+        redirectUri: { type: string, format: uri }
+        scope: { type: string }
+        state: { type: string }
+        codeChallenge: { type: string }
+        codeChallengeMethod: { type: string, enum: [S256] }
+    OAuthGrant:
+      type: object
+      required: [id, applicationId, userId, scopes, createdAt]
+      properties:
+        id: { type: string }
+        applicationId: { type: string }
+        applicationName: { type: string }
+        applicationLogoUrl: { type: string }
+        userId: { type: string }
+        scopes:
+          type: array
+          items: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        lastUsedAt: { type: string, format: date-time, nullable: true }
+    PaginatedOAuthApplications:
+      type: object
+      required: [items, page, pageSize, total, totalPages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/OAuthApplication"
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1 }
+        total: { type: integer, minimum: 0 }
+        totalPages: { type: integer, minimum: 0 }
+    PaginatedOAuthGrants:
+      type: object
+      required: [items, page, pageSize, total, totalPages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/OAuthGrant"
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1 }
+        total: { type: integer, minimum: 0 }
+        totalPages: { type: integer, minimum: 0 }
+    OAuthApplicationSecretResponse:
+      type: object
+      required: [application, clientSecret]
+      properties:
+        application:
+          $ref: "#/components/schemas/OAuthApplication"
+        clientSecret:
+          type: string
+          writeOnly: true
+          description: One-time plaintext client secret.
+    BuildVariableSetInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1 }
+        description: { type: string }
+        scope: { type: string, enum: [global, project, application] }
+        projectId: { type: string }
+        applicationId: { type: string }
+        variables:
+          type: object
+          additionalProperties: { type: string }
+        secrets:
+          type: object
+          writeOnly: true
+          additionalProperties: { type: string }
+        enabled: { type: boolean }
+    RuntimeClusterInput:
+      type: object
+      required: [name, type, endpoint, scope]
+      properties:
+        name: { type: string, minLength: 1 }
+        type: { type: string, enum: [kubernetes, k3s] }
+        endpoint: { type: string }
+        scope: { type: string, enum: [global, project, user] }
+        ownerRef: { type: string }
+        projectIds:
+          type: array
+          items: { type: string }
+        kubeconfig:
+          type: string
+          writeOnly: true
+        isDefault: { type: boolean }
+        maxConcurrentBuilds: { type: integer, minimum: 1 }
+        gatewayProvider: { type: string, enum: [gateway-api] }
+        gatewayRootDomain: { type: string }
+        gatewayDomainSuffixes:
+          type: array
+          items: { type: string }
+        gatewayPublicScheme: { type: string, enum: [http, https] }
+        gatewayPublicPort: { type: integer, minimum: 1, maximum: 65535 }
+        gatewayControllerType: { type: string, enum: [traefik, generic] }
+        gatewayClassName: { type: string }
+        gatewayName: { type: string }
+        gatewayNamespace: { type: string }
+        gatewayHttpListenerName: { type: string }
+        gatewayHttpListenerPort: { type: integer, minimum: 1, maximum: 65535 }
+        gatewayHttpsListenerName: { type: string }
+        gatewayHttpsListenerPort: { type: integer, minimum: 1, maximum: 65535 }
+        gatewayTlsSecretName: { type: string }
+        gatewayTlsSecretNamespace: { type: string }
+        gatewayCertIssuerKind: { type: string, enum: [Issuer, ClusterIssuer] }
+        gatewayCertIssuerName: { type: string }
+        gatewayCertificateNamespace: { type: string }
+        gatewayWildcardCertEnabled: { type: boolean }
+        gatewayWildcardCertDomain: { type: string }
+        gatewayWildcardCertSecretName: { type: string }
+        gatewayExternalTLSMode: { type: string, enum: [none, gateway, upstream] }
+        gatewayForwardedHeadersMode: { type: string, enum: [preserve, overwrite, none] }
+        gatewayTrustedProxyCIDRs: { type: string }
+        gatewayDefaultRequestHeaders: { type: string }
+        gatewayDefaultResponseHeaders: { type: string }
+        status: { type: string }
+    SystemComponentInstallInput:
+      type: object
+      required: [clusterId]
+      properties:
+        clusterId: { type: string }
+        namespace: { type: string }
+        values:
+          type: object
+          additionalProperties: true
+        parameters:
+          type: object
+          additionalProperties: { type: string }
+    NotificationChannelInput:
+      type: object
+      required: [name, adapterKind]
+      properties:
+        name: { type: string, minLength: 1 }
+        adapterKind: { type: string }
+        config:
+          type: object
+          additionalProperties: true
+        secrets:
+          type: object
+          writeOnly: true
+          additionalProperties: { type: string }
+        enabled: { type: boolean }
+    NotificationPresetChannelInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1 }
+        secrets:
+          type: object
+          writeOnly: true
+          additionalProperties: { type: string }
+        enabled: { type: boolean }
+    NotificationTemplateInput:
+      type: object
+      required: [name, eventType, adapterKind, locale]
+      properties:
+        name: { type: string, minLength: 1 }
+        eventType: { type: string }
+        adapterKind: { type: string }
+        locale: { type: string }
+        subjectTemplate: { type: string }
+        bodyTemplate: { type: string }
+        jsonBodyTemplate: { type: string }
+        enabled: { type: boolean }
+    NotificationRuleInput:
+      type: object
+      required: [name, eventTypes, channelIds]
+      properties:
+        name: { type: string, minLength: 1 }
+        eventTypes:
+          type: array
+          items: { type: string }
+        filter:
+          type: object
+          additionalProperties: true
+        channelIds:
+          type: array
+          items: { type: string }
+        templateId: { type: string }
+        locale: { type: string }
+        enabled: { type: boolean }
+    ProjectOrderInput:
+      type: object
+      required: [projectIds]
+      properties:
+        projectIds:
+          type: array
+          items: { type: string }
+    ProjectRuntimeConfigSetInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1 }
+        envVars: { type: string }
+        configFiles: { type: string }
+        secretRefs: { type: string }
+        secretFiles: { type: string }
+        enabled: { type: boolean }
+    ProjectHookConfigInput:
+      type: object
+      required: [name, script]
+      properties:
+        name: { type: string, minLength: 1 }
+        script: { type: string }
+        shell: { type: string }
+        timeoutSeconds: { type: integer, minimum: 1 }
+        failurePolicy: { type: string, enum: [fail, continue] }
+        enabled: { type: boolean }
+    ServiceBindingInput:
+      type: object
+      required: [sourceApplicationId, targetApplicationId]
+      properties:
+        sourceApplicationId: { type: string }
+        sourceDeploymentTargetId: { type: string }
+        targetApplicationId: { type: string }
+        targetDeploymentTargetId: { type: string }
+        targetPortName: { type: string }
+        targetPort: { type: integer, minimum: 1, maximum: 65535 }
+        protocol: { type: string }
+        path: { type: string }
+        injectionMode: { type: string }
+        urlEnvVar: { type: string }
+        hostEnvVar: { type: string }
+        portEnvVar: { type: string }
+        enabled: { type: boolean }
+    TopologyEdgeInput:
+      allOf:
+        - $ref: "#/components/schemas/ServiceBindingInput"
+        - type: object
+          properties:
+            relationType: { type: string }
+    AppTemplateInstallInput:
+      type: object
+      required: [applicationName, applicationIdentifier, deploymentName, stage, clusterId]
+      properties:
+        applicationName: { type: string }
+        applicationIdentifier: { type: string }
+        deploymentName: { type: string }
+        stage: { type: string }
+        clusterId: { type: string }
+        namespace: { type: string }
+        imageRef: { type: string }
+        replicas: { type: integer, minimum: 0 }
+        cpuRequest: { type: string }
+        memoryRequest: { type: string }
+        dataCapacity: { type: string }
+        installNow: { type: boolean }
+        values:
+          type: object
+          additionalProperties: true
+    BuildRunInput:
+      type: object
+      required: [applicationId, deploymentTargetId]
+      properties:
+        applicationId: { type: string }
+        deploymentTargetId: { type: string }
+        buildVariableSetIds:
+          type: array
+          items: { type: string }
+        triggerType: { type: string }
+        sourceBranch: { type: string }
+        sourceTag: { type: string }
+        sourceCommit: { type: string }
+        dockerfilePath: { type: string }
+        buildContext: { type: string }
+        buildDirectory: { type: string }
+        buildArgs:
+          type: object
+          additionalProperties: { type: string }
+        buildEnvironmentId: { type: string }
+        buildCpuRequest: { type: string }
+        buildMemoryRequest: { type: string }
+        buildTimeoutSeconds: { type: integer, minimum: 1 }
+        targetRegistryId: { type: string }
+        targetImageRef: { type: string }
+        targetRepository: { type: string }
+        targetTag: { type: string }
+        imageRef: { type: string }
+        cacheConfig:
+          type: object
+          additionalProperties: true
+    ReleaseInput:
+      type: object
+      required: [applicationId, deploymentTargetId]
+      properties:
+        applicationId: { type: string }
+        environmentId: { type: string }
+        deploymentTargetId: { type: string }
+        buildRunId: { type: string }
+        imageRef: { type: string }
+        forceImagePull: { type: boolean }
+        type: { type: string }
+        status: { type: string }
+        revision: { type: string }
+        message: { type: string }
+    ReleaseRuntimeExecInput:
+      type: object
+      required: [command]
+      properties:
+        command:
+          oneOf:
+            - type: string
+            - type: array
+              items: { type: string }
+        container: { type: string }
+        stdin: { type: string }
+        tty: { type: boolean }
+    GatewayRouteInput:
+      type: object
+      required: [applicationId, deploymentTargetId]
+      properties:
+        applicationId: { type: string }
+        environmentId: { type: string }
+        deploymentTargetId: { type: string }
+        host: { type: string }
+        domainSuffix: { type: string }
+        path: { type: string }
+        servicePort: { type: integer, minimum: 1, maximum: 65535 }
+        tlsMode: { type: string }
+        dnsStatus: { type: string }
+        status: { type: string }
+        enabled: { type: boolean }
+        isDefault: { type: boolean }
+        parentGatewayName: { type: string }
+        parentGatewayNamespace: { type: string }
+        sectionName: { type: string }
+        pathMatchType: { type: string, enum: [PathPrefix, Exact] }
+        requestHeaders: { type: string }
+        responseHeaders: { type: string }
+        urlRewrite: { type: string }
+        requestRedirect: { type: string }
+        backendWeight: { type: integer, minimum: 1 }
+        hostnameAliases: { type: string }
+    BillingRateRulesInput:
+      type: object
+      required: [rules]
+      properties:
+        rules:
+          type: array
+          items:
+            type: object
+            required: [meter, creditsPerUnit, enabled]
+            properties:
+              meter: { type: string }
+              creditsPerUnit: { type: number, minimum: 0 }
+              enabled: { type: boolean }
+    BillingWalletTransactionInput:
+      type: object
+      required: [amountCredits, type]
+      properties:
+        amountCredits: { type: number }
+        type: { type: string }
+        description: { type: string }
+        userId: { type: string }
+    ExternalBillingTransactionInput:
+      allOf:
+        - $ref: "#/components/schemas/BillingWalletTransactionInput"
+        - type: object
+          required: [idempotencyKey]
+          properties:
+            idempotencyKey: { type: string, minLength: 1 }
+    GatewayTrafficUsageInput:
+      type: object
+      required: [routeId, responseBytes, requestCount, periodStart, periodEnd]
+      properties:
+        routeId: { type: string }
+        responseBytes: { type: integer, format: int64, minimum: 0 }
+        requestCount: { type: integer, format: int64, minimum: 0 }
+        periodStart: { type: string, format: date-time }
+        periodEnd: { type: string, format: date-time }
+    BillingSummary:
+      type: object
+      properties:
+        userId: { type: string }
+        balanceCredits: { type: number }
+        periodSpendCredits: { type: number }
+        todaySpendCredits: { type: number }
+        unsettledCredits: { type: number }
+        buildSpendCredits: { type: number }
+        runtimeSpendCredits: { type: number }
+        storageSpendCredits: { type: number }
+        gatewaySpendCredits: { type: number }
+        periodStart: { type: string, format: date-time }
+        periodEnd: { type: string, format: date-time }

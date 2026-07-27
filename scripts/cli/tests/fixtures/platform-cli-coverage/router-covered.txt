@@ -1,0 +1,10 @@
+package fixture
+
+func registerRoutes(router *gin.Engine) {
+	v1 := router.Group("/api/v1")
+	v1.GET("/projects", handlers.ListProjects)
+	v1.POST("/oauth/device/authorization", handlers.StartOAuthDeviceAuthorization)
+	v1.GET("/auth/oidc/:providerId/start", handlers.StartOIDC)
+	v1.POST("/git/webhooks/:bindingId", handlers.ReceiveGitWebhook)
+	v1.POST("/public/configs", handlers.PublicConfigs)
+}

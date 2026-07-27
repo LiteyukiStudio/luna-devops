@@ -17,7 +17,7 @@ CLI 目前处于预发布阶段。源码清单使用 `0.0.0-development` 占位�
 - `key=value`、JSON、文件和标准输入参数解析；
 - 人类可读输出与稳定 JSON Envelope；
 - 本地命令注册、帮助目录、Shell Completion 和 OpenAPI 命令注册器；
-- 从 OpenAPI 生成并注册全部 110 个已登记操作，连同本地和协议命令共 125 条；
+- 从 OpenAPI 生成并注册普通业务 HTTP 命令，并为特殊传输提供显式协议命令；
 - 面向人类的 `login`、`logout`、`whoami`、`doctor` 顶层短命令；
 - 检查当前登录、认证、服务端版本、OpenAPI 契约和能力开关的 `health doctor` 诊断；
 - 在每个 OpenAPI 业务命令前自动协商 API 代际、最低 CLI 版本和契约摘要，并按实例缓存成功结果；
@@ -25,7 +25,16 @@ CLI 目前处于预发布阶段。源码清单使用 `0.0.0-development` 占位�
 
 `cli/src/entry.ts` 已作为 npm 与 Bun 二进制的统一入口，共享契约和客户端会被安全打包进发布产物。预发布版本已经发布到 npm，且发布产物会经过 npm/pnpm 全局安装、中文帮助、机器 Help 和受支持独立二进制的 smoke。
 
-当前明确未完成的能力包括：OpenAPI 尚未覆盖的后端公开路由、Authorization Code + PKCE 的 CLI 入口、SSE/WebSocket/下载协议适配和中高风险服务端执行计划。OAuth Device Code、刷新、吊销和 Bearer Step-up MFA 已接通；普通 OpenAPI 业务命令会自动读取 `/api/v1/meta` 并在不兼容时 fail closed；`luna doctor` 用于主动查看详细诊断。通用 `api request` 仅保留为人类诊断逃生口，不参与业务能力伪装。高风险 API 在计划协议完成前不会被 `yes=true` 绕过。
+普通 OpenAPI 业务命令会自动读取 `/api/v1/meta` 并在不兼容时 fail
+closed；`luna doctor` 用于主动查看详细诊断。标记为 hidden 的浏览器回调、
+Webhook、内部接收器和底层协议操作不会注册为 canonical raw command，SSE、
+下载和终端等能力只通过对应的专用协议命令提供。`high` 和 `critical` 风险操作
+在交互终端中必须逐次明确确认；非交互或 Agent 模式必须显式传入 `--yes`，
+否则以稳定的 `confirmation_required` 错误拒绝。CLI 的确认只表示调用意图，
+后端权限、Scope 与 Step-up MFA 仍是最终安全裁决。通用 `api request` 仅保留为
+人类诊断逃生口，不参与业务能力伪装。终端和数据导出要求 CLI OAuth 登录与
+对应 purpose 的有效 Step-up；个人访问令牌不能满足或绕过这一协议授权。
+覆盖数量与比例不在本文维护，以 `pnpm check:platform-cli-coverage` 的实时输出为准。
 
 ## 安装
 
@@ -77,8 +86,11 @@ luna --lang zh-CN project get-projects --help
 npm 的 `latest` 与 `beta` 是独立更新通道。测试预发布版本时必须显式安装
 `@beta`，普通的全局更新不会从稳定版自动切换到预发布版。
 
-AI Skills 会在此基础上使用 `luna help catalog ... agent=true` 和
-`luna help command ... agent=true` 获取稳定 JSON 契约，让执行更准确；CLI 本身不依赖 Skills。
+AI Skills 会在此基础上使用
+`luna help catalog ... output=json interactive=false agent=true` 和
+`luna help command ... output=json interactive=false agent=true`
+获取稳定 JSON 契约。Skill 发起的每条命令都固定使用这三个参数，不依赖本地
+默认输出或交互状态；CLI 本身不依赖 Skills。
 Skills 与 CLI 使用相同版本并由同一个 `cli-v*` GitHub Release 发布，安装时
 必须选择与本地 CLI 完全相同版本的
 `luna-devops-<version>.skill`。该文件内部按领域拆分 `references/`，由 Agent
@@ -119,11 +131,22 @@ luna <category> <tool> key=value
 
 ### Current status
 
-The CLI is in prerelease. The source manifest uses the `0.0.0-development` placeholder and `private: true` to prevent accidental publication; release versions are injected from `cli-v*` tags. It includes one active server/account login, OAuth Device Code authentication with refresh and revocation, an explicit personal-access-token fallback, a default project, structured input and output, command discovery, 110 OpenAPI business operations plus local and protocol commands, and release validation.
+The CLI is in prerelease. The source manifest uses the `0.0.0-development` placeholder and `private: true` to prevent accidental publication; release versions are injected from `cli-v*` tags. It includes one active server/account login, OAuth Device Code authentication with refresh and revocation, an explicit personal-access-token fallback, a default project, structured input and output, OpenAPI-generated business commands, dedicated protocol commands, command discovery, and release validation. Live coverage totals and ratios come only from `pnpm check:platform-cli-coverage`.
 
 `cli/src/entry.ts` is the shared npm and Bun entry point, and workspace packages are bundled safely into the distribution. Prereleases are available on npm and pass npm/pnpm global-install, localized Help, machine Help, and supported standalone-binary smoke tests.
 
-Undocumented server routes, the CLI entry point for Authorization Code + PKCE, streaming transports, downloads, and server-issued plans remain release work. OAuth Device Code, refresh, revocation, and OAuth Bearer step-up MFA are implemented. Canonical OpenAPI commands automatically negotiate the API generation, minimum CLI version, and OpenAPI digest through `/api/v1/meta`; `luna doctor` exposes the detailed diagnostics. Generic `api request` remains a human-only diagnostic escape hatch. High-risk API operations fail closed until the server-plan protocol exists.
+Canonical OpenAPI commands automatically negotiate the API generation, minimum
+CLI version, and OpenAPI digest through `/api/v1/meta`; `luna doctor` exposes
+the detailed diagnostics. Hidden browser callbacks, webhooks, internal receivers,
+and low-level protocol operations are not registered as canonical raw commands;
+SSE, downloads, and terminals are exposed only through their dedicated protocol
+commands. High- and critical-risk operations require an explicit interactive
+confirmation, or `--yes` in non-interactive and agent mode. CLI confirmation
+records caller intent only: server permissions, scopes, and step-up MFA remain
+authoritative. Terminal and data-export protocols require a CLI OAuth login and
+a valid step-up assertion for the matching purpose; personal access tokens cannot
+satisfy or bypass that authorization. Generic `api request` remains a human-only
+diagnostic escape hatch.
 
 ### Installation
 

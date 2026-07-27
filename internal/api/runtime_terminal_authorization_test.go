@@ -15,19 +15,19 @@ func TestRuntimeTerminalAuthorizationState(t *testing.T) {
 	now := time.Now()
 	binding := runtimeTerminalAuthorizationBinding{
 		UserID:                    "usr_test",
-		SessionID:                 "ses_test",
+		SubjectID:                 "ses_test",
 		AssertionID:               "mfaas_test",
 		AssertionRequired:         true,
 		AssertionAbsoluteDeadline: now.Add(20 * time.Minute),
 		Deadline:                  now.Add(20 * time.Minute),
 	}
 	activeState := runtimeTerminalAuthorizationState{
-		Session: model.UserSession{ID: binding.SessionID, UserID: binding.UserID, ExpiresAt: now.Add(time.Hour)},
+		Session: model.UserSession{ID: binding.SubjectID, UserID: binding.UserID, ExpiresAt: now.Add(time.Hour)},
 		User:    model.User{ID: binding.UserID},
 		Assertion: model.StepUpAssertion{
 			ID:                binding.AssertionID,
 			UserID:            binding.UserID,
-			SessionID:         binding.SessionID,
+			SessionID:         binding.SubjectID,
 			Purpose:           stepUpPurposeRuntimeTerminal,
 			IdleExpiresAt:     now.Add(10 * time.Minute),
 			AbsoluteExpiresAt: binding.AssertionAbsoluteDeadline,
@@ -82,9 +82,9 @@ func TestRuntimeTerminalAuthorizationState(t *testing.T) {
 
 func TestRuntimeTerminalAuthorizationStateWithoutMFAStillRequiresSessionAndAuthorization(t *testing.T) {
 	now := time.Now()
-	binding := runtimeTerminalAuthorizationBinding{UserID: "usr_test", SessionID: "ses_test", Deadline: now.Add(time.Hour)}
+	binding := runtimeTerminalAuthorizationBinding{UserID: "usr_test", SubjectID: "ses_test", Deadline: now.Add(time.Hour)}
 	state := runtimeTerminalAuthorizationState{
-		Session:              model.UserSession{ID: binding.SessionID, UserID: binding.UserID, ExpiresAt: now.Add(time.Hour)},
+		Session:              model.UserSession{ID: binding.SubjectID, UserID: binding.UserID, ExpiresAt: now.Add(time.Hour)},
 		User:                 model.User{ID: binding.UserID},
 		AuthorizationAllowed: true,
 	}
@@ -94,6 +94,137 @@ func TestRuntimeTerminalAuthorizationStateWithoutMFAStillRequiresSessionAndAutho
 	state.AuthorizationAllowed = false
 	if state.active(binding, now) {
 		t.Fatal("business authorization removal must cancel a terminal even when step-up MFA is disabled")
+	}
+}
+
+func TestRuntimeClusterPodTerminalTicketIsOneTimeAndResourceBound(t *testing.T) {
+	handlers := &Handlers{mode: "test"}
+	now := time.Now()
+	binding := runtimeTerminalAuthorizationBinding{
+		UserID:    "usr_runtime_pod_ticket",
+		SubjectID: "ses_runtime_pod_ticket",
+		Deadline:  now.Add(time.Hour),
+	}
+	reference := runtimeClusterPodTerminalAuthorizationReference{
+		ClusterID:          "rcl_runtime_pod_ticket",
+		ClusterKubeconfig:  "sec_runtime_pod_ticket",
+		Namespace:          "ns-runtime-pod-ticket",
+		Name:               "pod-runtime-pod-ticket",
+		ProjectID:          "prj_runtime_pod_ticket",
+		ApplicationID:      "app_runtime_pod_ticket",
+		DeploymentTargetID: "dplt_runtime_pod_ticket",
+		ReleaseID:          "rel_runtime_pod_ticket",
+	}
+
+	ticket, expiresAt, err := handlers.issueRuntimeTerminalTicket(context.Background(), binding, "runtime_pod", reference)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if expiresAt.Before(now.Add(runtimeTerminalTicketTTL-time.Second)) ||
+		expiresAt.After(now.Add(runtimeTerminalTicketTTL+time.Second)) {
+		t.Fatalf("ticket expiry %s is outside the expected short TTL", expiresAt)
+	}
+	if _, found := runtimeTerminalMemoryTickets.Load(ticket); found {
+		t.Fatal("raw terminal ticket must not be stored")
+	}
+	if _, found := runtimeTerminalMemoryTickets.Load(hashToken(ticket)); !found {
+		t.Fatal("hashed terminal ticket was not stored")
+	}
+
+	value, ok, err := handlers.consumeRuntimeTerminalTicket(context.Background(), ticket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || value.UserID != binding.UserID || value.Authorization.SubjectID != binding.SubjectID {
+		t.Fatalf("consumed ticket is not bound to the expected user/session: %#v", value)
+	}
+	if !value.matches("runtime_pod", reference) {
+		t.Fatal("ticket did not match its runtime Pod resource")
+	}
+	otherReference := reference
+	otherReference.Name = "another-pod"
+	if value.matches("runtime_pod", otherReference) {
+		t.Fatal("ticket must not match another runtime Pod")
+	}
+	if _, ok, err := handlers.consumeRuntimeTerminalTicket(context.Background(), ticket); err != nil || ok {
+		t.Fatalf("consuming a terminal ticket twice = (%v, %v), want (false, nil)", ok, err)
+	}
+}
+
+func TestReleaseRuntimeTerminalTicketBindsOAuthGrantAssertionAndResource(t *testing.T) {
+	handlers := &Handlers{mode: "test"}
+	now := time.Now()
+	grantID := "oagr_release_terminal_ticket"
+	binding := runtimeTerminalAuthorizationBinding{
+		UserID:                    "usr_release_terminal_ticket",
+		SubjectID:                 oauthAssertionSubject(grantID),
+		AssertionID:               "mfaas_release_terminal_ticket",
+		AssertionRequired:         true,
+		AssertionAbsoluteDeadline: now.Add(20 * time.Minute),
+		Deadline:                  now.Add(20 * time.Minute),
+	}
+	reference := releaseRuntimeTerminalAuthorizationReference{
+		ProjectID:          "prj_release_terminal_ticket",
+		ApplicationID:      "app_release_terminal_ticket",
+		ReleaseID:          "rel_release_terminal_ticket",
+		DeploymentTargetID: "dplt_release_terminal_ticket",
+		ClusterID:          "rcl_release_terminal_ticket",
+		ClusterKubeconfig:  "sec_release_terminal_ticket",
+		Namespace:          "ns-release-terminal-ticket",
+	}
+
+	ticket, _, err := handlers.issueRuntimeTerminalTicket(context.Background(), binding, "release", reference)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, ok, err := handlers.consumeRuntimeTerminalTicket(context.Background(), ticket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("expected the release terminal ticket to be consumable")
+	}
+	if value.Authorization.SubjectID != oauthAssertionSubject(grantID) ||
+		value.Authorization.AssertionID != binding.AssertionID ||
+		!value.Authorization.AssertionRequired {
+		t.Fatalf("release ticket lost its OAuth grant or MFA assertion binding: %#v", value.Authorization)
+	}
+	if !value.matches("release", reference) {
+		t.Fatal("ticket did not match its release resource")
+	}
+	otherReference := reference
+	otherReference.ReleaseID = "rel_other"
+	if value.matches("release", otherReference) {
+		t.Fatal("ticket must not match another release")
+	}
+
+	activeState := runtimeTerminalAuthorizationState{
+		OAuthGrant: model.OAuthGrant{
+			ID:            grantID,
+			ApplicationID: lunaCLIApplicationID,
+			UserID:        binding.UserID,
+		},
+		OAuthApplication: model.OAuthApplication{ID: lunaCLIApplicationID},
+		User:             model.User{ID: binding.UserID},
+		Assertion: model.StepUpAssertion{
+			ID:                binding.AssertionID,
+			UserID:            binding.UserID,
+			SessionID:         binding.SubjectID,
+			Purpose:           stepUpPurposeRuntimeTerminal,
+			IdleExpiresAt:     now.Add(10 * time.Minute),
+			AbsoluteExpiresAt: binding.AssertionAbsoluteDeadline,
+		},
+		AuthorizationAllowed: true,
+	}
+	if !activeState.active(binding, now) {
+		t.Fatal("expected an active Luna CLI OAuth grant and assertion to authorize the ticket")
+	}
+	activeState.OAuthGrant.RevokedAt = &now
+	if activeState.active(binding, now) {
+		t.Fatal("revoking the OAuth grant must revoke release terminal authorization")
+	}
+	if _, ok, err := handlers.consumeRuntimeTerminalTicket(context.Background(), ticket); err != nil || ok {
+		t.Fatalf("consuming a release terminal ticket twice = (%v, %v), want (false, nil)", ok, err)
 	}
 }
 
@@ -259,7 +390,7 @@ func createRuntimeTerminalAuthorizationFixture(t *testing.T, db *gorm.DB, now ti
 	}
 	return runtimeTerminalAuthorizationBinding{
 		UserID:                    user.ID,
-		SessionID:                 session.ID,
+		SubjectID:                 session.ID,
 		AssertionID:               assertion.ID,
 		AssertionRequired:         true,
 		AssertionAbsoluteDeadline: assertion.AbsoluteExpiresAt,

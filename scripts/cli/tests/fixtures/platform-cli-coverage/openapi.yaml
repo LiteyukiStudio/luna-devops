@@ -1,0 +1,65 @@
+openapi: 3.1.0
+info:
+  title: Coverage fixture
+  version: 1.0.0
+paths:
+  /api/v1/projects:
+    get:
+      tags:
+        - Projects
+      operationId: listProjects
+      x-luna-cli:
+        command: project.list
+        classification: business-command
+        risk: low
+      responses:
+        "200":
+          description: OK
+  /api/v1/public/configs:
+    post:
+      tags:
+        - Configs
+      operationId: getPublicConfigs
+      x-luna-cli:
+        command: config.public
+        classification: business-command
+        risk: low
+      responses:
+        "200":
+          description: OK
+  /api/v1/oauth/device/authorization:
+    post:
+      tags:
+        - Auth
+      operationId: startOAuthDeviceAuthorization
+      x-luna-cli:
+        classification: protocol-adapter
+        hidden: true
+        exclusionReason: Device authorization is consumed by the login adapter.
+      responses:
+        "200":
+          description: OK
+  /api/v1/auth/oidc/{providerId}/start:
+    get:
+      tags:
+        - Auth
+      operationId: startOIDC
+      x-luna-cli:
+        classification: browser-callback
+        hidden: true
+        exclusionReason: Starts the fixture browser authorization redirect.
+      responses:
+        "302":
+          description: Redirect
+  /api/v1/git/webhooks/{bindingId}:
+    post:
+      tags:
+        - Git
+      operationId: receiveGitWebhook
+      x-luna-cli:
+        classification: webhook-receiver
+        hidden: true
+        exclusionReason: Receives signed fixture webhook events.
+      responses:
+        "200":
+          description: OK

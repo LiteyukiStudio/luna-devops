@@ -216,7 +216,6 @@ export const resources = {
         service_failure: 'The service is temporarily unavailable.',
         confirmation_required: 'This operation requires confirmation.',
         operation_cancelled: 'Operation cancelled.',
-        server_plan_required: 'This high-risk operation requires a server-issued execution plan.',
       },
       table: {
         name: 'Name',
@@ -444,7 +443,6 @@ export const resources = {
         service_failure: '服务暂时不可用。',
         confirmation_required: '此操作需要先确认。',
         operation_cancelled: '操作已取消。',
-        server_plan_required: '此高风险操作需要服务端签发执行计划。',
       },
       table: {
         name: '名称',

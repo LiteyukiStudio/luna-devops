@@ -39,13 +39,36 @@ CLI changes run these checks:
 
 1. Install the locked pnpm workspace.
 2. Regenerate the API contract and reject drift.
-3. Read machine Help and verify every paired Skill command, Agent argument, and capability boundary.
-4. Run TypeScript typecheck, ESLint, unit tests, and the build.
-5. Create a real npm tarball and validate its file allowlist.
-6. Install the same tarball globally with npm and pnpm in clean temporary directories.
-7. Build a Bun baseline binary for the Linux CI host and run command smoke tests.
+3. Compare the Gin Router, OpenAPI, CLI machine catalog, and exact-route
+   protocol classifications, requiring 100% ordinary business-command coverage.
+4. Read machine Help and verify every paired Skill command, Agent argument, and capability boundary.
+5. Run TypeScript typecheck, ESLint, unit tests, and the build.
+6. Create a real npm tarball and validate its file allowlist.
+7. Install the same tarball globally with npm and pnpm in clean temporary directories.
+8. Build a Bun baseline binary for the Linux CI host and run command smoke tests.
 
 The release gate additionally asserts that the tarball manifest, the npm-installed `luna --version`, and every standalone binary report the tag version.
+
+`pnpm check:platform-cli-coverage` prints the live coverage totals. Documentation
+and release notes do not freeze route or command counts. A non-zero exit status
+blocks release, and neither `api request` nor wildcard exclusions may hide a
+missing command.
+
+## Execution-safety acceptance
+
+Release validation must also preserve these safety semantics:
+
+- `high` and `critical` operations require per-operation confirmation in an
+  interactive terminal. Agents and other non-interactive callers must pass
+  `--yes`, otherwise the CLI returns a stable confirmation error.
+- Agent commands always use `output=json interactive=false agent=true` and read
+  the JSON envelope from `stdout` only.
+- `--yes` records caller approval for the current operation only. It cannot
+  bypass backend permissions, scopes, step-up MFA, or resource-consistency
+  checks.
+- Terminal and data-export operations require CLI OAuth credentials and a valid
+  step-up assertion for the matching purpose. A personal access token cannot
+  satisfy or bypass this requirement.
 
 ## Paired CLI and Skill releases
 

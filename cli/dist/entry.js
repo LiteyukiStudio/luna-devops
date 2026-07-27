@@ -5,7 +5,7 @@ var __export = (target, all) => {
 };
 
 // src/entry.ts
-import process14 from "process";
+import process15 from "process";
 import { pathToFileURL } from "url";
 
 // ../packages/api-contract/src/index.ts
@@ -41,8 +41,8 @@ var OPENAPI_SNAPSHOT_METADATA = {
   "source": "openapi/openapi.yaml",
   "openapiVersion": "3.1.0",
   "apiVersion": "0.1.0",
-  "sourceDigest": "sha256:54cb6ef4eb6fd0721c90ecdb109e9f76d424db01aa7b426b81392f75ae4bf09e",
-  "operationCount": 116
+  "sourceDigest": "sha256:eccbff7b87352f9c176399c1b98c3e7924c894ada2941195adadea5c2c0c0ce0",
+  "operationCount": 226
 };
 var OPENAPI_OPERATION_SNAPSHOTS = [
   {
@@ -62,7 +62,8 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
         "description": "Service is healthy."
       }
     ],
-    "summary": "Health check"
+    "summary": "Health check",
+    "operationId": "healthCheck"
   },
   {
     "method": "get",
@@ -493,6 +494,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Get public app configs by keys",
+    "operationId": "getPublicConfigs",
     "requestBody": {
       "required": true,
       "contentTypes": [
@@ -548,7 +550,8 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
         "description": "Built-in template catalog."
       }
     ],
-    "summary": "List immutable platform build templates"
+    "summary": "List immutable platform build templates",
+    "operationId": "listBuildTemplates"
   },
   {
     "method": "post",
@@ -581,6 +584,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Validate template parameters and preview the generated Dockerfile",
+    "operationId": "previewBuildTemplate",
     "requestBody": {
       "required": true,
       "contentTypes": [
@@ -680,6 +684,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Get one global, application, or deployment build environment",
+    "operationId": "getBuildEnvironmentConfig",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -765,6 +770,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Replace one global, application, or deployment build environment",
+    "operationId": "updateBuildEnvironmentConfig",
     "requestBody": {
       "required": true,
       "contentTypes": [
@@ -847,7 +853,8 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
         "description": "Bootstrap status. devLoginHint is returned only in development mode."
       }
     ],
-    "summary": "Get bootstrap and runtime mode status"
+    "summary": "Get bootstrap and runtime mode status",
+    "operationId": "getBootstrapStatus"
   },
   {
     "method": "post",
@@ -911,6 +918,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Initialize the first platform admin",
+    "operationId": "initializeAdmin",
     "requestBody": {
       "required": true,
       "contentTypes": [
@@ -1000,6 +1008,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Login with a local account",
+    "operationId": "login",
     "requestBody": {
       "required": true,
       "contentTypes": [
@@ -1074,6 +1083,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
     ],
     "summary": "Resume login with a remembered account",
     "description": "Rotates the per-user remember token, creates a new 24-hour session, and refreshes the 30-day remember cookie. Browser cookies are required.",
+    "operationId": "resumeLogin",
     "requestBody": {
       "required": true,
       "contentTypes": [
@@ -1123,7 +1133,8 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
         "description": "Logged out."
       }
     ],
-    "summary": "Logout current session"
+    "summary": "Logout current session",
+    "operationId": "logout"
   },
   {
     "method": "get",
@@ -1146,7 +1157,8 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
         "description": "Public registration capability flags."
       }
     ],
-    "summary": "Get public registration capabilities"
+    "summary": "Get public registration capabilities",
+    "operationId": "getAuthRegistrationStatus"
   },
   {
     "method": "post",
@@ -1166,6 +1178,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Request an email registration verification code",
+    "operationId": "requestEmailRegistrationCode",
     "requestBody": {
       "required": true,
       "contentTypes": [
@@ -1223,6 +1236,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Complete email registration",
+    "operationId": "completeEmailRegistration",
     "requestBody": {
       "required": true,
       "contentTypes": [
@@ -1306,7 +1320,8 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
         "description": "Registration settings with the write-only SMTP password omitted."
       }
     ],
-    "summary": "Get registration and SMTP settings"
+    "summary": "Get registration and SMTP settings",
+    "operationId": "getAuthRegistrationSettings"
   },
   {
     "method": "put",
@@ -1326,6 +1341,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Update registration and SMTP settings",
+    "operationId": "updateAuthRegistrationSettings",
     "requestBody": {
       "required": true,
       "contentTypes": [
@@ -1458,7 +1474,8 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Get current user's MFA status",
-    "description": "Requires an interactive browser session. Personal access tokens cannot manage or verify MFA."
+    "description": "Requires an interactive browser session. Personal access tokens cannot manage or verify MFA.",
+    "operationId": "getMFAStatus"
   },
   {
     "method": "post",
@@ -1547,6 +1564,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
     ],
     "summary": "Start TOTP enrollment",
     "description": "Replaces any pending enrollment, stores the TOTP secret in the encrypted secret store, and returns the secret only for the current enrollment flow. Local accounts must re-enter their current password. OIDC accounts require non-impersonated primary authentication within the last five minutes; remember-token recovery does not refresh that timestamp.",
+    "operationId": "enrollMFA",
     "requestBody": {
       "required": true,
       "contentTypes": [
@@ -1675,6 +1693,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
     ],
     "summary": "Confirm pending TOTP enrollment",
     "description": "Accepts the current or adjacent 30-second TOTP window. On success, enables MFA and returns ten one-time recovery codes that are shown only once.",
+    "operationId": "confirmMFA",
     "requestBody": {
       "required": true,
       "contentTypes": [
@@ -1804,6 +1823,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
     ],
     "summary": "Verify MFA for a sensitive-operation purpose",
     "description": "Accepts exactly one TOTP code or one recovery code. A successful recovery code is consumed atomically. The resulting assertion is bound to the current user, browser session, and purpose.",
+    "operationId": "verifyMFA",
     "requestBody": {
       "required": true,
       "contentTypes": [
@@ -1947,7 +1967,8 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Regenerate MFA recovery codes",
-    "description": "Requires a valid `mfa_manage` assertion. Replaces and invalidates all previous recovery codes; the new plaintext codes are returned only once."
+    "description": "Requires a valid `mfa_manage` assertion. Replaces and invalidates all previous recovery codes; the new plaintext codes are returned only once.",
+    "operationId": "regenerateMFARecoveryCodes"
   },
   {
     "method": "delete",
@@ -2011,7 +2032,8 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Disable current user's MFA",
-    "description": "Requires a valid `mfa_manage` assertion. Deletes the TOTP secret, recovery codes, and all current step-up assertions. While the global policy is enabled, the last MFA-enabled platform administrator cannot disable MFA."
+    "description": "Requires a valid `mfa_manage` assertion. Deletes the TOTP secret, recovery codes, and all current step-up assertions. While the global policy is enabled, the last MFA-enabled platform administrator cannot disable MFA.",
+    "operationId": "disableMFA"
   },
   {
     "method": "get",
@@ -2030,7 +2052,8 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
         "description": "Auth provider list."
       }
     ],
-    "summary": "List auth providers"
+    "summary": "List auth providers",
+    "operationId": "listAuthProviders"
   },
   {
     "method": "post",
@@ -2050,6 +2073,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Create auth provider",
+    "operationId": "createAuthProvider",
     "requestBody": {
       "required": true,
       "contentTypes": [
@@ -2144,6 +2168,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Update auth provider",
+    "operationId": "updateAuthProvider",
     "requestBody": {
       "required": true,
       "contentTypes": [
@@ -2231,7 +2256,8 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
         "description": "Auth admission policy."
       }
     ],
-    "summary": "Get auth admission policy"
+    "summary": "Get auth admission policy",
+    "operationId": "getAuthAdmissionPolicy"
   },
   {
     "method": "put",
@@ -2251,6 +2277,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Update auth admission policy",
+    "operationId": "updateAuthAdmissionPolicy",
     "requestBody": {
       "required": true,
       "contentTypes": [
@@ -2355,6 +2382,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Start OIDC login or binding flow",
+    "operationId": "startOIDC",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -2378,6 +2406,10 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
         "providerId"
       ],
       "additionalProperties": false
+    },
+    "xLunaCli": {
+      "hidden": true,
+      "exclusionReason": "Protocol endpoint consumed by a browser, webhook, probe, stream, or terminal adapter instead of a regular CLI command."
     }
   },
   {
@@ -2417,6 +2449,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Complete OIDC callback",
+    "operationId": "completeOIDC",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -2432,6 +2465,10 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
         "state"
       ],
       "additionalProperties": false
+    },
+    "xLunaCli": {
+      "hidden": true,
+      "exclusionReason": "Protocol endpoint consumed by a browser, webhook, probe, stream, or terminal adapter instead of a regular CLI command."
     }
   },
   {
@@ -2455,7 +2492,8 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
         "description": "Current user."
       }
     ],
-    "summary": "Get current user"
+    "summary": "Get current user",
+    "operationId": "getCurrentUser"
   },
   {
     "method": "put",
@@ -2479,6 +2517,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Update current user preferences",
+    "operationId": "updateCurrentUser",
     "requestBody": {
       "required": true,
       "contentTypes": [
@@ -2576,6 +2615,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Set or change the current user's local password",
+    "operationId": "updateMyPassword",
     "requestBody": {
       "required": true,
       "contentTypes": [
@@ -2630,7 +2670,8 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
         "description": "External identity list."
       }
     ],
-    "summary": "List current user's external identities"
+    "summary": "List current user's external identities",
+    "operationId": "listMyExternalIdentities"
   },
   {
     "method": "delete",
@@ -2660,6 +2701,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Unbind current user's external identity",
+    "operationId": "unbindMyExternalIdentity",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -2742,6 +2784,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "List users",
+    "operationId": "listUsers",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -2798,6 +2841,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Create local user",
+    "operationId": "createUser",
     "requestBody": {
       "required": true,
       "contentTypes": [
@@ -2881,6 +2925,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Update user",
+    "operationId": "updateUser",
     "requestBody": {
       "required": true,
       "contentTypes": [
@@ -3013,6 +3058,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
     ],
     "summary": "Reset another user's MFA enrollment",
     "description": "Requires an interactive platform-administrator session and an active `user_admin_update` Step-up assertion. Deletes the target user's authenticator secret, recovery codes, and active Step-up assertions. Administrators cannot reset their own MFA through this endpoint and cannot remove the last enabled administrator MFA while the global policy is active.",
+    "operationId": "adminResetUserMFA",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -3047,7 +3093,62 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
         "description": "Config definitions."
       }
     ],
-    "summary": "List configurable app config definitions"
+    "summary": "List configurable app config definitions",
+    "operationId": "listConfigDefinitions"
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/configs",
+    "tags": [
+      "Configs"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Get Configs",
+    "operationId": "getConfigs"
   },
   {
     "method": "put",
@@ -3067,6 +3168,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Update app configs",
+    "operationId": "updateConfigs",
     "requestBody": {
       "required": true,
       "contentTypes": [
@@ -3485,6 +3587,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
     ],
     "summary": "Authorize a runtime-cluster Pod terminal connection",
     "description": "Normal HTTP preflight used before opening the Pod terminal WebSocket. It verifies the interactive session, platform-administrator role, target cluster, and `runtime_terminal` Step-up assertion. A missing assertion returns `mfa_required`, allowing the frontend to show the MFA dialog and retry. A 204 authorizes only the preflight; the WebSocket repeats all checks before upgrading and revalidates session, role, assertion, Pod identity, and platform ownership every three seconds while connected. Revocation or expiry closes the shell.",
+    "operationId": "authorizeRuntimeClusterPodTerminal",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -3504,6 +3607,11 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
         "namespace"
       ],
       "additionalProperties": false
+    },
+    "xLunaCli": {
+      "classification": "protocol-adapter",
+      "hidden": true,
+      "exclusionReason": "Low-level terminal preflight consumed by the explicit CLI runtime-terminal protocol adapter."
     }
   },
   {
@@ -3582,6 +3690,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
     ],
     "summary": "List runtime clusters",
     "description": "Returns the legacy array response when pagination parameters are omitted, or a paginated response when `page`/`pageSize` is supplied.",
+    "operationId": "listRuntimeClusters",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -3623,6 +3732,247 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
     }
   },
   {
+    "method": "post",
+    "path": "/api/v1/runtime/clusters",
+    "tags": [
+      "Runtime"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [],
+    "responses": [
+      {
+        "status": "201",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Create Runtime Cluster",
+    "operationId": "createRuntimeCluster",
+    "requestBody": {
+      "required": true,
+      "contentTypes": [
+        "application/json"
+      ],
+      "schemaRefs": [
+        "#/components/schemas/RuntimeClusterInput"
+      ]
+    },
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "body": {
+          "ref": "#/components/schemas/RuntimeClusterInput",
+          "type": "object",
+          "required": [
+            "endpoint",
+            "name",
+            "scope",
+            "type"
+          ],
+          "properties": {
+            "endpoint": {
+              "type": "string"
+            },
+            "gatewayCertificateNamespace": {
+              "type": "string"
+            },
+            "gatewayCertIssuerKind": {
+              "type": "string",
+              "enum": [
+                "Issuer",
+                "ClusterIssuer"
+              ]
+            },
+            "gatewayCertIssuerName": {
+              "type": "string"
+            },
+            "gatewayClassName": {
+              "type": "string"
+            },
+            "gatewayControllerType": {
+              "type": "string",
+              "enum": [
+                "traefik",
+                "generic"
+              ]
+            },
+            "gatewayDefaultRequestHeaders": {
+              "type": "string"
+            },
+            "gatewayDefaultResponseHeaders": {
+              "type": "string"
+            },
+            "gatewayDomainSuffixes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "gatewayExternalTLSMode": {
+              "type": "string",
+              "enum": [
+                "none",
+                "gateway",
+                "upstream"
+              ]
+            },
+            "gatewayForwardedHeadersMode": {
+              "type": "string",
+              "enum": [
+                "preserve",
+                "overwrite",
+                "none"
+              ]
+            },
+            "gatewayHttpListenerName": {
+              "type": "string"
+            },
+            "gatewayHttpListenerPort": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            "gatewayHttpsListenerName": {
+              "type": "string"
+            },
+            "gatewayHttpsListenerPort": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            "gatewayName": {
+              "type": "string"
+            },
+            "gatewayNamespace": {
+              "type": "string"
+            },
+            "gatewayProvider": {
+              "type": "string",
+              "enum": [
+                "gateway-api"
+              ]
+            },
+            "gatewayPublicPort": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            "gatewayPublicScheme": {
+              "type": "string",
+              "enum": [
+                "http",
+                "https"
+              ]
+            },
+            "gatewayRootDomain": {
+              "type": "string"
+            },
+            "gatewayTlsSecretName": {
+              "type": "string"
+            },
+            "gatewayTlsSecretNamespace": {
+              "type": "string"
+            },
+            "gatewayTrustedProxyCIDRs": {
+              "type": "string"
+            },
+            "gatewayWildcardCertDomain": {
+              "type": "string"
+            },
+            "gatewayWildcardCertEnabled": {
+              "type": "boolean"
+            },
+            "gatewayWildcardCertSecretName": {
+              "type": "string"
+            },
+            "isDefault": {
+              "type": "boolean"
+            },
+            "kubeconfig": {
+              "type": "string",
+              "writeOnly": true
+            },
+            "maxConcurrentBuilds": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "ownerRef": {
+              "type": "string"
+            },
+            "projectIds": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "scope": {
+              "type": "string",
+              "enum": [
+                "global",
+                "project",
+                "user"
+              ]
+            },
+            "status": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "kubernetes",
+                "k3s"
+              ]
+            }
+          }
+        }
+      },
+      "required": [
+        "body"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
     "method": "get",
     "path": "/api/v1/git/providers",
     "tags": [
@@ -3648,6 +3998,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "List Git providers",
+    "operationId": "listGitProviders",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -3676,6 +4027,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Create Git provider",
+    "operationId": "createGitProvider",
     "requestBody": {
       "required": true,
       "contentTypes": [
@@ -3775,6 +4127,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Update Git provider",
+    "operationId": "updateGitProvider",
     "requestBody": {
       "required": true,
       "contentTypes": [
@@ -3878,6 +4231,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Delete Git provider",
+    "operationId": "deleteGitProvider",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -3935,6 +4289,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Start GitHub or Gitea OAuth flow",
+    "operationId": "startGitOAuth",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -3954,6 +4309,10 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
         "providerId"
       ],
       "additionalProperties": false
+    },
+    "xLunaCli": {
+      "hidden": true,
+      "exclusionReason": "Protocol endpoint consumed by a browser, webhook, probe, stream, or terminal adapter instead of a regular CLI command."
     }
   },
   {
@@ -3993,6 +4352,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Complete Git OAuth callback",
+    "operationId": "completeGitOAuth",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -4008,6 +4368,10 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
         "state"
       ],
       "additionalProperties": false
+    },
+    "xLunaCli": {
+      "hidden": true,
+      "exclusionReason": "Protocol endpoint consumed by a browser, webhook, probe, stream, or terminal adapter instead of a regular CLI command."
     }
   },
   {
@@ -4044,6 +4408,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Receive Git webhook event",
+    "operationId": "receiveGitWebhook",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -4055,6 +4420,10 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
         "bindingId"
       ],
       "additionalProperties": false
+    },
+    "xLunaCli": {
+      "hidden": true,
+      "exclusionReason": "Protocol endpoint consumed by a browser, webhook, probe, stream, or terminal adapter instead of a regular CLI command."
     }
   },
   {
@@ -4083,6 +4452,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "List current user Git accounts",
+    "operationId": "listGitAccounts",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -4111,6 +4481,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Create current user Git account manually",
+    "operationId": "createGitAccount",
     "requestBody": {
       "required": true,
       "contentTypes": [
@@ -4213,6 +4584,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Update current user Git account",
+    "operationId": "updateGitAccount",
     "requestBody": {
       "required": true,
       "contentTypes": [
@@ -4319,6 +4691,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Delete current user Git account",
+    "operationId": "deleteGitAccount",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -4360,6 +4733,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Refresh current user Git account token",
+    "operationId": "refreshGitAccount",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -4429,6 +4803,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "List repositories visible to a Git account",
+    "operationId": "listGitRepositories",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -4502,6 +4877,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "List repository branches",
+    "operationId": "listGitBranches",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -4584,6 +4960,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Read repository file content",
+    "operationId": "readGitFile",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -4685,6 +5062,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "List artifact registries",
+    "operationId": "listArtifactRegistries",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -4741,6 +5119,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Create artifact registry",
+    "operationId": "createArtifactRegistry",
     "requestBody": {
       "required": true,
       "contentTypes": [
@@ -4837,6 +5216,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Update artifact registry",
+    "operationId": "updateArtifactRegistry",
     "requestBody": {
       "required": true,
       "contentTypes": [
@@ -4937,6 +5317,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Delete artifact registry",
+    "operationId": "deleteArtifactRegistry",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -4978,6 +5359,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Test artifact registry connectivity",
+    "operationId": "testArtifactRegistry",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -5066,6 +5448,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "List registry credentials",
+    "operationId": "listRegistryCredentials",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -5135,6 +5518,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Create registry credential",
+    "operationId": "createRegistryCredential",
     "requestBody": {
       "required": true,
       "contentTypes": [
@@ -5270,6 +5654,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "List visible registry credentials across registries",
+    "operationId": "listAllRegistryCredentials",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -5346,6 +5731,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Update registry credential",
+    "operationId": "updateRegistryCredential",
     "requestBody": {
       "required": true,
       "contentTypes": [
@@ -5456,6 +5842,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Delete registry credential",
+    "operationId": "deleteRegistryCredential",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -5513,6 +5900,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "List container image records",
+    "operationId": "listContainerImages",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -5547,6 +5935,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Create container image record",
+    "operationId": "createContainerImage",
     "requestBody": {
       "required": true,
       "contentTypes": [
@@ -5735,6 +6124,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
     ],
     "summary": "List projects",
     "description": "Returns the legacy project array when pagination parameters are omitted. Returns a paginated object when page or pageSize is provided.",
+    "operationId": "listProjects",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -5788,6 +6178,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Create project",
+    "operationId": "createProject",
     "requestBody": {
       "required": true,
       "contentTypes": [
@@ -5862,7 +6253,8 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
         "description": "Pinned project list."
       }
     ],
-    "summary": "List current user's pinned projects"
+    "summary": "List current user's pinned projects",
+    "operationId": "listProjectPins"
   },
   {
     "method": "get",
@@ -5892,6 +6284,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Get project",
+    "operationId": "getProject",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -5933,6 +6326,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Update project",
+    "operationId": "updateProject",
     "requestBody": {
       "required": true,
       "contentTypes": [
@@ -6022,6 +6416,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Delete project",
+    "operationId": "deleteProject",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -6069,6 +6464,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Pin project for current user",
+    "operationId": "pinProject",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -6110,6 +6506,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Unpin project for current user",
+    "operationId": "unpinProject",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -6151,6 +6548,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Get default artifact registry for a project",
+    "operationId": "getDefaultArtifactRegistry",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -6192,6 +6590,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "List project members",
+    "operationId": "listProjectMembers",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -6233,6 +6632,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Create project member",
+    "operationId": "createProjectMember",
     "requestBody": {
       "required": true,
       "contentTypes": [
@@ -6315,6 +6715,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Update project member",
+    "operationId": "updateProjectMember",
     "requestBody": {
       "required": true,
       "contentTypes": [
@@ -6401,6 +6802,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Delete project member",
+    "operationId": "deleteProjectMember",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -6500,6 +6902,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "List applications",
+    "operationId": "listApplications",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -6572,6 +6975,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Create application",
+    "operationId": "createApplication",
     "requestBody": {
       "required": true,
       "contentTypes": [
@@ -6675,6 +7079,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Get application",
+    "operationId": "getApplication",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -6729,6 +7134,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Update application",
+    "operationId": "updateApplication",
     "requestBody": {
       "required": true,
       "contentTypes": [
@@ -6836,6 +7242,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Delete application",
+    "operationId": "deleteApplication",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -6894,6 +7301,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Compute the current Kubernetes resource topology for an application",
+    "operationId": "getApplicationTopology",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -6952,6 +7360,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "List deployment targets for an application",
+    "operationId": "listDeploymentTargets",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -7010,6 +7419,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Create a deployment target",
+    "operationId": "createDeploymentTarget",
     "requestBody": {
       "required": true,
       "contentTypes": [
@@ -7146,6 +7556,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Update a deployment target",
+    "operationId": "updateDeploymentTarget",
     "requestBody": {
       "required": true,
       "contentTypes": [
@@ -7282,6 +7693,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Delete a deployment target",
+    "operationId": "deleteDeploymentTarget",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -7435,6 +7847,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
     ],
     "summary": "Export persistent runtime data",
     "description": "Consumes a short-lived, one-time export ticket issued by the authorize endpoint, then repeats the interactive session, project Owner/Admin, resource-state, and `data_export` Step-up checks. Personal access tokens are rejected. Each export uses an isolated temporary Pod and streams a gzip archive without persisting the ticket or archive in business tables.",
+    "operationId": "exportDeploymentTargetData",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -7458,6 +7871,11 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
         "ticket"
       ],
       "additionalProperties": false
+    },
+    "xLunaCli": {
+      "classification": "protocol-adapter",
+      "hidden": true,
+      "exclusionReason": "Raw gzip download consumed by the explicit CLI data-export protocol adapter."
     }
   },
   {
@@ -7575,6 +7993,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
     ],
     "summary": "Authorize a persistent runtime data export",
     "description": "Requires an interactive project Owner/Admin session, a mutable project/application/deployment target, exportable runtime data, and an active `data_export` Step-up assertion when the global policy is enabled. Returns a random 60-second one-time ticket bound to the current user, session, project, application, and deployment target. Production uses the shared Redis ticket store and fails closed when Redis is unavailable.",
+    "operationId": "authorizeDeploymentTargetDataExport",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -7594,6 +8013,11 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
         "targetId"
       ],
       "additionalProperties": false
+    },
+    "xLunaCli": {
+      "classification": "protocol-adapter",
+      "hidden": true,
+      "exclusionReason": "Low-level one-time-ticket preflight consumed by the explicit CLI data-export protocol adapter."
     }
   },
   {
@@ -7678,6 +8102,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
     ],
     "summary": "Authorize a release Web Console terminal connection",
     "description": "Normal HTTP preflight used before opening the release terminal WebSocket. It verifies project Owner/Admin/Developer access, project and deployment-target mutation state, the effective project/deployment `webConsoleEnabled` policy, and the `runtime_terminal` Step-up assertion. A missing assertion returns `mfa_required`, allowing the frontend to show the MFA dialog and retry. A 204 authorizes only the preflight; the WebSocket repeats all checks before upgrading and revalidates session, membership, role, resource state, Web Console policy, and assertion every three seconds while connected. Revocation or expiry closes the shell.",
+    "operationId": "authorizeReleaseRuntimeTerminal",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -7693,6 +8118,11 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
         "releaseId"
       ],
       "additionalProperties": false
+    },
+    "xLunaCli": {
+      "classification": "protocol-adapter",
+      "hidden": true,
+      "exclusionReason": "Low-level terminal preflight consumed by the explicit CLI release-terminal protocol adapter."
     }
   },
   {
@@ -7746,6 +8176,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
     ],
     "summary": "List release image candidates",
     "description": "Reads tags from the target registry first and falls back to saved build records when the registry is unavailable.",
+    "operationId": "listReleaseImageCandidates",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -7795,6 +8226,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "List repository bindings for a project",
+    "operationId": "listRepositoryBindings",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -7836,6 +8268,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Bind an application to a Git repository",
+    "operationId": "createRepositoryBinding",
     "requestBody": {
       "required": true,
       "contentTypes": [
@@ -7935,6 +8368,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Update repository binding",
+    "operationId": "updateRepositoryBinding",
     "requestBody": {
       "required": true,
       "contentTypes": [
@@ -8038,6 +8472,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Delete repository binding",
+    "operationId": "deleteRepositoryBinding",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -8092,6 +8527,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Create webhook for a repository binding",
+    "operationId": "createRepositoryWebhook",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -8221,6 +8657,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
     ],
     "summary": "List access tokens",
     "description": "Returns only non-revoked access tokens.",
+    "operationId": "listAccessTokens",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -8276,6 +8713,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Create access token",
+    "operationId": "createAccessToken",
     "requestBody": {
       "required": true,
       "contentTypes": [
@@ -8351,6 +8789,7 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       }
     ],
     "summary": "Revoke access token",
+    "operationId": "revokeAccessToken",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -8363,6 +8802,11222 @@ var OPENAPI_OPERATION_SNAPSHOTS = [
       ],
       "additionalProperties": false
     }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/auth/oidc/callback-url",
+    "tags": [
+      "Auth"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Get OIDCCallback URL",
+    "operationId": "getOIDCCallbackURL"
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/oauth/applications",
+    "tags": [
+      "OAuthApplications"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/PaginatedOAuthApplications"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "List OAuth Applications",
+    "operationId": "listOAuthApplications"
+  },
+  {
+    "method": "post",
+    "path": "/api/v1/oauth/applications",
+    "tags": [
+      "OAuthApplications"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [],
+    "responses": [
+      {
+        "status": "201",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/OAuthApplication"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Create OAuth Application",
+    "operationId": "createOAuthApplication",
+    "requestBody": {
+      "required": true,
+      "contentTypes": [
+        "application/json"
+      ],
+      "schemaRefs": [
+        "#/components/schemas/OAuthApplicationInput"
+      ]
+    },
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "body": {
+          "ref": "#/components/schemas/OAuthApplicationInput",
+          "type": "object",
+          "required": [
+            "name",
+            "redirectUris"
+          ],
+          "properties": {
+            "accessTokenLifetimeDays": {
+              "type": "integer",
+              "description": "Zero configures a non-expiring access token.",
+              "minimum": 0
+            },
+            "allowedScopes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "description": {
+              "type": "string"
+            },
+            "homepageUrl": {
+              "type": "string",
+              "format": "uri"
+            },
+            "logoUrl": {
+              "type": "string",
+              "format": "uri"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "redirectUris": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uri"
+              },
+              "minItems": 1
+            }
+          }
+        }
+      },
+      "required": [
+        "body"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "put",
+    "path": "/api/v1/oauth/applications/{applicationId}",
+    "tags": [
+      "OAuthApplications"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "applicationId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/OAuthApplication"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Update OAuth Application",
+    "operationId": "updateOAuthApplication",
+    "requestBody": {
+      "required": true,
+      "contentTypes": [
+        "application/json"
+      ],
+      "schemaRefs": [
+        "#/components/schemas/OAuthApplicationInput"
+      ]
+    },
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "applicationId": {
+          "type": "string"
+        },
+        "body": {
+          "ref": "#/components/schemas/OAuthApplicationInput",
+          "type": "object",
+          "required": [
+            "name",
+            "redirectUris"
+          ],
+          "properties": {
+            "accessTokenLifetimeDays": {
+              "type": "integer",
+              "description": "Zero configures a non-expiring access token.",
+              "minimum": 0
+            },
+            "allowedScopes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "description": {
+              "type": "string"
+            },
+            "homepageUrl": {
+              "type": "string",
+              "format": "uri"
+            },
+            "logoUrl": {
+              "type": "string",
+              "format": "uri"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "redirectUris": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uri"
+              },
+              "minItems": 1
+            }
+          }
+        }
+      },
+      "required": [
+        "applicationId",
+        "body"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "delete",
+    "path": "/api/v1/oauth/applications/{applicationId}",
+    "tags": [
+      "OAuthApplications"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "applicationId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "204",
+        "contentTypes": [],
+        "schemaRefs": [],
+        "description": "Resource deleted."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Delete OAuth Application",
+    "operationId": "deleteOAuthApplication",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "applicationId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "applicationId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "post",
+    "path": "/api/v1/oauth/applications/{applicationId}/rotate-secret",
+    "tags": [
+      "OAuthApplications"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "applicationId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/OAuthApplicationSecretResponse"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Rotate OAuth Application Secret",
+    "operationId": "rotateOAuthApplicationSecret",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "applicationId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "applicationId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/oauth/grants",
+    "tags": [
+      "OAuthApplications"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/PaginatedOAuthGrants"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "List My OAuth Grants",
+    "operationId": "listMyOAuthGrants"
+  },
+  {
+    "method": "delete",
+    "path": "/api/v1/oauth/grants/{grantId}",
+    "tags": [
+      "OAuthApplications"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "grantId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "204",
+        "contentTypes": [],
+        "schemaRefs": [],
+        "description": "Resource deleted."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Revoke My OAuth Grant",
+    "operationId": "revokeMyOAuthGrant",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "grantId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "grantId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/oauth/authorize",
+    "tags": [
+      "OAuthApplications"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "client_id",
+        "in": "query",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "redirect_uri",
+        "in": "query",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "scope",
+        "in": "query",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "state",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "code_challenge",
+        "in": "query",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "code_challenge_method",
+        "in": "query",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Get OAuth Authorization Request",
+    "operationId": "getOAuthAuthorizationRequest",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "client_id": {
+          "type": "string"
+        },
+        "redirect_uri": {
+          "type": "string"
+        },
+        "scope": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "code_challenge": {
+          "type": "string"
+        },
+        "code_challenge_method": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "client_id",
+        "code_challenge",
+        "code_challenge_method",
+        "redirect_uri",
+        "scope"
+      ],
+      "additionalProperties": false
+    },
+    "xLunaCli": {
+      "hidden": true,
+      "exclusionReason": "Protocol endpoint consumed by a browser, webhook, probe, stream, or terminal adapter instead of a regular CLI command."
+    }
+  },
+  {
+    "method": "post",
+    "path": "/api/v1/oauth/authorize",
+    "tags": [
+      "OAuthApplications"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Decide OAuth Authorization",
+    "operationId": "decideOAuthAuthorization",
+    "requestBody": {
+      "required": true,
+      "contentTypes": [
+        "application/json"
+      ],
+      "schemaRefs": [
+        "#/components/schemas/OAuthAuthorizationDecisionInput"
+      ]
+    },
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "body": {
+          "ref": "#/components/schemas/OAuthAuthorizationDecisionInput",
+          "type": "object",
+          "required": [
+            "approved",
+            "clientId",
+            "redirectUri"
+          ],
+          "properties": {
+            "approved": {
+              "type": "boolean"
+            },
+            "clientId": {
+              "type": "string"
+            },
+            "codeChallenge": {
+              "type": "string"
+            },
+            "codeChallengeMethod": {
+              "type": "string",
+              "enum": [
+                "S256"
+              ]
+            },
+            "redirectUri": {
+              "type": "string",
+              "format": "uri"
+            },
+            "scope": {
+              "type": "string"
+            },
+            "state": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "required": [
+        "body"
+      ],
+      "additionalProperties": false
+    },
+    "xLunaCli": {
+      "hidden": true,
+      "exclusionReason": "Protocol endpoint consumed by a browser, webhook, probe, stream, or terminal adapter instead of a regular CLI command."
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/git/accounts/{accountId}/repositories/{owner}/{repo}/build-options",
+    "tags": [
+      "Git"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "accountId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "owner",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "repo",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "ref",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Get Git Repository Build Options",
+    "operationId": "getGitRepositoryBuildOptions",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "accountId": {
+          "type": "string"
+        },
+        "owner": {
+          "type": "string"
+        },
+        "repo": {
+          "type": "string"
+        },
+        "ref": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "accountId",
+        "owner",
+        "repo"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/git/accounts/{accountId}/repositories/{owner}/{repo}/contents",
+    "tags": [
+      "Git"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "accountId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "owner",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "repo",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "path",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "ref",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObjectList"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "List Git Contents",
+    "operationId": "listGitContents",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "accountId": {
+          "type": "string"
+        },
+        "owner": {
+          "type": "string"
+        },
+        "repo": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "ref": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "accountId",
+        "owner",
+        "repo"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/registries/{registryId}/image-template-default",
+    "tags": [
+      "Registries"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "registryId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "projectId",
+        "in": "query",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "applicationId",
+        "in": "query",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "targetName",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "stage",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Get Registry Image Template Default",
+    "operationId": "getRegistryImageTemplateDefault",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "registryId": {
+          "type": "string"
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "applicationId": {
+          "type": "string"
+        },
+        "targetName": {
+          "type": "string"
+        },
+        "stage": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "applicationId",
+        "projectId",
+        "registryId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/registries/{registryId}/repositories/search",
+    "tags": [
+      "Registries"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "registryId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "search",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "page",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      {
+        "name": "pageSize",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/PaginatedBusinessObjects"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Search Registry Repositories",
+    "operationId": "searchRegistryRepositories",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "registryId": {
+          "type": "string"
+        },
+        "search": {
+          "type": "string"
+        },
+        "page": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "pageSize": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      "required": [
+        "registryId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/registries/{registryId}/repository-tags",
+    "tags": [
+      "Registries"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "registryId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "repository",
+        "in": "query",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObjectList"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "List Registry Repository Tags",
+    "operationId": "listRegistryRepositoryTags",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "registryId": {
+          "type": "string"
+        },
+        "repository": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      "required": [
+        "registryId",
+        "repository"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/build/variable-sets",
+    "tags": [
+      "Builds"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObjectList"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "List Build Variable Sets",
+    "operationId": "listBuildVariableSets",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "post",
+    "path": "/api/v1/build/variable-sets",
+    "tags": [
+      "Builds"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [],
+    "responses": [
+      {
+        "status": "201",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Create Build Variable Set",
+    "operationId": "createBuildVariableSet",
+    "requestBody": {
+      "required": true,
+      "contentTypes": [
+        "application/json"
+      ],
+      "schemaRefs": [
+        "#/components/schemas/BuildVariableSetInput"
+      ]
+    },
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "body": {
+          "ref": "#/components/schemas/BuildVariableSetInput",
+          "type": "object",
+          "required": [
+            "name"
+          ],
+          "properties": {
+            "applicationId": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "projectId": {
+              "type": "string"
+            },
+            "scope": {
+              "type": "string",
+              "enum": [
+                "global",
+                "project",
+                "application"
+              ]
+            },
+            "secrets": {
+              "type": "object",
+              "writeOnly": true,
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "variables": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "required": [
+        "body"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "put",
+    "path": "/api/v1/build/variable-sets/{setId}",
+    "tags": [
+      "Builds"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "setId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Update Build Variable Set",
+    "operationId": "updateBuildVariableSet",
+    "requestBody": {
+      "required": true,
+      "contentTypes": [
+        "application/json"
+      ],
+      "schemaRefs": [
+        "#/components/schemas/BuildVariableSetInput"
+      ]
+    },
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "setId": {
+          "type": "string"
+        },
+        "body": {
+          "ref": "#/components/schemas/BuildVariableSetInput",
+          "type": "object",
+          "required": [
+            "name"
+          ],
+          "properties": {
+            "applicationId": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "projectId": {
+              "type": "string"
+            },
+            "scope": {
+              "type": "string",
+              "enum": [
+                "global",
+                "project",
+                "application"
+              ]
+            },
+            "secrets": {
+              "type": "object",
+              "writeOnly": true,
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "variables": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "required": [
+        "body",
+        "setId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "delete",
+    "path": "/api/v1/build/variable-sets/{setId}",
+    "tags": [
+      "Builds"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "setId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "204",
+        "contentTypes": [],
+        "schemaRefs": [],
+        "description": "Resource deleted."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Delete Build Variable Set",
+    "operationId": "deleteBuildVariableSet",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "setId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "setId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "put",
+    "path": "/api/v1/runtime/clusters/{clusterId}",
+    "tags": [
+      "Runtime"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "clusterId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Update Runtime Cluster",
+    "operationId": "updateRuntimeCluster",
+    "requestBody": {
+      "required": true,
+      "contentTypes": [
+        "application/json"
+      ],
+      "schemaRefs": [
+        "#/components/schemas/RuntimeClusterInput"
+      ]
+    },
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "clusterId": {
+          "type": "string"
+        },
+        "body": {
+          "ref": "#/components/schemas/RuntimeClusterInput",
+          "type": "object",
+          "required": [
+            "endpoint",
+            "name",
+            "scope",
+            "type"
+          ],
+          "properties": {
+            "endpoint": {
+              "type": "string"
+            },
+            "gatewayCertificateNamespace": {
+              "type": "string"
+            },
+            "gatewayCertIssuerKind": {
+              "type": "string",
+              "enum": [
+                "Issuer",
+                "ClusterIssuer"
+              ]
+            },
+            "gatewayCertIssuerName": {
+              "type": "string"
+            },
+            "gatewayClassName": {
+              "type": "string"
+            },
+            "gatewayControllerType": {
+              "type": "string",
+              "enum": [
+                "traefik",
+                "generic"
+              ]
+            },
+            "gatewayDefaultRequestHeaders": {
+              "type": "string"
+            },
+            "gatewayDefaultResponseHeaders": {
+              "type": "string"
+            },
+            "gatewayDomainSuffixes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "gatewayExternalTLSMode": {
+              "type": "string",
+              "enum": [
+                "none",
+                "gateway",
+                "upstream"
+              ]
+            },
+            "gatewayForwardedHeadersMode": {
+              "type": "string",
+              "enum": [
+                "preserve",
+                "overwrite",
+                "none"
+              ]
+            },
+            "gatewayHttpListenerName": {
+              "type": "string"
+            },
+            "gatewayHttpListenerPort": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            "gatewayHttpsListenerName": {
+              "type": "string"
+            },
+            "gatewayHttpsListenerPort": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            "gatewayName": {
+              "type": "string"
+            },
+            "gatewayNamespace": {
+              "type": "string"
+            },
+            "gatewayProvider": {
+              "type": "string",
+              "enum": [
+                "gateway-api"
+              ]
+            },
+            "gatewayPublicPort": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            "gatewayPublicScheme": {
+              "type": "string",
+              "enum": [
+                "http",
+                "https"
+              ]
+            },
+            "gatewayRootDomain": {
+              "type": "string"
+            },
+            "gatewayTlsSecretName": {
+              "type": "string"
+            },
+            "gatewayTlsSecretNamespace": {
+              "type": "string"
+            },
+            "gatewayTrustedProxyCIDRs": {
+              "type": "string"
+            },
+            "gatewayWildcardCertDomain": {
+              "type": "string"
+            },
+            "gatewayWildcardCertEnabled": {
+              "type": "boolean"
+            },
+            "gatewayWildcardCertSecretName": {
+              "type": "string"
+            },
+            "isDefault": {
+              "type": "boolean"
+            },
+            "kubeconfig": {
+              "type": "string",
+              "writeOnly": true
+            },
+            "maxConcurrentBuilds": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "ownerRef": {
+              "type": "string"
+            },
+            "projectIds": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "scope": {
+              "type": "string",
+              "enum": [
+                "global",
+                "project",
+                "user"
+              ]
+            },
+            "status": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "kubernetes",
+                "k3s"
+              ]
+            }
+          }
+        }
+      },
+      "required": [
+        "body",
+        "clusterId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "delete",
+    "path": "/api/v1/runtime/clusters/{clusterId}",
+    "tags": [
+      "Runtime"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "clusterId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "204",
+        "contentTypes": [],
+        "schemaRefs": [],
+        "description": "Resource deleted."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Delete Runtime Cluster",
+    "operationId": "deleteRuntimeCluster",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "clusterId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "clusterId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "post",
+    "path": "/api/v1/runtime/clusters/{clusterId}/test",
+    "tags": [
+      "Runtime"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "clusterId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Test Runtime Cluster",
+    "operationId": "testRuntimeCluster",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "clusterId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "clusterId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/runtime/clusters/{clusterId}/resources",
+    "tags": [
+      "Runtime"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "clusterId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "kind",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "namespace",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "projectId",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "applicationId",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "environmentId",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObjectList"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "List Runtime Cluster Resources",
+    "operationId": "listRuntimeClusterResources",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "clusterId": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "applicationId": {
+          "type": "string"
+        },
+        "environmentId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "clusterId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "delete",
+    "path": "/api/v1/runtime/clusters/{clusterId}/resources",
+    "tags": [
+      "Runtime"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "clusterId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "kind",
+        "in": "query",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "namespace",
+        "in": "query",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "name",
+        "in": "query",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "204",
+        "contentTypes": [],
+        "schemaRefs": [],
+        "description": "Resource deleted."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Delete Runtime Cluster Resource",
+    "operationId": "deleteRuntimeClusterResource",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "clusterId": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "clusterId",
+        "kind",
+        "name",
+        "namespace"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/runtime/clusters/{clusterId}/resource-yaml",
+    "tags": [
+      "Runtime"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "clusterId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "kind",
+        "in": "query",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "namespace",
+        "in": "query",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "name",
+        "in": "query",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Get Runtime Cluster Resource YAML",
+    "operationId": "getRuntimeClusterResourceYAML",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "clusterId": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "clusterId",
+        "kind",
+        "name",
+        "namespace"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/runtime/clusters/{clusterId}/resource-events",
+    "tags": [
+      "Runtime"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "clusterId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "kind",
+        "in": "query",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "namespace",
+        "in": "query",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "name",
+        "in": "query",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "List Runtime Cluster Resource Events",
+    "operationId": "listRuntimeClusterResourceEvents",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "clusterId": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "clusterId",
+        "kind",
+        "name",
+        "namespace"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/runtime/clusters/{clusterId}/pods/terminal",
+    "tags": [
+      "Runtime"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "clusterId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "namespace",
+        "in": "query",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "pod",
+        "in": "query",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "container",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "text/plain"
+        ],
+        "schemaRefs": [],
+        "description": "Protocol stream established."
+      }
+    ],
+    "summary": "Stream Runtime Cluster Pod Terminal",
+    "operationId": "streamRuntimeClusterPodTerminal",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "clusterId": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "pod": {
+          "type": "string"
+        },
+        "container": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "clusterId",
+        "namespace",
+        "pod"
+      ],
+      "additionalProperties": false
+    },
+    "xLunaCli": {
+      "classification": "protocol-adapter",
+      "hidden": true,
+      "exclusionReason": "WebSocket terminal transport consumed by the explicit CLI runtime-terminal protocol adapter."
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/system-components",
+    "tags": [
+      "System"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "componentId",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "clusterId",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObjectList"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "List System Components",
+    "operationId": "listSystemComponents",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "componentId": {
+          "type": "string"
+        },
+        "clusterId": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "post",
+    "path": "/api/v1/app-templates/{templateId}/system-install",
+    "tags": [
+      "AppTemplates"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "templateId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "201",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Install System App Template",
+    "operationId": "installSystemAppTemplate",
+    "requestBody": {
+      "required": true,
+      "contentTypes": [
+        "application/json"
+      ],
+      "schemaRefs": [
+        "#/components/schemas/SystemComponentInstallInput"
+      ]
+    },
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "templateId": {
+          "type": "string"
+        },
+        "body": {
+          "ref": "#/components/schemas/SystemComponentInstallInput",
+          "type": "object",
+          "required": [
+            "clusterId"
+          ],
+          "properties": {
+            "clusterId": {
+              "type": "string"
+            },
+            "namespace": {
+              "type": "string"
+            },
+            "parameters": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "values": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          }
+        }
+      },
+      "required": [
+        "body",
+        "templateId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/notifications/presets",
+    "tags": [
+      "Notifications"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObjectList"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "List Notification Presets",
+    "operationId": "listNotificationPresets"
+  },
+  {
+    "method": "post",
+    "path": "/api/v1/notifications/presets/{presetId}/channels",
+    "tags": [
+      "Notifications"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "presetId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "201",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Create Notification Channel From Preset",
+    "operationId": "createNotificationChannelFromPreset",
+    "requestBody": {
+      "required": true,
+      "contentTypes": [
+        "application/json"
+      ],
+      "schemaRefs": [
+        "#/components/schemas/NotificationPresetChannelInput"
+      ]
+    },
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "presetId": {
+          "type": "string"
+        },
+        "body": {
+          "ref": "#/components/schemas/NotificationPresetChannelInput",
+          "type": "object",
+          "required": [
+            "name"
+          ],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "secrets": {
+              "type": "object",
+              "writeOnly": true,
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "required": [
+        "body",
+        "presetId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/notifications/channels",
+    "tags": [
+      "Notifications"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "search",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "page",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      {
+        "name": "pageSize",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/PaginatedBusinessObjects"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "List Notification Channels",
+    "operationId": "listNotificationChannels",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "search": {
+          "type": "string"
+        },
+        "page": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "pageSize": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "post",
+    "path": "/api/v1/notifications/channels",
+    "tags": [
+      "Notifications"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [],
+    "responses": [
+      {
+        "status": "201",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Create Notification Channel",
+    "operationId": "createNotificationChannel",
+    "requestBody": {
+      "required": true,
+      "contentTypes": [
+        "application/json"
+      ],
+      "schemaRefs": [
+        "#/components/schemas/NotificationChannelInput"
+      ]
+    },
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "body": {
+          "ref": "#/components/schemas/NotificationChannelInput",
+          "type": "object",
+          "required": [
+            "adapterKind",
+            "name"
+          ],
+          "properties": {
+            "adapterKind": {
+              "type": "string"
+            },
+            "config": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "secrets": {
+              "type": "object",
+              "writeOnly": true,
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "required": [
+        "body"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "put",
+    "path": "/api/v1/notifications/channels/{channelId}",
+    "tags": [
+      "Notifications"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "channelId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Update Notification Channel",
+    "operationId": "updateNotificationChannel",
+    "requestBody": {
+      "required": true,
+      "contentTypes": [
+        "application/json"
+      ],
+      "schemaRefs": [
+        "#/components/schemas/NotificationChannelInput"
+      ]
+    },
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "channelId": {
+          "type": "string"
+        },
+        "body": {
+          "ref": "#/components/schemas/NotificationChannelInput",
+          "type": "object",
+          "required": [
+            "adapterKind",
+            "name"
+          ],
+          "properties": {
+            "adapterKind": {
+              "type": "string"
+            },
+            "config": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "secrets": {
+              "type": "object",
+              "writeOnly": true,
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "required": [
+        "body",
+        "channelId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "delete",
+    "path": "/api/v1/notifications/channels/{channelId}",
+    "tags": [
+      "Notifications"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "channelId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "204",
+        "contentTypes": [],
+        "schemaRefs": [],
+        "description": "Resource deleted."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Delete Notification Channel",
+    "operationId": "deleteNotificationChannel",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "channelId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "channelId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "post",
+    "path": "/api/v1/notifications/channels/{channelId}/test",
+    "tags": [
+      "Notifications"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "channelId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Test Notification Channel",
+    "operationId": "testNotificationChannel",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "channelId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "channelId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/notifications/templates",
+    "tags": [
+      "Notifications"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "eventType",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "adapterKind",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "page",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      {
+        "name": "pageSize",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/PaginatedBusinessObjects"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "List Notification Templates",
+    "operationId": "listNotificationTemplates",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "eventType": {
+          "type": "string"
+        },
+        "adapterKind": {
+          "type": "string"
+        },
+        "page": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "pageSize": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "post",
+    "path": "/api/v1/notifications/templates",
+    "tags": [
+      "Notifications"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [],
+    "responses": [
+      {
+        "status": "201",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Create Notification Template",
+    "operationId": "createNotificationTemplate",
+    "requestBody": {
+      "required": true,
+      "contentTypes": [
+        "application/json"
+      ],
+      "schemaRefs": [
+        "#/components/schemas/NotificationTemplateInput"
+      ]
+    },
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "body": {
+          "ref": "#/components/schemas/NotificationTemplateInput",
+          "type": "object",
+          "required": [
+            "adapterKind",
+            "eventType",
+            "locale",
+            "name"
+          ],
+          "properties": {
+            "adapterKind": {
+              "type": "string"
+            },
+            "bodyTemplate": {
+              "type": "string"
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "eventType": {
+              "type": "string"
+            },
+            "jsonBodyTemplate": {
+              "type": "string"
+            },
+            "locale": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "subjectTemplate": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "required": [
+        "body"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "put",
+    "path": "/api/v1/notifications/templates/{templateId}",
+    "tags": [
+      "Notifications"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "templateId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Update Notification Template",
+    "operationId": "updateNotificationTemplate",
+    "requestBody": {
+      "required": true,
+      "contentTypes": [
+        "application/json"
+      ],
+      "schemaRefs": [
+        "#/components/schemas/NotificationTemplateInput"
+      ]
+    },
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "templateId": {
+          "type": "string"
+        },
+        "body": {
+          "ref": "#/components/schemas/NotificationTemplateInput",
+          "type": "object",
+          "required": [
+            "adapterKind",
+            "eventType",
+            "locale",
+            "name"
+          ],
+          "properties": {
+            "adapterKind": {
+              "type": "string"
+            },
+            "bodyTemplate": {
+              "type": "string"
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "eventType": {
+              "type": "string"
+            },
+            "jsonBodyTemplate": {
+              "type": "string"
+            },
+            "locale": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "subjectTemplate": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "required": [
+        "body",
+        "templateId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "delete",
+    "path": "/api/v1/notifications/templates/{templateId}",
+    "tags": [
+      "Notifications"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "templateId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "204",
+        "contentTypes": [],
+        "schemaRefs": [],
+        "description": "Resource deleted."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Delete Notification Template",
+    "operationId": "deleteNotificationTemplate",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "templateId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "templateId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/notifications/rules",
+    "tags": [
+      "Notifications"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "search",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "page",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      {
+        "name": "pageSize",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/PaginatedBusinessObjects"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "List Notification Rules",
+    "operationId": "listNotificationRules",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "search": {
+          "type": "string"
+        },
+        "page": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "pageSize": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "post",
+    "path": "/api/v1/notifications/rules",
+    "tags": [
+      "Notifications"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [],
+    "responses": [
+      {
+        "status": "201",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Create Notification Rule",
+    "operationId": "createNotificationRule",
+    "requestBody": {
+      "required": true,
+      "contentTypes": [
+        "application/json"
+      ],
+      "schemaRefs": [
+        "#/components/schemas/NotificationRuleInput"
+      ]
+    },
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "body": {
+          "ref": "#/components/schemas/NotificationRuleInput",
+          "type": "object",
+          "required": [
+            "channelIds",
+            "eventTypes",
+            "name"
+          ],
+          "properties": {
+            "channelIds": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "eventTypes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "filter": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "locale": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "templateId": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "required": [
+        "body"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "put",
+    "path": "/api/v1/notifications/rules/{ruleId}",
+    "tags": [
+      "Notifications"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "ruleId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Update Notification Rule",
+    "operationId": "updateNotificationRule",
+    "requestBody": {
+      "required": true,
+      "contentTypes": [
+        "application/json"
+      ],
+      "schemaRefs": [
+        "#/components/schemas/NotificationRuleInput"
+      ]
+    },
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "ruleId": {
+          "type": "string"
+        },
+        "body": {
+          "ref": "#/components/schemas/NotificationRuleInput",
+          "type": "object",
+          "required": [
+            "channelIds",
+            "eventTypes",
+            "name"
+          ],
+          "properties": {
+            "channelIds": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "eventTypes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "filter": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "locale": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "templateId": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "required": [
+        "body",
+        "ruleId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "delete",
+    "path": "/api/v1/notifications/rules/{ruleId}",
+    "tags": [
+      "Notifications"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "ruleId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "204",
+        "contentTypes": [],
+        "schemaRefs": [],
+        "description": "Resource deleted."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Delete Notification Rule",
+    "operationId": "deleteNotificationRule",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "ruleId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ruleId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/notifications/deliveries",
+    "tags": [
+      "Notifications"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "status",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "eventType",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "page",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      {
+        "name": "pageSize",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/PaginatedBusinessObjects"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "List Notification Deliveries",
+    "operationId": "listNotificationDeliveries",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string"
+        },
+        "eventType": {
+          "type": "string"
+        },
+        "page": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "pageSize": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/events",
+    "tags": [
+      "Events"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "scope",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "search",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "projectId",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      {
+        "name": "applicationId",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      {
+        "name": "deploymentTargetId",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      {
+        "name": "category",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      {
+        "name": "type",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      {
+        "name": "severity",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      {
+        "name": "status",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      {
+        "name": "dateFrom",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "dateTo",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "page",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      {
+        "name": "pageSize",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      {
+        "name": "sortBy",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "sortOrder",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/PaginatedBusinessObjects"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "List Platform Events",
+    "operationId": "listPlatformEvents",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "type": "string"
+        },
+        "search": {
+          "type": "string"
+        },
+        "projectId": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "applicationId": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "deploymentTargetId": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "category": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "type": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "severity": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "status": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "dateFrom": {
+          "type": "string"
+        },
+        "dateTo": {
+          "type": "string"
+        },
+        "page": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "pageSize": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "sortBy": {
+          "type": "string"
+        },
+        "sortOrder": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/events/catalog",
+    "tags": [
+      "Events"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObjectList"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "List Platform Event Catalog",
+    "operationId": "listPlatformEventCatalog"
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/events/{eventId}",
+    "tags": [
+      "Events"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "eventId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Get Platform Event",
+    "operationId": "getPlatformEvent",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "eventId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/app-templates",
+    "tags": [
+      "AppTemplates"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObjectList"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "List App Templates",
+    "operationId": "listAppTemplates"
+  },
+  {
+    "method": "put",
+    "path": "/api/v1/projects/order",
+    "tags": [
+      "Projects"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Update Project Order",
+    "operationId": "updateProjectOrder",
+    "requestBody": {
+      "required": true,
+      "contentTypes": [
+        "application/json"
+      ],
+      "schemaRefs": [
+        "#/components/schemas/ProjectOrderInput"
+      ]
+    },
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "body": {
+          "ref": "#/components/schemas/ProjectOrderInput",
+          "type": "object",
+          "required": [
+            "projectIds"
+          ],
+          "properties": {
+            "projectIds": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "required": [
+        "body"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/projects/{projectId}/runtime-config-sets",
+    "tags": [
+      "Projects"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObjectList"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "List Project Runtime Config Sets",
+    "operationId": "listProjectRuntimeConfigSets",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "projectId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "post",
+    "path": "/api/v1/projects/{projectId}/runtime-config-sets",
+    "tags": [
+      "Projects"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "201",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Create Project Runtime Config Set",
+    "operationId": "createProjectRuntimeConfigSet",
+    "requestBody": {
+      "required": true,
+      "contentTypes": [
+        "application/json"
+      ],
+      "schemaRefs": [
+        "#/components/schemas/ProjectRuntimeConfigSetInput"
+      ]
+    },
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "body": {
+          "ref": "#/components/schemas/ProjectRuntimeConfigSetInput",
+          "type": "object",
+          "required": [
+            "name"
+          ],
+          "properties": {
+            "configFiles": {
+              "type": "string"
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "envVars": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "secretFiles": {
+              "type": "string"
+            },
+            "secretRefs": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "required": [
+        "body",
+        "projectId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "put",
+    "path": "/api/v1/projects/{projectId}/runtime-config-sets/{setId}",
+    "tags": [
+      "Projects"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "setId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Update Project Runtime Config Set",
+    "operationId": "updateProjectRuntimeConfigSet",
+    "requestBody": {
+      "required": true,
+      "contentTypes": [
+        "application/json"
+      ],
+      "schemaRefs": [
+        "#/components/schemas/ProjectRuntimeConfigSetInput"
+      ]
+    },
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "setId": {
+          "type": "string"
+        },
+        "body": {
+          "ref": "#/components/schemas/ProjectRuntimeConfigSetInput",
+          "type": "object",
+          "required": [
+            "name"
+          ],
+          "properties": {
+            "configFiles": {
+              "type": "string"
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "envVars": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "secretFiles": {
+              "type": "string"
+            },
+            "secretRefs": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "required": [
+        "body",
+        "projectId",
+        "setId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "delete",
+    "path": "/api/v1/projects/{projectId}/runtime-config-sets/{setId}",
+    "tags": [
+      "Projects"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "setId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "204",
+        "contentTypes": [],
+        "schemaRefs": [],
+        "description": "Resource deleted."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Delete Project Runtime Config Set",
+    "operationId": "deleteProjectRuntimeConfigSet",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "setId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "projectId",
+        "setId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/projects/{projectId}/hooks",
+    "tags": [
+      "Projects"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObjectList"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "List Project Hook Configs",
+    "operationId": "listProjectHookConfigs",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "projectId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "post",
+    "path": "/api/v1/projects/{projectId}/hooks",
+    "tags": [
+      "Projects"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "201",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Create Project Hook Config",
+    "operationId": "createProjectHookConfig",
+    "requestBody": {
+      "required": true,
+      "contentTypes": [
+        "application/json"
+      ],
+      "schemaRefs": [
+        "#/components/schemas/ProjectHookConfigInput"
+      ]
+    },
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "body": {
+          "ref": "#/components/schemas/ProjectHookConfigInput",
+          "type": "object",
+          "required": [
+            "name",
+            "script"
+          ],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "failurePolicy": {
+              "type": "string",
+              "enum": [
+                "fail",
+                "continue"
+              ]
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "script": {
+              "type": "string"
+            },
+            "shell": {
+              "type": "string"
+            },
+            "timeoutSeconds": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      },
+      "required": [
+        "body",
+        "projectId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "put",
+    "path": "/api/v1/projects/{projectId}/hooks/{hookId}",
+    "tags": [
+      "Projects"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "hookId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Update Project Hook Config",
+    "operationId": "updateProjectHookConfig",
+    "requestBody": {
+      "required": true,
+      "contentTypes": [
+        "application/json"
+      ],
+      "schemaRefs": [
+        "#/components/schemas/ProjectHookConfigInput"
+      ]
+    },
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "hookId": {
+          "type": "string"
+        },
+        "body": {
+          "ref": "#/components/schemas/ProjectHookConfigInput",
+          "type": "object",
+          "required": [
+            "name",
+            "script"
+          ],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "failurePolicy": {
+              "type": "string",
+              "enum": [
+                "fail",
+                "continue"
+              ]
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "script": {
+              "type": "string"
+            },
+            "shell": {
+              "type": "string"
+            },
+            "timeoutSeconds": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      },
+      "required": [
+        "body",
+        "hookId",
+        "projectId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "delete",
+    "path": "/api/v1/projects/{projectId}/hooks/{hookId}",
+    "tags": [
+      "Projects"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "hookId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "204",
+        "contentTypes": [],
+        "schemaRefs": [],
+        "description": "Resource deleted."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Delete Project Hook Config",
+    "operationId": "deleteProjectHookConfig",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "hookId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "hookId",
+        "projectId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/projects/{projectId}/topology",
+    "tags": [
+      "Topology"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "stage",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "applicationId",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "origins",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Get Project Topology",
+    "operationId": "getProjectTopology",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "stage": {
+          "type": "string"
+        },
+        "applicationId": {
+          "type": "string"
+        },
+        "origins": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "projectId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/projects/{projectId}/service-bindings",
+    "tags": [
+      "Topology"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObjectList"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "List Service Bindings",
+    "operationId": "listServiceBindings",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "projectId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "post",
+    "path": "/api/v1/projects/{projectId}/service-bindings",
+    "tags": [
+      "Topology"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "201",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Create Service Binding",
+    "operationId": "createServiceBinding",
+    "requestBody": {
+      "required": true,
+      "contentTypes": [
+        "application/json"
+      ],
+      "schemaRefs": [
+        "#/components/schemas/ServiceBindingInput"
+      ]
+    },
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "body": {
+          "ref": "#/components/schemas/ServiceBindingInput",
+          "type": "object",
+          "required": [
+            "sourceApplicationId",
+            "targetApplicationId"
+          ],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "hostEnvVar": {
+              "type": "string"
+            },
+            "injectionMode": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "portEnvVar": {
+              "type": "string"
+            },
+            "protocol": {
+              "type": "string"
+            },
+            "sourceApplicationId": {
+              "type": "string"
+            },
+            "sourceDeploymentTargetId": {
+              "type": "string"
+            },
+            "targetApplicationId": {
+              "type": "string"
+            },
+            "targetDeploymentTargetId": {
+              "type": "string"
+            },
+            "targetPort": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            "targetPortName": {
+              "type": "string"
+            },
+            "urlEnvVar": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "required": [
+        "body",
+        "projectId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "put",
+    "path": "/api/v1/projects/{projectId}/service-bindings/{bindingId}",
+    "tags": [
+      "Topology"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "bindingId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Update Service Binding",
+    "operationId": "updateServiceBinding",
+    "requestBody": {
+      "required": true,
+      "contentTypes": [
+        "application/json"
+      ],
+      "schemaRefs": [
+        "#/components/schemas/ServiceBindingInput"
+      ]
+    },
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "bindingId": {
+          "type": "string"
+        },
+        "body": {
+          "ref": "#/components/schemas/ServiceBindingInput",
+          "type": "object",
+          "required": [
+            "sourceApplicationId",
+            "targetApplicationId"
+          ],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "hostEnvVar": {
+              "type": "string"
+            },
+            "injectionMode": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "portEnvVar": {
+              "type": "string"
+            },
+            "protocol": {
+              "type": "string"
+            },
+            "sourceApplicationId": {
+              "type": "string"
+            },
+            "sourceDeploymentTargetId": {
+              "type": "string"
+            },
+            "targetApplicationId": {
+              "type": "string"
+            },
+            "targetDeploymentTargetId": {
+              "type": "string"
+            },
+            "targetPort": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            "targetPortName": {
+              "type": "string"
+            },
+            "urlEnvVar": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "required": [
+        "bindingId",
+        "body",
+        "projectId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "delete",
+    "path": "/api/v1/projects/{projectId}/service-bindings/{bindingId}",
+    "tags": [
+      "Topology"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "bindingId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "204",
+        "contentTypes": [],
+        "schemaRefs": [],
+        "description": "Resource deleted."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Delete Service Binding",
+    "operationId": "deleteServiceBinding",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "bindingId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "bindingId",
+        "projectId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "post",
+    "path": "/api/v1/projects/{projectId}/service-bindings/{bindingId}/check",
+    "tags": [
+      "Topology"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "bindingId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Check Service Binding",
+    "operationId": "checkServiceBinding",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "bindingId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "bindingId",
+        "projectId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/projects/{projectId}/topology-edges",
+    "tags": [
+      "Topology"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObjectList"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "List Project Topology Edges",
+    "operationId": "listProjectTopologyEdges",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "projectId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "post",
+    "path": "/api/v1/projects/{projectId}/topology-edges",
+    "tags": [
+      "Topology"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "201",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Create Project Topology Edge",
+    "operationId": "createProjectTopologyEdge",
+    "requestBody": {
+      "required": true,
+      "contentTypes": [
+        "application/json"
+      ],
+      "schemaRefs": [
+        "#/components/schemas/TopologyEdgeInput"
+      ]
+    },
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "body": {
+          "ref": "#/components/schemas/TopologyEdgeInput",
+          "allOf": [
+            {
+              "ref": "#/components/schemas/ServiceBindingInput",
+              "type": "object",
+              "required": [
+                "sourceApplicationId",
+                "targetApplicationId"
+              ],
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "hostEnvVar": {
+                  "type": "string"
+                },
+                "injectionMode": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "portEnvVar": {
+                  "type": "string"
+                },
+                "protocol": {
+                  "type": "string"
+                },
+                "sourceApplicationId": {
+                  "type": "string"
+                },
+                "sourceDeploymentTargetId": {
+                  "type": "string"
+                },
+                "targetApplicationId": {
+                  "type": "string"
+                },
+                "targetDeploymentTargetId": {
+                  "type": "string"
+                },
+                "targetPort": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 65535
+                },
+                "targetPortName": {
+                  "type": "string"
+                },
+                "urlEnvVar": {
+                  "type": "string"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "relationType": {
+                  "type": "string"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "required": [
+        "body",
+        "projectId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "put",
+    "path": "/api/v1/projects/{projectId}/topology-edges/{edgeId}",
+    "tags": [
+      "Topology"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "edgeId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Update Project Topology Edge",
+    "operationId": "updateProjectTopologyEdge",
+    "requestBody": {
+      "required": true,
+      "contentTypes": [
+        "application/json"
+      ],
+      "schemaRefs": [
+        "#/components/schemas/TopologyEdgeInput"
+      ]
+    },
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "edgeId": {
+          "type": "string"
+        },
+        "body": {
+          "ref": "#/components/schemas/TopologyEdgeInput",
+          "allOf": [
+            {
+              "ref": "#/components/schemas/ServiceBindingInput",
+              "type": "object",
+              "required": [
+                "sourceApplicationId",
+                "targetApplicationId"
+              ],
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "hostEnvVar": {
+                  "type": "string"
+                },
+                "injectionMode": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "portEnvVar": {
+                  "type": "string"
+                },
+                "protocol": {
+                  "type": "string"
+                },
+                "sourceApplicationId": {
+                  "type": "string"
+                },
+                "sourceDeploymentTargetId": {
+                  "type": "string"
+                },
+                "targetApplicationId": {
+                  "type": "string"
+                },
+                "targetDeploymentTargetId": {
+                  "type": "string"
+                },
+                "targetPort": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 65535
+                },
+                "targetPortName": {
+                  "type": "string"
+                },
+                "urlEnvVar": {
+                  "type": "string"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "relationType": {
+                  "type": "string"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "required": [
+        "body",
+        "edgeId",
+        "projectId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "delete",
+    "path": "/api/v1/projects/{projectId}/topology-edges/{edgeId}",
+    "tags": [
+      "Topology"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "edgeId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "204",
+        "contentTypes": [],
+        "schemaRefs": [],
+        "description": "Resource deleted."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Delete Project Topology Edge",
+    "operationId": "deleteProjectTopologyEdge",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "edgeId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "edgeId",
+        "projectId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/projects/{projectId}/hook-runs",
+    "tags": [
+      "Projects"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "phase",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "buildRunId",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "releaseId",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObjectList"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "List Project Hook Runs",
+    "operationId": "listProjectHookRuns",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "phase": {
+          "type": "string"
+        },
+        "buildRunId": {
+          "type": "string"
+        },
+        "releaseId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "projectId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/projects/{projectId}/hook-runs/{runId}/logs",
+    "tags": [
+      "Projects"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "runId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Get Project Hook Run Log",
+    "operationId": "getProjectHookRunLog",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "runId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "projectId",
+        "runId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "post",
+    "path": "/api/v1/projects/{projectId}/app-templates/{templateId}/install",
+    "tags": [
+      "Projects"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "templateId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "201",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Install App Template",
+    "operationId": "installAppTemplate",
+    "requestBody": {
+      "required": true,
+      "contentTypes": [
+        "application/json"
+      ],
+      "schemaRefs": [
+        "#/components/schemas/AppTemplateInstallInput"
+      ]
+    },
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "templateId": {
+          "type": "string"
+        },
+        "body": {
+          "ref": "#/components/schemas/AppTemplateInstallInput",
+          "type": "object",
+          "required": [
+            "applicationIdentifier",
+            "applicationName",
+            "clusterId",
+            "deploymentName",
+            "stage"
+          ],
+          "properties": {
+            "applicationIdentifier": {
+              "type": "string"
+            },
+            "applicationName": {
+              "type": "string"
+            },
+            "clusterId": {
+              "type": "string"
+            },
+            "cpuRequest": {
+              "type": "string"
+            },
+            "dataCapacity": {
+              "type": "string"
+            },
+            "deploymentName": {
+              "type": "string"
+            },
+            "imageRef": {
+              "type": "string"
+            },
+            "installNow": {
+              "type": "boolean"
+            },
+            "memoryRequest": {
+              "type": "string"
+            },
+            "namespace": {
+              "type": "string"
+            },
+            "replicas": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "stage": {
+              "type": "string"
+            },
+            "values": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          }
+        }
+      },
+      "required": [
+        "body",
+        "projectId",
+        "templateId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/projects/{projectId}/member-candidates",
+    "tags": [
+      "Projects"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "search",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObjectList"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Search Project Member Candidates",
+    "operationId": "searchProjectMemberCandidates",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "search": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      "required": [
+        "projectId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "post",
+    "path": "/api/v1/projects/{projectId}/applications/{applicationId}/deployment-targets/{targetId}/restart",
+    "tags": [
+      "Deployments"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "applicationId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "targetId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Restart Deployment Target",
+    "operationId": "restartDeploymentTarget",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "applicationId": {
+          "type": "string"
+        },
+        "targetId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "applicationId",
+        "projectId",
+        "targetId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/projects/{projectId}/applications/{applicationId}/deployment-targets/{targetId}/metrics/stream",
+    "tags": [
+      "Deployments"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "applicationId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "targetId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "tail",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "text/plain"
+        ],
+        "schemaRefs": [],
+        "description": "Protocol stream established."
+      }
+    ],
+    "summary": "Stream Deployment Target Metrics",
+    "operationId": "streamDeploymentTargetMetrics",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "applicationId": {
+          "type": "string"
+        },
+        "targetId": {
+          "type": "string"
+        },
+        "tail": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      "required": [
+        "applicationId",
+        "projectId",
+        "targetId"
+      ],
+      "additionalProperties": false
+    },
+    "xLunaCli": {
+      "classification": "protocol-adapter",
+      "hidden": true,
+      "exclusionReason": "Streaming metrics transport consumed by the explicit CLI deployment-metrics protocol adapter."
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/projects/{projectId}/build-runs",
+    "tags": [
+      "Builds"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "applicationId",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "deploymentTargetId",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "status",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "triggerType",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "sourceBranch",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "createdBy",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "page",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      {
+        "name": "pageSize",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/PaginatedBusinessObjects"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "List Build Runs",
+    "operationId": "listBuildRuns",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "applicationId": {
+          "type": "string"
+        },
+        "deploymentTargetId": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "triggerType": {
+          "type": "string"
+        },
+        "sourceBranch": {
+          "type": "string"
+        },
+        "createdBy": {
+          "type": "string"
+        },
+        "page": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "pageSize": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      "required": [
+        "projectId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "post",
+    "path": "/api/v1/projects/{projectId}/build-runs/trigger",
+    "tags": [
+      "Builds"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "201",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Trigger Build Run",
+    "operationId": "triggerBuildRun",
+    "requestBody": {
+      "required": true,
+      "contentTypes": [
+        "application/json"
+      ],
+      "schemaRefs": [
+        "#/components/schemas/BuildRunInput"
+      ]
+    },
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "body": {
+          "ref": "#/components/schemas/BuildRunInput",
+          "type": "object",
+          "required": [
+            "applicationId",
+            "deploymentTargetId"
+          ],
+          "properties": {
+            "applicationId": {
+              "type": "string"
+            },
+            "buildArgs": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "buildContext": {
+              "type": "string"
+            },
+            "buildCpuRequest": {
+              "type": "string"
+            },
+            "buildDirectory": {
+              "type": "string"
+            },
+            "buildEnvironmentId": {
+              "type": "string"
+            },
+            "buildMemoryRequest": {
+              "type": "string"
+            },
+            "buildTimeoutSeconds": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "buildVariableSetIds": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "cacheConfig": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "deploymentTargetId": {
+              "type": "string"
+            },
+            "dockerfilePath": {
+              "type": "string"
+            },
+            "imageRef": {
+              "type": "string"
+            },
+            "sourceBranch": {
+              "type": "string"
+            },
+            "sourceCommit": {
+              "type": "string"
+            },
+            "sourceTag": {
+              "type": "string"
+            },
+            "targetImageRef": {
+              "type": "string"
+            },
+            "targetRegistryId": {
+              "type": "string"
+            },
+            "targetRepository": {
+              "type": "string"
+            },
+            "targetTag": {
+              "type": "string"
+            },
+            "triggerType": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "required": [
+        "body",
+        "projectId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/projects/{projectId}/build-runs/{runId}",
+    "tags": [
+      "Builds"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "runId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Get Build Run",
+    "operationId": "getBuildRun",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "runId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "projectId",
+        "runId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "delete",
+    "path": "/api/v1/projects/{projectId}/build-runs/{runId}",
+    "tags": [
+      "Builds"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "runId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "204",
+        "contentTypes": [],
+        "schemaRefs": [],
+        "description": "Resource deleted."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Delete Build Run",
+    "operationId": "deleteBuildRun",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "runId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "projectId",
+        "runId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "post",
+    "path": "/api/v1/projects/{projectId}/build-runs/{runId}/retry",
+    "tags": [
+      "Builds"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "runId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Retry Build Run",
+    "operationId": "retryBuildRun",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "runId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "projectId",
+        "runId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "post",
+    "path": "/api/v1/projects/{projectId}/build-runs/{runId}/cancel",
+    "tags": [
+      "Builds"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "runId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Cancel Build Run",
+    "operationId": "cancelBuildRun",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "runId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "projectId",
+        "runId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/projects/{projectId}/build-jobs",
+    "tags": [
+      "Builds"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "buildRunId",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "page",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      {
+        "name": "pageSize",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/PaginatedBusinessObjects"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "List Build Jobs",
+    "operationId": "listBuildJobs",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "buildRunId": {
+          "type": "string"
+        },
+        "page": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "pageSize": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      "required": [
+        "projectId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/projects/{projectId}/build-jobs/{jobId}",
+    "tags": [
+      "Builds"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "jobId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Get Build Job",
+    "operationId": "getBuildJob",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "jobId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "jobId",
+        "projectId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/projects/{projectId}/build-jobs/{jobId}/logs",
+    "tags": [
+      "Builds"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "jobId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Get Build Job Logs",
+    "operationId": "getBuildJobLogs",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "jobId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "jobId",
+        "projectId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/projects/{projectId}/build-jobs/{jobId}/logs/stream",
+    "tags": [
+      "Builds"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "jobId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "text/plain"
+        ],
+        "schemaRefs": [],
+        "description": "Protocol stream established."
+      }
+    ],
+    "summary": "Stream Build Job Logs",
+    "operationId": "streamBuildJobLogs",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "jobId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "jobId",
+        "projectId"
+      ],
+      "additionalProperties": false
+    },
+    "xLunaCli": {
+      "classification": "protocol-adapter",
+      "hidden": true,
+      "exclusionReason": "Streaming log transport consumed by the explicit CLI build-log protocol adapter."
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/projects/{projectId}/releases",
+    "tags": [
+      "Releases"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "environmentId",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "deploymentTargetId",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "page",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      {
+        "name": "pageSize",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/PaginatedBusinessObjects"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "List Releases",
+    "operationId": "listReleases",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "environmentId": {
+          "type": "string"
+        },
+        "deploymentTargetId": {
+          "type": "string"
+        },
+        "page": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "pageSize": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      "required": [
+        "projectId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "post",
+    "path": "/api/v1/projects/{projectId}/releases",
+    "tags": [
+      "Releases"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "201",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Create Release",
+    "operationId": "createRelease",
+    "requestBody": {
+      "required": true,
+      "contentTypes": [
+        "application/json"
+      ],
+      "schemaRefs": [
+        "#/components/schemas/ReleaseInput"
+      ]
+    },
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "body": {
+          "ref": "#/components/schemas/ReleaseInput",
+          "type": "object",
+          "required": [
+            "applicationId",
+            "deploymentTargetId"
+          ],
+          "properties": {
+            "applicationId": {
+              "type": "string"
+            },
+            "buildRunId": {
+              "type": "string"
+            },
+            "deploymentTargetId": {
+              "type": "string"
+            },
+            "environmentId": {
+              "type": "string"
+            },
+            "forceImagePull": {
+              "type": "boolean"
+            },
+            "imageRef": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "revision": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "required": [
+        "body",
+        "projectId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/projects/{projectId}/releases/{releaseId}/logs",
+    "tags": [
+      "Releases"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "releaseId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Get Release Logs",
+    "operationId": "getReleaseLogs",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "releaseId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "projectId",
+        "releaseId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/projects/{projectId}/releases/{releaseId}/runtime-logs",
+    "tags": [
+      "Releases"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "releaseId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "tailLines",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      {
+        "name": "container",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Get Release Runtime Logs",
+    "operationId": "getReleaseRuntimeLogs",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "releaseId": {
+          "type": "string"
+        },
+        "tailLines": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "container": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "projectId",
+        "releaseId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "post",
+    "path": "/api/v1/projects/{projectId}/releases/{releaseId}/exec",
+    "tags": [
+      "Releases"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "releaseId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Exec Release Runtime Command",
+    "operationId": "execReleaseRuntimeCommand",
+    "requestBody": {
+      "required": true,
+      "contentTypes": [
+        "application/json"
+      ],
+      "schemaRefs": [
+        "#/components/schemas/ReleaseRuntimeExecInput"
+      ]
+    },
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "releaseId": {
+          "type": "string"
+        },
+        "body": {
+          "ref": "#/components/schemas/ReleaseRuntimeExecInput",
+          "type": "object",
+          "required": [
+            "command"
+          ],
+          "properties": {
+            "command": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ]
+            },
+            "container": {
+              "type": "string"
+            },
+            "stdin": {
+              "type": "string"
+            },
+            "tty": {
+              "type": "boolean"
+            }
+          }
+        }
+      },
+      "required": [
+        "body",
+        "projectId",
+        "releaseId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/projects/{projectId}/releases/{releaseId}/terminal",
+    "tags": [
+      "Releases"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "releaseId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "container",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "text/plain"
+        ],
+        "schemaRefs": [],
+        "description": "Protocol stream established."
+      }
+    ],
+    "summary": "Stream Release Runtime Terminal",
+    "operationId": "streamReleaseRuntimeTerminal",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "releaseId": {
+          "type": "string"
+        },
+        "container": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "projectId",
+        "releaseId"
+      ],
+      "additionalProperties": false
+    },
+    "xLunaCli": {
+      "classification": "protocol-adapter",
+      "hidden": true,
+      "exclusionReason": "WebSocket terminal transport consumed by the explicit CLI release-terminal protocol adapter."
+    }
+  },
+  {
+    "method": "post",
+    "path": "/api/v1/projects/{projectId}/releases/{releaseId}/rollback",
+    "tags": [
+      "Releases"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "releaseId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Rollback Release",
+    "operationId": "rollbackRelease",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "releaseId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "projectId",
+        "releaseId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/projects/{projectId}/gateway-routes",
+    "tags": [
+      "Gateway"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObjectList"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "List Gateway Routes",
+    "operationId": "listGatewayRoutes",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "projectId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "post",
+    "path": "/api/v1/projects/{projectId}/gateway-routes",
+    "tags": [
+      "Gateway"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "201",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Create Gateway Route",
+    "operationId": "createGatewayRoute",
+    "requestBody": {
+      "required": true,
+      "contentTypes": [
+        "application/json"
+      ],
+      "schemaRefs": [
+        "#/components/schemas/GatewayRouteInput"
+      ]
+    },
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "body": {
+          "ref": "#/components/schemas/GatewayRouteInput",
+          "type": "object",
+          "required": [
+            "applicationId",
+            "deploymentTargetId"
+          ],
+          "properties": {
+            "applicationId": {
+              "type": "string"
+            },
+            "backendWeight": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "deploymentTargetId": {
+              "type": "string"
+            },
+            "dnsStatus": {
+              "type": "string"
+            },
+            "domainSuffix": {
+              "type": "string"
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "environmentId": {
+              "type": "string"
+            },
+            "host": {
+              "type": "string"
+            },
+            "hostnameAliases": {
+              "type": "string"
+            },
+            "isDefault": {
+              "type": "boolean"
+            },
+            "parentGatewayName": {
+              "type": "string"
+            },
+            "parentGatewayNamespace": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "pathMatchType": {
+              "type": "string",
+              "enum": [
+                "PathPrefix",
+                "Exact"
+              ]
+            },
+            "requestHeaders": {
+              "type": "string"
+            },
+            "requestRedirect": {
+              "type": "string"
+            },
+            "responseHeaders": {
+              "type": "string"
+            },
+            "sectionName": {
+              "type": "string"
+            },
+            "servicePort": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            "status": {
+              "type": "string"
+            },
+            "tlsMode": {
+              "type": "string"
+            },
+            "urlRewrite": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "required": [
+        "body",
+        "projectId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "put",
+    "path": "/api/v1/projects/{projectId}/gateway-routes/{routeId}",
+    "tags": [
+      "Gateway"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "routeId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Update Gateway Route",
+    "operationId": "updateGatewayRoute",
+    "requestBody": {
+      "required": true,
+      "contentTypes": [
+        "application/json"
+      ],
+      "schemaRefs": [
+        "#/components/schemas/GatewayRouteInput"
+      ]
+    },
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "routeId": {
+          "type": "string"
+        },
+        "body": {
+          "ref": "#/components/schemas/GatewayRouteInput",
+          "type": "object",
+          "required": [
+            "applicationId",
+            "deploymentTargetId"
+          ],
+          "properties": {
+            "applicationId": {
+              "type": "string"
+            },
+            "backendWeight": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "deploymentTargetId": {
+              "type": "string"
+            },
+            "dnsStatus": {
+              "type": "string"
+            },
+            "domainSuffix": {
+              "type": "string"
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "environmentId": {
+              "type": "string"
+            },
+            "host": {
+              "type": "string"
+            },
+            "hostnameAliases": {
+              "type": "string"
+            },
+            "isDefault": {
+              "type": "boolean"
+            },
+            "parentGatewayName": {
+              "type": "string"
+            },
+            "parentGatewayNamespace": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "pathMatchType": {
+              "type": "string",
+              "enum": [
+                "PathPrefix",
+                "Exact"
+              ]
+            },
+            "requestHeaders": {
+              "type": "string"
+            },
+            "requestRedirect": {
+              "type": "string"
+            },
+            "responseHeaders": {
+              "type": "string"
+            },
+            "sectionName": {
+              "type": "string"
+            },
+            "servicePort": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            "status": {
+              "type": "string"
+            },
+            "tlsMode": {
+              "type": "string"
+            },
+            "urlRewrite": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "required": [
+        "body",
+        "projectId",
+        "routeId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "delete",
+    "path": "/api/v1/projects/{projectId}/gateway-routes/{routeId}",
+    "tags": [
+      "Gateway"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "routeId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "204",
+        "contentTypes": [],
+        "schemaRefs": [],
+        "description": "Resource deleted."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Delete Gateway Route",
+    "operationId": "deleteGatewayRoute",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "routeId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "projectId",
+        "routeId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/projects/{projectId}/gateway-routes/check-domain",
+    "tags": [
+      "Gateway"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "domainSuffix",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "host",
+        "in": "query",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "routeId",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Check Gateway Domain",
+    "operationId": "checkGatewayDomain",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "domainSuffix": {
+          "type": "string"
+        },
+        "host": {
+          "type": "string"
+        },
+        "routeId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "host",
+        "projectId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "post",
+    "path": "/api/v1/projects/{projectId}/repository-bindings/{bindingId}/webhook/reconfigure",
+    "tags": [
+      "Projects"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "projectId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "bindingId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Reconfigure Repository Webhook",
+    "operationId": "reconfigureRepositoryWebhook",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "bindingId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "bindingId",
+        "projectId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/billing/summary",
+    "tags": [
+      "Billing"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "accountScope",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "userId",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "projectId",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      {
+        "name": "periodStart",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "periodEnd",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BillingSummary"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Get Billing Summary",
+    "operationId": "getBillingSummary",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "accountScope": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "projectId": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "periodStart": {
+          "type": "string"
+        },
+        "periodEnd": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/billing/deployment-spend",
+    "tags": [
+      "Billing"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "userId",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "projectId",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      {
+        "name": "periodStart",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "periodEnd",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "page",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      {
+        "name": "pageSize",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/PaginatedBusinessObjects"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "List Billing Deployment Spend",
+    "operationId": "listBillingDeploymentSpend",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string"
+        },
+        "projectId": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "periodStart": {
+          "type": "string"
+        },
+        "periodEnd": {
+          "type": "string"
+        },
+        "page": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "pageSize": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/billing/ledger",
+    "tags": [
+      "Billing"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "userId",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "projectId",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      {
+        "name": "type",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "periodStart",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "periodEnd",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "page",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      {
+        "name": "pageSize",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/PaginatedBusinessObjects"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "List Billing Ledger Entries",
+    "operationId": "listBillingLedgerEntries",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string"
+        },
+        "projectId": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "type": {
+          "type": "string"
+        },
+        "periodStart": {
+          "type": "string"
+        },
+        "periodEnd": {
+          "type": "string"
+        },
+        "page": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "pageSize": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/billing/usage-records",
+    "tags": [
+      "Billing"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [
+      {
+        "name": "userId",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "projectId",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      {
+        "name": "meter",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "periodStart",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "periodEnd",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "page",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      {
+        "name": "pageSize",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    ],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/PaginatedBusinessObjects"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "List Billing Usage Records",
+    "operationId": "listBillingUsageRecords",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string"
+        },
+        "projectId": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "meter": {
+          "type": "string"
+        },
+        "periodStart": {
+          "type": "string"
+        },
+        "periodEnd": {
+          "type": "string"
+        },
+        "page": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "pageSize": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/billing/rate-rules",
+    "tags": [
+      "Billing"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObjectList"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "List Billing Rate Rules",
+    "operationId": "listBillingRateRules"
+  },
+  {
+    "method": "put",
+    "path": "/api/v1/billing/rate-rules",
+    "tags": [
+      "Billing"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Update Billing Rate Rules",
+    "operationId": "updateBillingRateRules",
+    "requestBody": {
+      "required": true,
+      "contentTypes": [
+        "application/json"
+      ],
+      "schemaRefs": [
+        "#/components/schemas/BillingRateRulesInput"
+      ]
+    },
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "body": {
+          "ref": "#/components/schemas/BillingRateRulesInput",
+          "type": "object",
+          "required": [
+            "rules"
+          ],
+          "properties": {
+            "rules": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "creditsPerUnit",
+                  "enabled",
+                  "meter"
+                ],
+                "properties": {
+                  "creditsPerUnit": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "meter": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "required": [
+        "body"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "post",
+    "path": "/api/v1/billing/wallet-transactions",
+    "tags": [
+      "Billing"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [],
+    "responses": [
+      {
+        "status": "201",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Create Billing Wallet Transaction",
+    "operationId": "createBillingWalletTransaction",
+    "requestBody": {
+      "required": true,
+      "contentTypes": [
+        "application/json"
+      ],
+      "schemaRefs": [
+        "#/components/schemas/BillingWalletTransactionInput"
+      ]
+    },
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "body": {
+          "ref": "#/components/schemas/BillingWalletTransactionInput",
+          "type": "object",
+          "required": [
+            "amountCredits",
+            "type"
+          ],
+          "properties": {
+            "amountCredits": {
+              "type": "number"
+            },
+            "description": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string"
+            },
+            "userId": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "required": [
+        "body"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "post",
+    "path": "/api/v1/billing/external-transactions",
+    "tags": [
+      "Billing"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [],
+    "responses": [
+      {
+        "status": "201",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Create External Billing Transaction",
+    "operationId": "createExternalBillingTransaction",
+    "requestBody": {
+      "required": true,
+      "contentTypes": [
+        "application/json"
+      ],
+      "schemaRefs": [
+        "#/components/schemas/ExternalBillingTransactionInput"
+      ]
+    },
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "body": {
+          "ref": "#/components/schemas/ExternalBillingTransactionInput",
+          "allOf": [
+            {
+              "ref": "#/components/schemas/BillingWalletTransactionInput",
+              "type": "object",
+              "required": [
+                "amountCredits",
+                "type"
+              ],
+              "properties": {
+                "amountCredits": {
+                  "type": "number"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                },
+                "userId": {
+                  "type": "string"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "idempotencyKey"
+              ],
+              "properties": {
+                "idempotencyKey": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          ]
+        }
+      },
+      "required": [
+        "body"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "post",
+    "path": "/api/v1/billing/gateway-traffic/hello",
+    "tags": [
+      "Billing"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [],
+    "responses": [
+      {
+        "status": "201",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Create Gateway Traffic Probe Hello",
+    "operationId": "createGatewayTrafficProbeHello",
+    "requestBody": {
+      "required": false,
+      "contentTypes": [
+        "application/json"
+      ],
+      "schemaRefs": []
+    },
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "body": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "xLunaCli": {
+      "hidden": true,
+      "exclusionReason": "Protocol endpoint consumed by a browser, webhook, probe, stream, or terminal adapter instead of a regular CLI command."
+    }
+  },
+  {
+    "method": "post",
+    "path": "/api/v1/billing/gateway-traffic",
+    "tags": [
+      "Billing"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [],
+    "responses": [
+      {
+        "status": "201",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Create Gateway Traffic Usage",
+    "operationId": "createGatewayTrafficUsage",
+    "requestBody": {
+      "required": true,
+      "contentTypes": [
+        "application/json"
+      ],
+      "schemaRefs": [
+        "#/components/schemas/GatewayTrafficUsageInput"
+      ]
+    },
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "body": {
+          "ref": "#/components/schemas/GatewayTrafficUsageInput",
+          "type": "object",
+          "required": [
+            "periodEnd",
+            "periodStart",
+            "requestCount",
+            "responseBytes",
+            "routeId"
+          ],
+          "properties": {
+            "periodEnd": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "periodStart": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "requestCount": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            },
+            "responseBytes": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            },
+            "routeId": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "required": [
+        "body"
+      ],
+      "additionalProperties": false
+    },
+    "xLunaCli": {
+      "hidden": true,
+      "exclusionReason": "Protocol endpoint consumed by a browser, webhook, probe, stream, or terminal adapter instead of a regular CLI command."
+    }
+  },
+  {
+    "method": "get",
+    "path": "/api/v1/billing/gateway-traffic-status",
+    "tags": [
+      "Billing"
+    ],
+    "deprecated": false,
+    "security": [],
+    "parameters": [],
+    "responses": [
+      {
+        "status": "200",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/BusinessObject"
+        ],
+        "description": "Successful business response."
+      },
+      {
+        "status": "400",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The request is invalid or cannot be processed."
+      },
+      {
+        "status": "403",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The authenticated principal is not allowed to perform this operation."
+      },
+      {
+        "status": "404",
+        "contentTypes": [
+          "application/json"
+        ],
+        "schemaRefs": [
+          "#/components/schemas/ErrorResponse"
+        ],
+        "description": "The requested resource was not found."
+      }
+    ],
+    "summary": "Get Gateway Traffic Status",
+    "operationId": "getGatewayTrafficStatus"
   }
 ];
 
@@ -8714,6 +20369,30 @@ function requiredScopes(operation) {
   );
   return Object.freeze([...new Set(scopes)].sort());
 }
+function projectContext(operation) {
+  const configured = operation.xLunaCli?.projectContext;
+  if (typeof configured === "string") {
+    return configured;
+  }
+  if (configured?.mode) {
+    return configured.mode;
+  }
+  return operation.parameters.some(
+    (parameter2) => parameter2.in === "path" && ["projectId", "project_id"].includes(parameter2.name ?? "")
+  ) ? "required" : "none";
+}
+function uniqueStrings(values) {
+  return Object.freeze(
+    [...new Set((values ?? []).map((value) => value.trim()).filter(Boolean))]
+  );
+}
+function commandAliases(operation, operationId, command) {
+  const semanticAlias = toKebabCase(operationId);
+  return uniqueStrings([
+    ...operation.xLunaCli?.aliases ?? [],
+    ...semanticAlias && semanticAlias !== command.tool ? [semanticAlias] : []
+  ]);
+}
 function deepFreeze(value) {
   if (value === null || typeof value !== "object" || Object.isFrozen(value)) {
     return value;
@@ -8744,13 +20423,23 @@ function buildOperationCatalog(snapshots) {
       normalizedPath
     );
     const commandBase = explicitCommand ?? fallbackCommand;
+    const operationId = explicitOperationId ?? fallbackOperationId;
     const command = {
       ...commandBase,
+      categoryAliases: uniqueStrings(operation.xLunaCli?.categoryAliases),
+      aliases: commandAliases(operation, operationId, commandBase),
       classification: operation.xLunaCli?.classification ?? "unclassified",
       risk: operation.xLunaCli?.risk ?? fallbackRisk(operation.method),
       transport: operation.xLunaCli?.transport ?? "http",
       requiredScopes: requiredScopes(operation),
+      mfaPurpose: operation.xLunaCli?.mfaPurpose,
+      projectContext: projectContext(operation),
+      streaming: operation.xLunaCli?.streaming ?? ["sse", "websocket"].includes(
+        operation.xLunaCli?.transport ?? "http"
+      ),
       hidden: operation.xLunaCli?.hidden ?? false,
+      agentAllowed: operation.xLunaCli?.agentAllowed ?? true,
+      examples: uniqueStrings(operation.xLunaCli?.examples),
       exclusionReason: operation.xLunaCli?.exclusionReason
     };
     return deepFreeze({
@@ -8759,7 +20448,7 @@ function buildOperationCatalog(snapshots) {
       path: normalizedPath,
       operationKey: createOperationKey(operation.method, normalizedPath),
       primaryTag,
-      operationId: explicitOperationId ?? fallbackOperationId,
+      operationId,
       operationIdSource: explicitOperationId ? "explicit" : "fallback",
       explicitOperationId,
       fallbackOperationId,
@@ -9218,9 +20907,9 @@ var FetchHttpTransport = class {
 
 // ../packages/api-client/src/request-id.ts
 function createRequestId() {
-  const randomUUID3 = globalThis.crypto?.randomUUID;
-  if (typeof randomUUID3 === "function") {
-    return `req_${randomUUID3.call(globalThis.crypto)}`;
+  const randomUUID5 = globalThis.crypto?.randomUUID;
+  if (typeof randomUUID5 === "function") {
+    return `req_${randomUUID5.call(globalThis.crypto)}`;
   }
   const random = Math.random().toString(36).slice(2);
   return `req_${Date.now().toString(36)}_${random}`;
@@ -9278,7 +20967,7 @@ async function abortableSleep(ms, signal) {
   if (signal?.aborted) {
     throw new HttpTransportError("request_aborted", "The request was aborted");
   }
-  await new Promise((resolve, reject) => {
+  await new Promise((resolve2, reject) => {
     let settled = false;
     const finish = (callback) => {
       if (settled) {
@@ -9288,7 +20977,7 @@ async function abortableSleep(ms, signal) {
       signal?.removeEventListener("abort", onAbort);
       callback();
     };
-    const timer = setTimeout(() => finish(resolve), ms);
+    const timer = setTimeout(() => finish(resolve2), ms);
     const onAbort = () => {
       clearTimeout(timer);
       finish(() => reject(
@@ -10384,7 +22073,7 @@ async function readFileWithoutFollowingLinks(filePath) {
   }
 }
 function delay(milliseconds) {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+  return new Promise((resolve2) => setTimeout(resolve2, milliseconds));
 }
 
 // src/auth/validation.ts
@@ -10656,7 +22345,7 @@ async function revokeOAuthCredential(request) {
 }
 async function openSystemBrowser(url) {
   const command = process5.platform === "darwin" ? { executable: "open", args: [url] } : process5.platform === "win32" ? { executable: "rundll32", args: ["url.dll,FileProtocolHandler", url] } : { executable: "xdg-open", args: [url] };
-  return new Promise((resolve) => {
+  return new Promise((resolve2) => {
     try {
       const child = spawn(command.executable, command.args, {
         detached: true,
@@ -10666,18 +22355,18 @@ async function openSystemBrowser(url) {
       child.once("error", () => {
         if (!settled) {
           settled = true;
-          resolve(false);
+          resolve2(false);
         }
       });
       child.once("spawn", () => {
         if (!settled) {
           settled = true;
           child.unref();
-          resolve(true);
+          resolve2(true);
         }
       });
     } catch {
-      resolve(false);
+      resolve2(false);
     }
   });
 }
@@ -10815,7 +22504,7 @@ function isRecord3(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function delay2(milliseconds) {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+  return new Promise((resolve2) => setTimeout(resolve2, milliseconds));
 }
 async function bestEffortOpenBrowser(opener, url) {
   try {
@@ -13188,7 +24877,13 @@ function createCliProgram(options) {
         "after",
         () => commandHelpText(registered.metadata, options.ports)
       );
-      for (const alias of registered.metadata.aliases) tool.alias(alias);
+      for (const alias of registered.metadata.aliases) {
+        const canonicalOwner = options.registry.get(
+          `${registered.metadata.category}.${alias}`
+        );
+        if (!canonicalOwner || canonicalOwner === registered)
+          tool.alias(alias);
+      }
     }
   }
   return program;
@@ -13447,21 +25142,6 @@ async function enforceRiskPolicy(registered, requestedPath, globals, ports) {
   const risk = registered.metadata.risk;
   if (risk === "low" || globals.dryRun)
     return;
-  if (registered.metadata.source !== "local" && (risk === "high" || risk === "critical")) {
-    throw new CliCommandError(
-      "server_plan_required",
-      `Command "${requestedPath}" requires a server-issued execution plan before it can run.`,
-      {
-        status: 412,
-        exitCode: 6,
-        details: {
-          command: registered.metadata.canonicalPath,
-          risk,
-          requirement: "server_plan"
-        }
-      }
-    );
-  }
   if (registered.metadata.source === "local" && risk === "medium")
     return;
   if (globals.yes)
@@ -13469,7 +25149,7 @@ async function enforceRiskPolicy(registered, requestedPath, globals, ports) {
   if (!globals.interactive || !ports.input.confirm) {
     throw new CliCommandError(
       "confirmation_required",
-      `Command "${requestedPath}" requires confirmation. Re-run interactively or pass yes=true.`,
+      `Command "${requestedPath}" requires confirmation. Re-run interactively or pass --yes.`,
       {
         status: 412,
         exitCode: 6,
@@ -14242,6 +25922,1260 @@ function invalidArguments2(message, key) {
   });
 }
 
+// src/commands/download.ts
+import { createHash, randomUUID as randomUUID2 } from "crypto";
+import { createWriteStream } from "fs";
+import { access, mkdir as mkdir2, rename as rename2, rm as rm2 } from "fs/promises";
+import { basename, dirname, resolve } from "path";
+import { Readable, Transform } from "stream";
+import { pipeline } from "stream/promises";
+
+// src/commands/protocol-request.ts
+var LOCAL_PROTOCOL_PARAMETERS = /* @__PURE__ */ new Set([
+  "destination",
+  "maxBytes",
+  "maxEvents",
+  "overwrite"
+]);
+var OAUTH_REFRESH_SKEW_MS2 = 3e4;
+async function openProtocolRequest(invocation, ports, accept) {
+  if (invocation.globals.insecureSkipTlsVerify) {
+    throw new CliCommandError(
+      "insecure_tls_unsupported",
+      "This runtime cannot safely isolate insecure TLS verification for one request.",
+      {
+        status: 501,
+        details: { remediation: "Configure a trusted CA for the selected instance." }
+      }
+    );
+  }
+  const config = await ports.config.read();
+  let runtime = resolveRuntimeContext(config, {
+    server: invocation.globals.server,
+    project: invocation.globals.project,
+    output: invocation.globals.output,
+    language: invocation.globals.lang,
+    env: ports.env
+  });
+  if (runtime.sources.credential === "config" && runtime.credential?.type === "oauth" && credentialNeedsRefresh(runtime.credential.expiresAt)) {
+    const refreshToken = runtime.credential.refreshToken;
+    if (!refreshToken || !ports.api.refreshOAuthCredential) {
+      throw new CliCommandError(
+        "oauth_refresh_token_required",
+        "The stored OAuth credential expired and cannot be refreshed.",
+        { status: 401 }
+      );
+    }
+    const refreshed = await ports.api.refreshOAuthCredential({
+      server: runtime.server,
+      refreshToken,
+      scopes: runtime.credential.scopes
+    });
+    await ports.config.write({
+      ...config,
+      server: runtime.server,
+      credential: {
+        ...runtime.credential,
+        type: "oauth",
+        accessToken: refreshed.accessToken,
+        refreshToken: refreshed.refreshToken ?? refreshToken,
+        tokenType: refreshed.tokenType ?? runtime.credential.tokenType,
+        scopes: refreshed.scopes.length > 0 ? refreshed.scopes : runtime.credential.scopes,
+        expiresAt: refreshed.expiresAt
+      }
+    });
+    runtime = resolveRuntimeContext(await ports.config.read(), {
+      server: invocation.globals.server,
+      project: invocation.globals.project,
+      output: invocation.globals.output,
+      language: invocation.globals.lang,
+      env: ports.env
+    });
+  }
+  const token = runtime.credential?.type === "oauth" ? runtime.credential.accessToken : runtime.credential?.type === "access_token" ? runtime.credential.token : void 0;
+  if (!token) {
+    throw new CliCommandError(
+      "authentication_required",
+      "Sign in before using this protocol command.",
+      { status: 401 }
+    );
+  }
+  const metadata = requestMetadata(invocation.metadata);
+  const planned = planOpenApiRequest({
+    operationId: metadata.operationId ?? metadata.canonicalPath,
+    metadata,
+    params: requestParams(invocation.params),
+    globals: invocation.globals
+  });
+  const url = new URL(planned.path, `${runtime.server}/`);
+  appendQuery(url, planned.query);
+  const headers = new Headers(planned.headers);
+  headers.set("accept", accept);
+  headers.set("authorization", `Bearer ${token}`);
+  if (invocation.globals.requestId)
+    headers.set("x-request-id", invocation.globals.requestId);
+  if (invocation.globals.idempotencyKey)
+    headers.set("idempotency-key", invocation.globals.idempotencyKey);
+  const controller = new AbortController();
+  const connectionTimeout = setTimeout(
+    () => controller.abort("timeout"),
+    invocation.globals.timeoutMs
+  );
+  let response;
+  try {
+    response = await (ports.protocol?.fetch ?? globalThis.fetch)(url, {
+      method: planned.method,
+      headers,
+      redirect: "manual",
+      signal: controller.signal
+    });
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new CliCommandError("request_timeout", "The protocol request timed out.", {
+        status: 504,
+        retryable: true,
+        details: { timeoutMs: invocation.globals.timeoutMs },
+        cause: error
+      });
+    }
+    throw new CliCommandError("network_error", "The protocol request could not be sent.", {
+      status: 503,
+      retryable: true,
+      cause: error
+    });
+  } finally {
+    clearTimeout(connectionTimeout);
+  }
+  if (response.status >= 300 && response.status < 400) {
+    await cancelBody(response);
+    throw new CliCommandError(
+      "protocol_redirect_refused",
+      "The protocol endpoint returned a redirect. Refusing to forward credentials.",
+      {
+        status: 502,
+        details: {
+          location: response.headers.get("location") ?? "",
+          requestUrl: url.origin + url.pathname
+        }
+      }
+    );
+  }
+  if (!response.ok)
+    throw await responseError(response);
+  const requestId = response.headers.get("x-request-id") ?? void 0;
+  return {
+    response,
+    server: runtime.server,
+    ...requestId ? { requestId } : {}
+  };
+}
+function credentialNeedsRefresh(expiresAt) {
+  if (!expiresAt)
+    return false;
+  const expiresAtMs = Date.parse(expiresAt);
+  return Number.isFinite(expiresAtMs) && expiresAtMs <= Date.now() + OAUTH_REFRESH_SKEW_MS2;
+}
+function requestMetadata(metadata) {
+  return {
+    ...metadata,
+    parameters: metadata.parameters.filter((parameter2) => !LOCAL_PROTOCOL_PARAMETERS.has(parameter2.name))
+  };
+}
+function requestParams(params) {
+  return Object.fromEntries(
+    Object.entries(params).filter(([name]) => !LOCAL_PROTOCOL_PARAMETERS.has(name))
+  );
+}
+function appendQuery(url, query) {
+  if (!query)
+    return;
+  if (query instanceof URLSearchParams) {
+    for (const [name, value] of query)
+      url.searchParams.append(name, value);
+    return;
+  }
+  for (const [name, value] of Object.entries(query)) {
+    if (Array.isArray(value)) {
+      for (const item of value)
+        appendQueryValue(url, name, item);
+    } else {
+      appendQueryValue(url, name, value);
+    }
+  }
+}
+function appendQueryValue(url, name, value) {
+  if (value === void 0 || value === null)
+    return;
+  url.searchParams.append(name, value instanceof Date ? value.toISOString() : String(value));
+}
+async function responseError(response) {
+  const requestId = response.headers.get("x-request-id") ?? "";
+  const contentType = response.headers.get("content-type") ?? "";
+  let payload;
+  try {
+    payload = contentType.includes("json") ? await response.json() : { message: (await response.text()).slice(0, 4096) };
+  } catch {
+    payload = {};
+  }
+  const root = asRecord3(payload);
+  const nested = asRecord3(root.error);
+  const code = stringValue3(nested.code) ?? stringValue3(root.code) ?? `http_${response.status}`;
+  const message = stringValue3(nested.message) ?? stringValue3(root.message) ?? `Protocol request failed with HTTP ${response.status}.`;
+  const purpose = stringValue3(nested.purpose) ?? stringValue3(root.purpose) ?? stringValue3(asRecord3(nested.details).purpose) ?? stringValue3(asRecord3(root.details).purpose);
+  return new CliCommandError(code, message, {
+    status: response.status,
+    retryable: response.status === 429 || response.status >= 500,
+    details: {
+      ...asRecord3(nested.details),
+      ...asRecord3(root.details),
+      ...requestId ? { requestId } : {},
+      ...purpose ? { purpose } : {}
+    }
+  });
+}
+async function cancelBody(response) {
+  try {
+    await response.body?.cancel();
+  } catch {
+  }
+}
+function asRecord3(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? value : {};
+}
+function stringValue3(value) {
+  return typeof value === "string" && value.trim() ? value : void 0;
+}
+
+// src/commands/protocol-ticket.ts
+var LOCAL_PARAMETERS = /* @__PURE__ */ new Set([
+  "destination",
+  "maxBytes",
+  "maxEvents",
+  "overwrite",
+  "ticket"
+]);
+async function authorizeProtocolTicket(invocation, ports, operationId) {
+  const authorizationInvocation = {
+    ...invocation,
+    metadata: {
+      ...invocation.metadata,
+      operationId,
+      method: "POST",
+      path: `${invocation.metadata.path}/authorize`,
+      transport: "http",
+      streaming: false,
+      parameters: authorizationParameters(invocation.metadata.parameters)
+    },
+    params: Object.fromEntries(
+      Object.entries(invocation.params).filter(([name]) => !LOCAL_PARAMETERS.has(name))
+    )
+  };
+  const { response, server } = await openProtocolRequest(
+    authorizationInvocation,
+    ports,
+    "application/json"
+  );
+  const headerTicket = nonEmpty3(response.headers.get("x-luna-terminal-ticket")) ?? nonEmpty3(response.headers.get("x-terminal-ticket")) ?? nonEmpty3(response.headers.get("x-luna-ticket"));
+  const payload = await readAuthorizationPayload(response);
+  const root = asRecord4(payload);
+  const data = asRecord4(root.data);
+  const ticket = headerTicket ?? nonEmpty3(root.ticket) ?? nonEmpty3(data.ticket);
+  if (!ticket) {
+    throw new CliCommandError(
+      "protocol_ticket_missing",
+      "The authorization endpoint did not issue a protocol ticket.",
+      {
+        status: 502,
+        details: {
+          command: invocation.metadata.canonicalPath,
+          operationId,
+          remediation: "Upgrade the Luna DevOps server to a version that supports CLI protocol tickets."
+        }
+      }
+    );
+  }
+  const expiresAt = nonEmpty3(root.expiresAt) ?? nonEmpty3(data.expiresAt);
+  return {
+    ticket,
+    server,
+    ...expiresAt ? { expiresAt } : {}
+  };
+}
+async function readAuthorizationPayload(response) {
+  if (response.status === 204)
+    return {};
+  const contentType = response.headers.get("content-type") ?? "";
+  try {
+    return contentType.includes("json") ? await response.json() : {};
+  } catch {
+    return {};
+  }
+}
+function authorizationParameters(parameters) {
+  return parameters.filter((parameter2) => !LOCAL_PARAMETERS.has(parameter2.name));
+}
+function asRecord4(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? value : {};
+}
+function nonEmpty3(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : void 0;
+}
+
+// src/commands/download.ts
+var DEFAULT_MAX_BYTES = 10 * 1024 * 1024 * 1024;
+async function executeDownload(invocation, ports) {
+  const authorizedInvocation = await withDownloadTicket(invocation, ports);
+  const { response, requestId } = await openProtocolRequest(
+    authorizedInvocation,
+    ports,
+    "application/octet-stream, application/gzip"
+  );
+  if (!response.body) {
+    throw new CliCommandError("download_body_missing", "The download response has no body.", {
+      status: 502
+    });
+  }
+  const requestedDestination = stringParam2(invocation.params.destination);
+  if (requestedDestination === "-" || requestedDestination === "@-") {
+    await response.body.cancel();
+    throw new CliCommandError(
+      "download_stdout_unsupported",
+      "Binary stdout is not available through this CLI output pipeline.",
+      {
+        status: 501,
+        details: {
+          remediation: "Set destination to a file path."
+        }
+      }
+    );
+  }
+  const suggestedName = contentDispositionFilename(
+    response.headers.get("content-disposition")
+  ) ?? "luna-download.bin";
+  const destination = resolve(requestedDestination ?? suggestedName);
+  const overwrite = invocation.params.overwrite === true;
+  const maxBytes = integerParam2(invocation.params.maxBytes, DEFAULT_MAX_BYTES);
+  if (!overwrite && await exists(destination)) {
+    await response.body.cancel();
+    throw new CliCommandError(
+      "download_destination_exists",
+      `Download destination "${destination}" already exists.`,
+      { status: 409, details: { destination } }
+    );
+  }
+  await mkdir2(dirname(destination), { recursive: true });
+  const temporary = `${destination}.part-${randomUUID2()}`;
+  const hash = createHash("sha256");
+  let bytes = 0;
+  const meter = new Transform({
+    transform(chunk, _encoding, callback) {
+      bytes += chunk.length;
+      if (bytes > maxBytes) {
+        callback(new CliCommandError(
+          "download_too_large",
+          "The download exceeded the configured byte limit.",
+          { status: 413, details: { maxBytes, bytesRead: bytes } }
+        ));
+        return;
+      }
+      hash.update(chunk);
+      callback(null, chunk);
+    }
+  });
+  try {
+    await pipeline(
+      Readable.fromWeb(response.body),
+      meter,
+      createWriteStream(temporary, { flags: "wx" })
+    );
+    if (overwrite)
+      await rm2(destination, { force: true });
+    await rename2(temporary, destination);
+  } catch (error) {
+    await response.body.cancel().catch(() => void 0);
+    await rm2(temporary, { force: true }).catch(() => void 0);
+    if (error instanceof CliCommandError)
+      throw error;
+    throw new CliCommandError("download_failed", "The download did not complete.", {
+      status: 502,
+      retryable: true,
+      details: { destination, bytesRead: bytes },
+      cause: error
+    });
+  }
+  return {
+    schemaVersion: "cli.luna.devops/download/v1",
+    data: {
+      destination,
+      filename: basename(destination),
+      bytes,
+      sha256: hash.digest("hex"),
+      contentType: response.headers.get("content-type") ?? "application/octet-stream"
+    },
+    meta: {
+      ...requestId ? { requestId } : {},
+      transport: "download"
+    }
+  };
+}
+async function withDownloadTicket(invocation, ports) {
+  if (stringParam2(invocation.params.ticket))
+    return invocation;
+  const operationId = invocation.metadata.consumedOperations?.find((candidate) => candidate.toLocaleLowerCase().includes("authorize"));
+  if (!operationId) {
+    throw new CliCommandError(
+      "download_authorization_operation_missing",
+      "The download command has no authorization operation.",
+      { status: 500, details: { command: invocation.metadata.canonicalPath } }
+    );
+  }
+  const authorization = await authorizeProtocolTicket(invocation, ports, operationId);
+  return {
+    ...invocation,
+    params: {
+      ...invocation.params,
+      ticket: authorization.ticket
+    }
+  };
+}
+function contentDispositionFilename(value) {
+  if (!value)
+    return void 0;
+  const encoded = /filename\*\s*=\s*UTF-8''([^;]+)/i.exec(value)?.[1];
+  const plain = /filename\s*=\s*(?:"([^"]+)"|([^;]+))/i.exec(value);
+  let candidate;
+  try {
+    candidate = encoded ? decodeURIComponent(encoded.trim()) : plain?.[1] ?? plain?.[2]?.trim();
+  } catch {
+    candidate = void 0;
+  }
+  if (!candidate)
+    return void 0;
+  const safe = basename(candidate).split("").filter((character) => {
+    const code = character.charCodeAt(0);
+    return code > 31 && code !== 127;
+  }).join("").replace(/[\\/]/g, "-").trim();
+  return safe && safe !== "." && safe !== ".." ? safe : void 0;
+}
+async function exists(path3) {
+  try {
+    await access(path3);
+    return true;
+  } catch {
+    return false;
+  }
+}
+function stringParam2(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : void 0;
+}
+function integerParam2(value, fallback) {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : fallback;
+}
+
+// src/commands/protocol-terminal.ts
+import { Buffer as Buffer5 } from "buffer";
+import process12 from "process";
+var WEB_SOCKET_OPEN = 1;
+var TERMINAL_EOF_CLOSE_CODES = /* @__PURE__ */ new Set([1e3, 1001, 1005, 1006]);
+async function executeWebSocketTerminal(invocation, ports) {
+  assertInteractiveTty(invocation, ports);
+  const operationId = authorizationOperation(invocation);
+  const authorization = await authorizeProtocolTicket(invocation, ports, operationId);
+  const stdin = ports.protocol?.stdin ?? asInputStream(process12.stdin);
+  const stdout = ports.protocol?.stdout ?? asOutputStream(process12.stdout);
+  const webSocket = createWebSocket(terminalUrl(
+    authorization.server,
+    invocation,
+    authorization.ticket
+  ), ports);
+  return runTerminalSession(invocation, webSocket, stdin, stdout, ports);
+}
+async function runTerminalSession(invocation, socket, stdin, stdout, ports) {
+  socket.binaryType = "arraybuffer";
+  const previousRawMode = Boolean(stdin.isRaw);
+  let bytesSent = 0;
+  let bytesReceived = 0;
+  let remoteExitCode;
+  let opened = false;
+  let settled = false;
+  let outputQueue = Promise.resolve();
+  return new Promise((resolve2, reject) => {
+    const handshakeTimeout = setTimeout(() => {
+      if (opened || settled)
+        return;
+      socket.close(1e3, "handshake timeout");
+      settleError(new CliCommandError(
+        "terminal_connection_timeout",
+        "The terminal WebSocket connection timed out.",
+        {
+          status: 504,
+          retryable: true,
+          details: { timeoutMs: invocation.globals.timeoutMs }
+        }
+      ));
+    }, invocation.globals.timeoutMs);
+    const onOpen = () => {
+      opened = true;
+      clearTimeout(handshakeTimeout);
+      try {
+        stdin.setRawMode?.(true);
+        stdin.resume?.();
+        sendResize(socket, stdout);
+      } catch (error) {
+        socket.close(1011, "terminal initialization failed");
+        settleError(new CliCommandError(
+          "terminal_initialization_failed",
+          "The local terminal could not enter interactive mode.",
+          { status: 500, cause: error }
+        ));
+      }
+    };
+    const onMessage = (event) => {
+      outputQueue = outputQueue.then(async () => {
+        const result = await writeTerminalMessage(event.data, stdout);
+        bytesReceived += result.bytes;
+        if (result.exitCode !== void 0)
+          remoteExitCode = result.exitCode;
+      }).catch((error) => {
+        socket.close(1011, "terminal output failed");
+        settleError(new CliCommandError(
+          "terminal_output_failed",
+          "The terminal output could not be written.",
+          { status: 500, cause: error }
+        ));
+      });
+    };
+    const onError = () => {
+      socket.close(1011, "terminal connection failed");
+      settleError(new CliCommandError(
+        opened ? "terminal_connection_error" : "terminal_connection_failed",
+        opened ? "The terminal WebSocket connection failed." : "The terminal WebSocket could not be established.",
+        { status: 502, retryable: true }
+      ));
+    };
+    const onClose = (event) => {
+      if (settled)
+        return;
+      void outputQueue.then(() => {
+        if (settled)
+          return;
+        const closeCode = event.code ?? 1006;
+        const exitCode = remoteExitCode ?? exitCodeFromReason(event.reason);
+        const backendReachedEof = opened && TERMINAL_EOF_CLOSE_CODES.has(closeCode);
+        if (!backendReachedEof && exitCode === void 0) {
+          settleError(new CliCommandError(
+            "terminal_connection_closed",
+            "The terminal WebSocket closed unexpectedly.",
+            {
+              status: 502,
+              retryable: true,
+              details: { closeCode, reason: event.reason ?? "" }
+            }
+          ));
+          return;
+        }
+        settleSuccess(closeCode, event.reason ?? "", exitCode ?? 0);
+      });
+    };
+    const onInput = (chunk) => {
+      if (socket.readyState !== WEB_SOCKET_OPEN)
+        return;
+      const payload = terminalInput(chunk);
+      if (!payload)
+        return;
+      bytesSent += byteLength(payload);
+      socket.send(payload);
+    };
+    const onResize = () => {
+      if (socket.readyState === WEB_SOCKET_OPEN)
+        sendResize(socket, stdout);
+    };
+    const onInterrupt = () => {
+      if (settled)
+        return;
+      socket.close(1e3, "interrupted");
+      settleError(new CliCommandError(
+        "terminal_interrupted",
+        "The terminal session was interrupted.",
+        { status: 499, exitCode: 130 }
+      ));
+    };
+    const unsubscribeInterrupt = subscribeInterrupt(ports, onInterrupt);
+    function cleanup() {
+      clearTimeout(handshakeTimeout);
+      socket.removeEventListener?.("open", onOpen);
+      socket.removeEventListener?.("message", onMessage);
+      socket.removeEventListener?.("error", onError);
+      socket.removeEventListener?.("close", onClose);
+      stdin.off?.("data", onInput);
+      stdout.off?.("resize", onResize);
+      unsubscribeInterrupt();
+      try {
+        stdin.setRawMode?.(previousRawMode);
+        if (!previousRawMode)
+          stdin.pause?.();
+      } catch {
+      }
+    }
+    function settleError(error) {
+      if (settled)
+        return;
+      settled = true;
+      cleanup();
+      reject(error);
+    }
+    function settleSuccess(closeCode, reason, exitCode) {
+      if (settled)
+        return;
+      if (exitCode !== 0) {
+        settleError(new CliCommandError(
+          "terminal_remote_exit",
+          `The remote terminal exited with code ${exitCode}.`,
+          {
+            status: 500,
+            exitCode: processExitCode(exitCode),
+            details: {
+              remoteExitCode: exitCode,
+              closeCode,
+              reason
+            }
+          }
+        ));
+        return;
+      }
+      settled = true;
+      cleanup();
+      resolve2({
+        schemaVersion: "cli.luna.devops/terminal/v1",
+        data: {
+          exitCode,
+          closeCode,
+          reason,
+          bytesSent,
+          bytesReceived
+        },
+        meta: { transport: "websocket" }
+      });
+    }
+    socket.addEventListener("open", onOpen);
+    socket.addEventListener("message", onMessage);
+    socket.addEventListener("error", onError);
+    socket.addEventListener("close", onClose);
+    stdin.on("data", onInput);
+    stdout.on?.("resize", onResize);
+  });
+}
+function assertInteractiveTty(invocation, ports) {
+  if (invocation.globals.agent) {
+    throw new CliCommandError(
+      "terminal_agent_unsupported",
+      "Interactive terminal commands are not available in agent mode.",
+      {
+        status: 422,
+        details: {
+          command: invocation.metadata.canonicalPath,
+          remediation: "Use a non-interactive exec command in agent mode."
+        }
+      }
+    );
+  }
+  const stdin = ports.protocol?.stdin ?? asInputStream(process12.stdin);
+  const stdout = ports.protocol?.stdout ?? asOutputStream(process12.stdout);
+  if (!invocation.globals.interactive || !ports.isTTY || !stdin.isTTY || !stdout.isTTY) {
+    throw new CliCommandError(
+      "terminal_tty_required",
+      "This command requires an interactive TTY.",
+      {
+        status: 422,
+        details: {
+          command: invocation.metadata.canonicalPath,
+          remediation: "Run the command in an interactive terminal without --no-interactive."
+        }
+      }
+    );
+  }
+}
+function authorizationOperation(invocation) {
+  const operation = invocation.metadata.consumedOperations?.find((candidate) => candidate.toLocaleLowerCase().includes("authorize"));
+  if (!operation) {
+    throw new CliCommandError(
+      "terminal_authorization_operation_missing",
+      "The terminal command has no authorization operation.",
+      { status: 500, details: { command: invocation.metadata.canonicalPath } }
+    );
+  }
+  return operation;
+}
+function createWebSocket(url, ports) {
+  if (ports.protocol?.createWebSocket)
+    return ports.protocol.createWebSocket(url);
+  if (typeof globalThis.WebSocket !== "function") {
+    throw new CliCommandError(
+      "websocket_runtime_unavailable",
+      "This CLI runtime does not provide WebSocket support.",
+      { status: 501 }
+    );
+  }
+  return new globalThis.WebSocket(url);
+}
+function terminalUrl(server, invocation, ticket) {
+  const url = new URL(interpolatePath2(invocation.metadata.path ?? "", invocation.params), server);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  for (const parameter2 of invocation.metadata.parameters) {
+    if (parameter2.location !== "query" || parameter2.name === "ticket")
+      continue;
+    appendQueryValue2(url, parameter2.name, invocation.params[parameter2.name]);
+  }
+  url.searchParams.set("ticket", ticket);
+  return url.toString();
+}
+function interpolatePath2(template, params) {
+  return template.replace(/\{([^}]+)\}/g, (_match, name) => {
+    const value = params[name];
+    if (value === void 0 || value === null || value === "") {
+      throw new CliCommandError("invalid_arguments", `Missing path parameter "${name}".`, {
+        status: 400,
+        exitCode: 2
+      });
+    }
+    return encodeURIComponent(String(value));
+  });
+}
+function appendQueryValue2(url, name, value) {
+  if (value === void 0 || value === null || value === "")
+    return;
+  if (Array.isArray(value)) {
+    for (const item of value)
+      appendQueryValue2(url, name, item);
+    return;
+  }
+  url.searchParams.append(name, String(value));
+}
+function sendResize(socket, stdout) {
+  const cols = positiveInteger(stdout.columns);
+  const rows = positiveInteger(stdout.rows);
+  if (!cols || !rows)
+    return;
+  socket.send(JSON.stringify({ type: "resize", cols, rows }));
+}
+async function writeTerminalMessage(data, stdout) {
+  const exitCode = remoteExitMessage(data);
+  if (exitCode !== void 0)
+    return { bytes: 0, exitCode };
+  if (typeof data === "string") {
+    stdout.write(data);
+    return { bytes: Buffer5.byteLength(data) };
+  }
+  if (data instanceof ArrayBuffer) {
+    const bytes = new Uint8Array(data);
+    stdout.write(bytes);
+    return { bytes: bytes.byteLength };
+  }
+  if (ArrayBuffer.isView(data)) {
+    const bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+    stdout.write(bytes);
+    return { bytes: bytes.byteLength };
+  }
+  if (data instanceof Blob) {
+    const bytes = new Uint8Array(await data.arrayBuffer());
+    stdout.write(bytes);
+    return { bytes: bytes.byteLength };
+  }
+  return { bytes: 0 };
+}
+function remoteExitMessage(data) {
+  if (typeof data !== "string" || data.length > 256)
+    return void 0;
+  try {
+    const value = JSON.parse(data);
+    if (typeof value === "object" && value !== null && value.type === "exit") {
+      const code = value.code;
+      return typeof code === "number" && Number.isSafeInteger(code) ? code : void 0;
+    }
+  } catch {
+  }
+  return void 0;
+}
+function terminalInput(value) {
+  if (typeof value === "string" || value instanceof ArrayBuffer || ArrayBuffer.isView(value))
+    return value;
+  return void 0;
+}
+function byteLength(value) {
+  if (typeof value === "string")
+    return Buffer5.byteLength(value);
+  return value.byteLength;
+}
+function exitCodeFromReason(reason) {
+  const match = /(?:^|\b)exit(?:Code)?[=: ]+(-?\d+)(?:\b|$)/i.exec(reason ?? "");
+  if (!match)
+    return void 0;
+  const value = Number(match[1]);
+  return Number.isSafeInteger(value) ? value : void 0;
+}
+function positiveInteger(value) {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : void 0;
+}
+function processExitCode(value) {
+  return Number.isSafeInteger(value) && value > 0 && value <= 255 ? value : 1;
+}
+function subscribeInterrupt(ports, listener) {
+  if (ports.protocol?.onInterrupt)
+    return ports.protocol.onInterrupt(listener);
+  process12.once("SIGINT", listener);
+  process12.once("SIGTERM", listener);
+  return () => {
+    process12.off("SIGINT", listener);
+    process12.off("SIGTERM", listener);
+  };
+}
+function asInputStream(value) {
+  return value;
+}
+function asOutputStream(value) {
+  return value;
+}
+
+// src/commands/stream.ts
+import { Buffer as Buffer6 } from "buffer";
+import { randomUUID as randomUUID4 } from "crypto";
+
+// src/output/envelope.ts
+import { randomUUID as randomUUID3 } from "crypto";
+var CLI_API_VERSION = "cli.luna.devops/v1";
+var CLI_STREAM_VERSION = "cli.luna.devops/events/v1";
+function createSuccessEnvelope(schemaVersion, operationId, command, data, meta = {}) {
+  return {
+    apiVersion: CLI_API_VERSION,
+    schemaVersion,
+    operationId,
+    command,
+    data: redactValue(data),
+    meta: redactValue(meta)
+  };
+}
+function createStreamEvent(options) {
+  if (!Number.isSafeInteger(options.sequence) || options.sequence < 1) {
+    throw new RangeError("Stream sequence must be a positive safe integer.");
+  }
+  return {
+    type: options.type,
+    sequence: options.sequence,
+    eventId: options.eventId ?? `evt_${randomUUID3()}`,
+    correlationId: options.correlationId,
+    operationId: options.operationId,
+    resourceRef: options.resourceRef,
+    occurredAt: options.occurredAt ?? (/* @__PURE__ */ new Date()).toISOString(),
+    data: redactValue(options.data),
+    ...options.resumeCursor ? { resumeCursor: options.resumeCursor } : {}
+  };
+}
+function createStreamSummary(options) {
+  return createStreamEvent({ ...options, type: "summary" });
+}
+
+// src/commands/stream.ts
+var DEFAULT_MAX_EVENTS = 100;
+var DEFAULT_MAX_BYTES2 = 4 * 1024 * 1024;
+async function executeSseStream(invocation, ports) {
+  const maxEvents = integerParam3(invocation.params.maxEvents, DEFAULT_MAX_EVENTS);
+  const maxBytes = integerParam3(invocation.params.maxBytes, DEFAULT_MAX_BYTES2);
+  const { response, requestId } = await openProtocolRequest(
+    invocation,
+    ports,
+    "text/event-stream"
+  );
+  if (!(response.headers.get("content-type") ?? "").includes("text/event-stream")) {
+    await response.body?.cancel();
+    throw new CliCommandError(
+      "sse_content_type_invalid",
+      "The endpoint did not return a Server-Sent Events stream.",
+      {
+        status: 502,
+        details: { contentType: response.headers.get("content-type") ?? "" }
+      }
+    );
+  }
+  if (!response.body) {
+    throw new CliCommandError("sse_body_missing", "The SSE response has no body.", {
+      status: 502
+    });
+  }
+  const correlationId = requestId ?? invocation.globals.requestId ?? randomUUID4();
+  const resourceRef = streamResourceRef(invocation);
+  const events = [];
+  let bytesRead = 0;
+  let completed = false;
+  let reason = "eof";
+  try {
+    for await (const event of parseSse(response.body)) {
+      bytesRead += Buffer6.byteLength(event.data, "utf8");
+      if (bytesRead > maxBytes) {
+        reason = "max_bytes";
+        break;
+      }
+      if (event.event === "error") {
+        const payload = parseEventData(event.data);
+        throw new CliCommandError(
+          stringField(payload, "code") ?? "sse_remote_error",
+          stringField(payload, "message") ?? "The server ended the stream with an error.",
+          {
+            status: 502,
+            retryable: true,
+            details: { eventId: event.id ?? "", payload }
+          }
+        );
+      }
+      events.push(createStreamEvent({
+        type: event.event || "message",
+        sequence: events.length + 1,
+        correlationId,
+        operationId: invocation.metadata.operationId ?? invocation.metadata.consumedOperations?.[0] ?? invocation.metadata.canonicalPath,
+        resourceRef,
+        data: parseEventData(event.data),
+        ...event.id ? { resumeCursor: event.id } : {}
+      }));
+      if (event.event === "done") {
+        completed = true;
+        reason = "done";
+        break;
+      }
+      if (events.length >= maxEvents) {
+        reason = "max_events";
+        break;
+      }
+    }
+  } catch (error) {
+    if (error instanceof CliCommandError)
+      throw error;
+    throw new CliCommandError("sse_stream_failed", "The SSE stream ended unexpectedly.", {
+      status: 502,
+      retryable: true,
+      details: { eventsRead: events.length, bytesRead },
+      cause: error
+    });
+  } finally {
+    await response.body.cancel().catch(() => void 0);
+  }
+  const summary = createStreamSummary({
+    sequence: events.length + 1,
+    correlationId,
+    operationId: invocation.metadata.operationId ?? invocation.metadata.consumedOperations?.[0] ?? invocation.metadata.canonicalPath,
+    resourceRef,
+    data: {
+      completed,
+      reason,
+      eventsRead: events.length,
+      bytesRead
+    }
+  });
+  return {
+    schemaVersion: CLI_STREAM_VERSION,
+    data: {
+      streamVersion: CLI_STREAM_VERSION,
+      events,
+      summary
+    },
+    meta: {
+      ...requestId ? { requestId } : {},
+      transport: "sse"
+    }
+  };
+}
+async function* parseSse(body) {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let eventName = "";
+  let eventId;
+  let dataLines = [];
+  const dispatch = () => {
+    if (dataLines.length === 0 && !eventName && eventId === void 0)
+      return void 0;
+    const event = {
+      event: eventName || "message",
+      ...eventId !== void 0 ? { id: eventId } : {},
+      data: dataLines.join("\n")
+    };
+    eventName = "";
+    eventId = void 0;
+    dataLines = [];
+    return event;
+  };
+  try {
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done)
+        break;
+      buffer += decoder.decode(chunk.value, { stream: true });
+      const lines = buffer.split(/\r\n|\r|\n/);
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        if (line === "") {
+          const event = dispatch();
+          if (event)
+            yield event;
+          continue;
+        }
+        if (line.startsWith(":"))
+          continue;
+        const separator = line.indexOf(":");
+        const field = separator < 0 ? line : line.slice(0, separator);
+        const rawValue = separator < 0 ? "" : line.slice(separator + 1);
+        const value = rawValue.startsWith(" ") ? rawValue.slice(1) : rawValue;
+        if (field === "event")
+          eventName = value;
+        else if (field === "id" && !value.includes("\0"))
+          eventId = value;
+        else if (field === "data")
+          dataLines.push(value);
+      }
+    }
+    buffer += decoder.decode();
+    if (buffer) {
+      const separator = buffer.indexOf(":");
+      const field = separator < 0 ? buffer : buffer.slice(0, separator);
+      const rawValue = separator < 0 ? "" : buffer.slice(separator + 1);
+      const value = rawValue.startsWith(" ") ? rawValue.slice(1) : rawValue;
+      if (field === "event")
+        eventName = value;
+      else if (field === "id" && !value.includes("\0"))
+        eventId = value;
+      else if (field === "data")
+        dataLines.push(value);
+    }
+    const finalEvent = dispatch();
+    if (finalEvent)
+      yield finalEvent;
+  } finally {
+    reader.releaseLock();
+  }
+}
+function streamResourceRef(invocation) {
+  const id = stringParam3(invocation.params.jobId) ?? stringParam3(invocation.params.targetId) ?? stringParam3(invocation.params.releaseId) ?? invocation.metadata.canonicalPath;
+  return {
+    kind: invocation.params.jobId ? "BuildJob" : invocation.params.targetId ? "DeploymentTarget" : "Resource",
+    id
+  };
+}
+function parseEventData(value) {
+  if (!value)
+    return null;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+function integerParam3(value, fallback) {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : fallback;
+}
+function stringParam3(value) {
+  return typeof value === "string" && value ? value : void 0;
+}
+function stringField(value, key) {
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    return void 0;
+  const field = value[key];
+  return typeof field === "string" && field ? field : void 0;
+}
+
+// src/commands/protocol.ts
+var DATA_EXPORT_PATH = "/api/v1/projects/{projectId}/applications/{applicationId}/deployment-targets/{targetId}/data-export";
+var BUILD_LOG_STREAM_PATH = "/api/v1/projects/{projectId}/build-jobs/{jobId}/logs/stream";
+var DEPLOYMENT_METRICS_STREAM_PATH = "/api/v1/projects/{projectId}/applications/{applicationId}/deployment-targets/{targetId}/metrics/stream";
+var RUNTIME_TERMINAL_PATH = "/api/v1/runtime/clusters/{clusterId}/pods/terminal";
+var RELEASE_TERMINAL_PATH = "/api/v1/projects/{projectId}/releases/{releaseId}/terminal";
+function protocolCommandDefinitions() {
+  return [
+    protocolDefinition({
+      category: "build",
+      tool: "job-logs-follow",
+      source: "protocol",
+      consumedOperations: ["StreamBuildJobLogs"],
+      method: "GET",
+      path: BUILD_LOG_STREAM_PATH,
+      summary: "Follow build job logs",
+      transport: "sse",
+      streaming: true,
+      projectContext: "required",
+      parameters: [
+        pathParameter("projectId"),
+        pathParameter("jobId"),
+        queryParameter("after", { type: "integer", minimum: 0 }),
+        localParameter("maxEvents", { type: "integer", minimum: 1, maximum: 1e4 }),
+        localParameter("maxBytes", { type: "integer", minimum: 1, maximum: 16 * 1024 * 1024 })
+      ],
+      scopes: ["build:read"],
+      examples: [
+        "luna build job-logs-follow jobId=bldj_example maxEvents=200",
+        "luna build job-logs-follow jobId=bldj_example --agent"
+      ]
+    }),
+    protocolDefinition({
+      category: "deployment",
+      tool: "metrics-follow",
+      source: "protocol",
+      consumedOperations: ["StreamDeploymentTargetMetrics"],
+      method: "GET",
+      path: DEPLOYMENT_METRICS_STREAM_PATH,
+      summary: "Follow deployment runtime metrics",
+      transport: "sse",
+      streaming: true,
+      projectContext: "required",
+      parameters: [
+        pathParameter("projectId"),
+        pathParameter("applicationId"),
+        pathParameter("targetId"),
+        localParameter("maxEvents", { type: "integer", minimum: 1, maximum: 1e4 }),
+        localParameter("maxBytes", { type: "integer", minimum: 1, maximum: 16 * 1024 * 1024 })
+      ],
+      scopes: ["deployment:read"],
+      examples: [
+        "luna deployment metrics-follow applicationId=app_example targetId=dplt_example maxEvents=10"
+      ]
+    }),
+    protocolDefinition({
+      category: "deployment",
+      tool: "data-export",
+      source: "protocol",
+      consumedOperations: [
+        "fallback_deployments_post_api_v1_projects_by_project_id_applications_by_application_id_deployment_targets_by_target_id_data_export_authorize",
+        "fallback_deployments_get_api_v1_projects_by_project_id_applications_by_application_id_deployment_targets_by_target_id_data_export"
+      ],
+      method: "GET",
+      path: DATA_EXPORT_PATH,
+      summary: "Download a deployment data export",
+      transport: "download",
+      projectContext: "required",
+      risk: "high",
+      mfaPurpose: "data_export",
+      parameters: [
+        pathParameter("projectId"),
+        pathParameter("applicationId"),
+        pathParameter("targetId"),
+        queryParameter("ticket", { type: "string", minLength: 1 }),
+        localParameter("destination", { type: "string", minLength: 1 }),
+        localParameter("overwrite", { type: "boolean" }),
+        localParameter("maxBytes", { type: "integer", minimum: 1 })
+      ],
+      scopes: ["runtime:data:export"],
+      examples: [
+        "luna deployment data-export applicationId=app_example targetId=dplt_example destination=backup.tar.gz"
+      ]
+    }),
+    webSocketDefinition({
+      category: "cluster",
+      tool: "pod-terminal",
+      path: RUNTIME_TERMINAL_PATH,
+      consumedOperations: [
+        "AuthorizeRuntimeClusterPodTerminal",
+        "StreamRuntimeClusterPodTerminal"
+      ],
+      parameters: [
+        pathParameter("clusterId"),
+        queryParameter("namespace", { type: "string", minLength: 1 }, true),
+        queryParameter("name", { type: "string", minLength: 1 }, true),
+        queryParameter("container", { type: "string" })
+      ],
+      mfaPurpose: "runtime_terminal"
+    }),
+    webSocketDefinition({
+      category: "release",
+      tool: "terminal",
+      path: RELEASE_TERMINAL_PATH,
+      consumedOperations: [
+        "AuthorizeReleaseRuntimeTerminal",
+        "StreamReleaseRuntimeTerminal"
+      ],
+      projectContext: "required",
+      parameters: [
+        pathParameter("projectId"),
+        pathParameter("releaseId"),
+        queryParameter("container", { type: "string" })
+      ],
+      mfaPurpose: "runtime_terminal"
+    })
+  ];
+}
+function prepareProtocolRegistration(metadata, handler) {
+  const inferred = inferKnownTransport(metadata);
+  if (!isProtocolTransport(inferred.transport))
+    return { metadata: inferred, handler };
+  return {
+    metadata: inferred,
+    handler: protocolHandler
+  };
+}
+async function protocolHandler(invocation, ports) {
+  if (invocation.metadata.transport === "sse")
+    return executeSseStream(invocation, ports);
+  if (invocation.metadata.transport === "download")
+    return executeDownload(invocation, ports);
+  if (invocation.metadata.transport === "websocket")
+    return executeWebSocketTerminal(invocation, ports);
+  throw new CliCommandError(
+    "protocol_transport_unsupported",
+    `Protocol transport "${invocation.metadata.transport}" is not supported.`,
+    { status: 501, details: { transport: invocation.metadata.transport } }
+  );
+}
+function protocolDefinition(metadata) {
+  return { metadata, handler: protocolHandler };
+}
+function webSocketDefinition(options) {
+  return protocolDefinition({
+    ...options,
+    source: "protocol",
+    method: "GET",
+    transport: "websocket",
+    streaming: true,
+    agentAllowed: true,
+    risk: options.risk ?? "high",
+    summary: options.summary ?? "Open an interactive terminal"
+  });
+}
+function inferKnownTransport(metadata) {
+  if (metadata.path === DATA_EXPORT_PATH && metadata.method?.toUpperCase() === "GET") {
+    return {
+      ...metadata,
+      transport: "download",
+      parameters: withMissingParameters(metadata.parameters, [
+        localParameter("destination", { type: "string", minLength: 1 }),
+        localParameter("overwrite", { type: "boolean" }),
+        localParameter("maxBytes", { type: "integer", minimum: 1 })
+      ])
+    };
+  }
+  return metadata;
+}
+function isProtocolTransport(value) {
+  return value === "sse" || value === "websocket" || value === "download" || value === "upload";
+}
+function withMissingParameters(parameters, additions) {
+  const result = [...parameters ?? []];
+  const names = new Set(result.map((parameter2) => parameter2.name));
+  for (const parameter2 of additions) {
+    if (!names.has(parameter2.name))
+      result.push(parameter2);
+  }
+  return result;
+}
+function pathParameter(name) {
+  return {
+    name,
+    location: "path",
+    required: true,
+    schema: { type: "string", minLength: 1 }
+  };
+}
+function queryParameter(name, schema, required = false) {
+  return { name, location: "query", required, schema };
+}
+function localParameter(name, schema) {
+  return { name, schema };
+}
+
 // src/commands/registry.ts
 var NAME_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 var CommandRegistry = class {
@@ -14254,9 +27188,12 @@ var CommandRegistry = class {
       openapiDigest: metadata.openapiDigest ?? "unavailable",
       schemaDigest: metadata.schemaDigest ?? "unavailable"
     };
+    for (const definition of protocolCommandDefinitions())
+      this.register(definition.metadata, definition.handler);
   }
   register(metadata, handler) {
-    const normalized = normalizeMetadata(metadata);
+    const prepared = prepareProtocolRegistration(metadata, handler);
+    const normalized = normalizeMetadata(prepared.metadata);
     const path3 = normalized.canonicalPath;
     if (this.#commands.has(path3)) {
       throw new CliCommandError(
@@ -14265,8 +27202,9 @@ var CommandRegistry = class {
         { status: 409, details: { path: path3 } }
       );
     }
+    this.#aliases.delete(path3);
     validateSource(normalized);
-    const registered = { metadata: normalized, handler };
+    const registered = { metadata: normalized, handler: prepared.handler };
     this.#commands.set(path3, registered);
     for (const alias of normalized.aliases) {
       const aliasPath = `${normalized.category}.${alias}`;
@@ -14332,11 +27270,7 @@ var CommandRegistry = class {
       );
     }
     if (this.#commands.has(aliasPath) && aliasPath !== canonicalPath) {
-      throw new CliCommandError(
-        "command_alias_conflict",
-        `Command alias "${aliasPath}" conflicts with a canonical command.`,
-        { status: 409, details: { aliasPath, canonicalPath } }
-      );
+      return;
     }
     this.#aliases.set(aliasPath, canonicalPath);
   }
@@ -14421,24 +27355,24 @@ function createRegistryFromContract(contractModule) {
   return registry;
 }
 function extractCatalog(contractModule) {
-  const moduleRecord = asRecord3(contractModule);
+  const moduleRecord = asRecord5(contractModule);
   const candidate = moduleRecord.OPERATION_CATALOG ?? moduleRecord.commandCatalog ?? moduleRecord.COMMAND_CATALOG ?? moduleRecord.cliCommandCatalog ?? moduleRecord.default;
   const value = typeof candidate === "function" ? candidate() : candidate;
-  const catalog = asRecord3(value);
-  const exportedMetadata = asRecord3(moduleRecord.OPERATION_CATALOG_METADATA);
+  const catalog = asRecord5(value);
+  const exportedMetadata = asRecord5(moduleRecord.OPERATION_CATALOG_METADATA);
   const entries = Array.isArray(value) ? value : Array.isArray(catalog.commands) ? catalog.commands : Array.isArray(catalog.entries) ? catalog.entries : [];
   return {
     metadata: {
-      catalogVersion: stringValue3(exportedMetadata.catalogVersion) ?? stringValue3(catalog.metadata?.catalogVersion) ?? stringValue3(catalog.catalogVersion),
-      openapiDigest: stringValue3(exportedMetadata.openapiDigest) ?? stringValue3(catalog.metadata?.openapiDigest) ?? stringValue3(catalog.openapiDigest),
-      schemaDigest: stringValue3(exportedMetadata.catalogDigest) ?? stringValue3(exportedMetadata.schemaDigest) ?? stringValue3(catalog.metadata?.schemaDigest) ?? stringValue3(catalog.schemaDigest)
+      catalogVersion: stringValue4(exportedMetadata.catalogVersion) ?? stringValue4(catalog.metadata?.catalogVersion) ?? stringValue4(catalog.catalogVersion),
+      openapiDigest: stringValue4(exportedMetadata.openapiDigest) ?? stringValue4(catalog.metadata?.openapiDigest) ?? stringValue4(catalog.openapiDigest),
+      schemaDigest: stringValue4(exportedMetadata.catalogDigest) ?? stringValue4(exportedMetadata.schemaDigest) ?? stringValue4(catalog.metadata?.schemaDigest) ?? stringValue4(catalog.schemaDigest)
     },
     entries: entries.map(normalizeCatalogEntry)
   };
 }
 function registerOpenApiCommands(registry, entries) {
   for (const entry of entries) {
-    if (entry.source !== "openapi")
+    if (entry.source !== "openapi" || entry.hidden)
       continue;
     registry.register(entry, async (invocation, ports) => {
       if (!entry.operationId) {
@@ -14459,13 +27393,13 @@ function registerOpenApiCommands(registry, entries) {
   }
 }
 function normalizeCatalogEntry(value) {
-  const entry = asRecord3(value);
-  const command = asRecord3(entry.command);
-  const extension = asRecord3(entry["x-luna-cli"] ?? entry.cli);
+  const entry = asRecord5(value);
+  const command = asRecord5(entry.command);
+  const extension = asRecord5(entry.xLunaCli ?? entry["x-luna-cli"] ?? entry.cli);
   const category = requiredString3(entry.category ?? command.category ?? extension.category, "category");
   const tool = requiredString3(entry.tool ?? command.tool ?? extension.tool, "tool");
   const parameters = parameterArray(entry.parameters);
-  const requestBody = asRecord3(entry.requestBody);
+  const requestBody = asRecord5(entry.requestBody);
   if (Object.keys(requestBody).length > 0) {
     parameters.push({
       name: "body",
@@ -14483,47 +27417,53 @@ function normalizeCatalogEntry(value) {
   return {
     category,
     tool,
-    canonicalPath: stringValue3(entry.canonicalPath ?? command.canonicalPath),
-    categoryAliases: stringArray(entry.categoryAliases ?? extension.categoryAliases),
-    aliases: stringArray(entry.aliases ?? extension.aliases),
+    canonicalPath: stringValue4(entry.canonicalPath ?? command.canonicalPath),
+    categoryAliases: stringArray(
+      entry.categoryAliases ?? command.categoryAliases ?? extension.categoryAliases
+    ),
+    aliases: stringArray(entry.aliases ?? command.aliases ?? extension.aliases),
     source: "openapi",
-    operationId: stringValue3(entry.operationId),
+    operationId: stringValue4(entry.operationId),
     consumedOperations: stringArray(entry.consumedOperations),
-    summary: stringValue3(entry.summary),
-    summaryKey: stringValue3(entry.summaryKey),
-    description: stringValue3(entry.description),
-    descriptionKey: stringValue3(entry.descriptionKey),
+    summary: stringValue4(entry.summary),
+    summaryKey: stringValue4(entry.summaryKey),
+    description: stringValue4(entry.description),
+    descriptionKey: stringValue4(entry.descriptionKey),
     parameters,
     inputSchema: schemaValue(entry.inputSchema),
     outputSchema: schemaValue(entry.outputSchema),
     errorSchema: schemaValue(entry.errorSchema),
-    schemaVersion: stringValue3(entry.schemaVersion),
-    schemaDigest: stringValue3(entry.schemaDigest),
+    schemaVersion: stringValue4(entry.schemaVersion),
+    schemaDigest: stringValue4(entry.schemaDigest),
     scopes: stringArray(entry.scopes ?? command.requiredScopes ?? extension.scopes),
-    mfaPurpose: stringValue3(entry.mfaPurpose ?? extension.mfaPurpose),
+    mfaPurpose: stringValue4(
+      entry.mfaPurpose ?? command.mfaPurpose ?? extension.mfaPurpose
+    ),
     risk: riskValue(entry.risk ?? command.risk ?? extension.risk),
     transport: transportValue(entry.transport ?? command.transport ?? extension.transport),
     projectContext: projectContextValue(
-      entry.projectContext ?? asRecord3(extension.projectContext).mode
+      entry.projectContext ?? command.projectContext ?? extension.projectContext ?? asRecord5(extension.projectContext).mode
     ) ?? inferProjectContext(parameters),
-    streaming: booleanValue(entry.streaming),
+    streaming: booleanValue(
+      entry.streaming ?? command.streaming ?? extension.streaming
+    ),
     hidden: booleanValue(entry.hidden ?? command.hidden),
-    agentAllowed: typeof entry.agentAllowed === "boolean" ? entry.agentAllowed : void 0,
-    examples: stringArray(entry.examples),
-    method: stringValue3(entry.method),
-    path: stringValue3(entry.path)
+    agentAllowed: typeof (entry.agentAllowed ?? command.agentAllowed ?? extension.agentAllowed) === "boolean" ? booleanValue(entry.agentAllowed ?? command.agentAllowed ?? extension.agentAllowed) : void 0,
+    examples: stringArray(entry.examples ?? command.examples ?? extension.examples),
+    method: stringValue4(entry.method),
+    path: stringValue4(entry.path)
   };
 }
 function parameterArray(value) {
   if (!Array.isArray(value))
     return [];
   return value.map((item) => {
-    const parameter2 = asRecord3(item);
+    const parameter2 = asRecord5(item);
     return {
       name: requiredString3(parameter2.name, "parameter name"),
       location: parameterLocation(parameter2.in ?? parameter2.location),
-      description: stringValue3(parameter2.description),
-      descriptionKey: stringValue3(parameter2.descriptionKey),
+      description: stringValue4(parameter2.description),
+      descriptionKey: stringValue4(parameter2.descriptionKey),
       required: booleanValue(parameter2.required),
       repeated: booleanValue(parameter2.repeated),
       sensitive: booleanValue(parameter2.sensitive),
@@ -14540,7 +27480,7 @@ function valueSourceArray(value) {
   );
 }
 function asCommandResult(value, schemaVersion) {
-  const record = asRecord3(value);
+  const record = asRecord5(value);
   if ("data" in record && ("schemaVersion" in record || "meta" in record)) {
     return value;
   }
@@ -14570,7 +27510,7 @@ function schemaValue(value) {
   return typeof value === "object" && value !== null ? value : void 0;
 }
 function requiredString3(value, label) {
-  const result = stringValue3(value);
+  const result = stringValue4(value);
   if (!result) {
     throw new CliCommandError("invalid_command_catalog", `Missing ${label}.`, {
       status: 500
@@ -14578,7 +27518,7 @@ function requiredString3(value, label) {
   }
   return result;
 }
-function stringValue3(value) {
+function stringValue4(value) {
   return typeof value === "string" && value.length > 0 ? value : void 0;
 }
 function booleanValue(value) {
@@ -14587,13 +27527,13 @@ function booleanValue(value) {
 function stringArray(value) {
   return Array.isArray(value) ? value.filter((item) => typeof item === "string") : [];
 }
-function asRecord3(value) {
+function asRecord5(value) {
   return typeof value === "object" && value !== null ? value : {};
 }
 
 // src/commands/output.ts
-import { Buffer as Buffer5 } from "buffer";
-import process12 from "process";
+import { Buffer as Buffer7 } from "buffer";
+import process13 from "process";
 
 // src/output/json.ts
 function stringifyJson(value, options = {}) {
@@ -14750,20 +27690,6 @@ var OutputChannels = class {
   }
 };
 
-// src/output/envelope.ts
-import { randomUUID as randomUUID2 } from "crypto";
-var CLI_API_VERSION = "cli.luna.devops/v1";
-function createSuccessEnvelope(schemaVersion, operationId, command, data, meta = {}) {
-  return {
-    apiVersion: CLI_API_VERSION,
-    schemaVersion,
-    operationId,
-    command,
-    data: redactValue(data),
-    meta: redactValue(meta)
-  };
-}
-
 // src/commands/output.ts
 var CommandOutput = class {
   #streams;
@@ -14771,8 +27697,8 @@ var CommandOutput = class {
   #translate;
   constructor(options = {}) {
     this.#streams = options.streams ?? {
-      stdout: process12.stdout,
-      stderr: process12.stderr
+      stdout: process13.stdout,
+      stderr: process13.stderr
     };
     this.#version = options.version ?? CLI_VERSION;
     this.#translate = options.translate;
@@ -14837,7 +27763,7 @@ function stringMeta(meta, key) {
 import { createInstance } from "i18next";
 
 // src/i18n/locale.ts
-import process13 from "process";
+import process14 from "process";
 function normalizeLocale(locale) {
   if (!locale)
     return void 0;
@@ -14853,7 +27779,7 @@ function normalizeLocale(locale) {
   return void 0;
 }
 function detectLocale(options = {}) {
-  const env = options.env ?? process13.env;
+  const env = options.env ?? process14.env;
   const preferredCandidates = [
     options.explicit,
     env.LUNA_LANG,
@@ -15102,8 +28028,7 @@ var resources = {
         retry_later: "The operation cannot be completed yet. Try again later.",
         service_failure: "The service is temporarily unavailable.",
         confirmation_required: "This operation requires confirmation.",
-        operation_cancelled: "Operation cancelled.",
-        server_plan_required: "This high-risk operation requires a server-issued execution plan."
+        operation_cancelled: "Operation cancelled."
       },
       table: {
         name: "Name",
@@ -15330,8 +28255,7 @@ var resources = {
         retry_later: "\u5F53\u524D\u6682\u65F6\u65E0\u6CD5\u5B8C\u6210\u64CD\u4F5C\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5\u3002",
         service_failure: "\u670D\u52A1\u6682\u65F6\u4E0D\u53EF\u7528\u3002",
         confirmation_required: "\u6B64\u64CD\u4F5C\u9700\u8981\u5148\u786E\u8BA4\u3002",
-        operation_cancelled: "\u64CD\u4F5C\u5DF2\u53D6\u6D88\u3002",
-        server_plan_required: "\u6B64\u9AD8\u98CE\u9669\u64CD\u4F5C\u9700\u8981\u670D\u52A1\u7AEF\u7B7E\u53D1\u6267\u884C\u8BA1\u5212\u3002"
+        operation_cancelled: "\u64CD\u4F5C\u5DF2\u53D6\u6D88\u3002"
       },
       table: {
         name: "\u540D\u79F0",
@@ -15362,7 +28286,7 @@ async function createCliI18n(options = {}) {
 // src/entry.ts
 function createLunaCli(options = {}) {
   const version = options.version ?? CLI_VERSION;
-  const env = options.ports?.env ?? process14.env;
+  const env = options.ports?.env ?? process15.env;
   const config = options.ports?.config ?? new FileConfigStore();
   const translate3 = options.ports?.translate;
   const output = options.ports?.output ?? new CommandOutput({ version, translate: translate3 });
@@ -15381,7 +28305,7 @@ function createLunaCli(options = {}) {
       }
     }),
     env,
-    isTTY: options.ports?.isTTY ?? Boolean(process14.stdout.isTTY),
+    isTTY: options.ports?.isTTY ?? Boolean(process15.stdout.isTTY),
     version,
     distribution: options.distribution ?? options.ports?.distribution ?? runtimeDistribution(),
     translate: translate3
@@ -15401,8 +28325,8 @@ function createLunaCli(options = {}) {
     ports
   };
 }
-async function main(argv = process14.argv) {
-  const env = process14.env;
+async function main(argv = process15.argv) {
+  const env = process15.env;
   const config = new FileConfigStore();
   const configuredLanguage = await startupConfiguredLanguage(config);
   const i18n = await createCliI18n({
@@ -15422,7 +28346,7 @@ async function main(argv = process14.argv) {
     }
   });
   const result = await runCli(cli.program, argv, cli.ports.output);
-  process14.exitCode = result.exitCode;
+  process15.exitCode = result.exitCode;
   return result.exitCode;
 }
 function startupOptionValue(argv, name) {
@@ -15448,15 +28372,15 @@ async function startupConfiguredLanguage(configStore) {
   }
 }
 function runtimeDistribution() {
-  if (typeof process14.versions.bun === "string")
+  if (typeof process15.versions.bun === "string")
     return "binary";
-  return process14.env.npm_package_name ? "npm" : "source";
+  return process15.env.npm_package_name ? "npm" : "source";
 }
 if (isDirectExecution()) {
   void main();
 }
 function isDirectExecution() {
-  const executable = process14.argv[1];
+  const executable = process15.argv[1];
   return Boolean(executable && import.meta.url === pathToFileURL(executable).href);
 }
 export {

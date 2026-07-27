@@ -71,7 +71,7 @@ export function registerOpenApiCommands(
   entries: readonly CommandCatalogEntry[],
 ): void {
   for (const entry of entries) {
-    if (entry.source !== 'openapi')
+    if (entry.source !== 'openapi' || entry.hidden)
       continue
     registry.register(entry, async (invocation, ports) => {
       if (!entry.operationId) {
@@ -95,7 +95,7 @@ export function registerOpenApiCommands(
 function normalizeCatalogEntry(value: unknown): CommandCatalogEntry {
   const entry = asRecord(value)
   const command = asRecord(entry.command)
-  const extension = asRecord(entry['x-luna-cli'] ?? entry.cli)
+  const extension = asRecord(entry.xLunaCli ?? entry['x-luna-cli'] ?? entry.cli)
   const category = requiredString(entry.category ?? command.category ?? extension.category, 'category')
   const tool = requiredString(entry.tool ?? command.tool ?? extension.tool, 'tool')
   const parameters = parameterArray(entry.parameters)
@@ -119,8 +119,10 @@ function normalizeCatalogEntry(value: unknown): CommandCatalogEntry {
     category,
     tool,
     canonicalPath: stringValue(entry.canonicalPath ?? command.canonicalPath),
-    categoryAliases: stringArray(entry.categoryAliases ?? extension.categoryAliases),
-    aliases: stringArray(entry.aliases ?? extension.aliases),
+    categoryAliases: stringArray(
+      entry.categoryAliases ?? command.categoryAliases ?? extension.categoryAliases,
+    ),
+    aliases: stringArray(entry.aliases ?? command.aliases ?? extension.aliases),
     source: 'openapi',
     operationId: stringValue(entry.operationId),
     consumedOperations: stringArray(entry.consumedOperations),
@@ -135,17 +137,26 @@ function normalizeCatalogEntry(value: unknown): CommandCatalogEntry {
     schemaVersion: stringValue(entry.schemaVersion),
     schemaDigest: stringValue(entry.schemaDigest),
     scopes: stringArray(entry.scopes ?? command.requiredScopes ?? extension.scopes),
-    mfaPurpose: stringValue(entry.mfaPurpose ?? extension.mfaPurpose),
+    mfaPurpose: stringValue(
+      entry.mfaPurpose ?? command.mfaPurpose ?? extension.mfaPurpose,
+    ),
     risk: riskValue(entry.risk ?? command.risk ?? extension.risk),
     transport: transportValue(entry.transport ?? command.transport ?? extension.transport),
     projectContext: projectContextValue(
-      entry.projectContext ?? asRecord(extension.projectContext).mode,
+      entry.projectContext
+      ?? command.projectContext
+      ?? extension.projectContext
+      ?? asRecord(extension.projectContext).mode,
     ) ?? inferProjectContext(parameters),
-    streaming: booleanValue(entry.streaming),
+    streaming: booleanValue(
+      entry.streaming ?? command.streaming ?? extension.streaming,
+    ),
     hidden: booleanValue(entry.hidden ?? command.hidden),
     agentAllowed:
-      typeof entry.agentAllowed === 'boolean' ? entry.agentAllowed : undefined,
-    examples: stringArray(entry.examples),
+      typeof (entry.agentAllowed ?? command.agentAllowed ?? extension.agentAllowed) === 'boolean'
+        ? booleanValue(entry.agentAllowed ?? command.agentAllowed ?? extension.agentAllowed)
+        : undefined,
+    examples: stringArray(entry.examples ?? command.examples ?? extension.examples),
     method: stringValue(entry.method),
     path: stringValue(entry.path),
   }

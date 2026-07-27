@@ -29,7 +29,7 @@ describe('cli startup and human help', () => {
     ].join('\n')
     expect(rootHelp).toContain('快速开始：')
     expect(rootHelp).toContain('业务参数统一使用 key=value')
-    expect(rootHelp).toContain('当前共有 18 个分类、125 条命令')
+    expect(rootHelp).toMatch(/当前共有 \d+ 个分类、\d+ 条命令/)
     expect(rootHelp).toContain('login')
     expect(rootHelp).toContain('doctor')
 

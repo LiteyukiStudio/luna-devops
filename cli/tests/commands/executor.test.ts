@@ -412,7 +412,59 @@ describe('commander command execution', () => {
     expect(captures.successes).toHaveLength(1)
   })
 
-  it('fails closed for high-risk API commands without a server plan', async () => {
+  it.each(['high', 'critical'] as const)(
+    'allows --yes for %s-risk API commands in non-interactive mode',
+    async (risk) => {
+      const registry = new CommandRegistry()
+      registry.register({
+        category: 'application',
+        tool: 'delete',
+        source: 'openapi',
+        operationId: 'deleteApplication',
+        risk,
+      }, async () => ({ data: { deleted: true } }))
+      const captures = capturePorts()
+      const program = createCliProgram({ registry, ports: captures.ports })
+
+      const result = await runCli(
+        program,
+        ['node', 'luna', 'application', 'delete', '--yes'],
+        captures.ports.output,
+      )
+
+      expect(result.exitCode).toBe(0)
+      expect(captures.successes[0]?.result.data).toEqual({
+        data: { deleted: true },
+      })
+    },
+  )
+
+  it.each(['high', 'critical'] as const)(
+    'requires explicit confirmation for %s-risk API commands in non-interactive mode',
+    async (risk) => {
+      const registry = new CommandRegistry()
+      registry.register({
+        category: 'application',
+        tool: 'delete',
+        source: 'openapi',
+        operationId: 'deleteApplication',
+        risk,
+      }, async () => ({ data: {} }))
+      const captures = capturePorts()
+      const program = createCliProgram({ registry, ports: captures.ports })
+
+      const result = await runCli(
+        program,
+        ['node', 'luna', 'application', 'delete'],
+        captures.ports.output,
+      )
+
+      expect(result.exitCode).toBe(6)
+      expect((captures.errors[0] as { code?: string }).code).toBe('confirmation_required')
+    },
+  )
+
+  it('prompts before executing a high-risk API command interactively', async () => {
     const registry = new CommandRegistry()
     registry.register({
       category: 'application',
@@ -420,18 +472,68 @@ describe('commander command execution', () => {
       source: 'openapi',
       operationId: 'deleteApplication',
       risk: 'high',
-    }, async () => ({ data: {} }))
+    }, async () => ({ data: { deleted: true } }))
     const captures = capturePorts()
-    const program = createCliProgram({ registry, ports: captures.ports })
+    let prompted = false
+    const program = createCliProgram({
+      registry,
+      ports: {
+        ...captures.ports,
+        isTTY: true,
+        input: {
+          parse: captures.ports.input.parse,
+          async confirm() {
+            prompted = true
+            return true
+          },
+        },
+      },
+    })
 
     const result = await runCli(
       program,
-      ['node', 'luna', 'application', 'delete', 'yes=true'],
+      ['node', 'luna', 'application', 'delete'],
       captures.ports.output,
     )
 
-    expect(result.exitCode).toBe(6)
-    expect((captures.errors[0] as { code?: string }).code).toBe('server_plan_required')
+    expect(result.exitCode).toBe(0)
+    expect(prompted).toBe(true)
+    expect(captures.successes[0]?.result.data).toEqual({
+      data: { deleted: true },
+    })
+  })
+
+  it('requires --yes for high-risk API commands in agent mode', async () => {
+    const registry = new CommandRegistry()
+    registry.register({
+      category: 'application',
+      tool: 'delete',
+      source: 'openapi',
+      operationId: 'deleteApplication',
+      risk: 'high',
+    }, async () => ({ data: { deleted: true } }))
+    const captures = capturePorts()
+    const program = createCliProgram({ registry, ports: captures.ports })
+
+    const rejected = await runCli(
+      program,
+      ['node', 'luna', 'application', 'delete', '--agent'],
+      captures.ports.output,
+    )
+
+    expect(rejected.exitCode).toBe(6)
+    expect((captures.errors[0] as { code?: string }).code).toBe('confirmation_required')
+
+    const allowed = await runCli(
+      program,
+      ['node', 'luna', 'application', 'delete', '--agent', '--yes'],
+      captures.ports.output,
+    )
+
+    expect(allowed.exitCode).toBe(0)
+    expect(captures.successes.at(-1)?.result.data).toEqual({
+      data: { deleted: true },
+    })
   })
 
   it('uses the shared prompt for high-risk local commands', async () => {

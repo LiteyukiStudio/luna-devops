@@ -39,13 +39,31 @@ CLI 相关变更会执行：
 
 1. 使用锁文件安装 pnpm 工作区依赖。
 2. 重新生成 API 契约并检查 drift。
-3. 读取机器 Help，校验配套 Skill 引用的命令、Agent 参数和能力边界。
-4. TypeScript typecheck、ESLint、单元测试和构建。
-5. 生成真实 npm tarball，并检查文件白名单。
-6. 在干净临时目录中分别使用 npm 与 pnpm 全局安装同一个 tarball。
-7. 构建当前 Linux host 的 Bun baseline 二进制并运行 smoke test。
+3. 对比 Gin Router、OpenAPI、CLI 机器目录和逐路由协议分类，要求普通业务命令覆盖率为 100%。
+4. 读取机器 Help，校验配套 Skill 引用的命令、Agent 参数和能力边界。
+5. TypeScript typecheck、ESLint、单元测试和构建。
+6. 生成真实 npm tarball，并检查文件白名单。
+7. 在干净临时目录中分别使用 npm 与 pnpm 全局安装同一个 tarball。
+8. 构建当前 Linux host 的 Bun baseline 二进制并运行 smoke test。
 
 发布门禁还会断言 tarball 中的 `package.json.version`、npm 安装后的 `luna --version` 和独立二进制的 `luna --version` 都等于 tag 版本。
+
+覆盖门禁的实时统计由 `pnpm check:platform-cli-coverage` 输出。文档和发布说明
+不固定记录路由或命令数量；脚本退出码非零时不得发布，也不得用 `api request`
+或通配排除掩盖缺失命令。
+
+## 执行安全验收
+
+发布验证必须同时确认以下安全语义：
+
+- `high` 和 `critical` 操作在交互终端中逐次确认；Agent 或其他非交互调用必须
+  显式传入 `--yes`，否则返回稳定的确认错误。
+- Agent 命令固定使用 `output=json interactive=false agent=true`，只从
+  `stdout` 读取 JSON Envelope。
+- `--yes` 只表示调用方确认本次操作，不得绕过后端权限、Scope、Step-up MFA
+  或资源一致性校验。
+- 终端和数据导出必须由 CLI OAuth 凭据发起，并完成对应 purpose 的 Step-up；
+  个人访问令牌不能满足或绕过该要求。
 
 ## CLI 与 Skill 配套发版
 

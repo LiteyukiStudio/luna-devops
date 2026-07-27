@@ -122,7 +122,13 @@ export function createCliProgram(options: CliProgramOptions): Command {
           'after',
           () => commandHelpText(registered.metadata, options.ports),
         )
-      for (const alias of registered.metadata.aliases) tool.alias(alias)
+      for (const alias of registered.metadata.aliases) {
+        const canonicalOwner = options.registry.get(
+          `${registered.metadata.category}.${alias}`,
+        )
+        if (!canonicalOwner || canonicalOwner === registered)
+          tool.alias(alias)
+      }
     }
   }
   return program
@@ -466,25 +472,6 @@ async function enforceRiskPolicy(
   if (risk === 'low' || globals.dryRun)
     return
 
-  if (
-    registered.metadata.source !== 'local'
-    && (risk === 'high' || risk === 'critical')
-  ) {
-    throw new CliCommandError(
-      'server_plan_required',
-      `Command "${requestedPath}" requires a server-issued execution plan before it can run.`,
-      {
-        status: 412,
-        exitCode: 6,
-        details: {
-          command: registered.metadata.canonicalPath,
-          risk,
-          requirement: 'server_plan',
-        },
-      },
-    )
-  }
-
   if (registered.metadata.source === 'local' && risk === 'medium')
     return
   if (globals.yes)
@@ -493,7 +480,7 @@ async function enforceRiskPolicy(
   if (!globals.interactive || !ports.input.confirm) {
     throw new CliCommandError(
       'confirmation_required',
-      `Command "${requestedPath}" requires confirmation. Re-run interactively or pass yes=true.`,
+      `Command "${requestedPath}" requires confirmation. Re-run interactively or pass --yes.`,
       {
         status: 412,
         exitCode: 6,

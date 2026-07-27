@@ -23,7 +23,7 @@ const (
 
 type runtimeTerminalAuthorizationBinding struct {
 	UserID                    string
-	SessionID                 string
+	SubjectID                 string
 	AssertionID               string
 	AssertionRequired         bool
 	AssertionAbsoluteDeadline time.Time
@@ -32,6 +32,8 @@ type runtimeTerminalAuthorizationBinding struct {
 
 type runtimeTerminalAuthorizationState struct {
 	Session              model.UserSession
+	OAuthGrant           model.OAuthGrant
+	OAuthApplication     model.OAuthApplication
 	User                 model.User
 	Assertion            model.StepUpAssertion
 	AuthorizationAllowed bool
@@ -45,7 +47,16 @@ func (state runtimeTerminalAuthorizationState) identityActive(binding runtimeTer
 	if !binding.Deadline.After(now) {
 		return false
 	}
-	if state.Session.ID != binding.SessionID || state.Session.UserID != binding.UserID || !state.Session.ExpiresAt.After(now) {
+	if grantID, oauth := runtimeTerminalOAuthGrantID(binding.SubjectID); oauth {
+		if state.OAuthGrant.ID != grantID ||
+			state.OAuthGrant.UserID != binding.UserID ||
+			state.OAuthGrant.ApplicationID != lunaCLIApplicationID ||
+			state.OAuthGrant.RevokedAt != nil ||
+			state.OAuthApplication.ID != lunaCLIApplicationID ||
+			state.OAuthApplication.RevokedAt != nil {
+			return false
+		}
+	} else if state.Session.ID != binding.SubjectID || state.Session.UserID != binding.UserID || !state.Session.ExpiresAt.After(now) {
 		return false
 	}
 	if state.User.ID != binding.UserID || state.User.Disabled {
@@ -56,41 +67,57 @@ func (state runtimeTerminalAuthorizationState) identityActive(binding runtimeTer
 	}
 	return state.Assertion.ID == binding.AssertionID &&
 		state.Assertion.UserID == binding.UserID &&
-		state.Assertion.SessionID == binding.SessionID &&
+		state.Assertion.SessionID == binding.SubjectID &&
 		state.Assertion.Purpose == stepUpPurposeRuntimeTerminal &&
 		stepUpAssertionActive(state.Assertion, now) &&
 		!state.Assertion.AbsoluteExpiresAt.After(binding.AssertionAbsoluteDeadline)
 }
 
 func (h *Handlers) requireRuntimeTerminalAuthorization(ctx *gin.Context, user model.User) (runtimeTerminalAuthorizationBinding, bool) {
-	if !requireInteractiveSession(ctx) {
-		return runtimeTerminalAuthorizationBinding{}, false
-	}
-	session, ok := h.currentSessionFromCookie(ctx)
-	if !ok || session.UserID != user.ID {
-		writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.session.expired")
+	subject, ok := h.currentStepUpSubject(ctx, user)
+	if !ok {
+		if requestUsesBearerToken(ctx) {
+			h.audit(user.ID, "mfa.step_up_required", stepUpPurposeRuntimeTerminal, false, "personal access tokens cannot authorize a terminal")
+			writeErrorCode(ctx, http.StatusForbidden, "mfa.session_required", "个人令牌不能用于终端二次验证，请使用 Luna CLI OAuth 登录")
+		} else {
+			writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.session.expired")
+		}
 		return runtimeTerminalAuthorizationBinding{}, false
 	}
 
-	binding := runtimeTerminalAuthorizationBinding{
-		UserID:    user.ID,
-		SessionID: session.ID,
-		Deadline:  session.ExpiresAt,
+	binding := runtimeTerminalAuthorizationBinding{UserID: user.ID, SubjectID: subject}
+	if _, oauth := runtimeTerminalOAuthGrantID(subject); oauth {
+		token, tokenOK := currentAccessTokenFromContext(ctx)
+		if !tokenOK || token.UserID != user.ID || token.OAuthGrantID == "" {
+			writeErrorCode(ctx, http.StatusForbidden, "mfa.session_required", "Luna CLI OAuth 登录状态无效")
+			return runtimeTerminalAuthorizationBinding{}, false
+		}
+		binding.Deadline = time.Now().Add(defaultStepUpAbsoluteTimeout)
+		if token.ExpiresAt != nil && token.ExpiresAt.Before(binding.Deadline) {
+			binding.Deadline = *token.ExpiresAt
+		}
+	} else {
+		session, sessionOK := h.currentSessionFromCookie(ctx)
+		if !sessionOK || session.UserID != user.ID || session.ID != subject {
+			writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.session.expired")
+			return runtimeTerminalAuthorizationBinding{}, false
+		}
+		binding.Deadline = session.ExpiresAt
+		if !h.stepUpMFAEnabled() {
+			return binding, true
+		}
 	}
-	if !h.stepUpMFAEnabled() {
-		return binding, true
-	}
+
 	if !h.requireMFAAssertion(ctx, user, stepUpPurposeRuntimeTerminal) {
 		return runtimeTerminalAuthorizationBinding{}, false
 	}
-
 	now := time.Now()
 	var assertion model.StepUpAssertion
 	if err := h.db.First(
 		&assertion,
 		"user_id = ? and session_id = ? and purpose = ? and idle_expires_at > ? and absolute_expires_at > ?",
 		user.ID,
-		session.ID,
+		subject,
 		stepUpPurposeRuntimeTerminal,
 		now,
 		now,
@@ -105,6 +132,11 @@ func (h *Handlers) requireRuntimeTerminalAuthorization(ctx *gin.Context, user mo
 		binding.Deadline = assertion.AbsoluteExpiresAt
 	}
 	return binding, true
+}
+
+func runtimeTerminalOAuthGrantID(subject string) (string, bool) {
+	grantID := strings.TrimSpace(strings.TrimPrefix(subject, "oauth:"))
+	return grantID, strings.HasPrefix(subject, "oauth:") && grantID != ""
 }
 
 func (h *Handlers) monitorRuntimeTerminalAuthorization(
@@ -152,10 +184,15 @@ func (h *Handlers) runtimeTerminalAuthorizationActive(
 	now := time.Now()
 	state := runtimeTerminalAuthorizationState{}
 	db := h.db.WithContext(ctx)
-	_ = db.First(&state.Session, "id = ? and user_id = ?", binding.SessionID, binding.UserID).Error
+	if grantID, oauth := runtimeTerminalOAuthGrantID(binding.SubjectID); oauth {
+		_ = db.First(&state.OAuthGrant, "id = ? and user_id = ? and application_id = ? and revoked_at is null", grantID, binding.UserID, lunaCLIApplicationID).Error
+		_ = db.First(&state.OAuthApplication, "id = ? and revoked_at is null", lunaCLIApplicationID).Error
+	} else {
+		_ = db.First(&state.Session, "id = ? and user_id = ?", binding.SubjectID, binding.UserID).Error
+	}
 	_ = db.First(&state.User, "id = ? and disabled = ?", binding.UserID, false).Error
 	if binding.AssertionRequired {
-		_ = db.First(&state.Assertion, "id = ? and user_id = ? and session_id = ? and purpose = ?", binding.AssertionID, binding.UserID, binding.SessionID, stepUpPurposeRuntimeTerminal).Error
+		_ = db.First(&state.Assertion, "id = ? and user_id = ? and session_id = ? and purpose = ?", binding.AssertionID, binding.UserID, binding.SubjectID, stepUpPurposeRuntimeTerminal).Error
 	} else if h.stepUpMFAEnabled() {
 		return false
 	}
@@ -209,7 +246,7 @@ func (tracker *runtimeTerminalActivityTracker) Record(ctx context.Context, now t
 			"id = ? and user_id = ? and session_id = ? and purpose = ? and idle_expires_at > ? and absolute_expires_at > ? and absolute_expires_at <= ?",
 			tracker.binding.AssertionID,
 			tracker.binding.UserID,
-			tracker.binding.SessionID,
+			tracker.binding.SubjectID,
 			stepUpPurposeRuntimeTerminal,
 			now,
 			now,

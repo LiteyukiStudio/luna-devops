@@ -1,26 +1,29 @@
 # 应用与部署
 
-当前目录覆盖 `application` 与 `deployment` 的 CRUD、候选镜像、拓扑读取、数据
-导出入口和终端预授权。
+## 机器目录
 
-## 已可执行
+分别查询
+`luna help catalog category=application limit=100 output=json interactive=false agent=true`
+和
+`luna help catalog category=deployment limit=100 output=json interactive=false agent=true`。
+调用前使用
+`luna help command path=<category.tool> output=json interactive=false agent=true`
+读取具体契约，不凭名称猜测创建、发布或运行时工具。
 
-1. 确认项目、应用和部署配置的稳定 ID。
-2. 读取或维护应用与部署配置。
-3. 读取候选镜像与应用 Kubernetes 拓扑。
-4. 对数据导出和终端仅执行 Help 明确登记的预授权步骤。
+## 工作流
 
-## 尚未进入 CLI
+1. 解析项目空间、应用、部署配置、发布和目标镜像的稳定 ID。
+2. 按目录能力读取或维护应用、部署配置、候选镜像和部署相关设置。
+3. 创建发布前确认镜像、环境、目标集群、钩子、成本与并发影响。
+4. 对发布、重启、回滚、日志、等待终态、数据导出和终端授权，只调用目录存在的工具。
+5. 异步操作返回后按 Help 指示轮询，最终重新读取发布、工作负载或导出状态。
 
-- 发布创建、重启、回滚与发布状态跟踪
-- 发布日志和异步等待
-- WebSocket 终端传输
-- 可靠的二进制下载与断点处理
+## 风险与验证
 
-不得把“拿到授权票据”报告为终端已连接或数据已导出。
-
-## 安全
-
-- 应用和部署配置删除是关键操作。
-- Secret 环境变量不回显、不内联传递。
-- 数据导出和终端需要用户在场与 MFA 时，Bearer 流程无法完成则停止。
+- 应用、部署配置、发布和运行资源删除是关键操作。
+- Secret 环境变量不回显，也不以内联参数传递。
+- 取得终端或导出授权票据不代表会话已连接或文件已下载。
+- 终端与数据导出的预授权要求 CLI OAuth 登录和对应 purpose 的 Step-up MFA；
+  个人访问令牌不能用于绕过用户在场验证。
+- 收到 `mfa_required` 时遵循根 Skill 的用户在场验证流程，不能改用其他 Token 绕过。
+- 回滚和重启前确认目标版本与当前运行版本，执行后验证实际工作负载状态。

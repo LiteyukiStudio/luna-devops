@@ -213,11 +213,60 @@ export interface ApiPort {
   ) => Promise<void>
 }
 
+export interface ProtocolPort {
+  readonly fetch?: typeof globalThis.fetch
+  readonly createWebSocket?: (url: string) => ProtocolWebSocket
+  readonly stdin?: ProtocolInputStream
+  readonly stdout?: ProtocolOutputStream
+  readonly onInterrupt?: (listener: () => void) => () => void
+}
+
+export interface ProtocolInputStream {
+  readonly isTTY?: boolean
+  readonly isRaw?: boolean
+  setRawMode?: (enabled: boolean) => void
+  resume?: () => void
+  pause?: () => void
+  on: (event: string, listener: (...args: unknown[]) => void) => unknown
+  off?: (event: string, listener: (...args: unknown[]) => void) => unknown
+}
+
+export interface ProtocolOutputStream {
+  readonly isTTY?: boolean
+  readonly columns?: number
+  readonly rows?: number
+  write: (chunk: string | Uint8Array) => boolean
+  on?: (event: string, listener: (...args: unknown[]) => void) => unknown
+  off?: (event: string, listener: (...args: unknown[]) => void) => unknown
+}
+
+export interface ProtocolWebSocketEvent {
+  readonly data?: unknown
+  readonly code?: number
+  readonly reason?: string
+}
+
+export interface ProtocolWebSocket {
+  readonly readyState: number
+  binaryType: string
+  send: (data: string | ArrayBuffer | ArrayBufferView) => void
+  close: (code?: number, reason?: string) => void
+  addEventListener: (
+    event: string,
+    listener: (event: ProtocolWebSocketEvent) => void,
+  ) => void
+  removeEventListener?: (
+    event: string,
+    listener: (event: ProtocolWebSocketEvent) => void,
+  ) => void
+}
+
 export interface RuntimePorts {
   readonly config: ConfigPort
   readonly input: InputPort
   readonly output: OutputPort
   readonly api: ApiPort
+  readonly protocol?: ProtocolPort
   readonly env?: Readonly<Record<string, string | undefined>>
   readonly isTTY?: boolean
   readonly version?: string

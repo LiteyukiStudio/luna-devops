@@ -159,9 +159,34 @@ func (h *Handlers) ListRuntimeClusterResourceEvents(ctx *gin.Context) {
 }
 
 func (h *Handlers) StreamRuntimeClusterPodTerminal(ctx *gin.Context) {
-	user, ok := h.currentUser(ctx)
-	if !ok {
-		return
+	ticket := strings.TrimSpace(ctx.Query("ticket"))
+	var (
+		user          model.User
+		authorization runtimeTerminalAuthorizationBinding
+		ticketValue   runtimeTerminalTicketValue
+		ok            bool
+	)
+	if ticket == "" {
+		user, ok = h.currentUser(ctx)
+		if !ok {
+			return
+		}
+	} else {
+		var err error
+		ticketValue, ok, err = h.consumeRuntimeTerminalTicket(ctx.Request.Context(), ticket)
+		if err != nil {
+			writeErrorCode(ctx, http.StatusServiceUnavailable, "runtime_terminal.ticket_unavailable", "terminal authorization is temporarily unavailable")
+			return
+		}
+		if !ok {
+			writeErrorCode(ctx, http.StatusUnauthorized, "runtime_terminal.ticket_invalid", "terminal ticket is invalid, expired, or already consumed")
+			return
+		}
+		if err := h.db.First(&user, "id = ? and disabled = ?", ticketValue.UserID, false).Error; err != nil {
+			writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.account.disabled")
+			return
+		}
+		authorization = ticketValue.Authorization
 	}
 	if user.Role != "platform_admin" {
 		writeError(ctx, http.StatusForbidden, "只有平台管理员可以打开集群 Pod 终端")
@@ -171,9 +196,20 @@ func (h *Handlers) StreamRuntimeClusterPodTerminal(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	authorization, ok := h.requireRuntimeTerminalAuthorization(ctx, user)
-	if !ok {
-		return
+	reference := runtimeClusterPodTerminalReference(cluster, snapshot)
+	if ticket == "" {
+		authorization, ok = h.requireRuntimeTerminalAuthorization(ctx, user)
+		if !ok {
+			return
+		}
+	} else {
+		if !ticketValue.matches("runtime_pod", reference) ||
+			!h.runtimeTerminalAuthorizationActive(ctx.Request.Context(), authorization, func(checkCtx context.Context, currentUser model.User) bool {
+				return h.runtimeClusterPodTerminalAuthorizationAllowed(checkCtx, currentUser, client, reference)
+			}) {
+			writeErrorCode(ctx, http.StatusUnauthorized, "runtime_terminal.ticket_invalid", "terminal ticket is invalid, expired, revoked, or bound to another resource")
+			return
+		}
 	}
 	upgrader := websocket.Upgrader{
 		CheckOrigin: func(request *http.Request) bool {
@@ -198,7 +234,6 @@ func (h *Handlers) StreamRuntimeClusterPodTerminal(ctx *gin.Context) {
 	defer stdinWriter.Close()
 	sizeQueue := newRuntimeTerminalSizeQueue()
 	wsWriter := &runtimeTerminalWebSocketWriter{conn: conn}
-	reference := runtimeClusterPodTerminalReference(cluster, snapshot)
 	authorizationRevoked := h.monitorRuntimeTerminalAuthorization(sessionCtx, authorization, func(checkCtx context.Context, currentUser model.User) bool {
 		return h.runtimeClusterPodTerminalAuthorizationAllowed(checkCtx, currentUser, client, reference)
 	}, cancel)
@@ -241,13 +276,26 @@ func (h *Handlers) AuthorizeRuntimeClusterPodTerminal(ctx *gin.Context) {
 		writeError(ctx, http.StatusForbidden, "只有平台管理员可以打开集群 Pod 终端")
 		return
 	}
-	if _, _, _, ok := h.runtimeClusterPodTerminalTarget(ctx, user); !ok {
+	cluster, _, snapshot, ok := h.runtimeClusterPodTerminalTarget(ctx, user)
+	if !ok {
 		return
 	}
-	if _, ok := h.requireRuntimeTerminalAuthorization(ctx, user); !ok {
+	authorization, ok := h.requireRuntimeTerminalAuthorization(ctx, user)
+	if !ok {
 		return
 	}
-	ctx.Status(http.StatusNoContent)
+	ticket, expiresAt, err := h.issueRuntimeTerminalTicket(
+		ctx.Request.Context(),
+		authorization,
+		"runtime_pod",
+		runtimeClusterPodTerminalReference(cluster, snapshot),
+	)
+	if err != nil {
+		h.audit(user.ID, "runtime_cluster.pod_terminal_authorize", cluster.ID+":"+snapshot.Namespace+"/"+snapshot.Name, false, err.Error())
+		writeErrorCode(ctx, http.StatusServiceUnavailable, "runtime_terminal.ticket_unavailable", "terminal authorization is temporarily unavailable")
+		return
+	}
+	ctx.JSON(http.StatusOK, runtimeTerminalTicketResponse{Ticket: ticket, ExpiresAt: expiresAt})
 }
 
 func (h *Handlers) runtimeClusterPodTerminalTarget(ctx *gin.Context, user model.User) (model.RuntimeCluster, *kubeprovider.Client, kubeprovider.ResourceSnapshot, bool) {

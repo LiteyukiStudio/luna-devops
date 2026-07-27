@@ -995,15 +995,18 @@
 详细规格见 [`notes/cli-spec.md`](notes/cli-spec.md)。
 
 - [x] 确定 CLI 技术栈、两级工具命令、`key=value` 与多行/复杂输入规范、参数校验、单活动实例与账号凭据、活动登录默认项目空间、版本化 JSON Envelope、OAuth、Device Code、Access Token、Step-up MFA、i18n、AI 输出契约、npm/pnpm 安装、独立 `cli-v*` 发版、npm Trusted Publishing 和 Bun 单二进制方案。
-- [x] 完成 CLI spec 与 AI Agent 可实施性审计：按 `method + normalizedPath` 确认当前 223 条 Gin 路由中 OpenAPI 已覆盖 110 条、缺失 113 条；明确业务命令、协议适配、浏览器入口、服务端入口和内部可观测五类路由，`api request` 不计入覆盖；补齐 Agent 模式、复杂参数、受限工具发现、服务端计划、并发保护、版本化事件流、不可信内容和资源边界；第一版要求每项公开能力成功主路径和关键旅程 100%、完整操作场景矩阵不低于 95%。
+- [x] 完成 CLI spec 与 AI Agent 可实施性审计：按 `method + normalizedPath` 建立平台路由覆盖基线；明确普通业务命令、协议适配、浏览器回调、Webhook 接收器和显式排除等边界，`api request` 不计入覆盖；实时路由和命令数量统一由覆盖脚本输出，不在 TODO 复制快照。
 - [x] 移除旧 MCP 与内嵌 Assistant 设计，将 `ai-supports` 收敛为仅通过未来 `luna` CLI 工作的预发布 Skills。
 - [x] 建立根 pnpm workspace，抽取环境无关的 `@luna-devops/api-contract` 与 `@luna-devops/api-client`，CLI 从生成契约注册命令并复用统一 HTTP 客户端。
 - [ ] 将 Web 现有 API Client 渐进迁移到共享 contract/client；保持浏览器 Session、CSRF 和页面状态只属于 Web，不进入共享包。
-- [ ] 从 Gin Router 自动生成完整路由清单，把路由分类为业务命令、协议适配、浏览器入口、服务端入口和内部可观测性；除明确登记的内部可观测白名单外，补齐全部 HTTP API 的 OpenAPI、稳定 `operationId`、Scope 和 CLI 元数据，并增加 100% 路由/OpenAPI/Scope/命令/协议消费覆盖门禁；所有允许 Bearer 调用的业务与协议路由必须具有稳定非 `system:unmapped` Scope，且 OpenAPI 与运行时鉴权映射一致。
+- [x] 建立并通过 `pnpm check:platform-cli-coverage` 门禁：从 Gin Router 提取完整路由，逐路由分类为普通业务命令、协议适配、浏览器回调、Webhook 接收器或显式排除；普通业务 HTTP API 以 OpenAPI 为唯一事实源并生成 CLI 规范命令，协议适配必须由 OpenAPI 隐藏操作和精确 `method + path` 分类共同审计；禁止路径前缀通配排除，要求普通业务命令覆盖率 100%。所有允许 Bearer 调用的业务与协议路由还必须具有稳定非 `system:unmapped` Scope，且 OpenAPI 与运行时鉴权映射一致。
 - [ ] 新增语言无关的 `openapi/errors.yaml` 错误目录，把业务、OAuth、MFA、SSE、WebSocket、下载和服务端入口收敛到稳定错误 Envelope；Go、OpenAPI、Web 和 CLI 均从同一目录生成或校验，运行时出现未登记错误码时契约测试失败。
 - [ ] 为 Agent 可调用 operation 补齐 JSON Schema Draft 2020-12 输入/输出契约和 `x-luna-cli` 风险、敏感字段、dry-run、并发、资源上限、批准元数据；实现 `agent=true`、`params=@file|@-`、按 query/category/risk/scope 受限发现和 Schema digest 漂移检测。
 - [ ] 新增 `openapi/workflows.yaml`，使用 Arazzo 1.1 描述 OAuth、Device Code、Git 授权、构建发布部署、MFA、数据导出和终端等关键旅程，并用于文档、Skills 和集成测试生成，不实现通用运行时工作流解释器。
-- [ ] 为删除、权限、Secret、凭据、kubeconfig、终端、数据导出、账单和用户管理等高风险操作实现短时单次服务端计划；计划精确绑定 actor、认证上下文、项目、目标、规范化参数和资源版本，`yes=true` 不得绕过计划。
+- [ ] 评估并实现短时单次服务端计划作为高风险操作的附加安全层；当前 CLI
+  `high`/`critical` 操作采用交互逐次确认，非交互或 Agent 显式 `--yes`，且仍由
+  后端权限、Scope、Step-up MFA 和资源一致性策略最终裁决。若引入计划，需精确
+  绑定 actor、认证上下文、项目、目标、规范化参数和资源版本。
 - [ ] 为中高风险更新补齐 ETag/version/resourceVersion 乐观并发控制；CLI 和 Skills 遇到冲突时必须重新读取、重新计划并再次确认，不允许盲覆盖或自动追加 `force`。
 - [ ] 定义版本化 JSONL 长任务事件协议：首帧版本、sequence/eventId/correlationId/operationId/resourceRef、恢复游标、资源上限和唯一终态摘要；缺少摘要时不得报告成功。
 - [x] 新增公开且不泄露部署信息的 `/api/v1/meta` 能力接口，返回 API/服务端版本、OpenAPI digest、功能开关和最低 CLI 版本；Device Code 与 Bearer MFA 按实际能力返回。
@@ -1015,13 +1018,13 @@
 - [x] 实现 RFC 8628 Device Authorization Grant，包括设备授权端点、浏览器 GET/POST 确认接口、CSRF 防护、哈希状态、批准/拒绝、轮询限流、过期清理和一次性兑换；`luna login` 默认使用该流程。
 - [x] 改造 Step-up MFA 与交互认证上下文：OAuth Bearer 可验证 OTP/恢复码并按 OAuth Grant + purpose 读取 assertion；终端预授权、终端存活监控和数据导出票据支持绑定 Web Session 或 OAuth Grant；个人访问令牌仍不得绕过 MFA 保护。
 - [x] 将 OAuth Device Code、Token、Revoke 和 Discovery 协议端点纳入 OpenAPI 隐藏协议适配层，并增加 OpenAPI operation 到 Gin Router 的常驻契约测试，防止 CLI 已登记能力落入后端空路由。
-- [ ] 按业务域覆盖全部公开控制面 API；当前 CLI 已从 OpenAPI 注册全部 110 个已登记操作，并提供统一 JSON HTTP 传输；`api request` 仅供人类诊断已知相对 API 路径且在 Agent 模式固定禁用。Gin Router 中尚未进入 OpenAPI 的公开路由、SSE、WebSocket 终端、二进制下载、异步任务等待和批量部分成功仍需补齐。
+- [x] 按业务域覆盖全部公开控制面 API；普通业务命令必须由 OpenAPI 生成，SSE、WebSocket、下载等特殊传输使用显式协议适配器，浏览器回调和 Webhook receiver 不作为 CLI 业务命令，`api request` 仅供人类诊断且在 Agent 模式固定禁用。终端和数据导出要求 CLI OAuth + 对应 purpose 的 Step-up，个人访问令牌不得绕过；`high`/`critical` 在交互模式逐次确认，非交互或 Agent 必须显式 `--yes`。完成状态以 `pnpm check:platform-cli-coverage` 退出码及最终总验证为准，实时数量和业务域明细只读取脚本输出。
 - [ ] 为 Git Provider OAuth 增加短时授权事务创建/查询接口，回调写入事务终态；`luna git authorize` 打开浏览器并返回确定的 Git Account ID，不通过轮询账号列表猜测授权结果。
 - [ ] 建立干净测试实例的全 operation 场景矩阵：关键登录/CRUD/构建/发布/日志/终端/导出/MFA 旅程 100% 通过，完整可执行场景通过率不低于 95%。
 - [x] 新增 CLI CI 与 Release 工作流；平台项目继续由 `v*` 发版，CLI 仅由 `cli-v*` 发版且 tag 是唯一发布版本源；工作流验证契约 drift、CLI 类型/规范/测试、npm/pnpm 全局安装和受支持目标的 Bun 二进制 smoke，并按正式版、RC、Beta 维护 npm dist-tag。
 - [x] 建立 Luna DevOps、Luna CLI、Luna DevOps Skill 三个更新日志视图与自动同步工作流；平台使用 `v*`，CLI 与 Skill 由同一个 `cli-v*` tag 配套发版，发布成功后由 CI 生成中英文日志并同步文档。
 - [x] 建立 CLI 与 Skill 强配套契约：Skill 与 CLI 必须使用相同版本、tag 和 commit；CLI Release 缺少 Skill 制品或 manifest 不一致时直接失败，规则由 `release-compatibility.json`、双 manifest 和更新日志共同暴露。
-- [x] 完善中英文 CLI 文档入口、源码开发说明与配套 Skill；Skill 以机器可读 Help 为命令事实来源，准确标注尚未完成的服务端能力，并在 CLI CI/Release 中通过同步检查阻止命令和能力描述漂移。
+- [x] 完善中英文 CLI 文档入口、源码开发和发布门禁说明：明确 OpenAPI 是普通业务命令唯一事实源、协议适配器边界、机器目录与 JSON Agent 模式、全覆盖验证命令和 Skill 同步规则；文档不手写覆盖数量，统一引用脚本实时结果。
 - [x] 完善 CLI 人类可读分层帮助与语言检测：支持 `--lang`、`LUNA_LANG`、本地配置和系统 locale 优先级，命令帮助展示参数来源、风险、Scope、接口与示例，并在发布产物 smoke 中验证中文帮助。
 - [ ] 确认 npm `@liteyuki` 组织权限，使用 2FA 手动发布首个 `@liteyuki/luna-cli` public 预发布包；随后配置 Trusted Publisher 和 GitHub `npm` Environment，并以新的未发布版本完成真实 OIDC 发布验收。
 - [x] 使用固定 Bun 版本构建 Linux glibc x64/arm64 与 macOS arm64/x64 制品，生成 checksum、SBOM 和 provenance；Linux 制品完成无 Node.js smoke，macOS 未签名制品仅进入预发布；Windows 与 Alpine/musl 使用 npm/pnpm + Node.js 降级渠道。

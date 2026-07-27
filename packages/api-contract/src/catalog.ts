@@ -15,6 +15,7 @@ import type {
   OperationCatalogFilter,
   OperationCatalogMetadata,
   OperationCatalogPage,
+  ProjectContextMode,
 } from "./types.js";
 
 const TAG_CATEGORY_OVERRIDES: Readonly<Record<string, string>> = Object.freeze({
@@ -183,6 +184,43 @@ function requiredScopes(operation: OpenApiOperationSnapshot): readonly string[] 
   return Object.freeze([...new Set(scopes)].sort());
 }
 
+function projectContext(
+  operation: OpenApiOperationSnapshot,
+): ProjectContextMode {
+  const configured = operation.xLunaCli?.projectContext;
+  if (typeof configured === "string") {
+    return configured;
+  }
+  if (configured?.mode) {
+    return configured.mode;
+  }
+  return operation.parameters.some(
+    (parameter) =>
+      parameter.in === "path" &&
+      ["projectId", "project_id"].includes(parameter.name ?? ""),
+  )
+    ? "required"
+    : "none";
+}
+
+function uniqueStrings(values: readonly string[] | undefined): readonly string[] {
+  return Object.freeze(
+    [...new Set((values ?? []).map((value) => value.trim()).filter(Boolean))],
+  );
+}
+
+function commandAliases(
+  operation: OpenApiOperationSnapshot,
+  operationId: string,
+  command: Pick<CommandMetadata, "tool">,
+): readonly string[] {
+  const semanticAlias = toKebabCase(operationId);
+  return uniqueStrings([
+    ...(operation.xLunaCli?.aliases ?? []),
+    ...(semanticAlias && semanticAlias !== command.tool ? [semanticAlias] : []),
+  ]);
+}
+
 function deepFreeze<T>(value: T): T {
   if (value === null || typeof value !== "object" || Object.isFrozen(value)) {
     return value;
@@ -224,14 +262,26 @@ export function buildOperationCatalog(
       normalizedPath,
     );
     const commandBase = explicitCommand ?? fallbackCommand;
+    const operationId = explicitOperationId ?? fallbackOperationId;
     const command: CommandMetadata = {
       ...commandBase,
+      categoryAliases: uniqueStrings(operation.xLunaCli?.categoryAliases),
+      aliases: commandAliases(operation, operationId, commandBase),
       classification:
         operation.xLunaCli?.classification ?? "unclassified",
       risk: operation.xLunaCli?.risk ?? fallbackRisk(operation.method),
       transport: operation.xLunaCli?.transport ?? "http",
       requiredScopes: requiredScopes(operation),
+      mfaPurpose: operation.xLunaCli?.mfaPurpose,
+      projectContext: projectContext(operation),
+      streaming:
+        operation.xLunaCli?.streaming ??
+        ["sse", "websocket"].includes(
+          operation.xLunaCli?.transport ?? "http",
+        ),
       hidden: operation.xLunaCli?.hidden ?? false,
+      agentAllowed: operation.xLunaCli?.agentAllowed ?? true,
+      examples: uniqueStrings(operation.xLunaCli?.examples),
       exclusionReason: operation.xLunaCli?.exclusionReason,
     };
 
@@ -241,7 +291,7 @@ export function buildOperationCatalog(
       path: normalizedPath,
       operationKey: createOperationKey(operation.method, normalizedPath),
       primaryTag,
-      operationId: explicitOperationId ?? fallbackOperationId,
+      operationId,
       operationIdSource: explicitOperationId ? "explicit" : "fallback",
       explicitOperationId,
       fallbackOperationId,

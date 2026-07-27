@@ -2,13 +2,11 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/model"
@@ -16,31 +14,9 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/resourceidentifier"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
 	"github.com/gin-gonic/gin"
-	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
-
-const (
-	dataExportTicketTTL       = time.Minute
-	dataExportTicketKeyPrefix = "data_export:ticket:"
-)
-
-var dataExportMemoryTickets sync.Map
-
-type dataExportTicketValue struct {
-	UserID        string    `json:"userId"`
-	SessionID     string    `json:"sessionId"`
-	ProjectID     string    `json:"projectId"`
-	ApplicationID string    `json:"applicationId"`
-	TargetID      string    `json:"targetId"`
-	ExpiresAt     time.Time `json:"expiresAt"`
-}
-
-type dataExportTicketResponse struct {
-	Ticket    string    `json:"ticket"`
-	ExpiresAt time.Time `json:"expiresAt"`
-}
 
 func (h *Handlers) ListDeploymentTargets(ctx *gin.Context) {
 	if _, _, ok := h.projectAndCurrentUserWithRoles(ctx, "owner", "admin", "developer", "viewer"); !ok {
@@ -227,12 +203,10 @@ type deploymentTargetDataExportAuthorization struct {
 	project model.Project
 	app     model.Application
 	target  model.DeploymentTarget
+	binding dataExportAuthorizationBinding
 }
 
 func (h *Handlers) authorizeDeploymentTargetDataExport(ctx *gin.Context) (deploymentTargetDataExportAuthorization, bool) {
-	if !requireInteractiveSession(ctx) {
-		return deploymentTargetDataExportAuthorization{}, false
-	}
 	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, "owner", "admin")
 	if !ok {
 		return deploymentTargetDataExportAuthorization{}, false
@@ -240,7 +214,8 @@ func (h *Handlers) authorizeDeploymentTargetDataExport(ctx *gin.Context) (deploy
 	if !h.ensureProjectCanMutate(ctx, project) {
 		return deploymentTargetDataExportAuthorization{}, false
 	}
-	if !h.requireStepUp(ctx, user, stepUpPurposeDataExport) {
+	binding, ok := h.requireDataExportAuthorizationBinding(ctx, user)
+	if !ok {
 		return deploymentTargetDataExportAuthorization{}, false
 	}
 	app, ok := h.findApplication(ctx)
@@ -263,7 +238,9 @@ func (h *Handlers) authorizeDeploymentTargetDataExport(ctx *gin.Context) (deploy
 		writeError(ctx, http.StatusBadRequest, "该部署配置未启用运行数据保留")
 		return deploymentTargetDataExportAuthorization{}, false
 	}
-	return deploymentTargetDataExportAuthorization{user: user, project: project, app: app, target: target}, true
+	return deploymentTargetDataExportAuthorization{
+		user: user, project: project, app: app, target: target, binding: binding,
+	}, true
 }
 
 func (h *Handlers) AuthorizeDeploymentTargetDataExport(ctx *gin.Context) {
@@ -271,12 +248,7 @@ func (h *Handlers) AuthorizeDeploymentTargetDataExport(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	session, ok := h.currentSessionFromCookie(ctx)
-	if !ok || session.UserID != authorization.user.ID {
-		writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.session.expired")
-		return
-	}
-	ticket, expiresAt, err := h.issueDataExportTicket(ctx.Request.Context(), authorization, session)
+	ticket, expiresAt, err := h.issueDataExportTicket(ctx.Request.Context(), authorization)
 	if err != nil {
 		h.audit(authorization.user.ID, "deployment_target.data_export_authorize", authorization.target.ID, false, err.Error())
 		writeErrorCode(ctx, http.StatusServiceUnavailable, "data_export.ticket_unavailable", "data export authorization is temporarily unavailable")
@@ -286,28 +258,23 @@ func (h *Handlers) AuthorizeDeploymentTargetDataExport(ctx *gin.Context) {
 }
 
 func (h *Handlers) ExportDeploymentTargetData(ctx *gin.Context) {
-	authorization, ok := h.authorizeDeploymentTargetDataExport(ctx)
-	if !ok {
-		return
-	}
-	session, ok := h.currentSessionFromCookie(ctx)
-	if !ok || session.UserID != authorization.user.ID {
-		writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.session.expired")
-		return
-	}
 	ticket := strings.TrimSpace(ctx.Query("ticket"))
 	if ticket == "" {
 		writeErrorCode(ctx, http.StatusBadRequest, "data_export.ticket_required", "data export ticket is required")
 		return
 	}
-	valid, err := h.consumeDataExportTicket(ctx.Request.Context(), ticket, authorization, session)
+	ticketValue, valid, err := h.consumeDataExportTicket(ctx.Request.Context(), ticket)
 	if err != nil {
-		h.audit(authorization.user.ID, "deployment_target.data_export", authorization.target.ID, false, err.Error())
 		writeErrorCode(ctx, http.StatusServiceUnavailable, "data_export.ticket_unavailable", "data export authorization is temporarily unavailable")
 		return
 	}
-	if !valid {
+	if !valid || !ticketValue.matchesResource(ctx.Param("projectId"), ctx.Param("applicationId"), ctx.Param("targetId")) {
 		writeErrorCode(ctx, http.StatusForbidden, "data_export.ticket_invalid", "data export ticket is invalid, expired, consumed, or bound to another request")
+		return
+	}
+	authorization, ok := h.dataExportAuthorizationFromTicket(ctx.Request.Context(), ticketValue)
+	if !ok {
+		writeErrorCode(ctx, http.StatusForbidden, "data_export.ticket_invalid", "data export ticket authorization is no longer valid")
 		return
 	}
 	user, project, app, target := authorization.user, authorization.project, authorization.app, authorization.target
@@ -371,82 +338,6 @@ func (h *Handlers) ExportDeploymentTargetData(ctx *gin.Context) {
 		return
 	}
 	h.audit(user.ID, "deployment_target.data_export", target.ID, true, filename)
-}
-
-func (h *Handlers) issueDataExportTicket(ctx context.Context, authorization deploymentTargetDataExportAuthorization, session model.UserSession) (string, time.Time, error) {
-	expiresAt := time.Now().Add(dataExportTicketTTL)
-	value := dataExportTicketValue{
-		UserID:        authorization.user.ID,
-		SessionID:     session.ID,
-		ProjectID:     authorization.project.ID,
-		ApplicationID: authorization.app.ID,
-		TargetID:      authorization.target.ID,
-		ExpiresAt:     expiresAt,
-	}
-	payload, err := json.Marshal(value)
-	if err != nil {
-		return "", time.Time{}, err
-	}
-	if h.rateLimiter != nil && h.rateLimiter.redis != nil {
-		ticket := "r_" + randomHex(32)
-		redisCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
-		err = h.rateLimiter.redis.Set(redisCtx, dataExportTicketKeyPrefix+hashToken(ticket), payload, dataExportTicketTTL).Err()
-		cancel()
-		if err == nil {
-			return ticket, expiresAt, nil
-		}
-		if h.mode == "production" {
-			return "", time.Time{}, err
-		}
-	}
-	if h.mode == "production" {
-		return "", time.Time{}, errors.New("Redis is required for production data export tickets")
-	}
-	ticket := "m_" + randomHex(32)
-	dataExportMemoryTickets.Store(hashToken(ticket), value)
-	return ticket, expiresAt, nil
-}
-
-func (h *Handlers) consumeDataExportTicket(ctx context.Context, ticket string, authorization deploymentTargetDataExportAuthorization, session model.UserSession) (bool, error) {
-	var value dataExportTicketValue
-	switch {
-	case strings.HasPrefix(ticket, "r_"):
-		if h.rateLimiter == nil || h.rateLimiter.redis == nil {
-			return false, errors.New("Redis data export ticket store is unavailable")
-		}
-		redisCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
-		raw, err := h.rateLimiter.redis.GetDel(redisCtx, dataExportTicketKeyPrefix+hashToken(ticket)).Bytes()
-		cancel()
-		if errors.Is(err, redis.Nil) {
-			return false, nil
-		}
-		if err != nil {
-			return false, err
-		}
-		if err := json.Unmarshal(raw, &value); err != nil {
-			return false, err
-		}
-	case strings.HasPrefix(ticket, "m_") && h.mode != "production":
-		raw, found := dataExportMemoryTickets.LoadAndDelete(hashToken(ticket))
-		if !found {
-			return false, nil
-		}
-		var ok bool
-		value, ok = raw.(dataExportTicketValue)
-		if !ok {
-			return false, errors.New("invalid in-memory data export ticket")
-		}
-	default:
-		return false, nil
-	}
-	if !value.ExpiresAt.After(time.Now()) {
-		return false, nil
-	}
-	return value.UserID == authorization.user.ID &&
-		value.SessionID == session.ID &&
-		value.ProjectID == authorization.project.ID &&
-		value.ApplicationID == authorization.app.ID &&
-		value.TargetID == authorization.target.ID, nil
 }
 
 func requireInteractiveSession(ctx *gin.Context) bool {

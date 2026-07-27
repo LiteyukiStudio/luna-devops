@@ -10,9 +10,9 @@
     "activeMatch": "/operations/"
   },
   {
-    "text": "更新日志",
-    "link": "/changelog",
-    "activeMatch": "/changelog"
+    "text": "下载",
+    "link": "/guide/cli/installation",
+    "activeMatch": "/guide/cli/"
   },
   {
     "text": "开发",

@@ -1,0 +1,7 @@
+package fixture
+
+func registerRoutes(router *gin.Engine) {
+	v1 := router.Group("/api/v1")
+	v1.GET("/projects", handlers.ListProjects)
+	v1.GET("/projects/:projectId/new-business-capability", handlers.NewBusinessCapability)
+}

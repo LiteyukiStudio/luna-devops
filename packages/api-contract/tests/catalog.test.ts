@@ -133,6 +133,21 @@ describe("OpenAPI operation catalog", () => {
     );
   });
 
+  it("adds semantic operation aliases to generated commands", () => {
+    const [entry] = buildOperationCatalog([
+      operation({
+        operationId: "listProjectMembers",
+        path: "/api/v1/projects/{projectId}/members",
+        tags: ["Projects"],
+      }),
+    ]);
+
+    expect(entry?.command.canonicalPath).toBe(
+      "project.get-projects-by-project-id-members",
+    );
+    expect(entry?.command.aliases).toContain("list-project-members");
+  });
+
   it("prefers explicit operation and command metadata when available", () => {
     const [entry] = buildOperationCatalog([
       operation({
@@ -146,6 +161,15 @@ describe("OpenAPI operation catalog", () => {
           risk: "high",
           transport: "download",
           requiredScopes: ["project:read", "widget:read"],
+          categoryAliases: ["workspace"],
+          aliases: ["show-widget"],
+          mfaPurpose: "data_export",
+          projectContext: { mode: "required" },
+          streaming: true,
+          agentAllowed: false,
+          examples: [
+            "luna project widget-show projectId=prj_example widgetId=wid_example",
+          ],
         },
       }),
     ]);
@@ -161,8 +185,34 @@ describe("OpenAPI operation catalog", () => {
         risk: "high",
         transport: "download",
         requiredScopes: ["project:read", "widget:read"],
+        categoryAliases: ["workspace"],
+        aliases: ["show-widget", "get-widget"],
+        mfaPurpose: "data_export",
+        projectContext: "required",
+        streaming: true,
+        agentAllowed: false,
+        examples: [
+          "luna project widget-show projectId=prj_example widgetId=wid_example",
+        ],
       },
     });
+  });
+
+  it("infers project context from project path parameters", () => {
+    const [entry] = buildOperationCatalog([
+      operation({
+        parameters: [
+          {
+            name: "projectId",
+            in: "path",
+            required: true,
+          },
+        ],
+      }),
+    ]);
+
+    expect(entry?.command.projectContext).toBe("required");
+    expect(entry?.command.agentAllowed).toBe(true);
   });
 
   it("publishes explicit CLI contracts for dashboard and retention operations", () => {
@@ -241,7 +291,7 @@ describe("OpenAPI operation catalog", () => {
           entry.command.hidden &&
           entry.command.classification === "protocol-adapter",
       ),
-    ).toHaveLength(6);
+    ).toHaveLength(14);
   });
 
   it("rejects duplicate public identifiers", () => {

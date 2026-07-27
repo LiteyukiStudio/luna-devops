@@ -1,0 +1,18 @@
+[
+  {
+    "path": "project.list",
+    "category": "project",
+    "tool": "list",
+    "source": "openapi",
+    "risk": "low",
+    "serverSupported": null
+  },
+  {
+    "path": "config.public",
+    "category": "config",
+    "tool": "public",
+    "source": "openapi",
+    "risk": "low",
+    "serverSupported": null
+  }
+]

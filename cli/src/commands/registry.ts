@@ -6,6 +6,10 @@ import type {
   RegisteredCommand,
 } from './types.js'
 import { CliCommandError } from './errors.js'
+import {
+  prepareProtocolRegistration,
+  protocolCommandDefinitions,
+} from './protocol.js'
 
 const NAME_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/
 
@@ -20,10 +24,13 @@ export class CommandRegistry {
       openapiDigest: metadata.openapiDigest ?? 'unavailable',
       schemaDigest: metadata.schemaDigest ?? 'unavailable',
     }
+    for (const definition of protocolCommandDefinitions())
+      this.register(definition.metadata, definition.handler)
   }
 
   register(metadata: CommandMetadata, handler: CommandHandler): RegisteredCommand {
-    const normalized = normalizeMetadata(metadata)
+    const prepared = prepareProtocolRegistration(metadata, handler)
+    const normalized = normalizeMetadata(prepared.metadata)
     const path = normalized.canonicalPath
     if (this.#commands.has(path)) {
       throw new CliCommandError(
@@ -32,9 +39,13 @@ export class CommandRegistry {
         { status: 409, details: { path } },
       )
     }
+    // A real command always wins over a previously registered convenience
+    // alias. OpenAPI semantic aliases may intentionally overlap a hand-written
+    // local command such as auth.login.
+    this.#aliases.delete(path)
 
     validateSource(normalized)
-    const registered = { metadata: normalized, handler }
+    const registered = { metadata: normalized, handler: prepared.handler }
     this.#commands.set(path, registered)
 
     for (const alias of normalized.aliases) {
@@ -127,11 +138,7 @@ export class CommandRegistry {
       )
     }
     if (this.#commands.has(aliasPath) && aliasPath !== canonicalPath) {
-      throw new CliCommandError(
-        'command_alias_conflict',
-        `Command alias "${aliasPath}" conflicts with a canonical command.`,
-        { status: 409, details: { aliasPath, canonicalPath } },
-      )
+      return
     }
     this.#aliases.set(aliasPath, canonicalPath)
   }

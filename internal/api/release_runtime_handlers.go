@@ -105,9 +105,39 @@ func (h *Handlers) ExecReleaseRuntimeCommand(ctx *gin.Context) {
 }
 
 func (h *Handlers) StreamReleaseRuntimeTerminal(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, "owner", "admin", "developer")
-	if !ok {
-		return
+	ticket := strings.TrimSpace(ctx.Query("ticket"))
+	var (
+		user          model.User
+		project       model.Project
+		authorization runtimeTerminalAuthorizationBinding
+		ticketValue   runtimeTerminalTicketValue
+		ok            bool
+	)
+	if ticket == "" {
+		user, project, ok = h.projectAndCurrentUserWithRoles(ctx, "owner", "admin", "developer")
+		if !ok {
+			return
+		}
+	} else {
+		var err error
+		ticketValue, ok, err = h.consumeRuntimeTerminalTicket(ctx.Request.Context(), ticket)
+		if err != nil {
+			writeErrorCode(ctx, http.StatusServiceUnavailable, "runtime_terminal.ticket_unavailable", "terminal authorization is temporarily unavailable")
+			return
+		}
+		if !ok {
+			writeErrorCode(ctx, http.StatusUnauthorized, "runtime_terminal.ticket_invalid", "terminal ticket is invalid, expired, or already consumed")
+			return
+		}
+		if err := h.db.First(&user, "id = ? and disabled = ?", ticketValue.UserID, false).Error; err != nil {
+			writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.account.disabled")
+			return
+		}
+		project, ok = h.releaseRuntimeTerminalProjectForUser(ctx, user)
+		if !ok {
+			return
+		}
+		authorization = ticketValue.Authorization
 	}
 	if !h.ensureProjectCanMutate(ctx, project) {
 		return
@@ -127,9 +157,28 @@ func (h *Handlers) StreamReleaseRuntimeTerminal(ctx *gin.Context) {
 	if !h.ensureDeploymentTargetCanMutate(ctx, target) {
 		return
 	}
-	authorization, ok := h.requireRuntimeTerminalAuthorization(ctx, user)
-	if !ok {
-		return
+	reference := releaseRuntimeTerminalAuthorizationReference{
+		ProjectID:          project.ID,
+		ApplicationID:      release.ApplicationID,
+		ReleaseID:          release.ID,
+		DeploymentTargetID: target.ID,
+		ClusterID:          cluster.ID,
+		ClusterKubeconfig:  cluster.KubeconfigRef,
+		Namespace:          namespace,
+	}
+	if ticket == "" {
+		authorization, ok = h.requireRuntimeTerminalAuthorization(ctx, user)
+		if !ok {
+			return
+		}
+	} else {
+		if !ticketValue.matches("release", reference) ||
+			!h.runtimeTerminalAuthorizationActive(ctx.Request.Context(), authorization, func(checkCtx context.Context, currentUser model.User) bool {
+				return h.releaseRuntimeTerminalAuthorizationAllowed(checkCtx, currentUser, reference)
+			}) {
+			writeErrorCode(ctx, http.StatusUnauthorized, "runtime_terminal.ticket_invalid", "terminal ticket is invalid, expired, revoked, or bound to another resource")
+			return
+		}
 	}
 	upgrader := websocket.Upgrader{
 		CheckOrigin: func(request *http.Request) bool {
@@ -154,15 +203,6 @@ func (h *Handlers) StreamReleaseRuntimeTerminal(ctx *gin.Context) {
 	defer stdinWriter.Close()
 	sizeQueue := newRuntimeTerminalSizeQueue()
 	wsWriter := &runtimeTerminalWebSocketWriter{conn: conn}
-	reference := releaseRuntimeTerminalAuthorizationReference{
-		ProjectID:          project.ID,
-		ApplicationID:      release.ApplicationID,
-		ReleaseID:          release.ID,
-		DeploymentTargetID: target.ID,
-		ClusterID:          cluster.ID,
-		ClusterKubeconfig:  cluster.KubeconfigRef,
-		Namespace:          namespace,
-	}
 	authorizationRevoked := h.monitorRuntimeTerminalAuthorization(sessionCtx, authorization, func(checkCtx context.Context, currentUser model.User) bool {
 		return h.releaseRuntimeTerminalAuthorizationAllowed(checkCtx, currentUser, reference)
 	}, cancel)
@@ -208,10 +248,55 @@ func (h *Handlers) AuthorizeReleaseRuntimeTerminal(ctx *gin.Context) {
 	if !ok || !ensureRuntimeWebConsoleEnabled(ctx, project, target) || !h.ensureDeploymentTargetCanMutate(ctx, target) {
 		return
 	}
-	if _, ok := h.requireRuntimeTerminalAuthorization(ctx, user); !ok {
+	_, namespace, cluster, ok := h.runtimeClientForDeploymentTarget(ctx, project, target)
+	if !ok {
 		return
 	}
-	ctx.Status(http.StatusNoContent)
+	authorization, ok := h.requireRuntimeTerminalAuthorization(ctx, user)
+	if !ok {
+		return
+	}
+	reference := releaseRuntimeTerminalAuthorizationReference{
+		ProjectID:          project.ID,
+		ApplicationID:      release.ApplicationID,
+		ReleaseID:          release.ID,
+		DeploymentTargetID: target.ID,
+		ClusterID:          cluster.ID,
+		ClusterKubeconfig:  cluster.KubeconfigRef,
+		Namespace:          namespace,
+	}
+	ticket, expiresAt, err := h.issueRuntimeTerminalTicket(
+		ctx.Request.Context(),
+		authorization,
+		"release",
+		reference,
+	)
+	if err != nil {
+		h.audit(user.ID, "release_runtime.terminal_authorize", release.ID, false, err.Error())
+		writeErrorCode(ctx, http.StatusServiceUnavailable, "runtime_terminal.ticket_unavailable", "terminal authorization is temporarily unavailable")
+		return
+	}
+	ctx.JSON(http.StatusOK, runtimeTerminalTicketResponse{Ticket: ticket, ExpiresAt: expiresAt})
+}
+
+func (h *Handlers) releaseRuntimeTerminalProjectForUser(ctx *gin.Context, user model.User) (model.Project, bool) {
+	project, ok := h.findProject(ctx)
+	if !ok {
+		return model.Project{}, false
+	}
+	if projectUserRoleAllowed(user, "", []string{"owner", "admin", "developer"}) {
+		return project, true
+	}
+	var member model.ProjectMember
+	if err := h.db.First(&member, "project_id = ? and user_id = ?", project.ID, user.ID).Error; err != nil {
+		writeError(ctx, http.StatusForbidden, "你没有访问该项目的权限")
+		return model.Project{}, false
+	}
+	if !projectUserRoleAllowed(user, member.Role, []string{"owner", "admin", "developer"}) {
+		writeError(ctx, http.StatusForbidden, "你没有执行该项目操作的权限")
+		return model.Project{}, false
+	}
+	return project, true
 }
 
 func (h *Handlers) readRuntimeTerminalMessages(ctx context.Context, conn *websocket.Conn, stdin *io.PipeWriter, sizeQueue *runtimeTerminalSizeQueue, activityTracker *runtimeTerminalActivityTracker, cancel context.CancelFunc) {

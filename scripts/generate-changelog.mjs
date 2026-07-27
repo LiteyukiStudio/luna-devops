@@ -29,7 +29,7 @@ const tracks = {
     title: "Luna CLI",
     tagPattern: "cli-v*",
     prefix: "cli-v",
-    output: "cli.md",
+    output: "cli.mdx",
     paths: [
       "cli",
       "packages",
@@ -179,6 +179,79 @@ function compatibilityLines(trackName, metadata, version, lang) {
   return [];
 }
 
+function cliInstallLines(tag, version, lang) {
+  const releaseUrl = `${repositoryUrl}/releases/tag/${encodeURIComponent(tag)}`;
+  const skillAsset = `luna-devops-${version}.skill`;
+
+  if (lang === "zh") {
+    return [
+      "**安装此版本**",
+      "",
+      '<Tabs groupId="cli-release-install">',
+      '  <Tab label="AI 安装 Skill" value="ai">',
+      "",
+      "```text",
+      `请使用当前 AI 环境支持的 Skill 安装机制，为我安装与 Luna CLI ${version} 精确配套的 Luna DevOps Skill。`,
+      `1. 打开 GitHub Release：${releaseUrl}`,
+      `2. 查找并下载 ${skillAsset}，同时使用同一 Release 中的 SHA256SUMS 校验文件。`,
+      `3. 安装后读取 Skill 根目录的 SKILL.md，并运行 luna --version，确认 CLI 版本也是 ${version}。`,
+      "4. 如果该历史 Release 没有同版本 Skill，请停止，不要跨版本安装，并明确告诉我缺少的制品。",
+      "```",
+      "",
+      "  </Tab>",
+      '  <Tab label="pnpm" value="pnpm">',
+      "",
+      "```bash",
+      `pnpm add --global @liteyuki/luna-cli@${version}`,
+      "```",
+      "",
+      "  </Tab>",
+      '  <Tab label="npm" value="npm">',
+      "",
+      "```bash",
+      `npm install --global @liteyuki/luna-cli@${version}`,
+      "```",
+      "",
+      "  </Tab>",
+      "</Tabs>",
+      "",
+    ];
+  }
+
+  return [
+    "**Install this release**",
+    "",
+    '<Tabs groupId="cli-release-install">',
+    '  <Tab label="Install Skill with AI" value="ai">',
+    "",
+    "```text",
+    `Use the Skill installation mechanism supported by the current AI environment to install the Luna DevOps Skill that exactly matches Luna CLI ${version}.`,
+    `1. Open the GitHub Release: ${releaseUrl}`,
+    `2. Find and download ${skillAsset}, then verify it with SHA256SUMS from the same release.`,
+    `3. Read SKILL.md at the installed Skill root and run luna --version to confirm that the CLI version is also ${version}.`,
+    "4. If this historical release has no matching Skill artifact, stop. Do not install a different version, and tell me which artifact is missing.",
+    "```",
+    "",
+    "  </Tab>",
+    '  <Tab label="pnpm" value="pnpm">',
+    "",
+    "```bash",
+    `pnpm add --global @liteyuki/luna-cli@${version}`,
+    "```",
+    "",
+    "  </Tab>",
+    '  <Tab label="npm" value="npm">',
+    "",
+    "```bash",
+    `npm install --global @liteyuki/luna-cli@${version}`,
+    "```",
+    "",
+    "  </Tab>",
+    "</Tabs>",
+    "",
+  ];
+}
+
 function versionForTag(track, tag) {
   const prefixes = track.prefixes ?? [track.prefix];
   const prefix = prefixes.find(candidate => tag.startsWith(candidate));
@@ -212,6 +285,9 @@ function releaseSection(trackName, track, tag, previousTag, lang) {
   );
   if (compatibility.length > 0) {
     lines.push(...compatibility, "");
+  }
+  if (trackName === "cli") {
+    lines.push(...cliInstallLines(tag, version, lang));
   }
 
   const commits = commitsForRange(track, range);
@@ -276,6 +352,9 @@ function pageIntroduction(trackName, lang) {
 function generatePage(trackName, track, lang) {
   const tags = trackTags(track);
   const lines = [
+    ...(trackName === "cli"
+      ? ['import { Tab, Tabs } from "@rspress/core/theme";', ""]
+      : []),
     `# ${track.title}${lang === "zh" ? " 更新日志" : " Changelog"}`,
     "",
     ...pageIntroduction(trackName, lang),
@@ -323,6 +402,9 @@ function generatePage(trackName, track, lang) {
   }
 
   const output = join(root, "docs", "docs", lang, "changelog", track.output);
+  if (track.output.endsWith(".mdx")) {
+    rmSync(output.replace(/\.mdx$/, ".md"), { force: true });
+  }
   mkdirSync(dirname(output), { recursive: true });
   writeFileSync(output, `${lines.join("\n").trim()}\n`);
 }

@@ -10,9 +10,9 @@
     "activeMatch": "/operations/"
   },
   {
-    "text": "Changelog",
-    "link": "/changelog",
-    "activeMatch": "/changelog"
+    "text": "Download",
+    "link": "/guide/cli/installation",
+    "activeMatch": "/guide/cli/"
   },
   {
     "text": "Develop",

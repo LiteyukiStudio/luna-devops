@@ -1,19 +1,28 @@
 # 项目空间
 
-当前命令目录覆盖 `dashboard` 与 `project` 分类，包括项目空间 CRUD、成员、置顶和
-本地默认项目。
+## 机器目录
+
+按任务查询：
+
+- `luna help catalog category=dashboard limit=100 output=json interactive=false agent=true`
+- `luna help catalog category=project limit=100 output=json interactive=false agent=true`
+
+执行具体工具前使用
+`luna help command path=<category.tool> output=json interactive=false agent=true`
+读取参数、Scope、风险和服务端支持状态。
 
 ## 工作流
 
-1. 读取当前实例、当前项目和用户可见项目。
-2. 名称匹配不唯一时列出候选，使用稳定项目 ID 继续。
-3. 变更前读取项目与成员状态，明确角色和影响。
-4. 创建或更新后重新读取；项目删除按关键操作处理。
-5. 默认项目只影响本地上下文，不等于获得项目权限。
+1. 读取活动实例、默认项目和用户可见项目空间。
+2. 名称匹配不唯一时列出有限候选，使用稳定项目 ID 继续。
+3. 按目录能力读取看板摘要、项目空间、成员、置顶和默认项目。
+4. 变更前读取项目与成员状态，明确角色、计费归属和影响。
+5. 创建、更新或成员变更后重新读取；删除按关键操作处理。
 
 ## 边界
 
-- 不将项目名称、可变标识或 Kubernetes 名称当作项目 ID。
+- 默认项目只简化低风险读取，不等于获得项目权限。
+- 不将项目名称、可变描述、Kubernetes 名称或展示标签当作项目 ID。
 - 平台自有项目空间不可删除。
-- 成员权限由后端 RBAC 最终判断。
-- 看板只读取命令目录提供的摘要，不推测未登记的统计接口。
+- 成员权限由后端 RBAC 最终判断，前端可见不代表允许写入。
+- 看板只读取目录提供的摘要，不自行拼接或推测未登记统计。

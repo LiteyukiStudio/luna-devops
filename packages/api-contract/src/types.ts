@@ -95,6 +95,12 @@ export interface LunaCliCommandExtension {
   readonly path?: string;
 }
 
+export type ProjectContextMode = "required" | "optional" | "none";
+
+export interface LunaCliProjectContextExtension {
+  readonly mode: ProjectContextMode;
+}
+
 /**
  * Supported fields from the OpenAPI `x-luna-cli` extension.
  *
@@ -104,11 +110,20 @@ export interface LunaCliCommandExtension {
  */
 export interface LunaCliExtensionSnapshot {
   readonly command?: string | LunaCliCommandExtension;
+  readonly categoryAliases?: readonly string[];
+  readonly aliases?: readonly string[];
   readonly classification?: CommandClassification;
   readonly risk?: CommandRisk;
   readonly transport?: CommandTransport;
   readonly requiredScopes?: readonly string[];
+  readonly mfaPurpose?: string;
+  readonly projectContext?:
+    | ProjectContextMode
+    | LunaCliProjectContextExtension;
+  readonly streaming?: boolean;
   readonly hidden?: boolean;
+  readonly agentAllowed?: boolean;
+  readonly examples?: readonly string[];
   readonly exclusionReason?: string;
 }
 
@@ -134,12 +149,19 @@ export interface CommandMetadata {
   readonly canonicalPath: string;
   readonly category: string;
   readonly tool: string;
+  readonly categoryAliases: readonly string[];
+  readonly aliases: readonly string[];
   readonly source: MetadataSource;
   readonly classification: CommandClassification;
   readonly risk: CommandRisk;
   readonly transport: CommandTransport;
   readonly requiredScopes: readonly string[];
+  readonly mfaPurpose?: string;
+  readonly projectContext: ProjectContextMode;
+  readonly streaming: boolean;
   readonly hidden: boolean;
+  readonly agentAllowed: boolean;
+  readonly examples: readonly string[];
   readonly exclusionReason?: string;
 }
 
