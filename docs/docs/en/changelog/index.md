@@ -4,6 +4,22 @@ Public release notes for the Luna DevOps platform.
 
 Find container releases and release notes on [GitHub Releases](https://github.com/LiteyukiStudio/luna-devops/releases).
 
+## 0.0.3-beta.3
+
+Release date: 2026-07-27
+
+[GitHub Release](https://github.com/LiteyukiStudio/luna-devops/releases/tag/v0.0.3-beta.3) · [View tag source](https://github.com/LiteyukiStudio/luna-devops/tree/v0.0.3-beta.3)
+
+**Pairing:** Luna CLI and the Luna DevOps Skill are both `0.0.3-beta.3` and must match exactly.
+
+### Docs
+
+- docs 📝: 同步发布更新日志 ([6efdc29](https://github.com/LiteyukiStudio/luna-devops/commit/6efdc291b92094fd82f4c14d8716372a2b14a9f9))
+
+### Changed
+
+- ci 🚀: 使用 LiteyukiAutoBot 发布版本 ([93d9d50](https://github.com/LiteyukiStudio/luna-devops/commit/93d9d5072a4a94b2cfd6c002e92bcdd8c05115b0))
+
 ## 0.0.3-beta.2
 
 Release date: 2026-07-27

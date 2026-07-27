@@ -4,6 +4,22 @@
 
 容器版本、发布说明与下载入口请前往 [GitHub Releases](https://github.com/LiteyukiStudio/luna-devops/releases)。
 
+## 0.0.3-beta.3
+
+发布日期：2026-07-27
+
+[GitHub Release](https://github.com/LiteyukiStudio/luna-devops/releases/tag/v0.0.3-beta.3) · [查看版本代码](https://github.com/LiteyukiStudio/luna-devops/tree/v0.0.3-beta.3)
+
+**配套关系：** Luna CLI 与 Luna DevOps Skill 均为 `0.0.3-beta.3`，必须精确同版本使用。
+
+### 文档
+
+- docs 📝: 同步发布更新日志 ([6efdc29](https://github.com/LiteyukiStudio/luna-devops/commit/6efdc291b92094fd82f4c14d8716372a2b14a9f9))
+
+### 调整
+
+- ci 🚀: 使用 LiteyukiAutoBot 发布版本 ([93d9d50](https://github.com/LiteyukiStudio/luna-devops/commit/93d9d5072a4a94b2cfd6c002e92bcdd8c05115b0))
+
 ## 0.0.3-beta.2
 
 发布日期：2026-07-27
