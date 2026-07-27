@@ -4,6 +4,75 @@ Public release notes for the Luna DevOps platform.
 
 Find container releases and release notes on [GitHub Releases](https://github.com/LiteyukiStudio/luna-devops/releases).
 
+## 0.0.3-beta.2
+
+Release date: 2026-07-27
+
+[GitHub Release](https://github.com/LiteyukiStudio/luna-devops/releases/tag/v0.0.3-beta.2) · [View tag source](https://github.com/LiteyukiStudio/luna-devops/tree/v0.0.3-beta.2)
+
+**Pairing:** Luna CLI and the Luna DevOps Skill are both `0.0.3-beta.2` and must match exactly.
+
+### Fixed
+
+- fix 🐛: 同步 API Contract 生成产物 ([89ae74b](https://github.com/LiteyukiStudio/luna-devops/commit/89ae74bbfd31fbeaf9b9169c53695578e4fdc31c))
+
+## 0.0.3-beta.1
+
+Release date: 2026-07-27
+
+[GitHub Release](https://github.com/LiteyukiStudio/luna-devops/releases/tag/v0.0.3-beta.1) · [View tag source](https://github.com/LiteyukiStudio/luna-devops/tree/v0.0.3-beta.1)
+
+**Pairing:** Luna CLI and the Luna DevOps Skill are both `0.0.3-beta.1` and must match exactly.
+
+### Added
+
+- feat ✨: 完成 CLI 全功能平台对齐 ([904e0de](https://github.com/LiteyukiStudio/luna-devops/commit/904e0de373db94514074209f086251792471507f))
+- feat ✨: 实装 CLI Device Code 登录 ([d486594](https://github.com/LiteyukiStudio/luna-devops/commit/d4865943c5cde47c3a852b8ba0c01cda541b4607))
+- feat ✨: 简化 CLI 登录与命令发现 ([0932edd](https://github.com/LiteyukiStudio/luna-devops/commit/0932edd5341fa713102cd816141705b83533d59c))
+- feat: 移除独立的 Luna DevOps Skill 更新日志，更新 CLI 更新日志以反映配套关系 ([cac30f3](https://github.com/LiteyukiStudio/luna-devops/commit/cac30f3f3fddb97406722d9f9f08023b88de7d0c))
+- feat: Refactor Luna CLI Skills to Luna DevOps Skill ([8b18c6a](https://github.com/LiteyukiStudio/luna-devops/commit/8b18c6ae8c071ce6d3ed6613196883a6a21616f0))
+- feat: enforce paired versioning for Luna CLI and Skills ([b31961e](https://github.com/LiteyukiStudio/luna-devops/commit/b31961e0f542f7aec802beffd5eb2eddadc0f493))
+- feat: 更新 CLI 帮助信息和错误处理，增强用户体验 ([51ad943](https://github.com/LiteyukiStudio/luna-devops/commit/51ad9436a24033fba9cf2d1a7f4e808d0283ca19))
+- feat ✨: 完善 CLI 本地化帮助与配套发布流程 ([1e44356](https://github.com/LiteyukiStudio/luna-devops/commit/1e443563f1efee9671743d92006525df5b33ab29))
+- feat ✨: 更新项目引用，统一使用 luna-devops 作为 GitHub 仓库地址 ([dfccbe6](https://github.com/LiteyukiStudio/luna-devops/commit/dfccbe6a022ebe532d11f3a2ad9da4c3a352f56a))
+- feat: 增强 npm 发布流程，添加版本身份验证和测试用例 ([5807d1d](https://github.com/LiteyukiStudio/luna-devops/commit/5807d1d6cff10a64d65d959753a76a6e145c5024))
+- feat ✨: 更新 CLI 发布工作流，移除不再支持的 Windows 和 musl 制品，优化文档和测试用例 ([f41b0fb](https://github.com/LiteyukiStudio/luna-devops/commit/f41b0fb6573df638db7b1c99463da461495d98e5))
+- feat ✨: 更新 CLI 版本管理，使用占位版本并优化发布工作流 ([ea98fac](https://github.com/LiteyukiStudio/luna-devops/commit/ea98fac7c14b375b1622b14e6153e69469870718))
+- feat ✨: 完善 Luna CLI 回归与发布链路 ([ecdd091](https://github.com/LiteyukiStudio/luna-devops/commit/ecdd091004a10d0122b3fc636713d27118ab1aab))
+- feat: add CLI build and packaging scripts ([7101600](https://github.com/LiteyukiStudio/luna-devops/commit/710160049a78a2b363b27e8eabd6e6f1750475ca))
+- feat ✨: 添加标题ID以增强可访问性，并优化提示工具的布局 ([d32bd96](https://github.com/LiteyukiStudio/luna-devops/commit/d32bd967a9c94d1959cdce959db51f2a2ddcc3f0))
+- feat ✨: 更新仪表板页面指标项，移除多余的表面属性，优化视觉表现 ([9199b04](https://github.com/LiteyukiStudio/luna-devops/commit/9199b04f25d57c23334e05dde2a35aae1b44c498))
+- feat ✨: enhance deployment documentation and UI components ([7b81790](https://github.com/LiteyukiStudio/luna-devops/commit/7b817905f7bb601b6e8fcbf09bdca2d8a9241a21))
+- feat ✨: 使用不可变标识命名 Kubernetes 资源 ([931bb06](https://github.com/LiteyukiStudio/luna-devops/commit/931bb0667c990ef74ce89c22ffff7a0d3fcc943e))
+
+### Fixed
+
+- fix 🐛: 修复 OAuth 凭据失效响应 ([a6d958b](https://github.com/LiteyukiStudio/luna-devops/commit/a6d958baed3001a52aa059facb30af2a89bff89b))
+- fix 🚀: 发布更新日志后重建文档 ([4969464](https://github.com/LiteyukiStudio/luna-devops/commit/49694649b27e70ca4fd805259a625359fb4c1874))
+- fix 🚀: 修复发布更新日志自动同步 ([c17ff50](https://github.com/LiteyukiStudio/luna-devops/commit/c17ff50c7695cc94598fdb333b18e21c08b61c0c))
+- fix 🐛: 修复 CLI 干净环境打包入口缺失 ([e6ffba4](https://github.com/LiteyukiStudio/luna-devops/commit/e6ffba49d36fccf26ae634413baf148c09b4129f))
+- fix 🐛: 完善资源标识迁移与响应式界面 ([2f71b8c](https://github.com/LiteyukiStudio/luna-devops/commit/2f71b8cb868c5125f8621008e3b4f700ade2f10a))
+
+### Docs
+
+- docs 📝: 同步发布更新日志 ([37aa12f](https://github.com/LiteyukiStudio/luna-devops/commit/37aa12f41f04f1aa6e19e7e111e7bf1504105295))
+- docs 📝: 同步发布更新日志 ([313e365](https://github.com/LiteyukiStudio/luna-devops/commit/313e365e2553cf7e31aa00b893e6badfdc94d976))
+- docs 📝: 同步发布更新日志 ([7395fa9](https://github.com/LiteyukiStudio/luna-devops/commit/7395fa9dfd1ab4b33edf11a59d32e17facab52cf))
+- docs 📝: 同步发布更新日志 ([a9b198a](https://github.com/LiteyukiStudio/luna-devops/commit/a9b198afe22a099e9385fbfa3ad5d572e8236e0e))
+- docs 📝: 同步发布更新日志 ([8ea2fbb](https://github.com/LiteyukiStudio/luna-devops/commit/8ea2fbbdcfdeadec142f965e45529c5dca2873cd))
+- docs 📝: 同步发布更新日志 ([8f46cc3](https://github.com/LiteyukiStudio/luna-devops/commit/8f46cc3b91e5653579bc116bd9d3fea3f2e3a8e3))
+- docs 📝: 同步发布更新日志 ([583e006](https://github.com/LiteyukiStudio/luna-devops/commit/583e0061ef1368330b448f04c284c3e370476037))
+- docs 📝: 同步发布更新日志 ([c89ddd4](https://github.com/LiteyukiStudio/luna-devops/commit/c89ddd482b7a7ae62a62e5639c403fa04144e7fb))
+- docs 📝: 固化 CLI 与 Skills 预发布兼容版本 ([cd2145d](https://github.com/LiteyukiStudio/luna-devops/commit/cd2145db18a4484570349086f9f08ee1ff1b235b))
+- docs 📝: 同步发布更新日志 ([ad3ce93](https://github.com/LiteyukiStudio/luna-devops/commit/ad3ce93ad84b1f326c8a3cedc1fff73e0caa7c54))
+- docs 📝: 同步发布更新日志 ([1772a7e](https://github.com/LiteyukiStudio/luna-devops/commit/1772a7e3b3a83be86685beadc8c7d0775841608b))
+
+### Changed
+
+- style 🎨: 修正 OAuth 处理器格式 ([474705e](https://github.com/LiteyukiStudio/luna-devops/commit/474705e50ce991bde661d55d3aa26ae8bddd3b2f))
+- style 💄: 统一纯表格列表顶部留白 ([8747e58](https://github.com/LiteyukiStudio/luna-devops/commit/8747e58c77246f8ce0f23455542192038e8def87))
+- style 💄: 统一控制台视觉与表格布局 ([265b00a](https://github.com/LiteyukiStudio/luna-devops/commit/265b00abd443d88e73eb4c42cf3256e721540b34))
+
 ## 0.0.2-beta.1
 
 Release date: 2026-07-24
