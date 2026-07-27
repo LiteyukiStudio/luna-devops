@@ -6,6 +6,18 @@
 
 CLI 安装包、二进制文件和配套 `luna-devops-<version>.skill` 均可从 [GitHub Releases](https://github.com/LiteyukiStudio/luna-devops/releases) 获取。
 
+## 0.0.9
+
+发布日期：2026-07-27
+
+[GitHub Release](https://github.com/LiteyukiStudio/luna-devops/releases/tag/cli-v0.0.9) · [查看版本代码](https://github.com/LiteyukiStudio/luna-devops/tree/cli-v0.0.9)
+
+**配套关系：** Luna CLI 与 Luna DevOps Skill 均为 `0.0.9`，必须精确同版本使用。
+
+### 新增
+
+- feat ✨: 实装 CLI Device Code 登录 ([d486594](https://github.com/LiteyukiStudio/luna-devops/commit/d4865943c5cde47c3a852b8ba0c01cda541b4607))
+
 ## 0.0.8
 
 发布日期：2026-07-27
