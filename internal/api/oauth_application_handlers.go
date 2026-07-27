@@ -244,7 +244,7 @@ func oauthApplicationFromInput(ctx *gin.Context, user model.User, input oauthApp
 	}
 	return model.OAuthApplication{
 		OwnerUserID: &user.ID,
-		Name: name, Description: strings.TrimSpace(input.Description), HomepageURL: strings.TrimSpace(input.HomepageURL),
+		Name:        name, Description: strings.TrimSpace(input.Description), HomepageURL: strings.TrimSpace(input.HomepageURL),
 		LogoURL: strings.TrimSpace(input.LogoURL), RedirectURIs: encodeStringList(redirectURIs), AllowedScopes: scope,
 		AccessTokenLifetimeDays: input.AccessTokenLifetimeDays,
 	}, true
