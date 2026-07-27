@@ -1,164 +1,86 @@
 # 发布与制品验证
 
-Luna DevOps 使用独立版本；Luna CLI 与 Luna DevOps Skill 使用同一版本、tag、
-commit 和 GitHub Release：
+Luna DevOps 与 Luna CLI 现在由两个独立仓库发布：
 
-| 产品 | Git tag | 发布渠道 |
+| 产品 | 仓库 | Git tag | 发布渠道 |
+| --- | --- | --- | --- |
+| Luna DevOps | `LiteyukiStudio/luna-devops` | `v1.2.3` | 容器镜像与平台 GitHub Release |
+| Luna CLI + Skill | `LiteyukiStudio/luna-cli` | `v1.2.3` | npm、二进制、单一 `.skill` 与 CLI GitHub Release |
+
+两个仓库都使用标准 `v*` tag，但工作流和 Release 位于各自仓库，不会互相触发。
+CLI 与 Skill 必须使用同一版本、tag、commit 和 GitHub Release；CLI 可以单独运行，
+Skill 则精确依赖配套 CLI 版本。
+
+## 版本来源
+
+CLI 源码中的 `package.json.version` 固定为 `0.0.0-development`，并使用
+`private: true` 防止从工作区误发布。发布版本只来自 CLI 仓库的 `v*` tag。
+工作流会在临时 npm 打包目录中写入版本、移除 `private`，并把相同版本注入
+JavaScript 制品和 Bun 二进制，不需要为发布版本提交一次清单修改。
+
+预发布后缀决定 npm dist-tag：
+
+| tag 示例 | npm dist-tag | GitHub Release |
 | --- | --- | --- |
-| Luna DevOps | `v1.2.3` | 容器镜像与 GitHub Release |
-| Luna CLI + Skill | `cli-v1.2.3` | npm `latest`、二进制、单一 `.skill` 与 GitHub Release |
-| Luna CLI + Skill | `cli-v1.2.3-rc.1` | npm `next`、CLI/Skill 制品与 GitHub Prerelease |
-| Luna CLI + Skill | `cli-v1.2.3-beta.1` | npm `beta`、CLI/Skill 制品与 GitHub Prerelease |
-
-`v*` 和 `cli-v*` 由不同工作流消费，互不触发。版本策略在
-`release-compatibility.json` 中声明：Skill 必须与 CLI 使用完全相同的版本，
-发布时缺少 Skill 制品或版本不一致都会失败。CLI 自身仍可不安装 Skill
-独立运行。
-
-仓库中的 `cli/package.json.version` 固定为 `0.0.0-development`，只表示源码开发态，并通过 `private: true` 阻止从源码目录误发布。发布版本只来自 `cli-v*` tag：工作流校验 tag 中的 SemVer，在临时 npm 打包目录移除 `private` 标记、写入版本，并把同一版本注入 npm JavaScript 制品和 Bun 二进制，因此发版前不需要手动修改或提交 `package.json`。发布阶段直接读取待发布 tarball 内的 `package/package.json` 校验包名、版本和 `private` 状态，不使用源码占位版本判断制品版本。
-
-## 首次创建 npm 包
-
-npm 不需要提前创建一个空包。首次执行下面的发布命令时，会创建 public scoped package `@liteyuki/luna-cli`：
-
-```bash
-npm publish <已验证的-tarball.tgz> --access public --tag next
-```
-
-首次发布前需要确认：
-
-1. npm 组织 `@liteyuki` 已存在，当前维护者拥有创建 public package 的权限；
-2. 维护者已启用 2FA，并在干净环境中使用仓库脚本完成构建、打包和 smoke test；
-3. 首次发布使用预发布版本和 `next` 标签，不直接占用稳定版；
-4. 首次发布成功后，再在包设置中配置 GitHub Actions Trusted Publisher；
-5. 配置完成后创建一个尚未发布版本的 `cli-v*` tag 验证 OIDC 发布。复用首次发布的 tag 版本只会触发幂等校验，不会真正执行 `npm publish`。
+| `v1.2.3` | `latest` | Release |
+| `v1.2.3-rc.1` | `next` | Prerelease |
+| `v1.2.3-beta.1` | `beta` | Prerelease |
 
 ## CI 门禁
 
-CLI 相关变更会执行：
+CLI 仓库的常规 CI 会：
 
-1. 使用锁文件安装 pnpm 工作区依赖。
-2. 重新生成 API 契约并检查 drift。
-3. 对比 Gin Router、OpenAPI、CLI 机器目录和逐路由协议分类，要求普通业务命令覆盖率为 100%。
-4. 读取机器 Help，校验配套 Skill 引用的命令、Agent 参数和能力边界。
-5. TypeScript typecheck、ESLint、单元测试和构建。
-6. 生成真实 npm tarball，并检查文件白名单。
-7. 在干净临时目录中分别使用 npm 与 pnpm 全局安装同一个 tarball。
-8. 构建当前 Linux host 的 Bun baseline 二进制并运行 smoke test。
+1. 安装锁定依赖并执行 TypeScript、ESLint、单元测试和构建。
+2. 校验 OpenAPI 契约副本和配套 Skill。
+3. 只读检出 Luna DevOps 平台源码。
+4. 对比 Gin Router、平台 OpenAPI、CLI 机器目录和精确协议分类。
+5. 要求普通业务命令覆盖率为 100%。
+6. 生成真实 npm tarball，并用 npm 与 pnpm 做全局安装 smoke。
 
-发布门禁还会断言 tarball 中的 `package.json.version`、npm 安装后的 `luna --version` 和独立二进制的 `luna --version` 都等于 tag 版本。
-
-覆盖门禁的实时统计由 `pnpm check:platform-cli-coverage` 输出。文档和发布说明
-不固定记录路由或命令数量；脚本退出码非零时不得发布，也不得用 `api request`
-或通配排除掩盖缺失命令。
-
-## 执行安全验收
-
-发布验证必须同时确认以下安全语义：
-
-- `high` 和 `critical` 操作在交互终端中逐次确认；Agent 或其他非交互调用必须
-  显式传入 `--yes`，否则返回稳定的确认错误。
-- Agent 命令固定使用 `output=json interactive=false agent=true`，只从
-  `stdout` 读取 JSON Envelope。
-- `--yes` 只表示调用方确认本次操作，不得绕过后端权限、Scope、Step-up MFA
-  或资源一致性校验。
-- 终端和数据导出必须由 CLI OAuth 凭据发起，并完成对应 purpose 的 Step-up；
-  个人访问令牌不能满足或绕过该要求。
+CLI 仓库只读取平台源码，不推送平台仓库，也不要求两个仓库共享提交历史。
 
 ## CLI 与 Skill 配套发版
 
-`cli-v*` tag 触发 `cli-release.yml`。同一工作流在构建 CLI 的同时执行 Skill
-结构校验、CLI 命令同步检查和确定性打包，然后在同一个 GitHub Release 发布：
+CLI 仓库的 `v*` tag 触发 `cli-release.yml`。同一工作流构建 CLI，同时执行
+Skill 结构校验、命令同步检查和确定性打包，并在同一个 GitHub Release 发布：
 
-- 一个 `luna-devops-<version>.skill`，包含根 `SKILL.md` 和按业务领域拆分的 `references/`；
-- `LUNA-CLI-SKILLS-MANIFEST.json`，包含完全相同的 CLI 版本、渐进加载方式和制品 SHA-256；
-- CLI 的 npm 包、独立二进制、`SHA256SUMS` 与 GitHub OIDC build provenance。
+- `luna-devops-<version>.skill`；
+- `LUNA-CLI-SKILLS-MANIFEST.json`；
+- npm tarball 与受支持平台的独立二进制；
+- `SHA256SUMS`、Release manifest、SBOM 和 provenance。
 
-发布门禁会校验 Skill 与 CLI 的版本、tag 和 commit 完全一致，并要求
-`requires.lunaCli` 为相同的精确版本。缺少单一 Skill 或 manifest
-都会中止发布。`cli-skills-release.yml` 只保留为手动打包验证工具，不再创建
-独立 Release。
+`.skill` 本质上是 ZIP 文件，内部只有一个 `luna-devops` 根目录。Agent 先读取根
+`SKILL.md` 路由任务，再按需加载 `references/`，不会一次注入所有领域资料。
 
-`.skill` 是 ZIP 格式，文件只包含一个与 Skill `name` 相同的 `luna-devops`
-根目录。Agent 首先读取根 `SKILL.md` 完成领域路由，再按当前任务加载
-`references/` 中需要的少量文档，不会一次性把所有领域注入上下文。打包脚本固定文件顺序和时间戳，同一 tag
-重跑会得到相同哈希。所有制品都从
-[GitHub Releases](https://github.com/LiteyukiStudio/luna-devops/releases)
-下载，不从文档站复制一份。
-
-## 更新日志同步
-
-平台或 CLI Release 工作流成功后会触发 `changelog-sync.yml`。它从不可变 tag
-重新生成中英文 Luna DevOps 和 Luna CLI 两个更新日志视图；配套 Skill 与历史独立
-Skill 版本一并记录在 Luna CLI 页面中。同步任务
-串行提交生成结果到 `main`，遇到并发更新时会重新变基并重试；提交成功后显式
-启动 `Build & Publish Containers`。更新日志提交、工作流调度和 GitHub Release
-均使用 `LiteyukiAutoBot` 的短期 installation token，因此自动提交会显示为
-`liteyukiautobot[bot]`，并能正常触发后续工作流。没有内容变化时任务直接结束，
-不会形成工作流循环。
-
-仓库需要配置：
-
-- Actions variable `LITEYUKI_AUTO_BOT_APP_ID`：GitHub App ID；
-- Actions secret `LITEYUKI_AUTO_BOT_PRIVATE_KEY`：完整私钥 PEM；
-- App 安装范围仅包含 `LiteyukiStudio/luna-devops`；
-- Repository permissions 仅授予 `Contents: Read and write` 与
-  `Actions: Read and write`，`Metadata: Read-only` 由 GitHub 自动保留。
-
-工作流通过固定提交版本的 `actions/create-github-app-token@v3` 按任务进一步收窄
-权限。令牌默认只访问当前仓库、最长有效一小时，并在 Job 结束时自动撤销。普通测试、
-构建和 npm OIDC 发布不读取机器人私钥。
-
-发布工作流在这些门禁之外，还会构建明确的平台矩阵：
-
-- Linux x64 baseline；
-- Linux arm64；
-- macOS arm64 和 x64 预发布测试制品。
-
-Windows 与 Alpine/musl 不进入独立二进制矩阵，统一通过 npm 或 pnpm 安装，在 Node.js `22.14.0` 或更高版本上运行。这样发布门禁只承诺能够在目标 runner 真实执行的制品，不依赖构建阶段临时下载 Bun 目标运行时，也不要求用户补装 musl 平台的额外动态库。
-
-## 签名边界
-
-当前仓库没有 Apple Developer ID 和公证凭据。工作流不会假装 macOS 制品已经签名：
-
-- 正式版只包含经过目标环境 smoke 的 Linux 独立二进制；
-- 预发布版可以包含名称带 `-unsigned` 的 macOS 测试制品；
-- 未签名 macOS 制品不应进入生产环境；
-- 接入对应签名和验证阶段后，才会扩展稳定制品矩阵。
+所有新 CLI 与 Skill 制品都从
+[Luna CLI Releases](https://github.com/LiteyukiStudio/luna-cli/releases)
+下载。`0.0.12` 及更早版本仍保留在平台旧仓库中，历史链接不迁移。
 
 ## npm Trusted Publishing
 
-npm 发布使用 GitHub OIDC Trusted Publishing，不保存长期写入 Token。维护者需要在 npm 包设置中绑定：
+npm 发布使用 GitHub OIDC Trusted Publishing，不保存长期写入 Token。npm 包
+设置应绑定：
 
 - Organization or user：`LiteyukiStudio`
-- Repository：`luna-devops`
+- Repository：`luna-cli`
 - Workflow：`cli-release.yml`
 - Environment：`npm`
 
-GitHub `npm` Environment 应配置保护规则和维护者审批。发布 Job 只授予 `id-token: write`，不设置 `NPM_TOKEN` 或 `NODE_AUTH_TOKEN`。
+发布 Job 只授予必要的 `id-token: write`。如果同一版本已经存在，工作流比较
+npm integrity：内容一致时跳过，内容不一致时失败并要求发布新版本。
 
-如果同一版本已经存在，工作流会比较 npm `dist.integrity`：
+## 平台契约来源
 
-- 内容一致：跳过 npm 发布，继续补齐 GitHub Release；
-- 内容不同：立即失败，必须发布新版本。
+平台 OpenAPI 仍由 `LiteyukiStudio/luna-devops` 维护。CLI 发布前的覆盖门禁通过
+只读 checkout 获取指定平台 revision，并将 revision 与 OpenAPI digest 写入制品
+元数据。这能让两个产品独立发布，同时保留可追溯的兼容性依据。
 
-## 校验下载
+## 制品边界
 
-每个 Release 生成：
+- npm/pnpm + Node.js 是所有受支持系统的通用安装方式。
+- Linux glibc x64/arm64 提供经过 smoke 的独立二进制。
+- macOS 未完成 Developer ID 签名和公证前，只提供明确标记的测试制品。
+- Windows 与 Alpine/musl 使用 npm/pnpm + Node.js 降级渠道。
 
-- `SHA256SUMS`；
-- `RELEASE-MANIFEST.json`；
-- 同版本的 `luna-devops-<version>.skill` 和 `LUNA-CLI-SKILLS-MANIFEST.json`；
-- SPDX JSON SBOM；
-- GitHub OIDC build provenance；
-- SBOM attestation bundle。
-
-下载后至少校验 SHA-256：
-
-```bash
-grep " luna-linux-x64$" SHA256SUMS | sha256sum -c -
-```
-
-还应在 GitHub Release 的 Attestations 页面确认制品来自
-`LiteyukiStudio/luna-devops` 的对应发布工作流，并检查 tag、commit
-和制品名称是否与预期一致。
+下载独立二进制后至少校验 `SHA256SUMS`，并在 GitHub Attestations 中确认制品来自
+`LiteyukiStudio/luna-cli` 对应 tag 和发布工作流。

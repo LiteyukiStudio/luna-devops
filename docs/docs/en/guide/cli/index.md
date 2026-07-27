@@ -125,14 +125,16 @@ parse the JSON envelope from `stdout` only and treat `stderr` as diagnostics.
 ## Agent Skill
 
 The paired `luna-devops` Skill lives in
-[`ai-supports/skills/luna-devops`](https://github.com/LiteyukiStudio/luna-devops/tree/main/ai-supports/skills/luna-devops).
+[`skills/luna-devops`](https://github.com/LiteyukiStudio/luna-cli/tree/main/skills/luna-devops)
+in the standalone [`LiteyukiStudio/luna-cli`](https://github.com/LiteyukiStudio/luna-cli)
+repository.
 Its root `SKILL.md` defines intent routing, shared operation order, and safety
 boundaries. Domain material lives under `references/` and is loaded only when
 the task needs it. Machine-readable Help remains the source of truth for
 commands, parameters, risk, and output.
 
 The Skill ships with the CLI and must use the exact same version. Every
-`cli-v*` GitHub Release contains one `luna-devops-<version>.skill`; an Agent
+`v*` GitHub Release contains one `luna-devops-<version>.skill`; an Agent
 must not load a mismatched version.
 
 ```bash
@@ -144,7 +146,7 @@ When commands, parameters, risks, or capability boundaries change, update the
 Skill in the same change and run:
 
 ```bash
-pnpm check:cli-skills
+pnpm check:skills
 ```
 
 ## Remaining release blockers

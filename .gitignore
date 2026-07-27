@@ -21,11 +21,12 @@ logs/
 
 # Go build outputs
 bin/
-!cli/bin/
-!cli/bin/luna.js
 tmp/
 *.test
 coverage.out
+
+# Optional local checkout of https://github.com/LiteyukiStudio/luna-cli
+/cli/
 
 # Local database and generated runtime data
 *.db

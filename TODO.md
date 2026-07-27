@@ -992,9 +992,12 @@
 
 ## 16. Luna CLI
 
-详细规格见 [`notes/cli-spec.md`](notes/cli-spec.md)。
+CLI 已迁移到独立仓库 [`LiteyukiStudio/luna-cli`](https://github.com/LiteyukiStudio/luna-cli)。
+本仓库的 [`notes/cli-spec.md`](notes/cli-spec.md) 只保留迁移入口，完整规格由
+[`luna-cli/docs/cli-spec.md`](https://github.com/LiteyukiStudio/luna-cli/blob/main/docs/cli-spec.md)
+维护。
 
-- [x] 确定 CLI 技术栈、两级工具命令、`key=value` 与多行/复杂输入规范、参数校验、单活动实例与账号凭据、活动登录默认项目空间、版本化 JSON Envelope、OAuth、Device Code、Access Token、Step-up MFA、i18n、AI 输出契约、npm/pnpm 安装、独立 `cli-v*` 发版、npm Trusted Publishing 和 Bun 单二进制方案。
+- [x] 确定 CLI 技术栈、两级工具命令、`key=value` 与多行/复杂输入规范、参数校验、单活动实例与账号凭据、活动登录默认项目空间、版本化 JSON Envelope、OAuth、Device Code、Access Token、Step-up MFA、i18n、AI 输出契约、npm/pnpm 安装、独立仓库 `v*` 发版、npm Trusted Publishing 和 Bun 单二进制方案。
 - [x] 完成 CLI spec 与 AI Agent 可实施性审计：按 `method + normalizedPath` 建立平台路由覆盖基线；明确普通业务命令、协议适配、浏览器回调、Webhook 接收器和显式排除等边界，`api request` 不计入覆盖；实时路由和命令数量统一由覆盖脚本输出，不在 TODO 复制快照。
 - [x] 移除旧 MCP 与内嵌 Assistant 设计，将 `ai-supports` 收敛为仅通过未来 `luna` CLI 工作的预发布 Skills。
 - [x] 建立根 pnpm workspace，抽取环境无关的 `@luna-devops/api-contract` 与 `@luna-devops/api-client`，CLI 从生成契约注册命令并复用统一 HTTP 客户端。
@@ -1021,15 +1024,16 @@
 - [x] 按业务域覆盖全部公开控制面 API；普通业务命令必须由 OpenAPI 生成，SSE、WebSocket、下载等特殊传输使用显式协议适配器，浏览器回调和 Webhook receiver 不作为 CLI 业务命令，`api request` 仅供人类诊断且在 Agent 模式固定禁用。终端和数据导出要求 CLI OAuth + 对应 purpose 的 Step-up，个人访问令牌不得绕过；`high`/`critical` 在交互模式逐次确认，非交互或 Agent 必须显式 `--yes`。完成状态以 `pnpm check:platform-cli-coverage` 退出码及最终总验证为准，实时数量和业务域明细只读取脚本输出。
 - [ ] 为 Git Provider OAuth 增加短时授权事务创建/查询接口，回调写入事务终态；`luna git authorize` 打开浏览器并返回确定的 Git Account ID，不通过轮询账号列表猜测授权结果。
 - [ ] 建立干净测试实例的全 operation 场景矩阵：关键登录/CRUD/构建/发布/日志/终端/导出/MFA 旅程 100% 通过，完整可执行场景通过率不低于 95%。
-- [x] 新增 CLI CI 与 Release 工作流；平台项目继续由 `v*` 发版，CLI 仅由 `cli-v*` 发版且 tag 是唯一发布版本源；工作流验证契约 drift、CLI 类型/规范/测试、npm/pnpm 全局安装和受支持目标的 Bun 二进制 smoke，并按正式版、RC、Beta 维护 npm dist-tag。
-- [x] 建立 Luna DevOps、Luna CLI、Luna DevOps Skill 三个更新日志视图与自动同步工作流；平台使用 `v*`，CLI 与 Skill 由同一个 `cli-v*` tag 配套发版，发布成功后由 CI 生成中英文日志并同步文档。
+- [x] 将 CLI、API Client、契约副本、配套 Skill、测试和发布流程迁移到独立 `LiteyukiStudio/luna-cli` 仓库；平台仓库保留被忽略的 `/cli/` 本地克隆目录，不使用 submodule、subtree 或 subrepo 建立写入关联。
+- [x] 新增独立 CLI CI 与 Release 工作流；平台和 CLI 在各自仓库使用 `v*` tag，tag 分别作为对应产品的唯一发布版本源；CLI 工作流以只读方式拉取平台 OpenAPI 和源码，验证契约 drift、命令覆盖、CLI 类型/规范/测试、npm/pnpm 全局安装和受支持目标的 Bun 二进制 smoke。
+- [x] 建立 Luna DevOps、Luna CLI、Luna DevOps Skill 更新日志视图；CLI 与 Skill 由独立 CLI 仓库同一个 `v*` tag 配套发版，平台文档保留旧仓库历史版本链接并标明迁移边界。
 - [x] 建立 CLI 与 Skill 强配套契约：Skill 与 CLI 必须使用相同版本、tag 和 commit；CLI Release 缺少 Skill 制品或 manifest 不一致时直接失败，规则由 `release-compatibility.json`、双 manifest 和更新日志共同暴露。
 - [x] 完善中英文 CLI 文档入口、源码开发和发布门禁说明：明确 OpenAPI 是普通业务命令唯一事实源、协议适配器边界、机器目录与 JSON Agent 模式、全覆盖验证命令和 Skill 同步规则；文档不手写覆盖数量，统一引用脚本实时结果。
 - [x] 完善 CLI 人类可读分层帮助与语言检测：支持 `--lang`、`LUNA_LANG`、本地配置和系统 locale 优先级，命令帮助展示参数来源、风险、Scope、接口与示例，并在发布产物 smoke 中验证中文帮助。
 - [ ] 确认 npm `@liteyuki` 组织权限，使用 2FA 手动发布首个 `@liteyuki/luna-cli` public 预发布包；随后配置 Trusted Publisher 和 GitHub `npm` Environment，并以新的未发布版本完成真实 OIDC 发布验收。
 - [x] 使用固定 Bun 版本构建 Linux glibc x64/arm64 与 macOS arm64/x64 制品，生成 checksum、SBOM 和 provenance；Linux 制品完成无 Node.js smoke，macOS 未签名制品仅进入预发布；Windows 与 Alpine/musl 使用 npm/pnpm + Node.js 降级渠道。
 - [ ] 接入 Apple Developer ID 和公证；macOS 制品完成平台代码签名后才可进入稳定矩阵。
-- [x] 将 Luna CLI Skill 强制纳入 `cli-v*` 配套发版：使用单一 `luna-devops` 根 Skill 和领域 `references/` 渐进加载，完成结构与命令同步校验、可重复 `.skill` 打包、SHA-256、精确版本 manifest 和 OIDC provenance，并与 CLI 一起进入同一 GitHub Release；独立 Skill 工作流仅保留手动打包验证。
+- [x] 将 Luna CLI Skill 强制纳入独立仓库 `v*` 配套发版：使用单一 `luna-devops` 根 Skill 和领域 `references/` 渐进加载，完成结构与命令同步校验、可重复 `.skill` 打包、SHA-256、精确版本 manifest 和 OIDC provenance，并与 CLI 一起进入同一 GitHub Release；独立 Skill 工作流仅保留手动打包验证。
 - [ ] 在发布首个稳定版 Luna DevOps Skill 前，完成真实实例的只读、变更、失败、权限、MFA 与脱敏评估，再标记 Skill 稳定可用。
 - [ ] 建立 Agent 安全与可靠性评估集：覆盖提示注入、恶意日志/仓库内容、终端控制字符、越权工具选择、计划重放、目标集合漂移、无限分页/轮询、MFA 用户在场、执行后状态验证和审计关联；安全不变量要求 100% 通过。
 

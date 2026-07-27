@@ -36,7 +36,9 @@ CLI 目前处于预发布阶段。命令目录由以下三类受控来源组成�
 - 根据 OpenAPI 契约注册已登记的普通业务操作；
 - npm 包与 Bun 独立二进制的统一入口、CI、打包、全局安装 smoke 和发布门禁。
 
-共享契约和 API Client 会被打包进 npm 与 Bun 制品，不要求用户安装 monorepo 工作区。预发布版本已经可以从 npm 的 `beta` 通道安装。
+契约和 API Client 会被打包进 npm 与 Bun 制品，不要求用户克隆源码仓库。CLI
+源码、配套 Skill 和发布流程位于独立的
+[`LiteyukiStudio/luna-cli`](https://github.com/LiteyukiStudio/luna-cli) 仓库。
 
 ## 自带帮助与语言
 
@@ -113,12 +115,13 @@ Agent 命令固定使用 `output=json interactive=false agent=true`。调用方�
 
 ## Agent Skill
 
-配套 `luna-devops` Skill 位于仓库的 [`ai-supports/skills/luna-devops`](https://github.com/LiteyukiStudio/luna-devops/tree/main/ai-supports/skills/luna-devops)
+配套 `luna-devops` Skill 位于 CLI 仓库的
+[`skills/luna-devops`](https://github.com/LiteyukiStudio/luna-cli/tree/main/skills/luna-devops)
 目录。根 `SKILL.md` 负责意图路由、通用操作顺序和安全边界，领域资料放在
 `references/` 并按任务需要加载。具体命令、参数、风险与输出结构始终以机器 Help
 为准。
 
-Skill 跟随 CLI 一起发布，版本必须与 CLI 完全相同。每个 `cli-v*` GitHub
+Skill 跟随 CLI 一起发布，版本必须与 CLI 完全相同。每个 `v*` GitHub
 Release 只包含一个 `luna-devops-<version>.skill`；版本不一致时不得加载。
 
 ```bash
@@ -129,7 +132,7 @@ luna help command path=project.get-projects output=json interactive=false agent=
 CLI 命令、参数、风险或能力边界变化后，必须在同一变更中同步 Skill，并运行：
 
 ```bash
-pnpm check:cli-skills
+pnpm check:skills
 ```
 
 ## 下一步

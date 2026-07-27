@@ -36,9 +36,9 @@ npm/pnpm 是 Windows、macOS、常规 Linux 发行版以及 Alpine/musl 的统�
 首次稳定版只发布经过目标 runner 验证的 Linux glibc x64 和 arm64 制品。版本发布后，下载与系统匹配的文件和 `SHA256SUMS`：
 
 ```bash
-version="cli-vX.Y.Z"
+version="vX.Y.Z"
 asset="luna-linux-x64"
-base="https://github.com/LiteyukiStudio/luna-devops/releases/download/${version}"
+base="https://github.com/LiteyukiStudio/luna-cli/releases/download/${version}"
 
 curl -fL -o luna "${base}/${asset}"
 curl -fL -o SHA256SUMS "${base}/SHA256SUMS"

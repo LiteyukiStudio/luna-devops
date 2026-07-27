@@ -97,19 +97,31 @@ The Vite dev server proxies `/api/v1` to `http://localhost:8080`.
 
 ## Luna CLI
 
-The repository includes the `luna` CLI with a stable two-level command structure, multi-instance contexts, human-readable output, and versioned JSON output for agents:
+Luna CLI now lives in the standalone
+[`LiteyukiStudio/luna-cli`](https://github.com/LiteyukiStudio/luna-cli)
+repository. It provides a stable two-level command structure, human-readable
+output, and versioned JSON output for agents:
 
 ```bash
-pnpm --silent --dir cli exec tsx src/entry.ts version show agent=true
-pnpm --silent --dir cli exec tsx src/entry.ts help catalog query=project limit=5 agent=true
+npm install --global @liteyuki/luna-cli
+luna login
+luna project get-projects
 ```
 
-The source CLI is ready for development and local verification. Public npm packages and standalone binaries become installable after the first `cli-v*` release. The CLI executes commands exposed by machine-readable Help only; it does not use a generic HTTP request as a substitute for capabilities that are absent from OpenAPI or still need a dedicated transport.
+For platform and CLI development side by side, clone the standalone repository
+into this repository's ignored `/cli/` directory. It is not a submodule,
+subtree, or workspace member and is never included in platform commits or
+releases:
+
+```bash
+git clone git@github.com:LiteyukiStudio/luna-cli.git cli
+pnpm --dir cli install
+pnpm --dir cli check
+```
 
 - [CLI documentation](https://luna-devops.liteyuki.org/en/guide/cli/)
-- [Source development and verification](docs/docs/en/guide/cli/development.md)
-- [CLI package README](cli/README.md)
-- [Agent Skills](ai-supports/README.md)
+- [CLI source and development guide](https://github.com/LiteyukiStudio/luna-cli)
+- [Paired Agent Skill](https://github.com/LiteyukiStudio/luna-cli/tree/main/skills/luna-devops)
 
 ## Deployment
 
@@ -168,15 +180,15 @@ cmd/worker              Async Worker entry point
 internal/               Backend domains, providers, services, and models
 migrations/             PostgreSQL migrations
 openapi/                OpenAPI definitions
-cli/                    TypeScript CLI
-packages/api-*/         Shared API client and contracts for the CLI
-ai-supports/            Agent Skills paired with the CLI
 web/                    Vite + React console
 web/public/             Public assets, logo, mascot, and favicon
 docs/                   Rspress documentation site
 notes/                  Product notes, engineering notes, and SOPs
 charts/luna-devops      Helm chart
 ```
+
+The optional local `/cli/` directory is ignored by Git and exists only for a
+standalone CLI checkout during integration development.
 
 ## Development
 

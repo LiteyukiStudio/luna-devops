@@ -97,19 +97,25 @@ Vite 开发服务器会将 `/api/v1` 代理到 `http://localhost:8080`。
 
 ## Luna CLI
 
-仓库内的 `luna` CLI 使用稳定的两级命令结构，支持多实例上下文、人类可读输出和面向 Agent 的版本化 JSON 输出：
+Luna CLI 已迁移到独立仓库 [`LiteyukiStudio/luna-cli`](https://github.com/LiteyukiStudio/luna-cli)，使用稳定的两级命令结构，支持人类可读输出和面向 Agent 的版本化 JSON 输出：
 
 ```bash
-pnpm --silent --dir cli exec tsx src/entry.ts version show agent=true
-pnpm --silent --dir cli exec tsx src/entry.ts help catalog query=project limit=5 agent=true
+npm install --global @liteyuki/luna-cli
+luna login
+luna project get-projects
 ```
 
-CLI 源码已经可以用于开发和本地验证；公开 npm 包与独立二进制需要等首次 `cli-v*` 发版后才能安装。当前 CLI 只执行机器 Help 中存在的命令，尚未进入 OpenAPI 或尚未完成专用传输的能力不会由通用 HTTP 请求兜底。
+需要同时开发平台和 CLI 时，可以把独立仓库克隆到本仓库被忽略的 `/cli/` 目录。该目录不是 submodule、subtree 或 workspace 成员，不会进入平台提交和发布：
 
-- [CLI 文档](https://luna-devops.liteyuki.org/guide/cli/)
-- [源码开发与验证](docs/docs/zh/guide/cli/development.md)
-- [CLI 包说明](cli/README.md)
-- [Agent Skills](ai-supports/README.md)
+```bash
+git clone git@github.com:LiteyukiStudio/luna-cli.git cli
+pnpm --dir cli install
+pnpm --dir cli check
+```
+
+- [CLI 使用文档](https://luna-devops.liteyuki.org/guide/cli/)
+- [CLI 源码与开发说明](https://github.com/LiteyukiStudio/luna-cli)
+- [配套 Agent Skill](https://github.com/LiteyukiStudio/luna-cli/tree/main/skills/luna-devops)
 
 ## 部署
 
@@ -168,15 +174,14 @@ cmd/worker              异步 Worker 入口
 internal/               后端业务域、Provider、Service 和数据模型
 migrations/             PostgreSQL 数据库迁移
 openapi/                OpenAPI 定义
-cli/                    TypeScript CLI
-packages/api-*/         CLI 共享 API Client 与契约
-ai-supports/            与 CLI 配套的 Agent Skills
 web/                    Vite + React 控制台
 web/public/             公共资源、标志、吉祥物和 favicon
 docs/                   Rspress 文档站
 notes/                  产品方案、工程笔记和 SOP
 charts/luna-devops      Helm Chart
 ```
+
+本地可选的 `/cli/` 目录已被 Git 忽略，仅用于克隆独立 CLI 仓库进行联调。
 
 ## 开发
 

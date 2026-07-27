@@ -1,6 +1,4 @@
 packages:
-  - "cli"
-  - "packages/*"
   - "web"
   - "docs"
   - "tests"

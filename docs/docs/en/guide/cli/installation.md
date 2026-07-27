@@ -38,9 +38,9 @@ npm/pnpm is the universal installation path for Windows, macOS, conventional Lin
 The first stable release includes only target-smoked Linux glibc x64 and arm64 binaries. After a release is available, download the matching asset and `SHA256SUMS`:
 
 ```bash
-version="cli-vX.Y.Z"
+version="vX.Y.Z"
 asset="luna-linux-x64"
-base="https://github.com/LiteyukiStudio/luna-devops/releases/download/${version}"
+base="https://github.com/LiteyukiStudio/luna-cli/releases/download/${version}"
 
 curl -fL -o luna "${base}/${asset}"
 curl -fL -o SHA256SUMS "${base}/SHA256SUMS"

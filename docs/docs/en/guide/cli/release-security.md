@@ -1,176 +1,98 @@
-# Release Security
+# Release and artifact verification
 
-Luna DevOps has its own release version. Luna CLI and the Luna DevOps Skill share the
-same version, tag, commit, and GitHub Release:
+Luna DevOps and Luna CLI are released from separate repositories:
 
-| Product | Git tag | Distribution |
+| Product | Repository | Git tag | Release channels |
+| --- | --- | --- | --- |
+| Luna DevOps | `LiteyukiStudio/luna-devops` | `v1.2.3` | Container images and the platform GitHub Release |
+| Luna CLI + Skill | `LiteyukiStudio/luna-cli` | `v1.2.3` | npm, binaries, one `.skill`, and the CLI GitHub Release |
+
+Both repositories use standard `v*` tags, but their workflows and Releases are
+independent. The CLI and Skill must share the same version, tag, commit, and
+GitHub Release. The CLI can run without the Skill, while the Skill requires the
+exact paired CLI version.
+
+## Version source
+
+The source `package.json.version` remains `0.0.0-development` and uses
+`private: true` to prevent accidental publication from the checkout. A `v*` tag
+in the CLI repository is the sole release-version source. The workflow writes
+that version and removes `private` only in a temporary npm package, then injects
+the same value into JavaScript artifacts and Bun binaries.
+
+Prerelease suffixes select the npm dist-tag:
+
+| Tag example | npm dist-tag | GitHub Release |
 | --- | --- | --- |
-| Luna DevOps | `v1.2.3` | Container images and GitHub Release |
-| Luna CLI + Skill | `cli-v1.2.3` | npm `latest`, binaries, one `.skill` archive, and GitHub Release |
-| Luna CLI + Skill | `cli-v1.2.3-rc.1` | npm `next`, CLI/Skill artifacts, and GitHub Prerelease |
-| Luna CLI + Skill | `cli-v1.2.3-beta.1` | npm `beta`, CLI/Skill artifacts, and GitHub Prerelease |
-
-The `v*` and `cli-v*` prefixes are consumed by different workflows.
-`release-compatibility.json` declares the release policy: the Skill must use the
-exact same version as the CLI, and a release fails when its artifact is missing
-or mismatched. The CLI itself still works without installing the Skill.
-
-The source `cli/package.json.version` stays at `0.0.0-development` and only identifies a development checkout. The source manifest also uses `private: true` to prevent accidental publication from the working tree. A `cli-v*` tag is the sole release-version source: the workflow validates its SemVer, removes the private marker and writes that version into a temporary npm package manifest, then injects the same value into the npm JavaScript build and every Bun binary. A release therefore does not require a package manifest version commit. The publishing stage reads `package/package.json` directly from the tested tarball to validate its name, version, and private state instead of comparing the tag with the source placeholder version.
-
-## Bootstrapping the npm package
-
-npm does not require an empty package to be created in advance. The first publish command creates the public scoped package `@liteyuki/luna-cli`:
-
-```bash
-npm publish <verified-tarball.tgz> --access public --tag next
-```
-
-Before the bootstrap publish:
-
-1. confirm that the `@liteyuki` npm organization exists and the maintainer may create public packages;
-2. enable 2FA and build, pack, and smoke-test the tarball from a clean environment;
-3. use a prerelease version with the `next` tag instead of claiming the first stable version;
-4. configure the GitHub Actions Trusted Publisher in the package settings after the package exists;
-5. create a `cli-v*` tag for a new unpublished version to verify OIDC publishing. Reusing the bootstrap tag version only exercises the idempotency check and does not call `npm publish`.
+| `v1.2.3` | `latest` | Release |
+| `v1.2.3-rc.1` | `next` | Prerelease |
+| `v1.2.3-beta.1` | `beta` | Prerelease |
 
 ## CI gates
 
-CLI changes run these checks:
+Regular CLI CI:
 
-1. Install the locked pnpm workspace.
-2. Regenerate the API contract and reject drift.
-3. Compare the Gin Router, OpenAPI, CLI machine catalog, and exact-route
-   protocol classifications, requiring 100% ordinary business-command coverage.
-4. Read machine Help and verify every paired Skill command, Agent argument, and capability boundary.
-5. Run TypeScript typecheck, ESLint, unit tests, and the build.
-6. Create a real npm tarball and validate its file allowlist.
-7. Install the same tarball globally with npm and pnpm in clean temporary directories.
-8. Build a Bun baseline binary for the Linux CI host and run command smoke tests.
+1. installs locked dependencies and runs TypeScript, ESLint, tests, and builds;
+2. validates the OpenAPI contract snapshot and paired Skill;
+3. checks out Luna DevOps source read-only;
+4. compares Gin routes, platform OpenAPI, the CLI machine catalog, and exact
+   protocol classifications;
+5. requires 100% coverage for ordinary business commands;
+6. builds a real npm tarball and smoke-tests global npm and pnpm installation.
 
-The release gate additionally asserts that the tarball manifest, the npm-installed `luna --version`, and every standalone binary report the tag version.
+The CLI repository only reads platform source. It never pushes to the platform
+repository and does not require shared history.
 
-`pnpm check:platform-cli-coverage` prints the live coverage totals. Documentation
-and release notes do not freeze route or command counts. A non-zero exit status
-blocks release, and neither `api request` nor wildcard exclusions may hide a
-missing command.
+## Paired CLI and Skill release
 
-## Execution-safety acceptance
+A `v*` tag in the CLI repository triggers `cli-release.yml`. The same workflow
+builds the CLI, validates the Skill structure and command references, and
+creates deterministic artifacts in one GitHub Release:
 
-Release validation must also preserve these safety semantics:
+- `luna-devops-<version>.skill`;
+- `LUNA-CLI-SKILLS-MANIFEST.json`;
+- the npm tarball and supported standalone binaries;
+- `SHA256SUMS`, release manifest, SBOM, and provenance.
 
-- `high` and `critical` operations require per-operation confirmation in an
-  interactive terminal. Agents and other non-interactive callers must pass
-  `--yes`, otherwise the CLI returns a stable confirmation error.
-- Agent commands always use `output=json interactive=false agent=true` and read
-  the JSON envelope from `stdout` only.
-- `--yes` records caller approval for the current operation only. It cannot
-  bypass backend permissions, scopes, step-up MFA, or resource-consistency
-  checks.
-- Terminal and data-export operations require CLI OAuth credentials and a valid
-  step-up assertion for the matching purpose. A personal access token cannot
-  satisfy or bypass this requirement.
+A `.skill` file is a ZIP archive with one `luna-devops` root directory. An
+Agent reads the root `SKILL.md` for routing and loads only the required
+`references/` files.
 
-## Paired CLI and Skill releases
-
-A `cli-v*` tag triggers `cli-release.yml`. The same workflow builds the CLI,
-validates Skill structure and command synchronization, and publishes into one
-GitHub Release:
-
-- one `luna-devops-<version>.skill` archive containing the root `SKILL.md` and domain-specific `references/`;
-- `LUNA-CLI-SKILLS-MANIFEST.json` with the exact matching CLI version, progressive-loading mode, and artifact hash;
-- the npm package, standalone binaries, `SHA256SUMS`, and GitHub OIDC build provenance.
-
-The release gate requires the Skill and CLI to have the same version, tag, and
-commit, and `requires.lunaCli` must be that exact version. A missing individual
-Skill or manifest aborts the release. `cli-skills-release.yml` remains
-only as a manual packaging validation workflow and no longer creates a separate
-Release.
-
-A `.skill` is a ZIP archive with exactly one `luna-devops` root directory. An
-agent reads the root `SKILL.md` for domain routing, then loads only the relevant
-documents under `references/` for the current task instead of injecting every
-domain into context. Packaging fixes file ordering and timestamps, so rebuilding
-the same tag produces the same hashes.
-Download all artifacts from
-[GitHub Releases](https://github.com/LiteyukiStudio/luna-devops/releases);
-the documentation site does not mirror release binaries.
-
-## Changelog synchronization
-
-After the platform or CLI release workflow succeeds, `changelog-sync.yml`
-regenerates three Chinese and English changelog views for Luna DevOps, Luna CLI,
-from immutable tags. The Luna CLI page also includes its paired Skill and historical standalone
-Skill releases. The synchronization job serially commits generated
-content to `main`, rebases and retries when concurrent updates occur, then
-explicitly dispatches `Build & Publish Containers`. Changelog commits, workflow
-dispatches, and GitHub Releases use a short-lived `LiteyukiAutoBot` installation
-token, so automated commits are attributed to `liteyukiautobot[bot]` and can
-trigger downstream workflows. When there is no content change, the job exits
-without creating a workflow loop.
-
-The repository must configure:
-
-- Actions variable `LITEYUKI_AUTO_BOT_APP_ID`: the GitHub App ID;
-- Actions secret `LITEYUKI_AUTO_BOT_PRIVATE_KEY`: the complete private-key PEM;
-- an App installation limited to `LiteyukiStudio/luna-devops`;
-- repository permissions limited to `Contents: Read and write` and
-  `Actions: Read and write`; GitHub retains `Metadata: Read-only`.
-
-Each workflow uses a commit-pinned `actions/create-github-app-token@v3` step and
-narrows the token permissions for that job. The token is scoped to the current
-repository, expires within one hour, and is revoked when the job ends. Ordinary
-tests, builds, and npm OIDC publishing never read the bot private key.
-
-The release workflow also builds an explicit target matrix:
-
-- Linux x64 baseline;
-- Linux arm64;
-- macOS arm64 and x64 prerelease test artifacts.
-
-Windows and Alpine/musl are intentionally outside the standalone-binary matrix. They use the npm or pnpm distribution on Node.js `22.14.0` or later. The release gate therefore promises only artifacts that execute on their target runner, without relying on a build-time Bun target-runtime download or extra musl dynamic libraries on the user's machine.
-
-## Signing boundary
-
-The repository does not currently have Apple Developer ID signing and notarization credentials. The workflow does not claim that macOS artifacts are signed:
-
-- stable releases contain only target-smoked Linux standalone binaries;
-- prereleases may contain macOS test artifacts suffixed with `-unsigned`;
-- unsigned macOS artifacts are not intended for production;
-- desktop binaries enter the stable matrix only after platform signing and verification are integrated.
+All new artifacts are available from
+[Luna CLI Releases](https://github.com/LiteyukiStudio/luna-cli/releases).
+Releases up to and including `0.0.12` remain in the former platform repository
+and their historical links are preserved.
 
 ## npm Trusted Publishing
 
-npm publishing uses GitHub OIDC Trusted Publishing without a long-lived write token. Maintainers configure the npm package with:
+npm publishing uses GitHub OIDC Trusted Publishing instead of a long-lived
+write token. Configure the package with:
 
 - Organization or user: `LiteyukiStudio`
-- Repository: `luna-devops`
+- Repository: `luna-cli`
 - Workflow: `cli-release.yml`
 - Environment: `npm`
 
-The GitHub `npm` Environment should require protected tags and maintainer approval. The publishing job grants `id-token: write` and does not set `NPM_TOKEN` or `NODE_AUTH_TOKEN`.
+The publishing job receives only the required `id-token: write` permission. If
+the version already exists, the workflow compares npm integrity: identical
+content is skipped, while different content fails and requires a new version.
 
-When a version already exists, the workflow compares npm `dist.integrity`:
+## Platform contract source
 
-- matching content: skip npm publishing and continue repairing the GitHub Release;
-- different content: fail immediately and require a new version.
+The platform OpenAPI remains owned by `LiteyukiStudio/luna-devops`. Before a
+CLI release, the coverage gate checks out a selected platform revision
+read-only and records the revision and OpenAPI digest in artifact metadata.
+This keeps releases independent while preserving a traceable compatibility
+baseline.
 
-## Verify downloads
+## Artifact boundaries
 
-Each GitHub Release contains:
+- npm/pnpm with Node.js is the universal installation path.
+- Linux glibc x64 and arm64 receive smoke-tested standalone binaries.
+- macOS artifacts remain explicitly marked as test artifacts until Developer
+  ID signing and notarization are available.
+- Windows and Alpine/musl use the npm/pnpm and Node.js fallback.
 
-- `SHA256SUMS`;
-- `RELEASE-MANIFEST.json`;
-- the same-version `luna-devops-<version>.skill` and `LUNA-CLI-SKILLS-MANIFEST.json`;
-- an SPDX JSON SBOM;
-- GitHub OIDC build provenance;
-- an SBOM attestation bundle.
-
-At minimum, verify SHA-256:
-
-```bash
-grep " luna-linux-x64$" SHA256SUMS | sha256sum -c -
-```
-
-Also inspect GitHub Release Attestations and confirm that the artifact was
-produced by `LiteyukiStudio/luna-devops`, the expected release workflow, tag,
-and commit.
+After downloading a binary, verify `SHA256SUMS` and confirm in GitHub
+Attestations that it came from the matching `LiteyukiStudio/luna-cli` tag and
+release workflow.
