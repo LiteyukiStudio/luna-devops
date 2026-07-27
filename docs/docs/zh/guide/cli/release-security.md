@@ -92,8 +92,22 @@ CLI 相关变更会执行：
 重新生成中英文 Luna DevOps 和 Luna CLI 两个更新日志视图；配套 Skill 与历史独立
 Skill 版本一并记录在 Luna CLI 页面中。同步任务
 串行提交生成结果到 `main`，遇到并发更新时会重新变基并重试；提交成功后显式
-启动 `Build & Publish Containers`，确保由 `GITHUB_TOKEN` 产生的提交也能重建
-文档站。没有内容变化时任务直接结束，不会形成工作流循环。
+启动 `Build & Publish Containers`。更新日志提交、工作流调度和 GitHub Release
+均使用 `LiteyukiAutoBot` 的短期 installation token，因此自动提交会显示为
+`liteyukiautobot[bot]`，并能正常触发后续工作流。没有内容变化时任务直接结束，
+不会形成工作流循环。
+
+仓库需要配置：
+
+- Actions variable `LITEYUKI_AUTO_BOT_APP_ID`：GitHub App ID；
+- Actions secret `LITEYUKI_AUTO_BOT_PRIVATE_KEY`：完整私钥 PEM；
+- App 安装范围仅包含 `LiteyukiStudio/luna-devops`；
+- Repository permissions 仅授予 `Contents: Read and write` 与
+  `Actions: Read and write`，`Metadata: Read-only` 由 GitHub 自动保留。
+
+工作流通过固定提交版本的 `actions/create-github-app-token@v3` 按任务进一步收窄
+权限。令牌默认只访问当前仓库、最长有效一小时，并在 Job 结束时自动撤销。普通测试、
+构建和 npm OIDC 发布不读取机器人私钥。
 
 发布工作流在这些门禁之外，还会构建明确的平台矩阵：
 

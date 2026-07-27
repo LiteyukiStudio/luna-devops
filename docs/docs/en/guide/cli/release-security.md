@@ -102,9 +102,24 @@ regenerates three Chinese and English changelog views for Luna DevOps, Luna CLI,
 from immutable tags. The Luna CLI page also includes its paired Skill and historical standalone
 Skill releases. The synchronization job serially commits generated
 content to `main`, rebases and retries when concurrent updates occur, then
-explicitly dispatches `Build & Publish Containers`. This explicit dispatch makes
-sure a commit created with `GITHUB_TOKEN` still rebuilds the documentation site.
-When there is no content change, the job exits without creating a workflow loop.
+explicitly dispatches `Build & Publish Containers`. Changelog commits, workflow
+dispatches, and GitHub Releases use a short-lived `LiteyukiAutoBot` installation
+token, so automated commits are attributed to `liteyukiautobot[bot]` and can
+trigger downstream workflows. When there is no content change, the job exits
+without creating a workflow loop.
+
+The repository must configure:
+
+- Actions variable `LITEYUKI_AUTO_BOT_APP_ID`: the GitHub App ID;
+- Actions secret `LITEYUKI_AUTO_BOT_PRIVATE_KEY`: the complete private-key PEM;
+- an App installation limited to `LiteyukiStudio/luna-devops`;
+- repository permissions limited to `Contents: Read and write` and
+  `Actions: Read and write`; GitHub retains `Metadata: Read-only`.
+
+Each workflow uses a commit-pinned `actions/create-github-app-token@v3` step and
+narrows the token permissions for that job. The token is scoped to the current
+repository, expires within one hour, and is revoked when the job ends. Ordinary
+tests, builds, and npm OIDC publishing never read the bot private key.
 
 The release workflow also builds an explicit target matrix:
 
