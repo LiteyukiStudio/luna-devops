@@ -10,8 +10,6 @@ Release date: 2026-07-27
 
 [GitHub Release](https://github.com/LiteyukiStudio/luna-devops/releases/tag/v0.0.3-beta.3) · [View tag source](https://github.com/LiteyukiStudio/luna-devops/tree/v0.0.3-beta.3)
 
-**Pairing:** Luna CLI and the Luna DevOps Skill are both `0.0.3-beta.3` and must match exactly.
-
 ### Docs
 
 - docs 📝: 同步发布更新日志 ([6efdc29](https://github.com/LiteyukiStudio/luna-devops/commit/6efdc291b92094fd82f4c14d8716372a2b14a9f9))
@@ -26,8 +24,6 @@ Release date: 2026-07-27
 
 [GitHub Release](https://github.com/LiteyukiStudio/luna-devops/releases/tag/v0.0.3-beta.2) · [View tag source](https://github.com/LiteyukiStudio/luna-devops/tree/v0.0.3-beta.2)
 
-**Pairing:** Luna CLI and the Luna DevOps Skill are both `0.0.3-beta.2` and must match exactly.
-
 ### Fixed
 
 - fix 🐛: 同步 API Contract 生成产物 ([89ae74b](https://github.com/LiteyukiStudio/luna-devops/commit/89ae74bbfd31fbeaf9b9169c53695578e4fdc31c))
@@ -38,8 +34,6 @@ Release date: 2026-07-27
 
 [GitHub Release](https://github.com/LiteyukiStudio/luna-devops/releases/tag/v0.0.3-beta.1) · [View tag source](https://github.com/LiteyukiStudio/luna-devops/tree/v0.0.3-beta.1)
 
-**Pairing:** Luna CLI and the Luna DevOps Skill are both `0.0.3-beta.1` and must match exactly.
-
 ### Added
 
 - feat ✨: 完成 CLI 全功能平台对齐 ([904e0de](https://github.com/LiteyukiStudio/luna-devops/commit/904e0de373db94514074209f086251792471507f))
@@ -48,6 +42,7 @@ Release date: 2026-07-27
 - feat: 移除独立的 Luna DevOps Skill 更新日志，更新 CLI 更新日志以反映配套关系 ([cac30f3](https://github.com/LiteyukiStudio/luna-devops/commit/cac30f3f3fddb97406722d9f9f08023b88de7d0c))
 - feat: Refactor Luna CLI Skills to Luna DevOps Skill ([8b18c6a](https://github.com/LiteyukiStudio/luna-devops/commit/8b18c6ae8c071ce6d3ed6613196883a6a21616f0))
 - feat: enforce paired versioning for Luna CLI and Skills ([b31961e](https://github.com/LiteyukiStudio/luna-devops/commit/b31961e0f542f7aec802beffd5eb2eddadc0f493))
+- feat: 更新命令行选项处理，确保帮助和版本标志不被解析 ([f62cf4c](https://github.com/LiteyukiStudio/luna-devops/commit/f62cf4cc0036faa461d8cd7928a5a81ac3807f9d))
 - feat: 更新 CLI 帮助信息和错误处理，增强用户体验 ([51ad943](https://github.com/LiteyukiStudio/luna-devops/commit/51ad9436a24033fba9cf2d1a7f4e808d0283ca19))
 - feat ✨: 完善 CLI 本地化帮助与配套发布流程 ([1e44356](https://github.com/LiteyukiStudio/luna-devops/commit/1e443563f1efee9671743d92006525df5b33ab29))
 - feat ✨: 更新项目引用，统一使用 luna-devops 作为 GitHub 仓库地址 ([dfccbe6](https://github.com/LiteyukiStudio/luna-devops/commit/dfccbe6a022ebe532d11f3a2ad9da4c3a352f56a))
