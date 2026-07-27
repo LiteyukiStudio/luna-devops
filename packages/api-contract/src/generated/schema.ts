@@ -787,7 +787,7 @@ export interface paths {
         put?: never;
         /**
          * Authorize a runtime-cluster Pod terminal connection
-         * @description Normal HTTP preflight used before opening the Pod terminal WebSocket. It verifies the interactive session, platform-administrator role, target cluster, and `runtime_terminal` Step-up assertion. A missing assertion returns `mfa_required`, allowing the frontend to show the MFA dialog and retry. A 204 authorizes only the preflight; the WebSocket repeats all checks before upgrading and revalidates session, role, assertion, Pod identity, and platform ownership every three seconds while connected. Revocation or expiry closes the shell.
+         * @description Normal HTTP preflight used before opening the Pod terminal WebSocket. Browser callers may use their existing session cookie; Luna CLI may use its OAuth bearer token when an active `runtime_terminal` Step-up assertion already exists. Personal access tokens are rejected. The response contains a short-lived random one-time ticket bound to the user, browser session or Luna CLI OAuth grant, assertion, cluster, and Pod. The WebSocket passes this ticket in its query string, consumes it atomically, repeats all authorization checks before upgrading, and revalidates identity, role, assertion, Pod identity, and platform ownership every three seconds while connected. Browser WebSockets that omit a ticket retain the existing cookie-based flow. Revocation or expiry closes the shell.
          */
         post: operations["authorizeRuntimeClusterPodTerminal"];
         delete?: never;
@@ -1421,7 +1421,7 @@ export interface paths {
         put?: never;
         /**
          * Authorize a release Web Console terminal connection
-         * @description Normal HTTP preflight used before opening the release terminal WebSocket. It verifies project Owner/Admin/Developer access, project and deployment-target mutation state, the effective project/deployment `webConsoleEnabled` policy, and the `runtime_terminal` Step-up assertion. A missing assertion returns `mfa_required`, allowing the frontend to show the MFA dialog and retry. A 204 authorizes only the preflight; the WebSocket repeats all checks before upgrading and revalidates session, membership, role, resource state, Web Console policy, and assertion every three seconds while connected. Revocation or expiry closes the shell.
+         * @description Normal HTTP preflight used before opening the release terminal WebSocket. Browser callers may use their existing session cookie; Luna CLI may use its OAuth bearer token when an active `runtime_terminal` Step-up assertion already exists. Personal access tokens are rejected. The response contains a short-lived random one-time ticket bound to the user, browser session or Luna CLI OAuth grant, assertion, project, release, deployment target, cluster, and namespace. The WebSocket passes this ticket in its query string, consumes it atomically, repeats all authorization checks before upgrading, and revalidates identity, membership, role, resource state, Web Console policy, and assertion every three seconds while connected. Browser WebSockets that omit a ticket retain the existing cookie-based flow. Revocation or expiry closes the shell.
          */
         post: operations["authorizeReleaseRuntimeTerminal"];
         delete?: never;
@@ -1898,7 +1898,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Stream Runtime Cluster Pod Terminal */
+        /**
+         * Stream Runtime Cluster Pod Terminal
+         * @description Opens the Pod terminal WebSocket. Luna CLI passes the short-lived one-time ticket returned by the authorize endpoint in the `ticket` query parameter; browser callers may omit it and continue using the existing session-cookie flow.
+         */
         get: operations["streamRuntimeClusterPodTerminal"];
         put?: never;
         post?: never;
@@ -2713,7 +2716,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Stream Release Runtime Terminal */
+        /**
+         * Stream Release Runtime Terminal
+         * @description Opens the release terminal WebSocket. Luna CLI passes the short-lived one-time ticket returned by the authorize endpoint in the `ticket` query parameter; browser callers may omit it and continue using the existing session-cookie flow.
+         */
         get: operations["streamReleaseRuntimeTerminal"];
         put?: never;
         post?: never;
@@ -3141,6 +3147,12 @@ export interface components {
         };
         DataExportAuthorization: {
             /** @description Random one-time ticket. The backend stores only its hash in production. */
+            ticket: string;
+            /** Format: date-time */
+            expiresAt: string;
+        };
+        RuntimeTerminalAuthorization: {
+            /** @description Random short-lived one-time terminal ticket. Only its hash is stored by the backend. */
             ticket: string;
             /** Format: date-time */
             expiresAt: string;
@@ -5761,12 +5773,14 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Terminal preflight authorized. The WebSocket endpoint must still perform its own authorization checks. */
-            204: {
+            /** @description One-time terminal ticket issued. The WebSocket endpoint must still atomically consume it and repeat authorization checks. */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["RuntimeTerminalAuthorization"];
+                };
             };
             /** @description Pod namespace or name is empty. */
             400: {
@@ -5777,7 +5791,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Interactive browser session is missing or invalid. */
+            /** @description Browser session or Luna CLI OAuth bearer is missing, invalid, expired, or revoked. */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -5797,6 +5811,15 @@ export interface operations {
             };
             /** @description Runtime cluster was not found. */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The shared production terminal-ticket store is unavailable (`runtime_terminal.ticket_unavailable`). */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7211,14 +7234,16 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Terminal preflight authorized. The WebSocket endpoint must still perform its own authorization checks. */
-            204: {
+            /** @description One-time terminal ticket issued. The WebSocket endpoint must still atomically consume it and repeat authorization checks. */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["RuntimeTerminalAuthorization"];
+                };
             };
-            /** @description Interactive browser session is missing or invalid. */
+            /** @description Browser session or Luna CLI OAuth bearer is missing, invalid, expired, or revoked. */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -7247,6 +7272,15 @@ export interface operations {
             };
             /** @description Project or deployment target is being deleted and cannot open Web Console. */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The shared production terminal-ticket store is unavailable (`runtime_terminal.ticket_unavailable`). */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -8187,8 +8221,10 @@ export interface operations {
         parameters: {
             query: {
                 namespace: string;
-                pod: string;
+                name: string;
                 container?: string;
+                /** @description Short-lived one-time ticket returned by `authorizeRuntimeClusterPodTerminal`. Required for Luna CLI; omitted by the existing browser cookie flow. */
+                ticket?: string;
             };
             header?: never;
             path: {
@@ -8198,8 +8234,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Protocol stream established. */
-            200: {
+            /** @description WebSocket protocol switch accepted after the ticket or browser session is authorized. */
+            101: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -9895,6 +9931,8 @@ export interface operations {
         parameters: {
             query?: {
                 container?: string;
+                /** @description Short-lived one-time ticket returned by `authorizeReleaseRuntimeTerminal`. Required for Luna CLI; omitted by the existing browser cookie flow. */
+                ticket?: string;
             };
             header?: never;
             path: {
@@ -9905,8 +9943,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Protocol stream established. */
-            200: {
+            /** @description WebSocket protocol switch accepted after the ticket or browser session is authorized. */
+            101: {
                 headers: {
                     [name: string]: unknown;
                 };
