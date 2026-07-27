@@ -197,6 +197,7 @@ func performCookieJSONRequest(router http.Handler, method, path, sessionToken, b
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(method, path, strings.NewReader(body))
 	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Origin", "https://devops.example.com")
 	request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sessionToken})
 	router.ServeHTTP(recorder, request)
 	return recorder

@@ -126,8 +126,12 @@ func (h *Handlers) currentUserFromAccessToken(ctx *gin.Context) (model.User, boo
 		hashToken(plainToken),
 		time.Now(),
 	).Error
-	if err != nil || !accessTokenAllows(token.Scope, requiredScopeForRequest(ctx)) {
-		writeError(ctx, http.StatusForbidden, "Access Token scope 不足或已失效")
+	if err != nil {
+		writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.token.invalid")
+		return model.User{}, false
+	}
+	if !accessTokenAllows(token.Scope, requiredScopeForRequest(ctx)) {
+		writeErrorKey(ctx, http.StatusForbidden, requestLanguage(ctx), "auth.token.scope_insufficient")
 		return model.User{}, false
 	}
 	if token.Source == "oauth" {
@@ -139,7 +143,7 @@ func (h *Handlers) currentUserFromAccessToken(ctx *gin.Context) (model.User, boo
 			token.OAuthApplicationID,
 			token.UserID,
 		).Error != nil {
-			writeError(ctx, http.StatusForbidden, "OAuth 授权已失效")
+			writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.oauth.grant_invalid")
 			return model.User{}, false
 		}
 		var application model.OAuthApplication
@@ -148,7 +152,7 @@ func (h *Handlers) currentUserFromAccessToken(ctx *gin.Context) (model.User, boo
 			"id = ? and revoked_at is null",
 			token.OAuthApplicationID,
 		).Error != nil {
-			writeError(ctx, http.StatusForbidden, "OAuth 应用已失效")
+			writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.oauth.application_invalid")
 			return model.User{}, false
 		}
 	}
