@@ -54,7 +54,10 @@ paths:
                 properties:
                   apiVersion: { type: string, example: v1 }
                   serverVersion: { type: string, example: 0.1.0 }
-                  openapiDigest: { type: string, example: "sha256:0123456789abcdef" }
+                  openapiDigest:
+                    type: string
+                    description: Exact OpenAPI snapshot digest for diagnostics and cache invalidation, not a compatibility version.
+                    example: "sha256:0123456789abcdef"
                   minimumCliVersion: { type: string, example: 0.1.0 }
                   features:
                     type: object

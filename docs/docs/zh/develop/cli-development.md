@@ -34,7 +34,7 @@ pnpm --dir cli install --frozen-lockfile
 | `packages/api-client` | CLI 使用的统一 HTTP 客户端 |
 | `skills/luna-devops` | 与 CLI 配套发布的单一 Agent Skill |
 | `scripts/cli` | 契约校验、打包、制品验证与发布工具 |
-| `openapi` | 从平台同步并经 digest 校验的契约副本 |
+| `openapi` | 从平台同步的契约副本；digest 用于诊断和漂移检测 |
 
 ## 本地运行
 

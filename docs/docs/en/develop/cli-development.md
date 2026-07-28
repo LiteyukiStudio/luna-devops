@@ -39,7 +39,7 @@ else.
 | `packages/api-client` | Shared HTTP client used by the CLI |
 | `skills/luna-devops` | The single paired Agent Skill |
 | `scripts/cli` | Contract checks, packaging, artifact validation, and publishing |
-| `openapi` | Platform contract snapshot protected by digest checks |
+| `openapi` | Platform contract snapshot; its digest is used for diagnostics and drift detection |
 
 ## Run from source
 
