@@ -4,6 +4,23 @@
 
 容器版本、发布说明与下载入口请前往 [GitHub Releases](https://github.com/LiteyukiStudio/luna-devops/releases)。
 
+## 0.0.3-beta.4
+
+发布日期：2026-07-28
+
+[GitHub Release](https://github.com/LiteyukiStudio/luna-devops/releases/tag/v0.0.3-beta.4) · [查看版本代码](https://github.com/LiteyukiStudio/luna-devops/tree/v0.0.3-beta.4)
+
+### 文档
+
+- docs 📝: 明确 OpenAPI 摘要兼容语义 ([0dd41a7](https://github.com/LiteyukiStudio/luna-devops/commit/0dd41a76d76a7eb01a42c313eabef4f2d916e5ab))
+- docs 📝: 重组文档站导航与内容 ([537802b](https://github.com/LiteyukiStudio/luna-devops/commit/537802bc3f9aa0a3adff915e3773cc6ca72c5584))
+- docs 📝: 同步发布更新日志 ([cd1bfdc](https://github.com/LiteyukiStudio/luna-devops/commit/cd1bfdced7623ff524f38447f00331c350f55f61))
+- docs 📝: 同步发布更新日志 ([6c07df9](https://github.com/LiteyukiStudio/luna-devops/commit/6c07df93fe6df21a0f629192e7a41597526283e0))
+
+### 调整
+
+- refactor ♻️: 分离 Luna CLI 独立仓库 ([655b2a2](https://github.com/LiteyukiStudio/luna-devops/commit/655b2a28ce158c5b0febb4c50d800264102c0707))
+
 ## 0.0.3-beta.3
 
 发布日期：2026-07-27
