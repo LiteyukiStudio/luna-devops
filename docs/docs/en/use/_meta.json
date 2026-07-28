@@ -1,0 +1,37 @@
+[
+  {
+    "type": "file",
+    "name": "workflow",
+    "label": "Daily Delivery"
+  },
+  {
+    "type": "file",
+    "name": "app-marketplace",
+    "label": "App Marketplace"
+  },
+  {
+    "type": "file",
+    "name": "configuration",
+    "label": "Configuration and Secrets"
+  },
+  {
+    "type": "file",
+    "name": "notifications",
+    "label": "Notifications"
+  },
+  {
+    "type": "file",
+    "name": "billing",
+    "label": "Billing and Spend"
+  },
+  {
+    "type": "file",
+    "name": "data-retention",
+    "label": "Data Retention and Cleanup"
+  },
+  {
+    "type": "file",
+    "name": "diagnostics",
+    "label": "Status and Troubleshooting"
+  }
+]

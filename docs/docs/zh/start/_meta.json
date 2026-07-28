@@ -1,0 +1,27 @@
+[
+  {
+    "type": "dir",
+    "name": "install",
+    "label": "安装平台"
+  },
+  {
+    "type": "file",
+    "name": "first-login",
+    "label": "第一次登录"
+  },
+  {
+    "type": "file",
+    "name": "connect-resources",
+    "label": "连接集群和镜像站"
+  },
+  {
+    "type": "file",
+    "name": "first-project",
+    "label": "上线第一个项目"
+  },
+  {
+    "type": "file",
+    "name": "startup-troubleshooting",
+    "label": "启动排障"
+  }
+]

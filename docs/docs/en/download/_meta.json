@@ -1,0 +1,12 @@
+[
+  {
+    "type": "file",
+    "name": "installation",
+    "label": "Install Luna CLI"
+  },
+  {
+    "type": "file",
+    "name": "cli",
+    "label": "Use Luna CLI"
+  }
+]

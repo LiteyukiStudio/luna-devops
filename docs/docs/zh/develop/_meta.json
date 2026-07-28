@@ -1,0 +1,47 @@
+[
+  {
+    "type": "file",
+    "name": "local-development",
+    "label": "本地开发"
+  },
+  {
+    "type": "file",
+    "name": "contributing",
+    "label": "代码约定"
+  },
+  {
+    "type": "file",
+    "name": "configuration-reference",
+    "label": "环境变量参考"
+  },
+  {
+    "type": "file",
+    "name": "external-compatibility",
+    "label": "外部组件兼容范围"
+  },
+  {
+    "type": "file",
+    "name": "cli-development",
+    "label": "CLI 开发"
+  },
+  {
+    "type": "file",
+    "name": "cli-release",
+    "label": "CLI 发布"
+  },
+  {
+    "type": "file",
+    "name": "event-center-design",
+    "label": "事件中心设计"
+  },
+  {
+    "type": "file",
+    "name": "frontend-visual-system",
+    "label": "控制台视觉体系"
+  },
+  {
+    "type": "file",
+    "name": "docs-site",
+    "label": "维护文档站"
+  }
+]

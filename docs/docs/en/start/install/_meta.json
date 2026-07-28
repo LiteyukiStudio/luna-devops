@@ -1,0 +1,17 @@
+[
+  {
+    "type": "file",
+    "name": "kubernetes",
+    "label": "Kubernetes / K3s"
+  },
+  {
+    "type": "file",
+    "name": "docker-compose",
+    "label": "Docker Compose"
+  },
+  {
+    "type": "file",
+    "name": "binary",
+    "label": "Run the Binaries"
+  }
+]

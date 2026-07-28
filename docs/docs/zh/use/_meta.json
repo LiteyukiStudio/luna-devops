@@ -1,0 +1,37 @@
+[
+  {
+    "type": "file",
+    "name": "workflow",
+    "label": "日常交付"
+  },
+  {
+    "type": "file",
+    "name": "app-marketplace",
+    "label": "应用市场"
+  },
+  {
+    "type": "file",
+    "name": "configuration",
+    "label": "配置与密钥"
+  },
+  {
+    "type": "file",
+    "name": "notifications",
+    "label": "通知"
+  },
+  {
+    "type": "file",
+    "name": "billing",
+    "label": "账单与费用"
+  },
+  {
+    "type": "file",
+    "name": "data-retention",
+    "label": "数据保留与清理"
+  },
+  {
+    "type": "file",
+    "name": "diagnostics",
+    "label": "状态与排障"
+  }
+]

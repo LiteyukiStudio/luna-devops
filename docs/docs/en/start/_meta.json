@@ -1,0 +1,27 @@
+[
+  {
+    "type": "dir",
+    "name": "install",
+    "label": "Install the Platform"
+  },
+  {
+    "type": "file",
+    "name": "first-login",
+    "label": "First Login"
+  },
+  {
+    "type": "file",
+    "name": "connect-resources",
+    "label": "Connect a Cluster and Registry"
+  },
+  {
+    "type": "file",
+    "name": "first-project",
+    "label": "Ship Your First Project"
+  },
+  {
+    "type": "file",
+    "name": "startup-troubleshooting",
+    "label": "Startup Troubleshooting"
+  }
+]
