@@ -234,13 +234,15 @@ func (h *Handlers) authenticateOAuthTokenClient(ctx *gin.Context, allowPublic bo
 }
 
 func recommendedOAuthScope(user model.User) string {
-	values := make([]string, 0)
-	for _, definition := range authz.AccessTokenScopeCatalog(user.Role) {
-		if definition.Recommended && (user.Role == "platform_admin" || definition.CreatableByUser) {
-			values = append(values, definition.Value)
-		}
-	}
-	return normalizeAccessTokenScope(strings.Join(values, ","))
+	return authz.NormalizeOAuthScope(strings.Join(authz.RecommendedOAuthScopes(user.Role), ","))
+}
+
+func normalizeOAuthScope(scopeText string) string {
+	return authz.NormalizeOAuthScope(scopeText)
+}
+
+func userCanAuthorizeOAuthScope(user model.User, scopeText string) bool {
+	return authz.UserCanAuthorizeOAuthScope(user.Role, scopeText)
 }
 
 func oauthAssertionSubject(grantID string) string {

@@ -1,0 +1,82 @@
+import { describe, expect, it } from "vitest"
+import { ToolCatalog } from "../src/tools/catalog.js"
+import { DeterministicLunaApiClient } from "../src/tools/luna-api-client.js"
+import { MemoryToolCallStore, ToolOrchestrator, type ToolInterruption } from "../src/tools/orchestrator.js"
+
+const catalog = ToolCatalog.load([
+  {
+    operationId: "getBuildRun", method: "GET", path: "/api/v1/builds", category: "build",
+    risk: "read", requiredScopes: ["build:read"], approval: "never", idempotent: true, timeoutMs: 5000,
+    inputSchema: { type: "object", properties: { buildId: { type: "string", maxLength: 64 } }, required: ["buildId"], additionalProperties: false },
+  },
+  {
+    operationId: "restartRelease", method: "POST", path: "/api/v1/releases/restart", category: "deployment",
+    risk: "destructive", requiredScopes: ["deployment:write"], approval: "always", stepUpPurpose: "deployment_restart",
+    idempotent: true, timeoutMs: 5000,
+    inputSchema: { type: "object", properties: { releaseId: { type: "string" } }, required: ["releaseId"], additionalProperties: false },
+  },
+])
+const resolveGrant = async () => "opaque-test-run-grant"
+
+describe("tool catalog and orchestration", () => {
+  it("rejects undeclared arguments and asks for required input", async () => {
+    const orchestrator = new ToolOrchestrator(catalog, new DeterministicLunaApiClient(() => ({ status: 200, body: {} })), new MemoryToolCallStore())
+    await expect(orchestrator.propose({ runId: "airun_test", operationId: "getBuildRun", arguments: {} }))
+      .rejects.toMatchObject({ state: "waiting_input", fields: ["buildId"] } satisfies Partial<ToolInterruption>)
+  })
+  it("executes a read tool only through the Luna API client", async () => {
+    const client = new DeterministicLunaApiClient(() => ({ status: 200, body: { id: "build_a", status: "failed", token: "must-hide" } }))
+    const store = new MemoryToolCallStore()
+    const result = await new ToolOrchestrator(catalog, client, store, undefined, 12, undefined, resolveGrant).propose({ runId: "airun_test", operationId: "getBuildRun", arguments: { buildId: "build_a" } })
+    expect(result.status).toBe("succeeded")
+    expect(result.result).toMatchObject({ token: "[REDACTED]" })
+    expect(client.calls).toHaveLength(1)
+    expect(store.events.map(event => event.type)).toEqual(["tool_call.proposed", "tool_call.running", "tool_call.succeeded"])
+  })
+  it("binds approval to arguments and requires MFA separately", async () => {
+    const client = new DeterministicLunaApiClient(() => ({ status: 200, body: { restarted: true } }))
+    const orchestrator = new ToolOrchestrator(catalog, client, new MemoryToolCallStore(), undefined, 12, undefined, resolveGrant)
+    const pending = await orchestrator.propose({ runId: "airun_test", operationId: "restartRelease", arguments: { releaseId: "rel_a" } })
+    expect(pending.status).toBe("awaiting_approval")
+    const mfa = await orchestrator.approve(pending.id, pending.argumentsHash, pending.rowVersion)
+    expect(mfa).toMatchObject({ status: "awaiting_mfa", mfaPurpose: "deployment_restart" })
+    const completed = await orchestrator.resumeMfa(mfa.id, "deployment_restart", mfa.rowVersion)
+    expect(completed.status).toBe("succeeded")
+  })
+  it("enforces a per-run tool-call ceiling", async () => {
+    const client = new DeterministicLunaApiClient(() => ({ status: 200, body: {} }))
+    const orchestrator = new ToolOrchestrator(catalog, client, new MemoryToolCallStore(), undefined, 1, undefined, resolveGrant)
+    await orchestrator.propose({ runId: "airun_test", operationId: "getBuildRun", arguments: { buildId: "a" } })
+    await expect(orchestrator.propose({ runId: "airun_test", operationId: "getBuildRun", arguments: { buildId: "b" } })).rejects.toThrow("ai.limit_exceeded")
+  })
+  it("fails when final-state verification is inconclusive", async () => {
+    const client = new DeterministicLunaApiClient(() => ({ status: 202, body: { accepted: true } }))
+    const verifier = { verify: async () => ({ ok: false, code: "verification_inconclusive" }) }
+    const orchestrator = new ToolOrchestrator(catalog, client, new MemoryToolCallStore(), undefined, 12, verifier, resolveGrant)
+    const result = await orchestrator.propose({ runId: "airun_test", operationId: "getBuildRun", arguments: { buildId: "a" } })
+    expect(result).toMatchObject({ status: "failed", errorCode: "verification_inconclusive" })
+  })
+  it("creates an immutable new attempt when a failed read is retried", async () => {
+    let attempts = 0
+    const client = new DeterministicLunaApiClient(() => ++attempts === 1
+      ? { status: 503, body: { code: "provider_unavailable" } }
+      : { status: 200, body: { ok: true } })
+    const store = new MemoryToolCallStore()
+    const orchestrator = new ToolOrchestrator(catalog, client, store, undefined, 12, undefined, resolveGrant)
+    const failed = await orchestrator.propose({ runId: "airun_retry", operationId: "getBuildRun", arguments: { buildId: "a" } })
+    const retried = await orchestrator.retryFailed(failed.id)
+    expect(retried).toMatchObject({ status: "succeeded", attempt: 2, argumentsHash: failed.argumentsHash })
+    expect(retried.id).not.toBe(failed.id)
+    expect(store.records.get(failed.id)?.status).toBe("failed")
+  })
+})
+
+describe("tool catalog validation", () => {
+  it("rejects a high-risk operation without MFA purpose", () => {
+    expect(() => ToolCatalog.load([{
+      operationId: "deleteThing", method: "DELETE", path: "/api/v1/things", category: "thing",
+      risk: "destructive", requiredScopes: [], approval: "always", idempotent: true, timeoutMs: 1000,
+      inputSchema: { type: "object", properties: {}, required: [], additionalProperties: false },
+    }])).toThrow()
+  })
+})

@@ -20,6 +20,7 @@ The repository root `docker-compose.yaml` pulls these images by default:
 ```text
 liteyukistudio/devops-api:nightly
 liteyukistudio/devops-worker:nightly
+liteyukistudio/devops-agent:nightly (AI profile only)
 ```
 
 To verify a specific release, set the image tag before starting:
@@ -46,10 +47,29 @@ docker compose up -d
 
 This starts PostgreSQL, password-protected Redis, API, and Worker. API completes database migrations first, and Compose starts Worker only after `/healthz` passes, so Worker cannot access a fresh schema too early. The API image already embeds the web console, so you do not need to start Vite separately. On the first visit, open `/bootstrap` and use the `BOOTSTRAP_TOKEN` from `.env` to create the first administrator, then rotate or remove that one-time token.
 
+### Enable The AI Assistant
+
+The AI Agent uses an explicit profile and does not start by default. Configure these values in `.env` first:
+
+- `AI_AGENT_SERVICE_TOKEN` and `AI_ACTOR_CONTEXT_SIGNING_KEY`: independent values of at least 32 characters;
+- `AI_AGENT_CALLBACK_SERVICE_TOKEN`: the Agent's independent callback credential for Luna API;
+- `AI_RUN_ACTOR_GRANT_SIGNING_KEY` and `AI_DELEGATION_TOKEN_SIGNING_KEY`: independent signing keys for Run Grants and short-lived delegations;
+- `AI_RUN_GRANT_ENCRYPTION_KEY_BASE64`: 32 random bytes encoded as Base64 and kept stable.
+
+Then start the profile:
+
+```bash
+AI_ASSISTANT_AVAILABLE=true docker compose --profile ai up -d
+```
+
+Configure the Provider, model, access rules, and quotas under **Global Settings → AI Assistant**. The Provider API key is stored by the platform Secret Store and does not belong in `.env`. For diagnostics, run `docker compose --profile ai logs -f agent`.
+
 To build images from the current source tree:
 
 ```bash
 docker compose -f docker-compose-build.yaml up -d --build
+# Include the Agent:
+AI_ASSISTANT_AVAILABLE=true docker compose -f docker-compose-build.yaml --profile ai up -d --build
 ```
 
 ## Open The Console

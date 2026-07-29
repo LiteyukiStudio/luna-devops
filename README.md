@@ -59,6 +59,7 @@ Luna DevOps 将代码仓库、镜像站、BuildKit、Kubernetes、访问入口�
 | 层级 | 技术栈 |
 | --- | --- |
 | 后端 | Go、Gin、GORM、PostgreSQL、Redis、Asynq、client-go |
+| AI Agent | Node.js 24、TypeScript、Fastify、LangGraph.js、PostgreSQL Checkpoint |
 | 前端 | Vite、React、TypeScript、Tailwind CSS、shadcn/ui、TanStack Query |
 | 表单与交互 | React Hook Form、Zod、i18next、react-i18next、Sonner |
 | 交付 | Docker Compose、Helm、Kubernetes Job、BuildKit、Gateway API |
@@ -135,6 +136,12 @@ cp .env.example .env
 docker compose up -d
 ```
 
+AI 助手默认关闭。准备好 `.env` 中的 Agent 信任材料和持久化加密键后，显式启用 AI profile：
+
+```bash
+AI_ASSISTANT_AVAILABLE=true docker compose --profile ai up -d
+```
+
 从当前源码构建并启动完整服务：
 
 ```bash
@@ -171,6 +178,7 @@ helm install luna-devops ./charts/luna-devops \
 ```text
 cmd/api                 API 服务入口
 cmd/worker              异步 Worker 入口
+luna-agent/             独立 AI Agent、编排图、工具目录和持久运行时
 internal/               后端业务域、Provider、Service 和数据模型
 migrations/             PostgreSQL 数据库迁移
 openapi/                OpenAPI 定义

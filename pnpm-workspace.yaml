@@ -2,6 +2,7 @@ packages:
   - "web"
   - "docs"
   - "tests"
+  - "luna-agent"
 allowBuilds:
   esbuild: true
 auditConfig:

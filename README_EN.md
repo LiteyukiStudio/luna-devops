@@ -59,6 +59,7 @@ Repository
 | Layer | Stack |
 | --- | --- |
 | Backend | Go, Gin, GORM, PostgreSQL, Redis, Asynq, client-go |
+| AI Agent | Node.js 24, TypeScript, Fastify, LangGraph.js, PostgreSQL checkpoints |
 | Frontend | Vite, React, TypeScript, Tailwind CSS, shadcn/ui, TanStack Query |
 | Forms and UX | React Hook Form, Zod, i18next, react-i18next, Sonner |
 | Delivery | Docker Compose, Helm, Kubernetes Job, BuildKit, Gateway API |
@@ -141,6 +142,12 @@ cp .env.example .env
 docker compose up -d
 ```
 
+The AI assistant is disabled by default. After configuring the Agent trust material and durable encryption key in `.env`, enable its explicit profile:
+
+```bash
+AI_ASSISTANT_AVAILABLE=true docker compose --profile ai up -d
+```
+
 Build the complete stack from the current source tree:
 
 ```bash
@@ -177,6 +184,7 @@ For the full list of API and Worker options, use the [configuration reference](d
 ```text
 cmd/api                 API service entry point
 cmd/worker              Async Worker entry point
+luna-agent/             Independent AI Agent, orchestration graph, tool catalog, and durable runtime
 internal/               Backend domains, providers, services, and models
 migrations/             PostgreSQL migrations
 openapi/                OpenAPI definitions

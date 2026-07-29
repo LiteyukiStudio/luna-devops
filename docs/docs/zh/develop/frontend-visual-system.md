@@ -137,3 +137,5 @@ Tailwind v4 token 集中维护在 `web/src/styles/design-tokens.css`，品牌色
 - 空状态、异常状态、横向溢出和长文本。
 
 视觉整改不能改变原有查询、权限、校验、提交和路由行为。
+
+内嵌 AI 助手由全局布局统一渲染。桌面端使用可拖动、可调整尺寸的悬浮窗口，移动端使用全屏布局；Thinking、Message 与 Tool Call 分开渲染。Thinking 使用三行滚动视窗并跟随最新摘要，Tool Call 默认折叠，展开后只展示经过 Presenter 脱敏的参数与结果。Tool Call 的页面联动只能调用版本化 UI Action 注册表，禁止返回任意路由、HTML 或 DOM Selector。

@@ -121,9 +121,12 @@ Runtime-command audits store command summary, length, container, and exit code, 
 
 ### Data export
 
-Deployment-target data export requires a browser cookie session and project Owner/Admin role. A personal access token is rejected even if it has a data-export scope.
+Deployment-target data export accepts either a browser session or a Luna CLI
+OAuth login and still requires the project Owner/Admin role. A CLI OAuth grant
+must explicitly include `deployment:data_export` and complete `data_export`
+step-up MFA. Personal access tokens cannot request or bypass this capability.
 
-Before download, the platform issues a 60-second one-time ticket bound to the current user, session, project, application, and deployment target. Production replicas store only the ticket hash in Redis; when Redis is unavailable, export fails closed.
+Before download, the platform issues a 60-second one-time ticket bound to the current user, authentication context, project, application, and deployment target. Production replicas store only the ticket hash in Redis; when Redis is unavailable, export fails closed.
 
 Exports include platform-managed or existing PVCs only. `emptyDir` is never exported.
 

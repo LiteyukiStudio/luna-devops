@@ -1,3 +1,4 @@
+import { aiApi } from './domains/ai'
 import { applicationsApi } from './domains/applications'
 import { authApi } from './domains/auth'
 import { buildsApi } from './domains/builds'
@@ -27,6 +28,7 @@ export {
 } from './urls'
 
 export const api = {
+  ...aiApi,
   ...authApi,
   ...gitApi,
   ...projectsApi,

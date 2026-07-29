@@ -55,6 +55,19 @@ func writeErrorKey(ctx *gin.Context, status int, language, key string) {
 	ctx.JSON(status, gin.H{"code": key, "error": messageFor(language, key)})
 }
 
+func writeErrorKeyWithDetails(
+	ctx *gin.Context,
+	status int,
+	language, key string,
+	details gin.H,
+) {
+	ctx.JSON(status, gin.H{
+		"code":    key,
+		"error":   messageFor(language, key),
+		"details": details,
+	})
+}
+
 func writeErrorCode(ctx *gin.Context, status int, code, detail string) {
 	if code == "" {
 		code = defaultErrorCode(status)

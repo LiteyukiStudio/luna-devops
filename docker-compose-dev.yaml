@@ -27,6 +27,38 @@ services:
       timeout: 3s
       retries: 20
 
+  agent:
+    profiles: ["ai"]
+    build:
+      context: .
+      dockerfile: luna-agent/Dockerfile
+    environment:
+      NODE_ENV: development
+      HOST: 0.0.0.0
+      PORT: 8091
+      DATABASE_URL: postgres://devops:devops@postgres:5432/devops?sslmode=disable
+      AUTH_MODE: bff-hmac
+      API_SERVICE_TOKEN: ${AI_AGENT_SERVICE_TOKEN:-luna-agent-dev-service-token-change-me}
+      ACTOR_CONTEXT_SIGNING_KEY: ${AI_ACTOR_CONTEXT_SIGNING_KEY:-luna-agent-dev-actor-signing-key-change-me}
+      RUN_GRANT_ENCRYPTION_KEY_BASE64: ${AI_RUN_GRANT_ENCRYPTION_KEY_BASE64:-MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=}
+      LUNA_API_BASE_URL: ${LUNA_API_BASE_URL:-http://host.docker.internal:8080}
+      AI_AGENT_CALLBACK_SERVICE_TOKEN: ${AI_AGENT_CALLBACK_SERVICE_TOKEN:-luna-agent-dev-callback-token-change-me}
+      TOOL_CATALOG_JSON: '${AI_TOOL_CATALOG_JSON:-[{"operationId":"getDashboard","method":"GET","path":"/api/v1/dashboard","category":"platform","risk":"read","requiredScopes":["dashboard:read"],"approval":"never","idempotent":true,"timeoutMs":10000,"inputSchema":{"type":"object","properties":{},"required":[],"additionalProperties":false}}]}'
+      PROVIDER_TYPE: ${AI_PROVIDER_TYPE:-deterministic}
+      PROVIDER_BASE_URL: ${AI_PROVIDER_BASE_URL:-}
+      PROVIDER_API_KEY: ${AI_PROVIDER_API_KEY:-}
+      PROVIDER_MODEL: ${AI_PROVIDER_MODEL:-}
+      PROVIDER_CONFIG_TTL_MS: ${AI_PROVIDER_CONFIG_TTL_MS:-300000}
+      RUN_LEASE_SECONDS: ${AI_RUN_LEASE_SECONDS:-30}
+      RUN_POLL_MS: ${AI_RUN_POLL_MS:-500}
+      RUN_MAX_WALL_MS: ${AI_RUN_MAX_WALL_MS:-300000}
+      MAX_CONCURRENT_RUNS: ${AI_MAX_CONCURRENT_RUNS:-2}
+    ports:
+      - "8091:8091"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   worker:
     build:
       context: .

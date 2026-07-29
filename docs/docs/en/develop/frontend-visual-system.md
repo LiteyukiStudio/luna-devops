@@ -137,3 +137,5 @@ Changes to shared visual components, page templates, or theme tokens must check 
 - empty states, error states, horizontal overflow, and long text.
 
 A visual refactor must preserve existing query, authorization, validation, submission, and routing behavior.
+
+The embedded AI assistant is rendered once by the global layout. Desktop uses a draggable, resizable floating window and mobile uses a full-screen layout. Thinking, messages, and tool calls are rendered separately. Thinking uses a three-line viewport that follows the latest displayable summary; tool calls are collapsed by default and reveal only Presenter-sanitized arguments and results. Page integration from tool calls must use the versioned UI Action registry and must never return arbitrary routes, HTML, or DOM selectors.

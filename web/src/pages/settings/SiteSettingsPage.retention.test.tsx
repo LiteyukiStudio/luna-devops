@@ -126,4 +126,12 @@ describe('site settings page', () => {
     const siteTitleInput = screen.getByRole('textbox')
     expect(brandColorGroup.compareDocumentPosition(siteTitleInput) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
+
+  it('keeps the AI settings form outside other forms', async () => {
+    const user = userEvent.setup()
+    const { container } = renderPage()
+    await user.click(await screen.findByRole('tab', { name: i18next.t('settings.ai.tab') }))
+    expect(container.querySelectorAll('form')).toHaveLength(1)
+    expect(container.querySelector('form form')).toBeNull()
+  })
 })

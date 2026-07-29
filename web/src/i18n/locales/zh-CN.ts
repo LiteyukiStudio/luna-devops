@@ -1,5 +1,6 @@
 import accessTokens from './zh-CN/accessTokens'
 import accountPage from './zh-CN/accountPage'
+import aiAssistant from './zh-CN/aiAssistant'
 import apps from './zh-CN/apps'
 import appTemplatesPage from './zh-CN/appTemplatesPage'
 import auth from './zh-CN/auth'
@@ -41,6 +42,7 @@ import usersPage from './zh-CN/usersPage'
 
 const zhCN = {
   ...root,
+  ...aiAssistant,
   languages,
   common,
   time,

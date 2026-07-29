@@ -1,6 +1,7 @@
 # Luna DevOps Helm Chart
 
-This chart installs Luna DevOps with API, worker, PostgreSQL, and Redis.
+This chart installs Luna DevOps with API, worker, PostgreSQL, and Redis. It can
+also deploy the independently released `liteyukistudio/devops-agent` image.
 
 ## Install
 
@@ -51,3 +52,10 @@ externalRedis:
 ```
 
 For production, keep `app.secretEncryptionKey` stable. If you do not set it, the chart creates one on first install and reuses the existing Secret during upgrades. The chart stores the built-in Redis password and application connection URI as separate Secret keys, so Redis does not parse its own URI. An external Redis still uses one complete URI; use `rediss://` when it requires TLS.
+
+## Enable the AI Agent
+
+AI is fail-closed and disabled by default. Set `ai.enabled=true` and point
+`ai.existingSecret` to a Secret containing the key names configured under
+`ai.*Key`. The Agent image tag follows the chart `appVersion` unless
+`ai.agent.image.tag` is set explicitly.

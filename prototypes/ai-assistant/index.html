@@ -1,0 +1,741 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Luna DevOps AI 助手原型</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --canvas: #f5f8fd;
+      --canvas-tint: #edf4ff;
+      --surface: #ffffff;
+      --surface-soft: #f7f9fc;
+      --surface-inset: #eef2f7;
+      --text: #172033;
+      --muted: #68758a;
+      --line: #dfe6ef;
+      --line-strong: #ccd6e3;
+      --primary: #326ce5;
+      --primary-hover: #255bc7;
+      --primary-soft: #eaf1ff;
+      --primary-text: #2459bc;
+      --success: #27875d;
+      --success-soft: #e9f7f0;
+      --warning: #a36316;
+      --warning-soft: #fff6df;
+      --danger: #c43c4a;
+      --danger-soft: #fff0f1;
+      --shadow-overlay: 0 24px 70px rgb(31 54 88 / 18%), 0 4px 18px rgb(31 54 88 / 10%);
+      --radius-control: 8px;
+      --radius-container: 12px;
+      --radius-feature: 16px;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-width: 1180px;
+      color: var(--text);
+      background: var(--canvas);
+      font: 14px/1.5 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    button, input, textarea { font: inherit; }
+    button { color: inherit; }
+    svg { display: block; }
+
+    .prototype-nav {
+      position: sticky;
+      z-index: 20;
+      top: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      height: 64px;
+      padding: 0 28px;
+      border-bottom: 1px solid var(--line);
+      background: rgb(255 255 255 / 92%);
+      backdrop-filter: blur(16px);
+    }
+    .prototype-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-right: 18px;
+      font-weight: 700;
+    }
+    .prototype-brand-mark {
+      display: grid;
+      width: 34px;
+      height: 34px;
+      place-items: center;
+      border-radius: 10px;
+      color: white;
+      background: var(--primary);
+      box-shadow: 0 5px 15px rgb(50 108 229 / 25%);
+    }
+    .prototype-nav button {
+      height: 34px;
+      padding: 0 13px;
+      border: 0;
+      border-radius: 8px;
+      color: var(--muted);
+      background: transparent;
+      cursor: pointer;
+    }
+    .prototype-nav button:hover { background: var(--surface-soft); }
+    .prototype-nav button.active {
+      color: var(--primary-text);
+      background: var(--primary-soft);
+      font-weight: 650;
+    }
+    .prototype-meta { margin-left: auto; color: var(--muted); font-size: 12px; }
+
+    .scene { display: none; min-height: calc(100vh - 64px); }
+    .scene.active { display: block; }
+    .scene-caption {
+      position: absolute;
+      z-index: 4;
+      top: 22px;
+      left: 300px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .scene-caption h1 { margin: 0; font-size: 18px; }
+    .scene-caption p { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
+    .spec-chip {
+      padding: 4px 8px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--muted);
+      background: rgb(255 255 255 / 75%);
+      font-size: 11px;
+    }
+
+    .app-shell {
+      position: relative;
+      display: grid;
+      min-height: calc(100vh - 64px);
+      grid-template-columns: 244px 1fr;
+      overflow: hidden;
+      background: linear-gradient(135deg, var(--canvas-tint), var(--canvas) 45%, #f8f9fc);
+    }
+    .sidebar { padding: 16px 14px; }
+    .app-brand {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      height: 56px;
+      padding: 0 8px;
+      font-size: 15px;
+      font-weight: 700;
+    }
+    .logo {
+      display: grid;
+      width: 38px;
+      height: 38px;
+      place-items: center;
+      border-radius: 12px;
+      color: white;
+      background: var(--primary);
+      font-weight: 800;
+    }
+    .nav-group { margin-top: 20px; }
+    .nav-label { padding: 0 12px 7px; color: #8a96a8; font-size: 11px; }
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      height: 40px;
+      margin: 2px 0;
+      padding: 0 12px;
+      border-radius: 9px;
+      color: var(--muted);
+    }
+    .nav-item.active { color: var(--primary-text); background: linear-gradient(90deg, #dce9ff, #e8f0ff); font-weight: 650; }
+    .nav-icon { width: 17px; text-align: center; }
+    .main { padding: 32px 56px; }
+    .page-head { display: flex; align-items: center; justify-content: space-between; height: 48px; }
+    .page-head h2 { margin: 0; font-size: 23px; letter-spacing: -.02em; }
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      height: 36px;
+      padding: 0 13px;
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius-control);
+      background: var(--surface);
+      font-weight: 600;
+    }
+    .button.primary { border-color: var(--primary); color: #fff; background: var(--primary); }
+    .button.ghost { border-color: transparent; background: transparent; }
+    .button.danger { border-color: #f2c3c8; color: var(--danger); background: var(--danger-soft); }
+    .tabs { display: flex; gap: 24px; height: 44px; margin-top: 12px; border-bottom: 1px solid var(--line); }
+    .tab { display: flex; align-items: center; color: var(--muted); }
+    .tab.active { border-bottom: 2px solid var(--primary); color: var(--primary-text); font-weight: 650; }
+    .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; margin-top: 24px; overflow: hidden; border-radius: 12px; background: var(--line); }
+    .metric { min-height: 102px; padding: 19px; background: var(--surface); }
+    .metric-label { color: var(--muted); font-size: 12px; }
+    .metric-value { margin-top: 8px; font-size: 25px; font-weight: 700; }
+    .content-grid { display: grid; grid-template-columns: 1.6fr 1fr; gap: 18px; margin-top: 18px; }
+    .panel { min-height: 280px; padding: 22px; border-radius: 12px; background: var(--surface); }
+    .panel-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; font-weight: 700; }
+    .activity { display: flex; align-items: center; gap: 12px; padding: 14px 0; border-top: 1px solid var(--line); }
+    .activity:first-of-type { border-top: 0; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--success); }
+    .activity-copy { flex: 1; }
+    .activity-copy small { color: var(--muted); }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      color: var(--muted);
+      background: var(--surface-inset);
+      font-size: 11px;
+      font-weight: 650;
+    }
+    .pill.success { color: var(--success); background: var(--success-soft); }
+    .pill.warning { color: var(--warning); background: var(--warning-soft); }
+    .pill.danger { color: var(--danger); background: var(--danger-soft); }
+
+    .assistant-window {
+      position: absolute;
+      z-index: 8;
+      right: 30px;
+      bottom: 28px;
+      display: grid;
+      width: 420px;
+      height: 640px;
+      grid-template-rows: auto 1fr auto;
+      overflow: hidden;
+      border: 1px solid rgb(197 208 222 / 70%);
+      border-radius: 18px;
+      background: var(--surface);
+      box-shadow: var(--shadow-overlay);
+    }
+    .assistant-window.wide { width: 760px; grid-template-columns: 250px 1fr; grid-template-rows: 1fr; }
+    .assistant-window.minimized { width: 320px; height: 58px; grid-template-rows: 58px; }
+    .assistant-window.minimized .chat-body,
+    .assistant-window.minimized .composer { display: none; }
+    .assistant-head {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      min-height: 58px;
+      padding: 0 13px 0 15px;
+      border-bottom: 1px solid var(--line);
+      background: rgb(255 255 255 / 96%);
+    }
+    .ai-mark {
+      display: grid;
+      width: 30px;
+      height: 30px;
+      flex: 0 0 auto;
+      place-items: center;
+      border-radius: 10px;
+      color: white;
+      background: var(--primary);
+      font-weight: 800;
+      box-shadow: 0 4px 12px rgb(50 108 229 / 24%);
+    }
+    .assistant-title { min-width: 0; flex: 1; }
+    .assistant-title strong { display: block; line-height: 1.2; }
+    .assistant-title span { display: block; overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+    .icon-button {
+      display: grid;
+      width: 30px;
+      height: 30px;
+      flex: 0 0 auto;
+      place-items: center;
+      border: 0;
+      border-radius: 8px;
+      color: var(--muted);
+      background: transparent;
+    }
+    .icon-button:hover { color: var(--text); background: var(--surface-soft); }
+    .chat-body { overflow-y: auto; padding: 18px 16px 14px; background: linear-gradient(180deg, #fbfcfe, #fff 28%); }
+    .context-bar {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      margin-bottom: 17px;
+      padding: 9px 10px;
+      border-radius: 9px;
+      color: var(--muted);
+      background: var(--surface-soft);
+      font-size: 11px;
+    }
+    .context-bar strong { color: var(--text); font-weight: 650; }
+    .message { display: flex; gap: 9px; margin: 14px 0; }
+    .message.user { justify-content: flex-end; }
+    .avatar {
+      display: grid;
+      width: 28px;
+      height: 28px;
+      flex: 0 0 auto;
+      place-items: center;
+      border-radius: 9px;
+      color: var(--primary-text);
+      background: var(--primary-soft);
+      font-size: 11px;
+      font-weight: 800;
+    }
+    .bubble { max-width: 86%; padding: 10px 12px; border-radius: 12px; background: var(--surface-soft); }
+    .user .bubble { color: #fff; background: var(--primary); border-bottom-right-radius: 4px; }
+    .assistant .bubble { border-top-left-radius: 4px; }
+    .bubble p { margin: 0; }
+    .bubble p + p { margin-top: 7px; }
+    .bubble-meta { margin-top: 6px; color: #9aa4b5; font-size: 10px; }
+    .user .bubble-meta { color: rgb(255 255 255 / 70%); text-align: right; }
+    .thinking-card {
+      margin: 10px 0 10px 37px;
+      padding: 10px 11px;
+      border-left: 2px solid #a9bee6;
+      border-radius: 0 10px 10px 0;
+      background: #f8faff;
+    }
+    .thinking-head { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; color: var(--primary-text); font-size: 11px; font-weight: 700; }
+    .thinking-lines {
+      height: 54px;
+      overflow-y: auto;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 18px;
+      scrollbar-width: thin;
+    }
+    .thinking-lines p { margin: 0; }
+    .tool-card {
+      margin: 10px 0 10px 37px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      background: #fff;
+    }
+    .tool-row { display: flex; align-items: center; gap: 9px; min-height: 44px; padding: 9px 11px; }
+    .tool-row + .tool-row { border-top: 1px solid var(--line); }
+    details.tool-card > summary { list-style: none; cursor: pointer; }
+    details.tool-card > summary::-webkit-details-marker { display: none; }
+    .tool-chevron { color: var(--muted); transition: transform .15s ease; }
+    details[open] .tool-chevron { transform: rotate(90deg); }
+    .tool-details { padding: 0 11px 11px; border-top: 1px solid var(--line); background: #fbfcfe; }
+    .tool-detail-title { margin: 10px 0 6px; color: var(--muted); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+    .tool-data { display: grid; grid-template-columns: 90px 1fr; gap: 5px 8px; margin: 0; font-size: 10px; }
+    .tool-data dt { color: var(--muted); }
+    .tool-data dd { margin: 0; overflow-wrap: anywhere; font-weight: 600; }
+    .tool-result { padding: 8px; border-radius: 8px; color: #426453; background: var(--success-soft); font-size: 10px; }
+    .tool-route-action { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 9px; }
+    .tool-route-action .button { height: 30px; font-size: 10px; }
+    .tool-icon { display: grid; width: 28px; height: 28px; place-items: center; border-radius: 8px; color: var(--primary-text); background: var(--primary-soft); }
+    .tool-copy { flex: 1; min-width: 0; }
+    .tool-copy strong { display: block; font-size: 12px; }
+    .tool-copy span { color: var(--muted); font-size: 10px; }
+    .progress { height: 3px; margin: 0 11px 10px; overflow: hidden; border-radius: 9px; background: var(--surface-inset); }
+    .progress span { display: block; width: 72%; height: 100%; border-radius: inherit; background: var(--primary); }
+    .result-card {
+      margin: 10px 0 10px 37px;
+      padding: 11px;
+      border-radius: 11px;
+      background: var(--success-soft);
+    }
+    .result-title { display: flex; align-items: center; gap: 7px; color: var(--success); font-size: 12px; font-weight: 700; }
+    .result-card p { margin: 7px 0 0; color: #426453; font-size: 11px; }
+    .inline-action { display: flex; gap: 8px; margin: 10px 0 0 37px; }
+    .inline-action .button { height: 32px; font-size: 12px; }
+    .composer { padding: 10px 12px 12px; border-top: 1px solid var(--line); background: #fff; }
+    .composer-box {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      min-height: 68px;
+      padding: 10px;
+      border: 1px solid var(--line-strong);
+      border-radius: 12px;
+      background: var(--surface);
+    }
+    .composer textarea { resize: none; border: 0; outline: 0; color: var(--text); background: transparent; }
+    .send {
+      align-self: end;
+      width: 34px;
+      height: 34px;
+      border: 0;
+      border-radius: 9px;
+      color: white;
+      background: var(--primary);
+    }
+    .composer-foot { display: flex; justify-content: space-between; margin-top: 7px; color: var(--muted); font-size: 10px; }
+    .floating-ball {
+      position: absolute;
+      z-index: 7;
+      right: 30px;
+      bottom: 28px;
+      display: grid;
+      width: 56px;
+      height: 56px;
+      place-items: center;
+      border: 0;
+      border-radius: 18px;
+      color: white;
+      background: var(--primary);
+      box-shadow: 0 14px 36px rgb(50 108 229 / 32%);
+      font-size: 17px;
+      font-weight: 800;
+    }
+    .unread { position: absolute; top: -3px; right: -3px; min-width: 18px; height: 18px; padding: 0 5px; border: 2px solid white; border-radius: 999px; background: var(--danger); color: white; font-size: 9px; line-height: 14px; }
+
+    .approval-card { margin: 11px 0 11px 37px; overflow: hidden; border: 1px solid #eed08d; border-radius: 12px; background: #fffdfa; }
+    .approval-head { display: flex; gap: 10px; padding: 12px; background: var(--warning-soft); }
+    .approval-head strong { display: block; font-size: 12px; }
+    .approval-head span { color: #825d20; font-size: 10px; }
+    .approval-body { padding: 12px; }
+    .approval-grid { display: grid; grid-template-columns: 88px 1fr; gap: 8px; font-size: 11px; }
+    .approval-grid dt { color: var(--muted); }
+    .approval-grid dd { margin: 0; font-weight: 600; }
+    .approval-note { margin-top: 10px; padding: 8px; border-radius: 8px; color: #724f18; background: var(--warning-soft); font-size: 10px; }
+    .approval-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+    .approval-actions .button { height: 32px; font-size: 11px; }
+    .mfa-card { margin: 11px 0 11px 37px; padding: 13px; border: 1px solid #cbdcf8; border-radius: 12px; background: #f8fbff; }
+    .mfa-title { display: flex; gap: 9px; }
+    .mfa-title strong { display: block; font-size: 12px; }
+    .mfa-title span { color: var(--muted); font-size: 10px; }
+    .otp { display: flex; gap: 6px; margin: 13px 0; }
+    .otp i { display: grid; width: 34px; height: 38px; place-items: center; border: 1px solid var(--line-strong); border-radius: 8px; background: #fff; font-style: normal; font-weight: 700; }
+    .mfa-actions { display: flex; align-items: center; justify-content: space-between; }
+
+    .conversation-sidebar { min-width: 0; padding: 12px; border-right: 1px solid var(--line); background: var(--surface-soft); }
+    .conversation-sidebar .button { width: 100%; }
+    .search { display: flex; align-items: center; gap: 8px; height: 36px; margin: 10px 0; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--muted); }
+    .conversation-label { margin: 14px 5px 6px; color: var(--muted); font-size: 10px; font-weight: 650; }
+    .conversation-item { position: relative; padding: 10px; border-radius: 9px; }
+    .conversation-item.active { color: var(--primary-text); background: var(--primary-soft); }
+    .conversation-item strong { display: block; overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+    .conversation-item span { color: var(--muted); font-size: 10px; }
+    .conversation-item .dot { position: absolute; top: 13px; right: 10px; width: 6px; height: 6px; border-radius: 50%; background: var(--primary); }
+    .wide-chat { display: grid; grid-template-rows: auto 1fr auto; min-width: 0; }
+
+    .state-gallery { padding: 34px; }
+    .state-gallery h1 { margin: 0; font-size: 23px; }
+    .state-gallery > p { color: var(--muted); }
+    .state-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 24px; }
+    .state-card { min-height: 390px; overflow: hidden; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: 0 8px 28px rgb(31 54 88 / 6%); }
+    .state-card-head { display: flex; align-items: center; gap: 9px; height: 54px; padding: 0 14px; border-bottom: 1px solid var(--line); font-weight: 700; }
+    .state-card-body { display: grid; min-height: 336px; padding: 22px; place-items: center; text-align: center; }
+    .state-card-body h3 { margin: 12px 0 5px; }
+    .state-card-body p { max-width: 250px; margin: 0; color: var(--muted); font-size: 12px; }
+    .empty-icon { display: grid; width: 54px; height: 54px; place-items: center; border-radius: 16px; color: var(--primary-text); background: var(--primary-soft); font-size: 19px; font-weight: 800; }
+    .skeleton { width: 100%; }
+    .skeleton-line { height: 12px; margin: 12px 0; border-radius: 7px; background: linear-gradient(90deg, #edf1f6, #f6f8fb, #edf1f6); }
+    .skeleton-line.short { width: 56%; }
+    .skeleton-message { width: 86%; margin: 22px 0; padding: 10px; border-radius: 12px; background: #f7f9fc; }
+    .error-icon { display: grid; width: 54px; height: 54px; place-items: center; border-radius: 16px; color: var(--danger); background: var(--danger-soft); font-size: 22px; font-weight: 800; }
+
+    .mobile-stage {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: calc(100vh - 64px);
+      gap: 70px;
+      padding: 34px;
+      background: linear-gradient(135deg, #eaf2ff, #f7f9fc 55%, #eef3fb);
+    }
+    .mobile-notes { width: 290px; }
+    .mobile-notes h1 { margin: 0 0 8px; font-size: 24px; }
+    .mobile-notes p { color: var(--muted); }
+    .mobile-notes li { margin: 10px 0; color: var(--muted); }
+    .phone {
+      position: relative;
+      width: 390px;
+      height: 780px;
+      overflow: hidden;
+      border: 9px solid #182235;
+      border-radius: 42px;
+      background: #fff;
+      box-shadow: 0 30px 80px rgb(31 54 88 / 24%);
+    }
+    .phone::before { position: absolute; z-index: 10; top: 8px; left: 50%; width: 92px; height: 24px; border-radius: 20px; background: #182235; content: ""; transform: translateX(-50%); }
+    .phone-status { display: flex; justify-content: space-between; height: 38px; padding: 11px 20px 0; font-size: 10px; font-weight: 700; }
+    .mobile-head { display: flex; align-items: center; gap: 10px; height: 56px; padding: 0 14px; border-bottom: 1px solid var(--line); }
+    .mobile-head strong { flex: 1; }
+    .phone .chat-body { height: 578px; }
+    .phone .composer { position: absolute; right: 0; bottom: 0; left: 0; padding-bottom: 22px; }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="prototype-nav" aria-label="原型场景">
+    <div class="prototype-brand">
+      <span class="prototype-brand-mark">L</span>
+      <span>AI 助手原型集</span>
+    </div>
+    <button class="active" data-scene="desktop">桌面诊断</button>
+    <button data-scene="approval">批准与 MFA</button>
+    <button data-scene="history">会话管理</button>
+    <button data-scene="mobile">移动端</button>
+    <button data-scene="states">关键状态</button>
+    <span class="prototype-meta">Luna DevOps · notes/11 · 低保真视觉原型</span>
+  </nav>
+
+  <section class="scene active" id="desktop">
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="app-brand"><span class="logo">L</span>Luna DevOps</div>
+        <div class="nav-group">
+          <div class="nav-label">工作台</div>
+          <div class="nav-item active"><span class="nav-icon">▦</span>看板</div>
+          <div class="nav-item"><span class="nav-icon">◇</span>项目空间</div>
+          <div class="nav-item"><span class="nav-icon">◷</span>事件</div>
+        </div>
+        <div class="nav-group">
+          <div class="nav-label">资源</div>
+          <div class="nav-item"><span class="nav-icon">⌘</span>代码库</div>
+          <div class="nav-item"><span class="nav-icon">▣</span>镜像站</div>
+          <div class="nav-item"><span class="nav-icon">⬡</span>运行集群</div>
+        </div>
+      </aside>
+      <main class="main">
+        <div class="page-head"><h2>平台看板</h2><button class="button primary">＋ 创建项目空间</button></div>
+        <div class="tabs"><span class="tab active">概览</span><span class="tab">近期活动</span></div>
+        <div class="metrics">
+          <div class="metric"><div class="metric-label">进行中构建</div><div class="metric-value">2</div></div>
+          <div class="metric"><div class="metric-label">进行中发布</div><div class="metric-value">1</div></div>
+          <div class="metric"><div class="metric-label">待关注事项</div><div class="metric-value" style="color:var(--warning)">3</div></div>
+          <div class="metric"><div class="metric-label">健康集群</div><div class="metric-value">3/3</div></div>
+        </div>
+        <div class="content-grid">
+          <div class="panel">
+            <div class="panel-title"><span>近期活动</span><span style="color:var(--primary-text);font-size:12px">查看全部</span></div>
+            <div class="activity"><span class="status-dot"></span><div class="activity-copy">API Gateway 发布成功<br><small>Atlas / gateway · 2 分钟前</small></div><span class="pill success">成功</span></div>
+            <div class="activity"><span class="status-dot" style="background:var(--primary)"></span><div class="activity-copy">Web Console 正在构建<br><small>Nova / console · 6 分钟前</small></div><span class="pill">进行中</span></div>
+            <div class="activity"><span class="status-dot" style="background:var(--warning)"></span><div class="activity-copy">证书续期需要关注<br><small>Orbit / docs · 18 分钟前</small></div><span class="pill warning">警告</span></div>
+          </div>
+          <div class="panel">
+            <div class="panel-title">平台准备度</div>
+            <div class="activity"><span class="status-dot"></span><div class="activity-copy">镜像站<br><small>2 个连接可用</small></div></div>
+            <div class="activity"><span class="status-dot"></span><div class="activity-copy">运行集群<br><small>3 个集群健康</small></div></div>
+          </div>
+        </div>
+      </main>
+
+      <div class="assistant-window">
+        <header class="assistant-head">
+          <span class="ai-mark">✦</span>
+          <div class="assistant-title"><strong>Luna 助手</strong><span>诊断：Atlas / gateway</span></div>
+          <button class="icon-button" title="会话">☰</button>
+          <button class="icon-button" title="最小化">—</button>
+          <button class="icon-button" title="关闭">×</button>
+        </header>
+        <div class="chat-body">
+          <div class="context-bar">当前上下文 <strong>Atlas / gateway</strong><span>·</span><strong>部署</strong></div>
+          <div class="message user"><div class="bubble"><p>为什么刚才的发布耗时比平常久？</p><div class="bubble-meta">10:42</div></div></div>
+          <div class="thinking-card"><div class="thinking-head"><span>✦</span><span>思考中</span><span class="pill" style="margin-left:auto">自动跟随最新</span></div><div class="thinking-lines" data-auto-scroll><p>先确认本次发布与最近成功发布的耗时差异。</p><p>读取 Release 记录，并关联部署期间的 Pod 事件。</p><p>发现镜像拉取存在重试，继续核对 Gateway 与证书状态。</p><p>所有访问入口健康，主要延迟可以归因到镜像拉取。</p></div></div>
+          <div class="message assistant"><span class="avatar">AI</span><div class="bubble"><p>轻雪酱正在汇总这次发布的构建、Pod 事件和 Gateway 状态。</p></div></div>
+          <details class="tool-card">
+            <summary class="tool-row"><span class="tool-chevron">›</span><span class="tool-icon">✓</span><div class="tool-copy"><strong>读取发布记录</strong><span>Release rel_8472 · 412 ms</span></div><span class="pill success">完成</span></summary>
+            <div class="tool-details"><div class="tool-detail-title">参数</div><dl class="tool-data"><dt>项目空间</dt><dd>Atlas</dd><dt>应用</dt><dd>API Gateway</dd><dt>Release ID</dt><dd>rel_8472</dd></dl><div class="tool-detail-title">结果</div><div class="tool-result">发布成功，共耗时 2 分 14 秒；当前版本 v2.8.5。</div><div class="tool-route-action"><span style="color:var(--muted);font-size:10px">可与前端路由协作</span><button class="button" data-route-action="release">打开发布详情 ↗</button></div></div>
+          </details>
+          <details class="tool-card">
+            <summary class="tool-row"><span class="tool-chevron">›</span><span class="tool-icon">✓</span><div class="tool-copy"><strong>分析 Pod 事件</strong><span>发现 1 次镜像拉取重试 · 684 ms</span></div><span class="pill success">完成</span></summary>
+            <div class="tool-details"><div class="tool-detail-title">参数</div><dl class="tool-data"><dt>应用</dt><dd>API Gateway</dd><dt>时间范围</dt><dd>发布前后 10 分钟</dd></dl><div class="tool-detail-title">结果</div><div class="tool-result">3 个 Pod 均已就绪；pod/gateway-7f8b 首次拉取镜像失败后自动重试成功。</div><div class="tool-route-action"><span style="color:var(--muted);font-size:10px">UI Action · select_tab</span><button class="button" data-route-action="pods">打开 Pod 事件 ↗</button></div></div>
+          </details>
+          <details class="tool-card">
+            <summary class="tool-row"><span class="tool-chevron">›</span><span class="tool-icon">↻</span><div class="tool-copy"><strong>核对 Gateway 状态</strong><span>正在获取证书与路由状态</span></div><span class="pill">进行中</span></summary>
+            <div class="tool-details"><div class="tool-detail-title">参数</div><dl class="tool-data"><dt>应用</dt><dd>API Gateway</dd><dt>访问入口</dt><dd>production</dd></dl><div class="tool-detail-title">结果</div><div class="skeleton-line" style="margin:6px 0"></div><div class="skeleton-line short" style="margin:6px 0"></div></div>
+            <div class="progress"><span></span></div>
+          </details>
+          <div class="result-card"><div class="result-title">✓ 已定位主要原因</div><p>镜像节点首次拉取新层时发生了一次 38 秒重试；发布最终成功，当前 3 个 Pod 均健康。</p></div>
+          <div class="inline-action"><button class="button">查看发布详情</button><button class="button ghost">打开 Pod 事件</button></div>
+        </div>
+        <footer class="composer">
+          <div class="composer-box"><textarea aria-label="消息" placeholder="继续提问，或要求助手执行操作…"></textarea><button class="send" aria-label="发送">↑</button></div>
+          <div class="composer-foot"><span>不会读取页面中的密钥</span><span>Enter 发送 · Shift+Enter 换行</span></div>
+        </footer>
+      </div>
+    </div>
+  </section>
+
+  <section class="scene" id="approval">
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="app-brand"><span class="logo">L</span>Luna DevOps</div>
+        <div class="nav-group"><div class="nav-label">项目空间</div><div class="nav-item">← 返回项目空间</div><div class="nav-item active"><span class="nav-icon">◇</span>Atlas</div></div>
+      </aside>
+      <main class="main">
+        <div class="page-head"><h2>Atlas / API Gateway</h2><button class="button">发布新版本</button></div>
+        <div class="tabs"><span class="tab">概览</span><span class="tab active">部署</span><span class="tab">日志</span><span class="tab">访问入口</span></div>
+        <div class="panel" style="margin-top:24px">
+          <div class="panel-title">生产环境</div>
+          <div class="activity"><span class="status-dot"></span><div class="activity-copy">当前版本<br><small>v2.8.4 · 3/3 Pod 就绪</small></div><span class="pill success">运行中</span></div>
+          <div class="activity"><span class="status-dot" style="background:var(--primary)"></span><div class="activity-copy">候选版本<br><small>v2.8.5 · 由 Build #184 生成</small></div><button class="button">发布</button></div>
+        </div>
+      </main>
+      <div class="assistant-window">
+        <header class="assistant-head"><span class="ai-mark">✦</span><div class="assistant-title"><strong>Luna 助手</strong><span>操作确认：生产环境发布</span></div><button class="icon-button">—</button><button class="icon-button">×</button></header>
+        <div class="chat-body">
+          <div class="message user"><div class="bubble"><p>把 v2.8.5 发布到生产环境。</p></div></div>
+          <div class="message assistant"><span class="avatar">AI</span><div class="bubble"><p>已完成发布前检查。该操作会替换生产环境当前运行版本，需要你批准绑定参数。</p></div></div>
+          <div class="approval-card">
+            <div class="approval-head"><span style="font-size:18px">⚠</span><div><strong>批准生产环境发布</strong><span>中风险操作 · 批准仅对以下参数有效</span></div></div>
+            <div class="approval-body">
+              <dl class="approval-grid">
+                <dt>项目空间</dt><dd>Atlas</dd>
+                <dt>应用</dt><dd>API Gateway</dd>
+                <dt>目标环境</dt><dd>production</dd>
+                <dt>目标版本</dt><dd>v2.8.5</dd>
+                <dt>影响范围</dt><dd>滚动替换 3 个 Pod</dd>
+              </dl>
+              <div class="approval-note">批准后如果参数发生变化，助手必须重新请求批准。</div>
+              <div class="approval-actions"><button class="button danger">拒绝</button><button class="button primary">批准并继续</button></div>
+            </div>
+          </div>
+          <div class="mfa-card">
+            <div class="mfa-title"><span class="tool-icon">⌁</span><div><strong>需要二次验证</strong><span>批准已记录，请完成平台 Step-up MFA 后继续执行</span></div></div>
+            <div class="otp"><i>4</i><i>8</i><i>2</i><i>•</i><i>•</i><i>•</i></div>
+            <div class="mfa-actions"><span style="color:var(--muted);font-size:10px">验证不会发送给模型</span><button class="button primary" style="height:32px">验证并继续</button></div>
+          </div>
+        </div>
+        <footer class="composer"><div class="composer-box" style="opacity:.55"><textarea disabled>任务正在等待二次验证…</textarea><button class="send" disabled>↑</button></div><div class="composer-foot"><span>关闭窗口不会取消任务</span><span>等待用户操作</span></div></footer>
+      </div>
+    </div>
+  </section>
+
+  <section class="scene" id="history">
+    <div class="app-shell">
+      <aside class="sidebar"><div class="app-brand"><span class="logo">L</span>Luna DevOps</div><div class="nav-group"><div class="nav-label">工作台</div><div class="nav-item active">▦ 看板</div><div class="nav-item">◇ 项目空间</div><div class="nav-item">◷ 事件</div></div></aside>
+      <main class="main"><div class="page-head"><h2>平台看板</h2></div><div class="metrics"><div class="metric"><div class="metric-label">进行中构建</div><div class="metric-value">2</div></div><div class="metric"><div class="metric-label">进行中发布</div><div class="metric-value">1</div></div><div class="metric"><div class="metric-label">待关注事项</div><div class="metric-value">3</div></div><div class="metric"><div class="metric-label">健康集群</div><div class="metric-value">3/3</div></div></div></main>
+      <div class="assistant-window wide">
+        <aside class="conversation-sidebar">
+          <button class="button primary">＋ 新建会话</button>
+          <div class="search">⌕ 搜索会话</div>
+          <div class="conversation-label">今天</div>
+          <div class="conversation-item active"><strong>API Gateway 发布变慢</strong><span>10:42 · Atlas</span><i class="dot"></i></div>
+          <div class="conversation-item"><strong>证书续期失败诊断</strong><span>09:18 · Orbit</span></div>
+          <div class="conversation-label">昨天</div>
+          <div class="conversation-item"><strong>解释构建缓存未命中</strong><span>Nova / Console</span></div>
+          <div class="conversation-item"><strong>筛选异常 Pod</strong><span>Atlas / Worker</span></div>
+          <div class="conversation-label">更早</div>
+          <div class="conversation-item"><strong>Harbor 连接测试</strong><span>7 月 25 日</span></div>
+        </aside>
+        <div class="wide-chat">
+          <header class="assistant-head"><button class="icon-button">‹</button><div class="assistant-title"><strong>API Gateway 发布变慢</strong><span>Atlas · 运行已完成 · 6 条记录</span></div><button class="icon-button" title="重命名">✎</button><button class="icon-button" title="更多">•••</button><button class="icon-button">×</button></header>
+          <div class="chat-body">
+            <div class="context-bar">已从持久 Timeline 恢复 <strong>6 条记录</strong><span>·</span><strong>上下文：Atlas / gateway</strong></div>
+            <div class="message user"><div class="bubble"><p>为什么刚才的发布耗时比平常久？</p><div class="bubble-meta">10:42</div></div></div>
+            <div class="message assistant"><span class="avatar">AI</span><div class="bubble"><p>主要原因是镜像拉取重试。本次从调度到就绪共 2 分 14 秒，比最近 10 次中位数多 46 秒。</p></div></div>
+            <div class="tool-card"><div class="tool-row"><span class="tool-icon">✓</span><div class="tool-copy"><strong>诊断流程已完成</strong><span>3 个工具调用 · 结果已经验证</span></div><span class="pill success">完成</span></div></div>
+            <div class="message assistant"><span class="avatar">AI</span><div class="bubble"><p>当前服务健康，不需要回滚。你可以打开 Pod 事件查看重试详情。</p></div></div>
+            <div class="inline-action"><button class="button">打开 Pod 事件</button><button class="button ghost">基于此结果继续提问</button></div>
+          </div>
+          <footer class="composer"><div class="composer-box"><textarea placeholder="继续这个会话…"></textarea><button class="send">↑</button></div><div class="composer-foot"><span>会话记录保存在平台中</span><span>删除后将物理级联删除</span></div></footer>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="scene" id="mobile">
+    <div class="mobile-stage">
+      <div class="mobile-notes">
+        <span class="spec-chip">390 × 780</span>
+        <h1>移动端全屏 Sheet</h1>
+        <p>保留完整消息、工具进度与操作能力，去掉拖动和自由缩放。会话列表进入二级视图。</p>
+        <ul>
+          <li>顶部提供关闭、会话入口和新建操作</li>
+          <li>工具卡片占满内容宽度，不嵌套窄弹窗</li>
+          <li>输入区预留软键盘与安全区</li>
+          <li>关闭 Sheet 不会取消后端 Run</li>
+        </ul>
+      </div>
+      <div class="phone">
+        <div class="phone-status"><span>9:41</span><span>● ● ▰</span></div>
+        <header class="mobile-head"><button class="icon-button">×</button><span class="ai-mark">✦</span><strong>Luna 助手</strong><button class="icon-button">☰</button><button class="icon-button">＋</button></header>
+        <div class="chat-body">
+          <div class="context-bar">Atlas / gateway · 部署</div>
+          <div class="message user"><div class="bubble"><p>检查刚才发布后的服务状态。</p></div></div>
+          <div class="message assistant"><span class="avatar">AI</span><div class="bubble"><p>正在检查 Release、Pod 和访问入口。</p></div></div>
+          <div class="thinking-card"><div class="thinking-head"><span>✦</span><span>执行进度</span></div><div class="thinking-lines"><p>检查 Release 最终状态。</p><p>关联 3 个 Pod 的就绪探针。</p><p>等待最后一个启动探针返回。</p></div></div>
+          <details class="tool-card">
+            <summary class="tool-row"><span class="tool-chevron">›</span><span class="tool-icon">✓</span><div class="tool-copy"><strong>Release 状态</strong><span>v2.8.5 已部署</span></div><span class="pill success">完成</span></summary>
+            <div class="tool-details"><div class="tool-detail-title">结果</div><div class="tool-result">Release rel_8472 已成功下发。</div></div>
+          </details>
+          <details class="tool-card">
+            <summary class="tool-row"><span class="tool-chevron">›</span><span class="tool-icon">↻</span><div class="tool-copy"><strong>健康检查</strong><span>等待最后 1 个探针</span></div><span class="pill">进行中</span></summary>
+            <div class="tool-details"><div class="tool-detail-title">参数</div><dl class="tool-data"><dt>应用</dt><dd>API Gateway</dd><dt>环境</dt><dd>production</dd></dl></div><div class="progress"><span style="width:86%"></span></div>
+          </details>
+          <div class="message assistant"><span class="avatar">AI</span><div class="bubble"><p>当前 2/3 Pod 已就绪，最后一个正在通过启动探针。</p></div></div>
+        </div>
+        <footer class="composer"><div class="composer-box"><textarea placeholder="继续提问…"></textarea><button class="send">↑</button></div><div class="composer-foot"><span>关闭不会取消运行</span><span>正在接收更新</span></div></footer>
+      </div>
+    </div>
+  </section>
+
+  <section class="scene" id="states">
+    <div class="state-gallery">
+      <h1>关键状态与边界</h1>
+      <p>用于补齐首次打开、恢复失败和空会话等实际交付状态。</p>
+      <div class="state-grid">
+        <article class="state-card">
+          <header class="state-card-head"><span class="ai-mark">✦</span>正在恢复会话</header>
+          <div class="state-card-body">
+            <div class="skeleton">
+              <div class="context-bar" style="opacity:.65">加载持久 Timeline 快照…</div>
+              <div class="skeleton-message"><div class="skeleton-line short"></div><div class="skeleton-line"></div></div>
+              <div class="skeleton-message" style="margin-left:auto"><div class="skeleton-line"></div></div>
+              <div class="skeleton-message"><div class="skeleton-line"></div><div class="skeleton-line short"></div></div>
+            </div>
+          </div>
+        </article>
+        <article class="state-card">
+          <header class="state-card-head"><span class="ai-mark">✦</span>新会话</header>
+          <div class="state-card-body"><div><span class="empty-icon">✦</span><h3>今天想处理什么？</h3><p>轻雪酱可以解释构建与发布问题、汇总状态，或带你前往正确的资源页面。</p><div style="display:grid;gap:8px;margin-top:18px"><button class="button">检查当前页面异常</button><button class="button">汇总最近失败任务</button></div></div></div>
+        </article>
+        <article class="state-card">
+          <header class="state-card-head"><span class="ai-mark">✦</span>连接已中断</header>
+          <div class="state-card-body"><div><span class="error-icon">!</span><h3>暂时无法接收更新</h3><p>任务仍在后台运行。重新连接后会从上次事件位置继续，不会重复执行已完成操作。</p><button class="button primary" style="margin-top:18px">重新连接</button></div></div>
+        </article>
+      </div>
+      <div style="margin-top:18px;padding:14px 16px;border:1px dashed var(--line-strong);border-radius:12px;color:var(--muted);background:rgb(255 255 255 / 50%);font-size:12px"><strong style="color:var(--text)">不可用状态：</strong> 当能力关闭、配置不完整、Agent 不健康或用户无权限时，规格要求完全不渲染悬浮球，因此不单独设计禁用入口。</div>
+    </div>
+  </section>
+
+  <script>
+    const buttons = document.querySelectorAll("[data-scene]");
+    const scenes = document.querySelectorAll(".scene");
+    buttons.forEach((button) => {
+      button.addEventListener("click", () => {
+        buttons.forEach((item) => item.classList.remove("active"));
+        scenes.forEach((scene) => scene.classList.remove("active"));
+        button.classList.add("active");
+        document.getElementById(button.dataset.scene).classList.add("active");
+      });
+    });
+    document.querySelectorAll("[data-auto-scroll]").forEach((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    document.querySelectorAll("[data-route-action]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const action = button.dataset.routeAction;
+        const title = document.querySelector("#desktop .page-head h2");
+        const tabs = document.querySelectorAll("#desktop .tab");
+        if (action === "release") {
+          title.textContent = "Atlas / API Gateway / 发布 rel_8472";
+          tabs.forEach((tab) => tab.classList.remove("active"));
+          tabs[1].textContent = "发布详情";
+          tabs[1].classList.add("active");
+        } else {
+          title.textContent = "Atlas / API Gateway";
+          tabs.forEach((tab) => tab.classList.remove("active"));
+          tabs[1].textContent = "Pod 事件";
+          tabs[1].classList.add("active");
+        }
+        button.textContent = "已打开 ✓";
+      });
+    });
+  </script>
+</body>
+</html>

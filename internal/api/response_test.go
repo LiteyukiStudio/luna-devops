@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -30,5 +31,34 @@ func TestInternalErrorCodeFallsBackWithoutRegisteredRoute(t *testing.T) {
 	ctx.Request = httptest.NewRequest(http.MethodGet, "/unknown", nil)
 	if code := internalErrorCode(ctx); code != "internal_error" {
 		t.Fatalf("code = %q", code)
+	}
+}
+
+func TestWriteErrorKeyWithDetailsKeepsStableMachineReadableContext(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+
+	writeErrorKeyWithDetails(
+		ctx,
+		http.StatusForbidden,
+		"en-US",
+		"auth.token.scope_insufficient",
+		gin.H{"requiredScope": "deployment:data_export"},
+	)
+
+	var response struct {
+		Code    string `json:"code"`
+		Details struct {
+			RequiredScope string `json:"requiredScope"`
+		} `json:"details"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if response.Code != "auth.token.scope_insufficient" {
+		t.Fatalf("code = %q", response.Code)
+	}
+	if response.Details.RequiredScope != "deployment:data_export" {
+		t.Fatalf("required scope = %q", response.Details.RequiredScope)
 	}
 }

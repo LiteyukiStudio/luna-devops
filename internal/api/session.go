@@ -130,8 +130,15 @@ func (h *Handlers) currentUserFromAccessToken(ctx *gin.Context) (model.User, boo
 		writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.token.invalid")
 		return model.User{}, false
 	}
-	if !accessTokenAllows(token.Scope, requiredScopeForRequest(ctx)) {
-		writeErrorKey(ctx, http.StatusForbidden, requestLanguage(ctx), "auth.token.scope_insufficient")
+	requiredScope := requiredScopeForRequest(ctx)
+	if !accessTokenAllows(token.Scope, requiredScope) {
+		writeErrorKeyWithDetails(
+			ctx,
+			http.StatusForbidden,
+			requestLanguage(ctx),
+			"auth.token.scope_insufficient",
+			gin.H{"requiredScope": requiredScope},
+		)
 		return model.User{}, false
 	}
 	if token.Source == "oauth" {

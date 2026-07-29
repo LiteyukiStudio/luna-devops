@@ -111,6 +111,64 @@ func TestAccessTokenScopeCatalogMarksAdminOnlyScopes(t *testing.T) {
 	}
 }
 
+func TestOAuthScopeRules(t *testing.T) {
+	if scope := NormalizeOAuthScope(string(ActionDeploymentDataExport)); scope != string(ActionDeploymentDataExport) {
+		t.Fatalf("normalized OAuth data export scope = %q", scope)
+	}
+	if scope := NormalizeOAuthScope("project:write,deployment:exec,deployment:data_export"); scope != "project:write,deployment:exec,deployment:data_export" {
+		t.Fatalf("normalized OAuth project scopes = %q", scope)
+	}
+	if scope := NormalizeOAuthScope("*"); scope != "" {
+		t.Fatalf("OAuth full wildcard must be rejected, got %q", scope)
+	}
+
+	for _, scope := range []string{
+		"project:write",
+		"deployment:exec",
+		"deployment:data_export",
+		"secret:update",
+	} {
+		if !UserCanAuthorizeOAuthScope(PlatformRoleUser, scope) {
+			t.Fatalf("expected regular user to authorize project-scoped OAuth scope %q", scope)
+		}
+	}
+	for _, scope := range []string{
+		string(ActionConfigWrite),
+		string(ActionUserManage),
+		string(ActionDataRetentionManage),
+	} {
+		if UserCanAuthorizeOAuthScope(PlatformRoleUser, scope) {
+			t.Fatalf("expected regular user to be blocked from platform OAuth scope %q", scope)
+		}
+		if !UserCanAuthorizeOAuthScope(PlatformRoleAdmin, scope) {
+			t.Fatalf("expected platform administrator to authorize OAuth scope %q", scope)
+		}
+	}
+}
+
+func TestRecommendedOAuthScopesExcludeHighRiskOperations(t *testing.T) {
+	scopes := RecommendedOAuthScopes(PlatformRoleUser)
+	for _, scope := range []Action{
+		ActionProjectRead,
+		ActionBuildTrigger,
+		ActionDeploymentRelease,
+	} {
+		if !contains(scopes, string(scope)) {
+			t.Fatalf("expected recommended OAuth scopes to include %q", scope)
+		}
+	}
+	for _, scope := range []Action{
+		ActionDeploymentExec,
+		ActionDeploymentDataExport,
+		ActionSecretUpdate,
+		ActionConfigWrite,
+	} {
+		if contains(scopes, string(scope)) {
+			t.Fatalf("expected recommended OAuth scopes to exclude high-risk scope %q", scope)
+		}
+	}
+}
+
 func catalogContainsScope(catalog []AccessTokenScopeDefinition, value string) bool {
 	for _, scope := range catalog {
 		if scope.Value == value {

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/LiteyukiStudio/devops/internal/database"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/LiteyukiStudio/devops/internal/service"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -67,6 +69,7 @@ func TestPlatformAdminAccessTokenScopesAuthorizeDashboardAndDataRetention(t *tes
 			if recorder.Code != http.StatusForbidden {
 				t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
 			}
+			assertRequiredScopeError(t, recorder, service.RequiredAccessTokenScope(path, http.MethodGet))
 		})
 	}
 
@@ -96,6 +99,33 @@ func TestPlatformAdminAccessTokenScopesAuthorizeDashboardAndDataRetention(t *tes
 			t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
 		}
 	})
+}
+
+func assertRequiredScopeError(
+	t *testing.T,
+	recorder *httptest.ResponseRecorder,
+	requiredScope string,
+) {
+	t.Helper()
+	var response struct {
+		Code    string `json:"code"`
+		Details struct {
+			RequiredScope string `json:"requiredScope"`
+		} `json:"details"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode scope error: %v", err)
+	}
+	if response.Code != "auth.token.scope_insufficient" {
+		t.Fatalf("error code = %q", response.Code)
+	}
+	if response.Details.RequiredScope != requiredScope {
+		t.Fatalf(
+			"required scope = %q, want %q",
+			response.Details.RequiredScope,
+			requiredScope,
+		)
+	}
 }
 
 func performBearerRequest(router http.Handler, method, path, token, body string) *httptest.ResponseRecorder {

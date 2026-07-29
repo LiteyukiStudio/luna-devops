@@ -121,9 +121,11 @@ Web Console 的项目空间总开关默认开启，项目 Owner/Admin 可以关�
 
 ### 数据导出
 
-部署配置的数据导出只支持浏览器 cookie 会话，并且需要项目 Owner/Admin。个人访问令牌即使有数据导出 scope，也不能直接下载运行数据。
+部署配置的数据导出支持浏览器会话和 Luna CLI OAuth 登录，并且需要项目
+Owner/Admin。CLI OAuth Grant 必须显式包含 `deployment:data_export`，再完成
+`data_export` Step-up MFA；个人访问令牌不能申请或绕过这项能力。
 
-下载前平台会签发 60 秒一次性票据，并绑定当前用户、session、项目空间、应用和部署配置。生产多副本通过 Redis 保存票据哈希；Redis 不可用时拒绝导出。
+下载前平台会签发 60 秒一次性票据，并绑定当前用户、认证上下文、项目空间、应用和部署配置。生产多副本通过 Redis 保存票据哈希；Redis 不可用时拒绝导出。
 
 导出只包含平台托管 PVC 或已有 PVC，`emptyDir` 不参与导出。
 

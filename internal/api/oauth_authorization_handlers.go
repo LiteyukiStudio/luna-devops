@@ -243,8 +243,8 @@ func (h *Handlers) validateOAuthAuthorizationRequest(ctx *gin.Context, clientID,
 		writeErrorCode(ctx, http.StatusBadRequest, "oauth.redirect_uri.invalid", "Redirect URI does not match the registered application")
 		return model.OAuthApplication{}, "", false
 	}
-	scope := normalizeAccessTokenScope(requestedScope)
-	if strings.TrimSpace(requestedScope) == "" || scope == "" || !oauthScopeSubset(scope, application.AllowedScopes) || !userCanCreateAccessTokenScope(user, scope) {
+	scope := normalizeOAuthScope(requestedScope)
+	if strings.TrimSpace(requestedScope) == "" || scope == "" || !oauthScopeSubset(scope, application.AllowedScopes) || !userCanAuthorizeOAuthScope(user, scope) {
 		writeErrorCode(ctx, http.StatusForbidden, "oauth.scope.forbidden", "Requested OAuth scope is not allowed")
 		return model.OAuthApplication{}, "", false
 	}

@@ -30,6 +30,50 @@ api:
   podAnnotations: {}
   podLabels: {}
 
+ai:
+  enabled: false
+  agentAddress: ""
+  agentTimeout: 10s
+  existingSecret: ""
+  apiServicePrivateKeyKey: ai-api-service-private-key
+  actorContextPrivateKeyKey: ai-actor-context-private-key
+  apiServicePublicKeyKey: ai-api-service-public-key
+  actorContextPublicKeyKey: ai-actor-context-public-key
+  runGrantEncryptionKeyKey: ai-run-grant-encryption-key
+  runActorGrantSigningKeyKey: ai-run-actor-grant-signing-key
+  delegationTokenSigningKeyKey: ai-delegation-token-signing-key
+  agentCallbackServiceTokenKey: ai-agent-callback-service-token
+  agent:
+    replicaCount: 2
+    image:
+      repository: liteyukistudio/devops-agent
+      tag: ""
+      pullPolicy: IfNotPresent
+    service:
+      port: 8091
+    authMode: jwt
+    providerType: deterministic
+    providerBaseUrl: ""
+    providerModel: ""
+    providerApiKeyKey: ai-provider-api-key
+    toolCatalogJson: >-
+      [{"operationId":"getDashboard","method":"GET","path":"/api/v1/dashboard","category":"platform","risk":"read","requiredScopes":["dashboard:read"],"approval":"never","idempotent":true,"timeoutMs":10000,"inputSchema":{"type":"object","properties":{},"required":[],"additionalProperties":false}},{"operationId":"listPlatformEvents","method":"GET","path":"/api/v1/events","category":"diagnostics","risk":"read","requiredScopes":["event:read"],"approval":"never","idempotent":true,"timeoutMs":10000,"inputSchema":{"type":"object","properties":{"projectId":{"type":"string","maxLength":64},"pageSize":{"type":"integer","maximum":100}},"required":["projectId"],"additionalProperties":false},"maxItems":100},{"operationId":"getProject","method":"GET","path":"/api/v1/projects/{projectId}","category":"project","risk":"read","requiredScopes":["project:read"],"approval":"never","idempotent":true,"timeoutMs":10000,"inputSchema":{"type":"object","properties":{"projectId":{"type":"string","maxLength":64}},"required":["projectId"],"additionalProperties":false}},{"operationId":"listApplications","method":"GET","path":"/api/v1/applications","category":"diagnostics","risk":"read","requiredScopes":["application:read"],"approval":"never","idempotent":true,"timeoutMs":10000,"inputSchema":{"type":"object","properties":{"projectId":{"type":"string","maxLength":64},"pageSize":{"type":"integer","maximum":100}},"required":["projectId"],"additionalProperties":false},"maxItems":100},{"operationId":"listBuildRuns","method":"GET","path":"/api/v1/build-runs","category":"diagnostics","risk":"read","requiredScopes":["build:read"],"approval":"never","idempotent":true,"timeoutMs":10000,"inputSchema":{"type":"object","properties":{"projectId":{"type":"string","maxLength":64},"pageSize":{"type":"integer","maximum":100}},"required":["projectId"],"additionalProperties":false},"maxItems":100},{"operationId":"listReleases","method":"GET","path":"/api/v1/releases","category":"diagnostics","risk":"read","requiredScopes":["deployment:read"],"approval":"never","idempotent":true,"timeoutMs":10000,"inputSchema":{"type":"object","properties":{"projectId":{"type":"string","maxLength":64},"pageSize":{"type":"integer","maximum":100}},"required":["projectId"],"additionalProperties":false},"maxItems":100},{"operationId":"listRuntimeClusters","method":"GET","path":"/api/v1/runtime-clusters","category":"diagnostics","risk":"read","requiredScopes":["cluster:read"],"approval":"never","idempotent":true,"timeoutMs":10000,"inputSchema":{"type":"object","properties":{"projectId":{"type":"string","maxLength":64},"pageSize":{"type":"integer","maximum":100}},"required":["projectId"],"additionalProperties":false},"maxItems":100}]
+    toolCatalogExtensionsJson: >-
+      [{"operationId":"listGatewayRoutes","method":"GET","path":"/api/v1/gateway-routes","category":"diagnostics","risk":"read","requiredScopes":["gateway:read"],"approval":"never","idempotent":true,"timeoutMs":10000,"inputSchema":{"type":"object","properties":{"projectId":{"type":"string","maxLength":64}},"required":["projectId"],"additionalProperties":false},"maxItems":20},{"operationId":"listGatewayCertificates","method":"GET","path":"/api/v1/gateway-certificates","category":"diagnostics","risk":"read","requiredScopes":["gateway:read"],"approval":"never","idempotent":true,"timeoutMs":10000,"inputSchema":{"type":"object","properties":{"projectId":{"type":"string","maxLength":64}},"required":["projectId"],"additionalProperties":false},"maxItems":20},{"operationId":"listProjectHookRuns","method":"GET","path":"/api/v1/project-hook-runs","category":"diagnostics","risk":"read","requiredScopes":["project:read"],"approval":"never","idempotent":true,"timeoutMs":10000,"inputSchema":{"type":"object","properties":{"projectId":{"type":"string","maxLength":64}},"required":["projectId"],"additionalProperties":false},"maxItems":20},{"operationId":"listNotificationDeliveries","method":"GET","path":"/api/v1/notification-deliveries","category":"diagnostics","risk":"read","requiredScopes":["event:read"],"approval":"never","idempotent":true,"timeoutMs":10000,"inputSchema":{"type":"object","properties":{"projectId":{"type":"string","maxLength":64}},"required":["projectId"],"additionalProperties":false},"maxItems":20},{"operationId":"listRuntimeEvents","method":"GET","path":"/api/v1/runtime-events","category":"diagnostics","risk":"read","requiredScopes":["event:read"],"approval":"never","idempotent":true,"timeoutMs":10000,"inputSchema":{"type":"object","properties":{"projectId":{"type":"string","maxLength":64}},"required":["projectId"],"additionalProperties":false},"maxItems":20}]
+    runLeaseSeconds: 30
+    runPollMs: 500
+    resources: {}
+    nodeSelector: {}
+    tolerations: []
+    affinity: {}
+    podAnnotations: {}
+    podLabels: {}
+    podDisruptionBudget:
+      enabled: true
+      minAvailable: 1
+    networkPolicy:
+      enabled: true
+
 metrics:
   enabled: false
   path: /metrics
@@ -48,6 +92,8 @@ metrics:
   worker:
     addr: ":9091"
     port: 9091
+  agent:
+    port: 9092
 
 worker:
   replicaCount: 1

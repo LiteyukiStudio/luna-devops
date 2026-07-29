@@ -1,0 +1,144 @@
+openapi: 3.1.0
+info:
+  title: Luna Agent Internal API
+  version: 1.0.0
+  description: Cluster-internal contract consumed only by the Luna API BFF.
+servers:
+  - url: http://luna-agent
+security:
+  - APIServiceToken: []
+paths:
+  /internal/health/live:
+    get:
+      operationId: getAgentLiveness
+      security: []
+      responses: { "200": { description: Agent process is live } }
+  /internal/health/ready:
+    get:
+      operationId: getAgentReadiness
+      security: []
+      responses: { "200": { description: Agent is ready }, "503": { $ref: "#/components/responses/AgentError" } }
+  /internal/v1/capabilities:
+    get:
+      operationId: getInternalAICapabilities
+      responses: { "200": { description: Capability result, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }, "401": { $ref: "#/components/responses/AgentError" } }
+  /internal/v1/conversations:
+    get:
+      operationId: listInternalAIConversations
+      parameters: [{ $ref: "#/components/parameters/ActorContext" }, { $ref: "#/components/parameters/ActorSignature" }]
+      responses: { "200": { description: Paginated conversation list, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }, "401": { $ref: "#/components/responses/AgentError" } }
+    post:
+      operationId: createInternalAIConversation
+      parameters: [{ $ref: "#/components/parameters/ActorContext" }, { $ref: "#/components/parameters/ActorSignature" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }
+      responses: { "201": { description: Conversation created, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }, "401": { $ref: "#/components/responses/AgentError" } }
+  /internal/v1/conversations/{conversationId}:
+    parameters:
+      - { $ref: "#/components/parameters/ActorContext" }
+      - { $ref: "#/components/parameters/ActorSignature" }
+      - { $ref: "#/components/parameters/ConversationId" }
+    get:
+      operationId: getInternalAIConversation
+      responses: { "200": { description: Conversation, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }, "404": { $ref: "#/components/responses/AgentError" } }
+    patch:
+      operationId: updateInternalAIConversation
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }
+      responses: { "200": { description: Conversation updated, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }, "404": { $ref: "#/components/responses/AgentError" } }
+    delete:
+      operationId: deleteInternalAIConversation
+      responses: { "204": { description: Conversation physically deleted }, "404": { $ref: "#/components/responses/AgentError" }, "409": { $ref: "#/components/responses/AgentError" } }
+  /internal/v1/conversations/{conversationId}/timeline:
+    get:
+      operationId: getInternalAIConversationTimeline
+      parameters:
+        - { $ref: "#/components/parameters/ActorContext" }
+        - { $ref: "#/components/parameters/ActorSignature" }
+        - { $ref: "#/components/parameters/ConversationId" }
+      responses: { "200": { description: Durable timeline snapshot, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }, "404": { $ref: "#/components/responses/AgentError" } }
+  /internal/v1/conversations/{conversationId}/turns:
+    post:
+      operationId: createInternalAITurn
+      parameters:
+        - { $ref: "#/components/parameters/ActorContext" }
+        - { $ref: "#/components/parameters/ActorSignature" }
+        - { $ref: "#/components/parameters/ConversationId" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }
+      responses: { "202": { description: Turn and run accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }, "409": { $ref: "#/components/responses/AgentError" } }
+  /internal/v1/turns/{turnId}/runs:
+    parameters:
+      - { $ref: "#/components/parameters/ActorContext" }
+      - { $ref: "#/components/parameters/ActorSignature" }
+      - { $ref: "#/components/parameters/TurnId" }
+    get:
+      operationId: listInternalAIRuns
+      responses: { "200": { description: Paginated runs, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } } }
+    post:
+      operationId: createInternalAIRun
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }
+      responses: { "202": { description: Run accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }, "409": { $ref: "#/components/responses/AgentError" } }
+  /internal/v1/runs/{runId}:
+    get:
+      operationId: getInternalAIRun
+      parameters: [{ $ref: "#/components/parameters/ActorContext" }, { $ref: "#/components/parameters/ActorSignature" }, { $ref: "#/components/parameters/RunId" }]
+      responses: { "200": { description: Run state, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }, "404": { $ref: "#/components/responses/AgentError" } }
+  /internal/v1/runs/{runId}/events:
+    get:
+      operationId: streamInternalAIRunEvents
+      parameters:
+        - { $ref: "#/components/parameters/ActorContext" }
+        - { $ref: "#/components/parameters/ActorSignature" }
+        - { $ref: "#/components/parameters/RunId" }
+        - { name: after, in: query, required: false, schema: { type: integer, format: int64, minimum: 0 } }
+        - { name: Last-Event-ID, in: header, required: false, schema: { type: string } }
+      responses: { "200": { description: Recoverable SSE stream, content: { text/event-stream: { schema: { type: string } } } }, "404": { $ref: "#/components/responses/AgentError" } }
+  /internal/v1/runs/{runId}/cancel:
+    post:
+      operationId: cancelInternalAIRun
+      parameters: [{ $ref: "#/components/parameters/ActorContext" }, { $ref: "#/components/parameters/ActorSignature" }, { $ref: "#/components/parameters/RunId" }]
+      responses: { "202": { description: Cancellation accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }, "404": { $ref: "#/components/responses/AgentError" } }
+  /internal/v1/runs/{runId}/input:
+    post:
+      operationId: submitInternalAIRunInput
+      parameters: [{ $ref: "#/components/parameters/ActorContext" }, { $ref: "#/components/parameters/ActorSignature" }, { $ref: "#/components/parameters/RunId" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }
+      responses: { "202": { description: Input accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }, "409": { $ref: "#/components/responses/AgentError" } }
+  /internal/v1/runs/{runId}/approvals/{toolCallId}/decision:
+    post:
+      operationId: decideInternalAIToolApproval
+      parameters: [{ $ref: "#/components/parameters/ActorContext" }, { $ref: "#/components/parameters/ActorSignature" }, { $ref: "#/components/parameters/RunId" }, { $ref: "#/components/parameters/ToolCallId" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }
+      responses: { "202": { description: Decision accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }, "409": { $ref: "#/components/responses/AgentError" } }
+  /internal/v1/runs/{runId}/mfa/{toolCallId}/resume:
+    post:
+      operationId: resumeInternalAIRunAfterMFA
+      parameters: [{ $ref: "#/components/parameters/ActorContext" }, { $ref: "#/components/parameters/ActorSignature" }, { $ref: "#/components/parameters/RunId" }, { $ref: "#/components/parameters/ToolCallId" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }
+      responses: { "202": { description: Resume accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }, "409": { $ref: "#/components/responses/AgentError" } }
+components:
+  securitySchemes:
+    APIServiceToken: { type: http, scheme: bearer, bearerFormat: short-lived EdDSA service JWT }
+  parameters:
+    ActorContext: { name: X-Luna-Actor-Context, in: header, required: true, schema: { type: string }, description: Short-lived EdDSA Actor Context JWT; compatibility mode uses base64url-encoded JSON. }
+    ActorSignature: { name: X-Luna-Actor-Signature, in: header, required: false, schema: { type: string, pattern: "^sha256=[0-9a-f]{64}$" }, description: Required only by the explicitly configured HMAC compatibility mode. }
+    IdempotencyKey: { name: Idempotency-Key, in: header, required: true, schema: { type: string } }
+    ConversationId: { name: conversationId, in: path, required: true, schema: { type: string } }
+    TurnId: { name: turnId, in: path, required: true, schema: { type: string } }
+    RunId: { name: runId, in: path, required: true, schema: { type: string } }
+    ToolCallId: { name: toolCallId, in: path, required: true, schema: { type: string } }
+  schemas:
+    AgentObject: { type: object, additionalProperties: true }
+    AgentError:
+      type: object
+      properties:
+        code: { type: string }
+        message: { type: string }
+        requestId: { type: string }
+        details: { type: object, additionalProperties: true }
+        retryable: { type: boolean }
+      required: [code, retryable]
+  responses:
+    AgentError:
+      description: Stable internal Agent error envelope.
+      content: { application/json: { schema: { $ref: "#/components/schemas/AgentError" } } }

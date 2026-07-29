@@ -356,12 +356,37 @@ func NormalizeAccessTokenScope(scopeText string) string {
 	return strings.Join(scopes, ",")
 }
 
+func NormalizeOAuthScope(scopeText string) string {
+	scopes := normalizeList(strings.Split(strings.ReplaceAll(scopeText, " ", ","), ","))
+	if len(scopes) == 0 {
+		return ""
+	}
+	for _, scope := range scopes {
+		if scope == "*" || !allowedOAuthScopes[scope] {
+			return ""
+		}
+	}
+	return strings.Join(scopes, ",")
+}
+
 func UserCanCreateAccessTokenScope(userRole, scopeText string) bool {
 	if IsPlatformAdmin(userRole) {
 		return true
 	}
 	for _, scope := range splitCSV(scopeText) {
 		if !userCreatableAccessTokenScopes[scope] {
+			return false
+		}
+	}
+	return true
+}
+
+func UserCanAuthorizeOAuthScope(userRole, scopeText string) bool {
+	if IsPlatformAdmin(userRole) {
+		return true
+	}
+	for _, scope := range splitCSV(scopeText) {
+		if !userAuthorizableOAuthScopes[scope] {
 			return false
 		}
 	}

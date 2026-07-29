@@ -233,8 +233,8 @@ func oauthApplicationFromInput(ctx *gin.Context, user model.User, input oauthApp
 		writeErrorCode(ctx, http.StatusBadRequest, "oauth.application.invalid_url", "Homepage and logo URLs must use HTTP or HTTPS")
 		return model.OAuthApplication{}, false
 	}
-	scope := normalizeAccessTokenScope(input.AllowedScopes)
-	if scope == "" || !userCanCreateAccessTokenScope(user, scope) {
+	scope := normalizeOAuthScope(input.AllowedScopes)
+	if scope == "" || !userCanAuthorizeOAuthScope(user, scope) {
 		writeErrorCode(ctx, http.StatusForbidden, "oauth.scope.forbidden", "OAuth application scope is not allowed")
 		return model.OAuthApplication{}, false
 	}

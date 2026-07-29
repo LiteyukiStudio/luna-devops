@@ -86,8 +86,15 @@ section "Running race tests for critical packages"
 AUTH_TEST_DATABASE_URL="" go test -race ./internal/api ./internal/worker ./internal/provider/kubernetes ./internal/secret
 
 section "Installing locked frontend dependencies"
+pnpm install --frozen-lockfile --filter @luna-devops/agent...
 pnpm --dir web install --frozen-lockfile
 pnpm --dir docs install --frozen-lockfile
+
+section "Checking the AI Agent"
+pnpm --dir luna-agent lint
+pnpm --dir luna-agent typecheck
+pnpm --dir luna-agent test
+pnpm --dir luna-agent build
 
 section "Linting and building the frontend"
 pnpm --dir web test
@@ -103,6 +110,7 @@ section "Auditing pnpm dependencies"
 # neither the Vite SPA nor Rspress documentation site enables.
 pnpm --dir web audit --prod --audit-level=high --ignore=GHSA-qwww-vcr4-c8h2
 pnpm --dir docs audit --prod --audit-level=high --ignore=GHSA-qwww-vcr4-c8h2
+pnpm --dir luna-agent audit --prod --audit-level=high
 
 section "Scanning Go dependencies and reachable code"
 go run "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}" ./...

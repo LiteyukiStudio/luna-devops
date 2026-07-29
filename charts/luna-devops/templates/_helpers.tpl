@@ -78,6 +78,14 @@ app.kubernetes.io/component: {{ .component }}
 {{- printf "%s-worker" (include "luna-devops.fullname" .) | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
+{{- define "luna-devops.agentName" -}}
+{{- printf "%s-agent" (include "luna-devops.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "luna-devops.aiSecretName" -}}
+{{- default (printf "%s-ai" (include "luna-devops.fullname" .)) .Values.ai.existingSecret -}}
+{{- end -}}
+
 {{- define "luna-devops.apiMetricsName" -}}
 {{- printf "%s-api-metrics" (include "luna-devops.fullname" .) | trunc 63 | trimSuffix "-" -}}
 {{- end -}}

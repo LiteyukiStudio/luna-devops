@@ -30,6 +30,8 @@ postgres:17-alpine
 redis:8-alpine
 ```
 
+The AI assistant is disabled by default. The release workflow also publishes `liteyukistudio/devops-agent`, but the chart deploys it only when `ai.enabled=true` and `ai.existingSecret` is provided.
+
 ## Open The Console
 
 Forward the API Service:
@@ -51,7 +53,8 @@ helm upgrade --install luna-devops ./charts/luna-devops \
   --namespace luna-devops \
   --create-namespace \
   --set api.image.tag=v0.1.0-rc.1 \
-  --set worker.image.tag=v0.1.0-rc.1
+  --set worker.image.tag=v0.1.0-rc.1 \
+  --set ai.agent.image.tag=v0.1.0-rc.1
 ```
 
 ## Access the Console Through a Public Domain
@@ -104,6 +107,8 @@ helm upgrade --install luna-devops ./charts/luna-devops \
 | `app.publicBaseUrl` | `http://localhost:8088` | Public console URL. Required when Ingress is enabled. |
 | `app.secretEncryptionKey` | Generated on first install | Encrypts Git, registry, and OIDC secrets. Keep it stable in production. |
 | `api.image.tag` / `worker.image.tag` | `nightly` | API and worker image tag. |
+| `ai.enabled` | `false` | Deploy the independent AI Agent. `ai.existingSecret` is required when enabled. |
+| `ai.agent.image.tag` | Chart `appVersion` | Agent image tag. Releases use the same tag as API and Worker. |
 | `postgresql.enabled` | `true` | Install built-in PostgreSQL. |
 | `redis.enabled` | `true` | Install built-in Redis. |
 | `externalRedis.url` | Empty | Complete external Redis URI, used when built-in Redis is disabled. |

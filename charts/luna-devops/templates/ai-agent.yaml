@@ -1,0 +1,161 @@
+{{- if .Values.ai.enabled }}
+{{- if not .Values.ai.existingSecret }}
+{{- fail "ai.existingSecret is required when ai.enabled=true" }}
+{{- end }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "luna-devops.agentName" . }}
+  labels:
+    {{- include "luna-devops.componentLabels" (dict "root" . "component" "agent") | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.ai.agent.service.port }}
+      targetPort: http
+  selector:
+    {{- include "luna-devops.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: agent
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "luna-devops.agentName" . }}
+  labels:
+    {{- include "luna-devops.componentLabels" (dict "root" . "component" "agent") | nindent 4 }}
+spec:
+  replicas: {{ .Values.ai.agent.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "luna-devops.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: agent
+  template:
+    metadata:
+      labels:
+        {{- include "luna-devops.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: agent
+        {{- with .Values.ai.agent.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.ai.agent.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      automountServiceAccountToken: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: agent
+          image: "{{ .Values.ai.agent.image.repository }}:{{ include "luna-devops.imageTag" (dict "Chart" .Chart "tag" .Values.ai.agent.image.tag) }}"
+          imagePullPolicy: {{ .Values.ai.agent.image.pullPolicy }}
+          securityContext:
+            {{- toYaml (mergeOverwrite (deepCopy .Values.containerSecurityContext) (dict "readOnlyRootFilesystem" true)) | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.ai.agent.service.port }}
+              protocol: TCP
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: {{ .Values.ai.agent.service.port | quote }}
+            - name: AUTH_MODE
+              value: {{ .Values.ai.agent.authMode | quote }}
+            - name: PROVIDER_TYPE
+              value: {{ .Values.ai.agent.providerType | quote }}
+            - name: PROVIDER_BASE_URL
+              value: {{ .Values.ai.agent.providerBaseUrl | quote }}
+            - name: PROVIDER_MODEL
+              value: {{ .Values.ai.agent.providerModel | quote }}
+            - name: RUN_LEASE_SECONDS
+              value: {{ .Values.ai.agent.runLeaseSeconds | quote }}
+            - name: RUN_POLL_MS
+              value: {{ .Values.ai.agent.runPollMs | quote }}
+            - name: LUNA_API_BASE_URL
+              value: {{ printf "http://%s:%v" (include "luna-devops.apiName" .) .Values.api.service.port | quote }}
+            - name: TOOL_CATALOG_JSON
+              value: {{ printf "%s,%s" (trimSuffix "]" .Values.ai.agent.toolCatalogJson) (trimPrefix "[" .Values.ai.agent.toolCatalogExtensionsJson) | quote }}
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "luna-devops.databaseUrlSecretName" . }}
+                  key: {{ include "luna-devops.databaseUrlSecretKey" . }}
+            - name: API_SERVICE_JWT_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "luna-devops.aiSecretName" . }}
+                  key: {{ .Values.ai.apiServicePublicKeyKey }}
+            - name: ACTOR_CONTEXT_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "luna-devops.aiSecretName" . }}
+                  key: {{ .Values.ai.actorContextPublicKeyKey }}
+            - name: RUN_GRANT_ENCRYPTION_KEY_BASE64
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "luna-devops.aiSecretName" . }}
+                  key: {{ .Values.ai.runGrantEncryptionKeyKey }}
+            - name: AI_AGENT_CALLBACK_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "luna-devops.aiSecretName" . }}
+                  key: {{ .Values.ai.agentCallbackServiceTokenKey }}
+            {{- if eq .Values.ai.agent.providerType "openai-compatible" }}
+            - name: PROVIDER_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "luna-devops.aiSecretName" . }}
+                  key: {{ .Values.ai.agent.providerApiKeyKey }}
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /internal/health/live
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /internal/health/ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          {{- with .Values.ai.agent.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with .Values.ai.agent.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.ai.agent.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.ai.agent.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- if .Values.ai.agent.podDisruptionBudget.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "luna-devops.agentName" . }}
+  labels:
+    {{- include "luna-devops.componentLabels" (dict "root" . "component" "agent") | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.ai.agent.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "luna-devops.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: agent
+{{- end }}
+{{- end }}

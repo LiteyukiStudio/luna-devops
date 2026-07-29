@@ -11,6 +11,7 @@ import (
 
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/retention"
+	"github.com/LiteyukiStudio/devops/internal/secret"
 	"github.com/LiteyukiStudio/devops/internal/security"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -40,6 +41,32 @@ type configDefinitionResponse struct {
 }
 
 var configDefinitions = []configDefinition{
+	{
+		Key:         aiAssistantEnabledConfigKey,
+		Label:       "启用内嵌 AI 助手",
+		Description: "部署级 AI 开关、Agent 和模型配置均就绪时，允许已登录用户使用内嵌助手。",
+		Type:        "boolean",
+		Public:      false,
+		Default:     "false",
+	},
+	{Key: "ai.provider.type", Label: "AI Provider 类型", Type: "select", Default: "", Options: []string{"", "openai-compatible"}},
+	{Key: "ai.provider.base_url", Label: "AI Provider Base URL", Type: "string", Default: ""},
+	{Key: "ai.provider.api_key", Label: "AI Provider API Key", Type: "secret", Default: ""},
+	{Key: "ai.provider.default_model", Label: "AI 默认模型", Type: "string", Default: ""},
+	{Key: "ai.provider.fallback_model", Label: "AI 后备模型", Type: "string", Default: ""},
+	{Key: "ai.provider.model_pricing", Label: "AI 模型价格版本", Type: "textarea", Default: "[]"},
+	{Key: "ai.access.mode", Label: "AI 访问模式", Type: "select", Default: "admins", Options: []string{"admins", "all_authenticated", "allowlist"}},
+	{Key: "ai.access.user_ids", Label: "AI 用户允许列表", Type: "textarea", Default: "[]"},
+	{Key: "ai.access.project_ids", Label: "AI 项目允许列表", Type: "textarea", Default: "[]"},
+	{Key: "ai.quota.user_concurrent_runs", Label: "用户并发 Run", Type: "number", Default: "2"},
+	{Key: "ai.quota.user_daily_tokens", Label: "用户每日 Token", Type: "number", Default: "200000"},
+	{Key: "ai.quota.project_concurrent_runs", Label: "项目并发 Run", Type: "number", Default: "5"},
+	{Key: "ai.quota.run_max_tool_calls", Label: "Run 最大工具调用", Type: "number", Default: "20"},
+	{Key: "ai.quota.platform_daily_cost_soft", Label: "平台每日成本软上限", Type: "number", Default: "0"},
+	{Key: "ai.quota.platform_daily_cost_hard", Label: "平台每日成本硬上限", Type: "number", Default: "0"},
+	{Key: "ai.retention.conversation_days", Label: "AI 会话保留天数", Type: "number", Default: "90"},
+	{Key: "ai.retention.run_event_days", Label: "AI Run 事件保留天数", Type: "number", Default: "30"},
+	{Key: "ai.retention.checkpoint_days", Label: "AI Checkpoint 保留天数", Type: "number", Default: "7"},
 	{
 		Key:         "site.title",
 		Label:       "网站标题",
@@ -329,6 +356,10 @@ func (c *configCache) get(keys []string) map[string]string {
 	result := map[string]string{}
 	for _, key := range keys {
 		if value, ok := c.values[key]; ok {
+			if key == "ai.provider.api_key" {
+				result[key] = strconv.FormatBool(secret.HasValue(value))
+				continue
+			}
 			result[key] = value
 		}
 	}
@@ -405,16 +436,36 @@ func (h *Handlers) UpdateConfigs(ctx *gin.Context) {
 	if !bindJSON(ctx, &input) {
 		return
 	}
+	apiKeyInput := ""
+	if raw, exists := input.Values["ai.provider.api_key"]; exists {
+		if value, ok := raw.(string); ok {
+			apiKeyInput = strings.TrimSpace(value)
+		}
+		delete(input.Values, "ai.provider.api_key")
+	}
 	values, err := validateConfigValues(input.Values)
 	if err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
+	}
+	if err := h.validateAIConfigValues(values); err != nil {
+		writeErrorCode(ctx, http.StatusBadRequest, "ai.config_invalid", err.Error())
+		return
+	}
+	if apiKeyInput != "" {
+		ref := h.secrets.Store(apiKeyInput, user.ID, "ai_provider:api_key")
+		if ref == "" {
+			writeErrorCode(ctx, http.StatusInternalServerError, "ai.secret_store_failed", "AI Provider API key could not be stored")
+			return
+		}
+		values["ai.provider.api_key"] = ref
 	}
 	stepUpConfigChanged := false
 	if containsStepUpConfig(values) {
 		currentStepUpValues := h.configs.get(stepUpSecurityConfigKeys(knownConfigKeys()))
 		stepUpConfigChanged = stepUpConfigValuesChanged(values, currentStepUpValues)
 	}
+	aiSecurityChanged := containsAIConfig(values)
 	targetStepUpEnabled := false
 	actorSessionID := ""
 	if stepUpConfigChanged {
@@ -437,6 +488,10 @@ func (h *Handlers) UpdateConfigs(ctx *gin.Context) {
 			return
 		}
 		actorSessionID = actorSession.ID
+	} else if aiSecurityChanged && h.stepUpMFAEnabled() {
+		if !h.requireMFAAssertion(ctx, user, stepUpPurposeSecuritySettingsUpdate) {
+			return
+		}
 	}
 
 	err = h.db.Transaction(func(tx *gorm.DB) error {
@@ -464,6 +519,9 @@ func (h *Handlers) UpdateConfigs(ctx *gin.Context) {
 		}
 		if stepUpConfigChanged {
 			return createMFAAudit(tx, user.ID, "mfa.policy_update", "security.stepUpMfa", "step-up MFA policy updated")
+		}
+		if aiSecurityChanged {
+			return createMFAAudit(tx, user.ID, "ai.settings_update", "ai.settings", "AI security settings updated")
 		}
 		return nil
 	})

@@ -29,6 +29,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { TabsContent } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { buildVariableRecordToRows, buildVariableRowsToRecord, secretStateToRows } from '@/lib/build-variables'
+import { AIAssistantSettingsPanel } from './ai-assistant-settings-panel'
 import { AuthRegistrationSettingsPanel } from './auth-registration-settings-panel'
 import { BrandColorPresetField } from './brand-color-preset-field'
 import { configDefinitionText } from './config-definition-text'
@@ -129,10 +130,7 @@ export function SiteSettingsPage() {
     <PageShell spacing="compact" width="settings">
       {definitions.isError && <ErrorState title={t('settings.configDefinitionsFailedTitle')} description={t('settings.configDefinitionsFailedDescription')} />}
 
-      <form
-        id="site-settings-form"
-        onSubmit={form.handleSubmit(submitChangedValues)}
-      >
+      <div>
         <ContentTabs
           headerClassName={['billing', 'retention'].includes(activeTab) ? undefined : 'max-w-3xl'}
           tabs={[
@@ -142,6 +140,7 @@ export function SiteSettingsPage() {
             { value: 'build', label: t('settings.buildConfigTitle') },
             { value: 'billing', label: t('settings.billingConfigTitle') },
             { value: 'retention', label: t('settings.retentionConfigTitle') },
+            { value: 'ai', label: t('settings.ai.tab') },
           ]}
           value={activeTab}
           onValueChange={setActiveTab}
@@ -189,16 +188,19 @@ export function SiteSettingsPage() {
               <DataRetentionSection />
             </div>
           </TabsContent>
+          <TabsContent value="ai">
+            <AIAssistantSettingsPanel />
+          </TabsContent>
         </ContentTabs>
-        {!['registration', 'build'].includes(activeTab) && (
+        {!['registration', 'build', 'ai'].includes(activeTab) && (
           <FormActions className={['brand', 'security'].includes(activeTab) ? 'mt-4 max-w-3xl' : 'mt-4'} separated={false}>
-            <Button disabled={save.isPending || !form.formState.isValid || !form.formState.isDirty} type="submit">
+            <Button disabled={save.isPending || !form.formState.isValid || !form.formState.isDirty} type="button" onClick={form.handleSubmit(submitChangedValues)}>
               <Save size={16} />
               {t('settings.saveConfig')}
             </Button>
           </FormActions>
         )}
-      </form>
+      </div>
       <BuildEnvironmentEditorDialog
         description={t('buildsPage.globalBuildEnvironmentDescription')}
         open={environmentDialogOpen}

@@ -41,7 +41,7 @@ func (h *Handlers) StartOAuthDeviceAuthorization(ctx *gin.Context) {
 	requestedScope := strings.TrimSpace(ctx.PostForm("scope"))
 	scope := ""
 	if requestedScope != "" {
-		scope = normalizeAccessTokenScope(requestedScope)
+		scope = normalizeOAuthScope(requestedScope)
 		if scope == "" {
 			oauthError(ctx, http.StatusBadRequest, "invalid_scope", "Requested scope is invalid")
 			return
@@ -145,7 +145,7 @@ func (h *Handlers) DecideOAuthDeviceVerification(ctx *gin.Context) {
 		if scope == "" {
 			scope = recommendedOAuthScope(user)
 		}
-		if scope == "" || !userCanCreateAccessTokenScope(user, scope) {
+		if scope == "" || !userCanAuthorizeOAuthScope(user, scope) {
 			return errOAuthInvalidScope
 		}
 		grant, err := ensureOAuthGrant(tx, authorization.ApplicationID, user.ID, scope, now)
@@ -313,7 +313,7 @@ func (h *Handlers) oauthDeviceVerificationRequest(ctx *gin.Context, user model.U
 	if authorization.Scope == "" {
 		authorization.Scope = recommendedOAuthScope(user)
 	}
-	if authorization.Scope == "" || !userCanCreateAccessTokenScope(user, authorization.Scope) {
+	if authorization.Scope == "" || !userCanAuthorizeOAuthScope(user, authorization.Scope) {
 		writeErrorCode(ctx, http.StatusForbidden, "oauth.scope.forbidden", "Requested OAuth scope is not allowed")
 		return model.OAuthDeviceAuthorization{}, model.OAuthApplication{}, false
 	}

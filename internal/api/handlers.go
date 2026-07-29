@@ -3,10 +3,13 @@ package api
 import (
 	"context"
 
+	"github.com/LiteyukiStudio/devops/internal/aiagent"
+	"github.com/LiteyukiStudio/devops/internal/aitool"
 	"github.com/LiteyukiStudio/devops/internal/config"
 	"github.com/LiteyukiStudio/devops/internal/repository"
 	"github.com/LiteyukiStudio/devops/internal/secret"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
+	"github.com/gin-gonic/gin"
 	"github.com/hibiken/asynq"
 	"gorm.io/gorm"
 )
@@ -26,6 +29,11 @@ type Handlers struct {
 	registrySearchCache *registrySearchCache
 	gatewayTrafficState gatewayTrafficRuntimeStateStore
 	taskClient          taskEnqueuer
+	aiAgent             aiagent.Client
+	aiDeploymentEnabled bool
+	aiActorResolver     func(*gin.Context) (aiagent.ActorContext, bool)
+	aiProjectAuthorizer func(*gin.Context, string) bool
+	aiTools             *aitool.Service
 }
 
 type taskEnqueuer interface {
@@ -50,7 +58,16 @@ func NewHandlers(db *gorm.DB) *Handlers {
 		handlers.taskClient = tasks.NewClientWithRedis(redisOptions)
 	}
 	handlers.secrets = secret.NewStore(db, handlers.audit)
+	aiConfig := aiagent.LoadConfig()
+	handlers.aiDeploymentEnabled = aiConfig.Available
+	handlers.aiAgent = aiConfig.Client()
+	handlers.aiTools = aitool.NewService(db)
 	return handlers
+}
+
+func (h *Handlers) setAIAgentForTest(client aiagent.Client, deploymentEnabled bool) {
+	h.aiAgent = client
+	h.aiDeploymentEnabled = deploymentEnabled
 }
 
 func (h *Handlers) gatewayTrafficRuntimeStore() gatewayTrafficRuntimeStateStore {

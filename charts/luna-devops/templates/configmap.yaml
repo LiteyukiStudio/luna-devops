@@ -21,3 +21,6 @@ data:
   BUILD_PRIVATE_EGRESS_CIDRS: {{ .Values.worker.buildPrivateEgressCidrs | quote }}
   BUILD_PRIVATE_EGRESS_PORTS: {{ .Values.worker.buildPrivateEgressPorts | quote }}
   BUILD_BLOCKED_EGRESS_CIDRS: {{ .Values.worker.buildBlockedEgressCidrs | quote }}
+  AI_ASSISTANT_AVAILABLE: {{ .Values.ai.enabled | quote }}
+  AI_AGENT_ADDR: {{ default (printf "http://%s:%v" (include "luna-devops.agentName" .) .Values.ai.agent.service.port) .Values.ai.agentAddress | quote }}
+  AI_AGENT_TIMEOUT: {{ .Values.ai.agentTimeout | quote }}

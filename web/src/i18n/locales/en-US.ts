@@ -1,5 +1,6 @@
 import accessTokens from './en-US/accessTokens'
 import accountPage from './en-US/accountPage'
+import aiAssistant from './en-US/aiAssistant'
 import apps from './en-US/apps'
 import appTemplatesPage from './en-US/appTemplatesPage'
 import auth from './en-US/auth'
@@ -41,6 +42,7 @@ import usersPage from './en-US/usersPage'
 
 const enUS = {
   ...root,
+  ...aiAssistant,
   languages,
   theme,
   common,

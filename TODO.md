@@ -1017,7 +1017,8 @@ CLI 已迁移到独立仓库 [`LiteyukiStudio/luna-cli`](https://github.com/Lite
 - [x] 新增 `luna health doctor` 显式诊断，检查活动登录配置、认证、服务端可达性、最低 CLI 版本、OpenAPI digest 和功能开关；Device Code 未启用时在进入登录流程前返回稳定能力错误。
 - [x] CLI 接入逐实例能力协商和版本兼容判断；OpenAPI 业务命令在首次请求前校验 API 代际、最低 CLI 版本和契约摘要，对缺少接口或不兼容实例 fail closed，不通过试探业务接口猜测能力。
 - [x] 实现 CLI 基础框架、`~/.luna/auth.json` 单活动登录、`project current/use/unset`、项目空间解析优先级、稳定输出、完整 Help、机器可读 Help 和 Shell Completion；重新登录其他实例或账号会覆盖旧凭据并清除默认项目空间，临时跨源 `server=` 不复用当前 Token。
-- [ ] 实现由平台固定初始化、无需动态注册的内置 OAuth 公共 CLI Client：Token Endpoint 支持 `token_endpoint_auth_method=none`，仅允许严格 loopback redirect，完成 Authorization Code + PKCE、刷新和吊销；拆分 OAuth 与个人访问令牌 Scope 策略，使第一方 CLI 可在明确授权和 Step-up 保护下申请敏感 Scope，但不自动授予通配权限。
+- [ ] 实现由平台固定初始化、无需动态注册的内置 OAuth 公共 CLI Client：Token Endpoint 支持 `token_endpoint_auth_method=none`，仅允许严格 loopback redirect，完成 Authorization Code + PKCE、刷新和吊销。
+- [x] 拆分 OAuth 与个人访问令牌 Scope 策略：普通用户可授权项目空间和账号级 OAuth Scope，平台管理 Scope 仅允许平台管理员；敏感 Scope 不进入默认推荐集合或个人访问令牌目录。CLI 会在已知命令发送前检查 Grant，缺少 Scope 时返回可执行的重新授权提示；数据导出统一使用 `deployment:data_export`，且项目 RBAC 与 Step-up MFA 仍由后端最终判断。
 - [x] 实现 RFC 8628 Device Authorization Grant，包括设备授权端点、浏览器 GET/POST 确认接口、CSRF 防护、哈希状态、批准/拒绝、轮询限流、过期清理和一次性兑换；`luna login` 默认使用该流程。
 - [x] 改造 Step-up MFA 与交互认证上下文：OAuth Bearer 可验证 OTP/恢复码并按 OAuth Grant + purpose 读取 assertion；终端预授权、终端存活监控和数据导出票据支持绑定 Web Session 或 OAuth Grant；个人访问令牌仍不得绕过 MFA 保护。
 - [x] 将 OAuth Device Code、Token、Revoke 和 Discovery 协议端点纳入 OpenAPI 隐藏协议适配层，并增加 OpenAPI operation 到 Gin Router 的常驻契约测试，防止 CLI 已登记能力落入后端空路由。
@@ -1036,6 +1037,23 @@ CLI 已迁移到独立仓库 [`LiteyukiStudio/luna-cli`](https://github.com/Lite
 - [x] 将 Luna CLI Skill 强制纳入独立仓库 `v*` 配套发版：使用单一 `luna-devops` 根 Skill 和领域 `references/` 渐进加载，完成结构与命令同步校验、可重复 `.skill` 打包、SHA-256、精确版本 manifest 和 OIDC provenance，并与 CLI 一起进入同一 GitHub Release；独立 Skill 工作流仅保留手动打包验证。
 - [ ] 在发布首个稳定版 Luna DevOps Skill 前，完成真实实例的只读、变更、失败、权限、MFA 与脱敏评估，再标记 Skill 稳定可用。
 - [ ] 建立 Agent 安全与可靠性评估集：覆盖提示注入、恶意日志/仓库内容、终端控制字符、越权工具选择、计划重放、目标集合漂移、无限分页/轮询、MFA 用户在场、执行后状态验证和审计关联；安全不变量要求 100% 通过。
+
+## 17. 内嵌 AI 助手
+
+详细规格见 [`notes/11-内嵌AI助手规格.md`](notes/11-内嵌AI助手规格.md)。此前移除的
+旧 MCP 内嵌方案保持移除；新方案使用独立 `luna-agent`、LangGraph.js 和平台
+OpenAPI，不把 MCP 作为内部服务总线。
+
+- [x] 确定产品形态、独立运行架构、编排框架、OpenAPI 工具边界、会话模型、多用户隔离、批准与 MFA、安全不变量、可观测性和分阶段实施方案。
+- [x] 基于 Mock 数据实现首版前端交互壳：全局悬浮入口、桌面可拖动/调整尺寸窗口、移动端全屏布局、三行 Thinking、默认折叠 Tool Call、参数与结果详情、Mock 会话切换和声明式路由联动；暂不接入 AI API。
+- [x] P0：实现默认关闭的只读助手、私有会话、持久 Timeline/SSE 游标恢复、页面上下文、声明式 UI Action 和只读诊断工具。
+- [ ] P1：已实现 OpenAPI Agent 元数据、参数绑定批准、Step-up MFA、幂等/CAS、Delegation、审计和执行后验证框架；仍需逐项评审并开放生产写操作目录。
+- [x] P2：实现构建、运行时事件、Gateway、证书、发布、Hook 和通知投递的固定列只读诊断工具，并接入统一诊断图。
+- [x] 完成正式前端与 BFF/Agent 接线：私有会话管理、Timeline Presenter、SSE 重连、三行 Thinking、默认折叠 Tool Call、批准/MFA/补充输入、桌面拖拽缩放、移动端全屏和 AI 管理设置。
+- [x] 完成独立 `luna-agent` 生产骨架、`ai` schema 迁移、动态 Provider 配置、Secret Store、Helm/Docker Compose 部署、NetworkPolicy、双语使用文档和 OpenAPI 契约。
+- [x] 将 `devops-agent` 纳入工程化发版链路：生产/源码/开发 Compose、环境变量示例、Helm 镜像说明、release quality gate、DockerHub 多镜像矩阵、SBOM 与 provenance。
+- [ ] P3：评估显式长期记忆、项目空间共享知识和外部 MCP 扩展；默认不启用。
+- [ ] 建立跨用户、跨项目、权限变化、提示注入、批准重放、Secret 脱敏、成本和 Agent 故障恢复测试门禁。
 
 ## 100.优化需求
 

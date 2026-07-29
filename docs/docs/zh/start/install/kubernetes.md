@@ -30,6 +30,8 @@ postgres:17-alpine
 redis:8-alpine
 ```
 
+AI 助手默认关闭。发布工作流同时发布 `liteyukistudio/devops-agent`，但只有设置 `ai.enabled=true` 并提供 `ai.existingSecret` 后 Chart 才会部署 Agent。
+
 ## 打开控制台
 
 先把 API Service 转发到本机：
@@ -51,7 +53,8 @@ helm upgrade --install luna-devops ./charts/luna-devops \
   --namespace luna-devops \
   --create-namespace \
   --set api.image.tag=v0.1.0-rc.1 \
-  --set worker.image.tag=v0.1.0-rc.1
+  --set worker.image.tag=v0.1.0-rc.1 \
+  --set ai.agent.image.tag=v0.1.0-rc.1
 ```
 
 ## 通过公网域名访问
@@ -104,6 +107,8 @@ helm upgrade --install luna-devops ./charts/luna-devops \
 | `app.publicBaseUrl` | `http://localhost:8088` | 控制台对外访问地址。启用 Ingress 后必须改成公网地址。 |
 | `app.secretEncryptionKey` | 首次安装自动生成 | 用于加密 Git、镜像站和 OIDC 密钥。生产环境要保持稳定。 |
 | `api.image.tag` / `worker.image.tag` | `nightly` | API 和 worker 镜像版本。 |
+| `ai.enabled` | `false` | 是否部署独立 AI Agent。启用时必须设置 `ai.existingSecret`。 |
+| `ai.agent.image.tag` | 与 Chart `appVersion` 一致 | Agent 镜像版本。正式发版与 API、Worker 使用同一 tag。 |
 | `postgresql.enabled` | `true` | 是否安装内置 PostgreSQL。 |
 | `redis.enabled` | `true` | 是否安装内置 Redis。 |
 | `externalRedis.url` | 空 | 外部 Redis 完整连接 URI；关闭内置 Redis 时配置。 |

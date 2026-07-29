@@ -1,3 +1,5 @@
+export type * from './ai-types'
+export { isUsableAICapabilities } from './ai-types'
 export { api } from './client'
 export { ApiError } from './core'
 export type * from './topology-types'

@@ -20,6 +20,7 @@ Docker Compose 是最快的体验方式，适合个人服务器、测试环境�
 ```text
 liteyukistudio/devops-api:nightly
 liteyukistudio/devops-worker:nightly
+liteyukistudio/devops-agent:nightly（仅 AI profile）
 ```
 
 验证指定版本时，在启动命令前设置镜像 tag：
@@ -46,10 +47,29 @@ docker compose up -d
 
 这会启动 PostgreSQL、带密码认证的 Redis、API 和 Worker。API 会先完成数据库 migration；只有 `/healthz` 通过后 Compose 才启动 Worker，因此全新数据库不会被 Worker 提前访问。API 镜像已经内嵌前端页面，不需要单独启动 Vite。第一次进入时打开 `/bootstrap`，使用 `.env` 中的 `BOOTSTRAP_TOKEN` 创建首个管理员，完成后轮换或移除该一次性 Token。
 
+### 启用 AI 助手
+
+AI Agent 使用独立 profile，默认不会启动。先在 `.env` 中设置：
+
+- `AI_AGENT_SERVICE_TOKEN` 与 `AI_ACTOR_CONTEXT_SIGNING_KEY`：至少 32 字符且彼此独立；
+- `AI_AGENT_CALLBACK_SERVICE_TOKEN`：Agent 回调 Luna API 的独立服务凭据；
+- `AI_RUN_ACTOR_GRANT_SIGNING_KEY` 与 `AI_DELEGATION_TOKEN_SIGNING_KEY`：Run Grant 与短时 Delegation 的独立签名键；
+- `AI_RUN_GRANT_ENCRYPTION_KEY_BASE64`：32 个随机字节的 Base64，必须稳定保存。
+
+然后启动：
+
+```bash
+AI_ASSISTANT_AVAILABLE=true docker compose --profile ai up -d
+```
+
+登录后在“全局设置 → AI 助手”配置 Provider、模型、访问范围和配额。Provider API Key 由平台 Secret Store 保存，不写入 `.env`。排障时可查看 `docker compose --profile ai logs -f agent`。
+
 如果想从当前源码构建镜像：
 
 ```bash
 docker compose -f docker-compose-build.yaml up -d --build
+# 连同 Agent：
+AI_ASSISTANT_AVAILABLE=true docker compose -f docker-compose-build.yaml --profile ai up -d --build
 ```
 
 ## 打开控制台

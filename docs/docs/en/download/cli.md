@@ -110,6 +110,15 @@ See [Source Development and Verification](/en/develop/cli-development) for repos
 - Terminal and data-export operations use dedicated WebSocket/download protocol
   adapters. They require a CLI OAuth login and step-up MFA for the matching
   purpose; a personal access token cannot satisfy or bypass that requirement.
+- `luna login` requests only common scopes appropriate for the current role.
+  Sensitive scopes such as terminal and data export are never granted by
+  default and require explicit reauthorization.
+- Before sending a known command, the CLI checks the active OAuth grant. A
+  missing scope returns `oauth_scope_required` with a `luna login` remediation
+  command that preserves existing scopes. If command metadata does not yet
+  declare a scope, the server includes `requiredScope` in its denial and the
+  CLI produces the same remediation. Scopes never replace project roles or
+  backend authorization.
 
 Machines and Agents discover capabilities through the machine catalog rather
 than parsing human-oriented help:

@@ -102,6 +102,13 @@ luna --lang zh-CN project get-projects --help
 - `api request` 只供人类诊断已知相对 API 路径，并在 Agent 模式下固定禁用；它不能拿来伪装平台尚未进入 OpenAPI 或尚未完成专用传输的业务能力。
 - 终端和数据导出由专用 WebSocket/下载协议适配器执行。它们要求 CLI OAuth
   登录并完成对应 purpose 的 Step-up MFA；个人访问令牌不能满足或绕过该要求。
+- `luna login` 默认只请求当前角色适用的常用 Scope。终端、数据导出等敏感
+  Scope 不会默认授予，需要用户明确重新授权。
+- CLI 会在发送已知命令前检查当前 OAuth Grant。缺少 Scope 时返回
+  `oauth_scope_required`，并给出包含现有和缺失 Scope 的 `luna login`
+  命令。如果命令元数据尚未声明 Scope，服务端也会在权限不足响应中返回
+  `requiredScope`，CLI 会用同一方式生成重新授权命令。Scope 不能替代项目空间
+  角色和后端权限校验。
 
 机器或 Agent 应通过机器目录发现能力，不解析人类帮助文本：
 
