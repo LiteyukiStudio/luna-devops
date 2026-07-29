@@ -17,6 +17,7 @@ Thumbs.db
 
 bin/
 tmp/
+release/
 .local/
 .workbuddy/
 .cache/
@@ -55,6 +56,12 @@ web/coverage/
 web/playwright-report/
 web/test-results/
 web/*.local
+
+# Agent 镜像从独立 lockfile 安装依赖，本地依赖、构建和覆盖率产物不进入上下文。
+luna-agent/node_modules/
+luna-agent/dist/
+luna-agent/coverage/
+luna-agent/*.local
 
 # Documentation site dependencies and generated output can be very large locally.
 docs/node_modules/

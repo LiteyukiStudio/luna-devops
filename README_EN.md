@@ -90,8 +90,9 @@ go run ./cmd/worker
 Run the frontend:
 
 ```bash
-pnpm --dir web install
-pnpm --dir web dev
+cd web
+pnpm install
+pnpm dev
 ```
 
 The Vite dev server proxies `/api/v1` to `http://localhost:8080`.
@@ -213,6 +214,7 @@ pnpm --dir web build
 Project conventions:
 
 - Use `pnpm` for frontend dependencies.
+- `web/`, `docs/`, `tests/`, and `luna-agent/` each own their manifests and lockfiles. There is no cross-directory root pnpm workspace; any pnpm project settings stay inside the owning directory.
 - Use `uv` for Python tooling.
 - Keep backend handlers thin; put business logic in services and external integrations in providers.
 - Keep user-facing frontend text in i18n files.

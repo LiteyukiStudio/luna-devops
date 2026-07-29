@@ -1,6 +1,8 @@
 {
-  "extends": "../tsconfig.base.json",
   "compilerOptions": {
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
     "target": "ES2023",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
@@ -9,7 +11,9 @@
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
-    "noEmit": true
+    "noEmit": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true
   },
   "include": ["src/**/*.ts", "tests/**/*.ts", "eslint.config.js"]
 }

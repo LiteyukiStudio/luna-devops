@@ -1,6 +1,7 @@
 {
   "name": "luna-devops-tests",
   "private": true,
+  "packageManager": "pnpm@11.1.0",
   "type": "module",
   "scripts": {
     "api": "node api-smoke.mjs",
@@ -11,4 +12,3 @@
     "@playwright/test": "^1.57.0"
   }
 }
-

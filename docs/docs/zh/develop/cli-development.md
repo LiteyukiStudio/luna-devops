@@ -18,8 +18,8 @@ git clone git@github.com:LiteyukiStudio/luna-cli.git cli
 pnpm --dir cli install --frozen-lockfile
 ```
 
-该目录不属于平台 pnpm workspace，不会进入平台提交或发布制品。也可以把 CLI
-仓库克隆到任意其他目录。
+该目录不参与平台各子项目的 pnpm 依赖管理，也不会进入平台提交或发布制品。
+也可以把 CLI 仓库克隆到任意其他目录。
 
 ## 目录职责
 

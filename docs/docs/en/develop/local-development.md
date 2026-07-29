@@ -9,12 +9,14 @@ For day-to-day work, split the processes like this:
 - PostgreSQL, Redis, and worker run through `docker-compose-dev.yaml`.
 - API runs on the host for Go debugging.
 - Web runs on the host for Vite hot reload.
+- `web/`, `docs/`, `tests/`, and `luna-agent/` are independent pnpm projects. Each directory owns its dependencies, lockfile, and any required pnpm project settings; there is no cross-directory root workspace.
 
 ```bash
 docker compose -f docker-compose-dev.yaml up -d --build
 go run ./cmd/api
-pnpm --dir web install
-pnpm --dir web dev
+cd web
+pnpm install
+pnpm dev
 ```
 
 ## Backend entry points

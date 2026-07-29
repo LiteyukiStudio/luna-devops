@@ -22,9 +22,9 @@ git clone git@github.com:LiteyukiStudio/luna-cli.git cli
 pnpm --dir cli install --frozen-lockfile
 ```
 
-The directory is not part of the platform pnpm workspace and is never included
-in platform commits or release artifacts. The CLI can also be cloned anywhere
-else.
+The directory is not part of any platform package's pnpm dependency management
+and is never included in platform commits or release artifacts. The CLI can
+also be cloned anywhere else.
 
 ## Repository layout
 

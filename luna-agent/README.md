@@ -20,11 +20,12 @@ Timeline 或日志；缓存过期后的下一次真实调用会使用后台新�
 
 ## 本地运行
 
-服务属于根 pnpm workspace，不维护自己的 lockfile。
+服务是独立 pnpm 项目，依赖和 lockfile 都由 `luna-agent/` 自己维护。
 
 ```bash
+cd luna-agent
 pnpm install
-pnpm --dir luna-agent dev
+pnpm dev
 ```
 
 `dev` 会自动读取 `luna-agent/.env.local`（文件不存在时继续使用当前进程环境），
@@ -103,10 +104,11 @@ Tool Call ID 去重，历史 Timeline 不会再次触发跳转。
 ## 验证
 
 ```bash
-pnpm --dir luna-agent lint
-pnpm --dir luna-agent typecheck
-pnpm --dir luna-agent test
-pnpm --dir luna-agent build
+cd luna-agent
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
 ```
 
 尚未在本目录实现的跨模块 P0 内容包括：平台 OpenAPI 生成 Client、Go BFF、

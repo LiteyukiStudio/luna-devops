@@ -3,11 +3,11 @@ FROM node:25-alpine AS web-build
 
 WORKDIR /src/web
 
-# 固定 pnpm 版本，避免不同构建环境解析 lockfile 时行为漂移。
-RUN npm install -g pnpm@10.20.0
+# 固定 pnpm 版本，与 web/package.json 声明保持一致。
+RUN npm install -g pnpm@11.1.0
 
 # 先复制依赖清单以复用 Docker layer cache，再复制完整前端源码。
-COPY web/package.json web/pnpm-lock.yaml ./
+COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 
 COPY web/ ./

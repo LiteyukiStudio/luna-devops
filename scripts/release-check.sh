@@ -88,7 +88,7 @@ section "Running race tests for critical packages"
 AUTH_TEST_DATABASE_URL="" go test -race ./internal/api ./internal/worker ./internal/provider/kubernetes ./internal/secret
 
 section "Installing locked frontend dependencies"
-pnpm install --frozen-lockfile --filter @luna-devops/agent...
+pnpm --dir luna-agent install --frozen-lockfile
 pnpm --dir web install --frozen-lockfile
 pnpm --dir docs install --frozen-lockfile
 

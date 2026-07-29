@@ -9,12 +9,14 @@
 - PostgreSQL、Redis 和 worker 用 `docker-compose-dev.yaml`。
 - API 在宿主机运行，方便调试 Go 代码。
 - Web 在宿主机运行，享受 Vite 热更新。
+- `web/`、`docs/`、`tests/` 和 `luna-agent/` 都是独立 pnpm 项目，各自在目录内维护依赖、lockfile 和必要的 pnpm 项目配置，不使用跨目录的根 workspace。
 
 ```bash
 docker compose -f docker-compose-dev.yaml up -d --build
 go run ./cmd/api
-pnpm --dir web install
-pnpm --dir web dev
+cd web
+pnpm install
+pnpm dev
 ```
 
 ## 后端入口

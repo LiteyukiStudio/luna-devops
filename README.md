@@ -90,8 +90,9 @@ go run ./cmd/worker
 运行前端：
 
 ```bash
-pnpm --dir web install
-pnpm --dir web dev
+cd web
+pnpm install
+pnpm dev
 ```
 
 Vite 开发服务器会将 `/api/v1` 代理到 `http://localhost:8080`。
@@ -206,6 +207,7 @@ pnpm --dir web build
 项目约定：
 
 - 前端依赖统一使用 `pnpm`。
+- `web/`、`docs/`、`tests/` 和 `luna-agent/` 分别维护自己的依赖清单与 lockfile，不使用跨目录的根 pnpm workspace；需要 pnpm 项目配置时也只放在对应工作目录。
 - Python 工具链统一使用 `uv`。
 - 后端 Handler 保持精简，业务逻辑放入 Service，外部平台集成放入 Provider。
 - 所有用户可见的前端文案都放入 i18n 文件。

@@ -2,6 +2,7 @@
   "name": "@luna-devops/agent",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@11.1.0",
   "type": "module",
   "engines": {
     "node": ">=24"

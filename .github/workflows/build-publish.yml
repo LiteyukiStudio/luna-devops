@@ -68,9 +68,9 @@ jobs:
           node-version: 24
           cache: pnpm
           cache-dependency-path: |
-            pnpm-lock.yaml
             web/pnpm-lock.yaml
             docs/pnpm-lock.yaml
+            luna-agent/pnpm-lock.yaml
 
       - name: Set up Helm
         uses: azure/setup-helm@v4

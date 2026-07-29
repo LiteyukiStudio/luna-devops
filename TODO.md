@@ -210,6 +210,7 @@
 - [x] Redis 客户端连接收敛为唯一的 `REDIS_ADDR` URI：API、Worker、任务命令及 Asynq 调度共用解析结果；部署层不再从 URI 反向拆密码，完整 Compose 用 `REDIS_PASSWORD` 直接启动内置 Redis，并组装内部 URI；Helm 分别保存内置密码与客户端 URI，外部 Redis 继续使用完整 URI Secret。
 - [x] 完整 Compose 的 Worker 等待 API `/healthz` 通过后再启动，避免全新数据库首次 migration 尚未完成时提前访问业务表。
 - [x] 新增 GitHub Actions 容器发布工作流：仅构建 `linux/amd64` 容器镜像，发布 DockerHub `liteyukistudio/luna-devops`、`liteyukistudio/luna-worker`、`liteyukistudio/luna-agent`；分支发布 `nightly`，`v*` tag 发布版本 tag，稳定版本 tag 额外发布 `latest`；`luna-devops` 使用 `embed_web` 内嵌前端静态文件，不额外构建或上传 GitHub Release 二进制产物。
+- [x] 移除跨目录的根 pnpm workspace：`web/`、`docs/`、`tests/` 与 `luna-agent/` 分别维护 package、lockfile、必要的单项目 pnpm 配置和开发命令；API/Agent Docker 构建及发布质量门禁只消费对应子项目锁文件，避免本地 workspace 与镜像独立安装产生锁文件语义分裂。
 - [x] 修复内嵌 SPA 根路径和 fallback 被 Go FileServer 重定向到 `./` 的问题：`index.html` 改为直接返回，避免服务端根路径出现不必要 301。
 - [x] 新增发布质量门禁 `scripts/release-check.sh`：要求干净工作区、精确 Go `1.26.5` 和 `AUTH_TEST_DATABASE_URL`，统一执行 Go test/vet/race、不可缓存的 PostgreSQL 认证/迁移集成测试、前端测试/lint/build、文档构建、生产 pnpm 依赖 high/critical 审计、Go 可达漏洞扫描与 Helm lint/render；GitHub Quality Job 自动启动 PostgreSQL。普通 Go/race 套件不注入数据库地址，真实 PostgreSQL 集成测试只执行一次，避免同一批用例在 CI 中重复三次。
 
@@ -1000,8 +1001,8 @@ CLI 已迁移到独立仓库 [`LiteyukiStudio/luna-cli`](https://github.com/Lite
 - [x] 确定 CLI 技术栈、两级工具命令、`key=value` 与多行/复杂输入规范、参数校验、单活动实例与账号凭据、活动登录默认项目空间、版本化 JSON Envelope、OAuth、Device Code、Access Token、Step-up MFA、i18n、AI 输出契约、npm/pnpm 安装、独立仓库 `v*` 发版、npm Trusted Publishing 和 Bun 单二进制方案。
 - [x] 完成 CLI spec 与 AI Agent 可实施性审计：按 `method + normalizedPath` 建立平台路由覆盖基线；明确普通业务命令、协议适配、浏览器回调、Webhook 接收器和显式排除等边界，`api request` 不计入覆盖；实时路由和命令数量统一由覆盖脚本输出，不在 TODO 复制快照。
 - [x] 移除旧 MCP 与内嵌 Assistant 设计，将 `ai-supports` 收敛为仅通过未来 `luna` CLI 工作的预发布 Skills。
-- [x] 建立根 pnpm workspace，抽取环境无关的 `@luna-devops/api-contract` 与 `@luna-devops/api-client`，CLI 从生成契约注册命令并复用统一 HTTP 客户端。
-- [ ] 将 Web 现有 API Client 渐进迁移到共享 contract/client；保持浏览器 Session、CSRF 和页面状态只属于 Web，不进入共享包。
+- [x] 曾通过根 pnpm workspace 抽取环境无关契约与客户端；CLI 迁移到独立仓库后，共享包一并迁出，平台根 workspace 已移除。
+- [x] CLI 迁出后取消 Web 迁移到跨仓共享包的计划；Web 保持自有 API Client，浏览器 Session、CSRF 和页面状态继续只属于 Web。
 - [x] 建立并通过 `pnpm check:platform-cli-coverage` 门禁：从 Gin Router 提取完整路由，逐路由分类为普通业务命令、协议适配、浏览器回调、Webhook 接收器或显式排除；普通业务 HTTP API 以 OpenAPI 为唯一事实源并生成 CLI 规范命令，协议适配必须由 OpenAPI 隐藏操作和精确 `method + path` 分类共同审计；禁止路径前缀通配排除，要求普通业务命令覆盖率 100%。所有允许 Bearer 调用的业务与协议路由还必须具有稳定非 `system:unmapped` Scope，且 OpenAPI 与运行时鉴权映射一致。
 - [ ] 新增语言无关的 `openapi/errors.yaml` 错误目录，把业务、OAuth、MFA、SSE、WebSocket、下载和服务端入口收敛到稳定错误 Envelope；Go、OpenAPI、Web 和 CLI 均从同一目录生成或校验，运行时出现未登记错误码时契约测试失败。
 - [ ] 为 Agent 可调用 operation 补齐 JSON Schema Draft 2020-12 输入/输出契约和 `x-luna-cli` 风险、敏感字段、dry-run、并发、资源上限、批准元数据；实现 `agent=true`、`params=@file|@-`、按 query/category/risk/scope 受限发现和 Schema digest 漂移检测。
