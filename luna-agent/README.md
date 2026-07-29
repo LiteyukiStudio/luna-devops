@@ -27,6 +27,10 @@ pnpm install
 pnpm --dir luna-agent dev
 ```
 
+`dev` 会自动读取 `luna-agent/.env.local`（文件不存在时继续使用当前进程环境），
+因此本地 Provider、模型和测试密钥可以保存在该 Git 忽略文件中，不需要写入命令行
+或提交到仓库。
+
 开发默认使用内存 Repository、确定性 Provider 和显式开发身份：
 
 ```bash
@@ -80,6 +84,21 @@ golang-migrate Job 管理，Agent 不会在启动时自动迁移。
 SSE 游标是单 Run 单调递增的 `event_sequence`。事件先持久化，随后才能被读取；
 Redis fan-out 接入后也必须维持这一顺序。Provider 的原始 partial JSON、隐藏思维
 链和续接 artifact 不进入 Timeline。
+
+系统提示 `system-v2` 会向模型提供当前会话标题、标题来源和轮次。内建
+`rename_conversation` 工具负责首轮命名与明显话题漂移后的标题修正；浏览器手动
+命名会把来源持久化为 `user`，之后模型不再看到该工具，Repository 也会拒绝
+Agent 覆盖。该双层保护不能被 Prompt 遵循情况替代。
+
+新 Run 使用 `system-v3`。它在 `system-v2` 基础上加载
+`skills/luna-devops-navigation/SKILL.md`，要求模型在回答引用平台注册页面或可信
+资源 ID 时输出根相对 Markdown 链接。Skill 随 Agent 镜像发布；前端仍会独立校验
+平台注册路径，Prompt 或 Skill 不能把任意 URL 提升为站内导航。
+
+内建 `create_options` 为每个下一步选项保存稳定 ID 和独立重复策略：注册路由跳转
+默认可重复，发送消息与请求操作成功后只锁定自身。`navigate_to_route` 是单独的
+自动 UI 工具，仅用于用户明确要求的页面切换；浏览器只消费实时 SSE 完成事件并按
+Tool Call ID 去重，历史 Timeline 不会再次触发跳转。
 
 ## 验证
 

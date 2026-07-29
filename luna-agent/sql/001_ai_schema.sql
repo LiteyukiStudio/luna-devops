@@ -7,11 +7,16 @@ create table if not exists ai.conversations (
   owner_user_id text not null,
   project_id text,
   title text not null,
+  title_source text not null default 'default' check (title_source in ('default', 'assistant', 'user')),
   status text not null default 'active' check (status = 'active'),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 create index if not exists conversations_owner_updated on ai.conversations(owner_user_id, updated_at desc);
+alter table ai.conversations
+  add column if not exists title_source text not null default 'default'
+  check (title_source in ('default', 'assistant', 'user'));
+update ai.conversations set title_source = 'user' where title <> '新会话' and title_source = 'default';
 
 create table if not exists ai.turns (
   id text primary key,

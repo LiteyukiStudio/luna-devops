@@ -1,11 +1,12 @@
 import type { Repository } from "./persistence/repository.js"
 import type { RunEvent, TimelineItem } from "./domain.js"
 import { normalizeEventSequence } from "./event-sequence.js"
+import type { optionUIActions } from "./tools/ui-options.js"
 
 export async function presentTimeline(repository: Repository, ownerUserId: string, conversationId: string) {
   const snapshot = await repository.getTimeline(ownerUserId, conversationId)
   if (!snapshot) return undefined
-  const eventCursors = await Promise.all(snapshot.turns.flatMap(turn => turn.run ? [turn.run] : []).map(async run => {
+  const eventCursors = await Promise.all(snapshot.turns.flatMap(turn => turn.run && !isTerminal(turn.run.status) ? [turn.run] : []).map(async run => {
     const events = await repository.getEvents(ownerUserId, run.id, 0)
     return { runId: run.id, after: events.at(-1) ? normalizeEventSequence(events.at(-1)!.sequence) : 0 }
   }))
@@ -13,6 +14,7 @@ export async function presentTimeline(repository: Repository, ownerUserId: strin
     conversation: {
       id: snapshot.conversation.id,
       title: snapshot.conversation.title,
+      titleSource: snapshot.conversation.titleSource,
       status: snapshot.conversation.status,
     },
     turns: snapshot.turns.map(turn => ({
@@ -30,12 +32,17 @@ export async function presentTimeline(repository: Repository, ownerUserId: strin
           runIndex: turn.run.runIndex,
           status: turn.run.status === "expired" ? "failed" as const : turn.run.status,
           expectedVersion: turn.run.rowVersion,
+          ...(turn.run.errorCode ? { errorCode: turn.run.errorCode } : {}),
           items: turn.items.filter(item => item.type !== "user_message").map(presentItem),
         },
       } : {}),
     })),
     eventCursors,
   }
+}
+
+function isTerminal(status: string) {
+  return ["completed", "failed", "canceled", "expired"].includes(status)
 }
 
 export async function presentEvent(repository: Repository, ownerUserId: string, event: RunEvent) {
@@ -65,6 +72,7 @@ function presentItem(item: TimelineItem) {
     type: mapType(item.type),
     status: item.status,
     parts: text === undefined ? [] : [{ id: `${item.id}:0`, partIndex: 0, type: "text" as const, text }],
+    ...(stringValue(item.content.relatedItemId) ? { relatedItemId: stringValue(item.content.relatedItemId) } : {}),
   }
   if (item.type !== "tool_call" && item.type !== "tool_result") {
     return {
@@ -75,6 +83,9 @@ function presentItem(item: TimelineItem) {
   const toolCallId = stringValue(item.content.toolCallId) ?? item.id
   const status = toolStatus(stringValue(item.content.status), item.status)
   const errorCode = stringValue(item.content.errorCode)
+  const titleKey = stringValue(item.content.titleKey) ?? errorCode
+  const argumentsHash = stringValue(item.content.argumentsHash)
+  const mfaPurpose = stringValue(item.content.mfaPurpose)
   return {
     ...base,
     toolCall: {
@@ -84,7 +95,13 @@ function presentItem(item: TimelineItem) {
       status,
       arguments: objectValue(item.content.arguments),
       ...(item.content.result !== undefined ? { result: presentToolResult(item.content.result) } : {}),
-      ...(errorCode ? { titleKey: errorCode } : {}),
+      ...(Array.isArray(objectValue(item.content.result).uiActions)
+        ? { uiActions: objectValue(item.content.result).uiActions as ReturnType<typeof optionUIActions> }
+        : {}),
+      ...(argumentsHash ? { argumentsHash } : {}),
+      ...(typeof item.content.expectedVersion === "number" ? { expectedVersion: item.content.expectedVersion } : {}),
+      ...(mfaPurpose ? { mfaPurpose } : {}),
+      ...(titleKey ? { titleKey } : {}),
     },
   }
 }
@@ -103,6 +120,10 @@ function presentToolResult(value: unknown) {
   return {
     summaryKey: stringValue(object.summaryKey) ?? "ai.tool.result.completed",
     ...(object.summaryParams && typeof object.summaryParams === "object" ? { summaryParams: object.summaryParams as Record<string, string | number | boolean> } : {}),
+    ...(stringValue(object.title) ? { fields: [
+      { labelKey: "aiAssistant.options.title", value: stringValue(object.title)! },
+      ...(stringValue(object.description) ? [{ labelKey: "aiAssistant.options.description", value: stringValue(object.description)! }] : []),
+    ] } : {}),
     presentation: { component: "key_value" as const, version: 1 as const },
   }
 }

@@ -14,19 +14,23 @@ import (
 
 	"github.com/LiteyukiStudio/devops/internal/aiagent"
 	"github.com/LiteyukiStudio/devops/internal/aitool"
+	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/gin-gonic/gin"
 )
 
 type aiToolPolicy struct {
-	OperationID string
-	Scopes      []string
-	ProjectRole []string
-	Risk        string
-	MFAPurpose  string
+	OperationID      string
+	Scopes           []string
+	ProjectRole      []string
+	Risk             string
+	ApprovalRequired bool
+	MFAPurpose       string
 }
 
 var aiToolPolicies = map[string]aiToolPolicy{
 	"getDashboard":               {OperationID: "getDashboard", Scopes: []string{"dashboard:read"}, Risk: "read"},
+	"listProjects":               {OperationID: "listProjects", Scopes: []string{"project:read"}, Risk: "read"},
+	"createProject":              {OperationID: "createProject", Scopes: []string{"project:write"}, Risk: "write"},
 	"listPlatformEvents":         {OperationID: "listPlatformEvents", Scopes: []string{"event:read"}, ProjectRole: []string{"owner", "admin", "developer"}, Risk: "read"},
 	"getProject":                 {OperationID: "getProject", Scopes: []string{"project:read"}, ProjectRole: []string{"owner", "admin", "developer"}, Risk: "read"},
 	"listApplications":           {OperationID: "listApplications", Scopes: []string{"application:read"}, ProjectRole: []string{"owner", "admin", "developer"}, Risk: "read"},
@@ -41,12 +45,15 @@ var aiToolPolicies = map[string]aiToolPolicy{
 }
 
 type aiDelegationExchangeInput struct {
-	RunActorGrant   string   `json:"runActorGrant"`
-	RunID           string   `json:"runId"`
-	ToolCallID      string   `json:"toolCallId"`
-	OperationID     string   `json:"operationId"`
-	RequestedScopes []string `json:"requestedScopes"`
-	ArgumentsHash   string   `json:"argumentsHash"`
+	RunActorGrant     string   `json:"runActorGrant"`
+	RunID             string   `json:"runId"`
+	ToolCallID        string   `json:"toolCallId"`
+	OperationID       string   `json:"operationId"`
+	RequestedScopes   []string `json:"requestedScopes"`
+	ArgumentsHash     string   `json:"argumentsHash"`
+	ApprovalGranted   bool     `json:"approvalGranted"`
+	MFAPurpose        string   `json:"mfaPurpose"`
+	StepUpAssertionID string   `json:"stepUpAssertionId"`
 }
 
 func (h *Handlers) ExchangeAIDelegation(ctx *gin.Context) {
@@ -67,12 +74,13 @@ func (h *Handlers) ExchangeAIDelegation(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusBadRequest, "ai.delegation_request_invalid", "delegation binding is incomplete")
 		return
 	}
-	if policy.Risk != "read" {
-		if policy.MFAPurpose == "" {
-			writeErrorCode(ctx, http.StatusForbidden, "ai.tool_policy_invalid", "write tool is missing an MFA purpose")
-			return
-		}
-		writeErrorCode(ctx, http.StatusPreconditionRequired, "ai.approval_required", "write tool requires bound approval and MFA")
+	highRisk := policy.Risk == "sensitive" || policy.Risk == "destructive"
+	if (highRisk || policy.ApprovalRequired) && !input.ApprovalGranted {
+		writeErrorCode(ctx, http.StatusPreconditionRequired, "ai.approval_required", "high-risk tool requires bound approval")
+		return
+	}
+	if policy.MFAPurpose != "" && input.MFAPurpose != policy.MFAPurpose {
+		writeErrorCode(ctx, http.StatusPreconditionRequired, "mfa_required", "high-risk tool requires step-up verification")
 		return
 	}
 	if !sameStringSet(input.RequestedScopes, policy.Scopes) {
@@ -89,6 +97,10 @@ func (h *Handlers) ExchangeAIDelegation(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusForbidden, "ai.authorization_changed", "actor authorization is no longer valid")
 		return
 	}
+	if policy.MFAPurpose != "" && !h.validAIToolMFAAssertion(grant, input.StepUpAssertionID, policy.MFAPurpose, now) {
+		writeErrorCode(ctx, http.StatusForbidden, "mfa.assertion_invalid", "step-up assertion is invalid for this tool")
+		return
+	}
 	claims := aiagent.DelegationClaims{
 		Audience: "luna-api-ai-tools", Purpose: "execute_registered_tool",
 		RunID: grant.RunID, ToolCallID: input.ToolCallID, OperationID: input.OperationID,
@@ -101,8 +113,20 @@ func (h *Handlers) ExchangeAIDelegation(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusServiceUnavailable, "ai.delegation_not_configured", "delegation signing is unavailable")
 		return
 	}
-	h.audit(grant.UserID, "ai.delegation.exchange", input.OperationID+":"+input.ToolCallID, true, "short-lived AI tool delegation issued")
+	h.audit(grant.UserID, "ai.delegation.exchange", input.OperationID+":"+input.ToolCallID, true, "short-lived user-bound AI tool delegation issued")
 	ctx.JSON(http.StatusOK, gin.H{"accessToken": token, "tokenType": "Bearer", "expiresIn": 60, "operationId": input.OperationID})
+}
+
+func (h *Handlers) validAIToolMFAAssertion(grant aiagent.RunActorGrant, assertionID, purpose string, now time.Time) bool {
+	if h.db == nil || strings.TrimSpace(assertionID) == "" {
+		return false
+	}
+	var assertion model.StepUpAssertion
+	return h.db.First(
+		&assertion,
+		"id = ? and user_id = ? and session_id = ? and purpose = ? and idle_expires_at > ? and absolute_expires_at > ?",
+		assertionID, grant.UserID, grant.SessionID, purpose, now, now,
+	).Error == nil && stepUpAssertionActive(assertion, now)
 }
 
 func (h *Handlers) ExecuteAIInternalTool(ctx *gin.Context) {
@@ -120,13 +144,13 @@ func (h *Handlers) ExecuteAIInternalTool(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusConflict, "ai.approval_arguments_changed", "tool arguments differ from delegated arguments")
 		return
 	}
-	result, code, errCode := h.executeRegisteredAIReadTool(ctx, claims, input.Arguments)
+	result, code, errCode := h.executeRegisteredAITool(ctx, claims, input.Arguments)
 	if errCode != "" {
 		h.audit(claims.UserID, "ai.tool.execute", claims.OperationID+":"+claims.ToolCallID, false, errCode)
 		writeErrorCode(ctx, code, errCode, "AI tool execution denied")
 		return
 	}
-	h.audit(claims.UserID, "ai.tool.execute", claims.OperationID+":"+claims.ToolCallID, true, "registered read-only AI tool executed")
+	h.audit(claims.UserID, "ai.tool.execute", claims.OperationID+":"+claims.ToolCallID, true, "registered user-bound AI tool executed")
 	ctx.JSON(http.StatusOK, gin.H{"operationId": claims.OperationID, "verified": true, "result": result})
 }
 
@@ -171,7 +195,7 @@ func (h *Handlers) authorizeAIDelegatedActor(ctx *gin.Context, claims aiagent.De
 	)
 }
 
-func (h *Handlers) executeRegisteredAIReadTool(ctx *gin.Context, claims aiagent.DelegationClaims, arguments map[string]any) (any, int, string) {
+func (h *Handlers) executeRegisteredAITool(ctx *gin.Context, claims aiagent.DelegationClaims, arguments map[string]any) (any, int, string) {
 	if h.aiTools == nil {
 		return nil, http.StatusServiceUnavailable, "ai.tool_service_unavailable"
 	}
@@ -184,6 +208,10 @@ func (h *Handlers) executeRegisteredAIReadTool(ctx *gin.Context, claims aiagent.
 		return nil, http.StatusForbidden, "ai.tool_target_out_of_scope"
 	case errors.Is(err, aitool.ErrNotFound):
 		return nil, http.StatusNotFound, "resource.not_found"
+	case errors.Is(err, aitool.ErrInvalidInput):
+		return nil, http.StatusBadRequest, "request.invalid"
+	case errors.Is(err, aitool.ErrConflict):
+		return nil, http.StatusConflict, "resource.conflict"
 	case err != nil:
 		return nil, http.StatusInternalServerError, "ai.tool_execution_failed"
 	default:

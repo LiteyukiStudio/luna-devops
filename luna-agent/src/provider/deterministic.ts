@@ -27,6 +27,6 @@ export class DeterministicProvider implements ModelProvider {
       if (request.signal?.aborted) throw request.signal.reason
       yield { type: "message_delta", delta: chunk }
     }
-    yield { type: "completed", usage: response.usage }
+    yield { type: "completed", usage: response.usage, ...(response.toolCalls ? { toolCalls: response.toolCalls } : {}) }
   }
 }

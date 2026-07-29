@@ -5998,7 +5998,7 @@ paths:
         - { name: after, in: query, required: false, schema: { type: integer, format: int64, minimum: 0 } }
         - { name: Last-Event-ID, in: header, required: false, schema: { type: string } }
       responses:
-        "200": { description: SSE event stream, content: { text/event-stream: { schema: { type: string } } } }
+        "200": { description: Unbuffered recoverable SSE stream of persisted content, thinking, tool, and run lifecycle deltas, content: { text/event-stream: { schema: { type: string } } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
   /api/v1/ai/runs/{runId}/cancel:
@@ -6059,7 +6059,7 @@ paths:
           required: true
           schema:
             type: string
-            enum: [getDashboard, listPlatformEvents, getProject, listApplications, listBuildRuns, listReleases, listRuntimeClusters, listGatewayRoutes, listGatewayCertificates, listProjectHookRuns, listNotificationDeliveries, listRuntimeEvents]
+            enum: [getDashboard, listProjects, listPlatformEvents, getProject, listApplications, listBuildRuns, listReleases, listRuntimeClusters, listGatewayRoutes, listGatewayCertificates, listProjectHookRuns, listNotificationDeliveries, listRuntimeEvents]
       requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { arguments: { type: object, additionalProperties: true } }, required: [arguments] } } } }
       responses:
         "200": { description: Redacted diagnostic result, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }
@@ -6294,7 +6294,10 @@ components:
         operationId: { type: string }
         requestedScopes: { type: array, items: { type: string } }
         argumentsHash: { type: string, pattern: "^sha256:[0-9a-f]{64}$" }
-      required: [runActorGrant, runId, toolCallId, operationId, requestedScopes, argumentsHash]
+        approvalGranted: { type: boolean, description: True only after the Agent validated the current parameter-bound approval. }
+        mfaPurpose: { type: string, description: Present only after a matching Step-up resume. }
+        stepUpAssertionId: { type: string, description: API-issued assertion revalidated for the delegated user, session, and purpose. }
+      required: [runActorGrant, runId, toolCallId, operationId, requestedScopes, argumentsHash, approvalGranted]
     AIDelegationResponse:
       type: object
       properties:

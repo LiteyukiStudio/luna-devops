@@ -15,11 +15,15 @@ export type ActorContext = {
   runId?: string
 }
 
+export type ConversationTitleSource = "default" | "assistant" | "user"
+export type PromptVersion = "system-v1" | "system-v2" | "system-v3"
+
 export type Conversation = {
   id: string
   ownerUserId: string
   projectId?: string
   title: string
+  titleSource: ConversationTitleSource
   status: "active"
   createdAt: string
   updatedAt: string
@@ -35,6 +39,12 @@ export type Turn = {
   createdAt: string
 }
 
+export type ConversationHistoryEntry = {
+  turnIndex: number
+  user: string
+  assistant: string
+}
+
 export type Run = {
   id: string
   conversationId: string
@@ -43,7 +53,7 @@ export type Run = {
   status: RunStatus
   rowVersion: number
   graphVersion: "assistant-v1"
-  promptVersion: "system-v1"
+  promptVersion: PromptVersion
   toolCatalogDigest: string
   pageContext: Record<string, unknown>
   createdAt: string
@@ -79,6 +89,7 @@ export type CreateTurn = {
   idempotencyKey: string
   preallocatedRunId?: string
   runActorGrantCiphertext?: string
+  toolCatalogDigest?: string
 }
 
 export type CreatedTurn = { turn: Turn, run: Run }

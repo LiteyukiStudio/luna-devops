@@ -5,7 +5,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
-	"github.com/LiteyukiStudio/devops/internal/resourceidentifier"
+	projectservice "github.com/LiteyukiStudio/devops/internal/project"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -77,43 +77,25 @@ func (h *Handlers) CreateProject(ctx *gin.Context) {
 	if !bindJSON(ctx, &input) {
 		return
 	}
-	input.Identifier = strings.TrimSpace(input.Identifier)
-	if err := resourceidentifier.Validate(input.Identifier, projectIdentifierMinLength, projectIdentifierMaxLength); err != nil {
+	project, err := projectservice.NewService(h.db).Create(ctx.Request.Context(), user.ID, projectservice.CreateInput{
+		Identifier: input.Identifier, Name: input.Name, Description: input.Description,
+		NamespaceStrategy: input.NamespaceStrategy, MaxConcurrentBuilds: input.MaxConcurrentBuilds,
+		WebConsoleEnabled: input.WebConsoleEnabled,
+	})
+	if errors.Is(err, projectservice.ErrIdentifierInvalid) {
 		writeErrorCode(ctx, http.StatusBadRequest, "project.identifier_invalid", err.Error())
 		return
 	}
-	if !h.ensureProjectIdentifierAvailable(ctx, input.Identifier, "") {
+	if errors.Is(err, projectservice.ErrIdentifierExists) {
+		writeErrorCode(ctx, http.StatusConflict, "project.identifier_exists", "project identifier already exists")
 		return
 	}
-
-	project := model.Project{
-		ID:                  resourceidentifier.ProjectID(input.Identifier),
-		Identifier:          input.Identifier,
-		KubernetesNamespace: resourceidentifier.ProjectNamespace(input.Identifier),
-		Name:                input.Name,
-		Description:         input.Description,
-		NamespaceStrategy:   fallback(input.NamespaceStrategy, "project"),
-		MaxConcurrentBuilds: normalizeBuildConcurrency(input.MaxConcurrentBuilds, defaultProjectBuildConcurrency),
-		WebConsoleEnabled:   true,
-		BillingOwnerUserID:  user.ID,
-	}
-	if input.WebConsoleEnabled != nil {
-		project.WebConsoleEnabled = *input.WebConsoleEnabled
-	}
-
-	if err := h.db.Create(&project).Error; err != nil {
-		writeError(ctx, http.StatusBadRequest, err.Error())
+	if errors.Is(err, projectservice.ErrInputInvalid) {
+		writeErrorCode(ctx, http.StatusBadRequest, "request.invalid", "project input is invalid")
 		return
 	}
-
-	member := model.ProjectMember{
-		ID:        id.New("mem"),
-		ProjectID: project.ID,
-		UserID:    user.ID,
-		Role:      "owner",
-	}
-	if err := h.db.Create(&member).Error; err != nil {
-		writeError(ctx, http.StatusBadRequest, err.Error())
+	if err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 	ctx.JSON(http.StatusCreated, h.projectResponse(project))

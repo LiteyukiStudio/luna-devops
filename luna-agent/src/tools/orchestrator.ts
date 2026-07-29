@@ -20,6 +20,7 @@ export interface ToolCallStore {
   update(id: string, expected: ToolCallStatus, patch: Partial<ToolCallRecord>): Promise<ToolCallRecord>
   emit(event: ToolEvent): Promise<void>
   countForRun(runId: string): Promise<number>
+  listAwaitingApproval(runId: string): Promise<ToolCallRecord[]>
 }
 export interface ToolResultVerifier {
   verify(operationId: string, result: ToolExecutionResult): Promise<{ ok: boolean, code?: string }>
@@ -62,22 +63,42 @@ export class ToolOrchestrator {
       status: "proposed", arguments: redact(args), argumentsHash, attempt: 1, rowVersion: 1,
     }
     await this.store.insert(record)
-    await this.store.emit({ type: "tool_call.proposed", toolCallId: record.id, data: { operationId: record.operationId, arguments: record.arguments, argumentsHash } })
+    await this.store.emit({ type: "tool.started", toolCallId: record.id, data: {
+      operationId: record.operationId, arguments: record.arguments, argumentsHash, expectedVersion: record.rowVersion,
+    } })
     return this.advance(record, { approved: false })
   }
 
   async approve(id: string, argumentsHash: string, expectedVersion: number): Promise<ToolCallRecord> {
     const call = await this.require(id)
-    if (call.status !== "awaiting_approval" || call.argumentsHash !== argumentsHash || call.rowVersion !== expectedVersion || (call.approvalExpiresAt ?? 0) < Date.now()) {
-      throw new Error("ai.approval_expired")
-    }
+    this.requireApprovalBinding(call, argumentsHash, expectedVersion)
+    await this.store.emit({ type: "approval.resolved", toolCallId: call.id, data: { decision: "approve", argumentsHash, expectedVersion } })
     return this.advance(call, { approved: true })
   }
 
-  async resumeMfa(id: string, purpose: string, expectedVersion: number): Promise<ToolCallRecord> {
+  async approveAll(runId: string): Promise<ToolCallRecord[]> {
+    const pending = await this.store.listAwaitingApproval(runId)
+    const results: ToolCallRecord[] = []
+    for (const call of pending) {
+      results.push(await this.approve(call.id, call.argumentsHash, call.rowVersion))
+    }
+    return results
+  }
+
+  async reject(id: string, argumentsHash: string, expectedVersion: number): Promise<ToolCallRecord> {
     const call = await this.require(id)
-    if (call.status !== "awaiting_mfa" || call.mfaPurpose !== purpose || call.rowVersion !== expectedVersion) throw new Error("ai.run_not_resumable")
-    return this.execute(call)
+    this.requireApprovalBinding(call, argumentsHash, expectedVersion)
+    return this.transition(call, "canceled", {}, "approval.resolved", { decision: "reject" })
+  }
+
+  async inspect(id: string): Promise<ToolCallRecord> {
+    return this.require(id)
+  }
+
+  async resumeMfa(id: string, purpose: string, expectedVersion: number, stepUpAssertionId: string): Promise<ToolCallRecord> {
+    const call = await this.require(id)
+    if (call.status !== "awaiting_mfa" || call.mfaPurpose !== purpose || call.rowVersion !== expectedVersion || !stepUpAssertionId) throw new Error("ai.run_not_resumable")
+    return this.execute(call, { approvalGranted: true, mfaPurpose: purpose, stepUpAssertionId })
   }
 
   async retryFailed(id: string): Promise<ToolCallRecord> {
@@ -90,7 +111,10 @@ export class ToolOrchestrator {
       attempt: previous.attempt + 1, rowVersion: 1,
     }
     await this.store.insert(retry)
-    await this.store.emit({ type: "tool_call.retry_proposed", toolCallId: retry.id, data: { previousToolCallId: previous.id, attempt: retry.attempt, argumentsHash: retry.argumentsHash } })
+    await this.store.emit({ type: "tool.started", toolCallId: retry.id, data: {
+      operationId: retry.operationId, arguments: retry.arguments, previousToolCallId: previous.id,
+      attempt: retry.attempt, argumentsHash: retry.argumentsHash, expectedVersion: retry.rowVersion,
+    } })
     return this.advance(retry, { approved: false })
   }
 
@@ -98,20 +122,23 @@ export class ToolOrchestrator {
     const operation = this.catalog.get(call.operationId)
     const decision = this.policy.evaluate(operation, state)
     if (decision.action === "wait_approval") {
-      return this.transition(call, "awaiting_approval", { approvalExpiresAt: Date.now() + 30 * 60_000 }, "tool_call.awaiting_approval")
+      return this.transition(call, "awaiting_approval", { approvalExpiresAt: Date.now() + 30 * 60_000 }, "approval.required")
     }
     if (decision.action === "wait_mfa") {
-      return this.transition(call, "awaiting_mfa", { mfaPurpose: decision.purpose }, "tool_call.awaiting_mfa")
+      return this.transition(call, "awaiting_mfa", { mfaPurpose: decision.purpose }, "mfa.required")
     }
-    return this.execute(call)
+    return this.execute(call, { approvalGranted: state.approved })
   }
 
-  private async execute(call: ToolCallRecord): Promise<ToolCallRecord> {
+  private async execute(call: ToolCallRecord, authorization: { approvalGranted: boolean, mfaPurpose?: string, stepUpAssertionId?: string }): Promise<ToolCallRecord> {
     const operation = this.catalog.get(call.operationId)
     const running = await this.transition(call, "running", {}, "tool_call.running")
     const result = await this.client.execute({
       runId: call.runId, toolCallId: call.id, operation, arguments: call.arguments,
       argumentsHash: call.argumentsHash, runActorGrant: await this.grantResolver(call.runId),
+      approvalGranted: authorization.approvalGranted,
+      ...(authorization.mfaPurpose ? { mfaPurpose: authorization.mfaPurpose } : {}),
+      ...(authorization.stepUpAssertionId ? { stepUpAssertionId: authorization.stepUpAssertionId } : {}),
     })
     return this.finish(running, result)
   }
@@ -129,15 +156,28 @@ export class ToolOrchestrator {
     return this.transition(call, "succeeded", { result: redact(result.body) }, "tool_call.succeeded")
   }
 
-  private async transition(call: ToolCallRecord, status: ToolCallStatus, patch: Partial<ToolCallRecord>, event: string) {
+  private async transition(call: ToolCallRecord, status: ToolCallStatus, patch: Partial<ToolCallRecord>, event: string, eventData: Record<string, unknown> = {}) {
     const next = await this.store.update(call.id, call.status, { ...patch, status, rowVersion: call.rowVersion + 1 })
-    await this.store.emit({ type: event, toolCallId: call.id, data: redact({ status, result: next.result, errorCode: next.errorCode, mfaPurpose: next.mfaPurpose }) })
+    await this.store.emit({ type: event, toolCallId: call.id, data: redact({
+      status,
+      result: next.result,
+      errorCode: next.errorCode,
+      purpose: next.mfaPurpose,
+      argumentsHash: next.argumentsHash,
+      expectedVersion: next.rowVersion,
+      ...eventData,
+    }) })
     return next
   }
   private async require(id: string) {
     const call = await this.store.get(id)
     if (!call) throw new Error("ai.tool_call_not_found")
     return call
+  }
+  private requireApprovalBinding(call: ToolCallRecord, argumentsHash: string, expectedVersion: number) {
+    if (call.status !== "awaiting_approval" || call.argumentsHash !== argumentsHash || call.rowVersion !== expectedVersion || (call.approvalExpiresAt ?? 0) < Date.now()) {
+      throw new Error("ai.approval_expired")
+    }
   }
 }
 
@@ -161,6 +201,9 @@ export class MemoryToolCallStore implements ToolCallStore {
   }
   async emit(event: ToolEvent) { this.events.push(event) }
   async countForRun(runId: string) { return [...this.records.values()].filter(item => item.runId === runId).length }
+  async listAwaitingApproval(runId: string) {
+    return [...this.records.values()].filter(item => item.runId === runId && item.status === "awaiting_approval")
+  }
 }
 
 export class ProjectingToolCallStore implements ToolCallStore {
@@ -169,18 +212,52 @@ export class ProjectingToolCallStore implements ToolCallStore {
   get(id: string) { return this.inner.get(id) }
   update(id: string, expected: ToolCallStatus, patch: Partial<ToolCallRecord>) { return this.inner.update(id, expected, patch) }
   countForRun(runId: string) { return this.inner.countForRun(runId) }
+  listAwaitingApproval(runId: string) { return this.inner.listAwaitingApproval(runId) }
   async emit(event: ToolEvent) {
     await this.inner.emit(event)
     const call = await this.inner.get(event.toolCallId)
     if (!call) return
-    await this.repository.appendEvent(call.runId, event.type, { toolCallId: call.id, ...event.data })
     const execution = await this.repository.getExecutionInput(call.runId)
     if (!execution) return
-    await this.repository.appendItem({
-      runId: call.runId, turnId: execution.turnId,
-      type: event.type === "tool_call.succeeded" || event.type === "tool_call.failed" ? "tool_result" : "tool_call",
-      status: event.type === "tool_call.failed" ? "failed" : "completed",
-      content: redact({ toolCallId: call.id, operationId: call.operationId, status: call.status, arguments: call.arguments, result: call.result, errorCode: call.errorCode }),
+    const itemId = `${call.id}:item`
+    const content = redact(toolCallContent(call))
+    const item = event.type === "tool.started"
+      ? await this.repository.appendItem({ id: itemId, runId: call.runId, turnId: execution.turnId, type: "tool_call", status: "streaming", content })
+      : await this.repository.updateItem(itemId, toolItemStatus(event.type), content)
+    if (isToolTerminalEvent(event.type)) {
+      await this.repository.appendItem({
+        id: `${call.id}:result`, runId: call.runId, turnId: execution.turnId, type: "tool_result",
+        status: event.type === "tool_call.failed" ? "failed" : "completed",
+        content: redact({ relatedItemId: itemId, result: call.result, errorCode: call.errorCode }),
+      })
+    }
+    await this.repository.appendEvent(call.runId, publicToolEventType(event.type), {
+      itemId, toolCallId: call.id, timelineIndex: item.timelineIndex, ...event.data,
     })
   }
+}
+
+function toolCallContent(call: ToolCallRecord) {
+  return {
+    toolCallId: call.id, operationId: call.operationId, status: call.status,
+    arguments: call.arguments, result: call.result, errorCode: call.errorCode,
+    argumentsHash: call.argumentsHash, expectedVersion: call.rowVersion, mfaPurpose: call.mfaPurpose,
+  }
+}
+
+function isToolTerminalEvent(type: string) {
+  return type === "tool_call.succeeded" || type === "tool_call.failed"
+}
+
+function toolItemStatus(type: string): "streaming" | "completed" | "failed" {
+  if (type === "tool_call.failed") return "failed"
+  return type === "tool_call.succeeded" || type === "approval.resolved" ? "completed" : "streaming"
+}
+
+function publicToolEventType(type: string) {
+  if (type === "tool_call.running") return "tool.progress"
+  if (type === "tool_call.succeeded") return "tool.completed"
+  if (type === "tool_call.failed") return "tool.failed"
+  if (type === "tool_call.awaiting_mfa") return "mfa.required"
+  return type
 }

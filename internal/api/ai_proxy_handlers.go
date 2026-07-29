@@ -93,12 +93,23 @@ func (h *Handlers) ProxyAIRequest(ctx *gin.Context) {
 			return
 		}
 	}
+	if ctx.FullPath() == "/api/v1/ai/runs/:runId/mfa/:toolCallId/resume" {
+		var prepared bool
+		body, prepared = h.prepareAIToolMFAResume(ctx, actor, body)
+		if !prepared {
+			return
+		}
+	}
+	contentType := ctx.GetHeader("Content-Type")
+	if len(body) == 0 {
+		contentType = ""
+	}
 	response, err := h.aiAgent.Do(ctx.Request.Context(), actor, aiagent.Request{
 		Method:         route.method,
 		Path:           expandAIInternalPath(route.internal, ctx),
 		Query:          cloneAIQuery(ctx.Request.URL.Query()),
 		Body:           body,
-		ContentType:    ctx.GetHeader("Content-Type"),
+		ContentType:    contentType,
 		LastEventID:    strings.TrimSpace(ctx.GetHeader("Last-Event-ID")),
 		IdempotencyKey: strings.TrimSpace(ctx.GetHeader("Idempotency-Key")),
 		Stream:         route.stream,
@@ -113,6 +124,37 @@ func (h *Handlers) ProxyAIRequest(ctx *gin.Context) {
 	}
 	defer response.Body.Close()
 	h.copyAIResponse(ctx, response, route.status)
+}
+
+func (h *Handlers) prepareAIToolMFAResume(ctx *gin.Context, actor aiagent.ActorContext, body []byte) ([]byte, bool) {
+	var input struct {
+		StepUpAssertionID string `json:"stepUpAssertionId"`
+		ExpectedVersion   int    `json:"expectedVersion"`
+	}
+	if json.Unmarshal(body, &input) != nil || strings.TrimSpace(input.StepUpAssertionID) == "" || input.ExpectedVersion < 1 {
+		writeErrorCode(ctx, http.StatusBadRequest, "request.invalid_json", "invalid MFA resume input")
+		return nil, false
+	}
+	now := time.Now()
+	var assertion model.StepUpAssertion
+	if h.db == nil || h.db.First(
+		&assertion,
+		"id = ? and user_id = ? and session_id = ? and idle_expires_at > ? and absolute_expires_at > ?",
+		input.StepUpAssertionID, actor.UserID, actor.SessionID, now, now,
+	).Error != nil || !stepUpAssertionActive(assertion, now) {
+		writeErrorCode(ctx, http.StatusForbidden, "mfa.assertion_invalid", "step-up assertion is invalid or expired")
+		return nil, false
+	}
+	prepared, err := json.Marshal(gin.H{
+		"stepUpAssertionId": assertion.ID,
+		"purpose":           assertion.Purpose,
+		"expectedVersion":   input.ExpectedVersion,
+	})
+	if err != nil {
+		writeErrorCode(ctx, http.StatusInternalServerError, "ai.run_resume_failed", "cannot prepare MFA resume")
+		return nil, false
+	}
+	return prepared, true
 }
 
 func (h *Handlers) authorizeAIProject(ctx *gin.Context, projectID string) bool {
@@ -150,6 +192,7 @@ func prepareAITurnGrant(ctx *gin.Context, actor aiagent.ActorContext, body []byt
 		return nil, actor, false
 	}
 	now := time.Now()
+	input["pageContext"] = enrichAIPageContext(input["pageContext"], actor, now)
 	expiresAt := now.Add(24 * time.Hour)
 	if actor.SessionExpiresAt > 0 && time.Unix(actor.SessionExpiresAt, 0).Before(expiresAt) {
 		expiresAt = time.Unix(actor.SessionExpiresAt, 0)
@@ -174,6 +217,20 @@ func prepareAITurnGrant(ctx *gin.Context, actor aiagent.ActorContext, body []byt
 	}
 	actor.RunID = runID
 	return prepared, actor, true
+}
+
+func enrichAIPageContext(raw any, actor aiagent.ActorContext, now time.Time) map[string]any {
+	pageContext, _ := raw.(map[string]any)
+	if pageContext == nil {
+		pageContext = map[string]any{}
+	}
+	pageContext["locale"] = normalizedAILocale(actor.Locale)
+	pageContext["server"] = map[string]any{
+		"requestTimestamp":  now.UTC().Format(time.RFC3339),
+		"locale":            normalizedAILocale(actor.Locale),
+		"projectAuthorized": actor.ProjectID != "",
+	}
+	return pageContext
 }
 
 func (h *Handlers) aiUnavailableReason() string {
@@ -211,8 +268,19 @@ func (h *Handlers) copyAIResponse(ctx *gin.Context, response *aiagent.Response, 
 		ctx.Header("Cache-Control", "no-cache, no-transform")
 		ctx.Header("X-Accel-Buffering", "no")
 		ctx.Status(status)
-		_, _ = io.Copy(ctx.Writer, response.Body)
-		return
+		buffer := make([]byte, 4096)
+		for {
+			count, readErr := response.Body.Read(buffer)
+			if count > 0 {
+				if _, writeErr := ctx.Writer.Write(buffer[:count]); writeErr != nil {
+					return
+				}
+				ctx.Writer.Flush()
+			}
+			if readErr != nil {
+				return
+			}
+		}
 	}
 	ctx.Status(status)
 	_, _ = io.Copy(ctx.Writer, response.Body)

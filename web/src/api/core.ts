@@ -231,7 +231,7 @@ async function requestOnce<T>(path: string, options?: RequestInit): Promise<T> {
       credentials: 'include',
       headers: {
         'Accept-Language': i18next.language,
-        'Content-Type': 'application/json',
+        ...(requestOptions.body == null ? {} : { 'Content-Type': 'application/json' }),
         ...headers,
       },
     })

@@ -1,14 +1,298 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { loadConfig } from "../src/config.js"
 import { RunExecutor } from "../src/executor.js"
 import { GraphVersionRegistry } from "../src/graph/registry.js"
 import { MemoryRepository } from "../src/persistence/memory.js"
 import { DeterministicProvider } from "../src/provider/deterministic.js"
+import type { ModelProvider, ModelRequest } from "../src/provider/provider.js"
+import { presentTimeline } from "../src/timeline-presenter.js"
 import { ToolCatalog } from "../src/tools/catalog.js"
 import { DeterministicLunaApiClient } from "../src/tools/luna-api-client.js"
 import { MemoryToolCallStore, ProjectingToolCallStore, ToolOrchestrator } from "../src/tools/orchestrator.js"
+import { createOptionsInput, createOptionsTool } from "../src/tools/ui-options.js"
+import { navigateToRouteTool } from "../src/tools/ui-route.js"
 
 describe("provider to tool to subsequent model invocation", () => {
+  it("aborts an active model stream immediately after the run is canceled", async () => {
+    const repository = new MemoryRepository()
+    const conversation = await repository.createConversation("usr_a", "cancel")
+    const created = await repository.createTurn("usr_a", {
+      conversationId: conversation.id, input: "keep working", pageContext: {}, idempotencyKey: "cancel-run",
+    })
+    const provider: ModelProvider = {
+      async *stream(request: ModelRequest) {
+        yield { type: "message_delta", delta: "partial" } as const
+        await new Promise<void>((resolve, reject) => {
+          if (request.signal?.aborted) {
+            reject(request.signal.reason instanceof Error ? request.signal.reason : new Error("ai.run_canceled"))
+            return
+          }
+          request.signal?.addEventListener("abort", () => reject(request.signal?.reason instanceof Error ? request.signal.reason : new Error("ai.run_canceled")), { once: true })
+        })
+        resolveNever()
+      },
+      async complete() {
+        return { text: "unused", usage: { inputTokens: 0, outputTokens: 0 } }
+      },
+      capabilities: () => ({ streaming: true, toolCalling: false, structuredOutput: false }),
+      health: async () => ({ ok: true }),
+    }
+    const executor = new RunExecutor(repository, new GraphVersionRegistry(provider), loadConfig({ NODE_ENV: "test", INSTANCE_ID: "cancel-worker" }))
+    const execution = executor.runOnce()
+    await vi.waitFor(async () => {
+      expect((await repository.getRun("usr_a", created.run.id))?.status).toBe("running")
+    })
+    await repository.cancelRun("usr_a", created.run.id)
+    expect(executor.cancel(created.run.id)).toBe(true)
+    await execution
+    expect((await repository.getRun("usr_a", created.run.id))?.status).toBe("canceled")
+    expect((await repository.getTimeline("usr_a", conversation.id))?.turns[0]?.items.at(-1)?.status).toBe("completed")
+  })
+
+  it("automatically titles the first completed conversation without replacing manual titles", async () => {
+    const repository = new MemoryRepository()
+    const conversation = await repository.createConversation("usr_a", "新会话")
+    await repository.createTurn("usr_a", {
+      conversationId: conversation.id, input: "检查今天失败的构建", pageContext: {}, idempotencyKey: "auto-title",
+    })
+    const executor = new RunExecutor(repository, new GraphVersionRegistry(new DeterministicProvider()), loadConfig({ NODE_ENV: "test", INSTANCE_ID: "title-worker" }))
+    await executor.runOnce()
+    expect(await repository.getConversation("usr_a", conversation.id)).toMatchObject({
+      titleSource: "assistant",
+    })
+    expect((await repository.getConversation("usr_a", conversation.id))?.title).not.toBe("新会话")
+    const events = await repository.getEvents("usr_a", (await repository.getTimeline("usr_a", conversation.id))!.turns[0]!.run!.id, 0)
+    expect(events.filter(event => event.type === "content.delta").length).toBeGreaterThan(1)
+    expect(events.some(event => event.type === "thinking.started")).toBe(true)
+    expect(events.some(event => event.type === "thinking.completed")).toBe(true)
+    expect((await presentTimeline(repository, "usr_a", conversation.id))?.eventCursors).toEqual([])
+  })
+
+  it("passes the current assistant title as context and accepts a rename tool when the topic drifts", async () => {
+    const repository = new MemoryRepository()
+    const conversation = await repository.createConversation("usr_a", "旧的部署话题", undefined, "assistant")
+    await repository.createTurn("usr_a", {
+      conversationId: conversation.id, input: "现在改为排查账单扣费", pageContext: {}, idempotencyKey: "retitle-topic",
+    })
+    const requests: ModelRequest[] = []
+    const provider: ModelProvider = {
+      async *stream(request) {
+        requests.push(request)
+        yield { type: "message_delta", delta: "我们来排查账单扣费。" }
+        yield {
+          type: "completed",
+          usage: { inputTokens: 10, outputTokens: 10 },
+          toolCalls: [{ operationId: "rename_conversation", arguments: { title: "账单扣费排查" } }],
+        }
+      },
+      async complete() {
+        return { text: "unused", usage: { inputTokens: 0, outputTokens: 0 } }
+      },
+      capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
+      health: async () => ({ ok: true }),
+    }
+    const executor = new RunExecutor(repository, new GraphVersionRegistry(provider), loadConfig({ NODE_ENV: "test", INSTANCE_ID: "retitle-worker" }))
+
+    await executor.runOnce()
+
+    expect(requests[0]?.messages.at(-1)?.content).toContain('"title":"旧的部署话题"')
+    expect(requests[0]?.messages.at(-1)?.content).toContain('"titleSource":"assistant"')
+    expect(requests[0]?.tools?.some(tool => tool.operationId === "rename_conversation")).toBe(true)
+    expect(await repository.getConversation("usr_a", conversation.id)).toMatchObject({
+      title: "账单扣费排查",
+      titleSource: "assistant",
+    })
+  })
+
+  it("never exposes or applies the rename tool after the user manually names a conversation", async () => {
+    const repository = new MemoryRepository()
+    const conversation = await repository.createConversation("usr_a", "用户固定标题")
+    await repository.createTurn("usr_a", {
+      conversationId: conversation.id, input: "换一个话题", pageContext: {}, idempotencyKey: "locked-title",
+    })
+    const requests: ModelRequest[] = []
+    const provider: ModelProvider = {
+      async *stream(request) {
+        requests.push(request)
+        yield { type: "message_delta", delta: "标题保持不变。" }
+        yield {
+          type: "completed",
+          usage: { inputTokens: 10, outputTokens: 10 },
+          toolCalls: [{ operationId: "rename_conversation", arguments: { title: "恶意覆盖" } }],
+        }
+      },
+      async complete() {
+        return { text: "unused", usage: { inputTokens: 0, outputTokens: 0 } }
+      },
+      capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
+      health: async () => ({ ok: true }),
+    }
+    const executor = new RunExecutor(repository, new GraphVersionRegistry(provider), loadConfig({ NODE_ENV: "test", INSTANCE_ID: "locked-title-worker" }))
+
+    await executor.runOnce()
+
+    expect(requests[0]?.tools?.some(tool => tool.operationId === "rename_conversation")).toBe(false)
+    expect(await repository.getConversation("usr_a", conversation.id)).toMatchObject({
+      title: "用户固定标题",
+      titleSource: "user",
+    })
+    const timeline = await presentTimeline(repository, "usr_a", conversation.id)
+    const timelineItems = timeline?.turns[0]?.selectedRun?.items as Array<{
+      toolCall?: { operationId: string, status?: string }
+    }> | undefined
+    const renameCall = timelineItems?.find(item => item.toolCall?.operationId === "rename_conversation")
+    expect(renameCall?.toolCall?.status).toBe("skipped")
+  })
+
+  it("persists create_options arguments and returns visible UI actions without a business API call", async () => {
+    const repository = new MemoryRepository()
+    const conversation = await repository.createConversation("usr_a", "options")
+    await repository.createTurn("usr_a", {
+      conversationId: conversation.id, input: "What should I do next?", pageContext: {}, idempotencyKey: "options-tool",
+    })
+    const optionArguments = {
+      title: "Choose a next step",
+      options: [
+        { id: "projects", label: "Open projects", action: { type: "navigate", routeName: "projects" } },
+        { id: "continue", label: "Continue diagnosis", action: { type: "send_message", message: "Continue the diagnosis" } },
+      ],
+    }
+    const provider: ModelProvider = {
+      async *stream() {
+        yield {
+          type: "completed",
+          usage: { inputTokens: 10, outputTokens: 10 },
+          toolCalls: [{ operationId: "create_options", arguments: optionArguments }],
+        }
+      },
+      async complete() {
+        return { text: "Next steps", usage: { inputTokens: 1, outputTokens: 1 } }
+      },
+      capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
+      health: async () => ({ ok: true }),
+    }
+    const executor = new RunExecutor(repository, new GraphVersionRegistry(provider), loadConfig({ NODE_ENV: "test", INSTANCE_ID: "options-worker" }))
+
+    await executor.runOnce()
+
+    const timeline = await presentTimeline(repository, "usr_a", conversation.id)
+    const items = timeline?.turns[0]?.selectedRun?.items as Array<{
+      toolCall?: { operationId: string, arguments: Record<string, unknown>, uiActions?: Array<{ type: string, label?: string }> }
+    }> | undefined
+    const optionsItem = items?.find(item => item.toolCall?.operationId === "create_options")
+    expect(optionsItem?.toolCall?.arguments).toEqual(createOptionsInput.parse(optionArguments))
+    expect(optionsItem?.toolCall?.uiActions).toEqual([
+      expect.objectContaining({ type: "navigate", label: "Open projects" }),
+      expect.objectContaining({ type: "send_message", label: "Continue diagnosis" }),
+    ])
+  })
+
+  it("persists an automatic registered-route action without invoking the business tool orchestrator", async () => {
+    const repository = new MemoryRepository()
+    const conversation = await repository.createConversation("usr_a", "route", undefined, "user")
+    await repository.createTurn("usr_a", {
+      conversationId: conversation.id,
+      input: "Open the projects page",
+      pageContext: { routeName: "dashboard" },
+      idempotencyKey: "automatic-route",
+    })
+    const requests: ModelRequest[] = []
+    const provider: ModelProvider = {
+      async *stream(request) {
+        requests.push(request)
+        yield { type: "message_delta", delta: "Opening the projects page." }
+        yield {
+          type: "completed",
+          usage: { inputTokens: 10, outputTokens: 10 },
+          toolCalls: [
+            { operationId: "navigate_to_route", arguments: { routeName: "projects" } },
+            {
+              operationId: "create_options",
+              arguments: {
+                title: "Next",
+                options: [
+                  { id: "dashboard", label: "Dashboard", action: { type: "navigate", routeName: "dashboard" } },
+                  { id: "explain", label: "Explain projects", action: { type: "send_message", message: "Explain project spaces" } },
+                ],
+              },
+            },
+          ],
+        }
+      },
+      async complete() {
+        return { text: "", usage: { inputTokens: 1, outputTokens: 1 } }
+      },
+      capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
+      health: async () => ({ ok: true }),
+    }
+    const executor = new RunExecutor(
+      repository,
+      new GraphVersionRegistry(provider, [createOptionsTool, navigateToRouteTool]),
+      loadConfig({ NODE_ENV: "test", INSTANCE_ID: "route-worker" }),
+    )
+
+    await executor.runOnce()
+
+    expect(requests[0]?.tools?.map(tool => tool.operationId)).toContain("navigate_to_route")
+    const timeline = await presentTimeline(repository, "usr_a", conversation.id)
+    const routeItem = timeline?.turns[0]?.selectedRun?.items.find(item => "toolCall" in item && item.toolCall.operationId === "navigate_to_route")
+    expect(routeItem && "toolCall" in routeItem ? routeItem.toolCall.uiActions : undefined).toEqual([
+      expect.objectContaining({
+        type: "navigate",
+        activation: "automatic",
+        repeatable: false,
+        payload: { routeName: "projects", params: {}, query: {} },
+      }),
+    ])
+  })
+
+  it("runs a required prediction phase when the main response omits create_options", async () => {
+    const repository = new MemoryRepository()
+    const conversation = await repository.createConversation("usr_a", "Locked title", undefined, "user")
+    await repository.createTurn("usr_a", {
+      conversationId: conversation.id,
+      input: "你好",
+      pageContext: { locale: "zh-CN", routeName: "dashboard" },
+      idempotencyKey: "required-options",
+    })
+    const requests: ModelRequest[] = []
+    const provider: ModelProvider = {
+      async *stream(request) {
+        requests.push(request)
+        yield { type: "message_delta", delta: "你好，我可以帮你查看平台状态。" }
+        yield { type: "completed", usage: { inputTokens: 10, outputTokens: 10 } }
+      },
+      async complete(request) {
+        requests.push(request)
+        return {
+          text: "",
+          usage: { inputTokens: 5, outputTokens: 5 },
+          toolCalls: [{
+            operationId: "create_options",
+            arguments: {
+              title: "你接下来可能想做",
+              options: [
+                { id: "projects", label: "查看项目空间", action: { type: "navigate", routeName: "projects" } },
+                { id: "events", label: "检查平台事件", action: { type: "navigate", routeName: "events" } },
+              ],
+            },
+          }],
+        }
+      },
+      capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
+      health: async () => ({ ok: true }),
+    }
+    const executor = new RunExecutor(repository, new GraphVersionRegistry(provider), loadConfig({ NODE_ENV: "test", INSTANCE_ID: "required-options-worker" }))
+
+    await executor.runOnce()
+
+    expect(requests[1]?.toolChoice).toEqual({ operationId: "create_options" })
+    expect(requests[1]?.tools?.map(tool => tool.operationId)).toEqual(["create_options"])
+    const timeline = await presentTimeline(repository, "usr_a", conversation.id)
+    const options = timeline?.turns[0]?.selectedRun?.items.find(item => "toolCall" in item && item.toolCall.operationId === "create_options")
+    expect(options && "toolCall" in options ? options.toolCall.uiActions : undefined).toHaveLength(2)
+  })
+
   it("executes a deterministic read tool and completes the same durable run", async () => {
     const repository = new MemoryRepository()
     const conversation = await repository.createConversation("usr_a", "tool loop")
@@ -54,7 +338,7 @@ describe("provider to tool to subsequent model invocation", () => {
     const mfa = await tools.approve(pending.id, pending.argumentsHash, pending.rowVersion)
     await repository.updateRun(created.run.id, "waiting_approval", "waiting_mfa")
     expect(mfa.status).toBe("awaiting_mfa")
-    await tools.resumeMfa(mfa.id, "deployment_restart", mfa.rowVersion)
+    await tools.resumeMfa(mfa.id, "deployment_restart", mfa.rowVersion, "mfa_assertion_1")
     await repository.updateRun(created.run.id, "waiting_mfa", "queued")
     await executor.runOnce()
     expect((await repository.getRun("usr_a", created.run.id))?.status).toBe("completed")
@@ -82,3 +366,7 @@ describe("provider to tool to subsequent model invocation", () => {
     expect((await repository.getRun("usr_a", created.run.id))?.status).toBe("completed")
   })
 })
+
+function resolveNever(): never {
+  throw new Error("unreachable")
+}

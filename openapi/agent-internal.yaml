@@ -92,7 +92,7 @@ paths:
         - { $ref: "#/components/parameters/RunId" }
         - { name: after, in: query, required: false, schema: { type: integer, format: int64, minimum: 0 } }
         - { name: Last-Event-ID, in: header, required: false, schema: { type: string } }
-      responses: { "200": { description: Recoverable SSE stream, content: { text/event-stream: { schema: { type: string } } } }, "404": { $ref: "#/components/responses/AgentError" } }
+      responses: { "200": { description: Recoverable SSE stream of persisted content.delta, thinking.delta, tool, and run lifecycle events, content: { text/event-stream: { schema: { type: string } } } }, "404": { $ref: "#/components/responses/AgentError" } }
   /internal/v1/runs/{runId}/cancel:
     post:
       operationId: cancelInternalAIRun

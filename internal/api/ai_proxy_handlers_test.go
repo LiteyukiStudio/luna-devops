@@ -71,6 +71,12 @@ func TestAIProxyUsesSessionActorAndForwardsIdempotencyKey(t *testing.T) {
 	if err != nil || runID == "" || grant.RunID != runID || grant.UserID != "usr_session_owner" {
 		t.Fatalf("forwarded Run Actor Grant = %#v, error = %v", grant, err)
 	}
+	pageContext, _ := forwarded["pageContext"].(map[string]any)
+	serverContext, _ := pageContext["server"].(map[string]any)
+	if pageContext["locale"] != "zh-CN" || serverContext["locale"] != "zh-CN" ||
+		serverContext["projectAuthorized"] != true || serverContext["requestTimestamp"] == "" {
+		t.Fatalf("enriched page context = %#v", pageContext)
+	}
 }
 
 func TestAIProxyRejectsBrowserSuppliedActorIdentity(t *testing.T) {
@@ -130,6 +136,52 @@ func TestAICapabilitiesFailClosedWithoutAgent(t *testing.T) {
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"available":false`) ||
 		!strings.Contains(response.Body.String(), `"reasonCode":"ai.agent_unavailable"`) {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+}
+
+func TestAIProxyFlushesSSEChunks(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	fake := &fakeAIAgentClient{response: &aiagent.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       io.NopCloser(strings.NewReader("event: content.delta\ndata: {\"delta\":\"hello\"}\n\n")),
+	}}
+	handler := aiTestHandlers(fake, true)
+	router := gin.New()
+	router.GET("/api/v1/ai/runs/:runId/events", handler.ProxyAIRequest)
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/ai/runs/airun_stream/events", nil)
+	request.Header.Set("Accept", "text/event-stream")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK || !response.Flushed {
+		t.Fatalf("status = %d, flushed = %v, body = %s", response.Code, response.Flushed, response.Body.String())
+	}
+	if fake.request.LastEventID != "" || !fake.request.Stream {
+		t.Fatalf("agent stream request = %#v", fake.request)
+	}
+}
+
+func TestAIProxyDropsJSONContentTypeForBodylessCancel(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	fake := &fakeAIAgentClient{response: &aiagent.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"id":"airun_cancel","status":"canceled"}`)),
+	}}
+	handler := aiTestHandlers(fake, true)
+	router := gin.New()
+	router.POST("/api/v1/ai/runs/:runId/cancel", handler.ProxyAIRequest)
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/ai/runs/airun_cancel/cancel", nil)
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+	if fake.request.ContentType != "" || len(fake.request.Body) != 0 {
+		t.Fatalf("agent cancel request = %#v", fake.request)
 	}
 }
 

@@ -2,6 +2,10 @@
 
 Luna DevOps adds page-level visual primitives on top of shadcn/ui and Tailwind CSS. These primitives only define hierarchy, layout, and visual semantics. They must not own queries, authorization, or submission logic.
 
+## Shared component directories
+
+The root of `web/src/components/common` contains only cross-domain shared primitives. A stable capability with multiple components, state modules, and tests should use a named subdirectory. For example, the complete AI assistant lives in `components/common/ai-assistant/`, with `assistant.tsx` as its entry and its timeline, tool-call, streaming state, and tests colocated. Private dependencies inside a module use same-directory relative imports; pages and other business domains continue to import through `@/components/common/...`. Do not hide the directory structure behind an opaque catch-all barrel export.
+
 ## Design tokens
 
 Tailwind v4 tokens live in `web/src/styles/design-tokens.css`, while `brand-themes.css` continues to own the brand scales. Components consume semantic utilities instead of binding to concrete color values or repeating page dimensions.
@@ -138,4 +142,4 @@ Changes to shared visual components, page templates, or theme tokens must check 
 
 A visual refactor must preserve existing query, authorization, validation, submission, and routing behavior.
 
-The embedded AI assistant is rendered once by the global layout. Desktop uses a draggable, resizable floating window and mobile uses a full-screen layout. Thinking, messages, and tool calls are rendered separately. Thinking uses a three-line viewport that follows the latest displayable summary; tool calls are collapsed by default and reveal only Presenter-sanitized arguments and results. Page integration from tool calls must use the versioned UI Action registry and must never return arbitrary routes, HTML, or DOM selectors.
+The embedded AI assistant is rendered once by the global layout. Desktop uses a draggable, resizable floating window and mobile uses a full-screen layout. Thinking, messages, and tool calls are rendered separately, and both the top bar and conversation list expose New Conversation. Drafts, streaming reducers, active Runs, and SSE subscriptions are isolated by `conversationId`, so a generating conversation never blocks sends in another conversation and the list can mark every generating conversation. Message order uses durable `turnIndex` and `timelineIndex`; the per-run SSE `eventSequence` must never order content across turns. The timeline ends with a three-dot typing indicator while waiting for the first visible delta. Streaming Thinking uses a three-line viewport that follows the latest displayable summary, then collapses to a compact heading when complete; tool calls are collapsed by default and reveal only Presenter-sanitized arguments and results. Page integration from tool calls must use the versioned UI Action registry and must never return arbitrary routes, HTML, or DOM selectors.

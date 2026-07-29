@@ -1050,6 +1050,27 @@ OpenAPI，不把 MCP 作为内部服务总线。
 - [ ] P1：已实现 OpenAPI Agent 元数据、参数绑定批准、Step-up MFA、幂等/CAS、Delegation、审计和执行后验证框架；仍需逐项评审并开放生产写操作目录。
 - [x] P2：实现构建、运行时事件、Gateway、证书、发布、Hook 和通知投递的固定列只读诊断工具，并接入统一诊断图。
 - [x] 完成正式前端与 BFF/Agent 接线：私有会话管理、Timeline Presenter、SSE 重连、三行 Thinking、默认折叠 Tool Call、批准/MFA/补充输入、桌面拖拽缩放、移动端全屏和 AI 管理设置。
+- [x] 使用 `react-rnd` 统一 AI 助手窗口拖拽与缩放，支持悬浮球拖拽、窗口与悬浮球位置/尺寸本地记忆、视口边界约束和移动端全屏退化。
+- [x] 优化窄窗口消息层级与紧凑交互，完成态 Thinking 自动收起、Tool Call 默认折叠；空会话按项目空间复用，首轮由模型自动命名并保护手动标题。
+- [x] 为模型生成过程增加会话列表旋转状态与消息流三点输入指示器，并兼容减少动态效果偏好。
+- [x] 打通 Provider → Agent 持久事件 → Luna API 无缓冲 SSE → Web reducer 的真实流式输出，支持 reasoning、文本与分片工具参数归一化、游标恢复和终态主动断开。
+- [x] 重构多会话流式运行：顶栏新增会话入口，草稿/Run/SSE/reducer 按会话隔离，支持跨会话并行发送和逐会话中断；消息与工具块按持久 Turn/Timeline 顺序稳定渲染，避免流式阶段跳序。
+- [x] 将 AI 助手会话列表入口调整到小窗顶栏最左侧并使用列表图标，右侧只保留新建会话与窗口控制，明确区分导航和当前会话操作。
+- [x] 移除与关闭到悬浮球语义重复的助手缩小按钮及 minimized 状态，只保留单一关闭与恢复路径。
+- [x] 修复 AI 助手输入法候选阶段 Enter 误发送，兼容标准 composition 状态与 keyCode 229，并保持 Enter 发送、Shift+Enter 换行。
+- [x] 隐藏会话自动命名等内部维护型 Tool Call，将普通工具折叠行压缩为名称与右侧状态 Badge，参数、结果和耗时仅在展开后展示。
+- [x] 将 Agent 工具权限收敛为当前用户权限：读取与低风险写入按当前 Session/RBAC 即时执行，高风险调用提供“同意 / 拒绝 / 全部同意”并绑定 Run、Tool Call、参数哈希和版本；“全部同意”仅覆盖当前 Run 已展示的待批准调用，同时修复跨 Run Tool Call 审批风险。
+- [x] 将 Tool Catalog 作为 OpenAI-compatible `tools` Schema 传给模型，新增结构化 `create_options` UI 工具，并修复参数哈希绑定的批准事件与平台验证后的 MFA 恢复。
+- [x] 将 `create_options` 从折叠 Tool Call 升级为始终可见的下一步选项组件，覆盖站内无刷新跳转、消息回复和重新进入权限/批准/MFA 链路的受控操作请求。
+- [x] 会话目录增加显式批量选择、全选和批量删除确认；引入 `title_source` 与 `rename_conversation` 内建工具，首轮自动命名、话题漂移重命名，并在用户手动命名后由数据库永久锁定。
+- [x] 新增 `system-v3` 与 `luna-devops-navigation` 内置 Skill，指导模型为平台注册页面和可信资源输出 Markdown 站内链接；前端按注册路径安全校验并以主色 React Router 链接无刷新跳转。
+- [x] 按职责拆分 AI 助手编排层、消息时间线、工具调用卡片、输入区、窗口偏好与流式会话状态模块，降低单文件复杂度并保持现有交互行为。
+- [x] 将 AI 时间线按 `turnId` 归并为用户轮次，每轮只呈现一次用户消息和一个助手回复容器，并在容器内按 `timelineIndex` 保持 Thinking、Message 与 Tool Call 的真实交错顺序。
+- [x] 将用户与助手消息气泡限制为消息区最大 78% 宽度，分别为对方阵营保留稳定留白，并保持表格、代码与工具详情局部横向滚动。
+- [x] 整理 `components/common` 目录，将 AI 助手的组件、状态、工具与测试集中到 `common/ai-assistant/`，统一模块内相对导入与外部根路径导入。
+- [x] 修正 Tool Call 状态图标映射：仅运行态显示旋转加载图标，失败、成功、取消、跳过、等待批准与等待 MFA 使用明确语义图标。
+- [x] 扩展 AI 页面上下文信封与最近 6 轮角色化会话历史；每个正常完成的 Turn 强制生成 2-5 个意图预测选项，并为 Provider 格式偏差提供结构化重试和安全兜底。
+- [x] 将下一步选项改为独立点击状态：路由跳转可重复，发送消息与请求操作仅成功一次且不锁定兄弟选项；新增实时 SSE 驱动、注册表校验和重放去重的 `navigate_to_route` 自动前端路由工具，并将悬浮入口改为主题色语义渐变圆形。
 - [x] 完成独立 `luna-agent` 生产骨架、`ai` schema 迁移、动态 Provider 配置、Secret Store、Helm/Docker Compose 部署、NetworkPolicy、双语使用文档和 OpenAPI 契约。
 - [x] 将 `luna-agent` 纳入工程化发版链路：生产/源码/开发 Compose、环境变量示例、Helm 镜像说明、release quality gate、DockerHub 多镜像矩阵、SBOM 与 provenance。
 - [ ] P3：评估显式长期记忆、项目空间共享知识和外部 MCP 扩展；默认不启用。

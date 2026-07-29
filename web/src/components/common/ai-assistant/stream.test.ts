@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createAIEventSource } from './ai-assistant-stream'
+import { createAIEventSource } from './stream'
 
 afterEach(() => {
   vi.unstubAllGlobals()

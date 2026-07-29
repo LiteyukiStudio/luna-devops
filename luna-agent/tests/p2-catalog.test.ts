@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest"
 import { ToolCatalog } from "../src/tools/catalog.js"
-import { p2ReadonlyOperations } from "../src/tools/generated/p2-readonly.js"
+import { platformOperations } from "../src/tools/generated/platform.js"
 
-describe("P2 read-only catalog", () => {
+describe("platform tool catalog", () => {
   it("contains the BFF registered Gateway, Hook, notification, and runtime operations", () => {
-    const catalog = ToolCatalog.load(p2ReadonlyOperations)
+    const catalog = ToolCatalog.load(platformOperations)
     expect([
       ["listGatewayRoutes", "gateway:read"],
       ["listGatewayCertificates", "gateway:read"],
@@ -21,5 +21,21 @@ describe("P2 read-only catalog", () => {
       ["listNotificationDeliveries", "event:read", "read", "never", undefined],
       ["listRuntimeEvents", "event:read", "read", "never", undefined],
     ])
+  })
+
+  it("offers project-scoped tools only when the page context has a project", () => {
+    const catalog = ToolCatalog.load(platformOperations)
+
+    expect(catalog.modelTools().map(tool => tool.operationId)).toEqual(["getDashboard", "listProjects", "createProject"])
+    expect(catalog.modelTools({ projectId: "project-1" }).map(tool => tool.operationId)).toContain("listPlatformEvents")
+  })
+
+  it("exposes project creation as a user-authorized low-risk write without high-risk approval", () => {
+    expect(ToolCatalog.load(platformOperations).get("createProject")).toMatchObject({
+      requiredScopes: ["project:write"],
+      risk: "write",
+      approval: "never",
+      idempotent: true,
+    })
   })
 })

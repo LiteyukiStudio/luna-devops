@@ -2,6 +2,10 @@
 
 Luna DevOps 在 shadcn/ui 和 Tailwind CSS 之上增加了一层页面级视觉原语。它们只负责内容层级、布局和视觉语义，不承载查询、权限或提交逻辑。
 
+## 公共组件目录
+
+`web/src/components/common` 根目录只平铺跨业务域复用的公共原语。形成稳定内部模块、且包含多个组件、状态与测试文件的业务能力应建立同名子目录；例如 AI 助手统一位于 `components/common/ai-assistant/`，入口为 `assistant.tsx`，时间线、工具调用、流式状态和测试与其共置。模块内部私有依赖使用同目录相对导入，页面与其他业务域仍使用 `@/components/common/...` 根路径导入，禁止为减少路径长度建立不透明的全量 barrel export。
+
 ## Design Token
 
 Tailwind v4 token 集中维护在 `web/src/styles/design-tokens.css`，品牌色阶仍由 `brand-themes.css` 管理。组件只消费语义 utility，不直接绑定具体色值或重复维护页面尺寸。
@@ -138,4 +142,4 @@ Tailwind v4 token 集中维护在 `web/src/styles/design-tokens.css`，品牌色
 
 视觉整改不能改变原有查询、权限、校验、提交和路由行为。
 
-内嵌 AI 助手由全局布局统一渲染。桌面端使用可拖动、可调整尺寸的悬浮窗口，移动端使用全屏布局；Thinking、Message 与 Tool Call 分开渲染。Thinking 使用三行滚动视窗并跟随最新摘要，Tool Call 默认折叠，展开后只展示经过 Presenter 脱敏的参数与结果。Tool Call 的页面联动只能调用版本化 UI Action 注册表，禁止返回任意路由、HTML 或 DOM Selector。
+内嵌 AI 助手由全局布局统一渲染。桌面端使用可拖动、可调整尺寸的悬浮窗口，移动端使用全屏布局；Thinking、Message 与 Tool Call 分开渲染。顶栏和会话列表都提供新建会话入口。会话草稿、流式 reducer、活动 Run 与 SSE 订阅必须按 `conversationId` 隔离，一个会话生成时不得阻塞其他会话发送；会话列表同时显示所有生成中的会话。消息顺序使用持久 `turnIndex` 与 `timelineIndex`，禁止用会在每个 Run 重新计数的 SSE `eventSequence` 排跨轮内容。消息流末尾显示三点输入指示器；流式 Thinking 使用三行滚动视窗并跟随最新摘要，完成后收起为紧凑标题；Tool Call 默认折叠，展开后只展示经过 Presenter 脱敏的参数与结果。Tool Call 的页面联动只能调用版本化 UI Action 注册表，禁止返回任意路由、HTML 或 DOM Selector。

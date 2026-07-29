@@ -103,6 +103,13 @@
     hsl(var(--surface) / 0.2) 38%,
     hsl(var(--surface) / 0.58) 100%
   );
+  --ai-assistant-launcher-background: linear-gradient(
+    145deg,
+    color-mix(in oklab, var(--primary) 82%, white) 0%,
+    var(--primary) 42%,
+    color-mix(in oklab, var(--theme-secondary) 72%, var(--primary-hover)) 72%,
+    color-mix(in oklab, var(--theme-supporting) 68%, var(--primary-hover)) 100%
+  );
 }
 
 :root[data-theme="dark"] {
@@ -117,6 +124,13 @@
     transparent 0%,
     hsl(var(--surface) / 0.28) 38%,
     hsl(var(--surface) / 0.7) 100%
+  );
+  --ai-assistant-launcher-background: linear-gradient(
+    145deg,
+    color-mix(in oklab, var(--primary) 88%, white) 0%,
+    var(--primary) 42%,
+    color-mix(in oklab, var(--theme-secondary) 74%, var(--primary-hover)) 72%,
+    color-mix(in oklab, var(--theme-supporting) 70%, var(--primary-hover)) 100%
   );
 }
 

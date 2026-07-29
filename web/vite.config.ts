@@ -3,7 +3,10 @@ import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vitest/config'
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
+  define: {
+    'process.env.NODE_ENV': JSON.stringify(mode === 'production' ? 'production' : 'development'),
+  },
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
@@ -39,4 +42,4 @@ export default defineConfig({
       },
     },
   },
-})
+}))

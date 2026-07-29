@@ -29,6 +29,8 @@ export function buildServer(input: {
   grantCipher: RunGrantCipher
   tools?: ToolOrchestrator
   providerConfigClient?: ProviderConfigClient
+  cancelRun?: (runId: string) => void
+  toolCatalogDigest?: string
 }): FastifyInstance {
   const app = Fastify({
     logger: input.config.NODE_ENV === "test" ? false : {
@@ -48,7 +50,7 @@ export function buildServer(input: {
   app.get("/internal/v1/health/compatibility", async () => ({
     component: "luna-agent", version: "0.1.0", internalApiVersions: ["v1"],
     aiSchemaMin: 1, aiSchemaMax: 1, graphVersions: input.graphVersions,
-    toolCatalogDigest: "sha256:p0-readonly", promptVersions: ["system-v1"],
+    toolCatalogDigest: input.toolCatalogDigest ?? "sha256:platform-tools-v1", promptVersions: ["system-v1", "system-v2", "system-v3"],
   }))
 
   app.register(async secured => {
@@ -102,7 +104,16 @@ export function buildServer(input: {
     })
     secured.post("/internal/v1/conversations", async (request, reply) => {
       const body = z.object({ projectId: id.optional(), title: z.string().trim().min(1).max(120).default("新会话") }).parse(request.body)
-      const value = await input.repository.createConversation(request.actor.userId, body.title, body.projectId)
+      if (body.title === "新会话") {
+        const existing = await input.repository.findEmptyConversation(request.actor.userId, body.projectId)
+        if (existing) return reply.code(200).send(existing)
+      }
+      const value = await input.repository.createConversation(
+        request.actor.userId,
+        body.title,
+        body.projectId,
+        body.title === "新会话" ? "default" : "user",
+      )
       return reply.code(201).send(value)
     })
     secured.get("/internal/v1/conversations/:conversationId", async (request, reply) => {
@@ -140,8 +151,9 @@ export function buildServer(input: {
         conversationId, input: body.input.parts.map(part => part.text).join("\n"), pageContext: redact(body.pageContext),
         idempotencyKey: key, ...(body.runId ? { preallocatedRunId: body.runId } : {}),
         ...(body.runActorGrant ? { runActorGrantCiphertext: input.grantCipher.encrypt(body.runActorGrant) } : {}),
+        ...(input.toolCatalogDigest ? { toolCatalogDigest: input.toolCatalogDigest } : {}),
       })
-      return reply.code(202).send({ turnId: created.turn.id, runId: created.run.id, state: created.run.status, eventsUrl: `/api/v1/ai/runs/${created.run.id}/events` })
+      return reply.code(202).send({ turnId: created.turn.id, turnIndex: created.turn.turnIndex, runId: created.run.id, state: created.run.status, eventsUrl: `/api/v1/ai/runs/${created.run.id}/events` })
     })
     secured.get("/internal/v1/runs/:runId", async (request, reply) => {
       const { runId } = z.object({ runId: id }).parse(request.params)
@@ -151,20 +163,29 @@ export function buildServer(input: {
     secured.post("/internal/v1/runs/:runId/cancel", async (request, reply) => {
       const { runId } = z.object({ runId: id }).parse(request.params)
       const value = await input.repository.cancelRun(request.actor.userId, runId)
+      if (value?.status === "canceled") {
+        try { input.cancelRun?.(runId) } catch {
+          // The durable canceled state is authoritative; a local abort is only a latency optimization.
+        }
+      }
       return value ?? reply.code(404).send(errorBody("ai.run_not_found", request.id))
     })
     secured.post("/internal/v1/runs/:runId/approvals/:toolCallId/decision", async (request, reply) => {
       if (!input.tools) return reply.code(503).send(errorBody("ai.tool_not_available", request.id))
       const { runId, toolCallId } = z.object({ runId: id, toolCallId: id }).parse(request.params)
-      const body = z.object({ decision: z.enum(["approve", "reject"]), argumentsHash: z.string(), expectedVersion: z.number().int(), reason: z.string().max(500).optional() }).parse(request.body)
+      const body = z.object({ decision: z.enum(["approve", "reject", "approve_all"]), argumentsHash: z.string(), expectedVersion: z.number().int(), reason: z.string().max(500).optional() }).parse(request.body)
       const run = await input.repository.getRun(request.actor.userId, runId)
       if (!run || run.status !== "waiting_approval") return reply.code(409).send(errorBody("ai.run_not_resumable", request.id))
+      const selected = await input.tools.inspect(toolCallId)
+      if (selected.runId !== runId) return reply.code(404).send(errorBody("ai.tool_call_not_found", request.id))
       if (body.decision === "reject") {
+        await input.tools.reject(toolCallId, body.argumentsHash, body.expectedVersion)
         const canceled = await input.repository.cancelRun(request.actor.userId, runId)
         return canceled
       }
-      const call = await input.tools.approve(toolCallId, body.argumentsHash, body.expectedVersion)
-      if (call.status === "awaiting_mfa") return input.repository.updateRun(runId, "waiting_approval", "waiting_mfa")
+      const approved = [await input.tools.approve(toolCallId, body.argumentsHash, body.expectedVersion)]
+      if (body.decision === "approve_all") approved.push(...await input.tools.approveAll(runId))
+      if (approved.some(call => call.status === "awaiting_mfa")) return input.repository.updateRun(runId, "waiting_approval", "waiting_mfa")
       await input.repository.updateRun(runId, "waiting_approval", "queued")
       return reply.code(202).send({ runId, state: "queued" })
     })
@@ -174,7 +195,7 @@ export function buildServer(input: {
       const body = z.object({ purpose: z.string().min(1), expectedVersion: z.number().int(), stepUpAssertionId: z.string().min(1) }).parse(request.body)
       const run = await input.repository.getRun(request.actor.userId, runId)
       if (!run || run.status !== "waiting_mfa") return reply.code(409).send(errorBody("ai.run_not_resumable", request.id))
-      await input.tools.resumeMfa(toolCallId, body.purpose, body.expectedVersion)
+      await input.tools.resumeMfa(toolCallId, body.purpose, body.expectedVersion, body.stepUpAssertionId)
       await input.repository.updateRun(runId, "waiting_mfa", "queued")
       return reply.code(202).send({ runId, state: "queued" })
     })
@@ -214,13 +235,17 @@ export function buildServer(input: {
         }
       }
       await push(events)
+      let heartbeatAt = Date.now()
       while (!closed) {
         const run = await input.repository.getRun(request.actor.userId, runId)
         const batch = await input.repository.getEvents(request.actor.userId, runId, cursor)
         await push(batch)
         if (run && ["completed", "failed", "canceled", "expired"].includes(run.status) && batch.length === 0) break
-        reply.raw.write(": heartbeat\n\n")
-        await delay(1000)
+        if (Date.now() - heartbeatAt >= 15_000) {
+          reply.raw.write(": heartbeat\n\n")
+          heartbeatAt = Date.now()
+        }
+        await delay(100)
       }
       if (!closed) reply.raw.end()
       return reply

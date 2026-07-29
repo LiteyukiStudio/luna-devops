@@ -14,6 +14,7 @@ RUN addgroup -S -g 10001 luna && adduser -S -D -H -u 10001 -G luna luna \
   && mkdir -p /tmp/luna-agent && chown -R luna:luna /app /tmp/luna-agent
 COPY --from=build --chown=luna:luna /out ./
 COPY --from=build --chown=luna:luna /workspace/luna-agent/dist ./dist
+COPY --from=build --chown=luna:luna /workspace/luna-agent/skills ./skills
 USER 10001:10001
 EXPOSE 8091
 CMD ["node", "dist/index.js"]

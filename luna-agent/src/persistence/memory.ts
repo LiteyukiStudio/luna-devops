@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import type { Conversation, CreatedTurn, CreateTurn, Run, RunEvent, TimelineItem, Turn } from "../domain.js"
+import type { Conversation, ConversationHistoryEntry, ConversationTitleSource, CreatedTurn, CreateTurn, Run, RunEvent, TimelineItem, Turn } from "../domain.js"
 import { createId } from "../id.js"
 import type { Repository } from "./repository.js"
 
@@ -15,14 +15,24 @@ export class MemoryRepository implements Repository {
 
   async health(): Promise<boolean> { return true }
 
-  async createConversation(ownerUserId: string, title: string, projectId?: string): Promise<Conversation> {
+  async createConversation(ownerUserId: string, title: string, projectId?: string, titleSource?: ConversationTitleSource): Promise<Conversation> {
     const now = new Date().toISOString()
     const value: Conversation = {
-      id: createId("aicnv"), ownerUserId, title, status: "active", createdAt: now, updatedAt: now,
+      id: createId("aicnv"), ownerUserId, title,
+      titleSource: titleSource ?? (title === "新会话" ? "default" : "user"),
+      status: "active", createdAt: now, updatedAt: now,
       ...(projectId ? { projectId } : {}),
     }
     this.conversations.set(value.id, value)
     return value
+  }
+
+  async findEmptyConversation(ownerUserId: string, projectId?: string) {
+    return [...this.conversations.values()]
+      .filter(item => item.ownerUserId === ownerUserId
+        && item.projectId === projectId
+        && ![...this.turns.values()].some(turn => turn.conversationId === item.id))
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]
   }
 
   async listConversations(ownerUserId: string, page: number, pageSize: number) {
@@ -39,7 +49,15 @@ export class MemoryRepository implements Repository {
   async renameConversation(ownerUserId: string, id: string, title: string) {
     const value = await this.getConversation(ownerUserId, id)
     if (!value) return undefined
-    const next = { ...value, title, updatedAt: new Date().toISOString() }
+    const next: Conversation = { ...value, title, titleSource: "user", updatedAt: new Date().toISOString() }
+    this.conversations.set(id, next)
+    return next
+  }
+
+  async renameConversationByAssistant(id: string, title: string) {
+    const value = this.conversations.get(id)
+    if (!value || value.titleSource === "user") return undefined
+    const next: Conversation = { ...value, title, titleSource: "assistant", updatedAt: new Date().toISOString() }
     this.conversations.set(id, next)
     return next
   }
@@ -71,8 +89,8 @@ export class MemoryRepository implements Repository {
     }
     const run: StoredRun = {
       id: runId, conversationId: input.conversationId, turnId: turn.id, runIndex: 0,
-      status: "queued", rowVersion: 1, graphVersion: "assistant-v1", promptVersion: "system-v1",
-      toolCatalogDigest: "sha256:p0-readonly", pageContext: input.pageContext, createdAt: now, ownerUserId,
+      status: "queued", rowVersion: 1, graphVersion: "assistant-v1", promptVersion: "system-v3",
+      toolCatalogDigest: input.toolCatalogDigest ?? "sha256:platform-tools-v1", pageContext: input.pageContext, createdAt: now, ownerUserId,
       ...(input.runActorGrantCiphertext ? { runActorGrantCiphertext: input.runActorGrantCiphertext } : {}),
     }
     this.turns.set(turn.id, turn)
@@ -90,9 +108,16 @@ export class MemoryRepository implements Repository {
   }
 
   async cancelRun(ownerUserId: string, id: string) {
-    const run = await this.getRun(ownerUserId, id)
+    const run = this.runs.get(id)
+    if (run?.ownerUserId !== ownerUserId) return undefined
     if (!run || ["completed", "failed", "canceled", "expired"].includes(run.status)) return run
-    return this.updateRun(id, run.status, "canceled", { completedAt: new Date().toISOString() })
+    run.status = "canceled"
+    run.completedAt = new Date().toISOString()
+    run.rowVersion += 1
+    const turn = this.turns.get(run.turnId)
+    if (turn) turn.status = "canceled"
+    await this.appendEvent(id, "run.canceled", { state: "canceled", rowVersion: run.rowVersion })
+    return run
   }
 
   async claimRun(instanceId: string, leaseSeconds: number) {
@@ -106,7 +131,39 @@ export class MemoryRepository implements Repository {
   async getExecutionInput(runId: string) {
     const run = this.runs.get(runId)
     const turn = run ? this.turns.get(run.turnId) : undefined
-    return run && turn ? { turnId: turn.id, input: turn.input, pageContext: run.pageContext, toolResults: this.items.filter(item => item.runId === runId && item.type === "tool_result").map(item => item.content) } : undefined
+    const conversation = run ? this.conversations.get(run.conversationId) : undefined
+    const history = run && turn ? this.conversationHistory(run.conversationId, turn.turnIndex) : []
+    return run && turn && conversation
+      ? {
+          turnId: turn.id,
+          turnIndex: turn.turnIndex,
+          input: turn.input,
+          pageContext: run.pageContext,
+          toolResults: this.items.filter(item => item.runId === runId && item.type === "tool_result").map(item => item.content),
+          history,
+          conversation: { title: conversation.title, titleSource: conversation.titleSource },
+        }
+      : undefined
+  }
+
+  private conversationHistory(conversationId: string, beforeTurnIndex: number): ConversationHistoryEntry[] {
+    return [...this.turns.values()]
+      .filter(item => item.conversationId === conversationId && item.turnIndex < beforeTurnIndex)
+      .sort((a, b) => a.turnIndex - b.turnIndex)
+      .slice(-6)
+      .map((item) => {
+        const assistant = this.items
+          .filter(candidate => candidate.runId === item.selectedRunId && candidate.type === "assistant_message")
+          .sort((a, b) => a.timelineIndex - b.timelineIndex)
+          .map(candidate => timelineText(candidate.content))
+          .filter(Boolean)
+          .join("\n")
+        return {
+          turnIndex: item.turnIndex,
+          user: truncateHistoryText(item.input, 2000),
+          assistant: truncateHistoryText(assistant, 4000),
+        }
+      })
   }
   async getRunActorGrantCiphertext(runId: string) { return this.runs.get(runId)?.runActorGrantCiphertext }
   async appendRunInput(runId: string, text: string) {
@@ -118,7 +175,7 @@ export class MemoryRepository implements Repository {
 
   async renewLease(runId: string, instanceId: string, leaseSeconds: number) {
     const run = this.runs.get(runId)
-    if (!run || run.leaseOwner !== instanceId) return false
+    if (!run || run.leaseOwner !== instanceId || !["queued", "running"].includes(run.status)) return false
     run.leaseExpiresAt = Date.now() + leaseSeconds * 1000
     return true
   }
@@ -137,15 +194,31 @@ export class MemoryRepository implements Repository {
     Object.assign(run, fields, { status: to, rowVersion: run.rowVersion + 1 })
     const turn = this.turns.get(run.turnId)
     if (turn) turn.status = to
-    await this.appendEvent(runId, `run.${to}`, { state: to, rowVersion: run.rowVersion })
+    await this.appendEvent(runId, `run.${to}`, {
+      state: to,
+      rowVersion: run.rowVersion,
+      ...(fields.errorCode ? { errorCode: fields.errorCode } : {}),
+    })
     return run
   }
 
-  async appendItem(value: Omit<TimelineItem, "id" | "timelineIndex" | "createdAt">) {
+  async appendItem(value: Omit<TimelineItem, "id" | "timelineIndex" | "createdAt"> & { id?: string }) {
     const timelineIndex = this.items.filter(item => item.runId === value.runId).length
-    const item: TimelineItem = { ...value, id: createId("aiitm"), timelineIndex, createdAt: new Date().toISOString() }
+    const item: TimelineItem = { ...value, id: value.id ?? createId("aiitm"), timelineIndex, createdAt: new Date().toISOString() }
     this.items.push(item)
     return item
+  }
+
+  async updateItem(itemId: string, status: TimelineItem["status"], content: Record<string, unknown>) {
+    const item = this.items.find(candidate => candidate.id === itemId)
+    if (!item) throw new Error("ai.item_not_found")
+    item.status = status
+    item.content = content
+    return item
+  }
+
+  async finalizeStreamingItems(runId: string, status: Exclude<TimelineItem["status"], "streaming">) {
+    this.items.filter(item => item.runId === runId && item.status === "streaming").forEach(item => { item.status = status })
   }
 
   async appendEvent(runId: string, type: string, data: Record<string, unknown>) {
@@ -171,4 +244,19 @@ export class MemoryRepository implements Repository {
       })
     return { conversation, turns }
   }
+}
+
+function timelineText(content: Record<string, unknown>) {
+  if (!Array.isArray(content.parts)) return ""
+  return content.parts
+    .map((part: unknown) => {
+      if (!part || typeof part !== "object") return ""
+      const value = part as Record<string, unknown>
+      return typeof value.text === "string" ? value.text : ""
+    })
+    .join("")
+}
+
+function truncateHistoryText(value: string, maxLength: number) {
+  return [...value].slice(0, maxLength).join("")
 }

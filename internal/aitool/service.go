@@ -6,12 +6,15 @@ import (
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/model"
+	projectservice "github.com/LiteyukiStudio/devops/internal/project"
 	"gorm.io/gorm"
 )
 
 var (
-	ErrForbidden = errors.New("AI tool target is forbidden")
-	ErrNotFound  = errors.New("AI tool resource was not found")
+	ErrForbidden    = errors.New("AI tool target is forbidden")
+	ErrNotFound     = errors.New("AI tool resource was not found")
+	ErrInvalidInput = errors.New("AI tool input is invalid")
+	ErrConflict     = errors.New("AI tool operation conflicts with current state")
 )
 
 type Policy struct {
@@ -51,6 +54,9 @@ func (s *Service) AuthorizeActor(ctx context.Context, userID, sessionID, project
 	if len(policy.ProjectRoles) == 0 {
 		return true
 	}
+	if user.Role == "platform_admin" {
+		return true
+	}
 	if projectID == "" {
 		return false
 	}
@@ -68,10 +74,46 @@ func (s *Service) Execute(ctx context.Context, input Request) (Result, error) {
 	switch input.OperationID {
 	case "getDashboard":
 		var projects []map[string]any
-		err := s.db.WithContext(ctx).Table("projects").Select("projects.id, projects.name, projects.identifier").
-			Joins("join project_members on project_members.project_id = projects.id").
-			Where("project_members.user_id = ?", input.UserID).Order("projects.updated_at desc").Limit(limit).Scan(&projects).Error
+		query := s.db.WithContext(ctx).Table("projects").Select("projects.id, projects.name, projects.identifier")
+		if !s.platformAdmin(ctx, input.UserID) {
+			query = query.Joins("join project_members on project_members.project_id = projects.id").
+				Where("project_members.user_id = ?", input.UserID)
+		}
+		err := query.Order("projects.updated_at desc").Limit(limit).Scan(&projects).Error
 		return Result{Value: map[string]any{"projects": projects}, Truncated: len(projects) == limit}, err
+	case "listProjects":
+		var projects []map[string]any
+		query := s.db.WithContext(ctx).Table("projects").
+			Select("projects.id, projects.name, projects.identifier, projects.description, project_members.role, projects.created_at, projects.updated_at").
+			Joins("left join project_members on project_members.project_id = projects.id and project_members.user_id = ?", input.UserID)
+		if !s.platformAdmin(ctx, input.UserID) {
+			query = query.Where("project_members.user_id = ?", input.UserID)
+		}
+		err := query.Order("projects.updated_at desc").Limit(limit).Scan(&projects).Error
+		return Result{Value: map[string]any{"items": projects}, Truncated: len(projects) == limit}, err
+	case "createProject":
+		webConsoleEnabled, _ := input.Arguments["webConsoleEnabled"].(bool)
+		webConsoleConfigured := input.Arguments["webConsoleEnabled"] != nil
+		var webConsole *bool
+		if webConsoleConfigured {
+			webConsole = &webConsoleEnabled
+		}
+		project, err := projectservice.NewService(s.db).Create(ctx, input.UserID, projectservice.CreateInput{
+			Identifier:          stringArgument(input.Arguments, "identifier"),
+			Name:                stringArgument(input.Arguments, "name"),
+			Description:         stringArgument(input.Arguments, "description"),
+			NamespaceStrategy:   stringArgument(input.Arguments, "namespaceStrategy"),
+			MaxConcurrentBuilds: intArgument(input.Arguments, "maxConcurrentBuilds"),
+			WebConsoleEnabled:   webConsole,
+		})
+		switch {
+		case errors.Is(err, projectservice.ErrIdentifierInvalid), errors.Is(err, projectservice.ErrInputInvalid):
+			return Result{}, ErrInvalidInput
+		case errors.Is(err, projectservice.ErrIdentifierExists):
+			return Result{}, ErrConflict
+		default:
+			return Result{Value: project}, err
+		}
 	case "getProject":
 		var item map[string]any
 		err := s.db.WithContext(ctx).Table("projects").
@@ -117,6 +159,29 @@ func (s *Service) Execute(ctx context.Context, input Request) (Result, error) {
 		return Result{Value: map[string]any{"items": rows}, Truncated: len(rows) == limit}, err
 	default:
 		return Result{}, ErrForbidden
+	}
+}
+
+func (s *Service) platformAdmin(ctx context.Context, userID string) bool {
+	var count int64
+	return s.db.WithContext(ctx).Model(&model.User{}).
+		Where("id = ? and role = ? and disabled = ?", userID, "platform_admin", false).
+		Count(&count).Error == nil && count > 0
+}
+
+func stringArgument(arguments map[string]any, key string) string {
+	value, _ := arguments[key].(string)
+	return value
+}
+
+func intArgument(arguments map[string]any, key string) int {
+	switch value := arguments[key].(type) {
+	case int:
+		return value
+	case float64:
+		return int(value)
+	default:
+		return 0
 	}
 }
 

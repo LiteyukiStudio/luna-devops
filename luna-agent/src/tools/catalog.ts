@@ -33,12 +33,17 @@ const operation = z.object({
   if (["sensitive", "destructive"].includes(value.risk) && !value.stepUpPurpose) {
     context.addIssue({ code: "custom", message: "high-risk operation requires stepUpPurpose" })
   }
+  if (["sensitive", "destructive"].includes(value.risk) && value.approval === "never") {
+    context.addIssue({ code: "custom", message: "high-risk operation requires approval" })
+  }
   if (value.risk !== "read" && !value.idempotent) {
     context.addIssue({ code: "custom", message: "write operation requires idempotency" })
   }
 })
 
 export type ToolOperation = z.infer<typeof operation>
+
+const platformContextOperations = new Set(["getDashboard", "listProjects", "createProject"])
 
 export class ToolCatalog {
   private readonly operations: Map<string, ToolOperation>
@@ -55,6 +60,18 @@ export class ToolCatalog {
     const value = this.operations.get(operationId)
     if (!value) throw new Error("ai.tool_not_available")
     return value
+  }
+  all(): ToolOperation[] {
+    return [...this.operations.values()]
+  }
+  modelTools(context: { projectId?: string } = {}) {
+    return this.all()
+      .filter(item => context.projectId || platformContextOperations.has(item.operationId))
+      .map(item => ({
+        operationId: item.operationId,
+        description: `${item.category} operation (${item.risk}). ${platformContextOperations.has(item.operationId) ? "Available at platform scope." : "Requires the current page context to include a projectId."} Use only when the user's request requires current Luna DevOps data or an explicit platform action.`,
+        inputSchema: item.inputSchema,
+      }))
   }
   select(category: string, limit = 15): ToolOperation[] {
     return [...this.operations.values()].filter(item => item.category === category).slice(0, Math.min(15, limit))

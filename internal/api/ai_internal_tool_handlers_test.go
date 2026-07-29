@@ -17,8 +17,17 @@ func TestAIToolRegistryRejectsArbitraryOperationsAndPaths(t *testing.T) {
 		t.Fatal("arbitrary SQL must never enter the AI tool catalog")
 	}
 	for operationID, policy := range aiToolPolicies {
-		if operationID != policy.OperationID || policy.Risk != "read" || policy.MFAPurpose != "" {
-			t.Fatalf("unsafe P0/P2 tool policy %s = %#v", operationID, policy)
+		if operationID != policy.OperationID {
+			t.Fatalf("mismatched tool policy %s = %#v", operationID, policy)
+		}
+		if operationID == "createProject" {
+			if policy.Risk != "write" || policy.ApprovalRequired || policy.MFAPurpose != "" {
+				t.Fatalf("unexpected low-risk project creation policy = %#v", policy)
+			}
+			continue
+		}
+		if policy.Risk != "read" || policy.ApprovalRequired || policy.MFAPurpose != "" {
+			t.Fatalf("unsafe registered tool policy %s = %#v", operationID, policy)
 		}
 	}
 }

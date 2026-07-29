@@ -29,18 +29,56 @@ export class PostgresToolCallStore implements ToolCallStore {
   async emit(event: ToolEvent) {
     const call = await this.get(event.toolCallId)
     if (!call) throw new Error("ai.tool_call_not_found")
-    await this.repository.appendEvent(call.runId, event.type, { toolCallId: event.toolCallId, ...event.data })
     const input = await this.pool.query<{ turn_id: string }>(`select turn_id from ai.runs where id=$1`, [call.runId])
     const turnId = input.rows[0]?.turn_id
-    if (turnId) await this.repository.appendItem({
-      runId: call.runId, turnId, type: event.type === "tool_call.succeeded" || event.type === "tool_call.failed" ? "tool_result" : "tool_call",
-      status: event.type === "tool_call.failed" ? "failed" : "completed",
-      content: { toolCallId: call.id, operationId: call.operationId, status: call.status, arguments: call.arguments, result: call.result, errorCode: call.errorCode },
+    if (!turnId) return
+    const itemId = `${call.id}:item`
+    const content = {
+        toolCallId: call.id, operationId: call.operationId, status: call.status,
+        arguments: call.arguments, result: call.result, errorCode: call.errorCode,
+        argumentsHash: call.argumentsHash, expectedVersion: call.rowVersion, mfaPurpose: call.mfaPurpose,
+    }
+    const item = event.type === "tool.started"
+      ? await this.repository.appendItem({ id: itemId, runId: call.runId, turnId, type: "tool_call", status: "streaming", content })
+      : await this.repository.updateItem(itemId, toolItemStatus(event.type), content)
+    if (isToolTerminalEvent(event.type)) {
+      await this.repository.appendItem({
+        id: `${call.id}:result`, runId: call.runId, turnId, type: "tool_result",
+        status: event.type === "tool_call.failed" ? "failed" : "completed",
+        content: { relatedItemId: itemId, result: call.result, errorCode: call.errorCode },
+      })
+    }
+    await this.repository.appendEvent(call.runId, publicToolEventType(event.type), {
+      itemId, toolCallId: call.id, timelineIndex: item.timelineIndex, ...event.data,
     })
   }
   async countForRun(runId: string) {
     return Number((await this.pool.query<{ count: string }>(`select count(*) from ai.tool_calls where run_id=$1`, [runId])).rows[0]?.count ?? 0)
   }
+  async listAwaitingApproval(runId: string) {
+    const rows = (await this.pool.query<DbToolCall>(
+      `select * from ai.tool_calls where run_id=$1 and status='awaiting_approval' order by created_at`,
+      [runId],
+    )).rows
+    return rows.map(map)
+  }
+}
+
+function isToolTerminalEvent(type: string) {
+  return type === "tool_call.succeeded" || type === "tool_call.failed"
+}
+
+function toolItemStatus(type: string): "streaming" | "completed" | "failed" {
+  if (type === "tool_call.failed") return "failed"
+  return type === "tool_call.succeeded" || type === "approval.resolved" ? "completed" : "streaming"
+}
+
+function publicToolEventType(type: string) {
+  if (type === "tool_call.running") return "tool.progress"
+  if (type === "tool_call.succeeded") return "tool.completed"
+  if (type === "tool_call.failed") return "tool.failed"
+  if (type === "tool_call.awaiting_mfa") return "mfa.required"
+  return type
 }
 
 type DbToolCall = {

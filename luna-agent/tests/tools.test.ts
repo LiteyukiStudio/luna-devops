@@ -31,7 +31,8 @@ describe("tool catalog and orchestration", () => {
     expect(result.status).toBe("succeeded")
     expect(result.result).toMatchObject({ token: "[REDACTED]" })
     expect(client.calls).toHaveLength(1)
-    expect(store.events.map(event => event.type)).toEqual(["tool_call.proposed", "tool_call.running", "tool_call.succeeded"])
+    expect(client.calls[0]?.approvalGranted).toBe(false)
+    expect(store.events.map(event => event.type)).toEqual(["tool.started", "tool_call.running", "tool_call.succeeded"])
   })
   it("binds approval to arguments and requires MFA separately", async () => {
     const client = new DeterministicLunaApiClient(() => ({ status: 200, body: { restarted: true } }))
@@ -40,8 +41,9 @@ describe("tool catalog and orchestration", () => {
     expect(pending.status).toBe("awaiting_approval")
     const mfa = await orchestrator.approve(pending.id, pending.argumentsHash, pending.rowVersion)
     expect(mfa).toMatchObject({ status: "awaiting_mfa", mfaPurpose: "deployment_restart" })
-    const completed = await orchestrator.resumeMfa(mfa.id, "deployment_restart", mfa.rowVersion)
+    const completed = await orchestrator.resumeMfa(mfa.id, "deployment_restart", mfa.rowVersion, "mfa_assertion_1")
     expect(completed.status).toBe("succeeded")
+    expect(client.calls[0]).toMatchObject({ approvalGranted: true, mfaPurpose: "deployment_restart", stepUpAssertionId: "mfa_assertion_1" })
   })
   it("enforces a per-run tool-call ceiling", async () => {
     const client = new DeterministicLunaApiClient(() => ({ status: 200, body: {} }))
@@ -76,6 +78,14 @@ describe("tool catalog validation", () => {
     expect(() => ToolCatalog.load([{
       operationId: "deleteThing", method: "DELETE", path: "/api/v1/things", category: "thing",
       risk: "destructive", requiredScopes: [], approval: "always", idempotent: true, timeoutMs: 1000,
+      inputSchema: { type: "object", properties: {}, required: [], additionalProperties: false },
+    }])).toThrow()
+  })
+  it("rejects a high-risk operation that disables approval", () => {
+    expect(() => ToolCatalog.load([{
+      operationId: "deleteThing", method: "DELETE", path: "/api/v1/things", category: "thing",
+      risk: "destructive", requiredScopes: [], approval: "never", stepUpPurpose: "thing_delete",
+      idempotent: true, timeoutMs: 1000,
       inputSchema: { type: "object", properties: {}, required: [], additionalProperties: false },
     }])).toThrow()
   })

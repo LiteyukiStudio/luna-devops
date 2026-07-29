@@ -34,7 +34,54 @@ describe("internal API", () => {
       payload: { input: { parts: [{ type: "text", text: "为什么失败？" }] }, pageContext: { routeName: "application.builds" } },
     })
     expect(turn.statusCode).toBe(202)
-    expect(turn.json()).toMatchObject({ state: "queued" })
+    expect(turn.json()).toMatchObject({ state: "queued", turnIndex: 0 })
+    await app.close()
+  })
+  it("marks browser title edits as user-owned and permanently blocks assistant renames", async () => {
+    const { app, repository } = fixture()
+    const headers = { "x-luna-dev-user": "usr_title_owner" }
+    const created = await app.inject({ method: "POST", url: "/internal/v1/conversations", headers, payload: {} })
+    const conversationId = created.json<{ id: string }>().id
+    expect(created.json<{ titleSource: string }>().titleSource).toBe("default")
+
+    const renamed = await app.inject({
+      method: "PATCH",
+      url: `/internal/v1/conversations/${conversationId}`,
+      headers,
+      payload: { title: "我的固定标题" },
+    })
+
+    expect(renamed.statusCode).toBe(200)
+    expect(renamed.json()).toMatchObject({ title: "我的固定标题", titleSource: "user" })
+    expect(await repository.renameConversationByAssistant(conversationId, "AI 不应覆盖")).toBeUndefined()
+    expect((await repository.getConversation("usr_title_owner", conversationId))?.title).toBe("我的固定标题")
+    await app.close()
+  })
+  it("keeps a durable cancellation successful when the local abort hook fails", async () => {
+    const repository = new MemoryRepository()
+    const provider = new DeterministicProvider()
+    const app = buildServer({
+      config: loadConfig({ NODE_ENV: "test" }),
+      repository,
+      provider,
+      authenticator: new DevelopmentAuthenticator(),
+      graphVersions: ["assistant-v1"],
+      grantCipher: new RunGrantCipher(Buffer.alloc(32, 1)),
+      cancelRun: () => { throw new Error("local abort failed") },
+    })
+    const headers = { "x-luna-dev-user": "usr_cancel" }
+    const conversation = await app.inject({ method: "POST", url: "/internal/v1/conversations", headers, payload: { title: "Cancel" } })
+    const conversationId = conversation.json<{ id: string }>().id
+    const created = await app.inject({
+      method: "POST",
+      url: `/internal/v1/conversations/${conversationId}/turns`,
+      headers: { ...headers, "idempotency-key": "cancel-request-1" },
+      payload: { input: { parts: [{ type: "text", text: "stop" }] }, pageContext: {} },
+    })
+    const runId = created.json<AITurnCreated>().runId
+    const canceled = await app.inject({ method: "POST", url: `/internal/v1/runs/${runId}/cancel`, headers })
+    expect(canceled.statusCode).toBe(200)
+    expect(canceled.json()).toMatchObject({ id: runId, status: "canceled" })
     await app.close()
   })
   it("returns the complete fail-closed Web capabilities contract", async () => {
@@ -76,6 +123,7 @@ describe("internal API", () => {
     })
     const turnCreated: AITurnCreated = created.json<AITurnCreated>()
     const runId = turnCreated.runId
+    expect(turnCreated.turnIndex).toBe(0)
     expect(turnCreated.eventsUrl).toBe(`/api/v1/ai/runs/${runId}/events`)
     const response = await app.inject({ method: "GET", url: `/internal/v1/conversations/${conversationId}/timeline`, headers })
     const timeline: AITimeline = response.json<AITimeline>()
@@ -90,7 +138,7 @@ describe("internal API", () => {
       eventCursors: [{ runId, after: 1 }],
     })
     expect(Array.isArray(timeline.eventCursors)).toBe(true)
-    const directlyTyped: AITimeline | undefined = await presentTimeline(repository, "usr_timeline", conversationId)
+    const directlyTyped = await presentTimeline(repository, "usr_timeline", conversationId) as AITimeline | undefined
     expect(directlyTyped?.turns[0]?.selectedRun?.id).toBe(runId)
     const eventsResponse = await app.inject({ method: "GET", url: `/internal/v1/runs/${runId}/events?after=0&stream=false`, headers })
     const events = eventsResponse.json<{ items: AIEvent[], cursor: number }>()

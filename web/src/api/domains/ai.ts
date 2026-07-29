@@ -21,7 +21,7 @@ export const aiApi = {
     }),
   cancelAIRun: (runId: string) =>
     request<void>(`/ai/runs/${encodeURIComponent(runId)}/cancel`, { method: 'POST' }),
-  decideAIToolApproval: (runId: string, toolCallId: string, payload: { decision: 'approve' | 'reject', argumentsHash: string, expectedVersion: number, reason?: string }) =>
+  decideAIToolApproval: (runId: string, toolCallId: string, payload: { decision: 'approve' | 'reject' | 'approve_all', argumentsHash: string, expectedVersion: number, reason?: string }) =>
     request<void>(`/ai/runs/${encodeURIComponent(runId)}/approvals/${encodeURIComponent(toolCallId)}/decision`, { method: 'POST', body: JSON.stringify(payload) }),
   resumeAIToolMFA: (runId: string, toolCallId: string, payload: AIMFAResumePayload) =>
     request<void>(`/ai/runs/${encodeURIComponent(runId)}/mfa/${encodeURIComponent(toolCallId)}/resume`, { method: 'POST', body: JSON.stringify(payload) }),
