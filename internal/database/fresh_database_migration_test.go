@@ -29,6 +29,7 @@ func TestMigrateBootstrapsFreshPostgresSchema(t *testing.T) {
 		t.Fatalf("create integration schema: %v", err)
 	}
 	t.Cleanup(func() {
+		_ = adminDB.Exec(`DROP SCHEMA IF EXISTS ai CASCADE`).Error
 		_ = adminDB.Exec(`DROP SCHEMA IF EXISTS "` + schema + `" CASCADE`).Error
 		if sqlDB, dbErr := adminDB.DB(); dbErr == nil {
 			_ = sqlDB.Close()

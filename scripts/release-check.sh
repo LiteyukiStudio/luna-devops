@@ -77,7 +77,9 @@ section "Running Go tests"
 AUTH_TEST_DATABASE_URL="" go test ./...
 
 section "Running PostgreSQL integration and migration tests without cache"
-go test -count=1 ./internal/api ./internal/database
+# Both packages exercise the same ephemeral PostgreSQL database and apply the
+# full migration chain. Keep package execution serial to avoid concurrent DDL.
+go test -p 1 -count=1 ./internal/api ./internal/database
 
 section "Running Go vet"
 go vet ./...

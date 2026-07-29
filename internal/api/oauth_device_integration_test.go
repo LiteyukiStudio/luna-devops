@@ -97,7 +97,7 @@ func TestOAuthDeviceAuthorizationMFAAndRevocationFlow(t *testing.T) {
 	if pendingAuthorization.GrantID != nil || pendingAuthorization.UserID != nil {
 		t.Fatalf("pending authorization unexpectedly has an owner or grant: %#v", pendingAuthorization)
 	}
-	if pendingAuthorization.Scope != "deployment:data_export,user:read" {
+	if pendingAuthorization.Scope != "user:read,deployment:data_export" {
 		t.Fatalf("pending authorization scope = %q", pendingAuthorization.Scope)
 	}
 

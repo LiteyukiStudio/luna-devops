@@ -165,17 +165,18 @@ func newAccessTokenScopeIntegrationDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open integration schema: %v", err)
 	}
-	if err := database.Migrate(db); err != nil {
-		t.Fatalf("migrate integration schema: %v", err)
-	}
 	t.Cleanup(func() {
 		if sqlDB, dbErr := db.DB(); dbErr == nil {
 			_ = sqlDB.Close()
 		}
+		_ = adminDB.Exec(`DROP SCHEMA IF EXISTS ai CASCADE`).Error
 		_ = adminDB.Exec(`DROP SCHEMA IF EXISTS "` + schema + `" CASCADE`).Error
 		if sqlDB, dbErr := adminDB.DB(); dbErr == nil {
 			_ = sqlDB.Close()
 		}
 	})
+	if err := database.Migrate(db); err != nil {
+		t.Fatalf("migrate integration schema: %v", err)
+	}
 	return db
 }
