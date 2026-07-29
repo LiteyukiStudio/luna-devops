@@ -24,13 +24,13 @@ helm install luna-devops ./charts/luna-devops \
 This starts:
 
 ```text
-liteyukistudio/devops-api:nightly
-liteyukistudio/devops-worker:nightly
+liteyukistudio/luna-devops:nightly
+liteyukistudio/luna-worker:nightly
 postgres:17-alpine
 redis:8-alpine
 ```
 
-The AI assistant is disabled by default. The release workflow also publishes `liteyukistudio/devops-agent`, but the chart deploys it only when `ai.enabled=true` and `ai.existingSecret` is provided.
+The AI assistant is disabled by default. The release workflow also publishes `liteyukistudio/luna-agent`, but the chart deploys it only when `ai.enabled=true` and `ai.existingSecret` is provided.
 
 ## Open The Console
 

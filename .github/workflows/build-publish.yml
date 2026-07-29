@@ -12,9 +12,9 @@ env:
   CONTAINER_PLATFORMS: linux/amd64
   DOCKERHUB_REGISTRY: docker.io
   DOCKERHUB_NAMESPACE: liteyukistudio
-  IMAGE_API: devops-api
-  IMAGE_WORKER: devops-worker
-  IMAGE_AGENT: devops-agent
+  IMAGE_API: luna-devops
+  IMAGE_WORKER: luna-worker
+  IMAGE_AGENT: luna-agent
   IMAGE_GATEWAY_TRAFFIC_PROBE: devops-gateway-traffic-probe
 
 concurrency:
@@ -87,17 +87,17 @@ jobs:
       matrix:
         include:
           - title: API
-            image: devops-api
+            image: luna-devops
             file: Dockerfile
             target: runtime-embed-web
             build_args: TARGET=api
           - title: Worker
-            image: devops-worker
+            image: luna-worker
             file: Dockerfile
             target: runtime
             build_args: TARGET=worker
           - title: Agent
-            image: devops-agent
+            image: luna-agent
             file: luna-agent/Dockerfile
             target: runtime
             build_args: ""

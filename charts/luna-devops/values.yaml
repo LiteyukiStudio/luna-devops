@@ -17,7 +17,7 @@ app:
 api:
   replicaCount: 1
   image:
-    repository: liteyukistudio/devops-api
+    repository: liteyukistudio/luna-devops
     tag: ""
     pullPolicy: IfNotPresent
   service:
@@ -46,7 +46,7 @@ ai:
   agent:
     replicaCount: 2
     image:
-      repository: liteyukistudio/devops-agent
+      repository: liteyukistudio/luna-agent
       tag: ""
       pullPolicy: IfNotPresent
     service:
@@ -98,7 +98,7 @@ metrics:
 worker:
   replicaCount: 1
   image:
-    repository: liteyukistudio/devops-worker
+    repository: liteyukistudio/luna-worker
     tag: ""
     pullPolicy: IfNotPresent
   deployRolloutTimeoutSeconds: 600

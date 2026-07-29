@@ -128,6 +128,8 @@ Luna DevOps 支持容器、Helm 和本地二进制部署。实际使用环境推
 | Docker Compose | 单机试用、小型实验室和发版验证 | [`docker-compose.yaml`](docker-compose.yaml) |
 | 二进制 | 本地调试和源码开发 | [`cmd/api`](cmd/api)、[`cmd/worker`](cmd/worker) |
 
+DockerHub 发布镜像统一为 `liteyukistudio/luna-devops`、`liteyukistudio/luna-worker` 和 `liteyukistudio/luna-agent`。
+
 使用 Docker Compose 启动已发布的容器镜像：
 
 ```bash

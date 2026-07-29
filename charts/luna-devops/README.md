@@ -1,7 +1,8 @@
 # Luna DevOps Helm Chart
 
-This chart installs Luna DevOps with API, worker, PostgreSQL, and Redis. It can
-also deploy the independently released `liteyukistudio/devops-agent` image.
+This chart installs Luna DevOps with the `liteyukistudio/luna-devops` API image,
+the `liteyukistudio/luna-worker` worker image, PostgreSQL, and Redis. It can also
+deploy the independently released `liteyukistudio/luna-agent` image.
 
 ## Install
 

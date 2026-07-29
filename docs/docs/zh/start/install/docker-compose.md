@@ -18,9 +18,9 @@ Docker Compose 是最快的体验方式，适合个人服务器、测试环境�
 仓库根目录的 `docker-compose.yaml` 默认拉取：
 
 ```text
-liteyukistudio/devops-api:nightly
-liteyukistudio/devops-worker:nightly
-liteyukistudio/devops-agent:nightly（仅 AI profile）
+liteyukistudio/luna-devops:nightly
+liteyukistudio/luna-worker:nightly
+liteyukistudio/luna-agent:nightly（仅 AI profile）
 ```
 
 验证指定版本时，在启动命令前设置镜像 tag：

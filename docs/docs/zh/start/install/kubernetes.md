@@ -24,13 +24,13 @@ helm install luna-devops ./charts/luna-devops \
 这会启动：
 
 ```text
-liteyukistudio/devops-api:nightly
-liteyukistudio/devops-worker:nightly
+liteyukistudio/luna-devops:nightly
+liteyukistudio/luna-worker:nightly
 postgres:17-alpine
 redis:8-alpine
 ```
 
-AI 助手默认关闭。发布工作流同时发布 `liteyukistudio/devops-agent`，但只有设置 `ai.enabled=true` 并提供 `ai.existingSecret` 后 Chart 才会部署 Agent。
+AI 助手默认关闭。发布工作流同时发布 `liteyukistudio/luna-agent`，但只有设置 `ai.enabled=true` 并提供 `ai.existingSecret` 后 Chart 才会部署 Agent。
 
 ## 打开控制台
 

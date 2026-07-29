@@ -32,7 +32,7 @@ services:
       retries: 20
 
   api:
-    image: liteyukistudio/devops-api:${DEVOPS_IMAGE_TAG:-nightly}
+    image: liteyukistudio/luna-devops:${DEVOPS_IMAGE_TAG:-nightly}
     networks:
       - devops-internal
     environment:
@@ -72,7 +72,7 @@ services:
       start_period: 10s
 
   worker:
-    image: liteyukistudio/devops-worker:${DEVOPS_IMAGE_TAG:-nightly}
+    image: liteyukistudio/luna-worker:${DEVOPS_IMAGE_TAG:-nightly}
     networks:
       - devops-internal
     environment:
@@ -109,7 +109,7 @@ services:
 
   agent:
     profiles: ["ai"]
-    image: liteyukistudio/devops-agent:${DEVOPS_IMAGE_TAG:-nightly}
+    image: liteyukistudio/luna-agent:${DEVOPS_IMAGE_TAG:-nightly}
     networks:
       - devops-internal
     environment:

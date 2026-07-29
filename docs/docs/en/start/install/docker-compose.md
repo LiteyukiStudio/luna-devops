@@ -18,9 +18,9 @@ You need:
 The repository root `docker-compose.yaml` pulls these images by default:
 
 ```text
-liteyukistudio/devops-api:nightly
-liteyukistudio/devops-worker:nightly
-liteyukistudio/devops-agent:nightly (AI profile only)
+liteyukistudio/luna-devops:nightly
+liteyukistudio/luna-worker:nightly
+liteyukistudio/luna-agent:nightly (AI profile only)
 ```
 
 To verify a specific release, set the image tag before starting:

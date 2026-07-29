@@ -209,7 +209,7 @@
 - [x] 完整 Compose 固定使用生产模式，不再回退到开发管理员；启动前必须在统一 `.env` 中显式配置加密密钥、首次初始化 Token 和 Redis 密码。
 - [x] Redis 客户端连接收敛为唯一的 `REDIS_ADDR` URI：API、Worker、任务命令及 Asynq 调度共用解析结果；部署层不再从 URI 反向拆密码，完整 Compose 用 `REDIS_PASSWORD` 直接启动内置 Redis，并组装内部 URI；Helm 分别保存内置密码与客户端 URI，外部 Redis 继续使用完整 URI Secret。
 - [x] 完整 Compose 的 Worker 等待 API `/healthz` 通过后再启动，避免全新数据库首次 migration 尚未完成时提前访问业务表。
-- [x] 新增 GitHub Actions 容器发布工作流：仅构建 `linux/amd64` 容器镜像，发布 DockerHub `liteyukistudio/devops-api`、`liteyukistudio/devops-worker`；分支发布 `nightly`，`v*` tag 发布版本 tag，稳定版本 tag 额外发布 `latest`；`devops-api` 使用 `embed_web` 内嵌前端静态文件，不额外构建或上传 GitHub Release 二进制产物。
+- [x] 新增 GitHub Actions 容器发布工作流：仅构建 `linux/amd64` 容器镜像，发布 DockerHub `liteyukistudio/luna-devops`、`liteyukistudio/luna-worker`、`liteyukistudio/luna-agent`；分支发布 `nightly`，`v*` tag 发布版本 tag，稳定版本 tag 额外发布 `latest`；`luna-devops` 使用 `embed_web` 内嵌前端静态文件，不额外构建或上传 GitHub Release 二进制产物。
 - [x] 修复内嵌 SPA 根路径和 fallback 被 Go FileServer 重定向到 `./` 的问题：`index.html` 改为直接返回，避免服务端根路径出现不必要 301。
 - [x] 新增发布质量门禁 `scripts/release-check.sh`：要求干净工作区、精确 Go `1.26.5` 和 `AUTH_TEST_DATABASE_URL`，统一执行 Go test/vet/race、不可缓存的 PostgreSQL 认证/迁移集成测试、前端测试/lint/build、文档构建、生产 pnpm 依赖 high/critical 审计、Go 可达漏洞扫描与 Helm lint/render；GitHub Quality Job 自动启动 PostgreSQL。普通 Go/race 套件不注入数据库地址，真实 PostgreSQL 集成测试只执行一次，避免同一批用例在 CI 中重复三次。
 
@@ -1051,7 +1051,7 @@ OpenAPI，不把 MCP 作为内部服务总线。
 - [x] P2：实现构建、运行时事件、Gateway、证书、发布、Hook 和通知投递的固定列只读诊断工具，并接入统一诊断图。
 - [x] 完成正式前端与 BFF/Agent 接线：私有会话管理、Timeline Presenter、SSE 重连、三行 Thinking、默认折叠 Tool Call、批准/MFA/补充输入、桌面拖拽缩放、移动端全屏和 AI 管理设置。
 - [x] 完成独立 `luna-agent` 生产骨架、`ai` schema 迁移、动态 Provider 配置、Secret Store、Helm/Docker Compose 部署、NetworkPolicy、双语使用文档和 OpenAPI 契约。
-- [x] 将 `devops-agent` 纳入工程化发版链路：生产/源码/开发 Compose、环境变量示例、Helm 镜像说明、release quality gate、DockerHub 多镜像矩阵、SBOM 与 provenance。
+- [x] 将 `luna-agent` 纳入工程化发版链路：生产/源码/开发 Compose、环境变量示例、Helm 镜像说明、release quality gate、DockerHub 多镜像矩阵、SBOM 与 provenance。
 - [ ] P3：评估显式长期记忆、项目空间共享知识和外部 MCP 扩展；默认不启用。
 - [ ] 建立跨用户、跨项目、权限变化、提示注入、批准重放、Secret 脱敏、成本和 Agent 故障恢复测试门禁。
 

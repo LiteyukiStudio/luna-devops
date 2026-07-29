@@ -134,6 +134,8 @@ Luna DevOps can run from containers, Helm, or a local binary workflow. Container
 | Docker Compose | Single-node trial, small labs, release verification | [`docker-compose.yaml`](docker-compose.yaml) |
 | Binary | Local debugging and source-level development | [`cmd/api`](cmd/api), [`cmd/worker`](cmd/worker) |
 
+The DockerHub images are published as `liteyukistudio/luna-devops`, `liteyukistudio/luna-worker`, and `liteyukistudio/luna-agent`.
+
 Start the published container images with Docker Compose:
 
 ```bash
