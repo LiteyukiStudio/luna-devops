@@ -32,7 +32,6 @@ type Handlers struct {
 	aiAgent             aiagent.Client
 	aiDeploymentEnabled bool
 	aiActorResolver     func(*gin.Context) (aiagent.ActorContext, bool)
-	aiProjectAuthorizer func(*gin.Context, string) bool
 	aiTools             *aitool.Service
 }
 

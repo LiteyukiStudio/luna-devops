@@ -6,11 +6,35 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/LiteyukiStudio/devops/internal/config"
+	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/gin-gonic/gin"
 	"net/http"
 	"os"
 	"strings"
 )
+
+const requestIDContextKey = "luna_request_id"
+
+func requestIDMiddleware() gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		requestID := id.New("req")
+		ctx.Set(requestIDContextKey, requestID)
+		ctx.Header("X-Request-ID", requestID)
+		ctx.Next()
+	}
+}
+
+func requestID(ctx *gin.Context) string {
+	if value, exists := ctx.Get(requestIDContextKey); exists {
+		if requestID, ok := value.(string); ok && requestID != "" {
+			return requestID
+		}
+	}
+	requestID := id.New("req")
+	ctx.Set(requestIDContextKey, requestID)
+	ctx.Header("X-Request-ID", requestID)
+	return requestID
+}
 
 func bindJSON(ctx *gin.Context, value any) bool {
 	if err := ctx.ShouldBindJSON(value); err != nil {
@@ -72,11 +96,12 @@ func writeErrorCode(ctx *gin.Context, status int, code, detail string) {
 	if code == "" {
 		code = defaultErrorCode(status)
 	}
+	requestID := requestID(ctx)
 	if config.RuntimeMode() == "development" {
-		ctx.JSON(status, gin.H{"code": code, "error": detail, "detail": detail})
+		ctx.JSON(status, gin.H{"code": code, "error": detail, "detail": detail, "requestId": requestID})
 		return
 	}
-	ctx.JSON(status, gin.H{"code": code, "error": publicErrorMessage(status)})
+	ctx.JSON(status, gin.H{"code": code, "error": publicErrorMessage(status), "requestId": requestID})
 }
 
 func errorResponseMiddleware() gin.HandlerFunc {

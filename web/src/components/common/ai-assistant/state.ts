@@ -78,7 +78,7 @@ export function stateFromTimeline(timeline: AITimeline): AIAssistantState {
           titleKey: item.toolCall.titleKey,
           status: item.toolCall.status ?? (item.status === 'completed' ? 'succeeded' : 'running'),
           arguments: item.toolCall.arguments ?? {},
-          result: item.toolCall.result ?? structuredResult,
+          result: normalizeToolResult(item.toolCall.result ?? structuredResult),
           uiActions: item.toolCall.uiActions ?? [],
           durationMs: item.toolCall.durationMs,
           argumentsHash: item.toolCall.argumentsHash,
@@ -299,7 +299,8 @@ export function reduceAIEvent(state: AIAssistantState, event: AIEvent): AIAssist
             ...block,
             index: eventIndex,
             status,
-            result: event.payload.result as AIToolDisplayResult | undefined ?? block.result,
+            titleKey: stringPayload(event.payload, 'errorCode') || block.titleKey,
+            result: normalizeToolResult(event.payload.result) ?? block.result,
             uiActions: event.payload.uiActions as AIUIAction[] | undefined ?? block.uiActions,
             durationMs: typeof event.payload.durationMs === 'number' ? event.payload.durationMs : block.durationMs,
           }
@@ -311,15 +312,28 @@ export function reduceAIEvent(state: AIAssistantState, event: AIEvent): AIAssist
         type: 'tool_call',
         toolCallId,
         operationId: stringPayload(event.payload, 'operationId'),
-        titleKey: stringPayload(event.payload, 'titleKey') || undefined,
         status,
         arguments: typeof event.payload.arguments === 'object' && event.payload.arguments ? event.payload.arguments as Record<string, unknown> : {},
-        result: event.payload.result as AIToolDisplayResult | undefined,
+        titleKey: stringPayload(event.payload, 'errorCode') || stringPayload(event.payload, 'titleKey') || undefined,
+        result: normalizeToolResult(event.payload.result),
         uiActions: event.payload.uiActions as AIUIAction[] | undefined ?? [],
       })),
     }
   }
   return next
+}
+
+function normalizeToolResult(value: unknown): AIToolDisplayResult | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    return undefined
+  const result = value as Record<string, unknown>
+  return {
+    summaryKey: typeof result.summaryKey === 'string' ? result.summaryKey : 'ai.tool.result.completed',
+    ...(result.summaryParams && typeof result.summaryParams === 'object' ? { summaryParams: result.summaryParams as Record<string, string | number | boolean> } : {}),
+    ...(typeof result.requestId === 'string' ? { requestId: result.requestId } : {}),
+    ...(Array.isArray(result.fields) ? { fields: result.fields as AIToolDisplayResult['fields'] } : {}),
+    ...(result.presentation && typeof result.presentation === 'object' ? { presentation: result.presentation as AIToolDisplayResult['presentation'] } : {}),
+  }
 }
 
 export const emptyAIAssistantState: AIAssistantState = {

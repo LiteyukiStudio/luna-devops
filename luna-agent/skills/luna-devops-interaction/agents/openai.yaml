@@ -1,0 +1,4 @@
+interface:
+  display_name: "Luna DevOps 工作流"
+  short_description: "安全、连续地推进 Luna DevOps 平台工作流"
+  default_prompt: "使用 $luna-devops-interaction，通过正确的工具和下一步操作继续当前 Luna DevOps 工作流。"

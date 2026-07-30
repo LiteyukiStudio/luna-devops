@@ -80,6 +80,31 @@ describe('ai assistant tool status icon', () => {
     expect(screen.getByText('128 ms')).toBeInTheDocument()
   })
 
+  it('shows a safe failure reason and request id without exposing backend details', async () => {
+    await i18next.changeLanguage('zh-CN')
+    render(
+      <AIToolCallCard
+        block={{
+          ...toolBlock('failed'),
+          titleKey: 'ai.tool_storage_unavailable',
+          result: {
+            summaryKey: 'ai.tool.result.completed',
+            requestId: 'req_tool_failure',
+          },
+        }}
+        onAction={vi.fn(async () => true)}
+        onApproval={vi.fn(async () => {})}
+        onMFA={vi.fn(async () => {})}
+      />,
+    )
+
+    fireEvent.click(screen.getByText('listApplications'))
+    expect(screen.getByText('平台数据暂时无法读取，请稍后重试；如持续失败，请提供请求编号。')).toBeInTheDocument()
+    expect(screen.getByText('请求编号')).toBeInTheDocument()
+    expect(screen.getByText('req_tool_failure')).toBeInTheDocument()
+    expect(screen.queryByText(/select .* from/i)).not.toBeInTheDocument()
+  })
+
   it('offers reject, approve, and current-run approve-all decisions for a bound high-risk call', async () => {
     await i18next.changeLanguage('zh-CN')
     const onApproval = vi.fn(async () => {})

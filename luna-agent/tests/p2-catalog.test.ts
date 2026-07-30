@@ -23,11 +23,12 @@ describe("platform tool catalog", () => {
     ])
   })
 
-  it("offers project-scoped tools only when the page context has a project", () => {
+  it("offers project-scoped tools independently of page context and requires an explicit target", () => {
     const catalog = ToolCatalog.load(platformOperations)
 
-    expect(catalog.modelTools().map(tool => tool.operationId)).toEqual(["getDashboard", "listProjects", "createProject"])
-    expect(catalog.modelTools({ projectId: "project-1" }).map(tool => tool.operationId)).toContain("listPlatformEvents")
+    expect(catalog.modelTools().map(tool => tool.operationId)).toContain("listPlatformEvents")
+    expect(catalog.get("listApplications").inputSchema.required).toEqual(["projectId"])
+    expect(catalog.get("listProjects").inputSchema.properties).not.toHaveProperty("projectId")
   })
 
   it("exposes project creation as a user-authorized low-risk write without high-risk approval", () => {

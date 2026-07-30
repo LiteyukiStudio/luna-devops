@@ -57,7 +57,7 @@ export type UIOptionAction =
 
 export const createOptionsTool: ModelToolDefinition = {
   operationId: "create_options",
-  description: "Present 2-5 concise, context-specific predictions of what the user is most likely to do next. Every normally completed turn must end with exactly one create_options call. Each option is independent: selecting one never disables its siblings. Registered route navigation is repeatable by default; message and controlled-tool actions are non-idempotent and may run only once. Never claim the option already executed, never invent route names or operation IDs, and never use generic suggestions instead of answering a direct factual question.",
+  description: "Present 2-5 concise, context-specific next actions. Match the action to the immediate intent: send_message must answer a pending choice or collect missing operation arguments; request_tool proposes a ready registered operation; navigate is only for reading, browsing, or explicitly opening a known page. Never turn a required resource selection into navigation or mix unrelated navigation into a pending decision. Every normally completed turn must end with exactly one create_options call. Each option is independent. Navigation is repeatable by default; message and controlled-tool actions are one-time. Never claim execution, invent routes, IDs, or operations, or use generic suggestions instead of answering the current need.",
   inputSchema: {
     type: "object",
     additionalProperties: false,
@@ -114,7 +114,6 @@ export function fallbackOptionsInput(pageContext: Record<string, unknown>): Crea
   const chinese = locale.toLowerCase().startsWith("zh")
   const projectId = identifier(pageContext.projectId)
   const applicationId = identifier(pageContext.applicationId)
-  const route = typeof pageContext.routeName === "string" ? pageContext.routeName : "unknown"
   const followUp = {
     id: "continue-analysis",
     label: chinese ? "继续深入分析" : "Continue the analysis",
@@ -136,28 +135,34 @@ export function fallbackOptionsInput(pageContext: Record<string, unknown>): Crea
     },
   }
 
-  const options: Array<z.input<typeof createOptionsInput>["options"][number]> = [followUp, riskReview]
-  if (route === "application.detail" && projectId && applicationId) {
-    options.splice(0, 0, {
-      id: "open-builds",
-      label: chinese ? "查看应用构建" : "Open application builds",
-      action: { type: "navigate", routeName: "application.detail", params: { projectId, applicationId }, query: { tab: "builds" } },
-    })
-  } else if (route === "project.workspace" && projectId) {
-    options.splice(0, 0, {
-      id: "open-applications",
-      label: chinese ? "查看项目应用" : "Open project applications",
-      action: { type: "navigate", routeName: "project.workspace", params: { projectId }, query: { tab: "apps" } },
-    })
-  } else {
-    options.splice(0, 0, {
-      id: route === "projects" ? "open-dashboard" : "open-projects",
-      label: route === "projects"
-        ? (chinese ? "返回平台看板" : "Open dashboard")
-        : (chinese ? "查看项目空间" : "Open projects"),
-      action: { type: "navigate", routeName: route === "projects" ? "dashboard" : "projects", params: {}, query: {} },
-    })
-  }
+  const contextFollowUp = projectId && applicationId
+    ? {
+        id: "inspect-current-application",
+        label: chinese ? "分析当前应用" : "Analyze this application",
+        action: {
+          type: "send_message" as const,
+          message: chinese
+            ? `请继续分析当前应用（项目空间 ID：${projectId}，应用 ID：${applicationId}），并给出下一步建议。`
+            : `Continue analyzing the current application (project ID: ${projectId}, application ID: ${applicationId}) and recommend the next step.`,
+        },
+      }
+    : projectId
+      ? {
+          id: "inspect-current-project",
+          label: chinese ? "分析当前项目空间" : "Analyze this project",
+          action: {
+            type: "send_message" as const,
+            message: chinese
+              ? `请继续分析当前项目空间（ID：${projectId}），并给出下一步建议。`
+              : `Continue analyzing the current project (ID: ${projectId}) and recommend the next step.`,
+          },
+        }
+      : undefined
+  const options: Array<z.input<typeof createOptionsInput>["options"][number]> = [
+    ...(contextFollowUp ? [contextFollowUp] : []),
+    followUp,
+    riskReview,
+  ]
   return createOptionsInput.parse({
     title: chinese ? "你接下来可能想做" : "You may want to",
     options,

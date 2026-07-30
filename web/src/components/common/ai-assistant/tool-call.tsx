@@ -77,6 +77,12 @@ export function AIToolCallCard({ block, onAction, onApproval, onMFA }: { block: 
           ? (
               <div className="grid gap-2 rounded-control bg-surface px-2.5 py-2 text-xs">
                 <p>{summary}</p>
+                {block.result.requestId && (
+                  <div className="flex justify-between gap-3">
+                    <span className="text-muted-foreground">{t('aiAssistant.requestId')}</span>
+                    <code className="break-all text-right text-[11px]">{block.result.requestId}</code>
+                  </div>
+                )}
                 {block.durationMs !== undefined && (
                   <div className="flex justify-between gap-3">
                     <span className="text-muted-foreground">{t('aiAssistant.duration')}</span>

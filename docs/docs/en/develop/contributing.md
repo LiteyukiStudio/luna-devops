@@ -23,7 +23,7 @@
 ## Backend
 
 - Use PostgreSQL, not SQLite.
-- API startup runs embedded `migrations/*.up.sql`; legacy databases without `schema_migrations` are adopted at 008 before later migrations run.
+- API startup first runs embedded `migrations/*.up.sql` and then the model-bounded GORM `AutoMigrate`. Legacy databases without `schema_migrations` are adopted at 008 before later migrations run. Either stage failing prevents API startup rather than being silently skipped. Added or removed business fields should still use numbered SQL migrations and be verified against real PostgreSQL.
 - The running API serves the bundled OpenAPI document at `/openapi.yaml` and Swagger UI at `/swagger`.
 - Do not store secrets or tokens as plaintext in business tables.
 - External platform capabilities are adapted through backend providers, services, and APIs. The frontend must not orchestrate third-party APIs.

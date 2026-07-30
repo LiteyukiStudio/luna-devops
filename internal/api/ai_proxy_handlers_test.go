@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -78,7 +79,7 @@ func TestAIProxyUsesSessionActorAndForwardsIdempotencyKey(t *testing.T) {
 	pageContext, _ := forwarded["pageContext"].(map[string]any)
 	serverContext, _ := pageContext["server"].(map[string]any)
 	if pageContext["locale"] != "zh-CN" || serverContext["locale"] != "zh-CN" ||
-		serverContext["projectAuthorized"] != true || serverContext["requestTimestamp"] == "" {
+		serverContext["projectContextPresent"] != true || serverContext["requestTimestamp"] == "" {
 		t.Fatalf("enriched page context = %#v", pageContext)
 	}
 }
@@ -104,17 +105,14 @@ func TestAIProxyRejectsBrowserSuppliedActorIdentity(t *testing.T) {
 	}
 }
 
-func TestAIProxyRejectsProjectOutsideCurrentUserBoundary(t *testing.T) {
+func TestAIProxyTreatsPageProjectAsContextInsteadOfAuthorizationBoundary(t *testing.T) {
 	t.Setenv("AI_INTERNAL_SECRET", "test-ai-internal-secret-32-bytes-minimum")
-	fake := &fakeAIAgentClient{}
+	fake := &fakeAIAgentClient{response: &aiagent.Response{
+		StatusCode: http.StatusAccepted,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"turnId":"aitrn_context","runId":"airun_context"}`)),
+	}}
 	handler := aiTestHandlers(fake, true)
-	handler.aiProjectAuthorizer = func(ctx *gin.Context, projectID string) bool {
-		if projectID != "prj_hidden" {
-			t.Fatalf("project ID = %q", projectID)
-		}
-		writeErrorCode(ctx, http.StatusNotFound, "project.not_found", "project not found")
-		return false
-	}
 	router := gin.New()
 	router.POST("/api/v1/ai/conversations/:conversationId/turns", handler.ProxyAIRequest)
 
@@ -125,8 +123,29 @@ func TestAIProxyRejectsProjectOutsideCurrentUserBoundary(t *testing.T) {
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, request)
 
-	if response.Code != http.StatusNotFound || fake.calls != 0 {
+	if response.Code != http.StatusAccepted || fake.calls != 1 {
 		t.Fatalf("status = %d, agent calls = %d, body = %s", response.Code, fake.calls, response.Body.String())
+	}
+	var forwarded map[string]any
+	if err := json.Unmarshal(fake.request.Body, &forwarded); err != nil {
+		t.Fatal(err)
+	}
+	rawGrant, _ := forwarded["runActorGrant"].(string)
+	internalKeys, err := aiagent.LoadInternalKeys()
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant, err := aiagent.VerifyRunActorGrant(rawGrant, internalKeys.RunActorGrantSigningKey, time.Now())
+	if err != nil {
+		t.Fatalf("invalid authorization grant: %#v, error = %v", grant, err)
+	}
+	grantParts := strings.Split(rawGrant, ".")
+	if len(grantParts) != 3 {
+		t.Fatalf("invalid compact grant: %s", rawGrant)
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(grantParts[1])
+	if err != nil || strings.Contains(string(payload), `"projectId"`) {
+		t.Fatalf("page project leaked into authorization grant: %s", payload)
 	}
 }
 
@@ -216,6 +235,5 @@ func aiTestHandlers(client aiagent.Client, enabled bool) *Handlers {
 				UserID: "usr_session_owner", SessionID: "sess_owned", Locale: "zh-CN", RequestID: "req_test",
 			}, true
 		},
-		aiProjectAuthorizer: func(*gin.Context, string) bool { return true },
 	}
 }

@@ -1001,7 +1001,7 @@ CLI 已迁移到独立仓库 [`LiteyukiStudio/luna-cli`](https://github.com/Lite
 
 - [x] 确定 CLI 技术栈、两级工具命令、`key=value` 与多行/复杂输入规范、参数校验、单活动实例与账号凭据、活动登录默认项目空间、版本化 JSON Envelope、OAuth、Device Code、Access Token、Step-up MFA、i18n、AI 输出契约、npm/pnpm 安装、独立仓库 `v*` 发版、npm Trusted Publishing 和 Bun 单二进制方案。
 - [x] 完成 CLI spec 与 AI Agent 可实施性审计：按 `method + normalizedPath` 建立平台路由覆盖基线；明确普通业务命令、协议适配、浏览器回调、Webhook 接收器和显式排除等边界，`api request` 不计入覆盖；实时路由和命令数量统一由覆盖脚本输出，不在 TODO 复制快照。
-- [x] 移除旧 MCP 与内嵌 Assistant 设计，将 `ai-supports` 收敛为仅通过未来 `luna` CLI 工作的预发布 Skills。
+- [x] 移除旧 MCP、旧内嵌 Assistant 设计及 `ai-supports` 目录；CLI 与配套 Skills 已迁移到独立仓库。
 - [x] 曾通过根 pnpm workspace 抽取环境无关契约与客户端；CLI 迁移到独立仓库后，共享包一并迁出，平台根 workspace 已移除。
 - [x] CLI 迁出后取消 Web 迁移到跨仓共享包的计划；Web 保持自有 API Client，浏览器 Session、CSRF 和页面状态继续只属于 Web。
 - [x] 建立并通过 `pnpm check:platform-cli-coverage` 门禁：从 Gin Router 提取完整路由，逐路由分类为普通业务命令、协议适配、浏览器回调、Webhook 接收器或显式排除；普通业务 HTTP API 以 OpenAPI 为唯一事实源并生成 CLI 规范命令，协议适配必须由 OpenAPI 隐藏操作和精确 `method + path` 分类共同审计；禁止路径前缀通配排除，要求普通业务命令覆盖率 100%。所有允许 Bearer 调用的业务与协议路由还必须具有稳定非 `system:unmapped` Scope，且 OpenAPI 与运行时鉴权映射一致。
@@ -1042,6 +1042,9 @@ CLI 已迁移到独立仓库 [`LiteyukiStudio/luna-cli`](https://github.com/Lite
 
 ## 17. 内嵌 AI 助手
 
+- [x] 将 Agent 权限边界重构为当前登录用户的实时权限：页面与会话上下文只作模型指引，项目目标由哈希绑定的工具参数确定，执行期按 Session、目标项目和统一 RBAC Action 重新校验；平台工具拒绝项目参数，并恢复 viewer 的真实只读能力。
+- [x] 将内置中文交互与导航 Skills 拆成精简入口和按领域加载的 references，覆盖项目、应用、源码、构建、镜像、发布、运行时、网关、诊断、安全、管理与账单等主要工作流。
+- [x] 修复 `listApplications` 读取已移除 `description` 字段导致的工具失败；为工具数据库异常增加稳定错误分类和请求编号透传，前端展示可追踪原因而不暴露 SQL 或堆栈，并明确 API 启动迁移的 fail-closed 行为。
 - [x] 将 API↔Agent 的服务身份、上下文签名、回调认证、Delegation 签名与 Run Grant 加密配置收敛为单个 `AI_INTERNAL_SECRET`，通过 HKDF-SHA256 按用途派生子密钥，并同步简化 Compose、Helm 与部署文档。
 - [x] 将模型请求超时、单次 Run 超时和 Agent 实例并发数迁移到 Web 高级设置，通过受认证内部配置动态下发；轮询、租约和刷新周期收敛为代码安全默认值，部署环境只保留连接与鉴权配置。
 
@@ -1076,6 +1079,7 @@ OpenAPI，不把 MCP 作为内部服务总线。
 - [x] 修正 Tool Call 状态图标映射：仅运行态显示旋转加载图标，失败、成功、取消、跳过、等待批准与等待 MFA 使用明确语义图标。
 - [x] 扩展 AI 页面上下文信封与最近 6 轮角色化会话历史；每个正常完成的 Turn 强制生成 2-5 个意图预测选项，并为 Provider 格式偏差提供结构化重试和安全兜底。
 - [x] 将下一步选项改为独立点击状态：路由跳转可重复，发送消息与请求操作仅成功一次且不锁定兄弟选项；新增实时 SSE 驱动、注册表校验和重放去重的 `navigate_to_route` 自动前端路由工具，并将悬浮入口改为主题色语义渐变圆形。
+- [x] 新增 `luna-devops-interaction` 内置 Skill，并统一主 Prompt、独立意图预测与安全兜底：缺失参数使用消息选项回答，准备完备的变更使用受控操作，只有读取或明确打开资源时才建议导航。
 - [x] 完成独立 `luna-agent` 生产骨架、`ai` schema 迁移、动态 Provider 配置、Secret Store、Helm/Docker Compose 部署、NetworkPolicy、双语使用文档和 OpenAPI 契约。
 - [x] 将 `luna-agent` 纳入工程化发版链路：生产/源码/开发 Compose、环境变量示例、Helm 镜像说明、release quality gate、DockerHub 多镜像矩阵、SBOM 与 provenance。
 - [ ] P3：评估显式长期记忆、项目空间共享知识和外部 MCP 扩展；默认不启用。

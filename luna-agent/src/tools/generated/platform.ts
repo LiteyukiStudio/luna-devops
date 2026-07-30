@@ -1,7 +1,6 @@
-const listInputSchema = {
+const platformListInputSchema = {
   type: "object",
   properties: {
-    projectId: { type: "string", maxLength: 64 },
     page: { type: "integer", maximum: 100000 },
     pageSize: { type: "integer", maximum: 100 },
   },
@@ -9,9 +8,20 @@ const listInputSchema = {
   additionalProperties: false,
 } as const
 
+const projectListInputSchema = {
+  type: "object",
+  properties: {
+    projectId: { type: "string", maxLength: 64 },
+    page: { type: "integer", maximum: 100000 },
+    pageSize: { type: "integer", maximum: 100 },
+  },
+  required: ["projectId"],
+  additionalProperties: false,
+} as const
+
 export const platformOperations = [
-  operation("getDashboard", "dashboard", "dashboard:read"),
-  operation("listProjects", "project", "project:read"),
+  operation("getDashboard", "dashboard", "dashboard:read", platformListInputSchema),
+  operation("listProjects", "project", "project:read", platformListInputSchema),
   {
     operationId: "createProject",
     method: "POST",
@@ -37,20 +47,25 @@ export const platformOperations = [
     },
     resultVerifier: "project_created",
   },
-  operation("listPlatformEvents", "event", "event:read"),
-  operation("getProject", "project", "project:read"),
-  operation("listApplications", "application", "application:read"),
-  operation("listBuildRuns", "build", "build:read"),
-  operation("listReleases", "deployment", "deployment:read"),
-  operation("listRuntimeClusters", "runtime", "cluster:read"),
-  operation("listGatewayRoutes", "gateway", "gateway:read"),
-  operation("listGatewayCertificates", "gateway", "gateway:read"),
-  operation("listProjectHookRuns", "project", "project:read"),
-  operation("listNotificationDeliveries", "event", "event:read"),
-  operation("listRuntimeEvents", "event", "event:read"),
+  operation("listPlatformEvents", "event", "event:read", projectListInputSchema),
+  operation("getProject", "project", "project:read", projectListInputSchema),
+  operation("listApplications", "application", "application:read", projectListInputSchema),
+  operation("listBuildRuns", "build", "build:read", projectListInputSchema),
+  operation("listReleases", "deployment", "deployment:read", projectListInputSchema),
+  operation("listRuntimeClusters", "runtime", "cluster:read", projectListInputSchema),
+  operation("listGatewayRoutes", "gateway", "gateway:read", projectListInputSchema),
+  operation("listGatewayCertificates", "gateway", "gateway:read", projectListInputSchema),
+  operation("listProjectHookRuns", "project", "project:read", projectListInputSchema),
+  operation("listNotificationDeliveries", "event", "event:read", projectListInputSchema),
+  operation("listRuntimeEvents", "event", "event:read", projectListInputSchema),
 ]
 
-function operation(operationId: string, category: string, scope: string) {
+function operation(
+  operationId: string,
+  category: string,
+  scope: string,
+  inputSchema: typeof platformListInputSchema | typeof projectListInputSchema,
+) {
   return {
     operationId,
     method: "GET",
@@ -61,7 +76,7 @@ function operation(operationId: string, category: string, scope: string) {
     approval: "never",
     idempotent: true,
     timeoutMs: 15000,
-    inputSchema: listInputSchema,
+    inputSchema,
     maxItems: 100,
   }
 }

@@ -176,4 +176,34 @@ describe('aI assistant state', () => {
     })
     expect(approval.runStatuses['run-1']).toBe('waiting_approval')
   })
+
+  it('retains a failed tool error code and request id from the live event', () => {
+    const started = reduceAIEvent(emptyAIAssistantState, event({
+      type: 'tool.started',
+      toolCallId: 'tool-1',
+      payload: { operationId: 'listApplications', arguments: { projectId: 'prj_1' } },
+    }))
+    const failed = reduceAIEvent(started, event({
+      eventId: 'event-2',
+      eventSequence: 2,
+      type: 'tool.failed',
+      toolCallId: 'tool-1',
+      payload: {
+        errorCode: 'ai.tool_storage_unavailable',
+        result: {
+          code: 'ai.tool_storage_unavailable',
+          requestId: 'req_tool_failure',
+        },
+      },
+    }))
+
+    expect(failed.blocks[0]).toMatchObject({
+      type: 'tool_call',
+      status: 'failed',
+      titleKey: 'ai.tool_storage_unavailable',
+      result: {
+        requestId: 'req_tool_failure',
+      },
+    })
+  })
 })

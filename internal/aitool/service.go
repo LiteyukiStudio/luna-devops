@@ -3,8 +3,11 @@ package aitool
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	projectservice "github.com/LiteyukiStudio/devops/internal/project"
 	"gorm.io/gorm"
@@ -15,17 +18,20 @@ var (
 	ErrNotFound     = errors.New("AI tool resource was not found")
 	ErrInvalidInput = errors.New("AI tool input is invalid")
 	ErrConflict     = errors.New("AI tool operation conflicts with current state")
+	ErrStorage      = errors.New("AI tool storage is unavailable")
 )
 
+const applicationListColumns = "id, name, identifier, icon, delete_status, created_at, updated_at"
+
 type Policy struct {
-	ProjectRoles []string
+	ProjectAction authz.Action
 }
 
 type Request struct {
 	OperationID string
 	UserID      string
 	SessionID   string
-	ProjectID   string
+	Policy      Policy
 	Arguments   map[string]any
 }
 
@@ -51,24 +57,31 @@ func (s *Service) AuthorizeActor(ctx context.Context, userID, sessionID, project
 	if s.db.WithContext(ctx).First(&session, "id = ? and user_id = ? and expires_at > ?", sessionID, userID, time.Now()).Error != nil {
 		return false
 	}
-	if len(policy.ProjectRoles) == 0 {
+	if policy.ProjectAction == "" {
 		return true
 	}
-	if user.Role == "platform_admin" {
+	if authz.IsPlatformAdmin(user.Role) {
 		return true
 	}
 	if projectID == "" {
 		return false
 	}
-	var count int64
-	return s.db.WithContext(ctx).Table("project_members").
-		Where("project_id = ? and user_id = ? and role in ?", projectID, userID, policy.ProjectRoles).
-		Count(&count).Error == nil && count > 0
+	var member model.ProjectMember
+	if s.db.WithContext(ctx).First(&member, "project_id = ? and user_id = ?", projectID, userID).Error != nil {
+		return false
+	}
+	return authz.ProjectRoleAllows(member.Role, policy.ProjectAction)
 }
 
 func (s *Service) Execute(ctx context.Context, input Request) (Result, error) {
-	if requestedProject, _ := input.Arguments["projectId"].(string); requestedProject != "" && requestedProject != input.ProjectID {
-		return Result{}, ErrForbidden
+	projectID, err := targetProjectID(input.Policy, input.Arguments)
+	if err != nil {
+		return Result{}, err
+	}
+	if input.Policy.ProjectAction != "" {
+		if !s.AuthorizeActor(ctx, input.UserID, input.SessionID, projectID, input.Policy) {
+			return Result{}, ErrForbidden
+		}
 	}
 	const limit = 20
 	switch input.OperationID {
@@ -80,7 +93,7 @@ func (s *Service) Execute(ctx context.Context, input Request) (Result, error) {
 				Where("project_members.user_id = ?", input.UserID)
 		}
 		err := query.Order("projects.updated_at desc").Limit(limit).Scan(&projects).Error
-		return Result{Value: map[string]any{"projects": projects}, Truncated: len(projects) == limit}, err
+		return databaseResult(Result{Value: map[string]any{"projects": projects}, Truncated: len(projects) == limit}, err)
 	case "listProjects":
 		var projects []map[string]any
 		query := s.db.WithContext(ctx).Table("projects").
@@ -90,7 +103,7 @@ func (s *Service) Execute(ctx context.Context, input Request) (Result, error) {
 			query = query.Where("project_members.user_id = ?", input.UserID)
 		}
 		err := query.Order("projects.updated_at desc").Limit(limit).Scan(&projects).Error
-		return Result{Value: map[string]any{"items": projects}, Truncated: len(projects) == limit}, err
+		return databaseResult(Result{Value: map[string]any{"items": projects}, Truncated: len(projects) == limit}, err)
 	case "createProject":
 		webConsoleEnabled, _ := input.Arguments["webConsoleEnabled"].(bool)
 		webConsoleConfigured := input.Arguments["webConsoleEnabled"] != nil
@@ -112,54 +125,66 @@ func (s *Service) Execute(ctx context.Context, input Request) (Result, error) {
 		case errors.Is(err, projectservice.ErrIdentifierExists):
 			return Result{}, ErrConflict
 		default:
-			return Result{Value: project}, err
+			return databaseResult(Result{Value: project}, err)
 		}
 	case "getProject":
 		var item map[string]any
 		err := s.db.WithContext(ctx).Table("projects").
 			Select("id, name, identifier, description, created_at, updated_at").
-			Where("id = ?", input.ProjectID).Take(&item).Error
+			Where("id = ?", projectID).Take(&item).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return Result{}, ErrNotFound
 		}
-		return Result{Value: item}, err
+		return databaseResult(Result{Value: item}, err)
 	case "listApplications":
-		return s.scanProjectRows(ctx, "applications", input.ProjectID, "id, name, identifier, description, created_at, updated_at", limit)
+		return s.scanProjectRowsWhere(ctx, "applications", projectID, applicationListColumns, "deleted_at is null", limit)
 	case "listBuildRuns":
-		return s.scanProjectRows(ctx, "build_runs", input.ProjectID, "id, application_id, status, created_at, updated_at", limit)
+		return s.scanProjectRows(ctx, "build_runs", projectID, "id, application_id, status, created_at, updated_at", limit)
 	case "listReleases":
-		return s.scanProjectRows(ctx, "releases", input.ProjectID, "id, application_id, status, created_at, updated_at", limit)
+		return s.scanProjectRows(ctx, "releases", projectID, "id, application_id, status, created_at, updated_at", limit)
 	case "listPlatformEvents":
-		return s.scanProjectRows(ctx, "platform_events", input.ProjectID, "id, type, category, severity, status, resource_type, resource_id, occurred_at", limit)
+		return s.scanProjectRows(ctx, "platform_events", projectID, "id, type, category, severity, status, resource_type, resource_id, occurred_at", limit)
 	case "listGatewayRoutes":
-		return s.scanProjectRowsWhere(ctx, "gateway_routes", input.ProjectID,
+		return s.scanProjectRowsWhere(ctx, "gateway_routes", projectID,
 			"id, application_id, deployment_target_id, host, path, tls_mode, dns_status, certificate_status, status, enabled, updated_at",
 			"deleted_at is null", limit)
 	case "listGatewayCertificates":
-		return s.scanProjectRowsWhere(ctx, "gateway_routes", input.ProjectID,
+		return s.scanProjectRowsWhere(ctx, "gateway_routes", projectID,
 			"id, application_id, host, tls_mode, certificate_status, certificate_message, certificate_not_after, certificate_issuer_kind, certificate_issuer_name, updated_at",
 			"deleted_at is null and tls_mode <> 'http-only'", limit)
 	case "listProjectHookRuns":
-		return s.scanProjectRows(ctx, "hook_runs", input.ProjectID,
+		return s.scanProjectRows(ctx, "hook_runs", projectID,
 			"id, hook_config_id, build_run_id, release_id, application_id, name, phase, status, exit_code, message, started_at, finished_at, created_at", limit)
 	case "listNotificationDeliveries":
-		return s.scanProjectRows(ctx, "notification_deliveries", input.ProjectID,
+		return s.scanProjectRows(ctx, "notification_deliveries", projectID,
 			"id, event_id, event_type, severity, channel_id, adapter_kind, status, attempt_count, duration_millis, error_message, queued_at, started_at, finished_at", limit)
 	case "listRuntimeEvents":
-		return s.scanProjectRowsWhere(ctx, "platform_events", input.ProjectID,
+		return s.scanProjectRowsWhere(ctx, "platform_events", projectID,
 			"id, type, category, severity, status, application_id, deployment_target_id, resource_type, resource_id, summary_key, message, correlation_id, occurred_at",
 			"(category = 'runtime' or resource_type in ('pod', 'deployment', 'statefulset', 'job', 'runtime_cluster'))", limit)
 	case "listRuntimeClusters":
 		var rows []map[string]any
 		projectResources := s.db.WithContext(ctx).Table("scoped_resource_project_bindings").Select("resource_id").
-			Where("resource_type = ? and project_id = ?", "runtime_cluster", input.ProjectID)
+			Where("resource_type = ? and project_id = ?", "runtime_cluster", projectID)
 		err := s.db.WithContext(ctx).Table("runtime_clusters").Select("id, name, type, scope, status, created_at, updated_at").
 			Where("scope = 'global' or (scope = 'user' and owner_ref = ?) or (scope = 'project' and id in (?))", input.UserID, projectResources).
 			Order("created_at desc").Limit(limit).Scan(&rows).Error
-		return Result{Value: map[string]any{"items": rows}, Truncated: len(rows) == limit}, err
+		return databaseResult(Result{Value: map[string]any{"items": rows}, Truncated: len(rows) == limit}, err)
 	default:
 		return Result{}, ErrForbidden
 	}
+}
+
+func targetProjectID(policy Policy, arguments map[string]any) (string, error) {
+	projectID := strings.TrimSpace(stringArgument(arguments, "projectId"))
+	if policy.ProjectAction != "" && projectID == "" {
+		return "", ErrInvalidInput
+	}
+	if policy.ProjectAction == "" && projectID != "" {
+		// Platform-scoped tools must never inherit a project from page context.
+		return "", ErrInvalidInput
+	}
+	return projectID, nil
 }
 
 func (s *Service) platformAdmin(ctx context.Context, userID string) bool {
@@ -196,5 +221,12 @@ func (s *Service) scanProjectRowsWhere(ctx context.Context, table, projectID, co
 		query = query.Where(condition)
 	}
 	err := query.Order("created_at desc").Limit(limit).Scan(&rows).Error
-	return Result{Value: map[string]any{"items": rows}, Truncated: len(rows) == limit}, err
+	return databaseResult(Result{Value: map[string]any{"items": rows}, Truncated: len(rows) == limit}, err)
+}
+
+func databaseResult(result Result, err error) (Result, error) {
+	if err == nil {
+		return result, nil
+	}
+	return Result{}, fmt.Errorf("%w: %v", ErrStorage, err)
 }

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"sort"
 	"strings"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/LiteyukiStudio/devops/internal/aiagent"
 	"github.com/LiteyukiStudio/devops/internal/aitool"
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/gin-gonic/gin"
 )
@@ -20,7 +22,7 @@ import (
 type aiToolPolicy struct {
 	OperationID      string
 	Scopes           []string
-	ProjectRole      []string
+	ProjectAction    authz.Action
 	Risk             string
 	ApprovalRequired bool
 	MFAPurpose       string
@@ -30,17 +32,17 @@ var aiToolPolicies = map[string]aiToolPolicy{
 	"getDashboard":               {OperationID: "getDashboard", Scopes: []string{"dashboard:read"}, Risk: "read"},
 	"listProjects":               {OperationID: "listProjects", Scopes: []string{"project:read"}, Risk: "read"},
 	"createProject":              {OperationID: "createProject", Scopes: []string{"project:write"}, Risk: "write"},
-	"listPlatformEvents":         {OperationID: "listPlatformEvents", Scopes: []string{"event:read"}, ProjectRole: []string{"owner", "admin", "developer"}, Risk: "read"},
-	"getProject":                 {OperationID: "getProject", Scopes: []string{"project:read"}, ProjectRole: []string{"owner", "admin", "developer"}, Risk: "read"},
-	"listApplications":           {OperationID: "listApplications", Scopes: []string{"application:read"}, ProjectRole: []string{"owner", "admin", "developer"}, Risk: "read"},
-	"listBuildRuns":              {OperationID: "listBuildRuns", Scopes: []string{"build:read"}, ProjectRole: []string{"owner", "admin", "developer"}, Risk: "read"},
-	"listReleases":               {OperationID: "listReleases", Scopes: []string{"deployment:read"}, ProjectRole: []string{"owner", "admin", "developer"}, Risk: "read"},
-	"listRuntimeClusters":        {OperationID: "listRuntimeClusters", Scopes: []string{"cluster:read"}, ProjectRole: []string{"owner", "admin"}, Risk: "read"},
-	"listGatewayRoutes":          {OperationID: "listGatewayRoutes", Scopes: []string{"gateway:read"}, ProjectRole: []string{"owner", "admin", "developer", "viewer"}, Risk: "read"},
-	"listGatewayCertificates":    {OperationID: "listGatewayCertificates", Scopes: []string{"gateway:read"}, ProjectRole: []string{"owner", "admin", "developer", "viewer"}, Risk: "read"},
-	"listProjectHookRuns":        {OperationID: "listProjectHookRuns", Scopes: []string{"project:read"}, ProjectRole: []string{"owner", "admin", "developer", "viewer"}, Risk: "read"},
-	"listNotificationDeliveries": {OperationID: "listNotificationDeliveries", Scopes: []string{"event:read"}, ProjectRole: []string{"owner", "admin", "developer"}, Risk: "read"},
-	"listRuntimeEvents":          {OperationID: "listRuntimeEvents", Scopes: []string{"event:read"}, ProjectRole: []string{"owner", "admin", "developer"}, Risk: "read"},
+	"listPlatformEvents":         {OperationID: "listPlatformEvents", Scopes: []string{"event:read"}, ProjectAction: authz.ActionProjectRead, Risk: "read"},
+	"getProject":                 {OperationID: "getProject", Scopes: []string{"project:read"}, ProjectAction: authz.ActionProjectRead, Risk: "read"},
+	"listApplications":           {OperationID: "listApplications", Scopes: []string{"application:read"}, ProjectAction: authz.ActionApplicationRead, Risk: "read"},
+	"listBuildRuns":              {OperationID: "listBuildRuns", Scopes: []string{"build:read"}, ProjectAction: authz.ActionBuildRead, Risk: "read"},
+	"listReleases":               {OperationID: "listReleases", Scopes: []string{"deployment:read"}, ProjectAction: authz.ActionDeploymentRead, Risk: "read"},
+	"listRuntimeClusters":        {OperationID: "listRuntimeClusters", Scopes: []string{"cluster:read"}, ProjectAction: authz.ActionClusterRead, Risk: "read"},
+	"listGatewayRoutes":          {OperationID: "listGatewayRoutes", Scopes: []string{"gateway:read"}, ProjectAction: authz.ActionGatewayRead, Risk: "read"},
+	"listGatewayCertificates":    {OperationID: "listGatewayCertificates", Scopes: []string{"gateway:read"}, ProjectAction: authz.ActionGatewayRead, Risk: "read"},
+	"listProjectHookRuns":        {OperationID: "listProjectHookRuns", Scopes: []string{"project:read"}, ProjectAction: authz.ActionProjectRead, Risk: "read"},
+	"listNotificationDeliveries": {OperationID: "listNotificationDeliveries", Scopes: []string{"event:read"}, ProjectAction: authz.ActionProjectRead, Risk: "read"},
+	"listRuntimeEvents":          {OperationID: "listRuntimeEvents", Scopes: []string{"event:read"}, ProjectAction: authz.ActionProjectRead, Risk: "read"},
 }
 
 type aiDelegationExchangeInput struct {
@@ -108,7 +110,7 @@ func (h *Handlers) ExchangeAIDelegation(ctx *gin.Context) {
 	claims := aiagent.DelegationClaims{
 		Audience: "luna-api-ai-tools", Purpose: "execute_registered_tool",
 		RunID: grant.RunID, ToolCallID: input.ToolCallID, OperationID: input.OperationID,
-		UserID: grant.UserID, SessionID: grant.SessionID, ProjectID: grant.ProjectID,
+		UserID: grant.UserID, SessionID: grant.SessionID,
 		Scopes: append([]string(nil), policy.Scopes...), ArgumentsHash: input.ArgumentsHash,
 		IssuedAt: now.Unix(), ExpiresAt: now.Add(time.Minute).Unix(),
 	}
@@ -190,17 +192,17 @@ func (h *Handlers) requireAIDelegation(ctx *gin.Context, operationID string) (ai
 	return claims, true
 }
 
-func (h *Handlers) authorizeAIGrantActor(ctx *gin.Context, grant aiagent.RunActorGrant, policy aiToolPolicy) bool {
+func (h *Handlers) authorizeAIGrantActor(ctx *gin.Context, grant aiagent.RunActorGrant, _ aiToolPolicy) bool {
 	return h.aiTools != nil && h.aiTools.AuthorizeActor(
-		ctx.Request.Context(), grant.UserID, grant.SessionID, grant.ProjectID,
-		aitool.Policy{ProjectRoles: policy.ProjectRole},
+		ctx.Request.Context(), grant.UserID, grant.SessionID, "",
+		aitool.Policy{},
 	)
 }
 
-func (h *Handlers) authorizeAIDelegatedActor(ctx *gin.Context, claims aiagent.DelegationClaims, policy aiToolPolicy) bool {
+func (h *Handlers) authorizeAIDelegatedActor(ctx *gin.Context, claims aiagent.DelegationClaims, _ aiToolPolicy) bool {
 	return h.aiTools != nil && h.aiTools.AuthorizeActor(
-		ctx.Request.Context(), claims.UserID, claims.SessionID, claims.ProjectID,
-		aitool.Policy{ProjectRoles: policy.ProjectRole},
+		ctx.Request.Context(), claims.UserID, claims.SessionID, "",
+		aitool.Policy{},
 	)
 }
 
@@ -208,20 +210,31 @@ func (h *Handlers) executeRegisteredAITool(ctx *gin.Context, claims aiagent.Dele
 	if h.aiTools == nil {
 		return nil, http.StatusServiceUnavailable, "ai.tool_service_unavailable"
 	}
+	policy := aiToolPolicies[claims.OperationID]
 	result, err := h.aiTools.Execute(ctx.Request.Context(), aitool.Request{
 		OperationID: claims.OperationID, UserID: claims.UserID, SessionID: claims.SessionID,
-		ProjectID: claims.ProjectID, Arguments: arguments,
+		Policy: aitool.Policy{ProjectAction: policy.ProjectAction}, Arguments: arguments,
 	})
 	switch {
 	case errors.Is(err, aitool.ErrForbidden):
-		return nil, http.StatusForbidden, "ai.tool_target_out_of_scope"
+		return nil, http.StatusForbidden, "ai.tool_permission_denied"
 	case errors.Is(err, aitool.ErrNotFound):
 		return nil, http.StatusNotFound, "resource.not_found"
 	case errors.Is(err, aitool.ErrInvalidInput):
 		return nil, http.StatusBadRequest, "request.invalid"
 	case errors.Is(err, aitool.ErrConflict):
 		return nil, http.StatusConflict, "resource.conflict"
+	case errors.Is(err, aitool.ErrStorage):
+		log.Printf(
+			"ai tool storage failure request_id=%q operation=%q tool_call=%q: %v",
+			requestID(ctx), claims.OperationID, claims.ToolCallID, err,
+		)
+		return nil, http.StatusServiceUnavailable, "ai.tool_storage_unavailable"
 	case err != nil:
+		log.Printf(
+			"ai tool execution failure request_id=%q operation=%q tool_call=%q: %v",
+			requestID(ctx), claims.OperationID, claims.ToolCallID, err,
+		)
 		return nil, http.StatusInternalServerError, "ai.tool_execution_failed"
 	default:
 		return gin.H{"data": result.Value, "truncated": result.Truncated}, 0, ""

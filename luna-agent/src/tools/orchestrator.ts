@@ -145,15 +145,16 @@ export class ToolOrchestrator {
 
   private async finish(call: ToolCallRecord, result: ToolExecutionResult): Promise<ToolCallRecord> {
     const code = extractCode(result.body)
-    if (result.status === 401 || result.status === 403) return this.transition(call, "failed", { errorCode: code ?? "ai.tool_forbidden", result: redact(result.body) }, "tool_call.failed")
+    const storedResult = redact(withRequestId(result.body, result.requestId))
+    if (result.status === 401 || result.status === 403) return this.transition(call, "failed", { errorCode: code ?? "ai.tool_forbidden", result: storedResult }, "tool_call.failed")
     if (result.status === 428 && code === "mfa_required") {
       const purpose = (result.body as Record<string, unknown>).purpose
       return this.transition(call, "awaiting_mfa", { mfaPurpose: typeof purpose === "string" ? purpose : "" }, "tool_call.awaiting_mfa")
     }
-    if (result.status < 200 || result.status >= 300) return this.transition(call, "failed", { errorCode: code ?? "ai.tool_failed", result: redact(result.body) }, "tool_call.failed")
+    if (result.status < 200 || result.status >= 300) return this.transition(call, "failed", { errorCode: code ?? "ai.tool_failed", result: storedResult }, "tool_call.failed")
     const verification = await this.verifier.verify(call.operationId, result)
-    if (!verification.ok) return this.transition(call, "failed", { errorCode: verification.code ?? "verification_inconclusive", result: redact(result.body) }, "tool_call.failed")
-    return this.transition(call, "succeeded", { result: redact(result.body) }, "tool_call.succeeded")
+    if (!verification.ok) return this.transition(call, "failed", { errorCode: verification.code ?? "verification_inconclusive", result: storedResult }, "tool_call.failed")
+    return this.transition(call, "succeeded", { result: storedResult }, "tool_call.succeeded")
   }
 
   private async transition(call: ToolCallRecord, status: ToolCallStatus, patch: Partial<ToolCallRecord>, event: string, eventData: Record<string, unknown> = {}) {
@@ -185,6 +186,12 @@ function extractCode(body: unknown): string | undefined {
   if (!body || typeof body !== "object") return undefined
   const object = body as Record<string, unknown>
   return typeof object.code === "string" ? object.code : typeof (object.error as Record<string, unknown> | undefined)?.code === "string" ? (object.error as { code: string }).code : undefined
+}
+
+function withRequestId(body: unknown, requestId: string | undefined): unknown {
+  if (!requestId || !body || typeof body !== "object" || Array.isArray(body)) return body
+  const object = body as Record<string, unknown>
+  return typeof object.requestId === "string" ? body : { ...object, requestId }
 }
 
 export class MemoryToolCallStore implements ToolCallStore {

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/gin-gonic/gin"
 )
 
@@ -29,6 +30,20 @@ func TestAIToolRegistryRejectsArbitraryOperationsAndPaths(t *testing.T) {
 		if policy.Risk != "read" || policy.ApprovalRequired || policy.MFAPurpose != "" {
 			t.Fatalf("unsafe registered tool policy %s = %#v", operationID, policy)
 		}
+	}
+}
+
+func TestAIReadToolPoliciesReuseProjectRBACIncludingViewer(t *testing.T) {
+	for operationID, policy := range aiToolPolicies {
+		if policy.Risk != "read" || policy.ProjectAction == "" {
+			continue
+		}
+		if !authz.ProjectRoleAllows(authz.ProjectRoleViewer, policy.ProjectAction) {
+			t.Errorf("viewer denied read operation %s via action %s", operationID, policy.ProjectAction)
+		}
+	}
+	if aiToolPolicies["listApplications"].ProjectAction != authz.ActionApplicationRead {
+		t.Fatalf("listApplications policy = %#v", aiToolPolicies["listApplications"])
 	}
 }
 

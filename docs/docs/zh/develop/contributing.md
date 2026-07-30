@@ -23,7 +23,7 @@
 ## 后端
 
 - PostgreSQL，不使用 SQLite。
-- API 启动时会执行内嵌的 `migrations/*.up.sql`；已有但没有 `schema_migrations` 的旧库会先接入到 008，再继续执行后续迁移。
+- API 启动时会先执行内嵌的 `migrations/*.up.sql`，再运行受模型约束的 GORM `AutoMigrate`；已有但没有 `schema_migrations` 的旧库会先接入到 008，再继续执行后续迁移。任一步失败都会阻止 API 启动，不能静默跳过；新增或删除业务字段仍应以编号 SQL migration 为主，并用真实 PostgreSQL 迁移测试验证。
 - 运行中的 API 会在 `/openapi.yaml` 提供内置 OpenAPI 文档，并在 `/swagger` 提供 Swagger UI。
 - Secret 和 Token 不明文落业务表。
 - 外部平台能力由后端 provider/service/API 适配，前端不编排第三方平台 API。

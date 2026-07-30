@@ -1,52 +1,24 @@
 ---
 name: luna-devops-navigation
-description: Guide Luna DevOps assistant responses to link platform pages and resources with safe internal Markdown routes. Use when an answer references a page, project, application, build, deployment, gateway, billing, setting, or another resource that the user can open in the Luna DevOps web console.
+description: 指导 Luna DevOps 助手为平台页面和资源生成链接或切换路由；用于用户希望读取、检查、浏览、比较或明确打开项目空间、应用、构建、部署、网关、事件、账号、账单、设置或其他 Luna DevOps 控制台资源的场景。
 ---
 
-# Luna DevOps internal navigation
+# Luna DevOps 站内导航
 
-## Output links
+## 仅为导航意图提供链接
 
-- Write an inline Markdown link when a referenced page or resource has a useful destination: `[label](/registered/path)`.
-- Use a concise human label. Do not expose a raw path when a resource name is available.
-- Use links in the answer itself for resources being discussed. End every normally completed turn with exactly one `create_options` call containing 2-5 context-specific next-step predictions.
-- Use only IDs returned by trusted tool results or supplied page context. Never invent an ID or infer one from a display name.
-- Do not put internal links in code fences and do not claim that emitting a link navigated the browser.
+- 当打开或检查目标有助于满足读取意图时，输出 `[标签](/已注册路径)`。
+- 优先使用人类可读的资源名称，不要直接显示裸路径。
+- 只能使用已注册路由模式，以及来自页面上下文或工具结果的可信标识符。
+- 选择参数、确认意图或准备变更时，不要仅因提到操作目标就生成链接。
+- 不得声称 Markdown 链接已经切换路由。只有用户明确且无歧义地要求打开或切换页面时才使用 `navigate_to_route`。
+- 缺少标识符时，使用读取工具获取，或只描述目标，不得虚构链接。
 
-## Registered pages
+## 保持导航安全
 
-| Page | Path |
-| --- | --- |
-| Dashboard | `/dashboard` |
-| Projects | `/projects` |
-| Events | `/events` |
-| Code repositories | `/code-repositories` |
-| Registries | `/registries` |
-| Clusters | `/clusters` |
-| Application marketplace | `/app-templates` |
-| Billing | `/billing` |
-| Account | `/settings/account` |
-| Authentication providers | `/settings/auth-providers` |
-| Notifications | `/settings/notifications` |
-| Operations | `/settings/operations` |
-| Site settings | `/settings/site` |
-| Users | `/settings/users` |
+- 使用恰好以一个 `/` 开头的根相对路径。
+- 拒绝 `javascript:`、`data:`、协议相对地址、外部地址和未注册 URL。
+- 链接只表示导航，绝不授予访问权限、确认操作或证明资源存在。
+- 只有查询参数和 Hash 与已注册 Tab 或资源选择器匹配时才保留。
 
-## Resource paths
-
-- Project: `/projects/:projectId`
-- Project tab: `/projects/:projectId?tab=:tabId`
-- Application: `/projects/:projectId/apps/:applicationId`
-- Application tab: `/projects/:projectId/apps/:applicationId?tab=:tabId`
-- Build run: `/projects/:projectId/apps/:applicationId?tab=builds#tab=builds&buildRunId=:buildRunId`
-
-Project tab IDs: `overview`, `apps`, `members`, `build-variables`, `runtime-configs`, `hooks`, `topology`.
-
-Application tab IDs: `overview`, `repositories`, `builds`, `deployments`, `gateway`, `topology`, `settings`.
-
-## Safety
-
-- Use a root-relative path beginning with exactly one `/`.
-- Never emit `javascript:`, `data:`, protocol-relative, external, or unregistered URLs as internal links.
-- Preserve authorization boundaries. A link is navigation only and does not grant access or execute an operation.
-- If the destination or required IDs are uncertain, describe where to go without fabricating a link.
+仅在生成 Markdown 链接、`navigate` 选项或 `navigate_to_route` 调用时读取 [routes.md](references/routes.md)。

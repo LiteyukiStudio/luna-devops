@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -23,6 +24,34 @@ func TestInternalErrorCodeUsesStableRouteTemplate(t *testing.T) {
 	router.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusNoContent {
 		t.Fatalf("status = %d", recorder.Code)
+	}
+}
+
+func TestErrorResponseIncludesGeneratedRequestID(t *testing.T) {
+	router := gin.New()
+	router.Use(requestIDMiddleware())
+	router.GET("/failure", func(ctx *gin.Context) {
+		writeErrorCode(ctx, http.StatusServiceUnavailable, "ai.tool_storage_unavailable", "database detail")
+	})
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/failure", nil))
+
+	var response struct {
+		Code      string `json:"code"`
+		RequestID string `json:"requestId"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if response.Code != "ai.tool_storage_unavailable" {
+		t.Fatalf("code = %q", response.Code)
+	}
+	if !strings.HasPrefix(response.RequestID, "req_") {
+		t.Fatalf("request id = %q", response.RequestID)
+	}
+	if header := recorder.Header().Get("X-Request-ID"); header != response.RequestID {
+		t.Fatalf("X-Request-ID = %q, body requestId = %q", header, response.RequestID)
 	}
 }
 

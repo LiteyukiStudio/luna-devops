@@ -65,11 +65,11 @@ export class ToolCatalog {
     return [...this.operations.values()]
   }
   modelTools(context: { projectId?: string } = {}) {
+    void context
     return this.all()
-      .filter(item => context.projectId || platformContextOperations.has(item.operationId))
       .map(item => ({
         operationId: item.operationId,
-        description: `${item.category} operation (${item.risk}). ${platformContextOperations.has(item.operationId) ? "Available at platform scope." : "Requires the current page context to include a projectId."} Use only when the user's request requires current Luna DevOps data or an explicit platform action.`,
+        description: `${item.category} operation (${item.risk}). ${platformContextOperations.has(item.operationId) ? "Available at platform scope and must not receive projectId." : "Requires an explicit projectId selected from user-visible resources; page context is guidance, not authorization."} Use only when the user's request requires current Luna DevOps data or an explicit platform action.`,
         inputSchema: item.inputSchema,
       }))
   }

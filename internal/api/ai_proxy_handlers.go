@@ -82,9 +82,6 @@ func (h *Handlers) ProxyAIRequest(ctx *gin.Context) {
 
 	actor.ProjectID = projectIDFromAIRequest(ctx, body)
 	actor.RunID = strings.TrimSpace(ctx.Param("runId"))
-	if actor.ProjectID != "" && !h.authorizeAIProject(ctx, actor.ProjectID) {
-		return
-	}
 	if ctx.FullPath() == "/api/v1/ai/conversations/:conversationId/turns" {
 		var prepared bool
 		body, actor, prepared = prepareAITurnGrant(ctx, actor, body)
@@ -156,14 +153,6 @@ func (h *Handlers) prepareAIToolMFAResume(ctx *gin.Context, actor aiagent.ActorC
 	return prepared, true
 }
 
-func (h *Handlers) authorizeAIProject(ctx *gin.Context, projectID string) bool {
-	if h.aiProjectAuthorizer != nil {
-		return h.aiProjectAuthorizer(ctx, projectID)
-	}
-	_, ok := h.findProjectForCurrentUserByID(ctx, projectID)
-	return ok
-}
-
 func (h *Handlers) aiActorFromSession(ctx *gin.Context) (aiagent.ActorContext, bool) {
 	if h.aiActorResolver != nil {
 		return h.aiActorResolver(ctx)
@@ -205,8 +194,8 @@ func prepareAITurnGrant(ctx *gin.Context, actor aiagent.ActorContext, body []byt
 	grant, err := aiagent.SignRunActorGrant(aiagent.RunActorGrant{
 		Audience: "luna-ai-run-grant", Purpose: "agent_delegation_exchange",
 		RunID: runID, UserID: actor.UserID, SessionID: actor.SessionID,
-		OAuthGrantID: actor.OAuthGrantID, ProjectID: actor.ProjectID,
-		IssuedAt: now.Unix(), ExpiresAt: expiresAt.Unix(),
+		OAuthGrantID: actor.OAuthGrantID,
+		IssuedAt:     now.Unix(), ExpiresAt: expiresAt.Unix(),
 	}, internalKeys.RunActorGrantSigningKey)
 	if err != nil {
 		writeErrorCode(ctx, http.StatusServiceUnavailable, "ai.delegation_not_configured", "Run delegation trust is not configured")
@@ -230,9 +219,9 @@ func enrichAIPageContext(raw any, actor aiagent.ActorContext, now time.Time) map
 	}
 	pageContext["locale"] = normalizedAILocale(actor.Locale)
 	pageContext["server"] = map[string]any{
-		"requestTimestamp":  now.UTC().Format(time.RFC3339),
-		"locale":            normalizedAILocale(actor.Locale),
-		"projectAuthorized": actor.ProjectID != "",
+		"requestTimestamp":      now.UTC().Format(time.RFC3339),
+		"locale":                normalizedAILocale(actor.Locale),
+		"projectContextPresent": actor.ProjectID != "",
 	}
 	return pageContext
 }

@@ -19,7 +19,6 @@ type RunActorGrant struct {
 	UserID       string `json:"userId"`
 	SessionID    string `json:"sessionId"`
 	OAuthGrantID string `json:"oauthGrantId,omitempty"`
-	ProjectID    string `json:"projectId,omitempty"`
 	IssuedAt     int64  `json:"iat"`
 	ExpiresAt    int64  `json:"exp"`
 }
@@ -32,7 +31,6 @@ type DelegationClaims struct {
 	OperationID   string   `json:"operationId"`
 	UserID        string   `json:"userId"`
 	SessionID     string   `json:"sessionId"`
-	ProjectID     string   `json:"projectId,omitempty"`
 	Scopes        []string `json:"scopes"`
 	ArgumentsHash string   `json:"argumentsHash"`
 	IssuedAt      int64    `json:"iat"`

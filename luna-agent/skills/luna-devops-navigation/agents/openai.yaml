@@ -1,0 +1,4 @@
+interface:
+  display_name: "Luna DevOps 站内导航"
+  short_description: "安全生成并打开 Luna DevOps 站内资源链接"
+  default_prompt: "使用 $luna-devops-navigation，安全地链接或打开用户请求的 Luna DevOps 资源。"

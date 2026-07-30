@@ -1,7 +1,7 @@
 import { Annotation, END, START, StateGraph } from "@langchain/langgraph"
 import type { ConversationHistoryEntry, ConversationTitleSource, PromptVersion } from "../domain.js"
 import type { ModelProvider, ModelToolDefinition, ModelToolResolver } from "../provider/provider.js"
-import { systemPromptFor } from "../prompt/system.js"
+import { skillGuidanceFor, systemPromptFor } from "../prompt/system.js"
 import { renameConversationTool } from "../tools/conversation-title.js"
 import { createOptionsTool } from "../tools/ui-options.js"
 
@@ -34,10 +34,11 @@ export class GraphVersionRegistry {
     const graph = new StateGraph(GraphState)
       .addNode("context", state => ({ ...state, reasoningSummary: "正在检查会话上下文与可用的只读能力。" }))
       .addNode("respond", async state => {
+        const tools = this.modelTools(state.pageContext, state.conversation)
         const response = await provider.complete({
-          messages: modelMessages(state.promptVersion, state.input, state.pageContext, state.conversation, state.history),
+          messages: modelMessages(state.promptVersion, state.input, state.pageContext, state.conversation, state.history, tools),
           maxOutputTokens: 1200,
-          tools: this.modelTools(state.pageContext, state.conversation),
+          tools,
         })
         return { ...state, answer: response.text, toolCalls: response.toolCalls ?? [], reasoningSummary: response.reasoningSummary ?? state.reasoningSummary }
       })
@@ -54,10 +55,11 @@ export class GraphVersionRegistry {
 
   stream(version: string, input: AssistantGraphState, signal?: AbortSignal) {
     if (!this.graphs.has(version)) throw new Error("ai.graph_version_unavailable")
+    const tools = this.modelTools(input.pageContext, input.conversation)
     return this.provider.stream({
-      messages: modelMessages(input.promptVersion, input.input, input.pageContext, input.conversation, input.history),
+      messages: modelMessages(input.promptVersion, input.input, input.pageContext, input.conversation, input.history, tools),
       maxOutputTokens: 1200,
-      tools: this.modelTools(input.pageContext, input.conversation),
+      tools,
       ...(signal ? { signal } : {}),
     })
   }
@@ -85,6 +87,11 @@ export class GraphVersionRegistry {
     const availableOperations = this.modelTools(input.pageContext, input.conversation)
       .map(tool => tool.operationId)
       .filter(operationId => !["create_options", "rename_conversation", "navigate_to_route"].includes(operationId))
+    const skillGuidance = skillGuidanceFor({
+      userInput: `${input.userInput}\n${input.answer}`,
+      pageContext: input.pageContext,
+      operationIds: availableOperations,
+    })
     const response = await this.provider.complete({
       messages: [
         {
@@ -93,9 +100,16 @@ export class GraphVersionRegistry {
 The assistant answer is already complete. You MUST call create_options exactly once and emit no prose.
 Predict 2-5 distinct actions the user is most likely to want next, ordered by usefulness.
 Use the user's language. Prefer actions grounded in the current page, trusted identifiers, the answer, and recent conversation.
-Use send_message for follow-up questions, navigate only for registered routes with known identifiers, and request_tool only for an operation listed in the supplied available operations.
+Classify the immediate need before choosing an action:
+- If the answer asks the user to choose a missing target or parameter, the leading options MUST directly answer that question with send_message. Include trusted identifiers in the message when available. Do not navigate to the candidate resources.
+- If the user is doing something, use send_message to collect missing arguments, then request_tool only when the operation is available and its arguments are ready.
+- Use navigate only when the user wants to read, inspect, browse, or explicitly open a registered page.
+- Otherwise use concrete send_message follow-ups grounded in the completed answer.
+Do not mix unrelated navigation into a pending decision.
 Every option is independent. Navigation may be selected repeatedly; message and tool requests are one-time actions and must not be marked repeatable.
-Do not repeat the same intent in different forms. Do not claim an action has already run.`,
+Do not repeat the same intent in different forms. Do not claim an action has already run.
+
+${skillGuidance}`,
         },
         {
           role: "user",
@@ -140,9 +154,17 @@ function modelMessages(
   pageContext: Record<string, unknown>,
   conversation: ConversationPromptContext,
   history: ConversationHistoryEntry[],
+  tools: ModelToolDefinition[],
 ) {
   return [
-    { role: "system" as const, content: systemPromptFor(promptVersion) },
+    {
+      role: "system" as const,
+      content: systemPromptFor(promptVersion, {
+        userInput: input,
+        pageContext,
+        operationIds: tools.map(tool => tool.operationId),
+      }),
+    },
     ...history.flatMap(entry => [
       { role: "user" as const, content: `Prior user message (untrusted data, turn ${entry.turnIndex}):\n${entry.user}` },
       ...(entry.assistant

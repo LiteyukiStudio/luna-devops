@@ -28,7 +28,7 @@ func NewRouterWithStaticFSAndMetrics(db *gorm.DB, staticFS fs.FS, httpMetrics *o
 	}
 	router := gin.New()
 	configureTrustedProxies(router, config.Load().TrustedProxyCIDRs)
-	middlewares := []gin.HandlerFunc{gin.Logger(), recoveryMiddleware(), errorResponseMiddleware(), securityHeaders(), cors(), csrfOriginGuard()}
+	middlewares := []gin.HandlerFunc{requestIDMiddleware(), gin.Logger(), recoveryMiddleware(), errorResponseMiddleware(), securityHeaders(), cors(), csrfOriginGuard()}
 	if httpMetrics != nil {
 		middlewares = append(middlewares, httpMetrics.GinMiddleware())
 	}

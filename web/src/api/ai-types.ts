@@ -63,6 +63,7 @@ export type AIToolStatus = 'proposed' | 'awaiting_approval' | 'awaiting_mfa' | '
 export interface AIToolDisplayResult {
   summaryKey: string
   summaryParams?: Record<string, string | number | boolean>
+  requestId?: string
   fields?: Array<{
     labelKey: string
     value: string | number | boolean | null

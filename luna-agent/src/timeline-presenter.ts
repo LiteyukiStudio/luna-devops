@@ -120,6 +120,7 @@ function presentToolResult(value: unknown) {
   return {
     summaryKey: stringValue(object.summaryKey) ?? "ai.tool.result.completed",
     ...(object.summaryParams && typeof object.summaryParams === "object" ? { summaryParams: object.summaryParams as Record<string, string | number | boolean> } : {}),
+    ...(stringValue(object.requestId) ? { requestId: stringValue(object.requestId) } : {}),
     ...(stringValue(object.title) ? { fields: [
       { labelKey: "aiAssistant.options.title", value: stringValue(object.title)! },
       ...(stringValue(object.description) ? [{ labelKey: "aiAssistant.options.description", value: stringValue(object.description)! }] : []),

@@ -58,6 +58,25 @@ describe("tool catalog and orchestration", () => {
     const result = await orchestrator.propose({ runId: "airun_test", operationId: "getBuildRun", arguments: { buildId: "a" } })
     expect(result).toMatchObject({ status: "failed", errorCode: "verification_inconclusive" })
   })
+  it("retains the Luna API request id for a failed tool without exposing internal details", async () => {
+    const client = new DeterministicLunaApiClient(() => ({
+      status: 503,
+      body: { code: "ai.tool_storage_unavailable", error: "Service unavailable" },
+      requestId: "req_tool_failure",
+    }))
+    const result = await new ToolOrchestrator(catalog, client, new MemoryToolCallStore(), undefined, 12, undefined, resolveGrant)
+      .propose({ runId: "airun_test", operationId: "getBuildRun", arguments: { buildId: "a" } })
+
+    expect(result).toMatchObject({
+      status: "failed",
+      errorCode: "ai.tool_storage_unavailable",
+      result: {
+        code: "ai.tool_storage_unavailable",
+        requestId: "req_tool_failure",
+      },
+    })
+    expect(JSON.stringify(result.result)).not.toContain("driver")
+  })
   it("creates an immutable new attempt when a failed read is retried", async () => {
     let attempts = 0
     const client = new DeterministicLunaApiClient(() => ++attempts === 1

@@ -61,11 +61,10 @@ describe("create options tool", () => {
     })
 
     expect(fallback.options).toHaveLength(3)
+    expect(fallback.options.every(option => option.action.type === "send_message")).toBe(true)
     expect(fallback.options[0]?.action).toEqual({
-      type: "navigate",
-      routeName: "application.detail",
-      params: { projectId: "prj_1", applicationId: "app_1" },
-      query: { tab: "builds" },
+      type: "send_message",
+      message: "请继续分析当前应用（项目空间 ID：prj_1，应用 ID：app_1），并给出下一步建议。",
     })
   })
 
