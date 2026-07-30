@@ -32,7 +32,7 @@ pnpm dev
 因此本地 Provider、模型和测试密钥可以保存在该 Git 忽略文件中，不需要写入命令行
 或提交到仓库。
 
-开发默认使用内存 Repository、确定性 Provider 和显式开发身份：
+开发环境未填写模型配置时使用内存 Repository、确定性测试 Provider 和显式开发身份：
 
 ```bash
 curl -H 'X-Luna-Dev-User: usr_local' \
@@ -58,15 +58,19 @@ golang-migrate Job 管理，Agent 不会在启动时自动迁移。
 | `TOOL_CATALOG_JSON` | 空 | 由 OpenAPI 生成的严格 operation metadata JSON |
 | `API_SERVICE_JWT_PUBLIC_KEY` | 空 | 验证 `aud=luna-agent` 的 API 服务 JWT |
 | `ACTOR_CONTEXT_PUBLIC_KEY` | 空 | 验证签名 Actor Context |
-| `PROVIDER_TYPE` | `deterministic` | `deterministic` 或 `openai-compatible` |
 | `PROVIDER_CONFIG_TTL_MS` | `300000` | 后台 Provider 配置的短时内存缓存 TTL |
-| `PROVIDER_BASE_URL` | 空 | OpenAI-compatible HTTPS API 根地址 |
-| `PROVIDER_API_KEY` | 空 | 仅驻留进程内，不写数据库、事件或日志 |
-| `PROVIDER_MODEL` | 空 | Provider 模型 |
+| `PROVIDER_BASE_URL` | 空 | 本地直连时使用的 OpenAI-compatible API 根地址 |
+| `PROVIDER_API_KEY` | 空 | 本地直连密钥，仅驻留进程内 |
+| `PROVIDER_MODEL` | 空 | 本地直连模型名称 |
 | `RUN_LEASE_SECONDS` | `30` | PostgreSQL Run 租约 |
 | `RUN_MAX_WALL_MS` | `300000` | 单 Run 墙钟上限 |
 | `MAX_INPUT_BYTES` | `48000` | Web 能力契约公布的单次输入字节上限 |
 | `MAX_CONCURRENT_RUNS` | `2` | Web 能力契约公布的单用户并发 Run 上限 |
+
+Provider 不需要手动选择类型。连接 Luna API 时，Agent 自动读取后台保存的 API
+地址、加密 API Key 和模型名称；没有 Luna API 时，只有同时填写上述三个本地直连
+变量才会连接模型。三项均为空的确定性 Provider 只用于非生产开发和测试，生产环境
+不会回退到测试回复。
 
 ## 内部 API
 

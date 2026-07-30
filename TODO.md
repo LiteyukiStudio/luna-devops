@@ -211,6 +211,7 @@
 - [x] 完整 Compose 的 Worker 等待 API `/healthz` 通过后再启动，避免全新数据库首次 migration 尚未完成时提前访问业务表。
 - [x] 新增 GitHub Actions 容器发布工作流：仅构建 `linux/amd64` 容器镜像，发布 DockerHub `liteyukistudio/luna-devops`、`liteyukistudio/luna-worker`、`liteyukistudio/luna-agent`；分支发布 `nightly`，`v*` tag 发布版本 tag，稳定版本 tag 额外发布 `latest`；`luna-devops` 使用 `embed_web` 内嵌前端静态文件，不额外构建或上传 GitHub Release 二进制产物。
 - [x] 移除跨目录的根 pnpm workspace：`web/`、`docs/`、`tests/` 与 `luna-agent/` 分别维护 package、lockfile、必要的单项目 pnpm 配置和开发命令；API/Agent Docker 构建及发布质量门禁只消费对应子项目锁文件，避免本地 workspace 与镜像独立安装产生锁文件语义分裂。
+- [x] 将 AI 模型配置收敛为 API 地址、API Key 和模型名称三项：生产 Agent 自动使用平台托管配置，本地三项齐全时直连，确定性 Provider 仅保留给非生产测试；公网 HTTPS Provider 不再要求重复维护出站域名白名单。
 - [x] 修复内嵌 SPA 根路径和 fallback 被 Go FileServer 重定向到 `./` 的问题：`index.html` 改为直接返回，避免服务端根路径出现不必要 301。
 - [x] 新增发布质量门禁 `scripts/release-check.sh`：要求干净工作区、精确 Go `1.26.5` 和 `AUTH_TEST_DATABASE_URL`，统一执行 Go test/vet/race、不可缓存的 PostgreSQL 认证/迁移集成测试、前端测试/lint/build、文档构建、生产 pnpm 依赖 high/critical 审计、Go 可达漏洞扫描与 Helm lint/render；GitHub Quality Job 自动启动 PostgreSQL。普通 Go/race 套件不注入数据库地址，真实 PostgreSQL 集成测试只执行一次，避免同一批用例在 CI 中重复三次。
 

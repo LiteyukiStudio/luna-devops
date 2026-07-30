@@ -43,7 +43,7 @@ export class ManagedProvider implements ModelProvider {
     if (this.cached && this.cached.expiresAt > now) return this.cached
     if (this.loading) return this.loading
     this.loading = this.resolver.get(signal).then(config => {
-      if (!config.provider.configured || !config.provider.apiKey || !config.provider.baseUrl || !config.provider.defaultModel) {
+      if (!config.provider.configured || !config.provider.apiKey || !config.provider.baseUrl || !config.provider.model) {
         throw new Error("ai.not_configured")
       }
       const resolved = { version: config.version, provider: this.factory(config), expiresAt: Date.now() + this.ttlMs }
@@ -55,11 +55,10 @@ export class ManagedProvider implements ModelProvider {
 }
 
 function defaultFactory(config: RemoteProviderConfig): ModelProvider {
-  if (config.provider.type !== "openai-compatible") throw new Error("ai.provider_unsupported")
   return new OpenAICompatibleProvider({
     baseUrl: config.provider.baseUrl,
     apiKey: config.provider.apiKey,
-    model: config.provider.defaultModel,
+    model: config.provider.model,
     timeoutMs: 30000,
   })
 }

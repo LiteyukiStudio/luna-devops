@@ -69,20 +69,12 @@ spec:
               value: {{ .Values.ai.agent.service.port | quote }}
             - name: AUTH_MODE
               value: {{ .Values.ai.agent.authMode | quote }}
-            - name: PROVIDER_TYPE
-              value: {{ .Values.ai.agent.providerType | quote }}
-            - name: PROVIDER_BASE_URL
-              value: {{ .Values.ai.agent.providerBaseUrl | quote }}
-            - name: PROVIDER_MODEL
-              value: {{ .Values.ai.agent.providerModel | quote }}
             - name: RUN_LEASE_SECONDS
               value: {{ .Values.ai.agent.runLeaseSeconds | quote }}
             - name: RUN_POLL_MS
               value: {{ .Values.ai.agent.runPollMs | quote }}
             - name: LUNA_API_BASE_URL
               value: {{ printf "http://%s:%v" (include "luna-devops.apiName" .) .Values.api.service.port | quote }}
-            - name: TOOL_CATALOG_JSON
-              value: {{ printf "%s,%s" (trimSuffix "]" .Values.ai.agent.toolCatalogJson) (trimPrefix "[" .Values.ai.agent.toolCatalogExtensionsJson) | quote }}
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -108,13 +100,6 @@ spec:
                 secretKeyRef:
                   name: {{ include "luna-devops.aiSecretName" . }}
                   key: {{ .Values.ai.agentCallbackServiceTokenKey }}
-            {{- if eq .Values.ai.agent.providerType "openai-compatible" }}
-            - name: PROVIDER_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "luna-devops.aiSecretName" . }}
-                  key: {{ .Values.ai.agent.providerApiKeyKey }}
-            {{- end }}
           livenessProbe:
             httpGet:
               path: /internal/health/live

@@ -1,11 +1,8 @@
 export type RemoteProviderConfig = {
   version: string
   provider: {
-    type: "openai-compatible"
     baseUrl: string
-    defaultModel: string
-    fallbackModel?: string
-    modelPricing: unknown[]
+    model: string
     apiKey: string
     configured: boolean
   }

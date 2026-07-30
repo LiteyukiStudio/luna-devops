@@ -9,7 +9,7 @@ describe("ProviderConfigClient", () => {
       expect(init.headers).toMatchObject({ authorization: "Bearer callback-token-value" })
       return new Response(JSON.stringify({
         version: "cfg-1",
-        provider: { type: "openai-compatible", baseUrl: "https://provider.example/v1/", defaultModel: "model-a", modelPricing: [], apiKey: "secret", configured: true },
+        provider: { baseUrl: "https://provider.example/v1/", model: "model-a", apiKey: "secret", configured: true },
       }), { status: 200, headers: { "content-type": "application/json", "cache-control": "no-store" } })
     })
     vi.stubGlobal("fetch", fetchMock)

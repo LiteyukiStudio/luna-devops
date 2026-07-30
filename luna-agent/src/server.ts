@@ -86,7 +86,7 @@ export function buildServer(input: {
       if (!config.provider.configured) return reply.code(409).send({ status: "not_configured", configVersion: config.version, capabilities: {} })
       const provider = new OpenAICompatibleProvider({
         baseUrl: config.provider.baseUrl, apiKey: config.provider.apiKey,
-        model: config.provider.defaultModel, timeoutMs: input.config.PROVIDER_TIMEOUT_MS,
+        model: config.provider.model, timeoutMs: input.config.PROVIDER_TIMEOUT_MS,
       })
       const health = await provider.health()
       return {

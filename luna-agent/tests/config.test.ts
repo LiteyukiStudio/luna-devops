@@ -5,7 +5,20 @@ describe("configuration", () => {
   it("rejects unsafe production defaults", () => {
     expect(() => loadConfig({ NODE_ENV: "production" })).toThrow("DATABASE_URL")
   })
-  it("allows deterministic test configuration", () => {
-    expect(loadConfig({ NODE_ENV: "test" }).PROVIDER_TYPE).toBe("deterministic")
+  it("allows tests without a model configuration", () => {
+    const config = loadConfig({ NODE_ENV: "test" })
+    expect(config.PROVIDER_BASE_URL).toBeUndefined()
+    expect(config.PROVIDER_API_KEY).toBeUndefined()
+    expect(config.PROVIDER_MODEL).toBeUndefined()
+  })
+  it("requires all three direct provider values together", () => {
+    expect(() => loadConfig({ NODE_ENV: "development", PROVIDER_BASE_URL: "https://api.example.com/v1" }))
+      .toThrow("base URL, API key, and model")
+    expect(loadConfig({
+      NODE_ENV: "development",
+      PROVIDER_BASE_URL: "https://api.example.com/v1",
+      PROVIDER_API_KEY: "secret",
+      PROVIDER_MODEL: "model-1",
+    }).PROVIDER_MODEL).toBe("model-1")
   })
 })

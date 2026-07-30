@@ -12,7 +12,6 @@ const schema = z.object({
   RUN_GRANT_ENCRYPTION_KEY_BASE64: z.string().optional(),
   API_SERVICE_JWT_PUBLIC_KEY: z.string().optional(),
   ACTOR_CONTEXT_PUBLIC_KEY: z.string().optional(),
-  PROVIDER_TYPE: z.enum(["deterministic", "openai-compatible"]).default("deterministic"),
   PROVIDER_BASE_URL: z.string().url().optional(),
   PROVIDER_API_KEY: z.string().min(1).optional(),
   PROVIDER_MODEL: z.string().min(1).optional(),
@@ -40,8 +39,9 @@ export function loadConfig(input: NodeJS.ProcessEnv = process.env): Config {
   if (config.AUTH_MODE === "jwt" && (!config.API_SERVICE_JWT_PUBLIC_KEY || !config.ACTOR_CONTEXT_PUBLIC_KEY)) {
     throw new Error("API service and Actor Context public keys are required for JWT authentication")
   }
-  if (config.PROVIDER_TYPE === "openai-compatible" && (!config.PROVIDER_BASE_URL || !config.PROVIDER_API_KEY || !config.PROVIDER_MODEL)) {
-    throw new Error("OpenAI-compatible provider requires base URL, API key, and model")
+  const directProviderValues = [config.PROVIDER_BASE_URL, config.PROVIDER_API_KEY, config.PROVIDER_MODEL]
+  if (directProviderValues.some(Boolean) && !directProviderValues.every(Boolean)) {
+    throw new Error("Direct provider configuration requires base URL, API key, and model")
   }
   if ((config.NODE_ENV === "production" || config.DATABASE_URL) && !config.RUN_GRANT_ENCRYPTION_KEY_BASE64) {
     throw new Error("RUN_GRANT_ENCRYPTION_KEY_BASE64 is required with durable storage")

@@ -13,11 +13,8 @@ import (
 )
 
 var aiProviderConfigKeys = []string{
-	"ai.provider.type",
 	"ai.provider.base_url",
 	"ai.provider.default_model",
-	"ai.provider.fallback_model",
-	"ai.provider.model_pricing",
 }
 
 func (h *Handlers) GetAIProviderConfigInternal(ctx *gin.Context) {
@@ -29,18 +26,17 @@ func (h *Handlers) GetAIProviderConfigInternal(ctx *gin.Context) {
 	_ = h.db.First(&secretConfig, "key = ?", "ai.provider.api_key").Error
 	apiKey := h.secrets.Resolve(secretConfig.Value)
 	version := aiProviderConfigVersion(values, secretConfig.UpdatedAt.String())
+	baseURL := strings.TrimSpace(values["ai.provider.base_url"])
+	modelName := strings.TrimSpace(values["ai.provider.default_model"])
 	ctx.Header("Cache-Control", "no-store")
 	ctx.Header("ETag", `"`+version+`"`)
 	ctx.JSON(http.StatusOK, gin.H{
 		"version": version,
 		"provider": gin.H{
-			"type":          values["ai.provider.type"],
-			"baseUrl":       values["ai.provider.base_url"],
-			"defaultModel":  values["ai.provider.default_model"],
-			"fallbackModel": values["ai.provider.fallback_model"],
-			"modelPricing":  values["ai.provider.model_pricing"],
-			"apiKey":        apiKey,
-			"configured":    strings.TrimSpace(apiKey) != "",
+			"baseUrl":    baseURL,
+			"model":      modelName,
+			"apiKey":     apiKey,
+			"configured": baseURL != "" && modelName != "" && strings.TrimSpace(apiKey) != "",
 		},
 	})
 }

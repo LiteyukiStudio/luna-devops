@@ -15,16 +15,14 @@ describe("ManagedProvider", () => {
       get: vi.fn(async () => ({
         version: `cfg-${version}`,
         provider: {
-          type: "openai-compatible" as const,
           baseUrl: "https://provider.example/v1/",
-          defaultModel: `model-${version}`,
-          modelPricing: [],
+          model: `model-${version}`,
           apiKey: `secret-${version}`,
           configured: true,
         },
       })),
     }
-    const provider = new ManagedProvider(resolver, 1000, config => fakeProvider(config.provider.defaultModel))
+    const provider = new ManagedProvider(resolver, 1000, config => fakeProvider(config.provider.model))
     const request = { messages: [{ role: "user" as const, content: "hello" }], maxOutputTokens: 10 }
     expect((await provider.complete(request)).text).toBe("model-1")
     version = 2
@@ -41,12 +39,12 @@ describe("ManagedProvider", () => {
       get: vi.fn(async () => ({
         version: "cfg-1",
         provider: {
-          type: "openai-compatible" as const, baseUrl: "https://provider.example/v1/",
-          defaultModel: "model-a", modelPricing: [], apiKey: "secret-value", configured: true,
+          baseUrl: "https://provider.example/v1/",
+          model: "model-a", apiKey: "secret-value", configured: true,
         },
       })),
     }
-    const provider = new ManagedProvider(resolver, 1000, config => fakeProvider(config.provider.defaultModel))
+    const provider = new ManagedProvider(resolver, 1000, config => fakeProvider(config.provider.model))
     await Promise.all([provider.health(), provider.health(), provider.health()])
     expect(resolver.get).toHaveBeenCalledOnce()
     expect(JSON.stringify(provider)).not.toContain("secret-value")

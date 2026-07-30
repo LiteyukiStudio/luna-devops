@@ -30,9 +30,6 @@ func (h *Handlers) validateAIConfigValues(values map[string]string) error {
 			return fmt.Errorf("ai.provider.base_url must be an HTTPS URL without user info")
 		}
 		allowlist := splitConfigList(current["security.egress.domainAllowList"])
-		if !aiDomainAllowed(parsed.Hostname(), allowlist) {
-			return fmt.Errorf("ai.provider.base_url host must be present in the egress domain allowlist")
-		}
 		policy := security.PublicEgressPolicy()
 		policy.DomainAllowList = allowlist
 		policy.DomainBlockList = splitConfigList(current["security.egress.domainBlockList"])
@@ -63,32 +60,17 @@ func (h *Handlers) validateAIConfigValues(values map[string]string) error {
 			return fmt.Errorf("%s must be a non-negative number", key)
 		}
 	}
-	if fallback := strings.TrimSpace(current["ai.provider.fallback_model"]); fallback != "" &&
-		fallback == strings.TrimSpace(current["ai.provider.default_model"]) {
-		return fmt.Errorf("ai.provider.fallback_model must differ from the default model")
-	}
 	if current["ai.access.mode"] == "all_authenticated" {
 		hard, _ := strconv.ParseFloat(strings.TrimSpace(current["ai.quota.platform_daily_cost_hard"]), 64)
 		if hard <= 0 {
 			return fmt.Errorf("all_authenticated access requires a positive hard daily cost limit")
 		}
 	}
-	for _, key := range []string{"ai.access.user_ids", "ai.access.project_ids", "ai.provider.model_pricing"} {
+	for _, key := range []string{"ai.access.user_ids", "ai.access.project_ids"} {
 		var value []any
 		if json.Unmarshal([]byte(current[key]), &value) != nil {
 			return fmt.Errorf("%s must be a JSON array", key)
 		}
 	}
 	return nil
-}
-
-func aiDomainAllowed(host string, entries []string) bool {
-	host = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(host), "."))
-	for _, entry := range entries {
-		entry = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(entry), "."))
-		if entry == host || (strings.HasPrefix(entry, "*.") && strings.HasSuffix(host, strings.TrimPrefix(entry, "*")) && host != strings.TrimPrefix(entry, "*.")) {
-			return true
-		}
-	}
-	return false
 }

@@ -6,10 +6,8 @@ import { GraphVersionRegistry } from "./graph/registry.js"
 import { RunGrantCipher } from "./grant-cipher.js"
 import { MemoryRepository } from "./persistence/memory.js"
 import { PostgresRepository } from "./persistence/postgres.js"
-import { DeterministicProvider } from "./provider/deterministic.js"
-import { OpenAICompatibleProvider } from "./provider/openai-compatible.js"
 import { ProviderConfigClient } from "./provider/config-client.js"
-import { ManagedProvider } from "./provider/managed.js"
+import { createRuntimeProvider } from "./provider/runtime.js"
 import { buildServer } from "./server.js"
 import { ToolCatalog } from "./tools/catalog.js"
 import { HttpLunaApiToolClient } from "./tools/luna-api-client.js"
@@ -24,11 +22,7 @@ const repository = config.DATABASE_URL ? new PostgresRepository(config.DATABASE_
 const providerConfigClient = config.LUNA_API_BASE_URL && config.AI_AGENT_CALLBACK_SERVICE_TOKEN
   ? new ProviderConfigClient(config.LUNA_API_BASE_URL, config.AI_AGENT_CALLBACK_SERVICE_TOKEN)
   : undefined
-const provider = config.PROVIDER_TYPE === "deterministic"
-  ? new DeterministicProvider()
-  : providerConfigClient
-    ? new ManagedProvider(providerConfigClient, config.PROVIDER_CONFIG_TTL_MS)
-    : new OpenAICompatibleProvider({ baseUrl: config.PROVIDER_BASE_URL!, apiKey: config.PROVIDER_API_KEY!, model: config.PROVIDER_MODEL!, timeoutMs: config.PROVIDER_TIMEOUT_MS })
+const provider = createRuntimeProvider(config, providerConfigClient)
 const authenticator = config.AUTH_MODE === "jwt"
   ? await JwtAuthenticator.create(config.API_SERVICE_JWT_PUBLIC_KEY!, config.ACTOR_CONTEXT_PUBLIC_KEY!)
   : config.AUTH_MODE === "bff-hmac"

@@ -6,6 +6,14 @@ The Luna DevOps AI assistant explains build, release, Pod, Gateway, certificate,
 
 The assistant entry is rendered only when the deployment switch, site switch, Agent health, model configuration, cost limits, and current-user access all allow it. Unknown capability state, an unavailable Agent, or incomplete configuration keeps the entry hidden.
 
+A platform administrator configures only three model values under Global Settings →
+AI Assistant: an OpenAI-compatible HTTPS API URL, API key, and model name. The
+platform selects the managed Provider automatically; there is no Provider type,
+fallback model, pricing JSON, or Agent mode to configure. The API key is encrypted
+in the platform secret store and never displayed when editing. Embedded credentials,
+private networks, and reserved addresses remain blocked, while a valid public endpoint
+does not need to be duplicated in the global domain allowlist.
+
 Desktop uses a draggable and resizable floating window. Mobile uses a full-screen view. The launcher is draggable, and the browser remembers the window size, window position, and launcher position across reloads while keeping them inside the visible viewport. Closing the window, refreshing the page, or losing the connection only removes the browser subscription; it does not cancel a durable run.
 
 The list button at the far left of the top bar opens the conversation list. The right side keeps only New Conversation and Close, clearly separating navigation from current-conversation actions. Closing restores the draggable launcher, so there is no separate minimized state with the same outcome. The New Conversation action is also available in the conversation list. Each conversation keeps its own draft, streaming timeline, run state, and SSE subscription. You can switch to another conversation and send a message while the first one is still generating. The list marks every generating conversation, not only the selected one.

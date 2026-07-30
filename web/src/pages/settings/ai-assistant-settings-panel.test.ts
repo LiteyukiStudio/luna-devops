@@ -3,24 +3,10 @@ import { aiSettingsPayload, aiSettingsSchema } from './ai-assistant-settings'
 
 const validValues = {
   enabled: false,
-  providerType: 'openai-compatible' as const,
   baseUrl: 'https://api.example.com/v1',
   apiKey: '',
-  defaultModel: 'model-1',
-  fallbackModel: '',
-  modelPricing: '[]',
-  accessMode: 'admins' as const,
-  userIds: '',
-  projectIds: '',
-  userConcurrentRuns: 2,
-  userDailyTokens: 200000,
-  projectConcurrentRuns: 5,
-  runMaxToolCalls: 20,
-  platformDailyCostHard: 10,
-  platformDailyCostSoft: 5,
-  conversationDays: 90,
-  runEventDays: 30,
-  checkpointDays: 7,
+  apiKeyConfigured: true,
+  model: 'model-1',
 }
 
 describe('aI assistant admin settings', () => {
@@ -28,9 +14,17 @@ describe('aI assistant admin settings', () => {
     expect(aiSettingsSchema.safeParse({ ...validValues, baseUrl: 'http://api.example.com' }).success).toBe(false)
   })
 
-  it('omits a blank secret and normalizes allowlists', () => {
-    const payload = aiSettingsPayload({ ...validValues, userIds: 'usr_1\nusr_2' })
+  it('omits a blank secret while preserving the configured key', () => {
+    const payload = aiSettingsPayload(validValues)
     expect(payload).not.toHaveProperty('ai.provider.api_key')
-    expect(payload['ai.access.user_ids']).toEqual(['usr_1', 'usr_2'])
+    expect(payload).toEqual({
+      'ai.assistant.enabled': false,
+      'ai.provider.base_url': 'https://api.example.com/v1',
+      'ai.provider.default_model': 'model-1',
+    })
+  })
+
+  it('requires all three model settings before enabling the assistant', () => {
+    expect(aiSettingsSchema.safeParse({ ...validValues, enabled: true, apiKeyConfigured: false }).success).toBe(false)
   })
 })
