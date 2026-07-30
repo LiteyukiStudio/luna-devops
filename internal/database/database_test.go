@@ -8,10 +8,7 @@ import (
 
 func TestOpenRejectsUnsupportedDatabaseURLWithoutRetry(t *testing.T) {
 	started := time.Now()
-	_, err := Open("mysql://user:pass@db:3306/app", Options{
-		ConnectRetryAttempts: 3,
-		ConnectRetryInterval: time.Second,
-	})
+	_, err := Open("mysql://user:pass@db:3306/app")
 	if err == nil {
 		t.Fatalf("expected unsupported database URL error")
 	}
@@ -25,10 +22,8 @@ func TestOpenRejectsUnsupportedDatabaseURLWithoutRetry(t *testing.T) {
 
 func TestDatabaseOptionsDefaultsAndClamp(t *testing.T) {
 	options := (Options{
-		MaxOpenConns:         2,
-		MaxIdleConns:         8,
-		ConnectRetryAttempts: 1,
-		ConnectRetryInterval: time.Millisecond,
+		MaxOpenConns: 2,
+		MaxIdleConns: 8,
 	}).withDefaults()
 
 	if options.MaxOpenConns != 2 {
@@ -43,20 +38,12 @@ func TestDatabaseOptionsDefaultsAndClamp(t *testing.T) {
 	if options.ConnMaxIdleTime != defaultConnMaxIdleTime {
 		t.Fatalf("ConnMaxIdleTime = %s", options.ConnMaxIdleTime)
 	}
-	if options.ConnectRetryAttempts != 1 {
-		t.Fatalf("ConnectRetryAttempts = %d", options.ConnectRetryAttempts)
-	}
-	if options.ConnectRetryInterval != time.Millisecond {
-		t.Fatalf("ConnectRetryInterval = %s", options.ConnectRetryInterval)
-	}
 }
 
 func TestDatabaseOptionsAllowZeroIdleConnections(t *testing.T) {
 	options := (Options{
-		MaxOpenConns:         4,
-		MaxIdleConns:         0,
-		ConnectRetryAttempts: 1,
-		ConnectRetryInterval: time.Millisecond,
+		MaxOpenConns: 4,
+		MaxIdleConns: 0,
 	}).withDefaults()
 
 	if options.MaxIdleConns != 0 {
@@ -71,9 +58,6 @@ func TestDefaultDatabaseOptions(t *testing.T) {
 	}
 	if options.MaxIdleConns != defaultMaxIdleConns {
 		t.Fatalf("MaxIdleConns = %d", options.MaxIdleConns)
-	}
-	if options.ConnectRetryAttempts != defaultConnectRetryAttempts {
-		t.Fatalf("ConnectRetryAttempts = %d", options.ConnectRetryAttempts)
 	}
 }
 

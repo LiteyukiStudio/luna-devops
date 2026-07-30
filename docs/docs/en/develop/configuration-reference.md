@@ -21,13 +21,13 @@ For a first deployment, configure the Basic values only. Once the platform is ru
 | Advanced | `DB_MAX_IDLE_CONNS` | `5` | Idle PostgreSQL connections kept by this API process; lower it when database connections are tight. |
 | Advanced | `DB_CONN_MAX_LIFETIME` | `30m` | Maximum lifetime of a reused database connection; shorten it for load balancers, connection proxies, or database rolling maintenance. |
 | Advanced | `DB_CONN_MAX_IDLE_TIME` | `5m` | Maximum idle time for database connections; shorten it when connection slots are tight. |
-| Advanced | `DB_CONNECT_RETRY_ATTEMPTS` | `12` | Startup PostgreSQL connection retry attempts; increase when the database starts slowly or temporarily runs out of slots. |
-| Advanced | `DB_CONNECT_RETRY_INTERVAL` | `5s` | Startup connection retry interval. Values like `5s`, `1m`, or plain seconds are accepted. |
 | Advanced | `METRICS_ENABLED` | `false` | Enables the dedicated Prometheus metrics listener; disabled by default. When set to `true`, the API uses `:9090` by default. |
 | Advanced | `METRICS_ADDR` | `:9090` | Metrics listen address; change only when overriding the API metrics port or bind address. |
 | Advanced | `METRICS_PATH` | `/metrics` | Prometheus scrape path; registered only on the dedicated metrics listener. |
 
 When metrics are enabled, the API exports HTTP request, latency, error response, PostgreSQL connection pool, and PostgreSQL/Redis health metrics. Grafana dashboard JSON lives under `grafana/dashboards/` and can be imported into Grafana when needed.
+
+Before listening on its HTTP port, the API performs one real connection check against both Redis and PostgreSQL. The process exits immediately when either dependency is unreachable, authentication fails, or a PostgreSQL migration fails; it never starts in a partially available state. After startup, go-redis and the `database/sql` pool recover from transient connection interruptions, while the container platform is responsible for restarting a process whose startup check fails.
 
 OIDC identity provider Redirect URI is generated from `PUBLIC_BASE_URL`, and the admin identity provider form shows a copyable value. Admission policy requires OIDC to return a non-empty email and `email_verified=true` by default. For trusted internal identity providers that cannot return the standard `email_verified` claim, disable “Require verified OIDC email” in the admission policy; the platform still requires a non-empty email.
 
@@ -55,8 +55,6 @@ Available access-route domain suffixes, external access schemes, external access
 | Advanced | `DB_MAX_IDLE_CONNS` | `5` | Idle PostgreSQL connections kept by this worker process; lower it when database connections are tight. |
 | Advanced | `DB_CONN_MAX_LIFETIME` | `30m` | Maximum lifetime of a reused database connection; shorten it for load balancers, connection proxies, or database rolling maintenance. |
 | Advanced | `DB_CONN_MAX_IDLE_TIME` | `5m` | Maximum idle time for database connections; shorten it when connection slots are tight. |
-| Advanced | `DB_CONNECT_RETRY_ATTEMPTS` | `12` | Startup PostgreSQL connection retry attempts; increase when the database starts slowly or temporarily runs out of slots. |
-| Advanced | `DB_CONNECT_RETRY_INTERVAL` | `5s` | Startup connection retry interval. Values like `5s`, `1m`, or plain seconds are accepted. |
 | Advanced | `METRICS_ENABLED` | `false` | Enables the dedicated Prometheus metrics listener; disabled by default. When set to `true`, the worker uses `:9091` by default. |
 | Advanced | `METRICS_ADDR` | `:9091` | Metrics listen address; change only when overriding the worker metrics port or bind address. |
 | Advanced | `METRICS_PATH` | `/metrics` | Prometheus scrape path; registered only on the dedicated metrics listener. |
@@ -73,3 +71,5 @@ Available access-route domain suffixes, external access schemes, external access
 | Advanced | `BUILD_BLOCKED_EGRESS_CIDRS` | Empty | Extra blocked CIDRs in `restricted` mode. |
 
 When metrics are enabled, the worker exports task, retry, queue depth, queue latency, build/release result and duration, runtime replica, gateway sync, and dependency health metrics. Grafana dashboard JSON lives under `grafana/dashboards/` and can be imported into Grafana when needed.
+
+The worker also starts consuming tasks only after both Redis and PostgreSQL pass their startup connection checks. After startup, Asynq, go-redis, and `database/sql` recover from transient connection interruptions.

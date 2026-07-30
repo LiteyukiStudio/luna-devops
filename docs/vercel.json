@@ -1,0 +1,77 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "cleanUrls": true,
+  "trailingSlash": false,
+  "redirects": [
+    {
+      "source": "/guide/deployment/kubernetes-helm",
+      "destination": "/start/install/kubernetes",
+      "permanent": true
+    },
+    {
+      "source": "/guide/deployment/docker-compose",
+      "destination": "/start/install/docker-compose",
+      "permanent": true
+    },
+    {
+      "source": "/operations/deploy-web-project",
+      "destination": "/start/first-project",
+      "permanent": true
+    },
+    {
+      "source": "/guide/workspace",
+      "destination": "/start/connect-resources",
+      "permanent": true
+    },
+    {
+      "source": "/operations/diagnostics",
+      "destination": "/use/diagnostics",
+      "permanent": true
+    },
+    {
+      "source": "/guide/cli/installation",
+      "destination": "/download/installation",
+      "permanent": true
+    },
+    {
+      "source": "/developer/architecture",
+      "destination": "/develop/local-development",
+      "permanent": true
+    },
+    {
+      "source": "/en/guide/deployment/kubernetes-helm",
+      "destination": "/en/start/install/kubernetes",
+      "permanent": true
+    },
+    {
+      "source": "/en/guide/deployment/docker-compose",
+      "destination": "/en/start/install/docker-compose",
+      "permanent": true
+    },
+    {
+      "source": "/en/operations/deploy-web-project",
+      "destination": "/en/start/first-project",
+      "permanent": true
+    },
+    {
+      "source": "/en/guide/workspace",
+      "destination": "/en/start/connect-resources",
+      "permanent": true
+    },
+    {
+      "source": "/en/operations/diagnostics",
+      "destination": "/en/use/diagnostics",
+      "permanent": true
+    },
+    {
+      "source": "/en/guide/cli/installation",
+      "destination": "/en/download/installation",
+      "permanent": true
+    },
+    {
+      "source": "/en/developer/architecture",
+      "destination": "/en/develop/local-development",
+      "permanent": true
+    }
+  ]
+}

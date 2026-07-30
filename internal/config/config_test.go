@@ -167,8 +167,6 @@ func TestLoadDatabasePoolDefaults(t *testing.T) {
 	unsetEnv(t, "DB_MAX_IDLE_CONNS")
 	unsetEnv(t, "DB_CONN_MAX_LIFETIME")
 	unsetEnv(t, "DB_CONN_MAX_IDLE_TIME")
-	unsetEnv(t, "DB_CONNECT_RETRY_ATTEMPTS")
-	unsetEnv(t, "DB_CONNECT_RETRY_INTERVAL")
 
 	cfg := Load()
 	if cfg.DatabaseMaxOpenConns != 20 {
@@ -183,12 +181,6 @@ func TestLoadDatabasePoolDefaults(t *testing.T) {
 	if cfg.DatabaseConnMaxIdleTime != 5*time.Minute {
 		t.Fatalf("DatabaseConnMaxIdleTime = %s", cfg.DatabaseConnMaxIdleTime)
 	}
-	if cfg.DatabaseConnectRetryAttempts != 12 {
-		t.Fatalf("DatabaseConnectRetryAttempts = %d", cfg.DatabaseConnectRetryAttempts)
-	}
-	if cfg.DatabaseConnectRetryInterval != 5*time.Second {
-		t.Fatalf("DatabaseConnectRetryInterval = %s", cfg.DatabaseConnectRetryInterval)
-	}
 }
 
 func TestLoadDatabasePoolOverrides(t *testing.T) {
@@ -197,8 +189,6 @@ func TestLoadDatabasePoolOverrides(t *testing.T) {
 	t.Setenv("DB_MAX_IDLE_CONNS", "3")
 	t.Setenv("DB_CONN_MAX_LIFETIME", "12m")
 	t.Setenv("DB_CONN_MAX_IDLE_TIME", "90")
-	t.Setenv("DB_CONNECT_RETRY_ATTEMPTS", "4")
-	t.Setenv("DB_CONNECT_RETRY_INTERVAL", "2s")
 
 	cfg := Load()
 	if cfg.DatabaseMaxOpenConns != 8 {
@@ -212,12 +202,6 @@ func TestLoadDatabasePoolOverrides(t *testing.T) {
 	}
 	if cfg.DatabaseConnMaxIdleTime != 90*time.Second {
 		t.Fatalf("DatabaseConnMaxIdleTime = %s", cfg.DatabaseConnMaxIdleTime)
-	}
-	if cfg.DatabaseConnectRetryAttempts != 4 {
-		t.Fatalf("DatabaseConnectRetryAttempts = %d", cfg.DatabaseConnectRetryAttempts)
-	}
-	if cfg.DatabaseConnectRetryInterval != 2*time.Second {
-		t.Fatalf("DatabaseConnectRetryInterval = %s", cfg.DatabaseConnectRetryInterval)
 	}
 }
 

@@ -17,66 +17,62 @@ import (
 var envLoadOnce sync.Once
 
 type Config struct {
-	APIAddr                      string
-	PublicBaseURL                string
-	DatabaseURL                  string
-	DatabaseMaxOpenConns         int
-	DatabaseMaxIdleConns         int
-	DatabaseConnMaxLifetime      time.Duration
-	DatabaseConnMaxIdleTime      time.Duration
-	DatabaseConnectRetryAttempts int
-	DatabaseConnectRetryInterval time.Duration
-	RedisAddr                    string
-	TrustedProxyCIDRs            []string
-	BootstrapToken               string
-	MetricsEnabled               bool
-	MetricsAddr                  string
-	MetricsPath                  string
-	BuildExecutorImage           string
-	BuildNPMRegistry             string
-	BuildEgressMode              string
-	BuildCacheEnabled            bool
-	BuildCacheTag                string
-	BuildJobTimeoutSeconds       int64
-	BuildJobTTLSeconds           int64
-	BuildPrivateEgressCIDRs      []string
-	BuildPrivateEgressPorts      []int
-	BuildBlockedEgressCIDRs      []string
-	DeployRolloutTimeoutSeconds  int64
-	CertManagerClusterIssuer     string
+	APIAddr                     string
+	PublicBaseURL               string
+	DatabaseURL                 string
+	DatabaseMaxOpenConns        int
+	DatabaseMaxIdleConns        int
+	DatabaseConnMaxLifetime     time.Duration
+	DatabaseConnMaxIdleTime     time.Duration
+	RedisAddr                   string
+	TrustedProxyCIDRs           []string
+	BootstrapToken              string
+	MetricsEnabled              bool
+	MetricsAddr                 string
+	MetricsPath                 string
+	BuildExecutorImage          string
+	BuildNPMRegistry            string
+	BuildEgressMode             string
+	BuildCacheEnabled           bool
+	BuildCacheTag               string
+	BuildJobTimeoutSeconds      int64
+	BuildJobTTLSeconds          int64
+	BuildPrivateEgressCIDRs     []string
+	BuildPrivateEgressPorts     []int
+	BuildBlockedEgressCIDRs     []string
+	DeployRolloutTimeoutSeconds int64
+	CertManagerClusterIssuer    string
 }
 
 func Load() Config {
 	loadEnvFile()
 
 	return Config{
-		APIAddr:                      env("API_ADDR", ":8080"),
-		PublicBaseURL:                strings.TrimRight(env("PUBLIC_BASE_URL", ""), "/"),
-		DatabaseURL:                  env("DATABASE_URL", "postgres://devops:devops@localhost:5432/devops?sslmode=disable"),
-		DatabaseMaxOpenConns:         envInt("DB_MAX_OPEN_CONNS", 20),
-		DatabaseMaxIdleConns:         envInt("DB_MAX_IDLE_CONNS", 5),
-		DatabaseConnMaxLifetime:      envDuration("DB_CONN_MAX_LIFETIME", 30*time.Minute),
-		DatabaseConnMaxIdleTime:      envDuration("DB_CONN_MAX_IDLE_TIME", 5*time.Minute),
-		DatabaseConnectRetryAttempts: envInt("DB_CONNECT_RETRY_ATTEMPTS", 12),
-		DatabaseConnectRetryInterval: envDuration("DB_CONNECT_RETRY_INTERVAL", 5*time.Second),
-		RedisAddr:                    strings.TrimSpace(env("REDIS_ADDR", "redis://localhost:6379/0")),
-		TrustedProxyCIDRs:            trustedProxyCIDRs(env("TRUSTED_PROXY_CIDRS", "")),
-		BootstrapToken:               strings.TrimSpace(env("BOOTSTRAP_TOKEN", "")),
-		MetricsEnabled:               envBool("METRICS_ENABLED", false),
-		MetricsAddr:                  env("METRICS_ADDR", ""),
-		MetricsPath:                  normalizeMetricsPath(env("METRICS_PATH", "/metrics")),
-		BuildExecutorImage:           env("BUILD_EXECUTOR_IMAGE", "moby/buildkit:v0.24.0-rootless"),
-		BuildNPMRegistry:             env("BUILD_NPM_REGISTRY", ""),
-		BuildEgressMode:              buildEgressMode(env("BUILD_EGRESS_MODE", "permissive")),
-		BuildCacheEnabled:            envBool("BUILD_CACHE_ENABLED", false),
-		BuildCacheTag:                env("BUILD_CACHE_TAG", "buildcache"),
-		BuildJobTimeoutSeconds:       int64(envInt("BUILD_JOB_TIMEOUT_SECONDS", 1800)),
-		BuildJobTTLSeconds:           int64(envInt("BUILD_JOB_TTL_SECONDS", 3600)),
-		BuildPrivateEgressCIDRs:      envList("BUILD_PRIVATE_EGRESS_CIDRS"),
-		BuildPrivateEgressPorts:      envPortList("BUILD_PRIVATE_EGRESS_PORTS", []int{443}),
-		BuildBlockedEgressCIDRs:      append(defaultBuildBlockedEgressCIDRs(), envList("BUILD_BLOCKED_EGRESS_CIDRS")...),
-		DeployRolloutTimeoutSeconds:  int64(envInt("DEPLOY_ROLLOUT_TIMEOUT_SECONDS", 600)),
-		CertManagerClusterIssuer:     env("CERT_MANAGER_CLUSTER_ISSUER", "letsencrypt-http01"),
+		APIAddr:                     env("API_ADDR", ":8080"),
+		PublicBaseURL:               strings.TrimRight(env("PUBLIC_BASE_URL", ""), "/"),
+		DatabaseURL:                 env("DATABASE_URL", "postgres://devops:devops@localhost:5432/devops?sslmode=disable"),
+		DatabaseMaxOpenConns:        envInt("DB_MAX_OPEN_CONNS", 20),
+		DatabaseMaxIdleConns:        envInt("DB_MAX_IDLE_CONNS", 5),
+		DatabaseConnMaxLifetime:     envDuration("DB_CONN_MAX_LIFETIME", 30*time.Minute),
+		DatabaseConnMaxIdleTime:     envDuration("DB_CONN_MAX_IDLE_TIME", 5*time.Minute),
+		RedisAddr:                   strings.TrimSpace(env("REDIS_ADDR", "redis://localhost:6379/0")),
+		TrustedProxyCIDRs:           trustedProxyCIDRs(env("TRUSTED_PROXY_CIDRS", "")),
+		BootstrapToken:              strings.TrimSpace(env("BOOTSTRAP_TOKEN", "")),
+		MetricsEnabled:              envBool("METRICS_ENABLED", false),
+		MetricsAddr:                 env("METRICS_ADDR", ""),
+		MetricsPath:                 normalizeMetricsPath(env("METRICS_PATH", "/metrics")),
+		BuildExecutorImage:          env("BUILD_EXECUTOR_IMAGE", "moby/buildkit:v0.24.0-rootless"),
+		BuildNPMRegistry:            env("BUILD_NPM_REGISTRY", ""),
+		BuildEgressMode:             buildEgressMode(env("BUILD_EGRESS_MODE", "permissive")),
+		BuildCacheEnabled:           envBool("BUILD_CACHE_ENABLED", false),
+		BuildCacheTag:               env("BUILD_CACHE_TAG", "buildcache"),
+		BuildJobTimeoutSeconds:      int64(envInt("BUILD_JOB_TIMEOUT_SECONDS", 1800)),
+		BuildJobTTLSeconds:          int64(envInt("BUILD_JOB_TTL_SECONDS", 3600)),
+		BuildPrivateEgressCIDRs:     envList("BUILD_PRIVATE_EGRESS_CIDRS"),
+		BuildPrivateEgressPorts:     envPortList("BUILD_PRIVATE_EGRESS_PORTS", []int{443}),
+		BuildBlockedEgressCIDRs:     append(defaultBuildBlockedEgressCIDRs(), envList("BUILD_BLOCKED_EGRESS_CIDRS")...),
+		DeployRolloutTimeoutSeconds: int64(envInt("DEPLOY_ROLLOUT_TIMEOUT_SECONDS", 600)),
+		CertManagerClusterIssuer:    env("CERT_MANAGER_CLUSTER_ISSUER", "letsencrypt-http01"),
 	}
 }
 

@@ -9,27 +9,27 @@ hero:
   actions:
     - theme: brand
       text: 快速开始
-      link: /guide/deployment/kubernetes-helm
+      link: /start/install/kubernetes
     - theme: alt
       text: 部署项目
-      link: /operations/deploy-web-project
+      link: /start/first-project
   image:
     src: /brand/mascot-luna-catgirl-alpha.webp
     alt: Luna DevOps mascot
 features:
   - title: Kubernetes (Helm) 部署
     details: 已经有 Kubernetes 或 K3s？用 Helm 一次安装 API、Worker、PostgreSQL 和 Redis。
-    link: /guide/deployment/kubernetes-helm
+    link: /start/install/kubernetes
   - title: Docker Compose 部署
     details: 想先在一台机器上试用？一条 docker compose up -d 就能启动完整平台。
-    link: /guide/deployment/docker-compose
+    link: /start/install/docker-compose
   - title: 部署一个 Web 项目
     details: 跟着完整示例创建项目空间、构建镜像、发布应用，再为它配置可访问的域名。
-    link: /operations/deploy-web-project
+    link: /start/first-project
   - title: 连接外部系统
     details: 先连接运行集群和镜像站，确认基本部署可用，再接入 Git 和自动化。
-    link: /guide/workspace
+    link: /start/connect-resources
   - title: 排查失败状态
     details: 不知道问题在哪？按构建、发布、集群和访问入口的顺序逐段检查。
-    link: /operations/diagnostics
+    link: /use/diagnostics
 ---

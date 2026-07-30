@@ -21,13 +21,13 @@ API 和 Worker 都通过环境变量读取运行配置。使用 Docker Compose�
 | 进阶 | `DB_MAX_IDLE_CONNS` | `5` | 当前 API 进程保留的空闲 PostgreSQL 连接数；连接紧张时调小。 |
 | 进阶 | `DB_CONN_MAX_LIFETIME` | `30m` | 单个数据库连接最长复用时间；负载均衡、连接代理或数据库滚动维护时可适当调短。 |
 | 进阶 | `DB_CONN_MAX_IDLE_TIME` | `5m` | 空闲数据库连接保留时间；连接紧张时调短。 |
-| 进阶 | `DB_CONNECT_RETRY_ATTEMPTS` | `12` | 启动时连接 PostgreSQL 的重试次数；数据库启动慢或短暂满连接时调大。 |
-| 进阶 | `DB_CONNECT_RETRY_INTERVAL` | `5s` | 启动连接重试间隔，支持 `5s`、`1m` 或纯数字秒数。 |
 | 进阶 | `METRICS_ENABLED` | `false` | 是否启用独立 Prometheus metrics listener；默认关闭。设为 `true` 后 API 会使用默认监听地址 `:9090`。 |
 | 进阶 | `METRICS_ADDR` | `:9090` | metrics 监听地址；只在需要调整 API metrics 端口或绑定地址时修改。 |
 | 进阶 | `METRICS_PATH` | `/metrics` | Prometheus 抓取路径；只注册在独立 metrics listener 上。 |
 
 启用 metrics 后，API 会暴露 HTTP 请求量、延迟、错误响应、PostgreSQL 连接池和 PostgreSQL/Redis 健康检查指标。Grafana dashboard JSON 位于 `grafana/dashboards/`，需要时直接导入 Grafana。
+
+API 在监听 HTTP 端口前会分别对 Redis 和 PostgreSQL 执行一次真实连接检查。任一依赖不可达、认证失败或 PostgreSQL migration 失败时，进程都会直接退出，不会以部分可用状态启动。启动后的短暂连接中断由 go-redis 和 `database/sql` 的连接池恢复；容器平台应负责重启启动失败的进程。
 
 OIDC 身份源的 Redirect URI 由 `PUBLIC_BASE_URL` 生成，后台“身份源”表单会直接展示可复制地址。准入策略默认要求 OIDC 返回非空邮箱且 `email_verified=true`；如果接入的是可信内部身份源，但无法返回标准 `email_verified`，可以在准入策略里关闭“要求 OIDC 邮箱已验证”，平台仍会要求邮箱非空。
 
@@ -55,8 +55,6 @@ OIDC 身份源的 Redirect URI 由 `PUBLIC_BASE_URL` 生成，后台“身份源
 | 进阶 | `DB_MAX_IDLE_CONNS` | `5` | 当前 Worker 进程保留的空闲 PostgreSQL 连接数；连接紧张时调小。 |
 | 进阶 | `DB_CONN_MAX_LIFETIME` | `30m` | 单个数据库连接最长复用时间；负载均衡、连接代理或数据库滚动维护时可适当调短。 |
 | 进阶 | `DB_CONN_MAX_IDLE_TIME` | `5m` | 空闲数据库连接保留时间；连接紧张时调短。 |
-| 进阶 | `DB_CONNECT_RETRY_ATTEMPTS` | `12` | 启动时连接 PostgreSQL 的重试次数；数据库启动慢或短暂满连接时调大。 |
-| 进阶 | `DB_CONNECT_RETRY_INTERVAL` | `5s` | 启动连接重试间隔，支持 `5s`、`1m` 或纯数字秒数。 |
 | 进阶 | `METRICS_ENABLED` | `false` | 是否启用独立 Prometheus metrics listener；默认关闭。设为 `true` 后 Worker 会使用默认监听地址 `:9091`。 |
 | 进阶 | `METRICS_ADDR` | `:9091` | metrics 监听地址；只在需要调整 Worker metrics 端口或绑定地址时修改。 |
 | 进阶 | `METRICS_PATH` | `/metrics` | Prometheus 抓取路径；只注册在独立 metrics listener 上。 |
@@ -73,3 +71,5 @@ OIDC 身份源的 Redirect URI 由 `PUBLIC_BASE_URL` 生成，后台“身份源
 | 进阶 | `BUILD_BLOCKED_EGRESS_CIDRS` | 空 | `restricted` 模式下额外禁止的 CIDR。 |
 
 启用 metrics 后会暴露 worker 任务、重试、队列深度、队列延迟、构建/发布结果与耗时、运行副本、网关同步和依赖健康指标。Grafana dashboard JSON 位于 `grafana/dashboards/`，需要时直接导入 Grafana。
+
+Worker 同样只在 Redis 与 PostgreSQL 的启动连接检查都成功后才开始消费任务；启动后的连接中断由 Asynq、go-redis 和 `database/sql` 自行恢复。

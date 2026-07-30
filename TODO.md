@@ -204,7 +204,7 @@
 - [x] 将 compose 场景收敛为三份：`docker-compose-dev.yaml` 启动 PG/Redis/worker 用于开发联调，`docker-compose.yaml` 使用 DockerHub 镜像启动完整部署栈，`docker-compose-build.yaml` 从当前源码构建完整部署栈。
 - [x] 新增 Helm Chart：支持一键在 Kubernetes / K3s 中部署 API、worker、PostgreSQL 和 Redis，并支持切换外部数据库、外部 Redis、Ingress 和固定镜像版本。
 - [x] 本地环境文件收敛为单一 `.env`，只维护 `.env.example` 模板；开发 Compose 从同一文件插值，并在容器内显式覆盖数据库和 Redis 服务地址。
-- [x] API/Worker 数据库连接增强：启动时对 PostgreSQL 做可配置重试，统一限制每进程连接池大小、空闲连接和连接生命周期，避免多副本部署或数据库短暂满连接时直接崩溃。
+- [x] API/Worker 依赖启动门禁：监听或消费任务前分别对 PostgreSQL、Redis 做一次真实连接检查，任一依赖不可达或认证失败时直接退出；运行期间仍由连接池和客户端恢复短暂中断。统一限制每进程数据库连接池大小、空闲连接和连接生命周期。
 - [x] `docker-compose.yaml` 和 `docker-compose-build.yaml` 内联 API / worker 运行环境变量，生产密钥、域名和镜像 tag 通过宿主机环境变量覆盖；`docker-compose-dev.yaml` 从统一 `.env` 插值并显式注入容器地址。
 - [x] 完整 Compose 固定使用生产模式，不再回退到开发管理员；启动前必须在统一 `.env` 中显式配置加密密钥、首次初始化 Token 和 Redis 密码。
 - [x] Redis 客户端连接收敛为唯一的 `REDIS_ADDR` URI：API、Worker、任务命令及 Asynq 调度共用解析结果；部署层不再从 URI 反向拆密码，完整 Compose 用 `REDIS_PASSWORD` 直接启动内置 Redis，并组装内部 URI；Helm 分别保存内置密码与客户端 URI，外部 Redis 继续使用完整 URI Secret。
@@ -226,7 +226,7 @@
 - [x] 支持后台配置多个 OIDC Provider。
 - [x] 身份源页面拆为 OIDC Provider 和准入策略两个子 tab。
 - [x] 实现 OIDC 外部身份绑定 ExternalIdentity。
-- [x] 开发环境放宽登录、首个管理员初始化和镜像搜索限流到 `10000/分钟`，Redis 临时不可用时不阻断本地初始化和调试；生产环境仍保持 Redis 限流失败即拒绝。
+- [x] 开发环境放宽登录、首个管理员初始化和镜像搜索限流到 `10000/分钟`；服务成功启动后 Redis 临时中断时不阻断本地限流调试，生产环境仍保持 Redis 限流失败即拒绝。启动阶段所有环境都必须通过 Redis 真实连接检查。
 - [x] 身份源表单展示后端 `PUBLIC_BASE_URL` 生成的 OIDC Redirect URI，并提供复制入口，避免管理员在 OIDC Provider 应用里配置错回调地址。
 - [x] 准入策略支持配置“要求 OIDC 邮箱已验证”：默认开启，可信内部身份源无法返回 `email_verified=true` 时可关闭，但仍要求非空邮箱。
 - [x] 支持 OIDC 通过准入策略校验后的非空邮箱绑定现有用户。

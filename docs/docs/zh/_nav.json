@@ -1,22 +1,22 @@
 [
   {
     "text": "开始",
-    "link": "/guide/deployment/kubernetes-helm",
-    "activeMatch": "/guide/"
+    "link": "/start/install/kubernetes",
+    "activeMatch": "/start/"
   },
   {
     "text": "使用",
-    "link": "/operations/deploy-web-project",
-    "activeMatch": "/operations/"
+    "link": "/use/workflow",
+    "activeMatch": "/use/"
   },
   {
     "text": "下载",
-    "link": "/guide/cli/installation",
-    "activeMatch": "/guide/cli/"
+    "link": "/download/installation",
+    "activeMatch": "/download/"
   },
   {
     "text": "开发",
-    "link": "/developer/architecture",
-    "activeMatch": "/developer/"
+    "link": "/develop/local-development",
+    "activeMatch": "/develop/"
   }
 ]

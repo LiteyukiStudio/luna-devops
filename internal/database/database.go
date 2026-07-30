@@ -13,22 +13,18 @@ import (
 )
 
 const (
-	defaultMaxOpenConns         = 20
-	defaultMaxIdleConns         = 5
-	defaultConnMaxLifetime      = 30 * time.Minute
-	defaultConnMaxIdleTime      = 5 * time.Minute
-	defaultConnectRetryAttempts = 12
-	defaultConnectRetryInterval = 5 * time.Second
-	defaultConnectPingTimeout   = 5 * time.Second
+	defaultMaxOpenConns       = 20
+	defaultMaxIdleConns       = 5
+	defaultConnMaxLifetime    = 30 * time.Minute
+	defaultConnMaxIdleTime    = 5 * time.Minute
+	defaultConnectPingTimeout = 5 * time.Second
 )
 
 type Options struct {
-	MaxOpenConns         int
-	MaxIdleConns         int
-	ConnMaxLifetime      time.Duration
-	ConnMaxIdleTime      time.Duration
-	ConnectRetryAttempts int
-	ConnectRetryInterval time.Duration
+	MaxOpenConns    int
+	MaxIdleConns    int
+	ConnMaxLifetime time.Duration
+	ConnMaxIdleTime time.Duration
 }
 
 func (options Options) withDefaults() Options {
@@ -47,12 +43,6 @@ func (options Options) withDefaults() Options {
 	if options.ConnMaxIdleTime <= 0 {
 		options.ConnMaxIdleTime = defaultConnMaxIdleTime
 	}
-	if options.ConnectRetryAttempts <= 0 {
-		options.ConnectRetryAttempts = defaultConnectRetryAttempts
-	}
-	if options.ConnectRetryInterval <= 0 {
-		options.ConnectRetryInterval = defaultConnectRetryInterval
-	}
 	return options
 }
 
@@ -66,29 +56,19 @@ func Open(databaseURL string, optionList ...Options) (*gorm.DB, error) {
 		options = optionList[0].withDefaults()
 	}
 
-	var lastErr error
-	for attempt := 1; attempt <= options.ConnectRetryAttempts; attempt++ {
-		db, err := openPostgres(databaseURL, options)
-		if err == nil {
-			return db, nil
-		}
-		lastErr = err
-		if attempt < options.ConnectRetryAttempts {
-			time.Sleep(options.ConnectRetryInterval)
-		}
+	db, err := openPostgres(databaseURL, options)
+	if err != nil {
+		return nil, fmt.Errorf("connect database: %w", err)
 	}
-
-	return nil, fmt.Errorf("connect database after %d attempts: %w", options.ConnectRetryAttempts, lastErr)
+	return db, nil
 }
 
 func defaultOptions() Options {
 	return Options{
-		MaxOpenConns:         defaultMaxOpenConns,
-		MaxIdleConns:         defaultMaxIdleConns,
-		ConnMaxLifetime:      defaultConnMaxLifetime,
-		ConnMaxIdleTime:      defaultConnMaxIdleTime,
-		ConnectRetryAttempts: defaultConnectRetryAttempts,
-		ConnectRetryInterval: defaultConnectRetryInterval,
+		MaxOpenConns:    defaultMaxOpenConns,
+		MaxIdleConns:    defaultMaxIdleConns,
+		ConnMaxLifetime: defaultConnMaxLifetime,
+		ConnMaxIdleTime: defaultConnMaxIdleTime,
 	}
 }
 
@@ -97,7 +77,7 @@ func isPostgresURL(databaseURL string) bool {
 }
 
 func openPostgres(databaseURL string, options Options) (*gorm.DB, error) {
-	db, err := gorm.Open(postgres.Open(databaseURL), &gorm.Config{})
+	db, err := gorm.Open(postgres.Open(databaseURL), &gorm.Config{DisableAutomaticPing: true})
 	if err != nil {
 		return nil, err
 	}
