@@ -38,13 +38,8 @@ services:
       PORT: 8091
       DATABASE_URL: postgres://devops:devops@postgres:5432/devops?sslmode=disable
       AUTH_MODE: bff-hmac
-      API_SERVICE_TOKEN: ${AI_AGENT_SERVICE_TOKEN:-luna-agent-dev-service-token-change-me}
-      ACTOR_CONTEXT_SIGNING_KEY: ${AI_ACTOR_CONTEXT_SIGNING_KEY:-luna-agent-dev-actor-signing-key-change-me}
-      RUN_GRANT_ENCRYPTION_KEY_BASE64: ${AI_RUN_GRANT_ENCRYPTION_KEY_BASE64:-MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=}
+      AI_INTERNAL_SECRET: ${AI_INTERNAL_SECRET:-luna-agent-development-internal-secret-change-me}
       LUNA_API_BASE_URL: ${LUNA_API_BASE_URL:-http://host.docker.internal:8080}
-      AI_AGENT_CALLBACK_SERVICE_TOKEN: ${AI_AGENT_CALLBACK_SERVICE_TOKEN:-luna-agent-dev-callback-token-change-me}
-      TOOL_CATALOG_JSON: '${AI_TOOL_CATALOG_JSON:-[{"operationId":"getDashboard","method":"GET","path":"/api/v1/dashboard","category":"platform","risk":"read","requiredScopes":["dashboard:read"],"approval":"never","idempotent":true,"timeoutMs":10000,"inputSchema":{"type":"object","properties":{},"required":[],"additionalProperties":false}}]}'
-      PROVIDER_TYPE: ${AI_PROVIDER_TYPE:-deterministic}
       PROVIDER_BASE_URL: ${AI_PROVIDER_BASE_URL:-}
       PROVIDER_API_KEY: ${AI_PROVIDER_API_KEY:-}
       PROVIDER_MODEL: ${AI_PROVIDER_MODEL:-}

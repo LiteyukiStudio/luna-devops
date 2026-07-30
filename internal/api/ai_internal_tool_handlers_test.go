@@ -49,7 +49,7 @@ func TestAIToolRegistryIncludesP2DiagnosticCatalog(t *testing.T) {
 }
 
 func TestAIAgentCallbackCredentialFailsClosed(t *testing.T) {
-	t.Setenv("AI_AGENT_CALLBACK_SERVICE_TOKEN", "")
+	t.Setenv("AI_INTERNAL_SECRET", "")
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
 	ctx.Request = httptest.NewRequest(http.MethodPost, "/internal/v1/ai/delegations/exchange", nil)
@@ -57,7 +57,7 @@ func TestAIAgentCallbackCredentialFailsClosed(t *testing.T) {
 	if requireAIAgentService(ctx) {
 		t.Fatal("empty server credential must fail closed")
 	}
-	if recorder.Code != http.StatusUnauthorized || !strings.Contains(recorder.Body.String(), "ai.agent_service_unauthorized") {
+	if recorder.Code != http.StatusServiceUnavailable || !strings.Contains(recorder.Body.String(), "ai.agent_service_not_configured") {
 		t.Fatalf("response = %d %s", recorder.Code, recorder.Body.String())
 	}
 }

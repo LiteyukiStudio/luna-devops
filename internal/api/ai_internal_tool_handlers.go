@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"os"
 	"sort"
 	"strings"
 	"time"
@@ -88,7 +87,12 @@ func (h *Handlers) ExchangeAIDelegation(ctx *gin.Context) {
 		return
 	}
 	now := time.Now()
-	grant, err := aiagent.VerifyRunActorGrant(input.RunActorGrant, os.Getenv("AI_RUN_ACTOR_GRANT_SIGNING_KEY"), now)
+	internalKeys, err := aiagent.LoadInternalKeys()
+	if err != nil {
+		writeErrorCode(ctx, http.StatusServiceUnavailable, "ai.delegation_not_configured", "delegation trust is not configured")
+		return
+	}
+	grant, err := aiagent.VerifyRunActorGrant(input.RunActorGrant, internalKeys.RunActorGrantSigningKey, now)
 	if err != nil || grant.RunID != input.RunID {
 		writeErrorCode(ctx, http.StatusUnauthorized, "ai.run_actor_grant_invalid", "Run Actor Grant is invalid")
 		return
@@ -108,7 +112,7 @@ func (h *Handlers) ExchangeAIDelegation(ctx *gin.Context) {
 		Scopes: append([]string(nil), policy.Scopes...), ArgumentsHash: input.ArgumentsHash,
 		IssuedAt: now.Unix(), ExpiresAt: now.Add(time.Minute).Unix(),
 	}
-	token, err := aiagent.SignDelegationToken(claims, os.Getenv("AI_DELEGATION_TOKEN_SIGNING_KEY"))
+	token, err := aiagent.SignDelegationToken(claims, internalKeys.DelegationTokenSigningKey)
 	if err != nil {
 		writeErrorCode(ctx, http.StatusServiceUnavailable, "ai.delegation_not_configured", "delegation signing is unavailable")
 		return
@@ -168,7 +172,12 @@ func (h *Handlers) VerifyAIInternalTool(ctx *gin.Context) {
 
 func (h *Handlers) requireAIDelegation(ctx *gin.Context, operationID string) (aiagent.DelegationClaims, bool) {
 	token := strings.TrimSpace(strings.TrimPrefix(ctx.GetHeader("Authorization"), "Bearer "))
-	claims, err := aiagent.VerifyDelegationToken(token, os.Getenv("AI_DELEGATION_TOKEN_SIGNING_KEY"), time.Now())
+	internalKeys, keyErr := aiagent.LoadInternalKeys()
+	if keyErr != nil {
+		writeErrorCode(ctx, http.StatusServiceUnavailable, "ai.delegation_not_configured", "delegation trust is not configured")
+		return aiagent.DelegationClaims{}, false
+	}
+	claims, err := aiagent.VerifyDelegationToken(token, internalKeys.DelegationTokenSigningKey, time.Now())
 	if err != nil || claims.OperationID != operationID {
 		writeErrorCode(ctx, http.StatusUnauthorized, "ai.delegation_invalid", "delegation token is invalid for this operation")
 		return claims, false
@@ -221,14 +230,12 @@ func (h *Handlers) executeRegisteredAITool(ctx *gin.Context, claims aiagent.Dele
 
 func requireAIAgentService(ctx *gin.Context) bool {
 	actual := strings.TrimSpace(strings.TrimPrefix(ctx.GetHeader("Authorization"), "Bearer "))
-	if publicKey := strings.TrimSpace(os.Getenv("AI_AGENT_SERVICE_VERIFY_PUBLIC_KEY")); publicKey != "" {
-		if aiagent.VerifyAgentServiceJWT(actual, publicKey, time.Now()) == nil {
-			return true
-		}
-		writeErrorCode(ctx, http.StatusUnauthorized, "ai.agent_service_unauthorized", "Agent service identity is invalid")
+	internalKeys, err := aiagent.LoadInternalKeys()
+	if err != nil {
+		writeErrorCode(ctx, http.StatusServiceUnavailable, "ai.agent_service_not_configured", "Agent service identity is not configured")
 		return false
 	}
-	expected := strings.TrimSpace(os.Getenv("AI_AGENT_CALLBACK_SERVICE_TOKEN"))
+	expected := internalKeys.CallbackServiceToken
 	if expected == "" || len(expected) != len(actual) || subtle.ConstantTimeCompare([]byte(expected), []byte(actual)) != 1 {
 		writeErrorCode(ctx, http.StatusUnauthorized, "ai.agent_service_unauthorized", "Agent service identity is invalid")
 		return false

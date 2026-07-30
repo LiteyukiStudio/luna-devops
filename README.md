@@ -139,7 +139,7 @@ cp .env.example .env
 docker compose up -d
 ```
 
-AI 助手默认关闭。准备好 `.env` 中的 Agent 信任材料和持久化加密键后，显式启用 AI profile：
+AI 助手默认关闭。为 API 与 Agent 配置同一个稳定的 `AI_INTERNAL_SECRET` 后，显式启用 AI profile：
 
 ```bash
 AI_ASSISTANT_AVAILABLE=true docker compose --profile ai up -d

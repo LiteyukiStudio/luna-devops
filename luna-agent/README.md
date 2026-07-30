@@ -39,7 +39,7 @@ curl -H 'X-Luna-Dev-User: usr_local' \
   http://127.0.0.1:8091/internal/v1/capabilities
 ```
 
-生产必须配置 PostgreSQL 和 JWT 验证，服务启动时会拒绝不安全的默认值。用于本地
+生产必须配置 PostgreSQL、`bff-hmac` 验证和内部根密钥，服务启动时会拒绝不安全的默认值。用于本地
 PostgreSQL 验证的参考 DDL 位于 `sql/001_ai_schema.sql`；生产迁移仍由平台统一的
 golang-migrate Job 管理，Agent 不会在启动时自动迁移。
 
@@ -49,15 +49,10 @@ golang-migrate Job 管理，Agent 不会在启动时自动迁移。
 | --- | --- | --- |
 | `HOST` / `PORT` | `127.0.0.1` / `8091` | 内部监听地址 |
 | `DATABASE_URL` | 空 | 开发为空时使用内存；生产必填 |
-| `AUTH_MODE` | `development` | `bff-hmac`（当前 BFF 契约）或 `jwt` |
-| `API_SERVICE_TOKEN` | 空 | BFF 独立服务 Bearer，至少 32 字符 |
-| `ACTOR_CONTEXT_SIGNING_KEY` | 空 | Actor Context HMAC key，至少 32 字符 |
-| `RUN_GRANT_ENCRYPTION_KEY_BASE64` | 空 | 32 字节 AES-256-GCM key 的 Base64；持久存储时必填 |
+| `AUTH_MODE` | `development` | 生产使用 `bff-hmac` |
+| `AI_INTERNAL_SECRET` | 空 | API 与 Agent 共享的稳定内部根密钥，至少 32 字节；自动派生用途隔离子密钥 |
 | `LUNA_API_BASE_URL` | 空 | Luna API 内部 Service 根地址 |
-| `AI_AGENT_CALLBACK_SERVICE_TOKEN` | 空 | Agent 调用 delegation/tool callback 的独立服务身份 |
 | `TOOL_CATALOG_JSON` | 空 | 由 OpenAPI 生成的严格 operation metadata JSON |
-| `API_SERVICE_JWT_PUBLIC_KEY` | 空 | 验证 `aud=luna-agent` 的 API 服务 JWT |
-| `ACTOR_CONTEXT_PUBLIC_KEY` | 空 | 验证签名 Actor Context |
 | `PROVIDER_CONFIG_TTL_MS` | `300000` | 后台 Provider 配置的短时内存缓存 TTL |
 | `PROVIDER_BASE_URL` | 空 | 本地直连时使用的 OpenAI-compatible API 根地址 |
 | `PROVIDER_API_KEY` | 空 | 本地直连密钥，仅驻留进程内 |

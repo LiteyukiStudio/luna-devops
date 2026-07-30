@@ -1,5 +1,4 @@
 import { createHmac, timingSafeEqual } from "node:crypto"
-import { importSPKI, jwtVerify } from "jose"
 import { z } from "zod"
 import type { ActorContext } from "./domain.js"
 
@@ -25,33 +24,6 @@ export class DevelopmentAuthenticator implements RequestAuthenticator {
     if (!userId) throw new AuthError("ai.unauthorized")
     const now = Math.floor(Date.now() / 1000)
     return { userId, sessionId, locale: scalar(headers["x-luna-locale"]) ?? "zh-CN", issuedAt: now, expiresAt: now + 60, requestId: scalar(headers["x-request-id"]) ?? crypto.randomUUID() }
-  }
-}
-
-export class JwtAuthenticator implements RequestAuthenticator {
-  private constructor(
-    private readonly serviceKey: Awaited<ReturnType<typeof importSPKI>>,
-    private readonly actorKey: Awaited<ReturnType<typeof importSPKI>>,
-  ) {}
-  static async create(servicePublicKey: string, actorPublicKey: string): Promise<JwtAuthenticator> {
-    return new JwtAuthenticator(await importSPKI(servicePublicKey, "EdDSA"), await importSPKI(actorPublicKey, "EdDSA"))
-  }
-  async verify(headers: Record<string, string | string[] | undefined>): Promise<ActorContext> {
-    const serviceToken = scalar(headers.authorization)?.replace(/^Bearer\s+/i, "")
-    const actorToken = scalar(headers["x-luna-actor-context"])
-    if (!serviceToken || !actorToken) throw new AuthError("ai.unauthorized")
-    await jwtVerify(serviceToken, this.serviceKey, { audience: "luna-agent", algorithms: ["EdDSA"], maxTokenAge: "60s" })
-    const { payload } = await jwtVerify(actorToken, this.actorKey, { audience: "luna-agent", algorithms: ["EdDSA"], maxTokenAge: "60s" })
-    const raw = payload.actor ?? payload
-    const actor = actorSchema.parse(raw)
-    const now = Math.floor(Date.now() / 1000)
-    if (actor.issuedAt > now + 5 || actor.expiresAt < now) throw new AuthError("ai.actor_context_expired")
-    return {
-      userId: actor.userId, sessionId: actor.sessionId, locale: actor.locale,
-      issuedAt: actor.issuedAt, expiresAt: actor.expiresAt, requestId: actor.requestId,
-      ...(actor.projectId ? { projectId: actor.projectId } : {}),
-      ...(actor.runId ? { runId: actor.runId } : {}),
-    }
   }
 }
 

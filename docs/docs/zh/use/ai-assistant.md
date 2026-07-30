@@ -83,7 +83,7 @@ Agent 还提供独立的 `navigate_to_route` UI 工具。只有用户明确要�
 
 模型服务认证失败、额度不足、限流、超时或暂时不可用时，Agent 只持久化稳定错误码，不向前端透传第三方原始异常。会话时间线会显示对应的本地化失败提示；手动中断也会保留一条明确的终止状态，避免任务无声结束。
 
-Agent 只有在 `LUNA_API_BASE_URL` 与 `AI_AGENT_CALLBACK_SERVICE_TOKEN` 均有效时才向模型注册平台工具，避免模型选择一个当前实例无法执行的工具。本地联调时，Agent 的回调 Token 必须与 Luna API 进程中的同名配置一致。
+Agent 只有在 `LUNA_API_BASE_URL` 与 `AI_INTERNAL_SECRET` 均有效时才向模型注册平台工具，避免模型选择一个当前实例无法执行的工具。本地联调时，Luna API 与 Agent 必须使用同一个 `AI_INTERNAL_SECRET`；程序会按用途自动派生回调 Token、签名键和加密键，部署者无需分别维护。
 
 工具集合还会按当前页面作用域裁剪：平台级页面注册 `getDashboard`、`listProjects`、`createProject` 等平台级能力，只有结构化页面上下文包含有效 `projectId` 时才注册事件、构建、发布、网关和运行时等项目级工具。模型不能通过自行填写其他项目 ID 扩大作用域。
 

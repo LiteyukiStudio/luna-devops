@@ -51,31 +51,11 @@ spec:
             - name: METRICS_ADDR
               value: {{ .Values.metrics.api.addr | quote }}
             {{- if .Values.ai.enabled }}
-            - name: AI_API_SERVICE_PRIVATE_KEY
+            - name: AI_INTERNAL_SECRET
               valueFrom:
                 secretKeyRef:
                   name: {{ include "luna-devops.aiSecretName" . }}
-                  key: {{ .Values.ai.apiServicePrivateKeyKey }}
-            - name: AI_ACTOR_CONTEXT_PRIVATE_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "luna-devops.aiSecretName" . }}
-                  key: {{ .Values.ai.actorContextPrivateKeyKey }}
-            - name: AI_RUN_ACTOR_GRANT_SIGNING_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "luna-devops.aiSecretName" . }}
-                  key: {{ .Values.ai.runActorGrantSigningKeyKey }}
-            - name: AI_DELEGATION_TOKEN_SIGNING_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "luna-devops.aiSecretName" . }}
-                  key: {{ .Values.ai.delegationTokenSigningKeyKey }}
-            - name: AI_AGENT_CALLBACK_SERVICE_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "luna-devops.aiSecretName" . }}
-                  key: {{ .Values.ai.agentCallbackServiceTokenKey }}
+                  key: {{ .Values.ai.internalSecretKey }}
             {{- end }}
           envFrom:
             - configMapRef:

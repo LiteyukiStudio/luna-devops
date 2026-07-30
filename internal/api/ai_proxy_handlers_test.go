@@ -30,7 +30,7 @@ func (f *fakeAIAgentClient) Do(_ context.Context, actor aiagent.ActorContext, re
 }
 
 func TestAIProxyUsesSessionActorAndForwardsIdempotencyKey(t *testing.T) {
-	t.Setenv("AI_RUN_ACTOR_GRANT_SIGNING_KEY", "test-run-grant-key")
+	t.Setenv("AI_INTERNAL_SECRET", "test-ai-internal-secret-32-bytes-minimum")
 	gin.SetMode(gin.TestMode)
 	fake := &fakeAIAgentClient{response: &aiagent.Response{
 		StatusCode: http.StatusAccepted,
@@ -67,7 +67,11 @@ func TestAIProxyUsesSessionActorAndForwardsIdempotencyKey(t *testing.T) {
 	}
 	runID, _ := forwarded["runId"].(string)
 	rawGrant, _ := forwarded["runActorGrant"].(string)
-	grant, err := aiagent.VerifyRunActorGrant(rawGrant, "test-run-grant-key", time.Now())
+	internalKeys, keyErr := aiagent.LoadInternalKeys()
+	if keyErr != nil {
+		t.Fatal(keyErr)
+	}
+	grant, err := aiagent.VerifyRunActorGrant(rawGrant, internalKeys.RunActorGrantSigningKey, time.Now())
 	if err != nil || runID == "" || grant.RunID != runID || grant.UserID != "usr_session_owner" {
 		t.Fatalf("forwarded Run Actor Grant = %#v, error = %v", grant, err)
 	}
@@ -101,7 +105,7 @@ func TestAIProxyRejectsBrowserSuppliedActorIdentity(t *testing.T) {
 }
 
 func TestAIProxyRejectsProjectOutsideCurrentUserBoundary(t *testing.T) {
-	t.Setenv("AI_RUN_ACTOR_GRANT_SIGNING_KEY", "test-run-grant-key")
+	t.Setenv("AI_INTERNAL_SECRET", "test-ai-internal-secret-32-bytes-minimum")
 	fake := &fakeAIAgentClient{}
 	handler := aiTestHandlers(fake, true)
 	handler.aiProjectAuthorizer = func(ctx *gin.Context, projectID string) bool {

@@ -49,12 +49,15 @@ docker compose up -d
 
 ### 启用 AI 助手
 
-AI Agent 使用独立 profile，默认不会启动。先在 `.env` 中设置：
+AI Agent 使用独立 profile，默认不会启动。只需生成一个稳定的内部根密钥并写入 `.env`：
 
-- `AI_AGENT_SERVICE_TOKEN` 与 `AI_ACTOR_CONTEXT_SIGNING_KEY`：至少 32 字符且彼此独立；
-- `AI_AGENT_CALLBACK_SERVICE_TOKEN`：Agent 回调 Luna API 的独立服务凭据；
-- `AI_RUN_ACTOR_GRANT_SIGNING_KEY` 与 `AI_DELEGATION_TOKEN_SIGNING_KEY`：Run Grant 与短时 Delegation 的独立签名键；
-- `AI_RUN_GRANT_ENCRYPTION_KEY_BASE64`：32 个随机字节的 Base64，必须稳定保存。
+```bash
+printf 'AI_INTERNAL_SECRET=%s\n' "$(openssl rand -hex 32)" >> .env
+```
+
+API 与 Agent 会通过 HKDF-SHA256 自动派生服务身份、上下文签名、回调认证、Delegation
+签名和 Run Grant 加密所需的独立子密钥。不要与 `SECRET_ENCRYPTION_KEY` 共用，也不要在
+服务运行期间随意更换，否则尚未完成的持久化 Run 将无法恢复。
 
 然后启动：
 

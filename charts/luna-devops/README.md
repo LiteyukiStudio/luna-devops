@@ -57,6 +57,7 @@ For production, keep `app.secretEncryptionKey` stable. If you do not set it, the
 ## Enable the AI Agent
 
 AI is fail-closed and disabled by default. Set `ai.enabled=true` and point
-`ai.existingSecret` to a Secret containing the key names configured under
-`ai.*Key`. The Agent image tag follows the chart `appVersion` unless
-`ai.agent.image.tag` is set explicitly.
+`ai.existingSecret` to a Secret containing one stable `ai-internal-secret` key
+(or override `ai.internalSecretKey`). Generate it with `openssl rand -hex 32`;
+API and Agent derive all purpose-specific internal keys. The Agent image tag
+follows the chart `appVersion` unless `ai.agent.image.tag` is set explicitly.

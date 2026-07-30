@@ -30,7 +30,7 @@ postgres:17-alpine
 redis:8-alpine
 ```
 
-AI 助手默认关闭。发布工作流同时发布 `liteyukistudio/luna-agent`，但只有设置 `ai.enabled=true` 并提供 `ai.existingSecret` 后 Chart 才会部署 Agent。
+AI 助手默认关闭。发布工作流同时发布 `liteyukistudio/luna-agent`，但只有设置 `ai.enabled=true` 并提供 `ai.existingSecret` 后 Chart 才会部署 Agent。该 Secret 默认只需包含一个稳定的 `ai-internal-secret` key，可用 `openssl rand -hex 32` 生成；API 与 Agent 会自动派生用途隔离的内部子密钥。
 
 ## 打开控制台
 
@@ -107,7 +107,8 @@ helm upgrade --install luna-devops ./charts/luna-devops \
 | `app.publicBaseUrl` | `http://localhost:8088` | 控制台对外访问地址。启用 Ingress 后必须改成公网地址。 |
 | `app.secretEncryptionKey` | 首次安装自动生成 | 用于加密 Git、镜像站和 OIDC 密钥。生产环境要保持稳定。 |
 | `api.image.tag` / `worker.image.tag` | `nightly` | API 和 worker 镜像版本。 |
-| `ai.enabled` | `false` | 是否部署独立 AI Agent。启用时必须设置 `ai.existingSecret`。 |
+| `ai.enabled` | `false` | 是否部署独立 AI Agent。启用时必须设置含 `ai-internal-secret` 的 `ai.existingSecret`。 |
+| `ai.internalSecretKey` | `ai-internal-secret` | `ai.existingSecret` 中保存 AI 内部根密钥的 key 名称。 |
 | `ai.agent.image.tag` | 与 Chart `appVersion` 一致 | Agent 镜像版本。正式发版与 API、Worker 使用同一 tag。 |
 | `postgresql.enabled` | `true` | 是否安装内置 PostgreSQL。 |
 | `redis.enabled` | `true` | 是否安装内置 Redis。 |

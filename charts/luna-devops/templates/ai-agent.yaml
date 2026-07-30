@@ -68,7 +68,7 @@ spec:
             - name: PORT
               value: {{ .Values.ai.agent.service.port | quote }}
             - name: AUTH_MODE
-              value: {{ .Values.ai.agent.authMode | quote }}
+              value: bff-hmac
             - name: RUN_LEASE_SECONDS
               value: {{ .Values.ai.agent.runLeaseSeconds | quote }}
             - name: RUN_POLL_MS
@@ -80,26 +80,11 @@ spec:
                 secretKeyRef:
                   name: {{ include "luna-devops.databaseUrlSecretName" . }}
                   key: {{ include "luna-devops.databaseUrlSecretKey" . }}
-            - name: API_SERVICE_JWT_PUBLIC_KEY
+            - name: AI_INTERNAL_SECRET
               valueFrom:
                 secretKeyRef:
                   name: {{ include "luna-devops.aiSecretName" . }}
-                  key: {{ .Values.ai.apiServicePublicKeyKey }}
-            - name: ACTOR_CONTEXT_PUBLIC_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "luna-devops.aiSecretName" . }}
-                  key: {{ .Values.ai.actorContextPublicKeyKey }}
-            - name: RUN_GRANT_ENCRYPTION_KEY_BASE64
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "luna-devops.aiSecretName" . }}
-                  key: {{ .Values.ai.runGrantEncryptionKeyKey }}
-            - name: AI_AGENT_CALLBACK_SERVICE_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "luna-devops.aiSecretName" . }}
-                  key: {{ .Values.ai.agentCallbackServiceTokenKey }}
+                  key: {{ .Values.ai.internalSecretKey }}
           livenessProbe:
             httpGet:
               path: /internal/health/live

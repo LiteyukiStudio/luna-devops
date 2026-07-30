@@ -35,14 +35,7 @@ ai:
   agentAddress: ""
   agentTimeout: 10s
   existingSecret: ""
-  apiServicePrivateKeyKey: ai-api-service-private-key
-  actorContextPrivateKeyKey: ai-actor-context-private-key
-  apiServicePublicKeyKey: ai-api-service-public-key
-  actorContextPublicKeyKey: ai-actor-context-public-key
-  runGrantEncryptionKeyKey: ai-run-grant-encryption-key
-  runActorGrantSigningKeyKey: ai-run-actor-grant-signing-key
-  delegationTokenSigningKeyKey: ai-delegation-token-signing-key
-  agentCallbackServiceTokenKey: ai-agent-callback-service-token
+  internalSecretKey: ai-internal-secret
   agent:
     replicaCount: 2
     image:
@@ -51,7 +44,6 @@ ai:
       pullPolicy: IfNotPresent
     service:
       port: 8091
-    authMode: jwt
     runLeaseSeconds: 30
     runPollMs: 500
     resources: {}

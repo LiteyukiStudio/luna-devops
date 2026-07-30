@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 
@@ -198,12 +197,17 @@ func prepareAITurnGrant(ctx *gin.Context, actor aiagent.ActorContext, body []byt
 		expiresAt = time.Unix(actor.SessionExpiresAt, 0)
 	}
 	runID := id.New("airun")
+	internalKeys, err := aiagent.LoadInternalKeys()
+	if err != nil {
+		writeErrorCode(ctx, http.StatusServiceUnavailable, "ai.delegation_not_configured", "Run delegation trust is not configured")
+		return nil, actor, false
+	}
 	grant, err := aiagent.SignRunActorGrant(aiagent.RunActorGrant{
 		Audience: "luna-ai-run-grant", Purpose: "agent_delegation_exchange",
 		RunID: runID, UserID: actor.UserID, SessionID: actor.SessionID,
 		OAuthGrantID: actor.OAuthGrantID, ProjectID: actor.ProjectID,
 		IssuedAt: now.Unix(), ExpiresAt: expiresAt.Unix(),
-	}, os.Getenv("AI_RUN_ACTOR_GRANT_SIGNING_KEY"))
+	}, internalKeys.RunActorGrantSigningKey)
 	if err != nil {
 		writeErrorCode(ctx, http.StatusServiceUnavailable, "ai.delegation_not_configured", "Run delegation trust is not configured")
 		return nil, actor, false

@@ -86,7 +86,7 @@ Each visible text delta updates its durable Item and is recorded as a Run Event 
 
 When the model service rejects authentication, runs out of quota, rate limits, times out, or becomes unavailable, the Agent persists only a stable error code instead of forwarding the upstream exception. The timeline renders a localized failure notice. Manual cancellation also leaves an explicit terminal notice so a run never appears to end silently.
 
-The Agent registers platform tools with the model only when both `LUNA_API_BASE_URL` and `AI_AGENT_CALLBACK_SERVICE_TOKEN` are valid. This prevents the model from selecting a tool that the current Agent instance cannot execute. During local integration, the callback token must match the same setting in the Luna API process.
+The Agent registers platform tools with the model only when both `LUNA_API_BASE_URL` and `AI_INTERNAL_SECRET` are valid. This prevents the model from selecting a tool that the current Agent instance cannot execute. During local integration, Luna API and Agent must use the same `AI_INTERNAL_SECRET`; purpose-specific callback, signing, and encryption keys are derived automatically.
 
 The tool set is also filtered by page scope. Platform-level pages expose platform capabilities such as `getDashboard`, `listProjects`, and `createProject`. Project events, builds, releases, gateways, and runtime tools are registered only when the structured page context contains a valid `projectId`; the model cannot expand that scope by supplying a different project ID.
 

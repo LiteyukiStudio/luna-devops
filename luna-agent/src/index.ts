@@ -1,9 +1,10 @@
 import { randomBytes } from "node:crypto"
-import { BffHmacAuthenticator, DevelopmentAuthenticator, JwtAuthenticator } from "./auth.js"
+import { BffHmacAuthenticator, DevelopmentAuthenticator } from "./auth.js"
 import { loadConfig } from "./config.js"
 import { RunExecutor } from "./executor.js"
 import { GraphVersionRegistry } from "./graph/registry.js"
 import { RunGrantCipher } from "./grant-cipher.js"
+import { deriveInternalKeys } from "./internal-secret.js"
 import { MemoryRepository } from "./persistence/memory.js"
 import { PostgresRepository } from "./persistence/postgres.js"
 import { ProviderConfigClient } from "./provider/config-client.js"
@@ -18,21 +19,20 @@ import { createOptionsTool } from "./tools/ui-options.js"
 import { navigateToRouteTool } from "./tools/ui-route.js"
 
 const config = loadConfig()
+const internalKeys = config.AI_INTERNAL_SECRET ? deriveInternalKeys(config.AI_INTERNAL_SECRET) : undefined
 const repository = config.DATABASE_URL ? new PostgresRepository(config.DATABASE_URL) : new MemoryRepository()
-const providerConfigClient = config.LUNA_API_BASE_URL && config.AI_AGENT_CALLBACK_SERVICE_TOKEN
-  ? new ProviderConfigClient(config.LUNA_API_BASE_URL, config.AI_AGENT_CALLBACK_SERVICE_TOKEN)
+const providerConfigClient = config.LUNA_API_BASE_URL && internalKeys
+  ? new ProviderConfigClient(config.LUNA_API_BASE_URL, internalKeys.callbackServiceToken)
   : undefined
 const provider = createRuntimeProvider(config, providerConfigClient)
-const authenticator = config.AUTH_MODE === "jwt"
-  ? await JwtAuthenticator.create(config.API_SERVICE_JWT_PUBLIC_KEY!, config.ACTOR_CONTEXT_PUBLIC_KEY!)
-  : config.AUTH_MODE === "bff-hmac"
-    ? new BffHmacAuthenticator(config.API_SERVICE_TOKEN!, config.ACTOR_CONTEXT_SIGNING_KEY!)
-    : new DevelopmentAuthenticator()
-const grantCipher = new RunGrantCipher(config.RUN_GRANT_ENCRYPTION_KEY_BASE64 ? Buffer.from(config.RUN_GRANT_ENCRYPTION_KEY_BASE64, "base64") : randomBytes(32))
+const authenticator = config.AUTH_MODE === "bff-hmac"
+  ? new BffHmacAuthenticator(internalKeys!.serviceToken, internalKeys!.actorSigningKey)
+  : new DevelopmentAuthenticator()
+const grantCipher = new RunGrantCipher(internalKeys?.runGrantEncryptionKey ?? randomBytes(32))
 const catalog = ToolCatalog.load(config.TOOL_CATALOG_JSON ? JSON.parse(config.TOOL_CATALOG_JSON) as unknown : platformOperations)
 const toolStore = repository instanceof PostgresRepository ? new PostgresToolCallStore(repository.pool, repository) : new ProjectingToolCallStore(new MemoryToolCallStore(), repository)
-const tools = catalog && config.LUNA_API_BASE_URL && config.AI_AGENT_CALLBACK_SERVICE_TOKEN
-  ? new ToolOrchestrator(catalog, new HttpLunaApiToolClient(config.LUNA_API_BASE_URL, config.AI_AGENT_CALLBACK_SERVICE_TOKEN), toolStore, undefined, 12, undefined, async runId => {
+const tools = catalog && config.LUNA_API_BASE_URL && internalKeys
+  ? new ToolOrchestrator(catalog, new HttpLunaApiToolClient(config.LUNA_API_BASE_URL, internalKeys.callbackServiceToken), toolStore, undefined, 12, undefined, async runId => {
       const encrypted = await repository.getRunActorGrantCiphertext(runId)
       if (!encrypted) throw new Error("ai.run_grant_unavailable")
       return grantCipher.decrypt(encrypted)

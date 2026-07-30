@@ -49,12 +49,16 @@ This starts PostgreSQL, password-protected Redis, API, and Worker. API completes
 
 ### Enable The AI Assistant
 
-The AI Agent uses an explicit profile and does not start by default. Configure these values in `.env` first:
+The AI Agent uses an explicit profile and does not start by default. Generate one stable internal root and append it to `.env`:
 
-- `AI_AGENT_SERVICE_TOKEN` and `AI_ACTOR_CONTEXT_SIGNING_KEY`: independent values of at least 32 characters;
-- `AI_AGENT_CALLBACK_SERVICE_TOKEN`: the Agent's independent callback credential for Luna API;
-- `AI_RUN_ACTOR_GRANT_SIGNING_KEY` and `AI_DELEGATION_TOKEN_SIGNING_KEY`: independent signing keys for Run Grants and short-lived delegations;
-- `AI_RUN_GRANT_ENCRYPTION_KEY_BASE64`: 32 random bytes encoded as Base64 and kept stable.
+```bash
+printf 'AI_INTERNAL_SECRET=%s\n' "$(openssl rand -hex 32)" >> .env
+```
+
+API and Agent derive independent service identity, context signing, callback authentication,
+delegation signing, and Run Grant encryption keys with HKDF-SHA256. Do not reuse
+`SECRET_ENCRYPTION_KEY`, and do not rotate this value while durable Runs are active because
+those Runs would no longer be recoverable.
 
 Then start the profile:
 

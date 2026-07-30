@@ -30,7 +30,7 @@ postgres:17-alpine
 redis:8-alpine
 ```
 
-The AI assistant is disabled by default. The release workflow also publishes `liteyukistudio/luna-agent`, but the chart deploys it only when `ai.enabled=true` and `ai.existingSecret` is provided.
+The AI assistant is disabled by default. The release workflow also publishes `liteyukistudio/luna-agent`, but the chart deploys it only when `ai.enabled=true` and `ai.existingSecret` is provided. That Secret needs only one stable `ai-internal-secret` key by default; generate it with `openssl rand -hex 32`, and API plus Agent derive purpose-separated internal keys automatically.
 
 ## Open The Console
 
@@ -107,7 +107,8 @@ helm upgrade --install luna-devops ./charts/luna-devops \
 | `app.publicBaseUrl` | `http://localhost:8088` | Public console URL. Required when Ingress is enabled. |
 | `app.secretEncryptionKey` | Generated on first install | Encrypts Git, registry, and OIDC secrets. Keep it stable in production. |
 | `api.image.tag` / `worker.image.tag` | `nightly` | API and worker image tag. |
-| `ai.enabled` | `false` | Deploy the independent AI Agent. `ai.existingSecret` is required when enabled. |
+| `ai.enabled` | `false` | Deploy the independent AI Agent. `ai.existingSecret` must contain `ai-internal-secret`. |
+| `ai.internalSecretKey` | `ai-internal-secret` | Key name holding the AI internal root in `ai.existingSecret`. |
 | `ai.agent.image.tag` | Chart `appVersion` | Agent image tag. Releases use the same tag as API and Worker. |
 | `postgresql.enabled` | `true` | Install built-in PostgreSQL. |
 | `redis.enabled` | `true` | Install built-in Redis. |
