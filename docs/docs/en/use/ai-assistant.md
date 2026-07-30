@@ -29,6 +29,8 @@ An empty new conversation is not saved repeatedly. Conversations are named autom
 
 The assistant has the same platform permissions as you. It cannot read or change a project space or resource that your account cannot access.
 
+A request may require several resource queries. The assistant continues from each tool result and explains or corrects failed queries instead of treating an unfinished step as the final response.
+
 Read-only queries run directly. High-risk operations such as deletion, release, or permission changes show a confirmation card first. You can:
 
 - Approve this operation

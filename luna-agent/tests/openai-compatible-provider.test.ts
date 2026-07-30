@@ -79,6 +79,45 @@ describe("OpenAICompatibleProvider streaming", () => {
     })
   })
 
+  it("serializes assistant tool calls and correlated tool results for the next model step", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
+      choices: [{ message: { content: "完成" } }],
+      usage: { prompt_tokens: 8, completion_tokens: 2 },
+    }), { status: 200, headers: { "content-type": "application/json" } }))
+    vi.stubGlobal("fetch", fetchMock)
+    const provider = new OpenAICompatibleProvider({ baseUrl: "https://provider.example/v1", apiKey: "secret", model: "model-a", timeoutMs: 5000 })
+
+    await provider.complete({
+      messages: [
+        { role: "user", content: "查询项目空间" },
+        {
+          role: "assistant",
+          content: "正在查询。",
+          toolCalls: [{ id: "call_projects", operationId: "listProjects", arguments: {} }],
+        },
+        { role: "tool", toolCallId: "call_projects", content: "{\"items\":[]}" },
+      ],
+      tools: [{ operationId: "listProjects", description: "查询项目空间", inputSchema: { type: "object" } }],
+      maxOutputTokens: 100,
+    })
+
+    const requestBody = fetchMock.mock.calls[0]?.[1]?.body
+    const parsedRequest = JSON.parse(typeof requestBody === "string" ? requestBody : "{}") as { messages?: unknown }
+    expect(parsedRequest.messages).toEqual([
+      { role: "user", content: "查询项目空间" },
+      {
+        role: "assistant",
+        content: "正在查询。",
+        tool_calls: [{
+          id: "call_projects",
+          type: "function",
+          function: { name: "listProjects", arguments: "{}" },
+        }],
+      },
+      { role: "tool", tool_call_id: "call_projects", content: "{\"items\":[]}" },
+    ])
+  })
+
   it("normalizes a quota error embedded in an otherwise successful SSE response", async () => {
     const body = new ReadableStream<Uint8Array>({
       start(controller) {

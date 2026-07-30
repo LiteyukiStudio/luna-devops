@@ -99,6 +99,11 @@ Redis fan-out 接入后也必须维持这一顺序。Provider 的原始 partial 
 自动 UI 工具，仅用于用户明确要求的页面切换；浏览器只消费实时 SSE 完成事件并按
 Tool Call ID 去重，历史 Timeline 不会再次触发跳转。
 
+Run 使用统一的有界 Agent Loop：模型发起 Tool Call 后，执行器完成策略与权限检查，
+把带调用 ID 的工具结果按 OpenAI-compatible `assistant.tool_calls` / `tool` 消息回灌，
+再继续下一轮模型判断，直到得到最终答复或进入批准、MFA、补充输入、取消、超时及
+调用上限等明确终态。执行器不得把第二轮及后续平台 Tool Call 当作最终回复丢弃。
+
 ## 验证
 
 ```bash

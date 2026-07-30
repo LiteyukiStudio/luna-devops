@@ -15,4 +15,5 @@ export const agentRuntimeInternals = {
   runPollMs: 500,
   runLeaseSeconds: 30,
   maxInputBytes: 48_000,
+  maxModelSteps: 24,
 } as const

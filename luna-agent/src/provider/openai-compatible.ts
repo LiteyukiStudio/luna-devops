@@ -30,7 +30,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
     const decoder = new TextDecoder()
     let buffer = ""
     let usage = { inputTokens: 0, outputTokens: 0 }
-    const toolFragments = new Map<number, { operationId: string, arguments: string }>()
+    const toolFragments = new Map<number, { id?: string, operationId: string, arguments: string }>()
     const reader = (response.body as ReadableStream<Uint8Array>).getReader()
     while (true) {
       const { done, value } = await reader.read()
@@ -50,6 +50,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
         if (content) yield { type: "message_delta", delta: content }
         for (const fragment of delta?.tool_calls ?? []) {
           const current = toolFragments.get(fragment.index) ?? { operationId: "", arguments: "" }
+          if (!current.id && fragment.id) current.id = fragment.id
           current.operationId += fragment.function?.name ?? ""
           current.arguments += fragment.function?.arguments ?? ""
           toolFragments.set(fragment.index, current)
@@ -74,6 +75,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
       text: contentText(message?.content),
       reasoningSummary: textValue(message?.reasoning_summary),
       toolCalls: (message?.tool_calls ?? []).map(call => ({
+        ...(call.id ? { id: call.id } : {}),
         operationId: call.function?.name ?? "",
         arguments: parseArguments(call.function?.arguments ?? ""),
       })).filter(call => call.operationId),
@@ -93,7 +95,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
         headers: { authorization: `Bearer ${this.options.apiKey}`, "content-type": "application/json" },
         body: JSON.stringify({
           model: this.options.model,
-          messages,
+          messages: providerMessages(messages),
           max_tokens: maxTokens,
           stream,
           ...(tools?.length
@@ -152,8 +154,8 @@ function providerPayloadError(value: unknown): string {
   return "ai.provider_stream_failed"
 }
 
-type ToolCallShape = { index: number, function?: { name?: string, arguments?: string } }
-type MessageShape = { content?: unknown, reasoning_summary?: unknown, tool_calls?: Array<{ function?: { name?: string, arguments?: string } }> }
+type ToolCallShape = { index: number, id?: string, function?: { name?: string, arguments?: string } }
+type MessageShape = { content?: unknown, reasoning_summary?: unknown, tool_calls?: Array<{ id?: string, function?: { name?: string, arguments?: string } }> }
 type CompletionBody = { choices?: Array<{ message?: MessageShape }>, usage?: { prompt_tokens?: number, completion_tokens?: number } }
 type StreamChunk = {
   choices?: Array<{ delta?: { content?: unknown, reasoning_summary?: unknown, tool_calls?: ToolCallShape[] } }>
@@ -185,11 +187,35 @@ function parseArguments(value: string): Record<string, unknown> {
   throw new Error("ai.provider_invalid_tool_arguments")
 }
 
-function parseToolCalls(fragments: Map<number, { operationId: string, arguments: string }>): ModelToolCall[] {
+function parseToolCalls(fragments: Map<number, { id?: string, operationId: string, arguments: string }>): ModelToolCall[] {
   return [...fragments.entries()].sort(([a], [b]) => a - b).map(([, call]) => ({
+    ...(call.id ? { id: call.id } : {}),
     operationId: call.operationId,
     arguments: parseArguments(call.arguments),
   })).filter(call => call.operationId)
+}
+
+function providerMessages(messages: ModelRequest["messages"]) {
+  return messages.map((message, messageIndex) => {
+    if (message.role === "tool") {
+      return { role: "tool", tool_call_id: message.toolCallId, content: message.content }
+    }
+    if (message.role === "assistant" && message.toolCalls?.length) {
+      return {
+        role: "assistant",
+        content: message.content || null,
+        tool_calls: message.toolCalls.map((call, callIndex) => ({
+          id: call.id ?? `call_${messageIndex}_${callIndex}`,
+          type: "function",
+          function: {
+            name: call.operationId,
+            arguments: JSON.stringify(call.arguments),
+          },
+        })),
+      }
+    }
+    return message
+  })
 }
 
 function ensureTrailingSlash(value: string): string {

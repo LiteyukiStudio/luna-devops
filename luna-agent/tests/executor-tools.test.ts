@@ -187,6 +187,97 @@ describe("provider to tool to subsequent model invocation", () => {
     ])
   })
 
+  it("continues through multiple platform tool rounds before completing the run", async () => {
+    const repository = new MemoryRepository()
+    const conversation = await repository.createConversation("usr_a", "安装 PostgreSQL", undefined, "user")
+    const created = await repository.createTurn("usr_a", {
+      conversationId: conversation.id,
+      input: "帮我在轻雪项目空间v2安装 PostgreSQL",
+      pageContext: { routeName: "projects" },
+      idempotencyKey: "multi-step-tool-loop",
+      runActorGrantCiphertext: "encrypted-test-grant",
+    })
+    const catalog = ToolCatalog.load([
+      {
+        operationId: "listProjects", method: "GET", path: "/api/v1/projects", category: "project",
+        risk: "read", requiredScopes: ["project:read"], approval: "never", idempotent: true, timeoutMs: 5000,
+        inputSchema: { type: "object", properties: {}, required: [], additionalProperties: false },
+      },
+      {
+        operationId: "listApplications", method: "GET", path: "/api/v1/applications", category: "application",
+        risk: "read", requiredScopes: ["application:read"], approval: "never", idempotent: true, timeoutMs: 5000,
+        inputSchema: { type: "object", properties: { projectId: { type: "string" } }, required: ["projectId"], additionalProperties: false },
+      },
+    ])
+    const client = new DeterministicLunaApiClient(request => request.operation.operationId === "listProjects"
+      ? { status: 200, body: { items: [{ id: "prj_liteyuki", name: "轻雪项目空间v2" }] } }
+      : { status: 200, body: { items: [] } })
+    const requests: ModelRequest[] = []
+    let modelStep = 0
+    const provider: ModelProvider = {
+      async *stream(request) {
+        requests.push(request)
+        if (modelStep++ === 0) {
+          yield { type: "message_delta", delta: "我先查找目标项目空间。" }
+          yield {
+            type: "completed",
+            usage: { inputTokens: 10, outputTokens: 5 },
+            toolCalls: [{ id: "call_projects", operationId: "listProjects", arguments: {} }],
+          }
+          return
+        }
+        if (modelStep === 2) {
+          yield { type: "message_delta", delta: "已经找到项目空间，继续检查现有应用。" }
+          yield {
+            type: "completed",
+            usage: { inputTokens: 20, outputTokens: 8 },
+            toolCalls: [{ id: "call_apps", operationId: "listApplications", arguments: { projectId: "prj_liteyuki" } }],
+          }
+          return
+        }
+        yield { type: "message_delta", delta: "目标项目空间中没有现有 PostgreSQL 应用，可以继续选择模板和配置参数。" }
+        yield { type: "completed", usage: { inputTokens: 30, outputTokens: 15 } }
+      },
+      async complete() {
+        return { text: "", usage: { inputTokens: 1, outputTokens: 0 }, toolCalls: [] }
+      },
+      capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
+      health: async () => ({ ok: true }),
+    }
+    const tools = new ToolOrchestrator(
+      catalog,
+      client,
+      new ProjectingToolCallStore(new MemoryToolCallStore(), repository),
+      undefined,
+      12,
+      undefined,
+      async () => "opaque-grant",
+    )
+    const executor = new RunExecutor(
+      repository,
+      new GraphVersionRegistry(provider, catalog.modelTools()),
+      loadConfig({ NODE_ENV: "test", INSTANCE_ID: "multi-step-worker" }),
+      tools,
+    )
+
+    await executor.runOnce()
+
+    expect((await repository.getRun("usr_a", created.run.id))?.status).toBe("completed")
+    expect(client.calls.map(call => call.operation.operationId)).toEqual(["listProjects", "listApplications"])
+    expect(requests).toHaveLength(3)
+    expect(requests[1]?.messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: "assistant", toolCalls: [expect.objectContaining({ id: "call_projects", operationId: "listProjects" })] }),
+      expect.objectContaining({ role: "tool", toolCallId: "call_projects" }),
+    ]))
+    expect(requests[2]?.messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: "tool", toolCallId: "call_projects" }),
+      expect.objectContaining({ role: "tool", toolCallId: "call_apps" }),
+    ]))
+    const timeline = await presentTimeline(repository, "usr_a", conversation.id)
+    expect(timeline?.turns[0]?.selectedRun?.items.filter(item => item.type === "tool_call")).toHaveLength(2)
+    expect(JSON.stringify(timeline)).toContain("目标项目空间中没有现有 PostgreSQL 应用")
+  })
+
   it("persists an automatic registered-route action without invoking the business tool orchestrator", async () => {
     const repository = new MemoryRepository()
     const conversation = await repository.createConversation("usr_a", "route", undefined, "user")

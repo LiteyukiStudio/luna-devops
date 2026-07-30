@@ -1,4 +1,7 @@
-export type ModelMessage = { role: "system" | "user" | "assistant", content: string }
+export type ModelMessage =
+  | { role: "system" | "user", content: string }
+  | { role: "assistant", content: string, toolCalls?: ModelToolCall[] }
+  | { role: "tool", toolCallId: string, content: string }
 export type ModelToolDefinition = {
   operationId: string
   description: string
@@ -17,7 +20,7 @@ export type ModelEvent =
   | { type: "reasoning_summary_delta", delta: string }
   | { type: "message_delta", delta: string }
   | { type: "completed", usage: { inputTokens: number, outputTokens: number }, toolCalls?: ModelToolCall[] }
-export type ModelToolCall = { operationId: string, arguments: Record<string, unknown> }
+export type ModelToolCall = { id?: string, operationId: string, arguments: Record<string, unknown> }
 export type ModelResponse = { text: string, reasoningSummary?: string, toolCalls?: ModelToolCall[], usage: { inputTokens: number, outputTokens: number } }
 export type ModelCapabilities = { streaming: boolean, toolCalling: boolean, structuredOutput: boolean }
 

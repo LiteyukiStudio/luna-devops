@@ -1,6 +1,6 @@
 import { Annotation, END, START, StateGraph } from "@langchain/langgraph"
 import type { ConversationHistoryEntry, ConversationTitleSource, PromptVersion } from "../domain.js"
-import type { ModelProvider, ModelToolDefinition, ModelToolResolver } from "../provider/provider.js"
+import type { ModelMessage, ModelProvider, ModelToolCall, ModelToolDefinition, ModelToolResolver } from "../provider/provider.js"
 import { skillGuidanceFor, systemPromptFor } from "../prompt/system.js"
 import { renameConversationTool } from "../tools/conversation-title.js"
 import { createOptionsTool } from "../tools/ui-options.js"
@@ -19,7 +19,8 @@ const GraphState = Annotation.Root({
   promptVersion: Annotation<PromptVersion>,
   reasoningSummary: Annotation<string>,
   answer: Annotation<string>,
-  toolCalls: Annotation<Array<{ operationId: string, arguments: Record<string, unknown> }>>,
+  toolCalls: Annotation<ModelToolCall[]>,
+  continuationMessages: Annotation<ModelMessage[]>,
 })
 export type AssistantGraphState = typeof GraphState.State
 type CompiledAssistantGraph = {
@@ -36,7 +37,7 @@ export class GraphVersionRegistry {
       .addNode("respond", async state => {
         const tools = this.modelTools(state.pageContext, state.conversation)
         const response = await provider.complete({
-          messages: modelMessages(state.promptVersion, state.input, state.pageContext, state.conversation, state.history, tools),
+          messages: modelMessages(state.promptVersion, state.input, state.pageContext, state.conversation, state.history, tools, state.continuationMessages),
           maxOutputTokens: 1200,
           tools,
         })
@@ -57,7 +58,7 @@ export class GraphVersionRegistry {
     if (!this.graphs.has(version)) throw new Error("ai.graph_version_unavailable")
     const tools = this.modelTools(input.pageContext, input.conversation)
     return this.provider.stream({
-      messages: modelMessages(input.promptVersion, input.input, input.pageContext, input.conversation, input.history, tools),
+      messages: modelMessages(input.promptVersion, input.input, input.pageContext, input.conversation, input.history, tools, input.continuationMessages),
       maxOutputTokens: 1200,
       tools,
       ...(signal ? { signal } : {}),
@@ -155,6 +156,7 @@ function modelMessages(
   conversation: ConversationPromptContext,
   history: ConversationHistoryEntry[],
   tools: ModelToolDefinition[],
+  continuationMessages: ModelMessage[],
 ) {
   return [
     {
@@ -182,5 +184,6 @@ ${JSON.stringify(conversation)}
 当前用户消息：
 ${input}`,
     },
+    ...continuationMessages,
   ]
 }
