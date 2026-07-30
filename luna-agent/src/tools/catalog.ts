@@ -43,7 +43,7 @@ const operation = z.object({
 
 export type ToolOperation = z.infer<typeof operation>
 
-const platformContextOperations = new Set(["getDashboard", "listProjects", "createProject"])
+const platformContextOperations = new Set(["getDashboard", "listProjects", "listAppTemplates", "createProject"])
 
 export class ToolCatalog {
   private readonly operations: Map<string, ToolOperation>

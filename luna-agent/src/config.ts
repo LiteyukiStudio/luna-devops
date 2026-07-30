@@ -1,18 +1,22 @@
 import { z } from "zod"
 
+function optionalValue<T extends z.ZodType>(schema: T) {
+  return z.preprocess(value => typeof value === "string" && value.trim() === "" ? undefined : value, schema.optional())
+}
+
 const schema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   HOST: z.string().default("127.0.0.1"),
   PORT: z.coerce.number().int().min(1).max(65535).default(8091),
-  DATABASE_URL: z.string().optional(),
+  DATABASE_URL: optionalValue(z.string()),
   INSTANCE_ID: z.string().min(1).max(128).default(`agent-${process.pid}`),
   AUTH_MODE: z.enum(["development", "bff-hmac"]).default("development"),
-  AI_INTERNAL_SECRET: z.string().min(32).optional(),
-  PROVIDER_BASE_URL: z.string().url().optional(),
-  PROVIDER_API_KEY: z.string().min(1).optional(),
-  PROVIDER_MODEL: z.string().min(1).optional(),
-  LUNA_API_BASE_URL: z.string().url().optional(),
-  TOOL_CATALOG_JSON: z.string().optional(),
+  AI_INTERNAL_SECRET: optionalValue(z.string().min(32)),
+  PROVIDER_BASE_URL: optionalValue(z.string().url()),
+  PROVIDER_API_KEY: optionalValue(z.string().min(1)),
+  PROVIDER_MODEL: optionalValue(z.string().min(1)),
+  LUNA_API_BASE_URL: optionalValue(z.string().url()),
+  TOOL_CATALOG_JSON: optionalValue(z.string()),
 })
 
 export type Config = z.infer<typeof schema>

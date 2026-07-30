@@ -1,5 +1,6 @@
 import type { AIActionContext } from './actions'
 import { describe, expect, it, vi } from 'vitest'
+import i18next from '@/i18n'
 import { executeAIUIAction } from './actions'
 
 function context(overrides: Partial<AIActionContext> = {}): AIActionContext {
@@ -45,6 +46,11 @@ describe('aI UI action registry', () => {
     expect(await executeAIUIAction({ version: 1, type: 'send_message', label: '继续', payload: { message: '继续诊断' } }, ctx)).toBe(true)
     expect(await executeAIUIAction({ version: 1, type: 'request_tool', label: '重试', payload: { operationId: 'retryBuildRun', arguments: { runId: 'run_1' }, message: '请重试构建 run_1' } }, ctx)).toBe(true)
     expect(sendMessage).toHaveBeenNthCalledWith(1, '继续诊断')
-    expect(sendMessage).toHaveBeenNthCalledWith(2, '请重试构建 run_1')
+    expect(sendMessage).toHaveBeenNthCalledWith(2, [
+      '请重试构建 run_1',
+      '',
+      i18next.t('aiAssistant.cards.toolRequestEnvelope'),
+      '{"operationId":"retryBuildRun","arguments":{"runId":"run_1"}}',
+    ].join('\n'))
   })
 })

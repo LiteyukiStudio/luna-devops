@@ -1064,6 +1064,13 @@ OpenAPI，不把 MCP 作为内部服务总线。
 - [x] 为模型生成过程增加会话列表旋转状态与消息流三点输入指示器，并兼容减少动态效果偏好。
 - [x] 打通 Provider → Agent 持久事件 → Luna API 无缓冲 SSE → Web reducer 的真实流式输出，支持 reasoning、文本与分片工具参数归一化、游标恢复和终态主动断开。
 - [x] 将固定两次模型调用重构为统一有界 Agent Loop：按调用 ID 回灌 assistant tool_calls 与 tool result，支持任意轮次继续调用平台工具，并以批准、MFA、补充输入、取消、超时、调用上限或最终答复作为明确退出条件。
+- [x] 确定 AI 声明式交互内容与卡片 V1 Schema：固定场景模板、受控内容块、动态输入、可信来源、Tool 参数绑定、Secret 隔离、运行状态和安全提交链路。
+- [x] 实现 `create_interaction_cards`、卡片 Timeline/SSE、Web 固定内容块与动态输入渲染器；卡片动作复用 Agent Run 和用户绑定 Tool 委托链路，非法 Schema 与模型伪造审批卡 fail closed。
+- [x] 为交互卡片增加模型参数校验失败后的有界自修复回路，并支持用 `{{field_id}}` 将已校验的非敏感表单值带回会话；Secret 保持隔离，含必填字段的继续动作在校验通过前禁用。
+- [x] 将 Provider 连接中断、读取失败和畸形 SSE 统一映射为稳定错误码，避免卡片生成失败退化为无法诊断的通用 `ai.run_failed`。
+- [x] 将应用模板搜索接入 Agent Tool Catalog，支持按关键词和分类筛选，并在工具结果中剔除 Secret 默认值。
+- [ ] 将应用模板安装事务从 HTTP Handler 下沉为可复用服务，再注册 `installAppTemplate` 高风险 Tool；卡片提交继续复用用户权限、二次确认、MFA、幂等和审计，不复制安装事务与 Secret 写入逻辑。
+- [ ] 在 Luna API 实现可配置的互联网搜索与网页读取 Provider，Agent 只注册 `searchWeb`、`fetchWebPage` 和应用候选核验工具，不直接访问第三方服务。
 - [x] 重构多会话流式运行：顶栏新增会话入口，草稿/Run/SSE/reducer 按会话隔离，支持跨会话并行发送和逐会话中断；消息与工具块按持久 Turn/Timeline 顺序稳定渲染，避免流式阶段跳序。
 - [x] 将 AI 助手会话列表入口调整到小窗顶栏最左侧并使用列表图标，右侧只保留新建会话与窗口控制，明确区分导航和当前会话操作。
 - [x] 移除与关闭到悬浮球语义重复的助手缩小按钮及 minimized 状态，只保留单一关闭与恢复路径。

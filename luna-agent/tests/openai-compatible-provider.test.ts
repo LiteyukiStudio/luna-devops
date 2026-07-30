@@ -58,6 +58,31 @@ describe("OpenAICompatibleProvider streaming", () => {
     })).rejects.toThrow("ai.provider_quota_exhausted")
   })
 
+  it("maps provider transport and malformed stream failures to stable error codes", async () => {
+    const provider = new OpenAICompatibleProvider({ baseUrl: "https://provider.example/v1", apiKey: "secret", model: "model-a", timeoutMs: 5000 })
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      throw new TypeError("socket closed with upstream detail")
+    }))
+    await expect(provider.complete({
+      messages: [{ role: "user", content: "hello" }],
+      maxOutputTokens: 100,
+    })).rejects.toThrow("ai.provider_unavailable")
+
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("data: {broken-json}\n\n", {
+      status: 200,
+      headers: { "content-type": "text/event-stream" },
+    })))
+    const consume = async () => {
+      for await (const event of provider.stream({
+        messages: [{ role: "user", content: "hello" }],
+        maxOutputTokens: 100,
+      })) {
+        void event
+      }
+    }
+    await expect(consume()).rejects.toThrow("ai.provider_stream_failed")
+  })
+
   it("can require one named tool for structured UI prediction", async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
       choices: [{ message: { tool_calls: [{ function: { name: "create_options", arguments: "{\"title\":\"Next\",\"options\":[]}" } }] } }],
@@ -77,6 +102,24 @@ describe("OpenAICompatibleProvider streaming", () => {
     expect(JSON.parse(typeof requestBody === "string" ? requestBody : "{}")).toMatchObject({
       tool_choice: { type: "function", function: { name: "create_options" } },
     })
+  })
+
+  it("repairs only redundant trailing object closures from compatible providers", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      choices: [{ message: { tool_calls: [{ function: { name: "create_interaction_cards", arguments: "{\"schemaVersion\":1}}" } }] } }],
+      usage: { prompt_tokens: 4, completion_tokens: 2 },
+    }), { status: 200, headers: { "content-type": "application/json" } })))
+    const provider = new OpenAICompatibleProvider({ baseUrl: "https://provider.example/v1", apiKey: "secret", model: "model-a", timeoutMs: 5000 })
+
+    const result = await provider.complete({
+      messages: [{ role: "user", content: "create a card" }],
+      maxOutputTokens: 100,
+    })
+
+    expect(result.toolCalls).toEqual([{
+      operationId: "create_interaction_cards",
+      arguments: { schemaVersion: 1 },
+    }])
   })
 
   it("serializes assistant tool calls and correlated tool results for the next model step", async () => {

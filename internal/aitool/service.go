@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/appstore"
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	projectservice "github.com/LiteyukiStudio/devops/internal/project"
@@ -104,6 +105,52 @@ func (s *Service) Execute(ctx context.Context, input Request) (Result, error) {
 		}
 		err := query.Order("projects.updated_at desc").Limit(limit).Scan(&projects).Error
 		return databaseResult(Result{Value: map[string]any{"items": projects}, Truncated: len(projects) == limit}, err)
+	case "listAppTemplates":
+		templates, err := appstore.Catalog()
+		if err != nil {
+			return Result{}, fmt.Errorf("%w: %v", ErrStorage, err)
+		}
+		query := strings.ToLower(strings.TrimSpace(stringArgument(input.Arguments, "query")))
+		category := strings.ToLower(strings.TrimSpace(stringArgument(input.Arguments, "category")))
+		items := make([]map[string]any, 0, min(limit, len(templates)))
+		for _, template := range templates {
+			if template.Kind == "system" {
+				continue
+			}
+			if category != "" && strings.ToLower(template.Category) != category {
+				continue
+			}
+			searchable := strings.ToLower(strings.Join([]string{
+				template.ID, template.Slug, template.Name, template.Description, template.Category,
+			}, " "))
+			if query != "" && !strings.Contains(searchable, query) {
+				continue
+			}
+			values := make([]map[string]any, 0, len(template.Values))
+			for _, definition := range template.Values {
+				value := map[string]any{
+					"key": definition.Key, "label": definition.Label, "description": definition.Description,
+					"required": definition.Required, "secret": definition.Secret, "autoGenerate": definition.AutoGenerate,
+				}
+				if !definition.Secret {
+					value["default"] = definition.Default
+				}
+				values = append(values, value)
+			}
+			items = append(items, map[string]any{
+				"id": template.ID, "slug": template.Slug, "name": template.Name,
+				"description": template.Description, "category": template.Category,
+				"icon": template.Icon, "officialWebsite": template.OfficialWebsite,
+				"officialRepository": template.OfficialRepository, "version": template.Version,
+				"defaultReplicas": template.DefaultReplicas, "defaultCPU": template.DefaultCPU,
+				"defaultMemory": template.DefaultMemory, "dataRetentionEnabled": template.DataRetentionEnabled,
+				"dataCapacity": template.DataCapacity, "values": values,
+			})
+			if len(items) == limit {
+				break
+			}
+		}
+		return Result{Value: map[string]any{"items": items}, Truncated: len(items) == limit}, nil
 	case "createProject":
 		webConsoleEnabled, _ := input.Arguments["webConsoleEnabled"].(bool)
 		webConsoleConfigured := input.Arguments["webConsoleEnabled"] != nil

@@ -6,6 +6,7 @@ import { createId } from "./id.js"
 import { redact } from "./redaction.js"
 import { ToolInterruption, type ToolOrchestrator } from "./tools/orchestrator.js"
 import { renameConversationInput } from "./tools/conversation-title.js"
+import { createInteractionCardsInput, normalizeInteractionCardsInput } from "./tools/ui-cards.js"
 import { createOptionsInput, optionUIActions } from "./tools/ui-options.js"
 import { automaticRouteUIAction, navigateToRouteInput } from "./tools/ui-route.js"
 import type { ProviderConfigClient } from "./provider/config-client.js"
@@ -84,6 +85,7 @@ export class RunExecutor {
       }
       let assistantRenamed = false
       let pendingOptions: unknown
+      let interactionCardsCreated = false
       let finalAnswer = ""
       let completed = false
       const continuationMessages: ModelMessage[] = executionInput.toolResults.length
@@ -117,8 +119,31 @@ export class RunExecutor {
         continuationMessages.push({ role: "assistant", content: result.answer, toolCalls })
         let platformToolCalled = false
         let createOptionsCalled = false
+        let createInteractionCardsCalled = false
+        let recoverableToolError = false
         const hasPlatformTool = toolCalls.some(call => !internalToolOperationIds.has(call.operationId))
         for (const toolCall of toolCalls) {
+          if (toolCall.operationId === "create_interaction_cards") {
+            if (!hasPlatformTool) {
+              const creation = await this.createInteractionCards(run.id, run.turnId, toolCall.arguments)
+              if (!creation.accepted) {
+                recoverableToolError = true
+                continuationMessages.push(toolResultMessage(toolCall, {
+                  status: "rejected",
+                  errorCode: "ai.provider_invalid_tool_arguments",
+                  issues: creation.issues,
+                  guidance: "请严格按照当前 create_interaction_cards 工具 schema 修正参数后重试。",
+                }))
+                continue
+              }
+              createInteractionCardsCalled = true
+              interactionCardsCreated = true
+            }
+            continuationMessages.push(toolResultMessage(toolCall, {
+              status: hasPlatformTool ? "deferred_until_platform_results" : "succeeded",
+            }))
+            continue
+          }
           if (toolCall.operationId === "create_options") {
             createOptionsCalled = true
             if (!hasPlatformTool) pendingOptions = toolCall.arguments
@@ -161,8 +186,9 @@ export class RunExecutor {
             return true
           }
         }
+        if (recoverableToolError) continue
         if (platformToolCalled) pendingOptions = undefined
-        if (!platformToolCalled && (result.answer || createOptionsCalled)) {
+        if (!platformToolCalled && (result.answer || createOptionsCalled || createInteractionCardsCalled)) {
           completed = true
           break
         }
@@ -174,13 +200,15 @@ export class RunExecutor {
       } catch {
         // Title generation is best-effort and must never fail a completed response.
       }
-      await this.ensureOptions(run.id, run.turnId, {
-        userInput: executionInput.input,
-        answer: finalAnswer,
-        pageContext: executionInput.pageContext,
-        conversation: conversationContext,
-        history: executionInput.history,
-      }, pendingOptions, abort.signal)
+      if (!interactionCardsCreated) {
+        await this.ensureOptions(run.id, run.turnId, {
+          userInput: executionInput.input,
+          answer: finalAnswer,
+          pageContext: executionInput.pageContext,
+          conversation: conversationContext,
+          history: executionInput.history,
+        }, pendingOptions, abort.signal)
+      }
       await this.repository.updateRun(run.id, "running", "completed", { completedAt: new Date().toISOString() })
     } catch (error) {
       if (error instanceof ToolInterruption && error.state === "waiting_input") {
@@ -232,6 +260,48 @@ export class RunExecutor {
       itemId, toolCallId, operationId: "create_options", result, uiActions: result.uiActions, timelineIndex: item.timelineIndex,
     })
     await this.repository.appendEvent(runId, "item.completed", { itemId })
+  }
+
+  private async createInteractionCards(runId: string, turnId: string, raw: unknown) {
+    const parsed = createInteractionCardsInput.safeParse(normalizeInteractionCardsInput(raw))
+    if (!parsed.success) {
+      const issues = parsed.error.issues.map(issue => ({
+        code: issue.code,
+        path: issue.path.join("."),
+        message: issue.message,
+      }))
+      console.warn(JSON.stringify({ event: "interaction_cards_schema_rejected", issues }))
+      return { accepted: false as const, issues }
+    }
+    const input = parsed.data
+    const itemId = createId("aiitm")
+    const toolCallId = createId("aitool")
+    const result = {
+      summaryKey: "aiAssistant.cards.created",
+      title: input.title,
+      description: input.description,
+    }
+    const item = await this.repository.appendItem({
+      id: itemId, runId, turnId, type: "tool_call", status: "completed",
+      content: {
+        toolCallId,
+        operationId: "create_interaction_cards",
+        titleKey: "aiAssistant.cards.toolTitle",
+        status: "succeeded",
+        arguments: input,
+        result,
+      },
+    })
+    await this.repository.appendEvent(runId, "tool.started", {
+      itemId, toolCallId, operationId: "create_interaction_cards", titleKey: "aiAssistant.cards.toolTitle",
+      arguments: input, timelineIndex: item.timelineIndex,
+    })
+    await this.repository.appendEvent(runId, "tool.completed", {
+      itemId, toolCallId, operationId: "create_interaction_cards", titleKey: "aiAssistant.cards.toolTitle",
+      result, timelineIndex: item.timelineIndex,
+    })
+    await this.repository.appendEvent(runId, "item.completed", { itemId })
+    return { accepted: true as const }
   }
 
   private async ensureOptions(
@@ -409,4 +479,4 @@ function toolResultMessage(toolCall: ModelToolCall & { id: string }, result: Rec
   }
 }
 
-const internalToolOperationIds = new Set(["create_options", "rename_conversation", "navigate_to_route"])
+const internalToolOperationIds = new Set(["create_options", "create_interaction_cards", "rename_conversation", "navigate_to_route"])

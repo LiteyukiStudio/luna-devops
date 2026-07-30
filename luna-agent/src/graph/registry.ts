@@ -23,6 +23,7 @@ const GraphState = Annotation.Root({
   continuationMessages: Annotation<ModelMessage[]>,
 })
 export type AssistantGraphState = typeof GraphState.State
+const assistantMaxOutputTokens = 4096
 type CompiledAssistantGraph = {
   invoke(input: AssistantGraphState, options?: { signal?: AbortSignal }): Promise<AssistantGraphState>
 }
@@ -38,7 +39,7 @@ export class GraphVersionRegistry {
         const tools = this.modelTools(state.pageContext, state.conversation)
         const response = await provider.complete({
           messages: modelMessages(state.promptVersion, state.input, state.pageContext, state.conversation, state.history, tools, state.continuationMessages),
-          maxOutputTokens: 1200,
+          maxOutputTokens: assistantMaxOutputTokens,
           tools,
         })
         return { ...state, answer: response.text, toolCalls: response.toolCalls ?? [], reasoningSummary: response.reasoningSummary ?? state.reasoningSummary }
@@ -59,7 +60,7 @@ export class GraphVersionRegistry {
     const tools = this.modelTools(input.pageContext, input.conversation)
     return this.provider.stream({
       messages: modelMessages(input.promptVersion, input.input, input.pageContext, input.conversation, input.history, tools, input.continuationMessages),
-      maxOutputTokens: 1200,
+      maxOutputTokens: assistantMaxOutputTokens,
       tools,
       ...(signal ? { signal } : {}),
     })
@@ -87,7 +88,7 @@ export class GraphVersionRegistry {
   }, signal?: AbortSignal): Promise<Record<string, unknown> | undefined> {
     const availableOperations = this.modelTools(input.pageContext, input.conversation)
       .map(tool => tool.operationId)
-      .filter(operationId => !["create_options", "rename_conversation", "navigate_to_route"].includes(operationId))
+      .filter(operationId => !["create_options", "create_interaction_cards", "rename_conversation", "navigate_to_route"].includes(operationId))
     const skillGuidance = skillGuidanceFor({
       userInput: `${input.userInput}\n${input.answer}`,
       pageContext: input.pageContext,

@@ -33,7 +33,10 @@ export class OpenAICompatibleProvider implements ModelProvider {
     const toolFragments = new Map<number, { id?: string, operationId: string, arguments: string }>()
     const reader = (response.body as ReadableStream<Uint8Array>).getReader()
     while (true) {
-      const { done, value } = await reader.read()
+      const chunk = await reader.read().catch((error: unknown) => {
+        throw providerTransportError(error, request.signal)
+      })
+      const { done, value } = chunk
       if (done) break
       buffer += decoder.decode(value, { stream: true })
       const frames = buffer.split(/\r?\n\r?\n/)
@@ -41,7 +44,12 @@ export class OpenAICompatibleProvider implements ModelProvider {
       for (const frame of frames) {
         const data = frame.split(/\r?\n/).filter(line => line.startsWith("data:")).map(line => line.slice(5).trimStart()).join("\n")
         if (!data || data === "[DONE]") continue
-        const payload = JSON.parse(data) as StreamChunk
+        let payload: StreamChunk
+        try {
+          payload = JSON.parse(data) as StreamChunk
+        } catch {
+          throw new Error("ai.provider_stream_failed")
+        }
         if (payload.error) throw new Error(providerPayloadError(payload.error))
         const delta = payload.choices?.[0]?.delta
         const reasoning = textValue(delta?.reasoning_summary)
@@ -90,30 +98,35 @@ export class OpenAICompatibleProvider implements ModelProvider {
     const abort = () => controller.abort(signal?.reason)
     signal?.addEventListener("abort", abort, { once: true })
     try {
-      const response = await fetch(new URL("chat/completions", ensureTrailingSlash(this.options.baseUrl)), {
-        method: "POST",
-        headers: { authorization: `Bearer ${this.options.apiKey}`, "content-type": "application/json" },
-        body: JSON.stringify({
-          model: this.options.model,
-          messages: providerMessages(messages),
-          max_tokens: maxTokens,
-          stream,
-          ...(tools?.length
-            ? {
-                tools: tools.map(tool => ({
-                  type: "function",
-                  function: {
-                    name: tool.operationId,
-                    description: tool.description,
-                    parameters: tool.inputSchema,
-                  },
-                })),
-                tool_choice: providerToolChoice(toolChoice),
-              }
-            : {}),
-        }),
-        signal: controller.signal,
-      })
+      let response: Response
+      try {
+        response = await fetch(new URL("chat/completions", ensureTrailingSlash(this.options.baseUrl)), {
+          method: "POST",
+          headers: { authorization: `Bearer ${this.options.apiKey}`, "content-type": "application/json" },
+          body: JSON.stringify({
+            model: this.options.model,
+            messages: providerMessages(messages),
+            max_tokens: maxTokens,
+            stream,
+            ...(tools?.length
+              ? {
+                  tools: tools.map(tool => ({
+                    type: "function",
+                    function: {
+                      name: tool.operationId,
+                      description: tool.description,
+                      parameters: tool.inputSchema,
+                    },
+                  })),
+                  tool_choice: providerToolChoice(toolChoice),
+                }
+              : {}),
+          }),
+          signal: controller.signal,
+        })
+      } catch (error) {
+        throw providerTransportError(error, signal)
+      }
       if (!response.ok) throw new Error(providerHTTPError(response.status))
       return response
     } finally {
@@ -154,6 +167,16 @@ function providerPayloadError(value: unknown): string {
   return "ai.provider_stream_failed"
 }
 
+function providerTransportError(error: unknown, signal?: AbortSignal): Error {
+  if (error instanceof Error && error.message.startsWith("ai."))
+    return error
+  if (signal?.aborted)
+    return signal.reason instanceof Error ? signal.reason : new Error("ai.run_canceled")
+  if (error instanceof Error && error.name === "AbortError")
+    return new Error("ai.provider_timeout")
+  return new Error("ai.provider_unavailable")
+}
+
 type ToolCallShape = { index: number, id?: string, function?: { name?: string, arguments?: string } }
 type MessageShape = { content?: unknown, reasoning_summary?: unknown, tool_calls?: Array<{ id?: string, function?: { name?: string, arguments?: string } }> }
 type CompletionBody = { choices?: Array<{ message?: MessageShape }>, usage?: { prompt_tokens?: number, completion_tokens?: number } }
@@ -182,9 +205,73 @@ function parseArguments(value: string): Record<string, unknown> {
     const parsed = JSON.parse(value) as unknown
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed as Record<string, unknown>
   } catch {
+    const repaired = trimTrailingObjectClosures(value)
+    if (repaired) {
+      try {
+        const parsed = JSON.parse(repaired) as unknown
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          console.warn(JSON.stringify({
+            event: "provider_tool_arguments_trailing_closure_repaired",
+            originalLength: value.length,
+            repairedLength: repaired.length,
+          }))
+          return parsed as Record<string, unknown>
+        }
+      } catch {
+        // Fall through to the stable provider error below.
+      }
+    }
+    console.warn(JSON.stringify({
+      event: "provider_invalid_tool_arguments",
+      length: value.length,
+      startsWithObject: value.trimStart().startsWith("{"),
+      endsWithObject: value.trimEnd().endsWith("}"),
+      openBraces: [...value].filter(character => character === "{").length,
+      closeBraces: [...value].filter(character => character === "}").length,
+    }))
     throw new Error("ai.provider_invalid_tool_arguments")
   }
   throw new Error("ai.provider_invalid_tool_arguments")
+}
+
+function trimTrailingObjectClosures(value: string): string | undefined {
+  const input = value.trim()
+  if (!input.startsWith("{"))
+    return undefined
+  let depth = 0
+  let inString = false
+  let escaped = false
+  for (let index = 0; index < input.length; index += 1) {
+    const character = input[index]
+    if (inString) {
+      if (escaped) {
+        escaped = false
+        continue
+      }
+      if (character === "\\") {
+        escaped = true
+        continue
+      }
+      if (character === "\"")
+        inString = false
+      continue
+    }
+    if (character === "\"") {
+      inString = true
+      continue
+    }
+    if (character === "{")
+      depth += 1
+    else if (character === "}")
+      depth -= 1
+    if (depth === 0 && character === "}") {
+      const trailing = input.slice(index + 1)
+      return /^}+$/.test(trailing) ? input.slice(0, index + 1) : undefined
+    }
+    if (depth < 0)
+      return undefined
+  }
+  return undefined
 }
 
 function parseToolCalls(fragments: Map<number, { id?: string, operationId: string, arguments: string }>): ModelToolCall[] {

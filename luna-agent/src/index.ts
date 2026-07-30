@@ -15,6 +15,7 @@ import { HttpLunaApiToolClient } from "./tools/luna-api-client.js"
 import { MemoryToolCallStore, ProjectingToolCallStore, ToolOrchestrator } from "./tools/orchestrator.js"
 import { PostgresToolCallStore } from "./tools/postgres-store.js"
 import { platformOperations } from "./tools/generated/platform.js"
+import { createInteractionCardsTool } from "./tools/ui-cards.js"
 import { createOptionsTool } from "./tools/ui-options.js"
 import { navigateToRouteTool } from "./tools/ui-route.js"
 
@@ -43,6 +44,7 @@ const graphs = new GraphVersionRegistry(provider, pageContext => [
     ? catalog.modelTools(typeof pageContext.projectId === "string" ? { projectId: pageContext.projectId } : {})
     : []),
   createOptionsTool,
+  createInteractionCardsTool,
   navigateToRouteTool,
 ])
 const executor = new RunExecutor(repository, graphs, config, tools, providerConfigClient)

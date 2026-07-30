@@ -31,6 +31,7 @@ type aiToolPolicy struct {
 var aiToolPolicies = map[string]aiToolPolicy{
 	"getDashboard":               {OperationID: "getDashboard", Scopes: []string{"dashboard:read"}, Risk: "read"},
 	"listProjects":               {OperationID: "listProjects", Scopes: []string{"project:read"}, Risk: "read"},
+	"listAppTemplates":           {OperationID: "listAppTemplates", Scopes: []string{"application:read"}, Risk: "read"},
 	"createProject":              {OperationID: "createProject", Scopes: []string{"project:write"}, Risk: "write"},
 	"listPlatformEvents":         {OperationID: "listPlatformEvents", Scopes: []string{"event:read"}, ProjectAction: authz.ActionProjectRead, Risk: "read"},
 	"getProject":                 {OperationID: "getProject", Scopes: []string{"project:read"}, ProjectAction: authz.ActionProjectRead, Risk: "read"},

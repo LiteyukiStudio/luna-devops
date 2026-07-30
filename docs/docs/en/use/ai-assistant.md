@@ -50,6 +50,12 @@ After a response, the assistant shows a small set of next steps only when the mo
 For reading tasks, the assistant may include internal links. When it needs a decision, it prefers selectable options instead of moving you away from the current page.
 If the model does not return reliable contextual suggestions, the platform omits the suggestion area instead of filling it with fixed generic choices.
 
+## Interaction cards
+
+The assistant can organize resource candidates, comparisons, diagnostics, and configuration fields into cards. Continue or action buttons stay disabled until required fields are valid.
+
+When a form continues the conversation, only the non-sensitive fields declared by the card are included. Passwords, tokens, and secrets are never added to the message history. Any resulting operation still goes through platform authorization and required confirmation.
+
 ## Page context and privacy
 
 The assistant receives structured context such as the current route, page type, and selected resource IDs. Passwords, tokens, and secrets shown or entered on a page are not included in that context.

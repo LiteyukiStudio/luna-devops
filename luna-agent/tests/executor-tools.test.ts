@@ -187,6 +187,82 @@ describe("provider to tool to subsequent model invocation", () => {
     ])
   })
 
+  it("returns invalid interaction-card arguments to the model for a bounded self-correction", async () => {
+    const repository = new MemoryRepository()
+    const conversation = await repository.createConversation("usr_a", "Redis 配置", undefined, "user")
+    const created = await repository.createTurn("usr_a", {
+      conversationId: conversation.id,
+      input: "生成 Redis 配置表单",
+      pageContext: {},
+      idempotencyKey: "repair-interaction-card",
+    })
+    const requests: ModelRequest[] = []
+    let modelStep = 0
+    const provider: ModelProvider = {
+      async *stream(request) {
+        requests.push(request)
+        if (modelStep++ === 0) {
+          yield { type: "message_delta", delta: "正在生成配置表单。" }
+          yield {
+            type: "completed",
+            usage: { inputTokens: 10, outputTokens: 10 },
+            toolCalls: [{
+              id: "invalid_card",
+              operationId: "create_interaction_cards",
+              arguments: { schemaVersion: "v1", cards: [] },
+            }],
+          }
+          return
+        }
+        yield { type: "message_delta", delta: "请填写 Redis 配置。" }
+        yield {
+          type: "completed",
+          usage: { inputTokens: 20, outputTokens: 20 },
+          toolCalls: [{
+            id: "valid_card",
+            operationId: "create_interaction_cards",
+            arguments: {
+              schemaVersion: 1,
+              title: "Redis 配置",
+              template: "form",
+              cards: [{
+                id: "redis",
+                presentation: { variant: "form", title: "Redis" },
+                form: {
+                  sections: [{
+                    id: "basic",
+                    fields: [{ id: "name", type: "text", label: "实例名称", required: true }],
+                  }],
+                },
+              }],
+            },
+          }],
+        }
+      },
+      async complete() {
+        return { text: "", usage: { inputTokens: 1, outputTokens: 0 }, toolCalls: [] }
+      },
+      capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
+      health: async () => ({ ok: true }),
+    }
+    const executor = new RunExecutor(
+      repository,
+      new GraphVersionRegistry(provider),
+      loadConfig({ NODE_ENV: "test", INSTANCE_ID: "repair-card-worker" }),
+    )
+
+    await executor.runOnce()
+
+    expect((await repository.getRun("usr_a", created.run.id))?.status).toBe("completed")
+    expect(requests).toHaveLength(2)
+    const retryMessage = requests[1]?.messages.find(message => message.role === "tool")
+    expect(retryMessage).toMatchObject({ role: "tool", toolCallId: "invalid_card" })
+    expect(retryMessage?.content).toContain("ai.provider_invalid_tool_arguments")
+    const timeline = await presentTimeline(repository, "usr_a", conversation.id)
+    expect(JSON.stringify(timeline)).toContain("Redis 配置")
+    expect(JSON.stringify(timeline)).not.toContain("invalid_card")
+  })
+
   it("continues through multiple platform tool rounds before completing the run", async () => {
     const repository = new MemoryRepository()
     const conversation = await repository.createConversation("usr_a", "安装 PostgreSQL", undefined, "user")

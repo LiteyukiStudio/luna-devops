@@ -2,6 +2,7 @@ import type { QueryClient } from '@tanstack/react-query'
 import type { NavigateFunction } from 'react-router-dom'
 import type { AIUIAction } from '@/api'
 import { z } from 'zod'
+import i18next from '@/i18n'
 import { aiInternalRouteNames, buildAIInternalRoute } from './internal-routes'
 
 export interface AIActionContext {
@@ -107,12 +108,28 @@ export async function executeAIUIAction(action: AIUIAction, context: AIActionCon
   if (action.type === 'highlight')
     return highlightSchema.safeParse(action.payload).success
   if (action.type === 'send_message' || action.type === 'request_tool') {
-    const parsed = action.type === 'send_message'
-      ? sendMessageSchema.safeParse(action.payload)
-      : requestToolSchema.safeParse(action.payload)
-    if (!parsed.success || !context.sendMessage)
+    if (!context.sendMessage)
       return false
-    await context.sendMessage(parsed.data.message)
+    if (action.type === 'send_message') {
+      const parsed = sendMessageSchema.safeParse(action.payload)
+      if (!parsed.success)
+        return false
+      await context.sendMessage(parsed.data.message)
+      return true
+    }
+    const parsed = requestToolSchema.safeParse(action.payload)
+    if (!parsed.success)
+      return false
+    const message = [
+      parsed.data.message,
+      '',
+      i18next.t('aiAssistant.cards.toolRequestEnvelope'),
+      JSON.stringify({
+        operationId: parsed.data.operationId,
+        arguments: parsed.data.arguments ?? {},
+      }),
+    ].join('\n')
+    await context.sendMessage(message)
     return true
   }
   return false

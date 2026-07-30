@@ -19,9 +19,20 @@ const projectListInputSchema = {
   additionalProperties: false,
 } as const
 
+const appTemplateListInputSchema = {
+  type: "object",
+  properties: {
+    query: { type: "string", maxLength: 120 },
+    category: { type: "string", maxLength: 80 },
+  },
+  required: [],
+  additionalProperties: false,
+} as const
+
 export const platformOperations = [
   operation("getDashboard", "dashboard", "dashboard:read", platformListInputSchema),
   operation("listProjects", "project", "project:read", platformListInputSchema),
+  operation("listAppTemplates", "application", "application:read", appTemplateListInputSchema),
   {
     operationId: "createProject",
     method: "POST",
@@ -64,7 +75,7 @@ function operation(
   operationId: string,
   category: string,
   scope: string,
-  inputSchema: typeof platformListInputSchema | typeof projectListInputSchema,
+  inputSchema: typeof platformListInputSchema | typeof projectListInputSchema | typeof appTemplateListInputSchema,
 ) {
   return {
     operationId,

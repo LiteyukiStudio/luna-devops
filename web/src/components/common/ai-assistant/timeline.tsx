@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { runFailureTranslationKey } from './errors'
+import { AIInteractionCards } from './interaction-cards'
 import { AIMarkdown } from './markdown'
 import { AIOptionsCard } from './options'
 import { AIToolCallCard } from './tool-call'
@@ -156,6 +157,8 @@ function ResponseBlock({ block, onAction, onApproval, onMFA }: { block: AIBlock,
     return <ThinkingBlock block={block} />
   if (block.type === 'tool_call' && block.operationId === 'create_options' && block.status === 'succeeded' && block.uiActions.length > 0)
     return <AIOptionsCard actions={block.uiActions} arguments={block.arguments} onAction={onAction} />
+  if (block.type === 'tool_call' && block.operationId === 'create_interaction_cards' && block.status === 'succeeded')
+    return <AIInteractionCards arguments={block.arguments} onAction={onAction} />
   if (block.type === 'tool_call')
     return <AIToolCallCard block={block} onAction={onAction} onApproval={onApproval} onMFA={onMFA} />
   if (block.type === 'run_status')
