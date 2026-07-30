@@ -14,6 +14,12 @@ in the platform secret store and never displayed when editing. Embedded credenti
 private networks, and reserved addresses remain blocked, while a valid public endpoint
 does not need to be duplicated in the global domain allowlist.
 
+Advanced runtime settings stay collapsed by default. Platform administrators may adjust
+the model request timeout, complete Run timeout, and concurrent Runs per Agent instance
+when needed. The authenticated internal configuration channel applies updates within
+about 30 seconds without restarting containers. Polling, leases, and refresh cadence are
+internal consistency details with safe built-in defaults rather than deployment variables.
+
 Desktop uses a draggable and resizable floating window. Mobile uses a full-screen view. The launcher is draggable, and the browser remembers the window size, window position, and launcher position across reloads while keeping them inside the visible viewport. Closing the window, refreshing the page, or losing the connection only removes the browser subscription; it does not cancel a durable run.
 
 The list button at the far left of the top bar opens the conversation list. The right side keeps only New Conversation and Close, clearly separating navigation from current-conversation actions. Closing restores the draggable launcher, so there is no separate minimized state with the same outcome. The New Conversation action is also available in the conversation list. Each conversation keeps its own draft, streaming timeline, run state, and SSE subscription. You can switch to another conversation and send a message while the first one is still generating. The list marks every generating conversation, not only the selected one.

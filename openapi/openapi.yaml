@@ -6087,7 +6087,7 @@ paths:
     get:
       operationId: getInternalAIProviderConfig
       tags: [AI Assistant Internal]
-      summary: Return only the versioned Provider configuration required by Agent
+      summary: Return the versioned Provider and runtime policy required by Agent
       security: [{ AIAgentServiceToken: [] }]
       responses:
         "200":
@@ -6313,15 +6313,19 @@ components:
         provider:
           type: object
           properties:
-            type: { type: string, enum: [openai-compatible] }
             baseUrl: { type: string, format: uri }
-            defaultModel: { type: string }
-            fallbackModel: { type: string }
-            modelPricing: { type: string, description: Versioned pricing JSON. }
+            model: { type: string }
             apiKey: { type: string, description: In-memory Agent use only; never returned to browser APIs. }
             configured: { type: boolean }
-          required: [type, baseUrl, defaultModel, modelPricing, apiKey, configured]
-      required: [version, provider]
+          required: [baseUrl, model, apiKey, configured]
+        runtime:
+          type: object
+          properties:
+            providerTimeoutMs: { type: integer, minimum: 1000, maximum: 120000 }
+            runTimeoutMs: { type: integer, minimum: 30000, maximum: 900000 }
+            agentConcurrentRuns: { type: integer, minimum: 1, maximum: 10 }
+          required: [providerTimeoutMs, runTimeoutMs, agentConcurrentRuns]
+      required: [version, provider, runtime]
     ErrorResponse:
       type: object
       properties:

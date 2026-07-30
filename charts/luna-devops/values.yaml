@@ -44,8 +44,6 @@ ai:
       pullPolicy: IfNotPresent
     service:
       port: 8091
-    runLeaseSeconds: 30
-    runPollMs: 500
     resources: {}
     nodeSelector: {}
     tolerations: []

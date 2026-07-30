@@ -53,19 +53,18 @@ golang-migrate Job 管理，Agent 不会在启动时自动迁移。
 | `AI_INTERNAL_SECRET` | 空 | API 与 Agent 共享的稳定内部根密钥，至少 32 字节；自动派生用途隔离子密钥 |
 | `LUNA_API_BASE_URL` | 空 | Luna API 内部 Service 根地址 |
 | `TOOL_CATALOG_JSON` | 空 | 由 OpenAPI 生成的严格 operation metadata JSON |
-| `PROVIDER_CONFIG_TTL_MS` | `300000` | 后台 Provider 配置的短时内存缓存 TTL |
 | `PROVIDER_BASE_URL` | 空 | 本地直连时使用的 OpenAI-compatible API 根地址 |
 | `PROVIDER_API_KEY` | 空 | 本地直连密钥，仅驻留进程内 |
 | `PROVIDER_MODEL` | 空 | 本地直连模型名称 |
-| `RUN_LEASE_SECONDS` | `30` | PostgreSQL Run 租约 |
-| `RUN_MAX_WALL_MS` | `300000` | 单 Run 墙钟上限 |
-| `MAX_INPUT_BYTES` | `48000` | Web 能力契约公布的单次输入字节上限 |
-| `MAX_CONCURRENT_RUNS` | `2` | Web 能力契约公布的单用户并发 Run 上限 |
 
 Provider 不需要手动选择类型。连接 Luna API 时，Agent 自动读取后台保存的 API
 地址、加密 API Key 和模型名称；没有 Luna API 时，只有同时填写上述三个本地直连
 变量才会连接模型。三项均为空的确定性 Provider 只用于非生产开发和测试，生产环境
 不会回退到测试回复。
+
+模型请求超时、单次 Run 超时和每个 Agent 实例的并发数由“全局设置 → AI 助手 →
+高级运行设置”动态下发。配置刷新间隔、Run 轮询间隔和数据库租约属于内部一致性参数，
+使用代码中的安全默认值，不再暴露为部署环境变量。
 
 ## 内部 API
 

@@ -45,7 +45,7 @@ const graphs = new GraphVersionRegistry(provider, pageContext => [
   createOptionsTool,
   navigateToRouteTool,
 ])
-const executor = new RunExecutor(repository, graphs, config, tools)
+const executor = new RunExecutor(repository, graphs, config, tools, providerConfigClient)
 const server = buildServer({
   config, repository, authenticator, provider, graphVersions: graphs.versions(), grantCipher,
   cancelRun: runId => { executor.cancel(runId) },

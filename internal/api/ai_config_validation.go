@@ -41,13 +41,16 @@ func (h *Handlers) validateAIConfigValues(values map[string]string) error {
 		}
 	}
 	for key, bounds := range map[string][2]int{
-		"ai.quota.user_concurrent_runs":    {1, 10},
-		"ai.quota.user_daily_tokens":       {1000, 10000000},
-		"ai.quota.project_concurrent_runs": {1, 50},
-		"ai.quota.run_max_tool_calls":      {1, 100},
-		"ai.retention.conversation_days":   {0, 365},
-		"ai.retention.run_event_days":      {0, 90},
-		"ai.retention.checkpoint_days":     {1, 30},
+		"ai.runtime.provider_timeout_seconds": {1, 120},
+		"ai.runtime.run_timeout_seconds":      {30, 900},
+		"ai.runtime.agent_concurrent_runs":    {1, 10},
+		"ai.quota.user_concurrent_runs":       {1, 10},
+		"ai.quota.user_daily_tokens":          {1000, 10000000},
+		"ai.quota.project_concurrent_runs":    {1, 50},
+		"ai.quota.run_max_tool_calls":         {1, 100},
+		"ai.retention.conversation_days":      {0, 365},
+		"ai.retention.run_event_days":         {0, 90},
+		"ai.retention.checkpoint_days":        {1, 30},
 	} {
 		number, err := strconv.Atoi(strings.TrimSpace(current[key]))
 		if err != nil || number < bounds[0] || number > bounds[1] {

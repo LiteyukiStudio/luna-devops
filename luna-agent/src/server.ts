@@ -11,6 +11,7 @@ import { OpenAICompatibleProvider } from "./provider/openai-compatible.js"
 import { redact } from "./redaction.js"
 import type { ToolOrchestrator } from "./tools/orchestrator.js"
 import { presentEvent, presentTimeline } from "./timeline-presenter.js"
+import { agentRuntimeInternals, defaultRuntimeSettings } from "./runtime-settings.js"
 
 declare module "fastify" {
   interface FastifyRequest { actor: ActorContext }
@@ -58,7 +59,11 @@ export function buildServer(input: {
       request.actor = await input.authenticator.verify(request.headers)
     })
 
-    secured.get("/internal/v1/capabilities", async () => ({
+    secured.get("/internal/v1/capabilities", async () => {
+      const runtime = input.providerConfigClient
+        ? await input.providerConfigClient.get().then(config => config.runtime).catch(() => defaultRuntimeSettings)
+        : defaultRuntimeSettings
+      return {
       enabled: true,
       available: true,
       reasonCode: null,
@@ -72,11 +77,12 @@ export function buildServer(input: {
         toolCalling: Boolean(input.tools),
       },
       limits: {
-        maxInputBytes: input.config.MAX_INPUT_BYTES,
-        maxConcurrentRuns: input.config.MAX_CONCURRENT_RUNS,
+        maxInputBytes: agentRuntimeInternals.maxInputBytes,
+        maxConcurrentRuns: runtime.agentConcurrentRuns,
       },
       provider: input.provider.capabilities(),
-    }))
+      }
+    })
 
     secured.get("/internal/v1/provider/health", async () => redact(await input.provider.health()))
     secured.post("/internal/v1/provider/test", async (_request, reply) => {
@@ -86,7 +92,7 @@ export function buildServer(input: {
       if (!config.provider.configured) return reply.code(409).send({ status: "not_configured", configVersion: config.version, capabilities: {} })
       const provider = new OpenAICompatibleProvider({
         baseUrl: config.provider.baseUrl, apiKey: config.provider.apiKey,
-        model: config.provider.model, timeoutMs: input.config.PROVIDER_TIMEOUT_MS,
+        model: config.provider.model, timeoutMs: config.runtime.providerTimeoutMs,
       })
       const health = await provider.health()
       return {

@@ -10,6 +10,7 @@ import { api } from '@/api'
 import { CheckboxField } from '@/components/common/checkbox-field'
 import { FormActions } from '@/components/common/form-actions'
 import { FormField as Field } from '@/components/common/form-field'
+import { ProgressiveSection } from '@/components/common/progressive-section'
 import { Surface } from '@/components/common/surface'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -23,6 +24,9 @@ const defaults: FormValues = {
   apiKey: '',
   apiKeyConfigured: false,
   model: '',
+  providerTimeoutSeconds: 30,
+  runTimeoutSeconds: 300,
+  agentConcurrentRuns: 2,
 }
 
 export function AIAssistantSettingsPanel() {
@@ -41,6 +45,9 @@ export function AIAssistantSettingsPanel() {
       apiKey: '',
       apiKeyConfigured: values['ai.provider.api_key'] === 'true',
       model: values['ai.provider.default_model'] ?? '',
+      providerTimeoutSeconds: Number(values['ai.runtime.provider_timeout_seconds'] ?? 30),
+      runTimeoutSeconds: Number(values['ai.runtime.run_timeout_seconds'] ?? 300),
+      agentConcurrentRuns: Number(values['ai.runtime.agent_concurrent_runs'] ?? 2),
     })
   }, [configs.data, form])
 
@@ -57,6 +64,9 @@ export function AIAssistantSettingsPanel() {
   })
 
   const errors = form.formState.errors
+  const providerTimeoutSeconds = form.watch('providerTimeoutSeconds')
+  const runTimeoutSeconds = form.watch('runTimeoutSeconds')
+  const agentConcurrentRuns = form.watch('agentConcurrentRuns')
   return (
     <form className="max-w-3xl" onSubmit={form.handleSubmit(values => save.mutate(values))}>
       <Surface className="grid gap-5 rounded-xl p-6" variant="bordered">
@@ -72,6 +82,28 @@ export function AIAssistantSettingsPanel() {
         <Field error={errors.apiKey?.message} hint={t('settings.ai.apiKeyHint')} label={t('settings.ai.apiKey')} required>
           <Input autoComplete="new-password" placeholder={form.getValues('apiKeyConfigured') ? t('settings.ai.secretUnchanged') : 'sk-…'} type="password" {...form.register('apiKey')} />
         </Field>
+        <ProgressiveSection
+          description={t('settings.ai.runtimeDescription')}
+          storageKey="luna-settings-ai-runtime-open"
+          summary={t('settings.ai.runtimeSummary', {
+            providerTimeout: providerTimeoutSeconds,
+            runTimeout: runTimeoutSeconds,
+            concurrency: agentConcurrentRuns,
+          })}
+          title={t('settings.ai.runtimeTitle')}
+        >
+          <div className="grid gap-4 md:grid-cols-3">
+            <Field error={errors.providerTimeoutSeconds?.message} hint={t('settings.ai.providerTimeoutHint')} label={t('settings.ai.providerTimeout')}>
+              <Input max={120} min={1} step={1} type="number" {...form.register('providerTimeoutSeconds', { valueAsNumber: true })} />
+            </Field>
+            <Field error={errors.runTimeoutSeconds?.message} hint={t('settings.ai.runTimeoutHint')} label={t('settings.ai.runTimeout')}>
+              <Input max={900} min={30} step={1} type="number" {...form.register('runTimeoutSeconds', { valueAsNumber: true })} />
+            </Field>
+            <Field error={errors.agentConcurrentRuns?.message} hint={t('settings.ai.agentConcurrentRunsHint')} label={t('settings.ai.agentConcurrentRuns')}>
+              <Input max={10} min={1} step={1} type="number" {...form.register('agentConcurrentRuns', { valueAsNumber: true })} />
+            </Field>
+          </div>
+        </ProgressiveSection>
         <p className="text-sm leading-6 text-muted-foreground">{t('settings.ai.securitySummary')}</p>
       </Surface>
       <FormActions className="mt-4" separated={false}>

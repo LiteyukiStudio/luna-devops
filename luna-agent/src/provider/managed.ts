@@ -59,6 +59,6 @@ function defaultFactory(config: RemoteProviderConfig): ModelProvider {
     baseUrl: config.provider.baseUrl,
     apiKey: config.provider.apiKey,
     model: config.provider.model,
-    timeoutMs: 30000,
+    timeoutMs: config.runtime.providerTimeoutMs,
   })
 }

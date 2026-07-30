@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/LiteyukiStudio/devops/internal/aiagent"
@@ -15,6 +16,9 @@ import (
 var aiProviderConfigKeys = []string{
 	"ai.provider.base_url",
 	"ai.provider.default_model",
+	"ai.runtime.provider_timeout_seconds",
+	"ai.runtime.run_timeout_seconds",
+	"ai.runtime.agent_concurrent_runs",
 }
 
 func (h *Handlers) GetAIProviderConfigInternal(ctx *gin.Context) {
@@ -37,6 +41,11 @@ func (h *Handlers) GetAIProviderConfigInternal(ctx *gin.Context) {
 			"model":      modelName,
 			"apiKey":     apiKey,
 			"configured": baseURL != "" && modelName != "" && strings.TrimSpace(apiKey) != "",
+		},
+		"runtime": gin.H{
+			"providerTimeoutMs":   aiRuntimeMilliseconds(values, "ai.runtime.provider_timeout_seconds", 30),
+			"runTimeoutMs":        aiRuntimeMilliseconds(values, "ai.runtime.run_timeout_seconds", 300),
+			"agentConcurrentRuns": aiRuntimeInteger(values, "ai.runtime.agent_concurrent_runs", 2),
 		},
 	})
 }
@@ -81,4 +90,16 @@ func aiProviderConfigVersion(values map[string]string, secretVersion string) str
 	}
 	_, _ = hash.Write([]byte(secretVersion))
 	return "aipcfg_" + hex.EncodeToString(hash.Sum(nil))[:16]
+}
+
+func aiRuntimeMilliseconds(values map[string]string, key string, fallbackSeconds int) int {
+	return aiRuntimeInteger(values, key, fallbackSeconds) * 1000
+}
+
+func aiRuntimeInteger(values map[string]string, key string, fallback int) int {
+	value, err := strconv.Atoi(strings.TrimSpace(values[key]))
+	if err != nil {
+		return fallback
+	}
+	return value
 }

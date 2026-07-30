@@ -8,22 +8,37 @@ import { ToolInterruption, type ToolOrchestrator } from "./tools/orchestrator.js
 import { renameConversationInput } from "./tools/conversation-title.js"
 import { createOptionsInput, fallbackOptionsInput, optionUIActions } from "./tools/ui-options.js"
 import { automaticRouteUIAction, navigateToRouteInput } from "./tools/ui-route.js"
+import type { ProviderConfigClient } from "./provider/config-client.js"
+import { agentRuntimeInternals, defaultRuntimeSettings, type RuntimeSettings } from "./runtime-settings.js"
 
 export class RunExecutor {
   private timer?: NodeJS.Timeout
   private stopping = false
   private readonly active = new Set<Promise<boolean>>()
   private readonly controllers = new Map<string, AbortController>()
-  constructor(private readonly repository: Repository, private readonly graphs: GraphVersionRegistry, private readonly config: Config, private readonly tools?: ToolOrchestrator) {}
+  private runtimeSettings: RuntimeSettings = defaultRuntimeSettings
+  private runtimeRefreshTimer?: NodeJS.Timeout
+  constructor(
+    private readonly repository: Repository,
+    private readonly graphs: GraphVersionRegistry,
+    private readonly config: Config,
+    private readonly tools?: ToolOrchestrator,
+    private readonly runtimeConfig?: Pick<ProviderConfigClient, "get">,
+  ) {}
 
   start(): void {
+    void this.refreshRuntimeSettings()
+    if (this.runtimeConfig) {
+      this.runtimeRefreshTimer = setInterval(() => void this.refreshRuntimeSettings(), agentRuntimeInternals.configRefreshMs)
+      this.runtimeRefreshTimer.unref()
+    }
     const tick = () => {
       if (this.stopping) return
-      if (this.active.size < this.config.MAX_CONCURRENT_RUNS) {
+      if (this.active.size < this.runtimeSettings.agentConcurrentRuns) {
         const task = this.claimAndExecute().finally(() => this.active.delete(task))
         this.active.add(task)
       }
-      this.timer = setTimeout(tick, this.config.RUN_POLL_MS)
+      this.timer = setTimeout(tick, agentRuntimeInternals.runPollMs)
       this.timer.unref()
     }
     tick()
@@ -32,6 +47,7 @@ export class RunExecutor {
   async stop(): Promise<void> {
     this.stopping = true
     if (this.timer) clearTimeout(this.timer)
+    if (this.runtimeRefreshTimer) clearInterval(this.runtimeRefreshTimer)
     this.controllers.forEach(controller => controller.abort(new Error("ai.agent_stopping")))
     await Promise.allSettled([...this.active])
   }
@@ -48,15 +64,15 @@ export class RunExecutor {
   }
 
   private async claimAndExecute(): Promise<boolean> {
-    const run = await this.repository.claimRun(this.config.INSTANCE_ID, this.config.RUN_LEASE_SECONDS)
+    const run = await this.repository.claimRun(this.config.INSTANCE_ID, agentRuntimeInternals.runLeaseSeconds)
     if (!run) return false
     const abort = new AbortController()
     this.controllers.set(run.id, abort)
-    const timeout = setTimeout(() => abort.abort(new Error("ai.run_timeout")), this.config.RUN_MAX_WALL_MS)
+    const timeout = setTimeout(() => abort.abort(new Error("ai.run_timeout")), this.runtimeSettings.runTimeoutMs)
     const heartbeat = setInterval(() => {
-      void this.repository.renewLease(run.id, this.config.INSTANCE_ID, this.config.RUN_LEASE_SECONDS)
+      void this.repository.renewLease(run.id, this.config.INSTANCE_ID, agentRuntimeInternals.runLeaseSeconds)
         .then(ok => { if (!ok) abort.abort(new Error("ai.run_lease_lost")) })
-    }, Math.max(1000, this.config.RUN_LEASE_SECONDS * 333))
+    }, Math.max(1000, agentRuntimeInternals.runLeaseSeconds * 333))
     try {
       const running = await this.repository.updateRun(run.id, "queued", "running", { startedAt: new Date().toISOString() })
       await this.repository.appendEvent(run.id, "run.started", { state: "running", expectedVersion: running.rowVersion })
@@ -162,6 +178,17 @@ export class RunExecutor {
       await this.repository.releaseLease(run.id, this.config.INSTANCE_ID)
     }
     return true
+  }
+
+  private async refreshRuntimeSettings(): Promise<void> {
+    if (!this.runtimeConfig)
+      return
+    try {
+      this.runtimeSettings = (await this.runtimeConfig.get()).runtime
+    }
+    catch {
+      // Keep the last validated settings when Luna API is temporarily unavailable.
+    }
   }
 
   private async createOptions(runId: string, turnId: string, raw: unknown) {

@@ -1,3 +1,5 @@
+import { z } from "zod"
+
 export type RemoteProviderConfig = {
   version: string
   provider: {
@@ -6,7 +8,27 @@ export type RemoteProviderConfig = {
     apiKey: string
     configured: boolean
   }
+  runtime: {
+    providerTimeoutMs: number
+    runTimeoutMs: number
+    agentConcurrentRuns: number
+  }
 }
+
+const remoteProviderConfigSchema = z.object({
+  version: z.string().min(1),
+  provider: z.object({
+    baseUrl: z.string(),
+    model: z.string(),
+    apiKey: z.string(),
+    configured: z.boolean(),
+  }),
+  runtime: z.object({
+    providerTimeoutMs: z.number().int().min(1_000).max(120_000),
+    runTimeoutMs: z.number().int().min(30_000).max(900_000),
+    agentConcurrentRuns: z.number().int().min(1).max(10),
+  }),
+})
 
 export class ProviderConfigClient {
   constructor(private readonly baseUrl: string, private readonly serviceToken: string) {}
@@ -16,6 +38,6 @@ export class ProviderConfigClient {
       ...(signal ? { signal } : {}),
     })
     if (!response.ok) throw new Error("ai.provider_config_unavailable")
-    return response.json() as Promise<RemoteProviderConfig>
+    return remoteProviderConfigSchema.parse(await response.json())
   }
 }

@@ -8,6 +8,7 @@ import (
 func TestAIConfigDefinitionsCoverSpecificationCatalog(t *testing.T) {
 	expected := []string{
 		"ai.assistant.enabled", "ai.provider.base_url", "ai.provider.api_key", "ai.provider.default_model",
+		"ai.runtime.provider_timeout_seconds", "ai.runtime.run_timeout_seconds", "ai.runtime.agent_concurrent_runs",
 		"ai.access.mode", "ai.access.user_ids", "ai.access.project_ids",
 		"ai.quota.user_concurrent_runs", "ai.quota.user_daily_tokens", "ai.quota.project_concurrent_runs",
 		"ai.quota.run_max_tool_calls", "ai.quota.platform_daily_cost_soft", "ai.quota.platform_daily_cost_hard",
@@ -31,7 +32,9 @@ func TestAIProviderAPIKeyIsMaskedByConfigCache(t *testing.T) {
 func TestAIConfigRejectsUnsafeProviderURLBeforeSaving(t *testing.T) {
 	h := &Handlers{configs: &configCache{values: map[string]string{
 		"ai.provider.base_url": "", "ai.provider.default_model": "",
-		"ai.access.mode": "admins", "ai.access.user_ids": "[]", "ai.access.project_ids": "[]",
+		"ai.runtime.provider_timeout_seconds": "30", "ai.runtime.run_timeout_seconds": "300",
+		"ai.runtime.agent_concurrent_runs": "2",
+		"ai.access.mode":                   "admins", "ai.access.user_ids": "[]", "ai.access.project_ids": "[]",
 		"ai.quota.user_concurrent_runs": "2", "ai.quota.user_daily_tokens": "200000",
 		"ai.quota.project_concurrent_runs": "5", "ai.quota.run_max_tool_calls": "20",
 		"ai.quota.platform_daily_cost_soft": "0", "ai.quota.platform_daily_cost_hard": "0",
@@ -48,7 +51,9 @@ func TestAIConfigRejectsUnsafeProviderURLBeforeSaving(t *testing.T) {
 func TestAIConfigAcceptsSafePublicProviderWithoutManualDomainAllowlist(t *testing.T) {
 	h := &Handlers{configs: &configCache{values: map[string]string{
 		"ai.provider.base_url": "", "ai.provider.default_model": "",
-		"ai.access.mode": "admins", "ai.access.user_ids": "[]", "ai.access.project_ids": "[]",
+		"ai.runtime.provider_timeout_seconds": "30", "ai.runtime.run_timeout_seconds": "300",
+		"ai.runtime.agent_concurrent_runs": "2",
+		"ai.access.mode":                   "admins", "ai.access.user_ids": "[]", "ai.access.project_ids": "[]",
 		"ai.quota.user_concurrent_runs": "2", "ai.quota.user_daily_tokens": "200000",
 		"ai.quota.project_concurrent_runs": "5", "ai.quota.run_max_tool_calls": "20",
 		"ai.quota.platform_daily_cost_soft": "0", "ai.quota.platform_daily_cost_hard": "0",
@@ -57,5 +62,22 @@ func TestAIConfigAcceptsSafePublicProviderWithoutManualDomainAllowlist(t *testin
 	}}}
 	if err := h.validateAIConfigValues(map[string]string{"ai.provider.base_url": "https://1.1.1.1/v1"}); err != nil {
 		t.Fatalf("safe public Provider URL rejected: %v", err)
+	}
+}
+
+func TestAIConfigRejectsUnsafeRuntimeBounds(t *testing.T) {
+	for key, value := range map[string]string{
+		"ai.runtime.provider_timeout_seconds": "121",
+		"ai.runtime.run_timeout_seconds":      "10",
+		"ai.runtime.agent_concurrent_runs":    "0",
+	} {
+		defaults := make(map[string]string, len(configDefinitions))
+		for _, definition := range configDefinitions {
+			defaults[definition.Key] = definition.Default
+		}
+		h := &Handlers{configs: &configCache{values: defaults}}
+		if err := h.validateAIConfigValues(map[string]string{key: value}); err == nil {
+			t.Errorf("unsafe runtime setting accepted: %s=%s", key, value)
+		}
 	}
 }

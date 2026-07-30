@@ -11,13 +11,6 @@ const schema = z.object({
   PROVIDER_BASE_URL: z.string().url().optional(),
   PROVIDER_API_KEY: z.string().min(1).optional(),
   PROVIDER_MODEL: z.string().min(1).optional(),
-  PROVIDER_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120000).default(30000),
-  PROVIDER_CONFIG_TTL_MS: z.coerce.number().int().min(1000).max(600000).default(300000),
-  RUN_POLL_MS: z.coerce.number().int().min(50).max(10000).default(500),
-  RUN_LEASE_SECONDS: z.coerce.number().int().min(5).max(300).default(30),
-  RUN_MAX_WALL_MS: z.coerce.number().int().min(1000).max(900000).default(300000),
-  MAX_INPUT_BYTES: z.coerce.number().int().min(1024).max(1048576).default(48000),
-  MAX_CONCURRENT_RUNS: z.coerce.number().int().min(1).max(10).default(2),
   LUNA_API_BASE_URL: z.string().url().optional(),
   TOOL_CATALOG_JSON: z.string().optional(),
 })

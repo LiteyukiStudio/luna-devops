@@ -7,6 +7,18 @@ export const aiSettingsSchema = z.object({
   apiKey: z.string(),
   apiKeyConfigured: z.boolean(),
   model: z.string(),
+  providerTimeoutSeconds: z.number({ message: i18next.t('settings.ai.providerTimeoutInvalid') })
+    .int({ message: i18next.t('settings.ai.providerTimeoutInvalid') })
+    .min(1, { message: i18next.t('settings.ai.providerTimeoutInvalid') })
+    .max(120, { message: i18next.t('settings.ai.providerTimeoutInvalid') }),
+  runTimeoutSeconds: z.number({ message: i18next.t('settings.ai.runTimeoutInvalid') })
+    .int({ message: i18next.t('settings.ai.runTimeoutInvalid') })
+    .min(30, { message: i18next.t('settings.ai.runTimeoutInvalid') })
+    .max(900, { message: i18next.t('settings.ai.runTimeoutInvalid') }),
+  agentConcurrentRuns: z.number({ message: i18next.t('settings.ai.agentConcurrentRunsInvalid') })
+    .int({ message: i18next.t('settings.ai.agentConcurrentRunsInvalid') })
+    .min(1, { message: i18next.t('settings.ai.agentConcurrentRunsInvalid') })
+    .max(10, { message: i18next.t('settings.ai.agentConcurrentRunsInvalid') }),
 }).superRefine((value, context) => {
   if (!value.enabled)
     return
@@ -25,6 +37,9 @@ export function aiSettingsPayload(values: AISettingsFormValues) {
     'ai.assistant.enabled': values.enabled,
     'ai.provider.base_url': values.baseUrl.trim(),
     'ai.provider.default_model': values.model.trim(),
+    'ai.runtime.provider_timeout_seconds': values.providerTimeoutSeconds,
+    'ai.runtime.run_timeout_seconds': values.runTimeoutSeconds,
+    'ai.runtime.agent_concurrent_runs': values.agentConcurrentRuns,
   }
   if (values.apiKey.trim())
     payload['ai.provider.api_key'] = values.apiKey.trim()

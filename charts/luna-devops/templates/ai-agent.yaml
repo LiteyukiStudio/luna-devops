@@ -69,10 +69,6 @@ spec:
               value: {{ .Values.ai.agent.service.port | quote }}
             - name: AUTH_MODE
               value: bff-hmac
-            - name: RUN_LEASE_SECONDS
-              value: {{ .Values.ai.agent.runLeaseSeconds | quote }}
-            - name: RUN_POLL_MS
-              value: {{ .Values.ai.agent.runPollMs | quote }}
             - name: LUNA_API_BASE_URL
               value: {{ printf "http://%s:%v" (include "luna-devops.apiName" .) .Values.api.service.port | quote }}
             - name: DATABASE_URL
