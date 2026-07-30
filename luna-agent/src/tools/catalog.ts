@@ -69,7 +69,7 @@ export class ToolCatalog {
     return this.all()
       .map(item => ({
         operationId: item.operationId,
-        description: `${item.category} operation (${item.risk}). ${platformContextOperations.has(item.operationId) ? "Available at platform scope and must not receive projectId." : "Requires an explicit projectId selected from user-visible resources; page context is guidance, not authorization."} Use only when the user's request requires current Luna DevOps data or an explicit platform action.`,
+        description: `${item.category} 类操作，风险级别为 ${item.risk}。${platformContextOperations.has(item.operationId) ? "该操作作用于平台范围，不能传入 projectId。" : "必须使用从用户可见资源中明确选择的 projectId；页面上下文只提供指引，不代表授权。"}只有用户需要查询当前 Luna DevOps 数据或明确执行平台操作时才可使用。`,
         inputSchema: item.inputSchema,
       }))
   }

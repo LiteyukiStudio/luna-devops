@@ -57,7 +57,7 @@ export type UIOptionAction =
 
 export const createOptionsTool: ModelToolDefinition = {
   operationId: "create_options",
-  description: "Present 2-5 concise, context-specific next actions. Match the action to the immediate intent: send_message must answer a pending choice or collect missing operation arguments; request_tool proposes a ready registered operation; navigate is only for reading, browsing, or explicitly opening a known page. Never turn a required resource selection into navigation or mix unrelated navigation into a pending decision. Every normally completed turn must end with exactly one create_options call. Each option is independent. Navigation is repeatable by default; message and controlled-tool actions are one-time. Never claim execution, invent routes, IDs, or operations, or use generic suggestions instead of answering the current need.",
+  description: "展示 2～5 个简洁且符合当前上下文的后续操作。动作必须匹配最直接的用户意图：send_message 用于回答待选择问题或收集缺失参数；request_tool 用于提出参数已就绪的已注册操作；navigate 只用于读取、浏览或明确打开已知页面。不得把必要的资源选择变成页面跳转，也不得用无关跳转打断待完成的决定。每个正常完成的轮次必须以且仅以一次 create_options 调用结束。每个选项相互独立；导航默认可重复，消息和受控工具操作只能执行一次。不得声称操作已经执行，不得编造路由、ID 或操作，也不得用空泛建议代替对当前需求的直接回应。",
   inputSchema: {
     type: "object",
     additionalProperties: false,
@@ -78,7 +78,7 @@ export const createOptionsTool: ModelToolDefinition = {
             label: { type: "string", maxLength: 80 },
             description: { type: "string", maxLength: 180 },
             tone: { type: "string", enum: ["default", "primary", "danger"] },
-            repeatable: { type: "boolean", description: "Optional for navigation only. Defaults to true for navigate and false for message or tool requests." },
+            repeatable: { type: "boolean", description: "仅导航动作可选。navigate 默认为 true，消息或工具请求默认为 false。" },
             action: {
               oneOf: [
                 { type: "object", additionalProperties: false, required: ["type", "message"], properties: { type: { const: "send_message" }, message: { type: "string", maxLength: 2000 } } },
@@ -107,68 +107,4 @@ export function optionUIActions(input: CreateOptionsInput): UIOptionAction[] {
     if (option.action.type === "send_message") return { ...base, type: "send_message", payload: { message: option.action.message } }
     return { ...base, type: "request_tool", payload: { operationId: option.action.operationId, arguments: option.action.arguments, message: option.action.message } }
   })
-}
-
-export function fallbackOptionsInput(pageContext: Record<string, unknown>): CreateOptionsInput {
-  const locale = typeof pageContext.locale === "string" ? pageContext.locale : ""
-  const chinese = locale.toLowerCase().startsWith("zh")
-  const projectId = identifier(pageContext.projectId)
-  const applicationId = identifier(pageContext.applicationId)
-  const followUp = {
-    id: "continue-analysis",
-    label: chinese ? "继续深入分析" : "Continue the analysis",
-    action: {
-      type: "send_message" as const,
-      message: chinese
-        ? "请基于刚才的结果继续深入分析，并给出最值得优先处理的一步。"
-        : "Continue from the previous result and identify the single highest-priority next step.",
-    },
-  }
-  const riskReview = {
-    id: "review-risks",
-    label: chinese ? "查看风险和检查项" : "Review risks and checks",
-    action: {
-      type: "send_message" as const,
-      message: chinese
-        ? "请总结当前结果中的风险、待确认信息和检查清单。"
-        : "Summarize the risks, unknowns, and verification checklist from the current result.",
-    },
-  }
-
-  const contextFollowUp = projectId && applicationId
-    ? {
-        id: "inspect-current-application",
-        label: chinese ? "分析当前应用" : "Analyze this application",
-        action: {
-          type: "send_message" as const,
-          message: chinese
-            ? `请继续分析当前应用（项目空间 ID：${projectId}，应用 ID：${applicationId}），并给出下一步建议。`
-            : `Continue analyzing the current application (project ID: ${projectId}, application ID: ${applicationId}) and recommend the next step.`,
-        },
-      }
-    : projectId
-      ? {
-          id: "inspect-current-project",
-          label: chinese ? "分析当前项目空间" : "Analyze this project",
-          action: {
-            type: "send_message" as const,
-            message: chinese
-              ? `请继续分析当前项目空间（ID：${projectId}），并给出下一步建议。`
-              : `Continue analyzing the current project (ID: ${projectId}) and recommend the next step.`,
-          },
-        }
-      : undefined
-  const options: Array<z.input<typeof createOptionsInput>["options"][number]> = [
-    ...(contextFollowUp ? [contextFollowUp] : []),
-    followUp,
-    riskReview,
-  ]
-  return createOptionsInput.parse({
-    title: chinese ? "你接下来可能想做" : "You may want to",
-    options,
-  })
-}
-
-function identifier(value: unknown) {
-  return typeof value === "string" && /^[\w.:-]{1,160}$/.test(value) ? value : undefined
 }

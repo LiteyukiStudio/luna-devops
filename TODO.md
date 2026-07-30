@@ -12,6 +12,7 @@
 - [x] 删除独立品牌说明和旧 Builder 构建验收复盘文档；构建后续计划已由 TODO 中的细分条目承接。
 - [x] 将旧 `docs/` 内容迁移到 `notes/`，并使用 Rspress 建立支持中英双语、响应式和多主题的文档站。
 - [x] 补充外部组件兼容矩阵文档，覆盖 GitHub/Gitea、镜像仓库、Kubernetes/Gateway API、OIDC、PostgreSQL、Redis、BuildKit、Prometheus/Grafana 和通知适配器的接口与版本范围。
+- [x] 将公开文档收敛为面向部署与使用者的渐进式内容：移除源码开发、CI/发布门禁、内部设计和历史记录栏目，精简 CLI、AI 助手与更新日志，把环境变量和兼容范围归入独立参考区，并将文档受众、内容边界和渐进披露规则固化到 `AGENTS.md`。
 
 ## 2. 项目基础与前后端脚手架
 
@@ -1071,7 +1072,7 @@ OpenAPI，不把 MCP 作为内部服务总线。
 - [x] 将 Tool Catalog 作为 OpenAI-compatible `tools` Schema 传给模型，新增结构化 `create_options` UI 工具，并修复参数哈希绑定的批准事件与平台验证后的 MFA 恢复。
 - [x] 将 `create_options` 从折叠 Tool Call 升级为始终可见的下一步选项组件，覆盖站内无刷新跳转、消息回复和重新进入权限/批准/MFA 链路的受控操作请求。
 - [x] 会话目录增加显式批量选择、全选和批量删除确认；引入 `title_source` 与 `rename_conversation` 内建工具，首轮自动命名、话题漂移重命名，并在用户手动命名后由数据库永久锁定。
-- [x] 新增 `system-v3` 与 `luna-devops-navigation` 内置 Skill，指导模型为平台注册页面和可信资源输出 Markdown 站内链接；前端按注册路径安全校验并以主色 React Router 链接无刷新跳转。
+- [x] 将 Agent 系统提示、模型任务提示、上下文标签、工具描述与内置 Skills 统一为中文 `system-v4`，仅保留当前 Prompt 版本；继续指导模型为平台注册页面和可信资源输出 Markdown 站内链接，前端按注册路径安全校验并以主色 React Router 链接无刷新跳转。
 - [x] 按职责拆分 AI 助手编排层、消息时间线、工具调用卡片、输入区、窗口偏好与流式会话状态模块，降低单文件复杂度并保持现有交互行为。
 - [x] 将 AI 时间线按 `turnId` 归并为用户轮次，每轮只呈现一次用户消息和一个助手回复容器，并在容器内按 `timelineIndex` 保持 Thinking、Message 与 Tool Call 的真实交错顺序。
 - [x] 将用户与助手消息气泡限制为消息区最大 78% 宽度，分别为对方阵营保留稳定留白，并保持表格、代码与工具详情局部横向滚动。

@@ -16,7 +16,7 @@ export type ActorContext = {
 }
 
 export type ConversationTitleSource = "default" | "assistant" | "user"
-export type PromptVersion = "system-v1" | "system-v2" | "system-v3"
+export type PromptVersion = "system-v4"
 
 export type Conversation = {
   id: string

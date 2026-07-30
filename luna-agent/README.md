@@ -84,15 +84,15 @@ SSE 游标是单 Run 单调递增的 `event_sequence`。事件先持久化，随
 Redis fan-out 接入后也必须维持这一顺序。Provider 的原始 partial JSON、隐藏思维
 链和续接 artifact 不进入 Timeline。
 
-系统提示 `system-v2` 会向模型提供当前会话标题、标题来源和轮次。内建
-`rename_conversation` 工具负责首轮命名与明显话题漂移后的标题修正；浏览器手动
-命名会把来源持久化为 `user`，之后模型不再看到该工具，Repository 也会拒绝
-Agent 覆盖。该双层保护不能被 Prompt 遵循情况替代。
+新 Run 统一使用中文系统提示 `system-v4`。系统提示会向模型提供当前会话标题、标题
+来源和轮次，并加载 `skills/luna-devops-navigation` 与
+`skills/luna-devops-interaction`。领域指引根据当前消息、页面上下文和可用工具从
+`references/` 按需加载；页面路由清单只在读取、浏览或明确跳转意图下加载。
 
-新 Run 使用 `system-v3`。它在 `system-v2` 基础上加载
-`skills/luna-devops-navigation/SKILL.md`，要求模型在回答引用平台注册页面或可信
-资源 ID 时输出根相对 Markdown 链接。Skill 随 Agent 镜像发布；前端仍会独立校验
-平台注册路径，Prompt 或 Skill 不能把任意 URL 提升为站内导航。
+内建 `rename_conversation` 工具负责首轮命名与明显话题漂移后的标题修正；浏览器手动
+命名会把来源持久化为 `user`，之后模型不再看到该工具，Repository 也会拒绝 Agent
+覆盖。项目仅维护当前 Prompt 版本；系统提示、模型任务提示、工具描述和 Skill 后续
+均使用中文编写。
 
 内建 `create_options` 为每个下一步选项保存稳定 ID 和独立重复策略：注册路由跳转
 默认可重复，发送消息与请求操作成功后只锁定自身。`navigate_to_route` 是单独的

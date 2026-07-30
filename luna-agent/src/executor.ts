@@ -6,7 +6,7 @@ import { createId } from "./id.js"
 import { redact } from "./redaction.js"
 import { ToolInterruption, type ToolOrchestrator } from "./tools/orchestrator.js"
 import { renameConversationInput } from "./tools/conversation-title.js"
-import { createOptionsInput, fallbackOptionsInput, optionUIActions } from "./tools/ui-options.js"
+import { createOptionsInput, optionUIActions } from "./tools/ui-options.js"
 import { automaticRouteUIAction, navigateToRouteInput } from "./tools/ui-route.js"
 import type { ProviderConfigClient } from "./provider/config-client.js"
 import { agentRuntimeInternals, defaultRuntimeSettings, type RuntimeSettings } from "./runtime-settings.js"
@@ -237,10 +237,9 @@ export class RunExecutor {
       }
     } catch {
       if (signal.aborted) throw signal.reason
-      // Suggestions are best-effort at the provider boundary; a safe local set keeps the completed turn actionable.
+      // Suggestions are optional. Omitting them is safer than presenting unrelated generic actions.
     }
     if (signal.aborted) throw signal.reason
-    await this.createOptions(runId, turnId, fallbackOptionsInput(context.pageContext))
   }
 
   private async navigateToRoute(runId: string, turnId: string, raw: unknown) {

@@ -6,6 +6,11 @@
   },
   {
     "type": "file",
+    "name": "ai-assistant",
+    "label": "AI 助手"
+  },
+  {
+    "type": "file",
     "name": "app-marketplace",
     "label": "应用市场"
   },

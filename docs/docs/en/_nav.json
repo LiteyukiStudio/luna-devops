@@ -10,13 +10,13 @@
     "activeMatch": "/use/"
   },
   {
-    "text": "Download",
+    "text": "CLI",
     "link": "/download/installation",
     "activeMatch": "/download/"
   },
   {
-    "text": "Develop",
-    "link": "/develop/local-development",
-    "activeMatch": "/develop/"
+    "text": "Reference",
+    "link": "/reference/configuration",
+    "activeMatch": "/reference/"
   }
 ]

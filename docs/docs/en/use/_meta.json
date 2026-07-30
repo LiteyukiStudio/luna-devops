@@ -6,6 +6,11 @@
   },
   {
     "type": "file",
+    "name": "ai-assistant",
+    "label": "AI Assistant"
+  },
+  {
+    "type": "file",
     "name": "app-marketplace",
     "label": "App Marketplace"
   },

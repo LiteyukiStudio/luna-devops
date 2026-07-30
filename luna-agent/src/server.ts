@@ -51,7 +51,7 @@ export function buildServer(input: {
   app.get("/internal/v1/health/compatibility", async () => ({
     component: "luna-agent", version: "0.1.0", internalApiVersions: ["v1"],
     aiSchemaMin: 1, aiSchemaMax: 1, graphVersions: input.graphVersions,
-    toolCatalogDigest: input.toolCatalogDigest ?? "sha256:platform-tools-v1", promptVersions: ["system-v1", "system-v2", "system-v3"],
+    toolCatalogDigest: input.toolCatalogDigest ?? "sha256:platform-tools-v1", promptVersions: ["system-v4"],
   }))
 
   app.register(async secured => {

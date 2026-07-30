@@ -35,7 +35,22 @@
     },
     {
       "source": "/developer/architecture",
-      "destination": "/develop/local-development",
+      "destination": "/reference/compatibility",
+      "permanent": true
+    },
+    {
+      "source": "/develop/configuration-reference",
+      "destination": "/reference/configuration",
+      "permanent": true
+    },
+    {
+      "source": "/develop/external-compatibility",
+      "destination": "/reference/compatibility",
+      "permanent": true
+    },
+    {
+      "source": "/changelog/cli",
+      "destination": "https://github.com/LiteyukiStudio/luna-cli/releases",
       "permanent": true
     },
     {
@@ -70,7 +85,22 @@
     },
     {
       "source": "/en/developer/architecture",
-      "destination": "/en/develop/local-development",
+      "destination": "/en/reference/compatibility",
+      "permanent": true
+    },
+    {
+      "source": "/en/develop/configuration-reference",
+      "destination": "/en/reference/configuration",
+      "permanent": true
+    },
+    {
+      "source": "/en/develop/external-compatibility",
+      "destination": "/en/reference/compatibility",
+      "permanent": true
+    },
+    {
+      "source": "/en/changelog/cli",
+      "destination": "https://github.com/LiteyukiStudio/luna-cli/releases",
       "permanent": true
     }
   ]

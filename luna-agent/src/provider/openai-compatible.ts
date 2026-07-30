@@ -10,7 +10,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
   }
 
   async health(): Promise<{ ok: boolean, requestId?: string }> {
-    const response = await this.request([{ role: "user", content: "Reply with OK." }], 4)
+    const response = await this.request([{ role: "user", content: "只回复 OK。" }], 4)
     return { ok: response.text.length > 0, ...(response.requestId ? { requestId: response.requestId } : {}) }
   }
 

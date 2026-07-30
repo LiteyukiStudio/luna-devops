@@ -1,7 +1,12 @@
 [
   {
     "type": "file",
-    "name": "legacy-docs",
-    "label": "Legacy Docs"
+    "name": "configuration",
+    "label": "Environment Variables"
+  },
+  {
+    "type": "file",
+    "name": "compatibility",
+    "label": "Compatibility"
   }
 ]

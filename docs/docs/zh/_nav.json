@@ -10,13 +10,13 @@
     "activeMatch": "/use/"
   },
   {
-    "text": "下载",
+    "text": "CLI",
     "link": "/download/installation",
     "activeMatch": "/download/"
   },
   {
-    "text": "开发",
-    "link": "/develop/local-development",
-    "activeMatch": "/develop/"
+    "text": "参考",
+    "link": "/reference/configuration",
+    "activeMatch": "/reference/"
   }
 ]

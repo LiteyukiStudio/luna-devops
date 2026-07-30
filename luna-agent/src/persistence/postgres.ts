@@ -86,7 +86,7 @@ export class PostgresRepository implements Repository {
       const runId = input.preallocatedRunId ?? createId("airun")
       await client.query(`insert into ai.turns(id,conversation_id,turn_index,status,input,selected_run_id) values($1,$2,$3,'queued',$4,$5)`, [turnId, input.conversationId, index, input.input, runId])
       await client.query(
-        `insert into ai.runs(id,owner_user_id,conversation_id,turn_id,run_index,status,graph_version,prompt_version,tool_catalog_digest,page_context,run_actor_grant_ciphertext) values($1,$2,$3,$4,0,'queued','assistant-v1','system-v3',$5,$6,$7)`,
+        `insert into ai.runs(id,owner_user_id,conversation_id,turn_id,run_index,status,graph_version,prompt_version,tool_catalog_digest,page_context,run_actor_grant_ciphertext) values($1,$2,$3,$4,0,'queued','assistant-v1','system-v4',$5,$6,$7)`,
         [runId, ownerUserId, input.conversationId, turnId, input.toolCatalogDigest ?? "sha256:platform-tools-v1", JSON.stringify(input.pageContext), input.runActorGrantCiphertext ?? null],
       )
       await client.query(`insert into ai.idempotency_keys(owner_user_id,idempotency_key,request_hash,turn_id,run_id) values($1,$2,$3,$4,$5)`, [ownerUserId, input.idempotencyKey, hash, turnId, runId])

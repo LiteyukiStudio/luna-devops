@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { createOptionsInput, fallbackOptionsInput, optionUIActions } from "../src/tools/ui-options.js"
+import { createOptionsInput, optionUIActions } from "../src/tools/ui-options.js"
 import { automaticRouteUIAction, navigateToRouteInput } from "../src/tools/ui-route.js"
 
 describe("create options tool", () => {
@@ -50,22 +50,6 @@ describe("create options tool", () => {
         action: { type: "send_message", message: `Choose ${index}` },
       })),
     }).success).toBe(false)
-  })
-
-  it("creates a safe localized fallback with 2-5 actions", () => {
-    const fallback = fallbackOptionsInput({
-      locale: "zh-CN",
-      routeName: "application.detail",
-      projectId: "prj_1",
-      applicationId: "app_1",
-    })
-
-    expect(fallback.options).toHaveLength(3)
-    expect(fallback.options.every(option => option.action.type === "send_message")).toBe(true)
-    expect(fallback.options[0]?.action).toEqual({
-      type: "send_message",
-      message: "请继续分析当前应用（项目空间 ID：prj_1，应用 ID：app_1），并给出下一步建议。",
-    })
   })
 
   it("creates a one-shot automatic action only for a registered frontend route", () => {

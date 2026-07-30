@@ -17,7 +17,7 @@ export type NavigateToRouteInput = z.infer<typeof navigateToRouteInput>
 
 export const navigateToRouteTool: ModelToolDefinition = {
   operationId: "navigate_to_route",
-  description: "Immediately switch the signed-in user's current browser view to a registered Luna DevOps route without reloading the page. Use only when the user explicitly asks to open, go to, or switch to a known page, or when an immediate route change is necessary and unambiguous. Do not use this for optional suggestions; use create_options instead. Never invent route names or identifiers.",
+  description: "在不刷新页面的情况下，将当前登录用户的浏览器视图立即切换到已注册的 Luna DevOps 路由。只有用户明确要求打开、前往或切换到已知页面，或者立即跳转确有必要且没有歧义时才可使用。可选建议应使用 create_options，不得调用本工具。绝不能编造路由名或资源标识符。",
   inputSchema: {
     type: "object",
     additionalProperties: false,

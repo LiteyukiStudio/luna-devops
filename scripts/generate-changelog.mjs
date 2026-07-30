@@ -11,32 +11,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repositoryUrl = "https://github.com/LiteyukiStudio/luna-devops";
 const tagPattern = "v[0-9]*";
 const outputFile = "index.md";
-const categoryOrder = [
-  "added",
-  "fixed",
-  "performance",
-  "docs",
-  "changed",
-  "other",
-];
-const categoryLabels = {
-  zh: {
-    added: "新增",
-    fixed: "修复",
-    performance: "性能",
-    docs: "文档",
-    changed: "调整",
-    other: "其他",
-  },
-  en: {
-    added: "Added",
-    fixed: "Fixed",
-    performance: "Performance",
-    docs: "Docs",
-    changed: "Changed",
-    other: "Other",
-  },
-};
+const visibleReleaseCount = 10;
 
 function git(args) {
   return execFileSync("git", args, {
@@ -46,85 +21,16 @@ function git(args) {
   }).trim();
 }
 
-function categoryForSubject(subject) {
-  const type = /^([A-Za-z]+)(?:\([^)]*\))?(?:!)?(?:\s[^:]*)?:/
-    .exec(subject)?.[1]
-    ?.toLowerCase();
-  if (type === "feat") return "added";
-  if (type === "fix" || type === "revert") return "fixed";
-  if (type === "perf") return "performance";
-  if (type === "docs") return "docs";
-  if (["refactor", "style", "test", "build", "ci", "chore"].includes(type)) {
-    return "changed";
-  }
-  return "other";
-}
-
-function escapeMarkdown(value) {
-  return value
-    .replaceAll("\\", "\\\\")
-    .replaceAll("[", "\\[")
-    .replaceAll("]", "\\]");
-}
-
 function releaseTags() {
   const output = git(["tag", "--list", tagPattern, "--sort=-v:refname"]);
   return output ? output.split("\n").filter(Boolean) : [];
 }
 
-function commitsForRange(range) {
-  const output = git([
-    "log",
-    "--no-merges",
-    "--format=%H%x1f%s",
-    range,
-  ]);
-  if (!output) return [];
-  return output.split("\n").map((line) => {
-    const [hash, subject] = line.split("\x1f");
-    return { hash, subject, category: categoryForSubject(subject) };
-  });
-}
-
-function releaseSection(tag, previousTag, lang) {
-  const version = tag.slice(1);
-  const range = previousTag ? `${previousTag}..${tag}` : tag;
+function releaseLine(tag, lang) {
   const date = git(["log", "-1", "--format=%cs", tag]);
   const releaseUrl = `${repositoryUrl}/releases/tag/${encodeURIComponent(tag)}`;
-  const sourceUrl = `${repositoryUrl}/tree/${encodeURIComponent(tag)}`;
-  const lines = [`## ${version}`, ""];
-
-  if (lang === "zh") {
-    lines.push(`发布日期：${date}`, "");
-    lines.push(`[GitHub Release](${releaseUrl}) · [查看版本代码](${sourceUrl})`, "");
-  } else {
-    lines.push(`Release date: ${date}`, "");
-    lines.push(`[GitHub Release](${releaseUrl}) · [View tag source](${sourceUrl})`, "");
-  }
-
-  const commits = commitsForRange(range);
-  for (const category of categoryOrder) {
-    const matches = commits.filter(commit => commit.category === category);
-    if (matches.length === 0) continue;
-    lines.push(`### ${categoryLabels[lang][category]}`, "");
-    for (const commit of matches) {
-      const shortHash = commit.hash.slice(0, 7);
-      lines.push(
-        `- ${escapeMarkdown(commit.subject)} ([${shortHash}](${repositoryUrl}/commit/${commit.hash}))`,
-      );
-    }
-    lines.push("");
-  }
-
-  if (commits.length === 0) {
-    lines.push(
-      lang === "zh"
-        ? "此版本没有提交记录。"
-        : "No commits matched this release.",
-      "",
-    );
-  }
-  return lines.join("\n");
+  const label = lang === "zh" ? "查看发布说明" : "Release notes";
+  return `- **${tag.slice(1)}** · ${date} · [${label}](${releaseUrl})`;
 }
 
 function generatePage(lang) {
@@ -133,12 +39,12 @@ function generatePage(lang) {
     `# Luna DevOps${lang === "zh" ? " 更新日志" : " Changelog"}`,
     "",
     lang === "zh"
-      ? "这里记录 Luna DevOps 平台本体的公开版本变化。"
-      : "Public release notes for the Luna DevOps platform.",
+      ? "这里只列出最近发布的版本。新增能力、修复和升级注意事项以对应的 GitHub Release 为准。"
+      : "This page lists recent releases. See the matching GitHub Release for features, fixes, and upgrade notes.",
     "",
     lang === "zh"
-      ? `容器版本、发布说明与下载入口请前往 [GitHub Releases](${repositoryUrl}/releases)。`
-      : `Find container releases and release notes on [GitHub Releases](${repositoryUrl}/releases).`,
+      ? `查看[全部版本](${repositoryUrl}/releases)。`
+      : `View [all releases](${repositoryUrl}/releases).`,
     "",
   ];
 
@@ -148,9 +54,11 @@ function generatePage(lang) {
       "",
     );
   } else {
-    tags.forEach((tag, index) => {
-      lines.push(releaseSection(tag, tags[index + 1] ?? "", lang));
+    lines.push("## " + (lang === "zh" ? "最近版本" : "Recent releases"), "");
+    tags.slice(0, visibleReleaseCount).forEach((tag) => {
+      lines.push(releaseLine(tag, lang));
     });
+    lines.push("");
   }
 
   const output = join(root, "docs", "docs", lang, "changelog", outputFile);

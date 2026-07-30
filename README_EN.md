@@ -21,9 +21,9 @@
   ·
   <a href="https://github.com/LiteyukiStudio/luna-devops">GitHub</a>
   ·
-  <a href="docs/docs/en/guide/deployment/kubernetes-helm.md">Helm</a>
+  <a href="docs/docs/en/start/install/kubernetes.md">Helm</a>
   ·
-  <a href="docs/docs/en/guide/deployment/docker-compose.md">Docker Compose</a>
+  <a href="docs/docs/en/start/install/docker-compose.md">Docker Compose</a>
 </p>
 
 ## What Is Luna DevOps?
@@ -99,10 +99,8 @@ The Vite dev server proxies `/api/v1` to `http://localhost:8080`.
 
 ## Luna CLI
 
-Luna CLI now lives in the standalone
-[`LiteyukiStudio/luna-cli`](https://github.com/LiteyukiStudio/luna-cli)
-repository. It provides a stable two-level command structure, human-readable
-output, and versioned JSON output for agents:
+Luna CLI manages Luna DevOps from a terminal with human-readable output and
+JSON output for automation:
 
 ```bash
 npm install --global @liteyuki/luna-cli
@@ -110,19 +108,8 @@ luna login
 luna project get-projects
 ```
 
-For platform and CLI development side by side, clone the standalone repository
-into this repository's ignored `/cli/` directory. It is not a submodule,
-subtree, or workspace member and is never included in platform commits or
-releases:
-
-```bash
-git clone git@github.com:LiteyukiStudio/luna-cli.git cli
-pnpm --dir cli install
-pnpm --dir cli check
-```
-
-- [CLI documentation](https://luna-devops.liteyuki.org/en/guide/cli/)
-- [CLI source and development guide](https://github.com/LiteyukiStudio/luna-cli)
+- [CLI documentation](https://luna-devops.liteyuki.org/en/download/installation)
+- [CLI GitHub repository](https://github.com/LiteyukiStudio/luna-cli)
 - [Paired Agent Skill](https://github.com/LiteyukiStudio/luna-cli/tree/main/skills/luna-devops)
 
 ## Deployment
@@ -167,10 +154,10 @@ helm install luna-devops ./charts/luna-devops \
 
 More deployment guides:
 
-- [Kubernetes / Helm](docs/docs/en/guide/deployment/kubernetes-helm.md)
-- [Docker Compose](docs/docs/en/guide/deployment/docker-compose.md)
-- [Binary deployment](docs/docs/en/guide/deployment/binary.md)
-- [Configuration reference](docs/docs/en/guide/configuration-reference.md)
+- [Kubernetes / Helm](docs/docs/en/start/install/kubernetes.md)
+- [Docker Compose](docs/docs/en/start/install/docker-compose.md)
+- [Binary deployment](docs/docs/en/start/install/binary.md)
+- [Configuration reference](docs/docs/en/reference/configuration.md)
 
 ## Configuration Notes
 
@@ -180,7 +167,7 @@ More deployment guides:
 - `TRUSTED_PROXY_CIDRS` should include trusted reverse proxies or CDN egress ranges when Luna DevOps is behind a proxy.
 - Worker build networking is configurable. Use restricted egress plus explicit allowlists when builds need to access private registries or mirrors.
 
-For the full list of API and Worker options, use the [configuration reference](docs/docs/en/guide/configuration-reference.md).
+For the full list of API and Worker options, use the [configuration reference](docs/docs/en/reference/configuration.md).
 
 ## Repository Layout
 

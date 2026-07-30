@@ -7,7 +7,7 @@ export const renameConversationInput = z.object({
 
 export const renameConversationTool: ModelToolDefinition = {
   operationId: "rename_conversation",
-  description: "Rename the current conversation to a concise title in the user's language. Use this on the first turn when titleSource is default, or later when an assistant-generated title no longer matches the main topic. Never call it when titleSource is user.",
+  description: "使用用户当前语言为会话设置简洁标题。titleSource 为 default 时在首轮调用；titleSource 为 assistant 且原有标题不再符合主要话题时可以再次调用；titleSource 为 user 时绝不能调用。",
   inputSchema: {
     type: "object",
     properties: {
@@ -15,7 +15,7 @@ export const renameConversationTool: ModelToolDefinition = {
         type: "string",
         minLength: 1,
         maxLength: 60,
-        description: "A concise topic title without quotes, markdown, or trailing punctuation.",
+        description: "简洁的话题标题，不包含引号、Markdown 或句末标点。",
       },
     },
     required: ["title"],

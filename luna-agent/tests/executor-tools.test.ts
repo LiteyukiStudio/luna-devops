@@ -293,6 +293,43 @@ describe("provider to tool to subsequent model invocation", () => {
     expect(options && "toolCall" in options ? options.toolCall.uiActions : undefined).toHaveLength(2)
   })
 
+  it("omits suggestions when the model cannot produce context-specific options", async () => {
+    const repository = new MemoryRepository()
+    const conversation = await repository.createConversation("usr_a", "Locked title", undefined, "user")
+    await repository.createTurn("usr_a", {
+      conversationId: conversation.id,
+      input: "在轻雪项目空间v2部署 PostgreSQL",
+      pageContext: {
+        locale: "zh-CN",
+        routeName: "project.workspace",
+        projectId: "prj_liteyuki",
+      },
+      idempotencyKey: "invalid-options",
+    })
+    const provider: ModelProvider = {
+      async *stream() {
+        yield { type: "message_delta", delta: "已找到目标项目空间。" }
+        yield { type: "completed", usage: { inputTokens: 10, outputTokens: 10 } }
+      },
+      async complete() {
+        return {
+          text: "",
+          usage: { inputTokens: 5, outputTokens: 5 },
+          toolCalls: [],
+        }
+      },
+      capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
+      health: async () => ({ ok: true }),
+    }
+    const executor = new RunExecutor(repository, new GraphVersionRegistry(provider), loadConfig({ NODE_ENV: "test", INSTANCE_ID: "invalid-options-worker" }))
+
+    await executor.runOnce()
+
+    const timeline = await presentTimeline(repository, "usr_a", conversation.id)
+    const options = timeline?.turns[0]?.selectedRun?.items.find(item => "toolCall" in item && item.toolCall.operationId === "create_options")
+    expect(options).toBeUndefined()
+  })
+
   it("executes a deterministic read tool and completes the same durable run", async () => {
     const repository = new MemoryRepository()
     const conversation = await repository.createConversation("usr_a", "tool loop")
