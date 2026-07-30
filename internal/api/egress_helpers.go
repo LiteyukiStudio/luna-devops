@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/security"
 	"golang.org/x/oauth2"
@@ -13,7 +14,7 @@ import (
 
 func (h *Handlers) egressPolicyForUser(user model.User) security.EgressPolicy {
 	policy := security.PublicEgressPolicy()
-	if user.Role == "platform_admin" {
+	if user.Role == authz.PlatformRoleAdmin {
 		policy.AllowPrivateNetwork = true
 	}
 	if h.db != nil {
@@ -40,7 +41,7 @@ func (h *Handlers) egressContextForUser(ctx context.Context, user model.User, ti
 }
 
 func (h *Handlers) adminConfiguredEgressContext(ctx context.Context, timeout time.Duration) context.Context {
-	admin := model.User{Role: "platform_admin"}
+	admin := model.User{Role: authz.PlatformRoleAdmin}
 	return context.WithValue(ctx, oauth2.HTTPClient, security.NewHTTPClient(h.egressPolicyForUser(admin), timeout))
 }
 

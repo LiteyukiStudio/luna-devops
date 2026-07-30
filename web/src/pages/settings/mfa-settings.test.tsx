@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import i18next from '@/i18n'
+import { PlatformRole } from '@/lib/roles'
 import { AccountMFAPanel } from './account-mfa-panel'
 import { UsersPage } from './UsersPage'
 
@@ -39,7 +40,7 @@ vi.mock('@/app/session-context', () => ({
       language: 'en-US',
       name: 'Admin',
       permissions: ['user.manage'],
-      role: 'platform_admin',
+      role: PlatformRole.Admin,
     },
   }),
 }))
@@ -91,7 +92,7 @@ describe('mfa settings flows', () => {
         language: 'en-US',
         mfaEnabled: true,
         name: 'Target User',
-        role: 'user',
+        role: PlatformRole.User,
       }],
       page: 1,
       pageSize: 10,

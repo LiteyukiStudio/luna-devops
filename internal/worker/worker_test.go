@@ -126,10 +126,9 @@ func TestCompletedHourlyWindowsReturnsOnlyCompleteHours(t *testing.T) {
 func TestRuntimeBillingEffectivePeriodProratesWindowStart(t *testing.T) {
 	windowStart := time.Date(2026, 6, 19, 6, 0, 0, 0, time.UTC)
 	windowEnd := windowStart.Add(time.Hour)
-	targetCreatedAt := windowStart.Add(10 * time.Minute)
-	releaseStart := windowStart.Add(25 * time.Minute)
-	start, end, ok := runtimeBillingEffectivePeriod(windowStart, windowEnd, targetCreatedAt, releaseStart)
-	if !ok || !start.Equal(releaseStart) || !end.Equal(windowEnd) {
+	workloadCreatedAt := windowStart.Add(25 * time.Minute)
+	start, end, ok := runtimeBillingEffectivePeriod(windowStart, windowEnd, workloadCreatedAt)
+	if !ok || !start.Equal(workloadCreatedAt) || !end.Equal(windowEnd) {
 		t.Fatalf("period = %s %s %v", start, end, ok)
 	}
 }
@@ -735,33 +734,6 @@ func TestGatewayCertificateSpecUsesRuntimeClusterIssuerConfig(t *testing.T) {
 	}
 }
 
-func TestGatewayCertificateRuntimeUpdatesIncludeDetails(t *testing.T) {
-	notAfter := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
-	updates := gatewayCertificateRuntimeUpdates(kubeprovider.CertificateSnapshot{
-		Phase:    kubeprovider.CertificateIssued,
-		Message:  "Certificate is ready",
-		NotAfter: &notAfter,
-	}, model.RuntimeCluster{
-		GatewayCertIssuerKind: "Issuer",
-		GatewayCertIssuerName: "tenant-acme",
-	}, "letsencrypt-http01")
-
-	if updates["certificate_status"] != kubeprovider.CertificateIssued || updates["certificate_message"] != "Certificate is ready" {
-		t.Fatalf("updates = %#v", updates)
-	}
-	if updates["certificate_not_after"] != &notAfter || updates["certificate_issuer_kind"] != "Issuer" || updates["certificate_issuer_name"] != "tenant-acme" {
-		t.Fatalf("updates = %#v", updates)
-	}
-}
-
-func TestGatewayCertificateRuntimeUpdatesUseDefaultIssuer(t *testing.T) {
-	updates := gatewayCertificateRuntimeUpdates(kubeprovider.CertificateSnapshot{Phase: kubeprovider.CertificatePending}, model.RuntimeCluster{}, "letsencrypt-staging")
-
-	if updates["certificate_issuer_kind"] != "ClusterIssuer" || updates["certificate_issuer_name"] != "letsencrypt-staging" {
-		t.Fatalf("updates = %#v", updates)
-	}
-}
-
 func TestGatewayWildcardCertificateSpecUsesClusterDomain(t *testing.T) {
 	spec, ok := gatewayWildcardCertificateSpec(
 		model.RuntimeCluster{
@@ -823,6 +795,14 @@ func (r fakeCNameResolver) LookupCNAME(context.Context, string) (string, error) 
 }
 
 type fakeNamespaceManager struct{}
+
+func (fakeNamespaceManager) GetWorkloadSnapshot(context.Context, string, string, string) (kubeprovider.DeploymentSnapshot, error) {
+	return kubeprovider.DeploymentSnapshot{}, nil
+}
+
+func (fakeNamespaceManager) ListManagedPersistentVolumeClaims(context.Context, string, string) ([]kubeprovider.PersistentVolumeClaimSnapshot, error) {
+	return nil, nil
+}
 
 func (fakeNamespaceManager) EnsureNamespace(context.Context, string, map[string]string) error {
 	return nil
@@ -1126,21 +1106,21 @@ func TestGitAccountDueForWorkerRefresh(t *testing.T) {
 	now := time.Date(2026, 6, 7, 12, 0, 0, 0, time.UTC)
 	soon := now.Add(4 * time.Minute)
 	later := now.Add(10 * time.Minute)
-	if !gitAccountDueForWorkerRefresh(model.GitAccount{Status: "connected", RefreshTokenRef: "secret", ExpiresAt: &soon}, now) {
+	if !gitAccountDueForWorkerRefresh(model.GitAccount{Status: "unavailable", RefreshTokenRef: "secret", ExpiresAt: &soon}, now) {
 		t.Fatal("expected account expiring soon to be due")
 	}
-	if gitAccountDueForWorkerRefresh(model.GitAccount{Status: "connected", RefreshTokenRef: "secret", ExpiresAt: &later}, now) {
+	if gitAccountDueForWorkerRefresh(model.GitAccount{RefreshTokenRef: "secret", ExpiresAt: &later}, now) {
 		t.Fatal("expected account outside refresh window to be skipped")
 	}
-	if gitAccountDueForWorkerRefresh(model.GitAccount{Status: "expired", RefreshTokenRef: "secret", ExpiresAt: &soon}, now) {
-		t.Fatal("expected expired account to be skipped")
+	if !gitAccountDueForWorkerRefresh(model.GitAccount{Status: "degraded", RefreshTokenRef: "secret", ExpiresAt: &soon}, now) {
+		t.Fatal("expected response-only observation status not to affect refresh scheduling")
 	}
 }
 
 func TestGitAccountDueForWorkerRefreshSkipsAfterSuccessfulRefresh(t *testing.T) {
 	now := time.Date(2026, 6, 7, 12, 0, 0, 0, time.UTC)
 	refreshedExpiry := now.Add(1 * time.Hour)
-	account := model.GitAccount{Status: "connected", RefreshTokenRef: "secret", ExpiresAt: &refreshedExpiry}
+	account := model.GitAccount{RefreshTokenRef: "secret", ExpiresAt: &refreshedExpiry}
 	if gitAccountDueForWorkerRefresh(account, now) {
 		t.Fatal("expected refreshed account to be skipped on replay")
 	}

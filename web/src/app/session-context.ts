@@ -1,4 +1,5 @@
 import type { CurrentUser } from '@/api'
+import type { PlatformRoleValue } from '@/lib/roles'
 import { createContext, use } from 'react'
 
 export interface LoginInput {
@@ -25,7 +26,7 @@ export interface InitializeAdminInput {
 }
 
 interface DebugRoleOverride {
-  role: 'platform_admin' | 'user'
+  role: PlatformRoleValue
   type: 'role'
 }
 

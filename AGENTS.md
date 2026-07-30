@@ -24,6 +24,7 @@
 - **MUST i18n 边界**：能在前端本地化的内容必须由前端按稳定 `code`、枚举值或状态 key 映射 i18n 文案；后端只返回稳定 key、原始枚举和必要的原始 message/remark 备注，不返回面向用户的本地化文案。日志正文、第三方原始文本和用户输入内容作为数据展示时例外，但不能冒充 UI 文案。
 - **MUST 品牌命名边界**：用户可见品牌统一使用 `Luna DevOps`；项目自有运行标识统一使用 `luna-devops`、`luna.devops`、`luna-gateway` 或 `luna_devops_`（metrics/代码中需要下划线时）。项目尚未发版，不保留旧品牌技术标识兼容层，也不要把品牌技术标识做成用户可配置项。开发者、仓库、文档站和镜像发布地址仍使用真实可达的 Liteyuki Studio 资源：`github.com/LiteyukiStudio/luna-devops`、`https://luna-devops.liteyuki.org`、`liteyukistudio/devops-*`。
 - **MUST 后端适配外部平台**：涉及 GitHub、Gitea、GitLab、Harbor、DockerHub、OIDC、Kubernetes、Traefik、AI Provider 等第三方/外部平台的读取、探测、搜索、状态同步和写操作，必须由后端 provider/service/API 适配、聚合或反代。前端只调用平台后端 API，不允许在前端编排第三方平台 API、暴露底层外部平台能力，或用多个底层代理接口拼出业务流程。
+- **MUST 实时状态单一事实源**：当前状态、健康度、实时资源数量、实时指标等有时效要求的数据，必须在请求时从 Kubernetes 或对应外部平台读取。数据库只保存期望配置、资源引用、工作流过程与结果、不可变历史，不得持久化、回写或用 Redis/进程内缓存保存上游当前状态。上游不可达时统一返回 `unavailable` 和稳定 `observationCode`；实时响应必须使用 `Cache-Control: no-store`，前端不得通过长 `staleTime` 延续旧状态。
 - **MUST Agent Prompt 中文**：`luna-agent` 中的系统 Prompt、模型任务提示、上下文包裹说明、工具描述和配套 Skill 必须使用中文编写；工具名、参数名、枚举、路由名、协议字段和用户原始输入保持原值。Prompt 仍应要求模型按用户当前语言回复。项目未发版，只保留当前 Prompt 版本，不维护旧 Prompt 前向兼容分支。
 - Secret、Token、Registry Credential 不允许明文落业务表；密钥类字段不回显给前端。
 
@@ -107,6 +108,7 @@ web/src/i18n
 - `cmd/worker` 负责构建、部署、状态同步、证书申请、资源清理等异步任务。
 - 长耗时任务进入 worker，不在 HTTP 请求里同步执行。
 - Handler 只做参数解析、权限入口和响应；业务逻辑放 service；数据访问放 repository；外部系统调用放 provider。
+- 平台角色与项目角色必须复用 `internal/authz`、`web/src/lib/roles.ts` 和 OpenAPI 中的共享角色 schema，禁止在授权判断、输入校验和测试夹具中散落角色字面量。LLM 消息 role、资源 scope、Git owner 等同名字字段属于独立语义，不得混入授权角色常量。
 - 构建/部署阶段的用户配置字符串默认允许使用 GitHub Actions 风格变量；最终执行前必须通过后端统一变量渲染组件处理，禁止在各业务里手写零散替换逻辑。
 - 权限由后端最终判断，前端隐藏按钮只做体验优化。
 - 危险操作必须写 AuditLog。
@@ -135,6 +137,7 @@ web/src/i18n
 - 表单统一使用 React Hook Form + Zod。
 - React 中能由 props、查询结果或现有 state 直接计算出的值必须在渲染阶段派生，必要时使用 `useMemo`；禁止用同步 `useEffect` 调用 `setState` 回填默认选项、修剪选择项、重置页码或复制受控属性。资源切换后的局部状态应按资源 ID/作用域隔离，用户操作导致的重置应放在对应事件入口。
 - `useEffect` 只用于 EventSource、WebSocket、定时器、DOM 和其他外部系统同步。订阅状态必须绑定当前资源 ID，并在 cleanup 中关闭连接、阻止旧回调写入新资源状态；函数调用形式的初始 state 使用惰性初始化。
+- 实时观察查询必须复用 `web/src/lib/live-observation-query.ts` 的查询策略；上游断联时展示公共状态组件映射的 `unavailable`，不得保留上一次成功状态冒充当前事实。
 - 前端交付前必须保证 `pnpm --dir web lint` 和 `pnpm --dir web build` 无新增 error 或 warning。确属外部同步或工具链刻意行为的告警必须先确认语义，在最小代码范围注明原因；禁止通过全局关闭规则、批量 `eslint-disable` 或降低门禁掩盖告警。
 - 必填项使用主题色 `*`，不可用红色强警告风格。
 - 未满足要求前提交按钮保持 disabled/弱化；字段错误在对应字段附近展示。

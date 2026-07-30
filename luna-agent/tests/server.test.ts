@@ -31,7 +31,7 @@ describe("internal API", () => {
     const turn = await app.inject({
       method: "POST", url: `/internal/v1/conversations/${id}/turns`,
       headers: { ...headers, "idempotency-key": "browser-request-1" },
-      payload: { input: { parts: [{ type: "text", text: "为什么失败？" }] }, pageContext: { routeName: "application.builds" } },
+      payload: { input: { parts: [{ type: "text", text: "为什么失败？" }] }, pageContext: { routeName: "application.builds" }, clientInstanceId: "browser-client-instance-1" },
     })
     expect(turn.statusCode).toBe(202)
     expect(turn.json()).toMatchObject({ state: "queued", turnIndex: 0 })
@@ -76,7 +76,7 @@ describe("internal API", () => {
       method: "POST",
       url: `/internal/v1/conversations/${conversationId}/turns`,
       headers: { ...headers, "idempotency-key": "cancel-request-1" },
-      payload: { input: { parts: [{ type: "text", text: "stop" }] }, pageContext: {} },
+      payload: { input: { parts: [{ type: "text", text: "stop" }] }, pageContext: {}, clientInstanceId: "browser-client-instance-2" },
     })
     const runId = created.json<AITurnCreated>().runId
     const canceled = await app.inject({ method: "POST", url: `/internal/v1/runs/${runId}/cancel`, headers })
@@ -119,7 +119,7 @@ describe("internal API", () => {
       method: "POST",
       url: `/internal/v1/conversations/${conversationId}/turns`,
       headers: { ...headers, "idempotency-key": "timeline-request-1" },
-      payload: { input: { parts: [{ type: "text", text: "检查构建状态" }] }, pageContext: {} },
+      payload: { input: { parts: [{ type: "text", text: "检查构建状态" }] }, pageContext: {}, clientInstanceId: "browser-client-instance-3" },
     })
     const turnCreated: AITurnCreated = created.json<AITurnCreated>()
     const runId = turnCreated.runId
@@ -165,7 +165,7 @@ describe("internal API", () => {
       method: "POST",
       url: `/internal/v1/conversations/${conversationId}/turns`,
       headers: { ...headers, "idempotency-key": "sse-request-1" },
-      payload: { input: { parts: [{ type: "text", text: "hello" }] }, pageContext: {} },
+      payload: { input: { parts: [{ type: "text", text: "hello" }] }, pageContext: {}, clientInstanceId: "browser-client-instance-4" },
     })
     const runId = created.json<AITurnCreated>().runId
     await app.inject({ method: "POST", url: `/internal/v1/runs/${runId}/cancel`, headers })
@@ -179,6 +179,66 @@ describe("internal API", () => {
     expect(response.body).toContain("event: run.queued")
     expect(response.body).toContain("\"version\":1")
     expect(response.body).not.toContain("\"items\"")
+    await app.close()
+  })
+  it("replays and acknowledges UI actions only for their bound browser client", async () => {
+    const { app, repository } = fixture()
+    const headers = { "x-luna-dev-user": "usr_ui_action" }
+    const clientInstanceId = "browser-client-instance-5"
+    const conversation = await app.inject({ method: "POST", url: "/internal/v1/conversations", headers, payload: { title: "Navigation" } })
+    const conversationId = conversation.json<{ id: string }>().id
+    const created = await app.inject({
+      method: "POST",
+      url: `/internal/v1/conversations/${conversationId}/turns`,
+      headers: { ...headers, "idempotency-key": "ui-action-request-1" },
+      payload: { input: { parts: [{ type: "text", text: "打开项目空间" }] }, pageContext: {}, clientInstanceId },
+    })
+    const runId = created.json<AITurnCreated>().runId
+    const delivery = await repository.createUIAction(runId, "aitool_navigation", {
+      version: 1,
+      type: "navigate",
+      activation: "automatic",
+      repeatable: false,
+      payload: { routeName: "projects", params: {}, query: {} },
+    }, new Date(Date.now() + 60_000).toISOString())
+
+    const wrongClient = await app.inject({
+      method: "GET",
+      url: "/internal/v1/ui-actions/pending?clientInstanceId=another-browser-client",
+      headers,
+    })
+    expect(wrongClient.json()).toEqual({ items: [] })
+
+    const pending = await app.inject({
+      method: "GET",
+      url: `/internal/v1/ui-actions/pending?clientInstanceId=${clientInstanceId}`,
+      headers,
+    })
+    expect(pending.json()).toMatchObject({ items: [{ actionId: delivery.id, runId, toolCallId: "aitool_navigation" }] })
+
+    const rejectedAck = await app.inject({
+      method: "POST",
+      url: `/internal/v1/ui-actions/${delivery.id}/ack`,
+      headers,
+      payload: { clientInstanceId: "another-browser-client", status: "succeeded", actualPath: "/projects" },
+    })
+    expect(rejectedAck.statusCode).toBe(404)
+
+    const acknowledged = await app.inject({
+      method: "POST",
+      url: `/internal/v1/ui-actions/${delivery.id}/ack`,
+      headers,
+      payload: { clientInstanceId, status: "succeeded", actualPath: "/projects" },
+    })
+    expect(acknowledged.statusCode).toBe(202)
+    expect(acknowledged.json()).toMatchObject({ actionId: delivery.id, status: "succeeded" })
+
+    const empty = await app.inject({
+      method: "GET",
+      url: `/internal/v1/ui-actions/pending?clientInstanceId=${clientInstanceId}`,
+      headers,
+    })
+    expect(empty.json()).toEqual({ items: [] })
     await app.close()
   })
 })

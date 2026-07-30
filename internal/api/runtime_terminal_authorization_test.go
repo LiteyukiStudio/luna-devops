@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/gorilla/websocket"
 	"gorm.io/gorm"
@@ -362,7 +363,7 @@ func runtimeTerminalTestHandlers(db *gorm.DB, mfaEnabled bool, idleMinutes strin
 
 func createRuntimeTerminalAuthorizationFixture(t *testing.T, db *gorm.DB, now time.Time) (runtimeTerminalAuthorizationBinding, model.StepUpAssertion) {
 	t.Helper()
-	user := model.User{ID: "usr_runtime_terminal", Email: "runtime-terminal@example.com", Name: "Runtime Terminal", Role: "platform_admin", Language: "en-US"}
+	user := model.User{ID: "usr_runtime_terminal", Email: "runtime-terminal@example.com", Name: "Runtime Terminal", Role: authz.PlatformRoleAdmin, Language: "en-US"}
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatal(err)
 	}

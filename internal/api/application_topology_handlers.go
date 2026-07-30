@@ -38,6 +38,7 @@ type applicationTopologyResponse struct {
 }
 
 func (h *Handlers) GetApplicationTopology(ctx *gin.Context) {
+	markLiveObservationResponse(ctx)
 	user, project, ok := h.projectAndCurrentUser(ctx)
 	if !ok {
 		return

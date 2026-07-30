@@ -1,4 +1,16 @@
+import type { PlatformRoleValue, ProjectRoleValue } from '@/lib/roles'
+
 // Domain DTOs shared by the API client and UI pages.
+
+export type LiveObservationStatus
+  = | 'ready'
+    | 'degraded'
+    | 'progressing'
+    | 'not-found'
+    | 'not-configured'
+    | 'unavailable'
+    | 'unknown'
+    | 'declared'
 
 export interface Project {
   id: string
@@ -38,7 +50,7 @@ export interface ProjectMember {
   id: string
   projectId: string
   userId: string
-  role: 'owner' | 'admin' | 'developer' | 'viewer'
+  role: ProjectRoleValue
   email: string
   name: string
 }
@@ -202,6 +214,9 @@ export interface SystemComponentInstallation {
   mode: string
   config: string
   lastError: string
+  runtimeStatus: string
+  observationCode?: string
+  observedAt?: string | null
   installedBy: string
   createdAt: string
   updatedAt: string
@@ -233,7 +248,8 @@ export interface GatewayTrafficStatus {
   status: string
   componentId: string
   installableTemplateId: string
-  lastHeartbeatAt?: string | null
+  observationCode: string
+  observedAt?: string | null
   lastReportedAt?: string | null
   lastWindowStart?: string | null
   lastWindowEnd?: string | null
@@ -290,7 +306,6 @@ export interface NotificationRule {
   templateId: string
   locale: string
   enabled: boolean
-  lastMatchedEventId: string
   createdBy: string
   createdAt: string
   updatedAt: string
@@ -523,7 +538,9 @@ export interface GitAccount {
   scopes: string
   accessTokenSet: boolean
   refreshTokenSet: boolean
-  status: 'connected' | 'expired' | 'revoked'
+  status: LiveObservationStatus
+  observationCode?: string
+  observedAt?: string | null
   createdAt: string
 }
 
@@ -537,7 +554,10 @@ export interface RepositoryBinding {
   repo: string
   cloneUrl: string
   defaultBranch: string
-  webhookStatus: 'pending' | 'created' | 'disabled' | 'failed'
+  webhookEnabled: boolean
+  webhookStatus: LiveObservationStatus
+  webhookObservationCode?: string
+  webhookObservedAt?: string | null
   webhookId: string
   webhookCallbackUrl: string
   lastEvent: string
@@ -552,7 +572,7 @@ export interface RepositoryBinding {
   createdAt: string
 }
 
-export type RepositoryBindingPayload = Pick<RepositoryBinding, 'applicationId' | 'gitAccountId' | 'owner' | 'repo' | 'cloneUrl' | 'defaultBranch' | 'webhookStatus'> & {
+export type RepositoryBindingPayload = Pick<RepositoryBinding, 'applicationId' | 'gitAccountId' | 'owner' | 'repo' | 'cloneUrl' | 'defaultBranch'> & {
   autoConfigureWebhook?: boolean
 }
 
@@ -990,6 +1010,13 @@ export interface DeploymentTarget {
   requireApproval: boolean
   webConsoleEnabled: boolean | null
   enabled: boolean
+  status: string
+  observationCode?: string
+  lastCheckedAt?: string | null
+  desiredReplicas: number
+  updatedReplicas: number
+  readyReplicas: number
+  availableReplicas: number
   deleteStatus: 'active' | 'deleting' | 'delete_failed' | 'deleted' | string
   deleteMessage: string
   deleteStartedAt?: string | null
@@ -1006,6 +1033,7 @@ export interface DeploymentServicePort {
 
 export interface DeploymentTargetMetrics {
   available: boolean
+  status: 'ready' | 'unavailable'
   reason?: string
   podCount: number
   containerCount: number
@@ -1018,7 +1046,7 @@ export interface DeploymentTargetMetrics {
   updatedAt: string
 }
 
-export type DeploymentTargetPayload = Omit<DeploymentTarget, 'id' | 'projectId' | 'applicationId' | 'kubernetesName' | 'createdBy' | 'createdAt' | 'buildVariableSetIds' | 'runtimeConfigSetIds' | 'runtimeConfigRefs' | 'secretRefsSet' | 'secretFilesSet' | 'deleteStatus' | 'deleteMessage' | 'deleteStartedAt' | 'deleteFinishedAt'> & {
+export type DeploymentTargetPayload = Omit<DeploymentTarget, 'id' | 'projectId' | 'applicationId' | 'kubernetesName' | 'createdBy' | 'createdAt' | 'buildVariableSetIds' | 'runtimeConfigSetIds' | 'runtimeConfigRefs' | 'secretRefsSet' | 'secretFilesSet' | 'status' | 'observationCode' | 'lastCheckedAt' | 'desiredReplicas' | 'updatedReplicas' | 'readyReplicas' | 'availableReplicas' | 'deleteStatus' | 'deleteMessage' | 'deleteStartedAt' | 'deleteFinishedAt'> & {
   buildVariableSetIds: string | string[]
   buildVariables?: Record<string, string>
   buildSecrets?: Record<string, string>
@@ -1496,7 +1524,7 @@ export interface CurrentUser {
   name: string
   avatarUrl: string
   passwordSet: boolean
-  role: string
+  role: PlatformRoleValue
   language: 'zh-CN' | 'en-US'
   brandColorPreset: '' | 'aurora' | 'harbor' | 'sunset' | 'botanical' | 'meadow' | 'citrus' | 'gold' | 'bronze' | 'brown' | 'yellow' | 'amber' | 'orange' | 'tomato' | 'red' | 'ruby' | 'crimson' | 'pink' | 'plum' | 'purple' | 'violet' | 'iris' | 'indigo' | 'blue' | 'cyan' | 'teal' | 'jade' | 'green' | 'grass' | 'lime' | 'mint' | 'sky'
   interfaceStyle: '' | 'minimal' | 'themed'
@@ -1509,7 +1537,7 @@ export interface User {
   name: string
   avatarUrl: string
   passwordSet: boolean
-  role: 'platform_admin' | 'user'
+  role: PlatformRoleValue
   language: 'zh-CN' | 'en-US'
   disabled: boolean
   mfaEnabled: boolean
@@ -1579,7 +1607,7 @@ export interface AuthAdmissionPolicy {
   allowedEmailDomains: string[]
   allowedOidcGroups: string[]
   invitedEmails: string[]
-  defaultRole: 'platform_admin' | 'user'
+  defaultRole: PlatformRoleValue
 }
 
 export interface ConfigDefinition {

@@ -2,8 +2,9 @@ import { z } from 'zod'
 import { aiInternalRouteNames } from './internal-routes'
 
 const id = z.string().regex(/^[\w-]{1,64}$/)
-const text = z.string().trim().min(1).max(500)
+const text = z.string().trim().min(1).max(120)
 const tone = z.enum(['neutral', 'success', 'warning', 'error'])
+const sourceType = z.enum(['app_template', 'web_search_result', 'web_page', 'platform_resource', 'platform_event', 'tool_result'])
 const icon = z.discriminatedUnion('type', [
   z.object({ type: z.literal('asset'), assetRef: z.string().min(1).max(240), alt: text }),
   z.object({ type: z.literal('category'), name: z.string().min(1).max(40), alt: text }),
@@ -55,7 +56,6 @@ export const interactionContentBlockSchema = z.discriminatedUnion('type', [
     type: z.literal('data_table'),
     columns: z.array(z.object({ key: id, label: text, format: z.string().max(40).optional() })).min(1).max(8),
     rows: z.array(z.object({ id, cells: z.record(z.string(), z.string().max(2000)) })).max(30),
-    rowSelection: z.enum(['none', 'single', 'multiple']).optional(),
   }),
   z.object({ ...blockBase, type: z.literal('code'), language: z.string().min(1).max(40), content: z.string().max(16000), filename: z.string().max(200).optional() }),
   z.object({ ...blockBase, type: z.literal('diff'), language: z.string().max(40).optional(), beforeLabel: text.optional(), afterLabel: text.optional(), unifiedDiff: z.string().min(1).max(16000) }),
@@ -125,10 +125,11 @@ export const interactionCardActionSchema = z.discriminatedUnion('type', [
 
 export const interactionCardGroupSchema = z.object({
   schemaVersion: z.literal(1),
+  generationId: id,
   title: text,
   description: z.string().max(500).optional(),
   template: z.enum(['catalog', 'comparison', 'inspector', 'form', 'wizard', 'diagnosis', 'plan', 'progress', 'result', 'dashboard']),
-  display: z.object({ density: z.enum(['comfortable', 'compact']).optional(), selection: z.enum(['none', 'single', 'multiple']).optional() }).optional(),
+  display: z.object({ density: z.enum(['comfortable', 'compact']).optional() }).optional(),
   cards: z.array(z.object({
     id,
     presentation: z.object({
@@ -137,9 +138,9 @@ export const interactionCardGroupSchema = z.object({
       subtitle: z.string().max(160).optional(),
       description: z.string().max(500).optional(),
       icon: icon.optional(),
-      badges: z.array(z.object({ label: z.string().min(1).max(60), tone: z.enum(['neutral', 'success', 'warning']) })).max(6).optional(),
+      badges: z.array(z.object({ label: z.string().min(1).max(60), tone })).max(6).optional(),
     }),
-    sourceRefs: z.array(z.object({ type: z.string(), refId: z.string(), label: text, trust: z.enum(['platform', 'official', 'community']) })).max(12).optional(),
+    sourceRefs: z.array(z.object({ type: sourceType, refId: id, label: text, trust: z.enum(['platform', 'official', 'community']) })).max(12).optional(),
     blocks: z.array(interactionContentBlockSchema).max(12).optional(),
     form: z.object({ sections: z.array(z.object({ id, title: text.optional(), description: z.string().max(500).optional(), fields: z.array(interactionFormFieldSchema).min(1).max(12) })).min(1).max(6) }).optional(),
     actions: z.array(interactionCardActionSchema).max(4).optional(),

@@ -65,6 +65,23 @@ paths:
         - { $ref: "#/components/parameters/IdempotencyKey" }
       requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }
       responses: { "202": { description: Turn and run accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }, "409": { $ref: "#/components/responses/AgentError" } }
+  /internal/v1/ui-actions/pending:
+    get:
+      operationId: listInternalPendingAIUIActions
+      parameters:
+        - { $ref: "#/components/parameters/ActorContext" }
+        - { $ref: "#/components/parameters/ActorSignature" }
+        - { name: clientInstanceId, in: query, required: true, schema: { type: string, minLength: 16, maxLength: 80, pattern: "^[A-Za-z0-9_-]+$" } }
+      responses: { "200": { description: Pending UI actions bound to the actor and browser client, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } } }
+  /internal/v1/ui-actions/{actionId}/ack:
+    post:
+      operationId: acknowledgeInternalAIUIAction
+      parameters:
+        - { $ref: "#/components/parameters/ActorContext" }
+        - { $ref: "#/components/parameters/ActorSignature" }
+        - { name: actionId, in: path, required: true, schema: { type: string } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }
+      responses: { "202": { description: UI action acknowledgement accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }, "404": { $ref: "#/components/responses/AgentError" }, "409": { $ref: "#/components/responses/AgentError" } }
   /internal/v1/turns/{turnId}/runs:
     parameters:
       - { $ref: "#/components/parameters/ActorContext" }

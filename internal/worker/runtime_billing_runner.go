@@ -2,15 +2,15 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log"
-	"strings"
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/billing"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/hibiken/asynq"
-	"gorm.io/gorm"
 )
 
 const runtimeBillingLookbackHours = 6
@@ -41,48 +41,91 @@ func (r *Runner) settleRuntimeUsageWindows(ctx context.Context, now time.Time) e
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		r.settleStorageUsageForTarget(ctx, service, target, windows)
-		environment, release, ok := r.runtimeBillingTargetContext(target)
-		if !ok {
+		var project model.Project
+		if err := r.db.First(&project, "id = ?", target.ProjectID).Error; err != nil {
+			log.Printf("live billing observation skipped target=%s: load project: %v", target.ID, err)
 			continue
 		}
-		releaseStart := runtimeBillingReleaseStart(release)
-		for _, window := range windows {
-			periodStart, periodEnd, ok := runtimeBillingEffectivePeriod(window.Start, window.End, target.CreatedAt, releaseStart)
-			if !ok {
-				continue
-			}
-			err := service.SettleRuntimeTargetWindow(billing.RuntimeUsageInput{
-				ProjectID:          target.ProjectID,
-				ApplicationID:      target.ApplicationID,
-				DeploymentTargetID: target.ID,
-				Environment:        environment,
-				PeriodStart:        periodStart,
-				PeriodEnd:          periodEnd,
-				ActorID:            "system",
-			})
-			if err != nil && !errors.Is(err, billing.ErrAlreadySettled) {
-				log.Printf("runtime billing settlement skipped target=%s window=%s: %v", target.ID, window.Start.Format(time.RFC3339), err)
-			}
+		environment := deploymentTargetEnvironment(target)
+		manager, err := r.kubernetesManager(environment)
+		if err != nil {
+			log.Printf("live billing observation unavailable target=%s: %v", target.ID, err)
+			continue
 		}
+		namespace := target.Namespace
+		if namespace == "" {
+			namespace = projectNamespace(project)
+		}
+		snapshot, err := manager.GetWorkloadSnapshot(ctx, namespace, applicationResourceName(target), target.WorkloadType)
+		if err != nil {
+			log.Printf("live runtime billing observation unavailable target=%s: %v", target.ID, err)
+		} else if snapshot.DesiredReplicas > 0 {
+			liveEnvironment := environment
+			liveEnvironment.Replicas = int(snapshot.DesiredReplicas)
+			r.settleRuntimeUsageForTarget(service, target, liveEnvironment, snapshot.CreatedAt, windows)
+		}
+		claims, err := manager.ListManagedPersistentVolumeClaims(ctx, namespace, target.ID)
+		if err != nil {
+			log.Printf("live storage billing observation unavailable target=%s: %v", target.ID, err)
+			continue
+		}
+		r.settleStorageUsageForTarget(ctx, service, target, claims, windows)
 	}
 	return nil
 }
 
-func (r *Runner) settleStorageUsageForTarget(ctx context.Context, service billing.Service, target model.DeploymentTarget, windows []hourlyWindow) {
-	if !target.DataRetentionEnabled {
+func (r *Runner) settleRuntimeUsageForTarget(service billing.Service, target model.DeploymentTarget, environment model.Environment, workloadCreatedAt time.Time, windows []hourlyWindow) {
+	for _, window := range windows {
+		periodStart, periodEnd, ok := runtimeBillingEffectivePeriod(window.Start, window.End, workloadCreatedAt)
+		if !ok {
+			continue
+		}
+		err := service.SettleRuntimeTargetWindow(billing.RuntimeUsageInput{
+			ProjectID:          target.ProjectID,
+			ApplicationID:      target.ApplicationID,
+			DeploymentTargetID: target.ID,
+			Environment:        environment,
+			PeriodStart:        periodStart,
+			PeriodEnd:          periodEnd,
+			ActorID:            "system",
+		})
+		if err != nil && !errors.Is(err, billing.ErrAlreadySettled) {
+			log.Printf("runtime billing settlement skipped target=%s window=%s: %v", target.ID, window.Start.Format(time.RFC3339), err)
+		}
+	}
+}
+
+func (r *Runner) settleStorageUsageForTarget(ctx context.Context, service billing.Service, target model.DeploymentTarget, claims []kubeprovider.PersistentVolumeClaimSnapshot, windows []hourlyWindow) {
+	if len(claims) == 0 {
 		return
 	}
+	liveVolumes := make([]map[string]string, 0, len(claims))
+	storageCreatedAt := claims[0].CreatedAt
+	for _, claim := range claims {
+		liveVolumes = append(liveVolumes, map[string]string{"name": claim.Name, "capacity": claim.Capacity})
+		if claim.CreatedAt.After(storageCreatedAt) {
+			storageCreatedAt = claim.CreatedAt
+		}
+	}
+	encodedVolumes, err := json.Marshal(liveVolumes)
+	if err != nil {
+		log.Printf("live storage billing observation skipped target=%s: encode PVC capacities: %v", target.ID, err)
+		return
+	}
+	liveTarget := target
+	liveTarget.DataRetentionEnabled = true
+	liveTarget.DataVolumes = string(encodedVolumes)
+	liveTarget.DataCapacity = ""
 	for _, window := range windows {
 		if err := ctx.Err(); err != nil {
 			return
 		}
-		periodStart, periodEnd, ok := storageBillingEffectivePeriod(window.Start, window.End, target.CreatedAt)
+		periodStart, periodEnd, ok := storageBillingEffectivePeriod(window.Start, window.End, storageCreatedAt)
 		if !ok {
 			continue
 		}
 		err := service.SettleStorageTargetWindow(billing.StorageUsageInput{
-			Target:      target,
+			Target:      liveTarget,
 			PeriodStart: periodStart,
 			PeriodEnd:   periodEnd,
 			ActorID:     "system",
@@ -91,54 +134,6 @@ func (r *Runner) settleStorageUsageForTarget(ctx context.Context, service billin
 			log.Printf("storage billing settlement skipped target=%s window=%s: %v", target.ID, window.Start.Format(time.RFC3339), err)
 		}
 	}
-}
-
-func (r *Runner) runtimeBillingTargetContext(target model.DeploymentTarget) (model.Environment, model.Release, bool) {
-	environment := deploymentTargetEnvironment(target)
-	var release model.Release
-	if err := r.db.
-		Where("project_id = ? and application_id = ? and deployment_target_id = ? and status in ?", target.ProjectID, target.ApplicationID, target.ID, []string{"running", "succeeded"}).
-		Order("created_at desc").
-		First(&release).Error; err != nil {
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return environment, release, false
-		}
-		if !r.canUseLegacyReleaseForRuntimeBilling(target) {
-			return environment, release, false
-		}
-		query := r.db.
-			Where("project_id = ? and application_id = ? and deployment_target_id = ? and status in ?", target.ProjectID, target.ApplicationID, "", []string{"running", "succeeded"})
-		if strings.TrimSpace(target.EnvironmentID) != "" {
-			query = query.Where("environment_id = ?", strings.TrimSpace(target.EnvironmentID))
-		}
-		if err := query.Order("created_at desc").First(&release).Error; err != nil {
-			return environment, release, false
-		}
-	}
-	return environment, release, true
-}
-
-func (r *Runner) canUseLegacyReleaseForRuntimeBilling(target model.DeploymentTarget) bool {
-	query := r.db.Model(&model.DeploymentTarget{}).
-		Where("project_id = ? and application_id = ? and enabled = ? and delete_status in ?", target.ProjectID, target.ApplicationID, true, []string{"active", ""})
-	if strings.TrimSpace(target.EnvironmentID) != "" {
-		query = query.Where("environment_id = ?", strings.TrimSpace(target.EnvironmentID))
-	}
-	var count int64
-	if err := query.Count(&count).Error; err != nil {
-		return false
-	}
-	return count == 1
-}
-
-func runtimeBillingReleaseStart(release model.Release) time.Time {
-	if release.FinishedAt != nil && !release.FinishedAt.IsZero() {
-		return *release.FinishedAt
-	}
-	if release.StartedAt != nil && !release.StartedAt.IsZero() {
-		return *release.StartedAt
-	}
-	return release.CreatedAt
 }
 
 type hourlyWindow struct {
@@ -159,13 +154,10 @@ func completedHourlyWindows(now time.Time, lookbackHours int) []hourlyWindow {
 	return windows
 }
 
-func runtimeBillingEffectivePeriod(windowStart time.Time, windowEnd time.Time, targetCreatedAt time.Time, releaseStart time.Time) (time.Time, time.Time, bool) {
+func runtimeBillingEffectivePeriod(windowStart time.Time, windowEnd time.Time, workloadCreatedAt time.Time) (time.Time, time.Time, bool) {
 	start := windowStart
-	if targetCreatedAt.After(start) {
-		start = targetCreatedAt
-	}
-	if releaseStart.After(start) {
-		start = releaseStart
+	if workloadCreatedAt.After(start) {
+		start = workloadCreatedAt
 	}
 	if !windowEnd.After(start) {
 		return time.Time{}, time.Time{}, false

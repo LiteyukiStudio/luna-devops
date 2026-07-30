@@ -21,6 +21,7 @@ import { Input } from '@/components/ui/input'
 import { NativeSelect as Select } from '@/components/ui/native-select'
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { gatewayDeploymentTargetLabel } from './application-config-utils'
 
 type RouteForm = Omit<GatewayRoute, 'id' | 'projectId' | 'createdBy' | 'createdAt' | 'certificateStatus' | 'certificateMessage' | 'certificateNotAfter' | 'certificateIssuerKind' | 'certificateIssuerName' | 'cnameName' | 'cnameTarget' | 'accessUrl' | 'deleteStatus' | 'deleteMessage' | 'deleteStartedAt' | 'deleteFinishedAt' | 'routeSummary' | 'conditions'>
@@ -73,7 +74,12 @@ export function ApplicationGatewayPanel({ applicationId, applicationIdentifier, 
   const [editingRoute, setEditingRoute] = useState<GatewayRoute | null>(null)
   const [routeToDelete, setRouteToDelete] = useState<GatewayRoute | null>(null)
   const form = useForm<RouteForm>({ defaultValues: routeDefaults, mode: 'onChange' })
-  const runtimeClusters = useQuery({ queryKey: ['runtime-clusters', projectId], queryFn: () => api.listRuntimeClusters(projectId), enabled: Boolean(projectId) })
+  const runtimeClusters = useQuery({
+    queryKey: ['runtime-clusters', projectId],
+    queryFn: () => api.listRuntimeClusters(projectId),
+    enabled: Boolean(projectId),
+    ...liveObservationQueryPolicy,
+  })
   const deploymentTargetOptions = useMemo(() => deploymentTargets.map(target => ({
     id: target.id,
     label: gatewayDeploymentTargetLabel(target, t),

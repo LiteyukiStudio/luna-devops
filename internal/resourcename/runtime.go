@@ -15,6 +15,11 @@ func DeploymentTarget(targetID string) string {
 	return FromID("dplt", targetID)
 }
 
+func GatewayRoute(routeID string) string {
+	value := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(routeID)), "_", "-")
+	return DNSLabel("luna-gateway-" + value)
+}
+
 func PersistedOrLegacy(persisted, legacyPrefix, legacyID string) string {
 	if value := strings.TrimSpace(persisted); value != "" {
 		return DNSLabel(value)

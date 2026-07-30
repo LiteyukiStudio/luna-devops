@@ -9,8 +9,10 @@ import (
 	"strings"
 
 	"github.com/LiteyukiStudio/devops/internal/appstore"
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/LiteyukiStudio/devops/internal/observation"
 	"github.com/LiteyukiStudio/devops/internal/resourceidentifier"
 	"github.com/LiteyukiStudio/devops/internal/secret"
 	"github.com/gin-gonic/gin"
@@ -43,11 +45,12 @@ type systemComponentStatusResponse struct {
 }
 
 func (h *Handlers) ListSystemComponents(ctx *gin.Context) {
+	markLiveObservationResponse(ctx)
 	user, ok := h.currentUser(ctx)
 	if !ok {
 		return
 	}
-	if user.Role != "platform_admin" {
+	if user.Role != authz.PlatformRoleAdmin {
 		writeErrorKey(ctx, http.StatusForbidden, user.Language, "config.admin.required")
 		return
 	}
@@ -63,6 +66,7 @@ func (h *Handlers) ListSystemComponents(ctx *gin.Context) {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
+	h.observeSystemComponentInstallations(ctx.Request.Context(), items)
 	ctx.JSON(http.StatusOK, systemComponentStatusResponse{
 		Items:                      items,
 		GatewayTrafficProbeEnabled: hasReadySystemComponent(items, systemComponentGatewayTrafficProbe),
@@ -74,7 +78,7 @@ func (h *Handlers) InstallSystemAppTemplate(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if user.Role != "platform_admin" {
+	if user.Role != authz.PlatformRoleAdmin {
 		writeErrorKey(ctx, http.StatusForbidden, user.Language, "config.admin.required")
 		return
 	}
@@ -163,7 +167,7 @@ func (h *Handlers) InstallSystemAppTemplate(ctx *gin.Context) {
 
 func hasReadySystemComponent(items []model.SystemComponentInstallation, componentID string) bool {
 	for _, item := range items {
-		if item.ComponentID == componentID && (item.Status == "ready" || item.Status == "deployed") {
+		if item.ComponentID == componentID && item.RuntimeStatus == observation.StatusReady {
 			return true
 		}
 	}
@@ -286,6 +290,7 @@ func (h *Handlers) systemComponentApplicationPlan(ctx *gin.Context, user model.U
 		ReleaseID:          release.ID,
 		Namespace:          runtimeProjectNamespace(project),
 		Status:             "deploying",
+		RuntimeStatus:      observation.StatusProgressing,
 		Message:            "system component application deploy queued",
 		ControllerType:     firstNonEmpty(cluster.GatewayControllerType, "traefik"),
 		Mode:               mode,

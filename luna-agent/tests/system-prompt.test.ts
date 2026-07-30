@@ -97,6 +97,13 @@ describe("versioned system prompt", () => {
     expect(prompt).toContain("不是授权凭证或权限边界")
   })
 
+  it("requires the card preparation handshake before the final card tool", () => {
+    const prompt = systemPromptFor("system-v4")
+    expect(prompt).toContain("先调用 prepare_interaction_cards")
+    expect(prompt).toContain("完全相同的 generationId")
+    expect(prompt).toContain("不得输出 HTML、CSS 或脚本")
+  })
+
   it("keeps the complete model-facing prompt in Chinese", () => {
     const prompt = systemPromptFor("system-v4")
     expect(prompt).toContain("你是 Luna DevOps 的内嵌平台助手")

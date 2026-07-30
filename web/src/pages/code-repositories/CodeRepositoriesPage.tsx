@@ -15,6 +15,7 @@ import { ContentTabs } from '@/components/common/content-tabs'
 import { ErrorState } from '@/components/common/error-state'
 import { Button } from '@/components/ui/button'
 import { TabsContent } from '@/components/ui/tabs'
+import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { CredentialDialog, ProviderDialog } from './code-repositories-dialogs'
 import { credentialDefaults, credentialSchema, providerDefaults, providerSchema } from './code-repositories-form-model'
 import {
@@ -43,6 +44,7 @@ export function CodeRepositoriesPage() {
     queryFn: () => api.listGitProvidersPage({ page: providerPage, pageSize: providerPageSize, sortBy: 'createdAt', sortOrder: 'desc' }),
   })
   const credentials = useQuery({
+    ...liveObservationQueryPolicy,
     queryKey: ['git-accounts', credentialPage, credentialPageSize],
     queryFn: () => api.listGitAccountsPage({ page: credentialPage, pageSize: credentialPageSize, sortBy: 'createdAt', sortOrder: 'desc' }),
   })
@@ -113,7 +115,6 @@ export function CodeRepositoriesPage() {
       refreshToken: '',
       scope: editingCredential.scope,
       scopesText: editingCredential.scopes,
-      status: editingCredential.status,
       username: editingCredential.username,
     })
   }, [credentialForm, editingCredential])
@@ -187,7 +188,6 @@ export function CodeRepositoriesPage() {
         refreshToken: payload.refreshToken ?? '',
         scope: payload.scope,
         scopes: splitText(payload.scopesText),
-        status: payload.status,
         username: payload.username,
       }
       if (editingCredential)

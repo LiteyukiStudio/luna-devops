@@ -31,10 +31,7 @@ export function ApplicationOverviewPanel({ app, buildRuns, deploymentTargets, on
   const enabledTargets = deploymentTargets.filter(target => target.enabled).length
   const latestBuild = latestByDate(buildRuns, run => run.createdAt)
   const latestRelease = latestByDate(releases, release => release.createdAt)
-  const healthyReleases = deploymentTargets.filter((target) => {
-    const latest = latestReleaseForTarget(releases, target)
-    return latest?.status === 'succeeded'
-  }).length
+  const readyDeployments = deploymentTargets.filter(target => target.enabled && target.status === 'ready').length
   const readyRoutes = routes.filter(route => route.status === 'ready').length
   const primaryRoute = routes.find(route => route.status === 'ready') ?? routes[0]
   const recentActivities = [
@@ -135,9 +132,9 @@ export function ApplicationOverviewPanel({ app, buildRuns, deploymentTargets, on
           href="?tab=deployments"
           icon={<Rocket className="size-4" />}
           label={t('apps.deploymentHealth')}
-          meta={t('apps.deploymentReadyCount', { ready: healthyReleases, total: enabledTargets })}
-          tone={enabledTargets > 0 && healthyReleases < enabledTargets ? 'danger' : healthyReleases > 0 ? 'success' : 'neutral'}
-          value={`${healthyReleases} / ${enabledTargets}`}
+          meta={t('apps.deploymentReadyCount', { ready: readyDeployments, total: enabledTargets })}
+          tone={enabledTargets > 0 && readyDeployments < enabledTargets ? 'danger' : readyDeployments > 0 ? 'success' : 'neutral'}
+          value={`${readyDeployments} / ${enabledTargets}`}
         />
         <MetricItem
           emphasis={routes.length > 0}
@@ -342,16 +339,26 @@ function DeploymentSummary({ latestRelease, target, t }: { latestRelease?: Relea
         </div>
         <div className="flex shrink-0 flex-wrap justify-end gap-2">
           <StatusValueBadge value={target.enabled ? 'enabled' : 'disabled'} />
-          {latestRelease
-            ? <StatusValueBadge labelKeyPrefix="buildsPage.statuses" value={latestRelease.status} />
-            : <StatusValueBadge label={t('deploymentsPage.notDeployed')} value="pending" />}
+          <StatusValueBadge labelKeyPrefix="deploymentsPage.runtimeStatuses" value={target.status || 'unknown'} />
         </div>
       </div>
       <div className="grid gap-2 sm:grid-cols-3">
-        <DeploymentResourceItem label={t('deploymentsPage.replicas')} value={String(target.replicas || 1)} />
+        <DeploymentResourceItem
+          label={t('deploymentsPage.replicas')}
+          value={target.status === 'unavailable'
+            ? '-'
+            : `${target.readyReplicas || 0} / ${target.desiredReplicas || target.replicas || 1}`}
+        />
         <DeploymentResourceItem label={t('deploymentsPage.cpuRequest')} value={target.cpuRequest || '1'} />
         <DeploymentResourceItem label={t('deploymentsPage.memoryRequest')} value={target.memoryRequest || '1Gi'} />
       </div>
+      {latestRelease && (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span>{t('apps.latestRelease')}</span>
+          <StatusValueBadge labelKeyPrefix="buildsPage.statuses" value={latestRelease.status} />
+          <span>{formatReleaseTime(latestRelease, t)}</span>
+        </div>
+      )}
       {storageItems.length > 0 && (
         <div className="grid gap-2 rounded-md bg-muted/40 p-2">
           <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">

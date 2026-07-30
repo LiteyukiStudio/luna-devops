@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"strings"
-	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"gorm.io/gorm"
@@ -29,14 +28,12 @@ type Repository interface {
 	DeploymentTarget(context.Context, string) (model.DeploymentTarget, error)
 	Applications(context.Context, string) ([]model.Application, error)
 	DeploymentTargets(context.Context, string) ([]model.DeploymentTarget, error)
-	LatestSuccessfulRelease(context.Context, string) (model.Release, error)
 	ServiceBinding(context.Context, string, string) (model.ServiceBinding, error)
 	ServiceBindings(context.Context, string) ([]model.ServiceBinding, error)
 	ListServiceBindings(context.Context, string, ListOptions) ([]model.ServiceBinding, int64, error)
 	ConflictingServiceBinding(context.Context, string, string, []string) (bool, error)
 	CreateServiceBinding(context.Context, *model.ServiceBinding) error
 	UpdateServiceBinding(context.Context, *model.ServiceBinding) error
-	UpdateServiceBindingCheck(context.Context, string, string, time.Time) error
 	DeleteServiceBinding(context.Context, *model.ServiceBinding) error
 	TopologyEdge(context.Context, string, string) (model.ProjectTopologyEdge, error)
 	TopologyEdges(context.Context, string) ([]model.ProjectTopologyEdge, error)
@@ -77,15 +74,6 @@ func (repository *GormRepository) DeploymentTargets(ctx context.Context, project
 	var targets []model.DeploymentTarget
 	err := repository.db.WithContext(ctx).Where("project_id = ?", projectID).Order("created_at asc, id asc").Find(&targets).Error
 	return targets, err
-}
-
-func (repository *GormRepository) LatestSuccessfulRelease(ctx context.Context, deploymentTargetID string) (model.Release, error) {
-	var release model.Release
-	err := repository.db.WithContext(ctx).
-		Where("deployment_target_id = ? and status = ?", deploymentTargetID, "succeeded").
-		Order("finished_at desc nulls last, created_at desc").
-		First(&release).Error
-	return release, err
 }
 
 func (repository *GormRepository) ServiceBinding(ctx context.Context, projectID, id string) (model.ServiceBinding, error) {
@@ -136,13 +124,6 @@ func (repository *GormRepository) CreateServiceBinding(ctx context.Context, bind
 
 func (repository *GormRepository) UpdateServiceBinding(ctx context.Context, binding *model.ServiceBinding) error {
 	return repository.db.WithContext(ctx).Save(binding).Error
-}
-
-func (repository *GormRepository) UpdateServiceBindingCheck(ctx context.Context, bindingID, status string, checkedAt time.Time) error {
-	return repository.db.WithContext(ctx).Model(&model.ServiceBinding{}).Where("id = ?", bindingID).UpdateColumns(map[string]any{
-		"last_check_status": status,
-		"last_checked_at":   checkedAt,
-	}).Error
 }
 
 func (repository *GormRepository) DeleteServiceBinding(ctx context.Context, binding *model.ServiceBinding) error {

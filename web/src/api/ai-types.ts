@@ -156,6 +156,26 @@ export interface AITurnCreated {
   eventsUrl: string
 }
 
+export interface AIPendingUIAction {
+  actionId: string
+  runId: string
+  toolCallId: string
+  action: AIUIAction
+  attempts: number
+  expiresAt: string
+}
+
+export interface AIPendingUIActions {
+  items: AIPendingUIAction[]
+}
+
+export interface AIUIActionAcknowledgement {
+  clientInstanceId: string
+  status: 'succeeded' | 'failed'
+  actualPath?: string
+  errorCode?: string
+}
+
 export interface AIMFAResumePayload {
   stepUpAssertionId: string
   expectedVersion: number

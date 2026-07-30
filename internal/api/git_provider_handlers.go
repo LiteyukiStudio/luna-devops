@@ -1,16 +1,18 @@
 package api
 
 import (
+	"net/http"
+	"net/url"
+	"strings"
+	"time"
+
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	gitprovider "github.com/LiteyukiStudio/devops/internal/provider/git"
 	"github.com/gin-gonic/gin"
 	"golang.org/x/oauth2"
 	"gorm.io/gorm"
-	"net/http"
-	"net/url"
-	"strings"
-	"time"
 )
 
 const gitOAuthStateTTL = 10 * time.Minute
@@ -22,7 +24,7 @@ func (h *Handlers) ListGitProviders(ctx *gin.Context) {
 	}
 
 	query := h.db.Model(&model.GitProvider{})
-	if user.Role != "platform_admin" {
+	if user.Role != authz.PlatformRoleAdmin {
 		query = query.Where("enabled = ?", true)
 	}
 
@@ -218,7 +220,7 @@ func (h *Handlers) CompleteGitOAuth(ctx *gin.Context) {
 		ctx.Redirect(http.StatusFound, "/login?error=git_oauth_save_failed")
 		return
 	}
-	debugLog("git.oauth.complete account saved accountId=%s providerId=%s userId=%s username=%s status=%s", account.ID, provider.ID, account.UserID, account.Username, account.Status)
+	debugLog("git.oauth.complete account saved accountId=%s providerId=%s userId=%s username=%s", account.ID, provider.ID, account.UserID, account.Username)
 	h.audit(stateUser.ID, "git.oauth.complete", provider.ID, true, account.ID)
 
 	redirectTarget := buildFrontendRedirect(baseURL, oauthState.FrontendOrigin, oauthState.RedirectPath, account.ID)

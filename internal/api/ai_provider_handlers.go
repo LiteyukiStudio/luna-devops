@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/LiteyukiStudio/devops/internal/aiagent"
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/gin-gonic/gin"
 )
@@ -55,7 +56,7 @@ func (h *Handlers) TestAIProviderConnection(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if user.Role != "platform_admin" {
+	if user.Role != authz.PlatformRoleAdmin {
 		writeErrorKey(ctx, http.StatusForbidden, user.Language, "config.admin.required")
 		return
 	}

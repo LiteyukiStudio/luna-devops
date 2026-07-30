@@ -34,14 +34,13 @@ func (r *Runner) handleGitAccountRefresh(ctx context.Context, task *asynq.Task) 
 
 func (r *Runner) gitAccountsDueForRefresh(now time.Time) ([]model.GitAccount, error) {
 	var accounts []model.GitAccount
-	err := r.db.Where("status = ? and refresh_token_ref <> '' and expires_at is not null and expires_at <= ?", "connected", now.Add(5*time.Minute)).
+	err := r.db.Where("refresh_token_ref <> '' and expires_at is not null and expires_at <= ?", now.Add(5*time.Minute)).
 		Find(&accounts).Error
 	return accounts, err
 }
 
 func gitAccountDueForWorkerRefresh(account model.GitAccount, now time.Time) bool {
-	return account.Status == "connected" &&
-		strings.TrimSpace(account.RefreshTokenRef) != "" &&
+	return strings.TrimSpace(account.RefreshTokenRef) != "" &&
 		account.ExpiresAt != nil &&
 		!account.ExpiresAt.After(now.Add(5*time.Minute))
 }
@@ -53,11 +52,11 @@ func (r *Runner) refreshGitAccount(ctx context.Context, account model.GitAccount
 	}
 	refreshToken := r.secrets.Resolve(account.RefreshTokenRef)
 	if strings.TrimSpace(refreshToken) == "" {
-		return r.expireGitAccount(account, "git account has no refresh token")
+		return r.auditGitAccountRefresh(account, false, "git account has no refresh token")
 	}
 	oauthConfig, err := gitprovider.OAuthConfig(provider, "", r.secrets.Resolve(provider.ClientSecretRef))
 	if err != nil {
-		return r.expireGitAccount(account, "git OAuth provider configuration is invalid")
+		return r.auditGitAccountRefresh(account, false, "git OAuth provider configuration is invalid")
 	}
 	tokenSource := oauthConfig.TokenSource(ctx, &oauth2.Token{
 		RefreshToken: refreshToken,
@@ -65,7 +64,7 @@ func (r *Runner) refreshGitAccount(ctx context.Context, account model.GitAccount
 	})
 	token, err := tokenSource.Token()
 	if err != nil {
-		return r.expireGitAccount(account, "git token refresh failed")
+		return r.auditGitAccountRefresh(account, false, "git token refresh failed")
 	}
 	account.AccessTokenRef = r.secrets.Store(token.AccessToken, account.UserID, "git_account:"+account.ID+":access")
 	if token.RefreshToken != "" {
@@ -74,19 +73,10 @@ func (r *Runner) refreshGitAccount(ctx context.Context, account model.GitAccount
 	if !token.Expiry.IsZero() {
 		account.ExpiresAt = &token.Expiry
 	}
-	account.Status = "connected"
 	if err := r.db.Save(&account).Error; err != nil {
 		return err
 	}
 	return r.auditGitAccountRefresh(account, true, account.Username)
-}
-
-func (r *Runner) expireGitAccount(account model.GitAccount, message string) error {
-	account.Status = "expired"
-	if err := r.db.Save(&account).Error; err != nil {
-		return err
-	}
-	return r.auditGitAccountRefresh(account, false, message)
 }
 
 func (r *Runner) auditGitAccountRefresh(account model.GitAccount, success bool, message string) error {

@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/security"
 	"github.com/LiteyukiStudio/devops/internal/variables"
@@ -149,14 +150,14 @@ func TestDefaultUserProjectNameUsesLanguage(t *testing.T) {
 }
 
 func TestPlatformAdminBypassesProjectMemberRoleChecks(t *testing.T) {
-	allowedRoles := []string{"owner"}
-	if !projectUserRoleAllowed(model.User{Role: "platform_admin"}, "", allowedRoles) {
+	allowedRoles := []string{authz.ProjectRoleOwner}
+	if !projectUserRoleAllowed(model.User{Role: authz.PlatformRoleAdmin}, "", allowedRoles) {
 		t.Fatal("expected platform admin to bypass project member role checks")
 	}
-	if projectUserRoleAllowed(model.User{Role: "user"}, "viewer", allowedRoles) {
+	if projectUserRoleAllowed(model.User{Role: authz.PlatformRoleUser}, authz.ProjectRoleViewer, allowedRoles) {
 		t.Fatal("expected regular viewer to be blocked from owner-only project operation")
 	}
-	if !projectUserRoleAllowed(model.User{Role: "user"}, "owner", allowedRoles) {
+	if !projectUserRoleAllowed(model.User{Role: authz.PlatformRoleUser}, authz.ProjectRoleOwner, allowedRoles) {
 		t.Fatal("expected project owner to be allowed")
 	}
 }
@@ -384,13 +385,13 @@ func TestDefaultIPBlockListOverridesAdminPrivateNetworkAccess(t *testing.T) {
 		}},
 	}
 
-	policy := h.egressPolicyForUser(model.User{Role: "platform_admin"})
+	policy := h.egressPolicyForUser(model.User{Role: authz.PlatformRoleAdmin})
 	if _, err := policy.ValidateURL("http://127.0.0.1:8080"); !errors.Is(err, security.ErrBlockedByPolicy) {
 		t.Fatalf("expected default explicit block list to block loopback even for admin policy, got %v", err)
 	}
 
 	h.configs.values["security.egress.ipBlockList"] = ""
-	policy = h.egressPolicyForUser(model.User{Role: "platform_admin"})
+	policy = h.egressPolicyForUser(model.User{Role: authz.PlatformRoleAdmin})
 	if _, err := policy.ValidateURL("http://127.0.0.1:8080"); err != nil {
 		t.Fatalf("expected edited empty block list to allow admin private network access, got %v", err)
 	}

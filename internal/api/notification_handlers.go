@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/notification"
@@ -63,6 +64,7 @@ func (h *Handlers) ListNotificationPresets(ctx *gin.Context) {
 }
 
 func (h *Handlers) ListNotificationChannels(ctx *gin.Context) {
+	markLiveObservationResponse(ctx)
 	if !h.requirePlatformAdmin(ctx) {
 		return
 	}
@@ -86,6 +88,10 @@ func (h *Handlers) ListNotificationChannels(ctx *gin.Context) {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
+	if err := h.populateLatestNotificationDeliveries(channels); err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
+		return
+	}
 	ctx.JSON(http.StatusOK, paginatedResponse(notificationChannelResponses(channels), total, pagination))
 }
 
@@ -94,7 +100,7 @@ func (h *Handlers) CreateNotificationChannel(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if user.Role != "platform_admin" {
+	if user.Role != authz.PlatformRoleAdmin {
 		writeErrorKey(ctx, http.StatusForbidden, user.Language, "config.admin.required")
 		return
 	}
@@ -119,7 +125,7 @@ func (h *Handlers) UpdateNotificationChannel(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if user.Role != "platform_admin" {
+	if user.Role != authz.PlatformRoleAdmin {
 		writeErrorKey(ctx, http.StatusForbidden, user.Language, "config.admin.required")
 		return
 	}
@@ -149,7 +155,7 @@ func (h *Handlers) DeleteNotificationChannel(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if user.Role != "platform_admin" {
+	if user.Role != authz.PlatformRoleAdmin {
 		writeErrorKey(ctx, http.StatusForbidden, user.Language, "config.admin.required")
 		return
 	}
@@ -166,7 +172,7 @@ func (h *Handlers) TestNotificationChannel(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if user.Role != "platform_admin" {
+	if user.Role != authz.PlatformRoleAdmin {
 		writeErrorKey(ctx, http.StatusForbidden, user.Language, "config.admin.required")
 		return
 	}
@@ -185,10 +191,52 @@ func (h *Handlers) TestNotificationChannel(ctx *gin.Context) {
 		writeError(ctx, http.StatusBadGateway, err.Error())
 		return
 	}
-	now := time.Now()
-	_ = h.db.Model(&channel).Updates(map[string]any{"last_delivery_status": "test_succeeded", "last_delivery_error": "", "last_delivered_at": &now}).Error
 	h.audit(user.ID, "notification.channel.test", channel.ID, true, "")
 	ctx.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+type latestNotificationDelivery struct {
+	ChannelID    string
+	Status       string
+	ErrorMessage string
+	FinishedAt   *time.Time
+}
+
+func (h *Handlers) populateLatestNotificationDeliveries(channels []model.NotificationChannel) error {
+	if len(channels) == 0 {
+		return nil
+	}
+	channelIDs := make([]string, 0, len(channels))
+	for _, channel := range channels {
+		channelIDs = append(channelIDs, channel.ID)
+	}
+	var latest []latestNotificationDelivery
+	if err := h.db.Raw(`
+		SELECT DISTINCT ON (channel_id)
+			channel_id,
+			status,
+			error_message,
+			finished_at
+		FROM notification_deliveries
+		WHERE channel_id IN ?
+		ORDER BY channel_id, created_at DESC, id DESC
+	`, channelIDs).Scan(&latest).Error; err != nil {
+		return err
+	}
+	byChannelID := make(map[string]latestNotificationDelivery, len(latest))
+	for _, delivery := range latest {
+		byChannelID[delivery.ChannelID] = delivery
+	}
+	for index := range channels {
+		delivery, ok := byChannelID[channels[index].ID]
+		if !ok {
+			continue
+		}
+		channels[index].LastDeliveryStatus = delivery.Status
+		channels[index].LastDeliveryError = delivery.ErrorMessage
+		channels[index].LastDeliveredAt = delivery.FinishedAt
+	}
+	return nil
 }
 
 func (h *Handlers) CreateNotificationChannelFromPreset(ctx *gin.Context) {
@@ -196,7 +244,7 @@ func (h *Handlers) CreateNotificationChannelFromPreset(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if user.Role != "platform_admin" {
+	if user.Role != authz.PlatformRoleAdmin {
 		writeErrorKey(ctx, http.StatusForbidden, user.Language, "config.admin.required")
 		return
 	}
@@ -302,7 +350,7 @@ func (h *Handlers) CreateNotificationTemplate(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if user.Role != "platform_admin" {
+	if user.Role != authz.PlatformRoleAdmin {
 		writeErrorKey(ctx, http.StatusForbidden, user.Language, "config.admin.required")
 		return
 	}
@@ -327,7 +375,7 @@ func (h *Handlers) UpdateNotificationTemplate(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if user.Role != "platform_admin" {
+	if user.Role != authz.PlatformRoleAdmin {
 		writeErrorKey(ctx, http.StatusForbidden, user.Language, "config.admin.required")
 		return
 	}
@@ -357,7 +405,7 @@ func (h *Handlers) DeleteNotificationTemplate(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if user.Role != "platform_admin" {
+	if user.Role != authz.PlatformRoleAdmin {
 		writeErrorKey(ctx, http.StatusForbidden, user.Language, "config.admin.required")
 		return
 	}
@@ -397,7 +445,7 @@ func (h *Handlers) CreateNotificationRule(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if user.Role != "platform_admin" {
+	if user.Role != authz.PlatformRoleAdmin {
 		writeErrorKey(ctx, http.StatusForbidden, user.Language, "config.admin.required")
 		return
 	}
@@ -422,7 +470,7 @@ func (h *Handlers) UpdateNotificationRule(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if user.Role != "platform_admin" {
+	if user.Role != authz.PlatformRoleAdmin {
 		writeErrorKey(ctx, http.StatusForbidden, user.Language, "config.admin.required")
 		return
 	}
@@ -452,7 +500,7 @@ func (h *Handlers) DeleteNotificationRule(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if user.Role != "platform_admin" {
+	if user.Role != authz.PlatformRoleAdmin {
 		writeErrorKey(ctx, http.StatusForbidden, user.Language, "config.admin.required")
 		return
 	}

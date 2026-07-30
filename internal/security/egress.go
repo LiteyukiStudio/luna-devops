@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/config"
 )
 
@@ -52,7 +53,7 @@ func AdminEgressPolicy() EgressPolicy {
 }
 
 func EgressPolicyForRole(role string) EgressPolicy {
-	if role == "platform_admin" {
+	if role == authz.PlatformRoleAdmin {
 		return AdminEgressPolicy()
 	}
 	return PublicEgressPolicy()

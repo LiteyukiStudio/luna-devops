@@ -16,6 +16,7 @@ type deploymentTargetResponse struct {
 	EnvironmentID                string                               `json:"environmentId"`
 	Name                         string                               `json:"name"`
 	Stage                        string                               `json:"stage"`
+	KubernetesName               string                               `json:"kubernetesName"`
 	ClusterID                    string                               `json:"clusterId"`
 	Namespace                    string                               `json:"namespace"`
 	WorkloadType                 string                               `json:"workloadType"`
@@ -46,6 +47,8 @@ type deploymentTargetResponse struct {
 	Affinity                     string                               `json:"affinity"`
 	TopologySpreadConstraints    string                               `json:"topologySpreadConstraints"`
 	PriorityClassName            string                               `json:"priorityClassName"`
+	ServiceAccountName           string                               `json:"serviceAccountName"`
+	AutomountServiceAccountToken string                               `json:"automountServiceAccountToken"`
 	ServiceType                  string                               `json:"serviceType"`
 	ServiceAnnotations           string                               `json:"serviceAnnotations"`
 	ServiceExternalTrafficPolicy string                               `json:"serviceExternalTrafficPolicy"`
@@ -101,6 +104,13 @@ type deploymentTargetResponse struct {
 	RequireApproval              bool                                 `json:"requireApproval"`
 	WebConsoleEnabled            *bool                                `json:"webConsoleEnabled"`
 	Enabled                      bool                                 `json:"enabled"`
+	Status                       string                               `json:"status"`
+	ObservationCode              string                               `json:"observationCode,omitempty"`
+	LastCheckedAt                *time.Time                           `json:"lastCheckedAt,omitempty"`
+	DesiredReplicas              int32                                `json:"desiredReplicas"`
+	UpdatedReplicas              int32                                `json:"updatedReplicas"`
+	ReadyReplicas                int32                                `json:"readyReplicas"`
+	AvailableReplicas            int32                                `json:"availableReplicas"`
 	DeleteStatus                 string                               `json:"deleteStatus"`
 	DeleteMessage                string                               `json:"deleteMessage"`
 	DeleteStartedAt              *time.Time                           `json:"deleteStartedAt"`
@@ -125,6 +135,7 @@ func deploymentTargetResponseFromModel(target model.DeploymentTarget) deployment
 		EnvironmentID:                target.EnvironmentID,
 		Name:                         target.Name,
 		Stage:                        normalizeStage(target.Stage),
+		KubernetesName:               strings.TrimSpace(target.KubernetesName),
 		ClusterID:                    target.ClusterID,
 		Namespace:                    target.Namespace,
 		WorkloadType:                 normalizeWorkloadType(target.WorkloadType),
@@ -155,6 +166,8 @@ func deploymentTargetResponseFromModel(target model.DeploymentTarget) deployment
 		Affinity:                     target.Affinity,
 		TopologySpreadConstraints:    target.TopologySpreadConstraints,
 		PriorityClassName:            strings.TrimSpace(target.PriorityClassName),
+		ServiceAccountName:           strings.TrimSpace(target.ServiceAccountName),
+		AutomountServiceAccountToken: normalizeTriStateBool(target.AutomountServiceAccountToken),
 		ServiceType:                  normalizeServiceType(target.ServiceType),
 		ServiceAnnotations:           target.ServiceAnnotations,
 		ServiceExternalTrafficPolicy: normalizeServiceExternalTrafficPolicy(target.ServiceExternalTrafficPolicy),
@@ -210,6 +223,13 @@ func deploymentTargetResponseFromModel(target model.DeploymentTarget) deployment
 		RequireApproval:              target.RequireApproval,
 		WebConsoleEnabled:            target.WebConsoleEnabled,
 		Enabled:                      target.Enabled,
+		Status:                       target.Status,
+		ObservationCode:              target.ObservationCode,
+		LastCheckedAt:                target.LastCheckedAt,
+		DesiredReplicas:              target.DesiredReplicas,
+		UpdatedReplicas:              target.UpdatedReplicas,
+		ReadyReplicas:                target.ReadyReplicas,
+		AvailableReplicas:            target.AvailableReplicas,
 		DeleteStatus:                 target.DeleteStatus,
 		DeleteMessage:                target.DeleteMessage,
 		DeleteStartedAt:              target.DeleteStartedAt,

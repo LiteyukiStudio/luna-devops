@@ -4,6 +4,8 @@
 
 - 候选资源、可比较方案、结构化输入、诊断、计划、进度和结果使用
   `create_interaction_cards`。
+- 生成交互卡片前先单独调用 `prepare_interaction_cards`，收到 `accepted` 后再以相同
+  `generationId` 调用 `create_interaction_cards`，让客户端用最终内容原位替换准备动画。
 - 简单追问、单一步骤建议或无需上下文展示的快捷动作使用 `create_options`。
 - 同一个最终回复只选择一种，不重复呈现相同动作。
 

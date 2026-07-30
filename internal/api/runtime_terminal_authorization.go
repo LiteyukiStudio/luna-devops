@@ -278,7 +278,7 @@ func (h *Handlers) releaseRuntimeTerminalAuthorizationAllowed(ctx context.Contex
 	}
 	if !authz.IsPlatformAdmin(user.Role) {
 		var member model.ProjectMember
-		if err := db.First(&member, "project_id = ? and user_id = ?", reference.ProjectID, user.ID).Error; err != nil || !projectUserRoleAllowed(user, member.Role, []string{"owner", "admin", "developer"}) {
+		if err := db.First(&member, "project_id = ? and user_id = ?", reference.ProjectID, user.ID).Error; err != nil || !projectUserRoleAllowed(user, member.Role, []string{authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper}) {
 			return false
 		}
 	}

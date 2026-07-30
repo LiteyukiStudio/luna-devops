@@ -8,12 +8,14 @@ import (
 
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/LiteyukiStudio/devops/internal/observation"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
 func (h *Handlers) ListRuntimeClusters(ctx *gin.Context) {
+	markLiveObservationResponse(ctx)
 	user, ok := h.currentUser(ctx)
 	if !ok {
 		return
@@ -39,7 +41,6 @@ func (h *Handlers) ListRuntimeClusters(ctx *gin.Context) {
 			"name":      "name",
 			"type":      "type",
 			"scope":     "scope",
-			"status":    "status",
 			"createdAt": "created_at",
 		}, "created_at")).Limit(pagination.PageSize).Offset(pagination.Offset()).Find(&clusters).Error; err != nil {
 			writeError(ctx, http.StatusInternalServerError, err.Error())
@@ -48,6 +49,7 @@ func (h *Handlers) ListRuntimeClusters(ctx *gin.Context) {
 		for index := range clusters {
 			clusters[index] = h.runtimeClusterResponseForUser(user, clusters[index])
 		}
+		h.observeRuntimeClusters(ctx.Request.Context(), clusters)
 		ctx.JSON(http.StatusOK, paginatedResponse(clusters, total, pagination))
 		return
 	}
@@ -58,6 +60,7 @@ func (h *Handlers) ListRuntimeClusters(ctx *gin.Context) {
 	for index := range clusters {
 		clusters[index] = h.runtimeClusterResponseForUser(user, clusters[index])
 	}
+	h.observeRuntimeClusters(ctx.Request.Context(), clusters)
 	ctx.JSON(http.StatusOK, clusters)
 }
 
@@ -79,7 +82,8 @@ func (h *Handlers) CreateRuntimeCluster(ctx *gin.Context) {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	ctx.JSON(http.StatusCreated, h.runtimeClusterResponseForUser(user, cluster))
+	cluster = h.runtimeClusterResponseForUser(user, cluster)
+	ctx.JSON(http.StatusCreated, h.observeRuntimeCluster(ctx.Request.Context(), cluster))
 }
 
 func (h *Handlers) UpdateRuntimeCluster(ctx *gin.Context) {
@@ -145,12 +149,12 @@ func (h *Handlers) UpdateRuntimeCluster(ctx *gin.Context) {
 	existing.GatewayTrustedProxyCIDRs = next.GatewayTrustedProxyCIDRs
 	existing.GatewayDefaultRequestHeaders = next.GatewayDefaultRequestHeaders
 	existing.GatewayDefaultResponseHeaders = next.GatewayDefaultResponseHeaders
-	existing.Status = next.Status
 	if err := h.saveRuntimeClusterWithDefault(existing); err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	ctx.JSON(http.StatusOK, h.runtimeClusterResponseForUser(user, existing))
+	existing = h.runtimeClusterResponseForUser(user, existing)
+	ctx.JSON(http.StatusOK, h.observeRuntimeCluster(ctx.Request.Context(), existing))
 }
 
 func (h *Handlers) DeleteRuntimeCluster(ctx *gin.Context) {
@@ -188,6 +192,7 @@ func (h *Handlers) DeleteRuntimeCluster(ctx *gin.Context) {
 }
 
 func (h *Handlers) TestRuntimeCluster(ctx *gin.Context) {
+	markLiveObservationResponse(ctx)
 	user, ok := h.currentUser(ctx)
 	if !ok {
 		return
@@ -200,54 +205,16 @@ func (h *Handlers) TestRuntimeCluster(ctx *gin.Context) {
 	if !h.canManageScopedResourceByID(ctx, user, cluster.Scope, cluster.OwnerRef, scopedResourceRuntimeCluster, cluster.ID, "无权测试该运行集群") {
 		return
 	}
-	now := time.Now()
-	cluster.LastCheckedAt = &now
-	if cluster.KubeconfigRef == "" {
-		cluster.Status = "missing-credential"
-		if err := h.db.Save(&cluster).Error; err != nil {
-			writeError(ctx, http.StatusInternalServerError, err.Error())
-			return
-		}
-		writeError(ctx, http.StatusBadRequest, "运行集群缺少 kubeconfig，无法测试连接")
-		return
+	cluster = h.runtimeClusterResponseForUser(user, cluster)
+	cluster = h.observeRuntimeCluster(ctx.Request.Context(), cluster)
+	switch cluster.Status {
+	case observation.StatusNotConfigured:
+		writeErrorCode(ctx, http.StatusBadRequest, cluster.ObservationCode, "运行集群缺少可用的 kubeconfig")
+	case observation.StatusUnavailable:
+		writeErrorCode(ctx, http.StatusBadGateway, cluster.ObservationCode, "无法连接运行集群")
+	default:
+		ctx.JSON(http.StatusOK, cluster)
 	}
-	kubeconfig := h.secrets.Resolve(cluster.KubeconfigRef)
-	if strings.TrimSpace(kubeconfig) == "" {
-		cluster.Status = "missing-credential"
-		if err := h.db.Save(&cluster).Error; err != nil {
-			writeError(ctx, http.StatusInternalServerError, err.Error())
-			return
-		}
-		writeError(ctx, http.StatusBadRequest, "运行集群缺少 kubeconfig，无法测试连接")
-		return
-	}
-	client, err := kubeprovider.NewClientFromKubeconfig(kubeconfig)
-	if err != nil {
-		cluster.Status = "unhealthy"
-		if saveErr := h.db.Save(&cluster).Error; saveErr != nil {
-			writeError(ctx, http.StatusInternalServerError, saveErr.Error())
-			return
-		}
-		writeError(ctx, http.StatusBadRequest, "运行集群 kubeconfig 无效")
-		return
-	}
-	pingCtx, cancel := context.WithTimeout(ctx.Request.Context(), 8*time.Second)
-	defer cancel()
-	if err := client.Ping(pingCtx); err != nil {
-		cluster.Status = "unhealthy"
-		if saveErr := h.db.Save(&cluster).Error; saveErr != nil {
-			writeError(ctx, http.StatusInternalServerError, saveErr.Error())
-			return
-		}
-		writeError(ctx, http.StatusBadGateway, "运行集群连接测试失败，请检查 kubeconfig、集群地址和网络连通性")
-		return
-	}
-	cluster.Status = "ready"
-	if err := h.db.Save(&cluster).Error; err != nil {
-		writeError(ctx, http.StatusInternalServerError, err.Error())
-		return
-	}
-	ctx.JSON(http.StatusOK, h.runtimeClusterResponseForUser(user, cluster))
 }
 
 func (h *Handlers) DeleteRuntimeClusterResource(ctx *gin.Context) {

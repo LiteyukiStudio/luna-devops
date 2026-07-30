@@ -13,6 +13,7 @@ import { ContentTabs } from '@/components/common/content-tabs'
 import { Button } from '@/components/ui/button'
 import { NativeSelect as Select } from '@/components/ui/native-select'
 import { TabsContent } from '@/components/ui/tabs'
+import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { CredentialDialog, ImageDialog, RegistryDialog } from './registry-dialogs'
 import { credentialDefaults, credentialSchema, imageSchema, registryDefaults, registrySchema, splitText } from './registry-form-model'
 import { CredentialsPanel, ImagesPanel, RegistriesPanel } from './registry-list-panels'
@@ -39,11 +40,12 @@ export function RegistriesPage() {
   const [imageRepositoryResultsOpen, setImageRepositoryResultsOpen] = useState(false)
   const projects = useQuery({ queryKey: ['projects'], queryFn: api.listProjects })
   const registries = useQuery({
+    ...liveObservationQueryPolicy,
     queryKey: ['registries', registryPage, registryPageSize],
     queryFn: () => api.listRegistriesPage({ page: registryPage, pageSize: registryPageSize, sortBy: 'createdAt', sortOrder: 'desc' }),
   })
   const registryItems = registries.data?.items ?? []
-  const registryOptions = useQuery({ queryKey: ['registries', 'options'], queryFn: () => api.listRegistries() })
+  const registryOptions = useQuery({ ...liveObservationQueryPolicy, queryKey: ['registries', 'options'], queryFn: () => api.listRegistries() })
   const registryOptionItems = useMemo(() => registryOptions.data ?? [], [registryOptions.data])
   const images = useQuery({
     queryKey: ['container-images', imagePage, imagePageSize],
@@ -89,11 +91,13 @@ export function RegistriesPage() {
   const imageRegistryId = imageForm.watch('registryId')
   const imageRepository = imageForm.watch('repository')
   const imageRepositoryResults = useQuery({
+    ...liveObservationQueryPolicy,
     queryKey: ['registry-repositories', imageRegistryId, imageRepositorySearch],
     queryFn: () => api.searchRegistryRepositories(imageRegistryId, { search: imageRepositorySearch, page: 1, pageSize: 10 }),
     enabled: Boolean(imageRegistryId && imageRepositorySearch.trim().length >= 2),
   })
   const imageTags = useQuery({
+    ...liveObservationQueryPolicy,
     queryKey: ['registry-tags', imageRegistryId, imageRepository],
     queryFn: () => api.listRegistryRepositoryTags(imageRegistryId, imageRepository, 20),
     enabled: Boolean(imageRegistryId && imageRepository.trim()),

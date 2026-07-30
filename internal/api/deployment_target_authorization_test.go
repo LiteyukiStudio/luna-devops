@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/alicebob/miniredis/v2"
 	"github.com/gin-gonic/gin"
@@ -289,7 +290,7 @@ func newDataExportAuthorizationFixture(t *testing.T, stepUpEnabled bool) dataExp
 		ID:       "usr_export_" + suffix,
 		Email:    "data-export-" + suffix + "@example.test",
 		Name:     "Data Export User",
-		Role:     "user",
+		Role:     authz.PlatformRoleUser,
 		Language: "zh-CN",
 	}
 	project := model.Project{
@@ -325,7 +326,7 @@ func newDataExportAuthorizationFixture(t *testing.T, stepUpEnabled bool) dataExp
 			ID:        "pm_export_" + suffix,
 			ProjectID: project.ID,
 			UserID:    user.ID,
-			Role:      "owner",
+			Role:      authz.ProjectRoleOwner,
 		},
 		&app,
 		&target,

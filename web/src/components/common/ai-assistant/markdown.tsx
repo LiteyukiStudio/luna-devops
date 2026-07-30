@@ -37,23 +37,23 @@ const markdownComponents: Components = {
       {children}
     </code>
   ),
-  h1: ({ children }) => <h1 className="mb-2 mt-3 text-base font-semibold leading-6 first:mt-0">{children}</h1>,
-  h2: ({ children }) => <h2 className="mb-1.5 mt-3 text-[15px] font-semibold leading-5.5 first:mt-0">{children}</h2>,
-  h3: ({ children }) => <h3 className="mb-1 mt-2.5 text-sm font-semibold leading-5 first:mt-0">{children}</h3>,
-  h4: ({ children }) => <h4 className="mb-1 mt-2 text-sm font-medium leading-5 first:mt-0">{children}</h4>,
+  h1: ({ children }) => <h1 className="mb-1.5 mt-3 text-sm font-semibold leading-5.5 first:mt-0">{children}</h1>,
+  h2: ({ children }) => <h2 className="mb-1.5 mt-2.5 text-[13px] font-semibold leading-5 first:mt-0">{children}</h2>,
+  h3: ({ children }) => <h3 className="mb-1 mt-2.5 text-xs font-semibold leading-4.5 first:mt-0">{children}</h3>,
+  h4: ({ children }) => <h4 className="mb-1 mt-2 text-xs font-medium leading-4.5 first:mt-0">{children}</h4>,
   hr: () => <hr className="my-3 border-separator-subtle" />,
   img: ({ alt }) => alt ? <span className="text-muted-foreground">{alt}</span> : null,
   li: ({ children }) => <li className="my-0.5 pl-0.5 marker:text-muted-foreground">{children}</li>,
   ol: ({ children }) => <ol className="my-2 list-decimal space-y-0.5 pl-5">{children}</ol>,
   p: ({ children }) => <p className="my-2 first:mt-0 last:mb-0">{children}</p>,
   pre: ({ children }) => (
-    <pre className="my-2 w-full min-w-0 max-w-full overflow-x-auto overscroll-x-contain rounded-control bg-surface-inset p-3 font-mono text-xs leading-5 text-foreground [&_code]:break-normal [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-inherit" data-slot="ai-markdown-code-scroll">
+    <pre className="my-2 w-full min-w-0 max-w-full overflow-x-auto overscroll-x-contain rounded-control bg-surface-inset p-2.5 font-mono text-[11px] leading-4.5 text-foreground [&_code]:break-normal [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-inherit" data-slot="ai-markdown-code-scroll">
       {children}
     </pre>
   ),
   table: ({ children }) => (
     <div className="my-2 w-full min-w-0 max-w-full overflow-x-auto overscroll-x-contain rounded-control border border-separator-subtle" data-slot="ai-markdown-table-scroll">
-      <table className="w-max min-w-full border-collapse text-left text-xs">{children}</table>
+      <table className="w-max min-w-full border-collapse text-left text-[11px]">{children}</table>
     </div>
   ),
   tbody: ({ children }) => <tbody className="[&_tr:last-child]:border-b-0">{children}</tbody>,
@@ -65,7 +65,7 @@ const markdownComponents: Components = {
 
 function AIMarkdownContent({ children, className }: { children: string, className?: string }) {
   return (
-    <div className={cn('min-w-0 break-words text-sm leading-5.5', className)}>
+    <div className={cn('min-w-0 [overflow-wrap:anywhere] text-[13px] leading-5', className)}>
       <Markdown components={markdownComponents} remarkPlugins={[remarkGfm]} skipHtml>
         {children}
       </Markdown>
@@ -74,3 +74,21 @@ function AIMarkdownContent({ children, className }: { children: string, classNam
 }
 
 export const AIMarkdown = memo(AIMarkdownContent)
+
+function AIInlineMarkdownContent({ children, className }: { children: string, className?: string }) {
+  return (
+    <span className={cn('min-w-0 [overflow-wrap:anywhere]', className)}>
+      <Markdown
+        allowedElements={['a', 'br', 'code', 'del', 'em', 'strong']}
+        components={markdownComponents}
+        remarkPlugins={[remarkGfm]}
+        skipHtml
+        unwrapDisallowed
+      >
+        {children}
+      </Markdown>
+    </span>
+  )
+}
+
+export const AIInlineMarkdown = memo(AIInlineMarkdownContent)

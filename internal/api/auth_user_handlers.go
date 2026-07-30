@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/config"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
@@ -88,7 +89,7 @@ func (h *Handlers) InitializeAdmin(ctx *gin.Context) {
 		ID:       id.New("usr"),
 		Email:    email,
 		Name:     name,
-		Role:     "platform_admin",
+		Role:     authz.PlatformRoleAdmin,
 		Language: normalizeLanguage(input.Language),
 		Password: string(passwordHash),
 	}
@@ -396,7 +397,7 @@ func (h *Handlers) UpdateUser(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if currentUser.Role != "platform_admin" {
+	if currentUser.Role != authz.PlatformRoleAdmin {
 		writeErrorKey(ctx, http.StatusForbidden, currentUser.Language, "config.admin.required")
 		return
 	}
@@ -459,10 +460,10 @@ func (h *Handlers) UpdateUser(ctx *gin.Context) {
 			return err
 		}
 		if policyEnabled {
-			if _, err := lockStepUpActor(tx, currentUser.ID, actorSessionID, stepUpPurposeUserAdminUpdate, "platform_admin"); err != nil {
+			if _, err := lockStepUpActor(tx, currentUser.ID, actorSessionID, stepUpPurposeUserAdminUpdate, authz.PlatformRoleAdmin); err != nil {
 				return err
 			}
-		} else if _, err := lockActiveUserRole(tx, currentUser.ID, "platform_admin"); err != nil {
+		} else if _, err := lockActiveUserRole(tx, currentUser.ID, authz.PlatformRoleAdmin); err != nil {
 			return err
 		}
 		var stored model.User
@@ -514,7 +515,7 @@ func (h *Handlers) UpdateUser(ctx *gin.Context) {
 }
 
 func availablePlatformAdminRemoved(stored, next model.User) bool {
-	return stored.Role == "platform_admin" && !stored.Disabled && (next.Role != "platform_admin" || next.Disabled)
+	return stored.Role == authz.PlatformRoleAdmin && !stored.Disabled && (next.Role != authz.PlatformRoleAdmin || next.Disabled)
 }
 
 type loginInput struct {
@@ -578,7 +579,7 @@ func ensureDevelopmentAdmin(db *gorm.DB) {
 			ID:       "user_admin",
 			Email:    email,
 			Name:     env("LOCAL_ADMIN_NAME", "Platform Admin"),
-			Role:     "platform_admin",
+			Role:     authz.PlatformRoleAdmin,
 			Language: "zh-CN",
 		}
 		err = db.Create(&user).Error
@@ -623,10 +624,10 @@ func normalizeLanguage(language string) string {
 }
 
 func normalizeUserRole(role string) string {
-	if role == "platform_admin" {
-		return "platform_admin"
+	if role == authz.PlatformRoleAdmin {
+		return authz.PlatformRoleAdmin
 	}
-	return "user"
+	return authz.PlatformRoleUser
 }
 
 func createDefaultUserProject(tx *gorm.DB, user model.User) error {
@@ -646,7 +647,7 @@ func createDefaultUserProject(tx *gorm.DB, user model.User) error {
 		ID:        id.New("mem"),
 		ProjectID: project.ID,
 		UserID:    user.ID,
-		Role:      "owner",
+		Role:      authz.ProjectRoleOwner,
 	}
 	if err := tx.Create(&member).Error; err != nil {
 		return err
@@ -762,7 +763,7 @@ func userListResponse(user model.User, balanceCredits decimal.Decimal, mfaEnable
 }
 
 func permissionsFor(user model.User) []string {
-	if user.Role == "platform_admin" {
+	if user.Role == authz.PlatformRoleAdmin {
 		return []string{
 			"project.create",
 			"project.read",

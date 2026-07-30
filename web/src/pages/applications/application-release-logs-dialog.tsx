@@ -6,6 +6,7 @@ import { AutoFollowLog } from '@/components/common/auto-follow-log'
 import { SegmentedTabsList } from '@/components/common/segmented-control'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Tabs, TabsContent } from '@/components/ui/tabs'
+import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { WORKFLOW_STATUS_REFETCH_INTERVAL_MS } from '@/lib/polling'
 
 export function ApplicationReleaseLogsDialog({
@@ -29,6 +30,7 @@ export function ApplicationReleaseLogsDialog({
     refetchInterval: release?.status === 'running' || release?.status === 'pending' ? WORKFLOW_STATUS_REFETCH_INTERVAL_MS : false,
   })
   const runtimeLogs = useQuery({
+    ...liveObservationQueryPolicy,
     queryKey: ['release-runtime-logs', projectId, release?.id],
     queryFn: () => api.getReleaseRuntimeLogs(projectId, release!.id, { tailLines: 500 }),
     enabled: Boolean(projectId && release && logView === 'runtime'),

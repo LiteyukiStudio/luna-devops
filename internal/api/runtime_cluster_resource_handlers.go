@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/gin-gonic/gin"
@@ -14,6 +15,7 @@ import (
 )
 
 func (h *Handlers) ListRuntimeClusterResources(ctx *gin.Context) {
+	markLiveObservationResponse(ctx)
 	user, ok := h.currentUser(ctx)
 	if !ok {
 		return
@@ -73,6 +75,7 @@ func (h *Handlers) ListRuntimeClusterResources(ctx *gin.Context) {
 }
 
 func (h *Handlers) GetRuntimeClusterResourceYAML(ctx *gin.Context) {
+	markLiveObservationResponse(ctx)
 	user, ok := h.currentUser(ctx)
 	if !ok {
 		return
@@ -116,6 +119,7 @@ func (h *Handlers) GetRuntimeClusterResourceYAML(ctx *gin.Context) {
 }
 
 func (h *Handlers) ListRuntimeClusterResourceEvents(ctx *gin.Context) {
+	markLiveObservationResponse(ctx)
 	user, ok := h.currentUser(ctx)
 	if !ok {
 		return
@@ -188,7 +192,7 @@ func (h *Handlers) StreamRuntimeClusterPodTerminal(ctx *gin.Context) {
 		}
 		authorization = ticketValue.Authorization
 	}
-	if user.Role != "platform_admin" {
+	if user.Role != authz.PlatformRoleAdmin {
 		writeError(ctx, http.StatusForbidden, "只有平台管理员可以打开集群 Pod 终端")
 		return
 	}
@@ -272,7 +276,7 @@ func (h *Handlers) AuthorizeRuntimeClusterPodTerminal(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if user.Role != "platform_admin" {
+	if user.Role != authz.PlatformRoleAdmin {
 		writeError(ctx, http.StatusForbidden, "只有平台管理员可以打开集群 Pod 终端")
 		return
 	}

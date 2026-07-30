@@ -3,15 +3,17 @@ package api
 import (
 	"context"
 	"errors"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	"net/http"
-	"strings"
-	"time"
 )
 
 var errBuildRunNotCancelable = errors.New("build run is not cancelable")
@@ -109,7 +111,7 @@ func buildRunTriggerAllowed(triggerType string) bool {
 }
 
 func (h *Handlers) TriggerBuildRun(ctx *gin.Context) {
-	user, _, ok := h.projectAndCurrentUserWithRoles(ctx, "owner", "admin", "developer")
+	user, _, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
 	if !ok {
 		return
 	}
@@ -128,7 +130,7 @@ func (h *Handlers) TriggerBuildRun(ctx *gin.Context) {
 }
 
 func (h *Handlers) RetryBuildRun(ctx *gin.Context) {
-	user, _, ok := h.projectAndCurrentUserWithRoles(ctx, "owner", "admin", "developer")
+	user, _, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
 	if !ok {
 		return
 	}
@@ -180,7 +182,7 @@ func (h *Handlers) RetryBuildRun(ctx *gin.Context) {
 }
 
 func (h *Handlers) CancelBuildRun(ctx *gin.Context) {
-	user, _, ok := h.projectAndCurrentUserWithRoles(ctx, "owner", "admin", "developer")
+	user, _, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
 	if !ok {
 		return
 	}
@@ -240,7 +242,7 @@ func (h *Handlers) CancelBuildRun(ctx *gin.Context) {
 }
 
 func (h *Handlers) DeleteBuildRun(ctx *gin.Context) {
-	user, _, ok := h.projectAndCurrentUserWithRoles(ctx, "owner", "admin", "developer")
+	user, _, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
 	if !ok {
 		return
 	}

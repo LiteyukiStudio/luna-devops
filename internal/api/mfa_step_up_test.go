@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/gin-gonic/gin"
 	"github.com/pquerna/otp/totp"
@@ -182,7 +183,7 @@ func TestStepUpMiddlewareRejectsUnknownPurposeAtRegistration(t *testing.T) {
 
 func TestAuthenticationMiddlewaresReuseCurrentUserContext(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	admin := model.User{ID: "usr_admin", Role: "platform_admin", Language: "zh-CN"}
+	admin := model.User{ID: "usr_admin", Role: authz.PlatformRoleAdmin, Language: "zh-CN"}
 	handlers := &Handlers{configs: &configCache{values: map[string]string{
 		"security.stepUpMfa.enabled": "false",
 	}}}
@@ -213,7 +214,7 @@ func TestAuthenticationMiddlewaresReuseCurrentUserContext(t *testing.T) {
 
 func TestPlatformAdminMiddlewareStopsNonAdminBeforeStepUp(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	user := model.User{ID: "usr_member", Role: "user", Language: "zh-CN"}
+	user := model.User{ID: "usr_member", Role: authz.PlatformRoleUser, Language: "zh-CN"}
 	handlers := &Handlers{configs: &configCache{values: map[string]string{
 		"security.stepUpMfa.enabled": "true",
 	}}}
@@ -241,7 +242,7 @@ func TestPlatformAdminMiddlewareStopsNonAdminBeforeStepUp(t *testing.T) {
 }
 
 func TestRequireStepUpReusesMiddlewareAssertion(t *testing.T) {
-	user := model.User{ID: "usr_admin", Role: "platform_admin"}
+	user := model.User{ID: "usr_admin", Role: authz.PlatformRoleAdmin}
 	handlers := &Handlers{configs: &configCache{values: map[string]string{
 		"security.stepUpMfa.enabled": "true",
 	}}}

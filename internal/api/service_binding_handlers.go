@@ -4,12 +4,13 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/dependency"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/notification"
+	"github.com/LiteyukiStudio/devops/internal/observation"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/gin-gonic/gin"
 )
@@ -34,7 +35,7 @@ func (h *Handlers) ListServiceBindings(ctx *gin.Context) {
 }
 
 func (h *Handlers) CreateServiceBinding(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, "owner", "admin")
+	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
 	if !ok {
 		return
 	}
@@ -54,7 +55,7 @@ func (h *Handlers) CreateServiceBinding(ctx *gin.Context) {
 }
 
 func (h *Handlers) UpdateServiceBinding(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, "owner", "admin")
+	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
 	if !ok {
 		return
 	}
@@ -75,7 +76,7 @@ func (h *Handlers) UpdateServiceBinding(ctx *gin.Context) {
 }
 
 func (h *Handlers) DeleteServiceBinding(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, "owner", "admin")
+	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
 	if !ok {
 		return
 	}
@@ -92,7 +93,8 @@ func (h *Handlers) DeleteServiceBinding(ctx *gin.Context) {
 }
 
 func (h *Handlers) CheckServiceBinding(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUser(ctx)
+	markLiveObservationResponse(ctx)
+	_, project, ok := h.projectAndCurrentUser(ctx)
 	if !ok {
 		return
 	}
@@ -107,18 +109,20 @@ func (h *Handlers) CheckServiceBinding(ctx *gin.Context) {
 		writeDependencyError(ctx, err)
 		return
 	}
-	if result.Status != "invalid" {
-		var sourceTarget, targetTarget model.DeploymentTarget
-		if err := h.db.WithContext(ctx).First(&sourceTarget, "id = ? and project_id = ?", binding.SourceDeploymentTargetID, project.ID).Error; err != nil {
-			writeErrorCode(ctx, http.StatusNotFound, dependency.CodeNotFound, "source deployment target not found")
-			return
-		}
+	if result.Status == observation.StatusDeclared {
+		var targetTarget model.DeploymentTarget
 		if err := h.db.WithContext(ctx).First(&targetTarget, "id = ? and project_id = ?", binding.TargetDeploymentTargetID, project.ID).Error; err != nil {
 			writeErrorCode(ctx, http.StatusNotFound, dependency.CodeNotFound, "target deployment target not found")
 			return
 		}
-		client, _, clientOK := h.kubernetesClientForDeploymentTarget(ctx, project, targetTarget, "runtime_cluster_unavailable")
-		if !clientOK {
+		client, _, unavailableCode := h.kubernetesClientForDeploymentTargetObservation(project, targetTarget)
+		if client == nil {
+			result.Status = observation.StatusUnavailable
+			result.ObservationCode = "service_binding." + unavailableCode
+			result.Checks = append(result.Checks, dependency.BindingCheckItem{
+				Code: "kubernetes_check", Status: observation.StatusUnavailable,
+			})
+			ctx.JSON(http.StatusOK, result)
 			return
 		}
 		readContext, cancel := context.WithTimeout(ctx.Request.Context(), 12*time.Second)
@@ -131,9 +135,14 @@ func (h *Handlers) CheckServiceBinding(ctx *gin.Context) {
 		})
 		cancel()
 		if diagnosticErr != nil {
-			result.Status = "unavailable"
-			result.Checks = append(result.Checks, dependency.BindingCheckItem{Code: "kubernetes_check", Status: "failed", Detail: diagnosticErr.Error()})
+			result.Status = observation.StatusUnavailable
+			result.ObservationCode = "service_binding.kubernetes_unavailable"
+			result.Checks = append(result.Checks, dependency.BindingCheckItem{
+				Code: "kubernetes_check", Status: observation.StatusUnavailable,
+			})
 		} else {
+			result.Status = observation.StatusReady
+			result.ObservationCode = "service_binding.ready"
 			for _, check := range diagnostic.Checks {
 				result.Checks = append(result.Checks, dependency.BindingCheckItem{
 					Code: check.Code, Status: string(check.Status), Resource: fmt.Sprintf("%s/%s", diagnostic.TargetNamespace, diagnostic.ServiceName),
@@ -141,19 +150,21 @@ func (h *Handlers) CheckServiceBinding(ctx *gin.Context) {
 				switch {
 				case check.Code == kubeprovider.ServiceDependencyCheckServicePortResolved && check.Status == kubeprovider.ServiceDependencyCheckFailed:
 					result.Status = "invalid"
+					result.ObservationCode = "service_binding.port_unresolved"
 				case (check.Code == kubeprovider.ServiceDependencyCheckServiceExists || check.Code == kubeprovider.ServiceDependencyCheckEndpointReady) && check.Status == kubeprovider.ServiceDependencyCheckFailed && result.Status != "invalid":
-					result.Status = "unavailable"
+					result.Status = observation.StatusUnavailable
+					if check.Code == kubeprovider.ServiceDependencyCheckServiceExists {
+						result.ObservationCode = "service_binding.service_not_found"
+					} else {
+						result.ObservationCode = "service_binding.endpoint_unavailable"
+					}
 				}
 			}
 		}
-	}
-	previousStatus := strings.TrimSpace(binding.LastCheckStatus)
-	if err := service.RecordServiceBindingCheck(ctx.Request.Context(), binding.ID, result.Status, result.CheckedAt); err == nil {
-		if result.Status == "invalid" && previousStatus != "invalid" {
-			h.emitServiceBindingEvent(ctx.Request.Context(), user, project, binding, "invalid", notification.SeverityError)
-		} else if previousStatus == "invalid" && (result.Status == "ready" || result.Status == "pending_release") {
-			h.emitServiceBindingEvent(ctx.Request.Context(), user, project, binding, "recovered", notification.SeverityInfo)
-		}
+	} else if result.Status == "disabled" {
+		result.ObservationCode = "service_binding.disabled"
+	} else if result.Status == "invalid" {
+		result.ObservationCode = "service_binding.invalid"
 	}
 	ctx.JSON(http.StatusOK, result)
 }
@@ -174,7 +185,7 @@ func (h *Handlers) ListProjectTopologyEdges(ctx *gin.Context) {
 }
 
 func (h *Handlers) CreateProjectTopologyEdge(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, "owner", "admin")
+	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
 	if !ok {
 		return
 	}
@@ -193,7 +204,7 @@ func (h *Handlers) CreateProjectTopologyEdge(ctx *gin.Context) {
 }
 
 func (h *Handlers) UpdateProjectTopologyEdge(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, "owner", "admin")
+	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
 	if !ok {
 		return
 	}
@@ -213,7 +224,7 @@ func (h *Handlers) UpdateProjectTopologyEdge(ctx *gin.Context) {
 }
 
 func (h *Handlers) DeleteProjectTopologyEdge(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, "owner", "admin")
+	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
 	if !ok {
 		return
 	}

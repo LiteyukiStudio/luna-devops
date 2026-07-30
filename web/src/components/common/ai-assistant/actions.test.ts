@@ -1,7 +1,7 @@
 import type { AIActionContext } from './actions'
 import { describe, expect, it, vi } from 'vitest'
 import i18next from '@/i18n'
-import { executeAIUIAction } from './actions'
+import { executeAIUIAction, getAIUIActionTargetPath } from './actions'
 
 function context(overrides: Partial<AIActionContext> = {}): AIActionContext {
   return {
@@ -18,6 +18,7 @@ describe('aI UI action registry', () => {
     const ctx = context()
     expect(await executeAIUIAction({ version: 1, type: 'navigate', payload: { routeName: 'application.detail', params: { projectId: 'p1', applicationId: 'a1' }, query: { tab: 'builds' } } }, ctx)).toBe(true)
     expect(ctx.navigate).toHaveBeenCalledWith('/projects/p1/apps/a1?tab=builds')
+    expect(getAIUIActionTargetPath({ version: 1, type: 'navigate', payload: { routeName: 'application.detail', params: { projectId: 'p1', applicationId: 'a1' }, query: { tab: 'builds' } } })).toBe('/projects/p1/apps/a1?tab=builds')
   })
 
   it('navigates to registered settings and catalog pages', async () => {

@@ -27,6 +27,8 @@ type NamespaceManager interface {
 	ApplyApplicationResources(ctx context.Context, spec ApplicationResourcesSpec) error
 	RunHookJob(ctx context.Context, spec HookJobSpec) (HookJobResult, error)
 	GetDeploymentSnapshot(ctx context.Context, namespace, name string) (DeploymentSnapshot, error)
+	GetWorkloadSnapshot(ctx context.Context, namespace, name, workloadType string) (DeploymentSnapshot, error)
+	ListManagedPersistentVolumeClaims(ctx context.Context, namespace, deploymentTargetID string) ([]PersistentVolumeClaimSnapshot, error)
 	DetectGatewayAPISupport(ctx context.Context) error
 	EnsureGateway(ctx context.Context, spec GatewaySpec) error
 	ApplyHTTPRoute(ctx context.Context, spec HTTPRouteSpec) error

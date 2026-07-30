@@ -24,11 +24,6 @@ func (h *Handlers) SearchRegistryRepositories(ctx *gin.Context) {
 		pageSize = 20
 	}
 	search := strings.TrimSpace(ctx.Query("search"))
-	cacheKey := registrySearchCacheKey("repositories", user.ID, registry.ID, search, ctx.Query("page"), ctx.Query("pageSize"))
-	if cached, ok := h.registrySearchCache.get(cacheKey); ok {
-		ctx.JSON(http.StatusOK, cached)
-		return
-	}
 	credential := h.registryCredentialInput(user, registry)
 	result, err := registryprovider.SearchRepositories(ctx.Request.Context(), registry.Provider, registry.Endpoint, "", search, page, pageSize, h.egressPolicyForUser(user), credential)
 	if err != nil {
@@ -36,7 +31,6 @@ func (h *Handlers) SearchRegistryRepositories(ctx *gin.Context) {
 		return
 	}
 	response := gin.H{"items": result.Items, "page": page, "pageSize": pageSize, "total": result.Total, "limited": result.Limited}
-	h.registrySearchCache.set(cacheKey, response)
 	ctx.JSON(http.StatusOK, response)
 }
 
@@ -57,11 +51,6 @@ func (h *Handlers) ListRegistryRepositoryTags(ctx *gin.Context) {
 	if limit > 50 {
 		limit = 50
 	}
-	cacheKey := registrySearchCacheKey("tags", user.ID, registry.ID, repository, ctx.Query("limit"))
-	if cached, ok := h.registrySearchCache.get(cacheKey); ok {
-		ctx.JSON(http.StatusOK, cached)
-		return
-	}
 	credential := h.registryCredentialInput(user, registry)
 	result, err := registryprovider.ListTags(ctx.Request.Context(), registry.Provider, registry.Endpoint, repository, limit, h.egressPolicyForUser(user), credential)
 	if err != nil {
@@ -69,7 +58,6 @@ func (h *Handlers) ListRegistryRepositoryTags(ctx *gin.Context) {
 		return
 	}
 	response := gin.H{"items": result.Items, "total": result.Total, "limited": result.Limited}
-	h.registrySearchCache.set(cacheKey, response)
 	ctx.JSON(http.StatusOK, response)
 }
 

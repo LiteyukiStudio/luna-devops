@@ -164,7 +164,7 @@ function ActionButton({ action, onAction }: { action: AIUIAction, onAction: (act
   }
   const label = 'label' in action && action.label ? action.label : t(`aiAssistant.actions.${action.type}`)
   const variant = 'tone' in action && action.tone === 'primary' ? 'default' : 'outline'
-  return <Button disabled={pending || done} size="sm" variant={variant} onClick={() => void execute()}>{done ? t('aiAssistant.actions.opened') : label}</Button>
+  return <Button className="h-7 px-2.5 !text-[11px]" disabled={pending || done} size="sm" variant={variant} onClick={() => void execute()}>{done ? t('aiAssistant.actions.opened') : label}</Button>
 }
 
 function ApprovalControls({ block, onApproval }: { block: ToolCallBlock, onApproval: (block: ToolCallBlock, decision: AIApprovalDecision, reason?: string) => Promise<void> }) {
@@ -193,9 +193,9 @@ function ApprovalControls({ block, onApproval }: { block: ToolCallBlock, onAppro
       <Input aria-label={t('aiAssistant.approval.reason')} disabled={pending} maxLength={500} placeholder={t('aiAssistant.approval.reasonPlaceholder')} value={reason} onChange={event => setReason(event.target.value)} />
       {!validBinding && <p className="text-xs text-danger">{t('aiAssistant.approval.invalidBinding')}</p>}
       <div className="flex flex-wrap justify-end gap-2">
-        <Button disabled={pending || !validBinding} size="sm" variant="outline" onClick={() => void decide('reject')}>{t('aiAssistant.approval.reject')}</Button>
-        <Button disabled={pending || !validBinding} size="sm" variant="outline" onClick={() => void decide('approve_all')}>{t('aiAssistant.approval.approveAll')}</Button>
-        <Button disabled={pending || !validBinding} size="sm" onClick={() => void decide('approve')}>{t('aiAssistant.approval.approve')}</Button>
+        <Button className="h-7 px-2.5 !text-[11px]" disabled={pending || !validBinding} size="sm" variant="outline" onClick={() => void decide('reject')}>{t('aiAssistant.approval.reject')}</Button>
+        <Button className="h-7 px-2.5 !text-[11px]" disabled={pending || !validBinding} size="sm" variant="outline" onClick={() => void decide('approve_all')}>{t('aiAssistant.approval.approveAll')}</Button>
+        <Button className="h-7 px-2.5 !text-[11px]" disabled={pending || !validBinding} size="sm" onClick={() => void decide('approve')}>{t('aiAssistant.approval.approve')}</Button>
       </div>
     </div>
   )
@@ -234,7 +234,7 @@ function MFAControls({ block, onMFA }: { block: ToolCallBlock, onMFA: (block: To
         onChange={setCode}
         onComplete={value => void verify(value)}
       />
-      <Button disabled={pending || !validBinding || code.length !== 6} size="sm" onClick={() => void verify()}>{t('aiAssistant.mfa.verify')}</Button>
+      <Button className="h-7 px-2.5 !text-[11px]" disabled={pending || !validBinding || code.length !== 6} size="sm" onClick={() => void verify()}>{t('aiAssistant.mfa.verify')}</Button>
     </div>
   )
 }

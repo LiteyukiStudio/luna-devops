@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/gin-gonic/gin"
@@ -102,7 +103,7 @@ func (h *Handlers) ensureAdmissionPolicy() model.AuthAdmissionPolicy {
 			AllowLocalLogin:          true,
 			AllowOIDCLogin:           true,
 			RequireVerifiedOIDCEmail: true,
-			DefaultRole:              "user",
+			DefaultRole:              authz.PlatformRoleUser,
 		}
 	}
 
@@ -111,7 +112,7 @@ func (h *Handlers) ensureAdmissionPolicy() model.AuthAdmissionPolicy {
 		AllowLocalLogin:          true,
 		AllowOIDCLogin:           true,
 		RequireVerifiedOIDCEmail: true,
-		DefaultRole:              "user",
+		DefaultRole:              authz.PlatformRoleUser,
 	}
 	_ = h.db.Create(&policy).Error
 	return policy

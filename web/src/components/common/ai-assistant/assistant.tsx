@@ -1,3 +1,4 @@
+import type { AutomaticRouteDelivery } from './automatic-actions'
 import type { Position } from './layout'
 import type { LiveSubscription } from './session'
 import type { AIEvent, AIUIAction } from '@/api'
@@ -11,9 +12,15 @@ import { toast } from 'sonner'
 import { api, isUsableAICapabilities } from '@/api'
 import { Button } from '@/components/ui/button'
 import { executeAIUIAction } from './actions'
-import { automaticRouteActionFromEvent } from './automatic-actions'
+import {
+  automaticRouteDeliveryFromEvent,
+  automaticRouteDeliveryFromPending,
+} from './automatic-actions'
+import { executeAutomaticRouteDelivery } from './automatic-route-delivery'
+import { readAIClientInstanceId } from './client-instance'
 import { AIAssistantComposer } from './composer'
 import { AIConversationList } from './conversation-list'
+import { aiAssistantLauncherClassName } from './launcher'
 import {
   clampAssistantPosition,
   LAUNCHER_SIZE,
@@ -37,6 +44,8 @@ export function AiAssistant() {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const location = useLocation()
+  const locationRef = useRef(location)
+  locationRef.current = location
   const pageContext = useCallback(() => buildAIPageContext(location.pathname, location.search, i18n.language, {
     hash: location.hash,
   }), [i18n.language, location.hash, location.pathname, location.search])
@@ -44,8 +53,8 @@ export function AiAssistant() {
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const launcherDragStartRef = useRef<Position | undefined>(undefined)
   const suppressLauncherClickRef = useRef(false)
-  const automaticActionHandlerRef = useRef<((action: AIUIAction) => Promise<boolean>) | undefined>(undefined)
-  const handledAutomaticToolCallsRef = useRef(new Set<string>())
+  const automaticDeliveryHandlerRef = useRef<((delivery: AutomaticRouteDelivery) => Promise<void>) | undefined>(undefined)
+  const processingAutomaticActionsRef = useRef(new Set<string>())
   const desktop = useDesktopViewport()
   const [open, setOpen] = useState(false)
   const [capabilityEpoch, invalidateOpenWindow] = useReducer(value => value + 1, 0)
@@ -59,6 +68,7 @@ export function AiAssistant() {
   const [streamStates, dispatchStream] = useReducer(sessionStateReducer, {})
   const [preference, setPreference] = useState(readWindowPreference)
   const [launcherPosition, setLauncherPosition] = useState(readLauncherPosition)
+  const [clientInstanceId] = useState(readAIClientInstanceId)
 
   const capabilities = useQuery({
     queryKey: ['ai', 'capabilities'],
@@ -69,6 +79,13 @@ export function AiAssistant() {
   })
   const available = isUsableAICapabilities(capabilities.data)
   const assistantOpen = open && capabilityEpoch === openedCapabilityEpoch
+  const pendingUIActions = useQuery({
+    queryKey: ['ai', 'ui-actions', 'pending', clientInstanceId],
+    queryFn: () => api.listPendingAIUIActions(clientInstanceId),
+    enabled: available,
+    refetchInterval: 5_000,
+    staleTime: 0,
+  })
 
   const conversations = useQuery({
     queryKey: ['ai', 'conversations', conversationSearch],
@@ -101,17 +118,9 @@ export function AiAssistant() {
       try {
         const event = JSON.parse((rawEvent as MessageEvent<string>).data) as AIEvent
         dispatchStream({ type: 'event', event })
-        const automaticAction = automaticRouteActionFromEvent(event)
-        const automaticActionKey = event.toolCallId ?? event.itemId ?? event.eventId
-        if (automaticAction && automaticActionHandlerRef.current && !handledAutomaticToolCallsRef.current.has(automaticActionKey)) {
-          handledAutomaticToolCallsRef.current.add(automaticActionKey)
-          void automaticActionHandlerRef.current(automaticAction).then((success) => {
-            if (!success)
-              toast.error(t('aiAssistant.actions.unavailable'))
-          }).catch((error) => {
-            toast.error(error instanceof Error ? error.message : t('aiAssistant.actions.unavailable'))
-          })
-        }
+        const automaticDelivery = automaticRouteDeliveryFromEvent(event)
+        if (automaticDelivery && automaticDeliveryHandlerRef.current)
+          void automaticDeliveryHandlerRef.current(automaticDelivery)
         if (event.type === 'run.completed' || event.type === 'run.failed' || event.type === 'run.canceled') {
           void queryClient.invalidateQueries({ queryKey: ['ai', 'conversations'] })
           void queryClient.invalidateQueries({ queryKey: ['ai', 'timeline', conversationId] })
@@ -130,7 +139,7 @@ export function AiAssistant() {
       void queryClient.invalidateQueries({ queryKey: ['ai', 'capabilities'] })
     })
     return source
-  }, [queryClient, t])
+  }, [queryClient])
 
   useEffect(() => {
     if (!assistantOpen || !timelineValid || !selectedConversationId || !capabilities.data?.features.streaming)
@@ -198,6 +207,7 @@ export function AiAssistant() {
       const result = await api.createAITurn(conversationId, {
         input: { parts: [{ type: 'text', text }] },
         pageContext: pageContext(),
+        clientInstanceId,
       }, crypto.randomUUID())
       return { ...result, conversationId, text, sourceDraftKey: requestedConversationId ?? '__new__' }
     },
@@ -273,12 +283,44 @@ export function AiAssistant() {
       await sendTurn.mutateAsync({ conversationId: selectedConversationId, message })
     },
   }), [activeRunId, location.pathname, location.search, navigate, queryClient, selectedConversationId, sendTurn, t])
-  useEffect(() => {
-    automaticActionHandlerRef.current = executeAction
-    return () => {
-      automaticActionHandlerRef.current = undefined
+  const processAutomaticDelivery = useCallback(async (delivery: AutomaticRouteDelivery) => {
+    if (processingAutomaticActionsRef.current.has(delivery.actionId))
+      return
+    processingAutomaticActionsRef.current.add(delivery.actionId)
+    try {
+      const success = await executeAutomaticRouteDelivery({
+        delivery,
+        execute: executeAction,
+        currentPath: () => `${locationRef.current.pathname}${locationRef.current.search}`,
+        acknowledge: (actionId, acknowledgement) => api.acknowledgeAIUIAction(actionId, {
+          ...acknowledgement,
+          clientInstanceId,
+        }),
+      })
+      if (!success)
+        toast.error(t('aiAssistant.actions.unavailable'))
+      await queryClient.invalidateQueries({ queryKey: ['ai', 'ui-actions', 'pending', clientInstanceId] })
     }
-  }, [executeAction])
+    catch (error) {
+      toast.error(error instanceof Error ? error.message : t('aiAssistant.actions.unavailable'))
+    }
+    finally {
+      processingAutomaticActionsRef.current.delete(delivery.actionId)
+    }
+  }, [clientInstanceId, executeAction, queryClient, t])
+  useEffect(() => {
+    automaticDeliveryHandlerRef.current = processAutomaticDelivery
+    return () => {
+      automaticDeliveryHandlerRef.current = undefined
+    }
+  }, [processAutomaticDelivery])
+  useEffect(() => {
+    pendingUIActions.data?.items.forEach((item) => {
+      const delivery = automaticRouteDeliveryFromPending(item)
+      if (delivery)
+        void processAutomaticDelivery(delivery)
+    })
+  }, [pendingUIActions.data, processAutomaticDelivery])
   const submitDraft = () => {
     if (waitingInput && activeRunId && selectedConversationId) {
       submitRunInput.mutate({
@@ -341,7 +383,7 @@ export function AiAssistant() {
           <Button
             ref={triggerRef}
             aria-label={t('aiAssistant.open')}
-            className="size-14 touch-none rounded-full text-primary-foreground shadow-overlay [background:var(--ai-assistant-launcher-background)] hover:brightness-105"
+            className={aiAssistantLauncherClassName}
             size="icon"
             onClick={() => {
               if (suppressLauncherClickRef.current) {
@@ -391,7 +433,7 @@ export function AiAssistant() {
       >
         <section
           aria-label={t('aiAssistant.title')}
-          className="flex size-full overflow-hidden rounded-feature border border-border bg-surface shadow-overlay max-sm:rounded-none"
+          className="flex size-full overflow-hidden rounded-feature border border-border bg-surface text-[13px] shadow-overlay max-sm:rounded-none"
         >
           {showConversations && (
             <AIConversationList
@@ -417,8 +459,8 @@ export function AiAssistant() {
               <Button aria-label={t('aiAssistant.conversations.title')} size="icon" variant="ghost" onClick={() => setShowConversations(value => !value)}><List className="size-4" /></Button>
               <span className="grid size-8 shrink-0 place-items-center rounded-control bg-primary text-primary-foreground"><Sparkles className="size-4" /></span>
               <div className="min-w-0 flex-1">
-                <h2 className="truncate text-sm font-semibold">{timeline.data?.conversation.title || t('aiAssistant.title')}</h2>
-                <p className="truncate text-[11px] text-muted-foreground">{t('aiAssistant.context', { path: location.pathname })}</p>
+                <h2 className="truncate text-[13px] font-semibold leading-5">{timeline.data?.conversation.title || t('aiAssistant.title')}</h2>
+                <p className="truncate text-[10px] leading-4 text-muted-foreground">{t('aiAssistant.context', { path: location.pathname })}</p>
               </div>
               <Button aria-label={t('aiAssistant.conversations.new')} disabled={createConversation.isPending} size="icon" variant="ghost" onClick={() => createConversation.mutate()}>{createConversation.isPending ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" /> : <MessageSquarePlus className="size-4" />}</Button>
               <Button aria-label={t('common.close')} size="icon" variant="ghost" onClick={close}><X className="size-4" /></Button>

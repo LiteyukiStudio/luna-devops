@@ -1,8 +1,9 @@
 import type { RuntimeCluster } from '@/api'
 import { StatusBadge } from '@/components/common/status-badge'
+import { isPlatformAdmin } from '@/lib/roles'
 
 export function canManageCluster(cluster: RuntimeCluster, userID?: string, role?: string) {
-  if (role === 'platform_admin')
+  if (isPlatformAdmin(role))
     return true
   if (cluster.scope === 'user')
     return cluster.ownerRef === userID
@@ -12,7 +13,7 @@ export function canManageCluster(cluster: RuntimeCluster, userID?: string, role?
 }
 
 export function canInspectClusterKubeconfig(cluster: RuntimeCluster, userID?: string, role?: string) {
-  return role === 'platform_admin' || cluster.createdBy === userID
+  return isPlatformAdmin(role) || cluster.createdBy === userID
 }
 
 export function normalizeFormPort(value: number, fallback: number) {

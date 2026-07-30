@@ -103,12 +103,40 @@
     hsl(var(--surface) / 0.2) 38%,
     hsl(var(--surface) / 0.58) 100%
   );
-  --ai-assistant-launcher-background: linear-gradient(
-    145deg,
-    color-mix(in oklab, var(--primary) 82%, white) 0%,
-    var(--primary) 42%,
-    color-mix(in oklab, var(--theme-secondary) 72%, var(--primary-hover)) 72%,
-    color-mix(in oklab, var(--theme-supporting) 68%, var(--primary-hover)) 100%
+  --ai-assistant-launcher-background:
+    radial-gradient(
+      circle at 28% 20%,
+      color-mix(in oklab, var(--primary) 14%, white) 0%,
+      transparent 46%
+    ),
+    radial-gradient(
+      circle at 78% 82%,
+      color-mix(in oklab, var(--theme-highlight) 20%, transparent) 0%,
+      transparent 44%
+    ),
+    linear-gradient(
+      145deg,
+      color-mix(in oklab, var(--primary) 22%, white) 0%,
+      color-mix(in oklab, var(--theme-secondary) 28%, white) 54%,
+      color-mix(in oklab, var(--theme-supporting) 36%, white) 100%
+    );
+  --ai-assistant-launcher-border: color-mix(in oklab, var(--primary) 38%, transparent);
+  --ai-assistant-launcher-foreground: var(--primary-text-strong);
+  --ai-assistant-launcher-shadow:
+    inset 0 1px 0 hsl(var(--surface) / 0.88),
+    0 8px 24px color-mix(in oklab, var(--primary) 14%, transparent),
+    0 2px 6px hsl(var(--foreground) / 0.08);
+  --ai-assistant-launcher-shadow-hover:
+    inset 0 1px 0 hsl(var(--surface) / 0.96),
+    0 10px 28px color-mix(in oklab, var(--primary) 19%, transparent),
+    0 3px 8px hsl(var(--foreground) / 0.1);
+  --ai-card-generation-background: linear-gradient(
+    112deg,
+    transparent 0%,
+    color-mix(in oklab, var(--primary) 16%, transparent) 23%,
+    color-mix(in oklab, var(--theme-secondary) 24%, transparent) 43%,
+    color-mix(in oklab, var(--theme-supporting) 20%, transparent) 62%,
+    transparent 82%
   );
 }
 
@@ -125,13 +153,52 @@
     hsl(var(--surface) / 0.28) 38%,
     hsl(var(--surface) / 0.7) 100%
   );
-  --ai-assistant-launcher-background: linear-gradient(
-    145deg,
-    color-mix(in oklab, var(--primary) 88%, white) 0%,
-    var(--primary) 42%,
-    color-mix(in oklab, var(--theme-secondary) 74%, var(--primary-hover)) 72%,
-    color-mix(in oklab, var(--theme-supporting) 70%, var(--primary-hover)) 100%
+  --ai-assistant-launcher-background:
+    radial-gradient(
+      circle at 28% 20%,
+      color-mix(in oklab, var(--primary) 12%, hsl(var(--surface-raised))) 0%,
+      transparent 48%
+    ),
+    linear-gradient(
+      145deg,
+      color-mix(in oklab, var(--primary) 16%, hsl(var(--surface-raised))) 0%,
+      color-mix(in oklab, var(--theme-secondary) 18%, hsl(var(--surface-raised))) 56%,
+      color-mix(in oklab, var(--theme-supporting) 22%, hsl(var(--surface-raised))) 100%
+    );
+  --ai-assistant-launcher-border: color-mix(in oklab, var(--primary) 38%, transparent);
+  --ai-assistant-launcher-foreground: color-mix(in oklab, var(--primary-text) 78%, white);
+  --ai-assistant-launcher-shadow:
+    inset 0 1px 0 hsl(var(--foreground) / 0.08),
+    0 8px 24px color-mix(in oklab, var(--primary) 20%, transparent),
+    0 2px 6px hsl(var(--background) / 0.28);
+  --ai-assistant-launcher-shadow-hover:
+    inset 0 1px 0 hsl(var(--foreground) / 0.12),
+    0 10px 28px color-mix(in oklab, var(--primary) 28%, transparent),
+    0 3px 8px hsl(var(--background) / 0.34);
+  --ai-card-generation-background: linear-gradient(
+    112deg,
+    transparent 0%,
+    color-mix(in oklab, var(--primary) 24%, transparent) 23%,
+    color-mix(in oklab, var(--theme-secondary) 30%, transparent) 43%,
+    color-mix(in oklab, var(--theme-supporting) 26%, transparent) 62%,
+    transparent 82%
   );
+}
+
+@keyframes ai-card-generation-flow {
+  from {
+    transform: translate3d(-48%, 0, 0) scaleX(1.25);
+  }
+
+  to {
+    transform: translate3d(48%, 0, 0) scaleX(1.25);
+  }
+}
+
+.ai-card-generation-flow {
+  background: var(--ai-card-generation-background);
+  animation: ai-card-generation-flow 2.4s var(--ease-standard) infinite alternate;
+  will-change: transform;
 }
 
 @media (width >= 40rem) {

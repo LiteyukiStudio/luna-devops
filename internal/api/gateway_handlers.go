@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
@@ -12,11 +13,12 @@ import (
 )
 
 func (h *Handlers) ListGatewayRoutes(ctx *gin.Context) {
+	markLiveObservationResponse(ctx)
 	if _, ok := h.findProjectForCurrentUser(ctx); !ok {
 		return
 	}
 	query := h.db.Model(&model.GatewayRoute{}).Where("project_id = ?", ctx.Param("projectId"))
-	query = applySearch(ctx, query, "host", "path", "status")
+	query = applySearch(ctx, query, "host", "path")
 	var routes []model.GatewayRoute
 	if paginationRequested(ctx) {
 		pagination := paginationFromQuery(ctx)
@@ -27,13 +29,13 @@ func (h *Handlers) ListGatewayRoutes(ctx *gin.Context) {
 		}
 		if err := query.Order(orderByClause(pagination, map[string]string{
 			"host":      "host",
-			"status":    "status",
 			"enabled":   "enabled",
 			"createdAt": "created_at",
 		}, "created_at")).Limit(pagination.PageSize).Offset(pagination.Offset()).Find(&routes).Error; err != nil {
 			writeError(ctx, http.StatusInternalServerError, err.Error())
 			return
 		}
+		routes = h.observeGatewayRoutes(ctx.Request.Context(), routes)
 		ctx.JSON(http.StatusOK, paginatedResponse(h.gatewayRoutesWithAccessURL(routes), total, pagination))
 		return
 	}
@@ -41,11 +43,12 @@ func (h *Handlers) ListGatewayRoutes(ctx *gin.Context) {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
+	routes = h.observeGatewayRoutes(ctx.Request.Context(), routes)
 	ctx.JSON(http.StatusOK, h.gatewayRoutesWithAccessURL(routes))
 }
 
 func (h *Handlers) CreateGatewayRoute(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, "owner", "admin", "developer")
+	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
 	if !ok {
 		return
 	}
@@ -69,19 +72,16 @@ func (h *Handlers) CreateGatewayRoute(ctx *gin.Context) {
 		return
 	}
 	if !h.enqueueGatewayApply(ctx.Request.Context(), route) {
-		route.Status = "failed"
-		if err := h.db.Save(&route).Error; err != nil {
-			writeError(ctx, http.StatusInternalServerError, err.Error())
-			return
-		}
 		writeError(ctx, http.StatusServiceUnavailable, "网关任务投递失败，请稍后重试")
 		return
 	}
+	route.Status = "progressing"
+	route.ObservationCode = "gateway_route.apply_queued"
 	ctx.JSON(http.StatusCreated, h.gatewayRouteWithAccessURL(route))
 }
 
 func (h *Handlers) UpdateGatewayRoute(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, "owner", "admin", "developer")
+	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
 	if !ok {
 		return
 	}
@@ -114,15 +114,8 @@ func (h *Handlers) UpdateGatewayRoute(ctx *gin.Context) {
 	route.Path = next.Path
 	route.ServicePort = next.ServicePort
 	route.TLSMode = next.TLSMode
-	route.CertificateStatus = next.CertificateStatus
-	route.CertificateMessage = ""
-	route.CertificateNotAfter = nil
-	route.CertificateIssuerKind = ""
-	route.CertificateIssuerName = ""
 	route.CNAMEName = next.CNAMEName
 	route.CNAMETarget = next.CNAMETarget
-	route.DNSStatus = next.DNSStatus
-	route.Status = next.Status
 	route.Enabled = next.Enabled
 	route.IsDefault = next.IsDefault
 	route.ParentGatewayName = next.ParentGatewayName
@@ -140,19 +133,16 @@ func (h *Handlers) UpdateGatewayRoute(ctx *gin.Context) {
 		return
 	}
 	if !h.enqueueGatewayApply(ctx.Request.Context(), route) {
-		route.Status = "failed"
-		if err := h.db.Save(&route).Error; err != nil {
-			writeError(ctx, http.StatusInternalServerError, err.Error())
-			return
-		}
 		writeError(ctx, http.StatusServiceUnavailable, "网关任务投递失败，请稍后重试")
 		return
 	}
+	route.Status = "progressing"
+	route.ObservationCode = "gateway_route.apply_queued"
 	ctx.JSON(http.StatusOK, h.gatewayRouteWithAccessURL(route))
 }
 
 func (h *Handlers) DeleteGatewayRoute(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, "owner", "admin")
+	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
 	if !ok {
 		return
 	}

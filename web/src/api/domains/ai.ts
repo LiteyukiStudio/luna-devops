@@ -1,4 +1,13 @@
-import type { AICapabilities, AIConversation, AIMFAResumePayload, AIPaginatedResponse, AITimeline, AITurnCreated } from '../ai-types'
+import type {
+  AICapabilities,
+  AIConversation,
+  AIMFAResumePayload,
+  AIPaginatedResponse,
+  AIPendingUIActions,
+  AITimeline,
+  AITurnCreated,
+  AIUIActionAcknowledgement,
+} from '../ai-types'
 import { paginationQuery, request } from '../core'
 
 export const aiApi = {
@@ -13,10 +22,17 @@ export const aiApi = {
     request<void>(`/ai/conversations/${encodeURIComponent(conversationId)}`, { method: 'DELETE' }),
   getAIConversationTimeline: (conversationId: string) =>
     request<AITimeline>(`/ai/conversations/${encodeURIComponent(conversationId)}/timeline`),
-  createAITurn: (conversationId: string, payload: { input: { parts: Array<{ type: 'text', text: string }> }, pageContext: Record<string, unknown> }, idempotencyKey: string) =>
+  createAITurn: (conversationId: string, payload: { input: { parts: Array<{ type: 'text', text: string }> }, pageContext: Record<string, unknown>, clientInstanceId: string }, idempotencyKey: string) =>
     request<AITurnCreated>(`/ai/conversations/${encodeURIComponent(conversationId)}/turns`, {
       method: 'POST',
       headers: { 'Idempotency-Key': idempotencyKey },
+      body: JSON.stringify(payload),
+    }),
+  listPendingAIUIActions: (clientInstanceId: string) =>
+    request<AIPendingUIActions>(`/ai/ui-actions/pending?${new URLSearchParams({ clientInstanceId })}`),
+  acknowledgeAIUIAction: (actionId: string, payload: AIUIActionAcknowledgement) =>
+    request<void>(`/ai/ui-actions/${encodeURIComponent(actionId)}/ack`, {
+      method: 'POST',
       body: JSON.stringify(payload),
     }),
   cancelAIRun: (runId: string) =>

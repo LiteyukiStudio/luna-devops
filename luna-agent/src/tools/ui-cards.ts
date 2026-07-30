@@ -9,7 +9,7 @@ const tone = z.enum(["neutral", "success", "warning", "error"])
 
 const sourceRef = z.object({
   type: z.enum(["app_template", "web_search_result", "web_page", "platform_resource", "platform_event", "tool_result"]),
-  refId: z.string().trim().min(1).max(200),
+  refId: identifier,
   label: z.string().trim().min(1).max(160),
   trust: z.enum(["platform", "official", "community"]),
 })
@@ -88,7 +88,6 @@ const contentBlock = z.discriminatedUnion("type", [
       format: z.enum(["text", "code", "status", "duration", "date_time", "bytes", "currency"]).optional(),
     })).min(1).max(8),
     rows: z.array(z.object({ id: identifier, cells: z.record(z.string(), z.string().max(2000)) })).max(30),
-    rowSelection: z.enum(["none", "single", "multiple"]).optional(),
   }),
   z.object({ ...blockBase, type: z.literal("code"), language: z.string().trim().min(1).max(40), content: z.string().max(16000), filename: z.string().trim().max(200).optional() }),
   z.object({
@@ -280,7 +279,7 @@ const card = z.object({
     subtitle: z.string().trim().max(160).optional(),
     description,
     icon: icon.optional(),
-    badges: z.array(z.object({ label: z.string().trim().min(1).max(60), tone: z.enum(["neutral", "success", "warning"]) })).max(6).optional(),
+    badges: z.array(z.object({ label: z.string().trim().min(1).max(60), tone })).max(6).optional(),
   }),
   sourceRefs: z.array(sourceRef).max(12).optional(),
   blocks: z.array(contentBlock).max(12).optional(),
@@ -297,12 +296,12 @@ const card = z.object({
 
 export const createInteractionCardsInput = z.object({
   schemaVersion: z.literal(1),
+  generationId: identifier,
   title: shortText,
   description,
   template: z.enum(["catalog", "comparison", "inspector", "form", "wizard", "diagnosis", "plan", "progress", "result", "dashboard"]),
   display: z.object({
     density: z.enum(["comfortable", "compact"]).optional(),
-    selection: z.enum(["none", "single", "multiple"]).optional(),
   }).optional(),
   cards: z.array(card).min(1).max(12),
   groupActions: z.array(cardAction).max(3).optional(),
@@ -325,7 +324,92 @@ export const createInteractionCardsInput = z.object({
     })
     const fields = item.form?.sections.flatMap(section => section.fields) ?? []
     const fieldsById = new Map(fields.map(field => [field.id, field]))
+    const sourceRefIds = new Set((item.sourceRefs ?? []).map(source => source.refId))
+    item.blocks?.forEach((block, blockIndex) => {
+      block.sourceRefIds?.forEach((refId, refIndex) => {
+        if (!sourceRefIds.has(refId)) {
+          context.addIssue({
+            code: "custom",
+            message: `Content block references unknown source "${refId}".`,
+            path: ["cards", cardIndex, "blocks", blockIndex, "sourceRefIds", refIndex],
+          })
+        }
+      })
+      if (block.type === "relations") {
+        const nodeIds = new Set(block.nodes.map(node => node.id))
+        block.edges.forEach((edge, edgeIndex) => {
+          if (!nodeIds.has(edge.source) || !nodeIds.has(edge.target)) {
+            context.addIssue({
+              code: "custom",
+              message: "Relation edges must reference nodes in the same block.",
+              path: ["cards", cardIndex, "blocks", blockIndex, "edges", edgeIndex],
+            })
+          }
+        })
+      }
+      if (block.type === "data_table") {
+        const columnKeys = new Set(block.columns.map(column => column.key))
+        block.rows.forEach((row, rowIndex) => {
+          Object.keys(row.cells).forEach((key) => {
+            if (!columnKeys.has(key)) {
+              context.addIssue({
+                code: "custom",
+                message: `Table row contains unknown column "${key}".`,
+                path: ["cards", cardIndex, "blocks", blockIndex, "rows", rowIndex, "cells", key],
+              })
+            }
+          })
+        })
+      }
+      if (block.type === "chart") {
+        const lengths = new Set(block.series.map(series => series.values.length))
+        if (lengths.size > 1 || (block.xAxis && [...lengths].some(length => length !== block.xAxis!.length))) {
+          context.addIssue({
+            code: "custom",
+            message: "Chart series and x-axis must use the same number of points.",
+            path: ["cards", cardIndex, "blocks", blockIndex],
+          })
+        }
+      }
+      if (block.type === "progress" && block.mode === "determinate" && block.value === undefined) {
+        context.addIssue({
+          code: "custom",
+          message: "Determinate progress requires a value.",
+          path: ["cards", cardIndex, "blocks", blockIndex, "value"],
+        })
+      }
+    })
+    fields.forEach((field, fieldIndex) => {
+      if (field.visibleWhen && !fieldsById.has(field.visibleWhen.fieldId)) {
+        context.addIssue({
+          code: "custom",
+          message: `Visibility condition references unknown field "${field.visibleWhen.fieldId}".`,
+          path: ["cards", cardIndex, "form", "fields", fieldIndex, "visibleWhen", "fieldId"],
+        })
+      }
+    })
     item.actions?.forEach((action, actionIndex) => {
+      if (action.type === "tool") {
+        action.bindings.forEach((itemBinding, bindingIndex) => {
+          if (itemBinding.value.type !== "field")
+            return
+          const field = fieldsById.get(itemBinding.value.fieldId)
+          if (!field) {
+            context.addIssue({
+              code: "custom",
+              message: `Tool binding references unknown field "${itemBinding.value.fieldId}".`,
+              path: ["cards", cardIndex, "actions", actionIndex, "bindings", bindingIndex],
+            })
+          }
+          else if (field.type === "secret" || (field.type === "key_value" && field.valueMode === "secret")) {
+            context.addIssue({
+              code: "custom",
+              message: `Tool binding cannot expose sensitive field "${itemBinding.value.fieldId}".`,
+              path: ["cards", cardIndex, "actions", actionIndex, "bindings", bindingIndex],
+            })
+          }
+        })
+      }
       if (action.type !== "send_message")
         return
       for (const fieldId of messageTemplateFieldIds(action.message)) {
@@ -363,6 +447,15 @@ export const createInteractionCardsInput = z.object({
 
 export type CreateInteractionCardsInput = z.infer<typeof createInteractionCardsInput>
 
+export const prepareInteractionCardsInput = z.object({
+  schemaVersion: z.literal(1),
+  generationId: identifier,
+  title: shortText,
+  description,
+})
+
+export type PrepareInteractionCardsInput = z.infer<typeof prepareInteractionCardsInput>
+
 export function normalizeInteractionCardsInput(raw: unknown): unknown {
   if (!raw || typeof raw !== "object" || Array.isArray(raw))
     return raw
@@ -397,8 +490,24 @@ export function normalizeInteractionCardsInput(raw: unknown): unknown {
 
 export const createInteractionCardsTool: ModelToolDefinition = {
   operationId: "create_interaction_cards",
-  description: "在当前回复中创建受控的声明式内容与交互卡片。适用于资源候选、对比、详情、诊断、计划、进度、结果和需要结构化输入的任务。卡片只能引用当前工具结果中的真实资源和标识符；不能生成 HTML、CSS、脚本、任意 URL 或虚构状态。tool action 只能引用当前模型工具列表中已经存在的 operationId，平台仍会重新鉴权并按风险要求确认或 MFA；没有对应写入工具时只能展示或用 send_message 收集选择。send_message 需要带入表单值时只能在 message 中使用 {{field_id}}，不得自创路径或模板语法；敏感字段永远不能插入消息。简单的 2～5 个后续建议继续使用 create_options。",
+  description: "完成一组受控的声明式内容与交互卡片。调用前必须先单独调用 prepare_interaction_cards，等待其返回 accepted，再使用完全相同的 generationId 调用本工具；前端会用最终卡片原位替换准备动画。template 必须按当前工作流阶段选择：catalog 用于候选发现，comparison 用于同维度比较，inspector 用于已知资源事实，form 用于一次性配置，wizard 用于存在依赖的分步配置，diagnosis 用于结论、证据和修复，plan 用于执行前计划，progress 用于长任务状态，result 用于最终回执，dashboard 用于指标与健康概览。卡片只能引用当前工具结果中的真实资源和标识符；不能生成 HTML、CSS、脚本、任意 URL 或虚构状态。展示文本可以使用受控 Markdown，但 HTML 会被忽略。tool action 只能引用当前模型工具列表中已经存在的 operationId，平台仍会重新鉴权并按风险要求确认或 MFA；没有对应写入工具时只能展示或用 send_message 收集选择。send_message 需要带入表单值时只能在 message 中使用 {{field_id}}，不得自创路径或模板语法；敏感字段永远不能插入消息。简单的 2～5 个后续建议继续使用 create_options。",
   inputSchema: cardInputJsonSchema(),
+}
+
+export const prepareInteractionCardsTool: ModelToolDefinition = {
+  operationId: "prepare_interaction_cards",
+  description: "在开始组织复杂交互卡片前显示准备动画。只有已经取得生成卡片所需的可信工具结果，并且下一步确定要生成 create_interaction_cards 时才调用。必须单独调用本工具，等待 accepted 后再调用 create_interaction_cards；两次调用必须使用相同的 generationId。title 和 description 应简短说明正在组织什么内容，不得声称卡片或业务操作已经完成。",
+  inputSchema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["schemaVersion", "generationId", "title"],
+    properties: {
+      schemaVersion: { const: 1 },
+      generationId: { type: "string", pattern: "^[a-zA-Z0-9_-]{1,64}$" },
+      title: { type: "string", minLength: 1, maxLength: 120 },
+      description: { type: "string", maxLength: 500 },
+    },
+  },
 }
 
 function messageTemplateFieldIds(message: string): string[] {

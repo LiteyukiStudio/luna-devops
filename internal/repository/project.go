@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"gorm.io/gorm"
 )
@@ -30,7 +31,7 @@ func (r ProjectRepository) UserHasProject(userID, projectID string) bool {
 func (r ProjectRepository) HasAnotherOwner(projectID, memberID string) bool {
 	var count int64
 	_ = r.db.Model(&model.ProjectMember{}).
-		Where("project_id = ? and role = ? and id <> ?", projectID, "owner", memberID).
+		Where("project_id = ? and role = ? and id <> ?", projectID, authz.ProjectRoleOwner, memberID).
 		Count(&count).Error
 	return count > 0
 }

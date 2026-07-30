@@ -11,6 +11,7 @@ import { ContentTabs } from '@/components/common/content-tabs'
 import { Button } from '@/components/ui/button'
 import { NativeSelect as Select } from '@/components/ui/native-select'
 import { TabsContent } from '@/components/ui/tabs'
+import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { ClusterFormDialog } from './cluster-form-dialog'
 import { canManageCluster } from './cluster-helpers'
 import { ClusterResourceDialogs } from './cluster-resource-dialogs'
@@ -33,10 +34,11 @@ export function ClustersPage() {
   const [clusterPageSize, setClusterPageSize] = useState(10)
   const projects = useQuery({ queryKey: ['projects'], queryFn: api.listProjects })
   const clusters = useQuery({
+    ...liveObservationQueryPolicy,
     queryKey: ['runtime-clusters', 'page', clusterPage, clusterPageSize],
     queryFn: () => api.listRuntimeClustersPage({ page: clusterPage, pageSize: clusterPageSize, sortBy: 'createdAt', sortOrder: 'desc' }),
   })
-  const clusterOptions = useQuery({ queryKey: ['runtime-clusters', 'options'], queryFn: () => api.listRuntimeClusters() })
+  const clusterOptions = useQuery({ ...liveObservationQueryPolicy, queryKey: ['runtime-clusters', 'options'], queryFn: () => api.listRuntimeClusters() })
   const manageableClusters = useMemo(
     () => (clusterOptions.data ?? []).filter(cluster => canManageCluster(cluster, user?.id, user?.role)),
     [clusterOptions.data, user?.id, user?.role],

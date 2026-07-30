@@ -22,6 +22,7 @@ import { NativeSelect as Select } from '@/components/ui/native-select'
 import { Textarea } from '@/components/ui/textarea'
 import { useBillingDisplay } from '@/lib/billing-display'
 import { buildVariableRecordToRows, buildVariableRowsToRecord, secretStateToRows } from '@/lib/build-variables'
+import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { WORKFLOW_STATUS_REFETCH_INTERVAL_MS } from '@/lib/polling'
 import { defaultBuildCpuRequest, defaultBuildMemoryRequest, defaultBuildTimeoutSeconds } from './application-build-defaults'
 import { ApplicationBuildLogPanel } from './application-build-log-panel'
@@ -179,6 +180,7 @@ export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, b
     queryKey: ['git-branches', selectedBinding?.gitAccountId, selectedBinding?.owner, selectedBinding?.repo, branchSearch],
     queryFn: () => api.listGitBranches(selectedBinding?.gitAccountId ?? '', selectedBinding?.owner ?? '', selectedBinding?.repo ?? '', { search: branchSearch, limit: 50 }),
     enabled: Boolean(selectedBinding),
+    ...liveObservationQueryPolicy,
   })
   const triggerBuild = useMutation({
     mutationFn: (values: TriggerForm) => api.triggerBuildRun(projectId, { ...values, applicationId }),

@@ -56,6 +56,7 @@ export type Run = {
   promptVersion: PromptVersion
   toolCatalogDigest: string
   pageContext: Record<string, unknown>
+  clientInstanceId?: string
   createdAt: string
   startedAt?: string
   completedAt?: string
@@ -90,6 +91,31 @@ export type CreateTurn = {
   preallocatedRunId?: string
   runActorGrantCiphertext?: string
   toolCatalogDigest?: string
+  clientInstanceId?: string
 }
 
 export type CreatedTurn = { turn: Turn, run: Run }
+
+export type UIActionStatus = "pending" | "succeeded" | "failed" | "expired"
+
+export type UIActionDelivery = {
+  id: string
+  runId: string
+  toolCallId: string
+  clientInstanceId: string
+  action: Record<string, unknown>
+  status: UIActionStatus
+  attempts: number
+  expiresAt: string
+  acknowledgedAt?: string
+  actualPath?: string
+  errorCode?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type UIActionAcknowledgement = {
+  status: "succeeded" | "failed"
+  actualPath?: string
+  errorCode?: string
+}

@@ -116,12 +116,6 @@ func TestWorkerMetricsExportsBusinessMetrics(t *testing.T) {
 		CreatedAt:  startedAt,
 	})
 	metrics.RecordGatewaySync("apply", "succeeded", 150*time.Millisecond)
-	metrics.SetGatewayRoutes([]GatewayRouteMetric{{
-		Status:            "active",
-		TLSMode:           "http-only",
-		DNSStatus:         "verified",
-		CertificateStatus: "disabled",
-	}})
 	metrics.SetDeploymentRuntime(DeploymentRuntimeMetric{
 		DeploymentTargetID: "dplt-1",
 		EnvironmentID:      "env-1",
@@ -138,7 +132,6 @@ func TestWorkerMetricsExportsBusinessMetrics(t *testing.T) {
 		`luna_devops_build_runs_total{service="worker",status="succeeded",trigger_type="manual"} 1`,
 		`luna_devops_releases_total{service="worker",status="failed",type="deploy"} 1`,
 		`luna_devops_gateway_sync_total{operation="apply",result="succeeded",service="worker"} 1`,
-		`luna_devops_gateway_routes_total{certificate_status="disabled",dns_status="verified",service="worker",status="active",tls_mode="http_only"} 1`,
 		`luna_devops_deployment_unavailable_replicas{deployment_target_id="dplt_1",environment_id="env_1",service="worker"} 1`,
 	} {
 		if !strings.Contains(body, expected) {

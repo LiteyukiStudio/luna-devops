@@ -150,7 +150,7 @@ func shortID(value string) string {
 }
 
 func gatewayRuntimeName(route model.GatewayRoute) string {
-	return buildResourceName(route.ID, "luna-gateway-")
+	return resourcename.GatewayRoute(route.ID)
 }
 
 func gatewayTLSSecretName(route model.GatewayRoute) string {

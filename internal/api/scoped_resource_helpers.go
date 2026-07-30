@@ -113,7 +113,7 @@ func (h *Handlers) canInspectScopedResourceConfigByID(user model.User, scope, ow
 		}
 		for _, projectID := range h.scopedResourceProjectIDs(resourceType, resourceID) {
 			var member model.ProjectMember
-			err := h.db.First(&member, "project_id = ? and user_id = ? and role in ?", projectID, user.ID, []string{"owner", "admin"}).Error
+			err := h.db.First(&member, "project_id = ? and user_id = ? and role in ?", projectID, user.ID, []string{authz.ProjectRoleOwner, authz.ProjectRoleAdmin}).Error
 			if err == nil {
 				return true
 			}
@@ -293,7 +293,7 @@ func (h *Handlers) canManageAllScopedProjects(ctx *gin.Context, user model.User,
 			}
 			continue
 		}
-		if _, ok := h.findProjectForCurrentUserWithRolesByID(ctx, projectID, "owner", "admin"); !ok {
+		if _, ok := h.findProjectForCurrentUserWithRolesByID(ctx, projectID, authz.ProjectRoleOwner, authz.ProjectRoleAdmin); !ok {
 			return false
 		}
 	}

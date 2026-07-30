@@ -1,5 +1,17 @@
 import { createHash } from "node:crypto"
-import type { Conversation, ConversationHistoryEntry, ConversationTitleSource, CreatedTurn, CreateTurn, Run, RunEvent, TimelineItem, Turn } from "../domain.js"
+import type {
+  Conversation,
+  ConversationHistoryEntry,
+  ConversationTitleSource,
+  CreatedTurn,
+  CreateTurn,
+  Run,
+  RunEvent,
+  TimelineItem,
+  Turn,
+  UIActionAcknowledgement,
+  UIActionDelivery,
+} from "../domain.js"
 import { createId } from "../id.js"
 import type { Repository } from "./repository.js"
 
@@ -11,6 +23,7 @@ export class MemoryRepository implements Repository {
   private readonly runs = new Map<string, StoredRun>()
   private readonly items: TimelineItem[] = []
   private readonly events: RunEvent[] = []
+  private readonly uiActions = new Map<string, UIActionDelivery>()
   private readonly idempotency = new Map<string, { hash: string, created: CreatedTurn }>()
 
   async health(): Promise<boolean> { return true }
@@ -90,7 +103,8 @@ export class MemoryRepository implements Repository {
     const run: StoredRun = {
       id: runId, conversationId: input.conversationId, turnId: turn.id, runIndex: 0,
       status: "queued", rowVersion: 1, graphVersion: "assistant-v1", promptVersion: "system-v4",
-      toolCatalogDigest: input.toolCatalogDigest ?? "sha256:platform-tools-v1", pageContext: input.pageContext, createdAt: now, ownerUserId,
+      toolCatalogDigest: input.toolCatalogDigest ?? "sha256:platform-tools-v1", pageContext: input.pageContext,
+      clientInstanceId: input.clientInstanceId ?? "memory-client-instance", createdAt: now, ownerUserId,
       ...(input.runActorGrantCiphertext ? { runActorGrantCiphertext: input.runActorGrantCiphertext } : {}),
     }
     this.turns.set(turn.id, turn)
@@ -231,6 +245,50 @@ export class MemoryRepository implements Repository {
   async getEvents(ownerUserId: string, runId: string, after: number) {
     if (!await this.getRun(ownerUserId, runId)) return []
     return this.events.filter(event => event.runId === runId && event.sequence > after)
+  }
+
+  async createUIAction(runId: string, toolCallId: string, action: Record<string, unknown>, expiresAt: string) {
+    const existing = [...this.uiActions.values()].find(item => item.toolCallId === toolCallId)
+    if (existing) return existing
+    const run = this.runs.get(runId)
+    if (!run?.clientInstanceId) throw new Error("ai.client_instance_unavailable")
+    const now = new Date().toISOString()
+    const value: UIActionDelivery = {
+      id: createId("aiuia"), runId, toolCallId, clientInstanceId: run.clientInstanceId,
+      action, status: "pending", attempts: 1, expiresAt, createdAt: now, updatedAt: now,
+    }
+    this.uiActions.set(value.id, value)
+    return value
+  }
+
+  async listPendingUIActions(ownerUserId: string, clientInstanceId: string) {
+    const now = Date.now()
+    for (const action of this.uiActions.values()) {
+      if (action.status === "pending" && Date.parse(action.expiresAt) <= now) {
+        action.status = "expired"
+        action.updatedAt = new Date().toISOString()
+      }
+    }
+    return [...this.uiActions.values()]
+      .filter(action => action.status === "pending"
+        && action.clientInstanceId === clientInstanceId
+        && this.runs.get(action.runId)?.ownerUserId === ownerUserId)
+      .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+  }
+
+  async acknowledgeUIAction(ownerUserId: string, clientInstanceId: string, actionId: string, acknowledgement: UIActionAcknowledgement) {
+    const action = this.uiActions.get(actionId)
+    if (!action
+      || action.clientInstanceId !== clientInstanceId
+      || this.runs.get(action.runId)?.ownerUserId !== ownerUserId)
+      return undefined
+    if (action.status !== "pending") return action
+    action.status = acknowledgement.status
+    action.acknowledgedAt = new Date().toISOString()
+    action.updatedAt = action.acknowledgedAt
+    if (acknowledgement.actualPath) action.actualPath = acknowledgement.actualPath
+    if (acknowledgement.errorCode) action.errorCode = acknowledgement.errorCode
+    return action
   }
 
   async getTimeline(ownerUserId: string, conversationId: string) {

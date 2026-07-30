@@ -15,6 +15,7 @@ import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { buildRunImageRef, latestDeployableBuildRuns } from '@/components/common/deployment-build-runs'
 import { useBillingDisplay } from '@/lib/billing-display'
 import { buildVariableRecordToRows, buildVariableRowsToRecord, secretStateToRows } from '@/lib/build-variables'
+import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { WORKFLOW_STATUS_REFETCH_INTERVAL_MS } from '@/lib/polling'
 import { defaultBuildCpuRequest, defaultBuildMemoryRequest, defaultBuildTimeoutSeconds } from './application-build-defaults'
 import { defaultTargetImageRef, deploymentReleaseKey, deploymentTargetCanRelease, deploymentTargetImageRef, registryInputPrefix } from './application-config-utils'
@@ -41,7 +42,6 @@ const repositoryBindingSchema = z.object({
   gitAccountId: z.string().min(1, i18next.t('repositories.gitAccountRequired')),
   owner: z.string().min(1, i18next.t('repositories.ownerRequired')),
   repo: z.string().min(1, i18next.t('repositories.repoRequired')),
-  webhookStatus: z.enum(['pending', 'created', 'disabled', 'failed']),
 })
 
 type RepositoryBindingFormInput = RepositoryBindingDialogFormInput
@@ -54,7 +54,6 @@ const repositoryBindingDefaults: RepositoryBindingFormInput = {
   gitAccountId: '',
   owner: '',
   repo: '',
-  webhookStatus: 'pending',
 }
 
 function upsertRuntimeConfigRef(refs: DeploymentRuntimeConfigRef[], nextRef: DeploymentRuntimeConfigRef) {
@@ -164,7 +163,12 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
   const targetRegistry = registries.find(registry => registry.id === targetRegistryId)
   const targetImagePrefix = targetRegistry ? registryInputPrefix(targetRegistry) : ''
   const gitProviders = useQuery({ queryKey: ['git-providers'], queryFn: () => api.listGitProviders(), enabled: repositoryBindingDialogOpen })
-  const gitAccounts = useQuery({ queryKey: ['git-accounts'], queryFn: () => api.listGitAccounts(), enabled: repositoryBindingDialogOpen })
+  const gitAccounts = useQuery({
+    queryKey: ['git-accounts'],
+    queryFn: () => api.listGitAccounts(),
+    enabled: repositoryBindingDialogOpen,
+    ...liveObservationQueryPolicy,
+  })
   const selectedRepositoryAccountId = repositoryBindingForm.watch('gitAccountId')
   const selectedRepositoryOwner = repositoryBindingForm.watch('owner')
   const selectedRepositoryName = repositoryBindingForm.watch('repo')
@@ -172,6 +176,7 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
     queryKey: ['git-branches', selectedRepositoryAccountId, selectedRepositoryOwner, selectedRepositoryName, repositoryBranchSearch],
     queryFn: () => api.listGitBranches(selectedRepositoryAccountId || '', selectedRepositoryOwner || '', selectedRepositoryName || '', { search: repositoryBranchSearch, limit: 50 }),
     enabled: Boolean(repositoryBindingDialogOpen && selectedRepositoryAccountId && selectedRepositoryOwner && selectedRepositoryName),
+    ...liveObservationQueryPolicy,
   })
   const targetBuildOptions = useQuery({
     queryKey: [
@@ -244,6 +249,7 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
     queryKey: ['runtime-clusters', projectId],
     queryFn: () => api.listRuntimeClusters(projectId),
     enabled: Boolean(projectId),
+    ...liveObservationQueryPolicy,
   })
   const runtimeClusterMap = useMemo(() => Object.fromEntries((runtimeClusters.data ?? []).map(cluster => [cluster.id, cluster])), [runtimeClusters.data])
   const defaultRuntimeCluster = useMemo(() => {
@@ -265,6 +271,7 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
       queryFn: () => api.listRuntimeClusterResources(clusterId, { kind: 'workloads', projectId, applicationId }),
       queryKey: ['runtime-cluster-resources', clusterId, 'workloads', projectId, applicationId],
       refetchInterval: WORKFLOW_STATUS_REFETCH_INTERVAL_MS,
+      ...liveObservationQueryPolicy,
     })),
   })
   const serviceResourceQueries = useQueries({
@@ -273,6 +280,7 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
       queryFn: () => api.listRuntimeClusterResources(clusterId, { kind: 'services', projectId, applicationId }),
       queryKey: ['runtime-cluster-resources', clusterId, 'services', projectId, applicationId],
       refetchInterval: WORKFLOW_STATUS_REFETCH_INTERVAL_MS,
+      ...liveObservationQueryPolicy,
     })),
   })
   const workloadResourcesByCluster = useMemo(() => Object.fromEntries(workloadClusterIds.map((clusterId, index) => [clusterId, workloadResourceQueries[index]?.data ?? []] as const)), [workloadClusterIds, workloadResourceQueries])
@@ -677,7 +685,6 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
       gitAccountId: values.gitAccountId,
       owner: values.owner,
       repo: values.repo,
-      webhookStatus: values.webhookStatus,
     }),
     onSuccess: (binding) => {
       toast.success(t('repositories.bindingSaved'))

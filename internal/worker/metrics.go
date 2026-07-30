@@ -41,26 +41,6 @@ func (r *Runner) recordGatewaySyncMetric(operation string, result string, starte
 	r.workerMetrics.RecordGatewaySync(operation, result, time.Since(startedAt))
 }
 
-func (r *Runner) refreshGatewayRouteMetrics() {
-	if r.workerMetrics == nil || r.db == nil {
-		return
-	}
-	var routes []model.GatewayRoute
-	if err := r.db.Find(&routes).Error; err != nil {
-		return
-	}
-	metrics := make([]observability.GatewayRouteMetric, 0, len(routes))
-	for _, route := range routes {
-		metrics = append(metrics, observability.GatewayRouteMetric{
-			Status:            route.Status,
-			TLSMode:           route.TLSMode,
-			DNSStatus:         route.DNSStatus,
-			CertificateStatus: route.CertificateStatus,
-		})
-	}
-	r.workerMetrics.SetGatewayRoutes(metrics)
-}
-
 func (r *Runner) recordDeploymentRuntimeMetric(target model.DeploymentTarget, environment model.Environment, snapshot kubeprovider.DeploymentSnapshot) {
 	if r.workerMetrics == nil {
 		return

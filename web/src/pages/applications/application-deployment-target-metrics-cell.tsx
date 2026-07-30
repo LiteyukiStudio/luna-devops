@@ -2,6 +2,7 @@ import type { DeploymentTargetMetrics } from '@/api'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { deploymentTargetMetricsStreamUrl } from '@/api'
+import { StatusValueBadge } from '@/components/common/status-badge'
 import { formatMetricsBytes, formatMetricsPercent } from './application-deployments-panel-utils'
 
 export function DeploymentTargetMetricsCell({ applicationId, enabled, projectId, targetId }: {
@@ -26,9 +27,30 @@ export function DeploymentTargetMetricsCell({ applicationId, enabled, projectId,
         setMetricsState({ metrics: null, targetId })
       }
     }
+    const handleError = () => {
+      setMetricsState({
+        metrics: {
+          available: false,
+          containerCount: 0,
+          cpuCapacityMilli: 0,
+          cpuUsageMilli: 0,
+          cpuUsagePercent: 0,
+          memoryCapacityBytes: 0,
+          memoryUsageBytes: 0,
+          memoryUsagePercent: 0,
+          podCount: 0,
+          reason: 'stream_disconnected',
+          status: 'unavailable',
+          updatedAt: new Date().toISOString(),
+        },
+        targetId,
+      })
+    }
     source.addEventListener('metrics', handleMetrics)
+    source.addEventListener('error', handleError)
     return () => {
       source.removeEventListener('metrics', handleMetrics)
+      source.removeEventListener('error', handleError)
       source.close()
     }
   }, [applicationId, enabled, projectId, targetId])
@@ -38,7 +60,7 @@ export function DeploymentTargetMetricsCell({ applicationId, enabled, projectId,
   if (!metrics)
     return <span className="text-xs text-muted-foreground">{t('deploymentsPage.metricsConnecting')}</span>
   if (!metrics.available)
-    return <span className="text-xs text-muted-foreground">{t('deploymentsPage.metricsUnavailable')}</span>
+    return <StatusValueBadge value={metrics.status} />
 
   const memoryLabel = `${formatMetricsBytes(metrics.memoryUsageBytes, i18n.language)} / ${formatMetricsBytes(metrics.memoryCapacityBytes, i18n.language)}`
 

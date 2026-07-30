@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { NativeSelect } from '@/components/ui/native-select'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 
 registerEChartsModules([GraphChart, TooltipComponent, CanvasRenderer])
 
@@ -53,6 +54,7 @@ export function ApplicationTopologyPanel({ applicationId, projectId }: Applicati
   const [showDependencies, setShowDependencies] = useState(false)
   const [fitVersion, setFitVersion] = useState(0)
   const topology = useQuery({
+    ...liveObservationQueryPolicy,
     queryKey: ['application-topology', projectId, applicationId],
     queryFn: () => api.getApplicationTopology(projectId, applicationId),
     enabled: Boolean(projectId && applicationId),

@@ -348,7 +348,8 @@ func validateCreateAIConversation(h *Handlers, ctx *gin.Context, user model.User
 
 func validateTurnInput(_ *Handlers, ctx *gin.Context, _ model.User, body []byte) bool {
 	var input struct {
-		Input struct {
+		ClientInstanceID string `json:"clientInstanceId"`
+		Input            struct {
 			Parts []struct {
 				Type string `json:"type"`
 				Text string `json:"text"`
@@ -359,6 +360,10 @@ func validateTurnInput(_ *Handlers, ctx *gin.Context, _ model.User, body []byte)
 		writeErrorCode(ctx, http.StatusBadRequest, "request.invalid_json", "invalid turn input")
 		return false
 	}
+	if !validAIClientInstanceID(input.ClientInstanceID) {
+		writeErrorCode(ctx, http.StatusBadRequest, "ai.client_instance_invalid", "clientInstanceId is invalid")
+		return false
+	}
 	for _, part := range input.Input.Parts {
 		if part.Type != "text" || strings.TrimSpace(part.Text) == "" {
 			writeErrorCode(ctx, http.StatusBadRequest, "ai.input_invalid", "only non-empty text parts are supported")
@@ -367,6 +372,23 @@ func validateTurnInput(_ *Handlers, ctx *gin.Context, _ model.User, body []byte)
 	}
 	if strings.TrimSpace(ctx.GetHeader("Idempotency-Key")) == "" {
 		writeErrorCode(ctx, http.StatusBadRequest, "idempotency_key_required", "Idempotency-Key is required")
+		return false
+	}
+	return true
+}
+
+func validAIClientInstanceID(value string) bool {
+	value = strings.TrimSpace(value)
+	if len(value) < 16 || len(value) > 80 {
+		return false
+	}
+	for _, character := range value {
+		if (character >= 'a' && character <= 'z') ||
+			(character >= 'A' && character <= 'Z') ||
+			(character >= '0' && character <= '9') ||
+			character == '_' || character == '-' {
+			continue
+		}
 		return false
 	}
 	return true
@@ -407,7 +429,7 @@ func cloneAIQuery(query url.Values) url.Values {
 }
 
 func expandAIInternalPath(path string, ctx *gin.Context) string {
-	for _, parameter := range []string{"conversationId", "turnId", "runId", "toolCallId"} {
+	for _, parameter := range []string{"conversationId", "turnId", "runId", "toolCallId", "actionId"} {
 		path = strings.ReplaceAll(path, ":"+parameter, url.PathEscape(ctx.Param(parameter)))
 	}
 	return path
@@ -427,6 +449,8 @@ var aiProxyRoutes = map[string]aiProxyRoute{
 	"DELETE /api/v1/ai/conversations/:conversationId":            {method: "DELETE", internal: "/internal/v1/conversations/:conversationId"},
 	"GET /api/v1/ai/conversations/:conversationId/timeline":      {method: "GET", internal: "/internal/v1/conversations/:conversationId/timeline"},
 	"POST /api/v1/ai/conversations/:conversationId/turns":        {method: "POST", internal: "/internal/v1/conversations/:conversationId/turns", status: http.StatusAccepted, validate: validateTurnInput},
+	"GET /api/v1/ai/ui-actions/pending":                          {method: "GET", internal: "/internal/v1/ui-actions/pending"},
+	"POST /api/v1/ai/ui-actions/:actionId/ack":                   {method: "POST", internal: "/internal/v1/ui-actions/:actionId/ack", status: http.StatusAccepted},
 	"GET /api/v1/ai/turns/:turnId/runs":                          {method: "GET", internal: "/internal/v1/turns/:turnId/runs"},
 	"POST /api/v1/ai/turns/:turnId/runs":                         {method: "POST", internal: "/internal/v1/turns/:turnId/runs", status: http.StatusAccepted},
 	"GET /api/v1/ai/runs/:runId":                                 {method: "GET", internal: "/internal/v1/runs/:runId"},

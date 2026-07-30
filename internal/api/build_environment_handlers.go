@@ -135,7 +135,7 @@ func (h *Handlers) canManageBuildEnvironmentProject(ctx *gin.Context, user model
 		return true
 	}
 	var member model.ProjectMember
-	if err := h.db.First(&member, "project_id = ? and user_id = ?", projectID, user.ID).Error; err == nil && projectRoleAllowed(member.Role, []string{"owner", "admin"}) {
+	if err := h.db.First(&member, "project_id = ? and user_id = ?", projectID, user.ID).Error; err == nil && projectRoleAllowed(member.Role, []string{authz.ProjectRoleOwner, authz.ProjectRoleAdmin}) {
 		return true
 	}
 	writeError(ctx, http.StatusForbidden, "只有项目空间所有者或管理员可以维护构建变量和密钥")

@@ -21,18 +21,19 @@ import { UserAvatar } from '@/components/common/user-avatar'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { NativeSelect as Select } from '@/components/ui/native-select'
+import { PROJECT_ROLES, ProjectRole } from '@/lib/roles'
 
 const schema = z.object({
-  role: z.enum(['owner', 'admin', 'developer', 'viewer']),
+  role: z.enum(PROJECT_ROLES),
 })
 
 type MemberForm = z.infer<typeof schema>
 
 const roleLabels: Record<ProjectMember['role'], string> = {
-  owner: 'Owner',
-  admin: 'Admin',
-  developer: 'Developer',
-  viewer: 'Viewer',
+  [ProjectRole.Owner]: 'Owner',
+  [ProjectRole.Admin]: 'Admin',
+  [ProjectRole.Developer]: 'Developer',
+  [ProjectRole.Viewer]: 'Viewer',
 }
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
@@ -70,7 +71,7 @@ export function ProjectMembersPage({ embedded = false, projectId: projectIdProp,
   const form = useForm<MemberForm>({
     resolver: zodResolver(schema),
     mode: 'onChange',
-    defaultValues: { role: 'viewer' },
+    defaultValues: { role: ProjectRole.Viewer },
   })
   const candidateUsers = useMemo(() => {
     const candidates = [...selectedUsers, ...(memberCandidates.data ?? [])]
@@ -89,7 +90,7 @@ export function ProjectMembersPage({ embedded = false, projectId: projectIdProp,
       Promise.all(selectedUsers.map(user => api.createProjectMember(projectId, { userId: user.id, role: values.role }))),
     onSuccess: (members) => {
       toast.success(t('projectMembers.addedCount', { count: members.length }))
-      form.reset({ role: 'viewer' })
+      form.reset({ role: ProjectRole.Viewer })
       setMemberSearch('')
       setSelectedUsers([])
       setDialogOpen(false)
@@ -118,7 +119,7 @@ export function ProjectMembersPage({ embedded = false, projectId: projectIdProp,
   })
 
   const openAddMemberDialog = () => {
-    form.reset({ role: 'viewer' })
+    form.reset({ role: ProjectRole.Viewer })
     setMemberSearch('')
     setSelectedUsers([])
     setDialogOpen(true)
@@ -177,10 +178,10 @@ export function ProjectMembersPage({ embedded = false, projectId: projectIdProp,
                   value={member.role}
                   onChange={event => updateMember.mutate({ memberId: member.id, role: event.target.value as ProjectMember['role'] })}
                 >
-                  <option value="viewer">{t('projectMembers.roleViewer')}</option>
-                  <option value="developer">{t('projectMembers.roleDeveloper')}</option>
-                  <option value="admin">{t('projectMembers.roleAdmin')}</option>
-                  <option value="owner">{t('projectMembers.roleOwner')}</option>
+                  <option value={ProjectRole.Viewer}>{t('projectMembers.roleViewer')}</option>
+                  <option value={ProjectRole.Developer}>{t('projectMembers.roleDeveloper')}</option>
+                  <option value={ProjectRole.Admin}>{t('projectMembers.roleAdmin')}</option>
+                  <option value={ProjectRole.Owner}>{t('projectMembers.roleOwner')}</option>
                 </Select>
                 <ConfirmDialog
                   confirmText={t('projectMembers.removeConfirm')}
@@ -225,7 +226,7 @@ export function ProjectMembersPage({ embedded = false, projectId: projectIdProp,
         onOpenChange={(open) => {
           setDialogOpen(open)
           if (!open) {
-            form.reset({ role: 'viewer' })
+            form.reset({ role: ProjectRole.Viewer })
             setMemberSearch('')
             setSelectedUsers([])
           }
@@ -259,10 +260,10 @@ export function ProjectMembersPage({ embedded = false, projectId: projectIdProp,
             </Field>
             <Field error={form.formState.errors.role?.message} hint={t('projectMembers.roleHint')} label={t('projectMembers.role')} required>
               <Select {...form.register('role')} aria-invalid={Boolean(form.formState.errors.role)}>
-                <option value="viewer">{t('projectMembers.roleViewer')}</option>
-                <option value="developer">{t('projectMembers.roleDeveloper')}</option>
-                <option value="admin">{t('projectMembers.roleAdmin')}</option>
-                <option value="owner">{t('projectMembers.roleOwner')}</option>
+                <option value={ProjectRole.Viewer}>{t('projectMembers.roleViewer')}</option>
+                <option value={ProjectRole.Developer}>{t('projectMembers.roleDeveloper')}</option>
+                <option value={ProjectRole.Admin}>{t('projectMembers.roleAdmin')}</option>
+                <option value={ProjectRole.Owner}>{t('projectMembers.roleOwner')}</option>
               </Select>
             </Field>
             <DialogFooter>

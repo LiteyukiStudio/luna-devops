@@ -48,8 +48,9 @@ type RuntimeCluster struct {
 	GatewayTrustedProxyCIDRs      string         `gorm:"column:gateway_trusted_proxy_cidrs;type:text;not null;default:''" json:"gatewayTrustedProxyCIDRs"`
 	GatewayDefaultRequestHeaders  string         `gorm:"type:text;not null;default:''" json:"gatewayDefaultRequestHeaders"`
 	GatewayDefaultResponseHeaders string         `gorm:"type:text;not null;default:''" json:"gatewayDefaultResponseHeaders"`
-	Status                        string         `gorm:"not null;default:unknown" json:"status"`
-	LastCheckedAt                 *time.Time     `json:"lastCheckedAt"`
+	Status                        string         `gorm:"-" json:"status"`
+	ObservationCode               string         `gorm:"-" json:"observationCode,omitempty"`
+	LastCheckedAt                 *time.Time     `gorm:"-" json:"lastCheckedAt,omitempty"`
 	CreatedBy                     string         `gorm:"index" json:"createdBy"`
 	CreatedAt                     time.Time      `json:"createdAt"`
 	UpdatedAt                     time.Time      `json:"updatedAt"`
@@ -196,6 +197,13 @@ type DeploymentTarget struct {
 	RequireApproval              bool                          `gorm:"not null;default:false" json:"requireApproval"`
 	WebConsoleEnabled            *bool                         `json:"webConsoleEnabled"`
 	Enabled                      bool                          `gorm:"not null;default:true" json:"enabled"`
+	Status                       string                        `gorm:"-" json:"status"`
+	ObservationCode              string                        `gorm:"-" json:"observationCode,omitempty"`
+	LastCheckedAt                *time.Time                    `gorm:"-" json:"lastCheckedAt,omitempty"`
+	DesiredReplicas              int32                         `gorm:"-" json:"desiredReplicas"`
+	UpdatedReplicas              int32                         `gorm:"-" json:"updatedReplicas"`
+	ReadyReplicas                int32                         `gorm:"-" json:"readyReplicas"`
+	AvailableReplicas            int32                         `gorm:"-" json:"availableReplicas"`
 	CreatedBy                    string                        `gorm:"index" json:"createdBy"`
 	CreatedAt                    time.Time                     `json:"createdAt"`
 	UpdatedAt                    time.Time                     `json:"updatedAt"`

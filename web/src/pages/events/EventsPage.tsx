@@ -19,13 +19,15 @@ import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
+import { isPlatformAdmin } from '@/lib/roles'
 import { initialEventFilterValues, initialEventSeverityFilters } from './event-filter-defaults'
 
 export function EventsPage() {
   const { t } = useTranslation()
   const { user } = useSession()
   const [searchParams] = useSearchParams()
-  const isPlatformAdmin = user?.role === 'platform_admin'
+  const platformAdmin = isPlatformAdmin(user?.role)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   const [search, setSearch] = useState('')
@@ -61,6 +63,7 @@ export function EventsPage() {
     queries: selectedApplications.map(application => ({
       queryKey: ['deployment-targets', application.projectId, application.id],
       queryFn: () => api.listDeploymentTargets(application.projectId, application.id),
+      ...liveObservationQueryPolicy,
     })),
   })
   const deploymentTargets = useMemo(
@@ -76,7 +79,7 @@ export function EventsPage() {
       search: search || undefined,
       sortBy: 'occurredAt',
       sortOrder: 'desc',
-      scope: isPlatformAdmin ? scope : 'mine',
+      scope: platformAdmin ? scope : 'mine',
       projectIds,
       applicationIds,
       deploymentTargetIds,
@@ -209,7 +212,7 @@ export function EventsPage() {
   }
   const filterFields = (
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-      {isPlatformAdmin && (
+      {platformAdmin && (
         <EventFilterSelect
           label={t('eventsPage.filters.scope')}
           value={scope}

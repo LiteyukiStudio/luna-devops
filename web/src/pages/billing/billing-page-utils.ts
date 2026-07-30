@@ -18,7 +18,7 @@ export type BalanceStatus = 'ok' | 'low' | 'insufficient'
 export function gatewayTrafficStatusLabel(status: GatewayTrafficStatus, t: (key: string, options?: Record<string, unknown>) => string) {
   if (!status.installed)
     return t('billingPage.gatewayTrafficProbeStates.notInstalled')
-  if (!status.lastReportedAt)
+  if (status.status === 'ready' && !status.available)
     return t('billingPage.gatewayTrafficProbeStates.waitingReport')
   return t(`billingPage.gatewayTrafficStatuses.${status.status || 'unknown'}`, { defaultValue: status.status || t('common.unknown') })
 }

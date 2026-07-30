@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"gorm.io/gorm"
 )
@@ -13,7 +14,7 @@ func TestFullConfigPayloadWithUnchangedStepUpValuesDoesNotRequireAssertion(t *te
 	db := newMFAIntegrationDB(t)
 	limitMFAIntegrationConnections(t, db, 1)
 	now := time.Now()
-	user := model.User{ID: "usr_config_admin", Email: "config-admin@example.com", Name: "Config Admin", Role: "platform_admin", Language: "en-US"}
+	user := model.User{ID: "usr_config_admin", Email: "config-admin@example.com", Name: "Config Admin", Role: authz.PlatformRoleAdmin, Language: "en-US"}
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatal(err)
 	}

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/gin-gonic/gin"
@@ -44,7 +45,7 @@ func (h *Handlers) ListProjectHookConfigs(ctx *gin.Context) {
 }
 
 func (h *Handlers) CreateProjectHookConfig(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, "owner", "admin")
+	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
 	if !ok {
 		return
 	}
@@ -65,7 +66,7 @@ func (h *Handlers) CreateProjectHookConfig(ctx *gin.Context) {
 }
 
 func (h *Handlers) UpdateProjectHookConfig(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, "owner", "admin")
+	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
 	if !ok {
 		return
 	}
@@ -93,7 +94,7 @@ func (h *Handlers) UpdateProjectHookConfig(ctx *gin.Context) {
 }
 
 func (h *Handlers) DeleteProjectHookConfig(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, "owner", "admin")
+	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
 	if !ok {
 		return
 	}

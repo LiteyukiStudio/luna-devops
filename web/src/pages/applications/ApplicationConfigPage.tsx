@@ -23,6 +23,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { TabsContent } from '@/components/ui/tabs'
 import { APPLICATION_IDENTIFIER_MAX_LENGTH, APPLICATION_IDENTIFIER_MIN_LENGTH } from '@/lib/identifier-limits'
+import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { WORKFLOW_STATUS_REFETCH_INTERVAL_MS } from '@/lib/polling'
 import { firstReleaseReadyTarget } from './application-config-utils'
 import { ApplicationOverviewPanel } from './application-overview-panel'
@@ -72,8 +73,8 @@ export function ApplicationConfigPage() {
     enabled: Boolean(projectId && applicationId),
   })
   const project = useQuery({ queryKey: ['project', projectId], queryFn: () => api.getProject(projectId), enabled: Boolean(projectId) })
-  const repositoryBindings = useQuery({ queryKey: ['repository-bindings', projectId], queryFn: () => api.listRepositoryBindings(projectId), enabled: Boolean(projectId) })
-  const registries = useQuery({ queryKey: ['registries', projectId], queryFn: () => api.listRegistries(projectId), enabled: Boolean(projectId) })
+  const repositoryBindings = useQuery({ ...liveObservationQueryPolicy, queryKey: ['repository-bindings', projectId], queryFn: () => api.listRepositoryBindings(projectId), enabled: Boolean(projectId) })
+  const registries = useQuery({ ...liveObservationQueryPolicy, queryKey: ['registries', projectId], queryFn: () => api.listRegistries(projectId), enabled: Boolean(projectId) })
   const buildRuns = useQuery({
     queryKey: ['build-runs', projectId],
     queryFn: () => api.listBuildRuns(projectId),
@@ -92,8 +93,9 @@ export function ApplicationConfigPage() {
     enabled: Boolean(projectId),
     refetchInterval: activeTab === 'deployments' ? WORKFLOW_STATUS_REFETCH_INTERVAL_MS : false,
   })
-  const deploymentTargets = useQuery({ queryKey: ['deployment-targets', projectId, applicationId], queryFn: () => api.listDeploymentTargets(projectId, applicationId), enabled: Boolean(projectId && applicationId) })
+  const deploymentTargets = useQuery({ ...liveObservationQueryPolicy, queryKey: ['deployment-targets', projectId, applicationId], queryFn: () => api.listDeploymentTargets(projectId, applicationId), enabled: Boolean(projectId && applicationId) })
   const routes = useQuery({
+    ...liveObservationQueryPolicy,
     queryKey: ['gateway-routes', projectId],
     queryFn: () => api.listGatewayRoutes(projectId),
     enabled: Boolean(projectId),

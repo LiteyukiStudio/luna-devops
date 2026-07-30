@@ -26,12 +26,13 @@ import { Input } from '@/components/ui/input'
 import { NativeSelect as Select } from '@/components/ui/native-select'
 import i18next from '@/i18n'
 import { useBillingAmountDisplay } from '@/lib/billing-display'
+import { PLATFORM_ROLES, PlatformRole } from '@/lib/roles'
 
 const schema = z.object({
   email: z.string().email(i18next.t('common.validEmailRequired')),
   name: z.string().min(1, i18next.t('usersPage.nameRequired')),
   password: z.string(),
-  role: z.enum(['platform_admin', 'user']),
+  role: z.enum(PLATFORM_ROLES),
   language: z.enum(['zh-CN', 'en-US']),
   disabled: z.boolean(),
 })
@@ -42,7 +43,7 @@ const defaultValues: UserForm = {
   email: '',
   name: '',
   password: '',
-  role: 'user',
+  role: PlatformRole.User,
   language: 'zh-CN',
   disabled: false,
 }
@@ -130,7 +131,7 @@ export function UsersPage() {
       key: 'role',
       header: t('usersPage.globalRole'),
       className: 'w-[13%] px-4 py-3 align-middle',
-      render: user => <span className="text-sm text-muted-foreground">{user.role === 'platform_admin' ? t('usersPage.platformAdmin') : t('usersPage.normalUser')}</span>,
+      render: user => <span className="text-sm text-muted-foreground">{user.role === PlatformRole.Admin ? t('usersPage.platformAdmin') : t('usersPage.normalUser')}</span>,
     },
     {
       key: 'authentication',
@@ -292,8 +293,8 @@ export function UsersPage() {
             </Field>
             <Field error={form.formState.errors.role?.message} hint={t('usersPage.globalRoleHint')} label={t('usersPage.globalRole')} required>
               <Select {...form.register('role')} aria-invalid={Boolean(form.formState.errors.role)}>
-                <option value="user">{t('usersPage.normalUser')}</option>
-                <option value="platform_admin">{t('usersPage.platformAdmin')}</option>
+                <option value={PlatformRole.User}>{t('usersPage.normalUser')}</option>
+                <option value={PlatformRole.Admin}>{t('usersPage.platformAdmin')}</option>
               </Select>
             </Field>
             <Field error={form.formState.errors.language?.message} hint={t('usersPage.languageHint')} label={t('language')} required>

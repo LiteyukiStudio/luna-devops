@@ -1,4 +1,5 @@
 import type { AuthAdmissionPolicy, AuthProvider, AuthRegistrationSettings, AuthRegistrationStatus, BootstrapStatus, ConfigDefinition, CurrentUser, DataRetentionCatalogResponse, DataRetentionPayload, DataRetentionResultResponse, ExternalIdentity, MFAEnrollment, MFAEnrollmentRequest, MFARecoveryCodes, MFAStatus, MFAVerifyPayload, MFAVerifyResponse, OIDCCallbackConfig, PaginatedResponse, PaginationParams, User } from '../types'
+import type { PlatformRoleValue } from '@/lib/roles'
 import { paginationQuery, request } from '../core'
 
 export const authApi = {
@@ -49,9 +50,9 @@ export const authApi = {
     request<void>(`/users/me/external-identities/${identityId}`, { method: 'DELETE' }),
   listUsers: (params: PaginationParams) =>
     request<PaginatedResponse<User>>(`/users?${paginationQuery(params)}`),
-  createUser: (payload: { email: string, name: string, password: string, role: 'platform_admin' | 'user', language: 'zh-CN' | 'en-US', disabled: boolean }) =>
+  createUser: (payload: { email: string, name: string, password: string, role: PlatformRoleValue, language: 'zh-CN' | 'en-US', disabled: boolean }) =>
     request<User>('/users', { method: 'POST', body: JSON.stringify(payload) }),
-  updateUser: (userId: string, payload: { email: string, name: string, password?: string, role: 'platform_admin' | 'user', language: 'zh-CN' | 'en-US', disabled: boolean }) =>
+  updateUser: (userId: string, payload: { email: string, name: string, password?: string, role: PlatformRoleValue, language: 'zh-CN' | 'en-US', disabled: boolean }) =>
     request<User>(`/users/${userId}`, { method: 'PUT', body: JSON.stringify(payload) }),
   resetUserMFA: (userId: string) => request<void>(`/users/${userId}/mfa`, { method: 'DELETE' }),
   listConfigDefinitions: () => request<ConfigDefinition[]>('/configs/definitions'),

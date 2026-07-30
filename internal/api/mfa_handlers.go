@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/gin-gonic/gin"
@@ -342,7 +343,7 @@ func (h *Handlers) DisableMFA(ctx *gin.Context) {
 		if err != nil {
 			return err
 		}
-		if policyEnabled && lockedUser.Role == "platform_admin" {
+		if policyEnabled && lockedUser.Role == authz.PlatformRoleAdmin {
 			enabledAdmins, err := lockMFAEnabledPlatformAdmins(tx)
 			if err != nil {
 				return err
@@ -377,7 +378,7 @@ func (h *Handlers) AdminResetUserMFA(ctx *gin.Context) {
 		return
 	}
 	targetID := strings.TrimSpace(ctx.Param("userId"))
-	if actor.Role != "platform_admin" {
+	if actor.Role != authz.PlatformRoleAdmin {
 		h.audit(actor.ID, "mfa.admin_reset", targetID, false, "platform administrator role required")
 		writeErrorKey(ctx, http.StatusForbidden, actor.Language, "config.admin.required")
 		return
@@ -402,7 +403,7 @@ func (h *Handlers) AdminResetUserMFA(ctx *gin.Context) {
 		if err := lockStepUpPolicyMutation(tx); err != nil {
 			return err
 		}
-		if _, err := lockStepUpActor(tx, actor.ID, actorSession.ID, stepUpPurposeUserAdminUpdate, "platform_admin"); err != nil {
+		if _, err := lockStepUpActor(tx, actor.ID, actorSession.ID, stepUpPurposeUserAdminUpdate, authz.PlatformRoleAdmin); err != nil {
 			return err
 		}
 		policyEnabled, err := stepUpMFAEnabledInTransaction(tx)
@@ -425,7 +426,7 @@ func (h *Handlers) AdminResetUserMFA(ctx *gin.Context) {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&config, "user_id = ?", target.ID).Error; err != nil {
 			return err
 		}
-		if policyEnabled && target.Role == "platform_admin" && config.Enabled {
+		if policyEnabled && target.Role == authz.PlatformRoleAdmin && config.Enabled {
 			if !hasOtherMFAEnabledPlatformAdmin(enabledAdmins, target.ID) {
 				return errMFALastAdminRequired
 			}
@@ -644,7 +645,7 @@ func deleteUserMFAState(tx *gorm.DB, userID, secretResource string) error {
 func lockMFAEnabledPlatformAdmins(tx *gorm.DB) ([]model.UserMFAConfig, error) {
 	var admins []model.User
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("role = ? and disabled = ? and deleted_at is null", "platform_admin", false).
+		Where("role = ? and disabled = ? and deleted_at is null", authz.PlatformRoleAdmin, false).
 		Order("id asc").
 		Find(&admins).Error; err != nil {
 		return nil, err
@@ -700,7 +701,7 @@ func (h *Handlers) hasMFAEnabledPlatformAdmin() bool {
 	var count int64
 	_ = h.db.Table("users").
 		Joins("join user_mfa_configs on user_mfa_configs.user_id = users.id and user_mfa_configs.enabled = ?", true).
-		Where("users.role = ? and users.disabled = ? and users.deleted_at is null", "platform_admin", false).
+		Where("users.role = ? and users.disabled = ? and users.deleted_at is null", authz.PlatformRoleAdmin, false).
 		Count(&count).Error
 	return count > 0
 }

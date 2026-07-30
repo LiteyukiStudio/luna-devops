@@ -34,13 +34,6 @@ type BusinessRunMetric struct {
 	CreatedAt  time.Time
 }
 
-type GatewayRouteMetric struct {
-	Status            string
-	TLSMode           string
-	DNSStatus         string
-	CertificateStatus string
-}
-
 type DeploymentRuntimeMetric struct {
 	DeploymentTargetID string
 	EnvironmentID      string
@@ -206,7 +199,6 @@ type WorkerMetrics struct {
 	deploymentUnavailableReplicas *prometheus.GaugeVec
 	deploymentUpdatedReplicas     *prometheus.GaugeVec
 	duration                      *prometheus.HistogramVec
-	gatewayRoutes                 *prometheus.GaugeVec
 	gatewaySync                   *prometheus.CounterVec
 	gatewaySyncDuration           *prometheus.HistogramVec
 	inflight                      *prometheus.GaugeVec
@@ -266,11 +258,6 @@ func NewWorkerMetrics(registry *prometheus.Registry, service string) *WorkerMetr
 			ConstLabels: prometheus.Labels{"service": service},
 			Buckets:     prometheus.DefBuckets,
 		}, []string{"task_type", "result"}),
-		gatewayRoutes: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name:        "luna_devops_gateway_routes_total",
-			Help:        "Current Luna gateway route count by status and TLS state.",
-			ConstLabels: prometheus.Labels{"service": service},
-		}, []string{"status", "tls_mode", "dns_status", "certificate_status"}),
 		gatewaySync: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name:        "luna_devops_gateway_sync_total",
 			Help:        "Total Luna gateway sync operations.",
@@ -319,7 +306,6 @@ func NewWorkerMetrics(registry *prometheus.Registry, service string) *WorkerMetr
 		metrics.deploymentUnavailableReplicas,
 		metrics.deploymentUpdatedReplicas,
 		metrics.duration,
-		metrics.gatewayRoutes,
 		metrics.gatewaySync,
 		metrics.gatewaySyncDuration,
 		metrics.inflight,
@@ -397,21 +383,6 @@ func (m *WorkerMetrics) RecordGatewaySync(operation string, result string, durat
 	m.gatewaySync.WithLabelValues(operation, result).Inc()
 	if duration >= 0 {
 		m.gatewaySyncDuration.WithLabelValues(operation, result).Observe(duration.Seconds())
-	}
-}
-
-func (m *WorkerMetrics) SetGatewayRoutes(routes []GatewayRouteMetric) {
-	if m == nil {
-		return
-	}
-	m.gatewayRoutes.Reset()
-	for _, route := range routes {
-		m.gatewayRoutes.WithLabelValues(
-			stableLabel(route.Status, "unknown"),
-			stableLabel(route.TLSMode, "unknown"),
-			stableLabel(route.DNSStatus, "unknown"),
-			stableLabel(route.CertificateStatus, "unknown"),
-		).Inc()
 	}
 }
 

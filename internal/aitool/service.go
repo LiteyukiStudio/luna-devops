@@ -10,6 +10,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/appstore"
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/LiteyukiStudio/devops/internal/observation"
 	projectservice "github.com/LiteyukiStudio/devops/internal/project"
 	"gorm.io/gorm"
 )
@@ -192,13 +193,15 @@ func (s *Service) Execute(ctx context.Context, input Request) (Result, error) {
 	case "listPlatformEvents":
 		return s.scanProjectRows(ctx, "platform_events", projectID, "id, type, category, severity, status, resource_type, resource_id, occurred_at", limit)
 	case "listGatewayRoutes":
-		return s.scanProjectRowsWhere(ctx, "gateway_routes", projectID,
-			"id, application_id, deployment_target_id, host, path, tls_mode, dns_status, certificate_status, status, enabled, updated_at",
+		result, err := s.scanProjectRowsWhere(ctx, "gateway_routes", projectID,
+			"id, application_id, deployment_target_id, host, path, tls_mode, enabled, updated_at",
 			"deleted_at is null", limit)
+		return markObservationUnavailable(result, err, "gateway_route.live_observation_requires_upstream", "status", "dns_status", "certificate_status")
 	case "listGatewayCertificates":
-		return s.scanProjectRowsWhere(ctx, "gateway_routes", projectID,
-			"id, application_id, host, tls_mode, certificate_status, certificate_message, certificate_not_after, certificate_issuer_kind, certificate_issuer_name, updated_at",
+		result, err := s.scanProjectRowsWhere(ctx, "gateway_routes", projectID,
+			"id, application_id, host, tls_mode, certificate_issuer_kind, certificate_issuer_name, updated_at",
 			"deleted_at is null and tls_mode <> 'http-only'", limit)
+		return markObservationUnavailable(result, err, "gateway_certificate.live_observation_requires_upstream", "certificate_status")
 	case "listProjectHookRuns":
 		return s.scanProjectRows(ctx, "hook_runs", projectID,
 			"id, hook_config_id, build_run_id, release_id, application_id, name, phase, status, exit_code, message, started_at, finished_at, created_at", limit)
@@ -213,13 +216,41 @@ func (s *Service) Execute(ctx context.Context, input Request) (Result, error) {
 		var rows []map[string]any
 		projectResources := s.db.WithContext(ctx).Table("scoped_resource_project_bindings").Select("resource_id").
 			Where("resource_type = ? and project_id = ?", "runtime_cluster", projectID)
-		err := s.db.WithContext(ctx).Table("runtime_clusters").Select("id, name, type, scope, status, created_at, updated_at").
+		err := s.db.WithContext(ctx).Table("runtime_clusters").Select("id, name, type, scope, created_at, updated_at").
 			Where("scope = 'global' or (scope = 'user' and owner_ref = ?) or (scope = 'project' and id in (?))", input.UserID, projectResources).
 			Order("created_at desc").Limit(limit).Scan(&rows).Error
-		return databaseResult(Result{Value: map[string]any{"items": rows}, Truncated: len(rows) == limit}, err)
+		return markObservationUnavailable(
+			Result{Value: map[string]any{"items": rows}, Truncated: len(rows) == limit},
+			err,
+			"runtime_cluster.live_observation_requires_upstream",
+			"status",
+		)
 	default:
 		return Result{}, ErrForbidden
 	}
+}
+
+func markObservationUnavailable(result Result, err error, code string, statusFields ...string) (Result, error) {
+	if err != nil {
+		return databaseResult(Result{}, err)
+	}
+	value, ok := result.Value.(map[string]any)
+	if !ok {
+		return result, nil
+	}
+	rows, ok := value["items"].([]map[string]any)
+	if !ok {
+		return result, nil
+	}
+	observedAt := time.Now().UTC()
+	for index := range rows {
+		for _, field := range statusFields {
+			rows[index][field] = observation.StatusUnavailable
+		}
+		rows[index]["observation_code"] = code
+		rows[index]["observed_at"] = observedAt
+	}
+	return result, nil
 }
 
 func targetProjectID(policy Policy, arguments map[string]any) (string, error) {
@@ -237,7 +268,7 @@ func targetProjectID(policy Policy, arguments map[string]any) (string, error) {
 func (s *Service) platformAdmin(ctx context.Context, userID string) bool {
 	var count int64
 	return s.db.WithContext(ctx).Model(&model.User{}).
-		Where("id = ? and role = ? and disabled = ?", userID, "platform_admin", false).
+		Where("id = ? and role = ? and disabled = ?", userID, authz.PlatformRoleAdmin, false).
 		Count(&count).Error == nil && count > 0
 }
 

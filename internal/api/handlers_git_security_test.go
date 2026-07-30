@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	gitprovider "github.com/LiteyukiStudio/devops/internal/provider/git"
 )
@@ -29,7 +30,7 @@ func TestNormalizeAccessTokenScopeRejectsWildcardAndUnknownScopes(t *testing.T) 
 }
 
 func TestUserCannotCreateAdministrativeAccessTokenScope(t *testing.T) {
-	user := model.User{Role: "user"}
+	user := model.User{Role: authz.PlatformRoleUser}
 	if userCanCreateAccessTokenScope(user, "user:manage") {
 		t.Fatal("expected normal user to be blocked from user:manage")
 	}
@@ -417,13 +418,13 @@ func TestUserScopedGitAccountIsOnlyUsableByOwner(t *testing.T) {
 		OwnerRef: "usr_owner",
 	}
 
-	if !h.canUseGitAccount(ctx, model.User{ID: "usr_owner", Role: "user"}, account) {
+	if !h.canUseGitAccount(ctx, model.User{ID: "usr_owner", Role: authz.PlatformRoleUser}, account) {
 		t.Fatal("expected owner to use user-scoped Git account")
 	}
-	if h.canUseGitAccount(ctx, model.User{ID: "usr_other", Role: "user"}, account) {
+	if h.canUseGitAccount(ctx, model.User{ID: "usr_other", Role: authz.PlatformRoleUser}, account) {
 		t.Fatal("expected another user to be blocked from user-scoped Git account")
 	}
-	if h.canUseGitAccount(ctx, model.User{ID: "usr_admin", Role: "platform_admin"}, account) {
+	if h.canUseGitAccount(ctx, model.User{ID: "usr_admin", Role: authz.PlatformRoleAdmin}, account) {
 		t.Fatal("expected platform admin to be blocked from using another user's user-scoped Git account")
 	}
 }

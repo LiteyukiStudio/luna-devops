@@ -274,7 +274,7 @@ func (h *Handlers) dataExportAuthorizationFromTicket(ctx context.Context, value 
 	if !authz.IsPlatformAdmin(user.Role) {
 		var member model.ProjectMember
 		if err := db.First(&member, "project_id = ? and user_id = ?", value.ProjectID, user.ID).Error; err != nil ||
-			!projectUserRoleAllowed(user, member.Role, []string{"owner", "admin"}) {
+			!projectUserRoleAllowed(user, member.Role, []string{authz.ProjectRoleOwner, authz.ProjectRoleAdmin}) {
 			return deploymentTargetDataExportAuthorization{}, false
 		}
 	}

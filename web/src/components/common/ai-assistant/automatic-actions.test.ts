@@ -1,6 +1,6 @@
 import type { AIEvent } from '@/api'
 import { describe, expect, it } from 'vitest'
-import { automaticRouteActionFromEvent } from './automatic-actions'
+import { automaticRouteDeliveryFromEvent, automaticRouteDeliveryFromPending } from './automatic-actions'
 
 function event(payload: Record<string, unknown>, type = 'tool.completed'): AIEvent {
   return {
@@ -26,22 +26,49 @@ describe('automatic frontend actions', () => {
       repeatable: false,
       payload: { routeName: 'projects', params: {}, query: {} },
     }
-    expect(automaticRouteActionFromEvent(event({
+    expect(automaticRouteDeliveryFromEvent(event({
       operationId: 'navigate_to_route',
       uiActions: [action],
-    }))).toEqual(action)
+      uiActionDelivery: { actionId: 'aiuia_12345', expiresAt: '2030-01-01T00:00:00.000Z' },
+    }))).toEqual({
+      action,
+      actionId: 'aiuia_12345',
+      expiresAt: '2030-01-01T00:00:00.000Z',
+    })
 
-    expect(automaticRouteActionFromEvent(event({
+    expect(automaticRouteDeliveryFromEvent(event({
       operationId: 'create_options',
       uiActions: [action],
     }))).toBeNull()
-    expect(automaticRouteActionFromEvent(event({
+    expect(automaticRouteDeliveryFromEvent(event({
       operationId: 'navigate_to_route',
       uiActions: [{ ...action, activation: 'manual' }],
     }))).toBeNull()
-    expect(automaticRouteActionFromEvent(event({
+    expect(automaticRouteDeliveryFromEvent(event({
       operationId: 'navigate_to_route',
       uiActions: [action],
     }, 'run.completed'))).toBeNull()
+  })
+
+  it('validates a pending delivery before replaying it', () => {
+    const action = {
+      version: 1 as const,
+      type: 'navigate' as const,
+      activation: 'automatic' as const,
+      repeatable: false,
+      payload: { routeName: 'projects', params: {}, query: {} },
+    }
+    expect(automaticRouteDeliveryFromPending({
+      actionId: 'aiuia_12345',
+      runId: 'run_1',
+      toolCallId: 'tool_1',
+      action,
+      attempts: 2,
+      expiresAt: '2030-01-01T00:00:00.000Z',
+    })).toEqual({
+      action,
+      actionId: 'aiuia_12345',
+      expiresAt: '2030-01-01T00:00:00.000Z',
+    })
   })
 })

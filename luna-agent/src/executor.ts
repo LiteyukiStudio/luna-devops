@@ -6,7 +6,12 @@ import { createId } from "./id.js"
 import { redact } from "./redaction.js"
 import { ToolInterruption, type ToolOrchestrator } from "./tools/orchestrator.js"
 import { renameConversationInput } from "./tools/conversation-title.js"
-import { createInteractionCardsInput, normalizeInteractionCardsInput } from "./tools/ui-cards.js"
+import {
+  createInteractionCardsInput,
+  normalizeInteractionCardsInput,
+  prepareInteractionCardsInput,
+  type PrepareInteractionCardsInput,
+} from "./tools/ui-cards.js"
 import { createOptionsInput, optionUIActions } from "./tools/ui-options.js"
 import { automaticRouteUIAction, navigateToRouteInput } from "./tools/ui-route.js"
 import type { ProviderConfigClient } from "./provider/config-client.js"
@@ -74,6 +79,7 @@ export class RunExecutor {
       void this.repository.renewLease(run.id, this.config.INSTANCE_ID, agentRuntimeInternals.runLeaseSeconds)
         .then(ok => { if (!ok) abort.abort(new Error("ai.run_lease_lost")) })
     }, Math.max(1000, agentRuntimeInternals.runLeaseSeconds * 333))
+    const cardPreparations = new Map<string, CardPreparation>()
     try {
       const running = await this.repository.updateRun(run.id, "queued", "running", { startedAt: new Date().toISOString() })
       await this.repository.appendEvent(run.id, "run.started", { state: "running", expectedVersion: running.rowVersion })
@@ -108,6 +114,13 @@ export class RunExecutor {
         }, abort.signal)
         finalAnswer = result.answer
         if (!result.toolCalls.length) {
+          if (cardPreparations.size > 0) {
+            continuationMessages.push({
+              role: "user",
+              content: "交互卡片准备占位仍在等待最终内容。请立即使用相同 generationId 调用 create_interaction_cards；不要输出其他文本。",
+            })
+            continue
+          }
           completed = true
           break
         }
@@ -119,13 +132,34 @@ export class RunExecutor {
         continuationMessages.push({ role: "assistant", content: result.answer, toolCalls })
         let platformToolCalled = false
         let createOptionsCalled = false
+        let prepareInteractionCardsCalled = false
         let createInteractionCardsCalled = false
         let recoverableToolError = false
         const hasPlatformTool = toolCalls.some(call => !internalToolOperationIds.has(call.operationId))
         for (const toolCall of toolCalls) {
+          if (toolCall.operationId === "prepare_interaction_cards") {
+            if (!hasPlatformTool) {
+              const preparation = await this.prepareInteractionCards(run.id, run.turnId, toolCall.arguments, cardPreparations)
+              if (!preparation.accepted) {
+                recoverableToolError = true
+                continuationMessages.push(toolResultMessage(toolCall, {
+                  status: "rejected",
+                  errorCode: "ai.provider_invalid_tool_arguments",
+                  issues: preparation.issues,
+                  guidance: "请严格按照当前 prepare_interaction_cards 工具 schema 修正参数后重试。",
+                }))
+                continue
+              }
+              prepareInteractionCardsCalled = true
+            }
+            continuationMessages.push(toolResultMessage(toolCall, {
+              status: hasPlatformTool ? "deferred_until_platform_results" : "accepted",
+            }))
+            continue
+          }
           if (toolCall.operationId === "create_interaction_cards") {
             if (!hasPlatformTool) {
-              const creation = await this.createInteractionCards(run.id, run.turnId, toolCall.arguments)
+              const creation = await this.createInteractionCards(run.id, toolCall.arguments, cardPreparations)
               if (!creation.accepted) {
                 recoverableToolError = true
                 continuationMessages.push(toolResultMessage(toolCall, {
@@ -165,8 +199,12 @@ export class RunExecutor {
             continue
           }
           if (toolCall.operationId === "navigate_to_route") {
-            await this.navigateToRoute(run.id, run.turnId, toolCall.arguments)
-            continuationMessages.push(toolResultMessage(toolCall, { status: "succeeded" }))
+            const delivery = await this.navigateToRoute(run.id, run.turnId, toolCall.arguments)
+            continuationMessages.push(toolResultMessage(toolCall, {
+              status: "dispatched",
+              actionId: delivery.id,
+              expiresAt: delivery.expiresAt,
+            }))
             continue
           }
           if (!this.tools) throw new Error("ai.tool_not_available")
@@ -188,6 +226,7 @@ export class RunExecutor {
         }
         if (recoverableToolError) continue
         if (platformToolCalled) pendingOptions = undefined
+        if (prepareInteractionCardsCalled && !createInteractionCardsCalled) continue
         if (!platformToolCalled && (result.answer || createOptionsCalled || createInteractionCardsCalled)) {
           completed = true
           break
@@ -211,6 +250,7 @@ export class RunExecutor {
       }
       await this.repository.updateRun(run.id, "running", "completed", { completedAt: new Date().toISOString() })
     } catch (error) {
+      await this.failCardPreparations(run.id, cardPreparations)
       if (error instanceof ToolInterruption && error.state === "waiting_input") {
         await this.repository.appendEvent(run.id, "run.input_required", { fields: error.fields })
         await this.repository.updateRun(run.id, "running", "waiting_input")
@@ -262,7 +302,58 @@ export class RunExecutor {
     await this.repository.appendEvent(runId, "item.completed", { itemId })
   }
 
-  private async createInteractionCards(runId: string, turnId: string, raw: unknown) {
+  private async prepareInteractionCards(
+    runId: string,
+    turnId: string,
+    raw: unknown,
+    preparations: Map<string, CardPreparation>,
+  ) {
+    const parsed = prepareInteractionCardsInput.safeParse(raw)
+    if (!parsed.success) return {
+      accepted: false as const,
+      issues: parsed.error.issues.map(issue => ({
+        code: issue.code,
+        path: issue.path.join("."),
+        message: issue.message,
+      })),
+    }
+    const input = parsed.data
+    const existing = preparations.get(input.generationId)
+    if (existing) return { accepted: true as const, preparation: existing }
+    const itemId = createId("aiitm")
+    const toolCallId = createId("aitool")
+    const item = await this.repository.appendItem({
+      id: itemId,
+      runId,
+      turnId,
+      type: "tool_call",
+      status: "streaming",
+      content: {
+        toolCallId,
+        operationId: "prepare_interaction_cards",
+        titleKey: "aiAssistant.cards.preparingToolTitle",
+        status: "running",
+        arguments: input,
+      },
+    })
+    const preparation = { itemId, toolCallId, timelineIndex: item.timelineIndex, input }
+    preparations.set(input.generationId, preparation)
+    await this.repository.appendEvent(runId, "tool.started", {
+      itemId,
+      toolCallId,
+      operationId: "prepare_interaction_cards",
+      titleKey: "aiAssistant.cards.preparingToolTitle",
+      arguments: input,
+      timelineIndex: item.timelineIndex,
+    })
+    return { accepted: true as const, preparation }
+  }
+
+  private async createInteractionCards(
+    runId: string,
+    raw: unknown,
+    preparations: Map<string, CardPreparation>,
+  ) {
     const parsed = createInteractionCardsInput.safeParse(normalizeInteractionCardsInput(raw))
     if (!parsed.success) {
       const issues = parsed.error.issues.map(issue => ({
@@ -274,34 +365,60 @@ export class RunExecutor {
       return { accepted: false as const, issues }
     }
     const input = parsed.data
-    const itemId = createId("aiitm")
-    const toolCallId = createId("aitool")
+    const preparation = preparations.get(input.generationId)
+    if (!preparation) {
+      return {
+        accepted: false as const,
+        issues: [{
+          code: "custom",
+          path: "generationId",
+          message: "Call prepare_interaction_cards first and reuse its generationId.",
+        }],
+      }
+    }
+    const { itemId, toolCallId, timelineIndex } = preparation
     const result = {
       summaryKey: "aiAssistant.cards.created",
       title: input.title,
       description: input.description,
     }
-    const item = await this.repository.appendItem({
-      id: itemId, runId, turnId, type: "tool_call", status: "completed",
-      content: {
-        toolCallId,
-        operationId: "create_interaction_cards",
-        titleKey: "aiAssistant.cards.toolTitle",
-        status: "succeeded",
-        arguments: input,
-        result,
-      },
-    })
-    await this.repository.appendEvent(runId, "tool.started", {
-      itemId, toolCallId, operationId: "create_interaction_cards", titleKey: "aiAssistant.cards.toolTitle",
-      arguments: input, timelineIndex: item.timelineIndex,
+    await this.repository.updateItem(itemId, "completed", {
+      toolCallId,
+      operationId: "create_interaction_cards",
+      titleKey: "aiAssistant.cards.toolTitle",
+      status: "succeeded",
+      arguments: input,
+      result,
     })
     await this.repository.appendEvent(runId, "tool.completed", {
       itemId, toolCallId, operationId: "create_interaction_cards", titleKey: "aiAssistant.cards.toolTitle",
-      result, timelineIndex: item.timelineIndex,
+      arguments: input, result, timelineIndex,
     })
     await this.repository.appendEvent(runId, "item.completed", { itemId })
+    preparations.delete(input.generationId)
     return { accepted: true as const }
+  }
+
+  private async failCardPreparations(runId: string, preparations: Map<string, CardPreparation>) {
+    await Promise.allSettled([...preparations.values()].map(async (preparation) => {
+      await this.repository.updateItem(preparation.itemId, "failed", {
+        toolCallId: preparation.toolCallId,
+        operationId: "prepare_interaction_cards",
+        titleKey: "aiAssistant.cards.preparingToolTitle",
+        status: "failed",
+        arguments: preparation.input,
+        errorCode: "ai.run_failed",
+      })
+      await this.repository.appendEvent(runId, "tool.failed", {
+        itemId: preparation.itemId,
+        toolCallId: preparation.toolCallId,
+        operationId: "prepare_interaction_cards",
+        titleKey: "aiAssistant.cards.preparingToolTitle",
+        errorCode: "ai.run_failed",
+        timelineIndex: preparation.timelineIndex,
+      })
+    }))
+    preparations.clear()
   }
 
   private async ensureOptions(
@@ -337,8 +454,16 @@ export class RunExecutor {
     const itemId = createId("aiitm")
     const toolCallId = createId("aitool")
     const uiActions = [automaticRouteUIAction(input)]
+    const delivery = await this.repository.createUIAction(
+      runId,
+      toolCallId,
+      uiActions[0]!,
+      new Date(Date.now() + 60_000).toISOString(),
+    )
     const result = {
-      summaryKey: "aiAssistant.tools.navigateToRouteCompleted",
+      summaryKey: "aiAssistant.tools.navigateToRouteDispatched",
+      actionId: delivery.id,
+      expiresAt: delivery.expiresAt,
       uiActions,
     }
     const item = await this.repository.appendItem({
@@ -358,9 +483,14 @@ export class RunExecutor {
     })
     await this.repository.appendEvent(runId, "tool.completed", {
       itemId, toolCallId, operationId: "navigate_to_route", titleKey: "aiAssistant.tools.navigateToRoute",
-      result, uiActions, timelineIndex: item.timelineIndex,
+      result, uiActions, uiActionDelivery: {
+        actionId: delivery.id,
+        expiresAt: delivery.expiresAt,
+        attempts: delivery.attempts,
+      }, timelineIndex: item.timelineIndex,
     })
     await this.repository.appendEvent(runId, "item.completed", { itemId })
+    return delivery
   }
 
   private async renameConversation(runId: string, turnId: string, conversationId: string, raw: unknown) {
@@ -479,4 +609,11 @@ function toolResultMessage(toolCall: ModelToolCall & { id: string }, result: Rec
   }
 }
 
-const internalToolOperationIds = new Set(["create_options", "create_interaction_cards", "rename_conversation", "navigate_to_route"])
+type CardPreparation = {
+  itemId: string
+  toolCallId: string
+  timelineIndex: number
+  input: PrepareInteractionCardsInput
+}
+
+const internalToolOperationIds = new Set(["create_options", "prepare_interaction_cards", "create_interaction_cards", "rename_conversation", "navigate_to_route"])

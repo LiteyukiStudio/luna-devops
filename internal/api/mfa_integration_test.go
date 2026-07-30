@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/secret"
 	"github.com/gin-gonic/gin"
@@ -34,7 +35,7 @@ func TestMFAEnrollmentVerificationRecoveryAndDisableFlow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	user := model.User{ID: "usr_mfa_" + testSuffix, Email: "mfa-" + testSuffix + "@example.com", Name: "MFA User", Role: "platform_admin", Language: "zh-CN", Password: string(passwordHash)}
+	user := model.User{ID: "usr_mfa_" + testSuffix, Email: "mfa-" + testSuffix + "@example.com", Name: "MFA User", Role: authz.PlatformRoleAdmin, Language: "zh-CN", Password: string(passwordHash)}
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -239,9 +240,9 @@ func TestAdminResetUserMFAFlowAndLastAdminProtection(t *testing.T) {
 	t.Setenv("SECRET_ENCRYPTION_KEY", "mfa-admin-reset-test-key")
 	now := time.Now()
 	suffix := randomHex(4)
-	actor := model.User{ID: "usr_actor_" + suffix, Email: "actor-" + suffix + "@example.com", Name: "Actor", Role: "platform_admin", Language: "en-US"}
-	target := model.User{ID: "usr_target_" + suffix, Email: "target-" + suffix + "@example.com", Name: "Target", Role: "user", Language: "en-US"}
-	lastAdmin := model.User{ID: "usr_last_admin_" + suffix, Email: "last-admin-" + suffix + "@example.com", Name: "Last Admin", Role: "platform_admin", Language: "en-US"}
+	actor := model.User{ID: "usr_actor_" + suffix, Email: "actor-" + suffix + "@example.com", Name: "Actor", Role: authz.PlatformRoleAdmin, Language: "en-US"}
+	target := model.User{ID: "usr_target_" + suffix, Email: "target-" + suffix + "@example.com", Name: "Target", Role: authz.PlatformRoleUser, Language: "en-US"}
+	lastAdmin := model.User{ID: "usr_last_admin_" + suffix, Email: "last-admin-" + suffix + "@example.com", Name: "Last Admin", Role: authz.PlatformRoleAdmin, Language: "en-US"}
 	if err := db.Create(&[]model.User{actor, target, lastAdmin}).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -340,7 +341,7 @@ func TestOIDCMFAEnrollmentRequiresFreshBrowserSession(t *testing.T) {
 	t.Setenv("SECRET_ENCRYPTION_KEY", "mfa-oidc-reauth-test-key")
 	now := time.Now()
 	suffix := randomHex(4)
-	user := model.User{ID: "usr_oidc_mfa_" + suffix, Email: "oidc-mfa-" + suffix + "@example.com", Name: "OIDC MFA", Role: "user", Language: "en-US"}
+	user := model.User{ID: "usr_oidc_mfa_" + suffix, Email: "oidc-mfa-" + suffix + "@example.com", Name: "OIDC MFA", Role: authz.PlatformRoleUser, Language: "en-US"}
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -375,8 +376,8 @@ func TestConcurrentPlatformAdminMFADisableKeepsOneEnabledAdmin(t *testing.T) {
 	now := time.Now()
 	suffix := randomHex(4)
 	users := []model.User{
-		{ID: "usr_disable_a_" + suffix, Email: "disable-a-" + suffix + "@example.com", Name: "Disable A", Role: "platform_admin", Language: "en-US"},
-		{ID: "usr_disable_b_" + suffix, Email: "disable-b-" + suffix + "@example.com", Name: "Disable B", Role: "platform_admin", Language: "en-US"},
+		{ID: "usr_disable_a_" + suffix, Email: "disable-a-" + suffix + "@example.com", Name: "Disable A", Role: authz.PlatformRoleAdmin, Language: "en-US"},
+		{ID: "usr_disable_b_" + suffix, Email: "disable-b-" + suffix + "@example.com", Name: "Disable B", Role: authz.PlatformRoleAdmin, Language: "en-US"},
 	}
 	if err := db.Create(&users).Error; err != nil {
 		t.Fatal(err)
@@ -455,7 +456,7 @@ func TestConcurrentStepUpEnableAndLastAdminDisableRemainRecoverable(t *testing.T
 		Email: "policy-race-" + suffix + "@example.com",
 		Name:  "Policy Race Admin",
 
-		Role:     "platform_admin",
+		Role:     authz.PlatformRoleAdmin,
 		Language: "en-US",
 	}
 	if err := db.Create(&user).Error; err != nil {
@@ -559,7 +560,7 @@ func TestLastMFAEnabledAdminCannotBeDisabledOrDemoted(t *testing.T) {
 		Email: "admin-role-guard-" + suffix + "@example.com",
 		Name:  "Admin Role Guard",
 
-		Role:     "platform_admin",
+		Role:     authz.PlatformRoleAdmin,
 		Language: "en-US",
 	}
 	if err := db.Create(&user).Error; err != nil {
@@ -609,7 +610,7 @@ func TestLastMFAEnabledAdminCannotBeDisabledOrDemoted(t *testing.T) {
 	recorder, ctx := newMFAIntegrationContext(http.MethodPut, "/api/v1/users/"+user.ID, map[string]any{
 		"email":    user.Email,
 		"name":     user.Name,
-		"role":     "user",
+		"role":     authz.PlatformRoleUser,
 		"language": user.Language,
 		"disabled": false,
 	}, sessionToken)
@@ -622,7 +623,7 @@ func TestLastMFAEnabledAdminCannotBeDisabledOrDemoted(t *testing.T) {
 	if err := db.First(&stored, "id = ?", user.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if stored.Role != "platform_admin" || stored.Disabled {
+	if stored.Role != authz.PlatformRoleAdmin || stored.Disabled {
 		t.Fatalf("last MFA administrator changed despite guard: role=%s disabled=%t", stored.Role, stored.Disabled)
 	}
 }
@@ -637,7 +638,7 @@ func TestUserUpdateDoesNotRequireAssertionWhenStepUpPolicyIsDisabled(t *testing.
 		Email: "policy-off-actor-" + suffix + "@example.com",
 		Name:  "Policy Off Actor",
 
-		Role:     "platform_admin",
+		Role:     authz.PlatformRoleAdmin,
 		Language: "en-US",
 	}
 	target := model.User{
@@ -645,7 +646,7 @@ func TestUserUpdateDoesNotRequireAssertionWhenStepUpPolicyIsDisabled(t *testing.
 		Email: "policy-off-target-" + suffix + "@example.com",
 		Name:  "Policy Off Target",
 
-		Role:     "user",
+		Role:     authz.PlatformRoleUser,
 		Language: "en-US",
 	}
 	if err := db.Create(&[]model.User{actor, target}).Error; err != nil {
@@ -688,7 +689,7 @@ func TestDisableMFARollsBackWhenSuccessAuditCannotBeWritten(t *testing.T) {
 	t.Setenv("SECRET_ENCRYPTION_KEY", "mfa-audit-rollback-test-key")
 	now := time.Now()
 	suffix := randomHex(4)
-	user := model.User{ID: "usr_audit_rollback_" + suffix, Email: "audit-rollback-" + suffix + "@example.com", Name: "Audit Rollback", Role: "user", Language: "en-US"}
+	user := model.User{ID: "usr_audit_rollback_" + suffix, Email: "audit-rollback-" + suffix + "@example.com", Name: "Audit Rollback", Role: authz.PlatformRoleUser, Language: "en-US"}
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatal(err)
 	}

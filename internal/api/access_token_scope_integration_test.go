@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/database"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/service"
@@ -25,7 +26,7 @@ func TestPlatformAdminAccessTokenScopesAuthorizeDashboardAndDataRetention(t *tes
 		ID:       "usr_scope_" + suffix,
 		Email:    "scope-" + suffix + "@example.com",
 		Name:     "Scope Admin",
-		Role:     "platform_admin",
+		Role:     authz.PlatformRoleAdmin,
 		Language: "en-US",
 	}
 	if err := db.Create(&user).Error; err != nil {

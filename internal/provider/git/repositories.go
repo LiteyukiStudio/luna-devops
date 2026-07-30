@@ -202,6 +202,38 @@ func (c Client) CreateWebhook(ctx context.Context, owner, repo, callbackURL, sec
 	}
 }
 
+func (c Client) GetWebhook(ctx context.Context, owner, repo, webhookID string) (WebhookSnapshot, error) {
+	webhookID = strings.TrimSpace(webhookID)
+	if webhookID == "" {
+		return WebhookSnapshot{}, fmt.Errorf("webhook ID is required")
+	}
+	path := fmt.Sprintf("/repos/%s/%s/hooks/%s", pathEscape(owner), pathEscape(repo), pathEscape(webhookID))
+	switch c.provider.Type {
+	case "github":
+		var response githubWebhookResponse
+		if err := c.getJSON(ctx, c.apiURL(path, nil), &response); err != nil {
+			return WebhookSnapshot{}, err
+		}
+		return WebhookSnapshot{
+			ID:     strconv.FormatInt(response.ID, 10),
+			URL:    strings.TrimSpace(response.Config.URL),
+			Active: response.Active,
+		}, nil
+	case "gitea":
+		var response giteaWebhookResponse
+		if err := c.getJSON(ctx, c.apiURL(path, nil), &response); err != nil {
+			return WebhookSnapshot{}, err
+		}
+		return WebhookSnapshot{
+			ID:     strconv.FormatInt(response.ID, 10),
+			URL:    strings.TrimSpace(response.Config.URL),
+			Active: response.Active,
+		}, nil
+	default:
+		return WebhookSnapshot{}, fmt.Errorf("git provider type %q is not supported", c.provider.Type)
+	}
+}
+
 func FilterRepositories(repos []Repository, search string) []Repository {
 	search = strings.ToLower(strings.TrimSpace(search))
 	if search == "" {

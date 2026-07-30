@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/buildenv"
 	"github.com/LiteyukiStudio/devops/internal/builder"
 	"github.com/LiteyukiStudio/devops/internal/id"
@@ -332,7 +333,7 @@ func (r Resolver) buildVariableSetAccessible(db *gorm.DB, user model.User, proje
 	case "user":
 		return set.OwnerRef == user.ID
 	case "project":
-		if user.Role == "platform_admin" {
+		if user.Role == authz.PlatformRoleAdmin {
 			return true
 		}
 		var count int64

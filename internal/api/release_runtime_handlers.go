@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/gin-gonic/gin"
@@ -16,6 +17,7 @@ import (
 )
 
 func (h *Handlers) GetReleaseRuntimeLogs(ctx *gin.Context) {
+	markLiveObservationResponse(ctx)
 	if _, ok := h.findProjectForCurrentUser(ctx); !ok {
 		return
 	}
@@ -49,7 +51,7 @@ func (h *Handlers) GetReleaseRuntimeLogs(ctx *gin.Context) {
 }
 
 func (h *Handlers) ExecReleaseRuntimeCommand(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, "owner", "admin", "developer")
+	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
 	if !ok {
 		return
 	}
@@ -114,7 +116,7 @@ func (h *Handlers) StreamReleaseRuntimeTerminal(ctx *gin.Context) {
 		ok            bool
 	)
 	if ticket == "" {
-		user, project, ok = h.projectAndCurrentUserWithRoles(ctx, "owner", "admin", "developer")
+		user, project, ok = h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
 		if !ok {
 			return
 		}
@@ -236,7 +238,7 @@ func (h *Handlers) StreamReleaseRuntimeTerminal(ctx *gin.Context) {
 }
 
 func (h *Handlers) AuthorizeReleaseRuntimeTerminal(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, "owner", "admin", "developer")
+	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
 	if !ok || !h.ensureProjectCanMutate(ctx, project) {
 		return
 	}
@@ -284,7 +286,7 @@ func (h *Handlers) releaseRuntimeTerminalProjectForUser(ctx *gin.Context, user m
 	if !ok {
 		return model.Project{}, false
 	}
-	if projectUserRoleAllowed(user, "", []string{"owner", "admin", "developer"}) {
+	if projectUserRoleAllowed(user, "", []string{authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper}) {
 		return project, true
 	}
 	var member model.ProjectMember
@@ -292,7 +294,7 @@ func (h *Handlers) releaseRuntimeTerminalProjectForUser(ctx *gin.Context, user m
 		writeError(ctx, http.StatusForbidden, "你没有访问该项目的权限")
 		return model.Project{}, false
 	}
-	if !projectUserRoleAllowed(user, member.Role, []string{"owner", "admin", "developer"}) {
+	if !projectUserRoleAllowed(user, member.Role, []string{authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper}) {
 		writeError(ctx, http.StatusForbidden, "你没有执行该项目操作的权限")
 		return model.Project{}, false
 	}

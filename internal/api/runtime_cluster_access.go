@@ -110,21 +110,21 @@ func (h *Handlers) runtimeClusterResponseForUser(user model.User, cluster model.
 }
 
 func (h *Handlers) canReplaceRuntimeClusterKubeconfig(user model.User, cluster model.RuntimeCluster) bool {
-	return user.Role == "platform_admin" || cluster.CreatedBy == user.ID
+	return user.Role == authz.PlatformRoleAdmin || cluster.CreatedBy == user.ID
 }
 
 func (h *Handlers) canInspectClusterResourceProject(ctx *gin.Context, user model.User, projectID string) bool {
-	if user.Role == "platform_admin" {
+	if user.Role == authz.PlatformRoleAdmin {
 		return true
 	}
-	if _, ok := h.findProjectForCurrentUserWithRolesByID(ctx, projectID, "owner", "admin"); ok {
+	if _, ok := h.findProjectForCurrentUserWithRolesByID(ctx, projectID, authz.ProjectRoleOwner, authz.ProjectRoleAdmin); ok {
 		return true
 	}
 	return false
 }
 
 func (h *Handlers) canInspectClusterResourceSnapshot(ctx *gin.Context, user model.User, item kubeprovider.ResourceSnapshot) bool {
-	if user.Role == "platform_admin" {
+	if user.Role == authz.PlatformRoleAdmin {
 		return true
 	}
 	if strings.TrimSpace(item.ProjectID) == "" {
@@ -135,21 +135,21 @@ func (h *Handlers) canInspectClusterResourceSnapshot(ctx *gin.Context, user mode
 }
 
 func (h *Handlers) canManageClusterResourceSnapshot(ctx *gin.Context, user model.User, item kubeprovider.ResourceSnapshot) bool {
-	if user.Role == "platform_admin" {
+	if user.Role == authz.PlatformRoleAdmin {
 		return true
 	}
 	if strings.TrimSpace(item.ProjectID) == "" {
 		writeError(ctx, http.StatusForbidden, "无权维护无项目空间归属的集群资源")
 		return false
 	}
-	if _, ok := h.findProjectForCurrentUserWithRolesByID(ctx, item.ProjectID, "owner", "admin"); ok {
+	if _, ok := h.findProjectForCurrentUserWithRolesByID(ctx, item.ProjectID, authz.ProjectRoleOwner, authz.ProjectRoleAdmin); ok {
 		return true
 	}
 	return false
 }
 
 func (h *Handlers) filterClusterResourceSnapshots(ctx *gin.Context, user model.User, items []kubeprovider.ResourceSnapshot) []kubeprovider.ResourceSnapshot {
-	if user.Role == "platform_admin" {
+	if user.Role == authz.PlatformRoleAdmin {
 		return items
 	}
 	allowed := make(map[string]bool)
@@ -160,7 +160,7 @@ func (h *Handlers) filterClusterResourceSnapshots(ctx *gin.Context, user model.U
 		}
 		allowedProject, ok := allowed[item.ProjectID]
 		if !ok {
-			_, projectOK := h.findProjectForCurrentUserWithRolesByID(ctx, item.ProjectID, "owner", "admin")
+			_, projectOK := h.findProjectForCurrentUserWithRolesByID(ctx, item.ProjectID, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
 			allowedProject = projectOK
 			allowed[item.ProjectID] = projectOK
 		}

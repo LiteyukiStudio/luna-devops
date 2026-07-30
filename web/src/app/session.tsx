@@ -6,6 +6,7 @@ import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { api } from '@/api'
+import { isPlatformRole, PlatformRole } from '@/lib/roles'
 import { applyUserBrandColorPreference, clearActiveUserBrandColorPreference } from './brand-theme'
 import { applyUserInterfaceStylePreference, clearActiveUserInterfaceStylePreference } from './interface-style'
 import { SessionContext } from './session-context'
@@ -219,7 +220,7 @@ function readDebugOverride(): DebugSessionOverride | undefined {
       return undefined
 
     const parsed = JSON.parse(raw) as DebugSessionOverride
-    if (parsed.type === 'role' && (parsed.role === 'platform_admin' || parsed.role === 'user'))
+    if (parsed.type === 'role' && isPlatformRole(parsed.role))
       return parsed
   }
   catch {
@@ -244,5 +245,5 @@ function applyDebugOverride(user: CurrentUser | undefined, override: DebugSessio
 }
 
 function permissionsForRole(role: string) {
-  return role === 'platform_admin' ? adminPermissions : userPermissions
+  return role === PlatformRole.Admin ? adminPermissions : userPermissions
 }

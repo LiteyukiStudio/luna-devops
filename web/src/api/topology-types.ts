@@ -2,7 +2,7 @@ import type { PaginatedResponse, PaginationParams } from './types'
 
 export type ProjectTopologyOrigin = 'service_binding' | 'manual'
 export type ProjectTopologyRelationType = 'depends_on' | 'calls' | 'reads_writes' | 'publishes_to' | 'consumes_from'
-export type ProjectTopologyStatus = 'ready' | 'pending_release' | 'unavailable' | 'invalid' | 'disabled' | 'declared' | string
+export type ProjectTopologyStatus = 'ready' | 'unavailable' | 'invalid' | 'disabled' | 'declared' | string
 
 export interface ProjectTopologyDeploymentTarget {
   id: string
@@ -137,7 +137,7 @@ export type ProjectTopologyManualEdgePayload = Pick<ProjectTopologyManualEdge, |
 
 export interface ServiceBindingCheckItem {
   code: string
-  status: 'passed' | 'warning' | 'failed'
+  status: 'passed' | 'warning' | 'failed' | 'unavailable'
   resource?: string
   detail?: string
 }
@@ -146,6 +146,7 @@ export interface ServiceBindingCheckResult {
   bindingId: string
   checkedAt?: string
   status: ProjectTopologyStatus
+  observationCode?: string
   checks: ServiceBindingCheckItem[]
 }
 

@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { api } from '@/api'
+import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { canDeleteClusterResource } from './cluster-resource-utils'
 
 const RESOURCE_PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
@@ -47,6 +48,7 @@ export function useClusterResources({ activeTab, manageableClusters, user }: {
     updateResourceView(current => ({ ...current, page }))
   }
   const clusterResources = useQuery({
+    ...liveObservationQueryPolicy,
     queryKey: ['runtime-cluster-resources', selectedResourceCluster?.id, resourceKind, resourcePage, resourcePageSize],
     queryFn: () => api.listRuntimeClusterResourcesPage(selectedResourceCluster?.id ?? '', {
       kind: resourceKind,
@@ -71,6 +73,7 @@ export function useClusterResources({ activeTab, manageableClusters, user }: {
     return activeResourceItems.filter(item => selectedKeys.has(item.id) && canDeleteClusterResource(user, item))
   }, [activeResourceItems, user, visibleSelectedResourceKeys])
   const resourceEvents = useQuery({
+    ...liveObservationQueryPolicy,
     queryKey: ['runtime-cluster-resource-events', selectedResourceCluster?.id, eventResource?.kind, eventResource?.namespace, eventResource?.name],
     queryFn: () => api.listRuntimeClusterResourceEvents(selectedResourceCluster?.id ?? '', {
       kind: eventResource?.kind ?? '',
@@ -80,6 +83,7 @@ export function useClusterResources({ activeTab, manageableClusters, user }: {
     enabled: Boolean(selectedResourceCluster?.id && eventResource),
   })
   const resourceYAML = useQuery({
+    ...liveObservationQueryPolicy,
     queryKey: ['runtime-cluster-resource-yaml', selectedResourceCluster?.id, yamlResource?.kind, yamlResource?.namespace, yamlResource?.name],
     queryFn: () => api.getRuntimeClusterResourceYAML(selectedResourceCluster?.id ?? '', {
       kind: yamlResource?.kind ?? '',

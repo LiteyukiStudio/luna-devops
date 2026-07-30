@@ -5,6 +5,8 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { api } from '@/api'
 import { useSession } from '@/app/session-context'
+import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
+import { isPlatformAdmin } from '@/lib/roles'
 import { BILLING_PAGE_SIZE, billingPeriodToQuery, periodSelectionForPreset, readCachedBillingProjectScope, writeCachedBillingProjectScope } from './billing-page-utils'
 
 export function useBillingPage() {
@@ -23,7 +25,7 @@ export function useBillingPage() {
   const [transactionType, setTransactionType] = useState<'credit' | 'adjustment'>('credit')
   const [transactionAmount, setTransactionAmount] = useState('')
   const [transactionDescription, setTransactionDescription] = useState('')
-  const canManageBilling = user?.role === 'platform_admin'
+  const canManageBilling = isPlatformAdmin(user?.role)
   const billingUserScopeId = selectedBillingUserId ?? (canManageBilling ? user?.id ?? '' : '')
 
   const projectsQuery = useQuery({
@@ -95,6 +97,7 @@ export function useBillingPage() {
     }),
   })
   const gatewayTrafficStatusQuery = useQuery({
+    ...liveObservationQueryPolicy,
     queryKey: ['billing', 'gateway-traffic-status'],
     queryFn: api.getGatewayTrafficStatus,
   })

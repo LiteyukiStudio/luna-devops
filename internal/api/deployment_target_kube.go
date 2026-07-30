@@ -45,3 +45,22 @@ func (h *Handlers) kubernetesClientForDeploymentTarget(ctx *gin.Context, project
 	}
 	return client, deploymentTargetNamespace(project, target), true
 }
+
+// kubernetesClientForDeploymentTargetObservation resolves a read-only live
+// observation dependency without writing an HTTP response. Callers can return
+// a stable unavailable observation instead of failing the whole resource API.
+func (h *Handlers) kubernetesClientForDeploymentTargetObservation(project model.Project, target model.DeploymentTarget) (*kubeprovider.Client, string, string) {
+	cluster, err := h.runtimeClusterForDeploymentTargetValue(target)
+	if err != nil {
+		return nil, "", "runtime_cluster_not_found"
+	}
+	kubeconfig := h.secrets.Resolve(cluster.KubeconfigRef)
+	if strings.TrimSpace(kubeconfig) == "" {
+		return nil, "", "kubeconfig_not_configured"
+	}
+	client, err := kubeprovider.NewClientFromKubeconfig(kubeconfig)
+	if err != nil {
+		return nil, "", "kubeconfig_invalid"
+	}
+	return client, deploymentTargetNamespace(project, target), ""
+}

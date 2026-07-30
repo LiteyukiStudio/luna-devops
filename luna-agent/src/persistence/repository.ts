@@ -1,4 +1,15 @@
-import type { Conversation, ConversationHistoryEntry, ConversationTitleSource, CreatedTurn, CreateTurn, Run, RunEvent, TimelineItem } from "../domain.js"
+import type {
+  Conversation,
+  ConversationHistoryEntry,
+  ConversationTitleSource,
+  CreatedTurn,
+  CreateTurn,
+  Run,
+  RunEvent,
+  TimelineItem,
+  UIActionAcknowledgement,
+  UIActionDelivery,
+} from "../domain.js"
 
 export interface Repository {
   health(): Promise<boolean>
@@ -32,5 +43,8 @@ export interface Repository {
   finalizeStreamingItems(runId: string, status: Exclude<TimelineItem["status"], "streaming">): Promise<void>
   appendEvent(runId: string, type: string, data: Record<string, unknown>): Promise<RunEvent>
   getEvents(ownerUserId: string, runId: string, after: number): Promise<RunEvent[]>
+  createUIAction(runId: string, toolCallId: string, action: Record<string, unknown>, expiresAt: string): Promise<UIActionDelivery>
+  listPendingUIActions(ownerUserId: string, clientInstanceId: string): Promise<UIActionDelivery[]>
+  acknowledgeUIAction(ownerUserId: string, clientInstanceId: string, actionId: string, acknowledgement: UIActionAcknowledgement): Promise<UIActionDelivery | undefined>
   getTimeline(ownerUserId: string, conversationId: string): Promise<{ conversation: Conversation, turns: Array<{ id: string, turnIndex: number, status: string, input: string, run?: Run, items: TimelineItem[] }> } | undefined>
 }

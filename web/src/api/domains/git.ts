@@ -1,6 +1,14 @@
 import type { GitAccount, GitBranch, GitContentItem, GitFileContent, GitProvider, GitRepository, GitRepositoryBuildOptions, PaginatedResponse, PaginationParams } from '../types'
 import { optionalProjectQuery, paginationWithProjectQuery, request } from '../core'
 
+type GitAccountPayload = Omit<GitAccount, 'id' | 'userId' | 'scopes' | 'createdAt' | 'accessTokenSet' | 'refreshTokenSet' | 'status' | 'observationCode' | 'observedAt'> & {
+  scope?: GitAccount['scope']
+  ownerRef?: string
+  scopes: string[]
+  accessToken?: string
+  refreshToken?: string
+}
+
 export const gitApi = {
   listGitProviders: (projectId?: string) =>
     request<GitProvider[]>(`/git/providers${optionalProjectQuery(projectId)}`),
@@ -16,9 +24,9 @@ export const gitApi = {
     request<GitAccount[]>(`/git/accounts${optionalProjectQuery(projectId)}`),
   listGitAccountsPage: (params: PaginationParams & { projectId?: string }) =>
     request<PaginatedResponse<GitAccount>>(`/git/accounts?${paginationWithProjectQuery(params)}`),
-  createGitAccount: (payload: Omit<GitAccount, 'id' | 'userId' | 'scopes' | 'createdAt' | 'accessTokenSet' | 'refreshTokenSet'> & { scope?: GitAccount['scope'], ownerRef?: string, scopes: string[], accessToken?: string, refreshToken?: string }) =>
+  createGitAccount: (payload: GitAccountPayload) =>
     request<GitAccount>('/git/accounts', { method: 'POST', body: JSON.stringify(payload) }),
-  updateGitAccount: (accountId: string, payload: Omit<GitAccount, 'id' | 'userId' | 'scopes' | 'createdAt' | 'accessTokenSet' | 'refreshTokenSet'> & { scope?: GitAccount['scope'], ownerRef?: string, scopes: string[], accessToken?: string, refreshToken?: string }) =>
+  updateGitAccount: (accountId: string, payload: GitAccountPayload) =>
     request<GitAccount>(`/git/accounts/${accountId}`, { method: 'PUT', body: JSON.stringify(payload) }),
   deleteGitAccount: (accountId: string) =>
     request<void>(`/git/accounts/${accountId}`, { method: 'DELETE' }),

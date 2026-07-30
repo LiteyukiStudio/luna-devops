@@ -177,6 +177,43 @@ describe('aI assistant state', () => {
     expect(approval.runStatuses['run-1']).toBe('waiting_approval')
   })
 
+  it('replaces a card preparation block with the completed card in place', () => {
+    const started = reduceAIEvent(emptyAIAssistantState, event({
+      type: 'tool.started',
+      toolCallId: 'card-generation',
+      payload: {
+        operationId: 'prepare_interaction_cards',
+        arguments: { schemaVersion: 1, generationId: 'database-list', title: '正在整理数据库候选' },
+        timelineIndex: 2,
+      },
+    }))
+    const completed = reduceAIEvent(started, event({
+      eventId: 'event-2',
+      eventSequence: 2,
+      type: 'tool.completed',
+      toolCallId: 'card-generation',
+      payload: {
+        operationId: 'create_interaction_cards',
+        arguments: {
+          schemaVersion: 1,
+          generationId: 'database-list',
+          title: '数据库候选',
+          template: 'catalog',
+          cards: [],
+        },
+        timelineIndex: 2,
+      },
+    }))
+
+    expect(completed.blocks).toHaveLength(1)
+    expect(completed.blocks[0]).toMatchObject({
+      type: 'tool_call',
+      operationId: 'create_interaction_cards',
+      status: 'succeeded',
+      arguments: expect.objectContaining({ generationId: 'database-list', title: '数据库候选' }),
+    })
+  })
+
   it('retains a failed tool error code and request id from the live event', () => {
     const started = reduceAIEvent(emptyAIAssistantState, event({
       type: 'tool.started',

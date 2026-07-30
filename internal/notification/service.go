@@ -142,7 +142,6 @@ func (s Service) Emit(ctx context.Context, event Event) ([]model.NotificationDel
 				}
 			}
 		}
-		_ = s.DB.Model(&rule).Update("last_matched_event_id", event.ID).Error
 	}
 	return deliveries, nil
 }

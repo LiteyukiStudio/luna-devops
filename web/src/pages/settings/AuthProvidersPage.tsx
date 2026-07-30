@@ -25,6 +25,7 @@ import { Input } from '@/components/ui/input'
 import { NativeSelect as Select } from '@/components/ui/native-select'
 import { TabsContent } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
+import { PLATFORM_ROLES, PlatformRole } from '@/lib/roles'
 
 const providerSchema = z.object({
   name: z.string().min(1),
@@ -46,7 +47,7 @@ const policySchema = z.object({
   allowedEmailDomains: z.string(),
   allowedOidcGroups: z.string(),
   invitedEmails: z.string(),
-  defaultRole: z.enum(['platform_admin', 'user']),
+  defaultRole: z.enum(PLATFORM_ROLES),
 })
 
 type ProviderForm = z.infer<typeof providerSchema>
@@ -85,7 +86,7 @@ export function AuthProvidersPage() {
       allowedEmailDomains: '',
       allowedOidcGroups: '',
       invitedEmails: '',
-      defaultRole: 'user',
+      defaultRole: PlatformRole.User,
     },
   })
 
@@ -369,8 +370,8 @@ export function AuthProvidersPage() {
               </Field>
               <Field error={policyForm.formState.errors.defaultRole?.message} hint={t('authProvidersPage.defaultRoleHint')} label={t('authProvidersPage.defaultRole')} required>
                 <Select {...policyForm.register('defaultRole')} aria-invalid={Boolean(policyForm.formState.errors.defaultRole)}>
-                  <option value="user">{t('usersPage.normalUser')}</option>
-                  <option value="platform_admin">{t('usersPage.platformAdmin')}</option>
+                  <option value={PlatformRole.User}>{t('usersPage.normalUser')}</option>
+                  <option value={PlatformRole.Admin}>{t('usersPage.platformAdmin')}</option>
                 </Select>
               </Field>
               <FormActions>

@@ -5,6 +5,7 @@ import { AIInteractionCards } from './interaction-cards'
 
 const catalogCard = {
   schemaVersion: 1,
+  generationId: 'database-candidates',
   title: '选择数据库',
   template: 'catalog',
   cards: [{
@@ -138,5 +139,19 @@ describe('ai interaction cards', () => {
     render(<AIInteractionCards arguments={{ schemaVersion: 1, template: 'approval', cards: [] }} onAction={vi.fn()} />)
 
     expect(screen.getByRole('alert')).toBeInTheDocument()
+  })
+
+  it('renders card descriptions as safe markdown and ignores model HTML', () => {
+    const card = structuredClone(catalogCard) as unknown as {
+      description?: string
+      cards: Array<{ presentation: { description?: string } }>
+    }
+    card.description = '请选择 **可信来源** 的数据库。'
+    card.cards[0]!.presentation.description = '适合生产环境。<script>window.bad = true</script>'
+
+    const { container } = render(<AIInteractionCards arguments={card as unknown as Record<string, unknown>} onAction={vi.fn()} />)
+
+    expect(screen.getByText('可信来源').tagName).toBe('STRONG')
+    expect(container.querySelector('script')).not.toBeInTheDocument()
   })
 })

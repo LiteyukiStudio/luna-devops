@@ -16,12 +16,14 @@ import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
 import { Surface } from '@/components/common/surface'
 import { formatCompactDateTime } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
+import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { WORKFLOW_STATUS_REFETCH_INTERVAL_MS } from '@/lib/polling'
 
 export function DashboardPage() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const dashboard = useQuery({
+    ...liveObservationQueryPolicy,
     queryKey: ['dashboard'],
     queryFn: api.getDashboard,
     refetchInterval: WORKFLOW_STATUS_REFETCH_INTERVAL_MS,

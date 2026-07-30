@@ -94,6 +94,7 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 		"oauth_refresh_tokens",
 		"auth_registration_settings",
 		"email_registration_challenges",
+		"ai.ui_actions",
 	} {
 		if !db.Migrator().HasTable(table) {
 			t.Fatalf("fresh database is missing table %s", table)
@@ -113,6 +114,7 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 		{table: "projects", column: "kubernetes_namespace"},
 		{table: "applications", column: "identifier"},
 		{table: "deployment_targets", column: "kubernetes_name"},
+		{table: "ai.runs", column: "client_instance_id"},
 	} {
 		if !db.Migrator().HasColumn(expected.table, expected.column) {
 			t.Fatalf("fresh database is missing %s.%s", expected.table, expected.column)
@@ -132,6 +134,35 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 		if db.Migrator().HasColumn("access_tokens", column) {
 			t.Fatalf("fresh database contains legacy access_tokens.%s", column)
 		}
+	}
+	for _, obsolete := range []struct {
+		table  string
+		column string
+	}{
+		{table: "runtime_clusters", column: "status"},
+		{table: "runtime_clusters", column: "last_checked_at"},
+		{table: "service_bindings", column: "last_check_status"},
+		{table: "service_bindings", column: "last_checked_at"},
+		{table: "gateway_routes", column: "certificate_status"},
+		{table: "gateway_routes", column: "certificate_message"},
+		{table: "gateway_routes", column: "certificate_not_after"},
+		{table: "gateway_routes", column: "certificate_issuer_kind"},
+		{table: "gateway_routes", column: "certificate_issuer_name"},
+		{table: "gateway_routes", column: "dns_status"},
+		{table: "gateway_routes", column: "status"},
+		{table: "git_accounts", column: "status"},
+		{table: "repository_bindings", column: "webhook_status"},
+		{table: "notification_channels", column: "last_delivery_status"},
+		{table: "notification_channels", column: "last_delivery_error"},
+		{table: "notification_channels", column: "last_delivered_at"},
+		{table: "notification_rules", column: "last_matched_event_id"},
+	} {
+		if db.Migrator().HasColumn(obsolete.table, obsolete.column) {
+			t.Fatalf("fresh database contains persisted live observation %s.%s", obsolete.table, obsolete.column)
+		}
+	}
+	if !db.Migrator().HasColumn("repository_bindings", "webhook_enabled") {
+		t.Fatal("fresh database is missing desired-state repository_bindings.webhook_enabled")
 	}
 	if db.Migrator().HasColumn("users", "auth_type") {
 		t.Fatal("fresh database contains obsolete users.auth_type")

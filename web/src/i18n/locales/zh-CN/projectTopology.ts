@@ -66,7 +66,6 @@ const projectTopology = {
   },
   statuses: {
     ready: '可用',
-    pending_release: '等待发布',
     unavailable: '不可用',
     invalid: '配置失效',
     disabled: '已停用',
@@ -84,6 +83,7 @@ const projectTopology = {
     passed: '通过',
     warning: '注意',
     failed: '失败',
+    unavailable: '暂时不可用',
   },
   checkCodes: {
     kubernetes_check: 'Kubernetes 运行态检查',
@@ -92,7 +92,6 @@ const projectTopology = {
     service_port_resolved: '目标端口可解析',
     endpoint_ready: '存在可用 Endpoint',
     network_policy_detected: '检测到 NetworkPolicy',
-    binding_applied: '当前引用已发布',
     binding_config_valid: '服务引用配置有效',
   },
   form: {

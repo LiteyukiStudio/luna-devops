@@ -18,6 +18,7 @@ import { Label } from '@/components/ui/label'
 import { NativeSelect as Select } from '@/components/ui/native-select'
 import { TabsContent } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
+import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 
 const PAGE_SIZE = 10
 const FAILURE_EVENTS = ['build.failed', 'release.failed', 'hook.failed', 'gateway.apply_failed']
@@ -38,10 +39,12 @@ export function NotificationsPage() {
 
   const presets = useQuery({ queryKey: ['notifications', 'presets'], queryFn: api.listNotificationPresets })
   const channels = useQuery({
+    ...liveObservationQueryPolicy,
     queryKey: ['notifications', 'channels', channelPage],
     queryFn: () => api.listNotificationChannels({ page: channelPage, pageSize: PAGE_SIZE, sortBy: 'createdAt', sortOrder: 'desc' }),
   })
   const channelOptions = useQuery({
+    ...liveObservationQueryPolicy,
     queryKey: ['notifications', 'channels', 'options'],
     queryFn: () => api.listNotificationChannels({ page: 1, pageSize: 100, sortBy: 'name', sortOrder: 'asc' }),
   })

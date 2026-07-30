@@ -14,9 +14,9 @@ type NotificationChannel struct {
 	ConfigJSON         string         `gorm:"type:jsonb;not null;default:'{}'" json:"configJson"`
 	SecretRefsJSON     string         `gorm:"type:jsonb;not null;default:'{}'" json:"-"`
 	Enabled            bool           `gorm:"not null;default:true" json:"enabled"`
-	LastDeliveryStatus string         `gorm:"not null;default:''" json:"lastDeliveryStatus"`
-	LastDeliveryError  string         `gorm:"type:text;not null;default:''" json:"lastDeliveryError"`
-	LastDeliveredAt    *time.Time     `json:"lastDeliveredAt"`
+	LastDeliveryStatus string         `gorm:"-" json:"lastDeliveryStatus"`
+	LastDeliveryError  string         `gorm:"-" json:"lastDeliveryError"`
+	LastDeliveredAt    *time.Time     `gorm:"-" json:"lastDeliveredAt"`
 	CreatedBy          string         `json:"createdBy"`
 	CreatedAt          time.Time      `json:"createdAt"`
 	UpdatedAt          time.Time      `json:"updatedAt"`
@@ -41,20 +41,19 @@ type NotificationTemplate struct {
 }
 
 type NotificationRule struct {
-	ID                 string         `gorm:"primaryKey" json:"id"`
-	ProjectID          string         `gorm:"index;not null;default:''" json:"projectId"`
-	Name               string         `gorm:"not null" json:"name"`
-	EventTypesJSON     string         `gorm:"type:jsonb;not null;default:'[]'" json:"eventTypesJson"`
-	FilterJSON         string         `gorm:"type:jsonb;not null;default:'{}'" json:"filterJson"`
-	ChannelIDsJSON     string         `gorm:"type:jsonb;not null;default:'[]'" json:"channelIdsJson"`
-	TemplateID         string         `gorm:"index;not null;default:''" json:"templateId"`
-	Locale             string         `gorm:"not null;default:''" json:"locale"`
-	Enabled            bool           `gorm:"not null;default:true" json:"enabled"`
-	LastMatchedEventID string         `gorm:"not null;default:''" json:"lastMatchedEventId"`
-	CreatedBy          string         `json:"createdBy"`
-	CreatedAt          time.Time      `json:"createdAt"`
-	UpdatedAt          time.Time      `json:"updatedAt"`
-	DeletedAt          gorm.DeletedAt `gorm:"index" json:"-"`
+	ID             string         `gorm:"primaryKey" json:"id"`
+	ProjectID      string         `gorm:"index;not null;default:''" json:"projectId"`
+	Name           string         `gorm:"not null" json:"name"`
+	EventTypesJSON string         `gorm:"type:jsonb;not null;default:'[]'" json:"eventTypesJson"`
+	FilterJSON     string         `gorm:"type:jsonb;not null;default:'{}'" json:"filterJson"`
+	ChannelIDsJSON string         `gorm:"type:jsonb;not null;default:'[]'" json:"channelIdsJson"`
+	TemplateID     string         `gorm:"index;not null;default:''" json:"templateId"`
+	Locale         string         `gorm:"not null;default:''" json:"locale"`
+	Enabled        bool           `gorm:"not null;default:true" json:"enabled"`
+	CreatedBy      string         `json:"createdBy"`
+	CreatedAt      time.Time      `json:"createdAt"`
+	UpdatedAt      time.Time      `json:"updatedAt"`
+	DeletedAt      gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
 type NotificationDelivery struct {

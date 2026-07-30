@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/gin-gonic/gin"
@@ -19,8 +20,6 @@ type gatewayRouteInput struct {
 	Path                   string `json:"path"`
 	ServicePort            int    `json:"servicePort"`
 	TLSMode                string `json:"tlsMode"`
-	DNSStatus              string `json:"dnsStatus"`
-	Status                 string `json:"status"`
 	Enabled                *bool  `json:"enabled"`
 	IsDefault              bool   `json:"isDefault"`
 	ParentGatewayName      string `json:"parentGatewayName"`
@@ -83,11 +82,6 @@ func (h *Handlers) gatewayRouteFromInput(ctx *gin.Context, project model.Project
 		return model.GatewayRoute{}, false
 	}
 
-	tlsMode := normalizeTLSMode(input.TLSMode)
-	certStatus := "disabled"
-	if tlsMode != "http-only" {
-		certStatus = "pending"
-	}
 	return model.GatewayRoute{
 		ID:                     routeID,
 		ProjectID:              project.ID,
@@ -98,12 +92,9 @@ func (h *Handlers) gatewayRouteFromInput(ctx *gin.Context, project model.Project
 		DomainSuffix:           domainSuffix,
 		Path:                   fallback(strings.TrimSpace(input.Path), "/"),
 		ServicePort:            servicePort,
-		TLSMode:                tlsMode,
-		CertificateStatus:      certStatus,
+		TLSMode:                normalizeTLSMode(input.TLSMode),
 		CNAMEName:              host,
 		CNAMETarget:            h.gatewayCNAMETarget(cluster, domainSuffix),
-		DNSStatus:              fallback(strings.TrimSpace(input.DNSStatus), "pending"),
-		Status:                 fallback(strings.TrimSpace(input.Status), "pending"),
 		Enabled:                gatewayRouteInputEnabled(input.Enabled),
 		IsDefault:              input.IsDefault,
 		ParentGatewayName:      advanced.ParentGatewayName,
@@ -192,12 +183,12 @@ func (h *Handlers) gatewayRouteAdvancedConfig(ctx *gin.Context, projectID string
 	if !gatewayAdvancedConfigPresent(config) {
 		return config, true
 	}
-	projectAdmin := user.Role == "platform_admin" || h.currentProjectRoleAllows(ctx, projectID, user.ID, "owner", "admin")
+	projectAdmin := user.Role == authz.PlatformRoleAdmin || h.currentProjectRoleAllows(ctx, projectID, user.ID, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
 	if gatewayAdvancedConfigRequiresProjectAdmin(config) && !projectAdmin {
 		writeError(ctx, http.StatusForbidden, "只有项目 Owner/Admin 可以维护访问入口高级配置")
 		return gatewayRouteAdvancedConfig{}, false
 	}
-	platformAdmin := user.Role == "platform_admin"
+	platformAdmin := user.Role == authz.PlatformRoleAdmin
 	if _, err := parseGatewayHeaderMap(config.RequestHeaders, platformAdmin); err != nil {
 		writeError(ctx, http.StatusBadRequest, fmt.Sprintf("请求头配置无效: %s", err.Error()))
 		return gatewayRouteAdvancedConfig{}, false

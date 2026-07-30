@@ -12,6 +12,7 @@ import (
 )
 
 func (h *Handlers) ListArtifactRegistries(ctx *gin.Context) {
+	markLiveObservationResponse(ctx)
 	user, ok := h.currentUser(ctx)
 	if !ok {
 		return
@@ -43,6 +44,7 @@ func (h *Handlers) ListArtifactRegistries(ctx *gin.Context) {
 			writeError(ctx, http.StatusInternalServerError, err.Error())
 			return
 		}
+		h.observeArtifactRegistries(ctx.Request.Context(), user, registries)
 		ctx.JSON(http.StatusOK, paginatedResponse(h.registryResponsesForUser(user, registries), total, pagination))
 		return
 	}
@@ -50,6 +52,7 @@ func (h *Handlers) ListArtifactRegistries(ctx *gin.Context) {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
+	h.observeArtifactRegistries(ctx.Request.Context(), user, registries)
 	ctx.JSON(http.StatusOK, h.registryResponsesForUser(user, registries))
 }
 
@@ -76,6 +79,7 @@ func (h *Handlers) CreateArtifactRegistry(ctx *gin.Context) {
 		return
 	}
 	h.audit(user.ID, "registry.create", registry.ID, true, registry.Scope)
+	h.observeArtifactRegistry(ctx.Request.Context(), user, &registry)
 	ctx.JSON(http.StatusCreated, registryResponse(registry))
 }
 
@@ -118,6 +122,7 @@ func (h *Handlers) UpdateArtifactRegistry(ctx *gin.Context) {
 		return
 	}
 	h.audit(user.ID, "registry.update", existing.ID, true, existing.Scope)
+	h.observeArtifactRegistry(ctx.Request.Context(), user, &existing)
 	ctx.JSON(http.StatusOK, registryResponse(existing))
 }
 
@@ -175,6 +180,7 @@ func (h *Handlers) GetDefaultArtifactRegistry(ctx *gin.Context) {
 		writeError(ctx, http.StatusNotFound, "default artifact registry not found")
 		return
 	}
+	h.observeArtifactRegistry(ctx.Request.Context(), user, &registry)
 	ctx.JSON(http.StatusOK, registryResponse(registry))
 }
 

@@ -9,6 +9,7 @@ import { DataListSkeleton } from '@/components/common/loading-states'
 import { StatusValueBadge } from '@/components/common/status-badge'
 import { formatSmartDateTime } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
+import { isPlatformAdmin } from '@/lib/roles'
 import { canDeleteClusterResource } from './cluster-resource-utils'
 
 export interface ClusterResourcePagination {
@@ -69,7 +70,7 @@ export function ClusterResourcesPanel({ items, loading, pagination, selectedClus
   const visibleSelectedResourceKeys = selectedResourceKeys.filter(key => itemKeys.has(key))
   const selectedResources = rowItems.filter(item => visibleSelectedResourceKeys.includes(item.id) && canDeleteClusterResource(user, item) && !item.parentId)
   const canOpenWebConsole = (item: ClusterResourceRow) => {
-    return tab === 'workloads' && user?.role === 'platform_admin' && item.kind.toLowerCase() === 'pod' && Boolean(item.namespace && item.name)
+    return tab === 'workloads' && isPlatformAdmin(user?.role) && item.kind.toLowerCase() === 'pod' && Boolean(item.namespace && item.name)
   }
   const toggleResourceExpansion = (resource: ClusterResourceRow) => {
     setExpandedResourceKeys((keys) => {

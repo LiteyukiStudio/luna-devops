@@ -50,11 +50,15 @@ After a response, the assistant shows a small set of next steps only when the mo
 For reading tasks, the assistant may include internal links. When it needs a decision, it prefers selectable options instead of moving you away from the current page.
 If the model does not return reliable contextual suggestions, the platform omits the suggestion area instead of filling it with fixed generic choices.
 
+When you explicitly ask to open a page, the assistant can switch the current tab without a reload. An unfinished navigation is retried briefly after a temporary disconnect, and the platform confirms success only after the target page has opened.
+
 ## Interaction cards
 
-The assistant can organize resource candidates, comparisons, diagnostics, and configuration fields into cards. Continue or action buttons stay disabled until required fields are valid.
+The assistant can organize resource candidates, comparisons, resource details, configuration wizards, diagnostics, execution plans, task progress, receipts, and health summaries into cards. Continue or action buttons stay disabled until required fields are valid.
 
 When a form continues the conversation, only the non-sensitive fields declared by the card are included. Passwords, tokens, and secrets are never added to the message history. Any resulting operation still goes through platform authorization and required confirmation.
+
+Complex cards show a preparation animation and replace it in place when the final content is ready. Cards adapt to the assistant window width, while wide tables and code scroll inside the card. Descriptive text supports safe Markdown; HTML and scripts are never executed as interface content.
 
 ## Page context and privacy
 

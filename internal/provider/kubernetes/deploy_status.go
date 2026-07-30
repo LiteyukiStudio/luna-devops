@@ -20,6 +20,7 @@ const (
 type DeploymentSnapshot struct {
 	Phase             string
 	Message           string
+	CreatedAt         time.Time
 	DesiredReplicas   int32
 	UpdatedReplicas   int32
 	ReadyReplicas     int32
@@ -34,7 +35,23 @@ func (c *Client) GetDeploymentSnapshot(ctx context.Context, namespace, name stri
 	if err != nil {
 		return DeploymentSnapshot{}, err
 	}
+	return deploymentStatusSnapshot(deployment), nil
+}
 
+// GetWorkloadSnapshot observes the exact workload type referenced by the platform.
+// Unlike GetDeploymentSnapshot, it does not fall back to another resource kind.
+func (c *Client) GetWorkloadSnapshot(ctx context.Context, namespace, name, workloadType string) (DeploymentSnapshot, error) {
+	if workloadType == "StatefulSet" {
+		return c.getStatefulSetSnapshot(ctx, namespace, name)
+	}
+	deployment, err := c.client.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return DeploymentSnapshot{}, err
+	}
+	return deploymentStatusSnapshot(deployment), nil
+}
+
+func deploymentStatusSnapshot(deployment *appsv1.Deployment) DeploymentSnapshot {
 	desired := int32(1)
 	if deployment.Spec.Replicas != nil {
 		desired = *deployment.Spec.Replicas
@@ -42,6 +59,7 @@ func (c *Client) GetDeploymentSnapshot(ctx context.Context, namespace, name stri
 	snapshot := DeploymentSnapshot{
 		Phase:             DeploymentRunning,
 		Message:           fmt.Sprintf("rollout 进行中：updated=%d ready=%d available=%d desired=%d", deployment.Status.UpdatedReplicas, deployment.Status.ReadyReplicas, deployment.Status.AvailableReplicas, desired),
+		CreatedAt:         deployment.CreationTimestamp.Time,
 		DesiredReplicas:   desired,
 		UpdatedReplicas:   deployment.Status.UpdatedReplicas,
 		ReadyReplicas:     deployment.Status.ReadyReplicas,
@@ -52,7 +70,7 @@ func (c *Client) GetDeploymentSnapshot(ctx context.Context, namespace, name stri
 		if condition.Type == appsv1.DeploymentProgressing && condition.Status == corev1.ConditionFalse && condition.Reason == "ProgressDeadlineExceeded" {
 			snapshot.Phase = DeploymentFailed
 			snapshot.Message = firstNonEmpty(condition.Message, "Deployment rollout exceeded progress deadline")
-			return snapshot, nil
+			return snapshot
 		}
 	}
 	if deployment.Status.ObservedGeneration >= deployment.Generation &&
@@ -68,7 +86,7 @@ func (c *Client) GetDeploymentSnapshot(ctx context.Context, namespace, name stri
 			}
 		}
 	}
-	return snapshot, nil
+	return snapshot
 }
 
 func (c *Client) getStatefulSetSnapshot(ctx context.Context, namespace, name string) (DeploymentSnapshot, error) {
@@ -83,6 +101,7 @@ func (c *Client) getStatefulSetSnapshot(ctx context.Context, namespace, name str
 	snapshot := DeploymentSnapshot{
 		Phase:             DeploymentRunning,
 		Message:           fmt.Sprintf("StatefulSet rollout 进行中：updated=%d ready=%d available=%d desired=%d", statefulSet.Status.UpdatedReplicas, statefulSet.Status.ReadyReplicas, statefulSet.Status.AvailableReplicas, desired),
+		CreatedAt:         statefulSet.CreationTimestamp.Time,
 		DesiredReplicas:   desired,
 		UpdatedReplicas:   statefulSet.Status.UpdatedReplicas,
 		ReadyReplicas:     statefulSet.Status.ReadyReplicas,

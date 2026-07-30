@@ -1067,11 +1067,11 @@ paths:
       summary: Get Configs
       responses:
         "200":
-          description: Successful business response.
+          description: Point-in-time service dependency observation.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/BusinessObject"
+                $ref: "#/components/schemas/ServiceBindingCheckResult"
         "400":
           $ref: "#/components/responses/BadRequest"
         "403":
@@ -2722,7 +2722,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/BusinessObjectList"
+                $ref: "#/components/schemas/SystemComponentStatusResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
         "403":
@@ -2894,7 +2894,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/BusinessObject"
+                $ref: "#/components/schemas/SystemComponentInstallResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
         "403":
@@ -5966,6 +5966,31 @@ paths:
         - { name: Idempotency-Key, in: header, required: true, schema: { type: string } }
       requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }
       responses: { "202": { description: Turn and initial run accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }, "401": { $ref: "#/components/responses/Unauthorized" }, "404": { $ref: "#/components/responses/NotFound" }, "409": { $ref: "#/components/responses/Conflict" } }
+  /api/v1/ai/ui-actions/pending:
+    get:
+      operationId: listPendingAIUIActions
+      tags: [AI Assistant]
+      summary: List unacknowledged UI actions for the initiating browser client
+      security: [{ SessionCookie: [] }]
+      parameters:
+        - { name: clientInstanceId, in: query, required: true, schema: { type: string, minLength: 16, maxLength: 80, pattern: "^[A-Za-z0-9_-]+$" } }
+      responses:
+        "200": { description: Pending UI actions bound to the current user and browser client, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/ai/ui-actions/{actionId}/ack:
+    post:
+      operationId: acknowledgeAIUIAction
+      tags: [AI Assistant]
+      summary: Acknowledge a browser UI action after route execution succeeds or fails
+      security: [{ SessionCookie: [] }]
+      parameters:
+        - { name: actionId, in: path, required: true, schema: { type: string } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }
+      responses:
+        "202": { description: UI action acknowledgement accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
   /api/v1/ai/turns/{turnId}/runs:
     parameters: [{ name: turnId, in: path, required: true, schema: { type: string } }]
     get:
@@ -6437,13 +6462,81 @@ components:
         occurrences: { type: integer, minimum: 1 }
         latest: { $ref: "#/components/schemas/DashboardActivity" }
       required: [key, category, severity, occurrences, latest]
+    ObservationStatus:
+      type: string
+      enum: [ready, degraded, progressing, not-found, not-configured, unavailable, unknown, declared]
+      description: Point-in-time upstream observation. unavailable means the authoritative upstream could not be queried.
+    SystemComponentInstallation:
+      type: object
+      properties:
+        id: { type: string }
+        componentId: { type: string }
+        componentVersion: { type: string }
+        runtimeClusterId: { type: string }
+        projectId: { type: string }
+        applicationId: { type: string }
+        deploymentTargetId: { type: string }
+        releaseId: { type: string }
+        namespace: { type: string }
+        status:
+          type: string
+          description: Durable installation workflow result. It is not the current Kubernetes workload status.
+        message: { type: string }
+        controllerType: { type: string }
+        mode: { type: string }
+        config: { type: string }
+        lastError: { type: string }
+        installedBy: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        runtimeStatus: { $ref: "#/components/schemas/ObservationStatus" }
+        observationCode: { type: string }
+        observedAt: { type: string, format: date-time }
+      required:
+        - id
+        - componentId
+        - componentVersion
+        - runtimeClusterId
+        - projectId
+        - applicationId
+        - deploymentTargetId
+        - releaseId
+        - namespace
+        - status
+        - message
+        - controllerType
+        - mode
+        - config
+        - lastError
+        - installedBy
+        - createdAt
+        - updatedAt
+        - runtimeStatus
+    SystemComponentStatusResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/SystemComponentInstallation" }
+        gatewayTrafficProbeEnabled: { type: boolean }
+      required: [items, gatewayTrafficProbeEnabled]
+    SystemComponentInstallResponse:
+      type: object
+      properties:
+        installation: { $ref: "#/components/schemas/SystemComponentInstallation" }
+        application: { $ref: "#/components/schemas/BusinessObject" }
+        deploymentTarget: { $ref: "#/components/schemas/BusinessObject" }
+        release: { $ref: "#/components/schemas/BusinessObject" }
+      required: [installation]
     DashboardReadinessItem:
       type: object
       properties:
-        status: { type: string, enum: [ready, degraded, unavailable, available, missing] }
+        status: { $ref: "#/components/schemas/ObservationStatus" }
         available: { type: integer, minimum: 0 }
         total: { type: integer, minimum: 0 }
-      required: [status, available, total]
+        observationCode: { type: string }
+        observedAt: { type: string, format: date-time }
+      required: [status, available, total, observedAt]
     DashboardOverview:
       type: object
       properties:
@@ -6748,7 +6841,8 @@ components:
         allowedEmailDomains: { type: array, items: { type: string } }
         allowedOidcGroups: { type: array, items: { type: string } }
         invitedEmails: { type: array, items: { type: string } }
-        defaultRole: { type: string, enum: [platform_admin, user] }
+        defaultRole:
+          $ref: "#/components/schemas/PlatformRole"
     AuthProviderInput:
       type: object
       properties:
@@ -6820,7 +6914,6 @@ components:
         accessToken: { type: string, writeOnly: true }
         refreshToken: { type: string, writeOnly: true }
         scopes: { type: array, items: { type: string } }
-        status: { type: string, enum: [connected, expired, revoked] }
       required: [providerId, username]
     GitProviderInput:
       type: object
@@ -7050,7 +7143,8 @@ components:
       type: object
       properties:
         email: { type: string }
-        role: { type: string, enum: [owner, admin, developer, viewer] }
+        role:
+          $ref: "#/components/schemas/ProjectRole"
       required: [email, role]
     RegistryCredentialInput:
       type: object
@@ -7107,7 +7201,9 @@ components:
         repo: { type: string }
         cloneUrl: { type: string }
         defaultBranch: { type: string }
-        webhookStatus: { type: string, enum: [pending, created, disabled, failed] }
+        webhookEnabled:
+          type: boolean
+          description: Desired webhook configuration. Current webhook availability is observed from the Git provider.
       required: [applicationId, gitAccountId, owner, repo]
     UpdateConfigsInput:
       type: object
@@ -7165,6 +7261,12 @@ components:
           type: array
           items: { $ref: "#/components/schemas/DataRetentionResult" }
       required: [items]
+    PlatformRole:
+      type: string
+      enum: [platform_admin, user]
+    ProjectRole:
+      type: string
+      enum: [owner, admin, developer, viewer]
     CurrentUser:
       type: object
       properties:
@@ -7173,7 +7275,8 @@ components:
         name: { type: string }
         avatarUrl: { type: string }
         passwordSet: { type: boolean }
-        role: { type: string }
+        role:
+          $ref: "#/components/schemas/PlatformRole"
         language: { type: string, enum: [zh-CN, en-US] }
         brandColorPreset:
           type: string
@@ -7268,7 +7371,8 @@ components:
         email: { type: string }
         name: { type: string }
         password: { type: string }
-        role: { type: string, enum: [platform_admin, user] }
+        role:
+          $ref: "#/components/schemas/PlatformRole"
         language: { type: string, enum: [zh-CN, en-US] }
         disabled: { type: boolean }
       required: [email, name]
@@ -7435,16 +7539,13 @@ components:
         status: { type: string }
     SystemComponentInstallInput:
       type: object
-      required: [clusterId]
+      required: [clusterId, apiBaseUrl]
       properties:
         clusterId: { type: string }
         namespace: { type: string }
-        values:
-          type: object
-          additionalProperties: true
-        parameters:
-          type: object
-          additionalProperties: { type: string }
+        mode: { type: string }
+        apiBaseUrl: { type: string, format: uri }
+        traefikMetricsUrl: { type: string, format: uri }
     NotificationChannelInput:
       type: object
       required: [name, adapterKind]
@@ -7542,6 +7643,27 @@ components:
         hostEnvVar: { type: string }
         portEnvVar: { type: string }
         enabled: { type: boolean }
+    ServiceBindingCheckItem:
+      type: object
+      required: [code, status]
+      properties:
+        code: { type: string }
+        status: { type: string }
+        resource: { type: string }
+        detail: { type: string }
+    ServiceBindingCheckResult:
+      type: object
+      required: [bindingId, checkedAt, status, checks]
+      properties:
+        bindingId: { type: string }
+        checkedAt: { type: string, format: date-time }
+        status:
+          type: string
+          enum: [ready, unavailable, declared, disabled, invalid]
+        observationCode: { type: string }
+        checks:
+          type: array
+          items: { $ref: "#/components/schemas/ServiceBindingCheckItem" }
     TopologyEdgeInput:
       allOf:
         - $ref: "#/components/schemas/ServiceBindingInput"

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/notification"
@@ -81,7 +82,7 @@ func (h *Handlers) UpdateAuthRegistrationSettings(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if user.Role != "platform_admin" {
+	if user.Role != authz.PlatformRoleAdmin {
 		writeErrorKey(ctx, http.StatusForbidden, user.Language, "config.admin.required")
 		return
 	}
@@ -221,7 +222,7 @@ func (h *Handlers) CompleteEmailRegistration(ctx *gin.Context) {
 		ID:       id.New("usr"),
 		Email:    email,
 		Name:     strings.TrimSpace(input.Name),
-		Role:     "user",
+		Role:     authz.PlatformRoleUser,
 		Language: normalizeLanguage(input.Language),
 		Password: string(passwordHash),
 	}

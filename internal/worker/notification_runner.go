@@ -76,11 +76,7 @@ func (r *Runner) handleNotificationDeliver(ctx context.Context, task *asynq.Task
 	if err := r.db.Model(&delivery).Updates(updates).Error; err != nil {
 		return err
 	}
-	return r.db.Model(&channel).Updates(map[string]any{
-		"last_delivery_status": "succeeded",
-		"last_delivery_error":  "",
-		"last_delivered_at":    &finishedAt,
-	}).Error
+	return nil
 }
 
 func notificationDeliverySucceededUpdates(duration time.Duration, requestSnapshot string, responseSnippet string, finishedAt time.Time) map[string]any {
@@ -111,10 +107,7 @@ func (r *Runner) markNotificationDeliveryFailed(delivery model.NotificationDeliv
 	if updateErr := r.db.Model(&delivery).Updates(updates).Error; updateErr != nil {
 		return updateErr
 	}
-	return r.db.Model(&model.NotificationChannel{}).Where("id = ?", delivery.ChannelID).Updates(map[string]any{
-		"last_delivery_status": "failed",
-		"last_delivery_error":  err.Error(),
-	}).Error
+	return nil
 }
 
 func notificationSendErrorShouldSkipRetry(result notification.SendResult) bool {

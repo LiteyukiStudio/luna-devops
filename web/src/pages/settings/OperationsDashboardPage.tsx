@@ -11,22 +11,23 @@ import { ForbiddenPage } from '@/components/common/forbidden-page'
 import { ToolViewportSkeleton } from '@/components/common/loading-states'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { isPlatformAdmin } from '@/lib/roles'
 
 const OPERATIONS_DASHBOARD_URL_KEY = 'site.operationsDashboardUrl'
 
 export function OperationsDashboardPage() {
   const { t } = useTranslation()
   const { user } = useSession()
-  const isPlatformAdmin = user?.role === 'platform_admin'
+  const platformAdmin = isPlatformAdmin(user?.role)
   const configs = useQuery({
     queryKey: ['configs'],
     queryFn: api.getConfigs,
-    enabled: isPlatformAdmin,
+    enabled: platformAdmin,
   })
   const dashboardUrl = configs.data?.[OPERATIONS_DASHBOARD_URL_KEY]?.trim() ?? ''
   const iframeUrl = useMemo(() => resolveIframeUrl(dashboardUrl), [dashboardUrl])
 
-  if (!isPlatformAdmin)
+  if (!platformAdmin)
     return <ForbiddenPage />
 
   if (configs.isLoading)

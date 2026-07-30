@@ -1,12 +1,24 @@
 import { createHash } from "node:crypto"
 import { Pool, type PoolClient } from "pg"
-import type { Conversation, ConversationHistoryEntry, ConversationTitleSource, CreatedTurn, CreateTurn, Run, TimelineItem } from "../domain.js"
+import type {
+  Conversation,
+  ConversationHistoryEntry,
+  ConversationTitleSource,
+  CreatedTurn,
+  CreateTurn,
+  Run,
+  TimelineItem,
+  UIActionAcknowledgement,
+  UIActionDelivery,
+  UIActionStatus,
+} from "../domain.js"
 import { createId } from "../id.js"
 import type { Repository } from "./repository.js"
 import { normalizeEventSequence } from "../event-sequence.js"
 
 type DbConversation = { id: string, owner_user_id: string, project_id: string | null, title: string, title_source: ConversationTitleSource, status: "active", created_at: Date, updated_at: Date }
-type DbRun = { id: string, owner_user_id: string, conversation_id: string, turn_id: string, run_index: number, status: Run["status"], row_version: number, graph_version: "assistant-v1", prompt_version: Run["promptVersion"], tool_catalog_digest: string, page_context: Record<string, unknown>, created_at: Date, started_at: Date | null, completed_at: Date | null, error_code: string | null }
+type DbRun = { id: string, owner_user_id: string, conversation_id: string, turn_id: string, run_index: number, status: Run["status"], row_version: number, graph_version: "assistant-v1", prompt_version: Run["promptVersion"], tool_catalog_digest: string, page_context: Record<string, unknown>, client_instance_id: string | null, created_at: Date, started_at: Date | null, completed_at: Date | null, error_code: string | null }
+type DbUIAction = { id: string, run_id: string, tool_call_id: string, client_instance_id: string, action: Record<string, unknown>, status: UIActionStatus, attempts: number, expires_at: Date, acknowledged_at: Date | null, actual_path: string | null, error_code: string | null, created_at: Date, updated_at: Date }
 
 export class PostgresRepository implements Repository {
   readonly pool: Pool
@@ -86,8 +98,8 @@ export class PostgresRepository implements Repository {
       const runId = input.preallocatedRunId ?? createId("airun")
       await client.query(`insert into ai.turns(id,conversation_id,turn_index,status,input,selected_run_id) values($1,$2,$3,'queued',$4,$5)`, [turnId, input.conversationId, index, input.input, runId])
       await client.query(
-        `insert into ai.runs(id,owner_user_id,conversation_id,turn_id,run_index,status,graph_version,prompt_version,tool_catalog_digest,page_context,run_actor_grant_ciphertext) values($1,$2,$3,$4,0,'queued','assistant-v1','system-v4',$5,$6,$7)`,
-        [runId, ownerUserId, input.conversationId, turnId, input.toolCatalogDigest ?? "sha256:platform-tools-v1", JSON.stringify(input.pageContext), input.runActorGrantCiphertext ?? null],
+        `insert into ai.runs(id,owner_user_id,conversation_id,turn_id,run_index,status,graph_version,prompt_version,tool_catalog_digest,page_context,run_actor_grant_ciphertext,client_instance_id) values($1,$2,$3,$4,0,'queued','assistant-v1','system-v4',$5,$6,$7,$8)`,
+        [runId, ownerUserId, input.conversationId, turnId, input.toolCatalogDigest ?? "sha256:platform-tools-v1", JSON.stringify(input.pageContext), input.runActorGrantCiphertext ?? null, input.clientInstanceId ?? null],
       )
       await client.query(`insert into ai.idempotency_keys(owner_user_id,idempotency_key,request_hash,turn_id,run_id) values($1,$2,$3,$4,$5)`, [ownerUserId, input.idempotencyKey, hash, turnId, runId])
       await this.appendItemWith(client, { runId, turnId, type: "user_message", status: "completed", content: { parts: [{ type: "text", text: input.input }] } })
@@ -232,6 +244,55 @@ export class PostgresRepository implements Repository {
     )
     return result.rows.map(e => ({ id: e.id, runId: e.run_id, sequence: normalizeEventSequence(e.event_sequence), type: e.type, data: e.data, createdAt: e.created_at.toISOString() }))
   }
+  async createUIAction(runId: string, toolCallId: string, action: Record<string, unknown>, expiresAt: string) {
+    const row = (await this.pool.query<DbUIAction>(
+      `insert into ai.ui_actions(id,run_id,tool_call_id,client_instance_id,action,status,attempts,expires_at)
+       select $1,r.id,$2,r.client_instance_id,$3,'pending',1,$4
+       from ai.runs r
+       where r.id=$5 and r.client_instance_id is not null
+       on conflict (tool_call_id) do update set tool_call_id=excluded.tool_call_id
+       returning *`,
+      [createId("aiuia"), toolCallId, JSON.stringify(action), expiresAt, runId],
+    )).rows[0]
+    if (!row) throw new Error("ai.client_instance_unavailable")
+    return mapUIAction(row)
+  }
+  async listPendingUIActions(ownerUserId: string, clientInstanceId: string) {
+    await this.pool.query(
+      `update ai.ui_actions a set status='expired',updated_at=now()
+       from ai.runs r
+       where a.run_id=r.id and r.owner_user_id=$1 and a.client_instance_id=$2
+         and a.status='pending' and a.expires_at <= now()`,
+      [ownerUserId, clientInstanceId],
+    )
+    const result = await this.pool.query<DbUIAction>(
+      `update ai.ui_actions a set attempts=a.attempts+1,updated_at=now()
+       from ai.runs r
+       where a.run_id=r.id and r.owner_user_id=$1 and a.client_instance_id=$2
+         and a.status='pending' and a.expires_at > now()
+       returning a.*`,
+      [ownerUserId, clientInstanceId],
+    )
+    return result.rows.sort((left, right) => left.created_at.getTime() - right.created_at.getTime()).map(mapUIAction)
+  }
+  async acknowledgeUIAction(ownerUserId: string, clientInstanceId: string, actionId: string, acknowledgement: UIActionAcknowledgement) {
+    const row = (await this.pool.query<DbUIAction>(
+      `update ai.ui_actions a
+       set status=$4,acknowledged_at=now(),actual_path=$5,error_code=$6,updated_at=now()
+       from ai.runs r
+       where a.id=$1 and a.run_id=r.id and r.owner_user_id=$2 and a.client_instance_id=$3
+         and a.status='pending' and a.expires_at > now()
+       returning a.*`,
+      [actionId, ownerUserId, clientInstanceId, acknowledgement.status, acknowledgement.actualPath ?? null, acknowledgement.errorCode ?? null],
+    )).rows[0]
+    if (row) return mapUIAction(row)
+    const existing = (await this.pool.query<DbUIAction>(
+      `select a.* from ai.ui_actions a join ai.runs r on r.id=a.run_id
+       where a.id=$1 and r.owner_user_id=$2 and a.client_instance_id=$3`,
+      [actionId, ownerUserId, clientInstanceId],
+    )).rows[0]
+    return existing ? mapUIAction(existing) : undefined
+  }
   async getTimeline(ownerUserId: string, conversationId: string) {
     const conversation = await this.getConversation(ownerUserId, conversationId)
     if (!conversation) return undefined
@@ -280,7 +341,24 @@ function mapConversation(row: DbConversation): Conversation {
   }
 }
 function mapRun(row: DbRun): Run {
-  return { id: row.id, conversationId: row.conversation_id, turnId: row.turn_id, runIndex: row.run_index, status: row.status, rowVersion: row.row_version, graphVersion: row.graph_version, promptVersion: row.prompt_version, toolCatalogDigest: row.tool_catalog_digest, pageContext: row.page_context, createdAt: row.created_at.toISOString(), ...(row.started_at ? { startedAt: row.started_at.toISOString() } : {}), ...(row.completed_at ? { completedAt: row.completed_at.toISOString() } : {}), ...(row.error_code ? { errorCode: row.error_code } : {}) }
+  return { id: row.id, conversationId: row.conversation_id, turnId: row.turn_id, runIndex: row.run_index, status: row.status, rowVersion: row.row_version, graphVersion: row.graph_version, promptVersion: row.prompt_version, toolCatalogDigest: row.tool_catalog_digest, pageContext: row.page_context, createdAt: row.created_at.toISOString(), ...(row.client_instance_id ? { clientInstanceId: row.client_instance_id } : {}), ...(row.started_at ? { startedAt: row.started_at.toISOString() } : {}), ...(row.completed_at ? { completedAt: row.completed_at.toISOString() } : {}), ...(row.error_code ? { errorCode: row.error_code } : {}) }
+}
+function mapUIAction(row: DbUIAction): UIActionDelivery {
+  return {
+    id: row.id,
+    runId: row.run_id,
+    toolCallId: row.tool_call_id,
+    clientInstanceId: row.client_instance_id,
+    action: row.action,
+    status: row.status,
+    attempts: row.attempts,
+    expiresAt: row.expires_at.toISOString(),
+    ...(row.acknowledged_at ? { acknowledgedAt: row.acknowledged_at.toISOString() } : {}),
+    ...(row.actual_path ? { actualPath: row.actual_path } : {}),
+    ...(row.error_code ? { errorCode: row.error_code } : {}),
+    createdAt: row.created_at.toISOString(),
+    updatedAt: row.updated_at.toISOString(),
+  }
 }
 
 function truncateHistoryText(value: string, maxLength: number) {

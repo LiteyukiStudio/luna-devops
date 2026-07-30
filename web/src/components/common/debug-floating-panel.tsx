@@ -6,6 +6,7 @@ import { useSession } from '@/app/session-context'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { NativeSelect } from '@/components/ui/native-select'
+import { isPlatformRole, PlatformRole } from '@/lib/roles'
 
 const positionStorageKey = 'luna-devops.debug.floatingPosition'
 const hiddenStorageKey = 'luna-devops.debug.hidden'
@@ -155,7 +156,8 @@ export function DebugFloatingPanel() {
       clearDebugOverride()
       return
     }
-    setDebugOverride({ type: 'role', role: role as 'platform_admin' | 'user' })
+    if (isPlatformRole(role))
+      setDebugOverride({ type: 'role', role })
   }
 
   const handleReset = () => {
@@ -200,8 +202,8 @@ export function DebugFloatingPanel() {
             <DebugField icon={<ShieldCheck className="size-4" />} label={t('debugPanel.roleView')}>
               <NativeSelect aria-label={t('debugPanel.roleView')} value={selectedRole} onChange={event => handleRoleChange(event.target.value)}>
                 <option value="actual">{t('debugPanel.actualRole')}</option>
-                <option value="platform_admin">{t('debugPanel.platformAdminView')}</option>
-                <option value="user">{t('debugPanel.normalUserView')}</option>
+                <option value={PlatformRole.Admin}>{t('debugPanel.platformAdminView')}</option>
+                <option value={PlatformRole.User}>{t('debugPanel.normalUserView')}</option>
               </NativeSelect>
             </DebugField>
 
@@ -209,7 +211,7 @@ export function DebugFloatingPanel() {
               <p className="font-medium">{t('debugPanel.effectiveUser')}</p>
               <p className="mt-1 truncate text-muted-foreground">{user.name || user.email}</p>
               <p className="mt-1 text-muted-foreground">
-                {user.role === 'platform_admin' ? t('debugPanel.platformAdminView') : t('debugPanel.normalUserView')}
+                {user.role === PlatformRole.Admin ? t('debugPanel.platformAdminView') : t('debugPanel.normalUserView')}
               </p>
             </div>
 

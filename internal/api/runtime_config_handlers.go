@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
@@ -48,7 +49,7 @@ func (h *Handlers) ListProjectRuntimeConfigSets(ctx *gin.Context) {
 }
 
 func (h *Handlers) CreateProjectRuntimeConfigSet(ctx *gin.Context) {
-	project, ok := h.findProjectForCurrentUserWithRoles(ctx, "owner", "admin", "developer")
+	project, ok := h.findProjectForCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
 	if !ok {
 		return
 	}
@@ -76,7 +77,7 @@ func (h *Handlers) CreateProjectRuntimeConfigSet(ctx *gin.Context) {
 }
 
 func (h *Handlers) UpdateProjectRuntimeConfigSet(ctx *gin.Context) {
-	project, ok := h.findProjectForCurrentUserWithRoles(ctx, "owner", "admin", "developer")
+	project, ok := h.findProjectForCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
 	if !ok {
 		return
 	}
@@ -119,7 +120,7 @@ func (h *Handlers) UpdateProjectRuntimeConfigSet(ctx *gin.Context) {
 }
 
 func (h *Handlers) DeleteProjectRuntimeConfigSet(ctx *gin.Context) {
-	project, ok := h.findProjectForCurrentUserWithRoles(ctx, "owner", "admin", "developer")
+	project, ok := h.findProjectForCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
 	if !ok {
 		return
 	}

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/secret"
 	"github.com/pquerna/otp/totp"
@@ -25,7 +26,7 @@ func TestOAuthDeviceAuthorizationMFAAndRevocationFlow(t *testing.T) {
 		ID:       "usr_device_" + suffix,
 		Email:    "device-" + suffix + "@example.com",
 		Name:     "Device User",
-		Role:     "platform_admin",
+		Role:     authz.PlatformRoleAdmin,
 		Language: "zh-CN",
 	}
 	if err := db.Create(&user).Error; err != nil {

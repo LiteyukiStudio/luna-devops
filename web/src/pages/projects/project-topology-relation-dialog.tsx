@@ -25,6 +25,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
 import { Textarea } from '@/components/ui/textarea'
+import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { projectTopologyKeys } from './project-topology-query'
 
 const envNamePattern = /^[A-Z_][A-Z0-9_]*$/
@@ -99,11 +100,13 @@ export function ProjectTopologyRelationDialog({
     queryKey: ['deployment-targets', projectId, sourceApplicationId],
     queryFn: () => api.listDeploymentTargets(projectId, sourceApplicationId),
     enabled: Boolean(sourceApplicationId),
+    ...liveObservationQueryPolicy,
   })
   const targetTargets = useQuery({
     queryKey: ['deployment-targets', projectId, targetApplicationId],
     queryFn: () => api.listDeploymentTargets(projectId, targetApplicationId),
     enabled: Boolean(targetApplicationId),
+    ...liveObservationQueryPolicy,
   })
   const targetDeployment = targetTargets.data?.find(target => target.id === targetDeploymentTargetId)
   const targetPorts = useMemo(() => normalizedServicePorts(targetDeployment), [targetDeployment])

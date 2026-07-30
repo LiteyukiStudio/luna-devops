@@ -1,4 +1,7 @@
 allowBuilds:
   esbuild: true
+auditConfig:
+  ignoreGhsas:
+    - GHSA-qwww-vcr4-c8h2
 shellEmulator: true
 trustPolicy: no-downgrade

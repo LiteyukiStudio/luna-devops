@@ -34,7 +34,6 @@ export const credentialSchema = z.object({
   accessToken: z.string().optional(),
   refreshToken: z.string().optional(),
   scopesText: z.string().optional(),
-  status: z.enum(['connected', 'expired', 'revoked']),
 }).superRefine((value, ctx) => {
   if (value.scope === 'project' && value.projectIds.length === 0) {
     ctx.addIssue({
@@ -71,7 +70,6 @@ export const credentialDefaults: CredentialForm = {
   refreshToken: '',
   scope: 'user',
   scopesText: 'repo,read:user',
-  status: 'connected',
   username: '',
 }
 
@@ -81,7 +79,7 @@ export type ProviderPayload = Omit<GitProvider, 'id' | 'createdAt' | 'clientSecr
   clientSecret?: string
 }
 
-export type CredentialPayload = Omit<GitAccount, 'id' | 'userId' | 'scopes' | 'createdAt' | 'accessTokenSet' | 'refreshTokenSet'> & {
+export type CredentialPayload = Omit<GitAccount, 'id' | 'userId' | 'scopes' | 'createdAt' | 'accessTokenSet' | 'refreshTokenSet' | 'status' | 'observationCode' | 'observedAt'> & {
   scope?: GitAccount['scope']
   ownerRef?: string
   scopes: string[]

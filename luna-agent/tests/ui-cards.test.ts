@@ -1,8 +1,15 @@
 import { describe, expect, it } from "vitest"
-import { createInteractionCardsInput, createInteractionCardsTool, normalizeInteractionCardsInput } from "../src/tools/ui-cards.js"
+import {
+  createInteractionCardsInput,
+  createInteractionCardsTool,
+  normalizeInteractionCardsInput,
+  prepareInteractionCardsInput,
+  prepareInteractionCardsTool,
+} from "../src/tools/ui-cards.js"
 
 const databaseCard = {
   schemaVersion: 1,
+  generationId: "database-candidates",
   title: "选择数据库",
   template: "catalog",
   cards: [{
@@ -43,9 +50,19 @@ const databaseCard = {
 } as const
 
 describe("interaction card tool", () => {
+  it("publishes a bounded preparation tool linked by generation ID", () => {
+    expect(prepareInteractionCardsInput.parse({
+      schemaVersion: 1,
+      generationId: "database-candidates",
+      title: "正在整理数据库候选",
+    })).toMatchObject({ generationId: "database-candidates" })
+    expect(prepareInteractionCardsTool.operationId).toBe("prepare_interaction_cards")
+  })
+
   it("accepts a catalog card with content, input and a tool action", () => {
     expect(createInteractionCardsInput.parse(databaseCard)).toMatchObject({
       schemaVersion: 1,
+      generationId: "database-candidates",
       template: "catalog",
       cards: [{ id: "postgresql" }],
     })
@@ -107,5 +124,124 @@ describe("interaction card tool", () => {
     expect(JSON.stringify(cards)).toContain("presentation")
     expect(JSON.stringify(cards)).toContain("status_list")
     expect(JSON.stringify(cards)).toContain("multi_select")
+  })
+
+  it.each([
+    "catalog",
+    "comparison",
+    "inspector",
+    "form",
+    "wizard",
+    "diagnosis",
+    "plan",
+    "progress",
+    "result",
+    "dashboard",
+  ] as const)("accepts the %s workflow template", (template) => {
+    expect(createInteractionCardsInput.safeParse({
+      schemaVersion: 1,
+      generationId: `${template}-fixture`,
+      title: `${template} fixture`,
+      template,
+      cards: [{
+        id: `${template}-card`,
+        presentation: { variant: "summary", title: `${template} card` },
+      }],
+    }).success).toBe(true)
+  })
+
+  it("rejects dangling source, relation, table, chart, progress and field references", () => {
+    const invalidCases = [
+      {
+        block: { id: "source", type: "markdown", content: "content", sourceRefIds: ["missing"] },
+      },
+      {
+        block: {
+          id: "relations",
+          type: "relations",
+          nodes: [{ id: "known", label: "Known", category: "application" }],
+          edges: [{ source: "known", target: "missing" }],
+        },
+      },
+      {
+        block: {
+          id: "table",
+          type: "data_table",
+          columns: [{ key: "known", label: "Known" }],
+          rows: [{ id: "row", cells: { unknown: "value" } }],
+        },
+      },
+      {
+        block: {
+          id: "chart",
+          type: "chart",
+          chartType: "line",
+          xAxis: ["a", "b"],
+          series: [{ name: "value", values: [1] }],
+        },
+      },
+      {
+        block: { id: "progress", type: "progress", mode: "determinate", label: "Deploying" },
+      },
+    ]
+    for (const invalidCase of invalidCases) {
+      expect(createInteractionCardsInput.safeParse({
+        schemaVersion: 1,
+        generationId: "invalid-reference",
+        title: "Invalid reference",
+        template: "inspector",
+        cards: [{
+          id: "resource",
+          presentation: { variant: "resource", title: "Resource" },
+          blocks: [invalidCase.block],
+        }],
+      }).success).toBe(false)
+    }
+
+    expect(createInteractionCardsInput.safeParse({
+      schemaVersion: 1,
+      generationId: "invalid-field-reference",
+      title: "Invalid field reference",
+      template: "form",
+      cards: [{
+        id: "resource",
+        presentation: { variant: "form", title: "Resource" },
+        form: {
+          sections: [{
+            id: "main",
+            fields: [{
+              id: "dependent",
+              type: "text",
+              label: "Dependent",
+              visibleWhen: { fieldId: "missing", operator: "equals", value: "yes" },
+            }],
+          }],
+        },
+      }],
+    }).success).toBe(false)
+  })
+
+  it("accepts bounded maximum collections and rejects oversized groups", () => {
+    const maximum = {
+      schemaVersion: 1,
+      generationId: "maximum",
+      title: "Maximum",
+      template: "comparison",
+      cards: Array.from({ length: 12 }, (_, cardIndex) => ({
+        id: `card-${cardIndex}`,
+        presentation: { variant: "summary", title: `Card ${cardIndex}` },
+        blocks: [{
+          id: `table-${cardIndex}`,
+          type: "data_table",
+          columns: Array.from({ length: 8 }, (_, columnIndex) => ({ key: `column-${columnIndex}`, label: `Column ${columnIndex}` })),
+          rows: Array.from({ length: 30 }, (_, rowIndex) => ({
+            id: `row-${rowIndex}`,
+            cells: Object.fromEntries(Array.from({ length: 8 }, (_, columnIndex) => [`column-${columnIndex}`, `${rowIndex}:${columnIndex}`])),
+          })),
+        }],
+      })),
+    }
+    expect(createInteractionCardsInput.safeParse(maximum).success).toBe(true)
+    expect(createInteractionCardsInput.safeParse({ ...maximum, cards: [...maximum.cards, maximum.cards[0]] }).success).toBe(false)
   })
 })

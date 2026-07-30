@@ -1,5 +1,5 @@
 import type { Control } from 'react-hook-form'
-import type { InteractionCard, InteractionCardAction, InteractionContentBlock, InteractionFormField } from './interaction-card-schema'
+import type { InteractionCard, InteractionCardAction, InteractionCardGroup, InteractionContentBlock, InteractionFormField } from './interaction-card-schema'
 import type { AIUIAction } from '@/api'
 import { zodResolver } from '@hookform/resolvers/zod'
 import {
@@ -15,27 +15,37 @@ import {
   Copy,
   Database,
   ExternalLink,
+  Globe2,
   LoaderCircle,
+  Minus,
   Package,
-  Play,
   Plus,
+  ShieldCheck,
   Trash2,
+  TrendingDown,
+  TrendingUp,
+  Users,
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { z } from 'zod'
-import { Badge } from '@/components/ui/badge'
+import { StatusBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { NativeSelect } from '@/components/ui/native-select'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
+import { InteractionCardChart } from './interaction-card-chart'
 import { interactionCardGroupSchema } from './interaction-card-schema'
-import { AIMarkdown } from './markdown'
+import { interactionCardDensity, interactionCardTemplateConfigs, shouldExpandInteractionCard } from './interaction-card-templates'
+import { AIInlineMarkdown, AIMarkdown } from './markdown'
+
+const compactActionClassName = 'h-auto min-h-7 max-w-full gap-1.5 whitespace-normal px-2.5 py-1 !text-[11px] leading-4 [&_svg]:size-3.5'
 
 interface AIInteractionCardsProps {
   arguments: Record<string, unknown>
@@ -64,15 +74,17 @@ export function AIInteractionCards({ arguments: rawArguments, onAction }: AIInte
     )
   }
   const group = parsed.data
+  const density = interactionCardDensity(group)
+  const templateConfig = interactionCardTemplateConfigs[group.template]
   return (
-    <section className="grid min-w-0 gap-2.5" data-ai-card-group={group.template}>
+    <section className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)]', density === 'compact' ? 'gap-2' : 'gap-2.5')} data-ai-card-density={density} data-ai-card-group={group.template}>
       <header className="px-0.5">
         <p className="text-[10px] font-medium uppercase tracking-wide text-primary-text">{t(`aiAssistant.cards.templates.${group.template}`)}</p>
-        <h3 className="mt-0.5 text-sm font-semibold">{group.title}</h3>
-        {group.description && <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">{group.description}</p>}
+        <h3 className="mt-0.5 text-[13px] font-semibold leading-5"><AIInlineMarkdown>{group.title}</AIInlineMarkdown></h3>
+        {group.description && <AIMarkdown className="mt-0.5 text-[11px] leading-4 text-muted-foreground">{group.description}</AIMarkdown>}
       </header>
-      <div className={cn('grid min-w-0 gap-2', group.template === 'catalog' && 'min-[560px]:grid-cols-2')}>
-        {group.cards.map(card => <InteractionCardView key={card.id} card={card} onAction={onAction} />)}
+      <div className={cn('grid min-w-0', density === 'compact' ? 'gap-1.5' : 'gap-2', templateConfig.gridClassName)}>
+        {group.cards.map(card => <InteractionCardView key={card.id} card={card} density={density} group={group} onAction={onAction} />)}
       </div>
       {group.groupActions && group.groupActions.length > 0 && (
         <div className="flex flex-wrap justify-end gap-1.5">
@@ -83,9 +95,14 @@ export function AIInteractionCards({ arguments: rawArguments, onAction }: AIInte
   )
 }
 
-function InteractionCardView({ card, onAction }: { card: InteractionCard, onAction: (action: AIUIAction) => Promise<boolean> }) {
+function InteractionCardView({ card, density, group, onAction }: {
+  card: InteractionCard
+  density: 'comfortable' | 'compact'
+  group: InteractionCardGroup
+  onAction: (action: AIUIAction) => Promise<boolean>
+}) {
   const { t } = useTranslation()
-  const [expanded, setExpanded] = useState(Boolean(card.form || card.blocks?.some(block => block.defaultExpanded)))
+  const [expanded, setExpanded] = useState(() => shouldExpandInteractionCard(group, Boolean(card.form), Boolean(card.blocks?.some(block => block.defaultExpanded))))
   const fields = useMemo(() => card.form?.sections.flatMap(section => section.fields) ?? [], [card.form])
   const formSchema = useMemo(() => buildFormSchema(fields), [fields])
   const form = useForm<FormValues>({
@@ -99,18 +116,33 @@ function InteractionCardView({ card, onAction }: { card: InteractionCard, onActi
   const secondaryActions = card.actions?.filter(action => action !== primaryAction) ?? []
 
   return (
-    <article className="min-w-0 overflow-hidden rounded-container bg-surface" data-ai-card={card.presentation.variant}>
-      <div className="flex min-w-0 items-start gap-2.5 p-2.5">
-        <span className="grid size-9 shrink-0 place-items-center rounded-control bg-primary-subtle text-primary-text">
+    <article className="min-w-0 overflow-hidden rounded-container bg-surface" data-ai-card={card.presentation.variant} data-ai-card-template={group.template}>
+      <div className={cn('flex min-w-0 items-start', density === 'compact' ? 'gap-2 p-2' : 'gap-2.5 p-2.5')}>
+        <span className={cn('grid shrink-0 place-items-center rounded-control bg-primary-subtle text-primary-text', density === 'compact' ? 'size-8' : 'size-9')}>
           <CardIcon category={card.presentation.icon?.type === 'category' ? card.presentation.icon.name : card.presentation.variant} />
         </span>
         <div className="min-w-0 flex-1">
-          <h4 className="truncate text-xs font-semibold">{card.presentation.title}</h4>
-          {card.presentation.subtitle && <p className="truncate text-[10px] text-muted-foreground">{card.presentation.subtitle}</p>}
-          {card.presentation.description && <p className="mt-1 text-[11px] leading-4 text-muted-foreground">{card.presentation.description}</p>}
+          <h4 className="text-xs font-semibold leading-4"><AIInlineMarkdown>{card.presentation.title}</AIInlineMarkdown></h4>
+          {card.presentation.subtitle && <AIInlineMarkdown className="block text-[10px] leading-4 text-muted-foreground">{card.presentation.subtitle}</AIInlineMarkdown>}
+          {card.presentation.description && <AIMarkdown className="mt-1 text-[11px] leading-4 text-muted-foreground">{card.presentation.description}</AIMarkdown>}
           {card.presentation.badges && card.presentation.badges.length > 0 && (
             <div className="mt-1.5 flex flex-wrap gap-1">
-              {card.presentation.badges.map(badge => <Badge key={`${badge.label}-${badge.tone}`} className="px-1.5 py-0 text-[9px]" variant="outline">{badge.label}</Badge>)}
+              {card.presentation.badges.map(badge => (
+                <StatusBadge key={`${badge.label}-${badge.tone}`} className="px-1.5 py-0 text-[9px]" tone={badge.tone === 'error' ? 'danger' : badge.tone}>
+                  {badge.label}
+                </StatusBadge>
+              ))}
+            </div>
+          )}
+          {card.sourceRefs && card.sourceRefs.length > 0 && (
+            <div className="mt-1.5 flex min-w-0 flex-wrap gap-1" data-ai-card-sources>
+              {card.sourceRefs.slice(0, 4).map(source => (
+                <span key={`${source.type}-${source.refId}`} className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-full bg-surface-inset px-1.5 py-0.5 text-[9px] text-muted-foreground" title={source.label}>
+                  <SourceTrustIcon trust={source.trust} />
+                  <span className="truncate">{source.label}</span>
+                  <span className="sr-only">{t(`aiAssistant.cards.trust.${source.trust}`)}</span>
+                </span>
+              ))}
             </div>
           )}
         </div>
@@ -122,17 +154,14 @@ function InteractionCardView({ card, onAction }: { card: InteractionCard, onActi
       </div>
       {expanded && (
         <form
-          className="grid min-w-0 gap-3 border-t border-separator-subtle p-2.5"
-          onSubmit={form.handleSubmit(async (values) => {
-            if (primaryAction)
-              await executeCardAction(primaryAction, card.id, publicFormValues(fields, values), onAction)
-          })}
+          className={cn('grid min-w-0 border-t border-separator-subtle', density === 'compact' ? 'gap-2.5 p-2' : 'gap-3 p-2.5')}
+          onSubmit={event => event.preventDefault()}
         >
           {card.blocks?.map(block => <ContentBlock key={block.id} block={block} onAction={onAction} />)}
           {card.form?.sections.map(section => (
             <fieldset key={section.id} className="grid min-w-0 gap-2">
-              {section.title && <legend className="text-[11px] font-semibold">{section.title}</legend>}
-              {section.description && <p className="text-[10px] leading-4 text-muted-foreground">{section.description}</p>}
+              {section.title && <legend className="text-[11px] font-semibold"><AIInlineMarkdown>{section.title}</AIInlineMarkdown></legend>}
+              {section.description && <AIMarkdown className="text-[10px] leading-4 text-muted-foreground">{section.description}</AIMarkdown>}
               {section.fields.filter(field => isFieldVisible(field, watchedValues)).map(field => (
                 <DynamicField key={field.id} control={form.control} field={field} error={form.formState.errors[field.id]?.message as string | undefined} />
               ))}
@@ -141,12 +170,7 @@ function InteractionCardView({ card, onAction }: { card: InteractionCard, onActi
           {(primaryAction || secondaryActions.length > 0) && (
             <div className="flex flex-wrap justify-end gap-1.5 pt-0.5">
               {secondaryActions.map(action => <CardActionButton key={action.id} action={action} cardId={card.id} disabled={actionNeedsValidForm(action) && !form.formState.isValid} values={publicFormValues(fields, form.getValues())} onAction={onAction} />)}
-              {primaryAction && (
-                <Button disabled={form.formState.isSubmitting || (actionNeedsValidForm(primaryAction) && !form.formState.isValid)} size="sm" type={primaryAction.type === 'tool' ? 'submit' : 'button'} variant="default" onClick={primaryAction.type === 'tool' ? undefined : () => void executeCardAction(primaryAction, card.id, publicFormValues(fields, form.getValues()), onAction)}>
-                  {form.formState.isSubmitting ? <LoaderCircle className="animate-spin motion-reduce:animate-none" /> : <Play />}
-                  {primaryAction.label}
-                </Button>
-              )}
+              {primaryAction && <CardActionButton action={primaryAction} cardId={card.id} disabled={actionNeedsValidForm(primaryAction) && !form.formState.isValid} values={publicFormValues(fields, form.getValues())} onAction={onAction} />}
             </div>
           )}
         </form>
@@ -172,9 +196,9 @@ function ContentBlock({ block, onAction }: { block: InteractionContentBlock, onA
         <dl className="grid gap-1.5 text-[11px]">
           {block.items.map(item => (
             <div key={`${item.label}-${item.value}`} className="grid grid-cols-[minmax(4.5rem,35%)_minmax(0,1fr)] gap-2">
-              <dt className="text-muted-foreground">{item.label}</dt>
+              <dt className="min-w-0 text-muted-foreground"><AIInlineMarkdown>{item.label}</AIInlineMarkdown></dt>
               <dd className={cn('min-w-0 break-words font-medium', item.format === 'code' && 'font-mono text-[10px]')}>
-                {item.value}
+                <AIInlineMarkdown>{item.value}</AIInlineMarkdown>
                 {item.copyable && <CopyButton value={item.value} />}
               </dd>
             </div>
@@ -186,10 +210,27 @@ function ContentBlock({ block, onAction }: { block: InteractionContentBlock, onA
       return (
         <div className="grid grid-cols-2 gap-1.5">
           {block.items.map(item => (
-            <div key={`${item.label}-${item.value}`} className="rounded-control bg-surface-inset p-2">
-              <p className="text-[9px] text-muted-foreground">{item.label}</p>
-              <strong className="mt-0.5 block text-xs">{item.value}</strong>
-              {item.change && <span className="text-[9px] text-muted-foreground">{item.change}</span>}
+            <div
+              key={`${item.label}-${item.value}`}
+              className={cn(
+                'rounded-control p-2',
+                item.tone === 'success'
+                  ? 'bg-success-subtle text-success'
+                  : item.tone === 'warning'
+                    ? 'bg-warning-subtle text-warning'
+                    : item.tone === 'error'
+                      ? 'bg-danger-subtle text-danger'
+                      : 'bg-surface-inset',
+              )}
+            >
+              <AIInlineMarkdown className="block text-[9px] text-muted-foreground">{item.label}</AIInlineMarkdown>
+              <AIInlineMarkdown className="mt-0.5 block text-xs font-semibold">{item.value}</AIInlineMarkdown>
+              {item.change && (
+                <span className="mt-0.5 flex items-center gap-1 text-[9px] text-muted-foreground">
+                  <MetricTrendIcon trend={item.trend} />
+                  <AIInlineMarkdown>{item.change}</AIInlineMarkdown>
+                </span>
+              )}
             </div>
           ))}
         </div>
@@ -202,8 +243,8 @@ function ContentBlock({ block, onAction }: { block: InteractionContentBlock, onA
             <div key={item.id} className="flex gap-2 py-1.5">
               <Package className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
               <div className="min-w-0">
-                <p className="text-[11px] font-medium">{item.primary}</p>
-                {item.secondary && <p className="text-[10px] leading-4 text-muted-foreground">{item.secondary}</p>}
+                <AIInlineMarkdown className="block text-[11px] font-medium">{item.primary}</AIInlineMarkdown>
+                {item.secondary && <AIMarkdown className="text-[10px] leading-4 text-muted-foreground">{item.secondary}</AIMarkdown>}
               </div>
               {item.meta && <span className="ml-auto shrink-0 text-[9px] text-muted-foreground">{item.meta}</span>}
             </div>
@@ -218,8 +259,8 @@ function ContentBlock({ block, onAction }: { block: InteractionContentBlock, onA
             <div key={item.id} className="flex items-start gap-2 text-[11px]">
               <StatusIcon status={item.status} />
               <div>
-                <p className="font-medium">{item.label}</p>
-                {item.detail && <p className="text-[10px] leading-4 text-muted-foreground">{item.detail}</p>}
+                <AIInlineMarkdown className="block font-medium">{item.label}</AIInlineMarkdown>
+                {item.detail && <AIMarkdown className="text-[10px] leading-4 text-muted-foreground">{item.detail}</AIMarkdown>}
               </div>
             </div>
           ))}
@@ -230,8 +271,8 @@ function ContentBlock({ block, onAction }: { block: InteractionContentBlock, onA
       return (
         <div className="max-w-full overflow-x-auto rounded-control border border-separator-subtle">
           <table className="w-max min-w-full text-left text-[10px]">
-            <thead className="bg-surface-inset"><tr>{block.columns.map(column => <th key={column.key} className="whitespace-nowrap px-2 py-1.5 font-medium">{column.label}</th>)}</tr></thead>
-            <tbody>{block.rows.map(row => <tr key={row.id} className="border-t border-separator-subtle">{block.columns.map(column => <td key={column.key} className={cn('max-w-52 px-2 py-1.5 [overflow-wrap:anywhere]', column.format === 'code' && 'font-mono')}>{row.cells[column.key] ?? '—'}</td>)}</tr>)}</tbody>
+            <thead className="bg-surface-inset"><tr>{block.columns.map(column => <th key={column.key} className="whitespace-nowrap px-2 py-1.5 font-medium"><AIInlineMarkdown>{column.label}</AIInlineMarkdown></th>)}</tr></thead>
+            <tbody>{block.rows.map(row => <tr key={row.id} className="border-t border-separator-subtle">{block.columns.map(column => <td key={column.key} className={cn('max-w-52 px-2 py-1.5 [overflow-wrap:anywhere]', column.format === 'code' && 'font-mono')}><AIInlineMarkdown>{row.cells[column.key] ?? '—'}</AIInlineMarkdown></td>)}</tr>)}</tbody>
           </table>
         </div>
       )
@@ -252,30 +293,7 @@ function ContentBlock({ block, onAction }: { block: InteractionContentBlock, onA
       )
     }
     if (block.type === 'chart') {
-      const maximum = Math.max(1, ...block.series.flatMap(series => series.values.map(value => Math.abs(value))))
-      return (
-        <div className="grid gap-2" role="img" aria-label={block.title ?? t('aiAssistant.cards.chart')}>
-          {block.series.map(series => (
-            <div key={series.name} className="grid gap-1">
-              <div className="flex justify-between gap-2 text-[9px] text-muted-foreground">
-                <span>{series.name}</span>
-                <span>{series.unit}</span>
-              </div>
-              <div className="flex h-14 items-end gap-0.5 rounded-control bg-surface-inset p-1">
-                {chartPoints(series.values, block.xAxis).map(point => (
-                  <span
-                    key={point.id}
-                    aria-label={`${point.label}: ${point.value}${series.unit ?? ''}`}
-                    className="min-w-1 flex-1 rounded-sm bg-primary/70"
-                    style={{ height: `${Math.max(3, Math.abs(point.value) / maximum * 100)}%` }}
-                    title={`${point.label}: ${point.value}${series.unit ?? ''}`}
-                  />
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      )
+      return <InteractionCardChart block={block} label={block.title ?? t('aiAssistant.cards.chart')} />
     }
     if (block.type === 'relations') {
       const nodes = new Map(block.nodes.map(node => [node.id, node]))
@@ -309,7 +327,7 @@ function ContentBlock({ block, onAction }: { block: InteractionContentBlock, onA
       return (
         <div className="flex flex-wrap gap-1.5">
           {block.links.filter(link => link.routeName).map(link => (
-            <Button key={`${link.label}-${link.routeName}`} size="sm" variant="outline" onClick={() => void onAction({ version: 1, type: 'navigate', label: link.label, payload: { routeName: link.routeName!, params: link.routeParams ?? {}, query: {} } })}>
+            <Button key={`${link.label}-${link.routeName}`} className={compactActionClassName} size="sm" variant="outline" onClick={() => void onAction({ version: 1, type: 'navigate', label: link.label, payload: { routeName: link.routeName!, params: link.routeParams ?? {}, query: {} } })}>
               <ExternalLink />
               {link.label}
             </Button>
@@ -322,18 +340,18 @@ function ContentBlock({ block, onAction }: { block: InteractionContentBlock, onA
   if (!content)
     return null
   if (!block.title)
-    return content
+    return <div className="min-w-0" data-ai-content-block={block.type}>{content}</div>
   if (block.collapsible) {
     return (
-      <details open={block.defaultExpanded}>
+      <details data-ai-content-block={block.type} open={block.defaultExpanded}>
         <summary className="cursor-pointer text-[11px] font-semibold">{block.title}</summary>
         <div className="mt-1.5">{content}</div>
       </details>
     )
   }
   return (
-    <section className="grid gap-1.5">
-      <h5 className="text-[11px] font-semibold">{block.title}</h5>
+    <section className="grid gap-1.5" data-ai-content-block={block.type}>
+      <h5 className="text-[11px] font-semibold"><AIInlineMarkdown>{block.title ?? ''}</AIInlineMarkdown></h5>
       {content}
       <span className="sr-only">{t('aiAssistant.cards.contentSection')}</span>
     </section>
@@ -349,10 +367,10 @@ function DynamicField({ control, field, error }: { control: Control<FormValues>,
       render={({ field: input }) => (
         <div className="grid gap-1">
           <Label className="text-[10px]" htmlFor={`ai-card-field-${field.id}`}>
-            {field.label}
+            <AIInlineMarkdown>{field.label}</AIInlineMarkdown>
             {field.required && <span className="text-primary"> *</span>}
           </Label>
-          {field.description && <p className="text-[9px] leading-3.5 text-muted-foreground">{field.description}</p>}
+          {field.description && <AIMarkdown className="text-[9px] leading-3.5 text-muted-foreground">{field.description}</AIMarkdown>}
           {field.type === 'textarea'
             ? <Textarea {...input} id={`ai-card-field-${field.id}`} rows={field.rows ?? 3} value={String(input.value ?? '')} />
             : field.type === 'number'
@@ -365,12 +383,7 @@ function DynamicField({ control, field, error }: { control: Control<FormValues>,
                     </div>
                   )
                 : field.type === 'select'
-                  ? (
-                      <NativeSelect id={`ai-card-field-${field.id}`} value={String(input.value ?? '')} onChange={input.onChange}>
-                        <option value="">{field.placeholder ?? t('aiAssistant.cards.selectPlaceholder')}</option>
-                        {field.options.map(option => <option key={option.value} disabled={option.disabled} value={option.value}>{option.label}</option>)}
-                      </NativeSelect>
-                    )
+                  ? <SelectField field={field} value={String(input.value ?? '')} onChange={input.onChange} />
                   : field.type === 'multi_select'
                     ? (
                         <div className="grid gap-1.5">
@@ -406,6 +419,57 @@ function DynamicField({ control, field, error }: { control: Control<FormValues>,
   )
 }
 
+function SelectField({ field, value, onChange }: {
+  field: Extract<InteractionFormField, { type: 'select' }>
+  value: string
+  onChange: (value: string) => void
+}) {
+  const { t } = useTranslation()
+  if (!field.display || field.display === 'select') {
+    return (
+      <NativeSelect id={`ai-card-field-${field.id}`} value={value} onChange={event => onChange(event.target.value)}>
+        <option value="">{field.placeholder ?? t('aiAssistant.cards.selectPlaceholder')}</option>
+        {field.options.map(option => <option key={option.value} disabled={option.disabled} value={option.value}>{option.label}</option>)}
+      </NativeSelect>
+    )
+  }
+  const segmented = field.display === 'segmented'
+  return (
+    <RadioGroup
+      aria-label={field.label}
+      className={cn(segmented ? 'flex flex-wrap gap-1' : 'gap-1.5')}
+      value={value}
+      onValueChange={onChange}
+    >
+      {field.options.map(option => (
+        <Label
+          key={option.value}
+          className={cn(
+            'flex min-w-0 cursor-pointer items-start gap-2 rounded-control text-[10px]',
+            segmented
+              ? 'border border-separator-subtle px-2 py-1.5 data-[selected=true]:border-primary-border data-[selected=true]:bg-primary-subtle data-[selected=true]:text-primary-text'
+              : 'px-1 py-0.5',
+            option.disabled && 'cursor-not-allowed opacity-50',
+          )}
+          data-selected={value === option.value}
+          htmlFor={`ai-card-field-${field.id}-${option.value}`}
+        >
+          <RadioGroupItem
+            className={cn('mt-0.5', segmented && 'sr-only')}
+            disabled={option.disabled}
+            id={`ai-card-field-${field.id}-${option.value}`}
+            value={option.value}
+          />
+          <span className="min-w-0">
+            <span className="block [overflow-wrap:anywhere]">{option.label}</span>
+            {option.description && <span className="block text-[9px] leading-3.5 text-muted-foreground [overflow-wrap:anywhere]">{option.description}</span>}
+          </span>
+        </Label>
+      ))}
+    </RadioGroup>
+  )
+}
+
 function KeyValueInput({ value, secret, onChange }: { value: Array<{ key: string, value: string }>, secret: boolean, onChange: (value: Array<{ key: string, value: string }>) => void }) {
   const { t } = useTranslation()
   const [rowIds, setRowIds] = useState(() => value.map(() => crypto.randomUUID()))
@@ -426,7 +490,7 @@ function KeyValueInput({ value, secret, onChange }: { value: Array<{ key: string
           <Button aria-label={t('common.delete')} className="size-8" size="icon" type="button" variant="ghost" onClick={() => remove(index)}><Trash2 /></Button>
         </div>
       ))}
-      <Button className="justify-start" size="sm" type="button" variant="outline" onClick={add}>
+      <Button className={cn(compactActionClassName, 'justify-start')} size="sm" type="button" variant="outline" onClick={add}>
         <Plus />
         {t('aiAssistant.cards.addEntry')}
       </Button>
@@ -437,13 +501,14 @@ function KeyValueInput({ value, secret, onChange }: { value: Array<{ key: string
 function CardActionButton({ action, cardId, values, disabled = false, onAction }: { action: InteractionCardAction, cardId: string, values: FormValues, disabled?: boolean, onAction: (action: AIUIAction) => Promise<boolean> }) {
   const [pending, setPending] = useState(false)
   const [done, setDone] = useState(false)
+  const repeatable = action.repeatable ?? action.type === 'navigate'
   const run = async () => {
-    if (pending || (done && !action.repeatable))
+    if (pending || (done && !repeatable))
       return
     setPending(true)
     try {
       const success = await executeCardAction(action, cardId, values, onAction)
-      if (success && !action.repeatable)
+      if (success && !repeatable)
         setDone(true)
       if (!success)
         throw new Error('ai.card_action_failed')
@@ -456,7 +521,7 @@ function CardActionButton({ action, cardId, values, disabled = false, onAction }
     }
   }
   return (
-    <Button disabled={disabled || pending || done} size="sm" type="button" variant={action.emphasis === 'primary' ? 'default' : 'outline'} onClick={() => void run()}>
+    <Button className={compactActionClassName} disabled={disabled || pending || (done && !repeatable)} size="sm" type="button" variant={action.emphasis === 'primary' ? 'default' : 'outline'} onClick={() => void run()}>
       {pending ? <LoaderCircle className="animate-spin motion-reduce:animate-none" /> : done ? <Check /> : action.type === 'navigate' ? <ExternalLink /> : <ChevronRight />}
       {action.label}
     </Button>
@@ -467,12 +532,12 @@ async function executeCardAction(action: InteractionCardAction, cardId: string, 
   if (action.type === 'navigate')
     return onAction({ version: 1, id: action.id, repeatable: action.repeatable ?? true, type: 'navigate', label: action.label, description: action.description, payload: { routeName: action.routeName, params: action.routeParams ?? {}, query: {} } })
   if (action.type === 'send_message')
-    return onAction({ version: 1, id: action.id, repeatable: false, type: 'send_message', label: action.label, description: action.description, payload: { message: renderMessageTemplate(action.message, values) } })
+    return onAction({ version: 1, id: action.id, repeatable: action.repeatable ?? false, type: 'send_message', label: action.label, description: action.description, payload: { message: renderMessageTemplate(action.message, values) } })
   const argumentsValue = bindArguments(action, cardId, values)
   return onAction({
     version: 1,
     id: action.id,
-    repeatable: false,
+    repeatable: action.repeatable ?? false,
     type: 'request_tool',
     label: action.label,
     description: action.description,
@@ -604,17 +669,6 @@ function publicFormValues(fields: InteractionFormField[], values: FormValues): F
   return Object.fromEntries(Object.entries(values).filter(([key]) => !sensitiveIds.has(key)))
 }
 
-function chartPoints(values: number[], labels?: string[]) {
-  const occurrences = new Map<string, number>()
-  return values.map((value, index) => {
-    const label = labels?.[index] ?? String(index + 1)
-    const signature = `${label}:${value}`
-    const occurrence = (occurrences.get(signature) ?? 0) + 1
-    occurrences.set(signature, occurrence)
-    return { id: `${signature}:${occurrence}`, label, value }
-  })
-}
-
 function isFieldVisible(field: InteractionFormField, values: FormValues) {
   if (!field.visibleWhen)
     return true
@@ -641,6 +695,24 @@ function CardIcon({ category }: { category: string }) {
   if (category === 'cluster')
     return <Boxes className="size-4" />
   return <Package className="size-4" />
+}
+
+function SourceTrustIcon({ trust }: { trust: 'platform' | 'official' | 'community' }) {
+  if (trust === 'platform')
+    return <ShieldCheck aria-hidden="true" className="size-3 shrink-0 text-primary-text" />
+  if (trust === 'official')
+    return <Globe2 aria-hidden="true" className="size-3 shrink-0 text-info" />
+  return <Users aria-hidden="true" className="size-3 shrink-0" />
+}
+
+function MetricTrendIcon({ trend }: { trend?: 'up' | 'down' | 'flat' }) {
+  if (trend === 'up')
+    return <TrendingUp aria-hidden="true" className="size-3 shrink-0" />
+  if (trend === 'down')
+    return <TrendingDown aria-hidden="true" className="size-3 shrink-0" />
+  if (trend === 'flat')
+    return <Minus aria-hidden="true" className="size-3 shrink-0" />
+  return null
 }
 
 function StatusIcon({ status }: { status: 'pending' | 'running' | 'success' | 'warning' | 'error' | 'skipped' }) {

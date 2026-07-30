@@ -213,6 +213,7 @@
 - [x] 新增 GitHub Actions 容器发布工作流：仅构建 `linux/amd64` 容器镜像，发布 DockerHub `liteyukistudio/luna-devops`、`liteyukistudio/luna-worker`、`liteyukistudio/luna-agent`；分支发布 `nightly`，`v*` tag 发布版本 tag，稳定版本 tag 额外发布 `latest`；`luna-devops` 使用 `embed_web` 内嵌前端静态文件，不额外构建或上传 GitHub Release 二进制产物。
 - [x] 移除跨目录的根 pnpm workspace：`web/`、`docs/`、`tests/` 与 `luna-agent/` 分别维护 package、lockfile、必要的单项目 pnpm 配置和开发命令；API/Agent Docker 构建及发布质量门禁只消费对应子项目锁文件，避免本地 workspace 与镜像独立安装产生锁文件语义分裂。
 - [x] 将 AI 模型配置收敛为 API 地址、API Key 和模型名称三项：生产 Agent 自动使用平台托管配置，本地三项齐全时直连，确定性 Provider 仅保留给非生产测试；公网 HTTPS Provider 不再要求重复维护出站域名白名单。
+- [x] 为 Agent 自动路由建立可靠投递：动作绑定发起标签页并持久化，SSE 负责实时触发，断线后重放未确认动作，前端仅在 React Router 实际落到目标地址后回传 ACK。
 - [x] 修复内嵌 SPA 根路径和 fallback 被 Go FileServer 重定向到 `./` 的问题：`index.html` 改为直接返回，避免服务端根路径出现不必要 301。
 - [x] 新增发布质量门禁 `scripts/release-check.sh`：要求干净工作区、精确 Go `1.26.5` 和 `AUTH_TEST_DATABASE_URL`，统一执行 Go test/vet/race、不可缓存的 PostgreSQL 认证/迁移集成测试、前端测试/lint/build、文档构建、生产 pnpm 依赖 high/critical 审计、Go 可达漏洞扫描与 Helm lint/render；GitHub Quality Job 自动启动 PostgreSQL。普通 Go/race 套件不注入数据库地址，真实 PostgreSQL 集成测试只执行一次，避免同一批用例在 CI 中重复三次。
 
@@ -261,6 +262,7 @@
 - [x] 实现 Owner/Admin/Developer/Viewer 角色。
 - [x] 实现权限点校验。
 - [x] 建立 `internal/authz` 轻量授权中心：集中定义权限 action、项目角色矩阵和 Access Token scope 规则，保留现有角色体验并为后续 RBAC 收敛提供统一入口。
+- [x] 收敛平台角色与项目角色定义：Go 统一复用 `internal/authz`，前端统一复用 `web/src/lib/roles.ts`，OpenAPI 使用共享角色 schema；Agent 的模型消息 role 保持独立语义。
 - [x] 实现 Access Token 创建、hash 存储和撤销。
 - [x] 实现 Access Token scope 校验。
 - [x] 收紧 Access Token scope：未知 API 默认拒绝，创建 scope 白名单化，普通用户只能创建读类和明确自动化触发类 scope。
@@ -418,7 +420,7 @@
 - [x] Debug 角色预览状态下禁止触发 Git OAuth 授权，避免真实 session 归属混淆。
 - [x] Git 上游接口错误对前端脱敏，不再透传上游响应体。
 - [x] Git webhook 创建失败按上游状态和 validation 细节映射友好错误码，明确提示 PUBLIC_BASE_URL 不可公网访问、权限不足、仓库不存在、重复 webhook 和平台限流等原因。
-- [ ] Webhook 状态改为实时检测/同步：仓库绑定列表不只展示本地 `webhookStatus`，后端按 Git Provider 适配 GitHub/Gitea 查询当前仓库 Webhook 是否存在、回调 URL 是否匹配、是否启用，并将检测结果回写或作为实时状态返回；前端提供“检测 Webhook”入口，避免用户在上游手动删除后平台仍显示成功。
+- [x] Webhook 状态改为实时检测：仓库绑定列表由后端按 Git Provider 即时查询 GitHub/Gitea Webhook 是否存在、回调 URL 是否匹配、是否启用；结果只作为当前响应返回，不回写数据库，上游不可达时统一返回 `unavailable`。
 - [x] Git 外部请求网络失败映射为稳定错误码 `git.network_failed`，提示检查服务端网络、代理/VPN、DNS 解析或 FakeIP 设置。
 - [x] 收紧 Git 个人凭据访问：`user` 凭据仅所有者可见可用，`project` 和 `global` 凭据按明确作用域共享。
 - [x] 收紧普通业务列表中的用户空间资源：管理员不再混看他人的 user-scope Git Provider、镜像站和 Registry/Git 凭据，后续单独建设管理视图。
@@ -517,7 +519,7 @@
 - [x] 应用详情新增实时 Kubernetes 拓扑：后端按应用和部署配置即时解析 Gateway/HTTPRoute/Service/Workload/Pod、HPA、ConfigMap、Secret、PVC 关系，不持久化拓扑；前端用懒加载 ECharts 展示主链路、依赖资源和节点详情。
 - [x] 项目空间服务依赖 P1：实现手工逻辑关系模型、迁移、分页 CRUD、权限校验、项目空间拓扑聚合、按需显示的拓扑页和移动端依赖列表。
 - [x] 项目空间服务依赖 P2：实现可部署 ServiceBinding、同项目同集群与端口/环境变量校验、稳定 Service DNS 解析、Release 快照注入、Pod Template digest，以及“保存”/“保存并前往发布”流程。
-- [x] 项目空间服务依赖 P3：实现 Service/端口/EndpointSlice/NetworkPolicy 只读诊断、`pending_release`/`invalid`/`unavailable` 状态、被引用资源删除保护、AuditLog 和服务引用平台事件。
+- [x] 项目空间服务依赖 P3：实现 Service/端口/EndpointSlice/NetworkPolicy 只读诊断、`declared`/`invalid`/`unavailable` 状态、被引用资源删除保护、AuditLog 和服务引用平台事件。
 - [ ] 项目空间服务依赖 P4（后续可选）：从网关流量、OpenTelemetry 或 Service Mesh 聚合带时间窗口的观测关系，仅作为声明关系的验证信号，不自动修改业务关系。
 - [x] 项目应用列表移除来源类型和服务端口列，只展示应用基础摘要和操作入口。
 - [x] 部署配置表单选择应用下已绑定的 RepositoryBinding，支持就地绑定新仓库并自动选中；Dockerfile、构建上下文和构建路径按选中仓库自动探测，构建提供者不再作为用户表单项展示。
@@ -573,7 +575,7 @@
 
 - [x] 设计平台系统项目空间模型：新增或约定 `platform-system` 系统项目空间，用于承载平台自有探针、采集器和诊断组件；仅平台管理员可见，不参与普通用户账单，不允许普通用户删除或修改；平台管理员可以像维护普通项目空间一样进入查看应用、部署、发布和运行态。
 - [x] 将 Gateway Traffic Probe 从“特殊系统组件安装”迁移为平台系统项目空间下的普通应用：创建 Application、DeploymentTarget、Release 和运行态资源，复用正常部署、日志、Web Console、资源列表和审计链路；系统组件安装记录仅作为应用市场安装入口、状态索引或兼容迁移层。
-- [x] 为平台系统项目空间增加保护规则：禁止删除平台系统项目空间；探针相关运行费用不进入普通用户账单，系统组件安装记录仅保留安装索引，最近 heartbeat / 上报窗口改为 Redis 或进程内短 TTL 运行态。
+- [x] 为平台系统项目空间增加保护规则：禁止删除平台系统项目空间；探针相关运行费用不进入普通用户账单；系统组件安装记录仅保留安装索引，当前部署状态即时读取目标 Kubernetes 工作负载，访问流量可用性从不可变用量上报记录推导，不缓存在线状态。
 - [ ] 为平台组件实例增加卸载/重装二次确认：平台管理员删除或重装探针应用/部署配置时需要明确确认，并同步清理或更新系统组件安装记录。
 - [x] 为系统组件资源建立统一标记：平台自有集群组件写入 `luna.devops/system=true`、组件类型、运行集群 ID 和版本等 labels/annotations，便于集群资源页过滤、审计和后续升级。
 - [x] 设计系统组件部署 API/Worker：由平台按运行集群下发或升级探针组件，支持版本记录、部署状态回写和失败原因展示；组件部署失败不能影响用户业务发布。
@@ -899,7 +901,7 @@
 
 ## 12. 可观测性
 
-原则：所有可观测能力默认关闭，只有对应显式开关为 `true` 才启用；metrics 属于本地暴露类能力，`METRICS_ENABLED=true` 后使用 API `:9090`、Worker `:9091` 和 `/metrics` 默认值启动独立 listener。外部上报、查询和跳转类能力必须同时具备真实 endpoint/base URL，未配置时不注册外部导出器、不暴露外部查询入口、不在 UI 展示不可用的 Grafana/Trace/Log 跳转。平台状态仍以数据库业务记录为准，Prometheus、Tempo、Loki 只作为观测与排障数据源。
+原则：所有可观测能力默认关闭，只有对应显式开关为 `true` 才启用；metrics 属于本地暴露类能力，`METRICS_ENABLED=true` 后使用 API `:9090`、Worker `:9091` 和 `/metrics` 默认值启动独立 listener。外部上报、查询和跳转类能力必须同时具备真实 endpoint/base URL，未配置时不注册外部导出器、不暴露外部查询入口、不在 UI 展示不可用的 Grafana/Trace/Log 跳转。业务配置、工作流结果和不可变历史以数据库记录为准；当前运行状态以 Kubernetes 或对应外部平台的即时响应为准，上游不可达时统一返回 `unavailable`；Prometheus、Tempo、Loki 只作为观测与排障数据源。
 
 ### 12.1 配置开关与安全边界
 
@@ -1066,6 +1068,8 @@ OpenAPI，不把 MCP 作为内部服务总线。
 - [x] 将固定两次模型调用重构为统一有界 Agent Loop：按调用 ID 回灌 assistant tool_calls 与 tool result，支持任意轮次继续调用平台工具，并以批准、MFA、补充输入、取消、超时、调用上限或最终答复作为明确退出条件。
 - [x] 确定 AI 声明式交互内容与卡片 V1 Schema：固定场景模板、受控内容块、动态输入、可信来源、Tool 参数绑定、Secret 隔离、运行状态和安全提交链路。
 - [x] 实现 `create_interaction_cards`、卡片 Timeline/SSE、Web 固定内容块与动态输入渲染器；卡片动作复用 Agent Run 和用户绑定 Tool 委托链路，非法 Schema 与模型伪造审批卡 fail closed。
+- [x] 为交互卡片增加 `prepare_interaction_cards` 准备握手和原位流光占位；卡片占满助手回复可用宽度，候选布局按容器自适应，宽表格与代码仅在内部滚动，展示文本使用禁用 HTML 的安全 Markdown。
+- [x] 将交互卡片扩展为候选、对比、详情、表单、向导、诊断、计划、进度、回执和看板十类模板，补齐按模板密度与展开策略、真实图表、分段选择、动作幂等语义，并覆盖逐模板与极端窄窗测试。
 - [x] 为交互卡片增加模型参数校验失败后的有界自修复回路，并支持用 `{{field_id}}` 将已校验的非敏感表单值带回会话；Secret 保持隔离，含必填字段的继续动作在校验通过前禁用。
 - [x] 将 Provider 连接中断、读取失败和畸形 SSE 统一映射为稳定错误码，避免卡片生成失败退化为无法诊断的通用 `ai.run_failed`。
 - [x] 将应用模板搜索接入 Agent Tool Catalog，支持按关键词和分类筛选，并在工具结果中剔除 Secret 默认值。

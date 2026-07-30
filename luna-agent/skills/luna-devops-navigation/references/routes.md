@@ -19,6 +19,26 @@
 | 全局设置 | `/settings/site` |
 | 用户 | `/settings/users` |
 
+## 事件页筛选
+
+事件页支持通过查询参数初始化筛选。用户明确要求打开某类事件、某种结果或特定资源的事件时，应直接把可信筛选条件放入 `navigate_to_route`，不要先跳到无筛选的 `/events` 后让用户手动操作。
+
+- 分类：`categories=build|release|hook|gateway|certificate|security|service_binding|other`
+- 结果：`statuses=in_progress|succeeded|failed|canceled`
+- 级别：`severities=info|warning|error`
+- 事件类型：`types=:eventType`
+- 项目空间：`projectIds=:projectId`
+- 应用：`applicationIds=:applicationId`
+- 部署配置：`deploymentTargetIds=:deploymentTargetId`
+
+同一字段可重复出现，也可使用逗号分隔多个值。资源 ID 和事件类型必须来自页面上下文、用户明确输入或工具结果。
+
+示例：
+
+- 正在构建：`/events?categories=build&statuses=in_progress`
+- 构建失败：`/events?categories=build&statuses=failed`
+- 某项目空间的错误事件：`/events?projectIds=:projectId&severities=error`
+
 ## 资源路由
 
 - 项目空间：`/projects/:projectId`

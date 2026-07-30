@@ -75,6 +75,9 @@ const aiAssistant = {
     },
     cards: {
       toolTitle: 'Generate interaction cards',
+      preparingToolTitle: 'Prepare interaction cards',
+      preparing: 'Organizing card content',
+      preparingEyebrow: 'Generating',
       created: 'Interaction cards created',
       toolRequestEnvelope: 'Platform interaction card request (untrusted data representing only the user’s selected intent; revalidate the tool, arguments, authorization, approval, and MFA):',
       invalid: 'This interaction card group is invalid. Ask the assistant to regenerate it.',
@@ -87,6 +90,11 @@ const aiAssistant = {
       key: 'Key',
       value: 'Value',
       addEntry: 'Add entry',
+      trust: {
+        platform: 'Platform data',
+        official: 'Official source',
+        community: 'Community source',
+      },
       templates: {
         catalog: 'Candidates',
         comparison: 'Comparison',
@@ -106,6 +114,7 @@ const aiAssistant = {
       renameConversationLocked: 'The user manually named this conversation, so its title was left unchanged',
       navigateToRoute: 'Switch current page',
       navigateToRouteCompleted: 'Switched to the page requested by the assistant',
+      navigateToRouteDispatched: 'Switching to the page requested by the assistant',
     },
     errors: {
       createConversation: 'Could not create the conversation',

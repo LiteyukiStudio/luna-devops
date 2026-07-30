@@ -298,7 +298,11 @@ export function reduceAIEvent(state: AIAssistantState, event: AIEvent): AIAssist
         ? {
             ...block,
             index: eventIndex,
+            operationId: stringPayload(event.payload, 'operationId') || block.operationId,
             status,
+            arguments: typeof event.payload.arguments === 'object' && event.payload.arguments
+              ? event.payload.arguments as Record<string, unknown>
+              : block.arguments,
             titleKey: stringPayload(event.payload, 'errorCode') || block.titleKey,
             result: normalizeToolResult(event.payload.result) ?? block.result,
             uiActions: event.payload.uiActions as AIUIAction[] | undefined ?? block.uiActions,

@@ -44,7 +44,7 @@ export function AIAssistantComposer({
         <textarea
           ref={inputRef}
           aria-label={t('aiAssistant.inputLabel')}
-          className="min-h-10 min-w-0 flex-1 resize-none bg-transparent text-sm leading-5 outline-none placeholder:text-muted-foreground"
+          className="min-h-10 min-w-0 flex-1 resize-none bg-transparent !text-[13px] leading-5 outline-none placeholder:text-muted-foreground"
           disabled={busy || (activeRun && !waitingInput)}
           maxLength={maxLength}
           placeholder={waitingInput ? t('aiAssistant.inputRequired') : activeRun ? t('aiAssistant.inputRunning') : t('aiAssistant.inputPlaceholder')}

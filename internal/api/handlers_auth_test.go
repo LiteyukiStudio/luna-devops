@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/secret"
 )
@@ -208,11 +209,11 @@ func TestUserSecurityChangesRevokeAuthentication(t *testing.T) {
 		passwordChanged    bool
 		want               bool
 	}{
-		{name: "profile only", originalRole: "user", nextRole: "user", want: false},
-		{name: "role changed", originalRole: "user", nextRole: "platform_admin", want: true},
-		{name: "account disabled", originalRole: "user", nextRole: "user", nextDisabled: true, want: true},
-		{name: "password changed", originalRole: "user", nextRole: "user", passwordChanged: true, want: true},
-		{name: "account enabled", originalRole: "user", nextRole: "user", originallyDisabled: true, want: false},
+		{name: "profile only", originalRole: authz.PlatformRoleUser, nextRole: authz.PlatformRoleUser, want: false},
+		{name: "role changed", originalRole: authz.PlatformRoleUser, nextRole: authz.PlatformRoleAdmin, want: true},
+		{name: "account disabled", originalRole: authz.PlatformRoleUser, nextRole: authz.PlatformRoleUser, nextDisabled: true, want: true},
+		{name: "password changed", originalRole: authz.PlatformRoleUser, nextRole: authz.PlatformRoleUser, passwordChanged: true, want: true},
+		{name: "account enabled", originalRole: authz.PlatformRoleUser, nextRole: authz.PlatformRoleUser, originallyDisabled: true, want: false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -267,7 +268,7 @@ func TestBuildVariableSetResponseHidesVariablesWithoutInspectPermission(t *testi
 		Variables: `{"PUBLIC_FLAG":"true","API_URL":"https://api.example.com"}`,
 	}
 
-	output := h.buildVariableSetResponseForUser(model.User{ID: "usr_member", Role: "user"}, set)
+	output := h.buildVariableSetResponseForUser(model.User{ID: "usr_member", Role: authz.PlatformRoleUser}, set)
 
 	if output.CanInspectVariables {
 		t.Fatal("expected regular user to be unable to inspect global build variables")
@@ -289,7 +290,7 @@ func TestBuildVariableSetResponseShowsVariablesWithInspectPermission(t *testing.
 		Variables: `{"PUBLIC_FLAG":"true"}`,
 	}
 
-	output := h.buildVariableSetResponseForUser(model.User{ID: "usr_owner", Role: "user"}, set)
+	output := h.buildVariableSetResponseForUser(model.User{ID: "usr_owner", Role: authz.PlatformRoleUser}, set)
 
 	if !output.CanInspectVariables {
 		t.Fatal("expected owner to inspect personal build variables")

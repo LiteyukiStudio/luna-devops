@@ -88,7 +88,7 @@ export class GraphVersionRegistry {
   }, signal?: AbortSignal): Promise<Record<string, unknown> | undefined> {
     const availableOperations = this.modelTools(input.pageContext, input.conversation)
       .map(tool => tool.operationId)
-      .filter(operationId => !["create_options", "create_interaction_cards", "rename_conversation", "navigate_to_route"].includes(operationId))
+      .filter(operationId => !["create_options", "prepare_interaction_cards", "create_interaction_cards", "rename_conversation", "navigate_to_route"].includes(operationId))
     const skillGuidance = skillGuidanceFor({
       userInput: `${input.userInput}\n${input.answer}`,
       pageContext: input.pageContext,

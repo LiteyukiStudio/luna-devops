@@ -7,6 +7,7 @@ import (
 	"net/netip"
 	"strings"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/gin-gonic/gin"
@@ -34,7 +35,7 @@ func (h *Handlers) runtimeClusterFromInput(ctx *gin.Context, user model.User, in
 		}
 		kubeconfigRef = h.secrets.Store(kubeconfig, user.ID, "runtime_cluster:"+clusterID+":kubeconfig")
 	}
-	platformAdmin := user.Role == "platform_admin"
+	platformAdmin := user.Role == authz.PlatformRoleAdmin
 	if _, err := parseGatewayHeaderMap(input.GatewayDefaultRequestHeaders, platformAdmin); err != nil {
 		writeError(ctx, http.StatusBadRequest, fmt.Sprintf("默认请求头配置无效: %s", err.Error()))
 		return model.RuntimeCluster{}, false
@@ -86,7 +87,6 @@ func (h *Handlers) runtimeClusterFromInput(ctx *gin.Context, user model.User, in
 		GatewayTrustedProxyCIDRs:      strings.TrimSpace(input.GatewayTrustedProxyCIDRs),
 		GatewayDefaultRequestHeaders:  strings.TrimSpace(input.GatewayDefaultRequestHeaders),
 		GatewayDefaultResponseHeaders: strings.TrimSpace(input.GatewayDefaultResponseHeaders),
-		Status:                        fallback(strings.TrimSpace(input.Status), "unknown"),
 		CreatedBy:                     user.ID,
 	}, true
 }
@@ -163,7 +163,6 @@ type runtimeClusterInput struct {
 	GatewayTrustedProxyCIDRs      string   `json:"gatewayTrustedProxyCIDRs"`
 	GatewayDefaultRequestHeaders  string   `json:"gatewayDefaultRequestHeaders"`
 	GatewayDefaultResponseHeaders string   `json:"gatewayDefaultResponseHeaders"`
-	Status                        string   `json:"status"`
 }
 
 func normalizeGatewayRootDomain(value string, fallbackValue string) string {

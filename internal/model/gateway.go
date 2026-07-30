@@ -27,15 +27,17 @@ type GatewayRoute struct {
 	RequestRedirect        string           `gorm:"type:text;not null;default:''" json:"requestRedirect"`
 	BackendWeight          int              `gorm:"not null;default:1" json:"backendWeight"`
 	HostnameAliases        string           `gorm:"type:text;not null;default:''" json:"hostnameAliases"`
-	CertificateStatus      string           `gorm:"not null;default:disabled" json:"certificateStatus"`
-	CertificateMessage     string           `gorm:"type:text;not null;default:''" json:"certificateMessage"`
-	CertificateNotAfter    *time.Time       `json:"certificateNotAfter"`
-	CertificateIssuerKind  string           `gorm:"not null;default:''" json:"certificateIssuerKind"`
-	CertificateIssuerName  string           `gorm:"not null;default:''" json:"certificateIssuerName"`
+	CertificateStatus      string           `gorm:"-" json:"certificateStatus"`
+	CertificateMessage     string           `gorm:"-" json:"certificateMessage"`
+	CertificateNotAfter    *time.Time       `gorm:"-" json:"certificateNotAfter"`
+	CertificateIssuerKind  string           `gorm:"-" json:"certificateIssuerKind"`
+	CertificateIssuerName  string           `gorm:"-" json:"certificateIssuerName"`
 	CNAMEName              string           `json:"cnameName"`
 	CNAMETarget            string           `json:"cnameTarget"`
-	DNSStatus              string           `gorm:"not null;default:pending" json:"dnsStatus"`
-	Status                 string           `gorm:"not null;default:pending" json:"status"`
+	DNSStatus              string           `gorm:"-" json:"dnsStatus"`
+	Status                 string           `gorm:"-" json:"status"`
+	ObservationCode        string           `gorm:"-" json:"observationCode,omitempty"`
+	ObservedAt             *time.Time       `gorm:"-" json:"observedAt,omitempty"`
 	Enabled                bool             `gorm:"not null;default:true" json:"enabled"`
 	DeleteStatus           string           `gorm:"index;not null;default:active" json:"deleteStatus"`
 	DeleteMessage          string           `gorm:"type:text;not null;default:''" json:"deleteMessage"`

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/LiteyukiStudio/devops/internal/resourceidentifier"
@@ -19,7 +20,9 @@ import (
 )
 
 func (h *Handlers) ListDeploymentTargets(ctx *gin.Context) {
-	if _, _, ok := h.projectAndCurrentUserWithRoles(ctx, "owner", "admin", "developer", "viewer"); !ok {
+	markLiveObservationResponse(ctx)
+	_, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper, authz.ProjectRoleViewer)
+	if !ok {
 		return
 	}
 	app, ok := h.findApplication(ctx)
@@ -47,6 +50,7 @@ func (h *Handlers) ListDeploymentTargets(ctx *gin.Context) {
 			writeError(ctx, http.StatusInternalServerError, err.Error())
 			return
 		}
+		h.observeDeploymentTargets(ctx.Request.Context(), project, targets)
 		ctx.JSON(http.StatusOK, paginatedResponse(deploymentTargetResponses(targets), total, pagination))
 		return
 	}
@@ -58,11 +62,12 @@ func (h *Handlers) ListDeploymentTargets(ctx *gin.Context) {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
+	h.observeDeploymentTargets(ctx.Request.Context(), project, targets)
 	ctx.JSON(http.StatusOK, deploymentTargetResponses(targets))
 }
 
 func (h *Handlers) CreateDeploymentTarget(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, "owner", "admin", "developer")
+	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
 	if !ok {
 		return
 	}
@@ -112,11 +117,12 @@ func (h *Handlers) CreateDeploymentTarget(ctx *gin.Context) {
 		return
 	}
 	target, _ = h.deploymentTargetWithHookBindings(target)
+	target = h.observeDeploymentTarget(ctx.Request.Context(), project, target)
 	ctx.JSON(http.StatusCreated, deploymentTargetResponseFromModel(target))
 }
 
 func (h *Handlers) UpdateDeploymentTarget(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, "owner", "admin", "developer")
+	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
 	if !ok {
 		return
 	}
@@ -177,6 +183,7 @@ func (h *Handlers) UpdateDeploymentTarget(ctx *gin.Context) {
 		return
 	}
 	target, _ = h.deploymentTargetWithHookBindings(target)
+	target = h.observeDeploymentTarget(ctx.Request.Context(), project, target)
 	ctx.JSON(http.StatusOK, deploymentTargetResponseFromModel(target))
 }
 
@@ -207,7 +214,7 @@ type deploymentTargetDataExportAuthorization struct {
 }
 
 func (h *Handlers) authorizeDeploymentTargetDataExport(ctx *gin.Context) (deploymentTargetDataExportAuthorization, bool) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, "owner", "admin")
+	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
 	if !ok {
 		return deploymentTargetDataExportAuthorization{}, false
 	}
@@ -353,7 +360,7 @@ func requireInteractiveSession(ctx *gin.Context) bool {
 }
 
 func (h *Handlers) RestartDeploymentTarget(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, "owner", "admin", "developer")
+	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
 	if !ok {
 		return
 	}
@@ -397,7 +404,7 @@ func (h *Handlers) RestartDeploymentTarget(ctx *gin.Context) {
 }
 
 func (h *Handlers) DeleteDeploymentTarget(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, "owner", "admin", "developer")
+	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
 	if !ok {
 		return
 	}

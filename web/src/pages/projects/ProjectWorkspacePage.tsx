@@ -22,6 +22,8 @@ import { UserAvatar } from '@/components/common/user-avatar'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { TabsContent } from '@/components/ui/tabs'
+import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
+import { isPlatformAdmin, ProjectRole } from '@/lib/roles'
 import { ApplicationsPage } from '@/pages/applications/ApplicationsPage'
 import { ProjectBuildVariableSetsPage } from '@/pages/projects/ProjectBuildVariableSetsPage'
 import { ProjectHooksPage } from '@/pages/projects/ProjectHooksPage'
@@ -49,13 +51,18 @@ export function ProjectWorkspacePage() {
   const recentBuilds = useQuery({ queryKey: ['project-overview-build-runs', projectId], queryFn: () => api.listBuildRunsPage(projectId, { page: 1, pageSize: 5, sortBy: 'createdAt', sortOrder: 'desc' }), enabled: Boolean(projectId) })
   const recentEvents = useQuery({ queryKey: ['project-overview-events', projectId], queryFn: () => api.listPlatformEvents({ page: 1, pageSize: 5, projectId, sortBy: 'occurredAt', sortOrder: 'desc' }), enabled: Boolean(projectId) })
   const releases = useQuery({ queryKey: ['project-overview-releases', projectId], queryFn: () => api.listReleases(projectId), enabled: Boolean(projectId) })
-  const routes = useQuery({ queryKey: ['project-overview-gateway-routes', projectId], queryFn: () => api.listGatewayRoutes(projectId), enabled: Boolean(projectId) })
+  const routes = useQuery({
+    queryKey: ['project-overview-gateway-routes', projectId],
+    queryFn: () => api.listGatewayRoutes(projectId),
+    enabled: Boolean(projectId),
+    ...liveObservationQueryPolicy,
+  })
   if (project.isError)
     return <ErrorState title={t('projectSpaces.workspaceLoadFailedTitle')} description={t('projectSpaces.workspaceLoadFailedDescription')} />
 
   const currentProject = project.data
   const currentMember = members.data?.find(member => member.userId === user?.id)
-  const canManageTopology = user?.role === 'platform_admin' || currentMember?.role === 'owner' || currentMember?.role === 'admin'
+  const canManageTopology = isPlatformAdmin(user?.role) || currentMember?.role === ProjectRole.Owner || currentMember?.role === ProjectRole.Admin
   const activeContent = (() => {
     switch (activeTab) {
       case 'apps':
@@ -203,7 +210,7 @@ function ProjectOverviewDashboard({ applications, builds, events, members, proje
   const activeReleases = releases.filter(release => release.status === 'pending' || release.status === 'running').length
   const failedReleases = releases.filter(release => release.status === 'failed').length
   const readyRoutes = routes.filter(route => route.status === 'ready').length
-  const ownerCount = members.filter(member => member.role === 'owner').length
+  const ownerCount = members.filter(member => member.role === ProjectRole.Owner).length
   const latestRelease = [...releases].sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0]
 
   return (

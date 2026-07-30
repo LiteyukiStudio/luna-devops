@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -17,8 +18,8 @@ import (
 func TestInitializeAdminWithLockAllowsSingleConcurrentInitializer(t *testing.T) {
 	db := authIntegrationDB(t)
 	users := []model.User{
-		{ID: "usr_bootstrap_a", Email: "bootstrap-a@example.com", Name: "A", Role: "platform_admin", Language: "en-US", Password: "hash"},
-		{ID: "usr_bootstrap_b", Email: "bootstrap-b@example.com", Name: "B", Role: "platform_admin", Language: "en-US", Password: "hash"},
+		{ID: "usr_bootstrap_a", Email: "bootstrap-a@example.com", Name: "A", Role: authz.PlatformRoleAdmin, Language: "en-US", Password: "hash"},
+		{ID: "usr_bootstrap_b", Email: "bootstrap-b@example.com", Name: "B", Role: authz.PlatformRoleAdmin, Language: "en-US", Password: "hash"},
 	}
 
 	start := make(chan struct{})
@@ -54,7 +55,7 @@ func TestInitializeAdminWithLockAllowsSingleConcurrentInitializer(t *testing.T) 
 	}
 
 	var adminCount int64
-	if err := db.Model(&model.User{}).Where("role = ?", "platform_admin").Count(&adminCount).Error; err != nil {
+	if err := db.Model(&model.User{}).Where("role = ?", authz.PlatformRoleAdmin).Count(&adminCount).Error; err != nil {
 		t.Fatalf("count administrators: %v", err)
 	}
 	if adminCount != 1 {
@@ -64,7 +65,7 @@ func TestInitializeAdminWithLockAllowsSingleConcurrentInitializer(t *testing.T) 
 
 func TestRotateRememberLoginConsumesTokenOnce(t *testing.T) {
 	db := authIntegrationDB(t)
-	user := model.User{ID: "usr_remember", Email: "remember@example.com", Name: "Remember", Role: "user", Language: "en-US", Password: "hash"}
+	user := model.User{ID: "usr_remember", Email: "remember@example.com", Name: "Remember", Role: authz.PlatformRoleUser, Language: "en-US", Password: "hash"}
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatalf("create user: %v", err)
 	}
@@ -137,7 +138,7 @@ func TestOIDCRegistrationToggleOnlyBlocksNewUsers(t *testing.T) {
 	if err := db.Model(&settings).Update("allow_oidc_registration", false).Error; err != nil {
 		t.Fatalf("disable OIDC registration: %v", err)
 	}
-	if err := db.Create(&model.AuthAdmissionPolicy{ID: defaultAdmissionPolicyID, AllowLocalLogin: true, AllowOIDCLogin: true, RequireVerifiedOIDCEmail: true, DefaultRole: "user"}).Error; err != nil {
+	if err := db.Create(&model.AuthAdmissionPolicy{ID: defaultAdmissionPolicyID, AllowLocalLogin: true, AllowOIDCLogin: true, RequireVerifiedOIDCEmail: true, DefaultRole: authz.PlatformRoleUser}).Error; err != nil {
 		t.Fatalf("create admission policy: %v", err)
 	}
 	provider := model.AuthProvider{ID: "oidcp_registration_toggle", Type: "oidc", Name: "OIDC", Enabled: true}
@@ -151,7 +152,7 @@ func TestOIDCRegistrationToggleOnlyBlocksNewUsers(t *testing.T) {
 		t.Fatalf("new OIDC user error = %v, want registration disabled", err)
 	}
 
-	existing := model.User{ID: "usr_existing_oidc", Email: "existing-oidc@example.com", Name: "Existing", Role: "user", Language: "en-US"}
+	existing := model.User{ID: "usr_existing_oidc", Email: "existing-oidc@example.com", Name: "Existing", Role: authz.PlatformRoleUser, Language: "en-US"}
 	identity := model.ExternalIdentity{ID: "ext_existing_oidc", UserID: existing.ID, ProviderID: provider.ID, Subject: "existing-subject", Email: existing.Email, EmailVerified: true}
 	if err := db.Create(&existing).Error; err != nil {
 		t.Fatalf("create existing user: %v", err)
@@ -167,7 +168,7 @@ func TestOIDCRegistrationToggleOnlyBlocksNewUsers(t *testing.T) {
 
 func TestRememberTokenReplayRevokesCompromisedFamilyOnly(t *testing.T) {
 	db := authIntegrationDB(t)
-	user := model.User{ID: "usr_replay", Email: "replay@example.com", Name: "Replay", Role: "user", Language: "en-US", Password: "hash"}
+	user := model.User{ID: "usr_replay", Email: "replay@example.com", Name: "Replay", Role: authz.PlatformRoleUser, Language: "en-US", Password: "hash"}
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatalf("create user: %v", err)
 	}
@@ -214,7 +215,7 @@ func TestRememberTokenReplayRevokesCompromisedFamilyOnly(t *testing.T) {
 
 func TestRememberRotationPreservesPrimaryAuthenticationAndSingleSession(t *testing.T) {
 	db := authIntegrationDB(t)
-	user := model.User{ID: "usr_rotate_family", Email: "rotate-family@example.com", Name: "Rotate Family", Role: "user", Language: "en-US"}
+	user := model.User{ID: "usr_rotate_family", Email: "rotate-family@example.com", Name: "Rotate Family", Role: authz.PlatformRoleUser, Language: "en-US"}
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatalf("create user: %v", err)
 	}
@@ -267,7 +268,7 @@ func TestRememberRotationPreservesPrimaryAuthenticationAndSingleSession(t *testi
 
 func TestLogoutNonRememberedSessionLeavesRememberFamiliesAlone(t *testing.T) {
 	db := authIntegrationDB(t)
-	user := model.User{ID: "usr_logout", Email: "logout@example.com", Name: "Logout", Role: "user", Language: "en-US", Password: "hash"}
+	user := model.User{ID: "usr_logout", Email: "logout@example.com", Name: "Logout", Role: authz.PlatformRoleUser, Language: "en-US", Password: "hash"}
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatalf("create user: %v", err)
 	}
@@ -307,7 +308,7 @@ func TestLogoutNonRememberedSessionLeavesRememberFamiliesAlone(t *testing.T) {
 
 func TestLogoutRememberedSessionRevokesOnlyCurrentFamily(t *testing.T) {
 	db := authIntegrationDB(t)
-	user := model.User{ID: "usr_family_logout", Email: "family-logout@example.com", Name: "Family Logout", Role: "user", Language: "en-US", Password: "hash"}
+	user := model.User{ID: "usr_family_logout", Email: "family-logout@example.com", Name: "Family Logout", Role: authz.PlatformRoleUser, Language: "en-US", Password: "hash"}
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatalf("create user: %v", err)
 	}
@@ -346,7 +347,7 @@ func TestLogoutRememberedSessionRevokesOnlyCurrentFamily(t *testing.T) {
 
 func TestExpiredRememberTombstonesAreDeletedOnlyAfterWholeFamilyExpires(t *testing.T) {
 	db := authIntegrationDB(t)
-	user := model.User{ID: "usr_tombstone", Email: "tombstone@example.com", Name: "Tombstone", Role: "user", Language: "en-US", Password: "hash"}
+	user := model.User{ID: "usr_tombstone", Email: "tombstone@example.com", Name: "Tombstone", Role: authz.PlatformRoleUser, Language: "en-US", Password: "hash"}
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatalf("create user: %v", err)
 	}
@@ -381,7 +382,7 @@ func TestExpiredRememberTombstonesAreDeletedOnlyAfterWholeFamilyExpires(t *testi
 
 func TestRevokeUserAuthenticationClearsEverySession(t *testing.T) {
 	db := authIntegrationDB(t)
-	user := model.User{ID: "usr_revoke", Email: "revoke@example.com", Name: "Revoke", Role: "user", Language: "en-US", Password: "hash"}
+	user := model.User{ID: "usr_revoke", Email: "revoke@example.com", Name: "Revoke", Role: authz.PlatformRoleUser, Language: "en-US", Password: "hash"}
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatalf("create user: %v", err)
 	}

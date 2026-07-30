@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/shopspring/decimal"
@@ -180,7 +181,7 @@ func billingOwnerUserID(tx *gorm.DB, projectID string) (string, error) {
 		return ownerID, nil
 	}
 	var member model.ProjectMember
-	if err := tx.Select("user_id").First(&member, "project_id = ? and role = ?", projectID, "owner").Error; err != nil {
+	if err := tx.Select("user_id").First(&member, "project_id = ? and role = ?", projectID, authz.ProjectRoleOwner).Error; err != nil {
 		return "", err
 	}
 	return strings.TrimSpace(member.UserID), nil

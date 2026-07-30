@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/gin-gonic/gin"
 )
@@ -13,7 +14,7 @@ func (h *Handlers) GetRegistryImageTemplateDefault(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	project, ok := h.findProjectForCurrentUserWithRolesByID(ctx, strings.TrimSpace(ctx.Query("projectId")), "owner", "admin", "developer")
+	project, ok := h.findProjectForCurrentUserWithRolesByID(ctx, strings.TrimSpace(ctx.Query("projectId")), authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
 	if !ok {
 		return
 	}

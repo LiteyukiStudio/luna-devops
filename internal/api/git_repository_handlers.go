@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/buildtemplate"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
@@ -53,17 +54,10 @@ func (h *Handlers) ListGitBranches(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	ref := strings.TrimSpace(ctx.Query("ref"))
-	cacheKey := gitBranchCacheKey(ctx.Param("accountId"), ctx.Param("owner"), ctx.Param("repo"), ref)
-	branches, ok := h.branchCache.get(cacheKey)
-	if !ok {
-		var err error
-		branches, err = client.ListBranches(ctx.Request.Context(), ctx.Param("owner"), ctx.Param("repo"))
-		if err != nil {
-			writeGitUpstreamError(ctx, err)
-			return
-		}
-		h.branchCache.set(cacheKey, branches)
+	branches, err := client.ListBranches(ctx.Request.Context(), ctx.Param("owner"), ctx.Param("repo"))
+	if err != nil {
+		writeGitUpstreamError(ctx, err)
+		return
 	}
 	limit := positiveInt(ctx.DefaultQuery("limit", "50"), 50)
 	result := filterGitBranches(branches, ctx.Query("search"), limit)
@@ -130,6 +124,11 @@ func (h *Handlers) GetGitRepositoryBuildOptions(ctx *gin.Context) {
 }
 
 func (h *Handlers) ListRepositoryBindings(ctx *gin.Context) {
+	markLiveObservationResponse(ctx)
+	user, ok := h.currentUser(ctx)
+	if !ok {
+		return
+	}
 	if _, ok := h.findProjectForCurrentUser(ctx); !ok {
 		return
 	}
@@ -162,6 +161,7 @@ func (h *Handlers) ListRepositoryBindings(ctx *gin.Context) {
 			bindings[index].CredentialRef = ""
 			bindings[index].WebhookCallbackURL = h.gitWebhookURL(ctx, bindings[index].ID)
 		}
+		h.observeRepositoryBindings(ctx.Request.Context(), user, bindings)
 		ctx.JSON(http.StatusOK, paginatedResponse(bindings, total, pagination))
 		return
 	}
@@ -173,6 +173,7 @@ func (h *Handlers) ListRepositoryBindings(ctx *gin.Context) {
 		bindings[index].CredentialRef = ""
 		bindings[index].WebhookCallbackURL = h.gitWebhookURL(ctx, bindings[index].ID)
 	}
+	h.observeRepositoryBindings(ctx.Request.Context(), user, bindings)
 	ctx.JSON(http.StatusOK, bindings)
 }
 
@@ -181,7 +182,7 @@ func (h *Handlers) CreateRepositoryBinding(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if _, ok := h.findProjectForCurrentUserWithRoles(ctx, "owner", "admin", "developer"); !ok {
+	if _, ok := h.findProjectForCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper); !ok {
 		return
 	}
 
@@ -202,12 +203,14 @@ func (h *Handlers) CreateRepositoryBinding(ctx *gin.Context) {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	if shouldAutoConfigureWebhook(input) && binding.WebhookStatus != "disabled" {
+	if binding.WebhookEnabled {
 		h.tryConfigureRepositoryWebhook(ctx, user, &binding)
 	}
 	h.syncApplicationRepositoryURL(binding)
 	binding.CredentialRef = ""
-	ctx.JSON(http.StatusCreated, binding)
+	response := repositoryBindingResponse{RepositoryBinding: binding, WebhookCallbackURL: h.gitWebhookURL(ctx, binding.ID)}
+	h.observeRepositoryBinding(ctx.Request.Context(), user, &response)
+	ctx.JSON(http.StatusCreated, response)
 }
 
 func (h *Handlers) UpdateRepositoryBinding(ctx *gin.Context) {
@@ -215,7 +218,7 @@ func (h *Handlers) UpdateRepositoryBinding(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if _, ok := h.findProjectForCurrentUserWithRoles(ctx, "owner", "admin", "developer"); !ok {
+	if _, ok := h.findProjectForCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper); !ok {
 		return
 	}
 
@@ -238,7 +241,6 @@ func (h *Handlers) UpdateRepositoryBinding(ctx *gin.Context) {
 		return
 	}
 	webhookTargetChanged := repositoryBindingWebhookTargetChanged(existing, binding)
-	wasWebhookCreated := existing.WebhookStatus == "created"
 	existing.ApplicationID = binding.ApplicationID
 	existing.GitProviderID = binding.GitProviderID
 	existing.GitAccountID = binding.GitAccountID
@@ -246,16 +248,13 @@ func (h *Handlers) UpdateRepositoryBinding(ctx *gin.Context) {
 	existing.Repo = binding.Repo
 	existing.CloneURL = binding.CloneURL
 	existing.DefaultBranch = binding.DefaultBranch
-	existing.WebhookStatus = binding.WebhookStatus
+	existing.WebhookEnabled = binding.WebhookEnabled
 	if webhookTargetChanged {
 		existing.WebhookID = ""
 		existing.WebhookSecret = ""
 		existing.LastEvent = ""
 		existing.LastCommitSHA = ""
 		existing.LastWebhookAt = nil
-		if existing.WebhookStatus == "created" {
-			existing.WebhookStatus = "pending"
-		}
 	}
 	existing.CredentialRef = ""
 
@@ -263,16 +262,18 @@ func (h *Handlers) UpdateRepositoryBinding(ctx *gin.Context) {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	if shouldAutoConfigureWebhook(input) && (webhookTargetChanged || !wasWebhookCreated) && existing.WebhookStatus != "created" && existing.WebhookStatus != "disabled" {
+	if existing.WebhookEnabled && (webhookTargetChanged || strings.TrimSpace(existing.WebhookID) == "") {
 		h.tryConfigureRepositoryWebhook(ctx, user, &existing)
 	}
 	h.syncApplicationRepositoryURL(existing)
 	existing.CredentialRef = ""
-	ctx.JSON(http.StatusOK, existing)
+	response := repositoryBindingResponse{RepositoryBinding: existing, WebhookCallbackURL: h.gitWebhookURL(ctx, existing.ID)}
+	h.observeRepositoryBinding(ctx.Request.Context(), user, &response)
+	ctx.JSON(http.StatusOK, response)
 }
 
 func (h *Handlers) DeleteRepositoryBinding(ctx *gin.Context) {
-	if _, ok := h.findProjectForCurrentUserWithRoles(ctx, "owner", "admin", "developer"); !ok {
+	if _, ok := h.findProjectForCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper); !ok {
 		return
 	}
 
@@ -301,7 +302,7 @@ func (h *Handlers) configureRepositoryWebhookFromRequest(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if _, ok := h.findProjectForCurrentUserWithRoles(ctx, "owner", "admin", "developer"); !ok {
+	if _, ok := h.findProjectForCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper); !ok {
 		return
 	}
 	var binding model.RepositoryBinding
@@ -316,7 +317,9 @@ func (h *Handlers) configureRepositoryWebhookFromRequest(ctx *gin.Context) {
 		writeGitUpstreamError(ctx, err)
 		return
 	}
-	ctx.JSON(http.StatusOK, binding)
+	response := repositoryBindingResponse{RepositoryBinding: binding, WebhookCallbackURL: h.gitWebhookURL(ctx, binding.ID)}
+	h.observeRepositoryBinding(ctx.Request.Context(), user, &response)
+	ctx.JSON(http.StatusOK, response)
 }
 
 func (h *Handlers) ReceiveGitWebhook(ctx *gin.Context) {
@@ -341,7 +344,6 @@ func (h *Handlers) ReceiveGitWebhook(ctx *gin.Context) {
 		commitSHA = pushPayload.CommitSHA
 	}
 	now := time.Now()
-	binding.WebhookStatus = "created"
 	binding.LastEvent = event
 	binding.LastCommitSHA = commitSHA
 	binding.LastWebhookAt = &now
@@ -493,17 +495,17 @@ func (h *Handlers) repositoryBindingFromInput(ctx *gin.Context, userID string, i
 	}
 
 	return model.RepositoryBinding{
-		ID:            id.New("rpb"),
-		ProjectID:     ctx.Param("projectId"),
-		ApplicationID: app.ID,
-		GitProviderID: provider.ID,
-		GitAccountID:  account.ID,
-		Owner:         owner,
-		Repo:          repo,
-		CloneURL:      cloneURL,
-		DefaultBranch: fallback(strings.TrimSpace(input.DefaultBranch), "main"),
-		WebhookStatus: normalizeWebhookStatus(input.WebhookStatus),
-		CredentialRef: "",
+		ID:             id.New("rpb"),
+		ProjectID:      ctx.Param("projectId"),
+		ApplicationID:  app.ID,
+		GitProviderID:  provider.ID,
+		GitAccountID:   account.ID,
+		Owner:          owner,
+		Repo:           repo,
+		CloneURL:       cloneURL,
+		DefaultBranch:  fallback(strings.TrimSpace(input.DefaultBranch), "main"),
+		WebhookEnabled: shouldAutoConfigureWebhook(input),
+		CredentialRef:  "",
 	}, true
 }
 
@@ -558,25 +560,19 @@ func (h *Handlers) tryConfigureRepositoryWebhook(ctx *gin.Context, user model.Us
 func (h *Handlers) configureRepositoryWebhook(ctx *gin.Context, user model.User, binding *model.RepositoryBinding, writeClientErrors bool) error {
 	client, err := h.gitClientForUserBinding(ctx, user, *binding, writeClientErrors)
 	if err != nil {
-		binding.WebhookStatus = "failed"
-		_ = h.db.Save(binding).Error
 		h.audit(user.ID, "git_webhook.create", binding.ID, false, "git client unavailable")
 		return err
 	}
 	secret := randomHex(32)
 	result, err := client.CreateWebhook(ctx.Request.Context(), binding.Owner, binding.Repo, h.gitWebhookURL(ctx, binding.ID), secret)
 	if err != nil {
-		binding.WebhookStatus = "failed"
-		_ = h.db.Save(binding).Error
 		h.audit(user.ID, "git_webhook.create", binding.ID, false, "upstream create failed")
 		return err
 	}
-	binding.WebhookStatus = "created"
+	binding.WebhookEnabled = true
 	binding.WebhookID = result.ID
 	binding.WebhookSecret = h.secrets.Store(secret, user.ID, "repository_binding:"+binding.ID+":webhook")
 	if binding.WebhookSecret == "" {
-		binding.WebhookStatus = "failed"
-		_ = h.db.Save(binding).Error
 		h.audit(user.ID, "git_webhook.create", binding.ID, false, "secret store failed")
 		return fmt.Errorf("webhook secret store failed")
 	}
@@ -622,9 +618,6 @@ func (h *Handlers) gitClientForUserBinding(ctx *gin.Context, user model.User, bi
 	}
 	if !h.canUseScopedResourceByID(user, account.Scope, account.OwnerRef, scopedResourceGitAccount, account.ID) {
 		return gitprovider.Client{}, fmt.Errorf("git account forbidden")
-	}
-	if account.Status != "connected" {
-		return gitprovider.Client{}, fmt.Errorf("git account is not connected")
 	}
 	var provider model.GitProvider
 	if err := h.db.First(&provider, "id = ? and enabled = ?", strings.TrimSpace(binding.GitProviderID), true).Error; err != nil {

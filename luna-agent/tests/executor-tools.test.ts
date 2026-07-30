@@ -207,9 +207,25 @@ describe("provider to tool to subsequent model invocation", () => {
             type: "completed",
             usage: { inputTokens: 10, outputTokens: 10 },
             toolCalls: [{
+              id: "prepare_card",
+              operationId: "prepare_interaction_cards",
+              arguments: {
+                schemaVersion: 1,
+                generationId: "redis-config",
+                title: "正在组织 Redis 配置",
+              },
+            }],
+          }
+          return
+        }
+        if (modelStep === 2) {
+          yield {
+            type: "completed",
+            usage: { inputTokens: 10, outputTokens: 10 },
+            toolCalls: [{
               id: "invalid_card",
               operationId: "create_interaction_cards",
-              arguments: { schemaVersion: "v1", cards: [] },
+              arguments: { schemaVersion: "v1", generationId: "redis-config", cards: [] },
             }],
           }
           return
@@ -223,6 +239,7 @@ describe("provider to tool to subsequent model invocation", () => {
             operationId: "create_interaction_cards",
             arguments: {
               schemaVersion: 1,
+              generationId: "redis-config",
               title: "Redis 配置",
               template: "form",
               cards: [{
@@ -254,8 +271,8 @@ describe("provider to tool to subsequent model invocation", () => {
     await executor.runOnce()
 
     expect((await repository.getRun("usr_a", created.run.id))?.status).toBe("completed")
-    expect(requests).toHaveLength(2)
-    const retryMessage = requests[1]?.messages.find(message => message.role === "tool")
+    expect(requests).toHaveLength(3)
+    const retryMessage = requests[2]?.messages.find(message => message.role === "tool" && message.toolCallId === "invalid_card")
     expect(retryMessage).toMatchObject({ role: "tool", toolCallId: "invalid_card" })
     expect(retryMessage?.content).toContain("ai.provider_invalid_tool_arguments")
     const timeline = await presentTimeline(repository, "usr_a", conversation.id)
@@ -362,6 +379,7 @@ describe("provider to tool to subsequent model invocation", () => {
       input: "Open the projects page",
       pageContext: { routeName: "dashboard" },
       idempotencyKey: "automatic-route",
+      clientInstanceId: "executor-client-instance",
     })
     const requests: ModelRequest[] = []
     const provider: ModelProvider = {
@@ -411,6 +429,16 @@ describe("provider to tool to subsequent model invocation", () => {
         payload: { routeName: "projects", params: {}, query: {} },
       }),
     ])
+    const pendingActions = await repository.listPendingUIActions("usr_a", "executor-client-instance")
+    expect(pendingActions).toHaveLength(1)
+    expect(pendingActions[0]).toMatchObject({
+      runId: timeline?.turns[0]?.selectedRun?.id,
+      status: "pending",
+    })
+    expect(pendingActions[0]?.action).toMatchObject({
+      type: "navigate",
+      activation: "automatic",
+    })
   })
 
   it("runs a required prediction phase when the main response omits create_options", async () => {

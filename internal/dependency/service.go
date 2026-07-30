@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
-	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
@@ -66,10 +65,6 @@ func (service *Service) ServiceBinding(ctx context.Context, projectID, bindingID
 	return binding, nil
 }
 
-func (service *Service) RecordServiceBindingCheck(ctx context.Context, bindingID, status string, checkedAt time.Time) error {
-	return service.repository.UpdateServiceBindingCheck(ctx, bindingID, status, checkedAt)
-}
-
 func (service *Service) CreateServiceBinding(ctx context.Context, projectID, actorID string, input ServiceBindingInput) (model.ServiceBinding, error) {
 	binding := model.ServiceBinding{ID: id.New("sbind"), ProjectID: strings.TrimSpace(projectID), CreatedBy: strings.TrimSpace(actorID)}
 	if err := service.applyServiceBindingInput(ctx, &binding, input); err != nil {
@@ -89,8 +84,6 @@ func (service *Service) UpdateServiceBinding(ctx context.Context, projectID, bin
 	if err := service.applyServiceBindingInput(ctx, &binding, input); err != nil {
 		return model.ServiceBinding{}, err
 	}
-	binding.LastCheckStatus = ""
-	binding.LastCheckedAt = nil
 	if err := service.repository.UpdateServiceBinding(ctx, &binding); err != nil {
 		return model.ServiceBinding{}, normalizePersistenceError(err)
 	}

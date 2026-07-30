@@ -28,7 +28,6 @@ func (r *Runner) handleGatewayApply(ctx context.Context, task *asynq.Task) (err 
 			}
 		}
 		r.recordGatewaySyncMetric(operation, result, startedAt)
-		r.refreshGatewayRouteMetrics()
 	}()
 
 	var payload tasks.GatewayApplyPayload
@@ -58,10 +57,6 @@ func (r *Runner) handleGatewayApply(ctx context.Context, task *asynq.Task) (err 
 	if !route.Enabled {
 		operation = "disable"
 		if err := r.cleanupGatewayRuntimeResources(ctx, route); err != nil {
-			_ = r.db.Model(&route).Updates(map[string]any{"status": "failed"}).Error
-			return err
-		}
-		if err := r.db.Model(&route).Updates(map[string]any{"status": "disabled"}).Error; err != nil {
 			return err
 		}
 		route.Status = "disabled"
@@ -71,73 +66,37 @@ func (r *Runner) handleGatewayApply(ctx context.Context, task *asynq.Task) (err 
 
 	namespace := deploymentNamespace(project, environment)
 	if err := r.ensureProjectNamespace(ctx, namespace, project, environment); err != nil {
-		_ = r.db.Model(&route).Updates(map[string]any{"status": "failed"}).Error
 		return err
 	}
 	if err := r.applyGatewayAPIResources(ctx, route, project, application, environment, namespace); err != nil {
-		_ = r.db.Model(&route).Updates(map[string]any{"status": "failed"}).Error
 		return err
 	}
 	certificateSnapshot, certificateConfigured, err := r.gatewayCertificateSnapshot(ctx, route, project, environment, namespace)
 	if err != nil {
-		failureUpdates := gatewayCertificateFailureUpdates(err)
-		failureUpdates["status"] = "failed"
-		_ = r.db.Model(&route).Updates(failureUpdates).Error
 		failedRoute := route
 		failedRoute.CertificateStatus = kubeprovider.CertificateFailed
 		failedRoute.CertificateMessage = err.Error()
 		r.emitCertificateEvent(ctx, failedRoute, kubeprovider.CertificateFailed, err.Error())
 		return err
 	}
-	updates := map[string]any{"status": "active", "dns_status": r.gatewayDNSStatus(ctx, route)}
-	var certificateCluster *model.RuntimeCluster
+	route.DNSStatus = r.gatewayDNSStatus(ctx, route)
 	if certificateConfigured {
 		cluster, clusterErr := r.runtimeClusterForEnvironment(environment)
 		if clusterErr != nil {
 			return clusterErr
 		}
-		certificateCluster = &cluster
-		for key, value := range gatewayCertificateRuntimeUpdates(certificateSnapshot, cluster, r.certManagerClusterIssuer) {
-			updates[key] = value
-		}
+		route.CertificateStatus = certificateSnapshot.Phase
+		route.CertificateMessage = certificateSnapshot.Message
+		route.CertificateNotAfter = certificateSnapshot.NotAfter
+		route.CertificateIssuerKind = gatewayCertificateIssuerKind(cluster)
+		route.CertificateIssuerName = gatewayCertificateIssuerName(cluster, r.certManagerClusterIssuer)
+		r.emitCertificateEvent(ctx, route, certificateSnapshot.Phase, certificateSnapshot.Message)
 	} else {
-		updates["certificate_status"] = "disabled"
-		updates["certificate_message"] = ""
-		updates["certificate_not_after"] = nil
-		updates["certificate_issuer_kind"] = ""
-		updates["certificate_issuer_name"] = ""
-	}
-	if err := r.db.Model(&route).Updates(updates).Error; err != nil {
-		return err
-	}
-	if certificateCluster != nil {
-		r.emitCertificateSnapshotEvent(ctx, route, certificateSnapshot, *certificateCluster)
+		route.CertificateStatus = "disabled"
 	}
 	route.Status = "active"
 	r.emitGatewayEvent(ctx, route, "applied", "Gateway route applied")
 	return nil
-}
-
-func gatewayCertificateFailureUpdates(err error) map[string]any {
-	message := ""
-	if err != nil {
-		message = err.Error()
-	}
-	return map[string]any{
-		"certificate_status":    "failed",
-		"certificate_message":   message,
-		"certificate_not_after": nil,
-	}
-}
-
-func gatewayCertificateRuntimeUpdates(snapshot kubeprovider.CertificateSnapshot, cluster model.RuntimeCluster, fallbackIssuer string) map[string]any {
-	return map[string]any{
-		"certificate_status":      snapshot.Phase,
-		"certificate_message":     snapshot.Message,
-		"certificate_not_after":   snapshot.NotAfter,
-		"certificate_issuer_kind": gatewayCertificateIssuerKind(cluster),
-		"certificate_issuer_name": gatewayCertificateIssuerName(cluster, fallbackIssuer),
-	}
 }
 
 func (r *Runner) ensureProjectNamespace(ctx context.Context, namespace string, project model.Project, environment model.Environment) error {

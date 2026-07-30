@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -36,7 +37,7 @@ func TestOverviewAggregatesVisibleDashboardData(t *testing.T) {
 	if err := db.Create(&[]model.Project{project, hiddenProject}).Error; err != nil {
 		t.Fatalf("create projects: %v", err)
 	}
-	if err := db.Create(&model.ProjectMember{ID: "pm_1", ProjectID: project.ID, UserID: "usr_1", Role: "owner", UseCount: 3, CreatedAt: now}).Error; err != nil {
+	if err := db.Create(&model.ProjectMember{ID: "pm_1", ProjectID: project.ID, UserID: "usr_1", Role: authz.ProjectRoleOwner, UseCount: 3, CreatedAt: now}).Error; err != nil {
 		t.Fatalf("create project member: %v", err)
 	}
 	if err := db.Create(&model.ProjectPin{ID: "pin_1", ProjectID: project.ID, UserID: "usr_1", PinnedAt: now, CreatedAt: now}).Error; err != nil {
@@ -65,17 +66,6 @@ func TestOverviewAggregatesVisibleDashboardData(t *testing.T) {
 	if err := db.Create(&events).Error; err != nil {
 		t.Fatalf("create events: %v", err)
 	}
-	clusters := []model.RuntimeCluster{
-		{ID: "cluster_ready", Name: "Ready", Type: "kubernetes", Scope: "global", Status: "ready", CreatedAt: now},
-		{ID: "cluster_unknown", Name: "Unknown", Type: "kubernetes", Scope: "global", Status: "unknown", CreatedAt: now},
-	}
-	if err := db.Create(&clusters).Error; err != nil {
-		t.Fatalf("create clusters: %v", err)
-	}
-	if err := db.Create(&model.ArtifactRegistry{ID: "reg_1", Name: "Registry", Provider: "generic", Endpoint: "https://registry.example.test", Scope: "global", CreatedAt: now}).Error; err != nil {
-		t.Fatalf("create registry: %v", err)
-	}
-
 	service := NewService(db)
 	service.now = func() time.Time { return now }
 	overview, err := service.Overview(t.Context(), Scope{UserID: "usr_1", VisibleProjectIDs: []string{project.ID}})
@@ -97,11 +87,8 @@ func TestOverviewAggregatesVisibleDashboardData(t *testing.T) {
 	if len(overview.Activities) != 2 || overview.Activities[0].Application == nil || overview.Activities[0].Application.ID != application.ID {
 		t.Fatalf("activities = %#v", overview.Activities)
 	}
-	if overview.Readiness.Clusters.Status != "degraded" || overview.Readiness.Clusters.Available != 1 || overview.Readiness.Clusters.Total != 2 {
-		t.Fatalf("cluster readiness = %#v", overview.Readiness.Clusters)
-	}
-	if overview.Readiness.Registries.Status != "available" || overview.Readiness.Registries.Total != 1 {
-		t.Fatalf("registry readiness = %#v", overview.Readiness.Registries)
+	if overview.Readiness != (Readiness{}) {
+		t.Fatalf("database overview must not synthesize live readiness = %#v", overview.Readiness)
 	}
 }
 

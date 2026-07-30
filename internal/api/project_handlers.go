@@ -2,6 +2,11 @@ package api
 
 import (
 	"errors"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
@@ -9,10 +14,6 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/tasks"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	"net/http"
-	"strconv"
-	"strings"
-	"time"
 )
 
 func (h *Handlers) ListProjects(ctx *gin.Context) {
@@ -111,7 +112,7 @@ func (h *Handlers) GetProject(ctx *gin.Context) {
 }
 
 func (h *Handlers) UpdateProject(ctx *gin.Context) {
-	project, ok := h.findProjectForCurrentUserWithRoles(ctx, "owner", "admin")
+	project, ok := h.findProjectForCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
 	if !ok {
 		return
 	}
@@ -149,7 +150,7 @@ func (h *Handlers) DeleteProject(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	project, ok := h.findProjectForCurrentUserWithRoles(ctx, "owner")
+	project, ok := h.findProjectForCurrentUserWithRoles(ctx, authz.ProjectRoleOwner)
 	if !ok {
 		return
 	}
@@ -354,7 +355,7 @@ func (h *Handlers) ListProjectMembers(ctx *gin.Context) {
 }
 
 func (h *Handlers) SearchProjectMemberCandidates(ctx *gin.Context) {
-	_, project, ok := h.projectAndCurrentUserWithRoles(ctx, "owner", "admin")
+	_, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
 	if !ok {
 		return
 	}
@@ -390,7 +391,7 @@ func (h *Handlers) SearchProjectMemberCandidates(ctx *gin.Context) {
 }
 
 func (h *Handlers) CreateProjectMember(ctx *gin.Context) {
-	actor, project, ok := h.projectAndCurrentUserWithRoles(ctx, "owner", "admin")
+	actor, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
 	if !ok {
 		return
 	}
@@ -423,7 +424,7 @@ func (h *Handlers) CreateProjectMember(ctx *gin.Context) {
 	}
 
 	role := normalizeProjectRole(input.Role)
-	if role == "owner" && !h.currentProjectRoleAllows(ctx, project.ID, actor.ID, "owner") {
+	if role == authz.ProjectRoleOwner && !h.currentProjectRoleAllows(ctx, project.ID, actor.ID, authz.ProjectRoleOwner) {
 		writeError(ctx, http.StatusForbidden, "只有项目 owner 可以授予 owner 角色")
 		return
 	}
@@ -455,7 +456,7 @@ func (h *Handlers) CreateProjectMember(ctx *gin.Context) {
 }
 
 func (h *Handlers) UpdateProjectMember(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, "owner", "admin")
+	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
 	if !ok {
 		return
 	}
@@ -474,12 +475,12 @@ func (h *Handlers) UpdateProjectMember(ctx *gin.Context) {
 		return
 	}
 	nextRole := normalizeProjectRole(input.Role)
-	actorIsOwner := h.currentProjectRoleAllows(ctx, project.ID, user.ID, "owner")
-	if (member.Role == "owner" || nextRole == "owner") && !actorIsOwner {
+	actorIsOwner := h.currentProjectRoleAllows(ctx, project.ID, user.ID, authz.ProjectRoleOwner)
+	if (member.Role == authz.ProjectRoleOwner || nextRole == authz.ProjectRoleOwner) && !actorIsOwner {
 		writeError(ctx, http.StatusForbidden, "只有项目 owner 可以修改 owner 角色")
 		return
 	}
-	if member.Role == "owner" && nextRole != "owner" && !h.projectHasAnotherOwner(member.ProjectID, member.ID) {
+	if member.Role == authz.ProjectRoleOwner && nextRole != authz.ProjectRoleOwner && !h.projectHasAnotherOwner(member.ProjectID, member.ID) {
 		writeError(ctx, http.StatusBadRequest, "项目至少需要保留一个 owner")
 		return
 	}
@@ -493,7 +494,7 @@ func (h *Handlers) UpdateProjectMember(ctx *gin.Context) {
 }
 
 func (h *Handlers) DeleteProjectMember(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, "owner", "admin")
+	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
 	if !ok {
 		return
 	}
@@ -510,8 +511,8 @@ func (h *Handlers) DeleteProjectMember(ctx *gin.Context) {
 		writeError(ctx, http.StatusBadRequest, "不能移除当前登录账号")
 		return
 	}
-	if member.Role == "owner" {
-		if !h.currentProjectRoleAllows(ctx, project.ID, user.ID, "owner") {
+	if member.Role == authz.ProjectRoleOwner {
+		if !h.currentProjectRoleAllows(ctx, project.ID, user.ID, authz.ProjectRoleOwner) {
 			writeError(ctx, http.StatusForbidden, "只有项目 owner 可以移除 owner 成员")
 			return
 		}
@@ -538,11 +539,11 @@ func (h *Handlers) findProject(ctx *gin.Context) (model.Project, bool) {
 }
 
 func (h *Handlers) findProjectForCurrentUser(ctx *gin.Context) (model.Project, bool) {
-	return h.findProjectForCurrentUserWithRoles(ctx, "owner", "admin", "developer", "viewer")
+	return h.findProjectForCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper, authz.ProjectRoleViewer)
 }
 
 func (h *Handlers) projectAndCurrentUser(ctx *gin.Context) (model.User, model.Project, bool) {
-	return h.projectAndCurrentUserWithRoles(ctx, "owner", "admin", "developer", "viewer")
+	return h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper, authz.ProjectRoleViewer)
 }
 
 func (h *Handlers) projectAndCurrentUserWithRoles(ctx *gin.Context, allowedRoles ...string) (model.User, model.Project, bool) {

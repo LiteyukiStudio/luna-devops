@@ -54,6 +54,12 @@ type WebhookCreateResult struct {
 	Secret string `json:"-"`
 }
 
+type WebhookSnapshot struct {
+	ID     string `json:"id"`
+	URL    string `json:"url"`
+	Active bool   `json:"active"`
+}
+
 type UserResponse struct {
 	ID        any    `json:"id"`
 	Login     string `json:"login"`
@@ -169,11 +175,16 @@ func normalizeContentType(value string) string {
 
 type githubWebhookResponse struct {
 	ID     int64 `json:"id"`
+	Active bool  `json:"active"`
 	Config struct {
 		URL string `json:"url"`
 	} `json:"config"`
 }
 
 type giteaWebhookResponse struct {
-	ID int64 `json:"id"`
+	ID     int64 `json:"id"`
+	Active bool  `json:"active"`
+	Config struct {
+		URL string `json:"url"`
+	} `json:"config"`
 }

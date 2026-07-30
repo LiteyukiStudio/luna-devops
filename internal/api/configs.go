@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/retention"
 	"github.com/LiteyukiStudio/devops/internal/secret"
@@ -393,7 +394,7 @@ func (h *Handlers) GetConfigs(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if user.Role != "platform_admin" {
+	if user.Role != authz.PlatformRoleAdmin {
 		writeErrorKey(ctx, http.StatusForbidden, user.Language, "config.admin.required")
 		return
 	}
@@ -427,7 +428,7 @@ func (h *Handlers) UpdateConfigs(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if user.Role != "platform_admin" {
+	if user.Role != authz.PlatformRoleAdmin {
 		writeErrorKey(ctx, http.StatusForbidden, user.Language, "config.admin.required")
 		return
 	}
@@ -499,7 +500,7 @@ func (h *Handlers) UpdateConfigs(ctx *gin.Context) {
 			return err
 		}
 		if stepUpConfigChanged {
-			if _, err := lockStepUpActor(tx, user.ID, actorSessionID, stepUpPurposeSecuritySettingsUpdate, "platform_admin"); err != nil {
+			if _, err := lockStepUpActor(tx, user.ID, actorSessionID, stepUpPurposeSecuritySettingsUpdate, authz.PlatformRoleAdmin); err != nil {
 				return err
 			}
 			if targetStepUpEnabled {
@@ -511,7 +512,7 @@ func (h *Handlers) UpdateConfigs(ctx *gin.Context) {
 					return errMFAAdminEnrollmentRequired
 				}
 			}
-		} else if _, err := lockActiveUserRole(tx, user.ID, "platform_admin"); err != nil {
+		} else if _, err := lockActiveUserRole(tx, user.ID, authz.PlatformRoleAdmin); err != nil {
 			return err
 		}
 		if err := upsertConfigValuesInTransaction(tx, values); err != nil {

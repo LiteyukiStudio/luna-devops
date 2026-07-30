@@ -18,6 +18,9 @@ type ArtifactRegistry struct {
 	CredentialRef     string         `json:"credentialRef"`
 	IsDefault         bool           `gorm:"not null;default:false" json:"isDefault"`
 	Capabilities      string         `json:"capabilities"`
+	Status            string         `gorm:"-" json:"status"`
+	ObservationCode   string         `gorm:"-" json:"observationCode"`
+	LastCheckedAt     *time.Time     `gorm:"-" json:"lastCheckedAt"`
 	CreatedBy         string         `gorm:"index" json:"createdBy"`
 	CreatedAt         time.Time      `json:"createdAt"`
 	UpdatedAt         time.Time      `json:"updatedAt"`

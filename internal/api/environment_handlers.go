@@ -2,11 +2,13 @@ package api
 
 import (
 	"fmt"
+	"net/http"
+	"strings"
+
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/gin-gonic/gin"
-	"net/http"
-	"strings"
 )
 
 func (h *Handlers) ListEnvironments(ctx *gin.Context) {
@@ -24,7 +26,7 @@ func (h *Handlers) ListEnvironments(ctx *gin.Context) {
 }
 
 func (h *Handlers) CreateEnvironment(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, "owner", "admin", "developer")
+	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
 	if !ok {
 		return
 	}
@@ -51,7 +53,7 @@ func (h *Handlers) CreateEnvironment(ctx *gin.Context) {
 }
 
 func (h *Handlers) UpdateEnvironment(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, "owner", "admin", "developer")
+	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
 	if !ok {
 		return
 	}
@@ -91,7 +93,7 @@ func (h *Handlers) UpdateEnvironment(ctx *gin.Context) {
 }
 
 func (h *Handlers) DeleteEnvironment(ctx *gin.Context) {
-	project, ok := h.findProjectForCurrentUserWithRoles(ctx, "owner", "admin")
+	project, ok := h.findProjectForCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
 	if !ok {
 		return
 	}

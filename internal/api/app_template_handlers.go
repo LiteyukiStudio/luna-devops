@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/LiteyukiStudio/devops/internal/appstore"
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/resourceidentifier"
@@ -51,7 +52,7 @@ func (h *Handlers) InstallAppTemplate(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	project, ok := h.findProjectForCurrentUserWithRoles(ctx, "owner", "admin", "developer")
+	project, ok := h.findProjectForCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
 	if !ok {
 		return
 	}

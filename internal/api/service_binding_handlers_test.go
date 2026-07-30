@@ -15,18 +15,18 @@ import (
 
 func TestProjectDependencyWriteRoles(t *testing.T) {
 	user := model.User{Role: authz.PlatformRoleUser}
-	for _, role := range []string{"owner", "admin"} {
-		if !projectUserRoleAllowed(user, role, []string{"owner", "admin"}) {
+	for _, role := range []string{authz.ProjectRoleOwner, authz.ProjectRoleAdmin} {
+		if !projectUserRoleAllowed(user, role, []string{authz.ProjectRoleOwner, authz.ProjectRoleAdmin}) {
 			t.Fatalf("expected %s to manage project dependencies", role)
 		}
 	}
-	for _, role := range []string{"developer", "viewer"} {
-		if projectUserRoleAllowed(user, role, []string{"owner", "admin"}) {
+	for _, role := range []string{authz.ProjectRoleDeveloper, authz.ProjectRoleViewer} {
+		if projectUserRoleAllowed(user, role, []string{authz.ProjectRoleOwner, authz.ProjectRoleAdmin}) {
 			t.Fatalf("expected %s to have read-only project dependencies", role)
 		}
 	}
 	admin := model.User{Role: authz.PlatformRoleAdmin}
-	if !projectUserRoleAllowed(admin, "viewer", []string{"owner", "admin"}) {
+	if !projectUserRoleAllowed(admin, authz.ProjectRoleViewer, []string{authz.ProjectRoleOwner, authz.ProjectRoleAdmin}) {
 		t.Fatal("expected platform administrator bypass")
 	}
 }

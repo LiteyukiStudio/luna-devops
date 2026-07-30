@@ -24,6 +24,8 @@ import { Label } from '@/components/ui/label'
 import { NativeSelect as Select } from '@/components/ui/native-select'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { APPLICATION_IDENTIFIER_MAX_LENGTH, APPLICATION_IDENTIFIER_MIN_LENGTH } from '@/lib/identifier-limits'
+import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
+import { isPlatformAdmin } from '@/lib/roles'
 import { cn } from '@/lib/utils'
 
 const FALLBACK_ICON = '/app-templates/icons/fallback.svg'
@@ -54,7 +56,7 @@ export function AppTemplatesPage() {
   )
   const selectedTemplate = selectedTemplateOverride ?? requestedTemplate
   const selectedTemplateIsSystem = isSystemComponentTemplate(selectedTemplate)
-  const canInstallSystemComponent = user?.role === 'platform_admin'
+  const canInstallSystemComponent = isPlatformAdmin(user?.role)
   const defaultForm = useMemo(
     () => selectedTemplate ? payloadFromTemplate(selectedTemplate) : emptyInstallPayload(),
     [selectedTemplate],
@@ -64,6 +66,7 @@ export function AppTemplatesPage() {
     queryKey: ['runtime-clusters', selectedTemplateIsSystem ? 'system' : projectId],
     queryFn: () => api.listRuntimeClusters(selectedTemplateIsSystem ? undefined : projectId),
     enabled: selectedTemplateIsSystem || Boolean(projectId),
+    ...liveObservationQueryPolicy,
   })
   const clusterItems = clusters.data ?? []
 

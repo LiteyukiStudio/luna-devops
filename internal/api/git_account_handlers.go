@@ -3,18 +3,23 @@ package api
 import (
 	"errors"
 	"fmt"
+
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/LiteyukiStudio/devops/internal/observation"
 	gitprovider "github.com/LiteyukiStudio/devops/internal/provider/git"
 	"github.com/gin-gonic/gin"
 	"golang.org/x/oauth2"
 	"gorm.io/gorm"
-	"net/http"
-	"strings"
-	"time"
 )
 
 func (h *Handlers) ListGitAccounts(ctx *gin.Context) {
+	markLiveObservationResponse(ctx)
 	user, ok := h.currentUser(ctx)
 	if !ok {
 		return
@@ -33,7 +38,7 @@ func (h *Handlers) ListGitAccounts(ctx *gin.Context) {
 		}
 		conditions = append(conditions, "(scope = 'project' and exists (select 1 from scoped_resource_project_bindings srpb where srpb.resource_type = ? and srpb.resource_id = git_accounts.id and srpb.project_id = ?))")
 		args = append(args, scopedResourceGitAccount, projectID)
-	} else if user.Role == "platform_admin" {
+	} else if user.Role == authz.PlatformRoleAdmin {
 		conditions = append(conditions, "scope = 'project'")
 	} else {
 		projectIDs := h.projectIDsForUser(user.ID)
@@ -55,13 +60,13 @@ func (h *Handlers) ListGitAccounts(ctx *gin.Context) {
 		}
 		if err := query.Order(orderByClause(pagination, map[string]string{
 			"username":  "username",
-			"status":    "status",
 			"createdAt": "created_at",
 		}, "created_at")).Limit(pagination.PageSize).Offset(pagination.Offset()).Find(&accounts).Error; err != nil {
 			writeError(ctx, http.StatusInternalServerError, err.Error())
 			return
 		}
 		h.attachGitAccountProjects(accounts)
+		h.observeGitAccounts(ctx.Request.Context(), user, accounts)
 		ctx.JSON(http.StatusOK, paginatedResponse(gitAccountResponses(accounts), total, pagination))
 		return
 	}
@@ -70,6 +75,7 @@ func (h *Handlers) ListGitAccounts(ctx *gin.Context) {
 		return
 	}
 	h.attachGitAccountProjects(accounts)
+	h.observeGitAccounts(ctx.Request.Context(), user, accounts)
 	ctx.JSON(http.StatusOK, gitAccountResponses(accounts))
 }
 
@@ -103,7 +109,6 @@ func (h *Handlers) CreateGitAccount(ctx *gin.Context) {
 		Username:       strings.TrimSpace(input.Username),
 		AvatarURL:      strings.TrimSpace(input.AvatarURL),
 		Scopes:         strings.Join(normalizeList(input.Scopes, false), ","),
-		Status:         normalizeGitAccountStatus(input.Status),
 	}
 	if strings.TrimSpace(input.AccessToken) != "" {
 		account.AccessTokenRef = h.secrets.Store(input.AccessToken, user.ID, "git_account:"+account.ID+":access")
@@ -121,6 +126,7 @@ func (h *Handlers) CreateGitAccount(ctx *gin.Context) {
 		return
 	}
 	h.audit(user.ID, "git_account.create", account.ID, true, account.Scope)
+	h.observeGitAccount(ctx.Request.Context(), user, &account)
 	ctx.JSON(http.StatusCreated, gitAccountResponse(account))
 }
 
@@ -166,7 +172,6 @@ func (h *Handlers) UpdateGitAccount(ctx *gin.Context) {
 		account.RefreshTokenRef = h.secrets.Store(input.RefreshToken, user.ID, "git_account:"+account.ID+":refresh")
 	}
 	account.Scopes = strings.Join(normalizeList(input.Scopes, false), ",")
-	account.Status = normalizeGitAccountStatus(input.Status)
 	if account.Username == "" {
 		writeError(ctx, http.StatusBadRequest, "请输入 Git 账号用户名")
 		return
@@ -177,6 +182,7 @@ func (h *Handlers) UpdateGitAccount(ctx *gin.Context) {
 		return
 	}
 	h.audit(user.ID, "git_account.update", account.ID, true, account.Scope)
+	h.observeGitAccount(ctx.Request.Context(), user, &account)
 	ctx.JSON(http.StatusOK, gitAccountResponse(account))
 }
 
@@ -286,8 +292,6 @@ func (h *Handlers) refreshGitAccountForUser(ctx *gin.Context, user model.User, a
 	})
 	token, err := tokenSource.Token()
 	if err != nil {
-		account.Status = "expired"
-		_ = h.db.Save(&account).Error
 		h.audit(user.ID, "git_account.refresh", account.ID, false, "git token refresh failed")
 		writeErrorCode(ctx, http.StatusBadRequest, "git.token_refresh_failed", "git token refresh failed")
 		return account, false
@@ -299,12 +303,15 @@ func (h *Handlers) refreshGitAccountForUser(ctx *gin.Context, user model.User, a
 	if !token.Expiry.IsZero() {
 		account.ExpiresAt = &token.Expiry
 	}
-	account.Status = "connected"
 	if err := h.db.Save(&account).Error; err != nil {
 		writeErrorCode(ctx, http.StatusBadRequest, "git.token_refresh_failed", "git token refresh failed")
 		return account, false
 	}
 	h.audit(user.ID, "git_account.refresh", account.ID, true, account.Username)
+	now := time.Now().UTC()
+	account.Status = observation.StatusReady
+	account.ObservationCode = "git_account_ready"
+	account.ObservedAt = &now
 	return account, true
 }
 
@@ -351,7 +358,6 @@ func (h *Handlers) upsertGitAccountFromOAuth(userID string, provider model.GitPr
 	if !token.Expiry.IsZero() {
 		account.ExpiresAt = &token.Expiry
 	}
-	account.Status = "connected"
 	if err == gorm.ErrRecordNotFound {
 		if err := h.db.Create(&account).Error; err != nil {
 			return account, err

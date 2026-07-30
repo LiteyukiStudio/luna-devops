@@ -25,6 +25,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { NativeSelect as Select } from '@/components/ui/native-select'
+import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 
 const bindingSchema = z.object({
   applicationId: z.string().min(1, i18next.t('repositories.applicationRequired')),
@@ -33,7 +34,6 @@ const bindingSchema = z.object({
   repo: z.string().min(1, i18next.t('repositories.repoRequired')),
   cloneUrl: z.string().optional(),
   defaultBranch: z.string().optional(),
-  webhookStatus: z.enum(['pending', 'created', 'disabled', 'failed']),
   autoConfigureWebhook: z.boolean().default(true),
 })
 
@@ -57,18 +57,20 @@ export function RepositoryBindingsPage({ applicationId, applicationName, embedde
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   const providers = useQuery({ queryKey: ['git-providers'], queryFn: () => api.listGitProviders() })
-  const accounts = useQuery({ queryKey: ['git-accounts'], queryFn: () => api.listGitAccounts() })
+  const accounts = useQuery({ ...liveObservationQueryPolicy, queryKey: ['git-accounts'], queryFn: () => api.listGitAccounts() })
   const applications = useQuery({
     queryKey: ['applications', projectId],
     queryFn: () => api.listApplications(projectId),
     enabled: Boolean(projectId && !applicationId),
   })
   const bindingsPage = useQuery({
+    ...liveObservationQueryPolicy,
     queryKey: ['repository-bindings', projectId, page, pageSize],
     queryFn: () => api.listRepositoryBindingsPage(projectId, { page, pageSize, sortBy: 'createdAt', sortOrder: 'desc' }),
     enabled: Boolean(projectId && !applicationId),
   })
   const allBindings = useQuery({
+    ...liveObservationQueryPolicy,
     queryKey: ['repository-bindings', projectId, 'all'],
     queryFn: () => api.listRepositoryBindings(projectId),
     enabled: Boolean(projectId && (applicationId || dialogOpen)),
@@ -88,7 +90,6 @@ export function RepositoryBindingsPage({ applicationId, applicationName, embedde
       repo: '',
       cloneUrl: '',
       defaultBranch: 'main',
-      webhookStatus: 'pending',
       autoConfigureWebhook: true,
     },
   })
@@ -112,6 +113,7 @@ export function RepositoryBindingsPage({ applicationId, applicationName, embedde
     )
   }, [allBindings.data, bindingsPage.data?.items, editingBinding?.id, selectedApplicationId, selectedOwner, selectedProviderId, selectedRepo])
   const branches = useQuery({
+    ...liveObservationQueryPolicy,
     queryKey: ['git-branches', selectedAccountId, selectedOwner, selectedRepo, branchSearch],
     queryFn: () => api.listGitBranches(selectedAccountId || '', selectedOwner || '', selectedRepo || '', { search: branchSearch, limit: 50 }),
     enabled: Boolean(selectedAccountId && selectedOwner && selectedRepo),
@@ -125,7 +127,6 @@ export function RepositoryBindingsPage({ applicationId, applicationName, embedde
       repo: payload.repo,
       cloneUrl: payload.cloneUrl ?? '',
       defaultBranch: payload.defaultBranch ?? 'main',
-      webhookStatus: payload.webhookStatus,
       autoConfigureWebhook: payload.autoConfigureWebhook,
     }),
     onSuccess: () => {
@@ -149,7 +150,6 @@ export function RepositoryBindingsPage({ applicationId, applicationName, embedde
         repo: payload.repo,
         cloneUrl: payload.cloneUrl ?? '',
         defaultBranch: payload.defaultBranch ?? 'main',
-        webhookStatus: payload.webhookStatus,
         autoConfigureWebhook: payload.autoConfigureWebhook,
       })
     },
@@ -191,8 +191,7 @@ export function RepositoryBindingsPage({ applicationId, applicationName, embedde
       repo: binding?.repo ?? '',
       cloneUrl: binding?.cloneUrl ?? '',
       defaultBranch: binding?.defaultBranch ?? 'main',
-      webhookStatus: binding?.webhookStatus ?? 'pending',
-      autoConfigureWebhook: true,
+      autoConfigureWebhook: binding?.webhookEnabled ?? true,
     })
     setBranchSearch('')
   }
@@ -262,7 +261,7 @@ export function RepositoryBindingsPage({ applicationId, applicationName, embedde
             className: 'text-right whitespace-nowrap',
             render: binding => (
               <div className="flex justify-end gap-2">
-                <Button disabled={createWebhook.isPending || binding.webhookStatus === 'created'} type="button" variant="ghost" onClick={() => createWebhook.mutate(binding.id)}>
+                <Button disabled={createWebhook.isPending || binding.webhookStatus === 'ready'} type="button" variant="ghost" onClick={() => createWebhook.mutate(binding.id)}>
                   <LinkIcon size={16} />
                   {t('repositories.createWebhook')}
                 </Button>

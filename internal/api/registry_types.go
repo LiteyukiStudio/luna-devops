@@ -46,6 +46,9 @@ func registryResponse(registry model.ArtifactRegistry) artifactRegistryOutput {
 		CredentialSet:     registry.CredentialRef != "",
 		IsDefault:         registry.IsDefault || len(registry.DefaultProjectIDs) > 0,
 		Capabilities:      jsonList(splitCSV(registry.Capabilities)),
+		Status:            registry.Status,
+		ObservationCode:   registry.ObservationCode,
+		LastCheckedAt:     registry.LastCheckedAt,
 		CreatedBy:         registry.CreatedBy,
 		CreatedAt:         registry.CreatedAt,
 	}
@@ -149,20 +152,23 @@ type artifactRegistryInput struct {
 }
 
 type artifactRegistryOutput struct {
-	ID                string    `json:"id"`
-	Name              string    `json:"name"`
-	Provider          string    `json:"provider"`
-	Endpoint          string    `json:"endpoint"`
-	Namespace         string    `json:"namespace"`
-	Scope             string    `json:"scope"`
-	OwnerRef          string    `json:"ownerRef"`
-	ProjectIDs        []string  `json:"projectIds"`
-	DefaultProjectIDs []string  `json:"defaultProjectIds"`
-	CredentialSet     bool      `json:"credentialSet"`
-	IsDefault         bool      `json:"isDefault"`
-	Capabilities      []string  `json:"capabilities"`
-	CreatedBy         string    `json:"createdBy"`
-	CreatedAt         time.Time `json:"createdAt"`
+	ID                string     `json:"id"`
+	Name              string     `json:"name"`
+	Provider          string     `json:"provider"`
+	Endpoint          string     `json:"endpoint"`
+	Namespace         string     `json:"namespace"`
+	Scope             string     `json:"scope"`
+	OwnerRef          string     `json:"ownerRef"`
+	ProjectIDs        []string   `json:"projectIds"`
+	DefaultProjectIDs []string   `json:"defaultProjectIds"`
+	CredentialSet     bool       `json:"credentialSet"`
+	IsDefault         bool       `json:"isDefault"`
+	Capabilities      []string   `json:"capabilities"`
+	Status            string     `json:"status"`
+	ObservationCode   string     `json:"observationCode"`
+	LastCheckedAt     *time.Time `json:"lastCheckedAt"`
+	CreatedBy         string     `json:"createdBy"`
+	CreatedAt         time.Time  `json:"createdAt"`
 }
 
 type registryCredentialInput struct {

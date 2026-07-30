@@ -37,21 +37,3 @@ func TestAggregateAttentionOmitsRecoveredResource(t *testing.T) {
 		t.Fatalf("attention items = %#v, want none after recovery", items)
 	}
 }
-
-func TestReadinessStatus(t *testing.T) {
-	tests := []struct {
-		available int
-		total     int
-		want      string
-	}{
-		{available: 0, total: 0, want: "unavailable"},
-		{available: 0, total: 2, want: "unavailable"},
-		{available: 1, total: 2, want: "degraded"},
-		{available: 2, total: 2, want: "ready"},
-	}
-	for _, test := range tests {
-		if got := readinessStatus(test.available, test.total); got != test.want {
-			t.Fatalf("readinessStatus(%d, %d) = %q, want %q", test.available, test.total, got, test.want)
-		}
-	}
-}

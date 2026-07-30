@@ -30,6 +30,7 @@ import { Label } from '@/components/ui/label'
 import { NativeSelect as Select } from '@/components/ui/native-select'
 import { Textarea } from '@/components/ui/textarea'
 import { PROJECT_IDENTIFIER_MAX_LENGTH, PROJECT_IDENTIFIER_MIN_LENGTH } from '@/lib/identifier-limits'
+import { isPlatformAdmin } from '@/lib/roles'
 import { cn } from '@/lib/utils'
 
 const schema = z.object({
@@ -67,7 +68,7 @@ export function ProjectsPage() {
   const [sortBy, setSortBy] = useState<ProjectSortBy>('lastUsed')
   const [sortOrder, setSortOrder] = useState<ProjectSortOrder>('desc')
   const deferredSearch = useDeferredValue(search.trim())
-  const canViewAllProjects = user?.role === 'platform_admin'
+  const canViewAllProjects = isPlatformAdmin(user?.role)
   const effectiveScope: ProjectListScope = canViewAllProjects ? scope : 'related'
   const projects = useQuery({
     queryKey: ['projects', 'page', page, pageSize, effectiveScope, sortBy, sortOrder, deferredSearch],

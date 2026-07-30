@@ -36,30 +36,35 @@ type GitAccount struct {
 	RefreshTokenRef string         `json:"refreshTokenRef"`
 	Scopes          string         `json:"scopes"`
 	ExpiresAt       *time.Time     `json:"expiresAt"`
-	Status          string         `gorm:"not null;default:connected" json:"status"`
+	Status          string         `gorm:"-" json:"status"`
+	ObservationCode string         `gorm:"-" json:"observationCode,omitempty"`
+	ObservedAt      *time.Time     `gorm:"-" json:"observedAt,omitempty"`
 	CreatedAt       time.Time      `json:"createdAt"`
 	UpdatedAt       time.Time      `json:"updatedAt"`
 	DeletedAt       gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
 type RepositoryBinding struct {
-	ID            string         `gorm:"primaryKey" json:"id"`
-	ProjectID     string         `gorm:"index;not null" json:"projectId"`
-	ApplicationID string         `gorm:"index;not null" json:"applicationId"`
-	GitProviderID string         `gorm:"index;not null" json:"gitProviderId"`
-	GitAccountID  string         `gorm:"index;not null" json:"gitAccountId"`
-	Owner         string         `gorm:"not null" json:"owner"`
-	Repo          string         `gorm:"not null" json:"repo"`
-	CloneURL      string         `gorm:"not null" json:"cloneUrl"`
-	DefaultBranch string         `gorm:"not null;default:main" json:"defaultBranch"`
-	WebhookStatus string         `gorm:"not null;default:pending" json:"webhookStatus"`
-	WebhookID     string         `json:"webhookId"`
-	WebhookSecret string         `json:"-"`
-	CredentialRef string         `json:"credentialRef"`
-	LastEvent     string         `json:"lastEvent"`
-	LastCommitSHA string         `json:"lastCommitSha"`
-	LastWebhookAt *time.Time     `json:"lastWebhookAt"`
-	CreatedAt     time.Time      `json:"createdAt"`
-	UpdatedAt     time.Time      `json:"updatedAt"`
-	DeletedAt     gorm.DeletedAt `gorm:"index" json:"-"`
+	ID                     string         `gorm:"primaryKey" json:"id"`
+	ProjectID              string         `gorm:"index;not null" json:"projectId"`
+	ApplicationID          string         `gorm:"index;not null" json:"applicationId"`
+	GitProviderID          string         `gorm:"index;not null" json:"gitProviderId"`
+	GitAccountID           string         `gorm:"index;not null" json:"gitAccountId"`
+	Owner                  string         `gorm:"not null" json:"owner"`
+	Repo                   string         `gorm:"not null" json:"repo"`
+	CloneURL               string         `gorm:"not null" json:"cloneUrl"`
+	DefaultBranch          string         `gorm:"not null;default:main" json:"defaultBranch"`
+	WebhookEnabled         bool           `gorm:"not null;default:true" json:"webhookEnabled"`
+	WebhookStatus          string         `gorm:"-" json:"webhookStatus"`
+	WebhookObservationCode string         `gorm:"-" json:"webhookObservationCode,omitempty"`
+	WebhookObservedAt      *time.Time     `gorm:"-" json:"webhookObservedAt,omitempty"`
+	WebhookID              string         `json:"webhookId"`
+	WebhookSecret          string         `json:"-"`
+	CredentialRef          string         `json:"credentialRef"`
+	LastEvent              string         `json:"lastEvent"`
+	LastCommitSHA          string         `json:"lastCommitSha"`
+	LastWebhookAt          *time.Time     `json:"lastWebhookAt"`
+	CreatedAt              time.Time      `json:"createdAt"`
+	UpdatedAt              time.Time      `json:"updatedAt"`
+	DeletedAt              gorm.DeletedAt `gorm:"index" json:"-"`
 }

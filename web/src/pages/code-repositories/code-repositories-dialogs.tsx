@@ -222,18 +222,9 @@ export function CredentialDialog({ open, editingCredential, form, projects, prov
               type="password"
             />
           </Field>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field error={form.formState.errors.scopesText?.message} hint={t('codeRepositoriesView.scopesHint')} label={t('codeRepositoriesView.scopes')}>
-              <Input {...form.register('scopesText')} aria-invalid={Boolean(form.formState.errors.scopesText)} />
-            </Field>
-            <Field error={form.formState.errors.status?.message} label={t('codeRepositoriesView.status')} required>
-              <Select {...form.register('status')} aria-invalid={Boolean(form.formState.errors.status)}>
-                <option value="connected">{t('common.connected')}</option>
-                <option value="expired">{t('common.expired')}</option>
-                <option value="revoked">{t('common.revoked')}</option>
-              </Select>
-            </Field>
-          </div>
+          <Field error={form.formState.errors.scopesText?.message} hint={t('codeRepositoriesView.scopesHint')} label={t('codeRepositoriesView.scopes')}>
+            <Input {...form.register('scopesText')} aria-invalid={Boolean(form.formState.errors.scopesText)} />
+          </Field>
           <DialogFooter>
             <Button disabled={pending || !form.formState.isValid} type="submit">
               {editingCredential ? <Save size={16} /> : <Plus size={16} />}

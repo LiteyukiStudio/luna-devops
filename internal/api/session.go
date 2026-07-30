@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/redisconfig"
@@ -88,7 +89,7 @@ func (h *Handlers) platformAdminMiddleware() gin.HandlerFunc {
 			ctx.Abort()
 			return
 		}
-		if user.Role != "platform_admin" {
+		if user.Role != authz.PlatformRoleAdmin {
 			writeErrorKey(ctx, http.StatusForbidden, user.Language, "config.admin.required")
 			ctx.Abort()
 			return
@@ -198,7 +199,7 @@ func (h *Handlers) hasPlatformAdmin() bool {
 
 func platformAdminExists(db *gorm.DB) (bool, error) {
 	var count int64
-	if err := db.Model(&model.User{}).Where("role = ? and disabled = ?", "platform_admin", false).Count(&count).Error; err != nil {
+	if err := db.Model(&model.User{}).Where("role = ? and disabled = ?", authz.PlatformRoleAdmin, false).Count(&count).Error; err != nil {
 		return false, err
 	}
 	return count > 0, nil
@@ -209,7 +210,7 @@ func (h *Handlers) requirePlatformAdmin(ctx *gin.Context) bool {
 	if !ok {
 		return false
 	}
-	if user.Role != "platform_admin" {
+	if user.Role != authz.PlatformRoleAdmin {
 		writeErrorKey(ctx, http.StatusForbidden, user.Language, "config.admin.required")
 		return false
 	}

@@ -91,9 +91,11 @@ type Readiness struct {
 }
 
 type ReadinessItem struct {
-	Status    string `json:"status"`
-	Available int    `json:"available"`
-	Total     int    `json:"total"`
+	Status          string    `json:"status"`
+	Available       int       `json:"available"`
+	Total           int       `json:"total"`
+	ObservationCode string    `json:"observationCode,omitempty"`
+	ObservedAt      time.Time `json:"observedAt"`
 }
 
 type Service struct {
@@ -154,12 +156,6 @@ func (s *Service) Overview(ctx context.Context, scope Scope) (Overview, error) {
 	if err != nil {
 		return result, err
 	}
-	result.Readiness, err = s.readiness(ctx, scope, projectIDs)
-	if err != nil {
-		return result, err
-	}
-	result.Summary.HealthyClusters = result.Readiness.Clusters.Available
-	result.Summary.TotalClusters = result.Readiness.Clusters.Total
 	return result, nil
 }
 
@@ -424,34 +420,23 @@ func severityRank(value string) int {
 	}
 }
 
-func (s *Service) readiness(ctx context.Context, scope Scope, projectIDs []string) (Readiness, error) {
-	result := Readiness{}
+func (s *Service) ReadinessResources(ctx context.Context, scope Scope) ([]model.RuntimeCluster, []model.ArtifactRegistry, error) {
+	projectIDs, err := s.visibleProjectIDs(ctx, scope)
+	if err != nil {
+		return nil, nil, err
+	}
 	clusterQuery := s.scopedResourceQuery(ctx, scope, projectIDs, "runtime_cluster", &model.RuntimeCluster{})
 	var clusters []model.RuntimeCluster
 	if err := clusterQuery.Find(&clusters).Error; err != nil {
-		return result, fmt.Errorf("list dashboard clusters: %w", err)
+		return nil, nil, fmt.Errorf("list dashboard clusters: %w", err)
 	}
-	result.Clusters.Total = len(clusters)
-	for _, cluster := range clusters {
-		if cluster.Status == "ready" || cluster.Status == "connected" {
-			result.Clusters.Available++
-		}
-	}
-	result.Clusters.Status = readinessStatus(result.Clusters.Available, result.Clusters.Total)
 
 	registryQuery := s.scopedResourceQuery(ctx, scope, projectIDs, "artifact_registry", &model.ArtifactRegistry{})
-	var registryCount int64
-	if err := registryQuery.Count(&registryCount).Error; err != nil {
-		return result, fmt.Errorf("count dashboard registries: %w", err)
+	var registries []model.ArtifactRegistry
+	if err := registryQuery.Find(&registries).Error; err != nil {
+		return nil, nil, fmt.Errorf("list dashboard registries: %w", err)
 	}
-	result.Registries.Total = int(registryCount)
-	result.Registries.Available = result.Registries.Total
-	if result.Registries.Total > 0 {
-		result.Registries.Status = "available"
-	} else {
-		result.Registries.Status = "missing"
-	}
-	return result, nil
+	return clusters, registries, nil
 }
 
 func (s *Service) scopedResourceQuery(ctx context.Context, scope Scope, projectIDs []string, resourceType string, value any) *gorm.DB {
@@ -467,14 +452,4 @@ func (s *Service) scopedResourceQuery(ctx context.Context, scope Scope, projectI
 		args = append(args, bindings.Where("project_id in ?", projectIDs))
 	}
 	return query.Where(strings.Join(conditions, " or "), args...)
-}
-
-func readinessStatus(available, total int) string {
-	if total == 0 || available == 0 {
-		return "unavailable"
-	}
-	if available < total {
-		return "degraded"
-	}
-	return "ready"
 }

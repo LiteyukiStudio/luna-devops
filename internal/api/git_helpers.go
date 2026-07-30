@@ -212,10 +212,6 @@ func (h *Handlers) findGitAccountForUser(ctx *gin.Context, userID, accountID str
 		return account, false
 	}
 
-	if account.Status != "connected" {
-		writeError(ctx, http.StatusBadRequest, "Git 账号未连接")
-		return account, false
-	}
 	return account, true
 }
 
@@ -449,15 +445,6 @@ func (h *Handlers) requireSingleGitHubProvider(ctx *gin.Context, providerID stri
 	return fmt.Errorf("github provider already exists")
 }
 
-func normalizeGitAccountStatus(value string) string {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "expired", "revoked":
-		return strings.ToLower(strings.TrimSpace(value))
-	default:
-		return "connected"
-	}
-}
-
 func gitProviderResponses(providers []model.GitProvider) []gin.H {
 	responses := make([]gin.H, 0, len(providers))
 	for _, provider := range providers {
@@ -521,16 +508,9 @@ func gitAccountResponse(account model.GitAccount) gin.H {
 		"refreshTokenSet": secret.HasValue(account.RefreshTokenRef),
 		"expiresAt":       account.ExpiresAt,
 		"status":          account.Status,
+		"observationCode": account.ObservationCode,
+		"observedAt":      account.ObservedAt,
 		"createdAt":       account.CreatedAt,
-	}
-}
-
-func normalizeWebhookStatus(value string) string {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "created", "disabled", "failed":
-		return strings.ToLower(strings.TrimSpace(value))
-	default:
-		return "pending"
 	}
 }
 
@@ -590,7 +570,6 @@ type gitAccountInput struct {
 	AccessToken    string   `json:"accessToken"`
 	RefreshToken   string   `json:"refreshToken"`
 	Scopes         []string `json:"scopes"`
-	Status         string   `json:"status"`
 }
 
 type repositoryBindingInput struct {
@@ -600,7 +579,6 @@ type repositoryBindingInput struct {
 	Repo                 string `json:"repo" binding:"required"`
 	CloneURL             string `json:"cloneUrl"`
 	DefaultBranch        string `json:"defaultBranch"`
-	WebhookStatus        string `json:"webhookStatus"`
 	AutoConfigureWebhook *bool  `json:"autoConfigureWebhook"`
 }
 

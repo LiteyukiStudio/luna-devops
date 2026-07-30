@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/gin-gonic/gin"
 )
@@ -15,7 +16,7 @@ func (h *Handlers) billingScopeForUser(ctx *gin.Context, user model.User) (billi
 		requested = append(requested, strings.Split(rawProjectIDs, ",")...)
 	}
 	requested = normalizeStringList(requested)
-	if user.Role == "platform_admin" {
+	if user.Role == authz.PlatformRoleAdmin {
 		selectedUserID := strings.TrimSpace(ctx.Query("userId"))
 		scope.SelectedUserID = selectedUserID
 		scope.ProjectIDs = requested

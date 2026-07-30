@@ -17,22 +17,13 @@ type fakeRepository struct {
 	targets      map[string]model.DeploymentTarget
 	bindings     map[string]model.ServiceBinding
 	edges        map[string]model.ProjectTopologyEdge
-	releases     map[string]model.Release
 }
 
 func newFakeRepository() *fakeRepository {
 	return &fakeRepository{
 		applications: map[string]model.Application{}, targets: map[string]model.DeploymentTarget{},
-		bindings: map[string]model.ServiceBinding{}, edges: map[string]model.ProjectTopologyEdge{}, releases: map[string]model.Release{},
+		bindings: map[string]model.ServiceBinding{}, edges: map[string]model.ProjectTopologyEdge{},
 	}
-}
-
-func (repository *fakeRepository) LatestSuccessfulRelease(_ context.Context, deploymentTargetID string) (model.Release, error) {
-	item, ok := repository.releases[deploymentTargetID]
-	if !ok || item.Status != "succeeded" {
-		return model.Release{}, gorm.ErrRecordNotFound
-	}
-	return item, nil
 }
 
 func (repository *fakeRepository) Application(_ context.Context, id string) (model.Application, error) {
@@ -117,17 +108,6 @@ func (repository *fakeRepository) CreateServiceBinding(_ context.Context, item *
 
 func (repository *fakeRepository) UpdateServiceBinding(_ context.Context, item *model.ServiceBinding) error {
 	repository.bindings[item.ID] = *item
-	return nil
-}
-
-func (repository *fakeRepository) UpdateServiceBindingCheck(_ context.Context, bindingID, status string, checkedAt time.Time) error {
-	item, ok := repository.bindings[bindingID]
-	if !ok {
-		return gorm.ErrRecordNotFound
-	}
-	item.LastCheckStatus = status
-	item.LastCheckedAt = &checkedAt
-	repository.bindings[bindingID] = item
 	return nil
 }
 
@@ -333,7 +313,6 @@ func TestProjectTopologyAggregatesBindingsAndManualEdgesAndWarnsOnCycle(t *testi
 		TargetApplicationID: "app_target", TargetDeploymentTargetID: "dplt_target", TargetPortName: "http", TargetPort: 9000,
 		Protocol: "http", InjectionMode: "url", URLEnvVar: "API_URL", Enabled: true, UpdatedAt: now,
 	}
-	repository.releases["dplt_source"] = model.Release{ID: "rel_applied", DeploymentTargetID: "dplt_source", Status: "succeeded", CreatedAt: now.Add(time.Minute)}
 	repository.edges["ptedge_reverse"] = model.ProjectTopologyEdge{
 		ID: "ptedge_reverse", ProjectID: "prj_main", SourceApplicationID: "app_target", TargetApplicationID: "app_source", RelationType: "depends_on",
 	}
@@ -349,7 +328,7 @@ func TestProjectTopologyAggregatesBindingsAndManualEdgesAndWarnsOnCycle(t *testi
 	}
 }
 
-func TestProjectTopologyMarksBindingPendingUntilSuccessfulRelease(t *testing.T) {
+func TestProjectTopologyKeepsDeclaredStateIndependentFromReleaseHistory(t *testing.T) {
 	repository := dependencyFixture()
 	now := time.Now().UTC()
 	repository.bindings["sbind_pending"] = model.ServiceBinding{
@@ -361,15 +340,14 @@ func TestProjectTopologyMarksBindingPendingUntilSuccessfulRelease(t *testing.T) 
 	if err != nil {
 		t.Fatalf("project topology: %v", err)
 	}
-	if len(topology.Edges) != 1 || topology.Edges[0].Status != "pending_release" {
+	if len(topology.Edges) != 1 || topology.Edges[0].Status != "declared" {
 		t.Fatalf("topology edges = %#v", topology.Edges)
 	}
-	repository.releases["dplt_source"] = model.Release{ID: "rel_applied", DeploymentTargetID: "dplt_source", Status: "succeeded", CreatedAt: now.Add(time.Minute)}
 	topology, err = NewService(repository).ProjectTopology(context.Background(), "prj_main", TopologyFilter{})
 	if err != nil {
-		t.Fatalf("project topology after release: %v", err)
+		t.Fatalf("project topology repeated read: %v", err)
 	}
-	if topology.Edges[0].Status != "ready" {
+	if topology.Edges[0].Status != "declared" {
 		t.Fatalf("topology edge status = %q", topology.Edges[0].Status)
 	}
 }

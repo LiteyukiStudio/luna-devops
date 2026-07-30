@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { runFailureTranslationKey } from './errors'
+import { AIInteractionCardPlaceholder } from './interaction-card-placeholder'
 import { AIInteractionCards } from './interaction-cards'
 import { AIMarkdown } from './markdown'
 import { AIOptionsCard } from './options'
@@ -52,7 +53,7 @@ export function AIAssistantTimeline({ blocks, error, generating, loading, onActi
   if (error) {
     return (
       <div className="grid flex-1 place-content-center gap-3 p-6 text-center">
-        <p className="text-sm font-medium">{t('aiAssistant.errors.timeline')}</p>
+        <p className="text-[13px] font-medium">{t('aiAssistant.errors.timeline')}</p>
         <Button size="sm" variant="outline" onClick={onRetry}>
           <RotateCcw className="size-4" />
           {t('common.retry')}
@@ -66,7 +67,7 @@ export function AIAssistantTimeline({ blocks, error, generating, loading, onActi
         ? (
             <div className="mx-auto grid h-full max-w-64 place-content-center gap-2.5 text-center text-muted-foreground">
               <span className="mx-auto grid size-10 place-items-center rounded-full bg-primary-subtle text-primary-text"><Sparkles className="size-5" /></span>
-              <p className="text-sm font-medium text-foreground">{t('aiAssistant.emptyTitle')}</p>
+              <p className="text-[13px] font-medium text-foreground">{t('aiAssistant.emptyTitle')}</p>
               <p className="text-xs leading-5">{t('aiAssistant.empty')}</p>
             </div>
           )
@@ -103,7 +104,7 @@ function ConversationTurn({ generating, responseBlocks, userMessage, onAction, o
     <article className="grid min-w-0 gap-2.5" data-ai-turn>
       {userMessage && (
         <div className="flex min-w-0 max-w-full justify-end" data-ai-user-message>
-          <div className="min-w-0 max-w-[78%] whitespace-pre-wrap break-words rounded-container rounded-br-sm bg-primary px-3 py-2 text-sm leading-5.5 text-primary-foreground" data-ai-user-bubble>
+          <div className="min-w-0 max-w-[78%] whitespace-pre-wrap break-words rounded-container rounded-br-sm bg-primary px-3 py-2 text-[13px] leading-5 text-primary-foreground" data-ai-user-bubble>
             {userMessage.text}
           </div>
         </div>
@@ -128,10 +129,19 @@ function AssistantReply({ generating, responseBlocks, onAction, onApproval, onMF
   onApproval: (block: ToolCallBlock, decision: AIApprovalDecision, reason?: string) => Promise<void>
   onMFA: (block: ToolCallBlock, code: string) => Promise<void>
 }) {
+  const hasWideContent = responseBlocks.some(block =>
+    block.type === 'tool_call'
+    && (block.operationId === 'prepare_interaction_cards' || block.operationId === 'create_interaction_cards'))
   return (
     <div className="flex min-w-0 max-w-full items-start gap-2" data-ai-reply>
       <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-control bg-primary-subtle text-primary-text"><Bot className="size-3" /></span>
-      <div className="grid w-fit min-w-0 max-w-[78%] flex-none gap-2.5 rounded-container rounded-tl-sm bg-surface-subtle px-3 py-2.5" data-ai-assistant-bubble>
+      <div
+        className={cn(
+          'grid min-w-0 gap-2.5 rounded-container rounded-tl-sm bg-surface-subtle px-3 py-2.5',
+          hasWideContent ? 'w-full max-w-full flex-1' : 'w-fit max-w-[78%] flex-none',
+        )}
+        data-ai-assistant-bubble
+      >
         {responseBlocks.map(block => <ResponseBlock key={block.id} block={block} onAction={onAction} onApproval={onApproval} onMFA={onMFA} />)}
         {generating && <TypingIndicator />}
       </div>
@@ -157,6 +167,8 @@ function ResponseBlock({ block, onAction, onApproval, onMFA }: { block: AIBlock,
     return <ThinkingBlock block={block} />
   if (block.type === 'tool_call' && block.operationId === 'create_options' && block.status === 'succeeded' && block.uiActions.length > 0)
     return <AIOptionsCard actions={block.uiActions} arguments={block.arguments} onAction={onAction} />
+  if (block.type === 'tool_call' && block.operationId === 'prepare_interaction_cards' && block.status === 'running')
+    return <AIInteractionCardPlaceholder arguments={block.arguments} />
   if (block.type === 'tool_call' && block.operationId === 'create_interaction_cards' && block.status === 'succeeded')
     return <AIInteractionCards arguments={block.arguments} onAction={onAction} />
   if (block.type === 'tool_call')

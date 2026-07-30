@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/LiteyukiStudio/devops/internal/observation"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/gin-gonic/gin"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -31,7 +32,8 @@ func (h *Handlers) StreamDeploymentTargetMetrics(ctx *gin.Context) {
 
 	writer := ctx.Writer
 	writer.Header().Set("Content-Type", "text/event-stream")
-	writer.Header().Set("Cache-Control", "no-cache")
+	writer.Header().Set("Cache-Control", "no-store, no-transform")
+	writer.Header().Set("Pragma", "no-cache")
 	writer.Header().Set("Connection", "keep-alive")
 	writer.Header().Set("X-Accel-Buffering", "no")
 	writer.WriteHeader(http.StatusOK)
@@ -56,6 +58,7 @@ func (h *Handlers) writeDeploymentTargetMetricsEvent(ctx *gin.Context, client *k
 	if client == nil {
 		writeSSE(ctx.Writer, "metrics", strconv.Itoa(sequence), deploymentTargetMetricsResponse{
 			Available: false,
+			Status:    observation.StatusUnavailable,
 			Reason:    unavailableReason,
 			UpdatedAt: time.Now(),
 		})
@@ -70,6 +73,7 @@ func (h *Handlers) writeDeploymentTargetMetricsEvent(ctx *gin.Context, client *k
 	if err != nil {
 		writeSSE(ctx.Writer, "metrics", "", deploymentTargetMetricsResponse{
 			Available: false,
+			Status:    observation.StatusUnavailable,
 			Reason:    "metrics_error",
 			UpdatedAt: time.Now(),
 		})
@@ -103,6 +107,7 @@ func (h *Handlers) deploymentTargetMetricsClient(target model.DeploymentTarget) 
 
 type deploymentTargetMetricsResponse struct {
 	Available           bool      `json:"available"`
+	Status              string    `json:"status"`
 	Reason              string    `json:"reason,omitempty"`
 	PodCount            int       `json:"podCount"`
 	ContainerCount      int       `json:"containerCount"`
@@ -124,6 +129,7 @@ func deploymentTargetMetricsResponseFromSnapshot(snapshot kubeprovider.RuntimeMe
 	memoryCapacityBytes := quantityValue(target.MemoryRequest) * int64(replicas)
 	return deploymentTargetMetricsResponse{
 		Available:           snapshot.Available,
+		Status:              deploymentTargetMetricsStatus(snapshot.Available),
 		Reason:              snapshot.Reason,
 		PodCount:            snapshot.PodCount,
 		ContainerCount:      snapshot.ContainerCount,
@@ -135,6 +141,13 @@ func deploymentTargetMetricsResponseFromSnapshot(snapshot kubeprovider.RuntimeMe
 		MemoryUsagePercent:  usagePercent(snapshot.MemoryUsageBytes, memoryCapacityBytes),
 		UpdatedAt:           snapshot.UpdatedAt,
 	}
+}
+
+func deploymentTargetMetricsStatus(available bool) string {
+	if available {
+		return observation.StatusReady
+	}
+	return observation.StatusUnavailable
 }
 
 func quantityMilliValue(value string) int64 {

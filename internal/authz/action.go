@@ -75,16 +75,6 @@ const (
 	ActionTokenManage Action = "token:manage"
 )
 
-const (
-	PlatformRoleAdmin = "platform_admin"
-	PlatformRoleUser  = "user"
-
-	ProjectRoleOwner     = "owner"
-	ProjectRoleAdmin     = "admin"
-	ProjectRoleDeveloper = "developer"
-	ProjectRoleViewer    = "viewer"
-)
-
 var projectActionRoles = map[Action][]string{
 	ActionProjectRead:   {ProjectRoleOwner, ProjectRoleAdmin, ProjectRoleDeveloper, ProjectRoleViewer},
 	ActionProjectWrite:  {ProjectRoleOwner, ProjectRoleAdmin, ProjectRoleDeveloper},
@@ -123,19 +113,6 @@ var projectActionRoles = map[Action][]string{
 
 	ActionBillingRead:   {ProjectRoleOwner, ProjectRoleAdmin},
 	ActionBillingAdjust: {ProjectRoleOwner},
-}
-
-func IsPlatformAdmin(role string) bool {
-	return role == PlatformRoleAdmin
-}
-
-func NormalizeProjectRole(role string) string {
-	switch role {
-	case ProjectRoleOwner, ProjectRoleAdmin, ProjectRoleDeveloper, ProjectRoleViewer:
-		return role
-	default:
-		return ProjectRoleViewer
-	}
 }
 
 func ProjectRoleAllows(role string, action Action) bool {

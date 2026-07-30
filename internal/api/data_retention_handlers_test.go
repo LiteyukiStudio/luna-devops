@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/retention"
 	"github.com/gin-gonic/gin"
@@ -79,7 +80,7 @@ func TestDataRetentionAuditSummariesDoNotIncludeServiceErrors(t *testing.T) {
 func TestDataRetentionEndpointsRequirePlatformAdmin(t *testing.T) {
 	db := newMFAIntegrationDB(t)
 	now := time.Now()
-	user := model.User{ID: "usr_retention_guard", Email: "retention-guard@example.com", Name: "Retention Guard", Role: "user", Language: "en-US"}
+	user := model.User{ID: "usr_retention_guard", Email: "retention-guard@example.com", Name: "Retention Guard", Role: authz.PlatformRoleUser, Language: "en-US"}
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatal(err)
 	}

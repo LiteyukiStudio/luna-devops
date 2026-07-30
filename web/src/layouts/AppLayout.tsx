@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Bell, ChartNoAxesCombined, CircleUserRound, Container, CreditCard, Fingerprint, FolderKanban, GitBranch, LayoutDashboard, Menu, ScrollText, Server, Settings, Store, Users } from 'lucide-react'
 import { AnimatePresence } from 'motion/react'
-import { useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, Navigate, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -9,7 +9,6 @@ import { api } from '@/api'
 import { useDocumentTitle } from '@/app/document-title'
 import { usePublicConfig } from '@/app/public-config-context'
 import { useSession } from '@/app/session-context'
-import { AiAssistant } from '@/components/common/ai-assistant/assistant'
 import { DebugFloatingPanel } from '@/components/common/debug-floating-panel'
 import { AppLoadingState } from '@/components/common/loading-states'
 import { PageMotion } from '@/components/common/motion'
@@ -29,6 +28,8 @@ import {
   SidebarMenuItem,
 } from '@/components/ui/sidebar'
 import { cn } from '@/lib/utils'
+
+const AiAssistant = lazy(async () => ({ default: (await import('@/components/common/ai-assistant/assistant')).AiAssistant }))
 
 interface TopbarCrumb {
   label: string
@@ -309,7 +310,9 @@ export function AppLayout() {
         </div>
       </div>
       <DebugFloatingPanel />
-      <AiAssistant />
+      <Suspense fallback={null}>
+        <AiAssistant />
+      </Suspense>
     </div>
   )
 }

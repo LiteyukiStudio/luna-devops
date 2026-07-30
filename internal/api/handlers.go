@@ -25,9 +25,6 @@ type Handlers struct {
 	oauthStates         oauthStateStore
 	projects            repository.ProjectRepository
 	secrets             secret.Store
-	branchCache         *gitBranchCache
-	registrySearchCache *registrySearchCache
-	gatewayTrafficState gatewayTrafficRuntimeStateStore
 	taskClient          taskEnqueuer
 	aiAgent             aiagent.Client
 	aiDeploymentEnabled bool
@@ -52,7 +49,7 @@ func NewHandlers(db *gorm.DB) *Handlers {
 	}
 	cfg := config.Load()
 	redisOptions := cfg.RedisOptions()
-	handlers := &Handlers{db: db, configs: newConfigCache(db), mode: mode, rateLimiter: newRateLimiterWithRedis(redisOptions), oauthStates: newOAuthStateStoreWithRedis(redisOptions), projects: repository.NewProjectRepository(db), branchCache: newGitBranchCache(), registrySearchCache: newRegistrySearchCache(), gatewayTrafficState: newGatewayTrafficRuntimeStateStoreWithRedis(redisOptions)}
+	handlers := &Handlers{db: db, configs: newConfigCache(db), mode: mode, rateLimiter: newRateLimiterWithRedis(redisOptions), oauthStates: newOAuthStateStoreWithRedis(redisOptions), projects: repository.NewProjectRepository(db)}
 	if cfg.RedisAddr != "" {
 		handlers.taskClient = tasks.NewClientWithRedis(redisOptions)
 	}
@@ -67,11 +64,4 @@ func NewHandlers(db *gorm.DB) *Handlers {
 func (h *Handlers) setAIAgentForTest(client aiagent.Client, deploymentEnabled bool) {
 	h.aiAgent = client
 	h.aiDeploymentEnabled = deploymentEnabled
-}
-
-func (h *Handlers) gatewayTrafficRuntimeStore() gatewayTrafficRuntimeStateStore {
-	if h.gatewayTrafficState == nil {
-		h.gatewayTrafficState = newMemoryGatewayTrafficRuntimeStateStore()
-	}
-	return h.gatewayTrafficState
 }

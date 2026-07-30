@@ -18,7 +18,6 @@ export interface RepositoryBindingDialogForm {
   gitAccountId: string
   owner: string
   repo: string
-  webhookStatus: 'pending' | 'created' | 'disabled' | 'failed'
 }
 
 export interface RepositoryBindingDialogFormInput {
@@ -28,7 +27,6 @@ export interface RepositoryBindingDialogFormInput {
   gitAccountId: string
   owner: string
   repo: string
-  webhookStatus: 'pending' | 'created' | 'disabled' | 'failed'
 }
 
 interface ApplicationRepositoryBindingDialogProps {

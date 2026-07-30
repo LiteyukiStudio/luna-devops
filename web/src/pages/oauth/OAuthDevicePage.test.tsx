@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import i18next from '@/i18n'
+import { PlatformRole } from '@/lib/roles'
 import { OAuthDevicePage } from './OAuthDevicePage'
 
 const mocks = vi.hoisted(() => ({
@@ -31,7 +32,7 @@ vi.mock('@/app/session-context', () => ({
       id: 'usr_test',
       email: 'owner@example.test',
       name: 'Owner',
-      role: 'user',
+      role: PlatformRole.User,
     },
   }),
 }))

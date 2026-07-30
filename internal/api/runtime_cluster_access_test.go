@@ -3,12 +3,13 @@ package api
 import (
 	"testing"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 )
 
 func TestCanUseRuntimeClusterForProject(t *testing.T) {
-	user := model.User{ID: "usr_1", Role: "user"}
-	admin := model.User{ID: "usr_admin", Role: "platform_admin"}
+	user := model.User{ID: "usr_1", Role: authz.PlatformRoleUser}
+	admin := model.User{ID: "usr_admin", Role: authz.PlatformRoleAdmin}
 
 	cases := []struct {
 		name            string

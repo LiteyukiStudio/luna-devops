@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/resourceidentifier"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
@@ -48,7 +49,7 @@ func (h *Handlers) ListApplications(ctx *gin.Context) {
 }
 
 func (h *Handlers) CreateApplication(ctx *gin.Context) {
-	_, project, ok := h.projectAndCurrentUserWithRoles(ctx, "owner", "admin", "developer")
+	_, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
 	if !ok {
 		return
 	}
@@ -95,7 +96,7 @@ func (h *Handlers) GetApplication(ctx *gin.Context) {
 }
 
 func (h *Handlers) UpdateApplication(ctx *gin.Context) {
-	_, _, ok := h.projectAndCurrentUserWithRoles(ctx, "owner", "admin", "developer")
+	_, _, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
 	if !ok {
 		return
 	}
@@ -129,7 +130,7 @@ func (h *Handlers) UpdateApplication(ctx *gin.Context) {
 }
 
 func (h *Handlers) DeleteApplication(ctx *gin.Context) {
-	user, _, ok := h.projectAndCurrentUserWithRoles(ctx, "owner", "admin")
+	user, _, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
 	if !ok {
 		return
 	}

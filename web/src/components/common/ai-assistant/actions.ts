@@ -67,14 +67,20 @@ export function isAIUIActionRepeatable(action: AIUIAction): boolean {
   return true
 }
 
+export function getAIUIActionTargetPath(action: AIUIAction): string | null {
+  if (action.version !== 1 || action.type !== 'navigate')
+    return null
+  const parsed = routeSchema.safeParse(action.payload)
+  return parsed.success
+    ? buildAIInternalRoute(parsed.data.routeName, parsed.data.params, parsed.data.query)
+    : null
+}
+
 export async function executeAIUIAction(action: AIUIAction, context: AIActionContext) {
   if (action.version !== 1)
     return false
   if (action.type === 'navigate') {
-    const parsed = routeSchema.safeParse(action.payload)
-    if (!parsed.success)
-      return false
-    const path = buildAIInternalRoute(parsed.data.routeName, parsed.data.params, parsed.data.query)
+    const path = getAIUIActionTargetPath(action)
     if (!path)
       return false
     context.navigate(path)

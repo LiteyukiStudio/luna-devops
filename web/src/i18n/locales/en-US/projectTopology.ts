@@ -66,7 +66,6 @@ const projectTopology = {
   },
   statuses: {
     ready: 'Ready',
-    pending_release: 'Pending release',
     unavailable: 'Unavailable',
     invalid: 'Invalid',
     disabled: 'Disabled',
@@ -84,6 +83,7 @@ const projectTopology = {
     passed: 'Passed',
     warning: 'Warning',
     failed: 'Failed',
+    unavailable: 'Unavailable',
   },
   checkCodes: {
     kubernetes_check: 'Kubernetes runtime check',
@@ -92,7 +92,6 @@ const projectTopology = {
     service_port_resolved: 'Target port resolves',
     endpoint_ready: 'A ready Endpoint exists',
     network_policy_detected: 'NetworkPolicy detected',
-    binding_applied: 'Current binding has been released',
     binding_config_valid: 'Service binding configuration is valid',
   },
   form: {

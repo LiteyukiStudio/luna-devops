@@ -18,6 +18,9 @@ declare module "fastify" {
 }
 
 const id = z.string().min(5).max(64)
+const clientInstanceId = z.string().regex(/^[A-Za-z0-9_-]{16,80}$/)
+const relativePath = z.string().trim().min(1).max(2048).regex(/^\/(?!\/)/)
+const stableErrorCode = z.string().trim().min(3).max(120).regex(/^[a-z][a-z0-9_.-]+$/)
 const page = z.coerce.number().int().min(1).default(1)
 const pageSize = z.coerce.number().int().min(1).max(100).default(20)
 
@@ -150,6 +153,7 @@ export function buildServer(input: {
       const body = z.object({
         input: z.object({ parts: z.array(z.object({ type: z.literal("text"), text: z.string().trim().min(1).max(12000) })).min(1).max(10) }),
         pageContext: z.record(z.string(), z.unknown()).default({}),
+        clientInstanceId,
         runId: id.optional(),
         runActorGrant: z.string().min(16).max(8192).optional(),
       }).parse(request.body)
@@ -158,8 +162,51 @@ export function buildServer(input: {
         idempotencyKey: key, ...(body.runId ? { preallocatedRunId: body.runId } : {}),
         ...(body.runActorGrant ? { runActorGrantCiphertext: input.grantCipher.encrypt(body.runActorGrant) } : {}),
         ...(input.toolCatalogDigest ? { toolCatalogDigest: input.toolCatalogDigest } : {}),
+        clientInstanceId: body.clientInstanceId,
       })
       return reply.code(202).send({ turnId: created.turn.id, turnIndex: created.turn.turnIndex, runId: created.run.id, state: created.run.status, eventsUrl: `/api/v1/ai/runs/${created.run.id}/events` })
+    })
+    secured.get("/internal/v1/ui-actions/pending", async request => {
+      const query = z.object({ clientInstanceId }).parse(request.query)
+      const items = await input.repository.listPendingUIActions(request.actor.userId, query.clientInstanceId)
+      return {
+        items: items.map(item => ({
+          actionId: item.id,
+          runId: item.runId,
+          toolCallId: item.toolCallId,
+          action: item.action,
+          attempts: item.attempts,
+          expiresAt: item.expiresAt,
+        })),
+      }
+    })
+    secured.post("/internal/v1/ui-actions/:actionId/ack", async (request, reply) => {
+      const { actionId } = z.object({ actionId: id }).parse(request.params)
+      const body = z.object({
+        clientInstanceId,
+        status: z.enum(["succeeded", "failed"]),
+        actualPath: relativePath.optional(),
+        errorCode: stableErrorCode.optional(),
+      }).superRefine((value, context) => {
+        if (value.status === "succeeded" && !value.actualPath) {
+          context.addIssue({ code: "custom", path: ["actualPath"], message: "actualPath is required after successful navigation" })
+        }
+        if (value.status === "failed" && !value.errorCode) {
+          context.addIssue({ code: "custom", path: ["errorCode"], message: "errorCode is required after failed navigation" })
+        }
+      }).parse(request.body)
+      const action = await input.repository.acknowledgeUIAction(request.actor.userId, body.clientInstanceId, actionId, {
+        status: body.status,
+        ...(body.actualPath ? { actualPath: body.actualPath } : {}),
+        ...(body.errorCode ? { errorCode: body.errorCode } : {}),
+      })
+      if (!action) return reply.code(404).send(errorBody("ai.ui_action_not_found", request.id))
+      if (action.status !== body.status) return reply.code(409).send(errorBody("ai.ui_action_not_pending", request.id))
+      return reply.code(202).send({
+        actionId: action.id,
+        status: action.status,
+        acknowledgedAt: action.acknowledgedAt,
+      })
     })
     secured.get("/internal/v1/runs/:runId", async (request, reply) => {
       const { runId } = z.object({ runId: id }).parse(request.params)

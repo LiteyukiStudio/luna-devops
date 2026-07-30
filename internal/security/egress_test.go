@@ -6,6 +6,8 @@ import (
 	"net"
 	"strings"
 	"testing"
+
+	"github.com/LiteyukiStudio/devops/internal/authz"
 )
 
 func TestPublicEgressPolicyBlocksPrivateAndSpecialIPs(t *testing.T) {
@@ -129,7 +131,7 @@ func TestEgressPolicyForRole(t *testing.T) {
 	if EgressPolicyForRole("user").AllowPrivateNetwork {
 		t.Fatal("normal user should not be allowed to access private network")
 	}
-	if !EgressPolicyForRole("platform_admin").AllowPrivateNetwork {
+	if !EgressPolicyForRole(authz.PlatformRoleAdmin).AllowPrivateNetwork {
 		t.Fatal("platform admin should be allowed to access private network")
 	}
 }

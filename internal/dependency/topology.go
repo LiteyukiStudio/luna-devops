@@ -2,13 +2,12 @@ package dependency
 
 import (
 	"context"
-	"errors"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/model"
-	"gorm.io/gorm"
+	"github.com/LiteyukiStudio/devops/internal/observation"
 )
 
 type TopologyFilter struct {
@@ -106,19 +105,9 @@ func (service *Service) ProjectTopology(ctx context.Context, projectID string, f
 		if !topologyTargetStageMatches(stage, targetByID, binding.SourceDeploymentTargetID, binding.TargetDeploymentTargetID) {
 			continue
 		}
-		status := "ready"
+		status := observation.StatusDeclared
 		if !binding.Enabled {
 			status = "disabled"
-		} else if binding.LastCheckedAt != nil && !binding.LastCheckedAt.Before(binding.UpdatedAt) && (binding.LastCheckStatus == "invalid" || binding.LastCheckStatus == "unavailable") {
-			status = binding.LastCheckStatus
-		} else {
-			release, releaseErr := service.repository.LatestSuccessfulRelease(ctx, binding.SourceDeploymentTargetID)
-			if releaseErr != nil && !errors.Is(releaseErr, gorm.ErrRecordNotFound) {
-				return Topology{}, releaseErr
-			}
-			if errors.Is(releaseErr, gorm.ErrRecordNotFound) || release.CreatedAt.Before(binding.UpdatedAt) {
-				status = "pending_release"
-			}
 		}
 		links = append(links, TopologyLink{
 			ID: binding.ID, Source: binding.SourceApplicationID, Target: binding.TargetApplicationID,
@@ -137,7 +126,7 @@ func (service *Service) ProjectTopology(ctx context.Context, projectID string, f
 		links = append(links, TopologyLink{
 			ID: edge.ID, Source: edge.SourceApplicationID, Target: edge.TargetApplicationID,
 			SourceDeploymentTargetID: edge.SourceDeploymentTargetID, TargetDeploymentTargetID: edge.TargetDeploymentTargetID,
-			Origin: "manual", RelationType: edge.RelationType, Status: "declared", Protocol: edge.Protocol, Port: edge.Port, Description: edge.Description,
+			Origin: "manual", RelationType: edge.RelationType, Status: observation.StatusDeclared, Protocol: edge.Protocol, Port: edge.Port, Description: edge.Description,
 		})
 	}
 
@@ -172,7 +161,7 @@ func (service *Service) ProjectTopology(ctx context.Context, projectID string, f
 			applicationTargets = []TopologyDeploymentTarget{}
 		}
 		nodes = append(nodes, TopologyNode{
-			ID: application.ID, Kind: "application", Name: application.Name, Identifier: application.Identifier, Status: "unknown", DeploymentTargets: applicationTargets,
+			ID: application.ID, Kind: "application", Name: application.Name, Identifier: application.Identifier, Status: observation.StatusDeclared, DeploymentTargets: applicationTargets,
 		})
 	}
 
@@ -276,10 +265,11 @@ func topologyHasCycle(links []TopologyLink) bool {
 }
 
 type BindingCheck struct {
-	BindingID string             `json:"bindingId"`
-	CheckedAt time.Time          `json:"checkedAt"`
-	Status    string             `json:"status"`
-	Checks    []BindingCheckItem `json:"checks"`
+	BindingID       string             `json:"bindingId"`
+	CheckedAt       time.Time          `json:"checkedAt"`
+	Status          string             `json:"status"`
+	ObservationCode string             `json:"observationCode,omitempty"`
+	Checks          []BindingCheckItem `json:"checks"`
 }
 
 type BindingCheckItem struct {
@@ -307,24 +297,13 @@ func (service *Service) CheckServiceBinding(ctx context.Context, projectID, bind
 		{Code: "cluster_match", Status: "passed"},
 		{Code: "binding_config_valid", Status: "passed"},
 	}
-	status := "ready"
+	status := observation.StatusDeclared
 	if !binding.Enabled {
 		status = "disabled"
 	}
 	if err != nil {
 		status = "invalid"
 		checks = []BindingCheckItem{{Code: ErrorCode(err), Status: "failed"}}
-	}
-	if status == "ready" {
-		release, releaseErr := service.repository.LatestSuccessfulRelease(ctx, binding.SourceDeploymentTargetID)
-		applied := releaseErr == nil && !release.CreatedAt.Before(binding.UpdatedAt)
-		checkStatus := "failed"
-		if applied {
-			checkStatus = "passed"
-		} else {
-			status = "pending_release"
-		}
-		checks = append(checks, BindingCheckItem{Code: "binding_applied", Status: checkStatus})
 	}
 	return BindingCheck{BindingID: binding.ID, CheckedAt: time.Now().UTC(), Status: status, Checks: checks}, nil
 }

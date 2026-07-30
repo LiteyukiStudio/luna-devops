@@ -25,6 +25,9 @@ const ProjectWorkspacePage = lazyNamed(() => import('./pages/projects/ProjectWor
 const RegistriesPage = lazyNamed(() => import('./pages/registries/RegistriesPage'), 'RegistriesPage')
 const SiteSettingsPage = lazyNamed(() => import('./pages/settings/SiteSettingsPage'), 'SiteSettingsPage')
 const UsersPage = lazyNamed(() => import('./pages/settings/UsersPage'), 'UsersPage')
+const AIInteractionCardGallery = import.meta.env.DEV
+  ? lazyNamed(() => import('./dev/AIInteractionCardGallery'), 'AIInteractionCardGallery')
+  : null
 
 export default function App() {
   return (
@@ -36,6 +39,7 @@ export default function App() {
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/oauth/authorize" element={<OAuthAuthorizePage />} />
           <Route path="/oauth/device" element={<OAuthDevicePage />} />
+          {AIInteractionCardGallery && <Route path="/__dev/ai-interaction-cards" element={<AIInteractionCardGallery />} />}
           <Route element={<AppLayout />}>
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard" element={<DashboardPage />} />

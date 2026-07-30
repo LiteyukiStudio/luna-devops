@@ -83,14 +83,14 @@ export function AIOptionsCard({ actions, arguments: rawArguments, onAction }: {
             <Button
               key={key}
               aria-pressed={selected}
-              className="h-auto min-h-9 w-full justify-start whitespace-normal px-2.5 py-2 text-left"
+              className="h-auto min-h-8 w-full justify-start whitespace-normal px-2.5 py-1.5 text-left !text-[11px] [&_svg]:size-3.5"
               disabled={pending || (!repeatable && selected)}
               variant={variant}
               onClick={() => void choose(action, key)}
             >
               {pending ? <LoaderCircle className="animate-spin motion-reduce:animate-none" /> : selected ? <Check /> : <Icon />}
               <span className="min-w-0 flex-1">
-                <span className="block text-xs font-medium">{action.label ?? t(`aiAssistant.actions.${action.type}`)}</span>
+                <span className="block text-[11px] font-medium leading-4">{action.label ?? t(`aiAssistant.actions.${action.type}`)}</span>
                 {action.description && <span className="mt-0.5 block text-[10px] font-normal leading-3.5 opacity-75">{action.description}</span>}
               </span>
               {!pending && !selected && <ChevronRight className="opacity-60" />}

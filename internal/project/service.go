@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/resourceidentifier"
@@ -76,7 +77,7 @@ func (s *Service) Create(ctx context.Context, userID string, input CreateInput) 
 			return err
 		}
 		return tx.Create(&model.ProjectMember{
-			ID: id.New("mem"), ProjectID: project.ID, UserID: userID, Role: "owner",
+			ID: id.New("mem"), ProjectID: project.ID, UserID: userID, Role: authz.ProjectRoleOwner,
 		}).Error
 	})
 	return project, err

@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/gin-gonic/gin"
@@ -22,7 +23,7 @@ func (h *Handlers) ListContainerImages(ctx *gin.Context) {
 			return
 		}
 		query = query.Where("project_id = ?", projectID)
-	} else if user.Role != "platform_admin" {
+	} else if user.Role != authz.PlatformRoleAdmin {
 		query = query.Where("created_by = ? or project_id in ?", user.ID, h.projectIDsForUser(user.ID))
 	}
 	query = applySearch(ctx, query, "image_ref", "repository", "tag", "digest", "source_commit", "build_run_id", "source_type", "scan_status")
@@ -71,10 +72,10 @@ func (h *Handlers) CreateContainerImage(ctx *gin.Context) {
 		return
 	}
 	if input.ProjectID != "" {
-		if _, ok := h.findProjectForCurrentUserWithRolesByID(ctx, input.ProjectID, "owner", "admin", "developer"); !ok {
+		if _, ok := h.findProjectForCurrentUserWithRolesByID(ctx, input.ProjectID, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper); !ok {
 			return
 		}
-	} else if user.Role != "platform_admin" {
+	} else if user.Role != authz.PlatformRoleAdmin {
 		writeError(ctx, http.StatusForbidden, "只有平台管理员可以创建未归属项目的镜像记录")
 		return
 	}
