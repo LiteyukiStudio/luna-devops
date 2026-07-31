@@ -64,6 +64,14 @@ export interface AIToolDisplayResult {
   summaryKey: string
   summaryParams?: Record<string, string | number | boolean>
   requestId?: string
+  errorCode?: string
+  errorMessage?: string
+  data?: unknown
+  issues?: Array<{
+    code: string
+    path: string
+    message: string
+  }>
   fields?: Array<{
     labelKey: string
     value: string | number | boolean | null
@@ -96,6 +104,7 @@ export interface AITimelineItem {
     id: string
     operationId: string
     titleKey?: string
+    errorCode?: string
     callIndex: number
     status?: AIToolStatus
     arguments?: Record<string, unknown>

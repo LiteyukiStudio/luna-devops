@@ -237,7 +237,7 @@ describe('aI assistant state', () => {
     expect(failed.blocks[0]).toMatchObject({
       type: 'tool_call',
       status: 'failed',
-      titleKey: 'ai.tool_storage_unavailable',
+      errorCode: 'ai.tool_storage_unavailable',
       result: {
         requestId: 'req_tool_failure',
       },

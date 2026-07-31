@@ -4,7 +4,7 @@ export type AIBlock
   = | { id: string, turnId: string, index: number, type: 'thinking', status: string, display: 'summary' | 'progress', text: string }
     | { id: string, turnId: string, index: number, type: 'message', role: 'user' | 'assistant', status: string, text: string }
     | { id: string, turnId: string, runId: string, index: number, type: 'run_status', status: 'failed' | 'canceled', errorCode?: string }
-    | { id: string, turnId: string, runId: string, index: number, type: 'tool_call', toolCallId: string, operationId: string, titleKey?: string, status: AIToolStatus, arguments: Record<string, unknown>, result?: AIToolDisplayResult, uiActions: AIUIAction[], durationMs?: number, argumentsHash?: string, expectedVersion?: number, mfaPurpose?: string }
+    | { id: string, turnId: string, runId: string, index: number, type: 'tool_call', toolCallId: string, operationId: string, titleKey?: string, errorCode?: string, status: AIToolStatus, arguments: Record<string, unknown>, result?: AIToolDisplayResult, uiActions: AIUIAction[], durationMs?: number, argumentsHash?: string, expectedVersion?: number, mfaPurpose?: string }
 
 export interface AIAssistantState {
   blocks: AIBlock[]
@@ -76,6 +76,7 @@ export function stateFromTimeline(timeline: AITimeline): AIAssistantState {
           toolCallId: item.toolCall.id,
           operationId: item.toolCall.operationId,
           titleKey: item.toolCall.titleKey,
+          errorCode: item.toolCall.errorCode,
           status: item.toolCall.status ?? (item.status === 'completed' ? 'succeeded' : 'running'),
           arguments: item.toolCall.arguments ?? {},
           result: normalizeToolResult(item.toolCall.result ?? structuredResult),
@@ -303,7 +304,8 @@ export function reduceAIEvent(state: AIAssistantState, event: AIEvent): AIAssist
             arguments: typeof event.payload.arguments === 'object' && event.payload.arguments
               ? event.payload.arguments as Record<string, unknown>
               : block.arguments,
-            titleKey: stringPayload(event.payload, 'errorCode') || block.titleKey,
+            titleKey: stringPayload(event.payload, 'titleKey') || block.titleKey,
+            errorCode: stringPayload(event.payload, 'errorCode') || block.errorCode,
             result: normalizeToolResult(event.payload.result) ?? block.result,
             uiActions: event.payload.uiActions as AIUIAction[] | undefined ?? block.uiActions,
             durationMs: typeof event.payload.durationMs === 'number' ? event.payload.durationMs : block.durationMs,
@@ -318,7 +320,8 @@ export function reduceAIEvent(state: AIAssistantState, event: AIEvent): AIAssist
         operationId: stringPayload(event.payload, 'operationId'),
         status,
         arguments: typeof event.payload.arguments === 'object' && event.payload.arguments ? event.payload.arguments as Record<string, unknown> : {},
-        titleKey: stringPayload(event.payload, 'errorCode') || stringPayload(event.payload, 'titleKey') || undefined,
+        titleKey: stringPayload(event.payload, 'titleKey') || undefined,
+        errorCode: stringPayload(event.payload, 'errorCode') || undefined,
         result: normalizeToolResult(event.payload.result),
         uiActions: event.payload.uiActions as AIUIAction[] | undefined ?? [],
       })),
@@ -335,6 +338,23 @@ function normalizeToolResult(value: unknown): AIToolDisplayResult | undefined {
     summaryKey: typeof result.summaryKey === 'string' ? result.summaryKey : 'ai.tool.result.completed',
     ...(result.summaryParams && typeof result.summaryParams === 'object' ? { summaryParams: result.summaryParams as Record<string, string | number | boolean> } : {}),
     ...(typeof result.requestId === 'string' ? { requestId: result.requestId } : {}),
+    ...(typeof result.errorCode === 'string' ? { errorCode: result.errorCode } : {}),
+    ...(typeof result.errorMessage === 'string' ? { errorMessage: result.errorMessage } : {}),
+    ...('data' in result ? { data: result.data } : {}),
+    ...(Array.isArray(result.issues)
+      ? {
+          issues: result.issues
+            .filter(issue => issue && typeof issue === 'object' && !Array.isArray(issue))
+            .map((issue) => {
+              const candidate = issue as Record<string, unknown>
+              return {
+                code: typeof candidate.code === 'string' ? candidate.code : 'invalid',
+                path: typeof candidate.path === 'string' ? candidate.path : '',
+                message: typeof candidate.message === 'string' ? candidate.message : '',
+              }
+            }),
+        }
+      : {}),
     ...(Array.isArray(result.fields) ? { fields: result.fields as AIToolDisplayResult['fields'] } : {}),
     ...(result.presentation && typeof result.presentation === 'object' ? { presentation: result.presentation as AIToolDisplayResult['presentation'] } : {}),
   }

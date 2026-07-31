@@ -86,10 +86,11 @@ describe('ai assistant tool status icon', () => {
       <AIToolCallCard
         block={{
           ...toolBlock('failed'),
-          titleKey: 'ai.tool_storage_unavailable',
+          errorCode: 'ai.tool_storage_unavailable',
           result: {
             summaryKey: 'ai.tool.result.completed',
             requestId: 'req_tool_failure',
+            errorCode: 'ai.tool_storage_unavailable',
           },
         }}
         onAction={vi.fn(async () => true)}
@@ -103,6 +104,38 @@ describe('ai assistant tool status icon', () => {
     expect(screen.getByText('请求编号')).toBeInTheDocument()
     expect(screen.getByText('req_tool_failure')).toBeInTheDocument()
     expect(screen.queryByText(/select .* from/i)).not.toBeInTheDocument()
+  })
+
+  it('renders bounded non-sensitive response data and card validation issues', async () => {
+    await i18next.changeLanguage('zh-CN')
+    render(
+      <AIToolCallCard
+        block={{
+          ...toolBlock('failed'),
+          operationId: 'prepare_interaction_cards',
+          errorCode: 'ai.provider_invalid_tool_arguments',
+          result: {
+            summaryKey: 'aiAssistant.cards.failed',
+            errorCode: 'ai.provider_invalid_tool_arguments',
+            data: { items: [{ id: 'app-1', name: 'PostgreSQL' }], total: 1 },
+            issues: [{
+              code: 'too_small',
+              path: 'cards.0.sections',
+              message: 'Too small: expected array to have >=1 items',
+            }],
+          },
+        }}
+        onAction={vi.fn(async () => true)}
+        onApproval={vi.fn(async () => {})}
+        onMFA={vi.fn(async () => {})}
+      />,
+    )
+
+    fireEvent.click(screen.getByText('prepare_interaction_cards'))
+    expect(screen.getByText('模型生成的工具参数不符合要求，请查看校验详情。')).toBeInTheDocument()
+    expect(screen.getByText('cards.0.sections')).toBeInTheDocument()
+    expect(screen.getByText('Too small: expected array to have >=1 items')).toBeInTheDocument()
+    expect(screen.getByText(/"name": "PostgreSQL"/)).toBeInTheDocument()
   })
 
   it('offers reject, approve, and current-run approve-all decisions for a bound high-risk call', async () => {

@@ -29,4 +29,55 @@ describe("PostgreSQL bigint event sequence normalization", () => {
     expect(() => normalizeEventSequence("-1")).toThrow("ai.event_sequence_invalid")
     expect(() => normalizeEventSequence("1.5")).toThrow("ai.event_sequence_invalid")
   })
+
+  it("projects bounded non-sensitive tool results consistently for snapshots and events", async () => {
+    const repository = new MemoryRepository()
+    const conversation = await repository.createConversation("usr_a", "tool results")
+    const created = await repository.createTurn("usr_a", {
+      conversationId: conversation.id, input: "list applications", pageContext: {}, idempotencyKey: "tool-result",
+    })
+    const result = {
+      summaryKey: "ai.tool.result.completed",
+      requestId: "req_visible",
+      result: {
+        data: {
+          items: [{ id: "app-1", name: "PostgreSQL", apiToken: "must-not-leak" }],
+          total: 1,
+        },
+      },
+    }
+    await repository.appendItem({
+      runId: created.run.id,
+      turnId: created.turn.id,
+      type: "tool_call",
+      status: "completed",
+      content: {
+        toolCallId: "tool-1",
+        operationId: "listApplications",
+        status: "succeeded",
+        arguments: {},
+        result,
+      },
+    })
+    const rawEvent = await repository.appendEvent(created.run.id, "tool.completed", {
+      itemId: "item-1",
+      toolCallId: "tool-1",
+      operationId: "listApplications",
+      result,
+    })
+
+    const timeline = await presentTimeline(repository, "usr_a", conversation.id)
+    const toolItem = timeline?.turns[0]?.selectedRun?.items.find(item => "toolCall" in item)
+    if (!toolItem || !("toolCall" in toolItem)) throw new Error("expected projected tool call")
+    const toolResult = toolItem.toolCall.result
+    expect(toolResult).toMatchObject({
+      requestId: "req_visible",
+      data: { data: { items: [{ id: "app-1", name: "PostgreSQL" }], total: 1 } },
+    })
+    expect(JSON.stringify(toolResult)).not.toContain("must-not-leak")
+
+    const event = await presentEvent(repository, "usr_a", rawEvent)
+    expect(event?.payload.result).toEqual(toolResult)
+    expect(JSON.stringify(event?.payload.result)).not.toContain("must-not-leak")
+  })
 })

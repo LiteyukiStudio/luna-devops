@@ -39,12 +39,24 @@ function displayValue(value: unknown): string {
   return '—'
 }
 
+function displayJSON(value: unknown): string {
+  if (typeof value === 'string')
+    return value
+  try {
+    return JSON.stringify(value, null, 2)
+  }
+  catch {
+    return String(value)
+  }
+}
+
 export function AIToolCallCard({ block, onAction, onApproval, onMFA }: { block: ToolCallBlock, onAction: (action: AIUIAction) => Promise<boolean>, onApproval: (block: ToolCallBlock, decision: AIApprovalDecision, reason?: string) => Promise<void>, onMFA: (block: ToolCallBlock, code: string) => Promise<void> }) {
   const { t, i18n } = useTranslation()
   const entries = Object.entries(block.arguments).filter(([key]) => !SECRET_FIELD.test(key)).slice(0, 20)
   const title = block.titleKey && i18n.exists(block.titleKey) ? t(block.titleKey) : block.operationId
+  const errorCode = block.errorCode ?? block.result?.errorCode
   const summary = block.status === 'failed'
-    ? t(runFailureTranslationKey(block.titleKey))
+    ? t(runFailureTranslationKey(errorCode))
     : block.result?.summaryKey && i18n.exists(block.result.summaryKey)
       ? t(block.result.summaryKey, block.result.summaryParams)
       : t('aiAssistant.resultAvailable')
@@ -77,6 +89,17 @@ export function AIToolCallCard({ block, onAction, onApproval, onMFA }: { block: 
           ? (
               <div className="grid gap-2 rounded-control bg-surface px-2.5 py-2 text-xs">
                 <p>{summary}</p>
+                {errorCode && (
+                  <div className="flex justify-between gap-3">
+                    <span className="text-muted-foreground">{t('aiAssistant.errorCode')}</span>
+                    <code className="break-all text-right text-[11px]">{errorCode}</code>
+                  </div>
+                )}
+                {block.result.errorMessage && (
+                  <p className="break-words rounded-control bg-danger-subtle px-2 py-1.5 text-danger">
+                    {block.result.errorMessage}
+                  </p>
+                )}
                 {block.result.requestId && (
                   <div className="flex justify-between gap-3">
                     <span className="text-muted-foreground">{t('aiAssistant.requestId')}</span>
@@ -95,6 +118,25 @@ export function AIToolCallCard({ block, onAction, onApproval, onMFA }: { block: 
                     <strong className="break-all text-right">{displayValue(field.value)}</strong>
                   </div>
                 ))}
+                {block.result.issues && block.result.issues.length > 0 && (
+                  <div className="grid gap-1.5 rounded-control bg-danger-subtle px-2 py-2">
+                    <strong className="text-[11px] text-danger">{t('aiAssistant.validationDetails')}</strong>
+                    <ul className="m-0 grid list-none gap-1 p-0">
+                      {block.result.issues.map(issue => (
+                        <li key={`${issue.path}-${issue.code}-${issue.message}`} className="grid gap-0.5 text-[11px]">
+                          <code className="break-all font-semibold text-danger">{issue.path || t('aiAssistant.rootField')}</code>
+                          <span className="break-words text-muted-foreground">{issue.message}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {block.result.data !== undefined && (
+                  <div className="min-w-0">
+                    <strong className="mb-1 block text-[11px] text-muted-foreground">{t('aiAssistant.responseData')}</strong>
+                    <pre className="m-0 max-h-64 max-w-full overflow-auto rounded-control bg-surface-inset p-2 text-[11px] leading-4"><code>{displayJSON(block.result.data)}</code></pre>
+                  </div>
+                )}
               </div>
             )
           : (

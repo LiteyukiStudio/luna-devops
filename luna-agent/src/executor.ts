@@ -250,13 +250,13 @@ export class RunExecutor {
       }
       await this.repository.updateRun(run.id, "running", "completed", { completedAt: new Date().toISOString() })
     } catch (error) {
-      await this.failCardPreparations(run.id, cardPreparations)
+      const message = error instanceof Error ? error.message : "ai.run_failed"
+      await this.failCardPreparations(run.id, cardPreparations, stableError(message))
       if (error instanceof ToolInterruption && error.state === "waiting_input") {
         await this.repository.appendEvent(run.id, "run.input_required", { fields: error.fields })
         await this.repository.updateRun(run.id, "running", "waiting_input")
         return true
       }
-      const message = error instanceof Error ? error.message : "ai.run_failed"
       try { await this.repository.updateRun(run.id, "running", "failed", { completedAt: new Date().toISOString(), errorCode: stableError(message) }) } catch { /* state was changed by cancellation */ }
     } finally {
       clearTimeout(timeout)
@@ -361,6 +361,12 @@ export class RunExecutor {
         path: issue.path.join("."),
         message: issue.message,
       }))
+      const rawObject = raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : {}
+      const generationId = typeof rawObject.generationId === "string"
+        ? rawObject.generationId
+        : undefined
+      const preparation = generationId ? preparations.get(generationId) : undefined
+      if (preparation) preparation.issues = issues
       console.warn(JSON.stringify({ event: "interaction_cards_schema_rejected", issues }))
       return { accepted: false as const, issues }
     }
@@ -399,22 +405,29 @@ export class RunExecutor {
     return { accepted: true as const }
   }
 
-  private async failCardPreparations(runId: string, preparations: Map<string, CardPreparation>) {
+  private async failCardPreparations(runId: string, preparations: Map<string, CardPreparation>, errorCode: string) {
     await Promise.allSettled([...preparations.values()].map(async (preparation) => {
+      const result = {
+        summaryKey: "aiAssistant.cards.failed",
+        errorCode,
+        ...(preparation.issues?.length ? { issues: preparation.issues } : {}),
+      }
       await this.repository.updateItem(preparation.itemId, "failed", {
         toolCallId: preparation.toolCallId,
         operationId: "prepare_interaction_cards",
         titleKey: "aiAssistant.cards.preparingToolTitle",
         status: "failed",
         arguments: preparation.input,
-        errorCode: "ai.run_failed",
+        errorCode,
+        result,
       })
       await this.repository.appendEvent(runId, "tool.failed", {
         itemId: preparation.itemId,
         toolCallId: preparation.toolCallId,
         operationId: "prepare_interaction_cards",
         titleKey: "aiAssistant.cards.preparingToolTitle",
-        errorCode: "ai.run_failed",
+        errorCode,
+        result,
         timelineIndex: preparation.timelineIndex,
       })
     }))
@@ -614,6 +627,7 @@ type CardPreparation = {
   toolCallId: string
   timelineIndex: number
   input: PrepareInteractionCardsInput
+  issues?: Array<{ code: string, path: string, message: string }>
 }
 
 const internalToolOperationIds = new Set(["create_options", "prepare_interaction_cards", "create_interaction_cards", "rename_conversation", "navigate_to_route"])

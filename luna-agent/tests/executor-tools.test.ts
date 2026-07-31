@@ -283,6 +283,80 @@ describe("provider to tool to subsequent model invocation", () => {
     )).toBe(false)
   })
 
+  it("keeps the last interaction-card schema issues when bounded repair fails", async () => {
+    const repository = new MemoryRepository()
+    const conversation = await repository.createConversation("usr_a", "卡片校验", undefined, "user")
+    const created = await repository.createTurn("usr_a", {
+      conversationId: conversation.id,
+      input: "生成配置卡片",
+      pageContext: {},
+      idempotencyKey: "failed-interaction-card-repair",
+    })
+    let modelStep = 0
+    const provider: ModelProvider = {
+      async *stream() {
+        if (modelStep++ === 0) {
+          yield {
+            type: "completed",
+            usage: { inputTokens: 10, outputTokens: 5 },
+            toolCalls: [{
+              id: "prepare_card",
+              operationId: "prepare_interaction_cards",
+              arguments: {
+                schemaVersion: 1,
+                generationId: "broken-card",
+                title: "正在生成配置卡片",
+              },
+            }],
+          }
+          return
+        }
+        yield {
+          type: "completed",
+          usage: { inputTokens: 10, outputTokens: 5 },
+          toolCalls: [{
+            id: `invalid_card_${modelStep}`,
+            operationId: "create_interaction_cards",
+            arguments: {
+              schemaVersion: 1,
+              generationId: "broken-card",
+              title: "无效卡片",
+              template: "form",
+              cards: [],
+            },
+          }],
+        }
+      },
+      async complete() {
+        return { text: "", usage: { inputTokens: 1, outputTokens: 0 }, toolCalls: [] }
+      },
+      capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
+      health: async () => ({ ok: true }),
+    }
+    const executor = new RunExecutor(
+      repository,
+      new GraphVersionRegistry(provider),
+      loadConfig({ NODE_ENV: "test", INSTANCE_ID: "failed-card-repair-worker" }),
+    )
+
+    await executor.runOnce()
+
+    expect((await repository.getRun("usr_a", created.run.id))?.status).toBe("failed")
+    const timeline = await presentTimeline(repository, "usr_a", conversation.id)
+    const preparation = timeline?.turns[0]?.selectedRun?.items.find(item =>
+      "toolCall" in item && item.toolCall.operationId === "prepare_interaction_cards",
+    )
+    expect(preparation && "toolCall" in preparation ? preparation.toolCall : undefined).toMatchObject({
+      status: "failed",
+      errorCode: "ai.limit_exceeded",
+      result: {
+        summaryKey: "aiAssistant.cards.failed",
+        errorCode: "ai.limit_exceeded",
+        issues: [expect.objectContaining({ path: "cards" })],
+      },
+    })
+  })
+
   it("continues through multiple platform tool rounds before completing the run", async () => {
     const repository = new MemoryRepository()
     const conversation = await repository.createConversation("usr_a", "安装 PostgreSQL", undefined, "user")

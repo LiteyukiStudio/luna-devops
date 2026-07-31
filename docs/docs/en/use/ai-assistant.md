@@ -70,7 +70,9 @@ Complex cards show a preparation animation and replace it in place when the fina
 
 The assistant receives structured context such as the current route, page type, and selected resource IDs. Passwords, tokens, and secrets shown or entered on a page are not included in that context.
 
-Tool details are collapsed by default. Expand them to inspect redacted parameters, execution status, and results.
+Tool details are collapsed by default. Expand them to inspect redacted and bounded parameters, structured response data, execution status, stable error codes, and request IDs. Tokens, secrets, passwords, and authentication data are never displayed.
+
+If interaction-card generation fails, the tool details list the invalid field paths and reasons so the card can be regenerated or an administrator can investigate with the request ID.
 
 ## Troubleshooting
 
@@ -84,4 +86,4 @@ Check Provider quota, model name, and API key. If a fallback model is configured
 
 ### A tool failed
 
-Expand the tool details and keep the request ID. Common causes include a resource changing, missing permission, an unavailable dependency, or an operation that needs confirmation again.
+Expand the tool details to inspect the error code, response data, validation details, and request ID. Common causes include a resource changing, missing permission, an unavailable dependency, invalid arguments, or an operation that needs confirmation again.

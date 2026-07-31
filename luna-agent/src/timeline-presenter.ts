@@ -48,6 +48,7 @@ function isTerminal(status: string) {
 export async function presentEvent(repository: Repository, ownerUserId: string, event: RunEvent) {
   const run = await repository.getRun(ownerUserId, event.runId)
   if (!run) return undefined
+  const payload = presentEventPayload(event.data)
   return {
     version: 1 as const,
     eventId: event.id,
@@ -56,11 +57,20 @@ export async function presentEvent(repository: Repository, ownerUserId: string, 
     conversationId: run.conversationId,
     turnId: run.turnId,
     runId: run.id,
-    ...(stringValue(event.data.itemId) ? { itemId: stringValue(event.data.itemId) } : {}),
-    ...(stringValue(event.data.contentPartId) ? { contentPartId: stringValue(event.data.contentPartId) } : {}),
-    ...(stringValue(event.data.toolCallId) ? { toolCallId: stringValue(event.data.toolCallId) } : {}),
+    ...(stringValue(payload.itemId) ? { itemId: stringValue(payload.itemId) } : {}),
+    ...(stringValue(payload.contentPartId) ? { contentPartId: stringValue(payload.contentPartId) } : {}),
+    ...(stringValue(payload.toolCallId) ? { toolCallId: stringValue(payload.toolCallId) } : {}),
     occurredAt: event.createdAt,
-    payload: event.data,
+    payload,
+  }
+}
+
+function presentEventPayload(data: Record<string, unknown>) {
+  if (data.result === undefined)
+    return data
+  return {
+    ...data,
+    result: presentToolResult(data.result, stringValue(data.errorCode)),
   }
 }
 
@@ -83,7 +93,7 @@ function presentItem(item: TimelineItem) {
   const toolCallId = stringValue(item.content.toolCallId) ?? item.id
   const status = toolStatus(stringValue(item.content.status), item.status)
   const errorCode = stringValue(item.content.errorCode)
-  const titleKey = stringValue(item.content.titleKey) ?? errorCode
+  const titleKey = stringValue(item.content.titleKey)
   const argumentsHash = stringValue(item.content.argumentsHash)
   const mfaPurpose = stringValue(item.content.mfaPurpose)
   return {
@@ -94,7 +104,7 @@ function presentItem(item: TimelineItem) {
       callIndex: item.timelineIndex,
       status,
       arguments: objectValue(item.content.arguments),
-      ...(item.content.result !== undefined ? { result: presentToolResult(item.content.result) } : {}),
+      ...(item.content.result !== undefined ? { result: presentToolResult(item.content.result, errorCode) } : {}),
       ...(Array.isArray(objectValue(item.content.result).uiActions)
         ? { uiActions: objectValue(item.content.result).uiActions as ReturnType<typeof optionUIActions> }
         : {}),
@@ -102,6 +112,7 @@ function presentItem(item: TimelineItem) {
       ...(typeof item.content.expectedVersion === "number" ? { expectedVersion: item.content.expectedVersion } : {}),
       ...(mfaPurpose ? { mfaPurpose } : {}),
       ...(titleKey ? { titleKey } : {}),
+      ...(errorCode ? { errorCode } : {}),
     },
   }
 }
@@ -115,18 +126,63 @@ function extractText(item: TimelineItem): string | undefined {
   const parts = Array.isArray(item.content.parts) ? item.content.parts : []
   return parts.map(part => objectValue(part)).map(part => stringValue(part.text)).filter((value): value is string => Boolean(value)).join("\n") || undefined
 }
-function presentToolResult(value: unknown) {
+function presentToolResult(value: unknown, errorCode?: string) {
   const object = objectValue(value)
+  const data = toolDisplayData(object)
+  const issues = toolDisplayIssues(object.issues)
+  const displayErrorCode = errorCode ?? stringValue(object.code)
   return {
     summaryKey: stringValue(object.summaryKey) ?? "ai.tool.result.completed",
     ...(object.summaryParams && typeof object.summaryParams === "object" ? { summaryParams: object.summaryParams as Record<string, string | number | boolean> } : {}),
     ...(stringValue(object.requestId) ? { requestId: stringValue(object.requestId) } : {}),
+    ...(displayErrorCode ? { errorCode: displayErrorCode } : {}),
+    ...(stringValue(object.error) ? { errorMessage: stringValue(object.error) } : {}),
+    ...(data !== undefined ? { data } : {}),
+    ...(issues.length ? { issues } : {}),
     ...(stringValue(object.title) ? { fields: [
       { labelKey: "aiAssistant.options.title", value: stringValue(object.title)! },
       ...(stringValue(object.description) ? [{ labelKey: "aiAssistant.options.description", value: stringValue(object.description)! }] : []),
     ] } : {}),
     presentation: { component: "key_value" as const, version: 1 as const },
   }
+}
+
+const sensitiveDisplayKey = /authorization|cookie|password|secret|token|credential|api[-_]?key|kubeconfig/i
+const resultMetadataKeys = new Set(["summaryKey", "summaryParams", "requestId", "code", "error", "detail", "issues", "title", "description", "uiActions"])
+
+function toolDisplayData(object: Record<string, unknown>): unknown {
+  const candidate = object.result !== undefined
+    ? object.result
+    : Object.fromEntries(Object.entries(object).filter(([key]) => !resultMetadataKeys.has(key)))
+  if (candidate && typeof candidate === "object" && !Array.isArray(candidate) && Object.keys(candidate).length === 0)
+    return undefined
+  return sanitizeDisplayValue(candidate, 0)
+}
+
+function sanitizeDisplayValue(value: unknown, depth: number): unknown {
+  if (value === null || typeof value === "number" || typeof value === "boolean") return value
+  if (typeof value === "string") return value.slice(0, 2_000)
+  if (depth >= 6) return "[TRUNCATED]"
+  if (Array.isArray(value)) return value.slice(0, 50).map(item => sanitizeDisplayValue(item, depth + 1))
+  if (!value || typeof value !== "object") return undefined
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([key]) => !sensitiveDisplayKey.test(key))
+      .slice(0, 50)
+      .map(([key, item]) => [key, sanitizeDisplayValue(item, depth + 1)]),
+  )
+}
+
+function toolDisplayIssues(value: unknown) {
+  if (!Array.isArray(value)) return []
+  return value.slice(0, 20).map((issue) => {
+    const object = objectValue(issue)
+    return {
+      code: stringValue(object.code) ?? "invalid",
+      path: stringValue(object.path) ?? "",
+      message: (stringValue(object.message) ?? "Invalid value").slice(0, 500),
+    }
+  })
 }
 function objectValue(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
