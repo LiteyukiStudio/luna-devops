@@ -617,3 +617,18 @@ rg -n "TODO|FIXME|临时|兼容|fallback|special case|module|Builder|builder" in
 - 进入 TODO：继续按独立目标拆分 `application-deployments-panel.tsx`、`project_handlers.go`、`mfa_handlers.go` 和前端领域 DTO；不与安全修复混成一次无边界重写。
 - 暂不处理：Go 可达漏洞扫描需在安装 `govulncheck` 的发布环境补跑。
 - 文档同步：OpenAPI、中文/英文运维文档、TODO 与本健康记录已同步。
+
+## 15. 2026-08-01 Agent OTel 依赖收敛
+
+### 范围与结论
+
+- `@opentelemetry/auto-instrumentations-node` 通过未使用的 GCP 资源探测器引入 `brace-expansion@2.1.4`，触发 `GHSA-mh99-v99m-4gvg` High 级生产依赖门禁。
+- Agent 不读取 GCP 元数据，也不需要元包内的其他云平台、数据库和消息客户端插桩；保留该元包会扩大供应链与运行时攻击面。
+- 已改为按需启用 HTTP、Fastify、PostgreSQL、Pino 和 Undici 插桩。Fastify 使用维护方提供的 `@fastify/otel`，不引入已弃用的旧 Fastify instrumentation。
+- 不降低 `--audit-level=high`，不添加 advisory 豁免，不以跨主版本 override 强行替换传递依赖。
+
+### 验收要求
+
+- `pnpm --dir luna-agent install --frozen-lockfile` 和 `pnpm --dir luna-agent audit --prod --audit-level=high` 必须通过。
+- Agent 的 lint、typecheck、test、build 必须通过。
+- 真实请求必须证明 Fastify 入口 Span 继承 W3C 父上下文，内部 PostgreSQL 和 Undici Span 保持父子关系，Pino/OTel 日志可以使用同一 Trace ID 关联。

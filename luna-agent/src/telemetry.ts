@@ -1,9 +1,13 @@
 import { context, metrics, SpanKind, SpanStatusCode, trace, type Attributes, type Counter, type Histogram, type Span, type SpanOptions, type UpDownCounter } from "@opentelemetry/api"
 import { logs, SeverityNumber } from "@opentelemetry/api-logs"
-import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node"
+import { FastifyOtelInstrumentation } from "@fastify/otel"
 import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http"
 import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-http"
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http"
+import { HttpInstrumentation } from "@opentelemetry/instrumentation-http"
+import { PgInstrumentation } from "@opentelemetry/instrumentation-pg"
+import { PinoInstrumentation } from "@opentelemetry/instrumentation-pino"
+import { UndiciInstrumentation } from "@opentelemetry/instrumentation-undici"
 import { envDetector } from "@opentelemetry/resources"
 import { BatchLogRecordProcessor } from "@opentelemetry/sdk-logs"
 import { PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics"
@@ -61,26 +65,38 @@ export function initializeTelemetry(endpoint = process.env.OTEL_EXPORTER_OTLP_EN
       exportIntervalMillis: 15_000,
     })],
     logRecordProcessors: [new BatchLogRecordProcessor({ exporter: new OTLPLogExporter() })],
-    instrumentations: [getNodeAutoInstrumentations({
-      "@opentelemetry/instrumentation-fs": { enabled: false },
-      "@opentelemetry/instrumentation-pg": {
+    instrumentations: [
+      new HttpInstrumentation({
+        requestHook: (span, request) => sanitizeRequestSpan(span, request),
+        applyCustomAttributesOnSpan: (span, request) => sanitizeRequestSpan(span, request),
+      }),
+      new FastifyOtelInstrumentation({
+        registerOnInitialization: true,
+        instrumentHooks: false,
+        requestHook: (span, request) => sanitizeSpanURL(span, request.raw.url ?? request.url),
+      }),
+      new PgInstrumentation({
         enhancedDatabaseReporting: false,
         responseHook: (span, response) => {
           span.setAttribute("db.response.returned_rows", response.data.rowCount ?? 0)
         },
-      },
-      "@opentelemetry/instrumentation-pino": {
+      }),
+      new PinoInstrumentation({
         disableLogCorrelation: false,
         disableLogSending: false,
         logKeys: { traceId: "trace_id", spanId: "span_id", traceFlags: "trace_flags" },
-      },
-      "@opentelemetry/instrumentation-undici": {
+      }),
+      new UndiciInstrumentation({
         requestHook: (span, request) => {
           const origin = typeof request.origin === "string" ? request.origin : String(request.origin)
-          span.setAttribute("url.full", sanitizeTelemetryURL(`${origin}${request.path}`))
+          sanitizeSpanURL(span, `${origin}${request.path}`)
         },
-      },
-    })],
+        responseHook: (span, { request }) => {
+          const origin = typeof request.origin === "string" ? request.origin : String(request.origin)
+          sanitizeSpanURL(span, `${origin}${request.path}`)
+        },
+      }),
+    ],
   })
   sdk.start()
 }
@@ -96,6 +112,28 @@ export function sanitizeTelemetryURL(value: string): string {
   }
   catch {
     return value.split(/[?#]/, 1)[0] ?? ""
+  }
+}
+
+function sanitizeRequestSpan(span: Span, request: unknown): void {
+  if (!request || typeof request !== "object") return
+  if ("url" in request && typeof request.url === "string") {
+    sanitizeSpanURL(span, request.url)
+    return
+  }
+  if ("path" in request && typeof request.path === "string") sanitizeSpanURL(span, request.path)
+}
+
+function sanitizeSpanURL(span: Span, value: string): void {
+  try {
+    const absolute = /^[a-z][a-z0-9+.-]*:\/\//i.test(value)
+    const parsed = new URL(value, "http://telemetry.invalid")
+    span.setAttribute("url.path", parsed.pathname)
+    span.setAttribute("url.query", "")
+    if (absolute) span.setAttribute("url.full", sanitizeTelemetryURL(value))
+  }
+  catch {
+    span.setAttribute("url.query", "")
   }
 }
 
