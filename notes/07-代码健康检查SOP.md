@@ -632,3 +632,17 @@ rg -n "TODO|FIXME|临时|兼容|fallback|special case|module|Builder|builder" in
 - `pnpm --dir luna-agent install --frozen-lockfile` 和 `pnpm --dir luna-agent audit --prod --audit-level=high` 必须通过。
 - Agent 的 lint、typecheck、test、build 必须通过。
 - 真实请求必须证明 Fastify 入口 Span 继承 W3C 父上下文，内部 PostgreSQL 和 Undici Span 保持父子关系，Pino/OTel 日志可以使用同一 Trace ID 关联。
+
+## 16. 2026-08-01 Go 可达依赖漏洞修复
+
+### 范围与结论
+
+- `govulncheck` 确认 `google.golang.org/grpc@v1.81.1` 的 `GO-2026-6061` 和 `github.com/ClickHouse/ch-go@v0.61.5` 的 `GO-2025-3603` 存在可达调用路径，发布门禁按设计阻断。
+- `grpc` 升级到公告修复下限 `v1.82.1`；`ch-go` 升级到公告修复下限 `v0.65.0`。
+- `clickhouse-go/v2` 同步升级到首个声明兼容 `ch-go v0.65.0` 的 `v2.32.0`。禁止只覆盖 `ch-go`，否则旧驱动会因压缩 API 变化而无法编译。
+- 不添加漏洞豁免，不降低 `govulncheck` 门禁；间接升级仅保留 Go 最小版本选择为满足兼容性所需的结果。
+
+### 验收结果
+
+- `go test ./...`、`go vet ./...`：通过。
+- `go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...`：可达漏洞为 0。
