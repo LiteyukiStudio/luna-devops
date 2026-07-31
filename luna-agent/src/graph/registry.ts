@@ -30,13 +30,13 @@ type CompiledAssistantGraph = {
 
 export class GraphVersionRegistry {
   private readonly graphs = new Map<string, CompiledAssistantGraph>()
-  private readonly resolveTools: (pageContext: Record<string, unknown>) => ModelToolDefinition[]
+  private readonly resolveTools: (pageContext: Record<string, unknown>, userInput: string) => ModelToolDefinition[]
   constructor(private readonly provider: ModelProvider, tools: ModelToolResolver = []) {
     this.resolveTools = typeof tools === "function" ? tools : () => tools
     const graph = new StateGraph(GraphState)
       .addNode("context", state => ({ ...state, reasoningSummary: "正在检查会话上下文与可用的只读能力。" }))
       .addNode("respond", async state => {
-        const tools = this.modelTools(state.pageContext, state.conversation)
+        const tools = this.modelTools(state.pageContext, state.conversation, state.input)
         const response = await provider.complete({
           messages: modelMessages(state.promptVersion, state.input, state.pageContext, state.conversation, state.history, tools, state.continuationMessages),
           maxOutputTokens: assistantMaxOutputTokens,
@@ -57,7 +57,7 @@ export class GraphVersionRegistry {
 
   stream(version: string, input: AssistantGraphState, signal?: AbortSignal) {
     if (!this.graphs.has(version)) throw new Error("ai.graph_version_unavailable")
-    const tools = this.modelTools(input.pageContext, input.conversation)
+    const tools = this.modelTools(input.pageContext, input.conversation, input.input)
     return this.provider.stream({
       messages: modelMessages(input.promptVersion, input.input, input.pageContext, input.conversation, input.history, tools, input.continuationMessages),
       maxOutputTokens: assistantMaxOutputTokens,
@@ -86,7 +86,7 @@ export class GraphVersionRegistry {
     conversation: ConversationPromptContext
     history: ConversationHistoryEntry[]
   }, signal?: AbortSignal): Promise<Record<string, unknown> | undefined> {
-    const availableOperations = this.modelTools(input.pageContext, input.conversation)
+    const availableOperations = this.modelTools(input.pageContext, input.conversation, input.userInput)
       .map(tool => tool.operationId)
       .filter(operationId => !["create_options", "prepare_interaction_cards", "create_interaction_cards", "rename_conversation", "navigate_to_route"].includes(operationId))
     const skillGuidance = skillGuidanceFor({
@@ -144,9 +144,9 @@ ${JSON.stringify(availableOperations)}`,
     return response.toolCalls?.find(call => call.operationId === "create_options")?.arguments
   }
 
-  private modelTools(pageContext: Record<string, unknown>, conversation: ConversationPromptContext) {
+  private modelTools(pageContext: Record<string, unknown>, conversation: ConversationPromptContext, userInput: string) {
     return [
-      ...this.resolveTools(pageContext),
+      ...this.resolveTools(pageContext, userInput),
       ...(conversation.titleSource === "user" ? [] : [renameConversationTool]),
     ]
   }

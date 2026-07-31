@@ -9,6 +9,7 @@ import { MemoryRepository } from "./persistence/memory.js"
 import { PostgresRepository } from "./persistence/postgres.js"
 import { ProviderConfigClient } from "./provider/config-client.js"
 import { createRuntimeProvider } from "./provider/runtime.js"
+import { agentRuntimeInternals } from "./runtime-settings.js"
 import { buildServer } from "./server.js"
 import { ToolCatalog } from "./tools/catalog.js"
 import { HttpLunaApiToolClient } from "./tools/luna-api-client.js"
@@ -25,23 +26,39 @@ const repository = config.DATABASE_URL ? new PostgresRepository(config.DATABASE_
 const providerConfigClient = config.LUNA_API_BASE_URL && internalKeys
   ? new ProviderConfigClient(config.LUNA_API_BASE_URL, internalKeys.callbackServiceToken)
   : undefined
+const initialRemoteConfig = providerConfigClient
+  ? await providerConfigClient.get()
+  : undefined
 const provider = createRuntimeProvider(config, providerConfigClient)
 const authenticator = config.AUTH_MODE === "bff-hmac"
   ? new BffHmacAuthenticator(internalKeys!.serviceToken, internalKeys!.actorSigningKey)
   : new DevelopmentAuthenticator()
 const grantCipher = new RunGrantCipher(internalKeys?.runGrantEncryptionKey ?? randomBytes(32))
-const catalog = ToolCatalog.load(config.TOOL_CATALOG_JSON ? JSON.parse(config.TOOL_CATALOG_JSON) as unknown : platformOperations)
+const remoteOperationIds = new Set(
+  (initialRemoteConfig?.toolCatalog ?? [])
+    .map(item => typeof item === "object" && item && "operationId" in item ? String(item.operationId) : ""),
+)
+const catalog = ToolCatalog.load(config.TOOL_CATALOG_JSON
+  ? JSON.parse(config.TOOL_CATALOG_JSON) as unknown
+  : [
+      ...(initialRemoteConfig?.toolCatalog ?? []),
+      ...platformOperations.filter(operation => !remoteOperationIds.has(operation.operationId)),
+    ])
 const toolStore = repository instanceof PostgresRepository ? new PostgresToolCallStore(repository.pool, repository) : new ProjectingToolCallStore(new MemoryToolCallStore(), repository)
 const tools = catalog && config.LUNA_API_BASE_URL && internalKeys
-  ? new ToolOrchestrator(catalog, new HttpLunaApiToolClient(config.LUNA_API_BASE_URL, internalKeys.callbackServiceToken), toolStore, undefined, 12, undefined, async runId => {
+  ? new ToolOrchestrator(catalog, new HttpLunaApiToolClient(config.LUNA_API_BASE_URL, internalKeys.callbackServiceToken), toolStore, undefined, agentRuntimeInternals.maxToolCalls, undefined, async runId => {
       const encrypted = await repository.getRunActorGrantCiphertext(runId)
       if (!encrypted) throw new Error("ai.run_grant_unavailable")
       return grantCipher.decrypt(encrypted)
     })
   : undefined
-const graphs = new GraphVersionRegistry(provider, pageContext => [
+const graphs = new GraphVersionRegistry(provider, (pageContext, userInput) => [
   ...(tools
-    ? catalog.modelTools(typeof pageContext.projectId === "string" ? { projectId: pageContext.projectId } : {})
+    ? catalog.modelTools({
+        ...(typeof pageContext.projectId === "string" ? { projectId: pageContext.projectId } : {}),
+        ...(typeof pageContext.pathname === "string" ? { pathname: pageContext.pathname } : {}),
+        ...(typeof pageContext.routeName === "string" ? { routeName: pageContext.routeName } : {}),
+      }, userInput)
     : []),
   createOptionsTool,
   prepareInteractionCardsTool,

@@ -31,6 +31,10 @@ The assistant has the same platform permissions as you. It cannot read or change
 
 A request may require several resource queries. The assistant continues from each tool result and explains or corrects failed queries instead of treating an unfinished step as the final response.
 
+The assistant uses the same platform business APIs and the current signed-in user permissions as the web console; it does not maintain a lower-privilege or behaviorally different API subset. Protocol endpoints such as login callbacks, webhooks, terminal streams, and raw file downloads are not exposed directly to the model. The assistant explains any user step required for those interactions.
+
+The assistant follows complete workflows for common tasks, including delivering applications from marketplace templates, existing images, or source repositories; configuring builds, releases, runtime, and gateways; diagnosing build or application failures; and handling project members, service relationships, notifications, security, and billing. Each workflow discovers trusted resources, collects required input, runs available operations, and reads back the result for acceptance. If the platform has not exposed the required operation, the assistant clearly identifies the blocked stage.
+
 The assistant can also search the public web and read HTTP/HTTPS pages. Paste a GitHub repository, project website, or deployment guide to extract build methods, start commands, ports, and environment-variable names, then generate a deployment form with supported defaults. You still choose or confirm the target project space, domain, resource sizing, and secrets.
 
 Web requests do not carry your browser cookies, tokens, or Git credentials. URLs containing embedded credentials, tokens, or signature parameters are rejected, and external content is treated as untrusted data. Connect a Git Provider in Luna DevOps before accessing a private repository.
@@ -65,6 +69,8 @@ When you explicitly ask to open a page, the assistant can switch the current tab
 The assistant can organize resource candidates, comparisons, resource details, configuration wizards, diagnostics, execution plans, task progress, receipts, and health summaries into cards. Continue or action buttons stay disabled until required fields are valid.
 
 Cards are either presentational or interactive. Presentational cards only show facts or results already obtained. When the current task needs you to choose, enter, or confirm something, the assistant shows actionable candidate buttons, a selection field, or a form with an explicit submit action instead of asking you to answer from a display-only list.
+
+A card is only an input or presentation step in a workflow; it does not mean that the platform operation is complete. For creation, installation, release, or repair tasks, the assistant continues with the corresponding operation and reads back the actual state. It reports accepted work as “submitted” or “in progress” and only reports completion after the target state is reached.
 
 When creation, installation, or configuration needs a name, identifier, port, domain, toggle, or resource selection, the assistant presents a form or step-by-step wizard instead of asking you to copy and complete a message template.
 

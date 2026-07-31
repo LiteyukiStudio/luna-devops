@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/LiteyukiStudio/devops/internal/aiagent"
+	"github.com/LiteyukiStudio/devops/internal/aitool"
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/gin-gonic/gin"
@@ -24,6 +25,11 @@ var aiProviderConfigKeys = []string{
 
 func (h *Handlers) GetAIProviderConfigInternal(ctx *gin.Context) {
 	if !requireAIAgentService(ctx) {
+		return
+	}
+	toolCatalog, err := aitool.PlatformCatalog()
+	if err != nil {
+		writeErrorCode(ctx, http.StatusServiceUnavailable, "ai.tool_catalog_unavailable", "AI tool catalog is unavailable")
 		return
 	}
 	values := h.configs.get(aiProviderConfigKeys)
@@ -48,6 +54,7 @@ func (h *Handlers) GetAIProviderConfigInternal(ctx *gin.Context) {
 			"runTimeoutMs":        aiRuntimeMilliseconds(values, "ai.runtime.run_timeout_seconds", 300),
 			"agentConcurrentRuns": aiRuntimeInteger(values, "ai.runtime.agent_concurrent_runs", 2),
 		},
+		"toolCatalog": toolCatalog,
 	})
 }
 

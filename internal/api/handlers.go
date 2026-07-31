@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/LiteyukiStudio/devops/internal/aiagent"
 	"github.com/LiteyukiStudio/devops/internal/aitool"
@@ -30,6 +31,7 @@ type Handlers struct {
 	aiDeploymentEnabled bool
 	aiActorResolver     func(*gin.Context) (aiagent.ActorContext, bool)
 	aiTools             *aitool.Service
+	platformRouter      http.Handler
 }
 
 type taskEnqueuer interface {

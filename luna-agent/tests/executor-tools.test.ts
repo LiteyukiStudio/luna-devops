@@ -290,6 +290,85 @@ describe("provider to tool to subsequent model invocation", () => {
     )).toBe(false)
   })
 
+  it("feeds presentation-card completion back to the model before ending the workflow", async () => {
+    const repository = new MemoryRepository()
+    const conversation = await repository.createConversation("usr_a", "部署状态", undefined, "user")
+    const created = await repository.createTurn("usr_a", {
+      conversationId: conversation.id,
+      input: "展示部署摘要并继续判断是否完成",
+      pageContext: {},
+      idempotencyKey: "presentation-card-continuation",
+    })
+    const requests: ModelRequest[] = []
+    let modelStep = 0
+    const provider: ModelProvider = {
+      async *stream(request) {
+        requests.push(request)
+        if (modelStep++ === 0) {
+          yield {
+            type: "completed",
+            usage: { inputTokens: 10, outputTokens: 5 },
+            toolCalls: [{
+              id: "prepare_summary",
+              operationId: "prepare_interaction_cards",
+              arguments: {
+                schemaVersion: 1,
+                generationId: "deployment-summary",
+                title: "正在整理部署摘要",
+              },
+            }],
+          }
+          return
+        }
+        if (modelStep === 2) {
+          yield {
+            type: "completed",
+            usage: { inputTokens: 10, outputTokens: 5 },
+            toolCalls: [{
+              id: "create_summary",
+              operationId: "create_interaction_cards",
+              arguments: {
+                schemaVersion: 1,
+                generationId: "deployment-summary",
+                title: "部署摘要",
+                mode: "presentation",
+                template: "result",
+                cards: [{
+                  id: "summary",
+                  presentation: { variant: "summary", title: "部署参数已整理" },
+                }],
+              },
+            }],
+          }
+          return
+        }
+        yield { type: "message_delta", delta: "这里只完成了参数呈现，部署尚未执行。" }
+        yield { type: "completed", usage: { inputTokens: 10, outputTokens: 10 }, toolCalls: [] }
+      },
+      async complete() {
+        return { text: "", usage: { inputTokens: 1, outputTokens: 0 }, toolCalls: [] }
+      },
+      capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
+      health: async () => ({ ok: true }),
+    }
+    const executor = new RunExecutor(
+      repository,
+      new GraphVersionRegistry(provider),
+      loadConfig({ NODE_ENV: "test", INSTANCE_ID: "presentation-continuation-worker" }),
+    )
+
+    await executor.runOnce()
+
+    expect((await repository.getRun("usr_a", created.run.id))?.status).toBe("completed")
+    expect(requests).toHaveLength(3)
+    const cardResult = requests[2]?.messages.find(message =>
+      message.role === "tool" && message.toolCallId === "create_summary",
+    )
+    expect(cardResult?.content).toContain('"workflowState":"evidence_presented"')
+    expect(cardResult?.content).toContain('"completionEvidence":false')
+    expect(JSON.stringify(await presentTimeline(repository, "usr_a", conversation.id))).toContain("部署尚未执行")
+  })
+
   it("keeps the last interaction-card schema issues when bounded repair fails", async () => {
     const repository = new MemoryRepository()
     const conversation = await repository.createConversation("usr_a", "卡片校验", undefined, "user")

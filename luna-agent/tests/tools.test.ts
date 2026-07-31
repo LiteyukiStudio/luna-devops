@@ -93,12 +93,12 @@ describe("tool catalog and orchestration", () => {
 })
 
 describe("tool catalog validation", () => {
-  it("rejects a high-risk operation without MFA purpose", () => {
-    expect(() => ToolCatalog.load([{
+  it("allows handler-driven MFA for a high-risk operation while keeping approval mandatory", () => {
+    expect(ToolCatalog.load([{
       operationId: "deleteThing", method: "DELETE", path: "/api/v1/things", category: "thing",
       risk: "destructive", requiredScopes: [], approval: "always", idempotent: true, timeoutMs: 1000,
       inputSchema: { type: "object", properties: {}, required: [], additionalProperties: false },
-    }])).toThrow()
+    }]).get("deleteThing")).toMatchObject({ approval: "always" })
   })
   it("rejects a high-risk operation that disables approval", () => {
     expect(() => ToolCatalog.load([{

@@ -5,21 +5,17 @@ export const toolRisk = z.enum(["read", "ui", "write", "sensitive", "destructive
 export type ToolRisk = z.infer<typeof toolRisk>
 const jsonSchema = z.object({
   type: z.literal("object"),
-  properties: z.record(z.string(), z.object({
-    type: z.enum(["string", "number", "integer", "boolean", "array", "object"]),
-    maxLength: z.number().int().positive().optional(),
-    maximum: z.number().optional(),
-    enum: z.array(z.union([z.string(), z.number(), z.boolean()])).optional(),
-  })).default({}),
+  properties: z.record(z.string(), z.record(z.string(), z.unknown())).default({}),
   required: z.array(z.string()).default([]),
   additionalProperties: z.literal(false),
-})
+}).passthrough()
 
 const operation = z.object({
   operationId: z.string().regex(/^[A-Za-z][A-Za-z0-9._-]{2,100}$/),
   method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]),
   path: z.string().startsWith("/api/v1/"),
   category: z.string().min(1),
+  description: z.string().optional(),
   risk: toolRisk,
   requiredScopes: z.array(z.string()).max(20),
   approval: z.enum(["never", "always", "risk_based"]),
@@ -30,14 +26,8 @@ const operation = z.object({
   maxItems: z.number().int().min(1).max(500).optional(),
   resultVerifier: z.string().optional(),
 }).superRefine((value, context) => {
-  if (["sensitive", "destructive"].includes(value.risk) && !value.stepUpPurpose) {
-    context.addIssue({ code: "custom", message: "high-risk operation requires stepUpPurpose" })
-  }
   if (["sensitive", "destructive"].includes(value.risk) && value.approval === "never") {
     context.addIssue({ code: "custom", message: "high-risk operation requires approval" })
-  }
-  if (value.risk !== "read" && !value.idempotent) {
-    context.addIssue({ code: "custom", message: "write operation requires idempotency" })
   }
 })
 
@@ -69,12 +59,16 @@ export class ToolCatalog {
   all(): ToolOperation[] {
     return [...this.operations.values()]
   }
-  modelTools(context: { projectId?: string } = {}) {
-    void context
+  modelTools(context: { projectId?: string, pathname?: string, routeName?: string } = {}, userInput = "") {
+    const categories = relevantCategories(`${userInput}\n${context.pathname ?? ""}\n${context.routeName ?? ""}`)
+    const baseOperations = new Set(["getDashboard", "listProjects", "listAppTemplates", "listPlatformEvents", "webSearch", "fetchWebPage"])
     return this.all()
+      .filter(item => baseOperations.has(item.operationId) || categories.has(item.category))
+      .sort((left, right) => operationPriority(right.operationId) - operationPriority(left.operationId))
+      .slice(0, 112)
       .map(item => ({
         operationId: item.operationId,
-        description: operationDescriptions[item.operationId]
+        description: item.description ?? operationDescriptions[item.operationId]
           ?? `${item.category} 类操作，风险级别为 ${item.risk}。${platformContextOperations.has(item.operationId) ? "该操作作用于平台范围，不能传入 projectId。" : "必须使用从用户可见资源中明确选择的 projectId；页面上下文只提供指引，不代表授权。"}只有用户需要查询当前 Luna DevOps 数据或明确执行平台操作时才可使用。`,
         inputSchema: item.inputSchema,
       }))
@@ -84,6 +78,44 @@ export class ToolCatalog {
   }
 }
 
+const essentialWorkflowOperations = new Set([
+  "getDashboard", "listProjects", "getProject", "createProject",
+  "listAppTemplates", "installAppTemplate",
+  "listApplications", "getApplication", "createApplication",
+  "listDeploymentTargets", "createDeploymentTarget", "updateDeploymentTarget",
+  "listBuildRuns", "getBuildRun", "triggerBuildRun", "cancelBuildRun",
+  "listReleases", "getRelease", "createRelease", "rollbackRelease",
+  "listGatewayRoutes", "getGatewayRoute", "createGatewayRoute", "updateGatewayRoute",
+  "getReleaseRuntimeLogs", "listRuntimeEvents",
+  "webSearch", "fetchWebPage",
+])
+
+function operationPriority(operationId: string): number {
+  return essentialWorkflowOperations.has(operationId) ? 1 : 0
+}
+
+function relevantCategories(input: string): Set<string> {
+  const value = input.toLowerCase()
+  const categories = new Set<string>(["dashboard", "projects", "applications", "events", "apptemplates"])
+  const add = (...items: string[]) => items.forEach(item => categories.add(item))
+  if (/部署|安装|上线|发布|构建|源码|代码|仓库|镜像|模板|deploy|install|release|build|source|repository|image/.test(value)) {
+    add("deployments", "builds", "releases", "runtime", "registries", "git", "gateway", "topology")
+  }
+  if (/诊断|故障|异常|失败|日志|事件|健康|diagnos|error|fail|log|health/.test(value)) {
+    add("deployments", "builds", "releases", "runtime", "gateway", "notifications")
+  }
+  if (/网关|域名|证书|路由|gateway|domain|certificate|dns/.test(value)) add("gateway", "deployments", "runtime")
+  if (/集群|运行时|pod|kubernetes|k3s|cluster|runtime/.test(value)) add("runtime", "deployments")
+  if (/通知|投递|notification|delivery/.test(value)) add("notifications", "events")
+  if (/成员|用户|权限|认证|安全|mfa|oauth|token|member|user|permission|auth|security/.test(value)) {
+    add("users", "auth", "oauthapplications", "configs")
+  }
+  if (/账单|费用|成本|余额|billing|cost|wallet/.test(value)) add("billing")
+  if (/设置|配置|保留|清理|setting|config|retention|cleanup/.test(value)) add("configs", "dataretention")
+  if (/关系|拓扑|依赖|绑定|relation|topology|dependency|binding/.test(value)) add("topology")
+  return categories
+}
+
 export function validateArguments(schema: ToolOperation["inputSchema"], input: unknown): Record<string, unknown> {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("ai.tool_arguments_invalid")
   const value = input as Record<string, unknown>
@@ -91,12 +123,29 @@ export function validateArguments(schema: ToolOperation["inputSchema"], input: u
   if (Object.keys(value).some(key => !allowed.has(key)) || schema.required.some(key => value[key] === undefined)) throw new Error("ai.tool_arguments_invalid")
   for (const [key, item] of Object.entries(value)) {
     const rule = schema.properties[key]
-    if (!rule || !matches(rule.type, item)) throw new Error("ai.tool_arguments_invalid")
-    if (typeof item === "string" && rule.maxLength && item.length > rule.maxLength) throw new Error("ai.tool_arguments_invalid")
-    if (typeof item === "number" && rule.maximum !== undefined && item > rule.maximum) throw new Error("ai.tool_arguments_invalid")
-    if (rule.enum && !rule.enum.includes(item as never)) throw new Error("ai.tool_arguments_invalid")
+    if (!rule || !validateSchemaValue(rule, item)) throw new Error("ai.tool_arguments_invalid")
   }
   return value
+}
+
+function validateSchemaValue(rule: Record<string, unknown>, value: unknown): boolean {
+  const type = rule.type
+  if (typeof type === "string" && !matches(type, value)) return false
+  if (Array.isArray(rule.enum) && !rule.enum.includes(value)) return false
+  if (typeof value === "string" && typeof rule.maxLength === "number" && value.length > rule.maxLength) return false
+  if (typeof value === "number" && typeof rule.maximum === "number" && value > rule.maximum) return false
+  if (Array.isArray(value) && rule.items && typeof rule.items === "object") {
+    return value.every(item => validateSchemaValue(rule.items as Record<string, unknown>, item))
+  }
+  if (value && typeof value === "object" && !Array.isArray(value) && rule.properties && typeof rule.properties === "object") {
+    const object = value as Record<string, unknown>
+    const properties = rule.properties as Record<string, Record<string, unknown>>
+    const required = Array.isArray(rule.required) ? rule.required.filter((item): item is string => typeof item === "string") : []
+    if (required.some(key => object[key] === undefined)) return false
+    if (rule.additionalProperties === false && Object.keys(object).some(key => !properties[key])) return false
+    return Object.entries(object).every(([key, item]) => !properties[key] || validateSchemaValue(properties[key], item))
+  }
+  return true
 }
 
 function matches(type: string, value: unknown): boolean {

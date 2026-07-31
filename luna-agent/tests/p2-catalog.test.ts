@@ -60,4 +60,34 @@ describe("platform tool catalog", () => {
     expect(catalog.modelTools().find(tool => tool.operationId === "fetchWebPage")?.description)
       .toContain("不可信外部数据")
   })
+
+  it("keeps the complete delivery chain available when the user asks for deployment", () => {
+    const operationIds = [
+      "getProject", "createApplication", "createDeploymentTarget",
+      "triggerBuildRun", "createRelease", "createGatewayRoute", "getReleaseRuntimeLogs",
+    ]
+    const dynamicOperations = operationIds.map((operationId, index) => ({
+      operationId,
+      method: index === 0 || index === operationIds.length - 1 ? "GET" as const : "POST" as const,
+      path: `/api/v1/test/${operationId}`,
+      category: operationId.includes("Build") ? "builds"
+        : operationId.includes("Release") ? "releases"
+          : operationId.includes("Gateway") ? "gateway"
+            : operationId.includes("Deployment") ? "deployments"
+              : operationId.includes("Application") ? "applications"
+                : "projects",
+      description: `调用 ${operationId}。`,
+      risk: "read" as const,
+      requiredScopes: ["project:read"],
+      approval: "never" as const,
+      idempotent: true,
+      timeoutMs: 30_000,
+      inputSchema: { type: "object" as const, properties: {}, required: [], additionalProperties: false as const },
+    }))
+    const selected = ToolCatalog.load(dynamicOperations)
+      .modelTools({}, "从代码仓库构建、发布并部署应用，然后配置网关")
+      .map(tool => tool.operationId)
+
+    expect(selected).toEqual(expect.arrayContaining(operationIds))
+  })
 })

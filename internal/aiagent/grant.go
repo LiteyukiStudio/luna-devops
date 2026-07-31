@@ -33,6 +33,8 @@ type DelegationClaims struct {
 	SessionID     string   `json:"sessionId"`
 	Scopes        []string `json:"scopes"`
 	ArgumentsHash string   `json:"argumentsHash"`
+	MFAPurpose    string   `json:"mfaPurpose,omitempty"`
+	MFAAssertion  string   `json:"mfaAssertion,omitempty"`
 	IssuedAt      int64    `json:"iat"`
 	ExpiresAt     int64    `json:"exp"`
 }

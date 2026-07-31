@@ -28,24 +28,28 @@ type aiToolPolicy struct {
 	MFAPurpose       string
 }
 
-var aiToolPolicies = map[string]aiToolPolicy{
-	"getDashboard":               {OperationID: "getDashboard", Scopes: []string{"dashboard:read"}, Risk: "read"},
-	"listProjects":               {OperationID: "listProjects", Scopes: []string{"project:read"}, Risk: "read"},
-	"listAppTemplates":           {OperationID: "listAppTemplates", Scopes: []string{"application:read"}, Risk: "read"},
-	"webSearch":                  {OperationID: "webSearch", Scopes: []string{"web:read"}, Risk: "read"},
-	"fetchWebPage":               {OperationID: "fetchWebPage", Scopes: []string{"web:read"}, Risk: "read"},
-	"createProject":              {OperationID: "createProject", Scopes: []string{"project:write"}, Risk: "write"},
-	"listPlatformEvents":         {OperationID: "listPlatformEvents", Scopes: []string{"event:read"}, ProjectAction: authz.ActionProjectRead, Risk: "read"},
-	"getProject":                 {OperationID: "getProject", Scopes: []string{"project:read"}, ProjectAction: authz.ActionProjectRead, Risk: "read"},
-	"listApplications":           {OperationID: "listApplications", Scopes: []string{"application:read"}, ProjectAction: authz.ActionApplicationRead, Risk: "read"},
-	"listBuildRuns":              {OperationID: "listBuildRuns", Scopes: []string{"build:read"}, ProjectAction: authz.ActionBuildRead, Risk: "read"},
-	"listReleases":               {OperationID: "listReleases", Scopes: []string{"deployment:read"}, ProjectAction: authz.ActionDeploymentRead, Risk: "read"},
-	"listRuntimeClusters":        {OperationID: "listRuntimeClusters", Scopes: []string{"cluster:read"}, ProjectAction: authz.ActionClusterRead, Risk: "read"},
-	"listGatewayRoutes":          {OperationID: "listGatewayRoutes", Scopes: []string{"gateway:read"}, ProjectAction: authz.ActionGatewayRead, Risk: "read"},
-	"listGatewayCertificates":    {OperationID: "listGatewayCertificates", Scopes: []string{"gateway:read"}, ProjectAction: authz.ActionGatewayRead, Risk: "read"},
-	"listProjectHookRuns":        {OperationID: "listProjectHookRuns", Scopes: []string{"project:read"}, ProjectAction: authz.ActionProjectRead, Risk: "read"},
-	"listNotificationDeliveries": {OperationID: "listNotificationDeliveries", Scopes: []string{"event:read"}, ProjectAction: authz.ActionProjectRead, Risk: "read"},
-	"listRuntimeEvents":          {OperationID: "listRuntimeEvents", Scopes: []string{"event:read"}, ProjectAction: authz.ActionProjectRead, Risk: "read"},
+var aiToolPolicies = buildAIToolPolicies()
+
+func buildAIToolPolicies() map[string]aiToolPolicy {
+	policies := map[string]aiToolPolicy{
+		"webSearch":               {OperationID: "webSearch", Scopes: []string{"web:read"}, Risk: "read"},
+		"fetchWebPage":            {OperationID: "fetchWebPage", Scopes: []string{"web:read"}, Risk: "read"},
+		"listGatewayCertificates": {OperationID: "listGatewayCertificates", Scopes: []string{"gateway:read"}, ProjectAction: authz.ActionGatewayRead, Risk: "read"},
+		"listRuntimeEvents":       {OperationID: "listRuntimeEvents", Scopes: []string{"event:read"}, ProjectAction: authz.ActionProjectRead, Risk: "read"},
+	}
+	operations, err := aitool.PlatformCatalog()
+	if err != nil {
+		panic("load Agent OpenAPI catalog: " + err.Error())
+	}
+	for _, operation := range operations {
+		policies[operation.OperationID] = aiToolPolicy{
+			OperationID: operation.OperationID,
+			Scopes:      append([]string(nil), operation.RequiredScopes...),
+			Risk:        operation.Risk, ApprovalRequired: operation.Approval == "always",
+			MFAPurpose: operation.StepUpPurpose,
+		}
+	}
+	return policies
 }
 
 type aiDelegationExchangeInput struct {
@@ -83,8 +87,21 @@ func (h *Handlers) ExchangeAIDelegation(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusPreconditionRequired, "ai.approval_required", "high-risk tool requires bound approval")
 		return
 	}
-	if policy.MFAPurpose != "" && input.MFAPurpose != policy.MFAPurpose {
+	effectiveMFAPurpose := policy.MFAPurpose
+	if input.MFAPurpose != "" {
+		requestedPurpose := normalizeStepUpPurpose(input.MFAPurpose)
+		if requestedPurpose == "" || (effectiveMFAPurpose != "" && requestedPurpose != effectiveMFAPurpose) {
+			writeErrorCode(ctx, http.StatusPreconditionRequired, "mfa_required", "high-risk tool requires step-up verification")
+			return
+		}
+		effectiveMFAPurpose = requestedPurpose
+	}
+	if policy.MFAPurpose != "" && effectiveMFAPurpose != policy.MFAPurpose {
 		writeErrorCode(ctx, http.StatusPreconditionRequired, "mfa_required", "high-risk tool requires step-up verification")
+		return
+	}
+	if input.StepUpAssertionID != "" && effectiveMFAPurpose == "" {
+		writeErrorCode(ctx, http.StatusBadRequest, "ai.delegation_request_invalid", "step-up purpose is required with an assertion")
 		return
 	}
 	if !sameStringSet(input.RequestedScopes, policy.Scopes) {
@@ -106,7 +123,7 @@ func (h *Handlers) ExchangeAIDelegation(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusForbidden, "ai.authorization_changed", "actor authorization is no longer valid")
 		return
 	}
-	if policy.MFAPurpose != "" && !h.validAIToolMFAAssertion(grant, input.StepUpAssertionID, policy.MFAPurpose, now) {
+	if effectiveMFAPurpose != "" && !h.validAIToolMFAAssertion(grant, input.StepUpAssertionID, effectiveMFAPurpose, now) {
 		writeErrorCode(ctx, http.StatusForbidden, "mfa.assertion_invalid", "step-up assertion is invalid for this tool")
 		return
 	}
@@ -115,6 +132,7 @@ func (h *Handlers) ExchangeAIDelegation(ctx *gin.Context) {
 		RunID: grant.RunID, ToolCallID: input.ToolCallID, OperationID: input.OperationID,
 		UserID: grant.UserID, SessionID: grant.SessionID,
 		Scopes: append([]string(nil), policy.Scopes...), ArgumentsHash: input.ArgumentsHash,
+		MFAPurpose: effectiveMFAPurpose, MFAAssertion: input.StepUpAssertionID,
 		IssuedAt: now.Unix(), ExpiresAt: now.Add(time.Minute).Unix(),
 	}
 	token, err := aiagent.SignDelegationToken(claims, internalKeys.DelegationTokenSigningKey)
@@ -151,6 +169,37 @@ func (h *Handlers) ExecuteAIInternalTool(ctx *gin.Context) {
 	}
 	if claims.ArgumentsHash != "" && claims.ArgumentsHash != hashAIArguments(input.Arguments) {
 		writeErrorCode(ctx, http.StatusConflict, "ai.approval_arguments_changed", "tool arguments differ from delegated arguments")
+		return
+	}
+	if operation, exists := aitool.PlatformOperation(claims.OperationID); exists {
+		result, err := h.dispatchAIPlatformOperation(ctx, claims, operation, input.Arguments)
+		if err != nil {
+			h.audit(claims.UserID, "ai.tool.execute", claims.OperationID+":"+claims.ToolCallID, false, "request.invalid")
+			writeErrorCode(ctx, http.StatusBadRequest, "request.invalid", "AI tool arguments are invalid")
+			return
+		}
+		if result.RequestID != "" {
+			ctx.Header("X-Platform-Request-ID", result.RequestID)
+		}
+		success := result.Status >= http.StatusOK && result.Status < http.StatusMultipleChoices
+		h.audit(claims.UserID, "ai.tool.execute", claims.OperationID+":"+claims.ToolCallID, success, "delegated platform API operation executed")
+		if !success {
+			if result.Body == nil {
+				ctx.Status(result.Status)
+				return
+			}
+			ctx.JSON(result.Status, result.Body)
+			return
+		}
+		readOperation := strings.EqualFold(operation.Method, http.MethodGet)
+		ctx.JSON(result.Status, gin.H{
+			"operationId":          claims.OperationID,
+			"accepted":             true,
+			"verified":             readOperation,
+			"result":               result.Body,
+			"platformRequestId":    result.RequestID,
+			"verificationRequired": !readOperation,
+		})
 		return
 	}
 	result, code, errCode := h.executeRegisteredAITool(ctx, claims, input.Arguments)

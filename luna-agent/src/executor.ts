@@ -134,6 +134,7 @@ export class RunExecutor {
         let createOptionsCalled = false
         let prepareInteractionCardsCalled = false
         let createInteractionCardsCalled = false
+        let createdInteractionCardMode: "presentation" | "interactive" | undefined
         let recoverableToolError = false
         const hasPlatformTool = toolCalls.some(call => !internalToolOperationIds.has(call.operationId))
         for (const toolCall of toolCalls) {
@@ -171,10 +172,22 @@ export class RunExecutor {
                 continue
               }
               createInteractionCardsCalled = true
+              createdInteractionCardMode = creation.mode
               interactionCardsCreated = true
             }
             continuationMessages.push(toolResultMessage(toolCall, {
               status: hasPlatformTool ? "deferred_until_platform_results" : "succeeded",
+              ...(!hasPlatformTool && createdInteractionCardMode
+                ? {
+                    workflowState: createdInteractionCardMode === "interactive"
+                      ? "awaiting_user_input"
+                      : "evidence_presented",
+                    completionEvidence: false,
+                    guidance: createdInteractionCardMode === "interactive"
+                      ? "卡片正在等待用户提交输入或选择；这不代表业务目标已经完成。"
+                      : "卡片只完成了结果呈现，不代表任何业务操作已经执行或通过验收。请根据用户目标继续执行、回读验证，或明确说明尚未完成的原因；不要重复生成同一张卡片。",
+                  }
+                : {}),
             }))
             continue
           }
@@ -227,7 +240,12 @@ export class RunExecutor {
         if (recoverableToolError) continue
         if (platformToolCalled) pendingOptions = undefined
         if (prepareInteractionCardsCalled && !createInteractionCardsCalled) continue
-        if (!platformToolCalled && (result.answer || createOptionsCalled || createInteractionCardsCalled)) {
+        if (!platformToolCalled && createInteractionCardsCalled) {
+          if (createdInteractionCardMode === "presentation") continue
+          completed = true
+          break
+        }
+        if (!platformToolCalled && (result.answer || createOptionsCalled)) {
           completed = true
           break
         }
@@ -402,7 +420,7 @@ export class RunExecutor {
     })
     await this.repository.appendEvent(runId, "item.completed", { itemId })
     preparations.delete(input.generationId)
-    return { accepted: true as const }
+    return { accepted: true as const, mode: input.mode }
   }
 
   private async failCardPreparations(runId: string, preparations: Map<string, CardPreparation>, errorCode: string) {

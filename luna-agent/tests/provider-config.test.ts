@@ -11,12 +11,14 @@ describe("ProviderConfigClient", () => {
         version: "cfg-1",
         provider: { baseUrl: "https://provider.example/v1/", model: "model-a", apiKey: "secret", configured: true },
         runtime: { providerTimeoutMs: 45_000, runTimeoutMs: 420_000, agentConcurrentRuns: 3 },
+        toolCatalog: [{ operationId: "listProjects" }],
       }), { status: 200, headers: { "content-type": "application/json", "cache-control": "no-store" } })
     })
     vi.stubGlobal("fetch", fetchMock)
     const config = await new ProviderConfigClient("https://luna-api.internal", "callback-token-value").get()
     expect(config.version).toBe("cfg-1")
     expect(config.runtime).toEqual({ providerTimeoutMs: 45_000, runTimeoutMs: 420_000, agentConcurrentRuns: 3 })
+    expect(config.toolCatalog).toEqual([{ operationId: "listProjects" }])
     expect(fetchMock).toHaveBeenCalledOnce()
   })
 

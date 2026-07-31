@@ -40,6 +40,9 @@ func (h *Handlers) currentUser(ctx *gin.Context) (model.User, bool) {
 	if user, ok := currentUserFromContext(ctx); ok {
 		return user, true
 	}
+	if user, handled := h.currentAIPlatformUser(ctx); handled {
+		return user, user.ID != ""
+	}
 	if strings.HasPrefix(strings.ToLower(ctx.GetHeader("Authorization")), "bearer ") {
 		user, ok := h.currentUserFromAccessToken(ctx)
 		if ok {
@@ -99,6 +102,18 @@ func (h *Handlers) platformAdminMiddleware() gin.HandlerFunc {
 }
 
 func (h *Handlers) currentSessionFromCookie(ctx *gin.Context) (model.UserSession, bool) {
+	if actor, ok := ctx.Request.Context().Value(aiPlatformActorContextKey{}).(aiPlatformActor); ok &&
+		actor.UserID != "" && actor.SessionID != "" {
+		var session model.UserSession
+		err := h.db.First(
+			&session,
+			"id = ? and user_id = ? and expires_at > ?",
+			actor.SessionID,
+			actor.UserID,
+			time.Now(),
+		).Error
+		return session, err == nil
+	}
 	plainToken, err := ctx.Cookie(sessionCookieName)
 	if err != nil {
 		return model.UserSession{}, false

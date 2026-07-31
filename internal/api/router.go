@@ -306,6 +306,7 @@ func NewRouterWithStaticFSAndMetrics(db *gorm.DB, staticFS fs.FS, httpMetrics *o
 	registerStaticUI(router, staticFS, func() string {
 		return handlers.configs.get([]string{siteBrandColorPresetKey})[siteBrandColorPresetKey]
 	})
+	handlers.platformRouter = router
 	return router
 }
 

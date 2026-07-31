@@ -17,23 +17,26 @@ func TestAIToolRegistryRejectsArbitraryOperationsAndPaths(t *testing.T) {
 	if _, exists := aiToolPolicies["executeSQL"]; exists {
 		t.Fatal("arbitrary SQL must never enter the AI tool catalog")
 	}
+	if len(aiToolPolicies) < 150 {
+		t.Fatalf("Agent platform catalog is unexpectedly small: %d", len(aiToolPolicies))
+	}
 	for operationID, policy := range aiToolPolicies {
 		if operationID != policy.OperationID {
 			t.Fatalf("mismatched tool policy %s = %#v", operationID, policy)
 		}
-		if operationID == "createProject" {
-			if policy.Risk != "write" || policy.ApprovalRequired || policy.MFAPurpose != "" {
-				t.Fatalf("unexpected low-risk project creation policy = %#v", policy)
-			}
-			continue
+		if (policy.Risk == "sensitive" || policy.Risk == "destructive") && !policy.ApprovalRequired {
+			t.Fatalf("high-risk operation does not require approval %s = %#v", operationID, policy)
 		}
-		if policy.Risk != "read" || policy.ApprovalRequired || policy.MFAPurpose != "" {
-			t.Fatalf("unsafe registered tool policy %s = %#v", operationID, policy)
+		if policy.Risk == "read" && policy.ApprovalRequired {
+			t.Fatalf("read operation unexpectedly requires approval %s = %#v", operationID, policy)
 		}
+	}
+	if policy := aiToolPolicies["createProject"]; policy.Risk != "write" || policy.ApprovalRequired {
+		t.Fatalf("unexpected low-risk project creation policy = %#v", policy)
 	}
 }
 
-func TestAIReadToolPoliciesReuseProjectRBACIncludingViewer(t *testing.T) {
+func TestAIOpenAPIToolsDelegateAuthorizationToPlatformHandlers(t *testing.T) {
 	for operationID, policy := range aiToolPolicies {
 		if policy.Risk != "read" || policy.ProjectAction == "" {
 			continue
@@ -42,8 +45,10 @@ func TestAIReadToolPoliciesReuseProjectRBACIncludingViewer(t *testing.T) {
 			t.Errorf("viewer denied read operation %s via action %s", operationID, policy.ProjectAction)
 		}
 	}
-	if aiToolPolicies["listApplications"].ProjectAction != authz.ActionApplicationRead {
-		t.Fatalf("listApplications policy = %#v", aiToolPolicies["listApplications"])
+	for _, operationID := range []string{"listApplications", "createApplication", "deleteApplication"} {
+		if aiToolPolicies[operationID].ProjectAction != "" {
+			t.Fatalf("OpenAPI operation %s must reuse its platform Handler authorization: %#v", operationID, aiToolPolicies[operationID])
+		}
 	}
 }
 

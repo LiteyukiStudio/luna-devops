@@ -7,7 +7,7 @@ export type ModelToolDefinition = {
   description: string
   inputSchema: Record<string, unknown>
 }
-export type ModelToolResolver = ModelToolDefinition[] | ((pageContext: Record<string, unknown>) => ModelToolDefinition[])
+export type ModelToolResolver = ModelToolDefinition[] | ((pageContext: Record<string, unknown>, userInput: string) => ModelToolDefinition[])
 export type ModelToolChoice = "auto" | "required" | { operationId: string }
 export type ModelRequest = {
   messages: ModelMessage[]

@@ -110,6 +110,76 @@ describe("versioned system prompt", () => {
     expect(prompt).toContain("候选超过 5 个时，使用 form 的 select 字段")
   })
 
+  it("loads task completion criteria and treats loop limits as safety ceilings", () => {
+    const context = {
+      userInput: "帮我安装 PostgreSQL，完成后验证是否部署成功",
+      operationIds: ["listAppTemplates"],
+    }
+    const names = loadedSkillReferences(context).map(item => item.name)
+    const prompt = systemPromptFor("system-v4", context)
+
+    expect(names).toContain("task-completion")
+    expect(prompt).toContain("卡片只是交互和呈现层，不是业务执行或验收终态")
+    expect(prompt).toContain("安全上限，不是完成条件")
+    expect(prompt).toContain("没有安装写工具时应明确说“尚未安装”")
+    expect(prompt).toContain("通用验收清单")
+  })
+
+  it.each([
+    {
+      input: "从应用市场安装 PostgreSQL 到一个新项目空间并部署完成",
+      expected: ["delivery-orchestration", "projects-applications", "runtime-deployment", "task-completion"],
+      evidence: "应用市场模板分支",
+    },
+    {
+      input: "使用镜像站里的 ghcr.io/example/api:v2 创建应用并发布",
+      expected: ["delivery-orchestration", "projects-applications", "source-build-release", "runtime-deployment"],
+      evidence: "已有镜像分支",
+    },
+    {
+      input: "读取 GitHub 仓库文档，从源码构建并上线这个项目",
+      expected: ["delivery-orchestration", "source-build-release", "runtime-deployment"],
+      evidence: "代码仓库分支",
+    },
+    {
+      input: "诊断这个应用为什么 Pod 一直不健康",
+      expected: ["projects-applications", "runtime-deployment", "diagnostics-observability"],
+      evidence: "应用问题诊断流程",
+    },
+    {
+      input: "给应用配置域名、TLS 证书和网关入口",
+      expected: ["gateway-networking", "task-completion"],
+      evidence: "Accepted、ResolvedRefs、Programmed",
+    },
+    {
+      input: "配置 Webhook、部署钩子和失败通知自动化",
+      expected: ["source-build-release", "diagnostics-observability", "integrations-automation"],
+      evidence: "自动化闭环",
+    },
+    {
+      input: "创建服务引用并检查项目拓扑是否真的连通",
+      expected: ["projects-applications", "integrations-automation"],
+      evidence: "Service、端口、EndpointSlice、NetworkPolicy",
+    },
+    {
+      input: "检查用户权限，创建最小权限 Access Token 并完成 MFA",
+      expected: ["security-administration", "task-completion"],
+      evidence: "MFA、OAuth 与敏感会话",
+    },
+    {
+      input: "分析这个月账单异常并检查数据保留清理策略",
+      expected: ["diagnostics-observability", "security-administration"],
+      evidence: "平台设置与数据保留",
+    },
+  ])("loads the workflow references for $input", ({ input, expected, evidence }) => {
+    const context = { userInput: input }
+    const names = loadedSkillReferences(context).map(item => item.name)
+    const prompt = systemPromptFor("system-v4", context)
+
+    for (const name of expected) expect(names).toContain(name)
+    expect(prompt).toContain(evidence)
+  })
+
   it("does not load every domain merely because the full tool catalog is available", () => {
     const names = loadedSkillReferences({
       userInput: "帮我看看最近为什么构建失败",
