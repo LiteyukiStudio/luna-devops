@@ -77,7 +77,7 @@ export function AIInteractionCards({ arguments: rawArguments, onAction }: AIInte
   const density = interactionCardDensity(group)
   const templateConfig = interactionCardTemplateConfigs[group.template]
   return (
-    <section className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)]', density === 'compact' ? 'gap-2' : 'gap-2.5')} data-ai-card-density={density} data-ai-card-group={group.template}>
+    <section className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)]', density === 'compact' ? 'gap-2' : 'gap-2.5')} data-ai-card-density={density} data-ai-card-group={group.template} data-ai-card-mode={group.mode}>
       <header className="px-0.5">
         <p className="text-[10px] font-medium uppercase tracking-wide text-primary-text">{t(`aiAssistant.cards.templates.${group.template}`)}</p>
         <h3 className="mt-0.5 text-[13px] font-semibold leading-5"><AIInlineMarkdown>{group.title}</AIInlineMarkdown></h3>

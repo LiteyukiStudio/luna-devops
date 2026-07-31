@@ -299,6 +299,9 @@ export const createInteractionCardsInput = z.object({
   generationId: identifier,
   title: shortText,
   description,
+  mode: z.enum(["presentation", "interactive"]).describe(
+    "卡片组的会话职责。presentation 表示当前任务已经回答完，只呈现事实或结果；interactive 表示当前工作流正在等待用户选择、填写或确认后才能继续。",
+  ),
   template: z.enum(["catalog", "comparison", "inspector", "form", "wizard", "diagnosis", "plan", "progress", "result", "dashboard"]),
   display: z.object({
     density: z.enum(["comfortable", "compact"]).optional(),
@@ -306,6 +309,41 @@ export const createInteractionCardsInput = z.object({
   cards: z.array(card).min(1).max(12),
   groupActions: z.array(cardAction).max(3).optional(),
 }).superRefine((input, context) => {
+  const formCards = input.cards.filter(item => item.form)
+  const responseActions = [
+    ...input.cards.flatMap(item => item.actions ?? []),
+    ...(input.groupActions ?? []),
+  ].filter(action => action.type === "send_message" || action.type === "tool")
+
+  if (input.mode === "presentation" && formCards.length > 0) {
+    context.addIssue({
+      code: "custom",
+      message: "Presentation cards cannot contain input fields. Use interactive mode.",
+      path: ["mode"],
+    })
+  }
+  if (input.mode === "interactive" && responseActions.length === 0) {
+    context.addIssue({
+      code: "custom",
+      message: "Interactive cards must provide a send_message or tool action that submits the user's decision.",
+      path: ["mode"],
+    })
+  }
+  if ((input.template === "form" || input.template === "wizard") && input.mode !== "interactive") {
+    context.addIssue({
+      code: "custom",
+      message: `${input.template} templates must use interactive mode.`,
+      path: ["mode"],
+    })
+  }
+  if ((input.template === "form" || input.template === "wizard") && formCards.length === 0) {
+    context.addIssue({
+      code: "custom",
+      message: `${input.template} templates must contain input fields.`,
+      path: ["cards"],
+    })
+  }
+
   const cardIds = new Set<string>()
   input.cards.forEach((item, cardIndex) => {
     if (cardIds.has(item.id))
@@ -324,6 +362,25 @@ export const createInteractionCardsInput = z.object({
     })
     const fields = item.form?.sections.flatMap(section => section.fields) ?? []
     const fieldsById = new Map(fields.map(field => [field.id, field]))
+    const cardResponseActions = (item.actions ?? []).filter(action => action.type === "send_message" || action.type === "tool")
+    if (input.mode === "interactive" && fields.length > 0 && cardResponseActions.length === 0) {
+      context.addIssue({
+        code: "custom",
+        message: "Every interactive card with input fields must provide its own submit action.",
+        path: ["cards", cardIndex, "actions"],
+      })
+    }
+    if (
+      input.mode === "interactive"
+      && fields.length === 0
+      && item.blocks?.some(block => block.type === "item_list" && block.items.length > 1)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "An interactive multi-item list must expose the candidates as a select field, or use one actionable card per candidate.",
+        path: ["cards", cardIndex, "blocks"],
+      })
+    }
     const sourceRefIds = new Set((item.sourceRefs ?? []).map(source => source.refId))
     item.blocks?.forEach((block, blockIndex) => {
       block.sourceRefIds?.forEach((refId, refIndex) => {
@@ -490,7 +547,7 @@ export function normalizeInteractionCardsInput(raw: unknown): unknown {
 
 export const createInteractionCardsTool: ModelToolDefinition = {
   operationId: "create_interaction_cards",
-  description: "完成一组受控的声明式内容与交互卡片。调用前必须先单独调用 prepare_interaction_cards，等待其返回 accepted，再使用完全相同的 generationId 调用本工具；前端会用最终卡片原位替换准备动画。template 必须按当前工作流阶段选择：catalog 用于候选发现，comparison 用于同维度比较，inspector 用于已知资源事实，form 用于一轮内收集结构化参数，wizard 用于字段存在依赖或需要分阶段收集，diagnosis 用于结论、证据和修复，plan 用于执行前计划，progress 用于长任务状态，result 用于最终回执，dashboard 用于指标与健康概览。只要下一步需要用户填写、选择、切换或组合一个或多个结构化操作参数，就必须使用 form 或 wizard，不得用 create_options、纯文本问题或空白消息模板代替。卡片只能引用当前工具结果中的真实资源和标识符；不能生成 HTML、CSS、脚本、任意 URL 或虚构状态。展示文本可以使用受控 Markdown，但 HTML 会被忽略。tool action 只能引用当前模型工具列表中已经存在的 operationId，平台仍会重新鉴权并按风险要求确认或 MFA；没有对应写入工具时只能展示或用 send_message 收集选择。send_message 需要带入表单值时只能在 message 中使用 {{field_id}}，不得自创路径或模板语法；敏感字段永远不能插入消息。简单的 2～5 个无需结构化输入的后续建议继续使用 create_options。",
+  description: "完成一组受控的声明式内容与交互卡片。调用前必须先单独调用 prepare_interaction_cards，等待其返回 accepted，再使用完全相同的 generationId 调用本工具；前端会用最终卡片原位替换准备动画。必须先确定 mode：当前回复已经满足用户请求、只呈现事实或结果时使用 presentation；回复中出现“请选择、请填写、请确认、告诉我”等等待用户输入的要求，或必须取得用户决定才能继续当前任务时，必须使用 interactive，并提供能提交该决定的字段/按钮。presentation 不得包含表单；interactive 不得只有不可点击的 item_list。多个丰富候选默认每个候选一张带 send_message/tool 动作的卡片；候选较多时使用 form 的 select 字段并提供提交动作。template 必须按当前工作流阶段选择：catalog 用于候选发现，comparison 用于同维度比较，inspector 用于已知资源事实，form 用于一轮内收集结构化参数，wizard 用于字段存在依赖或需要分阶段收集，diagnosis 用于结论、证据和修复，plan 用于执行前计划，progress 用于长任务状态，result 用于最终回执，dashboard 用于指标与健康概览。只要下一步需要用户填写、选择、切换或组合一个或多个结构化操作参数，就必须使用 form 或 wizard，不得用 create_options、纯文本问题或空白消息模板代替。卡片只能引用当前工具结果中的真实资源和标识符；不能生成 HTML、CSS、脚本、任意 URL 或虚构状态。展示文本可以使用受控 Markdown，但 HTML 会被忽略。tool action 只能引用当前模型工具列表中已经存在的 operationId，平台仍会重新鉴权并按风险要求确认或 MFA；没有对应写入工具时只能展示或用 send_message 收集选择。send_message 需要带入表单值时只能在 message 中使用 {{field_id}}，不得自创路径或模板语法；敏感字段永远不能插入消息。简单的 2～5 个无需结构化输入的后续建议继续使用 create_options。",
   inputSchema: cardInputJsonSchema(),
 }
 

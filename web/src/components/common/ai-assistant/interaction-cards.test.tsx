@@ -7,6 +7,7 @@ const catalogCard = {
   schemaVersion: 1,
   generationId: 'database-candidates',
   title: '选择数据库',
+  mode: 'interactive',
   template: 'catalog',
   cards: [{
     id: 'postgresql',
@@ -139,6 +140,86 @@ describe('ai interaction cards', () => {
     render(<AIInteractionCards arguments={{ schemaVersion: 1, template: 'approval', cards: [] }} onAction={vi.fn()} />)
 
     expect(screen.getByRole('alert')).toBeInTheDocument()
+  })
+
+  it('rejects a display-only candidate list when the workflow is waiting for a selection', () => {
+    render(
+      <AIInteractionCards
+        arguments={{
+          schemaVersion: 1,
+          generationId: 'template-selection',
+          title: '请选择应用模板',
+          mode: 'interactive',
+          template: 'catalog',
+          cards: [{
+            id: 'templates',
+            presentation: { variant: 'application', title: '应用模板市场' },
+            blocks: [{
+              id: 'template-list',
+              type: 'item_list',
+              items: [
+                { id: 'postgresql', primary: 'PostgreSQL' },
+                { id: 'redis', primary: 'Redis' },
+              ],
+            }],
+          }],
+        }}
+        onAction={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByRole('alert')).toHaveTextContent('aiAssistant.cards.invalid')
+    expect(screen.queryByText('PostgreSQL')).not.toBeInTheDocument()
+  })
+
+  it('submits a candidate selected through an interactive form card', async () => {
+    const onAction = vi.fn<(action: AIUIAction) => Promise<boolean>>().mockResolvedValue(true)
+    const card = {
+      schemaVersion: 1,
+      generationId: 'template-selection',
+      title: '选择应用模板',
+      mode: 'interactive',
+      template: 'form',
+      cards: [{
+        id: 'template-selection',
+        presentation: { variant: 'form', title: '应用模板' },
+        form: {
+          sections: [{
+            id: 'selection',
+            fields: [{
+              id: 'templateId',
+              type: 'select',
+              display: 'radio',
+              label: '选择模板',
+              required: true,
+              options: [
+                { value: 'postgresql', label: 'PostgreSQL', description: '关系型数据库' },
+                { value: 'redis', label: 'Redis', description: '内存缓存' },
+              ],
+            }],
+          }],
+        },
+        actions: [{
+          id: 'continue',
+          type: 'send_message',
+          label: '继续配置',
+          message: '继续配置 {{templateId}}。',
+          emphasis: 'primary',
+        }],
+      }],
+    }
+    render(<AIInteractionCards arguments={card} onAction={onAction} />)
+
+    const actionButton = screen.getByRole('button', { name: '继续配置' })
+    expect(actionButton).toBeDisabled()
+    fireEvent.click(screen.getByRole('radio', { name: /PostgreSQL/ }))
+    await waitFor(() => expect(actionButton).toBeEnabled())
+    fireEvent.click(actionButton)
+
+    await waitFor(() => expect(onAction).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'send_message',
+      payload: { message: '继续配置 postgresql。' },
+    })))
   })
 
   it('renders card descriptions as safe markdown and ignores model HTML', () => {

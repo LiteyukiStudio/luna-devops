@@ -7,6 +7,9 @@ const validValues = {
   apiKey: '',
   apiKeyConfigured: true,
   model: 'model-1',
+  webProxyEnabled: false,
+  webProxyPool: '',
+  webProxyPoolConfigured: false,
   providerTimeoutSeconds: 30,
   runTimeoutSeconds: 300,
   agentConcurrentRuns: 2,
@@ -24,6 +27,7 @@ describe('aI assistant admin settings', () => {
       'ai.assistant.enabled': false,
       'ai.provider.base_url': 'https://api.example.com/v1',
       'ai.provider.default_model': 'model-1',
+      'ai.web.proxy_enabled': false,
       'ai.runtime.provider_timeout_seconds': 30,
       'ai.runtime.run_timeout_seconds': 300,
       'ai.runtime.agent_concurrent_runs': 2,
@@ -37,5 +41,25 @@ describe('aI assistant admin settings', () => {
   it('rejects unsafe runtime settings', () => {
     expect(aiSettingsSchema.safeParse({ ...validValues, runTimeoutSeconds: 10 }).success).toBe(false)
     expect(aiSettingsSchema.safeParse({ ...validValues, agentConcurrentRuns: 100 }).success).toBe(false)
+  })
+
+  it('accepts authenticated HTTP proxy URLs and keeps configured pools write-only', () => {
+    const withProxy = {
+      ...validValues,
+      webProxyEnabled: true,
+      webProxyPool: 'http://user:password@proxy.example.com:888',
+    }
+    expect(aiSettingsSchema.safeParse(withProxy).success).toBe(true)
+    expect(aiSettingsPayload(withProxy)['ai.web.proxy_pool']).toBe(withProxy.webProxyPool)
+
+    const unchanged = { ...withProxy, webProxyPool: '', webProxyPoolConfigured: true }
+    expect(aiSettingsSchema.safeParse(unchanged).success).toBe(true)
+    expect(aiSettingsPayload(unchanged)).not.toHaveProperty('ai.web.proxy_pool')
+  })
+
+  it('rejects unsupported proxy schemes and proxy URL paths', () => {
+    for (const webProxyPool of ['socks5://proxy.example.com:1080', 'http://proxy.example.com:888/path']) {
+      expect(aiSettingsSchema.safeParse({ ...validValues, webProxyEnabled: true, webProxyPool }).success).toBe(false)
+    }
   })
 })

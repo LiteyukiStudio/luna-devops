@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/appstore"
@@ -12,15 +13,19 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/observation"
 	projectservice "github.com/LiteyukiStudio/devops/internal/project"
+	"github.com/LiteyukiStudio/devops/internal/security"
 	"gorm.io/gorm"
 )
 
 var (
-	ErrForbidden    = errors.New("AI tool target is forbidden")
-	ErrNotFound     = errors.New("AI tool resource was not found")
-	ErrInvalidInput = errors.New("AI tool input is invalid")
-	ErrConflict     = errors.New("AI tool operation conflicts with current state")
-	ErrStorage      = errors.New("AI tool storage is unavailable")
+	ErrForbidden          = errors.New("AI tool target is forbidden")
+	ErrNotFound           = errors.New("AI tool resource was not found")
+	ErrInvalidInput       = errors.New("AI tool input is invalid")
+	ErrConflict           = errors.New("AI tool operation conflicts with current state")
+	ErrStorage            = errors.New("AI tool storage is unavailable")
+	ErrWebTargetBlocked   = errors.New("AI web target is blocked")
+	ErrWebRequestFailed   = errors.New("AI web request failed")
+	ErrWebContentRejected = errors.New("AI web content is not readable")
 )
 
 const applicationListColumns = "id, name, identifier, icon, delete_status, created_at, updated_at"
@@ -43,11 +48,35 @@ type Result struct {
 }
 
 type Service struct {
-	db *gorm.DB
+	db                *gorm.DB
+	webPolicyProvider WebPolicyProvider
+	webProxyProvider  WebProxyProvider
+	webProxyCursor    atomic.Uint64
 }
 
-func NewService(db *gorm.DB) *Service {
-	return &Service{db: db}
+type WebPolicyProvider func(context.Context, string) (security.EgressPolicy, error)
+type WebProxyProvider func(context.Context, string) ([]string, error)
+
+type ServiceOption func(*Service)
+
+func WithWebPolicyProvider(provider WebPolicyProvider) ServiceOption {
+	return func(service *Service) {
+		service.webPolicyProvider = provider
+	}
+}
+
+func WithWebProxyProvider(provider WebProxyProvider) ServiceOption {
+	return func(service *Service) {
+		service.webProxyProvider = provider
+	}
+}
+
+func NewService(db *gorm.DB, options ...ServiceOption) *Service {
+	service := &Service{db: db}
+	for _, option := range options {
+		option(service)
+	}
+	return service
 }
 
 func (s *Service) AuthorizeActor(ctx context.Context, userID, sessionID, projectID string, policy Policy) bool {
@@ -152,6 +181,10 @@ func (s *Service) Execute(ctx context.Context, input Request) (Result, error) {
 			}
 		}
 		return Result{Value: map[string]any{"items": items}, Truncated: len(items) == limit}, nil
+	case "webSearch":
+		return s.webSearch(ctx, input.UserID, input.Arguments)
+	case "fetchWebPage":
+		return s.fetchWebPage(ctx, input.UserID, input.Arguments)
 	case "createProject":
 		webConsoleEnabled, _ := input.Arguments["webConsoleEnabled"].(bool)
 		webConsoleConfigured := input.Arguments["webConsoleEnabled"] != nil

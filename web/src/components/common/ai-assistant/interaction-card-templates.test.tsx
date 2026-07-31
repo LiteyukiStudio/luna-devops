@@ -2,7 +2,7 @@ import type { InteractionCardGroup } from './interaction-card-schema'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import i18next from '@/i18n'
-import { extremeInteractionCardFixture, interactionCardTemplateFixtures } from './interaction-card-fixtures'
+import { extremeInteractionCardFixture, interactionCardTemplateFixtures, templateSelectionInteractionCardFixture } from './interaction-card-fixtures'
 import { interactionCardTemplateConfigs } from './interaction-card-templates'
 import { AIInteractionCards } from './interaction-cards'
 
@@ -29,6 +29,7 @@ describe.each(Object.entries(interactionCardTemplateFixtures))('%s interaction c
     const group = container.querySelector(`[data-ai-card-group="${template}"]`)
     expect(group).not.toBeNull()
     expect(group).toHaveAttribute('data-ai-card-density', interactionCardTemplateConfigs[template as keyof typeof interactionCardTemplateConfigs].defaultDensity)
+    expect(group).toHaveAttribute('data-ai-card-mode', fixture.mode)
     expect(container.querySelectorAll(`[data-ai-card-template="${template}"]`)).toHaveLength(fixture.cards.length)
 
     const toggleButtons = screen.queryAllByRole('button', { name: '展开或收起卡片详情' })
@@ -97,6 +98,16 @@ describe('interaction card template edge cases', () => {
     expect(screen.queryByRole('combobox', { name: '代码源' })).not.toBeInTheDocument()
     expect(screen.getByRole('radio', { name: 'GitHub' })).toBeVisible()
     expect(screen.getByRole('radio', { name: 'Gitea' })).toBeVisible()
+  })
+
+  it('uses a compact selectable field instead of a long display-only list for many candidates', () => {
+    const { container } = render(<AIInteractionCards arguments={templateSelectionInteractionCardFixture} onAction={vi.fn()} />)
+
+    expect(container.querySelector('[data-ai-card-mode="interactive"]')).not.toBeNull()
+    expect(screen.getByRole('combobox', { name: /应用模板/ })).toBeVisible()
+    expect(screen.getAllByRole('option')).toHaveLength(9)
+    expect(container.querySelector('[data-ai-content-block="item_list"]')).toBeNull()
+    expect(screen.getByRole('button', { name: '继续配置' })).toBeDisabled()
   })
 
   it('locks one-time actions after success and keeps navigation actions repeatable', async () => {

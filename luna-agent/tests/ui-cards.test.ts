@@ -11,6 +11,7 @@ const databaseCard = {
   schemaVersion: 1,
   generationId: "database-candidates",
   title: "选择数据库",
+  mode: "interactive",
   template: "catalog",
   cards: [{
     id: "postgresql",
@@ -124,6 +125,7 @@ describe("interaction card tool", () => {
     expect(JSON.stringify(cards)).toContain("presentation")
     expect(JSON.stringify(cards)).toContain("status_list")
     expect(JSON.stringify(cards)).toContain("multi_select")
+    expect(createInteractionCardsTool.inputSchema.required).toContain("mode")
   })
 
   it.each([
@@ -138,14 +140,92 @@ describe("interaction card tool", () => {
     "result",
     "dashboard",
   ] as const)("accepts the %s workflow template", (template) => {
+    const collectsInput = template === "form" || template === "wizard"
     expect(createInteractionCardsInput.safeParse({
       schemaVersion: 1,
       generationId: `${template}-fixture`,
       title: `${template} fixture`,
+      mode: collectsInput ? "interactive" : "presentation",
       template,
       cards: [{
         id: `${template}-card`,
         presentation: { variant: "summary", title: `${template} card` },
+        ...(collectsInput
+          ? {
+              form: {
+                sections: [{
+                  id: "main",
+                  fields: [{ id: "target", type: "text", label: "Target", required: true }],
+                }],
+              },
+              actions: [{
+                id: "continue",
+                type: "send_message",
+                label: "Continue",
+                message: "Continue with {{target}}",
+              }],
+            }
+          : {}),
+      }],
+    }).success).toBe(true)
+  })
+
+  it("separates presentation cards from workflows waiting for user input", () => {
+    expect(createInteractionCardsInput.safeParse({
+      ...databaseCard,
+      mode: "presentation",
+    }).success).toBe(false)
+
+    const displayOnlyCandidates = {
+      schemaVersion: 1,
+      generationId: "display-only-candidates",
+      title: "请选择应用模板",
+      mode: "interactive",
+      template: "catalog",
+      cards: [{
+        id: "templates",
+        presentation: { variant: "application", title: "应用模板市场" },
+        blocks: [{
+          id: "template-list",
+          type: "item_list",
+          items: [
+            { id: "postgresql", primary: "PostgreSQL" },
+            { id: "redis", primary: "Redis" },
+          ],
+        }],
+      }],
+    }
+    expect(createInteractionCardsInput.safeParse(displayOnlyCandidates).success).toBe(false)
+
+    expect(createInteractionCardsInput.safeParse({
+      ...displayOnlyCandidates,
+      template: "form",
+      cards: [{
+        id: "template-selection",
+        presentation: { variant: "form", title: "选择应用模板" },
+        form: {
+          sections: [{
+            id: "selection",
+            fields: [{
+              id: "templateId",
+              type: "select",
+              display: "radio",
+              label: "应用模板",
+              required: true,
+              options: [
+                { value: "postgresql", label: "PostgreSQL" },
+                { value: "redis", label: "Redis" },
+              ],
+            }],
+          }],
+        },
+        actions: [{
+          id: "continue",
+          type: "send_message",
+          label: "继续配置",
+          message: "继续配置 {{templateId}}。",
+          emphasis: "primary",
+        }],
       }],
     }).success).toBe(true)
   })
@@ -189,6 +269,7 @@ describe("interaction card tool", () => {
         schemaVersion: 1,
         generationId: "invalid-reference",
         title: "Invalid reference",
+        mode: "presentation",
         template: "inspector",
         cards: [{
           id: "resource",
@@ -202,6 +283,7 @@ describe("interaction card tool", () => {
       schemaVersion: 1,
       generationId: "invalid-field-reference",
       title: "Invalid field reference",
+      mode: "interactive",
       template: "form",
       cards: [{
         id: "resource",
@@ -226,6 +308,7 @@ describe("interaction card tool", () => {
       schemaVersion: 1,
       generationId: "maximum",
       title: "Maximum",
+      mode: "presentation",
       template: "comparison",
       cards: Array.from({ length: 12 }, (_, cardIndex) => ({
         id: `card-${cardIndex}`,

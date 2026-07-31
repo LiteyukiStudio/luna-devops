@@ -241,6 +241,7 @@ describe("provider to tool to subsequent model invocation", () => {
               schemaVersion: 1,
               generationId: "redis-config",
               title: "Redis 配置",
+              mode: "interactive",
               template: "form",
               cards: [{
                 id: "redis",
@@ -251,6 +252,12 @@ describe("provider to tool to subsequent model invocation", () => {
                     fields: [{ id: "name", type: "text", label: "实例名称", required: true }],
                   }],
                 },
+                actions: [{
+                  id: "continue",
+                  type: "send_message",
+                  label: "继续",
+                  message: "继续配置 {{name}}",
+                }],
               }],
             },
           }],
@@ -321,6 +328,7 @@ describe("provider to tool to subsequent model invocation", () => {
               schemaVersion: 1,
               generationId: "broken-card",
               title: "无效卡片",
+              mode: "interactive",
               template: "form",
               cards: [],
             },
@@ -352,9 +360,9 @@ describe("provider to tool to subsequent model invocation", () => {
       result: {
         summaryKey: "aiAssistant.cards.failed",
         errorCode: "ai.limit_exceeded",
-        issues: [expect.objectContaining({ path: "cards" })],
       },
     })
+    expect(JSON.stringify(preparation)).toContain('"path":"cards"')
   })
 
   it("continues through multiple platform tool rounds before completing the run", async () => {

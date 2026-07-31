@@ -63,6 +63,18 @@ func TestAIToolRegistryIncludesP2DiagnosticCatalog(t *testing.T) {
 	}
 }
 
+func TestAIToolRegistryIncludesPublicWebReadTools(t *testing.T) {
+	for _, operationID := range []string{"webSearch", "fetchWebPage"} {
+		policy, ok := aiToolPolicies[operationID]
+		if !ok {
+			t.Fatalf("missing %s policy", operationID)
+		}
+		if policy.Risk != "read" || policy.ApprovalRequired || len(policy.Scopes) != 1 || policy.Scopes[0] != "web:read" {
+			t.Fatalf("unexpected %s policy = %#v", operationID, policy)
+		}
+	}
+}
+
 func TestAIAgentCallbackCredentialFailsClosed(t *testing.T) {
 	t.Setenv("AI_INTERNAL_SECRET", "")
 	recorder := httptest.NewRecorder()

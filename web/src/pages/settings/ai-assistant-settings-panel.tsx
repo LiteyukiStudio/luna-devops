@@ -14,6 +14,7 @@ import { ProgressiveSection } from '@/components/common/progressive-section'
 import { Surface } from '@/components/common/surface'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { aiSettingsPayload, aiSettingsSchema } from './ai-assistant-settings'
 
 type FormValues = AISettingsFormValues
@@ -24,6 +25,9 @@ const defaults: FormValues = {
   apiKey: '',
   apiKeyConfigured: false,
   model: '',
+  webProxyEnabled: false,
+  webProxyPool: '',
+  webProxyPoolConfigured: false,
   providerTimeoutSeconds: 30,
   runTimeoutSeconds: 300,
   agentConcurrentRuns: 2,
@@ -45,6 +49,9 @@ export function AIAssistantSettingsPanel() {
       apiKey: '',
       apiKeyConfigured: values['ai.provider.api_key'] === 'true',
       model: values['ai.provider.default_model'] ?? '',
+      webProxyEnabled: values['ai.web.proxy_enabled'] === 'true',
+      webProxyPool: '',
+      webProxyPoolConfigured: values['ai.web.proxy_pool'] === 'true',
       providerTimeoutSeconds: Number(values['ai.runtime.provider_timeout_seconds'] ?? 30),
       runTimeoutSeconds: Number(values['ai.runtime.run_timeout_seconds'] ?? 300),
       agentConcurrentRuns: Number(values['ai.runtime.agent_concurrent_runs'] ?? 2),
@@ -59,6 +66,8 @@ export function AIAssistantSettingsPanel() {
       toast.success(t('settings.ai.saved'))
       form.setValue('apiKey', '')
       form.setValue('apiKeyConfigured', values['ai.provider.api_key'] === 'true')
+      form.setValue('webProxyPool', '')
+      form.setValue('webProxyPoolConfigured', values['ai.web.proxy_pool'] === 'true')
     },
     onError: error => toast.error(error instanceof Error ? error.message : t('settings.ai.saveFailed')),
   })
@@ -67,6 +76,7 @@ export function AIAssistantSettingsPanel() {
   const providerTimeoutSeconds = form.watch('providerTimeoutSeconds')
   const runTimeoutSeconds = form.watch('runTimeoutSeconds')
   const agentConcurrentRuns = form.watch('agentConcurrentRuns')
+  const webProxyEnabled = form.watch('webProxyEnabled')
   return (
     <form className="max-w-3xl" onSubmit={form.handleSubmit(values => save.mutate(values))}>
       <Surface className="grid gap-5 rounded-xl p-6" variant="bordered">
@@ -101,6 +111,24 @@ export function AIAssistantSettingsPanel() {
             </Field>
             <Field error={errors.agentConcurrentRuns?.message} hint={t('settings.ai.agentConcurrentRunsHint')} label={t('settings.ai.agentConcurrentRuns')}>
               <Input max={10} min={1} step={1} type="number" {...form.register('agentConcurrentRuns', { valueAsNumber: true })} />
+            </Field>
+          </div>
+        </ProgressiveSection>
+        <ProgressiveSection
+          description={t('settings.ai.webProxyDescription')}
+          storageKey="luna-settings-ai-web-proxy-open"
+          summary={webProxyEnabled ? t('settings.ai.webProxySummaryEnabled') : t('settings.ai.webProxySummaryDirect')}
+          title={t('settings.ai.webProxyTitle')}
+        >
+          <div className="grid gap-4">
+            <CheckboxField description={t('settings.ai.webProxyEnabledHint')} {...form.register('webProxyEnabled')}>{t('settings.ai.webProxyEnabled')}</CheckboxField>
+            <Field error={errors.webProxyPool?.message} hint={t('settings.ai.webProxyPoolHint')} label={t('settings.ai.webProxyPool')}>
+              <Textarea
+                autoComplete="off"
+                className="min-h-28 font-mono text-sm"
+                placeholder={form.getValues('webProxyPoolConfigured') ? t('settings.ai.secretUnchanged') : 'http://user:password@proxy.example.com:888'}
+                {...form.register('webProxyPool')}
+              />
             </Field>
           </div>
         </ProgressiveSection>

@@ -31,6 +31,16 @@ const settings = {
     agentConcurrentRuns: '单实例并发 Run',
     agentConcurrentRunsHint: '每个 Agent 容器同时执行的 Run 数量，范围 1–10；多副本时总容量会叠加。',
     agentConcurrentRunsInvalid: '请输入 1 到 10 之间的整数。',
+    webProxyTitle: '外网工具代理池',
+    webProxyDescription: '仅用于 Agent 的网络搜索与网页读取，不影响模型 API、构建、Git 或平台其他网络请求。',
+    webProxySummaryEnabled: '已通过独立代理池访问外网',
+    webProxySummaryDirect: '直连外网',
+    webProxyEnabled: '启用独立代理池',
+    webProxyEnabledHint: '启用后，网络搜索和网页读取会在代理池中轮换选择代理；关闭后恢复直连，但保留已保存的代理池。',
+    webProxyPool: '代理地址',
+    webProxyPoolHint: '每行一个 HTTP 或 HTTPS 代理，最多 16 个。支持 http://user:password@host:port；认证信息加密保存且不会回显。',
+    webProxyPoolInvalid: '请输入有效的 HTTP/HTTPS 代理地址，每行一个且最多 16 个。',
+    webProxyPoolRequired: '启用代理池前请至少填写一个代理地址。',
     securitySummary: '平台仅允许 HTTPS 公网模型地址，阻止私网与保留地址访问；API Key 加密保存且不会返回浏览器。Agent 始终继承当前用户权限，高风险操作仍需二次确认。',
     saved: 'AI 助手配置已保存',
     saveFailed: 'AI 助手配置保存失败',
@@ -77,9 +87,9 @@ const settings = {
     security: {
       egress: {
         domainAllowList: { label: 'SSRF 域名特许白名单', description: '每行一个域名或通配符域名，适合明确可信的本地 FakeIP 或内网镜像站。' },
-        domainBlockList: { label: 'SSRF 域名黑名单', description: '每行一个域名或通配符域名，命中后拒绝访问。' },
+        domainBlockList: { label: '网络访问域名黑名单', description: '每行一个域名或通配符域名；AI 网页读取和其他后端外部请求命中后都会被拒绝。' },
         ipAllowList: { label: 'SSRF IP 白名单', description: '每行一个 IP 或 CIDR，用于允许可信私网或保留地址。' },
-        ipBlockList: { label: 'SSRF IP 黑名单', description: '每行一个 IP 或 CIDR，用于拦截非白名单域名解析到的受限地址。' },
+        ipBlockList: { label: '网络访问 IP 黑名单', description: '每行一个 IP 或 CIDR；域名解析结果也会检查，默认包含私网、回环和元数据地址。' },
         allowedPorts: { label: 'SSRF 允许端口', description: '留空表示不限制；填写后每行一个允许访问的端口。' },
       },
       stepUpMfa: {

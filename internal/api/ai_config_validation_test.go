@@ -8,6 +8,7 @@ import (
 func TestAIConfigDefinitionsCoverSpecificationCatalog(t *testing.T) {
 	expected := []string{
 		"ai.assistant.enabled", "ai.provider.base_url", "ai.provider.api_key", "ai.provider.default_model",
+		"ai.web.proxy_enabled", "ai.web.proxy_pool",
 		"ai.runtime.provider_timeout_seconds", "ai.runtime.run_timeout_seconds", "ai.runtime.agent_concurrent_runs",
 		"ai.access.mode", "ai.access.user_ids", "ai.access.project_ids",
 		"ai.quota.user_concurrent_runs", "ai.quota.user_daily_tokens", "ai.quota.project_concurrent_runs",
@@ -22,10 +23,15 @@ func TestAIConfigDefinitionsCoverSpecificationCatalog(t *testing.T) {
 }
 
 func TestAIProviderAPIKeyIsMaskedByConfigCache(t *testing.T) {
-	cache := &configCache{values: map[string]string{"ai.provider.api_key": "secret-id:sec_private"}}
-	value := cache.get([]string{"ai.provider.api_key"})["ai.provider.api_key"]
-	if value != "true" || strings.Contains(value, "sec_private") {
-		t.Fatalf("masked API key = %q", value)
+	cache := &configCache{values: map[string]string{
+		"ai.provider.api_key": "secret-id:sec_private",
+		"ai.web.proxy_pool":   "secret-id:sec_proxy_private",
+	}}
+	values := cache.get([]string{"ai.provider.api_key", "ai.web.proxy_pool"})
+	for key, value := range values {
+		if value != "true" || strings.Contains(value, "private") {
+			t.Fatalf("masked %s = %q", key, value)
+		}
 	}
 }
 
@@ -79,5 +85,22 @@ func TestAIConfigRejectsUnsafeRuntimeBounds(t *testing.T) {
 		if err := h.validateAIConfigValues(map[string]string{key: value}); err == nil {
 			t.Errorf("unsafe runtime setting accepted: %s=%s", key, value)
 		}
+	}
+}
+
+func TestAIConfigRequiresProxyPoolWhenEnabled(t *testing.T) {
+	defaults := make(map[string]string, len(configDefinitions))
+	for _, definition := range configDefinitions {
+		defaults[definition.Key] = definition.Default
+	}
+	h := &Handlers{configs: &configCache{values: defaults}}
+	if err := h.validateAIConfigValues(map[string]string{"ai.web.proxy_enabled": "true"}); err == nil {
+		t.Fatal("enabled proxy pool without a configured secret was accepted")
+	}
+	if err := h.validateAIConfigValues(map[string]string{
+		"ai.web.proxy_enabled": "true",
+		"ai.web.proxy_pool":    "true",
+	}); err != nil {
+		t.Fatalf("configured proxy pool rejected: %v", err)
 	}
 }

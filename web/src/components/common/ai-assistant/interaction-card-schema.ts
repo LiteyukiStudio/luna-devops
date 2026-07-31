@@ -128,6 +128,7 @@ export const interactionCardGroupSchema = z.object({
   generationId: id,
   title: text,
   description: z.string().max(500).optional(),
+  mode: z.enum(['presentation', 'interactive']),
   template: z.enum(['catalog', 'comparison', 'inspector', 'form', 'wizard', 'diagnosis', 'plan', 'progress', 'result', 'dashboard']),
   display: z.object({ density: z.enum(['comfortable', 'compact']).optional() }).optional(),
   cards: z.array(z.object({
@@ -146,6 +147,56 @@ export const interactionCardGroupSchema = z.object({
     actions: z.array(interactionCardActionSchema).max(4).optional(),
   })).min(1).max(12),
   groupActions: z.array(interactionCardActionSchema).max(3).optional(),
+}).superRefine((group, context) => {
+  const formCards = group.cards.filter(card => card.form)
+  const responseActions = [
+    ...group.cards.flatMap(card => card.actions ?? []),
+    ...(group.groupActions ?? []),
+  ].filter(action => action.type === 'send_message' || action.type === 'tool')
+
+  if (group.mode === 'presentation' && formCards.length > 0) {
+    context.addIssue({
+      code: 'custom',
+      message: 'Presentation cards cannot contain input fields.',
+      path: ['mode'],
+    })
+  }
+  if (group.mode === 'interactive' && responseActions.length === 0) {
+    context.addIssue({
+      code: 'custom',
+      message: 'Interactive cards require a submit action.',
+      path: ['mode'],
+    })
+  }
+  if ((group.template === 'form' || group.template === 'wizard') && (group.mode !== 'interactive' || formCards.length === 0)) {
+    context.addIssue({
+      code: 'custom',
+      message: 'Form and wizard templates require interactive mode and input fields.',
+      path: ['template'],
+    })
+  }
+  group.cards.forEach((card, cardIndex) => {
+    const fields = card.form?.sections.flatMap(section => section.fields) ?? []
+    const cardResponseActions = (card.actions ?? []).filter(action => action.type === 'send_message' || action.type === 'tool')
+    if (group.mode === 'interactive' && fields.length > 0 && cardResponseActions.length === 0) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Interactive input cards require their own submit action.',
+        path: ['cards', cardIndex, 'actions'],
+      })
+    }
+    if (
+      group.mode === 'interactive'
+      && fields.length === 0
+      && card.blocks?.some(block => block.type === 'item_list' && block.items.length > 1)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Interactive multi-item lists require a select field or one actionable card per candidate.',
+        path: ['cards', cardIndex, 'blocks'],
+      })
+    }
+  })
 })
 
 export type InteractionCardGroup = z.infer<typeof interactionCardGroupSchema>

@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/aitool"
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/retention"
@@ -53,6 +54,8 @@ var configDefinitions = []configDefinition{
 	{Key: "ai.provider.base_url", Label: "AI API 地址", Type: "string", Default: ""},
 	{Key: "ai.provider.api_key", Label: "AI API Key", Type: "secret", Default: ""},
 	{Key: "ai.provider.default_model", Label: "AI 模型名称", Type: "string", Default: ""},
+	{Key: "ai.web.proxy_enabled", Label: "AI 外网工具代理池", Type: "boolean", Default: "false"},
+	{Key: "ai.web.proxy_pool", Label: "AI 外网工具代理地址", Type: "secret", Default: ""},
 	{Key: "ai.runtime.provider_timeout_seconds", Label: "模型请求超时", Type: "number", Default: "30"},
 	{Key: "ai.runtime.run_timeout_seconds", Label: "单次 Run 超时", Type: "number", Default: "300"},
 	{Key: "ai.runtime.agent_concurrent_runs", Label: "Agent 实例并发 Run", Type: "number", Default: "2"},
@@ -357,7 +360,7 @@ func (c *configCache) get(keys []string) map[string]string {
 	result := map[string]string{}
 	for _, key := range keys {
 		if value, ok := c.values[key]; ok {
-			if key == "ai.provider.api_key" {
+			if definition := configDefinitionByKey(key); definition != nil && definition.Type == "secret" {
 				result[key] = strconv.FormatBool(secret.HasValue(value))
 				continue
 			}
@@ -444,10 +447,26 @@ func (h *Handlers) UpdateConfigs(ctx *gin.Context) {
 		}
 		delete(input.Values, "ai.provider.api_key")
 	}
+	proxyPoolInput := ""
+	if raw, exists := input.Values["ai.web.proxy_pool"]; exists {
+		if value, ok := raw.(string); ok {
+			proxyPoolInput = strings.TrimSpace(value)
+		}
+		delete(input.Values, "ai.web.proxy_pool")
+		if proxyPoolInput != "" {
+			if _, err := aitool.ParseWebProxyPool(splitProxyPool(proxyPoolInput)); err != nil {
+				writeErrorCode(ctx, http.StatusBadRequest, "ai.config_invalid", "ai.web.proxy_pool is invalid")
+				return
+			}
+		}
+	}
 	values, err := validateConfigValues(input.Values)
 	if err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
+	}
+	if proxyPoolInput != "" {
+		values["ai.web.proxy_pool"] = "true"
 	}
 	if err := h.validateAIConfigValues(values); err != nil {
 		writeErrorCode(ctx, http.StatusBadRequest, "ai.config_invalid", err.Error())
@@ -460,6 +479,14 @@ func (h *Handlers) UpdateConfigs(ctx *gin.Context) {
 			return
 		}
 		values["ai.provider.api_key"] = ref
+	}
+	if proxyPoolInput != "" {
+		ref := h.secrets.Store(proxyPoolInput, user.ID, "ai_web:proxy_pool")
+		if ref == "" {
+			writeErrorCode(ctx, http.StatusInternalServerError, "ai.secret_store_failed", "AI web proxy pool could not be stored")
+			return
+		}
+		values["ai.web.proxy_pool"] = ref
 	}
 	stepUpConfigChanged := false
 	if containsStepUpConfig(values) {

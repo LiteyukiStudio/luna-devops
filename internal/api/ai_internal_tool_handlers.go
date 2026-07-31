@@ -32,6 +32,8 @@ var aiToolPolicies = map[string]aiToolPolicy{
 	"getDashboard":               {OperationID: "getDashboard", Scopes: []string{"dashboard:read"}, Risk: "read"},
 	"listProjects":               {OperationID: "listProjects", Scopes: []string{"project:read"}, Risk: "read"},
 	"listAppTemplates":           {OperationID: "listAppTemplates", Scopes: []string{"application:read"}, Risk: "read"},
+	"webSearch":                  {OperationID: "webSearch", Scopes: []string{"web:read"}, Risk: "read"},
+	"fetchWebPage":               {OperationID: "fetchWebPage", Scopes: []string{"web:read"}, Risk: "read"},
 	"createProject":              {OperationID: "createProject", Scopes: []string{"project:write"}, Risk: "write"},
 	"listPlatformEvents":         {OperationID: "listPlatformEvents", Scopes: []string{"event:read"}, ProjectAction: authz.ActionProjectRead, Risk: "read"},
 	"getProject":                 {OperationID: "getProject", Scopes: []string{"project:read"}, ProjectAction: authz.ActionProjectRead, Risk: "read"},
@@ -223,6 +225,16 @@ func (h *Handlers) executeRegisteredAITool(ctx *gin.Context, claims aiagent.Dele
 		return nil, http.StatusNotFound, "resource.not_found"
 	case errors.Is(err, aitool.ErrInvalidInput):
 		return nil, http.StatusBadRequest, "request.invalid"
+	case errors.Is(err, aitool.ErrWebTargetBlocked):
+		return nil, http.StatusForbidden, "ai.web_target_blocked"
+	case errors.Is(err, aitool.ErrWebContentRejected):
+		return nil, http.StatusUnsupportedMediaType, "ai.web_content_rejected"
+	case errors.Is(err, aitool.ErrWebRequestFailed):
+		log.Printf(
+			"ai web tool request failure request_id=%q operation=%q tool_call=%q: %v",
+			requestID(ctx), claims.OperationID, claims.ToolCallID, err,
+		)
+		return nil, http.StatusBadGateway, "ai.web_request_failed"
 	case errors.Is(err, aitool.ErrConflict):
 		return nil, http.StatusConflict, "resource.conflict"
 	case errors.Is(err, aitool.ErrStorage):

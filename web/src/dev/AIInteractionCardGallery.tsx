@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { extremeInteractionCardFixture, interactionCardTemplateFixtures } from '@/components/common/ai-assistant/interaction-card-fixtures'
+import { extremeInteractionCardFixture, interactionCardTemplateFixtures, templateSelectionInteractionCardFixture } from '@/components/common/ai-assistant/interaction-card-fixtures'
 import { AIInteractionCards } from '@/components/common/ai-assistant/interaction-cards'
 import { AIAssistantLauncher } from '@/components/common/ai-assistant/launcher'
 import { Button } from '@/components/ui/button'
 
 export function AIInteractionCardGallery() {
-  const allFixtures = [...Object.values(interactionCardTemplateFixtures), extremeInteractionCardFixture]
+  const allFixtures = [...Object.values(interactionCardTemplateFixtures), templateSelectionInteractionCardFixture, extremeInteractionCardFixture]
   const requestedFixture = new URLSearchParams(window.location.search).get('fixture')
   if (requestedFixture === 'launcher')
     return <LauncherFixture />

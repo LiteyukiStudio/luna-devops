@@ -40,6 +40,9 @@ func (h *Handlers) validateAIConfigValues(values map[string]string) error {
 			return fmt.Errorf("ai.provider.base_url is blocked by egress policy")
 		}
 	}
+	if configBool(current["ai.web.proxy_enabled"]) && current["ai.web.proxy_pool"] != "true" {
+		return fmt.Errorf("ai.web.proxy_pool is required when the proxy pool is enabled")
+	}
 	for key, bounds := range map[string][2]int{
 		"ai.runtime.provider_timeout_seconds": {1, 120},
 		"ai.runtime.run_timeout_seconds":      {30, 900},

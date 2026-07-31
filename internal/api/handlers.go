@@ -57,7 +57,11 @@ func NewHandlers(db *gorm.DB) *Handlers {
 	aiConfig := aiagent.LoadConfig()
 	handlers.aiDeploymentEnabled = aiConfig.Available
 	handlers.aiAgent = aiConfig.Client()
-	handlers.aiTools = aitool.NewService(db)
+	handlers.aiTools = aitool.NewService(
+		db,
+		aitool.WithWebPolicyProvider(handlers.aiWebEgressPolicyForUser),
+		aitool.WithWebProxyProvider(handlers.aiWebProxyPoolForUser),
+	)
 	return handlers
 }
 

@@ -31,6 +31,16 @@ const settings = {
     agentConcurrentRuns: 'Concurrent Runs per instance',
     agentConcurrentRunsHint: 'Runs executed concurrently by each Agent container, from 1 to 10. Capacity is additive across replicas.',
     agentConcurrentRunsInvalid: 'Enter a whole number from 1 to 10.',
+    webProxyTitle: 'Web-tool proxy pool',
+    webProxyDescription: 'Used only by Agent web search and page fetching. It does not affect the model API, builds, Git, or other platform requests.',
+    webProxySummaryEnabled: 'Web access uses a dedicated proxy pool',
+    webProxySummaryDirect: 'Direct web access',
+    webProxyEnabled: 'Enable the dedicated proxy pool',
+    webProxyEnabledHint: 'Web searches and page reads rotate through the pool when enabled. Disabling restores direct access while retaining the saved pool.',
+    webProxyPool: 'Proxy URLs',
+    webProxyPoolHint: 'One HTTP or HTTPS proxy per line, up to 16. http://user:password@host:port is supported. Credentials are encrypted and never displayed.',
+    webProxyPoolInvalid: 'Enter valid HTTP/HTTPS proxy URLs, one per line and no more than 16.',
+    webProxyPoolRequired: 'Enter at least one proxy URL before enabling the pool.',
     securitySummary: 'Only public HTTPS model endpoints are allowed; private and reserved addresses are blocked. The API key is encrypted and never returned to the browser. The Agent inherits the current user’s permissions, and high-risk actions still require confirmation.',
     saved: 'AI assistant settings saved',
     saveFailed: 'Could not save AI assistant settings',
@@ -77,9 +87,9 @@ const settings = {
     security: {
       egress: {
         domainAllowList: { label: 'SSRF domain allowlist', description: 'One domain or wildcard domain per line, for explicitly trusted local FakeIP or internal registry targets.' },
-        domainBlockList: { label: 'SSRF domain blocklist', description: 'One domain or wildcard domain per line. Matching targets are denied.' },
+        domainBlockList: { label: 'Network domain blocklist', description: 'One domain or wildcard domain per line. Matching AI web reads and other backend requests are denied.' },
         ipAllowList: { label: 'SSRF IP allowlist', description: 'One IP address or CIDR per line, used to allow trusted private or reserved addresses.' },
-        ipBlockList: { label: 'SSRF IP blocklist', description: 'One IP address or CIDR per line, used to block restricted addresses resolved from non-allowlisted domains.' },
+        ipBlockList: { label: 'Network IP blocklist', description: 'One IP address or CIDR per line. Resolved addresses are checked too; private, loopback, and metadata ranges are included by default.' },
         allowedPorts: { label: 'SSRF allowed ports', description: 'Leave empty for no port restriction, or enter one allowed port per line.' },
       },
       stepUpMfa: {

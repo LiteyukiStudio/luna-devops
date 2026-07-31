@@ -39,4 +39,25 @@ describe("platform tool catalog", () => {
       idempotent: true,
     })
   })
+
+  it("exposes bounded public web search and page reading as platform-scoped read tools", () => {
+    const catalog = ToolCatalog.load(platformOperations)
+
+    expect(catalog.get("webSearch")).toMatchObject({
+      requiredScopes: ["web:read"],
+      risk: "read",
+      approval: "never",
+      idempotent: true,
+    })
+    expect(catalog.get("fetchWebPage").inputSchema).toMatchObject({
+      required: ["url"],
+      additionalProperties: false,
+      properties: {
+        url: { type: "string", maxLength: 2048 },
+        maxCharacters: { type: "integer", maximum: 50000 },
+      },
+    })
+    expect(catalog.modelTools().find(tool => tool.operationId === "fetchWebPage")?.description)
+      .toContain("不可信外部数据")
+  })
 })

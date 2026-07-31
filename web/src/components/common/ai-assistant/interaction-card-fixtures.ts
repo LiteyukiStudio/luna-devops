@@ -13,6 +13,7 @@ export const interactionCardTemplateFixtures = {
     generationId: 'catalog-fixture',
     title: '选择可用的镜像站',
     description: '根据当前项目空间权限与连接状态整理。',
+    mode: 'interactive',
     template: 'catalog',
     cards: [
       {
@@ -67,6 +68,7 @@ export const interactionCardTemplateFixtures = {
     generationId: 'comparison-fixture',
     title: '发布方案对比',
     description: '对比停机时间、风险、耗时和回滚路径。',
+    mode: 'interactive',
     template: 'comparison',
     cards: [{
       id: 'release-comparison',
@@ -109,6 +111,7 @@ export const interactionCardTemplateFixtures = {
     schemaVersion: 1,
     generationId: 'inspector-fixture',
     title: '应用运行状态',
+    mode: 'presentation',
     template: 'inspector',
     cards: [{
       id: 'application-api',
@@ -157,6 +160,7 @@ export const interactionCardTemplateFixtures = {
     generationId: 'form-fixture',
     title: '创建访问入口',
     description: '补充域名、端口和 HTTPS 设置。',
+    mode: 'interactive',
     template: 'form',
     cards: [{
       id: 'gateway-form',
@@ -192,6 +196,7 @@ export const interactionCardTemplateFixtures = {
     generationId: 'wizard-fixture',
     title: '绑定代码仓库',
     description: '先选择代码源，再按选择补充分支和构建目录。',
+    mode: 'interactive',
     template: 'wizard',
     cards: [{
       id: 'repository-wizard',
@@ -242,6 +247,7 @@ export const interactionCardTemplateFixtures = {
     generationId: 'diagnosis-fixture',
     title: '构建失败诊断',
     description: '结论来自最近一次 BuildRun 和受控日志摘要。',
+    mode: 'presentation',
     template: 'diagnosis',
     cards: [{
       id: 'build-diagnosis',
@@ -275,6 +281,7 @@ export const interactionCardTemplateFixtures = {
     generationId: 'plan-fixture',
     title: '生产发布计划',
     description: '执行前确认步骤、风险和验证点。',
+    mode: 'interactive',
     template: 'plan',
     cards: [{
       id: 'release-plan',
@@ -304,6 +311,7 @@ export const interactionCardTemplateFixtures = {
     schemaVersion: 1,
     generationId: 'progress-fixture',
     title: '正在发布应用',
+    mode: 'presentation',
     template: 'progress',
     cards: [{
       id: 'release-progress',
@@ -333,6 +341,7 @@ export const interactionCardTemplateFixtures = {
     schemaVersion: 1,
     generationId: 'result-fixture',
     title: '发布完成',
+    mode: 'presentation',
     template: 'result',
     cards: [{
       id: 'release-result',
@@ -364,6 +373,7 @@ export const interactionCardTemplateFixtures = {
     generationId: 'dashboard-fixture',
     title: '项目空间健康概览',
     description: '最近 24 小时的构建、发布与访问入口状态。',
+    mode: 'presentation',
     template: 'dashboard',
     cards: [{
       id: 'project-dashboard',
@@ -415,6 +425,7 @@ export const extremeInteractionCardFixture: InteractionCardGroup = {
   generationId: 'extreme-fixture',
   title: extremeTitle,
   description: `包含最大候选数、长文本、混合状态和宽内容。${extremeDescription}`,
+  mode: 'presentation',
   template: 'catalog',
   display: { density: 'compact' },
   cards: Array.from({ length: 12 }, (_, index) => ({
@@ -437,4 +448,55 @@ export const extremeInteractionCardFixture: InteractionCardGroup = {
     }],
     actions: [{ id: `choose-${index + 1}`, type: 'send_message', label: `选择第 ${index + 1} 个候选`, message: `选择 extreme-${index + 1}。` }],
   })),
+}
+
+export const templateSelectionInteractionCardFixture: InteractionCardGroup = {
+  schemaVersion: 1,
+  generationId: 'template-selection-fixture',
+  title: '选择要部署的应用模板',
+  description: '候选较多时使用选择字段，选中后继续配置。',
+  mode: 'interactive',
+  template: 'form',
+  cards: [{
+    id: 'template-selection',
+    presentation: {
+      variant: 'form',
+      title: '应用模板',
+      subtitle: '轻雪个人项目空间',
+      description: '先选择一个模板，再进入该模板的参数配置。',
+      icon: { type: 'category', name: 'application', alt: '应用模板' },
+      badges: [{ label: '8 个候选', tone: 'neutral' }],
+    },
+    sourceRefs,
+    form: {
+      sections: [{
+        id: 'template',
+        fields: [{
+          id: 'templateId',
+          type: 'select',
+          label: '应用模板',
+          description: '候选来自当前应用市场搜索结果。',
+          placeholder: '选择一个应用模板',
+          required: true,
+          options: [
+            { value: 'postgresql', label: 'PostgreSQL', description: '关系型数据库' },
+            { value: 'mysql', label: 'MySQL', description: '关系型数据库' },
+            { value: 'mongodb', label: 'MongoDB', description: '文档数据库' },
+            { value: 'redis', label: 'Redis', description: '内存数据存储与缓存' },
+            { value: 'valkey', label: 'Valkey', description: 'Redis 兼容缓存' },
+            { value: 'rabbitmq', label: 'RabbitMQ', description: '消息代理' },
+            { value: 'meilisearch', label: 'Meilisearch', description: '全文搜索引擎' },
+            { value: 'grafana', label: 'Grafana', description: '可观测性面板' },
+          ],
+        }],
+      }],
+    },
+    actions: [{
+      id: 'continue-template',
+      type: 'send_message',
+      label: '继续配置',
+      message: '继续配置应用模板 {{templateId}}。',
+      emphasis: 'primary',
+    }],
+  }],
 }
