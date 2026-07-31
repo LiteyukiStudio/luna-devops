@@ -1,23 +1,15 @@
-import { Sparkles } from 'lucide-react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { extremeInteractionCardFixture, interactionCardTemplateFixtures } from '@/components/common/ai-assistant/interaction-card-fixtures'
 import { AIInteractionCards } from '@/components/common/ai-assistant/interaction-cards'
-import { aiAssistantLauncherClassName } from '@/components/common/ai-assistant/launcher'
+import { AIAssistantLauncher } from '@/components/common/ai-assistant/launcher'
 import { Button } from '@/components/ui/button'
 
 export function AIInteractionCardGallery() {
-  const { t } = useTranslation()
   const allFixtures = [...Object.values(interactionCardTemplateFixtures), extremeInteractionCardFixture]
   const requestedFixture = new URLSearchParams(window.location.search).get('fixture')
-  if (requestedFixture === 'launcher') {
-    return (
-      <main className="grid min-h-screen place-items-center bg-primary-subtle">
-        <Button aria-label={t('aiAssistant.open')} className={aiAssistantLauncherClassName} size="icon">
-          <Sparkles className="size-5" />
-        </Button>
-      </main>
-    )
-  }
+  if (requestedFixture === 'launcher')
+    return <LauncherFixture />
   const fixtures = requestedFixture
     ? allFixtures.filter(fixture => fixture.generationId === requestedFixture)
     : allFixtures
@@ -30,6 +22,31 @@ export function AIInteractionCardGallery() {
           </section>
         ))}
       </div>
+    </main>
+  )
+}
+
+function LauncherFixture() {
+  const { t } = useTranslation()
+  const [opened, setOpened] = useState(false)
+  const [position, setPosition] = useState({ x: 24, y: 24 })
+
+  return (
+    <main className="grid min-h-screen place-items-center bg-primary-subtle">
+      {!opened && (
+        <AIAssistantLauncher
+          label={t('aiAssistant.open')}
+          position={position}
+          onOpen={() => setOpened(true)}
+          onPositionChange={setPosition}
+        />
+      )}
+      {opened && (
+        <section aria-label={t('aiAssistant.title')} className="grid gap-4 rounded-feature bg-surface p-6 shadow-overlay">
+          <p>{t('aiAssistant.title')}</p>
+          <Button onClick={() => setOpened(false)}>{t('common.close')}</Button>
+        </section>
+      )}
     </main>
   )
 }

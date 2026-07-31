@@ -13,7 +13,7 @@ describe("versioned system prompt", () => {
     const prompt = systemPromptFor("system-v4")
 
     expect(interaction).toContain("name: luna-devops-interaction")
-    expect(interaction).toContain("使用 `send_message` 回答待选择问题")
+    expect(interaction).toContain("使用 `send_message` 回答已知候选中的单击选择")
     expect(interaction).toContain("references/runtime-deployment.md")
     expect(navigation).toContain("name: luna-devops-navigation")
     expect(navigation).toContain("[标签](/已注册路径)")
@@ -66,6 +66,37 @@ describe("versioned system prompt", () => {
     expect(names).toContain("diagnostics-observability")
     expect(names).toContain("security-administration")
     expect(names).toContain("options-and-continuity")
+  })
+
+  it("loads onboarding option guidance for users unfamiliar with the platform", () => {
+    const context = {
+      userInput: "你可以干什么，我应该怎么开始",
+      pageContext: { pathname: "/dashboard", routeName: "dashboard" },
+    }
+    const names = loadedSkillReferences(context).map(item => item.name)
+    const prompt = systemPromptFor("system-v4", context)
+
+    expect(names).toContain("options-and-continuity")
+    expect(prompt).toContain("必须调用 create_options 提供 2～5 个可直接点选的具体目标")
+    expect(prompt).toContain("优先使用 `send_message`")
+    expect(prompt).toContain("如果用户已经提出明确任务，应直接完成该任务")
+  })
+
+  it("requires an interaction form when an operation needs structured user input", () => {
+    const context = {
+      userInput: "帮我创建一个项目空间",
+      pageContext: { pathname: "/projects", routeName: "projects" },
+      operationIds: ["createProject"],
+    }
+    const names = loadedSkillReferences(context).map(item => item.name)
+    const prompt = systemPromptFor("system-v4", context)
+
+    expect(names).toContain("projects-applications")
+    expect(names).toContain("card-templates")
+    expect(prompt).toContain("就必须使用 create_interaction_cards")
+    expect(prompt).toContain("一轮可完成时使用 form")
+    expect(prompt).toContain("即使只缺一个结构化操作参数，也使用表单")
+    expect(prompt).not.toContain("缺少参数时先用 send_message 收集")
   })
 
   it("does not load every domain merely because the full tool catalog is available", () => {

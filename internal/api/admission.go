@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -29,7 +30,12 @@ func (h *Handlers) GetAuthAdmissionPolicy(ctx *gin.Context) {
 	if !h.requirePlatformAdmin(ctx) {
 		return
 	}
-	ctx.JSON(http.StatusOK, admissionPolicyResponse(h.ensureAdmissionPolicy()))
+	policy, err := h.ensureAdmissionPolicy()
+	if err != nil {
+		writeAdmissionPolicyUnavailable(ctx, err)
+		return
+	}
+	ctx.JSON(http.StatusOK, admissionPolicyResponse(policy))
 }
 
 func (h *Handlers) UpdateAuthAdmissionPolicy(ctx *gin.Context) {
@@ -42,7 +48,11 @@ func (h *Handlers) UpdateAuthAdmissionPolicy(ctx *gin.Context) {
 		return
 	}
 
-	policy := h.ensureAdmissionPolicy()
+	policy, err := h.ensureAdmissionPolicy()
+	if err != nil {
+		writeAdmissionPolicyUnavailable(ctx, err)
+		return
+	}
 	policy.AllowLocalLogin = input.AllowLocalLogin
 	policy.AllowOIDCLogin = input.AllowOIDCLogin
 	policy.RequireVerifiedOIDCEmail = input.RequireVerifiedOIDCEmail
@@ -59,7 +69,10 @@ func (h *Handlers) UpdateAuthAdmissionPolicy(ctx *gin.Context) {
 }
 
 func (h *Handlers) evaluateAdmission(claims oidcIdentityClaims) error {
-	policy := h.ensureAdmissionPolicy()
+	policy, err := h.ensureAdmissionPolicy()
+	if err != nil {
+		return err
+	}
 	if !policy.AllowOIDCLogin {
 		return errOIDCDisabled
 	}
@@ -91,20 +104,14 @@ func (h *Handlers) evaluateAdmission(claims oidcIdentityClaims) error {
 	return errOIDCAdmissionDenied
 }
 
-func (h *Handlers) ensureAdmissionPolicy() model.AuthAdmissionPolicy {
+func (h *Handlers) ensureAdmissionPolicy() (model.AuthAdmissionPolicy, error) {
 	var policy model.AuthAdmissionPolicy
 	err := h.db.First(&policy, "id = ?", defaultAdmissionPolicyID).Error
 	if err == nil {
-		return policy
+		return policy, nil
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return model.AuthAdmissionPolicy{
-			ID:                       defaultAdmissionPolicyID,
-			AllowLocalLogin:          true,
-			AllowOIDCLogin:           true,
-			RequireVerifiedOIDCEmail: true,
-			DefaultRole:              authz.PlatformRoleUser,
-		}
+		return model.AuthAdmissionPolicy{}, fmt.Errorf("load authentication admission policy: %w", err)
 	}
 
 	policy = model.AuthAdmissionPolicy{
@@ -114,8 +121,25 @@ func (h *Handlers) ensureAdmissionPolicy() model.AuthAdmissionPolicy {
 		RequireVerifiedOIDCEmail: true,
 		DefaultRole:              authz.PlatformRoleUser,
 	}
-	_ = h.db.Create(&policy).Error
-	return policy
+	if err := h.db.Create(&policy).Error; err != nil {
+		var existing model.AuthAdmissionPolicy
+		if reloadErr := h.db.First(&existing, "id = ?", defaultAdmissionPolicyID).Error; reloadErr == nil {
+			return existing, nil
+		}
+		return model.AuthAdmissionPolicy{}, fmt.Errorf("initialize authentication admission policy: %w", err)
+	}
+	return policy, nil
+}
+
+func writeAdmissionPolicyUnavailable(ctx *gin.Context, err error) {
+	requestID := requestID(ctx)
+	log.Printf("authentication admission policy unavailable request_id=%q: %v", requestID, err)
+	writeErrorCode(
+		ctx,
+		http.StatusServiceUnavailable,
+		"auth.admission_policy_unavailable",
+		"authentication admission policy is temporarily unavailable",
+	)
 }
 
 func admissionPolicyResponse(policy model.AuthAdmissionPolicy) gin.H {

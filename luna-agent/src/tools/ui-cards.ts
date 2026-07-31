@@ -490,7 +490,7 @@ export function normalizeInteractionCardsInput(raw: unknown): unknown {
 
 export const createInteractionCardsTool: ModelToolDefinition = {
   operationId: "create_interaction_cards",
-  description: "完成一组受控的声明式内容与交互卡片。调用前必须先单独调用 prepare_interaction_cards，等待其返回 accepted，再使用完全相同的 generationId 调用本工具；前端会用最终卡片原位替换准备动画。template 必须按当前工作流阶段选择：catalog 用于候选发现，comparison 用于同维度比较，inspector 用于已知资源事实，form 用于一次性配置，wizard 用于存在依赖的分步配置，diagnosis 用于结论、证据和修复，plan 用于执行前计划，progress 用于长任务状态，result 用于最终回执，dashboard 用于指标与健康概览。卡片只能引用当前工具结果中的真实资源和标识符；不能生成 HTML、CSS、脚本、任意 URL 或虚构状态。展示文本可以使用受控 Markdown，但 HTML 会被忽略。tool action 只能引用当前模型工具列表中已经存在的 operationId，平台仍会重新鉴权并按风险要求确认或 MFA；没有对应写入工具时只能展示或用 send_message 收集选择。send_message 需要带入表单值时只能在 message 中使用 {{field_id}}，不得自创路径或模板语法；敏感字段永远不能插入消息。简单的 2～5 个后续建议继续使用 create_options。",
+  description: "完成一组受控的声明式内容与交互卡片。调用前必须先单独调用 prepare_interaction_cards，等待其返回 accepted，再使用完全相同的 generationId 调用本工具；前端会用最终卡片原位替换准备动画。template 必须按当前工作流阶段选择：catalog 用于候选发现，comparison 用于同维度比较，inspector 用于已知资源事实，form 用于一轮内收集结构化参数，wizard 用于字段存在依赖或需要分阶段收集，diagnosis 用于结论、证据和修复，plan 用于执行前计划，progress 用于长任务状态，result 用于最终回执，dashboard 用于指标与健康概览。只要下一步需要用户填写、选择、切换或组合一个或多个结构化操作参数，就必须使用 form 或 wizard，不得用 create_options、纯文本问题或空白消息模板代替。卡片只能引用当前工具结果中的真实资源和标识符；不能生成 HTML、CSS、脚本、任意 URL 或虚构状态。展示文本可以使用受控 Markdown，但 HTML 会被忽略。tool action 只能引用当前模型工具列表中已经存在的 operationId，平台仍会重新鉴权并按风险要求确认或 MFA；没有对应写入工具时只能展示或用 send_message 收集选择。send_message 需要带入表单值时只能在 message 中使用 {{field_id}}，不得自创路径或模板语法；敏感字段永远不能插入消息。简单的 2～5 个无需结构化输入的后续建议继续使用 create_options。",
   inputSchema: cardInputJsonSchema(),
 }
 

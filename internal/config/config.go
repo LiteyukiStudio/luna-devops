@@ -63,7 +63,7 @@ func Load() Config {
 		MetricsPath:                 normalizeMetricsPath(env("METRICS_PATH", "/metrics")),
 		BuildExecutorImage:          env("BUILD_EXECUTOR_IMAGE", "moby/buildkit:v0.24.0-rootless"),
 		BuildNPMRegistry:            env("BUILD_NPM_REGISTRY", ""),
-		BuildEgressMode:             buildEgressMode(env("BUILD_EGRESS_MODE", "permissive")),
+		BuildEgressMode:             buildEgressMode(env("BUILD_EGRESS_MODE", "restricted")),
 		BuildCacheEnabled:           envBool("BUILD_CACHE_ENABLED", false),
 		BuildCacheTag:               env("BUILD_CACHE_TAG", "buildcache"),
 		BuildJobTimeoutSeconds:      int64(envInt("BUILD_JOB_TIMEOUT_SECONDS", 1800)),
@@ -252,10 +252,10 @@ func envPortList(key string, fallback []int) []int {
 
 func buildEgressMode(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "restricted":
-		return "restricted"
-	default:
+	case "permissive":
 		return "permissive"
+	default:
+		return "restricted"
 	}
 }
 

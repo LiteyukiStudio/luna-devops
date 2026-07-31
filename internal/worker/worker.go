@@ -192,8 +192,8 @@ func NewRunner(db *gorm.DB, options Options) *Runner {
 		buildCacheTag = "buildcache"
 	}
 	buildEgressMode := strings.ToLower(strings.TrimSpace(options.BuildEgressMode))
-	if buildEgressMode != "restricted" {
-		buildEgressMode = "permissive"
+	if buildEgressMode != "permissive" {
+		buildEgressMode = "restricted"
 	}
 	buildJobTimeoutSeconds := options.BuildJobTimeoutSeconds
 	if buildJobTimeoutSeconds <= 0 {

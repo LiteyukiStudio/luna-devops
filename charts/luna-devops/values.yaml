@@ -86,7 +86,7 @@ worker:
   deployRolloutTimeoutSeconds: 600
   certManagerClusterIssuer: letsencrypt-http01
   buildExecutorImage: moby/buildkit:v0.24.0-rootless
-  buildEgressMode: permissive
+  buildEgressMode: restricted
   buildJobTimeoutSeconds: 1800
   buildJobTtlSeconds: 3600
   buildCacheEnabled: false

@@ -107,7 +107,7 @@ func (r *Runner) ensureProjectNamespace(ctx context.Context, namespace string, p
 	if err := manager.EnsureNamespace(ctx, namespace, kubeprovider.ProjectNamespaceLabels(project.ID)); err != nil {
 		return err
 	}
-	if r.buildEgressMode != "restricted" {
+	if r.buildEgressMode == "permissive" {
 		return manager.EnsureBuildPolicy(ctx, networkpolicy.PermissiveBuildPolicy(namespace))
 	}
 	return manager.EnsureBuildPolicy(ctx, networkpolicy.BuildPolicyWithEgressControlsAndPorts(namespace, r.buildPrivateEgressCIDRs, r.buildPrivateEgressPorts, r.buildBlockedEgressCIDRs))

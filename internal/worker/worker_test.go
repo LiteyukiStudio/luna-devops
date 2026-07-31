@@ -901,7 +901,7 @@ func (m *recordingNamespaceManager) EnsureBuildPolicy(_ context.Context, policy 
 	return m.err
 }
 
-func TestEnsureProjectNamespaceAppliesBuildEgressPolicy(t *testing.T) {
+func TestEnsureProjectNamespaceDefaultsToRestrictedBuildEgressPolicy(t *testing.T) {
 	manager := &recordingNamespaceManager{}
 	runner := NewRunner(nil, Options{})
 	runner.kubernetesManagerFactory = func(model.Environment) (kubeprovider.NamespaceManager, error) {
@@ -918,6 +918,33 @@ func TestEnsureProjectNamespaceAppliesBuildEgressPolicy(t *testing.T) {
 	if policy.Name != "luna-build-egress" || policy.Namespace != "ns-demo" || policy.PodLabels[kubeprovider.ScopeLabel] != buildJobScope {
 		t.Fatalf("policy = %#v", policy)
 	}
+	if len(policy.Egress) != 3 {
+		t.Fatalf("expected dns and public HTTP(S) egress rules, got %#v", policy.Egress)
+	}
+	if len(policy.Egress[0].Ports) != 2 || policy.Egress[0].Ports[0].Number != 53 || policy.Egress[0].Ports[1].Number != 53 {
+		t.Fatalf("expected DNS egress rule, got %#v", policy.Egress[0])
+	}
+	for _, rule := range policy.Egress[1:] {
+		if len(rule.To) != 1 || len(rule.To[0].Except) == 0 {
+			t.Fatalf("expected restricted public egress rule, got %#v", rule)
+		}
+	}
+}
+
+func TestEnsureProjectNamespaceSupportsExplicitPermissiveBuildEgressPolicy(t *testing.T) {
+	manager := &recordingNamespaceManager{}
+	runner := NewRunner(nil, Options{BuildEgressMode: "permissive"})
+	runner.kubernetesManagerFactory = func(model.Environment) (kubeprovider.NamespaceManager, error) {
+		return manager, nil
+	}
+
+	if err := runner.ensureProjectNamespace(context.Background(), "ns-demo", model.Project{ID: "prj_demo"}, model.Environment{}); err != nil {
+		t.Fatalf("ensureProjectNamespace returned error: %v", err)
+	}
+	if len(manager.policies) != 1 {
+		t.Fatalf("policies = %#v", manager.policies)
+	}
+	policy := manager.policies[0]
 	if len(policy.Egress) != 1 || len(policy.Egress[0].To) != 0 || len(policy.Egress[0].Ports) != 0 {
 		t.Fatalf("expected permissive egress rule, got %#v", policy.Egress)
 	}

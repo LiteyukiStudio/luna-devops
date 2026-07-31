@@ -57,7 +57,7 @@ export type UIOptionAction =
 
 export const createOptionsTool: ModelToolDefinition = {
   operationId: "create_options",
-  description: "展示 2～5 个简洁且符合当前上下文的后续操作。动作必须匹配最直接的用户意图：send_message 用于回答待选择问题或收集缺失参数；request_tool 用于提出参数已就绪的已注册操作；navigate 只用于读取、浏览或明确打开已知页面。不得把必要的资源选择变成页面跳转，也不得用无关跳转打断待完成的决定。每个正常完成的轮次必须以且仅以一次 create_options 调用结束。每个选项相互独立；导航默认可重复，消息和受控工具操作只能执行一次。不得声称操作已经执行，不得编造路由、ID 或操作，也不得用空泛建议代替对当前需求的直接回应。",
+  description: "展示 2～5 个简洁且符合当前上下文的后续操作。动作必须匹配最直接的用户意图：send_message 只用于已知候选的单击选择、自然语言澄清或继续分析；request_tool 用于提出参数已就绪的已注册操作；navigate 只用于读取、浏览或明确打开已知页面。需要用户填写、选择、切换或组合任何结构化操作参数时，必须改用 create_interaction_cards 的 form 或 wizard；不得生成要求用户编辑消息、替换占位符或随后继续输入参数的选项。不得把必要的资源选择变成页面跳转，也不得用无关跳转打断待完成的决定。选择快捷选项作为本轮后续交互时只调用一次本工具，不得再生成重复交互卡片。每个选项相互独立；导航默认可重复，消息和受控工具操作只能执行一次。不得声称操作已经执行，不得编造路由、ID 或操作，也不得用空泛建议代替对当前需求的直接回应。",
   inputSchema: {
     type: "object",
     additionalProperties: false,

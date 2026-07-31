@@ -113,7 +113,7 @@ helm upgrade --install luna-devops ./charts/luna-devops \
 | `postgresql.enabled` | `true` | Install built-in PostgreSQL. |
 | `redis.enabled` | `true` | Install built-in Redis. |
 | `externalRedis.url` | Empty | Complete external Redis URI, used when built-in Redis is disabled. |
-| `worker.buildEgressMode` | `permissive` | Build Job egress mode. Use `restricted` when you need stronger isolation. |
+| `worker.buildEgressMode` | `restricted` | Build Job egress mode. Cluster-internal access is restricted by default; use `permissive` only when you explicitly accept the risk. |
 
 ## Uninstall
 

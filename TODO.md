@@ -662,6 +662,7 @@
 - [x] Build Job 默认不使用 privileged。
 - [x] 每个 BuildRun 使用独立 Kubernetes Secret 注入 Git/Registry 凭据。
 - [x] build namespace 应用 restricted BuildNetworkPolicy。
+- [x] API、Worker、Docker Compose 与 Helm 默认使用 `restricted` 构建出站模式；`permissive` 仅允许管理员显式启用。
 - [x] Docker Compose 移除 builder 服务，构建只依赖 worker 和部署集群 Kubernetes Job。
 - [x] 每个 Build Job 使用受限 ServiceAccount，默认不授予读取集群资源权限。
 - [x] Build Job 完成后立即删除临时 Secret，Job/Pod 按 TTL 保留日志窗口后清理。
@@ -1062,6 +1063,7 @@ OpenAPI，不把 MCP 作为内部服务总线。
 - [x] P2：实现构建、运行时事件、Gateway、证书、发布、Hook 和通知投递的固定列只读诊断工具，并接入统一诊断图。
 - [x] 完成正式前端与 BFF/Agent 接线：私有会话管理、Timeline Presenter、SSE 重连、三行 Thinking、默认折叠 Tool Call、批准/MFA/补充输入、桌面拖拽缩放、移动端全屏和 AI 管理设置。
 - [x] 使用 `react-rnd` 统一 AI 助手窗口拖拽与缩放，支持悬浮球拖拽、窗口与悬浮球位置/尺寸本地记忆、视口边界约束和移动端全屏退化。
+- [x] 修复真机触摸被悬浮球拖拽层吞掉点击的问题，短触摸直接打开助手，超过移动阈值时仍保持拖拽语义。
 - [x] 优化窄窗口消息层级与紧凑交互，完成态 Thinking 自动收起、Tool Call 默认折叠；空会话按项目空间复用，首轮由模型自动命名并保护手动标题。
 - [x] 为模型生成过程增加会话列表旋转状态与消息流三点输入指示器，并兼容减少动态效果偏好。
 - [x] 打通 Provider → Agent 持久事件 → Luna API 无缓冲 SSE → Web reducer 的真实流式输出，支持 reasoning、文本与分片工具参数归一化、游标恢复和终态主动断开。
@@ -1091,6 +1093,8 @@ OpenAPI，不把 MCP 作为内部服务总线。
 - [x] 整理 `components/common` 目录，将 AI 助手的组件、状态、工具与测试集中到 `common/ai-assistant/`，统一模块内相对导入与外部根路径导入。
 - [x] 修正 Tool Call 状态图标映射：仅运行态显示旋转加载图标，失败、成功、取消、跳过、等待批准与等待 MFA 使用明确语义图标。
 - [x] 扩展 AI 页面上下文信封与最近 6 轮角色化会话历史；每个正常完成的 Turn 强制生成 2-5 个意图预测选项，并为 Provider 格式偏差提供结构化重试和安全兜底。
+- [x] 为不熟悉平台且尚无明确任务的用户增加新手意图约束：询问助手能力、使用方法或起步方式时必须生成 2-5 个可点击具体目标，优先用消息选项继续对应工作流，不以功能介绍或页面入口代替选择。
+- [x] 收紧 Agent 结构化输入交互：创建、安装、配置、修改、诊断或执行需要用户补充参数时必须生成 `form` / `wizard` 卡片，禁止用快捷选项、纯文本追问或空白消息模板代替字段输入与校验。
 - [x] 将下一步选项改为独立点击状态：路由跳转可重复，发送消息与请求操作仅成功一次且不锁定兄弟选项；新增实时 SSE 驱动、注册表校验和重放去重的 `navigate_to_route` 自动前端路由工具，并将悬浮入口改为主题色语义渐变圆形。
 - [x] 新增 `luna-devops-interaction` 内置 Skill，并统一主 Prompt、独立意图预测与安全兜底：缺失参数使用消息选项回答，准备完备的变更使用受控操作，只有读取或明确打开资源时才建议导航。
 - [x] 完成独立 `luna-agent` 生产骨架、`ai` schema 迁移、动态 Provider 配置、Secret Store、Helm/Docker Compose 部署、NetworkPolicy、双语使用文档和 OpenAPI 契约。

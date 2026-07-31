@@ -278,6 +278,9 @@ describe("provider to tool to subsequent model invocation", () => {
     const timeline = await presentTimeline(repository, "usr_a", conversation.id)
     expect(JSON.stringify(timeline)).toContain("Redis 配置")
     expect(JSON.stringify(timeline)).not.toContain("invalid_card")
+    expect(timeline?.turns[0]?.selectedRun?.items.some(item =>
+      "toolCall" in item && item.toolCall.operationId === "create_options",
+    )).toBe(false)
   })
 
   it("continues through multiple platform tool rounds before completing the run", async () => {

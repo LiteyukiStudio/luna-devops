@@ -105,9 +105,19 @@ func TestLoadBuildPrivateEgressCIDRs(t *testing.T) {
 	}
 }
 
-func TestLoadBuildEgressModeDefaultsToPermissive(t *testing.T) {
+func TestLoadBuildEgressModeDefaultsToRestricted(t *testing.T) {
 	resetEnvLoader(t)
 	unsetEnv(t, "BUILD_EGRESS_MODE")
+
+	cfg := Load()
+	if cfg.BuildEgressMode != "restricted" {
+		t.Fatalf("BuildEgressMode = %q", cfg.BuildEgressMode)
+	}
+}
+
+func TestLoadBuildEgressModeSupportsExplicitPermissive(t *testing.T) {
+	resetEnvLoader(t)
+	t.Setenv("BUILD_EGRESS_MODE", "permissive")
 
 	cfg := Load()
 	if cfg.BuildEgressMode != "permissive" {
@@ -115,9 +125,9 @@ func TestLoadBuildEgressModeDefaultsToPermissive(t *testing.T) {
 	}
 }
 
-func TestLoadBuildEgressModeSupportsRestricted(t *testing.T) {
+func TestLoadBuildEgressModeFallsBackToRestricted(t *testing.T) {
 	resetEnvLoader(t)
-	t.Setenv("BUILD_EGRESS_MODE", "restricted")
+	t.Setenv("BUILD_EGRESS_MODE", "unexpected")
 
 	cfg := Load()
 	if cfg.BuildEgressMode != "restricted" {

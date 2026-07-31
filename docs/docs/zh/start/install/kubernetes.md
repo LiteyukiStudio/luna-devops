@@ -113,7 +113,7 @@ helm upgrade --install luna-devops ./charts/luna-devops \
 | `postgresql.enabled` | `true` | 是否安装内置 PostgreSQL。 |
 | `redis.enabled` | `true` | 是否安装内置 Redis。 |
 | `externalRedis.url` | 空 | 外部 Redis 完整连接 URI；关闭内置 Redis 时配置。 |
-| `worker.buildEgressMode` | `permissive` | 构建 Job 出站网络模式。需要强隔离时改为 `restricted`。 |
+| `worker.buildEgressMode` | `restricted` | 构建 Job 出站网络模式。默认限制对集群内服务的访问；只有明确接受风险时才改为 `permissive`。 |
 
 ## 卸载
 

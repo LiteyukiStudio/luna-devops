@@ -60,7 +60,7 @@ Available access-route domain suffixes, external access schemes, external access
 | Advanced | `METRICS_PATH` | `/metrics` | Prometheus scrape path; registered only on the dedicated metrics listener. |
 | Advanced | `DEPLOY_ROLLOUT_TIMEOUT_SECONDS` | `600` | Release wait timeout; increase for slow-starting apps. |
 | Advanced | `CERT_MANAGER_CLUSTER_ISSUER` | `letsencrypt-http01` | Certificate Issuer name; change when your cluster uses another name. |
-| Advanced | `BUILD_EGRESS_MODE` | `permissive` | Build egress mode; set to `restricted` when strong isolation is required. |
+| Advanced | `BUILD_EGRESS_MODE` | `restricted` | Build egress mode. The default allows DNS, public HTTP(S), and configured private sources only. Use `permissive` only when you explicitly accept that builds can reach arbitrary services in the cluster. |
 | Advanced | `BUILD_JOB_TIMEOUT_SECONDS` | `1800` | Build timeout fallback used when a deployment target does not set one; increase for large projects. |
 | Advanced | `BUILD_JOB_TTL_SECONDS` | `3600` | Completed build Pod retention; increase for a longer log window. |
 | Advanced | `BUILD_CACHE_ENABLED` | `false` | Build cache switch; enable for faster repeated builds. |

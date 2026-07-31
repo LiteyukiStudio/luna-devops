@@ -14,6 +14,8 @@ A platform administrator first configures these values under **Global Settings �
 
 After the connection test passes, the assistant entry appears in the lower-right corner of the console.
 
+Tap the floating entry on desktop or mobile to open the assistant. Drag it to change its position; small finger movement during a tap is not treated as a drag.
+
 ## Conversations
 
 In the assistant you can:
@@ -47,6 +49,8 @@ After a response, the assistant shows a small set of next steps only when the mo
 - Open a related platform page
 - Run one clearly described follow-up operation
 
+If you are new to the platform, ask “What can you do?” or “How should I get started?”. The assistant uses the current page and your permissions to offer two to five selectable goals, then continues the selected workflow.
+
 For reading tasks, the assistant may include internal links. When it needs a decision, it prefers selectable options instead of moving you away from the current page.
 If the model does not return reliable contextual suggestions, the platform omits the suggestion area instead of filling it with fixed generic choices.
 
@@ -55,6 +59,8 @@ When you explicitly ask to open a page, the assistant can switch the current tab
 ## Interaction cards
 
 The assistant can organize resource candidates, comparisons, resource details, configuration wizards, diagnostics, execution plans, task progress, receipts, and health summaries into cards. Continue or action buttons stay disabled until required fields are valid.
+
+When creation, installation, or configuration needs a name, identifier, port, domain, toggle, or resource selection, the assistant presents a form or step-by-step wizard instead of asking you to copy and complete a message template.
 
 When a form continues the conversation, only the non-sensitive fields declared by the card are included. Passwords, tokens, and secrets are never added to the message history. Any resulting operation still goes through platform authorization and required confirmation.
 

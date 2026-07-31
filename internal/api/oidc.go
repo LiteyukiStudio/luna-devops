@@ -245,7 +245,10 @@ func (h *Handlers) findOrCreateOIDCUser(provider model.AuthProvider, claims oidc
 	}
 
 	now := time.Now()
-	policy := h.ensureAdmissionPolicy()
+	policy, err := h.ensureAdmissionPolicy()
+	if err != nil {
+		return model.User{}, err
+	}
 	user := model.User{
 		ID:       id.New("usr"),
 		Email:    email,

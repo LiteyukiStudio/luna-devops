@@ -132,7 +132,12 @@ func (h *Handlers) Login(ctx *gin.Context) {
 	if !h.allowSensitiveAuthAttempt(ctx, "login_ip", 10, time.Minute) {
 		return
 	}
-	if !h.ensureAdmissionPolicy().AllowLocalLogin {
+	policy, err := h.ensureAdmissionPolicy()
+	if err != nil {
+		writeAdmissionPolicyUnavailable(ctx, err)
+		return
+	}
+	if !policy.AllowLocalLogin {
 		writeError(ctx, http.StatusForbidden, "本地账号登录已关闭")
 		return
 	}
@@ -147,7 +152,7 @@ func (h *Handlers) Login(ctx *gin.Context) {
 	}
 
 	var user model.User
-	err := h.db.First(&user, "email = ?", email).Error
+	err = h.db.First(&user, "email = ?", email).Error
 	if err != nil || user.Disabled || bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(input.Password)) != nil {
 		writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.login.invalid")
 		return

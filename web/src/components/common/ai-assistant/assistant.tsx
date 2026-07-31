@@ -1,5 +1,4 @@
 import type { AutomaticRouteDelivery } from './automatic-actions'
-import type { Position } from './layout'
 import type { LiveSubscription } from './session'
 import type { AIEvent, AIUIAction } from '@/api'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -20,7 +19,7 @@ import { executeAutomaticRouteDelivery } from './automatic-route-delivery'
 import { readAIClientInstanceId } from './client-instance'
 import { AIAssistantComposer } from './composer'
 import { AIConversationList } from './conversation-list'
-import { aiAssistantLauncherClassName } from './launcher'
+import { AIAssistantLauncher } from './launcher'
 import {
   clampAssistantPosition,
   LAUNCHER_SIZE,
@@ -51,8 +50,6 @@ export function AiAssistant() {
   }), [i18n.language, location.hash, location.pathname, location.search])
   const triggerRef = useRef<HTMLButtonElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
-  const launcherDragStartRef = useRef<Position | undefined>(undefined)
-  const suppressLauncherClickRef = useRef(false)
   const automaticDeliveryHandlerRef = useRef<((delivery: AutomaticRouteDelivery) => Promise<void>) | undefined>(undefined)
   const processingAutomaticActionsRef = useRef(new Set<string>())
   const desktop = useDesktopViewport()
@@ -362,42 +359,18 @@ export function AiAssistant() {
   if (!available)
     return null
   if (!assistantOpen) {
+    const openAssistant = () => {
+      setOpenedCapabilityEpoch(capabilityEpoch)
+      setOpen(true)
+    }
     return (
-      <div className="pointer-events-none fixed inset-0 z-40">
-        <Rnd
-          bounds="parent"
-          className="pointer-events-auto"
-          enableResizing={false}
-          position={launcherPosition}
-          size={{ width: LAUNCHER_SIZE, height: LAUNCHER_SIZE }}
-          onDragStart={(_, data) => {
-            launcherDragStartRef.current = { x: data.x, y: data.y }
-            suppressLauncherClickRef.current = false
-          }}
-          onDragStop={(_, data) => {
-            const start = launcherDragStartRef.current
-            suppressLauncherClickRef.current = Boolean(start && (Math.abs(data.x - start.x) > 3 || Math.abs(data.y - start.y) > 3))
-            setLauncherPosition(clampAssistantPosition({ x: data.x, y: data.y }, LAUNCHER_SIZE, LAUNCHER_SIZE))
-          }}
-        >
-          <Button
-            ref={triggerRef}
-            aria-label={t('aiAssistant.open')}
-            className={aiAssistantLauncherClassName}
-            size="icon"
-            onClick={() => {
-              if (suppressLauncherClickRef.current) {
-                suppressLauncherClickRef.current = false
-                return
-              }
-              setOpenedCapabilityEpoch(capabilityEpoch)
-              setOpen(true)
-            }}
-          >
-            <Sparkles className="size-5" />
-          </Button>
-        </Rnd>
-      </div>
+      <AIAssistantLauncher
+        ref={triggerRef}
+        label={t('aiAssistant.open')}
+        position={launcherPosition}
+        onOpen={openAssistant}
+        onPositionChange={setLauncherPosition}
+      />
     )
   }
 
