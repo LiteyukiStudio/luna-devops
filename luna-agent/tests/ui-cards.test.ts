@@ -118,14 +118,14 @@ describe("interaction card tool", () => {
   })
 
   it("publishes the full generated JSON schema to the model", () => {
-    const cards = (createInteractionCardsTool.inputSchema.properties as Record<string, Record<string, unknown>>).cards
-    expect(cards).toBeDefined()
-    if (!cards) throw new Error("create_interaction_cards cards schema is missing")
-    expect(cards.maxItems).toBe(12)
-    expect(JSON.stringify(cards)).toContain("presentation")
-    expect(JSON.stringify(cards)).toContain("status_list")
-    expect(JSON.stringify(cards)).toContain("multi_select")
-    expect(createInteractionCardsTool.inputSchema.required).toContain("mode")
+    const schema = JSON.stringify(createInteractionCardsTool.inputSchema)
+    expect(schema).toContain("businessTemplate")
+    expect(schema).toContain("candidate_picker")
+    expect(schema).toContain("resource_configuration")
+    expect(schema).toContain("health_overview")
+    expect(schema).toContain("presentation")
+    expect(schema).toContain("status_list")
+    expect(schema).toContain("multi_select")
   })
 
   it.each([

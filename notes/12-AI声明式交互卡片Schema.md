@@ -1355,6 +1355,33 @@ interface BatchActionResultV1 {
 前端以 `result` 模板展示部分成功，允许只重试失败项。非批量 Tool 不能由浏览器
 循环调用伪造成批量操作。
 
+### 12.4 业务模板编译层
+
+通用 `mode/template/cards` Schema 保留为底层表达能力，但模型处理高频场景时优先提交
+`businessTemplate`。Agent 在持久化前把业务模板编译为同一个通用 Card Group，再执行现有
+Zod 校验、Timeline 投影和前端渲染。前端不增加第二套协议，也不根据业务模板 ID 写特殊渲染。
+
+首批业务模板：
+
+| `templateId` | 交互职责 | 编译目标 |
+| --- | --- | --- |
+| `candidate_picker` | 从 2～5 个丰富候选中选择 | `interactive + catalog`，每候选一张可操作卡 |
+| `candidate_select` | 从 6～50 个候选中选择 | `interactive + form`，使用单选字段 |
+| `resource_configuration` | 在一轮内收集已知资源的结构化操作参数 | `interactive + form`，支持多个分组 section |
+| `change_review` | 执行写操作前核对参数、影响和风险 | `interactive + plan`，不替代平台批准卡 |
+| `diagnosis_report` | 展示诊断结论、检查项和证据 | `presentation + diagnosis` |
+| `execution_progress` | 展示未结束任务的进度和步骤 | `presentation + progress` |
+| `operation_result` | 展示已验证终态和回执 | `presentation + result` |
+| `health_overview` | 汇总实时指标和分项健康 | `presentation + dashboard` |
+
+业务模板选择依据是当前工作流阶段、是否等待用户、候选数量和证据类型，不是资源名称。
+同一部署任务可以依次使用候选、配置、核对、进度和结果模板。只有关系图、代码、Diff、宽表格、
+图表、条件字段或特殊多卡组合无法由业务模板表达时，模型才直接提供通用卡片结构。
+
+`create_interaction_cards` 对模型暴露业务模板与通用卡片的联合输入，但执行器统一调用
+`normalizeInteractionCardsInput` 编译并只持久化通用 V1 定义。这样模板可以独立演进，客户端
+只维护一个渲染协议，审批、MFA、Secret 隔离和工具参数绑定也不产生旁路。
+
 ## 13. 卡片生成、传输与渲染时机
 
 `create_interaction_cards` 仍按普通 Tool Call 流式传输，但前端不能渲染未完成的

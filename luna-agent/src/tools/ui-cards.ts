@@ -1,5 +1,9 @@
 import { z } from "zod"
 import type { ModelToolDefinition } from "../provider/provider.js"
+import {
+  compileBusinessCardTemplate,
+  createBusinessCardTemplateInput,
+} from "./business-card-templates.js"
 import { registeredRouteName, routeIdentifiers } from "./ui-route.js"
 
 const identifier = z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/)
@@ -504,6 +508,11 @@ export const createInteractionCardsInput = z.object({
 
 export type CreateInteractionCardsInput = z.infer<typeof createInteractionCardsInput>
 
+const createInteractionCardsRequestInput = z.union([
+  createBusinessCardTemplateInput,
+  createInteractionCardsInput,
+])
+
 export const prepareInteractionCardsInput = z.object({
   schemaVersion: z.literal(1),
   generationId: identifier,
@@ -519,6 +528,16 @@ export function normalizeInteractionCardsInput(raw: unknown): unknown {
   const input = structuredClone(raw) as Record<string, unknown>
   if (input.schemaVersion === "1")
     input.schemaVersion = 1
+  const businessTemplate = createBusinessCardTemplateInput.safeParse(input)
+  const normalizedInput = businessTemplate.success
+    ? compileBusinessCardTemplate(businessTemplate.data)
+    : input
+  if (!normalizedInput || typeof normalizedInput !== "object" || Array.isArray(normalizedInput))
+    return normalizedInput
+  return normalizeCardSections(normalizedInput as Record<string, unknown>)
+}
+
+function normalizeCardSections(input: Record<string, unknown>): unknown {
   if (!Array.isArray(input.cards))
     return input
   const cards = input.cards as unknown[]
@@ -547,7 +566,7 @@ export function normalizeInteractionCardsInput(raw: unknown): unknown {
 
 export const createInteractionCardsTool: ModelToolDefinition = {
   operationId: "create_interaction_cards",
-  description: "完成一组受控的声明式内容与交互卡片。调用前必须先单独调用 prepare_interaction_cards，等待其返回 accepted，再使用完全相同的 generationId 调用本工具；前端会用最终卡片原位替换准备动画。必须先确定 mode：当前回复已经满足用户请求、只呈现事实或结果时使用 presentation；回复中出现“请选择、请填写、请确认、告诉我”等等待用户输入的要求，或必须取得用户决定才能继续当前任务时，必须使用 interactive，并提供能提交该决定的字段/按钮。presentation 不得包含表单；interactive 不得只有不可点击的 item_list。多个丰富候选默认每个候选一张带 send_message/tool 动作的卡片；候选较多时使用 form 的 select 字段并提供提交动作。template 必须按当前工作流阶段选择：catalog 用于候选发现，comparison 用于同维度比较，inspector 用于已知资源事实，form 用于一轮内收集结构化参数，wizard 用于字段存在依赖或需要分阶段收集，diagnosis 用于结论、证据和修复，plan 用于执行前计划，progress 用于长任务状态，result 用于最终回执，dashboard 用于指标与健康概览。只要下一步需要用户填写、选择、切换或组合一个或多个结构化操作参数，就必须使用 form 或 wizard，不得用 create_options、纯文本问题或空白消息模板代替。卡片只能引用当前工具结果中的真实资源和标识符；不能生成 HTML、CSS、脚本、任意 URL 或虚构状态。展示文本可以使用受控 Markdown，但 HTML 会被忽略。tool action 只能引用当前模型工具列表中已经存在的 operationId，平台仍会重新鉴权并按风险要求确认或 MFA；没有对应写入工具时只能展示或用 send_message 收集选择。send_message 需要带入表单值时只能在 message 中使用 {{field_id}}，不得自创路径或模板语法；敏感字段永远不能插入消息。简单的 2～5 个无需结构化输入的后续建议继续使用 create_options。",
+  description: "完成一组受控的声明式内容与交互卡片。调用前必须先单独调用 prepare_interaction_cards，等待 accepted，再复用 generationId。优先使用 businessTemplate：2～5 个丰富候选用 candidate_picker，6～50 个候选用 candidate_select，需要结构化参数用 resource_configuration，执行前核对变更用 change_review，诊断结论用 diagnosis_report，运行中状态用 execution_progress，终态回执用 operation_result，健康概览用 health_overview。只有业务模板无法表达必要结构时，才直接提供 mode/template/cards 自定义卡片。需要用户选择、填写或确认时必须生成交互模板；只呈现事实、状态或结果时使用展示模板。卡片事实和 ID 必须来自当前可信工具结果；tool action 只能引用当前模型工具列表中的真实 operationId，并继续接受平台鉴权、批准和 MFA。不得生成 HTML、CSS、脚本、任意 URL 或虚构状态；简单的 2～5 个无丰富内容且无需结构化输入的建议继续使用 create_options。",
   inputSchema: cardInputJsonSchema(),
 }
 
@@ -572,7 +591,7 @@ function messageTemplateFieldIds(message: string): string[] {
 }
 
 function cardInputJsonSchema(): Record<string, unknown> {
-  const schema = z.toJSONSchema(createInteractionCardsInput, { io: "input" }) as Record<string, unknown>
+  const schema = z.toJSONSchema(createInteractionCardsRequestInput, { io: "input" }) as Record<string, unknown>
   delete schema.$schema
   return schema
 }

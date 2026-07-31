@@ -70,6 +70,8 @@ The assistant can organize resource candidates, comparisons, resource details, c
 
 Cards are either presentational or interactive. Presentational cards only show facts or results already obtained. When the current task needs you to choose, enter, or confirm something, the assistant shows actionable candidate buttons, a selection field, or a form with an explicit submit action instead of asking you to answer from a display-only list.
 
+Common workflows use platform presets for candidate selection, resource configuration, change review, diagnosis reports, execution progress, operation results, and health overviews. These presets keep fields, states, and actions consistent. The assistant only composes a more general card when a preset cannot express the required content.
+
 A card is only an input or presentation step in a workflow; it does not mean that the platform operation is complete. For creation, installation, release, or repair tasks, the assistant continues with the corresponding operation and reads back the actual state. It reports accepted work as “submitted” or “in progress” and only reports completion after the target state is reached.
 
 When creation, installation, or configuration needs a name, identifier, port, domain, toggle, or resource selection, the assistant presents a form or step-by-step wizard instead of asking you to copy and complete a message template.

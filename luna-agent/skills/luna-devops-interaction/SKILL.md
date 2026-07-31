@@ -93,3 +93,4 @@ description: 指导 Luna DevOps 助手处理项目空间、应用、代码仓库
 - 目标状态、执行闭环、完成措辞和验收证据：[task-completion.md](references/task-completion.md)
 - 选项组织、歧义、长列表、失败恢复：[options-and-continuity.md](references/options-and-continuity.md)
 - 交互卡片模板、内容块选择和极端数据处理：[card-templates.md](references/card-templates.md)
+- 业务卡片模板命中规则、参数契约和正反例：[business-card-templates.md](references/business-card-templates.md)

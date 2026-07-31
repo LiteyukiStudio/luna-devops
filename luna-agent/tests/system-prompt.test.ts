@@ -93,9 +93,11 @@ describe("versioned system prompt", () => {
 
     expect(names).toContain("projects-applications")
     expect(names).toContain("card-templates")
+    expect(names).toContain("business-card-templates")
     expect(prompt).toContain("就必须使用 create_interaction_cards")
     expect(prompt).toContain("一轮可完成时使用 form")
     expect(prompt).toContain("即使只缺一个结构化操作参数，也使用表单")
+    expect(prompt).toContain("业务模板能够表达当前阶段时，不得改用自由")
     expect(prompt).not.toContain("缺少参数时先用 send_message 收集")
   })
 
@@ -108,6 +110,8 @@ describe("versioned system prompt", () => {
     expect(prompt).toContain("当前任务必须等待用户选择、填写或确认才能继续时使用 interactive")
     expect(prompt).toContain("绝不能用 presentation 卡片或不可点击的 item_list 提问")
     expect(prompt).toContain("候选超过 5 个时，使用 form 的 select 字段")
+    expect(prompt).toContain("2～5 个带说明的真实候选使用 candidate_picker")
+    expect(prompt).toContain("6～50 个候选使用 candidate_select")
   })
 
   it("loads task completion criteria and treats loop limits as safety ceilings", () => {
