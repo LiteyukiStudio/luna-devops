@@ -13,6 +13,12 @@ const aiAssistant = {
     send: '发送消息',
     stop: '停止生成',
     generating: '助手正在生成',
+    messageActions: {
+      copy: '复制消息',
+      copied: '消息已复制',
+      copyFailed: '无法复制消息',
+      resend: '重新发送',
+    },
     runCanceled: '已停止生成，你可以继续发送消息。',
     runFailure: {
       generic: '本次生成失败，请重试；若持续失败，请检查模型服务配置。',

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -40,12 +41,12 @@ func (h *Handlers) ListReleaseImageCandidates(ctx *gin.Context) {
 	applicationID := strings.TrimSpace(ctx.Param("applicationId"))
 	targetID := strings.TrimSpace(ctx.Param("targetId"))
 	var app model.Application
-	if err := h.db.First(&app, "id = ? and project_id = ?", applicationID, project.ID).Error; err != nil {
+	if err := h.dbFor(ctx).First(&app, "id = ? and project_id = ?", applicationID, project.ID).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "应用不存在或不属于当前项目空间")
 		return
 	}
 	var target model.DeploymentTarget
-	if err := h.db.First(&target, "id = ? and project_id = ? and application_id = ?", targetID, project.ID, app.ID).Error; err != nil {
+	if err := h.dbFor(ctx).First(&target, "id = ? and project_id = ? and application_id = ?", targetID, project.ID, app.ID).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "部署配置不存在或不属于当前应用")
 		return
 	}
@@ -55,7 +56,7 @@ func (h *Handlers) ListReleaseImageCandidates(ctx *gin.Context) {
 	if target.SourceType == "repository" {
 		h.appendRegistryReleaseImageCandidates(ctx, user, target, &response, seen)
 	}
-	h.appendBuildRunReleaseImageCandidates(target, &response, seen)
+	h.appendBuildRunReleaseImageCandidates(target, &response, seen, ctx.Request.Context())
 	if target.SourceType == "image" && strings.TrimSpace(target.ImageRef) != "" {
 		appendReleaseImageCandidate(&response.Items, seen, releaseImageCandidateOutput{
 			Key:      "image:" + strings.TrimSpace(target.ImageRef),
@@ -76,16 +77,16 @@ func (h *Handlers) appendRegistryReleaseImageCandidates(ctx *gin.Context, user m
 		return
 	}
 	var registry model.ArtifactRegistry
-	if err := h.db.First(&registry, "id = ?", registryID).Error; err != nil {
+	if err := h.dbFor(ctx).First(&registry, "id = ?", registryID).Error; err != nil {
 		response.RegistryError = "registry_not_found"
 		return
 	}
-	if !h.canUseScopedResourceByID(user, registry.Scope, registry.OwnerRef, scopedResourceArtifactRegistry, registry.ID) {
+	if !h.canUseScopedResourceByID(user, registry.Scope, registry.OwnerRef, scopedResourceArtifactRegistry, registry.ID, ctx.Request.Context()) {
 		response.RegistryError = "registry_forbidden"
 		return
 	}
 	repository = repositoryWithoutRegistryHost(registry, repository)
-	credential := h.registryCredentialInput(user, registry)
+	credential := h.registryCredentialInput(ctx.Request.Context(), user, registry)
 	result, err := registryprovider.ListTags(ctx.Request.Context(), registry.Provider, registry.Endpoint, repository, releaseImageCandidateLimit, h.egressPolicyForUser(user), credential)
 	if err != nil {
 		response.RegistryError = "registry_unavailable"
@@ -119,9 +120,9 @@ func (h *Handlers) appendRegistryReleaseImageCandidates(ctx *gin.Context, user m
 	}
 }
 
-func (h *Handlers) appendBuildRunReleaseImageCandidates(target model.DeploymentTarget, response *releaseImageCandidatesOutput, seen map[string]bool) {
+func (h *Handlers) appendBuildRunReleaseImageCandidates(target model.DeploymentTarget, response *releaseImageCandidatesOutput, seen map[string]bool, contexts ...context.Context) {
 	var runs []model.BuildRun
-	if err := h.db.
+	if err := h.dbWithContext(firstContext(contexts)).
 		Where("project_id = ? and application_id = ? and deployment_target_id = ? and status = ?", target.ProjectID, target.ApplicationID, target.ID, "succeeded").
 		Order("finished_at desc nulls last, created_at desc").
 		Limit(releaseImageCandidateLimit).

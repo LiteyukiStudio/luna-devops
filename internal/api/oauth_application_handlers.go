@@ -27,7 +27,7 @@ func (h *Handlers) ListOAuthApplications(ctx *gin.Context) {
 		return
 	}
 	pagination := paginationFromQuery(ctx)
-	query := h.db.Model(&model.OAuthApplication{}).Where("owner_user_id = ? and revoked_at is null", user.ID)
+	query := h.dbFor(ctx).Model(&model.OAuthApplication{}).Where("owner_user_id = ? and revoked_at is null", user.ID)
 	query = applySearch(ctx, query, "name", "description", "client_id")
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -65,11 +65,11 @@ func (h *Handlers) CreateOAuthApplication(ctx *gin.Context) {
 	application.ID = id.New("oapp")
 	application.ClientID = "lyo_app_" + randomHex(16)
 	application.ClientSecretHash = hashToken(plainSecret)
-	if err := h.db.Create(&application).Error; err != nil {
+	if err := h.dbFor(ctx).Create(&application).Error; err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	h.audit(user.ID, "oauth_application.create", application.ID, true, application.AllowedScopes)
+	h.auditWithContext(user.ID, "oauth_application.create", application.ID, true, application.AllowedScopes, ctx.Request.Context())
 	ctx.JSON(http.StatusCreated, gin.H{"application": oauthApplicationToResponse(application), "clientSecret": plainSecret})
 }
 
@@ -79,7 +79,7 @@ func (h *Handlers) UpdateOAuthApplication(ctx *gin.Context) {
 		return
 	}
 	var existing model.OAuthApplication
-	if err := h.db.First(&existing, "id = ? and owner_user_id = ? and revoked_at is null", ctx.Param("applicationId"), user.ID).Error; err != nil {
+	if err := h.dbFor(ctx).First(&existing, "id = ? and owner_user_id = ? and revoked_at is null", ctx.Param("applicationId"), user.ID).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "OAuth application not found")
 		return
 	}
@@ -99,7 +99,7 @@ func (h *Handlers) UpdateOAuthApplication(ctx *gin.Context) {
 	existing.RedirectURIs = next.RedirectURIs
 	existing.AllowedScopes = next.AllowedScopes
 	existing.AccessTokenLifetimeDays = next.AccessTokenLifetimeDays
-	if err := h.db.Transaction(func(tx *gorm.DB) error {
+	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Save(&existing).Error; err != nil {
 			return err
 		}
@@ -111,7 +111,7 @@ func (h *Handlers) UpdateOAuthApplication(ctx *gin.Context) {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	h.audit(user.ID, "oauth_application.update", existing.ID, true, existing.AllowedScopes)
+	h.auditWithContext(user.ID, "oauth_application.update", existing.ID, true, existing.AllowedScopes, ctx.Request.Context())
 	ctx.JSON(http.StatusOK, oauthApplicationToResponse(existing))
 }
 
@@ -121,14 +121,14 @@ func (h *Handlers) RotateOAuthApplicationSecret(ctx *gin.Context) {
 		return
 	}
 	var application model.OAuthApplication
-	if err := h.db.First(&application, "id = ? and owner_user_id = ? and revoked_at is null", ctx.Param("applicationId"), user.ID).Error; err != nil {
+	if err := h.dbFor(ctx).First(&application, "id = ? and owner_user_id = ? and revoked_at is null", ctx.Param("applicationId"), user.ID).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "OAuth application not found")
 		return
 	}
 	plainSecret := "lyo_secret_" + randomHex(32)
 	application.ClientSecretHash = hashToken(plainSecret)
 	now := time.Now()
-	if err := h.db.Transaction(func(tx *gorm.DB) error {
+	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Save(&application).Error; err != nil {
 			return err
 		}
@@ -139,7 +139,7 @@ func (h *Handlers) RotateOAuthApplicationSecret(ctx *gin.Context) {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	h.audit(user.ID, "oauth_application.rotate_secret", application.ID, true, "")
+	h.auditWithContext(user.ID, "oauth_application.rotate_secret", application.ID, true, "", ctx.Request.Context())
 	ctx.JSON(http.StatusOK, gin.H{"application": oauthApplicationToResponse(application), "clientSecret": plainSecret})
 }
 
@@ -149,12 +149,12 @@ func (h *Handlers) DeleteOAuthApplication(ctx *gin.Context) {
 		return
 	}
 	var application model.OAuthApplication
-	if err := h.db.First(&application, "id = ? and owner_user_id = ? and revoked_at is null", ctx.Param("applicationId"), user.ID).Error; err != nil {
+	if err := h.dbFor(ctx).First(&application, "id = ? and owner_user_id = ? and revoked_at is null", ctx.Param("applicationId"), user.ID).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "OAuth application not found")
 		return
 	}
 	now := time.Now()
-	if err := h.db.Transaction(func(tx *gorm.DB) error {
+	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := revokeOAuthApplication(tx, application.ID, now); err != nil {
 			return err
 		}
@@ -163,7 +163,7 @@ func (h *Handlers) DeleteOAuthApplication(ctx *gin.Context) {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	h.audit(user.ID, "oauth_application.revoke", application.ID, true, "")
+	h.auditWithContext(user.ID, "oauth_application.revoke", application.ID, true, "", ctx.Request.Context())
 	ctx.Status(http.StatusNoContent)
 }
 
@@ -173,7 +173,7 @@ func (h *Handlers) ListMyOAuthGrants(ctx *gin.Context) {
 		return
 	}
 	pagination := paginationFromQuery(ctx)
-	query := h.db.Model(&model.OAuthGrant{}).Where("user_id = ? and revoked_at is null", user.ID)
+	query := h.dbFor(ctx).Model(&model.OAuthGrant{}).Where("user_id = ? and revoked_at is null", user.ID)
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
@@ -189,7 +189,7 @@ func (h *Handlers) ListMyOAuthGrants(ctx *gin.Context) {
 	items := make([]oauthGrantResponse, 0, len(grants))
 	for _, grant := range grants {
 		var application model.OAuthApplication
-		if err := h.db.First(&application, "id = ?", grant.ApplicationID).Error; err != nil {
+		if err := h.dbFor(ctx).First(&application, "id = ?", grant.ApplicationID).Error; err != nil {
 			continue
 		}
 		items = append(items, oauthGrantResponse{
@@ -206,15 +206,15 @@ func (h *Handlers) RevokeMyOAuthGrant(ctx *gin.Context) {
 		return
 	}
 	var grant model.OAuthGrant
-	if err := h.db.First(&grant, "id = ? and user_id = ? and revoked_at is null", ctx.Param("grantId"), user.ID).Error; err != nil {
+	if err := h.dbFor(ctx).First(&grant, "id = ? and user_id = ? and revoked_at is null", ctx.Param("grantId"), user.ID).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "OAuth authorization not found")
 		return
 	}
-	if err := h.db.Transaction(func(tx *gorm.DB) error { return revokeOAuthGrant(tx, grant.ID, time.Now()) }); err != nil {
+	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error { return revokeOAuthGrant(tx, grant.ID, time.Now()) }); err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	h.audit(user.ID, "oauth_grant.revoke", grant.ID, true, "")
+	h.auditWithContext(user.ID, "oauth_grant.revoke", grant.ID, true, "", ctx.Request.Context())
 	ctx.Status(http.StatusNoContent)
 }
 

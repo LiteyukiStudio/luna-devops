@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { agentMetrics, clientSpanOptions, telemetryLog, withSpan } from "../telemetry.js"
 
 export type RemoteProviderConfig = {
   version: string
@@ -35,11 +36,22 @@ const remoteProviderConfigSchema = z.object({
 export class ProviderConfigClient {
   constructor(private readonly baseUrl: string, private readonly serviceToken: string) {}
   async get(signal?: AbortSignal): Promise<RemoteProviderConfig> {
+    return withSpan("luna_api.provider_config.get", clientSpanOptions({
+      "server.address": new URL(this.baseUrl).hostname,
+    }), async span => {
     const response = await fetch(new URL("/internal/v1/ai/provider-config", this.baseUrl), {
       headers: { authorization: `Bearer ${this.serviceToken}`, accept: "application/json" },
       ...(signal ? { signal } : {}),
     })
-    if (!response.ok) throw new Error("ai.provider_config_unavailable")
-    return remoteProviderConfigSchema.parse(await response.json())
+    span.setAttribute("http.response.status_code", response.status)
+    agentMetrics.externalRequests.add(1, { target: "luna_api", operation: "provider_config", outcome: response.ok ? "success" : String(response.status) })
+    if (!response.ok) {
+      telemetryLog("agent.provider_config.failed", "warn", { "http.response.status_code": response.status })
+      throw new Error("ai.provider_config_unavailable")
+    }
+    const config = remoteProviderConfigSchema.parse(await response.json())
+    span.setAttribute("luna.provider.config_version", config.version)
+    return config
+    })
   }
 }

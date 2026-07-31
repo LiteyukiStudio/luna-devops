@@ -16,7 +16,7 @@ func (h *Handlers) ListReleases(ctx *gin.Context) {
 	if _, ok := h.findProjectForCurrentUser(ctx); !ok {
 		return
 	}
-	query := h.db.Where("project_id = ?", ctx.Param("projectId")).Order("created_at desc")
+	query := h.dbFor(ctx).Where("project_id = ?", ctx.Param("projectId")).Order("created_at desc")
 	if environmentID := strings.TrimSpace(ctx.Query("environmentId")); environmentID != "" {
 		query = query.Where("environment_id = ?", environmentID)
 	}
@@ -51,14 +51,14 @@ func (h *Handlers) CreateRelease(ctx *gin.Context) {
 		return
 	}
 	release.ID = id.New("rel")
-	if err := h.db.Create(&release).Error; err != nil {
+	if err := h.dbFor(ctx).Create(&release).Error; err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
 	if !h.enqueueDeployRun(ctx.Request.Context(), release) {
 		release.Status = "failed"
 		release.Message = "部署任务投递失败，请稍后重试"
-		if err := h.db.Save(&release).Error; err != nil {
+		if err := h.dbFor(ctx).Save(&release).Error; err != nil {
 			writeError(ctx, http.StatusInternalServerError, err.Error())
 			return
 		}
@@ -81,7 +81,7 @@ func (h *Handlers) RollbackRelease(ctx *gin.Context) {
 		return
 	}
 	var sourceTarget model.DeploymentTarget
-	if err := h.db.First(&sourceTarget, "id = ? and project_id = ? and application_id = ?", source.DeploymentTargetID, source.ProjectID, source.ApplicationID).Error; err != nil {
+	if err := h.dbFor(ctx).First(&sourceTarget, "id = ? and project_id = ? and application_id = ?", source.DeploymentTargetID, source.ProjectID, source.ApplicationID).Error; err != nil {
 		writeError(ctx, http.StatusBadRequest, "部署配置不存在或不可用")
 		return
 	}
@@ -95,21 +95,21 @@ func (h *Handlers) RollbackRelease(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	revision, err := h.nextReleaseRevision(source)
+	revision, err := h.nextReleaseRevision(source, ctx.Request.Context())
 	if err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 	release := rollbackReleaseFromTarget(source, target, user.ID, revision)
 	release.ID = id.New("rel")
-	if err := h.db.Create(&release).Error; err != nil {
+	if err := h.dbFor(ctx).Create(&release).Error; err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
 	if !h.enqueueDeployRun(ctx.Request.Context(), release) {
 		release.Status = "failed"
 		release.Message = "部署任务投递失败，请稍后重试"
-		if err := h.db.Save(&release).Error; err != nil {
+		if err := h.dbFor(ctx).Save(&release).Error; err != nil {
 			writeError(ctx, http.StatusInternalServerError, err.Error())
 			return
 		}
@@ -128,7 +128,7 @@ func (h *Handlers) GetReleaseLogs(ctx *gin.Context) {
 		return
 	}
 	var log model.ReleaseLog
-	err := h.db.First(&log, "release_id = ? and project_id = ?", release.ID, release.ProjectID).Error
+	err := h.dbFor(ctx).First(&log, "release_id = ? and project_id = ?", release.ID, release.ProjectID).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		ctx.JSON(http.StatusOK, model.ReleaseLog{
 			ReleaseID: release.ID,

@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/LiteyukiStudio/devops/internal/telemetry"
 )
 
 type Collector struct {
@@ -35,7 +37,7 @@ func NewCollector(config Config, discoverer RouteDiscoverer, reporter Reporter, 
 		config:     config,
 		discoverer: discoverer,
 		reporter:   reporter,
-		client:     &http.Client{Timeout: config.HTTPTimeout},
+		client:     telemetry.InstrumentHTTPClient(&http.Client{Timeout: config.HTTPTimeout}),
 		logger:     logger,
 		states:     map[string]routeState{},
 	}
@@ -44,11 +46,11 @@ func NewCollector(config Config, discoverer RouteDiscoverer, reporter Reporter, 
 func (c *Collector) Run(ctx context.Context) error {
 	if err := c.refreshRoutes(ctx); err != nil {
 		c.setError(err)
-		c.logger.Warn("initial route refresh failed", "error", err)
+		c.logger.WarnContext(ctx, "initial route refresh failed", "event.name", "gateway_probe.routes.refresh_failed", "error.type", telemetry.ErrorType(err))
 	}
 	if err := c.scrapeAndReport(ctx); err != nil {
 		c.setError(err)
-		c.logger.Warn("initial gateway traffic scrape failed", "error", err)
+		c.logger.WarnContext(ctx, "initial gateway traffic scrape failed", "event.name", "gateway_probe.scrape.failed", "error.type", telemetry.ErrorType(err))
 	}
 	ticker := time.NewTicker(c.config.ScrapeInterval)
 	defer ticker.Stop()
@@ -59,7 +61,7 @@ func (c *Collector) Run(ctx context.Context) error {
 		case <-ticker.C:
 			if err := c.scrapeAndReport(ctx); err != nil {
 				c.setError(err)
-				c.logger.Warn("gateway traffic scrape failed", "error", err)
+				c.logger.WarnContext(ctx, "gateway traffic scrape failed", "event.name", "gateway_probe.scrape.failed", "error.type", telemetry.ErrorType(err))
 			}
 		}
 	}
@@ -91,7 +93,9 @@ func (c *Collector) Metrics(w http.ResponseWriter, _ *http.Request) {
 	_, _ = fmt.Fprintln(w, "luna_devops_gateway_traffic_probe_last_error 0")
 }
 
-func (c *Collector) scrapeAndReport(ctx context.Context) error {
+func (c *Collector) scrapeAndReport(ctx context.Context) (err error) {
+	ctx, end := telemetry.StartOperation(ctx, "gateway_probe", "scrape_and_report")
+	defer func() { end(err) }()
 	if c.reporter != nil {
 		if err := c.reporter.Hello(ctx); err != nil {
 			return fmt.Errorf("send probe hello: %w", err)
@@ -139,7 +143,9 @@ func (c *Collector) scrapeAndReport(ctx context.Context) error {
 	return nil
 }
 
-func (c *Collector) refreshRoutes(ctx context.Context) error {
+func (c *Collector) refreshRoutes(ctx context.Context) (err error) {
+	ctx, end := telemetry.StartOperation(ctx, "gateway_probe", "refresh_routes")
+	defer func() { end(err) }()
 	routes, err := c.discoverer.ListRoutes(ctx)
 	if err != nil {
 		return err
@@ -211,7 +217,7 @@ func (c *Collector) setError(err error) {
 		return
 	}
 	c.mu.Lock()
-	c.lastError = err.Error()
+	c.lastError = telemetry.ErrorType(err)
 	c.mu.Unlock()
 }
 

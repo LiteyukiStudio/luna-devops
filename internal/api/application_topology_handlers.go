@@ -48,7 +48,7 @@ func (h *Handlers) GetApplicationTopology(ctx *gin.Context) {
 	}
 
 	var targets []model.DeploymentTarget
-	if err := h.db.WithContext(ctx).Where(
+	if err := h.dbFor(ctx).WithContext(ctx).Where(
 		"project_id = ? and application_id = ? and delete_status <> ?",
 		project.ID,
 		ctx.Param("applicationId"),
@@ -93,7 +93,7 @@ func (h *Handlers) GetApplicationTopology(ctx *gin.Context) {
 			response.Warnings = append(response.Warnings, warning)
 			continue
 		}
-		kubeconfig := h.secrets.Resolve(cluster.KubeconfigRef)
+		kubeconfig := h.secrets.ResolveContext(ctx.Request.Context(), cluster.KubeconfigRef)
 		if strings.TrimSpace(kubeconfig) == "" {
 			warning.Code = "cluster_kubeconfig_unavailable"
 			response.Warnings = append(response.Warnings, warning)

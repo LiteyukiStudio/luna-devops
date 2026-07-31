@@ -13,6 +13,12 @@ const aiAssistant = {
     send: 'Send message',
     stop: 'Stop generating',
     generating: 'Assistant is generating',
+    messageActions: {
+      copy: 'Copy message',
+      copied: 'Message copied',
+      copyFailed: 'Could not copy the message',
+      resend: 'Send again',
+    },
     runCanceled: 'Generation stopped. You can continue sending messages.',
     runFailure: {
       generic: 'This response failed. Try again, or check the model service configuration if it keeps failing.',

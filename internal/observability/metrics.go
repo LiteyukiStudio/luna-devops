@@ -3,13 +3,14 @@ package observability
 import (
 	"context"
 	"database/sql"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/gin-gonic/gin"
 	"github.com/hibiken/asynq"
 	"github.com/prometheus/client_golang/prometheus"
@@ -35,12 +36,10 @@ type BusinessRunMetric struct {
 }
 
 type DeploymentRuntimeMetric struct {
-	DeploymentTargetID string
-	EnvironmentID      string
-	DesiredReplicas    int32
-	ReadyReplicas      int32
-	AvailableReplicas  int32
-	UpdatedReplicas    int32
+	DesiredReplicas   int32
+	ReadyReplicas     int32
+	AvailableReplicas int32
+	UpdatedReplicas   int32
 }
 
 func (c MetricsConfig) Active() bool {
@@ -89,7 +88,11 @@ func RegisterDBStats(registry *prometheus.Registry, db *sql.DB, name string) {
 func StartMetricsServer(config MetricsConfig, registry *prometheus.Registry) (*http.Server, error) {
 	if !config.Active() {
 		if config.Enabled {
-			log.Printf("metrics disabled for %s: METRICS_ADDR is empty", config.Service)
+			telemetry.Logger().Warn("metrics endpoint disabled",
+				slog.String("event.name", "metrics.endpoint.disabled"),
+				slog.String("service.component", config.Service),
+				slog.String("reason.code", "metrics_address_empty"),
+			)
 		}
 		return nil, nil
 	}
@@ -111,9 +114,18 @@ func StartMetricsServer(config MetricsConfig, registry *prometheus.Registry) (*h
 	}
 	server.Addr = listener.Addr().String()
 	go func() {
-		log.Printf("%s metrics listening on %s%s", config.Service, config.Addr, path)
+		telemetry.Logger().Info("metrics endpoint started",
+			slog.String("event.name", "metrics.endpoint.started"),
+			slog.String("service.component", config.Service),
+			slog.String("server.address", server.Addr),
+			slog.String("url.path", path),
+		)
 		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
-			log.Printf("serve %s metrics: %v", config.Service, err)
+			telemetry.Logger().Error("metrics endpoint failed",
+				slog.String("event.name", "metrics.endpoint.failed"),
+				slog.String("service.component", config.Service),
+				slog.String("error.type", telemetry.ErrorType(err)),
+			)
 		}
 	}()
 	return server, nil
@@ -128,7 +140,10 @@ func ShutdownMetricsServer(ctx context.Context, server *http.Server) {
 		return
 	}
 	if err := server.Shutdown(ctx); err != nil {
-		log.Printf("shutdown metrics server: %v", err)
+		telemetry.Logger().ErrorContext(ctx, "metrics endpoint shutdown failed",
+			slog.String("event.name", "metrics.endpoint.shutdown_failed"),
+			slog.String("error.type", telemetry.ErrorType(err)),
+		)
 	}
 }
 
@@ -190,23 +205,21 @@ func (m *HTTPMetrics) GinMiddleware() gin.HandlerFunc {
 }
 
 type WorkerMetrics struct {
-	buildDuration                 *prometheus.HistogramVec
-	buildRuns                     *prometheus.CounterVec
-	completed                     *prometheus.CounterVec
-	deploymentAvailableReplicas   *prometheus.GaugeVec
-	deploymentDesiredReplicas     *prometheus.GaugeVec
-	deploymentReadyReplicas       *prometheus.GaugeVec
-	deploymentUnavailableReplicas *prometheus.GaugeVec
-	deploymentUpdatedReplicas     *prometheus.GaugeVec
-	duration                      *prometheus.HistogramVec
-	gatewaySync                   *prometheus.CounterVec
-	gatewaySyncDuration           *prometheus.HistogramVec
-	inflight                      *prometheus.GaugeVec
-	queueFor                      func(taskType string) string
-	releaseDuration               *prometheus.HistogramVec
-	releases                      *prometheus.CounterVec
-	retries                       *prometheus.CounterVec
-	started                       *prometheus.CounterVec
+	buildDuration          *prometheus.HistogramVec
+	buildRuns              *prometheus.CounterVec
+	completed              *prometheus.CounterVec
+	deploymentObservations *prometheus.CounterVec
+	deploymentReadyRatio   *prometheus.HistogramVec
+	deploymentReplicaCount *prometheus.HistogramVec
+	duration               *prometheus.HistogramVec
+	gatewaySync            *prometheus.CounterVec
+	gatewaySyncDuration    *prometheus.HistogramVec
+	inflight               *prometheus.GaugeVec
+	queueFor               func(taskType string) string
+	releaseDuration        *prometheus.HistogramVec
+	releases               *prometheus.CounterVec
+	retries                *prometheus.CounterVec
+	started                *prometheus.CounterVec
 }
 
 func NewWorkerMetrics(registry *prometheus.Registry, service string) *WorkerMetrics {
@@ -227,31 +240,23 @@ func NewWorkerMetrics(registry *prometheus.Registry, service string) *WorkerMetr
 			Help:        "Total worker tasks completed by Luna.",
 			ConstLabels: prometheus.Labels{"service": service},
 		}, []string{"queue", "task_type", "result"}),
-		deploymentAvailableReplicas: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name:        "luna_devops_deployment_available_replicas",
-			Help:        "Available replicas reported by Kubernetes for a Luna deployment target.",
+		deploymentObservations: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name:        "luna_devops_deployment_observations_total",
+			Help:        "Total Kubernetes deployment observations grouped by readiness state.",
 			ConstLabels: prometheus.Labels{"service": service},
-		}, []string{"deployment_target_id", "environment_id"}),
-		deploymentDesiredReplicas: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name:        "luna_devops_deployment_desired_replicas",
-			Help:        "Desired replicas reported by Kubernetes for a Luna deployment target.",
+		}, []string{"state"}),
+		deploymentReadyRatio: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name:        "luna_devops_deployment_ready_ratio",
+			Help:        "Distribution of ready replica ratios observed for Luna deployments.",
 			ConstLabels: prometheus.Labels{"service": service},
-		}, []string{"deployment_target_id", "environment_id"}),
-		deploymentReadyReplicas: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name:        "luna_devops_deployment_ready_replicas",
-			Help:        "Ready replicas reported by Kubernetes for a Luna deployment target.",
+			Buckets:     []float64{0, 0.25, 0.5, 0.75, 0.9, 1},
+		}, []string{"state"}),
+		deploymentReplicaCount: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name:        "luna_devops_deployment_replica_count",
+			Help:        "Distribution of desired, ready, available, and updated replica counts.",
 			ConstLabels: prometheus.Labels{"service": service},
-		}, []string{"deployment_target_id", "environment_id"}),
-		deploymentUnavailableReplicas: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name:        "luna_devops_deployment_unavailable_replicas",
-			Help:        "Unavailable replicas reported by Kubernetes for a Luna deployment target.",
-			ConstLabels: prometheus.Labels{"service": service},
-		}, []string{"deployment_target_id", "environment_id"}),
-		deploymentUpdatedReplicas: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name:        "luna_devops_deployment_updated_replicas",
-			Help:        "Updated replicas reported by Kubernetes for a Luna deployment target.",
-			ConstLabels: prometheus.Labels{"service": service},
-		}, []string{"deployment_target_id", "environment_id"}),
+			Buckets:     []float64{0, 1, 2, 3, 5, 10, 25, 50, 100},
+		}, []string{"kind"}),
 		duration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Name:        "luna_devops_worker_task_duration_seconds",
 			Help:        "Duration of worker tasks processed by Luna.",
@@ -300,11 +305,9 @@ func NewWorkerMetrics(registry *prometheus.Registry, service string) *WorkerMetr
 		metrics.buildDuration,
 		metrics.buildRuns,
 		metrics.completed,
-		metrics.deploymentAvailableReplicas,
-		metrics.deploymentDesiredReplicas,
-		metrics.deploymentReadyReplicas,
-		metrics.deploymentUnavailableReplicas,
-		metrics.deploymentUpdatedReplicas,
+		metrics.deploymentObservations,
+		metrics.deploymentReadyRatio,
+		metrics.deploymentReplicaCount,
 		metrics.duration,
 		metrics.gatewaySync,
 		metrics.gatewaySyncDuration,
@@ -390,21 +393,24 @@ func (m *WorkerMetrics) SetDeploymentRuntime(metric DeploymentRuntimeMetric) {
 	if m == nil {
 		return
 	}
-	targetID := stableLabel(metric.DeploymentTargetID, "unknown")
-	environmentID := stableLabel(metric.EnvironmentID, "unknown")
 	desired := float64(nonNegativeInt32(metric.DesiredReplicas))
 	ready := float64(nonNegativeInt32(metric.ReadyReplicas))
 	available := float64(nonNegativeInt32(metric.AvailableReplicas))
 	updated := float64(nonNegativeInt32(metric.UpdatedReplicas))
-	unavailable := desired - available
-	if unavailable < 0 {
-		unavailable = 0
+	state := "ready"
+	if desired > 0 && available < desired {
+		state = "degraded"
 	}
-	m.deploymentDesiredReplicas.WithLabelValues(targetID, environmentID).Set(desired)
-	m.deploymentReadyReplicas.WithLabelValues(targetID, environmentID).Set(ready)
-	m.deploymentAvailableReplicas.WithLabelValues(targetID, environmentID).Set(available)
-	m.deploymentUpdatedReplicas.WithLabelValues(targetID, environmentID).Set(updated)
-	m.deploymentUnavailableReplicas.WithLabelValues(targetID, environmentID).Set(unavailable)
+	readyRatio := 1.0
+	if desired > 0 {
+		readyRatio = ready / desired
+	}
+	m.deploymentObservations.WithLabelValues(state).Inc()
+	m.deploymentReadyRatio.WithLabelValues(state).Observe(readyRatio)
+	m.deploymentReplicaCount.WithLabelValues("desired").Observe(desired)
+	m.deploymentReplicaCount.WithLabelValues("ready").Observe(ready)
+	m.deploymentReplicaCount.WithLabelValues("available").Observe(available)
+	m.deploymentReplicaCount.WithLabelValues("updated").Observe(updated)
 }
 
 func (m *WorkerMetrics) queueName(taskType string) string {

@@ -35,13 +35,13 @@ func (r *Runner) handleDeployRun(ctx context.Context, task *asynq.Task) error {
 	if !applicationRuntimeCanMutate(application) {
 		message := "应用正在删除中，跳过部署"
 		r.appendReleaseLog(release, message)
-		return r.finishDeployRelease(release, "failed", message)
+		return r.finishDeployRelease(ctx, release, "failed", message)
 	}
 	deploymentTarget, err := r.releaseDeploymentTarget(release)
 	if err != nil {
 		message := "部署配置不存在或已被删除，无法部署"
 		r.appendReleaseLog(release, message)
-		return r.finishDeployRelease(release, "failed", message)
+		return r.finishDeployRelease(ctx, release, "failed", message)
 	}
 	deploymentTarget = r.applyPlatformDeploymentTargetDefaults(project, application, deploymentTarget)
 	environment := deploymentTargetEnvironment(deploymentTarget)
@@ -59,40 +59,52 @@ func (r *Runner) handleDeployRun(ctx context.Context, task *asynq.Task) error {
 
 	namespace := deploymentNamespace(project, environment)
 	r.appendReleaseLog(release, fmt.Sprintf("确保命名空间 %s 存在", namespace))
-	if err := r.ensureProjectNamespace(ctx, namespace, project, environment); err != nil {
-		_ = r.finishDeployRelease(release, "failed", err.Error())
+	if err := workerStage(ctx, "deploy.ensure_namespace", func(stageCtx context.Context) error {
+		return r.ensureProjectNamespace(stageCtx, namespace, project, environment)
+	}); err != nil {
+		_ = r.finishDeployRelease(ctx, release, "failed", err.Error())
 		r.appendReleaseLog(release, "命名空间准备失败: "+err.Error())
 		return err
 	}
 	r.appendReleaseLog(release, "下发 ConfigMap/Secret")
-	serviceBindings, err := r.resolveServiceBindingConfig(project, deploymentTarget)
+	serviceBindings, err := workerStageValue(ctx, "deploy.resolve_service_bindings", func(context.Context) (resolvedServiceBindingConfig, error) {
+		return r.resolveServiceBindingConfig(project, deploymentTarget)
+	})
 	if err != nil {
-		_ = r.finishDeployRelease(release, "failed", err.Error())
+		_ = r.finishDeployRelease(ctx, release, "failed", err.Error())
 		r.appendReleaseLog(release, "服务引用解析失败: "+err.Error())
 		return err
 	}
 	if serviceBindings.Count > 0 {
 		r.appendReleaseLog(release, fmt.Sprintf("已解析 %d 个服务引用", serviceBindings.Count))
 	}
-	if err := r.applyApplicationRuntimeConfig(ctx, release, project, application, environment, deploymentTarget, namespace, serviceBindings); err != nil {
-		_ = r.finishDeployRelease(release, "failed", err.Error())
+	if err := workerStage(ctx, "deploy.apply_runtime_config", func(stageCtx context.Context) error {
+		return r.applyApplicationRuntimeConfig(stageCtx, release, project, application, environment, deploymentTarget, namespace, serviceBindings)
+	}); err != nil {
+		_ = r.finishDeployRelease(ctx, release, "failed", err.Error())
 		r.appendReleaseLog(release, "运行配置下发失败: "+err.Error())
 		return err
 	}
-	if err := r.runDeploymentHooks(ctx, hookPhasePreDeployment, release, project, application, environment, deploymentTarget, namespace); err != nil {
-		_ = r.finishDeployRelease(release, "failed", err.Error())
+	if err := workerStage(ctx, "deploy.run_pre_hook", func(stageCtx context.Context) error {
+		return r.runDeploymentHooks(stageCtx, hookPhasePreDeployment, release, project, application, environment, deploymentTarget, namespace)
+	}); err != nil {
+		_ = r.finishDeployRelease(ctx, release, "failed", err.Error())
 		r.appendReleaseLog(release, "preDeployment Hook 失败: "+err.Error())
 		return err
 	}
 	r.appendReleaseLog(release, "下发 Deployment/Service/ConfigMap/Secret")
-	if err := r.ensurePlatformApplicationDependencies(ctx, release, project, application, deploymentTarget, namespace); err != nil {
-		_ = r.finishDeployRelease(release, "failed", err.Error())
+	if err := workerStage(ctx, "deploy.ensure_dependencies", func(stageCtx context.Context) error {
+		return r.ensurePlatformApplicationDependencies(stageCtx, release, project, application, deploymentTarget, namespace)
+	}); err != nil {
+		_ = r.finishDeployRelease(ctx, release, "failed", err.Error())
 		r.appendReleaseLog(release, "平台组件依赖准备失败: "+err.Error())
 		r.markSystemComponentDeployment(release, "failed", err.Error())
 		return err
 	}
-	if err := r.applyApplicationResources(ctx, release, project, application, environment, deploymentTarget, namespace, serviceBindings); err != nil {
-		_ = r.finishDeployRelease(release, "failed", err.Error())
+	if err := workerStage(ctx, "deploy.apply_resources", func(stageCtx context.Context) error {
+		return r.applyApplicationResources(stageCtx, release, project, application, environment, deploymentTarget, namespace, serviceBindings)
+	}); err != nil {
+		_ = r.finishDeployRelease(ctx, release, "failed", err.Error())
 		r.appendReleaseLog(release, "资源下发失败: "+err.Error())
 		r.markSystemComponentDeployment(release, "failed", err.Error())
 		return err
@@ -104,21 +116,25 @@ func (r *Runner) handleDeployRun(ctx context.Context, task *asynq.Task) error {
 		return err
 	}
 	r.appendReleaseLog(release, "等待 Deployment rollout 完成")
-	message, err := r.waitForDeploymentRollout(ctx, release, application, environment, deploymentTarget, namespace)
+	message, err := workerStageValue(ctx, "deploy.wait_rollout", func(stageCtx context.Context) (string, error) {
+		return r.waitForDeploymentRollout(stageCtx, release, application, environment, deploymentTarget, namespace)
+	})
 	if err != nil {
-		_ = r.finishDeployRelease(release, "failed", err.Error())
+		_ = r.finishDeployRelease(ctx, release, "failed", err.Error())
 		r.appendReleaseLog(release, "部署失败: "+err.Error())
 		r.markSystemComponentDeployment(release, "failed", err.Error())
 		return err
 	}
 	r.appendReleaseLog(release, firstNonEmpty(message, "Deployment rollout completed"))
-	if err := r.runDeploymentHooks(ctx, hookPhasePostDeployment, release, project, application, environment, deploymentTarget, namespace); err != nil {
-		_ = r.finishDeployRelease(release, "failed", err.Error())
+	if err := workerStage(ctx, "deploy.run_post_hook", func(stageCtx context.Context) error {
+		return r.runDeploymentHooks(stageCtx, hookPhasePostDeployment, release, project, application, environment, deploymentTarget, namespace)
+	}); err != nil {
+		_ = r.finishDeployRelease(ctx, release, "failed", err.Error())
 		r.appendReleaseLog(release, "postDeployment Hook 失败: "+err.Error())
 		r.markSystemComponentDeployment(release, "failed", err.Error())
 		return err
 	}
-	if err := r.finishDeployRelease(release, "succeeded", firstNonEmpty(message, "Deployment rollout completed")); err != nil {
+	if err := r.finishDeployRelease(ctx, release, "succeeded", firstNonEmpty(message, "Deployment rollout completed")); err != nil {
 		return err
 	}
 	r.markSystemComponentDeployment(release, "deployed", "system component application deployed")
@@ -383,7 +399,7 @@ func (r *Runner) waitForDeploymentRollout(ctx context.Context, release model.Rel
 	}
 }
 
-func (r *Runner) finishDeployRelease(release model.Release, status string, message string) error {
+func (r *Runner) finishDeployRelease(ctx context.Context, release model.Release, status string, message string) error {
 	finishedAt := time.Now()
 	err := r.db.Model(&model.Release{}).Where("id = ?", release.ID).Updates(releaseFinishUpdates(status, message, finishedAt)).Error
 	if err == nil {
@@ -391,7 +407,7 @@ func (r *Runner) finishDeployRelease(release model.Release, status string, messa
 		release.Message = firstNonEmpty(message, "Deployment "+status)
 		release.FinishedAt = &finishedAt
 		r.recordReleaseMetrics(release)
-		r.emitReleaseEvent(context.Background(), release, status, message)
+		r.emitReleaseEvent(ctx, release, status, message)
 	}
 	return err
 }

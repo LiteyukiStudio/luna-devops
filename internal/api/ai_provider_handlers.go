@@ -34,8 +34,8 @@ func (h *Handlers) GetAIProviderConfigInternal(ctx *gin.Context) {
 	}
 	values := h.configs.get(aiProviderConfigKeys)
 	var secretConfig model.AppConfig
-	_ = h.db.First(&secretConfig, "key = ?", "ai.provider.api_key").Error
-	apiKey := h.secrets.Resolve(secretConfig.Value)
+	_ = h.dbFor(ctx).First(&secretConfig, "key = ?", "ai.provider.api_key").Error
+	apiKey := h.secrets.ResolveContext(ctx.Request.Context(), secretConfig.Value)
 	version := aiProviderConfigVersion(values, secretConfig.UpdatedAt.String())
 	baseURL := strings.TrimSpace(values["ai.provider.base_url"])
 	modelName := strings.TrimSpace(values["ai.provider.default_model"])
@@ -80,12 +80,12 @@ func (h *Handlers) TestAIProviderConnection(ctx *gin.Context) {
 		ContentType: "application/json", Body: []byte(`{}`),
 	})
 	if err != nil {
-		h.audit(user.ID, "ai.provider.test", "ai.provider", false, "Agent connection test failed")
+		h.auditWithContext(user.ID, "ai.provider.test", "ai.provider", false, "Agent connection test failed", ctx.Request.Context())
 		writeErrorCode(ctx, http.StatusServiceUnavailable, "ai.provider_unavailable", "AI Provider test failed")
 		return
 	}
 	defer response.Body.Close()
-	h.audit(user.ID, "ai.provider.test", "ai.provider", response.StatusCode >= 200 && response.StatusCode < 300, "AI Provider connection tested through Agent")
+	h.auditWithContext(user.ID, "ai.provider.test", "ai.provider", response.StatusCode >= 200 && response.StatusCode < 300, "AI Provider connection tested through Agent", ctx.Request.Context())
 	ctx.Header("Cache-Control", "no-store")
 	ctx.Status(response.StatusCode)
 	_, _ = io.Copy(ctx.Writer, response.Body)

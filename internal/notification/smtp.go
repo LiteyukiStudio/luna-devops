@@ -13,6 +13,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/LiteyukiStudio/devops/internal/telemetry"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 type SMTPAdapter struct{}
@@ -134,6 +137,17 @@ func (cfg SMTPConfig) password(resolver SecretResolver) string {
 }
 
 func sendSMTP(ctx context.Context, cfg SMTPConfig, message RenderedMessage, resolver SecretResolver, timeout time.Duration) error {
+	operationCtx, end := telemetry.StartOperation(ctx, "notification", "smtp.send",
+		attribute.String("server.address", cfg.Host),
+		attribute.Int("server.port", cfg.Port),
+		attribute.String("network.transport", "tcp"),
+	)
+	err := sendSMTPMessage(operationCtx, cfg, message, resolver, timeout)
+	end(err)
+	return err
+}
+
+func sendSMTPMessage(ctx context.Context, cfg SMTPConfig, message RenderedMessage, resolver SecretResolver, timeout time.Duration) error {
 	address := net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port))
 	dialer := net.Dialer{Timeout: timeout}
 	var conn net.Conn

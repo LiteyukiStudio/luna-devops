@@ -24,8 +24,13 @@ For a first deployment, configure the Basic values only. Once the platform is ru
 | Advanced | `METRICS_ENABLED` | `false` | Enables the dedicated Prometheus metrics listener; disabled by default. When set to `true`, the API uses `:9090` by default. |
 | Advanced | `METRICS_ADDR` | `:9090` | Metrics listen address; change only when overriding the API metrics port or bind address. |
 | Advanced | `METRICS_PATH` | `/metrics` | Prometheus scrape path; registered only on the dedicated metrics listener. |
+| Advanced | `OTEL_EXPORTER_OTLP_ENDPOINT` | Empty | OpenTelemetry Collector OTLP HTTP endpoint. Leave empty to disable traces, OTLP metrics, and OTel log export. Use the same endpoint for API, Worker, and Agent. |
+| Advanced | `OTEL_RESOURCE_ATTRIBUTES` | Empty | Additional environment or cluster resource attributes as comma-separated `key=value` pairs. |
+| Advanced | `OTEL_EXPORTER_OTLP_HEADERS` | Empty | Collector authentication headers. Inject from a Secret in production instead of storing them in public configuration. |
 
 When metrics are enabled, the API exports HTTP request, latency, error response, PostgreSQL connection pool, and PostgreSQL/Redis health metrics. Grafana dashboard JSON lives under `grafana/dashboards/` and can be imported into Grafana when needed.
+
+When `OTEL_EXPORTER_OTLP_ENDPOINT` is configured, the API, Worker, and Agent report traces, metrics, and structured logs through OpenTelemetry. See [Connect an Observability Backend](./observability.md) for the minimal setup and local verification.
 
 Before listening on its HTTP port, the API performs one real connection check against both Redis and PostgreSQL. The process exits immediately when either dependency is unreachable, authentication fails, or a PostgreSQL migration fails; it never starts in a partially available state. After startup, go-redis and the `database/sql` pool recover from transient connection interruptions, while the container platform is responsible for restarting a process whose startup check fails.
 

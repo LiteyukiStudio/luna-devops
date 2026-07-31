@@ -1,18 +1,31 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 
 	"github.com/LiteyukiStudio/devops/internal/config"
+	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/hibiken/asynq"
 )
 
 func main() {
+	config.LoadEnvironment()
+	runtime, telemetryErr := telemetry.Setup(context.Background(), telemetry.ServiceConfig{ServiceName: "luna-tasks"})
+	if telemetryErr != nil {
+		_, _ = os.Stderr.WriteString("initialize telemetry failed\n")
+		os.Exit(1)
+	}
+	defer func() { _ = runtime.Shutdown(context.Background()) }()
 	if err := run(os.Args[1:]); err != nil {
-		log.Fatal(err)
+		telemetry.Logger().Error("task administration command failed",
+			slog.String("event.name", "tasks.command.failed"),
+			slog.String("error.type", telemetry.ErrorType(err)),
+		)
+		os.Exit(1)
 	}
 }
 

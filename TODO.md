@@ -1,5 +1,14 @@
 # TODO
 
+## 0. 全链路可观测改造
+
+- [x] 建立统一 OpenTelemetry 插桩标准，覆盖 Trace、结构化日志、Metrics、敏感信息与高基数约束。
+- [x] API 覆盖 HTTP、PostgreSQL、Redis、外部 Provider 与关键业务阶段，并统一 Trace/Request ID 日志关联。
+- [x] Worker 覆盖异步上下文传播、任务生命周期、构建/部署/网关阶段和依赖调用。
+- [x] Agent 覆盖 Run 循环、模型 Provider、工具、审批、交互卡片、网络访问和持久化。
+- [x] Web 覆盖页面操作与 API 链路传播，并确保遥测失败不阻塞用户流程。
+- [x] 使用临时本地可观测栈验收 Trace、Metrics、Logs；公开文档只说明最小配置和外部组件接入方式。
+
 ## 1. 文档与原型收口
 
 - [x] 更新产品原型为文档式多页面线框。
@@ -902,15 +911,15 @@
 
 ## 12. 可观测性
 
-原则：所有可观测能力默认关闭，只有对应显式开关为 `true` 才启用；metrics 属于本地暴露类能力，`METRICS_ENABLED=true` 后使用 API `:9090`、Worker `:9091` 和 `/metrics` 默认值启动独立 listener。外部上报、查询和跳转类能力必须同时具备真实 endpoint/base URL，未配置时不注册外部导出器、不暴露外部查询入口、不在 UI 展示不可用的 Grafana/Trace/Log 跳转。业务配置、工作流结果和不可变历史以数据库记录为准；当前运行状态以 Kubernetes 或对应外部平台的即时响应为准，上游不可达时统一返回 `unavailable`；Prometheus、Tempo、Loki 只作为观测与排障数据源。
+原则：OTLP 上报仅由 `OTEL_EXPORTER_OTLP_ENDPOINT` 启用，未配置时保持本地 JSON 日志与原有 Prometheus 指标，不初始化远端导出器。metrics 本地监听仍由 `METRICS_ENABLED=true` 独立控制。外部查询和跳转类能力必须具备真实 base URL，未配置时不暴露入口。业务配置、工作流结果和不可变历史以数据库记录为准；当前运行状态以 Kubernetes 或对应外部平台的即时响应为准；Prometheus、Tempo、Loki 只作为观测与排障数据源。
 
 ### 12.1 配置开关与安全边界
 
 - [x] Metrics MVP 配置闭环：新增 `METRICS_ENABLED`、`METRICS_ADDR`、`METRICS_PATH` 配置读取，默认关闭；API/Worker 显式开启后会用进程默认地址启动独立 metrics listener，配置项可覆盖监听地址和路径。
 - [x] Metrics MVP 部署闭环：`.env*` 示例、Docker Compose 和 Helm Chart 均补齐 API `:9090` / Worker `:9091` 独立 metrics 端口；Compose 仅 `expose` 容器内端口，Helm metrics Service/ServiceMonitor 默认关闭且不配置 Ingress。
-- [ ] 定义可观测配置模型和环境变量读取：`METRICS_ENABLED`、`METRICS_ADDR`、`METRICS_PATH`、`PROMETHEUS_QUERY_ENABLED`、`PROMETHEUS_BASE_URL`、`GRAFANA_LINKS_ENABLED`、`GRAFANA_BASE_URL`、`OTEL_TRACING_ENABLED`、`OTEL_EXPORTER_OTLP_ENDPOINT`、`OTEL_TRACES_SAMPLER`、`STRUCTURED_LOG_ENABLED`、`LOG_EXPORT_ENABLED`、`LOG_EXPORT_OTLP_ENDPOINT`、`LOKI_LINKS_ENABLED`、`LOKI_BASE_URL`、`ALERT_LINKS_ENABLED`、`ALERTMANAGER_BASE_URL`；每项必须有显式开关，metrics 可使用进程默认地址和路径，外部依赖 URL/endpoint 缺失时强制禁用并输出一次启动日志。
-- [ ] 在 `.env.example`、Docker Compose、Helm values 和配置参考文档中补齐可观测环境变量；默认值全部关闭，示例配置必须标明“配置后才启用”。
-- [ ] 收紧可观测安全边界：API/Worker metrics 仅在 `METRICS_ENABLED=true` 时使用独立 listener，不挂在业务 API 端口；默认 API `:9090/metrics`、Worker `:9091/metrics`，生产环境 metrics Service 默认只在集群内暴露，不配置 Ingress；Prometheus/Loki/Tempo/Grafana 查询和外链由后端生成或聚合，前端不得直接拼底层平台 API；日志、trace attribute 和 metric label 禁止记录 Secret、Token、Cookie、Authorization header 和用户输入原文。
+- [x] 收敛最小 OTLP 配置：`OTEL_EXPORTER_OTLP_ENDPOINT` 启用 Trace、Metrics 与 Logs，`OTEL_RESOURCE_ATTRIBUTES` 标识环境，`OTEL_EXPORTER_OTLP_HEADERS` 仅在 Collector 需要鉴权时配置。
+- [x] 在 `.env.example`、Docker Compose、Helm values 和中英文配置参考中补齐最小可观测配置；endpoint 留空时远端上报保持关闭。
+- [x] 收紧可观测安全边界：本地 metrics 使用独立 listener；遥测禁止记录 Secret、Token、Cookie、Authorization、请求正文、模型 Prompt、工具敏感参数、URL 查询参数与进程命令行参数。
 - [ ] 增加配置自检与系统设置展示：管理员可以看到每个可观测模块的启用状态、缺失配置键、采集端点和最后一次导出/查询错误；普通用户只看到可用的业务状态和受控跳转。
 
 ### 12.2 指标与 Prometheus/Grafana
@@ -928,20 +937,20 @@
 
 ### 12.3 链路追踪
 
-- [ ] 接入 OpenTelemetry SDK：仅当 `OTEL_TRACING_ENABLED=true` 且 `OTEL_EXPORTER_OTLP_ENDPOINT` 已配置时初始化 tracer provider 和 OTLP exporter；未配置时使用 no-op tracer，不影响主流程。
-- [ ] 为 Gin 请求、GORM 查询、Redis/Asynq 投递、外部 Git/Registry/Kubernetes provider 调用建立 span，span 命名使用稳定路由模板和操作名，不包含用户输入原文。
-- [ ] Asynq 任务 envelope 透传 W3C Trace Context；API 创建 BuildRun/Release 后投递任务，Worker 继续同一 trace，构建/部署/网关任务默认全量保留错误和慢任务 trace。
-- [ ] 为构建和发布阶段增加业务 span：checkout、build、push、apply、rollout wait、gateway sync；BuildRun/Release 详情保存 trace_id，用于 UI 生成受控 trace 跳转。
+- [x] 接入 OpenTelemetry SDK：仅在配置 `OTEL_EXPORTER_OTLP_ENDPOINT` 时初始化 OTLP Trace、Metrics 与 Logs 导出，未配置时不影响业务主流程。
+- [x] 为 Gin/Fastify 请求、GORM/PG 查询、Redis/Asynq、HTTP、Git/Registry/Kubernetes、模型 Provider 和 Agent 工具调用建立父子 span；命名使用稳定路由模板与操作名。
+- [x] Asynq 任务 envelope 透传 W3C Trace Context，Worker 从投递请求继续同一 trace，并记录任务生命周期与队列指标。
+- [x] 为构建、发布、网关、清理、通知和同步任务增加稳定业务阶段 span 与结构化关键节点日志。
 - [ ] 支持采样配置：`OTEL_TRACES_SAMPLER` 和采样比例环境变量；错误 trace、慢任务 trace 和构建/发布任务优先保留。
 - [ ] 在 `GRAFANA_LINKS_ENABLED=true` 且 `GRAFANA_BASE_URL` 已配置时，为构建详情、发布详情和访问入口生成 Tempo/Trace 深链；未配置时不展示 trace 入口。
 
 ### 12.4 日志上报与查询
 
-- [ ] 将 API/Worker 日志统一为可选结构化输出：仅当 `STRUCTURED_LOG_ENABLED=true` 时使用 JSON slog，默认保持当前开发友好输出；JSON 字段包含 service、component、trace_id、request_id、task_id、project_id、application_id、build_run_id、release_id、operation 和 error_code。
-- [ ] 日志导出显式开关：仅当 `LOG_EXPORT_ENABLED=true` 且 `LOG_EXPORT_OTLP_ENDPOINT` 或 `LOKI_BASE_URL` 已配置时启用日志导出；未配置时只输出到 stdout，不初始化远端日志客户端。
+- [x] API、Worker、Gateway Probe、任务 CLI 与 Agent 统一输出 JSON 结构化日志；关键节点携带 service、trace_id、span_id、request/task/run ID、稳定 operation 和 error_code。
+- [x] 配置 `OTEL_EXPORTER_OTLP_ENDPOINT` 时使用同一 OTLP 管道导出日志；未配置时只输出到 stdout。
 - [ ] 构建日志、Hook 日志、发布日志和运行 Pod 日志继续按业务权限在平台内展示；同时在启用日志导出时附加 trace_id、build_run_id、release_id 和 deployment_target_id，便于 Loki 聚合检索。
 - [ ] 在 `LOKI_LINKS_ENABLED=true` 且 `LOKI_BASE_URL`/`GRAFANA_BASE_URL` 已配置时，后端为构建、发布、运行日志生成受控 Loki/Grafana Explore 深链；未配置时仅展示平台内日志。
-- [ ] 增加日志脱敏统一组件验收：Secret、Token、Authorization header、Cookie、Registry 凭据、Git 凭据和 URL 内敏感参数不得进入平台日志、导出日志或 trace attribute。
+- [x] 增加日志与 Trace 脱敏验收：Secret、Token、Authorization、Cookie、Registry/Git 凭据、URL 查询参数、请求正文与进程命令行参数不得进入遥测。
 - [ ] 规划大日志归档：对象存储归档仍独立于 Loki，启用归档需要单独显式开关和存储配置；未配置时只保留数据库日志窗口。
 
 ### 12.5 告警与用户体验闭环
@@ -951,7 +960,7 @@
 - [ ] 平台看板增加可观测摘要：平台健康、队列积压、近期失败构建/发布、运行集群异常；所有摘要缺少 Prometheus 查询配置时回退到数据库业务记录。
 - [ ] 项目空间和应用概览增加用户友好的可观测卡片：构建成功率、最近发布状态、副本健康、访问入口状态、资源趋势；趋势依赖 Prometheus 查询开关，状态依赖平台业务记录。
 - [ ] 构建/发布失败自动关联最近日志、Kubernetes Events 和 trace_id，前端优先展示“可能原因 + 下一步操作”，深度日志和 trace 作为辅助入口。
-- [ ] 完成可观测 MVP 验收：不开任何可观测环境变量时平台行为与当前一致；只开 metrics 时 Prometheus 可 scrape API/Worker；只开 tracing 时构建/发布 trace 可在 Tempo 查看；只开日志导出时 Loki 可按 trace_id/build_run_id 查询；只开 Grafana 链接时 UI 展示受控 dashboard/trace/log 跳转。
+- [x] 完成可观测 MVP 验收：未配置 OTLP 时业务行为不变；临时 LGTM 环境已验证 API/数据库、Worker 异步任务和 Agent/模型/API 跨服务 Trace，Loki 可按 Trace ID 关联日志，Prometheus 可查询 API、Worker、数据库与 Agent 指标。
 
 ## 13. 通知适配器
 
@@ -1096,6 +1105,7 @@ OpenAPI，不把 MCP 作为内部服务总线。
 - [x] 按职责拆分 AI 助手编排层、消息时间线、工具调用卡片、输入区、窗口偏好与流式会话状态模块，降低单文件复杂度并保持现有交互行为。
 - [x] 将 AI 时间线按 `turnId` 归并为用户轮次，每轮只呈现一次用户消息和一个助手回复容器，并在容器内按 `timelineIndex` 保持 Thinking、Message 与 Tool Call 的真实交错顺序。
 - [x] 将用户与助手消息气泡限制为消息区最大 78% 宽度，分别为对方阵营保留稳定留白，并保持表格、代码与工具详情局部横向滚动。
+- [x] 为用户与助手消息增加常驻时间和整组稳定悬停操作区：双方支持复制，用户消息支持原文重发，触屏设备直接显示操作且不改写历史轮次。
 - [x] 整理 `components/common` 目录，将 AI 助手的组件、状态、工具与测试集中到 `common/ai-assistant/`，统一模块内相对导入与外部根路径导入。
 - [x] 修正 Tool Call 状态图标映射：仅运行态显示旋转加载图标，失败、成功、取消、跳过、等待批准与等待 MFA 使用明确语义图标。
 - [x] 扩展 AI 页面上下文信封与最近 6 轮角色化会话历史；每个正常完成的 Turn 强制生成 2-5 个意图预测选项，并为 Provider 格式偏差提供结构化重试和安全兜底。

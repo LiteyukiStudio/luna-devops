@@ -56,6 +56,7 @@ func NewClientFromKubeconfig(kubeconfig string) (*Client, error) {
 }
 
 func NewClientForConfig(config *rest.Config) (*Client, error) {
+	config = InstrumentRESTConfig(config)
 	client, err := clientset.NewForConfig(config)
 	if err != nil {
 		return nil, err

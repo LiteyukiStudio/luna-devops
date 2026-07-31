@@ -13,8 +13,8 @@ import (
 func (h *Handlers) emitServiceBindingEvent(ctx context.Context, user model.User, project model.Project, binding model.ServiceBinding, status, severity string) {
 	var sourceApplication model.Application
 	var sourceTarget model.DeploymentTarget
-	_ = h.db.WithContext(ctx).First(&sourceApplication, "id = ?", binding.SourceApplicationID).Error
-	_ = h.db.WithContext(ctx).First(&sourceTarget, "id = ?", binding.SourceDeploymentTargetID).Error
+	_ = h.dbWithContext(ctx).WithContext(ctx).First(&sourceApplication, "id = ?", binding.SourceApplicationID).Error
+	_ = h.dbWithContext(ctx).WithContext(ctx).First(&sourceTarget, "id = ?", binding.SourceDeploymentTargetID).Error
 
 	links := map[string]string{}
 	if base := strings.TrimRight(strings.TrimSpace(externalBaseURL()), "/"); base != "" {
@@ -23,7 +23,7 @@ func (h *Handlers) emitServiceBindingEvent(ctx context.Context, user model.User,
 	if len(links) == 0 {
 		links = nil
 	}
-	_, _ = (notification.Service{DB: h.db, Enqueuer: h.taskClient}).Emit(ctx, notification.Event{
+	_, _ = (notification.Service{DB: h.dbWithContext(ctx), Enqueuer: h.taskClient}).Emit(ctx, notification.Event{
 		Type:             "service_binding." + status,
 		Severity:         severity,
 		Project:          notification.EntityRef{ID: project.ID, Name: project.Name, Identifier: project.Identifier},

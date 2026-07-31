@@ -57,13 +57,17 @@ func (r *Runner) handleNotificationDeliver(ctx context.Context, task *asynq.Task
 		"attempt_count": delivery.AttemptCount + 1,
 		"started_at":    &startedAt,
 	}).Error
-	message, err := adapter.Render(ctx, event, template, json.RawMessage(channel.ConfigJSON), json.RawMessage(channel.SecretRefsJSON), r.secrets, event.Locale)
+	message, err := workerStageValue(ctx, "notification.render", func(stageCtx context.Context) (notification.RenderedMessage, error) {
+		return adapter.Render(stageCtx, event, template, json.RawMessage(channel.ConfigJSON), json.RawMessage(channel.SecretRefsJSON), r.secrets, event.Locale)
+	})
 	if err != nil {
 		_ = r.markNotificationDeliveryFailed(delivery, err, time.Since(startedAt), "", "")
 		return fmt.Errorf("%w: %v", asynq.SkipRetry, err)
 	}
 	requestSnapshot := r.notificationRequestSnapshot(message, channel.SecretRefsJSON)
-	result, err := adapter.Send(ctx, json.RawMessage(channel.ConfigJSON), json.RawMessage(channel.SecretRefsJSON), message, r.secrets)
+	result, err := workerStageValue(ctx, "notification.send", func(stageCtx context.Context) (notification.SendResult, error) {
+		return adapter.Send(stageCtx, json.RawMessage(channel.ConfigJSON), json.RawMessage(channel.SecretRefsJSON), message, r.secrets)
+	})
 	if err != nil {
 		_ = r.markNotificationDeliveryFailed(delivery, err, time.Since(startedAt), requestSnapshot, result.ResponseSnippet)
 		if notificationSendErrorShouldSkipRetry(result) {

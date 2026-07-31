@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"strings"
 
@@ -18,10 +19,10 @@ func isSystemProject(project model.Project) bool {
 	return strings.TrimSpace(project.SystemKey) != ""
 }
 
-func (h *Handlers) ensurePlatformSystemProject(user model.User) (model.Project, error) {
+func (h *Handlers) ensurePlatformSystemProject(user model.User, contexts ...context.Context) (model.Project, error) {
 	var project model.Project
-	if err := h.db.First(&project, "system_key = ?", platformSystemProjectKey).Error; err == nil {
-		return h.ensurePlatformSystemProjectBillingOwner(project, user)
+	if err := h.dbWithContext(firstContext(contexts)).First(&project, "system_key = ?", platformSystemProjectKey).Error; err == nil {
+		return h.ensurePlatformSystemProjectBillingOwner(project, user, firstContext(contexts))
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return model.Project{}, err
 	}
@@ -38,20 +39,20 @@ func (h *Handlers) ensurePlatformSystemProject(user model.User) (model.Project, 
 		SystemKey:           platformSystemProjectKey,
 		DeleteStatus:        "active",
 	}
-	if err := h.db.Create(&project).Error; err != nil {
+	if err := h.dbWithContext(firstContext(contexts)).Create(&project).Error; err != nil {
 		var existing model.Project
-		if findErr := h.db.First(&existing, "system_key = ?", platformSystemProjectKey).Error; findErr == nil {
-			return h.ensurePlatformSystemProjectBillingOwner(existing, user)
+		if findErr := h.dbWithContext(firstContext(contexts)).First(&existing, "system_key = ?", platformSystemProjectKey).Error; findErr == nil {
+			return h.ensurePlatformSystemProjectBillingOwner(existing, user, firstContext(contexts))
 		}
 		return model.Project{}, err
 	}
-	return h.ensurePlatformSystemProjectBillingOwner(project, user)
+	return h.ensurePlatformSystemProjectBillingOwner(project, user, firstContext(contexts))
 }
 
-func (h *Handlers) ensurePlatformSystemProjectBillingOwner(project model.Project, user model.User) (model.Project, error) {
+func (h *Handlers) ensurePlatformSystemProjectBillingOwner(project model.Project, user model.User, contexts ...context.Context) (model.Project, error) {
 	if strings.TrimSpace(project.BillingOwnerUserID) == "" && strings.TrimSpace(user.ID) != "" {
 		project.BillingOwnerUserID = user.ID
-		if err := h.db.Model(&project).Update("billing_owner_user_id", user.ID).Error; err != nil {
+		if err := h.dbWithContext(firstContext(contexts)).Model(&project).Update("billing_owner_user_id", user.ID).Error; err != nil {
 			return model.Project{}, err
 		}
 	}

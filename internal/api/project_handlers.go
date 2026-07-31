@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strconv"
@@ -22,13 +23,13 @@ func (h *Handlers) ListProjects(ctx *gin.Context) {
 		return
 	}
 	if authz.IsPlatformAdmin(user.Role) {
-		if _, err := h.ensurePlatformSystemProject(user); err != nil {
+		if _, err := h.ensurePlatformSystemProject(user, ctx.Request.Context()); err != nil {
 			writeError(ctx, http.StatusInternalServerError, err.Error())
 			return
 		}
 	}
 
-	baseQuery := h.db.
+	baseQuery := h.dbFor(ctx).
 		Table("projects").
 		Select("projects.*, project_members.dashboard_order, project_members.last_used_at, project_members.use_count").
 		Joins("left join project_members on project_members.project_id = projects.id and project_members.user_id = ?", user.ID).
@@ -78,7 +79,7 @@ func (h *Handlers) CreateProject(ctx *gin.Context) {
 	if !bindJSON(ctx, &input) {
 		return
 	}
-	project, err := projectservice.NewService(h.db).Create(ctx.Request.Context(), user.ID, projectservice.CreateInput{
+	project, err := projectservice.NewService(h.dbFor(ctx)).Create(ctx.Request.Context(), user.ID, projectservice.CreateInput{
 		Identifier: input.Identifier, Name: input.Name, Description: input.Description,
 		NamespaceStrategy: input.NamespaceStrategy, MaxConcurrentBuilds: input.MaxConcurrentBuilds,
 		WebConsoleEnabled: input.WebConsoleEnabled,
@@ -99,7 +100,7 @@ func (h *Handlers) CreateProject(ctx *gin.Context) {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	ctx.JSON(http.StatusCreated, h.projectResponse(project))
+	ctx.JSON(http.StatusCreated, h.projectResponse(project, ctx.Request.Context()))
 }
 
 func (h *Handlers) GetProject(ctx *gin.Context) {
@@ -107,8 +108,8 @@ func (h *Handlers) GetProject(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	h.recordProjectUsage(user.ID, project.ID)
-	ctx.JSON(http.StatusOK, h.projectResponse(project))
+	h.recordProjectUsage(user.ID, project.ID, ctx.Request.Context())
+	ctx.JSON(http.StatusOK, h.projectResponse(project, ctx.Request.Context()))
 }
 
 func (h *Handlers) UpdateProject(ctx *gin.Context) {
@@ -138,11 +139,11 @@ func (h *Handlers) UpdateProject(ctx *gin.Context) {
 		project.WebConsoleEnabled = *input.WebConsoleEnabled
 	}
 
-	if err := h.db.Save(&project).Error; err != nil {
+	if err := h.dbFor(ctx).Save(&project).Error; err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	ctx.JSON(http.StatusOK, h.projectResponse(project))
+	ctx.JSON(http.StatusOK, h.projectResponse(project, ctx.Request.Context()))
 }
 
 func (h *Handlers) DeleteProject(ctx *gin.Context) {
@@ -162,7 +163,7 @@ func (h *Handlers) DeleteProject(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusForbidden, "project.system_protected", "平台系统项目空间不能删除")
 		return
 	}
-	if err := markResourceDeleting(h.db, &model.Project{}, project.ID); err != nil {
+	if err := markResourceDeleting(h.dbFor(ctx), &model.Project{}, project.ID); err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -173,11 +174,11 @@ func (h *Handlers) DeleteProject(ctx *gin.Context) {
 		ActorID:      user.ID,
 		DeleteData:   true,
 	}) {
-		_ = markResourceDeleteFailed(h.db, &model.Project{}, project.ID, "资源清理任务投递失败，请稍后重试")
+		_ = markResourceDeleteFailed(h.dbFor(ctx), &model.Project{}, project.ID, "资源清理任务投递失败，请稍后重试")
 		writeError(ctx, http.StatusServiceUnavailable, "资源清理任务投递失败，请稍后重试")
 		return
 	}
-	h.audit(user.ID, "project.delete", project.ID, true, project.Name)
+	h.auditWithContext(user.ID, "project.delete", project.ID, true, project.Name, ctx.Request.Context())
 	ctx.Status(http.StatusNoContent)
 }
 
@@ -188,7 +189,7 @@ func (h *Handlers) ListProjectPins(ctx *gin.Context) {
 	}
 
 	var rows []projectPinResponse
-	err := h.db.Table("project_pins").
+	err := h.dbFor(ctx).Table("project_pins").
 		Select("projects.id, projects.identifier, projects.kubernetes_namespace, projects.name, projects.description, projects.namespace_strategy, projects.created_at, project_members.dashboard_order, project_members.last_used_at, project_members.use_count, project_pins.pinned_at").
 		Joins("join projects on projects.id = project_pins.project_id and projects.deleted_at is null").
 		Joins("join project_members on project_members.project_id = projects.id and project_members.user_id = project_pins.user_id").
@@ -210,14 +211,14 @@ func (h *Handlers) PinProject(ctx *gin.Context) {
 
 	now := time.Now()
 	var pin model.ProjectPin
-	err := h.db.First(&pin, "user_id = ? and project_id = ?", user.ID, project.ID).Error
+	err := h.dbFor(ctx).First(&pin, "user_id = ? and project_id = ?", user.ID, project.ID).Error
 	if err == nil {
 		pin.PinnedAt = now
-		if err := h.db.Save(&pin).Error; err != nil {
+		if err := h.dbFor(ctx).Save(&pin).Error; err != nil {
 			writeError(ctx, http.StatusInternalServerError, err.Error())
 			return
 		}
-		ctx.JSON(http.StatusOK, projectPinResponseFrom(project, pin, h.projectDashboardOrder(user.ID, project.ID)))
+		ctx.JSON(http.StatusOK, projectPinResponseFrom(project, pin, h.projectDashboardOrder(user.ID, project.ID, ctx.Request.Context())))
 		return
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -231,11 +232,11 @@ func (h *Handlers) PinProject(ctx *gin.Context) {
 		ProjectID: project.ID,
 		PinnedAt:  now,
 	}
-	if err := h.db.Create(&pin).Error; err != nil {
+	if err := h.dbFor(ctx).Create(&pin).Error; err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	ctx.JSON(http.StatusCreated, projectPinResponseFrom(project, pin, h.projectDashboardOrder(user.ID, project.ID)))
+	ctx.JSON(http.StatusCreated, projectPinResponseFrom(project, pin, h.projectDashboardOrder(user.ID, project.ID, ctx.Request.Context())))
 }
 
 func (h *Handlers) UnpinProject(ctx *gin.Context) {
@@ -244,7 +245,7 @@ func (h *Handlers) UnpinProject(ctx *gin.Context) {
 		return
 	}
 
-	if err := h.db.Delete(&model.ProjectPin{}, "user_id = ? and project_id = ?", user.ID, project.ID).Error; err != nil {
+	if err := h.dbFor(ctx).Delete(&model.ProjectPin{}, "user_id = ? and project_id = ?", user.ID, project.ID).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -271,7 +272,7 @@ func (h *Handlers) UpdateProjectOrder(ctx *gin.Context) {
 	}
 
 	var accessibleCount int64
-	if err := h.db.Model(&model.ProjectMember{}).Where("user_id = ? and project_id in ?", user.ID, projectIDs).Count(&accessibleCount).Error; err != nil {
+	if err := h.dbFor(ctx).Model(&model.ProjectMember{}).Where("user_id = ? and project_id in ?", user.ID, projectIDs).Count(&accessibleCount).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -280,7 +281,7 @@ func (h *Handlers) UpdateProjectOrder(ctx *gin.Context) {
 		return
 	}
 
-	if err := h.db.Transaction(func(tx *gorm.DB) error {
+	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
 		for index, projectID := range projectIDs {
 			if err := tx.Model(&model.ProjectMember{}).
 				Where("user_id = ? and project_id = ?", user.ID, projectID).
@@ -301,7 +302,7 @@ func (h *Handlers) ensureProjectIdentifierAvailable(ctx *gin.Context, identifier
 		writeError(ctx, http.StatusBadRequest, "项目空间标识不能为空")
 		return false
 	}
-	query := h.db.Unscoped().Model(&model.Project{}).Where("identifier = ?", identifier)
+	query := h.dbFor(ctx).Unscoped().Model(&model.Project{}).Where("identifier = ?", identifier)
 	if strings.TrimSpace(excludeProjectID) != "" {
 		query = query.Where("id <> ?", excludeProjectID)
 	}
@@ -323,7 +324,7 @@ func (h *Handlers) ListProjectMembers(ctx *gin.Context) {
 	}
 
 	var members []projectMemberResponse
-	query := h.db.Table("project_members").
+	query := h.dbFor(ctx).Table("project_members").
 		Select("project_members.id, project_members.project_id, project_members.user_id, project_members.role, users.email, users.name").
 		Joins("join users on users.id = project_members.user_id").
 		Where("project_members.project_id = ?", ctx.Param("projectId"))
@@ -375,7 +376,7 @@ func (h *Handlers) SearchProjectMemberCandidates(ctx *gin.Context) {
 
 	like := "%" + strings.ToLower(search) + "%"
 	var users []projectMemberCandidateResponse
-	err := h.db.Table("users").
+	err := h.dbFor(ctx).Table("users").
 		Select("users.id, users.email, users.name, users.avatar_url").
 		Where("users.disabled = ?", false).
 		Where("(lower(users.email) like ? or lower(users.name) like ?)", like, like).
@@ -409,12 +410,12 @@ func (h *Handlers) CreateProjectMember(ctx *gin.Context) {
 	email := strings.ToLower(strings.TrimSpace(input.Email))
 	switch {
 	case userID != "":
-		if err := h.db.First(&targetUser, "id = ? and disabled = ?", userID, false).Error; err != nil {
+		if err := h.dbFor(ctx).First(&targetUser, "id = ? and disabled = ?", userID, false).Error; err != nil {
 			writeError(ctx, http.StatusNotFound, "user not found")
 			return
 		}
 	case email != "":
-		if err := h.db.First(&targetUser, "email = ? and disabled = ?", email, false).Error; err != nil {
+		if err := h.dbFor(ctx).First(&targetUser, "email = ? and disabled = ?", email, false).Error; err != nil {
 			writeError(ctx, http.StatusNotFound, "user not found")
 			return
 		}
@@ -435,15 +436,15 @@ func (h *Handlers) CreateProjectMember(ctx *gin.Context) {
 		UserID:    targetUser.ID,
 		Role:      role,
 	}
-	if err := h.db.First(&model.ProjectMember{}, "project_id = ? and user_id = ?", member.ProjectID, member.UserID).Error; err == nil {
+	if err := h.dbFor(ctx).First(&model.ProjectMember{}, "project_id = ? and user_id = ?", member.ProjectID, member.UserID).Error; err == nil {
 		writeError(ctx, http.StatusConflict, "user is already a project member")
 		return
 	}
-	if err := h.db.Create(&member).Error; err != nil {
+	if err := h.dbFor(ctx).Create(&member).Error; err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	h.audit(actor.ID, "project_member.create", member.ID, true, member.Role)
+	h.auditWithContext(actor.ID, "project_member.create", member.ID, true, member.Role, ctx.Request.Context())
 
 	ctx.JSON(http.StatusCreated, projectMemberResponse{
 		ID:        member.ID,
@@ -465,7 +466,7 @@ func (h *Handlers) UpdateProjectMember(ctx *gin.Context) {
 	}
 
 	var member model.ProjectMember
-	if err := h.db.First(&member, "id = ? and project_id = ?", ctx.Param("memberId"), ctx.Param("projectId")).Error; err != nil {
+	if err := h.dbFor(ctx).First(&member, "id = ? and project_id = ?", ctx.Param("memberId"), ctx.Param("projectId")).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "member not found")
 		return
 	}
@@ -480,16 +481,16 @@ func (h *Handlers) UpdateProjectMember(ctx *gin.Context) {
 		writeError(ctx, http.StatusForbidden, "只有项目 owner 可以修改 owner 角色")
 		return
 	}
-	if member.Role == authz.ProjectRoleOwner && nextRole != authz.ProjectRoleOwner && !h.projectHasAnotherOwner(member.ProjectID, member.ID) {
+	if member.Role == authz.ProjectRoleOwner && nextRole != authz.ProjectRoleOwner && !h.projectHasAnotherOwner(ctx.Request.Context(), member.ProjectID, member.ID) {
 		writeError(ctx, http.StatusBadRequest, "项目至少需要保留一个 owner")
 		return
 	}
 	member.Role = nextRole
-	if err := h.db.Save(&member).Error; err != nil {
+	if err := h.dbFor(ctx).Save(&member).Error; err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	h.audit(user.ID, "project_member.update", member.ID, true, member.Role)
+	h.auditWithContext(user.ID, "project_member.update", member.ID, true, member.Role, ctx.Request.Context())
 	ctx.JSON(http.StatusOK, member)
 }
 
@@ -503,7 +504,7 @@ func (h *Handlers) DeleteProjectMember(ctx *gin.Context) {
 	}
 
 	var member model.ProjectMember
-	if err := h.db.First(&member, "id = ? and project_id = ?", ctx.Param("memberId"), ctx.Param("projectId")).Error; err != nil {
+	if err := h.dbFor(ctx).First(&member, "id = ? and project_id = ?", ctx.Param("memberId"), ctx.Param("projectId")).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "member not found")
 		return
 	}
@@ -516,22 +517,22 @@ func (h *Handlers) DeleteProjectMember(ctx *gin.Context) {
 			writeError(ctx, http.StatusForbidden, "只有项目 owner 可以移除 owner 成员")
 			return
 		}
-		if !h.projectHasAnotherOwner(member.ProjectID, member.ID) {
+		if !h.projectHasAnotherOwner(ctx.Request.Context(), member.ProjectID, member.ID) {
 			writeError(ctx, http.StatusBadRequest, "项目至少需要保留一个 owner")
 			return
 		}
 	}
-	if err := h.db.Delete(&member).Error; err != nil {
+	if err := h.dbFor(ctx).Delete(&member).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	h.audit(user.ID, "project_member.delete", member.ID, true, member.Role)
+	h.auditWithContext(user.ID, "project_member.delete", member.ID, true, member.Role, ctx.Request.Context())
 	ctx.Status(http.StatusNoContent)
 }
 
 func (h *Handlers) findProject(ctx *gin.Context) (model.Project, bool) {
 	var project model.Project
-	if err := h.db.First(&project, "id = ?", ctx.Param("projectId")).Error; err != nil {
+	if err := h.dbFor(ctx).First(&project, "id = ?", ctx.Param("projectId")).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "project not found")
 		return project, false
 	}
@@ -574,7 +575,7 @@ func (h *Handlers) findProjectForCurrentUserWithRoles(ctx *gin.Context, allowedR
 	}
 
 	var member model.ProjectMember
-	err := h.db.First(&member, "project_id = ? and user_id = ?", project.ID, user.ID).Error
+	err := h.dbFor(ctx).First(&member, "project_id = ? and user_id = ?", project.ID, user.ID).Error
 	if err != nil {
 		writeError(ctx, http.StatusForbidden, "你没有访问该项目的权限")
 		return model.Project{}, false
@@ -601,15 +602,15 @@ func projectRoleAllowed(role string, allowedRoles []string) bool {
 
 func (h *Handlers) currentProjectRoleAllows(ctx *gin.Context, projectID, userID string, allowedRoles ...string) bool {
 	var member model.ProjectMember
-	if err := h.db.First(&member, "project_id = ? and user_id = ?", projectID, userID).Error; err != nil {
+	if err := h.dbFor(ctx).First(&member, "project_id = ? and user_id = ?", projectID, userID).Error; err != nil {
 		writeError(ctx, http.StatusForbidden, "你没有访问该项目的权限")
 		return false
 	}
 	return projectRoleAllowed(member.Role, allowedRoles)
 }
 
-func (h *Handlers) projectHasAnotherOwner(projectID, memberID string) bool {
-	return h.projects.HasAnotherOwner(projectID, memberID)
+func (h *Handlers) projectHasAnotherOwner(ctx context.Context, projectID, memberID string) bool {
+	return h.projects.HasAnotherOwnerContext(ctx, projectID, memberID)
 }
 
 type projectInput struct {
@@ -650,14 +651,14 @@ type projectBillingOwnerResponse struct {
 	AvatarURL string `json:"avatarUrl"`
 }
 
-func (h *Handlers) projectResponse(project model.Project) projectResponse {
+func (h *Handlers) projectResponse(project model.Project, contexts ...context.Context) projectResponse {
 	response := projectResponse{Project: project}
 	if strings.TrimSpace(project.BillingOwnerUserID) == "" {
 		return response
 	}
 
 	var user model.User
-	if err := h.db.Select("id", "email", "name", "avatar_url").First(&user, "id = ?", project.BillingOwnerUserID).Error; err != nil {
+	if err := h.dbWithContext(firstContext(contexts)).Select("id", "email", "name", "avatar_url").First(&user, "id = ?", project.BillingOwnerUserID).Error; err != nil {
 		return response
 	}
 	response.BillingOwner = &projectBillingOwnerResponse{
@@ -713,9 +714,9 @@ func projectListScope(scope string) string {
 	return "related"
 }
 
-func (h *Handlers) recordProjectUsage(userID string, projectID string) {
+func (h *Handlers) recordProjectUsage(userID string, projectID string, contexts ...context.Context) {
 	now := time.Now()
-	_ = h.db.Model(&model.ProjectMember{}).
+	_ = h.dbWithContext(firstContext(contexts)).Model(&model.ProjectMember{}).
 		Where("user_id = ? and project_id = ?", userID, projectID).
 		Updates(map[string]any{
 			"last_used_at": now,
@@ -723,9 +724,9 @@ func (h *Handlers) recordProjectUsage(userID string, projectID string) {
 		}).Error
 }
 
-func (h *Handlers) projectDashboardOrder(userID string, projectID string) int {
+func (h *Handlers) projectDashboardOrder(userID string, projectID string, contexts ...context.Context) int {
 	var member model.ProjectMember
-	if err := h.db.Select("dashboard_order").First(&member, "user_id = ? and project_id = ?", userID, projectID).Error; err != nil {
+	if err := h.dbWithContext(firstContext(contexts)).Select("dashboard_order").First(&member, "user_id = ? and project_id = ?", userID, projectID).Error; err != nil {
 		return 0
 	}
 	return member.DashboardOrder

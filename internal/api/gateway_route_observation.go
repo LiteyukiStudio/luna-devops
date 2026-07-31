@@ -52,10 +52,10 @@ func (h *Handlers) observeGatewayRoute(ctx context.Context, route model.GatewayR
 	}
 
 	var project model.Project
-	if err := h.db.First(&project, "id = ?", route.ProjectID).Error; err != nil {
+	if err := h.dbWithContext(ctx).First(&project, "id = ?", route.ProjectID).Error; err != nil {
 		return unavailableGatewayRoute(route, "gateway_route.project_reference_unavailable")
 	}
-	cluster, err := h.runtimeClusterForGatewayRoute(route)
+	cluster, err := h.runtimeClusterForGatewayRoute(route, ctx)
 	if err != nil {
 		route.Status = observation.StatusNotConfigured
 		route.ObservationCode = "gateway_route.runtime_cluster_not_configured"
@@ -66,7 +66,7 @@ func (h *Handlers) observeGatewayRoute(ctx context.Context, route model.GatewayR
 	route.CertificateIssuerKind = gatewayRouteCertificateIssuerKind(cluster)
 	route.CertificateIssuerName = strings.TrimSpace(cluster.GatewayCertIssuerName)
 
-	kubeconfig := strings.TrimSpace(h.secrets.Resolve(cluster.KubeconfigRef))
+	kubeconfig := strings.TrimSpace(h.secrets.ResolveContext(ctx, cluster.KubeconfigRef))
 	if strings.TrimSpace(cluster.KubeconfigRef) == "" || kubeconfig == "" {
 		route.Status = observation.StatusNotConfigured
 		route.ObservationCode = "gateway_route.kubeconfig_not_configured"

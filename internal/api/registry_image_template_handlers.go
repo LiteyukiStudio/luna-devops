@@ -19,7 +19,7 @@ func (h *Handlers) GetRegistryImageTemplateDefault(ctx *gin.Context) {
 		return
 	}
 	var app model.Application
-	if err := h.db.First(&app, "id = ? and project_id = ?", strings.TrimSpace(ctx.Query("applicationId")), project.ID).Error; err != nil {
+	if err := h.dbFor(ctx).First(&app, "id = ? and project_id = ?", strings.TrimSpace(ctx.Query("applicationId")), project.ID).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "应用不存在")
 		return
 	}
@@ -29,7 +29,7 @@ func (h *Handlers) GetRegistryImageTemplateDefault(ctx *gin.Context) {
 	}
 	repository := repositoryWithoutRegistryHost(registry, buildTargetImageRepository(registry, project, app))
 	tag := "latest"
-	if credential, ok := h.registryPushCredentialForProject(user, registry, project.ID); ok {
+	if credential, ok := h.registryPushCredentialForProject(user, registry, project.ID, ctx.Request.Context()); ok {
 		templatedRepository, _ := splitTargetImageRef(buildTargetImageRepositoryForCredential(registry, credential, project, app, target))
 		repository = repositoryWithoutRegistryHost(registry, templatedRepository)
 		tag = buildStaticTargetImageTagForCredential(registry, credential, project, app, target)

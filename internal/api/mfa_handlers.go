@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"time"
@@ -51,14 +52,14 @@ func (h *Handlers) GetMFAStatus(ctx *gin.Context) {
 	}
 
 	var config model.UserMFAConfig
-	err := h.db.First(&config, "user_id = ?", user.ID).Error
+	err := h.dbFor(ctx).First(&config, "user_id = ?", user.ID).Error
 	if err != nil && err != gorm.ErrRecordNotFound {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 	remaining := int64(0)
 	if config.Enabled {
-		if err := h.db.Model(&model.MFARecoveryCode{}).Where("user_id = ? and used_at is null", user.ID).Count(&remaining).Error; err != nil {
+		if err := h.dbFor(ctx).Model(&model.MFARecoveryCode{}).Where("user_id = ? and used_at is null", user.ID).Count(&remaining).Error; err != nil {
 			writeError(ctx, http.StatusInternalServerError, err.Error())
 			return
 		}
@@ -87,27 +88,27 @@ func (h *Handlers) EnrollMFA(ctx *gin.Context) {
 	}
 
 	var existing model.UserMFAConfig
-	if err := h.db.First(&existing, "user_id = ?", user.ID).Error; err == nil && existing.Enabled {
-		h.audit(user.ID, "mfa.enroll", user.ID, false, "MFA already enabled")
+	if err := h.dbFor(ctx).First(&existing, "user_id = ?", user.ID).Error; err == nil && existing.Enabled {
+		h.auditWithContext(user.ID, "mfa.enroll", user.ID, false, "MFA already enabled", ctx.Request.Context())
 		writeErrorCode(ctx, http.StatusConflict, "mfa.already_enabled", "MFA 已启用，请先解绑后再重新绑定")
 		return
 	} else if err != nil && err != gorm.ErrRecordNotFound {
-		h.audit(user.ID, "mfa.enroll", user.ID, false, "failed to inspect MFA enrollment")
+		h.auditWithContext(user.ID, "mfa.enroll", user.ID, false, "failed to inspect MFA enrollment", ctx.Request.Context())
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	enrollment, err := generateTOTPEnrollment(user.Email)
 	if err != nil {
-		h.audit(user.ID, "mfa.enroll", user.ID, false, "failed to generate TOTP enrollment")
+		h.auditWithContext(user.ID, "mfa.enroll", user.ID, false, "failed to generate TOTP enrollment", ctx.Request.Context())
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 	resource := mfaSecretResource(user.ID)
-	_ = h.db.Where("resource = ?", resource).Delete(&model.SecretValue{}).Error
-	secretRef := h.secrets.Store(enrollment.Secret, user.ID, resource)
+	_ = h.dbFor(ctx).Where("resource = ?", resource).Delete(&model.SecretValue{}).Error
+	secretRef := h.secrets.StoreContext(ctx.Request.Context(), enrollment.Secret, user.ID, resource)
 	if secretRef == "" {
-		h.audit(user.ID, "mfa.enroll", user.ID, false, "failed to store TOTP secret")
+		h.auditWithContext(user.ID, "mfa.enroll", user.ID, false, "failed to store TOTP secret", ctx.Request.Context())
 		writeErrorCode(ctx, http.StatusInternalServerError, "mfa.secret_store_failed", "无法安全保存 TOTP 密钥")
 		return
 	}
@@ -118,7 +119,7 @@ func (h *Handlers) EnrollMFA(ctx *gin.Context) {
 		TOTPSecretRef: secretRef,
 		Enabled:       false,
 	}
-	err = h.db.Clauses(clause.OnConflict{
+	err = h.dbFor(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "user_id"}},
 		DoUpdates: clause.Assignments(map[string]any{
 			"totp_secret_ref":             secretRef,
@@ -130,15 +131,15 @@ func (h *Handlers) EnrollMFA(ctx *gin.Context) {
 		}),
 	}).Create(&config).Error
 	if err != nil {
-		_ = h.db.Where("resource = ?", resource).Delete(&model.SecretValue{}).Error
-		h.audit(user.ID, "mfa.enroll", user.ID, false, "failed to persist MFA enrollment")
+		_ = h.dbFor(ctx).Where("resource = ?", resource).Delete(&model.SecretValue{}).Error
+		h.auditWithContext(user.ID, "mfa.enroll", user.ID, false, "failed to persist MFA enrollment", ctx.Request.Context())
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	_ = h.db.Where("user_id = ?", user.ID).Delete(&model.MFARecoveryCode{}).Error
-	_ = h.db.Where("user_id = ?", user.ID).Delete(&model.StepUpAssertion{}).Error
-	h.clearMFAUserAttempts(user.ID, "enroll")
-	h.audit(user.ID, "mfa.enroll", user.ID, true, "TOTP enrollment created")
+	_ = h.dbFor(ctx).Where("user_id = ?", user.ID).Delete(&model.MFARecoveryCode{}).Error
+	_ = h.dbFor(ctx).Where("user_id = ?", user.ID).Delete(&model.StepUpAssertion{}).Error
+	h.clearMFAUserAttempts(ctx.Request.Context(), user.ID, "enroll")
+	h.auditWithContext(user.ID, "mfa.enroll", user.ID, true, "TOTP enrollment created", ctx.Request.Context())
 	ctx.JSON(http.StatusCreated, gin.H{
 		"secret":        enrollment.Secret,
 		"otpauthUrl":    enrollment.OTPAuthURL,
@@ -158,30 +159,30 @@ func (h *Handlers) ConfirmMFA(ctx *gin.Context) {
 
 	now := time.Now()
 	var pending model.UserMFAConfig
-	if err := h.db.First(&pending, "user_id = ?", user.ID).Error; err != nil {
-		h.audit(user.ID, "mfa.confirm", user.ID, false, mfaAuditFailure(err))
+	if err := h.dbFor(ctx).First(&pending, "user_id = ?", user.ID).Error; err != nil {
+		h.auditWithContext(user.ID, "mfa.confirm", user.ID, false, mfaAuditFailure(err), ctx.Request.Context())
 		writeMFAError(ctx, err)
 		return
 	}
 	if pending.Enabled {
-		h.audit(user.ID, "mfa.confirm", user.ID, false, mfaAuditFailure(errMFAAlreadyEnabled))
+		h.auditWithContext(user.ID, "mfa.confirm", user.ID, false, mfaAuditFailure(errMFAAlreadyEnabled), ctx.Request.Context())
 		writeMFAError(ctx, errMFAAlreadyEnabled)
 		return
 	}
-	secretValue := h.secrets.Resolve(pending.TOTPSecretRef)
+	secretValue := h.secrets.ResolveContext(ctx.Request.Context(), pending.TOTPSecretRef)
 	counter, valid := matchTOTPCounter(secretValue, input.Code, now)
 	if !valid {
-		h.audit(user.ID, "mfa.confirm", user.ID, false, mfaAuditFailure(errMFAInvalidCode))
+		h.auditWithContext(user.ID, "mfa.confirm", user.ID, false, mfaAuditFailure(errMFAInvalidCode), ctx.Request.Context())
 		writeMFAError(ctx, errMFAInvalidCode)
 		return
 	}
 	codes, hashes, err := generateRecoveryCodes()
 	if err != nil {
-		h.audit(user.ID, "mfa.confirm", user.ID, false, "failed to generate recovery codes")
+		h.auditWithContext(user.ID, "mfa.confirm", user.ID, false, "failed to generate recovery codes", ctx.Request.Context())
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	err = h.db.Transaction(func(tx *gorm.DB) error {
+	err = h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
 		var config model.UserMFAConfig
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&config, "user_id = ?", user.ID).Error; err != nil {
 			return err
@@ -211,12 +212,12 @@ func (h *Handlers) ConfirmMFA(ctx *gin.Context) {
 		}).Error
 	})
 	if err != nil {
-		h.audit(user.ID, "mfa.confirm", user.ID, false, mfaAuditFailure(err))
+		h.auditWithContext(user.ID, "mfa.confirm", user.ID, false, mfaAuditFailure(err), ctx.Request.Context())
 		writeMFAError(ctx, err)
 		return
 	}
-	h.clearMFAUserAttempts(user.ID, "confirm")
-	h.audit(user.ID, "mfa.confirm", user.ID, true, "TOTP enrollment confirmed")
+	h.clearMFAUserAttempts(ctx.Request.Context(), user.ID, "confirm")
+	h.auditWithContext(user.ID, "mfa.confirm", user.ID, true, "TOTP enrollment confirmed", ctx.Request.Context())
 	ctx.JSON(http.StatusOK, gin.H{"enabled": true, "recoveryCodes": codes})
 }
 
@@ -239,21 +240,21 @@ func (h *Handlers) VerifyMFA(ctx *gin.Context) {
 	}
 	purpose := normalizeStepUpPurpose(input.Purpose)
 	if purpose == "" {
-		h.audit(user.ID, "mfa.verify", "unknown", false, "invalid purpose")
+		h.auditWithContext(user.ID, "mfa.verify", "unknown", false, "invalid purpose", ctx.Request.Context())
 		writeErrorCode(ctx, http.StatusBadRequest, "mfa.invalid_purpose", "不支持的二次验证用途")
 		return
 	}
 	code := strings.TrimSpace(input.Code)
 	recoveryCode := normalizeRecoveryCode(input.RecoveryCode)
 	if (code == "") == (recoveryCode == "") {
-		h.audit(user.ID, "mfa.verify", purpose, false, "exactly one MFA credential is required")
+		h.auditWithContext(user.ID, "mfa.verify", purpose, false, "exactly one MFA credential is required", ctx.Request.Context())
 		writeErrorCode(ctx, http.StatusBadRequest, "mfa.credential_required", "必须且只能提供动态验证码或恢复码之一")
 		return
 	}
 
 	var config model.UserMFAConfig
-	if err := h.db.First(&config, "user_id = ? and enabled = ?", user.ID, true).Error; err != nil {
-		h.audit(user.ID, "mfa.verify", purpose, false, "MFA is not enabled")
+	if err := h.dbFor(ctx).First(&config, "user_id = ? and enabled = ?", user.ID, true).Error; err != nil {
+		h.auditWithContext(user.ID, "mfa.verify", purpose, false, "MFA is not enabled", ctx.Request.Context())
 		writeErrorCode(ctx, http.StatusConflict, "mfa.not_enabled", "当前账号尚未启用 MFA")
 		return
 	}
@@ -261,28 +262,28 @@ func (h *Handlers) VerifyMFA(ctx *gin.Context) {
 	usedRecoveryCode := false
 	valid := false
 	if code != "" {
-		secretValue := h.secrets.Resolve(config.TOTPSecretRef)
-		valid = secretValue != "" && h.consumeTOTPCode(user.ID, config.TOTPSecretRef, secretValue, code, time.Now())
+		secretValue := h.secrets.ResolveContext(ctx.Request.Context(), config.TOTPSecretRef)
+		valid = secretValue != "" && h.consumeTOTPCode(user.ID, config.TOTPSecretRef, secretValue, code, time.Now(), ctx.Request.Context())
 	} else {
-		valid = h.consumeRecoveryCode(user.ID, recoveryCode)
+		valid = h.consumeRecoveryCode(user.ID, recoveryCode, ctx.Request.Context())
 		usedRecoveryCode = valid
 	}
 	if !valid {
-		h.audit(user.ID, "mfa.verify", purpose, false, "invalid MFA credential")
+		h.auditWithContext(user.ID, "mfa.verify", purpose, false, "invalid MFA credential", ctx.Request.Context())
 		writeErrorCode(ctx, http.StatusUnauthorized, "mfa.invalid_code", "动态验证码或恢复码无效")
 		return
 	}
 
-	if err := h.createStepUpAssertion(user.ID, subject, purpose, time.Now()); err != nil {
-		h.audit(user.ID, "mfa.verify", purpose, false, "failed to persist assertion")
+	if err := h.createStepUpAssertion(user.ID, subject, purpose, time.Now(), ctx.Request.Context()); err != nil {
+		h.auditWithContext(user.ID, "mfa.verify", purpose, false, "failed to persist assertion", ctx.Request.Context())
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if usedRecoveryCode {
-		h.audit(user.ID, "mfa.recovery_code_used", purpose, true, "one-time recovery code consumed")
+		h.auditWithContext(user.ID, "mfa.recovery_code_used", purpose, true, "one-time recovery code consumed", ctx.Request.Context())
 	}
-	h.clearMFAUserAttempts(user.ID, "verify")
-	h.audit(user.ID, "mfa.verify", purpose, true, "step-up assertion created")
+	h.clearMFAUserAttempts(ctx.Request.Context(), user.ID, "verify")
+	h.auditWithContext(user.ID, "mfa.verify", purpose, true, "step-up assertion created", ctx.Request.Context())
 	ctx.JSON(http.StatusOK, gin.H{"verified": true, "purpose": purpose})
 }
 
@@ -292,8 +293,8 @@ func (h *Handlers) RegenerateMFARecoveryCodes(ctx *gin.Context) {
 		return
 	}
 	var config model.UserMFAConfig
-	if err := h.db.First(&config, "user_id = ? and enabled = ?", user.ID, true).Error; err != nil {
-		h.audit(user.ID, "mfa.recovery_codes_regenerate", user.ID, false, "MFA is not enabled")
+	if err := h.dbFor(ctx).First(&config, "user_id = ? and enabled = ?", user.ID, true).Error; err != nil {
+		h.auditWithContext(user.ID, "mfa.recovery_codes_regenerate", user.ID, false, "MFA is not enabled", ctx.Request.Context())
 		writeErrorCode(ctx, http.StatusConflict, "mfa.not_enabled", "当前账号尚未启用 MFA")
 		return
 	}
@@ -303,7 +304,7 @@ func (h *Handlers) RegenerateMFARecoveryCodes(ctx *gin.Context) {
 		return
 	}
 	now := time.Now()
-	err = h.db.Transaction(func(tx *gorm.DB) error {
+	err = h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("user_id = ?", user.ID).Delete(&model.MFARecoveryCode{}).Error; err != nil {
 			return err
 		}
@@ -317,11 +318,11 @@ func (h *Handlers) RegenerateMFARecoveryCodes(ctx *gin.Context) {
 		}).Error
 	})
 	if err != nil {
-		h.audit(user.ID, "mfa.recovery_codes_regenerate", user.ID, false, "failed to replace recovery codes")
+		h.auditWithContext(user.ID, "mfa.recovery_codes_regenerate", user.ID, false, "failed to replace recovery codes", ctx.Request.Context())
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	h.audit(user.ID, "mfa.recovery_codes_regenerate", user.ID, true, "recovery codes replaced")
+	h.auditWithContext(user.ID, "mfa.recovery_codes_regenerate", user.ID, true, "recovery codes replaced", ctx.Request.Context())
 	ctx.JSON(http.StatusOK, gin.H{"recoveryCodes": codes})
 }
 
@@ -331,7 +332,7 @@ func (h *Handlers) DisableMFA(ctx *gin.Context) {
 		return
 	}
 	resource := mfaSecretResource(user.ID)
-	err := h.db.Transaction(func(tx *gorm.DB) error {
+	err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := lockStepUpPolicyMutation(tx); err != nil {
 			return err
 		}
@@ -358,7 +359,7 @@ func (h *Handlers) DisableMFA(ctx *gin.Context) {
 		return createMFAAudit(tx, user.ID, "mfa.disable", user.ID, "MFA disabled and assertions revoked")
 	})
 	if err != nil {
-		h.audit(user.ID, "mfa.disable", user.ID, false, mfaAuditFailure(err))
+		h.auditWithContext(user.ID, "mfa.disable", user.ID, false, mfaAuditFailure(err), ctx.Request.Context())
 		switch err {
 		case errMFALastAdminRequired:
 			writeErrorCode(ctx, http.StatusConflict, "mfa.last_admin_required", "全局二次验证开启时必须保留至少一名已绑定 MFA 的平台管理员")
@@ -379,12 +380,12 @@ func (h *Handlers) AdminResetUserMFA(ctx *gin.Context) {
 	}
 	targetID := strings.TrimSpace(ctx.Param("userId"))
 	if actor.Role != authz.PlatformRoleAdmin {
-		h.audit(actor.ID, "mfa.admin_reset", targetID, false, "platform administrator role required")
+		h.auditWithContext(actor.ID, "mfa.admin_reset", targetID, false, "platform administrator role required", ctx.Request.Context())
 		writeErrorKey(ctx, http.StatusForbidden, actor.Language, "config.admin.required")
 		return
 	}
 	if !h.requireMFAAssertion(ctx, actor, stepUpPurposeUserAdminUpdate) {
-		h.audit(actor.ID, "mfa.admin_reset", targetID, false, "current administrator step-up required")
+		h.auditWithContext(actor.ID, "mfa.admin_reset", targetID, false, "current administrator step-up required", ctx.Request.Context())
 		return
 	}
 	actorSession, ok := h.currentSessionFromCookie(ctx)
@@ -394,12 +395,12 @@ func (h *Handlers) AdminResetUserMFA(ctx *gin.Context) {
 	}
 
 	if targetID == actor.ID {
-		h.audit(actor.ID, "mfa.admin_reset", targetID, false, "administrators must manage their own MFA from account settings")
+		h.auditWithContext(actor.ID, "mfa.admin_reset", targetID, false, "administrators must manage their own MFA from account settings", ctx.Request.Context())
 		writeErrorCode(ctx, http.StatusConflict, "mfa.admin_reset_self_forbidden", "请从个人安全设置管理当前账号的 MFA")
 		return
 	}
 
-	err := h.db.Transaction(func(tx *gorm.DB) error {
+	err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := lockStepUpPolicyMutation(tx); err != nil {
 			return err
 		}
@@ -437,7 +438,7 @@ func (h *Handlers) AdminResetUserMFA(ctx *gin.Context) {
 		return createMFAAudit(tx, actor.ID, "mfa.admin_reset", targetID, "target MFA credentials and assertions deleted")
 	})
 	if err != nil {
-		h.audit(actor.ID, "mfa.admin_reset", targetID, false, mfaAuditFailure(err))
+		h.auditWithContext(actor.ID, "mfa.admin_reset", targetID, false, mfaAuditFailure(err), ctx.Request.Context())
 		switch err {
 		case errMFALastAdminRequired:
 			writeErrorCode(ctx, http.StatusConflict, "mfa.last_admin_required", "全局二次验证开启时必须保留至少一名已绑定 MFA 的平台管理员")
@@ -466,11 +467,11 @@ func (h *Handlers) reauthenticateMFAEnrollment(ctx *gin.Context, user model.User
 		return true
 	}
 	if mfaEnrollmentReauthMode(user) == "password" {
-		h.audit(user.ID, "mfa.enroll", user.ID, false, "local primary reauthentication failed")
+		h.auditWithContext(user.ID, "mfa.enroll", user.ID, false, "local primary reauthentication failed", ctx.Request.Context())
 		writeErrorCode(ctx, http.StatusUnauthorized, "mfa.reauth_required", "请输入当前密码后重新验证")
 		return false
 	}
-	h.audit(user.ID, "mfa.enroll", user.ID, false, "primary session is not fresh enough for enrollment")
+	h.auditWithContext(user.ID, "mfa.enroll", user.ID, false, "primary session is not fresh enough for enrollment", ctx.Request.Context())
 	writeErrorCode(ctx, http.StatusUnauthorized, "mfa.reauth_required", "请重新登录后再绑定 MFA")
 	return false
 }
@@ -516,17 +517,17 @@ func (h *Handlers) allowMFAAttempt(ctx *gin.Context, userID, action string, limi
 		{key: mfaRateLimitKey(action, "ip", ctx.ClientIP()), limit: maxInt(limit*mfaIPAttemptMultiplier, mfaMinimumIPAttemptLimit)},
 	}
 	for _, item := range keys {
-		allowed, err := h.rateLimiter.allow(item.key, item.limit, window)
+		allowed, err := h.rateLimiter.allow(ctx.Request.Context(), item.key, item.limit, window)
 		if err != nil {
 			if h.mode == "development" {
 				return true
 			}
-			h.audit(userID, "mfa.rate_limit_unavailable", action, false, "Redis rate limiter unavailable")
+			h.auditWithContext(userID, "mfa.rate_limit_unavailable", action, false, "Redis rate limiter unavailable", ctx.Request.Context())
 			writeErrorCode(ctx, http.StatusServiceUnavailable, "mfa.rate_limit_unavailable", "MFA 安全限流暂时不可用")
 			return false
 		}
 		if !allowed {
-			h.audit(userID, "mfa.rate_limited", action, false, "too many MFA attempts")
+			h.auditWithContext(userID, "mfa.rate_limited", action, false, "too many MFA attempts", ctx.Request.Context())
 			writeErrorCode(ctx, http.StatusTooManyRequests, "mfa.rate_limited", "MFA 验证尝试过于频繁")
 			return false
 		}
@@ -534,12 +535,12 @@ func (h *Handlers) allowMFAAttempt(ctx *gin.Context, userID, action string, limi
 	return true
 }
 
-func (h *Handlers) clearMFAUserAttempts(userID, action string) {
+func (h *Handlers) clearMFAUserAttempts(ctx context.Context, userID, action string) {
 	if h.rateLimiter == nil {
 		return
 	}
-	if err := h.rateLimiter.reset(mfaRateLimitKey(action, "user", userID)); err != nil && h.mode != "development" {
-		h.audit(userID, "mfa.rate_limit_reset_failed", strings.TrimSpace(action), false, "failed to reset successful MFA attempt counter")
+	if err := h.rateLimiter.reset(ctx, mfaRateLimitKey(action, "user", userID)); err != nil && h.mode != "development" {
+		h.auditWithContext(userID, "mfa.rate_limit_reset_failed", strings.TrimSpace(action), false, "failed to reset successful MFA attempt counter", ctx)
 	}
 }
 
@@ -554,7 +555,7 @@ func maxInt(left, right int) int {
 	return right
 }
 
-func (h *Handlers) createStepUpAssertion(userID, sessionID, purpose string, now time.Time) error {
+func (h *Handlers) createStepUpAssertion(userID, sessionID, purpose string, now time.Time, contexts ...context.Context) error {
 	idleTimeout, absoluteTimeout := h.stepUpTimeouts()
 	absoluteExpiresAt := now.Add(absoluteTimeout)
 	assertion := model.StepUpAssertion{
@@ -567,7 +568,7 @@ func (h *Handlers) createStepUpAssertion(userID, sessionID, purpose string, now 
 		IdleExpiresAt:     refreshedStepUpIdleExpiry(now, idleTimeout, absoluteExpiresAt),
 		AbsoluteExpiresAt: absoluteExpiresAt,
 	}
-	return h.db.Clauses(clause.OnConflict{
+	return h.dbWithContext(firstContext(contexts)).Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "session_id"}, {Name: "purpose"}},
 		DoUpdates: clause.AssignmentColumns([]string{
 			"user_id", "verified_at", "last_activity_at", "idle_expires_at", "absolute_expires_at", "updated_at",
@@ -575,12 +576,12 @@ func (h *Handlers) createStepUpAssertion(userID, sessionID, purpose string, now 
 	}).Create(&assertion).Error
 }
 
-func (h *Handlers) consumeRecoveryCode(userID, normalizedCode string) bool {
+func (h *Handlers) consumeRecoveryCode(userID, normalizedCode string, contexts ...context.Context) bool {
 	if len(normalizedCode) != 16 {
 		return false
 	}
 	consumed := false
-	err := h.db.Transaction(func(tx *gorm.DB) error {
+	err := h.dbWithContext(firstContext(contexts)).Transaction(func(tx *gorm.DB) error {
 		var rows []model.MFARecoveryCode
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id = ? and used_at is null", userID).Find(&rows).Error; err != nil {
 			return err
@@ -605,13 +606,13 @@ func (h *Handlers) consumeRecoveryCode(userID, normalizedCode string) bool {
 	return err == nil && consumed
 }
 
-func (h *Handlers) consumeTOTPCode(userID, expectedSecretRef, secretValue, code string, now time.Time) bool {
+func (h *Handlers) consumeTOTPCode(userID, expectedSecretRef, secretValue, code string, now time.Time, contexts ...context.Context) bool {
 	counter, valid := matchTOTPCounter(secretValue, code, now)
 	if !valid {
 		return false
 	}
 	consumed := false
-	err := h.db.Transaction(func(tx *gorm.DB) error {
+	err := h.dbWithContext(firstContext(contexts)).Transaction(func(tx *gorm.DB) error {
 		var config model.UserMFAConfig
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&config, "user_id = ? and enabled = ?", userID, true).Error; err != nil {
 			return err
@@ -697,9 +698,9 @@ func createMFAAudit(tx *gorm.DB, userID, action, resource, message string) error
 	}).Error
 }
 
-func (h *Handlers) hasMFAEnabledPlatformAdmin() bool {
+func (h *Handlers) hasMFAEnabledPlatformAdmin(contexts ...context.Context) bool {
 	var count int64
-	_ = h.db.Table("users").
+	_ = h.dbWithContext(firstContext(contexts)).Table("users").
 		Joins("join user_mfa_configs on user_mfa_configs.user_id = users.id and user_mfa_configs.enabled = ?", true).
 		Where("users.role = ? and users.disabled = ? and users.deleted_at is null", authz.PlatformRoleAdmin, false).
 		Count(&count).Error

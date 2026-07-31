@@ -4,9 +4,11 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"strconv"
 	"strings"
+
+	"github.com/LiteyukiStudio/devops/internal/telemetry"
 )
 
 func HandleHookControlLine(line string, hookLabels map[string]string, onHookLog func(string, string) error, onHookComplete func(string, HookResult) error) (string, bool) {
@@ -25,7 +27,10 @@ func HandleHookControlLine(line string, hookLabels map[string]string, onHookLog 
 		}
 		hookLog := string(content)
 		if err := onHookLog(parts[0], hookLog); err != nil {
-			log.Printf("builder hook log upload failed: %v", err)
+			telemetry.Logger().Error("builder hook log upload failed",
+				slog.String("event.name", "builder.hook_log.upload_failed"),
+				slog.String("error.type", telemetry.ErrorType(err)),
+			)
 		}
 		return formatHookLog(parts[0], hookLog, hookLabels), true
 	}
@@ -42,7 +47,10 @@ func HandleHookControlLine(line string, hookLabels map[string]string, onHookLog 
 			Message:   string(message),
 		}
 		if err := onHookComplete(parts[0], result); err != nil {
-			log.Printf("builder hook status upload failed: %v", err)
+			telemetry.Logger().Error("builder hook status upload failed",
+				slog.String("event.name", "builder.hook_status.upload_failed"),
+				slog.String("error.type", telemetry.ErrorType(err)),
+			)
 		}
 		return formatHookLog(parts[0], result.Message, hookLabels), true
 	}

@@ -175,7 +175,7 @@ func (h *Handlers) oauthCookieUser(ctx *gin.Context) (model.User, bool) {
 		return model.User{}, false
 	}
 	var user model.User
-	if err := h.db.First(&user, "id = ? and disabled = ?", session.UserID, false).Error; err != nil {
+	if err := h.dbFor(ctx).First(&user, "id = ? and disabled = ?", session.UserID, false).Error; err != nil {
 		writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.account.disabled")
 		return model.User{}, false
 	}
@@ -198,7 +198,7 @@ func (h *Handlers) authenticateOAuthClient(ctx *gin.Context) (model.OAuthApplica
 		return model.OAuthApplication{}, false
 	}
 	var application model.OAuthApplication
-	if clientID == "" || clientSecret == "" || h.db.First(&application, "client_id = ? and revoked_at is null", clientID).Error != nil {
+	if clientID == "" || clientSecret == "" || h.dbFor(ctx).First(&application, "client_id = ? and revoked_at is null", clientID).Error != nil {
 		oauthError(ctx, http.StatusUnauthorized, "invalid_client", "Client authentication failed")
 		return model.OAuthApplication{}, false
 	}
@@ -219,7 +219,7 @@ func (h *Handlers) authenticateOAuthTokenClient(ctx *gin.Context, allowPublic bo
 		return model.OAuthApplication{}, false
 	}
 	var application model.OAuthApplication
-	if clientID == "" || h.db.First(&application, "client_id = ? and revoked_at is null", clientID).Error != nil {
+	if clientID == "" || h.dbFor(ctx).First(&application, "client_id = ? and revoked_at is null", clientID).Error != nil {
 		oauthError(ctx, http.StatusUnauthorized, "invalid_client", "Client authentication failed")
 		return model.OAuthApplication{}, false
 	}
@@ -262,7 +262,7 @@ func (h *Handlers) allowOAuthClientAttempt(ctx *gin.Context, clientID string) bo
 		"oauth_client_id:" + hashToken(strings.TrimSpace(clientID)),
 	}
 	for _, subject := range subjects {
-		allowed, err := h.rateLimiter.allow(subject, limit, time.Minute)
+		allowed, err := h.rateLimiter.allow(ctx.Request.Context(), subject, limit, time.Minute)
 		if allowed {
 			continue
 		}
@@ -288,7 +288,7 @@ func (h *Handlers) allowOAuthDeviceVerificationAttempt(ctx *gin.Context, userID 
 		"oauth_device_verify_user:" + hashToken(strings.TrimSpace(userID)),
 	}
 	for _, subject := range subjects {
-		allowed, err := h.rateLimiter.allow(subject, limit, time.Minute)
+		allowed, err := h.rateLimiter.allow(ctx.Request.Context(), subject, limit, time.Minute)
 		if allowed {
 			continue
 		}

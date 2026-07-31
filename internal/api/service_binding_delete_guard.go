@@ -15,7 +15,7 @@ type serviceBindingUsage struct {
 }
 
 func (h *Handlers) ensureNoIncomingServiceBindings(ctx *gin.Context, projectID, targetApplicationID, targetDeploymentTargetID string) bool {
-	query := h.db.Table("service_bindings AS binding").
+	query := h.dbFor(ctx).Table("service_bindings AS binding").
 		Select(`binding.id AS binding_id,
                 binding.source_application_id,
                 source_application.name AS source_application_name,

@@ -15,6 +15,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/LiteyukiStudio/devops/internal/telemetry"
 )
 
 var ErrUnavailable = errors.New("ai agent is unavailable")
@@ -86,9 +88,9 @@ func newBaseHTTPClient(baseURL string) (*HTTPClient, error) {
 	}
 	return &HTTPClient{
 		baseURL:      parsed,
-		httpClient:   &http.Client{Timeout: 5 * time.Second},
-		runClient:    &http.Client{Timeout: 10 * time.Second},
-		streamClient: &http.Client{},
+		httpClient:   telemetry.InstrumentHTTPClient(&http.Client{Timeout: 5 * time.Second}),
+		runClient:    telemetry.InstrumentHTTPClient(&http.Client{Timeout: 10 * time.Second}),
+		streamClient: telemetry.InstrumentHTTPClient(&http.Client{}),
 		now:          time.Now,
 	}, nil
 }

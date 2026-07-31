@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { deploymentTargetMetricsStreamUrl } from '@/api'
 import { StatusValueBadge } from '@/components/common/status-badge'
+import { createTracedEventSource } from '@/lib/telemetry'
 import { formatMetricsBytes, formatMetricsPercent } from './application-deployments-panel-utils'
 
 export function DeploymentTargetMetricsCell({ applicationId, enabled, projectId, targetId }: {
@@ -18,7 +19,7 @@ export function DeploymentTargetMetricsCell({ applicationId, enabled, projectId,
   useEffect(() => {
     if (!enabled || !projectId || !applicationId || !targetId)
       return
-    const source = new EventSource(deploymentTargetMetricsStreamUrl(projectId, applicationId, targetId), { withCredentials: true })
+    const source = createTracedEventSource(deploymentTargetMetricsStreamUrl(projectId, applicationId, targetId), { withCredentials: true }, 'runtime.metrics.stream')
     const handleMetrics = (event: MessageEvent) => {
       try {
         setMetricsState({ metrics: JSON.parse(event.data) as DeploymentTargetMetrics, targetId })

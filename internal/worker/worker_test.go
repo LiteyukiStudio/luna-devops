@@ -13,13 +13,48 @@ import (
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/LiteyukiStudio/devops/internal/provider/networkpolicy"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
+	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/hibiken/asynq"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/fake"
 )
+
+func TestTaskTelemetryMiddlewareContinuesProducerTrace(t *testing.T) {
+	previousProvider := otel.GetTracerProvider()
+	previousPropagator := otel.GetTextMapPropagator()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSampler(sdktrace.AlwaysSample()))
+	otel.SetTracerProvider(provider)
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+	defer func() {
+		otel.SetTracerProvider(previousProvider)
+		otel.SetTextMapPropagator(previousPropagator)
+		_ = provider.Shutdown(context.Background())
+	}()
+
+	producerCtx, producerSpan := provider.Tracer("test").Start(context.Background(), "producer")
+	headers := telemetry.InjectMap(producerCtx)
+	wantTraceID := producerSpan.SpanContext().TraceID()
+	producerSpan.End()
+
+	var gotTraceID trace.TraceID
+	handler := taskTelemetryMiddleware(asynq.HandlerFunc(func(ctx context.Context, _ *asynq.Task) error {
+		gotTraceID = trace.SpanContextFromContext(ctx).TraceID()
+		return nil
+	}))
+	if err := handler.ProcessTask(context.Background(), asynq.NewTaskWithHeaders(tasks.TypeSyncStatus, []byte("{}"), headers)); err != nil {
+		t.Fatalf("ProcessTask returned error: %v", err)
+	}
+	if gotTraceID != wantTraceID {
+		t.Fatalf("consumer trace ID = %s, want %s", gotTraceID, wantTraceID)
+	}
+}
 
 func TestNewRunnerDefaultsBuildJobOptions(t *testing.T) {
 	runner := NewRunner(nil, Options{})
@@ -93,7 +128,7 @@ func TestRetentionHandlerReturnsRunnerError(t *testing.T) {
 		return wantErr
 	}
 
-	handler := runner.withTaskEvents(runner.handleRetentionRun)
+	handler := runner.withTaskEvents((*Runner).handleRetentionRun)
 	err := handler(context.Background(), asynq.NewTask(tasks.TypeRetentionRun, []byte("{}")))
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("retention handler error = %v", err)

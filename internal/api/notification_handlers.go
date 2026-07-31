@@ -70,7 +70,7 @@ func (h *Handlers) ListNotificationChannels(ctx *gin.Context) {
 	}
 	pagination := paginationFromQuery(ctx)
 	var total int64
-	query := h.db.Model(&model.NotificationChannel{})
+	query := h.dbFor(ctx).Model(&model.NotificationChannel{})
 	if search := strings.TrimSpace(ctx.Query("search")); search != "" {
 		query = query.Where("name ILIKE ? or adapter_kind ILIKE ?", "%"+search+"%", "%"+search+"%")
 	}
@@ -88,7 +88,7 @@ func (h *Handlers) ListNotificationChannels(ctx *gin.Context) {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if err := h.populateLatestNotificationDeliveries(channels); err != nil {
+	if err := h.populateLatestNotificationDeliveries(channels, ctx.Request.Context()); err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -112,11 +112,11 @@ func (h *Handlers) CreateNotificationChannel(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := h.db.Create(&channel).Error; err != nil {
+	if err := h.dbFor(ctx).Create(&channel).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	h.audit(user.ID, "notification.channel.create", channel.ID, true, "")
+	h.auditWithContext(user.ID, "notification.channel.create", channel.ID, true, "", ctx.Request.Context())
 	ctx.JSON(http.StatusCreated, notificationChannelResponseFor(channel))
 }
 
@@ -130,7 +130,7 @@ func (h *Handlers) UpdateNotificationChannel(ctx *gin.Context) {
 		return
 	}
 	var existing model.NotificationChannel
-	if err := h.db.First(&existing, "id = ?", ctx.Param("channelId")).Error; err != nil {
+	if err := h.dbFor(ctx).First(&existing, "id = ?", ctx.Param("channelId")).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "notification channel not found")
 		return
 	}
@@ -142,11 +142,11 @@ func (h *Handlers) UpdateNotificationChannel(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := h.db.Save(&channel).Error; err != nil {
+	if err := h.dbFor(ctx).Save(&channel).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	h.audit(user.ID, "notification.channel.update", channel.ID, true, "")
+	h.auditWithContext(user.ID, "notification.channel.update", channel.ID, true, "", ctx.Request.Context())
 	ctx.JSON(http.StatusOK, notificationChannelResponseFor(channel))
 }
 
@@ -159,11 +159,11 @@ func (h *Handlers) DeleteNotificationChannel(ctx *gin.Context) {
 		writeErrorKey(ctx, http.StatusForbidden, user.Language, "config.admin.required")
 		return
 	}
-	if err := h.db.Delete(&model.NotificationChannel{}, "id = ?", ctx.Param("channelId")).Error; err != nil {
+	if err := h.dbFor(ctx).Delete(&model.NotificationChannel{}, "id = ?", ctx.Param("channelId")).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	h.audit(user.ID, "notification.channel.delete", ctx.Param("channelId"), true, "")
+	h.auditWithContext(user.ID, "notification.channel.delete", ctx.Param("channelId"), true, "", ctx.Request.Context())
 	ctx.Status(http.StatusNoContent)
 }
 
@@ -177,7 +177,7 @@ func (h *Handlers) TestNotificationChannel(ctx *gin.Context) {
 		return
 	}
 	var channel model.NotificationChannel
-	if err := h.db.First(&channel, "id = ?", ctx.Param("channelId")).Error; err != nil {
+	if err := h.dbFor(ctx).First(&channel, "id = ?", ctx.Param("channelId")).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "notification channel not found")
 		return
 	}
@@ -187,11 +187,11 @@ func (h *Handlers) TestNotificationChannel(ctx *gin.Context) {
 		return
 	}
 	if err := adapter.Test(ctx.Request.Context(), json.RawMessage(channel.ConfigJSON), json.RawMessage(channel.SecretRefsJSON), h.secrets); err != nil {
-		h.audit(user.ID, "notification.channel.test", channel.ID, false, err.Error())
+		h.auditWithContext(user.ID, "notification.channel.test", channel.ID, false, err.Error(), ctx.Request.Context())
 		writeError(ctx, http.StatusBadGateway, err.Error())
 		return
 	}
-	h.audit(user.ID, "notification.channel.test", channel.ID, true, "")
+	h.auditWithContext(user.ID, "notification.channel.test", channel.ID, true, "", ctx.Request.Context())
 	ctx.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
@@ -202,7 +202,7 @@ type latestNotificationDelivery struct {
 	FinishedAt   *time.Time
 }
 
-func (h *Handlers) populateLatestNotificationDeliveries(channels []model.NotificationChannel) error {
+func (h *Handlers) populateLatestNotificationDeliveries(channels []model.NotificationChannel, contexts ...context.Context) error {
 	if len(channels) == 0 {
 		return nil
 	}
@@ -211,7 +211,7 @@ func (h *Handlers) populateLatestNotificationDeliveries(channels []model.Notific
 		channelIDs = append(channelIDs, channel.ID)
 	}
 	var latest []latestNotificationDelivery
-	if err := h.db.Raw(`
+	if err := h.dbWithContext(firstContext(contexts)).Raw(`
 		SELECT DISTINCT ON (channel_id)
 			channel_id,
 			status,
@@ -273,7 +273,7 @@ func (h *Handlers) CreateNotificationChannelFromPreset(ctx *gin.Context) {
 			writeErrorCode(ctx, http.StatusBadRequest, "notification.secret_required", "notification preset secret is required")
 			return
 		}
-		secretRefs[field] = h.secrets.Store(value, user.ID, "notification_channel:preset:"+preset.ID+":"+field)
+		secretRefs[field] = h.secrets.StoreContext(ctx.Request.Context(), value, user.ID, "notification_channel:preset:"+preset.ID+":"+field)
 	}
 	secretRefsRaw := mustJSON(secretRefs)
 	enabled := true
@@ -289,7 +289,7 @@ func (h *Handlers) CreateNotificationChannelFromPreset(ctx *gin.Context) {
 		Enabled:        enabled,
 		CreatedBy:      user.ID,
 	}
-	if err := validateNotificationChannel(channel, h.secrets); err != nil {
+	if err := validateNotificationChannel(ctx.Request.Context(), channel, h.secrets); err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -302,7 +302,7 @@ func (h *Handlers) CreateNotificationChannelFromPreset(ctx *gin.Context) {
 		Enabled:          true,
 		CreatedBy:        user.ID,
 	}
-	if err := h.db.Transaction(func(tx *gorm.DB) error {
+	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&channel).Error; err != nil {
 			return err
 		}
@@ -311,7 +311,7 @@ func (h *Handlers) CreateNotificationChannelFromPreset(ctx *gin.Context) {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	h.audit(user.ID, "notification.preset.create_channel", channel.ID, true, preset.ID)
+	h.auditWithContext(user.ID, "notification.preset.create_channel", channel.ID, true, preset.ID, ctx.Request.Context())
 	ctx.JSON(http.StatusCreated, gin.H{"channel": notificationChannelResponseFor(channel), "template": template})
 }
 
@@ -321,7 +321,7 @@ func (h *Handlers) ListNotificationTemplates(ctx *gin.Context) {
 	}
 	pagination := paginationFromQuery(ctx)
 	var total int64
-	query := h.db.Model(&model.NotificationTemplate{})
+	query := h.dbFor(ctx).Model(&model.NotificationTemplate{})
 	if eventType := strings.TrimSpace(ctx.Query("eventType")); eventType != "" {
 		query = query.Where("event_type = ?", eventType)
 	}
@@ -362,11 +362,11 @@ func (h *Handlers) CreateNotificationTemplate(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := h.db.Create(&template).Error; err != nil {
+	if err := h.dbFor(ctx).Create(&template).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	h.audit(user.ID, "notification.template.create", template.ID, true, "")
+	h.auditWithContext(user.ID, "notification.template.create", template.ID, true, "", ctx.Request.Context())
 	ctx.JSON(http.StatusCreated, template)
 }
 
@@ -380,7 +380,7 @@ func (h *Handlers) UpdateNotificationTemplate(ctx *gin.Context) {
 		return
 	}
 	var existing model.NotificationTemplate
-	if err := h.db.First(&existing, "id = ?", ctx.Param("templateId")).Error; err != nil {
+	if err := h.dbFor(ctx).First(&existing, "id = ?", ctx.Param("templateId")).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "notification template not found")
 		return
 	}
@@ -392,11 +392,11 @@ func (h *Handlers) UpdateNotificationTemplate(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := h.db.Save(&template).Error; err != nil {
+	if err := h.dbFor(ctx).Save(&template).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	h.audit(user.ID, "notification.template.update", template.ID, true, "")
+	h.auditWithContext(user.ID, "notification.template.update", template.ID, true, "", ctx.Request.Context())
 	ctx.JSON(http.StatusOK, template)
 }
 
@@ -409,11 +409,11 @@ func (h *Handlers) DeleteNotificationTemplate(ctx *gin.Context) {
 		writeErrorKey(ctx, http.StatusForbidden, user.Language, "config.admin.required")
 		return
 	}
-	if err := h.db.Delete(&model.NotificationTemplate{}, "id = ?", ctx.Param("templateId")).Error; err != nil {
+	if err := h.dbFor(ctx).Delete(&model.NotificationTemplate{}, "id = ?", ctx.Param("templateId")).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	h.audit(user.ID, "notification.template.delete", ctx.Param("templateId"), true, "")
+	h.auditWithContext(user.ID, "notification.template.delete", ctx.Param("templateId"), true, "", ctx.Request.Context())
 	ctx.Status(http.StatusNoContent)
 }
 
@@ -423,7 +423,7 @@ func (h *Handlers) ListNotificationRules(ctx *gin.Context) {
 	}
 	pagination := paginationFromQuery(ctx)
 	var total int64
-	query := h.db.Model(&model.NotificationRule{})
+	query := h.dbFor(ctx).Model(&model.NotificationRule{})
 	if err := query.Count(&total).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
@@ -457,11 +457,11 @@ func (h *Handlers) CreateNotificationRule(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := h.db.Create(&rule).Error; err != nil {
+	if err := h.dbFor(ctx).Create(&rule).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	h.audit(user.ID, "notification.rule.create", rule.ID, true, "")
+	h.auditWithContext(user.ID, "notification.rule.create", rule.ID, true, "", ctx.Request.Context())
 	ctx.JSON(http.StatusCreated, rule)
 }
 
@@ -475,7 +475,7 @@ func (h *Handlers) UpdateNotificationRule(ctx *gin.Context) {
 		return
 	}
 	var existing model.NotificationRule
-	if err := h.db.First(&existing, "id = ?", ctx.Param("ruleId")).Error; err != nil {
+	if err := h.dbFor(ctx).First(&existing, "id = ?", ctx.Param("ruleId")).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "notification rule not found")
 		return
 	}
@@ -487,11 +487,11 @@ func (h *Handlers) UpdateNotificationRule(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := h.db.Save(&rule).Error; err != nil {
+	if err := h.dbFor(ctx).Save(&rule).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	h.audit(user.ID, "notification.rule.update", rule.ID, true, "")
+	h.auditWithContext(user.ID, "notification.rule.update", rule.ID, true, "", ctx.Request.Context())
 	ctx.JSON(http.StatusOK, rule)
 }
 
@@ -504,11 +504,11 @@ func (h *Handlers) DeleteNotificationRule(ctx *gin.Context) {
 		writeErrorKey(ctx, http.StatusForbidden, user.Language, "config.admin.required")
 		return
 	}
-	if err := h.db.Delete(&model.NotificationRule{}, "id = ?", ctx.Param("ruleId")).Error; err != nil {
+	if err := h.dbFor(ctx).Delete(&model.NotificationRule{}, "id = ?", ctx.Param("ruleId")).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	h.audit(user.ID, "notification.rule.delete", ctx.Param("ruleId"), true, "")
+	h.auditWithContext(user.ID, "notification.rule.delete", ctx.Param("ruleId"), true, "", ctx.Request.Context())
 	ctx.Status(http.StatusNoContent)
 }
 
@@ -518,7 +518,7 @@ func (h *Handlers) ListNotificationDeliveries(ctx *gin.Context) {
 	}
 	pagination := paginationFromQuery(ctx)
 	var total int64
-	query := h.db.Model(&model.NotificationDelivery{})
+	query := h.dbFor(ctx).Model(&model.NotificationDelivery{})
 	if status := strings.TrimSpace(ctx.Query("status")); status != "" {
 		query = query.Where("status = ?", status)
 	}
@@ -553,7 +553,7 @@ func (h *Handlers) notificationChannelFromInput(ctx *gin.Context, user model.Use
 	if input.Secrets == nil {
 		input.Secrets = map[string]string{}
 	}
-	configRaw, secretRefs = h.captureNotificationSecrets(user, channel.ID, channel.AdapterKind, configRaw, input.Secrets, secretRefs)
+	configRaw, secretRefs = h.captureNotificationSecrets(ctx.Request.Context(), user, channel.ID, channel.AdapterKind, configRaw, input.Secrets, secretRefs)
 	channel.ConfigJSON = string(configRaw)
 	channel.SecretRefsJSON = mustJSON(secretRefs)
 	if input.Enabled != nil {
@@ -562,7 +562,7 @@ func (h *Handlers) notificationChannelFromInput(ctx *gin.Context, user model.Use
 		channel.Enabled = true
 	}
 	channel.CreatedBy = firstNonEmpty(channel.CreatedBy, user.ID)
-	if err := validateNotificationChannel(channel, h.secrets); err != nil {
+	if err := validateNotificationChannel(ctx.Request.Context(), channel, h.secrets); err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return model.NotificationChannel{}, false
 	}
@@ -606,7 +606,7 @@ func (h *Handlers) notificationRuleFromInput(ctx *gin.Context, input notificatio
 		return model.NotificationRule{}, false
 	}
 	var count int64
-	if err := h.db.Model(&model.NotificationChannel{}).Where("id in ?", input.ChannelIDs).Count(&count).Error; err != nil {
+	if err := h.dbFor(ctx).Model(&model.NotificationChannel{}).Where("id in ?", input.ChannelIDs).Count(&count).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return model.NotificationRule{}, false
 	}
@@ -617,15 +617,15 @@ func (h *Handlers) notificationRuleFromInput(ctx *gin.Context, input notificatio
 	return rule, true
 }
 
-func validateNotificationChannel(channel model.NotificationChannel, resolver notification.SecretResolver) error {
+func validateNotificationChannel(ctx context.Context, channel model.NotificationChannel, resolver notification.SecretResolver) error {
 	adapter, err := notification.DefaultRegistry().Adapter(channel.AdapterKind)
 	if err != nil {
 		return err
 	}
-	return adapter.Validate(context.Background(), json.RawMessage(channel.ConfigJSON), resolver)
+	return adapter.Validate(ctx, json.RawMessage(channel.ConfigJSON), resolver)
 }
 
-func (h *Handlers) captureNotificationSecrets(user model.User, channelID string, adapterKind string, configRaw json.RawMessage, secretValues map[string]string, existing map[string]string) (json.RawMessage, map[string]string) {
+func (h *Handlers) captureNotificationSecrets(ctx context.Context, user model.User, channelID string, adapterKind string, configRaw json.RawMessage, secretValues map[string]string, existing map[string]string) (json.RawMessage, map[string]string) {
 	config := map[string]any{}
 	_ = json.Unmarshal(configRaw, &config)
 	if password, ok := config["password"].(string); ok && strings.TrimSpace(password) != "" {
@@ -638,7 +638,7 @@ func (h *Handlers) captureNotificationSecrets(user model.User, channelID string,
 		if key == "" || value == "" {
 			continue
 		}
-		existing[key] = h.secrets.Store(value, user.ID, "notification_channel:"+channelID+":"+key)
+		existing[key] = h.secrets.StoreContext(ctx, value, user.ID, "notification_channel:"+channelID+":"+key)
 	}
 	if adapterKind == notification.AdapterKindSMTP {
 		if ref := strings.TrimSpace(existing["password"]); ref != "" {

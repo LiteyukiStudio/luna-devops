@@ -4,6 +4,7 @@ import { Terminal as XTerm } from '@xterm/xterm'
 import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { releaseRuntimeTerminalUrl } from '@/api'
+import { createTracedWebSocket } from '@/lib/telemetry'
 import '@xterm/xterm/css/xterm.css'
 
 export function ApplicationRuntimeTerminalPanel({
@@ -120,7 +121,7 @@ export function ApplicationRuntimeTerminalPanel({
       }
       if (cancelled)
         return
-      socket = new WebSocket(terminalSocketUrl)
+      socket = createTracedWebSocket(terminalSocketUrl, undefined, 'runtime.terminal.websocket')
       socket.binaryType = 'arraybuffer'
       socket.addEventListener('open', handleOpen)
       socket.addEventListener('message', handleMessage)

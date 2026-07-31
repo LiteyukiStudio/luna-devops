@@ -51,7 +51,7 @@ func (h *Handlers) observeDeploymentTarget(ctx context.Context, project model.Pr
 		return target
 	}
 
-	cluster, err := h.deploymentTargetRuntimeCluster(project.ID, target.ClusterID)
+	cluster, err := h.deploymentTargetRuntimeCluster(project.ID, target.ClusterID, ctx)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		target.Status = observation.StatusNotConfigured
 		target.ObservationCode = "deployment_target.runtime_cluster_not_configured"
@@ -60,7 +60,7 @@ func (h *Handlers) observeDeploymentTarget(ctx context.Context, project model.Pr
 	if err != nil {
 		return unavailableDeploymentTarget(target, "deployment_target.runtime_cluster_unavailable")
 	}
-	kubeconfig := strings.TrimSpace(h.secrets.Resolve(cluster.KubeconfigRef))
+	kubeconfig := strings.TrimSpace(h.secrets.ResolveContext(ctx, cluster.KubeconfigRef))
 	if strings.TrimSpace(cluster.KubeconfigRef) == "" || kubeconfig == "" {
 		target.Status = observation.StatusNotConfigured
 		target.ObservationCode = "deployment_target.kubeconfig_not_configured"
@@ -95,9 +95,9 @@ func (h *Handlers) observeDeploymentTarget(ctx context.Context, project model.Pr
 	return target
 }
 
-func (h *Handlers) deploymentTargetRuntimeCluster(projectID, clusterID string) (model.RuntimeCluster, error) {
+func (h *Handlers) deploymentTargetRuntimeCluster(projectID, clusterID string, contexts ...context.Context) (model.RuntimeCluster, error) {
 	var cluster model.RuntimeCluster
-	query := h.db.Where("type in ?", []string{"kubernetes", "k3s"})
+	query := h.dbWithContext(firstContext(contexts)).Where("type in ?", []string{"kubernetes", "k3s"})
 	if strings.TrimSpace(clusterID) != "" {
 		return cluster, query.First(&cluster, "id = ?", clusterID).Error
 	}

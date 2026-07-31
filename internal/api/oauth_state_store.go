@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/redisconfig"
+	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -43,7 +44,11 @@ func newOAuthStateStore(redisAddr string) oauthStateStore {
 }
 
 func newOAuthStateStoreWithRedis(options redisconfig.Options) oauthStateStore {
-	return &redisOAuthStateStore{client: redis.NewClient(options.GoRedis())}
+	client := redis.NewClient(options.GoRedis())
+	if err := telemetry.InstrumentRedis(client); err != nil {
+		telemetry.Logger().Warn("Redis telemetry initialization failed", "event.name", "redis.instrumentation.failed", "error.type", telemetry.ErrorType(err))
+	}
+	return &redisOAuthStateStore{client: client}
 }
 
 type redisOAuthStateStore struct {

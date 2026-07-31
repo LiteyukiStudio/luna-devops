@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -26,7 +27,7 @@ func (h *Handlers) ListGitAccounts(ctx *gin.Context) {
 	}
 
 	projectID := strings.TrimSpace(ctx.Query("projectId"))
-	query := h.db.Model(&model.GitAccount{})
+	query := h.dbFor(ctx).Model(&model.GitAccount{})
 	conditions := []string{
 		"scope = 'global'",
 		"(scope = 'user' and owner_ref = ?)",
@@ -41,7 +42,7 @@ func (h *Handlers) ListGitAccounts(ctx *gin.Context) {
 	} else if user.Role == authz.PlatformRoleAdmin {
 		conditions = append(conditions, "scope = 'project'")
 	} else {
-		projectIDs := h.projectIDsForUser(user.ID)
+		projectIDs := h.projectIDsForUser(ctx.Request.Context(), user.ID)
 		if len(projectIDs) > 0 {
 			conditions = append(conditions, "(scope = 'project' and exists (select 1 from scoped_resource_project_bindings srpb where srpb.resource_type = ? and srpb.resource_id = git_accounts.id and srpb.project_id in ?))")
 			args = append(args, scopedResourceGitAccount, projectIDs)
@@ -65,7 +66,7 @@ func (h *Handlers) ListGitAccounts(ctx *gin.Context) {
 			writeError(ctx, http.StatusInternalServerError, err.Error())
 			return
 		}
-		h.attachGitAccountProjects(accounts)
+		h.attachGitAccountProjects(accounts, ctx.Request.Context())
 		h.observeGitAccounts(ctx.Request.Context(), user, accounts)
 		ctx.JSON(http.StatusOK, paginatedResponse(gitAccountResponses(accounts), total, pagination))
 		return
@@ -74,7 +75,7 @@ func (h *Handlers) ListGitAccounts(ctx *gin.Context) {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	h.attachGitAccountProjects(accounts)
+	h.attachGitAccountProjects(accounts, ctx.Request.Context())
 	h.observeGitAccounts(ctx.Request.Context(), user, accounts)
 	ctx.JSON(http.StatusOK, gitAccountResponses(accounts))
 }
@@ -111,21 +112,21 @@ func (h *Handlers) CreateGitAccount(ctx *gin.Context) {
 		Scopes:         strings.Join(normalizeList(input.Scopes, false), ","),
 	}
 	if strings.TrimSpace(input.AccessToken) != "" {
-		account.AccessTokenRef = h.secrets.Store(input.AccessToken, user.ID, "git_account:"+account.ID+":access")
+		account.AccessTokenRef = h.secrets.StoreContext(ctx.Request.Context(), input.AccessToken, user.ID, "git_account:"+account.ID+":access")
 	}
 	if strings.TrimSpace(input.RefreshToken) != "" {
-		account.RefreshTokenRef = h.secrets.Store(input.RefreshToken, user.ID, "git_account:"+account.ID+":refresh")
+		account.RefreshTokenRef = h.secrets.StoreContext(ctx.Request.Context(), input.RefreshToken, user.ID, "git_account:"+account.ID+":refresh")
 	}
 	if account.Username == "" {
 		writeError(ctx, http.StatusBadRequest, "请输入 Git 账号用户名")
 		return
 	}
 
-	if err := h.saveGitAccount(account); err != nil {
+	if err := h.saveGitAccount(account, ctx.Request.Context()); err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	h.audit(user.ID, "git_account.create", account.ID, true, account.Scope)
+	h.auditWithContext(user.ID, "git_account.create", account.ID, true, account.Scope, ctx.Request.Context())
 	h.observeGitAccount(ctx.Request.Context(), user, &account)
 	ctx.JSON(http.StatusCreated, gitAccountResponse(account))
 }
@@ -137,7 +138,7 @@ func (h *Handlers) UpdateGitAccount(ctx *gin.Context) {
 	}
 
 	var account model.GitAccount
-	if err := h.db.First(&account, "id = ?", ctx.Param("accountId")).Error; err != nil {
+	if err := h.dbFor(ctx).First(&account, "id = ?", ctx.Param("accountId")).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "git account not found")
 		return
 	}
@@ -166,10 +167,10 @@ func (h *Handlers) UpdateGitAccount(ctx *gin.Context) {
 	account.Username = strings.TrimSpace(input.Username)
 	account.AvatarURL = strings.TrimSpace(input.AvatarURL)
 	if strings.TrimSpace(input.AccessToken) != "" {
-		account.AccessTokenRef = h.secrets.Store(input.AccessToken, user.ID, "git_account:"+account.ID+":access")
+		account.AccessTokenRef = h.secrets.StoreContext(ctx.Request.Context(), input.AccessToken, user.ID, "git_account:"+account.ID+":access")
 	}
 	if strings.TrimSpace(input.RefreshToken) != "" {
-		account.RefreshTokenRef = h.secrets.Store(input.RefreshToken, user.ID, "git_account:"+account.ID+":refresh")
+		account.RefreshTokenRef = h.secrets.StoreContext(ctx.Request.Context(), input.RefreshToken, user.ID, "git_account:"+account.ID+":refresh")
 	}
 	account.Scopes = strings.Join(normalizeList(input.Scopes, false), ",")
 	if account.Username == "" {
@@ -177,17 +178,17 @@ func (h *Handlers) UpdateGitAccount(ctx *gin.Context) {
 		return
 	}
 
-	if err := h.saveGitAccount(account); err != nil {
+	if err := h.saveGitAccount(account, ctx.Request.Context()); err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	h.audit(user.ID, "git_account.update", account.ID, true, account.Scope)
+	h.auditWithContext(user.ID, "git_account.update", account.ID, true, account.Scope, ctx.Request.Context())
 	h.observeGitAccount(ctx.Request.Context(), user, &account)
 	ctx.JSON(http.StatusOK, gitAccountResponse(account))
 }
 
-func (h *Handlers) saveGitAccount(account model.GitAccount) error {
-	return h.db.Transaction(func(tx *gorm.DB) error {
+func (h *Handlers) saveGitAccount(account model.GitAccount, contexts ...context.Context) error {
+	return h.dbWithContext(firstContext(contexts)).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Save(&account).Error; err != nil {
 			return err
 		}
@@ -195,8 +196,8 @@ func (h *Handlers) saveGitAccount(account model.GitAccount) error {
 	})
 }
 
-func (h *Handlers) attachGitAccountProjects(accounts []model.GitAccount) {
-	projectMap := h.scopedResourceProjectIDMap(scopedResourceGitAccount, gitAccountIDs(accounts))
+func (h *Handlers) attachGitAccountProjects(accounts []model.GitAccount, contexts ...context.Context) {
+	projectMap := h.scopedResourceProjectIDMap(scopedResourceGitAccount, gitAccountIDs(accounts), firstContext(contexts))
 	for index := range accounts {
 		accounts[index].ProjectIDs = projectMap[accounts[index].ID]
 	}
@@ -217,7 +218,7 @@ func (h *Handlers) DeleteGitAccount(ctx *gin.Context) {
 	}
 
 	var account model.GitAccount
-	if err := h.db.First(&account, "id = ?", ctx.Param("accountId")).Error; err != nil {
+	if err := h.dbFor(ctx).First(&account, "id = ?", ctx.Param("accountId")).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "git account not found")
 		return
 	}
@@ -225,13 +226,13 @@ func (h *Handlers) DeleteGitAccount(ctx *gin.Context) {
 		return
 	}
 	var bindingCount int64
-	if err := h.db.Model(&model.RepositoryBinding{}).Where("git_account_id = ?", account.ID).Count(&bindingCount).Error; err != nil {
+	if err := h.dbFor(ctx).Model(&model.RepositoryBinding{}).Where("git_account_id = ?", account.ID).Count(&bindingCount).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if bindingCount > 0 {
 		var provider model.GitProvider
-		err := h.db.Select("id").First(&provider, "id = ?", account.ProviderID).Error
+		err := h.dbFor(ctx).Select("id").First(&provider, "id = ?", account.ProviderID).Error
 		if err == nil {
 			writeError(ctx, http.StatusConflict, "Git 凭据仍被仓库绑定引用，请先解绑")
 			return
@@ -241,7 +242,7 @@ func (h *Handlers) DeleteGitAccount(ctx *gin.Context) {
 			return
 		}
 	}
-	if err := h.db.Transaction(func(tx *gorm.DB) error {
+	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("resource_type = ? and resource_id = ?", scopedResourceGitAccount, account.ID).Delete(&model.ScopedResourceProjectBinding{}).Error; err != nil {
 			return err
 		}
@@ -250,7 +251,7 @@ func (h *Handlers) DeleteGitAccount(ctx *gin.Context) {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	h.audit(user.ID, "git_account.delete", account.ID, true, account.Username)
+	h.auditWithContext(user.ID, "git_account.delete", account.ID, true, account.Username, ctx.Request.Context())
 	ctx.Status(http.StatusNoContent)
 }
 
@@ -275,12 +276,12 @@ func (h *Handlers) RefreshGitAccount(ctx *gin.Context) {
 }
 
 func (h *Handlers) refreshGitAccountForUser(ctx *gin.Context, user model.User, account model.GitAccount, provider model.GitProvider) (model.GitAccount, bool) {
-	refreshToken := h.secrets.Resolve(account.RefreshTokenRef)
+	refreshToken := h.secrets.ResolveContext(ctx.Request.Context(), account.RefreshTokenRef)
 	if refreshToken == "" {
 		writeError(ctx, http.StatusBadRequest, "git account has no refresh token")
 		return account, false
 	}
-	oauthConfig, err := gitprovider.OAuthConfig(provider, h.gitOAuthRedirectURL(ctx), h.secrets.Resolve(provider.ClientSecretRef))
+	oauthConfig, err := gitprovider.OAuthConfig(provider, h.gitOAuthRedirectURL(ctx), h.secrets.ResolveContext(ctx.Request.Context(), provider.ClientSecretRef))
 	if err != nil {
 		writeError(ctx, http.StatusBadRequest, "git OAuth provider configuration is invalid")
 		return account, false
@@ -292,22 +293,22 @@ func (h *Handlers) refreshGitAccountForUser(ctx *gin.Context, user model.User, a
 	})
 	token, err := tokenSource.Token()
 	if err != nil {
-		h.audit(user.ID, "git_account.refresh", account.ID, false, "git token refresh failed")
+		h.auditWithContext(user.ID, "git_account.refresh", account.ID, false, "git token refresh failed", ctx.Request.Context())
 		writeErrorCode(ctx, http.StatusBadRequest, "git.token_refresh_failed", "git token refresh failed")
 		return account, false
 	}
-	account.AccessTokenRef = h.secrets.Store(token.AccessToken, account.UserID, "git_account:"+account.ID+":access")
+	account.AccessTokenRef = h.secrets.StoreContext(ctx.Request.Context(), token.AccessToken, account.UserID, "git_account:"+account.ID+":access")
 	if token.RefreshToken != "" {
-		account.RefreshTokenRef = h.secrets.Store(token.RefreshToken, account.UserID, "git_account:"+account.ID+":refresh")
+		account.RefreshTokenRef = h.secrets.StoreContext(ctx.Request.Context(), token.RefreshToken, account.UserID, "git_account:"+account.ID+":refresh")
 	}
 	if !token.Expiry.IsZero() {
 		account.ExpiresAt = &token.Expiry
 	}
-	if err := h.db.Save(&account).Error; err != nil {
+	if err := h.dbFor(ctx).Save(&account).Error; err != nil {
 		writeErrorCode(ctx, http.StatusBadRequest, "git.token_refresh_failed", "git token refresh failed")
 		return account, false
 	}
-	h.audit(user.ID, "git_account.refresh", account.ID, true, account.Username)
+	h.auditWithContext(user.ID, "git_account.refresh", account.ID, true, account.Username, ctx.Request.Context())
 	now := time.Now().UTC()
 	account.Status = observation.StatusReady
 	account.ObservationCode = "git_account_ready"
@@ -322,14 +323,14 @@ func gitAccountNeedsRefresh(account model.GitAccount) bool {
 	return time.Until(*account.ExpiresAt) <= 5*time.Minute
 }
 
-func (h *Handlers) upsertGitAccountFromOAuth(userID string, provider model.GitProvider, gitUser gitprovider.UserResponse, token *oauth2.Token) (model.GitAccount, error) {
+func (h *Handlers) upsertGitAccountFromOAuth(userID string, provider model.GitProvider, gitUser gitprovider.UserResponse, token *oauth2.Token, contexts ...context.Context) (model.GitAccount, error) {
 	externalID := gitUser.ExternalID()
 	username := gitUser.Username()
 	if externalID == "" || username == "" {
 		return model.GitAccount{}, fmt.Errorf("git user identity is incomplete")
 	}
 	var account model.GitAccount
-	err := h.db.First(&account, "user_id = ? and provider_id = ? and external_user_id = ?", userID, provider.ID, externalID).Error
+	err := h.dbWithContext(firstContext(contexts)).First(&account, "user_id = ? and provider_id = ? and external_user_id = ?", userID, provider.ID, externalID).Error
 	if err != nil && err != gorm.ErrRecordNotFound {
 		return account, err
 	}
@@ -350,25 +351,25 @@ func (h *Handlers) upsertGitAccountFromOAuth(userID string, provider model.GitPr
 	}
 	account.Username = username
 	account.AvatarURL = strings.TrimSpace(gitUser.AvatarURL)
-	account.AccessTokenRef = h.secrets.Store(token.AccessToken, userID, "git_account:"+account.ID+":access")
+	account.AccessTokenRef = h.secrets.StoreContext(firstContext(contexts), token.AccessToken, userID, "git_account:"+account.ID+":access")
 	if token.RefreshToken != "" {
-		account.RefreshTokenRef = h.secrets.Store(token.RefreshToken, userID, "git_account:"+account.ID+":refresh")
+		account.RefreshTokenRef = h.secrets.StoreContext(firstContext(contexts), token.RefreshToken, userID, "git_account:"+account.ID+":refresh")
 	}
 	account.Scopes = strings.Join(normalizeList(tokenScopes(token), false), ",")
 	if !token.Expiry.IsZero() {
 		account.ExpiresAt = &token.Expiry
 	}
 	if err == gorm.ErrRecordNotFound {
-		if err := h.db.Create(&account).Error; err != nil {
+		if err := h.dbWithContext(firstContext(contexts)).Create(&account).Error; err != nil {
 			return account, err
 		}
-		h.audit(userID, "git_account.oauth_upsert", account.ID, true, provider.ID)
+		h.auditWithContext(userID, "git_account.oauth_upsert", account.ID, true, provider.ID, firstContext(contexts))
 		return account, nil
 	}
-	if err := h.db.Save(&account).Error; err != nil {
+	if err := h.dbWithContext(firstContext(contexts)).Save(&account).Error; err != nil {
 		return account, err
 	}
-	h.audit(userID, "git_account.oauth_upsert", account.ID, true, provider.ID)
+	h.auditWithContext(userID, "git_account.oauth_upsert", account.ID, true, provider.ID, firstContext(contexts))
 	return account, nil
 }
 

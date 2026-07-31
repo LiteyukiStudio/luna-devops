@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"strings"
 
@@ -21,7 +22,7 @@ func (h *Handlers) ListArtifactRegistries(ctx *gin.Context) {
 	projectID := strings.TrimSpace(ctx.Query("projectId"))
 
 	var registries []model.ArtifactRegistry
-	query := h.db.Model(&model.ArtifactRegistry{})
+	query := h.dbFor(ctx).Model(&model.ArtifactRegistry{})
 	var visible bool
 	query, visible = h.applyScopedResourceVisibility(ctx, query, scopedResourceArtifactRegistry, user, projectID)
 	if !visible {
@@ -74,11 +75,11 @@ func (h *Handlers) CreateArtifactRegistry(ctx *gin.Context) {
 	registry.ID = id.New("reg")
 	registry.CreatedBy = user.ID
 
-	if err := h.saveRegistryWithDefault(registry); err != nil {
+	if err := h.saveRegistryWithDefault(registry, ctx.Request.Context()); err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	h.audit(user.ID, "registry.create", registry.ID, true, registry.Scope)
+	h.auditWithContext(user.ID, "registry.create", registry.ID, true, registry.Scope, ctx.Request.Context())
 	h.observeArtifactRegistry(ctx.Request.Context(), user, &registry)
 	ctx.JSON(http.StatusCreated, registryResponse(registry))
 }
@@ -90,7 +91,7 @@ func (h *Handlers) UpdateArtifactRegistry(ctx *gin.Context) {
 	}
 
 	var existing model.ArtifactRegistry
-	if err := h.db.First(&existing, "id = ?", ctx.Param("registryId")).Error; err != nil {
+	if err := h.dbFor(ctx).First(&existing, "id = ?", ctx.Param("registryId")).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "artifact registry not found")
 		return
 	}
@@ -117,11 +118,11 @@ func (h *Handlers) UpdateArtifactRegistry(ctx *gin.Context) {
 	existing.IsDefault = next.IsDefault
 	existing.Capabilities = next.Capabilities
 
-	if err := h.saveRegistryWithDefault(existing); err != nil {
+	if err := h.saveRegistryWithDefault(existing, ctx.Request.Context()); err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	h.audit(user.ID, "registry.update", existing.ID, true, existing.Scope)
+	h.auditWithContext(user.ID, "registry.update", existing.ID, true, existing.Scope, ctx.Request.Context())
 	h.observeArtifactRegistry(ctx.Request.Context(), user, &existing)
 	ctx.JSON(http.StatusOK, registryResponse(existing))
 }
@@ -133,14 +134,14 @@ func (h *Handlers) DeleteArtifactRegistry(ctx *gin.Context) {
 	}
 
 	var registry model.ArtifactRegistry
-	if err := h.db.First(&registry, "id = ?", ctx.Param("registryId")).Error; err != nil {
+	if err := h.dbFor(ctx).First(&registry, "id = ?", ctx.Param("registryId")).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "artifact registry not found")
 		return
 	}
 	if !h.canManageRegistry(ctx, user, registry) {
 		return
 	}
-	if err := h.db.Transaction(func(tx *gorm.DB) error {
+	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
 		var credentialIDs []string
 		if err := tx.Model(&model.RegistryCredential{}).Where("registry_id = ?", registry.ID).Pluck("id", &credentialIDs).Error; err != nil {
 			return err
@@ -161,7 +162,7 @@ func (h *Handlers) DeleteArtifactRegistry(ctx *gin.Context) {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	h.audit(user.ID, "registry.delete", registry.ID, true, registry.Scope)
+	h.auditWithContext(user.ID, "registry.delete", registry.ID, true, registry.Scope, ctx.Request.Context())
 	ctx.Status(http.StatusNoContent)
 }
 
@@ -175,7 +176,7 @@ func (h *Handlers) GetDefaultArtifactRegistry(ctx *gin.Context) {
 		return
 	}
 
-	registry, ok := h.defaultRegistryFor(user.ID, projectID)
+	registry, ok := h.defaultRegistryFor(user.ID, projectID, ctx.Request.Context())
 	if !ok {
 		writeError(ctx, http.StatusNotFound, "default artifact registry not found")
 		return
@@ -226,8 +227,8 @@ func (h *Handlers) registryFromInput(ctx *gin.Context, user model.User, input ar
 	return registry, true
 }
 
-func (h *Handlers) saveRegistryWithDefault(registry model.ArtifactRegistry) error {
-	return h.db.Transaction(func(tx *gorm.DB) error {
+func (h *Handlers) saveRegistryWithDefault(registry model.ArtifactRegistry, contexts ...context.Context) error {
+	return h.dbWithContext(firstContext(contexts)).Transaction(func(tx *gorm.DB) error {
 		projectIDs := sortedProjectIDs(registry.ProjectIDs)
 		defaultProjectIDs := []string{}
 		if registry.Scope == "project" {

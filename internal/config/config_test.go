@@ -2,7 +2,7 @@ package config
 
 import (
 	"bytes"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -338,16 +338,16 @@ func TestLoadEnvFileLogsPathInDevelopment(t *testing.T) {
 	t.Setenv("ENV_FILE", envFile)
 
 	var output bytes.Buffer
-	oldOutput := log.Writer()
-	log.SetOutput(&output)
+	oldLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&output, &slog.HandlerOptions{Level: slog.LevelDebug})))
 	t.Cleanup(func() {
-		log.SetOutput(oldOutput)
+		slog.SetDefault(oldLogger)
 	})
 
 	_ = Load()
 
 	got := output.String()
-	if !strings.Contains(got, "loaded env file") || !strings.Contains(got, envFile) {
+	if !strings.Contains(got, "environment file loaded") || !strings.Contains(got, envFile) {
 		t.Fatalf("log output %q does not include loaded env file path %q", got, envFile)
 	}
 }
@@ -430,10 +430,10 @@ func TestLoadMissingDefaultEnvLogsFallback(t *testing.T) {
 	t.Setenv("APP_ENV", "development")
 
 	var output bytes.Buffer
-	oldOutput := log.Writer()
-	log.SetOutput(&output)
+	oldLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&output, &slog.HandlerOptions{Level: slog.LevelDebug})))
 	t.Cleanup(func() {
-		log.SetOutput(oldOutput)
+		slog.SetDefault(oldLogger)
 	})
 
 	cfg := Load()

@@ -21,7 +21,7 @@ func (h *Handlers) ListApplications(ctx *gin.Context) {
 	}
 
 	var applications []model.Application
-	query := h.db.Model(&model.Application{}).Where("project_id = ?", ctx.Param("projectId"))
+	query := h.dbFor(ctx).Model(&model.Application{}).Where("project_id = ?", ctx.Param("projectId"))
 	query = applySearch(ctx, query, "name", "identifier")
 	if paginationRequested(ctx) {
 		pagination := paginationFromQuery(ctx)
@@ -76,7 +76,7 @@ func (h *Handlers) CreateApplication(ctx *gin.Context) {
 		DataRetentionMode: "retain",
 	}
 
-	if err := h.db.Create(&app).Error; err != nil {
+	if err := h.dbFor(ctx).Create(&app).Error; err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -122,7 +122,7 @@ func (h *Handlers) UpdateApplication(ctx *gin.Context) {
 	app.Name = input.Name
 	app.Icon = normalizeApplicationIcon(input.Icon)
 
-	if err := h.db.Save(&app).Error; err != nil {
+	if err := h.dbFor(ctx).Save(&app).Error; err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -147,7 +147,7 @@ func (h *Handlers) DeleteApplication(ctx *gin.Context) {
 		return
 	}
 	startedAt := time.Now()
-	err := h.db.Transaction(func(tx *gorm.DB) error {
+	err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&model.Application{}).
 			Where("id = ? and project_id = ? and delete_status in ?", app.ID, app.ProjectID, []string{"active", "delete_failed", ""}).
 			Updates(map[string]any{
@@ -172,7 +172,7 @@ func (h *Handlers) DeleteApplication(ctx *gin.Context) {
 	}
 	if !h.enqueueApplicationDelete(ctx.Request.Context(), app, user.ID, false) {
 		finishedAt := time.Now()
-		_ = h.db.Model(&model.Application{}).Where("id = ?", app.ID).Updates(map[string]any{
+		_ = h.dbFor(ctx).Model(&model.Application{}).Where("id = ?", app.ID).Updates(map[string]any{
 			"delete_status":      "delete_failed",
 			"delete_message":     "应用删除任务投递失败，请确认 Worker 队列可用后重试",
 			"delete_finished_at": &finishedAt,
@@ -180,7 +180,7 @@ func (h *Handlers) DeleteApplication(ctx *gin.Context) {
 		writeError(ctx, http.StatusServiceUnavailable, "应用删除任务投递失败，请确认 Worker 队列可用后重试")
 		return
 	}
-	h.audit(user.ID, "application.delete.request", app.ID, true, app.Name)
+	h.auditWithContext(user.ID, "application.delete.request", app.ID, true, app.Name, ctx.Request.Context())
 	ctx.JSON(http.StatusAccepted, app)
 }
 
@@ -202,7 +202,7 @@ func (h *Handlers) enqueueApplicationDelete(ctx context.Context, app model.Appli
 
 func (h *Handlers) findApplication(ctx *gin.Context) (model.Application, bool) {
 	var app model.Application
-	err := h.db.First(
+	err := h.dbFor(ctx).First(
 		&app,
 		"id = ? and project_id = ?",
 		ctx.Param("applicationId"),
@@ -225,7 +225,7 @@ func (h *Handlers) ensureApplicationIdentifierAvailable(ctx *gin.Context, projec
 		writeError(ctx, http.StatusBadRequest, "应用标识不能为空")
 		return false
 	}
-	query := h.db.Unscoped().Model(&model.Application{}).Where("project_id = ? and identifier = ?", projectID, identifier)
+	query := h.dbFor(ctx).Unscoped().Model(&model.Application{}).Where("project_id = ? and identifier = ?", projectID, identifier)
 	if strings.TrimSpace(excludeApplicationID) != "" {
 		query = query.Where("id <> ?", excludeApplicationID)
 	}

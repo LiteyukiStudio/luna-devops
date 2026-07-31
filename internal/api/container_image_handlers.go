@@ -17,14 +17,14 @@ func (h *Handlers) ListContainerImages(ctx *gin.Context) {
 	}
 
 	pagination := paginationFromQuery(ctx)
-	query := h.db
+	query := h.dbFor(ctx)
 	if projectID := strings.TrimSpace(ctx.Query("projectId")); projectID != "" {
 		if _, ok := h.findProjectForCurrentUserByID(ctx, projectID); !ok {
 			return
 		}
 		query = query.Where("project_id = ?", projectID)
 	} else if user.Role != authz.PlatformRoleAdmin {
-		query = query.Where("created_by = ? or project_id in ?", user.ID, h.projectIDsForUser(user.ID))
+		query = query.Where("created_by = ? or project_id in ?", user.ID, h.projectIDsForUser(ctx.Request.Context(), user.ID))
 	}
 	query = applySearch(ctx, query, "image_ref", "repository", "tag", "digest", "source_commit", "build_run_id", "source_type", "scan_status")
 
@@ -100,7 +100,7 @@ func (h *Handlers) CreateContainerImage(ctx *gin.Context) {
 	}
 	image.ImageRef = imageReference(registry, image.Repository, image.Tag, image.Digest)
 
-	if err := h.db.Create(&image).Error; err != nil {
+	if err := h.dbFor(ctx).Create(&image).Error; err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}

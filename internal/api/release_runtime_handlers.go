@@ -98,11 +98,11 @@ func (h *Handlers) ExecReleaseRuntimeCommand(ctx *gin.Context) {
 		Command:            command,
 	})
 	if err != nil {
-		h.audit(user.ID, "release_runtime.exec", release.ID, false, err.Error())
+		h.auditWithContext(user.ID, "release_runtime.exec", release.ID, false, err.Error(), ctx.Request.Context())
 		writeError(ctx, http.StatusBadGateway, err.Error())
 		return
 	}
-	h.audit(user.ID, "release_runtime.exec", release.ID, result.ExitCode == 0, runtimeExecAuditMessage(command, input.Container, result))
+	h.auditWithContext(user.ID, "release_runtime.exec", release.ID, result.ExitCode == 0, runtimeExecAuditMessage(command, input.Container, result), ctx.Request.Context())
 	ctx.JSON(http.StatusOK, result)
 }
 
@@ -131,7 +131,7 @@ func (h *Handlers) StreamReleaseRuntimeTerminal(ctx *gin.Context) {
 			writeErrorCode(ctx, http.StatusUnauthorized, "runtime_terminal.ticket_invalid", "terminal ticket is invalid, expired, or already consumed")
 			return
 		}
-		if err := h.db.First(&user, "id = ? and disabled = ?", ticketValue.UserID, false).Error; err != nil {
+		if err := h.dbFor(ctx).First(&user, "id = ? and disabled = ?", ticketValue.UserID, false).Error; err != nil {
 			writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.account.disabled")
 			return
 		}
@@ -193,7 +193,7 @@ func (h *Handlers) StreamReleaseRuntimeTerminal(ctx *gin.Context) {
 	}
 	conn, err := upgrader.Upgrade(ctx.Writer, ctx.Request, nil)
 	if err != nil {
-		h.audit(user.ID, "release_runtime.terminal", release.ID, false, err.Error())
+		h.auditWithContext(user.ID, "release_runtime.terminal", release.ID, false, err.Error(), ctx.Request.Context())
 		return
 	}
 	defer conn.Close()
@@ -221,20 +221,20 @@ func (h *Handlers) StreamReleaseRuntimeTerminal(ctx *gin.Context) {
 	})
 	if err != nil && sessionCtx.Err() == nil {
 		_, _ = wsWriter.Write([]byte("\r\nterminal disconnected: " + err.Error() + "\r\n"))
-		h.audit(user.ID, "release_runtime.terminal", release.ID, false, err.Error())
+		h.auditWithContext(user.ID, "release_runtime.terminal", release.ID, false, err.Error(), ctx.Request.Context())
 		return
 	}
 	select {
 	case <-authorizationRevoked:
-		h.audit(user.ID, "release_runtime.terminal", release.ID, false, "authorization expired or was revoked")
+		h.auditWithContext(user.ID, "release_runtime.terminal", release.ID, false, "authorization expired or was revoked", ctx.Request.Context())
 		return
 	default:
 	}
 	if sessionCtx.Err() == context.DeadlineExceeded {
-		h.audit(user.ID, "release_runtime.terminal", release.ID, false, "authorization deadline reached")
+		h.auditWithContext(user.ID, "release_runtime.terminal", release.ID, false, "authorization deadline reached", ctx.Request.Context())
 		return
 	}
-	h.audit(user.ID, "release_runtime.terminal", release.ID, true, strings.TrimSpace(ctx.Query("container")))
+	h.auditWithContext(user.ID, "release_runtime.terminal", release.ID, true, strings.TrimSpace(ctx.Query("container")), ctx.Request.Context())
 }
 
 func (h *Handlers) AuthorizeReleaseRuntimeTerminal(ctx *gin.Context) {
@@ -274,7 +274,7 @@ func (h *Handlers) AuthorizeReleaseRuntimeTerminal(ctx *gin.Context) {
 		reference,
 	)
 	if err != nil {
-		h.audit(user.ID, "release_runtime.terminal_authorize", release.ID, false, err.Error())
+		h.auditWithContext(user.ID, "release_runtime.terminal_authorize", release.ID, false, err.Error(), ctx.Request.Context())
 		writeErrorCode(ctx, http.StatusServiceUnavailable, "runtime_terminal.ticket_unavailable", "terminal authorization is temporarily unavailable")
 		return
 	}
@@ -290,7 +290,7 @@ func (h *Handlers) releaseRuntimeTerminalProjectForUser(ctx *gin.Context, user m
 		return project, true
 	}
 	var member model.ProjectMember
-	if err := h.db.First(&member, "project_id = ? and user_id = ?", project.ID, user.ID).Error; err != nil {
+	if err := h.dbFor(ctx).First(&member, "project_id = ? and user_id = ?", project.ID, user.ID).Error; err != nil {
 		writeError(ctx, http.StatusForbidden, "你没有访问该项目的权限")
 		return model.Project{}, false
 	}
@@ -338,7 +338,7 @@ func runtimeTerminalInputPayload(messageType int, data []byte, sizeQueue *runtim
 
 func (h *Handlers) releaseRuntimeClient(ctx *gin.Context, release model.Release) (*kubeprovider.Client, string, model.DeploymentTarget, bool) {
 	var project model.Project
-	if err := h.db.First(&project, "id = ?", release.ProjectID).Error; err != nil {
+	if err := h.dbFor(ctx).First(&project, "id = ?", release.ProjectID).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "project not found")
 		return nil, "", model.DeploymentTarget{}, false
 	}
@@ -352,7 +352,7 @@ func (h *Handlers) releaseRuntimeClient(ctx *gin.Context, release model.Release)
 
 func (h *Handlers) releaseRuntimeTarget(ctx *gin.Context, release model.Release) (model.DeploymentTarget, bool) {
 	var target model.DeploymentTarget
-	if err := h.db.First(&target, "id = ? and project_id = ? and application_id = ?", release.DeploymentTargetID, release.ProjectID, release.ApplicationID).Error; err != nil {
+	if err := h.dbFor(ctx).First(&target, "id = ? and project_id = ? and application_id = ?", release.DeploymentTargetID, release.ProjectID, release.ApplicationID).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "deployment target not found")
 		return model.DeploymentTarget{}, false
 	}
@@ -383,7 +383,7 @@ func (h *Handlers) runtimeClientForDeploymentTarget(ctx *gin.Context, project mo
 	if !ok {
 		return nil, "", model.RuntimeCluster{}, false
 	}
-	kubeconfig := h.secrets.Resolve(cluster.KubeconfigRef)
+	kubeconfig := h.secrets.ResolveContext(ctx.Request.Context(), cluster.KubeconfigRef)
 	if strings.TrimSpace(kubeconfig) == "" {
 		writeError(ctx, http.StatusBadRequest, "运行集群缺少 kubeconfig，无法读取运行时")
 		return nil, "", model.RuntimeCluster{}, false

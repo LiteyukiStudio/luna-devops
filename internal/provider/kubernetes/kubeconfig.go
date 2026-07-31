@@ -3,9 +3,11 @@ package kubernetes
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 
+	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
@@ -37,12 +39,31 @@ func SafeRESTConfigFromKubeconfig(kubeconfig string) (*rest.Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	return clientcmd.NewNonInteractiveClientConfig(
+	restConfig, err := clientcmd.NewNonInteractiveClientConfig(
 		*config,
 		config.CurrentContext,
 		&clientcmd.ConfigOverrides{},
 		nil,
 	).ClientConfig()
+	if err != nil {
+		return nil, err
+	}
+	return restConfig, nil
+}
+
+func InstrumentRESTConfig(config *rest.Config) *rest.Config {
+	if config == nil {
+		return nil
+	}
+	instrumented := rest.CopyConfig(config)
+	previousWrap := instrumented.WrapTransport
+	instrumented.WrapTransport = func(transport http.RoundTripper) http.RoundTripper {
+		if previousWrap != nil {
+			transport = previousWrap(transport)
+		}
+		return telemetry.InstrumentHTTPTransport(transport)
+	}
+	return instrumented
 }
 
 func loadSafeKubeconfig(kubeconfig string) (*clientcmdapi.Config, error) {

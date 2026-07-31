@@ -152,25 +152,19 @@ func (s *Service) getWebResource(ctx context.Context, userID, rawURL string) (*h
 	}
 
 	client := security.NewHTTPClient(policy, 20*time.Second)
-	if transport, ok := client.Transport.(*http.Transport); ok {
-		transport.Proxy = nil
-		proxyURL, err := s.nextWebProxy(ctx, userID)
-		if err != nil {
-			return nil, "", err
+	proxyURL, err := s.nextWebProxy(ctx, userID)
+	if err != nil {
+		return nil, "", err
+	}
+	if proxyURL != nil {
+		// 目标地址已在请求与重定向阶段按用户出网策略校验。代理本身是平台管理员
+		// 配置的受信传输节点，因此拨号策略只精确放行当前代理主机与端口。
+		proxyPolicy := security.AdminEgressPolicy()
+		proxyPolicy.AllowedPorts = []int{webURLPort(proxyURL)}
+		if net.ParseIP(proxyURL.Hostname()) == nil {
+			proxyPolicy.DomainAllowList = []string{proxyURL.Hostname()}
 		}
-		if proxyURL != nil {
-			// 目标地址已在请求与重定向阶段按用户出网策略校验。代理本身是平台管理员
-			// 配置的受信传输节点，因此拨号策略只精确放行当前代理主机与端口。
-			proxyPolicy := security.AdminEgressPolicy()
-			proxyPolicy.AllowedPorts = []int{webURLPort(proxyURL)}
-			if net.ParseIP(proxyURL.Hostname()) == nil {
-				proxyPolicy.DomainAllowList = []string{proxyURL.Hostname()}
-			}
-			proxyClient := security.NewHTTPClient(proxyPolicy, 20*time.Second)
-			proxyTransport := proxyClient.Transport.(*http.Transport)
-			proxyTransport.Proxy = http.ProxyURL(proxyURL)
-			client = proxyClient
-		}
+		client = security.NewHTTPClientWithProxy(proxyPolicy, 20*time.Second, proxyURL)
 	}
 	client.CheckRedirect = func(request *http.Request, via []*http.Request) error {
 		if len(via) >= maxRedirects {

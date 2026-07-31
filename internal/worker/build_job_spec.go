@@ -33,7 +33,7 @@ func (r *Runner) startBuildJob(ctx context.Context, client kubernetes.Interface,
 		}
 	}
 	cleanupSecret := func() {
-		_ = secrets.Delete(context.Background(), secretName, metav1.DeleteOptions{})
+		_ = secrets.Delete(context.WithoutCancel(ctx), secretName, metav1.DeleteOptions{})
 	}
 	timeoutSeconds := effectiveBuildTimeoutSeconds(run.BuildTimeoutSeconds, r.buildJobTimeoutSeconds)
 	job := buildJobSpec(jobName, secretName, environment, run, task, r.buildExecutorImage, r.buildNPMRegistry, r.buildCacheEnabled, r.buildCacheTag, timeoutSeconds, r.buildJobTTLSeconds)

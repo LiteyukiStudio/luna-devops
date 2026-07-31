@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -55,7 +56,7 @@ func (h *Handlers) ListSystemComponents(ctx *gin.Context) {
 		return
 	}
 	var items []model.SystemComponentInstallation
-	query := h.db.Order("component_id asc, runtime_cluster_id asc")
+	query := h.dbFor(ctx).Order("component_id asc, runtime_cluster_id asc")
 	if componentID := strings.TrimSpace(ctx.Query("componentId")); componentID != "" {
 		query = query.Where("component_id = ?", componentID)
 	}
@@ -101,7 +102,7 @@ func (h *Handlers) InstallSystemAppTemplate(ctx *gin.Context) {
 		return
 	}
 	var cluster model.RuntimeCluster
-	if err := h.db.First(&cluster, "id = ?", clusterID).Error; err != nil {
+	if err := h.dbFor(ctx).First(&cluster, "id = ?", clusterID).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "runtime cluster not found")
 		return
 	}
@@ -145,18 +146,18 @@ func (h *Handlers) InstallSystemAppTemplate(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := h.persistSystemComponentApplicationPlan(plan); err != nil {
+	if err := h.persistSystemComponentApplicationPlan(plan, ctx.Request.Context()); err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if !h.enqueueDeployRun(ctx.Request.Context(), *plan.Release) {
 		message := "平台组件部署任务投递失败"
-		_ = h.db.Model(&model.Release{}).Where("id = ?", plan.Release.ID).Updates(map[string]any{"status": "failed", "message": message}).Error
-		_ = h.db.Model(&model.SystemComponentInstallation{}).Where("id = ?", plan.Installation.ID).Updates(map[string]any{"status": "failed", "message": message, "last_error": message}).Error
+		_ = h.dbFor(ctx).Model(&model.Release{}).Where("id = ?", plan.Release.ID).Updates(map[string]any{"status": "failed", "message": message}).Error
+		_ = h.dbFor(ctx).Model(&model.SystemComponentInstallation{}).Where("id = ?", plan.Installation.ID).Updates(map[string]any{"status": "failed", "message": message, "last_error": message}).Error
 		writeError(ctx, http.StatusServiceUnavailable, message)
 		return
 	}
-	h.audit(user.ID, "system_component.install", plan.Installation.ID, true, componentID)
+	h.auditWithContext(user.ID, "system_component.install", plan.Installation.ID, true, componentID, ctx.Request.Context())
 	ctx.JSON(http.StatusCreated, systemComponentInstallResponse{
 		Installation:     plan.Installation,
 		Application:      plan.Application,
@@ -198,7 +199,7 @@ func (h *Handlers) systemComponentApplicationPlan(ctx *gin.Context, user model.U
 		DataRetentionMode: "retain",
 	}
 	var existingApp model.Application
-	if err := h.db.First(&existingApp, "project_id = ? and identifier = ?", project.ID, applicationIdentifier).Error; err == nil {
+	if err := h.dbFor(ctx).First(&existingApp, "project_id = ? and identifier = ?", project.ID, applicationIdentifier).Error; err == nil {
 		application = existingApp
 		application.Name = applicationName
 		application.Icon = templateApplicationIcon(template)
@@ -239,7 +240,7 @@ func (h *Handlers) systemComponentApplicationPlan(ctx *gin.Context, user model.U
 		CreatedBy:                    user.ID,
 	}
 	var existingTarget model.DeploymentTarget
-	if err := h.db.First(&existingTarget, "project_id = ? and application_id = ? and name = ? and deleted_at is null", project.ID, application.ID, target.Name).Error; err == nil {
+	if err := h.dbFor(ctx).First(&existingTarget, "project_id = ? and application_id = ? and name = ? and deleted_at is null", project.ID, application.ID, target.Name).Error; err == nil {
 		target.ID = existingTarget.ID
 		target.KubernetesName = firstNonEmpty(existingTarget.KubernetesName, target.KubernetesName)
 		target.CreatedAt = existingTarget.CreatedAt
@@ -307,8 +308,8 @@ func (h *Handlers) systemComponentApplicationPlan(ctx *gin.Context, user model.U
 	}, true
 }
 
-func (h *Handlers) persistSystemComponentApplicationPlan(plan systemComponentApplicationPlan) error {
-	return h.db.Transaction(func(tx *gorm.DB) error {
+func (h *Handlers) persistSystemComponentApplicationPlan(plan systemComponentApplicationPlan, contexts ...context.Context) error {
+	return h.dbWithContext(firstContext(contexts)).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Save(&plan.Application).Error; err != nil {
 			return err
 		}
@@ -382,13 +383,13 @@ func validateOptionalHTTPURL(value string, label string) error {
 	return nil
 }
 
-func (h *Handlers) systemComponentForBearerToken(token string, componentID string) (model.SystemComponentInstallation, bool) {
+func (h *Handlers) systemComponentForBearerToken(token string, componentID string, contexts ...context.Context) (model.SystemComponentInstallation, bool) {
 	token = strings.TrimSpace(token)
 	if token == "" {
 		return model.SystemComponentInstallation{}, false
 	}
 	var installation model.SystemComponentInstallation
-	err := h.db.First(&installation, "component_id = ? and report_token_hash = ?", componentID, hashToken(token)).Error
+	err := h.dbWithContext(firstContext(contexts)).First(&installation, "component_id = ? and report_token_hash = ?", componentID, hashToken(token)).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return model.SystemComponentInstallation{}, false
 	}

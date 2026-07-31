@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -218,7 +219,7 @@ func builderVisibleToUser(rawScopes string, userID string, projectIDs []string) 
 }
 
 func (h *Handlers) buildVariablesForRun(ctx *gin.Context, user model.User, projectID string, setIDs []string) (map[string]string, bool) {
-	variables, err := h.buildVariablesForRunByIDs(h.db, user, projectID, setIDs)
+	variables, err := h.buildVariablesForRunByIDs(h.dbFor(ctx), user, projectID, setIDs, ctx.Request.Context())
 	if err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return nil, false
@@ -226,9 +227,9 @@ func (h *Handlers) buildVariablesForRun(ctx *gin.Context, user model.User, proje
 	return variables, true
 }
 
-func (h *Handlers) buildVariablesForRunByIDs(db *gorm.DB, user model.User, projectID string, setIDs []string) (map[string]string, error) {
+func (h *Handlers) buildVariablesForRunByIDs(db *gorm.DB, user model.User, projectID string, setIDs []string, contexts ...context.Context) (map[string]string, error) {
 	output := make(map[string]string)
-	sets, err := h.buildVariableSetsForRun(db, user, projectID, setIDs)
+	sets, err := h.buildVariableSetsForRun(db, user, projectID, setIDs, firstContext(contexts))
 	if err != nil {
 		return nil, err
 	}
@@ -238,14 +239,14 @@ func (h *Handlers) buildVariablesForRunByIDs(db *gorm.DB, user model.User, proje
 	return output, nil
 }
 
-func (h *Handlers) buildEnvironmentSnapshotForRun(db *gorm.DB, user model.User, run model.BuildRun) (buildenv.Snapshot, error) {
+func (h *Handlers) buildEnvironmentSnapshotForRun(db *gorm.DB, user model.User, run model.BuildRun, contexts ...context.Context) (buildenv.Snapshot, error) {
 	snapshot := buildenv.NewSnapshot()
 	if config, err := h.findBuildEnvironmentConfig(db, model.BuildEnvironmentScopeGlobal, model.BuildEnvironmentGlobalRef); err == nil {
 		buildenv.Apply(&snapshot, config.Variables, config.SecretRefs)
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return snapshot, err
 	}
-	sets, err := h.buildVariableSetsForRun(db, user, run.ProjectID, buildVariableSetIDs(run.BuildVariableSetIDs))
+	sets, err := h.buildVariableSetsForRun(db, user, run.ProjectID, buildVariableSetIDs(run.BuildVariableSetIDs), firstContext(contexts))
 	if err != nil {
 		return snapshot, err
 	}
@@ -265,7 +266,7 @@ func (h *Handlers) buildEnvironmentSnapshotForRun(db *gorm.DB, user model.User, 
 	return snapshot, nil
 }
 
-func (h *Handlers) buildVariableSetsForRun(db *gorm.DB, user model.User, projectID string, setIDs []string) ([]model.BuildVariableSet, error) {
+func (h *Handlers) buildVariableSetsForRun(db *gorm.DB, user model.User, projectID string, setIDs []string, contexts ...context.Context) ([]model.BuildVariableSet, error) {
 	sets := make([]model.BuildVariableSet, 0)
 	seen := make(map[string]bool)
 	var defaultSets []model.BuildVariableSet
@@ -277,7 +278,7 @@ func (h *Handlers) buildVariableSetsForRun(db *gorm.DB, user model.User, project
 		return nil, err
 	}
 	for _, set := range defaultSets {
-		if !h.buildVariableSetAccessible(user, projectID, set) {
+		if !h.buildVariableSetAccessible(user, projectID, set, firstContext(contexts)) {
 			continue
 		}
 		sets = append(sets, set)
@@ -292,7 +293,7 @@ func (h *Handlers) buildVariableSetsForRun(db *gorm.DB, user model.User, project
 		if err := db.First(&set, "id = ? and enabled = ?", setID, true).Error; err != nil {
 			return nil, errors.New("变量和密钥不可用")
 		}
-		if !h.buildVariableSetAccessible(user, projectID, set) {
+		if !h.buildVariableSetAccessible(user, projectID, set, firstContext(contexts)) {
 			return nil, errors.New("无权使用该变量和密钥")
 		}
 		sets = append(sets, set)
@@ -327,7 +328,7 @@ func decodeSecretRefs(raw string) map[string]string {
 	return refs
 }
 
-func (h *Handlers) buildVariableSetAccessible(user model.User, projectID string, set model.BuildVariableSet) bool {
+func (h *Handlers) buildVariableSetAccessible(user model.User, projectID string, set model.BuildVariableSet, contexts ...context.Context) bool {
 	switch set.Scope {
 	case "global":
 		return true
@@ -337,7 +338,7 @@ func (h *Handlers) buildVariableSetAccessible(user model.User, projectID string,
 		if user.Role == authz.PlatformRoleAdmin {
 			return true
 		}
-		for _, boundProjectID := range h.scopedResourceProjectIDs(scopedResourceBuildVariableSet, set.ID) {
+		for _, boundProjectID := range h.scopedResourceProjectIDs(scopedResourceBuildVariableSet, set.ID, firstContext(contexts)) {
 			if boundProjectID == projectID {
 				return true
 			}
@@ -373,22 +374,22 @@ type buildVariableSetResponse struct {
 	CreatedAt           time.Time       `json:"createdAt"`
 }
 
-func (h *Handlers) buildVariableSetResponsesForUser(user model.User, sets []model.BuildVariableSet) []buildVariableSetResponse {
+func (h *Handlers) buildVariableSetResponsesForUser(user model.User, sets []model.BuildVariableSet, contexts ...context.Context) []buildVariableSetResponse {
 	output := make([]buildVariableSetResponse, 0, len(sets))
 	for _, set := range sets {
-		output = append(output, h.buildVariableSetResponseForUser(user, set))
+		output = append(output, h.buildVariableSetResponseForUser(user, set, firstContext(contexts)))
 	}
 	return output
 }
 
-func (h *Handlers) buildVariableSetResponseForUser(user model.User, set model.BuildVariableSet) buildVariableSetResponse {
+func (h *Handlers) buildVariableSetResponseForUser(user model.User, set model.BuildVariableSet, contexts ...context.Context) buildVariableSetResponse {
 	secrets := map[string]bool{}
 	for key, ref := range decodeSecretRefs(set.SecretRefs) {
 		if isBuildEnvKey(key) && strings.TrimSpace(ref) != "" {
 			secrets[key] = true
 		}
 	}
-	canInspectVariables := h.canInspectScopedResourceConfigByID(user, set.Scope, set.OwnerRef, scopedResourceBuildVariableSet, set.ID)
+	canInspectVariables := h.canInspectScopedResourceConfigByID(user, set.Scope, set.OwnerRef, scopedResourceBuildVariableSet, set.ID, firstContext(contexts))
 	variables := "{}"
 	if canInspectVariables {
 		variables = set.Variables

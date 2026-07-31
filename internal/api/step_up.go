@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strconv"
@@ -88,26 +89,26 @@ func (h *Handlers) stepUpMiddleware(purpose string) gin.HandlerFunc {
 func (h *Handlers) requireMFAAssertion(ctx *gin.Context, user model.User, purpose string) bool {
 	purpose = normalizeStepUpPurpose(purpose)
 	if purpose == "" {
-		h.audit(user.ID, "mfa.step_up_rejected", "unknown", false, "invalid purpose")
+		h.auditWithContext(user.ID, "mfa.step_up_rejected", "unknown", false, "invalid purpose", ctx.Request.Context())
 		writeErrorCode(ctx, http.StatusBadRequest, "mfa.invalid_purpose", "不支持的二次验证用途")
 		return false
 	}
 	subject, ok := h.currentStepUpSubject(ctx, user)
 	if !ok {
 		if requestUsesBearerToken(ctx) {
-			h.audit(user.ID, "mfa.step_up_required", purpose, false, "personal access tokens cannot satisfy step-up MFA")
+			h.auditWithContext(user.ID, "mfa.step_up_required", purpose, false, "personal access tokens cannot satisfy step-up MFA", ctx.Request.Context())
 			writeErrorCode(ctx, http.StatusForbidden, "mfa.session_required", "个人令牌不能用于二次验证，请使用 Luna CLI OAuth 登录")
 		} else {
-			h.audit(user.ID, "mfa.step_up_required", purpose, false, "missing browser session")
+			h.auditWithContext(user.ID, "mfa.step_up_required", purpose, false, "missing browser session", ctx.Request.Context())
 			writeMFARequired(ctx, purpose)
 		}
 		return false
 	}
 
 	now := time.Now()
-	h.cleanupExpiredStepUpAssertions(now)
+	h.cleanupExpiredStepUpAssertions(now, ctx.Request.Context())
 	var assertion model.StepUpAssertion
-	err := h.db.First(
+	err := h.dbFor(ctx).First(
 		&assertion,
 		"user_id = ? and session_id = ? and purpose = ? and idle_expires_at > ? and absolute_expires_at > ?",
 		user.ID,
@@ -117,18 +118,18 @@ func (h *Handlers) requireMFAAssertion(ctx *gin.Context, user model.User, purpos
 		now,
 	).Error
 	if err != nil || !stepUpAssertionActive(assertion, now) {
-		h.audit(user.ID, "mfa.step_up_required", purpose, false, "assertion missing or expired")
+		h.auditWithContext(user.ID, "mfa.step_up_required", purpose, false, "assertion missing or expired", ctx.Request.Context())
 		writeMFARequired(ctx, purpose)
 		return false
 	}
 
 	idleTimeout, _ := h.stepUpTimeouts()
 	idleExpiresAt := refreshedStepUpIdleExpiry(now, idleTimeout, assertion.AbsoluteExpiresAt)
-	result := h.db.Model(&model.StepUpAssertion{}).
+	result := h.dbFor(ctx).Model(&model.StepUpAssertion{}).
 		Where("id = ? and idle_expires_at > ? and absolute_expires_at > ?", assertion.ID, now, now).
 		Updates(map[string]any{"last_activity_at": now, "idle_expires_at": idleExpiresAt, "updated_at": now})
 	if result.Error != nil || result.RowsAffected != 1 {
-		h.audit(user.ID, "mfa.step_up_required", purpose, false, "assertion refresh failed")
+		h.auditWithContext(user.ID, "mfa.step_up_required", purpose, false, "assertion refresh failed", ctx.Request.Context())
 		writeMFARequired(ctx, purpose)
 		return false
 	}
@@ -154,8 +155,8 @@ func (h *Handlers) currentStepUpSubject(ctx *gin.Context, user model.User) (stri
 	return session.ID, true
 }
 
-func (h *Handlers) cleanupExpiredStepUpAssertions(now time.Time) {
-	_ = h.db.Where("idle_expires_at <= ? or absolute_expires_at <= ?", now, now).Delete(&model.StepUpAssertion{}).Error
+func (h *Handlers) cleanupExpiredStepUpAssertions(now time.Time, contexts ...context.Context) {
+	_ = h.dbWithContext(firstContext(contexts)).Where("idle_expires_at <= ? or absolute_expires_at <= ?", now, now).Delete(&model.StepUpAssertion{}).Error
 }
 
 func (h *Handlers) stepUpMFAEnabled() bool {

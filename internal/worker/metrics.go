@@ -41,16 +41,14 @@ func (r *Runner) recordGatewaySyncMetric(operation string, result string, starte
 	r.workerMetrics.RecordGatewaySync(operation, result, time.Since(startedAt))
 }
 
-func (r *Runner) recordDeploymentRuntimeMetric(target model.DeploymentTarget, environment model.Environment, snapshot kubeprovider.DeploymentSnapshot) {
+func (r *Runner) recordDeploymentRuntimeMetric(snapshot kubeprovider.DeploymentSnapshot) {
 	if r.workerMetrics == nil {
 		return
 	}
 	r.workerMetrics.SetDeploymentRuntime(observability.DeploymentRuntimeMetric{
-		DeploymentTargetID: target.ID,
-		EnvironmentID:      environment.ID,
-		DesiredReplicas:    snapshot.DesiredReplicas,
-		ReadyReplicas:      snapshot.ReadyReplicas,
-		AvailableReplicas:  snapshot.AvailableReplicas,
-		UpdatedReplicas:    snapshot.UpdatedReplicas,
+		DesiredReplicas:   snapshot.DesiredReplicas,
+		ReadyReplicas:     snapshot.ReadyReplicas,
+		AvailableReplicas: snapshot.AvailableReplicas,
+		UpdatedReplicas:   snapshot.UpdatedReplicas,
 	})
 }

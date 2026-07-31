@@ -6,6 +6,7 @@ import { Toaster } from 'sonner'
 import App from './App.tsx'
 import { PublicConfigProvider } from './app/public-config'
 import { SessionProvider } from './app/session'
+import { TelemetryRouteObserver } from './app/telemetry-route-observer'
 import { ThemeProvider } from './app/theme'
 import { MFADialogProvider } from './components/common/mfa-dialog'
 import './index.css'
@@ -19,6 +20,7 @@ createRoot(document.getElementById('root')!).render(
       <ThemeProvider>
         <PublicConfigProvider>
           <BrowserRouter>
+            <TelemetryRouteObserver />
             <SessionProvider>
               <MFADialogProvider>
                 <App />

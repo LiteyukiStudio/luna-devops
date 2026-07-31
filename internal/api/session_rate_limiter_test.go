@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http/httptest"
 	"strings"
@@ -19,7 +20,7 @@ func TestRateLimiterUsesRedisPassword(t *testing.T) {
 	limiter := newRateLimiterWithRedis(redisconfig.Options{Addr: server.Addr(), Password: "secret"})
 	t.Cleanup(func() { _ = limiter.redis.Close() })
 
-	allowed, err := limiter.allow("authenticated", 1, time.Minute)
+	allowed, err := limiter.allow(context.Background(), "authenticated", 1, time.Minute)
 	if err != nil {
 		t.Fatalf("allow returned error: %v", err)
 	}
@@ -42,7 +43,7 @@ func TestRateLimiterAtomicallyIncrementsAndSetsTTL(t *testing.T) {
 		go func() {
 			defer workers.Done()
 			<-start
-			_, err := limiter.allow("atomic", attempts, time.Minute)
+			_, err := limiter.allow(context.Background(), "atomic", attempts, time.Minute)
 			results <- err
 		}()
 	}
@@ -68,16 +69,16 @@ func TestRateLimiterResetClearsCounter(t *testing.T) {
 	limiter := newRateLimiter(server.Addr())
 	t.Cleanup(func() { _ = limiter.redis.Close() })
 
-	if allowed, err := limiter.allow("resettable", 1, time.Minute); err != nil || !allowed {
+	if allowed, err := limiter.allow(context.Background(), "resettable", 1, time.Minute); err != nil || !allowed {
 		t.Fatalf("first attempt: allowed=%v err=%v", allowed, err)
 	}
-	if allowed, err := limiter.allow("resettable", 1, time.Minute); err != nil || allowed {
+	if allowed, err := limiter.allow(context.Background(), "resettable", 1, time.Minute); err != nil || allowed {
 		t.Fatalf("second attempt: allowed=%v err=%v", allowed, err)
 	}
-	if err := limiter.reset("resettable"); err != nil {
+	if err := limiter.reset(context.Background(), "resettable"); err != nil {
 		t.Fatalf("reset: %v", err)
 	}
-	if allowed, err := limiter.allow("resettable", 1, time.Minute); err != nil || !allowed {
+	if allowed, err := limiter.allow(context.Background(), "resettable", 1, time.Minute); err != nil || !allowed {
 		t.Fatalf("attempt after reset: allowed=%v err=%v", allowed, err)
 	}
 }

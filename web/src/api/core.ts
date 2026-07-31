@@ -1,5 +1,6 @@
 import type { BillingListParams, BuildRunListParams, MFAChallenge, PaginationParams, RuntimeClusterResourceListParams } from './types'
 import i18next from '@/i18n'
+import { startAPIRequestSpan } from '@/lib/telemetry'
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1'
 
@@ -224,6 +225,7 @@ function apiNetworkError(path: string, error: unknown) {
 
 async function requestOnce<T>(path: string, options?: RequestInit): Promise<T> {
   const { headers, ...requestOptions } = options ?? {}
+  const telemetry = startAPIRequestSpan(requestOptions.method ?? 'GET', path)
   let response: Response
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
@@ -232,13 +234,17 @@ async function requestOnce<T>(path: string, options?: RequestInit): Promise<T> {
       headers: {
         'Accept-Language': i18next.language,
         ...(requestOptions.body == null ? {} : { 'Content-Type': 'application/json' }),
+        ...telemetry.headers,
         ...headers,
       },
     })
   }
   catch (error) {
+    telemetry.fail(error)
     throw apiNetworkError(path, error)
   }
+
+  telemetry.finish(response)
 
   if (!response.ok) {
     throw await apiErrorFromResponse(response, path)

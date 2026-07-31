@@ -1,5 +1,6 @@
 import type { ToolOperation } from "./catalog.js"
 import { canonicalJSONStringify } from "../canonical-json.js"
+import { agentMetrics, clientSpanOptions, telemetryLog, withSpan } from "../telemetry.js"
 
 export type ToolExecutionRequest = {
   runId: string
@@ -22,6 +23,13 @@ export interface LunaApiToolClient {
 export class HttpLunaApiToolClient implements LunaApiToolClient {
   constructor(private readonly baseUrl: string, private readonly serviceToken: string) {}
   async execute(request: ToolExecutionRequest): Promise<ToolExecutionResult> {
+    const startedAt = performance.now()
+    return withSpan("luna_api.tool.execute", clientSpanOptions({
+      "server.address": new URL(this.baseUrl).hostname,
+      "gen_ai.tool.name": request.operation.operationId,
+      "luna.run.id": request.runId,
+      "luna.tool_call.id": request.toolCallId,
+    }), async span => {
     const exchange = await fetch(new URL("/internal/v1/ai/delegations/exchange", this.baseUrl), {
       method: "POST",
       headers: { authorization: `Bearer ${this.serviceToken}`, "content-type": "application/json" },
@@ -37,6 +45,12 @@ export class HttpLunaApiToolClient implements LunaApiToolClient {
     })
     if (!exchange.ok) {
       const requestId = exchange.headers.get("x-request-id")
+      span.setAttribute("http.response.status_code", exchange.status)
+      agentMetrics.externalRequests.add(1, { target: "luna_api", operation: "delegation_exchange", outcome: String(exchange.status) })
+      telemetryLog("agent.luna_api.delegation_failed", "warn", {
+        "tool.name": request.operation.operationId,
+        "http.response.status_code": exchange.status,
+      })
       return { status: exchange.status, body: await safeJson(exchange), ...(requestId ? { requestId } : {}) }
     }
     const { accessToken } = await exchange.json() as { accessToken: string }
@@ -53,7 +67,15 @@ export class HttpLunaApiToolClient implements LunaApiToolClient {
     init.body = JSON.stringify({ argumentsCanonical: canonicalJSONStringify(request.arguments) })
     const response = await fetch(url, init)
     const requestId = response.headers.get("x-request-id")
+    span.setAttribute("http.response.status_code", response.status)
+    agentMetrics.externalRequests.add(1, {
+      target: "luna_api",
+      operation: "tool_execute",
+      outcome: response.ok ? "success" : String(response.status),
+    })
+    span.setAttribute("luna.external.duration_ms", performance.now() - startedAt)
     return { status: response.status, body: await safeJson(response), ...(requestId ? { requestId } : {}) }
+    })
   }
 }
 

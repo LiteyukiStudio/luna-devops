@@ -23,7 +23,7 @@ func (h *Handlers) ListRuntimeClusters(ctx *gin.Context) {
 	projectID := strings.TrimSpace(ctx.Query("projectId"))
 
 	var clusters []model.RuntimeCluster
-	query := h.db.Model(&model.RuntimeCluster{})
+	query := h.dbFor(ctx).Model(&model.RuntimeCluster{})
 	var visible bool
 	query, visible = h.applyScopedResourceVisibility(ctx, query, scopedResourceRuntimeCluster, user, projectID)
 	if !visible {
@@ -78,7 +78,7 @@ func (h *Handlers) CreateRuntimeCluster(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := h.saveRuntimeClusterWithDefault(cluster); err != nil {
+	if err := h.saveRuntimeClusterWithDefault(cluster, ctx.Request.Context()); err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -92,7 +92,7 @@ func (h *Handlers) UpdateRuntimeCluster(ctx *gin.Context) {
 		return
 	}
 	var existing model.RuntimeCluster
-	if err := h.db.First(&existing, "id = ?", ctx.Param("clusterId")).Error; err != nil {
+	if err := h.dbFor(ctx).First(&existing, "id = ?", ctx.Param("clusterId")).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "runtime cluster not found")
 		return
 	}
@@ -149,7 +149,7 @@ func (h *Handlers) UpdateRuntimeCluster(ctx *gin.Context) {
 	existing.GatewayTrustedProxyCIDRs = next.GatewayTrustedProxyCIDRs
 	existing.GatewayDefaultRequestHeaders = next.GatewayDefaultRequestHeaders
 	existing.GatewayDefaultResponseHeaders = next.GatewayDefaultResponseHeaders
-	if err := h.saveRuntimeClusterWithDefault(existing); err != nil {
+	if err := h.saveRuntimeClusterWithDefault(existing, ctx.Request.Context()); err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -163,7 +163,7 @@ func (h *Handlers) DeleteRuntimeCluster(ctx *gin.Context) {
 		return
 	}
 	var cluster model.RuntimeCluster
-	if err := h.db.First(&cluster, "id = ?", ctx.Param("clusterId")).Error; err != nil {
+	if err := h.dbFor(ctx).First(&cluster, "id = ?", ctx.Param("clusterId")).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "runtime cluster not found")
 		return
 	}
@@ -171,7 +171,7 @@ func (h *Handlers) DeleteRuntimeCluster(ctx *gin.Context) {
 		return
 	}
 	var targetCount int64
-	if err := h.db.Model(&model.DeploymentTarget{}).Where("cluster_id = ?", cluster.ID).Count(&targetCount).Error; err != nil {
+	if err := h.dbFor(ctx).Model(&model.DeploymentTarget{}).Where("cluster_id = ?", cluster.ID).Count(&targetCount).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -179,7 +179,7 @@ func (h *Handlers) DeleteRuntimeCluster(ctx *gin.Context) {
 		writeError(ctx, http.StatusConflict, "运行集群仍被部署配置引用，请先迁移或删除相关部署配置")
 		return
 	}
-	if err := h.db.Transaction(func(tx *gorm.DB) error {
+	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("resource_type = ? and resource_id = ?", scopedResourceRuntimeCluster, cluster.ID).Delete(&model.ScopedResourceProjectBinding{}).Error; err != nil {
 			return err
 		}
@@ -198,7 +198,7 @@ func (h *Handlers) TestRuntimeCluster(ctx *gin.Context) {
 		return
 	}
 	var cluster model.RuntimeCluster
-	if err := h.db.First(&cluster, "id = ?", ctx.Param("clusterId")).Error; err != nil {
+	if err := h.dbFor(ctx).First(&cluster, "id = ?", ctx.Param("clusterId")).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "runtime cluster not found")
 		return
 	}
@@ -223,14 +223,14 @@ func (h *Handlers) DeleteRuntimeClusterResource(ctx *gin.Context) {
 		return
 	}
 	var cluster model.RuntimeCluster
-	if err := h.db.First(&cluster, "id = ?", ctx.Param("clusterId")).Error; err != nil {
+	if err := h.dbFor(ctx).First(&cluster, "id = ?", ctx.Param("clusterId")).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "runtime cluster not found")
 		return
 	}
 	if !h.canManageScopedResourceByID(ctx, user, cluster.Scope, cluster.OwnerRef, scopedResourceRuntimeCluster, cluster.ID, "无权维护该集群资源") {
 		return
 	}
-	kubeconfig := h.secrets.Resolve(cluster.KubeconfigRef)
+	kubeconfig := h.secrets.ResolveContext(ctx.Request.Context(), cluster.KubeconfigRef)
 	if strings.TrimSpace(kubeconfig) == "" {
 		writeError(ctx, http.StatusBadRequest, "运行集群缺少 kubeconfig，无法维护资源")
 		return
@@ -261,6 +261,6 @@ func (h *Handlers) DeleteRuntimeClusterResource(ctx *gin.Context) {
 		writeError(ctx, http.StatusBadGateway, "集群资源删除失败，请确认资源仍存在且归属平台管理")
 		return
 	}
-	h.audit(user.ID, "runtime_cluster_resource.delete", cluster.ID, true, strings.Join([]string{kind, namespace, name}, "/"))
+	h.auditWithContext(user.ID, "runtime_cluster_resource.delete", cluster.ID, true, strings.Join([]string{kind, namespace, name}, "/"), ctx.Request.Context())
 	ctx.Status(http.StatusNoContent)
 }

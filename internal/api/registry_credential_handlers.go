@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -17,8 +18,8 @@ func (h *Handlers) ListRegistryCredentials(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	query := h.db.Model(&model.RegistryCredential{}).Where("registry_id = ?", registry.ID)
-	query = h.applyScopedResourceVisibilityForUser(query, scopedResourceRegistryCredential, user)
+	query := h.dbFor(ctx).Model(&model.RegistryCredential{}).Where("registry_id = ?", registry.ID)
+	query = h.applyScopedResourceVisibilityForUser(query, scopedResourceRegistryCredential, user, ctx.Request.Context())
 	h.listRegistryCredentials(ctx, query)
 }
 
@@ -28,10 +29,10 @@ func (h *Handlers) ListAllRegistryCredentials(ctx *gin.Context) {
 		return
 	}
 	query := h.applyScopedResourceVisibilityForUser(
-		h.db.Model(&model.RegistryCredential{}),
+		h.dbFor(ctx).Model(&model.RegistryCredential{}),
 		scopedResourceRegistryCredential,
 		user,
-	)
+		ctx.Request.Context())
 	h.listRegistryCredentials(ctx, query)
 }
 
@@ -98,8 +99,8 @@ func (h *Handlers) CreateRegistryCredential(ctx *gin.Context) {
 		RegistryID:         registry.ID,
 		Name:               fallback(strings.TrimSpace(input.Name), "default"),
 		Username:           strings.TrimSpace(input.Username),
-		PasswordRef:        h.secrets.Store(input.Password, user.ID, "registry_credential:"+registry.ID+":password"),
-		TokenRef:           h.secrets.Store(input.Token, user.ID, "registry_credential:"+registry.ID+":token"),
+		PasswordRef:        h.secrets.StoreContext(ctx.Request.Context(), input.Password, user.ID, "registry_credential:"+registry.ID+":password"),
+		TokenRef:           h.secrets.StoreContext(ctx.Request.Context(), input.Token, user.ID, "registry_credential:"+registry.ID+":token"),
 		Usage:              normalizeCredentialUsage(input.Usage),
 		Scope:              scope,
 		OwnerRef:           ownerRef,
@@ -113,7 +114,7 @@ func (h *Handlers) CreateRegistryCredential(ctx *gin.Context) {
 		return
 	}
 
-	if err := h.db.Transaction(func(tx *gorm.DB) error {
+	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&credential).Error; err != nil {
 			return err
 		}
@@ -128,7 +129,7 @@ func (h *Handlers) CreateRegistryCredential(ctx *gin.Context) {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	h.audit(user.ID, "registry_credential.create", credential.ID, true, credential.Scope)
+	h.auditWithContext(user.ID, "registry_credential.create", credential.ID, true, credential.Scope, ctx.Request.Context())
 	ctx.JSON(http.StatusCreated, credentialResponse(credential))
 }
 
@@ -139,7 +140,7 @@ func (h *Handlers) UpdateRegistryCredential(ctx *gin.Context) {
 	}
 
 	var credential model.RegistryCredential
-	if err := h.db.First(&credential, "id = ? and registry_id = ?", ctx.Param("credentialId"), registry.ID).Error; err != nil {
+	if err := h.dbFor(ctx).First(&credential, "id = ? and registry_id = ?", ctx.Param("credentialId"), registry.ID).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "registry credential not found")
 		return
 	}
@@ -173,11 +174,11 @@ func (h *Handlers) UpdateRegistryCredential(ctx *gin.Context) {
 
 	passwordRef := credential.PasswordRef
 	if strings.TrimSpace(input.Password) != "" {
-		passwordRef = h.secrets.Store(input.Password, user.ID, "registry_credential:"+registry.ID+":password")
+		passwordRef = h.secrets.StoreContext(ctx.Request.Context(), input.Password, user.ID, "registry_credential:"+registry.ID+":password")
 	}
 	tokenRef := credential.TokenRef
 	if strings.TrimSpace(input.Token) != "" {
-		tokenRef = h.secrets.Store(input.Token, user.ID, "registry_credential:"+registry.ID+":token")
+		tokenRef = h.secrets.StoreContext(ctx.Request.Context(), input.Token, user.ID, "registry_credential:"+registry.ID+":token")
 	}
 	if passwordRef == "" && tokenRef == "" {
 		writeError(ctx, http.StatusBadRequest, "请填写 Registry 密码或 Token")
@@ -195,7 +196,7 @@ func (h *Handlers) UpdateRegistryCredential(ctx *gin.Context) {
 	credential.RepositoryTemplate = normalizeImageRepositoryTemplate(input.RepositoryTemplate)
 	credential.TagTemplate = normalizeImageTagTemplate(input.TagTemplate)
 
-	if err := h.db.Transaction(func(tx *gorm.DB) error {
+	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Save(&credential).Error; err != nil {
 			return err
 		}
@@ -204,7 +205,7 @@ func (h *Handlers) UpdateRegistryCredential(ctx *gin.Context) {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	h.audit(user.ID, "registry_credential.update", credential.ID, true, credential.Scope)
+	h.auditWithContext(user.ID, "registry_credential.update", credential.ID, true, credential.Scope, ctx.Request.Context())
 	ctx.JSON(http.StatusOK, credentialResponse(credential))
 }
 
@@ -215,14 +216,14 @@ func (h *Handlers) DeleteRegistryCredential(ctx *gin.Context) {
 	}
 
 	var credential model.RegistryCredential
-	if err := h.db.First(&credential, "id = ? and registry_id = ?", ctx.Param("credentialId"), registry.ID).Error; err != nil {
+	if err := h.dbFor(ctx).First(&credential, "id = ? and registry_id = ?", ctx.Param("credentialId"), registry.ID).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "registry credential not found")
 		return
 	}
 	if !h.canManageRegistryCredential(ctx, user, registry, credential) {
 		return
 	}
-	if err := h.db.Transaction(func(tx *gorm.DB) error {
+	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("resource_type = ? and resource_id = ?", scopedResourceRegistryCredential, credential.ID).Delete(&model.ScopedResourceProjectBinding{}).Error; err != nil {
 			return err
 		}
@@ -237,19 +238,19 @@ func (h *Handlers) DeleteRegistryCredential(ctx *gin.Context) {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	h.audit(user.ID, "registry_credential.delete", credential.ID, true, credential.Scope)
+	h.auditWithContext(user.ID, "registry_credential.delete", credential.ID, true, credential.Scope, ctx.Request.Context())
 	ctx.Status(http.StatusNoContent)
 }
 
-func (h *Handlers) registryCredentialFor(user model.User, registry model.ArtifactRegistry) (model.RegistryCredential, bool) {
+func (h *Handlers) registryCredentialFor(user model.User, registry model.ArtifactRegistry, contexts ...context.Context) (model.RegistryCredential, bool) {
 	var credential model.RegistryCredential
 	if registry.CredentialRef != "" {
-		query := h.applyScopedResourceVisibilityForUser(h.db.Model(&model.RegistryCredential{}), scopedResourceRegistryCredential, user)
+		query := h.applyScopedResourceVisibilityForUser(h.dbWithContext(firstContext(contexts)).Model(&model.RegistryCredential{}), scopedResourceRegistryCredential, user, firstContext(contexts))
 		if err := query.First(&credential, "id = ? and registry_id = ?", registry.CredentialRef, registry.ID).Error; err == nil {
 			return credential, true
 		}
 	}
-	query := h.applyScopedResourceVisibilityForUser(h.db.Model(&model.RegistryCredential{}), scopedResourceRegistryCredential, user)
+	query := h.applyScopedResourceVisibilityForUser(h.dbWithContext(firstContext(contexts)).Model(&model.RegistryCredential{}), scopedResourceRegistryCredential, user, firstContext(contexts))
 	if query.Where("registry_id = ?", registry.ID).Order("case scope when 'user' then 0 when 'project' then 1 else 2 end, created_at desc").First(&credential).Error == nil {
 		return credential, true
 	}
@@ -260,15 +261,15 @@ func (h *Handlers) registryPushCredentialFor(user model.User, registry model.Art
 	return h.registryPushCredentialForProject(user, registry, "")
 }
 
-func (h *Handlers) registryPushCredentialForProject(user model.User, registry model.ArtifactRegistry, projectID string) (model.RegistryCredential, bool) {
+func (h *Handlers) registryPushCredentialForProject(user model.User, registry model.ArtifactRegistry, projectID string, contexts ...context.Context) (model.RegistryCredential, bool) {
 	usages := []string{"push", "push-pull"}
 	var credential model.RegistryCredential
 	visibleCredentials := func() *gorm.DB {
-		query := h.db.Model(&model.RegistryCredential{})
+		query := h.dbWithContext(firstContext(contexts)).Model(&model.RegistryCredential{})
 		if strings.TrimSpace(projectID) != "" {
-			return h.applyScopedResourceVisibilityForProject(query, scopedResourceRegistryCredential, user, projectID)
+			return h.applyScopedResourceVisibilityForProject(query, scopedResourceRegistryCredential, user, projectID, firstContext(contexts))
 		}
-		return h.applyScopedResourceVisibilityForUser(query, scopedResourceRegistryCredential, user)
+		return h.applyScopedResourceVisibilityForUser(query, scopedResourceRegistryCredential, user, firstContext(contexts))
 	}
 	if registry.CredentialRef != "" {
 		query := visibleCredentials()

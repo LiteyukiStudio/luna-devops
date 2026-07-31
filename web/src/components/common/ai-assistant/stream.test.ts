@@ -7,12 +7,21 @@ afterEach(() => {
 
 describe('aI assistant event stream', () => {
   it('forces stream mode and preserves the recovery cursor', () => {
-    const eventSource = vi.fn()
-    vi.stubGlobal('EventSource', eventSource)
+    const constructor = vi.fn()
+    class MockEventSource {
+      readyState = 0
+      addEventListener = vi.fn()
+      close = vi.fn()
+
+      constructor(url: string | URL, options?: EventSourceInit) {
+        constructor(url, options)
+      }
+    }
+    vi.stubGlobal('EventSource', MockEventSource)
 
     createAIEventSource('/api/v1/ai/runs/run-1/events?stream=false', 42, 'https://luna.example')
 
-    expect(eventSource).toHaveBeenCalledWith(
+    expect(constructor).toHaveBeenCalledWith(
       'https://luna.example/api/v1/ai/runs/run-1/events?stream=true&after=42',
       { withCredentials: true },
     )

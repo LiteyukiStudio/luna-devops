@@ -16,14 +16,14 @@ func (h *Handlers) enqueueAutoDeploymentsForBuildRun(ctx context.Context, run mo
 		return
 	}
 	var application model.Application
-	if err := h.db.First(&application, "id = ? and project_id = ?", run.ApplicationID, run.ProjectID).Error; err != nil {
+	if err := h.dbWithContext(ctx).First(&application, "id = ? and project_id = ?", run.ApplicationID, run.ProjectID).Error; err != nil {
 		return
 	}
 	if !applicationCanMutate(application) {
 		return
 	}
 	var target model.DeploymentTarget
-	if err := h.db.First(
+	if err := h.dbWithContext(ctx).First(
 		&target,
 		"id = ? and project_id = ? and application_id = ? and enabled = ? and auto_deploy = ? and require_approval = ?",
 		run.DeploymentTargetID,
@@ -45,13 +45,13 @@ func (h *Handlers) enqueueAutoDeploymentsForBuildRun(ctx context.Context, run mo
 	if !h.enqueueDeployRun(ctx, release) {
 		release.Status = "failed"
 		release.Message = "部署任务投递失败，请稍后重试"
-		_ = h.db.Save(&release).Error
+		_ = h.dbWithContext(ctx).Save(&release).Error
 	}
 }
 
 func (h *Handlers) createAutoDeployRelease(ctx context.Context, run model.BuildRun, target model.DeploymentTarget) (model.Release, bool) {
 	release := model.Release{}
-	err := h.db.Transaction(func(tx *gorm.DB) error {
+	err := h.dbWithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var existing model.Release
 		err := tx.First(&existing, "project_id = ? and application_id = ? and deployment_target_id = ? and build_run_id = ?", run.ProjectID, run.ApplicationID, target.ID, run.ID).Error
 		if err == nil {

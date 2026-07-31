@@ -5,12 +5,14 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"github.com/LiteyukiStudio/devops/internal/config"
-	"github.com/LiteyukiStudio/devops/internal/id"
-	"github.com/gin-gonic/gin"
 	"net/http"
 	"os"
 	"strings"
+
+	"github.com/LiteyukiStudio/devops/internal/config"
+	"github.com/LiteyukiStudio/devops/internal/id"
+	"github.com/LiteyukiStudio/devops/internal/telemetry"
+	"github.com/gin-gonic/gin"
 )
 
 const requestIDContextKey = "luna_request_id"
@@ -20,6 +22,7 @@ func requestIDMiddleware() gin.HandlerFunc {
 		requestID := id.New("req")
 		ctx.Set(requestIDContextKey, requestID)
 		ctx.Header("X-Request-ID", requestID)
+		ctx.Request = ctx.Request.WithContext(telemetry.ContextWithRequestID(ctx.Request.Context(), requestID))
 		ctx.Next()
 	}
 }

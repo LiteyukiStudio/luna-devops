@@ -2,7 +2,6 @@ package worker
 
 import (
 	"context"
-	"log"
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/retention"
@@ -18,6 +17,7 @@ func newAutomaticRetentionRunner(db *gorm.DB) func(context.Context, time.Time) e
 }
 
 func (r *Runner) handleRetentionRun(ctx context.Context, task *asynq.Task) error {
-	log.Printf("received task type=%s payload=%s", task.Type(), string(task.Payload()))
-	return r.runAutomaticRetention(ctx, time.Now())
+	return workerStage(ctx, "retention.run", func(stageCtx context.Context) error {
+		return r.runAutomaticRetention(stageCtx, time.Now())
+	})
 }

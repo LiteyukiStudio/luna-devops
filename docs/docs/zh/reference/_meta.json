@@ -8,5 +8,10 @@
     "type": "file",
     "name": "compatibility",
     "label": "兼容范围"
+  },
+  {
+    "type": "file",
+    "name": "observability",
+    "label": "可观测平台"
   }
 ]

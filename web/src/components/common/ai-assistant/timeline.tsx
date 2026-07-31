@@ -12,6 +12,7 @@ import { runFailureTranslationKey } from './errors'
 import { AIInteractionCardPlaceholder } from './interaction-card-placeholder'
 import { AIInteractionCards } from './interaction-cards'
 import { AIMarkdown } from './markdown'
+import { AIMessageMeta } from './message-meta'
 import { AIOptionsCard } from './options'
 import { AIToolCallCard } from './tool-call'
 import { groupAIAssistantBlocksByTurn } from './turns'
@@ -24,7 +25,9 @@ interface AIAssistantTimelineProps {
   onAction: (action: AIUIAction) => Promise<boolean>
   onApproval: (block: ToolCallBlock, decision: AIApprovalDecision, reason?: string) => Promise<void>
   onMFA: (block: ToolCallBlock, code: string) => Promise<void>
+  onResend: (message: string) => void
   onRetry: () => void
+  resendDisabled?: boolean
 }
 
 const HIDDEN_TOOL_OPERATION_IDS = new Set(['rename_conversation', 'navigate_to_route'])
@@ -33,7 +36,7 @@ function isVisibleResponseBlock(block: AIBlock): boolean {
   return block.type !== 'tool_call' || !HIDDEN_TOOL_OPERATION_IDS.has(block.operationId)
 }
 
-export function AIAssistantTimeline({ blocks, error, generating, loading, onAction, onApproval, onMFA, onRetry }: AIAssistantTimelineProps) {
+export function AIAssistantTimeline({ blocks, error, generating, loading, onAction, onApproval, onMFA, onResend, onRetry, resendDisabled }: AIAssistantTimelineProps) {
   const { t } = useTranslation()
   const viewportRef = useRef<HTMLDivElement>(null)
   const showTypingIndicator = generating && !blocks.some(block => block.status === 'streaming')
@@ -82,6 +85,8 @@ export function AIAssistantTimeline({ blocks, error, generating, loading, onActi
                   onAction={onAction}
                   onApproval={onApproval}
                   onMFA={onMFA}
+                  onResend={onResend}
+                  resendDisabled={resendDisabled}
                 />
               ))}
               {turns.length === 0 && showTypingIndicator && <AssistantReply generating responseBlocks={[]} onAction={onAction} onApproval={onApproval} onMFA={onMFA} />}
@@ -91,21 +96,32 @@ export function AIAssistantTimeline({ blocks, error, generating, loading, onActi
   )
 }
 
-function ConversationTurn({ generating, responseBlocks, userMessage, onAction, onApproval, onMFA }: {
+function ConversationTurn({ generating, responseBlocks, userMessage, onAction, onApproval, onMFA, onResend, resendDisabled }: {
   generating: boolean
   responseBlocks: AIBlock[]
   userMessage?: MessageBlock
   onAction: (action: AIUIAction) => Promise<boolean>
   onApproval: (block: ToolCallBlock, decision: AIApprovalDecision, reason?: string) => Promise<void>
   onMFA: (block: ToolCallBlock, code: string) => Promise<void>
+  onResend: (message: string) => void
+  resendDisabled?: boolean
 }) {
   const visibleResponseBlocks = responseBlocks.filter(isVisibleResponseBlock)
   return (
     <article className="grid min-w-0 gap-2.5" data-ai-turn>
       {userMessage && (
         <div className="flex min-w-0 max-w-full justify-end" data-ai-user-message>
-          <div className="min-w-0 max-w-[78%] whitespace-pre-wrap break-words rounded-container rounded-br-sm bg-primary px-3 py-2 text-[13px] leading-5 text-primary-foreground" data-ai-user-bubble>
-            {userMessage.text}
+          <div className="group/message flex min-w-0 max-w-[78%] flex-col items-end" data-ai-message-group>
+            <div className="min-w-0 max-w-full whitespace-pre-wrap break-words rounded-container rounded-br-sm bg-primary px-3 py-2 text-[13px] leading-5 text-primary-foreground" data-ai-user-bubble>
+              {userMessage.text}
+            </div>
+            <AIMessageMeta
+              align="end"
+              copyText={userMessage.text}
+              createdAt={userMessage.createdAt}
+              resendDisabled={resendDisabled}
+              onResend={() => onResend(userMessage.text)}
+            />
           </div>
         </div>
       )}
@@ -132,18 +148,24 @@ function AssistantReply({ generating, responseBlocks, onAction, onApproval, onMF
   const hasWideContent = responseBlocks.some(block =>
     block.type === 'tool_call'
     && (block.operationId === 'prepare_interaction_cards' || block.operationId === 'create_interaction_cards'))
+  const assistantMessages = responseBlocks.filter((block): block is MessageBlock => block.type === 'message' && block.role === 'assistant' && Boolean(block.text.trim()))
+  const copyText = assistantMessages.map(block => block.text).join('\n\n')
+  const createdAt = assistantMessages.at(-1)?.createdAt
   return (
     <div className="flex min-w-0 max-w-full items-start gap-2" data-ai-reply>
       <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-control bg-primary-subtle text-primary-text"><Bot className="size-3" /></span>
       <div
         className={cn(
-          'grid min-w-0 gap-2.5 rounded-container rounded-tl-sm bg-surface-subtle px-3 py-2.5',
+          'group/message flex min-w-0 flex-col items-start',
           hasWideContent ? 'w-full max-w-full flex-1' : 'w-fit max-w-[78%] flex-none',
         )}
-        data-ai-assistant-bubble
+        data-ai-message-group
       >
-        {responseBlocks.map(block => <ResponseBlock key={block.id} block={block} onAction={onAction} onApproval={onApproval} onMFA={onMFA} />)}
-        {generating && <TypingIndicator />}
+        <div className="grid min-w-0 max-w-full gap-2.5 rounded-container rounded-tl-sm bg-surface-subtle px-3 py-2.5" data-ai-assistant-bubble>
+          {responseBlocks.map(block => <ResponseBlock key={block.id} block={block} onAction={onAction} onApproval={onApproval} onMFA={onMFA} />)}
+          {generating && <TypingIndicator />}
+        </div>
+        {createdAt && <AIMessageMeta align="start" copyText={copyText} createdAt={createdAt} />}
       </div>
     </div>
   )

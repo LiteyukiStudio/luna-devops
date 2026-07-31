@@ -29,7 +29,7 @@ func (h *Handlers) StartOAuthDeviceAuthorization(ctx *gin.Context) {
 		return
 	}
 	var application model.OAuthApplication
-	if clientID != lunaCLIClientID || h.db.First(
+	if clientID != lunaCLIClientID || h.dbFor(ctx).First(
 		&application,
 		"id = ? and client_id = ? and revoked_at is null",
 		lunaCLIApplicationID,
@@ -61,7 +61,7 @@ func (h *Handlers) StartOAuthDeviceAuthorization(ctx *gin.Context) {
 		IntervalSeconds: int(oauthDevicePollInterval / time.Second),
 		ExpiresAt:       now.Add(oauthDeviceCodeTTL),
 	}
-	if err := h.db.Create(&authorization).Error; err != nil {
+	if err := h.dbFor(ctx).Create(&authorization).Error; err != nil {
 		oauthError(ctx, http.StatusInternalServerError, "server_error", "Device authorization could not be created")
 		return
 	}
@@ -113,7 +113,7 @@ func (h *Handlers) DecideOAuthDeviceVerification(ctx *gin.Context) {
 	}
 	userCode := normalizeOAuthDeviceUserCode(input.UserCode)
 	var authorization model.OAuthDeviceAuthorization
-	err := h.db.Transaction(func(tx *gorm.DB) error {
+	err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(
 			&authorization,
 			"user_code_hash = ?",
@@ -180,7 +180,7 @@ func (h *Handlers) DecideOAuthDeviceVerification(ctx *gin.Context) {
 	if input.Approved {
 		status = "approved"
 	}
-	h.audit(user.ID, "oauth_device."+status, authorization.ID, true, authorization.Scope)
+	h.auditWithContext(user.ID, "oauth_device."+status, authorization.ID, true, authorization.Scope, ctx.Request.Context())
 	ctx.JSON(http.StatusOK, gin.H{"status": status})
 }
 
@@ -192,7 +192,7 @@ func (h *Handlers) exchangeOAuthDeviceCode(ctx *gin.Context, application model.O
 	}
 	var response oauthTokenResponse
 	protocolError := ""
-	err := h.db.Transaction(func(tx *gorm.DB) error {
+	err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
 		var authorization model.OAuthDeviceAuthorization
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(
 			&authorization,
@@ -295,7 +295,7 @@ func (h *Handlers) oauthDeviceVerificationRequest(ctx *gin.Context, user model.U
 		return model.OAuthDeviceAuthorization{}, model.OAuthApplication{}, false
 	}
 	var authorization model.OAuthDeviceAuthorization
-	if h.db.First(
+	if h.dbFor(ctx).First(
 		&authorization,
 		"user_code_hash = ? and status = ? and expires_at > ?",
 		hashToken(userCode),
@@ -306,7 +306,7 @@ func (h *Handlers) oauthDeviceVerificationRequest(ctx *gin.Context, user model.U
 		return model.OAuthDeviceAuthorization{}, model.OAuthApplication{}, false
 	}
 	var application model.OAuthApplication
-	if h.db.First(&application, "id = ? and revoked_at is null", authorization.ApplicationID).Error != nil {
+	if h.dbFor(ctx).First(&application, "id = ? and revoked_at is null", authorization.ApplicationID).Error != nil {
 		writeErrorCode(ctx, http.StatusNotFound, "oauth.application.not_found", "OAuth application not found")
 		return model.OAuthDeviceAuthorization{}, model.OAuthApplication{}, false
 	}

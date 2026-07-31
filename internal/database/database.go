@@ -8,8 +8,11 @@ import (
 
 	"github.com/LiteyukiStudio/devops/internal/billing"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
+	"gorm.io/plugin/opentelemetry/tracing"
 )
 
 const (
@@ -47,6 +50,10 @@ func (options Options) withDefaults() Options {
 }
 
 func Open(databaseURL string, optionList ...Options) (*gorm.DB, error) {
+	return OpenContext(context.Background(), databaseURL, optionList...)
+}
+
+func OpenContext(ctx context.Context, databaseURL string, optionList ...Options) (*gorm.DB, error) {
 	if !isPostgresURL(databaseURL) {
 		return nil, fmt.Errorf("unsupported database url: %s", databaseURL)
 	}
@@ -56,7 +63,7 @@ func Open(databaseURL string, optionList ...Options) (*gorm.DB, error) {
 		options = optionList[0].withDefaults()
 	}
 
-	db, err := openPostgres(databaseURL, options)
+	db, err := openPostgres(ctx, databaseURL, options)
 	if err != nil {
 		return nil, fmt.Errorf("connect database: %w", err)
 	}
@@ -76,10 +83,22 @@ func isPostgresURL(databaseURL string) bool {
 	return strings.HasPrefix(databaseURL, "postgres://") || strings.HasPrefix(databaseURL, "postgresql://")
 }
 
-func openPostgres(databaseURL string, options Options) (*gorm.DB, error) {
-	db, err := gorm.Open(postgres.Open(databaseURL), &gorm.Config{DisableAutomaticPing: true})
+func openPostgres(ctx context.Context, databaseURL string, options Options) (*gorm.DB, error) {
+	db, err := gorm.Open(postgres.Open(databaseURL), &gorm.Config{
+		DisableAutomaticPing: true,
+		// SQL results are represented by OTel spans and structured boundary
+		// logs. GORM's text logger can interpolate secrets into raw SQL.
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
 	if err != nil {
 		return nil, err
+	}
+	if err := db.Use(tracing.NewPlugin(
+		tracing.WithDBSystem("postgresql"),
+		tracing.WithoutQueryVariables(),
+		tracing.WithoutServerAddress(),
+	)); err != nil {
+		return nil, fmt.Errorf("instrument database: %w", err)
 	}
 
 	sqlDB, err := db.DB()
@@ -91,17 +110,27 @@ func openPostgres(databaseURL string, options Options) (*gorm.DB, error) {
 	sqlDB.SetConnMaxLifetime(options.ConnMaxLifetime)
 	sqlDB.SetConnMaxIdleTime(options.ConnMaxIdleTime)
 
-	ctx, cancel := context.WithTimeout(context.Background(), defaultConnectPingTimeout)
+	ctx, cancel := context.WithTimeout(ctx, defaultConnectPingTimeout)
 	defer cancel()
-	if err := sqlDB.PingContext(ctx); err != nil {
+	pingCtx, end := telemetry.StartOperation(ctx, "database", "ping")
+	if err := sqlDB.PingContext(pingCtx); err != nil {
+		end(err)
 		_ = sqlDB.Close()
 		return nil, err
 	}
+	end(nil)
 
 	return db, nil
 }
 
 func Migrate(db *gorm.DB) error {
+	return MigrateContext(context.Background(), db)
+}
+
+func MigrateContext(ctx context.Context, db *gorm.DB) (err error) {
+	ctx, end := telemetry.StartOperation(ctx, "database", "migrate")
+	defer func() { end(err) }()
+	db = db.WithContext(ctx)
 	if err := runSQLMigrations(db); err != nil {
 		return err
 	}

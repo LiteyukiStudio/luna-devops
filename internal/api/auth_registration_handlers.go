@@ -62,7 +62,7 @@ type updateMyPasswordInput struct {
 }
 
 func (h *Handlers) GetAuthRegistrationStatus(ctx *gin.Context) {
-	settings := h.ensureAuthRegistrationSettings()
+	settings := h.ensureAuthRegistrationSettings(ctx.Request.Context())
 	ctx.JSON(http.StatusOK, gin.H{
 		"emailRegistrationEnabled":        settings.AllowEmailRegistration,
 		"oidcRegistrationEnabled":         settings.AllowOIDCRegistration,
@@ -74,7 +74,7 @@ func (h *Handlers) GetAuthRegistrationSettings(ctx *gin.Context) {
 	if !h.requirePlatformAdmin(ctx) {
 		return
 	}
-	ctx.JSON(http.StatusOK, authRegistrationSettingsResponse(h.ensureAuthRegistrationSettings()))
+	ctx.JSON(http.StatusOK, authRegistrationSettingsResponse(h.ensureAuthRegistrationSettings(ctx.Request.Context())))
 }
 
 func (h *Handlers) UpdateAuthRegistrationSettings(ctx *gin.Context) {
@@ -94,7 +94,7 @@ func (h *Handlers) UpdateAuthRegistrationSettings(ctx *gin.Context) {
 	if !bindJSON(ctx, &input) {
 		return
 	}
-	settings := h.ensureAuthRegistrationSettings()
+	settings := h.ensureAuthRegistrationSettings(ctx.Request.Context())
 	settings.AllowEmailRegistration = input.AllowEmailRegistration
 	settings.AllowOIDCRegistration = input.AllowOIDCRegistration
 	settings.AllowExternalIdentityPassword = input.AllowExternalIdentityPassword
@@ -118,7 +118,7 @@ func (h *Handlers) UpdateAuthRegistrationSettings(ctx *gin.Context) {
 		return
 	}
 	if password := strings.TrimSpace(input.SMTPPassword); password != "" {
-		ref := h.secrets.Store(password, user.ID, "auth_registration_settings:smtp_password")
+		ref := h.secrets.StoreContext(ctx.Request.Context(), password, user.ID, "auth_registration_settings:smtp_password")
 		if ref == "" {
 			writeErrorCode(ctx, http.StatusInternalServerError, "registration.smtp_secret_failed", "failed to store SMTP password")
 			return
@@ -129,11 +129,11 @@ func (h *Handlers) UpdateAuthRegistrationSettings(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusBadRequest, "registration.smtp_password_required", "SMTP password is required when username is set")
 		return
 	}
-	if err := h.db.Save(&settings).Error; err != nil {
+	if err := h.dbFor(ctx).Save(&settings).Error; err != nil {
 		writeErrorCode(ctx, http.StatusInternalServerError, "registration.settings_update_failed", err.Error())
 		return
 	}
-	h.audit(user.ID, "auth.registration_settings.update", settings.ID, true, "registration settings updated")
+	h.auditWithContext(user.ID, "auth.registration_settings.update", settings.ID, true, "registration settings updated", ctx.Request.Context())
 	ctx.JSON(http.StatusOK, authRegistrationSettingsResponse(settings))
 }
 
@@ -141,7 +141,7 @@ func (h *Handlers) RequestEmailRegistrationCode(ctx *gin.Context) {
 	if !h.allowSensitiveAuthAttempt(ctx, "email_registration_ip", 8, 10*time.Minute) {
 		return
 	}
-	settings := h.ensureAuthRegistrationSettings()
+	settings := h.ensureAuthRegistrationSettings(ctx.Request.Context())
 	if !settings.AllowEmailRegistration {
 		writeErrorCode(ctx, http.StatusForbidden, "registration.email_disabled", "email registration is disabled")
 		return
@@ -159,7 +159,7 @@ func (h *Handlers) RequestEmailRegistrationCode(ctx *gin.Context) {
 		return
 	}
 	var count int64
-	if err := h.db.Model(&model.User{}).Where("email = ?", email).Count(&count).Error; err != nil {
+	if err := h.dbFor(ctx).Model(&model.User{}).Where("email = ?", email).Count(&count).Error; err != nil {
 		writeErrorCode(ctx, http.StatusInternalServerError, "registration.lookup_failed", err.Error())
 		return
 	}
@@ -184,12 +184,12 @@ func (h *Handlers) RequestEmailRegistrationCode(ctx *gin.Context) {
 		Language:  normalizeLanguage(input.Language),
 		ExpiresAt: time.Now().Add(emailRegistrationCodeTTL),
 	}
-	if err := h.db.Create(&challenge).Error; err != nil {
+	if err := h.dbFor(ctx).Create(&challenge).Error; err != nil {
 		writeErrorCode(ctx, http.StatusInternalServerError, "registration.challenge_failed", err.Error())
 		return
 	}
 	if err := h.sendRegistrationEmail(ctx.Request.Context(), settings, challenge, code); err != nil {
-		_ = h.db.Delete(&challenge).Error
+		_ = h.dbFor(ctx).Delete(&challenge).Error
 		writeErrorCode(ctx, http.StatusBadGateway, "registration.email_send_failed", err.Error())
 		return
 	}
@@ -200,7 +200,7 @@ func (h *Handlers) CompleteEmailRegistration(ctx *gin.Context) {
 	if !h.allowSensitiveAuthAttempt(ctx, "email_registration_complete_ip", 12, 10*time.Minute) {
 		return
 	}
-	if !h.ensureAuthRegistrationSettings().AllowEmailRegistration {
+	if !h.ensureAuthRegistrationSettings(ctx.Request.Context()).AllowEmailRegistration {
 		writeErrorCode(ctx, http.StatusForbidden, "registration.email_disabled", "email registration is disabled")
 		return
 	}
@@ -226,7 +226,7 @@ func (h *Handlers) CompleteEmailRegistration(ctx *gin.Context) {
 		Language: normalizeLanguage(input.Language),
 		Password: string(passwordHash),
 	}
-	err = h.db.Transaction(func(tx *gorm.DB) error {
+	err = h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
 		var challenge model.EmailRegistrationChallenge
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&challenge, "id = ?", strings.TrimSpace(input.ChallengeID)).Error; err != nil {
 			return err
@@ -265,7 +265,7 @@ func (h *Handlers) CompleteEmailRegistration(ctx *gin.Context) {
 	if !h.createLoginCredentials(ctx, user.ID, input.RememberMe) {
 		return
 	}
-	h.audit(user.ID, "auth.email_registration", user.ID, true, "email registration completed")
+	h.auditWithContext(user.ID, "auth.email_registration", user.ID, true, "email registration completed", ctx.Request.Context())
 	ctx.JSON(http.StatusCreated, gin.H{"user": currentUserResponse(user)})
 }
 
@@ -289,7 +289,7 @@ func (h *Handlers) UpdateMyPassword(ctx *gin.Context) {
 			return
 		}
 	} else {
-		if !h.ensureAuthRegistrationSettings().AllowExternalIdentityPassword {
+		if !h.ensureAuthRegistrationSettings(ctx.Request.Context()).AllowExternalIdentityPassword {
 			writeErrorCode(ctx, http.StatusForbidden, "password.enrollment_disabled", "password enrollment is disabled")
 			return
 		}
@@ -307,7 +307,7 @@ func (h *Handlers) UpdateMyPassword(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusInternalServerError, "password.update_failed", err.Error())
 		return
 	}
-	if err := h.db.Transaction(func(tx *gorm.DB) error {
+	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&model.User{}).Where("id = ?", user.ID).Update("password", string(hash)).Error; err != nil {
 			return err
 		}
@@ -318,7 +318,7 @@ func (h *Handlers) UpdateMyPassword(ctx *gin.Context) {
 	}
 	clearSessionCookie(ctx)
 	clearRememberCookie(ctx, user.ID)
-	h.audit(user.ID, "auth.password_update", user.ID, true, "password updated and sessions revoked")
+	h.auditWithContext(user.ID, "auth.password_update", user.ID, true, "password updated and sessions revoked", ctx.Request.Context())
 	ctx.Status(http.StatusNoContent)
 }
 
@@ -327,9 +327,9 @@ var (
 	errRegistrationCodeInvalid      = errors.New("registration code is invalid")
 )
 
-func (h *Handlers) ensureAuthRegistrationSettings() model.AuthRegistrationSettings {
+func (h *Handlers) ensureAuthRegistrationSettings(contexts ...context.Context) model.AuthRegistrationSettings {
 	var settings model.AuthRegistrationSettings
-	if err := h.db.First(&settings, "id = ?", authRegistrationSettingsID).Error; err == nil {
+	if err := h.dbWithContext(firstContext(contexts)).First(&settings, "id = ?", authRegistrationSettingsID).Error; err == nil {
 		return settings
 	}
 	settings = model.AuthRegistrationSettings{
@@ -339,7 +339,7 @@ func (h *Handlers) ensureAuthRegistrationSettings() model.AuthRegistrationSettin
 		SMTPSecurity:          "starttls",
 		SMTPFromName:          "Luna DevOps",
 	}
-	_ = h.db.Create(&settings).Error
+	_ = h.dbWithContext(firstContext(contexts)).Create(&settings).Error
 	return settings
 }
 

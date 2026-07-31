@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -58,13 +59,13 @@ func (h *Handlers) gatewayRouteFromInput(ctx *gin.Context, project model.Project
 	}
 	host := h.normalizeGatewayHost(input.Host, cluster, domainSuffix)
 	if host == "" {
-		host = h.defaultGatewayHost(project, target.Stage, application.Identifier, cluster, domainSuffix)
+		host = h.defaultGatewayHost(project, target.Stage, application.Identifier, cluster, domainSuffix, ctx.Request.Context())
 	}
 	if host == "" {
 		writeError(ctx, http.StatusBadRequest, "请输入域名或选择部署配置")
 		return model.GatewayRoute{}, false
 	}
-	if h.gatewayHostExists(host, routeID) {
+	if h.gatewayHostExists(host, routeID, ctx.Request.Context()) {
 		writeError(ctx, http.StatusBadRequest, "域名已被占用")
 		return model.GatewayRoute{}, false
 	}
@@ -116,16 +117,16 @@ func (h *Handlers) ensureGatewayRouteBackendAvailable(ctx *gin.Context, route mo
 		return true
 	}
 	var target model.DeploymentTarget
-	if err := h.db.First(&target, "id = ? and project_id = ?", route.DeploymentTargetID, route.ProjectID).Error; err != nil {
+	if err := h.dbFor(ctx).First(&target, "id = ? and project_id = ?", route.DeploymentTargetID, route.ProjectID).Error; err != nil {
 		writeErrorCode(ctx, http.StatusBadRequest, "gateway_route.deployment_target_missing", "部署配置不存在，不能创建访问入口")
 		return false
 	}
 	var project model.Project
-	if err := h.db.First(&project, "id = ?", route.ProjectID).Error; err != nil {
+	if err := h.dbFor(ctx).First(&project, "id = ?", route.ProjectID).Error; err != nil {
 		writeErrorCode(ctx, http.StatusBadRequest, "gateway_route.project_missing", "项目空间不存在，不能创建访问入口")
 		return false
 	}
-	cluster, err := h.runtimeClusterForDeploymentTargetValue(target)
+	cluster, err := h.runtimeClusterForDeploymentTargetValue(target, ctx.Request.Context())
 	if err != nil {
 		writeErrorCode(ctx, http.StatusBadRequest, "gateway_route.runtime_cluster_missing", "部署配置运行集群不存在，不能创建访问入口")
 		return false
@@ -134,7 +135,7 @@ func (h *Handlers) ensureGatewayRouteBackendAvailable(ctx *gin.Context, route mo
 		writeErrorCode(ctx, http.StatusBadRequest, "gateway_route.runtime_cluster_kubeconfig_missing", "运行集群缺少 kubeconfig，无法检查访问入口后端服务")
 		return false
 	}
-	kubeconfig := h.secrets.Resolve(cluster.KubeconfigRef)
+	kubeconfig := h.secrets.ResolveContext(ctx.Request.Context(), cluster.KubeconfigRef)
 	if strings.TrimSpace(kubeconfig) == "" {
 		writeErrorCode(ctx, http.StatusBadRequest, "gateway_route.runtime_cluster_kubeconfig_missing", "运行集群缺少 kubeconfig，无法检查访问入口后端服务")
 		return false
@@ -272,7 +273,7 @@ func deploymentTargetHasServicePort(target model.DeploymentTarget, port int) boo
 
 func (h *Handlers) gatewayRouteTargetContext(ctx *gin.Context, projectID string, input gatewayRouteInput) (model.DeploymentTarget, model.Application, model.Environment, model.RuntimeCluster, bool) {
 	var target model.DeploymentTarget
-	if err := h.db.First(&target, "id = ? and project_id = ? and enabled = ?", strings.TrimSpace(input.DeploymentTargetID), projectID, true).Error; err != nil {
+	if err := h.dbFor(ctx).First(&target, "id = ? and project_id = ? and enabled = ?", strings.TrimSpace(input.DeploymentTargetID), projectID, true).Error; err != nil {
 		writeError(ctx, http.StatusBadRequest, "部署配置不存在或不属于当前项目空间")
 		return model.DeploymentTarget{}, model.Application{}, model.Environment{}, model.RuntimeCluster{}, false
 	}
@@ -281,7 +282,7 @@ func (h *Handlers) gatewayRouteTargetContext(ctx *gin.Context, projectID string,
 		return model.DeploymentTarget{}, model.Application{}, model.Environment{}, model.RuntimeCluster{}, false
 	}
 	var application model.Application
-	if err := h.db.First(&application, "id = ? and project_id = ?", target.ApplicationID, projectID).Error; err != nil {
+	if err := h.dbFor(ctx).First(&application, "id = ? and project_id = ?", target.ApplicationID, projectID).Error; err != nil {
 		writeError(ctx, http.StatusBadRequest, "应用不存在或不属于当前项目空间")
 		return model.DeploymentTarget{}, model.Application{}, model.Environment{}, model.RuntimeCluster{}, false
 	}
@@ -289,7 +290,7 @@ func (h *Handlers) gatewayRouteTargetContext(ctx *gin.Context, projectID string,
 		writeErrorCode(ctx, http.StatusConflict, "application.delete_in_progress", "应用正在删除中，不能维护访问入口")
 		return model.DeploymentTarget{}, model.Application{}, model.Environment{}, model.RuntimeCluster{}, false
 	}
-	cluster, err := h.runtimeClusterForDeploymentTargetValue(target)
+	cluster, err := h.runtimeClusterForDeploymentTargetValue(target, ctx.Request.Context())
 	if err != nil {
 		writeError(ctx, http.StatusBadRequest, "部署配置运行集群不存在，不能创建访问入口")
 		return model.DeploymentTarget{}, model.Application{}, model.Environment{}, model.RuntimeCluster{}, false
@@ -297,16 +298,16 @@ func (h *Handlers) gatewayRouteTargetContext(ctx *gin.Context, projectID string,
 	return target, application, deploymentTargetEnvironmentProfile(target), cluster, true
 }
 
-func (h *Handlers) runtimeClusterForGatewayRoute(route model.GatewayRoute) (model.RuntimeCluster, error) {
+func (h *Handlers) runtimeClusterForGatewayRoute(route model.GatewayRoute, contexts ...context.Context) (model.RuntimeCluster, error) {
 	var target model.DeploymentTarget
-	if err := h.db.First(&target, "id = ? and project_id = ?", route.DeploymentTargetID, route.ProjectID).Error; err != nil {
+	if err := h.dbWithContext(firstContext(contexts)).First(&target, "id = ? and project_id = ?", route.DeploymentTargetID, route.ProjectID).Error; err != nil {
 		return model.RuntimeCluster{}, err
 	}
-	return h.runtimeClusterForDeploymentTargetValue(target)
+	return h.runtimeClusterForDeploymentTargetValue(target, firstContext(contexts))
 }
 
-func (h *Handlers) runtimeClusterForDeploymentTargetValue(target model.DeploymentTarget) (model.RuntimeCluster, error) {
-	return runtimeClusterForDeploymentTargetDB(h.db, target)
+func (h *Handlers) runtimeClusterForDeploymentTargetValue(target model.DeploymentTarget, contexts ...context.Context) (model.RuntimeCluster, error) {
+	return runtimeClusterForDeploymentTargetDB(h.dbWithContext(firstContext(contexts)), target)
 }
 
 func gatewayRouteInputEnabled(value *bool) bool {

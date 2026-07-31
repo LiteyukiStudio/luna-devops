@@ -39,6 +39,9 @@ pnpm --dir docs build
 - 是否有本地运行产物、日志、构建目录进入 `git status`。
 - 代码改动是否同步更新文档站；用户流程、配置项、部署链路变更必须能在 `docs/` 中找到入口。
 - 是否出现新的 `.env` 依赖、明文 Secret、Token 回显或后端原始错误直出。
+- 新增 HTTP、数据库、Redis、异步任务、外部 Provider、模型或工具调用是否复用统一 OTel 插桩入口，并继续传递现有 Context。
+- 新增关键状态转换是否有稳定 `event.name` 的结构化日志，且能通过 `trace_id`/`span_id` 与请求、任务或 Agent Run 关联。
+- 新增 Metric 是否只使用低基数标签；禁止把用户、项目、资源、请求或 Trace ID 放入 label。
 
 产出：
 
@@ -141,6 +144,20 @@ rg -n "TODO|FIXME|临时|兼容|fallback|special case|module|Builder|builder" in
 7. 列表、看板、概览、账单和 AI 工具必须使用同一实时观察服务，禁止各自用不同口径统计。
 
 以下情况不属于违规缓存：静态元数据、OpenAPI/Scope 定义、不可变账单窗口、构建日志历史，以及明确标注时间范围的 Prometheus 查询结果。
+
+## 3.2 可观测覆盖审计
+
+新增功能和双周检查按 `notes/14-可观测插桩与验收标准.md` 执行以下审计：
+
+1. 从用户入口沿调用图列出 HTTP/SSE/WebSocket、Repository、PostgreSQL、Redis、Asynq、外部 Provider、模型和 Agent Tool 边界；每个边界都必须有自动或手工 Span。
+2. 检查业务代码是否在已有调用链中使用 `context.Background()`、裸 `http.Client`、未插桩 GORM/Redis Client 或绕过 Asynq 中间件；发现即视为父链路截断。
+3. 跨服务 HTTP 使用 W3C Header；Asynq 在任务 Header 注入并由 Consumer 提取；EventSource/WebSocket 的私有桥接参数进入 API 后必须立即移除，不得进入业务日志。
+4. 成功、失败、拒绝、取消、等待输入和重试等关键终态必须有稳定日志事件；失败 Span 使用稳定 `error.code`，日志不重复输出原始异常正文。
+5. 抽查 Trace/Logs/Metric 数据，确认不存在 Authorization、Cookie、Secret、密码、URL 查询参数、请求正文、模型 Prompt、工具敏感参数和进程命令行参数。
+6. 至少保留以下自动化门禁：数据库 Context 契约、W3C Producer/Consumer 传播、HTTP URL 脱敏、错误 Span 状态、日志关联字段和低基数 Metric 属性。
+7. 影响三个以上业务域或新增跨服务通道时，使用临时外部 OTel 栈验收数据库接口、失败接口和跨服务/异步链路；只提交代码与接入文档，不提交临时 Collector、Tempo、Loki、Prometheus 或 Grafana 部署文件。
+
+审计未通过时，不得以“入口已有 Trace”作为完成依据；必须补齐黑盒内部边界后再交付。
 
 ## 4. 重构分级
 

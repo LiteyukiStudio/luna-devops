@@ -8,5 +8,10 @@
     "type": "file",
     "name": "compatibility",
     "label": "Compatibility"
+  },
+  {
+    "type": "file",
+    "name": "observability",
+    "label": "Observability"
   }
 ]

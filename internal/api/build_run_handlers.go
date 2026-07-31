@@ -24,7 +24,7 @@ func (h *Handlers) ListBuildRuns(ctx *gin.Context) {
 		return
 	}
 	pagination := paginationFromQuery(ctx)
-	query := h.db.Where("project_id = ?", ctx.Param("projectId"))
+	query := h.dbFor(ctx).Where("project_id = ?", ctx.Param("projectId"))
 	if applicationID := strings.TrimSpace(ctx.Query("applicationId")); applicationID != "" {
 		query = query.Where("application_id = ?", applicationID)
 	}
@@ -197,7 +197,7 @@ func (h *Handlers) CancelBuildRun(ctx *gin.Context) {
 
 	finishedAt := time.Now()
 	var jobs []model.BuildJob
-	if err := h.db.Transaction(func(tx *gorm.DB) error {
+	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
 		var lockedRun model.BuildRun
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedRun, "id = ? and project_id = ?", run.ID, run.ProjectID).Error; err != nil {
 			return err
@@ -233,8 +233,8 @@ func (h *Handlers) CancelBuildRun(ctx *gin.Context) {
 		return
 	}
 
-	h.audit(user.ID, "build_run.cancel", run.ID, true, "")
-	if err := h.db.First(&run, "id = ? and project_id = ?", run.ID, run.ProjectID).Error; err != nil {
+	h.auditWithContext(user.ID, "build_run.cancel", run.ID, true, "", ctx.Request.Context())
+	if err := h.dbFor(ctx).First(&run, "id = ? and project_id = ?", run.ID, run.ProjectID).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -254,7 +254,7 @@ func (h *Handlers) DeleteBuildRun(ctx *gin.Context) {
 		writeError(ctx, http.StatusConflict, "只有已结束的构建记录可以删除")
 		return
 	}
-	if err := h.db.Transaction(func(tx *gorm.DB) error {
+	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
 		var hookRuns []model.HookRun
 		if err := tx.Where("build_run_id = ? and project_id = ?", run.ID, run.ProjectID).Find(&hookRuns).Error; err != nil {
 			return err
@@ -282,7 +282,7 @@ func (h *Handlers) DeleteBuildRun(ctx *gin.Context) {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	h.audit(user.ID, "build_run.delete", run.ID, true, "")
+	h.auditWithContext(user.ID, "build_run.delete", run.ID, true, "", ctx.Request.Context())
 	ctx.Status(http.StatusNoContent)
 }
 
@@ -311,7 +311,7 @@ func (h *Handlers) queueBuildRun(ctx context.Context, user model.User, run model
 		Type:       "build",
 		Status:     "queued",
 	}
-	if err := h.db.Transaction(func(tx *gorm.DB) error {
+	if err := h.dbWithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&run).Error; err != nil {
 			return err
 		}
@@ -320,7 +320,7 @@ func (h *Handlers) queueBuildRun(ctx context.Context, user model.User, run model
 		return run, err
 	}
 	if h.taskClient == nil {
-		h.markBuildRunDispatchFailed(run, job, "构建任务队列未配置")
+		h.markBuildRunDispatchFailed(run, job, "构建任务队列未配置", ctx)
 		return run, errBuildQueueUnavailable
 	}
 	if _, err := h.taskClient.EnqueueBuildRun(ctx, tasks.BuildRunPayload{
@@ -329,20 +329,20 @@ func (h *Handlers) queueBuildRun(ctx context.Context, user model.User, run model
 		ProjectID:  run.ProjectID,
 		ActorID:    user.ID,
 	}); err != nil {
-		h.markBuildRunDispatchFailed(run, job, "构建任务投递失败: "+err.Error())
+		h.markBuildRunDispatchFailed(run, job, "构建任务投递失败: "+err.Error(), ctx)
 		return run, errors.New("构建任务投递失败")
 	}
 	return run, nil
 }
 
-func (h *Handlers) markBuildRunDispatchFailed(run model.BuildRun, job model.BuildJob, message string) {
+func (h *Handlers) markBuildRunDispatchFailed(run model.BuildRun, job model.BuildJob, message string, contexts ...context.Context) {
 	finishedAt := time.Now()
-	_ = h.db.Model(&model.BuildJob{}).Where("id = ? and project_id = ?", job.ID, job.ProjectID).Updates(map[string]any{
+	_ = h.dbWithContext(firstContext(contexts)).Model(&model.BuildJob{}).Where("id = ? and project_id = ?", job.ID, job.ProjectID).Updates(map[string]any{
 		"status":      "failed",
 		"message":     message,
 		"finished_at": &finishedAt,
 	}).Error
-	_ = h.db.Model(&model.BuildRun{}).Where("id = ? and project_id = ?", run.ID, run.ProjectID).Updates(map[string]any{
+	_ = h.dbWithContext(firstContext(contexts)).Model(&model.BuildRun{}).Where("id = ? and project_id = ?", run.ID, run.ProjectID).Updates(map[string]any{
 		"status":      "failed",
 		"finished_at": &finishedAt,
 	}).Error
@@ -350,7 +350,7 @@ func (h *Handlers) markBuildRunDispatchFailed(run model.BuildRun, job model.Buil
 
 func (h *Handlers) findBuildRun(ctx *gin.Context) (model.BuildRun, bool) {
 	var run model.BuildRun
-	if err := h.db.First(&run, "id = ? and project_id = ?", ctx.Param("runId"), ctx.Param("projectId")).Error; err != nil {
+	if err := h.dbFor(ctx).First(&run, "id = ? and project_id = ?", ctx.Param("runId"), ctx.Param("projectId")).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "build run not found")
 		return run, false
 	}

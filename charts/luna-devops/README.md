@@ -61,3 +61,21 @@ AI is fail-closed and disabled by default. Set `ai.enabled=true` and point
 (or override `ai.internalSecretKey`). Generate it with `openssl rand -hex 32`;
 API and Agent derive all purpose-specific internal keys. The Agent image tag
 follows the chart `appVersion` unless `ai.agent.image.tag` is set explicitly.
+
+## Send telemetry to an OpenTelemetry Collector
+
+The Collector is deployed separately from this chart. Configure one OTLP HTTP
+endpoint to export traces, metrics, and structured logs from the API, Worker,
+and Agent:
+
+```yaml
+observability:
+  otlpEndpoint: http://otel-collector.observability.svc.cluster.local:4318
+  resourceAttributes: deployment.environment.name=production,k8s.cluster.name=main
+```
+
+Leave `observability.otlpEndpoint` empty to keep exporters disabled. When the
+Collector requires headers, store the complete `key=value` header value in a
+Secret, then set `observability.existingSecret` and
+`observability.headersKey`. See the public observability reference for local
+verification and production Collector guidance.

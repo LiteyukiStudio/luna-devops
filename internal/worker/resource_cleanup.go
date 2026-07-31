@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
@@ -13,14 +12,18 @@ import (
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
 	"github.com/hibiken/asynq"
+	"go.opentelemetry.io/otel/attribute"
 	"gorm.io/gorm"
 )
 
 func (r *Runner) retryPendingResourceCleanups(ctx context.Context) {
 	for _, payload := range r.pendingResourceCleanupPayloads() {
-		if err := r.handleResourceCleanupPayload(ctx, payload); err != nil {
-			log.Printf("resource cleanup retry skipped type=%s id=%s: %v", payload.ResourceType, payload.ResourceID, err)
-		}
+		_ = workerStage(ctx, "cleanup.retry", func(stageCtx context.Context) error {
+			return r.handleResourceCleanupPayload(stageCtx, payload)
+		},
+			attribute.String("resource.type", payload.ResourceType),
+			attribute.String("resource.id", payload.ResourceID),
+		)
 	}
 }
 

@@ -46,5 +46,5 @@ export interface Repository {
   createUIAction(runId: string, toolCallId: string, action: Record<string, unknown>, expiresAt: string): Promise<UIActionDelivery>
   listPendingUIActions(ownerUserId: string, clientInstanceId: string): Promise<UIActionDelivery[]>
   acknowledgeUIAction(ownerUserId: string, clientInstanceId: string, actionId: string, acknowledgement: UIActionAcknowledgement): Promise<UIActionDelivery | undefined>
-  getTimeline(ownerUserId: string, conversationId: string): Promise<{ conversation: Conversation, turns: Array<{ id: string, turnIndex: number, status: string, input: string, run?: Run, items: TimelineItem[] }> } | undefined>
+  getTimeline(ownerUserId: string, conversationId: string): Promise<{ conversation: Conversation, turns: Array<{ id: string, turnIndex: number, status: string, input: string, createdAt: string, run?: Run, items: TimelineItem[] }> } | undefined>
 }

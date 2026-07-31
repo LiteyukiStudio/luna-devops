@@ -19,6 +19,7 @@ export type ModelRequest = {
 export type ModelEvent =
   | { type: "reasoning_summary_delta", delta: string }
   | { type: "message_delta", delta: string }
+  | { type: "tool_call_delta" }
   | { type: "completed", usage: { inputTokens: number, outputTokens: number }, toolCalls?: ModelToolCall[] }
 export type ModelToolCall = { id?: string, operationId: string, arguments: Record<string, unknown> }
 export type ModelResponse = { text: string, reasoningSummary?: string, toolCalls?: ModelToolCall[], usage: { inputTokens: number, outputTokens: number } }

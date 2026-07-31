@@ -1,10 +1,46 @@
 package tasks
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 	"time"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
+
+func TestTaskWithTraceHeadersInjectsW3CContext(t *testing.T) {
+	previousProvider := otel.GetTracerProvider()
+	previousPropagator := otel.GetTextMapPropagator()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSampler(sdktrace.AlwaysSample()))
+	otel.SetTracerProvider(provider)
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+	defer func() {
+		otel.SetTracerProvider(previousProvider)
+		otel.SetTextMapPropagator(previousPropagator)
+		_ = provider.Shutdown(context.Background())
+	}()
+
+	ctx, span := provider.Tracer("test").Start(context.Background(), "producer")
+	task, err := NewDeployRunTask(DeployRunPayload{ReleaseID: "rel_1", ProjectID: "prj_1"})
+	if err != nil {
+		t.Fatalf("NewDeployRunTask returned error: %v", err)
+	}
+	task = taskWithTraceHeaders(ctx, task)
+	span.End()
+	if task.Headers()["traceparent"] == "" {
+		t.Fatalf("task headers did not include traceparent: %#v", task.Headers())
+	}
+	var payload DeployRunPayload
+	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
+		t.Fatalf("decode task payload: %v", err)
+	}
+	if payload.Envelope.CreatedAt.IsZero() {
+		t.Fatal("task payload did not include enqueue timestamp")
+	}
+}
 
 func TestPolicyForTypeUsesDedicatedQueuesAndTimeouts(t *testing.T) {
 	deploy := PolicyForType(TypeDeployRun)

@@ -160,6 +160,19 @@ redis-url
   value: {{ .Values.metrics.enabled | quote }}
 - name: METRICS_PATH
   value: {{ .Values.metrics.path | quote }}
+{{- if .Values.observability.otlpEndpoint }}
+- name: OTEL_EXPORTER_OTLP_ENDPOINT
+  value: {{ .Values.observability.otlpEndpoint | quote }}
+- name: OTEL_RESOURCE_ATTRIBUTES
+  value: {{ .Values.observability.resourceAttributes | quote }}
+{{- if .Values.observability.existingSecret }}
+- name: OTEL_EXPORTER_OTLP_HEADERS
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.observability.existingSecret }}
+      key: {{ .Values.observability.headersKey }}
+{{- end }}
+{{- end }}
 {{- range $name, $value := .Values.app.extraEnv }}
 - name: {{ $name }}
   value: {{ $value | quote }}

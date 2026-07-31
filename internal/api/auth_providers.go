@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -15,7 +16,7 @@ import (
 
 func (h *Handlers) ListAuthProviders(ctx *gin.Context) {
 	var providers []model.AuthProvider
-	query := h.db.Order("is_default desc, created_at desc")
+	query := h.dbFor(ctx).Order("is_default desc, created_at desc")
 	if ctx.Query("includeDisabled") == "true" {
 		if !h.requirePlatformAdmin(ctx) {
 			return
@@ -64,7 +65,7 @@ func (h *Handlers) CreateAuthProvider(ctx *gin.Context) {
 	}
 	providerID := id.New("ap")
 	if secret := strings.TrimSpace(input.ClientSecret); secret != "" {
-		input.ClientSecretRef = h.secrets.Store(secret, "", "auth_provider:"+providerID+":client_secret")
+		input.ClientSecretRef = h.secrets.StoreContext(ctx.Request.Context(), secret, "", "auth_provider:"+providerID+":client_secret")
 		input.ClientSecret = ""
 	}
 
@@ -74,7 +75,7 @@ func (h *Handlers) CreateAuthProvider(ctx *gin.Context) {
 		return
 	}
 
-	if err := h.db.Transaction(func(tx *gorm.DB) error {
+	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
 		if provider.IsDefault {
 			if err := tx.Model(&model.AuthProvider{}).Where("is_default = ?", true).Update("is_default", false).Error; err != nil {
 				return err
@@ -99,7 +100,7 @@ func (h *Handlers) UpdateAuthProvider(ctx *gin.Context) {
 	}
 
 	var provider model.AuthProvider
-	if err := h.db.First(&provider, "id = ?", ctx.Param("providerId")).Error; err != nil {
+	if err := h.dbFor(ctx).First(&provider, "id = ?", ctx.Param("providerId")).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "auth provider not found")
 		return
 	}
@@ -112,7 +113,7 @@ func (h *Handlers) UpdateAuthProvider(ctx *gin.Context) {
 		return
 	}
 	if secret := strings.TrimSpace(input.ClientSecret); secret != "" {
-		input.ClientSecretRef = h.secrets.Store(secret, "", "auth_provider:"+provider.ID+":client_secret")
+		input.ClientSecretRef = h.secrets.StoreContext(ctx.Request.Context(), secret, "", "auth_provider:"+provider.ID+":client_secret")
 		input.ClientSecret = ""
 	}
 
@@ -134,7 +135,7 @@ func (h *Handlers) UpdateAuthProvider(ctx *gin.Context) {
 	provider.UsernameClaim = next.UsernameClaim
 	provider.IsDefault = next.IsDefault
 
-	if err := h.db.Transaction(func(tx *gorm.DB) error {
+	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
 		if provider.IsDefault {
 			if err := tx.Model(&model.AuthProvider{}).
 				Where("id <> ? and is_default = ?", provider.ID, true).
@@ -158,7 +159,7 @@ func (h *Handlers) ListMyExternalIdentities(ctx *gin.Context) {
 	}
 
 	var identities []externalIdentityResponse
-	if err := h.db.Table("external_identities").
+	if err := h.dbFor(ctx).Table("external_identities").
 		Select("external_identities.id, external_identities.user_id, external_identities.provider_id, auth_providers.name as provider_name, external_identities.subject, external_identities.email, external_identities.email_verified, external_identities.username, external_identities.last_login_at, external_identities.created_at").
 		Joins("join auth_providers on auth_providers.id = external_identities.provider_id").
 		Where("external_identities.user_id = ?", user.ID).
@@ -178,19 +179,19 @@ func (h *Handlers) UnbindMyExternalIdentity(ctx *gin.Context) {
 	}
 
 	var identity model.ExternalIdentity
-	if err := h.db.First(&identity, "id = ? and user_id = ?", ctx.Param("identityId"), user.ID).Error; err != nil {
+	if err := h.dbFor(ctx).First(&identity, "id = ? and user_id = ?", ctx.Param("identityId"), user.ID).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "external identity not found")
 		return
 	}
 
 	var identityCount int64
-	_ = h.db.Model(&model.ExternalIdentity{}).Where("user_id = ?", user.ID).Count(&identityCount).Error
+	_ = h.dbFor(ctx).Model(&model.ExternalIdentity{}).Where("user_id = ?", user.ID).Count(&identityCount).Error
 	if identityCount <= 1 && strings.TrimSpace(user.Password) == "" {
 		writeError(ctx, http.StatusBadRequest, "请先设置本地密码或绑定另一个第三方登录")
 		return
 	}
 
-	if err := h.db.Delete(&identity).Error; err != nil {
+	if err := h.dbFor(ctx).Delete(&identity).Error; err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -198,14 +199,14 @@ func (h *Handlers) UnbindMyExternalIdentity(ctx *gin.Context) {
 	ctx.Status(http.StatusNoContent)
 }
 
-func (h *Handlers) bindExternalIdentityToUser(user model.User, provider model.AuthProvider, claims oidcIdentityClaims) (model.ExternalIdentity, error) {
+func (h *Handlers) bindExternalIdentityToUser(user model.User, provider model.AuthProvider, claims oidcIdentityClaims, contexts ...context.Context) (model.ExternalIdentity, error) {
 	subject := strings.TrimSpace(claims.Subject)
 	if user.ID == "" || provider.ID == "" || subject == "" {
 		return model.ExternalIdentity{}, errors.New("external identity requires user, provider and subject")
 	}
 
 	var existing model.ExternalIdentity
-	if err := h.db.First(&existing, "provider_id = ? and subject = ?", provider.ID, subject).Error; err == nil {
+	if err := h.dbWithContext(firstContext(contexts)).First(&existing, "provider_id = ? and subject = ?", provider.ID, subject).Error; err == nil {
 		if existing.UserID == user.ID {
 			return existing, nil
 		}
@@ -223,7 +224,7 @@ func (h *Handlers) bindExternalIdentityToUser(user model.User, provider model.Au
 		EmailVerified: claims.EmailVerified,
 		Username:      strings.TrimSpace(claims.Username),
 	}
-	if err := h.db.Create(&identity).Error; err != nil {
+	if err := h.dbWithContext(firstContext(contexts)).Create(&identity).Error; err != nil {
 		return model.ExternalIdentity{}, err
 	}
 	return identity, nil

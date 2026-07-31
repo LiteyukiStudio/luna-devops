@@ -77,7 +77,7 @@ func (h *Handlers) requireRuntimeTerminalAuthorization(ctx *gin.Context, user mo
 	subject, ok := h.currentStepUpSubject(ctx, user)
 	if !ok {
 		if requestUsesBearerToken(ctx) {
-			h.audit(user.ID, "mfa.step_up_required", stepUpPurposeRuntimeTerminal, false, "personal access tokens cannot authorize a terminal")
+			h.auditWithContext(user.ID, "mfa.step_up_required", stepUpPurposeRuntimeTerminal, false, "personal access tokens cannot authorize a terminal", ctx.Request.Context())
 			writeErrorCode(ctx, http.StatusForbidden, "mfa.session_required", "个人令牌不能用于终端二次验证，请使用 Luna CLI OAuth 登录")
 		} else {
 			writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.session.expired")
@@ -113,7 +113,7 @@ func (h *Handlers) requireRuntimeTerminalAuthorization(ctx *gin.Context, user mo
 	}
 	now := time.Now()
 	var assertion model.StepUpAssertion
-	if err := h.db.First(
+	if err := h.dbFor(ctx).First(
 		&assertion,
 		"user_id = ? and session_id = ? and purpose = ? and idle_expires_at > ? and absolute_expires_at > ?",
 		user.ID,
@@ -183,7 +183,7 @@ func (h *Handlers) runtimeTerminalAuthorizationActive(
 ) bool {
 	now := time.Now()
 	state := runtimeTerminalAuthorizationState{}
-	db := h.db.WithContext(ctx)
+	db := h.dbWithContext(ctx).WithContext(ctx)
 	if grantID, oauth := runtimeTerminalOAuthGrantID(binding.SubjectID); oauth {
 		_ = db.First(&state.OAuthGrant, "id = ? and user_id = ? and application_id = ? and revoked_at is null", grantID, binding.UserID, lunaCLIApplicationID).Error
 		_ = db.First(&state.OAuthApplication, "id = ? and revoked_at is null", lunaCLIApplicationID).Error
@@ -241,7 +241,7 @@ func (tracker *runtimeTerminalActivityTracker) Record(ctx context.Context, now t
 
 	idleTimeout, _ := tracker.h.stepUpTimeouts()
 	idleExpiresAt := refreshedStepUpIdleExpiry(now, idleTimeout, tracker.binding.AssertionAbsoluteDeadline)
-	result := tracker.h.db.WithContext(ctx).Model(&model.StepUpAssertion{}).
+	result := tracker.h.dbWithContext(ctx).Model(&model.StepUpAssertion{}).
 		Where(
 			"id = ? and user_id = ? and session_id = ? and purpose = ? and idle_expires_at > ? and absolute_expires_at > ? and absolute_expires_at <= ?",
 			tracker.binding.AssertionID,
@@ -271,7 +271,7 @@ type releaseRuntimeTerminalAuthorizationReference struct {
 }
 
 func (h *Handlers) releaseRuntimeTerminalAuthorizationAllowed(ctx context.Context, user model.User, reference releaseRuntimeTerminalAuthorizationReference) bool {
-	db := h.db.WithContext(ctx)
+	db := h.dbWithContext(ctx).WithContext(ctx)
 	var project model.Project
 	if err := db.First(&project, "id = ?", reference.ProjectID).Error; err != nil || !resourceCanMutateDuringDelete(project.DeleteStatus) {
 		return false
@@ -327,7 +327,7 @@ func (h *Handlers) runtimeClusterPodTerminalAuthorizationAllowed(ctx context.Con
 		return false
 	}
 	var cluster model.RuntimeCluster
-	if err := h.db.WithContext(ctx).First(&cluster, "id = ? and type in ?", reference.ClusterID, []string{"kubernetes", "k3s"}).Error; err != nil || cluster.KubeconfigRef != reference.ClusterKubeconfig {
+	if err := h.dbWithContext(ctx).WithContext(ctx).First(&cluster, "id = ? and type in ?", reference.ClusterID, []string{"kubernetes", "k3s"}).Error; err != nil || cluster.KubeconfigRef != reference.ClusterKubeconfig {
 		return false
 	}
 	resourceCtx, cancel := context.WithTimeout(ctx, runtimeTerminalResourceCheckTimeout)
@@ -354,7 +354,7 @@ func (h *Handlers) runtimeClusterPodWebConsoleAllowed(ctx context.Context, snaps
 	if projectID == "" {
 		return targetID == ""
 	}
-	db := h.db.WithContext(ctx)
+	db := h.dbWithContext(ctx).WithContext(ctx)
 	var project model.Project
 	if err := db.First(&project, "id = ?", projectID).Error; err != nil || !resourceCanMutateDuringDelete(project.DeleteStatus) || !project.WebConsoleEnabled {
 		return false

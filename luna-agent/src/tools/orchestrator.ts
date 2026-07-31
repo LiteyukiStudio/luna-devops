@@ -5,6 +5,7 @@ import type { Repository } from "../persistence/repository.js"
 import { validateArguments, type ToolCatalog } from "./catalog.js"
 import type { LunaApiToolClient, ToolExecutionResult } from "./luna-api-client.js"
 import { ToolPolicy } from "./policy.js"
+import { agentMetrics, internalSpanOptions, stableErrorCode, telemetryLog, withSpan } from "../telemetry.js"
 
 export type ToolCallStatus = "proposed" | "awaiting_approval" | "awaiting_mfa" | "running" | "succeeded" | "failed" | "canceled" | "skipped"
 export type ToolCallRecord = {
@@ -63,6 +64,10 @@ export class ToolOrchestrator {
       status: "proposed", arguments: args, argumentsHash, attempt: 1, rowVersion: 1,
     }
     await this.store.insert(record)
+    telemetryLog("agent.tool.proposed", "info", {
+      "luna.run.id": input.runId,
+      "tool.name": input.operationId,
+    })
     await this.store.emit({ type: "tool.started", toolCallId: record.id, data: {
       operationId: record.operationId, arguments: redact(record.arguments), argumentsHash, expectedVersion: record.rowVersion,
     } })
@@ -72,6 +77,8 @@ export class ToolOrchestrator {
   async approve(id: string, argumentsHash: string, expectedVersion: number): Promise<ToolCallRecord> {
     const call = await this.require(id)
     this.requireApprovalBinding(call, argumentsHash, expectedVersion)
+    agentMetrics.approvals.add(1, { decision: "approve", tool: call.operationId })
+    telemetryLog("agent.approval.resolved", "info", { "luna.run.id": call.runId, "tool.name": call.operationId, decision: "approve" })
     await this.store.emit({ type: "approval.resolved", toolCallId: call.id, data: { decision: "approve", argumentsHash, expectedVersion } })
     return this.advance(call, { approved: true })
   }
@@ -88,6 +95,8 @@ export class ToolOrchestrator {
   async reject(id: string, argumentsHash: string, expectedVersion: number): Promise<ToolCallRecord> {
     const call = await this.require(id)
     this.requireApprovalBinding(call, argumentsHash, expectedVersion)
+    agentMetrics.approvals.add(1, { decision: "reject", tool: call.operationId })
+    telemetryLog("agent.approval.resolved", "info", { "luna.run.id": call.runId, "tool.name": call.operationId, decision: "reject" })
     return this.transition(call, "canceled", {}, "approval.resolved", { decision: "reject" })
   }
 
@@ -131,16 +140,53 @@ export class ToolOrchestrator {
   }
 
   private async execute(call: ToolCallRecord, authorization: { approvalGranted: boolean, mfaPurpose?: string, stepUpAssertionId?: string }): Promise<ToolCallRecord> {
-    const operation = this.catalog.get(call.operationId)
-    const running = await this.transition(call, "running", {}, "tool_call.running")
-    const result = await this.client.execute({
-      runId: call.runId, toolCallId: call.id, operation, arguments: call.arguments,
-      argumentsHash: call.argumentsHash, runActorGrant: await this.grantResolver(call.runId),
-      approvalGranted: authorization.approvalGranted,
-      ...(authorization.mfaPurpose ? { mfaPurpose: authorization.mfaPurpose } : {}),
-      ...(authorization.stepUpAssertionId ? { stepUpAssertionId: authorization.stepUpAssertionId } : {}),
-    })
-    return this.finish(running, result)
+    const startedAt = performance.now()
+    let outcome = "succeeded"
+    try {
+      return await withSpan("agent.tool.execute", internalSpanOptions({
+        "gen_ai.operation.name": "execute_tool",
+        "gen_ai.tool.name": call.operationId,
+        "luna.run.id": call.runId,
+        "luna.tool_call.id": call.id,
+        "luna.tool.approval_granted": authorization.approvalGranted,
+      }), async span => {
+        const operation = this.catalog.get(call.operationId)
+        const running = await this.transition(call, "running", {}, "tool_call.running")
+        const result = await this.client.execute({
+          runId: call.runId, toolCallId: call.id, operation, arguments: call.arguments,
+          argumentsHash: call.argumentsHash, runActorGrant: await this.grantResolver(call.runId),
+          approvalGranted: authorization.approvalGranted,
+          ...(authorization.mfaPurpose ? { mfaPurpose: authorization.mfaPurpose } : {}),
+          ...(authorization.stepUpAssertionId ? { stepUpAssertionId: authorization.stepUpAssertionId } : {}),
+        })
+        span.setAttribute("http.response.status_code", result.status)
+        const finished = await this.finish(running, result)
+        outcome = finished.status
+        telemetryLog(finished.status === "succeeded" ? "agent.tool.completed" : "agent.tool.failed", finished.status === "succeeded" ? "info" : "warn", {
+          "luna.run.id": call.runId,
+          "luna.tool_call.id": call.id,
+          "tool.name": call.operationId,
+          ...(finished.errorCode ? { "error.code": finished.errorCode } : {}),
+        })
+        return finished
+      })
+    }
+    catch (error) {
+      outcome = stableErrorCode(error)
+      telemetryLog("agent.tool.failed", "error", {
+        "luna.run.id": call.runId,
+        "luna.tool_call.id": call.id,
+        "tool.name": call.operationId,
+        "error.type": error instanceof Error ? error.name : "UnknownError",
+        "error.code": outcome,
+      })
+      throw error
+    }
+    finally {
+      const attributes = { tool: call.operationId, outcome }
+      agentMetrics.toolCalls.add(1, attributes)
+      agentMetrics.toolDuration.record((performance.now() - startedAt) / 1000, attributes)
+    }
   }
 
   private async finish(call: ToolCallRecord, result: ToolExecutionResult): Promise<ToolCallRecord> {

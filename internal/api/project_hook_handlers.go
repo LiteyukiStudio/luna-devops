@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -37,7 +38,7 @@ func (h *Handlers) ListProjectHookConfigs(ctx *gin.Context) {
 		return
 	}
 	var hooks []model.ProjectHookConfig
-	if err := h.db.Where("project_id = ?", ctx.Param("projectId")).Order("created_at asc").Find(&hooks).Error; err != nil {
+	if err := h.dbFor(ctx).Where("project_id = ?", ctx.Param("projectId")).Order("created_at asc").Find(&hooks).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -57,11 +58,11 @@ func (h *Handlers) CreateProjectHookConfig(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := h.db.Create(&hook).Error; err != nil {
+	if err := h.dbFor(ctx).Create(&hook).Error; err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	h.audit(user.ID, "project_hook.create", hook.ID, true, hook.Name)
+	h.auditWithContext(user.ID, "project_hook.create", hook.ID, true, hook.Name, ctx.Request.Context())
 	ctx.JSON(http.StatusCreated, hook)
 }
 
@@ -71,7 +72,7 @@ func (h *Handlers) UpdateProjectHookConfig(ctx *gin.Context) {
 		return
 	}
 	var existing model.ProjectHookConfig
-	if err := h.db.First(&existing, "id = ? and project_id = ?", ctx.Param("hookId"), project.ID).Error; err != nil {
+	if err := h.dbFor(ctx).First(&existing, "id = ? and project_id = ?", ctx.Param("hookId"), project.ID).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "project hook not found")
 		return
 	}
@@ -85,11 +86,11 @@ func (h *Handlers) UpdateProjectHookConfig(ctx *gin.Context) {
 	}
 	hook.CreatedBy = existing.CreatedBy
 	hook.CreatedAt = existing.CreatedAt
-	if err := h.db.Save(&hook).Error; err != nil {
+	if err := h.dbFor(ctx).Save(&hook).Error; err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	h.audit(user.ID, "project_hook.update", hook.ID, true, hook.Name)
+	h.auditWithContext(user.ID, "project_hook.update", hook.ID, true, hook.Name, ctx.Request.Context())
 	ctx.JSON(http.StatusOK, hook)
 }
 
@@ -99,11 +100,11 @@ func (h *Handlers) DeleteProjectHookConfig(ctx *gin.Context) {
 		return
 	}
 	var hook model.ProjectHookConfig
-	if err := h.db.First(&hook, "id = ? and project_id = ?", ctx.Param("hookId"), project.ID).Error; err != nil {
+	if err := h.dbFor(ctx).First(&hook, "id = ? and project_id = ?", ctx.Param("hookId"), project.ID).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "project hook not found")
 		return
 	}
-	if err := h.db.Transaction(func(tx *gorm.DB) error {
+	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("hook_config_id = ?", hook.ID).Delete(&model.DeploymentTargetHookBinding{}).Error; err != nil {
 			return err
 		}
@@ -112,7 +113,7 @@ func (h *Handlers) DeleteProjectHookConfig(ctx *gin.Context) {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	h.audit(user.ID, "project_hook.delete", hook.ID, true, hook.Name)
+	h.auditWithContext(user.ID, "project_hook.delete", hook.ID, true, hook.Name, ctx.Request.Context())
 	ctx.Status(http.StatusNoContent)
 }
 
@@ -120,7 +121,7 @@ func (h *Handlers) ListProjectHookRuns(ctx *gin.Context) {
 	if _, _, ok := h.projectAndCurrentUser(ctx); !ok {
 		return
 	}
-	query := h.db.Where("project_id = ?", ctx.Param("projectId"))
+	query := h.dbFor(ctx).Where("project_id = ?", ctx.Param("projectId"))
 	if phase := normalizeHookPhase(ctx.Query("phase")); phase != "" {
 		query = query.Where("phase = ?", phase)
 	}
@@ -143,12 +144,12 @@ func (h *Handlers) GetProjectHookRunLog(ctx *gin.Context) {
 		return
 	} else {
 		var run model.HookRun
-		if err := h.db.First(&run, "id = ? and project_id = ?", ctx.Param("runId"), project.ID).Error; err != nil {
+		if err := h.dbFor(ctx).First(&run, "id = ? and project_id = ?", ctx.Param("runId"), project.ID).Error; err != nil {
 			writeError(ctx, http.StatusNotFound, "hook run not found")
 			return
 		}
 		var log model.HookRunLog
-		err := h.db.First(&log, "hook_run_id = ? and project_id = ?", run.ID, project.ID).Error
+		err := h.dbFor(ctx).First(&log, "hook_run_id = ? and project_id = ?", run.ID, project.ID).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			ctx.JSON(http.StatusOK, model.HookRunLog{HookRunID: run.ID, ProjectID: project.ID, Content: ""})
 			return
@@ -188,16 +189,16 @@ func (h *Handlers) projectHookConfigFromInput(ctx *gin.Context, user model.User,
 	}, true
 }
 
-func (h *Handlers) appendHookRunLog(run model.HookRun, content string) error {
-	content = h.redactHookRunLogContent(run, content)
+func (h *Handlers) appendHookRunLog(run model.HookRun, content string, contexts ...context.Context) error {
+	content = h.redactHookRunLogContent(run, content, firstContext(contexts))
 	content = trimHookRunLogContent(content)
 	if content == "" {
 		return nil
 	}
 	var existing model.HookRunLog
-	err := h.db.First(&existing, "hook_run_id = ? and project_id = ?", run.ID, run.ProjectID).Error
+	err := h.dbWithContext(firstContext(contexts)).First(&existing, "hook_run_id = ? and project_id = ?", run.ID, run.ProjectID).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return h.db.Create(&model.HookRunLog{
+		return h.dbWithContext(firstContext(contexts)).Create(&model.HookRunLog{
 			ID:        id.New("hlog"),
 			HookRunID: run.ID,
 			ProjectID: run.ProjectID,
@@ -208,7 +209,7 @@ func (h *Handlers) appendHookRunLog(run model.HookRun, content string) error {
 		return err
 	}
 	existing.Content = trimHookRunLogContent(existing.Content + "\n" + content)
-	return h.db.Save(&existing).Error
+	return h.dbWithContext(firstContext(contexts)).Save(&existing).Error
 }
 
 func trimHookRunLogContent(content string) string {

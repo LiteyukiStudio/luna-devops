@@ -31,7 +31,7 @@ func (h *Handlers) runtimeConfigRefsFromInput(ctx *gin.Context, projectID string
 	}
 	var sets []model.ProjectRuntimeConfigSet
 	if len(setIDs) > 0 {
-		if err := h.db.Where("project_id = ? and id in ?", projectID, setIDs).Find(&sets).Error; err != nil {
+		if err := h.dbFor(ctx).Where("project_id = ? and id in ?", projectID, setIDs).Find(&sets).Error; err != nil {
 			writeError(ctx, http.StatusInternalServerError, err.Error())
 			return nil, false
 		}
@@ -90,16 +90,16 @@ func (h *Handlers) applyRegistryCredentialImageTemplate(ctx *gin.Context, user m
 		return repository, tag, true
 	}
 	var project model.Project
-	if err := h.db.First(&project, "id = ?", app.ProjectID).Error; err != nil {
+	if err := h.dbFor(ctx).First(&project, "id = ?", app.ProjectID).Error; err != nil {
 		writeError(ctx, http.StatusBadRequest, "项目空间不存在")
 		return repository, tag, false
 	}
 	var registry model.ArtifactRegistry
-	if err := h.db.First(&registry, "id = ?", registryID).Error; err != nil {
+	if err := h.dbFor(ctx).First(&registry, "id = ?", registryID).Error; err != nil {
 		writeError(ctx, http.StatusBadRequest, "目标镜像站不存在")
 		return repository, tag, false
 	}
-	credential, ok := h.registryPushCredentialForProject(user, registry, app.ProjectID)
+	credential, ok := h.registryPushCredentialForProject(user, registry, app.ProjectID, ctx.Request.Context(), ctx.Request.Context())
 	if !ok {
 		return repository, tag, true
 	}

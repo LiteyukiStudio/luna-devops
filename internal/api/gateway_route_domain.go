@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -29,7 +30,7 @@ func (h *Handlers) CheckGatewayDomain(ctx *gin.Context) {
 	}
 	routeID := strings.TrimSpace(ctx.Query("routeId"))
 	var routes []model.GatewayRoute
-	if err := h.db.Select("id").
+	if err := h.dbFor(ctx).Select("id").
 		Where("host = ?", host).
 		Find(&routes).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
@@ -52,16 +53,16 @@ func (h *Handlers) CheckGatewayDomain(ctx *gin.Context) {
 func (h *Handlers) gatewayClusterForDomainCheck(ctx *gin.Context) model.RuntimeCluster {
 	if routeID := strings.TrimSpace(ctx.Query("routeId")); routeID != "" {
 		var route model.GatewayRoute
-		if err := h.db.First(&route, "id = ? and project_id = ?", routeID, ctx.Param("projectId")).Error; err == nil {
-			if cluster, err := h.runtimeClusterForGatewayRoute(route); err == nil {
+		if err := h.dbFor(ctx).First(&route, "id = ? and project_id = ?", routeID, ctx.Param("projectId")).Error; err == nil {
+			if cluster, err := h.runtimeClusterForGatewayRoute(route, ctx.Request.Context()); err == nil {
 				return cluster
 			}
 		}
 	}
 	if targetID := strings.TrimSpace(ctx.Query("deploymentTargetId")); targetID != "" {
 		var target model.DeploymentTarget
-		if err := h.db.First(&target, "id = ? and project_id = ?", targetID, ctx.Param("projectId")).Error; err == nil {
-			if cluster, err := h.runtimeClusterForDeploymentTargetValue(target); err == nil {
+		if err := h.dbFor(ctx).First(&target, "id = ? and project_id = ?", targetID, ctx.Param("projectId")).Error; err == nil {
+			if cluster, err := h.runtimeClusterForDeploymentTargetValue(target, ctx.Request.Context()); err == nil {
 				return cluster
 			}
 		}
@@ -69,7 +70,7 @@ func (h *Handlers) gatewayClusterForDomainCheck(ctx *gin.Context) model.RuntimeC
 	return model.RuntimeCluster{}
 }
 
-func (h *Handlers) defaultGatewayHost(project model.Project, stage, applicationIdentifier string, cluster model.RuntimeCluster, domainSuffix string) string {
+func (h *Handlers) defaultGatewayHost(project model.Project, stage, applicationIdentifier string, cluster model.RuntimeCluster, domainSuffix string, contexts ...context.Context) string {
 	rootDomain := h.gatewayDomainSuffix(cluster, domainSuffix)
 	if rootDomain == "" {
 		return ""
@@ -87,7 +88,7 @@ func (h *Handlers) defaultGatewayHost(project model.Project, stage, applicationI
 			prefix = fmt.Sprintf("%s-%d", base, index+1)
 		}
 		host := fmt.Sprintf("%s.%s", prefix, rootDomain)
-		if !h.gatewayHostExists(host, "") {
+		if !h.gatewayHostExists(host, "", firstContext(contexts)) {
 			return host
 		}
 	}
@@ -174,8 +175,8 @@ func (h *Handlers) legacyGatewayRootDomain() string {
 	return strings.Trim(strings.ToLower(strings.TrimSpace(h.configValue("gateway.rootDomain"))), ".")
 }
 
-func (h *Handlers) gatewayRouteWithAccessURL(route model.GatewayRoute) model.GatewayRoute {
-	cluster, err := h.runtimeClusterForGatewayRoute(route)
+func (h *Handlers) gatewayRouteWithAccessURL(route model.GatewayRoute, contexts ...context.Context) model.GatewayRoute {
+	cluster, err := h.runtimeClusterForGatewayRoute(route, firstContext(contexts))
 	if err != nil {
 		route.AccessURL = gatewayRouteAccessURL(route, normalizeGatewayPublicScheme(h.configValue("gateway.publicScheme")), 0)
 		return route
@@ -184,10 +185,10 @@ func (h *Handlers) gatewayRouteWithAccessURL(route model.GatewayRoute) model.Gat
 	return route
 }
 
-func (h *Handlers) gatewayRoutesWithAccessURL(routes []model.GatewayRoute) []model.GatewayRoute {
+func (h *Handlers) gatewayRoutesWithAccessURL(routes []model.GatewayRoute, contexts ...context.Context) []model.GatewayRoute {
 	result := make([]model.GatewayRoute, len(routes))
 	for index, route := range routes {
-		result[index] = h.gatewayRouteWithAccessURL(route)
+		result[index] = h.gatewayRouteWithAccessURL(route, firstContext(contexts))
 	}
 	return result
 }
@@ -223,11 +224,11 @@ func shouldShowGatewayPublicPort(scheme string, publicPort int) bool {
 	return !(scheme == "https" && publicPort == 443) && !(scheme == "http" && publicPort == 80)
 }
 
-func (h *Handlers) gatewayHostExists(host, routeID string) bool {
+func (h *Handlers) gatewayHostExists(host, routeID string, contexts ...context.Context) bool {
 	if strings.TrimSpace(host) == "" {
 		return false
 	}
 	var count int64
-	query := h.db.Model(&model.GatewayRoute{}).Where("host = ? and id <> ?", host, routeID)
+	query := h.dbWithContext(firstContext(contexts)).Model(&model.GatewayRoute{}).Where("host = ? and id <> ?", host, routeID)
 	return query.Count(&count).Error == nil && count > 0
 }

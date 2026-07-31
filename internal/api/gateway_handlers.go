@@ -17,7 +17,7 @@ func (h *Handlers) ListGatewayRoutes(ctx *gin.Context) {
 	if _, ok := h.findProjectForCurrentUser(ctx); !ok {
 		return
 	}
-	query := h.db.Model(&model.GatewayRoute{}).Where("project_id = ?", ctx.Param("projectId"))
+	query := h.dbFor(ctx).Model(&model.GatewayRoute{}).Where("project_id = ?", ctx.Param("projectId"))
 	query = applySearch(ctx, query, "host", "path")
 	var routes []model.GatewayRoute
 	if paginationRequested(ctx) {
@@ -36,7 +36,7 @@ func (h *Handlers) ListGatewayRoutes(ctx *gin.Context) {
 			return
 		}
 		routes = h.observeGatewayRoutes(ctx.Request.Context(), routes)
-		ctx.JSON(http.StatusOK, paginatedResponse(h.gatewayRoutesWithAccessURL(routes), total, pagination))
+		ctx.JSON(http.StatusOK, paginatedResponse(h.gatewayRoutesWithAccessURL(routes, ctx.Request.Context()), total, pagination))
 		return
 	}
 	if err := query.Find(&routes).Error; err != nil {
@@ -44,7 +44,7 @@ func (h *Handlers) ListGatewayRoutes(ctx *gin.Context) {
 		return
 	}
 	routes = h.observeGatewayRoutes(ctx.Request.Context(), routes)
-	ctx.JSON(http.StatusOK, h.gatewayRoutesWithAccessURL(routes))
+	ctx.JSON(http.StatusOK, h.gatewayRoutesWithAccessURL(routes, ctx.Request.Context()))
 }
 
 func (h *Handlers) CreateGatewayRoute(ctx *gin.Context) {
@@ -67,7 +67,7 @@ func (h *Handlers) CreateGatewayRoute(ctx *gin.Context) {
 	if !h.ensureGatewayRouteBackendAvailable(ctx, route) {
 		return
 	}
-	if err := h.db.Create(&route).Error; err != nil {
+	if err := h.dbFor(ctx).Create(&route).Error; err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -77,7 +77,7 @@ func (h *Handlers) CreateGatewayRoute(ctx *gin.Context) {
 	}
 	route.Status = "progressing"
 	route.ObservationCode = "gateway_route.apply_queued"
-	ctx.JSON(http.StatusCreated, h.gatewayRouteWithAccessURL(route))
+	ctx.JSON(http.StatusCreated, h.gatewayRouteWithAccessURL(route, ctx.Request.Context()))
 }
 
 func (h *Handlers) UpdateGatewayRoute(ctx *gin.Context) {
@@ -128,7 +128,7 @@ func (h *Handlers) UpdateGatewayRoute(ctx *gin.Context) {
 	route.RequestRedirect = next.RequestRedirect
 	route.BackendWeight = next.BackendWeight
 	route.HostnameAliases = next.HostnameAliases
-	if err := h.db.Save(&route).Error; err != nil {
+	if err := h.dbFor(ctx).Save(&route).Error; err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -138,7 +138,7 @@ func (h *Handlers) UpdateGatewayRoute(ctx *gin.Context) {
 	}
 	route.Status = "progressing"
 	route.ObservationCode = "gateway_route.apply_queued"
-	ctx.JSON(http.StatusOK, h.gatewayRouteWithAccessURL(route))
+	ctx.JSON(http.StatusOK, h.gatewayRouteWithAccessURL(route, ctx.Request.Context()))
 }
 
 func (h *Handlers) DeleteGatewayRoute(ctx *gin.Context) {
@@ -157,7 +157,7 @@ func (h *Handlers) DeleteGatewayRoute(ctx *gin.Context) {
 		writeError(ctx, http.StatusConflict, "访问入口正在删除中，请等待资源清理完成")
 		return
 	}
-	if err := markResourceDeleting(h.db, &model.GatewayRoute{}, route.ID); err != nil {
+	if err := markResourceDeleting(h.dbFor(ctx), &model.GatewayRoute{}, route.ID); err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -167,7 +167,7 @@ func (h *Handlers) DeleteGatewayRoute(ctx *gin.Context) {
 		ProjectID:    route.ProjectID,
 		ActorID:      user.ID,
 	}) {
-		_ = markResourceDeleteFailed(h.db, &model.GatewayRoute{}, route.ID, "资源清理任务投递失败，请稍后重试")
+		_ = markResourceDeleteFailed(h.dbFor(ctx), &model.GatewayRoute{}, route.ID, "资源清理任务投递失败，请稍后重试")
 		writeError(ctx, http.StatusServiceUnavailable, "资源清理任务投递失败，请稍后重试")
 		return
 	}
@@ -176,7 +176,7 @@ func (h *Handlers) DeleteGatewayRoute(ctx *gin.Context) {
 
 func (h *Handlers) findGatewayRoute(ctx *gin.Context) (model.GatewayRoute, bool) {
 	var route model.GatewayRoute
-	if err := h.db.First(&route, "id = ? and project_id = ?", ctx.Param("routeId"), ctx.Param("projectId")).Error; err != nil {
+	if err := h.dbFor(ctx).First(&route, "id = ? and project_id = ?", ctx.Param("routeId"), ctx.Param("projectId")).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "gateway route not found")
 		return route, false
 	}

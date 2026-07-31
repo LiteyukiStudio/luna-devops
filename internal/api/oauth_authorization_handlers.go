@@ -57,7 +57,7 @@ func (h *Handlers) GetOAuthAuthorizationRequest(ctx *gin.Context) {
 		return
 	}
 	var grant model.OAuthGrant
-	previouslyAuthorized := h.db.First(
+	previouslyAuthorized := h.dbFor(ctx).First(
 		&grant,
 		"application_id = ? and user_id = ? and scope = ? and revoked_at is null",
 		application.ID,
@@ -98,14 +98,14 @@ func (h *Handlers) DecideOAuthAuthorization(ctx *gin.Context) {
 		if input.State != "" {
 			values.Set("state", input.State)
 		}
-		h.audit(user.ID, "oauth_grant.deny", application.ID, true, scope)
+		h.auditWithContext(user.ID, "oauth_grant.deny", application.ID, true, scope, ctx.Request.Context())
 		ctx.JSON(http.StatusOK, gin.H{"redirectUrl": appendOAuthRedirectValues(input.RedirectURI, values)})
 		return
 	}
 
 	plainCode := "lyo_code_" + randomHex(32)
 	var grant model.OAuthGrant
-	err := h.db.Transaction(func(tx *gorm.DB) error {
+	err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
 		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(
 			&grant,
 			"application_id = ? and user_id = ? and revoked_at is null",
@@ -143,7 +143,7 @@ func (h *Handlers) DecideOAuthAuthorization(ctx *gin.Context) {
 	if input.State != "" {
 		values.Set("state", input.State)
 	}
-	h.audit(user.ID, "oauth_grant.authorize", grant.ID, true, scope)
+	h.auditWithContext(user.ID, "oauth_grant.authorize", grant.ID, true, scope, ctx.Request.Context())
 	ctx.JSON(http.StatusOK, gin.H{"redirectUrl": appendOAuthRedirectValues(input.RedirectURI, values)})
 }
 
@@ -174,7 +174,7 @@ func (h *Handlers) RevokeOAuthToken(ctx *gin.Context) {
 	plainToken := strings.TrimSpace(ctx.PostForm("token"))
 	if plainToken != "" {
 		tokenHash := hashToken(plainToken)
-		_ = h.db.Transaction(func(tx *gorm.DB) error {
+		_ = h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
 			grantID := ""
 			var accessToken model.AccessToken
 			if err := tx.First(
@@ -235,7 +235,7 @@ func (h *Handlers) validateOAuthAuthorizationRequest(ctx *gin.Context, clientID,
 		return model.OAuthApplication{}, "", false
 	}
 	var application model.OAuthApplication
-	if h.db.First(&application, "client_id = ? and revoked_at is null", strings.TrimSpace(clientID)).Error != nil {
+	if h.dbFor(ctx).First(&application, "client_id = ? and revoked_at is null", strings.TrimSpace(clientID)).Error != nil {
 		writeErrorCode(ctx, http.StatusNotFound, "oauth.application.not_found", "OAuth application not found")
 		return model.OAuthApplication{}, "", false
 	}
@@ -260,7 +260,7 @@ func (h *Handlers) exchangeOAuthAuthorizationCode(ctx *gin.Context, application 
 	redirectURI := strings.TrimSpace(ctx.PostForm("redirect_uri"))
 	verifier := ctx.PostForm("code_verifier")
 	var response oauthTokenResponse
-	err := h.db.Transaction(func(tx *gorm.DB) error {
+	err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
 		var code model.OAuthAuthorizationCode
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&code, "code_hash = ?", hashToken(plainCode)).Error; err != nil {
 			return err
@@ -293,7 +293,7 @@ func (h *Handlers) exchangeOAuthRefreshToken(ctx *gin.Context, application model
 	plainRefreshToken := strings.TrimSpace(ctx.PostForm("refresh_token"))
 	var response oauthTokenResponse
 	reused := false
-	err := h.db.Transaction(func(tx *gorm.DB) error {
+	err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
 		var refreshToken model.OAuthRefreshToken
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&refreshToken, "token_hash = ?", hashToken(plainRefreshToken)).Error; err != nil {
 			return err

@@ -16,6 +16,7 @@ import { createOptionsInput, optionUIActions } from "./tools/ui-options.js"
 import { automaticRouteUIAction, navigateToRouteInput } from "./tools/ui-route.js"
 import type { ProviderConfigClient } from "./provider/config-client.js"
 import { agentRuntimeInternals, defaultRuntimeSettings, type RuntimeSettings } from "./runtime-settings.js"
+import { agentMetrics, internalSpanOptions, recordSpanError, stableErrorCode, telemetryLog, withSpan } from "./telemetry.js"
 
 export class RunExecutor {
   private timer?: NodeJS.Timeout
@@ -72,6 +73,16 @@ export class RunExecutor {
   private async claimAndExecute(): Promise<boolean> {
     const run = await this.repository.claimRun(this.config.INSTANCE_ID, agentRuntimeInternals.runLeaseSeconds)
     if (!run) return false
+    return withSpan("agent.run.execute", internalSpanOptions({
+      "gen_ai.operation.name": "agent",
+      "gen_ai.conversation.id": run.conversationId,
+      "luna.run.id": run.id,
+      "luna.turn.id": run.turnId,
+      "luna.graph.version": run.graphVersion,
+    }), async span => {
+    const startedAt = performance.now()
+    let outcome = "completed"
+    agentMetrics.activeRuns.add(1)
     const abort = new AbortController()
     this.controllers.set(run.id, abort)
     const timeout = setTimeout(() => abort.abort(new Error("ai.run_timeout")), this.runtimeSettings.runTimeoutMs)
@@ -81,6 +92,10 @@ export class RunExecutor {
     }, Math.max(1000, agentRuntimeInternals.runLeaseSeconds * 333))
     const cardPreparations = new Map<string, CardPreparation>()
     try {
+      telemetryLog("agent.run.started", "info", {
+        "luna.run.id": run.id,
+        "luna.graph.version": run.graphVersion,
+      })
       const running = await this.repository.updateRun(run.id, "queued", "running", { startedAt: new Date().toISOString() })
       await this.repository.appendEvent(run.id, "run.started", { state: "running", expectedVersion: running.rowVersion })
       const executionInput = await this.repository.getExecutionInput(run.id)
@@ -140,7 +155,7 @@ export class RunExecutor {
         for (const toolCall of toolCalls) {
           if (toolCall.operationId === "prepare_interaction_cards") {
             if (!hasPlatformTool) {
-              const preparation = await this.prepareInteractionCards(run.id, run.turnId, toolCall.arguments, cardPreparations)
+              const preparation = await this.traceInternalTool("prepare_interaction_cards", run.id, () => this.prepareInteractionCards(run.id, run.turnId, toolCall.arguments, cardPreparations))
               if (!preparation.accepted) {
                 recoverableToolError = true
                 continuationMessages.push(toolResultMessage(toolCall, {
@@ -160,7 +175,7 @@ export class RunExecutor {
           }
           if (toolCall.operationId === "create_interaction_cards") {
             if (!hasPlatformTool) {
-              const creation = await this.createInteractionCards(run.id, toolCall.arguments, cardPreparations)
+              const creation = await this.traceInternalTool("create_interaction_cards", run.id, () => this.createInteractionCards(run.id, toolCall.arguments, cardPreparations))
               if (!creation.accepted) {
                 recoverableToolError = true
                 continuationMessages.push(toolResultMessage(toolCall, {
@@ -200,7 +215,7 @@ export class RunExecutor {
             continue
           }
           if (toolCall.operationId === "rename_conversation") {
-            const renamed = await this.renameConversation(run.id, run.turnId, run.conversationId, toolCall.arguments)
+            const renamed = await this.traceInternalTool("rename_conversation", run.id, () => this.renameConversation(run.id, run.turnId, run.conversationId, toolCall.arguments))
             if (renamed) {
               assistantRenamed = true
               conversationContext = { ...conversationContext, title: renamed.title, titleSource: renamed.titleSource }
@@ -212,7 +227,7 @@ export class RunExecutor {
             continue
           }
           if (toolCall.operationId === "navigate_to_route") {
-            const delivery = await this.navigateToRoute(run.id, run.turnId, toolCall.arguments)
+            const delivery = await this.traceInternalTool("navigate_to_route", run.id, () => this.navigateToRoute(run.id, run.turnId, toolCall.arguments))
             continuationMessages.push(toolResultMessage(toolCall, {
               status: "dispatched",
               actionId: delivery.id,
@@ -229,10 +244,14 @@ export class RunExecutor {
             ...(call.errorCode ? { errorCode: call.errorCode } : {}),
           }))
           if (call.status === "awaiting_approval") {
+            outcome = "waiting_approval"
+            telemetryLog("agent.run.waiting_approval", "info", { "luna.run.id": run.id, "tool.name": call.operationId })
             await this.repository.updateRun(run.id, "running", "waiting_approval")
             return true
           }
           if (call.status === "awaiting_mfa") {
+            outcome = "waiting_mfa"
+            telemetryLog("agent.run.waiting_mfa", "info", { "luna.run.id": run.id, "tool.name": call.operationId })
             await this.repository.updateRun(run.id, "running", "waiting_mfa")
             return true
           }
@@ -267,14 +286,24 @@ export class RunExecutor {
         }, pendingOptions, abort.signal)
       }
       await this.repository.updateRun(run.id, "running", "completed", { completedAt: new Date().toISOString() })
+      telemetryLog("agent.run.completed", "info", { "luna.run.id": run.id })
     } catch (error) {
       const message = error instanceof Error ? error.message : "ai.run_failed"
+      outcome = error instanceof ToolInterruption ? error.state : stableErrorCode(error)
+      span.setAttribute("luna.run.outcome", outcome)
+      telemetryLog("agent.run.failed", error instanceof ToolInterruption ? "info" : "error", {
+        "luna.run.id": run.id,
+        "error.type": error instanceof Error ? error.name : "UnknownError",
+        "error.code": stableErrorCode(error),
+      })
       await this.failCardPreparations(run.id, cardPreparations, stableError(message))
       if (error instanceof ToolInterruption && error.state === "waiting_input") {
+        outcome = "waiting_input"
         await this.repository.appendEvent(run.id, "run.input_required", { fields: error.fields })
         await this.repository.updateRun(run.id, "running", "waiting_input")
         return true
       }
+      recordSpanError(span, error)
       try { await this.repository.updateRun(run.id, "running", "failed", { completedAt: new Date().toISOString(), errorCode: stableError(message) }) } catch { /* state was changed by cancellation */ }
     } finally {
       clearTimeout(timeout)
@@ -282,8 +311,13 @@ export class RunExecutor {
       this.controllers.delete(run.id)
       await this.repository.finalizeStreamingItems(run.id, "completed")
       await this.repository.releaseLease(run.id, this.config.INSTANCE_ID)
+      const metricAttributes = { outcome, graph_version: run.graphVersion }
+      agentMetrics.activeRuns.add(-1)
+      agentMetrics.runs.add(1, metricAttributes)
+      agentMetrics.runDuration.record((performance.now() - startedAt) / 1000, metricAttributes)
     }
     return true
+    })
   }
 
   private async refreshRuntimeSettings(): Promise<void> {
@@ -356,6 +390,8 @@ export class RunExecutor {
     })
     const preparation = { itemId, toolCallId, timelineIndex: item.timelineIndex, input }
     preparations.set(input.generationId, preparation)
+    agentMetrics.cards.add(1, { phase: "prepared" })
+    telemetryLog("agent.card.prepared", "info", { "luna.run.id": runId })
     await this.repository.appendEvent(runId, "tool.started", {
       itemId,
       toolCallId,
@@ -385,7 +421,12 @@ export class RunExecutor {
         : undefined
       const preparation = generationId ? preparations.get(generationId) : undefined
       if (preparation) preparation.issues = issues
-      console.warn(JSON.stringify({ event: "interaction_cards_schema_rejected", issues }))
+      agentMetrics.cards.add(1, { phase: "rejected", mode: "unknown" })
+      telemetryLog("agent.card.schema_rejected", "warn", {
+        "luna.run.id": runId,
+        "error.code": "ai.provider_invalid_tool_arguments",
+        "card.issue_count": issues.length,
+      })
       return { accepted: false as const, issues }
     }
     const input = parsed.data
@@ -420,10 +461,20 @@ export class RunExecutor {
     })
     await this.repository.appendEvent(runId, "item.completed", { itemId })
     preparations.delete(input.generationId)
+    agentMetrics.cards.add(1, { phase: "created", mode: input.mode })
+    telemetryLog("agent.card.created", "info", { "luna.run.id": runId, "card.mode": input.mode })
     return { accepted: true as const, mode: input.mode }
   }
 
   private async failCardPreparations(runId: string, preparations: Map<string, CardPreparation>, errorCode: string) {
+    if (preparations.size > 0) {
+      agentMetrics.cards.add(preparations.size, { phase: "failed" })
+      telemetryLog("agent.card.failed", "error", {
+        "luna.run.id": runId,
+        "error.code": errorCode,
+        "card.count": preparations.size,
+      })
+    }
     await Promise.allSettled([...preparations.values()].map(async (preparation) => {
       const result = {
         summaryKey: "aiAssistant.cards.failed",
@@ -462,7 +513,7 @@ export class RunExecutor {
     if (preferred !== undefined) {
       const parsed = createOptionsInput.safeParse(preferred)
       if (parsed.success) {
-        await this.createOptions(runId, turnId, parsed.data)
+        await this.traceInternalTool("create_options", runId, () => this.createOptions(runId, turnId, parsed.data))
         return
       }
     }
@@ -470,7 +521,7 @@ export class RunExecutor {
       const predicted = await this.graphs.predictNextSteps(context, signal)
       const parsed = createOptionsInput.safeParse(predicted)
       if (parsed.success) {
-        await this.createOptions(runId, turnId, parsed.data)
+        await this.traceInternalTool("create_options", runId, () => this.createOptions(runId, turnId, parsed.data))
         return
       }
     } catch {
@@ -560,16 +611,33 @@ export class RunExecutor {
   }
 
   private async streamModel(version: string, runId: string, turnId: string, input: AssistantGraphState, signal: AbortSignal): Promise<AssistantGraphState> {
+    const startedAt = performance.now()
+    let outcome = "success"
+    return withSpan("agent.model.stream", internalSpanOptions({
+      "gen_ai.operation.name": "chat",
+      "luna.run.id": runId,
+      "luna.turn.id": turnId,
+      "luna.graph.version": version,
+    }), async span => {
     const reasoningItemId = createId("aiitm")
     const messageItemId = createId("aiitm")
     let reasoningSummary = ""
     let answer = ""
     let toolCalls: ModelToolCall[] = []
     let reasoningStarted = false
+    let firstOutputRecorded = false
     let reasoningTimelineIndex: number | undefined
     let messageTimelineIndex: number | undefined
     await this.repository.appendEvent(runId, "model.started", {})
     for await (const event of this.graphs.stream(version, input, signal)) {
+      if (!firstOutputRecorded && ["reasoning_summary_delta", "message_delta", "tool_call_delta"].includes(event.type)) {
+        firstOutputRecorded = true
+        const outputType = event.type === "reasoning_summary_delta"
+          ? "reasoning"
+          : event.type === "message_delta" ? "message" : "tool_call"
+        agentMetrics.modelFirstTokenDuration.record((performance.now() - startedAt) / 1000, { output_type: outputType })
+        span.addEvent("gen_ai.first_output", { "gen_ai.output.type": outputType })
+      }
       if (event.type === "reasoning_summary_delta" && event.delta) {
         reasoningSummary += event.delta
         if (reasoningTimelineIndex === undefined) {
@@ -610,6 +678,11 @@ export class RunExecutor {
       }
       if (event.type === "completed") {
         toolCalls = event.toolCalls ?? []
+        span.setAttribute("gen_ai.usage.input_tokens", event.usage.inputTokens)
+        span.setAttribute("gen_ai.usage.output_tokens", event.usage.outputTokens)
+        span.setAttribute("luna.tool_call.count", toolCalls.length)
+        agentMetrics.modelTokens.add(event.usage.inputTokens, { direction: "input" })
+        agentMetrics.modelTokens.add(event.usage.outputTokens, { direction: "output" })
         await this.repository.appendEvent(runId, "model.completed", { usage: event.usage })
       }
     }
@@ -624,7 +697,44 @@ export class RunExecutor {
       await this.repository.appendEvent(runId, "item.completed", { itemId: messageItemId })
       await this.repository.appendEvent(runId, "message.completed", { itemId: messageItemId })
     }
+    agentMetrics.modelRequests.add(1, { operation: "stream", outcome })
+    agentMetrics.modelSteps.add(1, { outcome })
+    agentMetrics.modelDuration.record((performance.now() - startedAt) / 1000, { operation: "stream", outcome })
+    telemetryLog("agent.model.completed", "info", { "luna.run.id": runId, "tool_call.count": toolCalls.length })
     return { ...input, reasoningSummary, answer, toolCalls }
+    }).catch(error => {
+      outcome = stableErrorCode(error)
+      agentMetrics.modelRequests.add(1, { operation: "stream", outcome })
+      agentMetrics.modelSteps.add(1, { outcome })
+      agentMetrics.modelDuration.record((performance.now() - startedAt) / 1000, { operation: "stream", outcome })
+      telemetryLog("agent.model.failed", "error", {
+        "luna.run.id": runId,
+        "error.type": error instanceof Error ? error.name : "UnknownError",
+        "error.code": outcome,
+      })
+      throw error
+    })
+  }
+
+  private async traceInternalTool<T>(operationId: string, runId: string, operation: () => Promise<T>): Promise<T> {
+    const startedAt = performance.now()
+    let outcome = "succeeded"
+    try {
+      return await withSpan("agent.tool.internal", internalSpanOptions({
+        "gen_ai.operation.name": "execute_tool",
+        "gen_ai.tool.name": operationId,
+        "luna.run.id": runId,
+      }), async () => operation())
+    }
+    catch (error) {
+      outcome = stableErrorCode(error)
+      throw error
+    }
+    finally {
+      const attributes = { tool: operationId, outcome }
+      agentMetrics.toolCalls.add(1, attributes)
+      agentMetrics.toolDuration.record((performance.now() - startedAt) / 1000, attributes)
+    }
   }
 }
 

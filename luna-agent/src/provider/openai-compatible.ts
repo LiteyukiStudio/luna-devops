@@ -1,4 +1,5 @@
 import type { ModelCapabilities, ModelEvent, ModelProvider, ModelRequest, ModelResponse, ModelToolCall } from "./provider.js"
+import { agentMetrics, telemetryLog } from "../telemetry.js"
 
 type Options = { baseUrl: string, apiKey: string, model: string, timeoutMs: number }
 
@@ -30,6 +31,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
     const decoder = new TextDecoder()
     let buffer = ""
     let usage = { inputTokens: 0, outputTokens: 0 }
+    let toolCallDeltaEmitted = false
     const toolFragments = new Map<number, { id?: string, operationId: string, arguments: string }>()
     const reader = (response.body as ReadableStream<Uint8Array>).getReader()
     while (true) {
@@ -57,6 +59,10 @@ export class OpenAICompatibleProvider implements ModelProvider {
         if (reasoning) yield { type: "reasoning_summary_delta", delta: reasoning }
         if (content) yield { type: "message_delta", delta: content }
         for (const fragment of delta?.tool_calls ?? []) {
+          if (!toolCallDeltaEmitted) {
+            toolCallDeltaEmitted = true
+            yield { type: "tool_call_delta" }
+          }
           const current = toolFragments.get(fragment.index) ?? { operationId: "", arguments: "" }
           if (!current.id && fragment.id) current.id = fragment.id
           current.operationId += fragment.function?.name ?? ""
@@ -127,7 +133,24 @@ export class OpenAICompatibleProvider implements ModelProvider {
       } catch (error) {
         throw providerTransportError(error, signal)
       }
-      if (!response.ok) throw new Error(providerHTTPError(response.status))
+      if (!response.ok) {
+        const errorCode = providerHTTPError(response.status)
+        agentMetrics.externalRequests.add(1, {
+          target: "model_provider",
+          operation: stream ? "chat_stream" : "chat_complete",
+          outcome: errorCode,
+        })
+        telemetryLog("agent.provider.request_failed", "warn", {
+          "http.response.status_code": response.status,
+          "error.code": errorCode,
+        })
+        throw new Error(errorCode)
+      }
+      agentMetrics.externalRequests.add(1, {
+        target: "model_provider",
+        operation: stream ? "chat_stream" : "chat_complete",
+        outcome: "success",
+      })
       return response
     } finally {
       clearTimeout(timer)
@@ -210,25 +233,24 @@ function parseArguments(value: string): Record<string, unknown> {
       try {
         const parsed = JSON.parse(repaired) as unknown
         if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-          console.warn(JSON.stringify({
-            event: "provider_tool_arguments_trailing_closure_repaired",
-            originalLength: value.length,
-            repairedLength: repaired.length,
-          }))
+          telemetryLog("agent.provider.tool_arguments_repaired", "warn", {
+            "arguments.original_length": value.length,
+            "arguments.repaired_length": repaired.length,
+          })
           return parsed as Record<string, unknown>
         }
       } catch {
         // Fall through to the stable provider error below.
       }
     }
-    console.warn(JSON.stringify({
-      event: "provider_invalid_tool_arguments",
-      length: value.length,
-      startsWithObject: value.trimStart().startsWith("{"),
-      endsWithObject: value.trimEnd().endsWith("}"),
-      openBraces: [...value].filter(character => character === "{").length,
-      closeBraces: [...value].filter(character => character === "}").length,
-    }))
+    telemetryLog("agent.provider.invalid_tool_arguments", "warn", {
+      "error.code": "ai.provider_invalid_tool_arguments",
+      "arguments.length": value.length,
+      "arguments.starts_with_object": value.trimStart().startsWith("{"),
+      "arguments.ends_with_object": value.trimEnd().endsWith("}"),
+      "arguments.open_braces": [...value].filter(character => character === "{").length,
+      "arguments.close_braces": [...value].filter(character => character === "}").length,
+    })
     throw new Error("ai.provider_invalid_tool_arguments")
   }
   throw new Error("ai.provider_invalid_tool_arguments")

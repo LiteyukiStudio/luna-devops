@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/LiteyukiStudio/devops/internal/telemetry"
 )
 
 type Reporter interface {
@@ -29,7 +31,7 @@ func NewAPIReporter(baseURL string, token string, timeout time.Duration) *APIRep
 	return &APIReporter{
 		baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"),
 		token:   strings.TrimSpace(token),
-		client:  &http.Client{Timeout: timeout},
+		client:  telemetry.InstrumentHTTPClient(&http.Client{Timeout: timeout}),
 	}
 }
 

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -79,7 +80,7 @@ func (h *Handlers) InstallAppTemplate(ctx *gin.Context) {
 		return
 	}
 
-	if err := h.db.Transaction(func(tx *gorm.DB) error {
+	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&plan.Application).Error; err != nil {
 			return err
 		}
@@ -113,19 +114,19 @@ func (h *Handlers) InstallAppTemplate(ctx *gin.Context) {
 	}
 
 	for _, entry := range plan.SecretValues {
-		h.audit(user.ID, "secret.write", entry.ID, true, entry.Resource)
+		h.auditWithContext(user.ID, "secret.write", entry.ID, true, entry.Resource, ctx.Request.Context())
 	}
-	h.audit(user.ID, "app_template.install", plan.Installation.ID, true, template.ID)
+	h.auditWithContext(user.ID, "app_template.install", plan.Installation.ID, true, template.ID, ctx.Request.Context())
 
 	if plan.Release != nil && !h.enqueueDeployRun(ctx.Request.Context(), *plan.Release) {
 		message := "部署任务投递失败"
-		_ = h.db.Model(&model.Release{}).Where("id = ?", plan.Release.ID).Updates(map[string]any{"status": "failed", "message": message}).Error
-		_ = h.db.Model(&model.AppTemplateInstallation{}).Where("id = ?", plan.Installation.ID).Updates(map[string]any{"status": "deploy_failed", "message": message}).Error
+		_ = h.dbFor(ctx).Model(&model.Release{}).Where("id = ?", plan.Release.ID).Updates(map[string]any{"status": "failed", "message": message}).Error
+		_ = h.dbFor(ctx).Model(&model.AppTemplateInstallation{}).Where("id = ?", plan.Installation.ID).Updates(map[string]any{"status": "deploy_failed", "message": message}).Error
 		plan.Release.Status = "failed"
 		plan.Release.Message = message
 		plan.Installation.Status = "deploy_failed"
 		plan.Installation.Message = message
-		h.audit(user.ID, "app_template.deploy_enqueue", plan.Installation.ID, false, message)
+		h.auditWithContext(user.ID, "app_template.deploy_enqueue", plan.Installation.ID, false, message, ctx.Request.Context())
 	}
 
 	ctx.JSON(http.StatusCreated, appTemplateInstallResponse{
@@ -233,7 +234,7 @@ func (h *Handlers) buildTemplateInstallPlan(ctx *gin.Context, user model.User, p
 	secretEntries = append(secretEntries, secretFileEntries...)
 	clusterID := strings.TrimSpace(input.ClusterID)
 	if clusterID == "" {
-		clusterID = h.defaultRuntimeClusterID()
+		clusterID = h.defaultRuntimeClusterID(ctx.Request.Context())
 	}
 	if _, ok := h.runtimeClusterForProjectUse(ctx, user, project.ID, clusterID); !ok {
 		return templateInstallPlan{}, false
@@ -415,13 +416,13 @@ func (h *Handlers) templateSecretFiles(ctx *gin.Context, userID string, installa
 	return string(content), entries, true
 }
 
-func (h *Handlers) defaultRuntimeClusterID() string {
+func (h *Handlers) defaultRuntimeClusterID(contexts ...context.Context) string {
 	var cluster model.RuntimeCluster
-	err := h.db.Where("type in ? and is_default = ?", []string{"kubernetes", "k3s"}, true).Order("created_at asc").First(&cluster).Error
+	err := h.dbWithContext(firstContext(contexts)).Where("type in ? and is_default = ?", []string{"kubernetes", "k3s"}, true).Order("created_at asc").First(&cluster).Error
 	if err == nil {
 		return cluster.ID
 	}
-	err = h.db.Where("type in ?", []string{"kubernetes", "k3s"}).Order("created_at asc").First(&cluster).Error
+	err = h.dbWithContext(firstContext(contexts)).Where("type in ?", []string{"kubernetes", "k3s"}).Order("created_at asc").First(&cluster).Error
 	if err == nil {
 		return cluster.ID
 	}

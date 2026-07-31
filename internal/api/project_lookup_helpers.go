@@ -1,16 +1,17 @@
 package api
 
 import (
+	"context"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/gin-gonic/gin"
 )
 
-func (h *Handlers) projectIDsForUser(userID string) []string {
-	return h.projects.IDsForUser(userID)
+func (h *Handlers) projectIDsForUser(ctx context.Context, userID string) []string {
+	return h.projects.IDsForUserContext(ctx, userID)
 }
 
 func (h *Handlers) userHasProject(ctx *gin.Context, userID, projectID string) bool {
-	return h.projects.UserHasProject(userID, projectID)
+	return h.projects.UserHasProjectContext(ctx.Request.Context(), userID, projectID)
 }
 
 func (h *Handlers) findProjectForCurrentUserByID(ctx *gin.Context, projectID string) (model.Project, bool) {

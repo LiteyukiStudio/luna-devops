@@ -24,8 +24,13 @@ API 和 Worker 都通过环境变量读取运行配置。使用 Docker Compose�
 | 进阶 | `METRICS_ENABLED` | `false` | 是否启用独立 Prometheus metrics listener；默认关闭。设为 `true` 后 API 会使用默认监听地址 `:9090`。 |
 | 进阶 | `METRICS_ADDR` | `:9090` | metrics 监听地址；只在需要调整 API metrics 端口或绑定地址时修改。 |
 | 进阶 | `METRICS_PATH` | `/metrics` | Prometheus 抓取路径；只注册在独立 metrics listener 上。 |
+| 进阶 | `OTEL_EXPORTER_OTLP_ENDPOINT` | 空 | OpenTelemetry Collector 的 OTLP HTTP 地址；留空关闭 Trace、OTLP Metrics 和 OTel Logs 导出。API、Worker 和 Agent 使用同一个地址。 |
+| 进阶 | `OTEL_RESOURCE_ATTRIBUTES` | 空 | 附加环境、集群等资源属性；多个 `key=value` 使用逗号分隔。 |
+| 进阶 | `OTEL_EXPORTER_OTLP_HEADERS` | 空 | Collector 鉴权 Header；生产环境从 Secret 注入，不写入公开配置文件。 |
 
 启用 metrics 后，API 会暴露 HTTP 请求量、延迟、错误响应、PostgreSQL 连接池和 PostgreSQL/Redis 健康检查指标。Grafana dashboard JSON 位于 `grafana/dashboards/`，需要时直接导入 Grafana。
+
+配置 `OTEL_EXPORTER_OTLP_ENDPOINT` 后，API、Worker 和 Agent 会同时通过 OpenTelemetry 上报链路、指标和结构化日志。最小配置与本地验证方式见[接入可观测平台](./observability.md)。
 
 API 在监听 HTTP 端口前会分别对 Redis 和 PostgreSQL 执行一次真实连接检查。任一依赖不可达、认证失败或 PostgreSQL migration 失败时，进程都会直接退出，不会以部分可用状态启动。启动后的短暂连接中断由 go-redis 和 `database/sql` 的连接池恢复；容器平台应负责重启启动失败的进程。
 

@@ -34,7 +34,7 @@ func (h *Handlers) GetBuildEnvironmentConfig(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	config, err := h.findBuildEnvironmentConfig(h.db, scope, scopeRef)
+	config, err := h.findBuildEnvironmentConfig(h.dbFor(ctx), scope, scopeRef)
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
@@ -61,7 +61,7 @@ func (h *Handlers) UpdateBuildEnvironmentConfig(ctx *gin.Context) {
 	if !bindJSON(ctx, &input) {
 		return
 	}
-	existing, err := h.findBuildEnvironmentConfig(h.db, scope, scopeRef)
+	existing, err := h.findBuildEnvironmentConfig(h.dbFor(ctx), scope, scopeRef)
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
@@ -74,11 +74,11 @@ func (h *Handlers) UpdateBuildEnvironmentConfig(ctx *gin.Context) {
 		config.ID = existing.ID
 		config.CreatedAt = existing.CreatedAt
 	}
-	if err := h.db.Save(&config).Error; err != nil {
+	if err := h.dbFor(ctx).Save(&config).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	h.audit(user.ID, "build_environment.update", scope+":"+scopeRef, true, "")
+	h.auditWithContext(user.ID, "build_environment.update", scope+":"+scopeRef, true, "", ctx.Request.Context())
 	ctx.JSON(http.StatusOK, buildEnvironmentConfigResponseFromModel(config))
 }
 
@@ -102,7 +102,7 @@ func (h *Handlers) authorizeBuildEnvironmentConfig(ctx *gin.Context, user model.
 			return "", "", "", false
 		}
 		var count int64
-		if err := h.db.Model(&model.Application{}).Where("id = ? and project_id = ?", applicationID, projectID).Count(&count).Error; err != nil || count == 0 {
+		if err := h.dbFor(ctx).Model(&model.Application{}).Where("id = ? and project_id = ?", applicationID, projectID).Count(&count).Error; err != nil || count == 0 {
 			writeError(ctx, http.StatusNotFound, "application not found")
 			return "", "", "", false
 		}
@@ -119,7 +119,7 @@ func (h *Handlers) authorizeBuildEnvironmentConfig(ctx *gin.Context, user model.
 			return "", "", "", false
 		}
 		var count int64
-		if err := h.db.Model(&model.DeploymentTarget{}).Where("id = ? and project_id = ? and application_id = ?", targetID, projectID, applicationID).Count(&count).Error; err != nil || count == 0 {
+		if err := h.dbFor(ctx).Model(&model.DeploymentTarget{}).Where("id = ? and project_id = ? and application_id = ?", targetID, projectID, applicationID).Count(&count).Error; err != nil || count == 0 {
 			writeError(ctx, http.StatusNotFound, "deployment target not found")
 			return "", "", "", false
 		}
@@ -135,7 +135,7 @@ func (h *Handlers) canManageBuildEnvironmentProject(ctx *gin.Context, user model
 		return true
 	}
 	var member model.ProjectMember
-	if err := h.db.First(&member, "project_id = ? and user_id = ?", projectID, user.ID).Error; err == nil && projectRoleAllowed(member.Role, []string{authz.ProjectRoleOwner, authz.ProjectRoleAdmin}) {
+	if err := h.dbFor(ctx).First(&member, "project_id = ? and user_id = ?", projectID, user.ID).Error; err == nil && projectRoleAllowed(member.Role, []string{authz.ProjectRoleOwner, authz.ProjectRoleAdmin}) {
 		return true
 	}
 	writeError(ctx, http.StatusForbidden, "只有项目空间所有者或管理员可以维护构建变量和密钥")
@@ -219,7 +219,7 @@ func (h *Handlers) buildEnvironmentSecretRefsFromInput(ctx *gin.Context, user mo
 			writeError(ctx, http.StatusBadRequest, "构建密钥值过长")
 			return nil, false
 		}
-		ref := h.secrets.Store(value, user.ID, "build_environment:"+scope+":"+scopeRef+":"+key)
+		ref := h.secrets.StoreContext(ctx.Request.Context(), value, user.ID, "build_environment:"+scope+":"+scopeRef+":"+key)
 		if strings.TrimSpace(ref) == "" {
 			writeError(ctx, http.StatusInternalServerError, "构建密钥保存失败")
 			return nil, false

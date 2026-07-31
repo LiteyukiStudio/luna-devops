@@ -12,7 +12,7 @@ import (
 
 func (h *Handlers) findPreviousSuccessfulRelease(ctx *gin.Context, source model.Release) (model.Release, bool) {
 	var target model.Release
-	err := h.db.Where(
+	err := h.dbFor(ctx).Where(
 		"project_id = ? and application_id = ? and deployment_target_id = ? and status = ? and revision < ?",
 		source.ProjectID,
 		source.ApplicationID,
@@ -27,8 +27,8 @@ func (h *Handlers) findPreviousSuccessfulRelease(ctx *gin.Context, source model.
 	return target, true
 }
 
-func (h *Handlers) nextReleaseRevision(source model.Release) (int, error) {
-	return nextReleaseRevisionFor(h.db, source.ProjectID, source.ApplicationID, source.DeploymentTargetID)
+func (h *Handlers) nextReleaseRevision(source model.Release, contexts ...context.Context) (int, error) {
+	return nextReleaseRevisionFor(h.dbWithContext(firstContext(contexts)), source.ProjectID, source.ApplicationID, source.DeploymentTargetID)
 }
 
 func (h *Handlers) enqueueDeployRun(ctx context.Context, release model.Release) bool {
@@ -45,7 +45,7 @@ func (h *Handlers) enqueueDeployRun(ctx context.Context, release model.Release) 
 
 func (h *Handlers) validateReleaseForCreate(ctx *gin.Context, release *model.Release) bool {
 	var application model.Application
-	if err := h.db.First(&application, "id = ? and project_id = ?", release.ApplicationID, release.ProjectID).Error; err != nil {
+	if err := h.dbFor(ctx).First(&application, "id = ? and project_id = ?", release.ApplicationID, release.ProjectID).Error; err != nil {
 		writeError(ctx, http.StatusBadRequest, "应用不存在或不属于当前项目空间")
 		return false
 	}
@@ -54,7 +54,7 @@ func (h *Handlers) validateReleaseForCreate(ctx *gin.Context, release *model.Rel
 		return false
 	}
 	var target model.DeploymentTarget
-	if err := h.db.First(&target, "id = ? and project_id = ? and application_id = ? and enabled = ?", strings.TrimSpace(release.DeploymentTargetID), release.ProjectID, release.ApplicationID, true).Error; err != nil {
+	if err := h.dbFor(ctx).First(&target, "id = ? and project_id = ? and application_id = ? and enabled = ?", strings.TrimSpace(release.DeploymentTargetID), release.ProjectID, release.ApplicationID, true).Error; err != nil {
 		writeError(ctx, http.StatusBadRequest, "部署配置不存在或不可用")
 		return false
 	}
@@ -73,7 +73,7 @@ func (h *Handlers) validateReleaseForCreate(ctx *gin.Context, release *model.Rel
 		return true
 	}
 	var run model.BuildRun
-	if err := h.db.First(&run, "id = ? and project_id = ? and application_id = ?", release.BuildRunID, release.ProjectID, release.ApplicationID).Error; err != nil {
+	if err := h.dbFor(ctx).First(&run, "id = ? and project_id = ? and application_id = ?", release.BuildRunID, release.ProjectID, release.ApplicationID).Error; err != nil {
 		writeError(ctx, http.StatusBadRequest, "构建产物不存在或不属于当前应用")
 		return false
 	}
@@ -88,7 +88,7 @@ func (h *Handlers) validateReleaseForCreate(ctx *gin.Context, release *model.Rel
 	imageRef := strings.TrimSpace(run.ImageRef)
 	if imageRef == "" && strings.TrimSpace(run.TargetRegistryID) != "" {
 		var registry model.ArtifactRegistry
-		if err := h.db.First(&registry, "id = ?", run.TargetRegistryID).Error; err == nil {
+		if err := h.dbFor(ctx).First(&registry, "id = ?", run.TargetRegistryID).Error; err == nil {
 			imageRef = buildImageRef(registry, run)
 		}
 	}
@@ -106,7 +106,7 @@ func (h *Handlers) validateReleaseForCreate(ctx *gin.Context, release *model.Rel
 
 func (h *Handlers) findRelease(ctx *gin.Context) (model.Release, bool) {
 	var release model.Release
-	if err := h.db.First(&release, "id = ? and project_id = ?", ctx.Param("releaseId"), ctx.Param("projectId")).Error; err != nil {
+	if err := h.dbFor(ctx).First(&release, "id = ? and project_id = ?", ctx.Param("releaseId"), ctx.Param("projectId")).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "release not found")
 		return release, false
 	}

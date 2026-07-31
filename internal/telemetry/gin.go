@@ -1,0 +1,119 @@
+package telemetry
+
+import (
+	"log/slog"
+	"net/http"
+	"strconv"
+	"sync"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
+)
+
+var (
+	httpMetricsOnce     sync.Once
+	httpRequestCounter  metric.Int64Counter
+	httpRequestDuration metric.Float64Histogram
+	httpRequestInflight metric.Int64UpDownCounter
+)
+
+func GinTracingMiddleware(serviceName string) gin.HandlerFunc {
+	return otelgin.Middleware(serviceName)
+}
+
+// QueryTraceContextMiddleware bridges W3C context for browser EventSource and
+// WebSocket APIs, which cannot set arbitrary request headers. The private
+// query parameters are removed before routing and never reach access logs.
+func QueryTraceContextMiddleware() gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		query := ctx.Request.URL.Query()
+		for parameter, header := range map[string]string{
+			"_otel_traceparent": "traceparent",
+			"_otel_tracestate":  "tracestate",
+		} {
+			value := query.Get(parameter)
+			if value != "" && len(value) <= 512 {
+				ctx.Request.Header.Set(header, value)
+			}
+			query.Del(parameter)
+		}
+		ctx.Request.URL.RawQuery = query.Encode()
+		ctx.Next()
+	}
+}
+
+// GinAccessLogMiddleware emits one completion record at the HTTP boundary.
+// Query strings and request/response bodies are deliberately excluded.
+func GinAccessLogMiddleware() gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		httpMetricsOnce.Do(func() {
+			meter := otel.Meter("github.com/LiteyukiStudio/devops/internal/telemetry/http")
+			httpRequestCounter, _ = meter.Int64Counter("luna_devops_http_server_request_total",
+				metric.WithDescription("Total HTTP requests completed by Luna services."))
+			httpRequestDuration, _ = meter.Float64Histogram("luna_devops_http_server_request_duration_seconds",
+				metric.WithDescription("Duration of HTTP requests handled by Luna services."), metric.WithUnit("s"))
+			httpRequestInflight, _ = meter.Int64UpDownCounter("luna_devops_http_server_request_inflight",
+				metric.WithDescription("Current HTTP requests handled by Luna services."))
+		})
+		startedAt := time.Now()
+		route := ctx.FullPath()
+		if route == "" {
+			route = "unmatched"
+		}
+		inflightAttrs := metric.WithAttributes(
+			attribute.String("http.request.method", ctx.Request.Method),
+			attribute.String("http.route", route),
+		)
+		if httpRequestInflight != nil {
+			httpRequestInflight.Add(ctx.Request.Context(), 1, inflightAttrs)
+			defer httpRequestInflight.Add(ctx.Request.Context(), -1, inflightAttrs)
+		}
+		ctx.Next()
+		route = ctx.FullPath()
+		if route == "" {
+			route = "unmatched"
+		}
+		requestCtx := ctx.Request.Context()
+		statusClass := strconv.Itoa(ctx.Writer.Status()/100) + "xx"
+		requestMetricAttrs := metric.WithAttributes(
+			attribute.String("http.request.method", ctx.Request.Method),
+			attribute.String("http.route", route),
+			attribute.String("http.response.status_class", statusClass),
+		)
+		if httpRequestCounter != nil {
+			httpRequestCounter.Add(requestCtx, 1, requestMetricAttrs)
+		}
+		if httpRequestDuration != nil {
+			httpRequestDuration.Record(requestCtx, time.Since(startedAt).Seconds(), requestMetricAttrs)
+		}
+		span := trace.SpanFromContext(requestCtx)
+		span.SetAttributes(
+			attribute.String("http.route", route),
+			attribute.String("luna.request.id", RequestIDFromContext(requestCtx)),
+			attribute.Int("http.response.status_code", ctx.Writer.Status()),
+		)
+		attrs := []any{
+			slog.String("event.name", "http.request.completed"),
+			slog.String("http.request.method", ctx.Request.Method),
+			slog.String("http.route", route),
+			slog.Int("http.response.status_code", ctx.Writer.Status()),
+			slog.Int64("http.server.duration_ms", time.Since(startedAt).Milliseconds()),
+			slog.String("network.protocol.version", ctx.Request.Proto),
+		}
+		if ctx.Writer.Status() >= http.StatusInternalServerError {
+			Logger().ErrorContext(requestCtx, "HTTP request failed", attrs...)
+			return
+		}
+		if ctx.Writer.Status() >= http.StatusBadRequest {
+			attrs = append(attrs, slog.String("http.response.status_class", statusClass))
+			Logger().WarnContext(requestCtx, "HTTP request rejected", attrs...)
+			return
+		}
+		Logger().InfoContext(requestCtx, "HTTP request completed", attrs...)
+	}
+}

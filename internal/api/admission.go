@@ -1,9 +1,10 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -30,7 +32,7 @@ func (h *Handlers) GetAuthAdmissionPolicy(ctx *gin.Context) {
 	if !h.requirePlatformAdmin(ctx) {
 		return
 	}
-	policy, err := h.ensureAdmissionPolicy()
+	policy, err := h.ensureAdmissionPolicy(ctx.Request.Context())
 	if err != nil {
 		writeAdmissionPolicyUnavailable(ctx, err)
 		return
@@ -48,7 +50,7 @@ func (h *Handlers) UpdateAuthAdmissionPolicy(ctx *gin.Context) {
 		return
 	}
 
-	policy, err := h.ensureAdmissionPolicy()
+	policy, err := h.ensureAdmissionPolicy(ctx.Request.Context())
 	if err != nil {
 		writeAdmissionPolicyUnavailable(ctx, err)
 		return
@@ -61,15 +63,15 @@ func (h *Handlers) UpdateAuthAdmissionPolicy(ctx *gin.Context) {
 	policy.InvitedEmails = strings.Join(normalizeList(input.InvitedEmails, false), ",")
 	policy.DefaultRole = normalizeUserRole(input.DefaultRole)
 
-	if err := h.db.Save(&policy).Error; err != nil {
+	if err := h.dbFor(ctx).Save(&policy).Error; err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
 	ctx.JSON(http.StatusOK, admissionPolicyResponse(policy))
 }
 
-func (h *Handlers) evaluateAdmission(claims oidcIdentityClaims) error {
-	policy, err := h.ensureAdmissionPolicy()
+func (h *Handlers) evaluateAdmission(claims oidcIdentityClaims, contexts ...context.Context) error {
+	policy, err := h.ensureAdmissionPolicy(firstContext(contexts))
 	if err != nil {
 		return err
 	}
@@ -104,9 +106,9 @@ func (h *Handlers) evaluateAdmission(claims oidcIdentityClaims) error {
 	return errOIDCAdmissionDenied
 }
 
-func (h *Handlers) ensureAdmissionPolicy() (model.AuthAdmissionPolicy, error) {
+func (h *Handlers) ensureAdmissionPolicy(contexts ...context.Context) (model.AuthAdmissionPolicy, error) {
 	var policy model.AuthAdmissionPolicy
-	err := h.db.First(&policy, "id = ?", defaultAdmissionPolicyID).Error
+	err := h.dbWithContext(firstContext(contexts)).First(&policy, "id = ?", defaultAdmissionPolicyID).Error
 	if err == nil {
 		return policy, nil
 	}
@@ -121,9 +123,9 @@ func (h *Handlers) ensureAdmissionPolicy() (model.AuthAdmissionPolicy, error) {
 		RequireVerifiedOIDCEmail: true,
 		DefaultRole:              authz.PlatformRoleUser,
 	}
-	if err := h.db.Create(&policy).Error; err != nil {
+	if err := h.dbWithContext(firstContext(contexts)).Create(&policy).Error; err != nil {
 		var existing model.AuthAdmissionPolicy
-		if reloadErr := h.db.First(&existing, "id = ?", defaultAdmissionPolicyID).Error; reloadErr == nil {
+		if reloadErr := h.dbWithContext(firstContext(contexts)).First(&existing, "id = ?", defaultAdmissionPolicyID).Error; reloadErr == nil {
 			return existing, nil
 		}
 		return model.AuthAdmissionPolicy{}, fmt.Errorf("initialize authentication admission policy: %w", err)
@@ -133,7 +135,11 @@ func (h *Handlers) ensureAdmissionPolicy() (model.AuthAdmissionPolicy, error) {
 
 func writeAdmissionPolicyUnavailable(ctx *gin.Context, err error) {
 	requestID := requestID(ctx)
-	log.Printf("authentication admission policy unavailable request_id=%q: %v", requestID, err)
+	telemetry.Logger().ErrorContext(ctx.Request.Context(), "authentication admission policy unavailable",
+		slog.String("event.name", "auth.admission_policy.unavailable"),
+		slog.String("request_id", requestID),
+		slog.String("error.type", telemetry.ErrorType(err)),
+	)
 	writeErrorCode(
 		ctx,
 		http.StatusServiceUnavailable,
@@ -156,6 +162,10 @@ func admissionPolicyResponse(policy model.AuthAdmissionPolicy) gin.H {
 }
 
 func (h *Handlers) audit(userID, action, resource string, success bool, message string) {
+	h.auditWithContext(userID, action, resource, success, message, context.Background())
+}
+
+func (h *Handlers) auditWithContext(userID, action, resource string, success bool, message string, ctx context.Context) {
 	entry := map[string]any{
 		"id":         id.New("aud"),
 		"user_id":    strings.TrimSpace(userID),
@@ -165,8 +175,14 @@ func (h *Handlers) audit(userID, action, resource string, success bool, message 
 		"message":    message,
 		"created_at": time.Now(),
 	}
-	if err := h.db.Model(&model.AuditLog{}).Create(entry).Error; err != nil {
-		log.Printf("audit write failed user=%q action=%q resource=%q success=%t: %v", entry["user_id"], action, resource, success, err)
+	if err := h.dbWithContext(ctx).Model(&model.AuditLog{}).Create(entry).Error; err != nil {
+		telemetry.Logger().ErrorContext(ctx, "audit write failed",
+			slog.String("event.name", "audit.write.failed"),
+			slog.String("audit.action", action),
+			slog.String("resource.type", resource),
+			slog.Bool("outcome.success", success),
+			slog.String("error.type", telemetry.ErrorType(err)),
+		)
 	}
 }
 

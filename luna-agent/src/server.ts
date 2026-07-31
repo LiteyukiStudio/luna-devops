@@ -12,6 +12,7 @@ import { redact } from "./redaction.js"
 import type { ToolOrchestrator } from "./tools/orchestrator.js"
 import { presentEvent, presentTimeline } from "./timeline-presenter.js"
 import { agentRuntimeInternals, defaultRuntimeSettings } from "./runtime-settings.js"
+import { stableErrorCode as telemetryErrorCode, telemetryLog } from "./telemetry.js"
 
 declare module "fastify" {
   interface FastifyRequest { actor: ActorContext }
@@ -40,6 +41,16 @@ export function buildServer(input: {
     logger: input.config.NODE_ENV === "test" ? false : {
       level: "info",
       redact: { paths: ["req.headers.authorization", "req.headers.x-luna-actor-context", "*.apiKey", "*.token", "*.secret"], censor: "[REDACTED]" },
+      serializers: {
+        req(request) {
+          return {
+            method: request.method,
+            url: String(request.url ?? "").split("?", 1)[0] ?? "",
+            host: request.host,
+            remoteAddress: request.raw.socket.remoteAddress ?? "",
+          }
+        },
+      },
     },
     bodyLimit: 256 * 1024,
     requestIdHeader: "x-request-id",
@@ -309,6 +320,14 @@ export function buildServer(input: {
     const normalized = error instanceof Error ? error : new Error("ai.internal_error")
     const code = normalized instanceof z.ZodError ? "invalid_request" : stableCode(normalized.message)
     const status = code === "ai.unauthorized" ? 401 : code.endsWith("_not_found") ? 404 : code === "idempotency_conflict" ? 409 : 400
+    telemetryLog("agent.http.request_failed", "error", {
+      "http.request.method": request.method,
+      "http.route": request.routeOptions.url,
+      "http.response.status_code": status,
+      "request.id": request.id,
+      "error.type": normalized.name,
+      "error.code": telemetryErrorCode(normalized),
+    })
     request.log.warn({ err: { code, name: normalized.name }, requestId: request.id }, "agent request failed")
     void reply.code(status).send(errorBody(code, request.id))
   })

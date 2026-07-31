@@ -12,6 +12,7 @@ import (
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/LiteyukiStudio/devops/internal/provider/networkpolicy"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
+	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/hibiken/asynq"
 )
 
@@ -65,13 +66,24 @@ func (r *Runner) handleGatewayApply(ctx context.Context, task *asynq.Task) (err 
 	}
 
 	namespace := deploymentNamespace(project, environment)
-	if err := r.ensureProjectNamespace(ctx, namespace, project, environment); err != nil {
+	if err := workerStage(ctx, "gateway.ensure_namespace", func(stageCtx context.Context) error {
+		return r.ensureProjectNamespace(stageCtx, namespace, project, environment)
+	}); err != nil {
 		return err
 	}
-	if err := r.applyGatewayAPIResources(ctx, route, project, application, environment, namespace); err != nil {
+	if err := workerStage(ctx, "gateway.apply_resources", func(stageCtx context.Context) error {
+		return r.applyGatewayAPIResources(stageCtx, route, project, application, environment, namespace)
+	}); err != nil {
 		return err
 	}
-	certificateSnapshot, certificateConfigured, err := r.gatewayCertificateSnapshot(ctx, route, project, environment, namespace)
+	type certificateResult struct {
+		snapshot   kubeprovider.CertificateSnapshot
+		configured bool
+	}
+	certificate, err := workerStageValue(ctx, "gateway.observe_certificate", func(stageCtx context.Context) (certificateResult, error) {
+		snapshot, configured, observeErr := r.gatewayCertificateSnapshot(stageCtx, route, project, environment, namespace)
+		return certificateResult{snapshot: snapshot, configured: configured}, observeErr
+	})
 	if err != nil {
 		failedRoute := route
 		failedRoute.CertificateStatus = kubeprovider.CertificateFailed
@@ -79,6 +91,8 @@ func (r *Runner) handleGatewayApply(ctx context.Context, task *asynq.Task) (err 
 		r.emitCertificateEvent(ctx, failedRoute, kubeprovider.CertificateFailed, err.Error())
 		return err
 	}
+	certificateSnapshot := certificate.snapshot
+	certificateConfigured := certificate.configured
 	route.DNSStatus = r.gatewayDNSStatus(ctx, route)
 	if certificateConfigured {
 		cluster, clusterErr := r.runtimeClusterForEnvironment(environment)
@@ -241,7 +255,10 @@ func (r *Runner) gatewayServiceName(route model.GatewayRoute, application model.
 }
 
 func (r *Runner) gatewayDNSStatus(ctx context.Context, route model.GatewayRoute) string {
-	if err := dnsprovider.CheckCNAME(ctx, r.dnsResolver, route.Host, route.CNAMETarget); err != nil {
+	ctx, end := telemetry.StartOperation(ctx, "worker", "gateway.check_dns")
+	err := dnsprovider.CheckCNAME(ctx, r.dnsResolver, route.Host, route.CNAMETarget)
+	end(err)
+	if err != nil {
 		return "failed"
 	}
 	return "verified"

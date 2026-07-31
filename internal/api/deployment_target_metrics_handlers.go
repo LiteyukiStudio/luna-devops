@@ -24,11 +24,11 @@ func (h *Handlers) StreamDeploymentTargetMetrics(ctx *gin.Context) {
 		return
 	}
 	var target model.DeploymentTarget
-	if err := h.db.First(&target, "id = ? and project_id = ? and application_id = ?", ctx.Param("targetId"), project.ID, app.ID).Error; err != nil {
+	if err := h.dbFor(ctx).First(&target, "id = ? and project_id = ? and application_id = ?", ctx.Param("targetId"), project.ID, app.ID).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "deployment target not found")
 		return
 	}
-	client, unavailableReason := h.deploymentTargetMetricsClient(target)
+	client, unavailableReason := h.deploymentTargetMetricsClient(target, ctx.Request.Context())
 
 	writer := ctx.Writer
 	writer.Header().Set("Content-Type", "text/event-stream")
@@ -83,18 +83,18 @@ func (h *Handlers) writeDeploymentTargetMetricsEvent(ctx *gin.Context, client *k
 	writeSSE(ctx.Writer, "metrics", strconv.Itoa(sequence), response)
 }
 
-func (h *Handlers) deploymentTargetMetricsClient(target model.DeploymentTarget) (*kubeprovider.Client, string) {
+func (h *Handlers) deploymentTargetMetricsClient(target model.DeploymentTarget, contexts ...context.Context) (*kubeprovider.Client, string) {
 	var cluster model.RuntimeCluster
 	var err error
 	if clusterID := strings.TrimSpace(target.ClusterID); clusterID != "" {
-		err = h.db.First(&cluster, "id = ? and type in ?", clusterID, []string{"kubernetes", "k3s"}).Error
+		err = h.dbWithContext(firstContext(contexts)).First(&cluster, "id = ? and type in ?", clusterID, []string{"kubernetes", "k3s"}).Error
 	} else {
-		err = h.db.Where("scope = ? and type in ?", "global", []string{"kubernetes", "k3s"}).Order("is_default desc, created_at asc").First(&cluster).Error
+		err = h.dbWithContext(firstContext(contexts)).Where("scope = ? and type in ?", "global", []string{"kubernetes", "k3s"}).Order("is_default desc, created_at asc").First(&cluster).Error
 	}
 	if err != nil {
 		return nil, "cluster_unavailable"
 	}
-	kubeconfig := h.secrets.Resolve(cluster.KubeconfigRef)
+	kubeconfig := h.secrets.ResolveContext(firstContext(contexts), cluster.KubeconfigRef)
 	if strings.TrimSpace(kubeconfig) == "" {
 		return nil, "cluster_unavailable"
 	}

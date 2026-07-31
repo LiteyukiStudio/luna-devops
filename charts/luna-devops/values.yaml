@@ -77,6 +77,14 @@ metrics:
   agent:
     port: 9092
 
+observability:
+  # Empty keeps OpenTelemetry exporters disabled.
+  otlpEndpoint: ""
+  resourceAttributes: "deployment.environment.name=production"
+  # Optional Secret containing an OTEL_EXPORTER_OTLP_HEADERS value.
+  existingSecret: ""
+  headersKey: otlp-headers
+
 worker:
   replicaCount: 1
   image:

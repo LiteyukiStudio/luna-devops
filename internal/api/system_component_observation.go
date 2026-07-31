@@ -42,11 +42,11 @@ func (h *Handlers) observeSystemComponentInstallation(ctx context.Context, item 
 	}
 
 	var project model.Project
-	if err := h.db.First(&project, "id = ?", item.ProjectID).Error; err != nil {
+	if err := h.dbWithContext(ctx).First(&project, "id = ?", item.ProjectID).Error; err != nil {
 		return unavailableSystemComponent(item, "system_component.project_unavailable")
 	}
 	var target model.DeploymentTarget
-	if err := h.db.First(&target, "id = ? and project_id = ? and deleted_at is null", item.DeploymentTargetID, item.ProjectID).Error; err != nil {
+	if err := h.dbWithContext(ctx).First(&target, "id = ? and project_id = ? and deleted_at is null", item.DeploymentTargetID, item.ProjectID).Error; err != nil {
 		item.RuntimeStatus = observation.StatusNotFound
 		item.ObservationCode = "system_component.deployment_target_not_found"
 		return item

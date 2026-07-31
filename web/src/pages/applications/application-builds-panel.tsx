@@ -24,6 +24,7 @@ import { useBillingDisplay } from '@/lib/billing-display'
 import { buildVariableRecordToRows, buildVariableRowsToRecord, secretStateToRows } from '@/lib/build-variables'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { WORKFLOW_STATUS_REFETCH_INTERVAL_MS } from '@/lib/polling'
+import { createTracedEventSource } from '@/lib/telemetry'
 import { defaultBuildCpuRequest, defaultBuildMemoryRequest, defaultBuildTimeoutSeconds } from './application-build-defaults'
 import { ApplicationBuildLogPanel } from './application-build-log-panel'
 import { buildRunIdFromHash } from './application-build-navigation'
@@ -252,7 +253,7 @@ export function ApplicationBuildsPanel({ applicationId, applicationIdentifier, b
     if (!logJobId)
       return
     let active = true
-    const stream = new EventSource(buildJobLogsStreamUrl(projectId, logJobId, 0), { withCredentials: true })
+    const stream = createTracedEventSource(buildJobLogsStreamUrl(projectId, logJobId, 0), { withCredentials: true }, 'build.logs.stream')
     const handleChunk = (event: Event) => {
       try {
         const payload = JSON.parse((event as MessageEvent).data) as { content?: string }

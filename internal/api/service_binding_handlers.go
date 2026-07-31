@@ -15,8 +15,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func (h *Handlers) dependencyService() *dependency.Service {
-	return dependency.NewService(dependency.NewGormRepository(h.db))
+func (h *Handlers) dependencyService(contexts ...context.Context) *dependency.Service {
+	return dependency.NewService(dependency.NewGormRepository(h.dbWithContext(firstContext(contexts))))
 }
 
 func (h *Handlers) ListServiceBindings(ctx *gin.Context) {
@@ -26,7 +26,7 @@ func (h *Handlers) ListServiceBindings(ctx *gin.Context) {
 	pagination := dependencyPagination(ctx, map[string]bool{
 		"createdAt": true, "updatedAt": true, "protocol": true, "enabled": true,
 	}, "createdAt")
-	bindings, total, err := h.dependencyService().ListServiceBindings(ctx.Request.Context(), ctx.Param("projectId"), dependencyListOptions(pagination))
+	bindings, total, err := h.dependencyService(ctx.Request.Context()).ListServiceBindings(ctx.Request.Context(), ctx.Param("projectId"), dependencyListOptions(pagination))
 	if err != nil {
 		writeDependencyError(ctx, err)
 		return
@@ -43,13 +43,13 @@ func (h *Handlers) CreateServiceBinding(ctx *gin.Context) {
 	if !bindJSON(ctx, &input) {
 		return
 	}
-	binding, err := h.dependencyService().CreateServiceBinding(ctx.Request.Context(), project.ID, user.ID, input)
+	binding, err := h.dependencyService(ctx.Request.Context()).CreateServiceBinding(ctx.Request.Context(), project.ID, user.ID, input)
 	if err != nil {
-		h.audit(user.ID, "service_binding.create", project.ID, false, dependencyAuditMessage(err))
+		h.auditWithContext(user.ID, "service_binding.create", project.ID, false, dependencyAuditMessage(err), ctx.Request.Context())
 		writeDependencyError(ctx, err)
 		return
 	}
-	h.audit(user.ID, "service_binding.create", binding.ID, true, binding.SourceDeploymentTargetID)
+	h.auditWithContext(user.ID, "service_binding.create", binding.ID, true, binding.SourceDeploymentTargetID, ctx.Request.Context())
 	h.emitServiceBindingEvent(ctx.Request.Context(), user, project, binding, "created", notification.SeverityInfo)
 	ctx.JSON(http.StatusCreated, serviceBindingMutationResponseFor(binding))
 }
@@ -64,13 +64,13 @@ func (h *Handlers) UpdateServiceBinding(ctx *gin.Context) {
 		return
 	}
 	bindingID := ctx.Param("bindingId")
-	binding, err := h.dependencyService().UpdateServiceBinding(ctx.Request.Context(), project.ID, bindingID, input)
+	binding, err := h.dependencyService(ctx.Request.Context()).UpdateServiceBinding(ctx.Request.Context(), project.ID, bindingID, input)
 	if err != nil {
-		h.audit(user.ID, "service_binding.update", bindingID, false, dependencyAuditMessage(err))
+		h.auditWithContext(user.ID, "service_binding.update", bindingID, false, dependencyAuditMessage(err), ctx.Request.Context())
 		writeDependencyError(ctx, err)
 		return
 	}
-	h.audit(user.ID, "service_binding.update", binding.ID, true, binding.SourceDeploymentTargetID)
+	h.auditWithContext(user.ID, "service_binding.update", binding.ID, true, binding.SourceDeploymentTargetID, ctx.Request.Context())
 	h.emitServiceBindingEvent(ctx.Request.Context(), user, project, binding, "updated", notification.SeverityInfo)
 	ctx.JSON(http.StatusOK, serviceBindingMutationResponseFor(binding))
 }
@@ -81,13 +81,13 @@ func (h *Handlers) DeleteServiceBinding(ctx *gin.Context) {
 		return
 	}
 	bindingID := ctx.Param("bindingId")
-	binding, err := h.dependencyService().DeleteServiceBinding(ctx.Request.Context(), project.ID, bindingID)
+	binding, err := h.dependencyService(ctx.Request.Context()).DeleteServiceBinding(ctx.Request.Context(), project.ID, bindingID)
 	if err != nil {
-		h.audit(user.ID, "service_binding.delete", bindingID, false, dependencyAuditMessage(err))
+		h.auditWithContext(user.ID, "service_binding.delete", bindingID, false, dependencyAuditMessage(err), ctx.Request.Context())
 		writeDependencyError(ctx, err)
 		return
 	}
-	h.audit(user.ID, "service_binding.delete", binding.ID, true, binding.SourceDeploymentTargetID)
+	h.auditWithContext(user.ID, "service_binding.delete", binding.ID, true, binding.SourceDeploymentTargetID, ctx.Request.Context())
 	h.emitServiceBindingEvent(ctx.Request.Context(), user, project, binding, "deleted", notification.SeverityInfo)
 	ctx.JSON(http.StatusOK, deletedServiceBindingMutationResponse(binding))
 }
@@ -98,7 +98,7 @@ func (h *Handlers) CheckServiceBinding(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	service := h.dependencyService()
+	service := h.dependencyService(ctx.Request.Context())
 	binding, err := service.ServiceBinding(ctx.Request.Context(), project.ID, ctx.Param("bindingId"))
 	if err != nil {
 		writeDependencyError(ctx, err)
@@ -111,7 +111,7 @@ func (h *Handlers) CheckServiceBinding(ctx *gin.Context) {
 	}
 	if result.Status == observation.StatusDeclared {
 		var targetTarget model.DeploymentTarget
-		if err := h.db.WithContext(ctx).First(&targetTarget, "id = ? and project_id = ?", binding.TargetDeploymentTargetID, project.ID).Error; err != nil {
+		if err := h.dbFor(ctx).WithContext(ctx).First(&targetTarget, "id = ? and project_id = ?", binding.TargetDeploymentTargetID, project.ID).Error; err != nil {
 			writeErrorCode(ctx, http.StatusNotFound, dependency.CodeNotFound, "target deployment target not found")
 			return
 		}
@@ -176,7 +176,7 @@ func (h *Handlers) ListProjectTopologyEdges(ctx *gin.Context) {
 	pagination := dependencyPagination(ctx, map[string]bool{
 		"createdAt": true, "updatedAt": true, "relationType": true, "protocol": true,
 	}, "createdAt")
-	edges, total, err := h.dependencyService().ListTopologyEdges(ctx.Request.Context(), ctx.Param("projectId"), dependencyListOptions(pagination))
+	edges, total, err := h.dependencyService(ctx.Request.Context()).ListTopologyEdges(ctx.Request.Context(), ctx.Param("projectId"), dependencyListOptions(pagination))
 	if err != nil {
 		writeDependencyError(ctx, err)
 		return
@@ -193,13 +193,13 @@ func (h *Handlers) CreateProjectTopologyEdge(ctx *gin.Context) {
 	if !bindJSON(ctx, &input) {
 		return
 	}
-	edge, err := h.dependencyService().CreateTopologyEdge(ctx.Request.Context(), project.ID, user.ID, input)
+	edge, err := h.dependencyService(ctx.Request.Context()).CreateTopologyEdge(ctx.Request.Context(), project.ID, user.ID, input)
 	if err != nil {
-		h.audit(user.ID, "project_topology_edge.create", project.ID, false, dependencyAuditMessage(err))
+		h.auditWithContext(user.ID, "project_topology_edge.create", project.ID, false, dependencyAuditMessage(err), ctx.Request.Context())
 		writeDependencyError(ctx, err)
 		return
 	}
-	h.audit(user.ID, "project_topology_edge.create", edge.ID, true, edge.RelationType)
+	h.auditWithContext(user.ID, "project_topology_edge.create", edge.ID, true, edge.RelationType, ctx.Request.Context())
 	ctx.JSON(http.StatusCreated, edge)
 }
 
@@ -213,13 +213,13 @@ func (h *Handlers) UpdateProjectTopologyEdge(ctx *gin.Context) {
 		return
 	}
 	edgeID := ctx.Param("edgeId")
-	edge, err := h.dependencyService().UpdateTopologyEdge(ctx.Request.Context(), project.ID, edgeID, input)
+	edge, err := h.dependencyService(ctx.Request.Context()).UpdateTopologyEdge(ctx.Request.Context(), project.ID, edgeID, input)
 	if err != nil {
-		h.audit(user.ID, "project_topology_edge.update", edgeID, false, dependencyAuditMessage(err))
+		h.auditWithContext(user.ID, "project_topology_edge.update", edgeID, false, dependencyAuditMessage(err), ctx.Request.Context())
 		writeDependencyError(ctx, err)
 		return
 	}
-	h.audit(user.ID, "project_topology_edge.update", edge.ID, true, edge.RelationType)
+	h.auditWithContext(user.ID, "project_topology_edge.update", edge.ID, true, edge.RelationType, ctx.Request.Context())
 	ctx.JSON(http.StatusOK, edge)
 }
 
@@ -229,13 +229,13 @@ func (h *Handlers) DeleteProjectTopologyEdge(ctx *gin.Context) {
 		return
 	}
 	edgeID := ctx.Param("edgeId")
-	edge, err := h.dependencyService().DeleteTopologyEdge(ctx.Request.Context(), project.ID, edgeID)
+	edge, err := h.dependencyService(ctx.Request.Context()).DeleteTopologyEdge(ctx.Request.Context(), project.ID, edgeID)
 	if err != nil {
-		h.audit(user.ID, "project_topology_edge.delete", edgeID, false, dependencyAuditMessage(err))
+		h.auditWithContext(user.ID, "project_topology_edge.delete", edgeID, false, dependencyAuditMessage(err), ctx.Request.Context())
 		writeDependencyError(ctx, err)
 		return
 	}
-	h.audit(user.ID, "project_topology_edge.delete", edge.ID, true, edge.RelationType)
+	h.auditWithContext(user.ID, "project_topology_edge.delete", edge.ID, true, edge.RelationType, ctx.Request.Context())
 	ctx.Status(http.StatusNoContent)
 }
 

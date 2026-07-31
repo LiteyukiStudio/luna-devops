@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -37,7 +38,7 @@ func (h *Handlers) GetGatewayTrafficStatus(ctx *gin.Context) {
 	}
 
 	var installations []model.SystemComponentInstallation
-	if err := h.db.Where("component_id = ?", systemComponentGatewayTrafficProbe).Order("created_at desc").Find(&installations).Error; err != nil {
+	if err := h.dbFor(ctx).Where("component_id = ?", systemComponentGatewayTrafficProbe).Order("created_at desc").Find(&installations).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -59,7 +60,7 @@ func (h *Handlers) GetGatewayTrafficStatus(ctx *gin.Context) {
 	runtimeStatus, observationCode, observedAt := summarizeGatewayTrafficProbeObservations(installations)
 
 	var latestUsage model.BillingUsageRecord
-	usageResult := h.db.
+	usageResult := h.dbFor(ctx).
 		Where("resource_type = ? and meter = ? and status = ?", billing.ResourceTypeGateway, "gateway.egress_gib", "settled").
 		Order("period_end desc").
 		First(&latestUsage)
@@ -149,7 +150,7 @@ func (h *Handlers) CreateGatewayTrafficUsage(ctx *gin.Context) {
 	var component model.SystemComponentInstallation
 	componentAuthenticated := false
 	if token := bearerTokenFromHeader(ctx.GetHeader("Authorization")); token != "" {
-		if item, ok := h.systemComponentForBearerToken(token, systemComponentGatewayTrafficProbe); ok {
+		if item, ok := h.systemComponentForBearerToken(token, systemComponentGatewayTrafficProbe, ctx.Request.Context(), ctx.Request.Context()); ok {
 			component = item
 			componentAuthenticated = true
 			actorID = item.ID
@@ -190,15 +191,15 @@ func (h *Handlers) CreateGatewayTrafficUsage(ctx *gin.Context) {
 		return
 	}
 	var route model.GatewayRoute
-	if err := h.db.First(&route, "id = ? and delete_status = ?", routeID, "active").Error; err != nil {
+	if err := h.dbFor(ctx).First(&route, "id = ? and delete_status = ?", routeID, "active").Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "gateway route not found")
 		return
 	}
-	if componentAuthenticated && !h.gatewayRouteBelongsToRuntimeCluster(route, component.RuntimeClusterID) {
+	if componentAuthenticated && !h.gatewayRouteBelongsToRuntimeCluster(route, component.RuntimeClusterID, ctx.Request.Context()) {
 		writeErrorCode(ctx, http.StatusForbidden, "billing.gateway_route_cluster_forbidden", "gateway route does not belong to the probe runtime cluster")
 		return
 	}
-	err = (billing.Service{DB: h.db}).SettleGatewayTrafficWindow(billing.GatewayTrafficUsageInput{
+	err = (billing.Service{DB: h.dbFor(ctx)}).SettleGatewayTrafficWindow(billing.GatewayTrafficUsageInput{
 		Route:         route,
 		ResponseBytes: input.ResponseBytes,
 		RequestCount:  input.RequestCount,
@@ -214,13 +215,13 @@ func (h *Handlers) CreateGatewayTrafficUsage(ctx *gin.Context) {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	h.audit(actorID, "billing.gateway_traffic", route.ID, true, "")
+	h.auditWithContext(actorID, "billing.gateway_traffic", route.ID, true, "", ctx.Request.Context())
 	ctx.JSON(http.StatusCreated, gin.H{"status": "settled"})
 }
 
 func (h *Handlers) CreateGatewayTrafficProbeHello(ctx *gin.Context) {
 	token := bearerTokenFromHeader(ctx.GetHeader("Authorization"))
-	_, ok := h.systemComponentForBearerToken(token, systemComponentGatewayTrafficProbe)
+	_, ok := h.systemComponentForBearerToken(token, systemComponentGatewayTrafficProbe, ctx.Request.Context(), ctx.Request.Context())
 	if !ok {
 		writeError(ctx, http.StatusUnauthorized, "gateway traffic probe token is invalid")
 		return
@@ -236,18 +237,18 @@ func bearerTokenFromHeader(header string) string {
 	return strings.TrimSpace(header[len("Bearer "):])
 }
 
-func (h *Handlers) gatewayRouteBelongsToRuntimeCluster(route model.GatewayRoute, clusterID string) bool {
+func (h *Handlers) gatewayRouteBelongsToRuntimeCluster(route model.GatewayRoute, clusterID string, contexts ...context.Context) bool {
 	clusterID = strings.TrimSpace(clusterID)
 	if clusterID == "" {
 		return false
 	}
 	var target model.DeploymentTarget
-	if err := h.db.Select("id", "cluster_id").First(&target, "id = ? and project_id = ?", route.DeploymentTargetID, route.ProjectID).Error; err != nil {
+	if err := h.dbWithContext(firstContext(contexts)).Select("id", "cluster_id").First(&target, "id = ? and project_id = ?", route.DeploymentTargetID, route.ProjectID).Error; err != nil {
 		return false
 	}
 	targetClusterID := strings.TrimSpace(target.ClusterID)
 	if targetClusterID == "" {
-		targetClusterID = h.defaultRuntimeClusterID()
+		targetClusterID = h.defaultRuntimeClusterID(firstContext(contexts))
 	}
 	return targetClusterID == clusterID
 }

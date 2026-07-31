@@ -2,7 +2,7 @@ package config
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"net/netip"
 	"os"
 	"strconv"
@@ -15,6 +15,12 @@ import (
 )
 
 var envLoadOnce sync.Once
+
+// LoadEnvironment loads the configured dotenv file before process-wide
+// infrastructure such as telemetry is initialized. Load remains idempotent.
+func LoadEnvironment() {
+	loadEnvFile()
+}
 
 type Config struct {
 	APIAddr                     string
@@ -45,7 +51,7 @@ type Config struct {
 }
 
 func Load() Config {
-	loadEnvFile()
+	LoadEnvironment()
 
 	return Config{
 		APIAddr:                     env("API_ADDR", ":8080"),
@@ -90,7 +96,10 @@ func (c Config) ValidateRedis() error {
 func trustedProxyCIDRs(raw string) []string {
 	values, err := parseTrustedProxyCIDRs(raw)
 	if err != nil {
-		log.Printf("invalid TRUSTED_PROXY_CIDRS: %v; forwarded client addresses will not be trusted", err)
+		slog.Warn("trusted proxy configuration rejected",
+			"event.name", "config.trusted_proxy.invalid",
+			"error.type", fmt.Sprintf("%T", err),
+		)
 		return nil
 	}
 	return values
@@ -153,12 +162,16 @@ func loadEnvFiles(paths ...string) {
 		}
 		if err := godotenv.Load(path); err != nil {
 			if RuntimeMode() == "development" {
-				log.Printf("development mode: env file %s not loaded: %v; using process environment", path, err)
+				slog.Debug("environment file not loaded; using process environment",
+					"event.name", "config.env_file.not_loaded",
+					"file.path", path,
+					"error.type", fmt.Sprintf("%T", err),
+				)
 			}
 			continue
 		}
 		if RuntimeMode() == "development" {
-			log.Printf("development mode: loaded env file %s", path)
+			slog.Debug("environment file loaded", "event.name", "config.env_file.loaded", "file.path", path)
 		}
 	}
 }

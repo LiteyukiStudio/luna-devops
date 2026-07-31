@@ -134,7 +134,7 @@ func (h *Handlers) ListRepositoryBindings(ctx *gin.Context) {
 	}
 
 	var bindings []repositoryBindingResponse
-	query := h.db.Table("repository_bindings").
+	query := h.dbFor(ctx).Table("repository_bindings").
 		Select("repository_bindings.*, git_providers.name as provider_name, git_providers.type as provider_type, git_accounts.username as account_username, users.email as account_owner_email, users.name as account_owner_name, applications.name as application_name").
 		Joins("join git_providers on git_providers.id = repository_bindings.git_provider_id and git_providers.deleted_at is null").
 		Joins("join git_accounts on git_accounts.id = repository_bindings.git_account_id and git_accounts.deleted_at is null").
@@ -199,7 +199,7 @@ func (h *Handlers) CreateRepositoryBinding(ctx *gin.Context) {
 		return
 	}
 
-	if err := h.db.Create(&binding).Error; err != nil {
+	if err := h.dbFor(ctx).Create(&binding).Error; err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -223,7 +223,7 @@ func (h *Handlers) UpdateRepositoryBinding(ctx *gin.Context) {
 	}
 
 	var existing model.RepositoryBinding
-	if err := h.db.First(&existing, "id = ? and project_id = ?", ctx.Param("bindingId"), ctx.Param("projectId")).Error; err != nil {
+	if err := h.dbFor(ctx).First(&existing, "id = ? and project_id = ?", ctx.Param("bindingId"), ctx.Param("projectId")).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "repository binding not found")
 		return
 	}
@@ -258,7 +258,7 @@ func (h *Handlers) UpdateRepositoryBinding(ctx *gin.Context) {
 	}
 	existing.CredentialRef = ""
 
-	if err := h.db.Save(&existing).Error; err != nil {
+	if err := h.dbFor(ctx).Save(&existing).Error; err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -278,11 +278,11 @@ func (h *Handlers) DeleteRepositoryBinding(ctx *gin.Context) {
 	}
 
 	var binding model.RepositoryBinding
-	if err := h.db.First(&binding, "id = ? and project_id = ?", ctx.Param("bindingId"), ctx.Param("projectId")).Error; err != nil {
+	if err := h.dbFor(ctx).First(&binding, "id = ? and project_id = ?", ctx.Param("bindingId"), ctx.Param("projectId")).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "repository binding not found")
 		return
 	}
-	if err := h.db.Delete(&binding).Error; err != nil {
+	if err := h.dbFor(ctx).Delete(&binding).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -306,7 +306,7 @@ func (h *Handlers) configureRepositoryWebhookFromRequest(ctx *gin.Context) {
 		return
 	}
 	var binding model.RepositoryBinding
-	if err := h.db.First(&binding, "id = ? and project_id = ?", ctx.Param("bindingId"), ctx.Param("projectId")).Error; err != nil {
+	if err := h.dbFor(ctx).First(&binding, "id = ? and project_id = ?", ctx.Param("bindingId"), ctx.Param("projectId")).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "repository binding not found")
 		return
 	}
@@ -324,7 +324,7 @@ func (h *Handlers) configureRepositoryWebhookFromRequest(ctx *gin.Context) {
 
 func (h *Handlers) ReceiveGitWebhook(ctx *gin.Context) {
 	var binding model.RepositoryBinding
-	if err := h.db.First(&binding, "id = ?", ctx.Param("bindingId")).Error; err != nil {
+	if err := h.dbFor(ctx).First(&binding, "id = ?", ctx.Param("bindingId")).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "repository binding not found")
 		return
 	}
@@ -333,7 +333,7 @@ func (h *Handlers) ReceiveGitWebhook(ctx *gin.Context) {
 		writeError(ctx, http.StatusBadRequest, "invalid webhook body")
 		return
 	}
-	if !verifyGitWebhookSignature(ctx.Request.Header, body, h.secrets.Resolve(binding.WebhookSecret)) {
+	if !verifyGitWebhookSignature(ctx.Request.Header, body, h.secrets.ResolveContext(ctx.Request.Context(), binding.WebhookSecret)) {
 		writeError(ctx, http.StatusUnauthorized, "invalid webhook signature")
 		return
 	}
@@ -347,7 +347,7 @@ func (h *Handlers) ReceiveGitWebhook(ctx *gin.Context) {
 	binding.LastEvent = event
 	binding.LastCommitSHA = commitSHA
 	binding.LastWebhookAt = &now
-	if err := h.db.Save(&binding).Error; err != nil {
+	if err := h.dbFor(ctx).Save(&binding).Error; err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -385,17 +385,17 @@ func (h *Handlers) enqueueBuildRunsForWebhook(ctx *gin.Context, binding model.Re
 		return result
 	}
 	var account model.GitAccount
-	if err := h.db.First(&account, "id = ?", binding.GitAccountID).Error; err != nil {
+	if err := h.dbFor(ctx).First(&account, "id = ?", binding.GitAccountID).Error; err != nil {
 		result.IgnoredReason = "git_account_missing"
 		return result
 	}
 	var actor model.User
-	if err := h.db.First(&actor, "id = ?", account.UserID).Error; err != nil {
+	if err := h.dbFor(ctx).First(&actor, "id = ?", account.UserID).Error; err != nil {
 		result.IgnoredReason = "actor_missing"
 		return result
 	}
 	var targets []model.DeploymentTarget
-	if err := h.db.Where(
+	if err := h.dbFor(ctx).Where(
 		"project_id = ? and application_id = ? and repository_binding_id = ? and enabled = ? and delete_status in ?",
 		binding.ProjectID,
 		binding.ApplicationID,
@@ -415,7 +415,7 @@ func (h *Handlers) enqueueBuildRunsForWebhook(ctx *gin.Context, binding model.Re
 			continue
 		}
 		result.Matched++
-		if err := h.prepareBuildRunRequest(actor, &run); err != nil {
+		if err := h.prepareBuildRunRequest(actor, &run, ctx.Request.Context()); err != nil {
 			result.Failed++
 			continue
 		}
@@ -510,7 +510,7 @@ func (h *Handlers) repositoryBindingFromInput(ctx *gin.Context, userID string, i
 }
 
 func (h *Handlers) ensureRepositoryBindingUnique(ctx *gin.Context, binding model.RepositoryBinding, excludeID string) bool {
-	query := h.db.Model(&model.RepositoryBinding{}).
+	query := h.dbFor(ctx).Model(&model.RepositoryBinding{}).
 		Where("project_id = ? and application_id = ? and git_provider_id = ? and lower(owner) = ? and lower(repo) = ?",
 			binding.ProjectID,
 			binding.ApplicationID,
@@ -560,27 +560,27 @@ func (h *Handlers) tryConfigureRepositoryWebhook(ctx *gin.Context, user model.Us
 func (h *Handlers) configureRepositoryWebhook(ctx *gin.Context, user model.User, binding *model.RepositoryBinding, writeClientErrors bool) error {
 	client, err := h.gitClientForUserBinding(ctx, user, *binding, writeClientErrors)
 	if err != nil {
-		h.audit(user.ID, "git_webhook.create", binding.ID, false, "git client unavailable")
+		h.auditWithContext(user.ID, "git_webhook.create", binding.ID, false, "git client unavailable", ctx.Request.Context())
 		return err
 	}
 	secret := randomHex(32)
 	result, err := client.CreateWebhook(ctx.Request.Context(), binding.Owner, binding.Repo, h.gitWebhookURL(ctx, binding.ID), secret)
 	if err != nil {
-		h.audit(user.ID, "git_webhook.create", binding.ID, false, "upstream create failed")
+		h.auditWithContext(user.ID, "git_webhook.create", binding.ID, false, "upstream create failed", ctx.Request.Context())
 		return err
 	}
 	binding.WebhookEnabled = true
 	binding.WebhookID = result.ID
-	binding.WebhookSecret = h.secrets.Store(secret, user.ID, "repository_binding:"+binding.ID+":webhook")
+	binding.WebhookSecret = h.secrets.StoreContext(ctx.Request.Context(), secret, user.ID, "repository_binding:"+binding.ID+":webhook")
 	if binding.WebhookSecret == "" {
-		h.audit(user.ID, "git_webhook.create", binding.ID, false, "secret store failed")
+		h.auditWithContext(user.ID, "git_webhook.create", binding.ID, false, "secret store failed", ctx.Request.Context())
 		return fmt.Errorf("webhook secret store failed")
 	}
-	if err := h.db.Save(binding).Error; err != nil {
-		h.audit(user.ID, "git_webhook.create", binding.ID, false, "save failed")
+	if err := h.dbFor(ctx).Save(binding).Error; err != nil {
+		h.auditWithContext(user.ID, "git_webhook.create", binding.ID, false, "save failed", ctx.Request.Context())
 		return err
 	}
-	h.audit(user.ID, "git_webhook.create", binding.ID, true, binding.WebhookID)
+	h.auditWithContext(user.ID, "git_webhook.create", binding.ID, true, binding.WebhookID, ctx.Request.Context())
 	return nil
 }
 
@@ -604,36 +604,36 @@ func (h *Handlers) gitClientForUserBinding(ctx *gin.Context, user model.User, bi
 				return gitprovider.Client{}, fmt.Errorf("%w: git account refresh failed", errGitClientResponseWritten)
 			}
 		}
-		token := h.secrets.Resolve(account.AccessTokenRef)
+		token := h.secrets.ResolveContext(ctx.Request.Context(), account.AccessTokenRef)
 		if token == "" {
 			writeError(ctx, http.StatusBadRequest, "git account has no access token")
 			return gitprovider.Client{}, fmt.Errorf("%w: git account has no access token", errGitClientResponseWritten)
 		}
-		return gitprovider.NewClientWithPolicy(provider, token, h.egressPolicyForUser(user)), nil
+		return gitprovider.NewClientWithPolicy(provider, token, h.egressPolicyForUser(user, ctx.Request.Context())), nil
 	}
 
 	var account model.GitAccount
-	if err := h.db.First(&account, "id = ?", strings.TrimSpace(binding.GitAccountID)).Error; err != nil {
+	if err := h.dbFor(ctx).First(&account, "id = ?", strings.TrimSpace(binding.GitAccountID)).Error; err != nil {
 		return gitprovider.Client{}, fmt.Errorf("git account unavailable: %w", err)
 	}
-	if !h.canUseScopedResourceByID(user, account.Scope, account.OwnerRef, scopedResourceGitAccount, account.ID) {
+	if !h.canUseScopedResourceByID(user, account.Scope, account.OwnerRef, scopedResourceGitAccount, account.ID, ctx.Request.Context()) {
 		return gitprovider.Client{}, fmt.Errorf("git account forbidden")
 	}
 	var provider model.GitProvider
-	if err := h.db.First(&provider, "id = ? and enabled = ?", strings.TrimSpace(binding.GitProviderID), true).Error; err != nil {
+	if err := h.dbFor(ctx).First(&provider, "id = ? and enabled = ?", strings.TrimSpace(binding.GitProviderID), true).Error; err != nil {
 		return gitprovider.Client{}, fmt.Errorf("git provider unavailable: %w", err)
 	}
 	if account.ProviderID != provider.ID {
 		return gitprovider.Client{}, fmt.Errorf("git provider mismatch")
 	}
-	if !h.canUseScopedResourceByID(user, provider.Scope, provider.OwnerRef, scopedResourceGitProvider, provider.ID) {
+	if !h.canUseScopedResourceByID(user, provider.Scope, provider.OwnerRef, scopedResourceGitProvider, provider.ID, ctx.Request.Context()) {
 		return gitprovider.Client{}, fmt.Errorf("git provider forbidden")
 	}
-	token := h.secrets.Resolve(account.AccessTokenRef)
+	token := h.secrets.ResolveContext(ctx.Request.Context(), account.AccessTokenRef)
 	if token == "" {
 		return gitprovider.Client{}, fmt.Errorf("git account has no access token")
 	}
-	return gitprovider.NewClientWithPolicy(provider, token, h.egressPolicyForUser(user)), nil
+	return gitprovider.NewClientWithPolicy(provider, token, h.egressPolicyForUser(user, ctx.Request.Context())), nil
 }
 
 func (h *Handlers) gitClientForCurrentUserAccount(ctx *gin.Context, accountID string) (gitprovider.Client, bool) {
@@ -655,10 +655,10 @@ func (h *Handlers) gitClientForCurrentUserAccount(ctx *gin.Context, accountID st
 			return gitprovider.Client{}, false
 		}
 	}
-	token := h.secrets.Resolve(account.AccessTokenRef)
+	token := h.secrets.ResolveContext(ctx.Request.Context(), account.AccessTokenRef)
 	if token == "" {
 		writeError(ctx, http.StatusBadRequest, "git account has no access token")
 		return gitprovider.Client{}, false
 	}
-	return gitprovider.NewClientWithPolicy(provider, token, h.egressPolicyForUser(user)), true
+	return gitprovider.NewClientWithPolicy(provider, token, h.egressPolicyForUser(user, ctx.Request.Context())), true
 }

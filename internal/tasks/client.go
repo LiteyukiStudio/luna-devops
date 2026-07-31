@@ -4,11 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/redisconfig"
+	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/hibiken/asynq"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -111,6 +118,12 @@ type EnqueuePolicy struct {
 	Unique    time.Duration
 }
 
+var (
+	taskProducerMetricsOnce sync.Once
+	taskEnqueuedTotal       metric.Int64Counter
+	taskEnqueueDuration     metric.Float64Histogram
+)
+
 func NewClient(redisAddr string) *Client {
 	return NewClientWithRedis(redisconfig.Options{Addr: redisAddr})
 }
@@ -150,9 +163,7 @@ func (c *Client) EnqueueBuildRunAfter(ctx context.Context, payload BuildRunPaylo
 	}
 
 	policy := PolicyForType(TypeBuildRun)
-	return c.client.EnqueueContext(
-		ctx,
-		task,
+	return c.enqueue(ctx, task, policy.Queue,
 		asynq.Queue(policy.Queue),
 		asynq.MaxRetry(policy.MaxRetry),
 		asynq.Timeout(policy.Timeout),
@@ -216,15 +227,110 @@ func (c *Client) EnqueueGitAccountRefresh(ctx context.Context, payload GitAccoun
 }
 
 func (c *Client) enqueueWithPolicy(ctx context.Context, task *asynq.Task, policy EnqueuePolicy) (*asynq.TaskInfo, error) {
-	return c.client.EnqueueContext(
-		ctx,
-		task,
+	return c.enqueue(ctx, task, policy.Queue,
 		asynq.Queue(policy.Queue),
 		asynq.MaxRetry(policy.MaxRetry),
 		asynq.Timeout(policy.Timeout),
 		asynq.Retention(policy.Retention),
 		asynq.Unique(policy.Unique),
 	)
+}
+
+func (c *Client) enqueue(ctx context.Context, task *asynq.Task, queue string, options ...asynq.Option) (info *asynq.TaskInfo, err error) {
+	initTaskProducerMetrics()
+	operation := taskOperationName(task.Type())
+	ctx, end := telemetry.StartOperationWithKind(ctx, "task", "enqueue."+operation, trace.SpanKindProducer,
+		attribute.String("messaging.system", "asynq"),
+		attribute.String("messaging.destination.name", queue),
+		attribute.String("messaging.operation.type", "send"),
+		attribute.String("task.type", task.Type()),
+	)
+	defer func() { end(err) }()
+
+	startedAt := time.Now()
+	task = taskWithTraceHeaders(ctx, task)
+	info, err = c.client.EnqueueContext(ctx, task, options...)
+	outcome := telemetry.ErrorOutcome(err)
+	metricOptions := metric.WithAttributes(
+		attribute.String("task.type", task.Type()),
+		attribute.String("task.queue", queue),
+		attribute.String("outcome", outcome),
+	)
+	if taskEnqueuedTotal != nil {
+		taskEnqueuedTotal.Add(ctx, 1, metricOptions)
+	}
+	if taskEnqueueDuration != nil {
+		taskEnqueueDuration.Record(ctx, time.Since(startedAt).Seconds(), metricOptions)
+	}
+	if err == nil {
+		telemetry.Logger().InfoContext(ctx, "worker task enqueued",
+			slog.String("event.name", "task.enqueued"),
+			slog.String("task.type", task.Type()),
+			slog.String("task.queue", queue),
+			slog.String("task.id", info.ID),
+		)
+	} else {
+		telemetry.Logger().ErrorContext(ctx, "worker task enqueue failed",
+			slog.String("event.name", "task.enqueue.failed"),
+			slog.String("task.type", task.Type()),
+			slog.String("task.queue", queue),
+			slog.String("error.type", telemetry.ErrorType(err)),
+		)
+	}
+	return info, err
+}
+
+func initTaskProducerMetrics() {
+	taskProducerMetricsOnce.Do(func() {
+		meter := otel.Meter("github.com/LiteyukiStudio/devops/internal/tasks")
+		taskEnqueuedTotal, _ = meter.Int64Counter("luna_devops_worker_task_enqueued_total",
+			metric.WithDescription("Total worker tasks accepted or rejected by the queue client."))
+		taskEnqueueDuration, _ = meter.Float64Histogram("luna_devops_worker_task_enqueue_duration_seconds",
+			metric.WithDescription("Duration of worker queue enqueue operations."), metric.WithUnit("s"))
+	})
+}
+
+func taskWithTraceHeaders(ctx context.Context, task *asynq.Task) *asynq.Task {
+	headers := task.Headers()
+	if headers == nil {
+		headers = make(map[string]string)
+	}
+	for key, value := range telemetry.InjectMap(ctx) {
+		headers[key] = value
+	}
+	return asynq.NewTaskWithHeaders(task.Type(), taskPayloadWithEnqueueTimestamp(task.Payload()), headers)
+}
+
+func taskPayloadWithEnqueueTimestamp(payload []byte) []byte {
+	var document map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &document); err != nil {
+		return payload
+	}
+	var envelope TaskEnvelope
+	if rawEnvelope, ok := document["envelope"]; ok {
+		if err := json.Unmarshal(rawEnvelope, &envelope); err != nil {
+			return payload
+		}
+	}
+	envelope.CreatedAt = time.Now().UTC()
+	encodedEnvelope, err := json.Marshal(envelope)
+	if err != nil {
+		return payload
+	}
+	document["envelope"] = encodedEnvelope
+	encodedPayload, err := json.Marshal(document)
+	if err != nil {
+		return payload
+	}
+	return encodedPayload
+}
+
+func taskOperationName(taskType string) string {
+	name := strings.NewReplacer(":", ".", "/", ".", " ", "_").Replace(strings.TrimSpace(taskType))
+	if name == "" {
+		return "unknown"
+	}
+	return name
 }
 
 func PolicyForType(taskType string) EnqueuePolicy {

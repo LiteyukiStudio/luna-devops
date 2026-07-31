@@ -3,13 +3,14 @@ package worker
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/model"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
+	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/hibiken/asynq"
+	"go.opentelemetry.io/otel/attribute"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -18,9 +19,9 @@ func (r *Runner) syncBuildJobStatus(ctx context.Context) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 	for {
-		if err := r.markExpiredBuildJobsLost(); err != nil {
-			log.Printf("build job status sync failed: %v", err)
-		}
+		reconcileCtx, end := telemetry.StartOperation(ctx, "worker", "build.reconcile_expired")
+		err := r.scoped(reconcileCtx).markExpiredBuildJobsLost()
+		end(err)
 		select {
 		case <-ctx.Done():
 			return
@@ -85,8 +86,7 @@ func (r *Runner) markExpiredBuildJobsLost() error {
 }
 
 func (r *Runner) handleSyncStatus(ctx context.Context, task *asynq.Task) error {
-	log.Printf("received task type=%s payload=%s", task.Type(), string(task.Payload()))
-	if err := r.syncReleaseRuntimeStatus(ctx); err != nil {
+	if err := workerStage(ctx, "runtime.sync_releases", r.syncReleaseRuntimeStatus); err != nil {
 		return err
 	}
 	r.retryPendingResourceCleanups(ctx)
@@ -106,9 +106,9 @@ func (r *Runner) syncReleaseRuntimeStatus(ctx context.Context) error {
 		return err
 	}
 	for _, release := range releases {
-		if err := r.syncReleaseRuntimeSnapshot(ctx, release); err != nil {
-			log.Printf("release runtime status sync skipped release=%s: %v", release.ID, err)
-		}
+		_ = workerStage(ctx, "runtime.observe_release", func(stageCtx context.Context) error {
+			return r.syncReleaseRuntimeSnapshot(stageCtx, release)
+		}, attribute.String("release.id", release.ID))
 	}
 	return nil
 }
@@ -137,17 +137,17 @@ func (r *Runner) syncReleaseRuntimeSnapshot(ctx context.Context, release model.R
 	if err != nil {
 		if isKubernetesNotFound(err) {
 			message := fmt.Sprintf("deployment_missing: Kubernetes %s %s/%s not found", deploymentTargetWorkloadKind(deploymentTarget), namespace, resourceName)
-			return r.markReleaseRolloutFailed(release, message)
+			return r.markReleaseRolloutFailed(ctx, release, message)
 		}
 		return err
 	}
-	r.recordDeploymentRuntimeMetric(deploymentTarget, environment, snapshot)
+	r.recordDeploymentRuntimeMetric(snapshot)
 	if snapshot.Phase == kubeprovider.DeploymentFailed {
-		return r.markReleaseRolloutFailed(release, firstNonEmpty(snapshot.Message, "Deployment runtime check failed"))
+		return r.markReleaseRolloutFailed(ctx, release, firstNonEmpty(snapshot.Message, "Deployment runtime check failed"))
 	}
 	if snapshot.Phase == kubeprovider.DeploymentSucceeded {
 		r.appendReleaseLog(release, firstNonEmpty(snapshot.Message, "Deployment rollout completed"))
-		return r.finishDeployRelease(release, "succeeded", firstNonEmpty(snapshot.Message, "Deployment rollout completed"))
+		return r.finishDeployRelease(ctx, release, "succeeded", firstNonEmpty(snapshot.Message, "Deployment rollout completed"))
 	}
 	return r.db.Model(&model.Release{}).Where("id = ?", release.ID).Updates(map[string]any{
 		"status":  "running",
@@ -164,8 +164,8 @@ func deploymentTargetWorkloadKind(target model.DeploymentTarget) string {
 	}
 }
 
-func (r *Runner) markReleaseRolloutFailed(release model.Release, message string) error {
-	if err := r.finishDeployRelease(release, "failed", message); err != nil {
+func (r *Runner) markReleaseRolloutFailed(ctx context.Context, release model.Release, message string) error {
+	if err := r.finishDeployRelease(ctx, release, "failed", message); err != nil {
 		return err
 	}
 	r.appendReleaseLog(release, "发布收敛失败: "+message)

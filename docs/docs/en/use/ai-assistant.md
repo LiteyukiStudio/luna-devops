@@ -25,6 +25,8 @@ In the assistant you can:
 
 An empty new conversation is not saved repeatedly. Conversations are named automatically until you rename one manually; a manually chosen title is never overwritten.
 
+Each message shows its timestamp underneath. Hover anywhere over the message, including the timestamp area, to copy it; your own messages can also be sent again unchanged. These actions remain visible on touch devices.
+
 ## Queries and operations
 
 The assistant has the same platform permissions as you. It cannot read or change a project space or resource that your account cannot access.

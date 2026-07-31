@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -18,7 +19,7 @@ func (h *Handlers) ListBuildVariableSets(ctx *gin.Context) {
 	}
 	projectID := strings.TrimSpace(ctx.Query("projectId"))
 
-	query := h.db.Model(&model.BuildVariableSet{})
+	query := h.dbFor(ctx).Model(&model.BuildVariableSet{})
 	var visible bool
 	query, visible = h.applyScopedResourceVisibility(ctx, query, scopedResourceBuildVariableSet, user, projectID)
 	if !visible {
@@ -42,16 +43,16 @@ func (h *Handlers) ListBuildVariableSets(ctx *gin.Context) {
 			writeError(ctx, http.StatusInternalServerError, err.Error())
 			return
 		}
-		h.attachBuildVariableSetProjects(sets)
-		ctx.JSON(http.StatusOK, paginatedResponse(h.buildVariableSetResponsesForUser(user, sets), total, pagination))
+		h.attachBuildVariableSetProjects(sets, ctx.Request.Context())
+		ctx.JSON(http.StatusOK, paginatedResponse(h.buildVariableSetResponsesForUser(user, sets, ctx.Request.Context()), total, pagination))
 		return
 	}
 	if err := query.Order("created_at desc").Find(&sets).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	h.attachBuildVariableSetProjects(sets)
-	ctx.JSON(http.StatusOK, h.buildVariableSetResponsesForUser(user, sets))
+	h.attachBuildVariableSetProjects(sets, ctx.Request.Context())
+	ctx.JSON(http.StatusOK, h.buildVariableSetResponsesForUser(user, sets, ctx.Request.Context()))
 }
 
 func (h *Handlers) CreateBuildVariableSet(ctx *gin.Context) {
@@ -72,11 +73,11 @@ func (h *Handlers) CreateBuildVariableSet(ctx *gin.Context) {
 		return
 	}
 	set.CreatedBy = user.ID
-	if err := h.saveBuildVariableSet(set); err != nil {
+	if err := h.saveBuildVariableSet(set, ctx.Request.Context()); err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	ctx.JSON(http.StatusCreated, h.buildVariableSetResponseForUser(user, set))
+	ctx.JSON(http.StatusCreated, h.buildVariableSetResponseForUser(user, set, ctx.Request.Context()))
 }
 
 func (h *Handlers) UpdateBuildVariableSet(ctx *gin.Context) {
@@ -85,7 +86,7 @@ func (h *Handlers) UpdateBuildVariableSet(ctx *gin.Context) {
 		return
 	}
 	var existing model.BuildVariableSet
-	if err := h.db.First(&existing, "id = ?", ctx.Param("setId")).Error; err != nil {
+	if err := h.dbFor(ctx).First(&existing, "id = ?", ctx.Param("setId")).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "build variable set not found")
 		return
 	}
@@ -110,11 +111,11 @@ func (h *Handlers) UpdateBuildVariableSet(ctx *gin.Context) {
 	existing.Variables = next.Variables
 	existing.SecretRefs = next.SecretRefs
 	existing.Enabled = next.Enabled
-	if err := h.saveBuildVariableSet(existing); err != nil {
+	if err := h.saveBuildVariableSet(existing, ctx.Request.Context()); err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	ctx.JSON(http.StatusOK, h.buildVariableSetResponseForUser(user, existing))
+	ctx.JSON(http.StatusOK, h.buildVariableSetResponseForUser(user, existing, ctx.Request.Context()))
 }
 
 func (h *Handlers) DeleteBuildVariableSet(ctx *gin.Context) {
@@ -123,14 +124,14 @@ func (h *Handlers) DeleteBuildVariableSet(ctx *gin.Context) {
 		return
 	}
 	var set model.BuildVariableSet
-	if err := h.db.First(&set, "id = ?", ctx.Param("setId")).Error; err != nil {
+	if err := h.dbFor(ctx).First(&set, "id = ?", ctx.Param("setId")).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "build variable set not found")
 		return
 	}
 	if !h.canManageScopedResourceByID(ctx, user, set.Scope, set.OwnerRef, scopedResourceBuildVariableSet, set.ID, "无权维护该变量和密钥") {
 		return
 	}
-	if err := h.db.Transaction(func(tx *gorm.DB) error {
+	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
 		var targets []model.DeploymentTarget
 		if err := tx.Select("id", "build_variable_set_ids").Find(&targets).Error; err != nil {
 			return err
@@ -198,8 +199,8 @@ func (h *Handlers) buildVariableSetFromInput(ctx *gin.Context, user model.User, 
 	}, true
 }
 
-func (h *Handlers) saveBuildVariableSet(set model.BuildVariableSet) error {
-	return h.db.Transaction(func(tx *gorm.DB) error {
+func (h *Handlers) saveBuildVariableSet(set model.BuildVariableSet, contexts ...context.Context) error {
+	return h.dbWithContext(firstContext(contexts)).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Save(&set).Error; err != nil {
 			return err
 		}
@@ -207,8 +208,8 @@ func (h *Handlers) saveBuildVariableSet(set model.BuildVariableSet) error {
 	})
 }
 
-func (h *Handlers) attachBuildVariableSetProjects(sets []model.BuildVariableSet) {
-	projectMap := h.scopedResourceProjectIDMap(scopedResourceBuildVariableSet, buildVariableSetModelIDs(sets))
+func (h *Handlers) attachBuildVariableSetProjects(sets []model.BuildVariableSet, contexts ...context.Context) {
+	projectMap := h.scopedResourceProjectIDMap(scopedResourceBuildVariableSet, buildVariableSetModelIDs(sets), firstContext(contexts))
 	for index := range sets {
 		sets[index].ProjectIDs = projectMap[sets[index].ID]
 	}
@@ -244,7 +245,7 @@ func (h *Handlers) buildVariableSecretRefsFromInput(ctx *gin.Context, user model
 			writeError(ctx, http.StatusBadRequest, "构建密钥值过长")
 			return nil, false
 		}
-		output[key] = h.secrets.Store(value, user.ID, "build_variable_set:"+setID+":"+key)
+		output[key] = h.secrets.StoreContext(ctx.Request.Context(), value, user.ID, "build_variable_set:"+setID+":"+key)
 	}
 	return output, true
 }

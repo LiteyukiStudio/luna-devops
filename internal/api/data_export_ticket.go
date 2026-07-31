@@ -54,7 +54,7 @@ func (h *Handlers) requireDataExportAuthorizationBinding(ctx *gin.Context, user 
 	subject, ok := h.currentStepUpSubject(ctx, user)
 	if !ok {
 		if requestUsesBearerToken(ctx) {
-			h.audit(user.ID, "mfa.step_up_required", stepUpPurposeDataExport, false, "personal access tokens cannot authorize data export")
+			h.auditWithContext(user.ID, "mfa.step_up_required", stepUpPurposeDataExport, false, "personal access tokens cannot authorize data export", ctx.Request.Context())
 			writeErrorCode(ctx, http.StatusForbidden, "mfa.session_required", "个人令牌不能用于数据导出二次验证，请使用 Luna CLI OAuth 登录")
 		} else {
 			writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.session.expired")
@@ -96,7 +96,7 @@ func (h *Handlers) requireDataExportAuthorizationBinding(ctx *gin.Context, user 
 	}
 	now := time.Now()
 	var assertion model.StepUpAssertion
-	if err := h.db.First(
+	if err := h.dbFor(ctx).First(
 		&assertion,
 		"user_id = ? and session_id = ? and purpose = ? and idle_expires_at > ? and absolute_expires_at > ?",
 		user.ID,
@@ -206,7 +206,7 @@ func (h *Handlers) dataExportAuthorizationFromTicket(ctx context.Context, value 
 		return deploymentTargetDataExportAuthorization{}, false
 	}
 
-	db := h.db.WithContext(ctx)
+	db := h.dbWithContext(ctx).WithContext(ctx)
 	var user model.User
 	if err := db.First(&user, "id = ? and disabled = ?", binding.UserID, false).Error; err != nil {
 		return deploymentTargetDataExportAuthorization{}, false

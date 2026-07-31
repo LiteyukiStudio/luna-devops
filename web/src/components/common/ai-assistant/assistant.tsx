@@ -459,7 +459,9 @@ export function AiAssistant() {
                   expectedVersion: block.expectedVersion!,
                 })
               }}
+              onResend={message => sendTurn.mutate({ conversationId: selectedConversationId, message })}
               onRetry={() => void timeline.refetch()}
+              resendDisabled={Boolean(activeRunId || sendingSelected)}
             />
             <AIAssistantComposer
               activeRun={Boolean(activeRunId)}

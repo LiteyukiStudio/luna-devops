@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -15,6 +15,7 @@ import (
 
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/config"
+	"github.com/LiteyukiStudio/devops/internal/telemetry"
 )
 
 type ListMode string
@@ -94,15 +95,23 @@ func ReservedIPBlockListText() string {
 }
 
 func NewHTTPClient(policy EgressPolicy, timeout time.Duration) *http.Client {
+	return NewHTTPClientWithProxy(policy, timeout, nil)
+}
+
+func NewHTTPClientWithProxy(policy EgressPolicy, timeout time.Duration, proxyURL *url.URL) *http.Client {
 	if timeout <= 0 {
 		timeout = 15 * time.Second
 	}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = nil
+	if proxyURL != nil {
+		transport.Proxy = http.ProxyURL(proxyURL)
+	}
 	dialer := &net.Dialer{Timeout: timeout}
 	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
 		return dialContextWithPolicy(ctx, network, address, policy, net.DefaultResolver.LookupIPAddr, dialer.DialContext)
 	}
-	return &http.Client{Timeout: timeout, Transport: transport}
+	return telemetry.InstrumentHTTPClient(&http.Client{Timeout: timeout, Transport: transport})
 }
 
 type lookupIPAddrFunc func(context.Context, string) ([]net.IPAddr, error)
@@ -385,7 +394,10 @@ func egressDebug(format string, args ...any) {
 	if !egressDebugEnabled() {
 		return
 	}
-	log.Printf("[DEBUG] egress."+format, args...)
+	telemetry.Logger().Debug("egress policy decision",
+		slog.String("event.name", "security.egress.decision"),
+		slog.String("decision.detail", fmt.Sprintf(format, args...)),
+	)
 }
 
 func egressDebugEnabled() bool {

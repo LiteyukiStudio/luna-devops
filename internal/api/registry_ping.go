@@ -8,7 +8,7 @@ import (
 )
 
 func (h *Handlers) pingRegistry(parent context.Context, user model.User, registry model.ArtifactRegistry) registryTestResult {
-	credentialInput := h.registryCredentialInput(user, registry)
+	credentialInput := h.registryCredentialInput(parent, user, registry)
 	result := registryprovider.Ping(parent, registry.Endpoint, h.egressPolicyForUser(user), credentialInput)
 	return registryTestResult{
 		Success:    result.Success,

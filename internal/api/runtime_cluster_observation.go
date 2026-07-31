@@ -22,7 +22,7 @@ func (h *Handlers) observeRuntimeCluster(ctx context.Context, cluster model.Runt
 		cluster.ObservationCode = "runtime_cluster.kubeconfig_not_configured"
 		return cluster
 	}
-	kubeconfig := strings.TrimSpace(h.secrets.Resolve(cluster.KubeconfigRef))
+	kubeconfig := strings.TrimSpace(h.secrets.ResolveContext(ctx, cluster.KubeconfigRef))
 	if kubeconfig == "" {
 		cluster.Status = observation.StatusNotConfigured
 		cluster.ObservationCode = "runtime_cluster.kubeconfig_unavailable"

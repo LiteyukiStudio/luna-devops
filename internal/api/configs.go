@@ -473,7 +473,7 @@ func (h *Handlers) UpdateConfigs(ctx *gin.Context) {
 		return
 	}
 	if apiKeyInput != "" {
-		ref := h.secrets.Store(apiKeyInput, user.ID, "ai_provider:api_key")
+		ref := h.secrets.StoreContext(ctx.Request.Context(), apiKeyInput, user.ID, "ai_provider:api_key")
 		if ref == "" {
 			writeErrorCode(ctx, http.StatusInternalServerError, "ai.secret_store_failed", "AI Provider API key could not be stored")
 			return
@@ -481,7 +481,7 @@ func (h *Handlers) UpdateConfigs(ctx *gin.Context) {
 		values["ai.provider.api_key"] = ref
 	}
 	if proxyPoolInput != "" {
-		ref := h.secrets.Store(proxyPoolInput, user.ID, "ai_web:proxy_pool")
+		ref := h.secrets.StoreContext(ctx.Request.Context(), proxyPoolInput, user.ID, "ai_web:proxy_pool")
 		if ref == "" {
 			writeErrorCode(ctx, http.StatusInternalServerError, "ai.secret_store_failed", "AI web proxy pool could not be stored")
 			return
@@ -503,7 +503,7 @@ func (h *Handlers) UpdateConfigs(ctx *gin.Context) {
 			return
 		}
 		targetStepUpEnabled = targetEnabled
-		if targetStepUpEnabled && !h.hasMFAEnabledPlatformAdmin() {
+		if targetStepUpEnabled && !h.hasMFAEnabledPlatformAdmin(ctx.Request.Context()) {
 			writeErrorCode(ctx, http.StatusConflict, "mfa.admin_enrollment_required", "至少一名可用平台管理员绑定 MFA 后才能开启全局二次验证")
 			return
 		}
@@ -522,7 +522,7 @@ func (h *Handlers) UpdateConfigs(ctx *gin.Context) {
 		}
 	}
 
-	err = h.db.Transaction(func(tx *gorm.DB) error {
+	err = h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := lockStepUpPolicyMutation(tx); err != nil {
 			return err
 		}
@@ -565,7 +565,7 @@ func (h *Handlers) UpdateConfigs(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusInternalServerError, "config.update_failed", "configuration update failed")
 		return
 	}
-	h.configs.reload(h.db)
+	h.configs.reload(h.dbFor(ctx))
 
 	ctx.JSON(http.StatusOK, h.configs.get(knownConfigKeys()))
 }

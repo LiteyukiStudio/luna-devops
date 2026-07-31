@@ -35,6 +35,7 @@ describe("OpenAICompatibleProvider streaming", () => {
       { type: "reasoning_summary_delta", delta: "检查上下文" },
       { type: "message_delta", delta: "正在" },
       { type: "message_delta", delta: "诊断" },
+      { type: "tool_call_delta" },
       { type: "completed", usage: { inputTokens: 12, outputTokens: 8 }, toolCalls: [{ operationId: "getBuild", arguments: { id: "build_a" } }] },
     ])
     const requestBody = fetchMock.mock.calls[0]?.[1]?.body

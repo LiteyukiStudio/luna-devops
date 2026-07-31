@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"net/url"
 	"strings"
@@ -23,7 +24,7 @@ func (h *Handlers) ListGitProviders(ctx *gin.Context) {
 		return
 	}
 
-	query := h.db.Model(&model.GitProvider{})
+	query := h.dbFor(ctx).Model(&model.GitProvider{})
 	if user.Role != authz.PlatformRoleAdmin {
 		query = query.Where("enabled = ?", true)
 	}
@@ -52,14 +53,14 @@ func (h *Handlers) ListGitProviders(ctx *gin.Context) {
 			writeError(ctx, http.StatusInternalServerError, err.Error())
 			return
 		}
-		ctx.JSON(http.StatusOK, paginatedResponse(h.gitProviderResponsesForUser(user, providers), total, pagination))
+		ctx.JSON(http.StatusOK, paginatedResponse(h.gitProviderResponsesForUser(user, providers, ctx.Request.Context()), total, pagination))
 		return
 	}
 	if err := query.Order("created_at desc").Find(&providers).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	ctx.JSON(http.StatusOK, h.gitProviderResponsesForUser(user, providers))
+	ctx.JSON(http.StatusOK, h.gitProviderResponsesForUser(user, providers, ctx.Request.Context()))
 }
 
 func (h *Handlers) StartGitOAuth(ctx *gin.Context) {
@@ -107,9 +108,9 @@ func (h *Handlers) StartGitOAuth(ctx *gin.Context) {
 		return
 	}
 	debugLog("git.oauth.start state saved providerId=%s userId=%s stateHash=%s ttl=%s redirectPath=%s frontendOrigin=%s callbackOrigin=%s", provider.ID, user.ID, shortDebugHash(state), gitOAuthStateTTL, oauthState.RedirectPath, oauthState.FrontendOrigin, oauthState.CallbackOrigin)
-	h.audit(user.ID, "git.oauth.start", provider.ID, true, oauthState.RedirectPath)
+	h.auditWithContext(user.ID, "git.oauth.start", provider.ID, true, oauthState.RedirectPath, ctx.Request.Context())
 
-	clientSecret := h.secrets.Resolve(provider.ClientSecretRef)
+	clientSecret := h.secrets.ResolveContext(ctx.Request.Context(), provider.ClientSecretRef)
 	debugLog("git.oauth.start secret resolved providerId=%s clientSecretSet=%t clientSecretRefSet=%t", provider.ID, strings.TrimSpace(clientSecret) != "", strings.TrimSpace(provider.ClientSecretRef) != "")
 	oauthConfig, err := gitprovider.OAuthConfig(provider, gitOAuthCallbackURL(callbackBaseURL), clientSecret)
 	if err != nil {
@@ -118,7 +119,7 @@ func (h *Handlers) StartGitOAuth(ctx *gin.Context) {
 		return
 	}
 	debugLog("git.oauth.start oauth config providerId=%s authURL=%s tokenURL=%s redirectURL=%s scopes=%s clientIdSet=%t", provider.ID, oauthConfig.Endpoint.AuthURL, oauthConfig.Endpoint.TokenURL, oauthConfig.RedirectURL, strings.Join(oauthConfig.Scopes, ","), strings.TrimSpace(oauthConfig.ClientID) != "")
-	if _, err := h.egressPolicyForUser(user).ValidateURL(oauthConfig.Endpoint.AuthURL); err != nil {
+	if _, err := h.egressPolicyForUser(user, ctx.Request.Context()).ValidateURL(oauthConfig.Endpoint.AuthURL); err != nil {
 		debugLog("git.oauth.start auth url blocked providerId=%s authURL=%s err=%v", provider.ID, oauthConfig.Endpoint.AuthURL, err)
 		writeError(ctx, http.StatusForbidden, "Git OAuth 授权地址不符合访问策略")
 		return
@@ -158,24 +159,24 @@ func (h *Handlers) CompleteGitOAuth(ctx *gin.Context) {
 	debugLog("git.oauth.complete state consumed stateHash=%s providerId=%s userId=%s redirectPath=%s frontendOrigin=%s callbackOrigin=%s", shortDebugHash(plainState), oauthState.ProviderID, oauthState.UserID, oauthState.RedirectPath, oauthState.FrontendOrigin, oauthState.CallbackOrigin)
 
 	var stateUser model.User
-	if err := h.db.First(&stateUser, "id = ? and disabled = ?", oauthState.UserID, false).Error; err != nil {
+	if err := h.dbFor(ctx).First(&stateUser, "id = ? and disabled = ?", oauthState.UserID, false).Error; err != nil {
 		debugLog("git.oauth.complete state user missing userId=%s providerId=%s err=%v", oauthState.UserID, oauthState.ProviderID, err)
-		h.audit(oauthState.UserID, "git.oauth.complete", oauthState.ProviderID, false, "user disabled or missing")
+		h.auditWithContext(oauthState.UserID, "git.oauth.complete", oauthState.ProviderID, false, "user disabled or missing", ctx.Request.Context())
 		ctx.Redirect(http.StatusFound, "/login?error=git_oauth_user_invalid")
 		return
 	}
 	debugLog("git.oauth.complete state user loaded userId=%s email=%s role=%s", stateUser.ID, stateUser.Email, stateUser.Role)
 
 	var provider model.GitProvider
-	if err := h.db.First(&provider, "id = ? and enabled = ?", oauthState.ProviderID, true).Error; err != nil {
+	if err := h.dbFor(ctx).First(&provider, "id = ? and enabled = ?", oauthState.ProviderID, true).Error; err != nil {
 		debugLog("git.oauth.complete provider missing providerId=%s err=%v", oauthState.ProviderID, err)
 		ctx.Redirect(http.StatusFound, "/login?error=git_oauth_provider_disabled")
 		return
 	}
 	debugLog("git.oauth.complete provider loaded providerId=%s type=%s baseUrl=%s scope=%s ownerRef=%s authType=%s", provider.ID, provider.Type, provider.BaseURL, provider.Scope, provider.OwnerRef, provider.AuthType)
-	if !h.canUseScopedResourceByID(stateUser, provider.Scope, provider.OwnerRef, scopedResourceGitProvider, provider.ID) {
+	if !h.canUseScopedResourceByID(stateUser, provider.Scope, provider.OwnerRef, scopedResourceGitProvider, provider.ID, ctx.Request.Context()) {
 		debugLog("git.oauth.complete provider forbidden providerId=%s userId=%s", provider.ID, stateUser.ID)
-		h.audit(oauthState.UserID, "git.oauth.complete", oauthState.ProviderID, false, "provider access denied")
+		h.auditWithContext(oauthState.UserID, "git.oauth.complete", oauthState.ProviderID, false, "provider access denied", ctx.Request.Context())
 		ctx.Redirect(http.StatusFound, "/login?error=git_oauth_provider_forbidden")
 		return
 	}
@@ -183,7 +184,7 @@ func (h *Handlers) CompleteGitOAuth(ctx *gin.Context) {
 	if callbackBaseURL == "" {
 		callbackBaseURL = baseURL
 	}
-	clientSecret := h.secrets.Resolve(provider.ClientSecretRef)
+	clientSecret := h.secrets.ResolveContext(ctx.Request.Context(), provider.ClientSecretRef)
 	debugLog("git.oauth.complete secret resolved providerId=%s clientSecretSet=%t clientSecretRefSet=%t", provider.ID, strings.TrimSpace(clientSecret) != "", strings.TrimSpace(provider.ClientSecretRef) != "")
 	oauthConfig, err := gitprovider.OAuthConfig(provider, gitOAuthCallbackURL(callbackBaseURL), clientSecret)
 	if err != nil {
@@ -197,31 +198,31 @@ func (h *Handlers) CompleteGitOAuth(ctx *gin.Context) {
 	token, err := oauthConfig.Exchange(egressCtx, code)
 	if err != nil {
 		debugLog("git.oauth.complete code exchange failed providerId=%s tokenURL=%s redirectURL=%s err=%v", provider.ID, oauthConfig.Endpoint.TokenURL, oauthConfig.RedirectURL, err)
-		h.audit(oauthState.UserID, "git.oauth.complete", provider.ID, false, "code exchange failed")
+		h.auditWithContext(oauthState.UserID, "git.oauth.complete", provider.ID, false, "code exchange failed", ctx.Request.Context())
 		ctx.Redirect(http.StatusFound, "/login?error=git_oauth_code_invalid")
 		return
 	}
 	debugLog("git.oauth.complete code exchange succeeded providerId=%s accessTokenSet=%t refreshTokenSet=%t expiry=%s tokenType=%s", provider.ID, token.AccessToken != "", token.RefreshToken != "", token.Expiry.Format(time.RFC3339), token.TokenType)
 
-	client := gitprovider.NewClientWithPolicy(provider, token.AccessToken, h.egressPolicyForUser(stateUser))
+	client := gitprovider.NewClientWithPolicy(provider, token.AccessToken, h.egressPolicyForUser(stateUser, ctx.Request.Context()))
 	debugLog("git.oauth.complete loading git user providerId=%s type=%s baseUrl=%s", provider.ID, provider.Type, provider.BaseURL)
 	gitUser, err := client.CurrentUser(egressCtx)
 	if err != nil {
 		debugLog("git.oauth.complete git user failed providerId=%s err=%v", provider.ID, err)
-		h.audit(oauthState.UserID, "git.oauth.complete", provider.ID, false, "git user failed")
+		h.auditWithContext(oauthState.UserID, "git.oauth.complete", provider.ID, false, "git user failed", ctx.Request.Context())
 		ctx.Redirect(http.StatusFound, "/login?error=git_oauth_user_failed")
 		return
 	}
 	debugLog("git.oauth.complete git user loaded providerId=%s externalUserId=%s username=%s", provider.ID, gitUser.ExternalID(), gitUser.Username())
-	account, err := h.upsertGitAccountFromOAuth(oauthState.UserID, provider, gitUser, token)
+	account, err := h.upsertGitAccountFromOAuth(oauthState.UserID, provider, gitUser, token, ctx.Request.Context())
 	if err != nil {
 		debugLog("git.oauth.complete account save failed providerId=%s userId=%s externalUserId=%s err=%v", provider.ID, oauthState.UserID, gitUser.ID, err)
-		h.audit(oauthState.UserID, "git.oauth.complete", provider.ID, false, "save failed")
+		h.auditWithContext(oauthState.UserID, "git.oauth.complete", provider.ID, false, "save failed", ctx.Request.Context())
 		ctx.Redirect(http.StatusFound, "/login?error=git_oauth_save_failed")
 		return
 	}
 	debugLog("git.oauth.complete account saved accountId=%s providerId=%s userId=%s username=%s", account.ID, provider.ID, account.UserID, account.Username)
-	h.audit(stateUser.ID, "git.oauth.complete", provider.ID, true, account.ID)
+	h.auditWithContext(stateUser.ID, "git.oauth.complete", provider.ID, true, account.ID, ctx.Request.Context())
 
 	redirectTarget := buildFrontendRedirect(baseURL, oauthState.FrontendOrigin, oauthState.RedirectPath, account.ID)
 	debugLog("git.oauth.complete redirecting accountId=%s target=%s", account.ID, redirectTarget)
@@ -320,7 +321,7 @@ func (h *Handlers) CreateGitProvider(ctx *gin.Context) {
 		Enabled:    input.Enabled,
 	}
 	if strings.TrimSpace(input.ClientSecret) != "" {
-		provider.ClientSecretRef = h.secrets.Store(input.ClientSecret, user.ID, "git_provider:"+provider.ID)
+		provider.ClientSecretRef = h.secrets.StoreContext(ctx.Request.Context(), input.ClientSecret, user.ID, "git_provider:"+provider.ID)
 	}
 	if provider.Name == "" {
 		writeError(ctx, http.StatusBadRequest, "请输入 Git Provider 名称")
@@ -330,11 +331,11 @@ func (h *Handlers) CreateGitProvider(ctx *gin.Context) {
 		provider.BaseURL = defaultGitBaseURL(provider.Type)
 	}
 
-	if err := h.saveGitProvider(provider); err != nil {
+	if err := h.saveGitProvider(provider, ctx.Request.Context()); err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	h.audit(user.ID, "git_provider.create", provider.ID, true, provider.Type)
+	h.auditWithContext(user.ID, "git_provider.create", provider.ID, true, provider.Type, ctx.Request.Context())
 	ctx.JSON(http.StatusCreated, gitProviderResponse(provider))
 }
 
@@ -349,7 +350,7 @@ func (h *Handlers) UpdateGitProvider(ctx *gin.Context) {
 	}
 
 	var provider model.GitProvider
-	if err := h.db.First(&provider, "id = ?", ctx.Param("providerId")).Error; err != nil {
+	if err := h.dbFor(ctx).First(&provider, "id = ?", ctx.Param("providerId")).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "git provider not found")
 		return
 	}
@@ -389,18 +390,18 @@ func (h *Handlers) UpdateGitProvider(ctx *gin.Context) {
 	provider.AuthType = normalizeGitAuthType(input.AuthType)
 	provider.ClientID = strings.TrimSpace(input.ClientID)
 	if strings.TrimSpace(input.ClientSecret) != "" {
-		provider.ClientSecretRef = h.secrets.Store(input.ClientSecret, user.ID, "git_provider:"+provider.ID)
+		provider.ClientSecretRef = h.secrets.StoreContext(ctx.Request.Context(), input.ClientSecret, user.ID, "git_provider:"+provider.ID)
 	}
 	provider.Enabled = input.Enabled
 	if provider.Name == "" {
 		writeError(ctx, http.StatusBadRequest, "请输入 Git Provider 名称")
 		return
 	}
-	if err := h.saveGitProvider(provider); err != nil {
+	if err := h.saveGitProvider(provider, ctx.Request.Context()); err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	h.audit(user.ID, "git_provider.update", provider.ID, true, provider.Type)
+	h.auditWithContext(user.ID, "git_provider.update", provider.ID, true, provider.Type, ctx.Request.Context())
 	ctx.JSON(http.StatusOK, gitProviderResponse(provider))
 }
 
@@ -414,11 +415,11 @@ func (h *Handlers) DeleteGitProvider(ctx *gin.Context) {
 	}
 
 	var provider model.GitProvider
-	if err := h.db.First(&provider, "id = ?", ctx.Param("providerId")).Error; err != nil {
+	if err := h.dbFor(ctx).First(&provider, "id = ?", ctx.Param("providerId")).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "git provider not found")
 		return
 	}
-	if err := h.db.Transaction(func(tx *gorm.DB) error {
+	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
 		var accountIDs []string
 		if err := tx.Model(&model.GitAccount{}).Where("provider_id = ?", provider.ID).Pluck("id", &accountIDs).Error; err != nil {
 			return err
@@ -440,12 +441,12 @@ func (h *Handlers) DeleteGitProvider(ctx *gin.Context) {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	h.audit(user.ID, "git_provider.delete", provider.ID, true, provider.Type)
+	h.auditWithContext(user.ID, "git_provider.delete", provider.ID, true, provider.Type, ctx.Request.Context())
 	ctx.Status(http.StatusNoContent)
 }
 
-func (h *Handlers) saveGitProvider(provider model.GitProvider) error {
-	return h.db.Transaction(func(tx *gorm.DB) error {
+func (h *Handlers) saveGitProvider(provider model.GitProvider, contexts ...context.Context) error {
+	return h.dbWithContext(firstContext(contexts)).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Save(&provider).Error; err != nil {
 			return err
 		}

@@ -12,6 +12,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/redisconfig"
 	"github.com/LiteyukiStudio/devops/internal/service"
+	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
@@ -58,7 +59,7 @@ func (h *Handlers) currentUser(ctx *gin.Context) (model.User, bool) {
 	}
 
 	var session model.UserSession
-	err = h.db.First(&session, "token_hash = ? and expires_at > ?", hashToken(plainToken), time.Now()).Error
+	err = h.dbFor(ctx).First(&session, "token_hash = ? and expires_at > ?", hashToken(plainToken), time.Now()).Error
 	if err != nil {
 		clearSessionCookie(ctx)
 		writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.session.expired")
@@ -66,7 +67,7 @@ func (h *Handlers) currentUser(ctx *gin.Context) (model.User, bool) {
 	}
 
 	var user model.User
-	if err := h.db.First(&user, "id = ? and disabled = ?", session.UserID, false).Error; err != nil {
+	if err := h.dbFor(ctx).First(&user, "id = ? and disabled = ?", session.UserID, false).Error; err != nil {
 		clearSessionCookie(ctx)
 		writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.account.disabled")
 		return model.User{}, false
@@ -105,7 +106,7 @@ func (h *Handlers) currentSessionFromCookie(ctx *gin.Context) (model.UserSession
 	if actor, ok := ctx.Request.Context().Value(aiPlatformActorContextKey{}).(aiPlatformActor); ok &&
 		actor.UserID != "" && actor.SessionID != "" {
 		var session model.UserSession
-		err := h.db.First(
+		err := h.dbFor(ctx).First(
 			&session,
 			"id = ? and user_id = ? and expires_at > ?",
 			actor.SessionID,
@@ -120,7 +121,7 @@ func (h *Handlers) currentSessionFromCookie(ctx *gin.Context) (model.UserSession
 	}
 
 	var session model.UserSession
-	err = h.db.First(&session, "token_hash = ? and expires_at > ?", hashToken(plainToken), time.Now()).Error
+	err = h.dbFor(ctx).First(&session, "token_hash = ? and expires_at > ?", hashToken(plainToken), time.Now()).Error
 	if err != nil {
 		return model.UserSession{}, false
 	}
@@ -136,7 +137,7 @@ func (h *Handlers) currentUserFromAccessToken(ctx *gin.Context) (model.User, boo
 
 	plainToken := strings.TrimSpace(header[len("Bearer "):])
 	var token model.AccessToken
-	err := h.db.First(
+	err := h.dbFor(ctx).First(
 		&token,
 		"token_hash = ? and revoked_at is null and (expires_at is null or expires_at > ?)",
 		hashToken(plainToken),
@@ -159,7 +160,7 @@ func (h *Handlers) currentUserFromAccessToken(ctx *gin.Context) (model.User, boo
 	}
 	if token.Source == "oauth" {
 		var grant model.OAuthGrant
-		if token.OAuthGrantID == "" || token.OAuthApplicationID == "" || h.db.First(
+		if token.OAuthGrantID == "" || token.OAuthApplicationID == "" || h.dbFor(ctx).First(
 			&grant,
 			"id = ? and application_id = ? and user_id = ? and revoked_at is null",
 			token.OAuthGrantID,
@@ -170,7 +171,7 @@ func (h *Handlers) currentUserFromAccessToken(ctx *gin.Context) (model.User, boo
 			return model.User{}, false
 		}
 		var application model.OAuthApplication
-		if h.db.First(
+		if h.dbFor(ctx).First(
 			&application,
 			"id = ? and revoked_at is null",
 			token.OAuthApplicationID,
@@ -181,7 +182,7 @@ func (h *Handlers) currentUserFromAccessToken(ctx *gin.Context) (model.User, boo
 	}
 
 	var user model.User
-	if err := h.db.First(&user, "id = ? and disabled = ?", token.UserID, false).Error; err != nil {
+	if err := h.dbFor(ctx).First(&user, "id = ? and disabled = ?", token.UserID, false).Error; err != nil {
 		writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.account.disabled")
 		return model.User{}, false
 	}
@@ -207,8 +208,8 @@ func accessTokenAllows(scopeText, required string) bool {
 	return service.AccessTokenAllows(scopeText, required)
 }
 
-func (h *Handlers) hasPlatformAdmin() bool {
-	exists, err := platformAdminExists(h.db)
+func (h *Handlers) hasPlatformAdmin(contexts ...context.Context) bool {
+	exists, err := platformAdminExists(h.dbWithContext(firstContext(contexts)))
 	return err == nil && exists
 }
 
@@ -238,7 +239,7 @@ func (h *Handlers) createSession(ctx *gin.Context, userID string) bool {
 
 func (h *Handlers) createSessionWithImpersonation(ctx *gin.Context, userID string, impersonatorID string) bool {
 	session, plainToken := newUserSession(userID, impersonatorID, time.Now())
-	if err := h.db.Create(&session).Error; err != nil {
+	if err := h.dbFor(ctx).Create(&session).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return false
 	}
@@ -299,7 +300,7 @@ func (h *Handlers) createLoginCredentials(ctx *gin.Context, userID string, remem
 	now := time.Now()
 	rememberToken, rememberPlainToken := newUserRememberToken(userID, now)
 	session, sessionPlainToken := newUserSessionInFamily(userID, "", rememberToken.FamilyID, now)
-	if err := h.db.Transaction(func(tx *gorm.DB) error {
+	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&rememberToken).Error; err != nil {
 			return err
 		}
@@ -327,7 +328,7 @@ func (h *Handlers) createRememberToken(ctx *gin.Context, userID string, requeste
 	}
 	now := time.Now()
 	rememberToken, rememberPlainToken := newUserRememberToken(userID, now)
-	if err := h.db.Transaction(func(tx *gorm.DB) error {
+	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
 		result := tx.Model(&model.UserSession{}).
 			Where("user_id = ? and token_hash = ?", userID, hashToken(plainSessionToken)).
 			Update("remember_family_id", rememberToken.FamilyID)
@@ -347,9 +348,9 @@ func (h *Handlers) createRememberToken(ctx *gin.Context, userID string, requeste
 	return true
 }
 
-func (h *Handlers) rotateRememberLogin(userID, plainToken string) (model.User, string, string, error) {
+func (h *Handlers) rotateRememberLogin(userID, plainToken string, contexts ...context.Context) (model.User, string, string, error) {
 	now := time.Now()
-	if err := h.cleanupExpiredRememberTokenFamilies(userID, now); err != nil {
+	if err := h.cleanupExpiredRememberTokenFamilies(userID, now, firstContext(contexts)); err != nil {
 		return model.User{}, "", "", err
 	}
 	var newSessionToken string
@@ -357,7 +358,7 @@ func (h *Handlers) rotateRememberLogin(userID, plainToken string) (model.User, s
 	var user model.User
 	reused := false
 
-	err := h.db.Transaction(func(tx *gorm.DB) error {
+	err := h.dbWithContext(firstContext(contexts)).Transaction(func(tx *gorm.DB) error {
 		var lockedUser model.User
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedUser, "id = ?", userID).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -467,8 +468,8 @@ func deleteRememberFamilySessionsExcept(tx *gorm.DB, userID, familyID, keepSessi
 	return tx.Where("id in ?", sessionIDs).Delete(&model.UserSession{}).Error
 }
 
-func (h *Handlers) cleanupExpiredRememberTokenFamilies(userID string, now time.Time) error {
-	return h.db.Transaction(func(tx *gorm.DB) error {
+func (h *Handlers) cleanupExpiredRememberTokenFamilies(userID string, now time.Time, contexts ...context.Context) error {
+	return h.dbWithContext(firstContext(contexts)).Transaction(func(tx *gorm.DB) error {
 		var families []struct {
 			FamilyID string
 		}
@@ -527,9 +528,9 @@ func revokeUserAuthentication(tx *gorm.DB, userID string) error {
 	return tx.Where("user_id = ?", userID).Delete(&model.UserSession{}).Error
 }
 
-func (h *Handlers) revokeCurrentSessionAndRememberTokens(plainToken string) (string, error) {
+func (h *Handlers) revokeCurrentSessionAndRememberTokens(plainToken string, contexts ...context.Context) (string, error) {
 	userID := ""
-	err := h.db.Transaction(func(tx *gorm.DB) error {
+	err := h.dbWithContext(firstContext(contexts)).Transaction(func(tx *gorm.DB) error {
 		var session model.UserSession
 		if err := tx.First(&session, "token_hash = ?", hashToken(plainToken)).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -601,14 +602,18 @@ func newRateLimiter(redisAddr ...string) *rateLimiter {
 }
 
 func newRateLimiterWithRedis(options redisconfig.Options) *rateLimiter {
-	return &rateLimiter{redis: redis.NewClient(options.GoRedis())}
+	client := redis.NewClient(options.GoRedis())
+	if err := telemetry.InstrumentRedis(client); err != nil {
+		telemetry.Logger().Warn("Redis telemetry initialization failed", "event.name", "redis.instrumentation.failed", "error.type", telemetry.ErrorType(err))
+	}
+	return &rateLimiter{redis: client}
 }
 
-func (l *rateLimiter) allow(key string, limit int, window time.Duration) (bool, error) {
+func (l *rateLimiter) allow(parent context.Context, key string, limit int, window time.Duration) (bool, error) {
 	if limit < 1 || window <= 0 {
 		return false, errors.New("rate limit and window must be positive")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	ctx, cancel := context.WithTimeout(parent, 250*time.Millisecond)
 	defer cancel()
 	redisKey := "rate_limit:" + key
 	count, err := incrementRateLimitScript.Run(ctx, l.redis, []string{redisKey}, window.Milliseconds()).Int64()
@@ -618,8 +623,8 @@ func (l *rateLimiter) allow(key string, limit int, window time.Duration) (bool, 
 	return count <= int64(limit), nil
 }
 
-func (l *rateLimiter) reset(key string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+func (l *rateLimiter) reset(parent context.Context, key string) error {
+	ctx, cancel := context.WithTimeout(parent, 250*time.Millisecond)
 	defer cancel()
 	return l.redis.Del(ctx, "rate_limit:"+key).Err()
 }
@@ -641,7 +646,7 @@ func (h *Handlers) allowSensitiveAuthKey(ctx *gin.Context, action, subject strin
 		limit = developmentRateLimit
 	}
 	key := action + ":" + subject
-	allowed, err := h.rateLimiter.allow(key, limit, window)
+	allowed, err := h.rateLimiter.allow(ctx.Request.Context(), key, limit, window)
 	if allowed {
 		return true
 	}

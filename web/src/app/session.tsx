@@ -2,11 +2,12 @@ import type { ReactNode } from 'react'
 import type { DebugSessionOverride, InitializeAdminInput, LoginInput, RecentLoginUser, SessionContextValue } from './session-context'
 import type { CurrentUser } from '@/api'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { api } from '@/api'
 import { isPlatformRole, PlatformRole } from '@/lib/roles'
+import { enableBrowserTelemetry } from '@/lib/telemetry'
 import { applyUserBrandColorPreference, clearActiveUserBrandColorPreference } from './brand-theme'
 import { applyUserInterfaceStylePreference, clearActiveUserInterfaceStylePreference } from './interface-style'
 import { SessionContext } from './session-context'
@@ -48,6 +49,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     retry: false,
   })
   const effectiveUser = useMemo(() => applyDebugOverride(currentUser.data, debugSessionOverride), [currentUser.data, debugSessionOverride])
+
+  useEffect(() => {
+    if (currentUser.data)
+      enableBrowserTelemetry()
+  }, [currentUser.data])
 
   const loginMutation = useMutation({
     mutationFn: api.login,

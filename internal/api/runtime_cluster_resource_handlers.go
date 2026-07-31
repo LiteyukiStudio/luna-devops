@@ -21,14 +21,14 @@ func (h *Handlers) ListRuntimeClusterResources(ctx *gin.Context) {
 		return
 	}
 	var cluster model.RuntimeCluster
-	if err := h.db.First(&cluster, "id = ?", ctx.Param("clusterId")).Error; err != nil {
+	if err := h.dbFor(ctx).First(&cluster, "id = ?", ctx.Param("clusterId")).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "runtime cluster not found")
 		return
 	}
 	if !h.canManageScopedResourceByID(ctx, user, cluster.Scope, cluster.OwnerRef, scopedResourceRuntimeCluster, cluster.ID, "无权查看该集群资源") {
 		return
 	}
-	kubeconfig := h.secrets.Resolve(cluster.KubeconfigRef)
+	kubeconfig := h.secrets.ResolveContext(ctx.Request.Context(), cluster.KubeconfigRef)
 	if strings.TrimSpace(kubeconfig) == "" {
 		writeError(ctx, http.StatusBadRequest, "运行集群缺少 kubeconfig，无法读取资源")
 		return
@@ -56,7 +56,7 @@ func (h *Handlers) ListRuntimeClusterResources(ctx *gin.Context) {
 		return
 	}
 	items = h.filterClusterResourceSnapshots(ctx, user, items)
-	responses, err := h.clusterResourceResponses(items)
+	responses, err := h.clusterResourceResponses(items, ctx.Request.Context())
 	if err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
@@ -81,14 +81,14 @@ func (h *Handlers) GetRuntimeClusterResourceYAML(ctx *gin.Context) {
 		return
 	}
 	var cluster model.RuntimeCluster
-	if err := h.db.First(&cluster, "id = ?", ctx.Param("clusterId")).Error; err != nil {
+	if err := h.dbFor(ctx).First(&cluster, "id = ?", ctx.Param("clusterId")).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "runtime cluster not found")
 		return
 	}
 	if !h.canManageScopedResourceByID(ctx, user, cluster.Scope, cluster.OwnerRef, scopedResourceRuntimeCluster, cluster.ID, "无权查看该集群资源") {
 		return
 	}
-	kubeconfig := h.secrets.Resolve(cluster.KubeconfigRef)
+	kubeconfig := h.secrets.ResolveContext(ctx.Request.Context(), cluster.KubeconfigRef)
 	if strings.TrimSpace(kubeconfig) == "" {
 		writeError(ctx, http.StatusBadRequest, "运行集群缺少 kubeconfig，无法读取资源 YAML")
 		return
@@ -125,14 +125,14 @@ func (h *Handlers) ListRuntimeClusterResourceEvents(ctx *gin.Context) {
 		return
 	}
 	var cluster model.RuntimeCluster
-	if err := h.db.First(&cluster, "id = ?", ctx.Param("clusterId")).Error; err != nil {
+	if err := h.dbFor(ctx).First(&cluster, "id = ?", ctx.Param("clusterId")).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "runtime cluster not found")
 		return
 	}
 	if !h.canManageScopedResourceByID(ctx, user, cluster.Scope, cluster.OwnerRef, scopedResourceRuntimeCluster, cluster.ID, "无权查看该集群资源") {
 		return
 	}
-	kubeconfig := h.secrets.Resolve(cluster.KubeconfigRef)
+	kubeconfig := h.secrets.ResolveContext(ctx.Request.Context(), cluster.KubeconfigRef)
 	if strings.TrimSpace(kubeconfig) == "" {
 		writeError(ctx, http.StatusBadRequest, "运行集群缺少 kubeconfig，无法读取资源事件")
 		return
@@ -186,7 +186,7 @@ func (h *Handlers) StreamRuntimeClusterPodTerminal(ctx *gin.Context) {
 			writeErrorCode(ctx, http.StatusUnauthorized, "runtime_terminal.ticket_invalid", "terminal ticket is invalid, expired, or already consumed")
 			return
 		}
-		if err := h.db.First(&user, "id = ? and disabled = ?", ticketValue.UserID, false).Error; err != nil {
+		if err := h.dbFor(ctx).First(&user, "id = ? and disabled = ?", ticketValue.UserID, false).Error; err != nil {
 			writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.account.disabled")
 			return
 		}
@@ -226,7 +226,7 @@ func (h *Handlers) StreamRuntimeClusterPodTerminal(ctx *gin.Context) {
 	}
 	conn, err := upgrader.Upgrade(ctx.Writer, ctx.Request, nil)
 	if err != nil {
-		h.audit(user.ID, "runtime_cluster.pod_terminal", cluster.ID+":"+snapshot.Namespace+"/"+snapshot.Name, false, err.Error())
+		h.auditWithContext(user.ID, "runtime_cluster.pod_terminal", cluster.ID+":"+snapshot.Namespace+"/"+snapshot.Name, false, err.Error(), ctx.Request.Context())
 		return
 	}
 	defer conn.Close()
@@ -255,20 +255,20 @@ func (h *Handlers) StreamRuntimeClusterPodTerminal(ctx *gin.Context) {
 	resourceID := cluster.ID + ":" + snapshot.Namespace + "/" + snapshot.Name
 	if err != nil && sessionCtx.Err() == nil {
 		_, _ = wsWriter.Write([]byte("\r\nterminal disconnected: " + err.Error() + "\r\n"))
-		h.audit(user.ID, "runtime_cluster.pod_terminal", resourceID, false, err.Error())
+		h.auditWithContext(user.ID, "runtime_cluster.pod_terminal", resourceID, false, err.Error(), ctx.Request.Context())
 		return
 	}
 	select {
 	case <-authorizationRevoked:
-		h.audit(user.ID, "runtime_cluster.pod_terminal", resourceID, false, "authorization expired or was revoked")
+		h.auditWithContext(user.ID, "runtime_cluster.pod_terminal", resourceID, false, "authorization expired or was revoked", ctx.Request.Context())
 		return
 	default:
 	}
 	if sessionCtx.Err() == context.DeadlineExceeded {
-		h.audit(user.ID, "runtime_cluster.pod_terminal", resourceID, false, "authorization deadline reached")
+		h.auditWithContext(user.ID, "runtime_cluster.pod_terminal", resourceID, false, "authorization deadline reached", ctx.Request.Context())
 		return
 	}
-	h.audit(user.ID, "runtime_cluster.pod_terminal", resourceID, true, strings.TrimSpace(ctx.Query("container")))
+	h.auditWithContext(user.ID, "runtime_cluster.pod_terminal", resourceID, true, strings.TrimSpace(ctx.Query("container")), ctx.Request.Context())
 }
 
 func (h *Handlers) AuthorizeRuntimeClusterPodTerminal(ctx *gin.Context) {
@@ -295,7 +295,7 @@ func (h *Handlers) AuthorizeRuntimeClusterPodTerminal(ctx *gin.Context) {
 		runtimeClusterPodTerminalReference(cluster, snapshot),
 	)
 	if err != nil {
-		h.audit(user.ID, "runtime_cluster.pod_terminal_authorize", cluster.ID+":"+snapshot.Namespace+"/"+snapshot.Name, false, err.Error())
+		h.auditWithContext(user.ID, "runtime_cluster.pod_terminal_authorize", cluster.ID+":"+snapshot.Namespace+"/"+snapshot.Name, false, err.Error(), ctx.Request.Context())
 		writeErrorCode(ctx, http.StatusServiceUnavailable, "runtime_terminal.ticket_unavailable", "terminal authorization is temporarily unavailable")
 		return
 	}
@@ -310,11 +310,11 @@ func (h *Handlers) runtimeClusterPodTerminalTarget(ctx *gin.Context, user model.
 		return model.RuntimeCluster{}, nil, kubeprovider.ResourceSnapshot{}, false
 	}
 	var cluster model.RuntimeCluster
-	if err := h.db.First(&cluster, "id = ? and type in ?", ctx.Param("clusterId"), []string{"kubernetes", "k3s"}).Error; err != nil {
+	if err := h.dbFor(ctx).First(&cluster, "id = ? and type in ?", ctx.Param("clusterId"), []string{"kubernetes", "k3s"}).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "runtime cluster not found")
 		return model.RuntimeCluster{}, nil, kubeprovider.ResourceSnapshot{}, false
 	}
-	kubeconfig := h.secrets.Resolve(cluster.KubeconfigRef)
+	kubeconfig := h.secrets.ResolveContext(ctx.Request.Context(), cluster.KubeconfigRef)
 	if strings.TrimSpace(kubeconfig) == "" {
 		writeError(ctx, http.StatusBadRequest, "运行集群缺少 kubeconfig，无法打开 Pod 终端")
 		return model.RuntimeCluster{}, nil, kubeprovider.ResourceSnapshot{}, false

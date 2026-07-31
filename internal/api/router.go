@@ -9,6 +9,7 @@ import (
 
 	"github.com/LiteyukiStudio/devops/internal/config"
 	"github.com/LiteyukiStudio/devops/internal/observability"
+	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -22,13 +23,23 @@ func NewRouterWithStaticFS(db *gorm.DB, staticFS fs.FS) *gin.Engine {
 }
 
 func NewRouterWithStaticFSAndMetrics(db *gorm.DB, staticFS fs.FS, httpMetrics *observability.HTTPMetrics) *gin.Engine {
+	gin.SetMode(gin.ReleaseMode)
 	if debugLogEnabled() {
-		gin.SetMode(gin.DebugMode)
 		debugLog("api log level set to debug")
 	}
 	router := gin.New()
 	configureTrustedProxies(router, config.Load().TrustedProxyCIDRs)
-	middlewares := []gin.HandlerFunc{requestIDMiddleware(), gin.Logger(), recoveryMiddleware(), errorResponseMiddleware(), securityHeaders(), cors(), csrfOriginGuard()}
+	middlewares := []gin.HandlerFunc{
+		telemetry.QueryTraceContextMiddleware(),
+		requestIDMiddleware(),
+		telemetry.GinTracingMiddleware("luna-devops-api"),
+		telemetry.GinAccessLogMiddleware(),
+		recoveryMiddleware(),
+		errorResponseMiddleware(),
+		securityHeaders(),
+		cors(),
+		csrfOriginGuard(),
+	}
 	if httpMetrics != nil {
 		middlewares = append(middlewares, httpMetrics.GinMiddleware())
 	}
@@ -76,6 +87,7 @@ func NewRouterWithStaticFSAndMetrics(db *gorm.DB, staticFS fs.FS, httpMetrics *o
 		v1.GET("/users/me", handlers.GetCurrentUser)
 		v1.PUT("/users/me", handlers.UpdateCurrentUser)
 		v1.PUT("/users/me/password", handlers.UpdateMyPassword)
+		v1.POST("/telemetry/v1/traces", handlers.RelayBrowserTraces)
 		v1.GET("/ai/capabilities", handlers.GetAICapabilities)
 		v1.POST("/configs/ai/provider/test", handlers.platformAdminMiddleware(), handlers.stepUpMiddleware(stepUpPurposeSecuritySettingsUpdate), handlers.TestAIProviderConnection)
 		v1.GET("/ai/conversations", handlers.ProxyAIRequest)

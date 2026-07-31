@@ -166,18 +166,18 @@ func (h *Handlers) currentAIPlatformUser(ctx *gin.Context) (model.User, bool) {
 	}
 	now := time.Now()
 	var user model.User
-	if h.db.First(&user, "id = ? and disabled = ?", actor.UserID, false).Error != nil {
+	if h.dbFor(ctx).First(&user, "id = ? and disabled = ?", actor.UserID, false).Error != nil {
 		writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.account.disabled")
 		return model.User{}, true
 	}
 	var session model.UserSession
-	if h.db.First(&session, "id = ? and user_id = ? and expires_at > ?", actor.SessionID, actor.UserID, now).Error != nil {
+	if h.dbFor(ctx).First(&session, "id = ? and user_id = ? and expires_at > ?", actor.SessionID, actor.UserID, now).Error != nil {
 		writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.session.expired")
 		return model.User{}, true
 	}
 	if actor.MFAPurpose != "" {
 		var assertion model.StepUpAssertion
-		if actor.MFAAssertion == "" || h.db.First(
+		if actor.MFAAssertion == "" || h.dbFor(ctx).First(
 			&assertion,
 			"id = ? and user_id = ? and session_id = ? and purpose = ? and idle_expires_at > ? and absolute_expires_at > ?",
 			actor.MFAAssertion, actor.UserID, actor.SessionID, actor.MFAPurpose, now, now,

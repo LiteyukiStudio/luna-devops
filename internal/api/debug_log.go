@@ -1,16 +1,22 @@
 package api
 
 import (
-	"log"
+	"log/slog"
 	"os"
 	"strings"
+
+	"github.com/LiteyukiStudio/devops/internal/telemetry"
 )
 
 func debugLog(format string, args ...any) {
 	if !debugLogEnabled() {
 		return
 	}
-	log.Printf("[DEBUG] "+format, args...)
+	telemetry.Logger().Debug("API diagnostic checkpoint",
+		slog.String("event.name", "api.debug.checkpoint"),
+		slog.String("message.template", format),
+		slog.Int("argument.count", len(args)),
+	)
 }
 
 func debugLogEnabled() bool {

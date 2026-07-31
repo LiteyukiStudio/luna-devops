@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -47,7 +48,10 @@ func Ping(parent context.Context, endpointText string, policy security.EgressPol
 
 	resp, err := security.NewHTTPClient(policy, 5*time.Second).Do(req)
 	if err != nil {
-		fmt.Printf("registry ping failed: %v\n", err)
+		slog.WarnContext(ctx, "registry.ping.failed",
+			"error.type", fmt.Sprintf("%T", err),
+			"registry.host", endpoint.Hostname(),
+		)
 		return PingResult{Success: false, Message: "镜像站连接失败，请检查地址、网络或凭据", Endpoint: endpoint.String()}
 	}
 	defer resp.Body.Close()

@@ -1,11 +1,13 @@
 package worker
 
 import (
-	"log"
+	"context"
+	"log/slog"
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/redisconfig"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
+	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/hibiken/asynq"
 )
 
@@ -34,7 +36,10 @@ func startScheduler(redisAddr string) (*asynq.Scheduler, error) {
 }
 
 func startSchedulerWithRedis(options redisconfig.Options) (*asynq.Scheduler, error) {
-	scheduler := asynq.NewScheduler(options.Asynq(), &asynq.SchedulerOpts{})
+	scheduler := asynq.NewScheduler(options.Asynq(), &asynq.SchedulerOpts{
+		Logger:   asynqTelemetryLogger{},
+		LogLevel: asynq.WarnLevel,
+	})
 	specs, err := periodicTaskSpecs()
 	if err != nil {
 		return nil, err
@@ -46,7 +51,10 @@ func startSchedulerWithRedis(options redisconfig.Options) (*asynq.Scheduler, err
 	}
 	go func() {
 		if err := scheduler.Run(); err != nil {
-			log.Printf("run scheduler: %v", err)
+			telemetry.Logger().ErrorContext(context.Background(), "worker scheduler stopped",
+				slog.String("event.name", "worker.scheduler.stopped"),
+				slog.String("error.type", telemetry.ErrorType(err)),
+			)
 		}
 	}()
 	return scheduler, nil

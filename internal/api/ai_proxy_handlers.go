@@ -133,7 +133,7 @@ func (h *Handlers) prepareAIToolMFAResume(ctx *gin.Context, actor aiagent.ActorC
 	}
 	now := time.Now()
 	var assertion model.StepUpAssertion
-	if h.db == nil || h.db.First(
+	if h.dbFor(ctx) == nil || h.dbFor(ctx).First(
 		&assertion,
 		"id = ? and user_id = ? and session_id = ? and idle_expires_at > ? and absolute_expires_at > ?",
 		input.StepUpAssertionID, actor.UserID, actor.SessionID, now, now,
@@ -163,7 +163,7 @@ func (h *Handlers) aiActorFromSession(ctx *gin.Context) (aiagent.ActorContext, b
 		return aiagent.ActorContext{}, false
 	}
 	var user model.User
-	if h.db == nil || h.db.First(&user, "id = ? and disabled = ?", session.UserID, false).Error != nil {
+	if h.dbFor(ctx) == nil || h.dbFor(ctx).First(&user, "id = ? and disabled = ?", session.UserID, false).Error != nil {
 		writeErrorCode(ctx, http.StatusUnauthorized, "auth.session.expired", "the browser session is invalid")
 		return aiagent.ActorContext{}, false
 	}

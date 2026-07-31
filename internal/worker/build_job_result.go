@@ -140,7 +140,7 @@ func (r *Runner) buildRunCanceled(job model.BuildJob) (bool, error) {
 	return run.Status == "canceled", nil
 }
 
-func (r *Runner) completeBuildJob(job model.BuildJob, run model.BuildRun, result builder.Result) (model.BuildRun, error) {
+func (r *Runner) completeBuildJob(ctx context.Context, job model.BuildJob, run model.BuildRun, result builder.Result) (model.BuildRun, error) {
 	finishedAt := time.Now()
 	var completedRun model.BuildRun
 	err := r.db.Transaction(func(tx *gorm.DB) error {
@@ -204,7 +204,7 @@ func (r *Runner) completeBuildJob(job model.BuildJob, run model.BuildRun, result
 	return completedRun, err
 }
 
-func (r *Runner) failBuildJob(job model.BuildJob, run model.BuildRun, message string) error {
+func (r *Runner) failBuildJob(ctx context.Context, job model.BuildJob, run model.BuildRun, message string) error {
 	finishedAt := time.Now()
 	err := r.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&model.BuildJob{}).Where("id = ? and project_id = ? and status in ?", job.ID, job.ProjectID, []string{"queued", "running"}).Updates(map[string]any{
@@ -225,7 +225,7 @@ func (r *Runner) failBuildJob(job model.BuildJob, run model.BuildRun, message st
 		run.Status = "failed"
 		run.FinishedAt = &finishedAt
 		r.recordBuildRunMetrics(run)
-		r.emitBuildFailed(context.Background(), run, message)
+		r.emitBuildFailed(ctx, run, message)
 	}
 	return err
 }

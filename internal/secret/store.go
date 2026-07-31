@@ -1,6 +1,7 @@
 package secret
 
 import (
+	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -83,10 +84,17 @@ func ResolveInline(ref string) string {
 }
 
 type AuditFunc func(userID, action, resource string, success bool, message string)
+type ContextAuditFunc func(ctx context.Context, userID, action, resource string, success bool, message string)
 
 type Store struct {
-	db    *gorm.DB
-	audit AuditFunc
+	db           *gorm.DB
+	audit        AuditFunc
+	auditContext ContextAuditFunc
+}
+
+func (s Store) WithContextAudit(audit ContextAuditFunc) Store {
+	s.auditContext = audit
+	return s
 }
 
 func NewStore(db *gorm.DB, audit AuditFunc) Store {
@@ -94,6 +102,10 @@ func NewStore(db *gorm.DB, audit AuditFunc) Store {
 }
 
 func (s Store) Store(secret, createdBy, resource string) string {
+	return s.StoreContext(context.Background(), secret, createdBy, resource)
+}
+
+func (s Store) StoreContext(ctx context.Context, secret, createdBy, resource string) string {
 	cipherRef := Encrypt(secret)
 	if cipherRef == "" {
 		return ""
@@ -104,20 +116,26 @@ func (s Store) Store(secret, createdBy, resource string) string {
 		CreatedBy: strings.TrimSpace(createdBy),
 		Resource:  strings.TrimSpace(resource),
 	}
-	if err := s.db.Create(&value).Error; err != nil {
+	if err := s.db.WithContext(ctx).Create(&value).Error; err != nil {
 		return ""
 	}
-	if s.audit != nil {
+	if s.auditContext != nil {
+		s.auditContext(ctx, createdBy, "secret.write", value.ID, true, value.Resource)
+	} else if s.audit != nil {
 		s.audit(createdBy, "secret.write", value.ID, true, value.Resource)
 	}
 	return storedSecretIDPrefix + value.ID
 }
 
 func (s Store) Resolve(ref string) string {
+	return s.ResolveContext(context.Background(), ref)
+}
+
+func (s Store) ResolveContext(ctx context.Context, ref string) string {
 	ref = strings.TrimSpace(ref)
 	if strings.HasPrefix(ref, storedSecretIDPrefix) {
 		var value model.SecretValue
-		if err := s.db.First(&value, "id = ?", strings.TrimPrefix(ref, storedSecretIDPrefix)).Error; err != nil {
+		if err := s.db.WithContext(ctx).First(&value, "id = ?", strings.TrimPrefix(ref, storedSecretIDPrefix)).Error; err != nil {
 			return ""
 		}
 		return ResolveInline(value.CipherRef)

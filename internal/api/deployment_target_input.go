@@ -19,7 +19,7 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 			return model.DeploymentTarget{}, false
 		}
 		var binding model.RepositoryBinding
-		if err := h.db.First(&binding, "id = ? and project_id = ? and application_id = ?", repositoryBindingID, app.ProjectID, app.ID).Error; err != nil {
+		if err := h.dbFor(ctx).First(&binding, "id = ? and project_id = ? and application_id = ?", repositoryBindingID, app.ProjectID, app.ID).Error; err != nil {
 			writeError(ctx, http.StatusBadRequest, "代码仓库绑定不存在")
 			return model.DeploymentTarget{}, false
 		}

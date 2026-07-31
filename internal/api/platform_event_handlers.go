@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -28,7 +29,7 @@ func (h *Handlers) ListPlatformEvents(ctx *gin.Context) {
 		return
 	}
 	pagination := paginationFromQuery(ctx)
-	query := h.platformEventsVisibleTo(user, strings.TrimSpace(ctx.Query("scope")))
+	query := h.platformEventsVisibleTo(user, strings.TrimSpace(ctx.Query("scope")), ctx.Request.Context())
 	query = applySearch(ctx, query, "platform_events.type", "platform_events.message", "platform_events.resource_id")
 	query = applyPlatformEventFilters(ctx, query)
 
@@ -66,17 +67,17 @@ func (h *Handlers) GetPlatformEvent(ctx *gin.Context) {
 		return
 	}
 	var event model.PlatformEvent
-	if err := h.db.First(&event, "id = ?", ctx.Param("eventId")).Error; err != nil {
+	if err := h.dbFor(ctx).First(&event, "id = ?", ctx.Param("eventId")).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "event not found")
 		return
 	}
-	if !h.canReadPlatformEvent(user, event) {
+	if !h.canReadPlatformEvent(ctx.Request.Context(), user, event) {
 		writeError(ctx, http.StatusForbidden, "you cannot access this event")
 		return
 	}
 	var deliveryCount int64
 	if authz.IsPlatformAdmin(user.Role) {
-		if err := h.db.Model(&model.NotificationDelivery{}).Where("event_id = ?", event.ID).Count(&deliveryCount).Error; err != nil {
+		if err := h.dbFor(ctx).Model(&model.NotificationDelivery{}).Where("event_id = ?", event.ID).Count(&deliveryCount).Error; err != nil {
 			writeError(ctx, http.StatusInternalServerError, err.Error())
 			return
 		}
@@ -91,20 +92,20 @@ func (h *Handlers) ListPlatformEventCatalog(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, platformevent.Catalog())
 }
 
-func (h *Handlers) platformEventsVisibleTo(user model.User, scope string) *gorm.DB {
-	query := h.db.Model(&model.PlatformEvent{})
+func (h *Handlers) platformEventsVisibleTo(user model.User, scope string, contexts ...context.Context) *gorm.DB {
+	query := h.dbWithContext(firstContext(contexts)).Model(&model.PlatformEvent{})
 	if authz.IsPlatformAdmin(user.Role) && scope == "all" {
 		return query
 	}
-	projectIDs := h.projectIDsForUser(user.ID)
+	projectIDs := h.projectIDsForUser(firstContext(contexts), user.ID)
 	if len(projectIDs) == 0 {
 		return query.Where("actor_id = ?", user.ID)
 	}
 	return query.Where("project_id in ? or actor_id = ?", projectIDs, user.ID)
 }
 
-func (h *Handlers) canReadPlatformEvent(user model.User, event model.PlatformEvent) bool {
-	return canReadPlatformEventForUser(user, event, h.projectIDsForUser(user.ID))
+func (h *Handlers) canReadPlatformEvent(ctx context.Context, user model.User, event model.PlatformEvent) bool {
+	return canReadPlatformEventForUser(user, event, h.projectIDsForUser(ctx, user.ID))
 }
 
 func canReadPlatformEventForUser(user model.User, event model.PlatformEvent, projectIDs []string) bool {

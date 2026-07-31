@@ -41,7 +41,7 @@ func (h *Handlers) PreviewDataRetention(ctx *gin.Context) {
 		return
 	}
 
-	items, err := retention.NewService(h.db).Preview(ctx.Request.Context(), input.Datasets, input.StartAt, input.EndAt, time.Now())
+	items, err := retention.NewService(h.dbFor(ctx)).Preview(ctx.Request.Context(), input.Datasets, input.StartAt, input.EndAt, time.Now())
 	if err != nil {
 		writeDataRetentionError(ctx, err)
 		return
@@ -62,17 +62,17 @@ func (h *Handlers) CleanupDataRetention(ctx *gin.Context) {
 	}
 	input, ok := bindDataRetentionRange(ctx)
 	if !ok {
-		h.audit(user.ID, dataRetentionCleanupAction, "data_retention", false, "invalid cleanup request")
+		h.auditWithContext(user.ID, dataRetentionCleanupAction, "data_retention", false, "invalid cleanup request", ctx.Request.Context())
 		return
 	}
 
-	items, err := retention.NewService(h.db).Cleanup(ctx.Request.Context(), input.Datasets, input.StartAt, input.EndAt, time.Now())
+	items, err := retention.NewService(h.dbFor(ctx)).Cleanup(ctx.Request.Context(), input.Datasets, input.StartAt, input.EndAt, time.Now())
 	if err != nil {
-		h.audit(user.ID, dataRetentionCleanupAction, "data_retention", false, dataRetentionFailureSummary(err))
+		h.auditWithContext(user.ID, dataRetentionCleanupAction, "data_retention", false, dataRetentionFailureSummary(err), ctx.Request.Context())
 		writeDataRetentionError(ctx, err)
 		return
 	}
-	h.audit(user.ID, dataRetentionCleanupAction, "data_retention", true, dataRetentionResultSummary(items))
+	h.auditWithContext(user.ID, dataRetentionCleanupAction, "data_retention", true, dataRetentionResultSummary(items), ctx.Request.Context())
 	ctx.JSON(http.StatusOK, gin.H{"items": items})
 }
 

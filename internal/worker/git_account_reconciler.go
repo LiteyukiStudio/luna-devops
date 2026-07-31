@@ -3,7 +3,7 @@ package worker
 import (
 	"context"
 	"encoding/json"
-	"log"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -11,7 +11,9 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/model"
 	gitprovider "github.com/LiteyukiStudio/devops/internal/provider/git"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
+	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/hibiken/asynq"
+	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/oauth2"
 )
 
@@ -25,8 +27,14 @@ func (r *Runner) handleGitAccountRefresh(ctx context.Context, task *asynq.Task) 
 		return err
 	}
 	for _, account := range accounts {
-		if err := r.refreshGitAccount(ctx, account); err != nil {
-			log.Printf("refresh git account %s: %v", account.ID, err)
+		err := workerStage(ctx, "git_account.refresh", func(stageCtx context.Context) error {
+			return r.refreshGitAccount(stageCtx, account)
+		}, attribute.String("git.account.id", account.ID))
+		if err == nil {
+			telemetry.Logger().InfoContext(ctx, "git account refreshed",
+				slog.String("event.name", "git_account.refreshed"),
+				slog.String("git.account.id", account.ID),
+			)
 		}
 	}
 	return nil
@@ -58,6 +66,7 @@ func (r *Runner) refreshGitAccount(ctx context.Context, account model.GitAccount
 	if err != nil {
 		return r.auditGitAccountRefresh(account, false, "git OAuth provider configuration is invalid")
 	}
+	ctx = context.WithValue(ctx, oauth2.HTTPClient, telemetry.InstrumentHTTPClient(nil))
 	tokenSource := oauthConfig.TokenSource(ctx, &oauth2.Token{
 		RefreshToken: refreshToken,
 		Expiry:       time.Now().Add(-time.Minute),

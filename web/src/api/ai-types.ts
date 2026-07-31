@@ -95,6 +95,7 @@ export type AIUIAction
 export interface AITimelineItem {
   id: string
   timelineIndex: number
+  createdAt: string
   type: 'reasoning_summary' | 'progress' | 'assistant_message' | 'tool_call' | 'tool_result'
   status: string
   relatedItemId?: string
@@ -124,6 +125,7 @@ export interface AITimelineTurn {
   input: {
     id: string
     type: 'user_message'
+    createdAt: string
     parts: AIMessagePart[]
   }
   selectedRun?: {

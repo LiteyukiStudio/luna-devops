@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"net"
 	"strings"
+
+	"github.com/LiteyukiStudio/devops/internal/telemetry"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 type Resolver interface {
@@ -24,7 +27,12 @@ func (r NetResolver) LookupCNAME(ctx context.Context, host string) (string, erro
 	if resolver == nil {
 		resolver = net.DefaultResolver
 	}
-	return resolver.LookupCNAME(ctx, host)
+	operationCtx, end := telemetry.StartOperation(ctx, "dns", "lookup_cname",
+		attribute.String("dns.question.name", strings.TrimSpace(host)),
+	)
+	result, err := resolver.LookupCNAME(operationCtx, host)
+	end(err)
+	return result, err
 }
 
 func CheckCNAME(ctx context.Context, resolver Resolver, host string, target string) error {

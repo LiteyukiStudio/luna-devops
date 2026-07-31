@@ -1,5 +1,5 @@
 import type { AIBlock } from './state'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
 import i18next from '@/i18n'
@@ -15,6 +15,7 @@ const blocks: AIBlock[] = [
     role: 'assistant',
     status: 'completed',
     text: '最终答复',
+    createdAt: '2026-08-01T09:03:00+08:00',
   },
   {
     id: 'user-message',
@@ -24,6 +25,7 @@ const blocks: AIBlock[] = [
     role: 'user',
     status: 'completed',
     text: '检查项目状态',
+    createdAt: '2026-08-01T09:02:00+08:00',
   },
   {
     id: 'tool-call',
@@ -55,6 +57,7 @@ const blocks: AIBlock[] = [
     role: 'assistant',
     status: 'completed',
     text: '正在查询项目状态',
+    createdAt: '2026-08-01T09:02:30+08:00',
   },
 ]
 
@@ -84,6 +87,7 @@ describe('ai assistant turn topology', () => {
           onAction={vi.fn(async () => true)}
           onApproval={vi.fn(async () => {})}
           onMFA={vi.fn(async () => {})}
+          onResend={vi.fn()}
           onRetry={vi.fn()}
         />
       </MemoryRouter>,
@@ -92,12 +96,42 @@ describe('ai assistant turn topology', () => {
     expect(screen.getAllByText('检查项目状态')).toHaveLength(1)
     const replies = container.querySelectorAll('[data-ai-reply]')
     expect(replies).toHaveLength(1)
-    expect(container.querySelector('[data-ai-user-bubble]')).toHaveClass('max-w-[78%]')
-    expect(container.querySelector('[data-ai-assistant-bubble]')).toHaveClass('max-w-[78%]')
+    expect(container.querySelector('[data-ai-user-message] [data-ai-message-group]')).toHaveClass('max-w-[78%]')
+    expect(container.querySelector('[data-ai-reply] [data-ai-message-group]')).toHaveClass('max-w-[78%]')
     const replyText = replies[0].textContent ?? ''
     expect(replyText.indexOf('先分析当前项目')).toBeLessThan(replyText.indexOf('正在查询项目状态'))
     expect(replyText.indexOf('正在查询项目状态')).toBeLessThan(replyText.indexOf('listProjects'))
     expect(replyText.indexOf('listProjects')).toBeLessThan(replyText.indexOf('最终答复'))
+  })
+
+  it('keeps timestamps visible and exposes message actions inside the stable message group', async () => {
+    await i18next.changeLanguage('zh-CN')
+    const onResend = vi.fn()
+    const writeText = vi.fn(async () => {})
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    const { container } = render(
+      <MemoryRouter>
+        <AIAssistantTimeline
+          blocks={blocks}
+          error={null}
+          generating={false}
+          loading={false}
+          onAction={vi.fn(async () => true)}
+          onApproval={vi.fn(async () => {})}
+          onMFA={vi.fn(async () => {})}
+          onResend={onResend}
+          onRetry={vi.fn()}
+        />
+      </MemoryRouter>,
+    )
+
+    expect(container.querySelectorAll('[data-ai-message-group]')).toHaveLength(2)
+    expect(container.querySelectorAll('time')).toHaveLength(2)
+    expect(screen.getAllByRole('button', { name: '复制消息' })).toHaveLength(2)
+    fireEvent.click(screen.getByRole('button', { name: '重新发送' }))
+    expect(onResend).toHaveBeenCalledWith('检查项目状态')
+    fireEvent.click(screen.getAllByRole('button', { name: '复制消息' })[1])
+    expect(writeText).toHaveBeenCalledWith('正在查询项目状态\n\n最终答复')
   })
 
   it('hides internal maintenance tools without leaving an empty assistant bubble', () => {
@@ -113,6 +147,7 @@ describe('ai assistant turn topology', () => {
               role: 'user',
               status: 'completed',
               text: '帮我看看',
+              createdAt: '2026-08-01T09:04:00+08:00',
             },
             {
               id: 'rename-tool',
@@ -135,6 +170,7 @@ describe('ai assistant turn topology', () => {
           onAction={vi.fn(async () => true)}
           onApproval={vi.fn(async () => {})}
           onMFA={vi.fn(async () => {})}
+          onResend={vi.fn()}
           onRetry={vi.fn()}
         />
       </MemoryRouter>,

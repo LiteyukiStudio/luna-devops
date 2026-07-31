@@ -17,7 +17,7 @@ func (h *Handlers) ListAccessTokens(ctx *gin.Context) {
 
 	pagination := paginationFromQuery(ctx)
 	var tokens []model.AccessToken
-	query := h.db.Model(&model.AccessToken{}).Where("user_id = ? and source = ? and revoked_at is null", user.ID, "personal")
+	query := h.dbFor(ctx).Model(&model.AccessToken{}).Where("user_id = ? and source = ? and revoked_at is null", user.ID, "personal")
 	query = applySearch(ctx, query, "name", "scope")
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -88,11 +88,11 @@ func (h *Handlers) CreateAccessToken(ctx *gin.Context) {
 		token.ExpiresAt = &expiresAt
 	}
 
-	if err := h.db.Create(&token).Error; err != nil {
+	if err := h.dbFor(ctx).Create(&token).Error; err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	h.audit(user.ID, "access_token.create", token.ID, true, scope)
+	h.auditWithContext(user.ID, "access_token.create", token.ID, true, scope, ctx.Request.Context())
 
 	ctx.JSON(http.StatusCreated, gin.H{
 		"token":       token,
@@ -107,17 +107,17 @@ func (h *Handlers) RevokeAccessToken(ctx *gin.Context) {
 	}
 
 	var token model.AccessToken
-	if err := h.db.First(&token, "id = ? and user_id = ? and source = ?", ctx.Param("tokenId"), user.ID, "personal").Error; err != nil {
+	if err := h.dbFor(ctx).First(&token, "id = ? and user_id = ? and source = ?", ctx.Param("tokenId"), user.ID, "personal").Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "token not found")
 		return
 	}
 	now := time.Now()
 	token.RevokedAt = &now
-	if err := h.db.Save(&token).Error; err != nil {
+	if err := h.dbFor(ctx).Save(&token).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	h.audit(user.ID, "access_token.revoke", token.ID, true, "")
+	h.auditWithContext(user.ID, "access_token.revoke", token.ID, true, "", ctx.Request.Context())
 	ctx.JSON(http.StatusOK, token)
 }
 

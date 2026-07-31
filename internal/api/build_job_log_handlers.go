@@ -18,7 +18,7 @@ func (h *Handlers) ListBuildJobs(ctx *gin.Context) {
 		return
 	}
 	pagination := paginationFromQuery(ctx)
-	query := h.db.Where("project_id = ?", ctx.Param("projectId"))
+	query := h.dbFor(ctx).Where("project_id = ?", ctx.Param("projectId"))
 	if runID := strings.TrimSpace(ctx.Query("buildRunId")); runID != "" {
 		query = query.Where("build_run_id = ?", runID)
 	}
@@ -53,7 +53,7 @@ func (h *Handlers) GetBuildJob(ctx *gin.Context) {
 		return
 	}
 	var job model.BuildJob
-	if err := h.db.First(&job, "id = ? and project_id = ?", ctx.Param("jobId"), ctx.Param("projectId")).Error; err != nil {
+	if err := h.dbFor(ctx).First(&job, "id = ? and project_id = ?", ctx.Param("jobId"), ctx.Param("projectId")).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "build job not found")
 		return
 	}
@@ -65,7 +65,7 @@ func (h *Handlers) GetBuildJobLogs(ctx *gin.Context) {
 		return
 	}
 	var log model.BuildLog
-	if err := h.db.First(&log, "build_job_id = ? and project_id = ?", ctx.Param("jobId"), ctx.Param("projectId")).Error; err != nil {
+	if err := h.dbFor(ctx).First(&log, "build_job_id = ? and project_id = ?", ctx.Param("jobId"), ctx.Param("projectId")).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "build log not found")
 		return
 	}
@@ -77,7 +77,7 @@ func (h *Handlers) StreamBuildJobLogs(ctx *gin.Context) {
 		return
 	}
 	var job model.BuildJob
-	if err := h.db.First(&job, "id = ? and project_id = ?", ctx.Param("jobId"), ctx.Param("projectId")).Error; err != nil {
+	if err := h.dbFor(ctx).First(&job, "id = ? and project_id = ?", ctx.Param("jobId"), ctx.Param("projectId")).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "build job not found")
 		return
 	}
@@ -112,7 +112,7 @@ func (h *Handlers) StreamBuildJobLogs(ctx *gin.Context) {
 		case <-ctx.Request.Context().Done():
 			return
 		case <-ticker.C:
-			if err := h.db.Select("status").First(&job, "id = ? and project_id = ?", job.ID, job.ProjectID).Error; err != nil {
+			if err := h.dbFor(ctx).Select("status").First(&job, "id = ? and project_id = ?", job.ID, job.ProjectID).Error; err != nil {
 				return
 			}
 		}
@@ -121,7 +121,7 @@ func (h *Handlers) StreamBuildJobLogs(ctx *gin.Context) {
 
 func (h *Handlers) writeBuildLogStreamChunk(ctx *gin.Context, job model.BuildJob, offset int) (int, bool, error) {
 	var log model.BuildLog
-	if err := h.db.First(&log, "build_job_id = ? and project_id = ?", job.ID, job.ProjectID).Error; err != nil {
+	if err := h.dbFor(ctx).First(&log, "build_job_id = ? and project_id = ?", job.ID, job.ProjectID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return offset, false, nil
 		}

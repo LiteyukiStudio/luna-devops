@@ -296,11 +296,11 @@ export class PostgresRepository implements Repository {
   async getTimeline(ownerUserId: string, conversationId: string) {
     const conversation = await this.getConversation(ownerUserId, conversationId)
     if (!conversation) return undefined
-    const result = await this.pool.query<{ id: string, turn_index: number, status: string, input: string, selected_run_id: string }>(`select * from ai.turns where conversation_id=$1 order by turn_index`, [conversationId])
+    const result = await this.pool.query<{ id: string, turn_index: number, status: string, input: string, selected_run_id: string, created_at: Date }>(`select * from ai.turns where conversation_id=$1 order by turn_index`, [conversationId])
     const turns = await Promise.all(result.rows.map(async turn => {
       const run = await this.getRun(ownerUserId, turn.selected_run_id)
       const items = run ? await this.pool.query<{ id: string, run_id: string, turn_id: string, timeline_index: number, type: TimelineItem["type"], status: TimelineItem["status"], content: Record<string, unknown>, created_at: Date }>(`select * from ai.items where run_id=$1 order by timeline_index`, [run.id]) : undefined
-      return { id: turn.id, turnIndex: turn.turn_index, status: turn.status, input: turn.input, ...(run ? { run } : {}), items: items?.rows.map(i => ({ id: i.id, runId: i.run_id, turnId: i.turn_id, timelineIndex: i.timeline_index, type: i.type, status: i.status, content: i.content, createdAt: i.created_at.toISOString() })) ?? [] }
+      return { id: turn.id, turnIndex: turn.turn_index, status: turn.status, input: turn.input, createdAt: turn.created_at.toISOString(), ...(run ? { run } : {}), items: items?.rows.map(i => ({ id: i.id, runId: i.run_id, turnId: i.turn_id, timelineIndex: i.timeline_index, type: i.type, status: i.status, content: i.content, createdAt: i.created_at.toISOString() })) ?? [] }
     }))
     return { conversation, turns }
   }

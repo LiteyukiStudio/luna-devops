@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
-	"log"
+	"fmt"
+	"log/slog"
+	"os"
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/api"
@@ -11,34 +13,66 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/observability"
 	"github.com/LiteyukiStudio/devops/internal/redisconfig"
 	"github.com/LiteyukiStudio/devops/internal/secret"
+	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/LiteyukiStudio/devops/internal/webui"
 	"github.com/redis/go-redis/v9"
 )
 
 func main() {
+	if err := run(); err != nil {
+		os.Exit(1)
+	}
+}
+
+func run() (runErr error) {
+	config.LoadEnvironment()
+	telemetryRuntime, err := telemetry.Setup(context.Background(), telemetry.ServiceConfig{ServiceName: "luna-devops-api"})
+	if err != nil {
+		slog.Error("initialize telemetry", "event.name", "telemetry.initialization.failed", "error.type", telemetry.ErrorType(err))
+		return err
+	}
+	defer func() {
+		if runErr != nil {
+			slog.Error("API stopped", "event.name", "service.failed", "error.type", telemetry.ErrorType(runErr))
+		}
+		if err := telemetryRuntime.Shutdown(context.Background()); err != nil {
+			slog.Error("shutdown telemetry", "event.name", "telemetry.shutdown.failed", "error.type", telemetry.ErrorType(err))
+		}
+	}()
 	cfg := config.Load()
 	if err := cfg.ValidateRedis(); err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("validate Redis configuration: %w", err)
 	}
 	if err := secret.ValidateEncryptionConfig(); err != nil {
-		log.Fatalf("%v; set SECRET_ENCRYPTION_KEY or run local development with APP_ENV=development", err)
+		return fmt.Errorf("validate encryption configuration: %w", err)
 	}
 	if err := redisconfig.CheckConnection(context.Background(), cfg.RedisOptions()); err != nil {
-		log.Fatalf("connect Redis: %v", err)
+		return fmt.Errorf("connect Redis: %w", err)
 	}
 
-	db, err := database.Open(cfg.DatabaseURL, database.Options{
+	db, err := database.OpenContext(context.Background(), cfg.DatabaseURL, database.Options{
 		MaxOpenConns:    cfg.DatabaseMaxOpenConns,
 		MaxIdleConns:    cfg.DatabaseMaxIdleConns,
 		ConnMaxLifetime: cfg.DatabaseConnMaxLifetime,
 		ConnMaxIdleTime: cfg.DatabaseConnMaxIdleTime,
 	})
 	if err != nil {
-		log.Fatalf("open database: %v", err)
+		return fmt.Errorf("open database: %w", err)
 	}
 
-	if err := database.Migrate(db); err != nil {
-		log.Fatalf("migrate database: %v", err)
+	if err := database.MigrateContext(context.Background(), db); err != nil {
+		return fmt.Errorf("migrate database: %w", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		return fmt.Errorf("open database telemetry handle: %w", err)
+	}
+	dbMetricRegistration, err := telemetry.RegisterDBPoolMetrics(sqlDB, "postgres")
+	if err != nil {
+		return fmt.Errorf("register database telemetry: %w", err)
+	}
+	if dbMetricRegistration != nil {
+		defer dbMetricRegistration.Unregister()
 	}
 
 	metricsConfig := observability.MetricsConfig{
@@ -50,10 +84,6 @@ func main() {
 	var httpMetrics *observability.HTTPMetrics
 	if metricsConfig.Active() {
 		metricsRegistry := observability.NewRegistry("api")
-		sqlDB, err := db.DB()
-		if err != nil {
-			log.Fatalf("open database metrics handle: %v", err)
-		}
 		observability.RegisterDBStats(metricsRegistry, sqlDB, "postgres")
 		dependencyChecks := map[string]observability.DependencyCheck{
 			"postgres": sqlDB.PingContext,
@@ -61,6 +91,9 @@ func main() {
 		var redisClient *redis.Client
 		if cfg.RedisAddr != "" {
 			redisClient = redis.NewClient(cfg.RedisOptions().GoRedis())
+			if err := telemetry.InstrumentRedis(redisClient); err != nil {
+				return fmt.Errorf("instrument Redis metrics client: %w", err)
+			}
 			defer redisClient.Close()
 			dependencyChecks["redis"] = func(ctx context.Context) error {
 				return redisClient.Ping(ctx).Err()
@@ -69,7 +102,7 @@ func main() {
 		metricsRegistry.MustRegister(observability.NewDependencyCollector("api", dependencyChecks))
 		metricsServer, err := observability.StartMetricsServer(metricsConfig, metricsRegistry)
 		if err != nil {
-			log.Fatalf("start api metrics server: %v", err)
+			return fmt.Errorf("start API metrics server: %w", err)
 		}
 		defer func() {
 			ctx, cancel := shutdownContext()
@@ -81,10 +114,11 @@ func main() {
 
 	router := api.NewRouterWithStaticFSAndMetrics(db, webui.FS, httpMetrics)
 
-	log.Printf("api listening on %s", cfg.APIAddr)
+	slog.Info("API listening", "event.name", "service.started", "server.address", cfg.APIAddr, "telemetry.enabled", telemetryRuntime.Active())
 	if err := router.Run(cfg.APIAddr); err != nil {
-		log.Fatalf("run api: %v", err)
+		return fmt.Errorf("run API: %w", err)
 	}
+	return nil
 }
 
 func shutdownContext() (context.Context, context.CancelFunc) {

@@ -24,6 +24,7 @@ export async function presentTimeline(repository: Repository, ownerUserId: strin
       input: {
         id: `${turn.id}:input`,
         type: "user_message" as const,
+        createdAt: turn.createdAt,
         parts: [{ id: `${turn.id}:input:0`, partIndex: 0, type: "text" as const, text: turn.input }],
       },
       ...(turn.run ? {
@@ -81,6 +82,7 @@ function presentItem(item: TimelineItem) {
     timelineIndex: item.timelineIndex,
     type: mapType(item.type),
     status: item.status,
+    createdAt: item.createdAt,
     parts: text === undefined ? [] : [{ id: `${item.id}:0`, partIndex: 0, type: "text" as const, text }],
     ...(stringValue(item.content.relatedItemId) ? { relatedItemId: stringValue(item.content.relatedItemId) } : {}),
   }

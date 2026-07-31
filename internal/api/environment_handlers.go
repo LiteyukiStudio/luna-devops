@@ -16,7 +16,7 @@ func (h *Handlers) ListEnvironments(ctx *gin.Context) {
 		return
 	}
 	var environments []model.Environment
-	query := h.db.Where("project_id = ?", ctx.Param("projectId")).Order("created_at desc")
+	query := h.dbFor(ctx).Where("project_id = ?", ctx.Param("projectId")).Order("created_at desc")
 	query = applySearch(ctx, query, "name", "slug", "namespace")
 	if err := query.Find(&environments).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
@@ -45,7 +45,7 @@ func (h *Handlers) CreateEnvironment(ctx *gin.Context) {
 		return
 	}
 	environment.ID = id.New("env")
-	if err := h.db.Create(&environment).Error; err != nil {
+	if err := h.dbFor(ctx).Create(&environment).Error; err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -85,7 +85,7 @@ func (h *Handlers) UpdateEnvironment(ctx *gin.Context) {
 	environment.EnvVars = next.EnvVars
 	environment.ConfigRefs = next.ConfigRefs
 	environment.SecretRefs = next.SecretRefs
-	if err := h.db.Save(&environment).Error; err != nil {
+	if err := h.dbFor(ctx).Save(&environment).Error; err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -107,7 +107,7 @@ func (h *Handlers) DeleteEnvironment(ctx *gin.Context) {
 	if !h.ensureEnvironmentCanDelete(ctx, environment) {
 		return
 	}
-	if err := h.db.Delete(&environment).Error; err != nil {
+	if err := h.dbFor(ctx).Delete(&environment).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -125,7 +125,7 @@ func (h *Handlers) ensureEnvironmentCanDelete(ctx *gin.Context, environment mode
 	}
 	for _, check := range checks {
 		var count int64
-		err := h.db.Model(check.model).
+		err := h.dbFor(ctx).Model(check.model).
 			Where("project_id = ? and environment_id = ?", environment.ProjectID, environment.ID).
 			Count(&count).Error
 		if err != nil {
@@ -142,7 +142,7 @@ func (h *Handlers) ensureEnvironmentCanDelete(ctx *gin.Context, environment mode
 
 func (h *Handlers) findEnvironment(ctx *gin.Context) (model.Environment, bool) {
 	var environment model.Environment
-	if err := h.db.First(&environment, "id = ? and project_id = ?", ctx.Param("environmentId"), ctx.Param("projectId")).Error; err != nil {
+	if err := h.dbFor(ctx).First(&environment, "id = ? and project_id = ?", ctx.Param("environmentId"), ctx.Param("projectId")).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "environment not found")
 		return environment, false
 	}

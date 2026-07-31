@@ -23,7 +23,7 @@ func (h *Handlers) billingScopeForUser(ctx *gin.Context, user model.User) (billi
 		scope.FilterProjectIDs = len(requested) > 0
 		if selectedUserID != "" {
 			var count int64
-			if err := h.db.Model(&model.User{}).Where("id = ?", selectedUserID).Count(&count).Error; err != nil {
+			if err := h.dbFor(ctx).Model(&model.User{}).Where("id = ?", selectedUserID).Count(&count).Error; err != nil {
 				writeError(ctx, http.StatusInternalServerError, err.Error())
 				return scope, false
 			}
@@ -34,7 +34,7 @@ func (h *Handlers) billingScopeForUser(ctx *gin.Context, user model.User) (billi
 			scope.UserIDs = []string{selectedUserID}
 		} else {
 			var wallets []model.UserWallet
-			if err := h.db.Select("user_id").Find(&wallets).Error; err != nil {
+			if err := h.dbFor(ctx).Select("user_id").Find(&wallets).Error; err != nil {
 				writeError(ctx, http.StatusInternalServerError, err.Error())
 				return scope, false
 			}
@@ -45,7 +45,7 @@ func (h *Handlers) billingScopeForUser(ctx *gin.Context, user model.User) (billi
 			}
 			if len(scope.UserIDs) == 0 {
 				var users []model.User
-				if err := h.db.Select("id").Find(&users).Error; err != nil {
+				if err := h.dbFor(ctx).Select("id").Find(&users).Error; err != nil {
 					writeError(ctx, http.StatusInternalServerError, err.Error())
 					return scope, false
 				}
@@ -67,7 +67,7 @@ func (h *Handlers) billingScopeForUser(ctx *gin.Context, user model.User) (billi
 	scope.ProjectIDs = requested
 	for _, projectID := range requested {
 		var count int64
-		if err := h.db.Model(&model.Project{}).Where("id = ? and billing_owner_user_id = ?", projectID, user.ID).Count(&count).Error; err != nil {
+		if err := h.dbFor(ctx).Model(&model.Project{}).Where("id = ? and billing_owner_user_id = ?", projectID, user.ID).Count(&count).Error; err != nil {
 			writeError(ctx, http.StatusInternalServerError, err.Error())
 			return scope, false
 		}
@@ -84,7 +84,7 @@ func (h *Handlers) ensureBillingProjectsExist(ctx *gin.Context, projectIDs []str
 		return true
 	}
 	var count int64
-	if err := h.db.Model(&model.Project{}).Where("id in ?", projectIDs).Count(&count).Error; err != nil {
+	if err := h.dbFor(ctx).Model(&model.Project{}).Where("id in ?", projectIDs).Count(&count).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return false
 	}

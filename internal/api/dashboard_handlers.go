@@ -21,21 +21,21 @@ func (h *Handlers) GetDashboard(ctx *gin.Context) {
 	}
 	platformAdmin := authz.IsPlatformAdmin(user.Role)
 	if platformAdmin {
-		if _, err := h.ensurePlatformSystemProject(user); err != nil {
+		if _, err := h.ensurePlatformSystemProject(user, ctx.Request.Context()); err != nil {
 			writeErrorCode(ctx, http.StatusInternalServerError, "dashboard.load_failed", err.Error())
 			return
 		}
 	}
 	projectIDs := []string{}
 	if !platformAdmin {
-		projectIDs = h.projectIDsForUser(user.ID)
+		projectIDs = h.projectIDsForUser(ctx.Request.Context(), user.ID)
 	}
 	scope := dashboardservice.Scope{
 		UserID:            user.ID,
 		PlatformAdmin:     platformAdmin,
 		VisibleProjectIDs: projectIDs,
 	}
-	service := dashboardservice.NewService(h.db)
+	service := dashboardservice.NewService(h.dbFor(ctx))
 	overview, err := service.Overview(ctx.Request.Context(), scope)
 	if err != nil {
 		writeErrorCode(ctx, http.StatusInternalServerError, "dashboard.load_failed", err.Error())

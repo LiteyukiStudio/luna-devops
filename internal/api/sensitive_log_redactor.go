@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/url"
 	"regexp"
 	"strings"
@@ -26,23 +27,23 @@ func (h *Handlers) redactBuildJobLogContent(job model.BuildJob, content string) 
 	return redactSensitiveLogContent(content, h.sensitiveValuesForBuildJob(job))
 }
 
-func (h *Handlers) redactHookRunLogContent(run model.HookRun, content string) string {
+func (h *Handlers) redactHookRunLogContent(run model.HookRun, content string, contexts ...context.Context) string {
 	if strings.TrimSpace(run.BuildJobID) == "" {
 		return redactSensitiveLogContent(content, nil)
 	}
 	var job model.BuildJob
-	if err := h.db.First(&job, "id = ? and project_id = ?", run.BuildJobID, run.ProjectID).Error; err != nil {
+	if err := h.dbWithContext(firstContext(contexts)).First(&job, "id = ? and project_id = ?", run.BuildJobID, run.ProjectID).Error; err != nil {
 		return redactSensitiveLogContent(content, nil)
 	}
 	return h.redactBuildJobLogContent(job, content)
 }
 
-func (h *Handlers) sensitiveValuesForBuildJob(job model.BuildJob) []string {
+func (h *Handlers) sensitiveValuesForBuildJob(job model.BuildJob, contexts ...context.Context) []string {
 	var run model.BuildRun
-	if err := h.db.First(&run, "id = ? and project_id = ?", job.BuildRunID, job.ProjectID).Error; err != nil {
+	if err := h.dbWithContext(firstContext(contexts)).First(&run, "id = ? and project_id = ?", job.BuildRunID, job.ProjectID).Error; err != nil {
 		return nil
 	}
-	return h.sensitiveValuesForBuildRun(h.db, run)
+	return h.sensitiveValuesForBuildRun(h.dbWithContext(firstContext(contexts)), run)
 }
 
 func (h *Handlers) sensitiveValuesForBuildRun(db *gorm.DB, run model.BuildRun) []string {
@@ -67,41 +68,41 @@ func (h *Handlers) gitSensitiveValuesForBuildRun(db *gorm.DB, run model.BuildRun
 	}
 
 	var values []string
-	if value := h.secrets.Resolve(binding.CredentialRef); strings.TrimSpace(value) != "" {
+	if value := h.secrets.ResolveContext(db.Statement.Context, binding.CredentialRef); strings.TrimSpace(value) != "" {
 		values = append(values, value)
 	}
 	var account model.GitAccount
 	if err := db.First(&account, "id = ?", binding.GitAccountID).Error; err != nil {
 		return values
 	}
-	if value := h.secrets.Resolve(account.AccessTokenRef); strings.TrimSpace(value) != "" {
+	if value := h.secrets.ResolveContext(db.Statement.Context, account.AccessTokenRef); strings.TrimSpace(value) != "" {
 		values = append(values, value)
 	}
-	if value := h.secrets.Resolve(account.RefreshTokenRef); strings.TrimSpace(value) != "" {
+	if value := h.secrets.ResolveContext(db.Statement.Context, account.RefreshTokenRef); strings.TrimSpace(value) != "" {
 		values = append(values, value)
 	}
 	return values
 }
 
-func (h *Handlers) registrySensitiveValuesForBuildRun(run model.BuildRun) []string {
+func (h *Handlers) registrySensitiveValuesForBuildRun(run model.BuildRun, contexts ...context.Context) []string {
 	if strings.TrimSpace(run.TargetRegistryID) == "" {
 		return nil
 	}
 	var registry model.ArtifactRegistry
-	if err := h.db.First(&registry, "id = ?", run.TargetRegistryID).Error; err != nil {
+	if err := h.dbWithContext(firstContext(contexts)).First(&registry, "id = ?", run.TargetRegistryID).Error; err != nil {
 		return nil
 	}
 	var actor model.User
-	if err := h.db.First(&actor, "id = ?", run.CreatedBy).Error; err != nil {
+	if err := h.dbWithContext(firstContext(contexts)).First(&actor, "id = ?", run.CreatedBy).Error; err != nil {
 		return nil
 	}
-	credential, ok := h.registryCredentialFor(actor, registry)
+	credential, ok := h.registryCredentialFor(actor, registry, firstContext(contexts))
 	if !ok {
 		return nil
 	}
 	return []string{
-		h.secrets.Resolve(credential.TokenRef),
-		h.secrets.Resolve(credential.PasswordRef),
+		h.secrets.ResolveContext(firstContext(contexts), credential.TokenRef),
+		h.secrets.ResolveContext(firstContext(contexts), credential.PasswordRef),
 	}
 }
 
@@ -117,7 +118,7 @@ func (h *Handlers) buildVariableSensitiveValuesForRun(db *gorm.DB, run model.Bui
 	values := make([]string, 0, len(sets))
 	for _, set := range sets {
 		for _, ref := range decodeSecretRefs(set.SecretRefs) {
-			if value := h.secrets.Resolve(ref); strings.TrimSpace(value) != "" {
+			if value := h.secrets.ResolveContext(db.Statement.Context, ref); strings.TrimSpace(value) != "" {
 				values = append(values, value)
 			}
 		}

@@ -37,7 +37,7 @@ func (h *Handlers) GetBillingSummary(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	summary, err := (billing.Service{DB: h.db}).Summary(scope.UserIDs, scope.ProjectIDs, time.Now(), lowBalanceLimit, period.Start, period.End)
+	summary, err := (billing.Service{DB: h.dbFor(ctx)}).Summary(scope.UserIDs, scope.ProjectIDs, time.Now(), lowBalanceLimit, period.Start, period.End)
 	if err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return

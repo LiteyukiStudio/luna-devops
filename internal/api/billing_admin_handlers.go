@@ -23,7 +23,7 @@ func (h *Handlers) ListBillingRateRules(ctx *gin.Context) {
 		return
 	}
 
-	rules, err := (billing.Service{DB: h.db}).ListRateRules()
+	rules, err := (billing.Service{DB: h.dbFor(ctx)}).ListRateRules()
 	if err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
@@ -63,7 +63,7 @@ func (h *Handlers) UpdateBillingRateRules(ctx *gin.Context) {
 			Enabled:        rule.Enabled,
 		})
 	}
-	rules, err := (billing.Service{DB: h.db}).UpdateRateRules(updates)
+	rules, err := (billing.Service{DB: h.dbFor(ctx)}).UpdateRateRules(updates)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		writeErrorCode(ctx, http.StatusBadRequest, "billing.rate_rule_unknown", "unknown billing rate rule meter")
 		return
@@ -94,7 +94,7 @@ func (h *Handlers) CreateBillingWalletTransaction(ctx *gin.Context) {
 		return
 	}
 	var targetUser model.User
-	if err := h.db.First(&targetUser, "id = ?", userID).Error; err != nil {
+	if err := h.dbFor(ctx).First(&targetUser, "id = ?", userID).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "user not found")
 		return
 	}
@@ -107,7 +107,7 @@ func (h *Handlers) CreateBillingWalletTransaction(ctx *gin.Context) {
 	if transactionType == "" {
 		transactionType = "credit"
 	}
-	entry, err := (billing.Service{DB: h.db}).ApplyWalletTransaction(billing.WalletTransactionInput{
+	entry, err := (billing.Service{DB: h.dbFor(ctx)}).ApplyWalletTransaction(billing.WalletTransactionInput{
 		UserID:        targetUser.ID,
 		AmountCredits: amount,
 		Type:          transactionType,
@@ -118,7 +118,7 @@ func (h *Handlers) CreateBillingWalletTransaction(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusBadRequest, "billing.transaction_invalid", err.Error())
 		return
 	}
-	h.audit(user.ID, "billing.wallet_transaction", entry.ID, true, "")
+	h.auditWithContext(user.ID, "billing.wallet_transaction", entry.ID, true, "", ctx.Request.Context())
 	ctx.JSON(http.StatusCreated, entry)
 }
 
@@ -150,7 +150,7 @@ func (h *Handlers) CreateExternalBillingTransaction(ctx *gin.Context) {
 		return
 	}
 	var targetUser model.User
-	if err := h.db.First(&targetUser, "id = ?", userID).Error; err != nil {
+	if err := h.dbFor(ctx).First(&targetUser, "id = ?", userID).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "user not found")
 		return
 	}
@@ -167,7 +167,7 @@ func (h *Handlers) CreateExternalBillingTransaction(ctx *gin.Context) {
 	if transactionType == "adjustment" {
 		reason = billing.ReasonExternalAdjust
 	}
-	entry, err := (billing.Service{DB: h.db}).ApplyWalletTransaction(billing.WalletTransactionInput{
+	entry, err := (billing.Service{DB: h.dbFor(ctx)}).ApplyWalletTransaction(billing.WalletTransactionInput{
 		UserID:         targetUser.ID,
 		AmountCredits:  amount,
 		Type:           transactionType,
@@ -180,6 +180,6 @@ func (h *Handlers) CreateExternalBillingTransaction(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusBadRequest, "billing.transaction_invalid", err.Error())
 		return
 	}
-	h.audit(user.ID, "billing.external_transaction", entry.ID, true, idempotencyKey)
+	h.auditWithContext(user.ID, "billing.external_transaction", entry.ID, true, idempotencyKey, ctx.Request.Context())
 	ctx.JSON(http.StatusOK, entry)
 }

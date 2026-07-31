@@ -55,7 +55,9 @@ func NewHandlers(db *gorm.DB) *Handlers {
 	if cfg.RedisAddr != "" {
 		handlers.taskClient = tasks.NewClientWithRedis(redisOptions)
 	}
-	handlers.secrets = secret.NewStore(db, handlers.audit)
+	handlers.secrets = secret.NewStore(db, handlers.audit).WithContextAudit(func(ctx context.Context, userID, action, resource string, success bool, message string) {
+		handlers.auditWithContext(userID, action, resource, success, message, ctx)
+	})
 	aiConfig := aiagent.LoadConfig()
 	handlers.aiDeploymentEnabled = aiConfig.Available
 	handlers.aiAgent = aiConfig.Client()
@@ -65,6 +67,47 @@ func NewHandlers(db *gorm.DB) *Handlers {
 		aitool.WithWebProxyProvider(handlers.aiWebProxyPoolForUser),
 	)
 	return handlers
+}
+
+// dbFor binds every database operation performed by an HTTP handler to the
+// request context. The GORM OpenTelemetry plugin uses this context to attach
+// SQL spans below the inbound HTTP span and to observe cancellation.
+func (h *Handlers) dbFor(ctx *gin.Context) *gorm.DB {
+	if h == nil || h.db == nil {
+		return nil
+	}
+	if ctx == nil || ctx.Request == nil {
+		return h.db
+	}
+	return h.db.WithContext(ctx.Request.Context())
+}
+
+// dbWithContext is the non-Gin counterpart used by request-triggered helpers
+// and services that already accept a standard library context.
+func (h *Handlers) dbWithContext(ctx context.Context) *gorm.DB {
+	if h == nil || h.db == nil {
+		return nil
+	}
+	if ctx == nil {
+		return h.db
+	}
+	return h.db.WithContext(ctx)
+}
+
+func firstContext(contexts []context.Context) context.Context {
+	for _, ctx := range contexts {
+		if ctx != nil {
+			return ctx
+		}
+	}
+	return context.Background()
+}
+
+func requestContext(ctx *gin.Context) context.Context {
+	if ctx == nil || ctx.Request == nil {
+		return context.Background()
+	}
+	return ctx.Request.Context()
 }
 
 func (h *Handlers) setAIAgentForTest(client aiagent.Client, deploymentEnabled bool) {

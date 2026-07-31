@@ -56,6 +56,9 @@ golang-migrate Job 管理，Agent 不会在启动时自动迁移。
 | `PROVIDER_BASE_URL` | 空 | 本地直连时使用的 OpenAI-compatible API 根地址 |
 | `PROVIDER_API_KEY` | 空 | 本地直连密钥，仅驻留进程内 |
 | `PROVIDER_MODEL` | 空 | 本地直连模型名称 |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | 空 | OTLP/HTTP Collector 根地址；为空时不初始化遥测 SDK |
+| `OTEL_RESOURCE_ATTRIBUTES` | 空 | 附加资源属性，例如 `deployment.environment.name=production` |
+| `OTEL_EXPORTER_OTLP_HEADERS` | 空 | Collector 鉴权 Header，使用 OTel 标准逗号分隔格式 |
 
 Provider 不需要手动选择类型。连接 Luna API 时，Agent 自动读取后台保存的 API
 地址、加密 API Key 和模型名称；没有 Luna API 时，只有同时填写上述三个本地直连
@@ -65,6 +68,22 @@ Provider 不需要手动选择类型。连接 Luna API 时，Agent 自动读取�
 模型请求超时、单次 Run 超时和每个 Agent 实例的并发数由“全局设置 → AI 助手 →
 高级运行设置”动态下发。配置刷新间隔、Run 轮询间隔和数据库租约属于内部一致性参数，
 使用代码中的安全默认值，不再暴露为部署环境变量。
+
+## 可观测性
+
+只需设置 `OTEL_EXPORTER_OTLP_ENDPOINT`，Agent 就会通过 OTLP/HTTP 输出 Trace、
+Metrics 和 Logs，服务名固定为 `luna-agent`。未设置端点时不会启动导出线程，也不会
+尝试连接 Collector。
+
+自动插桩覆盖 Fastify、HTTP/fetch、PostgreSQL 与 Pino；业务插桩覆盖 Run 循环、模型
+流、工具执行、审批、交互卡片、Provider 配置读取和 Luna API 调用。日志与 Span 只
+记录稳定错误代码、调用类型和低敏资源标识，不记录 Prompt、消息正文、工具参数、
+Token、API Key、Secret 或 HTTP Body。跨服务调用使用 W3C `traceparent` /
+`tracestate` 传播上下文。
+
+指标包括运行量和耗时、活跃运行、模型调用、首个输出延迟、循环轮次和 Token、工具调用、审批决策、卡片生成、
+外部请求与数据库连接池指标。指标标签只使用操作名、结果和阶段等低基数字段；Run ID、
+用户 ID 与请求 ID 只进入 Trace 或结构化日志。
 
 ## 内部 API
 

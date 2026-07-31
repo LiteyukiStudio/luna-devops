@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -22,7 +23,7 @@ func (h *Handlers) ListProjectRuntimeConfigSets(ctx *gin.Context) {
 		return
 	}
 	var sets []model.ProjectRuntimeConfigSet
-	query := h.db.Model(&model.ProjectRuntimeConfigSet{}).Where("project_id = ?", project.ID)
+	query := h.dbFor(ctx).Model(&model.ProjectRuntimeConfigSet{}).Where("project_id = ?", project.ID)
 	query = applySearch(ctx, query, "name", "env_vars", "config_files")
 	if paginationRequested(ctx) {
 		pagination := paginationFromQuery(ctx)
@@ -69,7 +70,7 @@ func (h *Handlers) CreateProjectRuntimeConfigSet(ctx *gin.Context) {
 		return
 	}
 	set.CreatedBy = user.ID
-	if err := h.db.Create(&set).Error; err != nil {
+	if err := h.dbFor(ctx).Create(&set).Error; err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -89,7 +90,7 @@ func (h *Handlers) UpdateProjectRuntimeConfigSet(ctx *gin.Context) {
 		return
 	}
 	var existing model.ProjectRuntimeConfigSet
-	if err := h.db.First(&existing, "id = ? and project_id = ?", ctx.Param("setId"), project.ID).Error; err != nil {
+	if err := h.dbFor(ctx).First(&existing, "id = ? and project_id = ?", ctx.Param("setId"), project.ID).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "运行配置集不存在")
 		return
 	}
@@ -110,12 +111,12 @@ func (h *Handlers) UpdateProjectRuntimeConfigSet(ctx *gin.Context) {
 	existing.SecretRefs = next.SecretRefs
 	existing.SecretFiles = next.SecretFiles
 	existing.Enabled = next.Enabled
-	if err := h.db.Save(&existing).Error; err != nil {
+	if err := h.dbFor(ctx).Save(&existing).Error; err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
 	response := projectRuntimeConfigSetResponseFor(existing)
-	response.AffectedDeploymentTargetCount = h.countRuntimeConfigSetDeploymentTargets(project.ID, existing.ID)
+	response.AffectedDeploymentTargetCount = h.countRuntimeConfigSetDeploymentTargets(project.ID, existing.ID, ctx.Request.Context())
 	ctx.JSON(http.StatusOK, response)
 }
 
@@ -128,7 +129,7 @@ func (h *Handlers) DeleteProjectRuntimeConfigSet(ctx *gin.Context) {
 		return
 	}
 	var set model.ProjectRuntimeConfigSet
-	if err := h.db.First(&set, "id = ? and project_id = ?", ctx.Param("setId"), project.ID).Error; err != nil {
+	if err := h.dbFor(ctx).First(&set, "id = ? and project_id = ?", ctx.Param("setId"), project.ID).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "运行配置集不存在")
 		return
 	}
@@ -136,7 +137,7 @@ func (h *Handlers) DeleteProjectRuntimeConfigSet(ctx *gin.Context) {
 		writeError(ctx, http.StatusConflict, "运行配置正在删除中，请等待资源清理完成")
 		return
 	}
-	if err := markResourceDeleting(h.db, &model.ProjectRuntimeConfigSet{}, set.ID); err != nil {
+	if err := markResourceDeleting(h.dbFor(ctx), &model.ProjectRuntimeConfigSet{}, set.ID); err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -146,7 +147,7 @@ func (h *Handlers) DeleteProjectRuntimeConfigSet(ctx *gin.Context) {
 		ProjectID:    set.ProjectID,
 		ActorID:      set.CreatedBy,
 	}) {
-		_ = markResourceDeleteFailed(h.db, &model.ProjectRuntimeConfigSet{}, set.ID, "资源清理任务投递失败，请稍后重试")
+		_ = markResourceDeleteFailed(h.dbFor(ctx), &model.ProjectRuntimeConfigSet{}, set.ID, "资源清理任务投递失败，请稍后重试")
 		writeError(ctx, http.StatusServiceUnavailable, "资源清理任务投递失败，请稍后重试")
 		return
 	}
@@ -260,7 +261,7 @@ func (h *Handlers) runtimeSecretRefsFromInput(ctx *gin.Context, user model.User,
 			}
 			continue
 		}
-		output[key] = h.secrets.Store(item, user.ID, "runtime_config:"+ownerID+":secret:"+key)
+		output[key] = h.secrets.StoreContext(ctx.Request.Context(), item, user.ID, "runtime_config:"+ownerID+":secret:"+key)
 	}
 	return output, true
 }
@@ -289,7 +290,7 @@ func (h *Handlers) runtimeSecretFilesFromInput(ctx *gin.Context, user model.User
 			}
 			continue
 		}
-		output[filePath] = h.secrets.Store(content, user.ID, "runtime_config:"+ownerID+":file:"+filePath)
+		output[filePath] = h.secrets.StoreContext(ctx.Request.Context(), content, user.ID, "runtime_config:"+ownerID+":file:"+filePath)
 	}
 	return output, true
 }
@@ -413,9 +414,9 @@ func projectRuntimeConfigSetResponseFor(set model.ProjectRuntimeConfigSet) proje
 	}
 }
 
-func (h *Handlers) countRuntimeConfigSetDeploymentTargets(projectID string, setID string) int {
+func (h *Handlers) countRuntimeConfigSetDeploymentTargets(projectID string, setID string, contexts ...context.Context) int {
 	var targets []model.DeploymentTarget
-	if err := h.db.Select("runtime_config_set_ids", "runtime_config_refs").Where("project_id = ?", projectID).Find(&targets).Error; err != nil {
+	if err := h.dbWithContext(firstContext(contexts)).Select("runtime_config_set_ids", "runtime_config_refs").Where("project_id = ?", projectID).Find(&targets).Error; err != nil {
 		return 0
 	}
 	count := 0

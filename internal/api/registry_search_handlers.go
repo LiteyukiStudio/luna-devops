@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"time"
@@ -24,7 +25,7 @@ func (h *Handlers) SearchRegistryRepositories(ctx *gin.Context) {
 		pageSize = 20
 	}
 	search := strings.TrimSpace(ctx.Query("search"))
-	credential := h.registryCredentialInput(user, registry)
+	credential := h.registryCredentialInput(ctx.Request.Context(), user, registry)
 	result, err := registryprovider.SearchRepositories(ctx.Request.Context(), registry.Provider, registry.Endpoint, "", search, page, pageSize, h.egressPolicyForUser(user), credential)
 	if err != nil {
 		writeError(ctx, http.StatusBadGateway, "镜像站上游接口调用失败，请检查凭据权限或稍后重试")
@@ -51,7 +52,7 @@ func (h *Handlers) ListRegistryRepositoryTags(ctx *gin.Context) {
 	if limit > 50 {
 		limit = 50
 	}
-	credential := h.registryCredentialInput(user, registry)
+	credential := h.registryCredentialInput(ctx.Request.Context(), user, registry)
 	result, err := registryprovider.ListTags(ctx.Request.Context(), registry.Provider, registry.Endpoint, repository, limit, h.egressPolicyForUser(user), credential)
 	if err != nil {
 		writeError(ctx, http.StatusBadGateway, "镜像站上游接口调用失败，请检查凭据权限或稍后重试")
@@ -61,12 +62,12 @@ func (h *Handlers) ListRegistryRepositoryTags(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, response)
 }
 
-func (h *Handlers) registryCredentialInput(user model.User, registry model.ArtifactRegistry) registryprovider.Credential {
+func (h *Handlers) registryCredentialInput(ctx context.Context, user model.User, registry model.ArtifactRegistry) registryprovider.Credential {
 	credentialInput := registryprovider.Credential{}
-	if credential, ok := h.registryCredentialFor(user, registry); ok {
-		credentialInput.Secret = h.secrets.Resolve(credential.TokenRef)
+	if credential, ok := h.registryCredentialFor(user, registry, ctx); ok {
+		credentialInput.Secret = h.secrets.ResolveContext(ctx, credential.TokenRef)
 		if credentialInput.Secret == "" {
-			credentialInput.Secret = h.secrets.Resolve(credential.PasswordRef)
+			credentialInput.Secret = h.secrets.ResolveContext(ctx, credential.PasswordRef)
 		}
 		credentialInput.Username = credential.Username
 	}
@@ -78,7 +79,7 @@ func (h *Handlers) allowRegistrySearch(ctx *gin.Context, userID string) bool {
 	if h.mode == "development" {
 		limit = developmentRateLimit
 	}
-	allowed, err := h.rateLimiter.allow("registry_search:"+userID, limit, time.Minute)
+	allowed, err := h.rateLimiter.allow(ctx.Request.Context(), "registry_search:"+userID, limit, time.Minute)
 	if allowed {
 		return true
 	}

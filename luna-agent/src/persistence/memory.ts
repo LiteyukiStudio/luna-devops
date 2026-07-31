@@ -298,7 +298,7 @@ export class MemoryRepository implements Repository {
       .sort((a, b) => a.turnIndex - b.turnIndex)
       .map(turn => {
         const run = this.runs.get(turn.selectedRunId)
-        return { id: turn.id, turnIndex: turn.turnIndex, status: turn.status, input: turn.input, ...(run ? { run } : {}), items: this.items.filter(i => i.runId === run?.id).sort((a, b) => a.timelineIndex - b.timelineIndex) }
+        return { id: turn.id, turnIndex: turn.turnIndex, status: turn.status, input: turn.input, createdAt: turn.createdAt, ...(run ? { run } : {}), items: this.items.filter(i => i.runId === run?.id).sort((a, b) => a.timelineIndex - b.timelineIndex) }
       })
     return { conversation, turns }
   }

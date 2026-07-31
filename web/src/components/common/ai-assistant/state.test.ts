@@ -74,12 +74,12 @@ describe('aI assistant state', () => {
         id: 'turn',
         turnIndex: 0,
         status: 'running',
-        input: { id: 'turn:input', type: 'user_message', parts: [{ id: 'input', partIndex: 0, type: 'text', text: 'question' }] },
+        input: { id: 'turn:input', type: 'user_message', createdAt: '2026-07-28T00:00:00Z', parts: [{ id: 'input', partIndex: 0, type: 'text', text: 'question' }] },
         selectedRun: {
           id: 'run',
           runIndex: 0,
           status: 'running',
-          items: [{ id: 'answer', timelineIndex: 0, type: 'assistant_message', status: 'streaming', parts: [{ id: 'answer:0', partIndex: 0, type: 'text', text: 'streamed' }] }],
+          items: [{ id: 'answer', timelineIndex: 0, createdAt: '2026-07-28T00:00:01Z', type: 'assistant_message', status: 'streaming', parts: [{ id: 'answer:0', partIndex: 0, type: 'text', text: 'streamed' }] }],
         },
       }],
     }
@@ -113,7 +113,7 @@ describe('aI assistant state', () => {
         id: 'turn',
         turnIndex: 0,
         status: 'failed',
-        input: { id: 'input', type: 'user_message', parts: [{ id: 'p', partIndex: 0, type: 'text', text: 'check' }] },
+        input: { id: 'input', type: 'user_message', createdAt: '2026-07-28T00:00:00Z', parts: [{ id: 'p', partIndex: 0, type: 'text', text: 'check' }] },
         selectedRun: {
           id: 'run',
           runIndex: 0,
@@ -138,14 +138,14 @@ describe('aI assistant state', () => {
         id: 'turn',
         turnIndex: 0,
         status: 'completed',
-        input: { id: 'input', type: 'user_message', parts: [{ id: 'p', partIndex: 0, type: 'text', text: 'check' }] },
+        input: { id: 'input', type: 'user_message', createdAt: '2026-07-28T00:00:00Z', parts: [{ id: 'p', partIndex: 0, type: 'text', text: 'check' }] },
         selectedRun: {
           id: 'run',
           runIndex: 0,
           status: 'completed',
           items: [
-            { id: 'call', timelineIndex: 0, type: 'tool_call', status: 'completed', parts: [], toolCall: { id: 'tool', operationId: 'runtime.read', callIndex: 0 } },
-            { id: 'result', timelineIndex: 1, type: 'tool_result', status: 'completed', relatedItemId: 'call', parts: [{ id: 'r', partIndex: 0, type: 'structured_data', data: { summaryKey: 'aiAssistant.resultAvailable' } }] },
+            { id: 'call', timelineIndex: 0, createdAt: '2026-07-28T00:00:01Z', type: 'tool_call', status: 'completed', parts: [], toolCall: { id: 'tool', operationId: 'runtime.read', callIndex: 0 } },
+            { id: 'result', timelineIndex: 1, createdAt: '2026-07-28T00:00:02Z', type: 'tool_result', status: 'completed', relatedItemId: 'call', parts: [{ id: 'r', partIndex: 0, type: 'structured_data', data: { summaryKey: 'aiAssistant.resultAvailable' } }] },
           ],
         },
       }],

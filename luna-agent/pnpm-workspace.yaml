@@ -1,4 +1,5 @@
 allowBuilds:
   esbuild: true
+  protobufjs: true
 shellEmulator: true
 trustPolicy: no-downgrade

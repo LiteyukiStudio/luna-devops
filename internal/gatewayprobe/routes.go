@@ -19,6 +19,7 @@ type GatewayAPIRouteDiscoverer struct {
 }
 
 func NewGatewayAPIRouteDiscoverer(config *rest.Config) (*GatewayAPIRouteDiscoverer, error) {
+	config = kubeprovider.InstrumentRESTConfig(config)
 	client, err := gatewayclient.NewForConfig(config)
 	if err != nil {
 		return nil, err

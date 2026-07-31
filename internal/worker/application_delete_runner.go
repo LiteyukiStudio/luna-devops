@@ -34,11 +34,15 @@ func (r *Runner) handleApplicationDelete(ctx context.Context, task *asynq.Task) 
 		"delete_status":  "deleting",
 		"delete_message": "",
 	}).Error
-	if err := r.cleanupApplicationRuntimeResources(ctx, payload); err != nil {
+	if err := workerStage(ctx, "application_delete.cleanup_runtime", func(stageCtx context.Context) error {
+		return r.cleanupApplicationRuntimeResources(stageCtx, payload)
+	}); err != nil {
 		_ = r.markApplicationDeleteFailed(payload.ApplicationID, err)
 		return err
 	}
-	return r.finishApplicationDelete(app, payload)
+	return workerStage(ctx, "application_delete.finalize", func(context.Context) error {
+		return r.finishApplicationDelete(app, payload)
+	})
 }
 
 func (r *Runner) cleanupApplicationRuntimeResources(ctx context.Context, payload tasks.ApplicationDeletePayload) error {

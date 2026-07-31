@@ -30,7 +30,7 @@ func (h *Handlers) ListDeploymentTargets(ctx *gin.Context) {
 		return
 	}
 	var targets []model.DeploymentTarget
-	query := h.db.Model(&model.DeploymentTarget{}).Where("project_id = ? and application_id = ?", app.ProjectID, app.ID)
+	query := h.dbFor(ctx).Model(&model.DeploymentTarget{}).Where("project_id = ? and application_id = ?", app.ProjectID, app.ID)
 	query = applySearch(ctx, query, "name", "source_branch", "image_repository", "image_tag")
 	if paginationRequested(ctx) {
 		pagination := paginationFromQuery(ctx)
@@ -46,7 +46,7 @@ func (h *Handlers) ListDeploymentTargets(ctx *gin.Context) {
 			writeError(ctx, http.StatusInternalServerError, err.Error())
 			return
 		}
-		if err := h.attachDeploymentTargetHookBindings(targets); err != nil {
+		if err := h.attachDeploymentTargetHookBindings(targets, ctx.Request.Context()); err != nil {
 			writeError(ctx, http.StatusInternalServerError, err.Error())
 			return
 		}
@@ -58,7 +58,7 @@ func (h *Handlers) ListDeploymentTargets(ctx *gin.Context) {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if err := h.attachDeploymentTargetHookBindings(targets); err != nil {
+	if err := h.attachDeploymentTargetHookBindings(targets, ctx.Request.Context()); err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -109,14 +109,14 @@ func (h *Handlers) CreateDeploymentTarget(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := h.saveDeploymentTarget(target, input.BuildHookBindings, buildEnvironment); err != nil {
+	if err := h.saveDeploymentTarget(target, input.BuildHookBindings, buildEnvironment, ctx.Request.Context()); err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
 	if !h.syncDeploymentTargetDataVolume(ctx, target) {
 		return
 	}
-	target, _ = h.deploymentTargetWithHookBindings(target)
+	target, _ = h.deploymentTargetWithHookBindings(target, ctx.Request.Context())
 	target = h.observeDeploymentTarget(ctx.Request.Context(), project, target)
 	ctx.JSON(http.StatusCreated, deploymentTargetResponseFromModel(target))
 }
@@ -138,7 +138,7 @@ func (h *Handlers) UpdateDeploymentTarget(ctx *gin.Context) {
 		return
 	}
 	var existing model.DeploymentTarget
-	if err := h.db.First(&existing, "id = ? and project_id = ? and application_id = ?", ctx.Param("targetId"), app.ProjectID, app.ID).Error; err != nil {
+	if err := h.dbFor(ctx).First(&existing, "id = ? and project_id = ? and application_id = ?", ctx.Param("targetId"), app.ProjectID, app.ID).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "deployment target not found")
 		return
 	}
@@ -166,7 +166,7 @@ func (h *Handlers) UpdateDeploymentTarget(ctx *gin.Context) {
 		target.SecretRefs = existing.SecretRefs
 	}
 	target = model.ApplyPlatformDeploymentTargetDefaults(project, app, target)
-	existingBuildEnvironment, err := h.findBuildEnvironmentConfig(h.db, model.BuildEnvironmentScopeDeployment, target.ID)
+	existingBuildEnvironment, err := h.findBuildEnvironmentConfig(h.dbFor(ctx), model.BuildEnvironmentScopeDeployment, target.ID)
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
@@ -175,20 +175,20 @@ func (h *Handlers) UpdateDeploymentTarget(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := h.saveDeploymentTarget(target, input.BuildHookBindings, buildEnvironment); err != nil {
+	if err := h.saveDeploymentTarget(target, input.BuildHookBindings, buildEnvironment, ctx.Request.Context()); err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
 	if !h.syncDeploymentTargetDataVolume(ctx, target) {
 		return
 	}
-	target, _ = h.deploymentTargetWithHookBindings(target)
+	target, _ = h.deploymentTargetWithHookBindings(target, ctx.Request.Context())
 	target = h.observeDeploymentTarget(ctx.Request.Context(), project, target)
 	ctx.JSON(http.StatusOK, deploymentTargetResponseFromModel(target))
 }
 
 func (h *Handlers) ensureDeploymentStageAvailable(ctx *gin.Context, applicationID, stage, excludeTargetID string) bool {
-	query := h.db.Unscoped().Model(&model.DeploymentTarget{}).
+	query := h.dbFor(ctx).Unscoped().Model(&model.DeploymentTarget{}).
 		Where("application_id = ? and stage = ?", applicationID, stage)
 	if strings.TrimSpace(excludeTargetID) != "" {
 		query = query.Where("id <> ?", excludeTargetID)
@@ -234,7 +234,7 @@ func (h *Handlers) authorizeDeploymentTargetDataExport(ctx *gin.Context) (deploy
 		return deploymentTargetDataExportAuthorization{}, false
 	}
 	var target model.DeploymentTarget
-	if err := h.db.First(&target, "id = ? and project_id = ? and application_id = ?", ctx.Param("targetId"), app.ProjectID, app.ID).Error; err != nil {
+	if err := h.dbFor(ctx).First(&target, "id = ? and project_id = ? and application_id = ?", ctx.Param("targetId"), app.ProjectID, app.ID).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "deployment target not found")
 		return deploymentTargetDataExportAuthorization{}, false
 	}
@@ -257,7 +257,7 @@ func (h *Handlers) AuthorizeDeploymentTargetDataExport(ctx *gin.Context) {
 	}
 	ticket, expiresAt, err := h.issueDataExportTicket(ctx.Request.Context(), authorization)
 	if err != nil {
-		h.audit(authorization.user.ID, "deployment_target.data_export_authorize", authorization.target.ID, false, err.Error())
+		h.auditWithContext(authorization.user.ID, "deployment_target.data_export_authorize", authorization.target.ID, false, err.Error(), ctx.Request.Context())
 		writeErrorCode(ctx, http.StatusServiceUnavailable, "data_export.ticket_unavailable", "data export authorization is temporarily unavailable")
 		return
 	}
@@ -313,7 +313,7 @@ func (h *Handlers) ExportDeploymentTargetData(ctx *gin.Context) {
 		if streamErr == nil {
 			streamErr = readErr
 		}
-		h.audit(user.ID, "deployment_target.data_export", target.ID, false, streamErr.Error())
+		h.auditWithContext(user.ID, "deployment_target.data_export", target.ID, false, streamErr.Error(), ctx.Request.Context())
 		writeErrorCode(ctx, http.StatusBadGateway, "data_export.stream_failed", "runtime data export could not be started")
 		return
 	}
@@ -329,7 +329,7 @@ func (h *Handlers) ExportDeploymentTargetData(ctx *gin.Context) {
 		if streamErr == nil {
 			streamErr = err
 		}
-		h.audit(user.ID, "deployment_target.data_export", target.ID, false, streamErr.Error())
+		h.auditWithContext(user.ID, "deployment_target.data_export", target.ID, false, streamErr.Error(), ctx.Request.Context())
 		return
 	}
 	_, copyErr := io.Copy(ctx.Writer, archiveReader)
@@ -341,10 +341,10 @@ func (h *Handlers) ExportDeploymentTargetData(ctx *gin.Context) {
 		streamErr = copyErr
 	}
 	if streamErr != nil {
-		h.audit(user.ID, "deployment_target.data_export", target.ID, false, streamErr.Error())
+		h.auditWithContext(user.ID, "deployment_target.data_export", target.ID, false, streamErr.Error(), ctx.Request.Context())
 		return
 	}
-	h.audit(user.ID, "deployment_target.data_export", target.ID, true, filename)
+	h.auditWithContext(user.ID, "deployment_target.data_export", target.ID, true, filename, ctx.Request.Context())
 }
 
 func requireInteractiveSession(ctx *gin.Context) bool {
@@ -376,7 +376,7 @@ func (h *Handlers) RestartDeploymentTarget(ctx *gin.Context) {
 		return
 	}
 	var target model.DeploymentTarget
-	if err := h.db.First(&target, "id = ? and project_id = ? and application_id = ?", ctx.Param("targetId"), app.ProjectID, app.ID).Error; err != nil {
+	if err := h.dbFor(ctx).First(&target, "id = ? and project_id = ? and application_id = ?", ctx.Param("targetId"), app.ProjectID, app.ID).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "deployment target not found")
 		return
 	}
@@ -391,7 +391,7 @@ func (h *Handlers) RestartDeploymentTarget(ctx *gin.Context) {
 	defer cancel()
 	resourceName := deploymentTargetResourceName(target)
 	if err := client.RestartDeployment(requestCtx, namespace, resourceName); err != nil {
-		h.audit(user.ID, "deployment_target.restart", target.ID, false, err.Error())
+		h.auditWithContext(user.ID, "deployment_target.restart", target.ID, false, err.Error(), ctx.Request.Context())
 		if apierrors.IsNotFound(err) {
 			writeError(ctx, http.StatusNotFound, "运行 Deployment 不存在，请先完成一次部署")
 			return
@@ -399,7 +399,7 @@ func (h *Handlers) RestartDeploymentTarget(ctx *gin.Context) {
 		writeError(ctx, http.StatusBadGateway, "部署重启失败，请检查运行集群状态")
 		return
 	}
-	h.audit(user.ID, "deployment_target.restart", target.ID, true, resourceName)
+	h.auditWithContext(user.ID, "deployment_target.restart", target.ID, true, resourceName, ctx.Request.Context())
 	ctx.Status(http.StatusNoContent)
 }
 
@@ -416,7 +416,7 @@ func (h *Handlers) DeleteDeploymentTarget(ctx *gin.Context) {
 		return
 	}
 	var target model.DeploymentTarget
-	if err := h.db.First(&target, "id = ? and project_id = ? and application_id = ?", ctx.Param("targetId"), app.ProjectID, app.ID).Error; err != nil {
+	if err := h.dbFor(ctx).First(&target, "id = ? and project_id = ? and application_id = ?", ctx.Param("targetId"), app.ProjectID, app.ID).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "deployment target not found")
 		return
 	}
@@ -427,7 +427,7 @@ func (h *Handlers) DeleteDeploymentTarget(ctx *gin.Context) {
 	if !h.ensureNoIncomingServiceBindings(ctx, target.ProjectID, target.ApplicationID, target.ID) {
 		return
 	}
-	if err := h.db.Transaction(func(tx *gorm.DB) error {
+	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := markResourceDeleting(tx, &model.DeploymentTarget{}, target.ID); err != nil {
 			return err
 		}
@@ -443,8 +443,8 @@ func (h *Handlers) DeleteDeploymentTarget(ctx *gin.Context) {
 		ActorID:      user.ID,
 		DeleteData:   !target.DataRetentionEnabled,
 	}) {
-		_ = markResourceDeleteFailed(h.db, &model.DeploymentTarget{}, target.ID, "资源清理任务投递失败，请稍后重试")
-		_ = markDeploymentTargetGatewayRoutesDeleteFailed(h.db, target, "资源清理任务投递失败，请稍后重试")
+		_ = markResourceDeleteFailed(h.dbFor(ctx), &model.DeploymentTarget{}, target.ID, "资源清理任务投递失败，请稍后重试")
+		_ = markDeploymentTargetGatewayRoutesDeleteFailed(h.dbFor(ctx), target, "资源清理任务投递失败，请稍后重试")
 		writeError(ctx, http.StatusServiceUnavailable, "资源清理任务投递失败，请稍后重试")
 		return
 	}

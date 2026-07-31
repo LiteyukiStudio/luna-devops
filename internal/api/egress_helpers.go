@@ -15,13 +15,13 @@ import (
 	"gorm.io/gorm"
 )
 
-func (h *Handlers) egressPolicyForUser(user model.User) security.EgressPolicy {
+func (h *Handlers) egressPolicyForUser(user model.User, contexts ...context.Context) security.EgressPolicy {
 	policy := security.PublicEgressPolicy()
 	if user.Role == authz.PlatformRoleAdmin {
 		policy.AllowPrivateNetwork = true
 	}
-	if h.db != nil {
-		h.configs.reload(h.db)
+	if h.dbWithContext(firstContext(contexts)) != nil {
+		h.configs.reload(h.dbWithContext(firstContext(contexts)))
 	}
 
 	values := h.configs.get([]string{
@@ -40,24 +40,24 @@ func (h *Handlers) egressPolicyForUser(user model.User) security.EgressPolicy {
 }
 
 func (h *Handlers) egressContextForUser(ctx context.Context, user model.User, timeout time.Duration) context.Context {
-	return context.WithValue(ctx, oauth2.HTTPClient, security.NewHTTPClient(h.egressPolicyForUser(user), timeout))
+	return context.WithValue(ctx, oauth2.HTTPClient, security.NewHTTPClient(h.egressPolicyForUser(user, ctx), timeout))
 }
 
 func (h *Handlers) adminConfiguredEgressContext(ctx context.Context, timeout time.Duration) context.Context {
 	admin := model.User{Role: authz.PlatformRoleAdmin}
-	return context.WithValue(ctx, oauth2.HTTPClient, security.NewHTTPClient(h.egressPolicyForUser(admin), timeout))
+	return context.WithValue(ctx, oauth2.HTTPClient, security.NewHTTPClient(h.egressPolicyForUser(admin, ctx), timeout))
 }
 
 func (h *Handlers) aiWebEgressPolicyForUser(ctx context.Context, userID string) (security.EgressPolicy, error) {
 	var user model.User
-	if err := h.db.WithContext(ctx).First(&user, "id = ? and disabled = ?", userID, false).Error; err != nil {
+	if err := h.dbWithContext(ctx).WithContext(ctx).First(&user, "id = ? and disabled = ?", userID, false).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return security.EgressPolicy{}, aitool.ErrForbidden
 		}
 		return security.EgressPolicy{}, err
 	}
-	if h.db != nil {
-		h.configs.reload(h.db)
+	if h.dbWithContext(ctx) != nil {
+		h.configs.reload(h.dbWithContext(ctx))
 	}
 	values := h.configs.get([]string{
 		"security.egress.domainBlockList",
@@ -71,26 +71,26 @@ func (h *Handlers) aiWebEgressPolicyForUser(ctx context.Context, userID string) 
 
 func (h *Handlers) aiWebProxyPoolForUser(ctx context.Context, userID string) ([]string, error) {
 	var user model.User
-	if err := h.db.WithContext(ctx).Select("id").First(&user, "id = ? and disabled = ?", userID, false).Error; err != nil {
+	if err := h.dbWithContext(ctx).WithContext(ctx).Select("id").First(&user, "id = ? and disabled = ?", userID, false).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, aitool.ErrForbidden
 		}
 		return nil, err
 	}
-	if h.db != nil {
-		h.configs.reload(h.db)
+	if h.dbWithContext(ctx) != nil {
+		h.configs.reload(h.dbWithContext(ctx))
 	}
 	if !configBool(h.configs.get([]string{"ai.web.proxy_enabled"})["ai.web.proxy_enabled"]) {
 		return nil, nil
 	}
 	var secretConfig model.AppConfig
-	if err := h.db.WithContext(ctx).First(&secretConfig, "key = ?", "ai.web.proxy_pool").Error; err != nil {
+	if err := h.dbWithContext(ctx).WithContext(ctx).First(&secretConfig, "key = ?", "ai.web.proxy_pool").Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, aitool.ErrWebRequestFailed
 		}
 		return nil, err
 	}
-	pool := splitProxyPool(h.secrets.Resolve(secretConfig.Value))
+	pool := splitProxyPool(h.secrets.ResolveContext(ctx, secretConfig.Value))
 	if len(pool) == 0 {
 		return nil, aitool.ErrWebRequestFailed
 	}

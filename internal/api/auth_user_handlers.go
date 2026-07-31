@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"crypto/sha256"
 	"crypto/subtle"
 	"errors"
@@ -26,7 +27,7 @@ const bootstrapAdminAdvisoryLockID int64 = 0x4c554e4141444d49
 var errBootstrapAlreadyInitialized = errors.New("platform administrator is already initialized")
 
 func (h *Handlers) GetBootstrapStatus(ctx *gin.Context) {
-	ctx.JSON(http.StatusOK, bootstrapStatusResponse(h.mode, h.hasPlatformAdmin()))
+	ctx.JSON(http.StatusOK, bootstrapStatusResponse(h.mode, h.hasPlatformAdmin(ctx.Request.Context(), ctx.Request.Context())))
 }
 
 func bootstrapStatusResponse(mode string, initialized bool) gin.H {
@@ -48,7 +49,7 @@ func (h *Handlers) InitializeAdmin(ctx *gin.Context) {
 	if !h.allowSensitiveAuthAttempt(ctx, "bootstrap_admin", 5, time.Minute) {
 		return
 	}
-	if h.hasPlatformAdmin() {
+	if h.hasPlatformAdmin(ctx.Request.Context(), ctx.Request.Context()) {
 		writeErrorCode(ctx, http.StatusConflict, "bootstrap.already_initialized", "平台管理员已经初始化")
 		return
 	}
@@ -93,7 +94,7 @@ func (h *Handlers) InitializeAdmin(ctx *gin.Context) {
 		Language: normalizeLanguage(input.Language),
 		Password: string(passwordHash),
 	}
-	if err := initializeAdminWithLock(h.db, user); err != nil {
+	if err := initializeAdminWithLock(h.dbFor(ctx), user); err != nil {
 		if errors.Is(err, errBootstrapAlreadyInitialized) {
 			writeErrorCode(ctx, http.StatusConflict, "bootstrap.already_initialized", err.Error())
 			return
@@ -132,7 +133,7 @@ func (h *Handlers) Login(ctx *gin.Context) {
 	if !h.allowSensitiveAuthAttempt(ctx, "login_ip", 10, time.Minute) {
 		return
 	}
-	policy, err := h.ensureAdmissionPolicy()
+	policy, err := h.ensureAdmissionPolicy(ctx.Request.Context())
 	if err != nil {
 		writeAdmissionPolicyUnavailable(ctx, err)
 		return
@@ -152,7 +153,7 @@ func (h *Handlers) Login(ctx *gin.Context) {
 	}
 
 	var user model.User
-	err = h.db.First(&user, "email = ?", email).Error
+	err = h.dbFor(ctx).First(&user, "email = ?", email).Error
 	if err != nil || user.Disabled || bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(input.Password)) != nil {
 		writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.login.invalid")
 		return
@@ -178,7 +179,7 @@ func (h *Handlers) ResumeLogin(ctx *gin.Context) {
 		return
 	}
 
-	user, sessionToken, rememberToken, err := h.rotateRememberLogin(userID, plainToken)
+	user, sessionToken, rememberToken, err := h.rotateRememberLogin(userID, plainToken, ctx.Request.Context(), ctx.Request.Context())
 	if errors.Is(err, errRememberTokenInvalid) || errors.Is(err, errRememberTokenReused) {
 		clearRememberCookie(ctx, userID)
 		writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.session.expired")
@@ -201,7 +202,7 @@ func (h *Handlers) ResumeLogin(ctx *gin.Context) {
 
 func (h *Handlers) Logout(ctx *gin.Context) {
 	if plainToken, err := ctx.Cookie(sessionCookieName); err == nil {
-		userID, revokeErr := h.revokeCurrentSessionAndRememberTokens(plainToken)
+		userID, revokeErr := h.revokeCurrentSessionAndRememberTokens(plainToken, ctx.Request.Context(), ctx.Request.Context())
 		clearRememberCookie(ctx, userID)
 		if revokeErr != nil {
 			clearSessionCookie(ctx)
@@ -256,7 +257,7 @@ func (h *Handlers) UpdateCurrentUser(ctx *gin.Context) {
 		user.InterfaceStyle = style
 	}
 
-	if err := h.db.Save(&user).Error; err != nil {
+	if err := h.dbFor(ctx).Save(&user).Error; err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -271,7 +272,7 @@ func (h *Handlers) ListUsers(ctx *gin.Context) {
 
 	pagination := paginationFromQuery(ctx)
 	var users []model.User
-	query := h.db.Model(&model.User{})
+	query := h.dbFor(ctx).Model(&model.User{})
 	query = applySearch(ctx, query, "email", "name")
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -289,12 +290,12 @@ func (h *Handlers) ListUsers(ctx *gin.Context) {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	balances, err := h.userWalletBalances(users)
+	balances, err := h.userWalletBalances(users, ctx.Request.Context())
 	if err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	mfaEnabled, err := h.userMFAEnabled(users)
+	mfaEnabled, err := h.userMFAEnabled(users, ctx.Request.Context())
 	if err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
@@ -306,7 +307,7 @@ func (h *Handlers) ListUsers(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, paginatedResponse(responses, total, pagination))
 }
 
-func (h *Handlers) userMFAEnabled(users []model.User) (map[string]bool, error) {
+func (h *Handlers) userMFAEnabled(users []model.User, contexts ...context.Context) (map[string]bool, error) {
 	enabled := make(map[string]bool, len(users))
 	if len(users) == 0 {
 		return enabled, nil
@@ -316,7 +317,7 @@ func (h *Handlers) userMFAEnabled(users []model.User) (map[string]bool, error) {
 		userIDs = append(userIDs, user.ID)
 	}
 	var configs []model.UserMFAConfig
-	if err := h.db.Select("user_id").Where("user_id in ? and enabled = ?", userIDs, true).Find(&configs).Error; err != nil {
+	if err := h.dbWithContext(firstContext(contexts)).Select("user_id").Where("user_id in ? and enabled = ?", userIDs, true).Find(&configs).Error; err != nil {
 		return nil, err
 	}
 	for _, config := range configs {
@@ -325,7 +326,7 @@ func (h *Handlers) userMFAEnabled(users []model.User) (map[string]bool, error) {
 	return enabled, nil
 }
 
-func (h *Handlers) userWalletBalances(users []model.User) (map[string]decimal.Decimal, error) {
+func (h *Handlers) userWalletBalances(users []model.User, contexts ...context.Context) (map[string]decimal.Decimal, error) {
 	balances := make(map[string]decimal.Decimal, len(users))
 	if len(users) == 0 {
 		return balances, nil
@@ -336,7 +337,7 @@ func (h *Handlers) userWalletBalances(users []model.User) (map[string]decimal.De
 		balances[user.ID] = decimal.Zero
 	}
 	var wallets []model.UserWallet
-	if err := h.db.Select("user_id", "balance_credits").Where("user_id in ?", userIDs).Find(&wallets).Error; err != nil {
+	if err := h.dbWithContext(firstContext(contexts)).Select("user_id", "balance_credits").Where("user_id in ?", userIDs).Find(&wallets).Error; err != nil {
 		return nil, err
 	}
 	for _, wallet := range wallets {
@@ -384,7 +385,7 @@ func (h *Handlers) CreateUser(ctx *gin.Context) {
 		Password: string(passwordHash),
 		Disabled: input.Disabled,
 	}
-	if err := h.db.Transaction(func(tx *gorm.DB) error {
+	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&user).Error; err != nil {
 			return err
 		}
@@ -415,7 +416,7 @@ func (h *Handlers) UpdateUser(ctx *gin.Context) {
 	}
 
 	var user model.User
-	if err := h.db.First(&user, "id = ?", ctx.Param("userId")).Error; err != nil {
+	if err := h.dbFor(ctx).First(&user, "id = ?", ctx.Param("userId")).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "user not found")
 		return
 	}
@@ -456,7 +457,7 @@ func (h *Handlers) UpdateUser(ctx *gin.Context) {
 		return
 	}
 
-	if err := h.db.Transaction(func(tx *gorm.DB) error {
+	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := lockStepUpPolicyMutation(tx); err != nil {
 			return err
 		}

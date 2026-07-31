@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"strings"
 
@@ -14,7 +15,7 @@ func (h *Handlers) kubernetesClientForEnvironment(ctx *gin.Context, project mode
 	if !ok {
 		return nil, "", false
 	}
-	kubeconfig := h.secrets.Resolve(managerCluster.KubeconfigRef)
+	kubeconfig := h.secrets.ResolveContext(ctx.Request.Context(), managerCluster.KubeconfigRef)
 	if strings.TrimSpace(kubeconfig) == "" {
 		writeError(ctx, http.StatusBadRequest, errorMessage)
 		return nil, "", false
@@ -33,7 +34,7 @@ func (h *Handlers) kubernetesClientForDeploymentTarget(ctx *gin.Context, project
 	if !ok {
 		return nil, "", false
 	}
-	kubeconfig := h.secrets.Resolve(managerCluster.KubeconfigRef)
+	kubeconfig := h.secrets.ResolveContext(ctx.Request.Context(), managerCluster.KubeconfigRef)
 	if strings.TrimSpace(kubeconfig) == "" {
 		writeError(ctx, http.StatusBadRequest, errorMessage)
 		return nil, "", false
@@ -49,12 +50,12 @@ func (h *Handlers) kubernetesClientForDeploymentTarget(ctx *gin.Context, project
 // kubernetesClientForDeploymentTargetObservation resolves a read-only live
 // observation dependency without writing an HTTP response. Callers can return
 // a stable unavailable observation instead of failing the whole resource API.
-func (h *Handlers) kubernetesClientForDeploymentTargetObservation(project model.Project, target model.DeploymentTarget) (*kubeprovider.Client, string, string) {
-	cluster, err := h.runtimeClusterForDeploymentTargetValue(target)
+func (h *Handlers) kubernetesClientForDeploymentTargetObservation(project model.Project, target model.DeploymentTarget, contexts ...context.Context) (*kubeprovider.Client, string, string) {
+	cluster, err := h.runtimeClusterForDeploymentTargetValue(target, firstContext(contexts))
 	if err != nil {
 		return nil, "", "runtime_cluster_not_found"
 	}
-	kubeconfig := h.secrets.Resolve(cluster.KubeconfigRef)
+	kubeconfig := h.secrets.ResolveContext(firstContext(contexts), cluster.KubeconfigRef)
 	if strings.TrimSpace(kubeconfig) == "" {
 		return nil, "", "kubeconfig_not_configured"
 	}

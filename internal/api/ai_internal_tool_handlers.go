@@ -1,12 +1,13 @@
 package api
 
 import (
+	"context"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/aitool"
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/gin-gonic/gin"
 )
 
@@ -123,7 +125,7 @@ func (h *Handlers) ExchangeAIDelegation(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusForbidden, "ai.authorization_changed", "actor authorization is no longer valid")
 		return
 	}
-	if effectiveMFAPurpose != "" && !h.validAIToolMFAAssertion(grant, input.StepUpAssertionID, effectiveMFAPurpose, now) {
+	if effectiveMFAPurpose != "" && !h.validAIToolMFAAssertion(grant, input.StepUpAssertionID, effectiveMFAPurpose, now, ctx.Request.Context()) {
 		writeErrorCode(ctx, http.StatusForbidden, "mfa.assertion_invalid", "step-up assertion is invalid for this tool")
 		return
 	}
@@ -140,16 +142,16 @@ func (h *Handlers) ExchangeAIDelegation(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusServiceUnavailable, "ai.delegation_not_configured", "delegation signing is unavailable")
 		return
 	}
-	h.audit(grant.UserID, "ai.delegation.exchange", input.OperationID+":"+input.ToolCallID, true, "short-lived user-bound AI tool delegation issued")
+	h.auditWithContext(grant.UserID, "ai.delegation.exchange", input.OperationID+":"+input.ToolCallID, true, "short-lived user-bound AI tool delegation issued", ctx.Request.Context())
 	ctx.JSON(http.StatusOK, gin.H{"accessToken": token, "tokenType": "Bearer", "expiresIn": 60, "operationId": input.OperationID})
 }
 
-func (h *Handlers) validAIToolMFAAssertion(grant aiagent.RunActorGrant, assertionID, purpose string, now time.Time) bool {
-	if h.db == nil || strings.TrimSpace(assertionID) == "" {
+func (h *Handlers) validAIToolMFAAssertion(grant aiagent.RunActorGrant, assertionID, purpose string, now time.Time, contexts ...context.Context) bool {
+	if h.dbWithContext(firstContext(contexts)) == nil || strings.TrimSpace(assertionID) == "" {
 		return false
 	}
 	var assertion model.StepUpAssertion
-	return h.db.First(
+	return h.dbWithContext(firstContext(contexts)).First(
 		&assertion,
 		"id = ? and user_id = ? and session_id = ? and purpose = ? and idle_expires_at > ? and absolute_expires_at > ?",
 		assertionID, grant.UserID, grant.SessionID, purpose, now, now,
@@ -179,7 +181,7 @@ func (h *Handlers) ExecuteAIInternalTool(ctx *gin.Context) {
 	if operation, exists := aitool.PlatformOperation(claims.OperationID); exists {
 		result, err := h.dispatchAIPlatformOperation(ctx, claims, operation, arguments)
 		if err != nil {
-			h.audit(claims.UserID, "ai.tool.execute", claims.OperationID+":"+claims.ToolCallID, false, "request.invalid")
+			h.auditWithContext(claims.UserID, "ai.tool.execute", claims.OperationID+":"+claims.ToolCallID, false, "request.invalid", ctx.Request.Context())
 			writeErrorCode(ctx, http.StatusBadRequest, "request.invalid", "AI tool arguments are invalid")
 			return
 		}
@@ -187,7 +189,7 @@ func (h *Handlers) ExecuteAIInternalTool(ctx *gin.Context) {
 			ctx.Header("X-Platform-Request-ID", result.RequestID)
 		}
 		success := result.Status >= http.StatusOK && result.Status < http.StatusMultipleChoices
-		h.audit(claims.UserID, "ai.tool.execute", claims.OperationID+":"+claims.ToolCallID, success, "delegated platform API operation executed")
+		h.auditWithContext(claims.UserID, "ai.tool.execute", claims.OperationID+":"+claims.ToolCallID, success, "delegated platform API operation executed", ctx.Request.Context())
 		if !success {
 			if result.Body == nil {
 				ctx.Status(result.Status)
@@ -209,11 +211,11 @@ func (h *Handlers) ExecuteAIInternalTool(ctx *gin.Context) {
 	}
 	result, code, errCode := h.executeRegisteredAITool(ctx, claims, arguments)
 	if errCode != "" {
-		h.audit(claims.UserID, "ai.tool.execute", claims.OperationID+":"+claims.ToolCallID, false, errCode)
+		h.auditWithContext(claims.UserID, "ai.tool.execute", claims.OperationID+":"+claims.ToolCallID, false, errCode, ctx.Request.Context())
 		writeErrorCode(ctx, code, errCode, "AI tool execution denied")
 		return
 	}
-	h.audit(claims.UserID, "ai.tool.execute", claims.OperationID+":"+claims.ToolCallID, true, "registered user-bound AI tool executed")
+	h.auditWithContext(claims.UserID, "ai.tool.execute", claims.OperationID+":"+claims.ToolCallID, true, "registered user-bound AI tool executed", ctx.Request.Context())
 	ctx.JSON(http.StatusOK, gin.H{"operationId": claims.OperationID, "verified": true, "result": result})
 }
 
@@ -284,23 +286,29 @@ func (h *Handlers) executeRegisteredAITool(ctx *gin.Context, claims aiagent.Dele
 	case errors.Is(err, aitool.ErrWebContentRejected):
 		return nil, http.StatusUnsupportedMediaType, "ai.web_content_rejected"
 	case errors.Is(err, aitool.ErrWebRequestFailed):
-		log.Printf(
-			"ai web tool request failure request_id=%q operation=%q tool_call=%q: %v",
-			requestID(ctx), claims.OperationID, claims.ToolCallID, err,
+		telemetry.Logger().WarnContext(ctx.Request.Context(), "AI web tool request failed",
+			slog.String("event.name", "ai.tool.web_request.failed"),
+			slog.String("request_id", requestID(ctx)),
+			slog.String("operation", claims.OperationID),
+			slog.String("error.type", telemetry.ErrorType(err)),
 		)
 		return nil, http.StatusBadGateway, "ai.web_request_failed"
 	case errors.Is(err, aitool.ErrConflict):
 		return nil, http.StatusConflict, "resource.conflict"
 	case errors.Is(err, aitool.ErrStorage):
-		log.Printf(
-			"ai tool storage failure request_id=%q operation=%q tool_call=%q: %v",
-			requestID(ctx), claims.OperationID, claims.ToolCallID, err,
+		telemetry.Logger().ErrorContext(ctx.Request.Context(), "AI tool storage failed",
+			slog.String("event.name", "ai.tool.storage.failed"),
+			slog.String("request_id", requestID(ctx)),
+			slog.String("operation", claims.OperationID),
+			slog.String("error.type", telemetry.ErrorType(err)),
 		)
 		return nil, http.StatusServiceUnavailable, "ai.tool_storage_unavailable"
 	case err != nil:
-		log.Printf(
-			"ai tool execution failure request_id=%q operation=%q tool_call=%q: %v",
-			requestID(ctx), claims.OperationID, claims.ToolCallID, err,
+		telemetry.Logger().ErrorContext(ctx.Request.Context(), "AI tool execution failed",
+			slog.String("event.name", "ai.tool.execution.failed"),
+			slog.String("request_id", requestID(ctx)),
+			slog.String("operation", claims.OperationID),
+			slog.String("error.type", telemetry.ErrorType(err)),
 		)
 		return nil, http.StatusInternalServerError, "ai.tool_execution_failed"
 	default:

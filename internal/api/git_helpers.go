@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -11,6 +12,7 @@ import (
 	gitprovider "github.com/LiteyukiStudio/devops/internal/provider/git"
 	"github.com/LiteyukiStudio/devops/internal/secret"
 	"github.com/gin-gonic/gin"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -176,14 +178,14 @@ func positiveInt(value string, fallbackValue int) int {
 
 func (h *Handlers) findEnabledGitProvider(ctx *gin.Context, providerID string) (model.GitProvider, bool) {
 	var provider model.GitProvider
-	if err := h.db.First(&provider, "id = ? and enabled = ?", strings.TrimSpace(providerID), true).Error; err != nil {
+	if err := h.dbFor(ctx).First(&provider, "id = ? and enabled = ?", strings.TrimSpace(providerID), true).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "git provider not found")
 		return provider, false
 	}
 	if !h.canUseGitProvider(ctx, provider) {
 		return provider, false
 	}
-	provider.ProjectIDs = h.scopedResourceProjectIDs(scopedResourceGitProvider, provider.ID)
+	provider.ProjectIDs = h.scopedResourceProjectIDs(scopedResourceGitProvider, provider.ID, ctx.Request.Context(), ctx.Request.Context())
 	return provider, true
 }
 
@@ -197,7 +199,7 @@ func (h *Handlers) findGitAccountForUser(ctx *gin.Context, userID, accountID str
 		writeError(ctx, http.StatusForbidden, "无权访问该 Git 账号")
 		return account, false
 	}
-	if err := h.db.First(&account, "id = ?", strings.TrimSpace(accountID)).Error; err != nil {
+	if err := h.dbFor(ctx).First(&account, "id = ?", strings.TrimSpace(accountID)).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "git account not found")
 		return account, false
 	}
@@ -220,7 +222,7 @@ func (h *Handlers) canUseGitProvider(ctx *gin.Context, provider model.GitProvide
 	if !ok {
 		return false
 	}
-	if h.canUseScopedResourceByID(user, provider.Scope, provider.OwnerRef, scopedResourceGitProvider, provider.ID) {
+	if h.canUseScopedResourceByID(user, provider.Scope, provider.OwnerRef, scopedResourceGitProvider, provider.ID, requestContext(ctx)) {
 		return true
 	}
 	writeError(ctx, http.StatusForbidden, "无权访问该 Git Provider")
@@ -232,7 +234,7 @@ func (h *Handlers) canManageGitProvider(ctx *gin.Context, user model.User, provi
 }
 
 func (h *Handlers) canUseGitAccount(ctx *gin.Context, user model.User, account model.GitAccount) bool {
-	if h.canUseScopedResourceByID(user, account.Scope, account.OwnerRef, scopedResourceGitAccount, account.ID) {
+	if h.canUseScopedResourceByID(user, account.Scope, account.OwnerRef, scopedResourceGitAccount, account.ID, requestContext(ctx)) {
 		return true
 	}
 	writeError(ctx, http.StatusForbidden, "无权访问该 Git 凭据")
@@ -245,7 +247,7 @@ func (h *Handlers) canManageGitAccount(ctx *gin.Context, user model.User, accoun
 
 func (h *Handlers) findApplicationByID(ctx *gin.Context, applicationID string) (model.Application, bool) {
 	var app model.Application
-	err := h.db.First(&app, "id = ? and project_id = ?", strings.TrimSpace(applicationID), ctx.Param("projectId")).Error
+	err := h.dbFor(ctx).First(&app, "id = ? and project_id = ?", strings.TrimSpace(applicationID), ctx.Param("projectId")).Error
 	if err != nil {
 		writeError(ctx, http.StatusNotFound, "application not found")
 		return app, false
@@ -259,7 +261,12 @@ func (h *Handlers) syncApplicationRepositoryURL(binding model.RepositoryBinding)
 
 func writeGitUpstreamError(ctx *gin.Context, err error) {
 	if err != nil {
-		fmt.Printf("git upstream error: %s\n", gitUpstreamLogMessage(err))
+		status, code := gitUpstreamErrorStatusAndCode(err)
+		slog.WarnContext(ctx.Request.Context(), "git.upstream.failed",
+			"error.code", code,
+			"http.status_code", status,
+			"error.type", fmt.Sprintf("%T", err),
+		)
 	}
 	status, code := gitUpstreamErrorStatusAndCode(err)
 	writeErrorKey(ctx, status, requestLanguage(ctx), code)
@@ -422,7 +429,7 @@ func (h *Handlers) providerIsSingleFor(ctx *gin.Context, providerID, providerTyp
 	if providerType != "github" {
 		return true
 	}
-	query := h.db.Model(&model.GitProvider{}).Where("type = ?", providerType)
+	query := h.dbFor(ctx).Model(&model.GitProvider{}).Where("type = ?", providerType)
 	if providerID != "" {
 		query = query.Where("id <> ?", providerID)
 	}
@@ -453,12 +460,12 @@ func gitProviderResponses(providers []model.GitProvider) []gin.H {
 	return responses
 }
 
-func (h *Handlers) gitProviderResponsesForUser(user model.User, providers []model.GitProvider) []gin.H {
+func (h *Handlers) gitProviderResponsesForUser(user model.User, providers []model.GitProvider, contexts ...context.Context) []gin.H {
 	responses := make([]gin.H, 0, len(providers))
 	for _, provider := range providers {
-		provider.ProjectIDs = h.scopedResourceProjectIDs(scopedResourceGitProvider, provider.ID)
+		provider.ProjectIDs = h.scopedResourceProjectIDs(scopedResourceGitProvider, provider.ID, firstContext(contexts))
 		response := gitProviderResponse(provider)
-		if !h.canInspectScopedResourceConfigByID(user, provider.Scope, provider.OwnerRef, scopedResourceGitProvider, provider.ID) {
+		if !h.canInspectScopedResourceConfigByID(user, provider.Scope, provider.OwnerRef, scopedResourceGitProvider, provider.ID, firstContext(contexts)) {
 			response["baseUrl"] = ""
 			response["clientId"] = ""
 		}

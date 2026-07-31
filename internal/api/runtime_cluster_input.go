@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -33,7 +34,7 @@ func (h *Handlers) runtimeClusterFromInput(ctx *gin.Context, user model.User, in
 			writeError(ctx, http.StatusBadRequest, err.Error())
 			return model.RuntimeCluster{}, false
 		}
-		kubeconfigRef = h.secrets.Store(kubeconfig, user.ID, "runtime_cluster:"+clusterID+":kubeconfig")
+		kubeconfigRef = h.secrets.StoreContext(ctx.Request.Context(), kubeconfig, user.ID, "runtime_cluster:"+clusterID+":kubeconfig")
 	}
 	platformAdmin := user.Role == authz.PlatformRoleAdmin
 	if _, err := parseGatewayHeaderMap(input.GatewayDefaultRequestHeaders, platformAdmin); err != nil {
@@ -99,8 +100,8 @@ func flattenKubeconfig(kubeconfig string) (string, error) {
 	return output, nil
 }
 
-func (h *Handlers) saveRuntimeClusterWithDefault(cluster model.RuntimeCluster) error {
-	return h.db.Transaction(func(tx *gorm.DB) error {
+func (h *Handlers) saveRuntimeClusterWithDefault(cluster model.RuntimeCluster, contexts ...context.Context) error {
+	return h.dbWithContext(firstContext(contexts)).Transaction(func(tx *gorm.DB) error {
 		if cluster.IsDefault {
 			if cluster.Scope != "global" {
 				return errors.New("只有全局运行集群可以设为默认集群")

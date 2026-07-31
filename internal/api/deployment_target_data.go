@@ -212,7 +212,7 @@ func (h *Handlers) syncDeploymentTargetDataVolume(ctx *gin.Context, target model
 		return true
 	}
 	var project model.Project
-	if err := h.db.First(&project, "id = ?", target.ProjectID).Error; err != nil {
+	if err := h.dbFor(ctx).First(&project, "id = ?", target.ProjectID).Error; err != nil {
 		writeError(ctx, http.StatusNotFound, "project not found")
 		return false
 	}

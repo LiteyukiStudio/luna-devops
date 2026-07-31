@@ -22,7 +22,7 @@ func (h *Handlers) ListBillingLedgerEntries(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	query := h.db.Table("billing_ledger_entries as ledger").Where("ledger.user_id in ?", scope.UserIDs)
+	query := h.dbFor(ctx).Table("billing_ledger_entries as ledger").Where("ledger.user_id in ?", scope.UserIDs)
 	if scope.FilterProjectIDs {
 		query = query.Where("ledger.project_id in ?", scope.ProjectIDs)
 	}
@@ -86,7 +86,7 @@ func (h *Handlers) ListBillingUsageRecords(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	query := h.db.Table("billing_usage_records as usage").Where("usage.billed_user_id in ?", scope.UserIDs)
+	query := h.dbFor(ctx).Table("billing_usage_records as usage").Where("usage.billed_user_id in ?", scope.UserIDs)
 	if scope.FilterProjectIDs {
 		query = query.Where("usage.project_id in ?", scope.ProjectIDs)
 	}
@@ -157,7 +157,7 @@ func (h *Handlers) ListBillingDeploymentSpend(ctx *gin.Context) {
 	}
 
 	deploymentTargetIDSQL := billingDeploymentTargetIDSQL()
-	grouped := h.db.Table("billing_usage_records as usage").
+	grouped := h.dbFor(ctx).Table("billing_usage_records as usage").
 		Select("usage.project_id, usage.application_id, "+deploymentTargetIDSQL+" AS deployment_target_id").
 		Joins("LEFT JOIN build_runs ON build_runs.id = usage.resource_id AND usage.resource_type = ?", billing.ResourceTypeBuildRun).
 		Joins("LEFT JOIN gateway_routes ON gateway_routes.id = split_part(usage.resource_id, ':', 1) AND usage.resource_type = ?", billing.ResourceTypeGateway).
@@ -168,13 +168,13 @@ func (h *Handlers) ListBillingDeploymentSpend(ctx *gin.Context) {
 	}
 	grouped = applyBillingUsagePeriod(grouped, period)
 	var total int64
-	if err := h.db.Table("(?) as grouped", grouped).Count(&total).Error; err != nil {
+	if err := h.dbFor(ctx).Table("(?) as grouped", grouped).Count(&total).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	var items []billingDeploymentSpendItem
-	query := h.db.Table("billing_usage_records as usage").
+	query := h.dbFor(ctx).Table("billing_usage_records as usage").
 		Select(`
 			usage.project_id,
 			projects.name AS project_name,

@@ -2,7 +2,7 @@ import type { AIEvent, AIMessagePart, AITimeline, AIToolDisplayResult, AIToolSta
 
 export type AIBlock
   = | { id: string, turnId: string, index: number, type: 'thinking', status: string, display: 'summary' | 'progress', text: string }
-    | { id: string, turnId: string, index: number, type: 'message', role: 'user' | 'assistant', status: string, text: string }
+    | { id: string, turnId: string, index: number, type: 'message', role: 'user' | 'assistant', status: string, text: string, createdAt: string }
     | { id: string, turnId: string, runId: string, index: number, type: 'run_status', status: 'failed' | 'canceled', errorCode?: string }
     | { id: string, turnId: string, runId: string, index: number, type: 'tool_call', toolCallId: string, operationId: string, titleKey?: string, errorCode?: string, status: AIToolStatus, arguments: Record<string, unknown>, result?: AIToolDisplayResult, uiActions: AIUIAction[], durationMs?: number, argumentsHash?: string, expectedVersion?: number, mfaPurpose?: string }
 
@@ -32,11 +32,12 @@ export function isValidAITimeline(value: unknown): value is AITimeline {
     && typeof turn.id === 'string'
     && typeof turn.turnIndex === 'number'
     && Boolean(turn.input)
+    && typeof turn.input.createdAt === 'string'
     && Array.isArray(turn.input.parts)
     && turn.input.parts.every(part => Boolean(part) && typeof part.id === 'string' && typeof part.partIndex === 'number')
     && (!turn.selectedRun || (typeof turn.selectedRun.id === 'string'
       && Array.isArray(turn.selectedRun.items)
-      && turn.selectedRun.items.every(item => Boolean(item) && typeof item.id === 'string' && typeof item.timelineIndex === 'number' && Array.isArray(item.parts)))),
+      && turn.selectedRun.items.every(item => Boolean(item) && typeof item.id === 'string' && typeof item.timelineIndex === 'number' && typeof item.createdAt === 'string' && Array.isArray(item.parts)))),
   ) && candidate.eventCursors.every(cursor => Boolean(cursor) && typeof cursor.runId === 'string' && typeof cursor.after === 'number')
 }
 
@@ -55,11 +56,12 @@ export function stateFromTimeline(timeline: AITimeline): AIAssistantState {
       role: 'user',
       status: 'completed',
       text: textFromParts(turn.input.parts),
+      createdAt: turn.input.createdAt,
     })
     const results = new Map(turn.selectedRun?.items.filter(item => item.type === 'tool_result' && item.relatedItemId).map(item => [item.relatedItemId!, item]) ?? [])
     for (const item of [...(turn.selectedRun?.items ?? [])].sort((a, b) => a.timelineIndex - b.timelineIndex)) {
       if (item.type === 'assistant_message') {
-        blocks.push({ id: item.id, turnId: turn.id, index: blockIndex(turn.turnIndex, item.timelineIndex), type: 'message', role: 'assistant', status: item.status, text: textFromParts(item.parts) })
+        blocks.push({ id: item.id, turnId: turn.id, index: blockIndex(turn.turnIndex, item.timelineIndex), type: 'message', role: 'assistant', status: item.status, text: textFromParts(item.parts), createdAt: item.createdAt })
       }
       else if (item.type === 'reasoning_summary' || item.type === 'progress') {
         blocks.push({ id: item.id, turnId: turn.id, index: blockIndex(turn.turnIndex, item.timelineIndex), type: 'thinking', status: item.status, display: item.type === 'progress' ? 'progress' : 'summary', text: textFromParts(item.parts) })
@@ -162,6 +164,7 @@ export function addOptimisticTurn(state: AIAssistantState, input: { turnId: stri
       role: 'user' as const,
       status: 'completed',
       text: input.text,
+      createdAt: new Date().toISOString(),
     }].sort((a, b) => a.index - b.index),
     runStatuses: { ...state.runStatuses, [input.runId]: 'queued' },
     turnIndexes: { ...state.turnIndexes, [input.turnId]: input.turnIndex },
@@ -234,6 +237,7 @@ export function reduceAIEvent(state: AIAssistantState, event: AIEvent): AIAssist
         role: 'assistant',
         status: 'streaming',
         text: delta,
+        createdAt: event.occurredAt,
       })),
     }
   }

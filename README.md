@@ -202,6 +202,7 @@ pnpm --dir web build
 - `web/`、`docs/`、`tests/` 和 `luna-agent/` 分别维护自己的依赖清单与 lockfile，不使用跨目录的根 pnpm workspace；需要 pnpm 项目配置时也只放在对应工作目录。
 - Python 工具链统一使用 `uv`。
 - 后端 Handler 保持精简，业务逻辑放入 Service，外部平台集成放入 Provider。
+- 新功能必须按 [`notes/14-可观测插桩与验收标准.md`](notes/14-可观测插桩与验收标准.md) 补齐 Trace、关键结构化日志和低基数 Metrics，并保持跨服务 Context 连续。
 - 所有用户可见的前端文案都放入 i18n 文件。
 - 功能或行为变化时同步更新文档站。
 

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"strings"
 
@@ -9,8 +10,8 @@ import (
 	"gorm.io/gorm"
 )
 
-func (h *Handlers) saveDeploymentTarget(target model.DeploymentTarget, hookInputs []deploymentTargetHookBindingInput, buildEnvironment *model.BuildEnvironmentConfig) error {
-	return h.db.Transaction(func(tx *gorm.DB) error {
+func (h *Handlers) saveDeploymentTarget(target model.DeploymentTarget, hookInputs []deploymentTargetHookBindingInput, buildEnvironment *model.BuildEnvironmentConfig, contexts ...context.Context) error {
+	return h.dbWithContext(firstContext(contexts)).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Save(&target).Error; err != nil {
 			return err
 		}
@@ -24,7 +25,7 @@ func (h *Handlers) saveDeploymentTarget(target model.DeploymentTarget, hookInput
 	})
 }
 
-func (h *Handlers) attachDeploymentTargetHookBindings(targets []model.DeploymentTarget) error {
+func (h *Handlers) attachDeploymentTargetHookBindings(targets []model.DeploymentTarget, contexts ...context.Context) error {
 	if len(targets) == 0 {
 		return nil
 	}
@@ -35,7 +36,7 @@ func (h *Handlers) attachDeploymentTargetHookBindings(targets []model.Deployment
 		targetIndex[targets[index].ID] = index
 	}
 	var bindings []model.DeploymentTargetHookBinding
-	if err := h.db.Where("target_id in ?", targetIDs).Order("run_order asc, created_at asc").Find(&bindings).Error; err != nil {
+	if err := h.dbWithContext(firstContext(contexts)).Where("target_id in ?", targetIDs).Order("run_order asc, created_at asc").Find(&bindings).Error; err != nil {
 		return err
 	}
 	for _, binding := range bindings {
@@ -48,9 +49,9 @@ func (h *Handlers) attachDeploymentTargetHookBindings(targets []model.Deployment
 	return nil
 }
 
-func (h *Handlers) deploymentTargetWithHookBindings(target model.DeploymentTarget) (model.DeploymentTarget, error) {
+func (h *Handlers) deploymentTargetWithHookBindings(target model.DeploymentTarget, contexts ...context.Context) (model.DeploymentTarget, error) {
 	targets := []model.DeploymentTarget{target}
-	if err := h.attachDeploymentTargetHookBindings(targets); err != nil {
+	if err := h.attachDeploymentTargetHookBindings(targets, firstContext(contexts)); err != nil {
 		return target, err
 	}
 	return targets[0], nil
