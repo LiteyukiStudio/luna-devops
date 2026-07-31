@@ -1088,6 +1088,7 @@ OpenAPI，不把 MCP 作为内部服务总线。
 - [x] 隐藏会话自动命名等内部维护型 Tool Call，将普通工具折叠行压缩为名称与右侧状态 Badge，参数、结果和耗时仅在展开后展示。
 - [x] 将 Agent 工具权限收敛为当前用户权限：读取与低风险写入按当前 Session/RBAC 即时执行，高风险调用提供“同意 / 拒绝 / 全部同意”并绑定 Run、Tool Call、参数哈希和版本；“全部同意”仅覆盖当前 Run 已展示的待批准调用，同时修复跨 Run Tool Call 审批风险。
 - [x] 将 Tool Catalog 作为 OpenAI-compatible `tools` Schema 传给模型，新增结构化 `create_options` UI 工具，并修复参数哈希绑定的批准事件与平台验证后的 MFA 恢复。
+- [x] 修复高风险工具确认后的参数误冲突：使用规范 JSON 统一审批哈希与执行载荷，加密保存可执行原始参数、仅向 Timeline 投影脱敏参数，并为 `ai.approval_arguments_changed` 提供明确恢复提示。
 - [x] 将 `create_options` 从折叠 Tool Call 升级为始终可见的下一步选项组件，覆盖站内无刷新跳转、消息回复和重新进入权限/批准/MFA 链路的受控操作请求。
 - [x] 会话目录增加显式批量选择、全选和批量删除确认；引入 `title_source` 与 `rename_conversation` 内建工具，首轮自动命名、话题漂移重命名，并在用户手动命名后由数据库永久锁定。
 - [x] 将 Agent 系统提示、模型任务提示、上下文标签、工具描述与内置 Skills 统一为中文 `system-v4`，仅保留当前 Prompt 版本；继续指导模型为平台注册页面和可信资源输出 Markdown 站内链接，前端按注册路径安全校验并以主色 React Router 链接无刷新跳转。

@@ -3,7 +3,7 @@ import { BffHmacAuthenticator, DevelopmentAuthenticator } from "./auth.js"
 import { loadConfig } from "./config.js"
 import { RunExecutor } from "./executor.js"
 import { GraphVersionRegistry } from "./graph/registry.js"
-import { RunGrantCipher } from "./grant-cipher.js"
+import { PayloadCipher } from "./payload-cipher.js"
 import { deriveInternalKeys } from "./internal-secret.js"
 import { MemoryRepository } from "./persistence/memory.js"
 import { PostgresRepository } from "./persistence/postgres.js"
@@ -33,7 +33,16 @@ const provider = createRuntimeProvider(config, providerConfigClient)
 const authenticator = config.AUTH_MODE === "bff-hmac"
   ? new BffHmacAuthenticator(internalKeys!.serviceToken, internalKeys!.actorSigningKey)
   : new DevelopmentAuthenticator()
-const grantCipher = new RunGrantCipher(internalKeys?.runGrantEncryptionKey ?? randomBytes(32))
+const grantCipher = new PayloadCipher(
+  internalKeys?.runGrantEncryptionKey ?? randomBytes(32),
+  "run-grant-v1",
+  "ai.run_grant_key_unavailable",
+)
+const toolArgumentsCipher = new PayloadCipher(
+  internalKeys?.toolArgumentsEncryptionKey ?? randomBytes(32),
+  "tool-arguments-v1",
+  "ai.tool_arguments_key_unavailable",
+)
 const remoteOperationIds = new Set(
   (initialRemoteConfig?.toolCatalog ?? [])
     .map(item => typeof item === "object" && item && "operationId" in item ? String(item.operationId) : ""),
@@ -44,7 +53,9 @@ const catalog = ToolCatalog.load(config.TOOL_CATALOG_JSON
       ...(initialRemoteConfig?.toolCatalog ?? []),
       ...platformOperations.filter(operation => !remoteOperationIds.has(operation.operationId)),
     ])
-const toolStore = repository instanceof PostgresRepository ? new PostgresToolCallStore(repository.pool, repository) : new ProjectingToolCallStore(new MemoryToolCallStore(), repository)
+const toolStore = repository instanceof PostgresRepository
+  ? new PostgresToolCallStore(repository.pool, repository, toolArgumentsCipher)
+  : new ProjectingToolCallStore(new MemoryToolCallStore(), repository)
 const tools = catalog && config.LUNA_API_BASE_URL && internalKeys
   ? new ToolOrchestrator(catalog, new HttpLunaApiToolClient(config.LUNA_API_BASE_URL, internalKeys.callbackServiceToken), toolStore, undefined, agentRuntimeInternals.maxToolCalls, undefined, async runId => {
       const encrypted = await repository.getRunActorGrantCiphertext(runId)

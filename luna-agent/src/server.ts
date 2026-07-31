@@ -3,7 +3,7 @@ import { z } from "zod"
 import type { RequestAuthenticator } from "./auth.js"
 import type { Config } from "./config.js"
 import type { ActorContext } from "./domain.js"
-import type { RunGrantCipher } from "./grant-cipher.js"
+import type { PayloadCipher } from "./payload-cipher.js"
 import type { Repository } from "./persistence/repository.js"
 import type { ModelProvider } from "./provider/provider.js"
 import type { ProviderConfigClient } from "./provider/config-client.js"
@@ -30,7 +30,7 @@ export function buildServer(input: {
   authenticator: RequestAuthenticator
   provider: ModelProvider
   graphVersions: string[]
-  grantCipher: RunGrantCipher
+  grantCipher: PayloadCipher
   tools?: ToolOrchestrator
   providerConfigClient?: ProviderConfigClient
   cancelRun?: (runId: string) => void

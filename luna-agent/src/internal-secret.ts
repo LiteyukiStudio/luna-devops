@@ -19,6 +19,7 @@ export interface InternalKeys {
   runActorGrantSigningKey: string
   delegationTokenSigningKey: string
   runGrantEncryptionKey: Buffer
+  toolArgumentsEncryptionKey: Buffer
 }
 
 export function deriveInternalKeys(secret: string): InternalKeys {
@@ -33,5 +34,6 @@ export function deriveInternalKeys(secret: string): InternalKeys {
     runActorGrantSigningKey: deriveText("run-actor-grant-signing-key"),
     delegationTokenSigningKey: deriveText("delegation-token-signing-key"),
     runGrantEncryptionKey: derive(secret, "run-grant-encryption-key"),
+    toolArgumentsEncryptionKey: derive(secret, "tool-arguments-encryption-key"),
   }
 }

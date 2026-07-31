@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto"
+import { hashCanonicalJSON } from "../canonical-json.js"
 import { createId } from "../id.js"
 import { redact } from "../redaction.js"
 import type { Repository } from "../persistence/repository.js"
@@ -57,14 +57,14 @@ export class ToolOrchestrator {
       const value = input.arguments && typeof input.arguments === "object" ? input.arguments as Record<string, unknown> : {}
       throw new ToolInterruption("waiting_input", operation.inputSchema.required.filter(field => value[field] === undefined))
     }
-    const argumentsHash = `sha256:${createHash("sha256").update(JSON.stringify(args)).digest("hex")}`
+    const argumentsHash = hashCanonicalJSON(args)
     const record: ToolCallRecord = {
       id: createId("aitool"), runId: input.runId, operationId: input.operationId,
-      status: "proposed", arguments: redact(args), argumentsHash, attempt: 1, rowVersion: 1,
+      status: "proposed", arguments: args, argumentsHash, attempt: 1, rowVersion: 1,
     }
     await this.store.insert(record)
     await this.store.emit({ type: "tool.started", toolCallId: record.id, data: {
-      operationId: record.operationId, arguments: record.arguments, argumentsHash, expectedVersion: record.rowVersion,
+      operationId: record.operationId, arguments: redact(record.arguments), argumentsHash, expectedVersion: record.rowVersion,
     } })
     return this.advance(record, { approved: false })
   }
@@ -112,7 +112,7 @@ export class ToolOrchestrator {
     }
     await this.store.insert(retry)
     await this.store.emit({ type: "tool.started", toolCallId: retry.id, data: {
-      operationId: retry.operationId, arguments: retry.arguments, previousToolCallId: previous.id,
+      operationId: retry.operationId, arguments: redact(retry.arguments), previousToolCallId: previous.id,
       attempt: retry.attempt, argumentsHash: retry.argumentsHash, expectedVersion: retry.rowVersion,
     } })
     return this.advance(retry, { approved: false })

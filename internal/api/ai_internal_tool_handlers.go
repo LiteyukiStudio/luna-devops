@@ -162,17 +162,22 @@ func (h *Handlers) ExecuteAIInternalTool(ctx *gin.Context) {
 		return
 	}
 	var input struct {
-		Arguments map[string]any `json:"arguments"`
+		ArgumentsCanonical string `json:"argumentsCanonical"`
 	}
 	if !bindJSON(ctx, &input) {
 		return
 	}
-	if claims.ArgumentsHash != "" && claims.ArgumentsHash != hashAIArguments(input.Arguments) {
+	arguments, err := decodeAICanonicalArguments(input.ArgumentsCanonical)
+	if err != nil {
+		writeErrorCode(ctx, http.StatusBadRequest, "request.invalid", "canonical tool arguments are invalid")
+		return
+	}
+	if claims.ArgumentsHash != "" && claims.ArgumentsHash != hashAICanonicalArguments(input.ArgumentsCanonical) {
 		writeErrorCode(ctx, http.StatusConflict, "ai.approval_arguments_changed", "tool arguments differ from delegated arguments")
 		return
 	}
 	if operation, exists := aitool.PlatformOperation(claims.OperationID); exists {
-		result, err := h.dispatchAIPlatformOperation(ctx, claims, operation, input.Arguments)
+		result, err := h.dispatchAIPlatformOperation(ctx, claims, operation, arguments)
 		if err != nil {
 			h.audit(claims.UserID, "ai.tool.execute", claims.OperationID+":"+claims.ToolCallID, false, "request.invalid")
 			writeErrorCode(ctx, http.StatusBadRequest, "request.invalid", "AI tool arguments are invalid")
@@ -202,7 +207,7 @@ func (h *Handlers) ExecuteAIInternalTool(ctx *gin.Context) {
 		})
 		return
 	}
-	result, code, errCode := h.executeRegisteredAITool(ctx, claims, input.Arguments)
+	result, code, errCode := h.executeRegisteredAITool(ctx, claims, arguments)
 	if errCode != "" {
 		h.audit(claims.UserID, "ai.tool.execute", claims.OperationID+":"+claims.ToolCallID, false, errCode)
 		writeErrorCode(ctx, code, errCode, "AI tool execution denied")
@@ -318,9 +323,19 @@ func requireAIAgentService(ctx *gin.Context) bool {
 	return true
 }
 
-func hashAIArguments(arguments map[string]any) string {
-	encoded, _ := json.Marshal(arguments)
-	sum := sha256.Sum256(encoded)
+func decodeAICanonicalArguments(encoded string) (map[string]any, error) {
+	if strings.TrimSpace(encoded) == "" || len(encoded) > 256*1024 {
+		return nil, errors.New("canonical arguments are empty or too large")
+	}
+	var arguments map[string]any
+	if err := json.Unmarshal([]byte(encoded), &arguments); err != nil || arguments == nil {
+		return nil, errors.New("canonical arguments must be a JSON object")
+	}
+	return arguments, nil
+}
+
+func hashAICanonicalArguments(encoded string) string {
+	sum := sha256.Sum256([]byte(encoded))
 	return "sha256:" + hex.EncodeToString(sum[:])
 }
 

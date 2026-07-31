@@ -45,9 +45,9 @@ Read-only queries run directly. High-risk operations such as deletion, release, 
 
 - Approve this operation
 - Reject it
-- Allow subsequent operations of the same kind in the current conversation
+- Approve all pending operations already shown in the current task
 
-Approval never expands your platform permissions. The backend still performs the final authorization check.
+Approval is bound to the complete arguments shown in the card; changed arguments require a new approval. Approval never expands your platform permissions, and the backend still performs the final authorization check.
 
 ## Suggestions and navigation
 
@@ -99,6 +99,8 @@ Check Provider quota, model name, and API key, then retry.
 ### A tool failed
 
 Expand the tool details to inspect the error code, response data, validation details, and request ID. Common causes include a resource changing, missing permission, an unavailable dependency, invalid arguments, or an operation that needs confirmation again.
+
+`ai.approval_arguments_changed` means the execution arguments did not match the confirmation card. The platform blocked the request before the operation started. Generate a new confirmation card and review its arguments.
 
 ### A web page cannot be read
 

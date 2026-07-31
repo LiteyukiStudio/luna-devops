@@ -4,14 +4,14 @@ import { loadConfig } from "../src/config.js"
 import { MemoryRepository } from "../src/persistence/memory.js"
 import { DeterministicProvider } from "../src/provider/deterministic.js"
 import { buildServer } from "../src/server.js"
-import { RunGrantCipher } from "../src/grant-cipher.js"
+import { PayloadCipher } from "../src/payload-cipher.js"
 import type { AICapabilities, AIEvent, AITimeline, AITurnCreated } from "../../web/src/api/ai-types.js"
 import { presentTimeline } from "../src/timeline-presenter.js"
 
 function fixture() {
   const repository = new MemoryRepository()
   const provider = new DeterministicProvider()
-  const app = buildServer({ config: loadConfig({ NODE_ENV: "test" }), repository, provider, authenticator: new DevelopmentAuthenticator(), graphVersions: ["assistant-v1"], grantCipher: new RunGrantCipher(Buffer.alloc(32, 1)) })
+  const app = buildServer({ config: loadConfig({ NODE_ENV: "test" }), repository, provider, authenticator: new DevelopmentAuthenticator(), graphVersions: ["assistant-v1"], grantCipher: new PayloadCipher(Buffer.alloc(32, 1)) })
   return { app, repository }
 }
 
@@ -66,7 +66,7 @@ describe("internal API", () => {
       provider,
       authenticator: new DevelopmentAuthenticator(),
       graphVersions: ["assistant-v1"],
-      grantCipher: new RunGrantCipher(Buffer.alloc(32, 1)),
+      grantCipher: new PayloadCipher(Buffer.alloc(32, 1)),
       cancelRun: () => { throw new Error("local abort failed") },
     })
     const headers = { "x-luna-dev-user": "usr_cancel" }

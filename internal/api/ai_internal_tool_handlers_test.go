@@ -95,10 +95,15 @@ func TestAIAgentCallbackCredentialFailsClosed(t *testing.T) {
 }
 
 func TestAIArgumentsHashIsStableAndSensitiveToChanges(t *testing.T) {
-	first := hashAIArguments(map[string]any{"projectId": "prj_1", "limit": float64(20)})
-	second := hashAIArguments(map[string]any{"limit": float64(20), "projectId": "prj_1"})
-	changed := hashAIArguments(map[string]any{"projectId": "prj_2", "limit": float64(20)})
+	canonical := `{"body":{"applicationIdentifier":"postgres","applicationName":"PostgreSQL","values":{"password":"generated"}},"projectId":"prj_1","templateId":"postgresql"}`
+	arguments, err := decodeAICanonicalArguments(canonical)
+	if err != nil || arguments["projectId"] != "prj_1" {
+		t.Fatalf("decode canonical arguments = %#v, %v", arguments, err)
+	}
+	first := hashAICanonicalArguments(canonical)
+	second := hashAICanonicalArguments(canonical)
+	changed := hashAICanonicalArguments(strings.Replace(canonical, "prj_1", "prj_2", 1))
 	if first != second || first == changed || !strings.HasPrefix(first, "sha256:") {
-		t.Fatalf("hashes = %q %q %q", first, second, changed)
+		t.Fatalf("canonical hashes = %q %q %q", first, second, changed)
 	}
 }

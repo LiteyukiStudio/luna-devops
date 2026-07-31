@@ -45,6 +45,39 @@ describe("tool catalog and orchestration", () => {
     expect(completed.status).toBe("succeeded")
     expect(client.calls[0]).toMatchObject({ approvalGranted: true, mfaPurpose: "deployment_restart", stepUpAssertionId: "mfa_assertion_1" })
   })
+  it("executes the approved original arguments while only emitting a redacted projection", async () => {
+    const sensitiveCatalog = ToolCatalog.load([{
+      operationId: "installTemplate", method: "POST", path: "/api/v1/templates/install", category: "application",
+      risk: "sensitive", requiredScopes: ["application:write"], approval: "always", idempotent: true, timeoutMs: 5000,
+      inputSchema: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          body: { type: "object", additionalProperties: true },
+        },
+        required: ["projectId", "body"],
+        additionalProperties: false,
+      },
+    }])
+    const sensitiveClient = new DeterministicLunaApiClient(() => ({ status: 200, body: { installed: true } }))
+    const sensitiveStore = new MemoryToolCallStore()
+    const sensitive = new ToolOrchestrator(sensitiveCatalog, sensitiveClient, sensitiveStore, undefined, 12, undefined, resolveGrant)
+    const approval = await sensitive.propose({
+      runId: "airun_secret",
+      operationId: "installTemplate",
+      arguments: { projectId: "prj_1", body: { username: "app", password: "generated-secret" } },
+    })
+    await sensitive.approve(approval.id, approval.argumentsHash, approval.rowVersion)
+
+    expect(sensitiveClient.calls[0]?.arguments).toEqual({
+      projectId: "prj_1",
+      body: { username: "app", password: "generated-secret" },
+    })
+    expect(sensitiveStore.events[0]?.data.arguments).toEqual({
+      projectId: "prj_1",
+      body: { username: "app", password: "[REDACTED]" },
+    })
+  })
   it("enforces a per-run tool-call ceiling", async () => {
     const client = new DeterministicLunaApiClient(() => ({ status: 200, body: {} }))
     const orchestrator = new ToolOrchestrator(catalog, client, new MemoryToolCallStore(), undefined, 1, undefined, resolveGrant)

@@ -1,4 +1,5 @@
 import type { ToolOperation } from "./catalog.js"
+import { canonicalJSONStringify } from "../canonical-json.js"
 
 export type ToolExecutionRequest = {
   runId: string
@@ -49,7 +50,7 @@ export class HttpLunaApiToolClient implements LunaApiToolClient {
       },
       ...(request.signal ? { signal: request.signal } : {}),
     }
-    init.body = JSON.stringify({ arguments: request.arguments })
+    init.body = JSON.stringify({ argumentsCanonical: canonicalJSONStringify(request.arguments) })
     const response = await fetch(url, init)
     const requestId = response.headers.get("x-request-id")
     return { status: response.status, body: await safeJson(response), ...(requestId ? { requestId } : {}) }

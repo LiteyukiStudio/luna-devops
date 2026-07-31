@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { DevelopmentAuthenticator } from "../src/auth.js"
 import { loadConfig } from "../src/config.js"
-import { RunGrantCipher } from "../src/grant-cipher.js"
+import { PayloadCipher } from "../src/payload-cipher.js"
 import { MemoryRepository } from "../src/persistence/memory.js"
 import { DeterministicProvider } from "../src/provider/deterministic.js"
 import { buildServer } from "../src/server.js"
@@ -46,7 +46,7 @@ async function approvalFixture() {
     provider: new DeterministicProvider(),
     authenticator: new DevelopmentAuthenticator(),
     graphVersions: ["assistant-v1"],
-    grantCipher: new RunGrantCipher(Buffer.alloc(32, 1)),
+    grantCipher: new PayloadCipher(Buffer.alloc(32, 1)),
     tools,
   })
   return { app, repository, store, client, tools }
