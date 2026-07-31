@@ -118,6 +118,8 @@ describe("interaction card tool", () => {
   })
 
   it("publishes the full generated JSON schema to the model", () => {
+    expect(createInteractionCardsTool.inputSchema.type).toBe("object")
+    expect(Array.isArray(createInteractionCardsTool.inputSchema.anyOf)).toBe(true)
     const schema = JSON.stringify(createInteractionCardsTool.inputSchema)
     expect(schema).toContain("businessTemplate")
     expect(schema).toContain("candidate_picker")

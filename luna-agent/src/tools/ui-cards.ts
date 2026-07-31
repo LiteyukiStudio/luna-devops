@@ -593,5 +593,8 @@ function messageTemplateFieldIds(message: string): string[] {
 function cardInputJsonSchema(): Record<string, unknown> {
   const schema = z.toJSONSchema(createInteractionCardsRequestInput, { io: "input" }) as Record<string, unknown>
   delete schema.$schema
-  return schema
+  // OpenAI-compatible providers require function parameters to declare an
+  // object at the schema root, even when the object variants are expressed by
+  // a top-level anyOf generated from a Zod union.
+  return { ...schema, type: "object" }
 }

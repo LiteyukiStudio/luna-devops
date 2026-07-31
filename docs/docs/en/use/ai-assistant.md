@@ -10,6 +10,8 @@ A platform administrator first configures these values under **Global Settings â
 - API key
 - Model name
 
+The Provider must expose an OpenAI-compatible `chat/completions` endpoint with SSE streaming and function tool calling.
+
 After saving and enabling it, the assistant entry appears in the lower-right corner of the console.
 
 Tap the floating entry on desktop or mobile to open the assistant. Drag it to change its position; small finger movement during a tap is not treated as a drag.

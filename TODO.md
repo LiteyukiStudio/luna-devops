@@ -481,6 +481,7 @@
 - [x] 为通用 5xx 响应生成基于 HTTP 方法和 Gin 路由模板的稳定错误码，生产环境继续隐藏底层异常。
 - [x] 清理 Kubernetes 高级部署字段和通知适配器选项的用户可见硬编码枚举，统一通过中英文 i18n label 展示。
 - [x] 修复空 PostgreSQL 数据库启动迁移：baseline 在后续 ALTER 前创建计费基础表，并用真实空 schema 测试覆盖完整 migration、非 dirty 状态和重复启动。
+- [x] 隔离完整迁移测试数据库：每次创建并销毁独立 `luna_migration_test_*` 数据库，禁止测试清理共享数据库的 `ai` schema，并验证测试前后源数据库状态不变。
 - [x] 收紧用户提交 kubeconfig：保存和运行时统一拒绝 exec/auth-provider、tokenFile、proxy-url、本机证书文件、HTTP API Server 和跳过 TLS 校验，仅接受内联凭据与合法 HTTPS API Server。
 - [x] 封装统一错误响应层，开发模式返回调试细节，生产模式仅返回稳定错误码和业务化文案。
 - [x] 持续补充业务错误码枚举和前端按错误码 i18n 展示。
@@ -1098,6 +1099,7 @@ OpenAPI，不把 MCP 作为内部服务总线。
 - [x] 隐藏会话自动命名等内部维护型 Tool Call，将普通工具折叠行压缩为名称与右侧状态 Badge，参数、结果和耗时仅在展开后展示。
 - [x] 将 Agent 工具权限收敛为当前用户权限：读取与低风险写入按当前 Session/RBAC 即时执行，高风险调用提供“同意 / 拒绝 / 全部同意”并绑定 Run、Tool Call、参数哈希和版本；“全部同意”仅覆盖当前 Run 已展示的待批准调用，同时修复跨 Run Tool Call 审批风险。
 - [x] 将 Tool Catalog 作为 OpenAI-compatible `tools` Schema 传给模型，新增结构化 `create_options` UI 工具，并修复参数哈希绑定的批准事件与平台验证后的 MFA 恢复。
+- [x] 修复交互卡片联合类型生成的顶层 Tool Schema 缺少 `type: object`，避免 OpenAI-compatible Provider 拒绝整轮模型请求；完成本地 API、Agent、SSE 与浏览器真实回复验收。
 - [x] 修复高风险工具确认后的参数误冲突：使用规范 JSON 统一审批哈希与执行载荷，加密保存可执行原始参数、仅向 Timeline 投影脱敏参数，并为 `ai.approval_arguments_changed` 提供明确恢复提示。
 - [x] 将 `create_options` 从折叠 Tool Call 升级为始终可见的下一步选项组件，覆盖站内无刷新跳转、消息回复和重新进入权限/批准/MFA 链路的受控操作请求。
 - [x] 会话目录增加显式批量选择、全选和批量删除确认；引入 `title_source` 与 `rename_conversation` 内建工具，首轮自动命名、话题漂移重命名，并在用户手动命名后由数据库永久锁定。

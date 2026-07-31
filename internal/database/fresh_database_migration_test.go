@@ -24,15 +24,29 @@ func TestMigrateBootstrapsFreshPostgresSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open integration database: %v", err)
 	}
-	schema := fmt.Sprintf("fresh_database_migration_test_%d", time.Now().UnixNano())
-	if err := adminDB.Exec(`CREATE SCHEMA "` + schema + `"`).Error; err != nil {
-		t.Fatalf("create integration schema: %v", err)
+	adminSQLDB, err := adminDB.DB()
+	if err != nil {
+		t.Fatalf("open integration database connection: %v", err)
 	}
+	t.Cleanup(func() { _ = adminSQLDB.Close() })
+
+	type sourceDatabaseState struct {
+		HasMigrationTable bool
+		HasAISchema       bool
+	}
+	readSourceState := func() sourceDatabaseState {
+		var state sourceDatabaseState
+		if stateErr := adminDB.Raw(`SELECT
+  to_regclass('schema_migrations') IS NOT NULL AS has_migration_table,
+  to_regnamespace('ai') IS NOT NULL AS has_ai_schema`).Scan(&state).Error; stateErr != nil {
+			t.Fatalf("inspect source integration database: %v", stateErr)
+		}
+		return state
+	}
+	sourceState := readSourceState()
 	t.Cleanup(func() {
-		_ = adminDB.Exec(`DROP SCHEMA IF EXISTS ai CASCADE`).Error
-		_ = adminDB.Exec(`DROP SCHEMA IF EXISTS "` + schema + `" CASCADE`).Error
-		if sqlDB, dbErr := adminDB.DB(); dbErr == nil {
-			_ = sqlDB.Close()
+		if currentState := readSourceState(); currentState != sourceState {
+			t.Errorf("migration test changed source database state: before=%+v after=%+v", sourceState, currentState)
 		}
 	})
 
@@ -40,27 +54,42 @@ func TestMigrateBootstrapsFreshPostgresSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse integration database URL: %v", err)
 	}
+	databaseName := fmt.Sprintf("luna_migration_test_%d", time.Now().UnixNano())
+	if !strings.HasPrefix(databaseName, "luna_migration_test_") {
+		t.Fatalf("refuse unsafe migration test database name %q", databaseName)
+	}
+	if err := adminDB.Exec(`CREATE DATABASE "` + databaseName + `"`).Error; err != nil {
+		t.Fatalf("create isolated migration test database: %v", err)
+	}
+	t.Cleanup(func() {
+		if dropErr := adminDB.Exec(`DROP DATABASE IF EXISTS "` + databaseName + `" WITH (FORCE)`).Error; dropErr != nil {
+			t.Errorf("drop isolated migration test database: %v", dropErr)
+		}
+	})
+
+	parsedURL.Path = "/" + databaseName
+	parsedURL.RawPath = ""
 	query := parsedURL.Query()
-	query.Set("search_path", schema)
+	query.Del("search_path")
 	parsedURL.RawQuery = query.Encode()
-	db, err := gorm.Open(postgres.Open(parsedURL.String()), &gorm.Config{})
+	testDB, err := gorm.Open(postgres.Open(parsedURL.String()), &gorm.Config{})
 	if err != nil {
-		t.Fatalf("open fresh integration schema: %v", err)
+		t.Fatalf("open isolated migration test database: %v", err)
 	}
 	defer func() {
-		if sqlDB, dbErr := db.DB(); dbErr == nil {
+		if sqlDB, dbErr := testDB.DB(); dbErr == nil {
 			_ = sqlDB.Close()
 		}
 	}()
 
-	if err := Migrate(db); err != nil {
+	if err := Migrate(testDB); err != nil {
 		t.Fatalf("migrate fresh database: %v", err)
 	}
-	if err := Migrate(db); err != nil {
+	if err := Migrate(testDB); err != nil {
 		t.Fatalf("repeat migration after fresh bootstrap: %v", err)
 	}
 
-	assertFreshMigrationState(t, db)
+	assertFreshMigrationState(t, testDB)
 }
 
 func assertFreshMigrationState(t *testing.T, db *gorm.DB) {

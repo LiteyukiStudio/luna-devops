@@ -646,3 +646,24 @@ rg -n "TODO|FIXME|临时|兼容|fallback|special case|module|Builder|builder" in
 
 - `go test ./...`、`go vet ./...`：通过。
 - `go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...`：可达漏洞为 0。
+
+## 17. 2026-08-01 完整迁移测试隔离修复
+
+### 事故根因
+
+- 完整迁移测试只通过 `search_path` 隔离 public 表，但迁移固定创建全局 `ai` schema。
+- 测试清理阶段直接执行 `DROP SCHEMA IF EXISTS ai CASCADE`；当 `AUTH_TEST_DATABASE_URL` 指向日常开发库时，会删除开发库中的 AI 会话、Run、工具调用和 UI Action 表。
+- 后续第 57 号迁移尝试修改已不存在的 `ai.tool_calls`，将 `schema_migrations` 留在 `57 dirty`，API 按 fail-closed 规则拒绝启动。
+
+### 修复标准
+
+- 完整迁移测试必须创建名称受控的独立 `luna_migration_test_*` 数据库，在其中执行完整迁移和重复迁移验证。
+- 清理只能删除本次测试生成的独立数据库，不得删除输入连接所指向数据库的 schema 或表。
+- 测试必须记录并复核源数据库的迁移表与 `ai` schema 存在状态，确保测试结束后保持不变。
+- 本地 dirty 恢复前先记录 schema；仅在确认 `ai` schema 已丢失时将迁移版本恢复至 52，再重新执行 53–57，禁止无条件强制迁移版本。
+
+### 验收结果
+
+- 本地开发库已恢复到 migration `57 clean`，8 张 `ai` schema 表和 `ai.tool_calls.arguments_ciphertext` 均存在。
+- `TestMigrateBootstrapsFreshPostgresSchema` 使用日常开发库作为管理连接时通过，测试生成的临时数据库已清理，源数据库迁移状态和 AI schema 保持不变。
+- API 已真实启动并监听 `:8080`，启动验证后正常停止。
