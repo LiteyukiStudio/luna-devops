@@ -22,6 +22,10 @@ Production mode requires a strong random `BOOTSTRAP_TOKEN` in the API process en
 
 The first administrator can also choose "Keep me signed in"; its session and remember-login behavior is the same as a normal local sign-in.
 
+## Get help or sign out
+
+The account menu at the bottom of the sidebar links to the documentation, the GitHub repository, and sign-out. Signing out requires confirmation so an accidental click does not end the current session.
+
 ## Use the dashboard to choose the next action
 
 After sign-in, the dashboard answers “what needs attention now” instead of presenting a wall of resource totals:

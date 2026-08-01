@@ -178,8 +178,13 @@ export function AppLayout() {
   }, [appRouteMatch, configs, currentApplication.data, currentProject.data, location.pathname, projectRouteMatch, projects.data, t])
   useDocumentTitle(pageMeta.title)
   const pageMotionKey = /^\/projects\/[^/]+$/.test(location.pathname) ? '/projects/:projectId' : location.pathname
-  const handleLogout = () => {
-    logout().catch(error => toast.error(error.message))
+  const handleLogout = async () => {
+    try {
+      await logout()
+    }
+    catch (error) {
+      toast.error(error instanceof Error ? error.message : t('errors.request.failed'))
+    }
   }
 
   const renderSidebarContent = (onNavigate?: () => void) => {
@@ -232,7 +237,6 @@ export function AppLayout() {
         </SidebarContent>
         <SidebarFooter>
           <SidebarUserPanel
-            logoutLabel={t('logout')}
             logoutPending={isLoggingOut}
             user={user}
             onLogout={handleLogout}
