@@ -135,6 +135,7 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       OTEL_RESOURCE_ATTRIBUTES: ${OTEL_RESOURCE_ATTRIBUTES:-deployment.environment.name=production}
       OTEL_EXPORTER_OTLP_HEADERS: ${OTEL_EXPORTER_OTLP_HEADERS:-}
+      AI_OBSERVABILITY_CAPTURE_CONTENT: ${AI_OBSERVABILITY_CAPTURE_CONTENT:-false}
     depends_on:
       api:
         condition: service_healthy

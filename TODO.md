@@ -945,6 +945,7 @@
 ### 12.3 链路追踪
 
 - [x] 接入 OpenTelemetry SDK：仅在配置 `OTEL_EXPORTER_OTLP_ENDPOINT` 时初始化 OTLP Trace、Metrics 与 Logs 导出，未配置时不影响业务主流程。
+- [x] Agent 支持显式启用的高敏全内容观测：统一采集脱敏、限长后的模型输入输出、Provider 错误和平台/内部工具输入输出，默认关闭并同步 Compose、Helm 与公开文档。
 - [x] 为 Gin/Fastify 请求、GORM/PG 查询、Redis/Asynq、HTTP、Git/Registry/Kubernetes、模型 Provider 和 Agent 工具调用建立父子 span；命名使用稳定路由模板与操作名。
 - [x] Asynq 任务 envelope 透传 W3C Trace Context，Worker 从投递请求继续同一 trace，并记录任务生命周期与队列指标。
 - [x] Agent Run 入队时持久化经过白名单过滤的 W3C `traceparent` / `tracestate`，后台领取、模型循环、工具调用和回调平台 API 继续原请求 Trace；Trace Context 不参与业务幂等哈希，也不向前端响应暴露。

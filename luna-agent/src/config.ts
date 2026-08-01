@@ -20,6 +20,7 @@ const schema = z.object({
   OTEL_EXPORTER_OTLP_ENDPOINT: optionalValue(z.string().url()),
   OTEL_RESOURCE_ATTRIBUTES: optionalValue(z.string()),
   OTEL_EXPORTER_OTLP_HEADERS: optionalValue(z.string()),
+  AI_OBSERVABILITY_CAPTURE_CONTENT: z.stringbool().default(false),
 })
 
 export type Config = z.infer<typeof schema>

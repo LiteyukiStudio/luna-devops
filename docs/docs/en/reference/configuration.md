@@ -75,3 +75,11 @@ Available access-route domain suffixes, external access schemes, external access
 Worker no longer listens on a separate metrics port. With `OTEL_EXPORTER_OTLP_ENDPOINT` configured, task, retry, queue depth, queue latency, build/release result and duration, runtime replica, and gateway sync metrics are exported with the other telemetry signals.
 
 The worker also starts consuming tasks only after both Redis and PostgreSQL pass their startup connection checks. After startup, Asynq, go-redis, and `database/sql` recover from transient connection interruptions.
+
+## Agent Settings
+
+| Type | Variable | Default | Purpose and when to change it |
+| --- | --- | --- | --- |
+| Advanced | `AI_OBSERVABILITY_CAPTURE_CONTENT` | `false` | Writes redacted model input/output, reasoning summaries, tool arguments, and tool results to trace events and structured logs. Enable it only for a controlled diagnostic window after restricting Tempo/Loki access and retention. |
+
+This switch affects only the Agent and requires `OTEL_EXPORTER_OTLP_ENDPOINT` to export data remotely. Each content field is capped at 32 KiB. Tokens, cookies, passwords, API keys, URL credentials, and secret form values are still replaced with `[REDACTED]`. See [Connect an Observability Backend](./observability.md#agent-full-content-observability-sensitive) for fields and queries.

@@ -14,6 +14,38 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
 
 AI 请求进入排队状态时会保留 W3C Trace Context，因此同一次操作中的 API 请求、Agent Run、模型请求、工具调用、平台回调和数据库访问可以在 Tempo 中沿同一个 Trace 查看。等待审批或用户输入后恢复执行时仍使用同一上游 Trace，并通过 Run ID 区分执行阶段。
 
+## Agent 全内容观测（高敏）
+
+默认遥测只记录模型、Run、工具和依赖的元数据，不记录用户提示词或工具正文。需要排查模型行为时，可以只在 Agent 容器临时开启：
+
+```bash
+AI_OBSERVABILITY_CAPTURE_CONTENT=true
+```
+
+重启 Agent 后，会额外采集：
+
+- 模型请求中的系统提示词、会话历史、当前用户输入、页面上下文、工具定义和工具选择；
+- 模型回复、推理摘要、工具调用请求、Token 用量和 Provider 错误响应；
+- 平台工具与 Agent 内部工具的输入参数、返回状态、返回正文和请求编号。
+
+内容会同时作为 Span Event 写入 Trace，并作为带 Trace ID 的 `debug` 结构化日志写入 Logs。每个序列化字段最多 32 KiB，超出时设置 `luna.ai.content.truncated=true`。Token、Cookie、密码、API Key、URL 内嵌凭据和 Secret 表单值无论开关状态如何都会替换为 `[REDACTED]`；这不是数据隔离措施，提示词和业务返回仍可能包含个人或平台数据。
+
+| 事件 | 内容字段 | 所在阶段 |
+| --- | --- | --- |
+| `gen_ai.content.input` | `gen_ai.input.messages` | 模型请求 |
+| `gen_ai.content.output` | `gen_ai.output.messages` | 模型完成或流式结束 |
+| `gen_ai.content.error` | `gen_ai.response.error_body` | Provider 返回非成功状态 |
+| `gen_ai.tool.content.input` | `gen_ai.tool.call.arguments` | 平台或内部工具执行前 |
+| `gen_ai.tool.content.output` | `gen_ai.tool.call.result` | 平台或内部工具执行后 |
+
+在 Tempo 中先按会话、轮次或 Run 查询，再展开 `agent.model.stream`、`gen_ai.chat.complete`、`agent.tool.execute` 或 `agent.tool.internal` Span 的 Events。在 Loki 中可以按 Agent 服务和事件名检索：
+
+```text
+{service_name="luna-agent"} | json | event_name=~"gen_ai\\.(content|tool\\.content)\\..*"
+```
+
+排障结束后把开关恢复为 `false` 并重启 Agent。生产环境应为 Tempo/Loki 配置最小访问权限和较短保留周期，不要把该开关作为常驻审计日志使用。
+
 ## 查询 Trace
 
 Luna DevOps 使用请求级 Trace：一次 AI 会话可以包含多轮对话，因此会话不是一条无限增长的 Trace。通常每轮用户消息对应一条 Trace；等待审批或用户输入后恢复的同一个 Run 仍接续原 Trace。会话、轮次和执行实例分别使用以下稳定属性关联：
@@ -137,7 +169,7 @@ OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=development
 - 在 Collector 使用 batch 和 memory limiter processor，避免后端短时不可达拖垮应用。
 - 错误和慢链路可以完整保留，正常链路按容量采样。采样应在 Collector 统一完成，不要让不同服务各自使用冲突策略。
 - Collector 与可观测后端放在受控网络中；跨网络上报时使用 TLS 和认证 Header。
-- 日志和链路默认不会记录 Cookie、Token、Secret、密码、请求正文、模型 Prompt 或工具敏感参数。下游系统仍应设置访问控制和保留周期。
+- 日志和链路默认不会记录 Cookie、Token、Secret、密码、请求正文、模型 Prompt 或工具敏感参数。只有显式开启 Agent 高敏内容观测时才会记录经过强制脱敏和长度限制的 AI 内容；下游系统仍应设置访问控制和保留周期。
 - API 的独立 Prometheus `/metrics` 入口只作为兼容抓取面；Worker 和 Agent 不开放独立指标端口。完整平台指标统一通过 OTLP 进入 Collector 和指标后端，避免跨进程抓取、重复采集和多副本 Counter 抖动。
 - 导入 `grafana/dashboards/luna-devops-overview.json` 后，先看服务上报数、错误率和成功率，再依次查看 API 延迟、Worker 队列与交付结果、Agent 首 Token/工具调用和数据库容量。Stat 用于当前健康，Time series 用于趋势与分位数，Bar gauge 只用于队列积压等同一时刻的分类比较，Table 只用于慢路由与依赖明细。
 

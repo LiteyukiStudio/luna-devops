@@ -14,6 +14,38 @@ After restart, the services report as `luna-devops-api`, `luna-worker`, and `lun
 
 When an AI request enters the queue, Luna DevOps preserves its W3C Trace Context. The API request, Agent Run, model request, tool call, platform callback, and database access can therefore be inspected as one Trace in Tempo. Execution resumed after approval or user input keeps the same upstream Trace and uses the Run ID to distinguish execution stages.
 
+## Agent full-content observability (sensitive)
+
+By default, telemetry records model, run, tool, and dependency metadata without user prompts or tool bodies. To diagnose model behavior, enable the following variable only on the Agent for a short window:
+
+```bash
+AI_OBSERVABILITY_CAPTURE_CONTENT=true
+```
+
+After restarting the Agent, telemetry additionally captures:
+
+- system prompts, conversation history, current user input, page context, tool definitions, and tool choice;
+- model replies, reasoning summaries, tool-call requests, token usage, and provider error responses;
+- platform and internal tool arguments, response status, response body, and request ID.
+
+Content is emitted both as span events in traces and as trace-correlated `debug` structured logs. Each serialized field is capped at 32 KiB and sets `luna.ai.content.truncated=true` when truncated. Tokens, cookies, passwords, API keys, URL credentials, and secret form values are always replaced with `[REDACTED]`. This is not data isolation: prompts and business responses can still contain personal or platform data.
+
+| Event | Content attribute | Stage |
+| --- | --- | --- |
+| `gen_ai.content.input` | `gen_ai.input.messages` | Model request |
+| `gen_ai.content.output` | `gen_ai.output.messages` | Model completion or stream end |
+| `gen_ai.content.error` | `gen_ai.response.error_body` | Non-success provider response |
+| `gen_ai.tool.content.input` | `gen_ai.tool.call.arguments` | Before platform or internal tool execution |
+| `gen_ai.tool.content.output` | `gen_ai.tool.call.result` | After platform or internal tool execution |
+
+In Tempo, find the conversation, turn, or run first, then inspect Events on `agent.model.stream`, `gen_ai.chat.complete`, `agent.tool.execute`, or `agent.tool.internal`. In Loki, filter the Agent service and event names:
+
+```text
+{service_name="luna-agent"} | json | event_name=~"gen_ai\\.(content|tool\\.content)\\..*"
+```
+
+Set the switch back to `false` and restart the Agent after diagnosis. Restrict Tempo/Loki access and use short retention periods; do not use this mode as permanent audit logging.
+
 ## Query traces
 
 Luna DevOps uses request-scoped traces. An AI conversation can contain multiple turns, so a conversation is not one indefinitely growing trace. One user turn normally produces one trace; resuming the same Run after approval or user input continues its original trace. Use these stable attributes to correlate each level:
@@ -137,7 +169,7 @@ Verify at least one database-backed list request, one asynchronous Worker task, 
 - Use batch and memory limiter processors in the Collector so a temporary backend outage cannot exhaust application resources.
 - Keep error and slow traces, then sample healthy traces according to capacity. Apply the sampling policy centrally in the Collector instead of configuring conflicting policies per service.
 - Keep the Collector and backend on a controlled network. Use TLS and authenticated headers across network boundaries.
-- Telemetry does not intentionally record cookies, tokens, secrets, passwords, request bodies, model prompts, or sensitive tool arguments. The backend should still enforce access control and retention limits.
+- Telemetry does not record cookies, tokens, secrets, passwords, request bodies, model prompts, or sensitive tool arguments by default. Only the explicit Agent sensitive-content mode records AI content after mandatory redaction and size limits. The backend should still enforce access control and retention limits.
 - API's dedicated Prometheus `/metrics` endpoint is a compatibility scrape surface only. Worker and Agent do not expose separate metrics ports. Complete platform metrics flow through OTLP into the Collector and metrics backend, avoiding cross-process scraping, duplicate ingestion, and counter jitter across replicas.
 - After importing `grafana/dashboards/luna-devops-overview.json`, start with reporting-service count, error ratio, and success ratios; then inspect API latency, Worker queues and delivery outcomes, Agent first-token/tool behavior, and database capacity. Stats represent current health, time series show trends and percentiles, bar gauges compare current queue categories, and tables are reserved for slow routes and dependency details.
 

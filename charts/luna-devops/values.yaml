@@ -37,6 +37,8 @@ ai:
   existingSecret: ""
   internalSecretKey: ai-internal-secret
   agent:
+    # High-sensitivity diagnostics. Exports redacted model and tool content.
+    observabilityCaptureContent: false
     replicaCount: 2
     image:
       repository: liteyukistudio/luna-agent

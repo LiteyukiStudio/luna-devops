@@ -5,7 +5,7 @@ import type { Repository } from "../persistence/repository.js"
 import { validateArguments, type ToolCatalog } from "./catalog.js"
 import type { LunaApiToolClient, ToolExecutionResult } from "./luna-api-client.js"
 import { ToolPolicy } from "./policy.js"
-import { agentMetrics, internalSpanOptions, stableErrorCode, telemetryLog, withSpan } from "../telemetry.js"
+import { agentMetrics, internalSpanOptions, recordAIContent, stableErrorCode, telemetryLog, withSpan } from "../telemetry.js"
 
 export type ToolCallStatus = "proposed" | "awaiting_approval" | "awaiting_mfa" | "running" | "succeeded" | "failed" | "canceled" | "skipped"
 export type ToolCallRecord = {
@@ -151,15 +151,36 @@ export class ToolOrchestrator {
         "luna.tool.approval_granted": authorization.approvalGranted,
       }), async span => {
         const operation = this.catalog.get(call.operationId)
-        const running = await this.transition(call, "running", {}, "tool_call.running")
-        const result = await this.client.execute({
-          runId: call.runId, toolCallId: call.id, operation, arguments: call.arguments,
-          argumentsHash: call.argumentsHash, runActorGrant: await this.grantResolver(call.runId),
-          approvalGranted: authorization.approvalGranted,
-          ...(authorization.mfaPurpose ? { mfaPurpose: authorization.mfaPurpose } : {}),
-          ...(authorization.stepUpAssertionId ? { stepUpAssertionId: authorization.stepUpAssertionId } : {}),
+        recordAIContent(span, "gen_ai.tool.content.input", "gen_ai.tool.call.arguments", call.arguments, {
+          "gen_ai.tool.name": call.operationId,
+          "luna.tool_call.id": call.id,
         })
+        const running = await this.transition(call, "running", {}, "tool_call.running")
+        let result: ToolExecutionResult
+        try {
+          result = await this.client.execute({
+            runId: call.runId, toolCallId: call.id, operation, arguments: call.arguments,
+            argumentsHash: call.argumentsHash, runActorGrant: await this.grantResolver(call.runId),
+            approvalGranted: authorization.approvalGranted,
+            ...(authorization.mfaPurpose ? { mfaPurpose: authorization.mfaPurpose } : {}),
+            ...(authorization.stepUpAssertionId ? { stepUpAssertionId: authorization.stepUpAssertionId } : {}),
+          })
+        } catch (error) {
+          recordAIContent(span, "gen_ai.tool.content.output", "gen_ai.tool.call.result", contentError(error), {
+            "gen_ai.tool.name": call.operationId,
+            "luna.tool_call.id": call.id,
+          })
+          throw error
+        }
         span.setAttribute("http.response.status_code", result.status)
+        recordAIContent(span, "gen_ai.tool.content.output", "gen_ai.tool.call.result", {
+          status: result.status,
+          body: result.body,
+          requestId: result.requestId,
+        }, {
+          "gen_ai.tool.name": call.operationId,
+          "luna.tool_call.id": call.id,
+        })
         const finished = await this.finish(running, result, {
           durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
           traceId: span.spanContext().traceId,
@@ -229,6 +250,12 @@ export class ToolOrchestrator {
       throw new Error("ai.approval_expired")
     }
   }
+}
+
+function contentError(error: unknown): Record<string, unknown> {
+  return error instanceof Error
+    ? { errorType: error.name, errorMessage: error.message, cause: error.cause }
+    : { errorType: "UnknownError", errorMessage: String(error) }
 }
 
 function extractCode(body: unknown): string | undefined {

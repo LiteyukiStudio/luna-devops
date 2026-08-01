@@ -12,12 +12,52 @@ import { envDetector } from "@opentelemetry/resources"
 import { BatchLogRecordProcessor } from "@opentelemetry/sdk-logs"
 import { PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics"
 import { NodeSDK } from "@opentelemetry/sdk-node"
+import { redact } from "./redaction.js"
 
 const instrumentationName = "luna-agent"
 const tracer = trace.getTracer(instrumentationName)
 const logger = logs.getLogger(instrumentationName)
 
 let sdk: NodeSDK | undefined
+let aiContentCaptureEnabled = false
+const aiContentAttributeLimit = 32_768
+
+export function configureAIContentCapture(enabled: boolean): void {
+  aiContentCaptureEnabled = enabled
+}
+
+export function isAIContentCaptureEnabled(): boolean {
+  return aiContentCaptureEnabled
+}
+
+export function serializeAIContent(value: unknown, limit = aiContentAttributeLimit): { value: string, truncated: boolean } {
+  let serialized: string
+  try {
+    serialized = JSON.stringify(redact(value), (_key, item: unknown) => typeof item === "bigint" ? item.toString() : item) ?? "null"
+  } catch {
+    serialized = "[UNSERIALIZABLE]"
+  }
+  if (serialized.length <= limit) return { value: serialized, truncated: false }
+  return { value: `${serialized.slice(0, Math.max(0, limit - 1))}…`, truncated: true }
+}
+
+export function recordAIContent(
+  span: Span,
+  eventName: string,
+  attributeName: string,
+  value: unknown,
+  attributes: Attributes = {},
+): void {
+  if (!aiContentCaptureEnabled) return
+  const content = serializeAIContent(value)
+  const contentAttributes: Attributes = {
+    ...attributes,
+    [attributeName]: content.value,
+    "luna.ai.content.truncated": content.truncated,
+  }
+  span.addEvent(eventName, contentAttributes)
+  telemetryLog(eventName, "debug", contentAttributes)
+}
 
 export const agentMetrics = {
   runs: deferredCounter("luna_devops_agent_runs", "Agent 运行次数"),

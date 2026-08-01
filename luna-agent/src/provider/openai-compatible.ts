@@ -1,5 +1,5 @@
 import type { ModelCapabilities, ModelEvent, ModelProvider, ModelRequest, ModelResponse, ModelToolCall } from "./provider.js"
-import { agentMetrics, clientSpanOptions, telemetryLog, withSpan } from "../telemetry.js"
+import { agentMetrics, clientSpanOptions, isAIContentCaptureEnabled, recordAIContent, telemetryLog, withSpan } from "../telemetry.js"
 import { trace } from "@opentelemetry/api"
 
 type Options = { baseUrl: string, apiKey: string, model: string, timeoutMs: number }
@@ -41,6 +41,8 @@ export class OpenAICompatibleProvider implements ModelProvider {
     const decoder = new TextDecoder()
     let buffer = ""
     let usage = { inputTokens: 0, outputTokens: 0 }
+    let responseText = ""
+    let reasoningText = ""
     let toolCallDeltaEmitted = false
     const toolFragments = new Map<number, { id?: string, operationId: string, arguments: string }>()
     const reader = (response.body as ReadableStream<Uint8Array>).getReader()
@@ -69,8 +71,14 @@ export class OpenAICompatibleProvider implements ModelProvider {
         const delta = payload.choices?.[0]?.delta
         const reasoning = textValue(delta?.reasoning_summary)
         const content = contentText(delta?.content)
-        if (reasoning) yield { type: "reasoning_summary_delta", delta: reasoning }
-        if (content) yield { type: "message_delta", delta: content }
+        if (reasoning) {
+          reasoningText += reasoning
+          yield { type: "reasoning_summary_delta", delta: reasoning }
+        }
+        if (content) {
+          responseText += content
+          yield { type: "message_delta", delta: content }
+        }
         for (const fragment of delta?.tool_calls ?? []) {
           if (!toolCallDeltaEmitted) {
             toolCallDeltaEmitted = true
@@ -91,6 +99,15 @@ export class OpenAICompatibleProvider implements ModelProvider {
       }
     }
     const toolCalls = parseToolCalls(toolFragments)
+    const activeSpan = trace.getActiveSpan()
+    if (activeSpan) {
+      recordAIContent(activeSpan, "gen_ai.content.output", "gen_ai.output.messages", {
+        text: responseText,
+        reasoningSummary: reasoningText,
+        toolCalls,
+        usage,
+      })
+    }
     yield { type: "completed", usage, ...(toolCalls.length ? { toolCalls } : {}) }
   }
 
@@ -101,7 +118,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
     if (body.id) activeSpan?.setAttribute("gen_ai.response.id", body.id)
     if (body.model) activeSpan?.setAttribute("gen_ai.response.model", body.model)
     const message = body.choices?.[0]?.message
-    return {
+    const result = {
       text: contentText(message?.content),
       reasoningSummary: textValue(message?.reasoning_summary),
       toolCalls: (message?.tool_calls ?? []).map(call => ({
@@ -112,6 +129,8 @@ export class OpenAICompatibleProvider implements ModelProvider {
       usage: { inputTokens: body.usage?.prompt_tokens ?? 0, outputTokens: body.usage?.completion_tokens ?? 0 },
       requestId: response.headers.get("x-request-id") ?? undefined,
     }
+    if (activeSpan) recordAIContent(activeSpan, "gen_ai.content.output", "gen_ai.output.messages", result)
+    return result
   }
 
   private async fetchCompletion(messages: ModelRequest["messages"], maxTokens: number, stream: boolean, signal?: AbortSignal, tools?: ModelRequest["tools"], toolChoice?: ModelRequest["toolChoice"]) {
@@ -127,6 +146,15 @@ export class OpenAICompatibleProvider implements ModelProvider {
       "gen_ai.request.streaming": stream,
       "server.address": new URL(this.options.baseUrl).hostname,
     })
+    if (activeSpan) {
+      recordAIContent(activeSpan, "gen_ai.content.input", "gen_ai.input.messages", {
+        messages,
+        tools,
+        toolChoice,
+        maxOutputTokens: maxTokens,
+        streaming: stream,
+      })
+    }
     try {
       let response: Response
       try {
@@ -155,10 +183,20 @@ export class OpenAICompatibleProvider implements ModelProvider {
           signal: controller.signal,
         })
       } catch (error) {
+        if (activeSpan) {
+          recordAIContent(activeSpan, "gen_ai.content.error", "gen_ai.response.error_body", contentError(error))
+        }
         throw providerTransportError(error, signal)
       }
       if (!response.ok) {
         const errorCode = providerHTTPError(response.status)
+        if (activeSpan && isAIContentCaptureEnabled()) {
+          const responseBody = await response.clone().text().catch(() => "")
+          recordAIContent(activeSpan, "gen_ai.content.error", "gen_ai.response.error_body", {
+            status: response.status,
+            body: responseBody,
+          })
+        }
         agentMetrics.externalRequests.add(1, {
           target: "model_provider",
           operation: stream ? "chat_stream" : "chat_complete",
@@ -184,6 +222,12 @@ export class OpenAICompatibleProvider implements ModelProvider {
       signal?.removeEventListener("abort", abort)
     }
   }
+}
+
+function contentError(error: unknown): Record<string, unknown> {
+  return error instanceof Error
+    ? { errorType: error.name, errorMessage: error.message, cause: error.cause }
+    : { errorType: "UnknownError", errorMessage: String(error) }
 }
 
 function providerToolChoice(choice: ModelRequest["toolChoice"]) {

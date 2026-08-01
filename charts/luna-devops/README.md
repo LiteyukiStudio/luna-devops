@@ -62,6 +62,11 @@ AI is fail-closed and disabled by default. Set `ai.enabled=true` and point
 API and Agent derive all purpose-specific internal keys. The Agent image tag
 follows the chart `appVersion` unless `ai.agent.image.tag` is set explicitly.
 
+For a short, controlled diagnostic window, set
+`ai.agent.observabilityCaptureContent=true` to export redacted model input,
+model output, tool arguments, and tool results. It is disabled by default
+because the content can contain user and platform data.
+
 ## Send telemetry to an OpenTelemetry Collector
 
 The Collector is deployed separately from this chart. Configure one OTLP HTTP

@@ -11,7 +11,7 @@ import { ProviderConfigClient } from "./provider/config-client.js"
 import { createRuntimeProvider } from "./provider/runtime.js"
 import { agentRuntimeInternals } from "./runtime-settings.js"
 import { buildServer } from "./server.js"
-import { shutdownTelemetry, telemetryLog } from "./telemetry.js"
+import { configureAIContentCapture, shutdownTelemetry, telemetryLog } from "./telemetry.js"
 import { ToolCatalog } from "./tools/catalog.js"
 import { HttpLunaApiToolClient } from "./tools/luna-api-client.js"
 import { MemoryToolCallStore, ProjectingToolCallStore, ToolOrchestrator } from "./tools/orchestrator.js"
@@ -23,6 +23,12 @@ import { navigateToRouteTool } from "./tools/ui-route.js"
 
 export async function startAgent(): Promise<void> {
   const config = loadConfig()
+  configureAIContentCapture(config.AI_OBSERVABILITY_CAPTURE_CONTENT)
+  if (config.AI_OBSERVABILITY_CAPTURE_CONTENT) {
+    telemetryLog("agent.telemetry.content_capture_enabled", "warn", {
+      "luna.ai.content_capture": true,
+    })
+  }
   const internalKeys = config.AI_INTERNAL_SECRET ? deriveInternalKeys(config.AI_INTERNAL_SECRET) : undefined
   const repository = config.DATABASE_URL ? new PostgresRepository(config.DATABASE_URL) : new MemoryRepository()
   const providerConfigClient = config.LUNA_API_BASE_URL && internalKeys

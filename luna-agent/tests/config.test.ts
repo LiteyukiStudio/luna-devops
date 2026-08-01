@@ -10,6 +10,11 @@ describe("configuration", () => {
     expect(config.PROVIDER_BASE_URL).toBeUndefined()
     expect(config.PROVIDER_API_KEY).toBeUndefined()
     expect(config.PROVIDER_MODEL).toBeUndefined()
+    expect(config.AI_OBSERVABILITY_CAPTURE_CONTENT).toBe(false)
+  })
+  it("enables sensitive AI content observability only when explicitly requested", () => {
+    expect(loadConfig({ NODE_ENV: "test", AI_OBSERVABILITY_CAPTURE_CONTENT: "true" }).AI_OBSERVABILITY_CAPTURE_CONTENT).toBe(true)
+    expect(() => loadConfig({ NODE_ENV: "test", AI_OBSERVABILITY_CAPTURE_CONTENT: "sometimes" })).toThrow()
   })
   it("treats empty optional compose values as unset", () => {
     const config = loadConfig({

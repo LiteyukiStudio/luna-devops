@@ -81,6 +81,8 @@ spec:
                 secretKeyRef:
                   name: {{ include "luna-devops.aiSecretName" . }}
                   key: {{ .Values.ai.internalSecretKey }}
+            - name: AI_OBSERVABILITY_CAPTURE_CONTENT
+              value: {{ .Values.ai.agent.observabilityCaptureContent | quote }}
             {{- if .Values.observability.otlpEndpoint }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.observability.otlpEndpoint | quote }}

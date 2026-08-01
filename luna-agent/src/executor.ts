@@ -16,7 +16,7 @@ import { createOptionsInput, optionUIActions } from "./tools/ui-options.js"
 import { automaticRouteUIAction, navigateToRouteInput } from "./tools/ui-route.js"
 import type { ProviderConfigClient } from "./provider/config-client.js"
 import { agentRuntimeInternals, defaultRuntimeSettings, type RuntimeSettings } from "./runtime-settings.js"
-import { agentMetrics, extractTraceContext, internalSpanOptions, recordSpanError, stableErrorCode, telemetryLog, withSpan } from "./telemetry.js"
+import { agentMetrics, extractTraceContext, internalSpanOptions, recordAIContent, recordSpanError, stableErrorCode, telemetryLog, withSpan } from "./telemetry.js"
 
 export class RunExecutor {
   private timer?: NodeJS.Timeout
@@ -155,7 +155,7 @@ export class RunExecutor {
         for (const toolCall of toolCalls) {
           if (toolCall.operationId === "prepare_interaction_cards") {
             if (!hasPlatformTool) {
-              const preparation = await this.traceInternalTool("prepare_interaction_cards", run.id, () => this.prepareInteractionCards(run.id, run.turnId, toolCall.arguments, cardPreparations))
+              const preparation = await this.traceInternalTool("prepare_interaction_cards", run.id, toolCall.arguments, () => this.prepareInteractionCards(run.id, run.turnId, toolCall.arguments, cardPreparations))
               if (!preparation.accepted) {
                 recoverableToolError = true
                 continuationMessages.push(toolResultMessage(toolCall, {
@@ -175,7 +175,7 @@ export class RunExecutor {
           }
           if (toolCall.operationId === "create_interaction_cards") {
             if (!hasPlatformTool) {
-              const creation = await this.traceInternalTool("create_interaction_cards", run.id, () => this.createInteractionCards(run.id, toolCall.arguments, cardPreparations))
+              const creation = await this.traceInternalTool("create_interaction_cards", run.id, toolCall.arguments, () => this.createInteractionCards(run.id, toolCall.arguments, cardPreparations))
               if (!creation.accepted) {
                 recoverableToolError = true
                 continuationMessages.push(toolResultMessage(toolCall, {
@@ -215,7 +215,7 @@ export class RunExecutor {
             continue
           }
           if (toolCall.operationId === "rename_conversation") {
-            const renamed = await this.traceInternalTool("rename_conversation", run.id, () => this.renameConversation(run.id, run.turnId, run.conversationId, toolCall.arguments))
+            const renamed = await this.traceInternalTool("rename_conversation", run.id, toolCall.arguments, () => this.renameConversation(run.id, run.turnId, run.conversationId, toolCall.arguments))
             if (renamed) {
               assistantRenamed = true
               conversationContext = { ...conversationContext, title: renamed.title, titleSource: renamed.titleSource }
@@ -227,7 +227,7 @@ export class RunExecutor {
             continue
           }
           if (toolCall.operationId === "navigate_to_route") {
-            const delivery = await this.traceInternalTool("navigate_to_route", run.id, () => this.navigateToRoute(run.id, run.turnId, toolCall.arguments))
+            const delivery = await this.traceInternalTool("navigate_to_route", run.id, toolCall.arguments, () => this.navigateToRoute(run.id, run.turnId, toolCall.arguments))
             continuationMessages.push(toolResultMessage(toolCall, {
               status: "dispatched",
               actionId: delivery.id,
@@ -501,7 +501,7 @@ export class RunExecutor {
     if (preferred !== undefined) {
       const parsed = createOptionsInput.safeParse(preferred)
       if (parsed.success) {
-        await this.traceInternalTool("create_options", runId, () => this.createOptions(runId, turnId, parsed.data))
+        await this.traceInternalTool("create_options", runId, parsed.data, () => this.createOptions(runId, turnId, parsed.data))
         return
       }
     }
@@ -509,7 +509,7 @@ export class RunExecutor {
       const predicted = await this.graphs.predictNextSteps(context, signal)
       const parsed = createOptionsInput.safeParse(predicted)
       if (parsed.success) {
-        await this.traceInternalTool("create_options", runId, () => this.createOptions(runId, turnId, parsed.data))
+        await this.traceInternalTool("create_options", runId, parsed.data, () => this.createOptions(runId, turnId, parsed.data))
         return
       }
     } catch {
@@ -603,6 +603,7 @@ export class RunExecutor {
     let firstOutputRecorded = false
     let reasoningTimelineIndex: number | undefined
     let messageTimelineIndex: number | undefined
+    try {
     await this.repository.appendEvent(runId, "model.started", {})
     for await (const event of this.graphs.stream(version, input, signal)) {
       if (!firstOutputRecorded && ["reasoning_summary_delta", "message_delta", "tool_call_delta"].includes(event.type)) {
@@ -697,6 +698,10 @@ export class RunExecutor {
     agentMetrics.modelDuration.record((performance.now() - startedAt) / 1000, { operation: "stream", outcome })
     telemetryLog("agent.model.completed", "info", { "luna.run.id": runId, "tool_call.count": toolCalls.length })
     return { ...input, reasoningSummary, answer, toolCalls }
+    } catch (error) {
+      recordAIContent(span, "gen_ai.content.error", "gen_ai.response.error_body", contentError(error))
+      throw error
+    }
     }).catch(error => {
       outcome = stableErrorCode(error)
       agentMetrics.modelRequests.add(1, { operation: "stream", outcome })
@@ -711,7 +716,7 @@ export class RunExecutor {
     })
   }
 
-  private async traceInternalTool<T>(operationId: string, runId: string, operation: () => Promise<T>): Promise<T> {
+  private async traceInternalTool<T>(operationId: string, runId: string, input: unknown, operation: () => Promise<T>): Promise<T> {
     const startedAt = performance.now()
     let outcome = "succeeded"
     try {
@@ -719,7 +724,24 @@ export class RunExecutor {
         "gen_ai.operation.name": "execute_tool",
         "gen_ai.tool.name": operationId,
         "luna.run.id": runId,
-      }), async () => operation())
+      }), async span => {
+        recordAIContent(span, "gen_ai.tool.content.input", "gen_ai.tool.call.arguments", input, {
+          "gen_ai.tool.name": operationId,
+        })
+        let result: T
+        try {
+          result = await operation()
+        } catch (error) {
+          recordAIContent(span, "gen_ai.tool.content.output", "gen_ai.tool.call.result", contentError(error), {
+            "gen_ai.tool.name": operationId,
+          })
+          throw error
+        }
+        recordAIContent(span, "gen_ai.tool.content.output", "gen_ai.tool.call.result", result, {
+          "gen_ai.tool.name": operationId,
+        })
+        return result
+      })
     }
     catch (error) {
       outcome = stableErrorCode(error)
@@ -731,6 +753,12 @@ export class RunExecutor {
       agentMetrics.toolDuration.record((performance.now() - startedAt) / 1000, attributes)
     }
   }
+}
+
+function contentError(error: unknown): Record<string, unknown> {
+  return error instanceof Error
+    ? { errorType: error.name, errorMessage: error.message, cause: error.cause }
+    : { errorType: "UnknownError", errorMessage: String(error) }
 }
 
 function stableError(message: string): string {
