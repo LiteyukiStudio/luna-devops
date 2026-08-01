@@ -9,6 +9,7 @@
 - [x] Web 覆盖页面操作与 API 链路传播，并确保遥测失败不阻塞用户流程。
 - [x] 使用临时本地可观测栈验收 Trace、Metrics、Logs；公开文档只说明最小配置和外部组件接入方式。
 - [x] 收敛指标出口：API 保留独立 Prometheus 兼容端口，Worker/Agent 仅通过 OTLP 上报完整指标，并按健康、API、队列、交付、Agent 和容量重构 Grafana 仪表盘。
+- [x] 提供 Luna Agent / LLM 专用 Grafana 仪表盘，联动 Prometheus、Tempo 与 Loki，并按会话、轮次、Run、Trace 和工具筛选模型及工具内容。
 
 ## 1. 文档与原型收口
 

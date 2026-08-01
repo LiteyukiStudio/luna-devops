@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks"
 import { context, metrics, propagation, ROOT_CONTEXT, SpanKind, SpanStatusCode, trace, type Attributes, type Context, type Counter, type Histogram, type Span, type SpanOptions, type UpDownCounter } from "@opentelemetry/api"
 import { logs, SeverityNumber } from "@opentelemetry/api-logs"
 import { FastifyOtelInstrumentation } from "@fastify/otel"
@@ -17,6 +18,12 @@ import { redact } from "./redaction.js"
 const instrumentationName = "luna-agent"
 const tracer = trace.getTracer(instrumentationName)
 const logger = logs.getLogger(instrumentationName)
+const aiCorrelationStorage = new AsyncLocalStorage<Attributes>()
+const aiCorrelationAttributeNames = [
+  "gen_ai.conversation.id",
+  "luna.turn.id",
+  "luna.run.id",
+] as const
 
 let sdk: NodeSDK | undefined
 let aiContentCaptureEnabled = false
@@ -51,6 +58,7 @@ export function recordAIContent(
   if (!aiContentCaptureEnabled) return
   const content = serializeAIContent(value)
   const contentAttributes: Attributes = {
+    ...activeAICorrelationAttributes(),
     ...attributes,
     [attributeName]: content.value,
     "luna.ai.content.truncated": content.truncated,
@@ -204,17 +212,33 @@ export async function withSpan<T>(
   parentContext: Context = context.active(),
 ): Promise<T> {
   return tracer.startActiveSpan(name, options, parentContext, async span => {
-    try {
-      return await operation(span)
-    }
-    catch (error) {
-      recordSpanError(span, error)
-      throw error
-    }
-    finally {
-      span.end()
-    }
+    const correlationAttributes = mergeAICorrelationAttributes(activeAICorrelationAttributes(), options.attributes)
+    return aiCorrelationStorage.run(correlationAttributes, async () => {
+      try {
+        return await operation(span)
+      }
+      catch (error) {
+        recordSpanError(span, error)
+        throw error
+      }
+      finally {
+        span.end()
+      }
+    })
   })
+}
+
+function activeAICorrelationAttributes(): Attributes {
+  return aiCorrelationStorage.getStore() ?? {}
+}
+
+function mergeAICorrelationAttributes(inherited: Attributes, current: Attributes | undefined): Attributes {
+  const merged: Attributes = { ...inherited }
+  for (const name of aiCorrelationAttributeNames) {
+    const value = current?.[name]
+    if (typeof value === "string" && value.length > 0) merged[name] = value
+  }
+  return merged
 }
 
 const traceContextKeys = new Set(["traceparent", "tracestate"])
@@ -256,6 +280,7 @@ export function telemetryLog(
   const spanContext = activeSpan?.spanContext()
   const correlatedAttributes = {
     "event.name": eventName,
+    ...activeAICorrelationAttributes(),
     ...attributes,
     ...(spanContext ? { trace_id: spanContext.traceId, span_id: spanContext.spanId } : {}),
   }

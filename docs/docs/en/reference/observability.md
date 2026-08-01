@@ -46,6 +46,22 @@ In Tempo, find the conversation, turn, or run first, then inspect Events on `age
 
 Set the switch back to `false` and restart the Agent after diagnosis. Restrict Tempo/Loki access and use short retention periods; do not use this mode as permanent audit logging.
 
+## Import the Agent / LLM dashboard
+
+The repository provides two Grafana dashboards that can be imported directly:
+
+- `grafana/dashboards/luna-devops-overview.json` covers platform services, API, Worker, delivery workflows, Agent, and database health;
+- `grafana/dashboards/luna-agent-llm-observability.json` focuses on Agent Runs, model latency, tokens, tools, human interaction, prompts/responses, and traces.
+
+When importing the Agent / LLM dashboard, map its Prometheus, Tempo, and Loki variables to your existing data sources. The top filters accept `Conversation ID`, `Turn ID`, `Run ID`, `Trace ID`, and tool names. Leave an ID as `.*` to include all matching data in the selected time range. Use this investigation order:
+
+1. Check Run success, model error ratio, and first-token p95 to distinguish orchestration, provider, and response-experience problems.
+2. Inspect Run, model, token, and tool trends to identify the affected time and operation.
+3. Enter a conversation, turn, or Run ID, then open the full trace from the trace table.
+4. Enable sensitive content capture only when raw model behavior is required, then inspect prompt, response, and tool-content panels.
+
+Content logs produced inside an Agent Run automatically carry `gen_ai.conversation.id`, `luna.turn.id`, `luna.run.id`, `trace_id`, and `span_id`. The same dashboard filters therefore constrain Tempo and Loki without copying correlation identifiers out of log messages.
+
 ## Query traces
 
 Luna DevOps uses request-scoped traces. An AI conversation can contain multiple turns, so a conversation is not one indefinitely growing trace. One user turn normally produces one trace; resuming the same Run after approval or user input continues its original trace. Use these stable attributes to correlate each level:
@@ -171,6 +187,6 @@ Verify at least one database-backed list request, one asynchronous Worker task, 
 - Keep the Collector and backend on a controlled network. Use TLS and authenticated headers across network boundaries.
 - Telemetry does not record cookies, tokens, secrets, passwords, request bodies, model prompts, or sensitive tool arguments by default. Only the explicit Agent sensitive-content mode records AI content after mandatory redaction and size limits. The backend should still enforce access control and retention limits.
 - API's dedicated Prometheus `/metrics` endpoint is a compatibility scrape surface only. Worker and Agent do not expose separate metrics ports. Complete platform metrics flow through OTLP into the Collector and metrics backend, avoiding cross-process scraping, duplicate ingestion, and counter jitter across replicas.
-- After importing `grafana/dashboards/luna-devops-overview.json`, start with reporting-service count, error ratio, and success ratios; then inspect API latency, Worker queues and delivery outcomes, Agent first-token/tool behavior, and database capacity. Stats represent current health, time series show trends and percentiles, bar gauges compare current queue categories, and tables are reserved for slow routes and dependency details.
+- After importing `grafana/dashboards/luna-devops-overview.json`, start with reporting-service count, error ratio, and success ratios; then inspect API latency, Worker queues and delivery outcomes, Agent first-token/tool behavior, and database capacity. Move to `grafana/dashboards/luna-agent-llm-observability.json` only when model behavior needs investigation, so high-cardinality content does not crowd the platform overview. Stats represent current health, time series show trends and percentiles, logs correlate raw events with traces, and tables are used for trace search and slow dependency details.
 
 Configure Collector receivers, processors, and exporters for the selected backend by following the [OpenTelemetry Collector deployment guide](https://opentelemetry.io/docs/collector/deploy/).

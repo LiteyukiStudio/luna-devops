@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest"
-import { initializeTelemetry, isHealthCheckPath, normalizeTraceContext, sanitizeTelemetryURL, stableErrorCode } from "../src/telemetry.js"
+import { describe, expect, it, vi } from "vitest"
+import { initializeTelemetry, internalSpanOptions, isHealthCheckPath, normalizeTraceContext, sanitizeTelemetryURL, stableErrorCode, telemetryLog, withSpan } from "../src/telemetry.js"
 
 describe("agent telemetry", () => {
   it("removes credentials, query strings, and fragments from telemetry URLs", () => {
@@ -38,5 +38,31 @@ describe("agent telemetry", () => {
     expect(isHealthCheckPath("/internal/health/live")).toBe(true)
     expect(isHealthCheckPath("/internal/v1/provider/health")).toBe(false)
     expect(isHealthCheckPath("/api/v1/registries/reg_1/test")).toBe(false)
+  })
+
+  it("correlates nested logs with the active AI conversation, turn, and run", async () => {
+    const write = vi.spyOn(process.stdout, "write").mockImplementation(() => true)
+    try {
+      await withSpan("agent.run.execute", internalSpanOptions({
+        "gen_ai.conversation.id": "aicnv_test",
+        "luna.turn.id": "aitrn_test",
+        "luna.run.id": "airun_test",
+      }), async () => {
+        await withSpan("agent.model.stream", internalSpanOptions(), async () => {
+          telemetryLog("agent.model.completed", "info")
+        })
+      })
+
+      const raw = write.mock.calls.at(-1)?.[0]
+      expect(typeof raw).toBe("string")
+      expect(JSON.parse(String(raw))).toMatchObject({
+        "gen_ai.conversation.id": "aicnv_test",
+        "luna.turn.id": "aitrn_test",
+        "luna.run.id": "airun_test",
+      })
+    }
+    finally {
+      write.mockRestore()
+    }
   })
 })

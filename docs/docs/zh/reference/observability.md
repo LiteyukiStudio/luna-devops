@@ -46,6 +46,22 @@ AI_OBSERVABILITY_CAPTURE_CONTENT=true
 
 排障结束后把开关恢复为 `false` 并重启 Agent。生产环境应为 Tempo/Loki 配置最小访问权限和较短保留周期，不要把该开关作为常驻审计日志使用。
 
+## 导入 Agent / LLM 仪表盘
+
+仓库提供两套可直接导入 Grafana 的仪表盘：
+
+- `grafana/dashboards/luna-devops-overview.json`：平台服务、API、Worker、交付链路、Agent 和数据库的全局概览；
+- `grafana/dashboards/luna-agent-llm-observability.json`：专门查看 Agent Run、模型延迟、Token、工具、人工交互、Prompt/回复和 Trace。
+
+导入 Agent / LLM 仪表盘时，分别选择已有的 Prometheus、Tempo 和 Loki 数据源。顶部筛选器提供 `Conversation ID`、`Turn ID`、`Run ID`、`Trace ID` 和工具名称；不指定时使用 `.*` 查看当前时间范围内的全部数据。推荐的排查顺序是：
+
+1. 先看 Run 成功率、模型错误率和首 Token p95，判断问题属于编排、Provider 还是响应体验；
+2. 再看 Run、模型、Token 和工具趋势，定位异常发生的时间与工具；
+3. 填入会话、轮次或 Run ID，在 Trace 表中打开完整链路；
+4. 只有需要检查模型原始行为时，临时启用高敏内容观测，再查看 Prompt、回复和工具输入输出面板。
+
+Agent Run 中产生的内容日志会自动携带 `gen_ai.conversation.id`、`luna.turn.id`、`luna.run.id`、`trace_id` 和 `span_id`。因此同一组筛选条件可以同时约束 Tempo 与 Loki，不需要从日志正文手工复制关联信息。
+
 ## 查询 Trace
 
 Luna DevOps 使用请求级 Trace：一次 AI 会话可以包含多轮对话，因此会话不是一条无限增长的 Trace。通常每轮用户消息对应一条 Trace；等待审批或用户输入后恢复的同一个 Run 仍接续原 Trace。会话、轮次和执行实例分别使用以下稳定属性关联：
@@ -171,6 +187,6 @@ OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=development
 - Collector 与可观测后端放在受控网络中；跨网络上报时使用 TLS 和认证 Header。
 - 日志和链路默认不会记录 Cookie、Token、Secret、密码、请求正文、模型 Prompt 或工具敏感参数。只有显式开启 Agent 高敏内容观测时才会记录经过强制脱敏和长度限制的 AI 内容；下游系统仍应设置访问控制和保留周期。
 - API 的独立 Prometheus `/metrics` 入口只作为兼容抓取面；Worker 和 Agent 不开放独立指标端口。完整平台指标统一通过 OTLP 进入 Collector 和指标后端，避免跨进程抓取、重复采集和多副本 Counter 抖动。
-- 导入 `grafana/dashboards/luna-devops-overview.json` 后，先看服务上报数、错误率和成功率，再依次查看 API 延迟、Worker 队列与交付结果、Agent 首 Token/工具调用和数据库容量。Stat 用于当前健康，Time series 用于趋势与分位数，Bar gauge 只用于队列积压等同一时刻的分类比较，Table 只用于慢路由与依赖明细。
+- 导入 `grafana/dashboards/luna-devops-overview.json` 后，先看服务上报数、错误率和成功率，再依次查看 API 延迟、Worker 队列与交付结果、Agent 首 Token/工具调用和数据库容量。需要分析模型行为时再进入 `grafana/dashboards/luna-agent-llm-observability.json`，避免在平台概览里堆叠高基数内容。Stat 用于当前健康，Time series 用于趋势与分位数，Logs 用于按 Trace 关联原始事件，Table 用于 Trace 搜索和慢依赖明细。
 
 OTel Collector 的接收器、处理器和后端导出器请按所选后端配置，参考 [OpenTelemetry Collector 部署文档](https://opentelemetry.io/docs/collector/deploy/)。
