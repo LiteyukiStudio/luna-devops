@@ -28,7 +28,7 @@ For a first deployment, configure the Basic values only. Once the platform is ru
 | Advanced | `OTEL_RESOURCE_ATTRIBUTES` | Empty | Additional environment or cluster resource attributes as comma-separated `key=value` pairs. |
 | Advanced | `OTEL_EXPORTER_OTLP_HEADERS` | Empty | Collector authentication headers. Inject from a Secret in production instead of storing them in public configuration. |
 
-When metrics are enabled, the API exports HTTP request, latency, error response, PostgreSQL connection pool, and PostgreSQL/Redis health metrics. Grafana dashboard JSON lives under `grafana/dashboards/` and can be imported into Grafana when needed.
+When metrics are enabled, only the API exposes a dedicated Prometheus-compatible listener with API HTTP, connection-pool, and dependency-health metrics. Worker and Agent do not expose separate metrics ports; task, queue, build, release, model, and tool metrics flow through OTLP to the unified metrics backend. Grafana dashboard JSON lives under `grafana/dashboards/` and can be imported when needed.
 
 When `OTEL_EXPORTER_OTLP_ENDPOINT` is configured, the API, Worker, and Agent report traces, metrics, and structured logs through OpenTelemetry. See [Connect an Observability Backend](./observability.md) for the minimal setup and local verification.
 
@@ -60,9 +60,6 @@ Available access-route domain suffixes, external access schemes, external access
 | Advanced | `DB_MAX_IDLE_CONNS` | `5` | Idle PostgreSQL connections kept by this worker process; lower it when database connections are tight. |
 | Advanced | `DB_CONN_MAX_LIFETIME` | `30m` | Maximum lifetime of a reused database connection; shorten it for load balancers, connection proxies, or database rolling maintenance. |
 | Advanced | `DB_CONN_MAX_IDLE_TIME` | `5m` | Maximum idle time for database connections; shorten it when connection slots are tight. |
-| Advanced | `METRICS_ENABLED` | `false` | Enables the dedicated Prometheus metrics listener; disabled by default. When set to `true`, the worker uses `:9091` by default. |
-| Advanced | `METRICS_ADDR` | `:9091` | Metrics listen address; change only when overriding the worker metrics port or bind address. |
-| Advanced | `METRICS_PATH` | `/metrics` | Prometheus scrape path; registered only on the dedicated metrics listener. |
 | Advanced | `DEPLOY_ROLLOUT_TIMEOUT_SECONDS` | `600` | Release wait timeout; increase for slow-starting apps. |
 | Advanced | `CERT_MANAGER_CLUSTER_ISSUER` | `letsencrypt-http01` | Certificate Issuer name; change when your cluster uses another name. |
 | Advanced | `BUILD_EGRESS_MODE` | `restricted` | Build egress mode. The default allows DNS, public HTTP(S), and configured private sources only. Use `permissive` only when you explicitly accept that builds can reach arbitrary services in the cluster. |
@@ -75,6 +72,6 @@ Available access-route domain suffixes, external access schemes, external access
 | Advanced | `BUILD_PRIVATE_EGRESS_PORTS` | `443` | Private allowlist ports in `restricted` mode; use ports like `5000` or `8081` for non-standard registries. |
 | Advanced | `BUILD_BLOCKED_EGRESS_CIDRS` | Empty | Extra blocked CIDRs in `restricted` mode. |
 
-When metrics are enabled, the worker exports task, retry, queue depth, queue latency, build/release result and duration, runtime replica, gateway sync, and dependency health metrics. Grafana dashboard JSON lives under `grafana/dashboards/` and can be imported into Grafana when needed.
+Worker no longer listens on a separate metrics port. With `OTEL_EXPORTER_OTLP_ENDPOINT` configured, task, retry, queue depth, queue latency, build/release result and duration, runtime replica, and gateway sync metrics are exported with the other telemetry signals.
 
 The worker also starts consuming tasks only after both Redis and PostgreSQL pass their startup connection checks. After startup, Asynq, go-redis, and `database/sql` recover from transient connection interruptions.

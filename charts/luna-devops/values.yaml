@@ -71,11 +71,6 @@ metrics:
   api:
     addr: ":9090"
     port: 9090
-  worker:
-    addr: ":9091"
-    port: 9091
-  agent:
-    port: 9092
 
 observability:
   # Empty keeps OpenTelemetry exporters disabled.

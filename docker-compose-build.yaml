@@ -106,9 +106,6 @@ services:
       BUILD_PRIVATE_EGRESS_CIDRS: ${BUILD_PRIVATE_EGRESS_CIDRS:-}
       BUILD_PRIVATE_EGRESS_PORTS: ${BUILD_PRIVATE_EGRESS_PORTS:-443}
       BUILD_BLOCKED_EGRESS_CIDRS: ${BUILD_BLOCKED_EGRESS_CIDRS:-}
-      METRICS_ENABLED: ${WORKER_METRICS_ENABLED:-${METRICS_ENABLED:-false}}
-      METRICS_ADDR: ${WORKER_METRICS_ADDR:-:9091}
-      METRICS_PATH: ${WORKER_METRICS_PATH:-${METRICS_PATH:-/metrics}}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       OTEL_RESOURCE_ATTRIBUTES: ${OTEL_RESOURCE_ATTRIBUTES:-deployment.environment.name=production}
       OTEL_EXPORTER_OTLP_HEADERS: ${OTEL_EXPORTER_OTLP_HEADERS:-}
@@ -119,9 +116,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    expose:
-      - "9091"
-
   agent:
     profiles: ["ai"]
     build:

@@ -23,29 +23,4 @@ spec:
   selector:
     {{- include "luna-devops.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: api
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: {{ include "luna-devops.workerMetricsName" . }}
-  labels:
-    {{- include "luna-devops.componentLabels" (dict "root" . "component" "worker") | nindent 4 }}
-    luna-devops.io/metrics: "true"
-    {{- with .Values.metrics.service.labels }}
-    {{- toYaml . | nindent 4 }}
-    {{- end }}
-  {{- with .Values.metrics.service.annotations }}
-  annotations:
-    {{- toYaml . | nindent 4 }}
-  {{- end }}
-spec:
-  type: ClusterIP
-  ports:
-    - port: {{ .Values.metrics.worker.port }}
-      targetPort: metrics
-      protocol: TCP
-      name: metrics
-  selector:
-    {{- include "luna-devops.selectorLabels" . | nindent 4 }}
-    app.kubernetes.io/component: worker
 {{- end }}

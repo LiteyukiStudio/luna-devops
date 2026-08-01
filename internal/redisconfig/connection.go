@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -26,9 +25,6 @@ func CheckConnection(parent context.Context, options Options) error {
 	clientOptions.MaxRetries = -1
 	client := redis.NewClient(clientOptions)
 	defer client.Close()
-	if err := telemetry.InstrumentRedis(client); err != nil {
-		return fmt.Errorf("instrument Redis: %w", err)
-	}
 	if err := client.Ping(ctx).Err(); err != nil {
 		return fmt.Errorf("ping Redis: %w", err)
 	}

@@ -8,6 +8,7 @@
 - [x] Agent 覆盖 Run 循环、模型 Provider、工具、审批、交互卡片、网络访问和持久化。
 - [x] Web 覆盖页面操作与 API 链路传播，并确保遥测失败不阻塞用户流程。
 - [x] 使用临时本地可观测栈验收 Trace、Metrics、Logs；公开文档只说明最小配置和外部组件接入方式。
+- [x] 收敛指标出口：API 保留独立 Prometheus 兼容端口，Worker/Agent 仅通过 OTLP 上报完整指标，并按健康、API、队列、交付、Agent 和容量重构 Grafana 仪表盘。
 
 ## 1. 文档与原型收口
 
@@ -942,6 +943,8 @@
 - [x] 为 Gin/Fastify 请求、GORM/PG 查询、Redis/Asynq、HTTP、Git/Registry/Kubernetes、模型 Provider 和 Agent 工具调用建立父子 span；命名使用稳定路由模板与操作名。
 - [x] Asynq 任务 envelope 透传 W3C Trace Context，Worker 从投递请求继续同一 trace，并记录任务生命周期与队列指标。
 - [x] Agent Run 入队时持久化经过白名单过滤的 W3C `traceparent` / `tracestate`，后台领取、模型循环、工具调用和回调平台 API 继续原请求 Trace；Trace Context 不参与业务幂等哈希，也不向前端响应暴露。
+- [x] 可观测参考文档补充 AI 会话、轮次、Run、工具调用和 Worker 任务的 TraceQL 查询，以及主要 Span 名称索引。
+- [x] 健康探针与启动 Ping 成功时保持 Trace/访问日志静默，指标继续观测可用性；失败就绪检查保留结构化告警，用户主动连通性测试不受影响。
 - [x] 为构建、发布、网关、清理、通知和同步任务增加稳定业务阶段 span 与结构化关键节点日志。
 - [ ] 支持采样配置：`OTEL_TRACES_SAMPLER` 和采样比例环境变量；错误 trace、慢任务 trace 和构建/发布任务优先保留。
 - [ ] 在 `GRAFANA_LINKS_ENABLED=true` 且 `GRAFANA_BASE_URL` 已配置时，为构建详情、发布详情和访问入口生成 Tempo/Trace 深链；未配置时不展示 trace 入口。

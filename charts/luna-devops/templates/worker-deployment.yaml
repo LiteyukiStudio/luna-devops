@@ -37,16 +37,8 @@ spec:
           imagePullPolicy: {{ .Values.worker.image.pullPolicy }}
           securityContext:
             {{- toYaml .Values.containerSecurityContext | nindent 12 }}
-          {{- if .Values.metrics.enabled }}
-          ports:
-            - name: metrics
-              containerPort: {{ .Values.metrics.worker.port }}
-              protocol: TCP
-          {{- end }}
           env:
             {{- include "luna-devops.commonEnv" . | nindent 12 }}
-            - name: METRICS_ADDR
-              value: {{ .Values.metrics.worker.addr | quote }}
           envFrom:
             - configMapRef:
                 name: {{ include "luna-devops.fullname" . }}-config

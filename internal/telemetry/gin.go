@@ -23,7 +23,14 @@ var (
 )
 
 func GinTracingMiddleware(serviceName string) gin.HandlerFunc {
-	return otelgin.Middleware(serviceName)
+	return otelgin.Middleware(serviceName, otelgin.WithFilter(func(request *http.Request) bool {
+		return !IsHealthCheckPath(request.URL.Path)
+	}))
+}
+
+// IsHealthCheckPath identifies machine probes that should remain metrics-only.
+func IsHealthCheckPath(path string) bool {
+	return path == "/healthz" || path == "/internal/health/live" || path == "/internal/health/ready"
 }
 
 // QueryTraceContextMiddleware bridges W3C context for browser EventSource and
@@ -51,6 +58,10 @@ func QueryTraceContextMiddleware() gin.HandlerFunc {
 // Query strings and request/response bodies are deliberately excluded.
 func GinAccessLogMiddleware() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
+		if IsHealthCheckPath(ctx.Request.URL.Path) {
+			ctx.Next()
+			return
+		}
 		httpMetricsOnce.Do(func() {
 			meter := otel.Meter("github.com/LiteyukiStudio/devops/internal/telemetry/http")
 			httpRequestCounter, _ = meter.Int64Counter("luna_devops_http_server_request_total",

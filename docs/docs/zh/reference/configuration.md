@@ -28,7 +28,7 @@ API 和 Worker 都通过环境变量读取运行配置。使用 Docker Compose�
 | 进阶 | `OTEL_RESOURCE_ATTRIBUTES` | 空 | 附加环境、集群等资源属性；多个 `key=value` 使用逗号分隔。 |
 | 进阶 | `OTEL_EXPORTER_OTLP_HEADERS` | 空 | Collector 鉴权 Header；生产环境从 Secret 注入，不写入公开配置文件。 |
 
-启用 metrics 后，API 会暴露 HTTP 请求量、延迟、错误响应、PostgreSQL 连接池和 PostgreSQL/Redis 健康检查指标。Grafana dashboard JSON 位于 `grafana/dashboards/`，需要时直接导入 Grafana。
+启用 metrics 后，只有 API 会在独立端口暴露 Prometheus 兼容入口，包含 API HTTP、连接池和依赖健康指标。Worker 与 Agent 不开放独立 metrics 端口，其任务、队列、构建、发布、模型和工具指标通过 OTLP 汇入统一指标后端。Grafana dashboard JSON 位于 `grafana/dashboards/`，需要时直接导入 Grafana。
 
 配置 `OTEL_EXPORTER_OTLP_ENDPOINT` 后，API、Worker 和 Agent 会同时通过 OpenTelemetry 上报链路、指标和结构化日志。最小配置与本地验证方式见[接入可观测平台](./observability.md)。
 
@@ -60,9 +60,6 @@ OIDC 身份源的 Redirect URI 由 `PUBLIC_BASE_URL` 生成，后台“身份源
 | 进阶 | `DB_MAX_IDLE_CONNS` | `5` | 当前 Worker 进程保留的空闲 PostgreSQL 连接数；连接紧张时调小。 |
 | 进阶 | `DB_CONN_MAX_LIFETIME` | `30m` | 单个数据库连接最长复用时间；负载均衡、连接代理或数据库滚动维护时可适当调短。 |
 | 进阶 | `DB_CONN_MAX_IDLE_TIME` | `5m` | 空闲数据库连接保留时间；连接紧张时调短。 |
-| 进阶 | `METRICS_ENABLED` | `false` | 是否启用独立 Prometheus metrics listener；默认关闭。设为 `true` 后 Worker 会使用默认监听地址 `:9091`。 |
-| 进阶 | `METRICS_ADDR` | `:9091` | metrics 监听地址；只在需要调整 Worker metrics 端口或绑定地址时修改。 |
-| 进阶 | `METRICS_PATH` | `/metrics` | Prometheus 抓取路径；只注册在独立 metrics listener 上。 |
 | 进阶 | `DEPLOY_ROLLOUT_TIMEOUT_SECONDS` | `600` | 发布等待超时；应用启动慢时调大。 |
 | 进阶 | `CERT_MANAGER_CLUSTER_ISSUER` | `letsencrypt-http01` | 证书 Issuer 名称；集群名称不同时改。 |
 | 进阶 | `BUILD_EGRESS_MODE` | `restricted` | 构建出站模式；默认仅允许 DNS、公网 HTTP(S) 和已配置的私有源。只有明确接受构建访问集群内任意服务的风险时，才改为 `permissive`。 |
@@ -75,6 +72,6 @@ OIDC 身份源的 Redirect URI 由 `PUBLIC_BASE_URL` 生成，后台“身份源
 | 进阶 | `BUILD_PRIVATE_EGRESS_PORTS` | `443` | `restricted` 模式下的内网白名单端口；非标镜像站常用 `5000`、`8081`。 |
 | 进阶 | `BUILD_BLOCKED_EGRESS_CIDRS` | 空 | `restricted` 模式下额外禁止的 CIDR。 |
 
-启用 metrics 后会暴露 worker 任务、重试、队列深度、队列延迟、构建/发布结果与耗时、运行副本、网关同步和依赖健康指标。Grafana dashboard JSON 位于 `grafana/dashboards/`，需要时直接导入 Grafana。
+Worker 不再监听独立 metrics 端口。配置 `OTEL_EXPORTER_OTLP_ENDPOINT` 后，任务、重试、队列深度、队列延迟、构建/发布结果与耗时、运行副本和网关同步指标会随其他遥测数据上报。
 
 Worker 同样只在 Redis 与 PostgreSQL 的启动连接检查都成功后才开始消费任务；启动后的连接中断由 Asynq、go-redis 和 `database/sql` 自行恢复。

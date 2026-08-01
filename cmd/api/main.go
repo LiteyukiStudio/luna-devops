@@ -91,9 +91,6 @@ func run() (runErr error) {
 		var redisClient *redis.Client
 		if cfg.RedisAddr != "" {
 			redisClient = redis.NewClient(cfg.RedisOptions().GoRedis())
-			if err := telemetry.InstrumentRedis(redisClient); err != nil {
-				return fmt.Errorf("instrument Redis metrics client: %w", err)
-			}
 			defer redisClient.Close()
 			dependencyChecks["redis"] = func(ctx context.Context) error {
 				return redisClient.Ping(ctx).Err()

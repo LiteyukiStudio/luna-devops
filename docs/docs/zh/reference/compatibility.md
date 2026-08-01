@@ -23,7 +23,7 @@
 | PostgreSQL | PostgreSQL wire protocol、GORM、golang-migrate | PostgreSQL `14 ~ 18` | `17`，与 compose/Helm 默认一致 | 项目不支持 SQLite；生产环境建议启用备份和连接池限制。 |
 | Redis | Redis 单实例、go-redis、Asynq 队列 | Redis `7.x ~ 8.x` | `8`，与 compose/Helm 默认一致 | 当前配置模型是单地址 Redis；Redis Cluster/Sentinel 不是第一阶段支持目标。 |
 | BuildKit | `moby/buildkit:*rootless`、`buildctl-daemonless.sh`、`dockerfile.v0` frontend | 重点验收 `v0.24.x-rootless`；替换为 `v0.20+ rootless` 需自行 smoke test | `moby/buildkit:v0.24.0-rootless` | 构建 Job 使用 rootless BuildKit，不挂载宿主机 Docker socket。 |
-| Prometheus | Prometheus text exposition format，抓取 API/Worker 独立 `/metrics` listener | Prometheus `2.40+` 或 `3.x` | 当前稳定版 | 平台只暴露指标，不依赖 Prometheus 写回业务状态。 |
+| Prometheus | Prometheus text exposition format，抓取 API 独立 `/metrics` listener；Worker/Agent 使用 OTLP | Prometheus `2.40+` 或 `3.x` | 当前稳定版 | API 入口用于兼容抓取；完整平台指标由 Collector 汇入统一后端。 |
 | Grafana | Dashboard JSON、运营面板 iframe 嵌入地址 | Grafana `9.x ~ 12.x` | 当前稳定版 | iframe 嵌入需要 Grafana 侧开启 `allow_embedding`，并自行处理认证和同源策略。 |
 | SMTP | SMTP/STARTTLS 发送通知 | 支持标准 SMTP 的服务 | 企业邮箱、云厂商 SMTP 或自建 SMTP 当前稳定版 | SMTP 属于通知适配器；凭据必须按 Secret 处理。 |
 | 自由 Webhook 通知 | 自定义方法、URL、JSON body 模板 | HTTP/HTTPS endpoint | 目标平台当前 Webhook API | 飞书、企业微信机器人等可以由 Webhook 模板快照生成；目标平台的验签和限流由对应适配器或用户配置负责。 |
@@ -67,7 +67,7 @@ PostgreSQL 和 Redis 的 compose/Helm 默认镜像分别是 `postgres:17-alpine`
 3. Kubernetes/K3s：测试集群连接、创建构建 Job、创建 Deployment/Service、读取 Pod 日志、Web Console exec。
 4. Gateway API：创建访问入口后确认 Gateway Accepted/Programmed、HTTPRoute Accepted/ResolvedRefs/Programmed。
 5. OIDC：完成登录、绑定外部身份、校验 callback URL 和 issuer。
-6. Prometheus/Grafana：抓取 API/Worker metrics，导入 dashboard JSON，确认 iframe 地址可访问。
+6. Prometheus/Grafana：抓取 API 兼容 metrics，并确认 API、Worker、Agent OTLP Metrics 已进入统一后端；导入 dashboard JSON 后确认 iframe 地址可访问。
 
 ## 参考来源
 

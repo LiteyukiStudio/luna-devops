@@ -64,8 +64,6 @@ services:
       SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY:-}
       DATABASE_URL: postgres://devops:devops@postgres:5432/devops?sslmode=disable
       REDIS_ADDR: redis://redis:6379/0
-      METRICS_ENABLED: ${METRICS_ENABLED:-false}
-      METRICS_PATH: ${METRICS_PATH:-/metrics}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       OTEL_RESOURCE_ATTRIBUTES: ${OTEL_RESOURCE_ATTRIBUTES:-deployment.environment.name=development}
       OTEL_EXPORTER_OTLP_HEADERS: ${OTEL_EXPORTER_OTLP_HEADERS:-}
@@ -82,8 +80,6 @@ services:
       BUILD_BLOCKED_EGRESS_CIDRS: ${BUILD_BLOCKED_EGRESS_CIDRS:-}
     extra_hosts:
       - "dev.minikube.local:host-gateway"
-    expose:
-      - "9091"
     depends_on:
       postgres:
         condition: service_healthy

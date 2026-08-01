@@ -10,13 +10,13 @@
 
 ## 可选：启用 Metrics
 
-平台默认关闭指标端口。需要让 Prometheus 抓取 API 和 Worker 指标时，再显式开启：
+平台默认关闭 Prometheus 兼容端口。需要抓取 API 指标时再显式开启：
 
 ```bash
 METRICS_ENABLED=true
 ```
 
-开启后 API 默认暴露 `:9090/metrics`，Worker 默认暴露 `:9091/metrics`。需要调整端口或路径时再配置 `METRICS_ADDR` 和 `METRICS_PATH`。
+开启后只有 API 在独立端口暴露 `:9090/metrics`。Worker 和 Agent 指标通过 `OTEL_EXPORTER_OTLP_ENDPOINT` 上报，不单独开放端口。需要调整 API 指标端口或路径时再配置 `METRICS_ADDR` 和 `METRICS_PATH`。
 
 Helm 部署可以同时启用 metrics Service 和 ServiceMonitor：
 
@@ -27,7 +27,7 @@ helm upgrade --install luna-devops ./charts/luna-devops \
   --set metrics.serviceMonitor.enabled=true
 ```
 
-Grafana dashboard 文件位于 `grafana/dashboards/luna-devops-overview.json`，可以直接导入 Grafana。
+Grafana dashboard 文件位于 `grafana/dashboards/luna-devops-overview.json`，可以直接导入 Grafana。完整仪表盘依赖统一指标后端中的 API、Worker 和 Agent OTLP Metrics；仅抓取 API `/metrics` 时只会显示 API 兼容指标。
 
 如果希望在 DevOps 控制台里查看 Grafana 大盘，平台管理员可以在“站点设置”中填写“运营面板地址”。该地址应使用 Grafana dashboard 或 panel 的 iframe 嵌入地址；Grafana 侧需要允许 iframe 嵌入。
 

@@ -23,7 +23,7 @@ This page is based on the external APIs the platform actually calls. Use it befo
 | PostgreSQL | PostgreSQL wire protocol, GORM, golang-migrate | PostgreSQL `14 ~ 18` | `17`, matching compose/Helm defaults | SQLite is not supported. Production deployments should configure backups and connection limits. |
 | Redis | Single Redis endpoint, go-redis, Asynq queues | Redis `7.x ~ 8.x` | `8`, matching compose/Helm defaults | The current configuration model uses one Redis address. Redis Cluster/Sentinel are not first-phase targets. |
 | BuildKit | `moby/buildkit:*rootless`, `buildctl-daemonless.sh`, `dockerfile.v0` frontend | Primarily validated with `v0.24.x-rootless`; replacing with `v0.20+ rootless` requires smoke tests | `moby/buildkit:v0.24.0-rootless` | Build Jobs use rootless BuildKit and do not mount the host Docker socket. |
-| Prometheus | Prometheus text exposition format, scraping API/Worker independent `/metrics` listeners | Prometheus `2.40+` or `3.x` | Current stable | The platform exposes metrics but does not use Prometheus as business state. |
+| Prometheus | Prometheus text exposition format for API's dedicated `/metrics` listener; Worker/Agent use OTLP | Prometheus `2.40+` or `3.x` | Current stable | The API endpoint is a compatibility scrape surface; the Collector sends complete platform metrics to one backend. |
 | Grafana | Dashboard JSON and operations iframe URL | Grafana `9.x ~ 12.x` | Current stable | iframe embedding requires Grafana-side `allow_embedding` and proper authentication / origin policy handling. |
 | SMTP | SMTP/STARTTLS notification sending | Standard SMTP service | Enterprise mail, cloud SMTP, or current stable self-hosted SMTP | SMTP is a notification adapter. Credentials must be stored as secrets. |
 | Generic webhook notification | Custom method, URL, and JSON body templates | HTTP/HTTPS endpoint | Current webhook API of the target platform | Feishu and WeCom bots can be created as webhook template snapshots. Signing and rate limits belong to the adapter or user configuration. |
@@ -65,7 +65,7 @@ After upgrading an external component, run at least these smoke tests. A success
 3. Kubernetes/K3s: cluster connection test, build Job creation, Deployment/Service creation, Pod log read, Web Console exec.
 4. Gateway API: after creating an access route, verify Gateway Accepted/Programmed and HTTPRoute Accepted/ResolvedRefs/Programmed.
 5. OIDC: complete login, bind external identity, validate callback URL and issuer.
-6. Prometheus/Grafana: scrape API/Worker metrics, import dashboard JSON, and open the iframe URL.
+6. Prometheus/Grafana: scrape API compatibility metrics, confirm API/Worker/Agent OTLP Metrics reach the unified backend, import the dashboard JSON, and open the iframe URL.
 
 ## References
 

@@ -16,6 +16,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	otelmetric "go.opentelemetry.io/otel/metric"
 )
 
 type MetricsConfig struct {
@@ -220,87 +223,119 @@ type WorkerMetrics struct {
 	releases               *prometheus.CounterVec
 	retries                *prometheus.CounterVec
 	started                *prometheus.CounterVec
+	otelBuildDuration      otelmetric.Float64Histogram
+	otelBuildRuns          otelmetric.Int64Counter
+	otelCompleted          otelmetric.Int64Counter
+	otelDeploymentObserved otelmetric.Int64Counter
+	otelDeploymentRatio    otelmetric.Float64Histogram
+	otelDeploymentReplicas otelmetric.Int64Histogram
+	otelDuration           otelmetric.Float64Histogram
+	otelGatewaySync        otelmetric.Int64Counter
+	otelGatewayDuration    otelmetric.Float64Histogram
+	otelInflight           otelmetric.Int64UpDownCounter
+	otelReleaseDuration    otelmetric.Float64Histogram
+	otelReleases           otelmetric.Int64Counter
+	otelRetries            otelmetric.Int64Counter
+	otelStarted            otelmetric.Int64Counter
 }
 
 func NewWorkerMetrics(registry *prometheus.Registry, service string) *WorkerMetrics {
+	meter := otel.Meter("github.com/LiteyukiStudio/devops/internal/observability/worker")
 	metrics := &WorkerMetrics{
-		buildDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name:        "luna_devops_build_run_duration_seconds",
-			Help:        "Duration of Luna build runs.",
-			ConstLabels: prometheus.Labels{"service": service},
-			Buckets:     []float64{30, 60, 120, 300, 600, 900, 1800, 3600, 5400},
-		}, []string{"status", "trigger_type"}),
-		buildRuns: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name:        "luna_devops_build_runs_total",
-			Help:        "Total Luna build runs completed by status and trigger type.",
-			ConstLabels: prometheus.Labels{"service": service},
-		}, []string{"status", "trigger_type"}),
-		completed: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name:        "luna_devops_worker_task_completed_total",
-			Help:        "Total worker tasks completed by Luna.",
-			ConstLabels: prometheus.Labels{"service": service},
-		}, []string{"queue", "task_type", "result"}),
-		deploymentObservations: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name:        "luna_devops_deployment_observations_total",
-			Help:        "Total Kubernetes deployment observations grouped by readiness state.",
-			ConstLabels: prometheus.Labels{"service": service},
-		}, []string{"state"}),
-		deploymentReadyRatio: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name:        "luna_devops_deployment_ready_ratio",
-			Help:        "Distribution of ready replica ratios observed for Luna deployments.",
-			ConstLabels: prometheus.Labels{"service": service},
-			Buckets:     []float64{0, 0.25, 0.5, 0.75, 0.9, 1},
-		}, []string{"state"}),
-		deploymentReplicaCount: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name:        "luna_devops_deployment_replica_count",
-			Help:        "Distribution of desired, ready, available, and updated replica counts.",
-			ConstLabels: prometheus.Labels{"service": service},
-			Buckets:     []float64{0, 1, 2, 3, 5, 10, 25, 50, 100},
-		}, []string{"kind"}),
-		duration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name:        "luna_devops_worker_task_duration_seconds",
-			Help:        "Duration of worker tasks processed by Luna.",
-			ConstLabels: prometheus.Labels{"service": service},
-			Buckets:     prometheus.DefBuckets,
-		}, []string{"task_type", "result"}),
-		gatewaySync: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name:        "luna_devops_gateway_sync_total",
-			Help:        "Total Luna gateway sync operations.",
-			ConstLabels: prometheus.Labels{"service": service},
-		}, []string{"operation", "result"}),
-		gatewaySyncDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name:        "luna_devops_gateway_sync_duration_seconds",
-			Help:        "Duration of Luna gateway sync operations.",
-			ConstLabels: prometheus.Labels{"service": service},
-			Buckets:     []float64{0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120},
-		}, []string{"operation", "result"}),
-		inflight: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name:        "luna_devops_worker_task_inflight",
-			Help:        "Current in-flight worker tasks processed by Luna.",
-			ConstLabels: prometheus.Labels{"service": service},
-		}, []string{"task_type"}),
-		releaseDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name:        "luna_devops_release_duration_seconds",
-			Help:        "Duration of Luna release runs.",
-			ConstLabels: prometheus.Labels{"service": service},
-			Buckets:     []float64{5, 10, 30, 60, 120, 300, 600, 900, 1800},
-		}, []string{"status", "type"}),
-		releases: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name:        "luna_devops_releases_total",
-			Help:        "Total Luna releases completed by status and type.",
-			ConstLabels: prometheus.Labels{"service": service},
-		}, []string{"status", "type"}),
-		retries: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name:        "luna_devops_worker_task_retries_total",
-			Help:        "Total worker task retry attempts observed by Luna.",
-			ConstLabels: prometheus.Labels{"service": service},
-		}, []string{"queue", "task_type"}),
-		started: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name:        "luna_devops_worker_task_started_total",
-			Help:        "Total worker tasks started by Luna.",
-			ConstLabels: prometheus.Labels{"service": service},
-		}, []string{"queue", "task_type"}),
+		otelBuildDuration:      mustFloat64Histogram(meter, "luna_devops_build_run_duration_seconds", "Duration of Luna build runs.", "s"),
+		otelBuildRuns:          mustInt64Counter(meter, "luna_devops_build_runs_total", "Total Luna build runs completed by status and trigger type."),
+		otelCompleted:          mustInt64Counter(meter, "luna_devops_worker_task_completed_total", "Total worker tasks completed by Luna."),
+		otelDeploymentObserved: mustInt64Counter(meter, "luna_devops_deployment_observations_total", "Total Kubernetes deployment observations grouped by readiness state."),
+		otelDeploymentRatio:    mustFloat64Histogram(meter, "luna_devops_deployment_ready_ratio", "Distribution of ready replica ratios observed for Luna deployments.", "1"),
+		otelDeploymentReplicas: mustInt64Histogram(meter, "luna_devops_deployment_replica_count", "Distribution of desired, ready, available, and updated replica counts.", "{replica}"),
+		otelDuration:           mustFloat64Histogram(meter, "luna_devops_worker_task_duration_seconds", "Duration of worker tasks processed by Luna.", "s"),
+		otelGatewaySync:        mustInt64Counter(meter, "luna_devops_gateway_sync_total", "Total Luna gateway sync operations."),
+		otelGatewayDuration:    mustFloat64Histogram(meter, "luna_devops_gateway_sync_duration_seconds", "Duration of Luna gateway sync operations.", "s"),
+		otelInflight:           mustInt64UpDownCounter(meter, "luna_devops_worker_task_inflight", "Current in-flight worker tasks processed by Luna."),
+		otelReleaseDuration:    mustFloat64Histogram(meter, "luna_devops_release_duration_seconds", "Duration of Luna release runs.", "s"),
+		otelReleases:           mustInt64Counter(meter, "luna_devops_releases_total", "Total Luna releases completed by status and type."),
+		otelRetries:            mustInt64Counter(meter, "luna_devops_worker_task_retries_total", "Total worker task retry attempts observed by Luna."),
+		otelStarted:            mustInt64Counter(meter, "luna_devops_worker_task_started_total", "Total worker tasks started by Luna."),
 	}
+	if registry == nil {
+		return metrics
+	}
+	metrics.buildDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Name:        "luna_devops_build_run_duration_seconds",
+		Help:        "Duration of Luna build runs.",
+		ConstLabels: prometheus.Labels{"service": service},
+		Buckets:     []float64{30, 60, 120, 300, 600, 900, 1800, 3600, 5400},
+	}, []string{"status", "trigger_type"})
+	metrics.buildRuns = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name:        "luna_devops_build_runs_total",
+		Help:        "Total Luna build runs completed by status and trigger type.",
+		ConstLabels: prometheus.Labels{"service": service},
+	}, []string{"status", "trigger_type"})
+	metrics.completed = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name:        "luna_devops_worker_task_completed_total",
+		Help:        "Total worker tasks completed by Luna.",
+		ConstLabels: prometheus.Labels{"service": service},
+	}, []string{"queue", "task_type", "result"})
+	metrics.deploymentObservations = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name:        "luna_devops_deployment_observations_total",
+		Help:        "Total Kubernetes deployment observations grouped by readiness state.",
+		ConstLabels: prometheus.Labels{"service": service},
+	}, []string{"state"})
+	metrics.deploymentReadyRatio = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Name:        "luna_devops_deployment_ready_ratio",
+		Help:        "Distribution of ready replica ratios observed for Luna deployments.",
+		ConstLabels: prometheus.Labels{"service": service},
+		Buckets:     []float64{0, 0.25, 0.5, 0.75, 0.9, 1},
+	}, []string{"state"})
+	metrics.deploymentReplicaCount = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Name:        "luna_devops_deployment_replica_count",
+		Help:        "Distribution of desired, ready, available, and updated replica counts.",
+		ConstLabels: prometheus.Labels{"service": service},
+		Buckets:     []float64{0, 1, 2, 3, 5, 10, 25, 50, 100},
+	}, []string{"kind"})
+	metrics.duration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Name:        "luna_devops_worker_task_duration_seconds",
+		Help:        "Duration of worker tasks processed by Luna.",
+		ConstLabels: prometheus.Labels{"service": service},
+		Buckets:     prometheus.DefBuckets,
+	}, []string{"task_type", "result"})
+	metrics.gatewaySync = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name:        "luna_devops_gateway_sync_total",
+		Help:        "Total Luna gateway sync operations.",
+		ConstLabels: prometheus.Labels{"service": service},
+	}, []string{"operation", "result"})
+	metrics.gatewaySyncDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Name:        "luna_devops_gateway_sync_duration_seconds",
+		Help:        "Duration of Luna gateway sync operations.",
+		ConstLabels: prometheus.Labels{"service": service},
+		Buckets:     []float64{0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120},
+	}, []string{"operation", "result"})
+	metrics.inflight = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name:        "luna_devops_worker_task_inflight",
+		Help:        "Current in-flight worker tasks processed by Luna.",
+		ConstLabels: prometheus.Labels{"service": service},
+	}, []string{"task_type"})
+	metrics.releaseDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Name:        "luna_devops_release_duration_seconds",
+		Help:        "Duration of Luna release runs.",
+		ConstLabels: prometheus.Labels{"service": service},
+		Buckets:     []float64{5, 10, 30, 60, 120, 300, 600, 900, 1800},
+	}, []string{"status", "type"})
+	metrics.releases = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name:        "luna_devops_releases_total",
+		Help:        "Total Luna releases completed by status and type.",
+		ConstLabels: prometheus.Labels{"service": service},
+	}, []string{"status", "type"})
+	metrics.retries = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name:        "luna_devops_worker_task_retries_total",
+		Help:        "Total worker task retry attempts observed by Luna.",
+		ConstLabels: prometheus.Labels{"service": service},
+	}, []string{"queue", "task_type"})
+	metrics.started = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name:        "luna_devops_worker_task_started_total",
+		Help:        "Total worker tasks started by Luna.",
+		ConstLabels: prometheus.Labels{"service": service},
+	}, []string{"queue", "task_type"})
 	registry.MustRegister(
 		metrics.buildDuration,
 		metrics.buildRuns,
@@ -336,19 +371,34 @@ func (m *WorkerMetrics) Middleware(next asynq.Handler) asynq.Handler {
 		start := time.Now()
 		taskType := task.Type()
 		queue := m.queueName(taskType)
-		m.started.WithLabelValues(queue, taskType).Inc()
-		if retryCount, ok := asynq.GetRetryCount(ctx); ok && retryCount > 0 {
-			m.retries.WithLabelValues(queue, taskType).Inc()
+		if m.started != nil {
+			m.started.WithLabelValues(queue, taskType).Inc()
 		}
-		m.inflight.WithLabelValues(taskType).Inc()
+		m.otelStarted.Add(ctx, 1, otelmetric.WithAttributes(attribute.String("queue", queue), attribute.String("task_type", taskType)))
+		if retryCount, ok := asynq.GetRetryCount(ctx); ok && retryCount > 0 {
+			if m.retries != nil {
+				m.retries.WithLabelValues(queue, taskType).Inc()
+			}
+			m.otelRetries.Add(ctx, 1, otelmetric.WithAttributes(attribute.String("queue", queue), attribute.String("task_type", taskType)))
+		}
+		if m.inflight != nil {
+			m.inflight.WithLabelValues(taskType).Inc()
+		}
+		m.otelInflight.Add(ctx, 1, otelmetric.WithAttributes(attribute.String("task_type", taskType)))
 		err := next.ProcessTask(ctx, task)
 		result := "succeeded"
 		if err != nil {
 			result = "failed"
 		}
-		m.inflight.WithLabelValues(taskType).Dec()
-		m.duration.WithLabelValues(taskType, result).Observe(time.Since(start).Seconds())
-		m.completed.WithLabelValues(queue, taskType, result).Inc()
+		if m.inflight != nil {
+			m.inflight.WithLabelValues(taskType).Dec()
+			m.duration.WithLabelValues(taskType, result).Observe(time.Since(start).Seconds())
+			m.completed.WithLabelValues(queue, taskType, result).Inc()
+		}
+		attrs := otelmetric.WithAttributes(attribute.String("queue", queue), attribute.String("task_type", taskType), attribute.String("result", result))
+		m.otelInflight.Add(ctx, -1, otelmetric.WithAttributes(attribute.String("task_type", taskType)))
+		m.otelDuration.Record(ctx, time.Since(start).Seconds(), attrs)
+		m.otelCompleted.Add(ctx, 1, attrs)
 		return err
 	})
 }
@@ -359,9 +409,16 @@ func (m *WorkerMetrics) RecordBuildRun(run BusinessRunMetric) {
 	}
 	status := stableLabel(run.Status, "unknown")
 	triggerType := stableLabel(run.Type, "unknown")
-	m.buildRuns.WithLabelValues(status, triggerType).Inc()
+	if m.buildRuns != nil {
+		m.buildRuns.WithLabelValues(status, triggerType).Inc()
+	}
+	attrs := otelmetric.WithAttributes(attribute.String("status", status), attribute.String("trigger_type", triggerType))
+	m.otelBuildRuns.Add(context.Background(), 1, attrs)
 	if duration, ok := runDuration(run); ok {
-		m.buildDuration.WithLabelValues(status, triggerType).Observe(duration.Seconds())
+		if m.buildDuration != nil {
+			m.buildDuration.WithLabelValues(status, triggerType).Observe(duration.Seconds())
+		}
+		m.otelBuildDuration.Record(context.Background(), duration.Seconds(), attrs)
 	}
 }
 
@@ -371,9 +428,16 @@ func (m *WorkerMetrics) RecordRelease(run BusinessRunMetric) {
 	}
 	status := stableLabel(run.Status, "unknown")
 	releaseType := stableLabel(run.Type, "deploy")
-	m.releases.WithLabelValues(status, releaseType).Inc()
+	if m.releases != nil {
+		m.releases.WithLabelValues(status, releaseType).Inc()
+	}
+	attrs := otelmetric.WithAttributes(attribute.String("status", status), attribute.String("type", releaseType))
+	m.otelReleases.Add(context.Background(), 1, attrs)
 	if duration, ok := runDuration(run); ok {
-		m.releaseDuration.WithLabelValues(status, releaseType).Observe(duration.Seconds())
+		if m.releaseDuration != nil {
+			m.releaseDuration.WithLabelValues(status, releaseType).Observe(duration.Seconds())
+		}
+		m.otelReleaseDuration.Record(context.Background(), duration.Seconds(), attrs)
 	}
 }
 
@@ -383,9 +447,16 @@ func (m *WorkerMetrics) RecordGatewaySync(operation string, result string, durat
 	}
 	operation = stableLabel(operation, "apply")
 	result = stableLabel(result, "unknown")
-	m.gatewaySync.WithLabelValues(operation, result).Inc()
+	if m.gatewaySync != nil {
+		m.gatewaySync.WithLabelValues(operation, result).Inc()
+	}
+	attrs := otelmetric.WithAttributes(attribute.String("operation", operation), attribute.String("result", result))
+	m.otelGatewaySync.Add(context.Background(), 1, attrs)
 	if duration >= 0 {
-		m.gatewaySyncDuration.WithLabelValues(operation, result).Observe(duration.Seconds())
+		if m.gatewaySyncDuration != nil {
+			m.gatewaySyncDuration.WithLabelValues(operation, result).Observe(duration.Seconds())
+		}
+		m.otelGatewayDuration.Record(context.Background(), duration.Seconds(), attrs)
 	}
 }
 
@@ -405,12 +476,21 @@ func (m *WorkerMetrics) SetDeploymentRuntime(metric DeploymentRuntimeMetric) {
 	if desired > 0 {
 		readyRatio = ready / desired
 	}
-	m.deploymentObservations.WithLabelValues(state).Inc()
-	m.deploymentReadyRatio.WithLabelValues(state).Observe(readyRatio)
-	m.deploymentReplicaCount.WithLabelValues("desired").Observe(desired)
-	m.deploymentReplicaCount.WithLabelValues("ready").Observe(ready)
-	m.deploymentReplicaCount.WithLabelValues("available").Observe(available)
-	m.deploymentReplicaCount.WithLabelValues("updated").Observe(updated)
+	if m.deploymentObservations != nil {
+		m.deploymentObservations.WithLabelValues(state).Inc()
+		m.deploymentReadyRatio.WithLabelValues(state).Observe(readyRatio)
+		m.deploymentReplicaCount.WithLabelValues("desired").Observe(desired)
+		m.deploymentReplicaCount.WithLabelValues("ready").Observe(ready)
+		m.deploymentReplicaCount.WithLabelValues("available").Observe(available)
+		m.deploymentReplicaCount.WithLabelValues("updated").Observe(updated)
+	}
+	ctx := context.Background()
+	m.otelDeploymentObserved.Add(ctx, 1, otelmetric.WithAttributes(attribute.String("state", state)))
+	m.otelDeploymentRatio.Record(ctx, readyRatio, otelmetric.WithAttributes(attribute.String("state", state)))
+	m.otelDeploymentReplicas.Record(ctx, int64(desired), otelmetric.WithAttributes(attribute.String("kind", "desired")))
+	m.otelDeploymentReplicas.Record(ctx, int64(ready), otelmetric.WithAttributes(attribute.String("kind", "ready")))
+	m.otelDeploymentReplicas.Record(ctx, int64(available), otelmetric.WithAttributes(attribute.String("kind", "available")))
+	m.otelDeploymentReplicas.Record(ctx, int64(updated), otelmetric.WithAttributes(attribute.String("kind", "updated")))
 }
 
 func (m *WorkerMetrics) queueName(taskType string) string {
@@ -422,6 +502,38 @@ func (m *WorkerMetrics) queueName(taskType string) string {
 		return "unknown"
 	}
 	return queue
+}
+
+func mustInt64Counter(meter otelmetric.Meter, name string, description string) otelmetric.Int64Counter {
+	instrument, err := meter.Int64Counter(name, otelmetric.WithDescription(description))
+	if err != nil {
+		panic(err)
+	}
+	return instrument
+}
+
+func mustInt64UpDownCounter(meter otelmetric.Meter, name string, description string) otelmetric.Int64UpDownCounter {
+	instrument, err := meter.Int64UpDownCounter(name, otelmetric.WithDescription(description))
+	if err != nil {
+		panic(err)
+	}
+	return instrument
+}
+
+func mustInt64Histogram(meter otelmetric.Meter, name string, description string, unit string) otelmetric.Int64Histogram {
+	instrument, err := meter.Int64Histogram(name, otelmetric.WithDescription(description), otelmetric.WithUnit(unit))
+	if err != nil {
+		panic(err)
+	}
+	return instrument
+}
+
+func mustFloat64Histogram(meter otelmetric.Meter, name string, description string, unit string) otelmetric.Float64Histogram {
+	instrument, err := meter.Float64Histogram(name, otelmetric.WithDescription(description), otelmetric.WithUnit(unit))
+	if err != nil {
+		panic(err)
+	}
+	return instrument
 }
 
 type DependencyCollector struct {

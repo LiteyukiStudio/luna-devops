@@ -90,10 +90,6 @@ app.kubernetes.io/component: {{ .component }}
 {{- printf "%s-api-metrics" (include "luna-devops.fullname" .) | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
-{{- define "luna-devops.workerMetricsName" -}}
-{{- printf "%s-worker-metrics" (include "luna-devops.fullname" .) | trunc 63 | trimSuffix "-" -}}
-{{- end -}}
-
 {{- define "luna-devops.imageTag" -}}
 {{- default .Chart.AppVersion .tag -}}
 {{- end -}}
@@ -156,10 +152,6 @@ redis-url
     secretKeyRef:
       name: {{ include "luna-devops.redisURLSecretName" . }}
       key: {{ include "luna-devops.redisURLSecretKey" . }}
-- name: METRICS_ENABLED
-  value: {{ .Values.metrics.enabled | quote }}
-- name: METRICS_PATH
-  value: {{ .Values.metrics.path | quote }}
 {{- if .Values.observability.otlpEndpoint }}
 - name: OTEL_EXPORTER_OTLP_ENDPOINT
   value: {{ .Values.observability.otlpEndpoint | quote }}

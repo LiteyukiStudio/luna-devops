@@ -67,16 +67,20 @@ export function initializeTelemetry(endpoint = process.env.OTEL_EXPORTER_OTLP_EN
     logRecordProcessors: [new BatchLogRecordProcessor({ exporter: new OTLPLogExporter() })],
     instrumentations: [
       new HttpInstrumentation({
+        ignoreIncomingRequestHook: request => isHealthCheckPath(request.url ?? ""),
         requestHook: (span, request) => sanitizeRequestSpan(span, request),
         applyCustomAttributesOnSpan: (span, request) => sanitizeRequestSpan(span, request),
       }),
       new FastifyOtelInstrumentation({
         registerOnInitialization: true,
         instrumentHooks: false,
+        ignorePaths: route => isHealthCheckPath(route.url),
         requestHook: (span, request) => sanitizeSpanURL(span, request.raw.url ?? request.url),
       }),
       new PgInstrumentation({
         enhancedDatabaseReporting: false,
+        ignoreConnectSpans: true,
+        requireParentSpan: true,
         responseHook: (span, response) => {
           span.setAttribute("db.response.returned_rows", response.data.rowCount ?? 0)
         },
@@ -99,6 +103,16 @@ export function initializeTelemetry(endpoint = process.env.OTEL_EXPORTER_OTLP_EN
     ],
   })
   sdk.start()
+}
+
+export function isHealthCheckPath(value: string): boolean {
+  try {
+    const path = new URL(value, "http://health-check.invalid").pathname
+    return path === "/healthz" || path === "/internal/health/live" || path === "/internal/health/ready"
+  }
+  catch {
+    return false
+  }
 }
 
 export function sanitizeTelemetryURL(value: string): string {

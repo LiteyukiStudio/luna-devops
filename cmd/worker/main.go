@@ -16,7 +16,6 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/LiteyukiStudio/devops/internal/worker"
 	"github.com/hibiken/asynq"
-	"github.com/redis/go-redis/v9"
 )
 
 func main() {
@@ -80,51 +79,21 @@ func run(ctx context.Context) error {
 		defer registration.Unregister()
 	}
 
-	metricsConfig := observability.MetricsConfig{
-		Enabled: cfg.MetricsEnabled,
-		Addr:    cfg.MetricsAddr,
-		Path:    cfg.MetricsPath,
-		Service: "worker",
-	}.WithDefaultAddr(":9091")
-	var workerMetrics *observability.WorkerMetrics
-	if metricsConfig.Active() {
-		metricsRegistry := observability.NewRegistry("worker")
-		sqlDB, err := db.DB()
-		if err != nil {
-			return fmt.Errorf("open database metrics handle: %w", err)
-		}
-		observability.RegisterDBStats(metricsRegistry, sqlDB, "postgres")
-		redisOptions := cfg.RedisOptions()
-		redisClient := redis.NewClient(redisOptions.GoRedis())
-		defer redisClient.Close()
-		if err := telemetry.InstrumentRedis(redisClient); err != nil {
-			return fmt.Errorf("instrument metrics Redis client: %w", err)
-		}
-		metricsRegistry.MustRegister(observability.NewDependencyCollector("worker", map[string]observability.DependencyCheck{
-			"postgres": sqlDB.PingContext,
-			"redis": func(ctx context.Context) error {
-				return redisClient.Ping(ctx).Err()
-			},
-		}))
-		queueInspector := asynq.NewInspector(redisOptions.Asynq())
-		defer queueInspector.Close()
-		metricsRegistry.MustRegister(observability.NewAsynqQueueCollector("worker", queueInspector, []string{
-			tasks.QueueBuild,
-			tasks.QueueDeploy,
-			tasks.QueueLight,
-		}))
-		metricsServer, err := observability.StartMetricsServer(metricsConfig, metricsRegistry)
-		if err != nil {
-			return fmt.Errorf("start worker metrics server: %w", err)
-		}
-		defer func() {
-			ctx, cancel := shutdownContext()
-			defer cancel()
-			observability.ShutdownMetricsServer(ctx, metricsServer)
-		}()
-		workerMetrics = observability.NewWorkerMetrics(metricsRegistry, "worker").WithQueueResolver(func(taskType string) string {
-			return tasks.PolicyForType(taskType).Queue
-		})
+	workerMetrics := observability.NewWorkerMetrics(nil, "worker").WithQueueResolver(func(taskType string) string {
+		return tasks.PolicyForType(taskType).Queue
+	})
+	queueInspector := asynq.NewInspector(cfg.RedisOptions().Asynq())
+	defer queueInspector.Close()
+	queueRegistration, err := observability.RegisterAsynqQueueTelemetry(queueInspector, []string{
+		tasks.QueueBuild,
+		tasks.QueueDeploy,
+		tasks.QueueLight,
+	})
+	if err != nil {
+		return fmt.Errorf("register worker queue metrics: %w", err)
+	}
+	if queueRegistration != nil {
+		defer queueRegistration.Unregister()
 	}
 
 	options := worker.Options{

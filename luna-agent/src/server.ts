@@ -56,10 +56,13 @@ export function buildServer(input: {
     requestIdHeader: "x-request-id",
   })
 
-  app.get("/internal/health/live", async () => ({ status: "ok" }))
-  app.get("/internal/health/ready", async (_request, reply) => {
+  app.get("/internal/health/live", { logLevel: "silent" }, async () => ({ status: "ok" }))
+  app.get("/internal/health/ready", { logLevel: "silent" }, async (_request, reply) => {
     const database = await input.repository.health()
-    if (!database) return reply.code(503).send({ status: "not_ready", checks: { database } })
+    if (!database) {
+      telemetryLog("agent.readiness.failed", "warn", { "error.code": "ai.persistence_unavailable" })
+      return reply.code(503).send({ status: "not_ready", checks: { database } })
+    }
     return { status: "ready", checks: { database, providerConfigured: true } }
   })
   app.get("/internal/v1/health/compatibility", async () => ({

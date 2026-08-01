@@ -112,13 +112,10 @@ func openPostgres(ctx context.Context, databaseURL string, options Options) (*go
 
 	ctx, cancel := context.WithTimeout(ctx, defaultConnectPingTimeout)
 	defer cancel()
-	pingCtx, end := telemetry.StartOperation(ctx, "database", "ping")
-	if err := sqlDB.PingContext(pingCtx); err != nil {
-		end(err)
+	if err := sqlDB.PingContext(ctx); err != nil {
 		_ = sqlDB.Close()
 		return nil, err
 	}
-	end(nil)
 
 	return db, nil
 }
