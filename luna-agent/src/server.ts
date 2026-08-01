@@ -2,7 +2,7 @@ import Fastify, { type FastifyInstance } from "fastify"
 import { z } from "zod"
 import type { RequestAuthenticator } from "./auth.js"
 import type { Config } from "./config.js"
-import type { ActorContext } from "./domain.js"
+import type { ActorContext, Run } from "./domain.js"
 import type { PayloadCipher } from "./payload-cipher.js"
 import type { Repository } from "./persistence/repository.js"
 import type { ModelProvider } from "./provider/provider.js"
@@ -12,7 +12,7 @@ import { redact } from "./redaction.js"
 import type { ToolOrchestrator } from "./tools/orchestrator.js"
 import { presentEvent, presentTimeline } from "./timeline-presenter.js"
 import { agentRuntimeInternals, defaultRuntimeSettings } from "./runtime-settings.js"
-import { stableErrorCode as telemetryErrorCode, telemetryLog } from "./telemetry.js"
+import { captureTraceContext, stableErrorCode as telemetryErrorCode, telemetryLog } from "./telemetry.js"
 
 declare module "fastify" {
   interface FastifyRequest { actor: ActorContext }
@@ -170,6 +170,7 @@ export function buildServer(input: {
       }).parse(request.body)
       const created = await input.repository.createTurn(request.actor.userId, {
         conversationId, input: body.input.parts.map(part => part.text).join("\n"), pageContext: redact(body.pageContext),
+        traceContext: captureTraceContext(),
         idempotencyKey: key, ...(body.runId ? { preallocatedRunId: body.runId } : {}),
         ...(body.runActorGrant ? { runActorGrantCiphertext: input.grantCipher.encrypt(body.runActorGrant) } : {}),
         ...(input.toolCatalogDigest ? { toolCatalogDigest: input.toolCatalogDigest } : {}),
@@ -222,7 +223,7 @@ export function buildServer(input: {
     secured.get("/internal/v1/runs/:runId", async (request, reply) => {
       const { runId } = z.object({ runId: id }).parse(request.params)
       const value = await input.repository.getRun(request.actor.userId, runId)
-      return value ?? reply.code(404).send(errorBody("ai.run_not_found", request.id))
+      return value ? presentRun(value) : reply.code(404).send(errorBody("ai.run_not_found", request.id))
     })
     secured.post("/internal/v1/runs/:runId/cancel", async (request, reply) => {
       const { runId } = z.object({ runId: id }).parse(request.params)
@@ -232,7 +233,7 @@ export function buildServer(input: {
           // The durable canceled state is authoritative; a local abort is only a latency optimization.
         }
       }
-      return value ?? reply.code(404).send(errorBody("ai.run_not_found", request.id))
+      return value ? presentRun(value) : reply.code(404).send(errorBody("ai.run_not_found", request.id))
     })
     secured.post("/internal/v1/runs/:runId/approvals/:toolCallId/decision", async (request, reply) => {
       if (!input.tools) return reply.code(503).send(errorBody("ai.tool_not_available", request.id))
@@ -245,11 +246,11 @@ export function buildServer(input: {
       if (body.decision === "reject") {
         await input.tools.reject(toolCallId, body.argumentsHash, body.expectedVersion)
         const canceled = await input.repository.cancelRun(request.actor.userId, runId)
-        return canceled
+        return canceled ? presentRun(canceled) : canceled
       }
       const approved = [await input.tools.approve(toolCallId, body.argumentsHash, body.expectedVersion)]
       if (body.decision === "approve_all") approved.push(...await input.tools.approveAll(runId))
-      if (approved.some(call => call.status === "awaiting_mfa")) return input.repository.updateRun(runId, "waiting_approval", "waiting_mfa")
+      if (approved.some(call => call.status === "awaiting_mfa")) return presentRun(await input.repository.updateRun(runId, "waiting_approval", "waiting_mfa"))
       await input.repository.updateRun(runId, "waiting_approval", "queued")
       return reply.code(202).send({ runId, state: "queued" })
     })
@@ -332,6 +333,12 @@ export function buildServer(input: {
     void reply.code(status).send(errorBody(code, request.id))
   })
   return app
+}
+
+function presentRun(run: Run): Omit<Run, "traceContext"> {
+  const publicRun = { ...run }
+  delete publicRun.traceContext
+  return publicRun
 }
 
 function errorBody(code: string, requestId: string) { return { error: { code, requestId } } }

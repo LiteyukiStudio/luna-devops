@@ -16,7 +16,7 @@ import { createOptionsInput, optionUIActions } from "./tools/ui-options.js"
 import { automaticRouteUIAction, navigateToRouteInput } from "./tools/ui-route.js"
 import type { ProviderConfigClient } from "./provider/config-client.js"
 import { agentRuntimeInternals, defaultRuntimeSettings, type RuntimeSettings } from "./runtime-settings.js"
-import { agentMetrics, internalSpanOptions, recordSpanError, stableErrorCode, telemetryLog, withSpan } from "./telemetry.js"
+import { agentMetrics, extractTraceContext, internalSpanOptions, recordSpanError, stableErrorCode, telemetryLog, withSpan } from "./telemetry.js"
 
 export class RunExecutor {
   private timer?: NodeJS.Timeout
@@ -317,7 +317,7 @@ export class RunExecutor {
       agentMetrics.runDuration.record((performance.now() - startedAt) / 1000, metricAttributes)
     }
     return true
-    })
+    }, extractTraceContext(run.traceContext))
   }
 
   private async refreshRuntimeSettings(): Promise<void> {

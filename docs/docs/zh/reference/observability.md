@@ -12,6 +12,8 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
 
 重启后，服务会分别以 `luna-devops-api`、`luna-worker` 和 `luna-agent` 上报遥测。该变量留空时不会启动导出器，Collector 不可用也不会阻止业务请求。
 
+AI 请求进入排队状态时会保留 W3C Trace Context，因此同一次操作中的 API 请求、Agent Run、模型请求、工具调用、平台回调和数据库访问可以在 Tempo 中沿同一个 Trace 查看。等待审批或用户输入后恢复执行时仍使用同一上游 Trace，并通过 Run ID 区分执行阶段。
+
 需要标记环境或集群时，可以增加资源属性：
 
 ```bash

@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto"
 import { Pool, type PoolClient } from "pg"
 import type {
   Conversation,
@@ -14,10 +13,11 @@ import type {
 } from "../domain.js"
 import { createId } from "../id.js"
 import type { Repository } from "./repository.js"
+import { createTurnRequestHash } from "./create-turn-hash.js"
 import { normalizeEventSequence } from "../event-sequence.js"
 
 type DbConversation = { id: string, owner_user_id: string, project_id: string | null, title: string, title_source: ConversationTitleSource, status: "active", created_at: Date, updated_at: Date }
-type DbRun = { id: string, owner_user_id: string, conversation_id: string, turn_id: string, run_index: number, status: Run["status"], row_version: number, graph_version: "assistant-v1", prompt_version: Run["promptVersion"], tool_catalog_digest: string, page_context: Record<string, unknown>, client_instance_id: string | null, created_at: Date, started_at: Date | null, completed_at: Date | null, error_code: string | null }
+type DbRun = { id: string, owner_user_id: string, conversation_id: string, turn_id: string, run_index: number, status: Run["status"], row_version: number, graph_version: "assistant-v1", prompt_version: Run["promptVersion"], tool_catalog_digest: string, page_context: Record<string, unknown>, trace_context: Record<string, string>, client_instance_id: string | null, created_at: Date, started_at: Date | null, completed_at: Date | null, error_code: string | null }
 type DbUIAction = { id: string, run_id: string, tool_call_id: string, client_instance_id: string, action: Record<string, unknown>, status: UIActionStatus, attempts: number, expires_at: Date, acknowledged_at: Date | null, actual_path: string | null, error_code: string | null, created_at: Date, updated_at: Date }
 
 export class PostgresRepository implements Repository {
@@ -80,7 +80,7 @@ export class PostgresRepository implements Repository {
     const client = await this.pool.connect()
     try {
       await client.query("begin")
-      const hash = createHash("sha256").update(JSON.stringify(input)).digest("hex")
+      const hash = createTurnRequestHash(input)
       const existing = await client.query<{ request_hash: string, turn_id: string, run_id: string }>(
         `select request_hash,turn_id,run_id from ai.idempotency_keys where owner_user_id=$1 and idempotency_key=$2`,
         [ownerUserId, input.idempotencyKey],
@@ -98,8 +98,8 @@ export class PostgresRepository implements Repository {
       const runId = input.preallocatedRunId ?? createId("airun")
       await client.query(`insert into ai.turns(id,conversation_id,turn_index,status,input,selected_run_id) values($1,$2,$3,'queued',$4,$5)`, [turnId, input.conversationId, index, input.input, runId])
       await client.query(
-        `insert into ai.runs(id,owner_user_id,conversation_id,turn_id,run_index,status,graph_version,prompt_version,tool_catalog_digest,page_context,run_actor_grant_ciphertext,client_instance_id) values($1,$2,$3,$4,0,'queued','assistant-v1','system-v4',$5,$6,$7,$8)`,
-        [runId, ownerUserId, input.conversationId, turnId, input.toolCatalogDigest ?? "sha256:platform-tools-v1", JSON.stringify(input.pageContext), input.runActorGrantCiphertext ?? null, input.clientInstanceId ?? null],
+        `insert into ai.runs(id,owner_user_id,conversation_id,turn_id,run_index,status,graph_version,prompt_version,tool_catalog_digest,page_context,trace_context,run_actor_grant_ciphertext,client_instance_id) values($1,$2,$3,$4,0,'queued','assistant-v1','system-v4',$5,$6,$7,$8,$9)`,
+        [runId, ownerUserId, input.conversationId, turnId, input.toolCatalogDigest ?? "sha256:platform-tools-v1", JSON.stringify(input.pageContext), JSON.stringify(input.traceContext ?? {}), input.runActorGrantCiphertext ?? null, input.clientInstanceId ?? null],
       )
       await client.query(`insert into ai.idempotency_keys(owner_user_id,idempotency_key,request_hash,turn_id,run_id) values($1,$2,$3,$4,$5)`, [ownerUserId, input.idempotencyKey, hash, turnId, runId])
       await this.appendItemWith(client, { runId, turnId, type: "user_message", status: "completed", content: { parts: [{ type: "text", text: input.input }] } })
@@ -341,7 +341,7 @@ function mapConversation(row: DbConversation): Conversation {
   }
 }
 function mapRun(row: DbRun): Run {
-  return { id: row.id, conversationId: row.conversation_id, turnId: row.turn_id, runIndex: row.run_index, status: row.status, rowVersion: row.row_version, graphVersion: row.graph_version, promptVersion: row.prompt_version, toolCatalogDigest: row.tool_catalog_digest, pageContext: row.page_context, createdAt: row.created_at.toISOString(), ...(row.client_instance_id ? { clientInstanceId: row.client_instance_id } : {}), ...(row.started_at ? { startedAt: row.started_at.toISOString() } : {}), ...(row.completed_at ? { completedAt: row.completed_at.toISOString() } : {}), ...(row.error_code ? { errorCode: row.error_code } : {}) }
+  return { id: row.id, conversationId: row.conversation_id, turnId: row.turn_id, runIndex: row.run_index, status: row.status, rowVersion: row.row_version, graphVersion: row.graph_version, promptVersion: row.prompt_version, toolCatalogDigest: row.tool_catalog_digest, pageContext: row.page_context, ...(Object.keys(row.trace_context ?? {}).length ? { traceContext: row.trace_context } : {}), createdAt: row.created_at.toISOString(), ...(row.client_instance_id ? { clientInstanceId: row.client_instance_id } : {}), ...(row.started_at ? { startedAt: row.started_at.toISOString() } : {}), ...(row.completed_at ? { completedAt: row.completed_at.toISOString() } : {}), ...(row.error_code ? { errorCode: row.error_code } : {}) }
 }
 function mapUIAction(row: DbUIAction): UIActionDelivery {
   return {

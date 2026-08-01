@@ -1,4 +1,4 @@
-import { context, metrics, SpanKind, SpanStatusCode, trace, type Attributes, type Counter, type Histogram, type Span, type SpanOptions, type UpDownCounter } from "@opentelemetry/api"
+import { context, metrics, propagation, ROOT_CONTEXT, SpanKind, SpanStatusCode, trace, type Attributes, type Context, type Counter, type Histogram, type Span, type SpanOptions, type UpDownCounter } from "@opentelemetry/api"
 import { logs, SeverityNumber } from "@opentelemetry/api-logs"
 import { FastifyOtelInstrumentation } from "@fastify/otel"
 import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http"
@@ -147,8 +147,9 @@ export async function withSpan<T>(
   name: string,
   options: SpanOptions,
   operation: (span: Span) => Promise<T>,
+  parentContext: Context = context.active(),
 ): Promise<T> {
-  return tracer.startActiveSpan(name, options, async span => {
+  return tracer.startActiveSpan(name, options, parentContext, async span => {
     try {
       return await operation(span)
     }
@@ -160,6 +161,24 @@ export async function withSpan<T>(
       span.end()
     }
   })
+}
+
+const traceContextKeys = new Set(["traceparent", "tracestate"])
+
+export function captureTraceContext(): Record<string, string> {
+  const carrier: Record<string, string> = {}
+  propagation.inject(context.active(), carrier)
+  return normalizeTraceContext(carrier)
+}
+
+export function extractTraceContext(carrier: Record<string, string> | undefined): Context {
+  return propagation.extract(ROOT_CONTEXT, normalizeTraceContext(carrier ?? {}))
+}
+
+export function normalizeTraceContext(carrier: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(Object.entries(carrier)
+    .map(([key, value]) => [key.toLowerCase(), value.trim()] as const)
+    .filter(([key, value]) => traceContextKeys.has(key) && value.length > 0 && value.length <= 512))
 }
 
 export function recordSpanError(span: Span, error: unknown): void {

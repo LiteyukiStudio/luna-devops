@@ -941,6 +941,7 @@
 - [x] 接入 OpenTelemetry SDK：仅在配置 `OTEL_EXPORTER_OTLP_ENDPOINT` 时初始化 OTLP Trace、Metrics 与 Logs 导出，未配置时不影响业务主流程。
 - [x] 为 Gin/Fastify 请求、GORM/PG 查询、Redis/Asynq、HTTP、Git/Registry/Kubernetes、模型 Provider 和 Agent 工具调用建立父子 span；命名使用稳定路由模板与操作名。
 - [x] Asynq 任务 envelope 透传 W3C Trace Context，Worker 从投递请求继续同一 trace，并记录任务生命周期与队列指标。
+- [x] Agent Run 入队时持久化经过白名单过滤的 W3C `traceparent` / `tracestate`，后台领取、模型循环、工具调用和回调平台 API 继续原请求 Trace；Trace Context 不参与业务幂等哈希，也不向前端响应暴露。
 - [x] 为构建、发布、网关、清理、通知和同步任务增加稳定业务阶段 span 与结构化关键节点日志。
 - [ ] 支持采样配置：`OTEL_TRACES_SAMPLER` 和采样比例环境变量；错误 trace、慢任务 trace 和构建/发布任务优先保留。
 - [ ] 在 `GRAFANA_LINKS_ENABLED=true` 且 `GRAFANA_BASE_URL` 已配置时，为构建详情、发布详情和访问入口生成 Tempo/Trace 深链；未配置时不展示 trace 入口。

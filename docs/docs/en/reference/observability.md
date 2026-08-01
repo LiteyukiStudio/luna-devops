@@ -12,6 +12,8 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
 
 After restart, the services report as `luna-devops-api`, `luna-worker`, and `luna-agent`. An empty value keeps exporters disabled, and an unavailable Collector does not block business requests.
 
+When an AI request enters the queue, Luna DevOps preserves its W3C Trace Context. The API request, Agent Run, model request, tool call, platform callback, and database access can therefore be inspected as one Trace in Tempo. Execution resumed after approval or user input keeps the same upstream Trace and uses the Run ID to distinguish execution stages.
+
 Add resource attributes when you need to identify an environment or cluster:
 
 ```bash

@@ -11,6 +11,25 @@ describe("conversation repository", () => {
     expect(second.run.id).toBe(first.run.id)
     expect((await repository.getTimeline("usr_a", conversation.id))?.turns).toHaveLength(1)
   })
+  it("persists queue trace context without making telemetry part of idempotency", async () => {
+    const repository = new MemoryRepository()
+    const conversation = await repository.createConversation("usr_a", "trace")
+    const request = {
+      conversationId: conversation.id,
+      input: "检查发布",
+      pageContext: {},
+      idempotencyKey: "request-trace",
+      traceContext: { traceparent: "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01" },
+    }
+    const first = await repository.createTurn("usr_a", request)
+    const second = await repository.createTurn("usr_a", {
+      ...request,
+      traceContext: { traceparent: "00-abcdef0123456789abcdef0123456789-abcdef0123456789-01" },
+    })
+
+    expect(second.run.id).toBe(first.run.id)
+    expect((await repository.claimRun("agent-a", 30))?.traceContext).toEqual(request.traceContext)
+  })
   it("isolates conversations by owner", async () => {
     const repository = new MemoryRepository()
     const conversation = await repository.createConversation("usr_a", "private")

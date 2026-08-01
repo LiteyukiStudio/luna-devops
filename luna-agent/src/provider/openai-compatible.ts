@@ -1,5 +1,6 @@
 import type { ModelCapabilities, ModelEvent, ModelProvider, ModelRequest, ModelResponse, ModelToolCall } from "./provider.js"
-import { agentMetrics, telemetryLog } from "../telemetry.js"
+import { agentMetrics, clientSpanOptions, telemetryLog, withSpan } from "../telemetry.js"
+import { trace } from "@opentelemetry/api"
 
 type Options = { baseUrl: string, apiKey: string, model: string, timeoutMs: number }
 
@@ -11,18 +12,27 @@ export class OpenAICompatibleProvider implements ModelProvider {
   }
 
   async health(): Promise<{ ok: boolean, requestId?: string }> {
-    const response = await this.request([{ role: "user", content: "只回复 OK。" }], 4)
-    return { ok: response.text.length > 0, ...(response.requestId ? { requestId: response.requestId } : {}) }
+    return withSpan("gen_ai.chat.health", clientSpanOptions(), async span => {
+      const response = await this.request([{ role: "user", content: "只回复 OK。" }], 4)
+      span.setAttribute("gen_ai.usage.input_tokens", response.usage.inputTokens)
+      span.setAttribute("gen_ai.usage.output_tokens", response.usage.outputTokens)
+      return { ok: response.text.length > 0, ...(response.requestId ? { requestId: response.requestId } : {}) }
+    })
   }
 
   async complete(request: ModelRequest): Promise<ModelResponse> {
-    const response = await this.request(request.messages, request.maxOutputTokens, request.signal, request.tools, request.toolChoice)
-    return {
-      text: response.text,
-      usage: response.usage,
-      ...(response.reasoningSummary ? { reasoningSummary: response.reasoningSummary } : {}),
-      ...(response.toolCalls.length ? { toolCalls: response.toolCalls } : {}),
-    }
+    return withSpan("gen_ai.chat.complete", clientSpanOptions(), async span => {
+      const response = await this.request(request.messages, request.maxOutputTokens, request.signal, request.tools, request.toolChoice)
+      span.setAttribute("gen_ai.usage.input_tokens", response.usage.inputTokens)
+      span.setAttribute("gen_ai.usage.output_tokens", response.usage.outputTokens)
+      span.setAttribute("luna.tool_call.count", response.toolCalls.length)
+      return {
+        text: response.text,
+        usage: response.usage,
+        ...(response.reasoningSummary ? { reasoningSummary: response.reasoningSummary } : {}),
+        ...(response.toolCalls.length ? { toolCalls: response.toolCalls } : {}),
+      }
+    })
   }
 
   async *stream(request: ModelRequest): AsyncIterable<ModelEvent> {
@@ -53,6 +63,9 @@ export class OpenAICompatibleProvider implements ModelProvider {
           throw new Error("ai.provider_stream_failed")
         }
         if (payload.error) throw new Error(providerPayloadError(payload.error))
+        const activeSpan = trace.getActiveSpan()
+        if (payload.id) activeSpan?.setAttribute("gen_ai.response.id", payload.id)
+        if (payload.model) activeSpan?.setAttribute("gen_ai.response.model", payload.model)
         const delta = payload.choices?.[0]?.delta
         const reasoning = textValue(delta?.reasoning_summary)
         const content = contentText(delta?.content)
@@ -84,6 +97,9 @@ export class OpenAICompatibleProvider implements ModelProvider {
   private async request(messages: ModelRequest["messages"], maxTokens: number, signal?: AbortSignal, tools?: ModelRequest["tools"], toolChoice?: ModelRequest["toolChoice"]) {
     const response = await this.fetchCompletion(messages, maxTokens, false, signal, tools, toolChoice)
     const body = await response.json() as CompletionBody
+    const activeSpan = trace.getActiveSpan()
+    if (body.id) activeSpan?.setAttribute("gen_ai.response.id", body.id)
+    if (body.model) activeSpan?.setAttribute("gen_ai.response.model", body.model)
     const message = body.choices?.[0]?.message
     return {
       text: contentText(message?.content),
@@ -103,6 +119,14 @@ export class OpenAICompatibleProvider implements ModelProvider {
     const timer = setTimeout(() => controller.abort(), this.options.timeoutMs)
     const abort = () => controller.abort(signal?.reason)
     signal?.addEventListener("abort", abort, { once: true })
+    const activeSpan = trace.getActiveSpan()
+    activeSpan?.setAttributes({
+      "gen_ai.provider.name": "openai_compatible",
+      "gen_ai.request.model": this.options.model,
+      "gen_ai.request.max_tokens": maxTokens,
+      "gen_ai.request.streaming": stream,
+      "server.address": new URL(this.options.baseUrl).hostname,
+    })
     try {
       let response: Response
       try {
@@ -146,6 +170,9 @@ export class OpenAICompatibleProvider implements ModelProvider {
         })
         throw new Error(errorCode)
       }
+      activeSpan?.setAttribute("http.response.status_code", response.status)
+      const providerRequestId = response.headers.get("x-request-id")
+      if (providerRequestId) activeSpan?.setAttribute("server.request.id", providerRequestId)
       agentMetrics.externalRequests.add(1, {
         target: "model_provider",
         operation: stream ? "chat_stream" : "chat_complete",
@@ -202,8 +229,10 @@ function providerTransportError(error: unknown, signal?: AbortSignal): Error {
 
 type ToolCallShape = { index: number, id?: string, function?: { name?: string, arguments?: string } }
 type MessageShape = { content?: unknown, reasoning_summary?: unknown, tool_calls?: Array<{ id?: string, function?: { name?: string, arguments?: string } }> }
-type CompletionBody = { choices?: Array<{ message?: MessageShape }>, usage?: { prompt_tokens?: number, completion_tokens?: number } }
+type CompletionBody = { id?: string, model?: string, choices?: Array<{ message?: MessageShape }>, usage?: { prompt_tokens?: number, completion_tokens?: number } }
 type StreamChunk = {
+  id?: string
+  model?: string
   choices?: Array<{ delta?: { content?: unknown, reasoning_summary?: unknown, tool_calls?: ToolCallShape[] } }>
   usage?: { prompt_tokens?: number, completion_tokens?: number }
   error?: unknown

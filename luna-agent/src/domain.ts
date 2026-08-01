@@ -56,6 +56,7 @@ export type Run = {
   promptVersion: PromptVersion
   toolCatalogDigest: string
   pageContext: Record<string, unknown>
+  traceContext?: Record<string, string>
   clientInstanceId?: string
   createdAt: string
   startedAt?: string
@@ -87,6 +88,7 @@ export type CreateTurn = {
   conversationId: string
   input: string
   pageContext: Record<string, unknown>
+  traceContext?: Record<string, string>
   idempotencyKey: string
   preallocatedRunId?: string
   runActorGrantCiphertext?: string

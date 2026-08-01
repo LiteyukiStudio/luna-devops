@@ -37,6 +37,27 @@ describe("internal API", () => {
     expect(turn.json()).toMatchObject({ state: "queued", turnIndex: 0 })
     await app.close()
   })
+  it("never exposes persisted trace propagation state in run responses", async () => {
+    const { app, repository } = fixture()
+    const conversation = await repository.createConversation("usr_trace_response", "trace")
+    const { run } = await repository.createTurn("usr_trace_response", {
+      conversationId: conversation.id,
+      input: "检查链路",
+      pageContext: {},
+      idempotencyKey: "trace-response-1",
+      traceContext: { traceparent: "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01" },
+    })
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/internal/v1/runs/${run.id}`,
+      headers: { "x-luna-dev-user": "usr_trace_response" },
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).not.toHaveProperty("traceContext")
+    await app.close()
+  })
   it("marks browser title edits as user-owned and permanently blocks assistant renames", async () => {
     const { app, repository } = fixture()
     const headers = { "x-luna-dev-user": "usr_title_owner" }
@@ -125,6 +146,7 @@ describe("internal API", () => {
     const runId = turnCreated.runId
     expect(turnCreated.turnIndex).toBe(0)
     expect(turnCreated.eventsUrl).toBe(`/api/v1/ai/runs/${runId}/events`)
+
     const response = await app.inject({ method: "GET", url: `/internal/v1/conversations/${conversationId}/timeline`, headers })
     const timeline: AITimeline = response.json<AITimeline>()
     expect(response.statusCode).toBe(200)

@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto"
 import type {
   Conversation,
   ConversationHistoryEntry,
@@ -14,6 +13,7 @@ import type {
 } from "../domain.js"
 import { createId } from "../id.js"
 import type { Repository } from "./repository.js"
+import { createTurnRequestHash } from "./create-turn-hash.js"
 
 type StoredRun = Run & { ownerUserId: string, leaseOwner?: string, leaseExpiresAt?: number, runActorGrantCiphertext?: string }
 
@@ -86,7 +86,7 @@ export class MemoryRepository implements Repository {
 
   async createTurn(ownerUserId: string, input: CreateTurn): Promise<CreatedTurn> {
     if (!await this.getConversation(ownerUserId, input.conversationId)) throw new Error("ai.conversation_not_found")
-    const hash = createHash("sha256").update(JSON.stringify(input)).digest("hex")
+    const hash = createTurnRequestHash(input)
     const key = `${ownerUserId}:${input.idempotencyKey}`
     const previous = this.idempotency.get(key)
     if (previous) {
@@ -104,6 +104,7 @@ export class MemoryRepository implements Repository {
       id: runId, conversationId: input.conversationId, turnId: turn.id, runIndex: 0,
       status: "queued", rowVersion: 1, graphVersion: "assistant-v1", promptVersion: "system-v4",
       toolCatalogDigest: input.toolCatalogDigest ?? "sha256:platform-tools-v1", pageContext: input.pageContext,
+      ...(input.traceContext ? { traceContext: input.traceContext } : {}),
       clientInstanceId: input.clientInstanceId ?? "memory-client-instance", createdAt: now, ownerUserId,
       ...(input.runActorGrantCiphertext ? { runActorGrantCiphertext: input.runActorGrantCiphertext } : {}),
     }
