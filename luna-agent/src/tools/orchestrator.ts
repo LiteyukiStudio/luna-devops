@@ -274,9 +274,11 @@ export class ProjectingToolCallStore implements ToolCallStore {
     if (!execution) return
     const itemId = `${call.id}:item`
     const content = redact(toolCallContent(call))
-    const item = event.type === "tool.started"
-      ? await this.repository.appendItem({ id: itemId, runId: call.runId, turnId: execution.turnId, type: "tool_call", status: "streaming", content })
-      : await this.repository.updateItem(itemId, toolItemStatus(event.type), content)
+    const publicType = publicToolEventType(event.type)
+    const eventData = { itemId, toolCallId: call.id, ...event.data }
+    await (event.type === "tool.started"
+      ? this.repository.appendItemWithEvent({ id: itemId, runId: call.runId, turnId: execution.turnId, type: "tool_call", status: "streaming", content }, publicType, eventData)
+      : this.repository.updateItemWithEvent(itemId, toolItemStatus(event.type), content, publicType, eventData))
     if (isToolTerminalEvent(event.type)) {
       await this.repository.appendItem({
         id: `${call.id}:result`, runId: call.runId, turnId: execution.turnId, type: "tool_result",
@@ -284,9 +286,6 @@ export class ProjectingToolCallStore implements ToolCallStore {
         content: redact({ relatedItemId: itemId, result: call.result, errorCode: call.errorCode }),
       })
     }
-    await this.repository.appendEvent(call.runId, publicToolEventType(event.type), {
-      itemId, toolCallId: call.id, timelineIndex: item.timelineIndex, ...event.data,
-    })
   }
 }
 

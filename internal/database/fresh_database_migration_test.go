@@ -144,6 +144,9 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 		{table: "applications", column: "identifier"},
 		{table: "deployment_targets", column: "kubernetes_name"},
 		{table: "ai.runs", column: "client_instance_id"},
+		{table: "ai.runs", column: "next_item_position"},
+		{table: "ai.runs", column: "next_event_sequence"},
+		{table: "ai.items", column: "revision"},
 	} {
 		if !db.Migrator().HasColumn(expected.table, expected.column) {
 			t.Fatalf("fresh database is missing %s.%s", expected.table, expected.column)

@@ -167,7 +167,7 @@ describe("internal API", () => {
     expect(events).toMatchObject({
       cursor: 1,
       items: [{
-        version: 1,
+        version: 2,
         eventSequence: 1,
         type: "run.queued",
         conversationId,
@@ -199,7 +199,7 @@ describe("internal API", () => {
     expect(response.statusCode).toBe(200)
     expect(response.headers["content-type"]).toContain("text/event-stream")
     expect(response.body).toContain("event: run.queued")
-    expect(response.body).toContain("\"version\":1")
+    expect(response.body).toContain("\"version\":2")
     expect(response.body).not.toContain("\"items\"")
     await app.close()
   })

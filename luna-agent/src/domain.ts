@@ -69,10 +69,16 @@ export type TimelineItem = {
   runId: string
   turnId: string
   timelineIndex: number
+  revision: number
   type: "user_message" | "reasoning_summary" | "assistant_message" | "tool_call" | "tool_result"
   status: "streaming" | "completed" | "failed"
   content: Record<string, unknown>
   createdAt: string
+}
+
+export type TimelineMutation = {
+  item: TimelineItem
+  event: RunEvent
 }
 
 export type RunEvent = {

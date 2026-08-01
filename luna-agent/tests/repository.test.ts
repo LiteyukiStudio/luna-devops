@@ -78,4 +78,30 @@ describe("conversation repository", () => {
       assistant: "构建失败在测试阶段。",
     }])
   })
+
+  it("publishes an authoritative revision when a streaming item is finalized", async () => {
+    const repository = new MemoryRepository()
+    const conversation = await repository.createConversation("usr_a", "finalize")
+    const created = await repository.createTurn("usr_a", {
+      conversationId: conversation.id, input: "hello", pageContext: {}, idempotencyKey: "finalize-stream",
+    })
+    const item = await repository.appendItem({
+      runId: created.run.id,
+      turnId: created.turn.id,
+      type: "assistant_message",
+      status: "streaming",
+      content: { parts: [{ type: "text", text: "partial" }] },
+    })
+
+    await repository.finalizeStreamingItems(created.run.id, "failed")
+
+    const timeline = await repository.getTimeline("usr_a", conversation.id)
+    const finalized = timeline?.turns[0]?.items.find(candidate => candidate.id === item.id)
+    const event = (await repository.getEvents("usr_a", created.run.id, 0)).at(-1)
+    expect(finalized).toMatchObject({ status: "failed", revision: 2 })
+    expect(event).toMatchObject({
+      type: "item.finalized",
+      data: { item: { id: item.id, status: "failed", revision: 2 } },
+    })
+  })
 })

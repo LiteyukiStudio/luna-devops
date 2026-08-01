@@ -7,6 +7,7 @@ import type {
   Run,
   RunEvent,
   TimelineItem,
+  TimelineMutation,
   UIActionAcknowledgement,
   UIActionDelivery,
 } from "../domain.js"
@@ -38,8 +39,10 @@ export interface Repository {
   renewLease(runId: string, instanceId: string, leaseSeconds: number): Promise<boolean>
   releaseLease(runId: string, instanceId: string): Promise<void>
   updateRun(runId: string, from: Run["status"], to: Run["status"], fields?: Partial<Run>): Promise<Run>
-  appendItem(item: Omit<TimelineItem, "id" | "timelineIndex" | "createdAt"> & { id?: string }): Promise<TimelineItem>
+  appendItem(item: Omit<TimelineItem, "id" | "timelineIndex" | "revision" | "createdAt"> & { id?: string }): Promise<TimelineItem>
   updateItem(itemId: string, status: TimelineItem["status"], content: Record<string, unknown>): Promise<TimelineItem>
+  appendItemWithEvent(item: Omit<TimelineItem, "id" | "timelineIndex" | "revision" | "createdAt"> & { id?: string }, eventType: string, eventData?: Record<string, unknown>): Promise<TimelineMutation>
+  updateItemWithEvent(itemId: string, status: TimelineItem["status"], content: Record<string, unknown>, eventType: string, eventData?: Record<string, unknown>): Promise<TimelineMutation>
   finalizeStreamingItems(runId: string, status: Exclude<TimelineItem["status"], "streaming">): Promise<void>
   appendEvent(runId: string, type: string, data: Record<string, unknown>): Promise<RunEvent>
   getEvents(ownerUserId: string, runId: string, after: number): Promise<RunEvent[]>

@@ -80,4 +80,49 @@ describe("PostgreSQL bigint event sequence normalization", () => {
     expect(event?.payload.result).toEqual(toolResult)
     expect(JSON.stringify(event?.payload.result)).not.toContain("must-not-leak")
   })
+
+  it("uses the same authoritative item revision and position for live events and snapshots", async () => {
+    const repository = new MemoryRepository()
+    const conversation = await repository.createConversation("usr_a", "authoritative timeline")
+    const created = await repository.createTurn("usr_a", {
+      conversationId: conversation.id, input: "inspect the project", pageContext: {}, idempotencyKey: "authoritative-item",
+    })
+    const started = await repository.appendItemWithEvent({
+      runId: created.run.id,
+      turnId: created.turn.id,
+      type: "assistant_message",
+      status: "streaming",
+      content: { parts: [{ type: "text", text: "正在检查" }] },
+    }, "content.delta")
+    const completed = await repository.updateItemWithEvent(
+      started.item.id,
+      "completed",
+      { parts: [{ type: "text", text: "检查完成" }] },
+      "message.completed",
+    )
+
+    const startedEvent = await presentEvent(repository, "usr_a", started.event)
+    const completedEvent = await presentEvent(repository, "usr_a", completed.event)
+    const timeline = await presentTimeline(repository, "usr_a", conversation.id)
+    const snapshotItem = timeline?.turns[0]?.selectedRun?.items[0]
+
+    expect(startedEvent).toMatchObject({
+      version: 2,
+      eventSequence: 2,
+      item: { id: started.item.id, timelineIndex: 1, revision: 1, status: "streaming" },
+    })
+    expect(completedEvent).toMatchObject({
+      version: 2,
+      eventSequence: 3,
+      item: { id: started.item.id, timelineIndex: 1, revision: 2, status: "completed" },
+    })
+    expect(snapshotItem).toMatchObject({
+      id: started.item.id,
+      timelineIndex: 1,
+      revision: 2,
+      status: "completed",
+      parts: [{ text: "检查完成" }],
+    })
+    expect(timeline?.eventCursors).toEqual([{ runId: created.run.id, after: 3 }])
+  })
 })

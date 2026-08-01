@@ -1,10 +1,10 @@
-import type { AIEvent, AITimeline } from '@/api'
+import type { AIEvent, AITimeline, AITimelineItem } from '@/api'
 import { describe, expect, it } from 'vitest'
 import { addOptimisticTurn, emptyAIAssistantState, isValidAITimeline, mergeTimelineSnapshot, reduceAIEvent, stateFromTimeline } from './state'
 
 function event(overrides: Partial<AIEvent>): AIEvent {
   return {
-    version: 1,
+    version: 2,
     eventId: 'event-1',
     eventSequence: 1,
     type: 'content.delta',
@@ -14,6 +14,34 @@ function event(overrides: Partial<AIEvent>): AIEvent {
     itemId: 'item-1',
     occurredAt: '2026-07-28T00:00:00Z',
     payload: { delta: 'hello' },
+    item: messageItem(),
+    ...overrides,
+  }
+}
+
+function messageItem(overrides: Partial<AITimelineItem> = {}): AITimelineItem {
+  return {
+    id: 'item-1',
+    timelineIndex: 0,
+    revision: 1,
+    createdAt: '2026-07-28T00:00:00Z',
+    type: 'assistant_message',
+    status: 'streaming',
+    parts: [{ id: 'item-1:0', partIndex: 0, type: 'text', text: 'hello' }],
+    ...overrides,
+  }
+}
+
+function toolItem(overrides: Partial<AITimelineItem> = {}): AITimelineItem {
+  return {
+    id: 'tool-item',
+    timelineIndex: 0,
+    revision: 1,
+    createdAt: '2026-07-28T00:00:00Z',
+    type: 'tool_call',
+    status: 'streaming',
+    parts: [],
+    toolCall: { id: 'tool-1', operationId: 'listApplications', callIndex: 0, status: 'running', arguments: {} },
     ...overrides,
   }
 }
@@ -27,7 +55,12 @@ describe('aI assistant state', () => {
   it('merges streaming deltas and ignores duplicate or stale events', () => {
     const first = reduceAIEvent(emptyAIAssistantState, event({}))
     const duplicate = reduceAIEvent(first, event({}))
-    const second = reduceAIEvent(duplicate, event({ eventId: 'event-2', eventSequence: 2, payload: { delta: ' world' } }))
+    const second = reduceAIEvent(duplicate, event({
+      eventId: 'event-2',
+      eventSequence: 2,
+      payload: { delta: ' world' },
+      item: messageItem({ revision: 2, parts: [{ id: 'item-1:0', partIndex: 0, type: 'text', text: 'hello world' }] }),
+    }))
     expect(duplicate).toBe(first)
     expect(second.blocks[0]).toMatchObject({ text: 'hello world' })
   })
@@ -52,6 +85,7 @@ describe('aI assistant state', () => {
       runId: 'run-new',
       itemId: 'new-answer',
       payload: { delta: 'answer', timelineIndex: 0 },
+      item: messageItem({ id: 'new-answer', parts: [{ id: 'new-answer:0', partIndex: 0, type: 'text', text: 'answer' }] }),
     }))
     expect(streamed.blocks.map(block => block.id)).toEqual([
       'turn-older:input',
@@ -60,13 +94,17 @@ describe('aI assistant state', () => {
     ])
   })
 
-  it('does not regress a longer live block when a delayed timeline snapshot arrives', () => {
+  it('does not regress a newer live item revision when a delayed timeline snapshot arrives', () => {
     const live = reduceAIEvent(addOptimisticTurn(emptyAIAssistantState, {
       turnId: 'turn',
       turnIndex: 0,
       runId: 'run',
       text: 'question',
-    }), event({ itemId: 'answer', payload: { delta: 'streamed answer', timelineIndex: 0 } }))
+    }), event({
+      itemId: 'answer',
+      payload: { delta: 'streamed answer', timelineIndex: 0 },
+      item: messageItem({ id: 'answer', revision: 2, parts: [{ id: 'answer:0', partIndex: 0, type: 'text', text: 'streamed answer' }] }),
+    }))
     const snapshot: AITimeline = {
       conversation: { id: 'conversation-1', title: 't', titleSource: 'assistant', status: 'active' },
       eventCursors: [{ runId: 'run', after: 0 }],
@@ -79,7 +117,7 @@ describe('aI assistant state', () => {
           id: 'run',
           runIndex: 0,
           status: 'running',
-          items: [{ id: 'answer', timelineIndex: 0, createdAt: '2026-07-28T00:00:01Z', type: 'assistant_message', status: 'streaming', parts: [{ id: 'answer:0', partIndex: 0, type: 'text', text: 'streamed' }] }],
+          items: [{ id: 'answer', timelineIndex: 0, revision: 1, createdAt: '2026-07-28T00:00:01Z', type: 'assistant_message', status: 'streaming', parts: [{ id: 'answer:0', partIndex: 0, type: 'text', text: 'streamed' }] }],
         },
       }],
     }
@@ -87,13 +125,14 @@ describe('aI assistant state', () => {
   })
 
   it('maps a started run to the active running state', () => {
-    const state = reduceAIEvent(emptyAIAssistantState, event({ type: 'run.started' }))
+    const state = reduceAIEvent(emptyAIAssistantState, event({ type: 'run.started', item: undefined }))
     expect(state.runStatuses['run-1']).toBe('running')
   })
 
   it('renders a stable failure notice from a terminal SSE event', () => {
     const state = reduceAIEvent(emptyAIAssistantState, event({
       type: 'run.failed',
+      item: undefined,
       payload: { errorCode: 'ai.provider_quota_exhausted' },
     }))
     expect(state.runStatuses['run-1']).toBe('failed')
@@ -144,8 +183,8 @@ describe('aI assistant state', () => {
           runIndex: 0,
           status: 'completed',
           items: [
-            { id: 'call', timelineIndex: 0, createdAt: '2026-07-28T00:00:01Z', type: 'tool_call', status: 'completed', parts: [], toolCall: { id: 'tool', operationId: 'runtime.read', callIndex: 0 } },
-            { id: 'result', timelineIndex: 1, createdAt: '2026-07-28T00:00:02Z', type: 'tool_result', status: 'completed', relatedItemId: 'call', parts: [{ id: 'r', partIndex: 0, type: 'structured_data', data: { summaryKey: 'aiAssistant.resultAvailable' } }] },
+            { id: 'call', timelineIndex: 0, revision: 1, createdAt: '2026-07-28T00:00:01Z', type: 'tool_call', status: 'completed', parts: [], toolCall: { id: 'tool', operationId: 'runtime.read', callIndex: 0 } },
+            { id: 'result', timelineIndex: 1, revision: 1, createdAt: '2026-07-28T00:00:02Z', type: 'tool_result', status: 'completed', relatedItemId: 'call', parts: [{ id: 'r', partIndex: 0, type: 'structured_data', data: { summaryKey: 'aiAssistant.resultAvailable' } }] },
           ],
         },
       }],
@@ -160,6 +199,9 @@ describe('aI assistant state', () => {
       type: 'tool.started',
       toolCallId: 'tool-1',
       payload: { operationId: 'restartDeploymentTarget', arguments: { targetId: 'target-1' }, argumentsHash: 'sha256:abc', expectedVersion: 1 },
+      item: toolItem({
+        toolCall: { id: 'tool-1', operationId: 'restartDeploymentTarget', callIndex: 0, status: 'running', arguments: { targetId: 'target-1' }, argumentsHash: 'sha256:abc', expectedVersion: 1 },
+      }),
     }))
     const approval = reduceAIEvent(started, event({
       eventId: 'event-2',
@@ -167,6 +209,10 @@ describe('aI assistant state', () => {
       type: 'approval.required',
       toolCallId: 'tool-1',
       payload: { argumentsHash: 'sha256:abc', expectedVersion: 2 },
+      item: toolItem({
+        revision: 2,
+        toolCall: { id: 'tool-1', operationId: 'restartDeploymentTarget', callIndex: 0, status: 'awaiting_approval', arguments: { targetId: 'target-1' }, argumentsHash: 'sha256:abc', expectedVersion: 2 },
+      }),
     }))
     expect(approval.blocks[0]).toMatchObject({
       type: 'tool_call',
@@ -186,6 +232,11 @@ describe('aI assistant state', () => {
         arguments: { schemaVersion: 1, generationId: 'database-list', title: '正在整理数据库候选' },
         timelineIndex: 2,
       },
+      item: toolItem({
+        id: 'card-item',
+        timelineIndex: 2,
+        toolCall: { id: 'card-generation', operationId: 'prepare_interaction_cards', callIndex: 2, status: 'running', arguments: { schemaVersion: 1, generationId: 'database-list', title: '正在整理数据库候选' } },
+      }),
     }))
     const completed = reduceAIEvent(started, event({
       eventId: 'event-2',
@@ -203,6 +254,19 @@ describe('aI assistant state', () => {
         },
         timelineIndex: 2,
       },
+      item: toolItem({
+        id: 'card-item',
+        timelineIndex: 2,
+        revision: 2,
+        status: 'completed',
+        toolCall: {
+          id: 'card-generation',
+          operationId: 'create_interaction_cards',
+          callIndex: 2,
+          status: 'succeeded',
+          arguments: { schemaVersion: 1, generationId: 'database-list', title: '数据库候选', template: 'catalog', cards: [] },
+        },
+      }),
     }))
 
     expect(completed.blocks).toHaveLength(1)
@@ -219,6 +283,7 @@ describe('aI assistant state', () => {
       type: 'tool.started',
       toolCallId: 'tool-1',
       payload: { operationId: 'listApplications', arguments: { projectId: 'prj_1' } },
+      item: toolItem({ toolCall: { id: 'tool-1', operationId: 'listApplications', callIndex: 0, status: 'running', arguments: { projectId: 'prj_1' } } }),
     }))
     const failed = reduceAIEvent(started, event({
       eventId: 'event-2',
@@ -232,6 +297,19 @@ describe('aI assistant state', () => {
           requestId: 'req_tool_failure',
         },
       },
+      item: toolItem({
+        revision: 2,
+        status: 'failed',
+        toolCall: {
+          id: 'tool-1',
+          operationId: 'listApplications',
+          callIndex: 0,
+          status: 'failed',
+          arguments: { projectId: 'prj_1' },
+          errorCode: 'ai.tool_storage_unavailable',
+          result: { summaryKey: 'ai.tool.result.failed', errorCode: 'ai.tool_storage_unavailable', requestId: 'req_tool_failure' },
+        },
+      }),
     }))
 
     expect(failed.blocks[0]).toMatchObject({
@@ -242,5 +320,47 @@ describe('aI assistant state', () => {
         requestId: 'req_tool_failure',
       },
     })
+  })
+
+  it('keeps message, tool and follow-up message in authoritative item order during streaming', () => {
+    const firstMessage = reduceAIEvent(emptyAIAssistantState, event({
+      item: messageItem({ id: 'message-1', timelineIndex: 0, revision: 1, parts: [{ id: 'message-1:0', partIndex: 0, type: 'text', text: '先检查资源。' }] }),
+    }))
+    const completedMessage = reduceAIEvent(firstMessage, event({
+      eventId: 'event-2',
+      eventSequence: 2,
+      type: 'message.completed',
+      payload: {},
+      item: messageItem({ id: 'message-1', timelineIndex: 0, revision: 2, status: 'completed', parts: [{ id: 'message-1:0', partIndex: 0, type: 'text', text: '先检查资源。' }] }),
+    }))
+    const tool = reduceAIEvent(completedMessage, event({
+      eventId: 'event-3',
+      eventSequence: 3,
+      type: 'tool.completed',
+      payload: {},
+      item: toolItem({ id: 'tool-item', timelineIndex: 1, status: 'completed', toolCall: { id: 'tool-1', operationId: 'listProjects', callIndex: 1, status: 'succeeded', arguments: {} } }),
+    }))
+    const followUp = reduceAIEvent(tool, event({
+      eventId: 'event-4',
+      eventSequence: 4,
+      itemId: 'message-2',
+      payload: { delta: '接下来检查部署。' },
+      item: messageItem({ id: 'message-2', timelineIndex: 2, revision: 1, parts: [{ id: 'message-2:0', partIndex: 0, type: 'text', text: '接下来检查部署。' }] }),
+    }))
+
+    expect(followUp.blocks.map(block => block.id)).toEqual(['message-1', 'tool-item', 'message-2'])
+  })
+
+  it('stops projection and requests a snapshot when an event sequence has a gap', () => {
+    const first = reduceAIEvent(emptyAIAssistantState, event({}))
+    const gap = reduceAIEvent(first, event({
+      eventId: 'event-3',
+      eventSequence: 3,
+      item: messageItem({ revision: 3, parts: [{ id: 'item-1:0', partIndex: 0, type: 'text', text: 'must not apply before recovery' }] }),
+    }))
+
+    expect(gap.blocks[0]).toMatchObject({ text: 'hello' })
+    expect(gap.desyncedRunIds.has('run-1')).toBe(true)
+    expect(gap.lastEventSequences['run-1']).toBe(1)
   })
 })

@@ -4,7 +4,7 @@ import { automaticRouteDeliveryFromEvent, automaticRouteDeliveryFromPending } fr
 
 function event(payload: Record<string, unknown>, type = 'tool.completed'): AIEvent {
   return {
-    version: 1,
+    version: 2,
     eventId: 'evt_1',
     eventSequence: 1,
     type,

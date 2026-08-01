@@ -1,4 +1,4 @@
-import type { AIEvent, AIMessagePart, AITimeline, AIToolDisplayResult, AIToolStatus, AIUIAction } from '@/api'
+import type { AIEvent, AIMessagePart, AITimeline, AITimelineItem, AIToolDisplayResult, AIToolStatus, AIUIAction } from '@/api'
 
 export type AIBlock
   = | { id: string, turnId: string, index: number, type: 'thinking', status: string, display: 'summary' | 'progress', text: string }
@@ -13,6 +13,8 @@ export interface AIAssistantState {
   runExpectedVersions: Record<string, number>
   lastEventSequences: Record<string, number>
   turnIndexes: Record<string, number>
+  itemRevisions: Record<string, number>
+  desyncedRunIds: Set<string>
 }
 
 const TURN_ORDER_STRIDE = 1_000_000
@@ -37,7 +39,7 @@ export function isValidAITimeline(value: unknown): value is AITimeline {
     && turn.input.parts.every(part => Boolean(part) && typeof part.id === 'string' && typeof part.partIndex === 'number')
     && (!turn.selectedRun || (typeof turn.selectedRun.id === 'string'
       && Array.isArray(turn.selectedRun.items)
-      && turn.selectedRun.items.every(item => Boolean(item) && typeof item.id === 'string' && typeof item.timelineIndex === 'number' && typeof item.createdAt === 'string' && Array.isArray(item.parts)))),
+      && turn.selectedRun.items.every(item => Boolean(item) && typeof item.id === 'string' && typeof item.timelineIndex === 'number' && typeof item.revision === 'number' && typeof item.createdAt === 'string' && Array.isArray(item.parts)))),
   ) && candidate.eventCursors.every(cursor => Boolean(cursor) && typeof cursor.runId === 'string' && typeof cursor.after === 'number')
 }
 
@@ -109,6 +111,8 @@ export function stateFromTimeline(timeline: AITimeline): AIAssistantState {
     runExpectedVersions: Object.fromEntries(timeline.turns.flatMap(turn => turn.selectedRun?.expectedVersion === undefined ? [] : [[turn.selectedRun.id, turn.selectedRun.expectedVersion]])),
     lastEventSequences: Object.fromEntries(timeline.eventCursors.map(cursor => [cursor.runId, cursor.after])),
     turnIndexes: Object.fromEntries(timeline.turns.map(turn => [turn.id, turn.turnIndex])),
+    itemRevisions: Object.fromEntries(timeline.turns.flatMap(turn => turn.selectedRun?.items.map(item => [item.id, item.revision]) ?? [])),
+    desyncedRunIds: new Set(),
   }
 }
 
@@ -122,14 +126,14 @@ export function mergeTimelineSnapshot(current: AIAssistantState | undefined, tim
     const live = currentBlocks.get(block.id)
     if (!live || live.type !== block.type)
       return block
-    if ((block.type === 'message' && live.type === 'message') || (block.type === 'thinking' && live.type === 'thinking')) {
-      return live.text.length > block.text.length ? { ...live, index: block.index } : block
-    }
-    if (block.type === 'tool_call' && live.type === 'tool_call' && live.status !== 'succeeded' && live.status !== 'failed')
-      return { ...live, index: block.index }
-    return block
+    return (current.itemRevisions[block.id] ?? 0) > (snapshot.itemRevisions[block.id] ?? 0) ? live : block
   })
-  current.blocks.filter(block => block.status === 'streaming' && !snapshotIds.has(block.id)).forEach(block => blocks.push(block))
+  current.blocks
+    .filter(block => block.type === 'message'
+      && block.role === 'user'
+      && (current.itemRevisions[block.id] ?? 0) === 0
+      && !snapshotIds.has(block.id))
+    .forEach(block => blocks.push(block))
   return {
     ...snapshot,
     blocks: blocks.sort((a, b) => a.index - b.index),
@@ -139,6 +143,9 @@ export function mergeTimelineSnapshot(current: AIAssistantState | undefined, tim
     runStatuses: mergeRunStatuses(snapshot.runStatuses, current.runStatuses),
     runExpectedVersions: { ...snapshot.runExpectedVersions, ...current.runExpectedVersions },
     turnIndexes: { ...snapshot.turnIndexes, ...current.turnIndexes },
+    itemRevisions: Object.fromEntries([...new Set([...Object.keys(current.itemRevisions), ...Object.keys(snapshot.itemRevisions)])]
+      .map(itemId => [itemId, Math.max(current.itemRevisions[itemId] ?? 0, snapshot.itemRevisions[itemId] ?? 0)])),
+    desyncedRunIds: new Set([...current.desyncedRunIds].filter(runId => snapshot.lastEventSequences[runId] === undefined)),
   }
 }
 
@@ -168,6 +175,7 @@ export function addOptimisticTurn(state: AIAssistantState, input: { turnId: stri
     }].sort((a, b) => a.index - b.index),
     runStatuses: { ...state.runStatuses, [input.runId]: 'queued' },
     turnIndexes: { ...state.turnIndexes, [input.turnId]: input.turnIndex },
+    itemRevisions: { ...state.itemRevisions, [`${input.turnId}:input`]: 0 },
   }
 }
 
@@ -182,29 +190,97 @@ function updateBlock(state: AIAssistantState, id: string, update: (block: AIBloc
   return state.blocks.map((block, index) => index === blockIndex ? update(block) : block).sort((a, b) => a.index - b.index)
 }
 
+function blockFromTimelineItem(item: AITimelineItem, turnId: string, runId: string, turnIndex: number, expectedVersion?: number): AIBlock | undefined {
+  const index = blockIndex(turnIndex, item.timelineIndex)
+  if (item.type === 'assistant_message') {
+    return {
+      id: item.id,
+      turnId,
+      index,
+      type: 'message',
+      role: 'assistant',
+      status: item.status,
+      text: textFromParts(item.parts),
+      createdAt: item.createdAt,
+    }
+  }
+  if (item.type === 'reasoning_summary' || item.type === 'progress') {
+    return {
+      id: item.id,
+      turnId,
+      index,
+      type: 'thinking',
+      status: item.status,
+      display: item.type === 'progress' ? 'progress' : item.display ?? 'summary',
+      text: textFromParts(item.parts),
+    }
+  }
+  if (item.type !== 'tool_call' || !item.toolCall)
+    return undefined
+  return {
+    id: item.id,
+    turnId,
+    runId,
+    index,
+    type: 'tool_call',
+    toolCallId: item.toolCall.id,
+    operationId: item.toolCall.operationId,
+    titleKey: item.toolCall.titleKey,
+    errorCode: item.toolCall.errorCode,
+    status: item.toolCall.status ?? (item.status === 'completed' ? 'succeeded' : item.status === 'failed' ? 'failed' : 'running'),
+    arguments: item.toolCall.arguments ?? {},
+    result: normalizeToolResult(item.toolCall.result),
+    uiActions: item.toolCall.uiActions ?? [],
+    durationMs: item.toolCall.durationMs,
+    argumentsHash: item.toolCall.argumentsHash,
+    expectedVersion: item.toolCall.expectedVersion ?? expectedVersion,
+    mfaPurpose: item.toolCall.mfaPurpose,
+  }
+}
+
+function applyAuthoritativeItem(state: AIAssistantState, event: AIEvent, turnIndex: number): AIAssistantState {
+  const item = event.item
+  if (!item || item.revision <= (state.itemRevisions[item.id] ?? 0))
+    return state
+  const block = blockFromTimelineItem(item, event.turnId, event.runId, turnIndex, state.runExpectedVersions[event.runId])
+  if (!block)
+    return { ...state, itemRevisions: { ...state.itemRevisions, [item.id]: item.revision } }
+  const existingIndex = state.blocks.findIndex(candidate => candidate.id === item.id)
+  const blocks = existingIndex < 0
+    ? [...state.blocks, block]
+    : state.blocks.map((candidate, index) => index === existingIndex ? block : candidate)
+  return {
+    ...state,
+    blocks: blocks.sort((left, right) => left.index - right.index),
+    itemRevisions: { ...state.itemRevisions, [item.id]: item.revision },
+  }
+}
+
 export function reduceAIEvent(state: AIAssistantState, event: AIEvent): AIAssistantState {
-  if (event.version !== 1 || !event.eventId || state.seenEventIds.has(event.eventId))
+  if (event.version !== 2 || !event.eventId || state.seenEventIds.has(event.eventId))
     return state
-  if (event.eventSequence <= (state.lastEventSequences[event.runId] ?? 0))
+  const lastSequence = state.lastEventSequences[event.runId] ?? 0
+  if (event.eventSequence <= lastSequence)
     return state
+  if (event.eventSequence !== lastSequence + 1) {
+    return {
+      ...state,
+      desyncedRunIds: new Set(state.desyncedRunIds).add(event.runId),
+    }
+  }
 
   const turnIndex = state.turnIndexes[event.turnId] ?? Math.max(-1, ...Object.values(state.turnIndexes)) + 1
-  const next = {
+  const next = applyAuthoritativeItem({
     ...state,
     seenEventIds: new Set(state.seenEventIds).add(event.eventId),
     lastEventSequences: { ...state.lastEventSequences, [event.runId]: event.eventSequence },
     turnIndexes: { ...state.turnIndexes, [event.turnId]: turnIndex },
-  }
-  const itemId = event.itemId ?? `${event.type}:${event.runId}`
-  const timelineIndex = typeof event.payload.timelineIndex === 'number'
-    ? event.payload.timelineIndex
-    : TURN_ORDER_STRIDE / 2 + event.eventSequence
-  const eventIndex = blockIndex(turnIndex, timelineIndex)
+  }, event, turnIndex)
 
-  if (event.type === 'run.started' || event.type === 'run.queued' || event.type === 'run.waiting_approval' || event.type === 'run.waiting_mfa' || event.type === 'run.waiting_input' || event.type === 'run.completed' || event.type === 'run.failed' || event.type === 'run.canceled') {
-    const status = event.type === 'run.started' ? 'running' : event.type.slice(4)
+  if (event.type === 'run.started' || event.type === 'run.running' || event.type === 'run.queued' || event.type === 'run.waiting_approval' || event.type === 'run.waiting_mfa' || event.type === 'run.waiting_input' || event.type === 'run.completed' || event.type === 'run.failed' || event.type === 'run.canceled') {
+    const status = event.type === 'run.started' || event.type === 'run.running' ? 'running' : event.type.slice(4)
     const terminalBlock = status === 'failed' || status === 'canceled'
-      ? updateBlock(state, `${event.runId}:status`, block => block.type === 'run_status'
+      ? updateBlock(next, `${event.runId}:status`, block => block.type === 'run_status'
           ? { ...block, status, errorCode: stringPayload(event.payload, 'errorCode') || block.errorCode }
           : block, () => ({
           id: `${event.runId}:status`,
@@ -215,120 +291,27 @@ export function reduceAIEvent(state: AIAssistantState, event: AIEvent): AIAssist
           status,
           errorCode: stringPayload(event.payload, 'errorCode') || undefined,
         }))
-      : state.blocks
+      : next.blocks
     return {
       ...next,
       blocks: terminalBlock,
-      runStatuses: { ...state.runStatuses, [event.runId]: status },
+      runStatuses: { ...next.runStatuses, [event.runId]: status },
       runExpectedVersions: typeof event.payload.expectedVersion === 'number'
-        ? { ...state.runExpectedVersions, [event.runId]: event.payload.expectedVersion }
-        : state.runExpectedVersions,
-    }
-  }
-  if (event.type === 'content.delta') {
-    const delta = stringPayload(event.payload, 'delta') || stringPayload(event.payload, 'text')
-    return {
-      ...next,
-      blocks: updateBlock(state, itemId, block => block.type === 'message' ? { ...block, index: eventIndex, text: block.text + delta, status: 'streaming' } : block, () => ({
-        id: itemId,
-        turnId: event.turnId,
-        index: eventIndex,
-        type: 'message',
-        role: 'assistant',
-        status: 'streaming',
-        text: delta,
-        createdAt: event.occurredAt,
-      })),
-    }
-  }
-  if (event.type === 'content.completed' || event.type === 'message.completed' || event.type === 'item.completed') {
-    return {
-      ...next,
-      blocks: updateBlock(state, itemId, block => block.type === 'tool_call' || block.type === 'run_status' ? block : { ...block, index: eventIndex, status: 'completed' }),
+        ? { ...next.runExpectedVersions, [event.runId]: event.payload.expectedVersion }
+        : next.runExpectedVersions,
     }
   }
   if (event.type === 'approval.required' || event.type === 'approval.resolved' || event.type === 'mfa.required' || event.type === 'mfa.resolved') {
-    const toolCallId = event.toolCallId ?? itemId
     const required = event.type.endsWith('.required')
-    const status: AIToolStatus = event.type.startsWith('approval')
-      ? (required ? 'awaiting_approval' : 'running')
-      : (required ? 'awaiting_mfa' : 'running')
     return {
       ...next,
       runStatuses: {
-        ...state.runStatuses,
+        ...next.runStatuses,
         [event.runId]: required ? (event.type.startsWith('approval') ? 'waiting_approval' : 'waiting_mfa') : 'running',
       },
       runExpectedVersions: typeof event.payload.expectedVersion === 'number'
-        ? { ...state.runExpectedVersions, [event.runId]: event.payload.expectedVersion }
-        : state.runExpectedVersions,
-      blocks: updateBlock(state, toolCallId, block => block.type === 'tool_call'
-        ? {
-            ...block,
-            index: eventIndex,
-            status,
-            argumentsHash: stringPayload(event.payload, 'argumentsHash') || block.argumentsHash,
-            expectedVersion: typeof event.payload.expectedVersion === 'number' ? event.payload.expectedVersion : block.expectedVersion,
-            mfaPurpose: stringPayload(event.payload, 'purpose') || block.mfaPurpose,
-          }
-        : block),
-    }
-  }
-  if (event.type === 'thinking.started' || event.type === 'thinking.delta' || event.type === 'thinking.completed') {
-    const delta = stringPayload(event.payload, 'delta') || stringPayload(event.payload, 'summary')
-    const display = event.payload.display === 'summary' ? 'summary' : 'progress'
-    return {
-      ...next,
-      blocks: updateBlock(state, itemId, block => block.type === 'thinking'
-        ? { ...block, index: eventIndex, text: event.type === 'thinking.started' ? delta : block.text + delta, status: event.type === 'thinking.completed' ? 'completed' : 'streaming', display }
-        : block, () => ({
-        id: itemId,
-        turnId: event.turnId,
-        index: eventIndex,
-        type: 'thinking',
-        status: event.type === 'thinking.completed' ? 'completed' : 'streaming',
-        display,
-        text: delta,
-      })),
-    }
-  }
-  if (event.type === 'tool.started' || event.type === 'tool.progress' || event.type === 'tool.completed' || event.type === 'tool.failed') {
-    const toolCallId = event.toolCallId ?? itemId
-    const status: AIToolStatus = event.type === 'tool.completed'
-      ? event.payload.status === 'skipped' ? 'skipped' : 'succeeded'
-      : event.type === 'tool.failed' ? 'failed' : 'running'
-    return {
-      ...next,
-      blocks: updateBlock(state, toolCallId, block => block.type === 'tool_call'
-        ? {
-            ...block,
-            index: eventIndex,
-            operationId: stringPayload(event.payload, 'operationId') || block.operationId,
-            status,
-            arguments: typeof event.payload.arguments === 'object' && event.payload.arguments
-              ? event.payload.arguments as Record<string, unknown>
-              : block.arguments,
-            titleKey: stringPayload(event.payload, 'titleKey') || block.titleKey,
-            errorCode: stringPayload(event.payload, 'errorCode') || block.errorCode,
-            result: normalizeToolResult(event.payload.result) ?? block.result,
-            uiActions: event.payload.uiActions as AIUIAction[] | undefined ?? block.uiActions,
-            durationMs: typeof event.payload.durationMs === 'number' ? event.payload.durationMs : block.durationMs,
-          }
-        : block, () => ({
-        id: itemId,
-        turnId: event.turnId,
-        runId: event.runId,
-        index: eventIndex,
-        type: 'tool_call',
-        toolCallId,
-        operationId: stringPayload(event.payload, 'operationId'),
-        status,
-        arguments: typeof event.payload.arguments === 'object' && event.payload.arguments ? event.payload.arguments as Record<string, unknown> : {},
-        titleKey: stringPayload(event.payload, 'titleKey') || undefined,
-        errorCode: stringPayload(event.payload, 'errorCode') || undefined,
-        result: normalizeToolResult(event.payload.result),
-        uiActions: event.payload.uiActions as AIUIAction[] | undefined ?? [],
-      })),
+        ? { ...next.runExpectedVersions, [event.runId]: event.payload.expectedVersion }
+        : next.runExpectedVersions,
     }
   }
   return next
@@ -371,4 +354,6 @@ export const emptyAIAssistantState: AIAssistantState = {
   runExpectedVersions: {},
   lastEventSequences: {},
   turnIndexes: {},
+  itemRevisions: {},
+  desyncedRunIds: new Set(),
 }

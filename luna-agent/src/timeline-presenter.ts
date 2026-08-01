@@ -6,7 +6,7 @@ import type { optionUIActions } from "./tools/ui-options.js"
 export async function presentTimeline(repository: Repository, ownerUserId: string, conversationId: string) {
   const snapshot = await repository.getTimeline(ownerUserId, conversationId)
   if (!snapshot) return undefined
-  const eventCursors = await Promise.all(snapshot.turns.flatMap(turn => turn.run && !isTerminal(turn.run.status) ? [turn.run] : []).map(async run => {
+  const eventCursors = await Promise.all(snapshot.turns.flatMap(turn => turn.run ? [turn.run] : []).map(async run => {
     const events = await repository.getEvents(ownerUserId, run.id, 0)
     return { runId: run.id, after: events.at(-1) ? normalizeEventSequence(events.at(-1)!.sequence) : 0 }
   }))
@@ -42,16 +42,13 @@ export async function presentTimeline(repository: Repository, ownerUserId: strin
   }
 }
 
-function isTerminal(status: string) {
-  return ["completed", "failed", "canceled", "expired"].includes(status)
-}
-
 export async function presentEvent(repository: Repository, ownerUserId: string, event: RunEvent) {
   const run = await repository.getRun(ownerUserId, event.runId)
   if (!run) return undefined
-  const payload = presentEventPayload(event.data)
+  const eventItem = timelineItemValue(event.data.item)
+  const payload = presentEventPayload(Object.fromEntries(Object.entries(event.data).filter(([key]) => key !== "item")))
   return {
-    version: 1 as const,
+    version: 2 as const,
     eventId: event.id,
     eventSequence: normalizeEventSequence(event.sequence),
     type: event.type,
@@ -61,6 +58,7 @@ export async function presentEvent(repository: Repository, ownerUserId: string, 
     ...(stringValue(payload.itemId) ? { itemId: stringValue(payload.itemId) } : {}),
     ...(stringValue(payload.contentPartId) ? { contentPartId: stringValue(payload.contentPartId) } : {}),
     ...(stringValue(payload.toolCallId) ? { toolCallId: stringValue(payload.toolCallId) } : {}),
+    ...(eventItem ? { item: presentItem(eventItem) } : {}),
     occurredAt: event.createdAt,
     payload,
   }
@@ -80,6 +78,7 @@ function presentItem(item: TimelineItem) {
   const base = {
     id: item.id,
     timelineIndex: item.timelineIndex,
+    revision: item.revision,
     type: mapType(item.type),
     status: item.status,
     createdAt: item.createdAt,
@@ -117,6 +116,22 @@ function presentItem(item: TimelineItem) {
       ...(errorCode ? { errorCode } : {}),
     },
   }
+}
+
+function timelineItemValue(value: unknown): TimelineItem | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
+  const item = value as Partial<TimelineItem>
+  return typeof item.id === "string"
+    && typeof item.runId === "string"
+    && typeof item.turnId === "string"
+    && typeof item.timelineIndex === "number"
+    && typeof item.revision === "number"
+    && typeof item.type === "string"
+    && typeof item.status === "string"
+    && Boolean(item.content)
+    && typeof item.createdAt === "string"
+    ? item as TimelineItem
+    : undefined
 }
 
 function mapType(type: TimelineItem["type"]) {

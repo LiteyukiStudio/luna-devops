@@ -19,6 +19,7 @@ import { normalizeEventSequence } from "../event-sequence.js"
 type DbConversation = { id: string, owner_user_id: string, project_id: string | null, title: string, title_source: ConversationTitleSource, status: "active", created_at: Date, updated_at: Date }
 type DbRun = { id: string, owner_user_id: string, conversation_id: string, turn_id: string, run_index: number, status: Run["status"], row_version: number, graph_version: "assistant-v1", prompt_version: Run["promptVersion"], tool_catalog_digest: string, page_context: Record<string, unknown>, trace_context: Record<string, string>, client_instance_id: string | null, created_at: Date, started_at: Date | null, completed_at: Date | null, error_code: string | null }
 type DbUIAction = { id: string, run_id: string, tool_call_id: string, client_instance_id: string, action: Record<string, unknown>, status: UIActionStatus, attempts: number, expires_at: Date, acknowledged_at: Date | null, actual_path: string | null, error_code: string | null, created_at: Date, updated_at: Date }
+type DbTimelineItem = { id: string, run_id: string, turn_id: string, timeline_index: number, revision: string | number, type: TimelineItem["type"], status: TimelineItem["status"], content: Record<string, unknown>, created_at: Date }
 
 export class PostgresRepository implements Repository {
   readonly pool: Pool
@@ -225,17 +226,63 @@ export class PostgresRepository implements Repository {
       return mapRun(row)
     } catch (error) { await client.query("rollback"); throw error } finally { client.release() }
   }
-  async appendItem(value: Omit<TimelineItem, "id" | "timelineIndex" | "createdAt"> & { id?: string }) { return this.appendItemWith(this.pool, value) }
+  async appendItem(value: Omit<TimelineItem, "id" | "timelineIndex" | "revision" | "createdAt"> & { id?: string }) { return this.appendItemWith(this.pool, value) }
   async updateItem(itemId: string, status: TimelineItem["status"], content: Record<string, unknown>) {
-    const row = (await this.pool.query<{ id: string, run_id: string, turn_id: string, timeline_index: number, type: TimelineItem["type"], status: TimelineItem["status"], content: Record<string, unknown>, created_at: Date }>(
-      `update ai.items set status=$2,content=$3 where id=$1 returning *`,
-      [itemId, status, JSON.stringify(content)],
-    )).rows[0]
-    if (!row) throw new Error("ai.item_not_found")
-    return { id: row.id, runId: row.run_id, turnId: row.turn_id, timelineIndex: row.timeline_index, type: row.type, status: row.status, content: row.content, createdAt: row.created_at.toISOString() }
+    return this.updateItemWith(this.pool, itemId, status, content)
+  }
+  async appendItemWithEvent(
+    value: Omit<TimelineItem, "id" | "timelineIndex" | "revision" | "createdAt"> & { id?: string },
+    eventType: string,
+    eventData: Record<string, unknown> = {},
+  ) {
+    const client = await this.pool.connect()
+    try {
+      await client.query("begin")
+      const item = await this.appendItemWith(client, value)
+      const event = await this.appendEventWith(client, item.runId, eventType, { ...eventData, item })
+      await client.query("commit")
+      return { item, event }
+    } catch (error) {
+      await client.query("rollback")
+      throw error
+    } finally { client.release() }
+  }
+  async updateItemWithEvent(
+    itemId: string,
+    status: TimelineItem["status"],
+    content: Record<string, unknown>,
+    eventType: string,
+    eventData: Record<string, unknown> = {},
+  ) {
+    const client = await this.pool.connect()
+    try {
+      await client.query("begin")
+      const item = await this.updateItemWith(client, itemId, status, content)
+      const event = await this.appendEventWith(client, item.runId, eventType, { ...eventData, item })
+      await client.query("commit")
+      return { item, event }
+    } catch (error) {
+      await client.query("rollback")
+      throw error
+    } finally { client.release() }
   }
   async finalizeStreamingItems(runId: string, status: Exclude<TimelineItem["status"], "streaming">) {
-    await this.pool.query(`update ai.items set status=$2 where run_id=$1 and status='streaming'`, [runId, status])
+    const client = await this.pool.connect()
+    try {
+      await client.query("begin")
+      const streaming = await client.query<DbTimelineItem>(
+        `select * from ai.items where run_id=$1 and status='streaming' order by timeline_index for update`,
+        [runId],
+      )
+      for (const current of streaming.rows) {
+        const item = await this.updateItemWith(client, current.id, status, current.content)
+        await this.appendEventWith(client, runId, "item.finalized", { item })
+      }
+      await client.query("commit")
+    } catch (error) {
+      await client.query("rollback")
+      throw error
+    } finally { client.release() }
   }
   async appendEvent(runId: string, type: string, data: Record<string, unknown>) { return this.appendEventWith(this.pool, runId, type, data) }
   async getEvents(ownerUserId: string, runId: string, after: number) {
@@ -299,23 +346,41 @@ export class PostgresRepository implements Repository {
     const result = await this.pool.query<{ id: string, turn_index: number, status: string, input: string, selected_run_id: string, created_at: Date }>(`select * from ai.turns where conversation_id=$1 order by turn_index`, [conversationId])
     const turns = await Promise.all(result.rows.map(async turn => {
       const run = await this.getRun(ownerUserId, turn.selected_run_id)
-      const items = run ? await this.pool.query<{ id: string, run_id: string, turn_id: string, timeline_index: number, type: TimelineItem["type"], status: TimelineItem["status"], content: Record<string, unknown>, created_at: Date }>(`select * from ai.items where run_id=$1 order by timeline_index`, [run.id]) : undefined
-      return { id: turn.id, turnIndex: turn.turn_index, status: turn.status, input: turn.input, createdAt: turn.created_at.toISOString(), ...(run ? { run } : {}), items: items?.rows.map(i => ({ id: i.id, runId: i.run_id, turnId: i.turn_id, timelineIndex: i.timeline_index, type: i.type, status: i.status, content: i.content, createdAt: i.created_at.toISOString() })) ?? [] }
+      const items = run ? await this.pool.query<DbTimelineItem>(`select * from ai.items where run_id=$1 order by timeline_index`, [run.id]) : undefined
+      return { id: turn.id, turnIndex: turn.turn_index, status: turn.status, input: turn.input, createdAt: turn.created_at.toISOString(), ...(run ? { run } : {}), items: items?.rows.map(mapTimelineItem) ?? [] }
     }))
     return { conversation, turns }
   }
-  private async appendItemWith(client: Pick<PoolClient, "query"> | Pool, value: Omit<TimelineItem, "id" | "timelineIndex" | "createdAt"> & { id?: string }) {
-    const row = (await client.query<{ id: string, run_id: string, turn_id: string, timeline_index: number, type: TimelineItem["type"], status: TimelineItem["status"], content: Record<string, unknown>, created_at: Date }>(
-      `insert into ai.items(id,run_id,turn_id,timeline_index,type,status,content) select $1,$2,$3,coalesce(max(timeline_index)+1,0),$4,$5,$6 from ai.items where run_id=$2 returning *`,
-      [value.id ?? createId("aiitm"), value.runId, value.turnId, value.type, value.status, JSON.stringify(value.content)],
+  private async appendItemWith(client: Pick<PoolClient, "query"> | Pool, value: Omit<TimelineItem, "id" | "timelineIndex" | "revision" | "createdAt"> & { id?: string }) {
+    const position = (await client.query<{ position: string | number }>(
+      `update ai.runs set next_item_position=next_item_position+1 where id=$1 returning next_item_position-1 as position`,
+      [value.runId],
+    )).rows[0]?.position
+    if (position === undefined) throw new Error("ai.run_not_found")
+    const row = (await client.query<DbTimelineItem>(
+      `insert into ai.items(id,run_id,turn_id,timeline_index,type,status,content) values($1,$2,$3,$4,$5,$6,$7) returning *`,
+      [value.id ?? createId("aiitm"), value.runId, value.turnId, Number(position), value.type, value.status, JSON.stringify(value.content)],
     )).rows[0]
     if (!row) throw new Error("ai.persistence_failed")
-    return { id: row.id, runId: row.run_id, turnId: row.turn_id, timelineIndex: row.timeline_index, type: row.type, status: row.status, content: row.content, createdAt: row.created_at.toISOString() }
+    return mapTimelineItem(row)
+  }
+  private async updateItemWith(client: Pick<PoolClient, "query"> | Pool, itemId: string, status: TimelineItem["status"], content: Record<string, unknown>) {
+    const row = (await client.query<DbTimelineItem>(
+      `update ai.items set status=$2,content=$3,revision=revision+1 where id=$1 returning *`,
+      [itemId, status, JSON.stringify(content)],
+    )).rows[0]
+    if (!row) throw new Error("ai.item_not_found")
+    return mapTimelineItem(row)
   }
   private async appendEventWith(client: Pick<PoolClient, "query"> | Pool, runId: string, type: string, data: Record<string, unknown>) {
+    const sequence = (await client.query<{ sequence: string | number }>(
+      `update ai.runs set next_event_sequence=next_event_sequence+1 where id=$1 returning next_event_sequence-1 as sequence`,
+      [runId],
+    )).rows[0]?.sequence
+    if (sequence === undefined) throw new Error("ai.run_not_found")
     const row = (await client.query<{ id: string, run_id: string, event_sequence: number, type: string, data: Record<string, unknown>, created_at: Date }>(
-      `insert into ai.run_events(id,run_id,event_sequence,type,data) select $1,$2,coalesce(max(event_sequence)+1,1),$3,$4 from ai.run_events where run_id=$2 returning *`,
-      [createId("aievt"), runId, type, JSON.stringify(data)],
+      `insert into ai.run_events(id,run_id,event_sequence,type,data) values($1,$2,$3,$4,$5) returning *`,
+      [createId("aievt"), runId, Number(sequence), type, JSON.stringify(data)],
     )).rows[0]
     if (!row) throw new Error("ai.persistence_failed")
     return { id: row.id, runId: row.run_id, sequence: normalizeEventSequence(row.event_sequence), type: row.type, data: row.data, createdAt: row.created_at.toISOString() }
@@ -342,6 +407,19 @@ function mapConversation(row: DbConversation): Conversation {
 }
 function mapRun(row: DbRun): Run {
   return { id: row.id, conversationId: row.conversation_id, turnId: row.turn_id, runIndex: row.run_index, status: row.status, rowVersion: row.row_version, graphVersion: row.graph_version, promptVersion: row.prompt_version, toolCatalogDigest: row.tool_catalog_digest, pageContext: row.page_context, ...(Object.keys(row.trace_context ?? {}).length ? { traceContext: row.trace_context } : {}), createdAt: row.created_at.toISOString(), ...(row.client_instance_id ? { clientInstanceId: row.client_instance_id } : {}), ...(row.started_at ? { startedAt: row.started_at.toISOString() } : {}), ...(row.completed_at ? { completedAt: row.completed_at.toISOString() } : {}), ...(row.error_code ? { errorCode: row.error_code } : {}) }
+}
+function mapTimelineItem(row: DbTimelineItem): TimelineItem {
+  return {
+    id: row.id,
+    runId: row.run_id,
+    turnId: row.turn_id,
+    timelineIndex: row.timeline_index,
+    revision: Number(row.revision),
+    type: row.type,
+    status: row.status,
+    content: row.content,
+    createdAt: row.created_at.toISOString(),
+  }
 }
 function mapUIAction(row: DbUIAction): UIActionDelivery {
   return {

@@ -103,10 +103,15 @@ export function AiAssistant() {
   })
   const timelineValid = isValidAITimeline(timeline.data)
   const streamState = selectedConversationId ? streamStates[selectedConversationId] ?? emptyAIAssistantState : emptyAIAssistantState
+  const desyncedRunsKey = [...streamState.desyncedRunIds].sort().join(',')
   useEffect(() => {
     if (timelineValid && selectedConversationId)
       dispatchStream({ type: 'snapshot', conversationId: selectedConversationId, timeline: timeline.data! })
   }, [selectedConversationId, timeline.data, timelineValid])
+  useEffect(() => {
+    if (selectedConversationId && desyncedRunsKey)
+      void queryClient.invalidateQueries({ queryKey: ['ai', 'timeline', selectedConversationId] })
+  }, [desyncedRunsKey, queryClient, selectedConversationId])
 
   const subscribe = useCallback((runId: string, conversationId: string, after: number, explicitUrl?: string) => {
     const rawUrl = explicitUrl || `/api/v1/ai/runs/${encodeURIComponent(runId)}/events`

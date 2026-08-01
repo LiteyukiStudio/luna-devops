@@ -35,6 +35,8 @@ The assistant has the same platform permissions as you. It cannot read or change
 
 A request may require several resource queries. The assistant continues from each tool result and explains or corrects failed queries instead of treating an unfinished step as the final response.
 
+Text, reasoning status, and tool calls appear in their actual workflow order while a response streams. Reconnecting, switching conversations, or refreshing preserves that same order instead of moving all tools to the top of the reply.
+
 The assistant uses the same platform business APIs and the current signed-in user permissions as the web console; it does not maintain a lower-privilege or behaviorally different API subset. Protocol endpoints such as login callbacks, webhooks, terminal streams, and raw file downloads are not exposed directly to the model. The assistant explains any user step required for those interactions.
 
 The assistant follows complete workflows for common tasks, including delivering applications from marketplace templates, existing images, or source repositories; configuring builds, releases, runtime, and gateways; diagnosing build or application failures; and handling project members, service relationships, notifications, security, and billing. Each workflow discovers trusted resources, collects required input, runs available operations, and reads back the result for acceptance. If the platform has not exposed the required operation, the assistant clearly identifies the blocked stage.

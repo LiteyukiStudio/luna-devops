@@ -217,9 +217,9 @@ export class MemoryRepository implements Repository {
     return run
   }
 
-  async appendItem(value: Omit<TimelineItem, "id" | "timelineIndex" | "createdAt"> & { id?: string }) {
+  async appendItem(value: Omit<TimelineItem, "id" | "timelineIndex" | "revision" | "createdAt"> & { id?: string }) {
     const timelineIndex = this.items.filter(item => item.runId === value.runId).length
-    const item: TimelineItem = { ...value, id: value.id ?? createId("aiitm"), timelineIndex, createdAt: new Date().toISOString() }
+    const item: TimelineItem = { ...value, id: value.id ?? createId("aiitm"), timelineIndex, revision: 1, createdAt: new Date().toISOString() }
     this.items.push(item)
     return item
   }
@@ -229,11 +229,39 @@ export class MemoryRepository implements Repository {
     if (!item) throw new Error("ai.item_not_found")
     item.status = status
     item.content = content
+    item.revision += 1
     return item
   }
 
+  async appendItemWithEvent(
+    value: Omit<TimelineItem, "id" | "timelineIndex" | "revision" | "createdAt"> & { id?: string },
+    eventType: string,
+    eventData: Record<string, unknown> = {},
+  ) {
+    const item = await this.appendItem(value)
+    const event = await this.appendEvent(item.runId, eventType, { ...eventData, item: structuredClone(item) })
+    return { item, event }
+  }
+
+  async updateItemWithEvent(
+    itemId: string,
+    status: TimelineItem["status"],
+    content: Record<string, unknown>,
+    eventType: string,
+    eventData: Record<string, unknown> = {},
+  ) {
+    const item = await this.updateItem(itemId, status, content)
+    const event = await this.appendEvent(item.runId, eventType, { ...eventData, item: structuredClone(item) })
+    return { item, event }
+  }
+
   async finalizeStreamingItems(runId: string, status: Exclude<TimelineItem["status"], "streaming">) {
-    this.items.filter(item => item.runId === runId && item.status === "streaming").forEach(item => { item.status = status })
+    const items = this.items.filter(item => item.runId === runId && item.status === "streaming")
+    for (const item of items) {
+      item.status = status
+      item.revision += 1
+      await this.appendEvent(runId, "item.finalized", { item: structuredClone(item) })
+    }
   }
 
   async appendEvent(runId: string, type: string, data: Record<string, unknown>) {

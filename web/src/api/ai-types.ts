@@ -95,6 +95,7 @@ export type AIUIAction
 export interface AITimelineItem {
   id: string
   timelineIndex: number
+  revision: number
   createdAt: string
   type: 'reasoning_summary' | 'progress' | 'assistant_message' | 'tool_call' | 'tool_result'
   status: string
@@ -145,7 +146,7 @@ export interface AITimeline {
 }
 
 export interface AIEvent {
-  version: number
+  version: 2
   eventId: string
   eventSequence: number
   type: string
@@ -155,6 +156,7 @@ export interface AIEvent {
   itemId?: string
   contentPartId?: string
   toolCallId?: string
+  item?: AITimelineItem
   occurredAt: string
   payload: Record<string, unknown>
 }

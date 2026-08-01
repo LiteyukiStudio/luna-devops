@@ -341,17 +341,10 @@ export class RunExecutor {
       description: input.description,
       uiActions: optionUIActions(input),
     }
-    const item = await this.repository.appendItem({
+    await this.repository.appendItemWithEvent({
       id: itemId, runId, turnId, type: "tool_call", status: "completed",
       content: { toolCallId, operationId: "create_options", status: "succeeded", arguments: input, result },
-    })
-    await this.repository.appendEvent(runId, "tool.started", {
-      itemId, toolCallId, operationId: "create_options", arguments: input, timelineIndex: item.timelineIndex,
-    })
-    await this.repository.appendEvent(runId, "tool.completed", {
-      itemId, toolCallId, operationId: "create_options", result, uiActions: result.uiActions, timelineIndex: item.timelineIndex,
-    })
-    await this.repository.appendEvent(runId, "item.completed", { itemId })
+    }, "tool.completed", { itemId, toolCallId, operationId: "create_options", result, uiActions: result.uiActions })
   }
 
   private async prepareInteractionCards(
@@ -374,7 +367,7 @@ export class RunExecutor {
     if (existing) return { accepted: true as const, preparation: existing }
     const itemId = createId("aiitm")
     const toolCallId = createId("aitool")
-    const item = await this.repository.appendItem({
+    const { item } = await this.repository.appendItemWithEvent({
       id: itemId,
       runId,
       turnId,
@@ -387,19 +380,17 @@ export class RunExecutor {
         status: "running",
         arguments: input,
       },
-    })
-    const preparation = { itemId, toolCallId, timelineIndex: item.timelineIndex, input }
-    preparations.set(input.generationId, preparation)
-    agentMetrics.cards.add(1, { phase: "prepared" })
-    telemetryLog("agent.card.prepared", "info", { "luna.run.id": runId })
-    await this.repository.appendEvent(runId, "tool.started", {
+    }, "tool.started", {
       itemId,
       toolCallId,
       operationId: "prepare_interaction_cards",
       titleKey: "aiAssistant.cards.preparingToolTitle",
       arguments: input,
-      timelineIndex: item.timelineIndex,
     })
+    const preparation = { itemId, toolCallId, timelineIndex: item.timelineIndex, input }
+    preparations.set(input.generationId, preparation)
+    agentMetrics.cards.add(1, { phase: "prepared" })
+    telemetryLog("agent.card.prepared", "info", { "luna.run.id": runId })
     return { accepted: true as const, preparation }
   }
 
@@ -447,19 +438,17 @@ export class RunExecutor {
       title: input.title,
       description: input.description,
     }
-    await this.repository.updateItem(itemId, "completed", {
+    await this.repository.updateItemWithEvent(itemId, "completed", {
       toolCallId,
       operationId: "create_interaction_cards",
       titleKey: "aiAssistant.cards.toolTitle",
       status: "succeeded",
       arguments: input,
       result,
-    })
-    await this.repository.appendEvent(runId, "tool.completed", {
+    }, "tool.completed", {
       itemId, toolCallId, operationId: "create_interaction_cards", titleKey: "aiAssistant.cards.toolTitle",
       arguments: input, result, timelineIndex,
     })
-    await this.repository.appendEvent(runId, "item.completed", { itemId })
     preparations.delete(input.generationId)
     agentMetrics.cards.add(1, { phase: "created", mode: input.mode })
     telemetryLog("agent.card.created", "info", { "luna.run.id": runId, "card.mode": input.mode })
@@ -481,7 +470,7 @@ export class RunExecutor {
         errorCode,
         ...(preparation.issues?.length ? { issues: preparation.issues } : {}),
       }
-      await this.repository.updateItem(preparation.itemId, "failed", {
+      await this.repository.updateItemWithEvent(preparation.itemId, "failed", {
         toolCallId: preparation.toolCallId,
         operationId: "prepare_interaction_cards",
         titleKey: "aiAssistant.cards.preparingToolTitle",
@@ -489,8 +478,7 @@ export class RunExecutor {
         arguments: preparation.input,
         errorCode,
         result,
-      })
-      await this.repository.appendEvent(runId, "tool.failed", {
+      }, "tool.failed", {
         itemId: preparation.itemId,
         toolCallId: preparation.toolCallId,
         operationId: "prepare_interaction_cards",
@@ -548,7 +536,7 @@ export class RunExecutor {
       expiresAt: delivery.expiresAt,
       uiActions,
     }
-    const item = await this.repository.appendItem({
+    await this.repository.appendItemWithEvent({
       id: itemId, runId, turnId, type: "tool_call", status: "completed",
       content: {
         toolCallId,
@@ -558,20 +546,14 @@ export class RunExecutor {
         arguments: input,
         result,
       },
-    })
-    await this.repository.appendEvent(runId, "tool.started", {
-      itemId, toolCallId, operationId: "navigate_to_route", titleKey: "aiAssistant.tools.navigateToRoute",
-      arguments: input, timelineIndex: item.timelineIndex,
-    })
-    await this.repository.appendEvent(runId, "tool.completed", {
+    }, "tool.completed", {
       itemId, toolCallId, operationId: "navigate_to_route", titleKey: "aiAssistant.tools.navigateToRoute",
       result, uiActions, uiActionDelivery: {
         actionId: delivery.id,
         expiresAt: delivery.expiresAt,
         attempts: delivery.attempts,
-      }, timelineIndex: item.timelineIndex,
+      },
     })
-    await this.repository.appendEvent(runId, "item.completed", { itemId })
     return delivery
   }
 
@@ -587,7 +569,7 @@ export class RunExecutor {
         : "aiAssistant.tools.renameConversationLocked",
       title: input.title,
     }
-    const item = await this.repository.appendItem({
+    await this.repository.appendItemWithEvent({
       id: itemId, runId, turnId, type: "tool_call", status: "completed",
       content: {
         toolCallId,
@@ -597,16 +579,10 @@ export class RunExecutor {
         arguments: input,
         result,
       },
-    })
-    await this.repository.appendEvent(runId, "tool.started", {
+    }, "tool.completed", {
       itemId, toolCallId, operationId: "rename_conversation", titleKey: "aiAssistant.tools.renameConversation",
-      arguments: input, timelineIndex: item.timelineIndex,
+      status, result,
     })
-    await this.repository.appendEvent(runId, "tool.completed", {
-      itemId, toolCallId, operationId: "rename_conversation", titleKey: "aiAssistant.tools.renameConversation",
-      status, result, timelineIndex: item.timelineIndex,
-    })
-    await this.repository.appendEvent(runId, "item.completed", { itemId })
     return renamed
   }
 
@@ -624,7 +600,6 @@ export class RunExecutor {
     let reasoningSummary = ""
     let answer = ""
     let toolCalls: ModelToolCall[] = []
-    let reasoningStarted = false
     let firstOutputRecorded = false
     let reasoningTimelineIndex: number | undefined
     let messageTimelineIndex: number | undefined
@@ -641,40 +616,53 @@ export class RunExecutor {
       if (event.type === "reasoning_summary_delta" && event.delta) {
         reasoningSummary += event.delta
         if (reasoningTimelineIndex === undefined) {
-          const item = await this.repository.appendItem({
+          const { item } = await this.repository.appendItemWithEvent({
             id: reasoningItemId, runId, turnId, type: "reasoning_summary", status: "streaming",
             content: redact({ summary: reasoningSummary, display: "summary" }),
-          })
+          }, "thinking.started", redact({
+            itemId: reasoningItemId,
+            summary: event.delta,
+            display: "summary",
+          }))
           reasoningTimelineIndex = item.timelineIndex
         } else {
-          await this.repository.updateItem(reasoningItemId, "streaming", redact({ summary: reasoningSummary, display: "summary" }))
+          await this.repository.updateItemWithEvent(
+            reasoningItemId,
+            "streaming",
+            redact({ summary: reasoningSummary, display: "summary" }),
+            "thinking.delta",
+            redact({ itemId: reasoningItemId, delta: event.delta, display: "summary", timelineIndex: reasoningTimelineIndex }),
+          )
         }
-        await this.repository.appendEvent(runId, reasoningStarted ? "thinking.delta" : "thinking.started", redact({
-          itemId: reasoningItemId,
-          ...(reasoningStarted ? { delta: event.delta } : { summary: event.delta }),
-          display: "summary",
-          timelineIndex: reasoningTimelineIndex,
-        }))
-        reasoningStarted = true
       }
       if (event.type === "message_delta" && event.delta) {
         answer += event.delta
         if (messageTimelineIndex === undefined) {
-          const item = await this.repository.appendItem({
+          const { item } = await this.repository.appendItemWithEvent({
             id: messageItemId, runId, turnId, type: "assistant_message", status: "streaming",
             content: redact({ parts: [{ type: "text", text: answer }] }),
-          })
+          }, "content.delta", redact({
+            itemId: messageItemId,
+            contentPartId: `${messageItemId}:0`,
+            partIndex: 0,
+            delta: event.delta,
+          }))
           messageTimelineIndex = item.timelineIndex
         } else {
-          await this.repository.updateItem(messageItemId, "streaming", redact({ parts: [{ type: "text", text: answer }] }))
+          await this.repository.updateItemWithEvent(
+            messageItemId,
+            "streaming",
+            redact({ parts: [{ type: "text", text: answer }] }),
+            "content.delta",
+            redact({
+              itemId: messageItemId,
+              contentPartId: `${messageItemId}:0`,
+              partIndex: 0,
+              delta: event.delta,
+              timelineIndex: messageTimelineIndex,
+            }),
+          )
         }
-        await this.repository.appendEvent(runId, "content.delta", redact({
-          itemId: messageItemId,
-          contentPartId: `${messageItemId}:0`,
-          partIndex: 0,
-          delta: event.delta,
-          timelineIndex: messageTimelineIndex,
-        }))
       }
       if (event.type === "completed") {
         toolCalls = event.toolCalls ?? []
@@ -687,15 +675,22 @@ export class RunExecutor {
       }
     }
     if (reasoningSummary) {
-      await this.repository.updateItem(reasoningItemId, "completed", redact({ summary: reasoningSummary, display: "summary" }))
-      await this.repository.appendEvent(runId, "thinking.completed", { itemId: reasoningItemId, display: "summary", timelineIndex: reasoningTimelineIndex })
-      await this.repository.appendEvent(runId, "item.completed", { itemId: reasoningItemId })
+      await this.repository.updateItemWithEvent(
+        reasoningItemId,
+        "completed",
+        redact({ summary: reasoningSummary, display: "summary" }),
+        "thinking.completed",
+        { itemId: reasoningItemId, display: "summary", timelineIndex: reasoningTimelineIndex },
+      )
     }
     if (answer) {
-      await this.repository.updateItem(messageItemId, "completed", redact({ parts: [{ type: "text", text: answer }] }))
-      await this.repository.appendEvent(runId, "content.completed", { itemId: messageItemId, contentPartId: `${messageItemId}:0`, partIndex: 0, timelineIndex: messageTimelineIndex })
-      await this.repository.appendEvent(runId, "item.completed", { itemId: messageItemId })
-      await this.repository.appendEvent(runId, "message.completed", { itemId: messageItemId })
+      await this.repository.updateItemWithEvent(
+        messageItemId,
+        "completed",
+        redact({ parts: [{ type: "text", text: answer }] }),
+        "message.completed",
+        { itemId: messageItemId, contentPartId: `${messageItemId}:0`, partIndex: 0, timelineIndex: messageTimelineIndex },
+      )
     }
     agentMetrics.modelRequests.add(1, { operation: "stream", outcome })
     agentMetrics.modelSteps.add(1, { outcome })

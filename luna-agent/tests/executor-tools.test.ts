@@ -65,7 +65,9 @@ describe("provider to tool to subsequent model invocation", () => {
     expect(events.filter(event => event.type === "content.delta").length).toBeGreaterThan(1)
     expect(events.some(event => event.type === "thinking.started")).toBe(true)
     expect(events.some(event => event.type === "thinking.completed")).toBe(true)
-    expect((await presentTimeline(repository, "usr_a", conversation.id))?.eventCursors).toEqual([])
+    expect((await presentTimeline(repository, "usr_a", conversation.id))?.eventCursors).toEqual([
+      expect.objectContaining({ runId: expect.any(String), after: expect.any(Number) }),
+    ])
   })
 
   it("passes the current assistant title as context and accepts a rename tool when the topic drifts", async () => {
