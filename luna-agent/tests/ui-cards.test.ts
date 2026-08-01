@@ -33,6 +33,7 @@ const databaseCard = {
           type: "select",
           label: "项目空间",
           required: true,
+          submissionFormat: "label_value",
           options: [{ value: "prj_example", label: "示例项目空间" }],
         }],
       }],
@@ -128,6 +129,7 @@ describe("interaction card tool", () => {
     expect(schema).toContain("presentation")
     expect(schema).toContain("status_list")
     expect(schema).toContain("multi_select")
+    expect(schema).toContain("label_value")
   })
 
   it.each([

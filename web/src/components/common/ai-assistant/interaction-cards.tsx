@@ -111,6 +111,8 @@ function InteractionCardView({ card, density, group, onAction }: {
     mode: 'onChange',
   })
   const watchedValues = form.watch()
+  const actionValues = publicFormValues(fields, watchedValues)
+  const messageValues = messageFormValues(fields, actionValues)
   const hasDetails = Boolean(card.blocks?.length || card.form)
   const primaryAction = card.actions?.find(action => action.emphasis === 'primary') ?? card.actions?.[0]
   const secondaryActions = card.actions?.filter(action => action !== primaryAction) ?? []
@@ -169,8 +171,8 @@ function InteractionCardView({ card, density, group, onAction }: {
           ))}
           {(primaryAction || secondaryActions.length > 0) && (
             <div className="flex flex-wrap justify-end gap-1.5 pt-0.5">
-              {secondaryActions.map(action => <CardActionButton key={action.id} action={action} cardId={card.id} disabled={actionNeedsValidForm(action) && !form.formState.isValid} values={publicFormValues(fields, form.getValues())} onAction={onAction} />)}
-              {primaryAction && <CardActionButton action={primaryAction} cardId={card.id} disabled={actionNeedsValidForm(primaryAction) && !form.formState.isValid} values={publicFormValues(fields, form.getValues())} onAction={onAction} />}
+              {secondaryActions.map(action => <CardActionButton key={action.id} action={action} cardId={card.id} disabled={actionNeedsValidForm(action) && !form.formState.isValid} messageValues={messageValues} values={actionValues} onAction={onAction} />)}
+              {primaryAction && <CardActionButton action={primaryAction} cardId={card.id} disabled={actionNeedsValidForm(primaryAction) && !form.formState.isValid} messageValues={messageValues} values={actionValues} onAction={onAction} />}
             </div>
           )}
         </form>
@@ -498,7 +500,7 @@ function KeyValueInput({ value, secret, onChange }: { value: Array<{ key: string
   )
 }
 
-function CardActionButton({ action, cardId, values, disabled = false, onAction }: { action: InteractionCardAction, cardId: string, values: FormValues, disabled?: boolean, onAction: (action: AIUIAction) => Promise<boolean> }) {
+function CardActionButton({ action, cardId, values, messageValues = values, disabled = false, onAction }: { action: InteractionCardAction, cardId: string, values: FormValues, messageValues?: FormValues, disabled?: boolean, onAction: (action: AIUIAction) => Promise<boolean> }) {
   const [pending, setPending] = useState(false)
   const [done, setDone] = useState(false)
   const repeatable = action.repeatable ?? action.type === 'navigate'
@@ -507,7 +509,7 @@ function CardActionButton({ action, cardId, values, disabled = false, onAction }
       return
     setPending(true)
     try {
-      const success = await executeCardAction(action, cardId, values, onAction)
+      const success = await executeCardAction(action, cardId, values, messageValues, onAction)
       if (success && !repeatable)
         setDone(true)
       if (!success)
@@ -528,11 +530,11 @@ function CardActionButton({ action, cardId, values, disabled = false, onAction }
   )
 }
 
-async function executeCardAction(action: InteractionCardAction, cardId: string, values: FormValues, onAction: (action: AIUIAction) => Promise<boolean>) {
+async function executeCardAction(action: InteractionCardAction, cardId: string, values: FormValues, messageValues: FormValues, onAction: (action: AIUIAction) => Promise<boolean>) {
   if (action.type === 'navigate')
     return onAction({ version: 1, id: action.id, repeatable: action.repeatable ?? true, type: 'navigate', label: action.label, description: action.description, payload: { routeName: action.routeName, params: action.routeParams ?? {}, query: {} } })
   if (action.type === 'send_message')
-    return onAction({ version: 1, id: action.id, repeatable: action.repeatable ?? false, type: 'send_message', label: action.label, description: action.description, payload: { message: renderMessageTemplate(action.message, values) } })
+    return onAction({ version: 1, id: action.id, repeatable: action.repeatable ?? false, type: 'send_message', label: action.label, description: action.description, payload: { message: renderMessageTemplate(action.message, messageValues) } })
   const argumentsValue = bindArguments(action, cardId, values)
   return onAction({
     version: 1,
@@ -667,6 +669,20 @@ function defaultValues(fields: InteractionFormField[]): FormValues {
 function publicFormValues(fields: InteractionFormField[], values: FormValues): FormValues {
   const sensitiveIds = new Set(fields.filter(field => field.type === 'secret' || (field.type === 'key_value' && field.valueMode === 'secret')).map(field => field.id))
   return Object.fromEntries(Object.entries(values).filter(([key]) => !sensitiveIds.has(key)))
+}
+
+function messageFormValues(fields: InteractionFormField[], values: FormValues): FormValues {
+  const fieldsById = new Map(fields.map(field => [field.id, field]))
+  return Object.fromEntries(Object.entries(values).map(([fieldId, value]) => {
+    const field = fieldsById.get(fieldId)
+    if (!field || (field.type !== 'select' && field.type !== 'multi_select') || field.submissionFormat !== 'label_value')
+      return [fieldId, value]
+    const formatOption = (optionValue: string) => {
+      const option = field.options.find(candidate => candidate.value === optionValue)
+      return option ? `${option.label} (${option.value})` : optionValue
+    }
+    return [fieldId, Array.isArray(value) ? value.map(item => formatOption(String(item))) : formatOption(String(value ?? ''))]
+  }))
 }
 
 function isFieldVisible(field: InteractionFormField, values: FormValues) {

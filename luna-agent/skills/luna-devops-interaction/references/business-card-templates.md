@@ -49,7 +49,7 @@
 ### candidate_select
 
 候选必须来自同一类可信资源。`submitLabel` 使用用户当前语言；`submitMessage` 必须包含
-`{{candidate}}`，这样用户选择的值才能安全带回下一轮。label 面向用户，value 使用真实稳定 ID。
+`{{candidate}}`，这样用户选择的值才能安全带回下一轮。label 面向用户，value 使用真实稳定 ID；模板会自动按“资源名称 (资源 ID)”回复，同时仍以原始 ID 作为后续工具参数。
 
 适用例：从 11 个项目空间、19 个应用模板或多个镜像 Tag 中选一个。
 
@@ -63,6 +63,7 @@
 - 一组彼此独立字段使用一个 section。
 - 字段较多时按“目标 / 构建 / 运行 / 访问”分 section，但仍在一轮表单中提交。
 - 非敏感字段可用 `send_message` 和 `{{field_id}}` 进入下一轮。
+- select 或 multi_select 字段表示平台资源时，label 使用资源名称、value 使用资源 ID，并设置 `submissionFormat: label_value`；普通枚举不要启用该格式。
 - 参数已完整且写工具可用时，使用 `tool` submit 和 JSON Pointer binding。
 - Secret 不得插入消息。遵循平台受控 Secret 提交流程，不把密钥写进对话。
 

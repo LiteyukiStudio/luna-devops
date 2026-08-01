@@ -6,6 +6,10 @@ import {
 } from './conversation-session'
 
 describe('ai conversation session lifecycle', () => {
+  it('keeps the refresh return window at eight seconds', () => {
+    expect(REFRESH_CONVERSATION_RETURN_DURATION_MS).toBe(8_000)
+  })
+
   it('starts with an unsaved new conversation and offers a bounded return after the first open', () => {
     const state = aiConversationSessionReducer(initialAIConversationSessionState, { type: 'open', now: 1_000 })
 

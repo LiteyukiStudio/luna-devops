@@ -27,7 +27,9 @@ In the assistant you can:
 
 An empty new conversation is not saved repeatedly. Conversations are named automatically until you rename one manually; a manually chosen title is never overwritten.
 
-Closing and reopening the assistant returns to the conversation you were using. A full browser refresh starts with a new empty conversation instead. A brief notice at the top of the message area lets you return to the previous conversation when needed. The conversation list stays open while switching conversations so you can continue browsing or managing them.
+Closing and reopening the assistant returns to the conversation you were using. A full browser refresh starts with a new empty conversation instead. For eight seconds, a notice at the top of the message area lets you return to the previous conversation when needed. The conversation list stays open while switching conversations so you can continue browsing or managing them.
+
+When an interactive form selects a project space, application, cluster, or another platform resource, the selector shows only its readable name. The submitted conversation message includes both the resource name and ID so you can verify the target and continue the operation unambiguously.
 
 Each message shows its timestamp underneath. Hover anywhere over the message, including the timestamp area, to copy it; your own messages can also be sent again unchanged. These actions remain visible on touch devices.
 

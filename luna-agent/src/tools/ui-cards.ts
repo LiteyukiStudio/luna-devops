@@ -214,6 +214,9 @@ const formField = z.discriminatedUnion("type", [
     defaultValue: z.string().max(240).optional(),
     placeholder: z.string().max(200).optional(),
     display: z.enum(["select", "radio", "segmented"]).optional(),
+    submissionFormat: z.enum(["value", "label_value"]).optional().describe(
+      "生成 send_message 回复时的选择值格式。平台资源必须使用 label_value，使回复包含“资源名称 (资源 ID)”；普通枚举使用 value。工具参数始终提交原始 value。",
+    ),
     options: z.array(selectOption).min(1).max(50),
   }),
   z.object({
@@ -223,6 +226,9 @@ const formField = z.discriminatedUnion("type", [
     placeholder: z.string().max(200).optional(),
     minItems: z.number().int().min(0).max(50).optional(),
     maxItems: z.number().int().min(1).max(50).optional(),
+    submissionFormat: z.enum(["value", "label_value"]).optional().describe(
+      "生成 send_message 回复时的选择值格式。平台资源必须使用 label_value，使每项包含“资源名称 (资源 ID)”；普通枚举使用 value。工具参数始终提交原始 value。",
+    ),
     options: z.array(selectOption).min(1).max(50),
   }),
   z.object({

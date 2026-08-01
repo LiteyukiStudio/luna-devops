@@ -35,7 +35,7 @@ describe("business interaction card templates", () => {
       submitMessage: "使用项目空间 {{candidate}}",
     })
     expect(result).toMatchObject({ mode: "interactive", template: "form" })
-    expect(result.cards[0]?.form?.sections[0]?.fields[0]).toMatchObject({ type: "select", id: "candidate" })
+    expect(result.cards[0]?.form?.sections[0]?.fields[0]).toMatchObject({ type: "select", id: "candidate", submissionFormat: "label_value" })
   })
 
   it("compiles resource configuration and preserves tool bindings", () => {

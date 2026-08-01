@@ -123,6 +123,7 @@ describe("versioned system prompt", () => {
     expect(prompt).toContain("当前任务必须等待用户选择、填写或确认才能继续时使用 interactive")
     expect(prompt).toContain("绝不能用 presentation 卡片或不可点击的 item_list 提问")
     expect(prompt).toContain("候选超过 5 个时，使用 form 的 select 字段")
+    expect(prompt).toContain("send_message 会自动带回“资源名称 (资源 ID)”")
     expect(prompt).toContain("2～5 个带说明的真实候选使用 candidate_picker")
     expect(prompt).toContain("6～50 个候选使用 candidate_select")
   })

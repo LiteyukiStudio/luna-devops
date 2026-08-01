@@ -1,4 +1,4 @@
-export const REFRESH_CONVERSATION_RETURN_DURATION_MS = 15_000
+export const REFRESH_CONVERSATION_RETURN_DURATION_MS = 8_000
 
 export interface AIConversationSessionState {
   activeConversationId?: string

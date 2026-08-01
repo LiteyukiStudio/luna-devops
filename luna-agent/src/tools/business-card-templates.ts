@@ -53,13 +53,13 @@ const templateField = z.discriminatedUnion("type", [
   z.object({
     id: identifier, label: shortText, description, required: z.boolean().optional(), type: z.literal("select"),
     defaultValue: z.string().max(240).optional(), placeholder: z.string().max(200).optional(),
-    display: z.enum(["select", "radio", "segmented"]).optional(), options: z.array(selectOption).min(1).max(50),
+    display: z.enum(["select", "radio", "segmented"]).optional(), submissionFormat: z.enum(["value", "label_value"]).optional(), options: z.array(selectOption).min(1).max(50),
   }),
   z.object({
     id: identifier, label: shortText, description, required: z.boolean().optional(), type: z.literal("multi_select"),
     defaultValue: z.array(z.string().max(240)).max(50).optional(), placeholder: z.string().max(200).optional(),
     minItems: z.number().int().min(0).max(50).optional(), maxItems: z.number().int().min(1).max(50).optional(),
-    options: z.array(selectOption).min(1).max(50),
+    submissionFormat: z.enum(["value", "label_value"]).optional(), options: z.array(selectOption).min(1).max(50),
   }),
   z.object({
     id: identifier, label: shortText, description, required: z.boolean().optional(), type: z.literal("key_value"),
@@ -228,7 +228,7 @@ export function compileBusinessCardTemplate(input: CreateBusinessCardTemplateInp
         cards: [{
           id: "candidate_selection",
           presentation: { variant: "form", title: template.title, description: template.description },
-          form: { sections: [{ id: "selection", fields: [{ id: "candidate", type: "select", label: template.fieldLabel, description: template.fieldDescription, required: true, options: template.candidates }] }] },
+          form: { sections: [{ id: "selection", fields: [{ id: "candidate", type: "select", label: template.fieldLabel, description: template.fieldDescription, required: true, submissionFormat: "label_value", options: template.candidates }] }] },
           actions: [{ id: "submit", type: "send_message", label: template.submitLabel, message: template.submitMessage, emphasis: "primary" }],
         }],
       }

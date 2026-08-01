@@ -31,6 +31,7 @@ const catalogCard = {
             type: 'select',
             label: '项目空间',
             required: true,
+            submissionFormat: 'label_value',
             options: [{ value: 'prj_example', label: '示例项目空间' }],
             defaultValue: 'prj_example',
           },
@@ -132,7 +133,56 @@ describe('ai interaction cards', () => {
 
     await waitFor(() => expect(onAction).toHaveBeenCalledWith(expect.objectContaining({
       type: 'send_message',
-      payload: { message: '继续配置 redis-cache，目标是 prj_example。' },
+      payload: { message: '继续配置 redis-cache，目标是 示例项目空间 (prj_example)。' },
+    })))
+  })
+
+  it('formats every selected resource name and ID in a multi-select reply', async () => {
+    const onAction = vi.fn<(action: AIUIAction) => Promise<boolean>>().mockResolvedValue(true)
+    const card = {
+      schemaVersion: 1,
+      generationId: 'cluster-selection',
+      title: '选择集群',
+      mode: 'interactive',
+      template: 'form',
+      cards: [{
+        id: 'clusters',
+        presentation: { variant: 'form', title: '目标集群' },
+        form: {
+          sections: [{
+            id: 'selection',
+            fields: [{
+              id: 'clusterIds',
+              type: 'multi_select',
+              label: '集群',
+              required: true,
+              submissionFormat: 'label_value',
+              options: [
+                { value: 'clu_chongqing', label: '重庆集群' },
+                { value: 'clu_shanghai', label: '上海集群' },
+              ],
+            }],
+          }],
+        },
+        actions: [{
+          id: 'continue',
+          type: 'send_message',
+          label: '确认集群',
+          message: '使用 {{clusterIds}}。',
+          emphasis: 'primary',
+        }],
+      }],
+    }
+    render(<AIInteractionCards arguments={card} onAction={onAction} />)
+
+    fireEvent.click(screen.getByRole('checkbox', { name: /重庆集群/ }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /上海集群/ }))
+    await waitFor(() => expect(screen.getByRole('button', { name: '确认集群' })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: '确认集群' }))
+
+    await waitFor(() => expect(onAction).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'send_message',
+      payload: { message: '使用 重庆集群 (clu_chongqing)、上海集群 (clu_shanghai)。' },
     })))
   })
 
