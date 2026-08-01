@@ -713,6 +713,9 @@ describe("provider to tool to subsequent model invocation", () => {
     const timeline = await repository.getTimeline("usr_a", conversation.id)
     expect(timeline?.turns[0]?.items.some(item => item.type === "tool_result")).toBe(true)
     expect(timeline?.turns[0]?.items.some(item => item.type === "assistant_message")).toBe(true)
+    const presented = await presentTimeline(repository, "usr_a", conversation.id)
+    const toolItem = presented?.turns[0]?.selectedRun?.items.find(item => "toolCall" in item && item.toolCall.operationId === "getBuildRun")
+    expect(toolItem && "toolCall" in toolItem ? toolItem.toolCall.durationMs : undefined).toEqual(expect.any(Number))
     expect(client.calls[0]?.runActorGrant).toBe("opaque-grant")
   })
   it("persists approval and MFA interruptions, then resumes the same run", async () => {

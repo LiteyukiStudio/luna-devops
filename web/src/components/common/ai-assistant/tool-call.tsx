@@ -8,15 +8,14 @@ import { OneTimeCodeInput } from '@/components/common/one-time-code-input'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { isAIUIActionRepeatable } from './actions'
 import { runFailureTranslationKey } from './errors'
+import { AIToolCallDetails } from './tool-call-details'
+import { toolDisplayName } from './tool-display-name'
 
 export type ToolCallBlock = Extract<AIBlock, { type: 'tool_call' }>
 export type AIApprovalDecision = 'approve' | 'reject' | 'approve_all'
-
-const SECRET_FIELD = /authorization|cookie|password|secret|token|credential/i
 
 const statusTone: Record<AIToolStatus, string> = {
   proposed: 'bg-surface-inset text-muted-foreground',
@@ -29,37 +28,16 @@ const statusTone: Record<AIToolStatus, string> = {
   skipped: 'bg-surface-inset text-muted-foreground',
 }
 
-function displayValue(value: unknown): string {
-  if (value === null)
-    return '—'
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean')
-    return String(value)
-  if (Array.isArray(value))
-    return value.slice(0, 5).map(displayValue).join(', ')
-  return '—'
-}
-
-function displayJSON(value: unknown): string {
-  if (typeof value === 'string')
-    return value
-  try {
-    return JSON.stringify(value, null, 2)
-  }
-  catch {
-    return String(value)
-  }
-}
-
 export function AIToolCallCard({ block, onAction, onApproval, onMFA }: { block: ToolCallBlock, onAction: (action: AIUIAction) => Promise<boolean>, onApproval: (block: ToolCallBlock, decision: AIApprovalDecision, reason?: string) => Promise<void>, onMFA: (block: ToolCallBlock, code: string) => Promise<void> }) {
   const { t, i18n } = useTranslation()
-  const entries = Object.entries(block.arguments).filter(([key]) => !SECRET_FIELD.test(key)).slice(0, 20)
-  const title = block.titleKey && i18n.exists(block.titleKey) ? t(block.titleKey) : block.operationId
+  const title = block.titleKey && i18n.exists(block.titleKey) ? t(block.titleKey) : toolDisplayName(t, block.operationId)
   const errorCode = block.errorCode ?? block.result?.errorCode
   const summary = block.status === 'failed'
     ? t(runFailureTranslationKey(errorCode))
     : block.result?.summaryKey && i18n.exists(block.result.summaryKey)
       ? t(block.result.summaryKey, block.result.summaryParams)
       : t('aiAssistant.resultAvailable')
+  const hasControls = block.uiActions.length > 0 || block.status === 'awaiting_approval' || block.status === 'awaiting_mfa'
   return (
     <details className="group overflow-hidden rounded-container bg-surface" open={block.status === 'awaiting_approval' || block.status === 'awaiting_mfa' ? true : undefined}>
       <summary className="flex min-h-9 cursor-pointer list-none items-center gap-1.5 px-2 py-1 outline-none hover:bg-surface-inset focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&::-webkit-details-marker]:hidden" data-ai-tool-summary>
@@ -70,89 +48,18 @@ export function AIToolCallCard({ block, onAction, onApproval, onMFA }: { block: 
         </Badge>
         <ChevronRight className="size-3.5 shrink-0 text-muted-foreground transition-transform group-open:rotate-90" />
       </summary>
-      <div className="border-t border-separator-subtle bg-surface-subtle/40 px-3 pb-3">
-        <h3 className="mb-2 mt-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{t('aiAssistant.arguments')}</h3>
-        {entries.length
-          ? (
-              <dl className="grid grid-cols-[minmax(5rem,35%)_minmax(0,1fr)] gap-x-2 gap-y-1.5 text-xs">
-                {entries.map(([key, value]) => (
-                  <div key={key} className="contents">
-                    <dt className="truncate text-muted-foreground">{key}</dt>
-                    <dd className="m-0 break-words font-medium">{displayValue(value)}</dd>
-                  </div>
-                ))}
-              </dl>
-            )
-          : <p className="text-xs text-muted-foreground">{t('aiAssistant.noArguments')}</p>}
-        <h3 className="mb-2 mt-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{t('aiAssistant.result')}</h3>
-        {block.result
-          ? (
-              <div className="grid gap-2 rounded-control bg-surface px-2.5 py-2 text-xs">
-                <p>{summary}</p>
-                {errorCode && (
-                  <div className="flex justify-between gap-3">
-                    <span className="text-muted-foreground">{t('aiAssistant.errorCode')}</span>
-                    <code className="break-all text-right text-[11px]">{errorCode}</code>
-                  </div>
-                )}
-                {block.result.errorMessage && (
-                  <p className="break-words rounded-control bg-danger-subtle px-2 py-1.5 text-danger">
-                    {block.result.errorMessage}
-                  </p>
-                )}
-                {block.result.requestId && (
-                  <div className="flex justify-between gap-3">
-                    <span className="text-muted-foreground">{t('aiAssistant.requestId')}</span>
-                    <code className="break-all text-right text-[11px]">{block.result.requestId}</code>
-                  </div>
-                )}
-                {block.durationMs !== undefined && (
-                  <div className="flex justify-between gap-3">
-                    <span className="text-muted-foreground">{t('aiAssistant.duration')}</span>
-                    <strong>{`${block.durationMs} ms`}</strong>
-                  </div>
-                )}
-                {block.result.fields?.map(field => (
-                  <div key={field.labelKey} className="flex justify-between gap-3">
-                    <span className="text-muted-foreground">{i18n.exists(field.labelKey) ? t(field.labelKey) : field.labelKey}</span>
-                    <strong className="break-all text-right">{displayValue(field.value)}</strong>
-                  </div>
-                ))}
-                {block.result.issues && block.result.issues.length > 0 && (
-                  <div className="grid gap-1.5 rounded-control bg-danger-subtle px-2 py-2">
-                    <strong className="text-[11px] text-danger">{t('aiAssistant.validationDetails')}</strong>
-                    <ul className="m-0 grid list-none gap-1 p-0">
-                      {block.result.issues.map(issue => (
-                        <li key={`${issue.path}-${issue.code}-${issue.message}`} className="grid gap-0.5 text-[11px]">
-                          <code className="break-all font-semibold text-danger">{issue.path || t('aiAssistant.rootField')}</code>
-                          <span className="break-words text-muted-foreground">{issue.message}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {block.result.data !== undefined && (
-                  <div className="min-w-0">
-                    <strong className="mb-1 block text-[11px] text-muted-foreground">{t('aiAssistant.responseData')}</strong>
-                    <pre className="m-0 max-h-64 max-w-full overflow-auto rounded-control bg-surface-inset p-2 text-[11px] leading-4"><code>{displayJSON(block.result.data)}</code></pre>
-                  </div>
-                )}
-              </div>
-            )
-          : (
-              <div className="grid gap-2" aria-label={t('aiAssistant.resultPending')}>
-                <Skeleton className="h-2.5 w-full" />
-                <Skeleton className="h-2.5 w-2/3" />
-              </div>
-            )}
-        {block.uiActions.length > 0 && (
-          <div className="mt-3 flex flex-wrap justify-end gap-2">
-            {block.uiActions.map(action => <ActionButton key={`${action.type}-${JSON.stringify(action.payload)}`} action={action} onAction={onAction} />)}
-          </div>
-        )}
-        {block.status === 'awaiting_approval' && <ApprovalControls block={block} onApproval={onApproval} />}
-        {block.status === 'awaiting_mfa' && <MFAControls block={block} onMFA={onMFA} />}
-      </div>
+      <AIToolCallDetails block={block} errorCode={errorCode} summary={summary} />
+      {hasControls && (
+        <div className="bg-surface-subtle/40 px-3 pb-3">
+          {block.uiActions.length > 0 && (
+            <div className="mt-3 flex flex-wrap justify-end gap-2">
+              {block.uiActions.map(action => <ActionButton key={`${action.type}-${JSON.stringify(action.payload)}`} action={action} onAction={onAction} />)}
+            </div>
+          )}
+          {block.status === 'awaiting_approval' && <ApprovalControls block={block} onApproval={onApproval} />}
+          {block.status === 'awaiting_mfa' && <MFAControls block={block} onMFA={onMFA} />}
+        </div>
+      )}
     </details>
   )
 }

@@ -113,6 +113,7 @@ export interface AITimelineItem {
     result?: AIToolDisplayResult
     uiActions?: AIUIAction[]
     durationMs?: number
+    traceId?: string
     argumentsHash?: string
     expectedVersion?: number
     mfaPurpose?: string

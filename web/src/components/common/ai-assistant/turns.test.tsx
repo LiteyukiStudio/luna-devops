@@ -104,6 +104,27 @@ describe('ai assistant turn topology', () => {
     expect(replyText.indexOf('listProjects')).toBeLessThan(replyText.indexOf('最终答复'))
   })
 
+  it('reserves scroll space below the last message when suggestions float over the timeline', () => {
+    const { container } = render(
+      <MemoryRouter>
+        <AIAssistantTimeline
+          bottomInset
+          blocks={blocks}
+          error={null}
+          generating={false}
+          loading={false}
+          onAction={vi.fn(async () => true)}
+          onApproval={vi.fn(async () => {})}
+          onMFA={vi.fn(async () => {})}
+          onResend={vi.fn()}
+          onRetry={vi.fn()}
+        />
+      </MemoryRouter>,
+    )
+
+    expect(container.querySelector('[data-slot="ai-assistant-timeline"]')).toHaveClass('pb-16')
+  })
+
   it('keeps timestamps visible and exposes message actions inside the stable message group', async () => {
     await i18next.changeLanguage('zh-CN')
     const onResend = vi.fn()
@@ -179,5 +200,113 @@ describe('ai assistant turn topology', () => {
     expect(screen.getByText('帮我看看')).toBeInTheDocument()
     expect(screen.queryByText('更新会话名称')).not.toBeInTheDocument()
     expect(container.querySelector('[data-ai-reply]')).not.toBeInTheDocument()
+  })
+
+  it('keeps create_options out of the message bubble for the fixed suggestion bar', () => {
+    const { container } = render(
+      <MemoryRouter>
+        <AIAssistantTimeline
+          blocks={[
+            {
+              id: 'user-options',
+              turnId: 'turn-options',
+              index: -1,
+              type: 'message',
+              role: 'user',
+              status: 'completed',
+              text: '下一步做什么',
+              createdAt: '2026-08-01T09:04:00+08:00',
+            },
+            {
+              id: 'options-tool',
+              turnId: 'turn-options',
+              runId: 'run-options',
+              index: 1,
+              type: 'tool_call',
+              toolCallId: 'options-tool-call',
+              operationId: 'create_options',
+              status: 'succeeded',
+              arguments: {},
+              uiActions: [{
+                version: 1,
+                id: 'continue',
+                repeatable: false,
+                type: 'send_message',
+                label: '继续分析',
+                payload: { message: '继续分析' },
+              }],
+            },
+          ]}
+          error={null}
+          generating={false}
+          loading={false}
+          onAction={vi.fn(async () => true)}
+          onApproval={vi.fn(async () => {})}
+          onMFA={vi.fn(async () => {})}
+          onResend={vi.fn()}
+          onRetry={vi.fn()}
+        />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByText('下一步做什么')).toBeInTheDocument()
+    expect(screen.queryByText('继续分析')).not.toBeInTheDocument()
+    expect(container.querySelector('[data-ai-reply]')).not.toBeInTheDocument()
+  })
+
+  it('renders an automatic route switch as a compact repeatable navigation event', async () => {
+    const onAction = vi.fn(async () => true)
+    const { container } = render(
+      <MemoryRouter>
+        <AIAssistantTimeline
+          blocks={[
+            {
+              id: 'user-navigation',
+              turnId: 'turn-navigation',
+              index: -1,
+              type: 'message',
+              role: 'user',
+              status: 'completed',
+              text: '看看账单用量',
+              createdAt: '2026-08-01T09:04:00+08:00',
+            },
+            {
+              id: 'navigation-tool',
+              turnId: 'turn-navigation',
+              runId: 'run-navigation',
+              index: 1,
+              type: 'tool_call',
+              toolCallId: 'navigation-tool-call',
+              operationId: 'navigate_to_route',
+              status: 'succeeded',
+              arguments: { routeName: 'billing', params: {}, query: {} },
+              uiActions: [{
+                version: 1,
+                type: 'navigate',
+                activation: 'automatic',
+                repeatable: false,
+                payload: { routeName: 'billing', params: {}, query: {} },
+              }],
+            },
+          ]}
+          error={null}
+          generating={false}
+          loading={false}
+          onAction={onAction}
+          onApproval={vi.fn(async () => {})}
+          onMFA={vi.fn(async () => {})}
+          onResend={vi.fn()}
+          onRetry={vi.fn()}
+        />
+      </MemoryRouter>,
+    )
+
+    const navigationEvent = screen.getByRole('button', { name: '再次打开账单' })
+    expect(navigationEvent).toHaveTextContent('已跳转到账单')
+    expect(container.querySelector('[data-ai-navigation-event]')).toBe(navigationEvent)
+    expect(screen.queryByText('切换当前页面')).not.toBeInTheDocument()
+
+    fireEvent.click(navigationEvent)
+    expect(onAction).toHaveBeenCalledWith(expect.objectContaining({ type: 'navigate' }))
   })
 })

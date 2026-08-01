@@ -306,6 +306,8 @@ describe('aI assistant state', () => {
           callIndex: 0,
           status: 'failed',
           arguments: { projectId: 'prj_1' },
+          durationMs: 234,
+          traceId: '717690e2661f8337d53fcd3295591b4b',
           errorCode: 'ai.tool_storage_unavailable',
           result: { summaryKey: 'ai.tool.result.failed', errorCode: 'ai.tool_storage_unavailable', requestId: 'req_tool_failure' },
         },
@@ -316,6 +318,8 @@ describe('aI assistant state', () => {
       type: 'tool_call',
       status: 'failed',
       errorCode: 'ai.tool_storage_unavailable',
+      durationMs: 234,
+      traceId: '717690e2661f8337d53fcd3295591b4b',
       result: {
         requestId: 'req_tool_failure',
       },

@@ -19,6 +19,7 @@ import { executeAutomaticRouteDelivery } from './automatic-route-delivery'
 import { readAIClientInstanceId } from './client-instance'
 import { AIAssistantComposer } from './composer'
 import { AIConversationList } from './conversation-list'
+import { aiConversationSessionReducer, initialAIConversationSessionState } from './conversation-session'
 import { AIAssistantLauncher } from './launcher'
 import {
   clampAssistantPosition,
@@ -32,10 +33,13 @@ import {
   VIEWPORT_GUTTER,
   WINDOW_STORAGE_KEY,
 } from './layout'
+import { AIOptionsBar } from './options'
 import { buildAIPageContext } from './page-context'
+import { AIRefreshConversationReturn } from './refresh-conversation-return'
 import { AI_EVENT_TYPES, sessionStateReducer } from './session'
 import { emptyAIAssistantState, isValidAITimeline } from './state'
 import { createAIEventSource } from './stream'
+import { resolveAISuggestions } from './suggestions'
 import { AIAssistantTimeline } from './timeline'
 
 export function AiAssistant() {
@@ -57,7 +61,7 @@ export function AiAssistant() {
   const [capabilityEpoch, invalidateOpenWindow] = useReducer(value => value + 1, 0)
   const [openedCapabilityEpoch, setOpenedCapabilityEpoch] = useState(0)
   const [showConversations, setShowConversations] = useState(false)
-  const [activeConversationId, setActiveConversationId] = useState<string>()
+  const [conversationSession, dispatchConversationSession] = useReducer(aiConversationSessionReducer, initialAIConversationSessionState)
   const [conversationSearch, setConversationSearch] = useState('')
   const [liveSubscriptions, setLiveSubscriptions] = useState<Record<string, LiveSubscription>>({})
   const [drafts, setDrafts] = useState<Record<string, string>>({})
@@ -89,7 +93,7 @@ export function AiAssistant() {
     queryFn: () => api.listAIConversations({ page: 1, pageSize: 50, search: conversationSearch || undefined }),
     enabled: available && assistantOpen,
   })
-  const selectedConversationId = activeConversationId ?? conversations.data?.items[0]?.id
+  const selectedConversationId = conversationSession.activeConversationId
   const draftKey = selectedConversationId ?? '__new__'
   const draft = drafts[draftKey] ?? ''
   const setDraft = useCallback((value: string) => {
@@ -161,10 +165,10 @@ export function AiAssistant() {
 
   const createConversation = useMutation({
     mutationFn: () => api.createAIConversation({ projectId: pageContext().projectId }),
+    onMutate: () => dispatchConversationSession({ type: 'start_new' }),
     onSuccess: async (conversation) => {
       await queryClient.invalidateQueries({ queryKey: ['ai', 'conversations'] })
-      setActiveConversationId(conversation.id)
-      setShowConversations(false)
+      dispatchConversationSession({ type: 'select', conversationId: conversation.id })
       window.setTimeout(() => inputRef.current?.focus(), 0)
     },
     onError: error => toast.error(error instanceof Error ? error.message : t('aiAssistant.errors.createConversation')),
@@ -182,8 +186,7 @@ export function AiAssistant() {
   const deleteConversations = useMutation({
     mutationFn: async (ids: string[]) => Promise.all(ids.map(id => api.deleteAIConversation(id))),
     onSuccess: async (_, deletedIds) => {
-      if (activeConversationId && deletedIds.includes(activeConversationId))
-        setActiveConversationId(undefined)
+      dispatchConversationSession({ type: 'clear_deleted', conversationIds: deletedIds })
       await queryClient.invalidateQueries({ queryKey: ['ai', 'conversations'] })
     },
     onError: error => toast.error(error instanceof Error ? error.message : t('aiAssistant.errors.deleteConversation')),
@@ -204,7 +207,7 @@ export function AiAssistant() {
       if (!conversationId) {
         const conversation = await api.createAIConversation({ projectId: pageContext().projectId })
         conversationId = conversation.id
-        setActiveConversationId(conversationId)
+        dispatchConversationSession({ type: 'select', conversationId })
       }
       const result = await api.createAITurn(conversationId, {
         input: { parts: [{ type: 'text', text }] },
@@ -274,6 +277,12 @@ export function AiAssistant() {
       ids.add(selectedConversationId)
     return ids
   }, [generating, liveSubscriptions, selectedConversationId, streamStates])
+  const allowPresetSuggestions = !conversations.isLoading
+    && (!selectedConversationId || (timelineValid && timeline.data!.turns.length === 0))
+  const suggestions = useMemo(
+    () => resolveAISuggestions(streamState.blocks, location.pathname, t, Boolean(activeRunId), allowPresetSuggestions),
+    [activeRunId, allowPresetSuggestions, location.pathname, streamState.blocks, t],
+  )
   const executeAction = useCallback((action: AIUIAction) => executeAIUIAction(action, {
     pathname: location.pathname,
     search: location.search,
@@ -335,6 +344,14 @@ export function AiAssistant() {
     }
     sendTurn.mutate({ conversationId: selectedConversationId, message: draft })
   }
+  const dismissRefreshReturn = useCallback(() => {
+    dispatchConversationSession({ type: 'dismiss_refresh_return' })
+  }, [])
+  const returnToPreviousConversation = useCallback(() => {
+    const previousConversationId = conversations.data?.items[0]?.id
+    if (previousConversationId)
+      dispatchConversationSession({ type: 'select', conversationId: previousConversationId })
+  }, [conversations.data?.items])
 
   useEffect(() => {
     if (!assistantOpen)
@@ -366,6 +383,7 @@ export function AiAssistant() {
   if (!assistantOpen) {
     const openAssistant = () => {
       setOpenedCapabilityEpoch(capabilityEpoch)
+      dispatchConversationSession({ type: 'open', now: Date.now() })
       setOpen(true)
     }
     return (
@@ -411,7 +429,7 @@ export function AiAssistant() {
       >
         <section
           aria-label={t('aiAssistant.title')}
-          className="flex size-full overflow-hidden rounded-feature border border-border bg-surface text-[13px] shadow-overlay max-sm:rounded-none"
+          className="relative flex size-full overflow-hidden rounded-feature border border-border bg-surface text-[13px] shadow-overlay max-sm:rounded-none"
         >
           {showConversations && (
             <AIConversationList
@@ -420,16 +438,11 @@ export function AiAssistant() {
               deleting={deleteConversations.isPending}
               loading={conversations.isLoading}
               search={conversationSearch}
-              onClose={() => setShowConversations(false)}
-              onCreate={() => createConversation.mutate()}
               onDeleteMany={ids => deleteConversations.mutateAsync(ids).then(() => undefined)}
               onRename={(id, title) => renameConversation.mutate({ id, title })}
               runningConversationIds={runningConversationIds}
               onSearch={setConversationSearch}
-              onSelect={(id) => {
-                setActiveConversationId(id)
-                setShowConversations(false)
-              }}
+              onSelect={id => dispatchConversationSession({ type: 'select', conversationId: id })}
             />
           )}
           <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
@@ -443,31 +456,50 @@ export function AiAssistant() {
               <Button aria-label={t('aiAssistant.conversations.new')} disabled={createConversation.isPending} size="icon" variant="ghost" onClick={() => createConversation.mutate()}>{createConversation.isPending ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" /> : <MessageSquarePlus className="size-4" />}</Button>
               <Button aria-label={t('common.close')} size="icon" variant="ghost" onClick={close}><X className="size-4" /></Button>
             </header>
-            <AIAssistantTimeline
-              blocks={streamState.blocks}
-              error={timeline.error ?? (timeline.data && !timelineValid ? new Error('ai_invalid_timeline') : null)}
-              generating={generating}
-              loading={timeline.isLoading}
-              onAction={executeAction}
-              onApproval={(block, decision, reason) => api.decideAIToolApproval(block.runId, block.toolCallId, {
-                decision,
-                argumentsHash: block.argumentsHash!,
-                expectedVersion: block.expectedVersion!,
-                reason,
-              })}
-              onMFA={async (block, code) => {
-                const verification = await api.verifyMFA({ code, purpose: block.mfaPurpose! })
-                if (!verification.stepUpAssertionId)
-                  throw new Error(t('aiAssistant.errors.mfaAssertion'))
-                await api.resumeAIToolMFA(block.runId, block.toolCallId, {
-                  stepUpAssertionId: verification.stepUpAssertionId,
+            <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
+              <AIAssistantTimeline
+                bottomInset={Boolean(suggestions)}
+                blocks={streamState.blocks}
+                error={timeline.error ?? (timeline.data && !timelineValid ? new Error('ai_invalid_timeline') : null)}
+                generating={generating}
+                loading={timeline.isLoading}
+                onAction={executeAction}
+                onApproval={(block, decision, reason) => api.decideAIToolApproval(block.runId, block.toolCallId, {
+                  decision,
+                  argumentsHash: block.argumentsHash!,
                   expectedVersion: block.expectedVersion!,
-                })
-              }}
-              onResend={message => sendTurn.mutate({ conversationId: selectedConversationId, message })}
-              onRetry={() => void timeline.refetch()}
-              resendDisabled={Boolean(activeRunId || sendingSelected)}
-            />
+                  reason,
+                })}
+                onMFA={async (block, code) => {
+                  const verification = await api.verifyMFA({ code, purpose: block.mfaPurpose! })
+                  if (!verification.stepUpAssertionId)
+                    throw new Error(t('aiAssistant.errors.mfaAssertion'))
+                  await api.resumeAIToolMFA(block.runId, block.toolCallId, {
+                    stepUpAssertionId: verification.stepUpAssertionId,
+                    expectedVersion: block.expectedVersion!,
+                  })
+                }}
+                onResend={message => sendTurn.mutate({ conversationId: selectedConversationId, message })}
+                onRetry={() => void timeline.refetch()}
+                resendDisabled={Boolean(activeRunId || sendingSelected)}
+                topContent={conversationSession.refreshReturnExpiresAt && !selectedConversationId && !conversationSearch && conversations.data?.items[0]
+                  ? (
+                      <AIRefreshConversationReturn
+                        expiresAt={conversationSession.refreshReturnExpiresAt}
+                        onExpire={dismissRefreshReturn}
+                        onReturn={returnToPreviousConversation}
+                      />
+                    )
+                  : undefined}
+              />
+              {suggestions && (
+                <AIOptionsBar
+                  actions={suggestions.actions}
+                  sourceKey={suggestions.sourceKey}
+                  onAction={executeAction}
+                />
+              )}
+            </div>
             <AIAssistantComposer
               activeRun={Boolean(activeRunId)}
               canceling={cancelingSelected}

@@ -3,7 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import i18next from '@/i18n'
-import { AIOptionsCard } from './options'
+import { AIOptionsBar } from './options'
 
 const actions = [
   {
@@ -37,18 +37,21 @@ const actions = [
 describe('ai assistant options', () => {
   it('renders all three supported next-step actions as visible buttons', async () => {
     await i18next.changeLanguage('zh-CN')
-    render(<AIOptionsCard actions={actions} arguments={{ title: '你接下来可以', description: '选择一个操作继续' }} onAction={vi.fn()} />)
+    render(<AIOptionsBar actions={actions} sourceKey="agent:turn-1" onAction={vi.fn()} />)
 
-    expect(screen.getByRole('heading', { name: '你接下来可以' })).toBeInTheDocument()
+    const region = screen.getByRole('region', { name: i18next.t('aiAssistant.options.suggested') })
+    expect(region).toHaveClass('absolute', 'bottom-0')
+    expect(region).not.toHaveClass('border-t', 'bg-surface')
     expect(screen.getByRole('button', { name: /查看项目空间/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /继续诊断/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /重新执行/ })).toBeInTheDocument()
+    expect(screen.queryByText('打开项目空间列表')).not.toBeInTheDocument()
   })
 
   it('keeps repeatable navigation and sibling actions available after a one-time choice', async () => {
     const user = userEvent.setup()
     const onAction = vi.fn(async () => true)
-    render(<AIOptionsCard actions={actions} arguments={{ title: '下一步' }} onAction={onAction} />)
+    render(<AIOptionsBar actions={actions} sourceKey="agent:turn-1" onAction={onAction} />)
 
     const navigateButton = screen.getByRole('button', { name: /查看项目空间/ })
     const messageButton = screen.getByRole('button', { name: /继续诊断/ })
@@ -65,7 +68,6 @@ describe('ai assistant options', () => {
 
     expect(onAction).toHaveBeenNthCalledWith(3, actions[1])
     expect(messageButton).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByText(i18next.t('aiAssistant.options.selected'))).toBeInTheDocument()
     expect(messageButton).toBeDisabled()
     expect(navigateButton).toBeEnabled()
     expect(toolButton).toBeEnabled()
@@ -82,7 +84,7 @@ describe('ai assistant options', () => {
     const onAction = vi.fn(() => new Promise<boolean>((resolve) => {
       finish = resolve
     }))
-    render(<AIOptionsCard actions={actions} arguments={{ title: '下一步' }} onAction={onAction} />)
+    render(<AIOptionsBar actions={actions} sourceKey="agent:turn-1" onAction={onAction} />)
 
     const navigateButton = screen.getByRole('button', { name: /查看项目空间/ })
     const messageButton = screen.getByRole('button', { name: /继续诊断/ })
@@ -105,9 +107,9 @@ describe('ai assistant options', () => {
       label: '打开外站',
       payload: { routeName: 'https://evil.example', params: {}, query: {} },
     }] as unknown as AIUIAction[]
-    render(<AIOptionsCard actions={unsafe} arguments={{ title: '下一步' }} onAction={vi.fn()} />)
+    render(<AIOptionsBar actions={unsafe} sourceKey="agent:unsafe" onAction={vi.fn()} />)
 
     expect(screen.queryByRole('button', { name: '打开外站' })).not.toBeInTheDocument()
-    expect(screen.getByText(i18next.t('aiAssistant.options.unavailable'))).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: i18next.t('aiAssistant.options.suggested') })).not.toBeInTheDocument()
   })
 })

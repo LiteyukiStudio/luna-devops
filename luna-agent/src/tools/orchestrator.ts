@@ -160,7 +160,10 @@ export class ToolOrchestrator {
           ...(authorization.stepUpAssertionId ? { stepUpAssertionId: authorization.stepUpAssertionId } : {}),
         })
         span.setAttribute("http.response.status_code", result.status)
-        const finished = await this.finish(running, result)
+        const finished = await this.finish(running, result, {
+          durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
+          traceId: span.spanContext().traceId,
+        })
         outcome = finished.status
         telemetryLog(finished.status === "succeeded" ? "agent.tool.completed" : "agent.tool.failed", finished.status === "succeeded" ? "info" : "warn", {
           "luna.run.id": call.runId,
@@ -189,18 +192,18 @@ export class ToolOrchestrator {
     }
   }
 
-  private async finish(call: ToolCallRecord, result: ToolExecutionResult): Promise<ToolCallRecord> {
+  private async finish(call: ToolCallRecord, result: ToolExecutionResult, diagnostics: { durationMs: number, traceId: string }): Promise<ToolCallRecord> {
     const code = extractCode(result.body)
     const storedResult = redact(withRequestId(result.body, result.requestId))
-    if (result.status === 401 || result.status === 403) return this.transition(call, "failed", { errorCode: code ?? "ai.tool_forbidden", result: storedResult }, "tool_call.failed")
+    if (result.status === 401 || result.status === 403) return this.transition(call, "failed", { errorCode: code ?? "ai.tool_forbidden", result: storedResult }, "tool_call.failed", diagnostics)
     if (result.status === 428 && code === "mfa_required") {
       const purpose = (result.body as Record<string, unknown>).purpose
       return this.transition(call, "awaiting_mfa", { mfaPurpose: typeof purpose === "string" ? purpose : "" }, "tool_call.awaiting_mfa")
     }
-    if (result.status < 200 || result.status >= 300) return this.transition(call, "failed", { errorCode: code ?? "ai.tool_failed", result: storedResult }, "tool_call.failed")
+    if (result.status < 200 || result.status >= 300) return this.transition(call, "failed", { errorCode: code ?? "ai.tool_failed", result: storedResult }, "tool_call.failed", diagnostics)
     const verification = await this.verifier.verify(call.operationId, result)
-    if (!verification.ok) return this.transition(call, "failed", { errorCode: verification.code ?? "verification_inconclusive", result: storedResult }, "tool_call.failed")
-    return this.transition(call, "succeeded", { result: storedResult }, "tool_call.succeeded")
+    if (!verification.ok) return this.transition(call, "failed", { errorCode: verification.code ?? "verification_inconclusive", result: storedResult }, "tool_call.failed", diagnostics)
+    return this.transition(call, "succeeded", { result: storedResult }, "tool_call.succeeded", diagnostics)
   }
 
   private async transition(call: ToolCallRecord, status: ToolCallStatus, patch: Partial<ToolCallRecord>, event: string, eventData: Record<string, unknown> = {}) {
@@ -273,7 +276,7 @@ export class ProjectingToolCallStore implements ToolCallStore {
     const execution = await this.repository.getExecutionInput(call.runId)
     if (!execution) return
     const itemId = `${call.id}:item`
-    const content = redact(toolCallContent(call))
+    const content = redact({ ...toolCallContent(call), ...toolDiagnostics(event.data) })
     const publicType = publicToolEventType(event.type)
     const eventData = { itemId, toolCallId: call.id, ...event.data }
     await (event.type === "tool.started"
@@ -294,6 +297,13 @@ function toolCallContent(call: ToolCallRecord) {
     toolCallId: call.id, operationId: call.operationId, status: call.status,
     arguments: call.arguments, result: call.result, errorCode: call.errorCode,
     argumentsHash: call.argumentsHash, expectedVersion: call.rowVersion, mfaPurpose: call.mfaPurpose,
+  }
+}
+
+function toolDiagnostics(data: Record<string, unknown>) {
+  return {
+    ...(typeof data.durationMs === "number" && Number.isFinite(data.durationMs) ? { durationMs: Math.max(0, Math.round(data.durationMs)) } : {}),
+    ...(typeof data.traceId === "string" && /^(?!0{32}$)[a-f0-9]{32}$/i.test(data.traceId) ? { traceId: data.traceId } : {}),
   }
 }
 

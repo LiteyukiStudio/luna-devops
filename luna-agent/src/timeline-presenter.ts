@@ -97,6 +97,7 @@ function presentItem(item: TimelineItem) {
   const titleKey = stringValue(item.content.titleKey)
   const argumentsHash = stringValue(item.content.argumentsHash)
   const mfaPurpose = stringValue(item.content.mfaPurpose)
+  const traceId = stringValue(item.content.traceId)
   return {
     ...base,
     toolCall: {
@@ -112,6 +113,8 @@ function presentItem(item: TimelineItem) {
       ...(argumentsHash ? { argumentsHash } : {}),
       ...(typeof item.content.expectedVersion === "number" ? { expectedVersion: item.content.expectedVersion } : {}),
       ...(mfaPurpose ? { mfaPurpose } : {}),
+      ...(typeof item.content.durationMs === "number" ? { durationMs: item.content.durationMs } : {}),
+      ...(traceId ? { traceId } : {}),
       ...(titleKey ? { titleKey } : {}),
       ...(errorCode ? { errorCode } : {}),
     },

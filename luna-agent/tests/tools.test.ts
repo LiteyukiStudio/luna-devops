@@ -33,6 +33,7 @@ describe("tool catalog and orchestration", () => {
     expect(client.calls).toHaveLength(1)
     expect(client.calls[0]?.approvalGranted).toBe(false)
     expect(store.events.map(event => event.type)).toEqual(["tool.started", "tool_call.running", "tool_call.succeeded"])
+    expect(store.events.at(-1)?.data.durationMs).toEqual(expect.any(Number))
   })
   it("binds approval to arguments and requires MFA separately", async () => {
     const client = new DeterministicLunaApiClient(() => ({ status: 200, body: { restarted: true } }))

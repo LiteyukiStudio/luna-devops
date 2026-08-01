@@ -27,6 +27,8 @@ In the assistant you can:
 
 An empty new conversation is not saved repeatedly. Conversations are named automatically until you rename one manually; a manually chosen title is never overwritten.
 
+Closing and reopening the assistant returns to the conversation you were using. A full browser refresh starts with a new empty conversation instead. A brief notice at the top of the message area lets you return to the previous conversation when needed. The conversation list stays open while switching conversations so you can continue browsing or managing them.
+
 Each message shows its timestamp underneath. Hover anywhere over the message, including the timestamp area, to copy it; your own messages can also be sent again unchanged. These actions remain visible on touch devices.
 
 ## Queries and operations
@@ -43,6 +45,8 @@ The assistant follows complete workflows for common tasks, including delivering 
 
 The assistant can also search the public web and read HTTP/HTTPS pages. Paste a GitHub repository, project website, or deployment guide to extract build methods, start commands, ports, and environment-variable names, then generate a deployment form with supported defaults. You still choose or confirm the target project space, domain, resource sizing, and secrets.
 
+You only need to describe the outcome; you do not need to write an expert procedural prompt. When you provide a GitHub repository and ask for deployment, the assistant checks the README, actual directory tree, Dockerfiles, dependency manifests, configuration examples, and migrations. It reports conflicts between documentation and the current code and uses executable facts from the selected revision to build a reviewable configuration. Multi-service repositories are split along independent build and release boundaries instead of being forced into one application.
+
 Web requests do not carry your browser cookies, tokens, or Git credentials. URLs containing embedded credentials, tokens, or signature parameters are rejected, and external content is treated as untrusted data. Connect a Git Provider in Luna DevOps before accessing a private repository.
 
 If the server needs a proxy for public web access, a platform administrator can enable a dedicated pool under **Global Settings → AI Assistant → Web-tool proxy pool**. Enter one `http://user:password@host:port` or HTTPS proxy URL per line. Web search and page fetching rotate through the pool without affecting the model API, Git, builds, or other platform requests. Proxy credentials are encrypted and never displayed.
@@ -57,18 +61,22 @@ Approval is bound to the complete arguments shown in the card; changed arguments
 
 ## Suggestions and navigation
 
-After a response, the assistant shows a small set of next steps only when the model produces valid suggestions that are directly relevant to the current task. A suggestion may:
+The row above the composer contains quick suggestions. Before the first message in a new conversation, the platform shows three to five common actions for the current page. After the conversation starts, the row switches to the next steps generated for the completed assistant response. A suggestion may:
 
 - Continue the conversation
 - Open a related platform page
 - Run one clearly described follow-up operation
 
-If you are new to the platform, ask “What can you do?” or “How should I get started?”. The assistant uses the current page and your permissions to offer two to five selectable goals, then continues the selected workflow.
+Suggestions are single-line pills floating over the bottom of the message area instead of occupying a divided toolbar. The message list keeps enough bottom scroll space so the final message can always move fully above the overlay. Long labels are truncated. Primary, standard, and high-risk actions use distinct semantic styles. New suggestions enter from the right with a spring transition, while the system’s reduced-motion preference removes the displacement.
+
+If you are new to the platform, select one of the page suggestions in a new conversation, or ask “What can you do?” or “How should I get started?”. The assistant uses the current page and your permissions to offer two to five selectable goals, then continues the selected workflow.
 
 For reading tasks, the assistant may include internal links. When it needs a decision, it prefers selectable options instead of moving you away from the current page.
-If the model does not return reliable contextual suggestions, the platform omits the suggestion area instead of filling it with fixed generic choices.
+After a conversation starts, the platform hides the row when the model does not return reliable contextual suggestions instead of restoring unrelated new-conversation presets.
 
-When you explicitly ask to open a page, the assistant can switch the current tab without a reload. An unfinished navigation is retried briefly after a temporary disconnect, and the platform confirms success only after the target page has opened.
+When you explicitly ask to open a page, or your intent clearly belongs to another page and switching would make inspection, configuration, diagnosis, or review more coherent, the assistant can proactively switch the current tab without a reload. For example, it can open Billing when you ask about usage from the Dashboard, or move to an application's Builds tab after resolving that application. Navigation only synchronizes the visible context; it never replaces queries, platform operations, or acceptance checks.
+
+Each assistant-driven route change appears in its actual timeline position as a compact navigation badge rather than a regular tool card. The badge names the destination and can be clicked to open it again. An unfinished navigation is retried briefly after a temporary disconnect, and the platform confirms success only after the target page has opened. The assistant does not jump ahead while multiple targets remain possible, a trusted resource ID is missing, or a form or approval is waiting.
 
 ## Interaction cards
 
@@ -90,7 +98,7 @@ Complex cards show a preparation animation and replace it in place when the fina
 
 The assistant receives structured context such as the current route, page type, and selected resource IDs. Passwords, tokens, and secrets shown or entered on a page are not included in that context.
 
-Tool details are collapsed by default. Expand them to inspect redacted and bounded parameters, structured response data, execution status, stable error codes, and request IDs. Tokens, secrets, passwords, and authentication data are never displayed.
+Tool details are collapsed by default. The collapsed row uses a localized business name. Expand it to inspect three sections: identifiers, arguments, and return value. Identifiers include the original operation, call ID, run ID, Trace ID, duration, and request ID when available. Redacted and bounded nested arguments and response data retain their JSON structure for direct inspection. Tokens, secrets, passwords, and authentication data are never displayed.
 
 If interaction-card generation fails, the tool details list the invalid field paths and reasons so the card can be regenerated or an administrator can investigate with the request ID.
 

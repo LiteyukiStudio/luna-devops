@@ -77,6 +77,9 @@
 
 ## 代码仓库分支
 
+具体仓库取证、README 复核、monorepo 拆分、迁移与多服务验收遵守根 Skill 直接索引的
+`repository-delivery.md`；本节只定义交付编排阶段。
+
 1. 优先发现已连接的 Git Provider、账号、仓库和分支。私有仓库使用平台 Git 能力，
    不使用公开网页工具绕过认证。
 2. 用户提供公开 GitHub 或网页 URL 时先用 `fetchWebPage` 读取；只有名称时先

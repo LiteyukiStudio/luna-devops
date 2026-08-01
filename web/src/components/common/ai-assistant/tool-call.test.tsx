@@ -56,6 +56,11 @@ describe('ai assistant tool status icon', () => {
         block={{
           ...toolBlock('succeeded'),
           durationMs: 128,
+          traceId: '717690e2661f8337d53fcd3295591b4b',
+          arguments: {
+            projectId: 'prj_1',
+            filters: { status: ['failed', 'running'], limit: 20 },
+          },
           result: { summaryKey: 'aiAssistant.resultAvailable' },
         }}
         onAction={vi.fn(async () => true)}
@@ -67,7 +72,8 @@ describe('ai assistant tool status icon', () => {
     const details = container.querySelector('details')
     const summary = container.querySelector('[data-ai-tool-summary]')
     expect(summary).toHaveClass('min-h-9')
-    expect(summary).toHaveTextContent('listApplications')
+    expect(summary).toHaveTextContent('查询应用列表')
+    expect(summary).not.toHaveTextContent('listApplications')
     expect(summary).toHaveTextContent('已完成')
     expect(summary).not.toHaveTextContent('工具已返回结果')
     expect(details).not.toHaveAttribute('open')
@@ -75,6 +81,18 @@ describe('ai assistant tool status icon', () => {
     fireEvent.click(summary!)
 
     expect(details).toHaveAttribute('open')
+    expect(screen.getByText('标识')).toBeInTheDocument()
+    expect(screen.getByText('工具标识')).toBeInTheDocument()
+    expect(screen.getByText('listApplications')).toBeInTheDocument()
+    expect(screen.getByText('调用标识')).toBeInTheDocument()
+    expect(screen.getByText('tool-call-1')).toBeInTheDocument()
+    expect(screen.getByText('运行标识')).toBeInTheDocument()
+    expect(screen.getByText('run-1')).toBeInTheDocument()
+    expect(screen.getByText('Trace ID')).toBeInTheDocument()
+    expect(screen.getByText('717690e2661f8337d53fcd3295591b4b')).toBeInTheDocument()
+    expect(screen.getByText('projectId')).toBeInTheDocument()
+    expect(screen.getByText(/"failed"/)).toBeInTheDocument()
+    expect(screen.getByText('返回')).toBeInTheDocument()
     expect(screen.getByText('工具已返回结果')).toBeInTheDocument()
     expect(screen.getByText('耗时')).toBeInTheDocument()
     expect(screen.getByText('128 ms')).toBeInTheDocument()
@@ -99,7 +117,7 @@ describe('ai assistant tool status icon', () => {
       />,
     )
 
-    fireEvent.click(screen.getByText('listApplications'))
+    fireEvent.click(screen.getByText('查询应用列表'))
     expect(screen.getByText('平台数据暂时无法读取，请稍后重试；如持续失败，请提供请求编号。')).toBeInTheDocument()
     expect(screen.getByText('请求编号')).toBeInTheDocument()
     expect(screen.getByText('req_tool_failure')).toBeInTheDocument()
@@ -131,7 +149,7 @@ describe('ai assistant tool status icon', () => {
       />,
     )
 
-    fireEvent.click(screen.getByText('prepare_interaction_cards'))
+    fireEvent.click(screen.getByText('准备交互卡片'))
     expect(screen.getByText('模型生成的工具参数不符合要求，请查看校验详情。')).toBeInTheDocument()
     expect(screen.getByText('cards.0.sections')).toBeInTheDocument()
     expect(screen.getByText('Too small: expected array to have >=1 items')).toBeInTheDocument()

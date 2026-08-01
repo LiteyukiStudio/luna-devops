@@ -33,8 +33,6 @@ function renderList(onDeleteMany = vi.fn(async () => {})) {
       loading={false}
       runningConversationIds={new Set()}
       search=""
-      onClose={vi.fn()}
-      onCreate={vi.fn()}
       onDeleteMany={onDeleteMany}
       onRename={vi.fn()}
       onSearch={vi.fn()}
@@ -64,5 +62,14 @@ describe('ai conversation list', () => {
     renderList()
 
     expect(screen.getByLabelText(i18next.t('aiAssistant.conversations.manualTitleLocked'))).toBeInTheDocument()
+  })
+
+  it('keeps navigation and new-conversation controls out of the conversation-list header', async () => {
+    await i18next.changeLanguage('zh-CN')
+    renderList()
+
+    expect(screen.queryByRole('button', { name: '关闭' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '新建会话' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '批量选择会话' })).toBeInTheDocument()
   })
 })

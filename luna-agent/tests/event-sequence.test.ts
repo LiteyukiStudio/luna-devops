@@ -56,6 +56,8 @@ describe("PostgreSQL bigint event sequence normalization", () => {
         operationId: "listApplications",
         status: "succeeded",
         arguments: {},
+        durationMs: 234,
+        traceId: "717690e2661f8337d53fcd3295591b4b",
         result,
       },
     })
@@ -70,6 +72,10 @@ describe("PostgreSQL bigint event sequence normalization", () => {
     const toolItem = timeline?.turns[0]?.selectedRun?.items.find(item => "toolCall" in item)
     if (!toolItem || !("toolCall" in toolItem)) throw new Error("expected projected tool call")
     const toolResult = toolItem.toolCall.result
+    expect(toolItem.toolCall).toMatchObject({
+      durationMs: 234,
+      traceId: "717690e2661f8337d53fcd3295591b4b",
+    })
     expect(toolResult).toMatchObject({
       requestId: "req_visible",
       data: { data: { items: [{ id: "app-1", name: "PostgreSQL" }], total: 1 } },

@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import type { AIBlock } from './state'
 import type { AIApprovalDecision, ToolCallBlock } from './tool-call'
 import type { MessageBlock } from './turns'
@@ -13,11 +14,12 @@ import { AIInteractionCardPlaceholder } from './interaction-card-placeholder'
 import { AIInteractionCards } from './interaction-cards'
 import { AIMarkdown } from './markdown'
 import { AIMessageMeta } from './message-meta'
-import { AIOptionsCard } from './options'
+import { AINavigationEvent } from './navigation-event'
 import { AIToolCallCard } from './tool-call'
 import { groupAIAssistantBlocksByTurn } from './turns'
 
 interface AIAssistantTimelineProps {
+  bottomInset?: boolean
   blocks: AIBlock[]
   error: Error | null
   generating: boolean
@@ -28,15 +30,16 @@ interface AIAssistantTimelineProps {
   onResend: (message: string) => void
   onRetry: () => void
   resendDisabled?: boolean
+  topContent?: ReactNode
 }
 
-const HIDDEN_TOOL_OPERATION_IDS = new Set(['rename_conversation', 'navigate_to_route'])
+const HIDDEN_TOOL_OPERATION_IDS = new Set(['create_options', 'rename_conversation'])
 
 function isVisibleResponseBlock(block: AIBlock): boolean {
   return block.type !== 'tool_call' || !HIDDEN_TOOL_OPERATION_IDS.has(block.operationId)
 }
 
-export function AIAssistantTimeline({ blocks, error, generating, loading, onAction, onApproval, onMFA, onResend, onRetry, resendDisabled }: AIAssistantTimelineProps) {
+export function AIAssistantTimeline({ bottomInset = false, blocks, error, generating, loading, onAction, onApproval, onMFA, onResend, onRetry, resendDisabled, topContent }: AIAssistantTimelineProps) {
   const { t } = useTranslation()
   const viewportRef = useRef<HTMLDivElement>(null)
   const showTypingIndicator = generating && !blocks.some(block => block.status === 'streaming')
@@ -65,7 +68,16 @@ export function AIAssistantTimeline({ blocks, error, generating, loading, onActi
     )
   }
   return (
-    <div ref={viewportRef} aria-live="polite" className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-x-none bg-surface p-3">
+    <div
+      ref={viewportRef}
+      aria-live="polite"
+      className={cn(
+        'min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-x-none bg-surface p-3',
+        bottomInset && 'pb-16',
+      )}
+      data-slot="ai-assistant-timeline"
+    >
+      {topContent}
       {turns.length === 0 && !showTypingIndicator
         ? (
             <div className="mx-auto grid h-full max-w-64 place-content-center gap-2.5 text-center text-muted-foreground">
@@ -187,12 +199,12 @@ function TypingIndicator() {
 function ResponseBlock({ block, onAction, onApproval, onMFA }: { block: AIBlock, onAction: (action: AIUIAction) => Promise<boolean>, onApproval: (block: ToolCallBlock, decision: AIApprovalDecision, reason?: string) => Promise<void>, onMFA: (block: ToolCallBlock, code: string) => Promise<void> }) {
   if (block.type === 'thinking')
     return <ThinkingBlock block={block} />
-  if (block.type === 'tool_call' && block.operationId === 'create_options' && block.status === 'succeeded' && block.uiActions.length > 0)
-    return <AIOptionsCard actions={block.uiActions} arguments={block.arguments} onAction={onAction} />
   if (block.type === 'tool_call' && block.operationId === 'prepare_interaction_cards' && block.status === 'running')
     return <AIInteractionCardPlaceholder arguments={block.arguments} />
   if (block.type === 'tool_call' && block.operationId === 'create_interaction_cards' && block.status === 'succeeded')
     return <AIInteractionCards arguments={block.arguments} onAction={onAction} />
+  if (block.type === 'tool_call' && block.operationId === 'navigate_to_route')
+    return <AINavigationEvent block={block} onAction={onAction} />
   if (block.type === 'tool_call')
     return <AIToolCallCard block={block} onAction={onAction} onApproval={onApproval} onMFA={onMFA} />
   if (block.type === 'run_status')

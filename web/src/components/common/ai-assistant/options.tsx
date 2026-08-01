@@ -1,38 +1,27 @@
 import type { AIUIAction } from '@/api'
-import { Check, ChevronRight, LoaderCircle, MessageSquareText, Navigation, Play } from 'lucide-react'
-import { useId, useMemo, useRef, useState } from 'react'
+import { Check, LoaderCircle } from 'lucide-react'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
+import { useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { z } from 'zod'
 import { Button } from '@/components/ui/button'
 import { isAIUIActionRepeatable, parseAIOptionAction } from './actions'
 
-const presentationSchema = z.object({
-  title: z.string().trim().min(1).max(120),
-  description: z.string().trim().max(300).optional(),
-})
-
-export function AIOptionsCard({ actions, arguments: rawArguments, onAction }: {
+export function AIOptionsBar({ actions, sourceKey, onAction }: {
   actions: AIUIAction[]
-  arguments: Record<string, unknown>
+  sourceKey: string
   onAction: (action: AIUIAction) => Promise<boolean>
 }) {
   const { t } = useTranslation()
-  const titleId = useId()
+  const reduceMotion = useReducedMotion()
   const [pendingKeys, setPendingKeys] = useState<Set<string>>(() => new Set())
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(() => new Set())
   const pendingKeysRef = useRef(new Set<string>())
   const selectedKeysRef = useRef(new Set<string>())
-  const presentation = presentationSchema.safeParse(rawArguments)
   const options = useMemo(() => actions.map(parseAIOptionAction).filter(action => action !== null).slice(0, 5), [actions])
 
-  if (!presentation.success || options.length === 0) {
-    return (
-      <div className="rounded-container bg-surface px-3 py-2 text-xs text-muted-foreground" role="status">
-        {t('aiAssistant.options.unavailable')}
-      </div>
-    )
-  }
+  if (options.length === 0)
+    return null
 
   const choose = async (action: AIUIAction, key: string) => {
     const repeatable = isAIUIActionRepeatable(action)
@@ -65,41 +54,54 @@ export function AIOptionsCard({ actions, arguments: rawArguments, onAction }: {
   }
 
   return (
-    <section className="min-w-0 rounded-container bg-primary-subtle/60 p-2.5" aria-labelledby={titleId}>
-      <div className="mb-2 px-0.5">
-        <p className="text-[10px] font-medium uppercase tracking-wide text-primary-text">{t('aiAssistant.options.suggested')}</p>
-        <h3 className="mt-0.5 text-xs font-semibold" id={titleId}>{presentation.data.title}</h3>
-        {presentation.data.description && <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">{presentation.data.description}</p>}
-      </div>
-      <div className="grid gap-1.5">
-        {options.map((action, index) => {
-          const key = action.id ? `id:${action.id}:${index}` : `${action.type}-${JSON.stringify(action.payload)}-${index}`
-          const selected = selectedKeys.has(key)
-          const pending = pendingKeys.has(key)
-          const repeatable = isAIUIActionRepeatable(action)
-          const Icon = action.type === 'navigate' ? Navigation : action.type === 'send_message' ? MessageSquareText : Play
-          const variant = action.tone === 'primary' ? 'default' : action.tone === 'danger' ? 'destructive' : 'outline'
-          return (
-            <Button
-              key={key}
-              aria-pressed={selected}
-              className="h-auto min-h-8 w-full justify-start whitespace-normal px-2.5 py-1.5 text-left !text-[11px] [&_svg]:size-3.5"
-              disabled={pending || (!repeatable && selected)}
-              variant={variant}
-              onClick={() => void choose(action, key)}
-            >
-              {pending ? <LoaderCircle className="animate-spin motion-reduce:animate-none" /> : selected ? <Check /> : <Icon />}
-              <span className="min-w-0 flex-1">
-                <span className="block text-[11px] font-medium leading-4">{action.label ?? t(`aiAssistant.actions.${action.type}`)}</span>
-                {action.description && <span className="mt-0.5 block text-[10px] font-normal leading-3.5 opacity-75">{action.description}</span>}
-              </span>
-              {!pending && !selected && <ChevronRight className="opacity-60" />}
-              {selected && <span className="text-[10px] font-normal">{t('aiAssistant.options.selected')}</span>}
-              <span className="sr-only">{t('aiAssistant.options.position', { current: index + 1, total: options.length })}</span>
-            </Button>
-          )
-        })}
-      </div>
+    <section
+      aria-label={t('aiAssistant.options.suggested')}
+      className="pointer-events-none absolute inset-x-0 bottom-0 z-10 overflow-hidden px-3 pb-2"
+    >
+      <AnimatePresence initial mode="popLayout">
+        <motion.div
+          key={sourceKey}
+          animate={{ opacity: 1, x: 0 }}
+          className="pointer-events-auto flex min-w-0 gap-2 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          exit={reduceMotion ? { opacity: 0 } : { opacity: 0, x: -12 }}
+          initial={reduceMotion ? { opacity: 0 } : { opacity: 0, x: 32 }}
+          transition={reduceMotion ? { duration: 0.12 } : { type: 'spring', stiffness: 420, damping: 30, mass: 0.75 }}
+        >
+          {options.map((action, index) => {
+            const key = action.id ? `${sourceKey}:id:${action.id}:${index}` : `${sourceKey}:${action.type}-${JSON.stringify(action.payload)}-${index}`
+            const selected = selectedKeys.has(key)
+            const pending = pendingKeys.has(key)
+            const repeatable = isAIUIActionRepeatable(action)
+            const variant = action.tone === 'primary' ? 'default' : action.tone === 'danger' ? 'destructive' : 'outline'
+            const label = action.label ?? t(`aiAssistant.actions.${action.type}`)
+            return (
+              <motion.div
+                key={key}
+                animate={{ opacity: 1, x: 0, scale: 1 }}
+                className="shrink-0"
+                initial={reduceMotion ? { opacity: 0 } : { opacity: 0, x: 24, scale: 0.94 }}
+                transition={reduceMotion
+                  ? { duration: 0.1 }
+                  : { type: 'spring', stiffness: 460, damping: 28, mass: 0.7, delay: Math.min(index * 0.045, 0.18) }}
+              >
+                <Button
+                  aria-pressed={selected}
+                  className="h-8 max-w-52 shrink-0 rounded-full px-3 !text-[11px] shadow-none [&_svg]:size-3.5"
+                  disabled={pending || (!repeatable && selected)}
+                  title={label}
+                  variant={variant}
+                  onClick={() => void choose(action, key)}
+                >
+                  {pending && <LoaderCircle className="animate-spin motion-reduce:animate-none" />}
+                  {!pending && selected && <Check />}
+                  <span className="truncate">{label}</span>
+                  <span className="sr-only">{t('aiAssistant.options.position', { current: index + 1, total: options.length })}</span>
+                </Button>
+              </motion.div>
+            )
+          })}
+        </motion.div>
+      </AnimatePresence>
     </section>
   )
 }

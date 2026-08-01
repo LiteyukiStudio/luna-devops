@@ -1,5 +1,5 @@
 import type { AIConversation } from '@/api'
-import { CheckSquare2, ChevronRight, Ellipsis, ListChecks, LoaderCircle, LockKeyhole, MessageSquarePlus, Pencil, Search, Trash2, X } from 'lucide-react'
+import { CheckSquare2, Ellipsis, ListChecks, LoaderCircle, LockKeyhole, Pencil, Search, Trash2, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
@@ -17,8 +17,6 @@ export interface AIConversationListProps {
   loading: boolean
   runningConversationIds: Set<string>
   search: string
-  onClose: () => void
-  onCreate: () => void
   onDeleteMany: (ids: string[]) => Promise<void>
   onRename: (id: string, title: string) => void
   onSearch: (search: string) => void
@@ -32,8 +30,6 @@ export function AIConversationList({
   loading,
   runningConversationIds,
   search,
-  onClose,
-  onCreate,
   onDeleteMany,
   onRename,
   onSearch,
@@ -86,9 +82,8 @@ export function AIConversationList({
   }
 
   return (
-    <aside className="absolute inset-0 z-10 flex flex-col bg-surface sm:static sm:w-64 sm:shrink-0 sm:border-r sm:border-separator-subtle">
+    <aside className="absolute inset-x-0 bottom-0 top-14 z-10 flex flex-col bg-surface sm:static sm:w-64 sm:shrink-0 sm:border-r sm:border-separator-subtle">
       <div className="flex h-14 items-center gap-2 border-b border-separator-subtle px-3">
-        <Button aria-label={t('common.close')} size="icon" variant="ghost" onClick={onClose}><ChevronRight className="size-4 rotate-180" /></Button>
         <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">{selecting ? t('aiAssistant.conversations.selectMode') : t('aiAssistant.conversations.title')}</h2>
         <Button
           aria-label={selecting ? t('aiAssistant.conversations.exitSelect') : t('aiAssistant.conversations.select')}
@@ -98,7 +93,6 @@ export function AIConversationList({
         >
           {selecting ? <X className="size-4" /> : <ListChecks className="size-4" />}
         </Button>
-        {!selecting && <Button aria-label={t('aiAssistant.conversations.new')} size="icon" variant="ghost" onClick={onCreate}><MessageSquarePlus className="size-4" /></Button>}
       </div>
       <div className="grid gap-2 p-2">
         <div className="relative">

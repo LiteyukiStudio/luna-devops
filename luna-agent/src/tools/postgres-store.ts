@@ -55,6 +55,12 @@ export class PostgresToolCallStore implements ToolCallStore {
         toolCallId: call.id, operationId: call.operationId, status: call.status,
         arguments: redact(call.arguments), result: call.result, errorCode: call.errorCode,
         argumentsHash: call.argumentsHash, expectedVersion: call.rowVersion, mfaPurpose: call.mfaPurpose,
+        ...(typeof event.data.durationMs === "number" && Number.isFinite(event.data.durationMs)
+          ? { durationMs: Math.max(0, Math.round(event.data.durationMs)) }
+          : {}),
+        ...(typeof event.data.traceId === "string" && /^(?!0{32}$)[a-f0-9]{32}$/i.test(event.data.traceId)
+          ? { traceId: event.data.traceId }
+          : {}),
     }
     const publicType = publicToolEventType(event.type)
     const eventData = { itemId, toolCallId: call.id, ...event.data }
