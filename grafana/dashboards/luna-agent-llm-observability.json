@@ -180,7 +180,7 @@
       },
       "targets": [
         {
-          "expr": "100 * sum(rate(luna_devops_agent_model_requests_total{outcome!=\"success\"}[$__rate_interval])) / clamp_min(sum(rate(luna_devops_agent_model_requests_total[$__rate_interval])), 0.001)",
+          "expr": "(100 * sum(rate(luna_devops_agent_model_requests_total{outcome!=\"success\"}[$__rate_interval])) / clamp_min(sum(rate(luna_devops_agent_model_requests_total[$__rate_interval])), 0.001)) or vector(0)",
           "instant": true,
           "legendFormat": "",
           "range": false,
@@ -549,7 +549,7 @@
         {
           "datasource": { "type": "loki", "uid": "${loki}" },
           "editorMode": "code",
-          "expr": "{service_name=\"luna-agent\"} | json | event_name=~\"gen_ai\\.content\\.(input|output|error)\" | gen_ai_conversation_id=~`${conversation_id:regex}` | luna_turn_id=~`${turn_id:regex}` | luna_run_id=~`${run_id:regex}` | trace_id=~`${trace_id:regex}` | line_format `{{.event_name}} · {{.gen_ai_input_messages}}{{.gen_ai_output_messages}}{{.gen_ai_response_error_body}}`",
+          "expr": "{service_name=\"luna-agent\"} | event_name=~`gen_ai\\.content\\.(input|output|error)` | gen_ai_conversation_id=~`${conversation_id:raw}` | luna_turn_id=~`${turn_id:raw}` | luna_run_id=~`${run_id:raw}` | trace_id=~`${trace_id:raw}` | line_format `{{.event_name}} · {{.gen_ai_input_messages}}{{.gen_ai_output_messages}}{{.gen_ai_response_error_body}}`",
           "queryType": "range",
           "refId": "A"
         }
@@ -576,7 +576,7 @@
         {
           "datasource": { "type": "loki", "uid": "${loki}" },
           "editorMode": "code",
-          "expr": "{service_name=\"luna-agent\"} | json | event_name=~\"agent\\.(run|model|tool)\\.failed|gen_ai\\.content\\.error\" | gen_ai_conversation_id=~`${conversation_id:regex}` | luna_turn_id=~`${turn_id:regex}` | luna_run_id=~`${run_id:regex}` | trace_id=~`${trace_id:regex}`",
+          "expr": "{service_name=\"luna-agent\"} | event_name=~`agent\\.(run|model|tool)\\.failed|gen_ai\\.content\\.error` | gen_ai_conversation_id=~`${conversation_id:raw}` | luna_turn_id=~`${turn_id:raw}` | luna_run_id=~`${run_id:raw}` | trace_id=~`${trace_id:raw}`",
           "queryType": "range",
           "refId": "A"
         }
@@ -603,7 +603,7 @@
         {
           "datasource": { "type": "loki", "uid": "${loki}" },
           "editorMode": "code",
-          "expr": "{service_name=\"luna-agent\"} | json | event_name=~\"gen_ai\\.tool\\.content\\.(input|output)\" | gen_ai_conversation_id=~`${conversation_id:regex}` | luna_turn_id=~`${turn_id:regex}` | luna_run_id=~`${run_id:regex}` | trace_id=~`${trace_id:regex}` | gen_ai_tool_name=~`${tool:regex}` | line_format `{{.event_name}} · {{.gen_ai_tool_name}} · {{.luna_tool_call_id}} · {{.gen_ai_tool_call_arguments}}{{.gen_ai_tool_call_result}}`",
+          "expr": "{service_name=\"luna-agent\"} | event_name=~`gen_ai\\.tool\\.content\\.(input|output)` | gen_ai_conversation_id=~`${conversation_id:raw}` | luna_turn_id=~`${turn_id:raw}` | luna_run_id=~`${run_id:raw}` | trace_id=~`${trace_id:raw}` | gen_ai_tool_name=~`${tool:regex}` | line_format `{{.event_name}} · {{.gen_ai_tool_name}} · {{.luna_tool_call_id}} · {{.gen_ai_tool_call_arguments}}{{.gen_ai_tool_call_result}}`",
           "queryType": "range",
           "refId": "A"
         }
@@ -636,7 +636,7 @@
         {
           "datasource": { "type": "tempo", "uid": "${tempo}" },
           "limit": 100,
-          "query": "{ resource.service.name = \"luna-agent\" && span:name = \"agent.run.execute\" && span.gen_ai.conversation.id =~ \"${conversation_id:regex}\" && span.luna.turn.id =~ \"${turn_id:regex}\" && span.luna.run.id =~ \"${run_id:regex}\" }",
+          "query": "{ resource.service.name = \"luna-agent\" && span:name = \"agent.run.execute\" && span.gen_ai.conversation.id =~ \"${conversation_id:raw}\" && span.luna.turn.id =~ \"${turn_id:raw}\" && span.luna.run.id =~ \"${run_id:raw}\" }",
           "queryType": "traceql",
           "refId": "A",
           "tableType": "traces"
@@ -662,13 +662,13 @@
         {
           "datasource": { "type": "tempo", "uid": "${tempo}" },
           "limit": 100,
-          "query": "{ resource.service.name = \"luna-agent\" && span.gen_ai.conversation.id =~ \"${conversation_id:regex}\" } && { span:status = error }",
+          "query": "{ resource.service.name = \"luna-agent\" && span:name = \"agent.run.execute\" && span.gen_ai.conversation.id =~ \"${conversation_id:raw}\" && span:status = error }",
           "queryType": "traceql",
           "refId": "A",
           "tableType": "traces"
         }
       ],
-      "title": "Failed traces in conversation",
+      "title": "Failed Agent runs in conversation",
       "type": "table"
     }
   ],
@@ -788,6 +788,6 @@
   "timezone": "browser",
   "title": "Luna Agent / LLM Observability",
   "uid": "luna-agent-llm-observability",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }

@@ -53,7 +53,7 @@ AI_OBSERVABILITY_CAPTURE_CONTENT=true
 - `grafana/dashboards/luna-devops-overview.json`：平台服务、API、Worker、交付链路、Agent 和数据库的全局概览；
 - `grafana/dashboards/luna-agent-llm-observability.json`：专门查看 Agent Run、模型延迟、Token、工具、人工交互、Prompt/回复和 Trace。
 
-导入 Agent / LLM 仪表盘时，分别选择已有的 Prometheus、Tempo 和 Loki 数据源。顶部筛选器提供 `Conversation ID`、`Turn ID`、`Run ID`、`Trace ID` 和工具名称；不指定时使用 `.*` 查看当前时间范围内的全部数据。推荐的排查顺序是：
+导入 Agent / LLM 仪表盘时，分别选择已有的 Prometheus、Tempo 和 Loki 数据源。顶部筛选器提供 `Conversation ID`、`Turn ID`、`Run ID`、`Trace ID` 和工具名称；不指定时使用 `.*` 查看当前时间范围内的全部数据。仪表盘的 Trace 列表只检索 `agent.run.execute` 根 Span，默认不会把 `pg.query:*`、`pg-pool.connect` 等数据库子 Span 当作 Agent 结果展示。推荐的排查顺序是：
 
 1. 先看 Run 成功率、模型错误率和首 Token p95，判断问题属于编排、Provider 还是响应体验；
 2. 再看 Run、模型、Token 和工具趋势，定位异常发生的时间与工具；

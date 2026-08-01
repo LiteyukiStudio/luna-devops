@@ -53,7 +53,7 @@ The repository provides two Grafana dashboards that can be imported directly:
 - `grafana/dashboards/luna-devops-overview.json` covers platform services, API, Worker, delivery workflows, Agent, and database health;
 - `grafana/dashboards/luna-agent-llm-observability.json` focuses on Agent Runs, model latency, tokens, tools, human interaction, prompts/responses, and traces.
 
-When importing the Agent / LLM dashboard, map its Prometheus, Tempo, and Loki variables to your existing data sources. The top filters accept `Conversation ID`, `Turn ID`, `Run ID`, `Trace ID`, and tool names. Leave an ID as `.*` to include all matching data in the selected time range. Use this investigation order:
+When importing the Agent / LLM dashboard, map its Prometheus, Tempo, and Loki variables to your existing data sources. The top filters accept `Conversation ID`, `Turn ID`, `Run ID`, `Trace ID`, and tool names. Leave an ID as `.*` to include all matching data in the selected time range. The dashboard trace tables query only `agent.run.execute` root spans, so database child spans such as `pg.query:*` and `pg-pool.connect` are not shown as Agent results by default. Use this investigation order:
 
 1. Check Run success, model error ratio, and first-token p95 to distinguish orchestration, provider, and response-experience problems.
 2. Inspect Run, model, token, and tool trends to identify the affected time and operation.
