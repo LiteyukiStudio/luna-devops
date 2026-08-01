@@ -13,5 +13,10 @@
     "type": "file",
     "name": "observability",
     "label": "Observability"
+  },
+  {
+    "type": "file",
+    "name": "license",
+    "label": "License"
   }
 ]

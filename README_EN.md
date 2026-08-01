@@ -219,3 +219,9 @@ Project conventions:
 - Code health SOP: [`notes/07-代码健康检查SOP.md`](notes/07-代码健康检查SOP.md)
 - Development plan: [`TODO.md`](TODO.md)
 - Agent and contribution rules: [`AGENTS.md`](AGENTS.md)
+
+## License
+
+Luna DevOps is open source under the [MIT License](LICENSE). You may use, copy, modify, merge, publish, and distribute the project as long as copies or substantial portions retain the original copyright and license notice.
+
+The project is provided “as is,” without express or implied warranty. Third-party dependencies, external services, and third-party brand assets remain subject to their own terms. The MIT License does not grant trademark rights to the Luna DevOps or Liteyuki Studio names and logos. See the [license guide](docs/docs/en/reference/license.md) for details.

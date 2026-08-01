@@ -13,5 +13,10 @@
     "type": "file",
     "name": "observability",
     "label": "可观测平台"
+  },
+  {
+    "type": "file",
+    "name": "license",
+    "label": "许可证"
   }
 ]

@@ -218,3 +218,9 @@ pnpm --dir web build
 - 代码健康检查 SOP：[`notes/07-代码健康检查SOP.md`](notes/07-代码健康检查SOP.md)
 - 开发计划：[`TODO.md`](TODO.md)
 - Agent 与贡献规范：[`AGENTS.md`](AGENTS.md)
+
+## 许可证
+
+Luna DevOps 采用 [MIT License](LICENSE) 开源。你可以使用、复制、修改、合并、发布和分发本项目，但在副本或项目的主要部分中需要保留原始版权与许可声明。
+
+项目按“原样”提供，不附带任何明示或暗示的担保。第三方依赖、外部服务和第三方品牌资源仍分别受其自身条款约束；MIT License 不授予 Luna DevOps 或 Liteyuki Studio 名称与标志的商标使用权。详细说明见[许可说明](docs/docs/zh/reference/license.md)。

@@ -24,6 +24,7 @@
 - [x] 将旧 `docs/` 内容迁移到 `notes/`，并使用 Rspress 建立支持中英双语、响应式和多主题的文档站。
 - [x] 补充外部组件兼容矩阵文档，覆盖 GitHub/Gitea、镜像仓库、Kubernetes/Gateway API、OIDC、PostgreSQL、Redis、BuildKit、Prometheus/Grafana 和通知适配器的接口与版本范围。
 - [x] 将公开文档收敛为面向部署与使用者的渐进式内容：移除源码开发、CI/发布门禁、内部设计和历史记录栏目，精简 CLI、AI 助手与更新日志，把环境变量和兼容范围归入独立参考区，并将文档受众、内容边界和渐进披露规则固化到 `AGENTS.md`。
+- [x] 使用 MIT License 开放仓库源码与文档，并在中英文 README 和公开文档中说明再分发要求、免责声明与第三方许可边界。
 
 ## 2. 项目基础与前后端脚手架
 
