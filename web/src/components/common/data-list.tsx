@@ -34,6 +34,7 @@ interface DataListProps<T> {
   rowKey: (item: T) => string
   title?: ReactNode
   toolbar?: ReactNode
+  toolbarActions?: ReactNode
   emptyTitle: string
   emptyActions?: ReactNode
   emptyDescription?: ReactNode
@@ -205,6 +206,7 @@ export function DataList<T>({
   rowKey,
   title,
   toolbar,
+  toolbarActions,
   emptyTitle,
   emptyActions,
   emptyDescription,
@@ -226,7 +228,8 @@ export function DataList<T>({
   const rowKeys = items.map(rowKey)
   const selectableRowKeys = selection ? items.filter(item => selection.isRowSelectable?.(item) ?? true).map(rowKey) : rowKeys
   const selectable = Boolean(selection)
-  const hasTools = Boolean(title || toolbar || search || selection?.bulkActions)
+  const hasToolbarControls = Boolean(toolbar || search || selection?.bulkActions)
+  const hasTools = Boolean(title || hasToolbarControls || toolbarActions)
   const hasToolsLead = Boolean(title || (selection && selection.selectedKeys.length > 0))
   const showTableFrame = loading || items.length > 0
   const allRowsSelected = selectableRowKeys.length > 0 && selectableRowKeys.every(key => selectedKeySet.has(key))
@@ -298,24 +301,31 @@ export function DataList<T>({
               )}
             </div>
           )}
-          <div
-            className={cn(
-              'flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center',
-              hasToolsLead && 'sm:justify-end',
-            )}
-            data-slot="data-list-tools-controls"
-          >
-            {search && (
-              <Input
-                className="h-9 w-full sm:w-64"
-                placeholder={search.placeholder}
-                value={search.value}
-                onChange={event => search.onChange(event.target.value)}
-              />
-            )}
-            {selection?.bulkActions}
-            {toolbar}
-          </div>
+          {hasToolbarControls && (
+            <div
+              className={cn(
+                'flex min-w-0 flex-col gap-2 sm:flex sm:flex-1 sm:flex-row sm:flex-wrap sm:items-center',
+                hasToolsLead && 'sm:justify-end',
+              )}
+              data-slot="data-list-tools-controls"
+            >
+              {search && (
+                <Input
+                  className="h-9 w-full sm:w-64"
+                  placeholder={search.placeholder}
+                  value={search.value}
+                  onChange={event => search.onChange(event.target.value)}
+                />
+              )}
+              {selection?.bulkActions}
+              {toolbar}
+            </div>
+          )}
+          {toolbarActions && (
+            <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2" data-slot="data-list-tools-actions">
+              {toolbarActions}
+            </div>
+          )}
         </div>
       )}
       <TableFrame

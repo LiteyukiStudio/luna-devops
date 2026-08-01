@@ -18,7 +18,6 @@ import { EditActionButton } from '@/components/common/edit-action-button'
 import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
 import { GitRepositoryPicker } from '@/components/common/git-repository-picker'
-import { PageHeader } from '@/components/common/page-header'
 import { SearchSelect } from '@/components/common/search-select'
 import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
@@ -45,7 +44,7 @@ export interface RepositoryBindingsPageHandle {
   openCreateDialog: () => void
 }
 
-export function RepositoryBindingsPage({ applicationId, applicationName, embedded = false, projectId: projectIdProp, ref }: { applicationId?: string, applicationName?: string, embedded?: boolean, projectId?: string, ref?: Ref<RepositoryBindingsPageHandle> } = {}) {
+export function RepositoryBindingsPage({ applicationId, embedded = false, projectId: projectIdProp, ref }: { applicationId?: string, embedded?: boolean, projectId?: string, ref?: Ref<RepositoryBindingsPageHandle> } = {}) {
   const { t } = useTranslation()
   const { projectId: routeProjectId = '' } = useParams()
   const projectId = projectIdProp ?? routeProjectId
@@ -212,8 +211,12 @@ export function RepositoryBindingsPage({ applicationId, applicationName, embedde
 
   return (
     <div className="grid gap-6">
-      <PageHeader
-        actions={!embedded
+      {(providers.isError || accounts.isError || bindingsPage.isError || allBindings.isError) && (
+        <ErrorState title={t('repositories.loadFailedTitle')} description={t('repositories.loadFailedDescription')} />
+      )}
+
+      <DataList
+        toolbarActions={!embedded
           ? (
               <div className="flex items-center gap-3">
                 <Button type="button" onClick={openCreateDialog}>
@@ -224,15 +227,6 @@ export function RepositoryBindingsPage({ applicationId, applicationName, embedde
               </div>
             )
           : undefined}
-        description={applicationId ? t('apps.repositoryBindingDescription') : t('repositories.description')}
-        title={applicationId ? t('apps.repositoryBindingTitle', { app: applicationName || t('applications') }) : t('repositories.title')}
-      />
-
-      {(providers.isError || accounts.isError || bindingsPage.isError || allBindings.isError) && (
-        <ErrorState title={t('repositories.loadFailedTitle')} description={t('repositories.loadFailedDescription')} />
-      )}
-
-      <DataList
         columns={[
           {
             key: 'repo',

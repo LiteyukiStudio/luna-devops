@@ -24,6 +24,17 @@ const errors = {
     transaction_invalid: '余额调整请求不正确',
     transaction_invalid_amount: '余额调整金额必须是非零数字',
   },
+  inbox: {
+    request_invalid: '消息请求参数不正确',
+    not_found: '消息或待处理请求不存在',
+    operation_failed: '消息操作失败，请稍后重试',
+    billing_owner_transfer_invalid: '计费归属转移信息不正确，请重新选择接收人。',
+    billing_owner_transfer_forbidden: '你没有发起或处理此计费归属转移的权限。',
+    billing_owner_transfer_conflict: '该项目空间已有待处理的计费归属转移请求。',
+    billing_owner_transfer_stale: '项目空间状态已变化，请刷新后重新发起。',
+    billing_owner_transfer_not_found: '计费归属转移请求不存在或已被删除。',
+    billing_owner_transfer_expired: '计费归属转移请求已过期，请让发起人重新发送。',
+  },
   config: {
     admin: { required: '请确认当前账号具有平台管理员权限。' },
     update_failed: '站点配置更新失败，请稍后重试。',

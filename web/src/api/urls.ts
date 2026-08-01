@@ -30,6 +30,10 @@ export function deploymentTargetMetricsStreamUrl(projectId: string, applicationI
   return `${API_BASE_URL}/projects/${encodeURIComponent(projectId)}/applications/${encodeURIComponent(applicationId)}/deployment-targets/${encodeURIComponent(targetId)}/metrics/stream`
 }
 
+export function inboxStreamUrl() {
+  return `${API_BASE_URL}/inbox/stream`
+}
+
 function apiWebSocketUrl(path: string) {
   const base = API_BASE_URL.startsWith('http://') || API_BASE_URL.startsWith('https://')
     ? API_BASE_URL

@@ -16,7 +16,6 @@ import { DataList } from '@/components/common/data-list'
 import { EditActionButton } from '@/components/common/edit-action-button'
 import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
-import { PageHeader } from '@/components/common/page-header'
 import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
 import { formatAbsoluteDateTime } from '@/components/common/time-format'
 import { UserAvatar } from '@/components/common/user-avatar'
@@ -212,26 +211,21 @@ export function UsersPage() {
 
   return (
     <div className="grid gap-6">
-      <PageHeader
-        actions={(
-          <Button
-            onClick={() => {
-              setEditingUser(null)
-              form.reset(defaultValues)
-              setDialogOpen(true)
-            }}
-          >
-            <UserPlus size={16} />
-            {t('usersPage.createTitle')}
-          </Button>
-        )}
-        description={t('usersPage.description')}
-        title={t('usersPage.title')}
-      />
-
       <div className="grid min-w-0 self-start">
         {users.isError && <ErrorState title={t('usersPage.loadFailedTitle')} description={t('common.platformAdminPermissionRequired')} />}
         <DataList
+          toolbarActions={(
+            <Button
+              onClick={() => {
+                setEditingUser(null)
+                form.reset(defaultValues)
+                setDialogOpen(true)
+              }}
+            >
+              <UserPlus size={16} />
+              {t('usersPage.createTitle')}
+            </Button>
+          )}
           columns={columns}
           emptyDescription={t('usersPage.emptyDescription')}
           emptyTitle={t('usersPage.emptyTitle')}

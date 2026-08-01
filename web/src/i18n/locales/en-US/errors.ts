@@ -24,6 +24,17 @@ const errors = {
     transaction_invalid: 'The balance adjustment request is invalid',
     transaction_invalid_amount: 'Balance adjustment amount must be a non-zero number',
   },
+  inbox: {
+    request_invalid: 'The inbox request is invalid.',
+    not_found: 'The message or action request was not found.',
+    operation_failed: 'The inbox operation failed. Try again later.',
+    billing_owner_transfer_invalid: 'The billing ownership transfer is invalid. Select the recipient again.',
+    billing_owner_transfer_forbidden: 'You cannot create or decide this billing ownership transfer.',
+    billing_owner_transfer_conflict: 'This project already has a pending billing ownership transfer.',
+    billing_owner_transfer_stale: 'The project state has changed. Refresh and create a new request.',
+    billing_owner_transfer_not_found: 'The billing ownership transfer request was not found.',
+    billing_owner_transfer_expired: 'The billing ownership transfer request has expired. Ask the requester to send it again.',
+  },
   config: {
     admin: { required: 'Confirm that the current account has platform administrator permission.' },
     update_failed: 'The site configuration could not be updated. Try again later.',

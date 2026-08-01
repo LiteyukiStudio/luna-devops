@@ -26,6 +26,11 @@
   },
   {
     "type": "file",
+    "name": "inbox",
+    "label": "消息盒子"
+  },
+  {
+    "type": "file",
     "name": "billing",
     "label": "账单与费用"
   },

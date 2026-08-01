@@ -1518,6 +1518,68 @@ export interface PaginatedResponse<T> {
   totalPages: number
 }
 
+export type InboxCategory = 'action' | 'project' | 'billing' | 'security' | 'delivery' | 'system'
+export type InboxPriority = 'low' | 'normal' | 'high' | 'critical'
+export type InboxFilter = 'all' | 'unread' | 'action'
+export type InboxActionRequestStatus = 'pending' | 'processing' | 'completed' | 'rejected' | 'cancelled' | 'expired' | 'failed'
+export type InboxDecision = 'accept' | 'reject'
+
+export interface InboxActionRequestSummary {
+  id: string
+  type: string
+  status: InboxActionRequestStatus
+  rowVersion: number
+  expiresAt?: string | null
+  allowedDecisions: InboxDecision[]
+}
+
+export interface InboxActionRequest {
+  id: string
+  type: string
+  requesterUserId: string
+  recipientUserId: string
+  projectId: string
+  resourceType: string
+  resourceId: string
+  status: InboxActionRequestStatus
+  rowVersion: number
+  expiresAt?: string | null
+  respondedAt?: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface InboxMessage {
+  id: string
+  type: string
+  category: InboxCategory
+  priority: InboxPriority
+  actorId: string
+  projectId: string
+  resourceType: string
+  resourceId: string
+  titleKey: string
+  contentKey: string
+  params: Record<string, unknown>
+  actionRequestId: string
+  actionRequest?: InboxActionRequestSummary | null
+  deepLink: string
+  groupKey: string
+  readAt?: string | null
+  expiresAt?: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface InboxListParams extends PaginationParams {
+  filter: InboxFilter
+  category?: InboxCategory
+}
+
+export interface InboxUnreadCount {
+  unreadCount: number
+}
+
 export interface CurrentUser {
   id: string
   email: string

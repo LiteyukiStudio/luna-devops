@@ -30,6 +30,7 @@ const (
 	stepUpPurposeDataRetentionCleanup     = "data_retention_cleanup"
 	stepUpPurposePasswordUpdate           = "password_update"
 	stepUpPurposeAccessTokenManage        = "access_token_manage"
+	stepUpPurposeBillingOwnerTransfer     = "billing_owner_transfer"
 
 	defaultStepUpIdleTimeout     = 10 * time.Minute
 	defaultStepUpAbsoluteTimeout = 60 * time.Minute
@@ -49,6 +50,7 @@ var allowedStepUpPurposes = map[string]struct{}{
 	stepUpPurposeDataRetentionCleanup:     {},
 	stepUpPurposePasswordUpdate:           {},
 	stepUpPurposeAccessTokenManage:        {},
+	stepUpPurposeBillingOwnerTransfer:     {},
 }
 
 var errStepUpAuthorizationChanged = errors.New("step-up authorization changed")

@@ -85,6 +85,7 @@ func TestPeriodicTaskSpecsIncludeGitRefresh(t *testing.T) {
 		t.Fatalf("periodicTaskSpecs returned error: %v", err)
 	}
 	foundGitRefresh := false
+	foundAIBilling := false
 	foundRuntimeBilling := false
 	foundRetentionRun := false
 	for _, spec := range specs {
@@ -94,11 +95,14 @@ func TestPeriodicTaskSpecsIncludeGitRefresh(t *testing.T) {
 		if spec.Task.Type() == tasks.TypeBillingRuntime {
 			foundRuntimeBilling = spec.Cron == "@every 10m" && spec.Queue == tasks.QueueLight
 		}
+		if spec.Task.Type() == tasks.TypeBillingAI {
+			foundAIBilling = spec.Cron == "@every 1m" && spec.Queue == tasks.QueueLight
+		}
 		if spec.Task.Type() == tasks.TypeRetentionRun {
 			foundRetentionRun = spec.Cron == "@every 24h" && spec.Queue == tasks.QueueLight
 		}
 	}
-	if !foundGitRefresh || !foundRuntimeBilling || !foundRetentionRun {
+	if !foundGitRefresh || !foundAIBilling || !foundRuntimeBilling || !foundRetentionRun {
 		t.Fatalf("specs = %#v", specs)
 	}
 }

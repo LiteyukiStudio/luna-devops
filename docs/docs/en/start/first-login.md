@@ -24,7 +24,9 @@ The first administrator can also choose "Keep me signed in"; its session and rem
 
 ## Get help or sign out
 
-The account menu at the bottom of the sidebar links to the documentation, the GitHub repository, and sign-out. Signing out requires confirmation so an accidental click does not end the current session.
+After signing in, open the account menu from the avatar at the right side of the content top bar. It links to account settings, documentation, the GitHub repository, and sign-out. Signing out requires confirmation so an accidental click does not end the current session.
+
+When a page has multiple sections, its tabs appear on a second row of the same top bar and can scroll horizontally on narrower screens. The page body keeps only the active section and necessary actions, leaving more vertical workspace for settings, resources, and project operations.
 
 ## Use the dashboard to choose the next action
 

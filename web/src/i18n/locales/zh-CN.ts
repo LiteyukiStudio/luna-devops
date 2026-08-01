@@ -19,6 +19,7 @@ import deploymentsPage from './zh-CN/deploymentsPage'
 import errors from './zh-CN/errors'
 import eventsPage from './zh-CN/eventsPage'
 import gatewayRoutesPage from './zh-CN/gatewayRoutesPage'
+import inbox from './zh-CN/inbox'
 import languages from './zh-CN/languages'
 import loginPage from './zh-CN/loginPage'
 import nav from './zh-CN/nav'
@@ -47,6 +48,7 @@ const zhCN = {
   common,
   time,
   errors,
+  ...inbox,
   eventsPage,
   auth,
   pagination,

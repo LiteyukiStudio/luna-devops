@@ -7,6 +7,8 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/aiagent"
 	"github.com/LiteyukiStudio/devops/internal/aitool"
 	"github.com/LiteyukiStudio/devops/internal/config"
+	"github.com/LiteyukiStudio/devops/internal/inbox"
+	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/repository"
 	"github.com/LiteyukiStudio/devops/internal/secret"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
@@ -32,7 +34,28 @@ type Handlers struct {
 	aiActorResolver     func(*gin.Context) (aiagent.ActorContext, bool)
 	aiTools             *aitool.Service
 	platformRouter      http.Handler
+	inbox               inboxService
+	inboxDecision       inboxDecisionHandler
 }
+
+type inboxService interface {
+	List(ctx context.Context, input inbox.ListInput) (inbox.ListResult, error)
+	Get(ctx context.Context, userID, messageID string) (model.InboxMessage, error)
+	GetActionRequest(ctx context.Context, userID, requestID string) (model.InboxActionRequest, error)
+	GetActionRequests(ctx context.Context, userID string, requestIDs []string) (map[string]model.InboxActionRequest, error)
+	UnreadCount(ctx context.Context, userID string) (int64, error)
+	MarkRead(ctx context.Context, userID, messageID string) error
+	MarkAllRead(ctx context.Context, userID string) error
+	Archive(ctx context.Context, userID, messageID string) error
+}
+
+type inboxDecisionHandler func(
+	ctx context.Context,
+	user model.User,
+	requestID string,
+	decision string,
+	expectedVersion int64,
+) error
 
 type taskEnqueuer interface {
 	EnqueueBuildRun(ctx context.Context, payload tasks.BuildRunPayload) (*asynq.TaskInfo, error)
@@ -66,6 +89,8 @@ func NewHandlers(db *gorm.DB) *Handlers {
 		aitool.WithWebPolicyProvider(handlers.aiWebEgressPolicyForUser),
 		aitool.WithWebProxyProvider(handlers.aiWebProxyPoolForUser),
 	)
+	handlers.inbox = inbox.NewService(db)
+	handlers.inboxDecision = handlers.decideInboxAction
 	return handlers
 }
 

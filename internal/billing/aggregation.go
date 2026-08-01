@@ -122,7 +122,7 @@ func (s Service) spendCategories(userIDs []string, projectIDs []string, start *t
 		category := billingCategory(entry.Reason, entry.Meter)
 		amounts[category] = amounts[category].Add(entry.AmountCredits.Abs())
 	}
-	order := []string{"build", "runtime", "storage", "gateway", "adjustment", "other"}
+	order := []string{"build", "runtime", "storage", "gateway", "ai", "adjustment", "other"}
 	categories := make([]BillingSpendCategory, 0, len(order))
 	for _, category := range order {
 		amount := amounts[category]
@@ -148,6 +148,8 @@ func billingCategory(reason string, meter string) string {
 		return "storage"
 	case strings.HasPrefix(value, "gateway."):
 		return "gateway"
+	case strings.HasPrefix(value, "ai."):
+		return "ai"
 	case strings.HasPrefix(value, "billing."):
 		return "adjustment"
 	default:

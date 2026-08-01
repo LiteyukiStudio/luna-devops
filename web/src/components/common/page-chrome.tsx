@@ -1,9 +1,9 @@
 import type { ReactNode } from 'react'
 import { ArrowLeft } from 'lucide-react'
-import { use } from 'react'
+import { use, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
-import { PageChromeTargetsContext } from '@/components/common/page-chrome-context'
+import { WorkspaceChromeTargetsContext } from '@/components/common/workspace-chrome-context'
 import { cn } from '@/lib/utils'
 
 interface PageChromeBackNavigation {
@@ -11,37 +11,7 @@ interface PageChromeBackNavigation {
   to: string
 }
 
-/**
- * 登录后页面的统一头部框架。
- * 第一行固定承载标题与页面工具；可选返回导航位于标题下方；存在 tabs 时才显示末行导航。
- */
-export function PageChrome({
-  backNavigation,
-  tabsTargetRef,
-  title,
-  toolsTargetRef,
-}: {
-  backNavigation?: PageChromeBackNavigation
-  tabsTargetRef: (node: HTMLDivElement | null) => void
-  title: ReactNode
-  toolsTargetRef: (node: HTMLDivElement | null) => void
-}) {
-  return (
-    <div className={cn('min-w-0', !backNavigation && 'hidden lg:block')} data-slot="page-chrome">
-      <div className="hidden min-w-0 flex-col gap-group lg:flex">
-        <div className="flex min-h-10 min-w-0 items-center justify-between gap-section" data-slot="page-chrome-title-row">
-          <div className="min-w-0 flex-1">{title}</div>
-          <div ref={toolsTargetRef} className="flex min-w-0 shrink-0 items-center justify-end empty:hidden" />
-        </div>
-        {backNavigation && <BackNavigationLink {...backNavigation} />}
-        <div ref={tabsTargetRef} className="min-w-0 empty:hidden" data-slot="page-chrome-tabs-row" />
-      </div>
-      {backNavigation && <BackNavigationLink className="lg:hidden" {...backNavigation} />}
-    </div>
-  )
-}
-
-function BackNavigationLink({
+export function PageBackNavigation({
   className,
   label,
   to,
@@ -62,18 +32,28 @@ function BackNavigationLink({
 }
 
 /**
- * 将页面级操作放入 PageChrome 标题行；中小屏回落到正文流。
+ * 将页面级操作放入 Topbar 的导航操作行；中小屏回落到正文流。
  */
 export function PageChromeTools({ children, className }: { children?: ReactNode, className?: string }) {
-  const { tools } = use(PageChromeTargetsContext)
+  const targets = use(WorkspaceChromeTargetsContext)
+  const tools = targets?.tools
+  const registerTools = targets?.registerTools
+  const hasChildren = children !== null && children !== undefined && children !== false
 
-  if (!children)
+  useEffect(() => {
+    if (!hasChildren || !registerTools)
+      return
+
+    return registerTools()
+  }, [hasChildren, registerTools])
+
+  if (!hasChildren)
     return null
 
   return (
     <>
       {tools && createPortal(
-        <div className={cn('flex min-w-0 flex-wrap items-center justify-end gap-2', className)}>
+        <div className={cn('flex min-w-0 flex-nowrap items-center justify-end gap-2', className)}>
           {children}
         </div>,
         tools,
@@ -86,13 +66,28 @@ export function PageChromeTools({ children, className }: { children?: ReactNode,
 }
 
 /**
- * 将可选的页面级 Tab 放入 PageChrome 第二行；中小屏内容由调用方提供。
+ * 将页面级 Tab 放入工作区 Topbar。布局只提供插槽，不持有业务 Tab 状态。
  */
 export function PageChromeTabs({ children, className }: { children?: ReactNode, className?: string }) {
-  const { tabs } = use(PageChromeTargetsContext)
+  const targets = use(WorkspaceChromeTargetsContext)
+  const registerTabs = targets?.registerTabs
+  const hasChildren = children !== null && children !== undefined && children !== false
 
-  if (!children || !tabs)
+  useEffect(() => {
+    if (!hasChildren || !registerTabs)
+      return
+
+    return registerTabs()
+  }, [hasChildren, registerTabs])
+
+  if (!hasChildren)
     return null
 
-  return createPortal(<div className={cn('min-w-0', className)}>{children}</div>, tabs)
+  if (!targets)
+    return <div className={cn('min-w-0', className)}>{children}</div>
+
+  if (!targets.tabs)
+    return null
+
+  return createPortal(<div className={cn('min-w-0', className)}>{children}</div>, targets.tabs)
 }

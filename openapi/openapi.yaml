@@ -22,6 +22,7 @@ tags:
   - name: OAuthApplications
   - name: System
   - name: Notifications
+  - name: Inbox
   - name: Events
   - name: Billing
   - name: Gateway
@@ -1871,6 +1872,39 @@ paths:
       responses:
         "201":
           description: Created project member.
+
+  /api/v1/projects/{projectId}/billing-owner-transfer-requests:
+    post:
+      operationId: createBillingOwnerTransferRequest
+      tags: [Inbox, Billing]
+      summary: Request transfer of a project's future billing ownership
+      description: Creates a pending inbox action request for an active project member. Historical usage and ledger entries are not transferred.
+      x-luna-cli:
+        hidden: true
+        exclusionReason: Billing-owner transfer is currently completed through the interactive inbox decision workflow.
+      security:
+        - SessionCookie: []
+        - BearerToken: []
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BillingOwnerTransferRequestInput"
+      responses:
+        "201":
+          description: Pending billing-owner transfer action request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InboxActionRequest"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /api/v1/projects/{projectId}/members/{memberId}:
     put:
@@ -3757,6 +3791,263 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+  /api/v1/inbox:
+    get:
+      operationId: listInboxMessages
+      tags: [Inbox]
+      summary: List the current user's inbox messages
+      description: Returns non-archived messages owned by the authenticated user. Read state and action-request state are independent.
+      x-luna-cli:
+        hidden: true
+        exclusionReason: The first inbox experience is provided by the interactive web message center.
+      security:
+        - SessionCookie: []
+        - BearerToken: []
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: sortBy
+          in: query
+          schema:
+            type: string
+            enum: [createdAt, updatedAt, priority]
+            default: createdAt
+        - $ref: "#/components/parameters/SortOrder"
+        - name: filter
+          in: query
+          schema:
+            type: string
+            enum: [all, unread, action]
+            default: all
+        - name: category
+          in: query
+          schema:
+            $ref: "#/components/schemas/InboxCategory"
+      responses:
+        "200":
+          description: Paginated user-scoped inbox messages.
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedInboxMessages"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "500":
+          description: Inbox query failed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/inbox/unread-count:
+    get:
+      operationId: getInboxUnreadCount
+      tags: [Inbox]
+      summary: Get the current user's unread inbox count
+      x-luna-cli:
+        hidden: true
+        exclusionReason: The unread badge is consumed by the interactive web message center.
+      security:
+        - SessionCookie: []
+        - BearerToken: []
+      responses:
+        "200":
+          description: Current unread count from the database fact source.
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InboxUnreadCount"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "500":
+          description: Inbox unread-count query failed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/inbox/stream:
+    get:
+      operationId: streamInboxChanges
+      tags: [Inbox]
+      summary: Stream inbox invalidation hints for the current user
+      description: Emits invalidation hints only. Clients must reload the list and unread count from the database-backed endpoints after every event or reconnect.
+      x-luna-cli:
+        hidden: true
+        exclusionReason: Browser EventSource transport for the interactive message center.
+      security:
+        - SessionCookie: []
+      responses:
+        "200":
+          description: Unbuffered SSE invalidation stream.
+          headers:
+            Cache-Control:
+              schema: { type: string, const: "no-cache, no-store" }
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                example: "event: inbox.changed\ndata: {\"unreadCount\":3,\"messageId\":\"imsg_example\"}\n\n"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "500":
+          description: Inbox stream initialization failed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/inbox/{messageId}:
+    get:
+      operationId: getInboxMessage
+      tags: [Inbox]
+      summary: Get one inbox message owned by the current user
+      x-luna-cli:
+        hidden: true
+        exclusionReason: Inbox message details are currently provided by the interactive web message center.
+      security:
+        - SessionCookie: []
+        - BearerToken: []
+      parameters:
+        - $ref: "#/components/parameters/InboxMessageId"
+      responses:
+        "200":
+          description: User-scoped inbox message.
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InboxMessage"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500":
+          description: Inbox message query failed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/inbox/{messageId}/read:
+    post:
+      operationId: markInboxMessageRead
+      tags: [Inbox]
+      summary: Mark one current-user inbox message as read
+      x-luna-cli:
+        hidden: true
+        exclusionReason: Inbox read state is currently managed by the interactive web message center.
+      security:
+        - SessionCookie: []
+        - BearerToken: []
+      parameters:
+        - $ref: "#/components/parameters/InboxMessageId"
+      responses:
+        "204": { description: Message marked as read. }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500":
+          description: Inbox message update failed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/inbox/read-all:
+    post:
+      operationId: markAllInboxMessagesRead
+      tags: [Inbox]
+      summary: Mark all current-user inbox messages as read
+      description: This does not accept, reject, or otherwise mutate linked action requests.
+      x-luna-cli:
+        hidden: true
+        exclusionReason: Inbox read state is currently managed by the interactive web message center.
+      security:
+        - SessionCookie: []
+        - BearerToken: []
+      responses:
+        "204": { description: All visible messages marked as read. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "500":
+          description: Inbox message update failed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/inbox/{messageId}/archive:
+    post:
+      operationId: archiveInboxMessage
+      tags: [Inbox]
+      summary: Archive one current-user inbox message
+      description: Archiving a message does not mutate its linked action request.
+      x-luna-cli:
+        hidden: true
+        exclusionReason: Inbox archive state is currently managed by the interactive web message center.
+      security:
+        - SessionCookie: []
+        - BearerToken: []
+      parameters:
+        - $ref: "#/components/parameters/InboxMessageId"
+      responses:
+        "204": { description: Message archived. }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500":
+          description: Inbox message update failed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/v1/inbox/action-requests/{requestId}/decision:
+    post:
+      operationId: decideInboxActionRequest
+      tags: [Inbox]
+      summary: Accept or reject an inbox action request
+      description: Revalidates the recipient, request version, expiry, requester authorization, and current resource state before applying the typed business decision.
+      x-luna-cli:
+        hidden: true
+        exclusionReason: Typed action requests currently require the interactive inbox confirmation workflow.
+      security:
+        - SessionCookie: []
+        - BearerToken: []
+      parameters:
+        - $ref: "#/components/parameters/InboxRequestId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InboxDecisionInput"
+      responses:
+        "200":
+          description: Updated action-request summary.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InboxActionRequestSummary"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "410":
+          description: The action request has expired.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "500":
+          description: Action-request decision failed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "503":
+          description: No typed action-request decision handler is available.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
   /api/v1/events:
     get:
       operationId: listPlatformEvents
@@ -6192,6 +6483,16 @@ components:
       in: path
       required: true
       schema: { type: string }
+    InboxMessageId:
+      name: messageId
+      in: path
+      required: true
+      schema: { type: string, pattern: "^imsg_" }
+    InboxRequestId:
+      name: requestId
+      in: path
+      required: true
+      schema: { type: string, pattern: "^iar_" }
     MemberId:
       name: memberId
       in: path
@@ -6282,7 +6583,7 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorResponse" }
     Conflict:
-      description: The requested AI state transition conflicts with the current durable state.
+      description: The requested state transition conflicts with the current durable state.
       content:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -6371,6 +6672,157 @@ components:
           additionalProperties: true
           description: Optional machine-readable error context. Scope failures include `requiredScope`.
       required: [code, error]
+    InboxCategory:
+      type: string
+      enum: [action, project, billing, security, delivery, system]
+    InboxPriority:
+      type: string
+      enum: [low, normal, high, critical]
+    InboxActionRequestStatus:
+      type: string
+      enum: [pending, processing, completed, rejected, cancelled, expired, failed]
+    InboxDecision:
+      type: string
+      enum: [accept, reject]
+    InboxDecisionInput:
+      type: object
+      additionalProperties: false
+      required: [decision, expectedVersion]
+      properties:
+        decision:
+          $ref: "#/components/schemas/InboxDecision"
+        expectedVersion:
+          type: integer
+          format: int64
+          minimum: 1
+    BillingOwnerTransferRequestInput:
+      type: object
+      additionalProperties: false
+      required: [recipientUserId]
+      properties:
+        recipientUserId:
+          type: string
+          minLength: 1
+    InboxActionRequestSummary:
+      type: object
+      additionalProperties: false
+      required: [id, type, status, rowVersion, expiresAt, allowedDecisions]
+      properties:
+        id: { type: string }
+        type:
+          type: string
+          enum: [project.billing_owner_transfer]
+        status:
+          $ref: "#/components/schemas/InboxActionRequestStatus"
+        rowVersion:
+          type: integer
+          format: int64
+          minimum: 1
+        expiresAt:
+          type: [string, "null"]
+          format: date-time
+        allowedDecisions:
+          type: array
+          maxItems: 2
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/InboxDecision"
+    InboxActionRequest:
+      type: object
+      additionalProperties: false
+      required: [id, type, requesterUserId, recipientUserId, projectId, resourceType, resourceId, status, rowVersion, expiresAt, respondedAt, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        type:
+          type: string
+          enum: [project.billing_owner_transfer]
+        requesterUserId: { type: string }
+        recipientUserId: { type: string }
+        projectId: { type: string }
+        resourceType: { type: string }
+        resourceId: { type: string }
+        status:
+          $ref: "#/components/schemas/InboxActionRequestStatus"
+        rowVersion:
+          type: integer
+          format: int64
+          minimum: 1
+        expiresAt:
+          type: [string, "null"]
+          format: date-time
+        respondedAt:
+          type: [string, "null"]
+          format: date-time
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    InboxMessage:
+      type: object
+      additionalProperties: false
+      required: [id, type, category, priority, actorId, projectId, resourceType, resourceId, titleKey, contentKey, params, actionRequestId, deepLink, groupKey, readAt, expiresAt, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        type: { type: string }
+        category:
+          $ref: "#/components/schemas/InboxCategory"
+        priority:
+          $ref: "#/components/schemas/InboxPriority"
+        actorId: { type: string }
+        projectId: { type: string }
+        resourceType: { type: string }
+        resourceId: { type: string }
+        titleKey: { type: string }
+        contentKey: { type: string }
+        params:
+          type: object
+          additionalProperties: true
+        actionRequestId: { type: string }
+        actionRequest:
+          oneOf:
+            - $ref: "#/components/schemas/InboxActionRequestSummary"
+            - type: "null"
+        deepLink:
+          anyOf:
+            - const: ""
+            - type: string
+              pattern: "^/(?!/)"
+          description: Empty or same-origin absolute application path. Protocol URLs and network-path references are rejected by the service.
+        groupKey: { type: string }
+        readAt:
+          type: [string, "null"]
+          format: date-time
+        expiresAt:
+          type: [string, "null"]
+          format: date-time
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    PaginatedInboxMessages:
+      type: object
+      additionalProperties: false
+      required: [items, page, pageSize, sortBy, sortOrder, total, totalPages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/InboxMessage"
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 100 }
+        sortBy:
+          type: string
+          enum: [createdAt, updatedAt, priority]
+        sortOrder:
+          type: string
+          enum: [asc, desc]
+        total: { type: integer, format: int64, minimum: 0 }
+        totalPages: { type: integer, minimum: 0 }
+    InboxUnreadCount:
+      type: object
+      additionalProperties: false
+      required: [unreadCount]
+      properties:
+        unreadCount:
+          type: integer
+          format: int64
+          minimum: 0
     OAuthApplication:
       type: object
       properties:

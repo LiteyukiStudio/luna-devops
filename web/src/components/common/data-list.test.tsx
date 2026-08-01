@@ -148,6 +148,28 @@ describe('data list layout', () => {
     expect(screen.getByRole('table').closest('[data-slot="data-list"]')).toBeInTheDocument()
   })
 
+  it('keeps page actions separate and right-aligned beside query controls', () => {
+    render(
+      <DataList
+        columns={[{ key: 'name', header: 'Name', render: item => item.name }]}
+        emptyTitle="Empty"
+        items={[{ id: 'one', name: 'One' }]}
+        rowKey={item => item.id}
+        search={{ value: '', placeholder: 'Search projects', onChange: () => undefined }}
+        toolbarActions={<button type="button">Create project</button>}
+      />,
+    )
+
+    const search = screen.getByPlaceholderText('Search projects')
+    const create = screen.getByRole('button', { name: 'Create project' })
+    const controls = search.closest('[data-slot="data-list-tools-controls"]')
+    const actions = create.closest('[data-slot="data-list-tools-actions"]')
+
+    expect(controls).not.toContainElement(create)
+    expect(actions).toHaveClass('ml-auto')
+    expect(actions?.parentElement).toBe(controls?.parentElement)
+  })
+
   it('uses the table frame as the only boundary below the toolbar', () => {
     render(
       <DataList

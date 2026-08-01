@@ -117,6 +117,7 @@ func registerTaskHandlers(mux *asynq.ServeMux, runner *Runner) {
 	mux.HandleFunc(tasks.TypeNotificationDeliver, runner.withTaskEvents((*Runner).handleNotificationDeliver))
 	mux.HandleFunc(tasks.TypeGitAccountRefresh, runner.withTaskEvents((*Runner).handleGitAccountRefresh))
 	mux.HandleFunc(tasks.TypeSyncStatus, runner.withTaskEvents((*Runner).handleSyncStatus))
+	mux.HandleFunc(tasks.TypeBillingAI, runner.withTaskEvents((*Runner).handleBillingAI))
 	mux.HandleFunc(tasks.TypeBillingRuntime, runner.withTaskEvents((*Runner).handleBillingRuntime))
 	mux.HandleFunc(tasks.TypeRetentionRun, runner.withTaskEvents((*Runner).handleRetentionRun))
 }

@@ -25,6 +25,7 @@ import { TabsContent } from '@/components/ui/tabs'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { isPlatformAdmin, ProjectRole } from '@/lib/roles'
 import { ApplicationsPage } from '@/pages/applications/ApplicationsPage'
+import { BillingOwnerTransferDialog } from '@/pages/projects/billing-owner-transfer-dialog'
 import { ProjectBuildVariableSetsPage } from '@/pages/projects/ProjectBuildVariableSetsPage'
 import { ProjectHooksPage } from '@/pages/projects/ProjectHooksPage'
 import { ProjectMembersPage } from '@/pages/projects/ProjectMembersPage'
@@ -94,6 +95,7 @@ export function ProjectWorkspacePage() {
             events={recentEvents.data?.items ?? []}
             members={members.data ?? []}
             project={currentProject}
+            canTransferBillingOwnership={currentMember?.role === ProjectRole.Owner && currentProject?.billingOwnerUserId === user?.id}
             releases={releases.data ?? []}
             routes={routes.data ?? []}
             runtimeConfigSetCount={runtimeConfigSets.data?.length ?? 0}
@@ -193,9 +195,10 @@ export function ProjectWorkspacePage() {
   )
 }
 
-function ProjectOverviewDashboard({ applications, builds, events, members, project, releases, routes, runtimeConfigSetCount, variableSetCount }: {
+function ProjectOverviewDashboard({ applications, builds, canTransferBillingOwnership, events, members, project, releases, routes, runtimeConfigSetCount, variableSetCount }: {
   applications: Application[]
   builds: BuildRun[]
+  canTransferBillingOwnership: boolean
   events: PlatformEvent[]
   members: ProjectMember[]
   project?: Project
@@ -264,7 +267,11 @@ function ProjectOverviewDashboard({ applications, builds, events, members, proje
         <Card className="min-w-0 p-4">
           <h3 className="text-sm font-semibold">{t('projectSpaces.projectOperations')}</h3>
           <div className="mt-3 grid gap-3">
-            <ProjectBillingOwnerItem owner={project?.billingOwner} />
+            <ProjectBillingOwnerItem
+              canTransfer={canTransferBillingOwnership}
+              members={members}
+              project={project}
+            />
             <ProjectOverviewItem label={t('buildsPage.variablesAndSecrets')} value={t('projectSpaces.variableSetCount', { count: variableSetCount })} />
             <ProjectOverviewItem label={t('runtimeConfigSets.tab')} value={t('projectSpaces.runtimeConfigSetCount', { count: runtimeConfigSetCount })} />
             <ProjectOverviewItem label={t('projectSpaces.members')} value={t('projectSpaces.memberRoleMeta', { members: members.length, owners: ownerCount })} />
@@ -322,11 +329,15 @@ function ProjectMetric({ icon, label, meta, value }: { icon: ReactNode, label: s
   )
 }
 
-function ProjectBillingOwnerItem({ owner }: { owner?: Project['billingOwner'] }) {
+function ProjectBillingOwnerItem({ canTransfer, members, project }: { canTransfer: boolean, members: ProjectMember[], project?: Project }) {
   const { t } = useTranslation()
+  const owner = project?.billingOwner
   return (
     <div className="rounded-md border border-border bg-background px-3 py-2">
-      <p className="text-xs text-muted-foreground">{t('projectSpaces.billingOwner')}</p>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs text-muted-foreground">{t('projectSpaces.billingOwner')}</p>
+        {canTransfer && project && <BillingOwnerTransferDialog members={members} project={project} />}
+      </div>
       {owner
         ? (
             <div className="mt-2 flex min-w-0 items-center gap-3">

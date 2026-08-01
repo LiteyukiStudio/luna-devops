@@ -18,7 +18,6 @@ import { DataList } from '@/components/common/data-list'
 import { EditActionButton } from '@/components/common/edit-action-button'
 import { ErrorState } from '@/components/common/error-state'
 import { HoverText } from '@/components/common/hover-text'
-import { PageHeader } from '@/components/common/page-header'
 import { StatusValueBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { buttonVariants } from '@/components/ui/button-variants'
@@ -153,24 +152,19 @@ export function ApplicationsPage({ embedded = false, projectId: projectIdProp, r
 
   return (
     <div className="grid gap-6">
-      {!embedded && (
-        <PageHeader
-          actions={(
-            <div className="flex items-center gap-3">
-              <Button onClick={openCreateDialog}>
-                <Plus size={16} />
-                {t('apps.createTitle')}
-              </Button>
-              <Link className="text-sm text-primary-text hover:underline" to="/projects">{t('backToProjectSpaces')}</Link>
-            </div>
-          )}
-          description={t('apps.description')}
-          title={t('apps.title')}
-        />
-      )}
-
       {applications.isError && <ErrorState title={t('apps.loadFailedTitle')} description={t('apps.loadFailedDescription')} />}
       <DataList
+        toolbarActions={!embedded
+          ? (
+              <div className="flex items-center gap-3">
+                <Button onClick={openCreateDialog}>
+                  <Plus size={16} />
+                  {t('apps.createTitle')}
+                </Button>
+                <Link className="text-sm text-primary-text hover:underline" to="/projects">{t('backToProjectSpaces')}</Link>
+              </div>
+            )
+          : undefined}
         columns={[
           {
             key: 'name',

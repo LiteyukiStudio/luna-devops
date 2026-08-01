@@ -6,7 +6,7 @@ import { Trash2, UserPlus } from 'lucide-react'
 import { useImperativeHandle, useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
-import { Link, useParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import { api } from '@/api'
@@ -14,7 +14,6 @@ import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { DataList } from '@/components/common/data-list'
 import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
-import { PageHeader } from '@/components/common/page-header'
 import { SearchMultiSelect } from '@/components/common/search-select'
 import { StatusBadge } from '@/components/common/status-badge'
 import { UserAvatar } from '@/components/common/user-avatar'
@@ -129,24 +128,16 @@ export function ProjectMembersPage({ embedded = false, projectId: projectIdProp,
 
   return (
     <div className="grid gap-6">
-      {!embedded && (
-        <PageHeader
-          actions={(
-            <div className="flex items-center gap-3">
+      {members.isError && <ErrorState title={t('projectMembers.loadFailedTitle')} description={t('projectMembers.loadFailedDescription')} />}
+      <DataList
+        toolbarActions={!embedded
+          ? (
               <Button onClick={openAddMemberDialog}>
                 <UserPlus size={16} />
                 {t('projectMembers.addTitle')}
               </Button>
-              <Link className="text-sm text-primary-text hover:underline" to="/projects">{t('backToProjectSpaces')}</Link>
-            </div>
-          )}
-          description={t('projectMembers.description')}
-          title={t('projectMembers.title')}
-        />
-      )}
-
-      {members.isError && <ErrorState title={t('projectMembers.loadFailedTitle')} description={t('projectMembers.loadFailedDescription')} />}
-      <DataList
+            )
+          : undefined}
         columns={[
           {
             key: 'member',

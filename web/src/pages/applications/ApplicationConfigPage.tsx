@@ -280,7 +280,6 @@ export function ApplicationConfigPage() {
             <RepositoryBindingsPage
               ref={repositoryBindingsPageRef}
               applicationId={applicationId}
-              applicationName={application.data?.name}
               embedded
               projectId={projectId}
             />

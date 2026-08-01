@@ -26,6 +26,11 @@
   },
   {
     "type": "file",
+    "name": "inbox",
+    "label": "Inbox"
+  },
+  {
+    "type": "file",
     "name": "billing",
     "label": "Billing and Spend"
   },

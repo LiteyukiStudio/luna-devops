@@ -118,57 +118,75 @@ func (s Service) debitUsages(usages []model.BillingUsageRecord, reason string, d
 		if err != nil {
 			return err
 		}
-		if err := ensureWallet(tx, billedUserID); err != nil {
-			return err
-		}
-		var wallet model.UserWallet
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&wallet, "user_id = ?", billedUserID).Error; err != nil {
-			return err
-		}
-		balanceAfter := wallet.BalanceCredits
-		created := 0
-		for _, usage := range usages {
-			if usage.ProjectID != projectID {
-				return errors.New("billing usage batch must belong to one project")
-			}
-			var existing model.BillingUsageRecord
-			err := tx.First(&existing, "resource_type = ? and resource_id = ? and meter = ?", usage.ResourceType, usage.ResourceID, usage.Meter).Error
-			if err == nil {
-				continue
-			}
-			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-				return err
-			}
-			usage.BilledUserID = billedUserID
-			balanceAfter = balanceAfter.Sub(usage.AmountCredits)
-			if err := tx.Create(&usage).Error; err != nil {
-				return err
-			}
-			entry := model.BillingLedgerEntry{
-				ID:                  id.New("bled"),
-				UserID:              billedUserID,
-				ProjectID:           usage.ProjectID,
-				Type:                "debit",
-				AmountCredits:       usage.AmountCredits.Neg(),
-				BalanceAfterCredits: balanceAfter,
-				Reason:              reason,
-				Meter:               usage.Meter,
-				UsageRecordID:       usage.ID,
-				ResourceType:        usage.ResourceType,
-				ResourceID:          usage.ResourceID,
-				Description:         description,
-				CreatedBy:           actorID,
-			}
-			if err := tx.Create(&entry).Error; err != nil {
-				return err
-			}
-			created++
-		}
-		if created == 0 {
-			return ErrAlreadySettled
-		}
-		return tx.Model(&model.UserWallet{}).Where("id = ?", wallet.ID).Update("balance_credits", balanceAfter).Error
+		return debitUsagesForUser(tx, usages, reason, description, actorID, billedUserID)
 	})
+}
+
+func (s Service) debitUserUsages(usages []model.BillingUsageRecord, reason string, description string, actorID string, billedUserID string) error {
+	if len(usages) == 0 {
+		return nil
+	}
+	billedUserID = strings.TrimSpace(billedUserID)
+	if billedUserID == "" {
+		return errors.New("billed user id is required")
+	}
+	return s.DB.Transaction(func(tx *gorm.DB) error {
+		return debitUsagesForUser(tx, usages, reason, description, actorID, billedUserID)
+	})
+}
+
+func debitUsagesForUser(tx *gorm.DB, usages []model.BillingUsageRecord, reason string, description string, actorID string, billedUserID string) error {
+	projectID := usages[0].ProjectID
+	if err := ensureWallet(tx, billedUserID); err != nil {
+		return err
+	}
+	var wallet model.UserWallet
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&wallet, "user_id = ?", billedUserID).Error; err != nil {
+		return err
+	}
+	balanceAfter := wallet.BalanceCredits
+	created := 0
+	for _, usage := range usages {
+		if usage.ProjectID != projectID {
+			return errors.New("billing usage batch must belong to one project")
+		}
+		var existing model.BillingUsageRecord
+		err := tx.First(&existing, "resource_type = ? and resource_id = ? and meter = ?", usage.ResourceType, usage.ResourceID, usage.Meter).Error
+		if err == nil {
+			continue
+		}
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		usage.BilledUserID = billedUserID
+		balanceAfter = balanceAfter.Sub(usage.AmountCredits)
+		if err := tx.Create(&usage).Error; err != nil {
+			return err
+		}
+		entry := model.BillingLedgerEntry{
+			ID:                  id.New("bled"),
+			UserID:              billedUserID,
+			ProjectID:           usage.ProjectID,
+			Type:                "debit",
+			AmountCredits:       usage.AmountCredits.Neg(),
+			BalanceAfterCredits: balanceAfter,
+			Reason:              reason,
+			Meter:               usage.Meter,
+			UsageRecordID:       usage.ID,
+			ResourceType:        usage.ResourceType,
+			ResourceID:          usage.ResourceID,
+			Description:         description,
+			CreatedBy:           actorID,
+		}
+		if err := tx.Create(&entry).Error; err != nil {
+			return err
+		}
+		created++
+	}
+	if created == 0 {
+		return ErrAlreadySettled
+	}
+	return tx.Model(&model.UserWallet{}).Where("id = ?", wallet.ID).Update("balance_credits", balanceAfter).Error
 }
 
 func billingOwnerUserID(tx *gorm.DB, projectID string) (string, error) {

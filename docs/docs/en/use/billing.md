@@ -26,6 +26,14 @@ CPU, memory, and storage are settled by deployment-config windows. Gateway traff
 
 Usage that is not linked to an application or deployment config is grouped as “Unassigned application” or “Unassigned deployment config”. Ledger entries remain the audit trail for every balance change, while spend analysis is the faster way to find which project, application, or deployment config is driving cost.
 
+## AI tokens
+
+The AI assistant bills the input and output tokens reported by the model separately. Charges belong to the user who started that conversation. Token usage still appears on that user's bill when the conversation is not linked to a project space; when it is linked, the project-space attribution is retained for filtering.
+
+The default price per 1,000 tokens is 1 credit for input and 4 credits for output. Platform administrators can change either price or disable its meter under **Global settings → Billing**. Price changes apply only to later model calls and do not recalculate historical ledger entries.
+
+Model usage is first stored as an immutable event, then asynchronously settled into usage records and ledger entries by the Worker. Pending usage survives a short restart, and repeated scans do not charge it twice.
+
 ## Gateway traffic
 
 Gateway charges are based on response egress traffic from platform-managed access routes. The platform does not read every Pod's external traffic directly, and cluster-internal service calls are not counted as public gateway traffic.

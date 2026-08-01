@@ -13,6 +13,11 @@ import (
 
 const MeterBuildJob = "build.job"
 
+const (
+	MeterAIInputTokens  = "ai.input_tokens_1000"
+	MeterAIOutputTokens = "ai.output_tokens_1000"
+)
+
 type RateRuleUpdate struct {
 	Meter          string
 	CreditsPerUnit decimal.Decimal
@@ -81,6 +86,8 @@ func defaultRateRules() []model.BillingRateRule {
 		{ID: id.New("brte"), Meter: "storage.gib_day", Unit: "gib_day", CreditsPerUnit: decimal.NewFromInt(1), Enabled: true, Description: "Persistent storage usage", CreatedAt: now, UpdatedAt: now},
 		{ID: id.New("brte"), Meter: "gateway.egress_gib", Unit: "gib", CreditsPerUnit: decimal.NewFromInt(1), Enabled: true, Description: "Gateway response egress traffic", CreatedAt: now, UpdatedAt: now},
 		{ID: id.New("brte"), Meter: "gateway.requests_1000", Unit: "1000_requests", CreditsPerUnit: decimal.Zero, Enabled: false, Description: "Gateway request count", CreatedAt: now, UpdatedAt: now},
+		{ID: id.New("brte"), Meter: MeterAIInputTokens, Unit: "1000_tokens", CreditsPerUnit: decimal.NewFromInt(1), Enabled: true, Description: "AI model input tokens", CreatedAt: now, UpdatedAt: now},
+		{ID: id.New("brte"), Meter: MeterAIOutputTokens, Unit: "1000_tokens", CreditsPerUnit: decimal.NewFromInt(4), Enabled: true, Description: "AI model output tokens", CreatedAt: now, UpdatedAt: now},
 	}
 }
 

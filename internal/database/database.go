@@ -195,6 +195,8 @@ func MigrateContext(ctx context.Context, db *gorm.DB) (err error) {
 		&model.NotificationRule{},
 		&model.NotificationDelivery{},
 		&model.PlatformEvent{},
+		&model.InboxActionRequest{},
+		&model.InboxMessage{},
 		&model.AppConfig{},
 	); err != nil {
 		return err

@@ -1,4 +1,4 @@
-import type { AppTemplate, AppTemplateInstallPayload, AppTemplateInstallResponse, BillingDeploymentSpend, BillingLedgerEntry, BillingListParams, BillingPeriodParams, BillingRateRule, BillingRateRulePayload, BillingSummary, BillingUsageRecord, BillingUsageSettlementResult, BillingWalletTransactionPayload, GatewayTrafficStatus, GatewayTrafficUsagePayload, PaginatedResponse, PaginationParams, Project, ProjectListParams, ProjectMember, ProjectMemberCandidate, ProjectPin, SystemComponentInstallPayload, SystemComponentInstallResponse, SystemComponentStatusResponse } from '../types'
+import type { AppTemplate, AppTemplateInstallPayload, AppTemplateInstallResponse, BillingDeploymentSpend, BillingLedgerEntry, BillingListParams, BillingPeriodParams, BillingRateRule, BillingRateRulePayload, BillingSummary, BillingUsageRecord, BillingUsageSettlementResult, BillingWalletTransactionPayload, GatewayTrafficStatus, GatewayTrafficUsagePayload, InboxActionRequest, PaginatedResponse, PaginationParams, Project, ProjectListParams, ProjectMember, ProjectMemberCandidate, ProjectPin, SystemComponentInstallPayload, SystemComponentInstallResponse, SystemComponentStatusResponse } from '../types'
 import { billingQuery, billingSummaryQuery, paginationQuery, request } from '../core'
 
 export const projectsApi = {
@@ -49,6 +49,11 @@ export const projectsApi = {
     request<ProjectPin>(`/projects/${projectId}/pin`, { method: 'PUT' }),
   unpinProject: (projectId: string) =>
     request<void>(`/projects/${projectId}/pin`, { method: 'DELETE' }),
+  createBillingOwnerTransferRequest: (projectId: string, recipientUserId: string) =>
+    request<InboxActionRequest>(`/projects/${projectId}/billing-owner-transfer-requests`, {
+      method: 'POST',
+      body: JSON.stringify({ recipientUserId }),
+    }),
   listProjectMembers: (projectId: string) => request<ProjectMember[]>(`/projects/${projectId}/members`),
   listProjectMembersPage: (projectId: string, params: PaginationParams) =>
     request<PaginatedResponse<ProjectMember>>(`/projects/${projectId}/members?${paginationQuery(params)}`),

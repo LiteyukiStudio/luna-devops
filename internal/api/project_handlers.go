@@ -440,11 +440,21 @@ func (h *Handlers) CreateProjectMember(ctx *gin.Context) {
 		writeError(ctx, http.StatusConflict, "user is already a project member")
 		return
 	}
-	if err := h.dbFor(ctx).Create(&member).Error; err != nil {
-		writeError(ctx, http.StatusBadRequest, err.Error())
+	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&member).Error; err != nil {
+			return err
+		}
+		return publishProjectMemberInbox(ctx.Request.Context(), tx, projectMemberInboxInput{
+			Type: "project.member_added", Priority: "normal", Project: project, Actor: actor,
+			RecipientUserID: targetUser.ID, MemberID: member.ID, Role: member.Role,
+			DedupKey: "project-member-added:" + member.ID,
+		})
+	}); err != nil {
+		writeErrorCode(ctx, http.StatusInternalServerError, "inbox.operation_failed", "project member notification failed")
 		return
 	}
 	h.auditWithContext(actor.ID, "project_member.create", member.ID, true, member.Role, ctx.Request.Context())
+	defaultInboxBroker.Notify(targetUser.ID, "")
 
 	ctx.JSON(http.StatusCreated, projectMemberResponse{
 		ID:        member.ID,
@@ -485,12 +495,26 @@ func (h *Handlers) UpdateProjectMember(ctx *gin.Context) {
 		writeError(ctx, http.StatusBadRequest, "项目至少需要保留一个 owner")
 		return
 	}
+	previousRole := member.Role
+	if previousRole == nextRole {
+		ctx.JSON(http.StatusOK, member)
+		return
+	}
 	member.Role = nextRole
-	if err := h.dbFor(ctx).Save(&member).Error; err != nil {
-		writeError(ctx, http.StatusBadRequest, err.Error())
+	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(&member).Error; err != nil {
+			return err
+		}
+		return publishProjectMemberInbox(ctx.Request.Context(), tx, projectMemberInboxInput{
+			Type: "project.member_role_changed", Priority: "high", Project: project, Actor: user,
+			RecipientUserID: member.UserID, MemberID: member.ID, Role: member.Role, PreviousRole: previousRole,
+		})
+	}); err != nil {
+		writeErrorCode(ctx, http.StatusInternalServerError, "inbox.operation_failed", "project member notification failed")
 		return
 	}
 	h.auditWithContext(user.ID, "project_member.update", member.ID, true, member.Role, ctx.Request.Context())
+	defaultInboxBroker.Notify(member.UserID, "")
 	ctx.JSON(http.StatusOK, member)
 }
 
@@ -522,11 +546,21 @@ func (h *Handlers) DeleteProjectMember(ctx *gin.Context) {
 			return
 		}
 	}
-	if err := h.dbFor(ctx).Delete(&member).Error; err != nil {
-		writeError(ctx, http.StatusInternalServerError, err.Error())
+	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Delete(&member).Error; err != nil {
+			return err
+		}
+		return publishProjectMemberInbox(ctx.Request.Context(), tx, projectMemberInboxInput{
+			Type: "project.member_removed", Priority: "high", Project: project, Actor: user,
+			RecipientUserID: member.UserID, MemberID: member.ID, Role: member.Role,
+			DedupKey: "project-member-removed:" + member.ID,
+		})
+	}); err != nil {
+		writeErrorCode(ctx, http.StatusInternalServerError, "inbox.operation_failed", "project member notification failed")
 		return
 	}
 	h.auditWithContext(user.ID, "project_member.delete", member.ID, true, member.Role, ctx.Request.Context())
+	defaultInboxBroker.Notify(member.UserID, "")
 	ctx.Status(http.StatusNoContent)
 }
 

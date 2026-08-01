@@ -19,6 +19,7 @@ import deploymentsPage from './en-US/deploymentsPage'
 import errors from './en-US/errors'
 import eventsPage from './en-US/eventsPage'
 import gatewayRoutesPage from './en-US/gatewayRoutesPage'
+import inbox from './en-US/inbox'
 import languages from './en-US/languages'
 import loginPage from './en-US/loginPage'
 import nav from './en-US/nav'
@@ -48,6 +49,7 @@ const enUS = {
   common,
   time,
   errors,
+  ...inbox,
   eventsPage,
   pagination,
   operationsDashboardPage,

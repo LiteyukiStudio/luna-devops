@@ -1,44 +1,67 @@
 import { render, screen } from '@testing-library/react'
+import { useState } from 'react'
 import { MemoryRouter } from 'react-router-dom'
-import { describe, expect, it } from 'vitest'
-import { PageChrome } from './page-chrome'
+import { describe, expect, it, vi } from 'vitest'
+import { PageBackNavigation, PageChromeTabs, PageChromeTools } from './page-chrome'
+import { WorkspaceChromeTargetsProvider } from './workspace-chrome-context'
 
 describe('page chrome', () => {
-  it('keeps the title row height stable when tools are absent', () => {
-    const { container } = render(
+  it('renders back navigation as a regular page-flow link', () => {
+    render(
       <MemoryRouter>
-        <PageChrome
-          tabsTargetRef={() => undefined}
-          title={<h1>Projects</h1>}
-          toolsTargetRef={() => undefined}
-        />
+        <PageBackNavigation label="Back to project spaces" to="/projects" />
       </MemoryRouter>,
     )
 
-    expect(container.querySelector('[data-slot="page-chrome-title-row"]')).toHaveClass('min-h-10')
-    expect(container.querySelector('[data-slot="page-chrome"]')).toHaveClass('hidden', 'lg:block')
+    expect(screen.getByRole('link', { name: 'Back to project spaces' })).toHaveAttribute('href', '/projects')
   })
 
-  it('places optional back navigation below the title', () => {
-    const { container } = render(
-      <MemoryRouter>
-        <PageChrome
-          backNavigation={{ label: 'Back to project spaces', to: '/projects' }}
-          tabsTargetRef={() => undefined}
-          title={<h1>Project workspace</h1>}
-          toolsTargetRef={() => undefined}
-        />
-      </MemoryRouter>,
+  it('portals page tabs and desktop tools into workspace targets', async () => {
+    render(<ChromeTargetsFixture />)
+
+    expect(await screen.findByTestId('tabs-target')).toHaveTextContent('Overview')
+    expect(screen.getByTestId('tools-target')).toHaveTextContent('Create')
+    expect(screen.getAllByText('Create')).toHaveLength(2)
+  })
+
+  it('registers secondary-row content for its mounted lifetime', () => {
+    const unregisterTabs = vi.fn()
+    const unregisterTools = vi.fn()
+    const registerTabs = vi.fn(() => unregisterTabs)
+    const registerTools = vi.fn(() => unregisterTools)
+    const { unmount } = render(
+      <WorkspaceChromeTargetsProvider value={{ registerTabs, registerTools, tabs: null, tools: null }}>
+        <PageChromeTabs>Overview</PageChromeTabs>
+        <PageChromeTools>Create</PageChromeTools>
+      </WorkspaceChromeTargetsProvider>,
     )
 
-    const titleRow = container.querySelector('[data-slot="page-chrome-title-row"]')
-    const desktopBackLink = container.querySelector('.lg\\:flex [data-slot="page-chrome-back-navigation"]')
-    const tabsRow = container.querySelector('[data-slot="page-chrome-tabs-row"]')
+    expect(registerTabs).toHaveBeenCalledOnce()
+    expect(registerTools).toHaveBeenCalledOnce()
 
-    expect(container.querySelector('[data-slot="page-chrome"]')).not.toHaveClass('hidden')
-    expect(screen.getAllByRole('link', { name: 'Back to project spaces' })).toHaveLength(2)
-    expect(desktopBackLink).toHaveAttribute('href', '/projects')
-    expect(titleRow!.compareDocumentPosition(desktopBackLink!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(desktopBackLink!.compareDocumentPosition(tabsRow!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    unmount()
+    expect(unregisterTabs).toHaveBeenCalledOnce()
+    expect(unregisterTools).toHaveBeenCalledOnce()
   })
 })
+
+function ChromeTargetsFixture() {
+  const [tabs, setTabs] = useState<HTMLDivElement | null>(null)
+  const [tools, setTools] = useState<HTMLDivElement | null>(null)
+
+  return (
+    <WorkspaceChromeTargetsProvider
+      value={{
+        registerTabs: () => () => {},
+        registerTools: () => () => {},
+        tabs,
+        tools,
+      }}
+    >
+      <div ref={setTabs} data-testid="tabs-target" />
+      <div ref={setTools} data-testid="tools-target" />
+      <PageChromeTabs>Overview</PageChromeTabs>
+      <PageChromeTools>Create</PageChromeTools>
+    </WorkspaceChromeTargetsProvider>
+  )
+}

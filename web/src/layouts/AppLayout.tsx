@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Bell, ChartNoAxesCombined, CircleUserRound, Container, CreditCard, Fingerprint, FolderKanban, GitBranch, LayoutDashboard, Menu, ScrollText, Server, Settings, Store, Users } from 'lucide-react'
 import { AnimatePresence } from 'motion/react'
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, Navigate, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -9,18 +9,18 @@ import { api } from '@/api'
 import { useDocumentTitle } from '@/app/document-title'
 import { usePublicConfig } from '@/app/public-config-context'
 import { useSession } from '@/app/session-context'
+import { AccountMenu } from '@/components/common/account-menu'
 import { DebugFloatingPanel } from '@/components/common/debug-floating-panel'
+import { InboxTrigger } from '@/components/common/inbox/inbox-trigger'
 import { AppLoadingState } from '@/components/common/loading-states'
 import { PageMotion } from '@/components/common/motion'
-import { PageChrome } from '@/components/common/page-chrome'
-import { PageChromeTargetsProvider } from '@/components/common/page-chrome-context'
-import { SidebarUserPanel } from '@/components/common/sidebar-user-panel'
+import { PageBackNavigation } from '@/components/common/page-chrome'
+import { WorkspaceChromeTargetsProvider } from '@/components/common/workspace-chrome-context'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
 import {
   Sidebar,
   SidebarContent,
-  SidebarFooter,
   SidebarGroup,
   SidebarGroupLabel,
   SidebarHeader,
@@ -94,6 +94,7 @@ const pageMetaRules = [
   { match: (pathname: string) => /^\/projects\/[^/]+$/.test(pathname), titleKey: 'projectSpaces.workspaceTitle' },
   { match: (pathname: string) => pathname === '/projects', titleKey: 'projectSpaces.title' },
   { match: (pathname: string) => pathname === '/events', titleKey: 'eventsPage.title' },
+  { match: (pathname: string) => pathname === '/inbox', titleKey: 'inbox.title' },
   { match: (pathname: string) => pathname === '/app-templates', titleKey: 'appTemplates' },
   { match: (pathname: string) => pathname === '/code-repositories', titleKey: 'codeRepositories' },
   { match: (pathname: string) => pathname === '/registries', titleKey: 'registries' },
@@ -114,14 +115,33 @@ function sidebarMenuButtonClassName(active?: boolean) {
   )
 }
 
+function useChromeSlotPresence() {
+  const [registrations, setRegistrations] = useState(0)
+  const register = useCallback(() => {
+    let active = true
+    setRegistrations(current => current + 1)
+
+    return () => {
+      if (!active)
+        return
+      active = false
+      setRegistrations(current => Math.max(0, current - 1))
+    }
+  }, [])
+
+  return [registrations > 0, register] as const
+}
+
 export function AppLayout() {
   const { i18n, t } = useTranslation()
   const { isLoading: sessionLoading, isLoggingOut, logout, user } = useSession()
   const configs = usePublicConfig()
   const location = useLocation()
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
-  const [pageTabsTarget, setPageTabsTarget] = useState<HTMLDivElement | null>(null)
-  const [pageToolsTarget, setPageToolsTarget] = useState<HTMLDivElement | null>(null)
+  const [topbarTabsTarget, setTopbarTabsTarget] = useState<HTMLDivElement | null>(null)
+  const [topbarToolsTarget, setTopbarToolsTarget] = useState<HTMLDivElement | null>(null)
+  const [hasTopbarTabs, registerTopbarTabs] = useChromeSlotPresence()
+  const [hasTopbarTools, registerTopbarTools] = useChromeSlotPresence()
   const projects = useQuery({ queryKey: ['projects'], queryFn: api.listProjects, enabled: Boolean(user) })
   const projectRouteMatch = location.pathname.match(/^\/projects\/([^/]+)/)
   const appRouteMatch = location.pathname.match(/^\/projects\/([^/]+)\/apps\/([^/]+)$/)
@@ -177,6 +197,13 @@ export function AppLayout() {
     }
   }, [appRouteMatch, configs, currentApplication.data, currentProject.data, location.pathname, projectRouteMatch, projects.data, t])
   useDocumentTitle(pageMeta.title)
+  const workspaceChromeTargets = useMemo(() => ({
+    registerTabs: registerTopbarTabs,
+    registerTools: registerTopbarTools,
+    tabs: topbarTabsTarget,
+    tools: topbarToolsTarget,
+  }), [registerTopbarTabs, registerTopbarTools, topbarTabsTarget, topbarToolsTarget])
+  const hasTopbarSecondaryRow = hasTopbarTabs || hasTopbarTools
   const pageMotionKey = /^\/projects\/[^/]+$/.test(location.pathname) ? '/projects/:projectId' : location.pathname
   const handleLogout = async () => {
     try {
@@ -235,13 +262,6 @@ export function AppLayout() {
             )
           })}
         </SidebarContent>
-        <SidebarFooter>
-          <SidebarUserPanel
-            logoutPending={isLoggingOut}
-            user={user}
-            onLogout={handleLogout}
-          />
-        </SidebarFooter>
       </>
     )
   }
@@ -274,43 +294,51 @@ export function AppLayout() {
         </Sheet>
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <header
-            className="z-10 flex h-14 shrink-0 items-center justify-between bg-surface-base/80 px-page-inline py-inline backdrop-blur lg:hidden"
-          >
-            <Button
-              aria-label={t('nav.openSidebar')}
-              className="mr-2 shrink-0 lg:hidden"
-              size="icon"
-              variant="ghost"
-              onClick={() => setMobileSidebarOpen(true)}
+          <WorkspaceChromeTargetsProvider value={workspaceChromeTargets}>
+            <header
+              className={cn(
+                'relative z-20 flex shrink-0 flex-col bg-transparent',
+                hasTopbarSecondaryRow ? 'h-26 lg:h-30' : 'h-14 lg:h-18',
+              )}
             >
-              <Menu className="size-5" />
-            </Button>
-            <div className="min-w-0 flex-1">
-              <TopbarTitle crumbs={pageMeta.titleCrumbs} prefix={pageMeta.titlePrefix} title={pageMeta.title} />
-            </div>
-          </header>
-          <main
-            className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-transparent px-page-inline py-page-block transition-colors"
-          >
-            <div className="flex min-h-full min-w-0 flex-col gap-group py-0">
-              <PageChrome
-                backNavigation={pageMeta.backNavigation}
-                tabsTargetRef={setPageTabsTarget}
-                title={(
+              <div className="flex h-14 min-w-0 shrink-0 items-center gap-2 px-page-inline lg:h-18">
+                <Button
+                  aria-label={t('nav.openSidebar')}
+                  className="shrink-0 lg:hidden"
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => setMobileSidebarOpen(true)}
+                >
+                  <Menu className="size-5" />
+                </Button>
+                <div className="min-w-0 flex-1">
                   <TopbarTitle crumbs={pageMeta.titleCrumbs} prefix={pageMeta.titlePrefix} title={pageMeta.title} />
-                )}
-                toolsTargetRef={setPageToolsTarget}
-              />
-              <PageChromeTargetsProvider value={{ tabs: pageTabsTarget, tools: pageToolsTarget }}>
+                </div>
+                <InboxTrigger />
+                <AccountMenu
+                  logoutPending={isLoggingOut}
+                  user={user}
+                  onLogout={handleLogout}
+                />
+              </div>
+              <div className={cn('flex min-w-0 shrink-0 items-center gap-3 overflow-hidden px-page-inline', hasTopbarSecondaryRow ? 'h-12' : 'h-0')}>
+                <div ref={setTopbarTabsTarget} className="min-w-0 flex-1 overflow-hidden" data-slot="workspace-topbar-tabs" />
+                <div ref={setTopbarToolsTarget} className="hidden min-w-0 shrink-0 items-center justify-end empty:hidden lg:flex" data-slot="workspace-topbar-tools" />
+              </div>
+            </header>
+            <main
+              className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-transparent px-page-inline py-page-block transition-colors"
+            >
+              <div className="flex min-h-full min-w-0 flex-col gap-group py-0">
+                {pageMeta.backNavigation && <PageBackNavigation {...pageMeta.backNavigation} />}
                 <AnimatePresence mode="wait">
                   <PageMotion key={pageMotionKey}>
                     <Outlet />
                   </PageMotion>
                 </AnimatePresence>
-              </PageChromeTargetsProvider>
-            </div>
-          </main>
+              </div>
+            </main>
+          </WorkspaceChromeTargetsProvider>
         </div>
       </div>
       <DebugFloatingPanel />

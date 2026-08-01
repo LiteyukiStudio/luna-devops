@@ -15,6 +15,7 @@ const CodeRepositoriesPage = lazyNamed(() => import('./pages/code-repositories/C
 const DashboardPage = lazyNamed(() => import('./pages/dashboard/DashboardPage'), 'DashboardPage')
 const EventsPage = lazyNamed(() => import('./pages/events/EventsPage'), 'EventsPage')
 const LoginPage = lazyNamed(() => import('./pages/login/LoginPage'), 'LoginPage')
+const InboxPage = lazyNamed(() => import('./pages/inbox/InboxPage'), 'InboxPage')
 const RegisterPage = lazyNamed(() => import('./pages/login/RegisterPage'), 'RegisterPage')
 const NotificationsPage = lazyNamed(() => import('./pages/settings/NotificationsPage'), 'NotificationsPage')
 const OAuthAuthorizePage = lazyNamed(() => import('./pages/oauth/OAuthAuthorizePage'), 'OAuthAuthorizePage')
@@ -45,6 +46,7 @@ export default function App() {
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/projects" element={<ProjectsPage />} />
             <Route path="/events" element={<EventsPage />} />
+            <Route path="/inbox" element={<InboxPage />} />
             <Route path="/projects/:projectId" element={<ProjectWorkspacePage />} />
             <Route path="/projects/:projectId/members" element={<ProjectRootRedirect />} />
             <Route path="/projects/:projectId/apps" element={<ProjectRootRedirect />} />

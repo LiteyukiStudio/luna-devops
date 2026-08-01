@@ -10,6 +10,7 @@ export {
   deploymentTargetDataExportUrl,
   deploymentTargetMetricsStreamUrl,
   gitOAuthStartUrl,
+  inboxStreamUrl,
   oidcStartUrl,
   releaseRuntimeTerminalUrl,
   runtimeClusterPodTerminalUrl,

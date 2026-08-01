@@ -16,7 +16,6 @@ import { DataList } from '@/components/common/data-list'
 import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
 import { HoverText } from '@/components/common/hover-text'
-import { PageHeader } from '@/components/common/page-header'
 import { PageShell } from '@/components/common/page-shell'
 import { ProgressiveSection } from '@/components/common/progressive-section'
 import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
@@ -127,8 +126,9 @@ export function ProjectsPage() {
 
   return (
     <PageShell spacing="compact" width="full">
-      <PageHeader
-        actions={(
+      {projects.isError && <ErrorState title={t('projectSpaces.loadFailedTitle')} description={t('projectSpaces.loadFailedDescription')} />}
+      <DataList
+        toolbarActions={(
           <Button
             onClick={() => {
               setEditingProject(null)
@@ -140,10 +140,6 @@ export function ProjectsPage() {
             <span>{t('projectSpaces.createTitle')}</span>
           </Button>
         )}
-        title={t('projectSpaces.title')}
-      />
-      {projects.isError && <ErrorState title={t('projectSpaces.loadFailedTitle')} description={t('projectSpaces.loadFailedDescription')} />}
-      <DataList
         columns={[
           {
             key: 'name',
