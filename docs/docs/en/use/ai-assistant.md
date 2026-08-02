@@ -104,7 +104,7 @@ Complex cards show a preparation animation and replace it in place when the fina
 
 The assistant receives structured context such as the current route, page type, and selected resource IDs. Passwords, tokens, and secrets shown or entered on a page are not included in that context.
 
-Tool details are collapsed by default. The collapsed row uses a localized business name. Expand it to inspect three sections: identifiers, arguments, and return value. Identifiers include the original operation, call ID, run ID, Trace ID, duration, and request ID when available. Redacted and bounded nested arguments and response data retain their JSON structure for direct inspection. Tokens, secrets, passwords, and authentication data are never displayed.
+Tool details are collapsed by default. The collapsed row uses a localized business name and shows a finished call as “status · duration.” Expand it to inspect three sections: identifiers, arguments, and return value. Identifiers include the original operation, call ID, run ID, Trace ID, duration, and request ID when available. Redacted and bounded nested arguments and response data retain their JSON structure for direct inspection. Tokens, secrets, passwords, and authentication data are never displayed.
 
 If interaction-card generation fails, the tool details list the invalid field paths and reasons so the card can be regenerated or an administrator can investigate with the request ID.
 

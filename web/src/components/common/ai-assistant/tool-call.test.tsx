@@ -77,6 +77,8 @@ describe('ai assistant tool status icon', () => {
     expect(summary).toHaveTextContent('查询应用列表')
     expect(summary).not.toHaveTextContent('listApplications')
     expect(summary).toHaveTextContent('已完成')
+    expect(summary).toHaveTextContent('·')
+    expect(summary).toHaveTextContent('128 ms')
     expect(summary).not.toHaveTextContent('工具已返回结果')
     expect(details).not.toHaveAttribute('open')
 
@@ -97,13 +99,29 @@ describe('ai assistant tool status icon', () => {
     expect(screen.getByText('返回')).toBeInTheDocument()
     expect(screen.getByText('工具已返回结果')).toBeInTheDocument()
     expect(screen.getByText('耗时')).toBeInTheDocument()
-    expect(screen.getByText('128 ms')).toBeInTheDocument()
+    expect(screen.getAllByText('128 ms')).toHaveLength(2)
 
     fireEvent.click(screen.getByRole('button', { name: '复制 Trace ID' }))
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('717690e2661f8337d53fcd3295591b4b'))
 
     fireEvent.click(screen.getByRole('button', { name: '复制' }))
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(expect.stringContaining('"status"')))
+  })
+
+  it('keeps a running status compact when no duration is available', async () => {
+    await i18next.changeLanguage('zh-CN')
+    const { container } = render(
+      <AIToolCallCard
+        block={toolBlock('running')}
+        onAction={vi.fn(async () => true)}
+        onApproval={vi.fn(async () => {})}
+        onMFA={vi.fn(async () => {})}
+      />,
+    )
+
+    const summary = container.querySelector('[data-ai-tool-summary]')
+    expect(summary).toHaveTextContent('进行中')
+    expect(summary).not.toHaveTextContent('·')
   })
 
   it('shows a safe failure reason and request id without exposing backend details', async () => {

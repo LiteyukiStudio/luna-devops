@@ -5,6 +5,7 @@ import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { OneTimeCodeInput } from '@/components/common/one-time-code-input'
+import { formatMillisecondsDuration } from '@/components/common/time-format'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -44,7 +45,13 @@ export function AIToolCallCard({ block, onAction, onApproval, onMFA }: { block: 
         <strong className="min-w-0 flex-1 truncate text-xs font-medium">{title}</strong>
         <Badge className={cn('gap-1 border-transparent px-1.5 py-0 text-[10px] leading-4', statusTone[block.status])}>
           <ToolStatusIcon status={block.status} />
-          {t(`aiAssistant.status.${block.status}`)}
+          <span>{t(`aiAssistant.status.${block.status}`)}</span>
+          {block.durationMs !== undefined && (
+            <>
+              <span aria-hidden="true" className="opacity-60">·</span>
+              <span>{formatMillisecondsDuration(block.durationMs, i18n.language)}</span>
+            </>
+          )}
         </Badge>
         <ChevronRight className="size-3.5 shrink-0 text-muted-foreground transition-transform group-open:rotate-90" />
       </summary>

@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import type { AIBlock } from './state'
 import { useTranslation } from 'react-i18next'
 import { CopyableHoverText } from '@/components/common/copyable-hover-text'
+import { formatMillisecondsDuration } from '@/components/common/time-format'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { CopyableCodeBlock } from './copyable-code-block'
@@ -31,12 +32,6 @@ function displayJSON(value: unknown): string {
 
 function isStructured(value: unknown): boolean {
   return typeof value === 'object' && value !== null
-}
-
-function formatDuration(durationMs: number, locale: string): string {
-  if (durationMs < 1000)
-    return `${Math.round(durationMs)} ms`
-  return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(durationMs / 1000)} s`
 }
 
 function DetailHeading({ children }: { children: ReactNode }) {
@@ -84,7 +79,7 @@ export function AIToolCallDetails({ block, errorCode, summary }: { block: ToolCa
     { label: t('aiAssistant.runId'), value: block.runId, copyable: true },
     ...(block.traceId ? [{ label: t('aiAssistant.traceId'), value: block.traceId, copyable: true }] : []),
     ...(block.durationMs !== undefined
-      ? [{ label: t('aiAssistant.duration'), value: formatDuration(block.durationMs, i18n.language), mono: false }]
+      ? [{ label: t('aiAssistant.duration'), value: formatMillisecondsDuration(block.durationMs, i18n.language), mono: false }]
       : []),
     ...(block.result?.requestId ? [{ label: t('aiAssistant.requestId'), value: block.result.requestId, copyable: true }] : []),
   ]

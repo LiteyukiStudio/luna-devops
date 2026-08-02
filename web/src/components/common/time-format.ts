@@ -52,6 +52,15 @@ export function formatElapsedDuration(startValue: string | undefined, endValue: 
   return formatDurationSeconds(Math.max(0, Math.floor((finishedAt.getTime() - startedAt.getTime()) / 1000)), t)
 }
 
+/**
+ * 格式化毫秒级短耗时；工具调用等紧凑状态使用毫秒，超过一秒后切换为本地化秒数。
+ */
+export function formatMillisecondsDuration(durationMs: number, locale: string): string {
+  if (durationMs < 1000)
+    return `${Math.round(durationMs)} ms`
+  return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(durationMs / 1000)} s`
+}
+
 function formatRelativeElapsed(elapsedMs: number, t: TFunction) {
   const totalMinutes = Math.max(0, Math.floor(elapsedMs / 60000))
   const hours = Math.floor(totalMinutes / 60)
