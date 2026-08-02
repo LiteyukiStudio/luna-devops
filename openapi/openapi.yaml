@@ -4054,6 +4054,52 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
 
+  /api/v1/telemetry/v1/traces:
+    post:
+      operationId: relayBrowserTraces
+      tags: [Telemetry]
+      summary: Relay authenticated browser OTLP traces
+      description: Accepts an OTLP/HTTP protobuf payload from the signed-in web client and relays it to the server-configured collector without exposing collector credentials or topology.
+      x-luna-cli:
+        classification: internal-observability
+        hidden: true
+        agentAllowed: false
+        exclusionReason: Browser telemetry ingestion transport is not a user business command.
+      security:
+        - SessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/x-protobuf:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "204":
+          description: Trace payload accepted, or server-side browser telemetry is disabled.
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "413":
+          description: Trace payload exceeds the one MiB relay limit.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "415":
+          description: OTLP protobuf content type is required.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "429":
+          description: Per-user browser telemetry rate limit exceeded.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "503":
+          description: Telemetry rate limiting or collector relay is unavailable.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
   /api/v1/events:
     get:
       operationId: listPlatformEvents
