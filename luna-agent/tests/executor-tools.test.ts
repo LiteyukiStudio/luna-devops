@@ -509,7 +509,6 @@ describe("provider to tool to subsequent model invocation", () => {
       client,
       new ProjectingToolCallStore(new MemoryToolCallStore(), repository),
       undefined,
-      12,
       undefined,
       async () => "opaque-grant",
     )
@@ -705,7 +704,7 @@ describe("provider to tool to subsequent model invocation", () => {
       inputSchema: { type: "object", properties: { buildId: { type: "string" } }, required: ["buildId"], additionalProperties: false },
     }])
     const client = new DeterministicLunaApiClient(() => ({ status: 200, body: { id: "build_a", status: "failed" } }))
-    const tools = new ToolOrchestrator(catalog, client, new ProjectingToolCallStore(new MemoryToolCallStore(), repository), undefined, 12, undefined, async () => "opaque-grant")
+    const tools = new ToolOrchestrator(catalog, client, new ProjectingToolCallStore(new MemoryToolCallStore(), repository), undefined, undefined, async () => "opaque-grant")
     const config = loadConfig({ NODE_ENV: "test", INSTANCE_ID: "test-worker" })
     const executor = new RunExecutor(repository, new GraphVersionRegistry(new DeterministicProvider()), config, tools)
     expect(await executor.runOnce()).toBe(true)
@@ -732,7 +731,7 @@ describe("provider to tool to subsequent model invocation", () => {
       inputSchema: { type: "object", properties: { releaseId: { type: "string" } }, required: ["releaseId"], additionalProperties: false },
     }])
     const store = new MemoryToolCallStore()
-    const tools = new ToolOrchestrator(catalog, new DeterministicLunaApiClient(() => ({ status: 200, body: { restarted: true } })), new ProjectingToolCallStore(store, repository), undefined, 12, undefined, async () => "grant")
+    const tools = new ToolOrchestrator(catalog, new DeterministicLunaApiClient(() => ({ status: 200, body: { restarted: true } })), new ProjectingToolCallStore(store, repository), undefined, undefined, async () => "grant")
     const executor = new RunExecutor(repository, new GraphVersionRegistry(new DeterministicProvider()), loadConfig({ NODE_ENV: "test", INSTANCE_ID: "approval-worker" }), tools)
     await executor.runOnce()
     expect((await repository.getRun("usr_a", created.run.id))?.status).toBe("waiting_approval")
@@ -757,7 +756,7 @@ describe("provider to tool to subsequent model invocation", () => {
       risk: "read", requiredScopes: ["build:read"], approval: "never", idempotent: true, timeoutMs: 5000,
       inputSchema: { type: "object", properties: { buildId: { type: "string" } }, required: ["buildId"], additionalProperties: false },
     }])
-    const tools = new ToolOrchestrator(catalog, new DeterministicLunaApiClient(() => ({ status: 200, body: { id: "build_a" } })), new ProjectingToolCallStore(new MemoryToolCallStore(), repository), undefined, 12, undefined, async () => "grant")
+    const tools = new ToolOrchestrator(catalog, new DeterministicLunaApiClient(() => ({ status: 200, body: { id: "build_a" } })), new ProjectingToolCallStore(new MemoryToolCallStore(), repository), undefined, undefined, async () => "grant")
     const executor = new RunExecutor(repository, new GraphVersionRegistry(new DeterministicProvider()), loadConfig({ NODE_ENV: "test", INSTANCE_ID: "input-worker" }), tools)
     await executor.runOnce()
     const waiting = await repository.getRun("usr_a", created.run.id)

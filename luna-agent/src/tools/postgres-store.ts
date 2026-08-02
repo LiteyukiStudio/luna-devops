@@ -75,9 +75,6 @@ export class PostgresToolCallStore implements ToolCallStore {
       })
     }
   }
-  async countForRun(runId: string) {
-    return Number((await this.pool.query<{ count: string }>(`select count(*) from ai.tool_calls where run_id=$1`, [runId])).rows[0]?.count ?? 0)
-  }
   async listAwaitingApproval(runId: string) {
     const rows = (await this.pool.query<DbToolCall>(
       `select * from ai.tool_calls where run_id=$1 and status='awaiting_approval' order by created_at`,

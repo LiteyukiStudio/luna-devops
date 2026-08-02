@@ -282,7 +282,10 @@ func normalizeOpenAPISchema(document openAPIDocument, schema map[string]any, dep
 		schema = mapValue(document.Components.Schemas[strings.TrimPrefix(ref, "#/components/schemas/")])
 	}
 	result := map[string]any{}
-	for _, key := range []string{"type", "format", "minimum", "maximum", "minLength", "maxLength", "default"} {
+	for _, key := range []string{
+		"type", "format", "description", "pattern", "minimum", "maximum",
+		"minLength", "maxLength", "minItems", "maxItems", "default",
+	} {
 		if value, ok := schema[key]; ok {
 			result[key] = value
 		}
@@ -300,6 +303,14 @@ func normalizeOpenAPISchema(document openAPIDocument, schema map[string]any, dep
 		}
 		result["properties"] = normalized
 		result["additionalProperties"] = false
+	}
+	if additionalProperties, exists := schema["additionalProperties"]; exists {
+		switch value := additionalProperties.(type) {
+		case bool:
+			result["additionalProperties"] = value
+		case map[string]any:
+			result["additionalProperties"] = normalizeOpenAPISchema(document, value, depth+1)
+		}
 	}
 	if items := mapValue(schema["items"]); len(items) > 0 {
 		result["items"] = normalizeOpenAPISchema(document, items, depth+1)

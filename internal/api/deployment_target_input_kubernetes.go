@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 type deploymentKubernetesAdvancedInput struct {
@@ -34,6 +35,8 @@ type deploymentKubernetesAdvancedInput struct {
 	Affinity                     string
 	TopologySpreadConstraints    string
 	PriorityClassName            string
+	ServiceAccountName           string
+	AutomountServiceAccountToken string
 	ServiceType                  string
 	ServiceAnnotations           string
 	ServiceExternalTrafficPolicy string
@@ -100,6 +103,13 @@ func normalizeDeploymentKubernetesAdvanced(ctx *gin.Context, input deploymentTar
 	if !ok {
 		return deploymentKubernetesAdvancedInput{}, false
 	}
+	serviceAccountName := strings.TrimSpace(input.ServiceAccountName)
+	if serviceAccountName != "" {
+		if problems := validation.IsDNS1123Subdomain(serviceAccountName); len(problems) > 0 {
+			writeErrorCode(ctx, http.StatusBadRequest, "deployment_target.service_account_invalid", strings.Join(problems, "; "))
+			return deploymentKubernetesAdvancedInput{}, false
+		}
+	}
 	return deploymentKubernetesAdvancedInput{
 		ImagePullPolicy:              normalizeImagePullPolicyValue(input.ImagePullPolicy),
 		ContainerCommand:             normalizeStringArrayText(input.ContainerCommand),
@@ -123,6 +133,8 @@ func normalizeDeploymentKubernetesAdvanced(ctx *gin.Context, input deploymentTar
 		Affinity:                     affinity,
 		TopologySpreadConstraints:    topologySpreadConstraints,
 		PriorityClassName:            strings.TrimSpace(input.PriorityClassName),
+		ServiceAccountName:           serviceAccountName,
+		AutomountServiceAccountToken: normalizeTriStateBool(input.AutomountServiceAccountToken),
 		ServiceType:                  normalizeServiceType(input.ServiceType),
 		ServiceAnnotations:           serviceAnnotations,
 		ServiceExternalTrafficPolicy: normalizeServiceExternalTrafficPolicy(input.ServiceExternalTrafficPolicy),

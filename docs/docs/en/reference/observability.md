@@ -97,7 +97,7 @@ Use these queries in the Grafana Tempo TraceQL editor:
 { resource.service.name = "luna-agent" && span:name = "agent.model.stream" && span:duration > 5s }
 ```
 
-The TraceQL intrinsic for a span name is `span:name`. After opening a trace, the trace-view filter uses `span.name`. To hide fine-grained PostgreSQL spans in that filter, enter `span.name !~ ^pg[.-].*` and turn off **Show all spans**.
+The TraceQL intrinsic for a span name is `span:name`. After opening a trace, the trace-view filter uses `span.name`. Detail-view filters affect only the current browser view; dashboard JSON cannot persist one into a subsequently opened Explore page. The Agent does not capture automatic PostgreSQL query spans by default. For per-query SQL diagnostics, temporarily set `AI_OBSERVABILITY_CAPTURE_DATABASE_SPANS=true`, restart the Agent, and disable it again when the investigation is complete.
 
 ### Main span names
 

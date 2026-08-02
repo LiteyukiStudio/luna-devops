@@ -97,7 +97,7 @@ Luna DevOps 使用请求级 Trace：一次 AI 会话可以包含多轮对话，�
 { resource.service.name = "luna-agent" && span:name = "agent.model.stream" && span:duration > 5s }
 ```
 
-TraceQL 的 Span 名内建字段写作 `span:name`；打开一条 Trace 后，详情页筛选栏使用 `span.name`。例如隐藏 PostgreSQL 细粒度 Span 时，在详情筛选栏填写 `span.name !~ ^pg[.-].*`，再关闭“显示所有 Span”。
+TraceQL 的 Span 名内建字段写作 `span:name`；打开一条 Trace 后，详情页筛选栏使用 `span.name`。详情页筛选只影响当前浏览器视图，仪表盘 JSON 不能为随后打开的 Explore 页面永久预设它。Agent 默认不采集 PostgreSQL 自动查询 Span；需要逐条 SQL 诊断时，临时设置 `AI_OBSERVABILITY_CAPTURE_DATABASE_SPANS=true` 并重启 Agent，完成后再关闭。
 
 ### 主要 Span 名称
 

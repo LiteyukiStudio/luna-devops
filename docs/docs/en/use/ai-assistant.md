@@ -39,6 +39,8 @@ The assistant has the same platform permissions as you. It cannot read or change
 
 A request may require several resource queries. The assistant continues from each tool result and explains or corrects failed queries instead of treating an unfinished step as the final response.
 
+A task has no fixed platform tool-call limit, so the assistant can keep querying, acting, and reading back results as the workflow requires. Run timeouts and model-iteration safeguards remain in place to stop abnormal infinite execution; when one is reached, completed operation records are preserved and the task is reported as unfinished.
+
 Text, reasoning status, and tool calls appear in their actual workflow order while a response streams. Reconnecting, switching conversations, or refreshing preserves that same order instead of moving all tools to the top of the reply.
 
 The assistant uses the same platform business APIs and the current signed-in user permissions as the web console; it does not maintain a lower-privilege or behaviorally different API subset. Protocol endpoints such as login callbacks, webhooks, terminal streams, and raw file downloads are not exposed directly to the model. The assistant explains any user step required for those interactions.
@@ -89,6 +91,8 @@ Cards are either presentational or interactive. Presentational cards only show f
 Common workflows use platform presets for candidate selection, resource configuration, change review, diagnosis reports, execution progress, operation results, and health overviews. These presets keep fields, states, and actions consistent. The assistant only composes a more general card when a preset cannot express the required content.
 
 A card is only an input or presentation step in a workflow; it does not mean that the platform operation is complete. For creation, installation, release, or repair tasks, the assistant continues with the corresponding operation and reads back the actual state. It reports accepted work as “submitted” or “in progress” and only reports completion after the target state is reached.
+
+Deployment-target operations use the same complete parameter contract as the console, including source type, repository binding or image, runtime cluster, ports, resource sizing, build settings, runtime configuration, data volumes, and advanced Kubernetes settings. Repository sources must bind a repository from the current application, while image sources must provide an image reference. The platform validates field types, ranges, and resource ownership before execution and does not create a partial deployment target from incomplete arguments.
 
 When creation, installation, or configuration needs a name, identifier, port, domain, toggle, or resource selection, the assistant presents a form or step-by-step wizard instead of asking you to copy and complete a message template.
 

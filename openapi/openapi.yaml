@@ -7454,15 +7454,181 @@ components:
       required: [id, name, identifier, kubernetesNamespace, namespaceStrategy, maxConcurrentBuilds, webConsoleEnabled, createdAt]
     DeploymentTargetInput:
       type: object
-      description: Deployment target create/update payload. Other build and Kubernetes fields are accepted by the implemented endpoint; `webConsoleEnabled` is documented here because it has inherited policy semantics.
-      additionalProperties: true
+      description: Complete deployment target create/update payload used by the console, CLI, and Agent. Repository sources require repositoryBindingId; image sources require imageRef. Omitted optional fields use platform defaults.
+      additionalProperties: false
       properties:
+        name:
+          type: string
+          maxLength: 120
+          description: Display name. Defaults to the normalized stage.
+        environmentId:
+          type: string
+          description: Optional project environment reference.
         stage:
           type: string
-          minLength: 2
-          maxLength: 12
-          pattern: "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$"
-          description: Human-readable stage identifier that is immutable while the deployment target exists and unique among active deployment targets in the application. It may be reused after deletion cleanup; the internal deployment target ID is generated independently.
+          enum: [dev, test, staging, prod]
+          default: dev
+          description: Immutable stage identifier, unique among active deployment targets in the application. It may be reused after deletion cleanup.
+        clusterId:
+          type: string
+          description: Runtime cluster ID available to the project. Empty selects the platform default cluster.
+        namespace:
+          type: string
+          description: Optional Kubernetes namespace override. Empty uses the project namespace.
+        workloadType:
+          type: string
+          enum: [Deployment, StatefulSet]
+          default: Deployment
+        replicas:
+          type: integer
+          minimum: 1
+          default: 1
+        cpuRequest:
+          type: string
+          default: "1"
+          description: Kubernetes CPU quantity for each replica.
+        memoryRequest:
+          type: string
+          default: 1Gi
+          description: Kubernetes memory quantity for each replica.
+        cpuLimit:
+          type: string
+          description: Optional Kubernetes CPU limit.
+        memoryLimit:
+          type: string
+          description: Optional Kubernetes memory limit.
+        imagePullPolicy:
+          type: string
+          enum: [Always, IfNotPresent, Never]
+        containerCommand:
+          type: string
+          description: JSON string array or line-separated container command.
+        containerArgs:
+          type: string
+          description: JSON string array or line-separated container arguments.
+        lifecycle:
+          type: string
+          description: JSON Kubernetes lifecycle object.
+        initContainers:
+          type: string
+          description: JSON array of Kubernetes init containers.
+        sidecarContainers:
+          type: string
+          description: JSON array of Kubernetes sidecar containers.
+        readinessProbe:
+          type: string
+          description: JSON Kubernetes readiness probe.
+        livenessProbe:
+          type: string
+          description: JSON Kubernetes liveness probe.
+        startupProbe:
+          type: string
+          description: JSON Kubernetes startup probe.
+        runAsUser:
+          type: string
+          pattern: "^[0-9]*$"
+        runAsGroup:
+          type: string
+          pattern: "^[0-9]*$"
+        fsGroup:
+          type: string
+          pattern: "^[0-9]*$"
+        fsGroupChangePolicy:
+          type: string
+          enum: [Always, OnRootMismatch]
+        readOnlyRootFilesystem:
+          type: boolean
+          default: false
+        allowPrivilegeEscalation:
+          type: string
+          enum: ["", "true", "false"]
+          description: Tri-state string; empty inherits the platform default.
+        capabilityAdd:
+          type: string
+          description: JSON string array or line-separated Linux capabilities to add.
+        capabilityDrop:
+          type: string
+          description: JSON string array or line-separated Linux capabilities to drop.
+        nodeSelector:
+          type: string
+          description: JSON object or key=value lines.
+        tolerations:
+          type: string
+          description: JSON Kubernetes toleration array.
+        affinity:
+          type: string
+          description: JSON Kubernetes affinity object.
+        topologySpreadConstraints:
+          type: string
+          description: JSON Kubernetes topology spread constraint array.
+        priorityClassName:
+          type: string
+        serviceAccountName:
+          type: string
+          pattern: "^$|^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
+          maxLength: 253
+          description: Optional Kubernetes ServiceAccount name used by the workload Pods.
+        automountServiceAccountToken:
+          type: string
+          enum: ["", "true", "false"]
+          description: Tri-state string controlling ServiceAccount token mounting; empty uses the Kubernetes default.
+        serviceType:
+          type: string
+          enum: [ClusterIP, NodePort, LoadBalancer]
+        serviceAnnotations:
+          type: string
+          description: JSON object or key=value lines.
+        serviceExternalTrafficPolicy:
+          type: string
+          enum: [Cluster, Local]
+        serviceSessionAffinity:
+          type: string
+          enum: [None, ClientIP]
+        autoScalingEnabled:
+          type: boolean
+          default: false
+        autoScalingMinReplicas:
+          type: integer
+          minimum: 1
+        autoScalingMaxReplicas:
+          type: integer
+          minimum: 1
+        autoScalingCpuPercent:
+          type: integer
+          minimum: 0
+          maximum: 1000
+        autoScalingMemoryPercent:
+          type: integer
+          minimum: 0
+          maximum: 1000
+        autoScalingBehavior:
+          type: string
+          description: JSON Kubernetes horizontal pod autoscaler behavior object.
+        servicePort:
+          type: integer
+          minimum: 1
+          maximum: 65535
+          default: 8080
+          description: Legacy single-port fallback used when servicePorts is empty.
+        servicePorts:
+          type: array
+          maxItems: 16
+          description: Unique container service ports.
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              name: { type: string }
+              port: { type: integer, minimum: 1, maximum: 65535 }
+              appProtocol: { type: string }
+            required: [port]
+        sourceType:
+          type: string
+          enum: [repository, image]
+          description: Repository builds source code; image deploys an existing image directly.
+        repositoryBindingId:
+          type: string
+          description: Required when sourceType is repository; must belong to the same application.
         buildDefinitionMode:
           type: string
           enum: [repository_dockerfile, template]
@@ -7477,6 +7643,53 @@ components:
         buildTemplateValues:
           type: string
           description: JSON object containing validated template parameters.
+        dockerfilePath:
+          type: string
+          default: Dockerfile
+        buildContext:
+          type: string
+          default: "."
+        buildDirectory:
+          type: string
+          description: Optional working directory within the build context.
+        buildArgs:
+          type: string
+          description: Newline-separated Docker build arguments in KEY=value form.
+        buildEnvironmentId:
+          type: string
+          description: Optional reusable build environment reference.
+        buildCpuRequest:
+          type: string
+          default: "2"
+        buildMemoryRequest:
+          type: string
+          default: 4Gi
+        buildTimeoutSeconds:
+          type: integer
+          minimum: 60
+          maximum: 86400
+          default: 1800
+        targetRegistryId:
+          type: string
+          description: Registry credential used to push repository builds.
+        targetImageRef:
+          type: string
+          description: Combined target repository and tag for repository builds.
+        targetRepository:
+          type: string
+        targetTag:
+          type: string
+          default: latest
+        imageRef:
+          type: string
+          description: Existing OCI image reference used when sourceType is image.
+        buildLabels:
+          type: string
+          description: Comma-separated build selector labels.
+        buildVariableSetIds:
+          type: array
+          items: { type: string }
+          description: Project build variable set IDs.
         buildVariables:
           type: object
           additionalProperties: { type: string }
@@ -7486,10 +7699,89 @@ components:
           additionalProperties: { type: string }
           writeOnly: true
           description: Optional deployment-level secret updates. Existing keys with an empty value are retained; omitted keys are removed. Values are encrypted and never returned.
+        buildHooksEnabled:
+          type: boolean
+          default: true
+        buildHookBindings:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              hookConfigId: { type: string }
+              phase: { type: string }
+              runOrder: { type: integer, minimum: 0 }
+            required: [hookConfigId, phase]
+        autoDeploy:
+          type: boolean
+          default: false
+        branchPattern:
+          type: string
+        tagPattern:
+          type: string
+        concurrencyPolicy:
+          type: string
+          enum: [queue, parallel]
+          default: queue
+        runtimeConfigSetIds:
+          type: array
+          items: { type: string }
+          description: Legacy shorthand for live runtime configuration references.
+        runtimeConfigRefs:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              setId: { type: string }
+              mode: { type: string, enum: [live, snapshot], default: live }
+            required: [setId]
+        envVars:
+          type: string
+          description: JSON object or newline-separated runtime environment variables.
+        configRefs:
+          type: string
+          description: Serialized runtime ConfigMap references.
+        secretRefs:
+          type: string
+          description: Serialized runtime Secret references; plaintext secret values are not accepted here.
+        configFiles:
+          type: string
+          description: JSON array of runtime configuration file mounts.
+        secretFiles:
+          type: string
+          writeOnly: true
+          description: JSON array of runtime secret file inputs. Existing plaintext values are never returned.
+        dataRetentionEnabled:
+          type: boolean
+          default: false
+        dataCapacity:
+          type: string
+          default: 1Gi
+        dataMountPath:
+          type: string
+          default: /data
+        dataVolumes:
+          type: string
+          description: JSON array of managed, existingClaim, or emptyDir data-volume objects.
+        dataStorageClassName:
+          type: string
+        dataAccessMode:
+          type: string
+          enum: [ReadWriteOnce, ReadOnlyMany, ReadWriteMany]
+        dataVolumeMode:
+          type: string
+          enum: [Filesystem, Block]
+        requireApproval:
+          type: boolean
+          default: false
         webConsoleEnabled:
           type: [boolean, "null"]
           default: null
-          description: "`null` inherits the project-space master switch and `false` disables Web Console for this deployment target. `true` is normalized to inheritance for compatibility and cannot bypass a disabled project-space switch."
+          description: "`null` inherits the project-space master switch and `false` disables Web Console for this deployment target."
+        enabled:
+          type: boolean
+          default: true
     DeploymentTarget:
       type: object
       additionalProperties: true

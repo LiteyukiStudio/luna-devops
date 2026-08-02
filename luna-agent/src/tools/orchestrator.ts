@@ -20,7 +20,6 @@ export interface ToolCallStore {
   get(id: string): Promise<ToolCallRecord | undefined>
   update(id: string, expected: ToolCallStatus, patch: Partial<ToolCallRecord>): Promise<ToolCallRecord>
   emit(event: ToolEvent): Promise<void>
-  countForRun(runId: string): Promise<number>
   listAwaitingApproval(runId: string): Promise<ToolCallRecord[]>
 }
 export interface ToolResultVerifier {
@@ -43,13 +42,11 @@ export class ToolOrchestrator {
     private readonly client: LunaApiToolClient,
     private readonly store: ToolCallStore,
     private readonly policy = new ToolPolicy(),
-    private readonly maxToolCalls = 12,
     private readonly verifier: ToolResultVerifier = new AcceptingResultVerifier(),
     private readonly grantResolver: (runId: string) => Promise<string> = async () => { throw new Error("ai.run_grant_unavailable") },
   ) {}
 
   async propose(input: { runId: string, operationId: string, arguments: unknown }): Promise<ToolCallRecord> {
-    if (await this.store.countForRun(input.runId) >= this.maxToolCalls) throw new Error("ai.limit_exceeded")
     const operation = this.catalog.get(input.operationId)
     let args: Record<string, unknown>
     try {
@@ -113,7 +110,6 @@ export class ToolOrchestrator {
   async retryFailed(id: string): Promise<ToolCallRecord> {
     const previous = await this.require(id)
     if (previous.status !== "failed") throw new Error("ai.tool_call_not_retryable")
-    if (await this.store.countForRun(previous.runId) >= this.maxToolCalls) throw new Error("ai.limit_exceeded")
     const retry: ToolCallRecord = {
       id: createId("aitool"), runId: previous.runId, operationId: previous.operationId,
       status: "proposed", arguments: previous.arguments, argumentsHash: previous.argumentsHash,
@@ -283,7 +279,6 @@ export class MemoryToolCallStore implements ToolCallStore {
     return next
   }
   async emit(event: ToolEvent) { this.events.push(event) }
-  async countForRun(runId: string) { return [...this.records.values()].filter(item => item.runId === runId).length }
   async listAwaitingApproval(runId: string) {
     return [...this.records.values()].filter(item => item.runId === runId && item.status === "awaiting_approval")
   }
@@ -294,7 +289,6 @@ export class ProjectingToolCallStore implements ToolCallStore {
   insert(value: ToolCallRecord) { return this.inner.insert(value) }
   get(id: string) { return this.inner.get(id) }
   update(id: string, expected: ToolCallStatus, patch: Partial<ToolCallRecord>) { return this.inner.update(id, expected, patch) }
-  countForRun(runId: string) { return this.inner.countForRun(runId) }
   listAwaitingApproval(runId: string) { return this.inner.listAwaitingApproval(runId) }
   async emit(event: ToolEvent) {
     await this.inner.emit(event)

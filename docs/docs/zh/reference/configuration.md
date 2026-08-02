@@ -81,5 +81,6 @@ Worker 同样只在 Redis 与 PostgreSQL 的启动连接检查都成功后才开
 | 类型 | 配置项 | 默认值 | 用途与修改时机 |
 | --- | --- | --- | --- |
 | 进阶 | `AI_OBSERVABILITY_CAPTURE_CONTENT` | `false` | 是否把脱敏后的模型输入输出、推理摘要、工具参数与结果写入 Trace 事件和结构化日志。仅在受控排障窗口临时开启；开启前应限制 Tempo/Loki 访问权限并确认保留周期。 |
+| 进阶 | `AI_OBSERVABILITY_CAPTURE_DATABASE_SPANS` | `false` | 是否记录 Agent 内部每一条 PostgreSQL 查询 Span。默认关闭以避免事件持久化产生大量低价值子 Span；仅在排查 SQL 耗时或事务问题时临时开启。 |
 
-该开关只影响 Agent，且必须同时配置 `OTEL_EXPORTER_OTLP_ENDPOINT` 才会发送到远端。每个内容字段最多保留 32 KiB；Token、Cookie、密码、API Key、URL 内嵌凭据和 Secret 表单值仍会强制替换为 `[REDACTED]`。详细字段和查询方式见[接入可观测平台](./observability.md#agent-全内容观测高敏)。
+这两个开关只影响 Agent，且必须同时配置 `OTEL_EXPORTER_OTLP_ENDPOINT` 才会发送到远端。内容采集开启时，每个字段最多保留 32 KiB；Token、Cookie、密码、API Key、URL 内嵌凭据和 Secret 表单值仍会强制替换为 `[REDACTED]`。数据库 Span 开关修改后需要重启 Agent，只影响之后产生的 Trace。详细字段和查询方式见[接入可观测平台](./observability.md#agent-全内容观测高敏)。

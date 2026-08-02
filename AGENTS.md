@@ -20,6 +20,7 @@
 - 当问题根因来自职责堆积、抽象缺失、旧模型残留或重复逻辑时，优先通过小范围重构消除根因；不要为了“最小改动”继续堆临时 patch 或特殊 case。
 - 完成实现后按改动规模选择验证：小功能改动只做针对性检查（相关 Go 包测试、TypeScript 类型检查或局部 smoke），不强制全量 lint/build/浏览器验收。
 - 当一次改动满足任一条件时，必须执行完整验证并优先用浏览器验收前端交互：修改文件数超过 8 个、同时跨 3 个及以上业务域、涉及认证/权限/Secret/SSRF/数据库迁移/构建部署运行时、或用户明确要求验收。验收通过后再把 `TODO.md` 对应项标记完成。
+- **MUST 端到端调用链一致性**：新增功能或修改既有行为时，必须逐层审计前端、API 后端、Worker、Agent 四个边界并明确适用或不适用；凡实际参与调用链的层都必须在同一事项中同步完成。请求/响应 Schema、OpenAPI、前端类型与 API Client、Agent 工具 Schema、异步任务载荷、事件/SSE 协议、权限与审计、错误码、幂等语义及可观测字段必须保持一致，禁止只修改某一层后依赖运行时容错、宽松解析或人工约定维持兼容。验证至少覆盖一条从真实入口到最终副作用或权威回读的成功链路，以及涉及层之间的契约测试；存在异步、失败或取消路径时还必须覆盖对应终态。
 - **MUST i18n**：前端任何用户可见文本常量必须走 `i18next/react-i18next`，不可硬编码。包括标题、描述、按钮、菜单、表单 label、hint、placeholder、toast、错误/空状态、确认弹窗、aria-label、schema 校验文案和状态 badge。产品名、文件名、API enum 原始值、URL/slug 示例可以保留为数据或示例；只要作为 UI 文案展示，就必须用 i18n label。
 - **MUST i18n 边界**：能在前端本地化的内容必须由前端按稳定 `code`、枚举值或状态 key 映射 i18n 文案；后端只返回稳定 key、原始枚举和必要的原始 message/remark 备注，不返回面向用户的本地化文案。日志正文、第三方原始文本和用户输入内容作为数据展示时例外，但不能冒充 UI 文案。
 - **MUST 品牌命名边界**：用户可见品牌统一使用 `Luna DevOps`；项目自有运行标识统一使用 `luna-devops`、`luna.devops`、`luna-gateway` 或 `luna_devops_`（metrics/代码中需要下划线时）。项目尚未发版，不保留旧品牌技术标识兼容层，也不要把品牌技术标识做成用户可配置项。开发者、仓库、文档站和镜像发布地址仍使用真实可达的 Liteyuki Studio 资源：`github.com/LiteyukiStudio/luna-devops`、`https://luna-devops.liteyuki.org`、`liteyukistudio/devops-*`。

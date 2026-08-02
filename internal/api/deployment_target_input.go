@@ -15,14 +15,17 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 	repositoryBindingID := strings.TrimSpace(input.RepositoryBindingID)
 	if sourceType == "repository" {
 		if repositoryBindingID == "" {
-			writeError(ctx, http.StatusBadRequest, "代码仓库不能为空")
+			writeErrorCode(ctx, http.StatusBadRequest, "deployment_target.repository_binding_required", "代码仓库不能为空")
 			return model.DeploymentTarget{}, false
 		}
 		var binding model.RepositoryBinding
 		if err := h.dbFor(ctx).First(&binding, "id = ? and project_id = ? and application_id = ?", repositoryBindingID, app.ProjectID, app.ID).Error; err != nil {
-			writeError(ctx, http.StatusBadRequest, "代码仓库绑定不存在")
+			writeErrorCode(ctx, http.StatusBadRequest, "deployment_target.repository_binding_not_found", "代码仓库绑定不存在")
 			return model.DeploymentTarget{}, false
 		}
+	} else if strings.TrimSpace(input.ImageRef) == "" {
+		writeErrorCode(ctx, http.StatusBadRequest, "deployment_target.image_ref_required", "镜像地址不能为空")
+		return model.DeploymentTarget{}, false
 	}
 	targetRepository, targetTag := splitTargetImageRef(input.TargetImageRef)
 	if targetRepository == "" {
@@ -199,6 +202,8 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 		Affinity:                     kubernetesAdvanced.Affinity,
 		TopologySpreadConstraints:    kubernetesAdvanced.TopologySpreadConstraints,
 		PriorityClassName:            kubernetesAdvanced.PriorityClassName,
+		ServiceAccountName:           kubernetesAdvanced.ServiceAccountName,
+		AutomountServiceAccountToken: kubernetesAdvanced.AutomountServiceAccountToken,
 		ServiceType:                  kubernetesAdvanced.ServiceType,
 		ServiceAnnotations:           kubernetesAdvanced.ServiceAnnotations,
 		ServiceExternalTrafficPolicy: kubernetesAdvanced.ServiceExternalTrafficPolicy,

@@ -9,7 +9,6 @@ import { MemoryRepository } from "./persistence/memory.js"
 import { PostgresRepository } from "./persistence/postgres.js"
 import { ProviderConfigClient } from "./provider/config-client.js"
 import { createRuntimeProvider } from "./provider/runtime.js"
-import { agentRuntimeInternals } from "./runtime-settings.js"
 import { buildServer } from "./server.js"
 import { configureAIContentCapture, shutdownTelemetry, telemetryLog } from "./telemetry.js"
 import { ToolCatalog } from "./tools/catalog.js"
@@ -65,7 +64,7 @@ export async function startAgent(): Promise<void> {
     ? new PostgresToolCallStore(repository.pool, repository, toolArgumentsCipher)
     : new ProjectingToolCallStore(new MemoryToolCallStore(), repository)
   const tools = catalog && config.LUNA_API_BASE_URL && internalKeys
-    ? new ToolOrchestrator(catalog, new HttpLunaApiToolClient(config.LUNA_API_BASE_URL, internalKeys.callbackServiceToken), toolStore, undefined, agentRuntimeInternals.maxToolCalls, undefined, async runId => {
+    ? new ToolOrchestrator(catalog, new HttpLunaApiToolClient(config.LUNA_API_BASE_URL, internalKeys.callbackServiceToken), toolStore, undefined, undefined, async runId => {
         const encrypted = await repository.getRunActorGrantCiphertext(runId)
         if (!encrypted) throw new Error("ai.run_grant_unavailable")
         return grantCipher.decrypt(encrypted)

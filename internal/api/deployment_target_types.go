@@ -312,6 +312,8 @@ type deploymentTargetInput struct {
 	Affinity                     string                             `json:"affinity"`
 	TopologySpreadConstraints    string                             `json:"topologySpreadConstraints"`
 	PriorityClassName            string                             `json:"priorityClassName"`
+	ServiceAccountName           string                             `json:"serviceAccountName"`
+	AutomountServiceAccountToken string                             `json:"automountServiceAccountToken"`
 	ServiceType                  string                             `json:"serviceType"`
 	ServiceAnnotations           string                             `json:"serviceAnnotations"`
 	ServiceExternalTrafficPolicy string                             `json:"serviceExternalTrafficPolicy"`

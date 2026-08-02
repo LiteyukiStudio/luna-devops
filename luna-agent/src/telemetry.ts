@@ -125,14 +125,16 @@ export function initializeTelemetry(endpoint = process.env.OTEL_EXPORTER_OTLP_EN
         ignorePaths: route => isHealthCheckPath(route.url),
         requestHook: (span, request) => sanitizeSpanURL(span, request.raw.url ?? request.url),
       }),
-      new PgInstrumentation({
-        enhancedDatabaseReporting: false,
-        ignoreConnectSpans: true,
-        requireParentSpan: true,
-        responseHook: (span, response) => {
-          span.setAttribute("db.response.returned_rows", response.data.rowCount ?? 0)
-        },
-      }),
+      ...(isDatabaseSpanCaptureEnabled()
+        ? [new PgInstrumentation({
+            enhancedDatabaseReporting: false,
+            ignoreConnectSpans: true,
+            requireParentSpan: true,
+            responseHook: (span, response) => {
+              span.setAttribute("db.response.returned_rows", response.data.rowCount ?? 0)
+            },
+          })]
+        : []),
       new PinoInstrumentation({
         disableLogCorrelation: false,
         disableLogSending: false,
@@ -151,6 +153,10 @@ export function initializeTelemetry(endpoint = process.env.OTEL_EXPORTER_OTLP_EN
     ],
   })
   sdk.start()
+}
+
+export function isDatabaseSpanCaptureEnabled(value = process.env.AI_OBSERVABILITY_CAPTURE_DATABASE_SPANS): boolean {
+  return value?.trim().toLowerCase() === "true"
 }
 
 export function isHealthCheckPath(value: string): boolean {

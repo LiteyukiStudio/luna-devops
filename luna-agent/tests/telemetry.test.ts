@@ -1,7 +1,13 @@
 import { describe, expect, it, vi } from "vitest"
-import { initializeTelemetry, internalSpanOptions, isHealthCheckPath, normalizeTraceContext, sanitizeTelemetryURL, stableErrorCode, telemetryLog, withSpan } from "../src/telemetry.js"
+import { initializeTelemetry, internalSpanOptions, isDatabaseSpanCaptureEnabled, isHealthCheckPath, normalizeTraceContext, sanitizeTelemetryURL, stableErrorCode, telemetryLog, withSpan } from "../src/telemetry.js"
 
 describe("agent telemetry", () => {
+  it("keeps noisy database spans opt-in", () => {
+    expect(isDatabaseSpanCaptureEnabled(undefined)).toBe(false)
+    expect(isDatabaseSpanCaptureEnabled("false")).toBe(false)
+    expect(isDatabaseSpanCaptureEnabled("TRUE")).toBe(true)
+  })
+
   it("removes credentials, query strings, and fragments from telemetry URLs", () => {
     expect(sanitizeTelemetryURL("https://user:password@example.com/path?token=secret#fragment"))
       .toBe("https://example.com/path")

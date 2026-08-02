@@ -36,7 +36,6 @@ async function approvalFixture() {
     client,
     new ProjectingToolCallStore(store, repository),
     undefined,
-    12,
     undefined,
     async () => "opaque-run-grant",
   )

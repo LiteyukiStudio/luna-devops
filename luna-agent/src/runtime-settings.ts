@@ -15,7 +15,6 @@ export const agentRuntimeInternals = {
   runPollMs: 500,
   runLeaseSeconds: 30,
   maxInputBytes: 48_000,
-  // This bounds runaway model/tool loops; task completion is decided by workflow evidence.
+  // Model iterations and wall time bound runaway loops. Tool calls are not capped.
   maxModelSteps: 48,
-  maxToolCalls: 64,
 } as const
