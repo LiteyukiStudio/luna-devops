@@ -33,6 +33,7 @@ import {
   VIEWPORT_GUTTER,
   WINDOW_STORAGE_KEY,
 } from './layout'
+import { AIMobileViewport } from './mobile-viewport'
 import { AIOptionsBar } from './options'
 import { buildAIPageContext } from './page-context'
 import { AIRefreshConversationReturn } from './refresh-conversation-return'
@@ -401,22 +402,120 @@ export function AiAssistant() {
     setOpen(false)
     window.setTimeout(() => triggerRef.current?.focus(), 0)
   }
-  const panelPosition = desktop ? clampAssistantPosition(preference, preference.width, preference.height) : { x: 0, y: 0 }
+  const panel = (
+    <section
+      aria-label={t('aiAssistant.title')}
+      className={desktop
+        ? 'relative flex size-full overflow-hidden rounded-feature border border-border bg-surface text-[13px] shadow-overlay'
+        : 'ai-assistant-mobile relative flex size-full overflow-hidden bg-surface text-[13px] [&_input]:!text-base [&_select]:!text-base [&_textarea]:!text-base'}
+    >
+      {showConversations && (
+        <AIConversationList
+          activeId={selectedConversationId}
+          conversations={conversations.data?.items ?? []}
+          deleting={deleteConversations.isPending}
+          loading={conversations.isLoading}
+          search={conversationSearch}
+          onDeleteMany={ids => deleteConversations.mutateAsync(ids).then(() => undefined)}
+          onRename={(id, title) => renameConversation.mutate({ id, title })}
+          runningConversationIds={runningConversationIds}
+          onSearch={setConversationSearch}
+          onSelect={id => dispatchConversationSession({ type: 'select', conversationId: id })}
+        />
+      )}
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <header className="ai-assistant-drag-handle flex h-[calc(3.5rem+env(safe-area-inset-top))] shrink-0 select-none items-center gap-2 border-b border-separator-subtle pb-0 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] pt-[env(safe-area-inset-top)] sm:h-14 sm:touch-none sm:px-3 sm:pt-0 sm:cursor-move">
+          <Button aria-label={t('aiAssistant.conversations.title')} size="icon" variant="ghost" onClick={() => setShowConversations(value => !value)}><List className="size-4" /></Button>
+          <span className="grid size-8 shrink-0 place-items-center rounded-control bg-primary text-primary-foreground"><Sparkles className="size-4" /></span>
+          <div className="min-w-0 flex-1">
+            <h2 className="truncate text-[13px] font-semibold leading-5">{timeline.data?.conversation.title || t('aiAssistant.title')}</h2>
+            <p className="truncate text-[10px] leading-4 text-muted-foreground">{t('aiAssistant.context', { path: location.pathname })}</p>
+          </div>
+          <Button aria-label={t('aiAssistant.conversations.new')} disabled={createConversation.isPending} size="icon" variant="ghost" onClick={() => createConversation.mutate()}>{createConversation.isPending ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" /> : <MessageSquarePlus className="size-4" />}</Button>
+          <Button aria-label={t('common.close')} size="icon" variant="ghost" onClick={close}><X className="size-4" /></Button>
+        </header>
+        <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
+          <AIAssistantTimeline
+            bottomInset={Boolean(suggestions)}
+            blocks={streamState.blocks}
+            error={timeline.error ?? (timeline.data && !timelineValid ? new Error('ai_invalid_timeline') : null)}
+            generating={generating}
+            loading={timeline.isLoading}
+            onAction={executeAction}
+            onApproval={(block, decision, reason) => api.decideAIToolApproval(block.runId, block.toolCallId, {
+              decision,
+              argumentsHash: block.argumentsHash!,
+              expectedVersion: block.expectedVersion!,
+              reason,
+            })}
+            onMFA={async (block, code) => {
+              const verification = await api.verifyMFA({ code, purpose: block.mfaPurpose! })
+              if (!verification.stepUpAssertionId)
+                throw new Error(t('aiAssistant.errors.mfaAssertion'))
+              await api.resumeAIToolMFA(block.runId, block.toolCallId, {
+                stepUpAssertionId: verification.stepUpAssertionId,
+                expectedVersion: block.expectedVersion!,
+              })
+            }}
+            onResend={message => sendTurn.mutate({ conversationId: selectedConversationId, message })}
+            onRetry={() => void timeline.refetch()}
+            resendDisabled={Boolean(activeRunId || sendingSelected)}
+            topContent={conversationSession.refreshReturnExpiresAt && !selectedConversationId && !conversationSearch && conversations.data?.items[0]
+              ? (
+                  <AIRefreshConversationReturn
+                    expiresAt={conversationSession.refreshReturnExpiresAt}
+                    onExpire={dismissRefreshReturn}
+                    onReturn={returnToPreviousConversation}
+                  />
+                )
+              : undefined}
+          />
+          {suggestions && (
+            <AIOptionsBar
+              actions={suggestions.actions}
+              sourceKey={suggestions.sourceKey}
+              onAction={executeAction}
+            />
+          )}
+        </div>
+        <AIAssistantComposer
+          activeRun={Boolean(activeRunId)}
+          canceling={cancelingSelected}
+          canCancel={Boolean(activeRunId && selectedConversationId)}
+          draft={draft}
+          inputRef={inputRef}
+          maxLength={capabilities.data?.limits.maxInputBytes}
+          sending={sendingSelected}
+          submitting={submittingSelected}
+          waitingInput={waitingInput}
+          onCancel={() => {
+            if (activeRunId && selectedConversationId)
+              cancelRun.mutate({ runId: activeRunId, conversationId: selectedConversationId })
+          }}
+          onDraftChange={setDraft}
+          onSubmit={submitDraft}
+        />
+      </div>
+    </section>
+  )
+
+  if (!desktop)
+    return <AIMobileViewport>{panel}</AIMobileViewport>
+
+  const panelPosition = clampAssistantPosition(preference, preference.width, preference.height)
   return (
     <div className="pointer-events-none fixed inset-0 z-40">
       <Rnd
         bounds="parent"
         cancel="button,input,textarea,select,a,[role='button'],[role='menuitem']"
         className="pointer-events-auto"
-        disableDragging={!desktop}
         dragHandleClassName="ai-assistant-drag-handle"
-        enableResizing={desktop}
         maxHeight={`calc(100dvh - ${VIEWPORT_GUTTER * 2}px)`}
         maxWidth={`calc(100vw - ${VIEWPORT_GUTTER * 2}px)`}
         minHeight={MIN_WINDOW_HEIGHT}
         minWidth={MIN_WINDOW_WIDTH}
         position={panelPosition}
-        size={desktop ? { width: preference.width, height: preference.height } : { width: '100vw', height: '100dvh' }}
+        size={{ width: preference.width, height: preference.height }}
         onDragStop={(_, data) => setPreference(current => ({ ...current, x: data.x, y: data.y }))}
         onResizeStop={(_, __, element, ___, position) => {
           setPreference({
@@ -427,98 +526,7 @@ export function AiAssistant() {
           })
         }}
       >
-        <section
-          aria-label={t('aiAssistant.title')}
-          className="relative flex size-full overflow-hidden rounded-feature border border-border bg-surface text-[13px] shadow-overlay max-sm:rounded-none"
-        >
-          {showConversations && (
-            <AIConversationList
-              activeId={selectedConversationId}
-              conversations={conversations.data?.items ?? []}
-              deleting={deleteConversations.isPending}
-              loading={conversations.isLoading}
-              search={conversationSearch}
-              onDeleteMany={ids => deleteConversations.mutateAsync(ids).then(() => undefined)}
-              onRename={(id, title) => renameConversation.mutate({ id, title })}
-              runningConversationIds={runningConversationIds}
-              onSearch={setConversationSearch}
-              onSelect={id => dispatchConversationSession({ type: 'select', conversationId: id })}
-            />
-          )}
-          <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-            <header className="ai-assistant-drag-handle flex h-14 shrink-0 touch-none select-none items-center gap-2 border-b border-separator-subtle px-3 sm:cursor-move">
-              <Button aria-label={t('aiAssistant.conversations.title')} size="icon" variant="ghost" onClick={() => setShowConversations(value => !value)}><List className="size-4" /></Button>
-              <span className="grid size-8 shrink-0 place-items-center rounded-control bg-primary text-primary-foreground"><Sparkles className="size-4" /></span>
-              <div className="min-w-0 flex-1">
-                <h2 className="truncate text-[13px] font-semibold leading-5">{timeline.data?.conversation.title || t('aiAssistant.title')}</h2>
-                <p className="truncate text-[10px] leading-4 text-muted-foreground">{t('aiAssistant.context', { path: location.pathname })}</p>
-              </div>
-              <Button aria-label={t('aiAssistant.conversations.new')} disabled={createConversation.isPending} size="icon" variant="ghost" onClick={() => createConversation.mutate()}>{createConversation.isPending ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" /> : <MessageSquarePlus className="size-4" />}</Button>
-              <Button aria-label={t('common.close')} size="icon" variant="ghost" onClick={close}><X className="size-4" /></Button>
-            </header>
-            <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
-              <AIAssistantTimeline
-                bottomInset={Boolean(suggestions)}
-                blocks={streamState.blocks}
-                error={timeline.error ?? (timeline.data && !timelineValid ? new Error('ai_invalid_timeline') : null)}
-                generating={generating}
-                loading={timeline.isLoading}
-                onAction={executeAction}
-                onApproval={(block, decision, reason) => api.decideAIToolApproval(block.runId, block.toolCallId, {
-                  decision,
-                  argumentsHash: block.argumentsHash!,
-                  expectedVersion: block.expectedVersion!,
-                  reason,
-                })}
-                onMFA={async (block, code) => {
-                  const verification = await api.verifyMFA({ code, purpose: block.mfaPurpose! })
-                  if (!verification.stepUpAssertionId)
-                    throw new Error(t('aiAssistant.errors.mfaAssertion'))
-                  await api.resumeAIToolMFA(block.runId, block.toolCallId, {
-                    stepUpAssertionId: verification.stepUpAssertionId,
-                    expectedVersion: block.expectedVersion!,
-                  })
-                }}
-                onResend={message => sendTurn.mutate({ conversationId: selectedConversationId, message })}
-                onRetry={() => void timeline.refetch()}
-                resendDisabled={Boolean(activeRunId || sendingSelected)}
-                topContent={conversationSession.refreshReturnExpiresAt && !selectedConversationId && !conversationSearch && conversations.data?.items[0]
-                  ? (
-                      <AIRefreshConversationReturn
-                        expiresAt={conversationSession.refreshReturnExpiresAt}
-                        onExpire={dismissRefreshReturn}
-                        onReturn={returnToPreviousConversation}
-                      />
-                    )
-                  : undefined}
-              />
-              {suggestions && (
-                <AIOptionsBar
-                  actions={suggestions.actions}
-                  sourceKey={suggestions.sourceKey}
-                  onAction={executeAction}
-                />
-              )}
-            </div>
-            <AIAssistantComposer
-              activeRun={Boolean(activeRunId)}
-              canceling={cancelingSelected}
-              canCancel={Boolean(activeRunId && selectedConversationId)}
-              draft={draft}
-              inputRef={inputRef}
-              maxLength={capabilities.data?.limits.maxInputBytes}
-              sending={sendingSelected}
-              submitting={submittingSelected}
-              waitingInput={waitingInput}
-              onCancel={() => {
-                if (activeRunId && selectedConversationId)
-                  cancelRun.mutate({ runId: activeRunId, conversationId: selectedConversationId })
-              }}
-              onDraftChange={setDraft}
-              onSubmit={submitDraft}
-            />
-          </div>
-        </section>
+        {panel}
       </Rnd>
     </div>
   )

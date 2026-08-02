@@ -2,6 +2,8 @@
 
 ## 0. 全链路可观测改造
 
+- [x] 优化 AI 助手移动端窗口：从桌面拖拽容器分离，适配 iOS Safari 动态视口、安全区和键盘，并在折叠工具状态中隐藏耗时。
+
 - [x] 建立统一 OpenTelemetry 插桩标准，覆盖 Trace、结构化日志、Metrics、敏感信息与高基数约束。
 - [x] API 覆盖 HTTP、PostgreSQL、Redis、外部 Provider 与关键业务阶段，并统一 Trace/Request ID 日志关联。
 - [x] Worker 覆盖异步上下文传播、任务生命周期、构建/部署/网关阶段和依赖调用。

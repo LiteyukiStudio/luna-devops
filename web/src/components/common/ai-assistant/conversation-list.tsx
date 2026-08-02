@@ -82,7 +82,7 @@ export function AIConversationList({
   }
 
   return (
-    <aside className="absolute inset-x-0 bottom-0 top-14 z-10 flex flex-col bg-surface sm:static sm:w-64 sm:shrink-0 sm:border-r sm:border-separator-subtle">
+    <aside className="absolute inset-x-0 bottom-0 top-[calc(3.5rem+env(safe-area-inset-top))] z-10 flex flex-col bg-surface sm:static sm:w-64 sm:shrink-0 sm:border-r sm:border-separator-subtle">
       <div className="flex h-14 items-center border-b border-separator-subtle px-3">
         <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">{selecting ? t('aiAssistant.conversations.selectMode') : t('aiAssistant.conversations.title')}</h2>
       </div>
@@ -99,7 +99,7 @@ export function AIConversationList({
           </Button>
           <div className="relative min-w-0 flex-1">
             <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input aria-label={t('aiAssistant.conversations.search')} className="h-8 pl-8 text-xs" placeholder={t('aiAssistant.conversations.search')} value={search} onChange={event => onSearch(event.target.value)} />
+            <Input aria-label={t('aiAssistant.conversations.search')} className="h-8 pl-8 text-base sm:text-xs" placeholder={t('aiAssistant.conversations.search')} value={search} onChange={event => onSearch(event.target.value)} />
           </div>
         </div>
         {selecting && (
@@ -145,7 +145,7 @@ export function AIConversationList({
               ? (
                   <Input
                     autoFocus
-                    className="h-8 min-w-0 flex-1 text-xs"
+                    className="h-8 min-w-0 flex-1 text-base sm:text-xs"
                     value={title}
                     onBlur={() => finishRename(conversation)}
                     onChange={event => setTitle(event.target.value)}

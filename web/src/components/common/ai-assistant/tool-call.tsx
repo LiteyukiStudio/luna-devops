@@ -47,10 +47,10 @@ export function AIToolCallCard({ block, onAction, onApproval, onMFA }: { block: 
           <ToolStatusIcon status={block.status} />
           <span>{t(`aiAssistant.status.${block.status}`)}</span>
           {block.durationMs !== undefined && (
-            <>
+            <span className="hidden sm:contents" data-ai-tool-duration>
               <span aria-hidden="true" className="opacity-60">·</span>
               <span>{formatMillisecondsDuration(block.durationMs, i18n.language)}</span>
-            </>
+            </span>
           )}
         </Badge>
         <ChevronRight className="size-3.5 shrink-0 text-muted-foreground transition-transform group-open:rotate-90" />

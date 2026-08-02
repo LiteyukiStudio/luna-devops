@@ -79,6 +79,7 @@ describe('ai assistant tool status icon', () => {
     expect(summary).toHaveTextContent('已完成')
     expect(summary).toHaveTextContent('·')
     expect(summary).toHaveTextContent('128 ms')
+    expect(summary?.querySelector('[data-ai-tool-duration]')).toHaveClass('hidden', 'sm:contents')
     expect(summary).not.toHaveTextContent('工具已返回结果')
     expect(details).not.toHaveAttribute('open')
 

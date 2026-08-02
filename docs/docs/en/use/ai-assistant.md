@@ -2,6 +2,8 @@
 
 The AI assistant uses the current page context and your platform permissions to query resources, explain status, and help with routine operations.
 
+On mobile, the assistant fills the currently visible Safari or browser viewport and keeps the composer available when the keyboard opens. Collapsed tool calls show only their execution status; expand a call to inspect its duration, arguments, result, and identifiers.
+
 ## Get started
 
 A platform administrator first configures these values under **Global Settings → AI Assistant**:
