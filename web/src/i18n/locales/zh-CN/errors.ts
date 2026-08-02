@@ -11,6 +11,22 @@ const errors = {
   },
   application: {
     delete_in_progress: '应用正在删除中，请等待资源清理完成或删除失败后重试。',
+    identifier_exists: '该项目空间内的应用标识已存在。',
+    identifier_delete_in_progress: '同标识应用正在删除，资源清理完成后才能复用。',
+    identifier_delete_failed: '同标识应用上次删除失败，请先完成资源清理。',
+  },
+  project: {
+    identifier_exists: '项目空间标识已存在。',
+    identifier_delete_in_progress: '同标识项目空间正在删除，资源清理完成后才能复用。',
+    identifier_delete_failed: '同标识项目空间上次删除失败，请先完成资源清理。',
+  },
+  deployment: {
+    stage_exists: '该应用内的部署阶段已存在。',
+    stage_delete_in_progress: '同阶段部署配置正在删除，资源清理完成后才能复用。',
+    stage_delete_failed: '同阶段部署配置上次删除失败，请先完成资源清理。',
+  },
+  kubernetes: {
+    resource_ownership_conflict: 'Kubernetes 同名资源属于其他资源生命周期，平台不会自动接管，请先处理残留资源。',
   },
   billing: {
     insufficient_balance: '计费归属人余额不足，当前操作已被计费风控拦截。请充值或联系平台管理员处理。',

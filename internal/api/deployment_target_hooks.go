@@ -8,11 +8,34 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
+var errDeploymentStageExists = errors.New("deployment stage already exists")
+
+func (h *Handlers) createDeploymentTarget(target model.DeploymentTarget, hookInputs []deploymentTargetHookBindingInput, buildEnvironment *model.BuildEnvironmentConfig, contexts ...context.Context) error {
+	return h.persistDeploymentTarget(target, hookInputs, buildEnvironment, true, contexts...)
+}
+
 func (h *Handlers) saveDeploymentTarget(target model.DeploymentTarget, hookInputs []deploymentTargetHookBindingInput, buildEnvironment *model.BuildEnvironmentConfig, contexts ...context.Context) error {
+	return h.persistDeploymentTarget(target, hookInputs, buildEnvironment, false, contexts...)
+}
+
+func (h *Handlers) persistDeploymentTarget(target model.DeploymentTarget, hookInputs []deploymentTargetHookBindingInput, buildEnvironment *model.BuildEnvironmentConfig, create bool, contexts ...context.Context) error {
 	return h.dbWithContext(firstContext(contexts)).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Save(&target).Error; err != nil {
+		if create {
+			result := tx.Clauses(clause.OnConflict{
+				Columns:     []clause.Column{{Name: "application_id"}, {Name: "stage"}},
+				TargetWhere: clause.Where{Exprs: []clause.Expression{clause.Expr{SQL: "deleted_at IS NULL"}}},
+				DoNothing:   true,
+			}).Create(&target)
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				return errDeploymentStageExists
+			}
+		} else if err := tx.Save(&target).Error; err != nil {
 			return err
 		}
 		if err := h.replaceDeploymentTargetHookBindings(tx, target, hookInputs); err != nil {

@@ -23,6 +23,7 @@ type NamespaceManager interface {
 	EnsureBuildPolicy(ctx context.Context, policy networkpolicy.BuildPolicy) error
 	ApplyGatewayTrafficProbe(ctx context.Context, spec GatewayTrafficProbeSpec) error
 	EnsureGatewayTrafficProbeAccess(ctx context.Context, spec GatewayTrafficProbeSpec) error
+	PreflightApplicationResources(ctx context.Context, spec ApplicationResourcesSpec) error
 	ApplyApplicationRuntimeConfig(ctx context.Context, spec ApplicationResourcesSpec) error
 	ApplyApplicationResources(ctx context.Context, spec ApplicationResourcesSpec) error
 	RunHookJob(ctx context.Context, spec HookJobSpec) (HookJobResult, error)
@@ -99,6 +100,9 @@ func (c *Client) EnsureNamespace(ctx context.Context, name string, labels map[st
 		return err
 	}
 	if err != nil {
+		return err
+	}
+	if err := ensureResourceOwnership("Namespace", existing, labels); err != nil {
 		return err
 	}
 

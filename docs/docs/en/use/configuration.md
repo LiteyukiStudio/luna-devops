@@ -102,17 +102,19 @@ Runtime clusters are release targets. The platform turns Releases into Kubernete
 
 Project spaces, applications, and deployment stages have immutable identifiers. Project and application identifiers must be 2–22 characters; stage identifiers must be 2–12 characters. They accept lowercase ASCII letters, numbers, and hyphens, and must start and end with a letter or number. Display names remain editable and may use localized text.
 
-New records use readable, stable IDs and Kubernetes names:
+The platform uses random, immutable internal IDs for ownership and history, while Kubernetes names remain based on human-readable identifiers:
 
 | Object | Example |
 | --- | --- |
-| Project space `payments` | ID `prj_payments`, Namespace `luna-payments` |
-| Application `api` in the project | ID `app_payments_api` |
-| Production deployment `prod` | ID `dplt_payments_api_prod` |
+| Project space `payments` | ID `prj_7d3f…`, Namespace `luna-payments` |
+| Application `api` in the project | ID `app_92ac…` |
+| Production deployment `prod` | ID `dplt_c481…` |
 | Deployment / StatefulSet / Service / HPA base name | `luna-api-prod` |
 | ConfigMap / Secret | `luna-api-prod-config` / `luna-api-prod-secret` |
 
-Kubernetes names are persisted separately, so changing a display name never renames runtime resources. Project spaces and deployment targets created before this migration keep their existing `ns-*` and `dplt-*` names to avoid workload recreation or traffic interruption during upgrade.
+Kubernetes names are persisted separately, so changing a display name never renames runtime resources. Human-readable identifiers cannot be changed after creation. An identifier remains reserved while deletion is running or has failed, and becomes reusable only after the platform finishes cleanup. Reusing it creates a new internal ID and never inherits audit, billing, or retained data from the deleted resource.
+
+When runtime data is retained during deletion, a same-name PVC remains owned by the old internal ID. A new resource never adopts it automatically. Deployment reports an ownership conflict until the retained data is handled, or a different application identifier or deployment stage is used.
 
 During upgrade, legacy registry credential placeholders such as `{projectSlug}`, `{appSlug}`, `{applicationSlug}`, and `{targetSlug}` are migrated to their immutable-identifier equivalents. Concrete image references already stored on deployment targets, build runs, and image records are not rewritten.
 

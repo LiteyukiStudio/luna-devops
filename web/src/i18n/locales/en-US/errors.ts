@@ -11,6 +11,22 @@ const errors = {
   },
   application: {
     delete_in_progress: 'The application is being deleted. Wait for resource cleanup to finish, or retry after deletion fails.',
+    identifier_exists: 'An application with this identifier already exists in the project space.',
+    identifier_delete_in_progress: 'An application with this identifier is being deleted. Wait for cleanup before reusing it.',
+    identifier_delete_failed: 'The previous deletion of an application with this identifier failed. Finish cleanup before reusing it.',
+  },
+  project: {
+    identifier_exists: 'A project space with this identifier already exists.',
+    identifier_delete_in_progress: 'A project space with this identifier is being deleted. Wait for cleanup before reusing it.',
+    identifier_delete_failed: 'The previous deletion of a project space with this identifier failed. Finish cleanup before reusing it.',
+  },
+  deployment: {
+    stage_exists: 'This deployment stage already exists in the application.',
+    stage_delete_in_progress: 'A deployment target with this stage is being deleted. Wait for cleanup before reusing it.',
+    stage_delete_failed: 'The previous deletion of a deployment target with this stage failed. Finish cleanup before reusing it.',
+  },
+  kubernetes: {
+    resource_ownership_conflict: 'A same-name Kubernetes resource belongs to another lifecycle. The platform will not adopt it automatically. Handle the retained resource first.',
   },
   billing: {
     insufficient_balance: 'The billing owner balance is insufficient. Billing controls blocked this operation. Recharge or contact a platform administrator.',

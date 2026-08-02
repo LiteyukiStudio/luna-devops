@@ -78,6 +78,14 @@ func (r *Runner) handleDeployRun(ctx context.Context, task *asynq.Task) error {
 	if serviceBindings.Count > 0 {
 		r.appendReleaseLog(release, fmt.Sprintf("已解析 %d 个服务引用", serviceBindings.Count))
 	}
+	if err := workerStage(ctx, "deploy.preflight_resources", func(stageCtx context.Context) error {
+		return r.preflightApplicationResources(stageCtx, release, project, application, environment, deploymentTarget, namespace, serviceBindings)
+	}); err != nil {
+		_ = r.finishDeployRelease(ctx, release, "failed", err.Error())
+		r.appendReleaseLog(release, "资源归属预检失败: "+err.Error())
+		r.markSystemComponentDeployment(release, "failed", err.Error())
+		return err
+	}
 	if err := workerStage(ctx, "deploy.apply_runtime_config", func(stageCtx context.Context) error {
 		return r.applyApplicationRuntimeConfig(stageCtx, release, project, application, environment, deploymentTarget, namespace, serviceBindings)
 	}); err != nil {
@@ -196,21 +204,8 @@ func systemComponentLastError(status string, message string) string {
 }
 
 func (r *Runner) applyApplicationResources(ctx context.Context, release model.Release, project model.Project, application model.Application, environment model.Environment, deploymentTarget model.DeploymentTarget, namespace string, serviceBindings resolvedServiceBindingConfig) error {
-	manager, err := r.kubernetesManager(environment)
+	manager, spec, err := r.applicationResourcesManagerAndSpec(release, project, application, environment, deploymentTarget, namespace, serviceBindings)
 	if err != nil {
-		return err
-	}
-	runtimeConfigSets, err := r.runtimeConfigSetsForTarget(project.ID, deploymentTarget)
-	if err != nil {
-		return err
-	}
-	deploymentTarget.SecretRefs = r.resolveRuntimeSecretRefsRaw(deploymentTarget.SecretRefs)
-	deploymentTarget.SecretFiles = r.resolveRuntimeSecretFileRefsRaw(deploymentTarget.SecretFiles)
-	spec, err := applicationResourcesSpec(release, project, application, environment, deploymentTarget, runtimeConfigSets, namespace, r.deployRolloutTimeoutSeconds)
-	if err != nil {
-		return err
-	}
-	if err := applyServiceBindingConfig(&spec, serviceBindings); err != nil {
 		return err
 	}
 	spec.ForceImagePull = r.releaseShouldForceImagePull(release)
@@ -218,24 +213,40 @@ func (r *Runner) applyApplicationResources(ctx context.Context, release model.Re
 }
 
 func (r *Runner) applyApplicationRuntimeConfig(ctx context.Context, release model.Release, project model.Project, application model.Application, environment model.Environment, deploymentTarget model.DeploymentTarget, namespace string, serviceBindings resolvedServiceBindingConfig) error {
-	manager, err := r.kubernetesManager(environment)
+	manager, spec, err := r.applicationResourcesManagerAndSpec(release, project, application, environment, deploymentTarget, namespace, serviceBindings)
 	if err != nil {
 		return err
 	}
-	runtimeConfigSets, err := r.runtimeConfigSetsForTarget(project.ID, deploymentTarget)
+	return manager.ApplyApplicationRuntimeConfig(ctx, spec)
+}
+
+func (r *Runner) preflightApplicationResources(ctx context.Context, release model.Release, project model.Project, application model.Application, environment model.Environment, deploymentTarget model.DeploymentTarget, namespace string, serviceBindings resolvedServiceBindingConfig) error {
+	manager, spec, err := r.applicationResourcesManagerAndSpec(release, project, application, environment, deploymentTarget, namespace, serviceBindings)
 	if err != nil {
 		return err
+	}
+	return manager.PreflightApplicationResources(ctx, spec)
+}
+
+func (r *Runner) applicationResourcesManagerAndSpec(release model.Release, project model.Project, application model.Application, environment model.Environment, deploymentTarget model.DeploymentTarget, namespace string, serviceBindings resolvedServiceBindingConfig) (kubeprovider.NamespaceManager, kubeprovider.ApplicationResourcesSpec, error) {
+	manager, err := r.kubernetesManager(environment)
+	if err != nil {
+		return nil, kubeprovider.ApplicationResourcesSpec{}, err
+	}
+	runtimeConfigSets, err := r.runtimeConfigSetsForTarget(project.ID, deploymentTarget)
+	if err != nil {
+		return nil, kubeprovider.ApplicationResourcesSpec{}, err
 	}
 	deploymentTarget.SecretRefs = r.resolveRuntimeSecretRefsRaw(deploymentTarget.SecretRefs)
 	deploymentTarget.SecretFiles = r.resolveRuntimeSecretFileRefsRaw(deploymentTarget.SecretFiles)
 	spec, err := applicationResourcesSpec(release, project, application, environment, deploymentTarget, runtimeConfigSets, namespace, r.deployRolloutTimeoutSeconds)
 	if err != nil {
-		return err
+		return nil, kubeprovider.ApplicationResourcesSpec{}, err
 	}
 	if err := applyServiceBindingConfig(&spec, serviceBindings); err != nil {
-		return err
+		return nil, kubeprovider.ApplicationResourcesSpec{}, err
 	}
-	return manager.ApplyApplicationRuntimeConfig(ctx, spec)
+	return manager, spec, nil
 }
 
 func (r *Runner) runtimeConfigSetsForTarget(projectID string, deploymentTarget model.DeploymentTarget) ([]model.ProjectRuntimeConfigSet, error) {

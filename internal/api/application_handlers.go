@@ -2,18 +2,23 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/authz"
+	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/resourceidentifier"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
+
+var errApplicationIdentifierExists = errors.New("application identifier already exists")
 
 func (h *Handlers) ListApplications(ctx *gin.Context) {
 	if _, ok := h.findProjectForCurrentUser(ctx); !ok {
@@ -49,7 +54,7 @@ func (h *Handlers) ListApplications(ctx *gin.Context) {
 }
 
 func (h *Handlers) CreateApplication(ctx *gin.Context) {
-	_, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
+	_, _, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
 	if !ok {
 		return
 	}
@@ -67,7 +72,7 @@ func (h *Handlers) CreateApplication(ctx *gin.Context) {
 		return
 	}
 	app := model.Application{
-		ID:                resourceidentifier.ApplicationID(project.Identifier, input.Identifier),
+		ID:                id.New("app"),
 		ProjectID:         ctx.Param("projectId"),
 		Identifier:        input.Identifier,
 		Name:              input.Name,
@@ -76,7 +81,10 @@ func (h *Handlers) CreateApplication(ctx *gin.Context) {
 		DataRetentionMode: "retain",
 	}
 
-	if err := h.dbFor(ctx).Create(&app).Error; err != nil {
+	if err := createApplicationRecord(h.dbFor(ctx), &app); errors.Is(err, errApplicationIdentifierExists) {
+		writeApplicationIdentifierConflict(ctx, "active")
+		return
+	} else if err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -222,23 +230,48 @@ func applicationCanMutate(app model.Application) bool {
 
 func (h *Handlers) ensureApplicationIdentifierAvailable(ctx *gin.Context, projectID string, identifier string, excludeApplicationID string) bool {
 	if identifier == "" {
-		writeError(ctx, http.StatusBadRequest, "应用标识不能为空")
+		writeErrorCode(ctx, http.StatusBadRequest, "application.identifier_invalid", "应用标识不能为空")
 		return false
 	}
-	query := h.dbFor(ctx).Unscoped().Model(&model.Application{}).Where("project_id = ? and identifier = ?", projectID, identifier)
+	query := h.dbFor(ctx).Select("id", "delete_status").Where("project_id = ? and identifier = ?", projectID, identifier)
 	if strings.TrimSpace(excludeApplicationID) != "" {
 		query = query.Where("id <> ?", excludeApplicationID)
 	}
-	var count int64
-	if err := query.Count(&count).Error; err != nil {
+	var existing model.Application
+	if err := query.First(&existing).Error; errors.Is(err, gorm.ErrRecordNotFound) {
+		return true
+	} else if err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return false
 	}
-	if count > 0 {
-		writeError(ctx, http.StatusBadRequest, "该项目空间内应用标识已存在")
-		return false
+	writeApplicationIdentifierConflict(ctx, existing.DeleteStatus)
+	return false
+}
+
+func createApplicationRecord(db *gorm.DB, application *model.Application) error {
+	result := db.Clauses(clause.OnConflict{
+		Columns:     []clause.Column{{Name: "project_id"}, {Name: "identifier"}},
+		TargetWhere: clause.Where{Exprs: []clause.Expression{clause.Expr{SQL: "deleted_at IS NULL"}}},
+		DoNothing:   true,
+	}).Create(application)
+	if result.Error != nil {
+		return result.Error
 	}
-	return true
+	if result.RowsAffected == 0 {
+		return errApplicationIdentifierExists
+	}
+	return nil
+}
+
+func writeApplicationIdentifierConflict(ctx *gin.Context, deleteStatus string) {
+	switch strings.TrimSpace(deleteStatus) {
+	case "deleting":
+		writeErrorCode(ctx, http.StatusConflict, "application.identifier_delete_in_progress", "同标识应用正在删除，资源清理完成后才能复用")
+	case "delete_failed":
+		writeErrorCode(ctx, http.StatusConflict, "application.identifier_delete_failed", "同标识应用上次删除失败，请先完成资源清理")
+	default:
+		writeErrorCode(ctx, http.StatusConflict, "application.identifier_exists", "该项目空间内应用标识已存在")
+	}
 }
 
 type applicationInput struct {

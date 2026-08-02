@@ -101,10 +101,10 @@ type Release struct {
 type DeploymentTarget struct {
 	ID                           string                        `gorm:"primaryKey" json:"id"`
 	ProjectID                    string                        `gorm:"index;not null" json:"projectId"`
-	ApplicationID                string                        `gorm:"index;not null" json:"applicationId"`
+	ApplicationID                string                        `gorm:"index;uniqueIndex:idx_deployment_targets_application_stage_active,where:deleted_at IS NULL;not null" json:"applicationId"`
 	EnvironmentID                string                        `gorm:"index;not null;default:''" json:"environmentId"`
 	Name                         string                        `gorm:"not null" json:"name"`
-	Stage                        string                        `gorm:"not null;default:prod" json:"stage"`
+	Stage                        string                        `gorm:"uniqueIndex:idx_deployment_targets_application_stage_active,where:deleted_at IS NULL;not null;default:prod" json:"stage"`
 	KubernetesName               string                        `gorm:"not null;default:''" json:"kubernetesName"`
 	ClusterID                    string                        `gorm:"index;not null;default:''" json:"clusterId"`
 	Namespace                    string                        `gorm:"not null;default:''" json:"namespace"`

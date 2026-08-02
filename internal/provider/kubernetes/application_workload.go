@@ -20,13 +20,13 @@ func (c *Client) applyApplicationWorkload(ctx context.Context, spec ApplicationR
 		if err != nil {
 			return nil, err
 		}
-		return effectiveSelectorLabels, c.deleteStaleApplicationDeployment(ctx, spec.Namespace, spec.Name)
+		return effectiveSelectorLabels, c.deleteStaleApplicationDeployment(ctx, spec)
 	default:
 		effectiveSelectorLabels, err := c.applyDeployment(ctx, spec, objectLabels, selectorLabels)
 		if err != nil {
 			return nil, err
 		}
-		return effectiveSelectorLabels, c.deleteStaleApplicationStatefulSet(ctx, spec.Namespace, spec.Name)
+		return effectiveSelectorLabels, c.deleteStaleApplicationStatefulSet(ctx, spec)
 	}
 }
 
@@ -55,6 +55,9 @@ func (c *Client) applyDeployment(ctx context.Context, spec ApplicationResourcesS
 		return selectorLabels, err
 	}
 	if err != nil {
+		return nil, err
+	}
+	if err := ensureResourceOwnership("Deployment", existing, objectLabels); err != nil {
 		return nil, err
 	}
 	effectiveSelectorLabels := deploymentSelectorLabels(existing, selectorLabels)
@@ -86,6 +89,9 @@ func (c *Client) applyStatefulSet(ctx context.Context, spec ApplicationResources
 		return selectorLabels, err
 	}
 	if err != nil {
+		return nil, err
+	}
+	if err := ensureResourceOwnership("StatefulSet", existing, objectLabels); err != nil {
 		return nil, err
 	}
 	effectiveSelectorLabels := statefulSetSelectorLabels(existing, selectorLabels)
@@ -244,20 +250,32 @@ func applicationWorkloadType(spec ApplicationResourcesSpec) string {
 	}
 }
 
-func (c *Client) deleteStaleApplicationDeployment(ctx context.Context, namespace string, name string) error {
-	err := c.client.AppsV1().Deployments(namespace).Delete(ctx, name, metav1.DeleteOptions{})
+func (c *Client) deleteStaleApplicationDeployment(ctx context.Context, spec ApplicationResourcesSpec) error {
+	item, err := c.client.AppsV1().Deployments(spec.Namespace).Get(ctx, spec.Name, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
 		return nil
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	if err := ensureResourceOwnership("Deployment", item, appObjectLabels(spec)); err != nil {
+		return err
+	}
+	return c.client.AppsV1().Deployments(spec.Namespace).Delete(ctx, spec.Name, metav1.DeleteOptions{})
 }
 
-func (c *Client) deleteStaleApplicationStatefulSet(ctx context.Context, namespace string, name string) error {
-	err := c.client.AppsV1().StatefulSets(namespace).Delete(ctx, name, metav1.DeleteOptions{})
+func (c *Client) deleteStaleApplicationStatefulSet(ctx context.Context, spec ApplicationResourcesSpec) error {
+	item, err := c.client.AppsV1().StatefulSets(spec.Namespace).Get(ctx, spec.Name, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
 		return nil
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	if err := ensureResourceOwnership("StatefulSet", item, appObjectLabels(spec)); err != nil {
+		return err
+	}
+	return c.client.AppsV1().StatefulSets(spec.Namespace).Delete(ctx, spec.Name, metav1.DeleteOptions{})
 }
 
 func applicationEnvFrom(spec ApplicationResourcesSpec) []corev1.EnvFromSource {

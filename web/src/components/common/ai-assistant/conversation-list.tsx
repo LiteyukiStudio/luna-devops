@@ -83,21 +83,24 @@ export function AIConversationList({
 
   return (
     <aside className="absolute inset-x-0 bottom-0 top-14 z-10 flex flex-col bg-surface sm:static sm:w-64 sm:shrink-0 sm:border-r sm:border-separator-subtle">
-      <div className="flex h-14 items-center gap-2 border-b border-separator-subtle px-3">
+      <div className="flex h-14 items-center border-b border-separator-subtle px-3">
         <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">{selecting ? t('aiAssistant.conversations.selectMode') : t('aiAssistant.conversations.title')}</h2>
-        <Button
-          aria-label={selecting ? t('aiAssistant.conversations.exitSelect') : t('aiAssistant.conversations.select')}
-          size="icon"
-          variant="ghost"
-          onClick={() => selecting ? exitSelection() : setSelecting(true)}
-        >
-          {selecting ? <X className="size-4" /> : <ListChecks className="size-4" />}
-        </Button>
       </div>
       <div className="grid gap-2 p-2">
-        <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input aria-label={t('aiAssistant.conversations.search')} className="h-8 pl-8 text-xs" placeholder={t('aiAssistant.conversations.search')} value={search} onChange={event => onSearch(event.target.value)} />
+        <div className="flex items-center gap-1.5">
+          <Button
+            aria-label={selecting ? t('aiAssistant.conversations.exitSelect') : t('aiAssistant.conversations.select')}
+            className="size-8 shrink-0"
+            size="icon"
+            variant="ghost"
+            onClick={() => selecting ? exitSelection() : setSelecting(true)}
+          >
+            {selecting ? <X className="size-4" /> : <ListChecks className="size-4" />}
+          </Button>
+          <div className="relative min-w-0 flex-1">
+            <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input aria-label={t('aiAssistant.conversations.search')} className="h-8 pl-8 text-xs" placeholder={t('aiAssistant.conversations.search')} value={search} onChange={event => onSearch(event.target.value)} />
+          </div>
         </div>
         {selecting && (
           <div className="flex min-h-8 items-center gap-1 rounded-control bg-surface-subtle px-1.5">

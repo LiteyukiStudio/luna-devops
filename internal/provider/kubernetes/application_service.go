@@ -86,6 +86,9 @@ func (c *Client) applyService(ctx context.Context, spec ApplicationResourcesSpec
 	if err != nil {
 		return err
 	}
+	if err := ensureResourceOwnership("Service", existing, labels); err != nil {
+		return err
+	}
 	existing.Labels = labels
 	existing.Annotations = annotations
 	existing.Spec.Type = service.Spec.Type

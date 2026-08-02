@@ -90,6 +90,7 @@ func TestMigrateBootstrapsFreshPostgresSchema(t *testing.T) {
 	}
 
 	assertFreshMigrationState(t, testDB)
+	assertActiveDeploymentStageUniqueness(t, testDB)
 }
 
 func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
@@ -204,6 +205,13 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 			t.Fatalf("fresh database contains obsolete %s.slug", table)
 		}
 	}
+	var activeStageIndex string
+	if err := db.Raw(`SELECT indexdef FROM pg_indexes WHERE schemaname = current_schema() AND indexname = 'idx_deployment_targets_application_stage_active'`).Scan(&activeStageIndex).Error; err != nil {
+		t.Fatalf("read deployment target active stage index: %v", err)
+	}
+	if !strings.Contains(activeStageIndex, "UNIQUE INDEX") || !strings.Contains(activeStageIndex, "WHERE (deleted_at IS NULL)") {
+		t.Fatalf("deployment target active stage index is missing or invalid: %q", activeStageIndex)
+	}
 
 	var defaultRuleCount int64
 	if err := db.Table("billing_rate_rules").Count(&defaultRuleCount).Error; err != nil {
@@ -244,4 +252,33 @@ func latestEmbeddedMigrationVersion(t *testing.T) uint {
 		t.Fatal("no embedded up migrations found")
 	}
 	return uint(latest)
+}
+
+func assertActiveDeploymentStageUniqueness(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	now := time.Now()
+	if err := db.Exec(`INSERT INTO projects (id, identifier, kubernetes_namespace, name, namespace_strategy, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"prj_stage_test", "stage-test", "luna-stage-test", "Stage Test", "project", now, now).Error; err != nil {
+		t.Fatalf("insert stage test project: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO applications (id, project_id, identifier, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		"app_stage_test", "prj_stage_test", "api", "API", now, now).Error; err != nil {
+		t.Fatalf("insert stage test application: %v", err)
+	}
+	insertTarget := func(id string) error {
+		return db.Exec(`INSERT INTO deployment_targets (id, project_id, application_id, environment_id, name, stage, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			id, "prj_stage_test", "app_stage_test", "", id, "prod", now, now).Error
+	}
+	if err := insertTarget("dplt_stage_first"); err != nil {
+		t.Fatalf("insert first active deployment stage: %v", err)
+	}
+	if err := insertTarget("dplt_stage_duplicate"); err == nil {
+		t.Fatal("duplicate active deployment stage unexpectedly succeeded")
+	}
+	if err := db.Exec(`UPDATE deployment_targets SET deleted_at = ? WHERE id = ?`, now, "dplt_stage_first").Error; err != nil {
+		t.Fatalf("soft delete first deployment stage: %v", err)
+	}
+	if err := insertTarget("dplt_stage_reused"); err != nil {
+		t.Fatalf("reuse deployment stage after soft deletion: %v", err)
+	}
 }

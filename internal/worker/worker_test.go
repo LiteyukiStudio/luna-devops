@@ -863,6 +863,10 @@ func (fakeNamespaceManager) ApplyApplicationResources(context.Context, kubeprovi
 	return nil
 }
 
+func (fakeNamespaceManager) PreflightApplicationResources(context.Context, kubeprovider.ApplicationResourcesSpec) error {
+	return nil
+}
+
 func (fakeNamespaceManager) ApplyApplicationRuntimeConfig(context.Context, kubeprovider.ApplicationResourcesSpec) error {
 	return nil
 }

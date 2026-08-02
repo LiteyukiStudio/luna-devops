@@ -1769,6 +1769,8 @@ paths:
       responses:
         "201":
           description: Created project.
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /api/v1/projects/pins:
     get:
@@ -1971,6 +1973,8 @@ paths:
       responses:
         "201":
           description: Created application.
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /api/v1/projects/{projectId}/applications/{applicationId}:
     get:
@@ -2060,6 +2064,8 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/DeploymentTarget" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /api/v1/projects/{projectId}/applications/{applicationId}/deployment-targets/{targetId}:
     put:
@@ -7265,7 +7271,7 @@ components:
           minLength: 2
           maxLength: 22
           pattern: "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$"
-          description: Immutable application identifier, unique within its project space and used to derive stable resource IDs.
+          description: Human-readable identifier that is immutable while the application exists and unique among active applications in the project space. It may be reused after deletion cleanup; the internal application ID is generated independently.
         sourceType: { type: string, enum: [repository, image] }
         repositoryUrl: { type: string }
         imageReference: { type: string }
@@ -7422,7 +7428,7 @@ components:
           minLength: 2
           maxLength: 22
           pattern: "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$"
-          description: Immutable project-space identifier used to derive the project ID and Kubernetes Namespace.
+          description: Human-readable identifier that is immutable while the project space exists and unique among active project spaces. It may be reused after deletion cleanup; the internal project ID is generated independently and the identifier derives the Kubernetes Namespace.
         description: { type: string }
         namespaceStrategy: { type: string, enum: [project] }
         maxConcurrentBuilds: { type: integer, minimum: 1 }
@@ -7456,7 +7462,7 @@ components:
           minLength: 2
           maxLength: 12
           pattern: "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$"
-          description: Immutable deployment stage identifier, unique within the application.
+          description: Human-readable stage identifier that is immutable while the deployment target exists and unique among active deployment targets in the application. It may be reused after deletion cleanup; the internal deployment target ID is generated independently.
         buildDefinitionMode:
           type: string
           enum: [repository_dockerfile, template]

@@ -14,6 +14,7 @@ const common = {
   helpSuffix: '说明',
   copy: '复制',
   copied: '已复制',
+  copyFailed: '复制失败',
   noDescription: '暂无描述',
   id: 'ID',
   type: '类型',

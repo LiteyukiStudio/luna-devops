@@ -1,8 +1,10 @@
 import type { ReactNode } from 'react'
 import type { AIBlock } from './state'
 import { useTranslation } from 'react-i18next'
+import { CopyableHoverText } from '@/components/common/copyable-hover-text'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
+import { CopyableCodeBlock } from './copyable-code-block'
 
 type ToolCallBlock = Extract<AIBlock, { type: 'tool_call' }>
 
@@ -41,11 +43,23 @@ function DetailHeading({ children }: { children: ReactNode }) {
   return <h3 className="text-[11px] font-semibold text-muted-foreground">{children}</h3>
 }
 
-function MetadataItem({ label, value, mono = true }: { label: string, value: string, mono?: boolean }) {
+function MetadataItem({ copyable = false, label, value, mono = true }: { copyable?: boolean, label: string, value: string, mono?: boolean }) {
+  const { t } = useTranslation()
   return (
     <div className="min-w-0 rounded-control bg-surface px-2.5 py-2">
       <dt className="text-[10px] leading-4 text-muted-foreground">{label}</dt>
-      <dd className={cn('m-0 mt-0.5 break-all text-[11px] leading-4 text-foreground', mono && 'font-mono')}>{value}</dd>
+      <dd className="m-0 mt-0.5 min-w-0">
+        {copyable
+          ? (
+              <CopyableHoverText
+                className={cn('break-all text-[11px] leading-4 text-foreground', mono && 'font-mono')}
+                copyLabel={`${t('common.copy')} ${label}`}
+                truncate={false}
+                value={value}
+              />
+            )
+          : <span className={cn('break-all text-[11px] leading-4 text-foreground', mono && 'font-mono')}>{value}</span>}
+      </dd>
     </div>
   )
 }
@@ -53,10 +67,11 @@ function MetadataItem({ label, value, mono = true }: { label: string, value: str
 function ValueView({ value }: { value: unknown }) {
   if (!isStructured(value))
     return <span className="break-words font-medium text-foreground">{displayValue(value)}</span>
+  const content = displayJSON(value)
   return (
-    <pre className="m-0 max-h-48 max-w-full overflow-auto rounded-control bg-surface-inset p-2 font-mono text-[11px] leading-4 text-foreground">
-      <code>{displayJSON(value)}</code>
-    </pre>
+    <CopyableCodeBlock className="max-h-48" value={content}>
+      <code>{content}</code>
+    </CopyableCodeBlock>
   )
 }
 
@@ -64,14 +79,14 @@ export function AIToolCallDetails({ block, errorCode, summary }: { block: ToolCa
   const { t, i18n } = useTranslation()
   const entries = Object.entries(block.arguments).filter(([key]) => !SECRET_FIELD.test(key)).slice(0, 20)
   const metadata = [
-    { label: t('aiAssistant.toolIdentifier'), value: block.operationId },
-    { label: t('aiAssistant.toolCallId'), value: block.toolCallId },
-    { label: t('aiAssistant.runId'), value: block.runId },
-    ...(block.traceId ? [{ label: t('aiAssistant.traceId'), value: block.traceId }] : []),
+    { label: t('aiAssistant.toolIdentifier'), value: block.operationId, copyable: true },
+    { label: t('aiAssistant.toolCallId'), value: block.toolCallId, copyable: true },
+    { label: t('aiAssistant.runId'), value: block.runId, copyable: true },
+    ...(block.traceId ? [{ label: t('aiAssistant.traceId'), value: block.traceId, copyable: true }] : []),
     ...(block.durationMs !== undefined
       ? [{ label: t('aiAssistant.duration'), value: formatDuration(block.durationMs, i18n.language), mono: false }]
       : []),
-    ...(block.result?.requestId ? [{ label: t('aiAssistant.requestId'), value: block.result.requestId }] : []),
+    ...(block.result?.requestId ? [{ label: t('aiAssistant.requestId'), value: block.result.requestId, copyable: true }] : []),
   ]
 
   return (

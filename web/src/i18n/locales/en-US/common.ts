@@ -9,6 +9,7 @@ const common = {
   close: 'Close',
   copy: 'Copy',
   copied: 'Copied',
+  copyFailed: 'Could not copy',
   loading: 'Loading...',
   refresh: 'Refresh',
   retry: 'Retry',

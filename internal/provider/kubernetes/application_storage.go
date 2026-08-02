@@ -32,6 +32,12 @@ func (c *Client) ApplyPersistentDataVolume(ctx context.Context, spec Application
 	if strings.TrimSpace(spec.Name) == "" || strings.TrimSpace(spec.Namespace) == "" {
 		return fmt.Errorf("application resource name and namespace are required")
 	}
+	if strings.TrimSpace(spec.ProjectID) == "" || strings.TrimSpace(spec.ApplicationID) == "" || strings.TrimSpace(spec.DeploymentTargetID) == "" {
+		return fmt.Errorf("project, application, and deployment target ids are required")
+	}
+	if err := c.ensureApplicationStorageOwnership(ctx, spec); err != nil {
+		return err
+	}
 	for _, volume := range persistentDataVolumes(spec) {
 		if !dataVolumeNeedsPVC(volume) {
 			continue
@@ -70,6 +76,9 @@ func (c *Client) applyPersistentDataVolume(ctx context.Context, spec Application
 		return err
 	}
 	if err != nil {
+		return err
+	}
+	if err := ensureResourceOwnership("PersistentVolumeClaim", existing, labels); err != nil {
 		return err
 	}
 	existing.Labels = pvc.Labels

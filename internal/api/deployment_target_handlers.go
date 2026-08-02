@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/authz"
+	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/LiteyukiStudio/devops/internal/resourceidentifier"
@@ -98,7 +99,7 @@ func (h *Handlers) CreateDeploymentTarget(ctx *gin.Context) {
 	if !h.ensureDeploymentStageAvailable(ctx, app.ID, stage, "") {
 		return
 	}
-	targetID := resourceidentifier.DeploymentTargetID(project.Identifier, app.Identifier, stage)
+	targetID := id.New("dplt")
 	kubernetesName := resourceidentifier.DeploymentTargetName(app.Identifier, stage)
 	target, ok := h.deploymentTargetFromInput(ctx, user, app, input, targetID, kubernetesName, nil, "")
 	if !ok {
@@ -109,7 +110,10 @@ func (h *Handlers) CreateDeploymentTarget(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := h.saveDeploymentTarget(target, input.BuildHookBindings, buildEnvironment, ctx.Request.Context()); err != nil {
+	if err := h.createDeploymentTarget(target, input.BuildHookBindings, buildEnvironment, ctx.Request.Context()); errors.Is(err, errDeploymentStageExists) {
+		writeErrorCode(ctx, http.StatusConflict, "deployment.stage_exists", "deployment stage already exists in this application")
+		return
+	} else if err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -188,21 +192,31 @@ func (h *Handlers) UpdateDeploymentTarget(ctx *gin.Context) {
 }
 
 func (h *Handlers) ensureDeploymentStageAvailable(ctx *gin.Context, applicationID, stage, excludeTargetID string) bool {
-	query := h.dbFor(ctx).Unscoped().Model(&model.DeploymentTarget{}).
+	query := h.dbFor(ctx).Select("id", "delete_status").
 		Where("application_id = ? and stage = ?", applicationID, stage)
 	if strings.TrimSpace(excludeTargetID) != "" {
 		query = query.Where("id <> ?", excludeTargetID)
 	}
-	var count int64
-	if err := query.Count(&count).Error; err != nil {
+	var existing model.DeploymentTarget
+	if err := query.First(&existing).Error; errors.Is(err, gorm.ErrRecordNotFound) {
+		return true
+	} else if err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return false
 	}
-	if count > 0 {
+	writeDeploymentStageConflict(ctx, existing.DeleteStatus)
+	return false
+}
+
+func writeDeploymentStageConflict(ctx *gin.Context, deleteStatus string) {
+	switch strings.TrimSpace(deleteStatus) {
+	case "deleting":
+		writeErrorCode(ctx, http.StatusConflict, "deployment.stage_delete_in_progress", "同阶段部署配置正在删除，资源清理完成后才能复用")
+	case "delete_failed":
+		writeErrorCode(ctx, http.StatusConflict, "deployment.stage_delete_failed", "同阶段部署配置上次删除失败，请先完成资源清理")
+	default:
 		writeErrorCode(ctx, http.StatusConflict, "deployment.stage_exists", "deployment stage already exists in this application")
-		return false
 	}
-	return true
 }
 
 type deploymentTargetDataExportAuthorization struct {

@@ -2,6 +2,7 @@ package kubernetes
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -56,7 +57,8 @@ func TestApplyApplicationResourcesCreatesWorkloadResources(t *testing.T) {
 	if deployment.Spec.ProgressDeadlineSeconds == nil || *deployment.Spec.ProgressDeadlineSeconds != 120 {
 		t.Fatalf("progress deadline = %#v", deployment.Spec.ProgressDeadlineSeconds)
 	}
-	if len(deployment.Spec.Template.Spec.Volumes) != 1 || deployment.Spec.Template.Spec.Volumes[0].PersistentVolumeClaim == nil || deployment.Spec.Template.Spec.Volumes[0].PersistentVolumeClaim.ClaimName != spec.Name+"-data" {
+	pvcName := persistentDataPVCName(spec, persistentDataVolumes(spec)[0])
+	if len(deployment.Spec.Template.Spec.Volumes) != 1 || deployment.Spec.Template.Spec.Volumes[0].PersistentVolumeClaim == nil || deployment.Spec.Template.Spec.Volumes[0].PersistentVolumeClaim.ClaimName != pvcName {
 		t.Fatalf("deployment data volume = %#v", deployment.Spec.Template.Spec.Volumes)
 	}
 	if len(deployment.Spec.Template.Spec.Containers[0].VolumeMounts) != 1 || deployment.Spec.Template.Spec.Containers[0].VolumeMounts[0].MountPath != "/data" {
@@ -99,7 +101,7 @@ func TestApplyApplicationResourcesCreatesWorkloadResources(t *testing.T) {
 	}
 	assertManagedLabels(t, secret.Labels, spec.Name, spec.ProjectID, spec.ApplicationID, spec.EnvironmentID, spec.DeploymentTargetID, spec.ReleaseID)
 
-	claim, err := client.client.CoreV1().PersistentVolumeClaims(spec.Namespace).Get(context.Background(), spec.Name+"-data", metav1.GetOptions{})
+	claim, err := client.client.CoreV1().PersistentVolumeClaims(spec.Namespace).Get(context.Background(), pvcName, metav1.GetOptions{})
 	if err != nil {
 		t.Fatalf("get persistent data claim: %v", err)
 	}
@@ -152,6 +154,94 @@ func TestApplyApplicationResourcesKeepsDeploymentSelectorStableAcrossReleases(t 
 	}
 }
 
+func TestApplyApplicationResourcesRejectsForeignOwnerBeforeMutation(t *testing.T) {
+	existing := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
+		Name:      "api-backend-dev",
+		Namespace: "project-demo",
+		Labels: map[string]string{
+			ManagedByLabel: ManagedByValue, DeploymentTargetIDLabel: "dplt_old",
+		},
+	}}
+	client := NewClientForInterface(fake.NewSimpleClientset(existing))
+	spec := ApplicationResourcesSpec{
+		Name:               existing.Name,
+		Namespace:          existing.Namespace,
+		ProjectID:          "prj_demo",
+		ApplicationID:      "app_new",
+		EnvironmentID:      "env_dev",
+		DeploymentTargetID: "dplt_new",
+		ReleaseID:          "rel_new",
+		Image:              "registry.example.com/acme/api:new",
+		ServicePort:        8080,
+		ConfigData:         map[string]string{"MUST_NOT_BE_CREATED": "true"},
+	}
+
+	err := client.ApplyApplicationResources(context.Background(), spec)
+	var conflict *ResourceOwnershipConflictError
+	if !errors.As(err, &conflict) || conflict.Kind != "Deployment" {
+		t.Fatalf("expected deployment ownership conflict, got %v", err)
+	}
+	if _, err := client.client.CoreV1().ConfigMaps(spec.Namespace).Get(context.Background(), spec.Name+"-config", metav1.GetOptions{}); err == nil {
+		t.Fatal("runtime config must not be created before ownership preflight succeeds")
+	}
+}
+
+func TestApplyApplicationResourcesRejectsUnmanagedService(t *testing.T) {
+	service := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "api-dev", Namespace: "project-demo"}}
+	client := NewClientForInterface(fake.NewSimpleClientset(service))
+	spec := ApplicationResourcesSpec{
+		Name:               service.Name,
+		Namespace:          service.Namespace,
+		ProjectID:          "prj_demo",
+		ApplicationID:      "app_api",
+		EnvironmentID:      "env_dev",
+		DeploymentTargetID: "dplt_backend",
+		ReleaseID:          "rel_1",
+		Image:              "registry.example.com/acme/api:v1",
+		ServicePort:        8080,
+	}
+
+	err := client.ApplyApplicationResources(context.Background(), spec)
+	var conflict *ResourceOwnershipConflictError
+	if !errors.As(err, &conflict) || conflict.Kind != "Service" {
+		t.Fatalf("expected service ownership conflict, got %v", err)
+	}
+}
+
+func TestManagedPVCRejectsDifferentDeploymentTargetLifecycle(t *testing.T) {
+	client := NewClientForInterface(fake.NewSimpleClientset())
+	base := ApplicationResourcesSpec{
+		Name:                 "postgres-dev",
+		Namespace:            "project-demo",
+		ProjectID:            "prj_demo",
+		ApplicationID:        "app_postgres",
+		DeploymentTargetID:   "dplt_first_lifecycle",
+		DataRetentionEnabled: true,
+		DataCapacity:         "1Gi",
+	}
+	if err := client.ApplyPersistentDataVolume(context.Background(), base); err != nil {
+		t.Fatalf("apply first lifecycle pvc: %v", err)
+	}
+
+	next := base
+	next.ApplicationID = "app_postgres_recreated"
+	next.DeploymentTargetID = "dplt_second_lifecycle"
+	err := client.ApplyPersistentDataVolume(context.Background(), next)
+	var conflict *ResourceOwnershipConflictError
+	if !errors.As(err, &conflict) || conflict.Kind != "PersistentVolumeClaim" {
+		t.Fatalf("expected retained pvc ownership conflict, got %v", err)
+	}
+
+	claimName := persistentDataPVCName(base, persistentDataVolumes(base)[0])
+	claim, getErr := client.client.CoreV1().PersistentVolumeClaims(base.Namespace).Get(context.Background(), claimName, metav1.GetOptions{})
+	if getErr != nil {
+		t.Fatalf("get retained pvc: %v", getErr)
+	}
+	if claim.Labels[DeploymentTargetIDLabel] != base.DeploymentTargetID {
+		t.Fatalf("retained pvc owner changed: %#v", claim.Labels)
+	}
+}
+
 func TestApplyApplicationResourcesPreservesExistingDeploymentSelector(t *testing.T) {
 	oldSelector := map[string]string{
 		ManagedByLabel:     ManagedByValue,
@@ -159,7 +249,9 @@ func TestApplyApplicationResourcesPreservesExistingDeploymentSelector(t *testing
 		ProjectIDLabel:     "prj_old",
 	}
 	existing := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{Name: "api-backend-dev", Namespace: "project-demo"},
+		ObjectMeta: metav1.ObjectMeta{Name: "api-backend-dev", Namespace: "project-demo", Labels: map[string]string{
+			ManagedByLabel: ManagedByValue, DeploymentTargetIDLabel: "dplt_backend",
+		}},
 		Spec: appsv1.DeploymentSpec{
 			Selector: &metav1.LabelSelector{MatchLabels: oldSelector},
 			Template: corev1.PodTemplateSpec{
@@ -372,7 +464,7 @@ func TestApplyApplicationResourcesAppliesAdvancedKubernetesOptions(t *testing.T)
 		t.Fatalf("hpa spec = %#v", hpa.Spec)
 	}
 
-	claim, err := client.client.CoreV1().PersistentVolumeClaims(spec.Namespace).Get(context.Background(), spec.Name+"-data", metav1.GetOptions{})
+	claim, err := client.client.CoreV1().PersistentVolumeClaims(spec.Namespace).Get(context.Background(), persistentDataPVCName(spec, persistentDataVolumes(spec)[0]), metav1.GetOptions{})
 	if err != nil {
 		t.Fatalf("get pvc: %v", err)
 	}
@@ -388,8 +480,10 @@ func TestApplyApplicationResourcesAppliesAdvancedKubernetesOptions(t *testing.T)
 }
 
 func TestApplyApplicationResourcesSupportsStatefulSetAndHPABehavior(t *testing.T) {
+	labels := baseManagedLabels("api-stateful")
+	labels[DeploymentTargetIDLabel] = "dplt_backend"
 	client := NewClientForInterface(fake.NewSimpleClientset(&appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{Name: "api-stateful", Namespace: "project-demo", Labels: baseManagedLabels("api-stateful")},
+		ObjectMeta: metav1.ObjectMeta{Name: "api-stateful", Namespace: "project-demo", Labels: labels},
 	}))
 	spec := ApplicationResourcesSpec{
 		Name:                   "api-stateful",

@@ -12,6 +12,12 @@ func (c *Client) ApplyApplicationRuntimeConfig(ctx context.Context, spec Applica
 	if err := validateApplicationResourcesSpec(spec); err != nil {
 		return err
 	}
+	if err := c.ensureApplicationRuntimeConfigOwnership(ctx, spec); err != nil {
+		return err
+	}
+	if err := c.ensureApplicationStorageOwnership(ctx, spec); err != nil {
+		return err
+	}
 	objectLabels := appObjectLabels(spec)
 	if err := c.applyApplicationRuntimeConfig(ctx, spec, objectLabels); err != nil {
 		return err
@@ -55,6 +61,9 @@ func (c *Client) applyConfigMap(ctx context.Context, spec ApplicationResourcesSp
 	if err != nil {
 		return err
 	}
+	if err := ensureResourceOwnership("ConfigMap", existing, labels); err != nil {
+		return err
+	}
 	existing.Labels = item.Labels
 	existing.Data = item.Data
 	_, err = c.client.CoreV1().ConfigMaps(spec.Namespace).Update(ctx, existing, metav1.UpdateOptions{})
@@ -75,6 +84,9 @@ func (c *Client) applySecret(ctx context.Context, spec ApplicationResourcesSpec,
 	if err != nil {
 		return err
 	}
+	if err := ensureResourceOwnership("Secret", existing, labels); err != nil {
+		return err
+	}
 	existing.Labels = item.Labels
 	existing.Type = item.Type
 	existing.Data = item.Data
@@ -84,7 +96,7 @@ func (c *Client) applySecret(ctx context.Context, spec ApplicationResourcesSpec,
 
 func (c *Client) applyConfigFilesConfigMap(ctx context.Context, spec ApplicationResourcesSpec, labels map[string]string) error {
 	if len(spec.ConfigFiles) == 0 {
-		return c.deleteConfigMapIfExists(ctx, spec.Namespace, spec.Name+"-config-files")
+		return c.deleteConfigMapIfExists(ctx, spec.Namespace, spec.Name+"-config-files", labels)
 	}
 	data := make(map[string]string, len(spec.ConfigFiles))
 	for _, file := range spec.ConfigFiles {
@@ -99,6 +111,9 @@ func (c *Client) applyConfigFilesConfigMap(ctx context.Context, spec Application
 	if err != nil {
 		return err
 	}
+	if err := ensureResourceOwnership("ConfigMap", existing, labels); err != nil {
+		return err
+	}
 	existing.Labels = item.Labels
 	existing.Data = item.Data
 	_, err = c.client.CoreV1().ConfigMaps(spec.Namespace).Update(ctx, existing, metav1.UpdateOptions{})
@@ -107,7 +122,7 @@ func (c *Client) applyConfigFilesConfigMap(ctx context.Context, spec Application
 
 func (c *Client) applySecretFilesSecret(ctx context.Context, spec ApplicationResourcesSpec, labels map[string]string) error {
 	if len(spec.SecretFiles) == 0 {
-		return c.deleteSecretIfExists(ctx, spec.Namespace, spec.Name+"-secret-files")
+		return c.deleteSecretIfExists(ctx, spec.Namespace, spec.Name+"-secret-files", labels)
 	}
 	data := make(map[string][]byte, len(spec.SecretFiles))
 	for _, file := range spec.SecretFiles {
@@ -122,6 +137,9 @@ func (c *Client) applySecretFilesSecret(ctx context.Context, spec ApplicationRes
 	if err != nil {
 		return err
 	}
+	if err := ensureResourceOwnership("Secret", existing, labels); err != nil {
+		return err
+	}
 	existing.Labels = item.Labels
 	existing.Type = item.Type
 	existing.Data = item.Data
@@ -129,18 +147,30 @@ func (c *Client) applySecretFilesSecret(ctx context.Context, spec ApplicationRes
 	return err
 }
 
-func (c *Client) deleteConfigMapIfExists(ctx context.Context, namespace string, name string) error {
-	err := c.client.CoreV1().ConfigMaps(namespace).Delete(ctx, name, metav1.DeleteOptions{})
+func (c *Client) deleteConfigMapIfExists(ctx context.Context, namespace string, name string, labels map[string]string) error {
+	item, err := c.client.CoreV1().ConfigMaps(namespace).Get(ctx, name, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
 		return nil
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	if err := ensureResourceOwnership("ConfigMap", item, labels); err != nil {
+		return err
+	}
+	return c.client.CoreV1().ConfigMaps(namespace).Delete(ctx, name, metav1.DeleteOptions{})
 }
 
-func (c *Client) deleteSecretIfExists(ctx context.Context, namespace string, name string) error {
-	err := c.client.CoreV1().Secrets(namespace).Delete(ctx, name, metav1.DeleteOptions{})
+func (c *Client) deleteSecretIfExists(ctx context.Context, namespace string, name string, labels map[string]string) error {
+	item, err := c.client.CoreV1().Secrets(namespace).Get(ctx, name, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
 		return nil
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	if err := ensureResourceOwnership("Secret", item, labels); err != nil {
+		return err
+	}
+	return c.client.CoreV1().Secrets(namespace).Delete(ctx, name, metav1.DeleteOptions{})
 }

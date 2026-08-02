@@ -639,7 +639,7 @@ func normalizeUserRole(role string) string {
 func createDefaultUserProject(tx *gorm.DB, user model.User) error {
 	identifier := defaultUserProjectIdentifier(tx, user)
 	project := model.Project{
-		ID:                  resourceidentifier.ProjectID(identifier),
+		ID:                  id.New("prj"),
 		Identifier:          identifier,
 		KubernetesNamespace: resourceidentifier.ProjectNamespace(identifier),
 		Name:                defaultUserProjectName(user),
@@ -687,7 +687,7 @@ func defaultUserProjectIdentifier(tx *gorm.DB, user model.User) string {
 	for index := 0; ; index++ {
 		candidate := slugWithNumericSuffix(base, index)
 		var count int64
-		if err := tx.Unscoped().Model(&model.Project{}).Where("identifier = ?", candidate).Count(&count).Error; err != nil || count == 0 {
+		if err := tx.Model(&model.Project{}).Where("identifier = ?", candidate).Count(&count).Error; err != nil || count == 0 {
 			return candidate
 		}
 	}

@@ -321,7 +321,7 @@
 ## 4. 项目、应用与前端主工作区
 
 - [x] 实现 Project CRUD。
-- [x] 项目空间标识全局永久唯一，应用标识在同一项目空间内永久唯一；标识派生稳定 ID，软删除后也不允许复用，API 返回友好业务错误。
+- [x] 分离资源主键与人类可读标识：Project/Application/DeploymentTarget 使用随机不可变主键；identifier 在有效资源中唯一，删除完成后可复用；Kubernetes 同名资源必须校验主键归属，不得接管残留资源或数据卷。
 - [x] 实现 Project namespaceStrategy。
 - [x] 实现 Application CRUD。
 - [x] 支持 sourceType: repository。

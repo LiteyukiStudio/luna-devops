@@ -153,7 +153,7 @@ type DataExportVolume struct {
 }
 
 func (c *Client) ApplyApplicationResources(ctx context.Context, spec ApplicationResourcesSpec) error {
-	if err := validateApplicationResourcesSpec(spec); err != nil {
+	if err := c.PreflightApplicationResources(ctx, spec); err != nil {
 		return err
 	}
 	objectLabels := appObjectLabels(spec)
@@ -184,12 +184,32 @@ func (c *Client) ApplyApplicationResources(ctx context.Context, spec Application
 	return c.applyService(ctx, spec, objectLabels, effectiveSelectorLabels)
 }
 
+// PreflightApplicationResources validates every same-name Kubernetes object
+// before the deploy workflow performs its first mutation. This keeps a new
+// database lifecycle from partially updating resources retained by an older
+// lifecycle that used the same human-readable identifier.
+func (c *Client) PreflightApplicationResources(ctx context.Context, spec ApplicationResourcesSpec) error {
+	if err := validateApplicationResourcesSpec(spec); err != nil {
+		return err
+	}
+	if err := c.ensureApplicationRuntimeConfigOwnership(ctx, spec); err != nil {
+		return err
+	}
+	if err := c.ensureApplicationStorageOwnership(ctx, spec); err != nil {
+		return err
+	}
+	return c.ensureApplicationWorkloadOwnership(ctx, spec)
+}
+
 func validateApplicationResourcesSpec(spec ApplicationResourcesSpec) error {
 	if strings.TrimSpace(spec.Name) == "" || strings.TrimSpace(spec.Namespace) == "" {
 		return fmt.Errorf("application resource name and namespace are required")
 	}
 	if strings.TrimSpace(spec.Image) == "" {
 		return fmt.Errorf("release image is required")
+	}
+	if strings.TrimSpace(spec.ProjectID) == "" || strings.TrimSpace(spec.ApplicationID) == "" || strings.TrimSpace(spec.DeploymentTargetID) == "" {
+		return fmt.Errorf("project, application, and deployment target ids are required")
 	}
 	for _, port := range applicationServicePorts(spec) {
 		if port.Port <= 0 || port.Port > 65535 {

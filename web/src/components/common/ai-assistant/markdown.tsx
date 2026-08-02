@@ -4,6 +4,7 @@ import Markdown from 'react-markdown'
 import { Link } from 'react-router-dom'
 import remarkGfm from 'remark-gfm'
 import { cn } from '@/lib/utils'
+import { CopyableCodeBlock } from './copyable-code-block'
 import { normalizeAIExternalHref, normalizeAIInternalHref } from './internal-routes'
 
 const linkClassName = 'font-medium text-primary-text underline decoration-primary/40 underline-offset-2 transition-colors hover:text-primary-text-strong hover:decoration-primary focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
@@ -47,9 +48,9 @@ const markdownComponents: Components = {
   ol: ({ children }) => <ol className="my-2 list-decimal space-y-0.5 pl-5">{children}</ol>,
   p: ({ children }) => <p className="my-2 first:mt-0 last:mb-0">{children}</p>,
   pre: ({ children }) => (
-    <pre className="my-2 w-full min-w-0 max-w-full overflow-x-auto overscroll-x-contain rounded-control bg-surface-inset p-2.5 font-mono text-[11px] leading-4.5 text-foreground [&_code]:break-normal [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-inherit" data-slot="ai-markdown-code-scroll">
+    <CopyableCodeBlock className="my-2 w-full min-w-0 overscroll-x-contain p-2.5 pr-9 leading-4.5 [&_code]:break-normal [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-inherit" dataSlot="ai-markdown-code-scroll">
       {children}
-    </pre>
+    </CopyableCodeBlock>
   ),
   table: ({ children }) => (
     <div className="my-2 w-full min-w-0 max-w-full overflow-x-auto overscroll-x-contain rounded-control border border-separator-subtle" data-slot="ai-markdown-table-scroll">

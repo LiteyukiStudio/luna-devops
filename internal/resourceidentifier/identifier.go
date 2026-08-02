@@ -28,18 +28,6 @@ func Validate(value string, minLength, maxLength int) error {
 	return nil
 }
 
-func ProjectID(identifier string) string {
-	return "prj_" + strings.TrimSpace(identifier)
-}
-
-func ApplicationID(projectIdentifier, applicationIdentifier string) string {
-	return "app_" + strings.TrimSpace(projectIdentifier) + "_" + strings.TrimSpace(applicationIdentifier)
-}
-
-func DeploymentTargetID(projectIdentifier, applicationIdentifier, stage string) string {
-	return "dplt_" + strings.TrimSpace(projectIdentifier) + "_" + strings.TrimSpace(applicationIdentifier) + "_" + strings.TrimSpace(stage)
-}
-
 func ProjectNamespace(identifier string) string {
 	return "luna-" + strings.TrimSpace(identifier)
 }

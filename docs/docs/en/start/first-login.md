@@ -60,7 +60,7 @@ On mobile, management lists prioritize primary information such as the resource 
 An application represents one independently deployable service. For the first run, create a basic application:
 
 - Fill in name.
-- Fill in a short lowercase identifier. It becomes immutable after creation.
+- Fill in a short lowercase identifier. It becomes immutable after creation and can be reused only after application cleanup completes.
 - Leave runtime details for later.
 
 Service ports, image settings, Dockerfile paths, environment variables, and data volumes belong to deployment targets. The application profile only keeps the name, immutable identifier, and icon.

@@ -23,15 +23,6 @@ func TestReadableNamesStayWithinDNSLabelLimit(t *testing.T) {
 	project := "abcdefghijklmnopqrstuv"
 	application := "abcdefghijklmnopqrstuv"
 	stage := "abcdefghijkl"
-	if got := ProjectID(project); got != "prj_abcdefghijklmnopqrstuv" {
-		t.Fatalf("unexpected project id %q", got)
-	}
-	if got := ApplicationID(project, application); got != "app_abcdefghijklmnopqrstuv_abcdefghijklmnopqrstuv" {
-		t.Fatalf("unexpected application id %q", got)
-	}
-	if got := DeploymentTargetID(project, application, stage); len(got) != 63 {
-		t.Fatalf("deployment target id is %d characters, want 63: %q", len(got), got)
-	}
 	if got := ProjectNamespace(project); len(got) > 63 {
 		t.Fatalf("project namespace is %d characters: %q", len(got), got)
 	}

@@ -92,6 +92,14 @@ func (h *Handlers) CreateProject(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusConflict, "project.identifier_exists", "project identifier already exists")
 		return
 	}
+	if errors.Is(err, projectservice.ErrIdentifierDeleteInProgress) {
+		writeErrorCode(ctx, http.StatusConflict, "project.identifier_delete_in_progress", "同标识项目空间正在删除，资源清理完成后才能复用")
+		return
+	}
+	if errors.Is(err, projectservice.ErrIdentifierDeleteFailed) {
+		writeErrorCode(ctx, http.StatusConflict, "project.identifier_delete_failed", "同标识项目空间上次删除失败，请先完成资源清理")
+		return
+	}
 	if errors.Is(err, projectservice.ErrInputInvalid) {
 		writeErrorCode(ctx, http.StatusBadRequest, "request.invalid", "project input is invalid")
 		return
@@ -295,27 +303,6 @@ func (h *Handlers) UpdateProjectOrder(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, gin.H{"projectIds": projectIDs})
-}
-
-func (h *Handlers) ensureProjectIdentifierAvailable(ctx *gin.Context, identifier string, excludeProjectID string) bool {
-	if identifier == "" {
-		writeError(ctx, http.StatusBadRequest, "项目空间标识不能为空")
-		return false
-	}
-	query := h.dbFor(ctx).Unscoped().Model(&model.Project{}).Where("identifier = ?", identifier)
-	if strings.TrimSpace(excludeProjectID) != "" {
-		query = query.Where("id <> ?", excludeProjectID)
-	}
-	var count int64
-	if err := query.Count(&count).Error; err != nil {
-		writeError(ctx, http.StatusInternalServerError, err.Error())
-		return false
-	}
-	if count > 0 {
-		writeError(ctx, http.StatusBadRequest, "项目空间标识已存在")
-		return false
-	}
-	return true
 }
 
 func (h *Handlers) ListProjectMembers(ctx *gin.Context) {

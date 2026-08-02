@@ -40,6 +40,7 @@ import { NativeSelect } from '@/components/ui/native-select'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
+import { CopyableCodeBlock } from './copyable-code-block'
 import { InteractionCardChart } from './interaction-card-chart'
 import { interactionCardGroupSchema } from './interaction-card-schema'
 import { interactionCardDensity, interactionCardTemplateConfigs, shouldExpandInteractionCard } from './interaction-card-templates'
@@ -279,8 +280,10 @@ function ContentBlock({ block, onAction }: { block: InteractionContentBlock, onA
         </div>
       )
     }
-    if (block.type === 'code' || block.type === 'diff')
-      return <pre className="max-w-full overflow-x-auto rounded-control bg-surface-inset p-2 font-mono text-[10px] leading-4"><code>{block.type === 'code' ? block.content : block.unifiedDiff}</code></pre>
+    if (block.type === 'code' || block.type === 'diff') {
+      const content = block.type === 'code' ? block.content : block.unifiedDiff
+      return <CopyableCodeBlock className="text-[10px]" value={content}><code>{content}</code></CopyableCodeBlock>
+    }
     if (block.type === 'timeline') {
       return (
         <div className="grid gap-2 border-l border-separator-strong pl-2.5">

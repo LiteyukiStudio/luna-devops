@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
 import { AIMarkdown } from './markdown'
+import '@/i18n'
 
 function renderMarkdown(markdown: string) {
   return render(

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -81,7 +82,7 @@ func (h *Handlers) InstallAppTemplate(ctx *gin.Context) {
 	}
 
 	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(&plan.Application).Error; err != nil {
+		if err := createApplicationRecord(tx, &plan.Application); err != nil {
 			return err
 		}
 		if err := tx.Create(&plan.DeploymentTarget).Error; err != nil {
@@ -108,7 +109,10 @@ func (h *Handlers) InstallAppTemplate(ctx *gin.Context) {
 			}
 		}
 		return nil
-	}); err != nil {
+	}); errors.Is(err, errApplicationIdentifierExists) {
+		writeApplicationIdentifierConflict(ctx, "active")
+		return
+	} else if err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -158,13 +162,13 @@ func (h *Handlers) buildTemplateInstallPlan(ctx *gin.Context, user model.User, p
 	if !h.ensureApplicationIdentifierAvailable(ctx, project.ID, applicationIdentifier, "") {
 		return templateInstallPlan{}, false
 	}
-	applicationID := resourceidentifier.ApplicationID(project.Identifier, applicationIdentifier)
+	applicationID := id.New("app")
 	stage := normalizeStage(input.Stage)
 	if err := resourceidentifier.Validate(stage, stageIdentifierMinLength, stageIdentifierMaxLength); err != nil {
 		writeErrorCode(ctx, http.StatusBadRequest, "deployment.stage_invalid", err.Error())
 		return templateInstallPlan{}, false
 	}
-	targetID := resourceidentifier.DeploymentTargetID(project.Identifier, applicationIdentifier, stage)
+	targetID := id.New("dplt")
 
 	rendered, err := appstore.Render(template, input.Values)
 	if err != nil {

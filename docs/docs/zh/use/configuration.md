@@ -102,17 +102,19 @@ Git 凭据创建后仍可修改作用域和项目空间绑定，但使用范围�
 
 项目空间、应用和部署阶段都有创建后不可修改的标识。项目空间和应用标识长度为 2–22 个字符，阶段标识长度为 2–12 个字符；只能使用小写英文字母、数字和短横线，并且必须以字母或数字开头和结尾。显示名称仍然可以修改，也可以使用中文。
 
-新创建的数据使用可读且稳定的 ID 与 Kubernetes 名称：
+平台使用随机、不可变的内部 ID 记录资源归属和历史，Kubernetes 名称则使用人类可读的标识：
 
 | 对象 | 示例 |
 | --- | --- |
-| 项目空间 `payments` | ID `prj_payments`，Namespace `luna-payments` |
-| 项目中的应用 `api` | ID `app_payments_api` |
-| 应用的生产部署 `prod` | ID `dplt_payments_api_prod` |
+| 项目空间 `payments` | ID `prj_7d3f…`，Namespace `luna-payments` |
+| 项目中的应用 `api` | ID `app_92ac…` |
+| 应用的生产部署 `prod` | ID `dplt_c481…` |
 | Deployment / StatefulSet / Service / HPA 基名 | `luna-api-prod` |
 | ConfigMap / Secret | `luna-api-prod-config` / `luna-api-prod-secret` |
 
-平台把 Kubernetes 名称单独保存，不会在显示名称变化时重命名资源。升级前已经存在的项目空间和部署配置继续使用原来的 `ns-*`、`dplt-*` 名称，避免升级时重建工作负载或中断访问。
+平台把 Kubernetes 名称单独保存，不会在显示名称变化时重命名资源。人类可读标识在资源创建后不能修改；删除中或删除失败时仍会占用该标识，只有平台完成清理后才能复用。复用标识会创建新的内部 ID，不会继承旧资源的审计、计费或保留数据。
+
+如果删除时选择保留运行数据，同名 PVC 仍属于旧的内部 ID。新资源不会自动接管它；部署遇到同名保留数据时会明确报告归属冲突，需要先处理旧数据，或使用其他应用标识或部署阶段。
 
 升级时，平台会把历史镜像凭据模板中的 `{projectSlug}`、`{appSlug}`、`{applicationSlug}` 和 `{targetSlug}` 自动迁移为对应的不可变标识变量。已经生成并保存到部署配置、构建记录和镜像记录中的实际镜像地址不会被改写。
 

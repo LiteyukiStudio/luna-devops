@@ -10,12 +10,15 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/resourceidentifier"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var (
-	ErrIdentifierInvalid = errors.New("project identifier is invalid")
-	ErrIdentifierExists  = errors.New("project identifier already exists")
-	ErrInputInvalid      = errors.New("project input is invalid")
+	ErrIdentifierInvalid          = errors.New("project identifier is invalid")
+	ErrIdentifierExists           = errors.New("project identifier already exists")
+	ErrIdentifierDeleteInProgress = errors.New("project with this identifier is being deleted")
+	ErrIdentifierDeleteFailed     = errors.New("project with this identifier failed to delete")
+	ErrInputInvalid               = errors.New("project input is invalid")
 )
 
 type CreateInput struct {
@@ -45,7 +48,7 @@ func (s *Service) Create(ctx context.Context, userID string, input CreateInput) 
 	}
 
 	project := model.Project{
-		ID:                  resourceidentifier.ProjectID(input.Identifier),
+		ID:                  id.New("prj"),
 		Identifier:          input.Identifier,
 		KubernetesNamespace: resourceidentifier.ProjectNamespace(input.Identifier),
 		Name:                input.Name,
@@ -66,19 +69,37 @@ func (s *Service) Create(ctx context.Context, userID string, input CreateInput) 
 	}
 
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var count int64
-		if err := tx.Model(&model.Project{}).Where("identifier = ? and deleted_at is null", project.Identifier).Count(&count).Error; err != nil {
+		var existing model.Project
+		if err := tx.Select("id", "delete_status").Where("identifier = ?", project.Identifier).First(&existing).Error; err == nil {
+			return projectIdentifierConflict(existing.DeleteStatus)
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
-		if count > 0 {
+		result := tx.Clauses(clause.OnConflict{
+			Columns:     []clause.Column{{Name: "identifier"}},
+			TargetWhere: clause.Where{Exprs: []clause.Expression{clause.Expr{SQL: "deleted_at IS NULL"}}},
+			DoNothing:   true,
+		}).Create(&project)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
 			return ErrIdentifierExists
-		}
-		if err := tx.Create(&project).Error; err != nil {
-			return err
 		}
 		return tx.Create(&model.ProjectMember{
 			ID: id.New("mem"), ProjectID: project.ID, UserID: userID, Role: authz.ProjectRoleOwner,
 		}).Error
 	})
 	return project, err
+}
+
+func projectIdentifierConflict(deleteStatus string) error {
+	switch strings.TrimSpace(deleteStatus) {
+	case "deleting":
+		return ErrIdentifierDeleteInProgress
+	case "delete_failed":
+		return ErrIdentifierDeleteFailed
+	default:
+		return ErrIdentifierExists
+	}
 }

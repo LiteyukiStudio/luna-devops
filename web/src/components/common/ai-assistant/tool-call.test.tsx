@@ -50,7 +50,9 @@ describe('ai assistant tool status icon', () => {
     expect(container.querySelector('[data-ai-tool-status-icon="running"]')).not.toBeInTheDocument()
   })
 
-  it('keeps the collapsed row compact and moves result details behind expansion', () => {
+  it('keeps the collapsed row compact and exposes copy controls in expanded details', async () => {
+    const writeText = vi.fn(async () => {})
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
     const { container } = render(
       <AIToolCallCard
         block={{
@@ -96,6 +98,12 @@ describe('ai assistant tool status icon', () => {
     expect(screen.getByText('工具已返回结果')).toBeInTheDocument()
     expect(screen.getByText('耗时')).toBeInTheDocument()
     expect(screen.getByText('128 ms')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '复制 Trace ID' }))
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('717690e2661f8337d53fcd3295591b4b'))
+
+    fireEvent.click(screen.getByRole('button', { name: '复制' }))
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(expect.stringContaining('"status"')))
   })
 
   it('shows a safe failure reason and request id without exposing backend details', async () => {

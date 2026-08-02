@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/resourceidentifier"
 	"gorm.io/gorm"
@@ -28,7 +29,7 @@ func (h *Handlers) ensurePlatformSystemProject(user model.User, contexts ...cont
 	}
 
 	project = model.Project{
-		ID:                  resourceidentifier.ProjectID(platformSystemProjectIdentifier),
+		ID:                  id.New("prj"),
 		Identifier:          platformSystemProjectIdentifier,
 		KubernetesNamespace: resourceidentifier.ProjectNamespace(platformSystemProjectIdentifier),
 		Name:                "Luna Platform",

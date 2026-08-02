@@ -190,7 +190,7 @@ func (h *Handlers) systemComponentApplicationPlan(ctx *gin.Context, user model.U
 	}
 	applicationName := template.Name
 	application := model.Application{
-		ID:                resourceidentifier.ApplicationID(project.Identifier, applicationIdentifier),
+		ID:                id.New("app"),
 		ProjectID:         project.ID,
 		Identifier:        applicationIdentifier,
 		Name:              applicationName,
@@ -210,13 +210,14 @@ func (h *Handlers) systemComponentApplicationPlan(ctx *gin.Context, user model.U
 	}
 
 	clusterSuffix := shortID(cluster.ID)
+	systemStage := "sys-" + clusterSuffix
 	target := model.DeploymentTarget{
-		ID:                           resourceidentifier.DeploymentTargetID(project.Identifier, applicationIdentifier, "system") + "_" + clusterSuffix,
+		ID:                           id.New("dplt"),
 		ProjectID:                    project.ID,
 		ApplicationID:                application.ID,
 		EnvironmentID:                "",
 		Name:                         "cluster-" + shortID(cluster.ID),
-		Stage:                        "system",
+		Stage:                        systemStage,
 		KubernetesName:               resourceidentifier.DeploymentTargetName(applicationIdentifier, "system-"+clusterSuffix),
 		ClusterID:                    cluster.ID,
 		Replicas:                     1,

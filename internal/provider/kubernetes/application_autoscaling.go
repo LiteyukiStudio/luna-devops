@@ -14,11 +14,17 @@ import (
 
 func (c *Client) applyApplicationAutoScaling(ctx context.Context, spec ApplicationResourcesSpec, labels map[string]string) error {
 	if !spec.AutoScalingEnabled {
-		err := c.client.AutoscalingV2().HorizontalPodAutoscalers(spec.Namespace).Delete(ctx, spec.Name, metav1.DeleteOptions{})
+		existing, err := c.client.AutoscalingV2().HorizontalPodAutoscalers(spec.Namespace).Get(ctx, spec.Name, metav1.GetOptions{})
 		if apierrors.IsNotFound(err) {
 			return nil
 		}
-		return err
+		if err != nil {
+			return err
+		}
+		if err := ensureResourceOwnership("HorizontalPodAutoscaler", existing, labels); err != nil {
+			return err
+		}
+		return c.client.AutoscalingV2().HorizontalPodAutoscalers(spec.Namespace).Delete(ctx, spec.Name, metav1.DeleteOptions{})
 	}
 	behavior, err := applicationAutoScalingBehavior(spec)
 	if err != nil {
@@ -44,6 +50,9 @@ func (c *Client) applyApplicationAutoScaling(ctx context.Context, spec Applicati
 		return err
 	}
 	if err != nil {
+		return err
+	}
+	if err := ensureResourceOwnership("HorizontalPodAutoscaler", existing, labels); err != nil {
 		return err
 	}
 	existing.Labels = labels
