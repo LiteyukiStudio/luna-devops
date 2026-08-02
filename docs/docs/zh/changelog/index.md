@@ -6,6 +6,7 @@
 
 ## 最近版本
 
+- **0.0.3-beta.5** · 2026-08-02 · [查看发布说明](https://github.com/LiteyukiStudio/luna-devops/releases/tag/v0.0.3-beta.5)
 - **0.0.3-beta.4** · 2026-07-28 · [查看发布说明](https://github.com/LiteyukiStudio/luna-devops/releases/tag/v0.0.3-beta.4)
 - **0.0.3-beta.3** · 2026-07-27 · [查看发布说明](https://github.com/LiteyukiStudio/luna-devops/releases/tag/v0.0.3-beta.3)
 - **0.0.3-beta.2** · 2026-07-27 · [查看发布说明](https://github.com/LiteyukiStudio/luna-devops/releases/tag/v0.0.3-beta.2)
