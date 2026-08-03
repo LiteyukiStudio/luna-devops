@@ -1,10 +1,11 @@
+import type { AIToolVisibility } from '@luna-devops/ai-interaction-card-contract'
 import type { AIEvent, AIMessagePart, AITimeline, AITimelineItem, AIToolDisplayResult, AIToolStatus, AIUIAction } from '@/api'
 
 export type AIBlock
   = | { id: string, turnId: string, index: number, type: 'thinking', status: string, display: 'summary' | 'progress', text: string }
     | { id: string, turnId: string, index: number, type: 'message', role: 'user' | 'assistant', status: string, text: string, createdAt: string }
     | { id: string, turnId: string, runId: string, index: number, type: 'run_status', status: 'failed' | 'canceled', errorCode?: string }
-    | { id: string, turnId: string, runId: string, index: number, type: 'tool_call', toolCallId: string, operationId: string, titleKey?: string, errorCode?: string, status: AIToolStatus, arguments: Record<string, unknown>, result?: AIToolDisplayResult, uiActions: AIUIAction[], durationMs?: number, traceId?: string, argumentsHash?: string, expectedVersion?: number, mfaPurpose?: string }
+    | { id: string, turnId: string, runId: string, index: number, type: 'tool_call', toolCallId: string, operationId: string, visibility: AIToolVisibility, titleKey?: string, errorCode?: string, status: AIToolStatus, arguments: Record<string, unknown>, result?: AIToolDisplayResult, uiActions: AIUIAction[], durationMs?: number, traceId?: string, argumentsHash?: string, expectedVersion?: number, mfaPurpose?: string }
 
 export interface AIAssistantState {
   blocks: AIBlock[]
@@ -79,6 +80,7 @@ export function stateFromTimeline(timeline: AITimeline): AIAssistantState {
           type: 'tool_call',
           toolCallId: item.toolCall.id,
           operationId: item.toolCall.operationId,
+          visibility: item.toolCall.visibility ?? 'normal',
           titleKey: item.toolCall.titleKey,
           errorCode: item.toolCall.errorCode,
           status: item.toolCall.status ?? (item.status === 'completed' ? 'succeeded' : 'running'),
@@ -226,6 +228,7 @@ function blockFromTimelineItem(item: AITimelineItem, turnId: string, runId: stri
     type: 'tool_call',
     toolCallId: item.toolCall.id,
     operationId: item.toolCall.operationId,
+    visibility: item.toolCall.visibility ?? 'normal',
     titleKey: item.toolCall.titleKey,
     errorCode: item.toolCall.errorCode,
     status: item.toolCall.status ?? (item.status === 'completed' ? 'succeeded' : item.status === 'failed' ? 'failed' : 'running'),
@@ -329,6 +332,9 @@ function normalizeToolResult(value: unknown): AIToolDisplayResult | undefined {
     ...(typeof result.requestId === 'string' ? { requestId: result.requestId } : {}),
     ...(typeof result.errorCode === 'string' ? { errorCode: result.errorCode } : {}),
     ...(typeof result.errorMessage === 'string' ? { errorMessage: result.errorMessage } : {}),
+    ...(typeof result.generationId === 'string' ? { generationId: result.generationId } : {}),
+    ...(typeof result.attempt === 'number' ? { attempt: result.attempt } : {}),
+    ...(typeof result.maxAttempts === 'number' ? { maxAttempts: result.maxAttempts } : {}),
     ...('data' in result ? { data: result.data } : {}),
     ...(Array.isArray(result.issues)
       ? {
@@ -340,6 +346,8 @@ function normalizeToolResult(value: unknown): AIToolDisplayResult | undefined {
                 code: typeof candidate.code === 'string' ? candidate.code : 'invalid',
                 path: typeof candidate.path === 'string' ? candidate.path : '',
                 message: typeof candidate.message === 'string' ? candidate.message : '',
+                ...(typeof candidate.expected === 'string' ? { expected: candidate.expected } : {}),
+                ...(typeof candidate.received === 'string' ? { received: candidate.received } : {}),
               }
             }),
         }

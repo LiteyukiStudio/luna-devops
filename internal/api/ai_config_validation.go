@@ -43,6 +43,23 @@ func (h *Handlers) validateAIConfigValues(values map[string]string) error {
 	if configBool(current["ai.web.proxy_enabled"]) && current["ai.web.proxy_pool"] != "true" {
 		return fmt.Errorf("ai.web.proxy_pool is required when the proxy pool is enabled")
 	}
+	for _, key := range []string{
+		"ai.observability.prometheus_url",
+		"ai.observability.loki_url",
+		"ai.observability.tempo_url",
+	} {
+		raw := strings.TrimSpace(current[key])
+		if raw == "" {
+			if configBool(current["ai.observability.enabled"]) {
+				return fmt.Errorf("%s is required when Agent observability is enabled", key)
+			}
+			continue
+		}
+		parsed, err := url.Parse(raw)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.User != nil || parsed.Hostname() == "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+			return fmt.Errorf("%s must be an HTTP(S) URL without user info, query, or fragment", key)
+		}
+	}
 	for key, bounds := range map[string][2]int{
 		"ai.runtime.provider_timeout_seconds": {1, 120},
 		"ai.runtime.run_timeout_seconds":      {30, 900},

@@ -121,11 +121,14 @@ export class OpenAICompatibleProvider implements ModelProvider {
     const result = {
       text: contentText(message?.content),
       reasoningSummary: textValue(message?.reasoning_summary),
-      toolCalls: (message?.tool_calls ?? []).map(call => ({
-        ...(call.id ? { id: call.id } : {}),
-        operationId: call.function?.name ?? "",
-        arguments: parseArguments(call.function?.arguments ?? ""),
-      })).filter(call => call.operationId),
+      toolCalls: (message?.tool_calls ?? []).map((call) => {
+        const parsed = parseArguments(call.function?.arguments ?? "")
+        return {
+          ...(call.id ? { id: call.id } : {}),
+          operationId: call.function?.name ?? "",
+          ...parsed,
+        }
+      }).filter(call => call.operationId),
       usage: { inputTokens: body.usage?.prompt_tokens ?? 0, outputTokens: body.usage?.completion_tokens ?? 0 },
       requestId: response.headers.get("x-request-id") ?? undefined,
     }
@@ -295,11 +298,11 @@ function contentText(value: unknown): string {
   }).join("")
 }
 
-function parseArguments(value: string): Record<string, unknown> {
-  if (!value.trim()) return {}
+function parseArguments(value: string): Pick<ModelToolCall, "arguments" | "argumentError"> {
+  if (!value.trim()) return { arguments: {} }
   try {
     const parsed = JSON.parse(value) as unknown
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed as Record<string, unknown>
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return { arguments: parsed as Record<string, unknown> }
   } catch {
     const repaired = trimTrailingObjectClosures(value)
     if (repaired) {
@@ -310,7 +313,7 @@ function parseArguments(value: string): Record<string, unknown> {
             "arguments.original_length": value.length,
             "arguments.repaired_length": repaired.length,
           })
-          return parsed as Record<string, unknown>
+          return { arguments: parsed as Record<string, unknown> }
         }
       } catch {
         // Fall through to the stable provider error below.
@@ -324,9 +327,21 @@ function parseArguments(value: string): Record<string, unknown> {
       "arguments.open_braces": [...value].filter(character => character === "{").length,
       "arguments.close_braces": [...value].filter(character => character === "}").length,
     })
-    throw new Error("ai.provider_invalid_tool_arguments")
+    return {
+      arguments: {},
+      argumentError: {
+        code: "invalid_json",
+        message: "工具参数不是完整的 JSON 对象。",
+      },
+    }
   }
-  throw new Error("ai.provider_invalid_tool_arguments")
+  return {
+    arguments: {},
+    argumentError: {
+      code: "invalid_json",
+      message: "工具参数必须是 JSON 对象。",
+    },
+  }
 }
 
 function trimTrailingObjectClosures(value: string): string | undefined {
@@ -370,11 +385,14 @@ function trimTrailingObjectClosures(value: string): string | undefined {
 }
 
 function parseToolCalls(fragments: Map<number, { id?: string, operationId: string, arguments: string }>): ModelToolCall[] {
-  return [...fragments.entries()].sort(([a], [b]) => a - b).map(([, call]) => ({
-    ...(call.id ? { id: call.id } : {}),
-    operationId: call.operationId,
-    arguments: parseArguments(call.arguments),
-  })).filter(call => call.operationId)
+  return [...fragments.entries()].sort(([a], [b]) => a - b).map(([, call]) => {
+    const parsed = parseArguments(call.arguments)
+    return {
+      ...(call.id ? { id: call.id } : {}),
+      operationId: call.operationId,
+      ...parsed,
+    }
+  }).filter(call => call.operationId)
 }
 
 function providerMessages(messages: ModelRequest["messages"]) {

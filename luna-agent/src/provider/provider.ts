@@ -21,7 +21,16 @@ export type ModelEvent =
   | { type: "message_delta", delta: string }
   | { type: "tool_call_delta" }
   | { type: "completed", usage: { inputTokens: number, outputTokens: number }, toolCalls?: ModelToolCall[] }
-export type ModelToolCall = { id?: string, operationId: string, arguments: Record<string, unknown> }
+export type ModelToolArgumentError = {
+  code: "invalid_json"
+  message: string
+}
+export type ModelToolCall = {
+  id?: string
+  operationId: string
+  arguments: Record<string, unknown>
+  argumentError?: ModelToolArgumentError
+}
 export type ModelResponse = { text: string, reasoningSummary?: string, toolCalls?: ModelToolCall[], usage: { inputTokens: number, outputTokens: number } }
 export type ModelCapabilities = { streaming: boolean, toolCalling: boolean, structuredOutput: boolean }
 

@@ -112,4 +112,27 @@ describe('ai assistant options', () => {
     expect(screen.queryByRole('button', { name: '打开外站' })).not.toBeInTheDocument()
     expect(screen.queryByRole('region', { name: i18next.t('aiAssistant.options.suggested') })).not.toBeInTheDocument()
   })
+
+  it('renders a consistent icon group in fixed visual slots', () => {
+    const visualActions = actions.slice(0, 2).map((action, index) => ({
+      ...action,
+      visual: { type: 'icon' as const, value: index === 0 ? 'folder-kanban' as const : 'search' as const },
+    }))
+    const { container } = render(<AIOptionsBar actions={visualActions} sourceKey="agent:visual" onAction={vi.fn()} />)
+
+    expect(container.querySelectorAll('[data-ai-option-visual]')).toHaveLength(2)
+    expect(container.querySelectorAll('[data-ai-option-visual] svg')).toHaveLength(2)
+  })
+
+  it('fails closed on partial or mixed visual groups without affecting option actions', () => {
+    const mixedActions = [
+      { ...actions[0], visual: { type: 'emoji' as const, value: '📦' } },
+      { ...actions[1], visual: { type: 'icon' as const, value: 'search' as const } },
+      actions[2],
+    ] satisfies AIUIAction[]
+    const { container } = render(<AIOptionsBar actions={mixedActions} sourceKey="agent:mixed-visual" onAction={vi.fn()} />)
+
+    expect(screen.getByRole('button', { name: /查看项目空间/ })).toBeInTheDocument()
+    expect(container.querySelector('[data-ai-option-visual]')).not.toBeInTheDocument()
+  })
 })

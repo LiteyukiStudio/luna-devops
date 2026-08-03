@@ -1,7 +1,6 @@
 import type { AIUIAction } from '@/api'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import i18next from '@/i18n'
 import { AIInteractionCards } from './interaction-cards'
 
 const catalogCard = {
@@ -193,7 +192,7 @@ describe('ai interaction cards', () => {
     expect(screen.getByRole('alert')).toBeInTheDocument()
   })
 
-  it('rejects a display-only candidate list when the workflow is waiting for a selection', () => {
+  it('renders an Agent-validated card without maintaining a second browser schema', () => {
     render(
       <AIInteractionCards
         arguments={{
@@ -219,8 +218,8 @@ describe('ai interaction cards', () => {
       />,
     )
 
-    expect(screen.getByRole('alert')).toHaveTextContent(i18next.t('aiAssistant.cards.invalid'))
-    expect(screen.queryByText('PostgreSQL')).not.toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.getByText('应用模板市场')).toBeInTheDocument()
   })
 
   it('submits a candidate selected through an interactive form card', async () => {

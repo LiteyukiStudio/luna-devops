@@ -123,6 +123,29 @@ describe("OpenAICompatibleProvider streaming", () => {
     }])
   })
 
+  it("returns malformed tool arguments to the executor as a recoverable validation result", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      choices: [{ message: { tool_calls: [{ id: "card_call", function: { name: "create_interaction_cards", arguments: "{\"schemaVersion\":1" } }] } }],
+      usage: { prompt_tokens: 4, completion_tokens: 2 },
+    }), { status: 200, headers: { "content-type": "application/json" } })))
+    const provider = new OpenAICompatibleProvider({ baseUrl: "https://provider.example/v1", apiKey: "secret", model: "model-a", timeoutMs: 5000 })
+
+    const result = await provider.complete({
+      messages: [{ role: "user", content: "create a card" }],
+      maxOutputTokens: 100,
+    })
+
+    expect(result.toolCalls).toEqual([{
+      id: "card_call",
+      operationId: "create_interaction_cards",
+      arguments: {},
+      argumentError: {
+        code: "invalid_json",
+        message: "工具参数不是完整的 JSON 对象。",
+      },
+    }])
+  })
+
   it("serializes assistant tool calls and correlated tool results for the next model step", async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
       choices: [{ message: { content: "完成" } }],

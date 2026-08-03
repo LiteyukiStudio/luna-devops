@@ -52,6 +52,37 @@ describe("create options tool", () => {
     }).success).toBe(false)
   })
 
+  it("accepts one consistent visual language and preserves it in UI actions", () => {
+    const input = createOptionsInput.parse({
+      title: "Next",
+      options: [
+        { id: "deploy", label: "Deploy", visual: { type: "icon", value: "rocket" }, action: { type: "send_message", message: "Deploy the app" } },
+        { id: "inspect", label: "Inspect", visual: { type: "icon", value: "search" }, action: { type: "send_message", message: "Inspect the app" } },
+      ],
+    })
+
+    expect(optionUIActions(input).map(option => option.visual)).toEqual([
+      { type: "icon", value: "rocket" },
+      { type: "icon", value: "search" },
+    ])
+  })
+
+  it("rejects partial, mixed, unknown, and unsafe option visuals", () => {
+    const base = (visuals: unknown[]) => ({
+      title: "Next",
+      options: visuals.map((visual, index) => ({
+        id: `option-${index}`,
+        label: `Option ${index}`,
+        ...(visual === undefined ? {} : { visual }),
+        action: { type: "send_message", message: `Choose ${index}` },
+      })),
+    })
+    expect(createOptionsInput.safeParse(base([{ type: "icon", value: "rocket" }, undefined])).success).toBe(false)
+    expect(createOptionsInput.safeParse(base([{ type: "icon", value: "rocket" }, { type: "emoji", value: "🔍" }])).success).toBe(false)
+    expect(createOptionsInput.safeParse(base([{ type: "icon", value: "not-a-project-icon" }, { type: "icon", value: "rocket" }])).success).toBe(false)
+    expect(createOptionsInput.safeParse(base([{ type: "img", value: "http://example.com/a.png" }, { type: "img", value: "https://example.com/b.png" }])).success).toBe(false)
+  })
+
   it("creates a one-shot automatic action only for a registered frontend route", () => {
     const input = navigateToRouteInput.parse({ routeName: "project.workspace", params: { projectId: "prj_1" } })
     expect(automaticRouteUIAction(input)).toEqual({

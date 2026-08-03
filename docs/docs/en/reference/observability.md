@@ -48,6 +48,18 @@ Set the switch back to `false` and restart the Agent after diagnosis. Restrict T
 
 ## Import the Agent / LLM dashboard
 
+### Configure Luna's embedded Agent observability
+
+To use Agent observability in the Luna DevOps Operations page, a platform administrator must open **Global settings → AI Assistant**, expand **Advanced AI settings**, enter the Prometheus, Loki, and Tempo query root URLs, and enable **Agent observability**. Luna API uses these endpoints for queries; they are separate from the `OTEL_EXPORTER_OTLP_ENDPOINT` used for export.
+
+- Prometheus provides Agent metrics, for example `http://prometheus:9090`.
+- Loki provides structured logs, for example `http://loki:3100`.
+- Tempo provides trace search and retrieval, for example `http://tempo:3200`.
+- Set the Loki or Tempo tenant ID when multi-tenancy is enabled.
+- Set a per-source bearer token when required. Tokens are encrypted and never displayed again.
+
+All three query URLs are required before Agent observability can be enabled. Turning the switch off stops the Operations page from querying these sources while retaining the saved URLs, tenant IDs, and tokens. Keep the data sources reachable from Luna API and do not expose them directly to browsers.
+
 The repository provides two Grafana dashboards that can be imported directly:
 
 - `grafana/dashboards/luna-devops-overview.json` covers platform services, API, Worker, delivery workflows, Agent, and database health;

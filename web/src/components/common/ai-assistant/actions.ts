@@ -1,6 +1,7 @@
 import type { QueryClient } from '@tanstack/react-query'
 import type { NavigateFunction } from 'react-router-dom'
 import type { AIUIAction } from '@/api'
+import { aiOptionIconNames } from '@luna-devops/ai-interaction-card-contract'
 import { z } from 'zod'
 import i18next from '@/i18n'
 import { aiInternalRouteNames, buildAIInternalRoute } from './internal-routes'
@@ -33,6 +34,11 @@ const requestToolSchema = z.object({
   arguments: z.record(z.string(), z.unknown()).optional(),
   message: z.string().trim().min(1).max(2000),
 })
+const optionVisualSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('emoji'), value: z.string().trim().min(1).max(16) }),
+  z.object({ type: z.literal('icon'), value: z.enum(aiOptionIconNames) }),
+  z.object({ type: z.literal('img'), value: z.url().max(2048).refine(value => value.startsWith('https://')) }),
+])
 const optionPresentationSchema = {
   version: z.literal(1),
   id: z.string().regex(/^[\w-]{1,40}$/).optional(),
@@ -41,6 +47,7 @@ const optionPresentationSchema = {
   label: z.string().trim().min(1).max(80).optional(),
   description: z.string().trim().max(180).optional(),
   tone: z.enum(['default', 'primary', 'danger']).optional(),
+  visual: optionVisualSchema.optional(),
 }
 const optionActionSchema = z.discriminatedUnion('type', [
   z.object({ ...optionPresentationSchema, type: z.literal('navigate'), payload: routeSchema }),

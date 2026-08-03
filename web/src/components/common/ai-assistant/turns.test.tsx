@@ -35,6 +35,7 @@ const blocks: AIBlock[] = [
     type: 'tool_call',
     toolCallId: 'tool-call-1',
     operationId: 'listProjects',
+    visibility: 'normal',
     status: 'succeeded',
     arguments: {},
     result: { summaryKey: 'ai.tool.result.completed' },
@@ -178,6 +179,7 @@ describe('ai assistant turn topology', () => {
               type: 'tool_call',
               toolCallId: 'rename-tool-call',
               operationId: 'rename_conversation',
+              visibility: 'internal',
               titleKey: 'aiAssistant.tools.renameConversation',
               status: 'succeeded',
               arguments: { title: '新的会话标题' },
@@ -225,6 +227,7 @@ describe('ai assistant turn topology', () => {
               type: 'tool_call',
               toolCallId: 'options-tool-call',
               operationId: 'create_options',
+              visibility: 'internal',
               status: 'succeeded',
               arguments: {},
               uiActions: [{
@@ -254,6 +257,42 @@ describe('ai assistant turn topology', () => {
     expect(container.querySelector('[data-ai-reply]')).not.toBeInTheDocument()
   })
 
+  it('shows internal maintenance tools only when an administrator enables debug mode', () => {
+    render(
+      <MemoryRouter>
+        <AIAssistantTimeline
+          showInternalTools
+          blocks={[{
+            id: 'rename-tool-debug',
+            turnId: 'turn-hidden-tool',
+            runId: 'run-hidden-tool',
+            index: 0,
+            type: 'tool_call',
+            toolCallId: 'rename-tool-debug-call',
+            operationId: 'rename_conversation',
+            visibility: 'internal',
+            titleKey: 'aiAssistant.tools.renameConversation',
+            status: 'succeeded',
+            arguments: { title: '新的会话标题' },
+            result: { summaryKey: 'aiAssistant.tools.renameConversationCompleted' },
+            uiActions: [],
+          }]}
+          error={null}
+          generating={false}
+          loading={false}
+          onAction={vi.fn(async () => true)}
+          onApproval={vi.fn(async () => {})}
+          onMFA={vi.fn(async () => {})}
+          onResend={vi.fn()}
+          onRetry={vi.fn()}
+        />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByText('更新会话名称')).toBeInTheDocument()
+    expect(screen.getByText('内部工具')).toBeInTheDocument()
+  })
+
   it('renders an automatic route switch as a compact repeatable navigation event', async () => {
     const onAction = vi.fn(async () => true)
     const { container } = render(
@@ -278,6 +317,7 @@ describe('ai assistant turn topology', () => {
               type: 'tool_call',
               toolCallId: 'navigation-tool-call',
               operationId: 'navigate_to_route',
+              visibility: 'normal',
               status: 'succeeded',
               arguments: { routeName: 'billing', params: {}, query: {} },
               uiActions: [{

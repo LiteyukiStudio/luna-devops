@@ -10,6 +10,9 @@ func TestAIConfigDefinitionsCoverSpecificationCatalog(t *testing.T) {
 		"ai.assistant.enabled", "ai.provider.base_url", "ai.provider.api_key", "ai.provider.default_model",
 		"ai.web.proxy_enabled", "ai.web.proxy_pool",
 		"ai.runtime.provider_timeout_seconds", "ai.runtime.run_timeout_seconds", "ai.runtime.agent_concurrent_runs",
+		"ai.observability.enabled", "ai.observability.prometheus_url", "ai.observability.prometheus_token",
+		"ai.observability.loki_url", "ai.observability.loki_tenant_id", "ai.observability.loki_token",
+		"ai.observability.tempo_url", "ai.observability.tempo_tenant_id", "ai.observability.tempo_token",
 		"ai.access.mode", "ai.access.user_ids", "ai.access.project_ids",
 		"ai.quota.user_concurrent_runs", "ai.quota.user_daily_tokens", "ai.quota.project_concurrent_runs",
 		"ai.quota.run_max_tool_calls", "ai.quota.platform_daily_cost_soft", "ai.quota.platform_daily_cost_hard",
@@ -102,5 +105,24 @@ func TestAIConfigRequiresProxyPoolWhenEnabled(t *testing.T) {
 		"ai.web.proxy_pool":    "true",
 	}); err != nil {
 		t.Fatalf("configured proxy pool rejected: %v", err)
+	}
+}
+
+func TestAIConfigRequiresAllObservabilitySourcesWhenEnabled(t *testing.T) {
+	defaults := make(map[string]string, len(configDefinitions))
+	for _, definition := range configDefinitions {
+		defaults[definition.Key] = definition.Default
+	}
+	h := &Handlers{configs: &configCache{values: defaults}}
+	if err := h.validateAIConfigValues(map[string]string{"ai.observability.enabled": "true"}); err == nil {
+		t.Fatal("Agent observability without query sources was accepted")
+	}
+	if err := h.validateAIConfigValues(map[string]string{
+		"ai.observability.enabled":        "true",
+		"ai.observability.prometheus_url": "http://prometheus:9090",
+		"ai.observability.loki_url":       "http://loki:3100",
+		"ai.observability.tempo_url":      "http://tempo:3200",
+	}); err != nil {
+		t.Fatalf("complete Agent observability configuration rejected: %v", err)
 	}
 }

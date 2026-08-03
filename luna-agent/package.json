@@ -21,6 +21,7 @@
     "@fastify/otel": "^0.20.1",
     "@langchain/langgraph": "^1.4.8",
     "@langchain/langgraph-checkpoint-postgres": "^1.0.4",
+    "@luna-devops/ai-interaction-card-contract": "file:../packages/ai-interaction-card-contract",
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/api-logs": "^0.221.0",
     "@opentelemetry/exporter-logs-otlp-http": "^0.221.0",

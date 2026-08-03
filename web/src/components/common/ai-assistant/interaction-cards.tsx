@@ -42,7 +42,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import { CopyableCodeBlock } from './copyable-code-block'
 import { InteractionCardChart } from './interaction-card-chart'
-import { interactionCardGroupSchema } from './interaction-card-schema'
+import { readValidatedInteractionCardGroup } from './interaction-card-schema'
 import { interactionCardDensity, interactionCardTemplateConfigs, shouldExpandInteractionCard } from './interaction-card-templates'
 import { LiveProgressBlock } from './live-progress-block'
 import { AIInlineMarkdown, AIMarkdown } from './markdown'
@@ -50,7 +50,7 @@ import { AIInlineMarkdown, AIMarkdown } from './markdown'
 const compactActionClassName = 'h-auto min-h-7 max-w-full gap-1.5 whitespace-normal px-2.5 py-1 !text-[11px] leading-4 [&_svg]:size-3.5'
 
 interface AIInteractionCardsProps {
-  arguments: Record<string, unknown>
+  arguments: unknown
   onAction: (action: AIUIAction) => Promise<boolean>
 }
 
@@ -67,15 +67,14 @@ const statusClasses = {
 
 export function AIInteractionCards({ arguments: rawArguments, onAction }: AIInteractionCardsProps) {
   const { t } = useTranslation()
-  const parsed = useMemo(() => interactionCardGroupSchema.safeParse(rawArguments), [rawArguments])
-  if (!parsed.success) {
+  const group = useMemo(() => readValidatedInteractionCardGroup(rawArguments), [rawArguments])
+  if (!group) {
     return (
       <div className="rounded-container bg-danger-subtle px-3 py-2 text-xs text-danger" role="alert">
         {t('aiAssistant.cards.invalid')}
       </div>
     )
   }
-  const group = parsed.data
   const density = interactionCardDensity(group)
   const templateConfig = interactionCardTemplateConfigs[group.template]
   return (

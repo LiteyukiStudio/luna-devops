@@ -13,6 +13,18 @@ const validValues = {
   providerTimeoutSeconds: 30,
   runTimeoutSeconds: 300,
   agentConcurrentRuns: 2,
+  observabilityEnabled: false,
+  prometheusUrl: '',
+  prometheusToken: '',
+  prometheusTokenConfigured: false,
+  lokiUrl: '',
+  lokiTenantId: '',
+  lokiToken: '',
+  lokiTokenConfigured: false,
+  tempoUrl: '',
+  tempoTenantId: '',
+  tempoToken: '',
+  tempoTokenConfigured: false,
 }
 
 describe('aI assistant admin settings', () => {
@@ -31,11 +43,28 @@ describe('aI assistant admin settings', () => {
       'ai.runtime.provider_timeout_seconds': 30,
       'ai.runtime.run_timeout_seconds': 300,
       'ai.runtime.agent_concurrent_runs': 2,
+      'ai.observability.enabled': false,
+      'ai.observability.prometheus_url': '',
+      'ai.observability.loki_url': '',
+      'ai.observability.loki_tenant_id': '',
+      'ai.observability.tempo_url': '',
+      'ai.observability.tempo_tenant_id': '',
     })
   })
 
   it('requires all three model settings before enabling the assistant', () => {
     expect(aiSettingsSchema.safeParse({ ...validValues, enabled: true, apiKeyConfigured: false }).success).toBe(false)
+  })
+
+  it('requires all three query URLs before enabling Agent observability', () => {
+    expect(aiSettingsSchema.safeParse({ ...validValues, observabilityEnabled: true }).success).toBe(false)
+    expect(aiSettingsSchema.safeParse({
+      ...validValues,
+      observabilityEnabled: true,
+      prometheusUrl: 'http://prometheus:9090',
+      lokiUrl: 'http://loki:3100',
+      tempoUrl: 'http://tempo:3200',
+    }).success).toBe(true)
   })
 
   it('rejects unsafe runtime settings', () => {

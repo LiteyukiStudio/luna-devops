@@ -1,17 +1,18 @@
 # 构建前端静态资源，供 API 镜像在 embed_web 模式下内嵌 SPA。
 FROM node:25-alpine AS web-build
 
-WORKDIR /src/web
+WORKDIR /src
 
 # 固定 pnpm 版本，与 web/package.json 声明保持一致。
 RUN npm install -g pnpm@11.1.0
 
 # 先复制依赖清单以复用 Docker layer cache，再复制完整前端源码。
-COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
-RUN pnpm install --frozen-lockfile
+COPY packages/ai-interaction-card-contract ./packages/ai-interaction-card-contract
+COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./web/
+RUN pnpm --dir web install --frozen-lockfile
 
-COPY web/ ./
-RUN pnpm build
+COPY web/ ./web/
+RUN pnpm --dir web build
 
 # 准备 Go 源码和依赖缓存，后续普通构建与内嵌前端构建共用该阶段。
 FROM golang:1.26.5-alpine AS source

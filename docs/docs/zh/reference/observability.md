@@ -48,6 +48,18 @@ AI_OBSERVABILITY_CAPTURE_CONTENT=true
 
 ## 导入 Agent / LLM 仪表盘
 
+### 配置 Luna 内嵌 Agent 观测
+
+如需在 Luna DevOps 运营面板中使用 Agent 观测，平台管理员还需要进入“全局设置 → AI 助手”，展开“AI 高级设置”，分别填写 Prometheus、Loki 和 Tempo 的查询根地址，然后开启“启用 Agent 可观测”。这些地址由 Luna API 访问，与用于上报的 `OTEL_EXPORTER_OTLP_ENDPOINT` 不是同一配置。
+
+- Prometheus 地址用于查询 Agent 指标，例如 `http://prometheus:9090`；
+- Loki 地址用于查询结构化日志，例如 `http://loki:3100`；
+- Tempo 地址用于搜索和读取 Trace，例如 `http://tempo:3200`；
+- Loki 或 Tempo 启用多租户时填写对应 Tenant ID；
+- 数据源需要 Bearer Token 时填入各自令牌，令牌会加密保存且不会回显。
+
+三个查询地址全部配置后才能开启 Agent 可观测。关闭开关会停止运营面板读取这些数据，但保留已保存的地址、Tenant ID 和令牌。数据源应只允许 Luna API 所在网络访问，不要直接暴露给浏览器。
+
 仓库提供两套可直接导入 Grafana 的仪表盘：
 
 - `grafana/dashboards/luna-devops-overview.json`：平台服务、API、Worker、交付链路、Agent 和数据库的全局概览；

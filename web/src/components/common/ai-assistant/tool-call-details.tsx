@@ -143,6 +143,22 @@ export function AIToolCallDetails({ block, errorCode, summary }: { block: ToolCa
                         <li key={`${issue.path}-${issue.code}-${issue.message}`} className="grid gap-0.5 text-[11px]">
                           <code className="break-all font-semibold text-danger">{issue.path || t('aiAssistant.rootField')}</code>
                           <span className="break-words text-muted-foreground">{issue.message}</span>
+                          {issue.expected && (
+                            <span className="break-words text-muted-foreground">
+                              {t('aiAssistant.expectedValue')}
+                              :
+                              {' '}
+                              <code>{issue.expected}</code>
+                            </span>
+                          )}
+                          {issue.received && (
+                            <span className="break-words text-muted-foreground">
+                              {t('aiAssistant.receivedValue')}
+                              :
+                              {' '}
+                              <code>{issue.received}</code>
+                            </span>
+                          )}
                         </li>
                       ))}
                     </ul>

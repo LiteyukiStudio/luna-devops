@@ -30,16 +30,15 @@ interface AIAssistantTimelineProps {
   onResend: (message: string) => void
   onRetry: () => void
   resendDisabled?: boolean
+  showInternalTools?: boolean
   topContent?: ReactNode
 }
 
-const HIDDEN_TOOL_OPERATION_IDS = new Set(['create_options', 'rename_conversation'])
-
-function isVisibleResponseBlock(block: AIBlock): boolean {
-  return block.type !== 'tool_call' || !HIDDEN_TOOL_OPERATION_IDS.has(block.operationId)
+function isVisibleResponseBlock(block: AIBlock, showInternalTools: boolean): boolean {
+  return block.type !== 'tool_call' || block.visibility !== 'internal' || showInternalTools
 }
 
-export function AIAssistantTimeline({ bottomInset = false, blocks, error, generating, loading, onAction, onApproval, onMFA, onResend, onRetry, resendDisabled, topContent }: AIAssistantTimelineProps) {
+export function AIAssistantTimeline({ bottomInset = false, blocks, error, generating, loading, onAction, onApproval, onMFA, onResend, onRetry, resendDisabled, showInternalTools = false, topContent }: AIAssistantTimelineProps) {
   const { t } = useTranslation()
   const viewportRef = useRef<HTMLDivElement>(null)
   const showTypingIndicator = generating && !blocks.some(block => block.status === 'streaming')
@@ -99,6 +98,7 @@ export function AIAssistantTimeline({ bottomInset = false, blocks, error, genera
                   onMFA={onMFA}
                   onResend={onResend}
                   resendDisabled={resendDisabled}
+                  showInternalTools={showInternalTools}
                 />
               ))}
               {turns.length === 0 && showTypingIndicator && <AssistantReply generating responseBlocks={[]} onAction={onAction} onApproval={onApproval} onMFA={onMFA} />}
@@ -108,7 +108,7 @@ export function AIAssistantTimeline({ bottomInset = false, blocks, error, genera
   )
 }
 
-function ConversationTurn({ generating, responseBlocks, userMessage, onAction, onApproval, onMFA, onResend, resendDisabled }: {
+function ConversationTurn({ generating, responseBlocks, userMessage, onAction, onApproval, onMFA, onResend, resendDisabled, showInternalTools }: {
   generating: boolean
   responseBlocks: AIBlock[]
   userMessage?: MessageBlock
@@ -117,8 +117,9 @@ function ConversationTurn({ generating, responseBlocks, userMessage, onAction, o
   onMFA: (block: ToolCallBlock, code: string) => Promise<void>
   onResend: (message: string) => void
   resendDisabled?: boolean
+  showInternalTools?: boolean
 }) {
-  const visibleResponseBlocks = responseBlocks.filter(isVisibleResponseBlock)
+  const visibleResponseBlocks = responseBlocks.filter(block => isVisibleResponseBlock(block, showInternalTools ?? false))
   return (
     <article className="grid min-w-0 gap-2.5" data-ai-turn>
       {userMessage && (
@@ -200,7 +201,7 @@ function ResponseBlock({ block, onAction, onApproval, onMFA }: { block: AIBlock,
   if (block.type === 'thinking')
     return <ThinkingBlock block={block} />
   if (block.type === 'tool_call' && block.operationId === 'prepare_interaction_cards' && block.status === 'running')
-    return <AIInteractionCardPlaceholder arguments={block.arguments} />
+    return <AIInteractionCardPlaceholder arguments={block.arguments} result={block.result} />
   if (block.type === 'tool_call' && block.operationId === 'create_interaction_cards' && block.status === 'succeeded')
     return <AIInteractionCards arguments={block.arguments} onAction={onAction} />
   if (block.type === 'tool_call' && block.operationId === 'navigate_to_route')

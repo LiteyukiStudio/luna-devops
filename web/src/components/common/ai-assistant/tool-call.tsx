@@ -43,6 +43,11 @@ export function AIToolCallCard({ block, onAction, onApproval, onMFA }: { block: 
     <details className="group overflow-hidden rounded-container bg-surface" open={block.status === 'awaiting_approval' || block.status === 'awaiting_mfa' ? true : undefined}>
       <summary className="flex min-h-9 cursor-pointer list-none items-center gap-1.5 px-2 py-1 outline-none hover:bg-surface-inset focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&::-webkit-details-marker]:hidden" data-ai-tool-summary>
         <strong className="min-w-0 flex-1 truncate text-xs font-medium">{title}</strong>
+        {block.visibility === 'internal' && (
+          <Badge className="border-transparent bg-warning-subtle px-1.5 py-0 text-[10px] leading-4 text-warning">
+            {t('aiAssistant.toolDebug.internal')}
+          </Badge>
+        )}
         <Badge className={cn('gap-1 border-transparent px-1.5 py-0 text-[10px] leading-4', statusTone[block.status])}>
           <ToolStatusIcon status={block.status} />
           <span>{t(`aiAssistant.status.${block.status}`)}</span>

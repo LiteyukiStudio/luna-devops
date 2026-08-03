@@ -13,6 +13,7 @@ function toolBlock(status: ToolCallBlock['status']): ToolCallBlock {
     type: 'tool_call',
     toolCallId: 'tool-call-1',
     operationId: 'listApplications',
+    visibility: 'normal',
     status,
     arguments: {},
     uiActions: [],

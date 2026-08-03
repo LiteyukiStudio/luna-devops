@@ -1,4 +1,5 @@
 import { z } from "zod"
+import type { InteractionCardGroup } from "@luna-devops/ai-interaction-card-contract"
 import type { ModelToolDefinition } from "../provider/provider.js"
 import {
   compileBusinessCardTemplate,
@@ -523,7 +524,8 @@ export const createInteractionCardsInput = z.object({
     context.addIssue({ code: "custom", message: "Card group exceeds 96 KiB." })
 })
 
-export type CreateInteractionCardsInput = z.infer<typeof createInteractionCardsInput>
+export type CreateInteractionCardsInput = InteractionCardGroup
+
 
 const createInteractionCardsRequestInput = z.union([
   createBusinessCardTemplateInput,
@@ -532,12 +534,10 @@ const createInteractionCardsRequestInput = z.union([
 
 export const prepareInteractionCardsInput = z.object({
   schemaVersion: z.literal(1),
-  generationId: identifier,
   title: shortText,
   description,
-})
+}).strict()
 
-export type PrepareInteractionCardsInput = z.infer<typeof prepareInteractionCardsInput>
 
 export function normalizeInteractionCardsInput(raw: unknown): unknown {
   if (!raw || typeof raw !== "object" || Array.isArray(raw))
@@ -589,14 +589,13 @@ export const createInteractionCardsTool: ModelToolDefinition = {
 
 export const prepareInteractionCardsTool: ModelToolDefinition = {
   operationId: "prepare_interaction_cards",
-  description: "在开始组织复杂交互卡片前显示准备动画。只有已经取得生成卡片所需的可信工具结果，并且下一步确定要生成 create_interaction_cards 时才调用。必须单独调用本工具，等待 accepted 后再调用 create_interaction_cards；两次调用必须使用相同的 generationId。title 和 description 应简短说明正在组织什么内容，不得声称卡片或业务操作已经完成。",
+  description: "在开始组织复杂交互卡片前显示准备动画。只有已经取得生成卡片所需的可信工具结果，并且下一步确定要生成 create_interaction_cards 时才调用。必须单独调用本工具并等待 accepted；Agent 会在工具结果中生成 generationId，随后必须原样复用该 generationId 调用 create_interaction_cards。title 和 description 应简短说明正在组织什么内容，不得声称卡片或业务操作已经完成。",
   inputSchema: {
     type: "object",
     additionalProperties: false,
-    required: ["schemaVersion", "generationId", "title"],
+    required: ["schemaVersion", "title"],
     properties: {
       schemaVersion: { const: 1 },
-      generationId: { type: "string", pattern: "^[a-zA-Z0-9_-]{1,64}$" },
       title: { type: "string", minLength: 1, maxLength: 120 },
       description: { type: "string", maxLength: 500 },
     },

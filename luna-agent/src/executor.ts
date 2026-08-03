@@ -1,4 +1,9 @@
 import type { Config } from "./config.js"
+import type {
+  InteractionCardValidationFailure,
+  InteractionCardValidationIssue,
+  PrepareInteractionCardsInput,
+} from "@luna-devops/ai-interaction-card-contract"
 import type { AssistantGraphState, GraphVersionRegistry } from "./graph/registry.js"
 import type { Repository } from "./persistence/repository.js"
 import type { ModelMessage, ModelToolCall } from "./provider/provider.js"
@@ -10,7 +15,6 @@ import {
   createInteractionCardsInput,
   normalizeInteractionCardsInput,
   prepareInteractionCardsInput,
-  type PrepareInteractionCardsInput,
 } from "./tools/ui-cards.js"
 import { createOptionsInput, optionUIActions } from "./tools/ui-options.js"
 import { automaticRouteUIAction, navigateToRouteInput } from "./tools/ui-route.js"
@@ -91,6 +95,9 @@ export class RunExecutor {
         .then(ok => { if (!ok) abort.abort(new Error("ai.run_lease_lost")) })
     }, Math.max(1000, agentRuntimeInternals.runLeaseSeconds * 333))
     const cardPreparations = new Map<string, CardPreparation>()
+    const failedCardGenerationIds = new Set<string>()
+    const cardPreparationRepairState = { attempt: 0 }
+    const providerArgumentRepairAttempts = new Map<string, number>()
     try {
       telemetryLog("agent.run.started", "info", {
         "luna.run.id": run.id,
@@ -107,6 +114,7 @@ export class RunExecutor {
       let assistantRenamed = false
       let pendingOptions: unknown
       let interactionCardsCreated = false
+      let cardRepairExhausted = false
       let finalAnswer = ""
       let completed = false
       const continuationMessages: ModelMessage[] = executionInput.toolResults.length
@@ -128,6 +136,11 @@ export class RunExecutor {
           continuationMessages,
         }, abort.signal)
         finalAnswer = result.answer
+        if (cardRepairExhausted) {
+          if (result.toolCalls.length > 0) throw new Error("ai.interaction_card_schema_invalid")
+          completed = true
+          break
+        }
         if (!result.toolCalls.length) {
           if (cardPreparations.size > 0) {
             continuationMessages.push({
@@ -153,37 +166,60 @@ export class RunExecutor {
         let recoverableToolError = false
         const hasPlatformTool = toolCalls.some(call => !internalToolOperationIds.has(call.operationId))
         for (const toolCall of toolCalls) {
+          if (toolCall.argumentError) {
+            const key = toolCall.operationId === "create_interaction_cards" && cardPreparations.size === 1
+              ? [...cardPreparations.keys()][0]!
+              : toolCall.operationId
+            let attempt = (providerArgumentRepairAttempts.get(key) ?? 0) + 1
+            providerArgumentRepairAttempts.set(key, attempt)
+            const issues: InteractionCardValidationIssue[] = [{
+              code: toolCall.argumentError.code,
+              path: "$",
+              message: toolCall.argumentError.message,
+              expected: "完整 JSON 对象",
+            }]
+            const preparation = toolCall.operationId === "create_interaction_cards" && cardPreparations.size === 1
+              ? [...cardPreparations.values()][0]
+              : undefined
+            if (preparation) {
+              attempt = await this.recordCardRepairFailure(run.id, preparation, issues, "ai.tool_arguments_json_invalid", cardPreparations, failedCardGenerationIds)
+            }
+            const failure = providerArgumentFailure(toolCall.argumentError, attempt, preparation?.input.generationId)
+            recoverableToolError ||= failure.retryable
+            cardRepairExhausted ||= !failure.retryable && cardToolOperationIds.has(toolCall.operationId)
+            continuationMessages.push(toolResultMessage(toolCall, { ...failure }))
+            continue
+          }
           if (toolCall.operationId === "prepare_interaction_cards") {
             if (!hasPlatformTool) {
-              const preparation = await this.traceInternalTool("prepare_interaction_cards", run.id, toolCall.arguments, () => this.prepareInteractionCards(run.id, run.turnId, toolCall.arguments, cardPreparations))
+              const preparation = await this.traceInternalTool("prepare_interaction_cards", run.id, toolCall.arguments, () => this.prepareInteractionCards(run.id, run.turnId, toolCall.arguments, cardPreparations, failedCardGenerationIds, cardPreparationRepairState))
               if (!preparation.accepted) {
-                recoverableToolError = true
-                continuationMessages.push(toolResultMessage(toolCall, {
-                  status: "rejected",
-                  errorCode: "ai.provider_invalid_tool_arguments",
-                  issues: preparation.issues,
-                  guidance: "请严格按照当前 prepare_interaction_cards 工具 schema 修正参数后重试。",
-                }))
+                recoverableToolError ||= preparation.failure.retryable
+                cardRepairExhausted ||= !preparation.failure.retryable
+                continuationMessages.push(toolResultMessage(toolCall, { ...preparation.failure }))
                 continue
               }
               prepareInteractionCardsCalled = true
+              continuationMessages.push(toolResultMessage(toolCall, {
+                status: "accepted",
+                generationId: preparation.preparation.input.generationId,
+                attempt: preparation.preparation.attempt,
+                guidance: "请原样复用 generationId 调用 create_interaction_cards。",
+              }))
+              continue
             }
             continuationMessages.push(toolResultMessage(toolCall, {
-              status: hasPlatformTool ? "deferred_until_platform_results" : "accepted",
+              status: "deferred_until_platform_results",
             }))
             continue
           }
           if (toolCall.operationId === "create_interaction_cards") {
             if (!hasPlatformTool) {
-              const creation = await this.traceInternalTool("create_interaction_cards", run.id, toolCall.arguments, () => this.createInteractionCards(run.id, toolCall.arguments, cardPreparations))
+              const creation = await this.traceInternalTool("create_interaction_cards", run.id, toolCall.arguments, () => this.createInteractionCards(run.id, toolCall.arguments, cardPreparations, failedCardGenerationIds))
               if (!creation.accepted) {
-                recoverableToolError = true
-                continuationMessages.push(toolResultMessage(toolCall, {
-                  status: "rejected",
-                  errorCode: "ai.provider_invalid_tool_arguments",
-                  issues: creation.issues,
-                  guidance: "请严格按照当前 create_interaction_cards 工具 schema 修正参数后重试。",
-                }))
+                recoverableToolError ||= creation.failure.retryable
+                cardRepairExhausted ||= !creation.failure.retryable
+                continuationMessages.push(toolResultMessage(toolCall, { ...creation.failure }))
                 continue
               }
               createInteractionCardsCalled = true
@@ -257,6 +293,7 @@ export class RunExecutor {
           }
         }
         if (recoverableToolError) continue
+        if (cardRepairExhausted) continue
         if (platformToolCalled) pendingOptions = undefined
         if (prepareInteractionCardsCalled && !createInteractionCardsCalled) continue
         if (!platformToolCalled && createInteractionCardsCalled) {
@@ -352,19 +389,35 @@ export class RunExecutor {
     turnId: string,
     raw: unknown,
     preparations: Map<string, CardPreparation>,
+    failedGenerationIds: Set<string>,
+    repairState: { attempt: number },
   ) {
-    const parsed = prepareInteractionCardsInput.safeParse(raw)
-    if (!parsed.success) return {
+    if (failedGenerationIds.size > 0) return {
       accepted: false as const,
-      issues: parsed.error.issues.map(issue => ({
-        code: issue.code,
-        path: issue.path.join("."),
-        message: issue.message,
-      })),
+      failure: cardValidationFailure("prepare", [{
+        code: "repair_exhausted",
+        path: "$",
+        message: "当前 Run 的交互卡片已达到自动修正上限。",
+        expected: "停止生成卡片并向用户说明失败",
+      }], maxCardRepairAttempts),
     }
-    const input = parsed.data
-    const existing = preparations.get(input.generationId)
+    const parsed = prepareInteractionCardsInput.safeParse(raw)
+    if (!parsed.success) {
+      repairState.attempt += 1
+      if (repairState.attempt >= maxCardRepairAttempts) failedGenerationIds.add("prepare")
+      return {
+        accepted: false as const,
+        failure: cardValidationFailure("prepare", validationIssues(parsed.error.issues), repairState.attempt),
+      }
+    }
+    const existing = [...preparations.values()].find(preparation => preparation.status === "repairing")
     if (existing) return { accepted: true as const, preparation: existing }
+    const input: PrepareInteractionCardsInput & { generationId: string } = {
+      schemaVersion: parsed.data.schemaVersion,
+      title: parsed.data.title,
+      ...(parsed.data.description !== undefined ? { description: parsed.data.description } : {}),
+      generationId: createId("aicardgen"),
+    }
     const itemId = createId("aiitm")
     const toolCallId = createId("aitool")
     const { item } = await this.repository.appendItemWithEvent({
@@ -379,6 +432,12 @@ export class RunExecutor {
         titleKey: "aiAssistant.cards.preparingToolTitle",
         status: "running",
         arguments: input,
+        result: {
+          summaryKey: "aiAssistant.cards.preparing",
+          generationId: input.generationId,
+          attempt: 0,
+          maxAttempts: maxCardRepairAttempts,
+        },
       },
     }, "tool.started", {
       itemId,
@@ -387,7 +446,14 @@ export class RunExecutor {
       titleKey: "aiAssistant.cards.preparingToolTitle",
       arguments: input,
     })
-    const preparation = { itemId, toolCallId, timelineIndex: item.timelineIndex, input }
+    const preparation: CardPreparation = {
+      itemId,
+      toolCallId,
+      timelineIndex: item.timelineIndex,
+      input,
+      attempt: 0,
+      status: "repairing",
+    }
     preparations.set(input.generationId, preparation)
     agentMetrics.cards.add(1, { phase: "prepared" })
     telemetryLog("agent.card.prepared", "info", { "luna.run.id": runId })
@@ -398,38 +464,41 @@ export class RunExecutor {
     runId: string,
     raw: unknown,
     preparations: Map<string, CardPreparation>,
+    failedGenerationIds: Set<string>,
   ) {
     const parsed = createInteractionCardsInput.safeParse(normalizeInteractionCardsInput(raw))
     if (!parsed.success) {
-      const issues = parsed.error.issues.map(issue => ({
-        code: issue.code,
-        path: issue.path.join("."),
-        message: issue.message,
-      }))
+      const issues = validationIssues(parsed.error.issues)
       const rawObject = raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : {}
       const generationId = typeof rawObject.generationId === "string"
         ? rawObject.generationId
-        : undefined
+        : preparations.size === 1 ? [...preparations.keys()][0] : undefined
       const preparation = generationId ? preparations.get(generationId) : undefined
-      if (preparation) preparation.issues = issues
+      const attempt = preparation
+        ? await this.recordCardRepairFailure(runId, preparation, issues, "ai.interaction_card_schema_invalid", preparations, failedGenerationIds)
+        : 1
+      const failure = cardValidationFailure("create", issues, attempt, generationId)
       agentMetrics.cards.add(1, { phase: "rejected", mode: "unknown" })
       telemetryLog("agent.card.schema_rejected", "warn", {
         "luna.run.id": runId,
         "error.code": "ai.provider_invalid_tool_arguments",
         "card.issue_count": issues.length,
       })
-      return { accepted: false as const, issues }
+      return { accepted: false as const, failure }
     }
     const input = parsed.data
     const preparation = preparations.get(input.generationId)
     if (!preparation) {
+      const exhausted = failedGenerationIds.has(input.generationId)
       return {
         accepted: false as const,
-        issues: [{
-          code: "custom",
+        failure: cardValidationFailure("create", [{
+          code: "missing_preparation",
           path: "generationId",
-          message: "Call prepare_interaction_cards first and reuse its generationId.",
-        }],
+          message: "generationId 未对应当前 Run 中已接受的卡片准备任务。",
+          expected: "prepare_interaction_cards 返回的 generationId",
+          received: input.generationId,
+        }], exhausted ? maxCardRepairAttempts : 1, input.generationId),
       }
     }
     const { itemId, toolCallId, timelineIndex } = preparation
@@ -455,6 +524,47 @@ export class RunExecutor {
     return { accepted: true as const, mode: input.mode }
   }
 
+  private async recordCardRepairFailure(
+    runId: string,
+    preparation: CardPreparation,
+    issues: InteractionCardValidationIssue[],
+    errorCode: InteractionCardValidationFailure["errorCode"],
+    preparations: Map<string, CardPreparation>,
+    failedGenerationIds: Set<string>,
+  ): Promise<number> {
+    const attempt = preparation.attempt + 1
+    preparation.attempt = attempt
+    preparation.issues = issues
+    if (attempt >= maxCardRepairAttempts) {
+      preparation.status = "failed"
+      await this.failCardPreparation(runId, preparation, errorCode)
+      preparations.delete(preparation.input.generationId)
+      failedGenerationIds.add(preparation.input.generationId)
+      return attempt
+    }
+    await this.repository.updateItemWithEvent(preparation.itemId, "streaming", {
+      toolCallId: preparation.toolCallId,
+      operationId: "prepare_interaction_cards",
+      titleKey: "aiAssistant.cards.preparingToolTitle",
+      status: "running",
+      arguments: preparation.input,
+      result: {
+        summaryKey: "aiAssistant.cards.repairing",
+        generationId: preparation.input.generationId,
+        attempt,
+        maxAttempts: maxCardRepairAttempts,
+        issues,
+      },
+    }, "tool.progress", {
+      itemId: preparation.itemId,
+      toolCallId: preparation.toolCallId,
+      operationId: "prepare_interaction_cards",
+      timelineIndex: preparation.timelineIndex,
+      result: cardValidationFailure("create", issues, attempt, preparation.input.generationId, errorCode),
+    })
+    return attempt
+  }
+
   private async failCardPreparations(runId: string, preparations: Map<string, CardPreparation>, errorCode: string) {
     if (preparations.size > 0) {
       agentMetrics.cards.add(preparations.size, { phase: "failed" })
@@ -464,31 +574,37 @@ export class RunExecutor {
         "card.count": preparations.size,
       })
     }
-    await Promise.allSettled([...preparations.values()].map(async (preparation) => {
-      const result = {
-        summaryKey: "aiAssistant.cards.failed",
-        errorCode,
-        ...(preparation.issues?.length ? { issues: preparation.issues } : {}),
-      }
-      await this.repository.updateItemWithEvent(preparation.itemId, "failed", {
-        toolCallId: preparation.toolCallId,
-        operationId: "prepare_interaction_cards",
-        titleKey: "aiAssistant.cards.preparingToolTitle",
-        status: "failed",
-        arguments: preparation.input,
-        errorCode,
-        result,
-      }, "tool.failed", {
-        itemId: preparation.itemId,
-        toolCallId: preparation.toolCallId,
-        operationId: "prepare_interaction_cards",
-        titleKey: "aiAssistant.cards.preparingToolTitle",
-        errorCode,
-        result,
-        timelineIndex: preparation.timelineIndex,
-      })
-    }))
+    await Promise.allSettled([...preparations.values()].map(preparation => this.failCardPreparation(runId, preparation, errorCode)))
     preparations.clear()
+  }
+
+  private async failCardPreparation(runId: string, preparation: CardPreparation, errorCode: string) {
+    const result = {
+      summaryKey: "aiAssistant.cards.failed",
+      errorCode,
+      generationId: preparation.input.generationId,
+      attempt: preparation.attempt,
+      maxAttempts: maxCardRepairAttempts,
+      ...(preparation.issues?.length ? { issues: preparation.issues } : {}),
+    }
+    await this.repository.updateItemWithEvent(preparation.itemId, "failed", {
+      toolCallId: preparation.toolCallId,
+      operationId: "prepare_interaction_cards",
+      titleKey: "aiAssistant.cards.preparingToolTitle",
+      status: "failed",
+      arguments: preparation.input,
+      errorCode,
+      result,
+    }, "tool.failed", {
+      itemId: preparation.itemId,
+      toolCallId: preparation.toolCallId,
+      operationId: "prepare_interaction_cards",
+      titleKey: "aiAssistant.cards.preparingToolTitle",
+      errorCode,
+      result,
+      timelineIndex: preparation.timelineIndex,
+      runId,
+    })
   }
 
   private async ensureOptions(
@@ -773,12 +889,72 @@ function toolResultMessage(toolCall: ModelToolCall & { id: string }, result: Rec
   }
 }
 
+const maxCardRepairAttempts = 3
+
 type CardPreparation = {
   itemId: string
   toolCallId: string
   timelineIndex: number
-  input: PrepareInteractionCardsInput
-  issues?: Array<{ code: string, path: string, message: string }>
+  input: PrepareInteractionCardsInput & { generationId: string }
+  attempt: number
+  status: "repairing" | "failed"
+  issues?: InteractionCardValidationIssue[]
+}
+
+function validationIssues(issues: readonly { code: string, path: PropertyKey[], message: string }[]): InteractionCardValidationIssue[] {
+  return issues.slice(0, 12).map((issue) => {
+    const details = issue as unknown as Record<string, unknown>
+    const expected = typeof details.expected === "string" ? details.expected : undefined
+    return {
+      code: issue.code,
+      path: issue.path.map(String).join(".") || "$",
+      message: issue.message,
+      ...(expected ? { expected } : {}),
+    }
+  })
+}
+
+function cardValidationFailure(
+  phase: InteractionCardValidationFailure["phase"],
+  issues: InteractionCardValidationIssue[],
+  attempt: number,
+  generationId?: string,
+  errorCode: InteractionCardValidationFailure["errorCode"] = "ai.interaction_card_schema_invalid",
+): InteractionCardValidationFailure {
+  const retryable = attempt < maxCardRepairAttempts
+  return {
+    status: "rejected",
+    errorCode,
+    phase,
+    ...(generationId ? { generationId } : {}),
+    retryable,
+    attempt,
+    maxAttempts: maxCardRepairAttempts,
+    issues,
+    guidance: retryable
+      ? `只修正 issues 中列出的字段；${generationId ? "保持 generationId 不变并" : ""}重新调用 ${phase === "prepare" ? "prepare_interaction_cards" : "create_interaction_cards"}。`
+      : "已达到自动修正上限。不要再次生成同一张卡片；请向用户简要说明卡片生成失败，并保留当前业务上下文。",
+  }
+}
+
+function providerArgumentFailure(
+  error: NonNullable<ModelToolCall["argumentError"]>,
+  attempt: number,
+  generationId?: string,
+): InteractionCardValidationFailure {
+  const failure = cardValidationFailure("provider", [{
+    code: error.code,
+    path: "$",
+    message: error.message,
+    expected: "完整 JSON 对象",
+  }], attempt, generationId, "ai.tool_arguments_json_invalid")
+  return {
+    ...failure,
+    guidance: failure.retryable
+      ? `重新生成完整的 JSON 工具参数；${generationId ? "保持 generationId 不变；" : ""}不要复用被截断的参数文本。`
+      : failure.guidance,
+  }
 }
 
 const internalToolOperationIds = new Set(["create_options", "prepare_interaction_cards", "create_interaction_cards", "rename_conversation", "navigate_to_route"])
+const cardToolOperationIds = new Set(["prepare_interaction_cards", "create_interaction_cards"])

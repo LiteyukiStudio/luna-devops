@@ -1,21 +1,15 @@
+import type { PrepareInteractionCardsInput } from '@luna-devops/ai-interaction-card-contract'
+import type { AIToolDisplayResult } from '@/api'
 import { LayoutTemplate, Sparkles } from 'lucide-react'
-import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { z } from 'zod'
 import { AIMarkdown } from './markdown'
 
-const preparationSchema = z.object({
-  schemaVersion: z.literal(1),
-  generationId: z.string().regex(/^[\w-]{1,64}$/),
-  title: z.string().trim().min(1).max(120),
-  description: z.string().max(500).optional(),
-})
-
-export function AIInteractionCardPlaceholder({ arguments: rawArguments }: { arguments: Record<string, unknown> }) {
+export function AIInteractionCardPlaceholder({ arguments: rawArguments, result }: { arguments: Record<string, unknown>, result?: AIToolDisplayResult }) {
   const { t } = useTranslation()
-  const preparation = useMemo(() => preparationSchema.safeParse(rawArguments), [rawArguments])
-  const title = preparation.success ? preparation.data.title : t('aiAssistant.cards.preparing')
-  const description = preparation.success ? preparation.data.description : undefined
+  const preparation = rawArguments as unknown as PrepareInteractionCardsInput & { generationId?: string }
+  const title = typeof preparation.title === 'string' ? preparation.title : t('aiAssistant.cards.preparing')
+  const description = typeof preparation.description === 'string' ? preparation.description : undefined
+  const repairing = Boolean(result?.attempt && result.attempt > 0)
 
   return (
     <section aria-label={title} aria-live="polite" className="relative min-h-32 min-w-0 overflow-hidden rounded-container bg-surface" data-ai-card-preparing role="status">
@@ -27,7 +21,11 @@ export function AIInteractionCardPlaceholder({ arguments: rawArguments }: { argu
             <LayoutTemplate className="size-4" />
           </span>
           <div className="min-w-0 flex-1">
-            <p className="text-[10px] font-medium uppercase tracking-wide text-primary-text">{t('aiAssistant.cards.preparingEyebrow')}</p>
+            <p className="text-[10px] font-medium uppercase tracking-wide text-primary-text">
+              {repairing
+                ? t('aiAssistant.cards.repairingEyebrow', { attempt: result?.attempt, max: result?.maxAttempts })
+                : t('aiAssistant.cards.preparingEyebrow')}
+            </p>
             <AIMarkdown className="mt-0.5 text-[13px] font-semibold leading-5">{title}</AIMarkdown>
             {description && <AIMarkdown className="mt-1 text-[11px] leading-4 text-muted-foreground">{description}</AIMarkdown>}
           </div>

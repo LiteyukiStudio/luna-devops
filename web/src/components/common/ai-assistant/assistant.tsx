@@ -2,7 +2,7 @@ import type { AutomaticRouteDelivery } from './automatic-actions'
 import type { LiveSubscription } from './session'
 import type { AIEvent, AIUIAction } from '@/api'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { List, LoaderCircle, MessageSquarePlus, Sparkles, X } from 'lucide-react'
+import { Bug, List, LoaderCircle, MessageSquarePlus, Sparkles, X } from 'lucide-react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -10,7 +10,9 @@ import { Rnd } from 'react-rnd'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { api, isUsableAICapabilities } from '@/api'
+import { useSession } from '@/app/session-context'
 import { Button } from '@/components/ui/button'
+import { isPlatformAdmin } from '@/lib/roles'
 import { executeAIUIAction } from './actions'
 import {
   automaticRouteDeliveryFromEvent,
@@ -50,11 +52,13 @@ import { emptyAIAssistantState, isValidAITimeline } from './state'
 import { createAIEventSource } from './stream'
 import { resolveAISuggestions } from './suggestions'
 import { AIAssistantTimeline } from './timeline'
+import { useAIToolDebugMode } from './tool-debug-mode'
 
 type AssistantView = 'chat' | 'conversations'
 
 export function AiAssistant() {
   const { i18n, t } = useTranslation()
+  const { actualUser } = useSession()
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const location = useLocation()
@@ -83,6 +87,8 @@ export function AiAssistant() {
   const [preference, setPreference] = useState(readWindowPreference)
   const [launcherPosition, setLauncherPosition] = useState(readLauncherPosition)
   const [clientInstanceId] = useState(readAIClientInstanceId)
+  const canDebugInternalTools = isPlatformAdmin(actualUser?.role)
+  const toolDebugMode = useAIToolDebugMode(actualUser?.id, canDebugInternalTools)
 
   const capabilities = useQuery({
     queryKey: ['ai', 'capabilities'],
@@ -462,6 +468,19 @@ export function AiAssistant() {
           <h2 className="truncate text-[13px] font-semibold leading-5">{timeline.data?.conversation.title || t('aiAssistant.title')}</h2>
           <p className="truncate text-[10px] leading-4 text-muted-foreground">{t('aiAssistant.context', { path: location.pathname })}</p>
         </div>
+        {canDebugInternalTools && (
+          <Button
+            aria-label={t(toolDebugMode.enabled ? 'aiAssistant.toolDebug.disable' : 'aiAssistant.toolDebug.enable')}
+            aria-pressed={toolDebugMode.enabled}
+            className={toolDebugMode.enabled ? 'bg-primary-subtle text-primary-text hover:bg-primary-subtle' : undefined}
+            size="icon"
+            title={t(toolDebugMode.enabled ? 'aiAssistant.toolDebug.disable' : 'aiAssistant.toolDebug.enable')}
+            variant="ghost"
+            onClick={toolDebugMode.toggle}
+          >
+            <Bug className="size-4" />
+          </Button>
+        )}
         <Button aria-label={t('aiAssistant.conversations.new')} disabled={createConversation.isPending} size="icon" variant="ghost" onClick={() => createConversation.mutate()}>{createConversation.isPending ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" /> : <MessageSquarePlus className="size-4" />}</Button>
         <Button aria-label={t('common.close')} size="icon" variant="ghost" onClick={close}><X className="size-4" /></Button>
       </header>
@@ -491,6 +510,7 @@ export function AiAssistant() {
           onResend={message => sendTurn.mutate({ conversationId: selectedConversationId, message })}
           onRetry={() => void timeline.refetch()}
           resendDisabled={Boolean(activeRunId || sendingSelected)}
+          showInternalTools={toolDebugMode.enabled}
           topContent={conversationSession.refreshReturnExpiresAt && canReturnToPreviousConversation && !selectedConversationId && !conversationSearch
             ? (
                 <AIRefreshConversationReturn

@@ -1,3 +1,5 @@
+import type { AIOptionVisual, AIToolVisibility } from '@luna-devops/ai-interaction-card-contract'
+
 export interface AICapabilities {
   available: boolean
   reasonCode: string | null
@@ -66,11 +68,16 @@ export interface AIToolDisplayResult {
   requestId?: string
   errorCode?: string
   errorMessage?: string
+  generationId?: string
+  attempt?: number
+  maxAttempts?: number
   data?: unknown
   issues?: Array<{
     code: string
     path: string
     message: string
+    expected?: string
+    received?: string
   }>
   fields?: Array<{
     labelKey: string
@@ -84,13 +91,13 @@ export interface AIToolDisplayResult {
 }
 
 export type AIUIAction
-  = | { version: 1, id?: string, repeatable?: boolean, activation?: 'manual' | 'automatic', type: 'navigate', label?: string, description?: string, tone?: 'default' | 'primary' | 'danger', payload: { routeName: string, params?: Record<string, string>, query?: Record<string, string> } }
+  = | { version: 1, id?: string, repeatable?: boolean, activation?: 'manual' | 'automatic', type: 'navigate', label?: string, description?: string, tone?: 'default' | 'primary' | 'danger', visual?: AIOptionVisual, payload: { routeName: string, params?: Record<string, string>, query?: Record<string, string> } }
     | { version: 1, type: 'select_tab', payload: { tabId: string } }
     | { version: 1, type: 'set_filters', payload: { targetId: string, values: Record<string, string> } }
     | { version: 1, type: 'refresh_query', payload: { queryKeyId: string } }
     | { version: 1, type: 'highlight', payload: { resourceId: string } }
-    | { version: 1, id?: string, repeatable?: boolean, activation?: 'manual', type: 'send_message', label?: string, description?: string, tone?: 'default' | 'primary' | 'danger', payload: { message: string } }
-    | { version: 1, id?: string, repeatable?: boolean, activation?: 'manual', type: 'request_tool', label?: string, description?: string, tone?: 'default' | 'primary' | 'danger', payload: { operationId: string, arguments?: Record<string, unknown>, message: string } }
+    | { version: 1, id?: string, repeatable?: boolean, activation?: 'manual', type: 'send_message', label?: string, description?: string, tone?: 'default' | 'primary' | 'danger', visual?: AIOptionVisual, payload: { message: string } }
+    | { version: 1, id?: string, repeatable?: boolean, activation?: 'manual', type: 'request_tool', label?: string, description?: string, tone?: 'default' | 'primary' | 'danger', visual?: AIOptionVisual, payload: { operationId: string, arguments?: Record<string, unknown>, message: string } }
 
 export interface AITimelineItem {
   id: string
@@ -105,6 +112,7 @@ export interface AITimelineItem {
   toolCall?: {
     id: string
     operationId: string
+    visibility?: AIToolVisibility
     titleKey?: string
     errorCode?: string
     callIndex: number

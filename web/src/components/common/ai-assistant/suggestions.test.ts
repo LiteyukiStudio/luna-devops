@@ -62,6 +62,7 @@ function options(id: string, index: number, label: string): AIBlock {
     type: 'tool_call',
     toolCallId: id,
     operationId: 'create_options',
+    visibility: 'internal',
     status: 'succeeded',
     arguments: {},
     uiActions: [{

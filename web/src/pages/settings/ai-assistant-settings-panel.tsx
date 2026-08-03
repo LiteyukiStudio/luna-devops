@@ -31,6 +31,18 @@ const defaults: FormValues = {
   providerTimeoutSeconds: 30,
   runTimeoutSeconds: 300,
   agentConcurrentRuns: 2,
+  observabilityEnabled: false,
+  prometheusUrl: '',
+  prometheusToken: '',
+  prometheusTokenConfigured: false,
+  lokiUrl: '',
+  lokiTenantId: '',
+  lokiToken: '',
+  lokiTokenConfigured: false,
+  tempoUrl: '',
+  tempoTenantId: '',
+  tempoToken: '',
+  tempoTokenConfigured: false,
 }
 
 export function AIAssistantSettingsPanel() {
@@ -55,6 +67,18 @@ export function AIAssistantSettingsPanel() {
       providerTimeoutSeconds: Number(values['ai.runtime.provider_timeout_seconds'] ?? 30),
       runTimeoutSeconds: Number(values['ai.runtime.run_timeout_seconds'] ?? 300),
       agentConcurrentRuns: Number(values['ai.runtime.agent_concurrent_runs'] ?? 2),
+      observabilityEnabled: values['ai.observability.enabled'] === 'true',
+      prometheusUrl: values['ai.observability.prometheus_url'] ?? '',
+      prometheusToken: '',
+      prometheusTokenConfigured: values['ai.observability.prometheus_token'] === 'true',
+      lokiUrl: values['ai.observability.loki_url'] ?? '',
+      lokiTenantId: values['ai.observability.loki_tenant_id'] ?? '',
+      lokiToken: '',
+      lokiTokenConfigured: values['ai.observability.loki_token'] === 'true',
+      tempoUrl: values['ai.observability.tempo_url'] ?? '',
+      tempoTenantId: values['ai.observability.tempo_tenant_id'] ?? '',
+      tempoToken: '',
+      tempoTokenConfigured: values['ai.observability.tempo_token'] === 'true',
     })
   }, [configs.data, form])
 
@@ -68,6 +92,10 @@ export function AIAssistantSettingsPanel() {
       form.setValue('apiKeyConfigured', values['ai.provider.api_key'] === 'true')
       form.setValue('webProxyPool', '')
       form.setValue('webProxyPoolConfigured', values['ai.web.proxy_pool'] === 'true')
+      for (const source of ['prometheus', 'loki', 'tempo'] as const) {
+        form.setValue(`${source}Token`, '')
+        form.setValue(`${source}TokenConfigured`, values[`ai.observability.${source}_token`] === 'true')
+      }
     },
     onError: error => toast.error(error instanceof Error ? error.message : t('settings.ai.saveFailed')),
   })
@@ -77,6 +105,7 @@ export function AIAssistantSettingsPanel() {
   const runTimeoutSeconds = form.watch('runTimeoutSeconds')
   const agentConcurrentRuns = form.watch('agentConcurrentRuns')
   const webProxyEnabled = form.watch('webProxyEnabled')
+  const observabilityEnabled = form.watch('observabilityEnabled')
   return (
     <form className="max-w-3xl" onSubmit={form.handleSubmit(values => save.mutate(values))}>
       <Surface className="grid gap-5 rounded-xl p-6" variant="bordered">
@@ -115,6 +144,17 @@ export function AIAssistantSettingsPanel() {
           </div>
         </ProgressiveSection>
         <ProgressiveSection
+          description={t('settings.ai.observabilityDescription')}
+          storageKey="luna-settings-ai-observability-open"
+          summary={observabilityEnabled ? t('settings.ai.observabilitySummaryEnabled') : t('settings.ai.observabilitySummaryDisabled')}
+          title={t('settings.ai.observabilityTitle')}
+        >
+          <CheckboxField description={t('settings.ai.observabilityEnabledHint')} {...form.register('observabilityEnabled')}>{t('settings.ai.observabilityEnabled')}</CheckboxField>
+          <ObservabilitySourceFields form={form} source="prometheus" />
+          <ObservabilitySourceFields form={form} source="loki" tenant />
+          <ObservabilitySourceFields form={form} source="tempo" tenant />
+        </ProgressiveSection>
+        <ProgressiveSection
           description={t('settings.ai.webProxyDescription')}
           storageKey="luna-settings-ai-web-proxy-open"
           summary={webProxyEnabled ? t('settings.ai.webProxySummaryEnabled') : t('settings.ai.webProxySummaryDirect')}
@@ -141,5 +181,28 @@ export function AIAssistantSettingsPanel() {
         </Button>
       </FormActions>
     </form>
+  )
+}
+
+function ObservabilitySourceFields({ form, source, tenant = false }: { form: ReturnType<typeof useForm<FormValues>>, source: 'prometheus' | 'loki' | 'tempo', tenant?: boolean }) {
+  const { t } = useTranslation()
+  const urlField = `${source}Url` as const
+  const tokenField = `${source}Token` as const
+  const configuredField = `${source}TokenConfigured` as const
+  const tenantField = `${source}TenantId` as 'lokiTenantId' | 'tempoTenantId'
+  const errors = form.formState.errors
+  return (
+    <div className="grid gap-4 rounded-lg bg-surface-subtle p-4">
+      <p className="text-sm font-medium">{t(`settings.ai.observabilitySources.${source}`)}</p>
+      <div className="grid gap-4 md:grid-cols-2">
+        <Field error={errors[urlField]?.message} hint={t('settings.ai.observabilityUrlHint')} label={t('settings.ai.observabilityUrl')} required={form.watch('observabilityEnabled')}>
+          <Input autoComplete="url" placeholder={`http://${source}:${source === 'prometheus' ? '9090' : source === 'loki' ? '3100' : '3200'}`} {...form.register(urlField)} />
+        </Field>
+        {tenant && <Field label={t('settings.ai.observabilityTenantId')}><Input autoComplete="off" {...form.register(tenantField)} /></Field>}
+        <Field hint={t('settings.ai.observabilityTokenHint')} label={t('settings.ai.observabilityToken')}>
+          <Input autoComplete="new-password" placeholder={form.getValues(configuredField) ? t('settings.ai.secretUnchanged') : ''} type="password" {...form.register(tokenField)} />
+        </Field>
+      </div>
+    </div>
   )
 }

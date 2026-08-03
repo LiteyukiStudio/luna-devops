@@ -12,6 +12,16 @@ import { MemoryToolCallStore, ProjectingToolCallStore, ToolOrchestrator } from "
 import { createOptionsInput, createOptionsTool } from "../src/tools/ui-options.js"
 import { navigateToRouteTool } from "../src/tools/ui-route.js"
 
+function preparedGenerationId(request: ModelRequest): string {
+  for (const message of request.messages.toReversed()) {
+    if (message.role !== "tool") continue
+    const payload = message.content.slice(message.content.indexOf("\n") + 1)
+    const result = JSON.parse(payload) as { status?: string, generationId?: string }
+    if (result.status === "accepted" && result.generationId) return result.generationId
+  }
+  throw new Error("accepted interaction-card generationId was not returned")
+}
+
 describe("provider to tool to subsequent model invocation", () => {
   it("aborts an active model stream immediately after the run is canceled", async () => {
     const repository = new MemoryRepository()
@@ -214,7 +224,6 @@ describe("provider to tool to subsequent model invocation", () => {
               operationId: "prepare_interaction_cards",
               arguments: {
                 schemaVersion: 1,
-                generationId: "redis-config",
                 title: "正在组织 Redis 配置",
               },
             }],
@@ -222,17 +231,19 @@ describe("provider to tool to subsequent model invocation", () => {
           return
         }
         if (modelStep === 2) {
+          const generationId = preparedGenerationId(request)
           yield {
             type: "completed",
             usage: { inputTokens: 10, outputTokens: 10 },
             toolCalls: [{
               id: "invalid_card",
               operationId: "create_interaction_cards",
-              arguments: { schemaVersion: "v1", generationId: "redis-config", cards: [] },
+              arguments: { schemaVersion: "v1", generationId, cards: [] },
             }],
           }
           return
         }
+        const generationId = preparedGenerationId(request)
         yield { type: "message_delta", delta: "请填写 Redis 配置。" }
         yield {
           type: "completed",
@@ -242,7 +253,7 @@ describe("provider to tool to subsequent model invocation", () => {
             operationId: "create_interaction_cards",
             arguments: {
               schemaVersion: 1,
-              generationId: "redis-config",
+              generationId,
               title: "Redis 配置",
               mode: "interactive",
               template: "form",
@@ -284,7 +295,9 @@ describe("provider to tool to subsequent model invocation", () => {
     expect(requests).toHaveLength(3)
     const retryMessage = requests[2]?.messages.find(message => message.role === "tool" && message.toolCallId === "invalid_card")
     expect(retryMessage).toMatchObject({ role: "tool", toolCallId: "invalid_card" })
-    expect(retryMessage?.content).toContain("ai.provider_invalid_tool_arguments")
+    expect(retryMessage?.content).toContain("ai.interaction_card_schema_invalid")
+    expect(retryMessage?.content).toContain('"attempt":1')
+    expect(retryMessage?.content).toContain('"retryable":true')
     const timeline = await presentTimeline(repository, "usr_a", conversation.id)
     expect(JSON.stringify(timeline)).toContain("Redis 配置")
     expect(JSON.stringify(timeline)).not.toContain("invalid_card")
@@ -316,7 +329,6 @@ describe("provider to tool to subsequent model invocation", () => {
               operationId: "prepare_interaction_cards",
               arguments: {
                 schemaVersion: 1,
-                generationId: "deployment-summary",
                 title: "正在整理部署摘要",
               },
             }],
@@ -324,6 +336,7 @@ describe("provider to tool to subsequent model invocation", () => {
           return
         }
         if (modelStep === 2) {
+          const generationId = preparedGenerationId(request)
           yield {
             type: "completed",
             usage: { inputTokens: 10, outputTokens: 5 },
@@ -332,7 +345,7 @@ describe("provider to tool to subsequent model invocation", () => {
               operationId: "create_interaction_cards",
               arguments: {
                 schemaVersion: 1,
-                generationId: "deployment-summary",
+                generationId,
                 title: "部署摘要",
                 mode: "presentation",
                 template: "result",
@@ -383,7 +396,7 @@ describe("provider to tool to subsequent model invocation", () => {
     })
     let modelStep = 0
     const provider: ModelProvider = {
-      async *stream() {
+      async *stream(request) {
         if (modelStep++ === 0) {
           yield {
             type: "completed",
@@ -393,13 +406,13 @@ describe("provider to tool to subsequent model invocation", () => {
               operationId: "prepare_interaction_cards",
               arguments: {
                 schemaVersion: 1,
-                generationId: "broken-card",
                 title: "正在生成配置卡片",
               },
             }],
           }
           return
         }
+        const generationId = preparedGenerationId(request)
         yield {
           type: "completed",
           usage: { inputTokens: 10, outputTokens: 5 },
@@ -408,7 +421,7 @@ describe("provider to tool to subsequent model invocation", () => {
             operationId: "create_interaction_cards",
             arguments: {
               schemaVersion: 1,
-              generationId: "broken-card",
+              generationId,
               title: "无效卡片",
               mode: "interactive",
               template: "form",
@@ -438,10 +451,12 @@ describe("provider to tool to subsequent model invocation", () => {
     )
     expect(preparation && "toolCall" in preparation ? preparation.toolCall : undefined).toMatchObject({
       status: "failed",
-      errorCode: "ai.limit_exceeded",
+      errorCode: "ai.interaction_card_schema_invalid",
       result: {
         summaryKey: "aiAssistant.cards.failed",
-        errorCode: "ai.limit_exceeded",
+        errorCode: "ai.interaction_card_schema_invalid",
+        attempt: 3,
+        maxAttempts: 3,
       },
     })
     expect(JSON.stringify(preparation)).toContain('"path":"cards"')

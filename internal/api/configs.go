@@ -59,6 +59,15 @@ var configDefinitions = []configDefinition{
 	{Key: "ai.runtime.provider_timeout_seconds", Label: "模型请求超时", Type: "number", Default: "30"},
 	{Key: "ai.runtime.run_timeout_seconds", Label: "单次 Run 超时", Type: "number", Default: "300"},
 	{Key: "ai.runtime.agent_concurrent_runs", Label: "Agent 实例并发 Run", Type: "number", Default: "2"},
+	{Key: "ai.observability.enabled", Label: "启用 Agent 可观测", Type: "boolean", Default: "false"},
+	{Key: "ai.observability.prometheus_url", Label: "Prometheus 查询地址", Type: "string", Default: ""},
+	{Key: "ai.observability.prometheus_token", Label: "Prometheus 访问令牌", Type: "secret", Default: ""},
+	{Key: "ai.observability.loki_url", Label: "Loki 查询地址", Type: "string", Default: ""},
+	{Key: "ai.observability.loki_tenant_id", Label: "Loki Tenant ID", Type: "string", Default: ""},
+	{Key: "ai.observability.loki_token", Label: "Loki 访问令牌", Type: "secret", Default: ""},
+	{Key: "ai.observability.tempo_url", Label: "Tempo 查询地址", Type: "string", Default: ""},
+	{Key: "ai.observability.tempo_tenant_id", Label: "Tempo Tenant ID", Type: "string", Default: ""},
+	{Key: "ai.observability.tempo_token", Label: "Tempo 访问令牌", Type: "secret", Default: ""},
 	{Key: "ai.access.mode", Label: "AI 访问模式", Type: "select", Default: "admins", Options: []string{"admins", "all_authenticated", "allowlist"}},
 	{Key: "ai.access.user_ids", Label: "AI 用户允许列表", Type: "textarea", Default: "[]"},
 	{Key: "ai.access.project_ids", Label: "AI 项目允许列表", Type: "textarea", Default: "[]"},
@@ -460,6 +469,19 @@ func (h *Handlers) UpdateConfigs(ctx *gin.Context) {
 			}
 		}
 	}
+	observabilitySecretInputs := map[string]string{}
+	for _, key := range []string{
+		"ai.observability.prometheus_token",
+		"ai.observability.loki_token",
+		"ai.observability.tempo_token",
+	} {
+		if raw, exists := input.Values[key]; exists {
+			if value, ok := raw.(string); ok {
+				observabilitySecretInputs[key] = strings.TrimSpace(value)
+			}
+			delete(input.Values, key)
+		}
+	}
 	values, err := validateConfigValues(input.Values)
 	if err != nil {
 		writeError(ctx, http.StatusBadRequest, err.Error())
@@ -467,6 +489,11 @@ func (h *Handlers) UpdateConfigs(ctx *gin.Context) {
 	}
 	if proxyPoolInput != "" {
 		values["ai.web.proxy_pool"] = "true"
+	}
+	for key, value := range observabilitySecretInputs {
+		if value != "" {
+			values[key] = "true"
+		}
 	}
 	if err := h.validateAIConfigValues(values); err != nil {
 		writeErrorCode(ctx, http.StatusBadRequest, "ai.config_invalid", err.Error())
@@ -487,6 +514,17 @@ func (h *Handlers) UpdateConfigs(ctx *gin.Context) {
 			return
 		}
 		values["ai.web.proxy_pool"] = ref
+	}
+	for key, value := range observabilitySecretInputs {
+		if value == "" {
+			continue
+		}
+		ref := h.secrets.StoreContext(ctx.Request.Context(), value, user.ID, strings.ReplaceAll(key, ".", ":"))
+		if ref == "" {
+			writeErrorCode(ctx, http.StatusInternalServerError, "ai.secret_store_failed", "Agent observability credential could not be stored")
+			return
+		}
+		values[key] = ref
 	}
 	stepUpConfigChanged := false
 	if containsStepUpConfig(values) {

@@ -1,6 +1,11 @@
 import i18next from 'i18next'
 import { z } from 'zod'
 
+const observabilityUrl = z.union([z.literal(''), z.url().refine((value) => {
+  const parsed = new URL(value)
+  return ['http:', 'https:'].includes(parsed.protocol) && !parsed.username && !parsed.password && !parsed.search && !parsed.hash
+}, { message: i18next.t('settings.ai.observabilityUrlInvalid') })])
+
 export const aiSettingsSchema = z.object({
   enabled: z.boolean(),
   baseUrl: z.union([z.literal(''), z.url().refine(value => value.startsWith('https://'))]),
@@ -39,17 +44,35 @@ export const aiSettingsSchema = z.object({
     .int({ message: i18next.t('settings.ai.agentConcurrentRunsInvalid') })
     .min(1, { message: i18next.t('settings.ai.agentConcurrentRunsInvalid') })
     .max(10, { message: i18next.t('settings.ai.agentConcurrentRunsInvalid') }),
+  observabilityEnabled: z.boolean(),
+  prometheusUrl: observabilityUrl,
+  prometheusToken: z.string(),
+  prometheusTokenConfigured: z.boolean(),
+  lokiUrl: observabilityUrl,
+  lokiTenantId: z.string(),
+  lokiToken: z.string(),
+  lokiTokenConfigured: z.boolean(),
+  tempoUrl: observabilityUrl,
+  tempoTenantId: z.string(),
+  tempoToken: z.string(),
+  tempoTokenConfigured: z.boolean(),
 }).superRefine((value, context) => {
-  if (!value.enabled)
-    return
-  if (!value.baseUrl)
-    context.addIssue({ code: 'custom', path: ['baseUrl'], message: i18next.t('settings.ai.baseUrlRequired') })
-  if (!value.model.trim())
-    context.addIssue({ code: 'custom', path: ['model'], message: i18next.t('settings.ai.modelRequired') })
-  if (!value.apiKey.trim() && !value.apiKeyConfigured)
-    context.addIssue({ code: 'custom', path: ['apiKey'], message: i18next.t('settings.ai.apiKeyRequired') })
+  if (value.enabled) {
+    if (!value.baseUrl)
+      context.addIssue({ code: 'custom', path: ['baseUrl'], message: i18next.t('settings.ai.baseUrlRequired') })
+    if (!value.model.trim())
+      context.addIssue({ code: 'custom', path: ['model'], message: i18next.t('settings.ai.modelRequired') })
+    if (!value.apiKey.trim() && !value.apiKeyConfigured)
+      context.addIssue({ code: 'custom', path: ['apiKey'], message: i18next.t('settings.ai.apiKeyRequired') })
+  }
   if (value.webProxyEnabled && !value.webProxyPool.trim() && !value.webProxyPoolConfigured)
     context.addIssue({ code: 'custom', path: ['webProxyPool'], message: i18next.t('settings.ai.webProxyPoolRequired') })
+  if (value.observabilityEnabled) {
+    for (const field of ['prometheusUrl', 'lokiUrl', 'tempoUrl'] as const) {
+      if (!value[field])
+        context.addIssue({ code: 'custom', path: [field], message: i18next.t('settings.ai.observabilityUrlRequired') })
+    }
+  }
 })
 
 export type AISettingsFormValues = z.infer<typeof aiSettingsSchema>
@@ -63,10 +86,22 @@ export function aiSettingsPayload(values: AISettingsFormValues) {
     'ai.runtime.provider_timeout_seconds': values.providerTimeoutSeconds,
     'ai.runtime.run_timeout_seconds': values.runTimeoutSeconds,
     'ai.runtime.agent_concurrent_runs': values.agentConcurrentRuns,
+    'ai.observability.enabled': values.observabilityEnabled,
+    'ai.observability.prometheus_url': values.prometheusUrl.trim(),
+    'ai.observability.loki_url': values.lokiUrl.trim(),
+    'ai.observability.loki_tenant_id': values.lokiTenantId.trim(),
+    'ai.observability.tempo_url': values.tempoUrl.trim(),
+    'ai.observability.tempo_tenant_id': values.tempoTenantId.trim(),
   }
   if (values.apiKey.trim())
     payload['ai.provider.api_key'] = values.apiKey.trim()
   if (values.webProxyPool.trim())
     payload['ai.web.proxy_pool'] = values.webProxyPool.trim()
+  if (values.prometheusToken.trim())
+    payload['ai.observability.prometheus_token'] = values.prometheusToken.trim()
+  if (values.lokiToken.trim())
+    payload['ai.observability.loki_token'] = values.lokiToken.trim()
+  if (values.tempoToken.trim())
+    payload['ai.observability.tempo_token'] = values.tempoToken.trim()
   return payload
 }

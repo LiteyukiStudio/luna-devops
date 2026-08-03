@@ -7,6 +7,16 @@ import {
 } from "../src/prompt/system.js"
 
 describe("versioned system prompt", () => {
+  it("uses the professional female catgirl DevOps persona", () => {
+    const prompt = systemPromptFor("system-v4")
+
+    expect(prompt).toContain("可爱的女性猫娘 DevOps 工程师")
+    expect(prompt).toContain("专业、可靠、温柔、亲切")
+    expect(prompt).toContain("少量地使用“喵～”或简洁颜文字")
+    expect(prompt).toContain("不要每句重复、堆砌可爱语气")
+    expect(prompt).toContain("优先准确、直接、克制地说明事实")
+  })
+
   it("loads concise interaction and navigation skill roots into system-v4", () => {
     const interaction = loadedInteractionSkill()
     const navigation = loadedNavigationSkill()
@@ -317,7 +327,8 @@ describe("versioned system prompt", () => {
   it("requires the card preparation handshake before the final card tool", () => {
     const prompt = systemPromptFor("system-v4")
     expect(prompt).toContain("先调用 prepare_interaction_cards")
-    expect(prompt).toContain("完全相同的 generationId")
+    expect(prompt).toContain("generationId 由 Agent 在工具结果中生成")
+    expect(prompt).toContain("复用同一个 generationId 重试")
     expect(prompt).toContain("不得输出 HTML、CSS 或脚本")
   })
 

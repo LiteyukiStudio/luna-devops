@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import type { InteractionCardGroup } from "@luna-devops/ai-interaction-card-contract"
 import {
   createInteractionCardsInput,
   createInteractionCardsTool,
@@ -49,15 +50,15 @@ const databaseCard = {
       ],
     }],
   }],
-} as const
+} satisfies InteractionCardGroup
 
 describe("interaction card tool", () => {
-  it("publishes a bounded preparation tool linked by generation ID", () => {
+  it("publishes a bounded preparation tool whose generation ID is assigned by the Agent", () => {
     expect(prepareInteractionCardsInput.parse({
       schemaVersion: 1,
-      generationId: "database-candidates",
       title: "正在整理数据库候选",
-    })).toMatchObject({ generationId: "database-candidates" })
+    })).toEqual({ schemaVersion: 1, title: "正在整理数据库候选" })
+    expect(prepareInteractionCardsInput.keyof().options).not.toContain("generationId")
     expect(prepareInteractionCardsTool.operationId).toBe("prepare_interaction_cards")
   })
 

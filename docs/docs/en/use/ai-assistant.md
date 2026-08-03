@@ -2,6 +2,8 @@
 
 The AI assistant uses the current page context and your platform permissions to query resources, explain status, and help with routine operations.
 
+Luna Assistant has the persona of a cute female catgirl DevOps engineer. Her tone is professional, warm, and lightly playful, while troubleshooting, security, and high-risk operations remain clear and restrained.
+
 On mobile, the assistant fills the currently visible Safari or browser viewport and keeps the composer available when the keyboard opens. Collapsed tool calls show only their execution status; expand a call to inspect its duration, arguments, result, and identifiers. The conversation browser is a dedicated mobile view that temporarily hides the composer and suggested actions. You can switch between conversations without closing the list, then use Back to return to chat.
 
 ## Get started
@@ -33,7 +35,7 @@ You can prepare the next message in the composer while the assistant is working,
 
 An empty new conversation is not saved repeatedly. Conversations are named automatically until you rename one manually; a manually chosen title is never overwritten.
 
-Closing and reopening the assistant returns to the conversation you were using. A full browser refresh starts with a new empty conversation instead. For eight seconds, a notice at the top of the message area lets you return to the previous conversation when needed. The conversation list stays open while switching conversations so you can continue browsing or managing them.
+Closing and reopening the assistant returns to the conversation you were using. A full browser refresh starts with a new empty conversation instead. If the previous conversation was active within the last 10 minutes, a notice at the top of the message area lets you return to it for eight seconds. The conversation list stays open while switching conversations so you can continue browsing or managing them.
 
 When an interactive form selects a project space, application, cluster, or another platform resource, the selector shows only its readable name. The submitted conversation message includes both the resource name and ID so you can verify the target and continue the operation unambiguously.
 
@@ -83,7 +85,7 @@ The row above the composer contains quick suggestions. Before the first message 
 - Open a related platform page
 - Run one clearly described follow-up operation
 
-Suggestions are single-line pills floating over the bottom of the message area instead of occupying a divided toolbar. The message list keeps enough bottom scroll space so the final message can always move fully above the overlay. Long labels are truncated. Primary, standard, and high-risk actions use distinct semantic styles. New suggestions enter from the right with a spring transition, while the system’s reduced-motion preference removes the displacement.
+Suggestions are single-line pills floating over the bottom of the message area instead of occupying a divided toolbar. The message list keeps enough bottom scroll space so the final message can always move fully above the overlay. Long labels are truncated. Primary, standard, and high-risk actions use distinct semantic styles. When every suggestion has a clear visual meaning, the assistant may consistently add emoji, platform icons, or trusted images across the whole group. It falls back to text-only pills when the group cannot stay consistent, avoiding decorative visuals that impair scanning or layout. New suggestions enter from the right with a spring transition, while the system’s reduced-motion preference removes the displacement.
 
 Builds, releases, template installations, and hooks can appear as live progress cards. Each card is bound to the actual platform operation and updates when its authoritative state changes. After a refresh or a temporary disconnect, the card reads the latest state again. The assistant does not invent a static percentage when no real operation identifier is available, and it still performs the required verification before presenting a final result.
 
@@ -114,11 +116,15 @@ When a form continues the conversation, only the non-sensitive fields declared b
 
 Complex cards show a preparation animation and replace it in place when the final content is ready. Cards adapt to the assistant window width, while wide tables and code scroll inside the card. Descriptive text supports safe Markdown; HTML and scripts are never executed as interface content.
 
+If a model-generated card fails validation, the assistant shows correction progress in the same preparation slot and uses the reported field paths to retry up to three times. A successful correction replaces that slot in place without inserting duplicate cards or requiring a page refresh. When the limit is reached, the failed state and final validation reasons remain available, and the assistant explains where the workflow stopped.
+
 ## Page context and privacy
 
 The assistant receives structured context such as the current route, page type, and selected resource IDs. Passwords, tokens, and secrets shown or entered on a page are not included in that context.
 
 Tool details are collapsed by default. The collapsed row uses a localized business name and shows a finished call as “status · duration.” Expand it to inspect three sections: identifiers, arguments, and return value. Identifiers include the original operation, call ID, run ID, Trace ID, duration, and request ID when available. Redacted and bounded nested arguments and response data retain their JSON structure for direct inspection. Tokens, secrets, passwords, and authentication data are never displayed.
+
+Internal maintenance tools stay hidden in normal conversations. A platform administrator can enable debug mode from the assistant header when investigating orchestration behavior. Internal tools then appear in their actual timeline position with an “Internal tool” badge. This browser-local preference only changes presentation for that administrator; it does not change authorization, execution, or another user's interface.
 
 If interaction-card generation fails, the tool details list the invalid field paths and reasons so the card can be regenerated or an administrator can investigate with the request ID.
 

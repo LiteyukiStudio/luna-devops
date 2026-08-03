@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { isAIUIActionRepeatable, parseAIOptionAction } from './actions'
+import { AIOptionLeadingVisual } from './option-visual'
 
 export function AIOptionsBar({ actions, sourceKey, onAction }: {
   actions: AIUIAction[]
@@ -19,6 +20,8 @@ export function AIOptionsBar({ actions, sourceKey, onAction }: {
   const pendingKeysRef = useRef(new Set<string>())
   const selectedKeysRef = useRef(new Set<string>())
   const options = useMemo(() => actions.map(parseAIOptionAction).filter(action => action !== null).slice(0, 5), [actions])
+  const visualType = options[0]?.visual?.type
+  const showVisuals = Boolean(visualType && options.every(option => option.visual?.type === visualType))
 
   if (options.length === 0)
     return null
@@ -92,8 +95,13 @@ export function AIOptionsBar({ actions, sourceKey, onAction }: {
                   variant={variant}
                   onClick={() => void choose(action, key)}
                 >
-                  {pending && <LoaderCircle className="animate-spin motion-reduce:animate-none" />}
-                  {!pending && selected && <Check />}
+                  {(pending || selected || showVisuals) && (
+                    <span className="grid size-4 shrink-0 place-items-center" data-ai-option-visual>
+                      {pending && <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" />}
+                      {!pending && selected && <Check className="size-3.5" />}
+                      {!pending && !selected && showVisuals && action.visual && <AIOptionLeadingVisual visual={action.visual} />}
+                    </span>
+                  )}
                   <span className="truncate">{label}</span>
                   <span className="sr-only">{t('aiAssistant.options.position', { current: index + 1, total: options.length })}</span>
                 </Button>

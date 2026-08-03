@@ -2,6 +2,7 @@ import type { Repository } from "./persistence/repository.js"
 import type { RunEvent, TimelineItem } from "./domain.js"
 import { normalizeEventSequence } from "./event-sequence.js"
 import type { optionUIActions } from "./tools/ui-options.js"
+import { toolVisibility } from "./tools/tool-presentation.js"
 
 export async function presentTimeline(repository: Repository, ownerUserId: string, conversationId: string) {
   const snapshot = await repository.getTimeline(ownerUserId, conversationId)
@@ -98,11 +99,13 @@ function presentItem(item: TimelineItem) {
   const argumentsHash = stringValue(item.content.argumentsHash)
   const mfaPurpose = stringValue(item.content.mfaPurpose)
   const traceId = stringValue(item.content.traceId)
+  const operationId = stringValue(item.content.operationId) ?? "unknown"
   return {
     ...base,
     toolCall: {
       id: toolCallId,
-      operationId: stringValue(item.content.operationId) ?? "unknown",
+      operationId,
+      visibility: toolVisibility(operationId),
       callIndex: item.timelineIndex,
       status,
       arguments: objectValue(item.content.arguments),
@@ -157,6 +160,9 @@ function presentToolResult(value: unknown, errorCode?: string) {
     ...(stringValue(object.requestId) ? { requestId: stringValue(object.requestId) } : {}),
     ...(displayErrorCode ? { errorCode: displayErrorCode } : {}),
     ...(stringValue(object.error) ? { errorMessage: stringValue(object.error) } : {}),
+    ...(stringValue(object.generationId) ? { generationId: stringValue(object.generationId) } : {}),
+    ...(typeof object.attempt === "number" ? { attempt: object.attempt } : {}),
+    ...(typeof object.maxAttempts === "number" ? { maxAttempts: object.maxAttempts } : {}),
     ...(data !== undefined ? { data } : {}),
     ...(issues.length ? { issues } : {}),
     ...(stringValue(object.title) ? { fields: [
@@ -168,7 +174,10 @@ function presentToolResult(value: unknown, errorCode?: string) {
 }
 
 const sensitiveDisplayKey = /authorization|cookie|password|secret|token|credential|api[-_]?key|kubeconfig/i
-const resultMetadataKeys = new Set(["summaryKey", "summaryParams", "requestId", "code", "error", "detail", "issues", "title", "description", "uiActions"])
+const resultMetadataKeys = new Set([
+  "summaryKey", "summaryParams", "requestId", "code", "error", "detail", "issues", "title", "description", "uiActions",
+  "generationId", "attempt", "maxAttempts",
+])
 
 function toolDisplayData(object: Record<string, unknown>): unknown {
   const candidate = object.result !== undefined
