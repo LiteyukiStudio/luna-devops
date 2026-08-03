@@ -1,7 +1,7 @@
 import type { AISettingsFormValues } from './ai-assistant-settings'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Save } from 'lucide-react'
+import { FlaskConical, LoaderCircle, Save } from 'lucide-react'
 import { useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -11,6 +11,7 @@ import { CheckboxField } from '@/components/common/checkbox-field'
 import { FormActions } from '@/components/common/form-actions'
 import { FormField as Field } from '@/components/common/form-field'
 import { ProgressiveSection } from '@/components/common/progressive-section'
+import { StatusBadge } from '@/components/common/status-badge'
 import { Surface } from '@/components/common/surface'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -153,6 +154,7 @@ export function AIAssistantSettingsPanel() {
           <ObservabilitySourceFields form={form} source="prometheus" />
           <ObservabilitySourceFields form={form} source="loki" tenant />
           <ObservabilitySourceFields form={form} source="tempo" tenant />
+          <p className="text-xs text-muted-foreground">{t('settings.ai.observabilitySaveWarning')}</p>
         </ProgressiveSection>
         <ProgressiveSection
           description={t('settings.ai.webProxyDescription')}
@@ -191,9 +193,36 @@ function ObservabilitySourceFields({ form, source, tenant = false }: { form: Ret
   const configuredField = `${source}TokenConfigured` as const
   const tenantField = `${source}TenantId` as 'lokiTenantId' | 'tempoTenantId'
   const errors = form.formState.errors
+  const test = useMutation({
+    mutationFn: () => api.testAgentObservabilitySource({
+      source,
+      url: form.getValues(urlField).trim(),
+      token: form.getValues(tokenField).trim() || undefined,
+      tenantId: tenant ? form.getValues(tenantField).trim() || undefined : undefined,
+    }),
+  })
   return (
     <div className="grid gap-4 rounded-lg bg-surface-subtle p-4">
-      <p className="text-sm font-medium">{t(`settings.ai.observabilitySources.${source}`)}</p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-medium">{t(`settings.ai.observabilitySources.${source}`)}</p>
+        <div className="flex items-center gap-2">
+          {test.data && (
+            <StatusBadge tone={test.data.reachable ? (test.data.dataAvailable ? 'success' : 'warning') : 'danger'}>
+              {t(`settings.ai.observabilityTestCodes.${test.data.code.split('.').at(-1)}`, { defaultValue: test.data.code })}
+              {' '}
+              ·
+              {test.data.latencyMs}
+              {' '}
+              ms
+            </StatusBadge>
+          )}
+          {test.isError && <StatusBadge tone="danger">{t('settings.ai.observabilityTestFailed')}</StatusBadge>}
+          <Button disabled={!form.watch(urlField) || test.isPending} size="sm" type="button" variant="outline" onClick={() => test.mutate()}>
+            {test.isPending ? <LoaderCircle className="size-4 animate-spin" /> : <FlaskConical className="size-4" />}
+            {t('settings.ai.observabilityTest')}
+          </Button>
+        </div>
+      </div>
       <div className="grid gap-4 md:grid-cols-2">
         <Field error={errors[urlField]?.message} hint={t('settings.ai.observabilityUrlHint')} label={t('settings.ai.observabilityUrl')} required={form.watch('observabilityEnabled')}>
           <Input autoComplete="url" placeholder={`http://${source}:${source === 'prometheus' ? '9090' : source === 'loki' ? '3100' : '3200'}`} {...form.register(urlField)} />

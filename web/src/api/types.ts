@@ -12,6 +12,38 @@ export type LiveObservationStatus
     | 'unknown'
     | 'declared'
 
+export type AgentObservabilitySource = 'prometheus' | 'loki' | 'tempo'
+
+export interface AgentObservabilityTestResult {
+  source: AgentObservabilitySource
+  reachable: boolean
+  dataAvailable: boolean
+  latencyMs: number
+  code: string
+}
+
+export interface AgentObservabilityPoint { timestamp: number, value: number }
+export interface AgentObservabilitySeries { labels: Record<string, string>, points: AgentObservabilityPoint[] }
+export interface AgentObservabilityLog { timestamp: string, line: string, labels: Record<string, string> }
+export interface AgentObservabilityTrace {
+  traceId: string
+  rootServiceName: string
+  rootTraceName: string
+  startTimeUnixNano: string
+  durationMs: number
+}
+export interface AgentObservabilityOverview {
+  generatedAt: string
+  range: '1h' | '6h' | '24h'
+  summary: Record<string, number>
+  series: Record<string, AgentObservabilitySeries[]>
+  tools: AgentObservabilitySeries[]
+  logs: AgentObservabilityLog[]
+  traces: AgentObservabilityTrace[]
+  sourceStatus: Record<AgentObservabilitySource, 'ready' | 'unavailable'>
+  observationCode: string
+}
+
 export interface Project {
   id: string
   identifier: string

@@ -6509,6 +6509,34 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "503": { description: Agent or Provider is unavailable, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+  /api/v1/configs/ai/observability/test:
+    post:
+      operationId: testAgentObservabilitySource
+      tags: [AI Assistant]
+      summary: Test one unsaved or saved Agent observability query source without blocking configuration persistence
+      security: [{ SessionCookie: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AgentObservabilityTestInput" }
+      responses:
+        "200": { description: Connection and recent-data diagnostic result, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObservabilityTestResult" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/ai/observability/overview:
+    get:
+      operationId: getAgentObservabilityOverview
+      tags: [AI Assistant]
+      summary: Return the fixed-query Agent metrics, failure logs, and Run traces used by the operations view
+      security: [{ SessionCookie: [] }]
+      parameters:
+        - { name: range, in: query, schema: { type: string, enum: [1h, 6h, 24h], default: 1h } }
+      responses:
+        "200": { description: Non-cacheable Agent observability snapshot, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObservabilityOverview" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { description: Agent observability is disabled or not configured, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
 components:
   securitySchemes:
     SessionCookie:
@@ -6772,6 +6800,67 @@ components:
             agentConcurrentRuns: { type: integer, minimum: 1, maximum: 10 }
           required: [providerTimeoutMs, runTimeoutMs, agentConcurrentRuns]
       required: [version, provider, runtime]
+    AgentObservabilitySource:
+      type: string
+      enum: [prometheus, loki, tempo]
+    AgentObservabilityTestInput:
+      type: object
+      required: [source, url]
+      properties:
+        source: { $ref: "#/components/schemas/AgentObservabilitySource" }
+        url: { type: string, format: uri }
+        token: { type: string, writeOnly: true }
+        tenantId: { type: string }
+    AgentObservabilityTestResult:
+      type: object
+      required: [source, reachable, dataAvailable, latencyMs, code]
+      properties:
+        source: { $ref: "#/components/schemas/AgentObservabilitySource" }
+        reachable: { type: boolean }
+        dataAvailable: { type: boolean }
+        latencyMs: { type: integer, format: int64 }
+        code: { type: string }
+    AgentObservabilityPoint:
+      type: object
+      required: [timestamp, value]
+      properties:
+        timestamp: { type: integer, format: int64, description: Unix seconds. }
+        value: { type: number }
+    AgentObservabilitySeries:
+      type: object
+      required: [labels, points]
+      properties:
+        labels: { type: object, additionalProperties: { type: string } }
+        points: { type: array, items: { $ref: "#/components/schemas/AgentObservabilityPoint" } }
+    AgentObservabilityLog:
+      type: object
+      required: [timestamp, line, labels]
+      properties:
+        timestamp: { type: string, description: Unix nanoseconds encoded as a string. }
+        line: { type: string }
+        labels: { type: object, additionalProperties: { type: string } }
+    AgentObservabilityTrace:
+      type: object
+      required: [traceId, rootServiceName, rootTraceName, startTimeUnixNano, durationMs]
+      properties:
+        traceId: { type: string }
+        rootServiceName: { type: string }
+        rootTraceName: { type: string }
+        startTimeUnixNano: { type: string }
+        durationMs: { type: integer, format: int64 }
+    AgentObservabilityOverview:
+      type: object
+      required: [generatedAt, range, summary, series, tools, logs, traces, sourceStatus, observationCode]
+      properties:
+        generatedAt: { type: string, format: date-time }
+        range: { type: string, enum: [1h, 6h, 24h] }
+        summary: { type: object, additionalProperties: { type: number } }
+        series: { type: object, additionalProperties: { type: array, items: { $ref: "#/components/schemas/AgentObservabilitySeries" } } }
+        tools: { type: array, items: { $ref: "#/components/schemas/AgentObservabilitySeries" } }
+        logs: { type: array, items: { $ref: "#/components/schemas/AgentObservabilityLog" } }
+        traces: { type: array, items: { $ref: "#/components/schemas/AgentObservabilityTrace" } }
+        sourceStatus: { type: object, additionalProperties: { type: string, enum: [ready, unavailable] } }
+        observationCode: { type: string }
     ErrorResponse:
       type: object
       properties:
