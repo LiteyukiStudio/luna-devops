@@ -20,7 +20,12 @@ import { executeAutomaticRouteDelivery } from './automatic-route-delivery'
 import { readAIClientInstanceId } from './client-instance'
 import { AIAssistantComposer } from './composer'
 import { AIConversationList } from './conversation-list'
-import { aiConversationSessionReducer, initialAIConversationSessionState } from './conversation-session'
+import {
+  aiConversationSessionReducer,
+  initialAIConversationSessionState,
+  isRecentConversationInteraction,
+  REFRESH_CONVERSATION_RETURN_DURATION_MS,
+} from './conversation-session'
 import { AIDesktopShell } from './desktop-shell'
 import { AIAssistantLauncher } from './launcher'
 import {
@@ -101,6 +106,15 @@ export function AiAssistant() {
     queryFn: () => api.listAIConversations({ page: 1, pageSize: 50, search: conversationSearch || undefined }),
     enabled: available && assistantOpen,
   })
+  const previousConversation = conversations.data?.items[0]
+  const refreshReturnOpenedAt = conversationSession.refreshReturnExpiresAt
+    ? conversationSession.refreshReturnExpiresAt - REFRESH_CONVERSATION_RETURN_DURATION_MS
+    : undefined
+  const canReturnToPreviousConversation = Boolean(
+    previousConversation
+    && refreshReturnOpenedAt !== undefined
+    && isRecentConversationInteraction(previousConversation.updatedAt, refreshReturnOpenedAt),
+  )
   const selectedConversationId = conversationSession.activeConversationId
   const draftKey = selectedConversationId ?? '__new__'
   const draft = drafts[draftKey] ?? ''
@@ -350,16 +364,18 @@ export function AiAssistant() {
       })
       return
     }
+    if (generating)
+      return
     sendTurn.mutate({ conversationId: selectedConversationId, message: draft })
   }
   const dismissRefreshReturn = useCallback(() => {
     dispatchConversationSession({ type: 'dismiss_refresh_return' })
   }, [])
   const returnToPreviousConversation = useCallback(() => {
-    const previousConversationId = conversations.data?.items[0]?.id
+    const previousConversationId = previousConversation?.id
     if (previousConversationId)
       dispatchConversationSession({ type: 'select', conversationId: previousConversationId })
-  }, [conversations.data?.items])
+  }, [previousConversation?.id])
 
   useEffect(() => {
     if (!assistantOpen)
@@ -475,7 +491,7 @@ export function AiAssistant() {
           onResend={message => sendTurn.mutate({ conversationId: selectedConversationId, message })}
           onRetry={() => void timeline.refetch()}
           resendDisabled={Boolean(activeRunId || sendingSelected)}
-          topContent={conversationSession.refreshReturnExpiresAt && !selectedConversationId && !conversationSearch && conversations.data?.items[0]
+          topContent={conversationSession.refreshReturnExpiresAt && canReturnToPreviousConversation && !selectedConversationId && !conversationSearch
             ? (
                 <AIRefreshConversationReturn
                   expiresAt={conversationSession.refreshReturnExpiresAt}

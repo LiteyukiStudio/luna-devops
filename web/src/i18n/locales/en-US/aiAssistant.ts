@@ -7,7 +7,7 @@ const aiAssistant = {
     empty: 'The assistant can diagnose issues or perform platform actions using the current page context',
     inputLabel: 'Message Luna Assistant',
     inputPlaceholder: 'Describe the issue to diagnose…',
-    inputRunning: 'You can continue when the current run finishes',
+    inputRunning: 'Keep typing, then stop the current run before sending',
     inputRequired: 'Provide the information needed to continue…',
     continue: 'Continue run',
     send: 'Send message',

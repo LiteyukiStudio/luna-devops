@@ -1,4 +1,13 @@
 export const REFRESH_CONVERSATION_RETURN_DURATION_MS = 8_000
+export const REFRESH_CONVERSATION_RECENCY_MS = 10 * 60_000
+
+export function isRecentConversationInteraction(updatedAt: string, now: number): boolean {
+  const timestamp = Date.parse(updatedAt)
+  if (!Number.isFinite(timestamp))
+    return false
+  const age = now - timestamp
+  return age >= 0 && age <= REFRESH_CONVERSATION_RECENCY_MS
+}
 
 export interface AIConversationSessionState {
   activeConversationId?: string

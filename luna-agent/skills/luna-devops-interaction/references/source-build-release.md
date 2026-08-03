@@ -7,6 +7,8 @@
   `repository-delivery.md`。
 - 判断用户要连接的是 Provider、凭据、代码仓库、分支或标签、子目录还是 Dockerfile。
 - 使用已注册的读取工具发现 Provider、凭据、代码仓库、分支或现有绑定，不要要求用户输入不透明 ID。
+- Provider、账号、凭据、仓库和输出镜像站遵守根 Skill 直接索引的
+  `resource-resolution.md`：唯一且已验证可用的候选直接采用，多候选无法消歧时再交互。
 - 不得在聊天中索要 Token 或 Secret。必须提供密钥时，引导用户前往只写凭据字段。
 - 绑定代码仓库时，按需收集项目空间、应用、可信仓库、版本策略、构建上下文和 Dockerfile 路径。
 - 新建 Git Provider 或账号连接时，区分管理员配置 Provider 与用户 OAuth 授权账号；

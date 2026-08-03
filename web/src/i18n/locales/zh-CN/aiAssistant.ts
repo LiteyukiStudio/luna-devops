@@ -7,7 +7,7 @@ const aiAssistant = {
     empty: '助手会结合当前页面上下文，帮你诊断问题或执行平台操作',
     inputLabel: '发送给 Luna 助手的消息',
     inputPlaceholder: '描述要诊断的问题…',
-    inputRunning: '当前任务完成后可继续提问',
+    inputRunning: '可继续输入，停止当前任务后发送',
     inputRequired: '补充助手继续执行所需的信息…',
     continue: '继续执行',
     send: '发送消息',

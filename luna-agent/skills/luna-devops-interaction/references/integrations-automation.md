@@ -4,6 +4,8 @@
 
 - 区分连接 Git Provider、授权账号、绑定仓库、创建 Webhook 和重新配置 Webhook。
 - 先读取 Provider、账号、仓库和现有绑定，再让用户选择；不得要求手填账号或仓库 ID。
+- 按根 Skill 直接索引的 `resource-resolution.md` 过滤候选；唯一且能访问目标仓库的账号或
+  Provider 直接采用，多个有效候选无法消歧时才让用户选择。
 - 建立绑定后回读账号、仓库、默认分支和绑定状态。启用 Webhook 时验证远端配置或平台
   返回状态，再通过一次受控测试事件或真实 push 检查是否产生 BuildRun。
 - Webhook 创建请求成功但后续没有 BuildRun 时，依次检查签名、事件类型、分支策略、

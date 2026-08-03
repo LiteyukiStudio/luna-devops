@@ -362,6 +362,13 @@ export class PostgresRepository implements Repository {
       [value.id ?? createId("aiitm"), value.runId, value.turnId, Number(position), value.type, value.status, JSON.stringify(value.content)],
     )).rows[0]
     if (!row) throw new Error("ai.persistence_failed")
+    if (value.type === "user_message" || value.type === "assistant_message") {
+      await client.query(
+        `update ai.conversations c set updated_at=$2
+         from ai.runs r where r.id=$1 and c.id=r.conversation_id`,
+        [value.runId, row.created_at],
+      )
+    }
     return mapTimelineItem(row)
   }
   private async updateItemWith(client: Pick<PoolClient, "query"> | Pool, itemId: string, status: TimelineItem["status"], content: Record<string, unknown>) {

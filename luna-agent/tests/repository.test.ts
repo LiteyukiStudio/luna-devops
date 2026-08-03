@@ -1,7 +1,32 @@
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { MemoryRepository } from "../src/persistence/memory.js"
 
 describe("conversation repository", () => {
+  afterEach(() => vi.useRealTimers())
+
+  it("updates conversation activity when a user or assistant message is appended", async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date("2026-08-03T10:00:00.000Z"))
+    const repository = new MemoryRepository()
+    const conversation = await repository.createConversation("usr_a", "activity")
+
+    vi.setSystemTime(new Date("2026-08-03T10:05:00.000Z"))
+    const created = await repository.createTurn("usr_a", {
+      conversationId: conversation.id, input: "继续诊断", pageContext: {}, idempotencyKey: "activity-turn",
+    })
+    expect((await repository.getConversation("usr_a", conversation.id))?.updatedAt).toBe("2026-08-03T10:05:00.000Z")
+
+    vi.setSystemTime(new Date("2026-08-03T10:06:00.000Z"))
+    await repository.appendItem({
+      runId: created.run.id,
+      turnId: created.turn.id,
+      type: "assistant_message",
+      status: "completed",
+      content: { parts: [{ type: "text", text: "诊断完成" }] },
+    })
+    expect((await repository.getConversation("usr_a", conversation.id))?.updatedAt).toBe("2026-08-03T10:06:00.000Z")
+  })
+
   it("persists a turn and returns the same run for an idempotent retry", async () => {
     const repository = new MemoryRepository()
     const conversation = await repository.createConversation("usr_a", "诊断")

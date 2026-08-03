@@ -38,6 +38,7 @@ export function AIAssistantComposer({
 }: AIAssistantComposerProps) {
   const { t } = useTranslation()
   const busy = sending || submitting
+  const canSubmit = !activeRun || waitingInput
   return (
     <footer className="shrink-0 border-t border-separator-subtle bg-surface p-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))]">
       <div className="flex min-h-16 gap-2 rounded-container border border-input bg-surface px-3 py-2 focus-within:ring-2 focus-within:ring-ring">
@@ -45,13 +46,13 @@ export function AIAssistantComposer({
           ref={inputRef}
           aria-label={t('aiAssistant.inputLabel')}
           className="min-h-10 min-w-0 flex-1 resize-none bg-transparent !text-base leading-5 outline-none placeholder:text-muted-foreground sm:!text-[13px]"
-          disabled={busy || (activeRun && !waitingInput)}
+          disabled={busy}
           maxLength={maxLength}
           placeholder={waitingInput ? t('aiAssistant.inputRequired') : activeRun ? t('aiAssistant.inputRunning') : t('aiAssistant.inputPlaceholder')}
           value={draft}
           onChange={event => onDraftChange(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.shiftKey && !isConfirmingIME(event) && draft.trim()) {
+            if (event.key === 'Enter' && !event.shiftKey && !isConfirmingIME(event) && draft.trim() && canSubmit) {
               event.preventDefault()
               onSubmit()
             }

@@ -221,6 +221,12 @@ export class MemoryRepository implements Repository {
     const timelineIndex = this.items.filter(item => item.runId === value.runId).length
     const item: TimelineItem = { ...value, id: value.id ?? createId("aiitm"), timelineIndex, revision: 1, createdAt: new Date().toISOString() }
     this.items.push(item)
+    if (value.type === "user_message" || value.type === "assistant_message") {
+      const run = this.runs.get(value.runId)
+      const conversation = run ? this.conversations.get(run.conversationId) : undefined
+      if (conversation)
+        this.conversations.set(conversation.id, { ...conversation, updatedAt: item.createdAt })
+    }
     return item
   }
 

@@ -144,6 +144,22 @@ describe("versioned system prompt", () => {
   })
 
   it.each([
+    "部署到当前可用的运行集群",
+    "使用镜像站构建并发布这个应用",
+    "选择项目空间和 Git 凭据继续部署",
+  ])("loads the shared resource resolution rules for %s", (userInput) => {
+    const context = { userInput }
+    const names = loadedSkillReferences(context).map(item => item.name)
+    const prompt = systemPromptFor("system-v4", context)
+
+    expect(names).toContain("resource-resolution")
+    expect(prompt).toContain("只有一个时直接采用并继续")
+    expect(prompt).toContain("不得把列表接口返回的第一项直接当默认值")
+    expect(prompt).toContain("用户明确要求“换一个”")
+    expect(prompt).toContain("自动选择资源不等于批准高风险操作")
+  })
+
+  it.each([
     {
       input: "从应用市场安装 PostgreSQL 到一个新项目空间并部署完成",
       expected: ["delivery-orchestration", "projects-applications", "runtime-deployment", "task-completion"],

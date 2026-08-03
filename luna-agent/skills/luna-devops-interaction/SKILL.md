@@ -15,6 +15,9 @@ description: 指导 Luna DevOps 助手处理项目空间、应用、代码仓库
 2. 判断当前阶段：发现资源、收集必填值、审阅变更、执行操作或验证结果。
 3. 使用可信工具获取平台实时事实。不得推测 ID、状态、权限、健康情况或执行成功。
 4. 只询问无法安全发现的值。优先提供由可信结果支持的具体选项，不要先让用户自由输入。
+   对项目空间、集群、镜像站、账号、凭据等同类资源，先按
+   [资源候选解析与默认选择](references/resource-resolution.md)过滤有效候选：只有一个时直接采用并继续，
+   不生成选择卡片；多个且无法从用户意图确定时才让用户选择。
 5. 持续推进同一个工作流直到达成结果。已有可用操作时，不要改成指导用户去界面手动完成。若当前主要意图唯一对应另一个已注册专用页面，必须在继续执行业务工具的同时使用 `navigate_to_route` 同步用户视图；页面切换不能替代实际操作。
 6. 调查型任务先建立最短取证计划，一次读取能区分当前分支的事实；不要反复列举整个
    平台资源，或在已经确认目标后继续调用无关列表工具。
@@ -51,7 +54,7 @@ description: 指导 Luna DevOps 助手处理项目空间、应用、代码仓库
   同一次模型响应中；准备提示应描述正在组织的内容，不得声称已经完成。
 - 只有无需丰富内容和结构化输入的 2～5 个轻量后续动作才使用 `create_options`。
 - 使用 `send_message` 回答已知候选中的单击选择、缩小查询范围或继续非结构化分析。
-- 只要继续工作流需要用户填写、选择、切换或组合结构化参数，就使用 `create_interaction_cards`：一轮可完成时选择 `form`，字段存在依赖或需要分阶段收集时选择 `wizard`。即使只缺一个操作参数，也不得改用快捷选项或纯文本追问。
+- 只要经过资源候选解析后，继续工作流仍需要用户填写、选择、切换或组合结构化参数，就使用 `create_interaction_cards`：一轮可完成时选择 `form`，字段存在依赖或需要分阶段收集时选择 `wizard`。同类有效资源只有一个时直接采用，不得为了展示唯一选项而创建表单；即使只缺一个无法发现的操作参数，也不得改用快捷选项或纯文本追问。
 - 仅当用户确实要执行操作、已注册的 operation ID 可用且所有必填参数已知时，使用 `request_tool`。
 - 用户明确要求打开页面，或其主要意图唯一对应另一个已知专用页面时，必须使用 `navigate_to_route` 主动同步当前视图；用户不必明确说“跳转”。全局页面不需要资源 ID，资源详情页必须先取得可信 ID。可选页面建议仍使用 `navigate`。跳转不能代替候选选择、结构化输入、业务操作或验收。
 - 操作不可用时，如实说明，并提供最接近的可用读取、澄清或手动流程。不得虚构工具。
@@ -100,6 +103,7 @@ description: 指导 Luna DevOps 助手处理项目空间、应用、代码仓库
 - Git/Webhook、钩子、服务关系、拓扑和通知自动化：[integrations-automation.md](references/integrations-automation.md)
 - 用户、角色、认证、密钥、账单、平台设置：[security-administration.md](references/security-administration.md)
 - 目标状态、执行闭环、完成措辞和验收证据：[task-completion.md](references/task-completion.md)
+- 项目空间、集群、镜像站、账号、凭据等资源的唯一候选默认与多候选消歧：[resource-resolution.md](references/resource-resolution.md)
 - 选项组织、歧义、长列表、失败恢复：[options-and-continuity.md](references/options-and-continuity.md)
 - 交互卡片模板、内容块选择和极端数据处理：[card-templates.md](references/card-templates.md)
 - 业务卡片模板命中规则、参数契约和正反例：[business-card-templates.md](references/business-card-templates.md)

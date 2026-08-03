@@ -20,6 +20,8 @@ Tap the floating entry on desktop or mobile to open the assistant. Drag it to ch
 
 ## Conversations
 
+After a page refresh, the assistant starts a new conversation. A brief return shortcut appears only when the previous conversation had activity within the last 10 minutes; older conversations remain available from the conversation list.
+
 In the assistant you can:
 
 - Describe what you want to inspect or change
@@ -27,11 +29,15 @@ In the assistant you can:
 - Switch conversations while another response is running
 - Stop a response at any time
 
+You can prepare the next message in the composer while the assistant is working, and the draft is preserved. Stop the current run before sending the new message.
+
 An empty new conversation is not saved repeatedly. Conversations are named automatically until you rename one manually; a manually chosen title is never overwritten.
 
 Closing and reopening the assistant returns to the conversation you were using. A full browser refresh starts with a new empty conversation instead. For eight seconds, a notice at the top of the message area lets you return to the previous conversation when needed. The conversation list stays open while switching conversations so you can continue browsing or managing them.
 
 When an interactive form selects a project space, application, cluster, or another platform resource, the selector shows only its readable name. The submitted conversation message includes both the resource name and ID so you can verify the target and continue the operation unambiguously.
+
+When a workflow needs an existing project space, runtime cluster, registry, code account, or another platform resource, the assistant first checks the usable candidates. It proceeds automatically when exactly one candidate meets the requirements, and asks you to choose or create one only when multiple candidates remain, none are usable, or you explicitly request a different or new resource.
 
 Each message shows its timestamp underneath. Hover anywhere over the message, including the timestamp area, to copy it; your own messages can also be sent again unchanged. These actions remain visible on touch devices.
 

@@ -12,6 +12,11 @@ const interactionSkill = readSkill("../../skills/luna-devops-interaction/SKILL.m
 
 const referenceDefinitions = [
   reference(
+    "resource-resolution",
+    "../../skills/luna-devops-interaction/references/resource-resolution.md",
+    /\b(project|workspace|application|app|deployment|cluster|environment|registry|provider|account|credential|repository|repo|template|gateway|domain|config set|variable set|channel|choose|select|candidate)\b|项目空间|应用|部署|集群|环境|镜像站|账号|凭据|仓库|模板|网关|域名|配置集|变量集|渠道|选择|候选|默认/i,
+  ),
+  reference(
     "delivery-orchestration",
     "../../skills/luna-devops-interaction/references/delivery-orchestration.md",
     /\b(deploy|deployment|install|launch|ship|host|source|image|template|marketplace)\b|部署|上线|安装|交付|托管|运行一个|从源码|代码部署|已有镜像|镜像站|应用市场/i,
