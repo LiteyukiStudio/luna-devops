@@ -4,9 +4,12 @@ WORKDIR /workspace
 RUN corepack enable
 COPY packages/ai-interaction-card-contract ./packages/ai-interaction-card-contract
 COPY luna-agent/package.json luna-agent/pnpm-lock.yaml luna-agent/pnpm-workspace.yaml ./luna-agent/
-RUN pnpm --dir luna-agent install --frozen-lockfile
+WORKDIR /workspace/luna-agent
+RUN pnpm install --frozen-lockfile
+WORKDIR /workspace
 COPY luna-agent/ ./luna-agent/
-RUN pnpm --dir luna-agent build && pnpm --dir luna-agent prune --prod
+WORKDIR /workspace/luna-agent
+RUN pnpm build && pnpm prune --prod
 
 FROM node:24-alpine AS runtime
 ENV NODE_ENV=production
