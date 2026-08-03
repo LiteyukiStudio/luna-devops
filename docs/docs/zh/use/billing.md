@@ -1,113 +1,31 @@
 # 账单与费用分析
 
-账单页回答两个问题：账户还剩多少额度，以及费用具体花在了哪些项目、应用和部署配置上。你可以在这里查看余额、消费概览、费用分析和每一笔账单流水。
+账单页用于查看账户余额、消费趋势，以及费用具体产生在哪些项目空间、应用和部署配置中。
 
-项目空间负责产生费用，真正扣款的是“计费归属账户”的用户钱包。归属人发生变化后，新费用由新的归属人承担，过去的账单流水不会跟着迁移。
+项目空间产生的费用由其“计费归属账户”承担。归属人变更后，新费用由新的归属人承担，历史账单不会迁移。接受费用归属转移前，请确认项目空间和发起人无误。
 
-项目空间概览页会展示“计费归属账户”，包含头像、名称和邮箱，用于确认当前项目空间后续扣费关联到哪个用户账户。
+普通用户只能查看自己的账单。平台管理员可以查看全部用户或指定用户的账单。页面支持按时间、用户和项目空间筛选，账单流水用于审计，费用分析更适合定位主要开销。
 
-旧发布记录缺少部署配置引用时，平台只在能唯一匹配部署配置的场景下回填或继续计费，避免旧应用漏账。
-
-旧部署配置缺少删除状态时，平台会按未删除资源规范化为可计费的 active 状态。
-
-页面顶部的余额是当前用户账户的总览；周期花费、今日花费和待结算金额会跟随项目空间筛选范围统计。工具栏可以同时选择账单周期、用户账户和项目空间。周期预设包含本周、近 7 天、本月、近 30 天、本年和去年，也可以用日期选择器自定义范围。费用分析、账单流水、用量记录和周期分类消耗都会使用同一时间范围。
-
-普通用户只能查看自己的账单。平台管理员进入页面时也先看到自己的数据，需要时再通过用户选择器切换到全部用户或指定用户；项目空间筛选会随当前用户范围一起更新。
-
-平台管理员还可以在站点设置里配置现实货币单位和换算比例。账单页顶部概览会在 credits 后显示折算金额，例如 `1,012.24 Credits (1.01 CNY)`；这只是展示换算，底层结算仍使用 credits。
-
-平台管理员进入用户管理时，用户列表会展示每个用户的钱包余额，便于快速判断账号余额状态；缺少钱包记录的用户按 0 credits 展示。
+平台以 Credits 结算。管理员可以配置现实货币单位和展示换算比例，但这不会改变底层结算单位，也不会重算历史账单。
 
 ## 费用分析
 
-费用分析按“项目空间 / 应用 / 部署配置”聚合已结算用量，展示总费用以及构建、运行、存储、访问和其他分类费用。
+费用分析按项目空间、应用和部署配置汇总已结算用量，并区分构建、运行、存储、访问和其他费用。
 
-CPU、内存和存储按部署配置窗口结算；网关流量按访问路由窗口结算，并在费用分析中归回路由关联的部署配置；构建按 BuildRun 结算，并归回构建所属部署配置。
-
-如果一条用量没有关联到应用或部署配置，页面会归到“未关联应用”或“未关联部署配置”。账单流水仍保留每一笔余额变动，适合审计；费用分析更适合判断哪个项目、应用或部署配置正在产生主要开销。
+无法关联到具体应用或部署配置的用量会显示为“未关联”。如果费用异常，请缩小时间范围并逐层查看项目空间、应用和部署配置。
 
 ## AI Token
 
-AI 助手按模型实际返回的输入和输出 Token 分别计费，费用归属发起该次对话的用户账户。即使会话没有绑定项目空间，Token 用量也会进入该用户的账单；绑定项目空间时，账单同时保留项目空间归属，便于筛选。
-
-平台默认按每 1,000 Token 结算：输入为 1 credit，输出为 4 credits。平台管理员可以在“全局设置 → 计费配置”中修改这两项单价或停用对应计量项。调价只影响后续模型调用，不会重算历史账单。
-
-模型用量会先记录为不可变事件，再由 Worker 异步写入用量记录和账单流水。短暂重启不会丢失待结算用量，重复扫描也不会重复扣费。
+AI 助手按模型实际返回的输入和输出 Token 计费，费用归属发起对话的用户账户。管理员可以在“全局设置 → 计费配置”中调整单价或停用对应计量项；修改只影响后续调用。
 
 ## 访问流量
 
-访问费用按平台访问入口的响应出站流量计费。平台不会直接读取每个 Pod 的外网流量，也不会把集群内服务互访计入公网访问费用。
+访问费用按平台访问入口产生的响应出站流量计算，不包含集群内服务互访流量。
 
-访问流量采集是可选能力，默认不安装。账单页不会把系统组件安装记录当作当前运行状态：平台每次从目标 Kubernetes 集群读取探针工作负载，集群不可达时统一显示“不可用”。未找到探针工作负载时显示“未部署”；工作负载已经就绪但尚未收到有效的正向流量时间窗口时显示“等待上报”；首个有效窗口到达后才展示访问费用。平台不缓存探针在线状态，已经结算的用量仍作为不可变账单历史保留。平台管理员可以从“应用市场”安装 `Luna Gateway Traffic Probe` 平台组件，并选择目标运行集群。
+访问流量采集是可选能力。平台管理员需要从应用市场为目标运行集群安装 `Luna Gateway Traffic Probe`。账单页可能显示：
 
-网关或外部采集器需要按 GatewayRoute 和时间窗口上报响应字节数，平台按 `gateway.egress_gib` 规则换算为 credits 并写入账单。Gateway Traffic Probe 使用独立系统组件 Token 上报，后端会校验上报的 GatewayRoute 是否属于该探针所在运行集群，避免跨集群伪造用量。请求次数当前只保留为审计和后续防滥用分析，默认不扣费。
+- **未部署**：目标集群尚未安装采集组件。
+- **等待上报**：组件已就绪，但尚未收到有效流量数据。
+- **不可用**：平台当前无法读取目标集群状态。
 
-内置 Gateway Traffic Probe 当前采用 Traefik Prometheus metrics 模式：探针在集群内读取平台创建的 HTTPRoute，使用 `luna.devops/gateway-route-id` 标签建立路由映射，再抓取 Traefik metrics 中的响应字节数和请求数 counter，按分钟窗口计算增量并回报平台。默认 metrics 地址为 `http://traefik.<Gateway 命名空间>.svc.cluster.local:9100/metrics`；如果集群中的 Traefik Service 名称、命名空间或 metrics 端口不同，可以在安装模板时填写“Traefik Metrics 地址”覆盖默认值。Traefik 需要启用 Prometheus metrics，并开启 router/service 标签，例如 `--metrics.prometheus.addrouterslabels=true` 和 `--metrics.prometheus.addserviceslabels=true`，同时保证探针 Pod 可以访问该 endpoint。
-
-### Traefik Prometheus metrics for Gateway Traffic Probe
-
-Gateway Traffic Probe 依赖 Traefik Prometheus 指标里的 router/service 标签把流量归属到平台 HTTPRoute。只暴露 entrypoint 级别指标是不够的；如果探针日志长期显示：
-
-```text
-gateway traffic scrape completed routes=9 matchedRoutes=0 windows=0 reportableWindows=0 reportedWindows=0
-```
-
-说明探针能读取 HTTPRoute，也能抓到 metrics，但 metrics 里的标签无法匹配到平台路由。此时需要在 Traefik 侧开启 Prometheus metrics，并开启 router/service labels。
-
-K3s 内置 Traefik 推荐通过 `HelmChartConfig` 覆盖 values。确认集群里存在 `kube-system/traefik` HelmChart 后，创建或更新：
-
-```yaml
-apiVersion: helm.cattle.io/v1
-kind: HelmChartConfig
-metadata:
-  name: traefik
-  namespace: kube-system
-spec:
-  valuesContent: |-
-    metrics:
-      prometheus:
-        addRoutersLabels: true
-        addServicesLabels: true
-```
-
-如果 Traefik 是自行 Helm 安装，请在 Traefik chart values 中设置：
-
-```yaml
-metrics:
-  prometheus:
-    addRoutersLabels: true
-    addServicesLabels: true
-```
-
-如果 Traefik 是手写 Deployment/args 管理，请确保等价参数存在：
-
-```text
---metrics.prometheus=true
---metrics.prometheus.addrouterslabels=true
---metrics.prometheus.addserviceslabels=true
-```
-
-修改 Traefik 静态配置通常会触发 Traefik Pod 滚动重启，期间入口流量可能短暂受影响。生产环境建议先在低峰期操作，并保留原始配置回滚方式。
-
-配置后先确认探针能访问 metrics endpoint：
-
-```bash
-kubectl -n <probe-namespace> exec -it <probe-pod> -- sh -c '
-wget -qO- "$TRAEFIK_METRICS_URL" | grep -E "traefik_.*(requests|responses).*total" | head -30
-'
-```
-
-输出里应能看到带 `router="...@kubernetesgateway"` 或 `service="..."` 的指标。再对照平台 HTTPRoute：
-
-```bash
-kubectl get httproute -A \
-  -l app.kubernetes.io/managed-by=luna-devops \
-  -o custom-columns='NS:.metadata.namespace,NAME:.metadata.name,ROUTE_ID:.metadata.labels.luna\.devops/gateway-route-id,HOST:.spec.hostnames[*]'
-```
-
-产生真实访问流量后，探针日志应从 `matchedRoutes=0` 变为至少 `matchedRoutes>0`，并在有响应字节增量时出现 `gateway traffic window reported`。账单页会在收到首个正向流量窗口后从“等待上报”变为正常访问费用。
-
-参考文档：
-
-- [Traefik Prometheus metrics](https://doc.traefik.io/traefik/observability/metrics/prometheus/)
-- [K3s HelmChartConfig](https://docs.k3s.io/add-ons/helm)
+已经结算的用量会作为账单历史保留。采集异常时，请先检查组件状态、运行日志，以及 Traefik Prometheus 指标是否启用了 router/service 标签。修改生产网关配置可能造成短暂流量中断，请在低峰期操作并保留回滚方式。

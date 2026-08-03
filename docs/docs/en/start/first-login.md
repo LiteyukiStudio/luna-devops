@@ -1,74 +1,37 @@
 # First Time in the Console
 
-After the platform starts, complete the few settings you actually need. There is no need to connect every external system at once. If you can sign in and create a project space, you are ready to prepare a runtime.
+After the platform starts, bootstrap an administrator and create your first project space. External services can be connected later as needed.
 
 ## Sign in or bootstrap
 
-The complete Compose stack starts the API in production mode and does not create a fixed development administrator. On the first visit, initialize an administrator with the deployment's `BOOTSTRAP_TOKEN`. Development account hints appear only when a local environment explicitly sets `APP_ENV=development`.
-
-Local-account sign-in and first-administrator bootstrap both create a server-side session that lasts at most 24 hours. "Keep me signed in" is off by default, so the session cookie has no persistent lifetime and disappears when the browser closes. Enabling it on a trusted device adds a per-user HttpOnly remember cookie with an absolute 30-day lifetime. After the session expires, choosing that recent account rotates the token inside the same token family and creates a new session, but rotation never extends the family's original 30-day deadline or treats remember recovery as a new password/OIDC primary authentication. Each family keeps only its latest session. Reuse of an old token is treated as replay and revokes the entire family's remember tokens, sessions, and Step-up assertions; signing out from a remembered session revokes that family as well. The browser keeps display metadata for at most three recent accounts, but never stores passwords, tokens, or session cookies. Disabling the account, changing its password, or changing its role revokes the account's related authentication state.
-
-Every person has one platform user record. A password and an OIDC identity are simply different sign-in methods that can be attached to that account. The first OIDC sign-in no longer creates a separate kind of “OIDC user.” The same account may bind external identities and, when policy allows it, add a local password. Before the final OIDC identity can be removed, the account must already have another usable sign-in method.
-
-Platform administrators control email registration and OIDC registration independently under Site Settings → Registration & Email. Email registration is off by default and OIDC registration is on by default. Turning off OIDC registration blocks only new user creation; existing bound identities can still sign in. Email registration requires SMTP and uses a short-lived verification code, while the SMTP password is stored only in the Secret Store. Administrators can also decide whether passwordless accounts may add a local password under Account → Security. Setting or changing a password revokes the user's existing sessions and requires a fresh sign-in.
-
-For the first visit to the complete Compose stack, open:
+A full deployment does not create a fixed administrator. For the first visit, open:
 
 ```text
 http://localhost:8088/bootstrap
 ```
 
-Production mode requires a strong random `BOOTSTRAP_TOKEN` in the API process environment. Enter the same Bootstrap Token on this page to create the first administrator. Bootstrap is unavailable when the environment value is missing and rejects mismatched values; development mode does not validate this field. After initialization, rotate or remove this one-time credential from the deployment configuration or secret manager.
+Enter the `BOOTSTRAP_TOKEN` from the deployment environment and create the first administrator. Remove or rotate this one-time credential in your deployment or secret manager afterward.
 
-The first administrator can also choose "Keep me signed in"; its session and remember-login behavior is the same as a normal local sign-in.
+You can later sign in with a local account or an OIDC provider configured by an administrator. Enable “Keep me signed in” only on a trusted device. Password, role, or sign-in method changes may require you to sign in again to protect the account.
 
-## Get help or sign out
+## Dashboard
 
-After signing in, open the account menu from the avatar at the right side of the content top bar. It links to account settings, documentation, the GitHub repository, and sign-out. Signing out requires confirmation so an accidental click does not end the current session.
-
-When a page has multiple sections, its tabs appear on a second row of the same top bar and can scroll horizontally on narrower screens. The page body keeps only the active section and necessary actions, leaving more vertical workspace for settings, resources, and project operations.
-
-## Use the dashboard to choose the next action
-
-After sign-in, the dashboard answers “what needs attention now” instead of presenting a wall of resource totals:
-
-- The work summary shows active builds and releases, consecutive failures, and available clusters.
-- Attention items group consecutive failures by application or deployment target. A later successful event closes the corresponding item.
-- Recent activity combines build, release, hook, route, certificate, and other platform events with contextual links.
-- Platform readiness reports clusters and registries available to the current account without treating mere existence as runtime health.
-
-The dashboard reads this aggregation from a single `GET /api/v1/dashboard` endpoint. Future dashboard modules extend this stable response rather than making the browser compose multiple low-level list APIs.
+The dashboard summarizes active builds and releases, failed work that needs attention, recent activity, and cluster and registry readiness. Open an item to continue troubleshooting in its resource page.
 
 ## Create the first project space
 
-A project space keeps the applications, members, and runtime settings for one product or team together. Think of it as that product's workspace inside the platform.
+A project space groups applications, members, and runtime configuration for one product or team. Open “Project Spaces” and create one:
 
-Suggested first values:
-
-| Field | Suggestion |
+| Field | Recommendation |
 | --- | --- |
-| Name | Product or team name |
-| Identifier | Lowercase English with hyphens; immutable after creation |
-| Members | Start with yourself, invite others later |
-
-The project space list defaults to spaces related to the current user. Platform administrators can switch the scope to all project spaces when they need global maintenance.
-
-On mobile, management lists prioritize primary information such as the resource name. The action column only occupies the width required by its current controls, while the remaining table can still scroll horizontally when needed.
+| Name | Use the product or team name |
+| Slug | Use lowercase letters and hyphens |
+| Members | Keep only yourself for the first run |
 
 ## Create the first application
 
-An application represents one independently deployable service. For the first run, create a basic application:
-
-- Fill in name.
-- Fill in a short lowercase identifier. It becomes immutable after creation and can be reused only after application cleanup completes.
-- Leave runtime details for later.
-
-Service ports, image settings, Dockerfile paths, environment variables, and data volumes belong to deployment targets. The application profile only keeps the name, immutable identifier, and icon.
+An application represents one independently deployable service. Enter a name and slug; the slug cannot be changed after creation. Configure the image, port, environment variables, and volumes in a deployment target.
 
 ## Next
 
-Continue to [Connect Cluster and Registry](/en/start/connect-resources).
-
-If you already have an image, start with an existing-image deployment. It is the shortest path to verify the platform, cluster, and route.
-
-If you want repository-based builds, configure Git providers, registries, and build settings afterward.
+Continue with [Connect Cluster and Registry](/en/start/connect-resources). If an image already exists, deploy it first to validate the platform. Connect a Git provider and build from source only when needed.

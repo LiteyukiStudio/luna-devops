@@ -4,41 +4,32 @@ Luna CLI 的官方 npm 包是 `@liteyuki/luna-cli`，需要 Node.js `22.14.0` �
 
 ## 安装
 
-选择一种包管理器即可：
+使用 npm 安装：
 
 ```bash
 npm install --global @liteyuki/luna-cli
 ```
 
-```bash
-pnpm add --global @liteyuki/luna-cli
-```
+也可以使用 `pnpm add --global @liteyuki/luna-cli`。
 
 安装后确认命令可用：
 
 ```bash
 luna --version
-luna --help
 ```
 
 建议使用 Node.js 版本管理器或用户级 pnpm home，不要用 `sudo` 解决全局目录权限问题。
 
 ## 登录
 
-登录官方实例：
+登录 Luna DevOps：
 
 ```bash
 luna login
 luna whoami
 ```
 
-登录其他 Luna DevOps 实例：
-
-```bash
-luna login server=https://devops.example.com
-```
-
-完成后即可继续阅读[使用 Luna CLI](./cli)。
+自托管实例可通过 `luna login server=https://devops.example.com` 指定地址。完成后即可继续阅读[使用 Luna CLI](./cli)。
 
 ## 更新
 
@@ -46,19 +37,7 @@ luna login server=https://devops.example.com
 npm update --global @liteyuki/luna-cli
 ```
 
-或：
-
-```bash
-pnpm update --global @liteyuki/luna-cli
-```
-
-需要测试预发布版本时，显式安装 `beta` 通道：
-
-```bash
-pnpm add --global @liteyuki/luna-cli@beta
-```
-
-其他发行制品可在 [Luna CLI Releases](https://github.com/LiteyukiStudio/luna-cli/releases) 查看。
+使用 pnpm 时运行 `pnpm update --global @liteyuki/luna-cli`。预发布版本和其他发行制品见 [Luna CLI Releases](https://github.com/LiteyukiStudio/luna-cli/releases)。
 
 ## 卸载
 

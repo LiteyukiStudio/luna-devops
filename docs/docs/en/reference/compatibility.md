@@ -10,13 +10,13 @@ This page is based on the external APIs the platform actually calls. Use it befo
 | --- | --- | --- | --- | --- |
 | GitHub.com / GitHub Enterprise Server | REST API, OAuth App, Webhooks, repository/branch/content reads; requests send `X-GitHub-Api-Version: 2022-11-28` | Current GitHub.com; GHES `3.17 ~ 3.21` as of the 2026-07-01 support window | GitHub.com or GHES `>= 3.18` | Older GHES versions may still expose the endpoints but be out of security support. GHES 3.17 closes down on 2026-08-25. Validate OAuth callback, webhook creation, `/user/repos`, and contents API after upgrades. |
 | Gitea | `/api/v1` REST API, OAuth2, repository search, branches, contents, repository webhooks | `1.20.x ~ 1.25.x` | `1.25.x` or current stable | Gitea's REST API is released with the instance. Check the instance Swagger/OpenAPI page before connecting older private deployments. |
-| GitLab | Model enum only; provider is not implemented | Not supported | Not applicable | Do not present GitLab as available yet. Add a separate GitLab REST API v4 compatibility entry when implementing it. |
+| GitLab | Not available | Not supported | Not applicable | Use GitHub or Gitea. |
 | Docker Hub | Docker Hub API v2 repository search and tag listing | Current Docker Hub public API v2 | Current Docker Hub SaaS | Docker Hub is SaaS and has no installable version range. Watch for rate limits and network reachability. |
 | Harbor | Harbor `/api/v2.0/search`, `/api/v2.0/projects/{project}/repositories/{repo}/artifacts`, with Distribution API fallback | `>= 2.0`, validate primarily with `2.10.x ~ 2.14.x` | `2.14.x` or current maintained release | Harbor 2.x keeps the `/api/v2.0` path. Keep Basic/Auth Token compatibility in smoke tests. |
 | Generic OCI/Docker Registry | Docker Registry HTTP API V2: `/v2/`, `/_catalog`, `/tags/list` | Distribution API V2 compatible or OCI Distribution Spec `1.0 ~ 1.1` | Registry that passes OCI Distribution Spec 1.1 compatibility | The platform only depends on basic catalog/tag APIs. Some registries disable catalog listing; manual image input still works. |
-| Kubernetes / K3s | `core/v1`, `apps/v1`, `batch/v1`, `networking.k8s.io/v1`, Pod logs/exec/events, dynamic client | Official support follows `client-go v0.36.x`: Kubernetes `1.34 ~ 1.36`; lower versions are not guaranteed | Kubernetes/K3s `1.34 ~ 1.36` | The code uses `k8s.io/client-go v0.36.2`. For K3s, map the K3s release to its embedded Kubernetes minor version. |
+| Kubernetes / K3s | Workloads, Jobs, logs, exec, events, and runtime status | Kubernetes `1.34 ~ 1.36`; lower versions are not guaranteed | Kubernetes/K3s `1.34 ~ 1.36` | For K3s, use its embedded Kubernetes minor version. |
 | Metrics Server | `metrics.k8s.io/v1beta1` Pod metrics | Metrics Server compatible with the Kubernetes version | Distribution-recommended Metrics Server version | Missing metrics degrade live resource metrics only; build and release flows still work. |
-| Kubernetes Gateway API | `gateway.networking.k8s.io/v1` GatewayClass, Gateway, HTTPRoute, HTTPRoute filters | Gateway API `1.0.0 ~ 1.6.x` | `v1.6.x` CRDs, close to the code dependency | The code depends on `sigs.k8s.io/gateway-api v1.6.0`; Ingress is no longer the main access route path. |
+| Kubernetes Gateway API | GatewayClass, Gateway, HTTPRoute, and route filters | Gateway API `1.0.0 ~ 1.6.x` | `v1.6.x` CRDs | Install the CRDs and a compatible Gateway controller. |
 | Traefik Gateway API Provider | Kubernetes Gateway provider and Gateway/HTTPRoute reconciliation | Traefik `3.x` | Latest stable Traefik `3.x` | Enable `providers.kubernetesGateway` and install Gateway API CRDs. Traefik v2 Gateway API support is not a current target. |
 | cert-manager | `cert-manager.io/v1` Certificate | cert-manager `>= 1.0`; choose a release supported by the current Kubernetes version | Current maintained cert-manager release | Runtime clusters support manual TLS Secret `certificateRefs`; HTTP Challenge and DNS-01 wildcard modes can create Certificates and attach their Secrets to the Gateway HTTPS listener. DNS provider credentials and solvers are owned by the Issuer/ClusterIssuer. |
 | OpenID Connect Provider | OIDC Core 1.0, Discovery 1.0, OAuth2 Authorization Code, ID Token verification | Provider supporting OIDC Core 1.0 + Discovery 1.0 | Standard implementations such as Logto, Keycloak, Auth0, or GHES OIDC | The `issuer` must be reachable by the API service. The callback URL must match the one shown by the platform. |
@@ -27,34 +27,6 @@ This page is based on the external APIs the platform actually calls. Use it befo
 | Grafana | Dashboard JSON and operations iframe URL | Grafana `9.x ~ 12.x` | Current stable | iframe embedding requires Grafana-side `allow_embedding` and proper authentication / origin policy handling. |
 | SMTP | SMTP/STARTTLS notification sending | Standard SMTP service | Enterprise mail, cloud SMTP, or current stable self-hosted SMTP | SMTP is a notification adapter. Credentials must be stored as secrets. |
 | Generic webhook notification | Custom method, URL, and JSON body templates | HTTP/HTTPS endpoint | Current webhook API of the target platform | Feishu and WeCom bots can be created as webhook template snapshots. Signing and rate limits belong to the adapter or user configuration. |
-
-## Key interface notes
-
-### Git platforms
-
-The current Git provider implementation supports GitHub and Gitea only. GitHub uses REST API version `2022-11-28`; GitHub Enterprise Server should stay within the official support window and include the same REST API behavior. Gitea uses the instance `/api/v1`, so private Gitea upgrades should rerun repository list, OAuth, webhook creation, and file read smoke tests.
-
-GitLab is currently only a model enum, not an available provider. Implementing it later should add a separate compatibility entry for GitLab REST API v4, OAuth, and webhooks.
-
-### Registries
-
-Registries are handled in three groups:
-
-- Docker Hub uses Docker Hub API v2 and is validated against the current SaaS API.
-- Harbor uses Harbor `/api/v2.0` for project/repository search and artifact/tag reads.
-- Other registries use Docker Registry HTTP API V2 or OCI Distribution Spec basics.
-
-If a registry disables catalog listing, users can still manually enter the image repository and tag. Search and tag suggestions degrade gracefully.
-
-### Kubernetes and Gateway
-
-Runtime cluster support follows the `client-go v0.36.x` official compatibility window: Kubernetes `1.34 ~ 1.36`. For K3s, use the embedded Kubernetes minor version rather than only the K3s release number.
-
-Access routes now use Gateway API HTTPRoute as the main path. Clusters must install Gateway API CRDs and run a Gateway API capable controller. The current validation target is Traefik 3.x with its Kubernetes Gateway provider, while the platform model remains generic Gateway API instead of Traefik-specific annotations.
-
-### Database, queue, and builds
-
-Compose and Helm defaults use `postgres:17-alpine` and `redis:8-alpine`. When using managed external services, prefer the same major versions or a documented backward-compatible version. The default build executor is `moby/buildkit:v0.24.0-rootless`; if replacing it, validate Git clone, Dockerfile frontend, registry login, push, cache import/export, and log collection.
 
 ## Upgrade smoke tests
 

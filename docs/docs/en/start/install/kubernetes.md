@@ -21,16 +21,7 @@ helm install luna-devops ./charts/luna-devops \
   --create-namespace
 ```
 
-This starts:
-
-```text
-liteyukistudio/luna-devops:nightly
-liteyukistudio/luna-worker:nightly
-postgres:17-alpine
-redis:8-alpine
-```
-
-The AI assistant is disabled by default. The release workflow also publishes `liteyukistudio/luna-agent`, but the chart deploys it only when `ai.enabled=true` and `ai.existingSecret` is provided. That Secret needs only one stable `ai-internal-secret` key by default; generate it with `openssl rand -hex 32`, and API plus Agent derive purpose-separated internal keys automatically.
+API, Worker, PostgreSQL, and Redis are installed by default. The AI assistant is disabled; enable it with `ai.enabled=true` and provide a stable `ai-internal-secret` through `ai.existingSecret`.
 
 ## Open The Console
 
@@ -89,7 +80,7 @@ externalRedis:
   url: redis://default:replace-with-a-strong-password@redis.example.com:6379/0
 ```
 
-The chart generates the built-in Redis password on first install and stores `redis-password` separately from the `redis-url` consumed by API and Worker; upgrades reuse the existing Secret. A `redis.auth.existingSecret` for the built-in service must contain both keys. For external Redis, set `externalRedis.url` directly or use an `externalRedis.existingSecret` containing only `redis-url`. External URIs use `redis://username:password@host:port/database`; use `rediss://` for TLS.
+External Redis can use a connection URI or an existing Secret; use `rediss://` for TLS. In production, provide credentials through Kubernetes Secrets instead of committing passwords to a values file.
 
 Then install:
 

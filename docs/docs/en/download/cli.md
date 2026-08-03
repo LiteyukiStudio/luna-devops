@@ -29,7 +29,7 @@ luna project --help
 luna project get-projects --help
 ```
 
-Help includes parameters, required permissions, risk level, and examples.
+Help includes parameters, required permissions, and examples.
 
 ## Common tasks
 
@@ -50,7 +50,7 @@ Use machine-readable output in scripts:
 luna project get-projects output=json interactive=false
 ```
 
-Parse only JSON from standard output. Do not depend on table widths, colors, or localized prose. High-risk operations ask for confirmation in an interactive terminal; non-interactive environments must pass `--yes` explicitly, but it never bypasses platform permissions or security checks.
+Automation should parse JSON only. High-risk operations still require explicit confirmation and never bypass platform permissions or security checks.
 
 When signing in with a personal token, read it from an environment variable or secret manager instead of placing it in shell history:
 
@@ -58,12 +58,4 @@ When signing in with a personal token, read it from an environment variable or s
 printf '%s' "$LUNA_TOKEN" | luna login mode=access-token token=@-
 ```
 
-## Agent use
-
-Agents should use:
-
-```text
-output=json interactive=false agent=true
-```
-
-The companion `luna-devops` Skill is available from the [Luna CLI repository](https://github.com/LiteyukiStudio/luna-cli/tree/main/skills/luna-devops). Use `luna help` as the source of truth for commands and parameters.
+Agents can use the companion [`luna-devops` Skill](https://github.com/LiteyukiStudio/luna-cli/tree/main/skills/luna-devops). Use `luna help` as the source of truth for commands and parameters.

@@ -28,17 +28,10 @@ API 和 Worker 都通过环境变量读取运行配置。使用 Docker Compose�
 | 进阶 | `OTEL_RESOURCE_ATTRIBUTES` | 空 | 附加环境、集群等资源属性；多个 `key=value` 使用逗号分隔。 |
 | 进阶 | `OTEL_EXPORTER_OTLP_HEADERS` | 空 | Collector 鉴权 Header；生产环境从 Secret 注入，不写入公开配置文件。 |
 
-启用 metrics 后，只有 API 会在独立端口暴露 Prometheus 兼容入口，包含 API HTTP、连接池和依赖健康指标。Worker 与 Agent 不开放独立 metrics 端口，其任务、队列、构建、发布、模型和工具指标通过 OTLP 汇入统一指标后端。Grafana dashboard JSON 位于 `grafana/dashboards/`，需要时直接导入 Grafana。
-
-配置 `OTEL_EXPORTER_OTLP_ENDPOINT` 后，API、Worker 和 Agent 会同时通过 OpenTelemetry 上报链路、指标和结构化日志。最小配置与本地验证方式见[接入可观测平台](./observability.md)。
-
-API 在监听 HTTP 端口前会分别对 Redis 和 PostgreSQL 执行一次真实连接检查。任一依赖不可达、认证失败或 PostgreSQL migration 失败时，进程都会直接退出，不会以部分可用状态启动。启动后的短暂连接中断由 go-redis 和 `database/sql` 的连接池恢复；容器平台应负责重启启动失败的进程。
+监控配置和验证方式见[接入可观测平台](./observability.md)。
 
 OIDC 身份源的 Redirect URI 由 `PUBLIC_BASE_URL` 生成，后台“身份源”表单会直接展示可复制地址。准入策略默认要求 OIDC 返回非空邮箱且 `email_verified=true`；如果接入的是可信内部身份源，但无法返回标准 `email_verified`，可以在准入策略里关闭“要求 OIDC 邮箱已验证”，平台仍会要求邮箱非空。
 
-前端未登录时会按浏览器首选语言顺序选择界面语言，目前支持 `zh-CN` 和 `en-US`。登录后以账号设置里的语言偏好为准，并写入本地缓存，方便下次打开时立即使用同一语言。
-
-访问入口的可用域名后缀、外层访问协议、外层访问端口和 Gateway API 默认值在“运行集群”里维护。不同集群可以配置不同的网关域名后缀、GatewayClass 和共享 Gateway；同一集群也可以配置多个域名后缀。部署配置绑定到哪个集群，创建访问入口时就只能从该集群的后缀里选择一个，默认域名、短前缀补全和控制台访问链接也按该选择生成。外层 CDN 或反向代理已经提供 HTTPS 时，可以把对应集群的外层访问协议改为 `https`；它只影响控制台展示和跳转链接，不会修改集群内部 listener，也不会触发证书申请。
 
 ## 前端构建配置项
 
@@ -72,9 +65,7 @@ OIDC 身份源的 Redirect URI 由 `PUBLIC_BASE_URL` 生成，后台“身份源
 | 进阶 | `BUILD_PRIVATE_EGRESS_PORTS` | `443` | `restricted` 模式下的内网白名单端口；非标镜像站常用 `5000`、`8081`。 |
 | 进阶 | `BUILD_BLOCKED_EGRESS_CIDRS` | 空 | `restricted` 模式下额外禁止的 CIDR。 |
 
-Worker 不再监听独立 metrics 端口。配置 `OTEL_EXPORTER_OTLP_ENDPOINT` 后，任务、重试、队列深度、队列延迟、构建/发布结果与耗时、运行副本和网关同步指标会随其他遥测数据上报。
-
-Worker 同样只在 Redis 与 PostgreSQL 的启动连接检查都成功后才开始消费任务；启动后的连接中断由 Asynq、go-redis 和 `database/sql` 自行恢复。
+Worker 指标通过 OTLP 上报，配置方式见[接入可观测平台](./observability.md)。
 
 ## Agent 配置项
 
@@ -83,4 +74,4 @@ Worker 同样只在 Redis 与 PostgreSQL 的启动连接检查都成功后才开
 | 进阶 | `AI_OBSERVABILITY_CAPTURE_CONTENT` | `false` | 是否把脱敏后的模型输入输出、推理摘要、工具参数与结果写入 Trace 事件和结构化日志。仅在受控排障窗口临时开启；开启前应限制 Tempo/Loki 访问权限并确认保留周期。 |
 | 进阶 | `AI_OBSERVABILITY_CAPTURE_DATABASE_SPANS` | `false` | 是否记录 Agent 内部每一条 PostgreSQL 查询 Span。默认关闭以避免事件持久化产生大量低价值子 Span；仅在排查 SQL 耗时或事务问题时临时开启。 |
 
-这两个开关只影响 Agent，且必须同时配置 `OTEL_EXPORTER_OTLP_ENDPOINT` 才会发送到远端。内容采集开启时，每个字段最多保留 32 KiB；Token、Cookie、密码、API Key、URL 内嵌凭据和 Secret 表单值仍会强制替换为 `[REDACTED]`。数据库 Span 开关修改后需要重启 Agent，只影响之后产生的 Trace。详细字段和查询方式见[接入可观测平台](./observability.md#agent-全内容观测高敏)。
+这两个开关只影响 Agent，修改后需要重启。内容观测可能包含敏感业务数据，只应在受控排障期间临时开启；详情见[接入可观测平台](./observability.md#agent-全内容观测高敏)。

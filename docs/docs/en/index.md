@@ -17,17 +17,14 @@ hero:
     src: /brand/mascot-luna-catgirl-alpha.webp
     alt: Luna DevOps mascot
 features:
-  - title: Kubernetes (Helm)
-    details: Already running Kubernetes or K3s? Install API, Worker, PostgreSQL, and Redis together with Helm.
+  - title: Install the platform
+    details: Choose Kubernetes, K3s, or Docker Compose for your environment and start the complete platform.
     link: /start/install/kubernetes
-  - title: Docker Compose
-    details: Want to try it on one machine first? Start the complete platform with one docker compose up -d.
-    link: /start/install/docker-compose
   - title: Deploy a web project
     details: Follow one complete example from project space and image build to release and public domain.
     link: /start/first-project
-  - title: Connect external systems
-    details: Connect a runtime cluster and registry first, verify deployment, and add Git automation when you are ready.
+  - title: Connect a cluster and registry
+    details: Connect a runtime cluster and registry to prepare for builds and releases.
     link: /start/connect-resources
   - title: Troubleshoot failed states
     details: Work through build, release, cluster, and route checks to find where a failure started.

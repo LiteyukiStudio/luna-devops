@@ -8,7 +8,7 @@ This is a complete walkthrough you can follow from start to finish. It uses [`sn
 | --- | --- | --- | ---: | --- |
 | Frontend | `web/` | `web/Dockerfile` | `3000` | Public route points here. |
 | Backend | repository root | `Dockerfile` | `8888` | Internal API service. |
-| Data | backend data path | backend volume | - | Start with the backend data volume; move to PostgreSQL later if needed. |
+| Data | backend data path | backend volume | - | Configure persistent storage for the application's needs. |
 
 Before you start, make sure the API and worker are running, a runtime cluster is configured, and a registry is available for build output. Missing any of these will block a later step.
 
@@ -37,7 +37,7 @@ Create two applications in the project space.
 | `Neo Blog Frontend` | `neo-blog-frontend` | Public web UI. |
 | `Neo Blog Backend` | `neo-blog-backend` | API and backend logic. |
 
-For the first deployment, keep data with the backend data volume. Add an external database only when the app configuration needs it.
+Configure data services and persistence according to the project. A separate application is not required for every volume.
 
 ## 3. Bind the GitHub Repository
 
@@ -64,17 +64,7 @@ Use these values:
 | Service port | `8888` |
 | Image tag | `latest` or `${GIT_SHA}` |
 
-Recommended environment variables:
-
-| Variable | Example |
-| --- | --- |
-| `MODE` | `prod` |
-| `PORT` | `8888` |
-| `BASE_URL` | `https://blog.example.com` |
-| `PASSWORD_SALT` | a stable random value |
-| `JWT_SECRET` | a stable random value |
-
-If you start with SQLite, mount a data volume at `/app/data`.
+Set runtime mode, port, public URL, and persistence paths as required by the project. Store passwords, tokens, and signing keys as Secrets and keep them stable after launch.
 
 ## 5. Create the Frontend Deployment Target
 
@@ -89,7 +79,7 @@ If you start with SQLite, mount a data volume at `/app/data`.
 | Service port | `3000` |
 | Image tag | `latest` or `${GIT_SHA}` |
 
-Dockerfile Build Args are passed to Dockerfile `ARG` instructions as BuildKit `build-arg` values and snapshotted into each build run. Use them for non-secret values such as `EMBED_WEB=true`, `VERSION=${{ github.sha }}`, or build modes. Put passwords, tokens, and private package credentials in project-space build secret variables instead.
+Use build arguments only for non-sensitive values. Put passwords, tokens, and private package credentials in project-space secret build variables.
 
 Set `BACKEND_URL` to the backend service URL, for example:
 
@@ -111,7 +101,7 @@ Recommended order:
 4. Release the frontend after the build succeeds.
 5. Check that both workloads are healthy.
 
-If a build fails, start from the build log tail. Common causes are base image pull failures, npm registry access, Go module download failures, or insufficient build memory.
+If a build fails, start from the end of the build log, then see the [FAQ](/en/start/faq).
 
 ## 7. Create the Public Route
 

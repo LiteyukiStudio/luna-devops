@@ -21,16 +21,7 @@ helm install luna-devops ./charts/luna-devops \
   --create-namespace
 ```
 
-这会启动：
-
-```text
-liteyukistudio/luna-devops:nightly
-liteyukistudio/luna-worker:nightly
-postgres:17-alpine
-redis:8-alpine
-```
-
-AI 助手默认关闭。发布工作流同时发布 `liteyukistudio/luna-agent`，但只有设置 `ai.enabled=true` 并提供 `ai.existingSecret` 后 Chart 才会部署 Agent。该 Secret 默认只需包含一个稳定的 `ai-internal-secret` key，可用 `openssl rand -hex 32` 生成；API 与 Agent 会自动派生用途隔离的内部子密钥。
+默认会同时安装 API、Worker、PostgreSQL 和 Redis。AI 助手默认关闭；启用时设置 `ai.enabled=true`，并通过 `ai.existingSecret` 提供稳定的 `ai-internal-secret`。
 
 ## 打开控制台
 
@@ -89,7 +80,7 @@ externalRedis:
   url: redis://default:replace-with-a-strong-password@redis.example.com:6379/0
 ```
 
-内置 Redis 会在首次安装时生成密码，并在 Kubernetes Secret 中分别保存 `redis-password` 和供 API/Worker 使用的 `redis-url`，后续升级会复用已有 Secret。为内置 Redis 指定 `redis.auth.existingSecret` 时，该 Secret 需要同时提供这两个 key。接入外部 Redis 时，可以直接填写 `externalRedis.url`，也可以使用只包含 `redis-url` 的 `externalRedis.existingSecret`。外部 Redis URI 格式为 `redis://用户名:密码@域名:端口/数据库`，TLS 连接使用 `rediss://`。
+外部 Redis 可以使用连接 URI 或现有 Secret；TLS 连接使用 `rediss://`。生产环境请通过 Kubernetes Secret 提供凭据，不要把密码直接提交到 values 文件。
 
 然后安装：
 

@@ -23,5 +23,10 @@
     "type": "file",
     "name": "startup-troubleshooting",
     "label": "启动排障"
+  },
+  {
+    "type": "file",
+    "name": "faq",
+    "label": "常见问题"
   }
 ]

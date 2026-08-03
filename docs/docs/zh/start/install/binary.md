@@ -23,7 +23,7 @@ go build -o bin/luna-devops-api ./cmd/api
 go build -o bin/luna-devops-worker ./cmd/worker
 ```
 
-API 会从内嵌文件系统提供前端页面。生产环境不需要单独启动 Vite。
+API 会同时提供控制台页面，不需要另行启动前端服务。
 
 ## 准备配置
 
@@ -61,7 +61,7 @@ curl http://127.0.0.1:8080/healthz
 ./bin/luna-devops-worker
 ```
 
-worker 负责构建、部署、状态同步、证书申请和清理任务。只启动 API 可以打开控制台，但不能完整运行构建部署链路。
+构建和发布需要 worker 正常运行；只启动 API 无法完成交付流程。
 
 ## 建议的 systemd 形态
 

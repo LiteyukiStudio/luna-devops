@@ -1,204 +1,82 @@
 # 接入可观测平台
 
-Luna DevOps 可以通过 OpenTelemetry 同时发送链路、指标和结构化日志。平台不内置或绑定某一种可观测后端；先准备一个支持 OTLP HTTP 的 OpenTelemetry Collector，再把同一个地址配置给 API、Worker 和 Agent。
+Luna DevOps 通过 OpenTelemetry 发送链路、指标和结构化日志。平台不绑定特定后端；使用前准备支持 OTLP HTTP 的 OpenTelemetry Collector。
 
 ## 最小配置
 
-把下面的环境变量注入三个服务：
+为 API、Worker 和 Agent 配置同一个地址：
 
 ```bash
 OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
 ```
 
-重启后，服务会分别以 `luna-devops-api`、`luna-worker` 和 `luna-agent` 上报遥测。该变量留空时不会启动导出器，Collector 不可用也不会阻止业务请求。
+重启后，三个服务分别以 `luna-devops-api`、`luna-worker` 和 `luna-agent` 上报。变量留空时关闭导出；Collector 暂时不可用不会阻止业务请求。
 
-AI 请求进入排队状态时会保留 W3C Trace Context，因此同一次操作中的 API 请求、Agent Run、模型请求、工具调用、平台回调和数据库访问可以在 Tempo 中沿同一个 Trace 查看。等待审批或用户输入后恢复执行时仍使用同一上游 Trace，并通过 Run ID 区分执行阶段。
-
-## Agent 全内容观测（高敏）
-
-默认遥测只记录模型、Run、工具和依赖的元数据，不记录用户提示词或工具正文。需要排查模型行为时，可以只在 Agent 容器临时开启：
-
-```bash
-AI_OBSERVABILITY_CAPTURE_CONTENT=true
-```
-
-重启 Agent 后，会额外采集：
-
-- 模型请求中的系统提示词、会话历史、当前用户输入、页面上下文、工具定义和工具选择；
-- 模型回复、推理摘要、工具调用请求、Token 用量和 Provider 错误响应；
-- 平台工具与 Agent 内部工具的输入参数、返回状态、返回正文和请求编号。
-
-内容会同时作为 Span Event 写入 Trace，并作为带 Trace ID 的 `debug` 结构化日志写入 Logs。每个序列化字段最多 32 KiB，超出时设置 `luna.ai.content.truncated=true`。Token、Cookie、密码、API Key、URL 内嵌凭据和 Secret 表单值无论开关状态如何都会替换为 `[REDACTED]`；这不是数据隔离措施，提示词和业务返回仍可能包含个人或平台数据。
-
-| 事件 | 内容字段 | 所在阶段 |
-| --- | --- | --- |
-| `gen_ai.content.input` | `gen_ai.input.messages` | 模型请求 |
-| `gen_ai.content.output` | `gen_ai.output.messages` | 模型完成或流式结束 |
-| `gen_ai.content.error` | `gen_ai.response.error_body` | Provider 返回非成功状态 |
-| `gen_ai.tool.content.input` | `gen_ai.tool.call.arguments` | 平台或内部工具执行前 |
-| `gen_ai.tool.content.output` | `gen_ai.tool.call.result` | 平台或内部工具执行后 |
-
-在 Tempo 中先按会话、轮次或 Run 查询，再展开 `agent.model.stream`、`gen_ai.chat.complete`、`agent.tool.execute` 或 `agent.tool.internal` Span 的 Events。在 Loki 中可以按 Agent 服务和事件名检索：
-
-```text
-{service_name="luna-agent"} | json | event_name=~"gen_ai\\.(content|tool\\.content)\\..*"
-```
-
-排障结束后把开关恢复为 `false` 并重启 Agent。生产环境应为 Tempo/Loki 配置最小访问权限和较短保留周期，不要把该开关作为常驻审计日志使用。
-
-## 导入 Agent / LLM 仪表盘
-
-### 配置 Luna 内嵌 Agent 观测
-
-如需在 Luna DevOps 运营面板中使用 Agent 观测，平台管理员还需要进入“全局设置 → AI 助手”，展开“AI 高级设置”，分别填写 Prometheus、Loki 和 Tempo 的查询根地址，然后开启“启用 Agent 可观测”。这些地址由 Luna API 访问，与用于上报的 `OTEL_EXPORTER_OTLP_ENDPOINT` 不是同一配置。
-
-- Prometheus 地址用于查询 Agent 指标，例如 `http://prometheus:9090`；
-- Loki 地址用于查询结构化日志，例如 `http://loki:3100`；
-- Tempo 地址用于搜索和读取 Trace，例如 `http://tempo:3200`；
-- Loki 或 Tempo 启用多租户时填写对应 Tenant ID；
-- 数据源需要 Bearer Token 时填入各自令牌，令牌会加密保存且不会回显。
-
-三个查询地址全部配置后才能开启 Agent 可观测。关闭开关会停止运营面板读取这些数据，但保留已保存的地址、Tenant ID 和令牌。数据源应只允许 Luna API 所在网络访问，不要直接暴露给浏览器。
-
-仓库提供两套可直接导入 Grafana 的仪表盘：
-
-- `grafana/dashboards/luna-devops-overview.json`：平台服务、API、Worker、交付链路、Agent 和数据库的全局概览；
-- `grafana/dashboards/luna-agent-llm-observability.json`：专门查看 Agent Run、模型延迟、Token、工具、人工交互、Prompt/回复和 Trace。
-
-导入 Agent / LLM 仪表盘时，分别选择已有的 Prometheus、Tempo 和 Loki 数据源。顶部筛选器提供 `Conversation ID`、`Turn ID`、`Run ID`、`Trace ID` 和工具名称；不指定时使用 `.*` 查看当前时间范围内的全部数据。仪表盘的 Trace 列表只检索 `agent.run.execute` 根 Span，默认不会把 `pg.query:*`、`pg-pool.connect` 等数据库子 Span 当作 Agent 结果展示。推荐的排查顺序是：
-
-1. 先看 Run 成功率、模型错误率和首 Token p95，判断问题属于编排、Provider 还是响应体验；
-2. 再看 Run、模型、Token 和工具趋势，定位异常发生的时间与工具；
-3. 填入会话、轮次或 Run ID，在 Trace 表中打开完整链路；
-4. 只有需要检查模型原始行为时，临时启用高敏内容观测，再查看 Prompt、回复和工具输入输出面板。
-
-Agent Run 中产生的内容日志会自动携带 `gen_ai.conversation.id`、`luna.turn.id`、`luna.run.id`、`trace_id` 和 `span_id`。因此同一组筛选条件可以同时约束 Tempo 与 Loki，不需要从日志正文手工复制关联信息。
-
-## 查询 Trace
-
-Luna DevOps 使用请求级 Trace：一次 AI 会话可以包含多轮对话，因此会话不是一条无限增长的 Trace。通常每轮用户消息对应一条 Trace；等待审批或用户输入后恢复的同一个 Run 仍接续原 Trace。会话、轮次和执行实例分别使用以下稳定属性关联：
-
-| 范围 | 属性 | 用途 |
-| --- | --- | --- |
-| AI 会话 | `gen_ai.conversation.id` | 查询一个会话的全部轮次 |
-| 对话轮次 | `luna.turn.id` | 查询一轮用户消息及其完整处理过程 |
-| Agent 执行 | `luna.run.id` | 查询一次排队、恢复或重试中的执行实例 |
-| 工具调用 | `luna.tool_call.id` | 定位一次具体工具调用 |
-| 工具名称 | `gen_ai.tool.name` | 按工具类型汇总或筛选 |
-
-在 Grafana Tempo 的 TraceQL 查询编辑器中，可以直接使用：
-
-```text title="查询一次 AI 会话的全部轮次"
-{ resource.service.name = "luna-agent" && span.gen_ai.conversation.id = "aicnv_xxx" }
-```
-
-```text title="查询一轮对话"
-{ span.luna.turn.id = "aitrn_xxx" }
-```
-
-```text title="查询一次 Run 或工具调用"
-{ span.luna.run.id = "airun_xxx" }
-{ span.luna.tool_call.id = "aitool_xxx" }
-```
-
-```text title="查询某个会话中的失败链路"
-{ span.gen_ai.conversation.id = "aicnv_xxx" } && { span:status = error }
-```
-
-```text title="查询耗时超过 5 秒的模型阶段"
-{ resource.service.name = "luna-agent" && span:name = "agent.model.stream" && span:duration > 5s }
-```
-
-TraceQL 的 Span 名内建字段写作 `span:name`；打开一条 Trace 后，详情页筛选栏使用 `span.name`。详情页筛选只影响当前浏览器视图，仪表盘 JSON 不能为随后打开的 Explore 页面永久预设它。Agent 默认不采集 PostgreSQL 自动查询 Span；需要逐条 SQL 诊断时，临时设置 `AI_OBSERVABILITY_CAPTURE_DATABASE_SPANS=true` 并重启 Agent，完成后再关闭。
-
-### 主要 Span 名称
-
-| 类别 | Span 名称或模式 | 含义 |
-| --- | --- | --- |
-| HTTP 入口 | 通常为 `METHOD /route` | API 或 Agent 的 HTTP 请求入口；优先通过 HTTP 方法、路由和状态属性筛选 |
-| HTTP 出站 | 自动生成的 HTTP Client Span | 调用 Agent、模型服务、外部平台或回调地址 |
-| Agent Run | `agent.run.execute` | 一次 Agent Run 的执行边界 |
-| 模型流式生成 | `agent.model.stream` | 主对话模型的流式输出阶段 |
-| 模型非流式生成 | `gen_ai.chat.complete` | 标题、建议或其他非流式模型调用 |
-| 模型健康检查 | `gen_ai.chat.health` | Provider 连通性检查 |
-| 平台工具 | `agent.tool.execute` | 需要调用 Luna API 的工具执行 |
-| Agent 内部工具 | `agent.tool.internal` | 卡片、选项、路由等 Agent 内部工具 |
-| 工具 API 请求 | `luna_api.tool.execute` | Agent 到 Luna API 的委托交换和工具请求 |
-| Provider 配置 | `luna_api.provider_config.get` | Agent 获取当前模型与运行配置 |
-| 异步任务入队 | `task.enqueue.<task_type>` | API 将任务发送到 Asynq；任务类型中的 `:` 会转换为 `.` |
-| 异步任务执行 | `task.process.<task_type>` | Worker 消费任务，例如 `task.process.deploy.run` |
-| 构建阶段 | `worker.build.*` | 容量检查、命名空间、任务解析、BuildKit Job、结果跟踪和结算 |
-| 部署阶段 | `worker.deploy.*` | 依赖解析、运行配置、资源应用、Hook 和 Rollout 验收 |
-| 网关阶段 | `worker.gateway.*` | 命名空间、路由资源、DNS 和证书观测 |
-| 运行时与账单 | `worker.runtime.*`、`worker.billing.*` | Release 状态同步及运行时、存储用量结算 |
-| 通知与清理 | `worker.notification.*`、`worker.cleanup.*`、`worker.retention.*` | 通知发送、资源清理和数据保留任务 |
-| 数据库迁移 | `database.migrate` | 数据库结构迁移；启动连接检查成功时不生成 Trace |
-| PostgreSQL 自动 Span | `pg.query:*`、`pg-pool.connect` 或 SQL 操作名 | SQL 与连接池细粒度耗时，可在 Trace 详情中按需隐藏 |
-| DNS 与网关探测 | `dns.lookup_cname`、`gateway_probe.*` | DNS 查询及网关探测采集 |
-
-Worker 的具体阶段会继续携带 `task.type`、`task.id`、`task.retry_count` 等属性。按一次异步任务查询时，优先使用：
-
-```text
-{ span.task.id = "task_xxx" }
-```
-
-按任务类型查看部署链路时，可以使用：
-
-```text
-{ resource.service.name = "luna-worker" && span.task.type = "deploy:run" }
-```
-
-需要标记环境或集群时，可以增加资源属性：
+需要标记环境或集群时可以增加：
 
 ```bash
 OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=production,k8s.cluster.name=main
 ```
 
-Collector 需要鉴权时，再增加 Header；不要把密钥写入 Compose 或 Helm values，生产环境应从 Secret 注入：
+Collector 需要鉴权时，通过 Secret 注入 `OTEL_EXPORTER_OTLP_HEADERS`，不要把凭据写入公开配置文件。
+
+## Agent 全内容观测（高敏）
+
+默认遥测不会记录用户提示词、模型回复或工具正文。仅在排查模型行为且已限制 Tempo/Loki 访问权限和保留周期时，临时为 Agent 开启：
 
 ```bash
-OTEL_EXPORTER_OTLP_HEADERS=api-key=replace-me
+AI_OBSERVABILITY_CAPTURE_CONTENT=true
 ```
 
-Helm 部署可以直接设置 endpoint 和资源属性：
+重启 Agent 后，Trace 和日志会包含经过脱敏的模型输入输出及工具调用内容。平台会过滤常见 Token、Cookie、密码和 API Key，但提示词与业务返回仍可能包含个人或平台数据，因此该功能不能替代数据隔离。
 
-```yaml
-observability:
-  otlpEndpoint: http://otel-collector.observability.svc.cluster.local:4318
-  resourceAttributes: deployment.environment.name=production,k8s.cluster.name=main
+排障结束后，将开关恢复为 `false` 并重启 Agent。不要把高敏内容观测作为常驻审计日志。
+
+## 配置 Luna 内嵌 Agent 观测
+
+如需在 Luna DevOps 运营面板中查看 Agent 观测数据，平台管理员进入“全局设置 → AI 助手 → AI 高级设置”，填写 Prometheus、Loki 和 Tempo 的查询根地址，然后开启“启用 Agent 可观测”。这些查询地址与用于上报的 `OTEL_EXPORTER_OTLP_ENDPOINT` 不同。
+
+- Prometheus：Agent 指标查询地址，例如 `http://prometheus:9090`。
+- Loki：结构化日志查询地址，例如 `http://loki:3100`。
+- Tempo：Trace 查询地址，例如 `http://tempo:3200`。
+- 使用多租户或 Bearer Token 时，填写对应 Tenant ID 和令牌。
+
+三个查询地址均配置后才能启用。令牌会加密保存且不回显。数据源应只允许 Luna API 所在网络访问，不要直接暴露给浏览器。
+
+## 导入 Grafana 仪表盘
+
+仓库提供两套可直接导入的仪表盘：
+
+- `grafana/dashboards/luna-devops-overview.json`：平台、API、Worker、交付链路、Agent 和数据库概览。
+- `grafana/dashboards/luna-agent-llm-observability.json`：Agent Run、模型延迟、Token、工具、日志和 Trace。
+
+导入时分别选择已有的 Prometheus、Tempo 和 Loki 数据源。建议先查看成功率、错误率和延迟，再按会话、轮次或 Run ID 定位 Trace；只有确实需要原始模型行为时才临时开启高敏内容观测。
+
+## 查询 Trace
+
+一次用户消息通常对应一条 Trace。常用关联字段如下：
+
+| 范围 | 属性 |
+| --- | --- |
+| AI 会话 | `gen_ai.conversation.id` |
+| 对话轮次 | `luna.turn.id` |
+| Agent 执行 | `luna.run.id` |
+| 工具调用 | `luna.tool_call.id` |
+
+例如在 Tempo 中查询一次 Run：
+
+```text
+{ span.luna.run.id = "airun_xxx" }
 ```
 
-## 本地验证
-
-本地临时验证可以使用 Grafana 的 OpenTelemetry LGTM 一体化镜像。它不属于 Luna DevOps，不需要写入平台 Compose：
-
-```bash
-docker run --rm --name otel-lgtm \
-  -p 3000:3000 \
-  -p 4317:4317 \
-  -p 4318:4318 \
-  grafana/otel-lgtm:latest
-```
-
-源码运行时设置：
-
-```bash
-OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
-OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=development
-```
-
-容器中的 Luna DevOps 访问宿主机时，把 endpoint 改为 `http://host.docker.internal:4318`。打开 `http://localhost:3000` 后，可以按 `service.name` 查看 Trace、Metrics 和 Logs。
-
-至少验证一次数据库列表查询、一次 Worker 异步任务和一次 Agent 工具调用。正常链路应能看到入口请求、数据库或外部依赖子调用及业务阶段；失败链路应能使用同一个 Trace ID 关联到结构化错误日志。
+具体查询语法以所用 Tempo/Grafana 版本为准。
 
 ## 生产建议
 
-- `/healthz`、`/internal/health/live`、`/internal/health/ready` 等机器探针的成功请求只保留健康指标，不生成 Trace 或访问日志；Agent 就绪检查失败时仍记录结构化告警。用户主动发起的 Provider、集群和镜像站连通性测试不属于探针，仍保留完整观测数据。
-- 在 Collector 使用 batch 和 memory limiter processor，避免后端短时不可达拖垮应用。
-- 错误和慢链路可以完整保留，正常链路按容量采样。采样应在 Collector 统一完成，不要让不同服务各自使用冲突策略。
-- Collector 与可观测后端放在受控网络中；跨网络上报时使用 TLS 和认证 Header。
-- 日志和链路默认不会记录 Cookie、Token、Secret、密码、请求正文、模型 Prompt 或工具敏感参数。只有显式开启 Agent 高敏内容观测时才会记录经过强制脱敏和长度限制的 AI 内容；下游系统仍应设置访问控制和保留周期。
-- API 的独立 Prometheus `/metrics` 入口只作为兼容抓取面；Worker 和 Agent 不开放独立指标端口。完整平台指标统一通过 OTLP 进入 Collector 和指标后端，避免跨进程抓取、重复采集和多副本 Counter 抖动。
-- 导入 `grafana/dashboards/luna-devops-overview.json` 后，先看服务上报数、错误率和成功率，再依次查看 API 延迟、Worker 队列与交付结果、Agent 首 Token/工具调用和数据库容量。需要分析模型行为时再进入 `grafana/dashboards/luna-agent-llm-observability.json`，避免在平台概览里堆叠高基数内容。Stat 用于当前健康，Time series 用于趋势与分位数，Logs 用于按 Trace 关联原始事件，Table 用于 Trace 搜索和慢依赖明细。
+- Collector 和观测后端应位于受控网络，跨网络上报时启用 TLS 和认证。
+- 在 Collector 统一配置批处理、内存限制和采样；优先保留错误和慢链路。
+- 为日志、Trace 和高敏 Agent 内容设置最小访问权限与合理保留周期。
+- API 可以提供 Prometheus 兼容抓取入口；完整平台指标建议统一通过 OTLP 汇入后端。
+- 健康检查成功请求可能不会生成 Trace。用户主动发起的 Provider、集群和镜像站测试仍会保留观测数据。
 
-OTel Collector 的接收器、处理器和后端导出器请按所选后端配置，参考 [OpenTelemetry Collector 部署文档](https://opentelemetry.io/docs/collector/deploy/)。
+Collector 的部署与导出配置参见 [OpenTelemetry Collector 文档](https://opentelemetry.io/docs/collector/deploy/)。

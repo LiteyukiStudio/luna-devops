@@ -1,23 +1,13 @@
 # Inbox
 
-The inbox brings together platform messages and requests that require your attention. Use the bell in the top-right corner after signing in to view recent messages. Its badge shows the unread count; select **View all** to open the full list.
+The inbox collects platform messages and requests that concern you. You can review unread messages, open related resources, archive messages, and handle requests that need a decision.
 
-## Review and organize messages
+## Handle requests
 
-- **All** shows every message that has not been archived.
-- **Unread** shows messages you have not opened.
-- **Action required** shows requests waiting for your decision.
-- Open a message to visit its related resource, or archive it when it is no longer needed.
-- Use **Mark all as read** to clear the unread indicator for your account.
+Open a pending request and verify the requester, project, and impact before accepting or rejecting it. A processed request cannot be handled again. Expired requests or changed resources require a new request.
 
-Messages can report project membership changes, billing ownership updates, security notices, external notification delivery, or platform announcements. A message is visible only to its recipient.
-
-## Respond to requests
-
-Requests that require confirmation appear under **Action required**. Open the details, verify the requester and related project, then accept or reject the request. Luna DevOps asks for confirmation before execution and prevents the same request from being processed more than once.
-
-Transferring project billing ownership is a high-impact action. After you accept, future charges for that project are assigned to your account. Verify the project and requester first, and reject the request if you do not want to take responsibility for its charges. If step-up authentication is enabled, accepting also requires MFA verification. Luna DevOps will not apply a request that has expired or whose project state or permissions have changed.
+Accepting a billing ownership transfer makes your account responsible for the project's future costs; historical charges are not transferred. Reject it if you do not want that responsibility. Step-up MFA is required when the platform policy enables it.
 
 ## Inbox and external notifications
 
-The inbox is for reading and acting on information inside Luna DevOps. [Notifications](./notifications.md) deliver selected platform events to email, webhooks, or collaboration tools. You can use both.
+The inbox is for reading and handling information inside the platform. [Notifications](./notifications.md) send platform events to email, webhooks, or collaboration tools. You can use both.

@@ -4,41 +4,32 @@ The official Luna CLI npm package is `@liteyuki/luna-cli`. It requires Node.js `
 
 ## Install
 
-Choose either package manager:
+Install with npm:
 
 ```bash
 npm install --global @liteyuki/luna-cli
 ```
 
-```bash
-pnpm add --global @liteyuki/luna-cli
-```
+You can also run `pnpm add --global @liteyuki/luna-cli`.
 
 Verify the installation:
 
 ```bash
 luna --version
-luna --help
 ```
 
 Use a Node.js version manager or a user-level pnpm home instead of using `sudo` to work around global directory permissions.
 
 ## Sign in
 
-Sign in to the official instance:
+Sign in to Luna DevOps:
 
 ```bash
 luna login
 luna whoami
 ```
 
-To use another Luna DevOps instance:
-
-```bash
-luna login server=https://devops.example.com
-```
-
-Then continue with [Use Luna CLI](./cli).
+For a self-hosted instance, specify its address with `luna login server=https://devops.example.com`. Then continue with [Use Luna CLI](./cli).
 
 ## Update
 
@@ -46,19 +37,7 @@ Then continue with [Use Luna CLI](./cli).
 npm update --global @liteyuki/luna-cli
 ```
 
-Or:
-
-```bash
-pnpm update --global @liteyuki/luna-cli
-```
-
-To try a prerelease, select the `beta` channel explicitly:
-
-```bash
-pnpm add --global @liteyuki/luna-cli@beta
-```
-
-Other release assets are available from [Luna CLI Releases](https://github.com/LiteyukiStudio/luna-cli/releases).
+With pnpm, run `pnpm update --global @liteyuki/luna-cli`. See [Luna CLI Releases](https://github.com/LiteyukiStudio/luna-cli/releases) for prereleases and other release assets.
 
 ## Uninstall
 

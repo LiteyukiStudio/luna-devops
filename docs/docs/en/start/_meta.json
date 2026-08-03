@@ -23,5 +23,10 @@
     "type": "file",
     "name": "startup-troubleshooting",
     "label": "Startup Troubleshooting"
+  },
+  {
+    "type": "file",
+    "name": "faq",
+    "label": "FAQ"
   }
 ]

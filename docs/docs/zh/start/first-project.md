@@ -8,7 +8,7 @@
 | --- | --- | --- | ---: | --- |
 | 前端 | `web/` | `web/Dockerfile` | `3000` | Next.js，对外访问入口指向它。 |
 | 后端 | 仓库根目录 | `Dockerfile` | `8888` | Go/Hertz，只给前端和集群内访问。 |
-| 数据 | 后端数据目录 | 后端数据卷 | - | 默认可用 SQLite 数据文件；需要 PostgreSQL 时再按项目配置切换。 |
+| 数据 | 后端数据目录 | 后端数据卷 | - | 按项目要求配置持久化存储。 |
 
 开始前先确认三件事，缺一项都可能让后面的步骤卡住：
 
@@ -43,7 +43,7 @@
 | `Neo Blog Frontend` | `neo-blog-frontend` | 对外访问的前端服务。 |
 | `Neo Blog Backend` | `neo-blog-backend` | 提供 API 和后台逻辑。 |
 
-数据不用急着单独建应用。`neo-blog` 默认可以把数据放在后端的 `/app/data`，第一次上线时优先用后端部署配置里的数据卷解决；之后需要外部 PostgreSQL，再接入单独数据库服务。
+数据服务和持久化方式按项目自身要求配置，不需要为每个数据卷创建应用。
 
 ## 3. 绑定 GitHub 仓库
 
@@ -83,21 +83,7 @@ snowykami/neo-blog
 | 副本数 | `1` |
 | CPU / 内存 | 第一次可用 `1C / 1Gi` |
 
-后端环境变量至少建议设置：
-
-| 变量 | 示例 | 说明 |
-| --- | --- | --- |
-| `MODE` | `prod` | 生产运行模式。 |
-| `PORT` | `8888` | 和服务端口保持一致。 |
-| `BASE_URL` | `https://blog.example.com` | 用户最终访问的博客地址。 |
-| `PASSWORD_SALT` | 一段稳定随机值 | 上线后不要随意改。 |
-| `JWT_SECRET` | 一段稳定随机值 | 上线后不要随意改。 |
-
-如果先用 SQLite，给后端加一个数据卷：
-
-| 挂载路径 | 容量示例 | 说明 |
-| --- | ---: | --- |
-| `/app/data` | `1Gi` | 保存 SQLite 数据文件和运行数据。 |
+按项目说明填写运行模式、端口、公开地址和持久化目录。密码、Token 和签名密钥必须使用 Secret，并在上线后保持稳定。
 
 ## 5. 创建前端部署配置
 
@@ -118,7 +104,7 @@ snowykami/neo-blog
 | 镜像标签 | `latest` 或 `${GIT_SHA}` |
 | 副本数 | `1` |
 
-Dockerfile Build Args 会作为 BuildKit `build-arg` 传入 Dockerfile 的 `ARG` 指令，并随每次构建记录保存快照。它适合放 `EMBED_WEB=true`、`VERSION=${{ github.sha }}`、构建模式这类非密钥值；密码、Token、私有 npm 凭据等敏感值请放到项目空间“构建变量”里的密钥项。
+构建参数只用于非敏感值；密码、Token 和私有包凭据应放在项目空间的密钥构建变量中。
 
 前端环境变量建议设置：
 
@@ -144,14 +130,7 @@ Dockerfile Build Args 会作为 BuildKit `build-arg` 传入 Dockerfile 的 `ARG`
 5. 等前端构建成功后创建 Release。
 6. 打开应用部署列表，确认前端和后端都处于正常状态。
 
-如果构建失败，先看构建日志末尾。常见原因：
-
-| 现象 | 先看哪里 |
-| --- | --- |
-| 拉不到基础镜像 | 构建网络、镜像站、DNS。 |
-| `pnpm install` 失败 | 前端构建网络或 npm registry。 |
-| Go module 下载失败 | 构建网络或 Go proxy。 |
-| 构建内存不足 | 调大部署配置里的构建内存。 |
+如果构建失败，先查看构建日志末尾，再参考[常见问题](/start/faq)。
 
 ## 7. 创建访问入口
 

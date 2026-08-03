@@ -28,17 +28,10 @@ For a first deployment, configure the Basic values only. Once the platform is ru
 | Advanced | `OTEL_RESOURCE_ATTRIBUTES` | Empty | Additional environment or cluster resource attributes as comma-separated `key=value` pairs. |
 | Advanced | `OTEL_EXPORTER_OTLP_HEADERS` | Empty | Collector authentication headers. Inject from a Secret in production instead of storing them in public configuration. |
 
-When metrics are enabled, only the API exposes a dedicated Prometheus-compatible listener with API HTTP, connection-pool, and dependency-health metrics. Worker and Agent do not expose separate metrics ports; task, queue, build, release, model, and tool metrics flow through OTLP to the unified metrics backend. Grafana dashboard JSON lives under `grafana/dashboards/` and can be imported when needed.
-
-When `OTEL_EXPORTER_OTLP_ENDPOINT` is configured, the API, Worker, and Agent report traces, metrics, and structured logs through OpenTelemetry. See [Connect an Observability Backend](./observability.md) for the minimal setup and local verification.
-
-Before listening on its HTTP port, the API performs one real connection check against both Redis and PostgreSQL. The process exits immediately when either dependency is unreachable, authentication fails, or a PostgreSQL migration fails; it never starts in a partially available state. After startup, go-redis and the `database/sql` pool recover from transient connection interruptions, while the container platform is responsible for restarting a process whose startup check fails.
+See [Connect an Observability Backend](./observability.md) for monitoring setup and verification.
 
 OIDC identity provider Redirect URI is generated from `PUBLIC_BASE_URL`, and the admin identity provider form shows a copyable value. Admission policy requires OIDC to return a non-empty email and `email_verified=true` by default. For trusted internal identity providers that cannot return the standard `email_verified` claim, disable “Require verified OIDC email” in the admission policy; the platform still requires a non-empty email.
 
-Before login, the frontend picks the first supported language from the browser language preference list. The supported languages are currently `zh-CN` and `en-US`. After login, the account language preference wins and is cached locally so the next page load uses the same language immediately.
-
-Available access-route domain suffixes, external access schemes, external access ports, and Gateway API defaults are managed on runtime clusters. Different clusters can use different gateway domain suffixes, GatewayClasses, and shared Gateways; the same cluster can also define multiple suffixes. A deployment target's cluster decides which suffixes are selectable, and each access route chooses exactly one suffix for default-domain generation, short-host expansion, and console access links. Set a cluster's external access scheme to `https` when an outer CDN or reverse proxy already terminates HTTPS; this only changes console display and link targets, does not change internal Gateway listeners, and does not request certificates.
 
 ## Frontend Build Settings
 
@@ -72,9 +65,7 @@ Available access-route domain suffixes, external access schemes, external access
 | Advanced | `BUILD_PRIVATE_EGRESS_PORTS` | `443` | Private allowlist ports in `restricted` mode; use ports like `5000` or `8081` for non-standard registries. |
 | Advanced | `BUILD_BLOCKED_EGRESS_CIDRS` | Empty | Extra blocked CIDRs in `restricted` mode. |
 
-Worker no longer listens on a separate metrics port. With `OTEL_EXPORTER_OTLP_ENDPOINT` configured, task, retry, queue depth, queue latency, build/release result and duration, runtime replica, and gateway sync metrics are exported with the other telemetry signals.
-
-The worker also starts consuming tasks only after both Redis and PostgreSQL pass their startup connection checks. After startup, Asynq, go-redis, and `database/sql` recover from transient connection interruptions.
+Worker metrics are exported through OTLP; see [Connect an Observability Backend](./observability.md).
 
 ## Agent Settings
 
@@ -83,4 +74,4 @@ The worker also starts consuming tasks only after both Redis and PostgreSQL pass
 | Advanced | `AI_OBSERVABILITY_CAPTURE_CONTENT` | `false` | Writes redacted model input/output, reasoning summaries, tool arguments, and tool results to trace events and structured logs. Enable it only for a controlled diagnostic window after restricting Tempo/Loki access and retention. |
 | Advanced | `AI_OBSERVABILITY_CAPTURE_DATABASE_SPANS` | `false` | Records every PostgreSQL query span inside the Agent. It is disabled by default because event persistence otherwise creates many low-value child spans; enable it temporarily for SQL latency or transaction diagnostics. |
 
-These switches affect only the Agent and require `OTEL_EXPORTER_OTLP_ENDPOINT` to export data remotely. When content capture is enabled, each field is capped at 32 KiB. Tokens, cookies, passwords, API keys, URL credentials, and secret form values are still replaced with `[REDACTED]`. Restart the Agent after changing database span capture; the setting affects only newly created traces. See [Connect an Observability Backend](./observability.md#agent-full-content-observability-sensitive) for fields and queries.
+These switches affect only the Agent and require a restart after changes. Content capture may include sensitive business data, so enable it only during a controlled diagnostic window. See [Connect an Observability Backend](./observability.md#agent-full-content-observability-sensitive).

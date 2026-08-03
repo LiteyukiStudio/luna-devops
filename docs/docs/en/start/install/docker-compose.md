@@ -15,13 +15,7 @@ You need:
 
 ## Choose A Version
 
-The repository root `docker-compose.yaml` pulls these images by default:
-
-```text
-liteyukistudio/luna-devops:nightly
-liteyukistudio/luna-worker:nightly
-liteyukistudio/luna-agent:nightly (AI profile only)
-```
+The repository root `docker-compose.yaml` uses `nightly` images by default.
 
 To verify a specific release, set the image tag before starting:
 
@@ -45,7 +39,7 @@ Run this from the repository root:
 docker compose up -d
 ```
 
-This starts PostgreSQL, password-protected Redis, API, and Worker. API completes database migrations first, and Compose starts Worker only after `/healthz` passes, so Worker cannot access a fresh schema too early. The API image already embeds the web console, so you do not need to start Vite separately. On the first visit, open `/bootstrap` and use the `BOOTSTRAP_TOKEN` from `.env` to create the first administrator, then rotate or remove that one-time token.
+This starts the platform with PostgreSQL and Redis. On the first visit, open `/bootstrap`, create the first administrator with the `BOOTSTRAP_TOKEN` from `.env`, and then rotate or remove that one-time token.
 
 ### Enable The AI Assistant
 
@@ -55,10 +49,7 @@ The AI Agent uses an explicit profile and does not start by default. Generate on
 printf 'AI_INTERNAL_SECRET=%s\n' "$(openssl rand -hex 32)" >> .env
 ```
 
-API and Agent derive independent service identity, context signing, callback authentication,
-delegation signing, and Run Grant encryption keys with HKDF-SHA256. Do not reuse
-`SECRET_ENCRYPTION_KEY`, and do not rotate this value while durable Runs are active because
-those Runs would no longer be recoverable.
+The platform isolates and protects the AI assistant's internal credentials. Keep this secret stable and do not reuse another encryption key.
 
 Then start the profile:
 
@@ -67,14 +58,6 @@ AI_ASSISTANT_AVAILABLE=true docker compose --profile ai up -d
 ```
 
 Configure the Provider, model, access rules, and quotas under **Global Settings → AI Assistant**. The Provider API key is stored by the platform Secret Store and does not belong in `.env`. For diagnostics, run `docker compose --profile ai logs -f agent`.
-
-To build images from the current source tree:
-
-```bash
-docker compose -f docker-compose-build.yaml up -d --build
-# Include the Agent:
-AI_ASSISTANT_AVAILABLE=true docker compose -f docker-compose-build.yaml --profile ai up -d --build
-```
 
 ## Open The Console
 
@@ -108,11 +91,13 @@ When API is healthy, the console opens in the browser. Worker must also be healt
 docker compose down
 ```
 
-To remove data as well:
+If the current data is no longer needed, remove its data volumes as well:
 
 ```bash
 docker compose down -v
 ```
+
+This permanently deletes the bundled PostgreSQL and Redis data. Make sure you have a backup first.
 
 <div class="hint">
 Start first, configure gradually. The first goal is to enter the console, not to connect every external system at once.

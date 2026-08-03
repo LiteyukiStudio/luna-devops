@@ -29,7 +29,7 @@ luna project --help
 luna project get-projects --help
 ```
 
-帮助会列出参数、权限要求、风险级别和示例。
+帮助会列出参数、权限要求和示例。
 
 ## 常用操作
 
@@ -50,7 +50,7 @@ luna logout
 luna project get-projects output=json interactive=false
 ```
 
-只解析标准输出中的 JSON，不要依赖表格宽度、颜色或本地化文字。高风险操作在交互终端中会要求确认；非交互环境必须显式传入 `--yes`，但它不会绕过平台权限或安全验证。
+自动化脚本只应解析 JSON。高风险操作仍需明确确认，且不会绕过平台权限或安全验证。
 
 需要通过个人令牌登录时，从环境变量或密钥服务传入，不要把令牌直接写进命令历史：
 
@@ -58,12 +58,4 @@ luna project get-projects output=json interactive=false
 printf '%s' "$LUNA_TOKEN" | luna login mode=access-token token=@-
 ```
 
-## Agent 使用
-
-Agent 应使用：
-
-```text
-output=json interactive=false agent=true
-```
-
-配套的 `luna-devops` Skill 可从 [Luna CLI 仓库](https://github.com/LiteyukiStudio/luna-cli/tree/main/skills/luna-devops) 获取。具体命令和参数始终以 `luna help` 为准。
+Agent 可使用配套的 [`luna-devops` Skill](https://github.com/LiteyukiStudio/luna-cli/tree/main/skills/luna-devops)。具体命令和参数以 `luna help` 为准。

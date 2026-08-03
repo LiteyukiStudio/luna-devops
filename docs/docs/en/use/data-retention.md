@@ -1,50 +1,33 @@
 # Data Retention and Cleanup
 
-Events, notification deliveries, worker task traces, and build or deployment logs keep growing as the platform runs. Platform administrators can configure automatic retention under **Site Settings > Data retention**, or preview and remove data from a specific time range.
+Administrators can configure automatic retention under **Site Settings → Data Retention**, or preview and clean data from a selected period.
 
 ## Automatic retention
 
-The worker runs an independent retention task every 24 hours. Each dataset has its own retention period:
-
-| Dataset | Default | Cleanup boundary |
+| Data | Default | Cleanup scope |
 | --- | ---: | --- |
-| Platform events | 90 days | Uses the event occurrence time |
-| Notification deliveries | 90 days | Removes only succeeded or failed deliveries |
-| Worker task events | 30 days | Removes historical task traces |
-| Build logs | 30 days | Removes logs from completed builds while preserving build records |
-| Release logs | 90 days | Removes logs from completed releases while preserving releases and rollback history |
-| Hook logs | 90 days | Removes logs from completed hooks while preserving run results |
-| Expired authentication data | 30 days | Removes only expired sessions, remember tokens, and Step-up assertions |
+| Platform events | 90 days | Expired events |
+| Notification deliveries | 90 days | Finished deliveries |
+| Worker task events | 30 days | Historical task traces |
+| Build logs | 30 days | Logs from finished builds; build records remain |
+| Release logs | 90 days | Logs from finished releases; release records remain |
+| Hook logs | 90 days | Logs from finished hooks; results remain |
+| Expired authentication data | 30 days | Expired sessions and verification data |
 
-Set a value to `0` to disable automatic cleanup for that dataset. Saving a policy affects future retention runs and does not immediately delete existing data.
-
-Cleanup uses a fixed dataset catalog and small batches. Logs attached to active builds, releases, or hooks are protected. A future end time also cannot remove authentication records that are still valid.
+Set a value to `0` to disable automatic cleanup for that category. Changes affect later cleanup runs and do not delete data immediately. Active task logs and valid sessions are not removed.
 
 ## Manual cleanup
 
-Manual cleanup is available only to platform administrators. When the platform Step-up MFA policy is enabled, the administrator must also complete the corresponding verification before cleanup:
+Only administrators can run manual cleanup. If step-up verification is enabled, MFA is also required.
 
-1. Select one or more datasets.
-2. Select a start and end time. The interval is `[startAt, endAt)`.
-3. Preview the matching row count for every dataset.
-4. Confirm the irreversible cleanup action.
+1. Select data categories and a time range.
+2. Preview the number of matching records.
+3. Verify the scope and confirm cleanup.
 
-Previewing does not change the database. Changing the datasets or time range invalidates the previous preview. The platform writes a summary to the audit log after cleanup, without copying removed log content into the audit record.
+Preview does not change data. Changing the selection requires a new preview. Cleanup cannot be undone and its result is audited; export anything that requires long-term retention first.
 
-## Protected data
+## Data that is not removed
 
-The following data is not part of the retention catalog and cannot be removed through the manual cleanup API:
+This feature does not remove audit logs, billing ledgers, build and release records, hook results, secrets and identity configuration, Kubernetes PVCs, or application data.
 
-- audit logs;
-- billing usage, wallets, and immutable ledger entries;
-- build records, build-job metadata, and image records;
-- release records, revisions, and rollback relationships;
-- hook results and script snapshots;
-- secrets, tokens, registry credentials, and identity-provider settings;
-- Kubernetes PVCs and application runtime data.
-
-Build and release entries remain visible after their old log body has been removed. Connect an external log system or archive storage before cleanup when long-term log access is required.
-
-## Replicas and failures
-
-Asynq schedules automatic retention, and one worker consumes each task after it is enqueued. An accidental duplicate trigger from multiple replicas cannot expand the cleanup range. Deletion runs in fixed-size batches; if a run fails halfway through, completed batches remain deleted and the next run continues with the remaining rows.
+After log cleanup, build and release records remain, but their expired log text is no longer available. Use an external log or archive system when longer retention is required.

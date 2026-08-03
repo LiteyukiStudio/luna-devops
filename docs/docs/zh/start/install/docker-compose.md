@@ -15,13 +15,7 @@ Docker Compose 是最快的体验方式，适合个人服务器、测试环境�
 
 ## 选择版本
 
-仓库根目录的 `docker-compose.yaml` 默认拉取：
-
-```text
-liteyukistudio/luna-devops:nightly
-liteyukistudio/luna-worker:nightly
-liteyukistudio/luna-agent:nightly（仅 AI profile）
-```
+仓库根目录的 `docker-compose.yaml` 默认使用 `nightly` 镜像。
 
 验证指定版本时，在启动命令前设置镜像 tag：
 
@@ -45,7 +39,7 @@ cp .env.example .env
 docker compose up -d
 ```
 
-这会启动 PostgreSQL、带密码认证的 Redis、API 和 Worker。API 会先完成数据库 migration；只有 `/healthz` 通过后 Compose 才启动 Worker，因此全新数据库不会被 Worker 提前访问。API 镜像已经内嵌前端页面，不需要单独启动 Vite。第一次进入时打开 `/bootstrap`，使用 `.env` 中的 `BOOTSTRAP_TOKEN` 创建首个管理员，完成后轮换或移除该一次性 Token。
+这会启动平台及其 PostgreSQL 和 Redis。第一次进入时打开 `/bootstrap`，使用 `.env` 中的 `BOOTSTRAP_TOKEN` 创建首个管理员，完成后轮换或移除该一次性 Token。
 
 ### 启用 AI 助手
 
@@ -55,9 +49,7 @@ AI Agent 使用独立 profile，默认不会启动。只需生成一个稳定的
 printf 'AI_INTERNAL_SECRET=%s\n' "$(openssl rand -hex 32)" >> .env
 ```
 
-API 与 Agent 会通过 HKDF-SHA256 自动派生服务身份、上下文签名、回调认证、Delegation
-签名和 Run Grant 加密所需的独立子密钥。不要与 `SECRET_ENCRYPTION_KEY` 共用，也不要在
-服务运行期间随意更换，否则尚未完成的持久化 Run 将无法恢复。
+平台会隔离并保护 AI 助手的内部凭据。请保持该密钥稳定，并且不要与其他加密密钥共用。
 
 然后启动：
 
@@ -66,14 +58,6 @@ AI_ASSISTANT_AVAILABLE=true docker compose --profile ai up -d
 ```
 
 登录后在“全局设置 → AI 助手”配置 Provider、模型、访问范围和配额。Provider API Key 由平台 Secret Store 保存，不写入 `.env`。排障时可查看 `docker compose --profile ai logs -f agent`。
-
-如果想从当前源码构建镜像：
-
-```bash
-docker compose -f docker-compose-build.yaml up -d --build
-# 连同 Agent：
-AI_ASSISTANT_AVAILABLE=true docker compose -f docker-compose-build.yaml --profile ai up -d --build
-```
 
 ## 打开控制台
 
@@ -107,11 +91,13 @@ API 正常后就能打开控制台；Worker 正常后，构建、部署和状态
 docker compose down
 ```
 
-连数据一起清理：
+如果确定不再需要当前数据，可以连同数据卷一起清理：
 
 ```bash
 docker compose down -v
 ```
+
+此操作会永久删除内置 PostgreSQL 和 Redis 数据，请先确认已有备份。
 
 <div class="hint">
 先跑起来，再慢慢配置。第一目标是进入控制台，不是一次性接好所有外部系统。

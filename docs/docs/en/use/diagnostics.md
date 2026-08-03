@@ -1,52 +1,39 @@
 # Status and Troubleshooting
 
-Do not start by retrying everything. First decide whether the failure is in build, release, application runtime, or the access route, then inspect the matching record. Luna DevOps keeps those stages close together so you can follow the same delivery context.
+First determine whether a problem is in the build, release, application runtime, or gateway. Avoid repeated retries until the likely cause is known.
 
-## Start with the event center
+## Start with events
 
-When the first question is "what just happened?", open **Events** from the sidebar. It presents build, release, deployment hook, access-route, and certificate state changes in time order.
+Open **Events** and narrow the time range, project, application, deployment target, and severity. Event details include a failure summary, related resources, and links to relevant pages.
 
-Select multiple project spaces, applications, deployment targets, categories, severities, and results, then combine them with a time range. Application and deployment-target options follow the selected parent resources, and stale child filters are removed when their parent is deselected. Event details show the failure summary, related resources, actor, and direct links to the relevant build, release, or access page. Regular users only see events from project spaces they can access. Platform administrators can switch between **Related to me** and **All events**.
+## Build failures
 
-## Build did not succeed
+Open the build record and check:
 
-Open the failed build record and check:
-
-- Dockerfile path.
-- Build context.
-- Dependency download failures.
+- Dockerfile path and build context.
+- Dependency download availability.
 - Registry push credentials.
+- Build CPU and memory.
 
-When a build record shows `kubernetes build job failed`, the platform enriches the message with the build Pod status and recent Kubernetes Events. Common fields include `executor terminated`, `exitCode=137`, `OOMKilled`, `Evicted`, and `BackOff`. `exitCode=137` / `OOMKilled` usually means the build environment ran out of memory; increase the build environment size in the deployment target and retry.
+`exitCode=137` or `OOMKilled` usually indicates insufficient memory. Increase build resources before retrying. If Git and a registry are not configured yet, deploy an existing image to validate the release and runtime path first.
 
-If Git and registry connections are not ready yet, deploy an existing image first to verify the second half of the delivery path.
+## Release failures
 
-## Release did not succeed
+Open the release and deployment logs. Confirm that the image exists, the cluster is reachable, pull credentials are valid, and ports, environment variables, secrets, and configuration files match the application.
 
-Open the Release status and deployment logs, then check:
+For an unready application, inspect workload events and container logs to distinguish image pulls, startup failures, health checks, and resource exhaustion.
 
-- Image exists.
-- Runtime cluster is reachable.
-- Image pull credential is correct.
-- Service port matches the real application port.
-- Environment variables, secrets, and config files match application expectations.
+## An unreachable route
 
-## Route is not reachable
+Check DNS, route status, the Service port, available Pods, and TLS configuration in that order. Administrators should also inspect Gateway, HTTPRoute, and certificate status.
 
-Check in this order:
+For a local test domain, use a hosts entry or `curl --resolve` before changing public DNS.
 
-- Domain resolves to the right entrypoint.
-- Gateway API CRDs are installed, and GatewayClass/Gateway exist.
-- HTTPRoute is Accepted, ResolvedRefs, and Programmed.
-- Service points to the correct port.
-- TLS settings match the gateway.
-- Service endpoints have ready Pods.
+## Recovery
 
-For local test domains, start with hosts or `curl --resolve` before changing public DNS.
+- Incorrect configuration: update the deployment target and create a release.
+- Incorrect image: select the correct image and release it.
+- Application failure: inspect logs before restarting or rolling back.
+- Route failure: inspect the route before the cluster Gateway.
 
-## Recovery suggestions
-
-- Wrong config: edit the deployment target and release again.
-- Wrong image: select the right image and create a new Release.
-- App issue: inspect runtime logs before restart or rollback.
-- Route issue: check route status first, then the cluster gateway.
+Rollbacks, restarts, and releases can affect live traffic. Verify the target version, impact, and recovery path before changing production.

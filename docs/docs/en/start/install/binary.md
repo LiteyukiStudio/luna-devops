@@ -23,7 +23,7 @@ go build -o bin/luna-devops-api ./cmd/api
 go build -o bin/luna-devops-worker ./cmd/worker
 ```
 
-The API serves the embedded web console. You do not need to start Vite in production.
+API also serves the web console, so no separate frontend service is required.
 
 ## Prepare Configuration
 
