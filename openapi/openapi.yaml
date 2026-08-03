@@ -6404,6 +6404,37 @@ paths:
         - { name: toolCallId, in: path, required: true, schema: { type: string } }
       requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }
       responses: { "202": { description: MFA resume accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }, "401": { $ref: "#/components/responses/Unauthorized" }, "404": { $ref: "#/components/responses/NotFound" }, "409": { $ref: "#/components/responses/Conflict" } }
+  /api/v1/ai/progress/projects/{projectId}/{operationType}/{operationId}:
+    get:
+      operationId: getAIProgress
+      tags: [AI Assistant]
+      summary: Read the authoritative progress snapshot for an AI interaction card
+      security: [{ SessionCookie: [] }]
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string } }
+        - { name: operationType, in: path, required: true, schema: { $ref: "#/components/schemas/AIProgressOperationType" } }
+        - { name: operationId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Current authoritative operation progress, content: { application/json: { schema: { $ref: "#/components/schemas/AIProgressSnapshot" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/ai/progress/projects/{projectId}/{operationType}/{operationId}/stream:
+    get:
+      operationId: streamAIProgress
+      tags: [AI Assistant]
+      summary: Stream authoritative progress snapshots for an AI interaction card
+      description: Emits an immediate `progress.snapshot`, sends later revisions, and closes after a terminal state. Reconnecting always reconciles from the latest platform state.
+      security: [{ SessionCookie: [] }]
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string } }
+        - { name: operationType, in: path, required: true, schema: { $ref: "#/components/schemas/AIProgressOperationType" } }
+        - { name: operationId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Unbuffered SSE stream of progress snapshots, content: { text/event-stream: { schema: { type: string } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /internal/v1/ai/delegations/exchange:
     post:
       operationId: exchangeAIRunActorGrant
@@ -6663,6 +6694,43 @@ components:
       type: object
       additionalProperties: true
       description: Versioned AI Agent response projected through the Luna API BFF.
+    AIProgressOperationType:
+      type: string
+      enum: [build_run, release, hook_run, app_template_installation]
+    AIProgressSnapshot:
+      type: object
+      required: [operationId, operationType, revision, state, stageCode, progress, steps, updatedAt]
+      properties:
+        operationId: { type: string }
+        operationType: { $ref: "#/components/schemas/AIProgressOperationType" }
+        revision: { type: string, pattern: "^[0-9]{8}T[0-9]{6}\\.[0-9]{9}Z$", description: Stable lexically sortable revision derived from the authoritative record update time. }
+        state: { type: string, enum: [queued, running, waiting_input, waiting_approval, succeeded, failed, cancelled] }
+        stageCode: { type: string, description: Stable frontend i18n code. }
+        progress:
+          type: object
+          required: [mode]
+          properties:
+            mode: { type: string, enum: [determinate, indeterminate] }
+            value: { type: number, minimum: 0, maximum: 100 }
+        steps:
+          type: array
+          items:
+            type: object
+            required: [id, labelCode, status]
+            properties:
+              id: { type: string }
+              labelCode: { type: string, description: Stable frontend i18n code. }
+              status: { type: string, enum: [pending, running, success, warning, error, skipped] }
+        startedAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time }
+        error:
+          type: object
+          required: [code]
+          properties:
+            code: { type: string }
+            requestId: { type: string }
+            traceId: { type: string }
     AIDelegationExchangeInput:
       type: object
       properties:

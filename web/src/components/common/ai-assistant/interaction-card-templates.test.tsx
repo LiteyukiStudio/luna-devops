@@ -14,7 +14,7 @@ const expectedContentBlocks = {
   wizard: [],
   diagnosis: ['callout', 'status_list', 'code'],
   plan: ['timeline', 'callout'],
-  progress: ['progress', 'status_list'],
+  progress: ['live_progress'],
   result: ['callout', 'key_value', 'resource_links'],
   dashboard: ['metrics', 'chart', 'status_list'],
 } as const

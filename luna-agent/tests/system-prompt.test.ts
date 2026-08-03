@@ -161,8 +161,8 @@ describe("versioned system prompt", () => {
     },
     {
       input: "诊断这个应用为什么 Pod 一直不健康",
-      expected: ["projects-applications", "runtime-deployment", "diagnostics-observability"],
-      evidence: "应用问题诊断流程",
+      expected: ["projects-applications", "runtime-deployment", "diagnostics-observability", "application-diagnostics"],
+      evidence: "应用故障诊断与修复",
     },
     {
       input: "给应用配置域名、TLS 证书和网关入口",
@@ -196,6 +196,24 @@ describe("versioned system prompt", () => {
 
     for (const name of expected) expect(names).toContain(name)
     expect(prompt).toContain(evidence)
+  })
+
+  it("loads the evidence-driven application repair workflow without treating restart as diagnosis", () => {
+    const context = {
+      userInput: "修复这个应用发布后 Pod 反复重启并且接口偶尔超时的问题",
+      operationIds: ["getApplicationTopology", "listReleases", "getReleaseRuntimeLogs", "listRuntimeEvents"],
+    }
+    const names = loadedSkillReferences(context).map(item => item.name)
+    const prompt = systemPromptFor("system-v4", context)
+
+    expect(names).toContain("application-diagnostics")
+    expect(names).toContain("diagnostics-observability")
+    expect(prompt).toContain("所有状态、事件、日志、指标和 Trace 使用同一故障窗口")
+    expect(prompt).toContain("结论必须分为四层")
+    expect(prompt).toContain("多副本时比较异常副本与健康副本")
+    expect(prompt).toContain("重启只用于配置已经正确但进程需要重建的情况")
+    expect(prompt).toContain("沿诊断时的同一观察链重新读取")
+    expect(prompt).toContain("当前已恢复，仍需观察")
   })
 
   it("does not load every domain merely because the full tool catalog is available", () => {
@@ -260,6 +278,24 @@ describe("versioned system prompt", () => {
     expect(prompt).toContain("monorepo 不等于单应用")
     expect(prompt).toContain("数据库迁移、种子数据、一次性初始化")
     expect(prompt).toContain("工作负载与 Service 就绪")
+  })
+
+  it("loads dependency planning and applies component-specific reuse boundaries", () => {
+    const context = {
+      userInput: "部署一个前后端分离且包含 Agent、PostgreSQL、Redis、MinIO 和 RabbitMQ 的博客",
+      operationIds: ["listApplications", "listAppTemplates", "createApplication", "createServiceReference"],
+    }
+    const names = loadedSkillReferences(context).map(item => item.name)
+    const prompt = systemPromptFor("system-v4", context)
+
+    expect(names).toContain("delivery-orchestration")
+    expect(names).toContain("repository-delivery")
+    expect(names).toContain("service-dependency-planning")
+    expect(prompt).toContain("把每个节点标记为 `业务服务`、`有状态依赖`、`共享平台能力`、`一次性任务` 或")
+    expect(prompt).toContain("关系型数据库可以复用服务器实例")
+    expect(prompt).toContain("Redis logical DB 不能作为强安全隔离")
+    expect(prompt).toContain("独立 vhost、用户、权限、配额和死信策略")
+    expect(prompt).toContain("只清理该解决方案拥有的资源")
   })
 
   it("requires the card preparation handshake before the final card tool", () => {

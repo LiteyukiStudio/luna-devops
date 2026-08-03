@@ -157,16 +157,20 @@ const diagnosisReport = z.object({
   evidence: z.array(keyValueItem).max(16).optional(),
 })
 
+const liveProgressBinding = z.object({
+  operationType: z.enum(["build_run", "release", "hook_run", "app_template_installation"]),
+  projectId: z.string().trim().min(1).max(120),
+  operationId: z.string().trim().min(1).max(120),
+})
+
 const executionProgress = z.object({
   templateId: z.literal("execution_progress"),
-  title: shortText,
-  description,
-  progress: z.object({ mode: z.enum(["determinate", "indeterminate"]), value: z.number().min(0).max(100).optional(), label: shortText, detail: description }),
-  steps: z.array(statusItem).min(1).max(20),
-}).refine(input => input.progress.mode !== "determinate" || input.progress.value !== undefined, {
-  message: "确定进度必须提供 value。",
-  path: ["progress", "value"],
-})
+  title: shortText.describe("稳定的任务名称，不得包含正在、已完成、失败等会随任务变化的状态。"),
+  description: description.describe("稳定的任务说明，不得写入会随任务变化的状态、百分比或步骤。"),
+  binding: liveProgressBinding,
+  label: shortText.optional(),
+  detail: description,
+}).describe("只用于绑定平台已经创建且仍在运行的权威任务。不得由模型填写百分比、步骤状态或在标题、说明中固化动态状态。")
 
 const operationResult = z.object({
   templateId: z.literal("operation_result"),
@@ -272,7 +276,7 @@ export function compileBusinessCardTemplate(input: CreateBusinessCardTemplateInp
         ...base, mode: "presentation", template: "progress", display: { density: "compact" },
         cards: [{
           id: "execution_progress", presentation: { variant: "task", title: template.title, description: template.description },
-          blocks: [{ id: "progress", type: "progress", ...template.progress }, { id: "steps", type: "status_list", items: template.steps }],
+          blocks: [{ id: "progress", type: "live_progress", binding: template.binding, label: template.label, detail: template.detail }],
         }],
       }
     case "operation_result":

@@ -77,7 +77,17 @@ export const interactionContentBlockSchema = z.discriminatedUnion('type', [
     nodes: z.array(z.object({ id, label: text, category: z.string().min(1).max(60), status: z.enum(['neutral', 'success', 'warning', 'error']).optional() })).min(1).max(30),
     edges: z.array(z.object({ source: id, target: id, label: z.string().max(120).optional() })).max(50),
   }),
-  z.object({ ...blockBase, type: z.literal('progress'), mode: z.enum(['determinate', 'indeterminate']), value: z.number().min(0).max(100).optional(), label: text, detail: z.string().max(500).optional() }),
+  z.object({
+    ...blockBase,
+    type: z.literal('live_progress'),
+    binding: z.object({
+      operationType: z.enum(['build_run', 'release', 'hook_run', 'app_template_installation']),
+      projectId: z.string().trim().min(1).max(120),
+      operationId: z.string().trim().min(1).max(120),
+    }),
+    label: text.optional(),
+    detail: z.string().max(500).optional(),
+  }),
   z.object({
     ...blockBase,
     type: z.literal('resource_links'),

@@ -5,6 +5,7 @@ export { ApiError } from './core'
 export type * from './topology-types'
 export type * from './types'
 export {
+  aiProgressStreamUrl,
   apiBaseOrigin,
   buildJobLogsStreamUrl,
   deploymentTargetDataExportUrl,

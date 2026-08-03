@@ -154,6 +154,9 @@ describe("interaction card tool", () => {
       cards: [{
         id: `${template}-card`,
         presentation: { variant: "summary", title: `${template} card` },
+        ...(template === "progress"
+          ? { blocks: [{ id: "progress", type: "live_progress", binding: { operationType: "release", projectId: "prj_1", operationId: "rel_1" } }] }
+          : {}),
         ...(collectsInput
           ? {
               form: {
@@ -234,7 +237,7 @@ describe("interaction card tool", () => {
     }).success).toBe(true)
   })
 
-  it("rejects dangling source, relation, table, chart, progress and field references", () => {
+  it("rejects dangling source, relation, table, chart and field references", () => {
     const invalidCases = [
       {
         block: { id: "source", type: "markdown", content: "content", sourceRefIds: ["missing"] },
@@ -263,9 +266,6 @@ describe("interaction card tool", () => {
           xAxis: ["a", "b"],
           series: [{ name: "value", values: [1] }],
         },
-      },
-      {
-        block: { id: "progress", type: "progress", mode: "determinate", label: "Deploying" },
       },
     ]
     for (const invalidCase of invalidCases) {

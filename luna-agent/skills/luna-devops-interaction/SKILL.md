@@ -90,11 +90,13 @@ description: 指导 Luna DevOps 助手处理项目空间、应用、代码仓库
 
 - 从模板、镜像或源码完成应用交付：[delivery-orchestration.md](references/delivery-orchestration.md)
 - GitHub/Git 仓库分析、README 复核、多服务拆分与源码部署：[repository-delivery.md](references/repository-delivery.md)
+- 多服务拓扑、数据库/缓存/队列/存储等依赖的复用与独占决策：[service-dependency-planning.md](references/service-dependency-planning.md)
 - 项目空间、成员、应用、应用市场模板：[projects-applications.md](references/projects-applications.md)
 - 代码仓库、变量、构建、镜像、发布：[source-build-release.md](references/source-build-release.md)
 - 部署、集群、运行时配置、回滚：[runtime-deployment.md](references/runtime-deployment.md)
 - 网关、路由、域名、DNS、证书：[gateway-networking.md](references/gateway-networking.md)
 - 事件、日志、状态、故障、诊断：[diagnostics-observability.md](references/diagnostics-observability.md)
+- 应用未就绪、崩溃、依赖异常、性能下降的诊断与修复：[application-diagnostics.md](references/application-diagnostics.md)
 - Git/Webhook、钩子、服务关系、拓扑和通知自动化：[integrations-automation.md](references/integrations-automation.md)
 - 用户、角色、认证、密钥、账单、平台设置：[security-administration.md](references/security-administration.md)
 - 目标状态、执行闭环、完成措辞和验收证据：[task-completion.md](references/task-completion.md)

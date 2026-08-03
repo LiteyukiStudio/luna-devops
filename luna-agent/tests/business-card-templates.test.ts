@@ -71,7 +71,7 @@ describe("business interaction card templates", () => {
 
   it.each([
     ["diagnosis_report", { conclusion: "构建失败源于 Dockerfile 路径不存在。", conclusionTone: "error", findings: [{ id: "dockerfile", label: "Dockerfile", status: "error" }] }, "diagnosis"],
-    ["execution_progress", { progress: { mode: "determinate", value: 50, label: "正在发布" }, steps: [{ id: "build", label: "构建", status: "success" }, { id: "release", label: "发布", status: "running" }] }, "progress"],
+    ["execution_progress", { binding: { operationType: "release", projectId: "prj_1", operationId: "rel_1" }, label: "正在发布" }, "progress"],
     ["operation_result", { outcome: "success", summary: "应用已发布并通过健康检查。", facts: [{ label: "版本", value: "v2" }] }, "result"],
     ["health_overview", { metrics: [{ label: "健康副本", value: "3/3", tone: "success" }], statuses: [{ id: "gateway", label: "访问入口", status: "success" }] }, "dashboard"],
   ] as const)("compiles the %s presentation template", (templateId, fields, expectedTemplate) => {

@@ -26,7 +26,7 @@
 | `resource_configuration` | 已知操作目标，需要收集一个或多个结构化参数；适用于创建、安装、部署、构建、网关、运行配置等 | 参数已经完整且只需核对；只缺自然语言澄清；仅展示资源事实 |
 | `change_review` | 写操作参数已完整，执行前需要集中展示目标、参数、影响或风险，并提供继续动作 | 平台高风险批准卡；仍缺参数；操作已经执行完成 |
 | `diagnosis_report` | 已完成检查，能够给出结论、分项状态和可核对证据 | 仍在查询；只展示普通资源详情；把未经验证的猜测当结论 |
-| `execution_progress` | 构建、部署、发布、迁移或批量任务仍在运行；需要展示总进度和步骤状态 | 任务已经终止；只收到请求受理但没有任何可读取进度；用进度卡假装持续轮询 |
+| `execution_progress` | 平台写工具已经返回受支持的 `projectId`、`operationId` 与 `operationType`，且任务仍在运行 | 没有权威任务 ID；任务已经终止；由模型填写百分比或步骤；用进度卡假装持续轮询 |
 | `operation_result` | 操作达到可验证终态，需要展示成功、部分成功或失败及关键事实 | 仅提交、排队或运行中；卡片生成完成但业务未完成；没有回读证据却声称成功 |
 | `health_overview` | 已取得一组实时指标和分项健康状态，需要帮助用户判断优先级 | 查看单个资源详情；诊断具体故障原因；指标来自旧缓存或猜测 |
 
@@ -93,9 +93,18 @@
 
 ### execution_progress
 
-能计算比例时使用 `determinate` 并提供 `value`；不能计算时使用 `indeterminate`。`steps` 至少
-包含当前步骤，并准确区分 pending、running、success、warning、error 和 skipped。达到终态后
-重新生成 `operation_result`，不要继续显示运行中卡片。
+进度卡不是模型生成的状态快照，而是平台权威异步任务的实时投影。必须把写工具结果中的
+`projectId`、`operationId` 和 `operationType` 原样放入 `binding`；当前支持 `build_run`、
+`release`、`hook_run` 与 `app_template_installation`。前端会先取得当前快照，再通过 SSE 接收
+后续变化，刷新和断线恢复后仍以平台状态为准。
+
+模型不得填写百分比、运行步骤或状态，不得根据耗时推测进度。没有受支持的任务 ID 时，不得
+生成 `execution_progress`，应继续调用工具取得事实，或只用普通消息说明当前阶段。达到终态后，
+Agent 仍需执行必要验收并用 `operation_result` 总结；动态卡片不能替代工作流完成判断。
+
+进度卡的标题、说明和徽标只能说明不会变化的任务身份，例如“luna-api 发布任务”；不得写
+“正在发布”“已完成”或“失败”。这些状态只由实时进度块呈现，否则任务进入终态后会出现
+互相矛盾的静态文案。
 
 ### operation_result
 
@@ -127,7 +136,7 @@
 2. 有 2～5 个仓库候选时用 `candidate_picker`；候选更多时用 `candidate_select`。
 3. 读取 README 和构建信息后，用 `resource_configuration` 收集无法发现的参数。
 4. 参数完整且需要用户核对时用 `change_review`，随后调用真实写工具。
-5. 构建或发布仍在运行时用 `execution_progress`，并继续读取状态。
+5. 写工具返回受支持的权威任务 ID 且任务仍在运行时，用 `execution_progress` 建立实时绑定；Agent 同时继续等待和验收任务终态。
 6. 运行资源和健康检查达到终态后用 `operation_result`。
 
 不得从第 2 步直接生成成功回执，也不得把第 3 步替换为“前往应用页面”的导航。

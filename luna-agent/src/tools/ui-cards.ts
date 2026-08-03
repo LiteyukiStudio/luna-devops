@@ -141,12 +141,15 @@ const contentBlock = z.discriminatedUnion("type", [
   }),
   z.object({
     ...blockBase,
-    type: z.literal("progress"),
-    mode: z.enum(["determinate", "indeterminate"]),
-    value: z.number().min(0).max(100).optional(),
-    label: shortText,
+    type: z.literal("live_progress"),
+    binding: z.object({
+      operationType: z.enum(["build_run", "release", "hook_run", "app_template_installation"]),
+      projectId: z.string().trim().min(1).max(120),
+      operationId: z.string().trim().min(1).max(120),
+    }),
+    label: shortText.optional(),
     detail: z.string().trim().max(500).optional(),
-  }),
+  }).describe("绑定平台权威异步任务的实时进度。禁止把运行中状态写成静态百分比或静态步骤。"),
   z.object({
     ...blockBase,
     type: z.literal("resource_links"),
@@ -353,6 +356,21 @@ export const createInteractionCardsInput = z.object({
       path: ["cards"],
     })
   }
+  const liveProgressBlocks = input.cards.flatMap(item => item.blocks ?? []).filter(block => block.type === "live_progress")
+  if (input.template === "progress" && (input.mode !== "presentation" || liveProgressBlocks.length === 0)) {
+    context.addIssue({
+      code: "custom",
+      message: "Progress templates must be presentation cards bound to at least one authoritative live progress operation.",
+      path: ["template"],
+    })
+  }
+  if (input.template !== "progress" && liveProgressBlocks.length > 0) {
+    context.addIssue({
+      code: "custom",
+      message: "Live progress blocks are only valid in the progress template.",
+      path: ["template"],
+    })
+  }
 
   const cardIds = new Set<string>()
   input.cards.forEach((item, cardIndex) => {
@@ -437,13 +455,6 @@ export const createInteractionCardsInput = z.object({
             path: ["cards", cardIndex, "blocks", blockIndex],
           })
         }
-      }
-      if (block.type === "progress" && block.mode === "determinate" && block.value === undefined) {
-        context.addIssue({
-          code: "custom",
-          message: "Determinate progress requires a value.",
-          path: ["cards", cardIndex, "blocks", blockIndex, "value"],
-        })
       }
     })
     fields.forEach((field, fieldIndex) => {
@@ -572,7 +583,7 @@ function normalizeCardSections(input: Record<string, unknown>): unknown {
 
 export const createInteractionCardsTool: ModelToolDefinition = {
   operationId: "create_interaction_cards",
-  description: "完成一组受控的声明式内容与交互卡片。调用前必须先单独调用 prepare_interaction_cards，等待 accepted，再复用 generationId。优先使用 businessTemplate：2～5 个丰富候选用 candidate_picker，6～50 个候选用 candidate_select，需要结构化参数用 resource_configuration，执行前核对变更用 change_review，诊断结论用 diagnosis_report，运行中状态用 execution_progress，终态回执用 operation_result，健康概览用 health_overview。只有业务模板无法表达必要结构时，才直接提供 mode/template/cards 自定义卡片。需要用户选择、填写或确认时必须生成交互模板；只呈现事实、状态或结果时使用展示模板。卡片事实和 ID 必须来自当前可信工具结果；tool action 只能引用当前模型工具列表中的真实 operationId，并继续接受平台鉴权、批准和 MFA。不得生成 HTML、CSS、脚本、任意 URL 或虚构状态；简单的 2～5 个无丰富内容且无需结构化输入的建议继续使用 create_options。",
+  description: "完成一组受控的声明式内容与交互卡片。调用前必须先单独调用 prepare_interaction_cards，等待 accepted，再复用 generationId。优先使用 businessTemplate：2～5 个丰富候选用 candidate_picker，6～50 个候选用 candidate_select，需要结构化参数用 resource_configuration，执行前核对变更用 change_review，诊断结论用 diagnosis_report，已取得平台任务 ID 的运行中状态用 execution_progress，终态回执用 operation_result，健康概览用 health_overview。execution_progress 必须使用平台工具结果中的 projectId、operationId 和 operationType 建立实时绑定，禁止填写或猜测静态百分比、步骤和运行状态；卡片标题、说明和徽标只能描述稳定的任务身份，不得写入“正在”“已完成”“失败”等动态状态；没有可绑定任务 ID 时不得生成进度卡片。任何会继续变化的运行状态不得用 status_list、timeline、metrics 或 chart 冒充动态进度，这些内容块只用于已经完成的历史事实或当前读取的瞬时快照。只有业务模板无法表达必要结构时，才直接提供 mode/template/cards 自定义卡片。需要用户选择、填写或确认时必须生成交互模板；只呈现事实、状态或结果时使用展示模板。卡片事实和 ID 必须来自当前可信工具结果；tool action 只能引用当前模型工具列表中的真实 operationId，并继续接受平台鉴权、批准和 MFA。不得生成 HTML、CSS、脚本、任意 URL 或虚构状态；简单的 2～5 个无丰富内容且无需结构化输入的建议继续使用 create_options。",
   inputSchema: cardInputJsonSchema(),
 }
 

@@ -34,6 +34,10 @@ export function inboxStreamUrl() {
   return `${API_BASE_URL}/inbox/stream`
 }
 
+export function aiProgressStreamUrl(projectId: string, operationType: string, operationId: string) {
+  return `${API_BASE_URL}/ai/progress/projects/${encodeURIComponent(projectId)}/${encodeURIComponent(operationType)}/${encodeURIComponent(operationId)}/stream`
+}
+
 function apiWebSocketUrl(path: string) {
   const base = API_BASE_URL.startsWith('http://') || API_BASE_URL.startsWith('https://')
     ? API_BASE_URL

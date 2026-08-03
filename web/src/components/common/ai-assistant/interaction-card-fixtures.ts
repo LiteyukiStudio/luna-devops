@@ -310,29 +310,19 @@ export const interactionCardTemplateFixtures = {
   progress: {
     schemaVersion: 1,
     generationId: 'progress-fixture',
-    title: '正在发布应用',
+    title: '应用发布进度',
     mode: 'presentation',
     template: 'progress',
     cards: [{
       id: 'release-progress',
       presentation: {
         variant: 'task',
-        title: '发布 luna-api:v2.4.0',
+        title: 'luna-api:v2.4.0 发布任务',
         subtitle: 'Release rel_01',
         icon: { type: 'category', name: 'deployment', alt: '发布' },
-        badges: [{ label: '进行中', tone: 'neutral' }],
       },
       blocks: [
-        { id: 'release-percent', type: 'progress', mode: 'determinate', value: 67, label: '滚动更新', detail: '2 / 3 个副本已就绪' },
-        {
-          id: 'release-status',
-          type: 'status_list',
-          items: [
-            { id: 'release-created', label: 'Release 已创建', status: 'success' },
-            { id: 'workload-updated', label: '工作负载正在更新', status: 'running' },
-            { id: 'route-check', label: '等待访问入口检查', status: 'pending' },
-          ],
-        },
+        { id: 'release-progress', type: 'live_progress', binding: { operationType: 'release', projectId: 'prj_1', operationId: 'rel_01' }, label: '滚动更新', detail: '进度来自平台 Release 的权威状态。' },
       ],
       actions: [{ id: 'refresh-release', type: 'send_message', label: '刷新发布状态', message: '刷新 Release rel_01 的状态。', repeatable: true }],
     }],

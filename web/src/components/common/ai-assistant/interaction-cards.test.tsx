@@ -1,6 +1,7 @@
 import type { AIUIAction } from '@/api'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
+import i18next from '@/i18n'
 import { AIInteractionCards } from './interaction-cards'
 
 const catalogCard = {
@@ -218,7 +219,7 @@ describe('ai interaction cards', () => {
       />,
     )
 
-    expect(screen.getByRole('alert')).toHaveTextContent('aiAssistant.cards.invalid')
+    expect(screen.getByRole('alert')).toHaveTextContent(i18next.t('aiAssistant.cards.invalid'))
     expect(screen.queryByText('PostgreSQL')).not.toBeInTheDocument()
   })
 

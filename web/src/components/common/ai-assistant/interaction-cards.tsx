@@ -44,6 +44,7 @@ import { CopyableCodeBlock } from './copyable-code-block'
 import { InteractionCardChart } from './interaction-card-chart'
 import { interactionCardGroupSchema } from './interaction-card-schema'
 import { interactionCardDensity, interactionCardTemplateConfigs, shouldExpandInteractionCard } from './interaction-card-templates'
+import { LiveProgressBlock } from './live-progress-block'
 import { AIInlineMarkdown, AIMarkdown } from './markdown'
 
 const compactActionClassName = 'h-auto min-h-7 max-w-full gap-1.5 whitespace-normal px-2.5 py-1 !text-[11px] leading-4 [&_svg]:size-3.5'
@@ -316,18 +317,8 @@ function ContentBlock({ block, onAction }: { block: InteractionContentBlock, onA
         </div>
       )
     }
-    if (block.type === 'progress') {
-      return (
-        <div className="grid gap-1">
-          <div className="flex justify-between gap-2 text-[10px]">
-            <span>{block.label}</span>
-            {block.mode === 'determinate' && <strong>{`${block.value ?? 0}%`}</strong>}
-          </div>
-          <div className="h-1.5 overflow-hidden rounded-full bg-surface-inset"><div className={cn('h-full rounded-full bg-primary transition-[width]', block.mode === 'indeterminate' && 'w-1/3 animate-pulse')} style={block.mode === 'determinate' ? { width: `${block.value ?? 0}%` } : undefined} /></div>
-          {block.detail && <p className="text-[9px] text-muted-foreground">{block.detail}</p>}
-        </div>
-      )
-    }
+    if (block.type === 'live_progress')
+      return <LiveProgressBlock key={`${block.binding.projectId}:${block.binding.operationType}:${block.binding.operationId}`} block={block} />
     if (block.type === 'resource_links') {
       return (
         <div className="flex flex-wrap gap-1.5">
