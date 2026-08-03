@@ -2,7 +2,7 @@
 
 The AI assistant uses the current page context and your platform permissions to query resources, explain status, and help with routine operations.
 
-On mobile, the assistant fills the currently visible Safari or browser viewport and keeps the composer available when the keyboard opens. Collapsed tool calls show only their execution status; expand a call to inspect its duration, arguments, result, and identifiers.
+On mobile, the assistant fills the currently visible Safari or browser viewport and keeps the composer available when the keyboard opens. Collapsed tool calls show only their execution status; expand a call to inspect its duration, arguments, result, and identifiers. The conversation browser is a dedicated mobile view that temporarily hides the composer and suggested actions. You can switch between conversations without closing the list, then use Back to return to chat.
 
 ## Get started
 
@@ -16,7 +16,7 @@ The Provider must expose an OpenAI-compatible `chat/completions` endpoint with S
 
 After saving and enabling it, the assistant entry appears in the lower-right corner of the console.
 
-Tap the floating entry on desktop or mobile to open the assistant. Drag it to change its position; small finger movement during a tap is not treated as a drag.
+Tap the floating entry on desktop or mobile to open the assistant. Drag it to change its position; small finger movement during a tap is not treated as a drag. On desktop, a compact assistant opens conversations as an overlay drawer so the chat is not squeezed. Widening the assistant automatically changes the drawer into a side-by-side sidebar. Switching conversations keeps the browser open; press Escape, click the scrim, or use Back to leave the overlay drawer.
 
 ## Conversations
 

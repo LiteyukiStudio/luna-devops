@@ -3,6 +3,7 @@ import type { LiveSubscription } from './session'
 import type { AIEvent, AIUIAction } from '@/api'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { List, LoaderCircle, MessageSquarePlus, Sparkles, X } from 'lucide-react'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Rnd } from 'react-rnd'
@@ -20,6 +21,7 @@ import { readAIClientInstanceId } from './client-instance'
 import { AIAssistantComposer } from './composer'
 import { AIConversationList } from './conversation-list'
 import { aiConversationSessionReducer, initialAIConversationSessionState } from './conversation-session'
+import { AIDesktopShell } from './desktop-shell'
 import { AIAssistantLauncher } from './launcher'
 import {
   clampAssistantPosition,
@@ -35,6 +37,7 @@ import {
 } from './layout'
 import { AIMobileViewport } from './mobile-viewport'
 import { AIOptionsBar } from './options'
+import { shouldDisplayAIOptions } from './options-visibility'
 import { buildAIPageContext } from './page-context'
 import { AIRefreshConversationReturn } from './refresh-conversation-return'
 import { AI_EVENT_TYPES, sessionStateReducer } from './session'
@@ -42,6 +45,8 @@ import { emptyAIAssistantState, isValidAITimeline } from './state'
 import { createAIEventSource } from './stream'
 import { resolveAISuggestions } from './suggestions'
 import { AIAssistantTimeline } from './timeline'
+
+type AssistantView = 'chat' | 'conversations'
 
 export function AiAssistant() {
   const { i18n, t } = useTranslation()
@@ -55,13 +60,15 @@ export function AiAssistant() {
   }), [i18n.language, location.hash, location.pathname, location.search])
   const triggerRef = useRef<HTMLButtonElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const conversationButtonRef = useRef<HTMLButtonElement>(null)
   const automaticDeliveryHandlerRef = useRef<((delivery: AutomaticRouteDelivery) => Promise<void>) | undefined>(undefined)
   const processingAutomaticActionsRef = useRef(new Set<string>())
   const desktop = useDesktopViewport()
+  const reduceMotion = useReducedMotion()
   const [open, setOpen] = useState(false)
   const [capabilityEpoch, invalidateOpenWindow] = useReducer(value => value + 1, 0)
   const [openedCapabilityEpoch, setOpenedCapabilityEpoch] = useState(0)
-  const [showConversations, setShowConversations] = useState(false)
+  const [assistantView, setAssistantView] = useState<AssistantView>('chat')
   const [conversationSession, dispatchConversationSession] = useReducer(aiConversationSessionReducer, initialAIConversationSessionState)
   const [conversationSearch, setConversationSearch] = useState('')
   const [liveSubscriptions, setLiveSubscriptions] = useState<Record<string, LiveSubscription>>({})
@@ -402,6 +409,109 @@ export function AiAssistant() {
     setOpen(false)
     window.setTimeout(() => triggerRef.current?.focus(), 0)
   }
+  const showConversations = assistantView === 'conversations'
+  const visibleSuggestions = suggestions && shouldDisplayAIOptions(desktop, showConversations)
+    ? suggestions
+    : undefined
+  const conversationListProps = {
+    activeId: selectedConversationId,
+    conversations: conversations.data?.items ?? [],
+    deleting: deleteConversations.isPending,
+    loading: conversations.isLoading,
+    search: conversationSearch,
+    onDeleteMany: (ids: string[]) => deleteConversations.mutateAsync(ids).then(() => undefined),
+    onRename: (id: string, title: string) => renameConversation.mutate({ id, title }),
+    runningConversationIds,
+    onSearch: setConversationSearch,
+    onSelect: (id: string) => dispatchConversationSession({ type: 'select', conversationId: id } as const),
+  }
+  const chatView = (
+    <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+      <header className="ai-assistant-drag-handle flex h-[calc(3.5rem+env(safe-area-inset-top))] shrink-0 select-none items-center gap-2 border-b border-separator-subtle pb-0 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] pt-[env(safe-area-inset-top)] sm:h-14 sm:touch-none sm:px-3 sm:pt-0 sm:cursor-move">
+        <Button
+          ref={conversationButtonRef}
+          aria-expanded={showConversations}
+          aria-label={t('aiAssistant.conversations.title')}
+          aria-pressed={showConversations}
+          className={showConversations ? 'bg-primary-subtle text-primary-text hover:bg-primary-subtle' : undefined}
+          size="icon"
+          title={t('aiAssistant.conversations.title')}
+          variant="ghost"
+          onClick={() => setAssistantView(showConversations ? 'chat' : 'conversations')}
+        >
+          <List className="size-4" />
+        </Button>
+        <span className="grid size-8 shrink-0 place-items-center rounded-control bg-primary text-primary-foreground"><Sparkles className="size-4" /></span>
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate text-[13px] font-semibold leading-5">{timeline.data?.conversation.title || t('aiAssistant.title')}</h2>
+          <p className="truncate text-[10px] leading-4 text-muted-foreground">{t('aiAssistant.context', { path: location.pathname })}</p>
+        </div>
+        <Button aria-label={t('aiAssistant.conversations.new')} disabled={createConversation.isPending} size="icon" variant="ghost" onClick={() => createConversation.mutate()}>{createConversation.isPending ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" /> : <MessageSquarePlus className="size-4" />}</Button>
+        <Button aria-label={t('common.close')} size="icon" variant="ghost" onClick={close}><X className="size-4" /></Button>
+      </header>
+      <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
+        <AIAssistantTimeline
+          bottomInset={Boolean(visibleSuggestions)}
+          blocks={streamState.blocks}
+          error={timeline.error ?? (timeline.data && !timelineValid ? new Error('ai_invalid_timeline') : null)}
+          generating={generating}
+          loading={timeline.isLoading}
+          onAction={executeAction}
+          onApproval={(block, decision, reason) => api.decideAIToolApproval(block.runId, block.toolCallId, {
+            decision,
+            argumentsHash: block.argumentsHash!,
+            expectedVersion: block.expectedVersion!,
+            reason,
+          })}
+          onMFA={async (block, code) => {
+            const verification = await api.verifyMFA({ code, purpose: block.mfaPurpose! })
+            if (!verification.stepUpAssertionId)
+              throw new Error(t('aiAssistant.errors.mfaAssertion'))
+            await api.resumeAIToolMFA(block.runId, block.toolCallId, {
+              stepUpAssertionId: verification.stepUpAssertionId,
+              expectedVersion: block.expectedVersion!,
+            })
+          }}
+          onResend={message => sendTurn.mutate({ conversationId: selectedConversationId, message })}
+          onRetry={() => void timeline.refetch()}
+          resendDisabled={Boolean(activeRunId || sendingSelected)}
+          topContent={conversationSession.refreshReturnExpiresAt && !selectedConversationId && !conversationSearch && conversations.data?.items[0]
+            ? (
+                <AIRefreshConversationReturn
+                  expiresAt={conversationSession.refreshReturnExpiresAt}
+                  onExpire={dismissRefreshReturn}
+                  onReturn={returnToPreviousConversation}
+                />
+              )
+            : undefined}
+        />
+        {visibleSuggestions && (
+          <AIOptionsBar
+            actions={visibleSuggestions.actions}
+            sourceKey={visibleSuggestions.sourceKey}
+            onAction={executeAction}
+          />
+        )}
+      </div>
+      <AIAssistantComposer
+        activeRun={Boolean(activeRunId)}
+        canceling={cancelingSelected}
+        canCancel={Boolean(activeRunId && selectedConversationId)}
+        draft={draft}
+        inputRef={inputRef}
+        maxLength={capabilities.data?.limits.maxInputBytes}
+        sending={sendingSelected}
+        submitting={submittingSelected}
+        waitingInput={waitingInput}
+        onCancel={() => {
+          if (activeRunId && selectedConversationId)
+            cancelRun.mutate({ runId: activeRunId, conversationId: selectedConversationId })
+        }}
+        onDraftChange={setDraft}
+        onSubmit={submitDraft}
+      />
+    </div>
+  )
   const panel = (
     <section
       aria-label={t('aiAssistant.title')}
@@ -409,93 +519,47 @@ export function AiAssistant() {
         ? 'relative flex size-full overflow-hidden rounded-feature border border-border bg-surface text-[13px] shadow-overlay'
         : 'ai-assistant-mobile relative flex size-full overflow-hidden bg-surface text-[13px] [&_input]:!text-base [&_select]:!text-base [&_textarea]:!text-base'}
     >
-      {showConversations && (
-        <AIConversationList
-          activeId={selectedConversationId}
-          conversations={conversations.data?.items ?? []}
-          deleting={deleteConversations.isPending}
-          loading={conversations.isLoading}
-          search={conversationSearch}
-          onDeleteMany={ids => deleteConversations.mutateAsync(ids).then(() => undefined)}
-          onRename={(id, title) => renameConversation.mutate({ id, title })}
-          runningConversationIds={runningConversationIds}
-          onSearch={setConversationSearch}
-          onSelect={id => dispatchConversationSession({ type: 'select', conversationId: id })}
-        />
-      )}
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="ai-assistant-drag-handle flex h-[calc(3.5rem+env(safe-area-inset-top))] shrink-0 select-none items-center gap-2 border-b border-separator-subtle pb-0 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] pt-[env(safe-area-inset-top)] sm:h-14 sm:touch-none sm:px-3 sm:pt-0 sm:cursor-move">
-          <Button aria-label={t('aiAssistant.conversations.title')} size="icon" variant="ghost" onClick={() => setShowConversations(value => !value)}><List className="size-4" /></Button>
-          <span className="grid size-8 shrink-0 place-items-center rounded-control bg-primary text-primary-foreground"><Sparkles className="size-4" /></span>
-          <div className="min-w-0 flex-1">
-            <h2 className="truncate text-[13px] font-semibold leading-5">{timeline.data?.conversation.title || t('aiAssistant.title')}</h2>
-            <p className="truncate text-[10px] leading-4 text-muted-foreground">{t('aiAssistant.context', { path: location.pathname })}</p>
-          </div>
-          <Button aria-label={t('aiAssistant.conversations.new')} disabled={createConversation.isPending} size="icon" variant="ghost" onClick={() => createConversation.mutate()}>{createConversation.isPending ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" /> : <MessageSquarePlus className="size-4" />}</Button>
-          <Button aria-label={t('common.close')} size="icon" variant="ghost" onClick={close}><X className="size-4" /></Button>
-        </header>
-        <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
-          <AIAssistantTimeline
-            bottomInset={Boolean(suggestions)}
-            blocks={streamState.blocks}
-            error={timeline.error ?? (timeline.data && !timelineValid ? new Error('ai_invalid_timeline') : null)}
-            generating={generating}
-            loading={timeline.isLoading}
-            onAction={executeAction}
-            onApproval={(block, decision, reason) => api.decideAIToolApproval(block.runId, block.toolCallId, {
-              decision,
-              argumentsHash: block.argumentsHash!,
-              expectedVersion: block.expectedVersion!,
-              reason,
-            })}
-            onMFA={async (block, code) => {
-              const verification = await api.verifyMFA({ code, purpose: block.mfaPurpose! })
-              if (!verification.stepUpAssertionId)
-                throw new Error(t('aiAssistant.errors.mfaAssertion'))
-              await api.resumeAIToolMFA(block.runId, block.toolCallId, {
-                stepUpAssertionId: verification.stepUpAssertionId,
-                expectedVersion: block.expectedVersion!,
-              })
-            }}
-            onResend={message => sendTurn.mutate({ conversationId: selectedConversationId, message })}
-            onRetry={() => void timeline.refetch()}
-            resendDisabled={Boolean(activeRunId || sendingSelected)}
-            topContent={conversationSession.refreshReturnExpiresAt && !selectedConversationId && !conversationSearch && conversations.data?.items[0]
-              ? (
-                  <AIRefreshConversationReturn
-                    expiresAt={conversationSession.refreshReturnExpiresAt}
-                    onExpire={dismissRefreshReturn}
-                    onReturn={returnToPreviousConversation}
-                  />
-                )
-              : undefined}
-          />
-          {suggestions && (
-            <AIOptionsBar
-              actions={suggestions.actions}
-              sourceKey={suggestions.sourceKey}
-              onAction={executeAction}
+      {desktop
+        ? (
+            <AIDesktopShell
+              chat={chatView}
+              closeLabel={t('common.back')}
+              conversationsOpen={showConversations}
+              initialWidth={preference.width}
+              listButtonRef={conversationButtonRef}
+              conversationList={variant => (
+                <AIConversationList
+                  {...conversationListProps}
+                  variant={variant}
+                  onBack={() => setAssistantView('chat')}
+                />
+              )}
+              onCloseConversations={() => setAssistantView('chat')}
             />
+          )
+        : (
+            <AnimatePresence initial={false} mode="popLayout">
+              <motion.div
+                key={assistantView}
+                animate={{ opacity: 1, x: 0 }}
+                className="relative flex size-full min-w-0 overflow-hidden"
+                exit={reduceMotion ? { opacity: 0 } : { opacity: 0, x: showConversations ? -32 : 32 }}
+                initial={reduceMotion ? { opacity: 0 } : { opacity: 0, x: showConversations ? -32 : 32 }}
+                transition={reduceMotion ? { duration: 0.1 } : { type: 'spring', stiffness: 420, damping: 34, mass: 0.8 }}
+              >
+                {showConversations
+                  ? (
+                      <AIConversationList
+                        {...conversationListProps}
+                        variant="mobile"
+                        onBack={() => setAssistantView('chat')}
+                        onClose={close}
+                      />
+                    )
+                  : chatView}
+              </motion.div>
+            </AnimatePresence>
           )}
-        </div>
-        <AIAssistantComposer
-          activeRun={Boolean(activeRunId)}
-          canceling={cancelingSelected}
-          canCancel={Boolean(activeRunId && selectedConversationId)}
-          draft={draft}
-          inputRef={inputRef}
-          maxLength={capabilities.data?.limits.maxInputBytes}
-          sending={sendingSelected}
-          submitting={submittingSelected}
-          waitingInput={waitingInput}
-          onCancel={() => {
-            if (activeRunId && selectedConversationId)
-              cancelRun.mutate({ runId: activeRunId, conversationId: selectedConversationId })
-          }}
-          onDraftChange={setDraft}
-          onSubmit={submitDraft}
-        />
-      </div>
     </section>
   )
 

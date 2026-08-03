@@ -6,6 +6,8 @@ export const VIEWPORT_GUTTER = 24
 export const MIN_WINDOW_WIDTH = 360
 export const MIN_WINDOW_HEIGHT = 480
 export const LAUNCHER_SIZE = 56
+export const AI_ASSISTANT_SPLIT_MIN_WIDTH = 720
+export const AI_ASSISTANT_SIDEBAR_WIDTH = 264
 
 const DESKTOP_MEDIA_QUERY = '(min-width: 640px)'
 const DEFAULT_WINDOW_WIDTH = 420
@@ -21,6 +23,12 @@ export interface WindowPreference {
 export interface Position {
   x: number
   y: number
+}
+
+export type AIDesktopConversationLayout = 'overlay' | 'split'
+
+export function resolveAIDesktopConversationLayout(width: number): AIDesktopConversationLayout {
+  return width >= AI_ASSISTANT_SPLIT_MIN_WIDTH ? 'split' : 'overlay'
 }
 
 function viewportSize(): { width: number, height: number } {

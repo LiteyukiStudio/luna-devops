@@ -1,5 +1,5 @@
 import type { AIConversation } from '@/api'
-import { CheckSquare2, Ellipsis, ListChecks, LoaderCircle, LockKeyhole, Pencil, Search, Trash2, X } from 'lucide-react'
+import { ArrowLeft, CheckSquare2, Ellipsis, ListChecks, LoaderCircle, LockKeyhole, MessageSquareText, Pencil, Search, Trash2, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
@@ -17,6 +17,9 @@ export interface AIConversationListProps {
   loading: boolean
   runningConversationIds: Set<string>
   search: string
+  variant?: 'drawer' | 'sidebar' | 'mobile'
+  onBack?: () => void
+  onClose?: () => void
   onDeleteMany: (ids: string[]) => Promise<void>
   onRename: (id: string, title: string) => void
   onSearch: (search: string) => void
@@ -30,6 +33,9 @@ export function AIConversationList({
   loading,
   runningConversationIds,
   search,
+  variant = 'sidebar',
+  onBack,
+  onClose,
   onDeleteMany,
   onRename,
   onSearch,
@@ -44,6 +50,8 @@ export function AIConversationList({
   const visibleIds = useMemo(() => conversations.map(conversation => conversation.id), [conversations])
   const selectedIds = visibleIds.filter(id => selectedKeys.has(id))
   const allSelected = conversations.length > 0 && selectedIds.length === conversations.length
+  const mobile = variant === 'mobile'
+  const drawer = variant === 'drawer'
 
   const finishRename = (conversation: AIConversation) => {
     const nextTitle = title.trim()
@@ -82,24 +90,40 @@ export function AIConversationList({
   }
 
   return (
-    <aside className="absolute inset-x-0 bottom-0 top-[calc(3.5rem+env(safe-area-inset-top))] z-10 flex flex-col bg-surface sm:static sm:w-64 sm:shrink-0 sm:border-r sm:border-separator-subtle">
-      <div className="flex h-14 items-center border-b border-separator-subtle px-3">
-        <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">{selecting ? t('aiAssistant.conversations.selectMode') : t('aiAssistant.conversations.title')}</h2>
-      </div>
+    <aside className={cn('flex size-full min-h-0 flex-col bg-surface', mobile ? 'absolute inset-0 z-20' : 'shrink-0 border-r border-separator-subtle')}>
+      {mobile
+        ? (
+            <div className="flex h-[calc(3.5rem+env(safe-area-inset-top))] shrink-0 items-center gap-1 border-b border-separator-subtle pb-0 pl-[max(0.5rem,env(safe-area-inset-left))] pr-[max(0.5rem,env(safe-area-inset-right))] pt-[env(safe-area-inset-top)]">
+              <Button aria-label={t('common.back')} size="icon" variant="ghost" onClick={onBack}><ArrowLeft className="size-4" /></Button>
+              <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">{selecting ? t('aiAssistant.conversations.selectMode') : t('aiAssistant.conversations.title')}</h2>
+              <Button className="h-9 px-2.5 text-xs" size="sm" variant="ghost" onClick={() => selecting ? exitSelection() : setSelecting(true)}>
+                {selecting ? t('aiAssistant.conversations.exitSelect') : t('aiAssistant.conversations.manage')}
+              </Button>
+              <Button aria-label={t('common.close')} size="icon" variant="ghost" onClick={onClose}><X className="size-4" /></Button>
+            </div>
+          )
+        : (
+            <div className="flex h-14 items-center gap-1 border-b border-separator-subtle px-3">
+              <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">{selecting ? t('aiAssistant.conversations.selectMode') : t('aiAssistant.conversations.title')}</h2>
+              {drawer && <Button autoFocus aria-label={t('common.back')} size="icon" variant="ghost" onClick={onBack}><ArrowLeft className="size-4" /></Button>}
+            </div>
+          )}
       <div className="grid gap-2 p-2">
         <div className="flex items-center gap-1.5">
-          <Button
-            aria-label={selecting ? t('aiAssistant.conversations.exitSelect') : t('aiAssistant.conversations.select')}
-            className="size-8 shrink-0"
-            size="icon"
-            variant="ghost"
-            onClick={() => selecting ? exitSelection() : setSelecting(true)}
-          >
-            {selecting ? <X className="size-4" /> : <ListChecks className="size-4" />}
-          </Button>
+          {!mobile && (
+            <Button
+              aria-label={selecting ? t('aiAssistant.conversations.exitSelect') : t('aiAssistant.conversations.select')}
+              className="size-8 shrink-0"
+              size="icon"
+              variant="ghost"
+              onClick={() => selecting ? exitSelection() : setSelecting(true)}
+            >
+              {selecting ? <X className="size-4" /> : <ListChecks className="size-4" />}
+            </Button>
+          )}
           <div className="relative min-w-0 flex-1">
             <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input aria-label={t('aiAssistant.conversations.search')} className="h-8 pl-8 text-base sm:text-xs" placeholder={t('aiAssistant.conversations.search')} value={search} onChange={event => onSearch(event.target.value)} />
+            <Input aria-label={t('aiAssistant.conversations.search')} className={cn('pl-8 text-base', mobile ? 'h-10' : 'h-8 text-xs')} placeholder={t('aiAssistant.conversations.search')} value={search} onChange={event => onSearch(event.target.value)} />
           </div>
         </div>
         {selecting && (
@@ -130,10 +154,19 @@ export function AIConversationList({
           </div>
         )}
       </div>
-      <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-x-none px-2 pb-2">
+      <div className={cn('min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-x-none px-2', mobile ? 'pb-[max(0.5rem,env(safe-area-inset-bottom))]' : 'pb-2')}>
         {loading && <Skeleton className="h-12 w-full" />}
+        {!loading && conversations.length === 0 && (
+          <div className="grid min-h-48 place-items-center px-5 text-center">
+            <div className="grid justify-items-center gap-2">
+              <span className="grid size-10 place-items-center rounded-full bg-surface-subtle text-muted-foreground"><MessageSquareText className="size-4" /></span>
+              <strong className="text-xs font-medium">{search ? t('aiAssistant.conversations.noResults') : t('aiAssistant.conversations.empty')}</strong>
+              {!search && <p className="max-w-52 text-[11px] leading-5 text-muted-foreground">{t('aiAssistant.conversations.emptyDescription')}</p>}
+            </div>
+          </div>
+        )}
         {conversations.map(conversation => (
-          <div key={conversation.id} className={cn('group flex items-center gap-2 rounded-control px-2 py-1.5 hover:bg-surface-subtle', activeId === conversation.id && 'bg-primary-subtle text-primary-text')}>
+          <div key={conversation.id} className={cn('group flex items-center gap-2 rounded-control border-l-2 border-transparent hover:bg-surface-subtle', mobile ? 'min-h-14 px-3 py-2' : 'px-2 py-1.5', activeId === conversation.id && 'border-l-primary bg-primary-subtle text-primary-text')}>
             {selecting && (
               <Checkbox
                 aria-label={t('aiAssistant.conversations.selectConversation', { title: conversation.title })}
@@ -159,6 +192,7 @@ export function AIConversationList({
                 )
               : (
                   <button
+                    aria-current={activeId === conversation.id ? 'true' : undefined}
                     className="min-w-0 flex-1 text-left"
                     type="button"
                     onClick={() => selecting ? toggleSelected(conversation.id, !selectedKeys.has(conversation.id)) : onSelect(conversation.id)}
@@ -173,7 +207,7 @@ export function AIConversationList({
                 )}
             {!selecting && (
               <DropdownMenu>
-                <DropdownMenuTrigger asChild><Button aria-label={t('common.actions')} className="size-7 shrink-0 opacity-0 group-hover:opacity-100 focus:opacity-100" size="icon" variant="ghost"><Ellipsis className="size-3.5" /></Button></DropdownMenuTrigger>
+                <DropdownMenuTrigger asChild><Button aria-label={t('common.actions')} className={cn('shrink-0', mobile ? 'size-9 opacity-100' : 'size-7 opacity-0 group-hover:opacity-100 focus:opacity-100')} size="icon" variant="ghost"><Ellipsis className="size-3.5" /></Button></DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem onClick={() => {
                     setTitle(conversation.title)

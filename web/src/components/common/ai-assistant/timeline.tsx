@@ -87,7 +87,7 @@ export function AIAssistantTimeline({ bottomInset = false, blocks, error, genera
             </div>
           )
         : (
-            <div className="grid min-w-0 gap-4">
+            <div className="mx-auto grid w-full min-w-0 max-w-[48rem] gap-4">
               {turns.map((turn, index) => (
                 <ConversationTurn
                   key={turn.id}

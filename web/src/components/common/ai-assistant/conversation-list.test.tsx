@@ -72,4 +72,98 @@ describe('ai conversation list', () => {
     expect(screen.queryByRole('button', { name: '新建会话' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '批量选择会话' })).toBeInTheDocument()
   })
+
+  it('uses a touch-friendly mobile header and keeps the list open while switching conversations', async () => {
+    await i18next.changeLanguage('zh-CN')
+    const user = userEvent.setup()
+    const onBack = vi.fn()
+    const onClose = vi.fn()
+    const onSelect = vi.fn()
+    render(
+      <AIConversationList
+        activeId="conversation-1"
+        conversations={conversations}
+        deleting={false}
+        loading={false}
+        runningConversationIds={new Set()}
+        search=""
+        variant="mobile"
+        onBack={onBack}
+        onClose={onClose}
+        onDeleteMany={vi.fn(async () => {})}
+        onRename={vi.fn()}
+        onSearch={vi.fn()}
+        onSelect={onSelect}
+      />,
+    )
+
+    expect(screen.getAllByRole('button', { name: '操作' })[0]).toHaveClass('opacity-100')
+    await user.click(screen.getByRole('button', { name: /构建失败诊断/ }))
+    expect(onSelect).toHaveBeenCalledWith('conversation-1')
+    expect(screen.getByRole('heading', { name: '会话' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '管理' }))
+    expect(screen.getByText('选择会话')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '返回' }))
+    await user.click(screen.getByRole('button', { name: '关闭' }))
+    expect(onBack).toHaveBeenCalledOnce()
+    expect(onClose).toHaveBeenCalledOnce()
+  })
+
+  it('provides an explicit return action in the compact desktop drawer', async () => {
+    await i18next.changeLanguage('zh-CN')
+    const user = userEvent.setup()
+    const onBack = vi.fn()
+    render(
+      <AIConversationList
+        conversations={conversations}
+        deleting={false}
+        loading={false}
+        runningConversationIds={new Set()}
+        search=""
+        variant="drawer"
+        onBack={onBack}
+        onDeleteMany={vi.fn(async () => {})}
+        onRename={vi.fn()}
+        onSearch={vi.fn()}
+        onSelect={vi.fn()}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: '返回' }))
+    expect(onBack).toHaveBeenCalledOnce()
+  })
+
+  it('shows distinct empty and filtered states', async () => {
+    await i18next.changeLanguage('zh-CN')
+    const { rerender } = render(
+      <AIConversationList
+        conversations={[]}
+        deleting={false}
+        loading={false}
+        runningConversationIds={new Set()}
+        search=""
+        onDeleteMany={vi.fn(async () => {})}
+        onRename={vi.fn()}
+        onSearch={vi.fn()}
+        onSelect={vi.fn()}
+      />,
+    )
+    expect(screen.getByText('暂无会话')).toBeInTheDocument()
+
+    rerender(
+      <AIConversationList
+        conversations={[]}
+        deleting={false}
+        loading={false}
+        runningConversationIds={new Set()}
+        search="missing"
+        onDeleteMany={vi.fn(async () => {})}
+        onRename={vi.fn()}
+        onSearch={vi.fn()}
+        onSelect={vi.fn()}
+      />,
+    )
+    expect(screen.getByText('没有匹配的会话')).toBeInTheDocument()
+  })
 })
