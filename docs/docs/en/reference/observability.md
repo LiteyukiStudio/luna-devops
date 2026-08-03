@@ -47,6 +47,8 @@ Each source has its own **Test connection** button. The test uses the URL, tenan
 
 Open **Operations → Agent observability** to inspect Run success, active Runs, first-token P95, model and dependency errors, token throughput, tool failures, recent Agent Runs, and trace-correlated failure logs. The browser only calls fixed-query Luna API endpoints. It cannot submit arbitrary PromQL, LogQL, or TraceQL, and it never receives source URLs or credentials.
 
+When Prometheus has no Agent metrics or returns non-finite query results, the affected metrics appear as zero or an empty trend without preventing Loki logs and Tempo traces from loading.
+
 ## Import Grafana dashboards
 
 The repository provides two dashboards:

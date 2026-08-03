@@ -2,12 +2,22 @@ package agentobservability
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 )
+
+func TestPrometheusPointRejectsNonFiniteValues(t *testing.T) {
+	for _, value := range []string{"NaN", "+Inf", "-Inf"} {
+		raw := []json.RawMessage{json.RawMessage(`1720000000`), json.RawMessage(`"` + value + `"`)}
+		if _, ok := prometheusPoint(raw); ok {
+			t.Fatalf("non-finite Prometheus value %q was accepted", value)
+		}
+	}
+}
 
 func TestPrometheusClientQueriesAndPropagatesAuthentication(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {

@@ -47,6 +47,8 @@ AI_OBSERVABILITY_CAPTURE_CONTENT=true
 
 配置完成后进入“运营面板 → Agent 观测”，可以查看 Run 成功率、活跃 Run、首 Token P95、模型与依赖错误率、Token 吞吐、工具失败趋势、最近 Agent Run 和 Trace 关联失败日志。浏览器只调用 Luna API 提供的固定查询，不能提交任意 PromQL、LogQL 或 TraceQL，也不会收到数据源地址和凭据。
 
+Prometheus 暂无 Agent 指标或查询返回非有限计算结果时，对应指标会显示为零或空趋势，不会阻止 Loki 日志与 Tempo 链路继续展示。
+
 ## 导入 Grafana 仪表盘
 
 仓库提供两套可直接导入的仪表盘：

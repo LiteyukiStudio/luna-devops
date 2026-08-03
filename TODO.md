@@ -244,6 +244,7 @@
 - [x] 完整 Compose 的 Worker 等待 API `/healthz` 通过后再启动，避免全新数据库首次 migration 尚未完成时提前访问业务表。
 - [x] 新增 GitHub Actions 容器发布工作流：仅构建 `linux/amd64` 容器镜像，发布 DockerHub `liteyukistudio/luna-devops`、`liteyukistudio/luna-worker`、`liteyukistudio/luna-agent`；分支发布 `nightly`，`v*` tag 发布版本 tag，稳定版本 tag 额外发布 `latest`；`luna-devops` 使用 `embed_web` 内嵌前端静态文件，不额外构建或上传 GitHub Release 二进制产物。
 - [x] 收紧外部 PR 的 GitHub Actions 边界：fork PR 只运行只读质量门禁且禁用依赖缓存写入与容器构建，容器构建仅允许同仓库分支；带 GitHub App 写权限的更新日志同步只接受同仓库 `push` 成功事件或受控手动触发，禁止 PR 间接触发特权工作流。
+- [x] 修复 Agent 观测 overview 在 Prometheus 返回 `NaN` 或无指标时序列化为 500，并让 Tempo 使用当前数据实际可检索的 `luna-agent` 服务级 TraceQL；单源空数据不再阻断其余链路与日志展示。
 - [x] 移除跨目录的根 pnpm workspace：`web/`、`docs/`、`tests/` 与 `luna-agent/` 分别维护 package、lockfile、必要的单项目 pnpm 配置和开发命令；API/Agent Docker 构建及发布质量门禁只消费对应子项目锁文件，避免本地 workspace 与镜像独立安装产生锁文件语义分裂。
 - [x] 将 AI 模型配置收敛为 API 地址、API Key 和模型名称三项：生产 Agent 自动使用平台托管配置，本地三项齐全时直连，确定性 Provider 仅保留给非生产测试；公网 HTTPS Provider 不再要求重复维护出站域名白名单。
 - [x] 为 Agent 自动路由建立可靠投递：动作绑定发起标签页并持久化，SSE 负责实时触发，断线后重放未确认动作，前端仅在 React Router 实际落到目标地址后回传 ACK。

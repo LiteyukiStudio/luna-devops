@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -17,6 +18,8 @@ import (
 )
 
 const maxResponseBytes = 4 << 20
+
+const AgentTraceQuery = `{ resource.service.name = "luna-agent" }`
 
 type Source string
 
@@ -106,7 +109,7 @@ func (c *Client) Test(ctx context.Context) (result TestResult, err error) {
 		err = queryErr
 		result.DataAvailable = len(logs) > 0
 	case SourceTempo:
-		traces, queryErr := c.SearchTraces(ctx, `{ resource.service.name = "luna-agent" && span:name = "agent.run.execute" }`, time.Now().Add(-time.Hour), time.Now(), 1)
+		traces, queryErr := c.SearchTraces(ctx, AgentTraceQuery, time.Now().Add(-time.Hour), time.Now(), 1)
 		err = queryErr
 		result.DataAvailable = len(traces) > 0
 	default:
@@ -295,7 +298,7 @@ func prometheusPoint(raw []json.RawMessage) (Point, bool) {
 		return Point{}, false
 	}
 	value, err := strconv.ParseFloat(valueText, 64)
-	if err != nil {
+	if err != nil || math.IsNaN(value) || math.IsInf(value, 0) {
 		return Point{}, false
 	}
 	return Point{Timestamp: int64(timestamp), Value: value}, true

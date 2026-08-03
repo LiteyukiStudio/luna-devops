@@ -188,7 +188,7 @@ func (h *Handlers) GetAgentObservabilityOverview(ctx *gin.Context) {
 	}()
 	go func() {
 		defer wait.Done()
-		traces, err := clients[agentobservability.SourceTempo].SearchTraces(ctx.Request.Context(), `{ resource.service.name = "luna-agent" && span:name = "agent.run.execute" }`, start, end, observabilityTraceLimit)
+		traces, err := clients[agentobservability.SourceTempo].SearchTraces(ctx.Request.Context(), agentobservability.AgentTraceQuery, start, end, observabilityTraceLimit)
 		mutex.Lock()
 		defer mutex.Unlock()
 		if err != nil {
