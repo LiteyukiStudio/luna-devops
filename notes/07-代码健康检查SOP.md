@@ -39,6 +39,7 @@ pnpm --dir docs build
 - 是否有本地运行产物、日志、构建目录进入 `git status`。
 - 代码改动是否同步更新文档站；用户流程、配置项、部署链路变更必须能在 `docs/` 中找到入口。
 - 是否出现新的 `.env` 依赖、明文 Secret、Token 回显或后端原始错误直出。
+- 外部 fork PR 是否仅获得只读权限并禁用依赖/容器缓存写入、镜像构建发布和后续特权工作流；带写权限或 Secret 的 `workflow_run` 必须同时校验上游事件为同仓库可信 `push`，不能由 PR 成功事件触发。
 - 新增 HTTP、数据库、Redis、异步任务、外部 Provider、模型或工具调用是否复用统一 OTel 插桩入口，并继续传递现有 Context。
 - 新增关键状态转换是否有稳定 `event.name` 的结构化日志，且能通过 `trace_id`/`span_id` 与请求、任务或 Agent Run 关联。
 - 新增 Metric 是否只使用低基数标签；禁止把用户、项目、资源、请求或 Trace ID 放入 label。

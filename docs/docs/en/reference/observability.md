@@ -43,6 +43,10 @@ To view Agent data in Luna DevOps Operations, open **Global Settings → AI Assi
 
 All three query URLs are required. Tokens are encrypted and are not displayed again. Keep these data sources reachable from Luna API and do not expose them directly to browsers.
 
+Each source has its own **Test connection** button. The test uses the URL, tenant ID, and newly entered token currently in the form; a blank token reuses the saved value. Results distinguish between a working connection with data and a working connection with no data in the last hour. A failed test does not block saving, which allows operators to save deployment configuration before networking is ready. Once enabled, the Agent view reports an unreachable source as unavailable.
+
+Open **Operations → Agent observability** to inspect Run success, active Runs, first-token P95, model and dependency errors, token throughput, tool failures, recent Agent Runs, and trace-correlated failure logs. The browser only calls fixed-query Luna API endpoints. It cannot submit arbitrary PromQL, LogQL, or TraceQL, and it never receives source URLs or credentials.
+
 ## Import Grafana dashboards
 
 The repository provides two dashboards:

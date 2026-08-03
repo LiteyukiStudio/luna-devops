@@ -3,6 +3,7 @@
 ## 0. 全链路可观测改造
 
 - [x] 在全局设置的 AI 助手中新增默认折叠的 AI 高级设置，支持加密配置 Prometheus、Loki、Tempo 查询连接和独立启用 Agent 可观测，为运营面板原生 Agent 观测提供受控数据源入口。
+- [x] 完成原生 Agent 可观测工作台：三个数据源支持独立且不阻塞保存的连接测试，Luna API 使用固定查询聚合 Metrics、Logs 与 Traces，运营面板提供健康摘要、趋势、工具失败、Run 与关联日志视图。
 
 - [x] 收紧 AI 刷新恢复提示：会话活动时间随用户与助手消息更新，仅在上一会话最后交互不超过 10 分钟时显示 8 秒返回入口。
 - [x] 允许在 Agent 工作期间编辑并保留下一条消息草稿，但必须先停止当前任务才能发送，避免并发轮次破坏会话顺序。
@@ -242,6 +243,7 @@
 - [x] Redis 客户端连接收敛为唯一的 `REDIS_ADDR` URI：API、Worker、任务命令及 Asynq 调度共用解析结果；部署层不再从 URI 反向拆密码，完整 Compose 用 `REDIS_PASSWORD` 直接启动内置 Redis，并组装内部 URI；Helm 分别保存内置密码与客户端 URI，外部 Redis 继续使用完整 URI Secret。
 - [x] 完整 Compose 的 Worker 等待 API `/healthz` 通过后再启动，避免全新数据库首次 migration 尚未完成时提前访问业务表。
 - [x] 新增 GitHub Actions 容器发布工作流：仅构建 `linux/amd64` 容器镜像，发布 DockerHub `liteyukistudio/luna-devops`、`liteyukistudio/luna-worker`、`liteyukistudio/luna-agent`；分支发布 `nightly`，`v*` tag 发布版本 tag，稳定版本 tag 额外发布 `latest`；`luna-devops` 使用 `embed_web` 内嵌前端静态文件，不额外构建或上传 GitHub Release 二进制产物。
+- [x] 收紧外部 PR 的 GitHub Actions 边界：fork PR 只运行只读质量门禁且禁用依赖缓存写入与容器构建，容器构建仅允许同仓库分支；带 GitHub App 写权限的更新日志同步只接受同仓库 `push` 成功事件或受控手动触发，禁止 PR 间接触发特权工作流。
 - [x] 移除跨目录的根 pnpm workspace：`web/`、`docs/`、`tests/` 与 `luna-agent/` 分别维护 package、lockfile、必要的单项目 pnpm 配置和开发命令；API/Agent Docker 构建及发布质量门禁只消费对应子项目锁文件，避免本地 workspace 与镜像独立安装产生锁文件语义分裂。
 - [x] 将 AI 模型配置收敛为 API 地址、API Key 和模型名称三项：生产 Agent 自动使用平台托管配置，本地三项齐全时直连，确定性 Provider 仅保留给非生产测试；公网 HTTPS Provider 不再要求重复维护出站域名白名单。
 - [x] 为 Agent 自动路由建立可靠投递：动作绑定发起标签页并持久化，SSE 负责实时触发，断线后重放未确认动作，前端仅在 React Router 实际落到目标地址后回传 ACK。
