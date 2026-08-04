@@ -6928,6 +6928,7 @@ components:
         spanCount: { type: integer }
         errorCount: { type: integer }
         spans: { type: array, items: { $ref: "#/components/schemas/AgentObservabilityTraceSpan" } }
+        context: { $ref: "#/components/schemas/AgentObservabilityTraceContext" }
     AgentObservabilityConversationUser:
       type: object
       required: [id, name, email, avatarUrl]
@@ -7000,6 +7001,12 @@ components:
             turnPage: { type: integer }
             turnPageSize: { type: integer }
             totalTurnPages: { type: integer }
+    AgentObservabilityTraceContext:
+      type: object
+      required: [conversation, turn]
+      properties:
+        conversation: { $ref: "#/components/schemas/AgentObservabilityConversation" }
+        turn: { $ref: "#/components/schemas/AgentObservabilityConversationTurn" }
     AgentObservabilityConversationPage:
       type: object
       required: [items, page, pageSize, sortBy, sortOrder, total, totalPages]

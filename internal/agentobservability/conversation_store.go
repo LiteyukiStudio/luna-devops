@@ -77,6 +77,11 @@ type ConversationDetail struct {
 	TotalTurnPages int                `json:"totalTurnPages"`
 }
 
+type TraceContext struct {
+	Conversation ConversationSummary `json:"conversation"`
+	Turn         ConversationTurn    `json:"turn"`
+}
+
 type ConversationListOptions struct {
 	Start     time.Time
 	Search    string
@@ -99,6 +104,84 @@ type ConversationListResult struct {
 type ConversationStore struct{ db *gorm.DB }
 
 func NewConversationStore(db *gorm.DB) *ConversationStore { return &ConversationStore{db: db} }
+
+func (s *ConversationStore) FindTraceContext(ctx context.Context, traceID string) (*TraceContext, error) {
+	traceID = validTraceID(traceID)
+	if traceID == "" {
+		return nil, ErrConversationNotFound
+	}
+	type traceRow struct {
+		ConversationID        string
+		ConversationTitle     string
+		ConversationCreatedAt time.Time
+		ConversationUpdatedAt time.Time
+		UserID                string
+		UserName              string
+		UserEmail             string
+		UserAvatarURL         string
+		TurnCount             int64
+		TraceCount            int64
+		TurnID                string
+		TurnIndex             int
+		TurnStatus            string
+		TurnInput             string
+		TurnCreatedAt         time.Time
+		RunID                 string
+		TraceContext          []byte
+		StartedAt             *time.Time
+		CompletedAt           *time.Time
+	}
+	var row traceRow
+	result := s.db.WithContext(ctx).Raw(`
+		SELECT c.id AS conversation_id, c.title AS conversation_title,
+			c.created_at AS conversation_created_at, c.updated_at AS conversation_updated_at,
+			c.owner_user_id AS user_id, COALESCE(u.name, '') AS user_name,
+			COALESCE(u.email, '') AS user_email, COALESCE(u.avatar_url, '') AS user_avatar_url,
+			(SELECT COUNT(*) FROM ai.turns counted_turn WHERE counted_turn.conversation_id = c.id) AS turn_count,
+			(SELECT COUNT(*) FROM ai.runs counted_run WHERE counted_run.conversation_id = c.id AND COALESCE(counted_run.trace_context->>'traceparent', '') <> '') AS trace_count,
+			t.id AS turn_id, t.turn_index, t.status AS turn_status, t.input AS turn_input,
+			t.created_at AS turn_created_at, r.id AS run_id, r.trace_context, r.started_at, r.completed_at
+		FROM ai.runs r
+		JOIN ai.turns t ON t.id = r.turn_id
+		JOIN ai.conversations c ON c.id = r.conversation_id
+		LEFT JOIN users u ON u.id = c.owner_user_id AND u.deleted_at IS NULL
+		WHERE LOWER(SPLIT_PART(COALESCE(r.trace_context->>'traceparent', ''), '-', 2)) = ?
+			OR EXISTS (
+				SELECT 1 FROM ai.items item
+				WHERE item.run_id = r.id AND item.type = 'tool_call'
+					AND LOWER(COALESCE(item.content->>'traceId', '')) = ?
+			)
+		ORDER BY r.created_at DESC
+		LIMIT 1`, traceID, traceID).Scan(&row)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return nil, ErrConversationNotFound
+	}
+	runItems, err := s.loadRunItems(ctx, []string{row.RunID})
+	if err != nil {
+		return nil, err
+	}
+	loops := buildConversationLoops(runItems[row.RunID])
+	turn := ConversationTurn{
+		ID: row.TurnID, TurnIndex: row.TurnIndex, Status: row.TurnStatus, UserMessage: row.TurnInput,
+		AssistantMessage: assistantMessageFromLoops(loops), RunID: row.RunID,
+		TraceID: traceIDFromContext(row.TraceContext), CreatedAt: row.TurnCreatedAt, Loops: loops,
+	}
+	if row.StartedAt != nil && row.CompletedAt != nil {
+		turn.DurationMs = float64(row.CompletedAt.Sub(*row.StartedAt).Microseconds()) / 1000
+	}
+	return &TraceContext{
+		Conversation: ConversationSummary{
+			ID: row.ConversationID, Title: row.ConversationTitle,
+			User:      ConversationUser{ID: row.UserID, Name: row.UserName, Email: row.UserEmail, AvatarURL: row.UserAvatarURL},
+			TurnCount: row.TurnCount, TraceCount: row.TraceCount,
+			CreatedAt: row.ConversationCreatedAt, UpdatedAt: row.ConversationUpdatedAt,
+		},
+		Turn: turn,
+	}, nil
+}
 
 func (s *ConversationStore) List(ctx context.Context, options ConversationListOptions) (ConversationListResult, error) {
 	options = normalizeConversationListOptions(options)

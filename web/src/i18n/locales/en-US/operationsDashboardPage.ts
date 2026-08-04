@@ -111,6 +111,11 @@ const operationsDashboardPage = {
     parentSpan: 'Parent span',
     attributes: 'Agent attributes',
     noAttributes: 'This span has no key attributes to display.',
+    executionReplay: 'Conversation and execution replay',
+    executionReplayDescription: 'Correlates the user message, thinking summaries, model responses, and tool calls in their actual order. Open a tool trace to focus its span.',
+    contextUnavailable: 'No conversation timeline was found for this trace. The conversation may have been removed, or the trace may predate correlation support.',
+    spanWaterfall: 'Span waterfall',
+    spanWaterfallDescription: 'Inspect parent-child relationships and timing across model, tool, HTTP, and database operations.',
   },
 }
 

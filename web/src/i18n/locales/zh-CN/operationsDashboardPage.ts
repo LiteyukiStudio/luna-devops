@@ -111,6 +111,11 @@ const operationsDashboardPage = {
     parentSpan: '父 Span',
     attributes: 'Agent 关键属性',
     noAttributes: '这一步没有可展示的关键属性。',
+    executionReplay: '对话与执行回放',
+    executionReplayDescription: '按真实顺序关联本轮用户消息、思考摘要、模型回复和工具调用。点击工具调用链可定位对应 Span。',
+    contextUnavailable: '没有找到与这条 Trace 关联的会话时间线。会话可能已被清理，或 Trace 来自尚未写入关联信息的旧版本。',
+    spanWaterfall: 'Span 瀑布',
+    spanWaterfallDescription: '查看模型、工具、HTTP 与数据库操作的父子关系和耗时。',
   },
 }
 

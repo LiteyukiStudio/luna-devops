@@ -1,12 +1,13 @@
-import type { AgentObservabilityConversationLoop, AgentObservabilityTrace } from '@/api'
+import type { AgentObservabilityConversationLoop, AgentObservabilityConversationToolCall, AgentObservabilityTrace } from '@/api'
 import { Bot, BrainCircuit, Wrench } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { AgentConversationMessage } from './agent-conversation-message'
 import { AgentObservabilityToolCall } from './agent-observability-tool-call'
 
-export function AgentConversationLoopView({ loop, onViewTrace }: {
+export function AgentConversationLoopView({ loop, onViewTrace, onSelectToolCall }: {
   loop: AgentObservabilityConversationLoop
   onViewTrace: (trace: AgentObservabilityTrace) => void
+  onSelectToolCall?: (call: AgentObservabilityConversationToolCall) => void
 }) {
   const { t } = useTranslation()
   const toolCount = loop.items.filter(item => item.type === 'tool_call').length
@@ -27,7 +28,7 @@ export function AgentConversationLoopView({ loop, onViewTrace }: {
           if (item.type === 'assistant_message' && item.text)
             return <AgentConversationMessage key={item.id} role="assistant" text={item.text} />
           if (item.type === 'tool_call' && item.toolCall)
-            return <AgentObservabilityToolCall key={item.id} call={item.toolCall} onViewTrace={onViewTrace} />
+            return <AgentObservabilityToolCall key={item.id} call={item.toolCall} onSelectToolCall={onSelectToolCall} onViewTrace={onViewTrace} />
           return null
         })}
         {loop.items.length === 0 && (

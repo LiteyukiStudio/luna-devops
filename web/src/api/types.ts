@@ -50,6 +50,7 @@ export interface AgentObservabilityTraceDetail {
   spanCount: number
   errorCount: number
   spans: AgentObservabilityTraceSpan[]
+  context?: AgentObservabilityTraceContext
 }
 export interface AgentObservabilityConversationUser {
   id: string
@@ -106,6 +107,10 @@ export interface AgentObservabilityConversationDetail extends AgentObservability
   turnPage: number
   turnPageSize: number
   totalTurnPages: number
+}
+export interface AgentObservabilityTraceContext {
+  conversation: AgentObservabilityConversation
+  turn: AgentObservabilityConversationTurn
 }
 export interface AgentObservabilityOverview {
   generatedAt: string

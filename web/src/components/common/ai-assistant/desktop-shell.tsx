@@ -11,6 +11,7 @@ interface AIDesktopShellProps {
   initialWidth: number
   listButtonRef: RefObject<HTMLButtonElement | null>
   onCloseConversations: () => void
+  onOpenConversations: () => void
 }
 
 export function AIDesktopShell({
@@ -21,12 +22,20 @@ export function AIDesktopShell({
   initialWidth,
   listButtonRef,
   onCloseConversations,
+  onOpenConversations,
 }: AIDesktopShellProps) {
   const reduceMotion = useReducedMotion()
   const containerRef = useRef<HTMLDivElement>(null)
   const [containerWidth, setContainerWidth] = useState(initialWidth)
   const layout = resolveAIDesktopConversationLayout(containerWidth)
+  const previousLayoutRef = useRef<typeof layout | undefined>(undefined)
   const overlayOpen = conversationsOpen && layout === 'overlay'
+
+  useEffect(() => {
+    if (layout === 'split' && previousLayoutRef.current !== 'split')
+      onOpenConversations()
+    previousLayoutRef.current = layout
+  }, [layout, onOpenConversations])
 
   useEffect(() => {
     const element = containerRef.current

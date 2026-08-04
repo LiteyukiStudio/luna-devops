@@ -1,4 +1,4 @@
-import type { AgentObservabilityTrace, AgentObservabilityTraceSpan } from '@/api'
+import type { AgentObservabilityConversationToolCall, AgentObservabilityTrace, AgentObservabilityTraceSpan } from '@/api'
 import { useQuery } from '@tanstack/react-query'
 import { Bot, Braces, ChevronDown, ChevronRight, Clock3, Database, Network, TriangleAlert, Wrench } from 'lucide-react'
 import { useMemo, useState } from 'react'
@@ -11,6 +11,7 @@ import { StatusBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
+import { AgentTraceContextPanel } from './agent-trace-context-panel'
 
 export function AgentTraceDetailSheet({ trace, onOpenChange }: {
   trace: AgentObservabilityTrace | null
@@ -43,6 +44,11 @@ export function AgentTraceDetailSheet({ trace, onOpenChange }: {
       next.add(spanId)
     updateCollapsedSpanIds(next)
   }
+  const selectToolSpan = (call: AgentObservabilityConversationToolCall) => {
+    const exact = detail.data?.spans.find(span => span.attributes['luna.tool_call.id'] === call.id)
+    const matchingName = detail.data?.spans.find(span => isToolSpan(span) && span.attributes['gen_ai.tool.name'] === call.operationId)
+    setSelectedSpanId((exact ?? matchingName)?.spanId ?? null)
+  }
 
   return (
     <Sheet open={Boolean(trace)} onOpenChange={onOpenChange}>
@@ -66,6 +72,19 @@ export function AgentTraceDetailSheet({ trace, onOpenChange }: {
                 <MetricItem icon={<Wrench className="size-4" />} label={t('operationsDashboardPage.traceDetail.toolCalls')} value={String(toolSpans)} />
                 <MetricItem icon={<TriangleAlert className="size-4" />} label={t('operationsDashboardPage.traceDetail.errors')} value={String(detail.data.errorCount)} tone={detail.data.errorCount ? 'danger' : 'success'} />
               </MetricGroup>
+              <div className="grid gap-3">
+                <div className="grid gap-1">
+                  <h2 className="text-base font-semibold">{t('operationsDashboardPage.traceDetail.executionReplay')}</h2>
+                  <p className="m-0 text-sm text-muted-foreground">{t('operationsDashboardPage.traceDetail.executionReplayDescription')}</p>
+                </div>
+                {detail.data.context
+                  ? <AgentTraceContextPanel context={detail.data.context} onSelectToolCall={selectToolSpan} />
+                  : <p className="m-0 rounded-container bg-surface-raised p-4 text-sm text-muted-foreground">{t('operationsDashboardPage.traceDetail.contextUnavailable')}</p>}
+              </div>
+              <div className="grid gap-1">
+                <h2 className="text-base font-semibold">{t('operationsDashboardPage.traceDetail.spanWaterfall')}</h2>
+                <p className="m-0 text-sm text-muted-foreground">{t('operationsDashboardPage.traceDetail.spanWaterfallDescription')}</p>
+              </div>
               <div className="grid min-w-[56rem] gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
                 <div className="overflow-hidden rounded-container bg-surface-raised">
                   <div className="flex justify-end gap-2 border-b border-border px-3 py-2">

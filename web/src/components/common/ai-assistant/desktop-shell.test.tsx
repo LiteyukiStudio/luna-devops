@@ -35,6 +35,7 @@ describe('ai assistant desktop conversation layout', () => {
           listButtonRef={triggerRef}
           conversationList={variant => <aside data-testid="conversation-browser">{variant}</aside>}
           onCloseConversations={onClose}
+          onOpenConversations={vi.fn()}
         />
       </>,
     )
@@ -56,10 +57,30 @@ describe('ai assistant desktop conversation layout', () => {
         listButtonRef={triggerRef}
         conversationList={variant => <aside data-testid="conversation-browser">{variant}</aside>}
         onCloseConversations={vi.fn()}
+        onOpenConversations={vi.fn()}
       />,
     )
 
     expect(screen.getByTestId('conversation-browser')).toHaveTextContent('sidebar')
     expect(screen.queryByRole('button', { name: 'back' })).not.toBeInTheDocument()
+  })
+
+  it('opens the conversation browser when entering the wide split layout', async () => {
+    const triggerRef = createRef<HTMLButtonElement>()
+    const onOpen = vi.fn()
+    render(
+      <AIDesktopShell
+        chat={<main>chat</main>}
+        closeLabel="back"
+        conversationsOpen={false}
+        initialWidth={900}
+        listButtonRef={triggerRef}
+        conversationList={variant => <aside>{variant}</aside>}
+        onCloseConversations={vi.fn()}
+        onOpenConversations={onOpen}
+      />,
+    )
+
+    await waitFor(() => expect(onOpen).toHaveBeenCalledOnce())
   })
 })

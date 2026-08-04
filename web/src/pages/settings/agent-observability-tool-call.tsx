@@ -7,9 +7,10 @@ import { StatusBadge } from '@/components/common/status-badge'
 import { formatMillisecondsDuration } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
 
-export function AgentObservabilityToolCall({ call, onViewTrace }: {
+export function AgentObservabilityToolCall({ call, onViewTrace, onSelectToolCall }: {
   call: AgentObservabilityConversationToolCall
   onViewTrace: (trace: AgentObservabilityTrace) => void
+  onSelectToolCall?: (call: AgentObservabilityConversationToolCall) => void
 }) {
   const { t, i18n } = useTranslation()
   return (
@@ -27,7 +28,7 @@ export function AgentObservabilityToolCall({ call, onViewTrace }: {
         {call.errorCode && <p className="m-0 break-all rounded-control bg-danger-subtle px-3 py-2 text-xs text-danger">{call.errorCode}</p>}
         {call.traceId && (
           <div className="flex justify-end">
-            <Button size="sm" variant="outline" onClick={() => onViewTrace(toolTrace(call))}>
+            <Button size="sm" variant="outline" onClick={() => onSelectToolCall ? onSelectToolCall(call) : onViewTrace(toolTrace(call))}>
               <Network className="size-4" />
               {t('operationsDashboardPage.conversationDetail.viewToolTrace')}
             </Button>

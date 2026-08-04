@@ -236,6 +236,11 @@ func (h *Handlers) GetAgentObservabilityTrace(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusBadGateway, "ai.observability.trace_unavailable", "Trace detail is unavailable")
 		return
 	}
+	traceContext, contextErr := agentobservability.NewConversationStore(h.dbFor(ctx)).FindTraceContext(ctx.Request.Context(), detail.TraceID)
+	if contextErr == nil {
+		detail.Context = traceContext
+	}
+	h.auditWithContext(user.ID, "ai.observability.trace.view", detail.TraceID, true, "Agent observability trace viewed", ctx.Request.Context())
 	ctx.Header("Cache-Control", "no-store")
 	ctx.JSON(http.StatusOK, detail)
 }

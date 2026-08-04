@@ -571,6 +571,7 @@ export function AiAssistant() {
                 />
               )}
               onCloseConversations={() => setAssistantView('chat')}
+              onOpenConversations={() => setAssistantView('conversations')}
             />
           )
         : (

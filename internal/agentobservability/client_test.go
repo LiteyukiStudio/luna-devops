@@ -20,7 +20,7 @@ func TestPrometheusPointRejectsNonFiniteValues(t *testing.T) {
 }
 
 func TestTempoTraceDetailNormalizesAgentSpans(t *testing.T) {
-	const payload = `{"batches":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"luna-agent"}}]},"scopeSpans":[{"spans":[{"spanId":"root","name":"agent.run.execute","kind":"SPAN_KIND_INTERNAL","startTimeUnixNano":"1000000000","endTimeUnixNano":"2000000000","status":{"code":"STATUS_CODE_OK"}},{"spanId":"model","parentSpanId":"root","name":"agent.model.stream","kind":"SPAN_KIND_INTERNAL","startTimeUnixNano":"1100000000","endTimeUnixNano":"1900000000","attributes":[{"key":"gen_ai.usage.input_tokens","value":{"intValue":"42"}},{"key":"gen_ai.input.messages","value":{"stringValue":"must not escape"}}],"status":{"code":"STATUS_CODE_ERROR"}}]}]}]}`
+	const payload = `{"batches":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"luna-agent"}}]},"scopeSpans":[{"spans":[{"spanId":"root","name":"agent.run.execute","kind":"SPAN_KIND_INTERNAL","startTimeUnixNano":"1000000000","endTimeUnixNano":"2000000000","status":{"code":"STATUS_CODE_OK"}},{"spanId":"model","parentSpanId":"root","name":"agent.model.stream","kind":"SPAN_KIND_INTERNAL","startTimeUnixNano":"1100000000","endTimeUnixNano":"1900000000","attributes":[{"key":"gen_ai.usage.input_tokens","value":{"intValue":"42"}},{"key":"luna.tool_call.id","value":{"stringValue":"tool-call-1"}},{"key":"gen_ai.input.messages","value":{"stringValue":"must not escape"}}],"status":{"code":"STATUS_CODE_ERROR"}}]}]}]}`
 	var response tempoTraceResponse
 	if err := json.Unmarshal([]byte(payload), &response); err != nil {
 		t.Fatalf("decode fixture: %v", err)
@@ -31,6 +31,9 @@ func TestTempoTraceDetailNormalizesAgentSpans(t *testing.T) {
 	}
 	if detail.Spans[1].StartOffsetMS != 100 || detail.Spans[1].Attributes["gen_ai.usage.input_tokens"] != "42" {
 		t.Fatalf("model span was not normalized: %+v", detail.Spans[1])
+	}
+	if detail.Spans[1].Attributes["luna.tool_call.id"] != "tool-call-1" {
+		t.Fatalf("tool call correlation attribute was not retained: %+v", detail.Spans[1])
 	}
 	if _, exists := detail.Spans[1].Attributes["gen_ai.input.messages"]; exists {
 		t.Fatal("sensitive model content escaped the trace attribute allowlist")

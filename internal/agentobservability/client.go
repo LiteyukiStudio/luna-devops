@@ -76,11 +76,12 @@ type TraceSummary struct {
 }
 
 type TraceDetail struct {
-	TraceID    string      `json:"traceId"`
-	DurationMS float64     `json:"durationMs"`
-	SpanCount  int         `json:"spanCount"`
-	ErrorCount int         `json:"errorCount"`
-	Spans      []TraceSpan `json:"spans"`
+	TraceID    string        `json:"traceId"`
+	DurationMS float64       `json:"durationMs"`
+	SpanCount  int           `json:"spanCount"`
+	ErrorCount int           `json:"errorCount"`
+	Spans      []TraceSpan   `json:"spans"`
+	Context    *TraceContext `json:"context,omitempty"`
 }
 
 type TraceSpan struct {
@@ -357,7 +358,7 @@ type tempoAttribute struct {
 var traceAttributeAllowlist = map[string]struct{}{
 	"gen_ai.operation.name": {}, "gen_ai.provider.name": {}, "gen_ai.request.model": {},
 	"gen_ai.response.model": {}, "gen_ai.usage.input_tokens": {}, "gen_ai.usage.output_tokens": {},
-	"gen_ai.tool.name": {}, "http.request.method": {}, "http.response.status_code": {},
+	"gen_ai.tool.name": {}, "luna.tool_call.id": {}, "http.request.method": {}, "http.response.status_code": {},
 	"db.system.name": {}, "error.type": {}, "luna.run.outcome": {},
 }
 

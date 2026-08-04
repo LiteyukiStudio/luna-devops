@@ -13,6 +13,8 @@ After it is enabled, open the assistant from the lower-right corner. You can ask
 - Inspect recent failed builds and suggest a fix.
 - Create, switch, or manage conversations.
 
+On desktop, you can move and resize the assistant window. In a compact window, the conversation browser opens as an overlay drawer. When the window is wide enough, it opens automatically as a left sidebar and can still be collapsed from the conversation button in the header.
+
 ## Capabilities and operations
 
 The assistant can inspect platform resources, analyze logs and status, read public web pages, collect settings through interactive cards, and report operation results. Long-running builds and releases show their real status, and the assistant checks the outcome after they finish.
