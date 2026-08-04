@@ -4,5 +4,7 @@ allowBuilds:
 overrides:
   "brace-expansion@<2.0.0": 1.1.18
   "brace-expansion@>=4.0.0 <5.0.9": 5.0.9
+  "fast-uri@>=3.0.0 <3.1.5": 3.1.5
+  "fast-uri@>=4.0.0 <4.1.2": 4.1.2
 shellEmulator: true
 trustPolicy: no-downgrade
