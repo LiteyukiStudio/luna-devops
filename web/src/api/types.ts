@@ -76,6 +76,30 @@ export interface AgentObservabilityConversationTurn {
   traceId: string
   durationMs: number
   createdAt: string
+  loops: AgentObservabilityConversationLoop[]
+}
+export interface AgentObservabilityConversationLoop {
+  loopIndex: number
+  items: AgentObservabilityConversationRunItem[]
+}
+export interface AgentObservabilityConversationRunItem {
+  id: string
+  timelineIndex: number
+  type: 'reasoning_summary' | 'assistant_message' | 'tool_call'
+  status: string
+  text: string
+  toolCall?: AgentObservabilityConversationToolCall
+  createdAt: string
+}
+export interface AgentObservabilityConversationToolCall {
+  id: string
+  operationId: string
+  status: string
+  arguments: Record<string, unknown>
+  result?: unknown
+  errorCode?: string
+  durationMs?: number
+  traceId?: string
 }
 export interface AgentObservabilityConversationDetail extends AgentObservabilityConversation {
   turns: AgentObservabilityConversationTurn[]

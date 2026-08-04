@@ -31,15 +31,42 @@ type ConversationSummary struct {
 }
 
 type ConversationTurn struct {
-	ID               string    `json:"id"`
-	TurnIndex        int       `json:"turnIndex"`
-	Status           string    `json:"status"`
-	UserMessage      string    `json:"userMessage"`
-	AssistantMessage string    `json:"assistantMessage"`
-	RunID            string    `json:"runId"`
-	TraceID          string    `json:"traceId"`
-	DurationMs       float64   `json:"durationMs"`
-	CreatedAt        time.Time `json:"createdAt"`
+	ID               string             `json:"id"`
+	TurnIndex        int                `json:"turnIndex"`
+	Status           string             `json:"status"`
+	UserMessage      string             `json:"userMessage"`
+	AssistantMessage string             `json:"assistantMessage"`
+	RunID            string             `json:"runId"`
+	TraceID          string             `json:"traceId"`
+	DurationMs       float64            `json:"durationMs"`
+	CreatedAt        time.Time          `json:"createdAt"`
+	Loops            []ConversationLoop `json:"loops"`
+}
+
+type ConversationLoop struct {
+	LoopIndex int                   `json:"loopIndex"`
+	Items     []ConversationRunItem `json:"items"`
+}
+
+type ConversationRunItem struct {
+	ID            string                `json:"id"`
+	TimelineIndex int                   `json:"timelineIndex"`
+	Type          string                `json:"type"`
+	Status        string                `json:"status"`
+	Text          string                `json:"text"`
+	ToolCall      *ConversationToolCall `json:"toolCall,omitempty"`
+	CreatedAt     time.Time             `json:"createdAt"`
+}
+
+type ConversationToolCall struct {
+	ID          string         `json:"id"`
+	OperationID string         `json:"operationId"`
+	Status      string         `json:"status"`
+	Arguments   map[string]any `json:"arguments"`
+	Result      any            `json:"result,omitempty"`
+	ErrorCode   string         `json:"errorCode,omitempty"`
+	DurationMs  float64        `json:"durationMs,omitempty"`
+	TraceID     string         `json:"traceId,omitempty"`
 }
 
 type ConversationDetail struct {
@@ -154,13 +181,14 @@ func (s *ConversationStore) Get(ctx context.Context, conversationID string, turn
 			runIDs = append(runIDs, row.RunID)
 		}
 	}
-	assistantMessages, err := s.loadAssistantMessages(ctx, runIDs)
+	runItems, err := s.loadRunItems(ctx, runIDs)
 	if err != nil {
 		return ConversationDetail{}, err
 	}
 	turns := make([]ConversationTurn, 0, len(rows))
 	for _, row := range rows {
-		turn := ConversationTurn{ID: row.ID, TurnIndex: row.TurnIndex, Status: row.Status, UserMessage: row.Input, AssistantMessage: assistantMessages[row.RunID], RunID: row.RunID, TraceID: traceIDFromContext(row.TraceContext), CreatedAt: row.CreatedAt}
+		loops := buildConversationLoops(runItems[row.RunID])
+		turn := ConversationTurn{ID: row.ID, TurnIndex: row.TurnIndex, Status: row.Status, UserMessage: row.Input, AssistantMessage: assistantMessageFromLoops(loops), RunID: row.RunID, TraceID: traceIDFromContext(row.TraceContext), CreatedAt: row.CreatedAt, Loops: loops}
 		if row.StartedAt != nil && row.CompletedAt != nil {
 			turn.DurationMs = float64(row.CompletedAt.Sub(*row.StartedAt).Microseconds()) / 1000
 		}
@@ -173,31 +201,164 @@ func (s *ConversationStore) Get(ctx context.Context, conversationID string, turn
 	return ConversationDetail{ConversationSummary: summary, Turns: turns, TurnPage: turnPage, TurnPageSize: turnPageSize, TotalTurnPages: totalTurnPages}, nil
 }
 
-func (s *ConversationStore) loadAssistantMessages(ctx context.Context, runIDs []string) (map[string]string, error) {
-	messages := make(map[string]string, len(runIDs))
+func (s *ConversationStore) loadRunItems(ctx context.Context, runIDs []string) (map[string][]ConversationRunItem, error) {
+	items := make(map[string][]ConversationRunItem, len(runIDs))
 	if len(runIDs) == 0 {
-		return messages, nil
+		return items, nil
 	}
 	type itemRow struct {
-		RunID   string
-		Content []byte
+		ID            string
+		RunID         string
+		TimelineIndex int
+		Type          string
+		Status        string
+		Content       []byte
+		CreatedAt     time.Time
 	}
 	var rows []itemRow
-	if err := s.db.WithContext(ctx).Table("ai.items").Select("run_id, content").
-		Where("run_id IN ? AND type = ?", runIDs, "assistant_message").Order("run_id ASC, timeline_index ASC").Scan(&rows).Error; err != nil {
+	if err := s.db.WithContext(ctx).Table("ai.items").Select("id, run_id, timeline_index, type, status, content, created_at").
+		Where("run_id IN ? AND type IN ?", runIDs, []string{"reasoning_summary", "assistant_message", "tool_call"}).Order("run_id ASC, timeline_index ASC").Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	for _, row := range rows {
-		text := messageText(row.Content)
-		if text == "" {
-			continue
+		item := ConversationRunItem{ID: row.ID, TimelineIndex: row.TimelineIndex, Type: row.Type, Status: row.Status, CreatedAt: row.CreatedAt}
+		if row.Type == "tool_call" {
+			item.ToolCall = toolCallFromContent(row.ID, row.Status, row.Content)
+		} else {
+			item.Text = runItemText(row.Type, row.Content)
 		}
-		if messages[row.RunID] != "" {
-			messages[row.RunID] += "\n"
-		}
-		messages[row.RunID] += text
+		items[row.RunID] = append(items[row.RunID], item)
 	}
-	return messages, nil
+	return items, nil
+}
+
+func buildConversationLoops(items []ConversationRunItem) []ConversationLoop {
+	loops := make([]ConversationLoop, 0)
+	for _, item := range items {
+		startsLoop := item.Type == "reasoning_summary"
+		if startsLoop || len(loops) == 0 {
+			loops = append(loops, ConversationLoop{LoopIndex: len(loops) + 1})
+		}
+		loops[len(loops)-1].Items = append(loops[len(loops)-1].Items, item)
+	}
+	return loops
+}
+
+func assistantMessageFromLoops(loops []ConversationLoop) string {
+	messages := make([]string, 0)
+	for _, loop := range loops {
+		for _, item := range loop.Items {
+			if item.Type == "assistant_message" && strings.TrimSpace(item.Text) != "" {
+				messages = append(messages, item.Text)
+			}
+		}
+	}
+	return strings.Join(messages, "\n")
+}
+
+func runItemText(itemType string, raw []byte) string {
+	if itemType == "reasoning_summary" {
+		var content struct {
+			Summary string `json:"summary"`
+		}
+		if json.Unmarshal(raw, &content) == nil {
+			return content.Summary
+		}
+	}
+	return messageText(raw)
+}
+
+func toolCallFromContent(itemID, itemStatus string, raw []byte) *ConversationToolCall {
+	var content struct {
+		ToolCallID  string         `json:"toolCallId"`
+		OperationID string         `json:"operationId"`
+		Status      string         `json:"status"`
+		Arguments   map[string]any `json:"arguments"`
+		Result      any            `json:"result"`
+		ErrorCode   string         `json:"errorCode"`
+		DurationMs  float64        `json:"durationMs"`
+		TraceID     string         `json:"traceId"`
+	}
+	if json.Unmarshal(raw, &content) != nil {
+		return &ConversationToolCall{ID: itemID, Status: itemStatus, Arguments: map[string]any{}}
+	}
+	status := content.Status
+	if status == "" {
+		status = itemStatus
+	}
+	return &ConversationToolCall{
+		ID: content.ToolCallID, OperationID: content.OperationID, Status: status,
+		Arguments: sanitizeToolObject(content.Arguments), Result: sanitizeToolValue(content.Result, 0),
+		ErrorCode: content.ErrorCode, DurationMs: content.DurationMs, TraceID: validTraceID(content.TraceID),
+	}
+}
+
+func sanitizeToolObject(value map[string]any) map[string]any {
+	result, _ := sanitizeToolValue(value, 0).(map[string]any)
+	if result == nil {
+		return map[string]any{}
+	}
+	return result
+}
+
+func sanitizeToolValue(value any, depth int) any {
+	if depth >= 6 {
+		return "[TRUNCATED]"
+	}
+	switch typed := value.(type) {
+	case string:
+		if len(typed) > 2000 {
+			return typed[:2000]
+		}
+		return typed
+	case []any:
+		if len(typed) > 50 {
+			typed = typed[:50]
+		}
+		result := make([]any, 0, len(typed))
+		for _, item := range typed {
+			result = append(result, sanitizeToolValue(item, depth+1))
+		}
+		return result
+	case map[string]any:
+		result := make(map[string]any)
+		count := 0
+		for key, item := range typed {
+			if sensitiveToolKey(key) {
+				continue
+			}
+			result[key] = sanitizeToolValue(item, depth+1)
+			count++
+			if count >= 50 {
+				break
+			}
+		}
+		return result
+	default:
+		return value
+	}
+}
+
+func sensitiveToolKey(key string) bool {
+	lower := strings.ToLower(key)
+	for _, fragment := range []string{"authorization", "cookie", "password", "secret", "token", "credential", "api_key", "apikey", "kubeconfig"} {
+		if strings.Contains(lower, fragment) {
+			return true
+		}
+	}
+	return false
+}
+
+func validTraceID(value string) string {
+	if len(value) != 32 || value == strings.Repeat("0", 32) {
+		return ""
+	}
+	for _, char := range value {
+		if !strings.ContainsRune("0123456789abcdefABCDEF", char) {
+			return ""
+		}
+	}
+	return strings.ToLower(value)
 }
 
 func normalizeConversationListOptions(options ConversationListOptions) ConversationListOptions {

@@ -37,3 +37,35 @@ func TestConversationSortClauseUsesWhitelist(t *testing.T) {
 		t.Fatalf("turn sort clause = %q", got)
 	}
 }
+
+func TestBuildConversationLoops(t *testing.T) {
+	items := []ConversationRunItem{
+		{ID: "thinking-1", Type: "reasoning_summary"},
+		{ID: "tool-1", Type: "tool_call"},
+		{ID: "thinking-2", Type: "reasoning_summary"},
+		{ID: "message-2", Type: "assistant_message", Text: "done"},
+	}
+	loops := buildConversationLoops(items)
+	if len(loops) != 2 || len(loops[0].Items) != 2 || len(loops[1].Items) != 2 {
+		t.Fatalf("unexpected loops: %#v", loops)
+	}
+}
+
+func TestToolCallFromContentSanitizesSensitiveValues(t *testing.T) {
+	raw := []byte(`{"toolCallId":"tool-1","operationId":"get_build","status":"succeeded","arguments":{"projectId":"project-1","token":"hidden","nested":{"password":"hidden","ok":true}},"result":{"requestId":"req-1","secret":"hidden"},"traceId":"ABCDEFABCDEFABCDEFABCDEFABCDEFAB"}`)
+	call := toolCallFromContent("item-1", "completed", raw)
+	if call.TraceID != "abcdefabcdefabcdefabcdefabcdefab" || call.Arguments["projectId"] != "project-1" {
+		t.Fatalf("unexpected tool call: %#v", call)
+	}
+	if _, ok := call.Arguments["token"]; ok {
+		t.Fatal("token must be removed")
+	}
+	nested := call.Arguments["nested"].(map[string]any)
+	if _, ok := nested["password"]; ok {
+		t.Fatal("nested password must be removed")
+	}
+	result := call.Result.(map[string]any)
+	if _, ok := result["secret"]; ok {
+		t.Fatal("result secret must be removed")
+	}
+}

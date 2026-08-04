@@ -1,6 +1,6 @@
 import type { AgentObservabilityConversation, AgentObservabilityTrace } from '@/api'
 import { useQuery } from '@tanstack/react-query'
-import { Bot, Clock3, MessageSquareText, Network, UserRound } from 'lucide-react'
+import { Clock3, MessageSquareText, Network, UserRound } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/api'
 import { ErrorState } from '@/components/common/error-state'
@@ -10,6 +10,8 @@ import { PaginationController } from '@/components/common/pagination'
 import { StatusBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { AgentConversationLoopView } from './agent-conversation-loop'
+import { AgentConversationMessage } from './agent-conversation-message'
 
 export function AgentConversationDetailSheet({ conversation, turnPage, onOpenChange, onTurnPageChange, onViewTrace }: {
   conversation: AgentObservabilityConversation | null
@@ -64,8 +66,10 @@ export function AgentConversationDetailSheet({ conversation, turnPage, onOpenCha
                       )}
                     </div>
                     <div className="grid gap-4 p-4">
-                      <Message role="user" text={turn.userMessage} />
-                      <Message role="assistant" text={turn.assistantMessage || t('operationsDashboardPage.conversationDetail.noAssistantMessage')} />
+                      <AgentConversationMessage role="user" text={turn.userMessage} />
+                      {turn.loops?.length
+                        ? turn.loops.map(loop => <AgentConversationLoopView key={loop.loopIndex} loop={loop} onViewTrace={onViewTrace} />)
+                        : <AgentConversationMessage role="assistant" text={turn.assistantMessage || t('operationsDashboardPage.conversationDetail.noAssistantMessage')} />}
                     </div>
                   </section>
                 ))}
@@ -76,20 +80,6 @@ export function AgentConversationDetailSheet({ conversation, turnPage, onOpenCha
         </div>
       </SheetContent>
     </Sheet>
-  )
-}
-
-function Message({ role, text }: { role: 'user' | 'assistant', text: string }) {
-  const { t } = useTranslation()
-  const Icon = role === 'user' ? UserRound : Bot
-  return (
-    <div className="grid gap-2">
-      <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-        <Icon className="size-4" />
-        {t(`operationsDashboardPage.conversationDetail.${role}`)}
-      </div>
-      <div className="whitespace-pre-wrap break-words rounded-control bg-muted px-4 py-3 text-sm leading-6">{text}</div>
-    </div>
   )
 }
 

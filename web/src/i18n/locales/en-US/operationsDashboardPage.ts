@@ -83,6 +83,12 @@ const operationsDashboardPage = {
     updatedAt: 'Updated',
     turnLabel: 'Turn {{index}}',
     assistant: 'Agent',
+    thinking: 'Thinking summary',
+    loopLabel: 'Loop {{index}}',
+    toolCount: '{{count}} tool calls',
+    emptyLoop: 'This loop has no execution items to display.',
+    toolResultPending: 'The tool result has not returned yet.',
+    viewToolTrace: 'View tool trace',
     noAssistantMessage: 'This turn has no Agent response yet.',
   },
   traceDetail: {

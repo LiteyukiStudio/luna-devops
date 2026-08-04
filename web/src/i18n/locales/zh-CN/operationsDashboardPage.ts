@@ -83,6 +83,12 @@ const operationsDashboardPage = {
     updatedAt: '最近更新',
     turnLabel: '第 {{index}} 轮',
     assistant: 'Agent',
+    thinking: '思考摘要',
+    loopLabel: 'Loop {{index}}',
+    toolCount: '{{count}} 次工具调用',
+    emptyLoop: '本次 Loop 没有可展示的执行项。',
+    toolResultPending: '工具结果尚未返回。',
+    viewToolTrace: '查看工具调用链',
     noAssistantMessage: '本轮尚无 Agent 回复。',
   },
   traceDetail: {

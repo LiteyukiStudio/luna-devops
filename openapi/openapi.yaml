@@ -6949,7 +6949,7 @@ components:
         updatedAt: { type: string, format: date-time }
     AgentObservabilityConversationTurn:
       type: object
-      required: [id, turnIndex, status, userMessage, assistantMessage, runId, traceId, durationMs, createdAt]
+      required: [id, turnIndex, status, userMessage, assistantMessage, runId, traceId, durationMs, createdAt, loops]
       properties:
         id: { type: string }
         turnIndex: { type: integer }
@@ -6960,6 +6960,36 @@ components:
         traceId: { type: string }
         durationMs: { type: number, format: double }
         createdAt: { type: string, format: date-time }
+        loops: { type: array, items: { $ref: "#/components/schemas/AgentObservabilityConversationLoop" } }
+    AgentObservabilityConversationLoop:
+      type: object
+      required: [loopIndex, items]
+      properties:
+        loopIndex: { type: integer }
+        items: { type: array, items: { $ref: "#/components/schemas/AgentObservabilityConversationRunItem" } }
+    AgentObservabilityConversationRunItem:
+      type: object
+      required: [id, timelineIndex, type, status, text, createdAt]
+      properties:
+        id: { type: string }
+        timelineIndex: { type: integer }
+        type: { type: string, enum: [reasoning_summary, assistant_message, tool_call] }
+        status: { type: string }
+        text: { type: string }
+        toolCall: { $ref: "#/components/schemas/AgentObservabilityConversationToolCall" }
+        createdAt: { type: string, format: date-time }
+    AgentObservabilityConversationToolCall:
+      type: object
+      required: [id, operationId, status, arguments]
+      properties:
+        id: { type: string }
+        operationId: { type: string }
+        status: { type: string }
+        arguments: { type: object, additionalProperties: true }
+        result: {}
+        errorCode: { type: string }
+        durationMs: { type: number, format: double }
+        traceId: { type: string }
     AgentObservabilityConversationDetail:
       allOf:
         - { $ref: "#/components/schemas/AgentObservabilityConversation" }
