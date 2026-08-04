@@ -37,6 +37,36 @@ func TestTempoTraceDetailNormalizesAgentSpans(t *testing.T) {
 	}
 }
 
+func TestTempoTraceDetailParsesTempoV2ResourceSpans(t *testing.T) {
+	const payload = `{"trace":{"resourceSpans":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"luna-agent"}}]},"scopeSpans":[{"spans":[{"spanId":"cm9vdA==","name":"handler - async secured => { /* generated handler source */ }","kind":"SPAN_KIND_INTERNAL","startTimeUnixNano":"1000000000","endTimeUnixNano":"2500000000","status":{"code":"STATUS_CODE_OK"}}]}]}]},"metrics":{"inspectedBytes":"1024"}}`
+	var response tempoTraceResponse
+	if err := json.Unmarshal([]byte(payload), &response); err != nil {
+		t.Fatalf("decode Tempo v2 fixture: %v", err)
+	}
+	detail := tempoTraceDetail("0123456789abcdef0123456789abcdef", response)
+	if detail.SpanCount != 1 || detail.DurationMS != 1500 {
+		t.Fatalf("unexpected Tempo v2 trace detail: %+v", detail)
+	}
+	if detail.Spans[0].ServiceName != "luna-agent" || detail.Spans[0].Name != "fastify.handler" {
+		t.Fatalf("Tempo v2 span was not normalized: %+v", detail.Spans[0])
+	}
+}
+
+func TestTempoClientRejectsTraceResponseWithoutSpans(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(writer, `{"trace":{"resourceSpans":[]}}`)
+	}))
+	defer server.Close()
+	client, err := New(SourceTempo, Config{BaseURL: server.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.GetTrace(context.Background(), "0123456789abcdef0123456789abcdef"); err == nil {
+		t.Fatal("empty Tempo trace response was accepted")
+	}
+}
+
 func TestPrometheusClientQueriesAndPropagatesAuthentication(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.Header.Get("Authorization") != "Bearer secret" || request.Header.Get("X-Scope-OrgID") != "tenant-a" {

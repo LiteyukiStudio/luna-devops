@@ -17,7 +17,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-const maxResponseBytes = 4 << 20
+const maxResponseBytes = 16 << 20
 
 const AgentTraceQuery = `{ resource.service.name = "luna-agent" }`
 
@@ -244,7 +244,11 @@ func (c *Client) GetTrace(ctx context.Context, traceID string) (TraceDetail, err
 	if err := c.getJSON(ctx, "tempo.trace.get", "/api/v2/traces/"+traceID, nil, &response); err != nil {
 		return TraceDetail{}, err
 	}
-	return tempoTraceDetail(traceID, response), nil
+	detail := tempoTraceDetail(traceID, response)
+	if detail.SpanCount == 0 {
+		return TraceDetail{}, fmt.Errorf("Tempo trace response contains no spans")
+	}
+	return detail, nil
 }
 
 func (c *Client) getJSON(ctx context.Context, operation, path string, params url.Values, target any) (err error) {
@@ -307,17 +311,24 @@ type tempoSearchResponse struct {
 }
 
 type tempoTraceResponse struct {
-	Batches []struct {
-		Resource struct {
-			Attributes []tempoAttribute `json:"attributes"`
-		} `json:"resource"`
-		ScopeSpans []struct {
-			Spans []tempoSpan `json:"spans"`
-		} `json:"scopeSpans"`
-		InstrumentationLibrarySpans []struct {
-			Spans []tempoSpan `json:"spans"`
-		} `json:"instrumentationLibrarySpans"`
-	} `json:"batches"`
+	// Tempo v2 wraps the OTLP payload in trace.resourceSpans. Batches keeps
+	// compatibility with the legacy JSON representation returned by v1 proxies.
+	Trace struct {
+		ResourceSpans []tempoResourceSpans `json:"resourceSpans"`
+	} `json:"trace"`
+	Batches []tempoResourceSpans `json:"batches"`
+}
+
+type tempoResourceSpans struct {
+	Resource struct {
+		Attributes []tempoAttribute `json:"attributes"`
+	} `json:"resource"`
+	ScopeSpans []struct {
+		Spans []tempoSpan `json:"spans"`
+	} `json:"scopeSpans"`
+	InstrumentationLibrarySpans []struct {
+		Spans []tempoSpan `json:"spans"`
+	} `json:"instrumentationLibrarySpans"`
 }
 
 type tempoSpan struct {
@@ -353,7 +364,11 @@ var traceAttributeAllowlist = map[string]struct{}{
 func tempoTraceDetail(traceID string, response tempoTraceResponse) TraceDetail {
 	detail := TraceDetail{TraceID: traceID, Spans: []TraceSpan{}}
 	var earliest, latest int64
-	for _, batch := range response.Batches {
+	batches := response.Trace.ResourceSpans
+	if len(batches) == 0 {
+		batches = response.Batches
+	}
+	for _, batch := range batches {
 		resourceAttributes := tempoAttributes(batch.Resource.Attributes, nil)
 		serviceName := resourceAttributes["service.name"]
 		groups := make([][]tempoSpan, 0, len(batch.ScopeSpans)+len(batch.InstrumentationLibrarySpans))
@@ -381,7 +396,7 @@ func tempoTraceDetail(traceID string, response tempoTraceResponse) TraceDetail {
 					detail.ErrorCount++
 				}
 				detail.Spans = append(detail.Spans, TraceSpan{
-					SpanID: span.SpanID, ParentSpanID: span.ParentSpanID, Name: span.Name,
+					SpanID: span.SpanID, ParentSpanID: span.ParentSpanID, Name: tempoSpanName(span.Name),
 					ServiceName: serviceName, Kind: strings.TrimPrefix(strings.ToLower(span.Kind), "span_kind_"),
 					Status: status, StartTimeNanos: span.StartTimeUnixNano, DurationMS: float64(end-start) / 1e6,
 					Attributes: tempoAttributes(span.Attributes, traceAttributeAllowlist),
@@ -396,6 +411,14 @@ func tempoTraceDetail(traceID string, response tempoTraceResponse) TraceDetail {
 		detail.Spans[index].StartOffsetMS = float64(start-earliest) / 1e6
 	}
 	return detail
+}
+
+func tempoSpanName(name string) string {
+	name = strings.TrimSpace(name)
+	if strings.HasPrefix(name, "handler - ") {
+		return "fastify.handler"
+	}
+	return truncateRunes(name, 160)
 }
 
 func tempoAttributes(attributes []tempoAttribute, allowlist map[string]struct{}) map[string]string {

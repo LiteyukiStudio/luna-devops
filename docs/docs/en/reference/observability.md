@@ -47,7 +47,7 @@ Each source has its own **Test connection** button. The test uses the URL, tenan
 
 Open **Operations → Agent observability** to inspect Run success, active Runs, first-token P95, model and dependency errors, token throughput, tool failures, recent Agent Runs, and trace-correlated failure logs. Open **View trace** on a recent Run to inspect span hierarchy, parallel stages, latency share, error spans, and model, tool, HTTP, or database calls in the embedded waterfall. Its inspector only exposes allowlisted model, token, tool, and error attributes; prompts and sensitive tool arguments are excluded.
 
-The browser only calls fixed-query Luna API endpoints. It cannot submit arbitrary PromQL, LogQL, or TraceQL, and it never receives source URLs or credentials. Luna API reads and normalizes trace details from Tempo, so details are no longer available after the Tempo retention window expires.
+The browser only calls fixed-query Luna API endpoints. It cannot submit arbitrary PromQL, LogQL, or TraceQL, and it never receives source URLs or credentials. Luna API reads and normalizes trace details through the Tempo 2.x query API while retaining compatibility with the legacy proxied OTLP JSON shape, so details are no longer available after the Tempo retention window expires.
 
 When Prometheus has no Agent metrics or returns non-finite query results, the affected metrics appear as zero or an empty trend without preventing Loki logs and Tempo traces from loading.
 
