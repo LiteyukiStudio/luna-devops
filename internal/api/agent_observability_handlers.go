@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -237,6 +238,67 @@ func (h *Handlers) GetAgentObservabilityTrace(ctx *gin.Context) {
 	}
 	ctx.Header("Cache-Control", "no-store")
 	ctx.JSON(http.StatusOK, detail)
+}
+
+func (h *Handlers) ListAgentObservabilityConversations(ctx *gin.Context) {
+	user, ok := h.requireAgentObservabilityAdmin(ctx)
+	if !ok {
+		return
+	}
+	rangeText, duration := observabilityRange(ctx.Query("range"))
+	pagination := paginationFromQuery(ctx)
+	result, err := agentobservability.NewConversationStore(h.dbFor(ctx)).List(ctx.Request.Context(), agentobservability.ConversationListOptions{
+		Start: time.Now().Add(-duration), Search: ctx.Query("search"), Page: pagination.Page, PageSize: pagination.PageSize,
+		SortBy: pagination.SortBy, SortOrder: pagination.SortOrder,
+	})
+	if err != nil {
+		writeErrorCode(ctx, http.StatusInternalServerError, "ai.observability.conversations_failed", "Agent conversations are unavailable")
+		return
+	}
+	h.auditWithContext(user.ID, "ai.observability.conversations.list", rangeText, true, "Agent observability conversations listed", ctx.Request.Context())
+	ctx.Header("Cache-Control", "no-store")
+	ctx.JSON(http.StatusOK, gin.H{
+		"items": result.Items, "page": result.Page, "pageSize": result.PageSize, "sortBy": result.SortBy,
+		"sortOrder": result.SortOrder, "total": result.Total, "totalPages": result.TotalPages,
+	})
+}
+
+func (h *Handlers) GetAgentObservabilityConversation(ctx *gin.Context) {
+	user, ok := h.requireAgentObservabilityAdmin(ctx)
+	if !ok {
+		return
+	}
+	conversationID := strings.TrimSpace(ctx.Param("conversationId"))
+	pagination := paginationFromQuery(ctx)
+	detail, err := agentobservability.NewConversationStore(h.dbFor(ctx)).Get(ctx.Request.Context(), conversationID, pagination.Page, pagination.PageSize)
+	if errors.Is(err, agentobservability.ErrConversationNotFound) {
+		writeErrorCode(ctx, http.StatusNotFound, "ai.observability.conversation_not_found", "Agent conversation was not found")
+		return
+	}
+	if err != nil {
+		writeErrorCode(ctx, http.StatusInternalServerError, "ai.observability.conversation_failed", "Agent conversation is unavailable")
+		return
+	}
+	h.auditWithContext(user.ID, "ai.observability.conversation.view", conversationID, true, "Agent observability conversation viewed", ctx.Request.Context())
+	ctx.Header("Cache-Control", "no-store")
+	ctx.JSON(http.StatusOK, detail)
+}
+
+func (h *Handlers) requireAgentObservabilityAdmin(ctx *gin.Context) (model.User, bool) {
+	user, ok := h.currentUser(ctx)
+	if !ok {
+		return model.User{}, false
+	}
+	if user.Role != authz.PlatformRoleAdmin {
+		writeErrorKey(ctx, http.StatusForbidden, user.Language, "config.admin.required")
+		return model.User{}, false
+	}
+	values := h.configs.get(knownConfigKeys())
+	if !configBool(values[agentObservabilityEnabledKey]) {
+		writeErrorCode(ctx, http.StatusServiceUnavailable, "ai.observability.disabled", "Agent observability is disabled")
+		return model.User{}, false
+	}
+	return user, true
 }
 
 func (h *Handlers) resolveAppConfigSecret(ctx *gin.Context, key string) string {

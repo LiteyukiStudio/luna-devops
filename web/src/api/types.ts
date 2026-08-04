@@ -51,6 +51,38 @@ export interface AgentObservabilityTraceDetail {
   errorCount: number
   spans: AgentObservabilityTraceSpan[]
 }
+export interface AgentObservabilityConversationUser {
+  id: string
+  name: string
+  email: string
+  avatarUrl: string
+}
+export interface AgentObservabilityConversation {
+  id: string
+  title: string
+  user: AgentObservabilityConversationUser
+  turnCount: number
+  traceCount: number
+  createdAt: string
+  updatedAt: string
+}
+export interface AgentObservabilityConversationTurn {
+  id: string
+  turnIndex: number
+  status: string
+  userMessage: string
+  assistantMessage: string
+  runId: string
+  traceId: string
+  durationMs: number
+  createdAt: string
+}
+export interface AgentObservabilityConversationDetail extends AgentObservabilityConversation {
+  turns: AgentObservabilityConversationTurn[]
+  turnPage: number
+  turnPageSize: number
+  totalTurnPages: number
+}
 export interface AgentObservabilityOverview {
   generatedAt: string
   range: '1h' | '6h' | '24h'

@@ -1,7 +1,7 @@
-import type { AgentObservabilityLog, AgentObservabilityTrace } from '@/api'
+import type { AgentObservabilityConversation, AgentObservabilityLog, AgentObservabilityTrace } from '@/api'
 import type { DataListColumn } from '@/components/common/data-list'
 import { useQuery } from '@tanstack/react-query'
-import { Activity, Bot, CircleGauge, Clock3, ExternalLink, Eye, RefreshCw, Settings, Timer, Wrench } from 'lucide-react'
+import { Activity, Bot, CircleGauge, Clock3, ExternalLink, Eye, MessagesSquare, Network, RefreshCw, Settings, Timer, UserRound, Wrench } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
@@ -18,8 +18,9 @@ import { Section } from '@/components/common/section'
 import { StatusBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { TabsContent } from '@/components/ui/tabs'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { isPlatformAdmin } from '@/lib/roles'
+import { AgentConversationDetailSheet } from './agent-conversation-detail-sheet'
 import { AgentObservabilityChart } from './agent-observability-chart'
 import { AgentTraceDetailSheet } from './agent-trace-detail-sheet'
 
@@ -104,6 +105,12 @@ function ObservabilityConfigEmpty({ description, title }: { description: string,
 function AgentObservabilityView({ active, enabled }: { active: boolean, enabled: boolean }) {
   const { t, i18n } = useTranslation()
   const [range, setRange] = useState<'1h' | '6h' | '24h'>('1h')
+  const [traceScope, setTraceScope] = useState<'conversations' | 'turns'>('conversations')
+  const [conversationPage, setConversationPage] = useState(1)
+  const [conversationPageSize, setConversationPageSize] = useState(20)
+  const [conversationSearch, setConversationSearch] = useState('')
+  const [selectedConversation, setSelectedConversation] = useState<AgentObservabilityConversation | null>(null)
+  const [conversationTurnPage, setConversationTurnPage] = useState(1)
   const [selectedTrace, setSelectedTrace] = useState<AgentObservabilityTrace | null>(null)
   const overview = useQuery({
     queryKey: ['agent-observability', range],
@@ -111,6 +118,24 @@ function AgentObservabilityView({ active, enabled }: { active: boolean, enabled:
     enabled: active && enabled,
     refetchInterval: 30_000,
   })
+  const conversations = useQuery({
+    queryKey: ['agent-observability-conversations', range, conversationPage, conversationPageSize, conversationSearch],
+    queryFn: () => api.listAgentObservabilityConversations({ range, page: conversationPage, pageSize: conversationPageSize, search: conversationSearch }),
+    enabled: active && enabled && traceScope === 'conversations',
+    refetchInterval: 30_000,
+  })
+  const changeConversationPageSize = (value: number) => {
+    setConversationPageSize(value)
+    setConversationPage(1)
+  }
+  const changeConversationSearch = (value: string) => {
+    setConversationSearch(value)
+    setConversationPage(1)
+  }
+  const openConversation = (conversation: AgentObservabilityConversation) => {
+    setConversationTurnPage(1)
+    setSelectedConversation(conversation)
+  }
   const logColumns = useMemo<DataListColumn<AgentObservabilityLog>[]>(() => [
     { key: 'time', header: t('operationsDashboardPage.time'), width: 'compact', render: item => formatLokiTime(item.timestamp, i18n.language) },
     { key: 'event', header: t('operationsDashboardPage.event'), width: 'secondary', render: item => item.labels.event_name || item.labels.eventName || '—' },
@@ -126,6 +151,27 @@ function AgentObservabilityView({ active, enabled }: { active: boolean, enabled:
       <Button size="sm" variant="outline" onClick={() => setSelectedTrace(item)}>
         <Eye className="size-4" />
         {t('operationsDashboardPage.viewTrace')}
+      </Button>
+    ) },
+  ], [i18n.language, t])
+  const conversationColumns = useMemo<DataListColumn<AgentObservabilityConversation>[]>(() => [
+    { key: 'updatedAt', header: t('operationsDashboardPage.updatedAt'), width: 'compact', render: item => formatDateTime(item.updatedAt, i18n.language) },
+    { key: 'title', header: t('operationsDashboardPage.conversationTitle'), width: 'primary', render: item => <span className="font-medium">{item.title}</span> },
+    { key: 'user', header: t('operationsDashboardPage.user'), width: 'normal', render: item => (
+      <span className="flex min-w-0 items-center gap-2">
+        <UserRound className="size-4 shrink-0 text-muted-foreground" />
+        <span className="min-w-0">
+          <span className="block truncate text-sm">{item.user.name || item.user.email}</span>
+          {item.user.name && <span className="block truncate text-xs text-muted-foreground">{item.user.email}</span>}
+        </span>
+      </span>
+    ) },
+    { key: 'turnCount', header: t('operationsDashboardPage.turnCount'), width: 'number', render: item => item.turnCount },
+    { key: 'traceCount', header: t('operationsDashboardPage.traceCount'), width: 'number', render: item => item.traceCount },
+    { key: 'actions', header: t('operationsDashboardPage.actions'), width: 'actions', sticky: 'right', mobileActions: 'inline', render: item => (
+      <Button size="sm" variant="outline" onClick={() => openConversation(item)}>
+        <Eye className="size-4" />
+        {t('operationsDashboardPage.viewConversation')}
       </Button>
     ) },
   ], [i18n.language, t])
@@ -175,8 +221,50 @@ function AgentObservabilityView({ active, enabled }: { active: boolean, enabled:
         <Section title={t('operationsDashboardPage.tokenTrend')} description={t('operationsDashboardPage.tokenTrendDescription')} variant="bordered"><AgentObservabilityChart label={t('operationsDashboardPage.tokenTrend')} series={data.series.tokenRate ?? []} /></Section>
         <Section title={t('operationsDashboardPage.toolFailures')} description={t('operationsDashboardPage.toolFailuresDescription')} variant="bordered"><AgentObservabilityChart label={t('operationsDashboardPage.toolFailures')} series={data.tools ?? []} /></Section>
       </div>
-      <DataList items={data.traces ?? []} columns={traceColumns} rowKey={item => item.traceId} title={t('operationsDashboardPage.recentRuns')} emptyTitle={t('operationsDashboardPage.noRuns')} emptyDescription={t('operationsDashboardPage.noRunsDescription')} />
+      <Section title={t('operationsDashboardPage.traceWorkspace')} description={t('operationsDashboardPage.traceWorkspaceDescription')}>
+        <Tabs value={traceScope} onValueChange={value => setTraceScope(value as 'conversations' | 'turns')}>
+          <TabsList>
+            <TabsTrigger value="conversations">
+              <MessagesSquare className="size-4" />
+              {t('operationsDashboardPage.conversationScope')}
+            </TabsTrigger>
+            <TabsTrigger value="turns">
+              <Network className="size-4" />
+              {t('operationsDashboardPage.turnScope')}
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="conversations">
+            {conversations.isError
+              ? <ErrorState title={t('operationsDashboardPage.conversationsLoadFailed')} description={t('operationsDashboardPage.conversationsLoadFailedDescription')} />
+              : (
+                  <DataList
+                    columns={conversationColumns}
+                    emptyDescription={t('operationsDashboardPage.noConversationsDescription')}
+                    emptyMode={conversationSearch ? 'filtered' : 'actionable'}
+                    emptyTitle={t('operationsDashboardPage.noConversations')}
+                    items={conversations.data?.items ?? []}
+                    loading={conversations.isLoading}
+                    pagination={{
+                      page: conversations.data?.page ?? conversationPage,
+                      pageSize: conversations.data?.pageSize ?? conversationPageSize,
+                      total: conversations.data?.total ?? 0,
+                      totalPages: conversations.data?.totalPages ?? 0,
+                      pageInfoLabel: t('pagination.pageInfo', { page: conversations.data?.page ?? conversationPage, totalPages: conversations.data?.totalPages ?? 0, total: conversations.data?.total ?? 0 }),
+                      onPageChange: setConversationPage,
+                      onPageSizeChange: changeConversationPageSize,
+                    }}
+                    rowKey={item => item.id}
+                    search={{ value: conversationSearch, placeholder: t('operationsDashboardPage.searchConversations'), onChange: changeConversationSearch }}
+                  />
+                )}
+          </TabsContent>
+          <TabsContent value="turns">
+            <DataList items={data.traces ?? []} columns={traceColumns} rowKey={item => item.traceId} emptyTitle={t('operationsDashboardPage.noRuns')} emptyDescription={t('operationsDashboardPage.noRunsDescription')} />
+          </TabsContent>
+        </Tabs>
+      </Section>
       <DataList items={data.logs ?? []} columns={logColumns} rowKey={item => `${item.timestamp}:${item.labels.trace_id ?? item.line}`} title={t('operationsDashboardPage.failureLogs')} emptyTitle={t('operationsDashboardPage.noFailures')} emptyDescription={t('operationsDashboardPage.noFailuresDescription')} />
+      <AgentConversationDetailSheet conversation={selectedConversation} turnPage={conversationTurnPage} onOpenChange={open => !open && setSelectedConversation(null)} onTurnPageChange={setConversationTurnPage} onViewTrace={setSelectedTrace} />
       <AgentTraceDetailSheet trace={selectedTrace} onOpenChange={open => !open && setSelectedTrace(null)} />
     </div>
   )
@@ -184,6 +272,10 @@ function AgentObservabilityView({ active, enabled }: { active: boolean, enabled:
 
 function OperationsDashboardSkeleton() {
   return <ToolViewportSkeleton />
+}
+
+function formatDateTime(value: string, language: string) {
+  return new Intl.DateTimeFormat(language, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(value))
 }
 
 function OperationsDashboardViewport({ iframeUrl }: { iframeUrl: string }) {

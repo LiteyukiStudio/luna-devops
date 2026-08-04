@@ -6306,6 +6306,8 @@ paths:
       security: [{ SessionCookie: [] }]
       parameters:
         - { name: conversationId, in: path, required: true, schema: { type: string } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
         - { name: Idempotency-Key, in: header, required: true, schema: { type: string } }
       requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }
       responses: { "202": { description: Turn and initial run accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }, "401": { $ref: "#/components/responses/Unauthorized" }, "404": { $ref: "#/components/responses/NotFound" }, "409": { $ref: "#/components/responses/Conflict" } }
@@ -6559,6 +6561,39 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "502": { description: Trace data is unavailable, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+  /api/v1/ai/observability/conversations:
+    get:
+      operationId: listAgentObservabilityConversations
+      tags: [AI Assistant]
+      summary: List Agent conversations across all users for platform-admin observability
+      x-luna-cli: { classification: internal-observability, hidden: true, agentAllowed: false }
+      security: [{ SessionCookie: [] }]
+      parameters:
+        - { name: range, in: query, schema: { type: string, enum: [1h, 6h, 24h], default: 1h } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - { name: search, in: query, schema: { type: string } }
+        - { name: sortBy, in: query, schema: { type: string, enum: [updatedAt, title, user, turnCount], default: updatedAt } }
+        - { name: sortOrder, in: query, schema: { type: string, enum: [asc, desc], default: desc } }
+      responses:
+        "200": { description: Paginated cross-user conversation summaries, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObservabilityConversationPage" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { description: Agent observability is disabled, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+  /api/v1/ai/observability/conversations/{conversationId}:
+    get:
+      operationId: getAgentObservabilityConversation
+      tags: [AI Assistant]
+      summary: Get one cross-user Agent conversation with messages, turns, and linked traces
+      x-luna-cli: { classification: internal-observability, hidden: true, agentAllowed: false }
+      security: [{ SessionCookie: [] }]
+      parameters:
+        - { name: conversationId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Conversation observability detail, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObservabilityConversationDetail" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
 components:
   securitySchemes:
     SessionCookie:
@@ -6893,6 +6928,59 @@ components:
         spanCount: { type: integer }
         errorCount: { type: integer }
         spans: { type: array, items: { $ref: "#/components/schemas/AgentObservabilityTraceSpan" } }
+    AgentObservabilityConversationUser:
+      type: object
+      required: [id, name, email, avatarUrl]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        email: { type: string }
+        avatarUrl: { type: string }
+    AgentObservabilityConversation:
+      type: object
+      required: [id, title, user, turnCount, traceCount, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        user: { $ref: "#/components/schemas/AgentObservabilityConversationUser" }
+        turnCount: { type: integer, format: int64 }
+        traceCount: { type: integer, format: int64 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    AgentObservabilityConversationTurn:
+      type: object
+      required: [id, turnIndex, status, userMessage, assistantMessage, runId, traceId, durationMs, createdAt]
+      properties:
+        id: { type: string }
+        turnIndex: { type: integer }
+        status: { type: string }
+        userMessage: { type: string }
+        assistantMessage: { type: string }
+        runId: { type: string }
+        traceId: { type: string }
+        durationMs: { type: number, format: double }
+        createdAt: { type: string, format: date-time }
+    AgentObservabilityConversationDetail:
+      allOf:
+        - { $ref: "#/components/schemas/AgentObservabilityConversation" }
+        - type: object
+          required: [turns, turnPage, turnPageSize, totalTurnPages]
+          properties:
+            turns: { type: array, items: { $ref: "#/components/schemas/AgentObservabilityConversationTurn" } }
+            turnPage: { type: integer }
+            turnPageSize: { type: integer }
+            totalTurnPages: { type: integer }
+    AgentObservabilityConversationPage:
+      type: object
+      required: [items, page, pageSize, sortBy, sortOrder, total, totalPages]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/AgentObservabilityConversation" } }
+        page: { type: integer }
+        pageSize: { type: integer }
+        sortBy: { type: string }
+        sortOrder: { type: string, enum: [asc, desc] }
+        total: { type: integer, format: int64 }
+        totalPages: { type: integer }
     AgentObservabilityOverview:
       type: object
       required: [generatedAt, range, summary, series, tools, logs, traces, sourceStatus, observationCode]
