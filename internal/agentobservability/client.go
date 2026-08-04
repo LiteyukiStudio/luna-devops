@@ -75,6 +75,27 @@ type TraceSummary struct {
 	DurationMS      int64  `json:"durationMs"`
 }
 
+type TraceDetail struct {
+	TraceID    string      `json:"traceId"`
+	DurationMS float64     `json:"durationMs"`
+	SpanCount  int         `json:"spanCount"`
+	ErrorCount int         `json:"errorCount"`
+	Spans      []TraceSpan `json:"spans"`
+}
+
+type TraceSpan struct {
+	SpanID         string            `json:"spanId"`
+	ParentSpanID   string            `json:"parentSpanId"`
+	Name           string            `json:"name"`
+	ServiceName    string            `json:"serviceName"`
+	Kind           string            `json:"kind"`
+	Status         string            `json:"status"`
+	StartTimeNanos string            `json:"startTimeUnixNano"`
+	StartOffsetMS  float64           `json:"startOffsetMs"`
+	DurationMS     float64           `json:"durationMs"`
+	Attributes     map[string]string `json:"attributes"`
+}
+
 func New(source Source, config Config) (*Client, error) {
 	parsed, err := url.Parse(strings.TrimSpace(config.BaseURL))
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
@@ -208,6 +229,24 @@ func (c *Client) SearchTraces(ctx context.Context, query string, start, end time
 	return response.Traces, nil
 }
 
+func (c *Client) GetTrace(ctx context.Context, traceID string) (TraceDetail, error) {
+	traceID = strings.TrimSpace(traceID)
+	if len(traceID) != 32 {
+		return TraceDetail{}, fmt.Errorf("invalid trace ID")
+	}
+	if _, err := strconv.ParseUint(traceID[:16], 16, 64); err != nil {
+		return TraceDetail{}, fmt.Errorf("invalid trace ID")
+	}
+	if _, err := strconv.ParseUint(traceID[16:], 16, 64); err != nil {
+		return TraceDetail{}, fmt.Errorf("invalid trace ID")
+	}
+	var response tempoTraceResponse
+	if err := c.getJSON(ctx, "tempo.trace.get", "/api/v2/traces/"+traceID, nil, &response); err != nil {
+		return TraceDetail{}, err
+	}
+	return tempoTraceDetail(traceID, response), nil
+}
+
 func (c *Client) getJSON(ctx context.Context, operation, path string, params url.Values, target any) (err error) {
 	ctx, end := telemetry.StartOperationWithKind(ctx, "agent_observability", operation, trace.SpanKindClient,
 		attribute.String("observability.source", string(c.source)))
@@ -265,6 +304,120 @@ type lokiResponse struct {
 
 type tempoSearchResponse struct {
 	Traces []TraceSummary `json:"traces"`
+}
+
+type tempoTraceResponse struct {
+	Batches []struct {
+		Resource struct {
+			Attributes []tempoAttribute `json:"attributes"`
+		} `json:"resource"`
+		ScopeSpans []struct {
+			Spans []tempoSpan `json:"spans"`
+		} `json:"scopeSpans"`
+		InstrumentationLibrarySpans []struct {
+			Spans []tempoSpan `json:"spans"`
+		} `json:"instrumentationLibrarySpans"`
+	} `json:"batches"`
+}
+
+type tempoSpan struct {
+	SpanID            string           `json:"spanId"`
+	ParentSpanID      string           `json:"parentSpanId"`
+	Name              string           `json:"name"`
+	Kind              string           `json:"kind"`
+	StartTimeUnixNano string           `json:"startTimeUnixNano"`
+	EndTimeUnixNano   string           `json:"endTimeUnixNano"`
+	Attributes        []tempoAttribute `json:"attributes"`
+	Status            struct {
+		Code string `json:"code"`
+	} `json:"status"`
+}
+
+type tempoAttribute struct {
+	Key   string `json:"key"`
+	Value struct {
+		StringValue *string  `json:"stringValue"`
+		IntValue    *string  `json:"intValue"`
+		DoubleValue *float64 `json:"doubleValue"`
+		BoolValue   *bool    `json:"boolValue"`
+	} `json:"value"`
+}
+
+var traceAttributeAllowlist = map[string]struct{}{
+	"gen_ai.operation.name": {}, "gen_ai.provider.name": {}, "gen_ai.request.model": {},
+	"gen_ai.response.model": {}, "gen_ai.usage.input_tokens": {}, "gen_ai.usage.output_tokens": {},
+	"gen_ai.tool.name": {}, "http.request.method": {}, "http.response.status_code": {},
+	"db.system.name": {}, "error.type": {}, "luna.run.outcome": {},
+}
+
+func tempoTraceDetail(traceID string, response tempoTraceResponse) TraceDetail {
+	detail := TraceDetail{TraceID: traceID, Spans: []TraceSpan{}}
+	var earliest, latest int64
+	for _, batch := range response.Batches {
+		resourceAttributes := tempoAttributes(batch.Resource.Attributes, nil)
+		serviceName := resourceAttributes["service.name"]
+		groups := make([][]tempoSpan, 0, len(batch.ScopeSpans)+len(batch.InstrumentationLibrarySpans))
+		for _, group := range batch.ScopeSpans {
+			groups = append(groups, group.Spans)
+		}
+		for _, group := range batch.InstrumentationLibrarySpans {
+			groups = append(groups, group.Spans)
+		}
+		for _, spans := range groups {
+			for _, span := range spans {
+				start, _ := strconv.ParseInt(span.StartTimeUnixNano, 10, 64)
+				end, _ := strconv.ParseInt(span.EndTimeUnixNano, 10, 64)
+				if earliest == 0 || start < earliest {
+					earliest = start
+				}
+				if end > latest {
+					latest = end
+				}
+				status := strings.TrimPrefix(strings.ToLower(span.Status.Code), "status_code_")
+				if status == "" {
+					status = "unset"
+				}
+				if status == "error" {
+					detail.ErrorCount++
+				}
+				detail.Spans = append(detail.Spans, TraceSpan{
+					SpanID: span.SpanID, ParentSpanID: span.ParentSpanID, Name: span.Name,
+					ServiceName: serviceName, Kind: strings.TrimPrefix(strings.ToLower(span.Kind), "span_kind_"),
+					Status: status, StartTimeNanos: span.StartTimeUnixNano, DurationMS: float64(end-start) / 1e6,
+					Attributes: tempoAttributes(span.Attributes, traceAttributeAllowlist),
+				})
+			}
+		}
+	}
+	detail.SpanCount = len(detail.Spans)
+	detail.DurationMS = float64(latest-earliest) / 1e6
+	for index := range detail.Spans {
+		start, _ := strconv.ParseInt(detail.Spans[index].StartTimeNanos, 10, 64)
+		detail.Spans[index].StartOffsetMS = float64(start-earliest) / 1e6
+	}
+	return detail
+}
+
+func tempoAttributes(attributes []tempoAttribute, allowlist map[string]struct{}) map[string]string {
+	result := map[string]string{}
+	for _, attribute := range attributes {
+		if allowlist != nil {
+			if _, ok := allowlist[attribute.Key]; !ok {
+				continue
+			}
+		}
+		switch {
+		case attribute.Value.StringValue != nil:
+			result[attribute.Key] = *attribute.Value.StringValue
+		case attribute.Value.IntValue != nil:
+			result[attribute.Key] = *attribute.Value.IntValue
+		case attribute.Value.DoubleValue != nil:
+			result[attribute.Key] = strconv.FormatFloat(*attribute.Value.DoubleValue, 'f', -1, 64)
+		case attribute.Value.BoolValue != nil:
+			result[attribute.Key] = strconv.FormatBool(*attribute.Value.BoolValue)
+		}
+	}
+	return result
 }
 
 func prometheusSeries(items []struct {

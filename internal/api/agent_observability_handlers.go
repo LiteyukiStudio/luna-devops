@@ -208,6 +208,37 @@ func (h *Handlers) GetAgentObservabilityOverview(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, result)
 }
 
+func (h *Handlers) GetAgentObservabilityTrace(ctx *gin.Context) {
+	user, ok := h.currentUser(ctx)
+	if !ok {
+		return
+	}
+	if user.Role != authz.PlatformRoleAdmin {
+		writeErrorKey(ctx, http.StatusForbidden, user.Language, "config.admin.required")
+		return
+	}
+	values := h.configs.get(knownConfigKeys())
+	if !configBool(values[agentObservabilityEnabledKey]) {
+		writeErrorCode(ctx, http.StatusServiceUnavailable, "ai.observability.disabled", "Agent observability is disabled")
+		return
+	}
+	keys := observabilitySourceKeys[agentobservability.SourceTempo]
+	client, err := agentobservability.New(agentobservability.SourceTempo, agentobservability.Config{
+		BaseURL: values[keys.URL], Token: h.resolveAppConfigSecret(ctx, keys.Token), TenantID: values[keys.TenantID],
+	})
+	if err != nil {
+		writeErrorCode(ctx, http.StatusServiceUnavailable, "ai.observability.not_configured", "Tempo is not configured")
+		return
+	}
+	detail, err := client.GetTrace(ctx.Request.Context(), ctx.Param("traceId"))
+	if err != nil {
+		writeErrorCode(ctx, http.StatusBadGateway, "ai.observability.trace_unavailable", "Trace detail is unavailable")
+		return
+	}
+	ctx.Header("Cache-Control", "no-store")
+	ctx.JSON(http.StatusOK, detail)
+}
+
 func (h *Handlers) resolveAppConfigSecret(ctx *gin.Context, key string) string {
 	if key == "" {
 		return ""

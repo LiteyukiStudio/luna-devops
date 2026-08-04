@@ -43,6 +43,26 @@ const operationsDashboardPage = {
   traceId: 'Trace ID',
   run: 'Run',
   duration: '耗时',
+  status: '状态',
+  actions: '操作',
+  viewTrace: '查看调用链',
+  traceDetail: {
+    title: 'Agent 调用链',
+    succeeded: '运行成功',
+    withErrors: '包含错误',
+    loadFailed: '调用链加载失败',
+    loadFailedDescription: 'Tempo 暂时无法返回这条 Trace，请确认数据保留时间或稍后重试。',
+    spans: 'Span 数量',
+    modelCalls: '模型调用',
+    toolCalls: '工具调用',
+    errors: '错误节点',
+    operation: '操作与服务',
+    timeline: '时间轴',
+    spanId: 'Span ID',
+    parentSpan: '父 Span',
+    attributes: 'Agent 关键属性',
+    noAttributes: '这一步没有可展示的关键属性。',
+  },
 }
 
 export default operationsDashboardPage

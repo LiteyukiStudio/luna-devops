@@ -1,7 +1,7 @@
 import type { AgentObservabilityLog, AgentObservabilityTrace } from '@/api'
 import type { DataListColumn } from '@/components/common/data-list'
 import { useQuery } from '@tanstack/react-query'
-import { Activity, Bot, CircleGauge, Clock3, ExternalLink, RefreshCw, Settings, Timer, Wrench } from 'lucide-react'
+import { Activity, Bot, CircleGauge, Clock3, ExternalLink, Eye, RefreshCw, Settings, Timer, Wrench } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
@@ -21,6 +21,7 @@ import { Card } from '@/components/ui/card'
 import { TabsContent } from '@/components/ui/tabs'
 import { isPlatformAdmin } from '@/lib/roles'
 import { AgentObservabilityChart } from './agent-observability-chart'
+import { AgentTraceDetailSheet } from './agent-trace-detail-sheet'
 
 const OPERATIONS_DASHBOARD_URL_KEY = 'site.operationsDashboardUrl'
 
@@ -103,6 +104,7 @@ function ObservabilityConfigEmpty({ description, title }: { description: string,
 function AgentObservabilityView({ active, enabled }: { active: boolean, enabled: boolean }) {
   const { t, i18n } = useTranslation()
   const [range, setRange] = useState<'1h' | '6h' | '24h'>('1h')
+  const [selectedTrace, setSelectedTrace] = useState<AgentObservabilityTrace | null>(null)
   const overview = useQuery({
     queryKey: ['agent-observability', range],
     queryFn: () => api.getAgentObservabilityOverview(range),
@@ -120,6 +122,12 @@ function AgentObservabilityView({ active, enabled }: { active: boolean, enabled:
     { key: 'name', header: t('operationsDashboardPage.run'), width: 'primary', render: item => item.rootTraceName || 'agent.run.execute' },
     { key: 'duration', header: t('operationsDashboardPage.duration'), width: 'number', render: item => formatDuration(item.durationMs) },
     { key: 'trace', header: t('operationsDashboardPage.traceId'), width: 'secondary', render: item => <span className="font-mono text-xs" title={item.traceId}>{shortId(item.traceId)}</span> },
+    { key: 'actions', header: t('operationsDashboardPage.actions'), width: 'actions', sticky: 'right', mobileActions: 'inline', render: item => (
+      <Button size="sm" variant="outline" onClick={() => setSelectedTrace(item)}>
+        <Eye className="size-4" />
+        {t('operationsDashboardPage.viewTrace')}
+      </Button>
+    ) },
   ], [i18n.language, t])
 
   if (!enabled) {
@@ -169,6 +177,7 @@ function AgentObservabilityView({ active, enabled }: { active: boolean, enabled:
       </div>
       <DataList items={data.traces ?? []} columns={traceColumns} rowKey={item => item.traceId} title={t('operationsDashboardPage.recentRuns')} emptyTitle={t('operationsDashboardPage.noRuns')} emptyDescription={t('operationsDashboardPage.noRunsDescription')} />
       <DataList items={data.logs ?? []} columns={logColumns} rowKey={item => `${item.timestamp}:${item.labels.trace_id ?? item.line}`} title={t('operationsDashboardPage.failureLogs')} emptyTitle={t('operationsDashboardPage.noFailures')} emptyDescription={t('operationsDashboardPage.noFailuresDescription')} />
+      <AgentTraceDetailSheet trace={selectedTrace} onOpenChange={open => !open && setSelectedTrace(null)} />
     </div>
   )
 }

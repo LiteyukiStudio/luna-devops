@@ -6537,6 +6537,28 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "503": { description: Agent observability is disabled or not configured, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+
+  /api/v1/ai/observability/traces/{traceId}:
+    get:
+      operationId: getAgentObservabilityTrace
+      tags: [AI Assistant]
+      summary: Get a normalized Agent trace waterfall from Tempo
+      x-luna-cli:
+        classification: internal-observability
+        hidden: true
+        agentAllowed: false
+        exclusionReason: The operations UI reads this diagnostic endpoint; Agent self-inspection would create recursive telemetry and is not a business command.
+      security: [{ SessionCookie: [] }]
+      parameters:
+        - in: path
+          name: traceId
+          required: true
+          schema: { type: string, pattern: "^[0-9a-fA-F]{32}$" }
+      responses:
+        "200": { description: Non-cacheable normalized trace detail, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObservabilityTraceDetail" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "502": { description: Trace data is unavailable, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
 components:
   securitySchemes:
     SessionCookie:
@@ -6848,6 +6870,29 @@ components:
         rootTraceName: { type: string }
         startTimeUnixNano: { type: string }
         durationMs: { type: integer, format: int64 }
+    AgentObservabilityTraceSpan:
+      type: object
+      required: [spanId, parentSpanId, name, serviceName, kind, status, startTimeUnixNano, startOffsetMs, durationMs, attributes]
+      properties:
+        spanId: { type: string }
+        parentSpanId: { type: string }
+        name: { type: string }
+        serviceName: { type: string }
+        kind: { type: string }
+        status: { type: string, enum: [unset, ok, error] }
+        startTimeUnixNano: { type: string, description: Unix nanoseconds encoded as a string. }
+        startOffsetMs: { type: number, format: double }
+        durationMs: { type: number, format: double }
+        attributes: { type: object, additionalProperties: { type: string } }
+    AgentObservabilityTraceDetail:
+      type: object
+      required: [traceId, durationMs, spanCount, errorCount, spans]
+      properties:
+        traceId: { type: string }
+        durationMs: { type: number, format: double }
+        spanCount: { type: integer }
+        errorCount: { type: integer }
+        spans: { type: array, items: { $ref: "#/components/schemas/AgentObservabilityTraceSpan" } }
     AgentObservabilityOverview:
       type: object
       required: [generatedAt, range, summary, series, tools, logs, traces, sourceStatus, observationCode]

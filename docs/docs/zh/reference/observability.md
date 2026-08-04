@@ -45,7 +45,9 @@ AI_OBSERVABILITY_CAPTURE_CONTENT=true
 
 每个数据源旁都有独立的“测试连接”按钮。测试使用当前表单中的地址、Tenant ID 和新输入的令牌；令牌留空时复用已保存值。结果会区分“连接正常且有数据”和“连接正常但最近一小时无数据”。测试失败不会阻止保存，便于先保存尚未开放网络的部署配置；启用后的 Agent 观测页会如实将不可达数据源标记为“不可用”。
 
-配置完成后进入“运营面板 → Agent 观测”，可以查看 Run 成功率、活跃 Run、首 Token P95、模型与依赖错误率、Token 吞吐、工具失败趋势、最近 Agent Run 和 Trace 关联失败日志。浏览器只调用 Luna API 提供的固定查询，不能提交任意 PromQL、LogQL 或 TraceQL，也不会收到数据源地址和凭据。
+配置完成后进入“运营面板 → Agent 观测”，可以查看 Run 成功率、活跃 Run、首 Token P95、模型与依赖错误率、Token 吞吐、工具失败趋势、最近 Agent Run 和 Trace 关联失败日志。打开最近 Run 的“查看调用链”，可以使用内嵌瀑布视图检查 Span 父子关系、并行阶段、耗时占比、错误节点，以及模型、工具、HTTP 和数据库调用；侧栏只展示经过白名单筛选的模型、Token、工具和错误属性，不展示 Prompt 或工具敏感参数。
+
+浏览器只调用 Luna API 提供的固定查询，不能提交任意 PromQL、LogQL 或 TraceQL，也不会收到数据源地址和凭据。Trace 详情由 Luna API 从 Tempo 读取并归一化，Tempo 数据保留期结束后，对应详情将无法继续打开。
 
 Prometheus 暂无 Agent 指标或查询返回非有限计算结果时，对应指标会显示为零或空趋势，不会阻止 Loki 日志与 Tempo 链路继续展示。
 

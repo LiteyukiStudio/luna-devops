@@ -32,6 +32,25 @@ export interface AgentObservabilityTrace {
   startTimeUnixNano: string
   durationMs: number
 }
+export interface AgentObservabilityTraceSpan {
+  spanId: string
+  parentSpanId: string
+  name: string
+  serviceName: string
+  kind: string
+  status: string
+  startTimeUnixNano: string
+  startOffsetMs: number
+  durationMs: number
+  attributes: Record<string, string>
+}
+export interface AgentObservabilityTraceDetail {
+  traceId: string
+  durationMs: number
+  spanCount: number
+  errorCount: number
+  spans: AgentObservabilityTraceSpan[]
+}
 export interface AgentObservabilityOverview {
   generatedAt: string
   range: '1h' | '6h' | '24h'

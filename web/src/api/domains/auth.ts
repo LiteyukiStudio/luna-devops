@@ -1,4 +1,4 @@
-import type { AgentObservabilityOverview, AgentObservabilitySource, AgentObservabilityTestResult, AuthAdmissionPolicy, AuthProvider, AuthRegistrationSettings, AuthRegistrationStatus, BootstrapStatus, ConfigDefinition, CurrentUser, DataRetentionCatalogResponse, DataRetentionPayload, DataRetentionResultResponse, ExternalIdentity, MFAEnrollment, MFAEnrollmentRequest, MFARecoveryCodes, MFAStatus, MFAVerifyPayload, MFAVerifyResponse, OIDCCallbackConfig, PaginatedResponse, PaginationParams, User } from '../types'
+import type { AgentObservabilityOverview, AgentObservabilitySource, AgentObservabilityTestResult, AgentObservabilityTraceDetail, AuthAdmissionPolicy, AuthProvider, AuthRegistrationSettings, AuthRegistrationStatus, BootstrapStatus, ConfigDefinition, CurrentUser, DataRetentionCatalogResponse, DataRetentionPayload, DataRetentionResultResponse, ExternalIdentity, MFAEnrollment, MFAEnrollmentRequest, MFARecoveryCodes, MFAStatus, MFAVerifyPayload, MFAVerifyResponse, OIDCCallbackConfig, PaginatedResponse, PaginationParams, User } from '../types'
 import type { PlatformRoleValue } from '@/lib/roles'
 import { paginationQuery, request } from '../core'
 
@@ -63,6 +63,8 @@ export const authApi = {
     request<AgentObservabilityTestResult>('/configs/ai/observability/test', { method: 'POST', body: JSON.stringify(payload) }),
   getAgentObservabilityOverview: (range: '1h' | '6h' | '24h') =>
     request<AgentObservabilityOverview>(`/ai/observability/overview?range=${range}`),
+  getAgentObservabilityTrace: (traceId: string) =>
+    request<AgentObservabilityTraceDetail>(`/ai/observability/traces/${encodeURIComponent(traceId)}`),
   getDataRetentionCatalog: () => request<DataRetentionCatalogResponse>('/data-retention/catalog'),
   previewDataRetention: (payload: DataRetentionPayload) =>
     request<DataRetentionResultResponse>('/data-retention/preview', { method: 'POST', body: JSON.stringify(payload) }),

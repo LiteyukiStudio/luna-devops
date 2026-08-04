@@ -43,6 +43,26 @@ const operationsDashboardPage = {
   traceId: 'Trace ID',
   run: 'Run',
   duration: 'Duration',
+  status: 'Status',
+  actions: 'Actions',
+  viewTrace: 'View trace',
+  traceDetail: {
+    title: 'Agent trace',
+    succeeded: 'Succeeded',
+    withErrors: 'Contains errors',
+    loadFailed: 'Trace failed to load',
+    loadFailedDescription: 'Tempo could not return this trace. Check its retention window or try again later.',
+    spans: 'Spans',
+    modelCalls: 'Model calls',
+    toolCalls: 'Tool calls',
+    errors: 'Error spans',
+    operation: 'Operation and service',
+    timeline: 'Timeline',
+    spanId: 'Span ID',
+    parentSpan: 'Parent span',
+    attributes: 'Agent attributes',
+    noAttributes: 'This span has no key attributes to display.',
+  },
 }
 
 export default operationsDashboardPage

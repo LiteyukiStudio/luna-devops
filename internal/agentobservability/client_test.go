@@ -19,6 +19,24 @@ func TestPrometheusPointRejectsNonFiniteValues(t *testing.T) {
 	}
 }
 
+func TestTempoTraceDetailNormalizesAgentSpans(t *testing.T) {
+	const payload = `{"batches":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"luna-agent"}}]},"scopeSpans":[{"spans":[{"spanId":"root","name":"agent.run.execute","kind":"SPAN_KIND_INTERNAL","startTimeUnixNano":"1000000000","endTimeUnixNano":"2000000000","status":{"code":"STATUS_CODE_OK"}},{"spanId":"model","parentSpanId":"root","name":"agent.model.stream","kind":"SPAN_KIND_INTERNAL","startTimeUnixNano":"1100000000","endTimeUnixNano":"1900000000","attributes":[{"key":"gen_ai.usage.input_tokens","value":{"intValue":"42"}},{"key":"gen_ai.input.messages","value":{"stringValue":"must not escape"}}],"status":{"code":"STATUS_CODE_ERROR"}}]}]}]}`
+	var response tempoTraceResponse
+	if err := json.Unmarshal([]byte(payload), &response); err != nil {
+		t.Fatalf("decode fixture: %v", err)
+	}
+	detail := tempoTraceDetail("0123456789abcdef0123456789abcdef", response)
+	if detail.SpanCount != 2 || detail.ErrorCount != 1 || detail.DurationMS != 1000 {
+		t.Fatalf("unexpected trace summary: %+v", detail)
+	}
+	if detail.Spans[1].StartOffsetMS != 100 || detail.Spans[1].Attributes["gen_ai.usage.input_tokens"] != "42" {
+		t.Fatalf("model span was not normalized: %+v", detail.Spans[1])
+	}
+	if _, exists := detail.Spans[1].Attributes["gen_ai.input.messages"]; exists {
+		t.Fatal("sensitive model content escaped the trace attribute allowlist")
+	}
+}
+
 func TestPrometheusClientQueriesAndPropagatesAuthentication(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.Header.Get("Authorization") != "Bearer secret" || request.Header.Get("X-Scope-OrgID") != "tenant-a" {
