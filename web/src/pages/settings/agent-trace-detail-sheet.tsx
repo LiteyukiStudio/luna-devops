@@ -1,6 +1,6 @@
 import type { AgentObservabilityTrace, AgentObservabilityTraceSpan } from '@/api'
 import { useQuery } from '@tanstack/react-query'
-import { Bot, Braces, Clock3, Database, Network, TriangleAlert, Wrench } from 'lucide-react'
+import { Bot, Braces, ChevronDown, ChevronRight, Clock3, Database, Network, TriangleAlert, Wrench } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/api'
@@ -23,10 +23,26 @@ export function AgentTraceDetailSheet({ trace, onOpenChange }: {
     enabled: Boolean(trace),
   })
   const [selectedSpanId, setSelectedSpanId] = useState<string | null>(null)
-  const spans = useMemo(() => buildSpanRows(detail.data?.spans ?? []), [detail.data?.spans])
+  const [collapsedSpanIdsByTrace, setCollapsedSpanIdsByTrace] = useState<Record<string, string[]>>({})
+  const traceId = trace?.traceId ?? ''
+  const collapsedSpanIds = useMemo(() => new Set(collapsedSpanIdsByTrace[traceId] ?? []), [collapsedSpanIdsByTrace, traceId])
+  const collapsibleSpanIds = useMemo(() => getCollapsibleSpanIds(detail.data?.spans ?? []), [detail.data?.spans])
+  const spans = useMemo(() => buildSpanRows(detail.data?.spans ?? [], collapsedSpanIds), [collapsedSpanIds, detail.data?.spans])
   const selected = detail.data?.spans.find(span => span.spanId === selectedSpanId) ?? detail.data?.spans[0]
   const modelSpans = detail.data?.spans.filter(span => isModelSpan(span)).length ?? 0
   const toolSpans = detail.data?.spans.filter(span => isToolSpan(span)).length ?? 0
+  const updateCollapsedSpanIds = (values: Set<string>) => {
+    if (traceId)
+      setCollapsedSpanIdsByTrace(current => ({ ...current, [traceId]: [...values] }))
+  }
+  const toggleSpan = (spanId: string) => {
+    const next = new Set(collapsedSpanIds)
+    if (next.has(spanId))
+      next.delete(spanId)
+    else
+      next.add(spanId)
+    updateCollapsedSpanIds(next)
+  }
 
   return (
     <Sheet open={Boolean(trace)} onOpenChange={onOpenChange}>
@@ -52,31 +68,53 @@ export function AgentTraceDetailSheet({ trace, onOpenChange }: {
               </MetricGroup>
               <div className="grid min-w-[56rem] gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
                 <div className="overflow-hidden rounded-container bg-surface-raised">
+                  <div className="flex justify-end gap-2 border-b border-border px-3 py-2">
+                    <Button size="sm" variant="ghost" disabled={collapsedSpanIds.size === 0} onClick={() => updateCollapsedSpanIds(new Set())}>
+                      {t('operationsDashboardPage.traceDetail.expandAll')}
+                    </Button>
+                    <Button size="sm" variant="ghost" disabled={collapsibleSpanIds.size === 0 || collapsedSpanIds.size === collapsibleSpanIds.size} onClick={() => updateCollapsedSpanIds(collapsibleSpanIds)}>
+                      {t('operationsDashboardPage.traceDetail.collapseAll')}
+                    </Button>
+                  </div>
                   <div className="grid grid-cols-[minmax(18rem,42%)_1fr_5rem] gap-3 border-b border-border px-4 py-3 text-xs font-medium text-muted-foreground">
                     <span>{t('operationsDashboardPage.traceDetail.operation')}</span>
                     <span>{t('operationsDashboardPage.traceDetail.timeline')}</span>
                     <span className="text-right">{t('operationsDashboardPage.duration')}</span>
                   </div>
                   <div className="divide-y divide-border/70">
-                    {spans.map(({ span, depth }) => (
-                      <Button
+                    {spans.map(({ span, depth, hasChildren }) => (
+                      <div
                         key={span.spanId}
-                        className={cn('grid h-auto w-full grid-cols-[minmax(18rem,42%)_1fr_5rem] gap-3 rounded-none px-4 py-2 text-left font-normal', selected?.spanId === span.spanId && 'bg-primary-subtle')}
-                        variant="ghost"
-                        onClick={() => setSelectedSpanId(span.spanId)}
+                        className={cn('grid min-h-12 w-full grid-cols-[minmax(18rem,42%)_1fr_5rem] gap-3 px-4 py-2 text-left', selected?.spanId === span.spanId && 'bg-primary-subtle')}
                       >
-                        <span className="flex min-w-0 items-center gap-2" style={{ paddingLeft: `${Math.min(depth, 8) * 14}px` }}>
-                          <SpanIcon span={span} />
-                          <span className="min-w-0">
-                            <span className="block truncate text-sm font-medium">{span.name}</span>
-                            <span className="block truncate text-xs text-muted-foreground">{span.serviceName}</span>
-                          </span>
+                        <span className="flex min-w-0 items-center gap-1" style={{ paddingLeft: `${Math.min(depth, 8) * 14}px` }}>
+                          {hasChildren
+                            ? (
+                                <Button
+                                  className="size-7 shrink-0"
+                                  size="icon"
+                                  variant="ghost"
+                                  aria-expanded={!collapsedSpanIds.has(span.spanId)}
+                                  aria-label={t(collapsedSpanIds.has(span.spanId) ? 'operationsDashboardPage.traceDetail.expandSpan' : 'operationsDashboardPage.traceDetail.collapseSpan', { name: span.name })}
+                                  onClick={() => toggleSpan(span.spanId)}
+                                >
+                                  {collapsedSpanIds.has(span.spanId) ? <ChevronRight className="size-4" /> : <ChevronDown className="size-4" />}
+                                </Button>
+                              )
+                            : <span className="size-7 shrink-0" />}
+                          <button className="flex min-w-0 items-center gap-2 rounded-control text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" type="button" onClick={() => setSelectedSpanId(span.spanId)}>
+                            <SpanIcon span={span} />
+                            <span className="min-w-0">
+                              <span className="block truncate text-sm font-medium">{span.name}</span>
+                              <span className="block truncate text-xs text-muted-foreground">{span.serviceName}</span>
+                            </span>
+                          </button>
                         </span>
                         <span className="relative h-6 overflow-hidden rounded-control bg-muted">
                           <span className={cn('absolute top-1 h-4 min-w-1 rounded-sm', spanBarClass(span))} style={barStyle(span, detail.data.durationMs)} />
                         </span>
                         <span className="self-center text-right font-mono text-xs">{formatDuration(span.durationMs)}</span>
-                      </Button>
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -139,7 +177,12 @@ function DetailValue({ label, value, mono, danger }: { label: string, value: str
   )
 }
 
-function buildSpanRows(spans: AgentObservabilityTraceSpan[]) {
+function getCollapsibleSpanIds(spans: AgentObservabilityTraceSpan[]) {
+  const ids = new Set(spans.map(span => span.spanId))
+  return new Set(spans.filter(span => ids.has(span.parentSpanId)).map(span => span.parentSpanId))
+}
+
+function buildSpanRows(spans: AgentObservabilityTraceSpan[], collapsedSpanIds: Set<string>) {
   const children = new Map<string, AgentObservabilityTraceSpan[]>()
   const ids = new Set(spans.map(span => span.spanId))
   for (const span of spans) {
@@ -147,10 +190,13 @@ function buildSpanRows(spans: AgentObservabilityTraceSpan[]) {
     children.set(parent, [...(children.get(parent) ?? []), span])
   }
   for (const values of children.values()) values.sort((a, b) => a.startOffsetMs - b.startOffsetMs)
-  const result: Array<{ span: AgentObservabilityTraceSpan, depth: number }> = []
+  const result: Array<{ span: AgentObservabilityTraceSpan, depth: number, hasChildren: boolean }> = []
   const visit = (span: AgentObservabilityTraceSpan, depth: number) => {
-    result.push({ span, depth })
-    for (const child of children.get(span.spanId) ?? []) visit(child, depth + 1)
+    const nested = children.get(span.spanId) ?? []
+    result.push({ span, depth, hasChildren: nested.length > 0 })
+    if (collapsedSpanIds.has(span.spanId))
+      return
+    for (const child of nested) visit(child, depth + 1)
   }
   for (const root of children.get('') ?? []) visit(root, 0)
   return result
