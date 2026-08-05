@@ -22,6 +22,11 @@ const referenceDefinitions = [
     /\b(deploy|deployment|install|launch|ship|host|source|image|template|marketplace)\b|部署|上线|安装|交付|托管|运行一个|从源码|代码部署|已有镜像|镜像站|应用市场/i,
   ),
   reference(
+    "first-deployment",
+    "../../skills/luna-devops-interaction/references/first-deployment.md",
+    /\b(first time|never deployed|new to deploy|newbie|beginner|no dockerfile|how to deploy|how do i deploy|get my project online)\b|第一次部署|首次部署|没部署过|不会部署|不懂部署|新手部署|小白|没有 Dockerfile|不会 Docker|不懂 Docker|什么是项目空间|什么是镜像|什么是集群|让别人访问|让别人能看到|部署我的项目|部署我的网站|上线我的项目/i,
+  ),
+  reference(
     "projects-applications",
     "../../skills/luna-devops-interaction/references/projects-applications.md",
     /\b(project|projects|workspace|application|applications|app|apps|template|marketplace|member|members)\b|listAppTemplates|installAppTemplate|项目|项目空间|应用|模板|市场|成员|工作区/i,

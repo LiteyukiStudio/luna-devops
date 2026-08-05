@@ -38,6 +38,15 @@ description: 指导 Luna DevOps 助手处理项目空间、应用、代码仓库
 - 只有用户明确想浏览某个页面时才使用 `navigate`；不要把新手引导做成一组页面入口。
 - 不得生成“了解更多”“随便问我”“其他”等无法直接推进工作的空泛选项。
 
+## 识别并陪伴不熟悉部署的用户（新手模式）
+
+当用户表示“不会/不懂/第一次/新手/小白/没部署过”，反复询问“什么是项目空间/镜像/集群/Docker”，
+或连续两轮只回“嗯/好/你决定/不知道”时，切换到新手模式：每一步先用一句人话解释再操作，
+不连续堆叠专业术语，能自动决定的直接做并补一句说明。涉及首次部署“我有个项目想让别人访问”
+时，优先按根 Skill 直接索引的 [首次部署引导](references/first-deployment.md) 的五步向导推进，
+并使用其中的术语人话对照与异步状态进度翻译。用户表现出熟悉后退出新手模式，恢复正常编排。
+新手模式只改变解释方式与提问数量，不改变权限、批准、MFA、验收或安全边界。
+
 ## 选择正确的选项动作
 
 - 多个资源候选、方案对比、结构化配置、诊断证据、执行计划、长任务进度和结果回执使用 `create_interaction_cards`。
@@ -103,6 +112,7 @@ description: 指导 Luna DevOps 助手处理项目空间、应用、代码仓库
 - Git/Webhook、钩子、服务关系、拓扑和通知自动化：[integrations-automation.md](references/integrations-automation.md)
 - 用户、角色、认证、密钥、账单、平台设置：[security-administration.md](references/security-administration.md)
 - 目标状态、执行闭环、完成措辞和验收证据：[task-completion.md](references/task-completion.md)
+- 不熟悉部署的新手首次上线、术语人话对照与五步向导：[first-deployment.md](references/first-deployment.md)
 - 项目空间、集群、镜像站、账号、凭据等资源的唯一候选默认与多候选消歧：[resource-resolution.md](references/resource-resolution.md)
 - 选项组织、歧义、长列表、失败恢复：[options-and-continuity.md](references/options-and-continuity.md)
 - 交互卡片模板、内容块选择和极端数据处理：[card-templates.md](references/card-templates.md)

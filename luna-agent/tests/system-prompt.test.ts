@@ -105,6 +105,21 @@ describe("versioned system prompt", () => {
     expect(prompt).toContain("如果用户已经提出明确任务，应直接完成该任务")
   })
 
+  it("loads first-deployment coaching for inexperienced users deploying their project", () => {
+    const context = {
+      userInput: "我第一次部署，不太懂 Docker，想让别人能访问我的项目",
+      pageContext: { pathname: "/dashboard", routeName: "dashboard" },
+    }
+    const names = loadedSkillReferences(context).map(item => item.name)
+    const prompt = systemPromptFor("system-v4", context)
+
+    expect(names).toContain("first-deployment")
+    expect(prompt).toContain("首次部署五步向导")
+    expect(prompt).toContain("术语人话对照")
+    expect(prompt).toContain("项目空间")
+    expect(prompt).toContain("你的项目没有 Docker 配置")
+  })
+
   it("requires an interaction form when an operation needs structured user input", () => {
     const context = {
       userInput: "帮我创建一个项目空间",
