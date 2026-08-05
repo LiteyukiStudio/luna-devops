@@ -391,7 +391,7 @@ func (item *session) waitForMarker(ctx context.Context, begin, end string) ([]by
 		notify := item.notify
 		closed, closeErr := item.closed, item.err
 		item.mu.Unlock()
-		if strings.Contains(string(output), end) {
+		if hasCompleteCommandMarkers(output, begin, end) {
 			return output, truncated, nil
 		}
 		if closed {
@@ -406,6 +406,16 @@ func (item *session) waitForMarker(ctx context.Context, begin, end string) ([]by
 		case <-notify:
 		}
 	}
+}
+
+func hasCompleteCommandMarkers(output []byte, begin, end string) bool {
+	value := string(output)
+	beginIndex := strings.Index(value, begin)
+	endIndex := strings.LastIndex(value, end)
+	if beginIndex < 0 || endIndex < beginIndex {
+		return false
+	}
+	return strings.Contains(value[endIndex+len(end):], "\x1f")
 }
 
 type sessionWriter struct{ session *session }

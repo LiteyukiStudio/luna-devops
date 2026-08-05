@@ -111,6 +111,20 @@ func TestBrokerTimeoutInvalidatesUnknownShellState(t *testing.T) {
 	}
 }
 
+func TestCommandMarkersWaitForCompleteStatusTerminator(t *testing.T) {
+	begin := "\x1eLUNA_BEGIN_token\x1f\n"
+	end := "\x1eLUNA_END_token:"
+	if hasCompleteCommandMarkers([]byte(begin+"output\n"+end), begin, end) {
+		t.Fatal("incomplete end marker must not finish the command")
+	}
+	if hasCompleteCommandMarkers([]byte(begin+"output\n"+end+"0"), begin, end) {
+		t.Fatal("status without terminator must not finish the command")
+	}
+	if !hasCompleteCommandMarkers([]byte(begin+"output\n"+end+"0\x1f\n"), begin, end) {
+		t.Fatal("complete status marker must finish the command")
+	}
+}
+
 func fakeShell(ctx context.Context, input io.Reader, output io.Writer) error {
 	command := exec.CommandContext(ctx, "/bin/sh")
 	command.Stdin = input
