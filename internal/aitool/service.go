@@ -171,7 +171,7 @@ func (s *Service) Execute(ctx context.Context, input Request) (Result, error) {
 				"defaultReplicas": template.DefaultReplicas, "defaultCPU": template.DefaultCPU,
 				"defaultMemory": template.DefaultMemory, "dataRetentionEnabled": template.DataRetentionEnabled,
 				"dataCapacity": template.DataCapacity,
-				"valueCount": len(template.Values), "requiredValueCount": requiredCount,
+				"valueCount":   len(template.Values), "requiredValueCount": requiredCount,
 			})
 			if len(items) == limit {
 				break
