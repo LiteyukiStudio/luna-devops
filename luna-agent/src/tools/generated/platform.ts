@@ -29,6 +29,16 @@ const appTemplateListInputSchema = {
   additionalProperties: false,
 } as const
 
+const appTemplateDetailInputSchema = {
+  type: "object",
+  properties: {
+    id: { type: "string", maxLength: 120 },
+    slug: { type: "string", maxLength: 120 },
+  },
+  required: [],
+  additionalProperties: false,
+} as const
+
 const webSearchInputSchema = {
   type: "object",
   properties: {
@@ -53,6 +63,7 @@ export const platformOperations = [
   operation("getDashboard", "dashboard", "dashboard:read", platformListInputSchema),
   operation("listProjects", "project", "project:read", platformListInputSchema),
   operation("listAppTemplates", "application", "application:read", appTemplateListInputSchema),
+  operation("getAppTemplate", "application", "application:read", appTemplateDetailInputSchema),
   operation("webSearch", "web", "web:read", webSearchInputSchema),
   operation("fetchWebPage", "web", "web:read", fetchWebPageInputSchema),
   {
@@ -97,7 +108,7 @@ function operation(
   operationId: string,
   category: string,
   scope: string,
-  inputSchema: typeof platformListInputSchema | typeof projectListInputSchema | typeof appTemplateListInputSchema | typeof webSearchInputSchema | typeof fetchWebPageInputSchema,
+  inputSchema: typeof platformListInputSchema | typeof projectListInputSchema | typeof appTemplateListInputSchema | typeof appTemplateDetailInputSchema | typeof webSearchInputSchema | typeof fetchWebPageInputSchema,
 ) {
   return {
     operationId,

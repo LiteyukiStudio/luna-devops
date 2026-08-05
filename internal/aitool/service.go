@@ -156,16 +156,12 @@ func (s *Service) Execute(ctx context.Context, input Request) (Result, error) {
 			if query != "" && !strings.Contains(searchable, query) {
 				continue
 			}
-			values := make([]map[string]any, 0, len(template.Values))
+			// 列表态只返回摘要，完整参数定义由 getAppTemplate 按需返回，避免批量结果过大
+			requiredCount := 0
 			for _, definition := range template.Values {
-				value := map[string]any{
-					"key": definition.Key, "label": definition.Label, "description": definition.Description,
-					"required": definition.Required, "secret": definition.Secret, "autoGenerate": definition.AutoGenerate,
+				if definition.Required {
+					requiredCount++
 				}
-				if !definition.Secret {
-					value["default"] = definition.Default
-				}
-				values = append(values, value)
 			}
 			items = append(items, map[string]any{
 				"id": template.ID, "slug": template.Slug, "name": template.Name,
@@ -174,13 +170,16 @@ func (s *Service) Execute(ctx context.Context, input Request) (Result, error) {
 				"officialRepository": template.OfficialRepository, "version": template.Version,
 				"defaultReplicas": template.DefaultReplicas, "defaultCPU": template.DefaultCPU,
 				"defaultMemory": template.DefaultMemory, "dataRetentionEnabled": template.DataRetentionEnabled,
-				"dataCapacity": template.DataCapacity, "values": values,
+				"dataCapacity": template.DataCapacity,
+				"valueCount": len(template.Values), "requiredValueCount": requiredCount,
 			})
 			if len(items) == limit {
 				break
 			}
 		}
 		return Result{Value: map[string]any{"items": items}, Truncated: len(items) == limit}, nil
+	case "getAppTemplate":
+		return s.getAppTemplate(input)
 	case "webSearch":
 		return s.webSearch(ctx, input.UserID, input.Arguments)
 	case "fetchWebPage":
@@ -303,6 +302,45 @@ func (s *Service) platformAdmin(ctx context.Context, userID string) bool {
 	return s.db.WithContext(ctx).Model(&model.User{}).
 		Where("id = ? and role = ? and disabled = ?", userID, authz.PlatformRoleAdmin, false).
 		Count(&count).Error == nil && count > 0
+}
+
+// getAppTemplate 返回单个模板的完整参数定义，供用户选定模板后按需加载，
+// 避免 listAppTemplates 在列表态携带全部 values 造成上下文过大。
+func (s *Service) getAppTemplate(input Request) (Result, error) {
+	id := strings.TrimSpace(stringArgument(input.Arguments, "id"))
+	if id == "" {
+		id = strings.TrimSpace(stringArgument(input.Arguments, "slug"))
+	}
+	if id == "" {
+		return Result{}, ErrInvalidInput
+	}
+	template, found, err := appstore.Find(id)
+	if err != nil {
+		return Result{}, fmt.Errorf("%w: %v", ErrStorage, err)
+	}
+	if !found || template.Kind == "system" {
+		return Result{}, ErrNotFound
+	}
+	values := make([]map[string]any, 0, len(template.Values))
+	for _, definition := range template.Values {
+		value := map[string]any{
+			"key": definition.Key, "label": definition.Label, "description": definition.Description,
+			"required": definition.Required, "secret": definition.Secret, "autoGenerate": definition.AutoGenerate,
+		}
+		if !definition.Secret {
+			value["default"] = definition.Default
+		}
+		values = append(values, value)
+	}
+	return Result{Value: map[string]any{
+		"id": template.ID, "slug": template.Slug, "name": template.Name,
+		"description": template.Description, "category": template.Category,
+		"icon": template.Icon, "officialWebsite": template.OfficialWebsite,
+		"officialRepository": template.OfficialRepository, "version": template.Version,
+		"defaultReplicas": template.DefaultReplicas, "defaultCPU": template.DefaultCPU,
+		"defaultMemory": template.DefaultMemory, "dataRetentionEnabled": template.DataRetentionEnabled,
+		"dataCapacity": template.DataCapacity, "values": values,
+	}}, nil
 }
 
 func stringArgument(arguments map[string]any, key string) string {

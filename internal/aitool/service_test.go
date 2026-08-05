@@ -12,7 +12,7 @@ import (
 	"gorm.io/gorm/schema"
 )
 
-func TestListAppTemplatesSupportsSearchAndDoesNotExposeSecretDefaults(t *testing.T) {
+func TestListAppTemplatesReturnsSummariesWithoutValues(t *testing.T) {
 	result, err := NewService(nil).Execute(context.Background(), Request{
 		OperationID: "listAppTemplates",
 		Arguments:   map[string]any{"query": "postgres"},
@@ -29,14 +29,61 @@ func TestListAppTemplatesSupportsSearchAndDoesNotExposeSecretDefaults(t *testing
 		t.Fatalf("items = %#v", value["items"])
 	}
 	for _, item := range items {
-		values, _ := item["values"].([]map[string]any)
-		for _, definition := range values {
-			if secret, _ := definition["secret"].(bool); secret {
-				if _, exists := definition["default"]; exists {
-					t.Fatal("secret template value must not expose its default")
-				}
+		if _, exists := item["values"]; exists {
+			t.Fatal("list summary must not embed full parameter values")
+		}
+		if _, exists := item["valueCount"]; !exists {
+			t.Fatal("list summary should report parameter count")
+		}
+		if item["id"].(string) == "" || item["name"].(string) == "" {
+			t.Fatal("list summary must keep identity fields")
+		}
+	}
+}
+
+func TestGetAppTemplateReturnsFullValuesAndHidesSecretDefaults(t *testing.T) {
+	service := NewService(nil)
+	list, err := service.Execute(context.Background(), Request{
+		OperationID: "listAppTemplates",
+		Arguments:   map[string]any{"query": "postgres"},
+	})
+	if err != nil {
+		t.Fatalf("list app templates: %v", err)
+	}
+	items := list.Value.(map[string]any)["items"].([]map[string]any)
+	id := items[0]["id"].(string)
+
+	result, err := service.Execute(context.Background(), Request{
+		OperationID: "getAppTemplate",
+		Arguments:   map[string]any{"id": id},
+	})
+	if err != nil {
+		t.Fatalf("get app template: %v", err)
+	}
+	detail := result.Value.(map[string]any)
+	values, ok := detail["values"].([]map[string]any)
+	if !ok {
+		t.Fatalf("detail values = %#v", detail["values"])
+	}
+	for _, definition := range values {
+		if secret, _ := definition["secret"].(bool); secret {
+			if _, exists := definition["default"]; exists {
+				t.Fatal("secret template value must not expose its default")
 			}
 		}
+	}
+
+	if _, err := service.Execute(context.Background(), Request{
+		OperationID: "getAppTemplate",
+		Arguments:   map[string]any{},
+	}); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("missing id error = %v", err)
+	}
+	if _, err := service.Execute(context.Background(), Request{
+		OperationID: "getAppTemplate",
+		Arguments:   map[string]any{"id": "nonexistent-template-id"},
+	}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown template error = %v", err)
 	}
 }
 
