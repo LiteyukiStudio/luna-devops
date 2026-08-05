@@ -1,4 +1,4 @@
-import type { AgentObservabilityConversation, AgentObservabilityConversationDetail, AgentObservabilityOverview, AgentObservabilitySource, AgentObservabilityTestResult, AgentObservabilityTraceDetail, AuthAdmissionPolicy, AuthProvider, AuthRegistrationSettings, AuthRegistrationStatus, BootstrapStatus, ConfigDefinition, CurrentUser, DataRetentionCatalogResponse, DataRetentionPayload, DataRetentionResultResponse, ExternalIdentity, MFAEnrollment, MFAEnrollmentRequest, MFARecoveryCodes, MFAStatus, MFAVerifyPayload, MFAVerifyResponse, OIDCCallbackConfig, PaginatedResponse, PaginationParams, User } from '../types'
+import type { AgentObservabilityConversation, AgentObservabilityConversationDetail, AgentObservabilityOverview, AgentObservabilitySource, AgentObservabilityTestResult, AgentObservabilityTraceDetail, AgentObservabilityTurn, AuthAdmissionPolicy, AuthProvider, AuthRegistrationSettings, AuthRegistrationStatus, BootstrapStatus, ConfigDefinition, CurrentUser, DataRetentionCatalogResponse, DataRetentionPayload, DataRetentionResultResponse, ExternalIdentity, MFAEnrollment, MFAEnrollmentRequest, MFARecoveryCodes, MFAStatus, MFAVerifyPayload, MFAVerifyResponse, OIDCCallbackConfig, PaginatedResponse, PaginationParams, User } from '../types'
 import type { PlatformRoleValue } from '@/lib/roles'
 import { paginationQuery, request } from '../core'
 
@@ -65,6 +65,8 @@ export const authApi = {
     request<AgentObservabilityOverview>(`/ai/observability/overview?range=${range}`),
   listAgentObservabilityConversations: (params: { range: '1h' | '6h' | '24h', page: number, pageSize: number, search?: string }) =>
     request<PaginatedResponse<AgentObservabilityConversation>>(`/ai/observability/conversations?${paginationQuery({ ...params, sortBy: 'updatedAt', sortOrder: 'desc' })}&range=${params.range}`),
+  listAgentObservabilityTurns: (params: { range: '1h' | '6h' | '24h', page: number, pageSize: number, search?: string }) =>
+    request<PaginatedResponse<AgentObservabilityTurn>>(`/ai/observability/turns?${paginationQuery({ ...params, sortBy: 'createdAt', sortOrder: 'desc' })}&range=${params.range}`),
   getAgentObservabilityConversation: (conversationId: string, page = 1, pageSize = 20) =>
     request<AgentObservabilityConversationDetail>(`/ai/observability/conversations/${encodeURIComponent(conversationId)}?page=${page}&pageSize=${pageSize}`),
   getAgentObservabilityTrace: (traceId: string) =>

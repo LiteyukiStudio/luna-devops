@@ -89,6 +89,14 @@ func (c *Client) RuntimePodLogs(ctx context.Context, options RuntimePodLogsOptio
 	return RuntimePodLogsResult{Pod: pod.Name, Container: container, Content: string(content)}, nil
 }
 
+func (c *Client) ResolveRuntimePod(ctx context.Context, namespace, deploymentTargetID, container string) (RuntimePodIdentity, error) {
+	pod, selectedContainer, err := c.runtimePod(ctx, namespace, deploymentTargetID, container)
+	if err != nil {
+		return RuntimePodIdentity{}, err
+	}
+	return RuntimePodIdentity{Pod: pod.Name, Container: selectedContainer}, nil
+}
+
 func (c *Client) RuntimeExec(ctx context.Context, options RuntimeExecOptions) (RuntimeExecResult, error) {
 	if c.restConfig == nil {
 		return RuntimeExecResult{}, fmt.Errorf("runtime exec requires a REST config")
@@ -175,6 +183,39 @@ func (c *Client) RuntimeTerminal(ctx context.Context, options RuntimeTerminalOpt
 		Stderr:            options.Stdout,
 		Tty:               true,
 		TerminalSizeQueue: options.SizeQueue,
+	})
+}
+
+func (c *Client) RuntimeShell(ctx context.Context, options RuntimeShellOptions) error {
+	if c.restConfig == nil {
+		return fmt.Errorf("runtime shell requires a REST config")
+	}
+	if options.Stdin == nil || options.Stdout == nil {
+		return fmt.Errorf("runtime shell streams are required")
+	}
+	pod, container, err := c.runtimePod(ctx, options.Namespace, options.DeploymentTargetID, options.Container)
+	if err != nil {
+		return err
+	}
+	req := c.client.CoreV1().RESTClient().Post().
+		Resource("pods").
+		Name(pod.Name).
+		Namespace(pod.Namespace).
+		SubResource("exec").
+		VersionedParams(&corev1.PodExecOptions{
+			Container: container,
+			Command:   []string{"/bin/sh"},
+			Stdin:     true,
+			Stdout:    true,
+			Stderr:    true,
+			TTY:       false,
+		}, scheme.ParameterCodec)
+	executor, err := remotecommand.NewSPDYExecutor(c.restConfig, "POST", req.URL())
+	if err != nil {
+		return err
+	}
+	return executor.StreamWithContext(ctx, remotecommand.StreamOptions{
+		Stdin: options.Stdin, Stdout: options.Stdout, Stderr: options.Stdout, Tty: false,
 	})
 }
 

@@ -77,6 +77,20 @@ type ConversationDetail struct {
 	TotalTurnPages int                `json:"totalTurnPages"`
 }
 
+type TurnSummary struct {
+	ID                string           `json:"id"`
+	ConversationID    string           `json:"conversationId"`
+	ConversationTitle string           `json:"conversationTitle"`
+	User              ConversationUser `gorm:"embedded;embeddedPrefix:user_" json:"user"`
+	TurnIndex         int              `json:"turnIndex"`
+	Status            string           `json:"status"`
+	UserMessage       string           `json:"userMessage"`
+	RunID             string           `json:"runId"`
+	TraceID           string           `json:"traceId"`
+	DurationMs        float64          `json:"durationMs"`
+	CreatedAt         time.Time        `json:"createdAt"`
+}
+
 type TraceContext struct {
 	Conversation ConversationSummary `json:"conversation"`
 	Turn         ConversationTurn    `json:"turn"`
@@ -93,6 +107,16 @@ type ConversationListOptions struct {
 
 type ConversationListResult struct {
 	Items      []ConversationSummary
+	Total      int64
+	Page       int
+	PageSize   int
+	SortBy     string
+	SortOrder  string
+	TotalPages int
+}
+
+type TurnListResult struct {
+	Items      []TurnSummary
 	Total      int64
 	Page       int
 	PageSize   int
@@ -197,6 +221,7 @@ func (s *ConversationStore) List(ctx context.Context, options ConversationListOp
 	if err := base.Count(&total).Error; err != nil {
 		return ConversationListResult{}, err
 	}
+	options.Page = pageWithinTotal(options.Page, options.PageSize, total)
 	var items []ConversationSummary
 	selectSQL := `c.id, c.title, c.created_at, c.updated_at,
 		c.owner_user_id AS user_id, COALESCE(u.name, '') AS user_name,
@@ -209,11 +234,75 @@ func (s *ConversationStore) List(ctx context.Context, options ConversationListOp
 		Scan(&items).Error; err != nil {
 		return ConversationListResult{}, err
 	}
-	totalPages := 0
-	if total > 0 {
-		totalPages = int((total + int64(options.PageSize) - 1) / int64(options.PageSize))
-	}
+	totalPages := pageCount(total, options.PageSize)
 	return ConversationListResult{Items: items, Total: total, Page: options.Page, PageSize: options.PageSize, SortBy: options.SortBy, SortOrder: options.SortOrder, TotalPages: totalPages}, nil
+}
+
+func (s *ConversationStore) ListTurns(ctx context.Context, options ConversationListOptions) (TurnListResult, error) {
+	options = normalizeTurnListOptions(options)
+	base := s.db.WithContext(ctx).Table("ai.turns AS t").
+		Joins("JOIN ai.conversations AS c ON c.id = t.conversation_id").
+		Joins("LEFT JOIN users AS u ON u.id = c.owner_user_id AND u.deleted_at IS NULL").
+		Joins("LEFT JOIN ai.runs AS r ON r.id = t.selected_run_id").
+		Where("t.created_at >= ?", options.Start)
+	if keyword := strings.TrimSpace(options.Search); keyword != "" {
+		escaped := strings.NewReplacer("\\", "\\\\", "%", "\\%", "_", "\\_").Replace(strings.ToLower(keyword))
+		pattern := "%" + escaped + "%"
+		base = base.Where(`LOWER(c.title) LIKE ? ESCAPE '\' OR LOWER(COALESCE(u.name, '')) LIKE ? ESCAPE '\'
+			OR LOWER(COALESCE(u.email, '')) LIKE ? ESCAPE '\' OR LOWER(t.input) LIKE ? ESCAPE '\'
+			OR LOWER(t.status) LIKE ? ESCAPE '\' OR LOWER(t.id) LIKE ? ESCAPE '\'
+			OR LOWER(COALESCE(r.id, '')) LIKE ? ESCAPE '\'`, pattern, pattern, pattern, pattern, pattern, pattern, pattern)
+	}
+	var total int64
+	if err := base.Count(&total).Error; err != nil {
+		return TurnListResult{}, err
+	}
+	options.Page = pageWithinTotal(options.Page, options.PageSize, total)
+	type turnSummaryRow struct {
+		ID                string
+		ConversationID    string
+		ConversationTitle string
+		UserID            string
+		UserName          string
+		UserEmail         string
+		UserAvatarURL     string
+		TurnIndex         int
+		Status            string
+		UserMessage       string
+		RunID             string
+		TraceContext      []byte
+		StartedAt         *time.Time
+		CompletedAt       *time.Time
+		CreatedAt         time.Time
+	}
+	var rows []turnSummaryRow
+	selectSQL := `t.id, t.conversation_id, c.title AS conversation_title,
+		c.owner_user_id AS user_id, COALESCE(u.name, '') AS user_name,
+		COALESCE(u.email, '') AS user_email, COALESCE(u.avatar_url, '') AS user_avatar_url,
+		t.turn_index, t.status, t.input AS user_message, t.created_at,
+		COALESCE(r.id, '') AS run_id, COALESCE(r.trace_context, '{}'::jsonb) AS trace_context,
+		r.started_at, r.completed_at`
+	if err := base.Select(selectSQL).
+		Order(turnSortClause(options.SortBy, options.SortOrder)).
+		Limit(options.PageSize).Offset((options.Page - 1) * options.PageSize).
+		Scan(&rows).Error; err != nil {
+		return TurnListResult{}, err
+	}
+	items := make([]TurnSummary, 0, len(rows))
+	for _, row := range rows {
+		item := TurnSummary{
+			ID: row.ID, ConversationID: row.ConversationID, ConversationTitle: row.ConversationTitle,
+			User:      ConversationUser{ID: row.UserID, Name: row.UserName, Email: row.UserEmail, AvatarURL: row.UserAvatarURL},
+			TurnIndex: row.TurnIndex, Status: row.Status, UserMessage: row.UserMessage, RunID: row.RunID,
+			TraceID: traceIDFromContext(row.TraceContext), CreatedAt: row.CreatedAt,
+		}
+		if row.StartedAt != nil && row.CompletedAt != nil {
+			item.DurationMs = float64(row.CompletedAt.Sub(*row.StartedAt).Microseconds()) / 1000
+		}
+		items = append(items, item)
+	}
+	totalPages := pageCount(total, options.PageSize)
+	return TurnListResult{Items: items, Total: total, Page: options.Page, PageSize: options.PageSize, SortBy: options.SortBy, SortOrder: options.SortOrder, TotalPages: totalPages}, nil
 }
 
 func (s *ConversationStore) Get(ctx context.Context, conversationID string, turnPage, turnPageSize int) (ConversationDetail, error) {
@@ -233,6 +322,7 @@ func (s *ConversationStore) Get(ctx context.Context, conversationID string, turn
 	if result.RowsAffected == 0 {
 		return ConversationDetail{}, ErrConversationNotFound
 	}
+	turnPage = pageWithinTotal(turnPage, turnPageSize, summary.TurnCount)
 
 	type turnRow struct {
 		ID           string
@@ -277,10 +367,7 @@ func (s *ConversationStore) Get(ctx context.Context, conversationID string, turn
 		}
 		turns = append(turns, turn)
 	}
-	totalTurnPages := 0
-	if summary.TurnCount > 0 {
-		totalTurnPages = int((summary.TurnCount + int64(turnPageSize) - 1) / int64(turnPageSize))
-	}
+	totalTurnPages := pageCount(summary.TurnCount, turnPageSize)
 	return ConversationDetail{ConversationSummary: summary, Turns: turns, TurnPage: turnPage, TurnPageSize: turnPageSize, TotalTurnPages: totalTurnPages}, nil
 }
 
@@ -455,6 +542,17 @@ func normalizeConversationListOptions(options ConversationListOptions) Conversat
 	return options
 }
 
+func normalizeTurnListOptions(options ConversationListOptions) ConversationListOptions {
+	options.Page, options.PageSize = normalizePage(options.Page, options.PageSize)
+	if options.SortBy != "conversation" && options.SortBy != "user" && options.SortBy != "status" && options.SortBy != "duration" {
+		options.SortBy = "createdAt"
+	}
+	if options.SortOrder != "asc" {
+		options.SortOrder = "desc"
+	}
+	return options
+}
+
 func normalizePage(page, pageSize int) (int, int) {
 	if page < 1 {
 		page = 1
@@ -478,6 +576,39 @@ func conversationSortClause(sortBy, sortOrder string) string {
 		sortOrder = "desc"
 	}
 	return fmt.Sprintf("%s %s", column, sortOrder)
+}
+
+func turnSortClause(sortBy, sortOrder string) string {
+	columns := map[string]string{
+		"createdAt": "t.created_at", "conversation": "c.title", "user": "u.name", "status": "t.status",
+		"duration": "(EXTRACT(EPOCH FROM (r.completed_at - r.started_at)) * 1000)",
+	}
+	column := columns[sortBy]
+	if column == "" {
+		column = "t.created_at"
+	}
+	if sortOrder != "asc" {
+		sortOrder = "desc"
+	}
+	return fmt.Sprintf("%s %s, t.id %s", column, sortOrder, sortOrder)
+}
+
+func pageCount(total int64, pageSize int) int {
+	if total <= 0 {
+		return 0
+	}
+	return int((total + int64(pageSize) - 1) / int64(pageSize))
+}
+
+func pageWithinTotal(page, pageSize int, total int64) int {
+	pages := pageCount(total, pageSize)
+	if pages == 0 {
+		return 1
+	}
+	if page > pages {
+		return pages
+	}
+	return page
 }
 
 func traceIDFromContext(raw []byte) string {

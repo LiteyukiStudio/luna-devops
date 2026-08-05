@@ -6,6 +6,8 @@ This page covers site settings and the information required to connect Git provi
 
 Administrators can configure the site title, logo, sign-in text, default language, theme, and interface style. Users can override the theme, light or dark mode, and interface style in personal settings. Personal settings take precedence.
 
+Global settings place the save action for the current tab in the tab action area. The button is enabled after a change is made; switching tabs does not save changes automatically.
+
 **Registration and email** controls email and OIDC registration independently. Email registration requires SMTP. The SMTP password is not shown after it is saved; leave it empty when editing other settings to keep the existing value.
 
 ## Security policy

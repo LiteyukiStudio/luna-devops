@@ -5594,6 +5594,117 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+  /api/v1/projects/{projectId}/releases/{releaseId}/command-sessions:
+    post:
+      operationId: createReleaseRuntimeCommandSession
+      tags: [Releases]
+      summary: Create a persistent release runtime command session
+      description: Creates an API-owned, non-TTY shell session for bounded Agent diagnostics. The session is bound to the current user session, Agent Run when present, release, deployment target, and container. Idle and absolute TTLs are enforced by the owning API instance.
+      x-luna-cli:
+        classification: business-command
+        risk: high
+        mfaPurpose: runtime_exec
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: releaseId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReleaseRuntimeCommandSessionInput" }
+      responses:
+        "201":
+          description: Runtime command session created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RuntimeCommandSession" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/projects/{projectId}/releases/{releaseId}/command-sessions/{sessionId}/commands:
+    post:
+      operationId: executeReleaseRuntimeCommandSession
+      tags: [Releases]
+      summary: Execute a command in a persistent release runtime session
+      description: Executes one bounded command serially in the existing shell. Authorization, project role, Web Console policy, Step-up MFA, Agent Run binding, and high-risk Agent approval are revalidated for every command.
+      x-luna-cli:
+        classification: business-command
+        risk: high
+        mfaPurpose: runtime_exec
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: releaseId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: sessionId
+          in: path
+          required: true
+          schema: { type: string, pattern: "^rtcs_[a-z0-9]{1,8}_[a-f0-9]{36}$" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReleaseRuntimeCommandSessionExecuteInput" }
+      responses:
+        "200":
+          description: Command completed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RuntimeCommandSessionCommandResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: The session belongs to another API instance.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "410":
+          description: The session expired.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /api/v1/projects/{projectId}/releases/{releaseId}/command-sessions/{sessionId}:
+    delete:
+      operationId: closeReleaseRuntimeCommandSession
+      tags: [Releases]
+      summary: Close a persistent release runtime command session
+      description: Closes the API-owned shell and releases its Kubernetes exec stream. Closing does not execute a workload command.
+      x-luna-cli:
+        classification: business-command
+        risk: medium
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: releaseId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: sessionId
+          in: path
+          required: true
+          schema: { type: string, pattern: "^rtcs_[a-z0-9]{1,8}_[a-f0-9]{36}$" }
+      responses:
+        "204": { description: Runtime command session closed. }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: The session belongs to another API instance.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
   /api/v1/projects/{projectId}/releases/{releaseId}/terminal:
     get:
       operationId: streamReleaseRuntimeTerminal
@@ -6589,11 +6700,32 @@ paths:
       security: [{ SessionCookie: [] }]
       parameters:
         - { name: conversationId, in: path, required: true, schema: { type: string } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
       responses:
         "200": { description: Conversation observability detail, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObservabilityConversationDetail" } } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/ai/observability/turns:
+    get:
+      operationId: listAgentObservabilityTurns
+      tags: [AI Assistant]
+      summary: List Agent turns across all users for platform-admin observability
+      x-luna-cli: { classification: internal-observability, hidden: true, agentAllowed: false }
+      security: [{ SessionCookie: [] }]
+      parameters:
+        - { name: range, in: query, schema: { type: string, enum: [1h, 6h, 24h], default: 1h } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - { name: search, in: query, schema: { type: string } }
+        - { name: sortBy, in: query, schema: { type: string, enum: [createdAt, conversation, user, status, duration], default: createdAt } }
+        - { name: sortOrder, in: query, schema: { type: string, enum: [asc, desc], default: desc } }
+      responses:
+        "200": { description: Paginated cross-user Agent turn summaries, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObservabilityTurnPage" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { description: Agent observability is disabled, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
 components:
   securitySchemes:
     SessionCookie:
@@ -6962,6 +7094,21 @@ components:
         durationMs: { type: number, format: double }
         createdAt: { type: string, format: date-time }
         loops: { type: array, items: { $ref: "#/components/schemas/AgentObservabilityConversationLoop" } }
+    AgentObservabilityTurn:
+      type: object
+      required: [id, conversationId, conversationTitle, user, turnIndex, status, userMessage, runId, traceId, durationMs, createdAt]
+      properties:
+        id: { type: string }
+        conversationId: { type: string }
+        conversationTitle: { type: string }
+        user: { $ref: "#/components/schemas/AgentObservabilityConversationUser" }
+        turnIndex: { type: integer }
+        status: { type: string }
+        userMessage: { type: string }
+        runId: { type: string }
+        traceId: { type: string }
+        durationMs: { type: number, format: double }
+        createdAt: { type: string, format: date-time }
     AgentObservabilityConversationLoop:
       type: object
       required: [loopIndex, items]
@@ -7012,6 +7159,17 @@ components:
       required: [items, page, pageSize, sortBy, sortOrder, total, totalPages]
       properties:
         items: { type: array, items: { $ref: "#/components/schemas/AgentObservabilityConversation" } }
+        page: { type: integer }
+        pageSize: { type: integer }
+        sortBy: { type: string }
+        sortOrder: { type: string, enum: [asc, desc] }
+        total: { type: integer, format: int64 }
+        totalPages: { type: integer }
+    AgentObservabilityTurnPage:
+      type: object
+      required: [items, page, pageSize, sortBy, sortOrder, total, totalPages]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/AgentObservabilityTurn" } }
         page: { type: integer }
         pageSize: { type: integer }
         sortBy: { type: string }
@@ -8862,13 +9020,47 @@ components:
       required: [command]
       properties:
         command:
-          oneOf:
-            - type: string
-            - type: array
-              items: { type: string }
+          type: string
+          minLength: 1
+          maxLength: 2000
         container: { type: string }
-        stdin: { type: string }
-        tty: { type: boolean }
+    ReleaseRuntimeCommandSessionInput:
+      type: object
+      additionalProperties: false
+      properties:
+        container:
+          type: string
+          description: Optional workload container. The platform selects the default container when omitted.
+    ReleaseRuntimeCommandSessionExecuteInput:
+      type: object
+      additionalProperties: false
+      required: [command]
+      properties:
+        command:
+          type: string
+          minLength: 1
+          maxLength: 16384
+          description: Shell command executed in the existing session. Command content is never written to logs or traces.
+    RuntimeCommandSession:
+      type: object
+      required: [sessionId, createdAt, lastActiveAt, idleExpiresAt, expiresAt]
+      properties:
+        sessionId: { type: string }
+        container: { type: string }
+        createdAt: { type: string, format: date-time }
+        lastActiveAt: { type: string, format: date-time }
+        idleExpiresAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+    RuntimeCommandSessionCommandResult:
+      type: object
+      required: [stdout, exitCode, truncated, durationMs]
+      properties:
+        stdout:
+          type: string
+          description: Combined bounded stdout and stderr returned to the authorized caller.
+        exitCode: { type: integer }
+        truncated: { type: boolean }
+        durationMs: { type: integer, format: int64, minimum: 0 }
     GatewayRouteInput:
       type: object
       required: [applicationId, deploymentTargetId]

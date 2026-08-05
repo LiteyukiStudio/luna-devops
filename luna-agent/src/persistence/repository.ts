@@ -1,6 +1,8 @@
 import type {
   Conversation,
   ConversationHistoryEntry,
+  ConversationSummary,
+  ConversationToolInteraction,
   ConversationTitleSource,
   CreatedTurn,
   CreateTurn,
@@ -26,14 +28,18 @@ export interface Repository {
   cancelRun(ownerUserId: string, runId: string): Promise<Run | undefined>
   claimRun(instanceId: string, leaseSeconds: number): Promise<Run | undefined>
   getExecutionInput(runId: string): Promise<{
+    conversationId: string
     turnId: string
     turnIndex: number
     input: string
     pageContext: Record<string, unknown>
-    toolResults: unknown[]
+    toolInteractions: ConversationToolInteraction[]
     history: ConversationHistoryEntry[]
     conversation: Pick<Conversation, "title" | "titleSource">
   } | undefined>
+  getConversationSummary(conversationId: string): Promise<ConversationSummary | undefined>
+  saveConversationSummary(summary: Omit<ConversationSummary, "createdAt" | "updatedAt">): Promise<ConversationSummary>
+  listConversationHistory(conversationId: string, afterTurnIndex: number, beforeTurnIndex: number, limit: number): Promise<ConversationHistoryEntry[]>
   getRunActorGrantCiphertext(runId: string): Promise<string | undefined>
   appendRunInput(runId: string, text: string): Promise<void>
   renewLease(runId: string, instanceId: string, leaseSeconds: number): Promise<boolean>

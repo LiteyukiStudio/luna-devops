@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import i18next from '@/i18n'
 import { AIConversationList } from './conversation-list'
+import { formatAIConversationTimestamp } from './conversation-timestamp'
 
 const conversations: AIConversation[] = [
   {
@@ -43,6 +44,14 @@ function renderList(onDeleteMany = vi.fn(async () => {})) {
 }
 
 describe('ai conversation list', () => {
+  it('formats conversation timestamps by calendar distance', () => {
+    const now = new Date(2026, 7, 5, 18, 30)
+
+    expect(formatAIConversationTimestamp(new Date(2026, 7, 5, 16, 20).toISOString(), 'zh-CN', now)).toBe('16:20')
+    expect(formatAIConversationTimestamp(new Date(2026, 7, 4, 16, 20).toISOString(), 'zh-CN', now)).toBe('8月4日 16:20')
+    expect(formatAIConversationTimestamp(new Date(2025, 11, 31, 16, 20).toISOString(), 'zh-CN', now)).toBe('2025年12月31日 16:20')
+  })
+
   it('enters an explicit selection mode and bulk deletes the selected conversations', async () => {
     await i18next.changeLanguage('zh-CN')
     const user = userEvent.setup()

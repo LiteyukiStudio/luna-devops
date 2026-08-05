@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"net/http"
+	"os"
 
 	"github.com/LiteyukiStudio/devops/internal/aiagent"
 	"github.com/LiteyukiStudio/devops/internal/aitool"
@@ -10,6 +11,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/inbox"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/repository"
+	"github.com/LiteyukiStudio/devops/internal/runtimecommand"
 	"github.com/LiteyukiStudio/devops/internal/secret"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
 	"github.com/gin-gonic/gin"
@@ -36,6 +38,7 @@ type Handlers struct {
 	platformRouter      http.Handler
 	inbox               inboxService
 	inboxDecision       inboxDecisionHandler
+	runtimeCommands     *runtimecommand.Broker
 }
 
 type inboxService interface {
@@ -91,6 +94,7 @@ func NewHandlers(db *gorm.DB) *Handlers {
 	)
 	handlers.inbox = inbox.NewService(db)
 	handlers.inboxDecision = handlers.decideInboxAction
+	handlers.runtimeCommands = runtimecommand.NewBroker(runtimecommand.Options{InstanceID: os.Getenv("HOSTNAME")})
 	return handlers
 }
 

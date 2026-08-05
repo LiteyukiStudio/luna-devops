@@ -4,10 +4,13 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/LiteyukiStudio/devops/internal/aiagent"
 	"github.com/LiteyukiStudio/devops/internal/aitool"
+	"github.com/gin-gonic/gin"
 )
 
 func TestBuildAIPlatformRequestBindsPathQueryAndBody(t *testing.T) {
@@ -65,5 +68,42 @@ func TestAppendAIQueryValuePreservesRepeatedValues(t *testing.T) {
 	}
 	if !strings.Contains(target, "status=ready") || !strings.Contains(target, "status=failed") {
 		t.Fatalf("target = %q", target)
+	}
+}
+
+func TestDispatchAIPlatformOperationPropagatesDelegatedSessionRunAndMFA(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/probe", func(ctx *gin.Context) {
+		actor, ok := ctx.Request.Context().Value(aiPlatformActorContextKey{}).(aiPlatformActor)
+		if !ok {
+			ctx.Status(http.StatusUnauthorized)
+			return
+		}
+		ctx.JSON(http.StatusOK, gin.H{
+			"userId": actor.UserID, "sessionId": actor.SessionID,
+			"mfaPurpose": actor.MFAPurpose, "mfaAssertion": actor.MFAAssertion,
+			"runId": ctx.GetHeader("X-Luna-AI-Run-ID"),
+		})
+	})
+	handlers := &Handlers{platformRouter: router}
+	recorder := httptest.NewRecorder()
+	parent, _ := gin.CreateTestContext(recorder)
+	parent.Request = httptest.NewRequest(http.MethodPost, "/internal/v1/ai/tools/probe/execute", nil)
+	claims := aiagent.DelegationClaims{
+		UserID: "usr_1", SessionID: "ses_1", RunID: "airun_1", ToolCallID: "aitool_1",
+		ArgumentsHash: "sha256:test", MFAPurpose: stepUpPurposeRuntimeExec, MFAAssertion: "mfaas_1",
+	}
+	result, err := handlers.dispatchAIPlatformOperation(parent, claims, aitool.OpenAPIOperation{
+		OperationID: "probe", Method: http.MethodPost, Path: "/probe",
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, ok := result.Body.(map[string]any)
+	if !ok || payload["userId"] != claims.UserID || payload["sessionId"] != claims.SessionID ||
+		payload["runId"] != claims.RunID || payload["mfaPurpose"] != claims.MFAPurpose ||
+		payload["mfaAssertion"] != claims.MFAAssertion {
+		t.Fatalf("delegated actor context was not preserved: %#v", result.Body)
 	}
 }

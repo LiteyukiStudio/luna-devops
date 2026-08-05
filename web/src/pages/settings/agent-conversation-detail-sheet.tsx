@@ -1,6 +1,7 @@
 import type { AgentObservabilityConversation, AgentObservabilityTrace } from '@/api'
 import { useQuery } from '@tanstack/react-query'
 import { Clock3, MessageSquareText, Network, UserRound } from 'lucide-react'
+import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/api'
 import { ErrorState } from '@/components/common/error-state'
@@ -21,15 +22,19 @@ export function AgentConversationDetailSheet({ conversation, turnPage, onOpenCha
   onViewTrace: (trace: AgentObservabilityTrace) => void
 }) {
   const { t, i18n } = useTranslation()
+  const scrollRef = useRef<HTMLDivElement>(null)
   const detail = useQuery({
     queryKey: ['agent-observability-conversation', conversation?.id, turnPage],
     queryFn: () => api.getAgentObservabilityConversation(conversation!.id, turnPage, 20),
     enabled: Boolean(conversation),
   })
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: 0 })
+  }, [conversation?.id, turnPage])
 
   return (
     <Sheet open={Boolean(conversation)} onOpenChange={onOpenChange}>
-      <SheetContent className="w-[min(96vw,64rem)] max-w-none gap-0 p-0 sm:max-w-none" side="right">
+      <SheetContent className="flex h-dvh w-[min(96vw,64rem)] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none" side="right">
         <SheetHeader className="border-b border-border px-6 py-4">
           <SheetTitle>{conversation?.title || t('operationsDashboardPage.conversationDetail.untitled')}</SheetTitle>
           <SheetDescription>
@@ -37,11 +42,11 @@ export function AgentConversationDetailSheet({ conversation, turnPage, onOpenCha
             {conversation?.user.name && conversation?.user.email ? ` · ${conversation.user.email}` : ''}
           </SheetDescription>
         </SheetHeader>
-        <div className="min-h-0 flex-1 overflow-auto p-6">
+        <div ref={scrollRef} aria-busy={detail.isFetching} className="min-h-0 flex-1 overflow-auto overscroll-contain p-6">
           {detail.isLoading && <ToolViewportSkeleton />}
           {detail.isError && <ErrorState title={t('operationsDashboardPage.conversationDetail.loadFailed')} description={t('operationsDashboardPage.conversationDetail.loadFailedDescription')} />}
           {detail.data && (
-            <div className="grid gap-6">
+            <div className={detail.isFetching ? 'grid gap-6 opacity-70' : 'grid gap-6'}>
               <MetricGroup>
                 <MetricItem icon={<UserRound className="size-4" />} label={t('operationsDashboardPage.conversationDetail.owner')} value={detail.data.user.name || detail.data.user.email} />
                 <MetricItem icon={<MessageSquareText className="size-4" />} label={t('operationsDashboardPage.conversationDetail.turns')} value={String(detail.data.turnCount)} />
@@ -74,10 +79,21 @@ export function AgentConversationDetailSheet({ conversation, turnPage, onOpenCha
                   </section>
                 ))}
               </div>
-              <PaginationController hideOnSinglePage initialPage={detail.data.turnPage} pageSize={detail.data.turnPageSize} total={detail.data.turnCount} onPageChange={onTurnPageChange} />
             </div>
           )}
         </div>
+        {detail.data && detail.data.totalTurnPages > 1 && (
+          <div className="shrink-0 border-t border-border bg-background px-6 py-3">
+            <PaginationController
+              hideOnSinglePage
+              disabled={detail.isFetching}
+              initialPage={turnPage}
+              pageSize={detail.data.turnPageSize}
+              total={detail.data.turnCount}
+              onPageChange={onTurnPageChange}
+            />
+          </div>
+        )}
       </SheetContent>
     </Sheet>
   )

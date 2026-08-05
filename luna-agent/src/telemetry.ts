@@ -81,6 +81,9 @@ export const agentMetrics = {
   approvals: deferredCounter("luna_devops_agent_approval_decisions", "工具审批决策次数"),
   cards: deferredCounter("luna_devops_agent_interaction_cards", "交互卡片生成次数"),
   externalRequests: deferredCounter("luna_devops_agent_external_requests", "外部请求次数"),
+  contextCompilations: deferredCounter("luna_devops_agent_context_compilations", "上下文编译次数"),
+  contextInputTokens: deferredHistogram("luna_devops_agent_context_input_tokens", "上下文估算 Token 数", "token"),
+  contextCompressionDuration: deferredHistogram("luna_devops_agent_context_compression_duration", "上下文压缩耗时", "s"),
 }
 
 function deferredCounter(name: string, description: string): Pick<Counter, "add"> {

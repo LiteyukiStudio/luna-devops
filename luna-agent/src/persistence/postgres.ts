@@ -2,6 +2,7 @@ import { Pool, type PoolClient } from "pg"
 import type {
   Conversation,
   ConversationHistoryEntry,
+  ConversationSummary,
   ConversationTitleSource,
   CreatedTurn,
   CreateTurn,
@@ -20,6 +21,7 @@ type DbConversation = { id: string, owner_user_id: string, project_id: string | 
 type DbRun = { id: string, owner_user_id: string, conversation_id: string, turn_id: string, run_index: number, status: Run["status"], row_version: number, graph_version: "assistant-v1", prompt_version: Run["promptVersion"], tool_catalog_digest: string, page_context: Record<string, unknown>, trace_context: Record<string, string>, client_instance_id: string | null, created_at: Date, started_at: Date | null, completed_at: Date | null, error_code: string | null }
 type DbUIAction = { id: string, run_id: string, tool_call_id: string, client_instance_id: string, action: Record<string, unknown>, status: UIActionStatus, attempts: number, expires_at: Date, acknowledged_at: Date | null, actual_path: string | null, error_code: string | null, created_at: Date, updated_at: Date }
 type DbTimelineItem = { id: string, run_id: string, turn_id: string, timeline_index: number, revision: string | number, type: TimelineItem["type"], status: TimelineItem["status"], content: Record<string, unknown>, created_at: Date }
+type DbConversationSummary = { conversation_id: string, covered_through_turn_index: number, compression_version: 1, source_turn_count: number, content: ConversationSummary["content"], created_at: Date, updated_at: Date }
 
 export class PostgresRepository implements Repository {
   readonly pool: Pool
@@ -163,8 +165,11 @@ export class PostgresRepository implements Repository {
       [runId],
     )).rows[0]
     if (!row) return undefined
-    const [results, historyRows] = await Promise.all([
-      this.pool.query<{ content: unknown }>(`select content from ai.items where run_id=$1 and type='tool_result' order by timeline_index`, [runId]),
+    const [currentToolInteractions, historyRows, historyItems] = await Promise.all([
+      this.pool.query<{ id: string, type: "tool_call" | "tool_result", status: TimelineItem["status"], content: Record<string, unknown> }>(
+        `select id,type,status,content from ai.items where run_id=$1 and type in ('tool_call','tool_result') order by timeline_index`,
+        [runId],
+      ),
       this.pool.query<{ turn_index: number, input: string, assistant: string }>(
         `select recent.turn_index,recent.input,
                 coalesce(string_agg(i.content->'parts'->0->>'text', E'\n' order by i.timeline_index)
@@ -174,27 +179,115 @@ export class PostgresRepository implements Repository {
            from ai.turns
            where conversation_id=$1 and turn_index<$2
            order by turn_index desc
-           limit 6
+           limit 8
          ) recent
          left join ai.items i on i.run_id=recent.selected_run_id
          group by recent.turn_index,recent.input
          order by recent.turn_index`,
         [row.conversation_id, row.turn_index],
       ),
+      this.pool.query<{ turn_index: number, type: TimelineItem["type"], status: TimelineItem["status"], content: Record<string, unknown>, timeline_index: number }>(
+        `select t.turn_index,i.type,i.status,i.content,i.timeline_index
+         from ai.turns t
+         join ai.items i on i.run_id=t.selected_run_id
+         where t.conversation_id=$1 and t.turn_index<$2 and t.turn_index>=greatest(0,$2-8)
+           and i.type in ('tool_call','tool_result')
+         order by t.turn_index,i.timeline_index`,
+        [row.conversation_id, row.turn_index],
+      ),
     ])
+    const toolInteractionsByTurn = new Map<number, typeof historyItems.rows>()
+    for (const item of historyItems.rows) {
+      const interactions = toolInteractionsByTurn.get(item.turn_index) ?? []
+      interactions.push(item)
+      toolInteractionsByTurn.set(item.turn_index, interactions)
+    }
     return {
       turnId: row.turn_id,
       turnIndex: row.turn_index,
+      conversationId: row.conversation_id,
       input: row.input,
       pageContext: row.page_context,
-      toolResults: results.rows.map(item => item.content),
+      toolInteractions: currentToolInteractions.rows.map(item => ({ itemId: item.id, type: item.type, status: item.status, content: item.content })),
       history: historyRows.rows.map((item): ConversationHistoryEntry => ({
         turnIndex: item.turn_index,
-        user: truncateHistoryText(item.input, 2000),
-        assistant: truncateHistoryText(item.assistant, 4000),
+        user: item.input,
+        assistant: item.assistant,
+        ...((toolInteractionsByTurn.get(item.turn_index)?.length ?? 0) > 0
+          ? { toolInteractions: toolInteractionsByTurn.get(item.turn_index)!.map(tool => ({ type: tool.type, status: tool.status, content: tool.content })) }
+          : {}),
       })),
       conversation: { title: row.title, titleSource: row.title_source },
     }
+  }
+  async getConversationSummary(conversationId: string) {
+    const row = (await this.pool.query<DbConversationSummary>(
+      `select * from ai.conversation_summaries where conversation_id=$1`,
+      [conversationId],
+    )).rows[0]
+    return row ? mapConversationSummary(row) : undefined
+  }
+  async listConversationHistory(conversationId: string, afterTurnIndex: number, beforeTurnIndex: number, limit: number) {
+    const turns = await this.pool.query<{ turn_index: number, input: string, selected_run_id: string }>(
+      `select turn_index,input,selected_run_id
+       from ai.turns
+       where conversation_id=$1 and turn_index>$2 and turn_index<$3
+       order by turn_index
+       limit $4`,
+      [conversationId, afterTurnIndex, beforeTurnIndex, Math.max(0, limit)],
+    )
+    if (turns.rows.length === 0) return []
+    const runIds = turns.rows.map(turn => turn.selected_run_id)
+    const items = await this.pool.query<{ run_id: string, type: TimelineItem["type"], status: TimelineItem["status"], content: Record<string, unknown>, timeline_index: number }>(
+      `select run_id,type,status,content,timeline_index
+       from ai.items
+       where run_id=any($1::text[]) and type in ('assistant_message','tool_call','tool_result')
+       order by run_id,timeline_index`,
+      [runIds],
+    )
+    const byRun = new Map<string, typeof items.rows>()
+    for (const item of items.rows) {
+      const values = byRun.get(item.run_id) ?? []
+      values.push(item)
+      byRun.set(item.run_id, values)
+    }
+    return turns.rows.map(turn => {
+      const runItems = byRun.get(turn.selected_run_id) ?? []
+      const assistant = runItems
+        .filter(item => item.type === "assistant_message")
+        .map(item => timelineContentText(item.content))
+        .filter(Boolean)
+        .join("\n")
+      const toolInteractions = runItems
+        .filter(item => item.type === "tool_call" || item.type === "tool_result")
+        .map(item => ({ type: item.type, status: item.status, content: item.content }))
+      return {
+        turnIndex: turn.turn_index,
+        user: turn.input,
+        assistant,
+        ...(toolInteractions.length ? { toolInteractions } : {}),
+      }
+    })
+  }
+  async saveConversationSummary(input: Omit<ConversationSummary, "createdAt" | "updatedAt">) {
+    const row = (await this.pool.query<DbConversationSummary>(
+      `insert into ai.conversation_summaries(
+         conversation_id,covered_through_turn_index,compression_version,source_turn_count,content
+       ) values($1,$2,$3,$4,$5)
+       on conflict(conversation_id) do update set
+         covered_through_turn_index=excluded.covered_through_turn_index,
+         compression_version=excluded.compression_version,
+         source_turn_count=excluded.source_turn_count,
+         content=excluded.content,
+         updated_at=now()
+       where ai.conversation_summaries.covered_through_turn_index < excluded.covered_through_turn_index
+       returning *`,
+      [input.conversationId, input.coveredThroughTurnIndex, input.compressionVersion, input.sourceTurnCount, JSON.stringify(input.content)],
+    )).rows[0]
+    if (row) return mapConversationSummary(row)
+    const current = await this.getConversationSummary(input.conversationId)
+    if (!current) throw new Error("ai.context_summary_persistence_failed")
+    return current
   }
   async getRunActorGrantCiphertext(runId: string) {
     return (await this.pool.query<{ run_actor_grant_ciphertext: string | null }>(`select run_actor_grant_ciphertext from ai.runs where id=$1`, [runId])).rows[0]?.run_actor_grant_ciphertext ?? undefined
@@ -412,6 +505,17 @@ function mapConversation(row: DbConversation): Conversation {
     ...(row.project_id ? { projectId: row.project_id } : {}),
   }
 }
+function mapConversationSummary(row: DbConversationSummary): ConversationSummary {
+  return {
+    conversationId: row.conversation_id,
+    coveredThroughTurnIndex: row.covered_through_turn_index,
+    compressionVersion: row.compression_version,
+    sourceTurnCount: row.source_turn_count,
+    content: row.content,
+    createdAt: row.created_at.toISOString(),
+    updatedAt: row.updated_at.toISOString(),
+  }
+}
 function mapRun(row: DbRun): Run {
   return { id: row.id, conversationId: row.conversation_id, turnId: row.turn_id, runIndex: row.run_index, status: row.status, rowVersion: row.row_version, graphVersion: row.graph_version, promptVersion: row.prompt_version, toolCatalogDigest: row.tool_catalog_digest, pageContext: row.page_context, ...(Object.keys(row.trace_context ?? {}).length ? { traceContext: row.trace_context } : {}), createdAt: row.created_at.toISOString(), ...(row.client_instance_id ? { clientInstanceId: row.client_instance_id } : {}), ...(row.started_at ? { startedAt: row.started_at.toISOString() } : {}), ...(row.completed_at ? { completedAt: row.completed_at.toISOString() } : {}), ...(row.error_code ? { errorCode: row.error_code } : {}) }
 }
@@ -446,6 +550,12 @@ function mapUIAction(row: DbUIAction): UIActionDelivery {
   }
 }
 
-function truncateHistoryText(value: string, maxLength: number) {
-  return [...value].slice(0, maxLength).join("")
+function timelineContentText(content: Record<string, unknown>): string {
+  if (!Array.isArray(content.parts)) return ""
+  return content.parts.map(part => {
+    if (!part || typeof part !== "object") return ""
+    return typeof (part as Record<string, unknown>).text === "string"
+      ? String((part as Record<string, unknown>).text)
+      : ""
+  }).join("")
 }

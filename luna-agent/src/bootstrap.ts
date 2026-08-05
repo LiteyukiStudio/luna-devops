@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto"
 import { BffHmacAuthenticator, DevelopmentAuthenticator } from "./auth.js"
 import { loadConfig } from "./config.js"
 import { RunExecutor } from "./executor.js"
+import { ContextCompiler } from "./context/compiler.js"
 import { GraphVersionRegistry } from "./graph/registry.js"
 import { PayloadCipher } from "./payload-cipher.js"
 import { deriveInternalKeys } from "./internal-secret.js"
@@ -11,6 +12,7 @@ import { ProviderConfigClient } from "./provider/config-client.js"
 import { createRuntimeProvider } from "./provider/runtime.js"
 import { buildServer } from "./server.js"
 import { configureAIContentCapture, shutdownTelemetry, telemetryLog } from "./telemetry.js"
+import { agentRuntimeInternals } from "./runtime-settings.js"
 import { ToolCatalog } from "./tools/catalog.js"
 import { HttpLunaApiToolClient } from "./tools/luna-api-client.js"
 import { MemoryToolCallStore, ProjectingToolCallStore, ToolOrchestrator } from "./tools/orchestrator.js"
@@ -70,6 +72,18 @@ export async function startAgent(): Promise<void> {
         return grantCipher.decrypt(encrypted)
       })
     : undefined
+  const contextCompiler = new ContextCompiler(repository, provider, {
+    inputTokenBudget: agentRuntimeInternals.contextInputTokenBudget,
+    compressionTriggerRatio: agentRuntimeInternals.contextCompressionTriggerRatio,
+    compressionTargetRatio: agentRuntimeInternals.contextCompressionTargetRatio,
+    recentTurnCount: agentRuntimeInternals.contextRecentTurnCount,
+    maxRecentTurnCount: agentRuntimeInternals.contextMaxRecentTurnCount,
+    maxUncompressedTurnCount: agentRuntimeInternals.contextMaxUncompressedTurnCount,
+    maxCompressionTurnsPerCompile: agentRuntimeInternals.contextMaxCompressionTurnsPerCompile,
+    summaryInputTokenBudget: agentRuntimeInternals.contextSummaryInputTokenBudget,
+    summaryMaxOutputTokens: agentRuntimeInternals.contextSummaryMaxOutputTokens,
+    historicalToolTokenBudget: agentRuntimeInternals.contextHistoricalToolTokenBudget,
+  })
   const graphs = new GraphVersionRegistry(provider, (pageContext, userInput) => [
     ...(tools
       ? catalog.modelTools({
@@ -82,7 +96,7 @@ export async function startAgent(): Promise<void> {
     prepareInteractionCardsTool,
     createInteractionCardsTool,
     navigateToRouteTool,
-  ])
+  ], contextCompiler)
   const executor = new RunExecutor(repository, graphs, config, tools, providerConfigClient)
   const server = buildServer({
     config, repository, authenticator, provider, graphVersions: graphs.versions(), grantCipher,

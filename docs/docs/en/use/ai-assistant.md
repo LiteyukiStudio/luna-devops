@@ -15,6 +15,10 @@ After it is enabled, open the assistant from the lower-right corner. You can ask
 
 On desktop, you can move and resize the assistant window. In a compact window, the conversation browser opens as an overlay drawer. When the window is wide enough, it opens automatically as a left sidebar and can still be collapsed from the conversation button in the header.
 
+The conversation browser shortens update timestamps by age: conversations updated today show only the time, earlier entries from the current year show month, day, and time, and older entries include the year. A running conversation shows its activity indicator beside the timestamp without taking space from the title.
+
+Long conversations retain their complete history for review. Before a request approaches the model context limit, earlier turns are summarized into task goals, constraints, resources, and pending work. Each model request prioritizes the current work, recent verbatim turns, and those retained facts, so a long-running task does not require a new conversation merely because its turn count grows.
+
 ## Capabilities and operations
 
 The assistant can inspect platform resources, analyze logs and status, read public web pages, collect settings through interactive cards, and report operation results. Long-running builds and releases show their real status, and the assistant checks the outcome after they finish.
@@ -24,6 +28,8 @@ When deploying from a repository or official deployment guide, the assistant fir
 When a project provides both Kubernetes/Helm and Docker/Compose deployment material, the assistant prefers Kubernetes/Helm configuration that matches the target version and uses Docker/Compose to fill in service topology and runtime parameters. If the Kubernetes material is outdated, incomplete, or unsuitable for the target environment, it uses verifiable Docker/Compose or source configuration instead.
 
 The assistant has the same platform permissions as you. It cannot access projects or resources that you cannot access. Deletions, releases, permission changes, and other high-risk operations show their targets and parameters before execution. Changed parameters require a new approval.
+
+When diagnosis requires several container commands that share a working directory or environment, the assistant can open a short-lived runtime command session. Every command still revalidates permission, project policy, approval, and MFA. Idle sessions and sessions that reach their maximum lifetime close automatically, and the assistant releases them when diagnosis ends. Do not use command sessions for long-running jobs or secret storage.
 
 If an operation requires an unavailable platform capability, additional permission, or manual work, the assistant identifies the unfinished step.
 

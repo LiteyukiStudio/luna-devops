@@ -3,7 +3,7 @@ import type { BillingRateRule, BillingRateRulePayload, ConfigDefinition, DataRet
 import type { DataListColumn } from '@/components/common/data-list'
 import type { KeyValueRow } from '@/components/common/key-value-rows-editor'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Eye, Save, Settings2, Trash2 } from 'lucide-react'
+import { Eye, Settings2, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -16,9 +16,9 @@ import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { ContentTabs } from '@/components/common/content-tabs'
 import { DataList } from '@/components/common/data-list'
 import { ErrorState } from '@/components/common/error-state'
-import { FormActions } from '@/components/common/form-actions'
 import { FormField as Field } from '@/components/common/form-field'
 import { SettingsSkeleton } from '@/components/common/loading-states'
+import { PageChromeTools } from '@/components/common/page-chrome'
 import { PageShell } from '@/components/common/page-shell'
 import { SearchMultiSelect } from '@/components/common/search-select'
 import { Section } from '@/components/common/section'
@@ -33,6 +33,7 @@ import { AIAssistantSettingsPanel } from './ai-assistant-settings-panel'
 import { AuthRegistrationSettingsPanel } from './auth-registration-settings-panel'
 import { BrandColorPresetField } from './brand-color-preset-field'
 import { configDefinitionText } from './config-definition-text'
+import { SettingsTabSaveButton } from './settings-tab-save-button'
 import { changedConfigValues } from './site-settings-values'
 
 const siteBrandColorPresetKey = 'site.brandColorPreset'
@@ -142,6 +143,17 @@ export function SiteSettingsPage() {
             { value: 'retention', label: t('settings.retentionConfigTitle') },
             { value: 'ai', label: t('settings.ai.tab') },
           ]}
+          tools={!['registration', 'build', 'ai'].includes(activeTab)
+            ? (
+                <SettingsTabSaveButton
+                  disabled={!form.formState.isValid || !form.formState.isDirty}
+                  label={t('settings.saveConfig')}
+                  pending={save.isPending}
+                  type="button"
+                  onClick={form.handleSubmit(submitChangedValues)}
+                />
+              )
+            : undefined}
           value={activeTab}
           onValueChange={setActiveTab}
         >
@@ -192,14 +204,6 @@ export function SiteSettingsPage() {
             <AIAssistantSettingsPanel />
           </TabsContent>
         </ContentTabs>
-        {!['registration', 'build', 'ai'].includes(activeTab) && (
-          <FormActions className={['brand', 'security'].includes(activeTab) ? 'mt-4 max-w-3xl' : 'mt-4'} separated={false}>
-            <Button disabled={save.isPending || !form.formState.isValid || !form.formState.isDirty} type="button" onClick={form.handleSubmit(submitChangedValues)}>
-              <Save size={16} />
-              {t('settings.saveConfig')}
-            </Button>
-          </FormActions>
-        )}
       </div>
       <BuildEnvironmentEditorDialog
         description={t('buildsPage.globalBuildEnvironmentDescription')}
@@ -565,22 +569,27 @@ function BillingRateRulesSection() {
     .filter((rule): rule is BillingRateRulePayload => Boolean(rule))
 
   return (
-    <Section
-      title={t('settings.billingRateRulesTitle')}
-      tools={(
-        <Button disabled={save.isPending || rules.length === 0} type="button" onClick={() => save.mutate(payload)}>
-          <Save size={16} />
-          {t('settings.saveBillingRateRules')}
-        </Button>
-      )}
-    >
-      <DataList
-        columns={columns}
-        emptyTitle={t('settings.billingRateRulesTitle')}
-        items={rules}
-        rowKey={rule => rule.meter}
-      />
-    </Section>
+    <>
+      <PageChromeTools>
+        <SettingsTabSaveButton
+          disabled={rules.length === 0 || Object.keys(drafts).length === 0}
+          label={t('settings.saveBillingRateRules')}
+          pending={save.isPending}
+          type="button"
+          variant="outline"
+          onClick={() => save.mutate(payload)}
+        />
+      </PageChromeTools>
+      <Section title={t('settings.billingRateRulesTitle')}>
+        <DataList
+          columns={columns}
+          emptyTitle={t('settings.billingRateRulesTitle')}
+          items={rules}
+          loading={rateRules.isLoading}
+          rowKey={rule => rule.meter}
+        />
+      </Section>
+    </>
   )
 }
 

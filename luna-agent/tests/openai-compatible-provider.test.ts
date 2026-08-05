@@ -4,6 +4,51 @@ import { OpenAICompatibleProvider } from "../src/provider/openai-compatible.js"
 afterEach(() => vi.unstubAllGlobals())
 
 describe("OpenAICompatibleProvider streaming", () => {
+  it("normalizes reasoning_content from compatible reasoning providers", async () => {
+    const frames = `data: ${JSON.stringify({ choices: [{ delta: { reasoning_content: "分析中" } }] })}\n\ndata: [DONE]\n\n`
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(frames))
+        controller.close()
+      },
+    })
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(body, {
+      status: 200,
+      headers: { "content-type": "text/event-stream" },
+    })))
+    const provider = new OpenAICompatibleProvider({ baseUrl: "https://provider.example/v1", apiKey: "secret", model: "model-a", timeoutMs: 5000 })
+
+    const events = []
+    for await (const event of provider.stream({
+      messages: [{ role: "user", content: "hello" }],
+      maxOutputTokens: 100,
+    }))
+      events.push(event)
+
+    expect(events).toEqual([
+      { type: "reasoning_summary_delta", delta: "分析中" },
+      { type: "completed", usage: { inputTokens: 0, outputTokens: 0 } },
+    ])
+  })
+
+  it("accepts a successful reasoning-only health response", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
+      choices: [{ message: { content: "", reasoning_content: "正在判断" } }],
+      usage: { prompt_tokens: 8, completion_tokens: 4 },
+    }), { status: 200, headers: { "content-type": "application/json", "x-request-id": "provider-health" } }))
+    vi.stubGlobal("fetch", fetchMock)
+    const provider = new OpenAICompatibleProvider({ baseUrl: "https://provider.example/v1", apiKey: "secret", model: "model-a", timeoutMs: 5000 })
+
+    await expect(provider.health()).resolves.toEqual({ ok: true, requestId: "provider-health" })
+    const requestBody = fetchMock.mock.calls[0]?.[1]?.body
+    expect(JSON.parse(typeof requestBody === "string" ? requestBody : "{}")).toMatchObject({ max_tokens: 32 })
+
+    await expect(provider.complete({
+      messages: [{ role: "user", content: "hello" }],
+      maxOutputTokens: 100,
+    })).resolves.toMatchObject({ reasoningSummary: "正在判断" })
+  })
+
   it("normalizes reasoning, content, usage, and fragmented tool calls from SSE", async () => {
     const frames = [
       { choices: [{ delta: { reasoning_summary: "检查上下文" } }] },

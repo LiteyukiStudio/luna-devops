@@ -2,7 +2,6 @@ import type { AuthRegistrationSettings } from '@/api/types'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import i18next from 'i18next'
-import { Save } from 'lucide-react'
 import { useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -11,13 +10,13 @@ import { z } from 'zod'
 import { api } from '@/api'
 import { CheckboxField } from '@/components/common/checkbox-field'
 import { ErrorState } from '@/components/common/error-state'
-import { FormActions } from '@/components/common/form-actions'
 import { FormField as Field } from '@/components/common/form-field'
+import { PageChromeTools } from '@/components/common/page-chrome'
 import { Section } from '@/components/common/section'
 import { Surface } from '@/components/common/surface'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
+import { SettingsTabSaveButton } from './settings-tab-save-button'
 
 const schema = z.object({
   allowEmailRegistration: z.boolean(),
@@ -84,6 +83,15 @@ export function AuthRegistrationSettingsPanel() {
 
   return (
     <div className="grid max-w-3xl gap-4">
+      <PageChromeTools>
+        <SettingsTabSaveButton
+          disabled={settings.isLoading || !form.formState.isValid || !form.formState.isDirty}
+          label={t('settings.registration.save')}
+          pending={save.isPending}
+          type="button"
+          onClick={() => void form.handleSubmit(values => save.mutate(values))()}
+        />
+      </PageChromeTools>
       <Surface className="grid gap-4 rounded-xl p-6" variant="bordered">
         <div className="grid gap-3">
           <CheckboxField description={t('settings.registration.emailRegistrationDescription')} {...form.register('allowEmailRegistration')}>
@@ -132,17 +140,6 @@ export function AuthRegistrationSettingsPanel() {
           </Field>
         </div>
       </Section>
-
-      <FormActions separated={false}>
-        <Button
-          disabled={save.isPending || settings.isLoading || !form.formState.isValid || !form.formState.isDirty}
-          type="button"
-          onClick={() => void form.handleSubmit(values => save.mutate(values))()}
-        >
-          <Save className="size-4" />
-          {t('settings.registration.save')}
-        </Button>
-      </FormActions>
     </div>
   )
 }

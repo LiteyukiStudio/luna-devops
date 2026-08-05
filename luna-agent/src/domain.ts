@@ -43,6 +43,36 @@ export type ConversationHistoryEntry = {
   turnIndex: number
   user: string
   assistant: string
+  toolInteractions?: Array<Record<string, unknown>>
+}
+
+export type ConversationToolInteraction = {
+  itemId: string
+  type: "tool_call" | "tool_result"
+  status: TimelineItem["status"]
+  content: Record<string, unknown>
+}
+
+export const conversationSummaryVersion = 1 as const
+
+export type ConversationSummaryContent = {
+  userGoals: string[]
+  constraints: string[]
+  confirmedResources: Array<{ type: string, name?: string, id?: string }>
+  completedActions: string[]
+  failures: string[]
+  pendingWork: string[]
+  durableFacts: string[]
+}
+
+export type ConversationSummary = {
+  conversationId: string
+  coveredThroughTurnIndex: number
+  compressionVersion: typeof conversationSummaryVersion
+  sourceTurnCount: number
+  content: ConversationSummaryContent
+  createdAt: string
+  updatedAt: string
 }
 
 export type Run = {

@@ -38,6 +38,27 @@ func TestConversationSortClauseUsesWhitelist(t *testing.T) {
 	}
 }
 
+func TestTurnSortClauseUsesWhitelistAndStableTieBreaker(t *testing.T) {
+	if got := turnSortClause("duration; DROP TABLE users", "asc"); got != "t.created_at asc, t.id asc" {
+		t.Fatalf("unsafe turn sort clause = %q", got)
+	}
+	if got := turnSortClause("duration", "desc"); got != "(EXTRACT(EPOCH FROM (r.completed_at - r.started_at)) * 1000) desc, t.id desc" {
+		t.Fatalf("duration sort clause = %q", got)
+	}
+}
+
+func TestPageWithinTotalClampsEmptyAndOverflowPages(t *testing.T) {
+	if got := pageWithinTotal(4, 20, 0); got != 1 {
+		t.Fatalf("empty result page = %d", got)
+	}
+	if got := pageWithinTotal(9, 20, 41); got != 3 {
+		t.Fatalf("overflow result page = %d", got)
+	}
+	if got := pageWithinTotal(2, 20, 41); got != 2 {
+		t.Fatalf("valid result page = %d", got)
+	}
+}
+
 func TestBuildConversationLoops(t *testing.T) {
 	items := []ConversationRunItem{
 		{ID: "thinking-1", Type: "reasoning_summary"},

@@ -268,6 +268,29 @@ func (h *Handlers) ListAgentObservabilityConversations(ctx *gin.Context) {
 	})
 }
 
+func (h *Handlers) ListAgentObservabilityTurns(ctx *gin.Context) {
+	user, ok := h.requireAgentObservabilityAdmin(ctx)
+	if !ok {
+		return
+	}
+	rangeText, duration := observabilityRange(ctx.Query("range"))
+	pagination := paginationFromQuery(ctx)
+	result, err := agentobservability.NewConversationStore(h.dbFor(ctx)).ListTurns(ctx.Request.Context(), agentobservability.ConversationListOptions{
+		Start: time.Now().Add(-duration), Search: ctx.Query("search"), Page: pagination.Page, PageSize: pagination.PageSize,
+		SortBy: pagination.SortBy, SortOrder: pagination.SortOrder,
+	})
+	if err != nil {
+		writeErrorCode(ctx, http.StatusInternalServerError, "ai.observability.turns_failed", "Agent turns are unavailable")
+		return
+	}
+	h.auditWithContext(user.ID, "ai.observability.turns.list", rangeText, true, "Agent observability turns listed", ctx.Request.Context())
+	ctx.Header("Cache-Control", "no-store")
+	ctx.JSON(http.StatusOK, gin.H{
+		"items": result.Items, "page": result.Page, "pageSize": result.PageSize, "sortBy": result.SortBy,
+		"sortOrder": result.SortOrder, "total": result.Total, "totalPages": result.TotalPages,
+	})
+}
+
 func (h *Handlers) GetAgentObservabilityConversation(ctx *gin.Context) {
 	user, ok := h.requireAgentObservabilityAdmin(ctx)
 	if !ok {

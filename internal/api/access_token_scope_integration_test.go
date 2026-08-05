@@ -150,17 +150,22 @@ func newAccessTokenScopeIntegrationDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open integration database: %v", err)
 	}
-	schema := fmt.Sprintf("access_token_scope_test_%d", time.Now().UnixNano())
-	if err := adminDB.Exec(`CREATE SCHEMA "` + schema + `"`).Error; err != nil {
-		t.Fatalf("create integration schema: %v", err)
+	databaseName := fmt.Sprintf("luna_access_token_scope_test_%d", time.Now().UnixNano())
+	if !strings.HasPrefix(databaseName, "luna_access_token_scope_test_") {
+		t.Fatalf("refuse unsafe integration test database name %q", databaseName)
+	}
+	if err := adminDB.Exec(`CREATE DATABASE "` + databaseName + `"`).Error; err != nil {
+		t.Fatalf("create isolated integration database: %v", err)
 	}
 
 	parsedURL, err := url.Parse(databaseURL)
 	if err != nil {
 		t.Fatalf("parse integration database URL: %v", err)
 	}
+	parsedURL.Path = "/" + databaseName
+	parsedURL.RawPath = ""
 	query := parsedURL.Query()
-	query.Set("search_path", schema)
+	query.Del("search_path")
 	parsedURL.RawQuery = query.Encode()
 	db, err := gorm.Open(postgres.Open(parsedURL.String()), &gorm.Config{})
 	if err != nil {
@@ -170,8 +175,9 @@ func newAccessTokenScopeIntegrationDB(t *testing.T) *gorm.DB {
 		if sqlDB, dbErr := db.DB(); dbErr == nil {
 			_ = sqlDB.Close()
 		}
-		_ = adminDB.Exec(`DROP SCHEMA IF EXISTS ai CASCADE`).Error
-		_ = adminDB.Exec(`DROP SCHEMA IF EXISTS "` + schema + `" CASCADE`).Error
+		if dropErr := adminDB.Exec(`DROP DATABASE IF EXISTS "` + databaseName + `" WITH (FORCE)`).Error; dropErr != nil {
+			t.Errorf("drop isolated integration database: %v", dropErr)
+		}
 		if sqlDB, dbErr := adminDB.DB(); dbErr == nil {
 			_ = sqlDB.Close()
 		}

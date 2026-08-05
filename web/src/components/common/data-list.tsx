@@ -1,6 +1,6 @@
 import type { CSSProperties, MouseEvent, ReactNode } from 'react'
 import { MoreHorizontal } from 'lucide-react'
-import { useState, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -219,6 +219,7 @@ export function DataList<T>({
   pagination,
 }: DataListProps<T>) {
   const { t } = useTranslation()
+  const rootRef = useRef<HTMLDivElement>(null)
   const collapseMobileActions = useSyncExternalStore(
     subscribeMobileActionViewport,
     mobileActionViewportSnapshot,
@@ -234,6 +235,11 @@ export function DataList<T>({
   const showTableFrame = loading || items.length > 0
   const allRowsSelected = selectableRowKeys.length > 0 && selectableRowKeys.every(key => selectedKeySet.has(key))
   const someRowsSelected = selectableRowKeys.some(key => selectedKeySet.has(key))
+  useEffect(() => {
+    const viewport = rootRef.current?.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]')
+    if (viewport)
+      viewport.scrollTop = 0
+  }, [pagination?.page])
   const updateRowSelection = (key: string, selected: boolean) => {
     if (!selection)
       return
@@ -279,6 +285,7 @@ export function DataList<T>({
 
   return (
     <div
+      ref={rootRef}
       className={cn(
         'flex w-full min-w-0 max-w-full max-h-none flex-col md:max-h-[calc(100vh-15rem)]',
         constrainedHeight && 'md:h-[calc(100vh-15rem)]',

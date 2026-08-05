@@ -1,15 +1,15 @@
 import type { AISettingsFormValues } from './ai-assistant-settings'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { FlaskConical, LoaderCircle, Save } from 'lucide-react'
+import { FlaskConical, LoaderCircle } from 'lucide-react'
 import { useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { api } from '@/api'
 import { CheckboxField } from '@/components/common/checkbox-field'
-import { FormActions } from '@/components/common/form-actions'
 import { FormField as Field } from '@/components/common/form-field'
+import { PageChromeTools } from '@/components/common/page-chrome'
 import { ProgressiveSection } from '@/components/common/progressive-section'
 import { StatusBadge } from '@/components/common/status-badge'
 import { Surface } from '@/components/common/surface'
@@ -18,6 +18,7 @@ import { Input } from '@/components/ui/input'
 import { NativeSelect as Select } from '@/components/ui/native-select'
 import { Textarea } from '@/components/ui/textarea'
 import { aiSettingsPayload, aiSettingsSchema } from './ai-assistant-settings'
+import { SettingsTabSaveButton } from './settings-tab-save-button'
 
 type FormValues = AISettingsFormValues
 
@@ -57,33 +58,7 @@ export function AIAssistantSettingsPanel() {
   useEffect(() => {
     if (!configs.data)
       return
-    const values = configs.data
-    form.reset({
-      enabled: values['ai.assistant.enabled'] === 'true',
-      accessMode: values['ai.access.mode'] === 'admins' ? 'admins' : 'all_authenticated',
-      baseUrl: values['ai.provider.base_url'] ?? '',
-      apiKey: '',
-      apiKeyConfigured: values['ai.provider.api_key'] === 'true',
-      model: values['ai.provider.default_model'] ?? '',
-      webProxyEnabled: values['ai.web.proxy_enabled'] === 'true',
-      webProxyPool: '',
-      webProxyPoolConfigured: values['ai.web.proxy_pool'] === 'true',
-      providerTimeoutSeconds: Number(values['ai.runtime.provider_timeout_seconds'] ?? 30),
-      runTimeoutSeconds: Number(values['ai.runtime.run_timeout_seconds'] ?? 300),
-      agentConcurrentRuns: Number(values['ai.runtime.agent_concurrent_runs'] ?? 2),
-      observabilityEnabled: values['ai.observability.enabled'] === 'true',
-      prometheusUrl: values['ai.observability.prometheus_url'] ?? '',
-      prometheusToken: '',
-      prometheusTokenConfigured: values['ai.observability.prometheus_token'] === 'true',
-      lokiUrl: values['ai.observability.loki_url'] ?? '',
-      lokiTenantId: values['ai.observability.loki_tenant_id'] ?? '',
-      lokiToken: '',
-      lokiTokenConfigured: values['ai.observability.loki_token'] === 'true',
-      tempoUrl: values['ai.observability.tempo_url'] ?? '',
-      tempoTenantId: values['ai.observability.tempo_tenant_id'] ?? '',
-      tempoToken: '',
-      tempoTokenConfigured: values['ai.observability.tempo_token'] === 'true',
-    })
+    form.reset(aiSettingsFormValues(configs.data))
   }, [configs.data, form])
 
   const save = useMutation({
@@ -92,14 +67,7 @@ export function AIAssistantSettingsPanel() {
       queryClient.setQueryData(['configs'], values)
       void queryClient.invalidateQueries({ queryKey: ['ai', 'capabilities'] })
       toast.success(t('settings.ai.saved'))
-      form.setValue('apiKey', '')
-      form.setValue('apiKeyConfigured', values['ai.provider.api_key'] === 'true')
-      form.setValue('webProxyPool', '')
-      form.setValue('webProxyPoolConfigured', values['ai.web.proxy_pool'] === 'true')
-      for (const source of ['prometheus', 'loki', 'tempo'] as const) {
-        form.setValue(`${source}Token`, '')
-        form.setValue(`${source}TokenConfigured`, values[`ai.observability.${source}_token`] === 'true')
-      }
+      form.reset(aiSettingsFormValues(values))
     },
     onError: error => toast.error(error instanceof Error ? error.message : t('settings.ai.saveFailed')),
   })
@@ -112,6 +80,15 @@ export function AIAssistantSettingsPanel() {
   const observabilityEnabled = form.watch('observabilityEnabled')
   return (
     <form className="max-w-3xl" onSubmit={form.handleSubmit(values => save.mutate(values))}>
+      <PageChromeTools>
+        <SettingsTabSaveButton
+          disabled={!form.formState.isDirty || !form.formState.isValid}
+          label={t('settings.saveConfig')}
+          pending={save.isPending}
+          type="button"
+          onClick={() => void form.handleSubmit(values => save.mutate(values))()}
+        />
+      </PageChromeTools>
       <Surface className="grid gap-5 rounded-xl p-6" variant="bordered">
         <CheckboxField description={t('settings.ai.enabledHint')} {...form.register('enabled')}>{t('settings.ai.enabled')}</CheckboxField>
         <Field hint={t('settings.ai.accessModeHint')} label={t('settings.ai.accessMode')} required>
@@ -185,14 +162,37 @@ export function AIAssistantSettingsPanel() {
         </ProgressiveSection>
         <p className="text-sm leading-6 text-muted-foreground">{t('settings.ai.securitySummary')}</p>
       </Surface>
-      <FormActions className="mt-4" separated={false}>
-        <Button disabled={!form.formState.isDirty || !form.formState.isValid || save.isPending} type="submit">
-          <Save className="size-4" />
-          {t('settings.saveConfig')}
-        </Button>
-      </FormActions>
     </form>
   )
+}
+
+function aiSettingsFormValues(values: Record<string, string>): FormValues {
+  return {
+    enabled: values['ai.assistant.enabled'] === 'true',
+    accessMode: values['ai.access.mode'] === 'admins' ? 'admins' : 'all_authenticated',
+    baseUrl: values['ai.provider.base_url'] ?? '',
+    apiKey: '',
+    apiKeyConfigured: values['ai.provider.api_key'] === 'true',
+    model: values['ai.provider.default_model'] ?? '',
+    webProxyEnabled: values['ai.web.proxy_enabled'] === 'true',
+    webProxyPool: '',
+    webProxyPoolConfigured: values['ai.web.proxy_pool'] === 'true',
+    providerTimeoutSeconds: Number(values['ai.runtime.provider_timeout_seconds'] ?? 30),
+    runTimeoutSeconds: Number(values['ai.runtime.run_timeout_seconds'] ?? 300),
+    agentConcurrentRuns: Number(values['ai.runtime.agent_concurrent_runs'] ?? 2),
+    observabilityEnabled: values['ai.observability.enabled'] === 'true',
+    prometheusUrl: values['ai.observability.prometheus_url'] ?? '',
+    prometheusToken: '',
+    prometheusTokenConfigured: values['ai.observability.prometheus_token'] === 'true',
+    lokiUrl: values['ai.observability.loki_url'] ?? '',
+    lokiTenantId: values['ai.observability.loki_tenant_id'] ?? '',
+    lokiToken: '',
+    lokiTokenConfigured: values['ai.observability.loki_token'] === 'true',
+    tempoUrl: values['ai.observability.tempo_url'] ?? '',
+    tempoTenantId: values['ai.observability.tempo_tenant_id'] ?? '',
+    tempoToken: '',
+    tempoTokenConfigured: values['ai.observability.tempo_token'] === 'true',
+  }
 }
 
 function ObservabilitySourceFields({ form, source, tenant = false }: { form: ReturnType<typeof useForm<FormValues>>, source: 'prometheus' | 'loki' | 'tempo', tenant?: boolean }) {

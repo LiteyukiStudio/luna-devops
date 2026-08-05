@@ -24,7 +24,7 @@ interface ContentTabsProps {
  * 页面正文区域的二级内容切换容器。
  * 用于项目详情、设置页等同一页面内的 tab 分区。
  * 组件只负责 tab 导航和内容切换。当前 tab 的新增、刷新、导出等页面级操作通过 tools
- * 提升到桌面端 Topbar 的导航操作行；设置表单的保存操作统一放在对应表单底部。
+ * 提升到桌面端 Topbar 的导航操作行；保存入口由业务页面按其交互规范决定。
  */
 export function ContentTabs({
   children,

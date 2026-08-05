@@ -80,6 +80,21 @@ func TestAIToolRegistryIncludesPublicWebReadTools(t *testing.T) {
 	}
 }
 
+func TestAIToolRegistryRequiresFreshApprovalAndMFAForEveryRuntimeSessionCommand(t *testing.T) {
+	for _, operationID := range []string{
+		"createReleaseRuntimeCommandSession",
+		"executeReleaseRuntimeCommandSession",
+	} {
+		policy, ok := aiToolPolicies[operationID]
+		if !ok {
+			t.Fatalf("missing runtime command session operation %s", operationID)
+		}
+		if policy.Risk != "sensitive" || !policy.ApprovalRequired || policy.MFAPurpose != stepUpPurposeRuntimeExec {
+			t.Fatalf("runtime command session policy %s = %#v", operationID, policy)
+		}
+	}
+}
+
 func TestAIAgentCallbackCredentialFailsClosed(t *testing.T) {
 	t.Setenv("AI_INTERNAL_SECRET", "")
 	recorder := httptest.NewRecorder()

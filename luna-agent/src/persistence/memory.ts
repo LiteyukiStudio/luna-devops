@@ -1,6 +1,7 @@
 import type {
   Conversation,
   ConversationHistoryEntry,
+  ConversationSummary,
   ConversationTitleSource,
   CreatedTurn,
   CreateTurn,
@@ -24,6 +25,7 @@ export class MemoryRepository implements Repository {
   private readonly items: TimelineItem[] = []
   private readonly events: RunEvent[] = []
   private readonly uiActions = new Map<string, UIActionDelivery>()
+  private readonly summaries = new Map<string, ConversationSummary>()
   private readonly idempotency = new Map<string, { hash: string, created: CreatedTurn }>()
 
   async health(): Promise<boolean> { return true }
@@ -78,6 +80,7 @@ export class MemoryRepository implements Repository {
   async deleteConversation(ownerUserId: string, id: string) {
     if (!await this.getConversation(ownerUserId, id)) return false
     this.conversations.delete(id)
+    this.summaries.delete(id)
     const turnIds = [...this.turns.values()].filter(t => t.conversationId === id).map(t => t.id)
     for (const turnId of turnIds) this.turns.delete(turnId)
     for (const [runId, run] of this.runs) if (run.conversationId === id) this.runs.delete(runId)
@@ -147,25 +150,39 @@ export class MemoryRepository implements Repository {
     const run = this.runs.get(runId)
     const turn = run ? this.turns.get(run.turnId) : undefined
     const conversation = run ? this.conversations.get(run.conversationId) : undefined
-    const history = run && turn ? this.conversationHistory(run.conversationId, turn.turnIndex) : []
+    const history = run && turn
+      ? this.conversationHistory(run.conversationId, -1, turn.turnIndex, 8, true)
+      : []
     return run && turn && conversation
       ? {
           turnId: turn.id,
+          conversationId: run.conversationId,
           turnIndex: turn.turnIndex,
           input: turn.input,
           pageContext: run.pageContext,
-          toolResults: this.items.filter(item => item.runId === runId && item.type === "tool_result").map(item => item.content),
+          toolInteractions: this.items
+            .filter(item => item.runId === runId && (item.type === "tool_call" || item.type === "tool_result"))
+            .map(item => ({ itemId: item.id, type: item.type as "tool_call" | "tool_result", status: item.status, content: item.content })),
           history,
           conversation: { title: conversation.title, titleSource: conversation.titleSource },
         }
       : undefined
   }
 
-  private conversationHistory(conversationId: string, beforeTurnIndex: number): ConversationHistoryEntry[] {
-    return [...this.turns.values()]
-      .filter(item => item.conversationId === conversationId && item.turnIndex < beforeTurnIndex)
+  private conversationHistory(
+    conversationId: string,
+    afterTurnIndex: number,
+    beforeTurnIndex: number,
+    limit: number,
+    fromEnd = false,
+  ): ConversationHistoryEntry[] {
+    const ordered = [...this.turns.values()]
+      .filter(item => item.conversationId === conversationId
+        && item.turnIndex > afterTurnIndex
+        && item.turnIndex < beforeTurnIndex)
       .sort((a, b) => a.turnIndex - b.turnIndex)
-      .slice(-6)
+    const bounded = fromEnd ? ordered.slice(-limit) : ordered.slice(0, limit)
+    return bounded
       .map((item) => {
         const assistant = this.items
           .filter(candidate => candidate.runId === item.selectedRunId && candidate.type === "assistant_message")
@@ -173,12 +190,31 @@ export class MemoryRepository implements Repository {
           .map(candidate => timelineText(candidate.content))
           .filter(Boolean)
           .join("\n")
+        const toolInteractions = this.items
+          .filter(candidate => candidate.runId === item.selectedRunId && ["tool_call", "tool_result"].includes(candidate.type))
+          .sort((a, b) => a.timelineIndex - b.timelineIndex)
+          .map(candidate => ({ type: candidate.type, status: candidate.status, content: structuredClone(candidate.content) }))
         return {
           turnIndex: item.turnIndex,
-          user: truncateHistoryText(item.input, 2000),
-          assistant: truncateHistoryText(assistant, 4000),
+          user: item.input,
+          assistant,
+          ...(toolInteractions.length ? { toolInteractions } : {}),
         }
       })
+  }
+  async getConversationSummary(conversationId: string) {
+    return this.summaries.get(conversationId)
+  }
+  async listConversationHistory(conversationId: string, afterTurnIndex: number, beforeTurnIndex: number, limit: number) {
+    return this.conversationHistory(conversationId, afterTurnIndex, beforeTurnIndex, Math.max(0, limit))
+  }
+  async saveConversationSummary(input: Omit<ConversationSummary, "createdAt" | "updatedAt">) {
+    const previous = this.summaries.get(input.conversationId)
+    if (previous && previous.coveredThroughTurnIndex >= input.coveredThroughTurnIndex) return previous
+    const now = new Date().toISOString()
+    const value: ConversationSummary = { ...input, createdAt: previous?.createdAt ?? now, updatedAt: now }
+    this.summaries.set(input.conversationId, value)
+    return value
   }
   async getRunActorGrantCiphertext(runId: string) { return this.runs.get(runId)?.runActorGrantCiphertext }
   async appendRunInput(runId: string, text: string) {
@@ -348,8 +384,4 @@ function timelineText(content: Record<string, unknown>) {
       return typeof value.text === "string" ? value.text : ""
     })
     .join("")
-}
-
-function truncateHistoryText(value: string, maxLength: number) {
-  return [...value].slice(0, maxLength).join("")
 }

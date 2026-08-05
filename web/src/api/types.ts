@@ -79,6 +79,19 @@ export interface AgentObservabilityConversationTurn {
   createdAt: string
   loops: AgentObservabilityConversationLoop[]
 }
+export interface AgentObservabilityTurn {
+  id: string
+  conversationId: string
+  conversationTitle: string
+  user: AgentObservabilityConversationUser
+  turnIndex: number
+  status: string
+  userMessage: string
+  runId: string
+  traceId: string
+  durationMs: number
+  createdAt: string
+}
 export interface AgentObservabilityConversationLoop {
   loopIndex: number
   items: AgentObservabilityConversationRunItem[]

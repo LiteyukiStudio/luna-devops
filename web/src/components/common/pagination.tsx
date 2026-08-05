@@ -1,5 +1,5 @@
 import type { HTMLAttributes } from 'react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { NativeSelect } from '@/components/ui/native-select'
 import {
@@ -66,24 +66,17 @@ export function PaginationController({
     return options.length > 0 ? options : [effectivePageSize]
   }, [effectivePageSize, pageSizeOptions])
 
-  const lastReportedRef = useRef<number | null>(null)
   useEffect(() => {
-    if (!onPageChange)
+    if (!onPageChange || !reportAutoAdjust || currentPage === effectivePage)
       return
-    if (lastReportedRef.current === effectivePage)
-      return
-    if (!reportAutoAdjust && lastReportedRef.current !== null && currentPage > totalPages)
-      return
-    lastReportedRef.current = effectivePage
     onPageChange(effectivePage)
-  }, [currentPage, effectivePage, onPageChange, reportAutoAdjust, totalPages])
+  }, [currentPage, effectivePage, onPageChange, reportAutoAdjust])
 
   const handleSetPage = useCallback((page: number) => {
     if (disabled)
       return
     const nextPage = clampPage(page, totalPages)
     if (onPageChange) {
-      lastReportedRef.current = nextPage
       onPageChange(nextPage)
       return
     }

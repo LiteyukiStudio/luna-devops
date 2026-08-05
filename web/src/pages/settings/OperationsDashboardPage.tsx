@@ -1,4 +1,4 @@
-import type { AgentObservabilityConversation, AgentObservabilityLog, AgentObservabilityTrace } from '@/api'
+import type { AgentObservabilityConversation, AgentObservabilityLog, AgentObservabilityTrace, AgentObservabilityTurn } from '@/api'
 import type { DataListColumn } from '@/components/common/data-list'
 import { useQuery } from '@tanstack/react-query'
 import { Activity, Bot, CircleGauge, Clock3, ExternalLink, Eye, MessagesSquare, Network, RefreshCw, Settings, Timer, UserRound, Wrench } from 'lucide-react'
@@ -109,6 +109,9 @@ function AgentObservabilityView({ active, enabled }: { active: boolean, enabled:
   const [conversationPage, setConversationPage] = useState(1)
   const [conversationPageSize, setConversationPageSize] = useState(20)
   const [conversationSearch, setConversationSearch] = useState('')
+  const [turnPage, setTurnPage] = useState(1)
+  const [turnPageSize, setTurnPageSize] = useState(20)
+  const [turnSearch, setTurnSearch] = useState('')
   const [selectedConversation, setSelectedConversation] = useState<AgentObservabilityConversation | null>(null)
   const [conversationTurnPage, setConversationTurnPage] = useState(1)
   const [selectedTrace, setSelectedTrace] = useState<AgentObservabilityTrace | null>(null)
@@ -124,6 +127,12 @@ function AgentObservabilityView({ active, enabled }: { active: boolean, enabled:
     enabled: active && enabled && traceScope === 'conversations',
     refetchInterval: 30_000,
   })
+  const turns = useQuery({
+    queryKey: ['agent-observability-turns', range, turnPage, turnPageSize, turnSearch],
+    queryFn: () => api.listAgentObservabilityTurns({ range, page: turnPage, pageSize: turnPageSize, search: turnSearch }),
+    enabled: active && enabled && traceScope === 'turns',
+    refetchInterval: 30_000,
+  })
   const changeConversationPageSize = (value: number) => {
     setConversationPageSize(value)
     setConversationPage(1)
@@ -131,6 +140,23 @@ function AgentObservabilityView({ active, enabled }: { active: boolean, enabled:
   const changeConversationSearch = (value: string) => {
     setConversationSearch(value)
     setConversationPage(1)
+  }
+  const changeTurnPageSize = (value: number) => {
+    setTurnPageSize(value)
+    setTurnPage(1)
+  }
+  const changeTurnSearch = (value: string) => {
+    setTurnSearch(value)
+    setTurnPage(1)
+  }
+  const changeRange = (value: '1h' | '6h' | '24h') => {
+    setRange(value)
+    setConversationPage(1)
+    setTurnPage(1)
+  }
+  const refreshWorkspace = () => {
+    const activeList = traceScope === 'conversations' ? conversations : turns
+    void Promise.all([overview.refetch(), activeList.refetch()])
   }
   const openConversation = (conversation: AgentObservabilityConversation) => {
     setConversationTurnPage(1)
@@ -142,13 +168,20 @@ function AgentObservabilityView({ active, enabled }: { active: boolean, enabled:
     { key: 'message', header: t('operationsDashboardPage.message'), width: 'primary', render: item => <span className="font-mono text-xs break-all">{item.line}</span> },
     { key: 'trace', header: t('operationsDashboardPage.traceId'), width: 'secondary', mobile: 'hidden', render: item => <span className="font-mono text-xs">{shortId(item.labels.trace_id)}</span> },
   ], [i18n.language, t])
-  const traceColumns = useMemo<DataListColumn<AgentObservabilityTrace>[]>(() => [
-    { key: 'time', header: t('operationsDashboardPage.time'), width: 'compact', render: item => formatNanoTime(item.startTimeUnixNano, i18n.language) },
-    { key: 'name', header: t('operationsDashboardPage.run'), width: 'primary', render: item => item.rootTraceName || 'agent.run.execute' },
-    { key: 'duration', header: t('operationsDashboardPage.duration'), width: 'number', render: item => formatDuration(item.durationMs) },
-    { key: 'trace', header: t('operationsDashboardPage.traceId'), width: 'secondary', render: item => <span className="font-mono text-xs" title={item.traceId}>{shortId(item.traceId)}</span> },
+  const turnColumns = useMemo<DataListColumn<AgentObservabilityTurn>[]>(() => [
+    { key: 'createdAt', header: t('operationsDashboardPage.time'), width: 'compact', render: item => formatDateTime(item.createdAt, i18n.language) },
+    { key: 'conversation', header: t('operationsDashboardPage.conversationTitle'), width: 'primary', render: item => (
+      <span className="min-w-0">
+        <span className="block truncate font-medium">{item.conversationTitle}</span>
+        <span className="block truncate text-xs text-muted-foreground">{t('operationsDashboardPage.turnNumber', { index: item.turnIndex + 1 })}</span>
+      </span>
+    ) },
+    { key: 'user', header: t('operationsDashboardPage.user'), width: 'normal', mobile: 'hidden', render: item => item.user.name || item.user.email },
+    { key: 'message', header: t('operationsDashboardPage.userMessage'), width: 'primary', render: item => <span className="block truncate" title={item.userMessage}>{item.userMessage || '—'}</span> },
+    { key: 'status', header: t('operationsDashboardPage.status'), width: 'status', render: item => <StatusBadge tone={runStatusTone(item.status)}>{t(`operationsDashboardPage.runStatus.${item.status}`, { defaultValue: item.status })}</StatusBadge> },
+    { key: 'duration', header: t('operationsDashboardPage.duration'), width: 'number', render: item => item.durationMs > 0 ? formatDuration(item.durationMs) : '—' },
     { key: 'actions', header: t('operationsDashboardPage.actions'), width: 'actions', sticky: 'right', mobileActions: 'inline', render: item => (
-      <Button size="sm" variant="outline" onClick={() => setSelectedTrace(item)}>
+      <Button disabled={!item.traceId} size="sm" variant="outline" onClick={() => setSelectedTrace(traceFromTurnSummary(item))}>
         <Eye className="size-4" />
         {t('operationsDashboardPage.viewTrace')}
       </Button>
@@ -203,8 +236,8 @@ function AgentObservabilityView({ active, enabled }: { active: boolean, enabled:
           ))}
         </div>
         <div className="flex items-center gap-2">
-          {(['1h', '6h', '24h'] as const).map(item => <Button key={item} size="sm" variant={range === item ? 'default' : 'outline'} onClick={() => setRange(item)}>{item}</Button>)}
-          <Button aria-label={t('common.refresh')} disabled={overview.isFetching} size="icon" variant="ghost" onClick={() => void overview.refetch()}><RefreshCw className={overview.isFetching ? 'animate-spin' : ''} /></Button>
+          {(['1h', '6h', '24h'] as const).map(item => <Button key={item} size="sm" variant={range === item ? 'default' : 'outline'} onClick={() => changeRange(item)}>{item}</Button>)}
+          <Button aria-label={t('common.refresh')} disabled={overview.isFetching || conversations.isFetching || turns.isFetching} size="icon" variant="ghost" onClick={refreshWorkspace}><RefreshCw className={overview.isFetching || conversations.isFetching || turns.isFetching ? 'animate-spin' : ''} /></Button>
         </div>
       </div>
       <MetricGroup>
@@ -239,14 +272,15 @@ function AgentObservabilityView({ active, enabled }: { active: boolean, enabled:
               : (
                   <DataList
                     columns={conversationColumns}
+                    constrainedHeight
                     emptyDescription={t('operationsDashboardPage.noConversationsDescription')}
                     emptyMode={conversationSearch ? 'filtered' : 'actionable'}
                     emptyTitle={t('operationsDashboardPage.noConversations')}
                     items={conversations.data?.items ?? []}
                     loading={conversations.isLoading}
                     pagination={{
-                      page: conversations.data?.page ?? conversationPage,
-                      pageSize: conversations.data?.pageSize ?? conversationPageSize,
+                      page: conversationPage,
+                      pageSize: conversationPageSize,
                       total: conversations.data?.total ?? 0,
                       totalPages: conversations.data?.totalPages ?? 0,
                       pageInfoLabel: t('pagination.pageInfo', { page: conversations.data?.page ?? conversationPage, totalPages: conversations.data?.totalPages ?? 0, total: conversations.data?.total ?? 0 }),
@@ -259,7 +293,30 @@ function AgentObservabilityView({ active, enabled }: { active: boolean, enabled:
                 )}
           </TabsContent>
           <TabsContent value="turns">
-            <DataList items={data.traces ?? []} columns={traceColumns} rowKey={item => item.traceId} emptyTitle={t('operationsDashboardPage.noRuns')} emptyDescription={t('operationsDashboardPage.noRunsDescription')} />
+            {turns.isError
+              ? <ErrorState title={t('operationsDashboardPage.turnsLoadFailed')} description={t('operationsDashboardPage.turnsLoadFailedDescription')} />
+              : (
+                  <DataList
+                    columns={turnColumns}
+                    constrainedHeight
+                    emptyDescription={t('operationsDashboardPage.noRunsDescription')}
+                    emptyMode={turnSearch ? 'filtered' : 'actionable'}
+                    emptyTitle={t('operationsDashboardPage.noRuns')}
+                    items={turns.data?.items ?? []}
+                    loading={turns.isLoading}
+                    pagination={{
+                      page: turnPage,
+                      pageSize: turnPageSize,
+                      total: turns.data?.total ?? 0,
+                      totalPages: turns.data?.totalPages ?? 0,
+                      pageInfoLabel: t('pagination.pageInfo', { page: turns.data?.page ?? turnPage, totalPages: turns.data?.totalPages ?? 0, total: turns.data?.total ?? 0 }),
+                      onPageChange: setTurnPage,
+                      onPageSizeChange: changeTurnPageSize,
+                    }}
+                    rowKey={item => item.id}
+                    search={{ value: turnSearch, placeholder: t('operationsDashboardPage.searchTurns'), onChange: changeTurnSearch }}
+                  />
+                )}
           </TabsContent>
         </Tabs>
       </Section>
@@ -364,16 +421,27 @@ function formatDuration(value: number) {
   return value < 1000 ? `${value} ms` : `${(value / 1000).toFixed(2)} s`
 }
 
-function formatLokiTime(value: string, language: string) {
-  try {
-    return new Intl.DateTimeFormat(language, { dateStyle: 'short', timeStyle: 'medium' }).format(new Date(Number(BigInt(value) / 1_000_000n)))
-  }
-  catch {
-    return '—'
+function runStatusTone(status: string): 'success' | 'danger' | 'warning' | 'neutral' {
+  if (status === 'completed')
+    return 'success'
+  if (status === 'failed' || status === 'canceled' || status === 'expired')
+    return 'danger'
+  if (status.startsWith('waiting_'))
+    return 'warning'
+  return 'neutral'
+}
+
+function traceFromTurnSummary(turn: AgentObservabilityTurn): AgentObservabilityTrace {
+  return {
+    traceId: turn.traceId,
+    rootServiceName: 'luna-agent',
+    rootTraceName: 'agent.run.execute',
+    startTimeUnixNano: String(new Date(turn.createdAt).getTime() * 1_000_000),
+    durationMs: turn.durationMs,
   }
 }
 
-function formatNanoTime(value: string, language: string) {
+function formatLokiTime(value: string, language: string) {
   try {
     return new Intl.DateTimeFormat(language, { dateStyle: 'short', timeStyle: 'medium' }).format(new Date(Number(BigInt(value) / 1_000_000n)))
   }

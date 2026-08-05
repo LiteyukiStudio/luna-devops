@@ -34,6 +34,8 @@ func TestPlatformCatalogCoversAgentEligibleControlPlane(t *testing.T) {
 		"createProject", "createApplication", "createDeploymentTarget",
 		"installAppTemplate", "triggerBuildRun", "createRelease",
 		"createGatewayRoute", "getBuildRun", "getReleaseRuntimeLogs",
+		"createReleaseRuntimeCommandSession", "executeReleaseRuntimeCommandSession",
+		"closeReleaseRuntimeCommandSession",
 	} {
 		if _, ok := byID[operationID]; !ok {
 			t.Errorf("missing common workflow operation %s", operationID)
@@ -46,6 +48,33 @@ func TestPlatformCatalogCoversAgentEligibleControlPlane(t *testing.T) {
 		if _, ok := byID[operationID]; ok {
 			t.Errorf("unsafe protocol or secret operation entered catalog: %s", operationID)
 		}
+	}
+}
+
+func TestPlatformCatalogClassifiesRuntimeCommandSessions(t *testing.T) {
+	for _, operationID := range []string{
+		"createReleaseRuntimeCommandSession",
+		"executeReleaseRuntimeCommandSession",
+	} {
+		operation, ok := PlatformOperation(operationID)
+		if !ok {
+			t.Fatalf("missing operation %s", operationID)
+		}
+		if operation.Risk != "sensitive" || operation.Approval != "always" || operation.StepUpPurpose != "runtime_exec" {
+			t.Errorf("operation %s policy = %#v", operationID, operation)
+		}
+	}
+
+	operation, ok := PlatformOperation("execReleaseRuntimeCommand")
+	if !ok {
+		t.Fatal("missing operation execReleaseRuntimeCommand")
+	}
+	properties, _ := operation.InputSchema["properties"].(map[string]any)
+	body, _ := properties["body"].(map[string]any)
+	bodyProperties, _ := body["properties"].(map[string]any)
+	command, _ := bodyProperties["command"].(map[string]any)
+	if command["type"] != "string" {
+		t.Fatalf("runtime exec command schema drifted: %#v", command)
 	}
 }
 

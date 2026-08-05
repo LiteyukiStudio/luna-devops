@@ -13,10 +13,11 @@ export class OpenAICompatibleProvider implements ModelProvider {
 
   async health(): Promise<{ ok: boolean, requestId?: string }> {
     return withSpan("gen_ai.chat.health", clientSpanOptions(), async span => {
-      const response = await this.request([{ role: "user", content: "只回复 OK。" }], 4)
+      const response = await this.request([{ role: "user", content: "只回复 OK。" }], 32)
       span.setAttribute("gen_ai.usage.input_tokens", response.usage.inputTokens)
       span.setAttribute("gen_ai.usage.output_tokens", response.usage.outputTokens)
-      return { ok: response.text.length > 0, ...(response.requestId ? { requestId: response.requestId } : {}) }
+      const ok = Boolean(response.text.trim() || response.reasoningSummary.trim() || response.usage.outputTokens > 0)
+      return { ok, ...(response.requestId ? { requestId: response.requestId } : {}) }
     })
   }
 
@@ -69,7 +70,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
         if (payload.id) activeSpan?.setAttribute("gen_ai.response.id", payload.id)
         if (payload.model) activeSpan?.setAttribute("gen_ai.response.model", payload.model)
         const delta = payload.choices?.[0]?.delta
-        const reasoning = textValue(delta?.reasoning_summary)
+        const reasoning = extractReasoningText(delta)
         const content = contentText(delta?.content)
         if (reasoning) {
           reasoningText += reasoning
@@ -120,7 +121,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
     const message = body.choices?.[0]?.message
     const result = {
       text: contentText(message?.content),
-      reasoningSummary: textValue(message?.reasoning_summary),
+      reasoningSummary: extractReasoningText(message),
       toolCalls: (message?.tool_calls ?? []).map((call) => {
         const parsed = parseArguments(call.function?.arguments ?? "")
         return {
@@ -275,18 +276,23 @@ function providerTransportError(error: unknown, signal?: AbortSignal): Error {
 }
 
 type ToolCallShape = { index: number, id?: string, function?: { name?: string, arguments?: string } }
-type MessageShape = { content?: unknown, reasoning_summary?: unknown, tool_calls?: Array<{ id?: string, function?: { name?: string, arguments?: string } }> }
+type ReasoningShape = { reasoning_summary?: unknown, reasoning_content?: unknown }
+type MessageShape = ReasoningShape & { content?: unknown, tool_calls?: Array<{ id?: string, function?: { name?: string, arguments?: string } }> }
 type CompletionBody = { id?: string, model?: string, choices?: Array<{ message?: MessageShape }>, usage?: { prompt_tokens?: number, completion_tokens?: number } }
 type StreamChunk = {
   id?: string
   model?: string
-  choices?: Array<{ delta?: { content?: unknown, reasoning_summary?: unknown, tool_calls?: ToolCallShape[] } }>
+  choices?: Array<{ delta?: ReasoningShape & { content?: unknown, tool_calls?: ToolCallShape[] } }>
   usage?: { prompt_tokens?: number, completion_tokens?: number }
   error?: unknown
 }
 
 function textValue(value: unknown): string {
   return typeof value === "string" ? value : ""
+}
+
+function extractReasoningText(value: ReasoningShape | undefined): string {
+  return textValue(value?.reasoning_summary) || textValue(value?.reasoning_content)
 }
 
 function contentText(value: unknown): string {

@@ -9,6 +9,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
+import { formatAIConversationTimestamp } from './conversation-timestamp'
 
 export interface AIConversationListProps {
   activeId?: string
@@ -41,7 +42,7 @@ export function AIConversationList({
   onSearch,
   onSelect,
 }: AIConversationListProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [selecting, setSelecting] = useState(false)
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(() => new Set())
   const [renamingId, setRenamingId] = useState<string>()
@@ -200,14 +201,16 @@ export function AIConversationList({
                     <span className="flex min-w-0 items-center gap-1.5">
                       <strong className="min-w-0 flex-1 truncate text-xs font-medium">{conversation.title}</strong>
                       {conversation.titleSource === 'user' && <LockKeyhole aria-label={t('aiAssistant.conversations.manualTitleLocked')} className="size-3 shrink-0 text-muted-foreground" />}
-                      {runningConversationIds.has(conversation.id) && <LoaderCircle aria-label={t('aiAssistant.generating')} className="size-3.5 shrink-0 animate-spin text-primary-text motion-reduce:animate-pulse" />}
                     </span>
-                    <span className="block text-[10px] text-muted-foreground">{new Date(conversation.updatedAt).toLocaleString()}</span>
+                    <span className="flex min-w-0 items-center gap-1.5 text-[10px] text-muted-foreground">
+                      <time dateTime={conversation.updatedAt}>{formatAIConversationTimestamp(conversation.updatedAt, i18n.language)}</time>
+                      {runningConversationIds.has(conversation.id) && <LoaderCircle aria-label={t('aiAssistant.generating')} className="size-3 shrink-0 animate-spin text-primary motion-reduce:animate-pulse" />}
+                    </span>
                   </button>
                 )}
             {!selecting && (
               <DropdownMenu>
-                <DropdownMenuTrigger asChild><Button aria-label={t('common.actions')} className={cn('shrink-0', mobile ? 'size-9 opacity-100' : 'size-7 opacity-0 group-hover:opacity-100 focus:opacity-100')} size="icon" variant="ghost"><Ellipsis className="size-3.5" /></Button></DropdownMenuTrigger>
+                <DropdownMenuTrigger asChild><Button aria-label={t('common.actions')} className={cn('shrink-0 self-center', mobile ? 'size-8 opacity-100' : 'size-7 opacity-0 group-hover:opacity-100 focus:opacity-100')} size="icon" variant="ghost"><Ellipsis className="size-4" /></Button></DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem onClick={() => {
                     setTitle(conversation.title)
