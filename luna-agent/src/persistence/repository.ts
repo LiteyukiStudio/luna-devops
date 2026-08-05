@@ -14,6 +14,19 @@ import type {
   UIActionDelivery,
 } from "../domain.js"
 
+export class RunStateConflictError extends Error {
+  override readonly name = "RunStateConflictError"
+
+  constructor(
+    readonly runId: string,
+    readonly expectedStatus: Run["status"],
+    readonly targetStatus: Run["status"],
+    readonly actualStatus?: Run["status"],
+  ) {
+    super("ai.run_state_conflict")
+  }
+}
+
 export interface Repository {
   health(): Promise<boolean>
   createConversation(ownerUserId: string, title: string, projectId?: string, titleSource?: ConversationTitleSource): Promise<Conversation>

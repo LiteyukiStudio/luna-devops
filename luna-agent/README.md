@@ -39,9 +39,14 @@ curl -H 'X-Luna-Dev-User: usr_local' \
   http://127.0.0.1:8091/internal/v1/capabilities
 ```
 
-生产必须配置 PostgreSQL、`bff-hmac` 验证和内部根密钥，服务启动时会拒绝不安全的默认值。用于本地
-PostgreSQL 验证的参考 DDL 位于 `sql/001_ai_schema.sql`；生产迁移仍由平台统一的
-golang-migrate Job 管理，Agent 不会在启动时自动迁移。
+生产必须配置 PostgreSQL、`bff-hmac` 验证和内部根密钥，服务启动时会拒绝不安全的默认值。持久层使用
+Drizzle ORM 访问 `ai` schema；Schema 只负责运行时类型与查询，数据库迁移继续由平台统一的
+golang-migrate Job 管理，Agent 不会在启动时自动迁移。本地验证可使用 `sql/001_ai_schema.sql`
+参考 DDL 初始化专用临时库，并通过 `AGENT_TEST_DATABASE_URL` 运行真实 PostgreSQL 集成测试：
+
+```bash
+AGENT_TEST_DATABASE_URL=postgres://devops:devops@127.0.0.1:5432/<临时库> pnpm vitest run tests/postgres-repository.test.ts
+```
 
 ## 配置
 

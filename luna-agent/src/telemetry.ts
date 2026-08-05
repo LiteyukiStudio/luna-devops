@@ -227,7 +227,11 @@ export async function withSpan<T>(
         return await operation(span)
       }
       catch (error) {
-        recordSpanError(span, error)
+        if (isExpectedCancellation(error)) {
+          span.setAttribute("luna.operation.outcome", "canceled")
+        } else {
+          recordSpanError(span, error)
+        }
         throw error
       }
       finally {
@@ -235,6 +239,11 @@ export async function withSpan<T>(
       }
     })
   })
+}
+
+export function isExpectedCancellation(error: unknown): boolean {
+  const code = stableErrorCode(error)
+  return code === "ai.run_canceled" || code === "ai.agent_stopping"
 }
 
 function activeAICorrelationAttributes(): Attributes {

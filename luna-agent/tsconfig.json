@@ -15,5 +15,5 @@
     "resolveJsonModule": true,
     "skipLibCheck": true
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts", "eslint.config.js"]
+  "include": ["src/**/*.ts", "tests/**/*.ts", "eslint.config.js", "vitest.config.ts"]
 }

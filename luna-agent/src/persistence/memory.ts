@@ -13,7 +13,7 @@ import type {
   UIActionDelivery,
 } from "../domain.js"
 import { createId } from "../id.js"
-import type { Repository } from "./repository.js"
+import { RunStateConflictError, type Repository } from "./repository.js"
 import { createTurnRequestHash } from "./create-turn-hash.js"
 
 type StoredRun = Run & { ownerUserId: string, leaseOwner?: string, leaseExpiresAt?: number, runActorGrantCiphertext?: string }
@@ -241,7 +241,7 @@ export class MemoryRepository implements Repository {
 
   async updateRun(runId: string, from: Run["status"], to: Run["status"], fields: Partial<Run> = {}) {
     const run = this.runs.get(runId)
-    if (!run || run.status !== from) throw new Error("ai.run_state_conflict")
+    if (!run || run.status !== from) throw new RunStateConflictError(runId, from, to, run?.status)
     Object.assign(run, fields, { status: to, rowVersion: run.rowVersion + 1 })
     const turn = this.turns.get(run.turnId)
     if (turn) turn.status = to

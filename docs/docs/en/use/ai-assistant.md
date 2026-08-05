@@ -2,6 +2,8 @@
 
 The AI assistant uses the current page and your platform permissions to inspect resources, explain status, diagnose failures, and help with deployments and routine operations.
 
+Stopping an active task preserves the conversation content already produced and marks the turn as canceled. A normal cancellation is not reported as a model-generation failure. You can then edit the input and start another task.
+
 ## Get started
 
 An administrator enters the provider URL, API key, and model under **Global Settings → AI Assistant**, then enables the assistant. All signed-in users can use it by default, or the administrator can restrict access to platform administrators. The provider must support an OpenAI-compatible `chat/completions` API, streaming, and tool calls.

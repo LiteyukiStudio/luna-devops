@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { initializeTelemetry, internalSpanOptions, isDatabaseSpanCaptureEnabled, isHealthCheckPath, normalizeTraceContext, sanitizeTelemetryURL, stableErrorCode, telemetryLog, withSpan } from "../src/telemetry.js"
+import { initializeTelemetry, internalSpanOptions, isDatabaseSpanCaptureEnabled, isExpectedCancellation, isHealthCheckPath, normalizeTraceContext, sanitizeTelemetryURL, stableErrorCode, telemetryLog, withSpan } from "../src/telemetry.js"
 
 describe("agent telemetry", () => {
   it("keeps noisy database spans opt-in", () => {
@@ -24,6 +24,12 @@ describe("agent telemetry", () => {
   it("only exposes stable error codes", () => {
     expect(stableErrorCode(new Error("ai.provider_timeout"))).toBe("ai.provider_timeout")
     expect(stableErrorCode(new Error("request contained secret abc"))).toBe("ai.internal_error")
+  })
+
+  it("separates expected cancellation from operational failures", () => {
+    expect(isExpectedCancellation(new Error("ai.run_canceled"))).toBe(true)
+    expect(isExpectedCancellation(new Error("ai.agent_stopping"))).toBe(true)
+    expect(isExpectedCancellation(new Error("ai.run_timeout"))).toBe(false)
   })
 
   it("persists only bounded W3C trace context fields", () => {

@@ -6,7 +6,7 @@ import type {
   PrepareInteractionCardsInput,
 } from "@luna-devops/ai-interaction-card-contract"
 import type { AssistantGraphState, GraphVersionRegistry } from "./graph/registry.js"
-import type { Repository } from "./persistence/repository.js"
+import { RunStateConflictError, type Repository } from "./persistence/repository.js"
 import type { ModelMessage, ModelToolCall } from "./provider/provider.js"
 import { createId } from "./id.js"
 import { redact } from "./redaction.js"
@@ -21,7 +21,7 @@ import { createOptionsInput, optionUIActions } from "./tools/ui-options.js"
 import { automaticRouteUIAction, navigateToRouteInput } from "./tools/ui-route.js"
 import type { ProviderConfigClient } from "./provider/config-client.js"
 import { agentRuntimeInternals, defaultRuntimeSettings, type RuntimeSettings } from "./runtime-settings.js"
-import { agentMetrics, extractTraceContext, internalSpanOptions, recordAIContent, recordSpanError, stableErrorCode, telemetryLog, withSpan } from "./telemetry.js"
+import { agentMetrics, extractTraceContext, internalSpanOptions, isExpectedCancellation, recordAIContent, recordSpanError, stableErrorCode, telemetryLog, withSpan } from "./telemetry.js"
 
 export class RunExecutor {
   private timer?: NodeJS.Timeout
@@ -323,12 +323,46 @@ export class RunExecutor {
       telemetryLog("agent.run.completed", "info", { "luna.run.id": run.id })
     } catch (error) {
       const message = error instanceof Error ? error.message : "ai.run_failed"
+      const errorCode = stableErrorCode(error)
+      const canceled = errorCode === "ai.run_canceled"
+        || (error instanceof RunStateConflictError && error.actualStatus === "canceled")
+      if (canceled) {
+        outcome = "canceled"
+        span.setAttribute("luna.run.outcome", outcome)
+        if (error instanceof RunStateConflictError) {
+          span.setAttribute("luna.run.expected_status", error.expectedStatus)
+          span.setAttribute("luna.run.actual_status", error.actualStatus ?? "missing")
+          span.setAttribute("luna.run.target_status", error.targetStatus)
+        }
+        telemetryLog("agent.run.canceled", "info", {
+          "luna.run.id": run.id,
+          "luna.run.cancel_source": error instanceof RunStateConflictError ? "durable_state" : "abort_signal",
+        })
+        await this.failCardPreparations(run.id, cardPreparations, "ai.run_canceled")
+        return true
+      }
       outcome = error instanceof ToolInterruption ? error.state : stableErrorCode(error)
       span.setAttribute("luna.run.outcome", outcome)
-      telemetryLog("agent.run.failed", error instanceof ToolInterruption ? "info" : "error", {
+      if (error instanceof RunStateConflictError) {
+        span.setAttribute("luna.run.expected_status", error.expectedStatus)
+        span.setAttribute("luna.run.actual_status", error.actualStatus ?? "missing")
+        span.setAttribute("luna.run.target_status", error.targetStatus)
+      }
+      telemetryLog(error instanceof ToolInterruption ? `agent.run.${error.state}` : "agent.run.failed", error instanceof ToolInterruption ? "info" : "error", {
         "luna.run.id": run.id,
-        "error.type": error instanceof Error ? error.name : "UnknownError",
-        "error.code": stableErrorCode(error),
+        ...(error instanceof ToolInterruption
+          ? {}
+          : {
+              "error.type": error instanceof Error ? error.name : "UnknownError",
+              "error.code": errorCode,
+            }),
+        ...(error instanceof RunStateConflictError
+          ? {
+              "luna.run.expected_status": error.expectedStatus,
+              "luna.run.actual_status": error.actualStatus ?? "missing",
+              "luna.run.target_status": error.targetStatus,
+            }
+          : {}),
       })
       await this.failCardPreparations(run.id, cardPreparations, stableError(message))
       if (error instanceof ToolInterruption && error.state === "waiting_input") {
@@ -564,10 +598,11 @@ export class RunExecutor {
 
   private async failCardPreparations(runId: string, preparations: Map<string, CardPreparation>, errorCode: string) {
     if (preparations.size > 0) {
-      agentMetrics.cards.add(preparations.size, { phase: "failed" })
-      telemetryLog("agent.card.failed", "error", {
+      const canceled = errorCode === "ai.run_canceled"
+      agentMetrics.cards.add(preparations.size, { phase: canceled ? "canceled" : "failed" })
+      telemetryLog(canceled ? "agent.card.canceled" : "agent.card.failed", canceled ? "info" : "error", {
         "luna.run.id": runId,
-        "error.code": errorCode,
+        ...(canceled ? {} : { "error.code": errorCode }),
         "card.count": preparations.size,
       })
     }
@@ -816,14 +851,15 @@ export class RunExecutor {
       throw error
     }
     }).catch(error => {
-      outcome = stableErrorCode(error)
+      const canceled = isExpectedCancellation(error)
+      outcome = canceled ? "canceled" : stableErrorCode(error)
       agentMetrics.modelRequests.add(1, { operation: "stream", outcome })
       agentMetrics.modelSteps.add(1, { outcome })
       agentMetrics.modelDuration.record((performance.now() - startedAt) / 1000, { operation: "stream", outcome })
-      telemetryLog("agent.model.failed", "error", {
+      telemetryLog(canceled ? "agent.model.canceled" : "agent.model.failed", canceled ? "info" : "error", {
         "luna.run.id": runId,
         "error.type": error instanceof Error ? error.name : "UnknownError",
-        "error.code": outcome,
+        ...(canceled ? {} : { "error.code": outcome }),
       })
       throw error
     })

@@ -49,6 +49,11 @@ create table if not exists ai.runs (
   started_at timestamptz,
   completed_at timestamptz,
   error_code text,
+  client_instance_id text,
+  trace_context jsonb not null default '{}'::jsonb
+    check (jsonb_typeof(trace_context) = 'object'),
+  next_item_position bigint not null default 0,
+  next_event_sequence bigint not null default 1,
   unique(turn_id, run_index)
 );
 create index if not exists runs_queue on ai.runs(status, lease_expires_at) where status = 'queued';
@@ -61,6 +66,7 @@ create table if not exists ai.items (
   type text not null,
   status text not null,
   content jsonb not null,
+  revision bigint not null default 1,
   created_at timestamptz not null default now(),
   unique(run_id, timeline_index)
 );
@@ -81,6 +87,7 @@ create table if not exists ai.tool_calls (
   operation_id text not null,
   status text not null,
   arguments jsonb not null,
+  arguments_ciphertext text,
   arguments_hash text not null,
   attempt integer not null default 1,
   row_version integer not null default 1,
@@ -92,6 +99,34 @@ create table if not exists ai.tool_calls (
   updated_at timestamptz not null default now()
 );
 create index if not exists tool_calls_run_created on ai.tool_calls(run_id, created_at);
+
+create table if not exists ai.ui_actions (
+  id text primary key,
+  run_id text not null references ai.runs(id) on delete cascade,
+  tool_call_id text not null unique,
+  client_instance_id text not null,
+  action jsonb not null,
+  status text not null default 'pending' check (status in ('pending', 'succeeded', 'failed', 'expired')),
+  attempts integer not null default 1 check (attempts > 0),
+  expires_at timestamptz not null,
+  acknowledged_at timestamptz,
+  actual_path text,
+  error_code text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists ui_actions_pending_client on ai.ui_actions(client_instance_id, created_at) where status = 'pending';
+
+create table if not exists ai.conversation_summaries (
+  conversation_id text primary key references ai.conversations(id) on delete cascade,
+  covered_through_turn_index integer not null check (covered_through_turn_index >= 0),
+  compression_version integer not null check (compression_version = 1),
+  source_turn_count integer not null check (source_turn_count > 0),
+  content jsonb not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists conversation_summaries_updated on ai.conversation_summaries(updated_at desc);
 
 create table if not exists ai.idempotency_keys (
   owner_user_id text not null,

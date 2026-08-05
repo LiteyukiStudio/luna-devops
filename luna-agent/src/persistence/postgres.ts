@@ -1,6 +1,6 @@
-import { Pool, type PoolClient } from "pg"
+import { and, asc, count, desc, eq, gt, gte, inArray, isNull, lt, ne, sql } from "drizzle-orm"
+import type { Pool } from "pg"
 import type {
-  Conversation,
   ConversationHistoryEntry,
   ConversationSummary,
   ConversationTitleSource,
@@ -9,206 +9,290 @@ import type {
   Run,
   TimelineItem,
   UIActionAcknowledgement,
-  UIActionDelivery,
-  UIActionStatus,
 } from "../domain.js"
 import { createId } from "../id.js"
-import type { Repository } from "./repository.js"
+import { internalSpanOptions, withSpan } from "../telemetry.js"
+import { RunStateConflictError, type Repository } from "./repository.js"
 import { createTurnRequestHash } from "./create-turn-hash.js"
-import { normalizeEventSequence } from "../event-sequence.js"
+import { AgentDatabase, type AgentDb, type AgentTx } from "./database.js"
+import {
+  mapConversation,
+  mapConversationSummary,
+  mapRun,
+  mapRunEvent,
+  mapTimelineItem,
+  mapUIAction,
+  timelineContentText,
+} from "./mappers/domain.js"
+import {
+  conversations,
+  conversationSummaries,
+  idempotencyKeys,
+  items,
+  runEvents,
+  runs,
+  turns,
+  uiActions,
+  type RunRow,
+  type UIActionRow,
+} from "./schema/index.js"
 
-type DbConversation = { id: string, owner_user_id: string, project_id: string | null, title: string, title_source: ConversationTitleSource, status: "active", created_at: Date, updated_at: Date }
-type DbRun = { id: string, owner_user_id: string, conversation_id: string, turn_id: string, run_index: number, status: Run["status"], row_version: number, graph_version: "assistant-v1", prompt_version: Run["promptVersion"], tool_catalog_digest: string, page_context: Record<string, unknown>, trace_context: Record<string, string>, client_instance_id: string | null, created_at: Date, started_at: Date | null, completed_at: Date | null, error_code: string | null }
-type DbUIAction = { id: string, run_id: string, tool_call_id: string, client_instance_id: string, action: Record<string, unknown>, status: UIActionStatus, attempts: number, expires_at: Date, acknowledged_at: Date | null, actual_path: string | null, error_code: string | null, created_at: Date, updated_at: Date }
-type DbTimelineItem = { id: string, run_id: string, turn_id: string, timeline_index: number, revision: string | number, type: TimelineItem["type"], status: TimelineItem["status"], content: Record<string, unknown>, created_at: Date }
-type DbConversationSummary = { conversation_id: string, covered_through_turn_index: number, compression_version: 1, source_turn_count: number, content: ConversationSummary["content"], created_at: Date, updated_at: Date }
+/** Drizzle 事务回调或共享 db 实例均可执行的最小查询接口 */
+type Querier = AgentDb | AgentTx
+
+const historyTurnWindow = 8
 
 export class PostgresRepository implements Repository {
-  readonly pool: Pool
+  private readonly database: AgentDatabase
+
   constructor(connectionString: string) {
-    this.pool = new Pool({ connectionString, max: 10, application_name: "luna-agent" })
+    this.database = new AgentDatabase(connectionString)
   }
-  async close(): Promise<void> { await this.pool.end() }
+
+  /** 连接池仅供既有 ToolCallStore 过渡使用；新代码不得直接使用 */
+  get pool(): Pool {
+    return this.database.pool
+  }
+
+  private get db(): AgentDb {
+    return this.database.db
+  }
+
+  async close(): Promise<void> {
+    await this.database.close()
+  }
+
   async health(): Promise<boolean> {
-    try { await this.pool.query("select 1"); return true } catch { return false }
+    return this.database.health()
   }
+
   async createConversation(ownerUserId: string, title: string, projectId?: string, titleSource?: ConversationTitleSource) {
-    const row = (await this.pool.query<DbConversation>(
-      `insert into ai.conversations(id, owner_user_id, project_id, title, title_source) values ($1,$2,$3,$4,$5) returning *`,
-      [createId("aicnv"), ownerUserId, projectId ?? null, title, titleSource ?? (title === "新会话" ? "default" : "user")],
-    )).rows[0]
+    const row = (await this.db.insert(conversations).values({
+      id: createId("aicnv"),
+      ownerUserId,
+      projectId: projectId ?? null,
+      title,
+      titleSource: titleSource ?? (title === "新会话" ? "default" : "user"),
+    }).returning())[0]
     if (!row) throw new Error("ai.persistence_failed")
     return mapConversation(row)
   }
+
   async findEmptyConversation(ownerUserId: string, projectId?: string) {
-    const row = (await this.pool.query<DbConversation>(
-      `select c.* from ai.conversations c
-       where c.owner_user_id=$1 and c.project_id is not distinct from $2
-         and not exists (select 1 from ai.turns t where t.conversation_id=c.id)
-       order by c.updated_at desc limit 1`,
-      [ownerUserId, projectId ?? null],
-    )).rows[0]
+    const emptyTurns = this.db.select({ id: turns.id }).from(turns).where(eq(turns.conversationId, conversations.id))
+    const row = (await this.db.select().from(conversations)
+      .where(and(
+        eq(conversations.ownerUserId, ownerUserId),
+        projectId === undefined ? isNull(conversations.projectId) : eq(conversations.projectId, projectId),
+        sql`not exists ${emptyTurns}`,
+      ))
+      .orderBy(desc(conversations.updatedAt))
+      .limit(1))[0]
     return row ? mapConversation(row) : undefined
   }
+
   async listConversations(ownerUserId: string, page: number, pageSize: number) {
-    const [rows, count] = await Promise.all([
-      this.pool.query<DbConversation>(`select * from ai.conversations where owner_user_id=$1 order by updated_at desc limit $2 offset $3`, [ownerUserId, pageSize, (page - 1) * pageSize]),
-      this.pool.query<{ count: string }>(`select count(*) from ai.conversations where owner_user_id=$1`, [ownerUserId]),
+    const [rows, total] = await Promise.all([
+      this.db.select().from(conversations)
+        .where(eq(conversations.ownerUserId, ownerUserId))
+        .orderBy(desc(conversations.updatedAt))
+        .limit(pageSize)
+        .offset((page - 1) * pageSize),
+      this.db.select({ value: count() }).from(conversations)
+        .where(eq(conversations.ownerUserId, ownerUserId)),
     ])
-    return { items: rows.rows.map(mapConversation), total: Number(count.rows[0]?.count ?? 0) }
+    return { items: rows.map(mapConversation), total: total[0]?.value ?? 0 }
   }
+
   async getConversation(ownerUserId: string, id: string) {
-    const row = (await this.pool.query<DbConversation>(`select * from ai.conversations where id=$1 and owner_user_id=$2`, [id, ownerUserId])).rows[0]
+    const row = (await this.db.select().from(conversations)
+      .where(and(eq(conversations.id, id), eq(conversations.ownerUserId, ownerUserId))))[0]
     return row ? mapConversation(row) : undefined
   }
+
   async renameConversation(ownerUserId: string, id: string, title: string) {
-    const row = (await this.pool.query<DbConversation>(
-      `update ai.conversations set title=$3,title_source='user',updated_at=now() where id=$1 and owner_user_id=$2 returning *`,
-      [id, ownerUserId, title],
-    )).rows[0]
+    const row = (await this.db.update(conversations)
+      .set({ title, titleSource: "user", updatedAt: sql`now()` })
+      .where(and(eq(conversations.id, id), eq(conversations.ownerUserId, ownerUserId)))
+      .returning())[0]
     return row ? mapConversation(row) : undefined
   }
+
   async renameConversationByAssistant(id: string, title: string) {
-    const row = (await this.pool.query<DbConversation>(
-      `update ai.conversations set title=$2,title_source='assistant',updated_at=now()
-       where id=$1 and title_source <> 'user' returning *`,
-      [id, title],
-    )).rows[0]
+    const row = (await this.db.update(conversations)
+      .set({ title, titleSource: "assistant", updatedAt: sql`now()` })
+      .where(and(eq(conversations.id, id), ne(conversations.titleSource, "user")))
+      .returning())[0]
     return row ? mapConversation(row) : undefined
   }
+
   async deleteConversation(ownerUserId: string, id: string) {
-    return (await this.pool.query(`delete from ai.conversations where id=$1 and owner_user_id=$2`, [id, ownerUserId])).rowCount === 1
+    const deleted = await this.db.delete(conversations)
+      .where(and(eq(conversations.id, id), eq(conversations.ownerUserId, ownerUserId)))
+      .returning({ id: conversations.id })
+    return deleted.length === 1
   }
+
   async createTurn(ownerUserId: string, input: CreateTurn): Promise<CreatedTurn> {
-    const client = await this.pool.connect()
-    try {
-      await client.query("begin")
+    return withSpan("agent.repository.turn.create", internalSpanOptions(), () => this.db.transaction(async (tx) => {
       const hash = createTurnRequestHash(input)
-      const existing = await client.query<{ request_hash: string, turn_id: string, run_id: string }>(
-        `select request_hash,turn_id,run_id from ai.idempotency_keys where owner_user_id=$1 and idempotency_key=$2`,
-        [ownerUserId, input.idempotencyKey],
-      )
-      if (existing.rows[0]) {
-        if (existing.rows[0].request_hash !== hash) throw new Error("idempotency_conflict")
-        const created = await this.loadCreated(client, existing.rows[0].turn_id, existing.rows[0].run_id)
-        await client.query("commit")
-        return created
+      const existing = (await tx.select().from(idempotencyKeys)
+        .where(and(eq(idempotencyKeys.ownerUserId, ownerUserId), eq(idempotencyKeys.idempotencyKey, input.idempotencyKey))))[0]
+      if (existing) {
+        if (existing.requestHash !== hash) throw new Error("idempotency_conflict")
+        return this.loadCreated(tx, existing.turnId, existing.runId)
       }
-      const owned = await client.query(`select 1 from ai.conversations where id=$1 and owner_user_id=$2 for update`, [input.conversationId, ownerUserId])
-      if (!owned.rowCount) throw new Error("ai.conversation_not_found")
-      const index = Number((await client.query<{ count: string }>(`select count(*) from ai.turns where conversation_id=$1`, [input.conversationId])).rows[0]?.count ?? 0)
+      const owned = (await tx.select({ id: conversations.id }).from(conversations)
+        .where(and(eq(conversations.id, input.conversationId), eq(conversations.ownerUserId, ownerUserId)))
+        .for("update"))[0]
+      if (!owned) throw new Error("ai.conversation_not_found")
+      const index = (await tx.select({ value: count() }).from(turns)
+        .where(eq(turns.conversationId, input.conversationId)))[0]?.value ?? 0
       const turnId = createId("aitrn")
       const runId = input.preallocatedRunId ?? createId("airun")
-      await client.query(`insert into ai.turns(id,conversation_id,turn_index,status,input,selected_run_id) values($1,$2,$3,'queued',$4,$5)`, [turnId, input.conversationId, index, input.input, runId])
-      await client.query(
-        `insert into ai.runs(id,owner_user_id,conversation_id,turn_id,run_index,status,graph_version,prompt_version,tool_catalog_digest,page_context,trace_context,run_actor_grant_ciphertext,client_instance_id) values($1,$2,$3,$4,0,'queued','assistant-v1','system-v4',$5,$6,$7,$8,$9)`,
-        [runId, ownerUserId, input.conversationId, turnId, input.toolCatalogDigest ?? "sha256:platform-tools-v1", JSON.stringify(input.pageContext), JSON.stringify(input.traceContext ?? {}), input.runActorGrantCiphertext ?? null, input.clientInstanceId ?? null],
-      )
-      await client.query(`insert into ai.idempotency_keys(owner_user_id,idempotency_key,request_hash,turn_id,run_id) values($1,$2,$3,$4,$5)`, [ownerUserId, input.idempotencyKey, hash, turnId, runId])
-      await this.appendItemWith(client, { runId, turnId, type: "user_message", status: "completed", content: { parts: [{ type: "text", text: input.input }] } })
-      await this.appendEventWith(client, runId, "run.queued", { state: "queued" })
-      const created = await this.loadCreated(client, turnId, runId)
-      await client.query("commit")
-      return created
-    } catch (error) {
-      await client.query("rollback")
-      throw error
-    } finally { client.release() }
+      await tx.insert(turns).values({
+        id: turnId,
+        conversationId: input.conversationId,
+        turnIndex: index,
+        status: "queued",
+        input: input.input,
+        selectedRunId: runId,
+      })
+      await tx.insert(runs).values({
+        id: runId,
+        ownerUserId,
+        conversationId: input.conversationId,
+        turnId,
+        runIndex: 0,
+        status: "queued",
+        graphVersion: "assistant-v1",
+        promptVersion: "system-v4",
+        toolCatalogDigest: input.toolCatalogDigest ?? "sha256:platform-tools-v1",
+        pageContext: input.pageContext,
+        traceContext: input.traceContext ?? {},
+        runActorGrantCiphertext: input.runActorGrantCiphertext ?? null,
+        clientInstanceId: input.clientInstanceId ?? null,
+      })
+      await tx.insert(idempotencyKeys).values({
+        ownerUserId,
+        idempotencyKey: input.idempotencyKey,
+        requestHash: hash,
+        turnId,
+        runId,
+      })
+      await this.appendItemWith(tx, { runId, turnId, type: "user_message", status: "completed", content: { parts: [{ type: "text", text: input.input }] } })
+      await this.appendEventWith(tx, runId, "run.queued", { state: "queued" })
+      return this.loadCreated(tx, turnId, runId)
+    }))
   }
+
   async getRun(ownerUserId: string, id: string) {
-    const row = (await this.pool.query<DbRun>(`select * from ai.runs where id=$1 and owner_user_id=$2`, [id, ownerUserId])).rows[0]
+    const row = (await this.db.select().from(runs)
+      .where(and(eq(runs.id, id), eq(runs.ownerUserId, ownerUserId))))[0]
     return row ? mapRun(row) : undefined
   }
+
   async cancelRun(ownerUserId: string, id: string) {
-    const client = await this.pool.connect()
-    try {
-      await client.query("begin")
-      const row = (await client.query<DbRun>(
-        `update ai.runs set status='canceled',row_version=row_version+1,completed_at=now()
-         where id=$1 and owner_user_id=$2 and status not in ('completed','failed','canceled','expired') returning *`,
-        [id, ownerUserId],
-      )).rows[0]
-      if (!row) {
-        await client.query("rollback")
-        return this.getRun(ownerUserId, id)
-      }
-      await client.query(`update ai.turns set status='canceled' where id=$1`, [row.turn_id])
-      await this.appendEventWith(client, id, "run.canceled", { state: "canceled", rowVersion: row.row_version })
-      await client.query("commit")
+    return this.db.transaction(async (tx) => {
+      const row = (await tx.update(runs)
+        .set({ status: "canceled", rowVersion: sql`${runs.rowVersion} + 1`, completedAt: sql`now()` })
+        .where(and(
+          eq(runs.id, id),
+          eq(runs.ownerUserId, ownerUserId),
+          sql`${runs.status} not in ('completed', 'failed', 'canceled', 'expired')`,
+        ))
+        .returning())[0]
+      if (!row) return undefined
+      await tx.update(turns).set({ status: "canceled" }).where(eq(turns.id, row.turnId))
+      await this.appendEventWith(tx, id, "run.canceled", { state: "canceled", rowVersion: row.rowVersion })
       return mapRun(row)
-    } catch (error) {
-      await client.query("rollback")
-      throw error
-    } finally {
-      client.release()
-    }
+    }).then(async (run) => {
+      if (run) return run
+      // 未命中条件更新时读取权威当前状态，保持与旧实现一致的返回语义
+      return this.getRun(ownerUserId, id)
+    })
   }
+
   async claimRun(instanceId: string, leaseSeconds: number) {
-    const row = (await this.pool.query<DbRun>(`select r.* from ai.claim_next_run($1,$2) c join ai.runs r on r.id=c.run_id`, [instanceId, leaseSeconds])).rows[0]
-    return row ? mapRun(row) : undefined
+    return withSpan("agent.repository.run.claim", internalSpanOptions(), async () => {
+      // 原子领取依赖数据库函数 ai.claim_next_run（FOR UPDATE SKIP LOCKED），
+      // 由 golang-migrate 迁移维护，无法以 Drizzle 查询安全替代
+      const raw = (await this.db.execute<Record<string, unknown>>(sql`
+        select r.* from ai.claim_next_run(${instanceId}, ${leaseSeconds}) c
+        join ai.runs r on r.id = c.run_id
+      `)).rows[0]
+      return raw ? mapRun(driverRow(runs, raw) as RunRow) : undefined
+    })
   }
+
   async getExecutionInput(runId: string) {
-    const row = (await this.pool.query<{
-      input: string
-      page_context: Record<string, unknown>
-      turn_id: string
-      turn_index: number
-      conversation_id: string
-      title: string
-      title_source: ConversationTitleSource
-    }>(
-      `select t.input,t.id as turn_id,t.turn_index,r.conversation_id,r.page_context,c.title,c.title_source
-       from ai.runs r
-       join ai.turns t on t.id=r.turn_id
-       join ai.conversations c on c.id=r.conversation_id
-       where r.id=$1`,
-      [runId],
-    )).rows[0]
+    const row = (await this.db.select({
+      input: turns.input,
+      turnId: turns.id,
+      turnIndex: turns.turnIndex,
+      conversationId: runs.conversationId,
+      pageContext: runs.pageContext,
+      title: conversations.title,
+      titleSource: conversations.titleSource,
+    })
+      .from(runs)
+      .innerJoin(turns, eq(turns.id, runs.turnId))
+      .innerJoin(conversations, eq(conversations.id, runs.conversationId))
+      .where(eq(runs.id, runId)))[0]
     if (!row) return undefined
+
+    // 最近历史轮次的 lateral 子查询保留原有聚合语义（按轮聚合 assistant 文本）
     const [currentToolInteractions, historyRows, historyItems] = await Promise.all([
-      this.pool.query<{ id: string, type: "tool_call" | "tool_result", status: TimelineItem["status"], content: Record<string, unknown> }>(
-        `select id,type,status,content from ai.items where run_id=$1 and type in ('tool_call','tool_result') order by timeline_index`,
-        [runId],
-      ),
-      this.pool.query<{ turn_index: number, input: string, assistant: string }>(
-        `select recent.turn_index,recent.input,
-                coalesce(string_agg(i.content->'parts'->0->>'text', E'\n' order by i.timeline_index)
-                  filter (where i.type='assistant_message'), '') assistant
-         from (
-           select turn_index,input,selected_run_id
-           from ai.turns
-           where conversation_id=$1 and turn_index<$2
-           order by turn_index desc
-           limit 8
-         ) recent
-         left join ai.items i on i.run_id=recent.selected_run_id
-         group by recent.turn_index,recent.input
-         order by recent.turn_index`,
-        [row.conversation_id, row.turn_index],
-      ),
-      this.pool.query<{ turn_index: number, type: TimelineItem["type"], status: TimelineItem["status"], content: Record<string, unknown>, timeline_index: number }>(
-        `select t.turn_index,i.type,i.status,i.content,i.timeline_index
-         from ai.turns t
-         join ai.items i on i.run_id=t.selected_run_id
-         where t.conversation_id=$1 and t.turn_index<$2 and t.turn_index>=greatest(0,$2-8)
-           and i.type in ('tool_call','tool_result')
-         order by t.turn_index,i.timeline_index`,
-        [row.conversation_id, row.turn_index],
-      ),
+      this.db.select({ id: items.id, type: items.type, status: items.status, content: items.content })
+        .from(items)
+        .where(and(eq(items.runId, runId), inArray(items.type, ["tool_call", "tool_result"])))
+        .orderBy(asc(items.timelineIndex)),
+      this.db.execute<{ turn_index: number, input: string, assistant: string }>(sql`
+        select recent.turn_index, recent.input,
+               coalesce(string_agg(i.content->'parts'->0->>'text', E'\n' order by i.timeline_index)
+                 filter (where i.type = 'assistant_message'), '') assistant
+        from (
+          select turn_index, input, selected_run_id
+          from ai.turns
+          where conversation_id = ${row.conversationId} and turn_index < ${row.turnIndex}
+          order by turn_index desc
+          limit ${historyTurnWindow}
+        ) recent
+        left join ai.items i on i.run_id = recent.selected_run_id
+        group by recent.turn_index, recent.input
+        order by recent.turn_index
+      `),
+      this.db.select({
+        turnIndex: turns.turnIndex,
+        type: items.type,
+        status: items.status,
+        content: items.content,
+        timelineIndex: items.timelineIndex,
+      })
+        .from(turns)
+        .innerJoin(items, eq(items.runId, turns.selectedRunId))
+        .where(and(
+          eq(turns.conversationId, row.conversationId),
+          lt(turns.turnIndex, row.turnIndex),
+          gte(turns.turnIndex, Math.max(0, row.turnIndex - historyTurnWindow)),
+          inArray(items.type, ["tool_call", "tool_result"]),
+        ))
+        .orderBy(asc(turns.turnIndex), asc(items.timelineIndex)),
     ])
-    const toolInteractionsByTurn = new Map<number, typeof historyItems.rows>()
-    for (const item of historyItems.rows) {
-      const interactions = toolInteractionsByTurn.get(item.turn_index) ?? []
+
+    const toolInteractionsByTurn = new Map<number, typeof historyItems>()
+    for (const item of historyItems) {
+      const interactions = toolInteractionsByTurn.get(item.turnIndex) ?? []
       interactions.push(item)
-      toolInteractionsByTurn.set(item.turn_index, interactions)
+      toolInteractionsByTurn.set(item.turnIndex, interactions)
     }
     return {
-      turnId: row.turn_id,
-      turnIndex: row.turn_index,
-      conversationId: row.conversation_id,
+      turnId: row.turnId,
+      turnIndex: row.turnIndex,
+      conversationId: row.conversationId,
       input: row.input,
-      pageContext: row.page_context,
-      toolInteractions: currentToolInteractions.rows.map(item => ({ itemId: item.id, type: item.type, status: item.status, content: item.content })),
+      pageContext: row.pageContext,
+      toolInteractions: currentToolInteractions.map(item => ({ itemId: item.id, type: item.type as "tool_call" | "tool_result", status: item.status, content: item.content })),
       history: historyRows.rows.map((item): ConversationHistoryEntry => ({
         turnIndex: item.turn_index,
         user: item.input,
@@ -217,42 +301,50 @@ export class PostgresRepository implements Repository {
           ? { toolInteractions: toolInteractionsByTurn.get(item.turn_index)!.map(tool => ({ type: tool.type, status: tool.status, content: tool.content })) }
           : {}),
       })),
-      conversation: { title: row.title, titleSource: row.title_source },
+      conversation: { title: row.title, titleSource: row.titleSource },
     }
   }
+
   async getConversationSummary(conversationId: string) {
-    const row = (await this.pool.query<DbConversationSummary>(
-      `select * from ai.conversation_summaries where conversation_id=$1`,
-      [conversationId],
-    )).rows[0]
+    const row = (await this.db.select().from(conversationSummaries)
+      .where(eq(conversationSummaries.conversationId, conversationId)))[0]
     return row ? mapConversationSummary(row) : undefined
   }
+
   async listConversationHistory(conversationId: string, afterTurnIndex: number, beforeTurnIndex: number, limit: number) {
-    const turns = await this.pool.query<{ turn_index: number, input: string, selected_run_id: string }>(
-      `select turn_index,input,selected_run_id
-       from ai.turns
-       where conversation_id=$1 and turn_index>$2 and turn_index<$3
-       order by turn_index
-       limit $4`,
-      [conversationId, afterTurnIndex, beforeTurnIndex, Math.max(0, limit)],
-    )
-    if (turns.rows.length === 0) return []
-    const runIds = turns.rows.map(turn => turn.selected_run_id)
-    const items = await this.pool.query<{ run_id: string, type: TimelineItem["type"], status: TimelineItem["status"], content: Record<string, unknown>, timeline_index: number }>(
-      `select run_id,type,status,content,timeline_index
-       from ai.items
-       where run_id=any($1::text[]) and type in ('assistant_message','tool_call','tool_result')
-       order by run_id,timeline_index`,
-      [runIds],
-    )
-    const byRun = new Map<string, typeof items.rows>()
-    for (const item of items.rows) {
-      const values = byRun.get(item.run_id) ?? []
+    const boundedTurns = await this.db.select({
+      turnIndex: turns.turnIndex,
+      input: turns.input,
+      selectedRunId: turns.selectedRunId,
+    })
+      .from(turns)
+      .where(and(
+        eq(turns.conversationId, conversationId),
+        gt(turns.turnIndex, afterTurnIndex),
+        lt(turns.turnIndex, beforeTurnIndex),
+      ))
+      .orderBy(asc(turns.turnIndex))
+      .limit(Math.max(0, limit))
+    if (boundedTurns.length === 0) return []
+    const runIds = boundedTurns.map(turn => turn.selectedRunId)
+    const turnItems = await this.db.select({
+      runId: items.runId,
+      type: items.type,
+      status: items.status,
+      content: items.content,
+      timelineIndex: items.timelineIndex,
+    })
+      .from(items)
+      .where(and(inArray(items.runId, runIds), inArray(items.type, ["assistant_message", "tool_call", "tool_result"])))
+      .orderBy(asc(items.runId), asc(items.timelineIndex))
+    const byRun = new Map<string, typeof turnItems>()
+    for (const item of turnItems) {
+      const values = byRun.get(item.runId) ?? []
       values.push(item)
-      byRun.set(item.run_id, values)
+      byRun.set(item.runId, values)
     }
-    return turns.rows.map(turn => {
-      const runItems = byRun.get(turn.selected_run_id) ?? []
+    return boundedTurns.map((turn) => {
+      const runItems = byRun.get(turn.selectedRunId) ?? []
       const assistant = runItems
         .filter(item => item.type === "assistant_message")
         .map(item => timelineContentText(item.content))
@@ -262,84 +354,123 @@ export class PostgresRepository implements Repository {
         .filter(item => item.type === "tool_call" || item.type === "tool_result")
         .map(item => ({ type: item.type, status: item.status, content: item.content }))
       return {
-        turnIndex: turn.turn_index,
+        turnIndex: turn.turnIndex,
         user: turn.input,
         assistant,
         ...(toolInteractions.length ? { toolInteractions } : {}),
       }
     })
   }
+
   async saveConversationSummary(input: Omit<ConversationSummary, "createdAt" | "updatedAt">) {
-    const row = (await this.pool.query<DbConversationSummary>(
-      `insert into ai.conversation_summaries(
-         conversation_id,covered_through_turn_index,compression_version,source_turn_count,content
-       ) values($1,$2,$3,$4,$5)
-       on conflict(conversation_id) do update set
-         covered_through_turn_index=excluded.covered_through_turn_index,
-         compression_version=excluded.compression_version,
-         source_turn_count=excluded.source_turn_count,
-         content=excluded.content,
-         updated_at=now()
-       where ai.conversation_summaries.covered_through_turn_index < excluded.covered_through_turn_index
-       returning *`,
-      [input.conversationId, input.coveredThroughTurnIndex, input.compressionVersion, input.sourceTurnCount, JSON.stringify(input.content)],
-    )).rows[0]
+    // 单调推进的水位条件属于原子 upsert 语义，使用最小范围 sql 模板保留
+    const row = (await this.db.insert(conversationSummaries).values({
+      conversationId: input.conversationId,
+      coveredThroughTurnIndex: input.coveredThroughTurnIndex,
+      compressionVersion: input.compressionVersion,
+      sourceTurnCount: input.sourceTurnCount,
+      content: input.content,
+    })
+      .onConflictDoUpdate({
+        target: conversationSummaries.conversationId,
+        set: {
+          coveredThroughTurnIndex: sql`excluded.covered_through_turn_index`,
+          compressionVersion: sql`excluded.compression_version`,
+          sourceTurnCount: sql`excluded.source_turn_count`,
+          content: sql`excluded.content`,
+          updatedAt: sql`now()`,
+        },
+        setWhere: sql`${conversationSummaries.coveredThroughTurnIndex} < excluded.covered_through_turn_index`,
+      })
+      .returning())[0]
     if (row) return mapConversationSummary(row)
     const current = await this.getConversationSummary(input.conversationId)
     if (!current) throw new Error("ai.context_summary_persistence_failed")
     return current
   }
+
   async getRunActorGrantCiphertext(runId: string) {
-    return (await this.pool.query<{ run_actor_grant_ciphertext: string | null }>(`select run_actor_grant_ciphertext from ai.runs where id=$1`, [runId])).rows[0]?.run_actor_grant_ciphertext ?? undefined
+    const row = (await this.db.select({ value: runs.runActorGrantCiphertext }).from(runs)
+      .where(eq(runs.id, runId)))[0]
+    return row?.value ?? undefined
   }
+
   async appendRunInput(runId: string, text: string) {
-    const result = await this.pool.query(`update ai.turns t set input=t.input || E'\\n' || $2 from ai.runs r where r.id=$1 and t.id=r.turn_id`, [runId, text])
-    if (!result.rowCount) throw new Error("ai.run_not_found")
+    const updated = await this.db.update(turns)
+      .set({ input: sql`${turns.input} || E'\n' || ${text}` })
+      .from(runs)
+      .where(and(eq(runs.id, runId), eq(turns.id, runs.turnId)))
+      .returning({ id: turns.id })
+    if (!updated.length) throw new Error("ai.run_not_found")
   }
+
   async renewLease(runId: string, instanceId: string, leaseSeconds: number) {
-    return Boolean((await this.pool.query<{ renewed: boolean }>(`select ai.renew_run_lease($1,$2,$3) renewed`, [runId, instanceId, leaseSeconds])).rows[0]?.renewed)
+    // 租约续期条件由数据库函数保证原子性
+    const row = (await this.db.execute<{ renewed: boolean | null }>(
+      sql`select ai.renew_run_lease(${runId}, ${instanceId}, ${leaseSeconds}) renewed`,
+    )).rows[0]
+    return Boolean(row?.renewed)
   }
-  async releaseLease(runId: string, instanceId: string) { await this.pool.query(`select ai.release_run_lease($1,$2)`, [runId, instanceId]) }
+
+  async releaseLease(runId: string, instanceId: string) {
+    await this.db.execute(sql`select ai.release_run_lease(${runId}, ${instanceId})`)
+  }
+
   async updateRun(runId: string, from: Run["status"], to: Run["status"], fields: Partial<Run> = {}) {
-    const client = await this.pool.connect()
-    try {
-      await client.query("begin")
-      const row = (await client.query<DbRun>(
-        `update ai.runs set status=$3,row_version=row_version+1,started_at=coalesce($4,started_at),completed_at=coalesce($5,completed_at),error_code=coalesce($6,error_code) where id=$1 and status=$2 returning *`,
-        [runId, from, to, fields.startedAt ?? null, fields.completedAt ?? null, fields.errorCode ?? null],
-      )).rows[0]
-      if (!row) throw new Error("ai.run_state_conflict")
-      await client.query(`update ai.turns set status=$2 where id=$1`, [row.turn_id, to])
-      await this.appendEventWith(client, runId, `run.${to}`, {
+    return withSpan("agent.repository.run.transition", internalSpanOptions({
+      "luna.run.expected_status": from,
+      "luna.run.target_status": to,
+    }), async (span) => this.db.transaction(async (tx) => {
+      const startedAt = typeof fields.startedAt === "string" ? fields.startedAt : null
+      const completedAt = typeof fields.completedAt === "string" ? fields.completedAt : null
+      const errorCode = typeof fields.errorCode === "string" ? fields.errorCode : null
+      const row = (await tx.update(runs)
+        .set({
+          status: to,
+          rowVersion: sql`${runs.rowVersion} + 1`,
+          startedAt: sql`coalesce(${startedAt}::timestamptz, ${runs.startedAt})`,
+          completedAt: sql`coalesce(${completedAt}::timestamptz, ${runs.completedAt})`,
+          errorCode: sql`coalesce(${errorCode}, ${runs.errorCode})`,
+        })
+        .where(and(eq(runs.id, runId), eq(runs.status, from)))
+        .returning())[0]
+      if (!row) {
+        // 条件更新未命中时读取权威当前状态后抛出冲突，禁止改成先查后改的竞态实现
+        const current = (await tx.select({ status: runs.status }).from(runs).where(eq(runs.id, runId)))[0]
+        const conflict = new RunStateConflictError(runId, from, to, current?.status)
+        span.setAttribute("luna.run.actual_status", conflict.actualStatus ?? "missing")
+        throw conflict
+      }
+      await tx.update(turns).set({ status: to }).where(eq(turns.id, row.turnId))
+      await this.appendEventWith(tx, runId, `run.${to}`, {
         state: to,
-        rowVersion: row.row_version,
+        rowVersion: row.rowVersion,
         ...(fields.errorCode ? { errorCode: fields.errorCode } : {}),
       })
-      await client.query("commit")
       return mapRun(row)
-    } catch (error) { await client.query("rollback"); throw error } finally { client.release() }
+    }))
   }
-  async appendItem(value: Omit<TimelineItem, "id" | "timelineIndex" | "revision" | "createdAt"> & { id?: string }) { return this.appendItemWith(this.pool, value) }
+
+  async appendItem(value: Omit<TimelineItem, "id" | "timelineIndex" | "revision" | "createdAt"> & { id?: string }) {
+    return this.appendItemWith(this.db, value)
+  }
+
   async updateItem(itemId: string, status: TimelineItem["status"], content: Record<string, unknown>) {
-    return this.updateItemWith(this.pool, itemId, status, content)
+    return this.updateItemWith(this.db, itemId, status, content)
   }
+
   async appendItemWithEvent(
     value: Omit<TimelineItem, "id" | "timelineIndex" | "revision" | "createdAt"> & { id?: string },
     eventType: string,
     eventData: Record<string, unknown> = {},
   ) {
-    const client = await this.pool.connect()
-    try {
-      await client.query("begin")
-      const item = await this.appendItemWith(client, value)
-      const event = await this.appendEventWith(client, item.runId, eventType, { ...eventData, item })
-      await client.query("commit")
+    return this.db.transaction(async (tx) => {
+      const item = await this.appendItemWith(tx, value)
+      const event = await this.appendEventWith(tx, item.runId, eventType, { ...eventData, item })
       return { item, event }
-    } catch (error) {
-      await client.query("rollback")
-      throw error
-    } finally { client.release() }
+    })
   }
+
   async updateItemWithEvent(
     itemId: string,
     status: TimelineItem["status"],
@@ -347,215 +478,231 @@ export class PostgresRepository implements Repository {
     eventType: string,
     eventData: Record<string, unknown> = {},
   ) {
-    const client = await this.pool.connect()
-    try {
-      await client.query("begin")
-      const item = await this.updateItemWith(client, itemId, status, content)
-      const event = await this.appendEventWith(client, item.runId, eventType, { ...eventData, item })
-      await client.query("commit")
+    return this.db.transaction(async (tx) => {
+      const item = await this.updateItemWith(tx, itemId, status, content)
+      const event = await this.appendEventWith(tx, item.runId, eventType, { ...eventData, item })
       return { item, event }
-    } catch (error) {
-      await client.query("rollback")
-      throw error
-    } finally { client.release() }
+    })
   }
+
   async finalizeStreamingItems(runId: string, status: Exclude<TimelineItem["status"], "streaming">) {
-    const client = await this.pool.connect()
-    try {
-      await client.query("begin")
-      const streaming = await client.query<DbTimelineItem>(
-        `select * from ai.items where run_id=$1 and status='streaming' order by timeline_index for update`,
-        [runId],
-      )
-      for (const current of streaming.rows) {
-        const item = await this.updateItemWith(client, current.id, status, current.content)
-        await this.appendEventWith(client, runId, "item.finalized", { item })
+    await this.db.transaction(async (tx) => {
+      const streaming = await tx.select().from(items)
+        .where(and(eq(items.runId, runId), eq(items.status, "streaming")))
+        .orderBy(asc(items.timelineIndex))
+        .for("update")
+      for (const current of streaming) {
+        const item = await this.updateItemWith(tx, current.id, status, current.content)
+        await this.appendEventWith(tx, runId, "item.finalized", { item })
       }
-      await client.query("commit")
-    } catch (error) {
-      await client.query("rollback")
-      throw error
-    } finally { client.release() }
+    })
   }
-  async appendEvent(runId: string, type: string, data: Record<string, unknown>) { return this.appendEventWith(this.pool, runId, type, data) }
+
+  async appendEvent(runId: string, type: string, data: Record<string, unknown>) {
+    return withSpan("agent.repository.event.append", internalSpanOptions(), () => this.appendEventWith(this.db, runId, type, data))
+  }
+
   async getEvents(ownerUserId: string, runId: string, after: number) {
-    const result = await this.pool.query<{ id: string, run_id: string, event_sequence: number, type: string, data: Record<string, unknown>, created_at: Date }>(
-      `select e.* from ai.run_events e join ai.runs r on r.id=e.run_id where e.run_id=$1 and r.owner_user_id=$2 and e.event_sequence>$3 order by e.event_sequence`, [runId, ownerUserId, after],
-    )
-    return result.rows.map(e => ({ id: e.id, runId: e.run_id, sequence: normalizeEventSequence(e.event_sequence), type: e.type, data: e.data, createdAt: e.created_at.toISOString() }))
+    const rows = await this.db.select({ event: runEvents })
+      .from(runEvents)
+      .innerJoin(runs, eq(runs.id, runEvents.runId))
+      .where(and(
+        eq(runEvents.runId, runId),
+        eq(runs.ownerUserId, ownerUserId),
+        gt(runEvents.eventSequence, after),
+      ))
+      .orderBy(asc(runEvents.eventSequence))
+    return rows.map(row => mapRunEvent(row.event))
   }
+
   async createUIAction(runId: string, toolCallId: string, action: Record<string, unknown>, expiresAt: string) {
-    const row = (await this.pool.query<DbUIAction>(
-      `insert into ai.ui_actions(id,run_id,tool_call_id,client_instance_id,action,status,attempts,expires_at)
-       select $1,r.id,$2,r.client_instance_id,$3,'pending',1,$4
-       from ai.runs r
-       where r.id=$5 and r.client_instance_id is not null
-       on conflict (tool_call_id) do update set tool_call_id=excluded.tool_call_id
-       returning *`,
-      [createId("aiuia"), toolCallId, JSON.stringify(action), expiresAt, runId],
-    )).rows[0]
+    // insert ... select 保证 run 存在且已绑定客户端实例，on conflict 提供幂等；
+    // 该 PostgreSQL 专属形态无法以 ORM insert values 表达，保留最小 sql 模板
+    const row = (await this.db.execute<Record<string, unknown>>(sql`
+      insert into ai.ui_actions (id, run_id, tool_call_id, client_instance_id, action, status, attempts, expires_at)
+      select ${createId("aiuia")}, r.id, ${toolCallId}, r.client_instance_id, ${JSON.stringify(action)}::jsonb, 'pending', 1, ${expiresAt}::timestamptz
+      from ai.runs r
+      where r.id = ${runId} and r.client_instance_id is not null
+      on conflict (tool_call_id) do update set tool_call_id = excluded.tool_call_id
+      returning *
+    `)).rows[0]
     if (!row) throw new Error("ai.client_instance_unavailable")
-    return mapUIAction(row)
+    return mapUIAction(driverRow(uiActions, row) as UIActionRow)
   }
+
   async listPendingUIActions(ownerUserId: string, clientInstanceId: string) {
-    await this.pool.query(
-      `update ai.ui_actions a set status='expired',updated_at=now()
-       from ai.runs r
-       where a.run_id=r.id and r.owner_user_id=$1 and a.client_instance_id=$2
-         and a.status='pending' and a.expires_at <= now()`,
-      [ownerUserId, clientInstanceId],
-    )
-    const result = await this.pool.query<DbUIAction>(
-      `update ai.ui_actions a set attempts=a.attempts+1,updated_at=now()
-       from ai.runs r
-       where a.run_id=r.id and r.owner_user_id=$1 and a.client_instance_id=$2
-         and a.status='pending' and a.expires_at > now()
-       returning a.*`,
-      [ownerUserId, clientInstanceId],
-    )
-    return result.rows.sort((left, right) => left.created_at.getTime() - right.created_at.getTime()).map(mapUIAction)
+    // 先把本客户端实例已过期的待办置为 expired，再领取剩余待办并递增投递次数
+    await this.db.update(uiActions)
+      .set({ status: "expired", updatedAt: sql`now()` })
+      .from(runs)
+      .where(and(
+        eq(uiActions.runId, runs.id),
+        eq(runs.ownerUserId, ownerUserId),
+        eq(uiActions.clientInstanceId, clientInstanceId),
+        eq(uiActions.status, "pending"),
+        sql`${uiActions.expiresAt} <= now()`,
+      ))
+    const delivered = await this.db.update(uiActions)
+      .set({ attempts: sql`${uiActions.attempts} + 1`, updatedAt: sql`now()` })
+      .from(runs)
+      .where(and(
+        eq(uiActions.runId, runs.id),
+        eq(runs.ownerUserId, ownerUserId),
+        eq(uiActions.clientInstanceId, clientInstanceId),
+        eq(uiActions.status, "pending"),
+        sql`${uiActions.expiresAt} > now()`,
+      ))
+      .returning()
+    return delivered
+      .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())
+      .map(mapUIAction)
   }
+
   async acknowledgeUIAction(ownerUserId: string, clientInstanceId: string, actionId: string, acknowledgement: UIActionAcknowledgement) {
-    const row = (await this.pool.query<DbUIAction>(
-      `update ai.ui_actions a
-       set status=$4,acknowledged_at=now(),actual_path=$5,error_code=$6,updated_at=now()
-       from ai.runs r
-       where a.id=$1 and a.run_id=r.id and r.owner_user_id=$2 and a.client_instance_id=$3
-         and a.status='pending' and a.expires_at > now()
-       returning a.*`,
-      [actionId, ownerUserId, clientInstanceId, acknowledgement.status, acknowledgement.actualPath ?? null, acknowledgement.errorCode ?? null],
-    )).rows[0]
-    if (row) return mapUIAction(row)
-    const existing = (await this.pool.query<DbUIAction>(
-      `select a.* from ai.ui_actions a join ai.runs r on r.id=a.run_id
-       where a.id=$1 and r.owner_user_id=$2 and a.client_instance_id=$3`,
-      [actionId, ownerUserId, clientInstanceId],
-    )).rows[0]
-    return existing ? mapUIAction(existing) : undefined
+    const row = (await this.db.update(uiActions)
+      .set({
+        status: acknowledgement.status,
+        acknowledgedAt: sql`now()`,
+        actualPath: acknowledgement.actualPath ?? null,
+        errorCode: acknowledgement.errorCode ?? null,
+        updatedAt: sql`now()`,
+      })
+      .from(runs)
+      .where(and(
+        eq(uiActions.id, actionId),
+        eq(uiActions.runId, runs.id),
+        eq(runs.ownerUserId, ownerUserId),
+        eq(uiActions.clientInstanceId, clientInstanceId),
+        eq(uiActions.status, "pending"),
+        sql`${uiActions.expiresAt} > now()`,
+      ))
+      .returning({ action: uiActions }))[0]
+    if (row) return mapUIAction(row.action)
+    const existing = (await this.db.select({ action: uiActions })
+      .from(uiActions)
+      .innerJoin(runs, eq(runs.id, uiActions.runId))
+      .where(and(
+        eq(uiActions.id, actionId),
+        eq(runs.ownerUserId, ownerUserId),
+        eq(uiActions.clientInstanceId, clientInstanceId),
+      )))[0]
+    return existing ? mapUIAction(existing.action) : undefined
   }
+
   async getTimeline(ownerUserId: string, conversationId: string) {
     const conversation = await this.getConversation(ownerUserId, conversationId)
     if (!conversation) return undefined
-    const result = await this.pool.query<{ id: string, turn_index: number, status: string, input: string, selected_run_id: string, created_at: Date }>(`select * from ai.turns where conversation_id=$1 order by turn_index`, [conversationId])
-    const turns = await Promise.all(result.rows.map(async turn => {
-      const run = await this.getRun(ownerUserId, turn.selected_run_id)
-      const items = run ? await this.pool.query<DbTimelineItem>(`select * from ai.items where run_id=$1 order by timeline_index`, [run.id]) : undefined
-      return { id: turn.id, turnIndex: turn.turn_index, status: turn.status, input: turn.input, createdAt: turn.created_at.toISOString(), ...(run ? { run } : {}), items: items?.rows.map(mapTimelineItem) ?? [] }
+    const boundedTurns = await this.db.select().from(turns)
+      .where(eq(turns.conversationId, conversationId))
+      .orderBy(asc(turns.turnIndex))
+    const result = await Promise.all(boundedTurns.map(async (turn) => {
+      const run = await this.getRun(ownerUserId, turn.selectedRunId)
+      const turnItems = run
+        ? await this.db.select().from(items).where(eq(items.runId, run.id)).orderBy(asc(items.timelineIndex))
+        : []
+      return {
+        id: turn.id,
+        turnIndex: turn.turnIndex,
+        status: turn.status,
+        input: turn.input,
+        createdAt: turn.createdAt.toISOString(),
+        ...(run ? { run } : {}),
+        items: turnItems.map(mapTimelineItem),
+      }
     }))
-    return { conversation, turns }
+    return { conversation, turns: result }
   }
-  private async appendItemWith(client: Pick<PoolClient, "query"> | Pool, value: Omit<TimelineItem, "id" | "timelineIndex" | "revision" | "createdAt"> & { id?: string }) {
-    const position = (await client.query<{ position: string | number }>(
-      `update ai.runs set next_item_position=next_item_position+1 where id=$1 returning next_item_position-1 as position`,
-      [value.runId],
-    )).rows[0]?.position
+
+  /** 原子推进 next_item_position 并插入 Timeline Item；计数器原子更新无法以 ORM 查询安全表达，保留最小 sql 模板 */
+  private async appendItemWith(db: Querier, value: Omit<TimelineItem, "id" | "timelineIndex" | "revision" | "createdAt"> & { id?: string }) {
+    const position = (await db.update(runs)
+      .set({ nextItemPosition: sql`${runs.nextItemPosition} + 1` })
+      .where(eq(runs.id, value.runId))
+      .returning({ position: sql<number>`${runs.nextItemPosition} - 1` }))[0]?.position
     if (position === undefined) throw new Error("ai.run_not_found")
-    const row = (await client.query<DbTimelineItem>(
-      `insert into ai.items(id,run_id,turn_id,timeline_index,type,status,content) values($1,$2,$3,$4,$5,$6,$7) returning *`,
-      [value.id ?? createId("aiitm"), value.runId, value.turnId, Number(position), value.type, value.status, JSON.stringify(value.content)],
-    )).rows[0]
+    const row = (await db.insert(items).values({
+      id: value.id ?? createId("aiitm"),
+      runId: value.runId,
+      turnId: value.turnId,
+      timelineIndex: position,
+      type: value.type,
+      status: value.status,
+      content: value.content,
+    }).returning())[0]
     if (!row) throw new Error("ai.persistence_failed")
     if (value.type === "user_message" || value.type === "assistant_message") {
-      await client.query(
-        `update ai.conversations c set updated_at=$2
-         from ai.runs r where r.id=$1 and c.id=r.conversation_id`,
-        [value.runId, row.created_at],
-      )
+      await db.update(conversations)
+        .set({ updatedAt: row.createdAt })
+        .from(runs)
+        .where(and(eq(runs.id, value.runId), eq(conversations.id, runs.conversationId)))
     }
     return mapTimelineItem(row)
   }
-  private async updateItemWith(client: Pick<PoolClient, "query"> | Pool, itemId: string, status: TimelineItem["status"], content: Record<string, unknown>) {
-    const row = (await client.query<DbTimelineItem>(
-      `update ai.items set status=$2,content=$3,revision=revision+1 where id=$1 returning *`,
-      [itemId, status, JSON.stringify(content)],
-    )).rows[0]
+
+  private async updateItemWith(db: Querier, itemId: string, status: TimelineItem["status"], content: Record<string, unknown>) {
+    const row = (await db.update(items)
+      .set({ status, content, revision: sql`${items.revision} + 1` })
+      .where(eq(items.id, itemId))
+      .returning())[0]
     if (!row) throw new Error("ai.item_not_found")
     return mapTimelineItem(row)
   }
-  private async appendEventWith(client: Pick<PoolClient, "query"> | Pool, runId: string, type: string, data: Record<string, unknown>) {
-    const sequence = (await client.query<{ sequence: string | number }>(
-      `update ai.runs set next_event_sequence=next_event_sequence+1 where id=$1 returning next_event_sequence-1 as sequence`,
-      [runId],
-    )).rows[0]?.sequence
+
+  /** 原子推进 next_event_sequence 并插入事件，保证单 Run 事件序列单调且唯一 */
+  private async appendEventWith(db: Querier, runId: string, type: string, data: Record<string, unknown>) {
+    const sequence = (await db.update(runs)
+      .set({ nextEventSequence: sql`${runs.nextEventSequence} + 1` })
+      .where(eq(runs.id, runId))
+      .returning({ sequence: sql<number>`${runs.nextEventSequence} - 1` }))[0]?.sequence
     if (sequence === undefined) throw new Error("ai.run_not_found")
-    const row = (await client.query<{ id: string, run_id: string, event_sequence: number, type: string, data: Record<string, unknown>, created_at: Date }>(
-      `insert into ai.run_events(id,run_id,event_sequence,type,data) values($1,$2,$3,$4,$5) returning *`,
-      [createId("aievt"), runId, Number(sequence), type, JSON.stringify(data)],
-    )).rows[0]
+    const row = (await db.insert(runEvents).values({
+      id: createId("aievt"),
+      runId,
+      eventSequence: sequence,
+      type,
+      data,
+    }).returning())[0]
     if (!row) throw new Error("ai.persistence_failed")
-    return { id: row.id, runId: row.run_id, sequence: normalizeEventSequence(row.event_sequence), type: row.type, data: row.data, createdAt: row.created_at.toISOString() }
+    return mapRunEvent(row)
   }
-  private async loadCreated(client: PoolClient, turnId: string, runId: string): Promise<CreatedTurn> {
-    const turn = (await client.query<{ id: string, conversation_id: string, turn_index: number, status: Run["status"], input: string, selected_run_id: string, created_at: Date }>(`select * from ai.turns where id=$1`, [turnId])).rows[0]
-    const run = (await client.query<DbRun>(`select * from ai.runs where id=$1`, [runId])).rows[0]
+
+  private async loadCreated(tx: AgentTx, turnId: string, runId: string): Promise<CreatedTurn> {
+    const turn = (await tx.select().from(turns).where(eq(turns.id, turnId)))[0]
+    const run = (await tx.select().from(runs).where(eq(runs.id, runId)))[0]
     if (!turn || !run) throw new Error("ai.persistence_failed")
-    return { turn: { id: turn.id, conversationId: turn.conversation_id, turnIndex: turn.turn_index, status: turn.status, input: turn.input, selectedRunId: turn.selected_run_id, createdAt: turn.created_at.toISOString() }, run: mapRun(run) }
+    return {
+      turn: {
+        id: turn.id,
+        conversationId: turn.conversationId,
+        turnIndex: turn.turnIndex,
+        status: turn.status,
+        input: turn.input,
+        selectedRunId: turn.selectedRunId,
+        createdAt: turn.createdAt.toISOString(),
+      },
+      run: mapRun(run),
+    }
   }
 }
 
-function mapConversation(row: DbConversation): Conversation {
-  return {
-    id: row.id,
-    ownerUserId: row.owner_user_id,
-    title: row.title,
-    titleSource: row.title_source,
-    status: row.status,
-    createdAt: row.created_at.toISOString(),
-    updatedAt: row.updated_at.toISOString(),
-    ...(row.project_id ? { projectId: row.project_id } : {}),
+/**
+ * `db.execute(sql...)` 返回驱动原始行（snake_case 列名、timestamptz/bigint 为字符串）。
+ * 统一在此按表定义逐列执行 `mapFromDriverValue`，转换为 ORM 等价的 camelCase 行，
+ * 保证时间、JSONB、bigint 等类型与 Query API 返回完全一致。
+ */
+function driverRow(
+  table: object,
+  row: Record<string, unknown>,
+): Record<string, unknown> {
+  const result: Record<string, unknown> = {}
+  for (const [fieldName, column] of Object.entries(table)) {
+    if (!column || typeof column !== "object") continue
+    const candidate = column as { name?: unknown, mapFromDriverValue?: unknown }
+    if (typeof candidate.name !== "string" || !(candidate.name in row)) continue
+    const value = row[candidate.name]
+    result[fieldName] = value === null || typeof candidate.mapFromDriverValue !== "function"
+      ? value
+      : (candidate.mapFromDriverValue as (input: unknown) => unknown)(value)
   }
-}
-function mapConversationSummary(row: DbConversationSummary): ConversationSummary {
-  return {
-    conversationId: row.conversation_id,
-    coveredThroughTurnIndex: row.covered_through_turn_index,
-    compressionVersion: row.compression_version,
-    sourceTurnCount: row.source_turn_count,
-    content: row.content,
-    createdAt: row.created_at.toISOString(),
-    updatedAt: row.updated_at.toISOString(),
-  }
-}
-function mapRun(row: DbRun): Run {
-  return { id: row.id, conversationId: row.conversation_id, turnId: row.turn_id, runIndex: row.run_index, status: row.status, rowVersion: row.row_version, graphVersion: row.graph_version, promptVersion: row.prompt_version, toolCatalogDigest: row.tool_catalog_digest, pageContext: row.page_context, ...(Object.keys(row.trace_context ?? {}).length ? { traceContext: row.trace_context } : {}), createdAt: row.created_at.toISOString(), ...(row.client_instance_id ? { clientInstanceId: row.client_instance_id } : {}), ...(row.started_at ? { startedAt: row.started_at.toISOString() } : {}), ...(row.completed_at ? { completedAt: row.completed_at.toISOString() } : {}), ...(row.error_code ? { errorCode: row.error_code } : {}) }
-}
-function mapTimelineItem(row: DbTimelineItem): TimelineItem {
-  return {
-    id: row.id,
-    runId: row.run_id,
-    turnId: row.turn_id,
-    timelineIndex: row.timeline_index,
-    revision: Number(row.revision),
-    type: row.type,
-    status: row.status,
-    content: row.content,
-    createdAt: row.created_at.toISOString(),
-  }
-}
-function mapUIAction(row: DbUIAction): UIActionDelivery {
-  return {
-    id: row.id,
-    runId: row.run_id,
-    toolCallId: row.tool_call_id,
-    clientInstanceId: row.client_instance_id,
-    action: row.action,
-    status: row.status,
-    attempts: row.attempts,
-    expiresAt: row.expires_at.toISOString(),
-    ...(row.acknowledged_at ? { acknowledgedAt: row.acknowledged_at.toISOString() } : {}),
-    ...(row.actual_path ? { actualPath: row.actual_path } : {}),
-    ...(row.error_code ? { errorCode: row.error_code } : {}),
-    createdAt: row.created_at.toISOString(),
-    updatedAt: row.updated_at.toISOString(),
-  }
-}
-
-function timelineContentText(content: Record<string, unknown>): string {
-  if (!Array.isArray(content.parts)) return ""
-  return content.parts.map(part => {
-    if (!part || typeof part !== "object") return ""
-    return typeof (part as Record<string, unknown>).text === "string"
-      ? String((part as Record<string, unknown>).text)
-      : ""
-  }).join("")
+  return result
 }

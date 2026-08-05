@@ -3,6 +3,7 @@ import { loadConfig } from "../src/config.js"
 import { RunExecutor } from "../src/executor.js"
 import { GraphVersionRegistry } from "../src/graph/registry.js"
 import { MemoryRepository } from "../src/persistence/memory.js"
+import type { RunStateConflictError } from "../src/persistence/repository.js"
 import { DeterministicProvider } from "../src/provider/deterministic.js"
 import type { ModelProvider, ModelRequest } from "../src/provider/provider.js"
 import { presentTimeline } from "../src/timeline-presenter.js"
@@ -23,6 +24,46 @@ function preparedGenerationId(request: ModelRequest): string {
 }
 
 describe("provider to tool to subsequent model invocation", () => {
+  it("reports the authoritative state when a run transition loses a race", async () => {
+    const repository = new MemoryRepository()
+    const conversation = await repository.createConversation("usr_a", "conflict")
+    const created = await repository.createTurn("usr_a", {
+      conversationId: conversation.id, input: "hello", pageContext: {}, idempotencyKey: "state-conflict",
+    })
+
+    await repository.cancelRun("usr_a", created.run.id)
+
+    await expect(repository.updateRun(created.run.id, "queued", "running")).rejects.toMatchObject({
+      name: "RunStateConflictError",
+      message: "ai.run_state_conflict",
+      expectedStatus: "queued",
+      targetStatus: "running",
+      actualStatus: "canceled",
+    } satisfies Partial<RunStateConflictError>)
+  })
+
+  it("treats a durable cancellation won during completion as canceled instead of failed", async () => {
+    class CancelBeforeCompletionRepository extends MemoryRepository {
+      override async updateRun(runId: string, from: Parameters<MemoryRepository["updateRun"]>[1], to: Parameters<MemoryRepository["updateRun"]>[2], fields: Parameters<MemoryRepository["updateRun"]>[3] = {}) {
+        if (from === "running" && to === "completed") await this.cancelRun("usr_a", runId)
+        return super.updateRun(runId, from, to, fields)
+      }
+    }
+    const repository = new CancelBeforeCompletionRepository()
+    const conversation = await repository.createConversation("usr_a", "completion race")
+    const created = await repository.createTurn("usr_a", {
+      conversationId: conversation.id, input: "hello", pageContext: {}, idempotencyKey: "completion-race",
+    })
+    const executor = new RunExecutor(repository, new GraphVersionRegistry(new DeterministicProvider()), loadConfig({ NODE_ENV: "test", INSTANCE_ID: "completion-race-worker" }))
+
+    await expect(executor.runOnce()).resolves.toBe(true)
+
+    expect((await repository.getRun("usr_a", created.run.id))?.status).toBe("canceled")
+    const events = await repository.getEvents("usr_a", created.run.id, 0)
+    expect(events.some(event => event.type === "run.canceled")).toBe(true)
+    expect(events.some(event => event.type === "run.failed")).toBe(false)
+  })
+
   it("aborts an active model stream immediately after the run is canceled", async () => {
     const repository = new MemoryRepository()
     const conversation = await repository.createConversation("usr_a", "cancel")
