@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -83,17 +82,8 @@ func (h *Handlers) validateAIConfigValues(values map[string]string) error {
 			return fmt.Errorf("%s must be a non-negative number", key)
 		}
 	}
-	if current["ai.access.mode"] == "all_authenticated" {
-		hard, _ := strconv.ParseFloat(strings.TrimSpace(current["ai.quota.platform_daily_cost_hard"]), 64)
-		if hard <= 0 {
-			return fmt.Errorf("all_authenticated access requires a positive hard daily cost limit")
-		}
-	}
-	for _, key := range []string{"ai.access.user_ids", "ai.access.project_ids"} {
-		var value []any
-		if json.Unmarshal([]byte(current[key]), &value) != nil {
-			return fmt.Errorf("%s must be a JSON array", key)
-		}
+	if mode := strings.TrimSpace(current["ai.access.mode"]); mode != "all_authenticated" && mode != "admins" {
+		return fmt.Errorf("ai.access.mode must be all_authenticated or admins")
 	}
 	return nil
 }

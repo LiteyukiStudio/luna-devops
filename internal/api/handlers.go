@@ -31,7 +31,7 @@ type Handlers struct {
 	taskClient          taskEnqueuer
 	aiAgent             aiagent.Client
 	aiDeploymentEnabled bool
-	aiActorResolver     func(*gin.Context) (aiagent.ActorContext, bool)
+	aiActorResolver     func(*gin.Context) (aiagent.ActorContext, string, bool)
 	aiTools             *aitool.Service
 	platformRouter      http.Handler
 	inbox               inboxService

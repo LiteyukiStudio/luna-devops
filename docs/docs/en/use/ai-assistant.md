@@ -4,7 +4,7 @@ The AI assistant uses the current page and your platform permissions to inspect 
 
 ## Get started
 
-An administrator enters the provider URL, API key, and model under **Global Settings → AI Assistant**, then enables the assistant. The provider must support an OpenAI-compatible `chat/completions` API, streaming, and tool calls.
+An administrator enters the provider URL, API key, and model under **Global Settings → AI Assistant**, then enables the assistant. All signed-in users can use it by default, or the administrator can restrict access to platform administrators. The provider must support an OpenAI-compatible `chat/completions` API, streaming, and tool calls.
 
 After it is enabled, open the assistant from the lower-right corner. You can ask it to:
 

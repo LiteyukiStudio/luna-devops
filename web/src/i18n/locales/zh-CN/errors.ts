@@ -55,6 +55,9 @@ const errors = {
     admin: { required: '请确认当前账号具有平台管理员权限。' },
     update_failed: '站点配置更新失败，请稍后重试。',
   },
+  ai: {
+    user_not_allowed: '当前站点仅允许平台管理员使用 AI 助手。',
+  },
   data_export: {
     ticket_unavailable: '数据导出授权暂时不可用，请稍后重试。',
     ticket_required: '数据导出授权已失效，请重新发起导出。',

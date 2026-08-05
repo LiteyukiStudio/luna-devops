@@ -71,7 +71,7 @@ func (h *Handlers) TestAIProviderConnection(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusServiceUnavailable, "ai.agent_unavailable", "AI Agent is unavailable")
 		return
 	}
-	actor, ok := h.aiActorFromSession(ctx)
+	actor, _, ok := h.aiActorFromSession(ctx)
 	if !ok {
 		return
 	}

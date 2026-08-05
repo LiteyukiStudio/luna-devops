@@ -55,6 +55,9 @@ const errors = {
     admin: { required: 'Confirm that the current account has platform administrator permission.' },
     update_failed: 'The site configuration could not be updated. Try again later.',
   },
+  ai: {
+    user_not_allowed: 'This site restricts AI assistant access to platform administrators.',
+  },
   data_export: {
     ticket_unavailable: 'Data export authorization is temporarily unavailable. Try again later.',
     ticket_required: 'The data export authorization has expired. Start the export again.',

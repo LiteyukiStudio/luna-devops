@@ -13,7 +13,7 @@ func TestAIConfigDefinitionsCoverSpecificationCatalog(t *testing.T) {
 		"ai.observability.enabled", "ai.observability.prometheus_url", "ai.observability.prometheus_token",
 		"ai.observability.loki_url", "ai.observability.loki_tenant_id", "ai.observability.loki_token",
 		"ai.observability.tempo_url", "ai.observability.tempo_tenant_id", "ai.observability.tempo_token",
-		"ai.access.mode", "ai.access.user_ids", "ai.access.project_ids",
+		"ai.access.mode",
 		"ai.quota.user_concurrent_runs", "ai.quota.user_daily_tokens", "ai.quota.project_concurrent_runs",
 		"ai.quota.run_max_tool_calls", "ai.quota.platform_daily_cost_soft", "ai.quota.platform_daily_cost_hard",
 		"ai.retention.conversation_days", "ai.retention.run_event_days", "ai.retention.checkpoint_days",
@@ -43,8 +43,8 @@ func TestAIConfigRejectsUnsafeProviderURLBeforeSaving(t *testing.T) {
 		"ai.provider.base_url": "", "ai.provider.default_model": "",
 		"ai.runtime.provider_timeout_seconds": "30", "ai.runtime.run_timeout_seconds": "300",
 		"ai.runtime.agent_concurrent_runs": "2",
-		"ai.access.mode":                   "admins", "ai.access.user_ids": "[]", "ai.access.project_ids": "[]",
-		"ai.quota.user_concurrent_runs": "2", "ai.quota.user_daily_tokens": "200000",
+		"ai.access.mode":                   "all_authenticated",
+		"ai.quota.user_concurrent_runs":    "2", "ai.quota.user_daily_tokens": "200000",
 		"ai.quota.project_concurrent_runs": "5", "ai.quota.run_max_tool_calls": "20",
 		"ai.quota.platform_daily_cost_soft": "0", "ai.quota.platform_daily_cost_hard": "0",
 		"ai.retention.conversation_days": "90", "ai.retention.run_event_days": "30",
@@ -62,8 +62,8 @@ func TestAIConfigAcceptsSafePublicProviderWithoutManualDomainAllowlist(t *testin
 		"ai.provider.base_url": "", "ai.provider.default_model": "",
 		"ai.runtime.provider_timeout_seconds": "30", "ai.runtime.run_timeout_seconds": "300",
 		"ai.runtime.agent_concurrent_runs": "2",
-		"ai.access.mode":                   "admins", "ai.access.user_ids": "[]", "ai.access.project_ids": "[]",
-		"ai.quota.user_concurrent_runs": "2", "ai.quota.user_daily_tokens": "200000",
+		"ai.access.mode":                   "all_authenticated",
+		"ai.quota.user_concurrent_runs":    "2", "ai.quota.user_daily_tokens": "200000",
 		"ai.quota.project_concurrent_runs": "5", "ai.quota.run_max_tool_calls": "20",
 		"ai.quota.platform_daily_cost_soft": "0", "ai.quota.platform_daily_cost_hard": "0",
 		"ai.retention.conversation_days": "90", "ai.retention.run_event_days": "30",
@@ -124,5 +124,23 @@ func TestAIConfigRequiresAllObservabilitySourcesWhenEnabled(t *testing.T) {
 		"ai.observability.tempo_url":      "http://tempo:3200",
 	}); err != nil {
 		t.Fatalf("complete Agent observability configuration rejected: %v", err)
+	}
+}
+
+func TestAIConfigDefaultsToAuthenticatedUsersAndAcceptsAdminRestriction(t *testing.T) {
+	definition := configDefinitionByKey("ai.access.mode")
+	if definition == nil || definition.Default != "all_authenticated" {
+		t.Fatalf("AI access default = %#v", definition)
+	}
+	defaults := make(map[string]string, len(configDefinitions))
+	for _, item := range configDefinitions {
+		defaults[item.Key] = item.Default
+	}
+	h := &Handlers{configs: &configCache{values: defaults}}
+	if err := h.validateAIConfigValues(map[string]string{"ai.access.mode": "admins"}); err != nil {
+		t.Fatalf("admin-only access mode rejected: %v", err)
+	}
+	if err := h.validateAIConfigValues(map[string]string{"ai.access.mode": "allowlist"}); err == nil {
+		t.Fatal("unsupported access mode accepted")
 	}
 }

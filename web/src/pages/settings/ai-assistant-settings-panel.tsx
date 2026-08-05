@@ -15,6 +15,7 @@ import { StatusBadge } from '@/components/common/status-badge'
 import { Surface } from '@/components/common/surface'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { NativeSelect as Select } from '@/components/ui/native-select'
 import { Textarea } from '@/components/ui/textarea'
 import { aiSettingsPayload, aiSettingsSchema } from './ai-assistant-settings'
 
@@ -22,6 +23,7 @@ type FormValues = AISettingsFormValues
 
 const defaults: FormValues = {
   enabled: false,
+  accessMode: 'all_authenticated',
   baseUrl: '',
   apiKey: '',
   apiKeyConfigured: false,
@@ -58,6 +60,7 @@ export function AIAssistantSettingsPanel() {
     const values = configs.data
     form.reset({
       enabled: values['ai.assistant.enabled'] === 'true',
+      accessMode: values['ai.access.mode'] === 'admins' ? 'admins' : 'all_authenticated',
       baseUrl: values['ai.provider.base_url'] ?? '',
       apiKey: '',
       apiKeyConfigured: values['ai.provider.api_key'] === 'true',
@@ -111,6 +114,12 @@ export function AIAssistantSettingsPanel() {
     <form className="max-w-3xl" onSubmit={form.handleSubmit(values => save.mutate(values))}>
       <Surface className="grid gap-5 rounded-xl p-6" variant="bordered">
         <CheckboxField description={t('settings.ai.enabledHint')} {...form.register('enabled')}>{t('settings.ai.enabled')}</CheckboxField>
+        <Field hint={t('settings.ai.accessModeHint')} label={t('settings.ai.accessMode')} required>
+          <Select {...form.register('accessMode')}>
+            <option value="all_authenticated">{t('settings.ai.accessModeAllAuthenticated')}</option>
+            <option value="admins">{t('settings.ai.accessModeAdmins')}</option>
+          </Select>
+        </Field>
         <div className="grid gap-4 md:grid-cols-2">
           <Field error={errors.model?.message} label={t('settings.ai.model')} required>
             <Input placeholder="deepseek-v4-pro" {...form.register('model')} />

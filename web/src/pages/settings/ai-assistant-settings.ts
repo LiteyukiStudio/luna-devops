@@ -8,6 +8,7 @@ const observabilityUrl = z.union([z.literal(''), z.url().refine((value) => {
 
 export const aiSettingsSchema = z.object({
   enabled: z.boolean(),
+  accessMode: z.enum(['all_authenticated', 'admins']),
   baseUrl: z.union([z.literal(''), z.url().refine(value => value.startsWith('https://'))]),
   apiKey: z.string(),
   apiKeyConfigured: z.boolean(),
@@ -80,6 +81,7 @@ export type AISettingsFormValues = z.infer<typeof aiSettingsSchema>
 export function aiSettingsPayload(values: AISettingsFormValues) {
   const payload: Record<string, unknown> = {
     'ai.assistant.enabled': values.enabled,
+    'ai.access.mode': values.accessMode,
     'ai.provider.base_url': values.baseUrl.trim(),
     'ai.provider.default_model': values.model.trim(),
     'ai.web.proxy_enabled': values.webProxyEnabled,

@@ -3,6 +3,7 @@ import { aiSettingsPayload, aiSettingsSchema } from './ai-assistant-settings'
 
 const validValues = {
   enabled: false,
+  accessMode: 'all_authenticated' as const,
   baseUrl: 'https://api.example.com/v1',
   apiKey: '',
   apiKeyConfigured: true,
@@ -37,6 +38,7 @@ describe('aI assistant admin settings', () => {
     expect(payload).not.toHaveProperty('ai.provider.api_key')
     expect(payload).toEqual({
       'ai.assistant.enabled': false,
+      'ai.access.mode': 'all_authenticated',
       'ai.provider.base_url': 'https://api.example.com/v1',
       'ai.provider.default_model': 'model-1',
       'ai.web.proxy_enabled': false,
@@ -50,6 +52,12 @@ describe('aI assistant admin settings', () => {
       'ai.observability.tempo_url': '',
       'ai.observability.tempo_tenant_id': '',
     })
+  })
+
+  it('supports restricting assistant access to platform administrators', () => {
+    const restricted = { ...validValues, accessMode: 'admins' as const }
+    expect(aiSettingsSchema.safeParse(restricted).success).toBe(true)
+    expect(aiSettingsPayload(restricted)['ai.access.mode']).toBe('admins')
   })
 
   it('requires all three model settings before enabling the assistant', () => {

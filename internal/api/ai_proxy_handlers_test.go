@@ -162,6 +162,38 @@ func TestAICapabilitiesFailClosedWithoutAgent(t *testing.T) {
 	}
 }
 
+func TestAIAccessModeDefaultsToAuthenticatedUsersAndCanRestrictAdmins(t *testing.T) {
+	fake := &fakeAIAgentClient{response: &aiagent.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"available":true}`)),
+	}}
+	handler := aiTestHandlers(fake, true)
+	if !handler.aiAccessAllowed("user") || !handler.aiAccessAllowed("platform_admin") {
+		t.Fatal("default authenticated access did not allow valid platform roles")
+	}
+
+	handler.configs.set(aiAccessModeConfigKey, "admins")
+	if handler.aiAccessAllowed("user") || !handler.aiAccessAllowed("platform_admin") {
+		t.Fatal("admin-only access mode was not enforced")
+	}
+
+	router := gin.New()
+	router.GET("/api/v1/ai/capabilities", handler.GetAICapabilities)
+	router.GET("/api/v1/ai/conversations", handler.ProxyAIRequest)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/ai/capabilities", nil))
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"reasonCode":"ai.user_not_allowed"`) || fake.calls != 0 {
+		t.Fatalf("status = %d, calls = %d, body = %s", response.Code, fake.calls, response.Body.String())
+	}
+
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/ai/conversations", nil))
+	if response.Code != http.StatusForbidden || !strings.Contains(response.Body.String(), `"code":"ai.user_not_allowed"`) || fake.calls != 0 {
+		t.Fatalf("status = %d, calls = %d, body = %s", response.Code, fake.calls, response.Body.String())
+	}
+}
+
 func TestAIProxyFlushesSSEChunks(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	fake := &fakeAIAgentClient{response: &aiagent.Response{
@@ -227,13 +259,13 @@ func TestAIRouteContractContainsP0Endpoints(t *testing.T) {
 
 func aiTestHandlers(client aiagent.Client, enabled bool) *Handlers {
 	return &Handlers{
-		configs:             &configCache{values: map[string]string{aiAssistantEnabledConfigKey: "true"}},
+		configs:             &configCache{values: map[string]string{aiAssistantEnabledConfigKey: "true", aiAccessModeConfigKey: "all_authenticated"}},
 		aiAgent:             client,
 		aiDeploymentEnabled: enabled,
-		aiActorResolver: func(*gin.Context) (aiagent.ActorContext, bool) {
+		aiActorResolver: func(*gin.Context) (aiagent.ActorContext, string, bool) {
 			return aiagent.ActorContext{
 				UserID: "usr_session_owner", SessionID: "sess_owned", Locale: "zh-CN", RequestID: "req_test",
-			}, true
+			}, "user", true
 		},
 	}
 }

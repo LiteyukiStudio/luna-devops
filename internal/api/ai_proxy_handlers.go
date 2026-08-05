@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/aiagent"
+	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/gin-gonic/gin"
@@ -18,6 +19,7 @@ import (
 
 const (
 	aiAssistantEnabledConfigKey = "ai.assistant.enabled"
+	aiAccessModeConfigKey       = "ai.access.mode"
 	aiMaxInputBytes             = 32768
 )
 
@@ -30,8 +32,12 @@ type aiProxyRoute struct {
 }
 
 func (h *Handlers) GetAICapabilities(ctx *gin.Context) {
-	actor, ok := h.aiActorFromSession(ctx)
+	actor, role, ok := h.aiActorFromSession(ctx)
 	if !ok {
+		return
+	}
+	if !h.aiAccessAllowed(role) {
+		ctx.JSON(http.StatusOK, unavailableAICapabilities("ai.user_not_allowed"))
 		return
 	}
 	if reason := h.aiUnavailableReason(); reason != "" {
@@ -59,8 +65,12 @@ func (h *Handlers) ProxyAIRequest(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusNotFound, "resource.not_found", "AI route not found")
 		return
 	}
-	actor, ok := h.aiActorFromSession(ctx)
+	actor, role, ok := h.aiActorFromSession(ctx)
 	if !ok {
+		return
+	}
+	if !h.aiAccessAllowed(role) {
+		writeErrorCode(ctx, http.StatusForbidden, "ai.user_not_allowed", "AI assistant access is restricted to platform administrators")
 		return
 	}
 	if reason := h.aiUnavailableReason(); reason != "" {
@@ -153,24 +163,39 @@ func (h *Handlers) prepareAIToolMFAResume(ctx *gin.Context, actor aiagent.ActorC
 	return prepared, true
 }
 
-func (h *Handlers) aiActorFromSession(ctx *gin.Context) (aiagent.ActorContext, bool) {
+func (h *Handlers) aiActorFromSession(ctx *gin.Context) (aiagent.ActorContext, string, bool) {
 	if h.aiActorResolver != nil {
 		return h.aiActorResolver(ctx)
 	}
 	session, ok := h.currentSessionFromCookie(ctx)
 	if !ok {
 		writeErrorCode(ctx, http.StatusUnauthorized, "auth.session.missing", "a browser session is required")
-		return aiagent.ActorContext{}, false
+		return aiagent.ActorContext{}, "", false
 	}
 	var user model.User
 	if h.dbFor(ctx) == nil || h.dbFor(ctx).First(&user, "id = ? and disabled = ?", session.UserID, false).Error != nil {
 		writeErrorCode(ctx, http.StatusUnauthorized, "auth.session.expired", "the browser session is invalid")
-		return aiagent.ActorContext{}, false
+		return aiagent.ActorContext{}, "", false
 	}
 	return aiagent.ActorContext{
 		UserID: user.ID, SessionID: session.ID, Locale: normalizedAILocale(user.Language),
 		RequestID: id.New("req"), SessionExpiresAt: session.ExpiresAt.Unix(),
-	}, true
+	}, user.Role, true
+}
+
+func (h *Handlers) aiAccessAllowed(role string) bool {
+	if h.configs == nil {
+		return false
+	}
+	mode := strings.TrimSpace(h.configs.get([]string{aiAccessModeConfigKey})[aiAccessModeConfigKey])
+	switch mode {
+	case "all_authenticated":
+		return authz.IsPlatformRole(role)
+	case "admins":
+		return authz.IsPlatformAdmin(role)
+	default:
+		return false
+	}
 }
 
 func prepareAITurnGrant(ctx *gin.Context, actor aiagent.ActorContext, body []byte) ([]byte, aiagent.ActorContext, bool) {

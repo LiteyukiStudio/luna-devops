@@ -1,0 +1,2 @@
+-- The administrator may have explicitly changed this setting after migration.
+-- Keep the current value instead of restoring an obsolete default.
