@@ -10,6 +10,7 @@ func TestAIConfigDefinitionsCoverSpecificationCatalog(t *testing.T) {
 		"ai.assistant.enabled", "ai.provider.base_url", "ai.provider.api_key", "ai.provider.default_model",
 		"ai.web.proxy_enabled", "ai.web.proxy_pool",
 		"ai.runtime.provider_timeout_seconds", "ai.runtime.run_timeout_seconds", "ai.runtime.agent_concurrent_runs",
+		"ai.runtime.context_input_k_tokens",
 		"ai.observability.enabled", "ai.observability.prometheus_url", "ai.observability.prometheus_token",
 		"ai.observability.loki_url", "ai.observability.loki_tenant_id", "ai.observability.loki_token",
 		"ai.observability.tempo_url", "ai.observability.tempo_tenant_id", "ai.observability.tempo_token",
@@ -42,9 +43,10 @@ func TestAIConfigRejectsUnsafeProviderURLBeforeSaving(t *testing.T) {
 	h := &Handlers{configs: &configCache{values: map[string]string{
 		"ai.provider.base_url": "", "ai.provider.default_model": "",
 		"ai.runtime.provider_timeout_seconds": "30", "ai.runtime.run_timeout_seconds": "300",
-		"ai.runtime.agent_concurrent_runs": "2",
-		"ai.access.mode":                   "all_authenticated",
-		"ai.quota.user_concurrent_runs":    "2", "ai.quota.user_daily_tokens": "200000",
+		"ai.runtime.agent_concurrent_runs":  "2",
+		"ai.runtime.context_input_k_tokens": "256",
+		"ai.access.mode":                    "all_authenticated",
+		"ai.quota.user_concurrent_runs":     "2", "ai.quota.user_daily_tokens": "200000",
 		"ai.quota.project_concurrent_runs": "5", "ai.quota.run_max_tool_calls": "20",
 		"ai.quota.platform_daily_cost_soft": "0", "ai.quota.platform_daily_cost_hard": "0",
 		"ai.retention.conversation_days": "90", "ai.retention.run_event_days": "30",
@@ -61,9 +63,10 @@ func TestAIConfigAcceptsSafePublicProviderWithoutManualDomainAllowlist(t *testin
 	h := &Handlers{configs: &configCache{values: map[string]string{
 		"ai.provider.base_url": "", "ai.provider.default_model": "",
 		"ai.runtime.provider_timeout_seconds": "30", "ai.runtime.run_timeout_seconds": "300",
-		"ai.runtime.agent_concurrent_runs": "2",
-		"ai.access.mode":                   "all_authenticated",
-		"ai.quota.user_concurrent_runs":    "2", "ai.quota.user_daily_tokens": "200000",
+		"ai.runtime.agent_concurrent_runs":  "2",
+		"ai.runtime.context_input_k_tokens": "256",
+		"ai.access.mode":                    "all_authenticated",
+		"ai.quota.user_concurrent_runs":     "2", "ai.quota.user_daily_tokens": "200000",
 		"ai.quota.project_concurrent_runs": "5", "ai.quota.run_max_tool_calls": "20",
 		"ai.quota.platform_daily_cost_soft": "0", "ai.quota.platform_daily_cost_hard": "0",
 		"ai.retention.conversation_days": "90", "ai.retention.run_event_days": "30",
@@ -79,6 +82,7 @@ func TestAIConfigRejectsUnsafeRuntimeBounds(t *testing.T) {
 		"ai.runtime.provider_timeout_seconds": "121",
 		"ai.runtime.run_timeout_seconds":      "10",
 		"ai.runtime.agent_concurrent_runs":    "0",
+		"ai.runtime.context_input_k_tokens":   "32",
 	} {
 		defaults := make(map[string]string, len(configDefinitions))
 		for _, definition := range configDefinitions {

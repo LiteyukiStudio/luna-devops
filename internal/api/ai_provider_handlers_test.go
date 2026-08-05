@@ -9,12 +9,20 @@ func TestAIProviderConfigVersionIncludesRuntimePolicy(t *testing.T) {
 		"ai.runtime.provider_timeout_seconds": "30",
 		"ai.runtime.run_timeout_seconds":      "300",
 		"ai.runtime.agent_concurrent_runs":    "2",
+		"ai.runtime.context_input_k_tokens":   "256",
 	}
 	initial := aiProviderConfigVersion(values, "secret-v1")
 	values["ai.runtime.agent_concurrent_runs"] = "3"
 	updated := aiProviderConfigVersion(values, "secret-v1")
 	if initial == updated {
 		t.Fatal("runtime policy change did not update Provider config version")
+	}
+}
+
+func TestAIProviderConfigContextBudgetUsesKTokens(t *testing.T) {
+	values := map[string]string{"context": "256"}
+	if got := aiRuntimeKTokens(values, "context", 128); got != 262144 {
+		t.Fatalf("context input token budget = %d, want 262144", got)
 	}
 }
 

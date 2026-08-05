@@ -57,7 +57,7 @@ export type CompiledContext = {
 }
 
 const defaultOptions: ContextCompilerOptions = {
-  inputTokenBudget: 48_000,
+  inputTokenBudget: 256 * 1024,
   compressionTriggerRatio: 0.8,
   compressionTargetRatio: 0.5,
   recentTurnCount: 4,
@@ -74,8 +74,14 @@ export class ContextCompiler {
   constructor(
     private readonly repository: Pick<Repository, "getConversationSummary" | "saveConversationSummary" | "listConversationHistory">,
     private readonly provider: Pick<ModelProvider, "complete">,
-    private readonly options: ContextCompilerOptions = defaultOptions,
+    private options: ContextCompilerOptions = defaultOptions,
   ) {}
+
+  setInputTokenBudget(inputTokenBudget: number): void {
+    if (!Number.isSafeInteger(inputTokenBudget) || inputTokenBudget <= 0)
+      throw new Error("ai.context_budget_invalid")
+    this.options = { ...this.options, inputTokenBudget }
+  }
 
   async compile(input: CompileContextInput): Promise<CompiledContext> {
     return withSpan("agent.context.compile", internalSpanOptions({
@@ -87,17 +93,18 @@ export class ContextCompiler {
       let summary: ConversationSummary | undefined
       let authoritativeHistory = input.history
       let historyHasGap = false
+      const inputTokenBudget = this.options.inputTokenBudget
       const baseTokens = estimateModelTokens([input.systemMessage, input.currentUserMessage]) + estimateTokens(JSON.stringify(input.tools))
-      if (baseTokens >= this.options.inputTokenBudget) throw new Error("ai.context_base_budget_exhausted")
+      if (baseTokens >= inputTokenBudget) throw new Error("ai.context_base_budget_exhausted")
       // 为结构化摘要和缺口说明保留空间，避免本轮工具结果恰好吃满预算后，
       // 仅因附加长期记忆而让整次模型调用失败。
       const retainedFactReserve = Math.min(
         this.options.summaryMaxOutputTokens + 128,
-        Math.floor(this.options.inputTokenBudget * 0.2),
+        Math.floor(inputTokenBudget * 0.2),
       )
       const continuationMessages = boundContinuationMessages(
         input.continuationMessages,
-        Math.max(0, this.options.inputTokenBudget - baseTokens - retainedFactReserve),
+        Math.max(0, inputTokenBudget - baseTokens - retainedFactReserve),
       )
       const fixedTokens = baseTokens + estimateModelTokens(continuationMessages)
       try {
@@ -112,8 +119,8 @@ export class ContextCompiler {
         authoritativeHistory = mergeHistory(uncovered, input.history)
         historyHasGap = hasHistoryGap(summary?.coveredThroughTurnIndex ?? -1, authoritativeHistory, input.beforeTurnIndex)
 
-        const triggerTokens = Math.floor(this.options.inputTokenBudget * this.options.compressionTriggerRatio)
-        const targetTokens = Math.floor(this.options.inputTokenBudget * this.options.compressionTargetRatio)
+        const triggerTokens = Math.floor(inputTokenBudget * this.options.compressionTriggerRatio)
+        const targetTokens = Math.floor(inputTokenBudget * this.options.compressionTargetRatio)
         const rawHistoryTokens = estimateHistoryTokens(authoritativeHistory, this.options.historicalToolTokenBudget)
         const forceForBacklog = uncovered.length >= historyLimit || historyHasGap
         const forceForRetention = authoritativeHistory.length > this.options.maxRecentTurnCount
@@ -159,7 +166,7 @@ export class ContextCompiler {
           "luna.context.deferred.turn_count": deferredTurnCount,
         })
       }
-      const availableHistoryTokens = Math.max(0, this.options.inputTokenBudget
+      const availableHistoryTokens = Math.max(0, inputTokenBudget
         - baseTokens
         - estimateModelTokens(continuationMessages))
       const summaryMessage = summary ? summaryModelMessage(summary) : undefined
@@ -180,12 +187,12 @@ export class ContextCompiler {
         ...continuationMessages,
       ]
       const estimatedInputTokens = estimateModelTokens(messages) + estimateTokens(JSON.stringify(input.tools))
-      if (estimatedInputTokens > this.options.inputTokenBudget) throw new Error("ai.context_budget_exhausted")
+      if (estimatedInputTokens > inputTokenBudget) throw new Error("ai.context_budget_exhausted")
       span.setAttributes({
         "luna.context.compression.outcome": outcome,
-        "luna.context.budget.tokens": this.options.inputTokenBudget,
-        "luna.context.trigger.tokens": Math.floor(this.options.inputTokenBudget * this.options.compressionTriggerRatio),
-        "luna.context.target.tokens": Math.floor(this.options.inputTokenBudget * this.options.compressionTargetRatio),
+        "luna.context.budget.tokens": inputTokenBudget,
+        "luna.context.trigger.tokens": Math.floor(inputTokenBudget * this.options.compressionTriggerRatio),
+        "luna.context.target.tokens": Math.floor(inputTokenBudget * this.options.compressionTargetRatio),
         "luna.context.history.turn_count": input.history.length,
         "luna.context.recent.turn_count": recentHistory.length,
         "luna.context.deferred.turn_count": deferredTurnCount,

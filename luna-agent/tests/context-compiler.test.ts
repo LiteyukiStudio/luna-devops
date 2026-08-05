@@ -287,6 +287,30 @@ describe("ContextCompiler", () => {
     expect(result.messages.some(message => message.content.includes("压缩正在增量追赶"))).toBe(false)
     expect(result.estimatedInputTokens).toBeLessThanOrEqual(8_000)
   })
+
+  it("applies a validated context budget update without recreating the compiler", async () => {
+    const repository = new MemoryRepository()
+    const conversation = await repository.createConversation("usr_a", "runtime-budget")
+    const compiler = new ContextCompiler(repository, summaryProvider(), {
+      inputTokenBudget: 1,
+      compressionTriggerRatio: 0.8,
+      compressionTargetRatio: 0.5,
+      recentTurnCount: 4,
+      maxRecentTurnCount: 8,
+      maxUncompressedTurnCount: 24,
+      maxCompressionTurnsPerCompile: 96,
+      summaryInputTokenBudget: 4_000,
+      summaryMaxOutputTokens: 500,
+      historicalToolTokenBudget: 1_000,
+    })
+
+    await expect(compiler.compile(compileInput(conversation.id, 0, [])))
+      .rejects.toThrow("ai.context_base_budget_exhausted")
+    compiler.setInputTokenBudget(8_000)
+
+    const result = await compiler.compile(compileInput(conversation.id, 0, []))
+    expect(result.estimatedInputTokens).toBeLessThanOrEqual(8_000)
+  })
 })
 
 function compileInput(conversationId: string, beforeTurnIndex: number, history: ConversationHistoryEntry[]): CompileContextInput {

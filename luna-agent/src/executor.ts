@@ -392,7 +392,9 @@ export class RunExecutor {
     if (!this.runtimeConfig)
       return
     try {
-      this.runtimeSettings = (await this.runtimeConfig.get()).runtime
+      const runtimeSettings = (await this.runtimeConfig.get()).runtime
+      this.graphs.setContextInputTokenBudget(runtimeSettings.contextInputTokenBudget)
+      this.runtimeSettings = runtimeSettings
     }
     catch {
       // Keep the last validated settings when Luna API is temporarily unavailable.

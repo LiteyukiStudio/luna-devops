@@ -61,6 +61,10 @@ export class GraphVersionRegistry {
   }
   versions() { return [...this.graphs.keys()] }
 
+  setContextInputTokenBudget(inputTokenBudget: number): void {
+    this.contextCompiler?.setInputTokenBudget(inputTokenBudget)
+  }
+
   async *stream(version: string, input: AssistantGraphState, signal?: AbortSignal) {
     if (!this.graphs.has(version)) throw new Error("ai.graph_version_unavailable")
     const tools = this.modelTools(input.pageContext, input.conversation, input.input)

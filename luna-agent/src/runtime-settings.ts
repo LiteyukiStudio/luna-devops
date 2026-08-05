@@ -2,12 +2,14 @@ export interface RuntimeSettings {
   providerTimeoutMs: number
   runTimeoutMs: number
   agentConcurrentRuns: number
+  contextInputTokenBudget: number
 }
 
 export const defaultRuntimeSettings: RuntimeSettings = {
   providerTimeoutMs: 30_000,
   runTimeoutMs: 300_000,
   agentConcurrentRuns: 2,
+  contextInputTokenBudget: 256 * 1024,
 }
 
 export const agentRuntimeInternals = {
@@ -15,7 +17,6 @@ export const agentRuntimeInternals = {
   runPollMs: 500,
   runLeaseSeconds: 30,
   maxInputBytes: 48_000,
-  contextInputTokenBudget: 48_000,
   contextCompressionTriggerRatio: 0.8,
   contextCompressionTargetRatio: 0.5,
   contextRecentTurnCount: 4,

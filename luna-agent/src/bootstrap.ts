@@ -12,7 +12,7 @@ import { ProviderConfigClient } from "./provider/config-client.js"
 import { createRuntimeProvider } from "./provider/runtime.js"
 import { buildServer } from "./server.js"
 import { configureAIContentCapture, shutdownTelemetry, telemetryLog } from "./telemetry.js"
-import { agentRuntimeInternals } from "./runtime-settings.js"
+import { agentRuntimeInternals, defaultRuntimeSettings } from "./runtime-settings.js"
 import { ToolCatalog } from "./tools/catalog.js"
 import { HttpLunaApiToolClient } from "./tools/luna-api-client.js"
 import { MemoryToolCallStore, ProjectingToolCallStore, ToolOrchestrator } from "./tools/orchestrator.js"
@@ -73,7 +73,7 @@ export async function startAgent(): Promise<void> {
       })
     : undefined
   const contextCompiler = new ContextCompiler(repository, provider, {
-    inputTokenBudget: agentRuntimeInternals.contextInputTokenBudget,
+    inputTokenBudget: initialRemoteConfig?.runtime.contextInputTokenBudget ?? defaultRuntimeSettings.contextInputTokenBudget,
     compressionTriggerRatio: agentRuntimeInternals.contextCompressionTriggerRatio,
     compressionTargetRatio: agentRuntimeInternals.contextCompressionTargetRatio,
     recentTurnCount: agentRuntimeInternals.contextRecentTurnCount,

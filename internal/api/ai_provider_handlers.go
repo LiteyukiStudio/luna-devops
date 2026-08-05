@@ -21,6 +21,7 @@ var aiProviderConfigKeys = []string{
 	"ai.runtime.provider_timeout_seconds",
 	"ai.runtime.run_timeout_seconds",
 	"ai.runtime.agent_concurrent_runs",
+	"ai.runtime.context_input_k_tokens",
 }
 
 func (h *Handlers) GetAIProviderConfigInternal(ctx *gin.Context) {
@@ -50,12 +51,17 @@ func (h *Handlers) GetAIProviderConfigInternal(ctx *gin.Context) {
 			"configured": baseURL != "" && modelName != "" && strings.TrimSpace(apiKey) != "",
 		},
 		"runtime": gin.H{
-			"providerTimeoutMs":   aiRuntimeMilliseconds(values, "ai.runtime.provider_timeout_seconds", 30),
-			"runTimeoutMs":        aiRuntimeMilliseconds(values, "ai.runtime.run_timeout_seconds", 300),
-			"agentConcurrentRuns": aiRuntimeInteger(values, "ai.runtime.agent_concurrent_runs", 2),
+			"providerTimeoutMs":       aiRuntimeMilliseconds(values, "ai.runtime.provider_timeout_seconds", 30),
+			"runTimeoutMs":            aiRuntimeMilliseconds(values, "ai.runtime.run_timeout_seconds", 300),
+			"agentConcurrentRuns":     aiRuntimeInteger(values, "ai.runtime.agent_concurrent_runs", 2),
+			"contextInputTokenBudget": aiRuntimeKTokens(values, "ai.runtime.context_input_k_tokens", 256),
 		},
 		"toolCatalog": toolCatalog,
 	})
+}
+
+func aiRuntimeKTokens(values map[string]string, key string, fallback int) int {
+	return aiRuntimeInteger(values, key, fallback) * 1024
 }
 
 func (h *Handlers) TestAIProviderConnection(ctx *gin.Context) {

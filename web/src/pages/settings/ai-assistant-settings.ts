@@ -45,6 +45,10 @@ export const aiSettingsSchema = z.object({
     .int({ message: i18next.t('settings.ai.agentConcurrentRunsInvalid') })
     .min(1, { message: i18next.t('settings.ai.agentConcurrentRunsInvalid') })
     .max(10, { message: i18next.t('settings.ai.agentConcurrentRunsInvalid') }),
+  contextInputKTokens: z.number({ message: i18next.t('settings.ai.contextInputBudgetInvalid') })
+    .int({ message: i18next.t('settings.ai.contextInputBudgetInvalid') })
+    .min(64, { message: i18next.t('settings.ai.contextInputBudgetInvalid') })
+    .max(1024, { message: i18next.t('settings.ai.contextInputBudgetInvalid') }),
   observabilityEnabled: z.boolean(),
   prometheusUrl: observabilityUrl,
   prometheusToken: z.string(),
@@ -88,6 +92,7 @@ export function aiSettingsPayload(values: AISettingsFormValues) {
     'ai.runtime.provider_timeout_seconds': values.providerTimeoutSeconds,
     'ai.runtime.run_timeout_seconds': values.runTimeoutSeconds,
     'ai.runtime.agent_concurrent_runs': values.agentConcurrentRuns,
+    'ai.runtime.context_input_k_tokens': values.contextInputKTokens,
     'ai.observability.enabled': values.observabilityEnabled,
     'ai.observability.prometheus_url': values.prometheusUrl.trim(),
     'ai.observability.loki_url': values.lokiUrl.trim(),

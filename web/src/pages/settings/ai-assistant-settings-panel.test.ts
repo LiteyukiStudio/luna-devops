@@ -14,6 +14,7 @@ const validValues = {
   providerTimeoutSeconds: 30,
   runTimeoutSeconds: 300,
   agentConcurrentRuns: 2,
+  contextInputKTokens: 256,
   observabilityEnabled: false,
   prometheusUrl: '',
   prometheusToken: '',
@@ -45,6 +46,7 @@ describe('aI assistant admin settings', () => {
       'ai.runtime.provider_timeout_seconds': 30,
       'ai.runtime.run_timeout_seconds': 300,
       'ai.runtime.agent_concurrent_runs': 2,
+      'ai.runtime.context_input_k_tokens': 256,
       'ai.observability.enabled': false,
       'ai.observability.prometheus_url': '',
       'ai.observability.loki_url': '',
@@ -78,6 +80,7 @@ describe('aI assistant admin settings', () => {
   it('rejects unsafe runtime settings', () => {
     expect(aiSettingsSchema.safeParse({ ...validValues, runTimeoutSeconds: 10 }).success).toBe(false)
     expect(aiSettingsSchema.safeParse({ ...validValues, agentConcurrentRuns: 100 }).success).toBe(false)
+    expect(aiSettingsSchema.safeParse({ ...validValues, contextInputKTokens: 32 }).success).toBe(false)
   })
 
   it('accepts authenticated HTTP proxy URLs and keeps configured pools write-only', () => {

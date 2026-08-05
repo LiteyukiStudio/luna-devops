@@ -23,6 +23,8 @@ The conversation browser shortens update timestamps by age: conversations update
 
 Long conversations retain their complete history for review. Before a request approaches the model context limit, earlier turns are summarized into task goals, constraints, resources, and pending work. Each model request prioritizes the current work, recent verbatim turns, and those retained facts, so a long-running task does not require a new conversation merely because its turn count grows.
 
+Administrators can change the **Context input budget** under advanced runtime settings. It defaults to 256K tokens. This is the maximum input allowed for one model request, not a fixed cost per turn, and it must not exceed the context capacity supported by the selected model.
+
 ## Capabilities and operations
 
 The assistant can inspect platform resources, analyze logs and status, read public web pages, collect settings through interactive cards, and report operation results. Long-running builds and releases show their real status, and the assistant checks the outcome after they finish.

@@ -63,6 +63,7 @@ func (h *Handlers) validateAIConfigValues(values map[string]string) error {
 		"ai.runtime.provider_timeout_seconds": {1, 120},
 		"ai.runtime.run_timeout_seconds":      {30, 900},
 		"ai.runtime.agent_concurrent_runs":    {1, 10},
+		"ai.runtime.context_input_k_tokens":   {64, 1024},
 		"ai.quota.user_concurrent_runs":       {1, 10},
 		"ai.quota.user_daily_tokens":          {1000, 10000000},
 		"ai.quota.project_concurrent_runs":    {1, 50},
