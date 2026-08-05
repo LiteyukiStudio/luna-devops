@@ -91,7 +91,7 @@ export function AIConversationList({
   }
 
   return (
-    <aside className={cn('flex size-full min-h-0 flex-col bg-surface', mobile ? 'absolute inset-0 z-20' : 'shrink-0 border-r border-separator-subtle')}>
+    <aside className={cn('flex size-full min-h-0 flex-col bg-surface', mobile ? 'relative z-20 flex-1 overflow-hidden rounded-t-feature border-t border-separator-subtle shadow-overlay' : 'shrink-0 border-r border-separator-subtle')}>
       {mobile
         ? (
             <div className="flex h-[calc(3.5rem+env(safe-area-inset-top))] shrink-0 items-center gap-1 border-b border-separator-subtle pb-0 pl-[max(0.5rem,env(safe-area-inset-left))] pr-[max(0.5rem,env(safe-area-inset-right))] pt-[env(safe-area-inset-top)]">

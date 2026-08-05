@@ -575,27 +575,47 @@ export function AiAssistant() {
             />
           )
         : (
-            <AnimatePresence initial={false} mode="popLayout">
-              <motion.div
-                key={assistantView}
-                animate={{ opacity: 1, x: 0 }}
-                className="relative flex size-full min-w-0 overflow-hidden"
-                exit={reduceMotion ? { opacity: 0 } : { opacity: 0, x: showConversations ? -32 : 32 }}
-                initial={reduceMotion ? { opacity: 0 } : { opacity: 0, x: showConversations ? -32 : 32 }}
-                transition={reduceMotion ? { duration: 0.1 } : { type: 'spring', stiffness: 420, damping: 34, mass: 0.8 }}
-              >
-                {showConversations
-                  ? (
+            // 移动端：聊天视图始终作为底层渲染，会话列表以底部半屏面板覆盖，
+            // 选中会话后自动收起；PC 端（desktop 分支）保持原有侧栏行为不变。
+            <div className="relative flex size-full min-w-0 overflow-hidden">
+              {chatView}
+              <AnimatePresence initial={false}>
+                {showConversations && (
+                  <>
+                    <motion.button
+                      key="conversation-scrim"
+                      animate={{ opacity: 1 }}
+                      aria-label={t('common.back')}
+                      className="absolute inset-0 z-10 cursor-default bg-black/40"
+                      exit={{ opacity: 0 }}
+                      initial={{ opacity: 0 }}
+                      transition={{ duration: reduceMotion ? 0.1 : 0.18 }}
+                      type="button"
+                      onClick={() => setAssistantView('chat')}
+                    />
+                    <motion.div
+                      key="conversation-panel"
+                      animate={{ opacity: 1, y: 0 }}
+                      className="absolute inset-x-0 bottom-0 z-20 flex max-h-[62%] min-h-0 flex-col"
+                      exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 40 }}
+                      initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 40 }}
+                      transition={reduceMotion ? { duration: 0.1 } : { type: 'spring', stiffness: 420, damping: 36, mass: 0.8 }}
+                    >
                       <AIConversationList
                         {...conversationListProps}
                         variant="mobile"
                         onBack={() => setAssistantView('chat')}
                         onClose={close}
+                        onSelect={(id) => {
+                          conversationListProps.onSelect(id)
+                          setAssistantView('chat')
+                        }}
                       />
-                    )
-                  : chatView}
-              </motion.div>
-            </AnimatePresence>
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
+            </div>
           )}
     </section>
   )
