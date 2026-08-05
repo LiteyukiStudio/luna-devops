@@ -38,6 +38,31 @@ describe("business interaction card templates", () => {
     expect(result.cards[0]?.form?.sections[0]?.fields[0]).toMatchObject({ type: "select", id: "candidate", submissionFormat: "label_value" })
   })
 
+  it("adds a creation entry alongside existing candidates", () => {
+    const picker = compile({
+      templateId: "candidate_picker",
+      title: "选择项目空间",
+      candidates: [
+        { id: "a", title: "默认空间", selectionLabel: "使用默认空间", selectionMessage: "使用默认空间 (prj_a)" },
+        { id: "b", title: "测试空间", selectionLabel: "使用测试空间", selectionMessage: "使用测试空间 (prj_b)" },
+      ],
+      creationAction: { label: "新建项目空间", message: "我想新建一个项目空间来部署应用" },
+    })
+    expect(picker.groupActions?.[0]).toMatchObject({ type: "send_message", label: "新建项目空间", emphasis: "secondary" })
+
+    const select = compile({
+      templateId: "candidate_select",
+      title: "选择项目空间",
+      fieldLabel: "项目空间",
+      candidates: Array.from({ length: 6 }, (_, index) => ({ value: `prj_${index}`, label: `项目 ${index}` })),
+      submitLabel: "确认项目空间",
+      submitMessage: "使用项目空间 {{candidate}}",
+      creationAction: { label: "新建项目空间", message: "我想新建一个项目空间" },
+    })
+    const actionTypes = select.cards[0]?.actions?.map(action => action.label)
+    expect(actionTypes).toContain("新建项目空间")
+  })
+
   it("compiles resource configuration and preserves tool bindings", () => {
     const result = compile({
       templateId: "resource_configuration",

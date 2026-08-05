@@ -4,6 +4,10 @@
 
 - 先按根 Skill 直接索引的 `resource-resolution.md` 解析资源候选。有效候选只有一个时直接
   采用并继续，不生成卡片或快捷选项；以下规则只处理仍然存在的真实选择。
+- 用卡片或快捷选项让用户从已有资源中选择时，只要平台支持创建该资源，就额外提供一个
+  “新建”入口（`candidate_picker` / `candidate_select` 的 `creationAction`，或通用卡片的
+  `groupActions`），用户选择后进入创建流程并在完成后回到原工作流；不得只给现有候选。
+  具体规则见根 Skill 直接索引的 `resource-resolution.md`。
 - 候选资源、可比较方案、结构化输入、诊断、计划、进度和结果使用
   `create_interaction_cards`。
 - 生成交互卡片前先单独调用 `prepare_interaction_cards`，收到 `accepted` 后再以相同

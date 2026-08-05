@@ -184,6 +184,16 @@ describe("versioned system prompt", () => {
     expect(prompt).toContain("自动选择资源不等于批准高风险操作")
   })
 
+  it("guides candidate selection to offer a creation entry when creatable", () => {
+    const prompt = systemPromptFor("system-v4", {
+      userInput: "选择项目空间部署这个应用",
+      operationIds: ["listProjects", "createProject"],
+    })
+    expect(prompt).toContain("新建")
+    expect(prompt).toContain("creationAction")
+    expect(prompt).toContain("创建完成并回读取得真实 ID 后回到原工作流")
+  })
+
   it.each([
     {
       input: "从应用市场安装 PostgreSQL 到一个新项目空间并部署完成",

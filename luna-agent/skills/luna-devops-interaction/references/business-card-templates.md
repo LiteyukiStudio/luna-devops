@@ -46,6 +46,10 @@
 
 反例：搜索得到 19 个模板后生成 19 张卡。此时使用 `candidate_select`，或者先按用户意图筛选。
 
+当候选可能不满足用户需求且平台支持创建该资源时，必须设置 `creationAction` 提供“新建”
+入口。`creationAction.label` 明确资源类型（如“新建项目空间”），`creationAction.message`
+把用户带入创建流程；创建完成并回读取得真实 ID 后回到原工作流继续。没有创建能力时才省略。
+
 ### candidate_select
 
 候选必须来自同一类可信资源。`submitLabel` 使用用户当前语言；`submitMessage` 必须包含

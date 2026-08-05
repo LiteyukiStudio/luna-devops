@@ -109,6 +109,11 @@ const candidatePicker = z.object({
   title: shortText,
   description,
   candidates: z.array(candidate).min(2).max(5),
+  creationAction: z.object({
+    label: shortText.describe("新建入口的标签，例如“新建项目空间”。"),
+    message: z.string().trim().min(1).max(1000)
+      .describe("用户点击新建后发送给助手的消息，用于引导进入创建流程。"),
+  }).optional().describe("当现有候选可能不满足用户需求时提供的新建入口。"),
 })
 
 const candidateSelect = z.object({
@@ -120,6 +125,10 @@ const candidateSelect = z.object({
   candidates: z.array(selectOption).min(6).max(50),
   submitLabel: shortText,
   submitMessage: z.string().trim().min(1).max(2000),
+  creationAction: z.object({
+    label: shortText,
+    message: z.string().trim().min(1).max(1000),
+  }).optional().describe("当现有候选可能不满足用户需求时提供的新建入口。"),
 }).refine(input => input.submitMessage.includes("{{candidate}}"), {
   message: "候选选择模板的 submitMessage 必须包含 {{candidate}}。",
   path: ["submitMessage"],
@@ -225,6 +234,9 @@ export function compileBusinessCardTemplate(input: CreateBusinessCardTemplateInp
           blocks: candidate.facts?.length ? [{ id: "facts", type: "key_value", items: candidate.facts, collapsible: true }] : undefined,
           actions: [{ id: "select", type: "send_message", label: candidate.selectionLabel, message: candidate.selectionMessage, emphasis: "primary" }],
         })),
+        ...(template.creationAction
+          ? { groupActions: [{ id: "create_new", type: "send_message", label: template.creationAction.label, message: template.creationAction.message, emphasis: "secondary" }] }
+          : {}),
       }
     case "candidate_select":
       return {
@@ -233,7 +245,12 @@ export function compileBusinessCardTemplate(input: CreateBusinessCardTemplateInp
           id: "candidate_selection",
           presentation: { variant: "form", title: template.title, description: template.description },
           form: { sections: [{ id: "selection", fields: [{ id: "candidate", type: "select", label: template.fieldLabel, description: template.fieldDescription, required: true, submissionFormat: "label_value", options: template.candidates }] }] },
-          actions: [{ id: "submit", type: "send_message", label: template.submitLabel, message: template.submitMessage, emphasis: "primary" }],
+          actions: [
+            { id: "submit", type: "send_message", label: template.submitLabel, message: template.submitMessage, emphasis: "primary" },
+            ...(template.creationAction
+              ? [{ id: "create_new", type: "send_message", label: template.creationAction.label, message: template.creationAction.message, emphasis: "secondary" }]
+              : []),
+          ],
         }],
       }
     case "resource_configuration":
