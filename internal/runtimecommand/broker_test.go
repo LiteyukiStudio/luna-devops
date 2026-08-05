@@ -125,6 +125,16 @@ func TestCommandMarkersWaitForCompleteStatusTerminator(t *testing.T) {
 	}
 }
 
+func TestPOSIXShellPrintsCompletionTerminator(t *testing.T) {
+	output, err := exec.Command("/bin/sh", "-c", "printf '\\037'").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(output) != "\x1f" {
+		t.Fatalf("completion terminator = %q", output)
+	}
+}
+
 func fakeShell(ctx context.Context, input io.Reader, output io.Writer) error {
 	command := exec.CommandContext(ctx, "/bin/sh")
 	command.Stdin = input

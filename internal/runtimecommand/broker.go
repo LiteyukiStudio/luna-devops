@@ -201,7 +201,7 @@ func (broker *Broker) Execute(ctx context.Context, id string, binding Binding, c
 	}
 	begin := "\x1eLUNA_BEGIN_" + token + "\x1f\n"
 	endMarker := "\x1eLUNA_END_" + token + ":"
-	payload := "printf '" + shellSingleQuote(begin) + "'; eval '" + shellSingleQuote(command) + "'; __luna_status=$?; printf '\\n" + shellSingleQuote(endMarker) + "%s\\x1f\\n' \"$__luna_status\"\n"
+	payload := "printf '" + shellSingleQuote(begin) + "'; eval '" + shellSingleQuote(command) + "'; __luna_status=$?; printf '\\n" + shellSingleQuote(endMarker) + "%s\\037\\n' \"$__luna_status\"\n"
 
 	item.resetOutput(now)
 	started := time.Now()
