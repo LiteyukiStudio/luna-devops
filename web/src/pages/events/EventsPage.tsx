@@ -407,6 +407,7 @@ export function EventsPage() {
         emptyTitle={t(search || activeFilterCount > 0 ? 'eventsPage.filteredEmptyTitle' : 'eventsPage.emptyTitle')}
         items={events.data?.items ?? []}
         loading={events.isLoading}
+        viewportOffset={24}
         pagination={{
           page: events.data?.page ?? page,
           pageSize,

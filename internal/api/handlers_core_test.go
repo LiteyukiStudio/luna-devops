@@ -81,6 +81,16 @@ func TestOrderByClauseUsesWhitelist(t *testing.T) {
 	}
 }
 
+func TestOrderByClauseToleratesDefaultColumnWithDirection(t *testing.T) {
+	pagination := paginationParams{SortBy: "", SortOrder: "desc"}
+	if got := orderByClause(pagination, map[string]string{"occurredAt": "occurred_at"}, "occurred_at desc"); got != "occurred_at desc" {
+		t.Fatalf("orderBy = %q", got)
+	}
+	if got := orderByClause(pagination, map[string]string{}, "occurred_at asc"); got != "occurred_at desc" {
+		t.Fatalf("orderBy = %q", got)
+	}
+}
+
 func TestNormalizedProjectOrderIDsDeduplicatesAndTrims(t *testing.T) {
 	got := normalizedProjectOrderIDs([]string{" prj_1 ", "", "prj_2", "prj_1"})
 	if len(got) != 2 || got[0] != "prj_1" || got[1] != "prj_2" {

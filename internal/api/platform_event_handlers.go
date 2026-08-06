@@ -46,7 +46,7 @@ func (h *Handlers) ListPlatformEvents(ctx *gin.Context) {
 			"severity":   "severity",
 			"type":       "type",
 			"category":   "category",
-		}, "occurred_at desc")).
+		}, "occurred_at")).
 		Limit(pagination.PageSize).
 		Offset(pagination.Offset()).
 		Find(&events).Error; err != nil {

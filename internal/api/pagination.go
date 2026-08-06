@@ -71,7 +71,9 @@ func paginateSlice[T any](items []T, pagination paginationParams) []T {
 func orderByClause(pagination paginationParams, allowedFields map[string]string, defaultColumn string) string {
 	column := allowedFields[pagination.SortBy]
 	if column == "" {
-		column = defaultColumn
+		// defaultColumn 约定为裸列名；历史调用方误传入方向后缀时在此归一化，
+		// 避免拼出 "col desc desc" 之类的非法 SQL。
+		column = strings.TrimSpace(strings.TrimSuffix(strings.TrimSuffix(defaultColumn, " desc"), " asc"))
 	}
 
 	order := pagination.SortOrder

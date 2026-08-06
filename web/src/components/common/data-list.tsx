@@ -42,6 +42,12 @@ interface DataListProps<T> {
   emptyMode?: 'actionable' | 'filtered'
   loading?: boolean
   constrainedHeight?: boolean
+  /**
+   * 列表相对视口的纵向偏移（rem），用于计算内部滚动区的最大高度。
+   * 默认 15rem 适用于列表上方只有紧凑工具栏的页面；当列表上方存在筛选卡片等
+   * 较高内容时，应传入更大的偏移，避免列表底部与分页被推出视口。
+   */
+  viewportOffset?: 15 | 20 | 24 | 28
   search?: {
     value: string
     placeholder: string
@@ -67,6 +73,20 @@ interface DataListProps<T> {
     onPageSizeChange?: (pageSize: number) => void
     pageSizeOptions?: number[]
   }
+}
+
+// Tailwind v4 只扫描源码中的字面量类名，预定义可选的视口偏移，避免动态拼接失效。
+const viewportOffsetClass: Record<number, string> = {
+  15: 'md:max-h-[calc(100vh-15rem)]',
+  20: 'md:max-h-[calc(100vh-20rem)]',
+  24: 'md:max-h-[calc(100vh-24rem)]',
+  28: 'md:max-h-[calc(100vh-28rem)]',
+}
+const viewportOffsetFixedClass: Record<number, string> = {
+  15: 'md:h-[calc(100vh-15rem)]',
+  20: 'md:h-[calc(100vh-20rem)]',
+  24: 'md:h-[calc(100vh-24rem)]',
+  28: 'md:h-[calc(100vh-28rem)]',
 }
 
 function stickyColumnClass(sticky: DataListColumn<unknown>['sticky'], surface: 'header' | 'cell') {
@@ -214,6 +234,7 @@ export function DataList<T>({
   emptyMode = 'actionable',
   loading = false,
   constrainedHeight = false,
+  viewportOffset = 15,
   search,
   selection,
   pagination,
@@ -283,12 +304,15 @@ export function DataList<T>({
       )
     : undefined
 
+  const offsetClass = viewportOffsetClass[viewportOffset] ?? viewportOffsetClass[15]
+  const offsetFixedClass = viewportOffsetFixedClass[viewportOffset] ?? viewportOffsetFixedClass[15]
   return (
     <div
       ref={rootRef}
       className={cn(
-        'flex w-full min-w-0 max-w-full max-h-none flex-col md:max-h-[calc(100vh-15rem)]',
-        constrainedHeight && 'md:h-[calc(100vh-15rem)]',
+        'flex w-full min-w-0 max-w-full max-h-none flex-col',
+        offsetClass,
+        constrainedHeight && offsetFixedClass,
       )}
       data-slot="data-list"
     >
