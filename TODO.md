@@ -1,5 +1,7 @@
 # TODO
 
+- [x] 修复 getAppTemplate 工具 `ai.tool_not_allowed`：手写 service 操作未注册到后端策略白名单，补充注册与测试，并在 AGENTS.md 沉淀 Agent 工具注册闭环规范。
+
 - [x] 为 Luna Agent 增加新手模式：识别不熟悉部署的用户，新增首次部署五步向导 reference、术语人话对照与异步状态进度翻译，注册意图触发并补充测试。
 
 - [x] 将 luna-agent PostgreSQL 持久层从手写 pg SQL 重构为 Drizzle ORM：建立 ai schema 强类型定义、统一行映射与连接模块，保留数据库原子语义所需的最小 sql 模板，补充真实 PostgreSQL 集成测试。

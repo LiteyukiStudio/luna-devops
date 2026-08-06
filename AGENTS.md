@@ -117,6 +117,13 @@ web/src/i18n
 - 构建/部署阶段的用户配置字符串默认允许使用 GitHub Actions 风格变量；最终执行前必须通过后端统一变量渲染组件处理，禁止在各业务里手写零散替换逻辑。
 - 权限由后端最终判断，前端隐藏按钮只做体验优化。
 - 危险操作必须写 AuditLog。
+- **MUST Agent 工具注册闭环**：新增或修改一个 `luna-agent` 可调用工具（`operationId`）时，必须在同一事项内逐项核对并同步全部注册点，禁止只加调用方不加执行方。手写工具（无独立 OpenAPI 路由，如 `webSearch`、`getAppTemplate`）的完整链路为：
+  1. Agent 侧 `src/tools/generated/platform.ts` 的 operation 定义（含 `inputSchema` 与 `requiredScopes`）；
+  2. 后端 `internal/aitool/service.go` `Execute` 的对应 `case`（真实执行）；
+  3. 后端 `internal/api/ai_internal_tool_handlers.go` `buildAIToolPolicies` 的策略白名单（缺失会导致 `ai.tool_not_allowed`），`Scopes` 必须与 Agent 侧 `requiredScopes` 完全一致；
+  4. Agent 侧 `src/tools/catalog.ts` 的 `baseOperations`/`essentialWorkflowOperations`（决定工具是否下发给模型）与 `operationDescriptions`（模型可见的工具描述）。
+  有独立 OpenAPI 路由的平台操作经 `PlatformCatalog()` 自动生成策略，只需确认 `agentEligibleOperation` 未将其排除。完成后必须用一条真实调用链验证工具可执行（通过 delegation 换取并成功返回），不能仅编译通过就交付。
+- 修改既有工具的 `requiredScopes`、参数 schema 或风险级别时，必须同步更新策略白名单与 Agent 侧定义，保持两端一致。
 
 ## 6. 前端准则
 
