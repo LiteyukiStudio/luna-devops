@@ -20,7 +20,6 @@ export interface AIConversationListProps {
   search: string
   variant?: 'drawer' | 'sidebar' | 'mobile'
   onBack?: () => void
-  onClose?: () => void
   onDeleteMany: (ids: string[]) => Promise<void>
   onRename: (id: string, title: string) => void
   onSearch: (search: string) => void
@@ -36,7 +35,6 @@ export function AIConversationList({
   search,
   variant = 'sidebar',
   onBack,
-  onClose,
   onDeleteMany,
   onRename,
   onSearch,
@@ -100,7 +98,6 @@ export function AIConversationList({
               <Button className="h-9 px-2.5 text-xs" size="sm" variant="ghost" onClick={() => selecting ? exitSelection() : setSelecting(true)}>
                 {selecting ? t('aiAssistant.conversations.exitSelect') : t('aiAssistant.conversations.manage')}
               </Button>
-              <Button aria-label={t('common.close')} size="icon" variant="ghost" onClick={onClose}><X className="size-4" /></Button>
             </div>
           )
         : (

@@ -605,7 +605,6 @@ export function AiAssistant() {
                         {...conversationListProps}
                         variant="mobile"
                         onBack={() => setAssistantView('chat')}
-                        onClose={close}
                         onSelect={(id) => {
                           conversationListProps.onSelect(id)
                           setAssistantView('chat')

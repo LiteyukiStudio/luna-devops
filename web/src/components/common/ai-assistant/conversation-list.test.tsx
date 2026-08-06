@@ -86,7 +86,6 @@ describe('ai conversation list', () => {
     await i18next.changeLanguage('zh-CN')
     const user = userEvent.setup()
     const onBack = vi.fn()
-    const onClose = vi.fn()
     const onSelect = vi.fn()
     render(
       <AIConversationList
@@ -98,7 +97,6 @@ describe('ai conversation list', () => {
         search=""
         variant="mobile"
         onBack={onBack}
-        onClose={onClose}
         onDeleteMany={vi.fn(async () => {})}
         onRename={vi.fn()}
         onSearch={vi.fn()}
@@ -114,9 +112,9 @@ describe('ai conversation list', () => {
     await user.click(screen.getByRole('button', { name: '管理' }))
     expect(screen.getByText('选择会话')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '返回' }))
-    await user.click(screen.getByRole('button', { name: '关闭' }))
     expect(onBack).toHaveBeenCalledOnce()
-    expect(onClose).toHaveBeenCalledOnce()
+    // 移动端半屏覆盖不再有“关闭整个助手”的按钮，避免误触
+    expect(screen.queryByRole('button', { name: '关闭' })).not.toBeInTheDocument()
   })
 
   it('provides an explicit return action in the compact desktop drawer', async () => {
