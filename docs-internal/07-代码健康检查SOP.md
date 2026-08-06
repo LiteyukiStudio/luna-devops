@@ -148,7 +148,7 @@ rg -n "TODO|FIXME|临时|兼容|fallback|special case|module|Builder|builder" in
 
 ## 3.2 可观测覆盖审计
 
-新增功能和双周检查按 `notes/14-可观测插桩与验收标准.md` 执行以下审计：
+新增功能和双周检查按 `docs-internal/14-可观测插桩与验收标准.md` 执行以下审计：
 
 1. 从用户入口沿调用图列出 HTTP/SSE/WebSocket、Repository、PostgreSQL、Redis、Asynq、外部 Provider、模型和 Agent Tool 边界；每个边界都必须有自动或手工 Span。
 2. 检查业务代码是否在已有调用链中使用 `context.Background()`、裸 `http.Client`、未插桩 GORM/Redis Client 或绕过 Asynq 中间件；发现即视为父链路截断。
@@ -295,13 +295,13 @@ rg -n "TODO|FIXME|临时|兼容|fallback|special case|module|Builder|builder" in
 
 风险：
 
-- 项目同时维护 `docs/` Rspress 用户文档和 `notes/` 设计记录，容易出现口径不一致。
+- 项目同时维护 `docs/` Rspress 用户文档和 `docs-internal/` 设计记录，容易出现口径不一致。
 - 中英文导航、配置项表格和部署教程不一致会直接影响用户上手。
 
 建议：
 
 - 用户操作、部署、配置和故障排查优先写入 `docs/docs/{zh,en}`。
-- 工程内部设计沉淀写入 `notes/`，不要混入用户文档。
+- 工程内部设计沉淀写入 `docs-internal/`，不要混入用户文档。
 - 每次新增用户可见能力，检查中文和英文导航是否都有入口。
 
 ### 5.8 DataList、ContentTabs 和操作菜单

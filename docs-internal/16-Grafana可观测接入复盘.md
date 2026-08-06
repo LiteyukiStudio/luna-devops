@@ -1,6 +1,6 @@
 # Grafana 可观测接入复盘
 
-本文记录 Luna DevOps 接入 OpenTelemetry、Prometheus、Tempo、Loki 和 Grafana 时实际遇到的问题。它不是部署教程，而是研发与运维排障清单；正式插桩约束仍以 `notes/14-可观测插桩与验收标准.md` 为准。
+本文记录 Luna DevOps 接入 OpenTelemetry、Prometheus、Tempo、Loki 和 Grafana 时实际遇到的问题。它不是部署教程，而是研发与运维排障清单；正式插桩约束仍以 `docs-internal/14-可观测插桩与验收标准.md` 为准。
 
 ## 1. 最重要的结论
 

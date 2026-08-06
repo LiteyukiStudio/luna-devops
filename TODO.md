@@ -1,5 +1,7 @@
 # TODO
 
+- [x] 收敛内部开发文档结构：`notes/` 重命名为 `docs-internal/`，新建 `docs-internal/README.md` 作为分层索引（长期规范与方案/记录分离），新建 `CONTRIBUTING.md` 作为人类贡献者入口，并与 `AGENTS.md`、中英文 README 统一引用。
+
 - [x] 修复 getAppTemplate 工具 `ai.tool_not_allowed`：手写 service 操作未注册到后端策略白名单，补充注册与测试，并在 AGENTS.md 沉淀 Agent 工具注册闭环规范。
 
 - [x] 为 Luna Agent 增加新手模式：识别不熟悉部署的用户，新增首次部署五步向导 reference、术语人话对照与异步状态进度翻译，注册意图触发并补充测试。
@@ -64,7 +66,7 @@
 - [x] 清理已被 `AGENTS.md` 吸收的旧版技术栈文档 `docs/02-项目技术栈要求.md`。
 - [x] 删除过期产品原型和暂不启用的 AI 能力提案文档，README 与 AGENTS 只保留当前有效文档入口。
 - [x] 删除独立品牌说明和旧 Builder 构建验收复盘文档；构建后续计划已由 TODO 中的细分条目承接。
-- [x] 将旧 `docs/` 内容迁移到 `notes/`，并使用 Rspress 建立支持中英双语、响应式和多主题的文档站。
+- [x] 将旧 `docs/` 内容迁移到 `docs-internal/`，并使用 Rspress 建立支持中英双语、响应式和多主题的文档站。
 - [x] 补充外部组件兼容矩阵文档，覆盖 GitHub/Gitea、镜像仓库、Kubernetes/Gateway API、OIDC、PostgreSQL、Redis、BuildKit、Prometheus/Grafana 和通知适配器的接口与版本范围。
 - [x] 将公开文档收敛为面向部署与使用者的渐进式内容：移除源码开发、CI/发布门禁、内部设计和历史记录栏目，精简 CLI、AI 助手与更新日志，把环境变量和兼容范围归入独立参考区，并将文档受众、内容边界和渐进披露规则固化到 `AGENTS.md`。
 - [x] 使用 MIT License 开放仓库源码与文档，并在中英文 README 和公开文档中说明再分发要求、免责声明与第三方许可边界。
@@ -1066,7 +1068,7 @@
 ## 16. Luna CLI
 
 CLI 已迁移到独立仓库 [`LiteyukiStudio/luna-cli`](https://github.com/LiteyukiStudio/luna-cli)。
-本仓库的 [`notes/cli-spec.md`](notes/cli-spec.md) 只保留迁移入口，完整规格由
+本仓库的 [`docs-internal/cli-spec.md`](docs-internal/cli-spec.md) 只保留迁移入口，完整规格由
 [`luna-cli/docs/cli-spec.md`](https://github.com/LiteyukiStudio/luna-cli/blob/main/docs/cli-spec.md)
 维护。
 
@@ -1119,7 +1121,7 @@ CLI 已迁移到独立仓库 [`LiteyukiStudio/luna-cli`](https://github.com/Lite
 - [x] 将 API↔Agent 的服务身份、上下文签名、回调认证、Delegation 签名与 Run Grant 加密配置收敛为单个 `AI_INTERNAL_SECRET`，通过 HKDF-SHA256 按用途派生子密钥，并同步简化 Compose、Helm 与部署文档。
 - [x] 将模型请求超时、单次 Run 超时和 Agent 实例并发数迁移到 Web 高级设置，通过受认证内部配置动态下发；轮询、租约和刷新周期收敛为代码安全默认值，部署环境只保留连接与鉴权配置。
 
-详细规格见 [`notes/11-内嵌AI助手规格.md`](notes/11-内嵌AI助手规格.md)。此前移除的
+详细规格见 [`docs-internal/11-内嵌AI助手规格.md`](docs-internal/11-内嵌AI助手规格.md)。此前移除的
 旧 MCP 内嵌方案保持移除；新方案使用独立 `luna-agent`、LangGraph.js 和平台
 OpenAPI，不把 MCP 作为内部服务总线。
 

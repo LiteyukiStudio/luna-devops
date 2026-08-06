@@ -180,7 +180,7 @@ openapi/                OpenAPI 定义
 web/                    Vite + React 控制台
 web/public/             公共资源、标志、吉祥物和 favicon
 docs/                   Rspress 文档站
-notes/                  产品方案、工程笔记和 SOP
+docs-internal/                  内部开发文档（长期规范与方案记录）
 charts/luna-devops      Helm Chart
 ```
 
@@ -202,7 +202,7 @@ pnpm --dir web build
 - `web/`、`docs/`、`tests/` 和 `luna-agent/` 分别维护自己的依赖清单与 lockfile，不使用跨目录的根 pnpm workspace；需要 pnpm 项目配置时也只放在对应工作目录。
 - Python 工具链统一使用 `uv`。
 - 后端 Handler 保持精简，业务逻辑放入 Service，外部平台集成放入 Provider。
-- 新功能必须按 [`notes/14-可观测插桩与验收标准.md`](notes/14-可观测插桩与验收标准.md) 补齐 Trace、关键结构化日志和低基数 Metrics，并保持跨服务 Context 连续。
+- 新功能必须按 [`docs-internal/14-可观测插桩与验收标准.md`](docs-internal/14-可观测插桩与验收标准.md) 补齐 Trace、关键结构化日志和低基数 Metrics，并保持跨服务 Context 连续。
 - 所有用户可见的前端文案都放入 i18n 文件。
 - 功能或行为变化时同步更新文档站。
 
@@ -214,10 +214,12 @@ pnpm --dir web build
 ## 文档
 
 - 在线文档：[luna-devops.liteyuki.org](https://luna-devops.liteyuki.org/)
-- 产品方案：[`notes/01-产品与一体化方案.md`](notes/01-产品与一体化方案.md)
-- 代码健康检查 SOP：[`notes/07-代码健康检查SOP.md`](notes/07-代码健康检查SOP.md)
+- 产品方案：[`docs-internal/01-产品与一体化方案.md`](docs-internal/01-产品与一体化方案.md)
+- 内部开发文档索引：[`docs-internal/README.md`](docs-internal/README.md)
+- 代码健康检查 SOP：[`docs-internal/07-代码健康检查SOP.md`](docs-internal/07-代码健康检查SOP.md)
 - 开发计划：[`TODO.md`](TODO.md)
-- Agent 与贡献规范：[`AGENTS.md`](AGENTS.md)
+- AI 代理规范：[`AGENTS.md`](AGENTS.md)
+- 贡献指南：[`CONTRIBUTING.md`](CONTRIBUTING.md)
 
 ## 许可证
 

@@ -181,7 +181,7 @@ openapi/                OpenAPI definitions
 web/                    Vite + React console
 web/public/             Public assets, logo, mascot, and favicon
 docs/                   Rspress documentation site
-notes/                  Product notes, engineering notes, and SOPs
+docs-internal/                  Internal engineering docs (standards, proposals, records)
 charts/luna-devops      Helm chart
 ```
 
@@ -215,10 +215,12 @@ Project conventions:
 ## Documentation
 
 - Public documentation: [luna-devops.liteyuki.org](https://luna-devops.liteyuki.org/en/)
-- Product notes: [`notes/01-产品与一体化方案.md`](notes/01-产品与一体化方案.md)
-- Code health SOP: [`notes/07-代码健康检查SOP.md`](notes/07-代码健康检查SOP.md)
+- Product notes: [`docs-internal/01-产品与一体化方案.md`](docs-internal/01-产品与一体化方案.md)
+- Internal engineering docs index: [`docs-internal/README.md`](docs-internal/README.md)
+- Code health SOP: [`docs-internal/07-代码健康检查SOP.md`](docs-internal/07-代码健康检查SOP.md)
 - Development plan: [`TODO.md`](TODO.md)
-- Agent and contribution rules: [`AGENTS.md`](AGENTS.md)
+- AI agent rules: [`AGENTS.md`](AGENTS.md)
+- Contributing guide: [`CONTRIBUTING.md`](CONTRIBUTING.md)
 
 ## License
 
