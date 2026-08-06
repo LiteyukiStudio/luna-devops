@@ -1121,7 +1121,7 @@ CLI 已迁移到独立仓库 [`LiteyukiStudio/luna-cli`](https://github.com/Lite
 - [x] 将 API↔Agent 的服务身份、上下文签名、回调认证、Delegation 签名与 Run Grant 加密配置收敛为单个 `AI_INTERNAL_SECRET`，通过 HKDF-SHA256 按用途派生子密钥，并同步简化 Compose、Helm 与部署文档。
 - [x] 将模型请求超时、单次 Run 超时和 Agent 实例并发数迁移到 Web 高级设置，通过受认证内部配置动态下发；轮询、租约和刷新周期收敛为代码安全默认值，部署环境只保留连接与鉴权配置。
 
-详细规格见 [`docs-internal/11-内嵌AI助手规格.md`](docs-internal/11-内嵌AI助手规格.md)。此前移除的
+详细规格见 [`docs-internal/11-AI助手与Agent规格.md`](docs-internal/11-AI助手与Agent规格.md)。此前移除的
 旧 MCP 内嵌方案保持移除；新方案使用独立 `luna-agent`、LangGraph.js 和平台
 OpenAPI，不把 MCP 作为内部服务总线。
 
