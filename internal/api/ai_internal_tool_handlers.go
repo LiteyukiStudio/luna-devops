@@ -38,6 +38,8 @@ func buildAIToolPolicies() map[string]aiToolPolicy {
 		"fetchWebPage":            {OperationID: "fetchWebPage", Scopes: []string{"web:read"}, Risk: "read"},
 		"listGatewayCertificates": {OperationID: "listGatewayCertificates", Scopes: []string{"gateway:read"}, ProjectAction: authz.ActionGatewayRead, Risk: "read"},
 		"listRuntimeEvents":       {OperationID: "listRuntimeEvents", Scopes: []string{"event:read"}, ProjectAction: authz.ActionProjectRead, Risk: "read"},
+		// getAppTemplate 是手写 service 操作，无独立 OpenAPI 路由，需手动注册策略
+		"getAppTemplate": {OperationID: "getAppTemplate", Scopes: []string{"application:read"}, Risk: "read"},
 	}
 	operations, err := aitool.PlatformCatalog()
 	if err != nil {

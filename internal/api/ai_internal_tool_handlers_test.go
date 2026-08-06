@@ -80,6 +80,16 @@ func TestAIToolRegistryIncludesPublicWebReadTools(t *testing.T) {
 	}
 }
 
+func TestAIToolRegistryIncludesAppTemplateDetail(t *testing.T) {
+	policy, ok := aiToolPolicies["getAppTemplate"]
+	if !ok {
+		t.Fatal("missing getAppTemplate policy")
+	}
+	if policy.Risk != "read" || policy.ApprovalRequired || len(policy.Scopes) != 1 || policy.Scopes[0] != "application:read" {
+		t.Fatalf("unexpected getAppTemplate policy = %#v", policy)
+	}
+}
+
 func TestAIToolRegistryRequiresFreshApprovalAndMFAForEveryRuntimeSessionCommand(t *testing.T) {
 	for _, operationID := range []string{
 		"createReleaseRuntimeCommandSession",
