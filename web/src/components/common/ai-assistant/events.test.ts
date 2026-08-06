@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { AI_ASSISTANT_OPEN_EVENT } from './events'
 
-describe('AI assistant open event', () => {
+describe('ai assistant open event', () => {
   it('uses a stable namespaced event name', () => {
     expect(AI_ASSISTANT_OPEN_EVENT).toBe('luna-devops:open-ai-assistant')
   })
