@@ -238,10 +238,19 @@ function ThinkingBlock({ block }: { block: Extract<AIBlock, { type: 'thinking' }
   const viewportRef = useRef<HTMLDivElement>(null)
   const [following, setFollowing] = useState(true)
   const [expanded, setExpanded] = useState(false)
+
+  // 折叠状态下始终跟随最新内容
   useEffect(() => {
-    if (following && viewportRef.current)
+    if (!expanded && viewportRef.current)
       viewportRef.current.scrollTop = viewportRef.current.scrollHeight
-  }, [block.text, following])
+  }, [block.text, expanded])
+
+  // 展开时跟随滚动到底部
+  useEffect(() => {
+    if (expanded && following && viewportRef.current)
+      viewportRef.current.scrollTop = viewportRef.current.scrollHeight
+  }, [block.text, expanded, following])
+
   return (
     <div className="min-w-0 rounded-control bg-surface-inset/70 px-2.5 py-1.5">
       <button aria-expanded={expanded} className="flex w-full items-center gap-1.5 text-left text-[11px] font-medium text-muted-foreground" type="button" onClick={() => setExpanded(value => !value)}>
@@ -252,17 +261,21 @@ function ThinkingBlock({ block }: { block: Extract<AIBlock, { type: 'thinking' }
       <div
         ref={viewportRef}
         className={cn(
-          'overflow-x-hidden overflow-y-auto whitespace-pre-wrap break-words text-[11px] leading-4 text-muted-foreground',
-          expanded ? 'mt-1 max-h-48' : block.status === 'completed' ? 'line-clamp-1 h-0' : 'mt-1 h-12',
+          'whitespace-pre-wrap break-words text-[11px] leading-4 text-muted-foreground',
+          expanded
+            ? 'mt-1 max-h-56 overflow-y-auto'
+            : 'mt-1 max-h-12 overflow-hidden',
         )}
-        onScroll={(event) => {
-          const target = event.currentTarget
-          setFollowing(target.scrollHeight - target.scrollTop - target.clientHeight < 8)
-        }}
+        onScroll={expanded
+          ? (event) => {
+              const target = event.currentTarget
+              setFollowing(target.scrollHeight - target.scrollTop - target.clientHeight < 8)
+            }
+          : undefined}
       >
         {block.text}
       </div>
-      {!following && <button className="mt-1 text-[10px] font-medium text-primary-text" type="button" onClick={() => setFollowing(true)}>{t('aiAssistant.thinking.backToLatest')}</button>}
+      {expanded && !following && <button className="mt-1 text-[10px] font-medium text-primary-text" type="button" onClick={() => setFollowing(true)}>{t('aiAssistant.thinking.backToLatest')}</button>}
     </div>
   )
 }
