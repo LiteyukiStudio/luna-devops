@@ -22,10 +22,12 @@ AI usage is billed from the input and output tokens reported by the model and ch
 
 Gateway charges use response egress traffic from platform-managed routes. Traffic between services inside the cluster is not included.
 
-Traffic collection is optional. An administrator installs `Luna Gateway Traffic Probe` for each target runtime cluster from the App Marketplace. The billing page may show:
+Traffic collection is optional. An administrator installs `Luna Gateway Traffic Probe` for each target runtime cluster from the App Marketplace. For the reporting mechanism, authentication, configuration options, and troubleshooting, see [Gateway Traffic Probe](../reference/gateway-traffic-probe.md).
+
+The billing page may show:
 
 - **Not installed**: the cluster has no collector.
 - **Waiting for reports**: the collector is ready but no valid traffic data has arrived.
 - **Unavailable**: the platform cannot currently read the cluster state.
 
-Already settled usage remains in billing history. If collection fails, inspect the component status and logs and confirm that Traefik Prometheus metrics include router and service labels. Changing a production gateway can briefly interrupt traffic; make the change during a suitable window and retain a rollback path.
+Already settled usage remains in billing history.

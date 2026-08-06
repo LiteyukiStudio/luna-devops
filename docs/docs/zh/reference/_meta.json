@@ -16,6 +16,11 @@
   },
   {
     "type": "file",
+    "name": "gateway-traffic-probe",
+    "label": "网关流量探针"
+  },
+  {
+    "type": "file",
     "name": "license",
     "label": "许可证"
   }

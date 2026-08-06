@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils'
 import { balanceStatusTone, gatewayTrafficStatusLabel, normalizeBalanceStatus } from './billing-page-utils'
 
 const DOCS_BASE_URL = String(import.meta.env.VITE_DOCS_BASE_URL || 'https://luna-devops.liteyuki.org').replace(/\/+$/, '')
-const GATEWAY_TRAFFIC_METRICS_DOC_URL = `${DOCS_BASE_URL}/operations/billing#traefik-prometheus-metrics-for-gateway-traffic-probe`
+const GATEWAY_TRAFFIC_METRICS_DOC_URL = `${DOCS_BASE_URL}/reference/gateway-traffic-probe`
 
 export function BillingSummary({
   accountLoading,
