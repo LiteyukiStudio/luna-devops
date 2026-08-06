@@ -22,7 +22,6 @@ type AIModelUsageInput struct {
 	EventID      string
 	RunID        string
 	UserID       string
-	ProjectID    string
 	InputTokens  int64
 	OutputTokens int64
 	OccurredAt   time.Time
@@ -32,7 +31,6 @@ type pendingAIModelUsage struct {
 	EventID    string          `gorm:"column:event_id"`
 	RunID      string          `gorm:"column:run_id"`
 	UserID     string          `gorm:"column:user_id"`
-	ProjectID  string          `gorm:"column:project_id"`
 	Data       json.RawMessage `gorm:"column:data"`
 	OccurredAt time.Time       `gorm:"column:occurred_at"`
 }
@@ -75,13 +73,14 @@ func (s Service) SettleAIModelUsage(input AIModelUsageInput) error {
 	now := time.Now()
 	records := []model.BillingUsageRecord{
 		{
-			ID: id.New("busg"), ProjectID: input.ProjectID, Meter: MeterAIInputTokens,
+			// AI 费用只归属发起用户，不关联项目空间：ProjectID 恒为空。
+			ID: id.New("busg"), ProjectID: "", Meter: MeterAIInputTokens,
 			Quantity: inputQuantity, Unit: "1000_tokens", AmountCredits: inputQuantity.Mul(inputRate),
 			ResourceType: ResourceTypeAIModelRequest, ResourceID: input.EventID,
 			PeriodStart: periodStart, PeriodEnd: periodEnd, Status: "settled", Metadata: string(metadata), SettledAt: &now,
 		},
 		{
-			ID: id.New("busg"), ProjectID: input.ProjectID, Meter: MeterAIOutputTokens,
+			ID: id.New("busg"), ProjectID: "", Meter: MeterAIOutputTokens,
 			Quantity: outputQuantity, Unit: "1000_tokens", AmountCredits: outputQuantity.Mul(outputRate),
 			ResourceType: ResourceTypeAIModelRequest, ResourceID: input.EventID,
 			PeriodStart: periodStart, PeriodEnd: periodEnd, Status: "settled", Metadata: string(metadata), SettledAt: &now,
@@ -99,12 +98,10 @@ func (s Service) SettlePendingAIModelUsage(limit int) (int, error) {
 		SELECT event.id AS event_id,
 		       event.run_id,
 		       run.owner_user_id AS user_id,
-		       COALESCE(conversation.project_id, '') AS project_id,
 		       event.data,
 		       event.created_at AS occurred_at
 		FROM ai.run_events AS event
 		JOIN ai.runs AS run ON run.id = event.run_id
-		JOIN ai.conversations AS conversation ON conversation.id = run.conversation_id
 		WHERE event.type = 'model.completed'
 		  AND (
 			NOT EXISTS (
@@ -130,7 +127,7 @@ func (s Service) SettlePendingAIModelUsage(limit int) (int, error) {
 			continue
 		}
 		err := s.SettleAIModelUsage(AIModelUsageInput{
-			EventID: item.EventID, RunID: item.RunID, UserID: item.UserID, ProjectID: item.ProjectID,
+			EventID: item.EventID, RunID: item.RunID, UserID: item.UserID,
 			InputTokens: data.Usage.InputTokens, OutputTokens: data.Usage.OutputTokens, OccurredAt: item.OccurredAt,
 		})
 		if errors.Is(err, ErrAlreadySettled) {

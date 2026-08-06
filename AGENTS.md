@@ -184,6 +184,7 @@ web/src/i18n
 - Webhook 必须校验签名，只接受已绑定仓库事件。
 - OIDC Provider 在平台后台配置，不通过环境变量 bootstrap。
 - 内部平台不开放自由注册；本地账号由管理员创建、邀请或导入。
+- **MUST 计费归属**：AI 模型费用只归属发起用户个人钱包，不关联项目空间——`billing_usage_records` 与 `billing_ledger_entries` 的 AI 记录（meter 以 `ai.` 开头）的 `project_id` 必须为空，不得从会话/应用/部署继承项目空间归属。项目空间维度的资源计费（构建、运行、存储、网关）仍可关联项目空间，但 AI 费用不参与项目空间维度的归集、筛选或分摊。
 
 ## 8. 常用命令
 

@@ -106,6 +106,21 @@ func TestSettleAIModelUsageBillsRunOwnerOnce(t *testing.T) {
 	if usageCount != 2 || ledgerCount != 2 {
 		t.Fatalf("usage count = %d, ledger count = %d", usageCount, ledgerCount)
 	}
+	// AI 费用只归属个人，不关联项目空间：所有记录的 project_id 必须为空
+	var nonEmptyProject int64
+	if err := db.Model(&model.BillingUsageRecord{}).Where("meter LIKE ? AND project_id <> ''", "ai.%").Count(&nonEmptyProject).Error; err != nil {
+		t.Fatalf("count project-bound AI usage: %v", err)
+	}
+	if nonEmptyProject != 0 {
+		t.Fatalf("AI usage must not bind to a project space, got %d records", nonEmptyProject)
+	}
+	var ledgerWithProject int64
+	if err := db.Model(&model.BillingLedgerEntry{}).Where("reason = ? AND project_id <> ''", ReasonAIUsage).Count(&ledgerWithProject).Error; err != nil {
+		t.Fatalf("count project-bound AI ledger: %v", err)
+	}
+	if ledgerWithProject != 0 {
+		t.Fatalf("AI ledger must not bind to a project space, got %d entries", ledgerWithProject)
+	}
 	if err := service.SettleAIModelUsage(input); !errors.Is(err, ErrAlreadySettled) {
 		t.Fatalf("repeat settlement error = %v", err)
 	}
