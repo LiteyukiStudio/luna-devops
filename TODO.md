@@ -1,5 +1,7 @@
 # TODO
 
+- [x] 精简 docs-internal 文档体量：激进压缩两份历史方案（11 AI 助手、01 产品方案）至仅保留定位/决策/边界/技术路线，轻度去冗 12 交互卡片契约的超长示例，规范类文档不动；三大文件从约 207K 字收敛到约 33K 字。
+
 - [x] 收敛内部开发文档结构：`notes/` 重命名为 `docs-internal/`，新建 `docs-internal/README.md` 作为分层索引（长期规范与方案/记录分离），新建 `CONTRIBUTING.md` 作为人类贡献者入口，并与 `AGENTS.md`、中英文 README 统一引用。
 
 - [x] 修复 getAppTemplate 工具 `ai.tool_not_allowed`：手写 service 操作未注册到后端策略白名单，补充注册与测试，并在 AGENTS.md 沉淀 Agent 工具注册闭环规范。
