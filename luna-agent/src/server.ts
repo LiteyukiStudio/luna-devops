@@ -96,6 +96,7 @@ export function buildServer(input: {
       limits: {
         maxInputBytes: agentRuntimeInternals.maxInputBytes,
         maxConcurrentRuns: runtime.agentConcurrentRuns,
+        maxUserConcurrentRuns: runtime.userConcurrentRuns,
         contextInputTokenBudget: runtime.contextInputTokenBudget,
       },
       provider: input.provider.capabilities(),

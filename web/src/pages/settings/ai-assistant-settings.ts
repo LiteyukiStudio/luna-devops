@@ -44,7 +44,7 @@ export const aiSettingsSchema = z.object({
   agentConcurrentRuns: z.number({ message: i18next.t('settings.ai.agentConcurrentRunsInvalid') })
     .int({ message: i18next.t('settings.ai.agentConcurrentRunsInvalid') })
     .min(1, { message: i18next.t('settings.ai.agentConcurrentRunsInvalid') })
-    .max(10, { message: i18next.t('settings.ai.agentConcurrentRunsInvalid') }),
+    .max(100, { message: i18next.t('settings.ai.agentConcurrentRunsInvalid') }),
   contextInputKTokens: z.number({ message: i18next.t('settings.ai.contextInputBudgetInvalid') })
     .int({ message: i18next.t('settings.ai.contextInputBudgetInvalid') })
     .min(64, { message: i18next.t('settings.ai.contextInputBudgetInvalid') })

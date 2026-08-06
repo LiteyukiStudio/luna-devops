@@ -46,6 +46,7 @@ export function mapConversationSummary(row: ConversationSummaryRow): Conversatio
 export function mapRun(row: RunRow): Run {
   return {
     id: row.id,
+    ownerUserId: row.ownerUserId,
     conversationId: row.conversationId,
     turnId: row.turnId,
     runIndex: row.runIndex,

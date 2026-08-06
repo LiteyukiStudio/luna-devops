@@ -77,6 +77,7 @@ export type ConversationSummary = {
 
 export type Run = {
   id: string
+  ownerUserId: string
   conversationId: string
   turnId: string
   runIndex: number

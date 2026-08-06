@@ -146,6 +146,15 @@ export class MemoryRepository implements Repository {
     run.leaseExpiresAt = now + leaseSeconds * 1000
     return run
   }
+  async countActiveUserRuns(userId: string) {
+    let count = 0
+    for (const run of this.runs.values()) {
+      if (run.ownerUserId === userId && (run.status === "queued" || run.status === "running")) {
+        count += 1
+      }
+    }
+    return count
+  }
   async getExecutionInput(runId: string) {
     const run = this.runs.get(runId)
     const turn = run ? this.turns.get(run.turnId) : undefined

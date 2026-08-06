@@ -78,6 +78,19 @@ export class RunExecutor {
   private async claimAndExecute(): Promise<boolean> {
     const run = await this.repository.claimRun(this.config.INSTANCE_ID, agentRuntimeInternals.runLeaseSeconds)
     if (!run) return false
+
+    const activeCount = await this.repository.countActiveUserRuns(run.ownerUserId)
+    if (activeCount > this.runtimeSettings.userConcurrentRuns) {
+      telemetryLog("agent.run.quota_rejected", "warn", {
+        "luna.run.id": run.id,
+        "luna.user.id": run.ownerUserId,
+        "luna.quota.user_concurrent_runs": this.runtimeSettings.userConcurrentRuns,
+        "luna.quota.active_count": activeCount,
+      })
+      try { await this.repository.updateRun(run.id, "queued", "failed", { completedAt: new Date().toISOString(), errorCode: "ai.quota.user_concurrent_runs_exceeded" })
+ } catch { /* state may have changed */ }
+      return true
+    }
     return withSpan("agent.run.execute", internalSpanOptions({
       "gen_ai.operation.name": "agent",
       "gen_ai.conversation.id": run.conversationId,

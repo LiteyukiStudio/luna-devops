@@ -40,6 +40,7 @@ export interface Repository {
   getRun(ownerUserId: string, runId: string): Promise<Run | undefined>
   cancelRun(ownerUserId: string, runId: string): Promise<Run | undefined>
   claimRun(instanceId: string, leaseSeconds: number): Promise<Run | undefined>
+  countActiveUserRuns(userId: string): Promise<number>
   getExecutionInput(runId: string): Promise<{
     conversationId: string
     turnId: string

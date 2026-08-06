@@ -225,6 +225,16 @@ export class PostgresRepository implements Repository {
     })
   }
 
+  async countActiveUserRuns(userId: string) {
+    const rows = await this.db.select({ count: sql<number>`count(*)::int` })
+      .from(runs)
+      .where(and(
+        eq(runs.ownerUserId, userId),
+        inArray(runs.status, ["queued", "running"]),
+      ))
+    return rows[0]?.count ?? 0
+  }
+
   async getExecutionInput(runId: string) {
     const row = (await this.db.select({
       input: turns.input,

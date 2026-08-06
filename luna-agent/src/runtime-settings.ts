@@ -2,13 +2,15 @@ export interface RuntimeSettings {
   providerTimeoutMs: number
   runTimeoutMs: number
   agentConcurrentRuns: number
+  userConcurrentRuns: number
   contextInputTokenBudget: number
 }
 
 export const defaultRuntimeSettings: RuntimeSettings = {
   providerTimeoutMs: 30_000,
   runTimeoutMs: 300_000,
-  agentConcurrentRuns: 2,
+  agentConcurrentRuns: 10,
+  userConcurrentRuns: 10,
   contextInputTokenBudget: 256 * 1024,
 }
 

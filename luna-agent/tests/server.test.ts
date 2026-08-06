@@ -126,7 +126,8 @@ describe("internal API", () => {
       },
       limits: {
         maxInputBytes: 48000,
-        maxConcurrentRuns: 2,
+        maxConcurrentRuns: 10,
+        maxUserConcurrentRuns: 10,
       },
     })
     await app.close()

@@ -34,7 +34,7 @@ const defaults: FormValues = {
   webProxyPoolConfigured: false,
   providerTimeoutSeconds: 30,
   runTimeoutSeconds: 300,
-  agentConcurrentRuns: 2,
+  agentConcurrentRuns: 10,
   contextInputKTokens: 256,
   observabilityEnabled: false,
   prometheusUrl: '',
@@ -129,7 +129,7 @@ export function AIAssistantSettingsPanel() {
               <Input max={900} min={30} step={1} type="number" {...form.register('runTimeoutSeconds', { valueAsNumber: true })} />
             </Field>
             <Field error={errors.agentConcurrentRuns?.message} hint={t('settings.ai.agentConcurrentRunsHint')} label={t('settings.ai.agentConcurrentRuns')}>
-              <Input max={10} min={1} step={1} type="number" {...form.register('agentConcurrentRuns', { valueAsNumber: true })} />
+              <Input max={100} min={1} step={1} type="number" {...form.register('agentConcurrentRuns', { valueAsNumber: true })} />
             </Field>
             <Field error={errors.contextInputKTokens?.message} hint={t('settings.ai.contextInputBudgetHint')} label={t('settings.ai.contextInputBudget')}>
               <Input max={1024} min={64} step={1} type="number" {...form.register('contextInputKTokens', { valueAsNumber: true })} />
@@ -185,7 +185,7 @@ function aiSettingsFormValues(values: Record<string, string>): FormValues {
     webProxyPoolConfigured: values['ai.web.proxy_pool'] === 'true',
     providerTimeoutSeconds: Number(values['ai.runtime.provider_timeout_seconds'] ?? 30),
     runTimeoutSeconds: Number(values['ai.runtime.run_timeout_seconds'] ?? 300),
-    agentConcurrentRuns: Number(values['ai.runtime.agent_concurrent_runs'] ?? 2),
+    agentConcurrentRuns: Number(values['ai.runtime.agent_concurrent_runs'] ?? 10),
     contextInputKTokens: Number(values['ai.runtime.context_input_k_tokens'] ?? 256),
     observabilityEnabled: values['ai.observability.enabled'] === 'true',
     prometheusUrl: values['ai.observability.prometheus_url'] ?? '',

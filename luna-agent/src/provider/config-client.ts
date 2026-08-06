@@ -13,6 +13,7 @@ export type RemoteProviderConfig = {
     providerTimeoutMs: number
     runTimeoutMs: number
     agentConcurrentRuns: number
+    userConcurrentRuns: number
     contextInputTokenBudget: number
   }
   toolCatalog?: unknown[]
@@ -29,7 +30,8 @@ const remoteProviderConfigSchema = z.object({
   runtime: z.object({
     providerTimeoutMs: z.number().int().min(1_000).max(120_000),
     runTimeoutMs: z.number().int().min(30_000).max(900_000),
-    agentConcurrentRuns: z.number().int().min(1).max(10),
+    agentConcurrentRuns: z.number().int().min(1).max(100),
+    userConcurrentRuns: z.number().int().min(1).max(100),
     contextInputTokenBudget: z.number().int().min(64 * 1024).max(1024 * 1024),
   }),
   toolCatalog: z.array(z.record(z.string(), z.unknown())).default([]),

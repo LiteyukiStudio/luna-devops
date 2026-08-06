@@ -79,7 +79,7 @@ describe('aI assistant admin settings', () => {
 
   it('rejects unsafe runtime settings', () => {
     expect(aiSettingsSchema.safeParse({ ...validValues, runTimeoutSeconds: 10 }).success).toBe(false)
-    expect(aiSettingsSchema.safeParse({ ...validValues, agentConcurrentRuns: 100 }).success).toBe(false)
+    expect(aiSettingsSchema.safeParse({ ...validValues, agentConcurrentRuns: 101 }).success).toBe(false)
     expect(aiSettingsSchema.safeParse({ ...validValues, contextInputKTokens: 32 }).success).toBe(false)
   })
 
