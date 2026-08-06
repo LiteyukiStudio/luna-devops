@@ -3,6 +3,8 @@ package api
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -87,6 +89,36 @@ func TestAIToolRegistryIncludesAppTemplateDetail(t *testing.T) {
 	}
 	if policy.Risk != "read" || policy.ApprovalRequired || len(policy.Scopes) != 1 || policy.Scopes[0] != "application:read" {
 		t.Fatalf("unexpected getAppTemplate policy = %#v", policy)
+	}
+}
+
+// 防回归：internal/aitool service.go 的每个手写 Execute case 都必须能解析到执行策略，
+// 否则会在运行时被 ai.tool_not_allowed 拒绝。该测试在策略缺失时直接失败，
+// 避免“只加 service 执行、漏注册白名单”的问题再次进入主干。
+func TestEveryHandwrittenAIToolHasRegisteredPolicy(t *testing.T) {
+	source, err := os.ReadFile("../aitool/service.go")
+	if err != nil {
+		t.Fatalf("read aitool service: %v", err)
+	}
+	casePattern := regexp.MustCompile(`case\s+"([A-Za-z][A-Za-z0-9]+)"`)
+	seen := map[string]struct{}{}
+	for _, match := range casePattern.FindAllStringSubmatch(string(source), -1) {
+		operationID := match[1]
+		if _, duplicated := seen[operationID]; duplicated {
+			continue
+		}
+		seen[operationID] = struct{}{}
+		policy, ok := aiToolPolicies[operationID]
+		if !ok {
+			t.Errorf("handwritten AI tool %q has no registered policy (ai.tool_not_allowed at runtime)", operationID)
+			continue
+		}
+		if len(policy.Scopes) == 0 {
+			t.Errorf("handwritten AI tool %q policy has no scopes", operationID)
+		}
+	}
+	if len(seen) == 0 {
+		t.Fatal("no handwritten AI tool cases discovered; pattern may be outdated")
 	}
 }
 
