@@ -1,15 +1,16 @@
 import { useQuery } from '@tanstack/react-query'
-import { Bell, ChartNoAxesCombined, CircleUserRound, Container, CreditCard, Fingerprint, FolderKanban, GitBranch, LayoutDashboard, Menu, ScrollText, Server, Settings, Store, Users } from 'lucide-react'
+import { Bell, ChartNoAxesCombined, CircleUserRound, Container, CreditCard, Fingerprint, FolderKanban, GitBranch, LayoutDashboard, Menu, ScrollText, Server, Settings, Sparkles, Store, Users } from 'lucide-react'
 import { AnimatePresence } from 'motion/react'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, Navigate, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { toast } from 'sonner'
-import { api } from '@/api'
+import { api, isUsableAICapabilities } from '@/api'
 import { useDocumentTitle } from '@/app/document-title'
 import { usePublicConfig } from '@/app/public-config-context'
 import { useSession } from '@/app/session-context'
 import { AccountMenu } from '@/components/common/account-menu'
+import { AI_ASSISTANT_OPEN_EVENT } from '@/components/common/ai-assistant/events'
 import { DebugFloatingPanel } from '@/components/common/debug-floating-panel'
 import { InboxTrigger } from '@/components/common/inbox/inbox-trigger'
 import { AppLoadingState } from '@/components/common/loading-states'
@@ -42,6 +43,8 @@ interface NavItem {
   icon: typeof LayoutDashboard
   permission?: string
   activeMatch?: (pathname: string) => boolean
+  /** 动作型菜单项：不跳转路由、无选中态，点击后派发对应动作 */
+  action?: 'ai-assistant'
 }
 
 interface NavSection {
@@ -56,6 +59,7 @@ const navSections: NavSection[] = [
       { to: '/dashboard', labelKey: 'dashboard', icon: LayoutDashboard },
       { to: '/projects', labelKey: 'projects', icon: FolderKanban, activeMatch: pathname => pathname === '/projects' || pathname.startsWith('/projects/') },
       { to: '/events', labelKey: 'events', icon: ScrollText },
+      { to: '/ai-assistant', labelKey: 'aiAssistantNav', icon: Sparkles, action: 'ai-assistant' },
     ],
   },
   {
@@ -143,6 +147,16 @@ export function AppLayout() {
   const [hasTopbarTabs, registerTopbarTabs] = useChromeSlotPresence()
   const [hasTopbarTools, registerTopbarTools] = useChromeSlotPresence()
   const projects = useQuery({ queryKey: ['projects'], queryFn: api.listProjects, enabled: Boolean(user) })
+  // 与 AI 助手共享同一 capabilities 查询（TanStack 缓存复用，assistant 已在轮询同 key），
+  // 用于在 AI 不可用时不显示侧边栏入口，与悬浮球行为保持一致。
+  const aiCapabilities = useQuery({
+    queryKey: ['ai', 'capabilities'],
+    queryFn: api.getAICapabilities,
+    retry: false,
+    staleTime: 30_000,
+    enabled: Boolean(user),
+  })
+  const aiAssistantAvailable = isUsableAICapabilities(aiCapabilities.data)
   const projectRouteMatch = location.pathname.match(/^\/projects\/([^/]+)/)
   const appRouteMatch = location.pathname.match(/^\/projects\/([^/]+)\/apps\/([^/]+)$/)
   const currentProject = useQuery({
@@ -236,7 +250,7 @@ export function AppLayout() {
         </SidebarHeader>
         <SidebarContent>
           {navSections.map((section, index) => {
-            const items = section.items.filter(item => !item.permission || user.permissions.includes(item.permission))
+            const items = section.items.filter(item => (!item.permission || user.permissions.includes(item.permission)) && (item.action !== 'ai-assistant' || aiAssistantAvailable))
             if (items.length === 0)
               return null
 
@@ -246,15 +260,32 @@ export function AppLayout() {
                 <SidebarMenu>
                   {items.map(item => (
                     <SidebarMenuItem key={item.to}>
-                      <NavLink
-                        className={({ isActive }) => sidebarMenuButtonClassName(isActive || item.activeMatch?.(location.pathname))}
-                        title={t(item.labelKey)}
-                        to={item.to}
-                        onClick={onNavigate}
-                      >
-                        <item.icon className="size-4 shrink-0" />
-                        <span className="min-w-0 flex-1 truncate text-sm leading-none">{t(item.labelKey)}</span>
-                      </NavLink>
+                      {item.action
+                        ? (
+                            <button
+                              className={sidebarMenuButtonClassName(false)}
+                              title={t(item.labelKey)}
+                              type="button"
+                              onClick={() => {
+                                onNavigate?.()
+                                window.dispatchEvent(new CustomEvent(AI_ASSISTANT_OPEN_EVENT))
+                              }}
+                            >
+                              <item.icon className="size-4 shrink-0" />
+                              <span className="min-w-0 flex-1 truncate text-left text-sm leading-none">{t(item.labelKey)}</span>
+                            </button>
+                          )
+                        : (
+                            <NavLink
+                              className={({ isActive }) => sidebarMenuButtonClassName(isActive || item.activeMatch?.(location.pathname))}
+                              title={t(item.labelKey)}
+                              to={item.to}
+                              onClick={onNavigate}
+                            >
+                              <item.icon className="size-4 shrink-0" />
+                              <span className="min-w-0 flex-1 truncate text-sm leading-none">{t(item.labelKey)}</span>
+                            </NavLink>
+                          )}
                     </SidebarMenuItem>
                   ))}
                 </SidebarMenu>

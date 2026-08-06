@@ -29,6 +29,7 @@ import {
   REFRESH_CONVERSATION_RETURN_DURATION_MS,
 } from './conversation-session'
 import { AIDesktopShell } from './desktop-shell'
+import { AI_ASSISTANT_OPEN_EVENT } from './events'
 import { AIAssistantLauncher } from './launcher'
 import {
   clampAssistantPosition,
@@ -408,14 +409,21 @@ export function AiAssistant() {
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
+  const openAssistant = useCallback(() => {
+    setOpenedCapabilityEpoch(capabilityEpoch)
+    dispatchConversationSession({ type: 'open', now: Date.now() })
+    setOpen(true)
+  }, [capabilityEpoch])
+  // 监听侧边栏等入口派发的打开请求，与悬浮球打开行为一致
+  useEffect(() => {
+    const handleOpenRequest = () => openAssistant()
+    window.addEventListener(AI_ASSISTANT_OPEN_EVENT, handleOpenRequest)
+    return () => window.removeEventListener(AI_ASSISTANT_OPEN_EVENT, handleOpenRequest)
+  }, [openAssistant])
+
   if (!available)
     return null
   if (!assistantOpen) {
-    const openAssistant = () => {
-      setOpenedCapabilityEpoch(capabilityEpoch)
-      dispatchConversationSession({ type: 'open', now: Date.now() })
-      setOpen(true)
-    }
     return (
       <AIAssistantLauncher
         ref={triggerRef}
