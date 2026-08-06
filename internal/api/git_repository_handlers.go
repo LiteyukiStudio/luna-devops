@@ -20,7 +20,8 @@ import (
 var errGitClientResponseWritten = errors.New("git client response written")
 
 func (h *Handlers) ListGitRepositories(ctx *gin.Context) {
-	client, ok := h.gitClientForCurrentUserAccount(ctx, ctx.Param("accountId"))
+	accountID := ctx.Param("accountId")
+	client, ok := h.gitClientForCurrentUserAccount(ctx, accountID)
 	if !ok {
 		return
 	}
@@ -29,13 +30,28 @@ func (h *Handlers) ListGitRepositories(ctx *gin.Context) {
 	if pageSize > 100 {
 		pageSize = 100
 	}
+	search := strings.TrimSpace(ctx.Query("search"))
+	if accountID == anonymousGitAccountID {
+		// 匿名访问无法列举“当前用户仓库”，仅支持按关键词搜索公开仓库
+		if search == "" {
+			ctx.JSON(http.StatusOK, gin.H{"items": []any{}, "page": page, "pageSize": pageSize})
+			return
+		}
+		repos, searchErr := client.SearchPublicRepositories(ctx.Request.Context(), search, page, pageSize)
+		if searchErr != nil {
+			writeGitUpstreamError(ctx, searchErr)
+			return
+		}
+		ctx.JSON(http.StatusOK, gin.H{"items": repos, "page": page, "pageSize": pageSize})
+		return
+	}
 	repos, err := client.ListRepositories(ctx.Request.Context(), ctx.Query("search"), page, pageSize)
 	if err != nil {
 		writeGitUpstreamError(ctx, err)
 		return
 	}
-	if len(repos) == 0 && boolQuery(ctx, "includePublic") && strings.TrimSpace(ctx.Query("search")) != "" {
-		repos, err = client.SearchPublicRepositories(ctx.Request.Context(), ctx.Query("search"), page, pageSize)
+	if len(repos) == 0 && boolQuery(ctx, "includePublic") && search != "" {
+		repos, err = client.SearchPublicRepositories(ctx.Request.Context(), search, page, pageSize)
 		if err != nil {
 			writeGitUpstreamError(ctx, err)
 			return
@@ -636,10 +652,17 @@ func (h *Handlers) gitClientForUserBinding(ctx *gin.Context, user model.User, bi
 	return gitprovider.NewClientWithPolicy(provider, token, h.egressPolicyForUser(user, ctx.Request.Context())), nil
 }
 
+// anonymousGitAccountID 是只读公开仓库访问的账号占位符：选择它时不绑定 Git 账号，
+// 使用匿名方式读取公开资源；匿名访问失败（需认证）时由前端引导绑定凭据。
+const anonymousGitAccountID = "anonymous"
+
 func (h *Handlers) gitClientForCurrentUserAccount(ctx *gin.Context, accountID string) (gitprovider.Client, bool) {
 	user, ok := h.currentUser(ctx)
 	if !ok {
 		return gitprovider.Client{}, false
+	}
+	if accountID == anonymousGitAccountID {
+		return h.anonymousGitClient(ctx, user)
 	}
 	account, ok := h.findGitAccountForUser(ctx, user.ID, accountID)
 	if !ok {
@@ -661,4 +684,20 @@ func (h *Handlers) gitClientForCurrentUserAccount(ctx *gin.Context, accountID st
 		return gitprovider.Client{}, false
 	}
 	return gitprovider.NewClientWithPolicy(provider, token, h.egressPolicyForUser(user, ctx.Request.Context())), true
+}
+
+// anonymousGitClient 构造不带凭据的 Git 只读 client，用于访问公开仓库。
+// provider 由 ?providerId= 查询参数指定；匿名访问仍走用户级 egress 策略（SSRF 防护不变）。
+func (h *Handlers) anonymousGitClient(ctx *gin.Context, user model.User) (gitprovider.Client, bool) {
+	providerID := strings.TrimSpace(ctx.Query("providerId"))
+	if providerID == "" {
+		writeErrorCode(ctx, http.StatusBadRequest, "git.provider_required", "providerId is required for anonymous access")
+		return gitprovider.Client{}, false
+	}
+	provider, ok := h.findEnabledGitProvider(ctx, providerID)
+	if !ok {
+		writeErrorCode(ctx, http.StatusNotFound, "git.provider_not_found", "git provider not found")
+		return gitprovider.Client{}, false
+	}
+	return gitprovider.NewClientWithPolicy(provider, "", h.egressPolicyForUser(user, ctx.Request.Context())), true
 }

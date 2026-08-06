@@ -32,12 +32,14 @@ export const gitApi = {
     request<void>(`/git/accounts/${accountId}`, { method: 'DELETE' }),
   refreshGitAccount: (accountId: string) =>
     request<GitAccount>(`/git/accounts/${accountId}/refresh`, { method: 'POST' }),
-  listGitRepositories: (accountId: string, params: { page: number, pageSize: number, search?: string, includePublic?: boolean }) => {
+  listGitRepositories: (accountId: string, params: { page: number, pageSize: number, search?: string, includePublic?: boolean, providerId?: string }) => {
     const search = new URLSearchParams({ page: String(params.page), pageSize: String(params.pageSize) })
     if (params.search)
       search.set('search', params.search)
     if (params.includePublic)
       search.set('includePublic', 'true')
+    if (params.providerId)
+      search.set('providerId', params.providerId)
     return request<{ items: GitRepository[], page: number, pageSize: number }>(`/git/accounts/${accountId}/repositories?${search.toString()}`)
   },
   listGitBranches: (accountId: string, owner: string, repo: string, params?: { search?: string, limit?: number }) => {

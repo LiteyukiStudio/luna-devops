@@ -28,6 +28,10 @@ func (h *Handlers) SearchRegistryRepositories(ctx *gin.Context) {
 	credential := h.registryCredentialInput(ctx.Request.Context(), user, registry)
 	result, err := registryprovider.SearchRepositories(ctx.Request.Context(), registry.Provider, registry.Endpoint, "", search, page, pageSize, h.egressPolicyForUser(user), credential)
 	if err != nil {
+		if up, ok := registryprovider.AsUpstreamError(err); ok && (up.StatusCode == http.StatusUnauthorized || up.StatusCode == http.StatusForbidden) {
+			writeErrorKey(ctx, http.StatusForbidden, requestLanguage(ctx), "registry.authentication_required")
+			return
+		}
 		writeError(ctx, http.StatusBadGateway, "镜像站上游接口调用失败，请检查凭据权限或稍后重试")
 		return
 	}
@@ -55,6 +59,10 @@ func (h *Handlers) ListRegistryRepositoryTags(ctx *gin.Context) {
 	credential := h.registryCredentialInput(ctx.Request.Context(), user, registry)
 	result, err := registryprovider.ListTags(ctx.Request.Context(), registry.Provider, registry.Endpoint, repository, limit, h.egressPolicyForUser(user), credential)
 	if err != nil {
+		if up, ok := registryprovider.AsUpstreamError(err); ok && (up.StatusCode == http.StatusUnauthorized || up.StatusCode == http.StatusForbidden) {
+			writeErrorKey(ctx, http.StatusForbidden, requestLanguage(ctx), "registry.authentication_required")
+			return
+		}
 		writeError(ctx, http.StatusBadGateway, "镜像站上游接口调用失败，请检查凭据权限或稍后重试")
 		return
 	}

@@ -1,6 +1,6 @@
 import type { GitAccount, GitProvider, GitRepository } from '@/api'
 import { useQuery } from '@tanstack/react-query'
-import { Search } from 'lucide-react'
+import { Globe, Search } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/api'
@@ -10,6 +10,10 @@ import { StatusBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { NativeSelect as Select } from '@/components/ui/native-select'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+
+// anonymousGitModeAccountId 是公开仓库匿名访问占位符，与后端 anonymousGitAccountID 对应。
+const anonymousGitModeAccountId = 'anonymous'
 
 export interface GitRepositoryPickerValue {
   gitAccountId: string
@@ -17,6 +21,8 @@ export interface GitRepositoryPickerValue {
   repo: string
   cloneUrl: string
   defaultBranch: string
+  /** 匿名模式使用的 providerId */
+  providerId?: string
 }
 
 export function GitRepositoryPicker({
@@ -33,11 +39,18 @@ export function GitRepositoryPicker({
   onChange: (value: GitRepositoryPickerValue) => void
 }) {
   const { t } = useTranslation()
+  const isAnonymous = value.gitAccountId === anonymousGitModeAccountId
   const [search, setSearch] = useState(value.owner && value.repo ? `${value.owner}/${value.repo}` : '')
   const repositories = useQuery({
-    queryKey: ['git-repositories', value.gitAccountId, search],
-    queryFn: () => api.listGitRepositories(value.gitAccountId, { page: 1, pageSize: 50, search, includePublic: true }),
-    enabled: Boolean(value.gitAccountId),
+    queryKey: ['git-repositories', value.gitAccountId, value.providerId, search],
+    queryFn: () => api.listGitRepositories(value.gitAccountId, {
+      page: 1,
+      pageSize: 50,
+      search,
+      includePublic: !isAnonymous,
+      providerId: isAnonymous ? value.providerId : undefined,
+    }),
+    enabled: Boolean(value.gitAccountId) && (!isAnonymous || Boolean(value.providerId)),
   })
 
   function selectRepository(repository: GitRepository) {
@@ -47,6 +60,7 @@ export function GitRepositoryPicker({
       repo: repository.name,
       cloneUrl: repository.cloneUrl,
       defaultBranch: repository.defaultBranch || 'main',
+      providerId: value.providerId,
     })
     setSearch(repository.fullName)
   }
@@ -57,46 +71,101 @@ export function GitRepositoryPicker({
     return `${provider?.name ?? account.providerId} / ${account.username} (${scope})`
   }
 
+  const enabledProviders = providers.filter(p => p.enabled !== false)
+
   return (
     <div className="grid gap-3">
-      <div className="grid gap-3 md:grid-cols-[minmax(13rem,0.8fr)_minmax(0,1.6fr)]">
-        <Field hint={t('repositories.gitAccountHint')} label={t('repositories.gitAccount')} required>
-          <Select
-            disabled={disabled}
-            value={value.gitAccountId}
-            onChange={(event) => {
-              onChange({ gitAccountId: event.target.value, owner: '', repo: '', cloneUrl: '', defaultBranch: 'main' })
-              setSearch('')
-            }}
-          >
-            <option value="">{t('repositories.selectAccount')}</option>
-            {accounts.map(account => (
-              <option key={account.id} value={account.id}>
-                {gitAccountLabel(account)}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field hint={t('repositories.repositorySearchHint')} label={t('repositories.repositorySearch')} required>
-          <div className="flex gap-2">
-            <Input
-              disabled={disabled || !value.gitAccountId}
-              placeholder={t('repositories.repositorySearchPlaceholder')}
-              value={search}
-              onChange={event => setSearch(event.target.value)}
-              onFocus={() => {
-                if (value.owner && value.repo && !search)
-                  setSearch(`${value.owner}/${value.repo}`)
-              }}
-            />
-            <Button disabled={disabled || !value.gitAccountId || repositories.isFetching} type="button" variant="secondary" onClick={() => repositories.refetch()}>
-              <Search size={16} />
-              {t('repositories.search')}
-            </Button>
+      <Field hint={t('repositories.accessModeHint')} label={t('repositories.accessMode')} required>
+        <RadioGroup
+          disabled={disabled}
+          value={isAnonymous ? 'public' : 'account'}
+          onValueChange={(mode) => {
+            if (mode === 'public') {
+              onChange({ gitAccountId: anonymousGitModeAccountId, owner: '', repo: '', cloneUrl: '', defaultBranch: 'main', providerId: enabledProviders[0]?.id ?? '' })
+            }
+            else {
+              onChange({ gitAccountId: '', owner: '', repo: '', cloneUrl: '', defaultBranch: 'main' })
+            }
+            setSearch('')
+          }}
+        >
+          <div className="flex items-center space-x-2">
+            <RadioGroupItem id="access-mode-account" value="account" />
+            <label htmlFor="access-mode-account" className="text-sm text-foreground">
+              {t('repositories.accessModeAccount')}
+            </label>
           </div>
-        </Field>
-      </div>
-      {value.gitAccountId && (
+          <div className="flex items-center space-x-2">
+            <RadioGroupItem id="access-mode-public" value="public" />
+            <label htmlFor="access-mode-public" className="flex items-center gap-1 text-sm text-foreground">
+              <Globe size={14} className="text-muted-foreground" />
+              {t('repositories.accessModePublic')}
+            </label>
+          </div>
+        </RadioGroup>
+      </Field>
+      {isAnonymous
+        ? (
+            <Field hint={t('repositories.gitPlatformHint')} label={t('repositories.gitPlatform')} required>
+              <Select
+                disabled={disabled}
+                value={value.providerId ?? ''}
+                onChange={(event) => {
+                  onChange({ ...value, providerId: event.target.value, owner: '', repo: '', cloneUrl: '', defaultBranch: 'main' })
+                  setSearch('')
+                }}
+              >
+                <option value="">{t('repositories.selectGitPlatform')}</option>
+                {enabledProviders.map(provider => (
+                  <option key={provider.id} value={provider.id}>
+                    {provider.name}
+                    {' '}
+                    (
+                    {provider.type}
+                    )
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          )
+        : (
+            <Field hint={t('repositories.gitAccountHint')} label={t('repositories.gitAccount')} required>
+              <Select
+                disabled={disabled}
+                value={value.gitAccountId}
+                onChange={(event) => {
+                  onChange({ gitAccountId: event.target.value, owner: '', repo: '', cloneUrl: '', defaultBranch: 'main' })
+                  setSearch('')
+                }}
+              >
+                <option value="">{t('repositories.selectAccount')}</option>
+                {accounts.map(account => (
+                  <option key={account.id} value={account.id}>
+                    {gitAccountLabel(account)}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          )}
+      <Field hint={t('repositories.repositorySearchHint')} label={t('repositories.repositorySearch')} required>
+        <div className="flex gap-2">
+          <Input
+            disabled={disabled || !value.gitAccountId || (isAnonymous && !value.providerId)}
+            placeholder={t('repositories.repositorySearchPlaceholder')}
+            value={search}
+            onChange={event => setSearch(event.target.value)}
+            onFocus={() => {
+              if (value.owner && value.repo && !search)
+                setSearch(`${value.owner}/${value.repo}`)
+            }}
+          />
+          <Button disabled={disabled || !value.gitAccountId || (isAnonymous && !value.providerId) || repositories.isFetching} type="button" variant="secondary" onClick={() => repositories.refetch()}>
+            <Search size={16} />
+            {t('repositories.search')}
+          </Button>
+        </div>
+      </Field>
+      {value.gitAccountId && (isAnonymous ? Boolean(value.providerId) : true) && (
         <div className="grid max-h-56 gap-2 overflow-y-auto rounded-md border border-border p-2">
           {(repositories.data?.items ?? []).map(repository => (
             <button

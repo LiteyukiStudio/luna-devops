@@ -260,7 +260,10 @@ func getRegistryJSON(parent context.Context, requestURL string, policy security.
 		return err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("registry api returned %d", resp.StatusCode)
+		return &UpstreamError{
+			StatusCode: resp.StatusCode,
+			Message:    http.StatusText(resp.StatusCode),
+		}
 	}
 	if output == nil || len(body) == 0 {
 		return nil

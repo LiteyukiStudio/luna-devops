@@ -235,6 +235,8 @@ var localizedMessages = map[string]map[string]string{
 		"git.webhook_callback_invalid":     "Webhook 回调地址格式无效。请配置以 http/https 开头的 PUBLIC_BASE_URL 后重新配置 Webhook。",
 		"git.webhook_already_exists":       "该仓库可能已经存在相同回调地址的 Webhook。请在 Git 平台确认后重试或使用现有 Webhook。",
 		"git.webhook_rate_limited":         "Git 平台暂时限制了 Webhook 创建请求，请稍后重试。",
+		"git.provider_required":            "公开仓库访问需要指定 Git 平台。请先选择 Git 平台。",
+		"registry.authentication_required": "该镜像站或仓库需要登录凭据才能访问。请在凭据管理中配置拉取凭据后重试。",
 	},
 	"en-US": {
 		"auth.login.invalid":               "Email or password is incorrect",
@@ -258,6 +260,8 @@ var localizedMessages = map[string]map[string]string{
 		"git.webhook_callback_invalid":     "The webhook callback URL is invalid. Configure PUBLIC_BASE_URL with an http/https URL and reconfigure the webhook.",
 		"git.webhook_already_exists":       "A webhook with the same callback URL may already exist in this repository. Check the Git platform and retry or use the existing webhook.",
 		"git.webhook_rate_limited":         "The Git platform is temporarily limiting webhook creation requests. Try again later.",
+		"git.provider_required":            "A Git provider must be selected when browsing public repositories. Please pick a Git provider first.",
+		"registry.authentication_required": "This registry or repository requires credentials. Configure a pull credential in Credential Management and try again.",
 	},
 }
 
