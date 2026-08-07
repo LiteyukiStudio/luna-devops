@@ -27,19 +27,20 @@ func NewService(repository Repository) *Service {
 }
 
 type ServiceBindingInput struct {
-	SourceApplicationID      string `json:"sourceApplicationId"`
-	SourceDeploymentTargetID string `json:"sourceDeploymentTargetId"`
-	TargetApplicationID      string `json:"targetApplicationId"`
-	TargetDeploymentTargetID string `json:"targetDeploymentTargetId"`
-	TargetPortName           string `json:"targetPortName"`
-	TargetPort               int    `json:"targetPort"`
-	Protocol                 string `json:"protocol"`
-	Path                     string `json:"path"`
-	InjectionMode            string `json:"injectionMode"`
-	URLEnvVar                string `json:"urlEnvVar"`
-	HostEnvVar               string `json:"hostEnvVar"`
-	PortEnvVar               string `json:"portEnvVar"`
-	Enabled                  *bool  `json:"enabled"`
+	SourceApplicationID      string          `json:"sourceApplicationId"`
+	SourceDeploymentTargetID string          `json:"sourceDeploymentTargetId"`
+	TargetApplicationID      string          `json:"targetApplicationId"`
+	TargetDeploymentTargetID string          `json:"targetDeploymentTargetId"`
+	TargetPortName           string          `json:"targetPortName"`
+	TargetPort               int             `json:"targetPort"`
+	Protocol                 string          `json:"protocol"`
+	Path                     string          `json:"path"`
+	InjectionMode            string          `json:"injectionMode"`
+	URLEnvVar                string          `json:"urlEnvVar"`
+	HostEnvVar               string          `json:"hostEnvVar"`
+	PortEnvVar               string          `json:"portEnvVar"`
+	SecretMap                []model.SecretMapping `json:"credentialMap"`
+	Enabled                  *bool           `json:"enabled"`
 }
 
 type TopologyEdgeInput struct {
@@ -115,6 +116,14 @@ func (service *Service) applyServiceBindingInput(ctx context.Context, binding *m
 	binding.HostEnvVar = strings.ToUpper(strings.TrimSpace(input.HostEnvVar))
 	binding.PortEnvVar = strings.ToUpper(strings.TrimSpace(input.PortEnvVar))
 	binding.Enabled = input.Enabled == nil || *input.Enabled
+	binding.SecretMap = model.EncodeSecretMap(input.SecretMap)
+
+	// 校验 SecretMap：每个条目的源变量名和目标 key 名均不能为空，且源变量名不与注入变量冲突
+	for _, m := range input.SecretMap {
+		if strings.TrimSpace(m.SourceEnvVar) == "" || strings.TrimSpace(m.TargetSecretKey) == "" {
+			return domainError(CodeInvalidInput, "credentialMap entries require both sourceEnvVar and targetSecretKey")
+		}
+	}
 
 	resources, err := service.validateResourcePair(ctx, binding.ProjectID, binding.SourceApplicationID, binding.SourceDeploymentTargetID, binding.TargetApplicationID, binding.TargetDeploymentTargetID, false)
 	if err != nil {

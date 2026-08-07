@@ -246,6 +246,7 @@ func (r *Runner) applicationResourcesManagerAndSpec(release model.Release, proje
 	if err := applyServiceBindingConfig(&spec, serviceBindings); err != nil {
 		return nil, kubeprovider.ApplicationResourcesSpec{}, err
 	}
+	expandEnvRefsCrossBoundary(spec.ConfigData, spec.SecretData)
 	return manager, spec, nil
 }
 

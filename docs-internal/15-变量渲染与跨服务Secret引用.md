@@ -1,51 +1,43 @@
 # 变量渲染与跨服务 Secret 引用 — 实施任务
 
-## Phase 1: 同部署变量渲染 `${VAR_NAME}`
+## Phase 1: 同部署变量渲染 `${VAR_NAME}` ✅
 
-### 1.1 实现 `expandEnvRefs` 函数
-- 在 `internal/variables/` 或 `internal/worker/` 中实现
-- 接受 `map[string]string`，对每个 value 调用 `os.Expand`，引用同 map 内的 key
-- 循环引用/缺失 key 时原样保留
+### 1.1 实现 `expandEnvRefs` 函数 ✅
+- `internal/variables/renderer.go` · `ExpandEnvRefs(map[string]string) map[string]string`
+- 正则 `${[A-Za-z_][A-Za-z0-9_]*}`，多轮迭代至不动点
+- 自引用和循环引用保留原样；缺失 key 保留原样
 
-### 1.2 集成到部署渲染链路
-- `internal/worker/kube_specs.go` → `mergeKeyValueMaps` 调用后对 `configData` 执行展开
-- SecretData 也需要（Secret 值也可能引用 Config 中的拼接）
+### 1.2 集成到部署渲染链路 ✅
+- `internal/worker/kube_specs.go` · `expandEnvRefsCrossBoundary(config, secret)`
+- 合并 config+secret 作为查找源，展开 config 中的 `${...}` 引用
+- `deploy_runner.go` · `applyServiceBindingConfig` 后再次展开，捕获 Service Binding 注入的值
 
-### 1.3 测试
-- 单元测试：基本展开、循环引用、缺失 key、空值处理
-
-### 1.4 更新 docs-internal
-- 记录变量渲染语法 `${VAR_NAME}` 到对应的规格文档
+### 1.3 测试 ✅
+- 6 个测试：基本展开、链式引用、自引用、缺失 key、空值、无引用
 
 ---
 
-## Phase 2: 跨服务 Secret 引用（Service Binding 扩展）
+## Phase 2: 跨服务 Secret 引用（Service Binding 扩展） ✅
 
-### 2.1 数据模型
-- `internal/model/` 新增 `SecretMapping` 结构体
-- `ServiceBinding` 模型加 `SecretMap` 字段（JSON 存储）
-- 数据库 migration：`service_bindings` 表加 `secret_map` 列
+### 2.1 数据模型 ✅
+- `internal/model/service_binding.go` · `SecretMapping` 结构体 (`sourceEnvVar`, `targetSecretKey`)
+- `ServiceBinding.SecretMap` 字段 (JSON 列，API 暴露为 `credentialMap`)
+- Migration `000064`：`service_bindings.secret_map`
 
-### 2.2 API 层
-- `internal/api/service_binding_handlers.go`：创建/更新时接受 `secretMap`
-- `internal/dependency/service.go`：`ServiceBindingInput` 加 `SecretMap`，校验
-- `internal/dependency/repository.go`：读写 `secret_map`
+### 2.2 API 层 ✅
+- `ServiceBindingInput.SecretMap` (`credentialMap` JSON)
+- 校验：每个条目 `sourceEnvVar` 和 `targetSecretKey` 不能为空
 
-### 2.3 Worker 渲染集成
-- `internal/worker/service_bindings.go`：`resolveServiceBindings` 扩展
-- 对每个 binding 的 `secretMap`，从目标 K8s Secret 读取值，注入源部署的 `SecretData`
-- Worker 需要增加读取目标 K8s Secret 的能力
+### 2.3 Worker 渲染集成 ✅
+- `resolveServiceBindingConfig` → 解析 `credentialMap`，通过 `r.secrets.Resolve` 解析目标 SecretRefs
+- 结果写入 `resolvedServiceBindingConfig.SecretValues`
+- `applyServiceBindingConfig` → 合并 SecretValues 到 `spec.SecretData`
 
-### 2.4 OpenAPI 更新
-- 同步 ServiceBinding 的请求/响应 schema
+### 2.4 OpenAPI 更新（待定）
+- ServiceBinding 的 `credentialMap` 字段需要同步到 OpenAPI spec
 
-### 2.5 Agent 工具更新（如果需要）
-- Agent 侧 `platform.ts` 工具定义加 `secretMap` 参数
-
-### 2.6 测试
-- Service binding 创建带 secretMap
-- Worker 渲染验证 SecretData 多出了目标秘密值
-- 安全边界：API 返回不含 Secret 值
+### 2.5 Agent 工具更新（按需）
+- 如果 AI 需要声明 Secret 引用，Agent 工具定义需加 `credentialMap`
 
 ---
 

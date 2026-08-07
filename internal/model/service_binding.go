@@ -1,6 +1,40 @@
 package model
 
-import "time"
+import (
+	"encoding/json"
+	"strings"
+	"time"
+)
+
+// SecretMapping 定义跨服务 Secret 引用：将目标部署的一个 K8s Secret key 注入到源部署的环境变量。
+// 仅存储 key 名，AI 和前端不接触值；Worker 渲染时解析。
+type SecretMapping struct {
+	SourceEnvVar    string `json:"sourceEnvVar"`
+	TargetSecretKey string `json:"targetSecretKey"`
+}
+
+func DecodeSecretMap(raw string) []SecretMapping {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	var mappings []SecretMapping
+	if err := json.Unmarshal([]byte(raw), &mappings); err != nil {
+		return nil
+	}
+	return mappings
+}
+
+func EncodeSecretMap(mappings []SecretMapping) string {
+	if len(mappings) == 0 {
+		return ""
+	}
+	data, err := json.Marshal(mappings)
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
 
 // ServiceBinding declares a runtime-affecting dependency between two
 // deployment targets. It stores only stable platform identifiers and
@@ -21,6 +55,7 @@ type ServiceBinding struct {
 	HostEnvVar               string    `gorm:"not null;default:''" json:"hostEnvVar"`
 	PortEnvVar               string    `gorm:"not null;default:''" json:"portEnvVar"`
 	Enabled                  bool      `gorm:"not null;default:true" json:"enabled"`
+	SecretMap                string    `gorm:"type:text;not null;default:''" json:"credentialMap"`
 	CreatedBy                string    `gorm:"index;not null" json:"createdBy"`
 	CreatedAt                time.Time `json:"createdAt"`
 	UpdatedAt                time.Time `json:"updatedAt"`

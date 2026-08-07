@@ -15,9 +15,10 @@ import (
 )
 
 type resolvedServiceBindingConfig struct {
-	Values map[string]string
-	Digest string
-	Count  int
+	Values       map[string]string
+	SecretValues map[string]string
+	Digest       string
+	Count        int
 }
 
 type serviceBindingDigestEntry struct {
@@ -75,6 +76,27 @@ func (r *Runner) resolveServiceBindingConfig(project model.Project, source model
 			result.Values[key] = value
 		}
 		digestEntries = append(digestEntries, serviceBindingDigestEntry{ID: binding.ID, Values: values})
+
+		// 解析跨服务 Secret 引用
+		secretMappings := model.DecodeSecretMap(binding.SecretMap)
+		for _, m := range secretMappings {
+			sourceEnvVar := strings.TrimSpace(m.SourceEnvVar)
+			targetKey := strings.TrimSpace(m.TargetSecretKey)
+			if sourceEnvVar == "" || targetKey == "" {
+				continue
+			}
+			resolved := r.resolveTargetSecretKey(target, targetKey)
+			if resolved == "" {
+				return result, fmt.Errorf("service binding %s credentialMap references target secret key %q which is not available", binding.ID, targetKey)
+			}
+			if result.SecretValues == nil {
+				result.SecretValues = map[string]string{}
+			}
+			if _, exists := result.SecretValues[sourceEnvVar]; exists {
+				return result, fmt.Errorf("service binding credentialMap environment variable %s is used more than once", sourceEnvVar)
+			}
+			result.SecretValues[sourceEnvVar] = resolved
+		}
 	}
 
 	digest, err := serviceBindingConfigDigest(digestEntries)
@@ -84,6 +106,22 @@ func (r *Runner) resolveServiceBindingConfig(project model.Project, source model
 	result.Digest = digest
 	result.Count = len(bindings)
 	return result, nil
+}
+
+func (r *Runner) resolveTargetSecretKey(target model.DeploymentTarget, key string) string {
+	refs := map[string]string{}
+	trimmed := strings.TrimSpace(target.SecretRefs)
+	if trimmed == "" {
+		return ""
+	}
+	if err := json.Unmarshal([]byte(trimmed), &refs); err != nil {
+		return ""
+	}
+	ref, ok := refs[key]
+	if !ok {
+		return ""
+	}
+	return r.secrets.Resolve(ref)
 }
 
 func serviceBindingTargetPort(binding model.ServiceBinding, target model.DeploymentTarget) (model.DeploymentServicePort, bool) {
@@ -160,6 +198,15 @@ func applyServiceBindingConfig(spec *kubeprovider.ApplicationResourcesSpec, bind
 			return fmt.Errorf("service binding environment variable %s conflicts with runtime Secret", key)
 		}
 		spec.ConfigData[key] = value
+	}
+	for key, value := range bindings.SecretValues {
+		if _, exists := spec.ConfigData[key]; exists {
+			return fmt.Errorf("service binding secret variable %s conflicts with runtime configuration", key)
+		}
+		if existing, ok := spec.SecretData[key]; ok && existing != value {
+			return fmt.Errorf("service binding secret variable %s conflicts with runtime Secret", key)
+		}
+		spec.SecretData[key] = value
 	}
 	spec.ServiceBindingsDigest = bindings.Digest
 	return nil
