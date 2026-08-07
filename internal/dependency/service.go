@@ -27,20 +27,20 @@ func NewService(repository Repository) *Service {
 }
 
 type ServiceBindingInput struct {
-	SourceApplicationID      string          `json:"sourceApplicationId"`
-	SourceDeploymentTargetID string          `json:"sourceDeploymentTargetId"`
-	TargetApplicationID      string          `json:"targetApplicationId"`
-	TargetDeploymentTargetID string          `json:"targetDeploymentTargetId"`
-	TargetPortName           string          `json:"targetPortName"`
-	TargetPort               int             `json:"targetPort"`
-	Protocol                 string          `json:"protocol"`
-	Path                     string          `json:"path"`
-	InjectionMode            string          `json:"injectionMode"`
-	URLEnvVar                string          `json:"urlEnvVar"`
-	HostEnvVar               string          `json:"hostEnvVar"`
-	PortEnvVar               string          `json:"portEnvVar"`
+	SourceApplicationID      string                `json:"sourceApplicationId"`
+	SourceDeploymentTargetID string                `json:"sourceDeploymentTargetId"`
+	TargetApplicationID      string                `json:"targetApplicationId"`
+	TargetDeploymentTargetID string                `json:"targetDeploymentTargetId"`
+	TargetPortName           string                `json:"targetPortName"`
+	TargetPort               int                   `json:"targetPort"`
+	Protocol                 string                `json:"protocol"`
+	Path                     string                `json:"path"`
+	InjectionMode            string                `json:"injectionMode"`
+	URLEnvVar                string                `json:"urlEnvVar"`
+	HostEnvVar               string                `json:"hostEnvVar"`
+	PortEnvVar               string                `json:"portEnvVar"`
 	SecretMap                []model.SecretMapping `json:"credentialMap"`
-	Enabled                  *bool           `json:"enabled"`
+	Enabled                  *bool                 `json:"enabled"`
 }
 
 type TopologyEdgeInput struct {

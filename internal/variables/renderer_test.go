@@ -8,11 +8,11 @@ import (
 
 func TestExpandEnvRefsBasic(t *testing.T) {
 	input := map[string]string{
-		"USER":     "blog",
-		"PASSWORD": "s3cret",
-		"HOST":     "localhost",
-		"PORT":     "5432",
-		"DB":       "blogdb",
+		"USER":         "blog",
+		"PASSWORD":     "s3cret",
+		"HOST":         "localhost",
+		"PORT":         "5432",
+		"DB":           "blogdb",
 		"DATABASE_URL": "postgresql://${USER}:${PASSWORD}@${HOST}:${PORT}/${DB}",
 	}
 	got := ExpandEnvRefs(input)
@@ -50,7 +50,7 @@ func TestExpandEnvRefsSelfReference(t *testing.T) {
 
 func TestExpandEnvRefsMissingKey(t *testing.T) {
 	input := map[string]string{
-		"URL": "http://${HOST}:${PORT}",
+		"URL":  "http://${HOST}:${PORT}",
 		"HOST": "localhost",
 	}
 	got := ExpandEnvRefs(input)
