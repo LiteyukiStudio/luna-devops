@@ -106,7 +106,7 @@ Redis。关系型数据库可以复用服务器实例，但应为博客创建独
 ## 执行与验收
 
 1. 先创建或绑定依赖，回读隔离单元、凭据引用、实时健康和服务地址。
-2. 创建业务应用及部署配置，通过平台服务引用或 Secret 引用连接依赖。
+2. 创建业务应用及部署配置，通过平台服务引用或 Service Binding credentialMap 声明跨服务 Secret 引用，只传 key 名（如 `sourceEnvVar: "DATABASE_PASSWORD"`、`targetSecretKey: "POSTGRES_PASSWORD"`），不传值。
 3. 按依赖图执行迁移、后端、Worker/Agent 和前端；互不依赖的构建可以并行。
 4. 验证每条依赖边的 Service、Endpoint、网络策略、认证和应用侧连接状态。
 5. 验证共享依赖没有覆盖其他租户的配置、凭据、数据、保留策略或删除责任。

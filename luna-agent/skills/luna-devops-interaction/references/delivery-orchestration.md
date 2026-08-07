@@ -163,6 +163,7 @@ GHCR 或其他 OCI Registry 镜像。对每个可独立部署的服务分别评�
 - CPU/内存 request 与 limit、健康探针、启动命令和镜像拉取策略。
 - 非敏感环境变量、项目空间公共配置和部署级覆盖。
 - Secret 引用、配置文件、密钥文件、数据卷和持久化策略。
+- 环境变量值支持 `${VAR_NAME}` 引用同部署的其他变量（含 Secret），例如 `DATABASE_URL=postgresql://${USER}:${PASSWORD}@${HOST}:${PORT}/db`，渲染时自动展开。
 - HPA、调度、安全上下文、initContainer、sidecar 和生命周期钩子等高级项。
 
 不要在首次交付时一次询问所有高级 Kubernetes 字段。只有来源文档或用户目标要求时
