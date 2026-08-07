@@ -167,7 +167,8 @@ ${JSON.stringify(availableOperations)}`,
       ],
       tools: [createOptionsTool],
       toolChoice: { operationId: "create_options" },
-      maxOutputTokens: 700,
+      thinking: { type: "disabled" },
+      maxOutputTokens: 2100,
       ...(signal ? { signal } : {}),
     })
     return response.toolCalls?.find(call => call.operationId === "create_options")?.arguments

@@ -15,6 +15,8 @@ export type ModelRequest = {
   toolChoice?: ModelToolChoice
   maxOutputTokens: number
   signal?: AbortSignal
+  thinking?: { type: string }
+  
 }
 export type ModelEvent =
   | { type: "reasoning_summary_delta", delta: string }

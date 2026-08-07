@@ -23,7 +23,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
 
   async complete(request: ModelRequest): Promise<ModelResponse> {
     return withSpan("gen_ai.chat.complete", clientSpanOptions(), async span => {
-      const response = await this.request(request.messages, request.maxOutputTokens, request.signal, request.tools, request.toolChoice)
+      const response = await this.request(request.messages, request.maxOutputTokens, request.signal, request.tools, request.toolChoice, request.thinking)
       span.setAttribute("gen_ai.usage.input_tokens", response.usage.inputTokens)
       span.setAttribute("gen_ai.usage.output_tokens", response.usage.outputTokens)
       span.setAttribute("luna.tool_call.count", response.toolCalls.length)
@@ -37,7 +37,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
   }
 
   async *stream(request: ModelRequest): AsyncIterable<ModelEvent> {
-    const response = await this.fetchCompletion(request.messages, request.maxOutputTokens, true, request.signal, request.tools, request.toolChoice)
+    const response = await this.fetchCompletion(request.messages, request.maxOutputTokens, true, request.signal, request.tools, request.toolChoice, request.thinking)
     if (!response.body) throw new Error("ai.provider_empty_stream")
     const decoder = new TextDecoder()
     let buffer = ""
@@ -112,8 +112,8 @@ export class OpenAICompatibleProvider implements ModelProvider {
     yield { type: "completed", usage, ...(toolCalls.length ? { toolCalls } : {}) }
   }
 
-  private async request(messages: ModelRequest["messages"], maxTokens: number, signal?: AbortSignal, tools?: ModelRequest["tools"], toolChoice?: ModelRequest["toolChoice"]) {
-    const response = await this.fetchCompletion(messages, maxTokens, false, signal, tools, toolChoice)
+  private async request(messages: ModelRequest["messages"], maxTokens: number, signal?: AbortSignal, tools?: ModelRequest["tools"], toolChoice?: ModelRequest["toolChoice"], thinking?: ModelRequest["thinking"]) {
+    const response = await this.fetchCompletion(messages, maxTokens, false, signal, tools, toolChoice, thinking)
     const body = await response.json() as CompletionBody
     const activeSpan = trace.getActiveSpan()
     if (body.id) activeSpan?.setAttribute("gen_ai.response.id", body.id)
@@ -137,7 +137,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
     return result
   }
 
-  private async fetchCompletion(messages: ModelRequest["messages"], maxTokens: number, stream: boolean, signal?: AbortSignal, tools?: ModelRequest["tools"], toolChoice?: ModelRequest["toolChoice"]) {
+  private async fetchCompletion(messages: ModelRequest["messages"], maxTokens: number, stream: boolean, signal?: AbortSignal, tools?: ModelRequest["tools"], toolChoice?: ModelRequest["toolChoice"], thinking?: ModelRequest["thinking"]) {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), this.options.timeoutMs)
     const abort = () => controller.abort(signal?.reason)
@@ -170,6 +170,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
             messages: providerMessages(messages),
             max_tokens: maxTokens,
             stream,
+            ...(thinking ? { thinking } : {}),
             ...(tools?.length
               ? {
                   tools: tools.map(tool => ({
