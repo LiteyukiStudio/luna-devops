@@ -11,7 +11,7 @@ import { OpenAICompatibleProvider } from "./provider/openai-compatible.js"
 import { redact } from "./redaction.js"
 import type { ToolOrchestrator } from "./tools/orchestrator.js"
 import { presentEvent, presentTimeline } from "./timeline-presenter.js"
-import { agentRuntimeInternals, defaultRuntimeSettings } from "./runtime-settings.js"
+import { defaultRuntimeSettings } from "./runtime-settings.js"
 import { captureTraceContext, stableErrorCode as telemetryErrorCode, telemetryLog } from "./telemetry.js"
 
 declare module "fastify" {
@@ -94,7 +94,7 @@ export function buildServer(input: {
         toolCalling: Boolean(input.tools),
       },
       limits: {
-        maxInputBytes: agentRuntimeInternals.maxInputBytes,
+        maxInputBytes: runtime.maxInputBytes,
         maxConcurrentRuns: runtime.agentConcurrentRuns,
         maxUserConcurrentRuns: runtime.userConcurrentRuns,
         contextInputTokenBudget: runtime.contextInputTokenBudget,

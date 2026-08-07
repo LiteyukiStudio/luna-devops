@@ -8,6 +8,7 @@ import {
 import type { Repository } from "../persistence/repository.js"
 import type { ModelMessage, ModelProvider, ModelToolDefinition } from "../provider/provider.js"
 import { redact } from "../redaction.js"
+import { defaultRuntimeSettings } from "../runtime-settings.js"
 import { agentMetrics, internalSpanOptions, telemetryLog, withSpan } from "../telemetry.js"
 
 const summaryContentSchema = z.object({
@@ -57,16 +58,16 @@ export type CompiledContext = {
 }
 
 const defaultOptions: ContextCompilerOptions = {
-  inputTokenBudget: 256 * 1024,
-  compressionTriggerRatio: 0.8,
-  compressionTargetRatio: 0.5,
-  recentTurnCount: 4,
-  maxRecentTurnCount: 8,
-  maxUncompressedTurnCount: 24,
-  maxCompressionTurnsPerCompile: 96,
-  summaryInputTokenBudget: 24_000,
-  summaryMaxOutputTokens: 1_500,
-  historicalToolTokenBudget: 4_000,
+  inputTokenBudget: defaultRuntimeSettings.contextInputTokenBudget,
+  compressionTriggerRatio: defaultRuntimeSettings.contextCompressionTriggerRatio,
+  compressionTargetRatio: defaultRuntimeSettings.contextCompressionTargetRatio,
+  recentTurnCount: defaultRuntimeSettings.contextRecentTurnCount,
+  maxRecentTurnCount: defaultRuntimeSettings.contextMaxRecentTurnCount,
+  maxUncompressedTurnCount: defaultRuntimeSettings.contextMaxUncompressedTurnCount,
+  maxCompressionTurnsPerCompile: defaultRuntimeSettings.contextMaxCompressionTurnsPerCompile,
+  summaryInputTokenBudget: defaultRuntimeSettings.contextSummaryInputTokenBudget,
+  summaryMaxOutputTokens: defaultRuntimeSettings.contextSummaryMaxOutputTokens,
+  historicalToolTokenBudget: defaultRuntimeSettings.contextHistoricalToolTokenBudget,
 }
 
 /** 将权威会话历史编译为单次模型调用所需的有界上下文。 */
@@ -78,9 +79,15 @@ export class ContextCompiler {
   ) {}
 
   setInputTokenBudget(inputTokenBudget: number): void {
-    if (!Number.isSafeInteger(inputTokenBudget) || inputTokenBudget <= 0)
+    this.setOptions({ inputTokenBudget })
+  }
+
+  setOptions(partial: Partial<ContextCompilerOptions>): void {
+    if (partial.inputTokenBudget !== undefined
+      && (!Number.isSafeInteger(partial.inputTokenBudget) || partial.inputTokenBudget <= 0)) {
       throw new Error("ai.context_budget_invalid")
-    this.options = { ...this.options, inputTokenBudget }
+    }
+    this.options = { ...this.options, ...partial }
   }
 
   async compile(input: CompileContextInput): Promise<CompiledContext> {

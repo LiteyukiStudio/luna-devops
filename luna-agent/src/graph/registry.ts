@@ -1,5 +1,5 @@
 import { Annotation, END, START, StateGraph } from "@langchain/langgraph"
-import type { ContextCompiler } from "../context/compiler.js"
+import type { ContextCompiler, ContextCompilerOptions } from "../context/compiler.js"
 import type { ConversationHistoryEntry, ConversationTitleSource, PromptVersion } from "../domain.js"
 import type { ModelMessage, ModelProvider, ModelToolCall, ModelToolDefinition, ModelToolResolver } from "../provider/provider.js"
 import { skillGuidanceFor, systemPromptFor } from "../prompt/system.js"
@@ -25,13 +25,14 @@ const GraphState = Annotation.Root({
   continuationMessages: Annotation<ModelMessage[]>,
 })
 export type AssistantGraphState = typeof GraphState.State
-const assistantMaxOutputTokens = 4096
+const assistantDefaultMaxOutputTokens = 4096
 type CompiledAssistantGraph = {
   invoke(input: AssistantGraphState, options?: { signal?: AbortSignal }): Promise<AssistantGraphState>
 }
 
 export class GraphVersionRegistry {
   private readonly graphs = new Map<string, CompiledAssistantGraph>()
+  private assistantMaxOutputTokens = assistantDefaultMaxOutputTokens
   private readonly resolveTools: (pageContext: Record<string, unknown>, userInput: string) => ModelToolDefinition[]
   constructor(
     private readonly provider: ModelProvider,
@@ -45,7 +46,7 @@ export class GraphVersionRegistry {
         const tools = this.modelTools(state.pageContext, state.conversation, state.input)
         const response = await provider.complete({
           messages: await this.compileMessages(state, tools),
-          maxOutputTokens: assistantMaxOutputTokens,
+          maxOutputTokens: this.assistantMaxOutputTokens,
           tools,
         })
         return { ...state, answer: response.text, toolCalls: response.toolCalls ?? [], reasoningSummary: response.reasoningSummary ?? state.reasoningSummary }
@@ -65,12 +66,22 @@ export class GraphVersionRegistry {
     this.contextCompiler?.setInputTokenBudget(inputTokenBudget)
   }
 
+  setContextOptions(options: Partial<ContextCompilerOptions>): void {
+    this.contextCompiler?.setOptions(options)
+  }
+
+  setAssistantMaxOutputTokens(tokens: number): void {
+    if (!Number.isSafeInteger(tokens) || tokens < 1)
+      throw new Error("ai.max_output_tokens_invalid")
+    this.assistantMaxOutputTokens = tokens
+  }
+
   async *stream(version: string, input: AssistantGraphState, signal?: AbortSignal) {
     if (!this.graphs.has(version)) throw new Error("ai.graph_version_unavailable")
     const tools = this.modelTools(input.pageContext, input.conversation, input.input)
     yield* this.provider.stream({
       messages: await this.compileMessages(input, tools, signal),
-      maxOutputTokens: assistantMaxOutputTokens,
+      maxOutputTokens: this.assistantMaxOutputTokens,
       tools,
       ...(signal ? { signal } : {}),
     })

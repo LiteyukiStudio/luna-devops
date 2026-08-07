@@ -25,6 +25,8 @@ Long conversations retain their complete history for review. Before a request ap
 
 Administrators can change the **Context input budget** under advanced runtime settings. It defaults to 256K tokens. This is the maximum input allowed for one model request, not a fixed cost per turn, and it must not exceed the context capacity supported by the selected model.
 
+Under **Advanced settings**, the Agent's internal parameters can be tuned by category: context & compression (compression trigger/target ratios, recent-turn retention, summary budgets, etc.), model & execution (max output tokens per reply, max model steps per Run, user-input size limit, navigation-action TTL), and tool results & cards (tool-result context budget, interaction-card repair limit). Every item ships with a platform default and is delivered to the Agent dynamically; keep the defaults for ordinary deployments and avoid tuning without a specific need.
+
 ## Capabilities and operations
 
 The assistant can inspect platform resources, analyze logs and status, read public web pages, collect settings through interactive cards, and report operation results. Long-running builds and releases show their real status, and the assistant checks the outcome after they finish.

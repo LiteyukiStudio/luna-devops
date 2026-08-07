@@ -6,6 +6,16 @@ const observabilityUrl = z.union([z.literal(''), z.url().refine((value) => {
   return ['http:', 'https:'].includes(parsed.protocol) && !parsed.username && !parsed.password && !parsed.search && !parsed.hash
 }, { message: i18next.t('settings.ai.observabilityUrlInvalid') })])
 
+function boundedInt(min: number, max: number, messageKey: string) {
+  const message = i18next.t(messageKey, { min, max })
+  return z.number({ message }).int({ message }).min(min, { message }).max(max, { message })
+}
+
+function boundedRatio(min: number, max: number, messageKey: string) {
+  const message = i18next.t(messageKey, { min, max })
+  return z.number({ message }).min(min, { message }).max(max, { message })
+}
+
 export const aiSettingsSchema = z.object({
   enabled: z.boolean(),
   accessMode: z.enum(['all_authenticated', 'admins']),
@@ -49,6 +59,24 @@ export const aiSettingsSchema = z.object({
     .int({ message: i18next.t('settings.ai.contextInputBudgetInvalid') })
     .min(64, { message: i18next.t('settings.ai.contextInputBudgetInvalid') })
     .max(1024, { message: i18next.t('settings.ai.contextInputBudgetInvalid') }),
+  // 高级设置：上下文与压缩
+  contextCompressionTriggerRatio: boundedRatio(0.5, 0.95, 'settings.ai.advancedNumberInvalid'),
+  contextCompressionTargetRatio: boundedRatio(0.1, 0.8, 'settings.ai.advancedNumberInvalid'),
+  contextRecentTurnCount: boundedInt(1, 16, 'settings.ai.advancedNumberInvalid'),
+  contextMaxRecentTurnCount: boundedInt(2, 32, 'settings.ai.advancedNumberInvalid'),
+  contextMaxUncompressedTurnCount: boundedInt(4, 200, 'settings.ai.advancedNumberInvalid'),
+  contextMaxCompressionTurnsPerCompile: boundedInt(8, 500, 'settings.ai.advancedNumberInvalid'),
+  contextSummaryInputKTokens: boundedInt(4, 128, 'settings.ai.advancedNumberInvalid'),
+  contextSummaryMaxOutputTokens: boundedInt(200, 8000, 'settings.ai.advancedNumberInvalid'),
+  contextHistoricalToolKTokens: boundedInt(1, 64, 'settings.ai.advancedNumberInvalid'),
+  // 高级设置：模型与执行
+  modelMaxOutputTokens: boundedInt(256, 16384, 'settings.ai.advancedNumberInvalid'),
+  runMaxModelSteps: boundedInt(1, 200, 'settings.ai.advancedNumberInvalid'),
+  runMaxInputKBytes: boundedInt(8, 1024, 'settings.ai.advancedNumberInvalid'),
+  runNavigateActionTtlSeconds: boundedInt(10, 600, 'settings.ai.advancedNumberInvalid'),
+  // 高级设置：工具结果与卡片
+  toolsResultPayloadKBytes: boundedInt(4, 512, 'settings.ai.advancedNumberInvalid'),
+  toolsMaxCardRepairAttempts: boundedInt(1, 10, 'settings.ai.advancedNumberInvalid'),
   observabilityEnabled: z.boolean(),
   prometheusUrl: observabilityUrl,
   prometheusToken: z.string(),
@@ -78,6 +106,10 @@ export const aiSettingsSchema = z.object({
         context.addIssue({ code: 'custom', path: [field], message: i18next.t('settings.ai.observabilityUrlRequired') })
     }
   }
+  if (value.contextCompressionTriggerRatio <= value.contextCompressionTargetRatio)
+    context.addIssue({ code: 'custom', path: ['contextCompressionTriggerRatio'], message: i18next.t('settings.ai.contextRatioInvalid') })
+  if (value.contextRecentTurnCount > value.contextMaxRecentTurnCount)
+    context.addIssue({ code: 'custom', path: ['contextRecentTurnCount'], message: i18next.t('settings.ai.contextRecentTurnInvalid') })
 })
 
 export type AISettingsFormValues = z.infer<typeof aiSettingsSchema>
@@ -93,6 +125,21 @@ export function aiSettingsPayload(values: AISettingsFormValues) {
     'ai.runtime.run_timeout_seconds': values.runTimeoutSeconds,
     'ai.runtime.agent_concurrent_runs': values.agentConcurrentRuns,
     'ai.runtime.context_input_k_tokens': values.contextInputKTokens,
+    'ai.context.compression_trigger_ratio': values.contextCompressionTriggerRatio,
+    'ai.context.compression_target_ratio': values.contextCompressionTargetRatio,
+    'ai.context.recent_turn_count': values.contextRecentTurnCount,
+    'ai.context.max_recent_turn_count': values.contextMaxRecentTurnCount,
+    'ai.context.max_uncompressed_turn_count': values.contextMaxUncompressedTurnCount,
+    'ai.context.max_compression_turns_per_compile': values.contextMaxCompressionTurnsPerCompile,
+    'ai.context.summary_input_k_tokens': values.contextSummaryInputKTokens,
+    'ai.context.summary_max_output_tokens': values.contextSummaryMaxOutputTokens,
+    'ai.context.historical_tool_k_tokens': values.contextHistoricalToolKTokens,
+    'ai.model.max_output_tokens': values.modelMaxOutputTokens,
+    'ai.run.max_model_steps': values.runMaxModelSteps,
+    'ai.run.max_input_k_bytes': values.runMaxInputKBytes,
+    'ai.run.navigate_action_ttl_seconds': values.runNavigateActionTtlSeconds,
+    'ai.tools.result_payload_k_bytes': values.toolsResultPayloadKBytes,
+    'ai.tools.max_card_repair_attempts': values.toolsMaxCardRepairAttempts,
     'ai.observability.enabled': values.observabilityEnabled,
     'ai.observability.prometheus_url': values.prometheusUrl.trim(),
     'ai.observability.loki_url': values.lokiUrl.trim(),

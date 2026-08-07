@@ -15,6 +15,21 @@ const validValues = {
   runTimeoutSeconds: 300,
   agentConcurrentRuns: 2,
   contextInputKTokens: 256,
+  contextCompressionTriggerRatio: 0.8,
+  contextCompressionTargetRatio: 0.5,
+  contextRecentTurnCount: 4,
+  contextMaxRecentTurnCount: 8,
+  contextMaxUncompressedTurnCount: 24,
+  contextMaxCompressionTurnsPerCompile: 96,
+  contextSummaryInputKTokens: 24,
+  contextSummaryMaxOutputTokens: 1500,
+  contextHistoricalToolKTokens: 4,
+  modelMaxOutputTokens: 4096,
+  runMaxModelSteps: 48,
+  runMaxInputKBytes: 48,
+  runNavigateActionTtlSeconds: 60,
+  toolsResultPayloadKBytes: 24,
+  toolsMaxCardRepairAttempts: 3,
   observabilityEnabled: false,
   prometheusUrl: '',
   prometheusToken: '',
@@ -47,6 +62,21 @@ describe('aI assistant admin settings', () => {
       'ai.runtime.run_timeout_seconds': 300,
       'ai.runtime.agent_concurrent_runs': 2,
       'ai.runtime.context_input_k_tokens': 256,
+      'ai.context.compression_trigger_ratio': 0.8,
+      'ai.context.compression_target_ratio': 0.5,
+      'ai.context.recent_turn_count': 4,
+      'ai.context.max_recent_turn_count': 8,
+      'ai.context.max_uncompressed_turn_count': 24,
+      'ai.context.max_compression_turns_per_compile': 96,
+      'ai.context.summary_input_k_tokens': 24,
+      'ai.context.summary_max_output_tokens': 1500,
+      'ai.context.historical_tool_k_tokens': 4,
+      'ai.model.max_output_tokens': 4096,
+      'ai.run.max_model_steps': 48,
+      'ai.run.max_input_k_bytes': 48,
+      'ai.run.navigate_action_ttl_seconds': 60,
+      'ai.tools.result_payload_k_bytes': 24,
+      'ai.tools.max_card_repair_attempts': 3,
       'ai.observability.enabled': false,
       'ai.observability.prometheus_url': '',
       'ai.observability.loki_url': '',
@@ -81,6 +111,50 @@ describe('aI assistant admin settings', () => {
     expect(aiSettingsSchema.safeParse({ ...validValues, runTimeoutSeconds: 10 }).success).toBe(false)
     expect(aiSettingsSchema.safeParse({ ...validValues, agentConcurrentRuns: 101 }).success).toBe(false)
     expect(aiSettingsSchema.safeParse({ ...validValues, contextInputKTokens: 32 }).success).toBe(false)
+  })
+
+  it('rejects unsafe advanced settings', () => {
+    expect(aiSettingsSchema.safeParse({ ...validValues, contextCompressionTriggerRatio: 0.99 }).success).toBe(false)
+    expect(aiSettingsSchema.safeParse({ ...validValues, contextMaxRecentTurnCount: 1 }).success).toBe(false)
+    expect(aiSettingsSchema.safeParse({ ...validValues, modelMaxOutputTokens: 100 }).success).toBe(false)
+    expect(aiSettingsSchema.safeParse({ ...validValues, runMaxModelSteps: 0 }).success).toBe(false)
+    expect(aiSettingsSchema.safeParse({ ...validValues, runMaxInputKBytes: 2000 }).success).toBe(false)
+    expect(aiSettingsSchema.safeParse({ ...validValues, runNavigateActionTtlSeconds: 5 }).success).toBe(false)
+    expect(aiSettingsSchema.safeParse({ ...validValues, toolsResultPayloadKBytes: 1000 }).success).toBe(false)
+    expect(aiSettingsSchema.safeParse({ ...validValues, toolsMaxCardRepairAttempts: 0 }).success).toBe(false)
+  })
+
+  it('rejects inconsistent advanced context settings', () => {
+    expect(aiSettingsSchema.safeParse({ ...validValues, contextCompressionTriggerRatio: 0.4, contextCompressionTargetRatio: 0.6 }).success).toBe(false)
+    expect(aiSettingsSchema.safeParse({ ...validValues, contextRecentTurnCount: 12, contextMaxRecentTurnCount: 4 }).success).toBe(false)
+  })
+
+  it('accepts tuned advanced settings within the platform contract', () => {
+    const tuned = {
+      ...validValues,
+      contextCompressionTriggerRatio: 0.9,
+      contextCompressionTargetRatio: 0.4,
+      contextRecentTurnCount: 6,
+      contextMaxRecentTurnCount: 10,
+      contextMaxUncompressedTurnCount: 40,
+      contextMaxCompressionTurnsPerCompile: 120,
+      contextSummaryInputKTokens: 32,
+      contextSummaryMaxOutputTokens: 2000,
+      contextHistoricalToolKTokens: 8,
+      modelMaxOutputTokens: 8192,
+      runMaxModelSteps: 64,
+      runMaxInputKBytes: 64,
+      runNavigateActionTtlSeconds: 120,
+      toolsResultPayloadKBytes: 48,
+      toolsMaxCardRepairAttempts: 5,
+    }
+    const parsed = aiSettingsSchema.safeParse(tuned)
+    expect(parsed.success).toBe(true)
+    if (parsed.success) {
+      expect(aiSettingsPayload(parsed.data)['ai.context.compression_trigger_ratio']).toBe(0.9)
+      expect(aiSettingsPayload(parsed.data)['ai.model.max_output_tokens']).toBe(8192)
+      expect(aiSettingsPayload(parsed.data)['ai.tools.max_card_repair_attempts']).toBe(5)
+    }
   })
 
   it('accepts authenticated HTTP proxy URLs and keeps configured pools write-only', () => {

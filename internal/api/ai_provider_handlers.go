@@ -23,6 +23,21 @@ var aiProviderConfigKeys = []string{
 	"ai.runtime.agent_concurrent_runs",
 	"ai.runtime.context_input_k_tokens",
 	"ai.quota.user_concurrent_runs",
+	"ai.model.max_output_tokens",
+	"ai.run.max_model_steps",
+	"ai.run.max_input_k_bytes",
+	"ai.run.navigate_action_ttl_seconds",
+	"ai.tools.result_payload_k_bytes",
+	"ai.tools.max_card_repair_attempts",
+	"ai.context.compression_trigger_ratio",
+	"ai.context.compression_target_ratio",
+	"ai.context.recent_turn_count",
+	"ai.context.max_recent_turn_count",
+	"ai.context.max_uncompressed_turn_count",
+	"ai.context.max_compression_turns_per_compile",
+	"ai.context.summary_input_k_tokens",
+	"ai.context.summary_max_output_tokens",
+	"ai.context.historical_tool_k_tokens",
 }
 
 func (h *Handlers) GetAIProviderConfigInternal(ctx *gin.Context) {
@@ -52,14 +67,37 @@ func (h *Handlers) GetAIProviderConfigInternal(ctx *gin.Context) {
 			"configured": baseURL != "" && modelName != "" && strings.TrimSpace(apiKey) != "",
 		},
 		"runtime": gin.H{
-			"providerTimeoutMs":       aiRuntimeMilliseconds(values, "ai.runtime.provider_timeout_seconds", 30),
-			"runTimeoutMs":            aiRuntimeMilliseconds(values, "ai.runtime.run_timeout_seconds", 300),
-			"agentConcurrentRuns":     aiRuntimeInteger(values, "ai.runtime.agent_concurrent_runs", 10),
-			"userConcurrentRuns":      aiRuntimeInteger(values, "ai.quota.user_concurrent_runs", 10),
-			"contextInputTokenBudget": aiRuntimeKTokens(values, "ai.runtime.context_input_k_tokens", 256),
+			"providerTimeoutMs":                    aiRuntimeMilliseconds(values, "ai.runtime.provider_timeout_seconds", 30),
+			"runTimeoutMs":                         aiRuntimeMilliseconds(values, "ai.runtime.run_timeout_seconds", 300),
+			"agentConcurrentRuns":                  aiRuntimeInteger(values, "ai.runtime.agent_concurrent_runs", 10),
+			"userConcurrentRuns":                   aiRuntimeInteger(values, "ai.quota.user_concurrent_runs", 10),
+			"contextInputTokenBudget":              aiRuntimeKTokens(values, "ai.runtime.context_input_k_tokens", 256),
+			"assistantMaxOutputTokens":             aiRuntimeInteger(values, "ai.model.max_output_tokens", 4096),
+			"maxModelSteps":                        aiRuntimeInteger(values, "ai.run.max_model_steps", 48),
+			"maxInputBytes":                        aiRuntimeKTokens(values, "ai.run.max_input_k_bytes", 48),
+			"navigateActionTtlSeconds":             aiRuntimeInteger(values, "ai.run.navigate_action_ttl_seconds", 60),
+			"toolResultPayloadBudget":              aiRuntimeKTokens(values, "ai.tools.result_payload_k_bytes", 24),
+			"maxCardRepairAttempts":                aiRuntimeInteger(values, "ai.tools.max_card_repair_attempts", 3),
+			"contextCompressionTriggerRatio":       aiRuntimeRatio(values, "ai.context.compression_trigger_ratio", 0.8),
+			"contextCompressionTargetRatio":        aiRuntimeRatio(values, "ai.context.compression_target_ratio", 0.5),
+			"contextRecentTurnCount":               aiRuntimeInteger(values, "ai.context.recent_turn_count", 4),
+			"contextMaxRecentTurnCount":            aiRuntimeInteger(values, "ai.context.max_recent_turn_count", 8),
+			"contextMaxUncompressedTurnCount":      aiRuntimeInteger(values, "ai.context.max_uncompressed_turn_count", 24),
+			"contextMaxCompressionTurnsPerCompile": aiRuntimeInteger(values, "ai.context.max_compression_turns_per_compile", 96),
+			"contextSummaryInputTokenBudget":       aiRuntimeKTokens(values, "ai.context.summary_input_k_tokens", 24),
+			"contextSummaryMaxOutputTokens":        aiRuntimeInteger(values, "ai.context.summary_max_output_tokens", 1500),
+			"contextHistoricalToolTokenBudget":     aiRuntimeKTokens(values, "ai.context.historical_tool_k_tokens", 4),
 		},
 		"toolCatalog": toolCatalog,
 	})
+}
+
+func aiRuntimeRatio(values map[string]string, key string, fallback float64) float64 {
+	value, err := strconv.ParseFloat(strings.TrimSpace(values[key]), 64)
+	if err != nil {
+		return fallback
+	}
+	return value
 }
 
 func aiRuntimeKTokens(values map[string]string, key string, fallback int) int {

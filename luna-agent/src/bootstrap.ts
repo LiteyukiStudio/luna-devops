@@ -12,7 +12,7 @@ import { ProviderConfigClient } from "./provider/config-client.js"
 import { createRuntimeProvider } from "./provider/runtime.js"
 import { buildServer } from "./server.js"
 import { configureAIContentCapture, shutdownTelemetry, telemetryLog } from "./telemetry.js"
-import { agentRuntimeInternals, defaultRuntimeSettings } from "./runtime-settings.js"
+import { defaultRuntimeSettings } from "./runtime-settings.js"
 import { ToolCatalog } from "./tools/catalog.js"
 import { HttpLunaApiToolClient } from "./tools/luna-api-client.js"
 import { MemoryToolCallStore, ProjectingToolCallStore, ToolOrchestrator } from "./tools/orchestrator.js"
@@ -72,17 +72,18 @@ export async function startAgent(): Promise<void> {
         return grantCipher.decrypt(encrypted)
       })
     : undefined
+  const runtime = initialRemoteConfig?.runtime ?? defaultRuntimeSettings
   const contextCompiler = new ContextCompiler(repository, provider, {
-    inputTokenBudget: initialRemoteConfig?.runtime.contextInputTokenBudget ?? defaultRuntimeSettings.contextInputTokenBudget,
-    compressionTriggerRatio: agentRuntimeInternals.contextCompressionTriggerRatio,
-    compressionTargetRatio: agentRuntimeInternals.contextCompressionTargetRatio,
-    recentTurnCount: agentRuntimeInternals.contextRecentTurnCount,
-    maxRecentTurnCount: agentRuntimeInternals.contextMaxRecentTurnCount,
-    maxUncompressedTurnCount: agentRuntimeInternals.contextMaxUncompressedTurnCount,
-    maxCompressionTurnsPerCompile: agentRuntimeInternals.contextMaxCompressionTurnsPerCompile,
-    summaryInputTokenBudget: agentRuntimeInternals.contextSummaryInputTokenBudget,
-    summaryMaxOutputTokens: agentRuntimeInternals.contextSummaryMaxOutputTokens,
-    historicalToolTokenBudget: agentRuntimeInternals.contextHistoricalToolTokenBudget,
+    inputTokenBudget: runtime.contextInputTokenBudget,
+    compressionTriggerRatio: runtime.contextCompressionTriggerRatio,
+    compressionTargetRatio: runtime.contextCompressionTargetRatio,
+    recentTurnCount: runtime.contextRecentTurnCount,
+    maxRecentTurnCount: runtime.contextMaxRecentTurnCount,
+    maxUncompressedTurnCount: runtime.contextMaxUncompressedTurnCount,
+    maxCompressionTurnsPerCompile: runtime.contextMaxCompressionTurnsPerCompile,
+    summaryInputTokenBudget: runtime.contextSummaryInputTokenBudget,
+    summaryMaxOutputTokens: runtime.contextSummaryMaxOutputTokens,
+    historicalToolTokenBudget: runtime.contextHistoricalToolTokenBudget,
   })
   const graphs = new GraphVersionRegistry(provider, (pageContext, userInput) => [
     ...(tools

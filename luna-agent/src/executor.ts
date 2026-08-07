@@ -132,7 +132,7 @@ export class RunExecutor {
       let finalAnswer = ""
       let completed = false
       const continuationMessages = resumedToolMessages(executionInput.toolInteractions)
-      for (let step = 0; step < agentRuntimeInternals.maxModelSteps; step += 1) {
+      for (let step = 0; step < this.runtimeSettings.maxModelSteps; step += 1) {
         const result = await this.streamModel(run.graphVersion, run.id, run.turnId, {
           conversationId: executionInput.conversationId,
           input: executionInput.input,
@@ -406,7 +406,21 @@ export class RunExecutor {
       return
     try {
       const runtimeSettings = (await this.runtimeConfig.get()).runtime
-      this.graphs.setContextInputTokenBudget(runtimeSettings.contextInputTokenBudget)
+      this.graphs.setContextOptions({
+        inputTokenBudget: runtimeSettings.contextInputTokenBudget,
+        compressionTriggerRatio: runtimeSettings.contextCompressionTriggerRatio,
+        compressionTargetRatio: runtimeSettings.contextCompressionTargetRatio,
+        recentTurnCount: runtimeSettings.contextRecentTurnCount,
+        maxRecentTurnCount: runtimeSettings.contextMaxRecentTurnCount,
+        maxUncompressedTurnCount: runtimeSettings.contextMaxUncompressedTurnCount,
+        maxCompressionTurnsPerCompile: runtimeSettings.contextMaxCompressionTurnsPerCompile,
+        summaryInputTokenBudget: runtimeSettings.contextSummaryInputTokenBudget,
+        summaryMaxOutputTokens: runtimeSettings.contextSummaryMaxOutputTokens,
+        historicalToolTokenBudget: runtimeSettings.contextHistoricalToolTokenBudget,
+      })
+      this.graphs.setAssistantMaxOutputTokens(runtimeSettings.assistantMaxOutputTokens)
+      setToolResultPayloadBudget(runtimeSettings.toolResultPayloadBudget)
+      setMaxCardRepairAttempts(runtimeSettings.maxCardRepairAttempts)
       this.runtimeSettings = runtimeSettings
     }
     catch {
@@ -691,7 +705,7 @@ export class RunExecutor {
       runId,
       toolCallId,
       uiActions[0]!,
-      new Date(Date.now() + 60_000).toISOString(),
+      new Date(Date.now() + this.runtimeSettings.navigateActionTtlSeconds * 1000).toISOString(),
     )
     const result = {
       summaryKey: "aiAssistant.tools.navigateToRouteDispatched",
@@ -931,8 +945,13 @@ function stableError(message: string): string {
 
 // 单个工具结果进入模型前的字节预算上限，防止单次大批量结果占满上下文。
 // 超出时按数组元素粒度保留尽可能多的完整元素并附加截断标记，不输出损坏的 JSON。
-const toolResultPayloadBudget = 24_000
+// 该预算与卡片修复上限由平台高级设置动态下发，见 setToolResultPayloadBudget / setMaxCardRepairAttempts。
+let toolResultPayloadBudget = defaultRuntimeSettings.toolResultPayloadBudget
 const toolResultTruncatedNote = "结果过大已按上下文预算截断：仅保留部分条目，需要更多时请用更精确的条件或翻页重新查询"
+
+export function setToolResultPayloadBudget(bytes: number): void {
+  toolResultPayloadBudget = bytes
+}
 
 function toolResultMessage(toolCall: ModelToolCall & { id: string }, result: Record<string, unknown>): ModelMessage {
   return {
@@ -1026,7 +1045,11 @@ function resumedToolMessages(interactions: ConversationToolInteraction[]): Model
     })
 }
 
-const maxCardRepairAttempts = 3
+let maxCardRepairAttempts = defaultRuntimeSettings.maxCardRepairAttempts
+
+export function setMaxCardRepairAttempts(attempts: number): void {
+  maxCardRepairAttempts = attempts
+}
 
 type CardPreparation = {
   itemId: string

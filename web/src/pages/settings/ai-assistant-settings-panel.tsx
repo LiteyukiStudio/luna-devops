@@ -36,6 +36,21 @@ const defaults: FormValues = {
   runTimeoutSeconds: 300,
   agentConcurrentRuns: 10,
   contextInputKTokens: 256,
+  contextCompressionTriggerRatio: 0.8,
+  contextCompressionTargetRatio: 0.5,
+  contextRecentTurnCount: 4,
+  contextMaxRecentTurnCount: 8,
+  contextMaxUncompressedTurnCount: 24,
+  contextMaxCompressionTurnsPerCompile: 96,
+  contextSummaryInputKTokens: 24,
+  contextSummaryMaxOutputTokens: 1500,
+  contextHistoricalToolKTokens: 4,
+  modelMaxOutputTokens: 4096,
+  runMaxModelSteps: 48,
+  runMaxInputKBytes: 48,
+  runNavigateActionTtlSeconds: 60,
+  toolsResultPayloadKBytes: 24,
+  toolsMaxCardRepairAttempts: 3,
   observabilityEnabled: false,
   prometheusUrl: '',
   prometheusToken: '',
@@ -49,6 +64,76 @@ const defaults: FormValues = {
   tempoToken: '',
   tempoTokenConfigured: false,
 }
+
+// 高级设置字段：对应 Agent 运行时中原本写死、现已由平台下发的参数。
+// 每个字段提供平台默认值；普通部署保持默认即可。
+type AdvancedFieldName
+  = 'contextCompressionTriggerRatio'
+    | 'contextCompressionTargetRatio'
+    | 'contextRecentTurnCount'
+    | 'contextMaxRecentTurnCount'
+    | 'contextMaxUncompressedTurnCount'
+    | 'contextMaxCompressionTurnsPerCompile'
+    | 'contextSummaryInputKTokens'
+    | 'contextSummaryMaxOutputTokens'
+    | 'contextHistoricalToolKTokens'
+    | 'modelMaxOutputTokens'
+    | 'runMaxModelSteps'
+    | 'runMaxInputKBytes'
+    | 'runNavigateActionTtlSeconds'
+    | 'toolsResultPayloadKBytes'
+    | 'toolsMaxCardRepairAttempts'
+
+interface AdvancedField {
+  name: AdvancedFieldName
+  labelKey: string
+  hintKey: string
+  min: number
+  max: number
+  step: number
+}
+
+interface AdvancedGroup {
+  titleKey: string
+  descriptionKey: string
+  fields: AdvancedField[]
+}
+
+const advancedGroups: AdvancedGroup[] = [
+  {
+    titleKey: 'settings.ai.contextTitle',
+    descriptionKey: 'settings.ai.contextDescription',
+    fields: [
+      { name: 'contextCompressionTriggerRatio', labelKey: 'settings.ai.compressionTriggerRatio', hintKey: 'settings.ai.compressionTriggerRatioHint', min: 0.5, max: 0.95, step: 0.01 },
+      { name: 'contextCompressionTargetRatio', labelKey: 'settings.ai.compressionTargetRatio', hintKey: 'settings.ai.compressionTargetRatioHint', min: 0.1, max: 0.8, step: 0.01 },
+      { name: 'contextRecentTurnCount', labelKey: 'settings.ai.recentTurnCount', hintKey: 'settings.ai.recentTurnCountHint', min: 1, max: 16, step: 1 },
+      { name: 'contextMaxRecentTurnCount', labelKey: 'settings.ai.maxRecentTurnCount', hintKey: 'settings.ai.maxRecentTurnCountHint', min: 2, max: 32, step: 1 },
+      { name: 'contextMaxUncompressedTurnCount', labelKey: 'settings.ai.maxUncompressedTurnCount', hintKey: 'settings.ai.maxUncompressedTurnCountHint', min: 4, max: 200, step: 1 },
+      { name: 'contextMaxCompressionTurnsPerCompile', labelKey: 'settings.ai.maxCompressionTurnsPerCompile', hintKey: 'settings.ai.maxCompressionTurnsPerCompileHint', min: 8, max: 500, step: 1 },
+      { name: 'contextSummaryInputKTokens', labelKey: 'settings.ai.summaryInputKTokens', hintKey: 'settings.ai.summaryInputKTokensHint', min: 4, max: 128, step: 1 },
+      { name: 'contextSummaryMaxOutputTokens', labelKey: 'settings.ai.summaryMaxOutputTokens', hintKey: 'settings.ai.summaryMaxOutputTokensHint', min: 200, max: 8000, step: 1 },
+      { name: 'contextHistoricalToolKTokens', labelKey: 'settings.ai.historicalToolKTokens', hintKey: 'settings.ai.historicalToolKTokensHint', min: 1, max: 64, step: 1 },
+    ],
+  },
+  {
+    titleKey: 'settings.ai.modelTitle',
+    descriptionKey: 'settings.ai.modelDescription',
+    fields: [
+      { name: 'modelMaxOutputTokens', labelKey: 'settings.ai.modelMaxOutputTokens', hintKey: 'settings.ai.modelMaxOutputTokensHint', min: 256, max: 16384, step: 1 },
+      { name: 'runMaxModelSteps', labelKey: 'settings.ai.runMaxModelSteps', hintKey: 'settings.ai.runMaxModelStepsHint', min: 1, max: 200, step: 1 },
+      { name: 'runMaxInputKBytes', labelKey: 'settings.ai.runMaxInputKBytes', hintKey: 'settings.ai.runMaxInputKBytesHint', min: 8, max: 1024, step: 1 },
+      { name: 'runNavigateActionTtlSeconds', labelKey: 'settings.ai.runNavigateActionTtlSeconds', hintKey: 'settings.ai.runNavigateActionTtlSecondsHint', min: 10, max: 600, step: 1 },
+    ],
+  },
+  {
+    titleKey: 'settings.ai.toolsTitle',
+    descriptionKey: 'settings.ai.toolsDescription',
+    fields: [
+      { name: 'toolsResultPayloadKBytes', labelKey: 'settings.ai.toolsResultPayloadKBytes', hintKey: 'settings.ai.toolsResultPayloadKBytesHint', min: 4, max: 512, step: 1 },
+      { name: 'toolsMaxCardRepairAttempts', labelKey: 'settings.ai.toolsMaxCardRepairAttempts', hintKey: 'settings.ai.toolsMaxCardRepairAttemptsHint', min: 1, max: 10, step: 1 },
+    ],
+  },
+]
 
 export function AIAssistantSettingsPanel() {
   const { t } = useTranslation()
@@ -137,6 +222,28 @@ export function AIAssistantSettingsPanel() {
           </div>
         </ProgressiveSection>
         <ProgressiveSection
+          description={t('settings.ai.advancedDescription')}
+          storageKey="luna-settings-ai-advanced-open"
+          summary={t('settings.ai.advancedSummary', { count: advancedGroups.reduce((total, group) => total + group.fields.length, 0) })}
+          title={t('settings.ai.advancedTitle')}
+        >
+          {advancedGroups.map(group => (
+            <div className="grid gap-4 rounded-lg bg-surface-subtle p-4" key={group.titleKey}>
+              <div className="grid gap-1">
+                <p className="text-sm font-medium">{t(group.titleKey)}</p>
+                <p className="text-xs text-muted-foreground">{t(group.descriptionKey)}</p>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                {group.fields.map(field => (
+                  <Field key={field.name} error={errors[field.name]?.message} hint={t(field.hintKey)} label={t(field.labelKey)}>
+                    <Input max={field.max} min={field.min} step={field.step} type="number" {...form.register(field.name, { valueAsNumber: true })} />
+                  </Field>
+                ))}
+              </div>
+            </div>
+          ))}
+        </ProgressiveSection>
+        <ProgressiveSection
           description={t('settings.ai.observabilityDescription')}
           storageKey="luna-settings-ai-observability-open"
           summary={observabilityEnabled ? t('settings.ai.observabilitySummaryEnabled') : t('settings.ai.observabilitySummaryDisabled')}
@@ -187,6 +294,21 @@ function aiSettingsFormValues(values: Record<string, string>): FormValues {
     runTimeoutSeconds: Number(values['ai.runtime.run_timeout_seconds'] ?? 300),
     agentConcurrentRuns: Number(values['ai.runtime.agent_concurrent_runs'] ?? 10),
     contextInputKTokens: Number(values['ai.runtime.context_input_k_tokens'] ?? 256),
+    contextCompressionTriggerRatio: Number(values['ai.context.compression_trigger_ratio'] ?? 0.8),
+    contextCompressionTargetRatio: Number(values['ai.context.compression_target_ratio'] ?? 0.5),
+    contextRecentTurnCount: Number(values['ai.context.recent_turn_count'] ?? 4),
+    contextMaxRecentTurnCount: Number(values['ai.context.max_recent_turn_count'] ?? 8),
+    contextMaxUncompressedTurnCount: Number(values['ai.context.max_uncompressed_turn_count'] ?? 24),
+    contextMaxCompressionTurnsPerCompile: Number(values['ai.context.max_compression_turns_per_compile'] ?? 96),
+    contextSummaryInputKTokens: Number(values['ai.context.summary_input_k_tokens'] ?? 24),
+    contextSummaryMaxOutputTokens: Number(values['ai.context.summary_max_output_tokens'] ?? 1500),
+    contextHistoricalToolKTokens: Number(values['ai.context.historical_tool_k_tokens'] ?? 4),
+    modelMaxOutputTokens: Number(values['ai.model.max_output_tokens'] ?? 4096),
+    runMaxModelSteps: Number(values['ai.run.max_model_steps'] ?? 48),
+    runMaxInputKBytes: Number(values['ai.run.max_input_k_bytes'] ?? 48),
+    runNavigateActionTtlSeconds: Number(values['ai.run.navigate_action_ttl_seconds'] ?? 60),
+    toolsResultPayloadKBytes: Number(values['ai.tools.result_payload_k_bytes'] ?? 24),
+    toolsMaxCardRepairAttempts: Number(values['ai.tools.max_card_repair_attempts'] ?? 3),
     observabilityEnabled: values['ai.observability.enabled'] === 'true',
     prometheusUrl: values['ai.observability.prometheus_url'] ?? '',
     prometheusToken: '',

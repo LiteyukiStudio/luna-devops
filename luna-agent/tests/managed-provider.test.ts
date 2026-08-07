@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { ManagedProvider } from "../src/provider/managed.js"
+import { defaultRuntimeSettings } from "../src/runtime-settings.js"
 import type { ModelProvider } from "../src/provider/provider.js"
 
 afterEach(() => {
@@ -20,7 +21,7 @@ describe("ManagedProvider", () => {
           apiKey: `secret-${version}`,
           configured: true,
         },
-        runtime: { providerTimeoutMs: 30_000, runTimeoutMs: 300_000, agentConcurrentRuns: 2, userConcurrentRuns: 10, contextInputTokenBudget: 256 * 1024 },
+        runtime: { ...defaultRuntimeSettings, providerTimeoutMs: 30_000, runTimeoutMs: 300_000, agentConcurrentRuns: 2, userConcurrentRuns: 10, contextInputTokenBudget: 256 * 1024 },
       })),
     }
     const provider = new ManagedProvider(resolver, 1000, config => fakeProvider(config.provider.model))
@@ -43,7 +44,7 @@ describe("ManagedProvider", () => {
           baseUrl: "https://provider.example/v1/",
           model: "model-a", apiKey: "secret-value", configured: true,
         },
-        runtime: { providerTimeoutMs: 30_000, runTimeoutMs: 300_000, agentConcurrentRuns: 2, userConcurrentRuns: 10, contextInputTokenBudget: 256 * 1024 },
+        runtime: { ...defaultRuntimeSettings, providerTimeoutMs: 30_000, runTimeoutMs: 300_000, agentConcurrentRuns: 2, userConcurrentRuns: 10, contextInputTokenBudget: 256 * 1024 },
       })),
     }
     const provider = new ManagedProvider(resolver, 1000, config => fakeProvider(config.provider.model))
