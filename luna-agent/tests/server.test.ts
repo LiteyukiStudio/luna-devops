@@ -3,6 +3,7 @@ import { DevelopmentAuthenticator } from "../src/auth.js"
 import { loadConfig } from "../src/config.js"
 import { MemoryRepository } from "../src/persistence/memory.js"
 import { DeterministicProvider } from "../src/provider/deterministic.js"
+import { defaultRuntimeSettings } from "../src/runtime-settings.js"
 import { buildServer } from "../src/server.js"
 import { PayloadCipher } from "../src/payload-cipher.js"
 import type { AICapabilities, AIEvent, AITimeline, AITurnCreated } from "../../web/src/api/ai-types.js"
@@ -125,7 +126,7 @@ describe("internal API", () => {
         longTermMemory: false,
       },
       limits: {
-        maxInputBytes: 48000,
+        maxInputBytes: defaultRuntimeSettings.maxInputBytes,
         maxConcurrentRuns: 10,
         maxUserConcurrentRuns: 10,
       },

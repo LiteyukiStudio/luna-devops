@@ -496,8 +496,8 @@ describe("provider to tool to subsequent model invocation", () => {
       result: {
         summaryKey: "aiAssistant.cards.failed",
         errorCode: "ai.interaction_card_schema_invalid",
-        attempt: 3,
-        maxAttempts: 3,
+        attempt: 5,
+        maxAttempts: 5,
       },
     })
     expect(JSON.stringify(preparation)).toContain('"path":"cards"')
