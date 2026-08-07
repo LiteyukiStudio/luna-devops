@@ -11,6 +11,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/model"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/LiteyukiStudio/devops/internal/resourcename"
+	"github.com/LiteyukiStudio/devops/internal/variables"
 	"gorm.io/gorm"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
@@ -324,6 +325,7 @@ func applicationResourcesSpec(release model.Release, project model.Project, appl
 	if err != nil {
 		return kubeprovider.ApplicationResourcesSpec{}, err
 	}
+	expandEnvRefsCrossBoundary(configData, secretData)
 	configFiles, err := mergeRuntimeConfigFiles(configFileValues...)
 	if err != nil {
 		return kubeprovider.ApplicationResourcesSpec{}, err
@@ -597,6 +599,30 @@ func parseKeyValueMap(value string) (map[string]string, error) {
 		parsed[strings.TrimSpace(key)] = strings.TrimSpace(item)
 	}
 	return compactKeyValueMap(parsed), nil
+}
+
+// expandEnvRefsCrossBoundary 合并 config 和 secret 数据作为引用源，展开 config 中的 ${VAR_NAME} 引用。
+// 这使得 DATABASE_URL=postgresql://${USER}:${PASSWORD}@${HOST}:${PORT}/db 可以在 PASSWORD 存在于 Secret 中时正确展开。
+// config 更新为展开后的值；secret 保持原样（只作为引用源）。
+func expandEnvRefsCrossBoundary(config, secret map[string]string) {
+	if len(config) == 0 {
+		return
+	}
+	// 合并 config 和 secret 作为查找源，config 优先级更高
+	source := make(map[string]string, len(secret)+len(config))
+	for k, v := range secret {
+		source[k] = v
+	}
+	for k, v := range config {
+		source[k] = v
+	}
+	expanded := variables.ExpandEnvRefs(source)
+	// 只回写 config 中发生变化的 key，不修改 secret
+	for key, value := range expanded {
+		if current, ok := config[key]; ok && current != value {
+			config[key] = value
+		}
+	}
 }
 
 func compactKeyValueMap(values map[string]string) map[string]string {
