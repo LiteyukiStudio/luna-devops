@@ -1,11 +1,10 @@
 import type { ReleaseForm } from './application-deployments-panel-utils'
 import type { RepositoryBindingDialogForm, RepositoryBindingDialogFormInput } from './application-repository-binding-dialog'
-import type { ArtifactRegistry, BuildRun, DeploymentRuntimeConfigRef, DeploymentTarget, DeploymentTargetPayload, ProjectRuntimeConfigSet, ProjectRuntimeConfigSetPayload, Release, RepositoryBinding, RuntimeConfigRefMode } from '@/api'
-import type { KeyValueRow } from '@/components/common/key-value-rows-editor'
+import type { ArtifactRegistry, BuildRun, DeploymentTarget, DeploymentTargetPayload, ProjectRuntimeConfigSet, ProjectRuntimeConfigSetPayload, Release, RepositoryBinding } from '@/api'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import i18next from 'i18next'
-import { useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
+import { useEffect, useImperativeHandle, useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -14,16 +13,16 @@ import { api } from '@/api'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { buildRunImageRef, latestDeployableBuildRuns } from '@/components/common/deployment-build-runs'
 import { useBillingDisplay } from '@/lib/billing-display'
-import { buildVariableRecordToRows, buildVariableRowsToRecord, secretStateToRows } from '@/lib/build-variables'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { WORKFLOW_STATUS_REFETCH_INTERVAL_MS } from '@/lib/polling'
 import { defaultBuildCpuRequest, defaultBuildMemoryRequest, defaultBuildTimeoutSeconds } from './application-build-defaults'
-import { defaultTargetImageRef, deploymentReleaseKey, deploymentTargetCanRelease, deploymentTargetImageRef, registryInputPrefix } from './application-config-utils'
+import { deploymentReleaseKey, deploymentTargetCanRelease, registryInputPrefix } from './application-config-utils'
 import { DeferredCreateReleaseDialog, DeferredDeploymentTargetDialog, DeferredReleaseLogsDialog, DeferredRepositoryBindingDialog, DeferredRuntimeConfigSetDialog, DeferredWebConsoleDialog } from './application-deployment-dialogs'
 import { buildDeploymentRuntimeStatus, buildInternalServiceEndpoint } from './application-deployment-runtime-utils'
 import { ApplicationDeploymentTargetsList } from './application-deployment-targets-list'
-import { applyDockerfileBuildDefaults, deploymentTargetDefaults, deploymentTargetRuntimeChanged, normalizeBoolean, normalizeDeploymentHookBindings, normalizeDeploymentTargetPayload, normalizeRuntimeConfigPayload, normalizeRuntimeConfigRefs, normalizeStringIds, parseRuntimeDataVolumes, redeployReleasePayload, releaseDefaults, repositoryBindingItems, runtimeConfigDefaults, runtimeConfigLiveSetIds, runtimeConfigRefIds, serializeRuntimeDataVolumes } from './application-deployments-panel-utils'
-import { effectiveWebConsoleEnabled, normalizeWebConsoleOverride } from './web-console-policy'
+import { applyDockerfileBuildDefaults, deploymentTargetRuntimeChanged, normalizeBoolean, normalizeDeploymentTargetPayload, normalizeRuntimeConfigPayload, normalizeRuntimeConfigRefs, redeployReleasePayload, releaseDefaults, repositoryBindingItems, runtimeConfigDefaults, runtimeConfigLiveSetIds, runtimeConfigRefIds } from './application-deployments-panel-utils'
+import { useDeploymentTargetForm } from './use-deployment-target-form'
+import { effectiveWebConsoleEnabled } from './web-console-policy'
 
 export interface DeploymentsPanelHandle {
   openReleaseDialog: (environmentId?: string, deploymentTargetId?: string) => void
@@ -49,11 +48,6 @@ const repositoryBindingDefaults: RepositoryBindingFormInput = {
   gitAccountId: '',
   owner: '',
   repo: '',
-}
-
-function upsertRuntimeConfigRef(refs: DeploymentRuntimeConfigRef[], nextRef: DeploymentRuntimeConfigRef) {
-  const next = normalizeRuntimeConfigRefs(refs).filter(ref => ref.setId !== nextRef.setId)
-  return [...next, nextRef]
 }
 
 function buildArgLineCount(raw?: string) {
@@ -88,10 +82,6 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
   const queryClient = useQueryClient()
   const billingDisplay = useBillingDisplay(i18n.language)
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [targetDialogOpen, setTargetDialogOpen] = useState(false)
-  const [editingTarget, setEditingTarget] = useState<DeploymentTarget | null>(null)
-  const [targetConfigFilesValid, setTargetConfigFilesValid] = useState(true)
-  const [targetSecretFilesValid, setTargetSecretFilesValid] = useState(true)
   const [logRelease, setLogRelease] = useState<Release | null>(null)
   const [logView, setLogView] = useState<'deployment' | 'runtime'>('deployment')
   const [consoleRelease, setConsoleRelease] = useState<Release | null>(null)
@@ -104,22 +94,67 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
   const [runtimeConfigRestartAffectedCount, setRuntimeConfigRestartAffectedCount] = useState(0)
   const [repositoryBindingDialogOpen, setRepositoryBindingDialogOpen] = useState(false)
   const [repositoryBranchSearch, setRepositoryBranchSearch] = useState('')
-  const [targetBuildVariableRows, setTargetBuildVariableRows] = useState<KeyValueRow[]>([])
-  const [targetBuildSecretRows, setTargetBuildSecretRows] = useState<KeyValueRow[]>([])
-  const [targetBuildEnvironmentDirty, setTargetBuildEnvironmentDirty] = useState(false)
-  const [targetBuildEnvironmentStatus, setTargetBuildEnvironmentStatus] = useState<'loading' | 'ready' | 'unavailable'>('ready')
-  const targetEnvironmentRequestRef = useRef(0)
   const form = useForm<ReleaseForm>({ defaultValues: releaseDefaults, mode: 'onChange' })
-  const targetForm = useForm<DeploymentTargetPayload>({ defaultValues: deploymentTargetDefaults, mode: 'onChange' })
   const runtimeConfigForm = useForm<ProjectRuntimeConfigSetPayload>({ defaultValues: runtimeConfigDefaults, mode: 'onChange' })
   const repositoryBindingForm = useForm<RepositoryBindingFormInput, undefined, RepositoryBindingForm>({
     defaultValues: repositoryBindingDefaults,
     mode: 'onChange',
     resolver: zodResolver(repositoryBindingSchema),
   })
-  const runtimeHourCost = billingDisplay.runtimeHourCost(targetForm.watch('replicas'), targetForm.watch('cpuRequest'), targetForm.watch('memoryRequest'))
-  const buildMinuteCost = billingDisplay.buildMinuteCost(targetForm.watch('buildCpuRequest'), targetForm.watch('buildMemoryRequest'))
-  const buildTimeoutMinutes = Math.max(1, Math.round((Number(targetForm.watch('buildTimeoutSeconds')) || defaultBuildTimeoutSeconds) / 60))
+  const runtimeClusters = useQuery({
+    queryKey: ['runtime-clusters', projectId],
+    queryFn: () => api.listRuntimeClusters(projectId),
+    enabled: Boolean(projectId),
+    ...liveObservationQueryPolicy,
+  })
+  const runtimeClusterMap = useMemo(() => Object.fromEntries((runtimeClusters.data ?? []).map(cluster => [cluster.id, cluster])), [runtimeClusters.data])
+  const defaultRuntimeCluster = useMemo(() => {
+    const clusters = runtimeClusters.data ?? []
+    return clusters.find(cluster => cluster.isDefault) ?? clusters[0]
+  }, [runtimeClusters.data])
+  const {
+    buildEnvironmentStatus: targetBuildEnvironmentStatus,
+    buildSecretRows: targetBuildSecretRows,
+    buildSubmissionPayload,
+    buildVariableRows: targetBuildVariableRows,
+    changeRuntimeConfigRefMode,
+    configFilesValid: targetConfigFilesValid,
+    dataRetentionEnabled: targetDataRetentionEnabled,
+    dataVolumes: targetDataVolumes,
+    dialogOpen: targetDialogOpen,
+    editingTarget,
+    form: targetForm,
+    handleDialogOpenChange: handleTargetDialogOpenChange,
+    imageRefDirty: targetImageRefDirty,
+    openDialog: openTargetFormDialog,
+    runtimeFilesValid: targetRuntimeFilesValid,
+    secretFilesValid: targetSecretFilesValid,
+    selectedHookBindings: selectedDeploymentHookBindings,
+    selectedRuntimeConfigRefs,
+    servicePorts: targetServicePorts,
+    setConfigFilesValid: setTargetConfigFilesValid,
+    setHookBindings: setTargetHookBindings,
+    setSecretFilesValid: setTargetSecretFilesValid,
+    sourceType: targetSourceType,
+    targetBuildHooksEnabled,
+    toggleRuntimeConfigSet,
+    updateBuildSecretRows: setTargetBuildSecretRows,
+    updateBuildVariableRows: setTargetBuildVariableRows,
+    updateDataVolumes: updateTargetDataVolumes,
+    updateServicePorts: updateTargetServicePorts,
+    values: watchedTargetValues,
+  } = useDeploymentTargetForm({
+    applicationId,
+    applicationIdentifier,
+    defaultRuntimeCluster,
+    projectId,
+    projectIdentifier,
+    registries,
+    repositoryBindings,
+  })
+  const runtimeHourCost = billingDisplay.runtimeHourCost(watchedTargetValues.replicas, watchedTargetValues.cpuRequest, watchedTargetValues.memoryRequest)
+  const buildMinuteCost = billingDisplay.buildMinuteCost(watchedTargetValues.buildCpuRequest, watchedTargetValues.buildMemoryRequest)
+  const buildTimeoutMinutes = Math.max(1, Math.round((Number(watchedTargetValues.buildTimeoutSeconds) || defaultBuildTimeoutSeconds) / 60))
   const buildRunMap = useMemo(() => Object.fromEntries(buildRuns.map(run => [run.id, run])), [buildRuns])
   const latestReleaseByTarget = useMemo(() => {
     const output: Record<string, Release> = {}
@@ -138,22 +173,10 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
     () => selectedDeploymentTargetId ? deployableBuildRuns.filter(run => run.deploymentTargetId === selectedDeploymentTargetId) : deployableBuildRuns,
     [deployableBuildRuns, selectedDeploymentTargetId],
   )
-  const targetSourceType = targetForm.watch('sourceType')
-  const targetRepositoryBindingId = targetForm.watch('repositoryBindingId')
-  const targetRegistryId = targetForm.watch('targetRegistryId')
-  const targetStage = targetForm.watch('stage')
-  const targetName = targetForm.watch('name')
-  const targetDataRetentionEnabled = normalizeBoolean(targetForm.watch('dataRetentionEnabled'), false)
-  const targetDataVolumesValue = targetForm.watch('dataVolumes')
-  const targetDataVolumes = useMemo(
-    () => parseRuntimeDataVolumes(targetDataVolumesValue, targetForm.getValues('dataMountPath') || '/data', targetForm.getValues('dataCapacity') || '1Gi'),
-    [targetDataVolumesValue, targetForm],
-  )
-  const watchedTargetValues = targetForm.watch()
-  const targetImageRefDirty = Boolean(targetForm.formState.dirtyFields.targetImageRef)
-  const selectedRuntimeConfigRefs = normalizeRuntimeConfigRefs(targetForm.watch('runtimeConfigRefs'), targetForm.watch('runtimeConfigSetIds'))
-  const selectedDeploymentHookBindings = normalizeDeploymentHookBindings(targetForm.watch('buildHookBindings'))
-  const targetBuildHooksEnabled = normalizeBoolean(targetForm.watch('buildHooksEnabled'), true)
+  const targetRepositoryBindingId = watchedTargetValues.repositoryBindingId
+  const targetRegistryId = watchedTargetValues.targetRegistryId
+  const targetStage = watchedTargetValues.stage
+  const targetName = watchedTargetValues.name
   const selectedTargetRepositoryBinding = repositoryBindings.find(binding => binding.id === targetRepositoryBindingId)
   const targetRegistry = registries.find(registry => registry.id === targetRegistryId)
   const targetImagePrefix = targetRegistry ? registryInputPrefix(targetRegistry) : ''
@@ -213,7 +236,6 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
   const latestEditingTargetRelease = editingTarget ? latestReleaseByTarget[deploymentReleaseKey(editingTarget.id)] : undefined
   const targetHasRuntimeChanges = editingTarget ? deploymentTargetRuntimeChanged(editingTarget, normalizeDeploymentTargetPayload(watchedTargetValues)) : false
   const targetCanRedeploy = Boolean(editingTarget && latestEditingTargetRelease && normalizeBoolean(watchedTargetValues.enabled, editingTarget.enabled))
-  const targetRuntimeFilesValid = targetConfigFilesValid && targetSecretFilesValid
   useEffect(() => {
     if (!targetDialogOpen || editingTarget || targetSourceType !== 'repository' || targetImageRefDirty)
       return
@@ -240,17 +262,6 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
     queryFn: () => api.listProjectHooks(projectId),
     enabled: Boolean(projectId && targetDialogOpen),
   })
-  const runtimeClusters = useQuery({
-    queryKey: ['runtime-clusters', projectId],
-    queryFn: () => api.listRuntimeClusters(projectId),
-    enabled: Boolean(projectId),
-    ...liveObservationQueryPolicy,
-  })
-  const runtimeClusterMap = useMemo(() => Object.fromEntries((runtimeClusters.data ?? []).map(cluster => [cluster.id, cluster])), [runtimeClusters.data])
-  const defaultRuntimeCluster = useMemo(() => {
-    const clusters = runtimeClusters.data ?? []
-    return clusters.find(cluster => cluster.isDefault) ?? clusters[0]
-  }, [runtimeClusters.data])
   const workloadClusterIds = useMemo(() => {
     const ids = new Set<string>()
     for (const target of deploymentTargets) {
@@ -314,105 +325,12 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
     const latestRelease = latestReleaseByTarget[deploymentReleaseKey(target.id)]
     return Boolean(redeployReleasePayload(target, latestRelease))
   }), [latestReleaseByTarget, runtimeConfigRestartTargets])
-  const resetTargetForm = (target?: DeploymentTarget | null) => {
-    const defaultRegistry = registries.find(registry => registry.credentialSet && registry.isDefault) ?? registries.find(registry => registry.credentialSet) ?? registries.find(registry => registry.isDefault) ?? registries[0]
-    const defaultBinding = repositoryBindings[0]
-    const sourceType = target?.sourceType ?? 'repository'
-    targetForm.reset({
-      ...deploymentTargetDefaults,
-      ...target,
-      sourceType,
-      environmentId: target?.environmentId ?? '',
-      clusterId: target?.clusterId ?? defaultRuntimeCluster?.id ?? '',
-      replicas: target?.replicas ?? 1,
-      cpuRequest: target?.cpuRequest || '1',
-      memoryRequest: target?.memoryRequest || '1Gi',
-      stage: target?.stage || 'prod',
-      buildEnvironmentId: target?.buildEnvironmentId || '',
-      buildCpuRequest: target?.buildCpuRequest || defaultBuildCpuRequest,
-      buildMemoryRequest: target?.buildMemoryRequest || defaultBuildMemoryRequest,
-      buildTimeoutSeconds: target?.buildTimeoutSeconds || defaultBuildTimeoutSeconds,
-      buildArgs: target?.buildArgs || '',
-      repositoryBindingId: target?.repositoryBindingId ?? defaultBinding?.id ?? '',
-      targetRegistryId: target?.targetRegistryId ?? defaultRegistry?.id ?? '',
-      targetImageRef: deploymentTargetImageRef(target ?? undefined) || defaultTargetImageRef(defaultRegistry, projectIdentifier, applicationIdentifier),
-      buildHooksEnabled: target?.buildHooksEnabled ?? true,
-      buildHookBindings: target?.buildHookBindings ?? [],
-      servicePort: target?.servicePort ?? 8080,
-      servicePorts: target?.servicePorts?.length ? target.servicePorts : [{ name: 'http', port: target?.servicePort ?? 8080 }],
-      buildVariableSetIds: normalizeStringIds(target?.buildVariableSetIds),
-      runtimeConfigRefs: normalizeRuntimeConfigRefs(target?.runtimeConfigRefs, target?.runtimeConfigSetIds),
-      runtimeConfigSetIds: runtimeConfigLiveSetIds(normalizeRuntimeConfigRefs(target?.runtimeConfigRefs, target?.runtimeConfigSetIds)),
-      secretRefs: '',
-      secretFiles: '',
-      dataRetentionEnabled: target?.dataRetentionEnabled ?? false,
-      dataCapacity: target?.dataCapacity || '1Gi',
-      dataMountPath: target?.dataMountPath || '/data',
-      dataVolumes: target?.dataVolumes || serializeRuntimeDataVolumes(parseRuntimeDataVolumes('', target?.dataMountPath || '/data', target?.dataCapacity || '1Gi')),
-      webConsoleEnabled: normalizeWebConsoleOverride(target?.webConsoleEnabled),
-      enabled: target?.enabled ?? true,
-    })
-  }
-  const setTargetRuntimeConfigRefs = (refs: DeploymentRuntimeConfigRef[]) => {
-    const normalizedRefs = normalizeRuntimeConfigRefs(refs)
-    targetForm.setValue('runtimeConfigRefs', normalizedRefs, { shouldDirty: true, shouldValidate: true })
-    targetForm.setValue('runtimeConfigSetIds', runtimeConfigLiveSetIds(normalizedRefs), { shouldDirty: true, shouldValidate: true })
-  }
   const openTargetDialog = (target?: DeploymentTarget) => {
-    const requestID = ++targetEnvironmentRequestRef.current
-    setEditingTarget(target ?? null)
-    setTargetConfigFilesValid(true)
-    setTargetSecretFilesValid(true)
     setRuntimeConfigRestartSetId('')
     setRuntimeConfigRestartAffectedCount(0)
-    resetTargetForm(target)
-    setTargetBuildVariableRows(buildVariableRecordToRows({}))
-    setTargetBuildSecretRows(secretStateToRows({}))
-    setTargetBuildEnvironmentDirty(false)
-    setTargetBuildEnvironmentStatus(target ? 'loading' : 'ready')
-    setTargetDialogOpen(true)
-    if (target) {
-      void queryClient.fetchQuery({
-        queryKey: ['build-environment-config', 'deployment', projectId, applicationId, target.id],
-        queryFn: () => api.getBuildEnvironmentConfig({ scope: 'deployment', projectId, applicationId, deploymentTargetId: target.id }),
-      }).then((config) => {
-        if (targetEnvironmentRequestRef.current !== requestID)
-          return
-        setTargetBuildVariableRows(buildVariableRecordToRows(config.variables))
-        setTargetBuildSecretRows(secretStateToRows(config.secrets))
-        setTargetBuildEnvironmentStatus('ready')
-      }).catch((error) => {
-        setTargetBuildEnvironmentStatus('unavailable')
-        toast.error(error instanceof Error ? error.message : t('buildsPage.buildEnvironmentLoadFailed'))
-      })
-    }
+    openTargetFormDialog(target)
   }
-  const toggleRuntimeConfigSet = (setId: string, checked: boolean) => {
-    const current = normalizeRuntimeConfigRefs(targetForm.getValues('runtimeConfigRefs'), targetForm.getValues('runtimeConfigSetIds'))
-    const next = checked
-      ? upsertRuntimeConfigRef(current, { mode: 'live', setId })
-      : current.filter(ref => ref.setId !== setId)
-    setTargetRuntimeConfigRefs(next)
-  }
-  const changeRuntimeConfigRefMode = (setId: string, mode: RuntimeConfigRefMode) => {
-    const current = normalizeRuntimeConfigRefs(targetForm.getValues('runtimeConfigRefs'), targetForm.getValues('runtimeConfigSetIds'))
-    setTargetRuntimeConfigRefs(upsertRuntimeConfigRef(current, { mode, setId }))
-  }
-  const setTargetHookBindings = (bindings: DeploymentTargetPayload['buildHookBindings']) => {
-    targetForm.setValue('buildHookBindings', normalizeDeploymentHookBindings(bindings), { shouldDirty: true, shouldValidate: true })
-  }
-  const updateTargetDataVolumes = (rows: typeof targetDataVolumes) => {
-    targetForm.setValue('dataVolumes', serializeRuntimeDataVolumes(rows), { shouldDirty: true, shouldValidate: true })
-  }
-  const targetServicePorts = targetForm.watch('servicePorts')?.length
-    ? targetForm.watch('servicePorts')
-    : [{ appProtocol: '', name: 'http', port: targetForm.watch('servicePort') || 8080 }]
-  const updateTargetServicePorts = (rows: DeploymentTargetPayload['servicePorts']) => {
-    const nextRows = rows.length > 0 ? rows : [{ name: 'http', port: 8080 }]
-    targetForm.setValue('servicePorts', nextRows, { shouldDirty: true, shouldValidate: true })
-    targetForm.setValue('servicePort', nextRows[0]?.port || 8080, { shouldDirty: true, shouldValidate: true })
-  }
-  const targetStageLabel = t(`deploymentsPage.stageLabels.${targetForm.watch('stage')}`)
+  const targetStageLabel = t(`deploymentsPage.stageLabels.${watchedTargetValues.stage}`)
   const targetSourceLabel = t(targetSourceType === 'image' ? 'apps.image' : 'apps.repository')
   const targetPrimaryPort = targetServicePorts[0] ?? { name: 'http', port: 8080 }
   const targetPortSummary = targetServicePorts.length > 1
@@ -433,21 +351,21 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
   const targetBuildSummary = targetSourceType === 'image'
     ? t('deploymentsPage.progressiveBuildSkippedSummary')
     : t('deploymentsPage.progressiveBuildSummary', {
-        context: targetForm.watch('buildContext') || '.',
-        cpu: targetForm.watch('buildCpuRequest') || defaultBuildCpuRequest,
-        dockerfile: targetForm.watch('dockerfilePath') || 'Dockerfile',
-        memory: targetForm.watch('buildMemoryRequest') || defaultBuildMemoryRequest,
-        args: buildArgLineCount(targetForm.watch('buildArgs')),
+        context: watchedTargetValues.buildContext || '.',
+        cpu: watchedTargetValues.buildCpuRequest || defaultBuildCpuRequest,
+        dockerfile: watchedTargetValues.dockerfilePath || 'Dockerfile',
+        memory: watchedTargetValues.buildMemoryRequest || defaultBuildMemoryRequest,
+        args: buildArgLineCount(watchedTargetValues.buildArgs),
         timeout: buildTimeoutMinutes,
       })
   const targetRuntimeSummary = t('deploymentsPage.progressiveRuntimeSummary', {
-    cpu: targetForm.watch('cpuRequest') || '1',
-    memory: targetForm.watch('memoryRequest') || '1Gi',
-    replicas: targetForm.watch('replicas') || 1,
+    cpu: watchedTargetValues.cpuRequest || '1',
+    memory: watchedTargetValues.memoryRequest || '1Gi',
+    replicas: watchedTargetValues.replicas || 1,
   })
   const targetPolicySummary = t('deploymentsPage.progressivePolicySummary', {
-    autoDeploy: t(normalizeBoolean(targetForm.watch('autoDeploy'), true) ? 'common.enabled' : 'common.disabled'),
-    concurrency: t(`apps.buildConcurrencyPolicies.${targetForm.watch('concurrencyPolicy') || 'queue'}`),
+    autoDeploy: t(normalizeBoolean(watchedTargetValues.autoDeploy, true) ? 'common.enabled' : 'common.disabled'),
+    concurrency: t(`apps.buildConcurrencyPolicies.${watchedTargetValues.concurrencyPolicy || 'queue'}`),
   })
   const targetHooksSummary = targetBuildHooksEnabled
     ? t('deploymentsPage.progressiveHooksSummary', { count: selectedDeploymentHookBindings.length })
@@ -456,11 +374,11 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
     ? t('deploymentsPage.progressiveDataEnabledSummary', { count: targetDataVolumes.length })
     : t('deploymentsPage.progressiveDataDisabledSummary')
   const targetHasAdvancedConfig = Boolean(
-    String(targetForm.watch('envVars') ?? '').trim()
-    || String(targetForm.watch('configRefs') ?? '').trim()
-    || String(targetForm.watch('configFiles') ?? '').trim()
-    || String(targetForm.watch('secretRefs') ?? '').trim()
-    || String(targetForm.watch('secretFiles') ?? '').trim()
+    String(watchedTargetValues.envVars ?? '').trim()
+    || String(watchedTargetValues.configRefs ?? '').trim()
+    || String(watchedTargetValues.configFiles ?? '').trim()
+    || String(watchedTargetValues.secretRefs ?? '').trim()
+    || String(watchedTargetValues.secretFiles ?? '').trim()
     || editingTarget?.secretRefsSet
     || editingTarget?.secretFilesSet,
   )
@@ -505,10 +423,10 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
     'dataAccessMode',
     'dataVolumeMode',
     'webConsoleEnabled',
-  ].filter(key => String(targetForm.watch(key as keyof DeploymentTargetPayload) ?? '').trim()).length
-  + (targetForm.watch('workloadType') === 'StatefulSet' ? 1 : 0)
-  + (normalizeBoolean(targetForm.watch('readOnlyRootFilesystem'), false) ? 1 : 0)
-  + (normalizeBoolean(targetForm.watch('autoScalingEnabled'), false) ? 1 : 0)
+  ].filter(key => String(watchedTargetValues[key as keyof DeploymentTargetPayload] ?? '').trim()).length
+  + (watchedTargetValues.workloadType === 'StatefulSet' ? 1 : 0)
+  + (normalizeBoolean(watchedTargetValues.readOnlyRootFilesystem, false) ? 1 : 0)
+  + (normalizeBoolean(watchedTargetValues.autoScalingEnabled, false) ? 1 : 0)
   const targetKubernetesAdvancedSummary = targetKubernetesAdvancedCount > 0
     ? t('deploymentsPage.progressiveKubernetesAdvancedEnabledSummary', { count: targetKubernetesAdvancedCount })
     : t('deploymentsPage.progressiveKubernetesAdvancedDisabledSummary')
@@ -697,14 +615,7 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
   })
   const saveTarget = useMutation({
     mutationFn: async ({ redeploy, values }: { redeploy: boolean, values: DeploymentTargetPayload }) => {
-      const normalized = normalizeDeploymentTargetPayload(values)
-      const payload = targetBuildEnvironmentDirty
-        ? {
-            ...normalized,
-            buildVariables: buildVariableRowsToRecord(targetBuildVariableRows),
-            buildSecrets: buildVariableRowsToRecord(targetBuildSecretRows),
-          }
-        : normalized
+      const payload = buildSubmissionPayload(values)
       const savedTarget = editingTarget
         ? api.updateDeploymentTarget(projectId, applicationId, editingTarget.id, payload)
         : api.createDeploymentTarget(projectId, applicationId, payload)
@@ -719,10 +630,7 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
     },
     onSuccess: ({ redeploy }) => {
       toast.success(t(redeploy ? 'deploymentsPage.targetUpdatedAndRedeployQueued' : editingTarget ? 'deploymentsPage.targetUpdated' : 'deploymentsPage.targetCreated'))
-      setTargetDialogOpen(false)
-      setEditingTarget(null)
-      setTargetBuildEnvironmentDirty(false)
-      targetForm.reset(deploymentTargetDefaults)
+      handleTargetDialogOpenChange(false)
       queryClient.invalidateQueries({ queryKey: ['deployment-targets', projectId, applicationId] })
       if (redeploy)
         queryClient.invalidateQueries({ queryKey: ['releases', projectId] })
@@ -822,22 +730,12 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
           setRuntimeConfigRestartAffectedCount(0)
         }}
         onEditRuntimeConfigSet={openRuntimeConfigDialog}
-        onOpenChange={(open) => {
-          setTargetDialogOpen(open)
-          if (!open)
-            setEditingTarget(null)
-        }}
+        onOpenChange={handleTargetDialogOpenChange}
         onRedeployRuntimeConfigTargets={() => redeployRuntimeConfigTargets.mutate()}
         onSave={(values, redeploy) => saveTarget.mutate({ redeploy, values })}
         onSetConfigFilesValid={setTargetConfigFilesValid}
-        onSetBuildSecretRows={(rows) => {
-          setTargetBuildSecretRows(rows)
-          setTargetBuildEnvironmentDirty(true)
-        }}
-        onSetBuildVariableRows={(rows) => {
-          setTargetBuildVariableRows(rows)
-          setTargetBuildEnvironmentDirty(true)
-        }}
+        onSetBuildSecretRows={setTargetBuildSecretRows}
+        onSetBuildVariableRows={setTargetBuildVariableRows}
         onSetHookBindings={setTargetHookBindings}
         onSetSecretFilesValid={setTargetSecretFilesValid}
         onToggleRuntimeConfigSet={toggleRuntimeConfigSet}

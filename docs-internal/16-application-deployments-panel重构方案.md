@@ -68,3 +68,10 @@
 ## 预计文件与契约影响
 
 预计修改现有 `application-deployments-panel.tsx`、`application-deployment-dialogs.tsx` 及相应测试，并新增上述 Hook/模型文件。现阶段不需要修改后端 API、OpenAPI、luna-agent 或公开文档；若拆分中发现选择器需要超过 100 条或缺少服务端筛选，应另立端到端契约事项，不在前端恢复全量兼容。只有新增用户可见文本时才同步中英文 i18n；行为保持不变时仅更新本方案与 `TODO.md` 的实施状态。
+
+## 实施状态（2026-08-10）
+
+- 已完成 `use-deployment-target-form.ts`：部署配置默认值、编辑态重置、Secret 留空、构建环境草稿、运行配置引用、Hook、数据卷、端口与提交载荷已从面板隔离。
+- 构建环境异步读取使用请求代次校验；切换部署配置或关闭 Dialog 会使旧响应失效，不再将旧变量和 Secret 状态写入当前表单。
+- `application-deployments-panel.tsx` 保留目标查询、镜像/Dockerfile 建议、Mutation 与 Dialog 编排；发布、运行配置和仓库绑定三组表单仍按后续步骤拆分。
+- 针对性测试覆盖新增/编辑默认值、Secret 不回显、目标快速切换及关闭 Dialog 的竞态路径；本阶段不改变 API、OpenAPI、公开文档或 i18n。
