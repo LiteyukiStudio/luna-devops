@@ -49,10 +49,6 @@ func (options Options) withDefaults() Options {
 	return options
 }
 
-func Open(databaseURL string, optionList ...Options) (*gorm.DB, error) {
-	return OpenContext(context.Background(), databaseURL, optionList...)
-}
-
 func OpenContext(ctx context.Context, databaseURL string, optionList ...Options) (*gorm.DB, error) {
 	if !isPostgresURL(databaseURL) {
 		return nil, fmt.Errorf("unsupported database url: %s", databaseURL)
@@ -118,10 +114,6 @@ func openPostgres(ctx context.Context, databaseURL string, options Options) (*go
 	}
 
 	return db, nil
-}
-
-func Migrate(db *gorm.DB) error {
-	return MigrateContext(context.Background(), db)
 }
 
 func MigrateContext(ctx context.Context, db *gorm.DB) (err error) {

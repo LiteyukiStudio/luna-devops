@@ -45,12 +45,12 @@ func (adapter WebhookAdapter) Validate(_ context.Context, config json.RawMessage
 	return err
 }
 
-func (WebhookAdapter) Render(_ context.Context, event Event, tpl Template, config json.RawMessage, secrets json.RawMessage, secretResolver SecretResolver, _ string) (RenderedMessage, error) {
+func (WebhookAdapter) Render(ctx context.Context, event Event, tpl Template, config json.RawMessage, secrets json.RawMessage, secretResolver SecretResolver, _ string) (RenderedMessage, error) {
 	cfg, err := parseWebhookConfig(config)
 	if err != nil {
 		return RenderedMessage{}, err
 	}
-	secretValues := resolveSecretMap(secrets, secretResolver)
+	secretValues := resolveSecretMap(ctx, secrets, secretResolver)
 	message, err := renderMessage(event, tpl, secretValues)
 	if err != nil {
 		return RenderedMessage{}, err

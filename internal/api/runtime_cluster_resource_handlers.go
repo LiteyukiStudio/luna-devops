@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -28,6 +29,11 @@ func (h *Handlers) ListRuntimeClusterResources(ctx *gin.Context) {
 	if !h.canManageScopedResourceByID(ctx, user, cluster.Scope, cluster.OwnerRef, scopedResourceRuntimeCluster, cluster.ID, "无权查看该集群资源") {
 		return
 	}
+	pagination := paginationFromQuery(ctx)
+	if pagination.Page != 1 {
+		writeErrorCode(ctx, http.StatusBadRequest, "pagination.cursor_required", "runtime cluster resources only support the first bounded page")
+		return
+	}
 	kubeconfig := h.secrets.ResolveContext(ctx.Request.Context(), cluster.KubeconfigRef)
 	if strings.TrimSpace(kubeconfig) == "" {
 		writeError(ctx, http.StatusBadRequest, "运行集群缺少 kubeconfig，无法读取资源")
@@ -44,34 +50,35 @@ func (h *Handlers) ListRuntimeClusterResources(ctx *gin.Context) {
 		ProjectID:     strings.TrimSpace(ctx.Query("projectId")),
 		ApplicationID: strings.TrimSpace(ctx.Query("applicationId")),
 		EnvironmentID: strings.TrimSpace(ctx.Query("environmentId")),
+		Limit:         int64(pagination.PageSize),
 	}
 	if options.ProjectID != "" && !h.canInspectClusterResourceProject(ctx, user, options.ProjectID) {
 		return
 	}
 	requestCtx, cancel := context.WithTimeout(ctx.Request.Context(), 10*time.Second)
 	defer cancel()
-	items, err := client.ListManagedResources(requestCtx, options)
+	page, err := client.ListManagedResourcesPage(requestCtx, options)
 	if err != nil {
 		writeError(ctx, http.StatusBadGateway, "集群资源读取失败，请检查集群连接和权限")
 		return
 	}
-	items = h.filterClusterResourceSnapshots(ctx, user, items)
+	items := h.filterClusterResourceSnapshots(ctx, user, page.Items)
 	responses, err := h.clusterResourceResponses(items, ctx.Request.Context())
 	if err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if paginationRequested(ctx) {
-		if isWorkloadResourceKind(options.Kind) {
-			responses = groupWorkloadPodResponses(responses)
-		}
-		pagination := paginationFromQuery(ctx)
-		pagination.SortBy = normalizeClusterResourceSortBy(pagination.SortBy)
-		sortClusterResourceResponses(responses, pagination)
-		ctx.JSON(http.StatusOK, paginatedResponse(paginateSlice(responses, pagination), int64(len(responses)), pagination))
-		return
+	if isWorkloadResourceKind(options.Kind) {
+		responses = groupWorkloadPodResponses(responses)
 	}
-	ctx.JSON(http.StatusOK, responses)
+	pagination.SortBy = normalizeClusterResourceSortBy(pagination.SortBy)
+	sortClusterResourceResponses(responses, pagination)
+	pageItems := paginateSlice(responses, pagination)
+	// A resource category fans out to several Kubernetes kinds, each with an
+	// independent continue token. A numeric global page cannot preserve the
+	// requested cross-kind sort without draining every kind. Keep this endpoint
+	// to one bounded page and do not advertise inaccessible remaining pages.
+	ctx.JSON(http.StatusOK, paginatedResponse(pageItems, int64(len(pageItems)), pagination))
 }
 
 func (h *Handlers) GetRuntimeClusterResourceYAML(ctx *gin.Context) {
@@ -132,6 +139,11 @@ func (h *Handlers) ListRuntimeClusterResourceEvents(ctx *gin.Context) {
 	if !h.canManageScopedResourceByID(ctx, user, cluster.Scope, cluster.OwnerRef, scopedResourceRuntimeCluster, cluster.ID, "无权查看该集群资源") {
 		return
 	}
+	pagination := paginationFromQueryWithSort(ctx, map[string]string{"lastSeen": "last_seen"}, "lastSeen")
+	if pagination.Page != 1 {
+		writeErrorCode(ctx, http.StatusBadRequest, "pagination.cursor_required", "runtime cluster resource events only support the first bounded page")
+		return
+	}
 	kubeconfig := h.secrets.ResolveContext(ctx.Request.Context(), cluster.KubeconfigRef)
 	if strings.TrimSpace(kubeconfig) == "" {
 		writeError(ctx, http.StatusBadRequest, "运行集群缺少 kubeconfig，无法读取资源事件")
@@ -151,7 +163,7 @@ func (h *Handlers) ListRuntimeClusterResourceEvents(ctx *gin.Context) {
 	}
 	requestCtx, cancel := context.WithTimeout(ctx.Request.Context(), 10*time.Second)
 	defer cancel()
-	events, snapshot, err := client.ListManagedResourceEvents(requestCtx, kind, namespace, name)
+	page, snapshot, err := client.ListManagedResourceEventsPage(requestCtx, kind, namespace, name, int64(pagination.PageSize))
 	if err != nil {
 		writeError(ctx, http.StatusBadGateway, "集群资源事件读取失败，请确认资源仍存在且归属平台管理")
 		return
@@ -159,7 +171,16 @@ func (h *Handlers) ListRuntimeClusterResourceEvents(ctx *gin.Context) {
 	if !h.canInspectClusterResourceSnapshot(ctx, user, snapshot) {
 		return
 	}
-	ctx.JSON(http.StatusOK, events)
+	sort.Slice(page.Items, func(left, right int) bool {
+		if pagination.SortOrder == "asc" {
+			return page.Items[left].LastSeen.Before(page.Items[right].LastSeen)
+		}
+		return page.Items[left].LastSeen.After(page.Items[right].LastSeen)
+	})
+	// Kubernetes event continuation follows API-server key order, which is not
+	// compatible with this endpoint's lastSeen ordering. Keep one bounded page
+	// and avoid claiming that a globally sorted next page is accessible.
+	ctx.JSON(http.StatusOK, paginatedResponse(page.Items, int64(len(page.Items)), pagination))
 }
 
 func (h *Handlers) StreamRuntimeClusterPodTerminal(ctx *gin.Context) {
@@ -254,7 +275,7 @@ func (h *Handlers) StreamRuntimeClusterPodTerminal(ctx *gin.Context) {
 	})
 	resourceID := cluster.ID + ":" + snapshot.Namespace + "/" + snapshot.Name
 	if err != nil && sessionCtx.Err() == nil {
-		_, _ = wsWriter.Write([]byte("\r\nterminal disconnected: " + err.Error() + "\r\n"))
+		_, _ = wsWriter.Write(terminalDisconnectedMessage(ctx, err.Error()))
 		h.auditWithContext(user.ID, "runtime_cluster.pod_terminal", resourceID, false, err.Error(), ctx.Request.Context())
 		return
 	}

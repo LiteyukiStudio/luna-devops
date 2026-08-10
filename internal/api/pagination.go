@@ -7,6 +7,11 @@ import (
 	"strings"
 )
 
+const (
+	defaultPageSize = 20
+	maxPageSize     = 100
+)
+
 type paginationParams struct {
 	Page      int
 	PageSize  int
@@ -20,9 +25,9 @@ func (p paginationParams) Offset() int {
 
 func paginationFromQuery(ctx *gin.Context) paginationParams {
 	page := parsePositiveInt(ctx.Query("page"), 1)
-	pageSize := parsePositiveInt(ctx.Query("pageSize"), 20)
-	if pageSize > 100 {
-		pageSize = 100
+	pageSize := parsePositiveInt(ctx.Query("pageSize"), defaultPageSize)
+	if pageSize > maxPageSize {
+		pageSize = maxPageSize
 	}
 	sortOrder := strings.ToLower(ctx.Query("sortOrder"))
 	if sortOrder != "asc" {
@@ -36,8 +41,12 @@ func paginationFromQuery(ctx *gin.Context) paginationParams {
 	}
 }
 
-func paginationRequested(ctx *gin.Context) bool {
-	return ctx.Query("page") != "" || ctx.Query("pageSize") != ""
+func paginationFromQueryWithSort(ctx *gin.Context, allowedFields map[string]string, defaultField string) paginationParams {
+	pagination := paginationFromQuery(ctx)
+	if allowedFields[pagination.SortBy] == "" {
+		pagination.SortBy = defaultField
+	}
+	return pagination
 }
 
 func paginatedResponse[T any](items []T, total int64, pagination paginationParams) gin.H {

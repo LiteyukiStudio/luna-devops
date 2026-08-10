@@ -33,29 +33,13 @@ func (h *Handlers) ListDeploymentTargets(ctx *gin.Context) {
 	var targets []model.DeploymentTarget
 	query := h.dbFor(ctx).Model(&model.DeploymentTarget{}).Where("project_id = ? and application_id = ?", app.ProjectID, app.ID)
 	query = applySearch(ctx, query, "name", "source_branch", "image_repository", "image_tag")
-	if paginationRequested(ctx) {
-		pagination := paginationFromQuery(ctx)
-		var total int64
-		if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
-			writeError(ctx, http.StatusInternalServerError, err.Error())
-			return
-		}
-		if err := query.Order(orderByClause(pagination, map[string]string{
-			"name":      "name",
-			"createdAt": "created_at",
-		}, "created_at")).Limit(pagination.PageSize).Offset(pagination.Offset()).Find(&targets).Error; err != nil {
-			writeError(ctx, http.StatusInternalServerError, err.Error())
-			return
-		}
-		if err := h.attachDeploymentTargetHookBindings(targets, ctx.Request.Context()); err != nil {
-			writeError(ctx, http.StatusInternalServerError, err.Error())
-			return
-		}
-		h.observeDeploymentTargets(ctx.Request.Context(), project, targets)
-		ctx.JSON(http.StatusOK, paginatedResponse(deploymentTargetResponses(targets), total, pagination))
+	pagination := paginationFromQueryWithSort(ctx, map[string]string{"name": "name", "createdAt": "created_at"}, "createdAt")
+	var total int64
+	if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if err := query.Order("created_at asc").Find(&targets).Error; err != nil {
+	if err := deploymentTargetPageQuery(query, pagination).Find(&targets).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -64,7 +48,14 @@ func (h *Handlers) ListDeploymentTargets(ctx *gin.Context) {
 		return
 	}
 	h.observeDeploymentTargets(ctx.Request.Context(), project, targets)
-	ctx.JSON(http.StatusOK, deploymentTargetResponses(targets))
+	ctx.JSON(http.StatusOK, paginatedResponse(deploymentTargetResponses(targets), total, pagination))
+}
+
+func deploymentTargetPageQuery(query *gorm.DB, pagination paginationParams) *gorm.DB {
+	return query.Order(orderByClause(pagination, map[string]string{
+		"name":      "name",
+		"createdAt": "created_at",
+	}, "created_at")).Limit(pagination.PageSize).Offset(pagination.Offset())
 }
 
 func (h *Handlers) CreateDeploymentTarget(ctx *gin.Context) {

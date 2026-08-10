@@ -25,28 +25,20 @@ func (h *Handlers) ListProjectRuntimeConfigSets(ctx *gin.Context) {
 	var sets []model.ProjectRuntimeConfigSet
 	query := h.dbFor(ctx).Model(&model.ProjectRuntimeConfigSet{}).Where("project_id = ?", project.ID)
 	query = applySearch(ctx, query, "name", "env_vars", "config_files")
-	if paginationRequested(ctx) {
-		pagination := paginationFromQuery(ctx)
-		var total int64
-		if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
-			writeError(ctx, http.StatusInternalServerError, err.Error())
-			return
-		}
-		if err := query.Order(orderByClause(pagination, map[string]string{
-			"name":      "name",
-			"createdAt": "created_at",
-		}, "created_at")).Limit(pagination.PageSize).Offset(pagination.Offset()).Find(&sets).Error; err != nil {
-			writeError(ctx, http.StatusInternalServerError, err.Error())
-			return
-		}
-		ctx.JSON(http.StatusOK, paginatedResponse(projectRuntimeConfigSetResponses(sets), total, pagination))
-		return
-	}
-	if err := query.Order("created_at desc").Find(&sets).Error; err != nil {
+	pagination := paginationFromQueryWithSort(ctx, map[string]string{"name": "name", "createdAt": "created_at"}, "createdAt")
+	var total int64
+	if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	ctx.JSON(http.StatusOK, projectRuntimeConfigSetResponses(sets))
+	if err := query.Order(orderByClause(pagination, map[string]string{
+		"name":      "name",
+		"createdAt": "created_at",
+	}, "created_at")).Limit(pagination.PageSize).Offset(pagination.Offset()).Find(&sets).Error; err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
+		return
+	}
+	ctx.JSON(http.StatusOK, paginatedResponse(projectRuntimeConfigSetResponses(sets), total, pagination))
 }
 
 func (h *Handlers) CreateProjectRuntimeConfigSet(ctx *gin.Context) {
@@ -414,9 +406,9 @@ func projectRuntimeConfigSetResponseFor(set model.ProjectRuntimeConfigSet) proje
 	}
 }
 
-func (h *Handlers) countRuntimeConfigSetDeploymentTargets(projectID string, setID string, contexts ...context.Context) int {
+func (h *Handlers) countRuntimeConfigSetDeploymentTargets(projectID string, setID string, ctx context.Context) int {
 	var targets []model.DeploymentTarget
-	if err := h.dbWithContext(firstContext(contexts)).Select("runtime_config_set_ids", "runtime_config_refs").Where("project_id = ?", projectID).Find(&targets).Error; err != nil {
+	if err := h.dbWithContext(ctx).Select("runtime_config_set_ids", "runtime_config_refs").Where("project_id = ?", projectID).Find(&targets).Error; err != nil {
 		return 0
 	}
 	count := 0

@@ -73,32 +73,32 @@ export function ApplicationConfigPage() {
     enabled: Boolean(projectId && applicationId),
   })
   const project = useQuery({ queryKey: ['project', projectId], queryFn: () => api.getProject(projectId), enabled: Boolean(projectId) })
-  const repositoryBindings = useQuery({ ...liveObservationQueryPolicy, queryKey: ['repository-bindings', projectId], queryFn: () => api.listRepositoryBindings(projectId), enabled: Boolean(projectId) })
+  const repositoryBindings = useQuery({ ...liveObservationQueryPolicy, queryKey: ['repository-bindings', projectId, applicationId], queryFn: () => api.listRepositoryBindings(projectId, applicationId), enabled: Boolean(projectId && applicationId) })
   const registries = useQuery({ ...liveObservationQueryPolicy, queryKey: ['registries', projectId], queryFn: () => api.listRegistries(projectId), enabled: Boolean(projectId) })
   const buildRuns = useQuery({
-    queryKey: ['build-runs', projectId],
-    queryFn: () => api.listBuildRuns(projectId),
-    enabled: Boolean(projectId),
+    queryKey: ['build-runs', projectId, applicationId],
+    queryFn: () => api.listBuildRuns(projectId, applicationId),
+    enabled: Boolean(projectId && applicationId),
     refetchInterval: shouldPollWorkflowStatus ? WORKFLOW_STATUS_REFETCH_INTERVAL_MS : false,
   })
   const buildJobs = useQuery({
-    queryKey: ['build-jobs', projectId],
-    queryFn: () => api.listBuildJobs(projectId),
-    enabled: Boolean(projectId),
+    queryKey: ['build-jobs', projectId, applicationId],
+    queryFn: () => api.listBuildJobs(projectId, undefined, applicationId),
+    enabled: Boolean(projectId && applicationId),
     refetchInterval: shouldPollWorkflowStatus ? WORKFLOW_STATUS_REFETCH_INTERVAL_MS : false,
   })
   const releases = useQuery({
-    queryKey: ['releases', projectId],
-    queryFn: () => api.listReleases(projectId),
-    enabled: Boolean(projectId),
+    queryKey: ['releases', projectId, applicationId],
+    queryFn: () => api.listReleases(projectId, applicationId),
+    enabled: Boolean(projectId && applicationId),
     refetchInterval: activeTab === 'deployments' ? WORKFLOW_STATUS_REFETCH_INTERVAL_MS : false,
   })
   const deploymentTargets = useQuery({ ...liveObservationQueryPolicy, queryKey: ['deployment-targets', projectId, applicationId], queryFn: () => api.listDeploymentTargets(projectId, applicationId), enabled: Boolean(projectId && applicationId) })
   const routes = useQuery({
     ...liveObservationQueryPolicy,
-    queryKey: ['gateway-routes', projectId],
-    queryFn: () => api.listGatewayRoutes(projectId),
-    enabled: Boolean(projectId),
+    queryKey: ['gateway-routes', projectId, applicationId],
+    queryFn: () => api.listGatewayRoutes(projectId, applicationId),
+    enabled: Boolean(projectId && applicationId),
     refetchInterval: query => activeTab === 'gateway' && (query.state.data ?? []).some(route => route.certificateStatus === 'pending')
       ? WORKFLOW_STATUS_REFETCH_INTERVAL_MS
       : false,
@@ -133,11 +133,11 @@ export function ApplicationConfigPage() {
   useEffect(() => {
     if (!projectId || !shouldPollWorkflowStatus)
       return
-    queryClient.invalidateQueries({ queryKey: ['build-runs', projectId] })
-    queryClient.invalidateQueries({ queryKey: ['build-jobs', projectId] })
+    queryClient.invalidateQueries({ queryKey: ['build-runs', projectId, applicationId] })
+    queryClient.invalidateQueries({ queryKey: ['build-jobs', projectId, applicationId] })
     if (activeTab === 'deployments')
-      queryClient.invalidateQueries({ queryKey: ['releases', projectId] })
-  }, [activeTab, projectId, queryClient, shouldPollWorkflowStatus])
+      queryClient.invalidateQueries({ queryKey: ['releases', projectId, applicationId] })
+  }, [activeTab, applicationId, projectId, queryClient, shouldPollWorkflowStatus])
 
   const updateApplication = useMutation({
     mutationFn: (payload: ApplicationForm) => api.updateApplication(projectId, applicationId, {

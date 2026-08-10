@@ -30,31 +30,22 @@ func (h *Handlers) ListArtifactRegistries(ctx *gin.Context) {
 	}
 
 	query = applySearch(ctx, query, "name", "endpoint")
-	if paginationRequested(ctx) {
-		pagination := paginationFromQuery(ctx)
-		var total int64
-		if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
-			writeError(ctx, http.StatusInternalServerError, err.Error())
-			return
-		}
-		if err := query.Order(orderByClause(pagination, map[string]string{
-			"name":      "name",
-			"scope":     "scope",
-			"createdAt": "created_at",
-		}, "created_at")).Limit(pagination.PageSize).Offset(pagination.Offset()).Find(&registries).Error; err != nil {
-			writeError(ctx, http.StatusInternalServerError, err.Error())
-			return
-		}
-		h.observeArtifactRegistries(ctx.Request.Context(), user, registries)
-		ctx.JSON(http.StatusOK, paginatedResponse(h.registryResponsesForUser(user, registries), total, pagination))
+	pagination := paginationFromQueryWithSort(ctx, map[string]string{"name": "name", "scope": "scope", "createdAt": "created_at"}, "createdAt")
+	var total int64
+	if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if err := query.Order("is_default desc, created_at desc").Find(&registries).Error; err != nil {
+	if err := query.Order(orderByClause(pagination, map[string]string{
+		"name":      "name",
+		"scope":     "scope",
+		"createdAt": "created_at",
+	}, "created_at")).Limit(pagination.PageSize).Offset(pagination.Offset()).Find(&registries).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 	h.observeArtifactRegistries(ctx.Request.Context(), user, registries)
-	ctx.JSON(http.StatusOK, h.registryResponsesForUser(user, registries))
+	ctx.JSON(http.StatusOK, paginatedResponse(h.registryResponsesForUser(user, registries, ctx.Request.Context()), total, pagination))
 }
 
 func (h *Handlers) CreateArtifactRegistry(ctx *gin.Context) {
@@ -227,8 +218,8 @@ func (h *Handlers) registryFromInput(ctx *gin.Context, user model.User, input ar
 	return registry, true
 }
 
-func (h *Handlers) saveRegistryWithDefault(registry model.ArtifactRegistry, contexts ...context.Context) error {
-	return h.dbWithContext(firstContext(contexts)).Transaction(func(tx *gorm.DB) error {
+func (h *Handlers) saveRegistryWithDefault(registry model.ArtifactRegistry, ctx context.Context) error {
+	return h.dbWithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		projectIDs := sortedProjectIDs(registry.ProjectIDs)
 		defaultProjectIDs := []string{}
 		if registry.Scope == "project" {

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -11,7 +12,6 @@ import (
 
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
-	"github.com/LiteyukiStudio/devops/internal/secret"
 	"github.com/pquerna/otp/totp"
 )
 
@@ -55,9 +55,9 @@ func TestOAuthDeviceAuthorizationMFAAndRevocationFlow(t *testing.T) {
 	}
 
 	setupHandlers := &Handlers{db: db, configs: newConfigCache(db), mode: "development", rateLimiter: newRateLimiter()}
-	setupHandlers.secrets = secret.NewStore(db, setupHandlers.audit)
+	setupHandlers.secrets = newContextAuditedTestSecretStore(db, setupHandlers)
 	totpSecret := "JBSWY3DPEHPK3PXP"
-	secretRef := setupHandlers.secrets.Store(totpSecret, user.ID, mfaSecretResource(user.ID))
+	secretRef := setupHandlers.secrets.StoreContext(context.Background(), totpSecret, user.ID, mfaSecretResource(user.ID))
 	confirmedAt := time.Now()
 	if err := db.Create(&model.UserMFAConfig{
 		ID:            "mfa_device_" + suffix,

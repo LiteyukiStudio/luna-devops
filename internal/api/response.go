@@ -17,6 +17,8 @@ import (
 
 const requestIDContextKey = "luna_request_id"
 
+const terminalDisconnectedErrorCode = "runtime.terminal_disconnected"
+
 func requestIDMiddleware() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		requestID := id.New("req")
@@ -79,7 +81,11 @@ func internalErrorCode(ctx *gin.Context) string {
 }
 
 func writeErrorKey(ctx *gin.Context, status int, language, key string) {
-	ctx.JSON(status, gin.H{"code": key, "error": messageFor(language, key)})
+	ctx.JSON(status, gin.H{
+		"code":      key,
+		"error":     messageFor(language, key),
+		"requestId": requestID(ctx),
+	})
 }
 
 func writeErrorKeyWithDetails(
@@ -88,11 +94,15 @@ func writeErrorKeyWithDetails(
 	language, key string,
 	details gin.H,
 ) {
-	ctx.JSON(status, gin.H{
-		"code":    key,
-		"error":   messageFor(language, key),
-		"details": details,
-	})
+	response := gin.H{
+		"code":      key,
+		"error":     messageFor(language, key),
+		"requestId": requestID(ctx),
+	}
+	if config.RuntimeMode() == "development" {
+		response["details"] = details
+	}
+	ctx.JSON(status, response)
 }
 
 func writeErrorCode(ctx *gin.Context, status int, code, detail string) {
@@ -104,7 +114,11 @@ func writeErrorCode(ctx *gin.Context, status int, code, detail string) {
 		ctx.JSON(status, gin.H{"code": code, "error": detail, "detail": detail, "requestId": requestID})
 		return
 	}
-	ctx.JSON(status, gin.H{"code": code, "error": publicErrorMessage(status), "requestId": requestID})
+	ctx.JSON(status, gin.H{
+		"code":      code,
+		"error":     publicErrorMessage(status, requestLanguage(ctx)),
+		"requestId": requestID,
+	})
 }
 
 func errorResponseMiddleware() gin.HandlerFunc {
@@ -120,7 +134,20 @@ func errorResponseMiddleware() gin.HandlerFunc {
 func recoveryMiddleware() gin.HandlerFunc {
 	return gin.CustomRecovery(func(ctx *gin.Context, recovered any) {
 		writeErrorCode(ctx, http.StatusInternalServerError, "internal_error", fmt.Sprint(recovered))
+		ctx.Abort()
 	})
+}
+
+func terminalDisconnectedMessage(ctx *gin.Context, detail string) []byte {
+	if config.RuntimeMode() == "development" {
+		return []byte("\r\nterminal disconnected: " + detail + "\r\n")
+	}
+	return []byte(fmt.Sprintf(
+		"\r\n%s (code=%s, requestId=%s)\r\n",
+		messageFor(requestLanguage(ctx), terminalDisconnectedErrorCode),
+		terminalDisconnectedErrorCode,
+		requestID(ctx),
+	))
 }
 
 func defaultErrorCode(status int) string {
@@ -147,28 +174,40 @@ func defaultErrorCode(status int) string {
 	}
 }
 
-func publicErrorMessage(status int) string {
-	switch status {
-	case http.StatusBadRequest:
-		return "请求参数不正确"
-	case http.StatusUnauthorized:
-		return "请先登录"
-	case http.StatusForbidden:
-		return "没有权限执行该操作"
-	case http.StatusNotFound:
-		return "资源不存在"
-	case http.StatusConflict:
-		return "资源状态冲突"
-	case http.StatusTooManyRequests:
-		return "请求过于频繁，请稍后再试"
-	case http.StatusBadGateway:
-		return "上游服务调用失败，请稍后再试"
-	default:
-		if status >= 500 {
-			return "服务暂时不可用，请稍后再试"
-		}
-		return "请求处理失败"
+func publicErrorMessage(status int, language string) string {
+	messages := publicErrorMessages[normalizeLanguage(language)]
+	if status >= 500 {
+		return messages[http.StatusInternalServerError]
 	}
+	if message, ok := messages[status]; ok {
+		return message
+	}
+	return messages[0]
+}
+
+var publicErrorMessages = map[string]map[int]string{
+	"zh-CN": {
+		0:                              "请求处理失败",
+		http.StatusBadRequest:          "请求参数不正确",
+		http.StatusUnauthorized:        "请先登录",
+		http.StatusForbidden:           "没有权限执行该操作",
+		http.StatusNotFound:            "资源不存在",
+		http.StatusConflict:            "资源状态冲突",
+		http.StatusTooManyRequests:     "请求过于频繁，请稍后再试",
+		http.StatusBadGateway:          "上游服务调用失败，请稍后再试",
+		http.StatusInternalServerError: "服务暂时不可用，请稍后再试",
+	},
+	"en-US": {
+		0:                              "The request could not be completed.",
+		http.StatusBadRequest:          "The request parameters are invalid.",
+		http.StatusUnauthorized:        "Please sign in first.",
+		http.StatusForbidden:           "You do not have permission to perform this action.",
+		http.StatusNotFound:            "The requested resource was not found.",
+		http.StatusConflict:            "The resource state conflicts with this request.",
+		http.StatusTooManyRequests:     "Too many requests. Please try again later.",
+		http.StatusBadGateway:          "The upstream service request failed. Please try again later.",
+		http.StatusInternalServerError: "The service is temporarily unavailable. Please try again later.",
+	},
 }
 
 func messageFor(language, key string) string {
@@ -180,6 +219,9 @@ func messageFor(language, key string) string {
 }
 
 func requestLanguage(ctx *gin.Context) string {
+	if ctx == nil || ctx.Request == nil {
+		return "zh-CN"
+	}
 	if strings.Contains(strings.ToLower(ctx.GetHeader("Accept-Language")), "en") {
 		return "en-US"
 	}
@@ -223,6 +265,9 @@ var localizedMessages = map[string]map[string]string{
 		"auth.token.scope_insufficient":    "当前访问凭据没有执行该操作所需的权限",
 		"auth.oauth.grant_invalid":         "OAuth 授权已失效，请重新登录",
 		"auth.oauth.application_invalid":   "OAuth 应用不可用，请重新登录",
+		"mfa_required":                     "需要完成敏感操作二次验证",
+		terminalDisconnectedErrorCode:      "终端连接已断开",
+		"service_binding_in_use":           "该应用或部署配置仍被服务关系引用，请先删除相关关系",
 		"application.delete_in_progress":   "应用正在删除中，请等待资源清理完成或删除失败后重试。",
 		"config.admin.required":            "只有平台管理员可以修改站点配置",
 		"ai.user_not_allowed":              "当前站点仅允许平台管理员使用 AI 助手",
@@ -247,6 +292,9 @@ var localizedMessages = map[string]map[string]string{
 		"auth.token.scope_insufficient":    "The access credential does not have the permission required for this operation",
 		"auth.oauth.grant_invalid":         "The OAuth authorization is no longer valid. Sign in again",
 		"auth.oauth.application_invalid":   "The OAuth application is unavailable. Sign in again",
+		"mfa_required":                     "Additional verification is required for this sensitive action.",
+		terminalDisconnectedErrorCode:      "The terminal connection was closed.",
+		"service_binding_in_use":           "This application or deployment target is still referenced by a service relation. Remove the relation first.",
 		"application.delete_in_progress":   "The application is being deleted. Wait for resource cleanup to finish, or retry after deletion fails.",
 		"project.delete_in_progress":       "The project space is being deleted. Wait for resource cleanup to finish.",
 		"config.admin.required":            "Only platform administrators can update site settings",

@@ -35,7 +35,7 @@ func (r *Runner) runDeploymentHooks(ctx context.Context, phase string, release m
 	for _, config := range configs {
 		configsByID[config.ID] = config
 	}
-	manager, err := r.kubernetesManager(environment)
+	manager, err := r.kubernetesManager(ctx, environment)
 	if err != nil {
 		return err
 	}

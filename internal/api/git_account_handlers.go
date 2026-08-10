@@ -52,32 +52,22 @@ func (h *Handlers) ListGitAccounts(ctx *gin.Context) {
 
 	var accounts []model.GitAccount
 	query = applySearch(ctx, query, "username", "external_user_id")
-	if paginationRequested(ctx) {
-		pagination := paginationFromQuery(ctx)
-		var total int64
-		if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
-			writeError(ctx, http.StatusInternalServerError, err.Error())
-			return
-		}
-		if err := query.Order(orderByClause(pagination, map[string]string{
-			"username":  "username",
-			"createdAt": "created_at",
-		}, "created_at")).Limit(pagination.PageSize).Offset(pagination.Offset()).Find(&accounts).Error; err != nil {
-			writeError(ctx, http.StatusInternalServerError, err.Error())
-			return
-		}
-		h.attachGitAccountProjects(accounts, ctx.Request.Context())
-		h.observeGitAccounts(ctx.Request.Context(), user, accounts)
-		ctx.JSON(http.StatusOK, paginatedResponse(gitAccountResponses(accounts), total, pagination))
+	pagination := paginationFromQueryWithSort(ctx, map[string]string{"username": "username", "createdAt": "created_at"}, "createdAt")
+	var total int64
+	if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if err := query.Order("created_at desc").Find(&accounts).Error; err != nil {
+	if err := query.Order(orderByClause(pagination, map[string]string{
+		"username":  "username",
+		"createdAt": "created_at",
+	}, "created_at")).Limit(pagination.PageSize).Offset(pagination.Offset()).Find(&accounts).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 	h.attachGitAccountProjects(accounts, ctx.Request.Context())
 	h.observeGitAccounts(ctx.Request.Context(), user, accounts)
-	ctx.JSON(http.StatusOK, gitAccountResponses(accounts))
+	ctx.JSON(http.StatusOK, paginatedResponse(gitAccountResponses(accounts), total, pagination))
 }
 
 func (h *Handlers) CreateGitAccount(ctx *gin.Context) {
@@ -187,8 +177,8 @@ func (h *Handlers) UpdateGitAccount(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gitAccountResponse(account))
 }
 
-func (h *Handlers) saveGitAccount(account model.GitAccount, contexts ...context.Context) error {
-	return h.dbWithContext(firstContext(contexts)).Transaction(func(tx *gorm.DB) error {
+func (h *Handlers) saveGitAccount(account model.GitAccount, ctx context.Context) error {
+	return h.dbWithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Save(&account).Error; err != nil {
 			return err
 		}
@@ -196,8 +186,8 @@ func (h *Handlers) saveGitAccount(account model.GitAccount, contexts ...context.
 	})
 }
 
-func (h *Handlers) attachGitAccountProjects(accounts []model.GitAccount, contexts ...context.Context) {
-	projectMap := h.scopedResourceProjectIDMap(scopedResourceGitAccount, gitAccountIDs(accounts), firstContext(contexts))
+func (h *Handlers) attachGitAccountProjects(accounts []model.GitAccount, ctx context.Context) {
+	projectMap := h.scopedResourceProjectIDMap(scopedResourceGitAccount, gitAccountIDs(accounts), ctx)
 	for index := range accounts {
 		accounts[index].ProjectIDs = projectMap[accounts[index].ID]
 	}
@@ -323,14 +313,14 @@ func gitAccountNeedsRefresh(account model.GitAccount) bool {
 	return time.Until(*account.ExpiresAt) <= 5*time.Minute
 }
 
-func (h *Handlers) upsertGitAccountFromOAuth(userID string, provider model.GitProvider, gitUser gitprovider.UserResponse, token *oauth2.Token, contexts ...context.Context) (model.GitAccount, error) {
+func (h *Handlers) upsertGitAccountFromOAuth(userID string, provider model.GitProvider, gitUser gitprovider.UserResponse, token *oauth2.Token, ctx context.Context) (model.GitAccount, error) {
 	externalID := gitUser.ExternalID()
 	username := gitUser.Username()
 	if externalID == "" || username == "" {
 		return model.GitAccount{}, fmt.Errorf("git user identity is incomplete")
 	}
 	var account model.GitAccount
-	err := h.dbWithContext(firstContext(contexts)).First(&account, "user_id = ? and provider_id = ? and external_user_id = ?", userID, provider.ID, externalID).Error
+	err := h.dbWithContext(ctx).First(&account, "user_id = ? and provider_id = ? and external_user_id = ?", userID, provider.ID, externalID).Error
 	if err != nil && err != gorm.ErrRecordNotFound {
 		return account, err
 	}
@@ -351,25 +341,25 @@ func (h *Handlers) upsertGitAccountFromOAuth(userID string, provider model.GitPr
 	}
 	account.Username = username
 	account.AvatarURL = strings.TrimSpace(gitUser.AvatarURL)
-	account.AccessTokenRef = h.secrets.StoreContext(firstContext(contexts), token.AccessToken, userID, "git_account:"+account.ID+":access")
+	account.AccessTokenRef = h.secrets.StoreContext(ctx, token.AccessToken, userID, "git_account:"+account.ID+":access")
 	if token.RefreshToken != "" {
-		account.RefreshTokenRef = h.secrets.StoreContext(firstContext(contexts), token.RefreshToken, userID, "git_account:"+account.ID+":refresh")
+		account.RefreshTokenRef = h.secrets.StoreContext(ctx, token.RefreshToken, userID, "git_account:"+account.ID+":refresh")
 	}
 	account.Scopes = strings.Join(normalizeList(tokenScopes(token), false), ",")
 	if !token.Expiry.IsZero() {
 		account.ExpiresAt = &token.Expiry
 	}
 	if err == gorm.ErrRecordNotFound {
-		if err := h.dbWithContext(firstContext(contexts)).Create(&account).Error; err != nil {
+		if err := h.dbWithContext(ctx).Create(&account).Error; err != nil {
 			return account, err
 		}
-		h.auditWithContext(userID, "git_account.oauth_upsert", account.ID, true, provider.ID, firstContext(contexts))
+		h.auditWithContext(userID, "git_account.oauth_upsert", account.ID, true, provider.ID, ctx)
 		return account, nil
 	}
-	if err := h.dbWithContext(firstContext(contexts)).Save(&account).Error; err != nil {
+	if err := h.dbWithContext(ctx).Save(&account).Error; err != nil {
 		return account, err
 	}
-	h.auditWithContext(userID, "git_account.oauth_upsert", account.ID, true, provider.ID, firstContext(contexts))
+	h.auditWithContext(userID, "git_account.oauth_upsert", account.ID, true, provider.ID, ctx)
 	return account, nil
 }
 

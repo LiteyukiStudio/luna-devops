@@ -1,10 +1,16 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -14,6 +20,9 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/security"
 	"github.com/LiteyukiStudio/devops/internal/variables"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 func TestBootstrapStatusHidesDevLoginHintInProduction(t *testing.T) {
@@ -51,6 +60,203 @@ func TestPaginationFromQueryDefaultsAndCapsPageSize(t *testing.T) {
 	if pagination.SortOrder != "asc" {
 		t.Fatalf("SortOrder = %q", pagination.SortOrder)
 	}
+}
+
+func TestPaginationFromQueryWithSortReturnsEffectiveWhitelistValue(t *testing.T) {
+	allowed := map[string]string{"createdAt": "created_at", "name": "name"}
+	for _, testCase := range []struct {
+		query string
+		want  string
+	}{
+		{query: "", want: "createdAt"},
+		{query: "?sortBy=unknown", want: "createdAt"},
+		{query: "?sortBy=name", want: "name"},
+	} {
+		ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+		ctx.Request = httptest.NewRequest(http.MethodGet, "/"+testCase.query, nil)
+		if got := paginationFromQueryWithSort(ctx, allowed, "createdAt").SortBy; got != testCase.want {
+			t.Fatalf("sortBy = %q, want %q", got, testCase.want)
+		}
+	}
+}
+
+func TestPriorityListPageQueriesApplyNormalizedLimitAndOffset(t *testing.T) {
+	db, err := gorm.Open(postgres.New(postgres.Config{
+		DSN: "host=127.0.0.1 user=test password=test dbname=test port=1 sslmode=disable",
+	}), &gorm.Config{DryRun: true, DisableAutomaticPing: true})
+	if err != nil {
+		t.Fatalf("open dry-run database: %v", err)
+	}
+
+	builders := map[string]func(*gorm.DB, paginationParams) *gorm.DB{
+		"build-runs":         buildRunPageQuery,
+		"container-images":   containerImagePageQuery,
+		"deployment-targets": deploymentTargetPageQuery,
+		"projects":           projectPageQuery,
+	}
+	cases := []struct {
+		name       string
+		query      string
+		wantPage   int
+		wantLimit  int
+		wantOffset int
+	}{
+		{name: "defaults", query: "", wantPage: 1, wantLimit: defaultPageSize, wantOffset: 0},
+		{name: "maximum cap", query: "?page=2&pageSize=101", wantPage: 2, wantLimit: maxPageSize, wantOffset: maxPageSize},
+		{name: "invalid fallback", query: "?page=-2&pageSize=0", wantPage: 1, wantLimit: defaultPageSize, wantOffset: 0},
+	}
+
+	for name, build := range builders {
+		for _, testCase := range cases {
+			t.Run(name+"/"+testCase.name, func(t *testing.T) {
+				ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+				ctx.Request = httptest.NewRequest(http.MethodGet, "/"+testCase.query, nil)
+				pagination := paginationFromQuery(ctx)
+				if pagination.Page != testCase.wantPage {
+					t.Fatalf("page = %d, want %d", pagination.Page, testCase.wantPage)
+				}
+
+				query := build(db.Table("list_items"), pagination)
+				limit, ok := query.Statement.Clauses["LIMIT"].Expression.(clause.Limit)
+				if !ok || limit.Limit == nil {
+					t.Fatalf("query has no LIMIT clause: %#v", query.Statement.Clauses)
+				}
+				if *limit.Limit != testCase.wantLimit || limit.Offset != testCase.wantOffset {
+					t.Fatalf("LIMIT/OFFSET = %d/%d, want %d/%d", *limit.Limit, limit.Offset, testCase.wantLimit, testCase.wantOffset)
+				}
+
+				assertPaginationEnvelope(t, paginatedResponse([]string{"item"}, 101, pagination))
+			})
+		}
+	}
+}
+
+func TestHighGrowthListHandlersCannotBypassPaginationContract(t *testing.T) {
+	contracts := []struct {
+		file     string
+		function string
+	}{
+		{file: "application_handlers.go", function: "ListApplications"},
+		{file: "build_job_log_handlers.go", function: "ListBuildJobs"},
+		{file: "build_run_handlers.go", function: "ListBuildRuns"},
+		{file: "build_variable_handlers.go", function: "ListBuildVariableSets"},
+		{file: "container_image_handlers.go", function: "ListContainerImages"},
+		{file: "deployment_target_handlers.go", function: "ListDeploymentTargets"},
+		{file: "gateway_handlers.go", function: "ListGatewayRoutes"},
+		{file: "git_account_handlers.go", function: "ListGitAccounts"},
+		{file: "git_provider_handlers.go", function: "ListGitProviders"},
+		{file: "git_repository_handlers.go", function: "ListGitRepositories"},
+		{file: "git_repository_handlers.go", function: "ListRepositoryBindings"},
+		{file: "project_handlers.go", function: "ListProjects"},
+		{file: "project_handlers.go", function: "ListProjectPins"},
+		{file: "project_handlers.go", function: "ListProjectMembers"},
+		{file: "project_hook_handlers.go", function: "ListProjectHookConfigs"},
+		{file: "project_hook_handlers.go", function: "ListProjectHookRuns"},
+		{file: "registries.go", function: "ListArtifactRegistries"},
+		{file: "registry_credential_handlers.go", function: "listRegistryCredentials"},
+		{file: "release_handlers.go", function: "ListReleases"},
+		{file: "runtime_cluster_handlers.go", function: "ListRuntimeClusters"},
+		{file: "runtime_cluster_resource_handlers.go", function: "ListRuntimeClusterResources"},
+		{file: "runtime_cluster_resource_handlers.go", function: "ListRuntimeClusterResourceEvents"},
+		{file: "runtime_config_handlers.go", function: "ListProjectRuntimeConfigSets"},
+	}
+
+	for _, contract := range contracts {
+		t.Run(contract.function, func(t *testing.T) {
+			function := parseAPIFunction(t, contract.file, contract.function)
+			calls := calledFunctions(function.Body)
+			if !calls["paginatedResponse"] {
+				t.Fatalf("%s must return the shared pagination envelope", contract.function)
+			}
+			sortNormalized := calls["paginationFromQueryWithSort"] || calls["normalizeClusterResourceSortBy"] || calls["gitRepositoryPagination"]
+			if !sortNormalized {
+				t.Fatalf("%s must normalize sortBy to an effective whitelist value", contract.function)
+			}
+			bounded := calls["paginateSlice"] || (calls["Limit"] && calls["Offset"]) ||
+				calls["buildRunPageQuery"] || calls["containerImagePageQuery"] ||
+				calls["deploymentTargetPageQuery"] || calls["projectPageQuery"] ||
+				calls["ListRepositories"] || calls["SearchPublicRepositories"] ||
+				calls["ListManagedResourcesPage"] || calls["ListManagedResourceEventsPage"]
+			if !bounded {
+				t.Fatalf("%s must apply LIMIT/OFFSET or bounded slice pagination", contract.function)
+			}
+		})
+	}
+}
+
+func TestGitRepositoryPaginationUsesUnifiedBoundsAndEffectiveSort(t *testing.T) {
+	cases := []struct {
+		query      string
+		wantPage   int
+		wantSize   int
+		wantOffset int
+	}{
+		{query: "", wantPage: 1, wantSize: defaultPageSize, wantOffset: 0},
+		{query: "?page=2&pageSize=101&sortBy=unknown&sortOrder=asc", wantPage: 2, wantSize: maxPageSize, wantOffset: maxPageSize},
+		{query: "?page=-1&pageSize=0", wantPage: 1, wantSize: defaultPageSize, wantOffset: 0},
+	}
+	for _, testCase := range cases {
+		ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+		ctx.Request = httptest.NewRequest(http.MethodGet, "/repositories"+testCase.query, nil)
+		pagination := gitRepositoryPagination(ctx)
+		if pagination.Page != testCase.wantPage || pagination.PageSize != testCase.wantSize || pagination.Offset() != testCase.wantOffset {
+			t.Fatalf("pagination = %#v, want page/size/offset %d/%d/%d", pagination, testCase.wantPage, testCase.wantSize, testCase.wantOffset)
+		}
+		if pagination.SortBy != "updatedAt" || pagination.SortOrder != "desc" {
+			t.Fatalf("effective sort = %s/%s", pagination.SortBy, pagination.SortOrder)
+		}
+		assertPaginationEnvelope(t, paginatedResponse([]string{"repository"}, remotePageTotal(pagination, 1), pagination))
+	}
+}
+
+func assertPaginationEnvelope(t *testing.T, response gin.H) {
+	t.Helper()
+	for _, key := range []string{"items", "page", "pageSize", "sortBy", "sortOrder", "total", "totalPages"} {
+		if _, exists := response[key]; !exists {
+			t.Fatalf("paginated response is missing %q: %#v", key, response)
+		}
+	}
+	if len(response) != 7 {
+		t.Fatalf("paginated response has unexpected fields: %#v", response)
+	}
+}
+
+func parseAPIFunction(t *testing.T, fileName string, functionName string) *ast.FuncDecl {
+	t.Helper()
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve current test file")
+	}
+	path := filepath.Join(filepath.Dir(currentFile), fileName)
+	parsed, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+	if err != nil {
+		t.Fatalf("parse %s: %v", path, err)
+	}
+	for _, declaration := range parsed.Decls {
+		if function, ok := declaration.(*ast.FuncDecl); ok && function.Name.Name == functionName {
+			return function
+		}
+	}
+	t.Fatalf("function %s was not found in %s", functionName, path)
+	return nil
+}
+
+func calledFunctions(node ast.Node) map[string]bool {
+	calls := map[string]bool{}
+	ast.Inspect(node, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		switch function := call.Fun.(type) {
+		case *ast.Ident:
+			calls[function.Name] = true
+		case *ast.SelectorExpr:
+			calls[function.Sel.Name] = true
+		}
+		return true
+	})
+	return calls
 }
 
 func TestPaginatedResponseCalculatesTotalPages(t *testing.T) {
@@ -395,13 +601,13 @@ func TestDefaultIPBlockListOverridesAdminPrivateNetworkAccess(t *testing.T) {
 		}},
 	}
 
-	policy := h.egressPolicyForUser(model.User{Role: authz.PlatformRoleAdmin})
+	policy := h.egressPolicyForUser(model.User{Role: authz.PlatformRoleAdmin}, context.Background())
 	if _, err := policy.ValidateURL("http://127.0.0.1:8080"); !errors.Is(err, security.ErrBlockedByPolicy) {
 		t.Fatalf("expected default explicit block list to block loopback even for admin policy, got %v", err)
 	}
 
 	h.configs.values["security.egress.ipBlockList"] = ""
-	policy = h.egressPolicyForUser(model.User{Role: authz.PlatformRoleAdmin})
+	policy = h.egressPolicyForUser(model.User{Role: authz.PlatformRoleAdmin}, context.Background())
 	if _, err := policy.ValidateURL("http://127.0.0.1:8080"); err != nil {
 		t.Fatalf("expected edited empty block list to allow admin private network access, got %v", err)
 	}

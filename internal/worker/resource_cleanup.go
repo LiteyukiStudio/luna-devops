@@ -122,7 +122,7 @@ func (r *Runner) cleanupProjectNamespacesForDeploymentTargets(ctx context.Contex
 			continue
 		}
 		seen[key] = true
-		manager, err := r.kubernetesManager(environment)
+		manager, err := r.kubernetesManager(ctx, environment)
 		if err != nil {
 			return err
 		}
@@ -251,7 +251,7 @@ func (r *Runner) cleanupDeploymentTargetRuntimeResources(ctx context.Context, ta
 		return fmt.Errorf("project not found: %w", err)
 	}
 	environment := deploymentTargetEnvironment(target)
-	manager, err := r.kubernetesManager(environment)
+	manager, err := r.kubernetesManager(ctx, environment)
 	if err != nil {
 		return err
 	}
@@ -300,7 +300,7 @@ func (r *Runner) cleanupGatewayRuntimeResources(ctx context.Context, route model
 		return fmt.Errorf("deployment target not found: %w", err)
 	}
 	environment := deploymentTargetEnvironment(target)
-	manager, err := r.kubernetesManager(environment)
+	manager, err := r.kubernetesManager(ctx, environment)
 	if err != nil {
 		return err
 	}

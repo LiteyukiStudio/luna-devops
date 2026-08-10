@@ -1,5 +1,6 @@
 import type { GitAccount, GitBranch, GitContentItem, GitFileContent, GitProvider, GitRepository, GitRepositoryBuildOptions, PaginatedResponse, PaginationParams } from '../types'
-import { optionalProjectQuery, paginationWithProjectQuery, request } from '../core'
+import { paginationWithProjectQuery, request } from '../core'
+import { selectionItems, selectionPageParams } from '../selection-page'
 
 type GitAccountPayload = Omit<GitAccount, 'id' | 'userId' | 'scopes' | 'createdAt' | 'accessTokenSet' | 'refreshTokenSet' | 'status' | 'observationCode' | 'observedAt'> & {
   scope?: GitAccount['scope']
@@ -11,7 +12,7 @@ type GitAccountPayload = Omit<GitAccount, 'id' | 'userId' | 'scopes' | 'createdA
 
 export const gitApi = {
   listGitProviders: (projectId?: string) =>
-    request<GitProvider[]>(`/git/providers${optionalProjectQuery(projectId)}`),
+    request<PaginatedResponse<GitProvider>>(`/git/providers?${paginationWithProjectQuery({ ...selectionPageParams, projectId })}`).then(selectionItems),
   listGitProvidersPage: (params: PaginationParams & { projectId?: string }) =>
     request<PaginatedResponse<GitProvider>>(`/git/providers?${paginationWithProjectQuery(params)}`),
   createGitProvider: (payload: Omit<GitProvider, 'id' | 'createdAt' | 'clientSecretSet'> & { scope?: GitProvider['scope'], ownerRef?: string, clientSecret?: string }) =>
@@ -21,7 +22,7 @@ export const gitApi = {
   deleteGitProvider: (providerId: string) =>
     request<void>(`/git/providers/${providerId}`, { method: 'DELETE' }),
   listGitAccounts: (projectId?: string) =>
-    request<GitAccount[]>(`/git/accounts${optionalProjectQuery(projectId)}`),
+    request<PaginatedResponse<GitAccount>>(`/git/accounts?${paginationWithProjectQuery({ ...selectionPageParams, projectId })}`).then(selectionItems),
   listGitAccountsPage: (params: PaginationParams & { projectId?: string }) =>
     request<PaginatedResponse<GitAccount>>(`/git/accounts?${paginationWithProjectQuery(params)}`),
   createGitAccount: (payload: GitAccountPayload) =>
@@ -40,7 +41,7 @@ export const gitApi = {
       search.set('includePublic', 'true')
     if (params.providerId)
       search.set('providerId', params.providerId)
-    return request<{ items: GitRepository[], page: number, pageSize: number }>(`/git/accounts/${accountId}/repositories?${search.toString()}`)
+    return request<PaginatedResponse<GitRepository>>(`/git/accounts/${accountId}/repositories?${search.toString()}`)
   },
   listGitBranches: (accountId: string, owner: string, repo: string, params?: { search?: string, limit?: number }) => {
     const search = new URLSearchParams()

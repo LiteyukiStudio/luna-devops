@@ -58,11 +58,11 @@ func (r *Runner) refreshGitAccount(ctx context.Context, account model.GitAccount
 	if err := r.db.First(&provider, "id = ? and enabled = ?", account.ProviderID, true).Error; err != nil {
 		return err
 	}
-	refreshToken := r.secrets.Resolve(account.RefreshTokenRef)
+	refreshToken := r.secrets.ResolveContext(ctx, account.RefreshTokenRef)
 	if strings.TrimSpace(refreshToken) == "" {
 		return r.auditGitAccountRefresh(account, false, "git account has no refresh token")
 	}
-	oauthConfig, err := gitprovider.OAuthConfig(provider, "", r.secrets.Resolve(provider.ClientSecretRef))
+	oauthConfig, err := gitprovider.OAuthConfig(provider, "", r.secrets.ResolveContext(ctx, provider.ClientSecretRef))
 	if err != nil {
 		return r.auditGitAccountRefresh(account, false, "git OAuth provider configuration is invalid")
 	}
@@ -75,9 +75,9 @@ func (r *Runner) refreshGitAccount(ctx context.Context, account model.GitAccount
 	if err != nil {
 		return r.auditGitAccountRefresh(account, false, "git token refresh failed")
 	}
-	account.AccessTokenRef = r.secrets.Store(token.AccessToken, account.UserID, "git_account:"+account.ID+":access")
+	account.AccessTokenRef = r.secrets.StoreContext(ctx, token.AccessToken, account.UserID, "git_account:"+account.ID+":access")
 	if token.RefreshToken != "" {
-		account.RefreshTokenRef = r.secrets.Store(token.RefreshToken, account.UserID, "git_account:"+account.ID+":refresh")
+		account.RefreshTokenRef = r.secrets.StoreContext(ctx, token.RefreshToken, account.UserID, "git_account:"+account.ID+":refresh")
 	}
 	if !token.Expiry.IsZero() {
 		account.ExpiresAt = &token.Expiry

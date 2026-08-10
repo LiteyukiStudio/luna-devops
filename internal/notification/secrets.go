@@ -1,8 +1,11 @@
 package notification
 
-import "encoding/json"
+import (
+	"context"
+	"encoding/json"
+)
 
-func resolveSecretMap(raw json.RawMessage, resolver SecretResolver) map[string]string {
+func resolveSecretMap(ctx context.Context, raw json.RawMessage, resolver SecretResolver) map[string]string {
 	refs := map[string]string{}
 	if len(raw) > 0 {
 		_ = json.Unmarshal(raw, &refs)
@@ -13,7 +16,7 @@ func resolveSecretMap(raw json.RawMessage, resolver SecretResolver) map[string]s
 			resolved[key] = ""
 			continue
 		}
-		resolved[key] = resolver.Resolve(ref)
+		resolved[key] = resolver.ResolveContext(ctx, ref)
 	}
 	return resolved
 }

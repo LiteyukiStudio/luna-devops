@@ -3,7 +3,6 @@ package api
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -133,8 +132,7 @@ func (h *Handlers) TestAIProviderConnection(ctx *gin.Context) {
 	defer response.Body.Close()
 	h.auditWithContext(user.ID, "ai.provider.test", "ai.provider", response.StatusCode >= 200 && response.StatusCode < 300, "AI Provider connection tested through Agent", ctx.Request.Context())
 	ctx.Header("Cache-Control", "no-store")
-	ctx.Status(response.StatusCode)
-	_, _ = io.Copy(ctx.Writer, response.Body)
+	h.copyAIResponse(ctx, response, http.StatusOK, "ai.provider_unavailable")
 }
 
 func aiProviderConfigVersion(values map[string]string, secretVersion string) string {

@@ -28,31 +28,22 @@ func (h *Handlers) ListBuildVariableSets(ctx *gin.Context) {
 	query = applySearch(ctx, query, "name")
 
 	var sets []model.BuildVariableSet
-	if paginationRequested(ctx) {
-		pagination := paginationFromQuery(ctx)
-		var total int64
-		if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
-			writeError(ctx, http.StatusInternalServerError, err.Error())
-			return
-		}
-		if err := query.Order(orderByClause(pagination, map[string]string{
-			"name":      "name",
-			"scope":     "scope",
-			"createdAt": "created_at",
-		}, "created_at")).Limit(pagination.PageSize).Offset(pagination.Offset()).Find(&sets).Error; err != nil {
-			writeError(ctx, http.StatusInternalServerError, err.Error())
-			return
-		}
-		h.attachBuildVariableSetProjects(sets, ctx.Request.Context())
-		ctx.JSON(http.StatusOK, paginatedResponse(h.buildVariableSetResponsesForUser(user, sets, ctx.Request.Context()), total, pagination))
+	pagination := paginationFromQueryWithSort(ctx, map[string]string{"name": "name", "scope": "scope", "createdAt": "created_at"}, "createdAt")
+	var total int64
+	if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if err := query.Order("created_at desc").Find(&sets).Error; err != nil {
+	if err := query.Order(orderByClause(pagination, map[string]string{
+		"name":      "name",
+		"scope":     "scope",
+		"createdAt": "created_at",
+	}, "created_at")).Limit(pagination.PageSize).Offset(pagination.Offset()).Find(&sets).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 	h.attachBuildVariableSetProjects(sets, ctx.Request.Context())
-	ctx.JSON(http.StatusOK, h.buildVariableSetResponsesForUser(user, sets, ctx.Request.Context()))
+	ctx.JSON(http.StatusOK, paginatedResponse(h.buildVariableSetResponsesForUser(user, sets, ctx.Request.Context()), total, pagination))
 }
 
 func (h *Handlers) CreateBuildVariableSet(ctx *gin.Context) {
@@ -199,8 +190,8 @@ func (h *Handlers) buildVariableSetFromInput(ctx *gin.Context, user model.User, 
 	}, true
 }
 
-func (h *Handlers) saveBuildVariableSet(set model.BuildVariableSet, contexts ...context.Context) error {
-	return h.dbWithContext(firstContext(contexts)).Transaction(func(tx *gorm.DB) error {
+func (h *Handlers) saveBuildVariableSet(set model.BuildVariableSet, ctx context.Context) error {
+	return h.dbWithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Save(&set).Error; err != nil {
 			return err
 		}
@@ -208,8 +199,8 @@ func (h *Handlers) saveBuildVariableSet(set model.BuildVariableSet, contexts ...
 	})
 }
 
-func (h *Handlers) attachBuildVariableSetProjects(sets []model.BuildVariableSet, contexts ...context.Context) {
-	projectMap := h.scopedResourceProjectIDMap(scopedResourceBuildVariableSet, buildVariableSetModelIDs(sets), firstContext(contexts))
+func (h *Handlers) attachBuildVariableSetProjects(sets []model.BuildVariableSet, ctx context.Context) {
+	projectMap := h.scopedResourceProjectIDMap(scopedResourceBuildVariableSet, buildVariableSetModelIDs(sets), ctx)
 	for index := range sets {
 		sets[index].ProjectIDs = projectMap[sets[index].ID]
 	}

@@ -9,6 +9,8 @@ const common = {
   back: '返回',
   close: '关闭',
   loading: '加载中...',
+  lazyLoadFailedTitle: '功能加载失败',
+  lazyLoadFailedDescription: '请刷新页面后重试，已保存的数据不会受到影响。',
   refresh: '刷新',
   retry: '重试',
   helpSuffix: '说明',

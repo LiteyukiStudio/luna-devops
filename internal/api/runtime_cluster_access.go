@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -97,13 +98,13 @@ func deploymentTargetNamespace(project model.Project, target model.DeploymentTar
 	return runtimeProjectNamespace(project)
 }
 
-func (h *Handlers) runtimeClusterResponseForUser(user model.User, cluster model.RuntimeCluster) model.RuntimeCluster {
-	cluster.ProjectIDs = h.scopedResourceProjectIDs(scopedResourceRuntimeCluster, cluster.ID)
+func (h *Handlers) runtimeClusterResponseForUser(user model.User, cluster model.RuntimeCluster, ctx context.Context) model.RuntimeCluster {
+	cluster.ProjectIDs = h.scopedResourceProjectIDs(scopedResourceRuntimeCluster, cluster.ID, ctx)
 	cluster.GatewayDomainSuffixes = decodeGatewayDomainSuffixes(cluster.GatewayDomainSuffixesRaw, cluster.GatewayRootDomain, h.legacyGatewayRootDomain())
 	cluster.GatewayRootDomain = cluster.GatewayDomainSuffixes[0]
 	cluster.KubeconfigSet = cluster.KubeconfigRef != ""
 	cluster.Kubeconfig = ""
-	if !h.canInspectScopedResourceConfigByID(user, cluster.Scope, cluster.OwnerRef, scopedResourceRuntimeCluster, cluster.ID) {
+	if !h.canInspectScopedResourceConfigByID(user, cluster.Scope, cluster.OwnerRef, scopedResourceRuntimeCluster, cluster.ID, ctx) {
 		cluster.Endpoint = ""
 	}
 	return cluster

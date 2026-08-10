@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,11 +17,11 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
-func (r *Runner) kubernetesManager(environment model.Environment) (kubeprovider.NamespaceManager, error) {
+func (r *Runner) kubernetesManager(ctx context.Context, environment model.Environment) (kubeprovider.NamespaceManager, error) {
 	if r.kubernetesManagerFactory != nil {
 		return r.kubernetesManagerFactory(environment)
 	}
-	kubeconfig, err := r.kubeconfigForEnvironment(environment)
+	kubeconfig, err := r.kubeconfigForEnvironment(ctx, environment)
 	if err != nil {
 		return nil, err
 	}
@@ -53,32 +54,33 @@ func deploymentTargetEnvironment(target model.DeploymentTarget) model.Environmen
 	}
 }
 
-func (r *Runner) kubeconfigForEnvironment(environment model.Environment) (string, error) {
-	cluster, err := r.runtimeClusterForEnvironment(environment)
+func (r *Runner) kubeconfigForEnvironment(ctx context.Context, environment model.Environment) (string, error) {
+	cluster, err := r.runtimeClusterForEnvironment(ctx, environment)
 	if err != nil {
 		return "", err
 	}
 
-	kubeconfig := r.secrets.Resolve(cluster.KubeconfigRef)
+	kubeconfig := r.secrets.ResolveContext(ctx, cluster.KubeconfigRef)
 	if strings.TrimSpace(kubeconfig) == "" {
 		return "", errors.New("runtime cluster kubeconfig is missing")
 	}
 	return kubeconfig, nil
 }
 
-func (r *Runner) runtimeClusterForEnvironment(environment model.Environment) (model.RuntimeCluster, error) {
+func (r *Runner) runtimeClusterForEnvironment(ctx context.Context, environment model.Environment) (model.RuntimeCluster, error) {
 	var cluster model.RuntimeCluster
+	db := r.db.WithContext(ctx)
 	if clusterID := strings.TrimSpace(environment.ClusterID); clusterID != "" {
 		query, args := environmentClusterLookup(clusterID)
-		err := r.db.First(&cluster, append([]any{query}, args...)...).Error
+		err := db.First(&cluster, append([]any{query}, args...)...).Error
 		if err != nil {
 			return cluster, fmt.Errorf("runtime cluster %s not found: %w", clusterID, err)
 		}
 		return cluster, nil
 	}
-	err := r.db.Where("scope = ? and is_default = ? and type in ?", "global", true, []string{"kubernetes", "k3s"}).First(&cluster).Error
+	err := db.Where("scope = ? and is_default = ? and type in ?", "global", true, []string{"kubernetes", "k3s"}).First(&cluster).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		err = r.db.Where("scope = ? and type in ?", "global", []string{"kubernetes", "k3s"}).Order("created_at asc").First(&cluster).Error
+		err = db.Where("scope = ? and type in ?", "global", []string{"kubernetes", "k3s"}).Order("created_at asc").First(&cluster).Error
 	}
 	if err != nil {
 		return cluster, fmt.Errorf("runtime cluster not found: %w", err)

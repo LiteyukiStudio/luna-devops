@@ -23,7 +23,10 @@ func (h *Handlers) ListBuildRuns(ctx *gin.Context) {
 	if _, ok := h.findProjectForCurrentUser(ctx); !ok {
 		return
 	}
-	pagination := paginationFromQuery(ctx)
+	pagination := paginationFromQueryWithSort(ctx, map[string]string{
+		"createdAt": "created_at", "status": "status", "sourceCommit": "source_commit",
+		"sourceBranch": "source_branch", "triggerType": "trigger_type", "createdBy": "created_by",
+	}, "createdAt")
 	query := h.dbFor(ctx).Where("project_id = ?", ctx.Param("projectId"))
 	if applicationID := strings.TrimSpace(ctx.Query("applicationId")); applicationID != "" {
 		query = query.Where("application_id = ?", applicationID)
@@ -45,32 +48,27 @@ func (h *Handlers) ListBuildRuns(ctx *gin.Context) {
 	}
 	query = applySearch(ctx, query, "id", "status", "trigger_type", "source_branch", "source_tag", "source_commit", "target_repository", "image_ref", "created_by")
 	var runs []model.BuildRun
-	if ctx.Query("page") == "" && ctx.Query("pageSize") == "" {
-		if err := query.Order("created_at desc").Find(&runs).Error; err != nil {
-			writeError(ctx, http.StatusInternalServerError, err.Error())
-			return
-		}
-		ctx.JSON(http.StatusOK, runs)
-		return
-	}
 	var total int64
 	if err := query.Model(&model.BuildRun{}).Count(&total).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	orderBy := orderByClause(pagination, map[string]string{
+	if err := buildRunPageQuery(query, pagination).Find(&runs).Error; err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
+		return
+	}
+	ctx.JSON(http.StatusOK, paginatedResponse(runs, total, pagination))
+}
+
+func buildRunPageQuery(query *gorm.DB, pagination paginationParams) *gorm.DB {
+	return query.Order(orderByClause(pagination, map[string]string{
 		"createdAt":    "created_at",
 		"status":       "status",
 		"sourceCommit": "source_commit",
 		"sourceBranch": "source_branch",
 		"triggerType":  "trigger_type",
 		"createdBy":    "created_by",
-	}, "created_at")
-	if err := query.Order(orderBy).Limit(pagination.PageSize).Offset(pagination.Offset()).Find(&runs).Error; err != nil {
-		writeError(ctx, http.StatusInternalServerError, err.Error())
-		return
-	}
-	ctx.JSON(http.StatusOK, paginatedResponse(runs, total, pagination))
+	}, "created_at")).Limit(pagination.PageSize).Offset(pagination.Offset())
 }
 
 func (h *Handlers) GetBuildRun(ctx *gin.Context) {
@@ -335,14 +333,14 @@ func (h *Handlers) queueBuildRun(ctx context.Context, user model.User, run model
 	return run, nil
 }
 
-func (h *Handlers) markBuildRunDispatchFailed(run model.BuildRun, job model.BuildJob, message string, contexts ...context.Context) {
+func (h *Handlers) markBuildRunDispatchFailed(run model.BuildRun, job model.BuildJob, message string, ctx context.Context) {
 	finishedAt := time.Now()
-	_ = h.dbWithContext(firstContext(contexts)).Model(&model.BuildJob{}).Where("id = ? and project_id = ?", job.ID, job.ProjectID).Updates(map[string]any{
+	_ = h.dbWithContext(ctx).Model(&model.BuildJob{}).Where("id = ? and project_id = ?", job.ID, job.ProjectID).Updates(map[string]any{
 		"status":      "failed",
 		"message":     message,
 		"finished_at": &finishedAt,
 	}).Error
-	_ = h.dbWithContext(firstContext(contexts)).Model(&model.BuildRun{}).Where("id = ? and project_id = ?", run.ID, run.ProjectID).Updates(map[string]any{
+	_ = h.dbWithContext(ctx).Model(&model.BuildRun{}).Where("id = ? and project_id = ?", run.ID, run.ProjectID).Updates(map[string]any{
 		"status":      "failed",
 		"finished_at": &finishedAt,
 	}).Error

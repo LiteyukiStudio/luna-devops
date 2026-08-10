@@ -4,9 +4,8 @@ import { Sparkles } from 'lucide-react'
 import { useRef } from 'react'
 import { Rnd } from 'react-rnd'
 import { Button } from '@/components/ui/button'
+import { aiAssistantLauncherClassName } from './launcher-appearance'
 import { clampAssistantPosition, LAUNCHER_SIZE } from './layout'
-
-const aiAssistantLauncherClassName = 'size-14 touch-none rounded-full border border-[color:var(--ai-assistant-launcher-border)] text-[color:var(--ai-assistant-launcher-foreground)] [background:var(--ai-assistant-launcher-background)] [box-shadow:var(--ai-assistant-launcher-shadow)] hover:[box-shadow:var(--ai-assistant-launcher-shadow-hover)]'
 
 interface LauncherTouchPoint {
   x: number

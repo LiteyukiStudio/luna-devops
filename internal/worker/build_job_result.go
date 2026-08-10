@@ -199,7 +199,7 @@ func (r *Runner) completeBuildJob(ctx context.Context, job model.BuildJob, run m
 		return nil
 	})
 	if err == nil && completedRun.ID != "" {
-		r.recordBuildRunMetrics(completedRun)
+		r.recordBuildRunMetrics(ctx, completedRun)
 	}
 	return completedRun, err
 }
@@ -224,7 +224,7 @@ func (r *Runner) failBuildJob(ctx context.Context, job model.BuildJob, run model
 	if err == nil {
 		run.Status = "failed"
 		run.FinishedAt = &finishedAt
-		r.recordBuildRunMetrics(run)
+		r.recordBuildRunMetrics(ctx, run)
 		r.emitBuildFailed(ctx, run, message)
 	}
 	return err

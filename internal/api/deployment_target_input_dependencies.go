@@ -99,7 +99,7 @@ func (h *Handlers) applyRegistryCredentialImageTemplate(ctx *gin.Context, user m
 		writeError(ctx, http.StatusBadRequest, "目标镜像站不存在")
 		return repository, tag, false
 	}
-	credential, ok := h.registryPushCredentialForProject(user, registry, app.ProjectID, ctx.Request.Context(), ctx.Request.Context())
+	credential, ok := h.registryPushCredentialForProject(user, registry, app.ProjectID, ctx.Request.Context())
 	if !ok {
 		return repository, tag, true
 	}

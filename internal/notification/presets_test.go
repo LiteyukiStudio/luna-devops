@@ -102,7 +102,7 @@ func presetSecretValues(fields []string) map[string]string {
 	values := map[string]string{}
 	_, resolver := presetSecretFixtures(fields)
 	for _, field := range fields {
-		values[field] = resolver.Resolve(field + "-ref")
+		values[field] = resolver.ResolveContext(context.Background(), field+"-ref")
 	}
 	return values
 }

@@ -25,6 +25,7 @@
 - [09-项目空间服务依赖与拓扑方案.md](09-项目空间服务依赖与拓扑方案.md)
 - [10-前端视觉与体验方案.md](10-前端视觉与体验方案.md) — 视觉体系整改与体验/表单优化
 - [11-AI助手与Agent规格.md](11-AI助手与Agent规格.md) — AI 助手分阶段实施规格与 Agent 运行时/Skill 审计
+- [16-application-deployments-panel重构方案.md](16-application-deployments-panel重构方案.md) — 应用部署面板的局部、行为保持型后续拆分方案
 - [场景测试.md](场景测试.md) — 用户场景模拟路径与测试问题记录
 - [cli-spec.md](cli-spec.md) — CLI 已拆分独立仓库的迁移入口
 - [exports/](exports/) — 架构图等导出产物

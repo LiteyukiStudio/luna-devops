@@ -40,33 +40,26 @@ func (h *Handlers) ListProjects(ctx *gin.Context) {
 	}
 	baseQuery = applySearch(ctx, baseQuery, "projects.name", "projects.identifier")
 
-	if ctx.Query("page") != "" || ctx.Query("pageSize") != "" {
-		pagination := paginationFromQuery(ctx)
-		query := baseQuery.Session(&gorm.Session{})
-		var total int64
-		if err := query.Count(&total).Error; err != nil {
-			writeError(ctx, http.StatusInternalServerError, err.Error())
-			return
-		}
-
-		var projects []model.Project
-		if err := baseQuery.Session(&gorm.Session{}).Order(projectListOrderClause(pagination.SortBy, pagination.SortOrder)).Limit(pagination.PageSize).Offset(pagination.Offset()).Find(&projects).Error; err != nil {
-			writeError(ctx, http.StatusInternalServerError, err.Error())
-			return
-		}
-		ctx.JSON(http.StatusOK, paginatedResponse(projects, total, pagination))
+	pagination := paginationFromQueryWithSort(ctx, map[string]string{
+		"createdAt": "projects.updated_at", "name": "projects.name", "identifier": "projects.identifier",
+	}, "createdAt")
+	query := baseQuery.Session(&gorm.Session{})
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	var projects []model.Project
-	err := baseQuery.
-		Order("coalesce(project_members.last_used_at, projects.created_at) desc, projects.created_at desc").
-		Find(&projects).Error
-	if err != nil {
+	if err := projectPageQuery(baseQuery.Session(&gorm.Session{}), pagination).Find(&projects).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	ctx.JSON(http.StatusOK, projects)
+	ctx.JSON(http.StatusOK, paginatedResponse(projects, total, pagination))
+}
+
+func projectPageQuery(query *gorm.DB, pagination paginationParams) *gorm.DB {
+	return query.Order(projectListOrderClause(pagination.SortBy, pagination.SortOrder)).Limit(pagination.PageSize).Offset(pagination.Offset())
 }
 
 func (h *Handlers) CreateProject(ctx *gin.Context) {
@@ -196,19 +189,36 @@ func (h *Handlers) ListProjectPins(ctx *gin.Context) {
 		return
 	}
 
-	var rows []projectPinResponse
-	err := h.dbFor(ctx).Table("project_pins").
-		Select("projects.id, projects.identifier, projects.kubernetes_namespace, projects.name, projects.description, projects.namespace_strategy, projects.created_at, project_members.dashboard_order, project_members.last_used_at, project_members.use_count, project_pins.pinned_at").
+	pagination := paginationFromQueryWithSort(ctx, map[string]string{
+		"pinnedAt": "project_pins.pinned_at", "lastUsedAt": "project_members.last_used_at",
+		"name": "projects.name", "useCount": "project_members.use_count",
+	}, "pinnedAt")
+	query := h.dbFor(ctx).Table("project_pins").
 		Joins("join projects on projects.id = project_pins.project_id and projects.deleted_at is null").
 		Joins("join project_members on project_members.project_id = projects.id and project_members.user_id = project_pins.user_id").
-		Where("project_pins.user_id = ?", user.ID).
-		Order("project_members.use_count desc, coalesce(project_members.last_used_at, projects.created_at) desc, project_pins.pinned_at desc").
+		Where("project_pins.user_id = ?", user.ID)
+	var total int64
+	if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
+		return
+	}
+	var rows []projectPinResponse
+	err := query.
+		Select("projects.id, projects.identifier, projects.kubernetes_namespace, projects.name, projects.description, projects.namespace_strategy, projects.created_at, project_members.dashboard_order, project_members.last_used_at, project_members.use_count, project_pins.pinned_at").
+		Order(orderByClause(pagination, map[string]string{
+			"pinnedAt":   "project_pins.pinned_at",
+			"lastUsedAt": "project_members.last_used_at",
+			"name":       "projects.name",
+			"useCount":   "project_members.use_count",
+		}, "project_pins.pinned_at")).
+		Limit(pagination.PageSize).
+		Offset(pagination.Offset()).
 		Scan(&rows).Error
 	if err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	ctx.JSON(http.StatusOK, rows)
+	ctx.JSON(http.StatusOK, paginatedResponse(rows, total, pagination))
 }
 
 func (h *Handlers) PinProject(ctx *gin.Context) {
@@ -316,30 +326,24 @@ func (h *Handlers) ListProjectMembers(ctx *gin.Context) {
 		Joins("join users on users.id = project_members.user_id").
 		Where("project_members.project_id = ?", ctx.Param("projectId"))
 	query = applySearch(ctx, query, "users.email", "users.name", "project_members.role")
-	if paginationRequested(ctx) {
-		pagination := paginationFromQuery(ctx)
-		var total int64
-		if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
-			writeError(ctx, http.StatusInternalServerError, err.Error())
-			return
-		}
-		if err := query.Order(orderByClause(pagination, map[string]string{
-			"email":     "users.email",
-			"name":      "users.name",
-			"role":      "project_members.role",
-			"createdAt": "project_members.created_at",
-		}, "project_members.created_at")).Limit(pagination.PageSize).Offset(pagination.Offset()).Scan(&members).Error; err != nil {
-			writeError(ctx, http.StatusInternalServerError, err.Error())
-			return
-		}
-		ctx.JSON(http.StatusOK, paginatedResponse(members, total, pagination))
-		return
-	}
-	if err := query.Order("project_members.created_at asc").Scan(&members).Error; err != nil {
+	pagination := paginationFromQueryWithSort(ctx, map[string]string{
+		"email": "users.email", "name": "users.name", "role": "project_members.role", "createdAt": "project_members.created_at",
+	}, "createdAt")
+	var total int64
+	if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	ctx.JSON(http.StatusOK, members)
+	if err := query.Order(orderByClause(pagination, map[string]string{
+		"email":     "users.email",
+		"name":      "users.name",
+		"role":      "project_members.role",
+		"createdAt": "project_members.created_at",
+	}, "project_members.created_at")).Limit(pagination.PageSize).Offset(pagination.Offset()).Scan(&members).Error; err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
+		return
+	}
+	ctx.JSON(http.StatusOK, paginatedResponse(members, total, pagination))
 }
 
 func (h *Handlers) SearchProjectMemberCandidates(ctx *gin.Context) {
@@ -672,14 +676,14 @@ type projectBillingOwnerResponse struct {
 	AvatarURL string `json:"avatarUrl"`
 }
 
-func (h *Handlers) projectResponse(project model.Project, contexts ...context.Context) projectResponse {
+func (h *Handlers) projectResponse(project model.Project, ctx context.Context) projectResponse {
 	response := projectResponse{Project: project}
 	if strings.TrimSpace(project.BillingOwnerUserID) == "" {
 		return response
 	}
 
 	var user model.User
-	if err := h.dbWithContext(firstContext(contexts)).Select("id", "email", "name", "avatar_url").First(&user, "id = ?", project.BillingOwnerUserID).Error; err != nil {
+	if err := h.dbWithContext(ctx).Select("id", "email", "name", "avatar_url").First(&user, "id = ?", project.BillingOwnerUserID).Error; err != nil {
 		return response
 	}
 	response.BillingOwner = &projectBillingOwnerResponse{
@@ -735,9 +739,9 @@ func projectListScope(scope string) string {
 	return "related"
 }
 
-func (h *Handlers) recordProjectUsage(userID string, projectID string, contexts ...context.Context) {
+func (h *Handlers) recordProjectUsage(userID string, projectID string, ctx context.Context) {
 	now := time.Now()
-	_ = h.dbWithContext(firstContext(contexts)).Model(&model.ProjectMember{}).
+	_ = h.dbWithContext(ctx).Model(&model.ProjectMember{}).
 		Where("user_id = ? and project_id = ?", userID, projectID).
 		Updates(map[string]any{
 			"last_used_at": now,
@@ -745,9 +749,9 @@ func (h *Handlers) recordProjectUsage(userID string, projectID string, contexts 
 		}).Error
 }
 
-func (h *Handlers) projectDashboardOrder(userID string, projectID string, contexts ...context.Context) int {
+func (h *Handlers) projectDashboardOrder(userID string, projectID string, ctx context.Context) int {
 	var member model.ProjectMember
-	if err := h.dbWithContext(firstContext(contexts)).Select("dashboard_order").First(&member, "user_id = ? and project_id = ?", userID, projectID).Error; err != nil {
+	if err := h.dbWithContext(ctx).Select("dashboard_order").First(&member, "user_id = ? and project_id = ?", userID, projectID).Error; err != nil {
 		return 0
 	}
 	return member.DashboardOrder

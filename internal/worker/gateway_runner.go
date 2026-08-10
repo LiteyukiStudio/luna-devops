@@ -28,7 +28,7 @@ func (r *Runner) handleGatewayApply(ctx context.Context, task *asynq.Task) (err 
 				r.emitGatewayApplyFailed(ctx, route, err.Error())
 			}
 		}
-		r.recordGatewaySyncMetric(operation, result, startedAt)
+		r.recordGatewaySyncMetric(ctx, operation, result, startedAt)
 	}()
 
 	var payload tasks.GatewayApplyPayload
@@ -95,7 +95,7 @@ func (r *Runner) handleGatewayApply(ctx context.Context, task *asynq.Task) (err 
 	certificateConfigured := certificate.configured
 	route.DNSStatus = r.gatewayDNSStatus(ctx, route)
 	if certificateConfigured {
-		cluster, clusterErr := r.runtimeClusterForEnvironment(environment)
+		cluster, clusterErr := r.runtimeClusterForEnvironment(ctx, environment)
 		if clusterErr != nil {
 			return clusterErr
 		}
@@ -114,7 +114,7 @@ func (r *Runner) handleGatewayApply(ctx context.Context, task *asynq.Task) (err 
 }
 
 func (r *Runner) ensureProjectNamespace(ctx context.Context, namespace string, project model.Project, environment model.Environment) error {
-	manager, err := r.kubernetesManager(environment)
+	manager, err := r.kubernetesManager(ctx, environment)
 	if err != nil {
 		return err
 	}
@@ -128,11 +128,11 @@ func (r *Runner) ensureProjectNamespace(ctx context.Context, namespace string, p
 }
 
 func (r *Runner) applyGatewayAPIResources(ctx context.Context, route model.GatewayRoute, project model.Project, application model.Application, environment model.Environment, namespace string) error {
-	manager, err := r.kubernetesManager(environment)
+	manager, err := r.kubernetesManager(ctx, environment)
 	if err != nil {
 		return err
 	}
-	cluster, err := r.runtimeClusterForEnvironment(environment)
+	cluster, err := r.runtimeClusterForEnvironment(ctx, environment)
 	if err != nil {
 		return err
 	}
@@ -285,11 +285,11 @@ func (r *Runner) gatewayCertificateSnapshot(ctx context.Context, route model.Gat
 	if strings.TrimSpace(route.TLSMode) != "http-challenge" {
 		return kubeprovider.CertificateSnapshot{}, false, nil
 	}
-	manager, err := r.kubernetesManager(environment)
+	manager, err := r.kubernetesManager(ctx, environment)
 	if err != nil {
 		return kubeprovider.CertificateSnapshot{}, true, err
 	}
-	cluster, err := r.runtimeClusterForEnvironment(environment)
+	cluster, err := r.runtimeClusterForEnvironment(ctx, environment)
 	if err != nil {
 		return kubeprovider.CertificateSnapshot{}, true, err
 	}

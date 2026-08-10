@@ -35,6 +35,27 @@ func TestMFARequiredResponseKeepsPurposeInProduction(t *testing.T) {
 	if body["error"] == "" {
 		t.Fatalf("expected a stable user-facing error: %#v", body)
 	}
+	if !strings.HasPrefix(body["requestId"], "req_") {
+		t.Fatalf("expected a request ID: %#v", body)
+	}
+}
+
+func TestMFARequiredResponseUsesRequestedLanguage(t *testing.T) {
+	t.Setenv("APP_ENV", "production")
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/sensitive-action", nil)
+	ctx.Request.Header.Set("Accept-Language", "en-US")
+
+	writeMFARequired(ctx, stepUpPurposeRuntimeTerminal)
+
+	var body map[string]string
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["error"] != "Additional verification is required for this sensitive action." {
+		t.Fatalf("unexpected localized error: %#v", body)
+	}
 }
 
 func TestGenerateTOTPEnrollmentAndValidateWithOneStepSkew(t *testing.T) {

@@ -298,16 +298,16 @@ func (h *Handlers) gatewayRouteTargetContext(ctx *gin.Context, projectID string,
 	return target, application, deploymentTargetEnvironmentProfile(target), cluster, true
 }
 
-func (h *Handlers) runtimeClusterForGatewayRoute(route model.GatewayRoute, contexts ...context.Context) (model.RuntimeCluster, error) {
+func (h *Handlers) runtimeClusterForGatewayRoute(route model.GatewayRoute, ctx context.Context) (model.RuntimeCluster, error) {
 	var target model.DeploymentTarget
-	if err := h.dbWithContext(firstContext(contexts)).First(&target, "id = ? and project_id = ?", route.DeploymentTargetID, route.ProjectID).Error; err != nil {
+	if err := h.dbWithContext(ctx).First(&target, "id = ? and project_id = ?", route.DeploymentTargetID, route.ProjectID).Error; err != nil {
 		return model.RuntimeCluster{}, err
 	}
-	return h.runtimeClusterForDeploymentTargetValue(target, firstContext(contexts))
+	return h.runtimeClusterForDeploymentTargetValue(target, ctx)
 }
 
-func (h *Handlers) runtimeClusterForDeploymentTargetValue(target model.DeploymentTarget, contexts ...context.Context) (model.RuntimeCluster, error) {
-	return runtimeClusterForDeploymentTargetDB(h.dbWithContext(firstContext(contexts)), target)
+func (h *Handlers) runtimeClusterForDeploymentTargetValue(target model.DeploymentTarget, ctx context.Context) (model.RuntimeCluster, error) {
+	return runtimeClusterForDeploymentTargetDB(h.dbWithContext(ctx), target)
 }
 
 func gatewayRouteInputEnabled(value *bool) bool {

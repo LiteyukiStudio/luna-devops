@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -20,6 +21,7 @@ import (
 )
 
 func TestPlatformAdminAccessTokenScopesAuthorizeDashboardAndDataRetention(t *testing.T) {
+	t.Setenv("APP_ENV", "development")
 	db := newAccessTokenScopeIntegrationDB(t)
 	suffix := randomHex(4)
 	user := model.User{
@@ -182,7 +184,7 @@ func newAccessTokenScopeIntegrationDB(t *testing.T) *gorm.DB {
 			_ = sqlDB.Close()
 		}
 	})
-	if err := database.Migrate(db); err != nil {
+	if err := database.MigrateContext(context.Background(), db); err != nil {
 		t.Fatalf("migrate integration schema: %v", err)
 	}
 	return db

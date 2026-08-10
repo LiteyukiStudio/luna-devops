@@ -53,7 +53,7 @@ func (r *Runner) handleBuildRun(ctx context.Context, task *asynq.Task) error {
 		return err
 	}
 	environment := deploymentTargetEnvironment(target)
-	cluster, err := r.runtimeClusterForEnvironment(environment)
+	cluster, err := r.runtimeClusterForEnvironment(ctx, environment)
 	if err != nil {
 		_ = r.failBuildJob(ctx, job, run, err.Error())
 		return err
@@ -79,14 +79,14 @@ func (r *Runner) handleBuildRun(ctx context.Context, task *asynq.Task) error {
 		_ = r.failBuildJob(ctx, job, run, "namespace prepare failed: "+err.Error())
 		return err
 	}
-	client, err := r.kubernetesClient(environment)
+	client, err := r.kubernetesClient(ctx, environment)
 	if err != nil {
 		_ = r.failBuildJob(ctx, job, run, err.Error())
 		return err
 	}
 
-	resolved, err := workerStageValue(ctx, "build.resolve_task", func(context.Context) (buildruntime.ResolvedTask, error) {
-		return (buildruntime.Resolver{DB: r.db, Secrets: r.secrets}).ResolveBuildTask(r.db, run, job)
+	resolved, err := workerStageValue(ctx, "build.resolve_task", func(stageCtx context.Context) (buildruntime.ResolvedTask, error) {
+		return (buildruntime.Resolver{DB: r.db, Secrets: r.secrets}).ResolveBuildTask(stageCtx, r.db.WithContext(stageCtx), run, job)
 	})
 	if err != nil {
 		_ = r.failBuildJob(ctx, job, run, err.Error())
@@ -194,8 +194,8 @@ func buildJobCanStart(status string) bool {
 	return status == "queued"
 }
 
-func (r *Runner) kubernetesClient(environment model.Environment) (kubernetes.Interface, error) {
-	kubeconfig, err := r.kubeconfigForEnvironment(environment)
+func (r *Runner) kubernetesClient(ctx context.Context, environment model.Environment) (kubernetes.Interface, error) {
+	kubeconfig, err := r.kubeconfigForEnvironment(ctx, environment)
 	if err != nil {
 		return nil, err
 	}

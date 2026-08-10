@@ -1,5 +1,6 @@
 import type { AccessToken, AccessTokenScopeCatalog, GatewayDomainCheckResult, GatewayRoute, PaginatedResponse, PaginationParams } from '../types'
 import { paginationQuery, request } from '../core'
+import { selectionItems, selectionPageParams } from '../selection-page'
 
 type GatewayRoutePayload = Omit<GatewayRoute, 'id' | 'projectId' | 'createdBy' | 'createdAt' | 'certificateStatus' | 'certificateMessage' | 'certificateNotAfter' | 'certificateIssuerKind' | 'certificateIssuerName' | 'cnameName' | 'cnameTarget' | 'accessUrl' | 'routeSummary' | 'conditions' | 'deleteStatus' | 'deleteMessage' | 'deleteStartedAt' | 'deleteFinishedAt'>
 interface GatewayDomainCheckParams {
@@ -10,10 +11,18 @@ interface GatewayDomainCheckParams {
 }
 
 export const gatewayApi = {
-  listGatewayRoutes: (projectId: string) =>
-    request<GatewayRoute[]>(`/projects/${projectId}/gateway-routes`),
-  listGatewayRoutesPage: (projectId: string, params: PaginationParams) =>
-    request<PaginatedResponse<GatewayRoute>>(`/projects/${projectId}/gateway-routes?${paginationQuery(params)}`),
+  listGatewayRoutes: (projectId: string, applicationId?: string) => {
+    const search = new URLSearchParams(paginationQuery(selectionPageParams))
+    if (applicationId)
+      search.set('applicationId', applicationId)
+    return request<PaginatedResponse<GatewayRoute>>(`/projects/${projectId}/gateway-routes?${search.toString()}`).then(selectionItems)
+  },
+  listGatewayRoutesPage: (projectId: string, params: PaginationParams & { applicationId?: string }) => {
+    const search = new URLSearchParams(paginationQuery(params))
+    if (params.applicationId)
+      search.set('applicationId', params.applicationId)
+    return request<PaginatedResponse<GatewayRoute>>(`/projects/${projectId}/gateway-routes?${search.toString()}`)
+  },
   createGatewayRoute: (projectId: string, payload: GatewayRoutePayload) =>
     request<GatewayRoute>(`/projects/${projectId}/gateway-routes`, { method: 'POST', body: JSON.stringify(payload) }),
   updateGatewayRoute: (projectId: string, routeId: string, payload: GatewayRoutePayload) =>

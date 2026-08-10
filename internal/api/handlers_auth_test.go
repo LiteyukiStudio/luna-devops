@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http/httptest"
 	"strings"
@@ -268,7 +269,7 @@ func TestBuildVariableSetResponseHidesVariablesWithoutInspectPermission(t *testi
 		Variables: `{"PUBLIC_FLAG":"true","API_URL":"https://api.example.com"}`,
 	}
 
-	output := h.buildVariableSetResponseForUser(model.User{ID: "usr_member", Role: authz.PlatformRoleUser}, set)
+	output := h.buildVariableSetResponseForUser(model.User{ID: "usr_member", Role: authz.PlatformRoleUser}, set, context.Background())
 
 	if output.CanInspectVariables {
 		t.Fatal("expected regular user to be unable to inspect global build variables")
@@ -290,7 +291,7 @@ func TestBuildVariableSetResponseShowsVariablesWithInspectPermission(t *testing.
 		Variables: `{"PUBLIC_FLAG":"true"}`,
 	}
 
-	output := h.buildVariableSetResponseForUser(model.User{ID: "usr_owner", Role: authz.PlatformRoleUser}, set)
+	output := h.buildVariableSetResponseForUser(model.User{ID: "usr_owner", Role: authz.PlatformRoleUser}, set, context.Background())
 
 	if !output.CanInspectVariables {
 		t.Fatal("expected owner to inspect personal build variables")
@@ -326,16 +327,16 @@ func TestResolveSecretSupportsStoredAndEnvRefsOnly(t *testing.T) {
 	t.Setenv("OIDC_TEST_SECRET", "env-secret")
 	h := &Handlers{}
 
-	if secret := h.resolveSecret(secret.Encrypt("stored-secret")); secret != "stored-secret" {
+	if secret := h.resolveSecretContext(context.Background(), secret.Encrypt("stored-secret")); secret != "stored-secret" {
 		t.Fatalf("expected stored secret, got %q", secret)
 	}
-	if secret := h.resolveSecret("literal:literal-secret"); secret != "" {
+	if secret := h.resolveSecretContext(context.Background(), "literal:literal-secret"); secret != "" {
 		t.Fatalf("expected literal secret ref to be rejected, got %q", secret)
 	}
-	if secret := h.resolveSecret("plain-secret"); secret != "" {
+	if secret := h.resolveSecretContext(context.Background(), "plain-secret"); secret != "" {
 		t.Fatalf("expected bare secret ref to be rejected, got %q", secret)
 	}
-	if secret := h.resolveSecret("env:OIDC_TEST_SECRET"); secret != "env-secret" {
+	if secret := h.resolveSecretContext(context.Background(), "env:OIDC_TEST_SECRET"); secret != "env-secret" {
 		t.Fatalf("expected env secret, got %q", secret)
 	}
 }

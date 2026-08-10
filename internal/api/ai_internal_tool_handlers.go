@@ -148,12 +148,12 @@ func (h *Handlers) ExchangeAIDelegation(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"accessToken": token, "tokenType": "Bearer", "expiresIn": 60, "operationId": input.OperationID})
 }
 
-func (h *Handlers) validAIToolMFAAssertion(grant aiagent.RunActorGrant, assertionID, purpose string, now time.Time, contexts ...context.Context) bool {
-	if h.dbWithContext(firstContext(contexts)) == nil || strings.TrimSpace(assertionID) == "" {
+func (h *Handlers) validAIToolMFAAssertion(grant aiagent.RunActorGrant, assertionID, purpose string, now time.Time, ctx context.Context) bool {
+	if h.dbWithContext(ctx) == nil || strings.TrimSpace(assertionID) == "" {
 		return false
 	}
 	var assertion model.StepUpAssertion
-	return h.dbWithContext(firstContext(contexts)).First(
+	return h.dbWithContext(ctx).First(
 		&assertion,
 		"id = ? and user_id = ? and session_id = ? and purpose = ? and idle_expires_at > ? and absolute_expires_at > ?",
 		assertionID, grant.UserID, grant.SessionID, purpose, now, now,

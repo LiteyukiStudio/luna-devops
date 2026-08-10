@@ -1239,7 +1239,7 @@ paths:
       operationId: listRuntimeClusters
       tags: [Runtime]
       summary: List runtime clusters
-      description: Returns the legacy array response when pagination parameters are omitted, or a paginated response when `page`/`pageSize` is supplied.
+      description: Pagination is always applied; omitted parameters use page 1 and pageSize 20.
       parameters:
         - name: projectId
           in: query
@@ -1255,7 +1255,10 @@ paths:
         - $ref: "#/components/parameters/SortOrder"
       responses:
         "200":
-          description: Runtime cluster list or paginated runtime cluster list.
+          description: Paginated runtime cluster list.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedBusinessObjects" }
 
     post:
       operationId: createRuntimeCluster
@@ -1291,9 +1294,18 @@ paths:
           in: query
           schema:
             type: string
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: sortBy
+          in: query
+          schema: { type: string, enum: [createdAt, name, scope], default: createdAt }
+        - $ref: "#/components/parameters/SortOrder"
       responses:
         "200":
-          description: Git provider list.
+          description: Paginated Git provider list.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedBusinessObjects" }
     post:
       operationId: createGitProvider
       tags: [Git]
@@ -1399,9 +1411,18 @@ paths:
           in: query
           schema:
             type: string
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: sortBy
+          in: query
+          schema: { type: string, enum: [createdAt, username], default: createdAt }
+        - $ref: "#/components/parameters/SortOrder"
       responses:
         "200":
-          description: Git account list.
+          description: Paginated Git account list.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedBusinessObjects" }
     post:
       operationId: createGitAccount
       tags: [Git]
@@ -1462,13 +1483,22 @@ paths:
         - $ref: "#/components/parameters/AccountId"
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
+        - name: sortBy
+          in: query
+          schema: { type: string, enum: [updatedAt], default: updatedAt }
+        - name: sortOrder
+          in: query
+          schema: { type: string, enum: [desc], default: desc }
         - name: search
           in: query
           schema:
             type: string
       responses:
         "200":
-          description: Repository list.
+          description: Paginated repository list. For upstreams without an exact total, a full page reports a bounded lower bound that keeps the next page available.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedBusinessObjects" }
 
   /api/v1/git/accounts/{accountId}/repositories/{owner}/{repo}/branches:
     get:
@@ -1527,7 +1557,10 @@ paths:
         - $ref: "#/components/parameters/SortOrder"
       responses:
         "200":
-          description: Artifact registry list.
+          description: Paginated artifact registry list.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedBusinessObjects" }
     post:
       operationId: createArtifactRegistry
       tags: [Registries]
@@ -1597,7 +1630,10 @@ paths:
         - $ref: "#/components/parameters/SortOrder"
       responses:
         "200":
-          description: Registry credential list.
+          description: Paginated registry credential list.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedBusinessObjects" }
     post:
       operationId: createRegistryCredential
       tags: [Registries]
@@ -1632,6 +1668,9 @@ paths:
       responses:
         "200":
           description: Paginated registry credential list.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedBusinessObjects" }
 
   /api/v1/registries/{registryId}/credentials/{credentialId}:
     put:
@@ -1683,9 +1722,18 @@ paths:
           in: query
           schema:
             type: string
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: sortBy
+          in: query
+          schema: { type: string, enum: [createdAt, repository, tag, sourceType, scanStatus, sourceCommit], default: createdAt }
+        - $ref: "#/components/parameters/SortOrder"
       responses:
         "200":
-          description: Container image list.
+          description: Paginated container image list.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedBusinessObjects" }
     post:
       operationId: createContainerImage
       tags: [Registries]
@@ -1734,7 +1782,7 @@ paths:
       operationId: listProjects
       tags: [Projects]
       summary: List projects
-      description: Returns the legacy project array when pagination parameters are omitted. Returns a paginated object when page or pageSize is provided.
+      description: Pagination is always applied; omitted parameters use page 1 and pageSize 20.
       parameters:
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
@@ -1747,15 +1795,10 @@ paths:
         - $ref: "#/components/parameters/SortOrder"
       responses:
         "200":
-          description: Project list or paginated project list.
+          description: Paginated project list.
           content:
             application/json:
-              schema:
-                oneOf:
-                  - type: array
-                    items:
-                      $ref: "#/components/schemas/Project"
-                  - $ref: "#/components/schemas/PaginatedProjectList"
+              schema: { $ref: "#/components/schemas/PaginatedProjectList" }
     post:
       operationId: createProject
       tags: [Projects]
@@ -1777,9 +1820,19 @@ paths:
       operationId: listProjectPins
       tags: [Projects]
       summary: List current user's pinned projects
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: sortBy
+          in: query
+          schema: { type: string, enum: [pinnedAt, lastUsedAt, name, useCount], default: pinnedAt }
+        - $ref: "#/components/parameters/SortOrder"
       responses:
         "200":
-          description: Pinned project list.
+          description: Paginated pinned project list.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedBusinessObjects" }
 
   /api/v1/projects/{projectId}:
     get:
@@ -1856,9 +1909,18 @@ paths:
       summary: List project members
       parameters:
         - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: sortBy
+          in: query
+          schema: { type: string, enum: [createdAt, email, name, role], default: createdAt }
+        - $ref: "#/components/parameters/SortOrder"
       responses:
         "200":
-          description: Project member list.
+          description: Paginated project member list.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedBusinessObjects" }
     post:
       operationId: createProjectMember
       tags: [Projects]
@@ -1957,7 +2019,10 @@ paths:
         - $ref: "#/components/parameters/SortOrder"
       responses:
         "200":
-          description: Application list or paginated application list.
+          description: Paginated application list.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedBusinessObjects" }
     post:
       operationId: createApplication
       tags: [Applications]
@@ -2038,14 +2103,18 @@ paths:
       parameters:
         - $ref: "#/components/parameters/ProjectId"
         - $ref: "#/components/parameters/ApplicationId"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: sortBy
+          in: query
+          schema: { type: string, enum: [createdAt, name], default: createdAt }
+        - $ref: "#/components/parameters/SortOrder"
       responses:
         "200":
-          description: Deployment target list.
+          description: Paginated deployment target list.
           content:
             application/json:
-              schema:
-                type: array
-                items: { $ref: "#/components/schemas/DeploymentTarget" }
+              schema: { $ref: "#/components/schemas/PaginatedBusinessObjects" }
     post:
       operationId: createDeploymentTarget
       tags: [Deployments]
@@ -2294,9 +2363,21 @@ paths:
       summary: List repository bindings for a project
       parameters:
         - $ref: "#/components/parameters/ProjectId"
+        - name: applicationId
+          in: query
+          schema: { type: string }
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: sortBy
+          in: query
+          schema: { type: string, enum: [createdAt, owner, repo], default: createdAt }
+        - $ref: "#/components/parameters/SortOrder"
       responses:
         "200":
-          description: Repository binding list.
+          description: Paginated repository binding list.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedBusinessObjects" }
     post:
       operationId: createRepositoryBinding
       tags: [Git]
@@ -2904,13 +2985,19 @@ paths:
           required: false
           schema:
             type: string
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: sortBy
+          in: query
+          schema: { type: string, enum: [createdAt, name, scope], default: createdAt }
+        - $ref: "#/components/parameters/SortOrder"
       responses:
         "200":
           description: Successful business response.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/BusinessObjectList"
+                $ref: "#/components/schemas/PaginatedBusinessObjects"
         "400":
           $ref: "#/components/responses/BadRequest"
         "403":
@@ -3105,13 +3192,21 @@ paths:
           required: false
           schema:
             type: string
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 1, default: 1 }
+        - $ref: "#/components/parameters/PageSize"
+        - name: sortBy
+          in: query
+          schema: { type: string, enum: [kind, name, namespace, status, owner, summary, createdAt, updatedAt], default: updatedAt }
+        - $ref: "#/components/parameters/SortOrder"
       responses:
         "200":
-          description: Successful business response.
+          description: First bounded, globally sorted resource page. Kubernetes resource categories span independent cursors, so page values above 1 return `pagination.cursor_required`.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/BusinessObjectList"
+                $ref: "#/components/schemas/PaginatedBusinessObjects"
         "400":
           $ref: "#/components/responses/BadRequest"
         "403":
@@ -3220,13 +3315,21 @@ paths:
           required: true
           schema:
             type: string
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 1, default: 1 }
+        - $ref: "#/components/parameters/PageSize"
+        - name: sortBy
+          in: query
+          schema: { type: string, enum: [lastSeen], default: lastSeen }
+        - $ref: "#/components/parameters/SortOrder"
       responses:
         "200":
-          description: Successful business response.
+          description: First bounded event page sorted by `lastSeen`. Page values above 1 return `pagination.cursor_required` because Kubernetes continuation order cannot preserve this global sort.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/BusinessObject"
+                $ref: "#/components/schemas/PaginatedBusinessObjects"
         "400":
           $ref: "#/components/responses/BadRequest"
         "403":
@@ -4325,13 +4428,19 @@ paths:
           required: true
           schema:
             type: string
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: sortBy
+          in: query
+          schema: { type: string, enum: [createdAt, name], default: createdAt }
+        - $ref: "#/components/parameters/SortOrder"
       responses:
         "200":
           description: Successful business response.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/BusinessObjectList"
+                $ref: "#/components/schemas/PaginatedBusinessObjects"
         "400":
           $ref: "#/components/responses/BadRequest"
         "403":
@@ -4441,13 +4550,19 @@ paths:
           required: true
           schema:
             type: string
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: sortBy
+          in: query
+          schema: { type: string, enum: [createdAt, name, phase], default: createdAt }
+        - $ref: "#/components/parameters/SortOrder"
       responses:
         "200":
           description: Successful business response.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/BusinessObjectList"
+                $ref: "#/components/schemas/PaginatedBusinessObjects"
         "400":
           $ref: "#/components/responses/BadRequest"
         "403":
@@ -4878,13 +4993,19 @@ paths:
           required: false
           schema:
             type: string
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: sortBy
+          in: query
+          schema: { type: string, enum: [createdAt, phase, status], default: createdAt }
+        - $ref: "#/components/parameters/SortOrder"
       responses:
         "200":
           description: Successful business response.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/BusinessObjectList"
+                $ref: "#/components/schemas/PaginatedBusinessObjects"
         "400":
           $ref: "#/components/responses/BadRequest"
         "403":
@@ -5109,18 +5230,12 @@ paths:
           required: false
           schema:
             type: string
-        - name: page
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: sortBy
           in: query
-          required: false
-          schema:
-            type: integer
-            format: int32
-        - name: pageSize
-          in: query
-          required: false
-          schema:
-            type: integer
-            format: int32
+          schema: { type: string, enum: [createdAt, status, sourceCommit, sourceBranch, triggerType, createdBy], default: createdAt }
+        - $ref: "#/components/parameters/SortOrder"
       responses:
         "200":
           description: Successful business response.
@@ -5297,18 +5412,17 @@ paths:
           required: false
           schema:
             type: string
-        - name: page
+        - name: applicationId
           in: query
           required: false
           schema:
-            type: integer
-            format: int32
-        - name: pageSize
+            type: string
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: sortBy
           in: query
-          required: false
-          schema:
-            type: integer
-            format: int32
+          schema: { type: string, enum: [createdAt, status, attempts], default: createdAt }
+        - $ref: "#/components/parameters/SortOrder"
       responses:
         "200":
           description: Successful business response.
@@ -5427,23 +5541,22 @@ paths:
           required: false
           schema:
             type: string
+        - name: applicationId
+          in: query
+          required: false
+          schema:
+            type: string
         - name: deploymentTargetId
           in: query
           required: false
           schema:
             type: string
-        - name: page
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: sortBy
           in: query
-          required: false
-          schema:
-            type: integer
-            format: int32
-        - name: pageSize
-          in: query
-          required: false
-          schema:
-            type: integer
-            format: int32
+          schema: { type: string, enum: [createdAt, status, revision], default: createdAt }
+        - $ref: "#/components/parameters/SortOrder"
       responses:
         "200":
           description: Successful business response.
@@ -5787,13 +5900,24 @@ paths:
           required: true
           schema:
             type: string
+        - name: applicationId
+          in: query
+          required: false
+          schema:
+            type: string
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: sortBy
+          in: query
+          schema: { type: string, enum: [createdAt, host, enabled], default: createdAt }
+        - $ref: "#/components/parameters/SortOrder"
       responses:
         "200":
           description: Successful business response.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/BusinessObjectList"
+                $ref: "#/components/schemas/PaginatedBusinessObjects"
         "400":
           $ref: "#/components/responses/BadRequest"
         "403":
@@ -7200,15 +7324,18 @@ components:
           description: Safe user-facing error message.
         detail:
           type: string
-          description: Development-only diagnostic detail.
+          description: Development-only diagnostic detail; omitted in production responses.
+        requestId:
+          type: string
+          description: Request identifier for support and log correlation.
         purpose:
           type: string
           description: Step-up purpose returned with `mfa_required`.
         details:
           type: object
           additionalProperties: true
-          description: Optional machine-readable error context. Scope failures include `requiredScope`.
-      required: [code, error]
+          description: Development-only machine-readable diagnostic context; omitted in production responses.
+      required: [code, error, requestId]
     InboxCategory:
       type: string
       enum: [action, project, billing, security, delivery, system]
@@ -8399,6 +8526,7 @@ components:
       required: [templateId, version, values, dockerfile, checksum]
     PaginatedProjectList:
       type: object
+      required: [items, page, pageSize, sortBy, sortOrder, total, totalPages]
       properties:
         items:
           type: array
@@ -8667,12 +8795,14 @@ components:
         $ref: "#/components/schemas/BusinessObject"
     PaginatedBusinessObjects:
       type: object
-      required: [items, page, pageSize, total, totalPages]
+      required: [items, page, pageSize, sortBy, sortOrder, total, totalPages]
       properties:
         items:
           $ref: "#/components/schemas/BusinessObjectList"
         page: { type: integer, minimum: 1 }
-        pageSize: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 100 }
+        sortBy: { type: string }
+        sortOrder: { type: string, enum: [asc, desc] }
         total: { type: integer, minimum: 0 }
         totalPages: { type: integer, minimum: 0 }
       additionalProperties: true

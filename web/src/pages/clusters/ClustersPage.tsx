@@ -1,25 +1,31 @@
 import type { RuntimeCluster } from '@/api'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, RefreshCw, Trash2 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { lazy, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { api } from '@/api'
 import { useSession } from '@/app/session-context'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { ContentTabs } from '@/components/common/content-tabs'
+import { LazyDialogBoundary } from '@/components/common/lazy-dialog-boundary'
 import { Button } from '@/components/ui/button'
 import { NativeSelect as Select } from '@/components/ui/native-select'
 import { TabsContent } from '@/components/ui/tabs'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
-import { ClusterFormDialog } from './cluster-form-dialog'
 import { canManageCluster } from './cluster-helpers'
-import { ClusterResourceDialogs } from './cluster-resource-dialogs'
 import { ClusterResourcesPanel } from './cluster-resources-panel'
 import { RuntimeClusterTable } from './runtime-cluster-table'
 import { useClusterResources } from './use-cluster-resources'
 
 const RESOURCE_TABS = ['namespaces', 'workloads', 'services', 'configs', 'storage']
+
+const ClusterFormDialog = lazy(() =>
+  import('./cluster-form-dialog').then(module => ({ default: module.ClusterFormDialog })),
+)
+const ClusterResourceDialogs = lazy(() =>
+  import('./cluster-resource-dialogs').then(module => ({ default: module.ClusterResourceDialogs })),
+)
 
 export function ClustersPage() {
   const { t } = useTranslation()
@@ -65,6 +71,22 @@ export function ClustersPage() {
     setEditingCluster(cluster ?? null)
     setDialogRevision(revision => revision + 1)
     setDialogOpen(true)
+  }
+  const resourceDialogsOpen = Boolean(
+    resources.consoleResource
+    || resources.eventResource
+    || resources.yamlResource
+    || resources.resourceToDelete
+    || resources.resourcesToDelete.length > 0,
+  )
+  const closeResourceDialogs = (open: boolean) => {
+    if (open)
+      return
+    resources.setConsoleResource(null)
+    resources.setEventResource(null)
+    resources.setYamlResource(null)
+    resources.setResourceToDelete(null)
+    resources.setResourcesToDelete([])
   }
 
   return (
@@ -173,18 +195,22 @@ export function ClustersPage() {
         ))}
       </ContentTabs>
 
-      <ClusterFormDialog
-        key={dialogRevision}
-        editingCluster={editingCluster}
-        open={dialogOpen}
-        projects={projects.data ?? []}
-        user={user}
-        onOpenChange={setDialogOpen}
-        onSaved={() => {
-          setDialogOpen(false)
-          setEditingCluster(null)
-        }}
-      />
+      {dialogOpen && (
+        <LazyDialogBoundary resetKey={`cluster-${dialogRevision}`} onOpenChange={setDialogOpen}>
+          <ClusterFormDialog
+            key={dialogRevision}
+            editingCluster={editingCluster}
+            open={dialogOpen}
+            projects={projects.data ?? []}
+            user={user}
+            onOpenChange={setDialogOpen}
+            onSaved={() => {
+              setDialogOpen(false)
+              setEditingCluster(null)
+            }}
+          />
+        </LazyDialogBoundary>
+      )}
       <ConfirmDialog
         cancelText={t('common.cancel')}
         confirmText={t('common.delete')}
@@ -194,27 +220,34 @@ export function ClustersPage() {
         onConfirm={() => clusterToDelete && deleteCluster.mutate(clusterToDelete.id)}
         onOpenChange={open => !open && setClusterToDelete(null)}
       />
-      <ClusterResourceDialogs
-        cluster={resources.selectedResourceCluster ?? null}
-        consoleResource={resources.consoleResource}
-        deletePending={resources.deleteResource.isPending}
-        deleteResourcesPending={resources.deleteResources.isPending}
-        eventResource={resources.eventResource}
-        events={resources.resourceEvents.data ?? []}
-        eventsLoading={resources.resourceEvents.isFetching}
-        resourceToDelete={resources.resourceToDelete}
-        resourcesToDelete={resources.resourcesToDelete}
-        yaml={resources.resourceYAML.data}
-        yamlLoading={resources.resourceYAML.isFetching}
-        yamlResource={resources.yamlResource}
-        onCloseConsole={() => resources.setConsoleResource(null)}
-        onCloseEvents={() => resources.setEventResource(null)}
-        onCloseYAML={() => resources.setYamlResource(null)}
-        onConfirmDelete={() => resources.resourceToDelete && resources.deleteResource.mutate(resources.resourceToDelete)}
-        onConfirmDeleteResources={() => resources.resourcesToDelete.length > 0 && resources.deleteResources.mutate(resources.resourcesToDelete)}
-        onResourceToDeleteChange={resources.setResourceToDelete}
-        onResourcesToDeleteChange={resources.setResourcesToDelete}
-      />
+      {resourceDialogsOpen && (
+        <LazyDialogBoundary
+          resetKey={`cluster-resource-${resources.selectedResourceCluster?.id ?? 'none'}-${resources.consoleResource?.name ?? resources.eventResource?.name ?? resources.yamlResource?.name ?? 'action'}`}
+          onOpenChange={closeResourceDialogs}
+        >
+          <ClusterResourceDialogs
+            cluster={resources.selectedResourceCluster ?? null}
+            consoleResource={resources.consoleResource}
+            deletePending={resources.deleteResource.isPending}
+            deleteResourcesPending={resources.deleteResources.isPending}
+            eventResource={resources.eventResource}
+            events={resources.resourceEvents.data ?? []}
+            eventsLoading={resources.resourceEvents.isFetching}
+            resourceToDelete={resources.resourceToDelete}
+            resourcesToDelete={resources.resourcesToDelete}
+            yaml={resources.resourceYAML.data}
+            yamlLoading={resources.resourceYAML.isFetching}
+            yamlResource={resources.yamlResource}
+            onCloseConsole={() => resources.setConsoleResource(null)}
+            onCloseEvents={() => resources.setEventResource(null)}
+            onCloseYAML={() => resources.setYamlResource(null)}
+            onConfirmDelete={() => resources.resourceToDelete && resources.deleteResource.mutate(resources.resourceToDelete)}
+            onConfirmDeleteResources={() => resources.resourcesToDelete.length > 0 && resources.deleteResources.mutate(resources.resourcesToDelete)}
+            onResourceToDeleteChange={resources.setResourceToDelete}
+            onResourcesToDeleteChange={resources.setResourcesToDelete}
+          />
+        </LazyDialogBoundary>
+      )}
     </div>
   )
 }

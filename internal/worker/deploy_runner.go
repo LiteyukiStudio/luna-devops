@@ -67,8 +67,8 @@ func (r *Runner) handleDeployRun(ctx context.Context, task *asynq.Task) error {
 		return err
 	}
 	r.appendReleaseLog(release, "下发 ConfigMap/Secret")
-	serviceBindings, err := workerStageValue(ctx, "deploy.resolve_service_bindings", func(context.Context) (resolvedServiceBindingConfig, error) {
-		return r.resolveServiceBindingConfig(project, deploymentTarget)
+	serviceBindings, err := workerStageValue(ctx, "deploy.resolve_service_bindings", func(stageCtx context.Context) (resolvedServiceBindingConfig, error) {
+		return r.resolveServiceBindingConfig(stageCtx, project, deploymentTarget)
 	})
 	if err != nil {
 		_ = r.finishDeployRelease(ctx, release, "failed", err.Error())
@@ -157,7 +157,7 @@ func (r *Runner) ensurePlatformApplicationDependencies(ctx context.Context, rele
 	if serviceAccountName == "" {
 		return nil
 	}
-	manager, err := r.kubernetesManager(deploymentTargetEnvironment(target))
+	manager, err := r.kubernetesManager(ctx, deploymentTargetEnvironment(target))
 	if err != nil {
 		return err
 	}
@@ -204,7 +204,7 @@ func systemComponentLastError(status string, message string) string {
 }
 
 func (r *Runner) applyApplicationResources(ctx context.Context, release model.Release, project model.Project, application model.Application, environment model.Environment, deploymentTarget model.DeploymentTarget, namespace string, serviceBindings resolvedServiceBindingConfig) error {
-	manager, spec, err := r.applicationResourcesManagerAndSpec(release, project, application, environment, deploymentTarget, namespace, serviceBindings)
+	manager, spec, err := r.applicationResourcesManagerAndSpec(ctx, release, project, application, environment, deploymentTarget, namespace, serviceBindings)
 	if err != nil {
 		return err
 	}
@@ -213,7 +213,7 @@ func (r *Runner) applyApplicationResources(ctx context.Context, release model.Re
 }
 
 func (r *Runner) applyApplicationRuntimeConfig(ctx context.Context, release model.Release, project model.Project, application model.Application, environment model.Environment, deploymentTarget model.DeploymentTarget, namespace string, serviceBindings resolvedServiceBindingConfig) error {
-	manager, spec, err := r.applicationResourcesManagerAndSpec(release, project, application, environment, deploymentTarget, namespace, serviceBindings)
+	manager, spec, err := r.applicationResourcesManagerAndSpec(ctx, release, project, application, environment, deploymentTarget, namespace, serviceBindings)
 	if err != nil {
 		return err
 	}
@@ -221,24 +221,24 @@ func (r *Runner) applyApplicationRuntimeConfig(ctx context.Context, release mode
 }
 
 func (r *Runner) preflightApplicationResources(ctx context.Context, release model.Release, project model.Project, application model.Application, environment model.Environment, deploymentTarget model.DeploymentTarget, namespace string, serviceBindings resolvedServiceBindingConfig) error {
-	manager, spec, err := r.applicationResourcesManagerAndSpec(release, project, application, environment, deploymentTarget, namespace, serviceBindings)
+	manager, spec, err := r.applicationResourcesManagerAndSpec(ctx, release, project, application, environment, deploymentTarget, namespace, serviceBindings)
 	if err != nil {
 		return err
 	}
 	return manager.PreflightApplicationResources(ctx, spec)
 }
 
-func (r *Runner) applicationResourcesManagerAndSpec(release model.Release, project model.Project, application model.Application, environment model.Environment, deploymentTarget model.DeploymentTarget, namespace string, serviceBindings resolvedServiceBindingConfig) (kubeprovider.NamespaceManager, kubeprovider.ApplicationResourcesSpec, error) {
-	manager, err := r.kubernetesManager(environment)
+func (r *Runner) applicationResourcesManagerAndSpec(ctx context.Context, release model.Release, project model.Project, application model.Application, environment model.Environment, deploymentTarget model.DeploymentTarget, namespace string, serviceBindings resolvedServiceBindingConfig) (kubeprovider.NamespaceManager, kubeprovider.ApplicationResourcesSpec, error) {
+	manager, err := r.kubernetesManager(ctx, environment)
 	if err != nil {
 		return nil, kubeprovider.ApplicationResourcesSpec{}, err
 	}
-	runtimeConfigSets, err := r.runtimeConfigSetsForTarget(project.ID, deploymentTarget)
+	runtimeConfigSets, err := r.runtimeConfigSetsForTarget(ctx, project.ID, deploymentTarget)
 	if err != nil {
 		return nil, kubeprovider.ApplicationResourcesSpec{}, err
 	}
-	deploymentTarget.SecretRefs = r.resolveRuntimeSecretRefsRaw(deploymentTarget.SecretRefs)
-	deploymentTarget.SecretFiles = r.resolveRuntimeSecretFileRefsRaw(deploymentTarget.SecretFiles)
+	deploymentTarget.SecretRefs = r.resolveRuntimeSecretRefsRaw(ctx, deploymentTarget.SecretRefs)
+	deploymentTarget.SecretFiles = r.resolveRuntimeSecretFileRefsRaw(ctx, deploymentTarget.SecretFiles)
 	spec, err := applicationResourcesSpec(release, project, application, environment, deploymentTarget, runtimeConfigSets, namespace, r.deployRolloutTimeoutSeconds)
 	if err != nil {
 		return nil, kubeprovider.ApplicationResourcesSpec{}, err
@@ -250,7 +250,7 @@ func (r *Runner) applicationResourcesManagerAndSpec(release model.Release, proje
 	return manager, spec, nil
 }
 
-func (r *Runner) runtimeConfigSetsForTarget(projectID string, deploymentTarget model.DeploymentTarget) ([]model.ProjectRuntimeConfigSet, error) {
+func (r *Runner) runtimeConfigSetsForTarget(ctx context.Context, projectID string, deploymentTarget model.DeploymentTarget) ([]model.ProjectRuntimeConfigSet, error) {
 	refs := model.DecodeDeploymentRuntimeConfigRefs(deploymentTarget.RuntimeConfigRefs)
 	if len(refs) == 0 {
 		for _, setID := range runtimeConfigSetIDs(deploymentTarget.RuntimeConfigSetIDs) {
@@ -263,14 +263,14 @@ func (r *Runner) runtimeConfigSetsForTarget(projectID string, deploymentTarget m
 	liveIDs := model.DeploymentRuntimeConfigLiveSetIDs(refs)
 	var sets []model.ProjectRuntimeConfigSet
 	if len(liveIDs) > 0 {
-		if err := r.db.Where("project_id = ? and enabled = ? and id in ?", projectID, true, liveIDs).Find(&sets).Error; err != nil {
+		if err := r.db.WithContext(ctx).Where("project_id = ? and enabled = ? and id in ?", projectID, true, liveIDs).Find(&sets).Error; err != nil {
 			return nil, err
 		}
 	}
 	byID := make(map[string]model.ProjectRuntimeConfigSet, len(sets))
 	for _, set := range sets {
-		set.SecretRefs = r.resolveRuntimeSecretRefsRaw(set.SecretRefs)
-		set.SecretFiles = r.resolveRuntimeSecretFileRefsRaw(set.SecretFiles)
+		set.SecretRefs = r.resolveRuntimeSecretRefsRaw(ctx, set.SecretRefs)
+		set.SecretFiles = r.resolveRuntimeSecretFileRefsRaw(ctx, set.SecretFiles)
 		byID[set.ID] = set
 	}
 	ordered := make([]model.ProjectRuntimeConfigSet, 0, len(refs))
@@ -285,8 +285,8 @@ func (r *Runner) runtimeConfigSetsForTarget(projectID string, deploymentTarget m
 				Name:        ref.Snapshot.Name,
 				EnvVars:     ref.Snapshot.EnvVars,
 				ConfigFiles: ref.Snapshot.ConfigFiles,
-				SecretRefs:  r.resolveRuntimeSecretRefsRaw(ref.Snapshot.SecretRefs),
-				SecretFiles: r.resolveRuntimeSecretFileRefsRaw(ref.Snapshot.SecretFiles),
+				SecretRefs:  r.resolveRuntimeSecretRefsRaw(ctx, ref.Snapshot.SecretRefs),
+				SecretFiles: r.resolveRuntimeSecretFileRefsRaw(ctx, ref.Snapshot.SecretFiles),
 				Enabled:     ref.Snapshot.Enabled,
 			}
 			ordered = append(ordered, set)
@@ -322,7 +322,7 @@ func (r *Runner) releaseShouldForceImagePull(release model.Release) bool {
 		strings.TrimSpace(previous.ImageRef) == strings.TrimSpace(release.ImageRef)
 }
 
-func (r *Runner) resolveRuntimeSecretRefsRaw(raw string) string {
+func (r *Runner) resolveRuntimeSecretRefsRaw(ctx context.Context, raw string) string {
 	refs := map[string]string{}
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
@@ -333,7 +333,7 @@ func (r *Runner) resolveRuntimeSecretRefsRaw(raw string) string {
 	}
 	resolved := make(map[string]string, len(refs))
 	for key, ref := range refs {
-		value := r.secrets.Resolve(ref)
+		value := r.secrets.ResolveContext(ctx, ref)
 		if strings.TrimSpace(value) == "" {
 			continue
 		}
@@ -346,7 +346,7 @@ func (r *Runner) resolveRuntimeSecretRefsRaw(raw string) string {
 	return string(content)
 }
 
-func (r *Runner) resolveRuntimeSecretFileRefsRaw(raw string) string {
+func (r *Runner) resolveRuntimeSecretFileRefsRaw(ctx context.Context, raw string) string {
 	refs := map[string]string{}
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
@@ -357,7 +357,7 @@ func (r *Runner) resolveRuntimeSecretFileRefsRaw(raw string) string {
 	}
 	files := make([]runtimeConfigFileInput, 0, len(refs))
 	for filePath, ref := range refs {
-		value := r.secrets.Resolve(ref)
+		value := r.secrets.ResolveContext(ctx, ref)
 		if strings.TrimSpace(filePath) == "" || strings.TrimSpace(value) == "" {
 			continue
 		}
@@ -371,7 +371,7 @@ func (r *Runner) resolveRuntimeSecretFileRefsRaw(raw string) string {
 }
 
 func (r *Runner) waitForDeploymentRollout(ctx context.Context, release model.Release, application model.Application, environment model.Environment, deploymentTarget model.DeploymentTarget, namespace string) (string, error) {
-	manager, err := r.kubernetesManager(environment)
+	manager, err := r.kubernetesManager(ctx, environment)
 	if err != nil {
 		return "", err
 	}
@@ -418,7 +418,7 @@ func (r *Runner) finishDeployRelease(ctx context.Context, release model.Release,
 		release.Status = status
 		release.Message = firstNonEmpty(message, "Deployment "+status)
 		release.FinishedAt = &finishedAt
-		r.recordReleaseMetrics(release)
+		r.recordReleaseMetrics(ctx, release)
 		r.emitReleaseEvent(ctx, release, status, message)
 	}
 	return err

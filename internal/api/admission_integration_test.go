@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"database/sql"
 	"strings"
 	"testing"
@@ -13,7 +14,7 @@ func TestEnsureAdmissionPolicyInitializesDefault(t *testing.T) {
 	db := authIntegrationDB(t)
 	h := &Handlers{db: db, mode: "production"}
 
-	policy, err := h.ensureAdmissionPolicy()
+	policy, err := h.ensureAdmissionPolicy(context.Background())
 	if err != nil {
 		t.Fatalf("ensure admission policy: %v", err)
 	}
@@ -33,7 +34,7 @@ func TestEnsureAdmissionPolicyFailsClosedOnDatabaseError(t *testing.T) {
 	}
 	h := &Handlers{db: db, mode: "production"}
 
-	policy, err := h.ensureAdmissionPolicy()
+	policy, err := h.ensureAdmissionPolicy(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "load authentication admission policy") {
 		t.Fatalf("ensure admission policy error = %v", err)
 	}
@@ -53,7 +54,7 @@ func TestEnsureAdmissionPolicyReturnsInitializationError(t *testing.T) {
 	})
 	h := &Handlers{db: tx, mode: "production"}
 
-	policy, err := h.ensureAdmissionPolicy()
+	policy, err := h.ensureAdmissionPolicy(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "initialize authentication admission policy") {
 		t.Fatalf("ensure admission policy error = %v", err)
 	}

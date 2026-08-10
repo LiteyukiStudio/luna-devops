@@ -1,9 +1,10 @@
 import type { Application, ApplicationPayload, ApplicationTopology, DataExportAuthorization, DeploymentTarget, DeploymentTargetPayload, PaginatedResponse, PaginationParams, RepositoryBinding, RepositoryBindingPayload } from '../types'
 import { paginationQuery, request } from '../core'
+import { selectionItems, selectionPageParams } from '../selection-page'
 
 export const applicationsApi = {
   listApplications: (projectId: string) =>
-    request<Application[]>(`/projects/${projectId}/applications`),
+    request<PaginatedResponse<Application>>(`/projects/${projectId}/applications?${paginationQuery(selectionPageParams)}`).then(selectionItems),
   listApplicationsPage: (projectId: string, params: PaginationParams) =>
     request<PaginatedResponse<Application>>(`/projects/${projectId}/applications?${paginationQuery(params)}`),
   getApplication: (projectId: string, applicationId: string) =>
@@ -17,7 +18,7 @@ export const applicationsApi = {
   deleteApplication: (projectId: string, applicationId: string) =>
     request<Application>(`/projects/${projectId}/applications/${applicationId}`, { method: 'DELETE' }),
   listDeploymentTargets: (projectId: string, applicationId: string) =>
-    request<DeploymentTarget[]>(`/projects/${projectId}/applications/${applicationId}/deployment-targets`),
+    request<PaginatedResponse<DeploymentTarget>>(`/projects/${projectId}/applications/${applicationId}/deployment-targets?${paginationQuery(selectionPageParams)}`).then(selectionItems),
   listDeploymentTargetsPage: (projectId: string, applicationId: string, params: PaginationParams) =>
     request<PaginatedResponse<DeploymentTarget>>(`/projects/${projectId}/applications/${applicationId}/deployment-targets?${paginationQuery(params)}`),
   createDeploymentTarget: (projectId: string, applicationId: string, payload: DeploymentTargetPayload) =>
@@ -30,10 +31,18 @@ export const applicationsApi = {
     request<DataExportAuthorization>(`/projects/${projectId}/applications/${applicationId}/deployment-targets/${targetId}/data-export/authorize`, { method: 'POST' }),
   deleteDeploymentTarget: (projectId: string, applicationId: string, targetId: string) =>
     request<void>(`/projects/${projectId}/applications/${applicationId}/deployment-targets/${targetId}`, { method: 'DELETE' }),
-  listRepositoryBindings: (projectId: string) =>
-    request<RepositoryBinding[]>(`/projects/${projectId}/repository-bindings`),
-  listRepositoryBindingsPage: (projectId: string, params: PaginationParams) =>
-    request<PaginatedResponse<RepositoryBinding>>(`/projects/${projectId}/repository-bindings?${paginationQuery(params)}`),
+  listRepositoryBindings: (projectId: string, applicationId?: string) => {
+    const search = new URLSearchParams(paginationQuery(selectionPageParams))
+    if (applicationId)
+      search.set('applicationId', applicationId)
+    return request<PaginatedResponse<RepositoryBinding>>(`/projects/${projectId}/repository-bindings?${search.toString()}`).then(selectionItems)
+  },
+  listRepositoryBindingsPage: (projectId: string, params: PaginationParams & { applicationId?: string }) => {
+    const search = new URLSearchParams(paginationQuery(params))
+    if (params.applicationId)
+      search.set('applicationId', params.applicationId)
+    return request<PaginatedResponse<RepositoryBinding>>(`/projects/${projectId}/repository-bindings?${search.toString()}`)
+  },
   createRepositoryBinding: (projectId: string, payload: RepositoryBindingPayload) =>
     request<RepositoryBinding>(`/projects/${projectId}/repository-bindings`, { method: 'POST', body: JSON.stringify(payload) }),
   updateRepositoryBinding: (projectId: string, bindingId: string, payload: RepositoryBindingPayload) =>

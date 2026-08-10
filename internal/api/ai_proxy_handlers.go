@@ -12,6 +12,7 @@ import (
 
 	"github.com/LiteyukiStudio/devops/internal/aiagent"
 	"github.com/LiteyukiStudio/devops/internal/authz"
+	"github.com/LiteyukiStudio/devops/internal/config"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/gin-gonic/gin"
@@ -56,7 +57,7 @@ func (h *Handlers) GetAICapabilities(ctx *gin.Context) {
 		ctx.JSON(http.StatusOK, unavailableAICapabilities("ai.agent_unavailable"))
 		return
 	}
-	h.copyAIResponse(ctx, response, http.StatusOK)
+	h.copyAIResponse(ctx, response, http.StatusOK, "ai.agent_unavailable")
 }
 
 func (h *Handlers) ProxyAIRequest(ctx *gin.Context) {
@@ -129,7 +130,7 @@ func (h *Handlers) ProxyAIRequest(ctx *gin.Context) {
 		return
 	}
 	defer response.Body.Close()
-	h.copyAIResponse(ctx, response, route.status)
+	h.copyAIResponse(ctx, response, route.status, "ai.agent_unavailable")
 }
 
 func (h *Handlers) prepareAIToolMFAResume(ctx *gin.Context, actor aiagent.ActorContext, body []byte) ([]byte, bool) {
@@ -272,10 +273,18 @@ func unavailableAICapabilities(reason string) gin.H {
 	}
 }
 
-func (h *Handlers) copyAIResponse(ctx *gin.Context, response *aiagent.Response, fallbackStatus int) {
+func (h *Handlers) copyAIResponse(ctx *gin.Context, response *aiagent.Response, fallbackStatus int, errorCode string) {
 	status := response.StatusCode
 	if status == 0 {
 		status = fallbackStatus
+	}
+	if (status < http.StatusOK || status >= http.StatusMultipleChoices) && config.RuntimeMode() == "production" {
+		ctx.Header("Cache-Control", "no-store")
+		if retryAfter := response.Header.Get("Retry-After"); retryAfter != "" {
+			ctx.Header("Retry-After", retryAfter)
+		}
+		writeErrorCode(ctx, status, errorCode, "AI upstream request failed")
+		return
 	}
 	for _, header := range []string{"Content-Type", "Cache-Control", "ETag", "Retry-After"} {
 		if value := response.Header.Get(header); value != "" {

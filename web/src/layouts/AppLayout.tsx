@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Bell, ChartNoAxesCombined, CircleUserRound, Container, CreditCard, Fingerprint, FolderKanban, GitBranch, LayoutDashboard, Menu, ScrollText, Server, Settings, Sparkles, Store, Users } from 'lucide-react'
 import { AnimatePresence } from 'motion/react'
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { lazy, useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, Navigate, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -10,9 +10,12 @@ import { useDocumentTitle } from '@/app/document-title'
 import { usePublicConfig } from '@/app/public-config-context'
 import { useSession } from '@/app/session-context'
 import { AccountMenu } from '@/components/common/account-menu'
+import { DeferredAIAssistantLauncher } from '@/components/common/ai-assistant/deferred-launcher'
 import { AI_ASSISTANT_OPEN_EVENT } from '@/components/common/ai-assistant/events'
+import { LAUNCHER_STORAGE_KEY, readLauncherPosition } from '@/components/common/ai-assistant/layout'
 import { DebugFloatingPanel } from '@/components/common/debug-floating-panel'
 import { InboxTrigger } from '@/components/common/inbox/inbox-trigger'
+import { LazyLoadBoundary } from '@/components/common/lazy-load-boundary'
 import { AppLoadingState } from '@/components/common/loading-states'
 import { PageMotion } from '@/components/common/motion'
 import { PageBackNavigation } from '@/components/common/page-chrome'
@@ -142,6 +145,8 @@ export function AppLayout() {
   const configs = usePublicConfig()
   const location = useLocation()
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
+  const [assistantMounted, setAssistantMounted] = useState(false)
+  const [deferredAssistantPosition, setDeferredAssistantPosition] = useState(readLauncherPosition)
   const [topbarTabsTarget, setTopbarTabsTarget] = useState<HTMLDivElement | null>(null)
   const [topbarToolsTarget, setTopbarToolsTarget] = useState<HTMLDivElement | null>(null)
   const [hasTopbarTabs, registerTopbarTabs] = useChromeSlotPresence()
@@ -157,6 +162,14 @@ export function AppLayout() {
     enabled: Boolean(user),
   })
   const aiAssistantAvailable = isUsableAICapabilities(aiCapabilities.data)
+  useEffect(() => {
+    const mountAssistant = () => setAssistantMounted(true)
+    window.addEventListener(AI_ASSISTANT_OPEN_EVENT, mountAssistant)
+    return () => window.removeEventListener(AI_ASSISTANT_OPEN_EVENT, mountAssistant)
+  }, [])
+  useEffect(() => {
+    localStorage.setItem(LAUNCHER_STORAGE_KEY, JSON.stringify(deferredAssistantPosition))
+  }, [deferredAssistantPosition])
   const projectRouteMatch = location.pathname.match(/^\/projects\/([^/]+)/)
   const appRouteMatch = location.pathname.match(/^\/projects\/([^/]+)\/apps\/([^/]+)$/)
   const currentProject = useQuery({
@@ -373,9 +386,19 @@ export function AppLayout() {
         </div>
       </div>
       <DebugFloatingPanel />
-      <Suspense fallback={null}>
-        <AiAssistant />
-      </Suspense>
+      {aiAssistantAvailable && !assistantMounted && (
+        <DeferredAIAssistantLauncher
+          label={t('aiAssistant.open')}
+          position={deferredAssistantPosition}
+          onOpen={() => setAssistantMounted(true)}
+          onPositionChange={setDeferredAssistantPosition}
+        />
+      )}
+      {aiAssistantAvailable && assistantMounted && (
+        <LazyLoadBoundary fallback={null} resetKey="ai-assistant">
+          <AiAssistant initiallyOpen />
+        </LazyLoadBoundary>
+      )}
     </div>
   )
 }

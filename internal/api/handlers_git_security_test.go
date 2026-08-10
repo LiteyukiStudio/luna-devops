@@ -412,6 +412,7 @@ func TestWriteErrorCodeIncludesDetailInDevelopment(t *testing.T) {
 func TestUserScopedGitAccountIsOnlyUsableByOwner(t *testing.T) {
 	h := &Handlers{}
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/git/accounts", nil)
 	account := model.GitAccount{
 		UserID:   "usr_owner",
 		Scope:    "user",

@@ -81,7 +81,7 @@ func NewHandlers(db *gorm.DB) *Handlers {
 	if cfg.RedisAddr != "" {
 		handlers.taskClient = tasks.NewClientWithRedis(redisOptions)
 	}
-	handlers.secrets = secret.NewStore(db, handlers.audit).WithContextAudit(func(ctx context.Context, userID, action, resource string, success bool, message string) {
+	handlers.secrets = secret.NewStore(db, func(ctx context.Context, userID, action, resource string, success bool, message string) {
 		handlers.auditWithContext(userID, action, resource, success, message, ctx)
 	})
 	aiConfig := aiagent.LoadConfig()
@@ -106,7 +106,7 @@ func (h *Handlers) dbFor(ctx *gin.Context) *gorm.DB {
 		return nil
 	}
 	if ctx == nil || ctx.Request == nil {
-		return h.db
+		panic("request database context is required")
 	}
 	return h.db.WithContext(ctx.Request.Context())
 }
@@ -118,23 +118,14 @@ func (h *Handlers) dbWithContext(ctx context.Context) *gorm.DB {
 		return nil
 	}
 	if ctx == nil {
-		return h.db
+		panic("api database context is required")
 	}
 	return h.db.WithContext(ctx)
 }
 
-func firstContext(contexts []context.Context) context.Context {
-	for _, ctx := range contexts {
-		if ctx != nil {
-			return ctx
-		}
-	}
-	return context.Background()
-}
-
 func requestContext(ctx *gin.Context) context.Context {
 	if ctx == nil || ctx.Request == nil {
-		return context.Background()
+		panic("request context is required")
 	}
 	return ctx.Request.Context()
 }

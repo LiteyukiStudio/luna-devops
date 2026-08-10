@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 
+	"github.com/LiteyukiStudio/devops/internal/config"
 	"github.com/gin-gonic/gin"
 )
 
@@ -38,10 +39,18 @@ func (h *Handlers) ensureNoIncomingServiceBindings(ctx *gin.Context, projectID, 
 	if len(usages) == 0 {
 		return true
 	}
-	ctx.JSON(http.StatusConflict, gin.H{
-		"code":            "service_binding_in_use",
-		"error":           "service_binding_in_use",
-		"affectedSources": usages,
-	})
+	writeServiceBindingInUse(ctx, usages)
 	return false
+}
+
+func writeServiceBindingInUse(ctx *gin.Context, usages []serviceBindingUsage) {
+	response := gin.H{
+		"code":      "service_binding_in_use",
+		"error":     messageFor(requestLanguage(ctx), "service_binding_in_use"),
+		"requestId": requestID(ctx),
+	}
+	if config.RuntimeMode() == "development" {
+		response["affectedSources"] = usages
+	}
+	ctx.JSON(http.StatusConflict, response)
 }

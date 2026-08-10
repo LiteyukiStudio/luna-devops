@@ -420,13 +420,13 @@ func (h *Handlers) templateSecretFiles(ctx *gin.Context, userID string, installa
 	return string(content), entries, true
 }
 
-func (h *Handlers) defaultRuntimeClusterID(contexts ...context.Context) string {
+func (h *Handlers) defaultRuntimeClusterID(ctx context.Context) string {
 	var cluster model.RuntimeCluster
-	err := h.dbWithContext(firstContext(contexts)).Where("type in ? and is_default = ?", []string{"kubernetes", "k3s"}, true).Order("created_at asc").First(&cluster).Error
+	err := h.dbWithContext(ctx).Where("type in ? and is_default = ?", []string{"kubernetes", "k3s"}, true).Order("created_at asc").First(&cluster).Error
 	if err == nil {
 		return cluster.ID
 	}
-	err = h.dbWithContext(firstContext(contexts)).Where("type in ?", []string{"kubernetes", "k3s"}).Order("created_at asc").First(&cluster).Error
+	err = h.dbWithContext(ctx).Where("type in ?", []string{"kubernetes", "k3s"}).Order("created_at asc").First(&cluster).Error
 	if err == nil {
 		return cluster.ID
 	}

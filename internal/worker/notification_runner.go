@@ -64,7 +64,7 @@ func (r *Runner) handleNotificationDeliver(ctx context.Context, task *asynq.Task
 		_ = r.markNotificationDeliveryFailed(delivery, err, time.Since(startedAt), "", "")
 		return fmt.Errorf("%w: %v", asynq.SkipRetry, err)
 	}
-	requestSnapshot := r.notificationRequestSnapshot(message, channel.SecretRefsJSON)
+	requestSnapshot := r.notificationRequestSnapshot(ctx, message, channel.SecretRefsJSON)
 	result, err := workerStageValue(ctx, "notification.send", func(stageCtx context.Context) (notification.SendResult, error) {
 		return adapter.Send(stageCtx, json.RawMessage(channel.ConfigJSON), json.RawMessage(channel.SecretRefsJSON), message, r.secrets)
 	})
@@ -118,8 +118,8 @@ func notificationSendErrorShouldSkipRetry(result notification.SendResult) bool {
 	return result.StatusCode >= 400 && result.StatusCode < 500 && result.StatusCode != 429
 }
 
-func (r *Runner) notificationRequestSnapshot(message notification.RenderedMessage, secretRefsJSON string) string {
-	redactor := notificationRedactor(r.secrets, secretRefsJSON)
+func (r *Runner) notificationRequestSnapshot(ctx context.Context, message notification.RenderedMessage, secretRefsJSON string) string {
+	redactor := notificationRedactor(ctx, r.secrets, secretRefsJSON)
 	snapshot := map[string]any{
 		"method":  message.Method,
 		"url":     redactor(message.URL),
@@ -130,12 +130,14 @@ func (r *Runner) notificationRequestSnapshot(message notification.RenderedMessag
 	return string(data)
 }
 
-func notificationRedactor(resolver interface{ Resolve(string) string }, secretRefsJSON string) func(string) string {
+func notificationRedactor(ctx context.Context, resolver interface {
+	ResolveContext(context.Context, string) string
+}, secretRefsJSON string) func(string) string {
 	refs := map[string]string{}
 	_ = json.Unmarshal([]byte(secretRefsJSON), &refs)
 	secrets := make([]string, 0, len(refs))
 	for _, ref := range refs {
-		if value := resolver.Resolve(ref); value != "" {
+		if value := resolver.ResolveContext(ctx, ref); value != "" {
 			secrets = append(secrets, value)
 		}
 	}

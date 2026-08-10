@@ -38,29 +38,21 @@ func (h *Handlers) ListGitProviders(ctx *gin.Context) {
 
 	var providers []model.GitProvider
 	query = applySearch(ctx, query, "name", "base_url")
-	if paginationRequested(ctx) {
-		pagination := paginationFromQuery(ctx)
-		var total int64
-		if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
-			writeError(ctx, http.StatusInternalServerError, err.Error())
-			return
-		}
-		if err := query.Order(orderByClause(pagination, map[string]string{
-			"name":      "name",
-			"scope":     "scope",
-			"createdAt": "created_at",
-		}, "created_at")).Limit(pagination.PageSize).Offset(pagination.Offset()).Find(&providers).Error; err != nil {
-			writeError(ctx, http.StatusInternalServerError, err.Error())
-			return
-		}
-		ctx.JSON(http.StatusOK, paginatedResponse(h.gitProviderResponsesForUser(user, providers, ctx.Request.Context()), total, pagination))
-		return
-	}
-	if err := query.Order("created_at desc").Find(&providers).Error; err != nil {
+	pagination := paginationFromQueryWithSort(ctx, map[string]string{"name": "name", "scope": "scope", "createdAt": "created_at"}, "createdAt")
+	var total int64
+	if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	ctx.JSON(http.StatusOK, h.gitProviderResponsesForUser(user, providers, ctx.Request.Context()))
+	if err := query.Order(orderByClause(pagination, map[string]string{
+		"name":      "name",
+		"scope":     "scope",
+		"createdAt": "created_at",
+	}, "created_at")).Limit(pagination.PageSize).Offset(pagination.Offset()).Find(&providers).Error; err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
+		return
+	}
+	ctx.JSON(http.StatusOK, paginatedResponse(h.gitProviderResponsesForUser(user, providers, ctx.Request.Context()), total, pagination))
 }
 
 func (h *Handlers) StartGitOAuth(ctx *gin.Context) {
@@ -445,8 +437,8 @@ func (h *Handlers) DeleteGitProvider(ctx *gin.Context) {
 	ctx.Status(http.StatusNoContent)
 }
 
-func (h *Handlers) saveGitProvider(provider model.GitProvider, contexts ...context.Context) error {
-	return h.dbWithContext(firstContext(contexts)).Transaction(func(tx *gorm.DB) error {
+func (h *Handlers) saveGitProvider(provider model.GitProvider, ctx context.Context) error {
+	return h.dbWithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Save(&provider).Error; err != nil {
 			return err
 		}

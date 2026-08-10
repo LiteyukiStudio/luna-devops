@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"strings"
 	"time"
 
@@ -16,13 +17,13 @@ func registryResponses(registries []model.ArtifactRegistry) []artifactRegistryOu
 	return result
 }
 
-func (h *Handlers) registryResponsesForUser(user model.User, registries []model.ArtifactRegistry) []artifactRegistryOutput {
+func (h *Handlers) registryResponsesForUser(user model.User, registries []model.ArtifactRegistry, ctx context.Context) []artifactRegistryOutput {
 	result := make([]artifactRegistryOutput, 0, len(registries))
 	for _, registry := range registries {
-		registry.ProjectIDs = h.scopedResourceProjectIDs(scopedResourceArtifactRegistry, registry.ID)
-		registry.DefaultProjectIDs = h.scopedResourceDefaultProjectIDMap(scopedResourceArtifactRegistry, []string{registry.ID})[registry.ID]
+		registry.ProjectIDs = h.scopedResourceProjectIDs(scopedResourceArtifactRegistry, registry.ID, ctx)
+		registry.DefaultProjectIDs = h.scopedResourceDefaultProjectIDMap(scopedResourceArtifactRegistry, []string{registry.ID}, ctx)[registry.ID]
 		response := registryResponse(registry)
-		if !h.canInspectScopedResourceConfigByID(user, registry.Scope, registry.OwnerRef, scopedResourceArtifactRegistry, registry.ID) {
+		if !h.canInspectScopedResourceConfigByID(user, registry.Scope, registry.OwnerRef, scopedResourceArtifactRegistry, registry.ID, ctx) {
 			response.Endpoint = ""
 			response.Namespace = ""
 			response.Capabilities = []string{}

@@ -102,7 +102,7 @@ func (h *Handlers) canManageScopedResourceByID(ctx *gin.Context, user model.User
 	return false
 }
 
-func (h *Handlers) canInspectScopedResourceConfigByID(user model.User, scope, ownerRef, resourceType, resourceID string, contexts ...context.Context) bool {
+func (h *Handlers) canInspectScopedResourceConfigByID(user model.User, scope, ownerRef, resourceType, resourceID string, ctx context.Context) bool {
 	switch normalizeOwnerScope(scope) {
 	case "global":
 		return authz.IsPlatformAdmin(user.Role)
@@ -112,9 +112,9 @@ func (h *Handlers) canInspectScopedResourceConfigByID(user model.User, scope, ow
 		if authz.IsPlatformAdmin(user.Role) {
 			return true
 		}
-		for _, projectID := range h.scopedResourceProjectIDs(resourceType, resourceID, firstContext(contexts)) {
+		for _, projectID := range h.scopedResourceProjectIDs(resourceType, resourceID, ctx) {
 			var member model.ProjectMember
-			err := h.dbWithContext(firstContext(contexts)).First(&member, "project_id = ? and user_id = ? and role in ?", projectID, user.ID, []string{authz.ProjectRoleOwner, authz.ProjectRoleAdmin}).Error
+			err := h.dbWithContext(ctx).First(&member, "project_id = ? and user_id = ? and role in ?", projectID, user.ID, []string{authz.ProjectRoleOwner, authz.ProjectRoleAdmin}).Error
 			if err == nil {
 				return true
 			}
@@ -125,7 +125,7 @@ func (h *Handlers) canInspectScopedResourceConfigByID(user model.User, scope, ow
 	}
 }
 
-func (h *Handlers) canUseScopedResourceByID(user model.User, scope, ownerRef, resourceType, resourceID string, contexts ...context.Context) bool {
+func (h *Handlers) canUseScopedResourceByID(user model.User, scope, ownerRef, resourceType, resourceID string, ctx context.Context) bool {
 	switch normalizeOwnerScope(scope) {
 	case "global":
 		return true
@@ -135,8 +135,8 @@ func (h *Handlers) canUseScopedResourceByID(user model.User, scope, ownerRef, re
 		if authz.IsPlatformAdmin(user.Role) {
 			return true
 		}
-		for _, projectID := range h.scopedResourceProjectIDs(resourceType, resourceID, firstContext(contexts)) {
-			if h.projects.UserHasProjectContext(firstContext(contexts), user.ID, projectID) {
+		for _, projectID := range h.scopedResourceProjectIDs(resourceType, resourceID, ctx) {
+			if h.projects.UserHasProjectContext(ctx, user.ID, projectID) {
 				return true
 			}
 		}
@@ -186,24 +186,24 @@ func (h *Handlers) applyScopedResourceVisibility(ctx *gin.Context, query *gorm.D
 	return query.Where(strings.Join(conditions, " or "), args...), true
 }
 
-func (h *Handlers) applyScopedResourceVisibilityForUser(query *gorm.DB, resourceType string, user model.User, contexts ...context.Context) *gorm.DB {
+func (h *Handlers) applyScopedResourceVisibilityForUser(query *gorm.DB, resourceType string, user model.User, ctx context.Context) *gorm.DB {
 	conditions := []string{"scope = 'global'", "(scope = 'user' and owner_ref = ?)"}
 	args := []any{user.ID}
-	projectSubquery := h.dbWithContext(firstContext(contexts)).Model(&model.ScopedResourceProjectBinding{}).
+	projectSubquery := h.dbWithContext(ctx).Model(&model.ScopedResourceProjectBinding{}).
 		Select("resource_id").
 		Where("resource_type = ?", resourceType)
 	if authz.IsPlatformAdmin(user.Role) {
 		conditions = append(conditions, "(scope = 'project' and id in (?))")
 		args = append(args, projectSubquery)
-	} else if projectIDs := h.projectIDsForUser(firstContext(contexts), user.ID); len(projectIDs) > 0 {
+	} else if projectIDs := h.projectIDsForUser(ctx, user.ID); len(projectIDs) > 0 {
 		conditions = append(conditions, "(scope = 'project' and id in (?))")
 		args = append(args, projectSubquery.Where("project_id in ?", projectIDs))
 	}
 	return query.Where(strings.Join(conditions, " or "), args...)
 }
 
-func (h *Handlers) applyScopedResourceVisibilityForProject(query *gorm.DB, resourceType string, user model.User, projectID string, contexts ...context.Context) *gorm.DB {
-	projectSubquery := h.dbWithContext(firstContext(contexts)).Model(&model.ScopedResourceProjectBinding{}).
+func (h *Handlers) applyScopedResourceVisibilityForProject(query *gorm.DB, resourceType string, user model.User, projectID string, ctx context.Context) *gorm.DB {
+	projectSubquery := h.dbWithContext(ctx).Model(&model.ScopedResourceProjectBinding{}).
 		Select("resource_id").
 		Where("resource_type = ? and project_id = ?", resourceType, strings.TrimSpace(projectID))
 	return query.Where(
@@ -236,9 +236,9 @@ func (h *Handlers) replaceScopedResourceProjectBindings(tx *gorm.DB, resourceTyp
 	return nil
 }
 
-func (h *Handlers) scopedResourceProjectIDs(resourceType, resourceID string, contexts ...context.Context) []string {
+func (h *Handlers) scopedResourceProjectIDs(resourceType, resourceID string, ctx context.Context) []string {
 	var bindings []model.ScopedResourceProjectBinding
-	if err := h.dbWithContext(firstContext(contexts)).Where("resource_type = ? and resource_id = ?", resourceType, resourceID).Order("project_id asc").Find(&bindings).Error; err != nil {
+	if err := h.dbWithContext(ctx).Where("resource_type = ? and resource_id = ?", resourceType, resourceID).Order("project_id asc").Find(&bindings).Error; err != nil {
 		return nil
 	}
 	result := make([]string, 0, len(bindings))
@@ -248,14 +248,14 @@ func (h *Handlers) scopedResourceProjectIDs(resourceType, resourceID string, con
 	return result
 }
 
-func (h *Handlers) scopedResourceProjectIDMap(resourceType string, resourceIDs []string, contexts ...context.Context) map[string][]string {
+func (h *Handlers) scopedResourceProjectIDMap(resourceType string, resourceIDs []string, ctx context.Context) map[string][]string {
 	result := map[string][]string{}
 	resourceIDs = normalizeStringList(resourceIDs)
 	if len(resourceIDs) == 0 {
 		return result
 	}
 	var bindings []model.ScopedResourceProjectBinding
-	if err := h.dbWithContext(firstContext(contexts)).Where("resource_type = ? and resource_id in ?", resourceType, resourceIDs).Order("project_id asc").Find(&bindings).Error; err != nil {
+	if err := h.dbWithContext(ctx).Where("resource_type = ? and resource_id in ?", resourceType, resourceIDs).Order("project_id asc").Find(&bindings).Error; err != nil {
 		return result
 	}
 	for _, binding := range bindings {
@@ -264,14 +264,14 @@ func (h *Handlers) scopedResourceProjectIDMap(resourceType string, resourceIDs [
 	return result
 }
 
-func (h *Handlers) scopedResourceDefaultProjectIDMap(resourceType string, resourceIDs []string, contexts ...context.Context) map[string][]string {
+func (h *Handlers) scopedResourceDefaultProjectIDMap(resourceType string, resourceIDs []string, ctx context.Context) map[string][]string {
 	result := map[string][]string{}
 	resourceIDs = normalizeStringList(resourceIDs)
 	if len(resourceIDs) == 0 {
 		return result
 	}
 	var bindings []model.ScopedResourceProjectBinding
-	if err := h.dbWithContext(firstContext(contexts)).Where("resource_type = ? and resource_id in ? and is_default = ?", resourceType, resourceIDs, true).Order("project_id asc").Find(&bindings).Error; err != nil {
+	if err := h.dbWithContext(ctx).Where("resource_type = ? and resource_id in ? and is_default = ?", resourceType, resourceIDs, true).Order("project_id asc").Find(&bindings).Error; err != nil {
 		return result
 	}
 	for _, binding := range bindings {

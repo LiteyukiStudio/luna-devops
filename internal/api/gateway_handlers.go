@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/id"
@@ -18,33 +19,27 @@ func (h *Handlers) ListGatewayRoutes(ctx *gin.Context) {
 		return
 	}
 	query := h.dbFor(ctx).Model(&model.GatewayRoute{}).Where("project_id = ?", ctx.Param("projectId"))
+	if applicationID := strings.TrimSpace(ctx.Query("applicationId")); applicationID != "" {
+		query = query.Where("application_id = ?", applicationID)
+	}
 	query = applySearch(ctx, query, "host", "path")
 	var routes []model.GatewayRoute
-	if paginationRequested(ctx) {
-		pagination := paginationFromQuery(ctx)
-		var total int64
-		if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
-			writeError(ctx, http.StatusInternalServerError, err.Error())
-			return
-		}
-		if err := query.Order(orderByClause(pagination, map[string]string{
-			"host":      "host",
-			"enabled":   "enabled",
-			"createdAt": "created_at",
-		}, "created_at")).Limit(pagination.PageSize).Offset(pagination.Offset()).Find(&routes).Error; err != nil {
-			writeError(ctx, http.StatusInternalServerError, err.Error())
-			return
-		}
-		routes = h.observeGatewayRoutes(ctx.Request.Context(), routes)
-		ctx.JSON(http.StatusOK, paginatedResponse(h.gatewayRoutesWithAccessURL(routes, ctx.Request.Context()), total, pagination))
+	pagination := paginationFromQueryWithSort(ctx, map[string]string{"host": "host", "enabled": "enabled", "createdAt": "created_at"}, "createdAt")
+	var total int64
+	if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if err := query.Find(&routes).Error; err != nil {
+	if err := query.Order(orderByClause(pagination, map[string]string{
+		"host":      "host",
+		"enabled":   "enabled",
+		"createdAt": "created_at",
+	}, "created_at")).Limit(pagination.PageSize).Offset(pagination.Offset()).Find(&routes).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 	routes = h.observeGatewayRoutes(ctx.Request.Context(), routes)
-	ctx.JSON(http.StatusOK, h.gatewayRoutesWithAccessURL(routes, ctx.Request.Context()))
+	ctx.JSON(http.StatusOK, paginatedResponse(h.gatewayRoutesWithAccessURL(routes, ctx.Request.Context()), total, pagination))
 }
 
 func (h *Handlers) CreateGatewayRoute(ctx *gin.Context) {

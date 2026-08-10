@@ -217,6 +217,83 @@ func TestAIProxyFlushesSSEChunks(t *testing.T) {
 	}
 }
 
+func TestAIProxySanitizesNonSuccessSSEBeforeStreamingInProduction(t *testing.T) {
+	t.Setenv("APP_ENV", "production")
+	gin.SetMode(gin.TestMode)
+	fake := &fakeAIAgentClient{response: &aiagent.Response{
+		StatusCode: http.StatusBadGateway,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       io.NopCloser(strings.NewReader("event: error\ndata: provider token=secret url=http://internal-agent.local\n\n")),
+	}}
+	handler := aiTestHandlers(fake, true)
+	router := gin.New()
+	router.GET("/api/v1/ai/conversations", handler.ProxyAIRequest)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/ai/conversations", nil))
+
+	if response.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+	if response.Flushed || strings.Contains(response.Header().Get("Content-Type"), "text/event-stream") {
+		t.Fatalf("production error started an SSE response: headers=%v", response.Header())
+	}
+	var body map[string]string
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode safe error: %v", err)
+	}
+	if body["code"] != "ai.agent_unavailable" || !strings.HasPrefix(body["requestId"], "req_") {
+		t.Fatalf("unexpected safe error: %#v", body)
+	}
+	if strings.Contains(response.Body.String(), "token=secret") || strings.Contains(response.Body.String(), "internal-agent") {
+		t.Fatalf("production proxy leaked upstream body: %s", response.Body.String())
+	}
+}
+
+func TestAIProxyKeepsNonSuccessBodyInDevelopment(t *testing.T) {
+	t.Setenv("APP_ENV", "development")
+	rawBody := `{"error":"provider connection failed","detail":"dial tcp internal-agent.local"}`
+	fake := &fakeAIAgentClient{response: &aiagent.Response{
+		StatusCode: http.StatusBadGateway,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(rawBody)),
+	}}
+	handler := aiTestHandlers(fake, true)
+	router := gin.New()
+	router.GET("/api/v1/ai/conversations", handler.ProxyAIRequest)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/ai/conversations", nil))
+
+	if response.Code != http.StatusBadGateway || response.Body.String() != rawBody {
+		t.Fatalf("development proxy response = %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestAIProviderConnectionResponseSanitizesUpstreamFailureInProduction(t *testing.T) {
+	t.Setenv("APP_ENV", "production")
+	response := &aiagent.Response{
+		StatusCode: http.StatusServiceUnavailable,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"error":"provider rejected token=secret"}`)),
+	}
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/configs/ai/provider/test", nil)
+
+	(&Handlers{}).copyAIResponse(ctx, response, http.StatusOK, "ai.provider_unavailable")
+
+	var body map[string]string
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode safe provider error: %v", err)
+	}
+	if recorder.Code != http.StatusServiceUnavailable || body["code"] != "ai.provider_unavailable" ||
+		!strings.HasPrefix(body["requestId"], "req_") {
+		t.Fatalf("unexpected provider error response: %d %#v", recorder.Code, body)
+	}
+	if strings.Contains(recorder.Body.String(), "token=secret") {
+		t.Fatalf("production provider test leaked upstream body: %s", recorder.Body.String())
+	}
+}
+
 func TestAIProxyDropsJSONContentTypeForBodylessCancel(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	fake := &fakeAIAgentClient{response: &aiagent.Response{

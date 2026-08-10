@@ -1,7 +1,9 @@
 allowBuilds:
   esbuild: true
-auditConfig:
-  ignoreGhsas:
-    - GHSA-qwww-vcr4-c8h2
 shellEmulator: true
 trustPolicy: no-downgrade
+overrides:
+  brace-expansion@>=4.0.0 <5.0.9: 5.0.9
+  nanoid@>=3.0.0 <3.3.17: 3.3.17
+  postcss@>=8.0.0 <8.5.23: 8.5.23
+  undici@>=7.0.0 <7.29.0: 7.29.0

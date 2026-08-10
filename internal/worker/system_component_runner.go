@@ -44,7 +44,7 @@ func (r *Runner) handleSystemComponentApply(ctx context.Context, task *asynq.Tas
 		_ = r.markSystemComponentApplyFailed(installation.ID, err)
 		return err
 	}
-	kubeconfig := r.secrets.Resolve(cluster.KubeconfigRef)
+	kubeconfig := r.secrets.ResolveContext(ctx, cluster.KubeconfigRef)
 	if strings.TrimSpace(kubeconfig) == "" {
 		err := errors.New("runtime cluster kubeconfig is missing")
 		_ = r.markSystemComponentApplyFailed(installation.ID, err)

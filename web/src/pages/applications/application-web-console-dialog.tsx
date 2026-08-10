@@ -1,9 +1,10 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import type { Release } from '@/api'
 import { Maximize2, Minimize2, Minus, X } from 'lucide-react'
-import { lazy, Suspense, useCallback, useState } from 'react'
+import { lazy, useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/api'
+import { LazyLoadBoundary } from '@/components/common/lazy-load-boundary'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 
@@ -94,14 +95,21 @@ export function ApplicationWebConsoleDialog({
             </div>
           </div>
           <div className={fullscreen ? 'min-h-0 flex-1' : undefined}>
-            <Suspense fallback={<div className={fullscreen ? 'h-full min-h-[28rem] bg-slate-950' : 'h-[29.5rem] bg-slate-950'} />}>
-              <ApplicationRuntimeTerminalPanel authorize={authorizeTerminal} fullscreen={fullscreen} container={container} projectId={projectId} release={release} />
-            </Suspense>
+            <LazyLoadBoundary
+              fallback={<TerminalLoadingState fullscreen={fullscreen} label={t('common.loading')} />}
+              resetKey={`${releaseId}:${container}`}
+            >
+              <ApplicationRuntimeTerminalPanel key={`${releaseId}:${container}`} authorize={authorizeTerminal} fullscreen={fullscreen} container={container} projectId={projectId} release={release} />
+            </LazyLoadBoundary>
           </div>
         </div>
       </DialogContent>
     </Dialog>
   )
+}
+
+function TerminalLoadingState({ fullscreen, label }: { fullscreen: boolean, label: string }) {
+  return <div className={cn('grid place-items-center bg-slate-950 text-sm text-zinc-400', fullscreen ? 'h-full min-h-[28rem]' : 'h-[29.5rem]')} role="status">{label}</div>
 }
 
 export function WindowControlButton({

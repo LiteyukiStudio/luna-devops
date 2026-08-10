@@ -1,6 +1,7 @@
 package buildruntime
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -29,13 +30,14 @@ type ResolvedTask struct {
 	SensitiveValues []string
 }
 
-func (r Resolver) ResolveBuildTask(tx *gorm.DB, run model.BuildRun, job model.BuildJob) (ResolvedTask, error) {
+func (r Resolver) ResolveBuildTask(ctx context.Context, tx *gorm.DB, run model.BuildRun, job model.BuildJob) (ResolvedTask, error) {
 	if tx == nil {
 		tx = r.DB
 	}
 	if tx == nil {
 		return ResolvedTask{}, errors.New("database is required")
 	}
+	tx = tx.WithContext(ctx)
 	binding, err := r.repositoryBindingForRun(tx, run)
 	if err != nil {
 		return ResolvedTask{}, err
@@ -44,7 +46,7 @@ func (r Resolver) ResolveBuildTask(tx *gorm.DB, run model.BuildRun, job model.Bu
 	if err := tx.First(&gitAccount, "id = ?", binding.GitAccountID).Error; err != nil {
 		return ResolvedTask{}, fmt.Errorf("git account not found: %w", err)
 	}
-	gitToken := r.Secrets.Resolve(gitAccount.AccessTokenRef)
+	gitToken := r.Secrets.ResolveContext(ctx, gitAccount.AccessTokenRef)
 	if strings.TrimSpace(gitToken) == "" && !repositoryBindingLooksPublic(binding) {
 		return ResolvedTask{}, errors.New("git access token is missing")
 	}
@@ -59,9 +61,9 @@ func (r Resolver) ResolveBuildTask(tx *gorm.DB, run model.BuildRun, job model.Bu
 	if err != nil {
 		return ResolvedTask{}, err
 	}
-	registrySecret := r.Secrets.Resolve(credential.TokenRef)
+	registrySecret := r.Secrets.ResolveContext(ctx, credential.TokenRef)
 	if registrySecret == "" {
-		registrySecret = r.Secrets.Resolve(credential.PasswordRef)
+		registrySecret = r.Secrets.ResolveContext(ctx, credential.PasswordRef)
 	}
 	if strings.TrimSpace(registrySecret) == "" {
 		return ResolvedTask{}, errors.New("registry credential secret is missing")
@@ -88,7 +90,7 @@ func (r Resolver) ResolveBuildTask(tx *gorm.DB, run model.BuildRun, job model.Bu
 	buildEnv, secretValues := buildenv.Resolve(buildenv.Snapshot{
 		Variables:  buildenv.Decode(run.BuildVariablesSnapshot),
 		SecretRefs: buildenv.Decode(run.BuildSecretRefsSnapshot),
-	}, r.Secrets.Resolve)
+	}, func(ref string) string { return r.Secrets.ResolveContext(ctx, ref) })
 	buildArgs := model.BuildArgs(run.BuildArgs)
 	hooks, err := r.hookPayloadsForRun(tx, run, job)
 	if err != nil {
@@ -96,10 +98,10 @@ func (r Resolver) ResolveBuildTask(tx *gorm.DB, run model.BuildRun, job model.Bu
 	}
 	sensitiveValues := []string{
 		gitToken,
-		r.Secrets.Resolve(binding.CredentialRef),
-		r.Secrets.Resolve(gitAccount.RefreshTokenRef),
-		r.Secrets.Resolve(credential.TokenRef),
-		r.Secrets.Resolve(credential.PasswordRef),
+		r.Secrets.ResolveContext(ctx, binding.CredentialRef),
+		r.Secrets.ResolveContext(ctx, gitAccount.RefreshTokenRef),
+		r.Secrets.ResolveContext(ctx, credential.TokenRef),
+		r.Secrets.ResolveContext(ctx, credential.PasswordRef),
 	}
 	sensitiveValues = append(sensitiveValues, secretValues...)
 	return ResolvedTask{
@@ -277,7 +279,7 @@ func hookPayloadFromRun(run model.HookRun) builder.HookPayload {
 	}
 }
 
-func (r Resolver) buildVariablesForRunByIDs(db *gorm.DB, user model.User, projectID string, setIDs []string) (map[string]string, []string, error) {
+func (r Resolver) buildVariablesForRunByIDs(ctx context.Context, db *gorm.DB, user model.User, projectID string, setIDs []string) (map[string]string, []string, error) {
 	output := make(map[string]string)
 	var sensitive []string
 	sets, err := r.buildVariableSetsForRun(db, user, projectID, setIDs)
@@ -285,7 +287,7 @@ func (r Resolver) buildVariablesForRunByIDs(db *gorm.DB, user model.User, projec
 		return nil, nil, err
 	}
 	for _, set := range sets {
-		setSensitive := applyBuildVariableSetValues(output, set, r.Secrets.Resolve)
+		setSensitive := applyBuildVariableSetValues(output, set, func(ref string) string { return r.Secrets.ResolveContext(ctx, ref) })
 		sensitive = append(sensitive, setSensitive...)
 	}
 	return output, sensitive, nil

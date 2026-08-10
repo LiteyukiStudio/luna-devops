@@ -83,18 +83,18 @@ func (h *Handlers) writeDeploymentTargetMetricsEvent(ctx *gin.Context, client *k
 	writeSSE(ctx.Writer, "metrics", strconv.Itoa(sequence), response)
 }
 
-func (h *Handlers) deploymentTargetMetricsClient(target model.DeploymentTarget, contexts ...context.Context) (*kubeprovider.Client, string) {
+func (h *Handlers) deploymentTargetMetricsClient(target model.DeploymentTarget, ctx context.Context) (*kubeprovider.Client, string) {
 	var cluster model.RuntimeCluster
 	var err error
 	if clusterID := strings.TrimSpace(target.ClusterID); clusterID != "" {
-		err = h.dbWithContext(firstContext(contexts)).First(&cluster, "id = ? and type in ?", clusterID, []string{"kubernetes", "k3s"}).Error
+		err = h.dbWithContext(ctx).First(&cluster, "id = ? and type in ?", clusterID, []string{"kubernetes", "k3s"}).Error
 	} else {
-		err = h.dbWithContext(firstContext(contexts)).Where("scope = ? and type in ?", "global", []string{"kubernetes", "k3s"}).Order("is_default desc, created_at asc").First(&cluster).Error
+		err = h.dbWithContext(ctx).Where("scope = ? and type in ?", "global", []string{"kubernetes", "k3s"}).Order("is_default desc, created_at asc").First(&cluster).Error
 	}
 	if err != nil {
 		return nil, "cluster_unavailable"
 	}
-	kubeconfig := h.secrets.ResolveContext(firstContext(contexts), cluster.KubeconfigRef)
+	kubeconfig := h.secrets.ResolveContext(ctx, cluster.KubeconfigRef)
 	if strings.TrimSpace(kubeconfig) == "" {
 		return nil, "cluster_unavailable"
 	}

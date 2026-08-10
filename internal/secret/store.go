@@ -83,26 +83,15 @@ func ResolveInline(ref string) string {
 	return ""
 }
 
-type AuditFunc func(userID, action, resource string, success bool, message string)
 type ContextAuditFunc func(ctx context.Context, userID, action, resource string, success bool, message string)
 
 type Store struct {
 	db           *gorm.DB
-	audit        AuditFunc
 	auditContext ContextAuditFunc
 }
 
-func (s Store) WithContextAudit(audit ContextAuditFunc) Store {
-	s.auditContext = audit
-	return s
-}
-
-func NewStore(db *gorm.DB, audit AuditFunc) Store {
-	return Store{db: db, audit: audit}
-}
-
-func (s Store) Store(secret, createdBy, resource string) string {
-	return s.StoreContext(context.Background(), secret, createdBy, resource)
+func NewStore(db *gorm.DB, audit ContextAuditFunc) Store {
+	return Store{db: db, auditContext: audit}
 }
 
 func (s Store) StoreContext(ctx context.Context, secret, createdBy, resource string) string {
@@ -121,14 +110,8 @@ func (s Store) StoreContext(ctx context.Context, secret, createdBy, resource str
 	}
 	if s.auditContext != nil {
 		s.auditContext(ctx, createdBy, "secret.write", value.ID, true, value.Resource)
-	} else if s.audit != nil {
-		s.audit(createdBy, "secret.write", value.ID, true, value.Resource)
 	}
 	return storedSecretIDPrefix + value.ID
-}
-
-func (s Store) Resolve(ref string) string {
-	return s.ResolveContext(context.Background(), ref)
 }
 
 func (s Store) ResolveContext(ctx context.Context, ref string) string {

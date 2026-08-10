@@ -22,15 +22,15 @@ If the Collector requires authentication, inject `OTEL_EXPORTER_OTLP_HEADERS` fr
 
 ## Agent full-content observability (sensitive)
 
-Telemetry does not record user prompts, model replies, or tool bodies by default. Enable the following only for model diagnostics after restricting Tempo/Loki access and retention:
+Content capture is disabled by default. Enable it temporarily only when required in a controlled development, test, or security-audit environment:
 
 ```bash
 AI_OBSERVABILITY_CAPTURE_CONTENT=true
 ```
 
-After restarting Agent, traces and logs include redacted model input, output, and tool-call content. Common tokens, cookies, passwords, and API keys are filtered, but prompts and business responses may still contain personal or platform data. This feature is not a data-isolation boundary.
+After restarting Agent, traces and logs may record model input messages, model output messages, tool-call arguments, tool execution results, and model or tool error responses. Even after redaction, this data may contain user input, resource names, configuration content, or diagnostic information. This feature is not a data-isolation boundary.
 
-Set the switch back to `false` and restart Agent after diagnosis. Do not use sensitive content capture as a permanent audit log.
+Keep content capture disabled in production. Enable it temporarily only after an administrator has assessed data access, retention, and sensitive-information risks. Set the switch back to `false` and restart Agent when the task is complete. Do not use sensitive content capture as a permanent audit log.
 
 ## Configure Luna's embedded Agent observability
 

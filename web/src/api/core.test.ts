@@ -1,6 +1,6 @@
 import type { MFAChallenge } from './types'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { registerMFAChallengeHandler, request } from './core'
+import { ApiError, registerMFAChallengeHandler, request } from './core'
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -158,5 +158,51 @@ describe('mfa request retry flow', () => {
     finally {
       unregister()
     }
+  })
+})
+
+describe('api error boundary', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  it('prefers the safe public error over development-only detail', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({
+      code: 'provider.future_failure',
+      detail: 'pq: relation secrets does not exist at /srv/luna/internal/provider/client.go',
+      error: 'The service is temporarily unavailable.',
+      requestId: 'req_safe_error',
+    }, 500))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const error = await request('/failure').catch((requestError: unknown) => requestError)
+
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error).toMatchObject({
+      code: 'provider.future_failure',
+      detail: 'pq: relation secrets does not exist at /srv/luna/internal/provider/client.go',
+      message: 'The service is temporarily unavailable.',
+      requestId: 'req_safe_error',
+      status: 500,
+    })
+  })
+
+  it('does not present a non-JSON proxy response as a user-facing error', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(
+      'dial tcp http://internal-provider.local: connection refused',
+      { status: 502, headers: { 'Content-Type': 'text/plain' } },
+    ))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const error = await request('/failure').catch((requestError: unknown) => requestError)
+
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error).toMatchObject({
+      code: 'http.502',
+      detail: 'dial tcp http://internal-provider.local: connection refused',
+      status: 502,
+    })
+    expect((error as ApiError).message).not.toContain('internal-provider.local')
   })
 })

@@ -150,7 +150,7 @@ func (h *Handlers) CreateGatewayTrafficUsage(ctx *gin.Context) {
 	var component model.SystemComponentInstallation
 	componentAuthenticated := false
 	if token := bearerTokenFromHeader(ctx.GetHeader("Authorization")); token != "" {
-		if item, ok := h.systemComponentForBearerToken(token, systemComponentGatewayTrafficProbe, ctx.Request.Context(), ctx.Request.Context()); ok {
+		if item, ok := h.systemComponentForBearerToken(token, systemComponentGatewayTrafficProbe, ctx.Request.Context()); ok {
 			component = item
 			componentAuthenticated = true
 			actorID = item.ID
@@ -221,7 +221,7 @@ func (h *Handlers) CreateGatewayTrafficUsage(ctx *gin.Context) {
 
 func (h *Handlers) CreateGatewayTrafficProbeHello(ctx *gin.Context) {
 	token := bearerTokenFromHeader(ctx.GetHeader("Authorization"))
-	_, ok := h.systemComponentForBearerToken(token, systemComponentGatewayTrafficProbe, ctx.Request.Context(), ctx.Request.Context())
+	_, ok := h.systemComponentForBearerToken(token, systemComponentGatewayTrafficProbe, ctx.Request.Context())
 	if !ok {
 		writeError(ctx, http.StatusUnauthorized, "gateway traffic probe token is invalid")
 		return
@@ -237,18 +237,18 @@ func bearerTokenFromHeader(header string) string {
 	return strings.TrimSpace(header[len("Bearer "):])
 }
 
-func (h *Handlers) gatewayRouteBelongsToRuntimeCluster(route model.GatewayRoute, clusterID string, contexts ...context.Context) bool {
+func (h *Handlers) gatewayRouteBelongsToRuntimeCluster(route model.GatewayRoute, clusterID string, ctx context.Context) bool {
 	clusterID = strings.TrimSpace(clusterID)
 	if clusterID == "" {
 		return false
 	}
 	var target model.DeploymentTarget
-	if err := h.dbWithContext(firstContext(contexts)).Select("id", "cluster_id").First(&target, "id = ? and project_id = ?", route.DeploymentTargetID, route.ProjectID).Error; err != nil {
+	if err := h.dbWithContext(ctx).Select("id", "cluster_id").First(&target, "id = ? and project_id = ?", route.DeploymentTargetID, route.ProjectID).Error; err != nil {
 		return false
 	}
 	targetClusterID := strings.TrimSpace(target.ClusterID)
 	if targetClusterID == "" {
-		targetClusterID = h.defaultRuntimeClusterID(firstContext(contexts))
+		targetClusterID = h.defaultRuntimeClusterID(ctx)
 	}
 	return targetClusterID == clusterID
 }

@@ -16,19 +16,32 @@ func (h *Handlers) ListReleases(ctx *gin.Context) {
 	if _, ok := h.findProjectForCurrentUser(ctx); !ok {
 		return
 	}
-	query := h.dbFor(ctx).Where("project_id = ?", ctx.Param("projectId")).Order("created_at desc")
+	pagination := paginationFromQueryWithSort(ctx, map[string]string{"createdAt": "created_at", "status": "status", "revision": "revision"}, "createdAt")
+	query := h.dbFor(ctx).Model(&model.Release{}).Where("project_id = ?", ctx.Param("projectId"))
+	if applicationID := strings.TrimSpace(ctx.Query("applicationId")); applicationID != "" {
+		query = query.Where("application_id = ?", applicationID)
+	}
 	if environmentID := strings.TrimSpace(ctx.Query("environmentId")); environmentID != "" {
 		query = query.Where("environment_id = ?", environmentID)
 	}
 	if targetID := strings.TrimSpace(ctx.Query("deploymentTargetId")); targetID != "" {
 		query = query.Where("deployment_target_id = ?", targetID)
 	}
-	var releases []model.Release
-	if err := query.Find(&releases).Error; err != nil {
+	var total int64
+	if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	ctx.JSON(http.StatusOK, releases)
+	var releases []model.Release
+	if err := query.Order(orderByClause(pagination, map[string]string{
+		"createdAt": "created_at",
+		"status":    "status",
+		"revision":  "revision",
+	}, "created_at")).Limit(pagination.PageSize).Offset(pagination.Offset()).Find(&releases).Error; err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
+		return
+	}
+	ctx.JSON(http.StatusOK, paginatedResponse(releases, total, pagination))
 }
 
 func (h *Handlers) CreateRelease(ctx *gin.Context) {

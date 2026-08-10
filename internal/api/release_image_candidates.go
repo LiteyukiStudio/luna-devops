@@ -87,7 +87,7 @@ func (h *Handlers) appendRegistryReleaseImageCandidates(ctx *gin.Context, user m
 	}
 	repository = repositoryWithoutRegistryHost(registry, repository)
 	credential := h.registryCredentialInput(ctx.Request.Context(), user, registry)
-	result, err := registryprovider.ListTags(ctx.Request.Context(), registry.Provider, registry.Endpoint, repository, releaseImageCandidateLimit, h.egressPolicyForUser(user), credential)
+	result, err := registryprovider.ListTags(ctx.Request.Context(), registry.Provider, registry.Endpoint, repository, releaseImageCandidateLimit, h.egressPolicyForUser(user, ctx.Request.Context()), credential)
 	if err != nil {
 		response.RegistryError = "registry_unavailable"
 		return
@@ -120,9 +120,9 @@ func (h *Handlers) appendRegistryReleaseImageCandidates(ctx *gin.Context, user m
 	}
 }
 
-func (h *Handlers) appendBuildRunReleaseImageCandidates(target model.DeploymentTarget, response *releaseImageCandidatesOutput, seen map[string]bool, contexts ...context.Context) {
+func (h *Handlers) appendBuildRunReleaseImageCandidates(target model.DeploymentTarget, response *releaseImageCandidatesOutput, seen map[string]bool, ctx context.Context) {
 	var runs []model.BuildRun
-	if err := h.dbWithContext(firstContext(contexts)).
+	if err := h.dbWithContext(ctx).
 		Where("project_id = ? and application_id = ? and deployment_target_id = ? and status = ?", target.ProjectID, target.ApplicationID, target.ID, "succeeded").
 		Order("finished_at desc nulls last, created_at desc").
 		Limit(releaseImageCandidateLimit).

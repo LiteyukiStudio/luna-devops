@@ -15,8 +15,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func (h *Handlers) dependencyService(contexts ...context.Context) *dependency.Service {
-	return dependency.NewService(dependency.NewGormRepository(h.dbWithContext(firstContext(contexts))))
+func (h *Handlers) dependencyService(ctx context.Context) *dependency.Service {
+	return dependency.NewService(dependency.NewGormRepository(h.dbWithContext(ctx)))
 }
 
 func (h *Handlers) ListServiceBindings(ctx *gin.Context) {
@@ -115,7 +115,7 @@ func (h *Handlers) CheckServiceBinding(ctx *gin.Context) {
 			writeErrorCode(ctx, http.StatusNotFound, dependency.CodeNotFound, "target deployment target not found")
 			return
 		}
-		client, _, unavailableCode := h.kubernetesClientForDeploymentTargetObservation(project, targetTarget)
+		client, _, unavailableCode := h.kubernetesClientForDeploymentTargetObservation(project, targetTarget, ctx.Request.Context())
 		if client == nil {
 			result.Status = observation.StatusUnavailable
 			result.ObservationCode = "service_binding." + unavailableCode

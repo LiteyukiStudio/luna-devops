@@ -1,6 +1,7 @@
 import type { ComponentType } from 'react'
-import { lazy, Suspense } from 'react'
+import { lazy } from 'react'
 import { Navigate, Route, Routes, useParams } from 'react-router-dom'
+import { LazyLoadBoundary } from './components/common/lazy-load-boundary'
 import { TooltipProvider } from './components/ui/tooltip'
 import { AppLayout } from './layouts/AppLayout'
 
@@ -33,7 +34,7 @@ const AIInteractionCardGallery = import.meta.env.DEV
 export default function App() {
   return (
     <TooltipProvider>
-      <Suspense fallback={<RouteFallback />}>
+      <LazyLoadBoundary fallback={<RouteFallback />}>
         <Routes>
           <Route path="/bootstrap" element={<BootstrapPage />} />
           <Route path="/login" element={<LoginPage />} />
@@ -67,7 +68,7 @@ export default function App() {
             <Route path="/settings/users" element={<UsersPage />} />
           </Route>
         </Routes>
-      </Suspense>
+      </LazyLoadBoundary>
     </TooltipProvider>
   )
 }

@@ -208,8 +208,8 @@ func accessTokenAllows(scopeText, required string) bool {
 	return service.AccessTokenAllows(scopeText, required)
 }
 
-func (h *Handlers) hasPlatformAdmin(contexts ...context.Context) bool {
-	exists, err := platformAdminExists(h.dbWithContext(firstContext(contexts)))
+func (h *Handlers) hasPlatformAdmin(ctx context.Context) bool {
+	exists, err := platformAdminExists(h.dbWithContext(ctx))
 	return err == nil && exists
 }
 
@@ -348,9 +348,9 @@ func (h *Handlers) createRememberToken(ctx *gin.Context, userID string, requeste
 	return true
 }
 
-func (h *Handlers) rotateRememberLogin(userID, plainToken string, contexts ...context.Context) (model.User, string, string, error) {
+func (h *Handlers) rotateRememberLogin(userID, plainToken string, ctx context.Context) (model.User, string, string, error) {
 	now := time.Now()
-	if err := h.cleanupExpiredRememberTokenFamilies(userID, now, firstContext(contexts)); err != nil {
+	if err := h.cleanupExpiredRememberTokenFamilies(userID, now, ctx); err != nil {
 		return model.User{}, "", "", err
 	}
 	var newSessionToken string
@@ -358,7 +358,7 @@ func (h *Handlers) rotateRememberLogin(userID, plainToken string, contexts ...co
 	var user model.User
 	reused := false
 
-	err := h.dbWithContext(firstContext(contexts)).Transaction(func(tx *gorm.DB) error {
+	err := h.dbWithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var lockedUser model.User
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedUser, "id = ?", userID).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -468,8 +468,8 @@ func deleteRememberFamilySessionsExcept(tx *gorm.DB, userID, familyID, keepSessi
 	return tx.Where("id in ?", sessionIDs).Delete(&model.UserSession{}).Error
 }
 
-func (h *Handlers) cleanupExpiredRememberTokenFamilies(userID string, now time.Time, contexts ...context.Context) error {
-	return h.dbWithContext(firstContext(contexts)).Transaction(func(tx *gorm.DB) error {
+func (h *Handlers) cleanupExpiredRememberTokenFamilies(userID string, now time.Time, ctx context.Context) error {
+	return h.dbWithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var families []struct {
 			FamilyID string
 		}
@@ -528,9 +528,9 @@ func revokeUserAuthentication(tx *gorm.DB, userID string) error {
 	return tx.Where("user_id = ?", userID).Delete(&model.UserSession{}).Error
 }
 
-func (h *Handlers) revokeCurrentSessionAndRememberTokens(plainToken string, contexts ...context.Context) (string, error) {
+func (h *Handlers) revokeCurrentSessionAndRememberTokens(plainToken string, ctx context.Context) (string, error) {
 	userID := ""
-	err := h.dbWithContext(firstContext(contexts)).Transaction(func(tx *gorm.DB) error {
+	err := h.dbWithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var session model.UserSession
 		if err := tx.First(&session, "token_hash = ?", hashToken(plainToken)).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {

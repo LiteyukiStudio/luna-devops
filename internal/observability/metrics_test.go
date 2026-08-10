@@ -101,22 +101,22 @@ func TestWorkerMetricsExportsBusinessMetrics(t *testing.T) {
 	startedAt := time.Now().Add(-2 * time.Minute)
 	finishedAt := time.Now()
 
-	metrics.RecordBuildRun(BusinessRunMetric{
+	metrics.RecordBuildRun(context.Background(), BusinessRunMetric{
 		Status:     "succeeded",
 		Type:       "manual",
 		StartedAt:  &startedAt,
 		FinishedAt: &finishedAt,
 		CreatedAt:  startedAt.Add(-time.Minute),
 	})
-	metrics.RecordRelease(BusinessRunMetric{
+	metrics.RecordRelease(context.Background(), BusinessRunMetric{
 		Status:     "failed",
 		Type:       "deploy",
 		StartedAt:  &startedAt,
 		FinishedAt: &finishedAt,
 		CreatedAt:  startedAt,
 	})
-	metrics.RecordGatewaySync("apply", "succeeded", 150*time.Millisecond)
-	metrics.SetDeploymentRuntime(DeploymentRuntimeMetric{
+	metrics.RecordGatewaySync(context.Background(), "apply", "succeeded", 150*time.Millisecond)
+	metrics.SetDeploymentRuntime(context.Background(), DeploymentRuntimeMetric{
 		DesiredReplicas:   3,
 		ReadyReplicas:     2,
 		AvailableReplicas: 2,

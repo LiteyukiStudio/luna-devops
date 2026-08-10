@@ -57,7 +57,7 @@ import { useAIToolDebugMode } from './tool-debug-mode'
 
 type AssistantView = 'chat' | 'conversations'
 
-export function AiAssistant() {
+export function AiAssistant({ initiallyOpen = false }: { initiallyOpen?: boolean }) {
   const { i18n, t } = useTranslation()
   const { actualUser } = useSession()
   const queryClient = useQueryClient()
@@ -75,7 +75,7 @@ export function AiAssistant() {
   const processingAutomaticActionsRef = useRef(new Set<string>())
   const desktop = useDesktopViewport()
   const reduceMotion = useReducedMotion()
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(initiallyOpen)
   const [capabilityEpoch, invalidateOpenWindow] = useReducer(value => value + 1, 0)
   const [openedCapabilityEpoch, setOpenedCapabilityEpoch] = useState(0)
   const [assistantView, setAssistantView] = useState<AssistantView>('chat')

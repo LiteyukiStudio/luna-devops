@@ -57,19 +57,19 @@ func (h *Handlers) validateBuildRunRequest(ctx *gin.Context, user model.User, ru
 	return true
 }
 
-func (h *Handlers) prepareBuildRunRequest(user model.User, run *model.BuildRun, contexts ...context.Context) error {
+func (h *Handlers) prepareBuildRunRequest(user model.User, run *model.BuildRun, ctx context.Context) error {
 	var project model.Project
-	if err := h.dbWithContext(firstContext(contexts)).First(&project, "id = ?", run.ProjectID).Error; err != nil {
+	if err := h.dbWithContext(ctx).First(&project, "id = ?", run.ProjectID).Error; err != nil {
 		return buildRunBadRequest("项目空间不存在")
 	}
 	var app model.Application
-	if err := h.dbWithContext(firstContext(contexts)).First(&app, "id = ? and project_id = ?", run.ApplicationID, run.ProjectID).Error; err != nil {
+	if err := h.dbWithContext(ctx).First(&app, "id = ? and project_id = ?", run.ApplicationID, run.ProjectID).Error; err != nil {
 		return buildRunBadRequest("应用不存在")
 	}
 	if !applicationCanMutate(app) {
 		return buildRunConflict("application.delete_in_progress", "应用正在删除中，不能触发构建")
 	}
-	config, err := h.deploymentTargetForBuildRun(app, run.DeploymentTargetID, firstContext(contexts))
+	config, err := h.deploymentTargetForBuildRun(app, run.DeploymentTargetID, ctx)
 	if err != nil {
 		return buildRunBadRequest("部署配置不存在或不可用")
 	}
@@ -129,7 +129,7 @@ func (h *Handlers) prepareBuildRunRequest(user model.User, run *model.BuildRun, 
 	run.BuildLabels = strings.Join(normalizeBuildSelectorList(strings.Split(config.BuildLabels, ",")), ",")
 	if strings.TrimSpace(config.RepositoryBindingID) != "" {
 		var binding model.RepositoryBinding
-		if err := h.dbWithContext(firstContext(contexts)).First(&binding, "id = ? and project_id = ? and application_id = ?", config.RepositoryBindingID, run.ProjectID, run.ApplicationID).Error; err != nil {
+		if err := h.dbWithContext(ctx).First(&binding, "id = ? and project_id = ? and application_id = ?", config.RepositoryBindingID, run.ProjectID, run.ApplicationID).Error; err != nil {
 			return buildRunBadRequest("部署配置绑定的代码仓库不存在")
 		}
 	} else {
@@ -142,10 +142,10 @@ func (h *Handlers) prepareBuildRunRequest(user model.User, run *model.BuildRun, 
 		return buildRunBadRequest("目标镜像站不能为空")
 	}
 	var registry model.ArtifactRegistry
-	if err := h.dbWithContext(firstContext(contexts)).First(&registry, "id = ?", run.TargetRegistryID).Error; err != nil {
+	if err := h.dbWithContext(ctx).First(&registry, "id = ?", run.TargetRegistryID).Error; err != nil {
 		return buildRunBadRequest("目标镜像站不存在")
 	}
-	credential, hasCredential := h.registryPushCredentialForProject(user, registry, run.ProjectID, firstContext(contexts))
+	credential, hasCredential := h.registryPushCredentialForProject(user, registry, run.ProjectID, ctx)
 	if strings.TrimSpace(run.TargetRepository) == "" {
 		run.TargetRepository = strings.Trim(strings.TrimSpace(config.TargetRepository), "/")
 		run.TargetTag = strings.TrimSpace(config.TargetTag)
@@ -165,14 +165,14 @@ func (h *Handlers) prepareBuildRunRequest(user model.User, run *model.BuildRun, 
 	run.TargetRepository = strings.Trim(strings.TrimSpace(run.TargetRepository), "/")
 	run.TargetTag = fallback(strings.TrimSpace(run.TargetTag), "latest")
 	run.ImageRef = fallback(strings.TrimSpace(run.ImageRef), buildImageRef(registry, *run))
-	if !h.usableRegistryCredentialExists(user.ID, run.ProjectID, registry, firstContext(contexts)) {
+	if !h.usableRegistryCredentialExists(user.ID, run.ProjectID, registry, ctx) {
 		return buildRunBadRequest("目标镜像站缺少可用推送凭据")
 	}
-	if _, err := h.buildVariablesForRunByIDs(h.dbWithContext(firstContext(contexts)), user, run.ProjectID, buildVariableSetIDs(run.BuildVariableSetIDs), firstContext(contexts)); err != nil {
+	if _, err := h.buildVariablesForRunByIDs(h.dbWithContext(ctx), user, run.ProjectID, buildVariableSetIDs(run.BuildVariableSetIDs), ctx); err != nil {
 		return buildRunBadRequest(err.Error())
 	}
 	if strings.TrimSpace(run.BuildVariablesSnapshot) == "" && strings.TrimSpace(run.BuildSecretRefsSnapshot) == "" {
-		snapshot, err := h.buildEnvironmentSnapshotForRun(h.dbWithContext(firstContext(contexts)), user, *run, firstContext(contexts))
+		snapshot, err := h.buildEnvironmentSnapshotForRun(h.dbWithContext(ctx), user, *run, ctx)
 		if err != nil {
 			return buildRunBadRequest("构建变量和密钥不可用")
 		}
@@ -182,9 +182,9 @@ func (h *Handlers) prepareBuildRunRequest(user model.User, run *model.BuildRun, 
 	return nil
 }
 
-func (h *Handlers) deploymentTargetForBuildRun(app model.Application, targetID string, contexts ...context.Context) (model.DeploymentTarget, error) {
+func (h *Handlers) deploymentTargetForBuildRun(app model.Application, targetID string, ctx context.Context) (model.DeploymentTarget, error) {
 	var config model.DeploymentTarget
-	query := h.dbWithContext(firstContext(contexts)).Where("project_id = ? and application_id = ? and enabled = ?", app.ProjectID, app.ID, true)
+	query := h.dbWithContext(ctx).Where("project_id = ? and application_id = ? and enabled = ?", app.ProjectID, app.ID, true)
 	if strings.TrimSpace(targetID) != "" {
 		query = query.Where("id = ?", strings.TrimSpace(targetID))
 	} else {
@@ -202,14 +202,14 @@ func (h *Handlers) deploymentTargetForRun(ctx *gin.Context, app model.Applicatio
 	return config, true
 }
 
-func (h *Handlers) usableRegistryCredentialExists(userID, projectID string, registry model.ArtifactRegistry, contexts ...context.Context) bool {
+func (h *Handlers) usableRegistryCredentialExists(userID, projectID string, registry model.ArtifactRegistry, ctx context.Context) bool {
 	visible := func(query *gorm.DB) *gorm.DB {
 		return query.Where("scope = ? and owner_ref = ? or scope = ? or (scope = ? and exists (select 1 from scoped_resource_project_bindings srpb where srpb.resource_type = ? and srpb.resource_id = registry_credentials.id and srpb.project_id = ?))",
 			"user", userID, "global", "project", scopedResourceRegistryCredential, projectID)
 	}
 	if strings.TrimSpace(registry.CredentialRef) != "" {
 		var count int64
-		visible(h.dbWithContext(firstContext(contexts)).Model(&model.RegistryCredential{})).
+		visible(h.dbWithContext(ctx).Model(&model.RegistryCredential{})).
 			Where("registry_id = ? and usage in ?", registry.ID, []string{"push", "push-pull"}).
 			Where("id = ?", registry.CredentialRef).
 			Count(&count)
@@ -218,7 +218,7 @@ func (h *Handlers) usableRegistryCredentialExists(userID, projectID string, regi
 		}
 	}
 	var count int64
-	visible(h.dbWithContext(firstContext(contexts)).Model(&model.RegistryCredential{})).
+	visible(h.dbWithContext(ctx).Model(&model.RegistryCredential{})).
 		Where("registry_id = ? and usage in ?", registry.ID, []string{"push", "push-pull"}).
 		Count(&count)
 	return count > 0

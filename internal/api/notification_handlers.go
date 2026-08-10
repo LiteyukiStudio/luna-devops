@@ -202,7 +202,7 @@ type latestNotificationDelivery struct {
 	FinishedAt   *time.Time
 }
 
-func (h *Handlers) populateLatestNotificationDeliveries(channels []model.NotificationChannel, contexts ...context.Context) error {
+func (h *Handlers) populateLatestNotificationDeliveries(channels []model.NotificationChannel, ctx context.Context) error {
 	if len(channels) == 0 {
 		return nil
 	}
@@ -211,7 +211,7 @@ func (h *Handlers) populateLatestNotificationDeliveries(channels []model.Notific
 		channelIDs = append(channelIDs, channel.ID)
 	}
 	var latest []latestNotificationDelivery
-	if err := h.dbWithContext(firstContext(contexts)).Raw(`
+	if err := h.dbWithContext(ctx).Raw(`
 		SELECT DISTINCT ON (channel_id)
 			channel_id,
 			status,

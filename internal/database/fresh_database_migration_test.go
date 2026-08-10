@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"os"
@@ -82,10 +83,10 @@ func TestMigrateBootstrapsFreshPostgresSchema(t *testing.T) {
 		}
 	}()
 
-	if err := Migrate(testDB); err != nil {
+	if err := MigrateContext(context.Background(), testDB); err != nil {
 		t.Fatalf("migrate fresh database: %v", err)
 	}
-	if err := Migrate(testDB); err != nil {
+	if err := MigrateContext(context.Background(), testDB); err != nil {
 		t.Fatalf("repeat migration after fresh bootstrap: %v", err)
 	}
 

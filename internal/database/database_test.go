@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -8,7 +9,7 @@ import (
 
 func TestOpenRejectsUnsupportedDatabaseURLWithoutRetry(t *testing.T) {
 	started := time.Now()
-	_, err := Open("mysql://user:pass@db:3306/app")
+	_, err := OpenContext(context.Background(), "mysql://user:pass@db:3306/app")
 	if err == nil {
 		t.Fatalf("expected unsupported database URL error")
 	}

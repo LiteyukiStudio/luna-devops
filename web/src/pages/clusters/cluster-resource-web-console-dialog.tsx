@@ -1,8 +1,9 @@
 import type { ClusterResource, RuntimeCluster } from '@/api'
 import { Maximize2, Minimize2, Minus, X } from 'lucide-react'
-import { lazy, Suspense, useCallback, useMemo, useState } from 'react'
+import { lazy, useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api, runtimeClusterPodTerminalUrl } from '@/api'
+import { LazyLoadBoundary } from '@/components/common/lazy-load-boundary'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { WindowControlButton } from '@/pages/applications/application-web-console-dialog'
@@ -101,8 +102,12 @@ export function ClusterResourceWebConsoleDialog({
             </div>
           </div>
           <div className={fullscreen ? 'min-h-0 flex-1' : undefined}>
-            <Suspense fallback={<div className={fullscreen ? 'h-full min-h-[28rem] bg-slate-950' : 'h-[29.5rem] bg-slate-950'} />}>
+            <LazyLoadBoundary
+              fallback={<div className={cn('grid place-items-center bg-slate-950 text-sm text-zinc-400', fullscreen ? 'h-full min-h-[28rem]' : 'h-[29.5rem]')} role="status">{t('common.loading')}</div>}
+              resetKey={`${podKey}:${container}`}
+            >
               <ApplicationRuntimeTerminalPanel
+                key={`${podKey}:${container}`}
                 authorize={authorizeTerminal}
                 container={container}
                 fullscreen={fullscreen}
@@ -111,7 +116,7 @@ export function ClusterResourceWebConsoleDialog({
                 release={null}
                 socketUrl={socketUrl}
               />
-            </Suspense>
+            </LazyLoadBoundary>
           </div>
         </div>
       </DialogContent>

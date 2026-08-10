@@ -13,16 +13,16 @@ import (
 
 var errDeploymentStageExists = errors.New("deployment stage already exists")
 
-func (h *Handlers) createDeploymentTarget(target model.DeploymentTarget, hookInputs []deploymentTargetHookBindingInput, buildEnvironment *model.BuildEnvironmentConfig, contexts ...context.Context) error {
-	return h.persistDeploymentTarget(target, hookInputs, buildEnvironment, true, contexts...)
+func (h *Handlers) createDeploymentTarget(target model.DeploymentTarget, hookInputs []deploymentTargetHookBindingInput, buildEnvironment *model.BuildEnvironmentConfig, ctx context.Context) error {
+	return h.persistDeploymentTarget(target, hookInputs, buildEnvironment, true, ctx)
 }
 
-func (h *Handlers) saveDeploymentTarget(target model.DeploymentTarget, hookInputs []deploymentTargetHookBindingInput, buildEnvironment *model.BuildEnvironmentConfig, contexts ...context.Context) error {
-	return h.persistDeploymentTarget(target, hookInputs, buildEnvironment, false, contexts...)
+func (h *Handlers) saveDeploymentTarget(target model.DeploymentTarget, hookInputs []deploymentTargetHookBindingInput, buildEnvironment *model.BuildEnvironmentConfig, ctx context.Context) error {
+	return h.persistDeploymentTarget(target, hookInputs, buildEnvironment, false, ctx)
 }
 
-func (h *Handlers) persistDeploymentTarget(target model.DeploymentTarget, hookInputs []deploymentTargetHookBindingInput, buildEnvironment *model.BuildEnvironmentConfig, create bool, contexts ...context.Context) error {
-	return h.dbWithContext(firstContext(contexts)).Transaction(func(tx *gorm.DB) error {
+func (h *Handlers) persistDeploymentTarget(target model.DeploymentTarget, hookInputs []deploymentTargetHookBindingInput, buildEnvironment *model.BuildEnvironmentConfig, create bool, ctx context.Context) error {
+	return h.dbWithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if create {
 			result := tx.Clauses(clause.OnConflict{
 				Columns:     []clause.Column{{Name: "application_id"}, {Name: "stage"}},
@@ -48,7 +48,7 @@ func (h *Handlers) persistDeploymentTarget(target model.DeploymentTarget, hookIn
 	})
 }
 
-func (h *Handlers) attachDeploymentTargetHookBindings(targets []model.DeploymentTarget, contexts ...context.Context) error {
+func (h *Handlers) attachDeploymentTargetHookBindings(targets []model.DeploymentTarget, ctx context.Context) error {
 	if len(targets) == 0 {
 		return nil
 	}
@@ -59,7 +59,7 @@ func (h *Handlers) attachDeploymentTargetHookBindings(targets []model.Deployment
 		targetIndex[targets[index].ID] = index
 	}
 	var bindings []model.DeploymentTargetHookBinding
-	if err := h.dbWithContext(firstContext(contexts)).Where("target_id in ?", targetIDs).Order("run_order asc, created_at asc").Find(&bindings).Error; err != nil {
+	if err := h.dbWithContext(ctx).Where("target_id in ?", targetIDs).Order("run_order asc, created_at asc").Find(&bindings).Error; err != nil {
 		return err
 	}
 	for _, binding := range bindings {
@@ -72,9 +72,9 @@ func (h *Handlers) attachDeploymentTargetHookBindings(targets []model.Deployment
 	return nil
 }
 
-func (h *Handlers) deploymentTargetWithHookBindings(target model.DeploymentTarget, contexts ...context.Context) (model.DeploymentTarget, error) {
+func (h *Handlers) deploymentTargetWithHookBindings(target model.DeploymentTarget, ctx context.Context) (model.DeploymentTarget, error) {
 	targets := []model.DeploymentTarget{target}
-	if err := h.attachDeploymentTargetHookBindings(targets, firstContext(contexts)); err != nil {
+	if err := h.attachDeploymentTargetHookBindings(targets, ctx); err != nil {
 		return target, err
 	}
 	return targets[0], nil

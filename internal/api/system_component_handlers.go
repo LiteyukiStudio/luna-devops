@@ -136,7 +136,7 @@ func (h *Handlers) InstallSystemAppTemplate(ctx *gin.Context) {
 	componentID := strings.TrimSpace(template.SystemComponent)
 	reportToken := "lyd_probe_" + randomHex(32)
 
-	platformProject, err := h.ensurePlatformSystemProject(user)
+	platformProject, err := h.ensurePlatformSystemProject(user, ctx.Request.Context())
 	if err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
@@ -309,8 +309,8 @@ func (h *Handlers) systemComponentApplicationPlan(ctx *gin.Context, user model.U
 	}, true
 }
 
-func (h *Handlers) persistSystemComponentApplicationPlan(plan systemComponentApplicationPlan, contexts ...context.Context) error {
-	return h.dbWithContext(firstContext(contexts)).Transaction(func(tx *gorm.DB) error {
+func (h *Handlers) persistSystemComponentApplicationPlan(plan systemComponentApplicationPlan, ctx context.Context) error {
+	return h.dbWithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Save(&plan.Application).Error; err != nil {
 			return err
 		}
@@ -384,13 +384,13 @@ func validateOptionalHTTPURL(value string, label string) error {
 	return nil
 }
 
-func (h *Handlers) systemComponentForBearerToken(token string, componentID string, contexts ...context.Context) (model.SystemComponentInstallation, bool) {
+func (h *Handlers) systemComponentForBearerToken(token string, componentID string, ctx context.Context) (model.SystemComponentInstallation, bool) {
 	token = strings.TrimSpace(token)
 	if token == "" {
 		return model.SystemComponentInstallation{}, false
 	}
 	var installation model.SystemComponentInstallation
-	err := h.dbWithContext(firstContext(contexts)).First(&installation, "component_id = ? and report_token_hash = ?", componentID, hashToken(token)).Error
+	err := h.dbWithContext(ctx).First(&installation, "component_id = ? and report_token_hash = ?", componentID, hashToken(token)).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return model.SystemComponentInstallation{}, false
 	}

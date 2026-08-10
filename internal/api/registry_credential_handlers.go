@@ -39,31 +39,22 @@ func (h *Handlers) ListAllRegistryCredentials(ctx *gin.Context) {
 func (h *Handlers) listRegistryCredentials(ctx *gin.Context, query *gorm.DB) {
 	var credentials []model.RegistryCredential
 	query = applySearch(ctx, query, "name", "username")
-	if paginationRequested(ctx) {
-		pagination := paginationFromQuery(ctx)
-		var total int64
-		if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
-			writeError(ctx, http.StatusInternalServerError, err.Error())
-			return
-		}
-		if err := query.Order(orderByClause(pagination, map[string]string{
-			"name":      "name",
-			"username":  "username",
-			"createdAt": "created_at",
-		}, "created_at")).Limit(pagination.PageSize).Offset(pagination.Offset()).Find(&credentials).Error; err != nil {
-			writeError(ctx, http.StatusInternalServerError, err.Error())
-			return
-		}
-		h.attachRegistryCredentialProjects(credentials)
-		ctx.JSON(http.StatusOK, paginatedResponse(credentialResponses(credentials), total, pagination))
-		return
-	}
-	if err := query.Order("created_at desc").Find(&credentials).Error; err != nil {
+	pagination := paginationFromQueryWithSort(ctx, map[string]string{"name": "name", "username": "username", "createdAt": "created_at"}, "createdAt")
+	var total int64
+	if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	h.attachRegistryCredentialProjects(credentials)
-	ctx.JSON(http.StatusOK, credentialResponses(credentials))
+	if err := query.Order(orderByClause(pagination, map[string]string{
+		"name":      "name",
+		"username":  "username",
+		"createdAt": "created_at",
+	}, "created_at")).Limit(pagination.PageSize).Offset(pagination.Offset()).Find(&credentials).Error; err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
+		return
+	}
+	h.attachRegistryCredentialProjects(credentials, ctx.Request.Context())
+	ctx.JSON(http.StatusOK, paginatedResponse(credentialResponses(credentials), total, pagination))
 }
 
 func (h *Handlers) CreateRegistryCredential(ctx *gin.Context) {
@@ -242,34 +233,34 @@ func (h *Handlers) DeleteRegistryCredential(ctx *gin.Context) {
 	ctx.Status(http.StatusNoContent)
 }
 
-func (h *Handlers) registryCredentialFor(user model.User, registry model.ArtifactRegistry, contexts ...context.Context) (model.RegistryCredential, bool) {
+func (h *Handlers) registryCredentialFor(user model.User, registry model.ArtifactRegistry, ctx context.Context) (model.RegistryCredential, bool) {
 	var credential model.RegistryCredential
 	if registry.CredentialRef != "" {
-		query := h.applyScopedResourceVisibilityForUser(h.dbWithContext(firstContext(contexts)).Model(&model.RegistryCredential{}), scopedResourceRegistryCredential, user, firstContext(contexts))
+		query := h.applyScopedResourceVisibilityForUser(h.dbWithContext(ctx).Model(&model.RegistryCredential{}), scopedResourceRegistryCredential, user, ctx)
 		if err := query.First(&credential, "id = ? and registry_id = ?", registry.CredentialRef, registry.ID).Error; err == nil {
 			return credential, true
 		}
 	}
-	query := h.applyScopedResourceVisibilityForUser(h.dbWithContext(firstContext(contexts)).Model(&model.RegistryCredential{}), scopedResourceRegistryCredential, user, firstContext(contexts))
+	query := h.applyScopedResourceVisibilityForUser(h.dbWithContext(ctx).Model(&model.RegistryCredential{}), scopedResourceRegistryCredential, user, ctx)
 	if query.Where("registry_id = ?", registry.ID).Order("case scope when 'user' then 0 when 'project' then 1 else 2 end, created_at desc").First(&credential).Error == nil {
 		return credential, true
 	}
 	return credential, false
 }
 
-func (h *Handlers) registryPushCredentialFor(user model.User, registry model.ArtifactRegistry) (model.RegistryCredential, bool) {
-	return h.registryPushCredentialForProject(user, registry, "")
+func (h *Handlers) registryPushCredentialFor(user model.User, registry model.ArtifactRegistry, ctx context.Context) (model.RegistryCredential, bool) {
+	return h.registryPushCredentialForProject(user, registry, "", ctx)
 }
 
-func (h *Handlers) registryPushCredentialForProject(user model.User, registry model.ArtifactRegistry, projectID string, contexts ...context.Context) (model.RegistryCredential, bool) {
+func (h *Handlers) registryPushCredentialForProject(user model.User, registry model.ArtifactRegistry, projectID string, ctx context.Context) (model.RegistryCredential, bool) {
 	usages := []string{"push", "push-pull"}
 	var credential model.RegistryCredential
 	visibleCredentials := func() *gorm.DB {
-		query := h.dbWithContext(firstContext(contexts)).Model(&model.RegistryCredential{})
+		query := h.dbWithContext(ctx).Model(&model.RegistryCredential{})
 		if strings.TrimSpace(projectID) != "" {
-			return h.applyScopedResourceVisibilityForProject(query, scopedResourceRegistryCredential, user, projectID, firstContext(contexts))
+			return h.applyScopedResourceVisibilityForProject(query, scopedResourceRegistryCredential, user, projectID, ctx)
 		}
-		return h.applyScopedResourceVisibilityForUser(query, scopedResourceRegistryCredential, user, firstContext(contexts))
+		return h.applyScopedResourceVisibilityForUser(query, scopedResourceRegistryCredential, user, ctx)
 	}
 	if registry.CredentialRef != "" {
 		query := visibleCredentials()
@@ -284,12 +275,12 @@ func (h *Handlers) registryPushCredentialForProject(user model.User, registry mo
 	return credential, false
 }
 
-func (h *Handlers) attachRegistryCredentialProjects(credentials []model.RegistryCredential) {
+func (h *Handlers) attachRegistryCredentialProjects(credentials []model.RegistryCredential, ctx context.Context) {
 	ids := make([]string, 0, len(credentials))
 	for _, credential := range credentials {
 		ids = append(ids, credential.ID)
 	}
-	projectMap := h.scopedResourceProjectIDMap(scopedResourceRegistryCredential, ids)
+	projectMap := h.scopedResourceProjectIDMap(scopedResourceRegistryCredential, ids, ctx)
 	for index := range credentials {
 		credentials[index].ProjectIDs = projectMap[credentials[index].ID]
 	}

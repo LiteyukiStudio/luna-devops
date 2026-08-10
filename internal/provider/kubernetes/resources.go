@@ -22,6 +22,17 @@ type ResourceListOptions struct {
 	EnvironmentID      string
 	DeploymentTargetID string
 	RouteID            string
+	Limit              int64
+}
+
+type ResourceListPage struct {
+	Items     []ResourceSnapshot
+	Remaining int64
+}
+
+type ResourceEventListPage struct {
+	Items     []ResourceEventSnapshot
+	Remaining int64
 }
 
 type ResourceSnapshot struct {
@@ -579,17 +590,22 @@ func (c *Client) DeleteManagedResource(ctx context.Context, kind string, namespa
 }
 
 func (c *Client) ListManagedResourceEvents(ctx context.Context, kind string, namespace string, name string) ([]ResourceEventSnapshot, ResourceSnapshot, error) {
+	page, snapshot, err := c.ListManagedResourceEventsPage(ctx, kind, namespace, name, 0)
+	return page.Items, snapshot, err
+}
+
+func (c *Client) ListManagedResourceEventsPage(ctx context.Context, kind string, namespace string, name string, limit int64) (ResourceEventListPage, ResourceSnapshot, error) {
 	snapshot, err := c.GetManagedResource(ctx, kind, namespace, name)
 	if err != nil {
-		return nil, ResourceSnapshot{}, err
+		return ResourceEventListPage{}, ResourceSnapshot{}, err
 	}
 	selector := fields.Set{
 		"involvedObject.kind": snapshot.Kind,
 		"involvedObject.name": snapshot.Name,
 	}.AsSelector().String()
-	events, err := c.client.CoreV1().Events(snapshot.Namespace).List(ctx, metav1.ListOptions{FieldSelector: selector})
+	events, err := c.client.CoreV1().Events(snapshot.Namespace).List(ctx, metav1.ListOptions{FieldSelector: selector, Limit: limit})
 	if err != nil {
-		return nil, ResourceSnapshot{}, err
+		return ResourceEventListPage{}, ResourceSnapshot{}, err
 	}
 	items := make([]ResourceEventSnapshot, 0, len(events.Items))
 	for _, item := range events.Items {
@@ -598,5 +614,12 @@ func (c *Client) ListManagedResourceEvents(ctx context.Context, kind string, nam
 	sort.Slice(items, func(left, right int) bool {
 		return items[left].LastSeen.After(items[right].LastSeen)
 	})
-	return items, snapshot, nil
+	return ResourceEventListPage{Items: items, Remaining: remainingItemCount(events.RemainingItemCount)}, snapshot, nil
+}
+
+func remainingItemCount(value *int64) int64 {
+	if value == nil || *value < 0 {
+		return 0
+	}
+	return *value
 }

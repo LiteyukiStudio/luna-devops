@@ -1,8 +1,9 @@
 import type { AppTemplate, AppTemplateInstallPayload, AppTemplateInstallResponse, BillingDeploymentSpend, BillingLedgerEntry, BillingListParams, BillingPeriodParams, BillingRateRule, BillingRateRulePayload, BillingSummary, BillingUsageRecord, BillingUsageSettlementResult, BillingWalletTransactionPayload, GatewayTrafficStatus, GatewayTrafficUsagePayload, InboxActionRequest, PaginatedResponse, PaginationParams, Project, ProjectListParams, ProjectMember, ProjectMemberCandidate, ProjectPin, SystemComponentInstallPayload, SystemComponentInstallResponse, SystemComponentStatusResponse } from '../types'
 import { billingQuery, billingSummaryQuery, paginationQuery, request } from '../core'
+import { selectionItems, selectionPageParams } from '../selection-page'
 
 export const projectsApi = {
-  listProjects: () => request<Project[]>('/projects'),
+  listProjects: () => request<PaginatedResponse<Project>>(`/projects?${paginationQuery(selectionPageParams)}`).then(selectionItems),
   listProjectsPage: (params: ProjectListParams) =>
     request<PaginatedResponse<Project>>(`/projects?${paginationQuery(params)}`),
   listAppTemplates: () => request<AppTemplate[]>('/app-templates'),
@@ -35,7 +36,7 @@ export const projectsApi = {
     request<BillingLedgerEntry>('/billing/wallet-transactions', { method: 'POST', body: JSON.stringify(payload) }),
   createGatewayTrafficUsage: (payload: GatewayTrafficUsagePayload) =>
     request<BillingUsageSettlementResult>('/billing/gateway-traffic', { method: 'POST', body: JSON.stringify(payload) }),
-  listProjectPins: () => request<ProjectPin[]>('/projects/pins'),
+  listProjectPins: () => request<PaginatedResponse<ProjectPin>>(`/projects/pins?${paginationQuery(selectionPageParams)}`).then(selectionItems),
   updateProjectOrder: (projectIds: string[]) =>
     request<{ projectIds: string[] }>('/projects/order', { method: 'PUT', body: JSON.stringify({ projectIds }) }),
   createProject: (payload: Pick<Project, 'identifier' | 'name' | 'description' | 'maxConcurrentBuilds' | 'webConsoleEnabled'>) =>
@@ -54,7 +55,7 @@ export const projectsApi = {
       method: 'POST',
       body: JSON.stringify({ recipientUserId }),
     }),
-  listProjectMembers: (projectId: string) => request<ProjectMember[]>(`/projects/${projectId}/members`),
+  listProjectMembers: (projectId: string) => request<PaginatedResponse<ProjectMember>>(`/projects/${projectId}/members?${paginationQuery(selectionPageParams)}`).then(selectionItems),
   listProjectMembersPage: (projectId: string, params: PaginationParams) =>
     request<PaginatedResponse<ProjectMember>>(`/projects/${projectId}/members?${paginationQuery(params)}`),
   searchProjectMemberCandidates: (projectId: string, params: { search: string, limit?: number }) => {

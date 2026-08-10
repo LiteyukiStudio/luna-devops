@@ -36,7 +36,7 @@ type clusterResourceResponse struct {
 	Children             []clusterResourceResponse `json:"children,omitempty"`
 }
 
-func (h *Handlers) clusterResourceResponses(items []kubeprovider.ResourceSnapshot, contexts ...context.Context) ([]clusterResourceResponse, error) {
+func (h *Handlers) clusterResourceResponses(items []kubeprovider.ResourceSnapshot, ctx context.Context) ([]clusterResourceResponse, error) {
 	responses := make([]clusterResourceResponse, 0, len(items))
 	releaseIDs := make(map[string]bool)
 	routeIDs := make(map[string]bool)
@@ -65,7 +65,7 @@ func (h *Handlers) clusterResourceResponses(items []kubeprovider.ResourceSnapsho
 	releasesByID := make(map[string]model.Release)
 	if ids := stringSetValues(releaseIDs); len(ids) > 0 {
 		var releases []model.Release
-		if err := h.dbWithContext(firstContext(contexts)).Unscoped().Where("id in ?", ids).Find(&releases).Error; err != nil {
+		if err := h.dbWithContext(ctx).Unscoped().Where("id in ?", ids).Find(&releases).Error; err != nil {
 			return nil, err
 		}
 		for _, release := range releases {
@@ -76,7 +76,7 @@ func (h *Handlers) clusterResourceResponses(items []kubeprovider.ResourceSnapsho
 	routesByID := make(map[string]model.GatewayRoute)
 	if ids := stringSetValues(routeIDs); len(ids) > 0 {
 		var routes []model.GatewayRoute
-		if err := h.dbWithContext(firstContext(contexts)).Unscoped().Where("id in ?", ids).Find(&routes).Error; err != nil {
+		if err := h.dbWithContext(ctx).Unscoped().Where("id in ?", ids).Find(&routes).Error; err != nil {
 			return nil, err
 		}
 		for _, route := range routes {
@@ -108,7 +108,7 @@ func (h *Handlers) clusterResourceResponses(items []kubeprovider.ResourceSnapsho
 	targetsByID := make(map[string]model.DeploymentTarget)
 	if ids := stringSetValues(deploymentTargetIDs); len(ids) > 0 {
 		var targets []model.DeploymentTarget
-		if err := h.dbWithContext(firstContext(contexts)).Unscoped().Where("id in ?", ids).Find(&targets).Error; err != nil {
+		if err := h.dbWithContext(ctx).Unscoped().Where("id in ?", ids).Find(&targets).Error; err != nil {
 			return nil, err
 		}
 		for _, target := range targets {
@@ -129,11 +129,11 @@ func (h *Handlers) clusterResourceResponses(items []kubeprovider.ResourceSnapsho
 		addStringID(applicationIDs, response.ApplicationID)
 	}
 
-	projectNames, err := h.projectNamesByID(projectIDs, firstContext(contexts))
+	projectNames, err := h.projectNamesByID(projectIDs, ctx)
 	if err != nil {
 		return nil, err
 	}
-	applicationNames, err := h.applicationNamesByID(applicationIDs, firstContext(contexts))
+	applicationNames, err := h.applicationNamesByID(applicationIDs, ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -154,11 +154,11 @@ func fillResourceOwnerIDs(response *clusterResourceResponse, projectID string, a
 	}
 }
 
-func (h *Handlers) projectNamesByID(ids map[string]bool, contexts ...context.Context) (map[string]string, error) {
+func (h *Handlers) projectNamesByID(ids map[string]bool, ctx context.Context) (map[string]string, error) {
 	names := make(map[string]string)
 	if values := stringSetValues(ids); len(values) > 0 {
 		var projects []model.Project
-		if err := h.dbWithContext(firstContext(contexts)).Unscoped().Where("id in ?", values).Find(&projects).Error; err != nil {
+		if err := h.dbWithContext(ctx).Unscoped().Where("id in ?", values).Find(&projects).Error; err != nil {
 			return nil, err
 		}
 		for _, project := range projects {
@@ -320,11 +320,11 @@ func compareTime(left time.Time, right time.Time) int {
 	return 0
 }
 
-func (h *Handlers) applicationNamesByID(ids map[string]bool, contexts ...context.Context) (map[string]string, error) {
+func (h *Handlers) applicationNamesByID(ids map[string]bool, ctx context.Context) (map[string]string, error) {
 	names := make(map[string]string)
 	if values := stringSetValues(ids); len(values) > 0 {
 		var applications []model.Application
-		if err := h.dbWithContext(firstContext(contexts)).Unscoped().Where("id in ?", values).Find(&applications).Error; err != nil {
+		if err := h.dbWithContext(ctx).Unscoped().Where("id in ?", values).Find(&applications).Error; err != nil {
 			return nil, err
 		}
 		for _, application := range applications {

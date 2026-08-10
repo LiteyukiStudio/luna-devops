@@ -9,8 +9,67 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 )
+
+func TestListManagedResourcesPageUsesKubernetesLimitAndRemainingCount(t *testing.T) {
+	clientset := fake.NewSimpleClientset()
+	clientset.PrependReactor("list", "namespaces", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		listAction, ok := action.(k8stesting.ListActionImpl)
+		if !ok {
+			t.Fatalf("action type = %T", action)
+		}
+		if limit := listAction.GetListOptions().Limit; limit != 20 {
+			t.Fatalf("Kubernetes list limit = %d, want 20", limit)
+		}
+		remaining := int64(7)
+		return true, &corev1.NamespaceList{
+			ListMeta: metav1.ListMeta{RemainingItemCount: &remaining},
+			Items: []corev1.Namespace{{ObjectMeta: metav1.ObjectMeta{
+				Name: "luna-project", Labels: map[string]string{ManagedByLabel: ManagedByValue},
+			}}},
+		}, nil
+	})
+
+	page, err := NewClientForInterface(clientset).ListManagedResourcesPage(context.Background(), ResourceListOptions{Kind: "namespaces", Limit: 20})
+	if err != nil {
+		t.Fatalf("ListManagedResourcesPage returned error: %v", err)
+	}
+	if len(page.Items) != 1 || page.Remaining != 7 {
+		t.Fatalf("page = %#v", page)
+	}
+}
+
+func TestListManagedResourceEventsPageUsesKubernetesLimitAndRemainingCount(t *testing.T) {
+	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+		Name: "app-pod", Namespace: "ns-demo", Labels: map[string]string{ManagedByLabel: ManagedByValue},
+	}}
+	clientset := fake.NewSimpleClientset(pod)
+	clientset.PrependReactor("list", "events", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		listAction, ok := action.(k8stesting.ListActionImpl)
+		if !ok {
+			t.Fatalf("action type = %T", action)
+		}
+		if limit := listAction.GetListOptions().Limit; limit != 20 {
+			t.Fatalf("Kubernetes event list limit = %d, want 20", limit)
+		}
+		remaining := int64(3)
+		return true, &corev1.EventList{
+			ListMeta: metav1.ListMeta{RemainingItemCount: &remaining},
+			Items:    []corev1.Event{{ObjectMeta: metav1.ObjectMeta{Name: "event-1", Namespace: "ns-demo"}}},
+		}, nil
+	})
+
+	page, _, err := NewClientForInterface(clientset).ListManagedResourceEventsPage(context.Background(), "pod", "ns-demo", "app-pod", 20)
+	if err != nil {
+		t.Fatalf("ListManagedResourceEventsPage returned error: %v", err)
+	}
+	if len(page.Items) != 1 || page.Remaining != 3 {
+		t.Fatalf("page = %#v", page)
+	}
+}
 
 func TestGetManagedResourceYAMLRedactsSecretData(t *testing.T) {
 	client := NewClientForInterface(fake.NewSimpleClientset(&corev1.Secret{
@@ -44,7 +103,7 @@ func TestGetManagedResourceYAMLRedactsSecretData(t *testing.T) {
 }
 
 func TestListManagedWorkloadsExcludesBuildPods(t *testing.T) {
-	client := NewClientForInterface(fake.NewSimpleClientset(
+	clientset := fake.NewSimpleClientset(
 		&appsv1.Deployment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "dplt-api",
@@ -84,17 +143,20 @@ func TestListManagedWorkloadsExcludesBuildPods(t *testing.T) {
 			},
 			Status: corev1.PodStatus{Phase: corev1.PodFailed},
 		},
-	))
+	)
+	client := NewClientForInterface(clientset)
 
-	items, err := client.ListManagedResources(context.Background(), ResourceListOptions{
+	page, err := client.ListManagedResourcesPage(context.Background(), ResourceListOptions{
 		Kind:          "workloads",
 		Namespace:     "ns-demo",
 		ProjectID:     "prj_demo",
 		ApplicationID: "app_api",
+		Limit:         20,
 	})
 	if err != nil {
-		t.Fatalf("ListManagedResources returned error: %v", err)
+		t.Fatalf("ListManagedResourcesPage returned error: %v", err)
 	}
+	items := page.Items
 	for _, item := range items {
 		if item.Name == "build-job-pod" {
 			t.Fatalf("build pod should be excluded from runtime workloads: %#v", items)
@@ -102,6 +164,18 @@ func TestListManagedWorkloadsExcludesBuildPods(t *testing.T) {
 	}
 	if len(items) != 2 {
 		t.Fatalf("items = %#v", items)
+	}
+	for _, action := range clientset.Actions() {
+		if action.GetVerb() != "list" {
+			continue
+		}
+		listAction, ok := action.(k8stesting.ListActionImpl)
+		if !ok {
+			t.Fatalf("action type = %T", action)
+		}
+		if limit := listAction.GetListOptions().Limit; limit != 20 {
+			t.Fatalf("%s list limit = %d, want 20", action.GetResource().Resource, limit)
+		}
 	}
 }
 

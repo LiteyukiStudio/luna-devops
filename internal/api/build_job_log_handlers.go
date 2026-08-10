@@ -17,20 +17,17 @@ func (h *Handlers) ListBuildJobs(ctx *gin.Context) {
 	if _, ok := h.findProjectForCurrentUser(ctx); !ok {
 		return
 	}
-	pagination := paginationFromQuery(ctx)
+	pagination := paginationFromQueryWithSort(ctx, map[string]string{"createdAt": "created_at", "status": "status", "attempts": "attempts"}, "createdAt")
 	query := h.dbFor(ctx).Where("project_id = ?", ctx.Param("projectId"))
 	if runID := strings.TrimSpace(ctx.Query("buildRunId")); runID != "" {
 		query = query.Where("build_run_id = ?", runID)
 	}
-	var jobs []model.BuildJob
-	if ctx.Query("page") == "" && ctx.Query("pageSize") == "" {
-		if err := query.Order("created_at desc").Find(&jobs).Error; err != nil {
-			writeError(ctx, http.StatusInternalServerError, err.Error())
-			return
-		}
-		ctx.JSON(http.StatusOK, jobs)
-		return
+	if applicationID := strings.TrimSpace(ctx.Query("applicationId")); applicationID != "" {
+		buildRuns := h.dbFor(ctx).Model(&model.BuildRun{}).Select("id").
+			Where("project_id = ? and application_id = ?", ctx.Param("projectId"), applicationID)
+		query = query.Where("build_run_id in (?)", buildRuns)
 	}
+	var jobs []model.BuildJob
 	var total int64
 	if err := query.Model(&model.BuildJob{}).Count(&total).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())

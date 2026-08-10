@@ -104,27 +104,27 @@ func (h *Handlers) observeRepositoryBinding(ctx context.Context, user model.User
 	binding.WebhookObservationCode = "git_webhook_ready"
 }
 
-func (h *Handlers) gitClientForObservation(user model.User, providerID, accountID string, contexts ...context.Context) (gitprovider.Client, bool) {
+func (h *Handlers) gitClientForObservation(user model.User, providerID, accountID string, ctx context.Context) (gitprovider.Client, bool) {
 	var account model.GitAccount
-	if err := h.dbWithContext(firstContext(contexts)).First(&account, "id = ?", strings.TrimSpace(accountID)).Error; err != nil {
+	if err := h.dbWithContext(ctx).First(&account, "id = ?", strings.TrimSpace(accountID)).Error; err != nil {
 		return gitprovider.Client{}, false
 	}
-	if !h.canUseScopedResourceByID(user, account.Scope, account.OwnerRef, scopedResourceGitAccount, account.ID, firstContext(contexts)) {
+	if !h.canUseScopedResourceByID(user, account.Scope, account.OwnerRef, scopedResourceGitAccount, account.ID, ctx) {
 		return gitprovider.Client{}, false
 	}
 	var provider model.GitProvider
-	if err := h.dbWithContext(firstContext(contexts)).First(&provider, "id = ? and enabled = ?", strings.TrimSpace(providerID), true).Error; err != nil {
+	if err := h.dbWithContext(ctx).First(&provider, "id = ? and enabled = ?", strings.TrimSpace(providerID), true).Error; err != nil {
 		return gitprovider.Client{}, false
 	}
 	if account.ProviderID != provider.ID ||
-		!h.canUseScopedResourceByID(user, provider.Scope, provider.OwnerRef, scopedResourceGitProvider, provider.ID, firstContext(contexts)) {
+		!h.canUseScopedResourceByID(user, provider.Scope, provider.OwnerRef, scopedResourceGitProvider, provider.ID, ctx) {
 		return gitprovider.Client{}, false
 	}
-	token := strings.TrimSpace(h.secrets.ResolveContext(firstContext(contexts), account.AccessTokenRef))
+	token := strings.TrimSpace(h.secrets.ResolveContext(ctx, account.AccessTokenRef))
 	if token == "" {
 		return gitprovider.Client{}, false
 	}
-	return gitprovider.NewClientWithPolicy(provider, token, h.egressPolicyForUser(user, firstContext(contexts))), true
+	return gitprovider.NewClientWithPolicy(provider, token, h.egressPolicyForUser(user, ctx)), true
 }
 
 func gitObservationFromError(err error, prefix string) (string, string) {

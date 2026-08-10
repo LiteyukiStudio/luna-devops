@@ -129,6 +129,9 @@ func TestSearchPublicRepositoriesUsesGitHubSearchAPI(t *testing.T) {
 		if r.URL.Query().Get("q") != "luna-devops/luna-devops" {
 			t.Fatalf("query = %q", r.URL.Query().Get("q"))
 		}
+		if r.URL.Query().Get("page") != "1" || r.URL.Query().Get("per_page") != "10" || r.URL.Query().Get("sort") != "updated" || r.URL.Query().Get("order") != "desc" {
+			t.Fatalf("pagination/sort query = %q", r.URL.RawQuery)
+		}
 		writeJSON(t, w, map[string]any{
 			"items": []map[string]any{{
 				"name":           "devops",

@@ -11,6 +11,8 @@ const common = {
   copied: 'Copied',
   copyFailed: 'Could not copy',
   loading: 'Loading...',
+  lazyLoadFailedTitle: 'Could not load this feature',
+  lazyLoadFailedDescription: 'Refresh the page and try again. Your saved data has not been changed.',
   refresh: 'Refresh',
   retry: 'Retry',
   noDescription: 'No description',

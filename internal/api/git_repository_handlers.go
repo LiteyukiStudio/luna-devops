@@ -25,39 +25,54 @@ func (h *Handlers) ListGitRepositories(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	page := positiveInt(ctx.DefaultQuery("page", "1"), 1)
-	pageSize := positiveInt(ctx.DefaultQuery("pageSize", "50"), 50)
-	if pageSize > 100 {
-		pageSize = 100
-	}
+	pagination := gitRepositoryPagination(ctx)
 	search := strings.TrimSpace(ctx.Query("search"))
 	if accountID == anonymousGitAccountID {
 		// 匿名访问无法列举“当前用户仓库”，仅支持按关键词搜索公开仓库
 		if search == "" {
-			ctx.JSON(http.StatusOK, gin.H{"items": []any{}, "page": page, "pageSize": pageSize})
+			ctx.JSON(http.StatusOK, paginatedResponse([]any{}, 0, pagination))
 			return
 		}
-		repos, searchErr := client.SearchPublicRepositories(ctx.Request.Context(), search, page, pageSize)
+		repos, searchErr := client.SearchPublicRepositories(ctx.Request.Context(), search, pagination.Page, pagination.PageSize)
 		if searchErr != nil {
 			writeGitUpstreamError(ctx, searchErr)
 			return
 		}
-		ctx.JSON(http.StatusOK, gin.H{"items": repos, "page": page, "pageSize": pageSize})
+		ctx.JSON(http.StatusOK, paginatedResponse(repos, remotePageTotal(pagination, len(repos)), pagination))
 		return
 	}
-	repos, err := client.ListRepositories(ctx.Request.Context(), ctx.Query("search"), page, pageSize)
+	repos, err := client.ListRepositories(ctx.Request.Context(), ctx.Query("search"), pagination.Page, pagination.PageSize)
 	if err != nil {
 		writeGitUpstreamError(ctx, err)
 		return
 	}
 	if len(repos) == 0 && boolQuery(ctx, "includePublic") && search != "" {
-		repos, err = client.SearchPublicRepositories(ctx.Request.Context(), search, page, pageSize)
+		repos, err = client.SearchPublicRepositories(ctx.Request.Context(), search, pagination.Page, pagination.PageSize)
 		if err != nil {
 			writeGitUpstreamError(ctx, err)
 			return
 		}
 	}
-	ctx.JSON(http.StatusOK, gin.H{"items": repos, "page": page, "pageSize": pageSize})
+	ctx.JSON(http.StatusOK, paginatedResponse(repos, remotePageTotal(pagination, len(repos)), pagination))
+}
+
+func gitRepositoryPagination(ctx *gin.Context) paginationParams {
+	pagination := paginationFromQueryWithSort(ctx, map[string]string{"updatedAt": "updated_at"}, "updatedAt")
+	// GitHub and Gitea expose this list in updated-descending order. Do not
+	// advertise a sort direction that the upstream request cannot guarantee.
+	pagination.SortOrder = "desc"
+	return pagination
+}
+
+func remotePageTotal(pagination paginationParams, itemCount int) int64 {
+	total := int64(pagination.Offset() + itemCount)
+	if itemCount == pagination.PageSize {
+		// Upstream repository lists do not consistently expose an exact total.
+		// A full page advertises one bounded next page instead of claiming that
+		// the current page is terminal.
+		total++
+	}
+	return total
 }
 
 func boolQuery(ctx *gin.Context, key string) bool {
@@ -157,31 +172,23 @@ func (h *Handlers) ListRepositoryBindings(ctx *gin.Context) {
 		Joins("join users on users.id = git_accounts.user_id and users.deleted_at is null").
 		Joins("join applications on applications.id = repository_bindings.application_id and applications.deleted_at is null").
 		Where("repository_bindings.project_id = ? and repository_bindings.deleted_at is null", ctx.Param("projectId"))
+	if applicationID := strings.TrimSpace(ctx.Query("applicationId")); applicationID != "" {
+		query = query.Where("repository_bindings.application_id = ?", applicationID)
+	}
 	query = applySearch(ctx, query, "repository_bindings.owner", "repository_bindings.repo", "applications.name", "git_accounts.username")
-	if paginationRequested(ctx) {
-		pagination := paginationFromQuery(ctx)
-		var total int64
-		if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
-			writeError(ctx, http.StatusInternalServerError, err.Error())
-			return
-		}
-		if err := query.Order(orderByClause(pagination, map[string]string{
-			"repo":      "repository_bindings.repo",
-			"owner":     "repository_bindings.owner",
-			"createdAt": "repository_bindings.created_at",
-		}, "repository_bindings.created_at")).Limit(pagination.PageSize).Offset(pagination.Offset()).Scan(&bindings).Error; err != nil {
-			writeError(ctx, http.StatusInternalServerError, err.Error())
-			return
-		}
-		for index := range bindings {
-			bindings[index].CredentialRef = ""
-			bindings[index].WebhookCallbackURL = h.gitWebhookURL(ctx, bindings[index].ID)
-		}
-		h.observeRepositoryBindings(ctx.Request.Context(), user, bindings)
-		ctx.JSON(http.StatusOK, paginatedResponse(bindings, total, pagination))
+	pagination := paginationFromQueryWithSort(ctx, map[string]string{
+		"repo": "repository_bindings.repo", "owner": "repository_bindings.owner", "createdAt": "repository_bindings.created_at",
+	}, "createdAt")
+	var total int64
+	if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if err := query.Order("repository_bindings.created_at desc").Scan(&bindings).Error; err != nil {
+	if err := query.Order(orderByClause(pagination, map[string]string{
+		"repo":      "repository_bindings.repo",
+		"owner":     "repository_bindings.owner",
+		"createdAt": "repository_bindings.created_at",
+	}, "repository_bindings.created_at")).Limit(pagination.PageSize).Offset(pagination.Offset()).Scan(&bindings).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -190,7 +197,7 @@ func (h *Handlers) ListRepositoryBindings(ctx *gin.Context) {
 		bindings[index].WebhookCallbackURL = h.gitWebhookURL(ctx, bindings[index].ID)
 	}
 	h.observeRepositoryBindings(ctx.Request.Context(), user, bindings)
-	ctx.JSON(http.StatusOK, bindings)
+	ctx.JSON(http.StatusOK, paginatedResponse(bindings, total, pagination))
 }
 
 func (h *Handlers) CreateRepositoryBinding(ctx *gin.Context) {

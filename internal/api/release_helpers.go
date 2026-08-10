@@ -27,8 +27,8 @@ func (h *Handlers) findPreviousSuccessfulRelease(ctx *gin.Context, source model.
 	return target, true
 }
 
-func (h *Handlers) nextReleaseRevision(source model.Release, contexts ...context.Context) (int, error) {
-	return nextReleaseRevisionFor(h.dbWithContext(firstContext(contexts)), source.ProjectID, source.ApplicationID, source.DeploymentTargetID)
+func (h *Handlers) nextReleaseRevision(source model.Release, ctx context.Context) (int, error) {
+	return nextReleaseRevisionFor(h.dbWithContext(ctx), source.ProjectID, source.ApplicationID, source.DeploymentTargetID)
 }
 
 func (h *Handlers) enqueueDeployRun(ctx context.Context, release model.Release) bool {

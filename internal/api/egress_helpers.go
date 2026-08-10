@@ -15,13 +15,13 @@ import (
 	"gorm.io/gorm"
 )
 
-func (h *Handlers) egressPolicyForUser(user model.User, contexts ...context.Context) security.EgressPolicy {
+func (h *Handlers) egressPolicyForUser(user model.User, ctx context.Context) security.EgressPolicy {
 	policy := security.PublicEgressPolicy()
 	if user.Role == authz.PlatformRoleAdmin {
 		policy.AllowPrivateNetwork = true
 	}
-	if h.dbWithContext(firstContext(contexts)) != nil {
-		h.configs.reload(h.dbWithContext(firstContext(contexts)))
+	if h.dbWithContext(ctx) != nil {
+		h.configs.reload(h.dbWithContext(ctx))
 	}
 
 	values := h.configs.get([]string{

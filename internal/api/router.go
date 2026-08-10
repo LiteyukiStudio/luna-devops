@@ -365,7 +365,8 @@ func cors() gin.HandlerFunc {
 
 		if ctx.Request.Method == http.MethodOptions {
 			if origin != "" && !containsString(allowedOrigins, origin) {
-				ctx.AbortWithStatus(http.StatusForbidden)
+				writeErrorCode(ctx, http.StatusForbidden, "request.origin_forbidden", "request origin is not allowed")
+				ctx.Abort()
 				return
 			}
 			ctx.AbortWithStatus(http.StatusNoContent)

@@ -38,19 +38,19 @@ func (SMTPAdapter) Kind() string {
 	return AdapterKindSMTP
 }
 
-func (SMTPAdapter) Validate(_ context.Context, config json.RawMessage, secretResolver SecretResolver) error {
+func (SMTPAdapter) Validate(ctx context.Context, config json.RawMessage, secretResolver SecretResolver) error {
 	cfg, err := parseSMTPConfig(config)
 	if err != nil {
 		return err
 	}
-	if cfg.password(secretResolver) == "" && cfg.Username != "" {
+	if cfg.password(ctx, secretResolver) == "" && cfg.Username != "" {
 		return fmt.Errorf("smtp password is required when username is set")
 	}
 	return nil
 }
 
-func (SMTPAdapter) Render(_ context.Context, event Event, tpl Template, _ json.RawMessage, secrets json.RawMessage, secretResolver SecretResolver, _ string) (RenderedMessage, error) {
-	return renderMessage(event, tpl, resolveSecretMap(secrets, secretResolver))
+func (SMTPAdapter) Render(ctx context.Context, event Event, tpl Template, _ json.RawMessage, secrets json.RawMessage, secretResolver SecretResolver, _ string) (RenderedMessage, error) {
+	return renderMessage(event, tpl, resolveSecretMap(ctx, secrets, secretResolver))
 }
 
 func (adapter SMTPAdapter) Send(ctx context.Context, config json.RawMessage, _ json.RawMessage, message RenderedMessage, secretResolver SecretResolver) (SendResult, error) {
@@ -126,14 +126,14 @@ func parseSMTPConfig(raw json.RawMessage) (SMTPConfig, error) {
 	return cfg, nil
 }
 
-func (cfg SMTPConfig) password(resolver SecretResolver) string {
+func (cfg SMTPConfig) password(ctx context.Context, resolver SecretResolver) string {
 	if strings.TrimSpace(cfg.Password) != "" {
 		return cfg.Password
 	}
 	if resolver == nil {
 		return ""
 	}
-	return resolver.Resolve(cfg.SecretRef)
+	return resolver.ResolveContext(ctx, cfg.SecretRef)
 }
 
 func sendSMTP(ctx context.Context, cfg SMTPConfig, message RenderedMessage, resolver SecretResolver, timeout time.Duration) error {
@@ -174,7 +174,7 @@ func sendSMTPMessage(ctx context.Context, cfg SMTPConfig, message RenderedMessag
 			return err
 		}
 	}
-	password := cfg.password(resolver)
+	password := cfg.password(ctx, resolver)
 	if cfg.Username != "" {
 		if err := client.Auth(smtp.PlainAuth("", cfg.Username, password, cfg.Host)); err != nil {
 			return err

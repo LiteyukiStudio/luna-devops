@@ -403,7 +403,7 @@ func (m *WorkerMetrics) Middleware(next asynq.Handler) asynq.Handler {
 	})
 }
 
-func (m *WorkerMetrics) RecordBuildRun(run BusinessRunMetric) {
+func (m *WorkerMetrics) RecordBuildRun(ctx context.Context, run BusinessRunMetric) {
 	if m == nil {
 		return
 	}
@@ -413,16 +413,16 @@ func (m *WorkerMetrics) RecordBuildRun(run BusinessRunMetric) {
 		m.buildRuns.WithLabelValues(status, triggerType).Inc()
 	}
 	attrs := otelmetric.WithAttributes(attribute.String("status", status), attribute.String("trigger_type", triggerType))
-	m.otelBuildRuns.Add(context.Background(), 1, attrs)
+	m.otelBuildRuns.Add(ctx, 1, attrs)
 	if duration, ok := runDuration(run); ok {
 		if m.buildDuration != nil {
 			m.buildDuration.WithLabelValues(status, triggerType).Observe(duration.Seconds())
 		}
-		m.otelBuildDuration.Record(context.Background(), duration.Seconds(), attrs)
+		m.otelBuildDuration.Record(ctx, duration.Seconds(), attrs)
 	}
 }
 
-func (m *WorkerMetrics) RecordRelease(run BusinessRunMetric) {
+func (m *WorkerMetrics) RecordRelease(ctx context.Context, run BusinessRunMetric) {
 	if m == nil {
 		return
 	}
@@ -432,16 +432,16 @@ func (m *WorkerMetrics) RecordRelease(run BusinessRunMetric) {
 		m.releases.WithLabelValues(status, releaseType).Inc()
 	}
 	attrs := otelmetric.WithAttributes(attribute.String("status", status), attribute.String("type", releaseType))
-	m.otelReleases.Add(context.Background(), 1, attrs)
+	m.otelReleases.Add(ctx, 1, attrs)
 	if duration, ok := runDuration(run); ok {
 		if m.releaseDuration != nil {
 			m.releaseDuration.WithLabelValues(status, releaseType).Observe(duration.Seconds())
 		}
-		m.otelReleaseDuration.Record(context.Background(), duration.Seconds(), attrs)
+		m.otelReleaseDuration.Record(ctx, duration.Seconds(), attrs)
 	}
 }
 
-func (m *WorkerMetrics) RecordGatewaySync(operation string, result string, duration time.Duration) {
+func (m *WorkerMetrics) RecordGatewaySync(ctx context.Context, operation string, result string, duration time.Duration) {
 	if m == nil {
 		return
 	}
@@ -451,16 +451,16 @@ func (m *WorkerMetrics) RecordGatewaySync(operation string, result string, durat
 		m.gatewaySync.WithLabelValues(operation, result).Inc()
 	}
 	attrs := otelmetric.WithAttributes(attribute.String("operation", operation), attribute.String("result", result))
-	m.otelGatewaySync.Add(context.Background(), 1, attrs)
+	m.otelGatewaySync.Add(ctx, 1, attrs)
 	if duration >= 0 {
 		if m.gatewaySyncDuration != nil {
 			m.gatewaySyncDuration.WithLabelValues(operation, result).Observe(duration.Seconds())
 		}
-		m.otelGatewayDuration.Record(context.Background(), duration.Seconds(), attrs)
+		m.otelGatewayDuration.Record(ctx, duration.Seconds(), attrs)
 	}
 }
 
-func (m *WorkerMetrics) SetDeploymentRuntime(metric DeploymentRuntimeMetric) {
+func (m *WorkerMetrics) SetDeploymentRuntime(ctx context.Context, metric DeploymentRuntimeMetric) {
 	if m == nil {
 		return
 	}
@@ -484,7 +484,6 @@ func (m *WorkerMetrics) SetDeploymentRuntime(metric DeploymentRuntimeMetric) {
 		m.deploymentReplicaCount.WithLabelValues("available").Observe(available)
 		m.deploymentReplicaCount.WithLabelValues("updated").Observe(updated)
 	}
-	ctx := context.Background()
 	m.otelDeploymentObserved.Add(ctx, 1, otelmetric.WithAttributes(attribute.String("state", state)))
 	m.otelDeploymentRatio.Record(ctx, readyRatio, otelmetric.WithAttributes(attribute.String("state", state)))
 	m.otelDeploymentReplicas.Record(ctx, int64(desired), otelmetric.WithAttributes(attribute.String("kind", "desired")))
@@ -576,6 +575,8 @@ func (c *DependencyCollector) Describe(ch chan<- *prometheus.Desc) {
 func (c *DependencyCollector) Collect(ch chan<- prometheus.Metric) {
 	for name, check := range c.checks {
 		start := time.Now()
+		// Prometheus collection is an independent runtime lifecycle operation,
+		// not a child of an application request.
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		err := check(ctx)
 		cancel()

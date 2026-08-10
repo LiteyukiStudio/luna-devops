@@ -27,7 +27,7 @@ const bootstrapAdminAdvisoryLockID int64 = 0x4c554e4141444d49
 var errBootstrapAlreadyInitialized = errors.New("platform administrator is already initialized")
 
 func (h *Handlers) GetBootstrapStatus(ctx *gin.Context) {
-	ctx.JSON(http.StatusOK, bootstrapStatusResponse(h.mode, h.hasPlatformAdmin(ctx.Request.Context(), ctx.Request.Context())))
+	ctx.JSON(http.StatusOK, bootstrapStatusResponse(h.mode, h.hasPlatformAdmin(ctx.Request.Context())))
 }
 
 func bootstrapStatusResponse(mode string, initialized bool) gin.H {
@@ -49,7 +49,7 @@ func (h *Handlers) InitializeAdmin(ctx *gin.Context) {
 	if !h.allowSensitiveAuthAttempt(ctx, "bootstrap_admin", 5, time.Minute) {
 		return
 	}
-	if h.hasPlatformAdmin(ctx.Request.Context(), ctx.Request.Context()) {
+	if h.hasPlatformAdmin(ctx.Request.Context()) {
 		writeErrorCode(ctx, http.StatusConflict, "bootstrap.already_initialized", "平台管理员已经初始化")
 		return
 	}
@@ -179,7 +179,7 @@ func (h *Handlers) ResumeLogin(ctx *gin.Context) {
 		return
 	}
 
-	user, sessionToken, rememberToken, err := h.rotateRememberLogin(userID, plainToken, ctx.Request.Context(), ctx.Request.Context())
+	user, sessionToken, rememberToken, err := h.rotateRememberLogin(userID, plainToken, ctx.Request.Context())
 	if errors.Is(err, errRememberTokenInvalid) || errors.Is(err, errRememberTokenReused) {
 		clearRememberCookie(ctx, userID)
 		writeErrorKey(ctx, http.StatusUnauthorized, requestLanguage(ctx), "auth.session.expired")
@@ -202,7 +202,7 @@ func (h *Handlers) ResumeLogin(ctx *gin.Context) {
 
 func (h *Handlers) Logout(ctx *gin.Context) {
 	if plainToken, err := ctx.Cookie(sessionCookieName); err == nil {
-		userID, revokeErr := h.revokeCurrentSessionAndRememberTokens(plainToken, ctx.Request.Context(), ctx.Request.Context())
+		userID, revokeErr := h.revokeCurrentSessionAndRememberTokens(plainToken, ctx.Request.Context())
 		clearRememberCookie(ctx, userID)
 		if revokeErr != nil {
 			clearSessionCookie(ctx)
@@ -307,7 +307,7 @@ func (h *Handlers) ListUsers(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, paginatedResponse(responses, total, pagination))
 }
 
-func (h *Handlers) userMFAEnabled(users []model.User, contexts ...context.Context) (map[string]bool, error) {
+func (h *Handlers) userMFAEnabled(users []model.User, ctx context.Context) (map[string]bool, error) {
 	enabled := make(map[string]bool, len(users))
 	if len(users) == 0 {
 		return enabled, nil
@@ -317,7 +317,7 @@ func (h *Handlers) userMFAEnabled(users []model.User, contexts ...context.Contex
 		userIDs = append(userIDs, user.ID)
 	}
 	var configs []model.UserMFAConfig
-	if err := h.dbWithContext(firstContext(contexts)).Select("user_id").Where("user_id in ? and enabled = ?", userIDs, true).Find(&configs).Error; err != nil {
+	if err := h.dbWithContext(ctx).Select("user_id").Where("user_id in ? and enabled = ?", userIDs, true).Find(&configs).Error; err != nil {
 		return nil, err
 	}
 	for _, config := range configs {
@@ -326,7 +326,7 @@ func (h *Handlers) userMFAEnabled(users []model.User, contexts ...context.Contex
 	return enabled, nil
 }
 
-func (h *Handlers) userWalletBalances(users []model.User, contexts ...context.Context) (map[string]decimal.Decimal, error) {
+func (h *Handlers) userWalletBalances(users []model.User, ctx context.Context) (map[string]decimal.Decimal, error) {
 	balances := make(map[string]decimal.Decimal, len(users))
 	if len(users) == 0 {
 		return balances, nil
@@ -337,7 +337,7 @@ func (h *Handlers) userWalletBalances(users []model.User, contexts ...context.Co
 		balances[user.ID] = decimal.Zero
 	}
 	var wallets []model.UserWallet
-	if err := h.dbWithContext(firstContext(contexts)).Select("user_id", "balance_credits").Where("user_id in ?", userIDs).Find(&wallets).Error; err != nil {
+	if err := h.dbWithContext(ctx).Select("user_id", "balance_credits").Where("user_id in ?", userIDs).Find(&wallets).Error; err != nil {
 		return nil, err
 	}
 	for _, wallet := range wallets {

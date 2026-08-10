@@ -50,12 +50,12 @@ func (h *Handlers) kubernetesClientForDeploymentTarget(ctx *gin.Context, project
 // kubernetesClientForDeploymentTargetObservation resolves a read-only live
 // observation dependency without writing an HTTP response. Callers can return
 // a stable unavailable observation instead of failing the whole resource API.
-func (h *Handlers) kubernetesClientForDeploymentTargetObservation(project model.Project, target model.DeploymentTarget, contexts ...context.Context) (*kubeprovider.Client, string, string) {
-	cluster, err := h.runtimeClusterForDeploymentTargetValue(target, firstContext(contexts))
+func (h *Handlers) kubernetesClientForDeploymentTargetObservation(project model.Project, target model.DeploymentTarget, ctx context.Context) (*kubeprovider.Client, string, string) {
+	cluster, err := h.runtimeClusterForDeploymentTargetValue(target, ctx)
 	if err != nil {
 		return nil, "", "runtime_cluster_not_found"
 	}
-	kubeconfig := h.secrets.ResolveContext(firstContext(contexts), cluster.KubeconfigRef)
+	kubeconfig := h.secrets.ResolveContext(ctx, cluster.KubeconfigRef)
 	if strings.TrimSpace(kubeconfig) == "" {
 		return nil, "", "kubeconfig_not_configured"
 	}

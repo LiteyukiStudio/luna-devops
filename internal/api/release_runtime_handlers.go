@@ -220,7 +220,7 @@ func (h *Handlers) StreamReleaseRuntimeTerminal(ctx *gin.Context) {
 		SizeQueue:          sizeQueue,
 	})
 	if err != nil && sessionCtx.Err() == nil {
-		_, _ = wsWriter.Write([]byte("\r\nterminal disconnected: " + err.Error() + "\r\n"))
+		_, _ = wsWriter.Write(terminalDisconnectedMessage(ctx, err.Error()))
 		h.auditWithContext(user.ID, "release_runtime.terminal", release.ID, false, err.Error(), ctx.Request.Context())
 		return
 	}

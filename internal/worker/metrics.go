@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"context"
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/model"
@@ -8,11 +9,11 @@ import (
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 )
 
-func (r *Runner) recordBuildRunMetrics(run model.BuildRun) {
+func (r *Runner) recordBuildRunMetrics(ctx context.Context, run model.BuildRun) {
 	if r.workerMetrics == nil {
 		return
 	}
-	r.workerMetrics.RecordBuildRun(observability.BusinessRunMetric{
+	r.workerMetrics.RecordBuildRun(ctx, observability.BusinessRunMetric{
 		Status:     run.Status,
 		Type:       run.TriggerType,
 		StartedAt:  run.StartedAt,
@@ -21,11 +22,11 @@ func (r *Runner) recordBuildRunMetrics(run model.BuildRun) {
 	})
 }
 
-func (r *Runner) recordReleaseMetrics(release model.Release) {
+func (r *Runner) recordReleaseMetrics(ctx context.Context, release model.Release) {
 	if r.workerMetrics == nil {
 		return
 	}
-	r.workerMetrics.RecordRelease(observability.BusinessRunMetric{
+	r.workerMetrics.RecordRelease(ctx, observability.BusinessRunMetric{
 		Status:     release.Status,
 		Type:       release.Type,
 		StartedAt:  release.StartedAt,
@@ -34,18 +35,18 @@ func (r *Runner) recordReleaseMetrics(release model.Release) {
 	})
 }
 
-func (r *Runner) recordGatewaySyncMetric(operation string, result string, startedAt time.Time) {
+func (r *Runner) recordGatewaySyncMetric(ctx context.Context, operation string, result string, startedAt time.Time) {
 	if r.workerMetrics == nil {
 		return
 	}
-	r.workerMetrics.RecordGatewaySync(operation, result, time.Since(startedAt))
+	r.workerMetrics.RecordGatewaySync(ctx, operation, result, time.Since(startedAt))
 }
 
-func (r *Runner) recordDeploymentRuntimeMetric(snapshot kubeprovider.DeploymentSnapshot) {
+func (r *Runner) recordDeploymentRuntimeMetric(ctx context.Context, snapshot kubeprovider.DeploymentSnapshot) {
 	if r.workerMetrics == nil {
 		return
 	}
-	r.workerMetrics.SetDeploymentRuntime(observability.DeploymentRuntimeMetric{
+	r.workerMetrics.SetDeploymentRuntime(ctx, observability.DeploymentRuntimeMetric{
 		DesiredReplicas:   snapshot.DesiredReplicas,
 		ReadyReplicas:     snapshot.ReadyReplicas,
 		AvailableReplicas: snapshot.AvailableReplicas,

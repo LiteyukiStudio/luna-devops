@@ -12,7 +12,7 @@ func (h *Handlers) GetProjectTopology(ctx *gin.Context) {
 	if _, ok := h.findProjectForCurrentUser(ctx); !ok {
 		return
 	}
-	topology, err := h.dependencyService(ctx.Request.Context(), ctx.Request.Context()).ProjectTopology(ctx.Request.Context(), ctx.Param("projectId"), dependency.TopologyFilter{
+	topology, err := h.dependencyService(ctx.Request.Context()).ProjectTopology(ctx.Request.Context(), ctx.Param("projectId"), dependency.TopologyFilter{
 		Stage: strings.TrimSpace(ctx.Query("stage")), ApplicationID: strings.TrimSpace(ctx.Query("applicationId")), Origins: topologyOrigins(ctx.Query("origins")),
 	})
 	if err != nil {

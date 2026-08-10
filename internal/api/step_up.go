@@ -157,8 +157,8 @@ func (h *Handlers) currentStepUpSubject(ctx *gin.Context, user model.User) (stri
 	return session.ID, true
 }
 
-func (h *Handlers) cleanupExpiredStepUpAssertions(now time.Time, contexts ...context.Context) {
-	_ = h.dbWithContext(firstContext(contexts)).Where("idle_expires_at <= ? or absolute_expires_at <= ?", now, now).Delete(&model.StepUpAssertion{}).Error
+func (h *Handlers) cleanupExpiredStepUpAssertions(now time.Time, ctx context.Context) {
+	_ = h.dbWithContext(ctx).Where("idle_expires_at <= ? or absolute_expires_at <= ?", now, now).Delete(&model.StepUpAssertion{}).Error
 }
 
 func (h *Handlers) stepUpMFAEnabled() bool {
@@ -282,9 +282,10 @@ func requestUsesBearerToken(ctx *gin.Context) bool {
 
 func writeMFARequired(ctx *gin.Context, purpose string) {
 	ctx.JSON(http.StatusForbidden, gin.H{
-		"code":    "mfa_required",
-		"error":   "需要完成敏感操作二次验证",
-		"purpose": purpose,
+		"code":      "mfa_required",
+		"error":     messageFor(requestLanguage(ctx), "mfa_required"),
+		"purpose":   purpose,
+		"requestId": requestID(ctx),
 	})
 }
 

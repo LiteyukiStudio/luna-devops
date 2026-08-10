@@ -9,6 +9,7 @@ interface ApiErrorBody {
   detail?: unknown
   error?: unknown
   purpose?: unknown
+  requestId?: unknown
 }
 
 type MFAChallengeHandler = (challenge: MFAChallenge) => Promise<void>
@@ -22,15 +23,17 @@ export class ApiError extends Error {
   detail?: string
   path: string
   purpose?: string
+  requestId?: string
   status: number
 
-  constructor(message: string, options: { code?: string, detail?: string, path: string, purpose?: string, status: number }) {
+  constructor(message: string, options: { code?: string, detail?: string, path: string, purpose?: string, requestId?: string, status: number }) {
     super(message)
     this.name = 'ApiError'
     this.code = options.code || 'request.failed'
     this.detail = options.detail
     this.path = options.path
     this.purpose = options.purpose
+    this.requestId = options.requestId
     this.status = options.status
   }
 }
@@ -191,7 +194,7 @@ async function parseErrorBody(response: Response): Promise<ApiErrorBody> {
     return response.json().catch(() => ({}))
   }
   const text = await response.text().catch(() => '')
-  return text.trim() ? { error: text.trim() } : {}
+  return text.trim() ? { detail: text.trim() } : {}
 }
 
 async function apiErrorFromResponse(response: Response, path: string) {
@@ -199,15 +202,17 @@ async function apiErrorFromResponse(response: Response, path: string) {
   const code = typeof body.code === 'string' && body.code.trim() ? body.code.trim() : ''
   const detail = typeof body.detail === 'string' && body.detail.trim() ? body.detail.trim() : ''
   const bodyError = typeof body.error === 'string' && body.error.trim() ? body.error.trim() : ''
+  const requestId = typeof body.requestId === 'string' && body.requestId.trim() ? body.requestId.trim() : undefined
   const purpose = typeof body.purpose === 'string' && /^[a-z][a-z0-9_]{0,63}$/.test(body.purpose.trim())
     ? body.purpose.trim()
     : undefined
-  const message = translatedErrorMessage(code) || detail || bodyError || fallbackMessageForStatus(response.status) || response.statusText
+  const message = translatedErrorMessage(code) || bodyError || fallbackMessageForStatus(response.status) || response.statusText
   return new ApiError(message, {
     code: code || `http.${response.status}`,
-    detail: detail || bodyError,
+    detail: detail || undefined,
     path,
     purpose,
+    requestId,
     status: response.status,
   })
 }

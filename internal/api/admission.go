@@ -70,8 +70,8 @@ func (h *Handlers) UpdateAuthAdmissionPolicy(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, admissionPolicyResponse(policy))
 }
 
-func (h *Handlers) evaluateAdmission(claims oidcIdentityClaims, contexts ...context.Context) error {
-	policy, err := h.ensureAdmissionPolicy(firstContext(contexts))
+func (h *Handlers) evaluateAdmission(claims oidcIdentityClaims, ctx context.Context) error {
+	policy, err := h.ensureAdmissionPolicy(ctx)
 	if err != nil {
 		return err
 	}
@@ -106,9 +106,9 @@ func (h *Handlers) evaluateAdmission(claims oidcIdentityClaims, contexts ...cont
 	return errOIDCAdmissionDenied
 }
 
-func (h *Handlers) ensureAdmissionPolicy(contexts ...context.Context) (model.AuthAdmissionPolicy, error) {
+func (h *Handlers) ensureAdmissionPolicy(ctx context.Context) (model.AuthAdmissionPolicy, error) {
 	var policy model.AuthAdmissionPolicy
-	err := h.dbWithContext(firstContext(contexts)).First(&policy, "id = ?", defaultAdmissionPolicyID).Error
+	err := h.dbWithContext(ctx).First(&policy, "id = ?", defaultAdmissionPolicyID).Error
 	if err == nil {
 		return policy, nil
 	}
@@ -123,9 +123,9 @@ func (h *Handlers) ensureAdmissionPolicy(contexts ...context.Context) (model.Aut
 		RequireVerifiedOIDCEmail: true,
 		DefaultRole:              authz.PlatformRoleUser,
 	}
-	if err := h.dbWithContext(firstContext(contexts)).Create(&policy).Error; err != nil {
+	if err := h.dbWithContext(ctx).Create(&policy).Error; err != nil {
 		var existing model.AuthAdmissionPolicy
-		if reloadErr := h.dbWithContext(firstContext(contexts)).First(&existing, "id = ?", defaultAdmissionPolicyID).Error; reloadErr == nil {
+		if reloadErr := h.dbWithContext(ctx).First(&existing, "id = ?", defaultAdmissionPolicyID).Error; reloadErr == nil {
 			return existing, nil
 		}
 		return model.AuthAdmissionPolicy{}, fmt.Errorf("initialize authentication admission policy: %w", err)
@@ -159,10 +159,6 @@ func admissionPolicyResponse(policy model.AuthAdmissionPolicy) gin.H {
 		"invitedEmails":            jsonList(splitCSV(policy.InvitedEmails)),
 		"defaultRole":              policy.DefaultRole,
 	}
-}
-
-func (h *Handlers) audit(userID, action, resource string, success bool, message string) {
-	h.auditWithContext(userID, action, resource, success, message, context.Background())
 }
 
 func (h *Handlers) auditWithContext(userID, action, resource string, success bool, message string, ctx context.Context) {

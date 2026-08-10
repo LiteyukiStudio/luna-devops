@@ -32,6 +32,7 @@ const hookDefaults: HookForm = {
   shell: 'sh',
   timeoutSeconds: 300,
 }
+const PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
 
 export function ProjectHooksPage({ projectId, ref }: { projectId: string, ref?: Ref<ProjectHooksPageHandle> }) {
   const { t } = useTranslation()
@@ -39,8 +40,14 @@ export function ProjectHooksPage({ projectId, ref }: { projectId: string, ref?: 
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingHook, setEditingHook] = useState<ProjectHookConfig | null>(null)
   const [hookToDelete, setHookToDelete] = useState<ProjectHookConfig | null>(null)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
   const form = useForm<HookForm>({ defaultValues: hookDefaults, mode: 'onChange' })
-  const hooks = useQuery({ queryKey: ['project-hooks', projectId], queryFn: () => api.listProjectHooks(projectId), enabled: Boolean(projectId) })
+  const hooks = useQuery({
+    queryKey: ['project-hooks', projectId, page, pageSize],
+    queryFn: () => api.listProjectHooksPage(projectId, { page, pageSize, sortBy: 'createdAt', sortOrder: 'asc' }),
+    enabled: Boolean(projectId),
+  })
 
   const saveHook = useMutation({
     mutationFn: (values: HookForm) => editingHook ? api.updateProjectHook(projectId, editingHook.id, values) : api.createProjectHook(projectId, values),
@@ -97,10 +104,6 @@ export function ProjectHooksPage({ projectId, ref }: { projectId: string, ref?: 
     )
   }
 
-  const hookItems = [...(hooks.data ?? [])].sort((left, right) => {
-    return left.createdAt.localeCompare(right.createdAt)
-  })
-
   return (
     <Card className="min-w-0 overflow-hidden p-0">
       <div className="border-b border-border px-4 py-4">
@@ -109,7 +112,7 @@ export function ProjectHooksPage({ projectId, ref }: { projectId: string, ref?: 
           <p className="mt-1 text-sm leading-6 text-muted-foreground">{t('projectHooks.description')}</p>
         </div>
       </div>
-      {hookItems.length > 0
+      {(hooks.data?.items.length ?? 0) > 0
         ? (
             <DataList
               columns={[
@@ -128,7 +131,24 @@ export function ProjectHooksPage({ projectId, ref }: { projectId: string, ref?: 
                 ) },
               ]}
               emptyTitle={t('projectHooks.emptyTitle')}
-              items={hookItems}
+              items={hooks.data?.items ?? []}
+              pagination={{
+                page: hooks.data?.page ?? page,
+                pageSize: hooks.data?.pageSize ?? pageSize,
+                pageSizeOptions: PAGE_SIZE_OPTIONS,
+                total: hooks.data?.total ?? 0,
+                totalPages: hooks.data?.totalPages ?? 0,
+                pageInfoLabel: t('pagination.pageInfo', {
+                  page: hooks.data?.page ?? page,
+                  total: hooks.data?.total ?? 0,
+                  totalPages: hooks.data?.totalPages ?? 0,
+                }),
+                onPageChange: setPage,
+                onPageSizeChange: (nextPageSize) => {
+                  setPageSize(nextPageSize)
+                  setPage(1)
+                },
+              }}
               rowKey={item => item.id}
             />
           )

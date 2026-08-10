@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -24,6 +25,12 @@ import (
 	"gorm.io/gorm"
 )
 
+func newContextAuditedTestSecretStore(db *gorm.DB, handlers *Handlers) secret.Store {
+	return secret.NewStore(db, func(ctx context.Context, userID, action, resource string, success bool, message string) {
+		handlers.auditWithContext(userID, action, resource, success, message, ctx)
+	})
+}
+
 func TestMFAEnrollmentVerificationRecoveryAndDisableFlow(t *testing.T) {
 	db := newMFAIntegrationDB(t)
 	t.Setenv("APP_ENV", "development")
@@ -45,7 +52,7 @@ func TestMFAEnrollmentVerificationRecoveryAndDisableFlow(t *testing.T) {
 		t.Fatal(err)
 	}
 	handlers := &Handlers{db: db, configs: newConfigCache(db), mode: "development", rateLimiter: newRateLimiter()}
-	handlers.secrets = secret.NewStore(db, handlers.audit)
+	handlers.secrets = newContextAuditedTestSecretStore(db, handlers)
 
 	policyBlockedRecorder, policyBlockedContext := newMFAIntegrationContext(http.MethodPut, "/api/v1/configs", map[string]any{"values": map[string]any{"security.stepUpMfa.enabled": true}}, sessionToken)
 	handlers.UpdateConfigs(policyBlockedContext)
@@ -107,7 +114,7 @@ func TestMFAEnrollmentVerificationRecoveryAndDisableFlow(t *testing.T) {
 	if len(initialRecovery.RecoveryCodes) != mfaRecoveryCodeCount {
 		t.Fatalf("recovery code count = %d", len(initialRecovery.RecoveryCodes))
 	}
-	if !handlers.hasMFAEnabledPlatformAdmin() {
+	if !handlers.hasMFAEnabledPlatformAdmin(context.Background()) {
 		t.Fatal("confirmed platform administrator was not recognized as MFA-enabled")
 	}
 	reusedConfirmationRecorder, reusedConfirmationContext := newMFAIntegrationContext(http.MethodPost, "/api/v1/auth/mfa/verify", map[string]string{"purpose": stepUpPurposeRuntimeExec, "code": confirmationCode}, sessionToken)
@@ -261,9 +268,9 @@ func TestAdminResetUserMFAFlowAndLastAdminProtection(t *testing.T) {
 		t.Fatal(err)
 	}
 	handlers := &Handlers{db: db, configs: newConfigCache(db), mode: "development", rateLimiter: newRateLimiter()}
-	handlers.secrets = secret.NewStore(db, handlers.audit)
+	handlers.secrets = newContextAuditedTestSecretStore(db, handlers)
 
-	targetSecretRef := handlers.secrets.Store("TARGETSECRET", actor.ID, mfaSecretResource(target.ID))
+	targetSecretRef := handlers.secrets.StoreContext(context.Background(), "TARGETSECRET", actor.ID, mfaSecretResource(target.ID))
 	confirmedAt := now
 	if err := db.Create(&model.UserMFAConfig{ID: "mfa_target_" + suffix, UserID: target.ID, TOTPSecretRef: targetSecretRef, Enabled: true, ConfirmedAt: &confirmedAt}).Error; err != nil {
 		t.Fatal(err)
@@ -315,7 +322,7 @@ func TestAdminResetUserMFAFlowAndLastAdminProtection(t *testing.T) {
 		t.Fatalf("missing successful admin reset audit: %v", err)
 	}
 
-	lastAdminSecretRef := handlers.secrets.Store("LASTADMINSECRET", actor.ID, mfaSecretResource(lastAdmin.ID))
+	lastAdminSecretRef := handlers.secrets.StoreContext(context.Background(), "LASTADMINSECRET", actor.ID, mfaSecretResource(lastAdmin.ID))
 	if err := db.Create(&model.UserMFAConfig{ID: "mfa_last_admin_" + suffix, UserID: lastAdmin.ID, TOTPSecretRef: lastAdminSecretRef, Enabled: true, ConfirmedAt: &confirmedAt}).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -352,7 +359,7 @@ func TestOIDCMFAEnrollmentRequiresFreshBrowserSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	handlers := &Handlers{db: db, configs: newConfigCache(db), mode: "development", rateLimiter: newRateLimiter()}
-	handlers.secrets = secret.NewStore(db, handlers.audit)
+	handlers.secrets = newContextAuditedTestSecretStore(db, handlers)
 
 	staleRecorder, staleContext := newMFAIntegrationContext(http.MethodPost, "/api/v1/auth/mfa/totp/enroll", map[string]any{}, sessionToken)
 	handlers.EnrollMFA(staleContext)
@@ -383,7 +390,7 @@ func TestConcurrentPlatformAdminMFADisableKeepsOneEnabledAdmin(t *testing.T) {
 		t.Fatal(err)
 	}
 	handlers := &Handlers{db: db, configs: newConfigCache(db), mode: "development", rateLimiter: newRateLimiter()}
-	handlers.secrets = secret.NewStore(db, handlers.audit)
+	handlers.secrets = newContextAuditedTestSecretStore(db, handlers)
 	if err := db.Save(&model.AppConfig{Key: "security.stepUpMfa.enabled", Value: "true"}).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -395,7 +402,7 @@ func TestConcurrentPlatformAdminMFADisableKeepsOneEnabledAdmin(t *testing.T) {
 		if err := db.Create(&session).Error; err != nil {
 			t.Fatal(err)
 		}
-		secretRef := handlers.secrets.Store("DISABLESECRET"+fmt.Sprint(index), user.ID, mfaSecretResource(user.ID))
+		secretRef := handlers.secrets.StoreContext(context.Background(), "DISABLESECRET"+fmt.Sprint(index), user.ID, mfaSecretResource(user.ID))
 		confirmedAt := now
 		if err := db.Create(&model.UserMFAConfig{ID: "mfa_disable_" + fmt.Sprint(index) + "_" + suffix, UserID: user.ID, TOTPSecretRef: secretRef, Enabled: true, ConfirmedAt: &confirmedAt}).Error; err != nil {
 			t.Fatal(err)
@@ -474,8 +481,8 @@ func TestConcurrentStepUpEnableAndLastAdminDisableRemainRecoverable(t *testing.T
 		t.Fatal(err)
 	}
 	handlers := &Handlers{db: db, configs: newConfigCache(db), mode: "development", rateLimiter: newRateLimiter()}
-	handlers.secrets = secret.NewStore(db, handlers.audit)
-	secretRef := handlers.secrets.Store("POLICYRACESECRET", user.ID, mfaSecretResource(user.ID))
+	handlers.secrets = newContextAuditedTestSecretStore(db, handlers)
+	secretRef := handlers.secrets.StoreContext(context.Background(), "POLICYRACESECRET", user.ID, mfaSecretResource(user.ID))
 	confirmedAt := now
 	if err := db.Create(&model.UserMFAConfig{
 		ID:            "mfa_policy_race_" + suffix,
@@ -578,8 +585,8 @@ func TestLastMFAEnabledAdminCannotBeDisabledOrDemoted(t *testing.T) {
 		t.Fatal(err)
 	}
 	handlers := &Handlers{db: db, configs: newConfigCache(db), mode: "development", rateLimiter: newRateLimiter()}
-	handlers.secrets = secret.NewStore(db, handlers.audit)
-	secretRef := handlers.secrets.Store("ADMINROLEGSECRET", user.ID, mfaSecretResource(user.ID))
+	handlers.secrets = newContextAuditedTestSecretStore(db, handlers)
+	secretRef := handlers.secrets.StoreContext(context.Background(), "ADMINROLEGSECRET", user.ID, mfaSecretResource(user.ID))
 	confirmedAt := now
 	if err := db.Create(&model.UserMFAConfig{
 		ID:            "mfa_admin_role_guard_" + suffix,
@@ -699,8 +706,8 @@ func TestDisableMFARollsBackWhenSuccessAuditCannotBeWritten(t *testing.T) {
 		t.Fatal(err)
 	}
 	handlers := &Handlers{db: db, configs: newConfigCache(db), mode: "development", rateLimiter: newRateLimiter()}
-	handlers.secrets = secret.NewStore(db, handlers.audit)
-	secretRef := handlers.secrets.Store("AUDITROLLBACKSECRET", user.ID, mfaSecretResource(user.ID))
+	handlers.secrets = newContextAuditedTestSecretStore(db, handlers)
+	secretRef := handlers.secrets.StoreContext(context.Background(), "AUDITROLLBACKSECRET", user.ID, mfaSecretResource(user.ID))
 	confirmedAt := now
 	if err := db.Create(&model.UserMFAConfig{ID: "mfa_audit_rollback_" + suffix, UserID: user.ID, TOTPSecretRef: secretRef, Enabled: true, ConfirmedAt: &confirmedAt}).Error; err != nil {
 		t.Fatal(err)

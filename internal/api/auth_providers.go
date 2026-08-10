@@ -199,14 +199,14 @@ func (h *Handlers) UnbindMyExternalIdentity(ctx *gin.Context) {
 	ctx.Status(http.StatusNoContent)
 }
 
-func (h *Handlers) bindExternalIdentityToUser(user model.User, provider model.AuthProvider, claims oidcIdentityClaims, contexts ...context.Context) (model.ExternalIdentity, error) {
+func (h *Handlers) bindExternalIdentityToUser(user model.User, provider model.AuthProvider, claims oidcIdentityClaims, ctx context.Context) (model.ExternalIdentity, error) {
 	subject := strings.TrimSpace(claims.Subject)
 	if user.ID == "" || provider.ID == "" || subject == "" {
 		return model.ExternalIdentity{}, errors.New("external identity requires user, provider and subject")
 	}
 
 	var existing model.ExternalIdentity
-	if err := h.dbWithContext(firstContext(contexts)).First(&existing, "provider_id = ? and subject = ?", provider.ID, subject).Error; err == nil {
+	if err := h.dbWithContext(ctx).First(&existing, "provider_id = ? and subject = ?", provider.ID, subject).Error; err == nil {
 		if existing.UserID == user.ID {
 			return existing, nil
 		}
@@ -224,7 +224,7 @@ func (h *Handlers) bindExternalIdentityToUser(user model.User, provider model.Au
 		EmailVerified: claims.EmailVerified,
 		Username:      strings.TrimSpace(claims.Username),
 	}
-	if err := h.dbWithContext(firstContext(contexts)).Create(&identity).Error; err != nil {
+	if err := h.dbWithContext(ctx).Create(&identity).Error; err != nil {
 		return model.ExternalIdentity{}, err
 	}
 	return identity, nil

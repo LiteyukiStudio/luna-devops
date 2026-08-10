@@ -130,11 +130,11 @@ type Adapter interface {
 }
 
 type SecretResolver interface {
-	Resolve(ref string) string
+	ResolveContext(ctx context.Context, ref string) string
 }
 
 type StaticSecretResolver map[string]string
 
-func (r StaticSecretResolver) Resolve(ref string) string {
+func (r StaticSecretResolver) ResolveContext(_ context.Context, ref string) string {
 	return r[ref]
 }

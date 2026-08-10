@@ -27,7 +27,7 @@ func (h *Handlers) findAccessibleRegistry(ctx *gin.Context, user model.User, reg
 	if !h.canUseRegistry(ctx, user, registry) {
 		return registry, false
 	}
-	registry.ProjectIDs = h.scopedResourceProjectIDs(scopedResourceArtifactRegistry, registry.ID, ctx.Request.Context(), ctx.Request.Context())
+	registry.ProjectIDs = h.scopedResourceProjectIDs(scopedResourceArtifactRegistry, registry.ID, ctx.Request.Context())
 	return registry, true
 }
 
@@ -50,15 +50,15 @@ func (h *Handlers) canManageRegistryCredential(ctx *gin.Context, user model.User
 	return h.canManageScopedResourceByID(ctx, user, credential.Scope, credential.OwnerRef, scopedResourceRegistryCredential, credential.ID, "无权维护该镜像凭据")
 }
 
-func (h *Handlers) defaultRegistryFor(userID, projectID string, contexts ...context.Context) (model.ArtifactRegistry, bool) {
+func (h *Handlers) defaultRegistryFor(userID, projectID string, ctx context.Context) (model.ArtifactRegistry, bool) {
 	var projectRegistry model.ArtifactRegistry
-	projectDefault := h.dbWithContext(firstContext(contexts)).
+	projectDefault := h.dbWithContext(ctx).
 		Joins("join scoped_resource_project_bindings srpb on srpb.resource_id = artifact_registries.id and srpb.resource_type = ? and srpb.project_id = ? and srpb.is_default = ?", scopedResourceArtifactRegistry, projectID, true).
 		Where("artifact_registries.scope = ? and artifact_registries.deleted_at is null", "project").
 		First(&projectRegistry)
 	if projectDefault.Error == nil {
-		projectRegistry.ProjectIDs = h.scopedResourceProjectIDs(scopedResourceArtifactRegistry, projectRegistry.ID, firstContext(contexts))
-		projectRegistry.DefaultProjectIDs = h.scopedResourceDefaultProjectIDMap(scopedResourceArtifactRegistry, []string{projectRegistry.ID}, firstContext(contexts))[projectRegistry.ID]
+		projectRegistry.ProjectIDs = h.scopedResourceProjectIDs(scopedResourceArtifactRegistry, projectRegistry.ID, ctx)
+		projectRegistry.DefaultProjectIDs = h.scopedResourceDefaultProjectIDMap(scopedResourceArtifactRegistry, []string{projectRegistry.ID}, ctx)[projectRegistry.ID]
 		return projectRegistry, true
 	}
 	candidates := []struct {
@@ -70,7 +70,7 @@ func (h *Handlers) defaultRegistryFor(userID, projectID string, contexts ...cont
 	}
 	for _, candidate := range candidates {
 		var registry model.ArtifactRegistry
-		err := h.dbWithContext(firstContext(contexts)).First(&registry, "scope = ? and owner_ref = ? and is_default = ?", candidate.scope, candidate.owner, true).Error
+		err := h.dbWithContext(ctx).First(&registry, "scope = ? and owner_ref = ? and is_default = ?", candidate.scope, candidate.owner, true).Error
 		if err == nil {
 			return registry, true
 		}

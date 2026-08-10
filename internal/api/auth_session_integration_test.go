@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/url"
@@ -90,7 +91,7 @@ func TestRotateRememberLoginConsumesTokenOnce(t *testing.T) {
 		go func() {
 			defer workers.Done()
 			<-start
-			_, _, _, err := h.rotateRememberLogin(user.ID, plainToken)
+			_, _, _, err := h.rotateRememberLogin(user.ID, plainToken, context.Background())
 			errorsByAttempt <- err
 		}()
 	}
@@ -148,7 +149,7 @@ func TestOIDCRegistrationToggleOnlyBlocksNewUsers(t *testing.T) {
 	h := &Handlers{db: db, mode: "production"}
 
 	newClaims := oidcIdentityClaims{Subject: "new-subject", Email: "new-oidc@example.com", EmailVerified: true, Name: "New OIDC User"}
-	if _, err := h.findOrCreateOIDCUser(provider, newClaims); !errors.Is(err, errOIDCRegistrationDisabled) {
+	if _, err := h.findOrCreateOIDCUser(provider, newClaims, context.Background()); !errors.Is(err, errOIDCRegistrationDisabled) {
 		t.Fatalf("new OIDC user error = %v, want registration disabled", err)
 	}
 
@@ -160,7 +161,7 @@ func TestOIDCRegistrationToggleOnlyBlocksNewUsers(t *testing.T) {
 	if err := db.Create(&identity).Error; err != nil {
 		t.Fatalf("create existing identity: %v", err)
 	}
-	loggedIn, err := h.findOrCreateOIDCUser(provider, oidcIdentityClaims{Subject: identity.Subject, Email: existing.Email, EmailVerified: true})
+	loggedIn, err := h.findOrCreateOIDCUser(provider, oidcIdentityClaims{Subject: identity.Subject, Email: existing.Email, EmailVerified: true}, context.Background())
 	if err != nil || loggedIn.ID != existing.ID {
 		t.Fatalf("existing OIDC login = %#v, %v", loggedIn, err)
 	}
@@ -191,7 +192,7 @@ func TestRememberTokenReplayRevokesCompromisedFamilyOnly(t *testing.T) {
 	}
 
 	h := &Handlers{db: db, mode: "production"}
-	if _, _, _, err := h.rotateRememberLogin(user.ID, plainToken); err != nil {
+	if _, _, _, err := h.rotateRememberLogin(user.ID, plainToken, context.Background()); err != nil {
 		t.Fatalf("rotate remember token: %v", err)
 	}
 	var rotatedSession model.UserSession
@@ -203,7 +204,7 @@ func TestRememberTokenReplayRevokesCompromisedFamilyOnly(t *testing.T) {
 		t.Fatalf("create family assertion: %v", err)
 	}
 
-	if _, _, _, err := h.rotateRememberLogin(user.ID, plainToken); !errors.Is(err, errRememberTokenReused) {
+	if _, _, _, err := h.rotateRememberLogin(user.ID, plainToken, context.Background()); !errors.Is(err, errRememberTokenReused) {
 		t.Fatalf("replay error = %v", err)
 	}
 	assertRecordCount(t, db, &model.UserSession{}, "user_id = ? and remember_family_id = ?", []any{user.ID, compromised.FamilyID}, 0)
@@ -236,7 +237,7 @@ func TestRememberRotationPreservesPrimaryAuthenticationAndSingleSession(t *testi
 	}
 
 	h := &Handlers{db: db, mode: "production"}
-	_, _, rotatedRememberToken, err := h.rotateRememberLogin(user.ID, rememberPlainToken)
+	_, _, rotatedRememberToken, err := h.rotateRememberLogin(user.ID, rememberPlainToken, context.Background())
 	if err != nil {
 		t.Fatalf("first rotation: %v", err)
 	}
@@ -253,7 +254,7 @@ func TestRememberRotationPreservesPrimaryAuthenticationAndSingleSession(t *testi
 		t.Fatalf("session expiry %v exceeds family expiry %v", firstRotated.ExpiresAt, familyExpiresAt)
 	}
 
-	if _, _, _, err := h.rotateRememberLogin(user.ID, rotatedRememberToken); err != nil {
+	if _, _, _, err := h.rotateRememberLogin(user.ID, rotatedRememberToken, context.Background()); err != nil {
 		t.Fatalf("second rotation: %v", err)
 	}
 	assertRecordCount(t, db, &model.UserSession{}, "user_id = ? and remember_family_id = ?", []any{user.ID, remember.FamilyID}, 1)
@@ -291,7 +292,7 @@ func TestLogoutNonRememberedSessionLeavesRememberFamiliesAlone(t *testing.T) {
 	}
 
 	h := &Handlers{db: db}
-	userID, err := h.revokeCurrentSessionAndRememberTokens(currentPlainToken)
+	userID, err := h.revokeCurrentSessionAndRememberTokens(currentPlainToken, context.Background())
 	if err != nil {
 		t.Fatalf("revoke logout credentials: %v", err)
 	}
@@ -334,7 +335,7 @@ func TestLogoutRememberedSessionRevokesOnlyCurrentFamily(t *testing.T) {
 	}
 
 	h := &Handlers{db: db}
-	if _, err := h.revokeCurrentSessionAndRememberTokens(currentPlainToken); err != nil {
+	if _, err := h.revokeCurrentSessionAndRememberTokens(currentPlainToken, context.Background()); err != nil {
 		t.Fatalf("logout remembered session: %v", err)
 	}
 	assertRecordCount(t, db, &model.UserSession{}, "user_id = ? and remember_family_id = ?", []any{user.ID, currentRemember.FamilyID}, 0)
@@ -370,7 +371,7 @@ func TestExpiredRememberTombstonesAreDeletedOnlyAfterWholeFamilyExpires(t *testi
 	}
 
 	h := &Handlers{db: db}
-	if err := h.cleanupExpiredRememberTokenFamilies(user.ID, now); err != nil {
+	if err := h.cleanupExpiredRememberTokenFamilies(user.ID, now, context.Background()); err != nil {
 		t.Fatalf("cleanup expired families: %v", err)
 	}
 	assertRecordCount(t, db, &model.UserRememberToken{}, "family_id = ?", []any{expiredOne.FamilyID}, 0)

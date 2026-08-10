@@ -23,34 +23,34 @@ var sensitiveLogPatterns = []sensitiveLogPattern{
 	{regex: regexp.MustCompile(`(?i)\b((?:password|token|secret|access_token|refresh_token)=)[^\s&]+`), replacement: "${1}" + redactedLogValue},
 }
 
-func (h *Handlers) redactBuildJobLogContent(job model.BuildJob, content string) string {
-	return redactSensitiveLogContent(content, h.sensitiveValuesForBuildJob(job))
+func (h *Handlers) redactBuildJobLogContent(job model.BuildJob, content string, ctx context.Context) string {
+	return redactSensitiveLogContent(content, h.sensitiveValuesForBuildJob(job, ctx))
 }
 
-func (h *Handlers) redactHookRunLogContent(run model.HookRun, content string, contexts ...context.Context) string {
+func (h *Handlers) redactHookRunLogContent(run model.HookRun, content string, ctx context.Context) string {
 	if strings.TrimSpace(run.BuildJobID) == "" {
 		return redactSensitiveLogContent(content, nil)
 	}
 	var job model.BuildJob
-	if err := h.dbWithContext(firstContext(contexts)).First(&job, "id = ? and project_id = ?", run.BuildJobID, run.ProjectID).Error; err != nil {
+	if err := h.dbWithContext(ctx).First(&job, "id = ? and project_id = ?", run.BuildJobID, run.ProjectID).Error; err != nil {
 		return redactSensitiveLogContent(content, nil)
 	}
-	return h.redactBuildJobLogContent(job, content)
+	return h.redactBuildJobLogContent(job, content, ctx)
 }
 
-func (h *Handlers) sensitiveValuesForBuildJob(job model.BuildJob, contexts ...context.Context) []string {
+func (h *Handlers) sensitiveValuesForBuildJob(job model.BuildJob, ctx context.Context) []string {
 	var run model.BuildRun
-	if err := h.dbWithContext(firstContext(contexts)).First(&run, "id = ? and project_id = ?", job.BuildRunID, job.ProjectID).Error; err != nil {
+	if err := h.dbWithContext(ctx).First(&run, "id = ? and project_id = ?", job.BuildRunID, job.ProjectID).Error; err != nil {
 		return nil
 	}
-	return h.sensitiveValuesForBuildRun(h.dbWithContext(firstContext(contexts)), run)
+	return h.sensitiveValuesForBuildRun(h.dbWithContext(ctx), run, ctx)
 }
 
-func (h *Handlers) sensitiveValuesForBuildRun(db *gorm.DB, run model.BuildRun) []string {
+func (h *Handlers) sensitiveValuesForBuildRun(db *gorm.DB, run model.BuildRun, ctx context.Context) []string {
 	values := make([]string, 0, 8)
 	values = append(values, h.gitSensitiveValuesForBuildRun(db, run)...)
-	values = append(values, h.registrySensitiveValuesForBuildRun(run)...)
-	values = append(values, h.buildVariableSensitiveValuesForRun(db, run)...)
+	values = append(values, h.registrySensitiveValuesForBuildRun(run, ctx)...)
+	values = append(values, h.buildVariableSensitiveValuesForRun(db, run, ctx)...)
 	return values
 }
 
@@ -84,34 +84,34 @@ func (h *Handlers) gitSensitiveValuesForBuildRun(db *gorm.DB, run model.BuildRun
 	return values
 }
 
-func (h *Handlers) registrySensitiveValuesForBuildRun(run model.BuildRun, contexts ...context.Context) []string {
+func (h *Handlers) registrySensitiveValuesForBuildRun(run model.BuildRun, ctx context.Context) []string {
 	if strings.TrimSpace(run.TargetRegistryID) == "" {
 		return nil
 	}
 	var registry model.ArtifactRegistry
-	if err := h.dbWithContext(firstContext(contexts)).First(&registry, "id = ?", run.TargetRegistryID).Error; err != nil {
+	if err := h.dbWithContext(ctx).First(&registry, "id = ?", run.TargetRegistryID).Error; err != nil {
 		return nil
 	}
 	var actor model.User
-	if err := h.dbWithContext(firstContext(contexts)).First(&actor, "id = ?", run.CreatedBy).Error; err != nil {
+	if err := h.dbWithContext(ctx).First(&actor, "id = ?", run.CreatedBy).Error; err != nil {
 		return nil
 	}
-	credential, ok := h.registryCredentialFor(actor, registry, firstContext(contexts))
+	credential, ok := h.registryCredentialFor(actor, registry, ctx)
 	if !ok {
 		return nil
 	}
 	return []string{
-		h.secrets.ResolveContext(firstContext(contexts), credential.TokenRef),
-		h.secrets.ResolveContext(firstContext(contexts), credential.PasswordRef),
+		h.secrets.ResolveContext(ctx, credential.TokenRef),
+		h.secrets.ResolveContext(ctx, credential.PasswordRef),
 	}
 }
 
-func (h *Handlers) buildVariableSensitiveValuesForRun(db *gorm.DB, run model.BuildRun) []string {
+func (h *Handlers) buildVariableSensitiveValuesForRun(db *gorm.DB, run model.BuildRun, ctx context.Context) []string {
 	var actor model.User
 	if err := db.First(&actor, "id = ?", run.CreatedBy).Error; err != nil {
 		return nil
 	}
-	sets, err := h.buildVariableSetsForRun(db, actor, run.ProjectID, buildVariableSetIDs(run.BuildVariableSetIDs))
+	sets, err := h.buildVariableSetsForRun(db, actor, run.ProjectID, buildVariableSetIDs(run.BuildVariableSetIDs), ctx)
 	if err != nil {
 		return nil
 	}

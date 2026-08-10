@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"gorm.io/gorm"
@@ -15,18 +16,10 @@ func NewProjectRepository(db *gorm.DB) ProjectRepository {
 	return ProjectRepository{db: db}
 }
 
-func (r ProjectRepository) IDsForUser(userID string) []string {
-	return r.IDsForUserContext(context.Background(), userID)
-}
-
 func (r ProjectRepository) IDsForUserContext(ctx context.Context, userID string) []string {
 	var projectIDs []string
 	_ = r.db.WithContext(ctx).Model(&model.ProjectMember{}).Where("user_id = ?", userID).Pluck("project_id", &projectIDs).Error
 	return projectIDs
-}
-
-func (r ProjectRepository) UserHasProject(userID, projectID string) bool {
-	return r.UserHasProjectContext(context.Background(), userID, projectID)
 }
 
 func (r ProjectRepository) UserHasProjectContext(ctx context.Context, userID, projectID string) bool {
@@ -35,10 +28,6 @@ func (r ProjectRepository) UserHasProjectContext(ctx context.Context, userID, pr
 		return false
 	}
 	return count > 0
-}
-
-func (r ProjectRepository) HasAnotherOwner(projectID, memberID string) bool {
-	return r.HasAnotherOwnerContext(context.Background(), projectID, memberID)
 }
 
 func (r ProjectRepository) HasAnotherOwnerContext(ctx context.Context, projectID, memberID string) bool {

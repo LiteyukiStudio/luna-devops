@@ -1,5 +1,15 @@
 # TODO
 
+## 2026-08-10 Code Review 修复
+
+- [x] 以最小安全版本升级 Web、luna-agent 与 Docs 高危依赖，并更新各自 lockfile，High audit 已清零。
+- [x] 将高增长业务列表统一为服务端默认分页，默认每页 20、最大每页 100，并同步 OpenAPI、前端选择器和分页契约测试。
+- [x] 清理 Repository、Secret、Provider、Telemetry、审计与 Worker 业务链中的隐式 `context.Background()`，保留并注明独立生命周期例外。
+- [x] 收紧生产错误响应为稳定错误码、安全公共文案和 requestId，开发模式继续提供 detail；前端优先展示安全 error。
+- [x] 在中英文管理员文档中补充 AI 内容观测默认关闭及敏感内容风险说明，不改变观测实现。
+- [x] 按业务边界延迟加载 API domain、终端、Web Console、编辑器、图表、运维 Dashboard、AI Assistant 与部署相关 Dialog，并保留公共加载/失败界面。
+- [ ] 按 [应用部署面板后续重构方案](docs-internal/16-application-deployments-panel重构方案.md) 分阶段提取查询、表单、Mutation、实时观察与派生模型；本轮不继续重写。
+
 - [x] 切断 AI 计费与项目空间的关联：AI 模型费用只归属发起用户个人钱包，用量记录与流水的 project_id 恒为空，不再从会话继承项目空间；补充个人归属回归测试并在 AGENTS.md 固化计费归属边界。
 
 - [x] 精简 docs-internal 文档体量：激进压缩两份历史方案（11 AI 助手、01 产品方案）至仅保留定位/决策/边界/技术路线，轻度去冗 12 交互卡片契约的超长示例，规范类文档不动；三大文件从约 207K 字收敛到约 33K 字。

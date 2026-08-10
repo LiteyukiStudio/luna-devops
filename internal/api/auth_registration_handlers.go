@@ -327,9 +327,9 @@ var (
 	errRegistrationCodeInvalid      = errors.New("registration code is invalid")
 )
 
-func (h *Handlers) ensureAuthRegistrationSettings(contexts ...context.Context) model.AuthRegistrationSettings {
+func (h *Handlers) ensureAuthRegistrationSettings(ctx context.Context) model.AuthRegistrationSettings {
 	var settings model.AuthRegistrationSettings
-	if err := h.dbWithContext(firstContext(contexts)).First(&settings, "id = ?", authRegistrationSettingsID).Error; err == nil {
+	if err := h.dbWithContext(ctx).First(&settings, "id = ?", authRegistrationSettingsID).Error; err == nil {
 		return settings
 	}
 	settings = model.AuthRegistrationSettings{
@@ -339,7 +339,7 @@ func (h *Handlers) ensureAuthRegistrationSettings(contexts ...context.Context) m
 		SMTPSecurity:          "starttls",
 		SMTPFromName:          "Luna DevOps",
 	}
-	_ = h.dbWithContext(firstContext(contexts)).Create(&settings).Error
+	_ = h.dbWithContext(ctx).Create(&settings).Error
 	return settings
 }
 

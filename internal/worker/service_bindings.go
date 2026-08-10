@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -26,7 +27,7 @@ type serviceBindingDigestEntry struct {
 	Values map[string]string `json:"values"`
 }
 
-func (r *Runner) resolveServiceBindingConfig(project model.Project, source model.DeploymentTarget) (resolvedServiceBindingConfig, error) {
+func (r *Runner) resolveServiceBindingConfig(ctx context.Context, project model.Project, source model.DeploymentTarget) (resolvedServiceBindingConfig, error) {
 	result := resolvedServiceBindingConfig{Values: map[string]string{}}
 	var bindings []model.ServiceBinding
 	if err := r.db.
@@ -85,7 +86,7 @@ func (r *Runner) resolveServiceBindingConfig(project model.Project, source model
 			if sourceEnvVar == "" || targetKey == "" {
 				continue
 			}
-			resolved := r.resolveTargetSecretKey(target, targetKey)
+			resolved := r.resolveTargetSecretKey(ctx, target, targetKey)
 			if resolved == "" {
 				return result, fmt.Errorf("service binding %s credentialMap references target secret key %q which is not available", binding.ID, targetKey)
 			}
@@ -108,7 +109,7 @@ func (r *Runner) resolveServiceBindingConfig(project model.Project, source model
 	return result, nil
 }
 
-func (r *Runner) resolveTargetSecretKey(target model.DeploymentTarget, key string) string {
+func (r *Runner) resolveTargetSecretKey(ctx context.Context, target model.DeploymentTarget, key string) string {
 	refs := map[string]string{}
 	trimmed := strings.TrimSpace(target.SecretRefs)
 	if trimmed == "" {
@@ -121,7 +122,7 @@ func (r *Runner) resolveTargetSecretKey(target model.DeploymentTarget, key strin
 	if !ok {
 		return ""
 	}
-	return r.secrets.Resolve(ref)
+	return r.secrets.ResolveContext(ctx, ref)
 }
 
 func serviceBindingTargetPort(binding model.ServiceBinding, target model.DeploymentTarget) (model.DeploymentServicePort, bool) {

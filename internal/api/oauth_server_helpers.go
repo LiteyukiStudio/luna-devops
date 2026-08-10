@@ -185,7 +185,11 @@ func (h *Handlers) oauthCookieUser(ctx *gin.Context) (model.User, bool) {
 func oauthError(ctx *gin.Context, status int, code, description string) {
 	ctx.Header("Cache-Control", "no-store")
 	ctx.Header("Pragma", "no-cache")
-	ctx.JSON(status, gin.H{"error": code, "error_description": description})
+	ctx.JSON(status, gin.H{
+		"error":             code,
+		"error_description": description,
+		"requestId":         requestID(ctx),
+	})
 }
 
 func (h *Handlers) authenticateOAuthClient(ctx *gin.Context) (model.OAuthApplication, bool) {

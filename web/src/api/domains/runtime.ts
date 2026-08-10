@@ -1,8 +1,10 @@
 import type { ClusterResource, ClusterResourceEvent, ClusterResourceYAML, PaginatedResponse, PaginationParams, Release, ReleaseImageCandidates, ReleaseLog, ReleaseRuntimeExecResult, ReleaseRuntimeLog, RuntimeCluster, RuntimeClusterResourceListParams } from '../types'
-import { optionalProjectQuery, paginationWithProjectQuery, request, runtimeClusterResourceListQuery } from '../core'
+import { paginationWithProjectQuery, request, runtimeClusterResourceListQuery } from '../core'
+import { selectionItems, selectionPageParams } from '../selection-page'
 
 export const runtimeApi = {
-  listRuntimeClusters: (projectId?: string) => request<RuntimeCluster[]>(`/runtime/clusters${optionalProjectQuery(projectId)}`),
+  listRuntimeClusters: (projectId?: string) =>
+    request<PaginatedResponse<RuntimeCluster>>(`/runtime/clusters?${paginationWithProjectQuery({ ...selectionPageParams, projectId })}`).then(selectionItems),
   listRuntimeClustersPage: (params: PaginationParams & { projectId?: string }) =>
     request<PaginatedResponse<RuntimeCluster>>(`/runtime/clusters?${paginationWithProjectQuery(params)}`),
   createRuntimeCluster: (payload: Omit<RuntimeCluster, 'id' | 'createdBy' | 'createdAt' | 'kubeconfigSet' | 'lastCheckedAt'> & { kubeconfig?: string }) =>
@@ -14,24 +16,21 @@ export const runtimeApi = {
   testRuntimeCluster: (clusterId: string) =>
     request<RuntimeCluster>(`/runtime/clusters/${clusterId}/test`, { method: 'POST' }),
   listRuntimeClusterResources: (clusterId: string, params: { kind: string, namespace?: string, projectId?: string, applicationId?: string, environmentId?: string }) => {
-    const search = new URLSearchParams({ kind: params.kind })
-    if (params.namespace)
-      search.set('namespace', params.namespace)
-    if (params.projectId)
-      search.set('projectId', params.projectId)
-    if (params.applicationId)
-      search.set('applicationId', params.applicationId)
-    if (params.environmentId)
-      search.set('environmentId', params.environmentId)
-    return request<ClusterResource[]>(`/runtime/clusters/${clusterId}/resources?${search.toString()}`)
+    const query = runtimeClusterResourceListQuery({ ...selectionPageParams, ...params })
+    return request<PaginatedResponse<ClusterResource>>(`/runtime/clusters/${clusterId}/resources?${query}`).then(selectionItems)
   },
   listRuntimeClusterResourcesPage: (clusterId: string, params: RuntimeClusterResourceListParams) =>
     request<PaginatedResponse<ClusterResource>>(`/runtime/clusters/${clusterId}/resources?${runtimeClusterResourceListQuery(params)}`),
   listRuntimeClusterResourceEvents: (clusterId: string, params: { kind: string, namespace?: string, name: string }) => {
-    const search = new URLSearchParams({ kind: params.kind, name: params.name })
+    const search = new URLSearchParams({
+      kind: params.kind,
+      name: params.name,
+      page: String(selectionPageParams.page),
+      pageSize: String(selectionPageParams.pageSize),
+    })
     if (params.namespace)
       search.set('namespace', params.namespace)
-    return request<ClusterResourceEvent[]>(`/runtime/clusters/${clusterId}/resource-events?${search.toString()}`)
+    return request<PaginatedResponse<ClusterResourceEvent>>(`/runtime/clusters/${clusterId}/resource-events?${search.toString()}`).then(selectionItems)
   },
   getRuntimeClusterResourceYAML: (clusterId: string, params: { kind: string, namespace?: string, name: string }) => {
     const search = new URLSearchParams({ kind: params.kind, name: params.name })
@@ -49,8 +48,18 @@ export const runtimeApi = {
     const search = new URLSearchParams({ namespace, name })
     return request<void>(`/runtime/clusters/${clusterId}/pods/terminal/authorize?${search.toString()}`, { method: 'POST' })
   },
-  listReleases: (projectId: string) =>
-    request<Release[]>(`/projects/${projectId}/releases`),
+  listReleases: (projectId: string, applicationId?: string) => {
+    const search = new URLSearchParams(paginationWithProjectQuery(selectionPageParams))
+    if (applicationId)
+      search.set('applicationId', applicationId)
+    return request<PaginatedResponse<Release>>(`/projects/${projectId}/releases?${search.toString()}`).then(selectionItems)
+  },
+  listReleasesPage: (projectId: string, params: PaginationParams & { applicationId?: string }) => {
+    const search = new URLSearchParams(paginationWithProjectQuery(params))
+    if (params.applicationId)
+      search.set('applicationId', params.applicationId)
+    return request<PaginatedResponse<Release>>(`/projects/${projectId}/releases?${search.toString()}`)
+  },
   listReleaseImageCandidates: (projectId: string, applicationId: string, targetId: string) =>
     request<ReleaseImageCandidates>(`/projects/${projectId}/applications/${applicationId}/deployment-targets/${targetId}/release-image-candidates`),
   createRelease: (projectId: string, payload: Omit<Release, 'id' | 'projectId' | 'createdBy' | 'createdAt' | 'rollbackFromId'>) =>

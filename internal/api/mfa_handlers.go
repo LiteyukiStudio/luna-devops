@@ -555,7 +555,7 @@ func maxInt(left, right int) int {
 	return right
 }
 
-func (h *Handlers) createStepUpAssertion(userID, sessionID, purpose string, now time.Time, contexts ...context.Context) error {
+func (h *Handlers) createStepUpAssertion(userID, sessionID, purpose string, now time.Time, ctx context.Context) error {
 	idleTimeout, absoluteTimeout := h.stepUpTimeouts()
 	absoluteExpiresAt := now.Add(absoluteTimeout)
 	assertion := model.StepUpAssertion{
@@ -568,7 +568,7 @@ func (h *Handlers) createStepUpAssertion(userID, sessionID, purpose string, now 
 		IdleExpiresAt:     refreshedStepUpIdleExpiry(now, idleTimeout, absoluteExpiresAt),
 		AbsoluteExpiresAt: absoluteExpiresAt,
 	}
-	return h.dbWithContext(firstContext(contexts)).Clauses(clause.OnConflict{
+	return h.dbWithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "session_id"}, {Name: "purpose"}},
 		DoUpdates: clause.AssignmentColumns([]string{
 			"user_id", "verified_at", "last_activity_at", "idle_expires_at", "absolute_expires_at", "updated_at",
@@ -576,12 +576,12 @@ func (h *Handlers) createStepUpAssertion(userID, sessionID, purpose string, now 
 	}).Create(&assertion).Error
 }
 
-func (h *Handlers) consumeRecoveryCode(userID, normalizedCode string, contexts ...context.Context) bool {
+func (h *Handlers) consumeRecoveryCode(userID, normalizedCode string, ctx context.Context) bool {
 	if len(normalizedCode) != 16 {
 		return false
 	}
 	consumed := false
-	err := h.dbWithContext(firstContext(contexts)).Transaction(func(tx *gorm.DB) error {
+	err := h.dbWithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var rows []model.MFARecoveryCode
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id = ? and used_at is null", userID).Find(&rows).Error; err != nil {
 			return err
@@ -606,13 +606,13 @@ func (h *Handlers) consumeRecoveryCode(userID, normalizedCode string, contexts .
 	return err == nil && consumed
 }
 
-func (h *Handlers) consumeTOTPCode(userID, expectedSecretRef, secretValue, code string, now time.Time, contexts ...context.Context) bool {
+func (h *Handlers) consumeTOTPCode(userID, expectedSecretRef, secretValue, code string, now time.Time, ctx context.Context) bool {
 	counter, valid := matchTOTPCounter(secretValue, code, now)
 	if !valid {
 		return false
 	}
 	consumed := false
-	err := h.dbWithContext(firstContext(contexts)).Transaction(func(tx *gorm.DB) error {
+	err := h.dbWithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var config model.UserMFAConfig
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&config, "user_id = ? and enabled = ?", userID, true).Error; err != nil {
 			return err
@@ -698,9 +698,9 @@ func createMFAAudit(tx *gorm.DB, userID, action, resource, message string) error
 	}).Error
 }
 
-func (h *Handlers) hasMFAEnabledPlatformAdmin(contexts ...context.Context) bool {
+func (h *Handlers) hasMFAEnabledPlatformAdmin(ctx context.Context) bool {
 	var count int64
-	_ = h.dbWithContext(firstContext(contexts)).Table("users").
+	_ = h.dbWithContext(ctx).Table("users").
 		Joins("join user_mfa_configs on user_mfa_configs.user_id = users.id and user_mfa_configs.enabled = ?", true).
 		Where("users.role = ? and users.disabled = ? and users.deleted_at is null", authz.PlatformRoleAdmin, false).
 		Count(&count).Error

@@ -196,29 +196,29 @@ func (h *Handlers) oauth2Config(ctx context.Context, provider model.AuthProvider
 	}
 }
 
-func (h *Handlers) enabledAuthProvider(providerID string, contexts ...context.Context) (model.AuthProvider, bool) {
+func (h *Handlers) enabledAuthProvider(providerID string, ctx context.Context) (model.AuthProvider, bool) {
 	var provider model.AuthProvider
-	err := h.dbWithContext(firstContext(contexts)).First(&provider, "id = ? and enabled = ? and type = ?", providerID, true, "oidc").Error
+	err := h.dbWithContext(ctx).First(&provider, "id = ? and enabled = ? and type = ?", providerID, true, "oidc").Error
 	return provider, err == nil
 }
 
-func (h *Handlers) findOrCreateOIDCUser(provider model.AuthProvider, claims oidcIdentityClaims, contexts ...context.Context) (model.User, error) {
+func (h *Handlers) findOrCreateOIDCUser(provider model.AuthProvider, claims oidcIdentityClaims, ctx context.Context) (model.User, error) {
 	subject := strings.TrimSpace(claims.Subject)
 	if provider.ID == "" || subject == "" {
 		return model.User{}, errOIDCInvalidIdentity
 	}
 
 	var identity model.ExternalIdentity
-	if err := h.dbWithContext(firstContext(contexts)).First(&identity, "provider_id = ? and subject = ?", provider.ID, subject).Error; err == nil {
+	if err := h.dbWithContext(ctx).First(&identity, "provider_id = ? and subject = ?", provider.ID, subject).Error; err == nil {
 		now := time.Now()
 		identity.Email = normalizeEmail(claims.Email)
 		identity.EmailVerified = claims.EmailVerified
 		identity.Username = strings.TrimSpace(claims.Username)
 		identity.LastLoginAt = &now
-		_ = h.dbWithContext(firstContext(contexts)).Save(&identity).Error
+		_ = h.dbWithContext(ctx).Save(&identity).Error
 
 		var user model.User
-		if err := h.dbWithContext(firstContext(contexts)).First(&user, "id = ? and disabled = ?", identity.UserID, false).Error; err != nil {
+		if err := h.dbWithContext(ctx).First(&user, "id = ? and disabled = ?", identity.UserID, false).Error; err != nil {
 			return model.User{}, err
 		}
 		return user, nil
@@ -226,26 +226,26 @@ func (h *Handlers) findOrCreateOIDCUser(provider model.AuthProvider, claims oidc
 		return model.User{}, err
 	}
 
-	if err := h.evaluateAdmission(claims, firstContext(contexts)); err != nil {
+	if err := h.evaluateAdmission(claims, ctx); err != nil {
 		return model.User{}, err
 	}
 
 	email := normalizeEmail(claims.Email)
 	var existing model.User
-	if err := h.dbWithContext(firstContext(contexts)).First(&existing, "email = ? and disabled = ?", email, false).Error; err == nil {
-		if _, err := h.bindExternalIdentityToUser(existing, provider, claims, firstContext(contexts)); err != nil {
+	if err := h.dbWithContext(ctx).First(&existing, "email = ? and disabled = ?", email, false).Error; err == nil {
+		if _, err := h.bindExternalIdentityToUser(existing, provider, claims, ctx); err != nil {
 			return model.User{}, err
 		}
 		return existing, nil
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return model.User{}, err
 	}
-	if !h.ensureAuthRegistrationSettings(firstContext(contexts)).AllowOIDCRegistration {
+	if !h.ensureAuthRegistrationSettings(ctx).AllowOIDCRegistration {
 		return model.User{}, errOIDCRegistrationDisabled
 	}
 
 	now := time.Now()
-	policy, err := h.ensureAdmissionPolicy(firstContext(contexts))
+	policy, err := h.ensureAdmissionPolicy(ctx)
 	if err != nil {
 		return model.User{}, err
 	}
@@ -267,7 +267,7 @@ func (h *Handlers) findOrCreateOIDCUser(provider model.AuthProvider, claims oidc
 		LastLoginAt:   &now,
 	}
 
-	if err := h.dbWithContext(firstContext(contexts)).Transaction(func(tx *gorm.DB) error {
+	if err := h.dbWithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&user).Error; err != nil {
 			return err
 		}
@@ -317,10 +317,6 @@ func oidcCallbackURL(publicBaseURL string) string {
 		return ""
 	}
 	return publicBaseURL + "/api/v1/auth/oidc/callback"
-}
-
-func (h *Handlers) resolveSecret(ref string) string {
-	return h.resolveSecretContext(context.Background(), ref)
 }
 
 func (h *Handlers) resolveSecretContext(ctx context.Context, ref string) string {

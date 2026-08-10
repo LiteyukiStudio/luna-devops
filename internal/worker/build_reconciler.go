@@ -20,7 +20,7 @@ func (r *Runner) syncBuildJobStatus(ctx context.Context) {
 	defer ticker.Stop()
 	for {
 		reconcileCtx, end := telemetry.StartOperation(ctx, "worker", "build.reconcile_expired")
-		err := r.scoped(reconcileCtx).markExpiredBuildJobsLost()
+		err := r.scoped(reconcileCtx).markExpiredBuildJobsLost(reconcileCtx)
 		end(err)
 		select {
 		case <-ctx.Done():
@@ -30,7 +30,7 @@ func (r *Runner) syncBuildJobStatus(ctx context.Context) {
 	}
 }
 
-func (r *Runner) markExpiredBuildJobsLost() error {
+func (r *Runner) markExpiredBuildJobsLost(ctx context.Context) error {
 	if r.db == nil {
 		return nil
 	}
@@ -79,7 +79,7 @@ func (r *Runner) markExpiredBuildJobsLost() error {
 	})
 	if err == nil {
 		for _, run := range lostRuns {
-			r.recordBuildRunMetrics(run)
+			r.recordBuildRunMetrics(ctx, run)
 		}
 	}
 	return err
@@ -127,7 +127,7 @@ func (r *Runner) syncReleaseRuntimeSnapshot(ctx context.Context, release model.R
 		return err
 	}
 	environment := deploymentTargetEnvironment(deploymentTarget)
-	manager, err := r.kubernetesManager(environment)
+	manager, err := r.kubernetesManager(ctx, environment)
 	if err != nil {
 		return err
 	}
@@ -141,7 +141,7 @@ func (r *Runner) syncReleaseRuntimeSnapshot(ctx context.Context, release model.R
 		}
 		return err
 	}
-	r.recordDeploymentRuntimeMetric(snapshot)
+	r.recordDeploymentRuntimeMetric(ctx, snapshot)
 	if snapshot.Phase == kubeprovider.DeploymentFailed {
 		return r.markReleaseRolloutFailed(ctx, release, firstNonEmpty(snapshot.Message, "Deployment runtime check failed"))
 	}

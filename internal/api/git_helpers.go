@@ -185,7 +185,7 @@ func (h *Handlers) findEnabledGitProvider(ctx *gin.Context, providerID string) (
 	if !h.canUseGitProvider(ctx, provider) {
 		return provider, false
 	}
-	provider.ProjectIDs = h.scopedResourceProjectIDs(scopedResourceGitProvider, provider.ID, ctx.Request.Context(), ctx.Request.Context())
+	provider.ProjectIDs = h.scopedResourceProjectIDs(scopedResourceGitProvider, provider.ID, ctx.Request.Context())
 	return provider, true
 }
 
@@ -460,12 +460,12 @@ func gitProviderResponses(providers []model.GitProvider) []gin.H {
 	return responses
 }
 
-func (h *Handlers) gitProviderResponsesForUser(user model.User, providers []model.GitProvider, contexts ...context.Context) []gin.H {
+func (h *Handlers) gitProviderResponsesForUser(user model.User, providers []model.GitProvider, ctx context.Context) []gin.H {
 	responses := make([]gin.H, 0, len(providers))
 	for _, provider := range providers {
-		provider.ProjectIDs = h.scopedResourceProjectIDs(scopedResourceGitProvider, provider.ID, firstContext(contexts))
+		provider.ProjectIDs = h.scopedResourceProjectIDs(scopedResourceGitProvider, provider.ID, ctx)
 		response := gitProviderResponse(provider)
-		if !h.canInspectScopedResourceConfigByID(user, provider.Scope, provider.OwnerRef, scopedResourceGitProvider, provider.ID, firstContext(contexts)) {
+		if !h.canInspectScopedResourceConfigByID(user, provider.Scope, provider.OwnerRef, scopedResourceGitProvider, provider.ID, ctx) {
 			response["baseUrl"] = ""
 			response["clientId"] = ""
 		}

@@ -30,38 +30,28 @@ func (h *Handlers) ListRuntimeClusters(ctx *gin.Context) {
 		return
 	}
 	query = applySearch(ctx, query, "name", "endpoint")
-	if paginationRequested(ctx) {
-		pagination := paginationFromQuery(ctx)
-		var total int64
-		if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
-			writeError(ctx, http.StatusInternalServerError, err.Error())
-			return
-		}
-		if err := query.Order(orderByClause(pagination, map[string]string{
-			"name":      "name",
-			"type":      "type",
-			"scope":     "scope",
-			"createdAt": "created_at",
-		}, "created_at")).Limit(pagination.PageSize).Offset(pagination.Offset()).Find(&clusters).Error; err != nil {
-			writeError(ctx, http.StatusInternalServerError, err.Error())
-			return
-		}
-		for index := range clusters {
-			clusters[index] = h.runtimeClusterResponseForUser(user, clusters[index])
-		}
-		h.observeRuntimeClusters(ctx.Request.Context(), clusters)
-		ctx.JSON(http.StatusOK, paginatedResponse(clusters, total, pagination))
+	pagination := paginationFromQueryWithSort(ctx, map[string]string{
+		"name": "name", "type": "type", "scope": "scope", "createdAt": "created_at",
+	}, "createdAt")
+	var total int64
+	if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if err := query.Order("is_default desc, created_at desc").Find(&clusters).Error; err != nil {
+	if err := query.Order(orderByClause(pagination, map[string]string{
+		"name":      "name",
+		"type":      "type",
+		"scope":     "scope",
+		"createdAt": "created_at",
+	}, "created_at")).Limit(pagination.PageSize).Offset(pagination.Offset()).Find(&clusters).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 	for index := range clusters {
-		clusters[index] = h.runtimeClusterResponseForUser(user, clusters[index])
+		clusters[index] = h.runtimeClusterResponseForUser(user, clusters[index], ctx.Request.Context())
 	}
 	h.observeRuntimeClusters(ctx.Request.Context(), clusters)
-	ctx.JSON(http.StatusOK, clusters)
+	ctx.JSON(http.StatusOK, paginatedResponse(clusters, total, pagination))
 }
 
 func (h *Handlers) CreateRuntimeCluster(ctx *gin.Context) {
@@ -82,7 +72,7 @@ func (h *Handlers) CreateRuntimeCluster(ctx *gin.Context) {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	cluster = h.runtimeClusterResponseForUser(user, cluster)
+	cluster = h.runtimeClusterResponseForUser(user, cluster, ctx.Request.Context())
 	ctx.JSON(http.StatusCreated, h.observeRuntimeCluster(ctx.Request.Context(), cluster))
 }
 
@@ -153,7 +143,7 @@ func (h *Handlers) UpdateRuntimeCluster(ctx *gin.Context) {
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	existing = h.runtimeClusterResponseForUser(user, existing)
+	existing = h.runtimeClusterResponseForUser(user, existing, ctx.Request.Context())
 	ctx.JSON(http.StatusOK, h.observeRuntimeCluster(ctx.Request.Context(), existing))
 }
 
@@ -205,7 +195,7 @@ func (h *Handlers) TestRuntimeCluster(ctx *gin.Context) {
 	if !h.canManageScopedResourceByID(ctx, user, cluster.Scope, cluster.OwnerRef, scopedResourceRuntimeCluster, cluster.ID, "无权测试该运行集群") {
 		return
 	}
-	cluster = h.runtimeClusterResponseForUser(user, cluster)
+	cluster = h.runtimeClusterResponseForUser(user, cluster, ctx.Request.Context())
 	cluster = h.observeRuntimeCluster(ctx.Request.Context(), cluster)
 	switch cluster.Status {
 	case observation.StatusNotConfigured:

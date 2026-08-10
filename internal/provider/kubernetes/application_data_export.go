@@ -78,6 +78,8 @@ func (c *Client) StreamDataArchive(ctx context.Context, spec DataExportSpec, out
 		return err
 	}
 	defer func() {
+		// Cleanup must outlive a canceled export request so the temporary pod is
+		// still removed after a client disconnects.
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		_ = c.client.CoreV1().Pods(spec.Namespace).Delete(cleanupCtx, podName, metav1.DeleteOptions{})

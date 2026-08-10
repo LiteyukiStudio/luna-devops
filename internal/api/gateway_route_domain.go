@@ -70,7 +70,7 @@ func (h *Handlers) gatewayClusterForDomainCheck(ctx *gin.Context) model.RuntimeC
 	return model.RuntimeCluster{}
 }
 
-func (h *Handlers) defaultGatewayHost(project model.Project, stage, applicationIdentifier string, cluster model.RuntimeCluster, domainSuffix string, contexts ...context.Context) string {
+func (h *Handlers) defaultGatewayHost(project model.Project, stage, applicationIdentifier string, cluster model.RuntimeCluster, domainSuffix string, ctx context.Context) string {
 	rootDomain := h.gatewayDomainSuffix(cluster, domainSuffix)
 	if rootDomain == "" {
 		return ""
@@ -88,7 +88,7 @@ func (h *Handlers) defaultGatewayHost(project model.Project, stage, applicationI
 			prefix = fmt.Sprintf("%s-%d", base, index+1)
 		}
 		host := fmt.Sprintf("%s.%s", prefix, rootDomain)
-		if !h.gatewayHostExists(host, "", firstContext(contexts)) {
+		if !h.gatewayHostExists(host, "", ctx) {
 			return host
 		}
 	}
@@ -175,8 +175,8 @@ func (h *Handlers) legacyGatewayRootDomain() string {
 	return strings.Trim(strings.ToLower(strings.TrimSpace(h.configValue("gateway.rootDomain"))), ".")
 }
 
-func (h *Handlers) gatewayRouteWithAccessURL(route model.GatewayRoute, contexts ...context.Context) model.GatewayRoute {
-	cluster, err := h.runtimeClusterForGatewayRoute(route, firstContext(contexts))
+func (h *Handlers) gatewayRouteWithAccessURL(route model.GatewayRoute, ctx context.Context) model.GatewayRoute {
+	cluster, err := h.runtimeClusterForGatewayRoute(route, ctx)
 	if err != nil {
 		route.AccessURL = gatewayRouteAccessURL(route, normalizeGatewayPublicScheme(h.configValue("gateway.publicScheme")), 0)
 		return route
@@ -185,10 +185,10 @@ func (h *Handlers) gatewayRouteWithAccessURL(route model.GatewayRoute, contexts 
 	return route
 }
 
-func (h *Handlers) gatewayRoutesWithAccessURL(routes []model.GatewayRoute, contexts ...context.Context) []model.GatewayRoute {
+func (h *Handlers) gatewayRoutesWithAccessURL(routes []model.GatewayRoute, ctx context.Context) []model.GatewayRoute {
 	result := make([]model.GatewayRoute, len(routes))
 	for index, route := range routes {
-		result[index] = h.gatewayRouteWithAccessURL(route, firstContext(contexts))
+		result[index] = h.gatewayRouteWithAccessURL(route, ctx)
 	}
 	return result
 }
@@ -224,11 +224,11 @@ func shouldShowGatewayPublicPort(scheme string, publicPort int) bool {
 	return !(scheme == "https" && publicPort == 443) && !(scheme == "http" && publicPort == 80)
 }
 
-func (h *Handlers) gatewayHostExists(host, routeID string, contexts ...context.Context) bool {
+func (h *Handlers) gatewayHostExists(host, routeID string, ctx context.Context) bool {
 	if strings.TrimSpace(host) == "" {
 		return false
 	}
 	var count int64
-	query := h.dbWithContext(firstContext(contexts)).Model(&model.GatewayRoute{}).Where("host = ? and id <> ?", host, routeID)
+	query := h.dbWithContext(ctx).Model(&model.GatewayRoute{}).Where("host = ? and id <> ?", host, routeID)
 	return query.Count(&count).Error == nil && count > 0
 }

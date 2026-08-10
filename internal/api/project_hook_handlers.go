@@ -37,12 +37,23 @@ func (h *Handlers) ListProjectHookConfigs(ctx *gin.Context) {
 	if _, _, ok := h.projectAndCurrentUser(ctx); !ok {
 		return
 	}
-	var hooks []model.ProjectHookConfig
-	if err := h.dbFor(ctx).Where("project_id = ?", ctx.Param("projectId")).Order("created_at asc").Find(&hooks).Error; err != nil {
+	pagination := paginationFromQueryWithSort(ctx, map[string]string{"createdAt": "created_at", "name": "name", "phase": "phase"}, "createdAt")
+	query := h.dbFor(ctx).Model(&model.ProjectHookConfig{}).Where("project_id = ?", ctx.Param("projectId"))
+	var total int64
+	if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	ctx.JSON(http.StatusOK, hooks)
+	var hooks []model.ProjectHookConfig
+	if err := query.Order(orderByClause(pagination, map[string]string{
+		"createdAt": "created_at",
+		"name":      "name",
+		"phase":     "phase",
+	}, "created_at")).Limit(pagination.PageSize).Offset(pagination.Offset()).Find(&hooks).Error; err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
+		return
+	}
+	ctx.JSON(http.StatusOK, paginatedResponse(hooks, total, pagination))
 }
 
 func (h *Handlers) CreateProjectHookConfig(ctx *gin.Context) {
@@ -121,7 +132,8 @@ func (h *Handlers) ListProjectHookRuns(ctx *gin.Context) {
 	if _, _, ok := h.projectAndCurrentUser(ctx); !ok {
 		return
 	}
-	query := h.dbFor(ctx).Where("project_id = ?", ctx.Param("projectId"))
+	pagination := paginationFromQueryWithSort(ctx, map[string]string{"createdAt": "created_at", "phase": "phase", "status": "status"}, "createdAt")
+	query := h.dbFor(ctx).Model(&model.HookRun{}).Where("project_id = ?", ctx.Param("projectId"))
 	if phase := normalizeHookPhase(ctx.Query("phase")); phase != "" {
 		query = query.Where("phase = ?", phase)
 	}
@@ -131,12 +143,21 @@ func (h *Handlers) ListProjectHookRuns(ctx *gin.Context) {
 	if releaseID := strings.TrimSpace(ctx.Query("releaseId")); releaseID != "" {
 		query = query.Where("release_id = ?", releaseID)
 	}
-	var runs []model.HookRun
-	if err := query.Order("created_at desc").Limit(100).Find(&runs).Error; err != nil {
+	var total int64
+	if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	ctx.JSON(http.StatusOK, runs)
+	var runs []model.HookRun
+	if err := query.Order(orderByClause(pagination, map[string]string{
+		"createdAt": "created_at",
+		"phase":     "phase",
+		"status":    "status",
+	}, "created_at")).Limit(pagination.PageSize).Offset(pagination.Offset()).Find(&runs).Error; err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
+		return
+	}
+	ctx.JSON(http.StatusOK, paginatedResponse(runs, total, pagination))
 }
 
 func (h *Handlers) GetProjectHookRunLog(ctx *gin.Context) {
@@ -189,16 +210,16 @@ func (h *Handlers) projectHookConfigFromInput(ctx *gin.Context, user model.User,
 	}, true
 }
 
-func (h *Handlers) appendHookRunLog(run model.HookRun, content string, contexts ...context.Context) error {
-	content = h.redactHookRunLogContent(run, content, firstContext(contexts))
+func (h *Handlers) appendHookRunLog(run model.HookRun, content string, ctx context.Context) error {
+	content = h.redactHookRunLogContent(run, content, ctx)
 	content = trimHookRunLogContent(content)
 	if content == "" {
 		return nil
 	}
 	var existing model.HookRunLog
-	err := h.dbWithContext(firstContext(contexts)).First(&existing, "hook_run_id = ? and project_id = ?", run.ID, run.ProjectID).Error
+	err := h.dbWithContext(ctx).First(&existing, "hook_run_id = ? and project_id = ?", run.ID, run.ProjectID).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return h.dbWithContext(firstContext(contexts)).Create(&model.HookRunLog{
+		return h.dbWithContext(ctx).Create(&model.HookRunLog{
 			ID:        id.New("hlog"),
 			HookRunID: run.ID,
 			ProjectID: run.ProjectID,
@@ -209,7 +230,7 @@ func (h *Handlers) appendHookRunLog(run model.HookRun, content string, contexts 
 		return err
 	}
 	existing.Content = trimHookRunLogContent(existing.Content + "\n" + content)
-	return h.dbWithContext(firstContext(contexts)).Save(&existing).Error
+	return h.dbWithContext(ctx).Save(&existing).Error
 }
 
 func trimHookRunLogContent(content string) string {

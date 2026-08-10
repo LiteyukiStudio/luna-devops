@@ -19,15 +19,10 @@ import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { WORKFLOW_STATUS_REFETCH_INTERVAL_MS } from '@/lib/polling'
 import { defaultBuildCpuRequest, defaultBuildMemoryRequest, defaultBuildTimeoutSeconds } from './application-build-defaults'
 import { defaultTargetImageRef, deploymentReleaseKey, deploymentTargetCanRelease, deploymentTargetImageRef, registryInputPrefix } from './application-config-utils'
-import { ApplicationCreateReleaseDialog } from './application-create-release-dialog'
+import { DeferredCreateReleaseDialog, DeferredDeploymentTargetDialog, DeferredReleaseLogsDialog, DeferredRepositoryBindingDialog, DeferredRuntimeConfigSetDialog, DeferredWebConsoleDialog } from './application-deployment-dialogs'
 import { buildDeploymentRuntimeStatus, buildInternalServiceEndpoint } from './application-deployment-runtime-utils'
-import { ApplicationDeploymentTargetDialog } from './application-deployment-target-dialog'
 import { ApplicationDeploymentTargetsList } from './application-deployment-targets-list'
 import { applyDockerfileBuildDefaults, deploymentTargetDefaults, deploymentTargetRuntimeChanged, normalizeBoolean, normalizeDeploymentHookBindings, normalizeDeploymentTargetPayload, normalizeRuntimeConfigPayload, normalizeRuntimeConfigRefs, normalizeStringIds, parseRuntimeDataVolumes, redeployReleasePayload, releaseDefaults, repositoryBindingItems, runtimeConfigDefaults, runtimeConfigLiveSetIds, runtimeConfigRefIds, serializeRuntimeDataVolumes } from './application-deployments-panel-utils'
-import { ApplicationReleaseLogsDialog } from './application-release-logs-dialog'
-import { ApplicationRepositoryBindingDialog } from './application-repository-binding-dialog'
-import { ApplicationRuntimeConfigSetDialog } from './application-runtime-config-set-dialog'
-import { ApplicationWebConsoleDialog } from './application-web-console-dialog'
 import { effectiveWebConsoleEnabled, normalizeWebConsoleOverride } from './web-console-policy'
 
 export interface DeploymentsPanelHandle {
@@ -688,7 +683,7 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
     }),
     onSuccess: (binding) => {
       toast.success(t('repositories.bindingSaved'))
-      queryClient.setQueryData<RepositoryBinding[]>(['repository-bindings', projectId], items => [
+      queryClient.setQueryData<RepositoryBinding[]>(['repository-bindings', projectId, applicationId], items => [
         ...repositoryBindingItems(items).filter(item => item.id !== binding.id),
         binding,
       ])
@@ -756,7 +751,7 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
         onRollback={releaseId => rollbackRelease.mutate(releaseId)}
         onViewLogs={setLogRelease}
       />
-      <ApplicationCreateReleaseDialog
+      <DeferredCreateReleaseDialog
         applicationId={applicationId}
         form={form}
         open={dialogOpen}
@@ -768,7 +763,7 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
         onOpenChange={setDialogOpen}
         onSubmit={values => createRelease.mutate(values)}
       />
-      <ApplicationDeploymentTargetDialog
+      <DeferredDeploymentTargetDialog
         buildContextSuggestions={buildContextSuggestions}
         buildMinutePriceText={billingDisplay.formatAmountWithUnit(buildMinuteCost)}
         buildTemplates={buildTemplates.data ?? []}
@@ -849,7 +844,7 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
         onUpdateDataVolumes={updateTargetDataVolumes}
         onUpdateServicePorts={updateTargetServicePorts}
       />
-      <ApplicationRepositoryBindingDialog
+      <DeferredRepositoryBindingDialog
         accounts={gitAccounts.data ?? []}
         branchLimited={repositoryBranches.data?.limited}
         branches={repositoryBranches.data?.items ?? []}
@@ -867,7 +862,7 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
         }}
         onSubmit={values => createRepositoryBinding.mutate(values)}
       />
-      <ApplicationRuntimeConfigSetDialog
+      <DeferredRuntimeConfigSetDialog
         editingSet={editingRuntimeConfigSet}
         filesValid={runtimeConfigFilesValid}
         form={runtimeConfigForm}
@@ -883,14 +878,14 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
         }}
         onSubmit={values => saveRuntimeConfigSet.mutate(values)}
       />
-      <ApplicationReleaseLogsDialog
+      <DeferredReleaseLogsDialog
         logView={logView}
         projectId={projectId}
         release={logRelease}
         setLogView={setLogView}
         onOpenChange={open => !open && setLogRelease(null)}
       />
-      <ApplicationWebConsoleDialog
+      <DeferredWebConsoleDialog
         projectId={projectId}
         release={consoleRelease}
         onOpenChange={open => !open && setConsoleRelease(null)}

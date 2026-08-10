@@ -95,9 +95,9 @@ func (h *Handlers) observeDeploymentTarget(ctx context.Context, project model.Pr
 	return target
 }
 
-func (h *Handlers) deploymentTargetRuntimeCluster(projectID, clusterID string, contexts ...context.Context) (model.RuntimeCluster, error) {
+func (h *Handlers) deploymentTargetRuntimeCluster(projectID, clusterID string, ctx context.Context) (model.RuntimeCluster, error) {
 	var cluster model.RuntimeCluster
-	query := h.dbWithContext(firstContext(contexts)).Where("type in ?", []string{"kubernetes", "k3s"})
+	query := h.dbWithContext(ctx).Where("type in ?", []string{"kubernetes", "k3s"})
 	if strings.TrimSpace(clusterID) != "" {
 		return cluster, query.First(&cluster, "id = ?", clusterID).Error
 	}

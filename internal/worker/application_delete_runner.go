@@ -60,7 +60,7 @@ func (r *Runner) cleanupApplicationRuntimeResources(ctx context.Context, payload
 	}
 	for _, target := range targets {
 		environment := deploymentTargetEnvironment(target)
-		manager, err := r.kubernetesManager(environment)
+		manager, err := r.kubernetesManager(ctx, environment)
 		if err != nil {
 			return err
 		}

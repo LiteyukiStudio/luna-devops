@@ -92,12 +92,12 @@ func (h *Handlers) ListPlatformEventCatalog(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, platformevent.Catalog())
 }
 
-func (h *Handlers) platformEventsVisibleTo(user model.User, scope string, contexts ...context.Context) *gorm.DB {
-	query := h.dbWithContext(firstContext(contexts)).Model(&model.PlatformEvent{})
+func (h *Handlers) platformEventsVisibleTo(user model.User, scope string, ctx context.Context) *gorm.DB {
+	query := h.dbWithContext(ctx).Model(&model.PlatformEvent{})
 	if authz.IsPlatformAdmin(user.Role) && scope == "all" {
 		return query
 	}
-	projectIDs := h.projectIDsForUser(firstContext(contexts), user.ID)
+	projectIDs := h.projectIDsForUser(ctx, user.ID)
 	if len(projectIDs) == 0 {
 		return query.Where("actor_id = ?", user.ID)
 	}

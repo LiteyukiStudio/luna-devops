@@ -100,8 +100,8 @@ func flattenKubeconfig(kubeconfig string) (string, error) {
 	return output, nil
 }
 
-func (h *Handlers) saveRuntimeClusterWithDefault(cluster model.RuntimeCluster, contexts ...context.Context) error {
-	return h.dbWithContext(firstContext(contexts)).Transaction(func(tx *gorm.DB) error {
+func (h *Handlers) saveRuntimeClusterWithDefault(cluster model.RuntimeCluster, ctx context.Context) error {
+	return h.dbWithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if cluster.IsDefault {
 			if cluster.Scope != "global" {
 				return errors.New("只有全局运行集群可以设为默认集群")

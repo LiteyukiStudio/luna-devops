@@ -49,8 +49,8 @@ func (r *Runner) settleRuntimeUsageWindows(ctx context.Context, now time.Time) e
 			continue
 		}
 		environment := deploymentTargetEnvironment(target)
-		manager, err := workerStageValue(ctx, "billing.connect_runtime", func(context.Context) (kubeprovider.NamespaceManager, error) {
-			return r.kubernetesManager(environment)
+		manager, err := workerStageValue(ctx, "billing.connect_runtime", func(stageCtx context.Context) (kubeprovider.NamespaceManager, error) {
+			return r.kubernetesManager(stageCtx, environment)
 		}, attribute.String("deployment_target.id", target.ID))
 		if err != nil {
 			continue
