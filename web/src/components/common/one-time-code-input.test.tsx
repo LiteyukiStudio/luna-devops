@@ -8,7 +8,6 @@ function ControlledCodeInput({ onComplete }: { onComplete?: (value: string) => v
   return (
     <OneTimeCodeInput
       aria-label="Verification code"
-      name="one-time-code"
       value={value}
       onChange={setValue}
       onComplete={onComplete}

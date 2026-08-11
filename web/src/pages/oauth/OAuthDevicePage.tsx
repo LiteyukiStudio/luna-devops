@@ -85,7 +85,7 @@ export function OAuthDevicePage() {
                     <Input
                       id="oauth-device-code"
                       autoCapitalize="characters"
-                      autoComplete="one-time-code"
+                      autoComplete="off"
                       autoFocus
                       className="font-mono uppercase tracking-wider"
                       placeholder={t('oauthApps.device.codePlaceholder')}

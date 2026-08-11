@@ -277,7 +277,7 @@ export function UsersPage() {
           </DialogHeader>
           <form className="grid gap-3" onSubmit={form.handleSubmit(values => save.mutate(values))}>
             <Field error={form.formState.errors.email?.message} hint={t('usersPage.emailHint')} label={t('usersPage.email')} required>
-              <Input {...form.register('email')} aria-invalid={Boolean(form.formState.errors.email)} autoComplete="email" />
+              <Input {...form.register('email')} aria-invalid={Boolean(form.formState.errors.email)} autoComplete="username" type="email" />
             </Field>
             <Field error={form.formState.errors.name?.message} hint={t('usersPage.nameHint')} label={t('usersPage.name')} required>
               <Input {...form.register('name')} aria-invalid={Boolean(form.formState.errors.name)} autoComplete="name" />

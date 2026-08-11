@@ -8,8 +8,10 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import i18next from '@/i18n'
 import { BootstrapPage } from '@/pages/bootstrap/BootstrapPage'
 import { LoginPage } from './LoginPage'
+import { RegisterPage } from './RegisterPage'
 
 const mocks = vi.hoisted(() => ({
+  getAuthRegistrationStatus: vi.fn(),
   getBootstrapStatus: vi.fn(),
   initializeAdmin: vi.fn(),
   listAuthProviders: vi.fn(),
@@ -22,6 +24,7 @@ vi.mock('@/api', async (importOriginal) => {
     ...actual,
     api: {
       ...actual.api,
+      getAuthRegistrationStatus: mocks.getAuthRegistrationStatus,
       getBootstrapStatus: mocks.getBootstrapStatus,
       initializeAdmin: mocks.initializeAdmin,
       listAuthProviders: mocks.listAuthProviders,
@@ -39,6 +42,7 @@ vi.mock('@/app/session-context', () => ({
     isLoggingOut: false,
     login: mocks.login,
     recentLoginUsers: [],
+    refreshUser: vi.fn(),
   }),
 }))
 
@@ -84,7 +88,9 @@ describe('authentication form payloads', () => {
     const rememberMe = screen.getByRole('checkbox')
 
     expect(rememberMe).not.toBeChecked()
-    await user.type(inputWithAutocomplete(container, 'email'), 'login@example.test')
+    const username = inputWithAutocomplete(container, 'username')
+    expect(username).toHaveAttribute('type', 'email')
+    await user.type(username, 'login@example.test')
     await user.type(inputWithAutocomplete(container, 'current-password'), 'password')
     const submit = screen.getByRole('button', { name: i18next.t('login') })
     await waitFor(() => expect(submit).toBeEnabled())
@@ -108,7 +114,9 @@ describe('authentication form payloads', () => {
     const rememberMe = screen.getByRole('checkbox')
 
     expect(rememberMe).not.toBeChecked()
-    await user.type(inputWithAutocomplete(container, 'email'), 'bootstrap@example.test')
+    const username = inputWithAutocomplete(container, 'username')
+    expect(username).toHaveAttribute('type', 'email')
+    await user.type(username, 'bootstrap@example.test')
     await user.type(inputWithAutocomplete(container, 'new-password'), 'password')
     const submit = screen.getByRole('button', { name: i18next.t('bootstrap.create') })
     await waitFor(() => expect(submit).toBeEnabled())
@@ -122,5 +130,17 @@ describe('authentication form payloads', () => {
       password: 'password',
       rememberMe: false,
     }))
+  })
+
+  it('exposes registration as a new password credential form', async () => {
+    mocks.getAuthRegistrationStatus.mockResolvedValue({ emailRegistrationEnabled: true })
+    const { container } = renderPage(<RegisterPage />)
+
+    await waitFor(() => expect(container.querySelector('input[autocomplete="username"]')).toBeInstanceOf(HTMLInputElement))
+    const username = inputWithAutocomplete(container, 'username')
+    const form = username.closest('form')
+    expect(username).toHaveAttribute('type', 'email')
+    expect(form?.querySelectorAll('input[autocomplete="new-password"]')).toHaveLength(2)
+    expect(form?.querySelector('input[autocomplete="one-time-code"]')).toHaveAttribute('name', 'one-time-code')
   })
 })

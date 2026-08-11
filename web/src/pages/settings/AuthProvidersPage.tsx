@@ -300,6 +300,7 @@ export function AuthProvidersPage() {
                 <Input
                   {...providerForm.register('clientSecret')}
                   aria-invalid={Boolean(providerForm.formState.errors.clientSecret)}
+                  autoComplete="off"
                   placeholder={editingProvider?.clientSecretSet ? t('common.secretSetPlaceholder') : t('authProvidersPage.secretPlaceholder')}
                   type="password"
                 />

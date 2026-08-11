@@ -160,7 +160,7 @@ export function LoginPage() {
                     </div>
                   )}
                   <Field error={form.formState.errors.email?.message} hint={t('loginPage.emailHint')} label={t('loginPage.email')} required>
-                    <Input {...form.register('email')} aria-invalid={Boolean(form.formState.errors.email)} autoComplete="email" />
+                    <Input {...form.register('email')} aria-invalid={Boolean(form.formState.errors.email)} autoComplete="username" type="email" />
                   </Field>
                   <Field error={form.formState.errors.password?.message} hint={t('loginPage.passwordHint')} label={t('loginPage.password')} required>
                     <Input {...form.register('password')} aria-invalid={Boolean(form.formState.errors.password)} autoComplete="current-password" type="password" />

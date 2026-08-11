@@ -100,7 +100,7 @@ export function RegisterPage() {
 
           <form className="grid gap-3" onSubmit={form.handleSubmit(values => register.mutate(values))}>
             <Field error={form.formState.errors.email?.message} label={t('loginPage.email')} required>
-              <Input {...form.register('email')} aria-invalid={Boolean(form.formState.errors.email)} autoComplete="email" type="email" />
+              <Input {...form.register('email')} aria-invalid={Boolean(form.formState.errors.email)} autoComplete="username" type="email" />
             </Field>
             <Field error={form.formState.errors.name?.message} label={t('accountPage.profileName')} required>
               <Input {...form.register('name')} aria-invalid={Boolean(form.formState.errors.name)} autoComplete="name" />

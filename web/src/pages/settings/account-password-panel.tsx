@@ -10,6 +10,7 @@ import { api } from '@/api'
 import { useSession } from '@/app/session-context'
 import { FormActions } from '@/components/common/form-actions'
 import { FormField as Field } from '@/components/common/form-field'
+import { PasswordManagerUsernameField } from '@/components/common/password-manager-username-field'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -28,7 +29,7 @@ type PasswordForm = z.infer<typeof schema>
 
 export function AccountPasswordPanel() {
   const { t } = useTranslation()
-  const { user } = useSession()
+  const { actualUser, user } = useSession()
   const registration = useQuery({ queryKey: ['auth-registration-status'], queryFn: api.getAuthRegistrationStatus })
   const form = useForm<PasswordForm>({
     resolver: zodResolver(schema),
@@ -61,6 +62,7 @@ export function AccountPasswordPanel() {
           )
         : (
             <form className="grid gap-3" onSubmit={form.handleSubmit(values => save.mutate(values))}>
+              <PasswordManagerUsernameField value={(actualUser ?? user)?.email} />
               {user?.passwordSet && (
                 <Field error={form.formState.errors.currentPassword?.message} label={t('accountPage.password.current')} required>
                   <Input {...form.register('currentPassword', { required: t('accountPage.password.currentRequired') })} autoComplete="current-password" type="password" />

@@ -122,12 +122,12 @@ export function AuthRegistrationSettingsPanel() {
             </NativeSelect>
           </Field>
           <Field label={t('settings.registration.smtpUsername')}>
-            <Input {...form.register('smtpUsername')} autoComplete="username" />
+            <Input {...form.register('smtpUsername')} autoComplete="off" />
           </Field>
           <Field hint={t('settings.registration.smtpPasswordHint')} label={t('settings.registration.smtpPassword')}>
             <Input
               {...form.register('smtpPassword')}
-              autoComplete="new-password"
+              autoComplete="off"
               placeholder={smtpPasswordSet ? t('common.secretSetPlaceholder') : undefined}
               type="password"
             />

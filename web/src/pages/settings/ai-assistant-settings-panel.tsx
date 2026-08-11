@@ -193,7 +193,7 @@ export function AIAssistantSettingsPanel() {
           </Field>
         </div>
         <Field error={errors.apiKey?.message} hint={t('settings.ai.apiKeyHint')} label={t('settings.ai.apiKey')} required>
-          <Input autoComplete="new-password" placeholder={form.getValues('apiKeyConfigured') ? t('settings.ai.secretUnchanged') : 'sk-…'} type="password" {...form.register('apiKey')} />
+          <Input autoComplete="off" placeholder={form.getValues('apiKeyConfigured') ? t('settings.ai.secretUnchanged') : 'sk-…'} type="password" {...form.register('apiKey')} />
         </Field>
         <ProgressiveSection
           description={t('settings.ai.runtimeDescription')}
@@ -367,7 +367,7 @@ function ObservabilitySourceFields({ form, source, tenant = false }: { form: Ret
         </Field>
         {tenant && <Field label={t('settings.ai.observabilityTenantId')}><Input autoComplete="off" {...form.register(tenantField)} /></Field>}
         <Field hint={t('settings.ai.observabilityTokenHint')} label={t('settings.ai.observabilityToken')}>
-          <Input autoComplete="new-password" placeholder={form.getValues(configuredField) ? t('settings.ai.secretUnchanged') : ''} type="password" {...form.register(tokenField)} />
+          <Input autoComplete="off" placeholder={form.getValues(configuredField) ? t('settings.ai.secretUnchanged') : ''} type="password" {...form.register(tokenField)} />
         </Field>
       </div>
     </div>

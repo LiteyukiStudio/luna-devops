@@ -5,10 +5,12 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { api } from '@/api'
+import { useSession } from '@/app/session-context'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
 import { OneTimeCodeInput } from '@/components/common/one-time-code-input'
+import { PasswordManagerUsernameField } from '@/components/common/password-manager-username-field'
 import { StatusBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -19,6 +21,7 @@ const mfaStatusQueryKey = ['mfa-status'] as const
 
 export function AccountMFAPanel() {
   const { t } = useTranslation()
+  const { actualUser, user } = useSession()
   const queryClient = useQueryClient()
   const [enrollment, setEnrollment] = useState<MFAEnrollment>()
   const [reauthOpen, setReauthOpen] = useState(false)
@@ -181,11 +184,13 @@ export function AccountMFAPanel() {
               submitEnrollmentReauth({ currentPassword })
             }}
           >
+            <PasswordManagerUsernameField value={(actualUser ?? user)?.email} />
             <Field error={enrollmentError} hint={t('accountPage.mfa.currentPasswordHint')} label={t('accountPage.mfa.currentPassword')} required>
               <Input
                 aria-invalid={Boolean(enrollmentError)}
                 autoComplete="current-password"
                 autoFocus
+                name="password"
                 type="password"
                 value={currentPassword}
                 onChange={(event) => {
@@ -211,7 +216,14 @@ export function AccountMFAPanel() {
             <DialogTitle>{t('accountPage.mfa.enrollTitle')}</DialogTitle>
             <DialogDescription>{t('accountPage.mfa.enrollDescription')}</DialogDescription>
           </DialogHeader>
-          <div className="grid gap-3">
+          <form
+            className="grid gap-3"
+            onSubmit={(event) => {
+              event.preventDefault()
+              confirm.mutate({ code: confirmationCode.trim() })
+            }}
+          >
+            <PasswordManagerUsernameField value={(actualUser ?? user)?.email} />
             {enrollment?.qrCodeDataUrl && (
               <img alt={t('accountPage.mfa.qrCodeAlt')} className="mx-auto size-48 rounded-md border border-border bg-white p-2" src={enrollment.qrCodeDataUrl} />
             )}
@@ -226,19 +238,18 @@ export function AccountMFAPanel() {
                 aria-label={t('accountPage.mfa.otpPlaceholder')}
                 autoFocus
                 disabled={confirm.isPending}
-                name="one-time-code"
                 value={confirmationCode}
                 onChange={setConfirmationCode}
                 onComplete={value => confirm.mutate({ code: value })}
               />
             </Field>
-          </div>
-          <DialogFooter>
-            <Button disabled={confirm.isPending} variant="secondary" onClick={() => setEnrollment(undefined)}>{t('cancel')}</Button>
-            <Button disabled={confirm.isPending || confirmationCode.trim().length < 6} onClick={() => confirm.mutate({ code: confirmationCode.trim() })}>
-              {t('accountPage.mfa.confirmEnable')}
-            </Button>
-          </DialogFooter>
+            <DialogFooter>
+              <Button disabled={confirm.isPending} type="button" variant="secondary" onClick={() => setEnrollment(undefined)}>{t('cancel')}</Button>
+              <Button disabled={confirm.isPending || confirmationCode.trim().length < 6} type="submit">
+                {t('accountPage.mfa.confirmEnable')}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 

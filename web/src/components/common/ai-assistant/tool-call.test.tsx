@@ -4,6 +4,12 @@ import { describe, expect, it, vi } from 'vitest'
 import i18next from '@/i18n'
 import { AIToolCallCard } from './tool-call'
 
+vi.mock('@/app/session-context', () => ({
+  useSession: () => ({
+    user: { email: 'admin@example.test' },
+  }),
+}))
+
 function toolBlock(status: ToolCallBlock['status']): ToolCallBlock {
   return {
     id: 'tool-item',
@@ -206,5 +212,27 @@ describe('ai assistant tool status icon', () => {
       'approve_all',
       undefined,
     ))
+  })
+
+  it('associates the MFA code with the current password-manager credential', async () => {
+    await i18next.changeLanguage('en-US')
+    render(
+      <AIToolCallCard
+        block={{
+          ...toolBlock('awaiting_mfa'),
+          expectedVersion: 2,
+          mfaPurpose: 'access_token_manage',
+        }}
+        onAction={vi.fn(async () => true)}
+        onApproval={vi.fn(async () => {})}
+        onMFA={vi.fn(async () => {})}
+      />,
+    )
+
+    const oneTimeCode = screen.getByRole('textbox', { name: i18next.t('aiAssistant.mfa.code') })
+    const form = oneTimeCode.closest('form')
+    expect(oneTimeCode).toHaveAttribute('autocomplete', 'one-time-code')
+    expect(form?.querySelector('input[autocomplete="username"]')).toHaveValue('admin@example.test')
+    expect(screen.getByRole('button', { name: i18next.t('aiAssistant.mfa.verify') })).toHaveAttribute('type', 'submit')
   })
 })

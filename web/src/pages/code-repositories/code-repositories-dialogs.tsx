@@ -127,6 +127,7 @@ export function ProviderDialog({
               <Input
                 {...form.register('clientSecret')}
                 aria-invalid={Boolean(form.formState.errors.clientSecret)}
+                autoComplete="off"
                 placeholder={editingProvider?.clientSecretSet ? t('common.secretSetPlaceholder') : t('codeRepositoriesView.clientSecretPlaceholder')}
                 type="password"
               />
@@ -213,11 +214,12 @@ export function CredentialDialog({ open, editingCredential, form, projects, prov
               />
             </Field>
           )}
-          <Field error={form.formState.errors.username?.message} hint={t('codeRepositoriesView.usernameHint')} label={t('codeRepositoriesView.username')} required><Input {...form.register('username')} aria-invalid={Boolean(form.formState.errors.username)} placeholder={t('codeRepositoriesView.usernamePlaceholder')} /></Field>
+          <Field error={form.formState.errors.username?.message} hint={t('codeRepositoriesView.usernameHint')} label={t('codeRepositoriesView.username')} required><Input {...form.register('username')} aria-invalid={Boolean(form.formState.errors.username)} autoComplete="off" placeholder={t('codeRepositoriesView.usernamePlaceholder')} /></Field>
           <Field error={form.formState.errors.accessToken?.message} hint={t(editingCredential ? 'codeRepositoriesView.accessTokenEditHint' : 'codeRepositoriesView.accessTokenHint')} label={t('codeRepositoriesView.accessToken')}>
             <Input
               {...form.register('accessToken')}
               aria-invalid={Boolean(form.formState.errors.accessToken)}
+              autoComplete="off"
               placeholder={editingCredential?.accessTokenSet ? t('common.secretSetPlaceholder') : undefined}
               type="password"
             />

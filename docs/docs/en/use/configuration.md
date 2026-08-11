@@ -16,6 +16,10 @@ Production responses include baseline browser protections. Enable HSTS only when
 
 The platform can require step-up MFA for sensitive operations. Before enabling it globally, ensure that at least one active platform administrator has enrolled an offline TOTP authenticator.
 
+Sign-in and step-up verification fields support standard browser password and one-time-code autofill semantics. To use a TOTP stored in a password manager, make sure the matching login item includes the current site address, the extension is unlocked, and inline autofill is enabled. If no suggestion appears, focus the verification-code field and select the code from the password manager.
+
+After creating an account, initializing an administrator, or changing a sign-in password, the browser can offer to save or update the matching credential. When an administrator sets or resets another user's password, the prompt is associated with the target user's email; verify the selected account before saving. Registry credentials, Git access tokens, OIDC client secrets, SMTP passwords, and AI API keys are marked as non-login credentials to avoid filling or overwriting the site password.
+
 ## Git providers
 
 Git providers connect GitHub, Gitea, or GitLab for repository search, webhooks, and builds.

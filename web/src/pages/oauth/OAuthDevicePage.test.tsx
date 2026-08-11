@@ -113,7 +113,9 @@ describe('oauth device page', () => {
 
     renderPage('/oauth/device')
 
-    await user.type(screen.getByLabelText(i18next.t('oauthApps.device.codeLabel')), 'wxyz-1234')
+    const codeInput = screen.getByLabelText(i18next.t('oauthApps.device.codeLabel'))
+    expect(codeInput).toHaveAttribute('autocomplete', 'off')
+    await user.type(codeInput, 'wxyz-1234')
     await user.click(screen.getByRole('button', { name: i18next.t('oauthApps.device.continue') }))
 
     await waitFor(() => expect(mocks.getOAuthDeviceVerification).toHaveBeenCalledWith('WXYZ-1234'))

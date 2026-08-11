@@ -4,7 +4,9 @@ import { Check, ChevronRight, CircleAlert, CircleDashed, CircleStop, LoaderCircl
 import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { useSession } from '@/app/session-context'
 import { OneTimeCodeInput } from '@/components/common/one-time-code-input'
+import { PasswordManagerUsernameField } from '@/components/common/password-manager-username-field'
 import { formatMillisecondsDuration } from '@/components/common/time-format'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -164,6 +166,7 @@ function ApprovalControls({ block, onApproval }: { block: ToolCallBlock, onAppro
 
 function MFAControls({ block, onMFA }: { block: ToolCallBlock, onMFA: (block: ToolCallBlock, code: string) => Promise<void> }) {
   const { t } = useTranslation()
+  const { actualUser, user } = useSession()
   const [code, setCode] = useState('')
   const [pending, setPending] = useState(false)
   const validBinding = block.expectedVersion !== undefined && Boolean(block.mfaPurpose)
@@ -182,7 +185,14 @@ function MFAControls({ block, onMFA }: { block: ToolCallBlock, onMFA: (block: To
     }
   }
   return (
-    <div className="mt-3 grid gap-3 rounded-control bg-primary-subtle p-3">
+    <form
+      className="mt-3 grid gap-3 rounded-control bg-primary-subtle p-3"
+      onSubmit={(event) => {
+        event.preventDefault()
+        void verify()
+      }}
+    >
+      <PasswordManagerUsernameField value={(actualUser ?? user)?.email} />
       <div>
         <strong className="text-xs text-primary-text">{t('aiAssistant.mfa.title')}</strong>
         <p className="mt-1 text-xs text-muted-foreground">{t('aiAssistant.mfa.description')}</p>
@@ -195,7 +205,7 @@ function MFAControls({ block, onMFA }: { block: ToolCallBlock, onMFA: (block: To
         onChange={setCode}
         onComplete={value => void verify(value)}
       />
-      <Button className="h-7 px-2.5 !text-[11px]" disabled={pending || !validBinding || code.length !== 6} size="sm" onClick={() => void verify()}>{t('aiAssistant.mfa.verify')}</Button>
-    </div>
+      <Button className="h-7 px-2.5 !text-[11px]" disabled={pending || !validBinding || code.length !== 6} size="sm" type="submit">{t('aiAssistant.mfa.verify')}</Button>
+    </form>
   )
 }

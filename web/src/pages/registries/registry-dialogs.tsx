@@ -162,13 +162,14 @@ export function CredentialDialog({ editingCredential, open, form, registries, pr
             </Field>
           </div>
           <Field error={form.formState.errors.username?.message} hint={t('registriesPage.usernameHint')} label={t('registriesPage.username')}>
-            <Input {...form.register('username')} aria-invalid={Boolean(form.formState.errors.username)} />
+            <Input {...form.register('username')} aria-invalid={Boolean(form.formState.errors.username)} autoComplete="off" />
           </Field>
           <div className="grid gap-3 sm:grid-cols-2">
             <Field error={form.formState.errors.password?.message} hint={editingCredential ? t('registriesPage.passwordEditHint') : t('registriesPage.passwordHint')} label={t('registriesPage.password')}>
               <Input
                 {...form.register('password')}
                 aria-invalid={Boolean(form.formState.errors.password)}
+                autoComplete="off"
                 placeholder={editingCredential?.passwordSet ? t('common.secretSetPlaceholder') : undefined}
                 type="password"
               />
@@ -177,6 +178,7 @@ export function CredentialDialog({ editingCredential, open, form, registries, pr
               <Input
                 {...form.register('token')}
                 aria-invalid={Boolean(form.formState.errors.token)}
+                autoComplete="off"
                 placeholder={editingCredential?.tokenSet ? t('common.secretSetPlaceholder') : undefined}
                 type="password"
               />

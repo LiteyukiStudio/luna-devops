@@ -7,10 +7,12 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import i18next from '@/i18n'
 import { PlatformRole } from '@/lib/roles'
 import { AccountMFAPanel } from './account-mfa-panel'
+import { AccountPasswordPanel } from './account-password-panel'
 import { UsersPage } from './UsersPage'
 
 const mocks = vi.hoisted(() => ({
   enrollMFA: vi.fn(),
+  getAuthRegistrationStatus: vi.fn(),
   getMFAStatus: vi.fn(),
   listUsers: vi.fn(),
   resetUserMFA: vi.fn(),
@@ -23,6 +25,7 @@ vi.mock('@/api', async (importOriginal) => {
     api: {
       ...actual.api,
       enrollMFA: mocks.enrollMFA,
+      getAuthRegistrationStatus: mocks.getAuthRegistrationStatus,
       getMFAStatus: mocks.getMFAStatus,
       listUsers: mocks.listUsers,
       resetUserMFA: mocks.resetUserMFA,
@@ -75,6 +78,7 @@ describe('mfa settings flows', () => {
       policyEnabled: false,
       recoveryCodesRemaining: 0,
     })
+    mocks.getAuthRegistrationStatus.mockResolvedValue({ externalIdentityPasswordEnabled: true })
     mocks.enrollMFA.mockResolvedValue({
       otpauthUrl: 'otpauth://totp/Luna%20DevOps:test',
       secret: 'TESTSECRET',
@@ -111,10 +115,15 @@ describe('mfa settings flows', () => {
     await screen.findByRole('heading', { name: i18next.t('accountPage.mfa.reauthTitle') })
     const password = document.querySelector('input[autocomplete="current-password"]')
     expect(password).toBeInstanceOf(HTMLInputElement)
+    expect(password).toHaveAttribute('name', 'password')
+    expect(password?.closest('form')?.querySelector('input[autocomplete="username"]')).toHaveValue('admin@example.test')
     await user.type(password as HTMLInputElement, 'current-password')
     await user.click(screen.getByRole('button', { name: i18next.t('accountPage.mfa.continueEnrollment') }))
 
     await waitFor(() => expect(mocks.enrollMFA.mock.calls[0]?.[0]).toEqual({ currentPassword: 'current-password' }))
+    const oneTimeCode = await screen.findByRole('textbox', { name: i18next.t('accountPage.mfa.otpPlaceholder') })
+    expect(oneTimeCode).toHaveAttribute('autocomplete', 'one-time-code')
+    expect(oneTimeCode.closest('form')?.querySelector('input[autocomplete="username"]')).toHaveValue('admin@example.test')
   })
 
   it('confirms an administrator reset for another user', async () => {
@@ -127,5 +136,29 @@ describe('mfa settings flows', () => {
     await user.click(resetButtons.at(-1)!)
 
     await waitFor(() => expect(mocks.resetUserMFA.mock.calls[0]?.[0]).toBe('usr_target'))
+  })
+
+  it('associates a password change with the signed-in credential', () => {
+    renderPage(<AccountPasswordPanel />)
+
+    const currentPassword = document.querySelector('input[autocomplete="current-password"]')
+    expect(currentPassword).toBeInstanceOf(HTMLInputElement)
+    const form = (currentPassword as HTMLInputElement).closest('form')
+    expect(currentPassword).toHaveAttribute('autocomplete', 'current-password')
+    expect(form?.querySelector('input[autocomplete="username"]')).toHaveValue('admin@example.test')
+    expect(form?.querySelectorAll('input[autocomplete="new-password"]')).toHaveLength(2)
+  })
+
+  it('associates an administrator password reset with the target user credential', async () => {
+    const user = userEvent.setup()
+    renderPage(<UsersPage />)
+
+    await user.click(await screen.findByRole('button', { name: i18next.t('edit') }))
+    await screen.findByRole('heading', { name: i18next.t('usersPage.editTitle') })
+    const newPassword = document.querySelector('input[autocomplete="new-password"]')
+    expect(newPassword).toBeInstanceOf(HTMLInputElement)
+    const form = (newPassword as HTMLInputElement).closest('form')
+    expect(newPassword).toHaveAttribute('autocomplete', 'new-password')
+    expect(form?.querySelector('input[autocomplete="username"]')).toHaveValue('target@example.test')
   })
 })

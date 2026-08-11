@@ -5,7 +5,9 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/api'
 import { registerMFAChallengeHandler } from '@/api/core'
+import { useSession } from '@/app/session-context'
 import { OneTimeCodeInput } from '@/components/common/one-time-code-input'
+import { PasswordManagerUsernameField } from '@/components/common/password-manager-username-field'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -19,6 +21,7 @@ interface PendingChallenge {
 
 export function MFADialogProvider({ children }: { children: ReactNode }) {
   const { t } = useTranslation()
+  const { actualUser, pendingLoginUsername, user } = useSession()
   const [challenge, setChallenge] = useState<PendingChallenge>()
   const [code, setCode] = useState('')
   const [method, setMethod] = useState<'otp' | 'recovery'>('otp')
@@ -80,7 +83,14 @@ export function MFADialogProvider({ children }: { children: ReactNode }) {
             </DialogHeader>
           </div>
 
-          <div className="grid gap-3">
+          <form
+            className="grid gap-3"
+            onSubmit={(event) => {
+              event.preventDefault()
+              void verify()
+            }}
+          >
+            <PasswordManagerUsernameField value={pendingLoginUsername ?? (actualUser ?? user)?.email} />
             <Select
               value={method}
               onValueChange={(value) => {
@@ -104,7 +114,6 @@ export function MFADialogProvider({ children }: { children: ReactNode }) {
                     autoFocus
                     disabled={verifying}
                     invalid={Boolean(error)}
-                    name="one-time-code"
                     value={code}
                     onChange={setCode}
                     onComplete={value => void verify(value)}
@@ -119,21 +128,19 @@ export function MFADialogProvider({ children }: { children: ReactNode }) {
                     type="text"
                     value={code}
                     onChange={event => setCode(event.target.value)}
-                    onKeyDown={event => event.key === 'Enter' && void verify()}
                   />
                 )}
             {error && <p className="text-sm text-danger">{error}</p>}
-          </div>
-
-          <DialogFooter>
-            <Button disabled={verifying} variant="secondary" onClick={cancel}>
-              {t('cancel')}
-            </Button>
-            <Button disabled={verifying || code.trim().length < 6} onClick={() => void verify()}>
-              <KeyRound size={16} />
-              {verifying ? t('accountPage.mfa.verifying') : t('accountPage.mfa.verify')}
-            </Button>
-          </DialogFooter>
+            <DialogFooter>
+              <Button disabled={verifying} type="button" variant="secondary" onClick={cancel}>
+                {t('cancel')}
+              </Button>
+              <Button disabled={verifying || code.trim().length < 6} type="submit">
+                <KeyRound size={16} />
+                {verifying ? t('accountPage.mfa.verifying') : t('accountPage.mfa.verify')}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </>

@@ -8,7 +8,7 @@ type OneTimeCodeInputProps = Omit<ComponentProps<typeof InputOTP>, 'autoComplete
 }
 
 /** Six-digit OTP input shared by email verification and TOTP flows. */
-export function OneTimeCodeInput({ className, containerClassName, invalid = false, ...props }: OneTimeCodeInputProps) {
+export function OneTimeCodeInput({ className, containerClassName, invalid = false, name = 'one-time-code', ...props }: OneTimeCodeInputProps) {
   return (
     <InputOTP
       {...props}
@@ -19,6 +19,7 @@ export function OneTimeCodeInput({ className, containerClassName, invalid = fals
       enterKeyHint="done"
       inputMode="numeric"
       maxLength={6}
+      name={name}
       pattern={REGEXP_ONLY_DIGITS}
       pushPasswordManagerStrategy="increase-width"
       type="text"

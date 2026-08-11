@@ -39,6 +39,7 @@ export interface SessionContextValue {
   isLoading: boolean
   isLoggingIn: boolean
   isLoggingOut: boolean
+  pendingLoginUsername?: string
   recentLoginUsers: RecentLoginUser[]
   user?: CurrentUser
   clearDebugOverride: () => void

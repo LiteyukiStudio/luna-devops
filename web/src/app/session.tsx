@@ -36,6 +36,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [debugSessionOverride, setDebugSessionOverride] = useState<DebugSessionOverride | undefined>(() => readDebugOverride())
+  const [pendingLoginUsername, setPendingLoginUsername] = useState<string>()
   const [recentLoginUsers, setRecentLoginUsers] = useState<RecentLoginUser[]>(() => readRecentLoginUsers())
   const currentUser = useQuery({
     queryKey: currentUserQueryKey,
@@ -117,6 +118,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     isLoading: currentUser.isLoading,
     isLoggingIn: loginMutation.isPending || initializeMutation.isPending || resumeLoginMutation.isPending,
     isLoggingOut: logoutMutation.isPending,
+    pendingLoginUsername,
     recentLoginUsers,
     user: effectiveUser,
     clearDebugOverride() {
@@ -129,8 +131,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       return result.user
     },
     async login(input: LoginInput) {
-      const result = await loginMutation.mutateAsync(input)
-      return result.user
+      setPendingLoginUsername(input.email)
+      try {
+        const result = await loginMutation.mutateAsync(input)
+        return result.user
+      }
+      finally {
+        setPendingLoginUsername(undefined)
+      }
     },
     async logout() {
       await logoutMutation.mutateAsync()
@@ -139,8 +147,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       await queryClient.invalidateQueries({ queryKey: currentUserQueryKey })
     },
     async resumeLogin(userId: string) {
-      const result = await resumeLoginMutation.mutateAsync({ userId })
-      return result.user
+      setPendingLoginUsername(recentLoginUsers.find(user => user.id === userId)?.email)
+      try {
+        const result = await resumeLoginMutation.mutateAsync({ userId })
+        return result.user
+      }
+      finally {
+        setPendingLoginUsername(undefined)
+      }
     },
     setDebugOverride(override: DebugSessionOverride) {
       setDebugSessionOverride(override)
@@ -153,7 +167,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     async updateLanguage(language: CurrentUser['language']) {
       return updateLanguageMutation.mutateAsync({ language })
     },
-  }), [currentUser.data, currentUser.isFetched, currentUser.isLoading, debugSessionOverride, effectiveUser, initializeMutation, loginMutation, logoutMutation, queryClient, recentLoginUsers, resumeLoginMutation, updateLanguageMutation, updateProfileMutation])
+  }), [currentUser.data, currentUser.isFetched, currentUser.isLoading, debugSessionOverride, effectiveUser, initializeMutation, loginMutation, logoutMutation, pendingLoginUsername, queryClient, recentLoginUsers, resumeLoginMutation, updateLanguageMutation, updateProfileMutation])
 
   return <SessionContext value={value}>{children}</SessionContext>
 }
