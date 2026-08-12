@@ -1,6 +1,9 @@
 import { z } from "zod"
+import { trace } from "@opentelemetry/api"
 import type { RuntimeSettings } from "../runtime-settings.js"
 import { agentMetrics, clientSpanOptions, telemetryLog, withSpan } from "../telemetry.js"
+import { isRetryableHTTPStatus, parseRetryAfter, waitForRetry } from "../retry.js"
+import { defaultRuntimeSettings } from "../runtime-settings.js"
 
 export type RemoteProviderConfig = {
   version: string
@@ -16,6 +19,7 @@ export type RemoteProviderConfig = {
 
 const runtimeSettingsSchema = z.object({
   providerTimeoutMs: z.number().int().min(1_000).max(120_000),
+  maxRequestRetries: z.number().int().min(0).max(10).default(5),
   runTimeoutMs: z.number().int().min(30_000).max(900_000),
   agentConcurrentRuns: z.number().int().min(1).max(100),
   userConcurrentRuns: z.number().int().min(1).max(100),
@@ -65,15 +69,16 @@ const remoteProviderConfigSchema = z.object({
 })
 
 export class ProviderConfigClient {
+  private currentConfig?: RemoteProviderConfig
   constructor(private readonly baseUrl: string, private readonly serviceToken: string) {}
+  current(): RemoteProviderConfig | undefined {
+    return this.currentConfig
+  }
   async get(signal?: AbortSignal): Promise<RemoteProviderConfig> {
     return withSpan("luna_api.provider_config.get", clientSpanOptions({
       "server.address": new URL(this.baseUrl).hostname,
     }), async span => {
-    const response = await fetch(new URL("/internal/v1/ai/provider-config", this.baseUrl), {
-      headers: { authorization: `Bearer ${this.serviceToken}`, accept: "application/json" },
-      ...(signal ? { signal } : {}),
-    })
+    const response = await this.fetchConfig(signal)
     span.setAttribute("http.response.status_code", response.status)
     agentMetrics.externalRequests.add(1, { target: "luna_api", operation: "provider_config", outcome: response.ok ? "success" : String(response.status) })
     if (!response.ok) {
@@ -81,8 +86,44 @@ export class ProviderConfigClient {
       throw new Error("ai.provider_config_unavailable")
     }
     const config = remoteProviderConfigSchema.parse(await response.json())
+    this.currentConfig = config
     span.setAttribute("luna.provider.config_version", config.version)
     return config
     })
+  }
+
+  private async fetchConfig(signal?: AbortSignal): Promise<Response> {
+    const maxRetries = this.currentConfig?.runtime.maxRequestRetries ?? defaultRuntimeSettings.maxRequestRetries
+    for (let retry = 0; ; retry += 1) {
+      try {
+        const response = await fetch(new URL("/internal/v1/ai/provider-config", this.baseUrl), {
+          headers: { authorization: `Bearer ${this.serviceToken}`, accept: "application/json" },
+          ...(signal ? { signal } : {}),
+        })
+        if (!isRetryableHTTPStatus(response.status) || retry >= maxRetries)
+          return response
+        agentMetrics.externalRequests.add(1, { target: "luna_api", operation: "provider_config", outcome: String(response.status) })
+        await this.scheduleRetry(retry + 1, maxRetries, signal, parseRetryAfter(response.headers), String(response.status))
+      }
+      catch (error) {
+        if (signal?.aborted || retry >= maxRetries) throw error
+        agentMetrics.externalRequests.add(1, { target: "luna_api", operation: "provider_config", outcome: "network_error" })
+        await this.scheduleRetry(retry + 1, maxRetries, signal, undefined, "network_error")
+      }
+    }
+  }
+
+  private async scheduleRetry(attempt: number, maxRetries: number, signal: AbortSignal | undefined, retryAfterMs: number | undefined, reason: string): Promise<void> {
+    trace.getActiveSpan()?.addEvent("luna_api.provider_config.retry_scheduled", {
+      "retry.attempt": attempt,
+      "retry.max_retries": maxRetries,
+      "retry.reason": reason,
+    })
+    telemetryLog("agent.provider_config.retry_scheduled", "warn", {
+      "retry.attempt": attempt,
+      "retry.max_retries": maxRetries,
+      "retry.reason": reason,
+    })
+    await waitForRetry(attempt, { maxRetries, ...(signal ? { signal } : {}), ...(retryAfterMs !== undefined ? { retryAfterMs } : {}) })
   }
 }

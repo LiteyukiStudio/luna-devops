@@ -1,8 +1,9 @@
 import type { ModelCapabilities, ModelEvent, ModelProvider, ModelRequest, ModelResponse, ModelToolCall } from "./provider.js"
 import { agentMetrics, clientSpanOptions, isAIContentCaptureEnabled, recordAIContent, telemetryLog, withSpan } from "../telemetry.js"
 import { trace } from "@opentelemetry/api"
+import { isRetryableHTTPStatus, parseRetryAfter, waitForRetry } from "../retry.js"
 
-type Options = { baseUrl: string, apiKey: string, model: string, timeoutMs: number }
+type Options = { baseUrl: string, apiKey: string, model: string, timeoutMs: number, maxRetries?: number }
 
 export class OpenAICompatibleProvider implements ModelProvider {
   constructor(private readonly options: Options) {}
@@ -37,7 +38,27 @@ export class OpenAICompatibleProvider implements ModelProvider {
   }
 
   async *stream(request: ModelRequest): AsyncIterable<ModelEvent> {
-    const response = await this.fetchCompletion(request.messages, request.maxOutputTokens, true, request.signal, request.tools, request.toolChoice, request.thinking)
+    let retry = 0
+    while (true) {
+      let outputStarted = false
+      try {
+        for await (const event of this.streamAttempt(request)) {
+          if (event.type !== "completed") outputStarted = true
+          yield event
+        }
+        return
+      }
+      catch (error) {
+        if (outputStarted || retry >= this.maxRetries || !isRetryableProviderError(error, true))
+          throw error
+        retry += 1
+        await this.scheduleRetry(error, retry, "chat_stream", request.signal)
+      }
+    }
+  }
+
+  private async *streamAttempt(request: ModelRequest): AsyncIterable<ModelEvent> {
+    const response = await this.fetchCompletionOnce(request.messages, request.maxOutputTokens, true, request.signal, request.tools, request.toolChoice, request.thinking)
     if (!response.body) throw new Error("ai.provider_empty_stream")
     const decoder = new TextDecoder()
     let buffer = ""
@@ -138,6 +159,21 @@ export class OpenAICompatibleProvider implements ModelProvider {
   }
 
   private async fetchCompletion(messages: ModelRequest["messages"], maxTokens: number, stream: boolean, signal?: AbortSignal, tools?: ModelRequest["tools"], toolChoice?: ModelRequest["toolChoice"], thinking?: ModelRequest["thinking"]) {
+    let retry = 0
+    while (true) {
+      try {
+        return await this.fetchCompletionOnce(messages, maxTokens, stream, signal, tools, toolChoice, thinking)
+      }
+      catch (error) {
+        if (retry >= this.maxRetries || !isRetryableProviderError(error, false))
+          throw error
+        retry += 1
+        await this.scheduleRetry(error, retry, stream ? "chat_stream" : "chat_complete", signal)
+      }
+    }
+  }
+
+  private async fetchCompletionOnce(messages: ModelRequest["messages"], maxTokens: number, stream: boolean, signal?: AbortSignal, tools?: ModelRequest["tools"], toolChoice?: ModelRequest["toolChoice"], thinking?: ModelRequest["thinking"]) {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), this.options.timeoutMs)
     const abort = () => controller.abort(signal?.reason)
@@ -191,7 +227,16 @@ export class OpenAICompatibleProvider implements ModelProvider {
         if (activeSpan) {
           recordAIContent(activeSpan, "gen_ai.content.error", "gen_ai.response.error_body", contentError(error))
         }
-        throw providerTransportError(error, signal)
+        const transportError = providerTransportError(error, signal)
+        agentMetrics.externalRequests.add(1, {
+          target: "model_provider",
+          operation: stream ? "chat_stream" : "chat_complete",
+          outcome: transportError.message,
+        })
+        telemetryLog("agent.provider.request_failed", "warn", {
+          "error.code": transportError.message,
+        })
+        throw transportError
       }
       if (!response.ok) {
         const errorCode = providerHTTPError(response.status)
@@ -211,7 +256,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
           "http.response.status_code": response.status,
           "error.code": errorCode,
         })
-        throw new Error(errorCode)
+        throw new ProviderRequestError(errorCode, response.status, parseRetryAfter(response.headers))
       }
       activeSpan?.setAttribute("http.response.status_code", response.status)
       const providerRequestId = response.headers.get("x-request-id")
@@ -227,6 +272,47 @@ export class OpenAICompatibleProvider implements ModelProvider {
       signal?.removeEventListener("abort", abort)
     }
   }
+
+  private get maxRetries(): number {
+    return Math.max(0, Math.min(10, this.options.maxRetries ?? 5))
+  }
+
+  private async scheduleRetry(error: unknown, attempt: number, operation: string, signal?: AbortSignal): Promise<void> {
+    const retryAfterMs = error instanceof ProviderRequestError ? error.retryAfterMs : undefined
+    trace.getActiveSpan()?.addEvent("gen_ai.request.retry_scheduled", {
+      "retry.attempt": attempt,
+      "retry.max_retries": this.maxRetries,
+      "error.code": errorCode(error),
+    })
+    telemetryLog("agent.provider.retry_scheduled", "warn", {
+      "retry.attempt": attempt,
+      "retry.max_retries": this.maxRetries,
+      "error.code": errorCode(error),
+      operation,
+    })
+    await waitForRetry(attempt, { maxRetries: this.maxRetries, ...(signal ? { signal } : {}), ...(retryAfterMs !== undefined ? { retryAfterMs } : {}) })
+  }
+}
+
+class ProviderRequestError extends Error {
+  constructor(message: string, readonly status?: number, readonly retryAfterMs?: number) {
+    super(message)
+    this.name = "ProviderRequestError"
+  }
+}
+
+function errorCode(error: unknown): string {
+  return error instanceof Error ? error.message : "ai.provider_unknown"
+}
+
+function isRetryableProviderError(error: unknown, streamBody: boolean): boolean {
+  if (error instanceof ProviderRequestError)
+    return error.status === undefined || isRetryableHTTPStatus(error.status, true)
+  if (!(error instanceof Error)) return false
+  return error.message === "ai.provider_unavailable"
+    || error.message === "ai.provider_timeout"
+    || error.message === "ai.provider_rate_limited"
+    || (streamBody && error.message === "ai.provider_stream_failed")
 }
 
 function contentError(error: unknown): Record<string, unknown> {

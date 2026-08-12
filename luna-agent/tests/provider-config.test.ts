@@ -32,6 +32,21 @@ describe("ProviderConfigClient", () => {
     expect(fetchMock).toHaveBeenCalledOnce()
   })
 
+  it("retries transient configuration failures before parsing the response", async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response("busy", { status: 503, headers: { "retry-after": "0" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        version: "cfg-recovered",
+        provider: { baseUrl: "", model: "", apiKey: "", configured: false },
+        runtime: runtimePayload,
+      }), { status: 200 }))
+    vi.stubGlobal("fetch", fetchMock)
+
+    const config = await new ProviderConfigClient("https://luna-api.internal", "callback-token-value").get()
+    expect(config.version).toBe("cfg-recovered")
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
   it("falls back to platform defaults when advanced runtime fields are omitted", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
       version: "cfg-partial",

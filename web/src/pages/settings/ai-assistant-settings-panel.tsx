@@ -33,6 +33,7 @@ const defaults: FormValues = {
   webProxyPool: '',
   webProxyPoolConfigured: false,
   providerTimeoutSeconds: 30,
+  maxRequestRetries: 5,
   runTimeoutSeconds: 300,
   agentConcurrentRuns: 10,
   contextInputKTokens: 256,
@@ -160,6 +161,7 @@ export function AIAssistantSettingsPanel() {
 
   const errors = form.formState.errors
   const providerTimeoutSeconds = form.watch('providerTimeoutSeconds')
+  const maxRequestRetries = form.watch('maxRequestRetries')
   const runTimeoutSeconds = form.watch('runTimeoutSeconds')
   const agentConcurrentRuns = form.watch('agentConcurrentRuns')
   const contextInputKTokens = form.watch('contextInputKTokens')
@@ -200,6 +202,7 @@ export function AIAssistantSettingsPanel() {
           storageKey="luna-settings-ai-runtime-open"
           summary={t('settings.ai.runtimeSummary', {
             providerTimeout: providerTimeoutSeconds,
+            retries: maxRequestRetries,
             runTimeout: runTimeoutSeconds,
             concurrency: agentConcurrentRuns,
             contextBudget: contextInputKTokens,
@@ -209,6 +212,9 @@ export function AIAssistantSettingsPanel() {
           <div className="grid gap-4 md:grid-cols-2">
             <Field error={errors.providerTimeoutSeconds?.message} hint={t('settings.ai.providerTimeoutHint')} label={t('settings.ai.providerTimeout')}>
               <Input max={120} min={1} step={1} type="number" {...form.register('providerTimeoutSeconds', { valueAsNumber: true })} />
+            </Field>
+            <Field error={errors.maxRequestRetries?.message} hint={t('settings.ai.maxRequestRetriesHint')} label={t('settings.ai.maxRequestRetries')}>
+              <Input max={10} min={0} step={1} type="number" {...form.register('maxRequestRetries', { valueAsNumber: true })} />
             </Field>
             <Field error={errors.runTimeoutSeconds?.message} hint={t('settings.ai.runTimeoutHint')} label={t('settings.ai.runTimeout')}>
               <Input max={900} min={30} step={1} type="number" {...form.register('runTimeoutSeconds', { valueAsNumber: true })} />
@@ -291,6 +297,7 @@ function aiSettingsFormValues(values: Record<string, string>): FormValues {
     webProxyPool: '',
     webProxyPoolConfigured: values['ai.web.proxy_pool'] === 'true',
     providerTimeoutSeconds: Number(values['ai.runtime.provider_timeout_seconds'] ?? 30),
+    maxRequestRetries: Number(values['ai.runtime.max_request_retries'] ?? 5),
     runTimeoutSeconds: Number(values['ai.runtime.run_timeout_seconds'] ?? 300),
     agentConcurrentRuns: Number(values['ai.runtime.agent_concurrent_runs'] ?? 10),
     contextInputKTokens: Number(values['ai.runtime.context_input_k_tokens'] ?? 256),

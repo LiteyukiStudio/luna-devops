@@ -57,6 +57,7 @@ var configDefinitions = []configDefinition{
 	{Key: "ai.web.proxy_enabled", Label: "AI 外网工具代理池", Type: "boolean", Default: "false"},
 	{Key: "ai.web.proxy_pool", Label: "AI 外网工具代理地址", Type: "secret", Default: ""},
 	{Key: "ai.runtime.provider_timeout_seconds", Label: "模型请求超时", Type: "number", Default: "30"},
+	{Key: "ai.runtime.max_request_retries", Label: "瞬时故障重试次数", Type: "number", Default: "5"},
 	{Key: "ai.runtime.run_timeout_seconds", Label: "单次 Run 超时", Type: "number", Default: "300"},
 	{Key: "ai.runtime.agent_concurrent_runs", Label: "Agent 实例并发 Run", Type: "number", Default: "10"},
 	{Key: "ai.runtime.context_input_k_tokens", Label: "上下文输入预算", Type: "number", Default: "256"},

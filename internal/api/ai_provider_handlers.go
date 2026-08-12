@@ -18,6 +18,7 @@ var aiProviderConfigKeys = []string{
 	"ai.provider.base_url",
 	"ai.provider.default_model",
 	"ai.runtime.provider_timeout_seconds",
+	"ai.runtime.max_request_retries",
 	"ai.runtime.run_timeout_seconds",
 	"ai.runtime.agent_concurrent_runs",
 	"ai.runtime.context_input_k_tokens",
@@ -67,6 +68,7 @@ func (h *Handlers) GetAIProviderConfigInternal(ctx *gin.Context) {
 		},
 		"runtime": gin.H{
 			"providerTimeoutMs":                    aiRuntimeMilliseconds(values, "ai.runtime.provider_timeout_seconds", 30),
+			"maxRequestRetries":                   aiRuntimeInteger(values, "ai.runtime.max_request_retries", 5),
 			"runTimeoutMs":                         aiRuntimeMilliseconds(values, "ai.runtime.run_timeout_seconds", 300),
 			"agentConcurrentRuns":                  aiRuntimeInteger(values, "ai.runtime.agent_concurrent_runs", 10),
 			"userConcurrentRuns":                   aiRuntimeInteger(values, "ai.quota.user_concurrent_runs", 10),

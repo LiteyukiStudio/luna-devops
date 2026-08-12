@@ -2,6 +2,8 @@
 
 The AI assistant uses the current page and your platform permissions to inspect resources, explain status, diagnose failures, and help with deployments and routine operations.
 
+When a containerized application supports both a network database and a local file database such as SQLite, the assistant first evaluates compatible databases already available in the project space, then considers deploying a new network database. It recommends local file storage only when those paths are unsuitable. An explicit database choice from you always takes precedence.
+
 While a reply is being generated, the message list follows new content only when you are already at the latest message. Scrolling up pauses following until you return to the bottom.
 
 Stopping an active task preserves the conversation content already produced and marks the turn as canceled. A normal cancellation is not reported as a model-generation failure. You can then edit the input and start another task.
@@ -11,6 +13,8 @@ If you're new to servers, containers, or Kubernetes, just say so ("I'm new to th
 ## Get started
 
 An administrator enters the provider URL, API key, and model under **Global Settings → AI Assistant**, then enables the assistant. All signed-in users can use it by default, or the administrator can restrict access to platform administrators. The provider must support an OpenAI-compatible `chat/completions` API, streaming, and tool calls.
+
+The assistant retries transient network errors, timeouts, rate limits, and server failures five times by default with exponential backoff. Administrators can set 0–10 retries under **Advanced runtime settings**; 0 disables retries. A stream is never replayed after visible output has started, and non-idempotent writes are not resubmitted when the outcome is unknown, preventing duplicate content or resources.
 
 After it is enabled, open the assistant from the lower-right corner. You can ask it to:
 

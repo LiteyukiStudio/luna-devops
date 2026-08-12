@@ -1,5 +1,6 @@
 export interface RuntimeSettings {
   providerTimeoutMs: number
+  maxRequestRetries: number
   runTimeoutMs: number
   agentConcurrentRuns: number
   userConcurrentRuns: number
@@ -26,6 +27,7 @@ export interface RuntimeSettings {
 
 export const defaultRuntimeSettings: RuntimeSettings = {
   providerTimeoutMs: 30_000,
+  maxRequestRetries: 5,
   runTimeoutMs: 300_000,
   agentConcurrentRuns: 10,
   userConcurrentRuns: 10,

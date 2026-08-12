@@ -61,6 +61,7 @@ func (h *Handlers) validateAIConfigValues(values map[string]string) error {
 	}
 	for key, bounds := range map[string][2]int{
 		"ai.runtime.provider_timeout_seconds":          {1, 120},
+		"ai.runtime.max_request_retries":               {0, 10},
 		"ai.runtime.run_timeout_seconds":               {30, 900},
 		"ai.runtime.agent_concurrent_runs":             {1, 100},
 		"ai.runtime.context_input_k_tokens":            {64, 1024},

@@ -13,6 +13,7 @@ export function createRuntimeProvider(config: Config, managedConfig?: ProviderCo
       apiKey: config.PROVIDER_API_KEY,
       model: config.PROVIDER_MODEL,
       timeoutMs: defaultRuntimeSettings.providerTimeoutMs,
+      maxRetries: defaultRuntimeSettings.maxRequestRetries,
     })
   }
   return new DeterministicProvider()

@@ -96,7 +96,7 @@ describe("OpenAICompatibleProvider streaming", () => {
       JSON.stringify({ error: { message: "upstream detail must stay private" } }),
       { status: 402, headers: { "content-type": "application/json" } },
     )))
-    const provider = new OpenAICompatibleProvider({ baseUrl: "https://provider.example/v1", apiKey: "secret", model: "model-a", timeoutMs: 5000 })
+    const provider = new OpenAICompatibleProvider({ baseUrl: "https://provider.example/v1", apiKey: "secret", model: "model-a", timeoutMs: 5000, maxRetries: 0 })
 
     await expect(provider.complete({
       messages: [{ role: "user", content: "hello" }],
@@ -105,7 +105,7 @@ describe("OpenAICompatibleProvider streaming", () => {
   })
 
   it("maps provider transport and malformed stream failures to stable error codes", async () => {
-    const provider = new OpenAICompatibleProvider({ baseUrl: "https://provider.example/v1", apiKey: "secret", model: "model-a", timeoutMs: 5000 })
+    const provider = new OpenAICompatibleProvider({ baseUrl: "https://provider.example/v1", apiKey: "secret", model: "model-a", timeoutMs: 5000, maxRetries: 0 })
     vi.stubGlobal("fetch", vi.fn(async () => {
       throw new TypeError("socket closed with upstream detail")
     }))
@@ -243,7 +243,7 @@ describe("OpenAICompatibleProvider streaming", () => {
       status: 200,
       headers: { "content-type": "text/event-stream" },
     })))
-    const provider = new OpenAICompatibleProvider({ baseUrl: "https://provider.example/v1", apiKey: "secret", model: "model-a", timeoutMs: 5000 })
+    const provider = new OpenAICompatibleProvider({ baseUrl: "https://provider.example/v1", apiKey: "secret", model: "model-a", timeoutMs: 5000, maxRetries: 0 })
 
     const consume = async () => {
       await provider.stream({
@@ -252,5 +252,63 @@ describe("OpenAICompatibleProvider streaming", () => {
       })[Symbol.asyncIterator]().next()
     }
     await expect(consume()).rejects.toThrow("ai.provider_quota_exhausted")
+  })
+
+  it("retries transient provider failures and honors Retry-After", async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response("busy", { status: 429, headers: { "retry-after": "0" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        choices: [{ message: { content: "恢复" } }],
+        usage: { prompt_tokens: 2, completion_tokens: 1 },
+      }), { status: 200, headers: { "content-type": "application/json" } }))
+    vi.stubGlobal("fetch", fetchMock)
+    const provider = new OpenAICompatibleProvider({ baseUrl: "https://provider.example/v1", apiKey: "secret", model: "model-a", timeoutMs: 5000, maxRetries: 5 })
+
+    await expect(provider.complete({ messages: [{ role: "user", content: "hello" }], maxOutputTokens: 100 }))
+      .resolves.toMatchObject({ text: "恢复" })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it("stops after the configured five retries", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response("busy", {
+      status: 429,
+      headers: { "retry-after": "0" },
+    }))
+    vi.stubGlobal("fetch", fetchMock)
+    const provider = new OpenAICompatibleProvider({
+      baseUrl: "https://provider.example/v1",
+      apiKey: "secret",
+      model: "model-a",
+      timeoutMs: 5000,
+      maxRetries: 5,
+    })
+
+    await expect(provider.complete({ messages: [{ role: "user", content: "hello" }], maxOutputTokens: 100 }))
+      .rejects.toThrow("ai.provider_rate_limited")
+    expect(fetchMock).toHaveBeenCalledTimes(6)
+  })
+
+  it("does not replay a stream after visible output has started", async () => {
+    let pullCount = 0
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pullCount += 1
+        if (pullCount === 1) {
+          controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ choices: [{ delta: { content: "部分" } }] })}\n\n`))
+          return
+        }
+        controller.error(new Error("connection reset"))
+      },
+    })
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response(body, { status: 200 }))
+    vi.stubGlobal("fetch", fetchMock)
+    const provider = new OpenAICompatibleProvider({ baseUrl: "https://provider.example/v1", apiKey: "secret", model: "model-a", timeoutMs: 5000, maxRetries: 5 })
+    const events = []
+    await expect(async () => {
+      for await (const event of provider.stream({ messages: [{ role: "user", content: "hello" }], maxOutputTokens: 100 }))
+        events.push(event)
+    }).rejects.toThrow("ai.provider_unavailable")
+    expect(events).toEqual([{ type: "message_delta", delta: "部分" }])
+    expect(fetchMock).toHaveBeenCalledOnce()
   })
 })

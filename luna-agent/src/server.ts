@@ -112,6 +112,7 @@ export function buildServer(input: {
       const provider = new OpenAICompatibleProvider({
         baseUrl: config.provider.baseUrl, apiKey: config.provider.apiKey,
         model: config.provider.model, timeoutMs: config.runtime.providerTimeoutMs,
+        maxRetries: config.runtime.maxRequestRetries,
       })
       const health = await provider.health()
       return {

@@ -57,4 +57,43 @@ describe("Luna API tool client", () => {
     expect(hashCanonicalJSON(JSON.parse(executionBody.argumentsCanonical))).toBe(hashCanonicalJSON(argumentsValue))
     expect(executionBody.argumentsCanonical).toContain("generated")
   })
+
+  it("retries transient failures only for idempotent tool execution", async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ accessToken: "delegation" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response("busy", { status: 503, headers: { "retry-after": "0" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ items: [] }), { status: 200 }))
+    vi.stubGlobal("fetch", fetchMock)
+    const result = await new HttpLunaApiToolClient("http://api:8080", "service-token", 5).execute({
+      runId: "airun_1",
+      toolCallId: "aitool_1",
+      operation: {
+        operationId: "listProjects", method: "GET", path: "/api/v1/projects", category: "project",
+        risk: "safe", requiredScopes: ["project:read"], approval: "never", idempotent: true, timeoutMs: 15000,
+        inputSchema: { type: "object", properties: {}, additionalProperties: false },
+      },
+      arguments: {}, argumentsHash: hashCanonicalJSON({}), runActorGrant: "grant", approvalGranted: false,
+    })
+    expect(result.status).toBe(200)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
+  it("does not retry a non-idempotent write with an unknown outcome", async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ accessToken: "delegation" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response("busy", { status: 503 }))
+    vi.stubGlobal("fetch", fetchMock)
+    const result = await new HttpLunaApiToolClient("http://api:8080", "service-token", 5).execute({
+      runId: "airun_1",
+      toolCallId: "aitool_1",
+      operation: {
+        operationId: "createThing", method: "POST", path: "/api/v1/things", category: "application",
+        risk: "sensitive", requiredScopes: ["application:write"], approval: "always", idempotent: false, timeoutMs: 15000,
+        inputSchema: { type: "object", properties: {}, additionalProperties: false },
+      },
+      arguments: {}, argumentsHash: hashCanonicalJSON({}), runActorGrant: "grant", approvalGranted: true,
+    })
+    expect(result.status).toBe(503)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
 })

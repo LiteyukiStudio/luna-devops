@@ -18,7 +18,7 @@ func TestAIConfigDefinitionsCoverSpecificationCatalog(t *testing.T) {
 		"ai.assistant.enabled", "ai.provider.base_url", "ai.provider.api_key", "ai.provider.default_model",
 		"ai.web.proxy_enabled", "ai.web.proxy_pool",
 		"ai.runtime.provider_timeout_seconds", "ai.runtime.run_timeout_seconds", "ai.runtime.agent_concurrent_runs",
-		"ai.runtime.context_input_k_tokens",
+		"ai.runtime.context_input_k_tokens", "ai.runtime.max_request_retries",
 		"ai.observability.enabled", "ai.observability.prometheus_url", "ai.observability.prometheus_token",
 		"ai.observability.loki_url", "ai.observability.loki_tenant_id", "ai.observability.loki_token",
 		"ai.observability.tempo_url", "ai.observability.tempo_tenant_id", "ai.observability.tempo_token",
@@ -74,6 +74,7 @@ func TestAIConfigAcceptsSafePublicProviderWithoutManualDomainAllowlist(t *testin
 func TestAIConfigRejectsUnsafeRuntimeBounds(t *testing.T) {
 	for key, value := range map[string]string{
 		"ai.runtime.provider_timeout_seconds":          "121",
+		"ai.runtime.max_request_retries":               "11",
 		"ai.runtime.run_timeout_seconds":               "10",
 		"ai.runtime.agent_concurrent_runs":             "0",
 		"ai.runtime.context_input_k_tokens":            "32",

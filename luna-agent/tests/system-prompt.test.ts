@@ -352,9 +352,21 @@ describe("versioned system prompt", () => {
     expect(names).toContain("service-dependency-planning")
     expect(prompt).toContain("把每个节点标记为 `业务服务`、`有状态依赖`、`共享平台能力`、`一次性任务` 或")
     expect(prompt).toContain("关系型数据库可以复用服务器实例")
+    expect(prompt).toContain("项目同时支持网络数据库与 SQLite 等本地文件数据库时")
+    expect(prompt).toContain("优先评估复用项目空间内兼容的网络数据库")
+    expect(prompt).toContain("MySQL 与 MariaDB 不得仅因协议相似就")
+    expect(prompt).toContain("确认单写者、单副本或")
     expect(prompt).toContain("Redis logical DB 不能作为强安全隔离")
     expect(prompt).toContain("独立 vhost、用户、权限、配额和死信策略")
     expect(prompt).toContain("只清理该解决方案拥有的资源")
+  })
+
+  it("loads dependency planning for local file database decisions", () => {
+    const names = loadedSkillReferences({
+      userInput: "这个应用同时支持 SQLite 和 PostgreSQL，应该怎么部署？",
+    }).map(item => item.name)
+
+    expect(names).toContain("service-dependency-planning")
   })
 
   it("requires the card preparation handshake before the final card tool", () => {

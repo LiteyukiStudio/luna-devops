@@ -65,14 +65,18 @@ export async function startAgent(): Promise<void> {
   const toolStore = repository instanceof PostgresRepository
     ? new PostgresToolCallStore(repository.pool, repository, toolArgumentsCipher)
     : new ProjectingToolCallStore(new MemoryToolCallStore(), repository)
+  const runtime = initialRemoteConfig?.runtime ?? defaultRuntimeSettings
   const tools = catalog && config.LUNA_API_BASE_URL && internalKeys
-    ? new ToolOrchestrator(catalog, new HttpLunaApiToolClient(config.LUNA_API_BASE_URL, internalKeys.callbackServiceToken), toolStore, undefined, undefined, async runId => {
+    ? new ToolOrchestrator(catalog, new HttpLunaApiToolClient(
+        config.LUNA_API_BASE_URL,
+        internalKeys.callbackServiceToken,
+        () => providerConfigClient?.current()?.runtime.maxRequestRetries ?? runtime.maxRequestRetries,
+      ), toolStore, undefined, undefined, async runId => {
         const encrypted = await repository.getRunActorGrantCiphertext(runId)
         if (!encrypted) throw new Error("ai.run_grant_unavailable")
         return grantCipher.decrypt(encrypted)
       })
     : undefined
-  const runtime = initialRemoteConfig?.runtime ?? defaultRuntimeSettings
   const contextCompiler = new ContextCompiler(repository, provider, {
     inputTokenBudget: runtime.contextInputTokenBudget,
     compressionTriggerRatio: runtime.contextCompressionTriggerRatio,

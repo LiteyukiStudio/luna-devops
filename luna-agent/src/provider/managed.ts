@@ -60,5 +60,6 @@ function defaultFactory(config: RemoteProviderConfig): ModelProvider {
     apiKey: config.provider.apiKey,
     model: config.provider.model,
     timeoutMs: config.runtime.providerTimeoutMs,
+    maxRetries: config.runtime.maxRequestRetries,
   })
 }

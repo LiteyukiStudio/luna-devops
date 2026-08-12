@@ -47,6 +47,7 @@ export const aiSettingsSchema = z.object({
     .int({ message: i18next.t('settings.ai.providerTimeoutInvalid') })
     .min(1, { message: i18next.t('settings.ai.providerTimeoutInvalid') })
     .max(120, { message: i18next.t('settings.ai.providerTimeoutInvalid') }),
+  maxRequestRetries: boundedInt(0, 10, 'settings.ai.maxRequestRetriesInvalid'),
   runTimeoutSeconds: z.number({ message: i18next.t('settings.ai.runTimeoutInvalid') })
     .int({ message: i18next.t('settings.ai.runTimeoutInvalid') })
     .min(30, { message: i18next.t('settings.ai.runTimeoutInvalid') })
@@ -122,6 +123,7 @@ export function aiSettingsPayload(values: AISettingsFormValues) {
     'ai.provider.default_model': values.model.trim(),
     'ai.web.proxy_enabled': values.webProxyEnabled,
     'ai.runtime.provider_timeout_seconds': values.providerTimeoutSeconds,
+    'ai.runtime.max_request_retries': values.maxRequestRetries,
     'ai.runtime.run_timeout_seconds': values.runTimeoutSeconds,
     'ai.runtime.agent_concurrent_runs': values.agentConcurrentRuns,
     'ai.runtime.context_input_k_tokens': values.contextInputKTokens,

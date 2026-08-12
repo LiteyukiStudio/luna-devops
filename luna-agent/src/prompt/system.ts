@@ -44,7 +44,7 @@ const referenceDefinitions = [
   reference(
     "service-dependency-planning",
     "../../skills/luna-devops-interaction/references/service-dependency-planning.md",
-    /\b(postgres|postgresql|mysql|mariadb|mongodb|redis|valkey|memcached|rabbitmq|kafka|redpanda|nats|jetstream|minio|garage|s3|object storage|elasticsearch|opensearch|meilisearch|typesense|qdrant|weaviate|milvus|database|cache|queue|broker|dependency|dependencies|multi-service|microservice)\b|数据库|缓存|消息队列|对象存储|搜索引擎|向量数据库|依赖服务|依赖组件|共享组件|复用组件|多服务|微服务/i,
+    /\b(postgres|postgresql|mysql|mariadb|mongodb|sqlite|sqlite3|embedded database|file database|redis|valkey|memcached|rabbitmq|kafka|redpanda|nats|jetstream|minio|garage|s3|object storage|elasticsearch|opensearch|meilisearch|typesense|qdrant|weaviate|milvus|database|cache|queue|broker|dependency|dependencies|multi-service|microservice)\b|数据库|本地文件数据库|嵌入式数据库|缓存|消息队列|对象存储|搜索引擎|向量数据库|依赖服务|依赖组件|共享组件|复用组件|多服务|微服务/i,
   ),
   reference(
     "runtime-deployment",
