@@ -3,6 +3,7 @@ package api
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestAgentObservabilitySummaryQueriesUseSelectedRange(t *testing.T) {
@@ -19,5 +20,29 @@ func TestAgentObservabilitySummaryQueriesUseSelectedRange(t *testing.T) {
 		if queries[key] == "" {
 			t.Fatalf("missing summary query %s", key)
 		}
+	}
+}
+
+func TestObservabilityRangeUsesAllowlistedWindows(t *testing.T) {
+	tests := []struct {
+		input    string
+		wantText string
+		want     time.Duration
+	}{
+		{input: "1h", wantText: "1h", want: time.Hour},
+		{input: "6h", wantText: "6h", want: 6 * time.Hour},
+		{input: "24h", wantText: "24h", want: 24 * time.Hour},
+		{input: "7d", wantText: "7d", want: 7 * 24 * time.Hour},
+		{input: "30d", wantText: "30d", want: 30 * 24 * time.Hour},
+		{input: "1y", wantText: "1y", want: 365 * 24 * time.Hour},
+		{input: "unbounded", wantText: "1h", want: time.Hour},
+	}
+	for _, test := range tests {
+		t.Run(test.input, func(t *testing.T) {
+			gotText, got := observabilityRange(test.input)
+			if gotText != test.wantText || got != test.want {
+				t.Fatalf("observabilityRange(%q) = (%q, %s), want (%q, %s)", test.input, gotText, got, test.wantText, test.want)
+			}
+		})
 	}
 }

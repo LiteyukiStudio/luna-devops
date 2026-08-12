@@ -201,7 +201,7 @@ export function AppTemplatesPage() {
   }
 
   return (
-    <PageShell width="content">
+    <PageShell width="full">
       <section className="relative overflow-hidden rounded-feature border border-transparent bg-surface-raised px-5 py-8 sm:px-8 sm:py-10">
         <div className="relative grid gap-7 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
           <div className="max-w-3xl">
@@ -275,7 +275,7 @@ export function AppTemplatesPage() {
           {sortedTemplates.length === 0
             ? <EmptyState description={t('appTemplatesPage.emptyDescription')} title={t('appTemplatesPage.emptyTitle')} />
             : (
-                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                   {sortedTemplates.map(template => (
                     <TemplateCard
                       key={template.id}

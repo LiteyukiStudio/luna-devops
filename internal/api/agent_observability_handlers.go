@@ -304,6 +304,12 @@ func observabilityRange(value string) (string, time.Duration) {
 		return "6h", 6 * time.Hour
 	case "24h":
 		return "24h", 24 * time.Hour
+	case "7d":
+		return "7d", 7 * 24 * time.Hour
+	case "30d":
+		return "30d", 30 * 24 * time.Hour
+	case "1y":
+		return "1y", 365 * 24 * time.Hour
 	default:
 		return "1h", time.Hour
 	}

@@ -20,6 +20,7 @@ const operationsDashboardPage = {
   sourceStatus: { ready: '正常', unavailable: '不可用' },
   agentOverview: '周期概览',
   agentOverviewDescription: '汇总最近 {{range}} 内的 Agent 对话轮与资源消耗。',
+  timeRange: { '1h': '1h', '6h': '6h', '24h': '24h', '7d': '7日', '30d': '30日', '1y': '1年' },
   inputTokens: '输入 Token',
   outputTokens: '输出 Token',
   executionSummary: '执行摘要',

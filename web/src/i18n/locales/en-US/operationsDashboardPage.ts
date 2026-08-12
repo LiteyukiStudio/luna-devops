@@ -20,6 +20,7 @@ const operationsDashboardPage = {
   sourceStatus: { ready: 'Ready', unavailable: 'Unavailable' },
   agentOverview: 'Period overview',
   agentOverviewDescription: 'Summarizes Agent turns and resource usage over the last {{range}}.',
+  timeRange: { '1h': '1h', '6h': '6h', '24h': '24h', '7d': '7d', '30d': '30d', '1y': '1y' },
   inputTokens: 'Input tokens',
   outputTokens: 'Output tokens',
   executionSummary: 'Execution summary',

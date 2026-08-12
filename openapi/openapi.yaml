@@ -6768,7 +6768,7 @@ paths:
       summary: Return selected-period Agent token, tool, turn, success, and latency totals used by the operations overview
       security: [{ SessionCookie: [] }]
       parameters:
-        - { name: range, in: query, schema: { type: string, enum: [1h, 6h, 24h], default: 1h } }
+        - { name: range, in: query, schema: { type: string, enum: [1h, 6h, 24h, 7d, 30d, 1y], default: 1h } }
       responses:
         "200": { description: Non-cacheable Agent observability snapshot, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObservabilityOverview" } } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
@@ -6808,7 +6808,7 @@ paths:
         exclusionReason: Legacy administrator conversation observability query; the current operations UI uses paginated turn queries instead of exposing this as a business CLI command.
       security: [{ SessionCookie: [] }]
       parameters:
-        - { name: range, in: query, schema: { type: string, enum: [1h, 6h, 24h], default: 1h } }
+        - { name: range, in: query, schema: { type: string, enum: [1h, 6h, 24h, 7d, 30d, 1y], default: 1h } }
         - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
         - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
         - { name: search, in: query, schema: { type: string } }
@@ -6851,7 +6851,7 @@ paths:
         exclusionReason: The administrator operations UI consumes this diagnostic turn list; it is intentionally excluded from the public business CLI catalog.
       security: [{ SessionCookie: [] }]
       parameters:
-        - { name: range, in: query, schema: { type: string, enum: [1h, 6h, 24h], default: 1h } }
+        - { name: range, in: query, schema: { type: string, enum: [1h, 6h, 24h, 7d, 30d, 1y], default: 1h } }
         - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
         - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
         - { name: search, in: query, schema: { type: string } }
@@ -7321,7 +7321,7 @@ components:
       required: [generatedAt, range, summary, sourceStatus, observationCode]
       properties:
         generatedAt: { type: string, format: date-time }
-        range: { type: string, enum: [1h, 6h, 24h] }
+        range: { type: string, enum: [1h, 6h, 24h, 7d, 30d, 1y] }
         summary:
           type: object
           required: [inputTokens, outputTokens, toolCalls, turnCount, turnSuccessRate, runDurationP95]

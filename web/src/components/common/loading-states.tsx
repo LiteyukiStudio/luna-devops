@@ -92,8 +92,8 @@ export function SettingsSkeleton() {
 /** Marketplace loading state that mirrors responsive template cards. */
 export function TemplateGridSkeleton() {
   return (
-    <LoadingRegion className="grid gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-3">
-      {Array.from({ length: 6 }, (_, index) => (
+    <LoadingRegion className="grid gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-3 2xl:grid-cols-4">
+      {Array.from({ length: 8 }, (_, index) => (
         <div key={index} className="grid min-h-56 gap-4 rounded-lg bg-surface-raised p-4">
           <div className="flex gap-3">
             <Skeleton className="size-12 shrink-0" />

@@ -52,7 +52,7 @@ export function DashboardPage() {
   }
 
   if (!dashboard.data) {
-    return <PageShell width="content"><OverviewSkeleton /></PageShell>
+    return <PageShell width="full"><OverviewSkeleton /></PageShell>
   }
 
   const overview = dashboard.data
@@ -60,7 +60,7 @@ export function DashboardPage() {
   const hasMoreProjects = overview.summary.projects > overview.projects.length
 
   return (
-    <PageShell width="content">
+    <PageShell width="full">
       {overview.attention.length > 0 && <AttentionPanel items={overview.attention} />}
 
       <section className="grid gap-3">
@@ -137,7 +137,7 @@ export function DashboardPage() {
       >
         {overview.projects.length
           ? (
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                 {overview.projects.slice(0, 6).map(project => (
                   <ProjectShortcutCard
                     key={project.id}

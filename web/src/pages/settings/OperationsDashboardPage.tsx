@@ -1,4 +1,4 @@
-import type { AgentObservabilityTurn } from '@/api'
+import type { AgentObservabilityRange, AgentObservabilityTurn } from '@/api'
 import type { DataListColumn } from '@/components/common/data-list'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowDownToLine, ArrowUpFromLine, CircleGauge, Clock3, ExternalLink, Eye, MessagesSquare, RefreshCw, Settings, UserRound, Wrench } from 'lucide-react'
@@ -23,6 +23,7 @@ import { isPlatformAdmin } from '@/lib/roles'
 import { AgentTurnDetailSheet } from './agent-turn-detail-sheet'
 
 const OPERATIONS_DASHBOARD_URL_KEY = 'site.operationsDashboardUrl'
+const AGENT_OBSERVABILITY_RANGES: readonly AgentObservabilityRange[] = ['1h', '6h', '24h', '7d', '30d', '1y']
 
 export function OperationsDashboardPage() {
   const { t } = useTranslation()
@@ -102,7 +103,7 @@ function ObservabilityConfigEmpty({ description, title }: { description: string,
 
 function AgentObservabilityView({ active, enabled }: { active: boolean, enabled: boolean }) {
   const { t, i18n } = useTranslation()
-  const [range, setRange] = useState<'1h' | '6h' | '24h'>('1h')
+  const [range, setRange] = useState<AgentObservabilityRange>('1h')
   const [turnPage, setTurnPage] = useState(1)
   const [turnPageSize, setTurnPageSize] = useState(20)
   const [turnSearch, setTurnSearch] = useState('')
@@ -127,7 +128,7 @@ function AgentObservabilityView({ active, enabled }: { active: boolean, enabled:
     setTurnSearch(value)
     setTurnPage(1)
   }
-  const changeRange = (value: '1h' | '6h' | '24h') => {
+  const changeRange = (value: AgentObservabilityRange) => {
     setRange(value)
     setTurnPage(1)
     setSelectedTurn(null)
@@ -193,10 +194,10 @@ function AgentObservabilityView({ active, enabled }: { active: boolean, enabled:
             <h2 className="text-base font-semibold">{t('operationsDashboardPage.agentOverview')}</h2>
             {data?.observationCode === 'ai.observability.partial' && <StatusBadge tone="warning">{t('operationsDashboardPage.metricsUnavailable')}</StatusBadge>}
           </div>
-          <p className="m-0 text-sm text-muted-foreground">{t('operationsDashboardPage.agentOverviewDescription', { range })}</p>
+          <p className="m-0 text-sm text-muted-foreground">{t('operationsDashboardPage.agentOverviewDescription', { range: t(`operationsDashboardPage.timeRange.${range}`) })}</p>
         </div>
-        <div className="flex items-center gap-2">
-          {(['1h', '6h', '24h'] as const).map(item => <Button key={item} size="sm" variant={range === item ? 'default' : 'outline'} onClick={() => changeRange(item)}>{item}</Button>)}
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {AGENT_OBSERVABILITY_RANGES.map(item => <Button key={item} size="sm" variant={range === item ? 'default' : 'outline'} onClick={() => changeRange(item)}>{t(`operationsDashboardPage.timeRange.${item}`)}</Button>)}
           <Button aria-label={t('common.refresh')} disabled={overview.isFetching || turns.isFetching} size="icon" variant="ghost" onClick={refreshWorkspace}><RefreshCw className={overview.isFetching || turns.isFetching ? 'animate-spin' : ''} /></Button>
         </div>
       </div>

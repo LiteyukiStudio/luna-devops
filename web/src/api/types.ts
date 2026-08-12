@@ -13,6 +13,7 @@ export type LiveObservationStatus
     | 'declared'
 
 export type AgentObservabilitySource = 'prometheus' | 'loki' | 'tempo'
+export type AgentObservabilityRange = '1h' | '6h' | '24h' | '7d' | '30d' | '1y'
 
 export interface AgentObservabilityTestResult {
   source: AgentObservabilitySource
@@ -131,7 +132,7 @@ export interface AgentObservabilityTraceContext {
 }
 export interface AgentObservabilityOverview {
   generatedAt: string
-  range: '1h' | '6h' | '24h'
+  range: AgentObservabilityRange
   summary: {
     inputTokens: number
     outputTokens: number
