@@ -71,7 +71,7 @@ Repository
 Start local dependencies:
 
 ```bash
-docker compose -f docker-compose-dev.yaml up -d
+docker compose -f docker-compose-dev-db.yaml up -d
 ```
 
 Create local configuration:
@@ -80,22 +80,34 @@ Create local configuration:
 cp .env.example .env
 ```
 
-Run the backend:
+The development Compose files do not manage Luna DevOps processes. Run the four components in separate terminals:
 
 ```bash
+# Terminal 1: API
 go run ./cmd/api
+
+# Terminal 2: Worker
 go run ./cmd/worker
-```
 
-Run the frontend:
+# Terminal 3: Agent
+pnpm --dir luna-agent install
+pnpm --dir luna-agent dev
 
-```bash
-cd web
-pnpm install
-pnpm dev
+# Terminal 4: Web
+pnpm --dir web install
+pnpm --dir web dev
 ```
 
 The Vite dev server proxies `/api/v1` to `http://localhost:8080`.
+See [`luna-agent/.env.example`](luna-agent/.env.example) for Agent integration settings. Also set `AI_ASSISTANT_AVAILABLE=true` and `AI_AGENT_BASE_URL=http://localhost:8091` in the root `.env`; `AI_INTERNAL_SECRET` must match in both files.
+
+To inspect local traces, metrics, and logs, start the development-only Grafana + Prometheus + Loki + Tempo + OpenTelemetry Collector stack:
+
+```bash
+docker compose -f docker-compose-dev-observability.yaml up -d
+```
+
+Grafana is available at `http://localhost:3000`. See [`observability/README.md`](observability/README.md) for exporter variables, Agent query URLs, and cleanup commands. The stack has no production-grade authentication or high availability and is restricted to local development.
 
 ## Luna CLI
 

@@ -1,4 +1,4 @@
-import type { CSSProperties, MouseEvent, ReactNode } from 'react'
+import type { CSSProperties, KeyboardEvent, MouseEvent, ReactNode } from 'react'
 import { MoreHorizontal } from 'lucide-react'
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -73,6 +73,8 @@ interface DataListProps<T> {
     onPageSizeChange?: (pageSize: number) => void
     pageSizeOptions?: number[]
   }
+  onRowClick?: (item: T) => void
+  rowActionLabel?: (item: T) => string
 }
 
 // Tailwind v4 只扫描源码中的字面量类名，预定义可选的视口偏移，避免动态拼接失效。
@@ -238,6 +240,8 @@ export function DataList<T>({
   search,
   selection,
   pagination,
+  onRowClick,
+  rowActionLabel,
 }: DataListProps<T>) {
   const { t } = useTranslation()
   const rootRef = useRef<HTMLDivElement>(null)
@@ -282,6 +286,17 @@ export function DataList<T>({
         next.delete(key)
     }
     selection.onSelectionChange([...next])
+  }
+  const activateRow = (item: T, target: EventTarget | null) => {
+    if (!onRowClick || !(target instanceof Element) || target.closest('button, a, input, select, textarea, [role="button"], [role="menuitem"]'))
+      return
+    onRowClick(item)
+  }
+  const activateRowFromKeyboard = (event: KeyboardEvent<HTMLTableRowElement>, item: T) => {
+    if (!onRowClick || event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' '))
+      return
+    event.preventDefault()
+    onRowClick(item)
   }
   const tableFooter = pagination && pagination.total > 0 && !loading
     ? (
@@ -429,7 +444,14 @@ export function DataList<T>({
                       return (
                         <tr
                           key={itemKey}
-                          className="group border-t border-border transition-colors hover:[&>td]:[background:var(--data-list-row-hover)] [&>td]:transition-colors"
+                          aria-label={rowActionLabel?.(item)}
+                          className={cn(
+                            'group border-t border-border transition-colors hover:[&>td]:[background:var(--data-list-row-hover)] [&>td]:transition-colors',
+                            onRowClick && 'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+                          )}
+                          tabIndex={onRowClick ? 0 : undefined}
+                          onClick={event => activateRow(item, event.target)}
+                          onKeyDown={event => activateRowFromKeyboard(event, item)}
                         >
                           {selectable && (
                             <td className="w-10 px-3 py-3 align-middle sm:px-4">

@@ -12,7 +12,7 @@ import { redact } from "./redaction.js"
 import type { ToolOrchestrator } from "./tools/orchestrator.js"
 import { presentEvent, presentTimeline } from "./timeline-presenter.js"
 import { defaultRuntimeSettings } from "./runtime-settings.js"
-import { captureTraceContext, stableErrorCode as telemetryErrorCode, telemetryLog } from "./telemetry.js"
+import { captureTraceContext, internalSpanOptions, stableErrorCode as telemetryErrorCode, telemetryLog, withSpan } from "./telemetry.js"
 
 declare module "fastify" {
   interface FastifyRequest { actor: ActorContext }
@@ -173,13 +173,21 @@ export function buildServer(input: {
         runId: id.optional(),
         runActorGrant: z.string().min(16).max(8192).optional(),
       }).parse(request.body)
-      const created = await input.repository.createTurn(request.actor.userId, {
-        conversationId, input: body.input.parts.map(part => part.text).join("\n"), pageContext: redact(body.pageContext),
-        traceContext: captureTraceContext(),
-        idempotencyKey: key, ...(body.runId ? { preallocatedRunId: body.runId } : {}),
-        ...(body.runActorGrant ? { runActorGrantCiphertext: input.grantCipher.encrypt(body.runActorGrant) } : {}),
-        ...(input.toolCatalogDigest ? { toolCatalogDigest: input.toolCatalogDigest } : {}),
-        clientInstanceId: body.clientInstanceId,
+      const created = await withSpan("agent.turn.accept", internalSpanOptions({
+        "gen_ai.operation.name": "create_turn",
+        "gen_ai.conversation.id": conversationId,
+      }), async span => {
+        const value = await input.repository.createTurn(request.actor.userId, {
+          conversationId, input: body.input.parts.map(part => part.text).join("\n"), pageContext: redact(body.pageContext),
+          traceContext: captureTraceContext(),
+          idempotencyKey: key, ...(body.runId ? { preallocatedRunId: body.runId } : {}),
+          ...(body.runActorGrant ? { runActorGrantCiphertext: input.grantCipher.encrypt(body.runActorGrant) } : {}),
+          ...(input.toolCatalogDigest ? { toolCatalogDigest: input.toolCatalogDigest } : {}),
+          clientInstanceId: body.clientInstanceId,
+        })
+        span.setAttribute("luna.turn.id", value.turn.id)
+        span.setAttribute("luna.run.id", value.run.id)
+        return value
       })
       return reply.code(202).send({ turnId: created.turn.id, turnIndex: created.turn.turnIndex, runId: created.run.id, state: created.run.status, eventsUrl: `/api/v1/ai/runs/${created.run.id}/events` })
     })

@@ -1,5 +1,11 @@
 # TODO
 
+## 2026-08-12 文档站首页入口
+
+- [x] 将首页主操作更新为“快速部署”和“使用项目”，并同步英文入口文案。
+- [x] 将 Luna CLI 的安装与使用入口并入“使用”导航，移除独立 CLI 顶级菜单并保留原有页面地址。
+- [x] 清理 `docs-internal/` 已完成方案、验收流水和旧导出产物，将代码健康、可观测和场景测试文档收敛为长期规范，仅保留仍在进行的部署面板重构方案。
+
 ## 2026-08-11 MFA 密码管理器兼容
 
 - [x] 为登录、MFA 启用确认、敏感操作挑战与 AI 高敏操作补齐标准凭据表单、用户名关联及 `one-time-code` 自动填充语义，并完成前端与文档验收。
@@ -43,15 +49,13 @@
 
 ## 0. 全链路可观测改造
 
+- [x] 新增仅绑定本机的开发用 Compose 观测栈，集成 OpenTelemetry Collector、Prometheus、Loki、Tempo 和 Grafana，自动配置数据源并加载仓库 Dashboard。
 - [x] 在全局设置的 AI 助手中新增默认折叠的 AI 高级设置，支持加密配置 Prometheus、Loki、Tempo 查询连接和独立启用 Agent 可观测，为运营面板原生 Agent 观测提供受控数据源入口。
-- [x] 完成原生 Agent 可观测工作台：三个数据源支持独立且不阻塞保存的连接测试，Luna API 使用固定查询聚合 Metrics、Logs 与 Traces，运营面板提供健康摘要、趋势、工具失败、Run 与关联日志视图。
-- [x] 将 Agent Trace 升级为内嵌调用链工作台：从 Tempo 按 Trace ID 读取并归一化 Span，提供父子层级、瀑布时间轴、模型/工具/错误摘要和安全属性检查器。
+- [x] 完成原生 Agent 可观测总览：三个数据源支持独立且不阻塞保存的连接测试，顶部按所选周期聚合 Token、工具调用、轮次成功率和执行耗时，轮次列表使用服务端分页。
+- [x] 将 Agent 轮次详情升级为右侧纵向步骤时间轴：从 Tempo 按 Trace ID 读取并归一化 Span，支持模型、工具、异常筛选以及安全属性展开。
 - [x] 修复 Tempo 2.x Trace 详情响应兼容：正确读取 `/api/v2/traces/{id}` 的 `trace.resourceSpans`，保留旧代理响应兼容与空 Span 失败检测，并将 Fastify 源码型 Span 名归一化为稳定短名称。
-- [x] Agent Trace Span 树支持逐节点与全局折叠/展开，默认完整展开，并按 Trace ID 隔离临时折叠状态。
-- [x] Agent 观测支持按会话与按轮次切换：平台管理员可跨用户检索会话，查看标题、用户、聊天内容、各轮状态及关联 Trace，并从任一轮进入 Span 瀑布。
-- [x] Agent 观测的会话、跨会话轮次和会话详情统一使用服务端分页；翻页时重置列表滚动位置，详情页码固定在抽屉底部并避免挂载时重复触发查询。
-- [x] 会话级 Agent 观测按轮次还原多次 Loop，展示安全 Markdown、思考摘要、工具参数与结果，并支持从单次工具调用下钻其 Trace Span 树。
-- [x] 将 Trace 详情与 Luna 权威会话时间线反向关联，在同一调用链视图中回放用户消息、Thinking、模型回复及脱敏工具参数和结果，并可从工具记录定位对应 Span。
+- [x] 取消 Agent 会话级观测视图，以“用户输入到 Agent 输出结束”为唯一轮次单位；列表支持跨用户检索、服务端分页、Token/工具摘要和整行打开详情。
+- [x] Agent 轮次时间轴按轮次 ID 隔离筛选与展开状态，切换轮次不复用旧 Trace 快照，并关联 Luna 权威存储中的用户消息与 Agent 回复。
 
 - [x] 收紧 AI 刷新恢复提示：会话活动时间随用户与助手消息更新，仅在上一会话最后交互不超过 10 分钟时显示 8 秒返回入口。
 - [x] 允许在 Agent 工作期间编辑并保留下一条消息草稿，但必须先停止当前任务才能发送，避免并发轮次破坏会话顺序。
@@ -71,7 +75,7 @@
 - [x] Worker 覆盖异步上下文传播、任务生命周期、构建/部署/网关阶段和依赖调用。
 - [x] Agent 覆盖 Run 循环、模型 Provider、工具、审批、交互卡片、网络访问和持久化。
 - [x] Web 覆盖页面操作与 API 链路传播，并确保遥测失败不阻塞用户流程。
-- [x] 使用临时本地可观测栈验收 Trace、Metrics、Logs；公开文档只说明最小配置和外部组件接入方式。
+- [x] 提供只绑定本机端口的可复用 Compose 可观测栈，并验收 Trace、Metrics、Logs 完整链路。
 - [x] 收敛指标出口：API 保留独立 Prometheus 兼容端口，Worker/Agent 仅通过 OTLP 上报完整指标，并按健康、API、队列、交付、Agent 和容量重构 Grafana 仪表盘。
 - [x] 提供 Luna Agent / LLM 专用 Grafana 仪表盘，联动 Prometheus、Tempo 与 Loki，并按会话、轮次、Run、Trace 和工具筛选模型及工具内容。
 - [x] 将 Agent PostgreSQL 自动查询 Span 改为按需采集，默认保留 Run、模型、工具和 HTTP 等业务链路，避免事件持久化 Span 淹没 Trace 视图。
@@ -284,17 +288,17 @@
 - [x] 提供完整 docker compose 运行编排。
 - [x] 拆分开发依赖和完整部署的 compose 边界：开发依赖使用独立项目名并暴露 PG/Redis，完整部署的 PG/Redis 仅走容器内网络，避免端口和容器项目名冲突。
 - [x] 明确本地开发拓扑：前端、API、worker 优先在宿主机运行，PG/Redis 由 dev compose 提供；构建联调使用部署配置所选运行集群的 Kubernetes Job。
-- [x] 将 compose 场景收敛为三份：`docker-compose-dev.yaml` 启动 PG/Redis/worker 用于开发联调，`docker-compose.yaml` 使用 DockerHub 镜像启动完整部署栈，`docker-compose-build.yaml` 从当前源码构建完整部署栈。
+- [x] 收敛本地开发拓扑：`docker-compose-dev-db.yaml` 只启动 PostgreSQL/Redis，`docker-compose-dev-observability.yaml` 只启动可观测组件，API/Worker/Agent/Web 均在宿主机手动启动；完整部署继续使用 `docker-compose.yaml` 和 `docker-compose-build.yaml`。
 - [x] 新增 Helm Chart：支持一键在 Kubernetes / K3s 中部署 API、worker、PostgreSQL 和 Redis，并支持切换外部数据库、外部 Redis、Ingress 和固定镜像版本。
 - [x] 本地环境文件收敛为单一 `.env`，只维护 `.env.example` 模板；开发 Compose 从同一文件插值，并在容器内显式覆盖数据库和 Redis 服务地址。
 - [x] API/Worker 依赖启动门禁：监听或消费任务前分别对 PostgreSQL、Redis 做一次真实连接检查，任一依赖不可达或认证失败时直接退出；运行期间仍由连接池和客户端恢复短暂中断。统一限制每进程数据库连接池大小、空闲连接和连接生命周期。
-- [x] `docker-compose.yaml` 和 `docker-compose-build.yaml` 内联 API / worker 运行环境变量，生产密钥、域名和镜像 tag 通过宿主机环境变量覆盖；`docker-compose-dev.yaml` 从统一 `.env` 插值并显式注入容器地址。
+- [x] `docker-compose.yaml` 和 `docker-compose-build.yaml` 内联 API / worker 运行环境变量，生产密钥、域名和镜像 tag 通过宿主机环境变量覆盖；宿主机开发进程读取各自的本地环境文件。
 - [x] 完整 Compose 固定使用生产模式，不再回退到开发管理员；启动前必须在统一 `.env` 中显式配置加密密钥、首次初始化 Token 和 Redis 密码。
 - [x] Redis 客户端连接收敛为唯一的 `REDIS_ADDR` URI：API、Worker、任务命令及 Asynq 调度共用解析结果；部署层不再从 URI 反向拆密码，完整 Compose 用 `REDIS_PASSWORD` 直接启动内置 Redis，并组装内部 URI；Helm 分别保存内置密码与客户端 URI，外部 Redis 继续使用完整 URI Secret。
 - [x] 完整 Compose 的 Worker 等待 API `/healthz` 通过后再启动，避免全新数据库首次 migration 尚未完成时提前访问业务表。
 - [x] 新增 GitHub Actions 容器发布工作流：仅构建 `linux/amd64` 容器镜像，发布 DockerHub `liteyukistudio/luna-devops`、`liteyukistudio/luna-worker`、`liteyukistudio/luna-agent`；分支发布 `nightly`，`v*` tag 发布版本 tag，稳定版本 tag 额外发布 `latest`；`luna-devops` 使用 `embed_web` 内嵌前端静态文件，不额外构建或上传 GitHub Release 二进制产物。
 - [x] 收紧外部 PR 的 GitHub Actions 边界：fork PR 只运行只读质量门禁且禁用依赖缓存写入与容器构建，容器构建仅允许同仓库分支；带 GitHub App 写权限的更新日志同步只接受同仓库 `push` 成功事件或受控手动触发，禁止 PR 间接触发特权工作流。
-- [x] 修复 Agent 观测 overview 在 Prometheus 返回 `NaN` 或无指标时序列化为 500，并让 Tempo 使用当前数据实际可检索的 `luna-agent` 服务级 TraceQL；单源空数据不再阻断其余链路与日志展示。
+- [x] 修复 Agent 观测 overview 在 Prometheus 返回 `NaN` 或无指标时序列化为 500，并让 Tempo 使用当前数据实际可检索的 `luna-agent` 服务级 TraceQL；Prometheus 缺失只影响周期指标，Tempo 缺失只影响轮次 Span 时间轴。
 - [x] 移除跨目录的根 pnpm workspace：`web/`、`docs/`、`tests/` 与 `luna-agent/` 分别维护 package、lockfile、必要的单项目 pnpm 配置和开发命令；API/Agent Docker 构建及发布质量门禁只消费对应子项目锁文件，避免本地 workspace 与镜像独立安装产生锁文件语义分裂。
 - [x] 将 AI 模型配置收敛为 API 地址、API Key 和模型名称三项：生产 Agent 自动使用平台托管配置，本地三项齐全时直连，确定性 Provider 仅保留给非生产测试；公网 HTTPS Provider 不再要求重复维护出站域名白名单。
 - [x] 为 Agent 自动路由建立可靠投递：动作绑定发起标签页并持久化，SSE 负责实时触发，断线后重放未确认动作，前端仅在 React Router 实际落到目标地址后回传 ACK。

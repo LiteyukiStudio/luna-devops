@@ -87,8 +87,12 @@ export interface AgentObservabilityTurn {
   turnIndex: number
   status: string
   userMessage: string
+  assistantMessage: string
   runId: string
   traceId: string
+  inputTokens: number
+  outputTokens: number
+  toolCallCount: number
   durationMs: number
   createdAt: string
 }
@@ -128,12 +132,15 @@ export interface AgentObservabilityTraceContext {
 export interface AgentObservabilityOverview {
   generatedAt: string
   range: '1h' | '6h' | '24h'
-  summary: Record<string, number>
-  series: Record<string, AgentObservabilitySeries[]>
-  tools: AgentObservabilitySeries[]
-  logs: AgentObservabilityLog[]
-  traces: AgentObservabilityTrace[]
-  sourceStatus: Record<AgentObservabilitySource, 'ready' | 'unavailable'>
+  summary: {
+    inputTokens: number
+    outputTokens: number
+    toolCalls: number
+    turnCount: number
+    turnSuccessRate: number
+    runDurationP95: number
+  }
+  sourceStatus: Partial<Record<AgentObservabilitySource, 'ready' | 'unavailable'>>
   observationCode: string
 }
 

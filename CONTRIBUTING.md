@@ -5,7 +5,7 @@
 ## 开工前
 
 1. 阅读 [`README.md`](README.md) 了解项目结构、技术栈与本地运行方式。
-2. 阅读 [`docs-internal/README.md`](docs-internal/README.md)，区分**长期规范**（必须遵守）与**方案/记录**（仅参考）。
+2. 阅读 [`docs-internal/README.md`](docs-internal/README.md)，区分**长期规范**、**长期边界**与**进行中方案**。
 3. 涉及的功能若有对应内部方案，先在 [`docs-internal/`](docs-internal/README.md) 中检索，避免与既定决策冲突。
 
 ## 开发约束（摘要）
@@ -37,7 +37,8 @@ pnpm --dir docs build                                       # 涉及文档站时
 | --- | --- |
 | 用户/部署管理员公开文档 | `docs/docs/{zh,en}` |
 | 长期开发规范（可观测、SOP、协议契约） | `docs-internal/`（见 [长期规范](docs-internal/README.md)） |
-| 一次性方案、复盘、审计、历史决策 | `docs-internal/`（见 [方案与记录](docs-internal/README.md)） |
+| 稳定产品/仓库边界与仍在进行的跨文件方案 | `docs-internal/`（见 [内部索引](docs-internal/README.md)） |
+| 已完成方案、复盘、审计和问题记录 | `TODO.md`、Issue、PR 与 Git 历史，不在仓库文档重复归档 |
 | AI 代理硬约束 | `AGENTS.md` |
 | 计划与状态 | `TODO.md` |
 

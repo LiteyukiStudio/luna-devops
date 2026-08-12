@@ -43,5 +43,15 @@
     "type": "file",
     "name": "diagnostics",
     "label": "Status and Troubleshooting"
+  },
+  {
+    "type": "custom-link",
+    "label": "Install Luna CLI",
+    "link": "/download/installation"
+  },
+  {
+    "type": "custom-link",
+    "label": "Use Luna CLI",
+    "link": "/download/cli"
   }
 ]

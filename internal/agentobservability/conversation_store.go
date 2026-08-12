@@ -85,10 +85,19 @@ type TurnSummary struct {
 	TurnIndex         int              `json:"turnIndex"`
 	Status            string           `json:"status"`
 	UserMessage       string           `json:"userMessage"`
+	AssistantMessage  string           `json:"assistantMessage"`
 	RunID             string           `json:"runId"`
 	TraceID           string           `json:"traceId"`
+	InputTokens       int64            `json:"inputTokens"`
+	OutputTokens      int64            `json:"outputTokens"`
+	ToolCallCount     int64            `json:"toolCallCount"`
 	DurationMs        float64          `json:"durationMs"`
 	CreatedAt         time.Time        `json:"createdAt"`
+}
+
+type TurnPeriodSummary struct {
+	Total       int64
+	SuccessRate float64
 }
 
 type TraceContext struct {
@@ -128,6 +137,31 @@ type TurnListResult struct {
 type ConversationStore struct{ db *gorm.DB }
 
 func NewConversationStore(db *gorm.DB) *ConversationStore { return &ConversationStore{db: db} }
+
+func (s *ConversationStore) SummarizeTurns(ctx context.Context, start time.Time) (TurnPeriodSummary, error) {
+	var row struct {
+		Total      int64
+		Successful int64
+		Terminal   int64
+	}
+	if err := s.db.WithContext(ctx).Raw(`
+		SELECT COUNT(*) AS total,
+			COUNT(*) FILTER (WHERE status = 'completed') AS successful,
+			COUNT(*) FILTER (WHERE status IN ('completed', 'failed', 'canceled', 'expired')) AS terminal
+		FROM ai.turns
+		WHERE created_at >= ?`, start).Scan(&row).Error; err != nil {
+		return TurnPeriodSummary{}, err
+	}
+	return summarizeTurnPeriod(row.Total, row.Successful, row.Terminal), nil
+}
+
+func summarizeTurnPeriod(total, successful, terminal int64) TurnPeriodSummary {
+	result := TurnPeriodSummary{Total: total}
+	if terminal > 0 {
+		result.SuccessRate = float64(successful) * 100 / float64(terminal)
+	}
+	return result
+}
 
 func (s *ConversationStore) FindTraceContext(ctx context.Context, traceID string) (*TraceContext, error) {
 	traceID = validTraceID(traceID)
@@ -288,13 +322,30 @@ func (s *ConversationStore) ListTurns(ctx context.Context, options ConversationL
 		Scan(&rows).Error; err != nil {
 		return TurnListResult{}, err
 	}
+	runIDs := make([]string, 0, len(rows))
+	for _, row := range rows {
+		if row.RunID != "" {
+			runIDs = append(runIDs, row.RunID)
+		}
+	}
+	assistantMessages, err := s.loadAssistantMessages(ctx, runIDs)
+	if err != nil {
+		return TurnListResult{}, err
+	}
+	statsByRun, err := s.loadRunStats(ctx, runIDs)
+	if err != nil {
+		return TurnListResult{}, err
+	}
 	items := make([]TurnSummary, 0, len(rows))
 	for _, row := range rows {
+		stats := statsByRun[row.RunID]
 		item := TurnSummary{
 			ID: row.ID, ConversationID: row.ConversationID, ConversationTitle: row.ConversationTitle,
 			User:      ConversationUser{ID: row.UserID, Name: row.UserName, Email: row.UserEmail, AvatarURL: row.UserAvatarURL},
 			TurnIndex: row.TurnIndex, Status: row.Status, UserMessage: row.UserMessage, RunID: row.RunID,
-			TraceID: traceIDFromContext(row.TraceContext), CreatedAt: row.CreatedAt,
+			AssistantMessage: assistantMessages[row.RunID], TraceID: traceIDFromContext(row.TraceContext),
+			InputTokens: stats.InputTokens, OutputTokens: stats.OutputTokens,
+			ToolCallCount: stats.ToolCallCount, CreatedAt: row.CreatedAt,
 		}
 		if row.StartedAt != nil && row.CompletedAt != nil {
 			item.DurationMs = float64(row.CompletedAt.Sub(*row.StartedAt).Microseconds()) / 1000
@@ -303,6 +354,66 @@ func (s *ConversationStore) ListTurns(ctx context.Context, options ConversationL
 	}
 	totalPages := pageCount(total, options.PageSize)
 	return TurnListResult{Items: items, Total: total, Page: options.Page, PageSize: options.PageSize, SortBy: options.SortBy, SortOrder: options.SortOrder, TotalPages: totalPages}, nil
+}
+
+type runStats struct {
+	InputTokens   int64
+	OutputTokens  int64
+	ToolCallCount int64
+}
+
+func (s *ConversationStore) loadAssistantMessages(ctx context.Context, runIDs []string) (map[string]string, error) {
+	messages := make(map[string][]string, len(runIDs))
+	if len(runIDs) == 0 {
+		return map[string]string{}, nil
+	}
+	var rows []struct {
+		RunID   string
+		Content []byte
+	}
+	if err := s.db.WithContext(ctx).Table("ai.items").Select("run_id, content").
+		Where("run_id IN ? AND type = ?", runIDs, "assistant_message").
+		Order("run_id ASC, timeline_index ASC").Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		if text := messageText(row.Content); strings.TrimSpace(text) != "" {
+			messages[row.RunID] = append(messages[row.RunID], text)
+		}
+	}
+	result := make(map[string]string, len(messages))
+	for runID, parts := range messages {
+		result[runID] = strings.Join(parts, "\n")
+	}
+	return result, nil
+}
+
+func (s *ConversationStore) loadRunStats(ctx context.Context, runIDs []string) (map[string]runStats, error) {
+	stats := make(map[string]runStats, len(runIDs))
+	if len(runIDs) == 0 {
+		return stats, nil
+	}
+	var rows []struct {
+		RunID         string
+		InputTokens   int64
+		OutputTokens  int64
+		ToolCallCount int64
+	}
+	if err := s.db.WithContext(ctx).Raw(`
+		SELECT run.id AS run_id,
+			COALESCE((SELECT SUM(CASE WHEN event.data->'usage'->>'inputTokens' ~ '^[0-9]+$' THEN (event.data->'usage'->>'inputTokens')::bigint ELSE 0 END)
+				FROM ai.run_events event WHERE event.run_id = run.id AND event.type = 'model.completed'), 0) AS input_tokens,
+			COALESCE((SELECT SUM(CASE WHEN event.data->'usage'->>'outputTokens' ~ '^[0-9]+$' THEN (event.data->'usage'->>'outputTokens')::bigint ELSE 0 END)
+				FROM ai.run_events event WHERE event.run_id = run.id AND event.type = 'model.completed'), 0) AS output_tokens,
+			(SELECT COUNT(*) FROM ai.items item WHERE item.run_id = run.id AND item.type = 'tool_call') AS tool_call_count
+		FROM ai.runs run
+		WHERE run.id IN ?`, runIDs).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		stats[row.RunID] = runStats{InputTokens: row.InputTokens, OutputTokens: row.OutputTokens, ToolCallCount: row.ToolCallCount}
+	}
+	return stats, nil
 }
 
 func (s *ConversationStore) Get(ctx context.Context, conversationID string, turnPage, turnPageSize int) (ConversationDetail, error) {

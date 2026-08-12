@@ -43,5 +43,15 @@
     "type": "file",
     "name": "diagnostics",
     "label": "状态与排障"
+  },
+  {
+    "type": "custom-link",
+    "label": "安装 Luna CLI",
+    "link": "/download/installation"
+  },
+  {
+    "type": "custom-link",
+    "label": "使用 Luna CLI",
+    "link": "/download/cli"
   }
 ]

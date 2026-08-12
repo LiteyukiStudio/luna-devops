@@ -16,8 +16,6 @@ import (
 
 const (
 	agentObservabilityEnabledKey = "ai.observability.enabled"
-	observabilityLogLimit        = 80
-	observabilityTraceLimit      = 50
 )
 
 var observabilitySourceKeys = map[agentobservability.Source]struct {
@@ -38,15 +36,20 @@ type observabilityTestInput struct {
 }
 
 type agentObservabilityOverview struct {
-	GeneratedAt     time.Time                              `json:"generatedAt"`
-	Range           string                                 `json:"range"`
-	Summary         map[string]float64                     `json:"summary"`
-	Series          map[string][]agentobservability.Series `json:"series"`
-	Tools           []agentobservability.Series            `json:"tools"`
-	Logs            []agentobservability.LogEntry          `json:"logs"`
-	Traces          []agentobservability.TraceSummary      `json:"traces"`
-	SourceStatus    map[agentobservability.Source]string   `json:"sourceStatus"`
-	ObservationCode string                                 `json:"observationCode"`
+	GeneratedAt     time.Time                            `json:"generatedAt"`
+	Range           string                               `json:"range"`
+	Summary         agentObservabilitySummary            `json:"summary"`
+	SourceStatus    map[agentobservability.Source]string `json:"sourceStatus"`
+	ObservationCode string                               `json:"observationCode"`
+}
+
+type agentObservabilitySummary struct {
+	InputTokens     float64 `json:"inputTokens"`
+	OutputTokens    float64 `json:"outputTokens"`
+	ToolCalls       float64 `json:"toolCalls"`
+	TurnCount       int64   `json:"turnCount"`
+	TurnSuccessRate float64 `json:"turnSuccessRate"`
+	RunDurationP95  float64 `json:"runDurationP95"`
 }
 
 func (h *Handlers) TestAgentObservabilitySource(ctx *gin.Context) {
@@ -102,111 +105,66 @@ func (h *Handlers) GetAgentObservabilityOverview(ctx *gin.Context) {
 	rangeText, duration := observabilityRange(ctx.Query("range"))
 	end := time.Now()
 	start := end.Add(-duration)
-	step := observabilityStep(duration)
-
-	clients := make(map[agentobservability.Source]*agentobservability.Client, len(observabilitySourceKeys))
-	for source, keys := range observabilitySourceKeys {
-		client, err := agentobservability.New(source, agentobservability.Config{
-			BaseURL: values[keys.URL], Token: h.resolveAppConfigSecret(ctx, keys.Token), TenantID: values[keys.TenantID],
-		})
-		if err != nil {
-			writeErrorCode(ctx, http.StatusServiceUnavailable, "ai.observability.not_configured", "Agent observability source is not configured")
-			return
-		}
-		clients[source] = client
+	keys := observabilitySourceKeys[agentobservability.SourcePrometheus]
+	client, err := agentobservability.New(agentobservability.SourcePrometheus, agentobservability.Config{
+		BaseURL: values[keys.URL], Token: h.resolveAppConfigSecret(ctx, keys.Token), TenantID: values[keys.TenantID],
+	})
+	if err != nil {
+		writeErrorCode(ctx, http.StatusServiceUnavailable, "ai.observability.not_configured", "Prometheus is not configured")
+		return
 	}
 
 	result := agentObservabilityOverview{
-		GeneratedAt: end, Range: rangeText, Summary: map[string]float64{},
-		Series: map[string][]agentobservability.Series{}, SourceStatus: map[agentobservability.Source]string{},
+		GeneratedAt: end, Range: rangeText,
+		SourceStatus:    map[agentobservability.Source]string{agentobservability.SourcePrometheus: "ready"},
 		ObservationCode: "ai.observability.ready",
 	}
-	var mutex sync.Mutex
+	queries := agentObservabilitySummaryQueries(rangeText)
+	queryTargets := []struct {
+		query  string
+		target *float64
+	}{
+		{queries["inputTokens"], &result.Summary.InputTokens},
+		{queries["outputTokens"], &result.Summary.OutputTokens},
+		{queries["toolCalls"], &result.Summary.ToolCalls},
+		{queries["runDurationP95"], &result.Summary.RunDurationP95},
+	}
 	var wait sync.WaitGroup
-	querySeries := func(key, query string) {
-		defer wait.Done()
-		series, err := clients[agentobservability.SourcePrometheus].QueryRange(ctx.Request.Context(), query, start, end, step)
-		mutex.Lock()
-		defer mutex.Unlock()
-		if err != nil {
-			result.SourceStatus[agentobservability.SourcePrometheus] = "unavailable"
-			result.ObservationCode = "ai.observability.partial"
-			return
-		}
-		result.Series[key] = series
-	}
-	querySummary := func(key, query string) {
-		defer wait.Done()
-		series, err := clients[agentobservability.SourcePrometheus].Query(ctx.Request.Context(), query, end)
-		mutex.Lock()
-		defer mutex.Unlock()
-		if err != nil {
-			result.SourceStatus[agentobservability.SourcePrometheus] = "unavailable"
-			result.ObservationCode = "ai.observability.partial"
-			return
-		}
-		result.Summary[key] = firstSeriesValue(series)
-	}
-
-	rateWindow := "5m"
-	seriesQueries := map[string]string{
-		"runRate":         fmt.Sprintf(`sum(rate(luna_devops_agent_runs_total[%s]))`, rateWindow),
-		"runSuccessRate":  fmt.Sprintf(`100 * sum(rate(luna_devops_agent_runs_total{outcome=~"completed|succeeded"}[%s])) / clamp_min(sum(rate(luna_devops_agent_runs_total[%s])), 0.001)`, rateWindow, rateWindow),
-		"firstTokenP95":   fmt.Sprintf(`histogram_quantile(0.95, sum(rate(luna_devops_agent_model_first_token_duration_seconds_bucket[%s])) by (le))`, rateWindow),
-		"modelLatencyP95": fmt.Sprintf(`histogram_quantile(0.95, sum(rate(luna_devops_agent_model_request_duration_seconds_bucket[%s])) by (le))`, rateWindow),
-		"tokenRate":       fmt.Sprintf(`sum(rate(luna_devops_agent_model_tokens_total[%s])) by (direction)`, rateWindow),
-		"toolFailureRate": fmt.Sprintf(`sum(rate(luna_devops_agent_tool_calls_total{outcome!="success"}[%s])) by (tool)`, rateWindow),
-	}
-	summaryQueries := map[string]string{
-		"activeRuns":        `sum(luna_devops_agent_active_runs) or vector(0)`,
-		"runSuccessRate":    fmt.Sprintf(`100 * sum(rate(luna_devops_agent_runs_total{outcome=~"completed|succeeded"}[%s])) / clamp_min(sum(rate(luna_devops_agent_runs_total[%s])), 0.001)`, rateWindow, rateWindow),
-		"modelErrorRate":    fmt.Sprintf(`(100 * sum(rate(luna_devops_agent_model_requests_total{outcome!="success"}[%s])) / clamp_min(sum(rate(luna_devops_agent_model_requests_total[%s])), 0.001)) or vector(0)`, rateWindow, rateWindow),
-		"firstTokenP95":     fmt.Sprintf(`histogram_quantile(0.95, sum(rate(luna_devops_agent_model_first_token_duration_seconds_bucket[%s])) by (le))`, rateWindow),
-		"outputTokenRate":   fmt.Sprintf(`sum(rate(luna_devops_agent_model_tokens_total{direction="output"}[%s])) or vector(0)`, rateWindow),
-		"externalErrorRate": fmt.Sprintf(`sum(rate(luna_devops_agent_external_requests_total{outcome!="success"}[%s])) or vector(0)`, rateWindow),
-	}
-	for key, query := range seriesQueries {
+	var mutex sync.Mutex
+	for _, item := range queryTargets {
 		wait.Add(1)
-		go querySeries(key, query)
+		go func() {
+			defer wait.Done()
+			series, queryErr := client.Query(ctx.Request.Context(), item.query, end)
+			mutex.Lock()
+			defer mutex.Unlock()
+			if queryErr != nil {
+				result.SourceStatus[agentobservability.SourcePrometheus] = "unavailable"
+				result.ObservationCode = "ai.observability.partial"
+				return
+			}
+			*item.target = firstSeriesValue(series)
+		}()
 	}
-	for key, query := range summaryQueries {
-		wait.Add(1)
-		go querySummary(key, query)
-	}
-	wait.Add(2)
-	go func() {
-		defer wait.Done()
-		logs, err := clients[agentobservability.SourceLoki].QueryLogs(ctx.Request.Context(), `{service_name="luna-agent"} | event_name=~`+"`"+`agent\.(run|model|tool)\.failed|gen_ai\.content\.error`+"`", start, end, observabilityLogLimit)
-		mutex.Lock()
-		defer mutex.Unlock()
-		if err != nil {
-			result.SourceStatus[agentobservability.SourceLoki] = "unavailable"
-			result.ObservationCode = "ai.observability.partial"
-			return
-		}
-		result.Logs = logs
-		result.SourceStatus[agentobservability.SourceLoki] = "ready"
-	}()
-	go func() {
-		defer wait.Done()
-		traces, err := clients[agentobservability.SourceTempo].SearchTraces(ctx.Request.Context(), agentobservability.AgentTraceQuery, start, end, observabilityTraceLimit)
-		mutex.Lock()
-		defer mutex.Unlock()
-		if err != nil {
-			result.SourceStatus[agentobservability.SourceTempo] = "unavailable"
-			result.ObservationCode = "ai.observability.partial"
-			return
-		}
-		result.Traces = traces
-		result.SourceStatus[agentobservability.SourceTempo] = "ready"
-	}()
 	wait.Wait()
-	if _, exists := result.SourceStatus[agentobservability.SourcePrometheus]; !exists {
-		result.SourceStatus[agentobservability.SourcePrometheus] = "ready"
+	turnSummary, err := agentobservability.NewConversationStore(h.dbFor(ctx)).SummarizeTurns(ctx.Request.Context(), start)
+	if err != nil {
+		writeErrorCode(ctx, http.StatusInternalServerError, "ai.observability.turns_failed", "Agent turns are unavailable")
+		return
 	}
-	result.Tools = result.Series["toolFailureRate"]
+	result.Summary.TurnCount = turnSummary.Total
+	result.Summary.TurnSuccessRate = turnSummary.SuccessRate
 	ctx.Header("Cache-Control", "no-store")
 	ctx.JSON(http.StatusOK, result)
+}
+
+func agentObservabilitySummaryQueries(rangeText string) map[string]string {
+	return map[string]string{
+		"inputTokens":    fmt.Sprintf(`sum(increase(luna_devops_agent_model_tokens_total{direction="input"}[%s])) or vector(0)`, rangeText),
+		"outputTokens":   fmt.Sprintf(`sum(increase(luna_devops_agent_model_tokens_total{direction="output"}[%s])) or vector(0)`, rangeText),
+		"toolCalls":      fmt.Sprintf(`sum(increase(luna_devops_agent_tool_calls_total[%s])) or vector(0)`, rangeText),
+		"runDurationP95": fmt.Sprintf(`histogram_quantile(0.95, sum(increase(luna_devops_agent_run_duration_seconds_bucket[%s])) by (le)) or vector(0)`, rangeText),
+	}
 }
 
 func (h *Handlers) GetAgentObservabilityTrace(ctx *gin.Context) {
@@ -349,16 +307,6 @@ func observabilityRange(value string) (string, time.Duration) {
 	default:
 		return "1h", time.Hour
 	}
-}
-
-func observabilityStep(duration time.Duration) time.Duration {
-	if duration >= 24*time.Hour {
-		return 5 * time.Minute
-	}
-	if duration >= 6*time.Hour {
-		return time.Minute
-	}
-	return 15 * time.Second
 }
 
 func firstSeriesValue(series []agentobservability.Series) float64 {

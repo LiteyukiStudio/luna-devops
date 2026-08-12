@@ -32,6 +32,11 @@ pnpm dev
 因此本地 Provider、模型和测试密钥可以保存在该 Git 忽略文件中，不需要写入命令行
 或提交到仓库。
 
+与宿主机 API 联调时，先将 `.env.example` 复制为 `.env.local`，设置
+`DATABASE_URL=postgres://devops:devops@localhost:5432/devops?sslmode=disable`、
+`LUNA_API_BASE_URL=http://localhost:8080` 和 `AUTH_MODE=bff-hmac`，并确保
+`AI_INTERNAL_SECRET` 与根目录 `.env` 一致。本地 Agent 不通过 Compose 启动。
+
 开发环境未填写模型配置时使用内存 Repository、确定性测试 Provider 和显式开发身份：
 
 ```bash

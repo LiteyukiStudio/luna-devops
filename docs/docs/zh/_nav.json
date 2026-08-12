@@ -7,12 +7,7 @@
   {
     "text": "使用",
     "link": "/use/workflow",
-    "activeMatch": "/use/"
-  },
-  {
-    "text": "CLI",
-    "link": "/download/installation",
-    "activeMatch": "/download/"
+    "activeMatch": "^/(use|download)/"
   },
   {
     "text": "参考",

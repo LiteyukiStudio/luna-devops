@@ -8,10 +8,10 @@ hero:
   tagline: 轻松几步部署自己的项目，为小型团队和企业提供一套清晰的 DevOps 方案。
   actions:
     - theme: brand
-      text: 快速开始
+      text: 快速部署
       link: /start/install/kubernetes
     - theme: alt
-      text: 部署项目
+      text: 使用项目
       link: /start/first-project
   image:
     src: /brand/mascot-luna-catgirl-alpha.webp

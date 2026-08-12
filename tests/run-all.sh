@@ -25,7 +25,7 @@ pnpm --dir web build
 pnpm --dir web lint
 
 if ! curl -fsS "$API_HEALTH_URL" >/dev/null 2>&1; then
-  docker compose -f docker-compose-dev.yaml up -d postgres redis
+  docker compose -f docker-compose-dev-db.yaml up -d
   APP_ENV=development \
     DATABASE_URL="${DATABASE_URL:-postgres://devops:devops@localhost:5432/devops?sslmode=disable}" \
     REDIS_ADDR="${REDIS_ADDR:-redis://localhost:6379/0}" \

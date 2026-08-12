@@ -6765,7 +6765,7 @@ paths:
     get:
       operationId: getAgentObservabilityOverview
       tags: [AI Assistant]
-      summary: Return the fixed-query Agent metrics, failure logs, and Run traces used by the operations view
+      summary: Return selected-period Agent token, tool, turn, success, and latency totals used by the operations overview
       security: [{ SessionCookie: [] }]
       parameters:
         - { name: range, in: query, schema: { type: string, enum: [1h, 6h, 24h], default: 1h } }
@@ -6779,7 +6779,7 @@ paths:
     get:
       operationId: getAgentObservabilityTrace
       tags: [AI Assistant]
-      summary: Get a normalized Agent trace waterfall from Tempo
+      summary: Get a normalized Agent turn Span timeline from Tempo
       x-luna-cli:
         classification: internal-observability
         hidden: true
@@ -6801,7 +6801,11 @@ paths:
       operationId: listAgentObservabilityConversations
       tags: [AI Assistant]
       summary: List Agent conversations across all users for platform-admin observability
-      x-luna-cli: { classification: internal-observability, hidden: true, agentAllowed: false }
+      x-luna-cli:
+        classification: internal-observability
+        hidden: true
+        agentAllowed: false
+        exclusionReason: Legacy administrator conversation observability query; the current operations UI uses paginated turn queries instead of exposing this as a business CLI command.
       security: [{ SessionCookie: [] }]
       parameters:
         - { name: range, in: query, schema: { type: string, enum: [1h, 6h, 24h], default: 1h } }
@@ -6820,7 +6824,11 @@ paths:
       operationId: getAgentObservabilityConversation
       tags: [AI Assistant]
       summary: Get one cross-user Agent conversation with messages, turns, and linked traces
-      x-luna-cli: { classification: internal-observability, hidden: true, agentAllowed: false }
+      x-luna-cli:
+        classification: internal-observability
+        hidden: true
+        agentAllowed: false
+        exclusionReason: Legacy administrator conversation detail query; it is not a public business operation and Agent self-inspection is forbidden.
       security: [{ SessionCookie: [] }]
       parameters:
         - { name: conversationId, in: path, required: true, schema: { type: string } }
@@ -6836,7 +6844,11 @@ paths:
       operationId: listAgentObservabilityTurns
       tags: [AI Assistant]
       summary: List Agent turns across all users for platform-admin observability
-      x-luna-cli: { classification: internal-observability, hidden: true, agentAllowed: false }
+      x-luna-cli:
+        classification: internal-observability
+        hidden: true
+        agentAllowed: false
+        exclusionReason: The administrator operations UI consumes this diagnostic turn list; it is intentionally excluded from the public business CLI catalog.
       security: [{ SessionCookie: [] }]
       parameters:
         - { name: range, in: query, schema: { type: string, enum: [1h, 6h, 24h], default: 1h } }
@@ -7220,7 +7232,7 @@ components:
         loops: { type: array, items: { $ref: "#/components/schemas/AgentObservabilityConversationLoop" } }
     AgentObservabilityTurn:
       type: object
-      required: [id, conversationId, conversationTitle, user, turnIndex, status, userMessage, runId, traceId, durationMs, createdAt]
+      required: [id, conversationId, conversationTitle, user, turnIndex, status, userMessage, assistantMessage, runId, traceId, inputTokens, outputTokens, toolCallCount, durationMs, createdAt]
       properties:
         id: { type: string }
         conversationId: { type: string }
@@ -7229,8 +7241,12 @@ components:
         turnIndex: { type: integer }
         status: { type: string }
         userMessage: { type: string }
+        assistantMessage: { type: string }
         runId: { type: string }
         traceId: { type: string }
+        inputTokens: { type: integer, format: int64, minimum: 0 }
+        outputTokens: { type: integer, format: int64, minimum: 0 }
+        toolCallCount: { type: integer, format: int64, minimum: 0 }
         durationMs: { type: number, format: double }
         createdAt: { type: string, format: date-time }
     AgentObservabilityConversationLoop:
@@ -7302,15 +7318,20 @@ components:
         totalPages: { type: integer }
     AgentObservabilityOverview:
       type: object
-      required: [generatedAt, range, summary, series, tools, logs, traces, sourceStatus, observationCode]
+      required: [generatedAt, range, summary, sourceStatus, observationCode]
       properties:
         generatedAt: { type: string, format: date-time }
         range: { type: string, enum: [1h, 6h, 24h] }
-        summary: { type: object, additionalProperties: { type: number } }
-        series: { type: object, additionalProperties: { type: array, items: { $ref: "#/components/schemas/AgentObservabilitySeries" } } }
-        tools: { type: array, items: { $ref: "#/components/schemas/AgentObservabilitySeries" } }
-        logs: { type: array, items: { $ref: "#/components/schemas/AgentObservabilityLog" } }
-        traces: { type: array, items: { $ref: "#/components/schemas/AgentObservabilityTrace" } }
+        summary:
+          type: object
+          required: [inputTokens, outputTokens, toolCalls, turnCount, turnSuccessRate, runDurationP95]
+          properties:
+            inputTokens: { type: number, minimum: 0, description: Input tokens consumed during the selected period. }
+            outputTokens: { type: number, minimum: 0, description: Output tokens generated during the selected period. }
+            toolCalls: { type: number, minimum: 0, description: Tool calls executed during the selected period. }
+            turnCount: { type: integer, format: int64, minimum: 0, description: Conversation turns created during the selected period. }
+            turnSuccessRate: { type: number, minimum: 0, maximum: 100, description: Completed turns divided by terminal turns during the selected period. }
+            runDurationP95: { type: number, minimum: 0, description: P95 Agent Run duration in seconds during the selected period. }
         sourceStatus: { type: object, additionalProperties: { type: string, enum: [ready, unavailable] } }
         observationCode: { type: string }
     ErrorResponse:

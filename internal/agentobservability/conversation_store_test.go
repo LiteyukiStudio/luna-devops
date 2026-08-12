@@ -72,6 +72,17 @@ func TestBuildConversationLoops(t *testing.T) {
 	}
 }
 
+func TestSummarizeTurnPeriodUsesOnlyTerminalTurnsForSuccessRate(t *testing.T) {
+	summary := summarizeTurnPeriod(8, 3, 4)
+	if summary.Total != 8 || summary.SuccessRate != 75 {
+		t.Fatalf("unexpected summary: %#v", summary)
+	}
+	empty := summarizeTurnPeriod(2, 0, 0)
+	if empty.SuccessRate != 0 {
+		t.Fatalf("non-terminal turns must not produce a success rate: %#v", empty)
+	}
+}
+
 func TestToolCallFromContentSanitizesSensitiveValues(t *testing.T) {
 	raw := []byte(`{"toolCallId":"tool-1","operationId":"get_build","status":"succeeded","arguments":{"projectId":"project-1","token":"hidden","nested":{"password":"hidden","ok":true}},"result":{"requestId":"req-1","secret":"hidden"},"traceId":"ABCDEFABCDEFABCDEFABCDEFABCDEFAB"}`)
 	call := toolCallFromContent("item-1", "completed", raw)

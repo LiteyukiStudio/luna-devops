@@ -1,8 +1,37 @@
 import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { DataList } from './data-list'
 
 describe('data list layout', () => {
+  it('opens an actionable row by pointer or keyboard without stealing nested actions', () => {
+    const onRowClick = vi.fn()
+    const onNestedClick = vi.fn()
+    render(
+      <DataList
+        columns={[
+          { key: 'name', header: 'Name', render: item => item.name },
+          { key: 'actions', header: 'Actions', render: () => <button type="button" onClick={onNestedClick}>Inspect</button> },
+        ]}
+        emptyTitle="Empty"
+        items={[{ id: 'one', name: 'One' }]}
+        rowActionLabel={() => 'Open One'}
+        rowKey={item => item.id}
+        onRowClick={onRowClick}
+      />,
+    )
+
+    const row = screen.getByLabelText('Open One')
+    fireEvent.click(row)
+    expect(onRowClick).toHaveBeenCalledOnce()
+    fireEvent.keyDown(row, { key: 'Enter' })
+    expect(onRowClick).toHaveBeenCalledTimes(2)
+    const nestedButton = screen.getByRole('button', { name: 'Inspect' })
+    fireEvent.click(nestedButton)
+    fireEvent.keyDown(nestedButton, { key: 'Enter' })
+    expect(onNestedClick).toHaveBeenCalledOnce()
+    expect(onRowClick).toHaveBeenCalledTimes(2)
+  })
+
   it('keeps intrinsic column width so a narrow container can scroll horizontally', () => {
     render(
       <DataList

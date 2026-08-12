@@ -1,24 +1,21 @@
 # 代码健康检查 SOP
 
-本文档用于定期检查 AI 长期协作开发后的代码健康度，避免大量最小补丁逐渐堆积成不可维护结构。执行目标不是频繁大重构，而是及时识别需要收口、抽象、拆分或重新设计的区域。
+本文定义 Luna DevOps 的长期代码健康检查方式。检查记录、已完成修复和当前热点统一进入
+`TODO.md` 或版本历史，不在本文件累积日期流水。
 
-本项目的检查重点要贴合当前交付主线：API/worker 模块化单体、BuildKit 构建 Job、Kubernetes 部署、网关证书、账单、应用市场、Rspress 文档站和中英 i18n。检查结论必须能落到具体文件、业务域和验证命令，不做泛泛的“代码质量建议”。
+## 1. 触发时机
 
-## 1. 适用范围
-
-- AI 连续修改超过 1 周或累计改动超过 20 个文件后。
-- 某个页面、handler、worker 或 provider 被连续修复 3 次以上后。
-- 上线前、版本冻结前、重要验收场景完成后。
-- 出现同类 bug 反复复发、状态语义混乱、权限边界不清或 UI 组件风格分裂时。
-- 涉及认证、Secret、数据库迁移、计费、构建网络策略、证书申请、Kubernetes 资源删除或生产内嵌前端缓存策略时。
+- AI 连续修改超过一周，或累计改动超过 20 个文件。
+- 同一页面、Handler、Worker 或 Provider 连续修复三次以上。
+- 上线、版本冻结或重要端到端验收前。
+- 同类缺陷复发，或出现状态、权限、资源归属和 UI 契约分裂。
+- 涉及认证、Secret、数据库迁移、计费、构建网络、证书、资源删除或生产运行时。
 
 ## 2. 固定节奏
 
 ### 2.1 每周轻量检查
 
-每周执行一次，目标是快速发现补丁堆积点。
-
-必做命令：
+按改动范围选择并执行：
 
 ```bash
 git status --short
@@ -29,642 +26,165 @@ pnpm --dir web build
 pnpm --dir docs build
 ```
 
-检查项：
+检查：
 
-- 最近一周改动最多的 5 个文件。
-- 最近一周重复出现的 bug 类型。
-- TODO 中是否出现相同模块的连续修复项。
-- 是否新增硬编码 UI 文案、绕过 i18n、绕过 DataList 或状态 Badge。
-- 前端 lint/build 是否出现新的 warning；重点检查同步 effect 回填派生状态、受控/非受控状态混用、订阅回调写入已切换资源等问题。可保留的刻意告警必须有最小范围说明，不允许全局关闭规则。
-- 是否有本地运行产物、日志、构建目录进入 `git status`。
-- 代码改动是否同步更新文档站；用户流程、配置项、部署链路变更必须能在 `docs/` 中找到入口。
-- 是否出现新的 `.env` 依赖、明文 Secret、Token 回显或后端原始错误直出。
-- 外部 fork PR 是否仅获得只读权限并禁用依赖/容器缓存写入、镜像构建发布和后续特权工作流；带写权限或 Secret 的 `workflow_run` 必须同时校验上游事件为同仓库可信 `push`，不能由 PR 成功事件触发。
-- 新增 HTTP、数据库、Redis、异步任务、外部 Provider、模型或工具调用是否复用统一 OTel 插桩入口，并继续传递现有 Context。
-- 新增关键状态转换是否有稳定 `event.name` 的结构化日志，且能通过 `trace_id`/`span_id` 与请求、任务或 Agent Run 关联。
-- 新增 Metric 是否只使用低基数标签；禁止把用户、项目、资源、请求或 Trace ID 放入 label。
+- 最近改动最多的文件和重复出现的缺陷类型。
+- 是否新增硬编码 UI 文案、绕过 i18n、DataList 或语义状态组件。
+- 是否新增同步 Effect 回填派生状态，或存在旧订阅写入新资源的问题。
+- 用户行为变更是否同步中英文公开文档，计划与状态是否同步 `TODO.md`。
+- 是否出现本地构建产物、环境文件、日志、明文 Secret 或后端原始异常直出。
+- 新增业务边界是否延续 Context，并具备 Trace、关联日志和低基数 Metric。
+- fork PR 和后续特权工作流是否保持只读、同仓库可信事件与 Secret 隔离。
 
-产出：
-
-- 在本文件的“健康检查记录”追加一条简短记录。
-- 对明确需要后续处理的问题同步写入 `TODO.md`。
+只把未解决问题写入 `TODO.md`；已完成的检查结论由提交历史保存。
 
 ### 2.2 双周结构检查
-
-每两周执行一次，目标是识别应该重构的模块边界。
 
 辅助命令：
 
 ```bash
 git log --since="2 weeks ago" --name-only --pretty=format: | sort | uniq -c | sort -nr | head -30
-rg --files | rg '^(cmd|internal|web/src|docs/docs|migrations)/' | rg -v '(^docs/pnpm-lock.yaml|\\.(webp|png|jpg|jpeg|gif|svg)$)' | sed 's#^#"#; s#$#"#' | xargs wc -l | sort -nr | head -30
+rg --files | rg '^(cmd|internal|web/src|docs/docs|migrations)/' | rg -v '(^docs/pnpm-lock.yaml|\.(webp|png|jpg|jpeg|gif|svg)$)' | sed 's#^#"#; s#$#"#' | xargs wc -l | sort -nr | head -30
 rg -n "TODO|FIXME|临时|兼容|fallback|special case|module|Builder|builder" internal web/src docs/docs migrations
 ```
 
-检查项：
+检查：
 
-- 是否存在超过 800 行且仍在频繁变更的前端页面组件。
-- 是否存在超过 600 行且同时处理参数解析、权限、业务逻辑、数据库和外部平台调用的 handler。
-- 是否存在 worker/provider/handler 重复实现同一业务规则。
-- 是否存在同一概念多套命名，例如 `module`、`deploymentTarget`、`config`、`release`、`deployment` 混用。
-- 是否存在列表、弹窗、菜单、表单、状态展示没有复用统一组件。
-- 是否存在前端编排外部平台 API 或后端 handler 直接散落外部平台细节。
-- 是否存在权限只靠前端隐藏按钮，后端没有最终校验。
-- 是否存在迁移 SQL、GORM 模型、API DTO 和前端类型不同步。
-- 是否存在 API/worker 对同一构建、部署、计费、清理规则的不同实现。
-- 是否存在中文文档已更新但英文文档缺失，或中英文导航结构不一致。
+- 超过 800 行且持续变更的前端页面，或超过 600 行且混合多层职责的 Handler。
+- 同一业务规则是否在前端、Handler、Worker 或 Provider 重复实现。
+- 产品概念、数据库模型、OpenAPI、前端类型和异步载荷是否仍使用同一语义。
+- 外部平台能力是否由后端适配，权限是否由后端最终判断。
+- 列表、表单、弹窗、状态和布局是否复用现有公共契约。
+- 迁移 SQL、GORM 模型、API DTO 与前端类型是否同步。
+- 中文与英文文档的导航、步骤和重要限制是否一致。
 
-产出：
-
-- 给每个高风险模块标注：`保持观察`、`局部重构`、`重新设计`。
-- 局部重构任务必须能在 1 到 2 天内完成；超过该范围要先写设计方案。
+每个发现只允许标记为 `保持观察`、`局部重构` 或 `重新设计`。需要后续处理时写入
+`TODO.md`；局部重构应能在一至两天内独立验收，更大范围先写方案。
 
 ### 2.3 每月设计复盘
 
-每月执行一次，目标是确认产品模型和代码模型是否仍然一致。
+按项目空间与权限、应用与部署、构建与 Worker、集群资源、网关证书、计费、应用市场、
+数据库迁移、文档站和前端公共契约复盘以下问题：
 
-按业务域复盘：
+- 用户侧概念是否清晰，旧模型是否仍影响新流程。
+- API 是否表达业务意图，而不是暴露底层平台操作。
+- 实时状态是否来自权威上游，数据库是否只保存期望配置、引用和历史。
+- 前端是否是业务组件组合，而不是页面内堆积查询、状态和副作用。
+- 安全、可观测和文档边界是否与真实调用链一致。
 
-- 项目空间与权限。
-- 应用与部署配置。
-- 构建、Worker、BuildKit Job 和构建网络策略。
-- Release、运行配置、重启和重新部署。
-- 集群资源、归属、删除和事件。
-- 网关、DNS、证书。
-- 账单、余额、充值补偿和资源用量归属。
-- 应用市场模板、镜像、官网和官方仓库元数据。
-- 数据库迁移、启动自动迁移和历史数据修复。
-- Rspress 文档站、历史记录和中英文内容同步。
-- 前端布局、DataList、ContentTabs、ActionMenu。
-
-判断标准：
-
-- 用户侧概念是否仍然清晰。
-- 数据模型是否还有旧概念残留。
-- API 是否以业务意图为边界，而不是暴露底层平台能力。
-- 前端是否以业务组件组合，而不是页面内堆状态和副作用。
-
-产出：
-
-- 最多选择 1 到 2 个最痛的区域进入重构。
-- 其余问题进入 TODO，不在同一轮扩大范围。
+每轮最多选择一至两个最痛区域进入重构，其余进入 `TODO.md`。
 
 ## 3. 重构触发条件
 
-满足任一条件时，必须暂停继续打补丁，先评估重构：
+满足任一条件时停止继续堆补丁，先评估重构：
 
-- 同一文件连续 3 次修复后仍出现同类问题。
-- 同一业务规则在前端、handler、worker 或 provider 中重复实现。
-- 一个页面组件同时承担数据查询、表单状态、权限判断、业务编排、复杂 UI 和多弹窗控制。
-- 一个 handler 同时承担参数解析、权限、数据库查询、外部平台调用和任务投递。
-- 为修一个小问题需要跨越 5 个以上无关模块。
-- 新需求需要绕过现有抽象才能实现。
-- 状态字段或资源归属出现语义不一致。
-- 代码里出现“临时兼容”“旧模型 fallback”“特殊 case”并持续保留。
-- 数据库迁移必须依赖人工补跑才可恢复核心链路。
-- 生产部署、构建或证书问题需要通过手动 patch 集群资源才能长期可用。
-- 账单、资源删除、构建网络策略等安全边界只能靠 UI 约束，后端或 worker 没有最终保护。
+- 同一文件连续三次修复后仍出现同类问题。
+- 同一规则在多个层重复实现，或新增需求必须绕过现有抽象。
+- 页面同时承担查询、表单、权限、业务编排、复杂 UI 和多弹窗控制。
+- Handler 同时承担参数、权限、数据库、外部平台和任务投递。
+- 修复一个局部问题需要跨越五个以上无关模块。
+- 状态、资源归属或权限语义不一致。
+- “临时兼容”“旧模型 fallback”或特殊 case 持续保留。
+- 核心迁移依赖人工补跑，或生产问题需要长期手工 patch 集群资源。
+- 账单、资源删除、构建网络等安全边界只依赖 UI。
 
-## 3.1 实时状态单一事实源审计
+## 4. 专项审计
 
-涉及 Kubernetes、Git Provider、镜像站、网关、证书、Webhook 或其他外部系统时，先把字段分成四类：
+### 4.1 实时状态单一事实源
 
-- 期望配置：用户希望平台创建或维持什么，可以落库。
-- 资源引用：集群、命名空间、资源名称和外部对象 ID，可以落库。
-- 工作流与不可变历史：构建、发布、投递、结算的过程和结果，可以落库。
-- 当前观察：此刻是否健康、是否存在、当前副本数、实时指标和外部对象状态，只能从权威上游读取。
+先把字段分为期望配置、资源引用、工作流历史和当前观察。前三类可以落库；健康度、存在性、
+副本数、实时指标等当前观察必须在请求时读取 Kubernetes 或外部平台。
 
-检查步骤：
+检查：
 
-1. 搜索模型中的 `status`、`health`、`ready`、`count`、`observedAt`、`lastCheckedAt` 等字段，确认当前观察字段使用 `gorm:"-"` 或仅存在于响应 DTO。
-2. 搜索 `Update`、`Updates`、`Save` 和定时同步任务，禁止把外部平台当前状态回写业务表；工作流状态更新必须能说明对应的审计或历史语义。
-3. 搜索 Redis、进程内 map、LRU、TTL、TanStack Query `staleTime` 和浏览器存储，禁止用缓存冒充当前状态。
-4. 当前状态接口在每次请求时读取权威上游，并设置 `Cache-Control: no-store`；前端统一复用实时观察查询策略。
-5. 上游不可达时返回统一 `unavailable` 和稳定 `observationCode`，不回退到数据库旧值，也不把上一次成功结果继续显示为当前事实。
-6. 数据库迁移测试必须断言已移除的实时字段不会在全新数据库中重新出现。
-7. 列表、看板、概览、账单和 AI 工具必须使用同一实时观察服务，禁止各自用不同口径统计。
+1. 模型中的 `status`、`health`、`ready`、`count`、`observedAt` 等字段是否只用于响应 DTO。
+2. Repository、同步任务和 Redis 是否把上游当前状态回写或缓存为事实。
+3. 当前状态接口是否设置 `Cache-Control: no-store`，前端是否复用实时观察查询策略。
+4. 上游不可达时是否返回 `unavailable` 和稳定 `observationCode`，而不是旧值。
+5. 列表、概览、账单和 AI 工具是否使用同一观察服务和统计口径。
 
-以下情况不属于违规缓存：静态元数据、OpenAPI/Scope 定义、不可变账单窗口、构建日志历史，以及明确标注时间范围的 Prometheus 查询结果。
+静态元数据、不可变账单窗口、构建日志历史和明确时间范围的 Prometheus 查询不属于当前状态缓存。
 
-## 3.2 可观测覆盖审计
+### 4.2 可观测覆盖
 
-新增功能和双周检查按 `docs-internal/14-可观测插桩与验收标准.md` 执行以下审计：
+按 [`14-可观测插桩与验收标准.md`](14-可观测插桩与验收标准.md) 审计：
 
-1. 从用户入口沿调用图列出 HTTP/SSE/WebSocket、Repository、PostgreSQL、Redis、Asynq、外部 Provider、模型和 Agent Tool 边界；每个边界都必须有自动或手工 Span。
-2. 检查业务代码是否在已有调用链中使用 `context.Background()`、裸 `http.Client`、未插桩 GORM/Redis Client 或绕过 Asynq 中间件；发现即视为父链路截断。
-3. 跨服务 HTTP 使用 W3C Header；Asynq 在任务 Header 注入并由 Consumer 提取；EventSource/WebSocket 的私有桥接参数进入 API 后必须立即移除，不得进入业务日志。
-4. 成功、失败、拒绝、取消、等待输入和重试等关键终态必须有稳定日志事件；失败 Span 使用稳定 `error.code`，日志不重复输出原始异常正文。
-5. 抽查 Trace/Logs/Metric 数据，确认不存在 Authorization、Cookie、Secret、密码、URL 查询参数、请求正文、模型 Prompt、工具敏感参数和进程命令行参数。
-6. 至少保留以下自动化门禁：数据库 Context 契约、W3C Producer/Consumer 传播、HTTP URL 脱敏、错误 Span 状态、日志关联字段和低基数 Metric 属性。
-7. 影响三个以上业务域或新增跨服务通道时，使用临时外部 OTel 栈验收数据库接口、失败接口和跨服务/异步链路；只提交代码与接入文档，不提交临时 Collector、Tempo、Loki、Prometheus 或 Grafana 部署文件。
+1. 沿真实入口列出 HTTP/SSE/WebSocket、Repository、PostgreSQL、Redis、Asynq、外部
+   Provider、模型和 Agent Tool 边界。
+2. 检查业务链路中的 `context.Background()`、裸 Client、未插桩连接和绕过中间件的任务。
+3. 验证 W3C 与异步 Context 传播、失败 Span 状态和稳定终态日志。
+4. 抽查遥测中没有 Token、Cookie、Secret、Prompt、请求正文和高基数字段。
+5. 保留数据库 Context、Producer/Consumer 传播、URL 脱敏、错误状态和低基数 Metric 测试。
 
-审计未通过时，不得以“入口已有 Trace”作为完成依据；必须补齐黑盒内部边界后再交付。
+入口有 Trace 但内部仍是黑盒时，审计不得通过。
 
-## 4. 重构分级
+### 4.3 认证与发布安全
 
-### 4.1 保持观察
+固定基线提交、目标环境和审计范围，覆盖认证入口、会话与 Token、OIDC、MFA/Step-up、权限、
+Secret、审计、长连接、导出、迁移、OpenAPI、前端类型、依赖、CI、镜像和 Helm。
 
-适用于问题明确但影响较小的区域。
+| 级别 | 判定 | 退出条件 |
+| --- | --- | --- |
+| P0 | 可绕过认证/授权/MFA、泄露 Secret、跨租户读写、重放凭据、破坏数据或接管发布 | 立即阻断合并和发布；修复并由独立复审通过 |
+| P1 | 在特定前提下导致提权、撤权失效、审计失真、并发不一致或安全默认失效 | 候选版本前修复；暂缓必须有缓解、责任人、期限和风险接受 |
+| P2 | 防御纵深、可观测、文档或契约偏差 | 进入 `TODO.md`，不得隐去后宣称无安全问题 |
 
-动作：
+修复必须先有可复现证据，覆盖失败、跨用户/项目、撤销、重放和并发场景；权限和安全配置读取
+失败时 fail closed。P0/P1 由不同于修复者的人或 Agent 独立复审。
 
-- 记录到健康检查记录。
-- 不立即改动。
-- 下一次检查继续观察是否复发。
+PostgreSQL 并发和迁移测试必须使用可销毁数据库，覆盖历史 schema 升级、不变式、回滚或明确
+不可逆，以及真正的事务/行锁保护；进程内 mutex 不能作为多副本安全证据。
 
-### 4.2 局部重构
+## 5. 重构分级
 
-适用于边界清楚、可在短时间内完成的改动。
+### 保持观察
 
-常见动作：
+问题明确但影响较小，只进入 `TODO.md` 并在下次复查，不立即改动。
 
-- 拆出公共组件。
-- 抽出 hook 或 helper。
-- 把 handler 中的业务逻辑下沉到 service。
-- 把重复状态映射收敛到统一函数。
-- 删除不再需要的旧模型 fallback。
+### 局部重构
 
-完成标准：
+边界清楚、可在一至两天内完成。优先抽取组件、Hook、Helper、Service 或统一状态映射；必须有
+针对性测试，并同步文档和 `TODO.md`。
 
-- 行为不变或有明确用户可见改进。
-- 有针对性测试或浏览器验收。
-- 文档和 TODO 同步更新。
+### 重新设计
 
-### 4.3 重新设计
+产品模型或职责边界本身错误。先写设计说明，明确数据兼容、迁移、验收和回滚，再拆为多个
+独立任务，不允许一次性无边界重写。
 
-适用于产品模型或边界本身已经不对的区域。
+## 6. 执行与记录
 
-触发例子：
+执行顺序：
 
-- 旧模型继续影响新模型，比如“模块”残留影响“应用 / 部署配置”。
-- 权限模型无法表达当前操作边界。
-- 资源归属、运行状态、发布状态之间职责混乱。
-- 一个页面已经无法通过局部拆分恢复清晰结构。
+1. 固定当前变更范围和基线。
+2. 识别热点、大文件和重复业务规则。
+3. 执行与风险相称的测试和构建。
+4. 检查 i18n、权限、Secret、实时状态、可观测、迁移和文档。
+5. 对发现分级，只实施本轮明确范围内的修复。
+6. 未解决事项写入 `TODO.md`；完成记录依赖测试、提交和 PR 历史，不回填到本规范。
 
-动作：
-
-- 先写设计说明。
-- 明确旧数据是否兼容。
-- 明确迁移、验收和回滚方式。
-- 拆成多步任务，不允许一次性无边界大改。
-
-## 5. 当前项目重点关注区域
-
-### 5.1 应用详情和部署面板
-
-风险：
-
-- `web/src/pages/applications/application-deployments-panel.tsx` 已成为前端最大热点之一。
-- 应用详情涉及构建、部署、访问入口、运行配置、日志和 Web Console，容易把查询、表单、菜单和运行态聚合堆在一个面板里。
-
-建议：
-
-- 将构建、部署、访问拆为独立 panel 文件。
-- 将部署配置表单、Release 菜单、运行状态聚合拆成独立组件或 hook。
-- 保留应用详情页作为编排层，不直接承载所有业务细节。
-- 对超过 800 行的页面面板保持拆分压力；如果新增功能只服务某个 tab，优先落到该 tab 的私有组件或 hook。
-
-### 5.2 构建与部署链路
-
-风险：
-
-- `DeploymentTarget`、`BuildRun`、`Release`、运行配置、重启、重新部署和 Kubernetes 资源之间关系复杂。
-- API、worker、Kubernetes provider 容易重复拼装资源名、namespace、labels、网络策略和运行配置。
-- 构建 Job 的网络策略、镜像源、私有 registry 和非标端口白名单会直接影响用户能否构建成功。
-
-建议：
-
-- 后端抽出部署和构建 service，统一处理 DeploymentTarget 解析、Release 创建、资源名生成、网络策略生成和运行态校验。
-- 明确“重启”和“重新部署”的语义：重启只 rollout restart；重新部署创建 Release 并重新下发资源。
-- 网络策略默认值必须有单测覆盖；允许放行的私有网段、DNS、HTTP/HTTPS 和自定义镜像站端口要由白名单配置驱动。
-
-### 5.3 集群资源归属
-
-风险：
-
-- 资源归属、删除权限、状态展示、事件查询都依赖 Kubernetes labels。
-- labels 缺失或旧资源残留时容易出现误归属或误删风险。
-
-建议：
-
-- 为资源归属建立专门测试。
-- 删除接口必须读取资源 labels 后再判断项目空间和应用归属。
-- 前端只展示当前用户有权维护的操作。
-- 对缺失 label 的历史资源只允许进入诊断/清理流程，不能自动归属到当前项目空间。
-
-### 5.4 账单与余额
-
-风险：
-
-- 计费已经从项目空间余额调整为用户账户余额，资源用量仍来自项目空间、应用、构建和运行态。
-- 创建人转移、资源删除、历史应用和迁移前数据可能造成计费归属漂移。
-
-建议：
-
-- 账单流水不可因项目空间或应用删除而删除。
-- 用量归属必须记录当时的计费用户，不能在查询时只按当前 owner 反推。
-- 充值、补偿、扣费、退款必须走同一套 ledger/service，避免 handler 直接改余额。
-
-### 5.5 应用市场
-
-风险：
-
-- 模板同时包含镜像、官网、官方仓库、默认配置和安装参数，容易出现前端展示和后端模板字段不同步。
-- Grafana 等应用可能依赖 Prometheus 等外部组件，单应用模板容易暗示“直接可用”。
-
-建议：
-
-- 模板字段新增或改名时同步检查 `internal/appstore/templates.json`、API 类型、前端卡片和文档。
-- 对存在外部依赖的模板，在模板描述和文档中明确“可安装”和“完整可观测方案”的边界。
-- 安装入口只表达单应用安装能力，不提前承诺组合市场。
-
-### 5.6 数据库迁移
-
-风险：
-
-- API 滚动更新时会执行迁移，迁移脚本、GORM 模型和历史库状态不一致会造成部分老数据行为异常。
-- 计费、软删除、唯一约束、Secret 加密字段属于迁移高风险区。
-
-建议：
-
-- 每个迁移都要说明是否可重复运行、是否修复历史数据、是否破坏兼容。
-- 涉及核心链路的迁移需要用已有数据快照或集成库验证。
-- 迁移失败时 API 应明确失败并暴露可诊断日志，不允许静默跳过。
-
-### 5.7 文档站和历史记录
-
-风险：
-
-- 项目同时维护 `docs/` Rspress 用户文档和 `docs-internal/` 设计记录，容易出现口径不一致。
-- 中英文导航、配置项表格和部署教程不一致会直接影响用户上手。
-
-建议：
-
-- 用户操作、部署、配置和故障排查优先写入 `docs/docs/{zh,en}`。
-- 工程内部设计沉淀写入 `docs-internal/`，不要混入用户文档。
-- 每次新增用户可见能力，检查中文和英文导航是否都有入口。
-
-### 5.8 DataList、ContentTabs 和操作菜单
-
-风险：
-
-- 管理台列表很多，容易每页手写列宽、滚动、菜单和状态。
-
-建议：
-
-- 列表默认使用 DataList。
-- 页签和工具区默认使用 ContentTabs。
-- 行内操作默认使用三点菜单，删除类操作使用 destructive 样式。
-- 移动端默认允许列表内部横向滑动，不撑开页面。
-
-### 5.9 运行配置
-
-风险：
-
-- ConfigMap、Secret、配置文件、运行数据卷、重启和重新部署容易被用户混淆。
-
-建议：
-
-- UI 文案持续区分“保存”“重启”“重新部署”。
-- 公共配置编辑后必须提示受影响部署配置。
-- 配置文件路径必须做冲突校验。
-
-## 6. 执行清单
-
-每次健康检查按以下顺序执行：
-
-1. 拉取当前变更范围：`git status --short`、`git diff --stat`。
-2. 找大文件和热点文件：看最近提交、diff stat 和行数排行。
-3. 执行验证命令：`go test ./...`、`pnpm --dir web lint`、`pnpm --dir web build`、`pnpm --dir docs build`。
-4. 检查硬规则：i18n、权限、Secret、列表组件、状态 Badge、后端外部平台适配。
-5. 检查重复业务规则：资源名、namespace、网络策略、状态映射、权限判断、运行配置合并、计费归属。
-6. 检查迁移和文档：migrations 是否自动执行、docs 是否同步、TODO 是否需要更新。
-7. 判断重构级别：保持观察、局部重构、重新设计。
-8. 更新记录：本文件追加健康检查记录，必要时同步 TODO。
-9. 只实施本轮明确范围内的修复，不顺手扩大。
-
-## 7. 健康检查记录模板
+记录模板：
 
 ```md
 ## YYYY-MM-DD 代码健康检查
 
-### 范围
-
-- 检查模块：
-- 检查原因：
-- 当前变更：
-
-### 验证结果
-
-- `go test ./...`：
-- `pnpm --dir web lint`：
-- `pnpm --dir web build`：
-- `pnpm --dir docs build`：
-- 其他针对性验证：
-
-### 发现
-
-| 模块 | 问题 | 风险 | 分级 | 处理 |
-| --- | --- | --- | --- | --- |
-|  |  |  | 保持观察 / 局部重构 / 重新设计 |  |
-
-### 本轮结论
-
+- 范围与原因：
+- 基线与环境：
+- 验证命令及结果：
+- 发现：模块 / 问题 / 风险 / 分级 / 处理
 - 立即处理：
 - 进入 TODO：
-- 暂不处理：
-- 文档同步：
+- 未审计范围与已接受风险：
 ```
 
-## 8. 2026-06-14 代码健康检查
-
-### 范围
-
-- 检查模块：应用部署页、部署链路、集群资源状态刷新。
-- 检查原因：AI 长时间连续修复部署配置、运行状态、DataList、重启和资源归属问题，存在补丁堆积风险。
-
-### 验证结果
-
-- `go test ./...`：通过。
-- `pnpm --dir web lint`：通过，保留既有 `react/set-state-in-effect` warning。
-- `pnpm --dir web build`：通过，保留 Vite chunk 体积提示。
-
-### 发现
-
-| 模块 | 问题 | 风险 | 分级 | 处理 |
-| --- | --- | --- | --- | --- |
-| `ApplicationConfigPage.tsx` | 页面职责过多，部署、构建、访问、运行配置和日志逻辑集中 | 后续补丁容易相互影响 | 局部重构 | 进入后续重构候选 |
-| 部署链路 | 重启、重新部署、Release 状态、Kubernetes 运行态语义复杂 | 用户和代码都容易混淆 | 保持观察 | 已补文档语义，继续观察 |
-| 集群资源状态 | 历史 Release 缺部署配置时曾退化为 `dplt` 资源名 | 误报 Kubernetes 资源丢失 | 局部重构 | 已修复 worker 防御逻辑 |
-
-### 本轮结论
-
-- 立即处理：修复后台轮询状态闪烁、部署重启入口、缺 DeploymentTarget 时误报 `dplt`。
-- 进入 TODO：后续拆分 `ApplicationConfigPage.tsx`。
-- 暂不处理：全局项目空间选择器、Bundle 拆分。
-
-## 9. 2026-06-14 代码健康修复复查
-
-### 范围
-
-- 检查模块：异步资源清理、项目空间删除、删除态写保护、部署配置端口模型、worker 热点文件。
-- 检查原因：全面检查发现项目空间删除只清理一个集群、删除中资源仍可被后端写入口操作、旧应用级服务端口字段残留、异步清理状态机测试不足。
-
-### 验证结果
-
-- `go test ./internal/worker ./internal/api ./internal/database`：通过。
-- `go test ./...`：通过。
-- `pnpm --dir web lint`：通过，保留既有 `react/set-state-in-effect` warning。
-- `pnpm --dir web build`：通过，保留 Vite chunk 体积提示。
-
-### 发现
-
-| 模块 | 问题 | 风险 | 分级 | 处理 |
-| --- | --- | --- | --- | --- |
-| 项目空间删除 | 删除项目空间时只取最早环境的运行集群清理 namespace | 多集群项目空间会残留其他集群资源 | 局部重构 | 已改为按项目环境覆盖的集群逐个清理 |
-| 删除态写保护 | 前端禁用 deleting 操作，但后端部分写入口仍可直接调用 | 清理任务与更新/重启/发布并发导致状态漂移 | 局部重构 | 已增加统一 mutate guard 并覆盖项目、环境、部署配置、访问入口、运行配置和运行时写操作 |
-| 旧模型字段 | `applications.service_port` 从产品模型退场但已有库会保留 | 旧概念残留影响后续判断 | 保持观察 | 已加入启动清理 SQL，破坏式移除旧字段 |
-| `worker.go` | 资源清理状态机继续堆入 worker 主文件 | 文件职责过多，后续难以测试 | 局部重构 | 已拆出 `internal/worker/resource_cleanup.go` 并补资源清理单测 |
-
-### 本轮结论
-
-- 立即处理：以上四项已完成。
-- 进入 TODO：继续拆分 `ApplicationConfigPage.tsx`、`deployment_handlers.go`、`web/src/api/client.ts` 和 locale 文件。
-- 暂不处理：旧异常业务数据兼容；项目未上线，必要时清库重建。
-
-## 10. 2026-06-14 热点大文件拆分复查
-
-### 范围
-
-- 检查模块：运行集群 handler、前端 API client、i18n locale、应用配置页概览面板。
-- 检查原因：SOP 热点文件仍处于高风险区，用户确认优先通过重构拆分不可维护的大文件，并允许 i18n 按 page/namespace 拆分。
-
-### 验证结果
-
-- `go test ./internal/api`：通过。
-- `go test ./...`：通过。
-- `pnpm --dir web lint`：通过，保留既有 5 个 `react/set-state-in-effect` warning。
-- `pnpm --dir web build`：通过，保留 Vite chunk 体积提示。
-
-### 发现
-
-| 模块 | 问题 | 风险 | 分级 | 处理 |
-| --- | --- | --- | --- | --- |
-| `internal/api/deployment_handlers.go` | 运行集群 CRUD、资源快照和 kubeconfig 逻辑与部署/发布逻辑混在同一文件 | 单文件职责过多，后续改部署链路容易误碰集群管理 | 局部重构 | 已拆出 `internal/api/runtime_cluster_handlers.go` |
-| `web/src/api/client.ts` | DTO 类型与请求实现混在一个 1200+ 行文件 | API 类型变更和请求逻辑变更互相干扰 | 局部重构 | 已拆出 `web/src/api/types.ts`，`client.ts` 保持 re-export 入口 |
-| i18n locale | 中英 locale 均为 1600+ 行单文件 | 页面文案维护冲突高，review 噪音大 | 局部重构 | 已按语言目录和 namespace/page 拆分，根文件只聚合 |
-| `ApplicationConfigPage.tsx` | 概览、构建、部署、访问、终端逻辑仍集中在一个页面文件 | 文件仍偏大，表单/运行态后续变更风险高 | 局部重构 | 已先拆 Overview 面板和 release 时间工具，剩余面板后续继续拆 |
-
-### 本轮结论
-
-- 立即处理：以上四类热点文件已完成第一轮拆分。
-- 进入 TODO：继续按面板拆 `ApplicationConfigPage.tsx` 的构建、部署、访问区域；继续按资源族群拆 `deployment_handlers.go` 的环境、发布和部署配置逻辑。
-- 暂不处理：为旧异常数据保留兼容层；项目未上线，异常数据优先清库重建。
-
-## 11. 2026-07-01 部署表单输入焦点复查
-
-### 范围
-
-- 检查模块：应用部署页部署配置 Dialog、动态表单行编辑器、全项目前端输入表单。
-- 检查原因：部署配置 Dialog 中服务端口输入框出现输入一个字符后失焦，需要重新聚焦才能继续输入。
-- 当前变更：修复 `ServicePortsEditor` 动态行 key，避免 key 绑定正在编辑的端口名称和端口号。
-
-### 验证结果
-
-- `pnpm --dir web lint`：通过，保留既有 11 个 React warning。
-- `pnpm --dir web build`：通过，保留 Vite chunk 体积提示。
-- 其他针对性验证：使用 `rg` 扫描 `web/src` 下 `key={...}`、动态表单行和输入表单；动态配置文件、构建变量/密钥、运行数据卷等表单行均使用稳定 `id`，未发现同类可编辑值作为动态行 key 的问题。
-
-### 发现
-
-| 模块 | 问题 | 风险 | 分级 | 处理 |
-| --- | --- | --- | --- | --- |
-| `web/src/pages/applications/application-deployment-service-ports-editor.tsx` | 服务端口动态行使用 `${name}-${port}` 作为 React key，输入时 key 随可编辑值变化 | 输入框每次变更都会 remount，导致焦点丢失和输入被打断 | 局部重构 | 已改为组件内部稳定行 id，并保留提交前的端口 normalize 兜底 |
-| 全项目前端表单 | 复扫动态表单行 key 和输入控件组合 | 同类 bug 若复发会影响 Dialog 表单连续输入 | 保持观察 | 当前未发现其他同类问题；后续新增动态行编辑器时禁止使用可编辑字段作为 key |
-
-### 本轮结论
-
-- 立即处理：修复部署配置服务端口编辑器的动态行 key。
-- 进入 TODO：无，本轮未发现需要拆分成后续任务的问题。
-- 暂不处理：非表单展示列表中使用业务字段作为 key 的场景不影响输入焦点，本轮不扩大范围。
-- 文档同步：已在本 SOP 记录本次表单焦点问题、扫描范围和处理结论。
-
-## 12. 2026-07-12 认证与发布安全复查
-
-### 范围
-
-- 检查模块：登录会话与生产初始化、TOTP/恢复码/Step-up MFA、管理员 MFA 重置、Web Console 项目/部署配置策略与持续授权、数据导出授权、发布质量门禁。
-- 检查原因：安全审查发现 remember token 重放、MFA 绑定主身份复核、TOTP 重放、失败审计落库、长连接授权持续性及契约同步仍有缺口。
-- 当前变更：完成后端安全加固、前端交互与测试、数据库迁移、OpenAPI、双语文档、TODO 和发布门禁同步。
-
-### 验证结果
-
-- `go test ./...`、`go vet ./...`：通过。
-- PostgreSQL 集成测试：`AUTH_TEST_DATABASE_URL=... go test -count=1 ./internal/api ./internal/database` 通过。
-- `pnpm --dir web test`：6 个测试文件、16 条测试通过。
-- `pnpm --dir web lint`：0 error，保留 13 个既有 React warning；`pnpm --dir web build`：通过。
-- `govulncheck ./...`：Go `1.26.5` 与 `quic-go 0.59.1` 下无可达漏洞。
-- `pnpm --dir web audit --prod`、`pnpm --dir docs audit --prod`：无已知漏洞。
-- `helm lint`、`helm template`：通过，仅保留可选 Chart icon 提示。
-- `pnpm --dir docs build` 与 OpenAPI YAML 解析：通过；前端 production preview 的 `/`、`/account`、`/settings/users`、`/projects` 和主 JS 资源 HTTP smoke 通过。
-
-### 发现
-
-| 模块 | 问题 | 风险 | 分级 | 处理 |
-| --- | --- | --- | --- | --- |
-| Remember login | token 轮换缺少 family 绝对期限、主认证时间继承和完整 session 撤销 | 被盗旧 token 或旧 session 可能在轮换/退出后继续使用，remember 恢复可能伪装为新鲜 OIDC 登录 | 立即修复 | 已增加 token family、旧 token 墓碑、`primary_authenticated_at` 和 family 级 session/assertion 撤销；每族只保留最新 session，remember 恢复继承主认证时间且迁移前 OIDC session fail closed |
-| MFA | 绑定前未复核主身份、TOTP 时间步可重复、最后管理员保护有并发竞态、管理员缺少受控重置入口 | 会话被劫持后可绑定验证器，验证码可重放，并发解绑可能让平台失去可用 MFA 管理员 | 立即修复 | 本地密码/OIDC 主认证复核、计数器防重放、事务行锁保护、带 Step-up 与最后管理员保护的审计重置入口均已实现 |
-| Step-up 安全配置 | 进程内缓存只在当前 API 副本更新，策略开启与最后管理员解绑、禁用或降级之间存在并发窗口；事务持锁后从全局连接池重读配置可能导致池饥饿 | 多副本下其他实例可能仍按旧策略免验证，或留下“策略已开启但无人可验证”的锁死状态；单连接池可能自锁 | 立即修复 | 安全判断改为从共享 PostgreSQL 读取；读取失败使用启用 MFA 和短超时的 fail-closed 值，批量配置更新先完整验证再单事务写入；策略修改与管理员 MFA 解绑/重置/账号状态变更共用 PostgreSQL 事务锁，并只使用当前事务重读策略、复核 actor/session/assertion 和管理员集合 |
-| Web Console | WebSocket 只在握手时检查，项目禁用可被部署级 true 覆盖，监视轮询会自行刷新空闲期限 | 长连接在撤权后继续存在，项目策略可绕过，空置高权限 shell 一直活到绝对期限 | 立即修复 | 项目开关改为硬上限，增加 HTTP 预检与每 3 秒持续复核；只有真实 stdin 输入节流刷新 idle，resize/ping/轮询不续期 |
-| 数据导出 | GET 可直接触发副作用，预检不是强制票据；固定导出 Pod 会让并发任务互删 | 跨站顶层导航可诱导资源消耗，并发导出相互中断 | 立即修复 | authorize 签发 60 秒一次性、全维度绑定票据，生产 Redis `GETDEL` 原子消费且故障 fail closed；每次导出使用独立临时 Pod并先读取首块数据再提交下载头 |
-| 审计日志 | GORM `default:true` 可能让失败审计落成成功，写入错误被静默忽略 | 安全审计结论失真或缺失 | 立即修复 | 审计写入改为显式字段 map，失败至少输出带上下文日志；MFA 解绑与管理员重置的成功审计和业务变更位于同一事务 |
-| OpenAPI / 双语文档 | remember login、MFA 重认证与重置、持续终端授权、数据导出预检和 Web Console 硬上限未同步 | 客户端实现和运维操作可能依赖过期契约 | 局部重构 | 已按当前实现补齐并保持中英文一致 |
-| TODO | MFA 聚合任务把已完成和未覆盖范围混在同一项 | 发布判断会把部分完成误认为全量完成 | 保持观察 | 已拆明完成项；资源删除和高风险部署 Step-up 仍作为后续范围保留 |
-| 发布门禁 | Go 版本和发布检查前置条件缺少文档入口，CI 未提供 PostgreSQL 导致认证/迁移集成测试被 skip | RC 可能使用错误工具链或绕过真实数据库测试 | 立即修复 | 已固定 Go `1.26.5`，Quality Job 启动 PostgreSQL，`release-check.sh` 缺少 `AUTH_TEST_DATABASE_URL` 时拒绝继续；普通 Go/race 与非缓存 PostgreSQL 集成套件分开执行，避免同一测试在 CI 重复三次 |
-
-### 本轮结论
-
-- 立即处理：认证、MFA、Web Console、数据导出、审计、OpenAPI、双语文档和发布门禁缺口已完成。
-- 进入 TODO：保留资源删除与高风险部署操作的 Step-up 覆盖，不把未实现范围误标为完成。
-- 暂不处理：无；聚合发布脚本仍会按设计拒绝脏工作区，合并前需在干净工作区再执行一次。
-- 文档同步：通过。
-
-## 13. 认证与发布安全审计流程
-
-### 13.1 范围与证据
-
-1. 先固定基线提交、目标环境和改动文件，列出认证入口、会话/Token、OIDC、MFA/Step-up、权限、Secret、审计日志、长连接/导出及发布链路。
-2. 同步检查数据库迁移、OpenAPI、前端类型与 i18n、中英文档、依赖锁文件、CI/镜像构建和 Helm Chart；不在范围的模块必须显式记录，不得默认为已审计。
-3. 每条发现记录「路径/接口、攻击或失败前提、影响、分级、责任人、修复提交、测试证据、剩余风险」；结论必须可由命令输出或人工复现，不接受只看代码的「应该安全」。
-
-### 13.2 并行 Agent 边界
-
-- 主审 Agent 维护唯一发现清单和分级口径；按认证后端、PostgreSQL/迁移、前端/契约、依赖/CI/Helm 分配互斥文件边界。
-- 每个 Agent 开工前声明「可修改路径、只读依赖路径、交叉点」；发现越界问题只上报，由对应责任人修改，不覆盖、回退或重写其他 Agent 的未提交改动。
-- 交付时报告基线、实际改动文件、验证命令、未解决项和冲突点；主审 Agent 先重读最新 diff，再做跨域整合。
-
-### 13.3 P0 / P1 / P2 分级
-
-| 级别 | 判定 | 处理和退出条件 |
-| --- | --- | --- |
-| P0 | 可绕过认证/授权或 MFA，泄露 Secret，会话/Token 可重放，可跨租户读写，迁移可破坏数据，或发布链路可被接管 | 立即停止合并/发布；本轮修复并补回归测试，独立复审通过后才能解除阻断 |
-| P1 | 需特定前提才能利用，但可造成提权、撤权失效、审计失真、并发不一致或安全默认值失效 | 发布候选版前修复；若暂缓，必须有可验证的缓解、责任人和截止日期，并由安全负责人接受风险 |
-| P2 | 防御纵深、错误可观测性、文档/契约偏差或低可利用性加固项 | 记入 TODO 并给出优先级；不得将已知 P2 省略后宣称「无安全问题」 |
-
-### 13.4 修复与独立复审
-
-1. 修复者先写能稳定复现的失败测试，修复根因后补充失败路径、跨用户/跨项目、过期/撤销、重放和并发场景；权限和安全配置读取失败时默认 fail closed。
-2. 复审者必须与修复者不同，从原始发现和最新完整 diff 独立建模；不仅确认测试变绿，还要尝试绕过、检查新增攻击面和剩余竞态。
-3. 复审结论只能是「通过」、「带已接受剩余风险通过」或「重开 P0/P1」；P0/P1 不得由原修复者自己关闭。
-
-### 13.5 PostgreSQL 并发与迁移测试
-
-- 使用专用、可销毁的 PostgreSQL 库设置 `AUTH_TEST_DATABASE_URL`，执行 `go test -count=1 ./internal/api ./internal/database`；输出中出现因未配数据库而 `skip` 视为门禁失败。
-- 迁移至少覆盖「历史 schema/数据 -> up -> 业务不变式 -> down 或明确不可逆 -> 重新 up」，校验 `NOT NULL`/唯一约束/外键/索引、回填顺序、旧数据 fail closed 和重启后状态。
-- 对「最后管理员」、Token 轮换/撤销、一次性票据、安全配置更新等不变式，用独立连接和 barrier 同时提交冲突操作，循环多次并直接查库校验最终状态；同时执行 `go test -race ./internal/api ./internal/worker ./internal/provider/kubernetes ./internal/secret`。
-- 测试必须证明行锁、事务级 advisory lock 或原子 SQL 真正保护共享数据；进程内 mutex 不能作为多副本安全证据。
-
-### 13.6 基础发布门禁
-
-| 领域 | 最低门禁 |
-| --- | --- |
-| 后端 | `gofmt` 无差异；`go test ./...`；上述 PostgreSQL 非缓存测试；`go vet ./...`；关键包 `go test -race` |
-| 前端 | `pnpm --dir web install --frozen-lockfile`；`pnpm --dir web test`；`pnpm --dir web lint`；`pnpm --dir web build`；lint/build 不得有未解释的 warning；对登录、账号安全、管理员用户和项目空间路由做 production preview smoke |
-| 契约/文档 | 解析 OpenAPI，核对 code/枚举、请求响应与前端类型；`pnpm --dir docs install --frozen-lockfile`；`pnpm --dir docs build`；用户可见流程中英文同步 |
-| 依赖 | 审查 `go.mod`/`go.sum` 与 pnpm lockfile 差异；`govulncheck ./...`；`pnpm --dir web audit --prod --audit-level=high`；`pnpm --dir docs audit --prod --audit-level=high`；Go 可达漏洞和生产 pnpm 依赖 high/critical 漏洞阻断发布，开发工具链告警单独升级处理但不阻断 RC |
-| Helm | `helm lint charts/luna-devops`；`helm template luna-devops charts/luna-devops` 结果非空；复核 Secret/RBAC、安全上下文、探针、资源限制、非浮动镜像 tag 和生产 values 覆盖 |
-
-依赖审计只允许对单条 advisory 做显式豁免，并且必须同时记录 advisory ID、官方影响条件、当前项目不可达该路径的代码或架构证据，以及移除豁免的复查条件；不得使用 `--ignore-unfixable`、降低整体严重级别或关闭审计来绕过门禁。当前 `GHSA-qwww-vcr4-c8h2` 仅影响 React Router 的 unstable RSC APIs，Luna DevOps 的 Vite SPA 与 Rspress 文档站均未启用 RSC，因此在升级到兼容的修复版本前由发布脚本按 advisory ID 窄范围忽略。
-
-干净工作区的 RC 最终执行 `AUTH_TEST_DATABASE_URL=... ./scripts/release-check.sh`。聚合脚本通过不代替针对本轮发现的业务回归、并发测试和独立复审。
-
-### 13.7 完成口径
-
-- **本轮完成**：范围内的 P0 已清零，P1 已修复或完成显式风险接受，每条发现有证据和独立复审结论，针对性测试通过，契约、文档和 TODO 已同步。只能表述「本轮已审计范围完成」。
-- **项目可发版**：除满足本轮条件外，还需所有发布范围已纳入审计，无未处置 P0/未接受 P1，干净 RC 提交的完整门禁通过，迁移、回滚/不可逆策略、部署配置、制品来源和运维文档均已验收。
-- 本轮完成时仍要单列「未审计范围」、「已接受风险」和「项目整体发版阻断项」，不得用局部结论替代项目发版签字。
-
-## 14. 2026-07-24 全项目安全与代码健康修复复查
-
-### 范围
-
-- 检查模块：后端出站访问、Access Token、OAuth 客户端认证、API 错误边界、前端 Kubernetes/通知选项和热点文件。
-- 检查原因：依据产品方案与本 SOP 对全项目执行安全性、可维护性和工程规范审计后，修复已确认问题。
-
-### 验证结果
-
-- `go test ./...`：通过。
-- `go vet ./...`：通过。
-- `go test -race ./internal/security ./internal/authz ./internal/secret ./internal/billing`：通过。
-- `pnpm --dir web lint`、`pnpm --dir web build`：通过。
-- `pnpm --dir docs build`：通过。
-- `pnpm --dir web audit --audit-level high`：无已知漏洞。
-- `govulncheck ./...`：本机未安装，未执行。
-
-### 发现
-
-| 模块 | 问题 | 风险 | 分级 | 处理 |
-| --- | --- | --- | --- | --- |
-| SSRF / egress | 域名策略校验后仍使用原域名连接，存在二次 DNS 解析窗口 | DNS 重绑定可能把公网域名切换到回环、metadata 或私网地址 | 立即修复 | 连接阶段校验全部解析 IP，并直接拨号到同一批 IP；增加公网地址钉扎和私网解析拒绝测试 |
-| Access Token | 有效期只由前端枚举约束，创建/撤销未纳入 Step-up MFA | 绕过前端可创建非预期长期凭据，被盗浏览器会话可升级为 API 凭据 | 立即修复 | 后端固定白名单；创建与撤销使用 `access_token_manage` Step-up purpose |
-| OAuth | token/revoke 客户端认证缺少独立限流 | 公开端点可被用于持续认证尝试和资源消耗 | 局部重构 | 按来源 IP 和散列 client ID 使用 Redis 双维度限流 |
-| API 错误 | 大量 5xx 使用统一 `internal_error` | 前端和日志难以按业务入口聚合诊断 | 局部重构 | 通用响应层按方法和 Gin 路由模板生成稳定 code，生产环境继续隐藏底层错误 |
-| 前端 i18n | Kubernetes 和通知适配器枚举直接作为 UI 文案 | 中英文显示不一致，违反 MUST i18n | 立即修复 | 原始枚举只作为 value，显示 label 统一进入 locale |
-| 热点文件 | 项目成员 DTO 继续堆在项目 handler | handler 职责和类型定义耦合 | 局部重构 | 抽出 `project_member_types.go`；更大的面板和领域类型拆分继续按独立目标推进 |
-
-### 本轮结论
-
-- 立即处理：SSRF、Token、OAuth 限流、错误 code 与 i18n 缺口已修复并有针对性测试。
-- 进入 TODO：继续按独立目标拆分 `application-deployments-panel.tsx`、`project_handlers.go`、`mfa_handlers.go` 和前端领域 DTO；不与安全修复混成一次无边界重写。
-- 暂不处理：Go 可达漏洞扫描需在安装 `govulncheck` 的发布环境补跑。
-- 文档同步：OpenAPI、中文/英文运维文档、TODO 与本健康记录已同步。
-
-## 15. 2026-08-01 Agent OTel 依赖收敛
-
-### 范围与结论
-
-- `@opentelemetry/auto-instrumentations-node` 通过未使用的 GCP 资源探测器引入 `brace-expansion@2.1.4`，触发 `GHSA-mh99-v99m-4gvg` High 级生产依赖门禁。
-- Agent 不读取 GCP 元数据，也不需要元包内的其他云平台、数据库和消息客户端插桩；保留该元包会扩大供应链与运行时攻击面。
-- 已改为按需启用 HTTP、Fastify、PostgreSQL、Pino 和 Undici 插桩。Fastify 使用维护方提供的 `@fastify/otel`，不引入已弃用的旧 Fastify instrumentation。
-- 不降低 `--audit-level=high`，不添加 advisory 豁免，不以跨主版本 override 强行替换传递依赖。
-
-### 验收要求
-
-- `pnpm --dir luna-agent install --frozen-lockfile` 和 `pnpm --dir luna-agent audit --prod --audit-level=high` 必须通过。
-- Agent 的 lint、typecheck、test、build 必须通过。
-- 真实请求必须证明 Fastify 入口 Span 继承 W3C 父上下文，内部 PostgreSQL 和 Undici Span 保持父子关系，Pino/OTel 日志可以使用同一 Trace ID 关联。
-
-## 16. 2026-08-01 Go 可达依赖漏洞修复
-
-### 范围与结论
-
-- `govulncheck` 确认 `google.golang.org/grpc@v1.81.1` 的 `GO-2026-6061` 和 `github.com/ClickHouse/ch-go@v0.61.5` 的 `GO-2025-3603` 存在可达调用路径，发布门禁按设计阻断。
-- `grpc` 升级到公告修复下限 `v1.82.1`；`ch-go` 升级到公告修复下限 `v0.65.0`。
-- `clickhouse-go/v2` 同步升级到首个声明兼容 `ch-go v0.65.0` 的 `v2.32.0`。禁止只覆盖 `ch-go`，否则旧驱动会因压缩 API 变化而无法编译。
-- 不添加漏洞豁免，不降低 `govulncheck` 门禁；间接升级仅保留 Go 最小版本选择为满足兼容性所需的结果。
-
-### 验收结果
-
-- `go test ./...`、`go vet ./...`：通过。
-- `go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...`：可达漏洞为 0。
-
-## 17. 2026-08-01 完整迁移测试隔离修复
-
-### 事故根因
-
-- 完整迁移测试只通过 `search_path` 隔离 public 表，但迁移固定创建全局 `ai` schema。
-- 测试清理阶段直接执行 `DROP SCHEMA IF EXISTS ai CASCADE`；当 `AUTH_TEST_DATABASE_URL` 指向日常开发库时，会删除开发库中的 AI 会话、Run、工具调用和 UI Action 表。
-- 后续第 57 号迁移尝试修改已不存在的 `ai.tool_calls`，将 `schema_migrations` 留在 `57 dirty`，API 按 fail-closed 规则拒绝启动。
-
-### 修复标准
-
-- 完整迁移测试必须创建名称受控的独立 `luna_migration_test_*` 数据库，在其中执行完整迁移和重复迁移验证。
-- 清理只能删除本次测试生成的独立数据库，不得删除输入连接所指向数据库的 schema 或表。
-- 测试必须记录并复核源数据库的迁移表与 `ai` schema 存在状态，确保测试结束后保持不变。
-- 本地 dirty 恢复前先记录 schema；仅在确认 `ai` schema 已丢失时将迁移版本恢复至 52，再重新执行 53–57，禁止无条件强制迁移版本。
-
-### 验收结果
-
-- 本地开发库已恢复到 migration `57 clean`，8 张 `ai` schema 表和 `ai.tool_calls.arguments_ciphertext` 均存在。
-- `TestMigrateBootstrapsFreshPostgresSchema` 使用日常开发库作为管理连接时通过，测试生成的临时数据库已清理，源数据库迁移状态和 AI schema 保持不变。
-- API 已真实启动并监听 `:8080`，启动验证后正常停止。
+## 7. 发布最低门禁
+
+- 后端：格式检查、`go test ./...`、针对性 PostgreSQL/竞态/迁移测试，必要时 `go vet`、
+  `go test -race` 和 `govulncheck`。
+- 前端：测试、lint、build 无新增错误或未解释 warning；关键路由做 production preview smoke。
+- 契约与文档：OpenAPI、错误码、枚举、前端类型和中英文流程同步；文档站构建通过。
+- 依赖：生产依赖的 High/Critical 与 Go 可达漏洞阻断发布；豁免必须限定单条 advisory，并记录
+  不可达证据和复查条件。
+- Helm：lint、template、Secret/RBAC、安全上下文、探针、资源限制和镜像 tag 检查。
+
+“本轮审计完成”只代表声明范围内 P0 清零、P1 已处理或接受且证据完整；不能替代项目整体
+发版签字。最终仍须单列未审计范围、已接受风险和发版阻断项。

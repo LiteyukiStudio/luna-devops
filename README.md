@@ -71,7 +71,7 @@ Luna DevOps 将代码仓库、镜像站、BuildKit、Kubernetes、访问入口�
 启动本地开发依赖：
 
 ```bash
-docker compose -f docker-compose-dev.yaml up -d
+docker compose -f docker-compose-dev-db.yaml up -d
 ```
 
 创建本地配置：
@@ -80,22 +80,34 @@ docker compose -f docker-compose-dev.yaml up -d
 cp .env.example .env
 ```
 
-运行后端：
+四个 Luna DevOps 组件不由开发 Compose 管理，分别在四个终端运行：
 
 ```bash
+# 终端 1：API
 go run ./cmd/api
+
+# 终端 2：Worker
 go run ./cmd/worker
-```
 
-运行前端：
+# 终端 3：Agent
+pnpm --dir luna-agent install
+pnpm --dir luna-agent dev
 
-```bash
-cd web
-pnpm install
-pnpm dev
+# 终端 4：Web
+pnpm --dir web install
+pnpm --dir web dev
 ```
 
 Vite 开发服务器会将 `/api/v1` 代理到 `http://localhost:8080`。
+Agent 联调配置见 [`luna-agent/.env.example`](luna-agent/.env.example)；根目录 `.env` 还需设置 `AI_ASSISTANT_AVAILABLE=true`、`AI_AGENT_BASE_URL=http://localhost:8091`，两处 `AI_INTERNAL_SECRET` 保持一致。
+
+如需在本地查看 Trace、Metrics 和 Logs，可启动开发用的 Grafana + Prometheus + Loki + Tempo + OpenTelemetry Collector 栈：
+
+```bash
+docker compose -f docker-compose-dev-observability.yaml up -d
+```
+
+Grafana 默认访问地址为 `http://localhost:3000`。上报环境变量、Agent 查询地址和清理方式见 [`observability/README.md`](observability/README.md)。该栈无生产级鉴权与高可用保护，仅允许本机开发使用。
 
 ## Luna CLI
 

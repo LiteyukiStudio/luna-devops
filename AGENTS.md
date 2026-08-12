@@ -81,7 +81,7 @@ Python：
 - 仓库是 monorepo。
 - Go 后端在仓库根目录。
 - 前端在 `web/`。
-- 本地开发依赖放 `docker-compose-dev.yaml`，只包含开发需要的 PostgreSQL、Redis 等组件。
+- 本地数据库依赖放 `docker-compose-dev-db.yaml`，只包含 PostgreSQL 和 Redis；本地可观测组件放 `docker-compose-dev-observability.yaml`。API、Worker、Agent 和 Web 均在宿主机手动启动，不纳入开发 Compose。
 - `.env.*` 不提交；`.env.example` 可提交。
 - 后端配置默认读取进程环境和仓库根目录 `.env`；需要临时使用另一份本地文件时可通过 `ENV_FILE=.env.local go run ./cmd/api` 显式替代 `.env`。
 
@@ -190,7 +190,7 @@ web/src/i18n
 
 ```bash
 # dev deps
-docker compose -f docker-compose-dev.yaml up -d
+docker compose -f docker-compose-dev-db.yaml up -d
 
 # backend
 go test ./...

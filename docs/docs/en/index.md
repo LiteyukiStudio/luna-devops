@@ -8,10 +8,10 @@ hero:
   tagline: Deploy your projects in a few clear steps with a DevOps platform built for small teams and businesses.
   actions:
     - theme: brand
-      text: Get Started
+      text: Quick Deploy
       link: /start/install/kubernetes
     - theme: alt
-      text: Deploy a Project
+      text: Use a Project
       link: /start/first-project
   image:
     src: /brand/mascot-luna-catgirl-alpha.webp
