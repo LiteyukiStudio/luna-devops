@@ -95,6 +95,14 @@ type TraceSpan struct {
 	StartOffsetMS  float64           `json:"startOffsetMs"`
 	DurationMS     float64           `json:"durationMs"`
 	Attributes     map[string]string `json:"attributes"`
+	Events         []TraceSpanEvent  `json:"events"`
+	Raw            json.RawMessage   `json:"raw"`
+}
+
+type TraceSpanEvent struct {
+	Name          string            `json:"name"`
+	TimeUnixNanos string            `json:"timeUnixNano"`
+	Attributes    map[string]string `json:"attributes"`
 }
 
 func New(source Source, config Config) (*Client, error) {
@@ -340,9 +348,17 @@ type tempoSpan struct {
 	StartTimeUnixNano string           `json:"startTimeUnixNano"`
 	EndTimeUnixNano   string           `json:"endTimeUnixNano"`
 	Attributes        []tempoAttribute `json:"attributes"`
+	Events            []tempoSpanEvent `json:"events"`
 	Status            struct {
 		Code string `json:"code"`
 	} `json:"status"`
+	Raw json.RawMessage `json:"-"`
+}
+
+type tempoSpanEvent struct {
+	Name         string           `json:"name"`
+	TimeUnixNano string           `json:"timeUnixNano"`
+	Attributes   []tempoAttribute `json:"attributes"`
 }
 
 type tempoAttribute struct {
@@ -353,6 +369,17 @@ type tempoAttribute struct {
 		DoubleValue *float64 `json:"doubleValue"`
 		BoolValue   *bool    `json:"boolValue"`
 	} `json:"value"`
+}
+
+func (span *tempoSpan) UnmarshalJSON(data []byte) error {
+	type rawTempoSpan tempoSpan
+	var decoded rawTempoSpan
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*span = tempoSpan(decoded)
+	span.Raw = append(json.RawMessage(nil), data...)
+	return nil
 }
 
 var traceAttributeAllowlist = map[string]struct{}{
@@ -397,11 +424,23 @@ func tempoTraceDetail(traceID string, response tempoTraceResponse) TraceDetail {
 				if status == "error" {
 					detail.ErrorCount++
 				}
+				events := make([]TraceSpanEvent, 0, len(span.Events))
+				for _, event := range span.Events {
+					events = append(events, TraceSpanEvent{
+						Name: event.Name, TimeUnixNanos: event.TimeUnixNano,
+						Attributes: tempoAttributes(event.Attributes, nil),
+					})
+				}
+				raw := span.Raw
+				if len(raw) == 0 {
+					raw = json.RawMessage(`{}`)
+				}
 				detail.Spans = append(detail.Spans, TraceSpan{
 					SpanID: span.SpanID, ParentSpanID: span.ParentSpanID, Name: tempoSpanName(span.Name),
 					ServiceName: serviceName, Kind: strings.TrimPrefix(strings.ToLower(span.Kind), "span_kind_"),
 					Status: status, StartTimeNanos: span.StartTimeUnixNano, DurationMS: float64(end-start) / 1e6,
 					Attributes: tempoAttributes(span.Attributes, traceAttributeAllowlist),
+					Events:     events, Raw: raw,
 				})
 			}
 		}

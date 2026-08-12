@@ -20,7 +20,7 @@ func TestPrometheusPointRejectsNonFiniteValues(t *testing.T) {
 }
 
 func TestTempoTraceDetailNormalizesAgentSpans(t *testing.T) {
-	const payload = `{"batches":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"luna-agent"}}]},"scopeSpans":[{"spans":[{"spanId":"root","name":"agent.run.execute","kind":"SPAN_KIND_INTERNAL","startTimeUnixNano":"1000000000","endTimeUnixNano":"2000000000","status":{"code":"STATUS_CODE_OK"}},{"spanId":"model","parentSpanId":"root","name":"agent.model.stream","kind":"SPAN_KIND_INTERNAL","startTimeUnixNano":"1100000000","endTimeUnixNano":"1900000000","attributes":[{"key":"gen_ai.usage.input_tokens","value":{"intValue":"42"}},{"key":"luna.tool_call.id","value":{"stringValue":"tool-call-1"}},{"key":"gen_ai.input.messages","value":{"stringValue":"must not escape"}}],"status":{"code":"STATUS_CODE_ERROR"}}]}]}]}`
+	const payload = `{"batches":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"luna-agent"}}]},"scopeSpans":[{"spans":[{"spanId":"root","name":"agent.run.execute","kind":"SPAN_KIND_INTERNAL","startTimeUnixNano":"1000000000","endTimeUnixNano":"2000000000","status":{"code":"STATUS_CODE_OK"}},{"spanId":"model","parentSpanId":"root","name":"agent.model.stream","kind":"SPAN_KIND_INTERNAL","startTimeUnixNano":"1100000000","endTimeUnixNano":"1900000000","attributes":[{"key":"gen_ai.usage.input_tokens","value":{"intValue":"42"}},{"key":"luna.tool_call.id","value":{"stringValue":"tool-call-1"}},{"key":"gen_ai.input.messages","value":{"stringValue":"must not escape"}}],"events":[{"name":"gen_ai.content.input","timeUnixNano":"1200000000","attributes":[{"key":"gen_ai.input.messages","value":{"stringValue":"{\"messages\":[{\"role\":\"system\",\"content\":\"You are Luna\"},{\"role\":\"user\",\"content\":\"Deploy it\"}]}"}}]},{"name":"gen_ai.content.output","timeUnixNano":"1800000000","attributes":[{"key":"gen_ai.output.messages","value":{"stringValue":"{\"text\":\"Done\"}"}}]}],"status":{"code":"STATUS_CODE_ERROR"}}]}]}]}`
 	var response tempoTraceResponse
 	if err := json.Unmarshal([]byte(payload), &response); err != nil {
 		t.Fatalf("decode fixture: %v", err)
@@ -37,6 +37,13 @@ func TestTempoTraceDetailNormalizesAgentSpans(t *testing.T) {
 	}
 	if _, exists := detail.Spans[1].Attributes["gen_ai.input.messages"]; exists {
 		t.Fatal("sensitive model content escaped the trace attribute allowlist")
+	}
+	if len(detail.Spans[1].Events) != 2 || detail.Spans[1].Events[0].Attributes["gen_ai.input.messages"] == "" {
+		t.Fatalf("model content events were not retained: %+v", detail.Spans[1].Events)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(detail.Spans[1].Raw, &raw); err != nil || raw["events"] == nil {
+		t.Fatalf("raw Tempo span was not retained: raw=%s err=%v", detail.Spans[1].Raw, err)
 	}
 }
 

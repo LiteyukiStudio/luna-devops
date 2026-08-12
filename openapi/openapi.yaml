@@ -7173,9 +7173,16 @@ components:
         rootTraceName: { type: string }
         startTimeUnixNano: { type: string }
         durationMs: { type: integer, format: int64 }
+    AgentObservabilityTraceSpanEvent:
+      type: object
+      required: [name, timeUnixNano, attributes]
+      properties:
+        name: { type: string }
+        timeUnixNano: { type: string, description: Unix nanoseconds encoded as a string. }
+        attributes: { type: object, additionalProperties: { type: string } }
     AgentObservabilityTraceSpan:
       type: object
-      required: [spanId, parentSpanId, name, serviceName, kind, status, startTimeUnixNano, startOffsetMs, durationMs, attributes]
+      required: [spanId, parentSpanId, name, serviceName, kind, status, startTimeUnixNano, startOffsetMs, durationMs, attributes, events, raw]
       properties:
         spanId: { type: string }
         parentSpanId: { type: string }
@@ -7187,6 +7194,8 @@ components:
         startOffsetMs: { type: number, format: double }
         durationMs: { type: number, format: double }
         attributes: { type: object, additionalProperties: { type: string } }
+        events: { type: array, items: { $ref: "#/components/schemas/AgentObservabilityTraceSpanEvent" } }
+        raw: { type: object, additionalProperties: true, description: Original OTLP JSON object returned by Tempo for this span. }
     AgentObservabilityTraceDetail:
       type: object
       required: [traceId, durationMs, spanCount, errorCount, spans]

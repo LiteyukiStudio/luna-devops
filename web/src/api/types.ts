@@ -33,6 +33,11 @@ export interface AgentObservabilityTrace {
   startTimeUnixNano: string
   durationMs: number
 }
+export interface AgentObservabilityTraceSpanEvent {
+  name: string
+  timeUnixNano: string
+  attributes: Record<string, string>
+}
 export interface AgentObservabilityTraceSpan {
   spanId: string
   parentSpanId: string
@@ -44,6 +49,8 @@ export interface AgentObservabilityTraceSpan {
   startOffsetMs: number
   durationMs: number
   attributes: Record<string, string>
+  events: AgentObservabilityTraceSpanEvent[]
+  raw: Record<string, unknown>
 }
 export interface AgentObservabilityTraceDetail {
   traceId: string

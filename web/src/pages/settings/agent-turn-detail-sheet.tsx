@@ -5,6 +5,7 @@ import { Bot, Braces, ChevronDown, ChevronRight, CircleDot, Clock3, Database, Me
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/api'
+import { CopyableCodeBlock } from '@/components/common/ai-assistant/copyable-code-block'
 import { EmptyState } from '@/components/common/empty-state'
 import { ErrorState } from '@/components/common/error-state'
 import { ToolViewportSkeleton } from '@/components/common/loading-states'
@@ -12,7 +13,9 @@ import { MetricGroup, MetricItem } from '@/components/common/metric-group'
 import { StatusBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
+import { agentSpanContentSections, agentSpanMessages, formatSpanJSON } from './agent-span-content'
 import { agentTurnTimelineKind, filterAgentTurnTimelineSpans } from './agent-turn-timeline'
 
 export function AgentTurnDetailSheet({ turn, onOpenChange }: {
@@ -21,6 +24,7 @@ export function AgentTurnDetailSheet({ turn, onOpenChange }: {
 }) {
   const { t, i18n } = useTranslation()
   const [filter, setFilter] = useState<AgentTurnTimelineFilter>('all')
+  const [hideExternalServices, setHideExternalServices] = useState(false)
   const [expandedSpanIds, setExpandedSpanIds] = useState<string[]>([])
   const detail = useQuery({
     queryKey: ['agent-observability-turn-trace', turn?.id, turn?.traceId],
@@ -28,14 +32,14 @@ export function AgentTurnDetailSheet({ turn, onOpenChange }: {
     enabled: Boolean(turn?.traceId),
     retry: 1,
   })
-  const spans = useMemo(() => filterAgentTurnTimelineSpans(detail.data?.spans ?? [], filter), [detail.data?.spans, filter])
+  const spans = useMemo(() => filterAgentTurnTimelineSpans(detail.data?.spans ?? [], filter, hideExternalServices), [detail.data?.spans, filter, hideExternalServices])
   const lastModelSpanId = useMemo(() => [...(detail.data?.spans ?? [])].reverse().find(span => agentTurnTimelineKind(span) === 'model')?.spanId, [detail.data?.spans])
   const toggleSpan = (spanId: string) => setExpandedSpanIds(current => current.includes(spanId) ? current.filter(id => id !== spanId) : [...current, spanId])
   const owner = turn?.user.name || turn?.user.email || '—'
 
   return (
     <Sheet open={Boolean(turn)} onOpenChange={onOpenChange}>
-      <SheetContent className="w-[min(100vw,50rem)] max-w-none gap-0 p-0 sm:max-w-none" side="right">
+      <SheetContent className="w-full max-w-none gap-0 p-0 sm:max-w-none lg:w-2/3" side="right">
         <SheetHeader className="border-b border-border px-6 py-4">
           <div className="flex flex-wrap items-center gap-2 pr-10">
             <SheetTitle>{turn ? t('operationsDashboardPage.turnDetail.title', { index: turn.turnIndex + 1 }) : t('operationsDashboardPage.turnDetail.titleFallback')}</SheetTitle>
@@ -74,17 +78,23 @@ export function AgentTurnDetailSheet({ turn, onOpenChange }: {
               </div>
 
               <section className="grid gap-4">
-                <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="grid items-start gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
                   <div className="grid gap-1">
                     <h2 className="text-base font-semibold">{t('operationsDashboardPage.turnDetail.timeline')}</h2>
                     <p className="m-0 text-sm text-muted-foreground">{t('operationsDashboardPage.turnDetail.timelineDescription')}</p>
                   </div>
-                  <div className="flex flex-wrap gap-1 rounded-control bg-muted p-1">
-                    {(['all', 'model', 'tool', 'error'] as const).map(value => (
-                      <Button key={value} aria-pressed={filter === value} size="sm" variant={filter === value ? 'secondary' : 'ghost'} onClick={() => setFilter(value)}>
-                        {t(`operationsDashboardPage.turnDetail.filters.${value}`)}
-                      </Button>
-                    ))}
+                  <div className="flex flex-wrap items-center gap-3 lg:justify-self-end">
+                    <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+                      <Switch aria-label={t('operationsDashboardPage.turnDetail.hideExternalServices')} checked={hideExternalServices} onCheckedChange={setHideExternalServices} />
+                      <span>{t('operationsDashboardPage.turnDetail.hideExternalServices')}</span>
+                    </label>
+                    <div className="flex flex-wrap gap-1 rounded-control bg-muted p-1">
+                      {(['all', 'model', 'tool', 'error'] as const).map(value => (
+                        <Button key={value} aria-pressed={filter === value} size="sm" variant={filter === value ? 'secondary' : 'ghost'} onClick={() => setFilter(value)}>
+                          {t(`operationsDashboardPage.turnDetail.filters.${value}`)}
+                        </Button>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
@@ -147,6 +157,7 @@ function TimelineStep({ span, expanded, isLast, userMessage, assistantMessage, o
   const { t, i18n } = useTranslation()
   const kind = agentTurnTimelineKind(span)
   const attributes = Object.entries(span.attributes)
+  const contentSections = agentSpanContentSections(span)
   return (
     <li className="grid grid-cols-[4.5rem_1.5rem_minmax(0,1fr)] gap-3">
       <time className="grid gap-0.5 pt-4 text-right font-mono text-xs text-muted-foreground">
@@ -185,6 +196,14 @@ function TimelineStep({ span, expanded, isLast, userMessage, assistantMessage, o
           <div className="grid gap-3 border-t border-border px-4 py-3">
             {userMessage && <TimelineContent label={t('operationsDashboardPage.userMessage')} value={userMessage} />}
             {assistantMessage && <TimelineContent label={t('operationsDashboardPage.assistantMessage')} value={assistantMessage} />}
+            {contentSections.map(section => (
+              <SpanContentSection key={section.id} kind={section.kind} value={section.value} />
+            ))}
+            {(kind === 'model' || kind === 'tool') && contentSections.length === 0 && (
+              <p className="m-0 rounded-control bg-info-subtle px-3 py-2 text-xs text-info">
+                {t('operationsDashboardPage.turnDetail.contentCaptureUnavailable')}
+              </p>
+            )}
             <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
               <DetailValue label={t('operationsDashboardPage.status')} value={span.status} />
               <DetailValue label={t('operationsDashboardPage.duration')} value={formatDuration(span.durationMs)} />
@@ -204,11 +223,57 @@ function TimelineStep({ span, expanded, isLast, userMessage, assistantMessage, o
                 </div>
               </div>
             )}
+            <details className="group overflow-hidden rounded-control bg-muted">
+              <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-xs font-medium outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+                <ChevronRight className="size-3.5 text-muted-foreground transition-transform group-open:rotate-90" />
+                {t('operationsDashboardPage.turnDetail.rawJson')}
+              </summary>
+              <div className="border-t border-border p-3">
+                <CopyableCodeBlock className="max-h-96" value={formatSpanJSON(span.raw)}><code>{formatSpanJSON(span.raw)}</code></CopyableCodeBlock>
+              </div>
+            </details>
           </div>
         )}
       </div>
     </li>
   )
+}
+
+function SpanContentSection({ kind, value }: { kind: 'modelInput' | 'modelOutput' | 'modelError' | 'toolArguments' | 'toolResult', value: unknown }) {
+  const { t } = useTranslation()
+  const messages = kind === 'modelInput' ? agentSpanMessages(value) : []
+  return (
+    <section className="grid min-w-0 gap-2">
+      <h3 className="text-xs font-medium text-muted-foreground">{t(`operationsDashboardPage.turnDetail.content.${kind}`)}</h3>
+      {messages.length > 0
+        ? (
+            <div className="grid gap-2">
+              {messages.map(message => (
+                <div key={message.id} className="grid min-w-0 gap-1 rounded-control bg-muted p-3">
+                  <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    {t(`operationsDashboardPage.turnDetail.roles.${message.role}`, { defaultValue: message.role })}
+                  </span>
+                  <CopyableCodeBlock className="max-h-80" value={displayContent(message.content)}><code>{displayContent(message.content)}</code></CopyableCodeBlock>
+                </div>
+              ))}
+              <details className="group overflow-hidden rounded-control bg-muted">
+                <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-xs font-medium outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+                  <ChevronRight className="size-3.5 text-muted-foreground transition-transform group-open:rotate-90" />
+                  {t('operationsDashboardPage.turnDetail.fullModelInput')}
+                </summary>
+                <div className="border-t border-border p-3">
+                  <CopyableCodeBlock className="max-h-96" value={formatSpanJSON(value)}><code>{formatSpanJSON(value)}</code></CopyableCodeBlock>
+                </div>
+              </details>
+            </div>
+          )
+        : <CopyableCodeBlock className="max-h-96" value={formatSpanJSON(value)}><code>{formatSpanJSON(value)}</code></CopyableCodeBlock>}
+    </section>
+  )
+}
+
+function displayContent(value: unknown) {
+  return typeof value === 'string' ? value : formatSpanJSON(value)
 }
 
 function TimelineContent({ label, value }: { label: string, value: string }) {

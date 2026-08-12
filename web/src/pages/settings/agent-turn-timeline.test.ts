@@ -14,6 +14,8 @@ function span(name: string, startOffsetMs: number, status: AgentObservabilityTra
     startOffsetMs,
     durationMs: 10,
     attributes: {},
+    events: [],
+    raw: {},
   }
 }
 
@@ -36,5 +38,14 @@ describe('agent turn timeline', () => {
     expect(filterAgentTurnTimelineSpans(spans, 'model')).toHaveLength(1)
     expect(filterAgentTurnTimelineSpans(spans, 'tool')).toHaveLength(1)
     expect(filterAgentTurnTimelineSpans(spans, 'error').map(item => item.name)).toEqual(['agent.model.stream'])
+  })
+
+  it('hides infrastructure spans while retaining Agent, model, and tool steps', () => {
+    const spans = [span('agent.run.execute', 1), span('agent.model.stream', 2), span('agent.tool.execute', 3), span('agent.repository.turn.create', 4), { ...span('http.request', 5), kind: 'client' }]
+    expect(filterAgentTurnTimelineSpans(spans, 'all', true).map(item => item.name)).toEqual([
+      'agent.run.execute',
+      'agent.model.stream',
+      'agent.tool.execute',
+    ])
   })
 })
