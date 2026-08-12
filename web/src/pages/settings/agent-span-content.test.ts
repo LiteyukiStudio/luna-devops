@@ -1,6 +1,6 @@
 import type { AgentObservabilityTraceSpan } from '@/api'
 import { describe, expect, it } from 'vitest'
-import { agentSpanContentSections, agentSpanMessages } from './agent-span-content'
+import { agentModelOutput, agentSpanContentSections, agentSpanMessageMarkdown, agentSpanMessages } from './agent-span-content'
 
 const baseSpan: AgentObservabilityTraceSpan = {
   spanId: 'model',
@@ -40,5 +40,14 @@ describe('agent span content', () => {
   it('keeps non-JSON event content readable', () => {
     const span: AgentObservabilityTraceSpan = { ...baseSpan, events: [{ name: 'gen_ai.content.output', timeUnixNano: '1', attributes: { 'gen_ai.output.messages': 'plain response' } }] }
     expect(agentSpanContentSections(span)).toEqual([{ id: 'gen_ai.content.output-0-gen_ai.output.messages', kind: 'modelOutput', value: 'plain response' }])
+  })
+
+  it('normalizes model messages and output for Markdown presentation', () => {
+    expect(agentSpanMessageMarkdown([{ type: 'text', text: 'First' }, { type: 'text', text: '**Second**' }])).toBe('First\n\n**Second**')
+    expect(agentModelOutput({ text: '## Done', reasoningSummary: 'Checked dependencies', toolCalls: [{ operationId: 'getProject' }], usage: { inputTokens: 1 } })).toEqual({
+      text: '## Done',
+      reasoningSummary: 'Checked dependencies',
+      toolCalls: [{ operationId: 'getProject' }],
+    })
   })
 })

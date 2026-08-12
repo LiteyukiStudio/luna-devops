@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import type { AgentTurnTimelineFilter, AgentTurnTimelineKind } from './agent-turn-timeline'
 import type { AgentObservabilityTraceSpan, AgentObservabilityTurn } from '@/api'
 import { useQuery } from '@tanstack/react-query'
@@ -5,7 +6,7 @@ import { Bot, Braces, ChevronDown, ChevronRight, CircleDot, Clock3, Database, Me
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/api'
-import { CopyableCodeBlock } from '@/components/common/ai-assistant/copyable-code-block'
+import { AIMarkdown } from '@/components/common/ai-assistant/markdown'
 import { EmptyState } from '@/components/common/empty-state'
 import { ErrorState } from '@/components/common/error-state'
 import { ToolViewportSkeleton } from '@/components/common/loading-states'
@@ -15,8 +16,28 @@ import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
-import { agentSpanContentSections, agentSpanMessages, formatSpanJSON } from './agent-span-content'
+import { ObservabilityJsonBlock, ObservabilityJsonValue } from './agent-observability-json'
+import { agentModelOutput, agentSpanContentSections, agentSpanMessageMarkdown, agentSpanMessages, formatSpanJSON } from './agent-span-content'
 import { agentTurnTimelineKind, filterAgentTurnTimelineSpans } from './agent-turn-timeline'
+
+const spanAttributeLabelKeys: Record<string, string> = {
+  'gen_ai.operation.name': 'operation',
+  'gen_ai.provider.name': 'provider',
+  'gen_ai.request.model': 'requestModel',
+  'gen_ai.response.model': 'responseModel',
+  'gen_ai.usage.input_tokens': 'inputTokens',
+  'gen_ai.usage.output_tokens': 'outputTokens',
+  'gen_ai.tool.name': 'toolName',
+  'gen_ai.conversation.id': 'conversationId',
+  'luna.turn.id': 'turnId',
+  'luna.run.id': 'runId',
+  'luna.tool_call.id': 'toolCallId',
+  'http.request.method': 'httpMethod',
+  'http.response.status_code': 'httpStatus',
+  'db.system.name': 'databaseSystem',
+  'error.type': 'errorType',
+  'luna.run.outcome': 'runOutcome',
+}
 
 export function AgentTurnDetailSheet({ turn, onOpenChange }: {
   turn: AgentObservabilityTurn | null
@@ -24,7 +45,7 @@ export function AgentTurnDetailSheet({ turn, onOpenChange }: {
 }) {
   const { t, i18n } = useTranslation()
   const [filter, setFilter] = useState<AgentTurnTimelineFilter>('all')
-  const [hideExternalServices, setHideExternalServices] = useState(false)
+  const [showExternalServices, setShowExternalServices] = useState(false)
   const [expandedSpanIds, setExpandedSpanIds] = useState<string[]>([])
   const detail = useQuery({
     queryKey: ['agent-observability-turn-trace', turn?.id, turn?.traceId],
@@ -32,7 +53,7 @@ export function AgentTurnDetailSheet({ turn, onOpenChange }: {
     enabled: Boolean(turn?.traceId),
     retry: 1,
   })
-  const spans = useMemo(() => filterAgentTurnTimelineSpans(detail.data?.spans ?? [], filter, hideExternalServices), [detail.data?.spans, filter, hideExternalServices])
+  const spans = useMemo(() => filterAgentTurnTimelineSpans(detail.data?.spans ?? [], filter, showExternalServices), [detail.data?.spans, filter, showExternalServices])
   const lastModelSpanId = useMemo(() => [...(detail.data?.spans ?? [])].reverse().find(span => agentTurnTimelineKind(span) === 'model')?.spanId, [detail.data?.spans])
   const toggleSpan = (spanId: string) => setExpandedSpanIds(current => current.includes(spanId) ? current.filter(id => id !== spanId) : [...current, spanId])
   const owner = turn?.user.name || turn?.user.email || '—'
@@ -85,8 +106,8 @@ export function AgentTurnDetailSheet({ turn, onOpenChange }: {
                   </div>
                   <div className="flex flex-wrap items-center gap-3 lg:justify-self-end">
                     <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
-                      <Switch aria-label={t('operationsDashboardPage.turnDetail.hideExternalServices')} checked={hideExternalServices} onCheckedChange={setHideExternalServices} />
-                      <span>{t('operationsDashboardPage.turnDetail.hideExternalServices')}</span>
+                      <Switch aria-label={t('operationsDashboardPage.turnDetail.showExternalServices')} checked={showExternalServices} onCheckedChange={setShowExternalServices} />
+                      <span>{t('operationsDashboardPage.turnDetail.showExternalServices')}</span>
                     </label>
                     <div className="flex flex-wrap gap-1 rounded-control bg-muted p-1">
                       {(['all', 'model', 'tool', 'error'] as const).map(value => (
@@ -194,8 +215,8 @@ function TimelineStep({ span, expanded, isLast, userMessage, assistantMessage, o
         </button>
         {expanded && (
           <div className="grid gap-3 border-t border-border px-4 py-3">
-            {userMessage && <TimelineContent label={t('operationsDashboardPage.userMessage')} value={userMessage} />}
-            {assistantMessage && <TimelineContent label={t('operationsDashboardPage.assistantMessage')} value={assistantMessage} />}
+            {userMessage && <TimelineMarkdownContent label={t('operationsDashboardPage.userMessage')} value={userMessage} />}
+            {assistantMessage && !contentSections.some(section => section.kind === 'modelOutput') && <TimelineMarkdownContent label={t('operationsDashboardPage.assistantMessage')} value={assistantMessage} />}
             {contentSections.map(section => (
               <SpanContentSection key={section.id} kind={section.kind} value={section.value} />
             ))}
@@ -205,7 +226,7 @@ function TimelineStep({ span, expanded, isLast, userMessage, assistantMessage, o
               </p>
             )}
             <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-              <DetailValue label={t('operationsDashboardPage.status')} value={span.status} />
+              <DetailValue label={t('operationsDashboardPage.status')} value={<StatusBadge tone={spanStatusTone(span.status)}>{spanStatusLabel(span.status, t)}</StatusBadge>} />
               <DetailValue label={t('operationsDashboardPage.duration')} value={formatDuration(span.durationMs)} />
               <DetailValue label={t('operationsDashboardPage.turnDetail.spanId')} value={span.spanId} mono />
               <DetailValue label={t('operationsDashboardPage.turnDetail.parentSpan')} value={span.parentSpanId || '—'} mono />
@@ -216,8 +237,8 @@ function TimelineStep({ span, expanded, isLast, userMessage, assistantMessage, o
                 <div className="grid gap-2 sm:grid-cols-2">
                   {attributes.map(([key, value]) => (
                     <div key={key} className="grid min-w-0 gap-1 rounded-control bg-muted p-2">
-                      <span className="truncate font-mono text-[11px] text-muted-foreground">{key}</span>
-                      <span className="break-all text-xs">{value}</span>
+                      <span className="truncate text-[11px] font-medium text-muted-foreground" title={key}>{spanAttributeLabel(key, t)}</span>
+                      <ObservabilityJsonValue>{spanAttributeValue(key, value, t, i18n.language)}</ObservabilityJsonValue>
                     </div>
                   ))}
                 </div>
@@ -229,7 +250,7 @@ function TimelineStep({ span, expanded, isLast, userMessage, assistantMessage, o
                 {t('operationsDashboardPage.turnDetail.rawJson')}
               </summary>
               <div className="border-t border-border p-3">
-                <CopyableCodeBlock className="max-h-96" value={formatSpanJSON(span.raw)}><code>{formatSpanJSON(span.raw)}</code></CopyableCodeBlock>
+                <ObservabilityJsonBlock className="max-h-96" value={span.raw} />
               </div>
             </details>
           </div>
@@ -242,6 +263,7 @@ function TimelineStep({ span, expanded, isLast, userMessage, assistantMessage, o
 function SpanContentSection({ kind, value }: { kind: 'modelInput' | 'modelOutput' | 'modelError' | 'toolArguments' | 'toolResult', value: unknown }) {
   const { t } = useTranslation()
   const messages = kind === 'modelInput' ? agentSpanMessages(value) : []
+  const output = kind === 'modelOutput' ? agentModelOutput(value) : undefined
   return (
     <section className="grid min-w-0 gap-2">
       <h3 className="text-xs font-medium text-muted-foreground">{t(`operationsDashboardPage.turnDetail.content.${kind}`)}</h3>
@@ -249,25 +271,33 @@ function SpanContentSection({ kind, value }: { kind: 'modelInput' | 'modelOutput
         ? (
             <div className="grid gap-2">
               {messages.map(message => (
-                <div key={message.id} className="grid min-w-0 gap-1 rounded-control bg-muted p-3">
+                <div key={message.id} className="grid min-w-0 gap-2 rounded-control bg-muted p-3">
                   <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                     {t(`operationsDashboardPage.turnDetail.roles.${message.role}`, { defaultValue: message.role })}
                   </span>
-                  <CopyableCodeBlock className="max-h-80" value={displayContent(message.content)}><code>{displayContent(message.content)}</code></CopyableCodeBlock>
+                  <AIMarkdown className="max-h-96 overflow-y-auto text-sm leading-6">{agentSpanMessageMarkdown(message.content) || t('operationsDashboardPage.turnDetail.noReadableModelContent')}</AIMarkdown>
                 </div>
               ))}
-              <details className="group overflow-hidden rounded-control bg-muted">
-                <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-xs font-medium outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
-                  <ChevronRight className="size-3.5 text-muted-foreground transition-transform group-open:rotate-90" />
-                  {t('operationsDashboardPage.turnDetail.fullModelInput')}
-                </summary>
-                <div className="border-t border-border p-3">
-                  <CopyableCodeBlock className="max-h-96" value={formatSpanJSON(value)}><code>{formatSpanJSON(value)}</code></CopyableCodeBlock>
-                </div>
-              </details>
             </div>
           )
-        : <CopyableCodeBlock className="max-h-96" value={formatSpanJSON(value)}><code>{formatSpanJSON(value)}</code></CopyableCodeBlock>}
+        : output && (output.text || output.reasoningSummary || output.toolCalls)
+          ? (
+              <div className="grid gap-3 rounded-control bg-muted p-3">
+                {output.reasoningSummary && <TimelineMarkdownContent label={t('operationsDashboardPage.turnDetail.reasoningSummary')} value={output.reasoningSummary} />}
+                {output.text && <TimelineMarkdownContent label={t('operationsDashboardPage.assistantMessage')} value={output.text} />}
+                {output.toolCalls !== undefined && (
+                  <div className="grid gap-1.5">
+                    <span className="text-[11px] font-medium text-muted-foreground">{t('operationsDashboardPage.turnDetail.modelToolCalls')}</span>
+                    <ObservabilityJsonBlock className="max-h-80" value={output.toolCalls} />
+                  </div>
+                )}
+              </div>
+            )
+          : kind === 'toolArguments' || kind === 'toolResult'
+            ? <ObservabilityJsonBlock className="max-h-96" value={value} />
+            : kind === 'modelError' && typeof value !== 'string'
+              ? <ObservabilityJsonBlock className="max-h-96" value={value} />
+              : <TimelineMarkdownContent value={kind === 'modelOutput' ? t('operationsDashboardPage.turnDetail.noReadableModelContent') : displayContent(value)} />}
     </section>
   )
 }
@@ -276,22 +306,49 @@ function displayContent(value: unknown) {
   return typeof value === 'string' ? value : formatSpanJSON(value)
 }
 
-function TimelineContent({ label, value }: { label: string, value: string }) {
+function TimelineMarkdownContent({ label, value }: { label?: string, value: string }) {
   return (
-    <div className="grid gap-1 rounded-control bg-muted p-3">
-      <span className="text-xs font-medium text-muted-foreground">{label}</span>
-      <span className="whitespace-pre-wrap break-words text-sm">{value}</span>
+    <div className="grid min-w-0 gap-1 rounded-control bg-surface-inset p-3">
+      {label && <span className="text-xs font-medium text-muted-foreground">{label}</span>}
+      <AIMarkdown className="max-h-96 overflow-y-auto text-sm leading-6">{value}</AIMarkdown>
     </div>
   )
 }
 
-function DetailValue({ label, value, mono }: { label: string, value: string, mono?: boolean }) {
+function DetailValue({ label, value, mono }: { label: string, value: ReactNode, mono?: boolean }) {
   return (
     <div className="grid min-w-0 gap-1">
       <span className="text-xs text-muted-foreground">{label}</span>
       <span className={cn('break-all', mono && 'font-mono text-xs')}>{value}</span>
     </div>
   )
+}
+
+function spanAttributeLabel(key: string, t: (key: string, options?: Record<string, unknown>) => string) {
+  const labelKey = spanAttributeLabelKeys[key]
+  return labelKey ? t(`operationsDashboardPage.turnDetail.attributeLabels.${labelKey}`) : key
+}
+
+function spanAttributeValue(key: string, value: string, t: (key: string, options?: Record<string, unknown>) => string, language: string) {
+  if (key === 'gen_ai.operation.name' || key === 'luna.run.outcome')
+    return t(`operationsDashboardPage.turnDetail.attributeValues.${value}`, { defaultValue: value })
+  if (key === 'gen_ai.usage.input_tokens' || key === 'gen_ai.usage.output_tokens') {
+    const number = Number(value)
+    return Number.isFinite(number) ? new Intl.NumberFormat(language).format(number) : value
+  }
+  return value
+}
+
+function spanStatusLabel(status: string, t: (key: string, options?: Record<string, unknown>) => string) {
+  return t(`operationsDashboardPage.turnDetail.spanStatus.${status}`, { defaultValue: status })
+}
+
+function spanStatusTone(status: string): 'success' | 'danger' | 'neutral' {
+  if (status === 'error')
+    return 'danger'
+  if (status === 'ok')
+    return 'success'
+  return 'neutral'
 }
 
 function TimelineIcon({ kind, status }: { kind: AgentTurnTimelineKind, status: string }) {

@@ -19,12 +19,12 @@ export function agentTurnTimelineKind(span: AgentObservabilityTraceSpan): AgentT
   return 'other'
 }
 
-export function filterAgentTurnTimelineSpans(spans: AgentObservabilityTraceSpan[], filter: AgentTurnTimelineFilter, hideExternalServices = false) {
+export function filterAgentTurnTimelineSpans(spans: AgentObservabilityTraceSpan[], filter: AgentTurnTimelineFilter, showExternalServices = false) {
   return [...spans]
     .sort((left, right) => left.startOffsetMs - right.startOffsetMs || left.durationMs - right.durationMs)
     .filter((span) => {
       const kind = agentTurnTimelineKind(span)
-      if (hideExternalServices && !['turn', 'agent', 'model', 'tool'].includes(kind))
+      if (!showExternalServices && !['turn', 'agent', 'model', 'tool'].includes(kind))
         return false
       if (filter === 'error')
         return span.status === 'error'

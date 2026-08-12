@@ -40,12 +40,21 @@ describe('agent turn timeline', () => {
     expect(filterAgentTurnTimelineSpans(spans, 'error').map(item => item.name)).toEqual(['agent.model.stream'])
   })
 
-  it('hides infrastructure spans while retaining Agent, model, and tool steps', () => {
+  it('hides infrastructure spans by default while retaining Agent, model, and tool steps', () => {
     const spans = [span('agent.run.execute', 1), span('agent.model.stream', 2), span('agent.tool.execute', 3), span('agent.repository.turn.create', 4), { ...span('http.request', 5), kind: 'client' }]
-    expect(filterAgentTurnTimelineSpans(spans, 'all', true).map(item => item.name)).toEqual([
+    expect(filterAgentTurnTimelineSpans(spans, 'all').map(item => item.name)).toEqual([
       'agent.run.execute',
       'agent.model.stream',
       'agent.tool.execute',
+    ])
+  })
+
+  it('includes infrastructure spans only when external services are shown', () => {
+    const spans = [span('agent.run.execute', 1), span('agent.repository.turn.create', 2), { ...span('http.request', 3), kind: 'client' }]
+    expect(filterAgentTurnTimelineSpans(spans, 'all', true).map(item => item.name)).toEqual([
+      'agent.run.execute',
+      'agent.repository.turn.create',
+      'http.request',
     ])
   })
 })

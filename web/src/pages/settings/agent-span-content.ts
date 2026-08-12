@@ -14,6 +14,12 @@ export interface AgentSpanMessage {
   content: unknown
 }
 
+export interface AgentModelOutput {
+  reasoningSummary?: string
+  text?: string
+  toolCalls?: unknown
+}
+
 const contentAttributeKinds: Record<string, AgentSpanContentKind> = {
   'gen_ai.input.messages': 'modelInput',
   'gen_ai.output.messages': 'modelOutput',
@@ -39,6 +45,35 @@ export function agentSpanMessages(value: unknown): AgentSpanMessage[] {
   })
 }
 
+export function agentSpanMessageMarkdown(value: unknown): string {
+  if (typeof value === 'string')
+    return value
+  if (Array.isArray(value))
+    return value.map(agentSpanMessageMarkdown).filter(Boolean).join('\n\n')
+  if (!isRecord(value))
+    return ''
+  for (const key of ['text', 'content', 'value']) {
+    if (typeof value[key] === 'string')
+      return value[key]
+  }
+  return ''
+}
+
+export function agentModelOutput(value: unknown): AgentModelOutput {
+  if (typeof value === 'string')
+    return { text: value }
+  if (!isRecord(value))
+    return {}
+  const text = firstString(value, ['text', 'content', 'output', 'message'])
+  const reasoningSummary = firstString(value, ['reasoningSummary', 'reasoning', 'thinking'])
+  const toolCalls = Array.isArray(value.toolCalls) && value.toolCalls.length > 0 ? value.toolCalls : undefined
+  return {
+    ...(text ? { text } : {}),
+    ...(reasoningSummary ? { reasoningSummary } : {}),
+    ...(toolCalls ? { toolCalls } : {}),
+  }
+}
+
 export function formatSpanJSON(value: unknown) {
   try {
     return JSON.stringify(value, null, 2) ?? String(value)
@@ -46,6 +81,10 @@ export function formatSpanJSON(value: unknown) {
   catch {
     return String(value)
   }
+}
+
+function firstString(value: Record<string, unknown>, keys: string[]): string | undefined {
+  return keys.map(key => value[key]).find(item => typeof item === 'string') as string | undefined
 }
 
 function parseSerializedContent(value: string): unknown {
