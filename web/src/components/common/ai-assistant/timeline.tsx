@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import type { ReactNode, UIEvent } from 'react'
 import type { AIBlock } from './state'
 import type { AIApprovalDecision, ToolCallBlock } from './tool-call'
 import type { MessageBlock } from './turns'
@@ -29,23 +29,49 @@ interface AIAssistantTimelineProps {
   onMFA: (block: ToolCallBlock, code: string) => Promise<void>
   onResend: (message: string) => void
   onRetry: () => void
+  resetKey?: string
   resendDisabled?: boolean
   showInternalTools?: boolean
   topContent?: ReactNode
 }
 
+const latestPositionThreshold = 12
+
 function isVisibleResponseBlock(block: AIBlock, showInternalTools: boolean): boolean {
   return block.type !== 'tool_call' || block.visibility !== 'internal' || showInternalTools
 }
 
-export function AIAssistantTimeline({ bottomInset = false, blocks, error, generating, loading, onAction, onApproval, onMFA, onResend, onRetry, resendDisabled, showInternalTools = false, topContent }: AIAssistantTimelineProps) {
+export function AIAssistantTimeline({ bottomInset = false, blocks, error, generating, loading, onAction, onApproval, onMFA, onResend, onRetry, resetKey, resendDisabled, showInternalTools = false, topContent }: AIAssistantTimelineProps) {
   const { t } = useTranslation()
   const viewportRef = useRef<HTMLDivElement>(null)
+  const shouldFollowLatestRef = useRef(true)
   const showTypingIndicator = generating && !blocks.some(block => block.status === 'streaming')
   const turns = groupAIAssistantBlocksByTurn(blocks)
+
+  const scrollToLatest = () => {
+    const viewport = viewportRef.current
+    if (viewport)
+      viewport.scrollTop = viewport.scrollHeight
+  }
+
+  const handleScroll = (event: UIEvent<HTMLDivElement>) => {
+    const viewport = event.currentTarget
+    const distanceFromLatest = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight
+    shouldFollowLatestRef.current = distanceFromLatest <= latestPositionThreshold
+  }
+
   useEffect(() => {
-    viewportRef.current?.scrollTo?.({ top: viewportRef.current.scrollHeight, behavior: 'smooth' })
-  }, [blocks])
+    shouldFollowLatestRef.current = true
+    const frame = requestAnimationFrame(scrollToLatest)
+    return () => cancelAnimationFrame(frame)
+  }, [resetKey])
+
+  useEffect(() => {
+    if (!shouldFollowLatestRef.current)
+      return
+    const frame = requestAnimationFrame(scrollToLatest)
+    return () => cancelAnimationFrame(frame)
+  }, [blocks, showTypingIndicator])
   if (loading) {
     return (
       <div className="grid flex-1 content-start gap-2.5 p-3">
@@ -75,6 +101,7 @@ export function AIAssistantTimeline({ bottomInset = false, blocks, error, genera
         bottomInset && 'pb-16',
       )}
       data-slot="ai-assistant-timeline"
+      onScroll={handleScroll}
     >
       {topContent}
       {turns.length === 0 && !showTypingIndicator

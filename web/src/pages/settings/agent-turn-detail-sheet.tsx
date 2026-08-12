@@ -2,9 +2,10 @@ import type { ReactNode } from 'react'
 import type { AgentTurnTimelineFilter, AgentTurnTimelineKind } from './agent-turn-timeline'
 import type { AgentObservabilityTraceSpan, AgentObservabilityTurn } from '@/api'
 import { useQuery } from '@tanstack/react-query'
-import { Bot, Braces, ChevronDown, ChevronRight, CircleDot, Clock3, Database, MessageSquareText, Network, TriangleAlert, UserRound, Wrench } from 'lucide-react'
+import { Bot, Braces, ChevronDown, ChevronRight, CircleDot, Clock3, Copy, Database, Download, MessageSquareText, Network, TriangleAlert, UserRound, Wrench } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { api } from '@/api'
 import { AIMarkdown } from '@/components/common/ai-assistant/markdown'
 import { EmptyState } from '@/components/common/empty-state'
@@ -18,6 +19,7 @@ import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import { ObservabilityJsonBlock, ObservabilityJsonValue } from './agent-observability-json'
 import { agentModelOutput, agentSpanContentSections, agentSpanMessageMarkdown, agentSpanMessages, formatSpanJSON } from './agent-span-content'
+import { agentTurnDiagnosticFilename, formatAgentTurnDiagnosticExport } from './agent-turn-diagnostic-export'
 import { agentTurnTimelineKind, filterAgentTurnTimelineSpans } from './agent-turn-timeline'
 
 const spanAttributeLabelKeys: Record<string, string> = {
@@ -57,14 +59,62 @@ export function AgentTurnDetailSheet({ turn, onOpenChange }: {
   const lastModelSpanId = useMemo(() => [...(detail.data?.spans ?? [])].reverse().find(span => agentTurnTimelineKind(span) === 'model')?.spanId, [detail.data?.spans])
   const toggleSpan = (spanId: string) => setExpandedSpanIds(current => current.includes(spanId) ? current.filter(id => id !== spanId) : [...current, spanId])
   const owner = turn?.user.name || turn?.user.email || '—'
+  const canExportDiagnostic = Boolean(turn && detail.data)
+  const exportUnavailableLabel = t('operationsDashboardPage.turnDetail.exportUnavailable')
+
+  const copyDiagnosticJSON = async () => {
+    if (!turn || !detail.data)
+      return
+    try {
+      await navigator.clipboard.writeText(formatAgentTurnDiagnosticExport(turn, detail.data))
+      toast.success(t('operationsDashboardPage.turnDetail.copyDiagnosticSuccess'))
+    }
+    catch {
+      toast.error(t('operationsDashboardPage.turnDetail.copyDiagnosticFailed'))
+    }
+  }
+
+  const downloadDiagnosticJSON = () => {
+    if (!turn || !detail.data)
+      return
+    try {
+      const exportedAt = new Date()
+      const diagnosticJSON = formatAgentTurnDiagnosticExport(turn, detail.data, exportedAt.toISOString())
+      const url = URL.createObjectURL(new Blob([diagnosticJSON], { type: 'application/json;charset=utf-8' }))
+      const link = document.createElement('a')
+      link.href = url
+      link.download = agentTurnDiagnosticFilename(turn, exportedAt)
+      link.hidden = true
+      document.body.append(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+      toast.success(t('operationsDashboardPage.turnDetail.downloadDiagnosticSuccess'))
+    }
+    catch {
+      toast.error(t('operationsDashboardPage.turnDetail.downloadDiagnosticFailed'))
+    }
+  }
 
   return (
     <Sheet open={Boolean(turn)} onOpenChange={onOpenChange}>
       <SheetContent className="w-full max-w-none gap-0 p-0 sm:max-w-none lg:w-2/3" side="right">
         <SheetHeader className="border-b border-border px-6 py-4">
           <div className="flex flex-wrap items-center gap-2 pr-10">
-            <SheetTitle>{turn ? t('operationsDashboardPage.turnDetail.title', { index: turn.turnIndex + 1 }) : t('operationsDashboardPage.turnDetail.titleFallback')}</SheetTitle>
-            {turn && <StatusBadge tone={runStatusTone(turn.status)}>{t(`operationsDashboardPage.runStatus.${turn.status}`, { defaultValue: turn.status })}</StatusBadge>}
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+              <SheetTitle>{turn ? t('operationsDashboardPage.turnDetail.title', { index: turn.turnIndex + 1 }) : t('operationsDashboardPage.turnDetail.titleFallback')}</SheetTitle>
+              {turn && <StatusBadge tone={runStatusTone(turn.status)}>{t(`operationsDashboardPage.runStatus.${turn.status}`, { defaultValue: turn.status })}</StatusBadge>}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button aria-label={t('operationsDashboardPage.turnDetail.copyDiagnostic')} disabled={!canExportDiagnostic} size="sm" title={canExportDiagnostic ? t('operationsDashboardPage.turnDetail.copyDiagnosticDescription') : exportUnavailableLabel} variant="outline" onClick={() => void copyDiagnosticJSON()}>
+                <Copy className="size-4" />
+                <span className="hidden sm:inline">{t('operationsDashboardPage.turnDetail.copyDiagnostic')}</span>
+              </Button>
+              <Button aria-label={t('operationsDashboardPage.turnDetail.downloadDiagnostic')} disabled={!canExportDiagnostic} size="sm" title={canExportDiagnostic ? t('operationsDashboardPage.turnDetail.downloadDiagnosticDescription') : exportUnavailableLabel} variant="outline" onClick={downloadDiagnosticJSON}>
+                <Download className="size-4" />
+                <span className="hidden sm:inline">{t('operationsDashboardPage.turnDetail.downloadDiagnostic')}</span>
+              </Button>
+            </div>
           </div>
           <SheetDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <span className="min-w-0 truncate font-medium text-foreground">{turn?.conversationTitle || t('operationsDashboardPage.turnDetail.untitledConversation')}</span>

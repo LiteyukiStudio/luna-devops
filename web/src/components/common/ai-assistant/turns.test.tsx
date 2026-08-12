@@ -126,6 +126,107 @@ describe('ai assistant turn topology', () => {
     expect(container.querySelector('[data-slot="ai-assistant-timeline"]')).toHaveClass('pb-16')
   })
 
+  it('follows streaming content only while the user remains at the latest position', () => {
+    const requestFrame = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      callback(0)
+      return 1
+    })
+    const cancelFrame = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {})
+    const props = {
+      error: null,
+      generating: true,
+      loading: false,
+      onAction: vi.fn(async () => true),
+      onApproval: vi.fn(async () => {}),
+      onMFA: vi.fn(async () => {}),
+      onResend: vi.fn(),
+      onRetry: vi.fn(),
+      resetKey: 'conversation-1',
+    }
+    const { container, rerender } = render(
+      <MemoryRouter>
+        <AIAssistantTimeline {...props} blocks={blocks} />
+      </MemoryRouter>,
+    )
+    const viewport = container.querySelector<HTMLElement>('[data-slot="ai-assistant-timeline"]')!
+    Object.defineProperties(viewport, {
+      clientHeight: { configurable: true, value: 400 },
+      scrollHeight: { configurable: true, value: 1000 },
+    })
+    const streamingBlocks = (id: string, text: string): AIBlock[] => [...blocks, {
+      id,
+      turnId: 'turn-1',
+      index: 4,
+      type: 'message',
+      role: 'assistant',
+      status: 'streaming',
+      text,
+      createdAt: '2026-08-01T09:03:01+08:00',
+    }]
+
+    viewport.scrollTop = 500
+    fireEvent.scroll(viewport)
+    rerender(
+      <MemoryRouter>
+        <AIAssistantTimeline {...props} blocks={streamingBlocks('stream-update-1', '流式更新一')} />
+      </MemoryRouter>,
+    )
+    expect(viewport.scrollTop).toBe(500)
+
+    viewport.scrollTop = 588
+    fireEvent.scroll(viewport)
+    rerender(
+      <MemoryRouter>
+        <AIAssistantTimeline {...props} blocks={streamingBlocks('stream-update-2', '流式更新二')} />
+      </MemoryRouter>,
+    )
+    expect(viewport.scrollTop).toBe(1000)
+
+    requestFrame.mockRestore()
+    cancelFrame.mockRestore()
+  })
+
+  it('resumes latest-position following when switching conversations', () => {
+    const requestFrame = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      callback(0)
+      return 1
+    })
+    const cancelFrame = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {})
+    const props = {
+      blocks,
+      error: null,
+      generating: false,
+      loading: false,
+      onAction: vi.fn(async () => true),
+      onApproval: vi.fn(async () => {}),
+      onMFA: vi.fn(async () => {}),
+      onResend: vi.fn(),
+      onRetry: vi.fn(),
+    }
+    const { container, rerender } = render(
+      <MemoryRouter>
+        <AIAssistantTimeline {...props} resetKey="conversation-1" />
+      </MemoryRouter>,
+    )
+    const viewport = container.querySelector<HTMLElement>('[data-slot="ai-assistant-timeline"]')!
+    Object.defineProperties(viewport, {
+      clientHeight: { configurable: true, value: 400 },
+      scrollHeight: { configurable: true, value: 1000 },
+    })
+    viewport.scrollTop = 300
+    fireEvent.scroll(viewport)
+
+    rerender(
+      <MemoryRouter>
+        <AIAssistantTimeline {...props} resetKey="conversation-2" />
+      </MemoryRouter>,
+    )
+    expect(viewport.scrollTop).toBe(1000)
+
+    requestFrame.mockRestore()
+    cancelFrame.mockRestore()
+  })
+
   it('keeps timestamps visible and exposes message actions inside the stable message group', async () => {
     await i18next.changeLanguage('zh-CN')
     const onResend = vi.fn()

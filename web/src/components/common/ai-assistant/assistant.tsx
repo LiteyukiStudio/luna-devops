@@ -517,6 +517,7 @@ export function AiAssistant({ initiallyOpen = false }: { initiallyOpen?: boolean
           }}
           onResend={message => sendTurn.mutate({ conversationId: selectedConversationId, message })}
           onRetry={() => void timeline.refetch()}
+          resetKey={selectedConversationId}
           resendDisabled={Boolean(activeRunId || sendingSelected)}
           showInternalTools={toolDebugMode.enabled}
           topContent={conversationSession.refreshReturnExpiresAt && canReturnToPreviousConversation && !selectedConversationId && !conversationSearch

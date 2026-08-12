@@ -2,6 +2,8 @@
 
 The AI assistant uses the current page and your platform permissions to inspect resources, explain status, diagnose failures, and help with deployments and routine operations.
 
+While a reply is being generated, the message list follows new content only when you are already at the latest message. Scrolling up pauses following until you return to the bottom.
+
 Stopping an active task preserves the conversation content already produced and marks the turn as canceled. A normal cancellation is not reported as a model-generation failure. You can then edit the input and start another task.
 
 If you're new to servers, containers, or Kubernetes, just say so ("I'm new to this" or "first time deploying"). The assistant switches to a guided mode that explains each concept in plain terms, first confirming your project type, start command, and port, then helping you package, deploy, and expose your app.

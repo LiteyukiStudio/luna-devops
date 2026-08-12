@@ -20,10 +20,10 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { TabsContent } from '@/components/ui/tabs'
 import { isPlatformAdmin } from '@/lib/roles'
+import { agentObservabilityRanges, readAgentObservabilityRange, writeAgentObservabilityRange } from './agent-observability-range-preference'
 import { AgentTurnDetailSheet } from './agent-turn-detail-sheet'
 
 const OPERATIONS_DASHBOARD_URL_KEY = 'site.operationsDashboardUrl'
-const AGENT_OBSERVABILITY_RANGES: readonly AgentObservabilityRange[] = ['1h', '6h', '24h', '7d', '30d', '1y']
 
 export function OperationsDashboardPage() {
   const { t } = useTranslation()
@@ -67,7 +67,7 @@ export function OperationsDashboardPage() {
         <PlatformDashboardContent dashboardUrl={dashboardUrl} iframeUrl={iframeUrl} />
       </TabsContent>
       <TabsContent value="agent">
-        <AgentObservabilityView active={activeTab === 'agent'} enabled={observabilityEnabled} />
+        <AgentObservabilityView active={activeTab === 'agent'} enabled={observabilityEnabled} userId={user?.id ?? ''} />
       </TabsContent>
     </ContentTabs>
   )
@@ -101,9 +101,9 @@ function ObservabilityConfigEmpty({ description, title }: { description: string,
   )
 }
 
-function AgentObservabilityView({ active, enabled }: { active: boolean, enabled: boolean }) {
+function AgentObservabilityView({ active, enabled, userId }: { active: boolean, enabled: boolean, userId: string }) {
   const { t, i18n } = useTranslation()
-  const [range, setRange] = useState<AgentObservabilityRange>('1h')
+  const [range, setRange] = useState<AgentObservabilityRange>(() => readAgentObservabilityRange(userId))
   const [turnPage, setTurnPage] = useState(1)
   const [turnPageSize, setTurnPageSize] = useState(20)
   const [turnSearch, setTurnSearch] = useState('')
@@ -130,6 +130,7 @@ function AgentObservabilityView({ active, enabled }: { active: boolean, enabled:
   }
   const changeRange = (value: AgentObservabilityRange) => {
     setRange(value)
+    writeAgentObservabilityRange(userId, value)
     setTurnPage(1)
     setSelectedTurn(null)
   }
@@ -197,7 +198,7 @@ function AgentObservabilityView({ active, enabled }: { active: boolean, enabled:
           <p className="m-0 text-sm text-muted-foreground">{t('operationsDashboardPage.agentOverviewDescription', { range: t(`operationsDashboardPage.timeRange.${range}`) })}</p>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
-          {AGENT_OBSERVABILITY_RANGES.map(item => <Button key={item} size="sm" variant={range === item ? 'default' : 'outline'} onClick={() => changeRange(item)}>{t(`operationsDashboardPage.timeRange.${item}`)}</Button>)}
+          {agentObservabilityRanges.map(item => <Button key={item} size="sm" variant={range === item ? 'default' : 'outline'} onClick={() => changeRange(item)}>{t(`operationsDashboardPage.timeRange.${item}`)}</Button>)}
           <Button aria-label={t('common.refresh')} disabled={overview.isFetching || turns.isFetching} size="icon" variant="ghost" onClick={refreshWorkspace}><RefreshCw className={overview.isFetching || turns.isFetching ? 'animate-spin' : ''} /></Button>
         </div>
       </div>
