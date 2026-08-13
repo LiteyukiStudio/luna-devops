@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
 import { AgentTraceContextPanel } from './agent-trace-context-panel'
+import { filterAgentTraceDisplaySpans, isCanonicalAgentToolSpan } from './agent-turn-timeline'
 
 export function AgentTraceDetailSheet({ trace, onOpenChange }: {
   trace: AgentObservabilityTrace | null
@@ -27,11 +28,12 @@ export function AgentTraceDetailSheet({ trace, onOpenChange }: {
   const [collapsedSpanIdsByTrace, setCollapsedSpanIdsByTrace] = useState<Record<string, string[]>>({})
   const traceId = trace?.traceId ?? ''
   const collapsedSpanIds = useMemo(() => new Set(collapsedSpanIdsByTrace[traceId] ?? []), [collapsedSpanIdsByTrace, traceId])
-  const collapsibleSpanIds = useMemo(() => getCollapsibleSpanIds(detail.data?.spans ?? []), [detail.data?.spans])
-  const spans = useMemo(() => buildSpanRows(detail.data?.spans ?? [], collapsedSpanIds), [collapsedSpanIds, detail.data?.spans])
-  const selected = detail.data?.spans.find(span => span.spanId === selectedSpanId) ?? detail.data?.spans[0]
+  const displaySpans = useMemo(() => filterAgentTraceDisplaySpans(detail.data?.spans ?? []), [detail.data?.spans])
+  const collapsibleSpanIds = useMemo(() => getCollapsibleSpanIds(displaySpans), [displaySpans])
+  const spans = useMemo(() => buildSpanRows(displaySpans, collapsedSpanIds), [collapsedSpanIds, displaySpans])
+  const selected = displaySpans.find(span => span.spanId === selectedSpanId) ?? displaySpans[0]
   const modelSpans = detail.data?.spans.filter(span => isModelSpan(span)).length ?? 0
-  const toolSpans = detail.data?.spans.filter(span => isToolSpan(span)).length ?? 0
+  const toolSpans = detail.data?.spans.filter(span => isCanonicalAgentToolSpan(span)).length ?? 0
   const updateCollapsedSpanIds = (values: Set<string>) => {
     if (traceId)
       setCollapsedSpanIdsByTrace(current => ({ ...current, [traceId]: [...values] }))
@@ -45,8 +47,8 @@ export function AgentTraceDetailSheet({ trace, onOpenChange }: {
     updateCollapsedSpanIds(next)
   }
   const selectToolSpan = (call: AgentObservabilityConversationToolCall) => {
-    const exact = detail.data?.spans.find(span => span.attributes['luna.tool_call.id'] === call.id)
-    const matchingName = detail.data?.spans.find(span => isToolSpan(span) && span.attributes['gen_ai.tool.name'] === call.operationId)
+    const exact = detail.data?.spans.find(span => isCanonicalAgentToolSpan(span) && span.attributes['luna.tool_call.id'] === call.id)
+    const matchingName = detail.data?.spans.find(span => isCanonicalAgentToolSpan(span) && span.attributes['gen_ai.tool.name'] === call.operationId)
     setSelectedSpanId((exact ?? matchingName)?.spanId ?? null)
   }
 

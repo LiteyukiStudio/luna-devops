@@ -65,6 +65,8 @@
 
 ## 0. 全链路可观测改造
 
+- [x] Agent 观测按 `service.name` 与稳定 Span 名区分业务工具调用和 API 传输：界面以 `luna-agent / agent.tool.execute` 为权威工具步骤，过滤重复的 `luna_api.tool.execute` 子 Span，同时在原始 Trace 与诊断导出中保留完整链路。
+
 - [x] 新增仅绑定本机的开发用 Compose 观测栈，集成 OpenTelemetry Collector、Prometheus、Loki、Tempo 和 Grafana，自动配置数据源并加载仓库 Dashboard。
 - [x] 在全局设置的 AI 助手中新增默认折叠的 AI 高级设置，支持加密配置 Prometheus、Loki、Tempo 查询连接和独立启用 Agent 可观测，为运营面板原生 Agent 观测提供受控数据源入口。
 - [x] 完成原生 Agent 可观测总览：三个数据源支持独立且不阻塞保存的连接测试，顶部支持 1 小时、6 小时、24 小时、7 日、30 日和 1 年窗口并聚合 Token、工具调用、轮次成功率和执行耗时，轮次列表使用服务端分页。
