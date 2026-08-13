@@ -1,15 +1,9 @@
 import type { DataExportAuthorization } from '@/api'
 import { api, deploymentTargetDataExportUrl } from '@/api'
 
-interface ExportWindow {
-  close: () => void
-  location: Pick<Location, 'replace'>
-  opener: unknown
-}
-
 interface DataExportDependencies {
   authorize?: (projectId: string, applicationId: string, targetId: string) => Promise<DataExportAuthorization>
-  openWindow?: () => ExportWindow | null
+  startDownload?: (url: string) => void
 }
 
 export async function openDeploymentTargetDataExport(
@@ -18,24 +12,22 @@ export async function openDeploymentTargetDataExport(
   targetId: string,
   dependencies: DataExportDependencies = {},
 ) {
-  const exportWindow = (dependencies.openWindow ?? (() => window.open('about:blank', '_blank')))()
-  if (!exportWindow)
-    throw new Error('data_export_window_blocked')
+  const authorization = await (dependencies.authorize ?? api.authorizeDeploymentTargetDataExport)(projectId, applicationId, targetId)
+  const baseExportUrl = deploymentTargetDataExportUrl(projectId, applicationId, targetId)
+  const exportUrl = new URL(baseExportUrl, window.location.origin)
+  exportUrl.searchParams.set('ticket', authorization.ticket)
+  const href = baseExportUrl.startsWith('http://') || baseExportUrl.startsWith('https://')
+    ? exportUrl.toString()
+    : `${exportUrl.pathname}${exportUrl.search}`
+  ;(dependencies.startDownload ?? startBrowserDownload)(href)
+}
 
-  exportWindow.opener = null
-  try {
-    const authorization = await (dependencies.authorize ?? api.authorizeDeploymentTargetDataExport)(projectId, applicationId, targetId)
-    const baseExportUrl = deploymentTargetDataExportUrl(projectId, applicationId, targetId)
-    const exportUrl = new URL(baseExportUrl, window.location.origin)
-    exportUrl.searchParams.set('ticket', authorization.ticket)
-    exportWindow.location.replace(
-      baseExportUrl.startsWith('http://') || baseExportUrl.startsWith('https://')
-        ? exportUrl.toString()
-        : `${exportUrl.pathname}${exportUrl.search}`,
-    )
-  }
-  catch (error) {
-    exportWindow.close()
-    throw error
-  }
+function startBrowserDownload(url: string) {
+  const link = document.createElement('a')
+  link.href = url
+  link.download = ''
+  link.hidden = true
+  document.body.append(link)
+  link.click()
+  link.remove()
 }

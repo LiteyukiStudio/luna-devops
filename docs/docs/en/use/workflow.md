@@ -53,7 +53,7 @@ Shared configuration can follow the latest value or use a snapshot. Deployment h
 
 Web Console access depends on project settings, account permission, and MFA policy. Terminal use is audited; avoid printing or pasting unnecessary secrets.
 
-Data export requires project Owner or Admin permission and any required step-up verification. It includes managed or attached PVCs, not `emptyDir`. Before export or cleanup, consider file size, sensitive content, and destination storage.
+Data export requires project Owner or Admin permission and any required step-up verification. The browser completes verification on the current page and starts the download only after authorization, without opening a download page in advance. It includes managed or attached PVCs, not `emptyDir`. Before export or cleanup, consider file size, sensitive content, and destination storage.
 
 ## Routes
 
