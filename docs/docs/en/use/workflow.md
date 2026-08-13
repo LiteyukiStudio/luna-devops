@@ -45,6 +45,8 @@ Most services can use the defaults. Configure health probes, startup commands, S
 
 PVC storage properties are generally chosen at creation time; do not assume automatic migration. `emptyDir` data disappears with its Pod and is not included in data exports. Confirm backup and recovery before changing or retaining storage.
 
+Deleting an application retains its managed PVCs by default and registers them as data volumes that can be reclaimed. To restore the data, select the retained volume in a new deployment target on the same runtime cluster. The platform deletes a PVC only after you explicitly choose permanent deletion and confirm the operation; export a backup first when the data may still be needed.
+
 Shared configuration can follow the latest value or use a snapshot. Deployment hooks suit one-time tasks such as database migrations. A failed hook can stop a release, so scripts should be repeatable and have a rollback plan.
 
 ## Web Console and data export

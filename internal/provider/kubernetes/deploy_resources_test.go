@@ -575,6 +575,51 @@ func TestApplyApplicationResourcesSupportsExistingClaimAndEmptyDirDataVolumes(t 
 	}
 }
 
+func TestApplyApplicationResourcesReclaimsRetainedClaim(t *testing.T) {
+	const retainedVolumeID = "rvol_demo"
+	existing := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "retained-data",
+			Namespace: "project-demo",
+			Labels: map[string]string{
+				ManagedByLabel:        ManagedByValue,
+				RetainedVolumeIDLabel: retainedVolumeID,
+			},
+		},
+	}
+	client := NewClientForInterface(fake.NewSimpleClientset(existing))
+	spec := ApplicationResourcesSpec{
+		Name: "api-reclaim", Namespace: "project-demo", ProjectID: "prj_demo",
+		ApplicationID: "app_api", EnvironmentID: "env_dev", DeploymentTargetID: "dplt_backend",
+		ReleaseID: "rel_1", Image: "registry.example.com/acme/api:prod", ServicePort: 8080,
+		DataRetentionEnabled: true,
+		DataVolumes: []ApplicationDataVolume{{
+			Name: "data", MountPath: "/data", SourceType: "retainedClaim",
+			ExistingClaimName: "retained-data", RetainedVolumeID: retainedVolumeID,
+		}},
+	}
+	if err := client.ApplyApplicationResources(context.Background(), spec); err != nil {
+		t.Fatalf("apply retained claim: %v", err)
+	}
+	claim, err := client.client.CoreV1().PersistentVolumeClaims(spec.Namespace).Get(context.Background(), "retained-data", metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get reclaimed claim: %v", err)
+	}
+	if claim.Labels[ApplicationIDLabel] != spec.ApplicationID || claim.Labels[DeploymentTargetIDLabel] != spec.DeploymentTargetID {
+		t.Fatalf("reclaimed labels = %#v", claim.Labels)
+	}
+	if _, ok := claim.Labels[RetainedVolumeIDLabel]; ok {
+		t.Fatalf("retained ownership label was not removed: %#v", claim.Labels)
+	}
+	deployment, err := client.client.AppsV1().Deployments(spec.Namespace).Get(context.Background(), spec.Name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get deployment: %v", err)
+	}
+	if deployment.Spec.Template.Spec.Volumes[0].PersistentVolumeClaim.ClaimName != "retained-data" {
+		t.Fatalf("deployment did not mount retained claim: %#v", deployment.Spec.Template.Spec.Volumes)
+	}
+}
+
 func TestApplyApplicationResourcesRejectsRiskyAuxContainerSecurityContext(t *testing.T) {
 	client := NewClientForInterface(fake.NewSimpleClientset())
 	spec := ApplicationResourcesSpec{

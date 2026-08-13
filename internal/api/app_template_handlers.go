@@ -29,6 +29,7 @@ type appTemplateInstallInput struct {
 	CPURequest            string            `json:"cpuRequest"`
 	MemoryRequest         string            `json:"memoryRequest"`
 	DataCapacity          string            `json:"dataCapacity"`
+	RetainedVolumeID      string            `json:"retainedVolumeId"`
 	InstallNow            *bool             `json:"installNow"`
 	Values                map[string]string `json:"values"`
 }
@@ -86,6 +87,13 @@ func (h *Handlers) InstallAppTemplate(ctx *gin.Context) {
 			return err
 		}
 		if err := tx.Create(&plan.DeploymentTarget).Error; err != nil {
+			return err
+		}
+		var dataVolumes []deploymentTargetDataVolumeInput
+		if err := json.Unmarshal([]byte(plan.DeploymentTarget.DataVolumes), &dataVolumes); err != nil {
+			return err
+		}
+		if err := reserveRetainedVolumes(tx, plan.Application.ProjectID, plan.Application.ID, plan.DeploymentTarget.ID, plan.DeploymentTarget.ClusterID, dataVolumes); err != nil {
 			return err
 		}
 		if plan.Release != nil {
@@ -222,6 +230,23 @@ func (h *Handlers) buildTemplateInstallPlan(ctx *gin.Context, user model.User, p
 	if !ok {
 		return templateInstallPlan{}, false
 	}
+	retainedVolumeID := strings.TrimSpace(input.RetainedVolumeID)
+	if retainedVolumeID != "" {
+		if !template.DataRetentionEnabled {
+			writeErrorCode(ctx, http.StatusBadRequest, "app_template.retained_volume_unsupported", "该模板没有持久化数据卷")
+			return templateInstallPlan{}, false
+		}
+		var retained model.RetainedVolume
+		if err := h.dbFor(ctx).First(&retained, "id = ? and project_id = ? and status = ?", retainedVolumeID, project.ID, model.RetainedVolumeStatusRetained).Error; err != nil {
+			writeErrorCode(ctx, http.StatusConflict, "retained_volume.unavailable", "保留数据卷不存在或已被认领")
+			return templateInstallPlan{}, false
+		}
+		dataVolumes[0].SourceType = "retainedClaim"
+		dataVolumes[0].ExistingClaimName = retained.ClaimName
+		dataVolumes[0].RetainedVolumeID = retained.ID
+		dataVolumes[0].Capacity = ""
+		dataVolumes[0].MountPath = firstNonEmpty(retained.MountPath, dataVolumes[0].MountPath)
+	}
 	dataVolumesContent, err := json.Marshal(dataVolumes)
 	if err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
@@ -242,6 +267,13 @@ func (h *Handlers) buildTemplateInstallPlan(ctx *gin.Context, user model.User, p
 	}
 	if _, ok := h.runtimeClusterForProjectUse(ctx, user, project.ID, clusterID); !ok {
 		return templateInstallPlan{}, false
+	}
+	if retainedVolumeID != "" {
+		var retained model.RetainedVolume
+		if err := h.dbFor(ctx).First(&retained, "id = ?", retainedVolumeID).Error; err != nil || strings.TrimSpace(retained.ClusterID) != strings.TrimSpace(clusterID) {
+			writeErrorCode(ctx, http.StatusConflict, "retained_volume.cluster_mismatch", "保留数据卷只能在原运行集群中重新认领")
+			return templateInstallPlan{}, false
+		}
 	}
 
 	installNow := true

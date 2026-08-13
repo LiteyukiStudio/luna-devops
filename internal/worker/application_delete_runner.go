@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
@@ -50,6 +51,10 @@ func (r *Runner) cleanupApplicationRuntimeResources(ctx context.Context, payload
 	if err := r.db.First(&project, "id = ?", payload.ProjectID).Error; err != nil {
 		return fmt.Errorf("project not found: %w", err)
 	}
+	var app model.Application
+	if err := r.db.WithContext(ctx).First(&app, "id = ? and project_id = ?", payload.ApplicationID, payload.ProjectID).Error; err != nil {
+		return fmt.Errorf("application not found: %w", err)
+	}
 	var targets []model.DeploymentTarget
 	if err := r.db.Where("project_id = ? and application_id = ?", payload.ProjectID, payload.ApplicationID).Find(&targets).Error; err != nil {
 		return err
@@ -65,6 +70,11 @@ func (r *Runner) cleanupApplicationRuntimeResources(ctx context.Context, payload
 			return err
 		}
 		namespace := deploymentNamespace(project, environment)
+		if !payload.DeleteData {
+			if err := r.retainApplicationVolumes(ctx, manager, project, app, target, namespace); err != nil {
+				return err
+			}
+		}
 		for _, kind := range kinds {
 			items, err := manager.ListManagedResources(ctx, kubeprovider.ResourceListOptions{
 				Kind:          kind,
@@ -89,6 +99,77 @@ func (r *Runner) cleanupApplicationRuntimeResources(ctx context.Context, payload
 		}
 	}
 	return nil
+}
+
+func (r *Runner) retainApplicationVolumes(ctx context.Context, manager kubeprovider.NamespaceManager, project model.Project, app model.Application, target model.DeploymentTarget, namespace string) error {
+	claims, err := manager.ListManagedPersistentVolumeClaims(ctx, namespace, target.ID)
+	if err != nil {
+		if isKubernetesNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("list persistent data before retention: %w", err)
+	}
+	for _, claim := range claims {
+		var retained model.RetainedVolume
+		err := r.db.WithContext(ctx).Where("cluster_id = ? and namespace = ? and claim_name = ?", target.ClusterID, namespace, claim.Name).First(&retained).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			retained = model.RetainedVolume{
+				ID: id.New("rvol"), ProjectID: project.ID,
+				SourceApplicationID: app.ID, SourceApplicationName: app.Name, SourceDeploymentTargetID: target.ID,
+				ClusterID: target.ClusterID, Namespace: namespace, ClaimName: claim.Name,
+				VolumeName: retainedVolumeLogicalName(target, claim.Name), MountPath: retainedVolumeMountPath(target, claim.Name),
+				Capacity: claim.Capacity, StorageClassName: claim.StorageClassName, AccessMode: claim.AccessMode, VolumeMode: claim.VolumeMode,
+				Status: model.RetainedVolumeStatusRetaining, RetainedAt: time.Now(),
+			}
+			if err := r.db.WithContext(ctx).Create(&retained).Error; err != nil {
+				return err
+			}
+		} else if err != nil {
+			return err
+		}
+		if retained.Status == model.RetainedVolumeStatusRetained {
+			continue
+		}
+		if err := manager.RetainManagedPersistentVolumeClaim(ctx, namespace, claim.Name, target.ID, retained.ID); err != nil {
+			_ = r.db.WithContext(ctx).Model(&retained).Updates(map[string]any{"status": model.RetainedVolumeStatusFailed, "last_error": trimReleaseLogContent(err.Error())}).Error
+			return fmt.Errorf("retain persistent data %s/%s: %w", namespace, claim.Name, err)
+		}
+		if err := r.db.WithContext(ctx).Model(&retained).Updates(map[string]any{
+			"source_application_id":       app.ID,
+			"source_application_name":     app.Name,
+			"source_deployment_target_id": target.ID,
+			"status":                      model.RetainedVolumeStatusRetained,
+			"claimed_by_application_id":   "",
+			"claimed_by_target_id":        "",
+			"claimed_at":                  nil,
+			"retained_at":                 time.Now(),
+			"last_error":                  "",
+		}).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func retainedVolumeLogicalName(target model.DeploymentTarget, claimName string) string {
+	baseName := applicationResourceName(target)
+	for _, volume := range deploymentTargetDataVolumes(target) {
+		name := firstNonEmpty(strings.TrimSpace(volume.Name), "data")
+		if claimName == baseName+"-data" && name == "data" || strings.HasSuffix(claimName, "-"+name+"-data") {
+			return name
+		}
+	}
+	return "data"
+}
+
+func retainedVolumeMountPath(target model.DeploymentTarget, claimName string) string {
+	logicalName := retainedVolumeLogicalName(target, claimName)
+	for _, volume := range deploymentTargetDataVolumes(target) {
+		if firstNonEmpty(strings.TrimSpace(volume.Name), "data") == logicalName {
+			return firstNonEmpty(strings.TrimSpace(volume.MountPath), "/data")
+		}
+	}
+	return "/data"
 }
 
 func applicationDeleteTaskCanRun(app model.Application) bool {

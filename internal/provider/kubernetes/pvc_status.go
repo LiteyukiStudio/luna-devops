@@ -11,9 +11,12 @@ import (
 )
 
 type PersistentVolumeClaimSnapshot struct {
-	Name      string
-	Capacity  string
-	CreatedAt time.Time
+	Name             string    `json:"name"`
+	Capacity         string    `json:"capacity"`
+	StorageClassName string    `json:"storageClassName"`
+	AccessMode       string    `json:"accessMode"`
+	VolumeMode       string    `json:"volumeMode"`
+	CreatedAt        time.Time `json:"createdAt"`
 }
 
 // ListManagedPersistentVolumeClaims returns live PVCs created and managed for a
@@ -38,10 +41,45 @@ func (c *Client) ListManagedPersistentVolumeClaims(ctx context.Context, namespac
 			continue
 		}
 		output = append(output, PersistentVolumeClaimSnapshot{
-			Name:      item.Name,
-			Capacity:  capacity.String(),
-			CreatedAt: item.CreationTimestamp.Time,
+			Name: item.Name, Capacity: capacity.String(), CreatedAt: item.CreationTimestamp.Time,
+			StorageClassName: valueOrEmpty(item.Spec.StorageClassName),
+			AccessMode:       firstAccessMode(item.Spec.AccessModes), VolumeMode: valueOrEmpty(item.Spec.VolumeMode),
 		})
 	}
 	return output, nil
+}
+
+func valueOrEmpty[T ~string](value *T) string {
+	if value == nil {
+		return ""
+	}
+	return string(*value)
+}
+
+func firstAccessMode(values []corev1.PersistentVolumeAccessMode) string {
+	if len(values) == 0 {
+		return ""
+	}
+	return string(values[0])
+}
+
+// RetainManagedPersistentVolumeClaim transfers a PVC from an application
+// lifecycle to a retained-volume lifecycle without changing its Kubernetes name.
+func (c *Client) RetainManagedPersistentVolumeClaim(ctx context.Context, namespace, claimName, deploymentTargetID, retainedVolumeID string) error {
+	claim, err := c.client.CoreV1().PersistentVolumeClaims(namespace).Get(ctx, claimName, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	if err := ensureResourceOwnership("PersistentVolumeClaim", claim, map[string]string{DeploymentTargetIDLabel: deploymentTargetID}); err != nil {
+		return err
+	}
+	labels := claim.GetLabels()
+	delete(labels, ApplicationIDLabel)
+	delete(labels, EnvironmentIDLabel)
+	delete(labels, DeploymentTargetIDLabel)
+	delete(labels, ReleaseIDLabel)
+	labels[RetainedVolumeIDLabel] = retainedVolumeID
+	claim.SetLabels(labels)
+	_, err = c.client.CoreV1().PersistentVolumeClaims(namespace).Update(ctx, claim, metav1.UpdateOptions{})
+	return err
 }

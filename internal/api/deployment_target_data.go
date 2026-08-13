@@ -111,6 +111,12 @@ func normalizeDataVolumes(ctx *gin.Context, value string, enabled bool, fallback
 				return nil, false
 			}
 			capacity = ""
+		} else if sourceType == "retainedClaim" {
+			if existingClaimName == "" || strings.TrimSpace(item.RetainedVolumeID) == "" {
+				writeErrorCode(ctx, http.StatusBadRequest, "deployment.retained_volume_required", "保留数据卷必须同时提供保留卷标识和 PVC 名称")
+				return nil, false
+			}
+			capacity = ""
 		} else if sourceType == "emptyDir" {
 			if emptyDirSizeLimit != "" {
 				if _, ok := normalizeDataCapacity(ctx, emptyDirSizeLimit, true); !ok {
@@ -127,6 +133,7 @@ func normalizeDataVolumes(ctx *gin.Context, value string, enabled bool, fallback
 			Capacity:          capacity,
 			SourceType:        sourceType,
 			ExistingClaimName: existingClaimName,
+			RetainedVolumeID:  strings.TrimSpace(item.RetainedVolumeID),
 			EmptyDirMedium:    emptyDirMedium,
 			EmptyDirSizeLimit: emptyDirSizeLimit,
 		})
@@ -138,6 +145,8 @@ func normalizeDataVolumeSourceType(value string) string {
 	switch strings.TrimSpace(value) {
 	case "existingClaim":
 		return "existingClaim"
+	case "retainedClaim":
+		return "retainedClaim"
 	case "emptyDir":
 		return "emptyDir"
 	default:
@@ -280,6 +289,7 @@ func deploymentTargetKubernetesDataVolumes(target model.DeploymentTarget) []kube
 			Capacity:          volume.Capacity,
 			SourceType:        normalizeDataVolumeSourceType(volume.SourceType),
 			ExistingClaimName: strings.TrimSpace(volume.ExistingClaimName),
+			RetainedVolumeID:  strings.TrimSpace(volume.RetainedVolumeID),
 			EmptyDirMedium:    normalizeEmptyDirMedium(volume.EmptyDirMedium),
 			EmptyDirSizeLimit: strings.TrimSpace(volume.EmptyDirSizeLimit),
 		})
@@ -300,7 +310,7 @@ func deploymentTargetDataExportVolumes(target model.DeploymentTarget) []kubeprov
 			continue
 		}
 		pvcName := resourceName + "-data"
-		if normalizeDataVolumeSourceType(volume.SourceType) == "existingClaim" {
+		if normalizeDataVolumeSourceType(volume.SourceType) == "existingClaim" || normalizeDataVolumeSourceType(volume.SourceType) == "retainedClaim" {
 			pvcName = strings.TrimSpace(volume.ExistingClaimName)
 		} else if name != "data" {
 			pvcName = runtimeDNSLabel(resourceName + "-" + name + "-data")

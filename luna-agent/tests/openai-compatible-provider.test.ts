@@ -303,7 +303,7 @@ describe("OpenAICompatibleProvider streaming", () => {
     const fetchMock = vi.fn<typeof fetch>(async () => new Response(body, { status: 200 }))
     vi.stubGlobal("fetch", fetchMock)
     const provider = new OpenAICompatibleProvider({ baseUrl: "https://provider.example/v1", apiKey: "secret", model: "model-a", timeoutMs: 5000, maxRetries: 5 })
-    const events = []
+    const events: Array<{ type: string, delta?: string }> = []
     await expect(async () => {
       for await (const event of provider.stream({ messages: [{ role: "user", content: "hello" }], maxOutputTokens: 100 }))
         events.push(event)

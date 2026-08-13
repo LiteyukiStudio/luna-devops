@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 
@@ -36,6 +37,15 @@ func (h *Handlers) persistDeploymentTarget(target model.DeploymentTarget, hookIn
 				return errDeploymentStageExists
 			}
 		} else if err := tx.Save(&target).Error; err != nil {
+			return err
+		}
+		var dataVolumes []deploymentTargetDataVolumeInput
+		if strings.TrimSpace(target.DataVolumes) != "" {
+			if err := json.Unmarshal([]byte(target.DataVolumes), &dataVolumes); err != nil {
+				return err
+			}
+		}
+		if err := reserveRetainedVolumes(tx, target.ProjectID, target.ApplicationID, target.ID, target.ClusterID, dataVolumes); err != nil {
 			return err
 		}
 		if err := h.replaceDeploymentTargetHookBindings(tx, target, hookInputs); err != nil {

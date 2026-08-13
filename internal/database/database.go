@@ -156,6 +156,7 @@ func MigrateContext(ctx context.Context, db *gorm.DB) (err error) {
 		&model.SecretValue{},
 		&model.ScopedResourceProjectBinding{},
 		&model.Application{},
+		&model.RetainedVolume{},
 		&model.ServiceBinding{},
 		&model.ProjectTopologyEdge{},
 		&model.AppTemplateInstallation{},

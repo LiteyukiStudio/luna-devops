@@ -399,6 +399,8 @@ const deploymentsPage = {
   dataVolumeSourceDetail: '来源详情',
   dataVolumeSourceManaged: '托管 PVC',
   dataVolumeSourceExistingClaim: '已有 PVC',
+  dataVolumeSourceRetainedClaim: '保留数据卷',
+  dataRetainedVolumePlaceholder: '选择此前保留的数据卷',
   dataVolumeSourceEmptyDir: '临时 emptyDir',
   dataExistingClaimNamePlaceholder: '已有 PVC 名称',
   emptyDirMediumDefault: '节点磁盘',

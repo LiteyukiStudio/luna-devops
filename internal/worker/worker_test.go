@@ -843,6 +843,10 @@ func (fakeNamespaceManager) ListManagedPersistentVolumeClaims(context.Context, s
 	return nil, nil
 }
 
+func (fakeNamespaceManager) RetainManagedPersistentVolumeClaim(context.Context, string, string, string, string) error {
+	return nil
+}
+
 func (fakeNamespaceManager) EnsureNamespace(context.Context, string, map[string]string) error {
 	return nil
 }

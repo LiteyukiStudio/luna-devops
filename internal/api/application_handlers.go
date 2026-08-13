@@ -11,6 +11,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/LiteyukiStudio/devops/internal/resourceidentifier"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
 	"github.com/gin-gonic/gin"
@@ -19,6 +20,19 @@ import (
 )
 
 var errApplicationIdentifierExists = errors.New("application identifier already exists")
+
+type applicationDeletionTargetPreview struct {
+	TargetID        string                                       `json:"deploymentTargetId"`
+	TargetName      string                                       `json:"deploymentTargetName"`
+	ExportAvailable bool                                         `json:"exportAvailable"`
+	Volumes         []kubeprovider.PersistentVolumeClaimSnapshot `json:"volumes"`
+	ObservationCode string                                       `json:"observationCode,omitempty"`
+}
+
+type applicationDeletionPreview struct {
+	HasPersistentData bool                               `json:"hasPersistentData"`
+	Targets           []applicationDeletionTargetPreview `json:"targets"`
+}
 
 func (h *Handlers) ListApplications(ctx *gin.Context) {
 	if _, ok := h.findProjectForCurrentUser(ctx); !ok {
@@ -130,7 +144,7 @@ func (h *Handlers) UpdateApplication(ctx *gin.Context) {
 }
 
 func (h *Handlers) DeleteApplication(ctx *gin.Context) {
-	user, _, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
+	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
 	if !ok {
 		return
 	}
@@ -146,6 +160,34 @@ func (h *Handlers) DeleteApplication(ctx *gin.Context) {
 	if !h.ensureNoIncomingServiceBindings(ctx, app.ProjectID, app.ID, "") {
 		return
 	}
+	var input struct {
+		DataAction string `json:"dataAction"`
+	}
+	if ctx.Request.ContentLength > 0 && !bindJSON(ctx, &input) {
+		return
+	}
+	dataAction := strings.TrimSpace(input.DataAction)
+	if dataAction == "" {
+		dataAction = "retain"
+	}
+	if dataAction != "retain" && dataAction != "delete" {
+		writeErrorCode(ctx, http.StatusBadRequest, "application.data_action_invalid", "数据处理方式无效")
+		return
+	}
+	deleteData := dataAction == "delete"
+	if deleteData {
+		preview, err := h.buildApplicationDeletionPreview(ctx.Request.Context(), project, app)
+		if err != nil {
+			writeError(ctx, http.StatusInternalServerError, err.Error())
+			return
+		}
+		for _, target := range preview.Targets {
+			if target.ObservationCode != "" {
+				writeErrorCode(ctx, http.StatusConflict, "application.persistent_data_unavailable", "无法确认全部持久化数据，暂不能永久删除")
+				return
+			}
+		}
+	}
 	startedAt := time.Now()
 	err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&model.Application{}).
@@ -155,7 +197,7 @@ func (h *Handlers) DeleteApplication(ctx *gin.Context) {
 				"delete_message":      "",
 				"delete_started_at":   &startedAt,
 				"delete_finished_at":  nil,
-				"data_retention_mode": "retain",
+				"data_retention_mode": dataAction,
 			}).Error; err != nil {
 			return err
 		}
@@ -163,14 +205,14 @@ func (h *Handlers) DeleteApplication(ctx *gin.Context) {
 		app.DeleteMessage = ""
 		app.DeleteStartedAt = &startedAt
 		app.DeleteFinishedAt = nil
-		app.DataRetentionMode = "retain"
+		app.DataRetentionMode = dataAction
 		return nil
 	})
 	if err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if !h.enqueueApplicationDelete(ctx.Request.Context(), app, user.ID, false) {
+	if !h.enqueueApplicationDelete(ctx.Request.Context(), app, user.ID, deleteData) {
 		finishedAt := time.Now()
 		_ = h.dbFor(ctx).Model(&model.Application{}).Where("id = ?", app.ID).Updates(map[string]any{
 			"delete_status":      "delete_failed",
@@ -180,8 +222,53 @@ func (h *Handlers) DeleteApplication(ctx *gin.Context) {
 		writeError(ctx, http.StatusServiceUnavailable, "应用删除任务投递失败，请确认 Worker 队列可用后重试")
 		return
 	}
-	h.auditWithContext(user.ID, "application.delete.request", app.ID, true, app.Name, ctx.Request.Context())
+	h.auditWithContext(user.ID, "application.delete.request", app.ID, true, app.Name+":"+dataAction, ctx.Request.Context())
 	ctx.JSON(http.StatusAccepted, app)
+}
+
+func (h *Handlers) PreviewApplicationDeletion(ctx *gin.Context) {
+	_, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
+	if !ok {
+		return
+	}
+	app, ok := h.findApplication(ctx)
+	if !ok {
+		return
+	}
+	result, err := h.buildApplicationDeletionPreview(ctx.Request.Context(), project, app)
+	if err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
+		return
+	}
+	markLiveObservationResponse(ctx)
+	ctx.JSON(http.StatusOK, result)
+}
+
+func (h *Handlers) buildApplicationDeletionPreview(requestCtx context.Context, project model.Project, app model.Application) (applicationDeletionPreview, error) {
+	var targets []model.DeploymentTarget
+	if err := h.dbWithContext(requestCtx).Where("project_id = ? and application_id = ?", project.ID, app.ID).Find(&targets).Error; err != nil {
+		return applicationDeletionPreview{}, err
+	}
+	result := applicationDeletionPreview{Targets: make([]applicationDeletionTargetPreview, 0, len(targets))}
+	for _, target := range targets {
+		preview := applicationDeletionTargetPreview{TargetID: target.ID, TargetName: target.Name, Volumes: []kubeprovider.PersistentVolumeClaimSnapshot{}}
+		client, namespace, code := h.kubernetesClientForDeploymentTargetObservation(project, target, requestCtx)
+		if code != "" {
+			preview.ObservationCode = code
+			result.Targets = append(result.Targets, preview)
+			continue
+		}
+		volumes, err := client.ListManagedPersistentVolumeClaims(requestCtx, namespace, target.ID)
+		if err != nil {
+			preview.ObservationCode = "persistent_data_unavailable"
+		} else {
+			preview.Volumes = volumes
+			preview.ExportAvailable = len(volumes) > 0
+			result.HasPersistentData = result.HasPersistentData || len(volumes) > 0
+		}
+		result.Targets = append(result.Targets, preview)
+	}
+	return result, nil
 }
 
 func (h *Handlers) enqueueApplicationDelete(ctx context.Context, app model.Application, actorID string, deleteData bool) bool {

@@ -380,6 +380,7 @@ type deploymentTargetDataVolumeInput struct {
 	Capacity          string `json:"capacity"`
 	SourceType        string `json:"sourceType"`
 	ExistingClaimName string `json:"existingClaimName"`
+	RetainedVolumeID  string `json:"retainedVolumeId"`
 	EmptyDirMedium    string `json:"emptyDirMedium"`
 	EmptyDirSizeLimit string `json:"emptyDirSizeLimit"`
 }

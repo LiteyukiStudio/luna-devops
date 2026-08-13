@@ -36,6 +36,7 @@ func TestPlatformCatalogCoversAgentEligibleControlPlane(t *testing.T) {
 		"createGatewayRoute", "getBuildRun", "getReleaseRuntimeLogs",
 		"createReleaseRuntimeCommandSession", "executeReleaseRuntimeCommandSession",
 		"closeReleaseRuntimeCommandSession",
+		"previewApplicationDeletion", "listRetainedVolumes", "deleteRetainedVolume",
 	} {
 		if _, ok := byID[operationID]; !ok {
 			t.Errorf("missing common workflow operation %s", operationID)
@@ -79,7 +80,7 @@ func TestPlatformCatalogClassifiesRuntimeCommandSessions(t *testing.T) {
 }
 
 func TestPlatformCatalogClassifiesDestructiveOperations(t *testing.T) {
-	for _, operationID := range []string{"deleteApplication", "deleteProject", "rollbackRelease"} {
+	for _, operationID := range []string{"deleteApplication", "deleteProject", "deleteRetainedVolume", "rollbackRelease"} {
 		operation, ok := PlatformOperation(operationID)
 		if !ok {
 			t.Fatalf("missing operation %s", operationID)
@@ -87,5 +88,24 @@ func TestPlatformCatalogClassifiesDestructiveOperations(t *testing.T) {
 		if operation.Risk != "destructive" || operation.Approval != "always" {
 			t.Errorf("operation %s policy = %#v", operationID, operation)
 		}
+	}
+}
+
+func TestApplicationDeletionCatalogRequiresDataLifecycleChoice(t *testing.T) {
+	operation, ok := PlatformOperation("deleteApplication")
+	if !ok {
+		t.Fatal("missing operation deleteApplication")
+	}
+	properties, _ := operation.InputSchema["properties"].(map[string]any)
+	body, _ := properties["body"].(map[string]any)
+	required, _ := body["required"].([]string)
+	if len(required) != 1 || required[0] != "dataAction" {
+		t.Fatalf("deleteApplication body must require dataAction: %#v", body)
+	}
+	bodyProperties, _ := body["properties"].(map[string]any)
+	dataAction, _ := bodyProperties["dataAction"].(map[string]any)
+	values, _ := dataAction["enum"].([]any)
+	if len(values) != 2 || values[0] != "retain" || values[1] != "delete" {
+		t.Fatalf("deleteApplication dataAction enum drifted: %#v", dataAction)
 	}
 }

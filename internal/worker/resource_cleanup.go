@@ -256,6 +256,15 @@ func (r *Runner) cleanupDeploymentTargetRuntimeResources(ctx context.Context, ta
 		return err
 	}
 	namespace := deploymentNamespace(project, environment)
+	if !deleteData {
+		var app model.Application
+		if err := r.db.WithContext(ctx).First(&app, "id = ? and project_id = ?", target.ApplicationID, target.ProjectID).Error; err != nil {
+			return err
+		}
+		if err := r.retainApplicationVolumes(ctx, manager, project, app, target, namespace); err != nil {
+			return err
+		}
+	}
 	kinds := []string{"services", "workloads", "configs"}
 	if deleteData {
 		kinds = append(kinds, "storage")

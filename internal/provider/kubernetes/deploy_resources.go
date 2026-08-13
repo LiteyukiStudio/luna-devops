@@ -97,6 +97,7 @@ type ApplicationDataVolume struct {
 	Capacity          string
 	SourceType        string
 	ExistingClaimName string
+	RetainedVolumeID  string
 	EmptyDirMedium    string
 	EmptyDirSizeLimit string
 }
@@ -278,7 +279,7 @@ func validateApplicationResourcesSpec(spec ApplicationResourcesSpec) error {
 	}
 	if spec.DataRetentionEnabled {
 		for _, volume := range persistentDataVolumes(spec) {
-			if !dataVolumeNeedsPVC(volume) {
+			if !dataVolumeNeedsPVC(volume) || dataVolumeSourceType(volume) == "retainedClaim" {
 				continue
 			}
 			if _, err := persistentDataCapacity(volume); err != nil {

@@ -2075,9 +2075,58 @@ paths:
       parameters:
         - $ref: "#/components/parameters/ProjectId"
         - $ref: "#/components/parameters/ApplicationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApplicationDeleteInput"
       responses:
-        "204":
-          description: Deleted application.
+        "202":
+          description: Application deletion was queued.
+
+  /api/v1/projects/{projectId}/applications/{applicationId}/deletion-preview:
+    get:
+      operationId: previewApplicationDeletion
+      tags: [Applications]
+      summary: Inspect persistent data before deleting an application
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/ApplicationId"
+      responses:
+        "200":
+          description: Live deletion impact preview.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApplicationDeletionPreview" }
+
+  /api/v1/projects/{projectId}/retained-volumes:
+    get:
+      operationId: listRetainedVolumes
+      tags: [Applications]
+      summary: List data volumes retained from deleted applications
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Paginated retained volumes.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedRetainedVolumes" }
+
+  /api/v1/projects/{projectId}/retained-volumes/{retainedVolumeId}:
+    delete:
+      operationId: deleteRetainedVolume
+      tags: [Applications]
+      summary: Permanently delete retained application data
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - name: retainedVolumeId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204": { description: Retained data deleted. }
 
   /api/v1/projects/{projectId}/applications/{applicationId}/topology:
     get:
@@ -7967,6 +8016,77 @@ components:
         buildContext: { type: string }
         servicePort: { type: integer }
       required: [name, identifier, sourceType]
+    ApplicationDeleteInput:
+      type: object
+      additionalProperties: false
+      required: [dataAction]
+      properties:
+        dataAction:
+          type: string
+          enum: [retain, delete]
+          description: Retain managed PVCs for later reclaim, or permanently delete them.
+    PersistentVolumeClaimSnapshot:
+      type: object
+      required: [name, capacity, storageClassName, accessMode, volumeMode, createdAt]
+      properties:
+        name: { type: string }
+        capacity: { type: string }
+        storageClassName: { type: string }
+        accessMode: { type: string }
+        volumeMode: { type: string }
+        createdAt: { type: string, format: date-time }
+    ApplicationDeletionTargetPreview:
+      type: object
+      required: [deploymentTargetId, deploymentTargetName, exportAvailable, volumes]
+      properties:
+        deploymentTargetId: { type: string }
+        deploymentTargetName: { type: string }
+        exportAvailable: { type: boolean }
+        volumes:
+          type: array
+          items: { $ref: "#/components/schemas/PersistentVolumeClaimSnapshot" }
+        observationCode: { type: string }
+    ApplicationDeletionPreview:
+      type: object
+      required: [hasPersistentData, targets]
+      properties:
+        hasPersistentData: { type: boolean }
+        targets:
+          type: array
+          items: { $ref: "#/components/schemas/ApplicationDeletionTargetPreview" }
+    RetainedVolume:
+      type: object
+      required: [id, projectId, sourceApplicationId, sourceApplicationName, sourceDeploymentTargetId, clusterId, namespace, claimName, volumeName, mountPath, capacity, storageClassName, accessMode, volumeMode, status, retainedAt]
+      properties:
+        id: { type: string }
+        projectId: { type: string }
+        sourceApplicationId: { type: string }
+        sourceApplicationName: { type: string }
+        sourceDeploymentTargetId: { type: string }
+        clusterId: { type: string }
+        namespace: { type: string }
+        claimName: { type: string }
+        volumeName: { type: string }
+        mountPath: { type: string }
+        capacity: { type: string }
+        storageClassName: { type: string }
+        accessMode: { type: string }
+        volumeMode: { type: string }
+        status: { type: string, enum: [retaining, retained, reserved, claimed, deleting, delete_failed] }
+        retainedAt: { type: string, format: date-time }
+    PaginatedRetainedVolumes:
+      type: object
+      required: [items, page, pageSize, sortBy, sortOrder, total, totalPages]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/RetainedVolume" }
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 100 }
+        sortBy: { type: string }
+        sortOrder: { type: string, enum: [asc, desc] }
+        total: { type: integer, minimum: 0 }
+        totalPages: { type: integer, minimum: 0 }
     ArtifactRegistryInput:
       type: object
       properties:
@@ -8451,7 +8571,7 @@ components:
           default: /data
         dataVolumes:
           type: string
-          description: JSON array of managed, existingClaim, or emptyDir data-volume objects.
+          description: JSON array of managed, retainedClaim, existingClaim, or emptyDir data-volume objects. retainedClaim requires retainedVolumeId and existingClaimName.
         dataStorageClassName:
           type: string
         dataAccessMode:
@@ -9126,6 +9246,9 @@ components:
         cpuRequest: { type: string }
         memoryRequest: { type: string }
         dataCapacity: { type: string }
+        retainedVolumeId:
+          type: string
+          description: Optional retained-volume ID to reclaim as the template's managed data volume. The volume must belong to this project and original runtime cluster.
         installNow: { type: boolean }
         values:
           type: object

@@ -209,7 +209,23 @@ func (r *Runner) applyApplicationResources(ctx context.Context, release model.Re
 		return err
 	}
 	spec.ForceImagePull = r.releaseShouldForceImagePull(release)
-	return manager.ApplyApplicationResources(ctx, spec)
+	if err := manager.ApplyApplicationResources(ctx, spec); err != nil {
+		return err
+	}
+	return r.completeRetainedVolumeClaims(ctx, deploymentTarget)
+}
+
+func (r *Runner) completeRetainedVolumeClaims(ctx context.Context, target model.DeploymentTarget) error {
+	ids := make([]string, 0)
+	for _, volume := range deploymentTargetDataVolumes(target) {
+		if strings.TrimSpace(volume.RetainedVolumeID) != "" {
+			ids = append(ids, strings.TrimSpace(volume.RetainedVolumeID))
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	return r.db.WithContext(ctx).Model(&model.RetainedVolume{}).Where("id in ? and claimed_by_target_id = ?", ids, target.ID).Updates(map[string]any{"status": model.RetainedVolumeStatusClaimed, "last_error": ""}).Error
 }
 
 func (r *Runner) applyApplicationRuntimeConfig(ctx context.Context, release model.Release, project model.Project, application model.Application, environment model.Environment, deploymentTarget model.DeploymentTarget, namespace string, serviceBindings resolvedServiceBindingConfig) error {

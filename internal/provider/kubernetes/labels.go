@@ -9,6 +9,7 @@ const (
 	ApplicationIDLabel      = "luna.devops/application-id"
 	EnvironmentIDLabel      = "luna.devops/environment-id"
 	DeploymentTargetIDLabel = "luna.devops/deployment-target-id"
+	RetainedVolumeIDLabel   = "luna.devops/retained-volume-id"
 	ReleaseIDLabel          = "luna.devops/release-id"
 	BuildRunIDLabel         = "luna.devops/build-run-id"
 	ImageDigestLabel        = "luna.devops/image-digest"

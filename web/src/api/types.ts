@@ -296,6 +296,7 @@ export interface AppTemplate {
   dataRetentionEnabled: boolean
   dataMountPath: string
   dataCapacity: string
+  retainedVolumeId?: string
   values: AppTemplateValueDefinition[]
 }
 
@@ -327,6 +328,7 @@ export interface AppTemplateInstallPayload {
   cpuRequest: string
   memoryRequest: string
   dataCapacity: string
+  retainedVolumeId?: string
   installNow: boolean
   values: Record<string, string>
 }
@@ -336,6 +338,30 @@ export interface AppTemplateInstallResponse {
   application: Application
   deploymentTarget: DeploymentTarget
   release?: Release
+}
+
+export interface RetainedVolume {
+  id: string
+  projectId: string
+  sourceApplicationId: string
+  sourceApplicationName: string
+  sourceDeploymentTargetId: string
+  clusterId: string
+  namespace: string
+  claimName: string
+  volumeName: string
+  mountPath: string
+  capacity: string
+  storageClassName: string
+  accessMode: string
+  volumeMode: string
+  status: 'retaining' | 'retained' | 'reserved' | 'claimed' | 'deleting' | 'delete_failed'
+  retainedAt: string
+}
+
+export interface ApplicationDeletionPreview {
+  hasPersistentData: boolean
+  targets: Array<{ deploymentTargetId: string, deploymentTargetName: string, exportAvailable: boolean, observationCode?: string, volumes: Array<{ name: string, capacity: string, storageClassName: string, accessMode: string, volumeMode: string, createdAt: string }> }>
 }
 
 export interface SystemComponentInstallation {

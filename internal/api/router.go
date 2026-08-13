@@ -261,6 +261,8 @@ func NewRouterWithStaticFSAndMetrics(db *gorm.DB, staticFS fs.FS, httpMetrics *o
 		v1.GET("/projects/:projectId/hook-runs", handlers.ListProjectHookRuns)
 		v1.GET("/projects/:projectId/hook-runs/:runId/logs", handlers.GetProjectHookRunLog)
 		v1.POST("/projects/:projectId/app-templates/:templateId/install", handlers.InstallAppTemplate)
+		v1.GET("/projects/:projectId/retained-volumes", handlers.ListRetainedVolumes)
+		v1.DELETE("/projects/:projectId/retained-volumes/:retainedVolumeId", handlers.DeleteRetainedVolume)
 
 		v1.GET("/projects/:projectId/members", handlers.ListProjectMembers)
 		v1.GET("/projects/:projectId/member-candidates", handlers.SearchProjectMemberCandidates)
@@ -273,6 +275,7 @@ func NewRouterWithStaticFSAndMetrics(db *gorm.DB, staticFS fs.FS, httpMetrics *o
 		v1.GET("/projects/:projectId/applications/:applicationId", handlers.GetApplication)
 		v1.GET("/projects/:projectId/applications/:applicationId/topology", handlers.GetApplicationTopology)
 		v1.PUT("/projects/:projectId/applications/:applicationId", handlers.UpdateApplication)
+		v1.GET("/projects/:projectId/applications/:applicationId/deletion-preview", handlers.PreviewApplicationDeletion)
 		v1.DELETE("/projects/:projectId/applications/:applicationId", handlers.DeleteApplication)
 		v1.GET("/projects/:projectId/applications/:applicationId/deployment-targets", handlers.ListDeploymentTargets)
 		v1.POST("/projects/:projectId/applications/:applicationId/deployment-targets", handlers.CreateDeploymentTarget)

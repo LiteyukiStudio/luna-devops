@@ -399,6 +399,8 @@ const deploymentsPage = {
   dataVolumeSourceDetail: 'Source detail',
   dataVolumeSourceManaged: 'Managed PVC',
   dataVolumeSourceExistingClaim: 'Existing PVC',
+  dataVolumeSourceRetainedClaim: 'Retained volume',
+  dataRetainedVolumePlaceholder: 'Select retained application data',
   dataVolumeSourceEmptyDir: 'Temporary emptyDir',
   dataExistingClaimNamePlaceholder: 'Existing PVC name',
   emptyDirMediumDefault: 'Node disk',

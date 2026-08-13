@@ -12,6 +12,7 @@ import (
 const ResourceOwnershipConflictCode = "kubernetes.resource_ownership_conflict"
 
 var immutableOwnershipLabels = []string{
+	RetainedVolumeIDLabel,
 	DeploymentTargetIDLabel,
 	GatewayRouteIDLabel,
 	ProjectIDLabel,
@@ -116,6 +117,9 @@ func (c *Client) ensureApplicationStorageOwnership(ctx context.Context, spec App
 			continue
 		}
 		claim, err := c.client.CoreV1().PersistentVolumeClaims(spec.Namespace).Get(ctx, persistentDataPVCName(spec, volume), metav1.GetOptions{})
+		if err == nil && dataVolumeSourceType(volume) == "retainedClaim" && strings.TrimSpace(claim.Labels[RetainedVolumeIDLabel]) == strings.TrimSpace(volume.RetainedVolumeID) {
+			continue
+		}
 		if err := checkExistingOwnership("PersistentVolumeClaim", claim, err, labels); err != nil {
 			return err
 		}

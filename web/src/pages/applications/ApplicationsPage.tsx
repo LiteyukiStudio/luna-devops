@@ -3,7 +3,7 @@ import type { Application } from '@/api'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import i18next from 'i18next'
-import { LayoutDashboard, MoreHorizontal, Pencil, Plus, Save, Trash2 } from 'lucide-react'
+import { Download, LayoutDashboard, MoreHorizontal, Pencil, Plus, Save, Trash2 } from 'lucide-react'
 import { useImperativeHandle, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -25,7 +25,9 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { NativeSelect } from '@/components/ui/native-select'
 import { APPLICATION_IDENTIFIER_MAX_LENGTH, APPLICATION_IDENTIFIER_MIN_LENGTH } from '@/lib/identifier-limits'
+import { openDeploymentTargetDataExport } from './deployment-target-data-export'
 
 const schema = z.object({
   name: z.string().min(1, i18next.t('apps.nameRequired')),
@@ -60,6 +62,7 @@ export function ApplicationsPage({ embedded = false, projectId: projectIdProp, r
   const [editingApplication, setEditingApplication] = useState<Application | null>(null)
   const [applicationToDelete, setApplicationToDelete] = useState<Application | null>(null)
   const [deleteConfirmation, setDeleteConfirmation] = useState('')
+  const [deleteDataAction, setDeleteDataAction] = useState<'retain' | 'delete'>('retain')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
 
@@ -70,6 +73,14 @@ export function ApplicationsPage({ embedded = false, projectId: projectIdProp, r
   })
   const deleteConfirmationTarget = applicationToDelete?.name ?? ''
   const deleteConfirmationMatches = deleteConfirmation === deleteConfirmationTarget
+  const deletionPreview = useQuery({
+    queryKey: ['application-deletion-preview', projectId, applicationToDelete?.id],
+    queryFn: () => api.previewApplicationDeletion(projectId, applicationToDelete!.id),
+    enabled: Boolean(applicationToDelete),
+  })
+  const persistentVolumeCount = deletionPreview.data?.targets.reduce((total, target) => total + target.volumes.length, 0) ?? 0
+  const deletionObservationUnavailable = deletionPreview.isError || (deletionPreview.data?.targets.some(target => Boolean(target.observationCode)) ?? false)
+  const permanentDeleteUnavailable = deletionPreview.isPending || deletionObservationUnavailable
   const form = useForm<ApplicationFormInput, undefined, ApplicationForm>({
     resolver: zodResolver(schema),
     mode: 'onChange',
@@ -139,11 +150,12 @@ export function ApplicationsPage({ embedded = false, projectId: projectIdProp, r
   })
 
   const deleteApplication = useMutation({
-    mutationFn: (applicationId: string) => api.deleteApplication(projectId, applicationId),
+    mutationFn: ({ applicationId, dataAction }: { applicationId: string, dataAction: 'retain' | 'delete' }) => api.deleteApplication(projectId, applicationId, dataAction),
     onSuccess: () => {
       toast.success(t('apps.deleteQueued'))
       setApplicationToDelete(null)
       setDeleteConfirmation('')
+      setDeleteDataAction('retain')
       queryClient.invalidateQueries({ queryKey: ['applications', projectId] })
       queryClient.invalidateQueries({ queryKey: ['repository-bindings', projectId] })
     },
@@ -187,6 +199,7 @@ export function ApplicationsPage({ embedded = false, projectId: projectIdProp, r
               const openDeleteDialog = () => {
                 setApplicationToDelete(application)
                 setDeleteConfirmation('')
+                setDeleteDataAction('retain')
               }
               return (
                 <div className="flex justify-end">
@@ -271,7 +284,33 @@ export function ApplicationsPage({ embedded = false, projectId: projectIdProp, r
         confirmDisabled={!deleteConfirmationMatches}
         confirmText={t('apps.deleteConfirm')}
         content={(
-          <div className="grid gap-2">
+          <div className="grid gap-3">
+            {persistentVolumeCount > 0 && (
+              <div className="grid gap-2">
+                <p className="text-sm text-warning-foreground">{t('apps.deleteDataDetected', { count: persistentVolumeCount })}</p>
+                {deletionPreview.data?.targets.filter(target => target.exportAvailable).map(target => (
+                  <Button
+                    className="justify-start"
+                    key={target.deploymentTargetId}
+                    type="button"
+                    variant="outline"
+                    onClick={() => void openDeploymentTargetDataExport(projectId, applicationToDelete!.id, target.deploymentTargetId).catch(error => toast.error(error instanceof Error ? error.message : t('apps.deleteDataExportFailed')))}
+                  >
+                    <Download size={16} />
+                    {t('apps.deleteDataExportTarget', { name: target.deploymentTargetName })}
+                  </Button>
+                ))}
+              </div>
+            )}
+            {deletionObservationUnavailable && <p className="text-sm text-warning-foreground">{t('apps.deleteDataUnavailable')}</p>}
+            <div className="grid gap-1">
+              <Label htmlFor="application-delete-data-action">{t('apps.deleteDataActionLabel')}</Label>
+              <NativeSelect id="application-delete-data-action" value={deleteDataAction} onChange={event => setDeleteDataAction(event.target.value as 'retain' | 'delete')}>
+                <option value="retain">{t('apps.deleteDataRetain')}</option>
+                <option disabled={permanentDeleteUnavailable} value="delete">{t('apps.deleteDataPermanent')}</option>
+              </NativeSelect>
+              <p className="text-xs text-muted-foreground">{deleteDataAction === 'retain' ? t('apps.deleteDataRetainHint') : t('apps.deleteDataPermanentHint')}</p>
+            </div>
             <Label htmlFor="application-delete-confirmation">{t('apps.deleteConfirmationLabel', { name: deleteConfirmationTarget })}</Label>
             <Input
               id="application-delete-confirmation"
@@ -290,12 +329,13 @@ export function ApplicationsPage({ embedded = false, projectId: projectIdProp, r
         title={t('apps.deleteTitle')}
         onConfirm={() => {
           if (applicationToDelete && deleteConfirmationMatches)
-            deleteApplication.mutate(applicationToDelete.id)
+            deleteApplication.mutate({ applicationId: applicationToDelete.id, dataAction: deleteDataAction })
         }}
         onOpenChange={(open) => {
           if (!open) {
             setApplicationToDelete(null)
             setDeleteConfirmation('')
+            setDeleteDataAction('retain')
           }
         }}
       />

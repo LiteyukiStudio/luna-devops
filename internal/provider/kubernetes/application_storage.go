@@ -13,9 +13,12 @@ import (
 
 func validateApplicationDataVolume(volume ApplicationDataVolume) error {
 	switch dataVolumeSourceType(volume) {
-	case "existingClaim":
+	case "existingClaim", "retainedClaim":
 		if strings.TrimSpace(volume.ExistingClaimName) == "" {
 			return fmt.Errorf("existing claim data volume %s requires claim name", persistentDataVolumeName(volume))
+		}
+		if dataVolumeSourceType(volume) == "retainedClaim" && strings.TrimSpace(volume.RetainedVolumeID) == "" {
+			return fmt.Errorf("retained claim data volume %s requires retained volume id", persistentDataVolumeName(volume))
 		}
 	case "emptyDir":
 		if sizeLimit := strings.TrimSpace(volume.EmptyDirSizeLimit); sizeLimit != "" {
@@ -53,6 +56,19 @@ func (c *Client) ApplyPersistentDataVolume(ctx context.Context, spec Application
 }
 
 func (c *Client) applyPersistentDataVolume(ctx context.Context, spec ApplicationResourcesSpec, volume ApplicationDataVolume, labels map[string]string) error {
+	if dataVolumeSourceType(volume) == "retainedClaim" {
+		claimName := persistentDataPVCName(spec, volume)
+		existing, err := c.client.CoreV1().PersistentVolumeClaims(spec.Namespace).Get(ctx, claimName, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(existing.Labels[RetainedVolumeIDLabel]) != strings.TrimSpace(volume.RetainedVolumeID) {
+			return fmt.Errorf("retained volume %s no longer owns PersistentVolumeClaim %s/%s", volume.RetainedVolumeID, spec.Namespace, claimName)
+		}
+		existing.Labels = labels
+		_, err = c.client.CoreV1().PersistentVolumeClaims(spec.Namespace).Update(ctx, existing, metav1.UpdateOptions{})
+		return err
+	}
 	capacity, err := persistentDataCapacity(volume)
 	if err != nil {
 		return err
@@ -120,6 +136,7 @@ func persistentDataVolumes(spec ApplicationResourcesSpec) []ApplicationDataVolum
 				Capacity:          firstNonEmpty(volume.Capacity, "1Gi"),
 				SourceType:        dataVolumeSourceType(volume),
 				ExistingClaimName: strings.TrimSpace(volume.ExistingClaimName),
+				RetainedVolumeID:  strings.TrimSpace(volume.RetainedVolumeID),
 				EmptyDirMedium:    strings.TrimSpace(volume.EmptyDirMedium),
 				EmptyDirSizeLimit: strings.TrimSpace(volume.EmptyDirSizeLimit),
 			})
@@ -138,6 +155,8 @@ func dataVolumeSourceType(volume ApplicationDataVolume) string {
 	switch strings.TrimSpace(volume.SourceType) {
 	case "existingClaim":
 		return "existingClaim"
+	case "retainedClaim":
+		return "retainedClaim"
 	case "emptyDir":
 		return "emptyDir"
 	default:
@@ -146,12 +165,12 @@ func dataVolumeSourceType(volume ApplicationDataVolume) string {
 }
 
 func dataVolumeNeedsPVC(volume ApplicationDataVolume) bool {
-	return dataVolumeSourceType(volume) == "managed"
+	return dataVolumeSourceType(volume) == "managed" || dataVolumeSourceType(volume) == "retainedClaim"
 }
 
 func applicationDataVolumeSource(spec ApplicationResourcesSpec, volume ApplicationDataVolume, name string) corev1.Volume {
 	switch dataVolumeSourceType(volume) {
-	case "existingClaim":
+	case "existingClaim", "retainedClaim":
 		return corev1.Volume{
 			Name: name,
 			VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
@@ -178,6 +197,9 @@ func applicationDataVolumeSource(spec ApplicationResourcesSpec, volume Applicati
 }
 
 func persistentDataPVCName(spec ApplicationResourcesSpec, volume ApplicationDataVolume) string {
+	if dataVolumeSourceType(volume) == "retainedClaim" {
+		return strings.TrimSpace(volume.ExistingClaimName)
+	}
 	name := persistentDataVolumeName(volume)
 	if name == "data" {
 		return spec.Name + "-data"

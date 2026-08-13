@@ -1,4 +1,4 @@
-import type { Application, ApplicationPayload, ApplicationTopology, DataExportAuthorization, DeploymentTarget, DeploymentTargetPayload, PaginatedResponse, PaginationParams, RepositoryBinding, RepositoryBindingPayload } from '../types'
+import type { Application, ApplicationDeletionPreview, ApplicationPayload, ApplicationTopology, DataExportAuthorization, DeploymentTarget, DeploymentTargetPayload, PaginatedResponse, PaginationParams, RepositoryBinding, RepositoryBindingPayload, RetainedVolume } from '../types'
 import { paginationQuery, request } from '../core'
 import { selectionItems, selectionPageParams } from '../selection-page'
 
@@ -15,8 +15,14 @@ export const applicationsApi = {
     request<Application>(`/projects/${projectId}/applications`, { method: 'POST', body: JSON.stringify(payload) }),
   updateApplication: (projectId: string, applicationId: string, payload: ApplicationPayload) =>
     request<Application>(`/projects/${projectId}/applications/${applicationId}`, { method: 'PUT', body: JSON.stringify(payload) }),
-  deleteApplication: (projectId: string, applicationId: string) =>
-    request<Application>(`/projects/${projectId}/applications/${applicationId}`, { method: 'DELETE' }),
+  previewApplicationDeletion: (projectId: string, applicationId: string) =>
+    request<ApplicationDeletionPreview>(`/projects/${projectId}/applications/${applicationId}/deletion-preview`),
+  deleteApplication: (projectId: string, applicationId: string, dataAction: 'retain' | 'delete') =>
+    request<Application>(`/projects/${projectId}/applications/${applicationId}`, { method: 'DELETE', body: JSON.stringify({ dataAction }) }),
+  listRetainedVolumes: (projectId: string) =>
+    request<PaginatedResponse<RetainedVolume>>(`/projects/${projectId}/retained-volumes?${paginationQuery(selectionPageParams)}`).then(selectionItems),
+  deleteRetainedVolume: (projectId: string, retainedVolumeId: string) =>
+    request<void>(`/projects/${projectId}/retained-volumes/${retainedVolumeId}`, { method: 'DELETE' }),
   listDeploymentTargets: (projectId: string, applicationId: string) =>
     request<PaginatedResponse<DeploymentTarget>>(`/projects/${projectId}/applications/${applicationId}/deployment-targets?${paginationQuery(selectionPageParams)}`).then(selectionItems),
   listDeploymentTargetsPage: (projectId: string, applicationId: string, params: PaginationParams) =>

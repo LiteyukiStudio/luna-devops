@@ -69,8 +69,8 @@ describe("Luna API tool client", () => {
       toolCallId: "aitool_1",
       operation: {
         operationId: "listProjects", method: "GET", path: "/api/v1/projects", category: "project",
-        risk: "safe", requiredScopes: ["project:read"], approval: "never", idempotent: true, timeoutMs: 15000,
-        inputSchema: { type: "object", properties: {}, additionalProperties: false },
+        risk: "read", requiredScopes: ["project:read"], approval: "never", idempotent: true, timeoutMs: 15000,
+        inputSchema: { type: "object", properties: {}, required: [], additionalProperties: false },
       },
       arguments: {}, argumentsHash: hashCanonicalJSON({}), runActorGrant: "grant", approvalGranted: false,
     })
@@ -89,7 +89,7 @@ describe("Luna API tool client", () => {
       operation: {
         operationId: "createThing", method: "POST", path: "/api/v1/things", category: "application",
         risk: "sensitive", requiredScopes: ["application:write"], approval: "always", idempotent: false, timeoutMs: 15000,
-        inputSchema: { type: "object", properties: {}, additionalProperties: false },
+        inputSchema: { type: "object", properties: {}, required: [], additionalProperties: false },
       },
       arguments: {}, argumentsHash: hashCanonicalJSON({}), runActorGrant: "grant", approvalGranted: true,
     })
