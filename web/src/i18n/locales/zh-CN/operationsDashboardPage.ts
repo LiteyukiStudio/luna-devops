@@ -149,6 +149,8 @@ const operationsDashboardPage = {
       databaseSystem: '数据库类型',
       errorType: '错误类型',
       runOutcome: '运行结果',
+      availableToolCount: '可用工具数量',
+      availableToolNames: '可用工具清单',
     },
     attributeValues: { agent: 'Agent 执行', chat: '模型对话', execute_tool: '执行工具', completed: '已完成', failed: '失败', canceled: '已取消' },
     tracePending: '调用链尚未生成',
@@ -166,6 +168,7 @@ const operationsDashboardPage = {
       persistence: '保存执行状态',
       externalRequest: '访问外部服务',
       internalOperation: '内部处理',
+      availableTools: '下发模型工具 · {{count}} 个',
     },
   },
   conversationDetail: {
@@ -212,6 +215,7 @@ const operationsDashboardPage = {
     contextUnavailable: '没有找到与这条 Trace 关联的会话时间线。会话可能已被清理，或 Trace 来自尚未写入关联信息的旧版本。',
     spanWaterfall: 'Span 瀑布',
     spanWaterfallDescription: '查看模型、工具、HTTP 与数据库操作的父子关系和耗时。',
+    availableTools: '本次模型可用工具',
   },
 }
 

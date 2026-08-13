@@ -30,6 +30,13 @@ export function ledgerReasonLabel(item: BillingLedgerEntry, t: (key: string, opt
   return t(`billingPage.reasons.${item.reason}`, { defaultValue: item.reason || '-' })
 }
 
+export function ledgerDescription(item: BillingLedgerEntry, reasonLabel: string) {
+  const description = item.description.trim()
+  if (!description || description.localeCompare(reasonLabel.trim(), undefined, { sensitivity: 'accent' }) === 0)
+    return ''
+  return description
+}
+
 export function formatQuantity(value: string, unit: string, locale: string) {
   const formatted = formatBillingNumber(value, locale)
   return unit ? `${formatted} ${unit}` : formatted

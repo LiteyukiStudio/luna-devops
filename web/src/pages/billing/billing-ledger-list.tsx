@@ -8,7 +8,7 @@ import { StatusBadge } from '@/components/common/status-badge'
 import { formatSmartDateTime } from '@/components/common/time-format'
 import { cn } from '@/lib/utils'
 import { ApplicationCell, ProjectCell, ResourceCell } from './billing-list-cells'
-import { amountToneClass, BILLING_PAGE_SIZE, ledgerReasonLabel } from './billing-page-utils'
+import { amountToneClass, BILLING_PAGE_SIZE, ledgerDescription, ledgerReasonLabel } from './billing-page-utils'
 
 export function BillingLedgerList({
   billingDisplay,
@@ -70,8 +70,21 @@ export function BillingLedgerList({
     {
       key: 'reason',
       header: t('billingPage.reason'),
-      className: 'min-w-40',
-      render: item => ledgerReasonLabel(item, t),
+      className: 'min-w-56',
+      render: (item) => {
+        const reasonLabel = ledgerReasonLabel(item, t)
+        const description = ledgerDescription(item, reasonLabel)
+        return (
+          <div className="min-w-0 space-y-1">
+            <div className="text-sm font-medium">{reasonLabel}</div>
+            {description && (
+              <div className="line-clamp-2 text-xs leading-relaxed text-muted-foreground" title={description}>
+                {description}
+              </div>
+            )}
+          </div>
+        )
+      },
     },
     {
       key: 'resource',

@@ -90,4 +90,33 @@ describe("platform tool catalog", () => {
 
     expect(selected).toEqual(expect.arrayContaining(operationIds))
   })
+
+  it.each([
+    "给 Uptime Kuma 配一个公网可访问的地址",
+    "为这个服务创建访问入口",
+    "Expose this service with a public URL",
+  ])("offers gateway tools for public access intent: %s", (input) => {
+    const selected = ToolCatalog.load(platformOperations).modelTools({}, input).map(tool => tool.operationId)
+
+    expect(selected).toContain("listGatewayRoutes")
+  })
+
+  it("keeps the gateway write path for public access intent", () => {
+    const gatewayOperations = ["listGatewayRoutes", "createGatewayRoute"].map(operationId => ({
+      operationId,
+      method: operationId.startsWith("list") ? "GET" as const : "POST" as const,
+      path: `/api/v1/test/${operationId}`,
+      category: "gateway",
+      description: `调用 ${operationId}。`,
+      risk: "read" as const,
+      requiredScopes: ["gateway:read"],
+      approval: "never" as const,
+      idempotent: true,
+      timeoutMs: 30_000,
+      inputSchema: { type: "object" as const, properties: {}, required: [], additionalProperties: false as const },
+    }))
+
+    expect(ToolCatalog.load(gatewayOperations).modelTools({}, "创建公网访问地址").map(tool => tool.operationId))
+      .toEqual(expect.arrayContaining(["listGatewayRoutes", "createGatewayRoute"]))
+  })
 })

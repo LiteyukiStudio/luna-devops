@@ -240,7 +240,7 @@ function isModelSpan(span: AgentObservabilityTraceSpan) {
   return span.name.includes('model') || span.name.startsWith('gen_ai.chat')
 }
 function isToolSpan(span: AgentObservabilityTraceSpan) {
-  return span.name.includes('tool') || Boolean(span.attributes['gen_ai.tool.name'])
+  return span.name !== 'agent.tools.available' && (span.name.includes('tool') || Boolean(span.attributes['gen_ai.tool.name']))
 }
 function spanBarClass(span: AgentObservabilityTraceSpan) {
   if (span.status === 'error')

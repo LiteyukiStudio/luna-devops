@@ -1,7 +1,7 @@
 import type { AgentObservabilityTraceSpan } from '@/api'
 
 export type AgentTurnTimelineFilter = 'all' | 'model' | 'tool' | 'error'
-export type AgentTurnTimelineKind = 'turn' | 'agent' | 'model' | 'tool' | 'storage' | 'external' | 'other'
+export type AgentTurnTimelineKind = 'turn' | 'agent' | 'model' | 'toolset' | 'tool' | 'storage' | 'external' | 'other'
 
 export function isCanonicalAgentToolSpan(span: AgentObservabilityTraceSpan) {
   return span.serviceName === 'luna-agent' && (span.name === 'agent.tool.execute' || span.name === 'agent.tool.internal')
@@ -16,6 +16,8 @@ export function agentTurnTimelineKind(span: AgentObservabilityTraceSpan): AgentT
     return 'turn'
   if (span.name === 'agent.run.execute')
     return 'agent'
+  if (span.name === 'agent.tools.available')
+    return 'toolset'
   if (span.name.includes('model') || span.name.startsWith('gen_ai.chat'))
     return 'model'
   if (isCanonicalAgentToolSpan(span))
@@ -38,12 +40,14 @@ export function filterAgentTurnTimelineSpans(spans: AgentObservabilityTraceSpan[
       if (isAgentToolTransportSpan(span))
         return false
       const kind = agentTurnTimelineKind(span)
-      if (!showExternalServices && !['turn', 'agent', 'model', 'tool'].includes(kind))
+      if (!showExternalServices && !['turn', 'agent', 'model', 'toolset', 'tool'].includes(kind))
         return false
       if (filter === 'error')
         return span.status === 'error'
-      if (filter === 'model' || filter === 'tool')
-        return kind === filter
+      if (filter === 'model')
+        return kind === 'model' || kind === 'toolset'
+      if (filter === 'tool')
+        return kind === 'tool'
       return true
     })
 }

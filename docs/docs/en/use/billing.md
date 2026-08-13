@@ -6,6 +6,8 @@ Project costs are charged to the project's **billing owner**. After ownership ch
 
 Users can only view their own bills. Administrators can view all users or a selected user. Filter by time, user, and project. Use billing transactions for auditing and cost analysis to find the largest sources of spending.
 
+Each ledger entry shows both its standard reason and the specific description recorded when it was created. Empty descriptions and descriptions that duplicate the reason are omitted.
+
 Settlement uses Credits. Administrators may configure a display currency and conversion ratio, but this does not change settlement or recalculate historical bills.
 
 ## Cost analysis

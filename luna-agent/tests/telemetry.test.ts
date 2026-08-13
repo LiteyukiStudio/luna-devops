@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { initializeTelemetry, internalSpanOptions, isDatabaseSpanCaptureEnabled, isExpectedCancellation, isHealthCheckPath, normalizeTraceContext, sanitizeTelemetryURL, stableErrorCode, telemetryLog, withSpan } from "../src/telemetry.js"
+import { initializeTelemetry, internalSpanOptions, isDatabaseSpanCaptureEnabled, isExpectedCancellation, isHealthCheckPath, normalizeTraceContext, recordAvailableTools, sanitizeTelemetryURL, stableErrorCode, telemetryLog, withSpan } from "../src/telemetry.js"
 
 describe("agent telemetry", () => {
   it("keeps noisy database spans opt-in", () => {
@@ -15,6 +15,14 @@ describe("agent telemetry", () => {
 
   it("stays disabled when no OTLP endpoint is configured", () => {
     expect(() => initializeTelemetry(undefined)).not.toThrow()
+  })
+
+  it("records the effective model tool set without requiring sensitive content capture", () => {
+    expect(() => recordAvailableTools([
+      { operationId: "listProjects" },
+      { operationId: "createGatewayRoute" },
+      { operationId: "listProjects" },
+    ])).not.toThrow()
   })
 
   it("rejects unsupported OTLP endpoint protocols", () => {

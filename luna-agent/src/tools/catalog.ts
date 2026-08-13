@@ -116,7 +116,7 @@ function relevantCategories(input: string): Set<string> {
   if (/诊断|故障|异常|失败|日志|事件|健康|diagnos|error|fail|log|health/.test(value)) {
     add("deployments", "builds", "releases", "runtime", "gateway", "notifications")
   }
-  if (/网关|域名|证书|路由|gateway|domain|certificate|dns/.test(value)) add("gateway", "deployments", "runtime")
+  if (/网关|域名|证书|路由|公网|外网|访问地址|访问入口|暴露服务|gateway|domain|certificate|dns|ingress|public url|public access|expose service/.test(value)) add("gateway", "deployments", "runtime")
   if (/集群|运行时|pod|kubernetes|k3s|cluster|runtime/.test(value)) add("runtime", "deployments")
   if (/通知|投递|notification|delivery/.test(value)) add("notifications", "events")
   if (/成员|用户|权限|认证|安全|mfa|oauth|token|member|user|permission|auth|security/.test(value)) {

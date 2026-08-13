@@ -5,6 +5,7 @@ import type { ModelMessage, ModelProvider, ModelToolCall, ModelToolDefinition, M
 import { skillGuidanceFor, systemPromptFor } from "../prompt/system.js"
 import { renameConversationTool } from "../tools/conversation-title.js"
 import { createOptionsTool } from "../tools/ui-options.js"
+import { recordAvailableTools } from "../telemetry.js"
 
 export type ConversationPromptContext = {
   title: string
@@ -79,6 +80,7 @@ export class GraphVersionRegistry {
   async *stream(version: string, input: AssistantGraphState, signal?: AbortSignal) {
     if (!this.graphs.has(version)) throw new Error("ai.graph_version_unavailable")
     const tools = this.modelTools(input.pageContext, input.conversation, input.input)
+    recordAvailableTools(tools)
     yield* this.provider.stream({
       messages: await this.compileMessages(input, tools, signal),
       maxOutputTokens: this.assistantMaxOutputTokens,
