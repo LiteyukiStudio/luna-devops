@@ -21,6 +21,7 @@ const errors = {
     identifier_delete_failed: 'The previous deletion of a project space with this identifier failed. Finish cleanup before reusing it.',
   },
   deployment: {
+    stage_immutable: 'The deployment stage cannot be changed. Refresh the page and try again.',
     stage_exists: 'This deployment stage already exists in the application.',
     stage_delete_in_progress: 'A deployment target with this stage is being deleted. Wait for cleanup before reusing it.',
     stage_delete_failed: 'The previous deletion of a deployment target with this stage failed. Finish cleanup before reusing it.',

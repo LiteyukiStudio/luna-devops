@@ -3,7 +3,7 @@ import type { ArtifactRegistry, BuildEnvironmentConfig, DeploymentTarget, Reposi
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, renderHook } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import { deploymentTargetDefaults } from './application-deployments-panel-utils'
+import { deploymentTargetDefaults, normalizeDeploymentTargetPayload } from './application-deployments-panel-utils'
 import { deploymentTargetFormValues, useDeploymentTargetForm } from './use-deployment-target-form'
 import '@/i18n'
 
@@ -54,6 +54,20 @@ function deferred<T>() {
 }
 
 describe('deployment target form', () => {
+  it('preserves the immutable stage of a system-managed target', () => {
+    const target = deploymentTarget('target-system', { stage: 'sys-cluster1' })
+    const formValues = deploymentTargetFormValues({
+      applicationIdentifier: 'probe',
+      projectIdentifier: 'platform-system',
+      registries: [],
+      repositoryBindings: [],
+      target,
+    })
+
+    expect(formValues.stage).toBe('sys-cluster1')
+    expect(normalizeDeploymentTargetPayload(formValues).stage).toBe('sys-cluster1')
+  })
+
   it('builds create and edit defaults without exposing configured secrets', () => {
     const registry = { credentialSet: true, id: 'registry-1', isDefault: true } as ArtifactRegistry
     const binding = { id: 'binding-1' } as RepositoryBinding

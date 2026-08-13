@@ -24,6 +24,8 @@ Only response egress traffic from platform-managed HTTPRoutes is counted. Traffi
 
 The probe is configured through environment variables. Sensible defaults are written at install time; usually you only need to confirm the following:
 
+To change the metrics address or collection interval, edit the corresponding environment variables in the probe application's deployment target. The platform preserves the system component's internal deployment stage; do not change `REPORT_TOKEN`, the runtime cluster identifier, or the ServiceAccount configuration.
+
 | Variable | Default | Description |
 | --- | --- | --- |
 | `API_BASE_URL` | set at install | Platform API address the probe can reach |

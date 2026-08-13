@@ -1086,7 +1086,7 @@ export interface DeploymentTarget {
   applicationId: string
   environmentId: string
   name: string
-  stage: 'dev' | 'test' | 'staging' | 'prod'
+  stage: string
   kubernetesName: string
   clusterId: string
   namespace: string

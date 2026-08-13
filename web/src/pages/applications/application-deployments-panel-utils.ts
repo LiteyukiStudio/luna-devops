@@ -522,9 +522,7 @@ function normalizedComparable(value: unknown) {
 }
 
 function normalizeDeploymentStage(value: string) {
-  if (value === 'dev' || value === 'test' || value === 'staging' || value === 'prod')
-    return value
-  return 'prod'
+  return value.trim() || 'prod'
 }
 
 function normalizePositiveInteger(value: number, fallback: number) {

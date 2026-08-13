@@ -138,7 +138,10 @@ func TestDeploymentTargetAgentSchemaDescribesSourceAndStructuredFields(t *testin
 	properties := schemaProperties(t, body)
 
 	assertSchemaEnum(t, properties, "sourceType", "repository", "image")
-	assertSchemaEnum(t, properties, "stage", "dev", "test", "staging", "prod")
+	stage, ok := properties["stage"].(map[string]any)
+	if !ok || stage["pattern"] != "^(dev|test|staging|prod|sys-[a-z0-9-]+)$" {
+		t.Fatalf("stage must accept public stages and persisted system stages: %#v", stage)
+	}
 	assertSchemaEnum(t, properties, "workloadType", "Deployment", "StatefulSet")
 
 	servicePorts, ok := properties["servicePorts"].(map[string]any)

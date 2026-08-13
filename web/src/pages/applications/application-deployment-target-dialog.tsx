@@ -178,6 +178,9 @@ export function ApplicationDeploymentTargetDialog({
                 </Field>
                 <Field label={t('deploymentsPage.stage')}>
                   <Select {...form.register('stage')} disabled={Boolean(editingTarget)}>
+                    {editingTarget && !['dev', 'test', 'staging', 'prod'].includes(editingTarget.stage) && (
+                      <option value={editingTarget.stage}>{t('deploymentsPage.stageSystemManaged', { stage: editingTarget.stage })}</option>
+                    )}
                     <option value="dev">{t('deploymentsPage.stageDev')}</option>
                     <option value="test">{t('deploymentsPage.stageTest')}</option>
                     <option value="staging">{t('deploymentsPage.stageStaging')}</option>

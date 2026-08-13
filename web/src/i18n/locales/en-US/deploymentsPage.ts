@@ -435,6 +435,7 @@ const deploymentsPage = {
   stageTest: 'Test',
   stageStaging: 'Staging',
   stageProd: 'Production',
+  stageSystemManaged: 'System managed ({{stage}})',
   stageLabels: {
     dev: 'Development',
     test: 'Test',

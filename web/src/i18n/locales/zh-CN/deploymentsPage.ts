@@ -435,6 +435,7 @@ const deploymentsPage = {
   stageTest: '测试',
   stageStaging: '预发',
   stageProd: '生产',
+  stageSystemManaged: '系统托管（{{stage}}）',
   stageLabels: {
     dev: '开发',
     test: '测试',

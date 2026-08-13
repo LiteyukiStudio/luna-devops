@@ -147,7 +147,7 @@ func (h *Handlers) UpdateDeploymentTarget(ctx *gin.Context) {
 	if !h.ensureBillingAllowsDeployChange(ctx, project.ID) {
 		return
 	}
-	if normalizeStage(input.Stage) != existing.Stage {
+	if strings.TrimSpace(input.Stage) != strings.TrimSpace(existing.Stage) {
 		writeErrorCode(ctx, http.StatusConflict, "deployment.stage_immutable", "deployment stage cannot be changed")
 		return
 	}
@@ -157,6 +157,10 @@ func (h *Handlers) UpdateDeploymentTarget(ctx *gin.Context) {
 	}
 	target.CreatedBy = existing.CreatedBy
 	target.CreatedAt = existing.CreatedAt
+	// Stage is immutable and may use an internal sys-* value for platform-managed
+	// components. Keep the persisted value authoritative instead of passing it
+	// through the public-stage normalizer used by create requests.
+	target.Stage = existing.Stage
 	if strings.TrimSpace(input.SecretRefs) == "" {
 		target.SecretRefs = existing.SecretRefs
 	}

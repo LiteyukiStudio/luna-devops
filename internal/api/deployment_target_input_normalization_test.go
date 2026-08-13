@@ -76,3 +76,10 @@ func TestNormalizeSecretRefsInput(t *testing.T) {
 		t.Fatalf("normalizeSecretRefsInput(value) = %q", got)
 	}
 }
+
+func TestDeploymentTargetResponsePreservesSystemStage(t *testing.T) {
+	response := deploymentTargetResponseFromModel(model.DeploymentTarget{Stage: "sys-cluster1"})
+	if response.Stage != "sys-cluster1" {
+		t.Fatalf("deploymentTargetResponseFromModel().Stage = %q, want system stage", response.Stage)
+	}
+}

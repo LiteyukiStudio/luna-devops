@@ -134,7 +134,7 @@ func deploymentTargetResponseFromModel(target model.DeploymentTarget) deployment
 		ApplicationID:                target.ApplicationID,
 		EnvironmentID:                target.EnvironmentID,
 		Name:                         target.Name,
-		Stage:                        normalizeStage(target.Stage),
+		Stage:                        fallback(strings.TrimSpace(target.Stage), "dev"),
 		KubernetesName:               strings.TrimSpace(target.KubernetesName),
 		ClusterID:                    target.ClusterID,
 		Namespace:                    target.Namespace,

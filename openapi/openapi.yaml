@@ -8274,9 +8274,9 @@ components:
           description: Optional project environment reference.
         stage:
           type: string
-          enum: [dev, test, staging, prod]
+          pattern: '^(dev|test|staging|prod|sys-[a-z0-9-]+)$'
           default: dev
-          description: Immutable stage identifier, unique among active deployment targets in the application. It may be reused after deletion cleanup.
+          description: Immutable stage identifier, unique among active deployment targets in the application. Create requests use dev, test, staging, or prod. Updates to platform-managed components echo their existing sys-* value. It may be reused after deletion cleanup.
         clusterId:
           type: string
           description: Runtime cluster ID available to the project. Empty selects the platform default cluster.

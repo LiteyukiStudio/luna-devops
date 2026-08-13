@@ -21,6 +21,7 @@ const errors = {
     identifier_delete_failed: '同标识项目空间上次删除失败，请先完成资源清理。',
   },
   deployment: {
+    stage_immutable: '部署阶段不可修改。请刷新页面后重试。',
     stage_exists: '该应用内的部署阶段已存在。',
     stage_delete_in_progress: '同阶段部署配置正在删除，资源清理完成后才能复用。',
     stage_delete_failed: '同阶段部署配置上次删除失败，请先完成资源清理。',
