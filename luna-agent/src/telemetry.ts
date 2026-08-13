@@ -87,6 +87,8 @@ export const agentMetrics = {
   modelTokens: deferredCounter("luna_devops_agent_model_tokens", "模型 Token 用量"),
   toolCalls: deferredCounter("luna_devops_agent_tool_calls", "工具调用次数"),
   toolDuration: deferredHistogram("luna_devops_agent_tool_call_duration", "工具调用耗时", "s"),
+  toolSearches: deferredCounter("luna_devops_agent_tool_searches", "工具目录检索次数"),
+  toolSearchMatches: deferredHistogram("luna_devops_agent_tool_search_matches", "单次工具目录检索命中数量", "tool"),
   approvals: deferredCounter("luna_devops_agent_approval_decisions", "工具审批决策次数"),
   cards: deferredCounter("luna_devops_agent_interaction_cards", "交互卡片生成次数"),
   externalRequests: deferredCounter("luna_devops_agent_external_requests", "外部请求次数"),

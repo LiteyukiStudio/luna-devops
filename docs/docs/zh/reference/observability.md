@@ -49,6 +49,8 @@ AI_OBSERVABILITY_CAPTURE_CONTENT=true
 
 轮次详情按开始时间把真实 Span 呈现为纵向步骤时间轴，并支持筛选全部、模型、工具或异常步骤。每次请求模型前，`agent.tools.available` 会记录该次实际下发的工具子集；页面将其以胶囊列表展示，便于判断模型为何能或不能调用某项能力。默认只保留用户消息、Agent、模型和工具步骤；一次工具调用以 `luna-agent` 服务的 `agent.tool.execute`（内部工具为 `agent.tool.internal`）作为权威业务步骤，其 `luna_api.tool.execute` 网络传输子 Span 不重复展示。开启“展示外部服务”后才显示外部 HTTP、数据库等基础设施 Span。模型输入输出按消息角色和 Markdown 呈现，工具入参与返回使用格式化、语法高亮的 JSON，常用 Span 属性显示为本地化业务标签。展开“原始 Span JSON”可查看 Tempo 返回的完整原始数据。使用标题栏的“复制诊断 JSON”或“下载诊断 JSON”，可导出本轮元数据以及按开始时间排序的全部 Span；导出不受当前时间轴筛选或“展示外部服务”开关影响，并同时保留标准化字段、内容事件和 Tempo 原始 Span，便于离线诊断 Agent Harness。
 
+动态检索工具时会产生 `agent.tool.internal` Span，`gen_ai.tool.name=search_tools`；随后的 `agent.tools.available` 应包含本次命中的工具。指标 `luna_devops_agent_tool_searches` 按结果统计检索次数，`luna_devops_agent_tool_search_matches` 记录单次命中数量。检索词属于用户目标，不写入普通 Span 属性或 Metric label；只有显式开启高敏内容观测时才可从工具内容事件中查看。
+
 开启 `AI_OBSERVABILITY_CAPTURE_CONTENT` 后，新产生的模型步骤会展示 System Prompt、用户消息及模型输出，工具步骤会展示执行状态、调用入参和返回结果；这些内容来自对应 Span Event。关闭内容观测时，面板仍展示步骤元数据与原始 JSON，但不会补录此前未采集的模型或工具内容。用户消息与最终 Agent 回复同时从 Luna 的权威会话存储读取。跨用户轮次与内容仅平台管理员可见，Trace 详情读取会写入审计日志。
 
 浏览器只调用 Luna API 提供的固定查询，不能提交任意 PromQL、LogQL 或 TraceQL，也不会收到数据源地址和凭据。Trace 详情由 Luna API 通过 Tempo 2.x 查询接口读取并归一化，同时兼容旧代理返回的 OTLP JSON 结构；Tempo 数据保留期结束后，对应详情将无法继续打开。

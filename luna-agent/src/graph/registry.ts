@@ -1,7 +1,7 @@
 import { Annotation, END, START, StateGraph } from "@langchain/langgraph"
 import type { ContextCompiler, ContextCompilerOptions } from "../context/compiler.js"
 import type { ConversationHistoryEntry, ConversationTitleSource, PromptVersion } from "../domain.js"
-import type { ModelMessage, ModelProvider, ModelToolCall, ModelToolDefinition, ModelToolResolver } from "../provider/provider.js"
+import type { ModelMessage, ModelProvider, ModelToolCall, ModelToolDefinition, ModelToolResolver, ModelToolSearchResult } from "../provider/provider.js"
 import { skillGuidanceFor, systemPromptFor } from "../prompt/system.js"
 import { renameConversationTool } from "../tools/conversation-title.js"
 import { createOptionsTool } from "../tools/ui-options.js"
@@ -24,6 +24,7 @@ const GraphState = Annotation.Root({
   answer: Annotation<string>,
   toolCalls: Annotation<ModelToolCall[]>,
   continuationMessages: Annotation<ModelMessage[]>,
+  loadedOperationIds: Annotation<string[]>,
 })
 export type AssistantGraphState = typeof GraphState.State
 const assistantDefaultMaxOutputTokens = 4096
@@ -34,17 +35,23 @@ type CompiledAssistantGraph = {
 export class GraphVersionRegistry {
   private readonly graphs = new Map<string, CompiledAssistantGraph>()
   private assistantMaxOutputTokens = assistantDefaultMaxOutputTokens
-  private readonly resolveTools: (pageContext: Record<string, unknown>, userInput: string) => ModelToolDefinition[]
+  private readonly resolveTools: (pageContext: Record<string, unknown>, userInput: string, loadedOperationIds: string[]) => ModelToolDefinition[]
+  private readonly searchTools?: (query: string, pageContext: Record<string, unknown>, limit: number) => ModelToolSearchResult
   constructor(
     private readonly provider: ModelProvider,
     tools: ModelToolResolver = [],
     private readonly contextCompiler?: ContextCompiler,
   ) {
-    this.resolveTools = typeof tools === "function" ? tools : () => tools
+    if (Array.isArray(tools)) this.resolveTools = () => tools
+    else if (typeof tools === "function") this.resolveTools = tools
+    else {
+      this.resolveTools = tools.resolve
+      this.searchTools = tools.search
+    }
     const graph = new StateGraph(GraphState)
       .addNode("context", state => ({ ...state, reasoningSummary: "正在检查会话上下文与可用的只读能力。" }))
       .addNode("respond", async state => {
-        const tools = this.modelTools(state.pageContext, state.conversation, state.input)
+        const tools = this.modelTools(state.pageContext, state.conversation, state.input, state.loadedOperationIds)
         const response = await provider.complete({
           messages: await this.compileMessages(state, tools),
           maxOutputTokens: this.assistantMaxOutputTokens,
@@ -79,7 +86,7 @@ export class GraphVersionRegistry {
 
   async *stream(version: string, input: AssistantGraphState, signal?: AbortSignal) {
     if (!this.graphs.has(version)) throw new Error("ai.graph_version_unavailable")
-    const tools = this.modelTools(input.pageContext, input.conversation, input.input)
+    const tools = this.modelTools(input.pageContext, input.conversation, input.input, input.loadedOperationIds)
     recordAvailableTools(tools)
     yield* this.provider.stream({
       messages: await this.compileMessages(input, tools, signal),
@@ -87,6 +94,11 @@ export class GraphVersionRegistry {
       tools,
       ...(signal ? { signal } : {}),
     })
+  }
+
+  searchAvailableTools(query: string, pageContext: Record<string, unknown>, limit: number): ModelToolSearchResult {
+    if (!this.searchTools) return { query, matches: [], loadedOperationIds: [], totalMatches: 0 }
+    return this.searchTools(query, pageContext, limit)
   }
 
   private async compileMessages(input: AssistantGraphState, tools: ModelToolDefinition[], signal?: AbortSignal) {
@@ -128,7 +140,7 @@ export class GraphVersionRegistry {
   }, signal?: AbortSignal): Promise<Record<string, unknown> | undefined> {
     const availableOperations = this.modelTools(input.pageContext, input.conversation, input.userInput)
       .map(tool => tool.operationId)
-      .filter(operationId => !["create_options", "prepare_interaction_cards", "create_interaction_cards", "rename_conversation", "navigate_to_route"].includes(operationId))
+      .filter(operationId => !["create_options", "prepare_interaction_cards", "create_interaction_cards", "rename_conversation", "navigate_to_route", "search_tools"].includes(operationId))
     const skillGuidance = skillGuidanceFor({
       userInput: `${input.userInput}\n${input.answer}`,
       pageContext: input.pageContext,
@@ -187,9 +199,9 @@ ${JSON.stringify(availableOperations)}`,
     return response.toolCalls?.find(call => call.operationId === "create_options")?.arguments
   }
 
-  private modelTools(pageContext: Record<string, unknown>, conversation: ConversationPromptContext, userInput: string) {
+  private modelTools(pageContext: Record<string, unknown>, conversation: ConversationPromptContext, userInput: string, loadedOperationIds: string[] = []) {
     return [
-      ...this.resolveTools(pageContext, userInput),
+      ...this.resolveTools(pageContext, userInput, loadedOperationIds),
       ...(conversation.titleSource === "user" ? [] : [renameConversationTool]),
     ]
   }

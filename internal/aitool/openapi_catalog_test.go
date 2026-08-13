@@ -52,6 +52,20 @@ func TestPlatformCatalogCoversAgentEligibleControlPlane(t *testing.T) {
 	}
 }
 
+func TestPlatformCatalogProvidesSemanticSearchHints(t *testing.T) {
+	operation, ok := PlatformOperation("listProjects")
+	if !ok {
+		t.Fatal("missing operation listProjects")
+	}
+	joined := strings.Join(operation.SearchHints, " ")
+	if !strings.Contains(joined, "List projects") || !strings.Contains(joined, "Pagination") {
+		t.Fatalf("OpenAPI semantic hints are missing: %#v", operation.SearchHints)
+	}
+	if !strings.HasPrefix(operation.Description, "调用 Luna DevOps") {
+		t.Fatalf("model-facing fallback description must remain Chinese: %q", operation.Description)
+	}
+}
+
 func TestPlatformCatalogClassifiesRuntimeCommandSessions(t *testing.T) {
 	for _, operationID := range []string{
 		"createReleaseRuntimeCommandSession",

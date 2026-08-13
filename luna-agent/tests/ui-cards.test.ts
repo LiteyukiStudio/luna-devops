@@ -71,6 +71,40 @@ describe("interaction card tool", () => {
     })
   })
 
+  it("allows turn-end placement only for one blocking interactive form", () => {
+    expect(createInteractionCardsInput.safeParse({
+      ...databaseCard,
+      placement: "turn_end",
+    }).success).toBe(true)
+
+    expect(createInteractionCardsInput.safeParse({
+      ...databaseCard,
+      placement: "turn_end",
+      cards: [databaseCard.cards[0], {
+        ...databaseCard.cards[0],
+        id: "mysql",
+      }],
+    }).success).toBe(false)
+
+    expect(createInteractionCardsInput.safeParse({
+      ...databaseCard,
+      placement: "turn_end",
+      mode: "presentation",
+    }).success).toBe(false)
+  })
+
+  it("accepts an explicit placement while preparing a card", () => {
+    expect(prepareInteractionCardsInput.parse({
+      schemaVersion: 1,
+      title: "正在整理部署配置",
+      placement: "turn_end",
+    })).toEqual({
+      schemaVersion: 1,
+      title: "正在整理部署配置",
+      placement: "turn_end",
+    })
+  })
+
   it("rejects platform-only approval cards and duplicate card IDs", () => {
     expect(createInteractionCardsInput.safeParse({ ...databaseCard, template: "approval" }).success).toBe(false)
     expect(createInteractionCardsInput.safeParse({

@@ -142,6 +142,8 @@ export interface InteractionCardGroup {
   title: string
   description?: string
   mode: 'presentation' | 'interactive'
+  /** inline 保持真实事件位置；turn_end 仅用于单张、阻塞后续流程的交互表单。省略时按 inline 处理。 */
+  placement?: 'inline' | 'turn_end'
   template: 'catalog' | 'comparison' | 'inspector' | 'form' | 'wizard' | 'diagnosis' | 'plan' | 'progress' | 'result' | 'dashboard'
   display?: { density?: 'comfortable' | 'compact' }
   cards: InteractionCard[]
@@ -152,6 +154,8 @@ export interface PrepareInteractionCardsInput {
   schemaVersion: 1
   title: string
   description?: string
+  /** 必须与随后 create_interaction_cards 使用的位置一致；省略时按 inline 处理。 */
+  placement?: 'inline' | 'turn_end'
 }
 
 export interface InteractionCardValidationIssue {

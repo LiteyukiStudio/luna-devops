@@ -7,7 +7,19 @@ export type ModelToolDefinition = {
   description: string
   inputSchema: Record<string, unknown>
 }
-export type ModelToolResolver = ModelToolDefinition[] | ((pageContext: Record<string, unknown>, userInput: string) => ModelToolDefinition[])
+export type ModelToolSearchResult = {
+  query: string
+  matches: Array<{ operationId: string, category: string, description: string }>
+  loadedOperationIds: string[]
+  totalMatches: number
+}
+export type ModelToolRegistry = {
+  resolve: (pageContext: Record<string, unknown>, userInput: string, loadedOperationIds: string[]) => ModelToolDefinition[]
+  search: (query: string, pageContext: Record<string, unknown>, limit: number) => ModelToolSearchResult
+}
+export type ModelToolResolver = ModelToolDefinition[]
+  | ((pageContext: Record<string, unknown>, userInput: string, loadedOperationIds: string[]) => ModelToolDefinition[])
+  | ModelToolRegistry
 export type ModelToolChoice = "auto" | "required" | { operationId: string }
 export type ModelRequest = {
   messages: ModelMessage[]

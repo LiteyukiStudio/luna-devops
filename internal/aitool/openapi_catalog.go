@@ -19,6 +19,7 @@ type OpenAPIOperation struct {
 	Path           string         `json:"path"`
 	Category       string         `json:"category"`
 	Description    string         `json:"description"`
+	SearchHints    []string       `json:"searchHints,omitempty"`
 	Risk           string         `json:"risk"`
 	RequiredScopes []string       `json:"requiredScopes"`
 	Approval       string         `json:"approval"`
@@ -180,9 +181,10 @@ func catalogOperation(document openAPIDocument, path, method, operationID string
 		strings.ToUpper(method),
 		path,
 	)
+	searchHints := compactSearchHints(stringValue(raw["summary"]), stringValue(raw["description"]))
 	return OpenAPIOperation{
 		OperationID: operationID, Method: strings.ToUpper(method), Path: path,
-		Category: category, Description: description, Risk: risk,
+		Category: category, Description: description, SearchHints: searchHints, Risk: risk,
 		RequiredScopes: scopes, Approval: approval,
 		StepUpPurpose: stringValue(extension["mfaPurpose"]),
 		Idempotent:    method == "get" || method == "put" || method == "delete",
@@ -191,6 +193,24 @@ func catalogOperation(document openAPIDocument, path, method, operationID string
 		Parameters: parameters, RequestBody: len(requestSchema) > 0,
 		RequestRequired: requestRequired, RequestType: requestType,
 	}, nil
+}
+
+// compactSearchHints keeps OpenAPI prose out of the model-visible description while
+// retaining concise semantic terms for the Agent-side tool retriever.
+func compactSearchHints(values ...string) []string {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.Join(strings.Fields(value), " ")
+		if value == "" {
+			continue
+		}
+		characters := []rune(value)
+		if len(characters) > 500 {
+			value = string(characters[:500])
+		}
+		result = append(result, value)
+	}
+	return result
 }
 
 func agentEligibleOperation(path, method, operationID string, raw map[string]any) bool {

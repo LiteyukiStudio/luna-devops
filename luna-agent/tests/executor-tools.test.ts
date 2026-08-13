@@ -12,6 +12,7 @@ import { DeterministicLunaApiClient } from "../src/tools/luna-api-client.js"
 import { MemoryToolCallStore, ProjectingToolCallStore, ToolOrchestrator } from "../src/tools/orchestrator.js"
 import { createOptionsInput, createOptionsTool } from "../src/tools/ui-options.js"
 import { navigateToRouteTool } from "../src/tools/ui-route.js"
+import { searchToolsTool } from "../src/tools/tool-search.js"
 
 function preparedGenerationId(request: ModelRequest): string {
   for (const message of request.messages.toReversed()) {
@@ -266,6 +267,7 @@ describe("provider to tool to subsequent model invocation", () => {
               arguments: {
                 schemaVersion: 1,
                 title: "正在组织 Redis 配置",
+                placement: "turn_end",
               },
             }],
           }
@@ -279,7 +281,30 @@ describe("provider to tool to subsequent model invocation", () => {
             toolCalls: [{
               id: "invalid_card",
               operationId: "create_interaction_cards",
-              arguments: { schemaVersion: "v1", generationId, cards: [] },
+              arguments: {
+                schemaVersion: 1,
+                generationId,
+                placement: "inline",
+                title: "Redis 配置",
+                mode: "interactive",
+                template: "form",
+                cards: [{
+                  id: "redis",
+                  presentation: { variant: "form", title: "Redis" },
+                  form: {
+                    sections: [{
+                      id: "basic",
+                      fields: [{ id: "name", type: "text", label: "实例名称", required: true }],
+                    }],
+                  },
+                  actions: [{
+                    id: "continue",
+                    type: "send_message",
+                    label: "继续",
+                    message: "继续配置 {{name}}",
+                  }],
+                }],
+              },
             }],
           }
           return
@@ -295,6 +320,7 @@ describe("provider to tool to subsequent model invocation", () => {
             arguments: {
               schemaVersion: 1,
               generationId,
+              placement: "turn_end",
               title: "Redis 配置",
               mode: "interactive",
               template: "form",
@@ -337,6 +363,7 @@ describe("provider to tool to subsequent model invocation", () => {
     const retryMessage = requests[2]?.messages.find(message => message.role === "tool" && message.toolCallId === "invalid_card")
     expect(retryMessage).toMatchObject({ role: "tool", toolCallId: "invalid_card" })
     expect(retryMessage?.content).toContain("ai.interaction_card_schema_invalid")
+    expect(retryMessage?.content).toContain("placement_mismatch")
     expect(retryMessage?.content).toContain('"attempt":1')
     expect(retryMessage?.content).toContain('"retryable":true')
     const timeline = await presentTimeline(repository, "usr_a", conversation.id)
@@ -591,6 +618,58 @@ describe("provider to tool to subsequent model invocation", () => {
     const timeline = await presentTimeline(repository, "usr_a", conversation.id)
     expect(timeline?.turns[0]?.selectedRun?.items.filter(item => item.type === "tool_call")).toHaveLength(2)
     expect(JSON.stringify(timeline)).toContain("目标项目空间中没有现有 PostgreSQL 应用")
+  })
+
+  it("loads a discovered tool into the next model step and then executes it", async () => {
+    const repository = new MemoryRepository()
+    const conversation = await repository.createConversation("usr_a", "公网入口", undefined, "user")
+    const created = await repository.createTurn("usr_a", {
+      conversationId: conversation.id,
+      input: "继续处理刚才的事情",
+      pageContext: { routeName: "applications" },
+      idempotencyKey: "dynamic-tool-search",
+      runActorGrantCiphertext: "encrypted-test-grant",
+    })
+    const catalog = ToolCatalog.load([{
+      operationId: "createGatewayRoute", method: "POST", path: "/api/v1/gateway-routes", category: "gateway",
+      description: "创建公网网关路由。", risk: "write", requiredScopes: ["gateway:write"], approval: "never",
+      idempotent: true, timeoutMs: 5000,
+      inputSchema: { type: "object", properties: {}, required: [], additionalProperties: false },
+    }])
+    const requests: ModelRequest[] = []
+    let modelStep = 0
+    const provider: ModelProvider = {
+      async *stream(request) {
+        requests.push(request)
+        if (modelStep++ === 0) {
+          yield { type: "completed", usage: { inputTokens: 5, outputTokens: 2 }, toolCalls: [{ id: "search", operationId: "search_tools", arguments: { query: "创建公网 HTTPS 网关入口", maxResults: 5 } }] }
+          return
+        }
+        if (modelStep === 2) {
+          yield { type: "completed", usage: { inputTokens: 8, outputTokens: 3 }, toolCalls: [{ id: "gateway", operationId: "createGatewayRoute", arguments: {} }] }
+          return
+        }
+        yield { type: "message_delta", delta: "公网入口已创建并完成回读。" }
+        yield { type: "completed", usage: { inputTokens: 9, outputTokens: 5 } }
+      },
+      async complete() { return { text: "", usage: { inputTokens: 1, outputTokens: 0 }, toolCalls: [] } },
+      capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
+      health: async () => ({ ok: true }),
+    }
+    const client = new DeterministicLunaApiClient(() => ({ status: 200, body: { id: "gwr_test" } }))
+    const tools = new ToolOrchestrator(catalog, client, new ProjectingToolCallStore(new MemoryToolCallStore(), repository), undefined, undefined, async () => "opaque-grant")
+    const registry = new GraphVersionRegistry(provider, {
+      resolve: (pageContext, input, loaded) => [...catalog.resolve(pageContext, input, loaded), searchToolsTool],
+      search: (query, pageContext, limit) => catalog.search(query, pageContext, limit),
+    })
+    const executor = new RunExecutor(repository, registry, loadConfig({ NODE_ENV: "test", INSTANCE_ID: "dynamic-search-worker" }), tools)
+
+    await executor.runOnce()
+
+    expect((await repository.getRun("usr_a", created.run.id))?.status).toBe("completed")
+    expect(requests[0]?.tools?.map(tool => tool.operationId)).not.toContain("createGatewayRoute")
+    expect(requests[1]?.tools?.map(tool => tool.operationId)).toContain("createGatewayRoute")
+    expect(client.calls.map(call => call.operation.operationId)).toEqual(["createGatewayRoute"])
   })
 
   it("persists an automatic registered-route action without invoking the business tool orchestrator", async () => {

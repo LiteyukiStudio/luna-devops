@@ -19,6 +19,7 @@ import {
 } from "./tools/ui-cards.js"
 import { createOptionsInput, optionUIActions } from "./tools/ui-options.js"
 import { automaticRouteUIAction, navigateToRouteInput } from "./tools/ui-route.js"
+import { searchToolsInput } from "./tools/tool-search.js"
 import type { ProviderConfigClient } from "./provider/config-client.js"
 import { agentRuntimeInternals, defaultRuntimeSettings, type RuntimeSettings } from "./runtime-settings.js"
 import { agentMetrics, extractTraceContext, internalSpanOptions, isExpectedCancellation, recordAIContent, recordSpanError, stableErrorCode, telemetryLog, withSpan } from "./telemetry.js"
@@ -132,6 +133,9 @@ export class RunExecutor {
       let finalAnswer = ""
       let completed = false
       const continuationMessages = resumedToolMessages(executionInput.toolInteractions)
+      // 恢复审批/MFA 后仍保留此前已经使用过的工具，避免动态工具集在断点续跑时漂移。
+      const loadedOperationIds = new Set(resumedOperationIds(executionInput.toolInteractions))
+      const searchedToolQueries = new Set<string>()
       for (let step = 0; step < this.runtimeSettings.maxModelSteps; step += 1) {
         const result = await this.streamModel(run.graphVersion, run.id, run.turnId, {
           conversationId: executionInput.conversationId,
@@ -144,6 +148,7 @@ export class RunExecutor {
           answer: "",
           toolCalls: [],
           continuationMessages,
+          loadedOperationIds: [...loadedOperationIds],
         }, abort.signal)
         finalAnswer = result.answer
         if (cardRepairExhausted) {
@@ -257,6 +262,35 @@ export class RunExecutor {
             if (!hasPlatformTool) pendingOptions = toolCall.arguments
             continuationMessages.push(toolResultMessage(toolCall, {
               status: hasPlatformTool ? "deferred_until_final_response" : "accepted",
+            }))
+            continue
+          }
+          if (toolCall.operationId === "search_tools") {
+            const input = searchToolsInput.parse(toolCall.arguments)
+            const normalizedQuery = normalizeToolSearchQuery(input.query)
+            const alreadySearched = searchedToolQueries.has(normalizedQuery)
+            const result = await this.traceInternalTool("search_tools", run.id, input, async () => {
+              if (alreadySearched) return {
+                query: input.query,
+                matches: [],
+                loadedOperationIds: [] as string[],
+                totalMatches: 0,
+              }
+              searchedToolQueries.add(normalizedQuery)
+              return this.graphs.searchAvailableTools(input.query, executionInput.pageContext, input.maxResults)
+            })
+            result.loadedOperationIds.forEach(operationId => loadedOperationIds.add(operationId))
+            const searchOutcome = alreadySearched ? "duplicate" : result.matches.length ? "succeeded" : "no_matches"
+            agentMetrics.toolSearches.add(1, { outcome: searchOutcome })
+            agentMetrics.toolSearchMatches.record(result.matches.length, { outcome: searchOutcome })
+            continuationMessages.push(toolResultMessage(toolCall, {
+              status: result.matches.length ? "succeeded" : "no_matches",
+              matches: result.matches,
+              loadedOperationIds: result.loadedOperationIds,
+              totalMatches: result.totalMatches,
+              guidance: result.matches.length
+                ? "这些工具已加入本轮后续模型步骤。请继续调用最适合的具体工具；不要把检索结果当成业务执行结果。"
+                : "没有新增匹配工具，或同一检索已经执行过。请改用更具体且不同的业务目标检索一次；仍无结果时再如实说明能力缺失。",
             }))
             continue
           }
@@ -476,6 +510,7 @@ export class RunExecutor {
       schemaVersion: parsed.data.schemaVersion,
       title: parsed.data.title,
       ...(parsed.data.description !== undefined ? { description: parsed.data.description } : {}),
+      ...(parsed.data.placement !== undefined ? { placement: parsed.data.placement } : {}),
       generationId: createId("aicardgen"),
     }
     const itemId = createId("aiitm")
@@ -516,7 +551,10 @@ export class RunExecutor {
     }
     preparations.set(input.generationId, preparation)
     agentMetrics.cards.add(1, { phase: "prepared" })
-    telemetryLog("agent.card.prepared", "info", { "luna.run.id": runId })
+    telemetryLog("agent.card.prepared", "info", {
+      "luna.run.id": runId,
+      "card.placement": input.placement ?? "inline",
+    })
     return { accepted: true as const, preparation }
   }
 
@@ -561,6 +599,22 @@ export class RunExecutor {
         }], exhausted ? maxCardRepairAttempts : 1, input.generationId),
       }
     }
+    const preparedPlacement = preparation.input.placement ?? "inline"
+    const createdPlacement = input.placement ?? "inline"
+    if (preparedPlacement !== createdPlacement) {
+      const issues: InteractionCardValidationIssue[] = [{
+        code: "placement_mismatch",
+        path: "placement",
+        message: "最终卡片 placement 必须与准备阶段保持一致。",
+        expected: preparedPlacement,
+        received: createdPlacement,
+      }]
+      const attempt = await this.recordCardRepairFailure(runId, preparation, issues, "ai.interaction_card_schema_invalid", preparations, failedGenerationIds)
+      return {
+        accepted: false as const,
+        failure: cardValidationFailure("create", issues, attempt, input.generationId),
+      }
+    }
     const { itemId, toolCallId, timelineIndex } = preparation
     const result = {
       summaryKey: "aiAssistant.cards.created",
@@ -580,7 +634,11 @@ export class RunExecutor {
     })
     preparations.delete(input.generationId)
     agentMetrics.cards.add(1, { phase: "created", mode: input.mode })
-    telemetryLog("agent.card.created", "info", { "luna.run.id": runId, "card.mode": input.mode })
+    telemetryLog("agent.card.created", "info", {
+      "luna.run.id": runId,
+      "card.mode": input.mode,
+      "card.placement": input.placement ?? "inline",
+    })
     return { accepted: true as const, mode: input.mode }
   }
 
@@ -1045,6 +1103,17 @@ function resumedToolMessages(interactions: ConversationToolInteraction[]): Model
     })
 }
 
+function resumedOperationIds(interactions: ConversationToolInteraction[]): string[] {
+  return [...new Set(interactions
+    .filter(interaction => interaction.type === "tool_call")
+    .map(interaction => interaction.content.operationId)
+    .filter((operationId): operationId is string => typeof operationId === "string" && !internalToolOperationIds.has(operationId)))]
+}
+
+function normalizeToolSearchQuery(query: string): string {
+  return query.trim().toLowerCase().replace(/\s+/g, " ")
+}
+
 let maxCardRepairAttempts = defaultRuntimeSettings.maxCardRepairAttempts
 
 export function setMaxCardRepairAttempts(attempts: number): void {
@@ -1116,5 +1185,5 @@ function providerArgumentFailure(
   }
 }
 
-const internalToolOperationIds = new Set(["create_options", "prepare_interaction_cards", "create_interaction_cards", "rename_conversation", "navigate_to_route"])
+const internalToolOperationIds = new Set(["create_options", "prepare_interaction_cards", "create_interaction_cards", "rename_conversation", "navigate_to_route", "search_tools"])
 const cardToolOperationIds = new Set(["prepare_interaction_cards", "create_interaction_cards"])

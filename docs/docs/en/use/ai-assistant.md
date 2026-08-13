@@ -37,6 +37,10 @@ Under **Advanced settings**, the Agent's internal parameters can be tuned by cat
 
 The assistant can inspect platform resources, analyze logs and status, read public web pages, collect settings through interactive cards, and report operation results. Long-running builds and releases show their real status, and the assistant checks the outcome after they finish.
 
+Interactive cards normally appear at their actual point in the conversation. When a reply contains exactly one blocking configuration form, the assistant may place it at the end of that reply so you can read the explanation before filling it in. Candidate lists, multiple cards, progress, and results stay in their real event order.
+
+When the platform has many tools, the assistant first selects a focused set for the current goal. If that set is insufficient, it searches the tool catalog in the background and continues the same task. Tool discovery does not bypass your permissions or mean that an operation has already run, and you do not need to know tool names.
+
 When deploying from a repository or official deployment guide, the assistant first evaluates official container images maintained by the project. It normally recommends direct image deployment when the version, architecture, and pull requirements match the target. It falls back to a source build when the image cannot be verified, does not fit the deployment, or you explicitly request a source build.
 
 When a project provides both Kubernetes/Helm and Docker/Compose deployment material, the assistant prefers Kubernetes/Helm configuration that matches the target version and uses Docker/Compose to fill in service topology and runtime parameters. If the Kubernetes material is outdated, incomplete, or unsuitable for the target environment, it uses verifiable Docker/Compose or source configuration instead.

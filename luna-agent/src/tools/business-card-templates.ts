@@ -213,6 +213,9 @@ export const businessCardTemplate = z.discriminatedUnion("templateId", [
 export const createBusinessCardTemplateInput = z.object({
   schemaVersion: z.literal(1),
   generationId: identifier,
+  placement: z.enum(["inline", "turn_end"]).optional().describe(
+    "卡片在本轮回复中的渲染位置。默认 inline；只有单张、等待用户提交且阻塞后续流程的交互表单才使用 turn_end。",
+  ),
   businessTemplate: businessCardTemplate,
 })
 
@@ -220,7 +223,7 @@ export type CreateBusinessCardTemplateInput = z.infer<typeof createBusinessCardT
 
 export function compileBusinessCardTemplate(input: CreateBusinessCardTemplateInput): unknown {
   const template = input.businessTemplate
-  const base = { schemaVersion: 1, generationId: input.generationId, title: template.title, description: template.description }
+  const base = { schemaVersion: 1, generationId: input.generationId, title: template.title, description: template.description, placement: input.placement ?? "inline" }
   switch (template.templateId) {
     case "candidate_picker":
       return {

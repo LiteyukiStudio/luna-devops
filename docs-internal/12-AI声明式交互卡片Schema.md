@@ -39,6 +39,11 @@ Agent 使用：
 - `create_interaction_cards`：校验、编译并持久化通用卡片定义。
 - 业务模板编译器：把高频业务输入编译成同一通用协议，不产生第二套运行时。
 
+准备和创建工具共享 `placement`：默认 `inline`，按权威 Timeline 事件位置展示；只有当前回合唯一、
+阻塞后续流程且等待用户提交的单张交互表单才可使用 `turn_end`，将它投影到该回复末尾。一个回合
+出现多张卡片、候选列表、展示卡片、进度或结果卡片时必须使用 `inline`。准备与创建阶段的位置不
+一致时拒绝生成，Web 只改变展示投影，不修改 `timelineIndex`、持久化顺序或模型上下文顺序。
+
 实现事实源：
 
 - Agent Schema 与 Tool 定义：`luna-agent/src/tools/ui-cards.ts`
@@ -117,6 +122,8 @@ prepare -> generationId -> tool arguments complete -> Agent Schema validation
 - Schema 校验失败不展示损坏卡片；记录稳定错误码和字段路径并回灌模型有界修复。
 - 达到修复上限后保留可诊断失败并回退普通消息，禁止无限重试。
 - Thinking、Message、Tool Call 和卡片按真实 Timeline 顺序进入同一助手回复容器。
+- 仅当同一回合恰有一张声明为 `turn_end` 的交互卡片时，Web 将它展示在回复底部；出现多个末尾
+  声明时回退真实事件顺序，避免前端猜测等待点。
 
 ## 9. 运行态与进度
 

@@ -76,6 +76,61 @@ describe('ai assistant turn topology', () => {
     ])
   })
 
+  it('moves one explicitly deferred interactive card to the end of the turn', () => {
+    const turnEndCard: AIBlock = {
+      id: 'turn-end-card',
+      turnId: 'turn-1',
+      runId: 'run-1',
+      index: 1.5,
+      type: 'tool_call',
+      toolCallId: 'card-call',
+      operationId: 'create_interaction_cards',
+      visibility: 'normal',
+      status: 'succeeded',
+      arguments: { placement: 'turn_end' },
+      result: { summaryKey: 'ai.tool.result.completed' },
+      uiActions: [],
+    }
+
+    const turns = groupAIAssistantBlocksByTurn([...blocks, turnEndCard])
+
+    expect(turns[0].responseBlocks.map(block => block.id)).toEqual([
+      'thinking',
+      'progress-message',
+      'tool-call',
+      'final-message',
+      'turn-end-card',
+    ])
+  })
+
+  it('keeps multiple deferred cards in their event positions', () => {
+    const deferredCards: AIBlock[] = [1.5, 2.5].map((index, cardIndex) => ({
+      id: `turn-end-card-${cardIndex + 1}`,
+      turnId: 'turn-1',
+      runId: 'run-1',
+      index,
+      type: 'tool_call',
+      toolCallId: `card-call-${cardIndex + 1}`,
+      operationId: 'create_interaction_cards',
+      visibility: 'normal',
+      status: 'succeeded',
+      arguments: { placement: 'turn_end' },
+      result: { summaryKey: 'ai.tool.result.completed' },
+      uiActions: [],
+    }))
+
+    const turns = groupAIAssistantBlocksByTurn([...blocks, ...deferredCards])
+
+    expect(turns[0].responseBlocks.map(block => block.id)).toEqual([
+      'thinking',
+      'progress-message',
+      'turn-end-card-1',
+      'tool-call',
+      'turn-end-card-2',
+      'final-message',
+    ])
+  })
+
   it('renders interleaved thinking, messages and tools inside one assistant reply', async () => {
     await i18next.changeLanguage('zh-CN')
     const { container } = render(

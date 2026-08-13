@@ -125,6 +125,7 @@ web/src/i18n
   4. Agent 侧 `src/tools/catalog.ts` 的 `baseOperations`/`essentialWorkflowOperations`（决定工具是否下发给模型）与 `operationDescriptions`（模型可见的工具描述）。
   有独立 OpenAPI 路由的平台操作经 `PlatformCatalog()` 自动生成策略，只需确认 `agentEligibleOperation` 未将其排除。完成后必须用一条真实调用链验证工具可执行（通过 delegation 换取并成功返回），不能仅编译通过就交付。
 - 修改既有工具的 `requiredScopes`、参数 schema 或风险级别时，必须同步更新策略白名单与 Agent 侧定义，保持两端一致。
+- **MUST Agent 工具可检索性**：工具目录规模扩大时不得把全部定义无条件下发给模型。每个新增或变更工具必须提供可区分的用途、禁用场景、前置条件、主要参数和成功回读说明，并确保它能通过 Harness 的动态工具检索被对应用户目标命中；模型在声明缺少能力前必须先检索目录。检索工具只负责发现，不授予权限、不执行操作，也不得把用户检索词写入普通遥测属性或 Metric label。常用场景评测至少断言正确工具进入前 8 个结果，并覆盖相似读写工具的边界。
 
 ## 6. 前端准则
 

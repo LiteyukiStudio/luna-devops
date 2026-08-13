@@ -21,6 +21,7 @@ import { platformOperations } from "./tools/generated/platform.js"
 import { createInteractionCardsTool, prepareInteractionCardsTool } from "./tools/ui-cards.js"
 import { createOptionsTool } from "./tools/ui-options.js"
 import { navigateToRouteTool } from "./tools/ui-route.js"
+import { searchToolsTool } from "./tools/tool-search.js"
 
 export async function startAgent(): Promise<void> {
   const config = loadConfig()
@@ -89,19 +90,27 @@ export async function startAgent(): Promise<void> {
     summaryMaxOutputTokens: runtime.contextSummaryMaxOutputTokens,
     historicalToolTokenBudget: runtime.contextHistoricalToolTokenBudget,
   })
-  const graphs = new GraphVersionRegistry(provider, (pageContext, userInput) => [
+  const graphs = new GraphVersionRegistry(provider, {
+    resolve: (pageContext, userInput, loadedOperationIds) => [
     ...(tools
-      ? catalog.modelTools({
+      ? catalog.resolve({
           ...(typeof pageContext.projectId === "string" ? { projectId: pageContext.projectId } : {}),
           ...(typeof pageContext.pathname === "string" ? { pathname: pageContext.pathname } : {}),
           ...(typeof pageContext.routeName === "string" ? { routeName: pageContext.routeName } : {}),
-        }, userInput)
+        }, userInput, loadedOperationIds)
       : []),
+    ...(tools ? [searchToolsTool] : []),
     createOptionsTool,
     prepareInteractionCardsTool,
     createInteractionCardsTool,
     navigateToRouteTool,
-  ], contextCompiler)
+    ],
+    search: (query, pageContext, limit) => catalog.search(query, {
+      ...(typeof pageContext.projectId === "string" ? { projectId: pageContext.projectId } : {}),
+      ...(typeof pageContext.pathname === "string" ? { pathname: pageContext.pathname } : {}),
+      ...(typeof pageContext.routeName === "string" ? { routeName: pageContext.routeName } : {}),
+    }, limit),
+  }, contextCompiler)
   const executor = new RunExecutor(repository, graphs, config, tools, providerConfigClient)
   const server = buildServer({
     config, repository, authenticator, provider, graphVersions: graphs.versions(), grantCipher,
