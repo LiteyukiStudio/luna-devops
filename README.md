@@ -204,6 +204,7 @@ charts/luna-devops      Helm Chart
 
 ```bash
 go test ./...
+pnpm --dir web check:singletons
 pnpm --dir web lint
 pnpm --dir web build
 ```
@@ -211,6 +212,7 @@ pnpm --dir web build
 项目约定：
 
 - 前端依赖统一使用 `pnpm`。
+- React、CodeMirror 等运行时单例依赖不得在同一前端产物中出现多个版本；依赖变更后运行 `pnpm --dir web check:singletons`。
 - `web/`、`docs/`、`tests/` 和 `luna-agent/` 分别维护自己的依赖清单与 lockfile，不使用跨目录的根 pnpm workspace；需要 pnpm 项目配置时也只放在对应工作目录。
 - Python 工具链统一使用 `uv`。
 - 后端 Handler 保持精简，业务逻辑放入 Service，外部平台集成放入 Provider。

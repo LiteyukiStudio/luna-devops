@@ -21,6 +21,7 @@
 git status --short
 git diff --stat
 go test ./...
+pnpm --dir web check:singletons
 pnpm --dir web lint
 pnpm --dir web build
 pnpm --dir docs build
@@ -33,6 +34,7 @@ pnpm --dir docs build
 - 是否新增同步 Effect 回填派生状态，或存在旧订阅写入新资源的问题。
 - 用户行为变更是否同步中英文公开文档，计划与状态是否同步 `TODO.md`。
 - 是否出现本地构建产物、环境文件、日志、明文 Secret 或后端原始异常直出。
+- React、React DOM、CodeMirror 等依赖对象身份判断的运行时库是否出现多个版本；依赖升级后是否通过单例门禁和真实组件挂载测试。
 - 新增业务边界是否延续 Context，并具备 Trace、关联日志和低基数 Metric。
 - fork PR 和后续特权工作流是否保持只读、同仓库可信事件与 Secret 隔离。
 
@@ -182,8 +184,8 @@ PostgreSQL 并发和迁移测试必须使用可销毁数据库，覆盖历史 sc
   `go test -race` 和 `govulncheck`。
 - 前端：测试、lint、build 无新增错误或未解释 warning；关键路由做 production preview smoke。
 - 契约与文档：OpenAPI、错误码、枚举、前端类型和中英文流程同步；文档站构建通过。
-- 依赖：生产依赖的 High/Critical 与 Go 可达漏洞阻断发布；豁免必须限定单条 advisory，并记录
-  不可达证据和复查条件。
+- 依赖：生产依赖的 High/Critical 与 Go 可达漏洞阻断发布；前端运行时单例门禁必须通过；豁免
+  必须限定单条 advisory，并记录不可达证据和复查条件。
 - Helm：lint、template、Secret/RBAC、安全上下文、探针、资源限制和镜像 tag 检查。
 
 “本轮审计完成”只代表声明范围内 P0 清零、P1 已处理或接受且证据完整；不能替代项目整体

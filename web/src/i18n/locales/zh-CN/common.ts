@@ -11,6 +11,7 @@ const common = {
   loading: '加载中...',
   lazyLoadFailedTitle: '功能加载失败',
   lazyLoadFailedDescription: '请刷新页面后重试，已保存的数据不会受到影响。',
+  codeEditorFallback: '高级编辑器暂时不可用，已切换为基础文本输入；你仍可继续编辑并保存。',
   refresh: '刷新',
   retry: '重试',
   helpSuffix: '说明',

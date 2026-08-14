@@ -14,12 +14,8 @@ import (
 )
 
 func (h *Handlers) ListBillingRateRules(ctx *gin.Context) {
-	user, ok := h.currentUser(ctx)
+	_, ok := h.currentUser(ctx)
 	if !ok {
-		return
-	}
-	if user.Role != authz.PlatformRoleAdmin {
-		writeErrorKey(ctx, http.StatusForbidden, user.Language, "config.admin.required")
 		return
 	}
 

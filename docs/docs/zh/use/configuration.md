@@ -48,6 +48,8 @@ Git Provider 用于连接 GitHub、Gitea 或 GitLab，并为仓库搜索、Webho
 
 如果 API 或 Worker 运行在容器中，kubeconfig 不能使用仅宿主机可访问的 `127.0.0.1`。建议先执行 `kubectl config view --raw --minify --flatten`，再保存输出。平台仅接受 HTTPS API Server 和内联认证材料，不支持需要执行本机命令或读取本机文件的认证方式。
 
+编辑 kubeconfig 时会使用带语法高亮的 YAML 编辑器。如果高级编辑器在浏览器中暂时无法加载，表单会自动降级为普通文本输入并保留当前内容，你仍可继续编辑、校验和保存。
+
 集群设置还包括访问域名后缀、外部访问协议、Gateway 和 TLS。选择 TLS 模式时：
 
 - 上游代理或 CDN 已终止 HTTPS：选择“上游代理已终止 TLS”。

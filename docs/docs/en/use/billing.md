@@ -10,6 +10,12 @@ Each ledger entry shows both its standard reason and the specific description re
 
 Settlement uses Credits. Administrators may configure a display currency and conversion ratio, but this does not change settlement or recalculate historical bills.
 
+## Price table
+
+The **Price table** tab lists every billing meter currently configured by the platform, including build CPU and memory, runtime resources, persistent storage, gateway traffic, and AI tokens. Each item shows its billing unit, Credits price, and enabled state.
+
+Disabled meters remain visible but do not currently generate charges. Price and state changes only affect future usage; settled bills are not recalculated.
+
 ## Cost analysis
 
 Cost analysis groups settled usage by project, application, and deployment target and separates build, runtime, storage, gateway, and other costs.

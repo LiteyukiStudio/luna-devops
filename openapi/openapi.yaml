@@ -6366,20 +6366,19 @@ paths:
       operationId: listBillingRateRules
       tags:
         - Billing
-      summary: List Billing Rate Rules
+      summary: List current billing prices
+      description: Returns every configured billing meter, including disabled meters, for the authenticated user.
       responses:
         "200":
-          description: Successful business response.
+          description: Current billing prices sorted by meter.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/BusinessObjectList"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFound"
+                type: array
+                items:
+                  $ref: "#/components/schemas/BillingRateRule"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
     put:
       operationId: updateBillingRateRules
       tags:
@@ -6393,11 +6392,13 @@ paths:
               $ref: "#/components/schemas/BillingRateRulesInput"
       responses:
         "200":
-          description: Successful business response.
+          description: Updated billing rate rules.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/BusinessObject"
+                type: array
+                items:
+                  $ref: "#/components/schemas/BillingRateRule"
         "400":
           $ref: "#/components/responses/BadRequest"
         "403":
@@ -9370,6 +9371,21 @@ components:
         requestRedirect: { type: string }
         backendWeight: { type: integer, minimum: 1 }
         hostnameAliases: { type: string }
+    BillingRateRule:
+      type: object
+      required: [id, meter, unit, creditsPerUnit, enabled, description, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        meter: { type: string }
+        unit: { type: string }
+        creditsPerUnit:
+          type: string
+          pattern: '^[0-9]+(\.[0-9]+)?$'
+          description: Non-negative Credits price encoded as a decimal string.
+        enabled: { type: boolean }
+        description: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
     BillingRateRulesInput:
       type: object
       required: [rules]
@@ -9381,7 +9397,9 @@ components:
             required: [meter, creditsPerUnit, enabled]
             properties:
               meter: { type: string }
-              creditsPerUnit: { type: number, minimum: 0 }
+              creditsPerUnit:
+                type: string
+                pattern: '^[0-9]+(\.[0-9]+)?$'
               enabled: { type: boolean }
     BillingWalletTransactionInput:
       type: object

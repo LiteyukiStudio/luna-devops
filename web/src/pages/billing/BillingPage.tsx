@@ -4,6 +4,7 @@ import { TabsContent } from '@/components/ui/tabs'
 import { useBillingDisplay } from '@/lib/billing-display'
 import { BillingDeploymentSpendList } from './billing-deployment-spend-list'
 import { BillingLedgerList } from './billing-ledger-list'
+import { BillingPriceList } from './billing-price-list'
 import { BillingScopeToolbar } from './billing-scope-toolbar'
 import { BillingBalanceWarning, BillingSummary } from './billing-summary'
 import { BillingUsageList } from './billing-usage-list'
@@ -55,6 +56,7 @@ export function BillingPage() {
           { label: t('billingPage.deploymentSpendTitle'), value: 'deployment-spend' },
           { label: t('billingPage.ledgerTitle'), value: 'ledger' },
           { label: t('billingPage.usageTitle'), value: 'usage' },
+          { label: t('billingPage.priceTableTitle'), value: 'prices' },
         ]}
         value={billing.activeTab}
         onValueChange={billing.setActiveTab}
@@ -86,6 +88,9 @@ export function BillingPage() {
             projectMap={billing.projectMap}
             onPageChange={billing.setUsagePage}
           />
+        </TabsContent>
+        <TabsContent value="prices">
+          <BillingPriceList billingDisplay={billingDisplay} />
         </TabsContent>
       </ContentTabs>
 

@@ -48,6 +48,8 @@ A runtime cluster is a release target. Provide a kubeconfig that the platform se
 
 When the API or worker runs in a container, do not use a kubeconfig address such as `127.0.0.1` that is only reachable from the host. Run `kubectl config view --raw --minify --flatten` and save the output. The platform accepts HTTPS API servers and inline authentication material, not authentication methods that execute local commands or read local files.
 
+The kubeconfig field uses a syntax-highlighted YAML editor. If the enhanced editor cannot load in the browser, the form falls back to a basic text input and keeps the current content, so you can continue editing, validation, and saving.
+
 Cluster settings also include domain suffixes, the external protocol, Gateway, and TLS. Choose a TLS mode based on the traffic path:
 
 - A CDN or upstream proxy terminates HTTPS: choose **TLS terminated by upstream proxy**.

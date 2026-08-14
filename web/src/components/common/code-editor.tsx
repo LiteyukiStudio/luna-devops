@@ -1,4 +1,6 @@
-import { lazy, Suspense } from 'react'
+import { lazy } from 'react'
+import { useTranslation } from 'react-i18next'
+import { LazyLoadBoundary } from '@/components/common/lazy-load-boundary'
 import { cn } from '@/lib/utils'
 
 type CodeEditorLanguage = 'json' | 'yaml' | 'text'
@@ -21,22 +23,30 @@ const CodeEditorCore = lazy(() => import('./code-editor-core').then(module => ({
  * 用于 kubeconfig、JSON 配置、YAML 清单、脚本片段等需要等宽字体、语法高亮和滚动编辑的长文本字段；普通备注或描述仍使用 Textarea。
  */
 export function CodeEditor(props: CodeEditorProps) {
+  const { t } = useTranslation()
   return (
-    <Suspense fallback={<CodeEditorFallback {...props} />}>
+    <LazyLoadBoundary
+      errorFallback={<CodeEditorFallback {...props} failureMessage={t('common.codeEditorFallback')} />}
+      fallback={<CodeEditorFallback {...props} />}
+      resetKey={`${props.language ?? 'text'}:${props.readOnly ? 'readonly' : 'editable'}`}
+    >
       <CodeEditorCore {...props} />
-    </Suspense>
+    </LazyLoadBoundary>
   )
 }
 
 function CodeEditorFallback({
   value,
+  onChange,
   language = 'text',
   height,
   minHeight = '14rem',
   placeholder,
+  readOnly,
   className,
   ariaInvalid,
-}: CodeEditorProps) {
+  failureMessage,
+}: CodeEditorProps & { failureMessage?: string }) {
   return (
     <div
       className={cn(
@@ -49,12 +59,15 @@ function CodeEditorFallback({
       <div className="flex h-8 items-center justify-between border-b border-border bg-muted/70 px-3">
         <span className="font-mono text-xs font-medium uppercase tracking-normal text-muted-foreground">{language}</span>
       </div>
+      {failureMessage && <p className="m-0 bg-warning-subtle px-3 py-2 text-xs text-warning" role="status">{failureMessage}</p>}
       <textarea
+        aria-invalid={ariaInvalid || undefined}
         className="block w-full resize-none bg-transparent p-3 font-mono text-sm outline-none placeholder:text-muted-foreground"
         placeholder={placeholder}
-        readOnly
+        readOnly={failureMessage ? readOnly : true}
         style={{ height: height ?? `calc(${minHeight} - 2rem)`, minHeight: height ? undefined : `calc(${minHeight} - 2rem)` }}
         value={value}
+        onChange={event => onChange(event.target.value)}
       />
     </div>
   )

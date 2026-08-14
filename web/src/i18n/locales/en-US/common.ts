@@ -13,6 +13,7 @@ const common = {
   loading: 'Loading...',
   lazyLoadFailedTitle: 'Could not load this feature',
   lazyLoadFailedDescription: 'Refresh the page and try again. Your saved data has not been changed.',
+  codeEditorFallback: 'The advanced editor is unavailable. You can continue editing and save with the basic text input.',
   refresh: 'Refresh',
   retry: 'Retry',
   noDescription: 'No description',

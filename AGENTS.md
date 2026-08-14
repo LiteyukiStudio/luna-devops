@@ -130,6 +130,7 @@ web/src/i18n
 ## 6. 前端准则
 
 - 页面按 `web/src/pages/<module>` 组织。
+- **MUST 前端运行时单例依赖**：React/React DOM、CodeMirror 核心包，以及任何依赖 `instanceof`、全局 Symbol、Context/Provider 或扩展对象身份判断的库，在同一前端产物中必须只解析到一个兼容版本。新增或升级依赖后必须执行 `pnpm --dir web check:singletons` 并检查 `pnpm list`；发现重复版本时在 `web/pnpm-workspace.yaml` 用最小范围 `overrides` 统一依赖族并重新生成 lockfile，禁止依赖打包器偶然去重、运行时 catch 或页面级特殊 case 维持可用。
 - `web/src` 下共享模块必须使用 `@/` 根目录导入；公共组件、API、app context、layout、lib、i18n 和跨页面引用都必须用 `@/`。相对导入只用于当前页面/组件目录内的私有文件。
 - **MUST shadcn/ui**：前端基础 UI 必须优先使用 shadcn/ui。凡 shadcn/ui 已提供的基础组件、布局组件、表单组件、反馈组件、表格/分页组件，不允许手写同类轮子；只能在业务组合层做薄封装。
 - shadcn/ui 基础组件放 `web/src/components/ui`，组件清单见 `web/SHADCN_COMPONENTS.md`。

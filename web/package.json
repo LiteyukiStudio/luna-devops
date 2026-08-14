@@ -8,9 +8,10 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "check:singletons": "node scripts/check-singleton-dependencies.mjs",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "pnpm check:singletons && vitest run"
   },
   "dependencies": {
     "@codemirror/lang-json": "^6.0.2",

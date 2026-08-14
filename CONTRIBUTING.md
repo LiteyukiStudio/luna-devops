@@ -15,7 +15,7 @@
 - **端到端一致性**：改动涉及前端、API、Worker、Agent 多层时，各层 Schema、错误码、权限、可观测字段必须在同一事项内同步，不允许只改一层。
 - **可观测**：新功能按 [`docs-internal/14-可观测插桩与验收标准.md`](docs-internal/14-可观测插桩与验收标准.md) 补齐 Trace、结构化日志与低基数 Metrics。
 - **i18n**：所有用户可见前端文案走 i18n，不硬编码。
-- **工具与依赖**：前端统一 `pnpm`，Python 统一 `uv`；`web/`、`docs/`、`luna-agent/`、`tests/` 各自维护依赖清单，不用根 workspace。
+- **工具与依赖**：前端统一 `pnpm`，Python 统一 `uv`；`web/`、`docs/`、`luna-agent/`、`tests/` 各自维护依赖清单，不用根 workspace。React、CodeMirror 等依赖对象身份判断的运行时库必须保持单一兼容版本，依赖变更后执行 `pnpm --dir web check:singletons`。
 - **Secret**：不落明文、不回显、不进日志与遥测。
 
 ## 提交
