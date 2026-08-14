@@ -26,7 +26,7 @@ import {
   TrendingUp,
   Users,
 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
 import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -42,12 +42,23 @@ import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import { CopyableCodeBlock } from './copyable-code-block'
 import { InteractionCardChart } from './interaction-card-chart'
+import { InteractionCardErrorBoundary } from './interaction-card-error-boundary'
 import { readValidatedInteractionCardGroup } from './interaction-card-schema'
 import { interactionCardDensity, interactionCardTemplateConfigs, shouldExpandInteractionCard } from './interaction-card-templates'
 import { LiveProgressBlock } from './live-progress-block'
 import { AIInlineMarkdown, AIMarkdown } from './markdown'
 
 const compactActionClassName = 'h-auto min-h-7 max-w-full gap-1.5 whitespace-normal px-2.5 py-1 !text-[11px] leading-4 [&_svg]:size-3.5'
+
+function withStableKeys<T>(items: readonly T[], identity: (item: T) => string) {
+  const occurrences = new Map<string, number>()
+  return items.map((item, ordinal) => {
+    const base = identity(item)
+    const occurrence = occurrences.get(base) ?? 0
+    occurrences.set(base, occurrence + 1)
+    return { item, key: `${base}:${occurrence}`, ordinal }
+  })
+}
 
 interface AIInteractionCardsProps {
   arguments: unknown
@@ -75,21 +86,38 @@ export function AIInteractionCards({ arguments: rawArguments, onAction }: AIInte
       </div>
     )
   }
+  return (
+    <InteractionCardErrorBoundary resetKey={group.generationId} scope="group">
+      <InteractionCardGroupView group={group} onAction={onAction} />
+    </InteractionCardErrorBoundary>
+  )
+}
+
+function InteractionCardGroupView({ group, onAction }: { group: InteractionCardGroup, onAction: (action: AIUIAction) => Promise<boolean> }) {
+  const { t } = useTranslation()
   const density = interactionCardDensity(group)
   const templateConfig = interactionCardTemplateConfigs[group.template]
   return (
-    <section className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)]', density === 'compact' ? 'gap-2' : 'gap-2.5')} data-ai-card-density={density} data-ai-card-group={group.template} data-ai-card-mode={group.mode}>
+    <section className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)]', density === 'compact' ? 'gap-2' : 'gap-2.5')} data-ai-card-density={density} data-ai-card-generation={group.generationId} data-ai-card-group={group.template} data-ai-card-mode={group.mode}>
       <header className="px-0.5">
         <p className="text-[10px] font-medium uppercase tracking-wide text-primary-text">{t(`aiAssistant.cards.templates.${group.template}`)}</p>
         <h3 className="mt-0.5 text-[13px] font-semibold leading-5"><AIInlineMarkdown>{group.title}</AIInlineMarkdown></h3>
         {group.description && <AIMarkdown className="mt-0.5 text-[11px] leading-4 text-muted-foreground">{group.description}</AIMarkdown>}
       </header>
       <div className={cn('grid min-w-0', density === 'compact' ? 'gap-1.5' : 'gap-2', templateConfig.gridClassName)}>
-        {group.cards.map(card => <InteractionCardView key={card.id} card={card} density={density} group={group} onAction={onAction} />)}
+        {withStableKeys(group.cards, card => card.id).map(({ item: card, key: cardKey }) => (
+          <InteractionCardErrorBoundary key={cardKey} resetKey={`${group.generationId}:${cardKey}`} scope="card">
+            <InteractionCardView card={card} density={density} group={group} onAction={onAction} />
+          </InteractionCardErrorBoundary>
+        ))}
       </div>
       {group.groupActions && group.groupActions.length > 0 && (
         <div className="flex flex-wrap justify-end gap-1.5">
-          {group.groupActions.map(action => <CardActionButton key={action.id} action={action} cardId="group" values={{}} onAction={onAction} />)}
+          {withStableKeys(group.groupActions, action => action.id).map(({ item: action, key: actionKey }) => (
+            <InteractionCardErrorBoundary key={actionKey} resetKey={`${group.generationId}:group:${actionKey}`} scope="action">
+              <CardActionButton action={action} cardId="group" values={{}} onAction={onAction} />
+            </InteractionCardErrorBoundary>
+          ))}
         </div>
       )}
     </section>
@@ -119,7 +147,7 @@ function InteractionCardView({ card, density, group, onAction }: {
   const secondaryActions = card.actions?.filter(action => action !== primaryAction) ?? []
 
   return (
-    <article className="min-w-0 overflow-hidden rounded-container bg-surface" data-ai-card={card.presentation.variant} data-ai-card-template={group.template}>
+    <article className="min-w-0 overflow-hidden rounded-container bg-surface" data-ai-card={card.presentation.variant} data-ai-card-id={card.id} data-ai-card-template={group.template}>
       <div className={cn('flex min-w-0 items-start', density === 'compact' ? 'gap-2 p-2' : 'gap-2.5 p-2.5')}>
         <span className={cn('grid shrink-0 place-items-center rounded-control bg-primary-subtle text-primary-text', density === 'compact' ? 'size-8' : 'size-9')}>
           <CardIcon category={card.presentation.icon?.type === 'category' ? card.presentation.icon.name : card.presentation.variant} />
@@ -130,8 +158,8 @@ function InteractionCardView({ card, density, group, onAction }: {
           {card.presentation.description && <AIMarkdown className="mt-1 text-[11px] leading-4 text-muted-foreground">{card.presentation.description}</AIMarkdown>}
           {card.presentation.badges && card.presentation.badges.length > 0 && (
             <div className="mt-1.5 flex flex-wrap gap-1">
-              {card.presentation.badges.map(badge => (
-                <StatusBadge key={`${badge.label}-${badge.tone}`} className="px-1.5 py-0 text-[9px]" tone={badge.tone === 'error' ? 'danger' : badge.tone}>
+              {withStableKeys(card.presentation.badges, badge => `${badge.label}:${badge.tone}`).map(({ item: badge, key }) => (
+                <StatusBadge key={key} className="px-1.5 py-0 text-[9px]" tone={badge.tone === 'error' ? 'danger' : badge.tone}>
                   {badge.label}
                 </StatusBadge>
               ))}
@@ -139,8 +167,8 @@ function InteractionCardView({ card, density, group, onAction }: {
           )}
           {card.sourceRefs && card.sourceRefs.length > 0 && (
             <div className="mt-1.5 flex min-w-0 flex-wrap gap-1" data-ai-card-sources>
-              {card.sourceRefs.slice(0, 4).map(source => (
-                <span key={`${source.type}-${source.refId}`} className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-full bg-surface-inset px-1.5 py-0.5 text-[9px] text-muted-foreground" title={source.label}>
+              {withStableKeys(card.sourceRefs.slice(0, 4), source => `${source.type}:${source.refId}`).map(({ item: source, key }) => (
+                <span key={key} className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-full bg-surface-inset px-1.5 py-0.5 text-[9px] text-muted-foreground" title={source.label}>
                   <SourceTrustIcon trust={source.trust} />
                   <span className="truncate">{source.label}</span>
                   <span className="sr-only">{t(`aiAssistant.cards.trust.${source.trust}`)}</span>
@@ -160,27 +188,43 @@ function InteractionCardView({ card, density, group, onAction }: {
           className={cn('grid min-w-0 border-t border-separator-subtle', density === 'compact' ? 'gap-2.5 p-2' : 'gap-3 p-2.5')}
           onSubmit={event => event.preventDefault()}
         >
-          {card.blocks?.map(block => <ContentBlock key={block.id} block={block} onAction={onAction} />)}
-          {card.form?.sections.map(section => (
-            <fieldset key={section.id} className="grid min-w-0 gap-2">
+          {card.blocks && withStableKeys(card.blocks, block => block.id).map(({ item: block, key: blockKey }) => (
+            <InteractionCardErrorBoundary key={blockKey} resetKey={`${group.generationId}:${card.id}:block:${blockKey}`} scope="content">
+              <ContentBlock block={block} onAction={onAction} />
+            </InteractionCardErrorBoundary>
+          ))}
+          {card.form && withStableKeys(card.form.sections, section => section.id).map(({ item: section, key: sectionKey }) => (
+            <fieldset key={sectionKey} className="grid min-w-0 gap-2" data-ai-section-id={section.id}>
               {section.title && <legend className="text-[11px] font-semibold"><AIInlineMarkdown>{section.title}</AIInlineMarkdown></legend>}
               {section.description && <AIMarkdown className="text-[10px] leading-4 text-muted-foreground">{section.description}</AIMarkdown>}
-              {section.fields.filter(field => isFieldVisible(field, watchedValues)).map(field => (
-                <DynamicField key={field.id} control={form.control} field={field} error={form.formState.errors[field.id]?.message as string | undefined} />
+              {withStableKeys(section.fields.filter(field => isFieldVisible(field, watchedValues)), field => field.id).map(({ item: field, key: fieldKey }) => (
+                <InteractionCardErrorBoundary key={fieldKey} resetKey={`${group.generationId}:${card.id}:section:${sectionKey}:field:${fieldKey}`} scope="field">
+                  <DynamicField control={form.control} field={field} error={form.formState.errors[field.id]?.message as string | undefined} />
+                </InteractionCardErrorBoundary>
               ))}
             </fieldset>
           ))}
           {(primaryAction || secondaryActions.length > 0) && (
             <div className="flex flex-wrap justify-end gap-1.5 pt-0.5">
-              {secondaryActions.map(action => <CardActionButton key={action.id} action={action} cardId={card.id} disabled={actionNeedsValidForm(action) && !form.formState.isValid} messageValues={messageValues} values={actionValues} onAction={onAction} />)}
-              {primaryAction && <CardActionButton action={primaryAction} cardId={card.id} disabled={actionNeedsValidForm(primaryAction) && !form.formState.isValid} messageValues={messageValues} values={actionValues} onAction={onAction} />}
+              {withStableKeys(secondaryActions, action => action.id).map(({ item: action, key: actionKey }) => (
+                <InteractionCardErrorBoundary key={actionKey} resetKey={`${group.generationId}:${card.id}:action:${actionKey}`} scope="action">
+                  <CardActionButton action={action} cardId={card.id} disabled={actionNeedsValidForm(action) && !form.formState.isValid} messageValues={messageValues} values={actionValues} onAction={onAction} />
+                </InteractionCardErrorBoundary>
+              ))}
+              {primaryAction && (
+                <InteractionCardErrorBoundary resetKey={`${group.generationId}:${card.id}:action:${primaryAction.id}`} scope="action">
+                  <CardActionButton action={primaryAction} cardId={card.id} disabled={actionNeedsValidForm(primaryAction) && !form.formState.isValid} messageValues={messageValues} values={actionValues} onAction={onAction} />
+                </InteractionCardErrorBoundary>
+              )}
             </div>
           )}
         </form>
       )}
       {!expanded && primaryAction && !card.form && (
         <div className="flex justify-end border-t border-separator-subtle px-2.5 py-2">
-          <CardActionButton action={primaryAction} cardId={card.id} values={{}} onAction={onAction} />
+          <InteractionCardErrorBoundary resetKey={`${group.generationId}:${card.id}:action:${primaryAction.id}`} scope="action">
+            <CardActionButton action={primaryAction} cardId={card.id} values={{}} onAction={onAction} />
+          </InteractionCardErrorBoundary>
         </div>
       )}
     </article>
@@ -197,8 +241,8 @@ function ContentBlock({ block, onAction }: { block: InteractionContentBlock, onA
     if (block.type === 'key_value') {
       return (
         <dl className="grid gap-1.5 text-[11px]">
-          {block.items.map(item => (
-            <div key={`${item.label}-${item.value}`} className="grid grid-cols-[minmax(4.5rem,35%)_minmax(0,1fr)] gap-2">
+          {withStableKeys(block.items, item => `${item.label}:${item.value}`).map(({ item, key }) => (
+            <div key={key} className="grid grid-cols-[minmax(4.5rem,35%)_minmax(0,1fr)] gap-2">
               <dt className="min-w-0 text-muted-foreground"><AIInlineMarkdown>{item.label}</AIInlineMarkdown></dt>
               <dd className={cn('min-w-0 break-words font-medium', item.format === 'code' && 'font-mono text-[10px]')}>
                 <AIInlineMarkdown>{item.value}</AIInlineMarkdown>
@@ -212,9 +256,9 @@ function ContentBlock({ block, onAction }: { block: InteractionContentBlock, onA
     if (block.type === 'metrics') {
       return (
         <div className="grid grid-cols-2 gap-1.5">
-          {block.items.map(item => (
+          {withStableKeys(block.items, item => `${item.label}:${item.value}`).map(({ item, key }) => (
             <div
-              key={`${item.label}-${item.value}`}
+              key={key}
               className={cn(
                 'rounded-control p-2',
                 item.tone === 'success'
@@ -242,8 +286,8 @@ function ContentBlock({ block, onAction }: { block: InteractionContentBlock, onA
     if (block.type === 'item_list') {
       return (
         <div className="divide-y divide-separator-subtle">
-          {block.items.map(item => (
-            <div key={item.id} className="flex gap-2 py-1.5">
+          {withStableKeys(block.items, item => item.id).map(({ item, key }) => (
+            <div key={key} className="flex gap-2 py-1.5">
               <Package className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
               <div className="min-w-0">
                 <AIInlineMarkdown className="block text-[11px] font-medium">{item.primary}</AIInlineMarkdown>
@@ -258,8 +302,8 @@ function ContentBlock({ block, onAction }: { block: InteractionContentBlock, onA
     if (block.type === 'status_list') {
       return (
         <div className="grid gap-1.5">
-          {block.items.map(item => (
-            <div key={item.id} className="flex items-start gap-2 text-[11px]">
+          {withStableKeys(block.items, item => item.id).map(({ item, key }) => (
+            <div key={key} className="flex items-start gap-2 text-[11px]">
               <StatusIcon status={item.status} />
               <div>
                 <AIInlineMarkdown className="block font-medium">{item.label}</AIInlineMarkdown>
@@ -274,8 +318,8 @@ function ContentBlock({ block, onAction }: { block: InteractionContentBlock, onA
       return (
         <div className="max-w-full overflow-x-auto rounded-control border border-separator-subtle">
           <table className="w-max min-w-full text-left text-[10px]">
-            <thead className="bg-surface-inset"><tr>{block.columns.map(column => <th key={column.key} className="whitespace-nowrap px-2 py-1.5 font-medium"><AIInlineMarkdown>{column.label}</AIInlineMarkdown></th>)}</tr></thead>
-            <tbody>{block.rows.map(row => <tr key={row.id} className="border-t border-separator-subtle">{block.columns.map(column => <td key={column.key} className={cn('max-w-52 px-2 py-1.5 [overflow-wrap:anywhere]', column.format === 'code' && 'font-mono')}><AIInlineMarkdown>{row.cells[column.key] ?? '—'}</AIInlineMarkdown></td>)}</tr>)}</tbody>
+            <thead className="bg-surface-inset"><tr>{withStableKeys(block.columns, column => column.key).map(({ item: column, key }) => <th key={key} className="whitespace-nowrap px-2 py-1.5 font-medium"><AIInlineMarkdown>{column.label}</AIInlineMarkdown></th>)}</tr></thead>
+            <tbody>{withStableKeys(block.rows, row => row.id).map(({ item: row, key: rowKey }) => <tr key={rowKey} className="border-t border-separator-subtle">{withStableKeys(block.columns, column => column.key).map(({ item: column, key: columnKey }) => <td key={columnKey} className={cn('max-w-52 px-2 py-1.5 [overflow-wrap:anywhere]', column.format === 'code' && 'font-mono')}><AIInlineMarkdown>{row.cells[column.key] ?? '—'}</AIInlineMarkdown></td>)}</tr>)}</tbody>
           </table>
         </div>
       )
@@ -287,8 +331,8 @@ function ContentBlock({ block, onAction }: { block: InteractionContentBlock, onA
     if (block.type === 'timeline') {
       return (
         <div className="grid gap-2 border-l border-separator-strong pl-2.5">
-          {block.items.map(item => (
-            <div key={item.id} className="relative text-[11px] before:absolute before:-left-[13px] before:top-1 before:size-1.5 before:rounded-full before:bg-primary">
+          {withStableKeys(block.items, item => item.id).map(({ item, key }) => (
+            <div key={key} className="relative text-[11px] before:absolute before:-left-[13px] before:top-1 before:size-1.5 before:rounded-full before:bg-primary">
               <p className="font-medium">{item.title}</p>
               {item.detail && <p className="text-[10px] text-muted-foreground">{item.detail}</p>}
               {item.timestamp && <time className="text-[9px] text-muted-foreground">{item.timestamp}</time>}
@@ -304,15 +348,15 @@ function ContentBlock({ block, onAction }: { block: InteractionContentBlock, onA
       const nodes = new Map(block.nodes.map(node => [node.id, node]))
       return (
         <div className="grid gap-1.5">
-          {block.edges.map(edge => (
-            <div key={`${edge.source}-${edge.target}-${edge.label ?? ''}`} className="flex min-w-0 items-center gap-1.5 rounded-control bg-surface-inset px-2 py-1.5 text-[10px]">
+          {withStableKeys(block.edges, edge => `${edge.source}:${edge.target}:${edge.label ?? ''}`).map(({ item: edge, key }) => (
+            <div key={key} className="flex min-w-0 items-center gap-1.5 rounded-control bg-surface-inset px-2 py-1.5 text-[10px]">
               <span className="truncate font-medium">{nodes.get(edge.source)?.label ?? edge.source}</span>
               <ChevronRight className="size-3 shrink-0 text-muted-foreground" />
               <span className="truncate font-medium">{nodes.get(edge.target)?.label ?? edge.target}</span>
               {edge.label && <span className="ml-auto shrink-0 text-[9px] text-muted-foreground">{edge.label}</span>}
             </div>
           ))}
-          {block.edges.length === 0 && block.nodes.map(node => <div key={node.id} className="rounded-control bg-surface-inset px-2 py-1.5 text-[10px] font-medium">{node.label}</div>)}
+          {block.edges.length === 0 && withStableKeys(block.nodes, node => node.id).map(({ item: node, key }) => <div key={key} className="rounded-control bg-surface-inset px-2 py-1.5 text-[10px] font-medium">{node.label}</div>)}
         </div>
       )
     }
@@ -321,8 +365,8 @@ function ContentBlock({ block, onAction }: { block: InteractionContentBlock, onA
     if (block.type === 'resource_links') {
       return (
         <div className="flex flex-wrap gap-1.5">
-          {block.links.filter(link => link.routeName).map(link => (
-            <Button key={`${link.label}-${link.routeName}`} className={compactActionClassName} size="sm" variant="outline" onClick={() => void onAction({ version: 1, type: 'navigate', label: link.label, payload: { routeName: link.routeName!, params: link.routeParams ?? {}, query: {} } })}>
+          {withStableKeys(block.links.filter(link => link.routeName), link => `${link.label}:${link.routeName}`).map(({ item: link, key }) => (
+            <Button key={key} className={compactActionClassName} size="sm" variant="outline" onClick={() => void runInlineCardAction({ version: 1, type: 'navigate', label: link.label, payload: { routeName: link.routeName!, params: link.routeParams ?? {}, query: {} } }, onAction, t('aiAssistant.cards.actionFailed'))}>
               <ExternalLink />
               {link.label}
             </Button>
@@ -355,117 +399,156 @@ function ContentBlock({ block, onAction }: { block: InteractionContentBlock, onA
 
 function DynamicField({ control, field, error }: { control: Control<FormValues>, field: InteractionFormField, error?: string }) {
   const { t } = useTranslation()
+  const instanceId = useId()
+  const controlId = `${instanceId}-control`
+  const labelId = `${instanceId}-label`
+  const descriptionId = field.description ? `${instanceId}-description` : undefined
+  const errorId = error ? `${instanceId}-error` : undefined
+  const describedBy = [descriptionId, errorId].filter(Boolean).join(' ') || undefined
+  const grouped = field.type === 'multi_select'
+    || field.type === 'key_value'
+    || field.type === 'secret'
+    || (field.type === 'select' && field.display !== undefined && field.display !== 'select')
+  const labelContent = (
+    <>
+      <AIInlineMarkdown>{field.label}</AIInlineMarkdown>
+      {field.required && <span className="text-primary"> *</span>}
+    </>
+  )
   return (
     <Controller
       control={control}
       name={field.id}
       render={({ field: input }) => (
-        <div className="grid gap-1">
-          <Label className="text-[10px]" htmlFor={`ai-card-field-${field.id}`}>
-            <AIInlineMarkdown>{field.label}</AIInlineMarkdown>
-            {field.required && <span className="text-primary"> *</span>}
-          </Label>
-          {field.description && <AIMarkdown className="text-[9px] leading-3.5 text-muted-foreground">{field.description}</AIMarkdown>}
+        <div className="grid gap-1" data-ai-field-id={field.id}>
+          {grouped
+            ? <div id={labelId} className="text-[10px] font-medium">{labelContent}</div>
+            : <Label id={labelId} className="text-[10px]" htmlFor={controlId}>{labelContent}</Label>}
+          {field.description && <div id={descriptionId}><AIMarkdown className="text-[9px] leading-3.5 text-muted-foreground">{field.description}</AIMarkdown></div>}
           {field.type === 'textarea'
-            ? <Textarea {...input} id={`ai-card-field-${field.id}`} rows={field.rows ?? 3} value={String(input.value ?? '')} />
+            ? <Textarea {...input} id={controlId} aria-describedby={describedBy} aria-invalid={Boolean(error)} aria-required={field.required} rows={field.rows ?? 3} value={String(input.value ?? '')} />
             : field.type === 'number'
-              ? <Input id={`ai-card-field-${field.id}`} max={field.max} min={field.min} step={field.step} type="number" value={input.value === undefined ? '' : String(input.value)} onChange={event => input.onChange(event.target.value === '' ? undefined : Number(event.target.value))} />
+              ? <Input ref={input.ref} id={controlId} aria-describedby={describedBy} aria-invalid={Boolean(error)} aria-required={field.required} max={field.max} min={field.min} name={input.name} step={field.step} type="number" value={input.value === undefined ? '' : String(input.value)} onBlur={input.onBlur} onChange={event => input.onChange(event.target.value === '' ? undefined : Number(event.target.value))} />
               : field.type === 'boolean'
                 ? (
                     <div className="flex items-center gap-2">
-                      <Checkbox checked={Boolean(input.value)} id={`ai-card-field-${field.id}`} onCheckedChange={value => input.onChange(value === true)} />
+                      <Checkbox ref={input.ref} checked={Boolean(input.value)} id={controlId} aria-describedby={describedBy} aria-invalid={Boolean(error)} aria-required={field.required} name={input.name} onBlur={input.onBlur} onCheckedChange={value => input.onChange(value === true)} />
                       <span className="text-[10px] text-muted-foreground">{input.value ? t('common.enabled') : t('common.disabled')}</span>
                     </div>
                   )
                 : field.type === 'select'
-                  ? <SelectField field={field} value={String(input.value ?? '')} onChange={input.onChange} />
+                  ? <SelectField controlId={controlId} describedBy={describedBy} error={Boolean(error)} field={field} labelId={labelId} name={`${input.name}-${instanceId}`} required={field.required} value={String(input.value ?? '')} onBlur={input.onBlur} onChange={input.onChange} />
                   : field.type === 'multi_select'
                     ? (
-                        <div className="grid gap-1.5">
-                          {field.options.map(option => (
-                            <label key={option.value} className="flex items-start gap-2 text-[10px]">
-                              <Checkbox
-                                checked={Array.isArray(input.value) && input.value.includes(option.value)}
-                                disabled={option.disabled}
-                                onCheckedChange={(checked) => {
-                                  const current = Array.isArray(input.value) ? input.value as string[] : []
-                                  input.onChange(checked ? [...current, option.value] : current.filter(value => value !== option.value))
-                                }}
-                              />
-                              <span>
-                                {option.label}
-                                {option.description && <span className="block text-[9px] text-muted-foreground">{option.description}</span>}
-                              </span>
-                            </label>
-                          ))}
+                        <div aria-describedby={describedBy} aria-labelledby={labelId} aria-required={field.required} className="grid gap-1.5" role="group">
+                          {withStableKeys(field.options, option => option.value).map(({ item: option, key, ordinal }) => {
+                            const optionId = `${controlId}-option-${ordinal}`
+                            return (
+                              <div key={key} className="flex items-start gap-2 text-[10px]">
+                                <Checkbox
+                                  id={optionId}
+                                  aria-invalid={Boolean(error)}
+                                  checked={Array.isArray(input.value) && input.value.includes(option.value)}
+                                  disabled={option.disabled}
+                                  name={input.name}
+                                  onBlur={input.onBlur}
+                                  onCheckedChange={(checked) => {
+                                    const current = Array.isArray(input.value) ? input.value as string[] : []
+                                    input.onChange(checked ? [...current, option.value] : current.filter(value => value !== option.value))
+                                  }}
+                                />
+                                <Label className="block min-w-0 cursor-pointer text-[10px] leading-4" htmlFor={optionId}>
+                                  <span>
+                                    {option.label}
+                                    {option.description && <span className="block text-[9px] text-muted-foreground">{option.description}</span>}
+                                  </span>
+                                </Label>
+                              </div>
+                            )
+                          })}
                         </div>
                       )
                     : field.type === 'key_value'
                       ? field.valueMode === 'secret'
-                        ? <div className="rounded-control bg-info-subtle px-2.5 py-2 text-[10px] text-info">{t('aiAssistant.cards.secretManualUnavailable')}</div>
-                        : <KeyValueInput value={Array.isArray(input.value) ? input.value as Array<{ key: string, value: string }> : []} secret={false} onChange={input.onChange} />
+                        ? <div aria-describedby={describedBy} aria-labelledby={labelId} className="rounded-control bg-info-subtle px-2.5 py-2 text-[10px] text-info" role="note">{t('aiAssistant.cards.secretManualUnavailable')}</div>
+                        : <KeyValueInput controlId={controlId} describedBy={describedBy} labelId={labelId} value={Array.isArray(input.value) ? input.value as Array<{ key: string, value: string }> : []} secret={false} onChange={input.onChange} />
                       : field.type === 'secret'
-                        ? <div className="rounded-control bg-info-subtle px-2.5 py-2 text-[10px] text-info">{t(field.generation === 'disabled' ? 'aiAssistant.cards.secretManualUnavailable' : 'aiAssistant.cards.secretGenerated')}</div>
-                        : <Input {...input} id={`ai-card-field-${field.id}`} placeholder={field.placeholder} type="text" value={String(input.value ?? '')} />}
-          {error && <p className="text-[9px] text-danger" role="alert">{error}</p>}
+                        ? <div aria-describedby={describedBy} aria-labelledby={labelId} className="rounded-control bg-info-subtle px-2.5 py-2 text-[10px] text-info" role="note">{t(field.generation === 'disabled' ? 'aiAssistant.cards.secretManualUnavailable' : 'aiAssistant.cards.secretGenerated')}</div>
+                        : <Input {...input} id={controlId} aria-describedby={describedBy} aria-invalid={Boolean(error)} aria-required={field.required} placeholder={field.placeholder} type="text" value={String(input.value ?? '')} />}
+          {error && <p id={errorId} className="text-[9px] text-danger" role="alert">{error}</p>}
         </div>
       )}
     />
   )
 }
 
-function SelectField({ field, value, onChange }: {
+function SelectField({ controlId, describedBy, error, field, labelId, name, required, value, onBlur, onChange }: {
+  controlId: string
+  describedBy?: string
+  error: boolean
   field: Extract<InteractionFormField, { type: 'select' }>
+  labelId: string
+  name: string
+  required?: boolean
   value: string
+  onBlur: () => void
   onChange: (value: string) => void
 }) {
   const { t } = useTranslation()
   if (!field.display || field.display === 'select') {
     return (
-      <NativeSelect id={`ai-card-field-${field.id}`} value={value} onChange={event => onChange(event.target.value)}>
+      <NativeSelect id={controlId} aria-describedby={describedBy} aria-invalid={error} aria-required={required} name={name} value={value} onBlur={onBlur} onChange={event => onChange(event.target.value)}>
         <option value="">{field.placeholder ?? t('aiAssistant.cards.selectPlaceholder')}</option>
-        {field.options.map(option => <option key={option.value} disabled={option.disabled} value={option.value}>{option.label}</option>)}
+        {withStableKeys(field.options, option => option.value).map(({ item: option, key }) => <option key={key} disabled={option.disabled} value={option.value}>{option.label}</option>)}
       </NativeSelect>
     )
   }
   const segmented = field.display === 'segmented'
   return (
     <RadioGroup
-      aria-label={field.label}
+      aria-describedby={describedBy}
+      aria-invalid={error}
+      aria-labelledby={labelId}
+      aria-required={required}
       className={cn(segmented ? 'flex flex-wrap gap-1' : 'gap-1.5')}
+      name={name}
       value={value}
+      onBlur={onBlur}
       onValueChange={onChange}
     >
-      {field.options.map(option => (
-        <Label
-          key={option.value}
-          className={cn(
-            'flex min-w-0 cursor-pointer items-start gap-2 rounded-control text-[10px]',
-            segmented
-              ? 'border border-separator-subtle px-2 py-1.5 data-[selected=true]:border-primary-border data-[selected=true]:bg-primary-subtle data-[selected=true]:text-primary-text'
-              : 'px-1 py-0.5',
-            option.disabled && 'cursor-not-allowed opacity-50',
-          )}
-          data-selected={value === option.value}
-          htmlFor={`ai-card-field-${field.id}-${option.value}`}
-        >
-          <RadioGroupItem
-            className={cn('mt-0.5', segmented && 'sr-only')}
-            disabled={option.disabled}
-            id={`ai-card-field-${field.id}-${option.value}`}
-            value={option.value}
-          />
+      {withStableKeys(field.options, option => option.value).map(({ item: option, key, ordinal }) => {
+        const optionId = `${controlId}-option-${ordinal}`
+        const content = (
           <span className="min-w-0">
             <span className="block [overflow-wrap:anywhere]">{option.label}</span>
             {option.description && <span className="block text-[9px] leading-3.5 text-muted-foreground [overflow-wrap:anywhere]">{option.description}</span>}
           </span>
-        </Label>
-      ))}
+        )
+        if (segmented) {
+          return (
+            <RadioGroupItem
+              key={key}
+              className="flex h-auto min-h-8 w-auto min-w-0 max-w-full aspect-auto items-start gap-2 rounded-control border-separator-subtle px-2 py-1.5 text-left text-[10px] shadow-none data-[state=checked]:border-primary-border data-[state=checked]:bg-primary-subtle data-[state=checked]:text-primary-text [&_[data-slot=radio-group-indicator]]:hidden"
+              disabled={option.disabled}
+              id={optionId}
+              value={option.value}
+            >
+              {content}
+            </RadioGroupItem>
+          )
+        }
+        return (
+          <div key={key} className={cn('flex min-w-0 items-start gap-2 rounded-control px-1 py-0.5 text-[10px]', option.disabled && 'opacity-50')}>
+            <RadioGroupItem className="mt-0.5" disabled={option.disabled} id={optionId} value={option.value} />
+            <Label className={cn('block min-w-0 text-[10px] leading-4', option.disabled ? 'cursor-not-allowed' : 'cursor-pointer')} htmlFor={optionId}>{content}</Label>
+          </div>
+        )
+      })}
     </RadioGroup>
   )
 }
 
-function KeyValueInput({ value, secret, onChange }: { value: Array<{ key: string, value: string }>, secret: boolean, onChange: (value: Array<{ key: string, value: string }>) => void }) {
+function KeyValueInput({ controlId, describedBy, labelId, value, secret, onChange }: { controlId: string, describedBy?: string, labelId: string, value: Array<{ key: string, value: string }>, secret: boolean, onChange: (value: Array<{ key: string, value: string }>) => void }) {
   const { t } = useTranslation()
   const [rowIds, setRowIds] = useState(() => value.map(() => crypto.randomUUID()))
   const remove = (index: number) => {
@@ -477,11 +560,11 @@ function KeyValueInput({ value, secret, onChange }: { value: Array<{ key: string
     onChange([...value, { key: '', value: '' }])
   }
   return (
-    <div className="grid gap-1.5">
+    <div aria-describedby={describedBy} aria-labelledby={labelId} className="grid gap-1.5" role="group">
       {value.map((entry, index) => (
         <div key={rowIds[index]} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-1">
-          <Input aria-label={t('aiAssistant.cards.key')} value={entry.key} onChange={event => onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, key: event.target.value } : item))} />
-          <Input aria-label={t('aiAssistant.cards.value')} type={secret ? 'password' : 'text'} value={entry.value} onChange={event => onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value } : item))} />
+          <Input id={`${controlId}-key-${rowIds[index]}`} aria-label={t('aiAssistant.cards.key')} value={entry.key} onChange={event => onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, key: event.target.value } : item))} />
+          <Input id={`${controlId}-value-${rowIds[index]}`} aria-label={t('aiAssistant.cards.value')} type={secret ? 'password' : 'text'} value={entry.value} onChange={event => onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value } : item))} />
           <Button aria-label={t('common.delete')} className="size-8" size="icon" type="button" variant="ghost" onClick={() => remove(index)}><Trash2 /></Button>
         </div>
       ))}
@@ -494,6 +577,7 @@ function KeyValueInput({ value, secret, onChange }: { value: Array<{ key: string
 }
 
 function CardActionButton({ action, cardId, values, messageValues = values, disabled = false, onAction }: { action: InteractionCardAction, cardId: string, values: FormValues, messageValues?: FormValues, disabled?: boolean, onAction: (action: AIUIAction) => Promise<boolean> }) {
+  const { t } = useTranslation()
   const [pending, setPending] = useState(false)
   const [done, setDone] = useState(false)
   const repeatable = action.repeatable ?? action.type === 'navigate'
@@ -509,7 +593,7 @@ function CardActionButton({ action, cardId, values, messageValues = values, disa
         throw new Error('ai.card_action_failed')
     }
     catch {
-      toast.error(action.label)
+      toast.error(t('aiAssistant.cards.actionFailed'))
     }
     finally {
       setPending(false)
@@ -521,6 +605,16 @@ function CardActionButton({ action, cardId, values, messageValues = values, disa
       {action.label}
     </Button>
   )
+}
+
+async function runInlineCardAction(action: AIUIAction, onAction: (action: AIUIAction) => Promise<boolean>, failureMessage: string) {
+  try {
+    if (!await onAction(action))
+      toast.error(failureMessage)
+  }
+  catch {
+    toast.error(failureMessage)
+  }
 }
 
 async function executeCardAction(action: InteractionCardAction, cardId: string, values: FormValues, messageValues: FormValues, onAction: (action: AIUIAction) => Promise<boolean>) {
@@ -741,5 +835,13 @@ function StatusIcon({ status }: { status: 'pending' | 'running' | 'success' | 'w
 
 function CopyButton({ value }: { value: string }) {
   const { t } = useTranslation()
-  return <Button aria-label={t('common.copy')} className="ml-1 size-6" size="icon" type="button" variant="ghost" onClick={() => void navigator.clipboard.writeText(value)}><Copy className="size-3" /></Button>
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(value)
+    }
+    catch {
+      toast.error(t('common.copyFailed'))
+    }
+  }
+  return <Button aria-label={t('common.copy')} className="ml-1 size-6" size="icon" type="button" variant="ghost" onClick={() => void copy()}><Copy className="size-3" /></Button>
 }

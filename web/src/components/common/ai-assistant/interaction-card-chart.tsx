@@ -12,10 +12,20 @@ interface InteractionCardChartProps {
   label: string
 }
 
+function keyedSeries<T extends { name: string }>(series: readonly T[]) {
+  const occurrences = new Map<string, number>()
+  return series.map((item) => {
+    const occurrence = occurrences.get(item.name) ?? 0
+    occurrences.set(item.name, occurrence + 1)
+    return { item, key: `${item.name}:${occurrence}` }
+  })
+}
+
 export function InteractionCardChart({ block, label }: InteractionCardChartProps) {
   const elementRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<EChartsType | null>(null)
   const optionRef = useRef<CompactChartOption | null>(null)
+  const [loadError, setLoadError] = useState<unknown>()
   const [themeVersion, setThemeVersion] = useState(0)
   const option = useMemo(() => buildOption(block, themeVersion), [block, themeVersion])
   optionRef.current = option
@@ -51,6 +61,9 @@ export function InteractionCardChart({ block, label }: InteractionCardChartProps
           chart.resize()
       })
       resizeObserver.observe(element)
+    }).catch((error: unknown) => {
+      if (!cancelled)
+        setLoadError(error)
     })
     return () => {
       cancelled = true
@@ -73,12 +86,15 @@ export function InteractionCardChart({ block, label }: InteractionCardChartProps
     return () => observer.disconnect()
   }, [])
 
+  if (loadError)
+    throw loadError
+
   return (
     <div className="min-w-0" data-ai-chart-type={block.chartType} role="img" aria-label={label}>
       <div ref={elementRef} className="h-32 w-full" />
       <div className="sr-only">
-        {block.series.map(series => (
-          <p key={series.name}>
+        {keyedSeries(block.series).map(({ item: series, key }) => (
+          <p key={key}>
             {series.name}
             {': '}
             {series.values.map((value, index) => `${block.xAxis?.[index] ?? index + 1}: ${value}${series.unit ?? ''}`).join(', ')}

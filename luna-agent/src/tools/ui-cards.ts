@@ -388,10 +388,32 @@ export const createInteractionCardsInput = z.object({
   }
 
   const cardIds = new Set<string>()
+  const groupActionIds = new Set<string>()
+  input.groupActions?.forEach((action, actionIndex) => {
+    if (groupActionIds.has(action.id)) {
+      context.addIssue({
+        code: "custom",
+        message: "Group action IDs must be unique.",
+        path: ["groupActions", actionIndex, "id"],
+      })
+    }
+    groupActionIds.add(action.id)
+  })
   input.cards.forEach((item, cardIndex) => {
     if (cardIds.has(item.id))
       context.addIssue({ code: "custom", message: "Card IDs must be unique.", path: ["cards", cardIndex, "id"] })
     cardIds.add(item.id)
+    const sectionIds = new Set<string>()
+    item.form?.sections.forEach((section, sectionIndex) => {
+      if (sectionIds.has(section.id)) {
+        context.addIssue({
+          code: "custom",
+          message: "Section IDs inside a card must be unique.",
+          path: ["cards", cardIndex, "form", "sections", sectionIndex, "id"],
+        })
+      }
+      sectionIds.add(section.id)
+    })
     const ids = new Set<string>()
     const values = [
       ...(item.blocks ?? []).map(block => ({ id: block.id, path: "blocks" })),
@@ -425,6 +447,19 @@ export const createInteractionCardsInput = z.object({
       })
     }
     const sourceRefIds = new Set((item.sourceRefs ?? []).map(source => source.refId))
+    if (sourceRefIds.size !== (item.sourceRefs?.length ?? 0)) {
+      const seenSourceRefIds = new Set<string>()
+      item.sourceRefs?.forEach((source, sourceIndex) => {
+        if (seenSourceRefIds.has(source.refId)) {
+          context.addIssue({
+            code: "custom",
+            message: "Source reference IDs inside a card must be unique.",
+            path: ["cards", cardIndex, "sourceRefs", sourceIndex, "refId"],
+          })
+        }
+        seenSourceRefIds.add(source.refId)
+      })
+    }
     item.blocks?.forEach((block, blockIndex) => {
       block.sourceRefIds?.forEach((refId, refIndex) => {
         if (!sourceRefIds.has(refId)) {
@@ -437,6 +472,19 @@ export const createInteractionCardsInput = z.object({
       })
       if (block.type === "relations") {
         const nodeIds = new Set(block.nodes.map(node => node.id))
+        if (nodeIds.size !== block.nodes.length) {
+          const seenNodeIds = new Set<string>()
+          block.nodes.forEach((node, nodeIndex) => {
+            if (seenNodeIds.has(node.id)) {
+              context.addIssue({
+                code: "custom",
+                message: "Relation node IDs must be unique within a block.",
+                path: ["cards", cardIndex, "blocks", blockIndex, "nodes", nodeIndex, "id"],
+              })
+            }
+            seenNodeIds.add(node.id)
+          })
+        }
         block.edges.forEach((edge, edgeIndex) => {
           if (!nodeIds.has(edge.source) || !nodeIds.has(edge.target)) {
             context.addIssue({
@@ -449,7 +497,27 @@ export const createInteractionCardsInput = z.object({
       }
       if (block.type === "data_table") {
         const columnKeys = new Set(block.columns.map(column => column.key))
+        const seenColumnKeys = new Set<string>()
+        block.columns.forEach((column, columnIndex) => {
+          if (seenColumnKeys.has(column.key)) {
+            context.addIssue({
+              code: "custom",
+              message: "Table column keys must be unique within a block.",
+              path: ["cards", cardIndex, "blocks", blockIndex, "columns", columnIndex, "key"],
+            })
+          }
+          seenColumnKeys.add(column.key)
+        })
+        const seenRowIds = new Set<string>()
         block.rows.forEach((row, rowIndex) => {
+          if (seenRowIds.has(row.id)) {
+            context.addIssue({
+              code: "custom",
+              message: "Table row IDs must be unique within a block.",
+              path: ["cards", cardIndex, "blocks", blockIndex, "rows", rowIndex, "id"],
+            })
+          }
+          seenRowIds.add(row.id)
           Object.keys(row.cells).forEach((key) => {
             if (!columnKeys.has(key)) {
               context.addIssue({
@@ -462,6 +530,17 @@ export const createInteractionCardsInput = z.object({
         })
       }
       if (block.type === "chart") {
+        const seenSeriesNames = new Set<string>()
+        block.series.forEach((series, seriesIndex) => {
+          if (seenSeriesNames.has(series.name)) {
+            context.addIssue({
+              code: "custom",
+              message: "Chart series names must be unique within a block.",
+              path: ["cards", cardIndex, "blocks", blockIndex, "series", seriesIndex, "name"],
+            })
+          }
+          seenSeriesNames.add(series.name)
+        })
         const lengths = new Set(block.series.map(series => series.values.length))
         if (lengths.size > 1 || (block.xAxis && [...lengths].some(length => length !== block.xAxis!.length))) {
           context.addIssue({
@@ -471,6 +550,19 @@ export const createInteractionCardsInput = z.object({
           })
         }
       }
+      if (block.type === "item_list" || block.type === "status_list" || block.type === "timeline") {
+        const seenItemIds = new Set<string>()
+        block.items.forEach((blockItem, itemIndex) => {
+          if (seenItemIds.has(blockItem.id)) {
+            context.addIssue({
+              code: "custom",
+              message: "Item IDs must be unique within a content block.",
+              path: ["cards", cardIndex, "blocks", blockIndex, "items", itemIndex, "id"],
+            })
+          }
+          seenItemIds.add(blockItem.id)
+        })
+      }
     })
     fields.forEach((field, fieldIndex) => {
       if (field.visibleWhen && !fieldsById.has(field.visibleWhen.fieldId)) {
@@ -478,6 +570,19 @@ export const createInteractionCardsInput = z.object({
           code: "custom",
           message: `Visibility condition references unknown field "${field.visibleWhen.fieldId}".`,
           path: ["cards", cardIndex, "form", "fields", fieldIndex, "visibleWhen", "fieldId"],
+        })
+      }
+      if (field.type === "select" || field.type === "multi_select") {
+        const seenOptionValues = new Set<string>()
+        field.options.forEach((option, optionIndex) => {
+          if (seenOptionValues.has(option.value)) {
+            context.addIssue({
+              code: "custom",
+              message: "Option values must be unique within a field.",
+              path: ["cards", cardIndex, "form", "fields", fieldIndex, "options", optionIndex, "value"],
+            })
+          }
+          seenOptionValues.add(option.value)
         })
       }
     })

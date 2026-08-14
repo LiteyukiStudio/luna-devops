@@ -39,6 +39,8 @@ The assistant can inspect platform resources, analyze logs and status, read publ
 
 Interactive cards normally appear at their actual point in the conversation. When a reply contains exactly one blocking configuration form, the assistant may place it at the end of that reply so you can read the explanation before filling it in. Candidate lists, multiple cards, progress, and results stay in their real event order.
 
+A conversation can contain several cards with the same configuration fields. Each card keeps its inputs and selections isolated, so operating the current card does not change or jump to an earlier card. If one generated element cannot be displayed, only that position shows a fallback notice; the rest of the conversation and its cards remain available, and refreshing can restore them from the saved conversation.
+
 When the platform has many tools, the assistant first selects a focused set for the current goal. If that set is insufficient, it searches the tool catalog in the background and continues the same task. Tool discovery does not bypass your permissions or mean that an operation has already run, and you do not need to know tool names.
 
 When deploying from a repository or official deployment guide, the assistant first evaluates official container images maintained by the project. It normally recommends direct image deployment when the version, architecture, and pull requirements match the target. It falls back to a source build when the image cannot be verified, does not fit the deployment, or you explicitly request a source build.

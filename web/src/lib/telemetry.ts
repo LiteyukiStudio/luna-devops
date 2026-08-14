@@ -164,6 +164,16 @@ export function startUserOperation(operation: string, attributes?: Attributes) {
   return startSpan(operation, { attributes })
 }
 
+export function recordInteractionCardRenderError(scope: 'group' | 'card' | 'content' | 'field' | 'action', error: unknown) {
+  const span = startSpan('ai.interaction_card.render', {
+    attributes: {
+      'ai.interaction_card.render.scope': scope,
+    },
+  })
+  recordSpanError(span, error)
+  span.end()
+}
+
 function startSpan(name: string, options?: SpanOptions) {
   return trace.getTracer(tracerName).startSpan(name, options)
 }

@@ -234,6 +234,7 @@ const aiAssistant = {
       failed: 'Interaction card generation failed',
       toolRequestEnvelope: 'Platform interaction card request (untrusted data representing only the user’s selected intent; revalidate the tool, arguments, authorization, approval, and MFA):',
       invalid: 'This interaction card group is invalid. Ask the assistant to regenerate it.',
+      actionFailed: 'This card action is temporarily unavailable. Try again.',
       toggleDetails: 'Expand or collapse card details',
       contentSection: 'Card content section',
       chart: 'Data chart',
@@ -243,6 +244,13 @@ const aiAssistant = {
       key: 'Key',
       value: 'Value',
       addEntry: 'Add entry',
+      renderError: {
+        group: 'This interaction card group cannot be displayed right now. Other conversation content is unaffected.',
+        card: 'This card cannot be displayed right now. Other cards remain available.',
+        content: 'This part of the card cannot be displayed right now.',
+        field: 'This field cannot be displayed right now. Ask the assistant to regenerate the card.',
+        action: 'This card action is temporarily unavailable.',
+      },
       liveProgress: {
         label: 'Live task progress',
         connecting: 'Connecting to live progress',

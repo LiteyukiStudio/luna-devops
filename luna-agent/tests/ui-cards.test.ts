@@ -113,6 +113,75 @@ describe("interaction card tool", () => {
     }).success).toBe(false)
   })
 
+  it("rejects duplicate identifiers in every generated card collection", () => {
+    const cardWithDuplicateSections = structuredClone(databaseCard) as unknown as {
+      cards: Array<{ form: { sections: Array<Record<string, unknown>> } }>
+    }
+    cardWithDuplicateSections.cards[0]!.form.sections.push({
+      id: "target",
+      fields: [{ id: "environmentId", type: "text", label: "环境" }],
+    })
+
+    const cardWithDuplicateOptions = structuredClone(databaseCard) as unknown as {
+      cards: Array<{ form: { sections: Array<{ fields: Array<Record<string, unknown>> }> } }>
+    }
+    const selectField = cardWithDuplicateOptions.cards[0]!.form.sections[0]!.fields[0]!
+    selectField.options = [
+      { value: "prj_example", label: "示例项目空间" },
+      { value: "prj_example", label: "重复项目空间" },
+    ]
+
+    const presentationCard = (block: Record<string, unknown>) => ({
+      schemaVersion: 1,
+      generationId: "duplicate-content-ids",
+      title: "重复标识",
+      mode: "presentation",
+      template: "inspector",
+      cards: [{
+        id: "resource",
+        presentation: { variant: "resource", title: "资源" },
+        blocks: [block],
+      }],
+    })
+    const invalidInputs = [
+      cardWithDuplicateSections,
+      cardWithDuplicateOptions,
+      presentationCard({
+        id: "items",
+        type: "item_list",
+        items: [{ id: "same", primary: "A" }, { id: "same", primary: "B" }],
+      }),
+      presentationCard({
+        id: "table",
+        type: "data_table",
+        columns: [{ key: "same", label: "A" }, { key: "same", label: "B" }],
+        rows: [{ id: "same", cells: { same: "A" } }, { id: "same", cells: { same: "B" } }],
+      }),
+      presentationCard({
+        id: "relations",
+        type: "relations",
+        nodes: [{ id: "same", label: "A", category: "application" }, { id: "same", label: "B", category: "application" }],
+        edges: [],
+      }),
+      presentationCard({
+        id: "chart",
+        type: "chart",
+        chartType: "line",
+        series: [{ name: "same", values: [1] }, { name: "same", values: [2] }],
+      }),
+      {
+        ...presentationCard({ id: "content", type: "markdown", content: "内容" }),
+        groupActions: [
+          { id: "same", type: "navigate", label: "A", routeName: "dashboard" },
+          { id: "same", type: "navigate", label: "B", routeName: "projects" },
+        ],
+      },
+    ]
+
+    for (const input of invalidInputs)
+      expect(createInteractionCardsInput.safeParse(input).success).toBe(false)
+  })
+
   it("normalizes only representational version and missing section IDs", () => {
     const input = structuredClone(databaseCard) as unknown as Record<string, unknown>
     input.schemaVersion = "1"

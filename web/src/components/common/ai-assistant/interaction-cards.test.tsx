@@ -272,6 +272,104 @@ describe('ai interaction cards', () => {
     })))
   })
 
+  it('isolates DOM controls when historical cards reuse the same field and option IDs', async () => {
+    const card = {
+      schemaVersion: 1,
+      generationId: 'storage-selection-first',
+      title: '数据方案',
+      mode: 'interactive',
+      template: 'form',
+      cards: [{
+        id: 'deployment',
+        presentation: { variant: 'form', title: '运行配置' },
+        form: {
+          sections: [{
+            id: 'storage',
+            fields: [{
+              id: 'dataStrategy',
+              type: 'select',
+              display: 'segmented',
+              label: '数据存储方案',
+              required: true,
+              defaultValue: 'postgres_redis',
+              options: [
+                { value: 'postgres_redis', label: 'PostgreSQL + Redis' },
+                { value: 'sqlite', label: 'SQLite 本地文件' },
+              ],
+            }],
+          }],
+        },
+        actions: [{
+          id: 'continue',
+          type: 'send_message',
+          label: '提交复现测试',
+          message: '选择 {{dataStrategy}}。',
+          emphasis: 'primary',
+        }],
+      }],
+    }
+    const secondCard = structuredClone(card)
+    secondCard.generationId = 'storage-selection-second'
+    const { container } = render(
+      <div data-testid="timeline">
+        <AIInteractionCards arguments={card} onAction={vi.fn()} />
+        <AIInteractionCards arguments={secondCard} onAction={vi.fn()} />
+      </div>,
+    )
+    const timeline = screen.getByTestId('timeline')
+    timeline.scrollTop = 120
+    const ids = [...container.querySelectorAll<HTMLElement>('[id]')].map(element => element.id)
+    expect(new Set(ids).size).toBe(ids.length)
+    expect(container.querySelector('[id*="dataStrategy"]')).not.toBeInTheDocument()
+
+    const postgresOptions = screen.getAllByRole('radio', { name: 'PostgreSQL + Redis' })
+    const sqliteOptions = screen.getAllByRole('radio', { name: 'SQLite 本地文件' })
+    expect(postgresOptions).toHaveLength(2)
+    expect(sqliteOptions).toHaveLength(2)
+    expect(postgresOptions[0]).toBeChecked()
+    expect(postgresOptions[1]).toBeChecked()
+
+    fireEvent.click(sqliteOptions[1]!)
+
+    await waitFor(() => expect(sqliteOptions[1]).toBeChecked())
+    expect(sqliteOptions[0]).not.toBeChecked()
+    expect(postgresOptions[0]).toBeChecked()
+    expect(postgresOptions[1]).not.toBeChecked()
+    expect(timeline.scrollTop).toBe(120)
+  })
+
+  it('contains a broken generated content block without hiding sibling content', () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const brokenBlock = { id: 'broken', type: 'key_value' } as Record<string, unknown>
+    Object.defineProperty(brokenBlock, 'items', {
+      get: () => {
+        throw new Error('broken generated block')
+      },
+    })
+    const card = {
+      schemaVersion: 1,
+      generationId: 'isolated-render-error',
+      title: '诊断结果',
+      mode: 'presentation',
+      template: 'inspector',
+      cards: [{
+        id: 'resource',
+        presentation: { variant: 'resource', title: '资源详情' },
+        blocks: [
+          { id: 'healthy', type: 'markdown', content: '仍然可见的内容' },
+          brokenBlock,
+        ],
+      }],
+    }
+
+    render(<AIInteractionCards arguments={card} onAction={vi.fn()} />)
+
+    expect(screen.getByText('仍然可见的内容')).toBeInTheDocument()
+    expect(screen.getByText('This part of the card cannot be displayed right now.')).toBeInTheDocument()
+    expect(screen.queryByText('This interaction card group cannot be displayed right now. Other conversation content is unaffected.')).not.toBeInTheDocument()
+    consoleError.mockRestore()
+  })
+
   it('renders card descriptions as safe markdown and ignores model HTML', () => {
     const card = structuredClone(catalogCard) as unknown as {
       description?: string
