@@ -15,4 +15,13 @@ describe("redact", () => {
       field: { type: "secret", id: "credential", value: "[REDACTED]", defaultValue: "[REDACTED]" },
     })
   })
+  it("masks generated secret values with equal-length asterisks", () => {
+    expect(redact({ secrets: ["abc123", "qwertyuiop"], encoding: "base64", length: 6 }))
+      .toEqual({ secrets: ["******", "**********"], encoding: "base64", length: 6 })
+    expect(redact({ secrets: [] })).toEqual({ secrets: [] })
+  })
+  it("keeps non-secrets fields intact next to generated secrets", () => {
+    expect(redact({ secrets: ["s3cr3t"], encoding: "alphanumeric" }))
+      .toEqual({ secrets: ["******"], encoding: "alphanumeric" })
+  })
 })

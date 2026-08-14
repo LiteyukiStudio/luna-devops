@@ -11,7 +11,7 @@ export type ToolCallStatus = "proposed" | "awaiting_approval" | "awaiting_mfa" |
 export type ToolCallRecord = {
   id: string; runId: string; operationId: string; status: ToolCallStatus; arguments: Record<string, unknown>
   argumentsHash: string; attempt: number; rowVersion: number; approvalExpiresAt?: number; mfaPurpose?: string
-  result?: unknown; errorCode?: string
+  result?: unknown; modelResult?: unknown; errorCode?: string
 }
 export type ToolEvent = { type: string, toolCallId: string, data: Record<string, unknown> }
 
@@ -211,7 +211,11 @@ export class ToolOrchestrator {
 
   private async finish(call: ToolCallRecord, result: ToolExecutionResult, diagnostics: { durationMs: number, traceId: string }): Promise<ToolCallRecord> {
     const code = extractCode(result.body)
-    const storedResult = redact(withRequestId(result.body, result.requestId))
+    // generateSecret 的生成值需要明文回灌模型以便直接填入后续表单；
+    // 持久化 result 仍使用掩码投影，模型可见明文仅保存在内存的 modelResult。
+    const plainResult = withRequestId(result.body, result.requestId)
+    const storedResult = redact(plainResult)
+    const modelResult = call.operationId === "generateSecret" ? plainResult : undefined
     if (result.status === 401 || result.status === 403) return this.transition(call, "failed", { errorCode: code ?? "ai.tool_forbidden", result: storedResult }, "tool_call.failed", diagnostics)
     if (result.status === 428 && code === "mfa_required") {
       const purpose = (result.body as Record<string, unknown>).purpose
@@ -220,7 +224,7 @@ export class ToolOrchestrator {
     if (result.status < 200 || result.status >= 300) return this.transition(call, "failed", { errorCode: code ?? "ai.tool_failed", result: storedResult }, "tool_call.failed", diagnostics)
     const verification = await this.verifier.verify(call.operationId, result)
     if (!verification.ok) return this.transition(call, "failed", { errorCode: verification.code ?? "verification_inconclusive", result: storedResult }, "tool_call.failed", diagnostics)
-    return this.transition(call, "succeeded", { result: storedResult }, "tool_call.succeeded", diagnostics)
+    return this.transition(call, "succeeded", { result: storedResult, modelResult }, "tool_call.succeeded", diagnostics)
   }
 
   private async transition(call: ToolCallRecord, status: ToolCallStatus, patch: Partial<ToolCallRecord>, event: string, eventData: Record<string, unknown> = {}) {

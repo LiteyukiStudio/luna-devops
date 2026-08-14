@@ -40,6 +40,9 @@ func buildAIToolPolicies() map[string]aiToolPolicy {
 		"listRuntimeEvents":       {OperationID: "listRuntimeEvents", Scopes: []string{"event:read"}, ProjectAction: authz.ActionProjectRead, Risk: "read"},
 		// getAppTemplate 是手写 service 操作，无独立 OpenAPI 路由，需手动注册策略
 		"getAppTemplate": {OperationID: "getAppTemplate", Scopes: []string{"application:read"}, Risk: "read"},
+		// generateSecret 是手写 service 操作，无独立 OpenAPI 路由，需手动注册策略；
+		// 生成值仅经工具结果回传，不触达平台资源，按 read 处理且不需要批准。
+		"generateSecret": {OperationID: "generateSecret", Scopes: []string{"secret:generate"}, Risk: "read"},
 	}
 	operations, err := aitool.PlatformCatalog()
 	if err != nil {

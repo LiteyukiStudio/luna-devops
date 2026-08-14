@@ -59,6 +59,17 @@ const fetchWebPageInputSchema = {
   additionalProperties: false,
 } as const
 
+const generateSecretInputSchema = {
+  type: "object",
+  properties: {
+    length: { type: "integer", minimum: 8, maximum: 256 },
+    encoding: { type: "string", enum: ["base64", "hex", "alphanumeric", "numeric"] },
+    count: { type: "integer", minimum: 1, maximum: 10 },
+  },
+  required: [],
+  additionalProperties: false,
+} as const
+
 export const platformOperations = [
   operation("getDashboard", "dashboard", "dashboard:read", platformListInputSchema),
   operation("listProjects", "project", "project:read", platformListInputSchema),
@@ -66,6 +77,7 @@ export const platformOperations = [
   operation("getAppTemplate", "application", "application:read", appTemplateDetailInputSchema),
   operation("webSearch", "web", "web:read", webSearchInputSchema),
   operation("fetchWebPage", "web", "web:read", fetchWebPageInputSchema),
+  operation("generateSecret", "secret", "secret:generate", generateSecretInputSchema),
   {
     operationId: "createProject",
     method: "POST",
@@ -108,7 +120,7 @@ function operation(
   operationId: string,
   category: string,
   scope: string,
-  inputSchema: typeof platformListInputSchema | typeof projectListInputSchema | typeof appTemplateListInputSchema | typeof appTemplateDetailInputSchema | typeof webSearchInputSchema | typeof fetchWebPageInputSchema,
+  inputSchema: typeof platformListInputSchema | typeof projectListInputSchema | typeof appTemplateListInputSchema | typeof appTemplateDetailInputSchema | typeof webSearchInputSchema | typeof fetchWebPageInputSchema | typeof generateSecretInputSchema,
 ) {
   return {
     operationId,

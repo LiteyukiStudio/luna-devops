@@ -6,6 +6,13 @@ export function redact<T>(value: T): T {
   return visit(value, new WeakSet()) as T
 }
 
+function maskSecrets(item: unknown): unknown {
+  if (typeof item === "string") return "*".repeat(item.length)
+  if (Array.isArray(item)) return item.map(maskSecrets)
+  if (!item || typeof item !== "object") return item
+  return visit(item, new WeakSet())
+}
+
 function visit(value: unknown, seen: WeakSet<object>): unknown {
   if (typeof value === "string") {
     return value
@@ -20,10 +27,15 @@ function visit(value: unknown, seen: WeakSet<object>): unknown {
   if (Array.isArray(value)) return value.map(item => visit(item, seen))
   const record = value as Record<string, unknown>
   const secretContainer = record.type === "secret" || record.valueMode === "secret"
-  return Object.fromEntries(Object.entries(record).map(([key, item]) => [
-    key,
-    sensitiveKey.test(key) || (secretContainer && /^(default)?value$/i.test(key))
-      ? "[REDACTED]"
-      : visit(item, seen),
-  ]))
+  return Object.fromEntries(Object.entries(record).map(([key, item]) => {
+    // generateSecret 的生成值（secrets 数组）按等长 `*` 掩码，保留可辨识的位数信息；
+    // 其余敏感键继续使用固定 [REDACTED] 占位。
+    if (key === "secrets" && Array.isArray(item)) return [key, maskSecrets(item)]
+    return [
+      key,
+      sensitiveKey.test(key) || (secretContainer && /^(default)?value$/i.test(key))
+        ? "[REDACTED]"
+        : visit(item, seen),
+    ]
+  }))
 }

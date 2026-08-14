@@ -896,6 +896,63 @@ describe("provider to tool to subsequent model invocation", () => {
     await executor.runOnce()
     expect((await repository.getRun("usr_a", created.run.id))?.status).toBe("completed")
   })
+
+  it("feeds generated secrets to the model while persisting masked results", async () => {
+    const repository = new MemoryRepository()
+    const conversation = await repository.createConversation("usr_a", "secret")
+    const created = await repository.createTurn("usr_a", {
+      conversationId: conversation.id, input: "部署应用并生成 JWT 密钥", pageContext: {}, idempotencyKey: "secret-loop",
+    })
+    const catalog = ToolCatalog.load([{
+      operationId: "generateSecret", method: "GET", path: "/api/v1/ai-tools/generateSecret", category: "secret",
+      risk: "read", requiredScopes: ["secret:generate"], approval: "never", idempotent: true, timeoutMs: 5000,
+      inputSchema: {
+        type: "object",
+        properties: { length: { type: "integer" }, encoding: { type: "string" }, count: { type: "integer" } },
+        required: [], additionalProperties: false,
+      },
+    }])
+    const generated = "s3cretValu3_forJwt"
+    const client = new DeterministicLunaApiClient(() => ({
+      status: 200,
+      body: { secrets: [generated], encoding: "alphanumeric", length: generated.length },
+    }))
+    const store = new MemoryToolCallStore()
+    const tools = new ToolOrchestrator(catalog, client, new ProjectingToolCallStore(store, repository), undefined, undefined, async () => "grant")
+    const requests: ModelRequest[] = []
+    let modelStep = 0
+    const provider: ModelProvider = {
+      async *stream(request) {
+        requests.push(request)
+        if (modelStep++ === 0) {
+          yield { type: "completed", usage: { inputTokens: 5, outputTokens: 2 }, toolCalls: [{ id: "secret", operationId: "generateSecret", arguments: {} }] }
+          return
+        }
+        yield { type: "message_delta", delta: "已生成密钥并继续部署。" }
+        yield { type: "completed", usage: { inputTokens: 9, outputTokens: 5 } }
+      },
+      async complete() { return { text: "", usage: { inputTokens: 1, outputTokens: 0 }, toolCalls: [] } },
+      capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
+      health: async () => ({ ok: true }),
+    }
+    const registry = new GraphVersionRegistry(provider, {
+      resolve: (pageContext, input, loaded) => [...catalog.resolve(pageContext, input, loaded), searchToolsTool],
+      search: (query, pageContext, limit) => catalog.search(query, pageContext, limit),
+    })
+    const executor = new RunExecutor(repository, registry, loadConfig({ NODE_ENV: "test", INSTANCE_ID: "secret-worker" }), tools)
+    await executor.runOnce()
+
+    expect((await repository.getRun("usr_a", created.run.id))?.status).toBe("completed")
+    // 模型可见的工具结果包含明文生成值
+    const toolMessage = requests[1]?.messages.find(message => message.role === "tool" && message.toolCallId === "secret")
+    expect(String(toolMessage?.content)).toContain(generated)
+    // 持久化投影不包含明文，遥测 redact 后按等长 * 掩码
+    const persisted = [...store.records.values()][0]!
+    expect(JSON.stringify(persisted.result)).not.toContain(generated)
+    expect(JSON.stringify(persisted.result)).toContain("*".repeat(generated.length))
+    const timeline = await presentTimeline(repository, "usr_a", conversation.id)
+    expect(JSON.stringify(timeline)).not.toContain(generated)
+  })
 })
 
 function resolveNever(): never {
