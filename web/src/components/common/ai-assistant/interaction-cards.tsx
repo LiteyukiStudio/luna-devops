@@ -528,7 +528,7 @@ function SelectField({ controlId, describedBy, error, field, labelId, name, requ
           return (
             <RadioGroupItem
               key={key}
-              className="flex h-auto min-h-8 w-auto min-w-0 max-w-full aspect-auto items-start gap-2 rounded-control border-separator-subtle px-2 py-1.5 text-left text-[10px] shadow-none data-[state=checked]:border-primary-border data-[state=checked]:bg-primary-subtle data-[state=checked]:text-primary-text [&_[data-slot=radio-group-indicator]]:hidden"
+              className="flex h-auto min-h-8 w-auto min-w-0 max-w-full aspect-auto items-start gap-2 rounded-control! border-separator-subtle px-2 py-1.5 text-left text-[10px] shadow-none focus-visible:ring-2! focus-visible:ring-primary/35! data-[state=checked]:border-primary-border data-[state=checked]:bg-primary-subtle data-[state=checked]:text-primary-text [&_[data-slot=radio-group-indicator]]:hidden"
               disabled={option.disabled}
               id={optionId}
               value={option.value}

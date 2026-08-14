@@ -326,6 +326,10 @@ describe('ai interaction cards', () => {
     const sqliteOptions = screen.getAllByRole('radio', { name: 'SQLite 本地文件' })
     expect(postgresOptions).toHaveLength(2)
     expect(sqliteOptions).toHaveLength(2)
+    for (const option of [...postgresOptions, ...sqliteOptions]) {
+      expect(option).toHaveClass('rounded-control!')
+      expect(option).toHaveClass('focus-visible:ring-2!')
+    }
     expect(postgresOptions[0]).toBeChecked()
     expect(postgresOptions[1]).toBeChecked()
 
