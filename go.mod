@@ -1,6 +1,6 @@
 module github.com/LiteyukiStudio/devops
 
-go 1.26.5
+go 1.26.6
 
 require (
 	github.com/alicebob/miniredis/v2 v2.33.0
@@ -100,7 +100,7 @@ require (
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/klauspost/compress v1.18.0 // indirect
+	github.com/klauspost/compress v1.18.7 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/lib/pq v1.10.9 // indirect

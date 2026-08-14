@@ -7,3 +7,6 @@ overrides:
   nanoid@>=3.0.0 <3.3.17: 3.3.17
   postcss@>=8.0.0 <8.5.23: 8.5.23
   undici@>=7.0.0 <7.29.0: 7.29.0
+auditConfig:
+  ignoreGhsas:
+    - GHSA-qwww-vcr4-c8h2

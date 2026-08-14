@@ -15,7 +15,7 @@ COPY web/ ./web/
 RUN pnpm --dir web build
 
 # 准备 Go 源码和依赖缓存，后续普通构建与内嵌前端构建共用该阶段。
-FROM golang:1.26.5-alpine AS source
+FROM golang:1.26.6-alpine AS source
 
 WORKDIR /src
 
