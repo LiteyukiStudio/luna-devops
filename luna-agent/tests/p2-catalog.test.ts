@@ -120,42 +120,22 @@ describe("platform tool catalog", () => {
       .toEqual(expect.arrayContaining(["listGatewayRoutes", "createGatewayRoute"]))
   })
 
-  it("keeps the initial model tool set focused instead of exposing the whole catalog", () => {
+  it("exposes the whole catalog to the model instead of a focused subset", () => {
     const catalog = ToolCatalog.load(platformOperations)
     const selected = catalog.modelTools({}, "你好")
 
-    expect(selected.length).toBeLessThanOrEqual(24)
-    expect(selected.map(tool => tool.operationId)).toEqual(expect.arrayContaining(["getDashboard", "listProjects", "webSearch", "fetchWebPage"]))
+    expect(selected.map(tool => tool.operationId)).toEqual(expect.arrayContaining(["getDashboard", "listProjects", "webSearch", "fetchWebPage", "listRuntimeClusters"]))
+    expect(selected.length).toBe(platformOperations.length)
   })
 
   it.each([
     ["读取 GitHub 仓库 README 和官方部署文档", "fetchWebPage"],
     ["查看 Pod 调度和镜像拉取失败事件", "listRuntimeEvents"],
+    ["部署前看一下有哪些可用运行集群", "listRuntimeClusters"],
   ])("retrieves the expected operation for goal: %s", (query, expectedOperationId) => {
     const result = ToolCatalog.load(platformOperations).search(query)
 
     expect(result.loadedOperationIds).toContain(expectedOperationId)
     expect(result.matches.find(match => match.operationId === expectedOperationId)?.description).toContain("适用：")
-  })
-
-  it("loads explicitly discovered operations into a later model step", () => {
-    const catalog = ToolCatalog.load([...platformOperations, {
-      operationId: "rotateRegistryCredential",
-      method: "POST",
-      path: "/api/v1/test/rotate-registry-credential",
-      category: "registries",
-      description: "轮换镜像站凭据。",
-      risk: "sensitive",
-      requiredScopes: ["registry:write"],
-      approval: "always",
-      idempotent: false,
-      timeoutMs: 30_000,
-      inputSchema: { type: "object", properties: {}, required: [], additionalProperties: false },
-    }])
-    const initial = catalog.modelTools({}, "帮我处理一下")
-    const loaded = catalog.modelTools({}, "帮我处理一下", ["rotateRegistryCredential"])
-
-    expect(initial.map(tool => tool.operationId)).not.toContain("rotateRegistryCredential")
-    expect(loaded.map(tool => tool.operationId)).toContain("rotateRegistryCredential")
   })
 })

@@ -620,14 +620,14 @@ describe("provider to tool to subsequent model invocation", () => {
     expect(JSON.stringify(timeline)).toContain("目标项目空间中没有现有 PostgreSQL 应用")
   })
 
-  it("loads a discovered tool into the next model step and then executes it", async () => {
+  it("exposes the full catalog from the first model step and executes the requested tool", async () => {
     const repository = new MemoryRepository()
     const conversation = await repository.createConversation("usr_a", "公网入口", undefined, "user")
     const created = await repository.createTurn("usr_a", {
       conversationId: conversation.id,
       input: "继续处理刚才的事情",
       pageContext: { routeName: "applications" },
-      idempotencyKey: "dynamic-tool-search",
+      idempotencyKey: "full-catalog-tool",
       runActorGrantCiphertext: "encrypted-test-grant",
     })
     const catalog = ToolCatalog.load([{
@@ -642,11 +642,7 @@ describe("provider to tool to subsequent model invocation", () => {
       async *stream(request) {
         requests.push(request)
         if (modelStep++ === 0) {
-          yield { type: "completed", usage: { inputTokens: 5, outputTokens: 2 }, toolCalls: [{ id: "search", operationId: "search_tools", arguments: { query: "创建公网 HTTPS 网关入口", maxResults: 5 } }] }
-          return
-        }
-        if (modelStep === 2) {
-          yield { type: "completed", usage: { inputTokens: 8, outputTokens: 3 }, toolCalls: [{ id: "gateway", operationId: "createGatewayRoute", arguments: {} }] }
+          yield { type: "completed", usage: { inputTokens: 5, outputTokens: 2 }, toolCalls: [{ id: "gateway", operationId: "createGatewayRoute", arguments: {} }] }
           return
         }
         yield { type: "message_delta", delta: "公网入口已创建并完成回读。" }
@@ -662,13 +658,12 @@ describe("provider to tool to subsequent model invocation", () => {
       resolve: (pageContext, input, loaded) => [...catalog.resolve(pageContext, input, loaded), searchToolsTool],
       search: (query, pageContext, limit) => catalog.search(query, pageContext, limit),
     })
-    const executor = new RunExecutor(repository, registry, loadConfig({ NODE_ENV: "test", INSTANCE_ID: "dynamic-search-worker" }), tools)
+    const executor = new RunExecutor(repository, registry, loadConfig({ NODE_ENV: "test", INSTANCE_ID: "full-catalog-worker" }), tools)
 
     await executor.runOnce()
 
     expect((await repository.getRun("usr_a", created.run.id))?.status).toBe("completed")
-    expect(requests[0]?.tools?.map(tool => tool.operationId)).not.toContain("createGatewayRoute")
-    expect(requests[1]?.tools?.map(tool => tool.operationId)).toContain("createGatewayRoute")
+    expect(requests[0]?.tools?.map(tool => tool.operationId)).toContain("createGatewayRoute")
     expect(client.calls.map(call => call.operation.operationId)).toEqual(["createGatewayRoute"])
   })
 

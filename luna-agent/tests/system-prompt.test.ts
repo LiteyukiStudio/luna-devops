@@ -17,13 +17,11 @@ describe("versioned system prompt", () => {
     expect(prompt).toContain("优先准确、直接、克制地说明事实")
   })
 
-  it("requires dynamic tool discovery before claiming a platform capability is missing", () => {
+  it("loads the full tool catalog and does not require search before claiming a capability is missing", () => {
     const prompt = systemPromptFor("system-v4")
 
-    expect(prompt).toContain("必须先调用 search_tools")
-    expect(prompt).toContain("不要猜 operationId")
-    expect(prompt).toContain("加入同一 Run 的下一次模型步骤")
-    expect(prompt).toContain("只发现能力，不执行操作")
+    expect(prompt).toContain("已全量加载全部已注册平台工具")
+    expect(prompt).toContain("可直接选择使用，不需要先检索或猜测 operationId")
   })
 
   it("loads concise interaction and navigation skill roots into system-v4", () => {
