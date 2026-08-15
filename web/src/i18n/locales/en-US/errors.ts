@@ -41,6 +41,9 @@ const errors = {
     transaction_invalid: 'The balance adjustment request is invalid',
     transaction_invalid_amount: 'Balance adjustment amount must be a non-zero number',
   },
+  build: {
+    registry_push_credential_required: 'The target registry has no push credential available to this project space. Configure a Push or Push and pull credential, then retry.',
+  },
   inbox: {
     request_invalid: 'The inbox request is invalid.',
     not_found: 'The message or action request was not found.',

@@ -163,6 +163,10 @@ export interface AIPendingUIAction {
 
 export interface AIPendingUIActions {
   items: AIPendingUIAction[]
+  /** False when the BFF is temporarily unable to reconcile actions with Agent. */
+  agentAvailable?: boolean
+  /** Suggested recovery interval while Agent is temporarily unavailable. */
+  retryAfterSeconds?: number
 }
 
 export interface AIUIActionAcknowledgement {

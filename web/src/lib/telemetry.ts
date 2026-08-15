@@ -1,7 +1,7 @@
 import type { Attributes, Span, SpanOptions } from '@opentelemetry/api'
 import type { BatchSpanProcessor } from '@opentelemetry/sdk-trace-web'
 import { context, propagation, SpanKind, SpanStatusCode, trace } from '@opentelemetry/api'
-import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http'
+import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-proto'
 import { resourceFromAttributes } from '@opentelemetry/resources'
 import { BatchSpanProcessor as WebBatchSpanProcessor, WebTracerProvider } from '@opentelemetry/sdk-trace-web'
 import { ATTR_SERVICE_NAME } from '@opentelemetry/semantic-conventions'
@@ -35,7 +35,7 @@ export function enableBrowserTelemetry() {
   if (provider || typeof window === 'undefined')
     return
 
-  const exporter = new OTLPTraceExporter({ url: browserTraceRelayURL() })
+  const exporter = createBrowserTraceExporter()
   spanProcessor = new WebBatchSpanProcessor(exporter, {
     maxExportBatchSize: 64,
     maxQueueSize: 256,
@@ -52,6 +52,10 @@ export function enableBrowserTelemetry() {
   window.addEventListener('pagehide', flushBrowserTelemetry, { capture: true })
   window.addEventListener('error', recordWindowError)
   window.addEventListener('unhandledrejection', recordUnhandledRejection)
+}
+
+export function createBrowserTraceExporter(url = browserTraceRelayURL()) {
+  return new OTLPTraceExporter({ url })
 }
 
 export function startAPIRequestSpan(method: string, path: string) {

@@ -20,6 +20,8 @@ OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=production,k8s.cluster.name
 
 Collector 需要鉴权时，通过 Secret 注入 `OTEL_EXPORTER_OTLP_HEADERS`，不要把凭据写入公开配置文件。
 
+Web 控制台产生的 Trace 会由 Luna API 使用 OTLP/HTTP protobuf 代转到同一 Collector。升级时应同步更新 Web 与 API；如果浏览器控制台持续出现遥测请求 `415 Unsupported Media Type`，通常表示两者版本不一致。
+
 ## Agent 全内容观测（高敏）
 
 内容观测默认关闭。仅在受控的开发、测试或安全审计环境中确有需要时，临时为 Agent 开启：

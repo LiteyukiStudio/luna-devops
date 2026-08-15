@@ -1620,6 +1620,10 @@ paths:
       summary: List registry credentials
       parameters:
         - $ref: "#/components/parameters/RegistryId"
+        - name: projectId
+          in: query
+          description: When provided, return only credentials usable for this project space (global, owned by the current user, or bound to this project); credentials bound only to other projects are excluded.
+          schema: { type: string }
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
         - name: sortBy
@@ -1635,6 +1639,10 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/PaginatedBusinessObjects" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
     post:
       operationId: createRegistryCredential
       tags: [Registries]
@@ -5874,6 +5882,16 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          description: The selected target registry has no push-capable credential visible to the current user or project. The BuildRun is not created and the stable error code is `build.registry_push_credential_required`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                code: build.registry_push_credential_required
+                error: Configure a push-capable credential for the target registry before starting the build.
+                requestId: req_example
   /api/v1/projects/{projectId}/build-runs/{runId}:
     get:
       operationId: getBuildRun
@@ -5947,7 +5965,7 @@ paths:
           schema:
             type: string
       responses:
-        "200":
+        "201":
           description: Successful business response.
           content:
             application/json:
@@ -5959,6 +5977,16 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          description: The target registry used by the original BuildRun has no push-capable credential visible to the current user or project. The retry BuildRun is not created and the stable error code is `build.registry_push_credential_required`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                code: build.registry_push_credential_required
+                error: Configure a push-capable credential for the target registry before retrying the build.
+                requestId: req_example
   /api/v1/projects/{projectId}/build-runs/{runId}/cancel:
     post:
       operationId: cancelBuildRun
@@ -7151,7 +7179,7 @@ paths:
       parameters:
         - { name: clientInstanceId, in: query, required: true, schema: { type: string, minLength: 16, maxLength: 80, pattern: "^[A-Za-z0-9_-]+$" } }
       responses:
-        "200": { description: Pending UI actions bound to the current user and browser client, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }
+        "200": { description: Pending UI actions bound to the current user and browser client. Returns an empty list with agentAvailable=false and retryAfterSeconds while Agent is temporarily unavailable so clients can back off and retry without surfacing a transport error., content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
   /api/v1/ai/ui-actions/{actionId}/ack:
     post:
@@ -10520,7 +10548,9 @@ components:
         buildCpuRequest: { type: string }
         buildMemoryRequest: { type: string }
         buildTimeoutSeconds: { type: integer, minimum: 1 }
-        targetRegistryId: { type: string }
+        targetRegistryId:
+          type: string
+          description: Optional target registry override. The selected registry, whether supplied here or inherited from the deployment target, must have a push or push-pull credential visible to the current user or project before a build can be triggered or retried.
         targetImageRef: { type: string }
         targetRepository: { type: string }
         targetTag: { type: string }

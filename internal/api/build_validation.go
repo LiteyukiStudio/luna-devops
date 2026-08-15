@@ -10,14 +10,16 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/buildtemplate"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 type buildRunRequestError struct {
-	status  int
-	code    string
-	message string
+	status           int
+	code             string
+	message          string
+	publicMessageKey string
 }
+
+const buildPushCredentialRequiredCode = "build.registry_push_credential_required"
 
 func (e buildRunRequestError) Error() string {
 	return e.message
@@ -31,6 +33,15 @@ func buildRunConflict(code string, message string) error {
 	return buildRunRequestError{status: http.StatusConflict, code: code, message: message}
 }
 
+func buildRunPublicConflict(code string, message string) error {
+	return buildRunRequestError{
+		status:           http.StatusConflict,
+		code:             code,
+		message:          message,
+		publicMessageKey: code,
+	}
+}
+
 func firstPositiveInt(values ...int) int {
 	for _, value := range values {
 		if value > 0 {
@@ -42,19 +53,27 @@ func firstPositiveInt(values ...int) int {
 
 func (h *Handlers) validateBuildRunRequest(ctx *gin.Context, user model.User, run *model.BuildRun) bool {
 	if err := h.prepareBuildRunRequest(user, run, ctx.Request.Context()); err != nil {
-		var requestErr buildRunRequestError
-		if errors.As(err, &requestErr) {
-			if requestErr.code != "" {
-				writeErrorCode(ctx, requestErr.status, requestErr.code, requestErr.message)
-				return false
-			}
-			writeError(ctx, requestErr.status, requestErr.message)
-			return false
-		}
-		writeError(ctx, http.StatusBadRequest, err.Error())
+		writeBuildRunRequestError(ctx, err)
 		return false
 	}
 	return true
+}
+
+func writeBuildRunRequestError(ctx *gin.Context, err error) {
+	var requestErr buildRunRequestError
+	if !errors.As(err, &requestErr) {
+		writeError(ctx, http.StatusBadRequest, err.Error())
+		return
+	}
+	if requestErr.publicMessageKey != "" {
+		writeLocalizedErrorCode(ctx, requestErr.status, requestErr.code, requestErr.message, requestErr.publicMessageKey)
+		return
+	}
+	if requestErr.code != "" {
+		writeErrorCode(ctx, requestErr.status, requestErr.code, requestErr.message)
+		return
+	}
+	writeError(ctx, requestErr.status, requestErr.message)
 }
 
 func (h *Handlers) prepareBuildRunRequest(user model.User, run *model.BuildRun, ctx context.Context) error {
@@ -165,8 +184,8 @@ func (h *Handlers) prepareBuildRunRequest(user model.User, run *model.BuildRun, 
 	run.TargetRepository = strings.Trim(strings.TrimSpace(run.TargetRepository), "/")
 	run.TargetTag = fallback(strings.TrimSpace(run.TargetTag), "latest")
 	run.ImageRef = fallback(strings.TrimSpace(run.ImageRef), buildImageRef(registry, *run))
-	if !h.usableRegistryCredentialExists(user.ID, run.ProjectID, registry, ctx) {
-		return buildRunBadRequest("目标镜像站缺少可用推送凭据")
+	if !hasCredential {
+		return buildRunPublicConflict(buildPushCredentialRequiredCode, "目标镜像站缺少可用推送凭据")
 	}
 	if _, err := h.buildVariablesForRunByIDs(h.dbWithContext(ctx), user, run.ProjectID, buildVariableSetIDs(run.BuildVariableSetIDs), ctx); err != nil {
 		return buildRunBadRequest(err.Error())
@@ -200,26 +219,4 @@ func (h *Handlers) deploymentTargetForRun(ctx *gin.Context, app model.Applicatio
 		return config, false
 	}
 	return config, true
-}
-
-func (h *Handlers) usableRegistryCredentialExists(userID, projectID string, registry model.ArtifactRegistry, ctx context.Context) bool {
-	visible := func(query *gorm.DB) *gorm.DB {
-		return query.Where("scope = ? and owner_ref = ? or scope = ? or (scope = ? and exists (select 1 from scoped_resource_project_bindings srpb where srpb.resource_type = ? and srpb.resource_id = registry_credentials.id and srpb.project_id = ?))",
-			"user", userID, "global", "project", scopedResourceRegistryCredential, projectID)
-	}
-	if strings.TrimSpace(registry.CredentialRef) != "" {
-		var count int64
-		visible(h.dbWithContext(ctx).Model(&model.RegistryCredential{})).
-			Where("registry_id = ? and usage in ?", registry.ID, []string{"push", "push-pull"}).
-			Where("id = ?", registry.CredentialRef).
-			Count(&count)
-		if count > 0 {
-			return true
-		}
-	}
-	var count int64
-	visible(h.dbWithContext(ctx).Model(&model.RegistryCredential{})).
-		Where("registry_id = ? and usage in ?", registry.ID, []string{"push", "push-pull"}).
-		Count(&count)
-	return count > 0
 }

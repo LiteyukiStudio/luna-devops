@@ -47,6 +47,7 @@ import { AIMobileViewport } from './mobile-viewport'
 import { AIOptionsBar } from './options'
 import { shouldDisplayAIOptions } from './options-visibility'
 import { buildAIPageContext } from './page-context'
+import { pendingUIActionsPollInterval } from './pending-ui-actions-query'
 import { AIRefreshConversationReturn } from './refresh-conversation-return'
 import { useAIRunStreamManager } from './run-stream-manager'
 import { emptyAIAssistantState } from './state'
@@ -99,7 +100,9 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
   const pendingUIActions = useQuery({
     queryKey: ['ai', 'ui-actions', 'pending', clientInstanceId],
     queryFn: () => api.listPendingAIUIActions(clientInstanceId),
-    refetchInterval: 5_000,
+    enabled: open,
+    retry: false,
+    refetchInterval: query => pendingUIActionsPollInterval(query.state.data, Boolean(query.state.error)),
     staleTime: 0,
   })
 

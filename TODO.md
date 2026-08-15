@@ -1,5 +1,15 @@
 # TODO
 
+## 2026-08-15 构建镜像推送凭据预检
+
+- [x] 在构建触发与重试入队前校验目标镜像站存在当前用户或项目空间可见的 `push` / `push-pull` 凭据；缺失时返回 HTTP 409 和稳定错误码 `build.registry_push_credential_required`，且不创建 BuildRun。
+- [x] 同步 OpenAPI 与中英文配置、排障文档，并校正 `retryBuildRun` 成功响应为实际使用的 HTTP 201。
+
+## 2026-08-15 浏览器 Trace 协议一致性
+
+- [x] 将 Web OTLP exporter、Luna API 同源中继与 Collector 上游统一为 OTLP/HTTP protobuf，修复 JSON payload 被 API 以 415 拒绝的问题。
+- [x] 增加真实 exporter 请求体与 Content-Type 契约测试，并同步 OpenAPI 和中英文可观测说明。
+
 ## 2026-08-15 Block 数据卷导出校验清单
 
 - [x] 为成功的 Block `raw.zst` 导出持久化服务端观察的未压缩字节数与 SHA-256，并通过同一下载授权提供可移植 `.manifest.json`。
@@ -413,7 +423,7 @@
 - [x] 修复 Agent 观测 overview 在 Prometheus 返回 `NaN` 或无指标时序列化为 500，并让 Tempo 使用当前数据实际可检索的 `luna-agent` 服务级 TraceQL；Prometheus 缺失只影响周期指标，Tempo 缺失只影响轮次 Span 时间轴。
 - [x] 移除跨目录的根 pnpm workspace：`web/`、`docs/`、`tests/` 与 `luna-agent/` 分别维护 package、lockfile、必要的单项目 pnpm 配置和开发命令；API/Agent Docker 构建及发布质量门禁只消费对应子项目锁文件，避免本地 workspace 与镜像独立安装产生锁文件语义分裂。
 - [x] 将 AI 模型配置收敛为 API 地址、API Key 和模型名称三项：生产 Agent 自动使用平台托管配置，本地三项齐全时直连，确定性 Provider 仅保留给非生产测试；公网 HTTPS Provider 不再要求重复维护出站域名白名单。
-- [x] 为 Agent 自动路由建立可靠投递：动作绑定发起标签页并持久化，SSE 负责实时触发，断线后重放未确认动作，前端仅在 React Router 实际落到目标地址后回传 ACK。
+- [x] 为 Agent 自动路由建立可靠投递：动作绑定发起标签页并持久化，SSE 负责实时触发，断线后重放未确认动作，前端仅在 React Router 实际落到目标地址后回传 ACK；Agent 暂不可用时 pending 回读降级为空结果并按响应建议退避轮询，恢复后自动继续，且不影响助手入口；Agent URL 或信任材料无效时在 API 初始化期输出一次不含密钥的结构化错误。
 - [x] 修复内嵌 SPA 根路径和 fallback 被 Go FileServer 重定向到 `./` 的问题：`index.html` 改为直接返回，避免服务端根路径出现不必要 301。
 - [x] 新增发布质量门禁 `scripts/release-check.sh`：要求干净工作区、精确 Go `1.26.5` 和 `AUTH_TEST_DATABASE_URL`，统一执行 Go test/vet/race、不可缓存的 PostgreSQL 认证/迁移集成测试、前端测试/lint/build、文档构建、生产 pnpm 依赖 high/critical 审计、Go 可达漏洞扫描与 Helm lint/render；GitHub Quality Job 自动启动 PostgreSQL。普通 Go/race 套件不注入数据库地址，真实 PostgreSQL 集成测试只执行一次，避免同一批用例在 CI 中重复三次。
 

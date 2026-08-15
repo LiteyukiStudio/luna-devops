@@ -19,10 +19,12 @@ import (
 )
 
 const (
-	aiAssistantEnabledConfigKey = "ai.assistant.enabled"
-	aiAccessModeConfigKey       = "ai.access.mode"
-	aiMaxInputBytesConfigKey    = "ai.run.max_input_k_bytes"
-	aiDefaultMaxInputKBytes     = 48
+	aiAssistantEnabledConfigKey    = "ai.assistant.enabled"
+	aiAccessModeConfigKey          = "ai.access.mode"
+	aiMaxInputBytesConfigKey       = "ai.run.max_input_k_bytes"
+	aiDefaultMaxInputKBytes        = 48
+	aiPendingUIActionsRetrySeconds = 30
+	aiPendingUIActionsDrainLimit   = 64 << 10
 )
 
 type aiProxyRoute struct {
@@ -65,6 +67,10 @@ func (h *Handlers) ProxyAIRequest(ctx *gin.Context) {
 		return
 	}
 	if reason := h.aiUnavailableReason(); reason != "" {
+		if reason == "ai.agent_unavailable" && isPendingAIUIActionsRoute(route) {
+			writePendingAIUIActionsUnavailable(ctx)
+			return
+		}
 		writeErrorCode(ctx, http.StatusServiceUnavailable, reason, "AI assistant is unavailable")
 		return
 	}
@@ -112,6 +118,10 @@ func (h *Handlers) ProxyAIRequest(ctx *gin.Context) {
 		Stream:         route.stream,
 	})
 	if err != nil {
+		if isPendingAIUIActionsRoute(route) {
+			writePendingAIUIActionsUnavailable(ctx)
+			return
+		}
 		if errors.Is(err, aiagent.ErrUnavailable) {
 			writeErrorCode(ctx, http.StatusServiceUnavailable, "ai.agent_unavailable", "AI agent is unavailable")
 			return
@@ -120,7 +130,28 @@ func (h *Handlers) ProxyAIRequest(ctx *gin.Context) {
 		return
 	}
 	defer response.Body.Close()
+	if isPendingAIUIActionsRoute(route) && response.StatusCode >= http.StatusInternalServerError {
+		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, aiPendingUIActionsDrainLimit))
+		writePendingAIUIActionsUnavailable(ctx)
+		return
+	}
+	if isPendingAIUIActionsRoute(route) {
+		response.Header.Set("Cache-Control", "no-store")
+	}
 	h.copyAIResponse(ctx, response, route.status, "ai.agent_unavailable")
+}
+
+func isPendingAIUIActionsRoute(route aiProxyRoute) bool {
+	return route.method == http.MethodGet && route.internal == "/internal/v1/ui-actions/pending"
+}
+
+func writePendingAIUIActionsUnavailable(ctx *gin.Context) {
+	ctx.Header("Cache-Control", "no-store")
+	ctx.JSON(http.StatusOK, gin.H{
+		"items":             []any{},
+		"agentAvailable":    false,
+		"retryAfterSeconds": aiPendingUIActionsRetrySeconds,
+	})
 }
 
 func (h *Handlers) prepareAIToolMFAResume(ctx *gin.Context, actor aiagent.ActorContext, body []byte) ([]byte, bool) {

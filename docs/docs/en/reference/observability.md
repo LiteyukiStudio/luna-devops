@@ -20,6 +20,8 @@ OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=production,k8s.cluster.name
 
 If the Collector requires authentication, inject `OTEL_EXPORTER_OTLP_HEADERS` from a Secret instead of storing credentials in public configuration.
 
+Luna API relays traces produced by the web console to the same Collector using OTLP/HTTP protobuf. Upgrade Web and API together; repeated `415 Unsupported Media Type` responses for browser telemetry usually indicate that their deployed versions do not match.
+
 ## Agent full-content observability (sensitive)
 
 Content capture is disabled by default. Enable it temporarily only when required in a controlled development, test, or security-audit environment:

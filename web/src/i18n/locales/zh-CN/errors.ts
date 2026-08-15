@@ -41,6 +41,9 @@ const errors = {
     transaction_invalid: '余额调整请求不正确',
     transaction_invalid_amount: '余额调整金额必须是非零数字',
   },
+  build: {
+    registry_push_credential_required: '目标镜像站缺少当前项目空间可用的推送凭据。请在镜像站凭据管理中配置“推送”或“推送与拉取”凭据后重试。',
+  },
   inbox: {
     request_invalid: '消息请求参数不正确',
     not_found: '消息或待处理请求不存在',

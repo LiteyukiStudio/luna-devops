@@ -68,6 +68,20 @@ describe("versioned system prompt", () => {
     expect(prompt.length).toBeLessThan(50_000)
   })
 
+  it("loads the registry push-credential preflight for source builds", () => {
+    const guidance = skillGuidanceFor({
+      userInput: "从代码仓库构建镜像并发布",
+      operationIds: ["listRegistryCredentials", "triggerBuildRun", "retryBuildRun"],
+    })
+
+    expect(guidance).toContain("triggerBuildRun.targetRegistryId")
+    expect(guidance).toContain("usage` 为 `push` 或")
+    expect(guidance).toContain("不得把另一个项目空间的查询结果")
+    expect(guidance).toContain("build.registry_push_credential_required")
+    expect(guidance).toContain("停止再次调用这两个工具")
+    expect(guidance).toContain("修改分支、Dockerfile、构建上下文")
+  })
+
   it("selects references from structured intent instead of every available operation", () => {
     const references = loadedSkillReferences({
       userInput: "诊断应用为什么 CrashLoopBackOff",

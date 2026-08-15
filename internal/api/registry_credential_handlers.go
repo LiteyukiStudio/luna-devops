@@ -19,7 +19,16 @@ func (h *Handlers) ListRegistryCredentials(ctx *gin.Context) {
 		return
 	}
 	query := h.dbFor(ctx).Model(&model.RegistryCredential{}).Where("registry_id = ?", registry.ID)
-	query = h.applyScopedResourceVisibilityForUser(query, scopedResourceRegistryCredential, user, ctx.Request.Context())
+	query, ok = h.applyScopedResourceVisibility(
+		ctx,
+		query,
+		scopedResourceRegistryCredential,
+		user,
+		strings.TrimSpace(ctx.Query("projectId")),
+	)
+	if !ok {
+		return
+	}
 	h.listRegistryCredentials(ctx, query)
 }
 

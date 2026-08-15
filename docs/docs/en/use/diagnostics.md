@@ -17,6 +17,8 @@ Open the build record and check:
 
 `exitCode=137` or `OOMKilled` usually indicates insufficient memory. Increase build resources before retrying. If Git and a registry are not configured yet, deploy an existing image to validate the release and runtime path first.
 
+If starting or retrying a build returns `build.registry_push_credential_required`, no new BuildRun was created. Add or bind a credential for that build's target registry that is visible to the current user or project and has **push** or **push-pull** usage, then retry. Changing the branch, Dockerfile, or image name does not resolve a missing credential.
+
 ## Release failures
 
 Open the release and deployment logs. Confirm that the image exists, the cluster is reachable, pull credentials are valid, and ports, environment variables, secrets, and configuration files match the application.

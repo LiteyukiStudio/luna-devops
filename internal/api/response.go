@@ -121,6 +121,23 @@ func writeErrorCode(ctx *gin.Context, status int, code, detail string) {
 	})
 }
 
+// writeLocalizedErrorCode exposes a stable, localized remediation message in
+// production while preserving the original diagnostic detail in development.
+func writeLocalizedErrorCode(ctx *gin.Context, status int, code, detail, publicMessageKey string) {
+	if config.RuntimeMode() == "development" {
+		writeErrorCode(ctx, status, code, detail)
+		return
+	}
+	if code == "" {
+		code = defaultErrorCode(status)
+	}
+	ctx.JSON(status, gin.H{
+		"code":      code,
+		"error":     messageFor(requestLanguage(ctx), publicMessageKey),
+		"requestId": requestID(ctx),
+	})
+}
+
 func errorResponseMiddleware() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		ctx.Next()
@@ -282,6 +299,7 @@ var localizedMessages = map[string]map[string]string{
 		"git.webhook_rate_limited":         "Git 平台暂时限制了 Webhook 创建请求，请稍后重试。",
 		"git.provider_required":            "公开仓库访问需要指定 Git 平台。请先选择 Git 平台。",
 		"registry.authentication_required": "该镜像站或仓库需要登录凭据才能访问。请在凭据管理中配置拉取凭据后重试。",
+		buildPushCredentialRequiredCode:    "目标镜像站没有当前用户或项目空间可用的推送凭据。请先绑定 push 或 push-pull 凭据后重试。",
 	},
 	"en-US": {
 		"auth.login.invalid":               "Email or password is incorrect",
@@ -310,6 +328,7 @@ var localizedMessages = map[string]map[string]string{
 		"git.webhook_rate_limited":         "The Git platform is temporarily limiting webhook creation requests. Try again later.",
 		"git.provider_required":            "A Git provider must be selected when browsing public repositories. Please pick a Git provider first.",
 		"registry.authentication_required": "This registry or repository requires credentials. Configure a pull credential in Credential Management and try again.",
+		buildPushCredentialRequiredCode:    "The target registry has no push credential available to this user or project space. Bind a push or push-pull credential and try again.",
 	},
 }
 

@@ -30,6 +30,23 @@ func (f *fakeAIAgentClient) Do(_ context.Context, actor aiagent.ActorContext, re
 	return f.response, f.err
 }
 
+type trackingReadCloser struct {
+	reader *strings.Reader
+	read   int
+	closed bool
+}
+
+func (r *trackingReadCloser) Read(buffer []byte) (int, error) {
+	count, err := r.reader.Read(buffer)
+	r.read += count
+	return count, err
+}
+
+func (r *trackingReadCloser) Close() error {
+	r.closed = true
+	return nil
+}
+
 func TestAIProxyUsesSessionActorAndForwardsIdempotencyKey(t *testing.T) {
 	t.Setenv("AI_INTERNAL_SECRET", "test-ai-internal-secret-32-bytes-minimum")
 	gin.SetMode(gin.TestMode)
@@ -218,6 +235,124 @@ func TestAIProxyStillReportsUnavailableAgentWhenEnabled(t *testing.T) {
 	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/ai/conversations", nil))
 	if response.Code != http.StatusServiceUnavailable || !strings.Contains(response.Body.String(), `"code":"ai.agent_unavailable"`) {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+}
+
+func TestPendingAIUIActionsDegradesWhenAgentIsUnavailable(t *testing.T) {
+	tests := []struct {
+		name   string
+		client aiagent.Client
+	}{
+		{
+			name:   "client is not configured",
+			client: nil,
+		},
+		{
+			name: "agent connection is unavailable",
+			client: func() *fakeAIAgentClient {
+				return &fakeAIAgentClient{err: aiagent.ErrUnavailable}
+			}(),
+		},
+		{
+			name: "agent reports a temporary server failure",
+			client: func() *fakeAIAgentClient {
+				return &fakeAIAgentClient{response: &aiagent.Response{
+					StatusCode: http.StatusServiceUnavailable,
+					Header:     http.Header{"Content-Type": []string{"application/json"}},
+					Body:       io.NopCloser(strings.NewReader(`{"code":"temporary"}`)),
+				}}
+			}(),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			handler := aiTestHandlers(test.client, true)
+			router := gin.New()
+			router.GET("/api/v1/ai/ui-actions/pending", handler.ProxyAIRequest)
+
+			response := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodGet, "/api/v1/ai/ui-actions/pending?clientInstanceId=browser-client-instance-1", nil)
+			router.ServeHTTP(response, request)
+
+			if response.Code != http.StatusOK || response.Header().Get("Cache-Control") != "no-store" || response.Header().Get("Retry-After") != "" {
+				t.Fatalf("status = %d, headers = %v, body = %s", response.Code, response.Header(), response.Body.String())
+			}
+			var body struct {
+				Items             []any `json:"items"`
+				AgentAvailable    bool  `json:"agentAvailable"`
+				RetryAfterSeconds int   `json:"retryAfterSeconds"`
+			}
+			if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if body.Items == nil || len(body.Items) != 0 || body.AgentAvailable || body.RetryAfterSeconds != aiPendingUIActionsRetrySeconds {
+				t.Fatalf("unexpected degraded response: %#v", body)
+			}
+		})
+	}
+}
+
+func TestPendingAIUIActionsForwardsHealthyAgentResponse(t *testing.T) {
+	fake := &fakeAIAgentClient{response: &aiagent.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"items":[{"actionId":"aiuia_1"}]}`)),
+	}}
+	handler := aiTestHandlers(fake, true)
+	router := gin.New()
+	router.GET("/api/v1/ai/ui-actions/pending", handler.ProxyAIRequest)
+
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/ai/ui-actions/pending?clientInstanceId=browser-client-instance-1", nil)
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK || response.Body.String() != `{"items":[{"actionId":"aiuia_1"}]}` {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+	if response.Header().Get("Cache-Control") != "no-store" || response.Header().Get("Retry-After") != "" || fake.calls != 1 || fake.request.Path != "/internal/v1/ui-actions/pending" {
+		t.Fatalf("headers = %v, calls = %d, request = %#v", response.Header(), fake.calls, fake.request)
+	}
+}
+
+func TestPendingAIUIActionsForwardsAgentClientErrors(t *testing.T) {
+	fake := &fakeAIAgentClient{response: &aiagent.Response{
+		StatusCode: http.StatusBadRequest,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"code":"ai.client_instance_invalid"}`)),
+	}}
+	handler := aiTestHandlers(fake, true)
+	router := gin.New()
+	router.GET("/api/v1/ai/ui-actions/pending", handler.ProxyAIRequest)
+
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/ai/ui-actions/pending?clientInstanceId=invalid", nil)
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusBadRequest || response.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("status = %d, headers = %v, body = %s", response.Code, response.Header(), response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), `"agentAvailable":false`) {
+		t.Fatalf("client error was incorrectly degraded: %s", response.Body.String())
+	}
+}
+
+func TestPendingAIUIActionsDrainsTemporaryFailureBodyWithinLimit(t *testing.T) {
+	body := &trackingReadCloser{reader: strings.NewReader(strings.Repeat("x", aiPendingUIActionsDrainLimit+1024))}
+	fake := &fakeAIAgentClient{response: &aiagent.Response{
+		StatusCode: http.StatusServiceUnavailable,
+		Header:     http.Header{"Content-Type": []string{"text/plain"}},
+		Body:       body,
+	}}
+	handler := aiTestHandlers(fake, true)
+	router := gin.New()
+	router.GET("/api/v1/ai/ui-actions/pending", handler.ProxyAIRequest)
+
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/ai/ui-actions/pending?clientInstanceId=browser-client-instance-1", nil))
+
+	if response.Code != http.StatusOK || body.read != aiPendingUIActionsDrainLimit || !body.closed {
+		t.Fatalf("status = %d, read = %d, closed = %t", response.Code, body.read, body.closed)
 	}
 }
 

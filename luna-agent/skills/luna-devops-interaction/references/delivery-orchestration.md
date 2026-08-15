@@ -157,7 +157,13 @@ GHCR 或其他 OCI Registry 镜像。对每个可独立部署的服务分别评�
    镜像命名、端口、运行配置和发布策略。monorepo 按服务创建多个应用或部署配置，
    不把不同 Dockerfile 强行合并为一个服务。
 6. 创建或复用应用，建立仓库绑定与 Webhook，创建 `sourceType: repository` 的部署
-   配置，然后触发 BuildRun。
+   配置。触发 BuildRun 前，必须用 `listRegistryCredentials` 同时查询本次构建的 `projectId`
+   与 `targetRegistryId`，并确认存在 `usage=push` 或 `push-pull` 的可用凭据；不得复用其他
+   项目空间对同一镜像站的查询结果。没有时停止并引导用户为该项目空间配置推送凭据，不得
+   通过改分支、Dockerfile、构建上下文或镜像名称反复试错。`triggerBuildRun` 或
+   `retryBuildRun` 返回 `build.registry_push_credential_required` 时同样停止调用这两个工具，
+   因为本次 BuildRun 尚未创建；重试前应先回读原 BuildRun 的目标镜像站并按当前 `projectId`
+   重新完成凭据检查。
 7. BuildRun 成功并取得制品 Tag/Digest 后创建 Release。构建成功不等于部署成功。
 
 验收：仓库绑定指向正确账号、仓库和版本；BuildRun 成功并产生预期制品；Release 使用

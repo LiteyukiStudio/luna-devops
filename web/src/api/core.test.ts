@@ -1,5 +1,6 @@
 import type { MFAChallenge } from './types'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import i18next from '@/i18n'
 import { ApiError, registerMFAChallengeHandler, request } from './core'
 
 function jsonResponse(body: unknown, status = 200) {
@@ -185,6 +186,25 @@ describe('api error boundary', () => {
       message: 'The service is temporarily unavailable.',
       requestId: 'req_safe_error',
       status: 500,
+    })
+  })
+
+  it('localizes a stable build precondition instead of showing a generic conflict', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({
+      code: 'build.registry_push_credential_required',
+      error: 'The resource state conflicts with this request.',
+      requestId: 'req_build_credential',
+    }, 409))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const error = await request('/projects/project/build-runs/trigger').catch((requestError: unknown) => requestError)
+
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error).toMatchObject({
+      code: 'build.registry_push_credential_required',
+      message: i18next.t('errors.build.registry_push_credential_required'),
+      requestId: 'req_build_credential',
+      status: 409,
     })
   })
 

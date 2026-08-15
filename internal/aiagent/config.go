@@ -26,15 +26,15 @@ func LoadConfig() Config {
 	}
 }
 
-func (c Config) Client() Client {
+func (c Config) Client() (Client, error) {
 	if !c.Available {
-		return nil
+		return nil, nil
 	}
 	client, err := NewHTTPClient(c.BaseURL, c.ServiceToken, c.ActorSigningKey)
 	if err != nil {
-		return nil
+		return nil, err
 	}
-	return client
+	return client, nil
 }
 
 func parseBool(value string) bool {

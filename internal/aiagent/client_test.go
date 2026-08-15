@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -56,8 +57,17 @@ func TestConfigDefaultsFailClosed(t *testing.T) {
 	t.Setenv("AI_AGENT_BASE_URL", "")
 	t.Setenv("AI_INTERNAL_SECRET", "")
 	config := LoadConfig()
-	if config.Available || config.Client() != nil {
+	client, err := config.Client()
+	if config.Available || client != nil || err != nil {
 		t.Fatal("AI agent must be disabled by default")
+	}
+}
+
+func TestEnabledConfigReportsClientInitializationError(t *testing.T) {
+	config := Config{Available: true, BaseURL: "://invalid", ServiceToken: "service-token", ActorSigningKey: "actor-key"}
+	client, err := config.Client()
+	if client != nil || err == nil || !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("client = %#v, error = %v", client, err)
 	}
 }
 

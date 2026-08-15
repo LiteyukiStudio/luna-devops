@@ -38,7 +38,7 @@ Registries store build output and provide images to runtime clusters. Luna DevOp
 
 Choose whether each credential can pull, push, or both, and limit who can use it. Deleting a registry also deletes its credentials; first verify that builds and releases no longer depend on it.
 
-Automated builds require push access. Deploying existing images requires the cluster to have pull access. Some registries disable repository or tag listing; search may then be unavailable, but you can still enter a full image reference.
+Automated builds require push access. Before starting or retrying a source build, the target registry must have at least one credential visible to the current user or project with **push** or **push-pull** usage. A registry address or pull-only credential cannot receive build output. Deploying existing images requires the cluster to have pull access. Some registries disable repository or tag listing; search may then be unavailable, but you can still enter a full image reference.
 
 Build variables can be set globally, per project, per application, or per deployment target. A more specific value overrides a broader one. Build arguments and plain variables appear in build records and must not contain secrets; use secret variables instead.
 

@@ -542,6 +542,108 @@ describe("provider to tool to subsequent model invocation", () => {
     expect(JSON.stringify(timeline)).toContain("目标项目空间中没有现有 PostgreSQL 应用")
   })
 
+  it.each(["triggerBuildRun", "retryBuildRun"] as const)("returns actionable non-retry guidance when %s lacks a push credential", async (operationId) => {
+    const repository = new MemoryRepository()
+    const conversation = await repository.createConversation("usr_a", "源码构建", undefined, "user")
+    const created = await repository.createTurn("usr_a", {
+      conversationId: conversation.id,
+      input: "从源码构建这个应用",
+      pageContext: {},
+      idempotencyKey: `build-missing-push-credential-${operationId}`,
+      runActorGrantCiphertext: "encrypted-test-grant",
+    })
+    const toolArguments = operationId === "triggerBuildRun"
+      ? {
+          projectId: "prj_test",
+          body: { targetRegistryId: "reg_test", sourceBranch: "main", dockerfilePath: "Dockerfile" },
+        }
+      : { projectId: "prj_test", runId: "build_original" }
+    const catalog = ToolCatalog.load([{
+      operationId,
+      method: "POST",
+      path: operationId === "triggerBuildRun"
+        ? "/api/v1/projects/{projectId}/build-runs/trigger"
+        : "/api/v1/projects/{projectId}/build-runs/{runId}/retry",
+      category: "builds",
+      risk: "write",
+      requiredScopes: ["build:write"],
+      approval: "never",
+      idempotent: false,
+      timeoutMs: 5000,
+      inputSchema: {
+        type: "object",
+        properties: {
+          projectId: { type: "string" },
+          body: { type: "object", additionalProperties: true },
+          runId: { type: "string" },
+        },
+        required: operationId === "triggerBuildRun" ? ["projectId", "body"] : ["projectId", "runId"],
+        additionalProperties: false,
+      },
+    }])
+    const client = new DeterministicLunaApiClient(() => ({
+      status: 409,
+      body: {
+        code: "build.registry_push_credential_required",
+        error: "Registry push credential required",
+      },
+    }))
+    const requests: ModelRequest[] = []
+    let modelStep = 0
+    const provider: ModelProvider = {
+      async *stream(request) {
+        requests.push(request)
+        if (modelStep++ === 0) {
+          yield {
+            type: "completed",
+            usage: { inputTokens: 10, outputTokens: 5 },
+            toolCalls: [{
+              id: "build_action",
+              operationId,
+              arguments: toolArguments,
+            }],
+          }
+          return
+        }
+        yield { type: "message_delta", delta: "目标镜像站缺少可用推送凭据，请先完成凭据配置。" }
+        yield { type: "completed", usage: { inputTokens: 15, outputTokens: 8 } }
+      },
+      async complete() { return { text: "", usage: { inputTokens: 1, outputTokens: 0 }, toolCalls: [] } },
+      capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
+      health: async () => ({ ok: true }),
+    }
+    const tools = new ToolOrchestrator(
+      catalog,
+      client,
+      new ProjectingToolCallStore(new MemoryToolCallStore(), repository),
+      undefined,
+      undefined,
+      async () => "opaque-grant",
+    )
+    const executor = new RunExecutor(
+      repository,
+      new ModelRuntime(provider, catalog.modelTools()),
+      loadConfig({ NODE_ENV: "test", INSTANCE_ID: "build-preflight-worker" }),
+      tools,
+    )
+
+    await executor.runOnce()
+
+    expect((await repository.getRun("usr_a", created.run.id))?.status).toBe("completed")
+    expect(client.calls).toHaveLength(1)
+    expect(client.calls[0]?.operation.operationId).toBe(operationId)
+    const toolMessage = requests[1]?.messages.find(message => message.role === "tool" && message.toolCallId === "build_action")
+    expect(toolMessage?.content).toContain('"errorCode":"build.registry_push_credential_required"')
+    expect(toolMessage?.content).toContain('"retryable":false')
+    expect(toolMessage?.content).toContain('"blocked":true')
+    expect(toolMessage?.content).toContain('"workflowState":"blocked_on_registry_push_credential"')
+    expect(toolMessage?.content).toContain('"requiredPreflightOperationId":"listRegistryCredentials"')
+    expect(toolMessage?.content).toContain("同时传入本次构建的 projectId 与目标 registryId")
+    expect(toolMessage?.content).toContain("不得复用其他项目空间的结果")
+    expect(toolMessage?.content).toContain("不要再次调用 triggerBuildRun 或 retryBuildRun")
+    expect(toolMessage?.content).toContain("不要修改分支、Dockerfile、构建上下文、镜像引用或 Tag")
+  })
+
   it("exposes the full catalog from the first model step and executes the requested tool", async () => {
     const repository = new MemoryRepository()
     const conversation = await repository.createConversation("usr_a", "公网入口", undefined, "user")

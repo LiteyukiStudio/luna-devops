@@ -110,7 +110,15 @@ func NewHandlers(db *gorm.DB) *Handlers {
 	}
 	aiConfig := aiagent.LoadConfig()
 	handlers.aiDeploymentEnabled = aiConfig.Available
-	handlers.aiAgent = aiConfig.Client()
+	var aiClientErr error
+	handlers.aiAgent, aiClientErr = aiConfig.Client()
+	if aiClientErr != nil {
+		telemetry.Logger().Error("AI Agent client initialization failed",
+			"event.name", "ai.agent_client.initialization_failed",
+			"error.type", telemetry.ErrorType(aiClientErr),
+			"error.message", aiClientErr.Error(),
+			"ai.enabled", aiConfig.Available)
+	}
 	handlers.aiTools = aitool.NewService(
 		db,
 		aitool.WithWebPolicyProvider(handlers.aiWebEgressPolicyForUser),

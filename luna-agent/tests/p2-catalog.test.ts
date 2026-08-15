@@ -97,6 +97,82 @@ describe("platform tool catalog", () => {
     expect(selected).toEqual(expect.arrayContaining(operationIds))
   })
 
+  it("requires a usable push credential before triggering a source build", () => {
+    const catalog = ToolCatalog.load([
+      {
+        operationId: "listRegistryCredentials",
+        method: "GET",
+        path: "/api/v1/registries/{registryId}/credentials",
+        category: "registries",
+        risk: "read",
+        requiredScopes: ["registry:read"],
+        approval: "never",
+        idempotent: true,
+        timeoutMs: 30_000,
+        inputSchema: {
+          type: "object",
+          properties: { registryId: { type: "string" }, projectId: { type: "string" } },
+          required: ["registryId"],
+          additionalProperties: false,
+        },
+      },
+      {
+        operationId: "triggerBuildRun",
+        method: "POST",
+        path: "/api/v1/projects/{projectId}/build-runs/trigger",
+        category: "builds",
+        risk: "write",
+        requiredScopes: ["build:write"],
+        approval: "never",
+        idempotent: false,
+        timeoutMs: 30_000,
+        inputSchema: {
+          type: "object",
+          properties: {
+            projectId: { type: "string" },
+            body: { type: "object" },
+          },
+          required: ["projectId", "body"],
+          additionalProperties: false,
+        },
+      },
+      {
+        operationId: "retryBuildRun",
+        method: "POST",
+        path: "/api/v1/projects/{projectId}/build-runs/{runId}/retry",
+        category: "builds",
+        risk: "write",
+        requiredScopes: ["build:write"],
+        approval: "never",
+        idempotent: false,
+        timeoutMs: 30_000,
+        inputSchema: {
+          type: "object",
+          properties: {
+            projectId: { type: "string" },
+            runId: { type: "string" },
+          },
+          required: ["projectId", "runId"],
+          additionalProperties: false,
+        },
+      },
+    ])
+
+    const credentials = catalog.modelTools().find(tool => tool.operationId === "listRegistryCredentials")?.description ?? ""
+    const trigger = catalog.modelTools().find(tool => tool.operationId === "triggerBuildRun")?.description ?? ""
+    const retry = catalog.modelTools().find(tool => tool.operationId === "retryBuildRun")?.description ?? ""
+
+    expect(credentials).toContain("usage 为 push 或 push-pull")
+    expect(credentials).toContain("构建的 projectId 与目标 registryId")
+    expect(credentials).toContain("禁止跨项目复用查询结果")
+    expect(trigger).toContain("相同 projectId 和 targetRegistryId")
+    expect(trigger).toContain("build.registry_push_credential_required")
+    expect(trigger).toContain("停止修改分支、Dockerfile、构建上下文或镜像引用")
+    expect(retry).toContain("retryBuildRun.projectId")
+    expect(retry).toContain("停止重复调用 retryBuildRun")
+    expect(retry).toContain("不要改用 triggerBuildRun")
+  })
+
   it.each([
     "给 Uptime Kuma 配一个公网可访问的地址",
     "为这个服务创建访问入口",

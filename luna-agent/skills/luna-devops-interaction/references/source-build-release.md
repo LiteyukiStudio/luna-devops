@@ -41,7 +41,18 @@
 - 区分构建配置和单次构建运行。
 - 只收集相关输入：仓库版本、构建上下文、Dockerfile、构建参数、目标阶段、输出镜像站或镜像，以及缓存策略。
 - 不得暴露秘密构建参数，应使用平台密钥或变量引用。
-- 触发构建前，如有读取工具，应确认仓库绑定、构建配置和输出镜像站已经就绪。
+- 首次触发或重试构建前都必须调用 `listRegistryCredentials`，同时传入本次构建的
+  `projectId` 与目标 `registryId`。首次触发使用 `triggerBuildRun.targetRegistryId`；重试先用
+  `getBuildRun` 回读原构建的目标镜像站。只有至少一个查询结果的 `usage` 为 `push` 或
+  `push-pull` 才能继续。镜像名称模板可生成、Registry 可读取或 pull 凭据存在，都不能
+  代替这项检查。
+- 凭据可用性包含项目空间语义：即使 `registryId` 相同，也不得把另一个项目空间的查询结果
+  用于当前构建。无可用凭据时不要创建 BuildRun，应明确引导用户为本次构建的项目空间和
+  镜像站创建或绑定推送凭据。
+- `triggerBuildRun` 或 `retryBuildRun` 返回 `build.registry_push_credential_required` 时，
+  表示本次 BuildRun 没有创建成功，且失败是确定性的前置条件缺失。停止再次调用这两个工具，
+  也不要修改分支、Dockerfile、构建上下文、镜像引用或 Tag 等无关参数盲目试错；至多按当前
+  `projectId` 回读一次目标镜像站凭据以说明缺口，然后等待用户完成凭据配置再继续。
 - 选择 `repository_dockerfile` 时确认 Dockerfile 与上下文真实存在；选择平台模板时先
   预览渲染结果，并让用户确认构建命令、运行时和输出。
 - 构建变量区分普通值与 Secret；变量引用最终由平台统一渲染，不把密钥展开进卡片、
