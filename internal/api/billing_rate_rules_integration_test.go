@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -48,11 +49,24 @@ func TestListBillingRateRulesAllowsAuthenticatedUser(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &rules); err != nil {
 		t.Fatalf("decode rate rules: %v", err)
 	}
-	if len(rules) != 9 {
-		t.Fatalf("rate rule count = %d, want 9", len(rules))
+	meters := make([]string, 0, len(rules))
+	for _, rule := range rules {
+		meters = append(meters, rule.Meter)
 	}
-	if rules[0].Meter != "ai.input_tokens_1000" {
-		t.Fatalf("first meter = %q, want sorted meter list", rules[0].Meter)
+	wantMeters := []string{
+		"ai.input_tokens_1000",
+		"ai.output_tokens_1000",
+		"build.cpu_vcpu_minute",
+		"build.memory_gib_minute",
+		"gateway.egress_gib",
+		"gateway.requests_1000",
+		"runtime.cpu_vcpu_hour",
+		"runtime.memory_gib_hour",
+		"storage.gib_day",
+		"storage.transfer_gib",
+	}
+	if !slices.Equal(meters, wantMeters) {
+		t.Fatalf("rate rule meters = %v, want sorted meters %v", meters, wantMeters)
 	}
 }
 
