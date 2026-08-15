@@ -377,7 +377,7 @@ export function AppLayout() {
               <div className="flex min-h-full min-w-0 flex-col gap-group py-0">
                 {pageMeta.backNavigation && <PageBackNavigation {...pageMeta.backNavigation} />}
                 <AnimatePresence mode="wait">
-                  <PageMotion key={pageMotionKey}>
+                  <PageMotion key={pageMotionKey} className="w-full min-w-0 max-w-full">
                     <Outlet />
                   </PageMotion>
                 </AnimatePresence>

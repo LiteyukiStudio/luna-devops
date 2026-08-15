@@ -68,8 +68,8 @@ export function ApplicationDeploymentTargetsList({
   const { t } = useTranslation()
 
   return (
-    <>
-      <div className="hidden md:block">
+    <div className="w-full min-w-0 max-w-full @container/deployment-targets" data-slot="deployment-targets-list">
+      <div className="hidden min-w-0 max-w-full @[68rem]/deployment-targets:block" data-slot="deployment-targets-table">
         <DataList
           columns={[
             { key: 'name', header: t('common.name'), width: 'primary', render: item => <DeploymentTargetSummary applicationId={applicationId} item={item} projectId={projectId} onCopy={onCopy} /> },
@@ -113,7 +113,7 @@ export function ApplicationDeploymentTargetsList({
           rowKey={item => item.target.id}
         />
       </div>
-      <div className="md:hidden">
+      <div className="min-w-0 max-w-full @[68rem]/deployment-targets:hidden" data-slot="deployment-targets-cards">
         {items.length === 0
           ? <EmptyState description={t('deploymentsPage.emptyDeploymentsDescription')} title={t('deploymentsPage.emptyDeployments')} variant="plain" />
           : (
@@ -144,7 +144,7 @@ export function ApplicationDeploymentTargetsList({
               </div>
             )}
       </div>
-    </>
+    </div>
   )
 }
 

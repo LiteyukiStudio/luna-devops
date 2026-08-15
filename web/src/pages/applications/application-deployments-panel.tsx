@@ -635,7 +635,7 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
     onError: error => toast.error(error.message),
   })
   return (
-    <div className="grid gap-4">
+    <div className="grid min-w-0 max-w-full gap-4">
       <ApplicationDeploymentTargetsList
         applicationId={applicationId}
         createReleasePending={createRelease.isPending}

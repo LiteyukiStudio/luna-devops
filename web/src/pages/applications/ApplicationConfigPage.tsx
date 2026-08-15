@@ -19,6 +19,7 @@ import { ContentTabs } from '@/components/common/content-tabs'
 import { ErrorState } from '@/components/common/error-state'
 import { ToolViewportSkeleton } from '@/components/common/loading-states'
 import { MotionItem, MotionList } from '@/components/common/motion'
+import { PageShell } from '@/components/common/page-shell'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { TabsContent } from '@/components/ui/tabs'
@@ -169,7 +170,7 @@ export function ApplicationConfigPage() {
     return <ErrorState title={t('apps.loadFailedTitle')} description={t('apps.appLoadFailedDescription')} />
 
   return (
-    <div className="grid gap-4">
+    <PageShell spacing="compact" width="full">
       <ContentTabs
         tabs={[
           { label: t('apps.overview'), value: 'overview' },
@@ -181,7 +182,7 @@ export function ApplicationConfigPage() {
           { label: t('apps.configTab'), value: 'settings' },
         ]}
         tools={(
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
             {activeTab === 'deployments' && (
               <>
                 <Button variant="outline" onClick={() => deploymentsPanelRef.current?.openTargetDialog()}>
@@ -338,7 +339,7 @@ export function ApplicationConfigPage() {
           </Suspense>
         </TabsContent>
       </ContentTabs>
-    </div>
+    </PageShell>
   )
 }
 
