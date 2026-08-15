@@ -17,7 +17,7 @@ import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { WORKFLOW_STATUS_REFETCH_INTERVAL_MS } from '@/lib/polling'
 import { defaultBuildCpuRequest, defaultBuildMemoryRequest, defaultBuildTimeoutSeconds } from './application-build-defaults'
 import { deploymentReleaseKey, deploymentTargetCanRelease, registryInputPrefix } from './application-config-utils'
-import { DeferredCreateReleaseDialog, DeferredDeploymentTargetDialog, DeferredReleaseLogsDialog, DeferredRepositoryBindingDialog, DeferredRuntimeConfigSetDialog, DeferredWebConsoleDialog } from './application-deployment-dialogs'
+import { DeferredCreateReleaseDialog, DeferredDeploymentBundleImportDialog, DeferredDeploymentTargetDialog, DeferredReleaseLogsDialog, DeferredRepositoryBindingDialog, DeferredRuntimeConfigSetDialog, DeferredWebConsoleDialog } from './application-deployment-dialogs'
 import { buildDeploymentRuntimeStatus, buildInternalServiceEndpoint } from './application-deployment-runtime-utils'
 import { ApplicationDeploymentTargetsList } from './application-deployment-targets-list'
 import { applyDockerfileBuildDefaults, deploymentTargetRuntimeChanged, normalizeBoolean, normalizeDeploymentTargetPayload, normalizeRuntimeConfigPayload, normalizeRuntimeConfigRefs, redeployReleasePayload, releaseDefaults, repositoryBindingItems, runtimeConfigDefaults, runtimeConfigLiveSetIds, runtimeConfigRefIds } from './application-deployments-panel-utils'
@@ -25,6 +25,7 @@ import { useDeploymentTargetForm } from './use-deployment-target-form'
 import { effectiveWebConsoleEnabled } from './web-console-policy'
 
 export interface DeploymentsPanelHandle {
+  openImportDialog: () => void
   openReleaseDialog: (environmentId?: string, deploymentTargetId?: string) => void
   openTargetDialog: () => void
 }
@@ -82,6 +83,7 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
   const queryClient = useQueryClient()
   const billingDisplay = useBillingDisplay(i18n.language)
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [bundleImportOpen, setBundleImportOpen] = useState(false)
   const [logRelease, setLogRelease] = useState<Release | null>(null)
   const [logView, setLogView] = useState<'deployment' | 'runtime'>('deployment')
   const [consoleRelease, setConsoleRelease] = useState<Release | null>(null)
@@ -467,7 +469,7 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
     })
     setDialogOpen(true)
   }
-  useImperativeHandle(ref, () => ({ openReleaseDialog, openTargetDialog: () => openTargetDialog() }))
+  useImperativeHandle(ref, () => ({ openImportDialog: () => setBundleImportOpen(true), openReleaseDialog, openTargetDialog: () => openTargetDialog() }))
   useEffect(() => {
     if (!selectedBuildRun)
       return
@@ -655,6 +657,13 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
         onRestart={target => restartTarget.mutate(target)}
         onRollback={releaseId => rollbackRelease.mutate(releaseId)}
         onViewLogs={setLogRelease}
+      />
+      <DeferredDeploymentBundleImportDialog
+        applicationId={applicationId}
+        open={bundleImportOpen}
+        projectId={projectId}
+        onImported={() => queryClient.invalidateQueries({ queryKey: ['deployment-targets', projectId, applicationId] })}
+        onOpenChange={setBundleImportOpen}
       />
       <DeferredCreateReleaseDialog
         applicationId={applicationId}

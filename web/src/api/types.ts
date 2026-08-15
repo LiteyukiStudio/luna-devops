@@ -1246,6 +1246,89 @@ export type DeploymentTargetPayload = Omit<DeploymentTarget, 'id' | 'projectId' 
   dataVolumes: DeploymentDataVolumeInput[]
 }
 
+export interface DeploymentBundleReferenceDescriptor {
+  name?: string
+  type?: string
+  scope?: string
+  owner?: string
+  repository?: string
+  namespace?: string
+  mode?: string
+  phase?: string
+  runOrder?: number
+  logicalName?: string
+  mountPath?: string
+  devicePath?: string
+  readOnly?: boolean
+  accessMode?: string
+  volumeMode?: string
+  storageClassName?: string
+  clusterName?: string
+  clusterType?: string
+}
+
+export interface DeploymentBundleReference {
+  key: string
+  kind: 'repositoryBinding' | 'runtimeCluster' | 'artifactRegistry' | 'buildVariableSet' | 'runtimeConfigSet' | 'hookConfig' | 'projectVolume'
+  required: boolean
+  usage: string
+  source: DeploymentBundleReferenceDescriptor
+}
+
+export interface DeploymentBundleSecretRequirement {
+  key: string
+  target: 'build' | 'runtimeEnv' | 'runtimeFile'
+  name?: string
+  path?: string
+}
+
+export interface DeploymentTargetBundle {
+  schemaVersion: 1
+  kind: 'luna-devops.deployment-target'
+  exportedAt: string
+  configuration: DeploymentTargetPayload
+  references: DeploymentBundleReference[]
+  secretRequirements: DeploymentBundleSecretRequirement[]
+  omissions: string[]
+}
+
+export interface DeploymentBundleReferenceCandidate {
+  id: string
+  name: string
+  description?: string
+  matched: boolean
+  compatible: boolean
+}
+
+export interface DeploymentBundleReferenceResolution extends DeploymentBundleReference {
+  status: 'resolved' | 'missing' | 'ambiguous' | 'forbidden' | 'incompatible'
+  resolvedId?: string
+  candidates: DeploymentBundleReferenceCandidate[]
+  candidateCount: number
+  truncated: boolean
+  code?: string
+}
+
+export interface DeploymentTargetBundlePreviewRequest {
+  bundle: DeploymentTargetBundle
+  mappings?: Record<string, string>
+  overrides?: { name?: string, stage?: string, namespace?: string | null }
+}
+
+export interface DeploymentTargetBundleImportRequest extends DeploymentTargetBundlePreviewRequest {
+  digest: string
+  secretValues?: Record<string, string>
+}
+
+export interface DeploymentTargetBundlePreview {
+  digest: string
+  status: 'ready' | 'requires_mapping' | 'invalid'
+  summary: { name: string, stage: string, namespace: string, sourceType: 'repository' | 'image' }
+  references: DeploymentBundleReferenceResolution[]
+  secretRequirements: DeploymentBundleSecretRequirement[]
+  warnings: string[]
+}
+
 export type ApplicationPayload = Pick<Application, 'name' | 'identifier' | 'icon'>
 
 export interface BuildJob {

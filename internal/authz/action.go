@@ -443,11 +443,11 @@ func isProjectMemberPath(path string) bool {
 }
 
 func isProjectApplicationPath(path string) bool {
-	return strings.Contains(path, "/applications") && !strings.Contains(path, "/deployment-targets")
+	return strings.Contains(path, "/applications") && !isDeploymentTargetPath(path)
 }
 
 func isDeploymentTargetPath(path string) bool {
-	return strings.Contains(path, "/deployment-targets")
+	return strings.Contains(path, "/deployment-targets") || strings.Contains(path, "/deployment-target-imports")
 }
 
 func isProjectBuildPath(path string) bool {

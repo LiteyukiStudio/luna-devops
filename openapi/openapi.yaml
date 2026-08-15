@@ -2890,6 +2890,90 @@ paths:
         "204":
           description: Deployment target deletion accepted and queued for asynchronous runtime cleanup.
 
+  /api/v1/projects/{projectId}/applications/{applicationId}/deployment-targets/{targetId}/export:
+    get:
+      operationId: exportDeploymentTargetBundle
+      tags: [Deployments]
+      summary: Export one deployment target as a portable JSON bundle
+      description: Exports desired deployment configuration and logical dependency descriptors. Resource IDs, credentials, secret values, runtime state, and workflow history are omitted. Importing the bundle never starts a build or release.
+      x-luna-cli:
+        classification: protocol-adapter
+        hidden: true
+        agentAllowed: false
+        exclusionReason: Local JSON file download is handled by the Web console deployment bundle adapter.
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/ApplicationId"
+        - $ref: "#/components/parameters/TargetId"
+      responses:
+        "200":
+          description: "Portable deployment target JSON bundle. The response uses Cache-Control: no-store and an attachment filename."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeploymentTargetBundle" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/projects/{projectId}/applications/{applicationId}/deployment-target-imports/preview:
+    post:
+      operationId: previewDeploymentTargetBundleImport
+      tags: [Deployments]
+      summary: Validate a deployment target bundle and resolve destination references
+      description: Stateless preview. The destination project and application are authoritative. Missing, ambiguous, forbidden, or incompatible references must be mapped explicitly before commit. No database record, Secret, build, release, or asynchronous task is created.
+      x-luna-cli:
+        classification: protocol-adapter
+        hidden: true
+        agentAllowed: false
+        exclusionReason: Local JSON selection and interactive reference mapping are handled by the Web console deployment bundle adapter.
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/ApplicationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DeploymentTargetBundlePreviewRequest" }
+      responses:
+        "200":
+          description: Destination-specific validation and reference resolution result.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeploymentTargetBundlePreview" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "413": { description: Bundle exceeds 1 MiB, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+
+  /api/v1/projects/{projectId}/applications/{applicationId}/deployment-target-imports:
+    post:
+      operationId: importDeploymentTargetBundle
+      tags: [Deployments]
+      summary: Create a deployment target from a validated portable bundle
+      description: Revalidates the bundle digest, destination mappings, permissions, billing gate, stage uniqueness, dependency visibility, and Secret requirements. Creates one new deployment target transactionally and does not start a build, release, or deployment.
+      x-luna-cli:
+        classification: protocol-adapter
+        hidden: true
+        agentAllowed: false
+        exclusionReason: Local JSON selection, interactive mappings, and Secret re-entry are handled by the Web console deployment bundle adapter.
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/ApplicationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DeploymentTargetBundleImportRequest" }
+      responses:
+        "201":
+          description: Newly imported deployment target configuration. No build or release was started.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeploymentTarget" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "413": { description: Bundle exceeds 1 MiB, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+
   /api/v1/projects/{projectId}/releases/{releaseId}/terminal/authorize:
     post:
       operationId: authorizeReleaseRuntimeTerminal
@@ -9937,6 +10021,162 @@ components:
           type: [boolean, "null"]
           description: Nullable target restriction. Effective policy is `project.webConsoleEnabled && webConsoleEnabled != false`; a true value is treated as inheritance.
       required: [id, projectId, applicationId, stage, kubernetesName, dataVolumes, webConsoleEnabled]
+    DeploymentTargetBundle:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, kind, exportedAt, configuration, references, secretRequirements, omissions]
+      properties:
+        schemaVersion: { type: integer, const: 1 }
+        kind: { type: string, const: luna-devops.deployment-target }
+        exportedAt: { type: string, format: date-time }
+        configuration:
+          allOf:
+            - $ref: "#/components/schemas/DeploymentTargetInput"
+          description: Portable desired configuration. Source IDs, resource IDs, secret fields, enabled, and runtime status fields are forbidden and rejected by the importer.
+        references:
+          type: array
+          maxItems: 100
+          items: { $ref: "#/components/schemas/DeploymentBundleReference" }
+        secretRequirements:
+          type: array
+          maxItems: 100
+          items: { $ref: "#/components/schemas/DeploymentBundleSecretRequirement" }
+        omissions:
+          type: array
+          items: { type: string }
+          description: Stable categories intentionally omitted from the portable bundle.
+    DeploymentBundleReferenceDescriptor:
+      type: object
+      additionalProperties: false
+      properties:
+        name: { type: string }
+        type: { type: string }
+        scope: { type: string }
+        owner: { type: string }
+        repository: { type: string }
+        namespace: { type: string }
+        mode: { type: string }
+        phase: { type: string }
+        runOrder: { type: integer }
+        logicalName: { type: string }
+        mountPath: { type: string }
+        devicePath: { type: string }
+        readOnly: { type: boolean }
+        accessMode: { type: string }
+        volumeMode: { type: string }
+        storageClassName: { type: string }
+        clusterName: { type: string }
+        clusterType: { type: string }
+    DeploymentBundleReference:
+      type: object
+      additionalProperties: false
+      required: [key, kind, required, usage, source]
+      properties:
+        key: { type: string, minLength: 1, maxLength: 128 }
+        kind: { type: string, enum: [repositoryBinding, runtimeCluster, artifactRegistry, buildVariableSet, runtimeConfigSet, hookConfig, projectVolume] }
+        required: { type: boolean }
+        usage: { type: string }
+        source: { $ref: "#/components/schemas/DeploymentBundleReferenceDescriptor" }
+    DeploymentBundleSecretRequirement:
+      type: object
+      additionalProperties: false
+      required: [key, target]
+      properties:
+        key: { type: string, minLength: 1, maxLength: 128 }
+        target: { type: string, enum: [build, runtimeEnv, runtimeFile] }
+        name: { type: string }
+        path: { type: string }
+    DeploymentTargetBundleOverrides:
+      type: object
+      additionalProperties: false
+      properties:
+        name: { type: string, maxLength: 120 }
+        stage: { type: string, pattern: '^(dev|test|staging|prod)$' }
+        namespace: { type: [string, "null"] }
+    DeploymentTargetBundleImportRequest:
+      type: object
+      additionalProperties: false
+      required: [bundle, digest]
+      properties:
+        bundle: { $ref: "#/components/schemas/DeploymentTargetBundle" }
+        digest:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+          description: Digest returned by preview. Commit rejects a changed bundle.
+        mappings:
+          type: object
+          additionalProperties: { type: string }
+          description: Maps each portable reference key to a destination resource ID.
+        overrides: { $ref: "#/components/schemas/DeploymentTargetBundleOverrides" }
+        secretValues:
+          type: object
+          writeOnly: true
+          additionalProperties: { type: string, maxLength: 8192 }
+          description: Plaintext values re-entered for each secretRequirements key. Values are encrypted and stored only during the commit transaction.
+    DeploymentTargetBundlePreviewRequest:
+      type: object
+      additionalProperties: false
+      required: [bundle]
+      properties:
+        bundle: { $ref: "#/components/schemas/DeploymentTargetBundle" }
+        mappings:
+          type: object
+          additionalProperties: { type: string }
+          description: Maps each portable reference key to a destination resource ID.
+        overrides: { $ref: "#/components/schemas/DeploymentTargetBundleOverrides" }
+    DeploymentBundleReferenceCandidate:
+      type: object
+      additionalProperties: false
+      required: [id, name, matched, compatible]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        matched: { type: boolean }
+        compatible: { type: boolean }
+    DeploymentBundleReferenceResolution:
+      type: object
+      additionalProperties: false
+      required: [key, kind, required, usage, source, status, candidates, candidateCount, truncated]
+      properties:
+        key: { type: string, minLength: 1, maxLength: 128 }
+        kind: { type: string, enum: [repositoryBinding, runtimeCluster, artifactRegistry, buildVariableSet, runtimeConfigSet, hookConfig, projectVolume] }
+        required: { type: boolean }
+        usage: { type: string }
+        source: { $ref: "#/components/schemas/DeploymentBundleReferenceDescriptor" }
+        status: { type: string, enum: [resolved, missing, ambiguous, forbidden, incompatible] }
+        resolvedId: { type: string }
+        candidates:
+          type: array
+          items: { $ref: "#/components/schemas/DeploymentBundleReferenceCandidate" }
+        candidateCount: { type: integer, minimum: 0 }
+        truncated: { type: boolean }
+        code: { type: string }
+    DeploymentTargetBundlePreview:
+      type: object
+      additionalProperties: false
+      required: [digest, status, summary, references, secretRequirements, warnings]
+      properties:
+        digest: { type: string, pattern: '^[a-f0-9]{64}$' }
+        status: { type: string, enum: [ready, requires_mapping, invalid] }
+        summary:
+          type: object
+          additionalProperties: false
+          required: [name, stage, namespace, sourceType]
+          properties:
+            name: { type: string }
+            stage: { type: string }
+            namespace: { type: string }
+            sourceType: { type: string, enum: [repository, image] }
+        references:
+          type: array
+          items: { $ref: "#/components/schemas/DeploymentBundleReferenceResolution" }
+        secretRequirements:
+          type: array
+          items: { $ref: "#/components/schemas/DeploymentBundleSecretRequirement" }
+        warnings:
+          type: array
+          items: { type: string }
     BuildTemplateParameter:
       type: object
       properties:

@@ -203,6 +203,8 @@ func TestRequiredAccessTokenScopeUsesFineGrainedProjectRoutes(t *testing.T) {
 		{"/api/v1/projects/:projectId/members", "POST", string(ActionProjectManage)},
 		{"/api/v1/projects/:projectId/applications", "POST", string(ActionApplicationCreate)},
 		{"/api/v1/projects/:projectId/applications/:applicationId/deployment-targets/:targetId/restart", "POST", string(ActionDeploymentRestart)},
+		{"/api/v1/projects/:projectId/applications/:applicationId/deployment-target-imports/preview", "POST", string(ActionDeploymentUpdate)},
+		{"/api/v1/projects/:projectId/applications/:applicationId/deployment-target-imports", "POST", string(ActionDeploymentUpdate)},
 		{"/api/v1/projects/:projectId/build-runs/trigger", "POST", string(ActionBuildTrigger)},
 		{"/api/v1/projects/:projectId/build-runs/:runId/cancel", "POST", string(ActionBuildCancel)},
 		{"/api/v1/projects/:projectId/releases", "POST", string(ActionDeploymentRelease)},

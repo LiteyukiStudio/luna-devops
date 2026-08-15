@@ -35,6 +35,14 @@ const deploymentsPage = {
   deploymentTargetsDescription: 'Configure runtime specs, build specs, and auto-release policy.',
   createDeploymentTarget: 'New deploy config',
   editDeploymentTarget: 'Edit deploy config',
+  bundleExport: {
+    action: 'Export JSON',
+    exported: 'Deploy config JSON downloaded',
+    failed: 'Failed to export deploy config',
+  },
+  bundleImport: {
+    open: 'Import JSON',
+  },
   deploymentTargetDialogDescription: 'Configure runtime, build, and release policy for one deploy config.',
   progressiveBasicTitle: 'Basic deployment',
   progressiveBasicDescription: 'Confirm the deploy config name, stage, source, target registry, and service port first. Default specs can be saved now and adjusted later.',

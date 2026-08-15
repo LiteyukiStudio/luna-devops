@@ -14,14 +14,14 @@ import (
 var errDeploymentStageExists = errors.New("deployment stage already exists")
 
 func (h *Handlers) createDeploymentTarget(target model.DeploymentTarget, dataVolumes []deploymentTargetDataVolumeInput, hookInputs []deploymentTargetHookBindingInput, buildEnvironment *model.BuildEnvironmentConfig, ctx context.Context) (deploymentVolumeMountChanges, error) {
-	return h.persistDeploymentTarget(target, dataVolumes, hookInputs, buildEnvironment, true, ctx)
+	return h.persistDeploymentTarget(target, dataVolumes, hookInputs, buildEnvironment, nil, true, ctx)
 }
 
 func (h *Handlers) saveDeploymentTarget(target model.DeploymentTarget, dataVolumes []deploymentTargetDataVolumeInput, hookInputs []deploymentTargetHookBindingInput, buildEnvironment *model.BuildEnvironmentConfig, ctx context.Context) (deploymentVolumeMountChanges, error) {
-	return h.persistDeploymentTarget(target, dataVolumes, hookInputs, buildEnvironment, false, ctx)
+	return h.persistDeploymentTarget(target, dataVolumes, hookInputs, buildEnvironment, nil, false, ctx)
 }
 
-func (h *Handlers) persistDeploymentTarget(target model.DeploymentTarget, dataVolumes []deploymentTargetDataVolumeInput, hookInputs []deploymentTargetHookBindingInput, buildEnvironment *model.BuildEnvironmentConfig, create bool, ctx context.Context) (deploymentVolumeMountChanges, error) {
+func (h *Handlers) persistDeploymentTarget(target model.DeploymentTarget, dataVolumes []deploymentTargetDataVolumeInput, hookInputs []deploymentTargetHookBindingInput, buildEnvironment *model.BuildEnvironmentConfig, secretValues []model.SecretValue, create bool, ctx context.Context) (deploymentVolumeMountChanges, error) {
 	changes := deploymentVolumeMountChanges{}
 	err := h.dbWithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if create {
@@ -48,7 +48,14 @@ func (h *Handlers) persistDeploymentTarget(target model.DeploymentTarget, dataVo
 			return err
 		}
 		if buildEnvironment != nil {
-			return tx.Save(buildEnvironment).Error
+			if err := tx.Save(buildEnvironment).Error; err != nil {
+				return err
+			}
+		}
+		if len(secretValues) > 0 {
+			if err := tx.Create(&secretValues).Error; err != nil {
+				return err
+			}
 		}
 		return nil
 	})

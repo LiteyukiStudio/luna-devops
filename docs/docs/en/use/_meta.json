@@ -21,6 +21,11 @@
   },
   {
     "type": "file",
+    "name": "deployment-config-transfer",
+    "label": "Deploy Config Import and Export"
+  },
+  {
+    "type": "file",
     "name": "project-volumes",
     "label": "Project Volumes"
   },

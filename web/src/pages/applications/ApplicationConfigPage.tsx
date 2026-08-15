@@ -6,7 +6,7 @@ import type { RepositoryBindingsPageHandle } from '@/pages/repositories/Reposito
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import i18next from 'i18next'
-import { Globe2, Package, Play, Plus, Save } from 'lucide-react'
+import { Globe2, Package, Play, Plus, Save, Upload } from 'lucide-react'
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -185,6 +185,10 @@ export function ApplicationConfigPage() {
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
             {activeTab === 'deployments' && (
               <>
+                <Button variant="outline" onClick={() => deploymentsPanelRef.current?.openImportDialog()}>
+                  <Upload size={16} />
+                  {t('deploymentsPage.bundleImport.open')}
+                </Button>
                 <Button variant="outline" onClick={() => deploymentsPanelRef.current?.openTargetDialog()}>
                   <Plus size={16} />
                   {t('deploymentsPage.createDeploymentTarget')}

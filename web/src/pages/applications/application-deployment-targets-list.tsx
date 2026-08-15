@@ -1,8 +1,11 @@
 import type { ReactNode } from 'react'
 import type { DeploymentRuntimeStatus, InternalServiceEndpointValue } from './application-deployment-runtime-utils'
 import type { BuildRun, DeploymentTarget, Release } from '@/api'
-import { Eye, MoreHorizontal, Package, Pencil, RefreshCw, RotateCcw, Terminal, Trash2 } from 'lucide-react'
+import { Download, Eye, MoreHorizontal, Package, Pencil, RefreshCw, RotateCcw, Terminal, Trash2 } from 'lucide-react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
+import { api } from '@/api'
 import { CopyableHoverText } from '@/components/common/copyable-hover-text'
 import { DataList } from '@/components/common/data-list'
 import { DeploymentReplicaBadge } from '@/components/common/deployment-replica-badge'
@@ -66,6 +69,30 @@ export function ApplicationDeploymentTargetsList({
   rollbackPending: boolean
 }) {
   const { t } = useTranslation()
+  const [exportPendingId, setExportPendingId] = useState('')
+
+  const exportTarget = async (target: DeploymentTarget) => {
+    setExportPendingId(target.id)
+    try {
+      const bundle = await api.exportDeploymentTargetBundle(projectId, applicationId, target.id)
+      const url = URL.createObjectURL(new Blob([`${JSON.stringify(bundle, null, 2)}\n`], { type: 'application/json;charset=utf-8' }))
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `luna-deployment-${deploymentBundleFilenamePart(target.stage)}.json`
+      link.hidden = true
+      document.body.append(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+      toast.success(t('deploymentsPage.bundleExport.exported'))
+    }
+    catch (error) {
+      toast.error(error instanceof Error ? error.message : t('deploymentsPage.bundleExport.failed'))
+    }
+    finally {
+      setExportPendingId('')
+    }
+  }
 
   return (
     <div className="w-full min-w-0 max-w-full @container/deployment-targets" data-slot="deployment-targets-list">
@@ -92,10 +119,12 @@ export function ApplicationDeploymentTargetsList({
                   deletePending={deletePending}
                   deployableBuildRuns={deployableBuildRuns}
                   item={item}
+                  exportPending={exportPendingId === item.target.id}
                   pullLatestPending={pullLatestPending}
                   restartPending={restartPending}
                   rollbackPending={rollbackPending}
                   onDeleteTarget={onDeleteTarget}
+                  onExportTarget={exportTarget}
                   onOpenConsole={onOpenConsole}
                   onOpenReleaseDialog={onOpenReleaseDialog}
                   onOpenTargetDialog={onOpenTargetDialog}
@@ -126,12 +155,14 @@ export function ApplicationDeploymentTargetsList({
                     deletePending={deletePending}
                     deployableBuildRuns={deployableBuildRuns}
                     item={item}
+                    exportPending={exportPendingId === item.target.id}
                     projectId={projectId}
                     pullLatestPending={pullLatestPending}
                     restartPending={restartPending}
                     rollbackPending={rollbackPending}
                     onCopy={onCopy}
                     onDeleteTarget={onDeleteTarget}
+                    onExportTarget={exportTarget}
                     onOpenConsole={onOpenConsole}
                     onOpenReleaseDialog={onOpenReleaseDialog}
                     onOpenTargetDialog={onOpenTargetDialog}
@@ -153,7 +184,9 @@ function DeploymentTargetActions({
   deletePending,
   deployableBuildRuns,
   item,
+  exportPending,
   onDeleteTarget,
+  onExportTarget,
   onOpenConsole,
   onOpenReleaseDialog,
   onOpenTargetDialog,
@@ -169,7 +202,9 @@ function DeploymentTargetActions({
   deletePending: boolean
   deployableBuildRuns: BuildRun[]
   item: DeploymentTargetRow
+  exportPending: boolean
   onDeleteTarget: (target: DeploymentTarget) => void
+  onExportTarget: (target: DeploymentTarget) => void
   onOpenConsole: (release: Release) => void
   onOpenReleaseDialog: (environmentId: string, deploymentTargetId: string) => void
   onOpenTargetDialog: (target: DeploymentTarget) => void
@@ -199,6 +234,10 @@ function DeploymentTargetActions({
           <DropdownMenuItem disabled={deleting} onSelect={() => onOpenTargetDialog(item.target)}>
             <Pencil className="size-4" />
             {t('common.edit')}
+          </DropdownMenuItem>
+          <DropdownMenuItem disabled={exportPending} onSelect={() => onExportTarget(item.target)}>
+            <Download className="size-4" />
+            {t('deploymentsPage.bundleExport.action')}
           </DropdownMenuItem>
           {item.release && (
             <DropdownMenuItem onSelect={() => item.release && onViewLogs(item.release)}>
@@ -311,8 +350,10 @@ function MobileDeploymentTargetCard({
   deletePending,
   deployableBuildRuns,
   item,
+  exportPending,
   onCopy,
   onDeleteTarget,
+  onExportTarget,
   onOpenConsole,
   onOpenReleaseDialog,
   onOpenTargetDialog,
@@ -330,8 +371,10 @@ function MobileDeploymentTargetCard({
   deletePending: boolean
   deployableBuildRuns: BuildRun[]
   item: DeploymentTargetRow
+  exportPending: boolean
   onCopy: (value?: string) => void
   onDeleteTarget: (target: DeploymentTarget) => void
+  onExportTarget: (target: DeploymentTarget) => void
   onOpenConsole: (release: Release) => void
   onOpenReleaseDialog: (environmentId: string, deploymentTargetId: string) => void
   onOpenTargetDialog: (target: DeploymentTarget) => void
@@ -362,10 +405,12 @@ function MobileDeploymentTargetCard({
           deletePending={deletePending}
           deployableBuildRuns={deployableBuildRuns}
           item={item}
+          exportPending={exportPending}
           pullLatestPending={pullLatestPending}
           restartPending={restartPending}
           rollbackPending={rollbackPending}
           onDeleteTarget={onDeleteTarget}
+          onExportTarget={onExportTarget}
           onOpenConsole={onOpenConsole}
           onOpenReleaseDialog={onOpenReleaseDialog}
           onOpenTargetDialog={onOpenTargetDialog}
@@ -396,6 +441,10 @@ function MobileDeploymentTargetCard({
       </DeploymentTargetDetails>
     </article>
   )
+}
+
+function deploymentBundleFilenamePart(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9_-]+/g, '') || 'deployment'
 }
 
 function DeploymentTargetDetails({

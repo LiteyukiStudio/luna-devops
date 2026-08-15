@@ -35,6 +35,14 @@ const deploymentsPage = {
   deploymentTargetsDescription: '配置应用运行规格、构建规格和自动发布策略。',
   createDeploymentTarget: '新增部署配置',
   editDeploymentTarget: '编辑部署配置',
+  bundleExport: {
+    action: '导出 JSON',
+    exported: '部署配置 JSON 已下载',
+    failed: '导出部署配置失败',
+  },
+  bundleImport: {
+    open: '导入 JSON',
+  },
   deploymentTargetDialogDescription: '配置一个部署配置的运行、构建和发布策略。',
   progressiveBasicTitle: '基础部署',
   progressiveBasicDescription: '先确认部署配置名称、阶段、来源、目标镜像站和服务端口，默认规格可以直接保存后再调整。',

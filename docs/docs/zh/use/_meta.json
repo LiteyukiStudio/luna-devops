@@ -21,6 +21,11 @@
   },
   {
     "type": "file",
+    "name": "deployment-config-transfer",
+    "label": "部署配置导入与导出"
+  },
+  {
+    "type": "file",
     "name": "project-volumes",
     "label": "项目数据卷"
   },
