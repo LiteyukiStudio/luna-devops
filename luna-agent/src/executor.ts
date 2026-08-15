@@ -937,10 +937,10 @@ export function platformToolFailureGuidance(operationId: string, errorCode?: str
   }
 }
 
-export function serializeToolResultPayload(result: unknown): string {
+export function serializeToolResultPayload(result: unknown, budget = toolResultPayloadBudget): string {
   const full = JSON.stringify(result)
-  if (Buffer.byteLength(full, "utf8") <= toolResultPayloadBudget) return full
-  return JSON.stringify(shrinkToolResultValue(result, toolResultPayloadBudget))
+  if (Buffer.byteLength(full, "utf8") <= budget) return full
+  return JSON.stringify(shrinkToolResultValue(result, budget))
 }
 
 function byteSize(value: unknown): number {
