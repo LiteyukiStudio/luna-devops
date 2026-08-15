@@ -132,8 +132,8 @@ Secret 传递方式，不把示例密码带入配置。
 直接索引的 `resource-resolution.md` 自动采用唯一有效资源；只有仍存在真实选择时才让用户
 决定，不让用户手填不透明 ID。
 
-需要一个服务的参数时使用 `resource_configuration`；跨多个服务且字段有依赖时使用
-`wizard`。交互卡片应显示来源路径、默认值依据和可编辑推断。Secret 使用平台受控字段，
+优先使用 `resource_configuration` 业务模板；跨多个服务且字段有依赖时，直接使用通用
+`form` 的多个 section 与 `visibleWhen`。交互卡片应显示来源路径、默认值依据和可编辑推断。Secret 使用平台受控字段，
 不得进入 `send_message` 模板、普通参数摘要或最终回复。
 
 提交前使用 `change_review` 核对服务拆分、目标、构建路径、运行端口、依赖的新建/复用

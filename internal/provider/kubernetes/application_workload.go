@@ -144,12 +144,16 @@ func applicationPodTemplate(spec ApplicationResourcesSpec, objectLabels map[stri
 			container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{Name: "secret-files", MountPath: file.Path, SubPath: file.Key, ReadOnly: true})
 		}
 	}
-	if spec.DataRetentionEnabled {
-		for _, dataVolume := range persistentDataVolumes(spec) {
-			volumeName := persistentDataVolumeName(dataVolume)
-			container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{Name: volumeName, MountPath: dataVolume.MountPath})
-			volumes = append(volumes, applicationDataVolumeSource(spec, dataVolume, volumeName))
+	for _, dataVolume := range persistentDataVolumes(spec) {
+		volumeName := persistentDataVolumeName(dataVolume)
+		if strings.TrimSpace(dataVolume.DevicePath) != "" {
+			container.VolumeDevices = append(container.VolumeDevices, corev1.VolumeDevice{Name: volumeName, DevicePath: dataVolume.DevicePath})
+		} else {
+			container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{
+				Name: volumeName, MountPath: dataVolume.MountPath, ReadOnly: dataVolume.ReadOnly,
+			})
 		}
+		volumes = append(volumes, applicationDataVolumeSource(dataVolume, volumeName))
 	}
 	availableVolumeNames := map[string]bool{}
 	for _, volume := range volumes {

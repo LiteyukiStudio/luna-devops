@@ -21,6 +21,7 @@ paths:
   /internal/v1/capabilities:
     get:
       operationId: getInternalAICapabilities
+      description: Returns Agent feature, limit, and Provider metadata. Liveness and readiness are reported only by the dedicated health endpoints.
       responses: { "200": { description: Capability result, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }, "401": { $ref: "#/components/responses/AgentError" } }
   /internal/v1/conversations:
     get:

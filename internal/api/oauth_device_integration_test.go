@@ -72,7 +72,7 @@ func TestOAuthDeviceAuthorizationMFAAndRevocationFlow(t *testing.T) {
 	router := NewRouter(db)
 	start := performFormRequest(router, http.MethodPost, "/api/v1/oauth/device/authorization", url.Values{
 		"client_id": {lunaCLIClientID},
-		"scope":     {"user:read deployment:data_export"},
+		"scope":     {"user:read volume:export"},
 	})
 	if start.Code != http.StatusOK {
 		t.Fatalf("start device authorization = %d %s", start.Code, start.Body.String())
@@ -98,7 +98,7 @@ func TestOAuthDeviceAuthorizationMFAAndRevocationFlow(t *testing.T) {
 	if pendingAuthorization.GrantID != nil || pendingAuthorization.UserID != nil {
 		t.Fatalf("pending authorization unexpectedly has an owner or grant: %#v", pendingAuthorization)
 	}
-	if pendingAuthorization.Scope != "user:read,deployment:data_export" {
+	if pendingAuthorization.Scope != "user:read,volume:export" {
 		t.Fatalf("pending authorization scope = %q", pendingAuthorization.Scope)
 	}
 

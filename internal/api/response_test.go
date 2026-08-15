@@ -74,7 +74,7 @@ func TestWriteErrorKeyWithDetailsKeepsStableMachineReadableContext(t *testing.T)
 		http.StatusForbidden,
 		"en-US",
 		"auth.token.scope_insufficient",
-		gin.H{"requiredScope": "deployment:data_export"},
+		gin.H{"requiredScope": "volume:export"},
 	)
 
 	var response struct {
@@ -89,7 +89,7 @@ func TestWriteErrorKeyWithDetailsKeepsStableMachineReadableContext(t *testing.T)
 	if response.Code != "auth.token.scope_insufficient" {
 		t.Fatalf("code = %q", response.Code)
 	}
-	if response.Details.RequiredScope != "deployment:data_export" {
+	if response.Details.RequiredScope != "volume:export" {
 		t.Fatalf("required scope = %q", response.Details.RequiredScope)
 	}
 }
@@ -184,7 +184,7 @@ func TestProductionKeyDetailsAreOmitted(t *testing.T) {
 		http.StatusForbidden,
 		"en-US",
 		"auth.token.scope_insufficient",
-		gin.H{"requiredScope": "deployment:data_export"},
+		gin.H{"requiredScope": "volume:export"},
 	)
 
 	var response map[string]any

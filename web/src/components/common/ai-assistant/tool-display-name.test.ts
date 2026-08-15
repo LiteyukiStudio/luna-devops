@@ -9,7 +9,7 @@ describe('ai tool display names', () => {
     expect(toolDisplayName(i18next.t, 'listApplications')).toBe('查询应用列表')
     expect(toolDisplayName(i18next.t, 'createRelease')).toBe('创建发布')
     expect(toolDisplayName(i18next.t, 'fetchWebPage')).toBe('读取网页')
-    expect(toolDisplayName(i18next.t, 'prepare_interaction_cards')).toBe('准备交互卡片')
+    expect(toolDisplayName(i18next.t, 'create_interaction_cards')).toBe('生成交互卡片')
   })
 
   it('uses a localized safe fallback for newly registered operations', async () => {

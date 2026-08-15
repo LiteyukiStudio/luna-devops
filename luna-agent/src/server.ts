@@ -30,7 +30,6 @@ export function buildServer(input: {
   repository: Repository
   authenticator: RequestAuthenticator
   provider: ModelProvider
-  graphVersions: string[]
   grantCipher: PayloadCipher
   tools?: ToolOrchestrator
   providerConfigClient?: ProviderConfigClient
@@ -67,7 +66,7 @@ export function buildServer(input: {
   })
   app.get("/internal/v1/health/compatibility", async () => ({
     component: "luna-agent", version: "0.1.0", internalApiVersions: ["v1"],
-    aiSchemaMin: 1, aiSchemaMax: 1, graphVersions: input.graphVersions,
+    aiSchemaMin: 1, aiSchemaMax: 1,
     toolCatalogDigest: input.toolCatalogDigest ?? "sha256:platform-tools-v1", promptVersions: ["system-v4"],
   }))
 
@@ -81,25 +80,22 @@ export function buildServer(input: {
         ? await input.providerConfigClient.get().then(config => config.runtime).catch(() => defaultRuntimeSettings)
         : defaultRuntimeSettings
       return {
-      enabled: true,
-      available: true,
-      reasonCode: null,
-      mode: input.tools ? "controlled_tools" : "read_only",
-      features: {
-        conversations: true, streaming: true, cancel: true, uiActions: true,
-        approvals: Boolean(input.tools),
-        stepUpMFA: Boolean(input.tools),
-        longTermMemory: false,
-        mfa: Boolean(input.tools),
-        toolCalling: Boolean(input.tools),
-      },
-      limits: {
-        maxInputBytes: runtime.maxInputBytes,
-        maxConcurrentRuns: runtime.agentConcurrentRuns,
-        maxUserConcurrentRuns: runtime.userConcurrentRuns,
-        contextInputTokenBudget: runtime.contextInputTokenBudget,
-      },
-      provider: input.provider.capabilities(),
+        mode: input.tools ? "controlled_tools" : "read_only",
+        features: {
+          conversations: true, streaming: true, cancel: true, uiActions: true,
+          approvals: Boolean(input.tools),
+          stepUpMFA: Boolean(input.tools),
+          longTermMemory: false,
+          mfa: Boolean(input.tools),
+          toolCalling: Boolean(input.tools),
+        },
+        limits: {
+          maxInputBytes: runtime.maxInputBytes,
+          maxConcurrentRuns: runtime.agentConcurrentRuns,
+          maxUserConcurrentRuns: runtime.userConcurrentRuns,
+          contextInputTokenBudget: runtime.contextInputTokenBudget,
+        },
+        provider: input.provider.capabilities(),
       }
     })
 

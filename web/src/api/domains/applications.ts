@@ -1,12 +1,16 @@
-import type { Application, ApplicationDeletionPreview, ApplicationPayload, ApplicationTopology, DataExportAuthorization, DeploymentTarget, DeploymentTargetPayload, PaginatedResponse, PaginationParams, RepositoryBinding, RepositoryBindingPayload, RetainedVolume } from '../types'
+import type { Application, ApplicationDeletionPreview, ApplicationListParams, ApplicationPayload, ApplicationTopology, DeploymentTarget, DeploymentTargetPayload, PaginatedResponse, PaginationParams, RepositoryBinding, RepositoryBindingPayload } from '../types'
 import { paginationQuery, request } from '../core'
 import { selectionItems, selectionPageParams } from '../selection-page'
 
 export const applicationsApi = {
   listApplications: (projectId: string) =>
     request<PaginatedResponse<Application>>(`/projects/${projectId}/applications?${paginationQuery(selectionPageParams)}`).then(selectionItems),
-  listApplicationsPage: (projectId: string, params: PaginationParams) =>
-    request<PaginatedResponse<Application>>(`/projects/${projectId}/applications?${paginationQuery(params)}`),
+  listApplicationsPage: (projectId: string, params: ApplicationListParams) => {
+    const search = new URLSearchParams(paginationQuery(params))
+    if (params.includeRuntime)
+      search.set('includeRuntime', 'true')
+    return request<PaginatedResponse<Application>>(`/projects/${projectId}/applications?${search.toString()}`)
+  },
   getApplication: (projectId: string, applicationId: string) =>
     request<Application>(`/projects/${projectId}/applications/${applicationId}`),
   getApplicationTopology: (projectId: string, applicationId: string) =>
@@ -17,12 +21,8 @@ export const applicationsApi = {
     request<Application>(`/projects/${projectId}/applications/${applicationId}`, { method: 'PUT', body: JSON.stringify(payload) }),
   previewApplicationDeletion: (projectId: string, applicationId: string) =>
     request<ApplicationDeletionPreview>(`/projects/${projectId}/applications/${applicationId}/deletion-preview`),
-  deleteApplication: (projectId: string, applicationId: string, dataAction: 'retain' | 'delete') =>
-    request<Application>(`/projects/${projectId}/applications/${applicationId}`, { method: 'DELETE', body: JSON.stringify({ dataAction }) }),
-  listRetainedVolumes: (projectId: string) =>
-    request<PaginatedResponse<RetainedVolume>>(`/projects/${projectId}/retained-volumes?${paginationQuery(selectionPageParams)}`).then(selectionItems),
-  deleteRetainedVolume: (projectId: string, retainedVolumeId: string) =>
-    request<void>(`/projects/${projectId}/retained-volumes/${retainedVolumeId}`, { method: 'DELETE' }),
+  deleteApplication: (projectId: string, applicationId: string) =>
+    request<Application>(`/projects/${projectId}/applications/${applicationId}`, { method: 'DELETE' }),
   listDeploymentTargets: (projectId: string, applicationId: string) =>
     request<PaginatedResponse<DeploymentTarget>>(`/projects/${projectId}/applications/${applicationId}/deployment-targets?${paginationQuery(selectionPageParams)}`).then(selectionItems),
   listDeploymentTargetsPage: (projectId: string, applicationId: string, params: PaginationParams) =>
@@ -33,8 +33,6 @@ export const applicationsApi = {
     request<DeploymentTarget>(`/projects/${projectId}/applications/${applicationId}/deployment-targets/${targetId}`, { method: 'PUT', body: JSON.stringify(payload) }),
   restartDeploymentTarget: (projectId: string, applicationId: string, targetId: string) =>
     request<void>(`/projects/${projectId}/applications/${applicationId}/deployment-targets/${targetId}/restart`, { method: 'POST' }),
-  authorizeDeploymentTargetDataExport: (projectId: string, applicationId: string, targetId: string) =>
-    request<DataExportAuthorization>(`/projects/${projectId}/applications/${applicationId}/deployment-targets/${targetId}/data-export/authorize`, { method: 'POST' }),
   deleteDeploymentTarget: (projectId: string, applicationId: string, targetId: string) =>
     request<void>(`/projects/${projectId}/applications/${applicationId}/deployment-targets/${targetId}`, { method: 'DELETE' }),
   listRepositoryBindings: (projectId: string, applicationId?: string) => {

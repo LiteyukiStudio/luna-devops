@@ -8,13 +8,13 @@ const sourceRefs: NonNullable<InteractionCardGroup['cards'][number]['sourceRefs'
 }]
 
 export const interactionCardTemplateFixtures = {
-  catalog: {
+  candidates: {
     schemaVersion: 1,
-    generationId: 'catalog-fixture',
+    generationId: 'candidates-fixture',
     title: '选择可用的镜像站',
     description: '根据当前项目空间权限与连接状态整理。',
     mode: 'interactive',
-    template: 'catalog',
+    template: 'candidates',
     cards: [
       {
         id: 'registry-harbor',
@@ -61,99 +61,43 @@ export const interactionCardTemplateFixtures = {
           message: '使用镜像站 registry-dockerhub 继续配置。',
         }],
       },
+      {
+        id: 'release-strategies',
+        presentation: {
+          variant: 'summary',
+          title: '滚动发布与重新创建',
+          subtitle: '同一应用、同一镜像版本',
+          badges: [{ label: '滚动发布风险较低', tone: 'success' }],
+        },
+        sourceRefs,
+        blocks: [
+          {
+            id: 'release-metrics',
+            type: 'metrics',
+            items: [
+              { label: '预计停机', value: '0 秒', change: '保持可用', trend: 'flat', tone: 'success' },
+              { label: '预计耗时', value: '3–5 分钟', change: '增加约 1 分钟', trend: 'up', tone: 'neutral' },
+            ],
+          },
+          {
+            id: 'release-table',
+            type: 'data_table',
+            columns: [
+              { key: 'strategy', label: '方案' },
+              { key: 'downtime', label: '停机' },
+              { key: 'risk', label: '风险' },
+              { key: 'rollback', label: '回滚方式' },
+              { key: 'notes', label: '适用条件' },
+            ],
+            rows: [
+              { id: 'rolling', cells: { strategy: '滚动发布', downtime: '无', risk: '低', rollback: '回滚到上一 Release', notes: '至少两个可用副本，并且 Readiness Probe 正常' } },
+              { id: 'recreate', cells: { strategy: '重新创建', downtime: '有', risk: '中', rollback: '重新部署上一镜像', notes: '单副本或不允许两个版本并行运行' } },
+            ],
+          },
+        ],
+        actions: [{ id: 'choose-rolling', type: 'send_message', label: '选择滚动发布', message: '使用滚动发布方案继续。', emphasis: 'primary' }],
+      },
     ],
-  },
-  comparison: {
-    schemaVersion: 1,
-    generationId: 'comparison-fixture',
-    title: '发布方案对比',
-    description: '对比停机时间、风险、耗时和回滚路径。',
-    mode: 'interactive',
-    template: 'comparison',
-    cards: [{
-      id: 'release-comparison',
-      presentation: {
-        variant: 'summary',
-        title: '滚动发布与重新创建',
-        subtitle: '同一应用、同一镜像版本',
-        badges: [{ label: '滚动发布风险较低', tone: 'success' }],
-      },
-      sourceRefs,
-      blocks: [
-        {
-          id: 'release-metrics',
-          type: 'metrics',
-          items: [
-            { label: '预计停机', value: '0 秒', change: '保持可用', trend: 'flat', tone: 'success' },
-            { label: '预计耗时', value: '3–5 分钟', change: '增加约 1 分钟', trend: 'up', tone: 'neutral' },
-          ],
-        },
-        {
-          id: 'release-table',
-          type: 'data_table',
-          columns: [
-            { key: 'strategy', label: '方案' },
-            { key: 'downtime', label: '停机' },
-            { key: 'risk', label: '风险' },
-            { key: 'rollback', label: '回滚方式' },
-            { key: 'notes', label: '适用条件' },
-          ],
-          rows: [
-            { id: 'rolling', cells: { strategy: '滚动发布', downtime: '无', risk: '低', rollback: '回滚到上一 Release', notes: '至少两个可用副本，并且 Readiness Probe 正常' } },
-            { id: 'recreate', cells: { strategy: '重新创建', downtime: '有', risk: '中', rollback: '重新部署上一镜像', notes: '单副本或不允许两个版本并行运行' } },
-          ],
-        },
-      ],
-      actions: [{ id: 'choose-rolling', type: 'send_message', label: '选择滚动发布', message: '使用滚动发布方案继续。', emphasis: 'primary' }],
-    }],
-  },
-  inspector: {
-    schemaVersion: 1,
-    generationId: 'inspector-fixture',
-    title: '应用运行状态',
-    mode: 'presentation',
-    template: 'inspector',
-    cards: [{
-      id: 'application-api',
-      presentation: {
-        variant: 'resource',
-        title: 'luna-api',
-        subtitle: 'production · app_luna_api',
-        description: '当前 Release 与集群工作负载状态。',
-        icon: { type: 'category', name: 'application', alt: '应用' },
-        badges: [{ label: '运行中', tone: 'success' }],
-      },
-      sourceRefs,
-      blocks: [
-        {
-          id: 'application-facts',
-          type: 'key_value',
-          items: [
-            { label: '当前版本', value: 'sha-8a3b7f2', format: 'code', copyable: true },
-            { label: '副本', value: '3 / 3', format: 'status' },
-            { label: '更新时间', value: '2026-07-31 00:20', format: 'date_time' },
-          ],
-        },
-        {
-          id: 'application-relations',
-          type: 'relations',
-          nodes: [
-            { id: 'app', label: 'luna-api', category: 'application', status: 'success' },
-            { id: 'cluster', label: 'production-k3s', category: 'cluster', status: 'success' },
-            { id: 'route', label: 'api.example.com', category: 'gateway', status: 'success' },
-          ],
-          edges: [
-            { source: 'app', target: 'cluster', label: '部署到' },
-            { source: 'route', target: 'app', label: '路由到' },
-          ],
-        },
-        {
-          id: 'application-links',
-          type: 'resource_links',
-          links: [{ label: '打开项目空间', routeName: 'projects' }],
-        },
-      ],
-    }],
   },
   form: {
     schemaVersion: 1,
@@ -191,98 +135,13 @@ export const interactionCardTemplateFixtures = {
       }],
     }],
   },
-  wizard: {
+  change_review: {
     schemaVersion: 1,
-    generationId: 'wizard-fixture',
-    title: '绑定代码仓库',
-    description: '先选择代码源，再按选择补充分支和构建目录。',
-    mode: 'interactive',
-    template: 'wizard',
-    cards: [{
-      id: 'repository-wizard',
-      presentation: {
-        variant: 'form',
-        title: '代码仓库与构建入口',
-        subtitle: '步骤 1 / 2',
-        icon: { type: 'category', name: 'repository', alt: '代码仓库' },
-      },
-      form: {
-        sections: [
-          {
-            id: 'repository-source',
-            title: '代码来源',
-            fields: [{
-              id: 'provider',
-              type: 'select',
-              label: '代码源',
-              required: true,
-              display: 'segmented',
-              options: [
-                { value: 'github', label: 'GitHub' },
-                { value: 'gitea', label: 'Gitea' },
-              ],
-            }],
-          },
-          {
-            id: 'repository-build',
-            title: '构建入口',
-            fields: [
-              { id: 'branch', type: 'text', label: '分支', required: true, defaultValue: 'main', visibleWhen: { fieldId: 'provider', operator: 'is_not_empty' } },
-              { id: 'context', type: 'text', label: '构建目录', required: true, defaultValue: '.', visibleWhen: { fieldId: 'provider', operator: 'is_not_empty' } },
-            ],
-          },
-        ],
-      },
-      actions: [{
-        id: 'continue-repository',
-        type: 'send_message',
-        label: '继续选择仓库',
-        message: '使用 {{provider}}，分支 {{branch}}，构建目录 {{context}}，继续选择仓库。',
-        emphasis: 'primary',
-      }],
-    }],
-  },
-  diagnosis: {
-    schemaVersion: 1,
-    generationId: 'diagnosis-fixture',
-    title: '构建失败诊断',
-    description: '结论来自最近一次 BuildRun 和受控日志摘要。',
-    mode: 'presentation',
-    template: 'diagnosis',
-    cards: [{
-      id: 'build-diagnosis',
-      presentation: {
-        variant: 'finding',
-        title: '镜像站认证失败',
-        subtitle: 'BuildRun bldr_01 · push 阶段',
-        icon: { type: 'category', name: 'build', alt: '构建' },
-        badges: [{ label: '阻断构建', tone: 'error' }],
-      },
-      sourceRefs,
-      blocks: [
-        { id: 'diagnosis-summary', type: 'callout', tone: 'error', content: 'Builder 无法使用当前凭据向目标镜像站推送镜像。' },
-        {
-          id: 'diagnosis-evidence',
-          type: 'status_list',
-          title: '检查项',
-          items: [
-            { id: 'compile', label: '镜像构建完成', status: 'success' },
-            { id: 'credential', label: '推送凭据被拒绝', detail: 'Registry 返回 401 Unauthorized。', status: 'error' },
-            { id: 'network', label: '镜像站网络可达', status: 'success' },
-          ],
-        },
-        { id: 'diagnosis-log', type: 'code', title: '关键日志', language: 'text', content: 'failed to push: unexpected status 401 Unauthorized', collapsible: true },
-      ],
-      actions: [{ id: 'inspect-registry', type: 'send_message', label: '继续检查镜像站凭据', message: '继续检查 BuildRun bldr_01 使用的镜像站凭据。', emphasis: 'primary' }],
-    }],
-  },
-  plan: {
-    schemaVersion: 1,
-    generationId: 'plan-fixture',
+    generationId: 'change-review-fixture',
     title: '生产发布计划',
     description: '执行前确认步骤、风险和验证点。',
     mode: 'interactive',
-    template: 'plan',
+    template: 'change_review',
     cards: [{
       id: 'release-plan',
       presentation: {
@@ -307,12 +166,12 @@ export const interactionCardTemplateFixtures = {
       actions: [{ id: 'review-plan', type: 'send_message', label: '检查发布前条件', message: '按此计划检查生产发布前条件。', emphasis: 'primary' }],
     }],
   },
-  progress: {
+  live_task: {
     schemaVersion: 1,
-    generationId: 'progress-fixture',
+    generationId: 'live-task-fixture',
     title: '应用发布进度',
     mode: 'presentation',
-    template: 'progress',
+    template: 'live_task',
     cards: [{
       id: 'release-progress',
       presentation: {
@@ -356,17 +215,68 @@ export const interactionCardTemplateFixtures = {
         },
         { id: 'result-links', type: 'resource_links', links: [{ label: '查看事件', routeName: 'events' }] },
       ],
-    }],
-  },
-  dashboard: {
-    schemaVersion: 1,
-    generationId: 'dashboard-fixture',
-    title: '项目空间健康概览',
-    description: '最近 24 小时的构建、发布与访问入口状态。',
-    mode: 'presentation',
-    template: 'dashboard',
-    cards: [{
-      id: 'project-dashboard',
+    }, {
+      id: 'application-api',
+      presentation: {
+        variant: 'resource',
+        title: 'luna-api',
+        subtitle: 'production · app_luna_api',
+        description: '当前 Release 与集群工作负载状态。',
+        icon: { type: 'category', name: 'application', alt: '应用' },
+        badges: [{ label: '运行中', tone: 'success' }],
+      },
+      sourceRefs,
+      blocks: [
+        {
+          id: 'application-facts',
+          type: 'key_value',
+          items: [
+            { label: '当前版本', value: 'sha-8a3b7f2', format: 'code', copyable: true },
+            { label: '副本', value: '3 / 3', format: 'status' },
+          ],
+        },
+        {
+          id: 'application-relations',
+          type: 'relations',
+          nodes: [
+            { id: 'app', label: 'luna-api', category: 'application', status: 'success' },
+            { id: 'cluster', label: 'production-k3s', category: 'cluster', status: 'success' },
+            { id: 'route', label: 'api.example.com', category: 'gateway', status: 'success' },
+          ],
+          edges: [
+            { source: 'app', target: 'cluster', label: '部署到' },
+            { source: 'route', target: 'app', label: '路由到' },
+          ],
+        },
+        { id: 'application-links', type: 'resource_links', links: [{ label: '打开项目空间', routeName: 'projects' }] },
+      ],
+    }, {
+      id: 'build-diagnosis',
+      presentation: {
+        variant: 'finding',
+        title: '镜像站认证失败',
+        subtitle: 'BuildRun bldr_01 · push 阶段',
+        icon: { type: 'category', name: 'build', alt: '构建' },
+        badges: [{ label: '阻断构建', tone: 'error' }],
+      },
+      sourceRefs,
+      blocks: [
+        { id: 'diagnosis-summary', type: 'callout', tone: 'error', content: 'Builder 无法使用当前凭据向目标镜像站推送镜像。' },
+        {
+          id: 'diagnosis-evidence',
+          type: 'status_list',
+          title: '检查项',
+          items: [
+            { id: 'compile', label: '镜像构建完成', status: 'success' },
+            { id: 'credential', label: '推送凭据被拒绝', detail: 'Registry 返回 401 Unauthorized。', status: 'error' },
+            { id: 'network', label: '镜像站网络可达', status: 'success' },
+          ],
+        },
+        { id: 'diagnosis-log', type: 'code', title: '关键日志', language: 'text', content: 'failed to push: unexpected status 401 Unauthorized', collapsible: true },
+      ],
+      actions: [{ id: 'inspect-registry', type: 'send_message', label: '继续检查镜像站凭据', message: '继续检查 BuildRun bldr_01 使用的镜像站凭据。', emphasis: 'primary' }],
+    }, {
+      id: 'project-health',
       presentation: {
         variant: 'summary',
         title: '轻雪项目空间 v2',
@@ -416,7 +326,7 @@ export const extremeInteractionCardFixture: InteractionCardGroup = {
   title: extremeTitle,
   description: `包含最大候选数、长文本、混合状态和宽内容。${extremeDescription}`,
   mode: 'presentation',
-  template: 'catalog',
+  template: 'candidates',
   display: { density: 'compact' },
   cards: Array.from({ length: 12 }, (_, index) => ({
     id: `extreme-${index + 1}`,

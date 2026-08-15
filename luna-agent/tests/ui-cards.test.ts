@@ -1,19 +1,15 @@
 import { describe, expect, it } from "vitest"
-import type { InteractionCardGroup } from "@luna-devops/ai-interaction-card-contract"
 import {
   createInteractionCardsInput,
   createInteractionCardsTool,
   normalizeInteractionCardsInput,
-  prepareInteractionCardsInput,
-  prepareInteractionCardsTool,
 } from "../src/tools/ui-cards.js"
 
 const databaseCard = {
   schemaVersion: 1,
-  generationId: "database-candidates",
   title: "选择数据库",
   mode: "interactive",
-  template: "catalog",
+  template: "candidates",
   cards: [{
     id: "postgresql",
     presentation: {
@@ -50,23 +46,13 @@ const databaseCard = {
       ],
     }],
   }],
-} satisfies InteractionCardGroup
+} as const
 
 describe("interaction card tool", () => {
-  it("publishes a bounded preparation tool whose generation ID is assigned by the Agent", () => {
-    expect(prepareInteractionCardsInput.parse({
-      schemaVersion: 1,
-      title: "正在整理数据库候选",
-    })).toEqual({ schemaVersion: 1, title: "正在整理数据库候选" })
-    expect(prepareInteractionCardsInput.keyof().options).not.toContain("generationId")
-    expect(prepareInteractionCardsTool.operationId).toBe("prepare_interaction_cards")
-  })
-
-  it("accepts a catalog card with content, input and a tool action", () => {
+  it("accepts a candidates card with content, input and a tool action", () => {
     expect(createInteractionCardsInput.parse(databaseCard)).toMatchObject({
       schemaVersion: 1,
-      generationId: "database-candidates",
-      template: "catalog",
+      template: "candidates",
       cards: [{ id: "postgresql" }],
     })
   })
@@ -91,18 +77,6 @@ describe("interaction card tool", () => {
       placement: "turn_end",
       mode: "presentation",
     }).success).toBe(false)
-  })
-
-  it("accepts an explicit placement while preparing a card", () => {
-    expect(prepareInteractionCardsInput.parse({
-      schemaVersion: 1,
-      title: "正在整理部署配置",
-      placement: "turn_end",
-    })).toEqual({
-      schemaVersion: 1,
-      title: "正在整理部署配置",
-      placement: "turn_end",
-    })
   })
 
   it("rejects platform-only approval cards and duplicate card IDs", () => {
@@ -133,10 +107,9 @@ describe("interaction card tool", () => {
 
     const presentationCard = (block: Record<string, unknown>) => ({
       schemaVersion: 1,
-      generationId: "duplicate-content-ids",
       title: "重复标识",
       mode: "presentation",
-      template: "inspector",
+      template: "result",
       cards: [{
         id: "resource",
         presentation: { variant: "resource", title: "资源" },
@@ -237,28 +210,23 @@ describe("interaction card tool", () => {
   })
 
   it.each([
-    "catalog",
-    "comparison",
-    "inspector",
+    "candidates",
     "form",
-    "wizard",
-    "diagnosis",
-    "plan",
-    "progress",
+    "change_review",
     "result",
-    "dashboard",
+    "live_task",
   ] as const)("accepts the %s workflow template", (template) => {
-    const collectsInput = template === "form" || template === "wizard"
+    const collectsInput = template === "form"
+    const requiresDecision = template === "change_review"
     expect(createInteractionCardsInput.safeParse({
       schemaVersion: 1,
-      generationId: `${template}-fixture`,
       title: `${template} fixture`,
-      mode: collectsInput ? "interactive" : "presentation",
+      mode: collectsInput || requiresDecision ? "interactive" : "presentation",
       template,
       cards: [{
         id: `${template}-card`,
         presentation: { variant: "summary", title: `${template} card` },
-        ...(template === "progress"
+        ...(template === "live_task"
           ? { blocks: [{ id: "progress", type: "live_progress", binding: { operationType: "release", projectId: "prj_1", operationId: "rel_1" } }] }
           : {}),
         ...(collectsInput
@@ -277,8 +245,48 @@ describe("interaction card tool", () => {
               }],
             }
           : {}),
+        ...(requiresDecision
+          ? {
+              actions: [{
+                id: "confirm",
+                type: "send_message",
+                label: "Confirm",
+                message: "Confirm this change.",
+              }],
+            }
+          : {}),
       }],
     }).success).toBe(true)
+  })
+
+  it("enforces change-review as interactive and result as presentation", () => {
+    expect(createInteractionCardsInput.safeParse({
+      schemaVersion: 1,
+      title: "Change review",
+      mode: "presentation",
+      template: "change_review",
+      cards: [{
+        id: "change-review",
+        presentation: { variant: "plan", title: "Review change" },
+      }],
+    }).success).toBe(false)
+
+    expect(createInteractionCardsInput.safeParse({
+      schemaVersion: 1,
+      title: "Result",
+      mode: "interactive",
+      template: "result",
+      cards: [{
+        id: "result",
+        presentation: { variant: "receipt", title: "Operation result" },
+        actions: [{
+          id: "continue",
+          type: "send_message",
+          label: "Continue",
+          message: "Continue.",
+        }],
+      }],
+    }).success).toBe(false)
   })
 
   it("separates presentation cards from workflows waiting for user input", () => {
@@ -289,10 +297,9 @@ describe("interaction card tool", () => {
 
     const displayOnlyCandidates = {
       schemaVersion: 1,
-      generationId: "display-only-candidates",
       title: "请选择应用模板",
       mode: "interactive",
-      template: "catalog",
+      template: "candidates",
       cards: [{
         id: "templates",
         presentation: { variant: "application", title: "应用模板市场" },
@@ -375,10 +382,9 @@ describe("interaction card tool", () => {
     for (const invalidCase of invalidCases) {
       expect(createInteractionCardsInput.safeParse({
         schemaVersion: 1,
-        generationId: "invalid-reference",
         title: "Invalid reference",
         mode: "presentation",
-        template: "inspector",
+        template: "result",
         cards: [{
           id: "resource",
           presentation: { variant: "resource", title: "Resource" },
@@ -389,7 +395,6 @@ describe("interaction card tool", () => {
 
     expect(createInteractionCardsInput.safeParse({
       schemaVersion: 1,
-      generationId: "invalid-field-reference",
       title: "Invalid field reference",
       mode: "interactive",
       template: "form",
@@ -414,10 +419,9 @@ describe("interaction card tool", () => {
   it("accepts bounded maximum collections and rejects oversized groups", () => {
     const maximum = {
       schemaVersion: 1,
-      generationId: "maximum",
       title: "Maximum",
       mode: "presentation",
-      template: "comparison",
+      template: "result",
       cards: Array.from({ length: 12 }, (_, cardIndex) => ({
         id: `card-${cardIndex}`,
         presentation: { variant: "summary", title: `Card ${cardIndex}` },

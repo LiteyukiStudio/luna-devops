@@ -15,7 +15,7 @@ import (
 
 func (r *Runner) runDeploymentHooks(ctx context.Context, phase string, release model.Release, project model.Project, application model.Application, environment model.Environment, deploymentTarget model.DeploymentTarget, namespace string) error {
 	var bindings []model.DeploymentTargetHookBinding
-	if err := r.db.Where("project_id = ? and application_id = ? and target_id = ? and phase = ?", project.ID, application.ID, deploymentTarget.ID, phase).
+	if err := r.db.WithContext(ctx).Where("project_id = ? and application_id = ? and target_id = ? and phase = ?", project.ID, application.ID, deploymentTarget.ID, phase).
 		Order("run_order asc, created_at asc").
 		Find(&bindings).Error; err != nil {
 		return err
@@ -28,7 +28,7 @@ func (r *Runner) runDeploymentHooks(ctx context.Context, phase string, release m
 		hookIDs = append(hookIDs, binding.HookConfigID)
 	}
 	var configs []model.ProjectHookConfig
-	if err := r.db.Where("project_id = ? and id in ?", project.ID, hookIDs).Find(&configs).Error; err != nil {
+	if err := r.db.WithContext(ctx).Where("project_id = ? and id in ?", project.ID, hookIDs).Find(&configs).Error; err != nil {
 		return err
 	}
 	configsByID := make(map[string]model.ProjectHookConfig, len(configs))
@@ -40,7 +40,7 @@ func (r *Runner) runDeploymentHooks(ctx context.Context, phase string, release m
 		return err
 	}
 	resourceName := applicationResourceName(deploymentTarget)
-	buildContext := r.releaseBuildContext(release)
+	buildContext := r.releaseBuildContext(ctx, release)
 	for _, binding := range bindings {
 		config, ok := configsByID[binding.HookConfigID]
 		if !ok {
@@ -64,11 +64,11 @@ func (r *Runner) runDeploymentHooks(ctx context.Context, phase string, release m
 			FailurePolicy:      config.FailurePolicy,
 			StartedAt:          timePtr(time.Now()),
 		}
-		if err := r.db.Create(&hookRun).Error; err != nil {
+		if err := r.db.WithContext(ctx).Create(&hookRun).Error; err != nil {
 			return err
 		}
 		r.emitHookEvent(ctx, hookRun, "started", "Hook started")
-		r.appendReleaseLog(release, fmt.Sprintf("执行 %s Hook: %s", phase, config.Name))
+		r.appendReleaseLog(ctx, release, fmt.Sprintf("执行 %s Hook: %s", phase, config.Name))
 		result, err := manager.RunHookJob(ctx, kubeprovider.HookJobSpec{
 			Name:               hookJobName(hookRun),
 			Namespace:          namespace,
@@ -97,13 +97,13 @@ func (r *Runner) runDeploymentHooks(ctx context.Context, phase string, release m
 		if err != nil {
 			result = kubeprovider.HookJobResult{Succeeded: false, ExitCode: 1, Message: err.Error()}
 		}
-		r.appendHookRunLog(hookRun, result.Logs)
+		r.appendHookRunLog(ctx, hookRun, result.Logs)
 		status := "succeeded"
 		if !result.Succeeded {
 			status = "failed"
 		}
 		finishedAt := time.Now()
-		if updateErr := r.db.Model(&model.HookRun{}).Where("id = ?", hookRun.ID).Updates(map[string]any{
+		if updateErr := r.db.WithContext(ctx).Model(&model.HookRun{}).Where("id = ?", hookRun.ID).Updates(map[string]any{
 			"status":      status,
 			"exit_code":   result.ExitCode,
 			"message":     result.Message,
@@ -116,7 +116,7 @@ func (r *Runner) runDeploymentHooks(ctx context.Context, phase string, release m
 		hookRun.FinishedAt = &finishedAt
 		r.emitHookEvent(ctx, hookRun, status, result.Message)
 		if result.Logs != "" {
-			r.appendReleaseLog(release, result.Logs)
+			r.appendReleaseLog(ctx, release, result.Logs)
 		}
 		if !result.Succeeded && config.FailurePolicy != "ignore" {
 			return errors.New(firstNonEmpty(result.Message, phase+" hook failed"))
@@ -125,7 +125,7 @@ func (r *Runner) runDeploymentHooks(ctx context.Context, phase string, release m
 	return nil
 }
 
-func (r *Runner) appendReleaseLog(release model.Release, content string) {
+func (r *Runner) appendReleaseLog(ctx context.Context, release model.Release, content string) {
 	if r.db == nil {
 		return
 	}
@@ -134,9 +134,9 @@ func (r *Runner) appendReleaseLog(release model.Release, content string) {
 		return
 	}
 	var existing model.ReleaseLog
-	err := r.db.First(&existing, "release_id = ? and project_id = ?", release.ID, release.ProjectID).Error
+	err := r.db.WithContext(ctx).First(&existing, "release_id = ? and project_id = ?", release.ID, release.ProjectID).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		_ = r.db.Create(&model.ReleaseLog{
+		_ = r.db.WithContext(ctx).Create(&model.ReleaseLog{
 			ID:        id.New("rlog"),
 			ReleaseID: release.ID,
 			ProjectID: release.ProjectID,
@@ -148,10 +148,10 @@ func (r *Runner) appendReleaseLog(release model.Release, content string) {
 		return
 	}
 	existing.Content = trimReleaseLogContent(existing.Content + "\n" + content)
-	_ = r.db.Save(&existing).Error
+	_ = r.db.WithContext(ctx).Save(&existing).Error
 }
 
-func (r *Runner) appendHookRunLog(run model.HookRun, content string) {
+func (r *Runner) appendHookRunLog(ctx context.Context, run model.HookRun, content string) {
 	if r.db == nil {
 		return
 	}
@@ -160,9 +160,9 @@ func (r *Runner) appendHookRunLog(run model.HookRun, content string) {
 		return
 	}
 	var existing model.HookRunLog
-	err := r.db.First(&existing, "hook_run_id = ? and project_id = ?", run.ID, run.ProjectID).Error
+	err := r.db.WithContext(ctx).First(&existing, "hook_run_id = ? and project_id = ?", run.ID, run.ProjectID).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		_ = r.db.Create(&model.HookRunLog{
+		_ = r.db.WithContext(ctx).Create(&model.HookRunLog{
 			ID:        id.New("hlog"),
 			HookRunID: run.ID,
 			ProjectID: run.ProjectID,
@@ -174,12 +174,12 @@ func (r *Runner) appendHookRunLog(run model.HookRun, content string) {
 		return
 	}
 	existing.Content = trimReleaseLogContent(existing.Content + "\n" + content)
-	_ = r.db.Save(&existing).Error
+	_ = r.db.WithContext(ctx).Save(&existing).Error
 }
 
-func (r *Runner) releaseBuildContext(release model.Release) deploymentHookBuildContext {
+func (r *Runner) releaseBuildContext(ctx context.Context, release model.Release) deploymentHookBuildContext {
 	var run model.BuildRun
-	if strings.TrimSpace(release.BuildRunID) == "" || r.db.First(&run, "id = ? and project_id = ?", release.BuildRunID, release.ProjectID).Error != nil {
+	if strings.TrimSpace(release.BuildRunID) == "" || r.db.WithContext(ctx).First(&run, "id = ? and project_id = ?", release.BuildRunID, release.ProjectID).Error != nil {
 		return deploymentHookBuildContext{}
 	}
 	refName := firstNonEmpty(run.SourceTag, run.SourceBranch)

@@ -44,7 +44,6 @@ async function approvalFixture() {
     repository,
     provider: new DeterministicProvider(),
     authenticator: new DevelopmentAuthenticator(),
-    graphVersions: ["assistant-v1"],
     grantCipher: new PayloadCipher(Buffer.alloc(32, 1)),
     tools,
   })

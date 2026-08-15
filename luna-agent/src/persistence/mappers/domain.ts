@@ -52,7 +52,6 @@ export function mapRun(row: RunRow): Run {
     runIndex: row.runIndex,
     status: row.status,
     rowVersion: row.rowVersion,
-    graphVersion: row.graphVersion,
     promptVersion: row.promptVersion,
     toolCatalogDigest: row.toolCatalogDigest,
     pageContext: row.pageContext,

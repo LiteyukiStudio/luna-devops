@@ -119,7 +119,7 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
     buildVariableRows: targetBuildVariableRows,
     changeRuntimeConfigRefMode,
     configFilesValid: targetConfigFilesValid,
-    dataRetentionEnabled: targetDataRetentionEnabled,
+    hasDataVolumes: targetHasDataVolumes,
     dataVolumes: targetDataVolumes,
     dialogOpen: targetDialogOpen,
     editingTarget,
@@ -370,7 +370,7 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
   const targetHooksSummary = targetBuildHooksEnabled
     ? t('deploymentsPage.progressiveHooksSummary', { count: selectedDeploymentHookBindings.length })
     : t('deploymentsPage.progressiveHooksDisabledSummary')
-  const targetDataSummary = targetDataRetentionEnabled
+  const targetDataSummary = targetHasDataVolumes
     ? t('deploymentsPage.progressiveDataEnabledSummary', { count: targetDataVolumes.length })
     : t('deploymentsPage.progressiveDataDisabledSummary')
   const targetHasAdvancedConfig = Boolean(
@@ -419,9 +419,6 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
     'autoScalingMaxReplicas',
     'autoScalingCpuPercent',
     'autoScalingMemoryPercent',
-    'dataStorageClassName',
-    'dataAccessMode',
-    'dataVolumeMode',
     'webConsoleEnabled',
   ].filter(key => String(watchedTargetValues[key as keyof DeploymentTargetPayload] ?? '').trim()).length
   + (watchedTargetValues.workloadType === 'StatefulSet' ? 1 : 0)
@@ -717,7 +714,7 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
         targetBuildOptionsFetching={targetBuildOptions.isFetching}
         targetCanRedeploy={targetCanRedeploy}
         targetConfigFilesValid={targetConfigFilesValid}
-        targetDataRetentionEnabled={targetDataRetentionEnabled}
+        targetHasDataVolumes={targetHasDataVolumes}
         targetDataVolumes={targetDataVolumes}
         targetHasRuntimeChanges={targetHasRuntimeChanges}
         targetImagePrefix={targetImagePrefix}

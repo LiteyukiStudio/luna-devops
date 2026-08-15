@@ -35,14 +35,13 @@ Template -> Content Block -> Field -> Action -> Platform Runtime
 
 Agent 使用：
 
-- `prepare_interaction_cards`：分配 `generationId` 并创建准备占位。
-- `create_interaction_cards`：校验、编译并持久化通用卡片定义。
+- `create_interaction_cards`：调用开始时由 Agent 分配 `generationId` 并创建占位，随后校验、编译并在同一 Timeline Item 原子持久化通用卡片定义。
 - 业务模板编译器：把高频业务输入编译成同一通用协议，不产生第二套运行时。
 
-准备和创建工具共享 `placement`：默认 `inline`，按权威 Timeline 事件位置展示；只有当前回合唯一、
+`placement` 默认 `inline`，按权威 Timeline 事件位置展示；只有当前回合唯一、
 阻塞后续流程且等待用户提交的单张交互表单才可使用 `turn_end`，将它投影到该回复末尾。一个回合
-出现多张卡片、候选列表、展示卡片、进度或结果卡片时必须使用 `inline`。准备与创建阶段的位置不
-一致时拒绝生成，Web 只改变展示投影，不修改 `timelineIndex`、持久化顺序或模型上下文顺序。
+出现多张卡片、候选列表、展示卡片、进度或结果卡片时必须使用 `inline`。Web 只改变展示投影，
+不修改 `timelineIndex`、持久化顺序或模型上下文顺序。
 
 实现事实源：
 
@@ -61,16 +60,11 @@ Agent 使用：
 
 | 模板 | 用途 |
 | --- | --- |
-| `catalog` | 少量候选发现与选择 |
-| `comparison` | 候选对比 |
-| `inspector` | 单资源详情和证据阅读 |
-| `form` | 单阶段结构化输入 |
-| `wizard` | 多阶段、有关联约束的输入 |
-| `diagnosis` | 证据、判断和修复建议 |
-| `plan` | 变更预览、风险和执行意图 |
-| `progress` | 绑定平台权威异步任务的实时进度 |
-| `result` | 权威执行结果和回执 |
-| `dashboard` | 多指标和状态摘要 |
+| `candidates` | 候选发现、选择和对比 |
+| `form` | 单阶段或带字段依赖的结构化输入 |
+| `change_review` | 变更预览、参数核对和风险说明 |
+| `result` | 资源详情、诊断、健康概览和权威执行结果 |
+| `live_task` | 绑定平台权威异步任务的实时进度 |
 
 审批是平台运行态，不允许模型通过普通卡片自行声明。简单的二至五个建议、追问或导航继续使用
 `create_options`，不为所有对话强制生成卡片。
@@ -114,12 +108,12 @@ Agent 使用：
 ## 8. 生成、持久化与修复
 
 ```text
-prepare -> generationId -> tool arguments complete -> Agent Schema validation
-        -> persist validated group -> Timeline/SSE -> Web render
+create tool call starts -> Agent generationId + placeholder -> arguments complete
+        -> Agent Schema validation -> atomically replace same Timeline Item -> SSE/Web render
 ```
 
 - 前端只在完整参数经过 Agent 校验并持久化后渲染，不解析半截流式 JSON。
-- `generationId` 必须与准备握手绑定；失败修复沿用同一生成上下文，不可串到其他卡片。
+- `generationId` 只由 Agent 签发；模型输入不包含该字段。失败修复自动沿用同一占位项，不可串到其他卡片。
 - Timeline Item、事件和快照使用服务端权威顺序与版本，刷新后结果必须一致。
 - Schema 校验失败不展示损坏卡片；记录稳定错误码和字段路径并回灌模型有界修复。
 - 达到修复上限后保留可诊断失败并回退普通消息，禁止无限重试。
@@ -143,7 +137,7 @@ prepare -> generationId -> tool arguments complete -> Agent Schema validation
 - 小窗消息区不横向滚动；表格、代码、Diff 和关系图在自身容器滚动。
 - 输入法组合状态下 Enter 不提交；提交中阻止重复操作，错误聚焦第一个字段。
 - 状态不能只依赖颜色；按钮、字段、展开内容和焦点必须支持键盘与辅助技术。
-- 模型提供的 `generationId`、卡片 ID、字段 ID 和选项值只作为业务数据，不得直接拼接为 DOM `id`、
+- Agent 提供的 `generationId` 以及模型提供的卡片 ID、字段 ID 和选项值只作为业务数据，不得直接拼接为 DOM `id`、
   `htmlFor` 或全局 selector。每个挂载实例使用 React 实例级 ID 建立 label、说明、错误与控件关联。
 - 分段单选的完整候选块必须由单选控件自身承载点击和焦点语义，不使用外层 label 跨节点代理点击。
 - 渲染失败按卡片组、单卡、内容块、字段和动作逐级隔离；异步组件加载失败必须转为受控局部降级，
@@ -155,7 +149,7 @@ prepare -> generationId -> tool arguments complete -> Agent Schema validation
 - 卡片内容与网页来源按不可信输入处理，不能覆盖系统 Prompt、工具策略或平台规则。
 - 参数摘要、批准哈希和实际执行载荷使用同一规范化 JSON；批准后参数变化必须 fail closed。
 - 权限、确认、MFA、幂等和审计测试必须覆盖伪造资源 ID、跨用户/项目、重复提交和重放。
-- Trace 覆盖准备、校验、持久化、Action、Tool 和平台 API；Span 名和 Metric label 使用稳定低基数值。
+- Trace 覆盖生成开始、校验、持久化、Action、Tool 和平台 API；Span 名和 Metric label 使用稳定低基数值。
 - 默认遥测不得包含卡片正文、用户输入、Prompt、Secret 和敏感工具参数；任何模式都不得记录凭据。
 
 ## 12. 变更门禁

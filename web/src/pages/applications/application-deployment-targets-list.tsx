@@ -1,11 +1,11 @@
 import type { ReactNode } from 'react'
 import type { DeploymentRuntimeStatus, InternalServiceEndpointValue } from './application-deployment-runtime-utils'
 import type { BuildRun, DeploymentTarget, Release } from '@/api'
-import { Download, Eye, MoreHorizontal, Package, Pencil, RefreshCw, RotateCcw, Terminal, Trash2 } from 'lucide-react'
+import { Eye, MoreHorizontal, Package, Pencil, RefreshCw, RotateCcw, Terminal, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { toast } from 'sonner'
 import { CopyableHoverText } from '@/components/common/copyable-hover-text'
 import { DataList } from '@/components/common/data-list'
+import { DeploymentReplicaBadge } from '@/components/common/deployment-replica-badge'
 import { EmptyState } from '@/components/common/empty-state'
 import { HoverText } from '@/components/common/hover-text'
 import { StatusValueBadge } from '@/components/common/status-badge'
@@ -17,7 +17,6 @@ import { deploymentTargetCanRelease, formatReleaseTime } from './application-con
 import { DeploymentRuntimeStatusBadge, InternalServiceEndpoint } from './application-deployment-runtime'
 import { DeploymentTargetMetricsCell } from './application-deployment-target-metrics-cell'
 import { formatTargetRuntimeSize, shortImageRef } from './application-deployments-panel-utils'
-import { openDeploymentTargetDataExport } from './deployment-target-data-export'
 
 export interface DeploymentTargetRow {
   internalEndpoint?: InternalServiceEndpointValue
@@ -76,8 +75,8 @@ export function ApplicationDeploymentTargetsList({
             { key: 'name', header: t('common.name'), width: 'primary', render: item => <DeploymentTargetSummary applicationId={applicationId} item={item} projectId={projectId} onCopy={onCopy} /> },
             { key: 'stage', header: t('deploymentsPage.stage'), width: 'compact', render: item => t(`deploymentsPage.stageLabels.${item.target.stage}`, { defaultValue: item.target.stage }) },
             { key: 'runtimeSize', header: t('deploymentsPage.runtimeEnvironment'), width: 'secondary', render: item => formatTargetRuntimeSize(item.target, t) },
-            { key: 'runtimeStatus', header: t('deploymentsPage.runtimeStatus'), width: 'status', render: item => <DeploymentRuntimeStatusBadge status={item.runtimeStatus} /> },
-            { key: 'status', header: t('deploymentsPage.releaseStatus'), width: 'status', render: item => <ReleaseStatusSummary release={item.release} /> },
+            { key: 'runtimeStatus', header: t('deploymentsPage.runtimeStatus'), width: 'status', render: item => <DeploymentRuntimeStatusBadge deployed={Boolean(item.release)} desiredReplicas={item.target.desiredReplicas} readyReplicas={item.target.readyReplicas} status={item.runtimeStatus} /> },
+            { key: 'status', header: t('deploymentsPage.releaseStatus'), width: 'status', render: item => <ReleaseStatusSummary release={item.release} target={item.target} /> },
             { key: 'image', header: t('deploymentsPage.imageSummary'), width: 'normal', render: item => <DeploymentImageSummary release={item.release} /> },
             {
               key: 'actions',
@@ -89,12 +88,10 @@ export function ApplicationDeploymentTargetsList({
               width: 'actions',
               render: item => (
                 <DeploymentTargetActions
-                  applicationId={applicationId}
                   createReleasePending={createReleasePending}
                   deletePending={deletePending}
                   deployableBuildRuns={deployableBuildRuns}
                   item={item}
-                  projectId={projectId}
                   pullLatestPending={pullLatestPending}
                   restartPending={restartPending}
                   rollbackPending={rollbackPending}
@@ -152,7 +149,6 @@ export function ApplicationDeploymentTargetsList({
 }
 
 function DeploymentTargetActions({
-  applicationId,
   createReleasePending,
   deletePending,
   deployableBuildRuns,
@@ -165,12 +161,10 @@ function DeploymentTargetActions({
   onRestart,
   onRollback,
   onViewLogs,
-  projectId,
   pullLatestPending,
   restartPending,
   rollbackPending,
 }: {
-  applicationId: string
   createReleasePending: boolean
   deletePending: boolean
   deployableBuildRuns: BuildRun[]
@@ -183,18 +177,12 @@ function DeploymentTargetActions({
   onRestart: (target: DeploymentTarget) => void
   onRollback: (releaseId: string) => void
   onViewLogs: (release: Release) => void
-  projectId: string
   pullLatestPending: boolean
   restartPending: boolean
   rollbackPending: boolean
 }) {
   const { t } = useTranslation()
   const deleting = item.target.deleteStatus === 'deleting'
-  const exportData = () => {
-    void openDeploymentTargetDataExport(projectId, applicationId, item.target.id)
-      .catch(() => toast.error(t('deploymentsPage.dataExportFailed')))
-  }
-
   return (
     <div className="flex justify-end">
       <DropdownMenu>
@@ -242,12 +230,6 @@ function DeploymentTargetActions({
             <Package className="size-4" />
             {t('deploymentsPage.pullLatestImageDeploy')}
           </DropdownMenuItem>
-          {item.target.dataRetentionEnabled && (
-            <DropdownMenuItem onSelect={exportData}>
-              <Download className="size-4" />
-              {t('deploymentsPage.exportData')}
-            </DropdownMenuItem>
-          )}
           <DropdownMenuSeparator />
           <DropdownMenuItem disabled={deletePending || deleting} variant="destructive" onSelect={() => onDeleteTarget(item.target)}>
             <Trash2 className="size-4" />
@@ -287,12 +269,11 @@ function DeploymentTargetSummary({ applicationId, item, onCopy, projectId }: { a
   )
 }
 
-function ReleaseStatusSummary({ release }: { release?: Release }) {
-  const { t } = useTranslation()
+function ReleaseStatusSummary({ release, target }: { release?: Release, target: DeploymentTarget }) {
   const message = release?.message?.trim()
   const badge = release
-    ? <StatusValueBadge labelKeyPrefix="buildsPage.statuses" value={release.status} />
-    : <StatusValueBadge label={t('deploymentsPage.notDeployed')} value="pending" />
+    ? <DeploymentReplicaBadge desiredReplicas={target.desiredReplicas} labelKeyPrefix="buildsPage.statuses" readyReplicas={target.readyReplicas} status={release.status} />
+    : <DeploymentReplicaBadge deployed={false} desiredReplicas={0} readyReplicas={0} status="not-deployed" />
 
   if (!message)
     return badge
@@ -377,12 +358,10 @@ function MobileDeploymentTargetCard({
           </p>
         </div>
         <DeploymentTargetActions
-          applicationId={applicationId}
           createReleasePending={createReleasePending}
           deletePending={deletePending}
           deployableBuildRuns={deployableBuildRuns}
           item={item}
-          projectId={projectId}
           pullLatestPending={pullLatestPending}
           restartPending={restartPending}
           rollbackPending={rollbackPending}
@@ -398,10 +377,10 @@ function MobileDeploymentTargetCard({
       </div>
       <div className="grid grid-cols-2 gap-3 text-xs">
         <LabeledValue label={t('deploymentsPage.runtimeStatus')}>
-          <DeploymentRuntimeStatusBadge status={item.runtimeStatus} />
+          <DeploymentRuntimeStatusBadge deployed={Boolean(item.release)} desiredReplicas={item.target.desiredReplicas} readyReplicas={item.target.readyReplicas} status={item.runtimeStatus} />
         </LabeledValue>
         <LabeledValue label={t('deploymentsPage.releaseStatus')}>
-          <ReleaseStatusSummary release={item.release} />
+          <ReleaseStatusSummary release={item.release} target={item.target} />
         </LabeledValue>
       </div>
       <LabeledValue label={t('deploymentsPage.imageSummary')}>
@@ -437,7 +416,9 @@ function DeploymentTargetDetails({
   showMetrics?: boolean
 }) {
   const { t } = useTranslation()
-  const runtimeData = item.target.dataRetentionEnabled ? (item.target.dataCapacity || '1Gi') : t('common.disabled')
+  const runtimeData = item.target.dataVolumes.length > 0
+    ? t('deploymentsPage.dataVolumeCount', { count: item.target.dataVolumes.length })
+    : t('common.disabled')
   const releaseMessage = item.release?.message?.trim()
 
   return (

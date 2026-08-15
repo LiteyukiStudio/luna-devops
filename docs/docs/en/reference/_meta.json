@@ -16,6 +16,11 @@
   },
   {
     "type": "file",
+    "name": "volume-transfer",
+    "label": "Volume Transfers"
+  },
+  {
+    "type": "file",
     "name": "gateway-traffic-probe",
     "label": "Gateway Traffic Probe"
   },

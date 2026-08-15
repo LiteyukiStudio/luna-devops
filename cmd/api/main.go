@@ -43,6 +43,9 @@ func run() (runErr error) {
 	if err := cfg.ValidateRedis(); err != nil {
 		return fmt.Errorf("validate Redis configuration: %w", err)
 	}
+	if err := cfg.ValidateVolumeTransfer(); err != nil {
+		return fmt.Errorf("validate volume transfer configuration: %w", err)
+	}
 	if err := secret.ValidateEncryptionConfig(); err != nil {
 		return fmt.Errorf("validate encryption configuration: %w", err)
 	}

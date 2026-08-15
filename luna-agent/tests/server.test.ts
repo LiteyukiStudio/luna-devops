@@ -6,13 +6,13 @@ import { DeterministicProvider } from "../src/provider/deterministic.js"
 import { defaultRuntimeSettings } from "../src/runtime-settings.js"
 import { buildServer } from "../src/server.js"
 import { PayloadCipher } from "../src/payload-cipher.js"
-import type { AICapabilities, AIEvent, AITimeline, AITurnCreated } from "../../web/src/api/ai-types.js"
+import type { AIEvent, AITimeline, AITurnCreated } from "../../web/src/api/ai-types.js"
 import { presentTimeline } from "../src/timeline-presenter.js"
 
 function fixture() {
   const repository = new MemoryRepository()
   const provider = new DeterministicProvider()
-  const app = buildServer({ config: loadConfig({ NODE_ENV: "test" }), repository, provider, authenticator: new DevelopmentAuthenticator(), graphVersions: ["assistant-v1"], grantCipher: new PayloadCipher(Buffer.alloc(32, 1)) })
+  const app = buildServer({ config: loadConfig({ NODE_ENV: "test" }), repository, provider, authenticator: new DevelopmentAuthenticator(), grantCipher: new PayloadCipher(Buffer.alloc(32, 1)) })
   return { app, repository }
 }
 
@@ -87,7 +87,6 @@ describe("internal API", () => {
       repository,
       provider,
       authenticator: new DevelopmentAuthenticator(),
-      graphVersions: ["assistant-v1"],
       grantCipher: new PayloadCipher(Buffer.alloc(32, 1)),
       cancelRun: () => { throw new Error("local abort failed") },
     })
@@ -106,7 +105,7 @@ describe("internal API", () => {
     expect(canceled.json()).toMatchObject({ id: runId, status: "canceled" })
     await app.close()
   })
-  it("returns the complete fail-closed Web capabilities contract", async () => {
+  it("returns Agent feature and limit metadata without a redundant health flag", async () => {
     const { app } = fixture()
     const response = await app.inject({
       method: "GET",
@@ -114,10 +113,10 @@ describe("internal API", () => {
       headers: { "x-luna-dev-user": "usr_test" },
     })
     expect(response.statusCode).toBe(200)
-    const capabilities: AICapabilities = response.json<AICapabilities>()
+    const capabilities = response.json<Record<string, unknown>>()
+    expect(capabilities).not.toHaveProperty("available")
+    expect(capabilities).not.toHaveProperty("enabled")
     expect(capabilities).toMatchObject({
-      available: true,
-      reasonCode: null,
       features: {
         streaming: true,
         approvals: false,
@@ -131,6 +130,22 @@ describe("internal API", () => {
         maxUserConcurrentRuns: 10,
       },
     })
+    await app.close()
+  })
+  it("reports only compatibility dimensions that still select runtime behavior", async () => {
+    const { app } = fixture()
+    const response = await app.inject({ method: "GET", url: "/internal/v1/health/compatibility" })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({
+      component: "luna-agent",
+      internalApiVersions: ["v1"],
+      aiSchemaMin: 1,
+      aiSchemaMax: 1,
+      promptVersions: ["system-v4"],
+      toolCatalogDigest: "sha256:platform-tools-v1",
+    })
+    expect(response.json()).not.toHaveProperty("graphVersions")
     await app.close()
   })
   it("presents a created turn as the strict Web timeline contract", async () => {

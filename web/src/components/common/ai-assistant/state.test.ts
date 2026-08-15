@@ -223,19 +223,19 @@ describe('aI assistant state', () => {
     expect(approval.runStatuses['run-1']).toBe('waiting_approval')
   })
 
-  it('replaces a card preparation block with the completed card in place', () => {
+  it('replaces a running card creation block with the completed card in place', () => {
     const started = reduceAIEvent(emptyAIAssistantState, event({
       type: 'tool.started',
       toolCallId: 'card-generation',
       payload: {
-        operationId: 'prepare_interaction_cards',
+        operationId: 'create_interaction_cards',
         arguments: { schemaVersion: 1, generationId: 'database-list', title: '正在整理数据库候选' },
         timelineIndex: 2,
       },
       item: toolItem({
         id: 'card-item',
         timelineIndex: 2,
-        toolCall: { id: 'card-generation', operationId: 'prepare_interaction_cards', callIndex: 2, status: 'running', arguments: { schemaVersion: 1, generationId: 'database-list', title: '正在整理数据库候选' } },
+        toolCall: { id: 'card-generation', operationId: 'create_interaction_cards', callIndex: 2, status: 'running', arguments: { schemaVersion: 1, generationId: 'database-list', title: '正在整理数据库候选' } },
       }),
     }))
     const completed = reduceAIEvent(started, event({
@@ -249,7 +249,7 @@ describe('aI assistant state', () => {
           schemaVersion: 1,
           generationId: 'database-list',
           title: '数据库候选',
-          template: 'catalog',
+          template: 'candidates',
           cards: [],
         },
         timelineIndex: 2,
@@ -264,7 +264,7 @@ describe('aI assistant state', () => {
           operationId: 'create_interaction_cards',
           callIndex: 2,
           status: 'succeeded',
-          arguments: { schemaVersion: 1, generationId: 'database-list', title: '数据库候选', template: 'catalog', cards: [] },
+          arguments: { schemaVersion: 1, generationId: 'database-list', title: '数据库候选', template: 'candidates', cards: [] },
         },
       }),
     }))

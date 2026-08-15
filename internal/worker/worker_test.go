@@ -88,6 +88,8 @@ func TestPeriodicTaskSpecsIncludeGitRefresh(t *testing.T) {
 	foundAIBilling := false
 	foundRuntimeBilling := false
 	foundRetentionRun := false
+	foundVolumeReconcile := false
+	foundVolumeTransferCleanup := false
 	for _, spec := range specs {
 		if spec.Task.Type() == tasks.TypeGitAccountRefresh {
 			foundGitRefresh = spec.Cron == "@every 5m" && spec.Queue == tasks.QueueLight
@@ -101,8 +103,18 @@ func TestPeriodicTaskSpecsIncludeGitRefresh(t *testing.T) {
 		if spec.Task.Type() == tasks.TypeRetentionRun {
 			foundRetentionRun = spec.Cron == "@every 24h" && spec.Queue == tasks.QueueLight
 		}
+		if spec.Task.Type() == tasks.TypeVolumeReconcile {
+			policy := tasks.PolicyForType(spec.Task.Type())
+			foundVolumeReconcile = spec.Cron == "@every 5m" && spec.Queue == policy.Queue && spec.Timeout == policy.Timeout &&
+				spec.MaxRetry == policy.MaxRetry && spec.Retention == policy.Retention && spec.Unique == policy.Unique
+		}
+		if spec.Task.Type() == tasks.TypeVolumeTransferCleanup {
+			policy := tasks.PolicyForType(spec.Task.Type())
+			foundVolumeTransferCleanup = spec.Cron == "@every 15m" && spec.Queue == policy.Queue && spec.Timeout == policy.Timeout &&
+				spec.MaxRetry == policy.MaxRetry && spec.Retention == policy.Retention && spec.Unique == policy.Unique
+		}
 	}
-	if !foundGitRefresh || !foundAIBilling || !foundRuntimeBilling || !foundRetentionRun {
+	if !foundGitRefresh || !foundAIBilling || !foundRuntimeBilling || !foundRetentionRun || !foundVolumeReconcile || !foundVolumeTransferCleanup {
 		t.Fatalf("specs = %#v", specs)
 	}
 }
@@ -178,6 +190,21 @@ func TestStorageBillingEffectivePeriodProratesWindowStart(t *testing.T) {
 	targetCreatedAt := windowStart.Add(10 * time.Minute)
 	start, end, ok := storageBillingEffectivePeriod(windowStart, windowEnd, targetCreatedAt)
 	if !ok || !start.Equal(targetCreatedAt) || !end.Equal(windowEnd) {
+		t.Fatalf("period = %s %s %v", start, end, ok)
+	}
+}
+
+func TestStorageBillingEffectivePeriodDoesNotPrecedeClaimCreation(t *testing.T) {
+	windowStart := time.Date(2026, 8, 15, 6, 0, 0, 0, time.UTC)
+	windowEnd := windowStart.Add(time.Hour)
+	volumeCreatedAt := windowStart.Add(5 * time.Minute)
+	claimCreatedAt := windowStart.Add(20 * time.Minute)
+	storageCreatedAt := volumeCreatedAt
+	if claimCreatedAt.After(storageCreatedAt) {
+		storageCreatedAt = claimCreatedAt
+	}
+	start, end, ok := storageBillingEffectivePeriod(windowStart, windowEnd, storageCreatedAt)
+	if !ok || !start.Equal(claimCreatedAt) || !end.Equal(windowEnd) {
 		t.Fatalf("period = %s %s %v", start, end, ok)
 	}
 }
@@ -839,14 +866,6 @@ func (fakeNamespaceManager) GetWorkloadSnapshot(context.Context, string, string,
 	return kubeprovider.DeploymentSnapshot{}, nil
 }
 
-func (fakeNamespaceManager) ListManagedPersistentVolumeClaims(context.Context, string, string) ([]kubeprovider.PersistentVolumeClaimSnapshot, error) {
-	return nil, nil
-}
-
-func (fakeNamespaceManager) RetainManagedPersistentVolumeClaim(context.Context, string, string, string, string) error {
-	return nil
-}
-
 func (fakeNamespaceManager) EnsureNamespace(context.Context, string, map[string]string) error {
 	return nil
 }
@@ -1124,6 +1143,7 @@ func TestApplicationResourcesSpecAppliesDefaults(t *testing.T) {
 		model.Environment{ID: "env_dev", Slug: "dev", EnvVars: `{"APP_ENV":"dev"}`, ConfigRefs: "LOG_LEVEL=debug", SecretRefs: "TOKEN=secret"},
 		model.DeploymentTarget{ID: "dplt_backend"},
 		nil,
+		nil,
 		"ns-demo",
 		120,
 	)
@@ -1146,6 +1166,7 @@ func TestApplicationResourcesSpecMergesRuntimeConfigFiles(t *testing.T) {
 		model.Environment{ID: "env_dev"},
 		model.DeploymentTarget{ID: "dplt_backend", ConfigFiles: `[{"path":"/app/config.yaml","content":"port: 3000"}]`},
 		[]model.ProjectRuntimeConfigSet{{ConfigFiles: `[{"path":"/app/config.yaml","content":"port: 8080"},{"path":"/app/base.yaml","content":"enabled: true"}]`}},
+		nil,
 		"ns-demo",
 		120,
 	)

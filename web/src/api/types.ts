@@ -161,6 +161,7 @@ export interface Project {
   namespaceStrategy: string
   maxConcurrentBuilds: number
   webConsoleEnabled: boolean
+  currentUserRole?: ProjectRoleValue
   billingOwnerUserId: string
   billingOwner?: ProjectBillingOwner
   systemKey: string
@@ -212,8 +213,15 @@ export interface Application {
   deleteMessage: string
   deleteStartedAt?: string | null
   deleteFinishedAt?: string | null
-  dataRetentionMode: 'retain' | 'retained' | 'deleted' | string
+  deploymentSummary?: ApplicationDeploymentSummary
   createdAt: string
+}
+
+export interface ApplicationDeploymentSummary {
+  targetCount: number
+  desiredReplicas: number
+  readyReplicas: number
+  status: LiveObservationStatus | 'not-deployed'
 }
 
 export interface ApplicationTopologyTarget {
@@ -260,11 +268,6 @@ export interface ApplicationTopology {
   warnings: ApplicationTopologyWarning[]
 }
 
-export interface DataExportAuthorization {
-  ticket: string
-  expiresAt: string
-}
-
 export interface AppTemplateValueDefinition {
   key: string
   label: string
@@ -274,6 +277,24 @@ export interface AppTemplateValueDefinition {
   secret: boolean
   autoGenerate: boolean
 }
+
+export type AppTemplateDataVolume
+  = | {
+    logicalName: string
+    sourceType: 'projectVolume'
+    mountPath?: string
+    devicePath?: string
+    readOnly?: boolean
+  }
+  | {
+    logicalName: string
+    sourceType: 'emptyDir'
+    mountPath: string
+    emptyDir?: {
+      medium?: '' | 'Memory'
+      sizeLimit?: string
+    }
+  }
 
 export interface AppTemplate {
   id: string
@@ -293,10 +314,7 @@ export interface AppTemplate {
   defaultReplicas: number
   defaultCPU: string
   defaultMemory: string
-  dataRetentionEnabled: boolean
-  dataMountPath: string
-  dataCapacity: string
-  retainedVolumeId?: string
+  dataVolumes: AppTemplateDataVolume[]
   values: AppTemplateValueDefinition[]
 }
 
@@ -327,8 +345,7 @@ export interface AppTemplateInstallPayload {
   replicas: number
   cpuRequest: string
   memoryRequest: string
-  dataCapacity: string
-  retainedVolumeId?: string
+  projectVolumeId?: string
   installNow: boolean
   values: Record<string, string>
 }
@@ -340,28 +357,21 @@ export interface AppTemplateInstallResponse {
   release?: Release
 }
 
-export interface RetainedVolume {
-  id: string
-  projectId: string
-  sourceApplicationId: string
-  sourceApplicationName: string
-  sourceDeploymentTargetId: string
-  clusterId: string
-  namespace: string
-  claimName: string
-  volumeName: string
-  mountPath: string
-  capacity: string
-  storageClassName: string
-  accessMode: string
-  volumeMode: string
-  status: 'retaining' | 'retained' | 'reserved' | 'claimed' | 'deleting' | 'delete_failed'
-  retainedAt: string
-}
-
 export interface ApplicationDeletionPreview {
   hasPersistentData: boolean
-  targets: Array<{ deploymentTargetId: string, deploymentTargetName: string, exportAvailable: boolean, observationCode?: string, volumes: Array<{ name: string, capacity: string, storageClassName: string, accessMode: string, volumeMode: string, createdAt: string }> }>
+  targets: Array<{
+    deploymentTargetId: string
+    deploymentTargetName: string
+    volumes: Array<{
+      bindingId: string
+      projectVolumeId: string
+      displayName: string
+      logicalName: string
+      mountPath?: string
+      devicePath?: string
+      activationState: string
+    }>
+  }>
 }
 
 export interface SystemComponentInstallation {
@@ -1080,6 +1090,25 @@ export interface DeploymentTargetHookBinding {
   updatedAt?: string
 }
 
+export interface DeploymentDataVolumeInput {
+  logicalName: string
+  sourceType: 'projectVolume' | 'emptyDir'
+  projectVolumeId?: string
+  mountPath?: string
+  devicePath?: string
+  readOnly?: boolean
+  emptyDir?: {
+    medium?: '' | 'Memory'
+    sizeLimit?: string
+  }
+}
+
+export interface DeploymentDataVolume extends DeploymentDataVolumeInput {
+  bindingId: string
+  activationState: 'reserved' | 'active' | 'release_pending' | 'error' | string
+  readOnly: boolean
+}
+
 export interface DeploymentTarget {
   id: string
   projectId: string
@@ -1166,13 +1195,7 @@ export interface DeploymentTarget {
   secretRefsSet: boolean
   configFiles: string
   secretFilesSet: boolean
-  dataRetentionEnabled: boolean
-  dataCapacity: string
-  dataMountPath: string
-  dataVolumes: string
-  dataStorageClassName: string
-  dataAccessMode: '' | 'ReadWriteOnce' | 'ReadWriteMany' | 'ReadOnlyMany' | string
-  dataVolumeMode: '' | 'Filesystem' | 'Block' | string
+  dataVolumes: DeploymentDataVolume[]
   requireApproval: boolean
   webConsoleEnabled: boolean | null
   enabled: boolean
@@ -1212,7 +1235,7 @@ export interface DeploymentTargetMetrics {
   updatedAt: string
 }
 
-export type DeploymentTargetPayload = Omit<DeploymentTarget, 'id' | 'projectId' | 'applicationId' | 'kubernetesName' | 'createdBy' | 'createdAt' | 'buildVariableSetIds' | 'runtimeConfigSetIds' | 'runtimeConfigRefs' | 'secretRefsSet' | 'secretFilesSet' | 'status' | 'observationCode' | 'lastCheckedAt' | 'desiredReplicas' | 'updatedReplicas' | 'readyReplicas' | 'availableReplicas' | 'deleteStatus' | 'deleteMessage' | 'deleteStartedAt' | 'deleteFinishedAt'> & {
+export type DeploymentTargetPayload = Omit<DeploymentTarget, 'id' | 'projectId' | 'applicationId' | 'kubernetesName' | 'createdBy' | 'createdAt' | 'buildVariableSetIds' | 'runtimeConfigSetIds' | 'runtimeConfigRefs' | 'secretRefsSet' | 'secretFilesSet' | 'dataVolumes' | 'status' | 'observationCode' | 'lastCheckedAt' | 'desiredReplicas' | 'updatedReplicas' | 'readyReplicas' | 'availableReplicas' | 'deleteStatus' | 'deleteMessage' | 'deleteStartedAt' | 'deleteFinishedAt'> & {
   buildVariableSetIds: string | string[]
   buildVariables?: Record<string, string>
   buildSecrets?: Record<string, string>
@@ -1220,6 +1243,7 @@ export type DeploymentTargetPayload = Omit<DeploymentTarget, 'id' | 'projectId' 
   runtimeConfigRefs: DeploymentRuntimeConfigRef[]
   secretRefs?: string
   secretFiles?: string
+  dataVolumes: DeploymentDataVolumeInput[]
 }
 
 export type ApplicationPayload = Pick<Application, 'name' | 'identifier' | 'icon'>
@@ -1643,6 +1667,10 @@ export interface PaginationParams {
   sortOrder?: 'asc' | 'desc'
 }
 
+export interface ApplicationListParams extends PaginationParams {
+  includeRuntime?: boolean
+}
+
 export type ProjectListScope = 'related' | 'all'
 
 export interface ProjectListParams extends PaginationParams {
@@ -1888,7 +1916,6 @@ export interface MFAStatus {
 export const mfaPurposes = [
   'runtime_exec',
   'runtime_terminal',
-  'data_export',
   'secret_update',
   'registry_credential_update',
   'kubeconfig_update',
@@ -1899,6 +1926,11 @@ export const mfaPurposes = [
   'data_retention_cleanup',
   'password_update',
   'access_token_manage',
+  'billing_owner_transfer',
+  'volume_import',
+  'volume_export',
+  'volume_adopt',
+  'volume_delete',
 ] as const
 
 export type MFAPurpose = typeof mfaPurposes[number]

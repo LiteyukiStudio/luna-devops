@@ -16,6 +16,12 @@ The **Price table** tab lists every billing meter currently configured by the pl
 
 Disabled meters remain visible but do not currently generate charges. Price and state changes only affect future usage; settled bills are not recalculated.
 
+## Volume charges
+
+Platform-managed volumes continue to produce storage usage while they are Available, Reserved, or In use. Metering prefers the PVC capacity observed live from Kubernetes and falls back to the recorded requested capacity only while the cluster is unavailable. Externally referenced volumes do not produce managed-storage charges.
+
+Actual import and export bytes use the `storage.transfer_gib` meter. Each succeeded, failed, cancelled, or expired Transfer job is settled at most once. A retry creates a new Transfer and is settled independently from the bytes it actually moves. This meter is disabled with a price of `0` by default; administrators can enable it and set its price in the **Global Settings → Billing** price table.
+
 ## Cost analysis
 
 Cost analysis groups settled usage by project, application, and deployment target and separates build, runtime, storage, gateway, and other costs.

@@ -32,6 +32,14 @@ API 和 Worker 都通过环境变量读取运行配置。使用 Docker Compose�
 
 OIDC 身份源的 Redirect URI 由 `PUBLIC_BASE_URL` 生成，后台“身份源”表单会直接展示可复制地址。准入策略默认要求 OIDC 返回非空邮箱且 `email_verified=true`；如果接入的是可信内部身份源，但无法返回标准 `email_verified`，可以在准入策略里关闭“要求 OIDC 邮箱已验证”，平台仍会要求邮箱非空。
 
+## 控制台全局设置
+
+以下设置由平台管理员在控制台中修改，不是环境变量：
+
+| 配置项 | 默认值 | 用途 |
+| --- | --- | --- |
+| `storage.projectManagedCapacityLimitGiB` | `0` | 每个项目空间可预留的托管数据卷容量上限（GiB）；`0` 表示不限制。降低上限不会截断历史卷，但会阻止新的创建和扩容，直到用量重新低于上限。 |
+
 
 ## 前端构建配置项
 
@@ -66,6 +74,8 @@ OIDC 身份源的 Redirect URI 由 `PUBLIC_BASE_URL` 生成，后台“身份源
 | 进阶 | `BUILD_BLOCKED_EGRESS_CIDRS` | 空 | `restricted` 模式下额外禁止的 CIDR。 |
 
 Worker 指标通过 OTLP 上报，配置方式见[接入可观测平台](./observability.md)。
+
+数据卷导入与导出的 S3-compatible 对象存储、回调地址、任务镜像和容量限制见[数据卷传输配置](./volume-transfer.md)。不使用导入/导出时可以不配置这些变量，数据卷的创建、挂载和删除仍可使用。
 
 ## Agent 配置项
 

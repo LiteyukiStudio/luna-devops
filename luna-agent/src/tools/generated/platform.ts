@@ -8,6 +8,17 @@ const platformListInputSchema = {
   additionalProperties: false,
 } as const
 
+const platformProjectListInputSchema = {
+  type: "object",
+  properties: {
+    page: { type: "integer", minimum: 1, maximum: 100000, default: 1 },
+    pageSize: { type: "integer", minimum: 1, maximum: 100, default: 20 },
+    scope: { type: "string", enum: ["related", "all"], default: "related" },
+  },
+  required: [],
+  additionalProperties: false,
+} as const
+
 const projectListInputSchema = {
   type: "object",
   properties: {
@@ -72,7 +83,7 @@ const generateSecretInputSchema = {
 
 export const platformOperations = [
   operation("getDashboard", "dashboard", "dashboard:read", platformListInputSchema),
-  operation("listProjects", "project", "project:read", platformListInputSchema),
+  operation("listProjects", "project", "project:read", platformProjectListInputSchema),
   operation("listAppTemplates", "application", "application:read", appTemplateListInputSchema),
   operation("getAppTemplate", "application", "application:read", appTemplateDetailInputSchema),
   operation("webSearch", "web", "web:read", webSearchInputSchema),
@@ -120,7 +131,7 @@ function operation(
   operationId: string,
   category: string,
   scope: string,
-  inputSchema: typeof platformListInputSchema | typeof projectListInputSchema | typeof appTemplateListInputSchema | typeof appTemplateDetailInputSchema | typeof webSearchInputSchema | typeof fetchWebPageInputSchema | typeof generateSecretInputSchema,
+  inputSchema: typeof platformListInputSchema | typeof platformProjectListInputSchema | typeof projectListInputSchema | typeof appTemplateListInputSchema | typeof appTemplateDetailInputSchema | typeof webSearchInputSchema | typeof fetchWebPageInputSchema | typeof generateSecretInputSchema,
 ) {
   return {
     operationId,

@@ -23,6 +23,13 @@ func (h *Handlers) ensureBillingAllowsDeployChange(ctx *gin.Context, projectID s
 	return h.ensureProjectBalanceNonNegative(ctx, projectID)
 }
 
+// Managed project volumes begin accruing storage usage as soon as capacity is
+// reserved. Unlike the optional deploy-wide policy, their create/import/expand
+// admission always requires a positive billing-owner balance.
+func (h *Handlers) ensureBillingAllowsManagedVolumeChange(ctx *gin.Context, projectID string) bool {
+	return h.ensureProjectBalanceNonNegative(ctx, projectID)
+}
+
 func (h *Handlers) ensureProjectBalanceNonNegative(ctx *gin.Context, projectID string) bool {
 	var project model.Project
 	if err := h.dbFor(ctx).Select("billing_owner_user_id").First(&project, "id = ?", projectID).Error; err != nil {

@@ -35,7 +35,6 @@ var scopeCatalog = []scopeDefinition{
 	scopeDef(ActionDeploymentRollback, "deployment", false, false, true),
 	scopeDef(ActionDeploymentDelete, "deployment", false, false, true),
 	scopeDef(ActionDeploymentExec, "deployment", false, false, true),
-	oauthOnlyScopeDef(ActionDeploymentDataExport, "deployment", false, true),
 
 	scopeDef(ActionBuildRead, "build", true, true, true),
 	scopeDef(ActionBuildTrigger, "build", true, true, true),
@@ -61,6 +60,12 @@ var scopeCatalog = []scopeDefinition{
 
 	scopeDef(ActionImageRead, "image", true, true, true),
 	scopeDef(ActionImageWrite, "image", false, false, true),
+
+	scopeDef(ActionVolumeRead, "volume", true, true, true),
+	scopeDef(ActionVolumeWrite, "volume", false, false, true),
+	oauthOnlyScopeDef(ActionVolumeImport, "volume", false, true),
+	oauthOnlyScopeDef(ActionVolumeExport, "volume", false, true),
+	oauthOnlyScopeDef(ActionVolumeDelete, "volume", false, true),
 
 	scopeDef(ActionBillingRead, "billing", true, true, true),
 	scopeDef(ActionBillingAdjust, "billing", false, false, true),

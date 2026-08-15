@@ -30,14 +30,13 @@ const (
 	ActionApplicationUpdate Action = "application:update"
 	ActionApplicationDelete Action = "application:delete"
 
-	ActionDeploymentRead       Action = "deployment:read"
-	ActionDeploymentUpdate     Action = "deployment:update"
-	ActionDeploymentRelease    Action = "deployment:release"
-	ActionDeploymentRestart    Action = "deployment:restart"
-	ActionDeploymentRollback   Action = "deployment:rollback"
-	ActionDeploymentDelete     Action = "deployment:delete"
-	ActionDeploymentExec       Action = "deployment:exec"
-	ActionDeploymentDataExport Action = "deployment:data_export"
+	ActionDeploymentRead     Action = "deployment:read"
+	ActionDeploymentUpdate   Action = "deployment:update"
+	ActionDeploymentRelease  Action = "deployment:release"
+	ActionDeploymentRestart  Action = "deployment:restart"
+	ActionDeploymentRollback Action = "deployment:rollback"
+	ActionDeploymentDelete   Action = "deployment:delete"
+	ActionDeploymentExec     Action = "deployment:exec"
 
 	ActionBuildRead    Action = "build:read"
 	ActionBuildTrigger Action = "build:trigger"
@@ -72,6 +71,12 @@ const (
 	ActionImageRead  Action = "image:read"
 	ActionImageWrite Action = "image:write"
 
+	ActionVolumeRead   Action = "volume:read"
+	ActionVolumeWrite  Action = "volume:write"
+	ActionVolumeImport Action = "volume:import"
+	ActionVolumeExport Action = "volume:export"
+	ActionVolumeDelete Action = "volume:delete"
+
 	ActionTokenManage Action = "token:manage"
 )
 
@@ -86,14 +91,13 @@ var projectActionRoles = map[Action][]string{
 	ActionApplicationUpdate: {ProjectRoleOwner, ProjectRoleAdmin, ProjectRoleDeveloper},
 	ActionApplicationDelete: {ProjectRoleOwner, ProjectRoleAdmin},
 
-	ActionDeploymentRead:       {ProjectRoleOwner, ProjectRoleAdmin, ProjectRoleDeveloper, ProjectRoleViewer},
-	ActionDeploymentUpdate:     {ProjectRoleOwner, ProjectRoleAdmin, ProjectRoleDeveloper},
-	ActionDeploymentRelease:    {ProjectRoleOwner, ProjectRoleAdmin, ProjectRoleDeveloper},
-	ActionDeploymentRestart:    {ProjectRoleOwner, ProjectRoleAdmin, ProjectRoleDeveloper},
-	ActionDeploymentRollback:   {ProjectRoleOwner, ProjectRoleAdmin, ProjectRoleDeveloper},
-	ActionDeploymentDelete:     {ProjectRoleOwner, ProjectRoleAdmin},
-	ActionDeploymentExec:       {ProjectRoleOwner, ProjectRoleAdmin, ProjectRoleDeveloper},
-	ActionDeploymentDataExport: {ProjectRoleOwner, ProjectRoleAdmin},
+	ActionDeploymentRead:     {ProjectRoleOwner, ProjectRoleAdmin, ProjectRoleDeveloper, ProjectRoleViewer},
+	ActionDeploymentUpdate:   {ProjectRoleOwner, ProjectRoleAdmin, ProjectRoleDeveloper},
+	ActionDeploymentRelease:  {ProjectRoleOwner, ProjectRoleAdmin, ProjectRoleDeveloper},
+	ActionDeploymentRestart:  {ProjectRoleOwner, ProjectRoleAdmin, ProjectRoleDeveloper},
+	ActionDeploymentRollback: {ProjectRoleOwner, ProjectRoleAdmin, ProjectRoleDeveloper},
+	ActionDeploymentDelete:   {ProjectRoleOwner, ProjectRoleAdmin},
+	ActionDeploymentExec:     {ProjectRoleOwner, ProjectRoleAdmin, ProjectRoleDeveloper},
 
 	ActionBuildRead:    {ProjectRoleOwner, ProjectRoleAdmin, ProjectRoleDeveloper, ProjectRoleViewer},
 	ActionBuildTrigger: {ProjectRoleOwner, ProjectRoleAdmin, ProjectRoleDeveloper},
@@ -113,6 +117,12 @@ var projectActionRoles = map[Action][]string{
 
 	ActionBillingRead:   {ProjectRoleOwner, ProjectRoleAdmin},
 	ActionBillingAdjust: {ProjectRoleOwner},
+
+	ActionVolumeRead:   {ProjectRoleOwner, ProjectRoleAdmin, ProjectRoleDeveloper, ProjectRoleViewer},
+	ActionVolumeWrite:  {ProjectRoleOwner, ProjectRoleAdmin, ProjectRoleDeveloper},
+	ActionVolumeImport: {ProjectRoleOwner, ProjectRoleAdmin, ProjectRoleDeveloper},
+	ActionVolumeExport: {ProjectRoleOwner, ProjectRoleAdmin},
+	ActionVolumeDelete: {ProjectRoleOwner, ProjectRoleAdmin},
 }
 
 func ProjectRoleAllows(role string, action Action) bool {
@@ -213,6 +223,8 @@ func RequiredAccessTokenScope(path, method string) string {
 		return string(ActionGitRead)
 	case isProjectRepositoryBindingPath(path) && method != http.MethodGet:
 		return string(ActionGitWrite)
+	case isProjectVolumePath(path):
+		return projectVolumeScope(path, method)
 	case strings.HasPrefix(path, "/api/v1/projects") && method == http.MethodGet:
 		return string(ActionProjectRead)
 	case strings.HasPrefix(path, "/api/v1/projects") && method != http.MethodGet:
@@ -252,6 +264,45 @@ func RequiredAccessTokenScope(path, method string) string {
 	}
 }
 
+func isProjectVolumePath(path string) bool {
+	return strings.HasPrefix(path, "/api/v1/projects/:projectId/volumes") ||
+		strings.HasPrefix(path, "/api/v1/projects/:projectId/volume-imports") ||
+		strings.HasPrefix(path, "/api/v1/projects/:projectId/volume-transfers") ||
+		path == "/api/v1/projects/:projectId/volume-storage-classes"
+}
+
+func projectVolumeScope(path, method string) string {
+	switch {
+	case strings.Contains(path, "/volume-imports"):
+		return string(ActionVolumeImport)
+	case strings.HasSuffix(path, "/exports"),
+		strings.HasSuffix(path, "/download-authorizations"),
+		strings.HasSuffix(path, "/content"),
+		strings.HasSuffix(path, "/manifest"):
+		return string(ActionVolumeExport)
+	case strings.HasSuffix(path, "/deletion-preview"), method == http.MethodDelete:
+		return string(ActionVolumeDelete)
+	case strings.Contains(path, "/volume-transfers/") && (strings.HasSuffix(path, "/cancel") || strings.HasSuffix(path, "/retry")):
+		// Transfer cancel/retry has an ownership-or-operation-specific permission
+		// rule that is resolved after loading the transfer. Requiring read here
+		// authenticates the project boundary without incorrectly rejecting the
+		// creating Developer before that resource-level check can run.
+		return string(ActionVolumeRead)
+	case strings.Contains(path, "/volumes/") && strings.HasSuffix(path, "/retry"):
+		// A failed provision/expand retry requires volume:write, while a failed
+		// deletion retry requires volume:delete and a fresh volume_delete step-up.
+		// Load the project-scoped volume under read permission first, then enforce
+		// the original operation permission in the Handler.
+		return string(ActionVolumeRead)
+	case strings.HasSuffix(path, "/retry"):
+		return string(ActionVolumeWrite)
+	case method == http.MethodGet || method == http.MethodHead:
+		return string(ActionVolumeRead)
+	default:
+		return string(ActionVolumeWrite)
+	}
+}
+
 func runtimeClusterWriteScope(path, method string) string {
 	if method == http.MethodDelete && strings.HasSuffix(path, "/resources") {
 		return string(ActionClusterManage)
@@ -266,8 +317,6 @@ func deploymentTargetScope(path, method string) string {
 	switch {
 	case strings.HasSuffix(path, "/restart"):
 		return string(ActionDeploymentRestart)
-	case strings.HasSuffix(path, "/data-export") || strings.HasSuffix(path, "/data-export/authorize"):
-		return string(ActionDeploymentDataExport)
 	case strings.Contains(path, "/metrics/stream"):
 		return string(ActionDeploymentRead)
 	case method == http.MethodGet:

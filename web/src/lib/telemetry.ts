@@ -23,6 +23,9 @@ const dynamicResourceParents = new Set([
   'routes',
   'tokens',
   'users',
+  'volume-imports',
+  'volume-transfers',
+  'volumes',
 ])
 
 let provider: WebTracerProvider | undefined
@@ -200,7 +203,7 @@ function normalizeRoute(input: string) {
   return `/${segments.map((segment, index) => {
     if (index > 0 && dynamicResourceParents.has(segments[index - 1]))
       return ':id'
-    if (/^(?:prj|app|rel|run|usr|reg|clu|dpt|env)_[\w-]+$/i.test(segment))
+    if (/^(?:prj|app|rel|run|usr|reg|clu|dpt|env|pvol|vtx)_[\w-]+$/i.test(segment))
       return ':id'
     if (/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(segment))
       return ':id'

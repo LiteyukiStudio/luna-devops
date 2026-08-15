@@ -105,7 +105,7 @@ export class MemoryRepository implements Repository {
     }
     const run: StoredRun = {
       id: runId, conversationId: input.conversationId, turnId: turn.id, runIndex: 0,
-      status: "queued", rowVersion: 1, graphVersion: "assistant-v1", promptVersion: "system-v4",
+      status: "queued", rowVersion: 1, promptVersion: "system-v4",
       toolCatalogDigest: input.toolCatalogDigest ?? "sha256:platform-tools-v1", pageContext: input.pageContext,
       ...(input.traceContext ? { traceContext: input.traceContext } : {}),
       clientInstanceId: input.clientInstanceId ?? "memory-client-instance", createdAt: now, ownerUserId,

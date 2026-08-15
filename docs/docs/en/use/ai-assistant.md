@@ -37,7 +37,9 @@ Under **Advanced settings**, the Agent's internal parameters can be tuned by cat
 
 The assistant can inspect platform resources, analyze logs and status, read public web pages, collect settings through interactive cards, and report operation results. Long-running builds and releases show their real status, and the assistant checks the outcome after they finish.
 
-Interactive cards normally appear at their actual point in the conversation. When a reply contains exactly one blocking configuration form, the assistant may place it at the end of that reply so you can read the explanation before filling it in. Candidate lists, multiple cards, progress, and results stay in their real event order.
+An interaction card first shows a preparation placeholder at its actual conversation position, then replaces that same item with validated content. When a reply contains exactly one blocking configuration form, the assistant may place it at the end of that reply so you can read the explanation before filling it in. Candidate lists, multiple cards, progress, and results stay in their real event order.
+
+Cards use five stable roles: candidate discovery and comparison (`candidates`), structured configuration (`form`), change review (`change_review`), facts or operation outcomes (`result`), and platform-backed live tasks (`live_task`). Resource details, diagnostics, charts, and tables remain available as content blocks; you do not need to select or know these template names.
 
 A conversation can contain several cards with the same configuration fields. Each card keeps its inputs and selections isolated, so operating the current card does not change or jump to an earlier card. If one generated element cannot be displayed, only that position shows a fallback notice; the rest of the conversation and its cards remain available, and refreshing can restore them from the saved conversation.
 
@@ -48,6 +50,8 @@ When deploying from a repository or official deployment guide, the assistant fir
 When a project provides both Kubernetes/Helm and Docker/Compose deployment material, the assistant prefers Kubernetes/Helm configuration that matches the target version and uses Docker/Compose to fill in service topology and runtime parameters. If the Kubernetes material is outdated, incomplete, or unsuitable for the target environment, it uses verifiable Docker/Compose or source configuration instead.
 
 The assistant has the same platform permissions as you. It cannot access projects or resources that you cannot access. Deletions, releases, permission changes, and other high-risk operations show their targets and parameters before execution. Changed parameters require a new approval.
+
+When discovering project spaces, the assistant searches only project spaces directly related to you by default. Even for a platform administrator, it searches all project spaces only when you explicitly request a platform-wide search.
 
 When diagnosis requires several container commands that share a working directory or environment, the assistant can open a short-lived runtime command session. Every command still revalidates permission, project policy, approval, and MFA. Idle sessions and sessions that reach their maximum lifetime close automatically, and the assistant releases them when diagnosis ends. Do not use command sessions for long-running jobs or secret storage.
 
@@ -65,7 +69,7 @@ Tool details show redacted parameters, results, and troubleshooting identifiers.
 
 ### The assistant is missing
 
-Ask an administrator to confirm that it is enabled and that the provider URL, API key, and model are valid.
+Ask an administrator to confirm that the assistant is enabled and that its access scope includes your account. The entry point depends only on platform enablement and access policy. It remains visible when the Agent or model service is temporarily unreachable, and a retryable error is shown when you start an operation.
 
 ### The model is unavailable
 

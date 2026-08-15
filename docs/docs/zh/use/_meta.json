@@ -21,6 +21,16 @@
   },
   {
     "type": "file",
+    "name": "project-volumes",
+    "label": "项目数据卷"
+  },
+  {
+    "type": "file",
+    "name": "volume-transfer",
+    "label": "数据卷导入与导出"
+  },
+  {
+    "type": "file",
     "name": "notifications",
     "label": "通知"
   },

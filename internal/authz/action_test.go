@@ -15,14 +15,22 @@ func TestProjectRoleAllowsAction(t *testing.T) {
 	if ProjectRoleAllows(ProjectRoleDeveloper, ActionSecretViewValue) {
 		t.Fatal("expected developer to be blocked from secret values")
 	}
-	for _, role := range []string{ProjectRoleOwner, ProjectRoleAdmin} {
-		if !ProjectRoleAllows(role, ActionDeploymentDataExport) {
-			t.Fatalf("expected project %s to export deployment data", role)
+	for _, role := range []string{ProjectRoleOwner, ProjectRoleAdmin, ProjectRoleDeveloper, ProjectRoleViewer} {
+		if !ProjectRoleAllows(role, ActionVolumeRead) {
+			t.Fatalf("expected project %s to read volumes", role)
 		}
 	}
-	for _, role := range []string{ProjectRoleDeveloper, ProjectRoleViewer} {
-		if ProjectRoleAllows(role, ActionDeploymentDataExport) {
-			t.Fatalf("expected project %s to be blocked from deployment data export", role)
+	for _, role := range []string{ProjectRoleOwner, ProjectRoleAdmin, ProjectRoleDeveloper} {
+		if !ProjectRoleAllows(role, ActionVolumeWrite) || !ProjectRoleAllows(role, ActionVolumeImport) {
+			t.Fatalf("expected project %s to write and import volumes", role)
+		}
+	}
+	for _, action := range []Action{ActionVolumeExport, ActionVolumeDelete} {
+		if !ProjectRoleAllows(ProjectRoleOwner, action) || !ProjectRoleAllows(ProjectRoleAdmin, action) {
+			t.Fatalf("expected owner and admin to use %s", action)
+		}
+		if ProjectRoleAllows(ProjectRoleDeveloper, action) || ProjectRoleAllows(ProjectRoleViewer, action) {
+			t.Fatalf("expected developer and viewer to be blocked from %s", action)
 		}
 	}
 }
@@ -77,8 +85,13 @@ func TestAccessTokenScopeRules(t *testing.T) {
 			t.Fatalf("expected full scope token to allow %s", action)
 		}
 	}
-	if scope := NormalizeAccessTokenScope(string(ActionDeploymentDataExport)); scope != "" {
-		t.Fatalf("deployment data export must not be accepted as a personal access token scope, got %q", scope)
+	if scope := NormalizeAccessTokenScope(string(ActionVolumeRead)); scope != string(ActionVolumeRead) {
+		t.Fatalf("volume read must be accepted as a personal access token scope, got %q", scope)
+	}
+	for _, action := range []Action{ActionVolumeImport, ActionVolumeExport, ActionVolumeDelete} {
+		if scope := NormalizeAccessTokenScope(string(action)); scope != "" {
+			t.Fatalf("high-risk volume scope %s must not be exposed to personal access tokens, got %q", action, scope)
+		}
 	}
 }
 
@@ -91,9 +104,6 @@ func TestAccessTokenScopeCatalogMarksAdminOnlyScopes(t *testing.T) {
 	}
 	if catalogScopeRequiresAdmin(adminCatalog, string(ActionDeploymentExec)) {
 		t.Fatal("expected deployment exec to be available for platform admins")
-	}
-	if catalogContainsScope(userCatalog, string(ActionDeploymentDataExport)) || catalogContainsScope(adminCatalog, string(ActionDeploymentDataExport)) {
-		t.Fatal("deployment data export must not be exposed as a personal access token scope")
 	}
 	if catalogScopeRequiresAdmin(userCatalog, string(ActionBuildTrigger)) {
 		t.Fatal("expected build trigger to be creatable by regular users")
@@ -112,10 +122,7 @@ func TestAccessTokenScopeCatalogMarksAdminOnlyScopes(t *testing.T) {
 }
 
 func TestOAuthScopeRules(t *testing.T) {
-	if scope := NormalizeOAuthScope(string(ActionDeploymentDataExport)); scope != string(ActionDeploymentDataExport) {
-		t.Fatalf("normalized OAuth data export scope = %q", scope)
-	}
-	if scope := NormalizeOAuthScope("project:write,deployment:exec,deployment:data_export"); scope != "project:write,deployment:exec,deployment:data_export" {
+	if scope := NormalizeOAuthScope("project:write,deployment:exec,volume:import,volume:export,volume:delete"); scope != "project:write,deployment:exec,volume:import,volume:export,volume:delete" {
 		t.Fatalf("normalized OAuth project scopes = %q", scope)
 	}
 	if scope := NormalizeOAuthScope("*"); scope != "" {
@@ -125,8 +132,10 @@ func TestOAuthScopeRules(t *testing.T) {
 	for _, scope := range []string{
 		"project:write",
 		"deployment:exec",
-		"deployment:data_export",
 		"secret:update",
+		"volume:import",
+		"volume:export",
+		"volume:delete",
 	} {
 		if !UserCanAuthorizeOAuthScope(PlatformRoleUser, scope) {
 			t.Fatalf("expected regular user to authorize project-scoped OAuth scope %q", scope)
@@ -159,9 +168,11 @@ func TestRecommendedOAuthScopesExcludeHighRiskOperations(t *testing.T) {
 	}
 	for _, scope := range []Action{
 		ActionDeploymentExec,
-		ActionDeploymentDataExport,
 		ActionSecretUpdate,
 		ActionConfigWrite,
+		ActionVolumeImport,
+		ActionVolumeExport,
+		ActionVolumeDelete,
 	} {
 		if contains(scopes, string(scope)) {
 			t.Fatalf("expected recommended OAuth scopes to exclude high-risk scope %q", scope)
@@ -192,8 +203,6 @@ func TestRequiredAccessTokenScopeUsesFineGrainedProjectRoutes(t *testing.T) {
 		{"/api/v1/projects/:projectId/members", "POST", string(ActionProjectManage)},
 		{"/api/v1/projects/:projectId/applications", "POST", string(ActionApplicationCreate)},
 		{"/api/v1/projects/:projectId/applications/:applicationId/deployment-targets/:targetId/restart", "POST", string(ActionDeploymentRestart)},
-		{"/api/v1/projects/:projectId/applications/:applicationId/deployment-targets/:targetId/data-export", "GET", string(ActionDeploymentDataExport)},
-		{"/api/v1/projects/:projectId/applications/:applicationId/deployment-targets/:targetId/data-export/authorize", "POST", string(ActionDeploymentDataExport)},
 		{"/api/v1/projects/:projectId/build-runs/trigger", "POST", string(ActionBuildTrigger)},
 		{"/api/v1/projects/:projectId/build-runs/:runId/cancel", "POST", string(ActionBuildCancel)},
 		{"/api/v1/projects/:projectId/releases", "POST", string(ActionDeploymentRelease)},
@@ -201,6 +210,22 @@ func TestRequiredAccessTokenScopeUsesFineGrainedProjectRoutes(t *testing.T) {
 		{"/api/v1/projects/:projectId/releases/:releaseId/rollback", "POST", string(ActionDeploymentRollback)},
 		{"/api/v1/projects/:projectId/gateway-routes", "POST", string(ActionGatewayManage)},
 		{"/api/v1/projects/:projectId/repository-bindings", "POST", string(ActionGitWrite)},
+		{"/api/v1/projects/:projectId/volumes", "GET", string(ActionVolumeRead)},
+		{"/api/v1/projects/:projectId/volumes", "POST", string(ActionVolumeWrite)},
+		{"/api/v1/projects/:projectId/volumes/:volumeId", "PATCH", string(ActionVolumeWrite)},
+		{"/api/v1/projects/:projectId/volumes/:volumeId/retry", "POST", string(ActionVolumeRead)},
+		{"/api/v1/projects/:projectId/volumes/:volumeId", "DELETE", string(ActionVolumeDelete)},
+		{"/api/v1/projects/:projectId/volumes/:volumeId/deletion-preview", "POST", string(ActionVolumeDelete)},
+		{"/api/v1/projects/:projectId/volumes/:volumeId/exports", "POST", string(ActionVolumeExport)},
+		{"/api/v1/projects/:projectId/volume-storage-classes", "GET", string(ActionVolumeRead)},
+		{"/api/v1/projects/:projectId/volume-imports", "POST", string(ActionVolumeImport)},
+		{"/api/v1/projects/:projectId/volume-imports/:transferId/content", "PATCH", string(ActionVolumeImport)},
+		{"/api/v1/projects/:projectId/volume-transfers", "GET", string(ActionVolumeRead)},
+		{"/api/v1/projects/:projectId/volume-transfers/:transferId/retry", "POST", string(ActionVolumeRead)},
+		{"/api/v1/projects/:projectId/volume-transfers/:transferId/cancel", "POST", string(ActionVolumeRead)},
+		{"/api/v1/projects/:projectId/volume-transfers/:transferId/download-authorizations", "POST", string(ActionVolumeExport)},
+		{"/api/v1/projects/:projectId/volume-transfers/:transferId/content", "GET", string(ActionVolumeExport)},
+		{"/api/v1/projects/:projectId/volume-transfers/:transferId/manifest", "GET", string(ActionVolumeExport)},
 		{"/api/v1/events", "GET", string(ActionEventRead)},
 		{"/api/v1/events/:eventId", "GET", string(ActionEventRead)},
 		{"/api/v1/dashboard", "GET", string(ActionDashboardRead)},

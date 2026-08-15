@@ -11,9 +11,9 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
-	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/LiteyukiStudio/devops/internal/resourceidentifier"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
+	"github.com/LiteyukiStudio/devops/internal/volume"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -22,11 +22,19 @@ import (
 var errApplicationIdentifierExists = errors.New("application identifier already exists")
 
 type applicationDeletionTargetPreview struct {
-	TargetID        string                                       `json:"deploymentTargetId"`
-	TargetName      string                                       `json:"deploymentTargetName"`
-	ExportAvailable bool                                         `json:"exportAvailable"`
-	Volumes         []kubeprovider.PersistentVolumeClaimSnapshot `json:"volumes"`
-	ObservationCode string                                       `json:"observationCode,omitempty"`
+	TargetID   string                             `json:"deploymentTargetId"`
+	TargetName string                             `json:"deploymentTargetName"`
+	Volumes    []applicationDeletionVolumePreview `json:"volumes"`
+}
+
+type applicationDeletionVolumePreview struct {
+	BindingID       string `json:"bindingId"`
+	ProjectVolumeID string `json:"projectVolumeId"`
+	DisplayName     string `json:"displayName"`
+	LogicalName     string `json:"logicalName"`
+	MountPath       string `json:"mountPath,omitempty"`
+	DevicePath      string `json:"devicePath,omitempty"`
+	ActivationState string `json:"activationState"`
 }
 
 type applicationDeletionPreview struct {
@@ -35,7 +43,8 @@ type applicationDeletionPreview struct {
 }
 
 func (h *Handlers) ListApplications(ctx *gin.Context) {
-	if _, ok := h.findProjectForCurrentUser(ctx); !ok {
+	project, ok := h.findProjectForCurrentUser(ctx)
+	if !ok {
 		return
 	}
 
@@ -54,6 +63,16 @@ func (h *Handlers) ListApplications(ctx *gin.Context) {
 		"createdAt":  "created_at",
 	}, "created_at")).Limit(pagination.PageSize).Offset(pagination.Offset()).Find(&applications).Error; err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if ctx.Query("includeRuntime") == "true" {
+		items, err := h.applicationListItemsWithRuntime(ctx.Request.Context(), project, applications)
+		if err != nil {
+			writeError(ctx, http.StatusInternalServerError, err.Error())
+			return
+		}
+		markLiveObservationResponse(ctx)
+		ctx.JSON(http.StatusOK, paginatedResponse(items, total, pagination))
 		return
 	}
 	ctx.JSON(http.StatusOK, paginatedResponse(applications, total, pagination))
@@ -78,13 +97,12 @@ func (h *Handlers) CreateApplication(ctx *gin.Context) {
 		return
 	}
 	app := model.Application{
-		ID:                id.New("app"),
-		ProjectID:         ctx.Param("projectId"),
-		Identifier:        input.Identifier,
-		Name:              input.Name,
-		Icon:              normalizeApplicationIcon(input.Icon),
-		DeleteStatus:      "active",
-		DataRetentionMode: "retain",
+		ID:           id.New("app"),
+		ProjectID:    ctx.Param("projectId"),
+		Identifier:   input.Identifier,
+		Name:         input.Name,
+		Icon:         normalizeApplicationIcon(input.Icon),
+		DeleteStatus: "active",
 	}
 
 	if err := createApplicationRecord(h.dbFor(ctx), &app); errors.Is(err, errApplicationIdentifierExists) {
@@ -144,7 +162,7 @@ func (h *Handlers) UpdateApplication(ctx *gin.Context) {
 }
 
 func (h *Handlers) DeleteApplication(ctx *gin.Context) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
+	user, _, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
 	if !ok {
 		return
 	}
@@ -160,44 +178,21 @@ func (h *Handlers) DeleteApplication(ctx *gin.Context) {
 	if !h.ensureNoIncomingServiceBindings(ctx, app.ProjectID, app.ID, "") {
 		return
 	}
-	var input struct {
-		DataAction string `json:"dataAction"`
-	}
-	if ctx.Request.ContentLength > 0 && !bindJSON(ctx, &input) {
+	var targets []model.DeploymentTarget
+	if err := h.dbFor(ctx).Where("project_id = ? and application_id = ?", app.ProjectID, app.ID).Find(&targets).Error; err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
-	}
-	dataAction := strings.TrimSpace(input.DataAction)
-	if dataAction == "" {
-		dataAction = "retain"
-	}
-	if dataAction != "retain" && dataAction != "delete" {
-		writeErrorCode(ctx, http.StatusBadRequest, "application.data_action_invalid", "数据处理方式无效")
-		return
-	}
-	deleteData := dataAction == "delete"
-	if deleteData {
-		preview, err := h.buildApplicationDeletionPreview(ctx.Request.Context(), project, app)
-		if err != nil {
-			writeError(ctx, http.StatusInternalServerError, err.Error())
-			return
-		}
-		for _, target := range preview.Targets {
-			if target.ObservationCode != "" {
-				writeErrorCode(ctx, http.StatusConflict, "application.persistent_data_unavailable", "无法确认全部持久化数据，暂不能永久删除")
-				return
-			}
-		}
 	}
 	startedAt := time.Now()
+	volumeChanges := make(map[string]deploymentVolumeMountChanges, len(targets))
 	err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&model.Application{}).
 			Where("id = ? and project_id = ? and delete_status in ?", app.ID, app.ProjectID, []string{"active", "delete_failed", ""}).
 			Updates(map[string]any{
-				"delete_status":       "deleting",
-				"delete_message":      "",
-				"delete_started_at":   &startedAt,
-				"delete_finished_at":  nil,
-				"data_retention_mode": dataAction,
+				"delete_status":      "deleting",
+				"delete_message":     "",
+				"delete_started_at":  &startedAt,
+				"delete_finished_at": nil,
 			}).Error; err != nil {
 			return err
 		}
@@ -205,14 +200,30 @@ func (h *Handlers) DeleteApplication(ctx *gin.Context) {
 		app.DeleteMessage = ""
 		app.DeleteStartedAt = &startedAt
 		app.DeleteFinishedAt = nil
-		app.DataRetentionMode = dataAction
+		for _, target := range targets {
+			changes, syncErr := syncDeploymentTargetVolumeMounts(ctx.Request.Context(), tx, target, nil)
+			volumeChanges[target.ID] = changes
+			if syncErr != nil {
+				return syncErr
+			}
+		}
 		return nil
 	})
 	if err != nil {
-		writeError(ctx, http.StatusInternalServerError, err.Error())
+		for _, target := range targets {
+			h.auditDeploymentVolumeMountFailure(ctx.Request.Context(), user.ID, volumeChanges[target.ID], err)
+		}
+		if volume.ErrorCode(err) != "" {
+			writeVolumeError(ctx, err)
+		} else {
+			writeError(ctx, http.StatusInternalServerError, err.Error())
+		}
 		return
 	}
-	if !h.enqueueApplicationDelete(ctx.Request.Context(), app, user.ID, deleteData) {
+	for _, target := range targets {
+		h.auditDeploymentVolumeMountChanges(ctx.Request.Context(), user.ID, target, volumeChanges[target.ID])
+	}
+	if !h.enqueueApplicationDelete(ctx.Request.Context(), app, user.ID, false) {
 		finishedAt := time.Now()
 		_ = h.dbFor(ctx).Model(&model.Application{}).Where("id = ?", app.ID).Updates(map[string]any{
 			"delete_status":      "delete_failed",
@@ -222,7 +233,7 @@ func (h *Handlers) DeleteApplication(ctx *gin.Context) {
 		writeError(ctx, http.StatusServiceUnavailable, "应用删除任务投递失败，请确认 Worker 队列可用后重试")
 		return
 	}
-	h.auditWithContext(user.ID, "application.delete.request", app.ID, true, app.Name+":"+dataAction, ctx.Request.Context())
+	h.auditWithContext(user.ID, "application.delete.request", app.ID, true, "volume_mounts_unbound", ctx.Request.Context())
 	ctx.JSON(http.StatusAccepted, app)
 }
 
@@ -240,7 +251,6 @@ func (h *Handlers) PreviewApplicationDeletion(ctx *gin.Context) {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	markLiveObservationResponse(ctx)
 	ctx.JSON(http.StatusOK, result)
 }
 
@@ -249,23 +259,46 @@ func (h *Handlers) buildApplicationDeletionPreview(requestCtx context.Context, p
 	if err := h.dbWithContext(requestCtx).Where("project_id = ? and application_id = ?", project.ID, app.ID).Find(&targets).Error; err != nil {
 		return applicationDeletionPreview{}, err
 	}
+	mountsByTarget, err := h.deploymentTargetVolumeMountsByTarget(requestCtx, targets)
+	if err != nil {
+		return applicationDeletionPreview{}, err
+	}
+	volumeIDs := make([]string, 0)
+	for _, mounts := range mountsByTarget {
+		for _, mount := range mounts {
+			if mount.ProjectVolumeID != nil {
+				volumeIDs = append(volumeIDs, *mount.ProjectVolumeID)
+			}
+		}
+	}
+	volumesByID := make(map[string]model.ProjectVolume, len(volumeIDs))
+	if len(volumeIDs) > 0 {
+		var volumes []model.ProjectVolume
+		if err := h.dbWithContext(requestCtx).Where("project_id = ? and id in ?", project.ID, volumeIDs).Find(&volumes).Error; err != nil {
+			return applicationDeletionPreview{}, err
+		}
+		for _, projectVolume := range volumes {
+			volumesByID[projectVolume.ID] = projectVolume
+		}
+	}
 	result := applicationDeletionPreview{Targets: make([]applicationDeletionTargetPreview, 0, len(targets))}
 	for _, target := range targets {
-		preview := applicationDeletionTargetPreview{TargetID: target.ID, TargetName: target.Name, Volumes: []kubeprovider.PersistentVolumeClaimSnapshot{}}
-		client, namespace, code := h.kubernetesClientForDeploymentTargetObservation(project, target, requestCtx)
-		if code != "" {
-			preview.ObservationCode = code
-			result.Targets = append(result.Targets, preview)
-			continue
+		preview := applicationDeletionTargetPreview{TargetID: target.ID, TargetName: target.Name, Volumes: []applicationDeletionVolumePreview{}}
+		for _, mount := range mountsByTarget[target.ID] {
+			if mount.ProjectVolumeID == nil {
+				continue
+			}
+			projectVolume, exists := volumesByID[*mount.ProjectVolumeID]
+			if !exists {
+				continue
+			}
+			preview.Volumes = append(preview.Volumes, applicationDeletionVolumePreview{
+				BindingID: mount.ID, ProjectVolumeID: projectVolume.ID, DisplayName: projectVolume.DisplayName,
+				LogicalName: mount.LogicalName, MountPath: optionalStringValue(mount.MountPath),
+				DevicePath: optionalStringValue(mount.DevicePath), ActivationState: mount.ActivationState,
+			})
 		}
-		volumes, err := client.ListManagedPersistentVolumeClaims(requestCtx, namespace, target.ID)
-		if err != nil {
-			preview.ObservationCode = "persistent_data_unavailable"
-		} else {
-			preview.Volumes = volumes
-			preview.ExportAvailable = len(volumes) > 0
-			result.HasPersistentData = result.HasPersistentData || len(volumes) > 0
-		}
+		result.HasPersistentData = result.HasPersistentData || len(preview.Volumes) > 0
 		result.Targets = append(result.Targets, preview)
 	}
 	return result, nil

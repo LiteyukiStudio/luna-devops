@@ -12,7 +12,6 @@ export const runs = aiSchema.table("runs", {
   runIndex: integer("run_index").notNull(),
   status: text("status").notNull().$type<RunStatus>(),
   rowVersion: integer("row_version").notNull().default(1),
-  graphVersion: text("graph_version").notNull().$type<"assistant-v1">(),
   promptVersion: text("prompt_version").notNull().$type<PromptVersion>(),
   toolCatalogDigest: text("tool_catalog_digest").notNull(),
   pageContext: jsonb("page_context").notNull().$type<Record<string, unknown>>().default({}),

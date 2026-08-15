@@ -27,3 +27,27 @@ func TestOTLPRelayHeadersDoNotForwardMalformedValues(t *testing.T) {
 		t.Fatal("CRLF header was forwarded")
 	}
 }
+
+func TestBrowserTraceMediaTypeAcceptsStandardOTLPHTTPEncodings(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    string
+		allowed bool
+	}{
+		{name: "json", input: "application/json; charset=utf-8", want: "application/json", allowed: true},
+		{name: "protobuf", input: "application/x-protobuf", want: "application/x-protobuf", allowed: true},
+		{name: "case insensitive", input: " Application/JSON ", want: "application/json", allowed: true},
+		{name: "plain text", input: "text/plain", allowed: false},
+		{name: "missing", input: "", allowed: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, allowed := browserTraceMediaType(test.input)
+			if got != test.want || allowed != test.allowed {
+				t.Fatalf("browserTraceMediaType(%q) = (%q, %v), want (%q, %v)", test.input, got, allowed, test.want, test.allowed)
+			}
+		})
+	}
+}

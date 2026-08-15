@@ -1,0 +1,70 @@
+package worker
+
+import (
+	"context"
+	"sync"
+	"testing"
+
+	"github.com/LiteyukiStudio/devops/internal/model"
+	"go.opentelemetry.io/otel/trace"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+)
+
+func TestDeploymentDatabaseOperationsPreserveTraceAndCancellationContext(t *testing.T) {
+	db, err := gorm.Open(postgres.New(postgres.Config{
+		DSN: "host=127.0.0.1 port=1 user=context_test dbname=context_test sslmode=disable",
+	}), &gorm.Config{DryRun: true, DisableAutomaticPing: true})
+	if err != nil {
+		t.Fatalf("open dry-run database: %v", err)
+	}
+
+	var mu sync.Mutex
+	var observed []context.Context
+	capture := func(tx *gorm.DB) {
+		mu.Lock()
+		observed = append(observed, tx.Statement.Context)
+		mu.Unlock()
+	}
+	if err := db.Callback().Query().Before("gorm:query").Register("test:capture_query_context", capture); err != nil {
+		t.Fatalf("register query callback: %v", err)
+	}
+	if err := db.Callback().Update().Before("gorm:update").Register("test:capture_update_context", capture); err != nil {
+		t.Fatalf("register update callback: %v", err)
+	}
+
+	traceID := trace.TraceID{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
+	spanID := trace.SpanID{1, 2, 3, 4, 5, 6, 7, 8}
+	parent := trace.ContextWithRemoteSpanContext(context.Background(), trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: traceID,
+		SpanID:  spanID,
+		Remote:  true,
+	}))
+	ctx, cancel := context.WithCancel(parent)
+	cancel()
+
+	runner := &Runner{db: db}
+	_, _ = runner.releaseDeploymentTarget(ctx, model.Release{
+		ID:                 "rel_context",
+		ProjectID:          "prj_context",
+		ApplicationID:      "app_context",
+		DeploymentTargetID: "dt_context",
+	})
+	_ = runner.finishDeployRelease(ctx, model.Release{ID: "rel_context"}, "failed", "cancelled")
+	_ = runner.markApplicationDeleteFailed(ctx, "app_context", context.Canceled)
+
+	mu.Lock()
+	contexts := append([]context.Context(nil), observed...)
+	mu.Unlock()
+	if len(contexts) < 3 {
+		t.Fatalf("observed database contexts = %d, want at least 3", len(contexts))
+	}
+	for index, observedCtx := range contexts {
+		if observedCtx.Err() != context.Canceled {
+			t.Fatalf("database context %d cancellation = %v, want context.Canceled", index, observedCtx.Err())
+		}
+		if got := trace.SpanContextFromContext(observedCtx).TraceID(); got != traceID {
+			t.Fatalf("database context %d trace ID = %s, want %s", index, got, traceID)
+		}
+	}
+}

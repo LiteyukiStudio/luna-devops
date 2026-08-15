@@ -14,6 +14,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/secret"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
 	"github.com/LiteyukiStudio/devops/internal/telemetry"
+	"github.com/LiteyukiStudio/devops/internal/volumetransfer"
 	"github.com/LiteyukiStudio/devops/internal/worker"
 	"github.com/hibiken/asynq"
 )
@@ -52,6 +53,9 @@ func run(ctx context.Context) error {
 	cfg := config.Load()
 	if err := cfg.ValidateRedis(); err != nil {
 		return err
+	}
+	if err := cfg.ValidateVolumeTransfer(); err != nil {
+		return fmt.Errorf("validate volume transfer configuration: %w", err)
 	}
 	if err := secret.ValidateEncryptionConfig(); err != nil {
 		return fmt.Errorf("%w; set SECRET_ENCRYPTION_KEY or run local development with APP_ENV=development", err)
@@ -95,6 +99,10 @@ func run(ctx context.Context) error {
 	if queueRegistration != nil {
 		defer queueRegistration.Unregister()
 	}
+	volumeTransferStore, err := volumetransfer.NewConfiguredStore(cfg)
+	if err != nil {
+		return fmt.Errorf("initialize volume transfer store: %w", err)
+	}
 
 	options := worker.Options{
 		DeployRolloutTimeoutSeconds: cfg.DeployRolloutTimeoutSeconds,
@@ -111,6 +119,10 @@ func run(ctx context.Context) error {
 		BuildPrivateEgressCIDRs:     cfg.BuildPrivateEgressCIDRs,
 		BuildPrivateEgressPorts:     cfg.BuildPrivateEgressPorts,
 		BuildBlockedEgressCIDRs:     cfg.BuildBlockedEgressCIDRs,
+		VolumeTransferStore:         volumeTransferStore,
+		VolumeTransferCallbackURL:   cfg.VolumeTransferCallbackURL,
+		VolumeTransferJobImage:      cfg.VolumeTransferJobImage,
+		VolumeTransferMaxBytes:      cfg.VolumeTransferMaxBytes,
 	}
 	telemetry.Logger().InfoContext(ctx, "worker service starting",
 		slog.String("event.name", "worker.starting"),

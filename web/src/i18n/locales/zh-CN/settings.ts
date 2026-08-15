@@ -184,6 +184,9 @@ const settings = {
       blockNewBuildsWhenInsufficient: { label: '余额不足阻止新构建', description: '余额不足时不再接受新构建任务，已经开始的任务仍会完成结算。' },
       blockDeployChangesWhenInsufficient: { label: '余额不足阻止部署变更', description: '余额不足时阻止新发布、扩容和新增数据卷等付费变更。' },
     },
+    storage: {
+      projectManagedCapacityLimitGiB: { label: '项目空间托管数据卷容量上限（GiB）', description: '限制每个项目空间可预留的托管数据卷总容量。0 表示不限制；历史超额卷不会被截断，但新增和扩容会被拒绝。' },
+    },
     retention: {
       platformEventsDays: { label: '平台事件保留天数', description: '平台事件明细的保留天数，0 表示不自动清理。' },
       notificationDeliveriesDays: { label: '通知投递记录保留天数', description: '通知投递记录的保留天数，0 表示不自动清理。' },
@@ -297,6 +300,7 @@ const settings = {
     'runtime.cpu_vcpu_hour': '运行 CPU 用量；1 核时表示 1 个 vCPU 使用 1 小时。',
     'runtime.memory_gib_hour': '运行内存用量；1 GiB 时表示 1 GiB 内存使用 1 小时。',
     'storage.gib_day': '持久化存储声明容量；1 GiB 日表示 1 GiB 存储占用 1 天。',
+    'storage.transfer_gib': '数据卷导入和导出的实际传输流量；每个终态传输任务只结算一次。',
     'gateway.egress_gib': '网关响应出站流量；按实际传输的 GiB 计费。',
     'gateway.requests_1000': '网关请求次数；1 千请求表示 1,000 次请求。',
     'ai.input_tokens_1000': 'AI 模型输入 Token；每 1,000 Token 作为一个计费单位。',

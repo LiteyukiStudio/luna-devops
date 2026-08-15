@@ -12,9 +12,9 @@ export interface AIAssistantTurn {
 function isTurnEndInteractionCard(block: AIBlock): boolean {
   if (block.type !== 'tool_call')
     return false
-  const isPreparing = block.operationId === 'prepare_interaction_cards' && block.status === 'running'
-  const isCreated = block.operationId === 'create_interaction_cards' && block.status === 'succeeded'
-  return (isPreparing || isCreated) && block.arguments.placement === 'turn_end'
+  return block.operationId === 'create_interaction_cards'
+    && (block.status === 'running' || block.status === 'succeeded')
+    && block.arguments.placement === 'turn_end'
 }
 
 /**

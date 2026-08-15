@@ -325,7 +325,7 @@ function OverviewItem({ icon, label, value }: { icon?: string, label: string, va
 }
 
 function DeploymentSummary({ latestRelease, target, t }: { latestRelease?: Release, target: DeploymentTarget, t: TFunction }) {
-  const storageItems = target.dataRetentionEnabled ? deploymentStorageItems(target) : []
+  const storageItems = deploymentStorageItems(target)
 
   return (
     <div className="grid min-w-0 gap-3 py-3 text-sm">
@@ -400,16 +400,16 @@ function DeploymentResourceItem({ label, value }: { label: string, value: string
 }
 
 function deploymentStorageItems(target: DeploymentTarget) {
-  return parseRuntimeDataVolumes(target.dataVolumes, target.dataMountPath || '/data', target.dataCapacity || '1Gi')
+  return parseRuntimeDataVolumes(target.dataVolumes)
     .map((volume) => {
       const name = volume.name.trim()
-      const mountPath = volume.mountPath.trim()
-      const capacity = volume.capacity.trim() || target.dataCapacity || '1Gi'
+      const mountPath = volume.mountPath.trim() || volume.devicePath.trim()
+      const source = volume.sourceType === 'projectVolume' ? volume.projectVolumeId : 'emptyDir'
       const labelPrefix = [name, mountPath].filter(Boolean).join(' · ')
       return {
         name,
         mountPath,
-        label: labelPrefix ? `${labelPrefix}: ${capacity}` : capacity,
+        label: [labelPrefix, source].filter(Boolean).join(': '),
       }
     })
     .filter(item => item.label.trim())

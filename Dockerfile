@@ -31,6 +31,14 @@ FROM source AS build
 ARG TARGET=api
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/app ./cmd/${TARGET}
 
+# 数据卷迁移 Job 与 Worker 使用同一版本镜像，但以独立入口执行。
+# 使用 BuildKit 目标平台参数，确保多架构 Worker 镜像中的辅助二进制架构一致。
+FROM source AS build-volume-transfer
+
+ARG TARGETOS
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -ldflags="-s -w" -o /out/luna-volume-transfer ./cmd/volume-transfer
+
 # 构建内嵌前端静态资源的 API 二进制，用于完整平台部署镜像。
 FROM source AS build-embed-web
 
@@ -66,6 +74,14 @@ USER app
 EXPOSE 8080
 
 ENTRYPOINT ["/app/app"]
+
+# Worker 运行镜像同时交付数据卷迁移入口，供 Kubernetes Job 覆盖默认 ENTRYPOINT 后执行。
+FROM runtime AS runtime-worker
+
+COPY --from=build-volume-transfer --chmod=0755 /out/luna-volume-transfer /usr/local/bin/luna-volume-transfer
+
+# 在构建阶段验证非 root Worker 用户可以执行迁移入口。
+RUN test -x /usr/local/bin/luna-volume-transfer
 
 # Gateway Traffic Probe 运行镜像：只需要证书和独立 9090 健康/指标端口。
 FROM alpine:3.22 AS runtime-probe

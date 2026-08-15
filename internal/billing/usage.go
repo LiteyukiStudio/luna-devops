@@ -1,7 +1,9 @@
 package billing
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/id"
@@ -14,14 +16,15 @@ const (
 	ReasonBuildUsage     = "build.usage"
 	ReasonRuntimeUsage   = "runtime.usage"
 	ReasonStorageUsage   = "storage.usage"
+	ReasonTransferUsage  = "storage.transfer_usage"
 	ReasonGatewayUsage   = "gateway.usage"
 	ResourceTypeBuildRun = "build_run"
 	ResourceTypeRuntime  = "runtime_target"
 	ResourceTypeStorage  = "storage_volume"
+	ResourceTypeTransfer = "volume_transfer"
 	ResourceTypeGateway  = "gateway_route"
 	defaultCPURequest    = "500m"
 	defaultMemoryRequest = "512Mi"
-	defaultDataCapacity  = "1Gi"
 )
 
 type BuildUsageInput struct {
@@ -41,11 +44,18 @@ type RuntimeUsageInput struct {
 	ActorID            string
 }
 
-type StorageUsageInput struct {
-	Target      model.DeploymentTarget
-	PeriodStart time.Time
-	PeriodEnd   time.Time
-	ActorID     string
+type ProjectVolumeStorageUsageInput struct {
+	Volume                model.ProjectVolume
+	ObservedCapacityBytes int64
+	PeriodStart           time.Time
+	PeriodEnd             time.Time
+	ActorID               string
+}
+
+type VolumeTransferUsageInput struct {
+	Transfer  model.VolumeTransfer
+	SettledAt time.Time
+	ActorID   string
 }
 
 type GatewayTrafficUsageInput struct {
@@ -186,47 +196,126 @@ func (s Service) SettleRuntimeTargetWindow(input RuntimeUsageInput) error {
 	return s.debitUsages(records, ReasonRuntimeUsage, "Runtime resource usage", input.ActorID)
 }
 
-func (s Service) SettleStorageTargetWindow(input StorageUsageInput) error {
-	if input.Target.ProjectID == "" || input.Target.ID == "" || !input.Target.DataRetentionEnabled || !input.PeriodEnd.After(input.PeriodStart) {
-		return nil
+// SettleProjectVolumeStorageWindow bills the Kubernetes-observed capacity of
+// a managed project volume. Referenced claims are never billed as platform
+// storage, and application/target bindings do not affect ownership or charge.
+func (s Service) SettleProjectVolumeStorageWindow(ctx context.Context, input ProjectVolumeStorageUsageInput) error {
+	if ctx == nil {
+		return errors.New("project volume storage usage context is required")
 	}
-	capacityGiB := deploymentTargetStorageGiB(input.Target)
-	if capacityGiB.LessThanOrEqual(decimal.Zero) {
+	if input.Volume.ID == "" || input.Volume.ProjectID == "" ||
+		input.Volume.OwnershipMode != model.ProjectVolumeOwnershipManaged || input.ObservedCapacityBytes <= 0 ||
+		!input.PeriodEnd.After(input.PeriodStart) {
 		return nil
 	}
 	durationDays := decimal.NewFromInt(int64(input.PeriodEnd.Sub(input.PeriodStart) / time.Second)).Div(decimal.NewFromInt(86400))
 	if durationDays.LessThanOrEqual(decimal.Zero) {
 		return nil
 	}
+	capacityGiB := decimal.NewFromInt(input.ObservedCapacityBytes).Div(decimal.NewFromInt(1024 * 1024 * 1024))
 	quantity := capacityGiB.Mul(durationDays)
-	rate, err := s.rate("storage.gib_day")
+	contextService := Service{DB: s.DB.WithContext(ctx)}
+	rate, err := contextService.rate("storage.gib_day")
 	if err != nil {
 		return err
 	}
 	metadata, _ := json.Marshal(map[string]string{
-		"deploymentTargetId": input.Target.ID,
-		"dataRetention":      "true",
-		"capacityGiB":        capacityGiB.String(),
-		"durationDays":       durationDays.String(),
+		"projectVolumeId": input.Volume.ID,
+		"capacityGiB":     capacityGiB.String(),
+		"durationDays":    durationDays.String(),
 	})
 	now := time.Now()
 	usage := model.BillingUsageRecord{
 		ID:            id.New("busg"),
-		ProjectID:     input.Target.ProjectID,
-		ApplicationID: input.Target.ApplicationID,
+		ProjectID:     input.Volume.ProjectID,
 		Meter:         "storage.gib_day",
 		Quantity:      quantity,
 		Unit:          "gib_day",
 		AmountCredits: quantity.Mul(rate),
 		ResourceType:  ResourceTypeStorage,
-		ResourceID:    storageUsageResourceID(input.Target.ID, input.PeriodStart),
+		ResourceID:    projectVolumeStorageUsageResourceID(input.Volume.ID, input.PeriodStart),
 		PeriodStart:   input.PeriodStart,
 		PeriodEnd:     input.PeriodEnd,
 		Status:        "settled",
 		Metadata:      string(metadata),
 		SettledAt:     &now,
 	}
-	return s.debitUsage(usage, ReasonStorageUsage, "Persistent storage usage", input.ActorID)
+	return contextService.debitUsage(usage, ReasonStorageUsage, "Persistent storage usage", input.ActorID)
+}
+
+// SettleVolumeTransferUsage records the bytes moved by one terminal transfer.
+// The transfer ID is the billing resource ID, so retries with a new transfer
+// remain distinct while repeated Worker reconciliation is idempotent.
+func (s Service) SettleVolumeTransferUsage(ctx context.Context, input VolumeTransferUsageInput) error {
+	if ctx == nil {
+		return errors.New("volume transfer usage context is required")
+	}
+	transfer := input.Transfer
+	if transfer.ID == "" || transfer.ProjectID == "" || transfer.TransferredBytes <= 0 || !volumeTransferTerminal(transfer.State) {
+		return nil
+	}
+	quantity := decimal.NewFromInt(transfer.TransferredBytes).Div(decimal.NewFromInt(1024 * 1024 * 1024))
+	if quantity.LessThanOrEqual(decimal.Zero) {
+		return nil
+	}
+	contextService := Service{DB: s.DB.WithContext(ctx)}
+	rate, err := contextService.rate(MeterStorageTransferGiB)
+	if err != nil {
+		return err
+	}
+	periodStart := transfer.CreatedAt.UTC()
+	periodEnd := input.SettledAt.UTC()
+	if transfer.FinishedAt != nil {
+		periodEnd = transfer.FinishedAt.UTC()
+	}
+	if periodEnd.IsZero() {
+		periodEnd = time.Now().UTC()
+	}
+	if periodStart.IsZero() {
+		periodStart = periodEnd
+	}
+	if !periodEnd.After(periodStart) {
+		periodEnd = periodStart.Add(time.Microsecond)
+	}
+	metadata, _ := json.Marshal(map[string]string{
+		"volumeTransferId": transfer.ID,
+		"projectVolumeId":  transfer.ProjectVolumeID,
+		"direction":        transfer.Direction,
+		"format":           transfer.Format,
+		"state":            transfer.State,
+		"bytes":            decimal.NewFromInt(transfer.TransferredBytes).String(),
+	})
+	now := time.Now().UTC()
+	usage := model.BillingUsageRecord{
+		ID:            id.New("busg"),
+		ProjectID:     transfer.ProjectID,
+		Meter:         MeterStorageTransferGiB,
+		Quantity:      quantity,
+		Unit:          "gib",
+		AmountCredits: quantity.Mul(rate),
+		ResourceType:  ResourceTypeTransfer,
+		ResourceID:    transfer.ID,
+		PeriodStart:   periodStart,
+		PeriodEnd:     periodEnd,
+		Status:        "settled",
+		Metadata:      string(metadata),
+		SettledAt:     &now,
+	}
+	actorID := input.ActorID
+	if actorID == "" {
+		actorID = transfer.ActorID
+	}
+	return contextService.debitUsage(usage, ReasonTransferUsage, "Volume transfer usage", actorID)
+}
+
+func volumeTransferTerminal(state string) bool {
+	switch state {
+	case model.VolumeTransferStateSucceeded, model.VolumeTransferStateFailed,
+		model.VolumeTransferStateCancelled, model.VolumeTransferStateExpired:
+		return true
+	default:
+		return false
+	}
 }
 
 func (s Service) SettleGatewayTrafficWindow(input GatewayTrafficUsageInput) error {
@@ -273,43 +362,12 @@ func runtimeUsageResourceID(deploymentTargetID string, periodStart time.Time) st
 	return deploymentTargetID + ":" + periodStart.UTC().Format("2006010215")
 }
 
-func storageUsageResourceID(deploymentTargetID string, periodStart time.Time) string {
-	return deploymentTargetID + ":" + periodStart.UTC().Format("2006010215")
+func projectVolumeStorageUsageResourceID(projectVolumeID string, periodStart time.Time) string {
+	return projectVolumeID + ":" + periodStart.UTC().Format("2006010215")
 }
 
 func gatewayTrafficUsageResourceID(routeID string, periodStart time.Time) string {
 	return routeID + ":" + periodStart.UTC().Format("200601021504")
-}
-
-func deploymentTargetStorageGiB(target model.DeploymentTarget) decimal.Decimal {
-	total := decimal.Zero
-	for _, volume := range deploymentTargetBillingVolumes(target) {
-		total = total.Add(storageGiBFromQuantity(volume.Capacity))
-	}
-	if total.GreaterThan(decimal.Zero) {
-		return total
-	}
-	return storageGiBFromQuantity(target.DataCapacity)
-}
-
-type deploymentTargetBillingVolume struct {
-	Name      string `json:"name"`
-	MountPath string `json:"mountPath"`
-	Capacity  string `json:"capacity"`
-}
-
-func deploymentTargetBillingVolumes(target model.DeploymentTarget) []deploymentTargetBillingVolume {
-	var volumes []deploymentTargetBillingVolume
-	if err := json.Unmarshal([]byte(target.DataVolumes), &volumes); err != nil {
-		return nil
-	}
-	output := make([]deploymentTargetBillingVolume, 0, len(volumes))
-	for _, volume := range volumes {
-		if volume.Capacity != "" {
-			output = append(output, volume)
-		}
-	}
-	return output
 }
 
 func cpuCoresFromQuantity(value string) decimal.Decimal {
@@ -330,17 +388,6 @@ func memoryGiBFromQuantity(value string) decimal.Decimal {
 	quantity, err := resource.ParseQuantity(value)
 	if err != nil {
 		quantity = resource.MustParse(defaultMemoryRequest)
-	}
-	return decimal.NewFromInt(quantity.Value()).Div(decimal.NewFromInt(1024 * 1024 * 1024))
-}
-
-func storageGiBFromQuantity(value string) decimal.Decimal {
-	if value == "" {
-		value = defaultDataCapacity
-	}
-	quantity, err := resource.ParseQuantity(value)
-	if err != nil {
-		quantity = resource.MustParse(defaultDataCapacity)
 	}
 	return decimal.NewFromInt(quantity.Value()).Div(decimal.NewFromInt(1024 * 1024 * 1024))
 }

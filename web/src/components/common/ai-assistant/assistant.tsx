@@ -1,6 +1,6 @@
 import type { AutomaticRouteDelivery } from './automatic-actions'
-import type { LiveSubscription } from './session'
-import type { AIEvent, AIUIAction } from '@/api'
+import type { AITimelineQueryData } from './timeline-query'
+import type { AICapabilities, AIUIAction } from '@/api'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Bug, List, LoaderCircle, MessageSquarePlus, Sparkles, X } from 'lucide-react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
@@ -9,7 +9,7 @@ import { useTranslation } from 'react-i18next'
 import { Rnd } from 'react-rnd'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
-import { api, isUsableAICapabilities } from '@/api'
+import { api } from '@/api'
 import { useSession } from '@/app/session-context'
 import { Button } from '@/components/ui/button'
 import { isPlatformAdmin } from '@/lib/roles'
@@ -48,16 +48,24 @@ import { AIOptionsBar } from './options'
 import { shouldDisplayAIOptions } from './options-visibility'
 import { buildAIPageContext } from './page-context'
 import { AIRefreshConversationReturn } from './refresh-conversation-return'
-import { AI_EVENT_TYPES, sessionStateReducer } from './session'
-import { emptyAIAssistantState, isValidAITimeline } from './state'
-import { createAIEventSource } from './stream'
+import { useAIRunStreamManager } from './run-stream-manager'
+import { emptyAIAssistantState } from './state'
 import { resolveAISuggestions } from './suggestions'
 import { AIAssistantTimeline } from './timeline'
+import {
+  activeRunStreamSubscriptions,
+  addOptimisticTimelineTurn,
+  aiTimelineQueryKey,
+  applyTimelineQueryEvent,
+  mergeTimelineQuerySnapshot,
+  recoverTimelineOnce,
+  timelineQueryDataFromSnapshot,
+} from './timeline-query'
 import { useAIToolDebugMode } from './tool-debug-mode'
 
 type AssistantView = 'chat' | 'conversations'
 
-export function AiAssistant({ initiallyOpen = false }: { initiallyOpen?: boolean }) {
+export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilities: AICapabilities, initiallyOpen?: boolean }) {
   const { i18n, t } = useTranslation()
   const { actualUser } = useSession()
   const queryClient = useQueryClient()
@@ -73,37 +81,24 @@ export function AiAssistant({ initiallyOpen = false }: { initiallyOpen?: boolean
   const conversationButtonRef = useRef<HTMLButtonElement>(null)
   const automaticDeliveryHandlerRef = useRef<((delivery: AutomaticRouteDelivery) => Promise<void>) | undefined>(undefined)
   const processingAutomaticActionsRef = useRef(new Set<string>())
+  const timelineRecoveriesRef = useRef(new Set<string>())
   const desktop = useDesktopViewport()
   const reduceMotion = useReducedMotion()
   const [open, setOpen] = useState(initiallyOpen)
-  const [capabilityEpoch, invalidateOpenWindow] = useReducer(value => value + 1, 0)
-  const [openedCapabilityEpoch, setOpenedCapabilityEpoch] = useState(0)
   const [assistantView, setAssistantView] = useState<AssistantView>('chat')
   const [conversationSession, dispatchConversationSession] = useReducer(aiConversationSessionReducer, initialAIConversationSessionState)
   const [conversationSearch, setConversationSearch] = useState('')
-  const [liveSubscriptions, setLiveSubscriptions] = useState<Record<string, LiveSubscription>>({})
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [pendingSends, setPendingSends] = useState<Record<string, number>>({})
-  const [streamStates, dispatchStream] = useReducer(sessionStateReducer, {})
   const [preference, setPreference] = useState(readWindowPreference)
   const [launcherPosition, setLauncherPosition] = useState(readLauncherPosition)
   const [clientInstanceId] = useState(readAIClientInstanceId)
   const canDebugInternalTools = isPlatformAdmin(actualUser?.role)
   const toolDebugMode = useAIToolDebugMode(actualUser?.id, canDebugInternalTools)
 
-  const capabilities = useQuery({
-    queryKey: ['ai', 'capabilities'],
-    queryFn: api.getAICapabilities,
-    retry: false,
-    staleTime: 30_000,
-    refetchInterval: 30_000,
-  })
-  const available = isUsableAICapabilities(capabilities.data)
-  const assistantOpen = open && capabilityEpoch === openedCapabilityEpoch
   const pendingUIActions = useQuery({
     queryKey: ['ai', 'ui-actions', 'pending', clientInstanceId],
     queryFn: () => api.listPendingAIUIActions(clientInstanceId),
-    enabled: available,
     refetchInterval: 5_000,
     staleTime: 0,
   })
@@ -111,7 +106,7 @@ export function AiAssistant({ initiallyOpen = false }: { initiallyOpen?: boolean
   const conversations = useQuery({
     queryKey: ['ai', 'conversations', conversationSearch],
     queryFn: () => api.listAIConversations({ page: 1, pageSize: 50, search: conversationSearch || undefined }),
-    enabled: available && assistantOpen,
+    enabled: open,
   })
   const previousConversation = conversations.data?.items[0]
   const refreshReturnOpenedAt = conversationSession.refreshReturnExpiresAt
@@ -129,68 +124,70 @@ export function AiAssistant({ initiallyOpen = false }: { initiallyOpen?: boolean
     setDrafts(current => ({ ...current, [draftKey]: value }))
   }, [draftKey])
 
-  const timeline = useQuery({
-    queryKey: ['ai', 'timeline', selectedConversationId],
-    queryFn: () => api.getAIConversationTimeline(selectedConversationId!),
-    enabled: available && assistantOpen && Boolean(selectedConversationId),
+  const timeline = useQuery<AITimelineQueryData>({
+    queryKey: aiTimelineQueryKey(selectedConversationId),
+    queryFn: async () => timelineQueryDataFromSnapshot(await api.getAIConversationTimeline(selectedConversationId!)),
+    enabled: open && Boolean(selectedConversationId),
+    structuralSharing: (current, incoming) => mergeTimelineQuerySnapshot(
+      current as AITimelineQueryData | undefined,
+      incoming as AITimelineQueryData,
+    ),
   })
-  const timelineValid = isValidAITimeline(timeline.data)
-  const streamState = selectedConversationId ? streamStates[selectedConversationId] ?? emptyAIAssistantState : emptyAIAssistantState
-  const desyncedRunsKey = [...streamState.desyncedRunIds].sort().join(',')
-  useEffect(() => {
-    if (timelineValid && selectedConversationId)
-      dispatchStream({ type: 'snapshot', conversationId: selectedConversationId, timeline: timeline.data! })
-  }, [selectedConversationId, timeline.data, timelineValid])
-  useEffect(() => {
-    if (selectedConversationId && desyncedRunsKey)
-      void queryClient.invalidateQueries({ queryKey: ['ai', 'timeline', selectedConversationId] })
-  }, [desyncedRunsKey, queryClient, selectedConversationId])
-
-  const subscribe = useCallback((runId: string, conversationId: string, after: number, explicitUrl?: string) => {
-    const rawUrl = explicitUrl || `/api/v1/ai/runs/${encodeURIComponent(runId)}/events`
-    const source = createAIEventSource(rawUrl, after)
-    const receive = (rawEvent: Event) => {
-      try {
-        const event = JSON.parse((rawEvent as MessageEvent<string>).data) as AIEvent
-        dispatchStream({ type: 'event', event })
-        const automaticDelivery = automaticRouteDeliveryFromEvent(event)
-        if (automaticDelivery && automaticDeliveryHandlerRef.current)
-          void automaticDeliveryHandlerRef.current(automaticDelivery)
-        if (event.type === 'run.completed' || event.type === 'run.failed' || event.type === 'run.canceled') {
-          void queryClient.invalidateQueries({ queryKey: ['ai', 'conversations'] })
-          void queryClient.invalidateQueries({ queryKey: ['ai', 'timeline', conversationId] })
-          setLiveSubscriptions(current => Object.fromEntries(Object.entries(current).filter(([id]) => id !== runId)))
-          source.close()
-        }
-      }
-      catch {
-        source.close()
-      }
-    }
-    source.onmessage = receive
-    AI_EVENT_TYPES.forEach(type => source.addEventListener(type, receive))
-    source.addEventListener('ai.capabilities_changed', () => {
-      invalidateOpenWindow()
-      void queryClient.invalidateQueries({ queryKey: ['ai', 'capabilities'] })
+  const streamState = timeline.data?.state ?? emptyAIAssistantState
+  const recoverTimeline = useCallback((conversationId: string) => recoverTimelineOnce(
+    timelineRecoveriesRef.current,
+    conversationId,
+    async () => {
+      await queryClient.fetchQuery<AITimelineQueryData>({
+        queryKey: aiTimelineQueryKey(conversationId),
+        queryFn: async () => timelineQueryDataFromSnapshot(await api.getAIConversationTimeline(conversationId)),
+        staleTime: 0,
+        structuralSharing: (current, incoming) => mergeTimelineQuerySnapshot(
+          current as AITimelineQueryData | undefined,
+          incoming as AITimelineQueryData,
+        ),
+      })
+    },
+  ), [queryClient])
+  const handleStreamEvent = useCallback((event: Parameters<typeof applyTimelineQueryEvent>[1]) => {
+    let desynced = false
+    let accepted = false
+    queryClient.setQueryData<AITimelineQueryData>(aiTimelineQueryKey(event.conversationId), (current) => {
+      const next = applyTimelineQueryEvent(current, event)
+      desynced = next.state.desyncedRunIds.has(event.runId)
+      accepted = next !== current
+        && !desynced
+        && next.state.lastEventSequences[event.runId] === event.eventSequence
+      return next
     })
-    return source
-  }, [queryClient])
+    const automaticDelivery = accepted ? automaticRouteDeliveryFromEvent(event) : undefined
+    if (automaticDelivery && automaticDeliveryHandlerRef.current)
+      void automaticDeliveryHandlerRef.current(automaticDelivery)
+    if (desynced)
+      void recoverTimeline(event.conversationId)
+    if (event.type === 'run.completed' || event.type === 'run.failed' || event.type === 'run.canceled') {
+      void queryClient.invalidateQueries({ queryKey: ['ai', 'conversations'] })
+      void queryClient.invalidateQueries({ queryKey: aiTimelineQueryKey(event.conversationId) })
+    }
+  }, [queryClient, recoverTimeline])
+  const {
+    connect: connectRunStream,
+    subscriptions: runSubscriptions,
+    syncConversation: syncRunStreams,
+  } = useAIRunStreamManager({
+    // AiAssistant 在关闭时仍常驻布局；保持已知 Run 的唯一流连接，避免关窗后
+    // 后台任务失去事件。组件真正卸载时 manager 才统一关闭连接。
+    enabled: true,
+    onEvent: handleStreamEvent,
+    onCapabilitiesChanged: () => void queryClient.invalidateQueries({ queryKey: ['ai', 'capabilities'] }),
+    onMalformedEvent: subscription => recoverTimeline(subscription.conversationId),
+  })
 
   useEffect(() => {
-    if (!assistantOpen || !timelineValid || !selectedConversationId || !capabilities.data?.features.streaming)
+    if (!open || !selectedConversationId)
       return
-    const subscriptions = timeline.data!.eventCursors
-      .filter(cursor => !liveSubscriptions[cursor.runId])
-      .map(cursor => subscribe(cursor.runId, selectedConversationId, cursor.after))
-    return () => subscriptions.forEach(source => source.close())
-  }, [assistantOpen, capabilities.data?.features.streaming, liveSubscriptions, selectedConversationId, subscribe, timeline.data, timelineValid])
-  useEffect(() => {
-    if (!assistantOpen)
-      return
-    const sources = Object.values(liveSubscriptions).map(subscription =>
-      subscribe(subscription.runId, subscription.conversationId, 0, subscription.eventsUrl))
-    return () => sources.forEach(source => source.close())
-  }, [assistantOpen, liveSubscriptions, subscribe])
+    syncRunStreams(selectedConversationId, activeRunStreamSubscriptions(timeline.data, selectedConversationId, runSubscriptions))
+  }, [open, runSubscriptions, selectedConversationId, syncRunStreams, timeline.data])
 
   const createConversation = useMutation({
     mutationFn: () => api.createAIConversation({ projectId: pageContext().projectId }),
@@ -207,7 +204,7 @@ export function AiAssistant({ initiallyOpen = false }: { initiallyOpen?: boolean
     onSuccess: async (conversation) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['ai', 'conversations'] }),
-        queryClient.invalidateQueries({ queryKey: ['ai', 'timeline', conversation.id] }),
+        queryClient.invalidateQueries({ queryKey: aiTimelineQueryKey(conversation.id) }),
       ])
     },
     onError: error => toast.error(error instanceof Error ? error.message : t('aiAssistant.errors.renameConversation')),
@@ -216,6 +213,10 @@ export function AiAssistant({ initiallyOpen = false }: { initiallyOpen?: boolean
     mutationFn: async (ids: string[]) => Promise.all(ids.map(id => api.deleteAIConversation(id))),
     onSuccess: async (_, deletedIds) => {
       dispatchConversationSession({ type: 'clear_deleted', conversationIds: deletedIds })
+      deletedIds.forEach((conversationId) => {
+        syncRunStreams(conversationId, [])
+        queryClient.removeQueries({ queryKey: aiTimelineQueryKey(conversationId), exact: true })
+      })
       await queryClient.invalidateQueries({ queryKey: ['ai', 'conversations'] })
     },
     onError: error => toast.error(error instanceof Error ? error.message : t('aiAssistant.errors.deleteConversation')),
@@ -224,11 +225,11 @@ export function AiAssistant({ initiallyOpen = false }: { initiallyOpen?: boolean
     const activeFromTimeline = Object.entries(streamState.runStatuses).find(([, status]) => ['queued', 'running', 'waiting_approval', 'waiting_mfa', 'waiting_input'].includes(status))?.[0]
     if (activeFromTimeline)
       return activeFromTimeline
-    const liveSubscription = Object.values(liveSubscriptions).find(subscription => subscription.conversationId === selectedConversationId)
+    const liveSubscription = runSubscriptions.find(subscription => subscription.conversationId === selectedConversationId)
     if (liveSubscription && !['completed', 'failed', 'canceled'].includes(streamState.runStatuses[liveSubscription.runId] ?? 'queued'))
       return liveSubscription.runId
     return undefined
-  }, [liveSubscriptions, selectedConversationId, streamState.runStatuses])
+  }, [runSubscriptions, selectedConversationId, streamState.runStatuses])
   const sendTurn = useMutation({
     mutationFn: async ({ conversationId: requestedConversationId, message }: { conversationId?: string, message: string }) => {
       const text = message.trim()
@@ -251,21 +252,16 @@ export function AiAssistant({ initiallyOpen = false }: { initiallyOpen?: boolean
     },
     onSuccess: async (result) => {
       setDrafts(current => ({ ...current, [result.sourceDraftKey]: '', [result.conversationId]: '' }))
-      dispatchStream({
-        type: 'optimistic_turn',
-        conversationId: result.conversationId,
+      queryClient.setQueryData<AITimelineQueryData>(aiTimelineQueryKey(result.conversationId), current => addOptimisticTimelineTurn(current, {
         turnId: result.turnId,
         turnIndex: result.turnIndex,
         runId: result.runId,
         text: result.text,
-      })
-      setLiveSubscriptions(current => ({
-        ...current,
-        [result.runId]: { conversationId: result.conversationId, eventsUrl: result.eventsUrl, runId: result.runId },
       }))
+      connectRunStream({ conversationId: result.conversationId, eventsUrl: result.eventsUrl, runId: result.runId, after: 0 })
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['ai', 'conversations'] }),
-        queryClient.invalidateQueries({ queryKey: ['ai', 'timeline', result.conversationId] }),
+        queryClient.invalidateQueries({ queryKey: aiTimelineQueryKey(result.conversationId) }),
       ])
     },
     onError: error => toast.error(error instanceof Error ? error.message : t('aiAssistant.errors.send')),
@@ -281,7 +277,7 @@ export function AiAssistant({ initiallyOpen = false }: { initiallyOpen?: boolean
   })
   const cancelRun = useMutation({
     mutationFn: ({ runId }: { runId: string, conversationId: string }) => api.cancelAIRun(runId),
-    onSuccess: (_, { conversationId }) => void queryClient.invalidateQueries({ queryKey: ['ai', 'timeline', conversationId] }),
+    onSuccess: (_, { conversationId }) => void queryClient.invalidateQueries({ queryKey: aiTimelineQueryKey(conversationId) }),
     onError: error => toast.error(error instanceof Error ? error.message : t('aiAssistant.errors.stop')),
   })
   const submitRunInput = useMutation({
@@ -299,15 +295,13 @@ export function AiAssistant({ initiallyOpen = false }: { initiallyOpen?: boolean
   const cancelingSelected = cancelRun.isPending && cancelRun.variables?.runId === activeRunId
   const submittingSelected = submitRunInput.isPending && submitRunInput.variables?.conversationId === selectedConversationId
   const runningConversationIds = useMemo(() => {
-    const ids = new Set(Object.values(liveSubscriptions)
-      .filter(subscription => ['queued', 'running'].includes(streamStates[subscription.conversationId]?.runStatuses[subscription.runId] ?? 'queued'))
-      .map(subscription => subscription.conversationId))
+    const ids = new Set(runSubscriptions.map(subscription => subscription.conversationId))
     if (generating && selectedConversationId)
       ids.add(selectedConversationId)
     return ids
-  }, [generating, liveSubscriptions, selectedConversationId, streamStates])
+  }, [generating, runSubscriptions, selectedConversationId])
   const allowPresetSuggestions = !conversations.isLoading
-    && (!selectedConversationId || (timelineValid && timeline.data!.turns.length === 0))
+    && (!selectedConversationId || timeline.data?.snapshot?.turns.length === 0)
   const suggestions = useMemo(
     () => resolveAISuggestions(streamState.blocks, location.pathname, t, Boolean(activeRunId), allowPresetSuggestions),
     [activeRunId, allowPresetSuggestions, location.pathname, streamState.blocks, t],
@@ -385,11 +379,11 @@ export function AiAssistant({ initiallyOpen = false }: { initiallyOpen?: boolean
   }, [previousConversation?.id])
 
   useEffect(() => {
-    if (!assistantOpen)
+    if (!open)
       return
     const timeout = window.setTimeout(() => inputRef.current?.focus(), 0)
     return () => window.clearTimeout(timeout)
-  }, [assistantOpen])
+  }, [open])
 
   useEffect(() => {
     localStorage.setItem(WINDOW_STORAGE_KEY, JSON.stringify(preference))
@@ -410,10 +404,9 @@ export function AiAssistant({ initiallyOpen = false }: { initiallyOpen?: boolean
   }, [])
 
   const openAssistant = useCallback(() => {
-    setOpenedCapabilityEpoch(capabilityEpoch)
     dispatchConversationSession({ type: 'open', now: Date.now() })
     setOpen(true)
-  }, [capabilityEpoch])
+  }, [])
   // 监听侧边栏等入口派发的打开请求，与悬浮球打开行为一致
   useEffect(() => {
     const handleOpenRequest = () => openAssistant()
@@ -421,9 +414,7 @@ export function AiAssistant({ initiallyOpen = false }: { initiallyOpen?: boolean
     return () => window.removeEventListener(AI_ASSISTANT_OPEN_EVENT, handleOpenRequest)
   }, [openAssistant])
 
-  if (!available)
-    return null
-  if (!assistantOpen) {
+  if (!open) {
     return (
       <AIAssistantLauncher
         ref={triggerRef}
@@ -473,7 +464,7 @@ export function AiAssistant({ initiallyOpen = false }: { initiallyOpen?: boolean
         </Button>
         <span className="grid size-8 shrink-0 place-items-center rounded-control bg-primary text-primary-foreground"><Sparkles className="size-4" /></span>
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-[13px] font-semibold leading-5">{timeline.data?.conversation.title || t('aiAssistant.title')}</h2>
+          <h2 className="truncate text-[13px] font-semibold leading-5">{timeline.data?.snapshot?.conversation.title || t('aiAssistant.title')}</h2>
           <p className="truncate text-[10px] leading-4 text-muted-foreground">{t('aiAssistant.context', { path: location.pathname })}</p>
         </div>
         {canDebugInternalTools && (
@@ -496,7 +487,7 @@ export function AiAssistant({ initiallyOpen = false }: { initiallyOpen?: boolean
         <AIAssistantTimeline
           bottomInset={Boolean(visibleSuggestions)}
           blocks={streamState.blocks}
-          error={timeline.error ?? (timeline.data && !timelineValid ? new Error('ai_invalid_timeline') : null)}
+          error={timeline.error}
           generating={generating}
           loading={timeline.isLoading}
           onAction={executeAction}
@@ -544,7 +535,7 @@ export function AiAssistant({ initiallyOpen = false }: { initiallyOpen?: boolean
         canCancel={Boolean(activeRunId && selectedConversationId)}
         draft={draft}
         inputRef={inputRef}
-        maxLength={capabilities.data?.limits.maxInputBytes}
+        maxLength={capabilities.maxInputBytes}
         sending={sendingSelected}
         submitting={submittingSelected}
         waitingInput={waitingInput}

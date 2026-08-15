@@ -7,7 +7,6 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
@@ -61,7 +60,7 @@ func InstrumentRESTConfig(config *rest.Config) *rest.Config {
 		if previousWrap != nil {
 			transport = previousWrap(transport)
 		}
-		return telemetry.InstrumentHTTPTransport(transport)
+		return instrumentKubernetesHTTPTransport(transport)
 	}
 	return instrumented
 }

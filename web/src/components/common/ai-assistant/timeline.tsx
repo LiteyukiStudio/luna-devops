@@ -187,7 +187,7 @@ function AssistantReply({ generating, responseBlocks, onAction, onApproval, onMF
 }) {
   const hasWideContent = responseBlocks.some(block =>
     block.type === 'tool_call'
-    && (block.operationId === 'prepare_interaction_cards' || block.operationId === 'create_interaction_cards'))
+    && block.operationId === 'create_interaction_cards')
   const assistantMessages = responseBlocks.filter((block): block is MessageBlock => block.type === 'message' && block.role === 'assistant' && Boolean(block.text.trim()))
   const copyText = assistantMessages.map(block => block.text).join('\n\n')
   const createdAt = assistantMessages.at(-1)?.createdAt
@@ -227,7 +227,7 @@ function TypingIndicator() {
 function ResponseBlock({ block, onAction, onApproval, onMFA }: { block: AIBlock, onAction: (action: AIUIAction) => Promise<boolean>, onApproval: (block: ToolCallBlock, decision: AIApprovalDecision, reason?: string) => Promise<void>, onMFA: (block: ToolCallBlock, code: string) => Promise<void> }) {
   if (block.type === 'thinking')
     return <ThinkingBlock block={block} />
-  if (block.type === 'tool_call' && block.operationId === 'prepare_interaction_cards' && block.status === 'running')
+  if (block.type === 'tool_call' && block.operationId === 'create_interaction_cards' && block.status === 'running')
     return <AIInteractionCardPlaceholder arguments={block.arguments} result={block.result} />
   if (block.type === 'tool_call' && block.operationId === 'create_interaction_cards' && block.status === 'succeeded')
     return <AIInteractionCards arguments={block.arguments} onAction={onAction} />

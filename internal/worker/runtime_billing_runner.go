@@ -2,7 +2,6 @@ package worker
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"time"
 
@@ -11,6 +10,7 @@ import (
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/hibiken/asynq"
 	"go.opentelemetry.io/otel/attribute"
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 const runtimeBillingLookbackHours = 6
@@ -28,7 +28,7 @@ func (r *Runner) settleRuntimeUsageWindows(ctx context.Context, now time.Time) e
 		return nil
 	}
 	var targets []model.DeploymentTarget
-	if err := r.db.
+	if err := r.db.WithContext(ctx).
 		Joins("join projects on projects.id = deployment_targets.project_id").
 		Where("deployment_targets.enabled = ? and deployment_targets.delete_status in ? and projects.system_key = ?", true, []string{"active", ""}, "").
 		Order("deployment_targets.created_at asc").
@@ -40,9 +40,9 @@ func (r *Runner) settleRuntimeUsageWindows(ctx context.Context, now time.Time) e
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		project, err := workerStageValue(ctx, "billing.load_project", func(context.Context) (model.Project, error) {
+		project, err := workerStageValue(ctx, "billing.load_project", func(stageCtx context.Context) (model.Project, error) {
 			var project model.Project
-			err := r.db.First(&project, "id = ?", target.ProjectID).Error
+			err := r.db.WithContext(stageCtx).First(&project, "id = ?", target.ProjectID).Error
 			return project, err
 		}, attribute.String("deployment_target.id", target.ID))
 		if err != nil {
@@ -69,17 +69,14 @@ func (r *Runner) settleRuntimeUsageWindows(ctx context.Context, now time.Time) e
 				return r.settleRuntimeUsageForTarget(stageCtx, service, target, liveEnvironment, snapshot.CreatedAt, windows)
 			}, attribute.String("deployment_target.id", target.ID))
 		}
-		claims, err := workerStageValue(ctx, "billing.observe_storage", func(stageCtx context.Context) ([]kubeprovider.PersistentVolumeClaimSnapshot, error) {
-			return manager.ListManagedPersistentVolumeClaims(stageCtx, namespace, target.ID)
-		}, attribute.String("deployment_target.id", target.ID))
-		if err != nil {
-			continue
-		}
-		_ = workerStage(ctx, "billing.settle_storage", func(stageCtx context.Context) error {
-			return r.settleStorageUsageForTarget(stageCtx, service, target, claims, windows)
-		}, attribute.String("deployment_target.id", target.ID))
 	}
-	return nil
+	volumeErr := workerStage(ctx, "billing.settle_project_volumes", func(stageCtx context.Context) error {
+		return r.settleProjectVolumeStorageWindows(stageCtx, service, windows)
+	})
+	transferErr := workerStage(ctx, "billing.settle_volume_transfers", func(stageCtx context.Context) error {
+		return r.settleVolumeTransferUsage(stageCtx, service, now)
+	})
+	return errors.Join(volumeErr, transferErr)
 }
 
 func (r *Runner) settleRuntimeUsageForTarget(ctx context.Context, service billing.Service, target model.DeploymentTarget, environment model.Environment, workloadCreatedAt time.Time, windows []hourlyWindow) error {
@@ -108,44 +105,86 @@ func (r *Runner) settleRuntimeUsageForTarget(ctx context.Context, service billin
 	return result
 }
 
-func (r *Runner) settleStorageUsageForTarget(ctx context.Context, service billing.Service, target model.DeploymentTarget, claims []kubeprovider.PersistentVolumeClaimSnapshot, windows []hourlyWindow) error {
-	if len(claims) == 0 {
+func (r *Runner) settleProjectVolumeStorageWindows(ctx context.Context, service billing.Service, windows []hourlyWindow) error {
+	if r.db == nil || len(windows) == 0 {
 		return nil
 	}
-	liveVolumes := make([]map[string]string, 0, len(claims))
-	storageCreatedAt := claims[0].CreatedAt
-	for _, claim := range claims {
-		liveVolumes = append(liveVolumes, map[string]string{"name": claim.Name, "capacity": claim.Capacity})
-		if claim.CreatedAt.After(storageCreatedAt) {
-			storageCreatedAt = claim.CreatedAt
-		}
+	const pageSize = 100
+	type observationGroup struct {
+		clusterID string
+		namespace string
+		projectID string
 	}
-	encodedVolumes, err := json.Marshal(liveVolumes)
-	if err != nil {
-		return err
-	}
-	liveTarget := target
-	liveTarget.DataRetentionEnabled = true
-	liveTarget.DataVolumes = string(encodedVolumes)
-	liveTarget.DataCapacity = ""
+	cursor := ""
 	var result error
-	for _, window := range windows {
+	for {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		periodStart, periodEnd, ok := storageBillingEffectivePeriod(window.Start, window.End, storageCreatedAt)
-		if !ok {
-			continue
+		items := make([]model.ProjectVolume, 0, pageSize)
+		query := r.db.WithContext(ctx).Where("ownership_mode = ?", model.ProjectVolumeOwnershipManaged)
+		if cursor != "" {
+			query = query.Where("id > ?", cursor)
 		}
-		err := service.SettleStorageTargetWindow(billing.StorageUsageInput{
-			Target:      liveTarget,
-			PeriodStart: periodStart,
-			PeriodEnd:   periodEnd,
-			ActorID:     "system",
-		})
-		if err != nil && !errors.Is(err, billing.ErrAlreadySettled) {
-			result = errors.Join(result, err)
+		if err := query.Order("id ASC").Limit(pageSize).Find(&items).Error; err != nil {
+			return err
 		}
+		groups := make(map[observationGroup][]model.ProjectVolume)
+		for _, item := range items {
+			key := observationGroup{clusterID: item.ClusterID, namespace: item.Namespace, projectID: item.ProjectID}
+			groups[key] = append(groups[key], item)
+		}
+		for key, volumes := range groups {
+			provider, err := r.projectVolumeProvider(ctx, key.clusterID)
+			if err != nil {
+				result = errors.Join(result, err)
+				continue
+			}
+			claimNames := make([]string, 0, len(volumes))
+			for _, item := range volumes {
+				claimNames = append(claimNames, item.ClaimName)
+			}
+			observations, err := provider.ObserveProjectVolumeClaims(ctx, key.namespace, key.projectID, claimNames)
+			if err != nil {
+				result = errors.Join(result, err)
+				continue
+			}
+			for _, item := range volumes {
+				observation, exists := observations[item.ClaimName]
+				if !exists || !observation.Exists {
+					continue
+				}
+				storageCreatedAt := item.CreatedAt
+				if observation.CreatedAt.After(storageCreatedAt) {
+					storageCreatedAt = observation.CreatedAt
+				}
+				capacity := observation.Capacity
+				if capacity == "" {
+					capacity = observation.RequestedCapacity
+				}
+				quantity, parseErr := resource.ParseQuantity(capacity)
+				if parseErr != nil || quantity.Value() <= 0 {
+					continue
+				}
+				for _, window := range windows {
+					periodStart, periodEnd, ok := storageBillingEffectivePeriod(window.Start, window.End, storageCreatedAt)
+					if !ok {
+						continue
+					}
+					err := service.SettleProjectVolumeStorageWindow(ctx, billing.ProjectVolumeStorageUsageInput{
+						Volume: item, ObservedCapacityBytes: quantity.Value(),
+						PeriodStart: periodStart, PeriodEnd: periodEnd, ActorID: "system",
+					})
+					if err != nil && !errors.Is(err, billing.ErrAlreadySettled) {
+						result = errors.Join(result, err)
+					}
+				}
+			}
+		}
+		if len(items) < pageSize {
+			break
+		}
+		cursor = items[len(items)-1].ID
 	}
 	return result
 }

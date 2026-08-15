@@ -83,7 +83,6 @@ export type Run = {
   runIndex: number
   status: RunStatus
   rowVersion: number
-  graphVersion: "assistant-v1"
   promptVersion: PromptVersion
   toolCatalogDigest: string
   pageContext: Record<string, unknown>

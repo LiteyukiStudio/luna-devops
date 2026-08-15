@@ -44,8 +44,9 @@ func (h *Handlers) RelayBrowserTraces(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusTooManyRequests, "rate_limited", "telemetry rate limit exceeded")
 		return
 	}
-	if mediaType := strings.TrimSpace(strings.Split(ctx.GetHeader("Content-Type"), ";")[0]); mediaType != "application/x-protobuf" {
-		writeErrorCode(ctx, http.StatusUnsupportedMediaType, "telemetry.invalid_content_type", "OTLP protobuf is required")
+	mediaType, ok := browserTraceMediaType(ctx.GetHeader("Content-Type"))
+	if !ok {
+		writeErrorCode(ctx, http.StatusUnsupportedMediaType, "telemetry.invalid_content_type", "OTLP JSON or protobuf is required")
 		return
 	}
 	body, err := io.ReadAll(io.LimitReader(ctx.Request.Body, browserTelemetryBodyLimit+1))
@@ -63,7 +64,7 @@ func (h *Handlers) RelayBrowserTraces(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusServiceUnavailable, "telemetry.relay_unavailable", err.Error())
 		return
 	}
-	request.Header.Set("Content-Type", "application/x-protobuf")
+	request.Header.Set("Content-Type", mediaType)
 	for key, value := range otlpRelayHeaders() {
 		request.Header.Set(key, value)
 	}
@@ -79,6 +80,16 @@ func (h *Handlers) RelayBrowserTraces(ctx *gin.Context) {
 		return
 	}
 	ctx.Status(http.StatusNoContent)
+}
+
+func browserTraceMediaType(value string) (string, bool) {
+	mediaType := strings.ToLower(strings.TrimSpace(strings.Split(value, ";")[0]))
+	switch mediaType {
+	case "application/json", "application/x-protobuf":
+		return mediaType, true
+	default:
+		return "", false
+	}
 }
 
 func otlpRelayHeaders() map[string]string {

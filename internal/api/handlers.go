@@ -14,6 +14,8 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/runtimecommand"
 	"github.com/LiteyukiStudio/devops/internal/secret"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
+	"github.com/LiteyukiStudio/devops/internal/telemetry"
+	"github.com/LiteyukiStudio/devops/internal/volume"
 	"github.com/gin-gonic/gin"
 	"github.com/hibiken/asynq"
 	"gorm.io/gorm"
@@ -21,24 +23,29 @@ import (
 
 const rememberCookiePrefix = "lyd_remember_"
 const sessionCookieName = "lyd_session"
+const currentProjectRoleContextKey = "currentProjectRole"
 
 type Handlers struct {
-	db                  *gorm.DB
-	configs             *configCache
-	mode                string
-	rateLimiter         *rateLimiter
-	oauthStates         oauthStateStore
-	projects            repository.ProjectRepository
-	secrets             secret.Store
-	taskClient          taskEnqueuer
-	aiAgent             aiagent.Client
-	aiDeploymentEnabled bool
-	aiActorResolver     func(*gin.Context) (aiagent.ActorContext, string, bool)
-	aiTools             *aitool.Service
-	platformRouter      http.Handler
-	inbox               inboxService
-	inboxDecision       inboxDecisionHandler
-	runtimeCommands     *runtimecommand.Broker
+	db                     *gorm.DB
+	configs                *configCache
+	mode                   string
+	rateLimiter            *rateLimiter
+	oauthStates            oauthStateStore
+	projects               repository.ProjectRepository
+	secrets                secret.Store
+	taskClient             taskEnqueuer
+	aiAgent                aiagent.Client
+	aiDeploymentEnabled    bool
+	aiActorResolver        func(*gin.Context) (aiagent.ActorContext, string, bool)
+	aiTools                *aitool.Service
+	platformRouter         http.Handler
+	inbox                  inboxService
+	inboxDecision          inboxDecisionHandler
+	runtimeCommands        *runtimecommand.Broker
+	volumes                *volume.Service
+	volumeClusters         projectVolumeClusterService
+	volumeContent          volumeTransferContentService
+	volumeTransferMaxBytes int64
 }
 
 type inboxService interface {
@@ -77,13 +84,30 @@ func NewHandlers(db *gorm.DB) *Handlers {
 	}
 	cfg := config.Load()
 	redisOptions := cfg.RedisOptions()
-	handlers := &Handlers{db: db, configs: newConfigCache(db), mode: mode, rateLimiter: newRateLimiterWithRedis(redisOptions), oauthStates: newOAuthStateStoreWithRedis(redisOptions), projects: repository.NewProjectRepository(db)}
+	handlers := &Handlers{db: db, configs: newConfigCache(db), mode: mode, rateLimiter: newRateLimiterWithRedis(redisOptions), oauthStates: newOAuthStateStoreWithRedis(redisOptions), projects: repository.NewProjectRepository(db), volumeTransferMaxBytes: cfg.VolumeTransferMaxBytes}
 	if cfg.RedisAddr != "" {
 		handlers.taskClient = tasks.NewClientWithRedis(redisOptions)
 	}
 	handlers.secrets = secret.NewStore(db, func(ctx context.Context, userID, action, resource string, success bool, message string) {
 		handlers.auditWithContext(userID, action, resource, success, message, ctx)
 	})
+	var volumeTasks volumeTaskEnqueuer
+	if candidate, ok := handlers.taskClient.(volumeTaskEnqueuer); ok {
+		volumeTasks = candidate
+	}
+	handlers.volumeClusters = newProjectVolumeClusterAdapter(db, handlers.secrets)
+	handlers.volumes = volume.NewGormService(db, volumeOperationDispatcher{tasks: volumeTasks}).
+		WithExistingClaimInspector(handlers.volumeClusters)
+	if cfg.VolumeTransferEnabled() {
+		volumeContent, err := newVolumeTransferContentAdapter(handlers, cfg)
+		if err != nil {
+			telemetry.Logger().Error("Volume transfer content service initialization failed",
+				"event.name", "volume_transfer.content_service.initialization_failed",
+				"error.type", telemetry.ErrorType(err))
+		} else {
+			handlers.volumeContent = volumeContent
+		}
+	}
 	aiConfig := aiagent.LoadConfig()
 	handlers.aiDeploymentEnabled = aiConfig.Available
 	handlers.aiAgent = aiConfig.Client()

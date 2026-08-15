@@ -2,10 +2,8 @@ import { describe, expect, it } from "vitest"
 import { createInteractionCardsInput, normalizeInteractionCardsInput } from "../src/tools/ui-cards.js"
 
 function compile(businessTemplate: Record<string, unknown>) {
-  const templateId = String(businessTemplate.templateId)
   return createInteractionCardsInput.parse(normalizeInteractionCardsInput({
     schemaVersion: 1,
-    generationId: `fixture-${templateId}`,
     businessTemplate,
   }))
 }
@@ -20,7 +18,7 @@ describe("business interaction card templates", () => {
         { id: "image", title: "容器镜像", description: "直接发布已有镜像", selectionLabel: "选择容器镜像", selectionMessage: "使用容器镜像" },
       ],
     })
-    expect(result).toMatchObject({ mode: "interactive", template: "catalog" })
+    expect(result).toMatchObject({ mode: "interactive", template: "candidates" })
     expect(result.cards).toHaveLength(2)
     expect(result.cards[0]?.actions?.[0]).toMatchObject({ type: "send_message", message: "使用应用市场模板" })
   })
@@ -91,14 +89,14 @@ describe("business interaction card templates", () => {
       risks: [{ id: "availability", label: "可用性检查", status: "success" }],
       submit: { type: "send_message", label: "继续发布", message: "按以上参数继续发布" },
     })
-    expect(result).toMatchObject({ mode: "interactive", template: "plan" })
+    expect(result).toMatchObject({ mode: "interactive", template: "change_review" })
   })
 
   it.each([
-    ["diagnosis_report", { conclusion: "构建失败源于 Dockerfile 路径不存在。", conclusionTone: "error", findings: [{ id: "dockerfile", label: "Dockerfile", status: "error" }] }, "diagnosis"],
-    ["execution_progress", { binding: { operationType: "release", projectId: "prj_1", operationId: "rel_1" }, label: "正在发布" }, "progress"],
+    ["diagnosis_report", { conclusion: "构建失败源于 Dockerfile 路径不存在。", conclusionTone: "error", findings: [{ id: "dockerfile", label: "Dockerfile", status: "error" }] }, "result"],
+    ["execution_progress", { binding: { operationType: "release", projectId: "prj_1", operationId: "rel_1" }, label: "正在发布" }, "live_task"],
     ["operation_result", { outcome: "success", summary: "应用已发布并通过健康检查。", facts: [{ label: "版本", value: "v2" }] }, "result"],
-    ["health_overview", { metrics: [{ label: "健康副本", value: "3/3", tone: "success" }], statuses: [{ id: "gateway", label: "访问入口", status: "success" }] }, "dashboard"],
+    ["health_overview", { metrics: [{ label: "健康副本", value: "3/3", tone: "success" }], statuses: [{ id: "gateway", label: "访问入口", status: "success" }] }, "result"],
   ] as const)("compiles the %s presentation template", (templateId, fields, expectedTemplate) => {
     const result = compile({ templateId, title: `${templateId} fixture`, ...fields })
     expect(result).toMatchObject({ mode: "presentation", template: expectedTemplate })

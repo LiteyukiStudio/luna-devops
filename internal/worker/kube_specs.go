@@ -304,7 +304,7 @@ func gatewayCertificateSpec(route model.GatewayRoute, project model.Project, nam
 	}
 }
 
-func applicationResourcesSpec(release model.Release, project model.Project, application model.Application, environment model.Environment, deploymentTarget model.DeploymentTarget, runtimeConfigSets []model.ProjectRuntimeConfigSet, namespace string, rolloutTimeoutSeconds int64) (kubeprovider.ApplicationResourcesSpec, error) {
+func applicationResourcesSpec(release model.Release, project model.Project, application model.Application, environment model.Environment, deploymentTarget model.DeploymentTarget, runtimeConfigSets []model.ProjectRuntimeConfigSet, dataVolumes []kubeprovider.ApplicationDataVolume, namespace string, rolloutTimeoutSeconds int64) (kubeprovider.ApplicationResourcesSpec, error) {
 	configValues := make([]string, 0, len(runtimeConfigSets)+4)
 	secretValues := make([]string, 0, len(runtimeConfigSets)+2)
 	configFileValues := make([]string, 0, len(runtimeConfigSets)+1)
@@ -402,33 +402,8 @@ func applicationResourcesSpec(release model.Release, project model.Project, appl
 		SecretData:                   secretData,
 		ConfigFiles:                  configFiles,
 		SecretFiles:                  secretFiles,
-		DataRetentionEnabled:         deploymentTarget.DataRetentionEnabled,
-		DataCapacity:                 deploymentTarget.DataCapacity,
-		DataMountPath:                deploymentTarget.DataMountPath,
-		DataVolumes:                  deploymentTargetDataVolumes(deploymentTarget),
-		DataStorageClassName:         strings.TrimSpace(deploymentTarget.DataStorageClassName),
-		DataAccessMode:               strings.TrimSpace(deploymentTarget.DataAccessMode),
-		DataVolumeMode:               strings.TrimSpace(deploymentTarget.DataVolumeMode),
+		DataVolumes:                  dataVolumes,
 	}, nil
-}
-
-func deploymentTargetDataVolumes(target model.DeploymentTarget) []kubeprovider.ApplicationDataVolume {
-	normalized := strings.TrimSpace(target.DataVolumes)
-	if normalized == "" || normalized == "[]" {
-		if !target.DataRetentionEnabled {
-			return nil
-		}
-		return []kubeprovider.ApplicationDataVolume{{
-			Name:      "data",
-			MountPath: firstNonEmpty(target.DataMountPath, "/data"),
-			Capacity:  firstNonEmpty(target.DataCapacity, "1Gi"),
-		}}
-	}
-	var volumes []kubeprovider.ApplicationDataVolume
-	if err := json.Unmarshal([]byte(normalized), &volumes); err != nil {
-		return nil
-	}
-	return volumes
 }
 
 func deploymentTargetApplicationServicePorts(target model.DeploymentTarget, fallbackPort int) []kubeprovider.ApplicationServicePort {

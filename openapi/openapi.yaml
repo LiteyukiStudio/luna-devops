@@ -15,6 +15,7 @@ tags:
   - name: Runtime
   - name: Dashboard
   - name: Projects
+  - name: Volumes
   - name: Applications
   - name: Deployments
   - name: Builds
@@ -1782,10 +1783,17 @@ paths:
       operationId: listProjects
       tags: [Projects]
       summary: List projects
-      description: Pagination is always applied; omitted parameters use page 1 and pageSize 20.
+      description: Pagination is always applied; omitted parameters use page 1 and pageSize 20. Project discovery defaults to project spaces related to the caller. Platform administrators may explicitly request all project spaces.
       parameters:
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
+        - name: scope
+          in: query
+          description: Use `related` by default. `all` is allowed only for platform administrators and must be requested explicitly.
+          schema:
+            type: string
+            enum: [related, all]
+            default: related
         - name: sortBy
           in: query
           schema:
@@ -1799,6 +1807,8 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/PaginatedProjectList" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
     post:
       operationId: createProject
       tags: [Projects]
@@ -2017,12 +2027,16 @@ paths:
             enum: [createdAt, name, identifier]
             default: createdAt
         - $ref: "#/components/parameters/SortOrder"
+        - name: includeRuntime
+          in: query
+          description: Include a point-in-time Kubernetes replica summary for each application. The response is marked no-store because the summary is read from the authoritative runtime.
+          schema: { type: boolean, default: false }
       responses:
         "200":
           description: Paginated application list.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/PaginatedBusinessObjects" }
+              schema: { $ref: "#/components/schemas/PaginatedApplications" }
     post:
       operationId: createApplication
       tags: [Applications]
@@ -2075,12 +2089,6 @@ paths:
       parameters:
         - $ref: "#/components/parameters/ProjectId"
         - $ref: "#/components/parameters/ApplicationId"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/ApplicationDeleteInput"
       responses:
         "202":
           description: Application deletion was queued.
@@ -2100,33 +2108,690 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ApplicationDeletionPreview" }
 
-  /api/v1/projects/{projectId}/retained-volumes:
+  /api/v1/projects/{projectId}/volumes:
     get:
-      operationId: listRetainedVolumes
-      tags: [Applications]
-      summary: List data volumes retained from deleted applications
+      operationId: listProjectVolumes
+      tags: [Volumes]
+      summary: List project-space volumes with current Kubernetes observations
+      description: Returns only the requested page. Current state is observed from Kubernetes and is never served from a persisted status cache.
+      x-luna-cli:
+        command: volume.list
+        classification: business-command
+        risk: low
+        requiredScopes: [volume:read]
       parameters:
         - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - { name: search, in: query, schema: { type: string, maxLength: 200 } }
+        - { name: availability, in: query, schema: { $ref: "#/components/schemas/ProjectVolumeAvailability" } }
+        - { name: lifecycleState, in: query, schema: { $ref: "#/components/schemas/ProjectVolumeLifecycleState" } }
+        - { name: clusterId, in: query, schema: { type: string } }
+        - { name: sourceKind, in: query, schema: { $ref: "#/components/schemas/ProjectVolumeSourceKind" } }
+        - { name: ownershipMode, in: query, schema: { $ref: "#/components/schemas/ProjectVolumeOwnershipMode" } }
+        - { name: volumeMode, in: query, schema: { $ref: "#/components/schemas/ProjectVolumeMode" } }
+        - { name: sortBy, in: query, schema: { type: string, enum: [createdAt, updatedAt, displayName, capacity], default: createdAt } }
+        - $ref: "#/components/parameters/SortOrder"
       responses:
         "200":
-          description: Paginated retained volumes.
+          description: Paginated project volume list. This response is not cacheable.
+          headers:
+            Cache-Control: { schema: { type: string, const: no-store } }
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/PaginatedRetainedVolumes" }
-
-  /api/v1/projects/{projectId}/retained-volumes/{retainedVolumeId}:
-    delete:
-      operationId: deleteRetainedVolume
-      tags: [Applications]
-      summary: Permanently delete retained application data
+              schema: { $ref: "#/components/schemas/PaginatedProjectVolumes" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      operationId: createProjectVolume
+      tags: [Volumes]
+      summary: Create a blank volume, reference or adopt a claim, or restore a snapshot
+      description: Existing-claim adoption is checked against live Pod references and existing Luna ownership. The endpoint never supports a force bypass.
+      x-luna-cli:
+        command: volume.create
+        classification: business-command
+        risk: high
+        requiredScopes: [volume:write]
       parameters:
         - $ref: "#/components/parameters/ProjectId"
-        - name: retainedVolumeId
-          in: path
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProjectVolumeCreateInput" }
+      responses:
+        "202":
+          description: Volume provisioning was accepted.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProjectVolume" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { description: Snapshot or volume specification is unsupported, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "503": { description: Runtime cluster is unavailable, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+
+  /api/v1/projects/{projectId}/volume-storage-classes:
+    get:
+      operationId: listProjectVolumeStorageClasses
+      tags: [Volumes]
+      summary: List storage classes and volume capabilities from a runtime cluster
+      x-luna-cli:
+        command: volume.storage-classes
+        classification: business-command
+        risk: low
+        requiredScopes: [volume:read]
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - name: clusterId
+          in: query
           required: true
           schema: { type: string }
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - { name: sortBy, in: query, schema: { type: string, enum: [name, provisioner], default: name } }
+        - $ref: "#/components/parameters/SortOrder"
       responses:
-        "204": { description: Retained data deleted. }
+        "200":
+          description: Paginated live storage class capabilities. This response is not cacheable.
+          headers:
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedProjectVolumeStorageClasses" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "503": { description: Runtime cluster is unavailable, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+
+  /api/v1/projects/{projectId}/volumes/{volumeId}:
+    get:
+      operationId: getProjectVolume
+      tags: [Volumes]
+      summary: Get a project volume, bindings, recent transfers, and current observation
+      x-luna-cli:
+        command: volume.get
+        classification: business-command
+        risk: low
+        requiredScopes: [volume:read]
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/VolumeId"
+        - { name: bindingPage, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: bindingPageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - { name: transferPage, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: transferPageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        "200":
+          description: Project volume detail. This response is not cacheable.
+          headers:
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProjectVolumeDetail" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateProjectVolume
+      tags: [Volumes]
+      summary: Rename or expand a project volume
+      x-luna-cli:
+        command: volume.update
+        classification: business-command
+        risk: high
+        requiredScopes: [volume:write]
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/VolumeId"
+        - name: If-Match
+          in: header
+          required: true
+          x-luna-agent-input-name: revision
+          description: Current numeric volume revision.
+          schema: { type: integer, format: int64, minimum: 1 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProjectVolumeUpdateInput" }
+      responses:
+        "200":
+          description: Updated volume.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProjectVolume" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      operationId: deleteProjectVolume
+      tags: [Volumes]
+      summary: Queue managed claim deletion or detach a referenced claim
+      x-luna-cli:
+        command: volume.delete
+        classification: business-command
+        risk: critical
+        requiredScopes: [volume:delete]
+        mfaPurpose: volume_delete
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/VolumeId"
+        - name: dataAction
+          in: query
+          required: true
+          schema: { type: string, enum: [delete, detach] }
+        - name: If-Match
+          in: header
+          required: true
+          x-luna-agent-input-name: revision
+          description: Current numeric volume revision.
+          schema: { type: integer, format: int64, minimum: 1 }
+      responses:
+        "202":
+          description: Deletion or detachment was accepted.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProjectVolume" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/projects/{projectId}/volumes/{volumeId}/retry:
+    post:
+      operationId: retryProjectVolumeOperation
+      tags: [Volumes]
+      summary: Retry the most recent failed project volume operation
+      x-luna-cli:
+        command: volume.retry
+        classification: business-command
+        risk: high
+        requiredScopes: [volume:read]
+        agentAllowed: false
+        exclusionReason: Retrying must first read the failed operation and dynamically re-authorize its original action and step-up purpose; generic Agent delegation cannot express that policy safely.
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/VolumeId"
+        - name: If-Match
+          in: header
+          required: true
+          x-luna-agent-input-name: revision
+          description: Current numeric volume revision.
+          schema: { type: integer, format: int64, minimum: 1 }
+      responses:
+        "202":
+          description: Retry was queued after rechecking the original operation permission.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProjectVolume" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/projects/{projectId}/volumes/{volumeId}/deletion-preview:
+    post:
+      operationId: previewProjectVolumeDeletion
+      tags: [Volumes]
+      summary: Preview active bindings, transfers, and underlying storage deletion impact
+      x-luna-cli:
+        command: volume.delete-preview
+        classification: business-command
+        risk: high
+        requiredScopes: [volume:delete]
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/VolumeId"
+      responses:
+        "200":
+          description: Current deletion impact preview. This response is not cacheable.
+          headers:
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProjectVolumeDeletionPreview" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { description: Runtime cluster is unavailable, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+
+  /api/v1/projects/{projectId}/volume-imports:
+    post:
+      operationId: createVolumeImport
+      tags: [Volumes]
+      summary: Create a resumable archive import session and provisioning volume
+      x-luna-cli:
+        classification: protocol-adapter
+        hidden: true
+        agentAllowed: false
+        transport: upload
+        risk: high
+        mfaPurpose: volume_import
+        exclusionReason: Local archive selection and resumable byte upload are handled by Web or Luna CLI protocol adapters.
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VolumeImportCreateInput" }
+      responses:
+        "202":
+          description: Import upload session created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VolumeImportCreateResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { description: Transfer store or runtime cluster is unavailable, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+
+  /api/v1/projects/{projectId}/volume-imports/{transferId}/content:
+    head:
+      operationId: getVolumeImportUploadOffset
+      tags: [Volumes]
+      summary: Read the authoritative resumable upload offset
+      x-luna-cli:
+        classification: protocol-adapter
+        hidden: true
+        agentAllowed: false
+        transport: upload
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/TransferId"
+        - $ref: "#/components/parameters/TusResumable"
+      responses:
+        "200":
+          description: Current upload offset.
+          headers:
+            Tus-Resumable: { schema: { type: string, const: 1.0.0 } }
+            Upload-Offset: { schema: { type: integer, format: int64, minimum: 0 } }
+            Upload-Length: { schema: { type: integer, format: int64, minimum: 0 } }
+            Upload-Chunk-Size: { schema: { type: integer, format: int64, minimum: 67108864, maximum: 5368709120 } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "410": { description: Transfer expired, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+    patch:
+      operationId: uploadVolumeImportContent
+      tags: [Volumes]
+      summary: Stream one checksum-protected TUS upload chunk
+      x-luna-cli:
+        classification: protocol-adapter
+        hidden: true
+        agentAllowed: false
+        transport: upload
+        streaming: true
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/TransferId"
+        - $ref: "#/components/parameters/TusResumable"
+        - name: Upload-Offset
+          in: header
+          required: true
+          schema: { type: integer, format: int64, minimum: 0 }
+        - name: Upload-Checksum
+          in: header
+          required: true
+          schema: { type: string, pattern: '^sha256 [A-Za-z0-9+/]+={0,2}$' }
+      requestBody:
+        required: true
+        content:
+          application/offset+octet-stream:
+            schema: { type: string, format: binary, maxLength: 5368709120 }
+      responses:
+        "204":
+          description: Chunk persisted and offset advanced.
+          headers:
+            Tus-Resumable: { schema: { type: string, const: 1.0.0 } }
+            Upload-Offset: { schema: { type: integer, format: int64, minimum: 0 } }
+            Upload-Chunk-Size: { schema: { type: integer, format: int64, minimum: 67108864, maximum: 5368709120 } }
+        "409":
+          description: Upload offset mismatch, content conflict, or an identical part is still being persisted. `volume_transfer.part_in_progress` includes a bounded Retry-After value.
+          headers:
+            Upload-Offset: { schema: { type: integer, format: int64, minimum: 0 } }
+            Upload-Chunk-Size: { schema: { type: integer, format: int64, minimum: 67108864, maximum: 5368709120 } }
+            Retry-After: { schema: { type: integer, minimum: 1, maximum: 5 }, description: Present for `volume_transfer.part_in_progress`; clients wait, then HEAD the authoritative offset before a bounded retry. }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "410": { description: Transfer expired, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "413": { description: Chunk exceeds the S3 multipart part-size limit, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "429": { description: API spool byte budget is busy, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "460": { description: Chunk checksum mismatch, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "503": { description: API spool directory or capacity observation is unavailable, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "507": { description: API spool disk has insufficient free space, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+
+  /api/v1/projects/{projectId}/volume-imports/{transferId}/complete:
+    post:
+      operationId: completeVolumeImportUpload
+      tags: [Volumes]
+      summary: Verify the complete archive and queue an import job
+      x-luna-cli:
+        classification: protocol-adapter
+        hidden: true
+        agentAllowed: false
+        risk: high
+        mfaPurpose: volume_import
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/TransferId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VolumeImportCompleteInput" }
+      responses:
+        "202":
+          description: Import job queued.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VolumeTransfer" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { description: Full archive checksum or length mismatch, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+
+  /api/v1/projects/{projectId}/volumes/{volumeId}/exports:
+    post:
+      operationId: createVolumeExport
+      tags: [Volumes]
+      summary: Queue an asynchronous project volume export
+      x-luna-cli:
+        command: volume.export
+        classification: business-command
+        risk: high
+        requiredScopes: [volume:export]
+        mfaPurpose: volume_export
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/VolumeId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VolumeExportCreateInput" }
+      responses:
+        "202":
+          description: Export queued.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VolumeTransfer" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { description: Transfer store, snapshot support, or runtime cluster is unavailable, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+
+  /api/v1/projects/{projectId}/volume-transfers:
+    get:
+      operationId: listVolumeTransfers
+      tags: [Volumes]
+      summary: List project volume import and export transfers
+      x-luna-cli:
+        command: volume-transfer.list
+        classification: business-command
+        risk: low
+        requiredScopes: [volume:read]
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - { name: direction, in: query, schema: { $ref: "#/components/schemas/VolumeTransferDirection" } }
+        - { name: state, in: query, schema: { $ref: "#/components/schemas/VolumeTransferState" } }
+        - { name: volumeId, in: query, schema: { type: string } }
+        - { name: createdBy, in: query, schema: { type: string } }
+        - { name: sortBy, in: query, schema: { type: string, enum: [createdAt, updatedAt, state, transferredBytes], default: createdAt } }
+        - $ref: "#/components/parameters/SortOrder"
+      responses:
+        "200":
+          description: Paginated transfer history.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedVolumeTransfers" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/projects/{projectId}/volume-transfers/{transferId}:
+    get:
+      operationId: getVolumeTransfer
+      tags: [Volumes]
+      summary: Get volume transfer progress and terminal result
+      x-luna-cli:
+        command: volume-transfer.get
+        classification: business-command
+        risk: low
+        requiredScopes: [volume:read]
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/TransferId"
+      responses:
+        "200":
+          description: Transfer state.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VolumeTransfer" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/projects/{projectId}/volume-transfers/{transferId}/retry:
+    post:
+      operationId: retryVolumeTransfer
+      tags: [Volumes]
+      summary: Create a new transfer from a failed transfer after rechecking the original permission
+      x-luna-cli:
+        command: volume-transfer.retry
+        classification: business-command
+        risk: high
+        requiredScopes: [volume:read]
+        agentAllowed: false
+        exclusionReason: Retrying must first read the transfer direction and dynamically re-authorize the original import or export scope; generic Agent delegation cannot express that policy safely.
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/TransferId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "202":
+          description: New transfer created. The response always has a new transfer ID.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VolumeTransfer" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "410": { description: Source archive expired, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+
+  /api/v1/projects/{projectId}/volume-transfers/{transferId}/cancel:
+    post:
+      operationId: cancelVolumeTransfer
+      tags: [Volumes]
+      summary: Cancel a non-terminal transfer
+      description: The creating user may cancel their transfer. Other callers require `volume:delete` and an Owner or Admin project role.
+      x-luna-cli:
+        command: volume-transfer.cancel
+        classification: business-command
+        risk: high
+        requiredScopes: [volume:read]
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/TransferId"
+      responses:
+        "200":
+          description: Transfer cancelled or already cancelled idempotently.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VolumeTransfer" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/projects/{projectId}/volume-transfers/{transferId}/download-authorizations:
+    post:
+      operationId: authorizeVolumeTransferDownload
+      tags: [Volumes]
+      summary: Issue a one-time volume export download ticket
+      x-luna-cli:
+        classification: protocol-adapter
+        hidden: true
+        agentAllowed: false
+        risk: high
+        mfaPurpose: volume_export
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/TransferId"
+      responses:
+        "201":
+          description: One-time ticket valid for 60 seconds.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VolumeTransferDownloadAuthorization" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "410": { description: Export archive expired, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+
+  /api/v1/projects/{projectId}/volume-transfers/{transferId}/content:
+    head:
+      operationId: headVolumeTransferContent
+      tags: [Volumes]
+      summary: Inspect an authorized export archive and Range capability
+      description: Exchange an optional single-use ticket for a transfer-bound HttpOnly download session, or reuse the existing download session cookie. A supplied ticket takes precedence and rotates any old cookie.
+      x-luna-cli:
+        classification: protocol-adapter
+        hidden: true
+        agentAllowed: false
+        transport: download
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/TransferId"
+        - $ref: "#/components/parameters/DownloadTicket"
+        - $ref: "#/components/parameters/DownloadSessionCookie"
+      responses:
+        "200":
+          description: Archive metadata.
+          headers:
+            Accept-Ranges: { schema: { type: string, const: bytes } }
+            Content-Length: { schema: { type: integer, format: int64, minimum: 0 } }
+            ETag: { schema: { type: string } }
+            Set-Cookie:
+              description: Present when a ticket is exchanged. Sets a transfer-path-bound `luna_volume_download_session` HttpOnly, SameSite=Strict cookie for at most 30 minutes; production responses also set Secure.
+              schema: { type: string }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "401":
+          description: Download credential is missing, malformed, or bound to another project or transfer.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+              example: { code: volume_transfer.download_unauthorized, error: Download authorization is invalid, requestId: req_example }
+        "410": { description: Ticket, download session, or export archive expired, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+    get:
+      operationId: downloadVolumeTransferContent
+      tags: [Volumes]
+      summary: Download an authorized export archive with HTTP Range support
+      description: Use a single-use ticket on the first request to establish a transfer-bound HttpOnly download session. Subsequent Range requests omit the ticket and reuse the cookie; a new valid ticket rotates an existing session.
+      x-luna-cli:
+        classification: protocol-adapter
+        hidden: true
+        agentAllowed: false
+        transport: download
+        streaming: true
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/TransferId"
+        - $ref: "#/components/parameters/DownloadTicket"
+        - $ref: "#/components/parameters/DownloadSessionCookie"
+        - name: Range
+          in: header
+          schema: { type: string, pattern: '^bytes=[0-9]+-[0-9]*$' }
+      responses:
+        "200":
+          description: Complete archive.
+          headers:
+            Accept-Ranges: { schema: { type: string, const: bytes } }
+            ETag: { schema: { type: string } }
+            Set-Cookie:
+              description: Present when a ticket is exchanged. Sets a transfer-path-bound `luna_volume_download_session` HttpOnly, SameSite=Strict cookie for at most 30 minutes; production responses also set Secure.
+              schema: { type: string }
+          content:
+            application/gzip: { schema: { type: string, format: binary } }
+            application/zstd: { schema: { type: string, format: binary } }
+        "206":
+          description: Requested archive byte range.
+          headers:
+            Content-Range: { schema: { type: string } }
+            Accept-Ranges: { schema: { type: string, const: bytes } }
+            ETag: { schema: { type: string } }
+            Set-Cookie:
+              description: Present when a ticket is exchanged. Sets a transfer-path-bound `luna_volume_download_session` HttpOnly, SameSite=Strict cookie for at most 30 minutes; production responses also set Secure.
+              schema: { type: string }
+          content:
+            application/octet-stream: { schema: { type: string, format: binary } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "401":
+          description: Download credential is missing, malformed, or bound to another project or transfer.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+              example: { code: volume_transfer.download_unauthorized, error: Download authorization is invalid, requestId: req_example }
+        "410": { description: Ticket, download session, or export archive expired, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+
+  /api/v1/projects/{projectId}/volume-transfers/{transferId}/manifest:
+    head:
+      operationId: headVolumeTransferManifest
+      tags: [Volumes]
+      summary: Inspect an authorized Block raw.zst export manifest
+      description: Available only for a succeeded `raw_zst` export of a Block volume. A supplied single-use ticket takes precedence over the transfer-bound `luna_volume_download_session` cookie and rotates the cookie. The session cookie Path is `/api/v1/projects/{projectId}/volume-transfers/{transferId}/`, so the same session authorizes both content and manifest reads. Authorization requires `volume:export`.
+      x-luna-cli:
+        classification: protocol-adapter
+        hidden: true
+        agentAllowed: false
+        transport: download
+        requiredScopes: [volume:export]
+        exclusionReason: Manifest authentication and attachment download are consumed by Web or Luna CLI protocol adapters.
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/TransferId"
+        - $ref: "#/components/parameters/DownloadTicket"
+        - $ref: "#/components/parameters/DownloadSessionCookie"
+      responses:
+        "200":
+          description: Manifest attachment metadata.
+          headers:
+            Content-Length: { schema: { type: integer, format: int64, minimum: 0 } }
+            ETag: { schema: { type: string } }
+            Content-Type: { schema: { type: string, const: "application/json; charset=utf-8" } }
+            Content-Disposition: { schema: { type: string } }
+            Set-Cookie:
+              description: Present when a ticket is exchanged. The HttpOnly, SameSite=Strict cookie is scoped to the transfer path for at most 30 minutes; production responses also set Secure.
+              schema: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "410": { description: Ticket, download session, or export manifest expired, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "422": { description: The completed raw.zst export does not contain a valid manifest digest or metadata, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+    get:
+      operationId: downloadVolumeTransferManifest
+      tags: [Volumes]
+      summary: Download an authorized Block raw.zst export manifest
+      description: Returns the dynamic JSON manifest only for a succeeded `raw_zst` export of a Block volume. A supplied single-use ticket takes precedence over the transfer-bound cookie. Authorization requires `volume:export`.
+      x-luna-cli:
+        classification: protocol-adapter
+        hidden: true
+        agentAllowed: false
+        transport: download
+        requiredScopes: [volume:export]
+        exclusionReason: Manifest authentication and attachment download are consumed by Web or Luna CLI protocol adapters.
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/TransferId"
+        - $ref: "#/components/parameters/DownloadTicket"
+        - $ref: "#/components/parameters/DownloadSessionCookie"
+      responses:
+        "200":
+          description: JSON manifest attachment.
+          headers:
+            Content-Length: { schema: { type: integer, format: int64, minimum: 0 } }
+            ETag: { schema: { type: string } }
+            Content-Type: { schema: { type: string, const: "application/json; charset=utf-8" } }
+            Content-Disposition: { schema: { type: string } }
+            Set-Cookie:
+              description: Present when a ticket is exchanged. The HttpOnly, SameSite=Strict cookie is scoped to the transfer path for at most 30 minutes; production responses also set Secure.
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VolumeTransferManifest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "410": { description: Ticket, download session, or export manifest expired, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "422": { description: The completed raw.zst export does not contain a valid manifest digest or metadata, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
 
   /api/v1/projects/{projectId}/applications/{applicationId}/topology:
     get:
@@ -2216,128 +2881,6 @@ paths:
       responses:
         "204":
           description: Deployment target deletion accepted and queued for asynchronous runtime cleanup.
-
-  /api/v1/projects/{projectId}/applications/{applicationId}/deployment-targets/{targetId}/data-export:
-    get:
-      operationId: exportDeploymentTargetData
-      tags: [Deployments]
-      summary: Export persistent runtime data
-      x-luna-cli:
-        classification: protocol-adapter
-        hidden: true
-        exclusionReason: Raw gzip download consumed by the explicit CLI data-export protocol adapter.
-      description: Consumes a short-lived, one-time export ticket issued by the authorize endpoint, then repeats the interactive authentication-context, project Owner/Admin, resource-state, OAuth Scope, and `data_export` Step-up checks. Browser callers may use their session cookie and Luna CLI may use its OAuth bearer token; personal access tokens are rejected. Each export uses an isolated temporary Pod and streams a gzip archive without persisting the ticket or archive in business tables.
-      security:
-        - SessionCookie: []
-        - BearerToken: []
-      parameters:
-        - $ref: "#/components/parameters/ProjectId"
-        - $ref: "#/components/parameters/ApplicationId"
-        - $ref: "#/components/parameters/TargetId"
-        - name: ticket
-          in: query
-          required: true
-          description: One-time export ticket returned by the authorize endpoint. It expires after 60 seconds and is consumed even when its resource binding does not match.
-          schema: { type: string }
-      responses:
-        "200":
-          description: Gzip-compressed tar archive streamed as an attachment.
-          headers:
-            Content-Disposition:
-              schema: { type: string }
-              description: Attachment filename in the form `<app-identifier>-<target-id>-data.tar.gz`.
-          content:
-            application/gzip:
-              schema: { type: string, format: binary }
-        "400":
-          description: Runtime data retention is disabled, the runtime cluster cannot export the target data, or the ticket is missing (`data_export.ticket_required`).
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-        "401":
-          description: Browser session or Luna CLI OAuth bearer is missing, invalid, expired, or revoked.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-        "403":
-          description: A personal access token was used (`mfa.session_required`), the OAuth grant lacks `deployment:data_export`, the role is insufficient, MFA is required, or the ticket is invalid/expired/consumed/bound to another request (`data_export.ticket_invalid`).
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-        "404":
-          description: Project, application, deployment target, or runtime dependency was not found.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-        "409":
-          description: The project, application, or deployment target is being deleted and cannot be exported.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-        "502":
-          description: The temporary export Pod or archive stream could not be started (`data_export.stream_failed`).
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-        "503":
-          description: The shared production ticket store is unavailable (`data_export.ticket_unavailable`).
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-
-  /api/v1/projects/{projectId}/applications/{applicationId}/deployment-targets/{targetId}/data-export/authorize:
-    post:
-      operationId: authorizeDeploymentTargetDataExport
-      tags: [Deployments]
-      summary: Authorize a persistent runtime data export
-      x-luna-cli:
-        classification: protocol-adapter
-        hidden: true
-        exclusionReason: Low-level one-time-ticket preflight consumed by the explicit CLI data-export protocol adapter.
-      description: Requires a browser session or Luna CLI OAuth bearer, project Owner/Admin membership, a mutable project/application/deployment target, exportable runtime data, and an active `data_export` Step-up assertion when the global policy is enabled. OAuth callers also require `deployment:data_export`; personal access tokens are rejected. Returns a random 60-second one-time ticket bound to the current user, authentication context, project, application, and deployment target. Production uses the shared Redis ticket store and fails closed when Redis is unavailable.
-      security:
-        - SessionCookie: []
-        - BearerToken: []
-      parameters:
-        - $ref: "#/components/parameters/ProjectId"
-        - $ref: "#/components/parameters/ApplicationId"
-        - $ref: "#/components/parameters/TargetId"
-      responses:
-        "200":
-          description: Data-export ticket issued. The download endpoint still repeats authorization and atomically consumes the ticket.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/DataExportAuthorization" }
-        "400":
-          description: Runtime data retention is disabled or the runtime cluster cannot export the target data.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-        "401":
-          description: Browser session or Luna CLI OAuth bearer is missing, invalid, expired, or revoked.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-        "403":
-          description: Project role is insufficient, the OAuth grant lacks `deployment:data_export`, a personal access token was used, or `data_export` Step-up verification is required.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-        "404":
-          description: Project, application, deployment target, or runtime dependency was not found.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-        "409":
-          description: Project, application, or deployment target is being deleted.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-        "503":
-          description: The shared production ticket store is unavailable (`data_export.ticket_unavailable`).
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
 
   /api/v1/projects/{projectId}/releases/{releaseId}/terminal/authorize:
     post:
@@ -4433,7 +4976,9 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/BusinessObjectList"
+                type: array
+                items:
+                  $ref: "#/components/schemas/AppTemplate"
         "400":
           $ref: "#/components/responses/BadRequest"
         "403":
@@ -6535,10 +7080,11 @@ paths:
     get:
       operationId: getAICapabilities
       tags: [AI Assistant]
-      summary: Resolve AI assistant availability for the current browser session
+      summary: Resolve AI assistant enablement and access for the current browser session
+      description: Returns the platform-and-user enablement decision plus the configured browser input limit. It does not probe Agent or Provider runtime health; transient runtime failures are reported by the requested AI operation and never hide the assistant entry point.
       security: [{ SessionCookie: [] }]
       responses:
-        "200": { description: Capability result, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }
+        "200": { description: Assistant access result, content: { application/json: { schema: { $ref: "#/components/schemas/AIAssistantAccess" } } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
   /api/v1/ai/conversations:
     get:
@@ -6912,6 +7458,175 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "503": { description: Agent observability is disabled, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+  /internal/v1/volume-transfers/{transferId}/content:
+    head:
+      operationId: headInternalVolumeTransferContent
+      tags: [Volumes]
+      summary: Read the authoritative internal transfer content offset or size
+      x-luna-cli:
+        classification: protocol-adapter
+        hidden: true
+        agentAllowed: false
+        exclusionReason: Private transfer-job token protocol; it is not a user or Agent business command.
+      security: [{ VolumeTransferJobToken: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TransferId"
+      responses:
+        "200":
+          description: Internal content metadata bound to this transfer.
+          headers:
+            Upload-Offset: { schema: { type: integer, format: int64, minimum: 0 } }
+            Upload-Length: { schema: { type: integer, format: int64, minimum: 0 } }
+            Upload-Chunk-Size: { schema: { type: integer, format: int64, minimum: 67108864, maximum: 5368709120 } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    patch:
+      operationId: uploadInternalVolumeTransferContent
+      tags: [Volumes]
+      summary: Stream an export-job archive chunk to the private transfer store
+      x-luna-cli:
+        classification: protocol-adapter
+        hidden: true
+        agentAllowed: false
+        transport: upload
+        streaming: true
+        exclusionReason: Private transfer-job token byte protocol; it is not a user or Agent business command.
+      security: [{ VolumeTransferJobToken: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TransferId"
+        - name: Upload-Offset
+          in: header
+          required: true
+          schema: { type: integer, format: int64, minimum: 0 }
+        - name: Upload-Checksum
+          in: header
+          required: true
+          schema: { type: string, pattern: '^sha256 [A-Za-z0-9+/]+={0,2}$' }
+      requestBody:
+        required: true
+        content:
+          application/offset+octet-stream:
+            schema: { type: string, format: binary, maxLength: 5368709120 }
+      responses:
+        "204":
+          description: Chunk persisted.
+          headers:
+            Upload-Offset: { schema: { type: integer, format: int64, minimum: 0 } }
+            Upload-Chunk-Size: { schema: { type: integer, format: int64, minimum: 67108864, maximum: 5368709120 } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409":
+          description: Upload offset mismatch, content conflict, or an identical part is still being persisted. `volume_transfer.part_in_progress` includes a bounded Retry-After value.
+          headers:
+            Upload-Offset: { schema: { type: integer, format: int64, minimum: 0 } }
+            Upload-Chunk-Size: { schema: { type: integer, format: int64, minimum: 67108864, maximum: 5368709120 } }
+            Retry-After: { schema: { type: integer, minimum: 1, maximum: 5 }, description: Present for `volume_transfer.part_in_progress`; clients wait, then HEAD the authoritative offset before a bounded retry. }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "413": { description: Chunk exceeds the S3 multipart part-size limit, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "429": { description: API spool byte budget is busy, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "460": { description: Chunk checksum mismatch, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "503": { description: API spool directory or capacity observation is unavailable, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "507": { description: API spool disk has insufficient free space, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+    get:
+      operationId: downloadInternalVolumeTransferContent
+      tags: [Volumes]
+      summary: Stream an import archive range to the transfer job
+      x-luna-cli:
+        classification: protocol-adapter
+        hidden: true
+        agentAllowed: false
+        transport: download
+        streaming: true
+        exclusionReason: Private transfer-job token byte protocol; it is not a user or Agent business command.
+      security: [{ VolumeTransferJobToken: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TransferId"
+        - name: Range
+          in: header
+          schema: { type: string, pattern: '^bytes=[0-9]+-[0-9]*$' }
+      responses:
+        "200": { description: Complete archive, content: { application/octet-stream: { schema: { type: string, format: binary } } } }
+        "206":
+          description: Requested archive range.
+          headers:
+            Content-Range: { schema: { type: string } }
+          content:
+            application/octet-stream: { schema: { type: string, format: binary } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /internal/v1/volume-transfers/{transferId}/progress:
+    post:
+      operationId: reportInternalVolumeTransferProgress
+      tags: [Volumes]
+      summary: Report bounded transfer progress using a state CAS
+      x-luna-cli:
+        classification: protocol-adapter
+        hidden: true
+        agentAllowed: false
+        exclusionReason: Private transfer-job token callback; it is not a user or Agent business command.
+      security: [{ VolumeTransferJobToken: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TransferId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VolumeTransferProgressInput" }
+      responses:
+        "204": { description: Progress accepted idempotently. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /internal/v1/volume-transfers/{transferId}/complete:
+    post:
+      operationId: completeInternalVolumeTransfer
+      tags: [Volumes]
+      summary: Commit a successful transfer terminal state idempotently
+      x-luna-cli:
+        classification: protocol-adapter
+        hidden: true
+        agentAllowed: false
+        exclusionReason: Private transfer-job token callback; it is not a user or Agent business command.
+      security: [{ VolumeTransferJobToken: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TransferId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VolumeTransferCompleteInput" }
+      responses:
+        "200": { description: Terminal state committed, content: { application/json: { schema: { $ref: "#/components/schemas/VolumeTransfer" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { description: Final checksum or size mismatch, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+
+  /internal/v1/volume-transfers/{transferId}/fail:
+    post:
+      operationId: failInternalVolumeTransfer
+      tags: [Volumes]
+      summary: Commit a failed transfer terminal state using a stable error code
+      x-luna-cli:
+        classification: protocol-adapter
+        hidden: true
+        agentAllowed: false
+        exclusionReason: Private transfer-job token callback; it is not a user or Agent business command.
+      description: Raw stderr is accepted only as bounded internal diagnostics and is never returned in production API responses.
+      security: [{ VolumeTransferJobToken: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TransferId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VolumeTransferFailInput" }
+      responses:
+        "200": { description: Failed terminal state committed, content: { application/json: { schema: { $ref: "#/components/schemas/VolumeTransfer" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
 components:
   securitySchemes:
     SessionCookie:
@@ -6932,6 +7647,11 @@ components:
       type: http
       scheme: bearer
       bearerFormat: 60-second operation-bound AI delegation
+    VolumeTransferJobToken:
+      type: http
+      scheme: bearer
+      bearerFormat: short-lived transfer-bound worker token
+      description: Random token bound to exactly one Transfer and valid only for the internal transfer-job callback API.
 
   parameters:
     BuildEnvironmentScope:
@@ -6969,6 +7689,11 @@ components:
       in: path
       required: true
       schema: { type: string }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, minLength: 8, maxLength: 160 }
     InboxMessageId:
       name: messageId
       in: path
@@ -7056,11 +7781,38 @@ components:
       in: path
       required: true
       schema: { type: string }
+    TransferId:
+      name: transferId
+      in: path
+      required: true
+      schema: { type: string, pattern: '^vtx_' }
+    TusResumable:
+      name: Tus-Resumable
+      in: header
+      required: true
+      schema: { type: string, const: 1.0.0 }
+    DownloadTicket:
+      name: ticket
+      in: query
+      required: false
+      description: Optional single-use 60-second ticket exchanged for a transfer-bound Range download session. It is required only for the initial exchange or reauthorization and takes precedence over an existing download session cookie.
+      schema: { type: string, minLength: 16, maxLength: 512 }
+    DownloadSessionCookie:
+      name: luna_volume_download_session
+      in: cookie
+      required: false
+      description: Opaque HttpOnly download session established by a prior successful ticket exchange. It is bound to the actor, project, transfer, archive identity, and exact content path, and expires within 30 minutes.
+      schema: { type: string, minLength: 16, maxLength: 512 }
     UserId:
       name: userId
       in: path
       required: true
       schema: { type: string }
+    VolumeId:
+      name: volumeId
+      in: path
+      required: true
+      schema: { type: string, pattern: '^pvol_' }
 
   responses:
     Unauthorized:
@@ -7093,6 +7845,19 @@ components:
             $ref: "#/components/schemas/ErrorResponse"
 
   schemas:
+    AIAssistantAccess:
+      type: object
+      additionalProperties: false
+      required: [enabled, maxInputBytes]
+      properties:
+        enabled:
+          type: boolean
+          description: Whether the platform enables the assistant for the current authenticated user. Runtime Agent or Provider health never changes this value.
+        maxInputBytes:
+          type: integer
+          minimum: 8192
+          maximum: 1048576
+          description: Maximum UTF-8 request body size enforced by the Luna API BFF.
     AIObject:
       type: object
       additionalProperties: true
@@ -7831,16 +8596,6 @@ components:
           format: password
           writeOnly: true
           description: Required for local accounts and ignored for OIDC accounts.
-    DataExportAuthorization:
-      type: object
-      properties:
-        ticket:
-          type: string
-          description: Random one-time ticket. The backend stores only its hash in production.
-        expiresAt:
-          type: string
-          format: date-time
-      required: [ticket, expiresAt]
     RuntimeTerminalAuthorization:
       type: object
       properties:
@@ -7890,7 +8645,6 @@ components:
       enum:
         - runtime_exec
         - runtime_terminal
-        - data_export
         - secret_update
         - registry_credential_update
         - kubeconfig_update
@@ -7901,6 +8655,11 @@ components:
         - data_retention_cleanup
         - password_update
         - access_token_manage
+        - billing_owner_transfer
+        - volume_import
+        - volume_export
+        - volume_adopt
+        - volume_delete
     MFAVerifyInput:
       type: object
       properties:
@@ -8017,36 +8776,68 @@ components:
         buildContext: { type: string }
         servicePort: { type: integer }
       required: [name, identifier, sourceType]
-    ApplicationDeleteInput:
+    ApplicationDeploymentSummary:
+      type: object
+      description: Point-in-time aggregate of Kubernetes replicas for an application. It is returned only when includeRuntime=true and is never persisted as current state.
+      properties:
+        targetCount: { type: integer, minimum: 0 }
+        desiredReplicas: { type: integer, minimum: 0 }
+        readyReplicas: { type: integer, minimum: 0 }
+        status:
+          type: string
+          enum: [ready, degraded, progressing, unavailable, not-deployed]
+      required: [targetCount, desiredReplicas, readyReplicas, status]
+    ApplicationListItem:
+      type: object
+      properties:
+        id: { type: string }
+        projectId: { type: string }
+        identifier: { type: string }
+        name: { type: string }
+        icon: { type: string }
+        deleteStatus: { type: string }
+        deleteMessage: { type: string }
+        deleteStartedAt: { type: string, format: date-time, nullable: true }
+        deleteFinishedAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        deploymentSummary: { $ref: "#/components/schemas/ApplicationDeploymentSummary" }
+      required: [id, projectId, identifier, name, icon, deleteStatus, deleteMessage, createdAt, updatedAt]
+    PaginatedApplications:
+      type: object
+      required: [items, page, pageSize, sortBy, sortOrder, total, totalPages]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/ApplicationListItem" }
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 100 }
+        sortBy: { type: string }
+        sortOrder: { type: string, enum: [asc, desc] }
+        total: { type: integer, minimum: 0 }
+        totalPages: { type: integer, minimum: 0 }
+    ApplicationDeletionVolumePreview:
       type: object
       additionalProperties: false
-      required: [dataAction]
+      required: [bindingId, projectVolumeId, displayName, logicalName, activationState]
       properties:
-        dataAction:
-          type: string
-          enum: [retain, delete]
-          description: Retain managed PVCs for later reclaim, or permanently delete them.
-    PersistentVolumeClaimSnapshot:
-      type: object
-      required: [name, capacity, storageClassName, accessMode, volumeMode, createdAt]
-      properties:
-        name: { type: string }
-        capacity: { type: string }
-        storageClassName: { type: string }
-        accessMode: { type: string }
-        volumeMode: { type: string }
-        createdAt: { type: string, format: date-time }
+        bindingId: { type: string }
+        projectVolumeId: { type: string }
+        displayName: { type: string }
+        logicalName: { type: string }
+        mountPath: { type: string }
+        devicePath: { type: string }
+        activationState: { type: string, enum: [reserved, active, release_pending] }
     ApplicationDeletionTargetPreview:
       type: object
-      required: [deploymentTargetId, deploymentTargetName, exportAvailable, volumes]
+      additionalProperties: false
+      required: [deploymentTargetId, deploymentTargetName, volumes]
       properties:
         deploymentTargetId: { type: string }
         deploymentTargetName: { type: string }
-        exportAvailable: { type: boolean }
         volumes:
           type: array
-          items: { $ref: "#/components/schemas/PersistentVolumeClaimSnapshot" }
-        observationCode: { type: string }
+          items: { $ref: "#/components/schemas/ApplicationDeletionVolumePreview" }
     ApplicationDeletionPreview:
       type: object
       required: [hasPersistentData, targets]
@@ -8055,39 +8846,378 @@ components:
         targets:
           type: array
           items: { $ref: "#/components/schemas/ApplicationDeletionTargetPreview" }
-    RetainedVolume:
+    ProjectVolumeOwnershipMode:
+      type: string
+      enum: [managed, referenced]
+    ProjectVolumeSourceKind:
+      type: string
+      enum: [blank, managed, retained, archive_import, snapshot_restore, existing_claim]
+    ProjectVolumeLifecycleState:
+      type: string
+      enum: [provisioning, ready, deleting, error]
+    ProjectVolumeAvailability:
+      type: string
+      enum: [available, reserved, in_use, unavailable]
+    ProjectVolumeAccessMode:
+      type: string
+      enum: [ReadWriteOnce, ReadWriteOncePod, ReadOnlyMany, ReadWriteMany]
+    ProjectVolumeMode:
+      type: string
+      enum: [Filesystem, Block]
+    ProjectVolumeObservationStatus:
+      type: string
+      enum: [available, reserved, in_use, unavailable]
+    ProjectVolumeBindingSummary:
       type: object
-      required: [id, projectId, sourceApplicationId, sourceApplicationName, sourceDeploymentTargetId, clusterId, namespace, claimName, volumeName, mountPath, capacity, storageClassName, accessMode, volumeMode, status, retainedAt]
+      additionalProperties: false
+      required: [reserved, active]
       properties:
-        id: { type: string }
+        reserved: { type: integer, minimum: 0 }
+        active: { type: integer, minimum: 0 }
+    ProjectVolumeObservation:
+      type: object
+      additionalProperties: false
+      required: [status, exists, phase, capacity, storageClassName, accessModes, volumeMode, boundVolumeName, observedAt, observationCode]
+      properties:
+        status: { $ref: "#/components/schemas/ProjectVolumeObservationStatus" }
+        exists: { type: boolean }
+        phase: { type: string }
+        capacity: { type: string }
+        storageClassName: { type: string }
+        accessModes:
+          type: array
+          items: { $ref: "#/components/schemas/ProjectVolumeAccessMode" }
+        volumeMode: { $ref: "#/components/schemas/ProjectVolumeMode" }
+        boundVolumeName: { type: string }
+        observedAt: { type: string, format: date-time }
+        observationCode: { type: string }
+    ProjectVolume:
+      type: object
+      additionalProperties: false
+      required: [id, projectId, displayName, clusterId, namespace, claimName, ownershipMode, sourceKind, lifecycleState, availability, capacity, capacityBytes, storageClassName, accessMode, volumeMode, bindingSummary, revision, observation, createdAt, updatedAt]
+      properties:
+        id: { type: string, pattern: '^pvol_' }
         projectId: { type: string }
-        sourceApplicationId: { type: string }
-        sourceApplicationName: { type: string }
-        sourceDeploymentTargetId: { type: string }
+        displayName: { type: string }
         clusterId: { type: string }
         namespace: { type: string }
         claimName: { type: string }
-        volumeName: { type: string }
-        mountPath: { type: string }
+        ownershipMode: { $ref: "#/components/schemas/ProjectVolumeOwnershipMode" }
+        sourceKind: { $ref: "#/components/schemas/ProjectVolumeSourceKind" }
+        sourceSnapshotName: { type: string }
+        lifecycleState: { $ref: "#/components/schemas/ProjectVolumeLifecycleState" }
+        pendingOperation: { type: string, enum: [provision, expand, delete, import] }
+        availability: { $ref: "#/components/schemas/ProjectVolumeAvailability" }
         capacity: { type: string }
+        capacityBytes: { type: integer, format: int64, minimum: 0 }
         storageClassName: { type: string }
-        accessMode: { type: string }
-        volumeMode: { type: string }
-        status: { type: string, enum: [retaining, retained, reserved, claimed, deleting, delete_failed] }
-        retainedAt: { type: string, format: date-time }
-    PaginatedRetainedVolumes:
+        accessMode: { $ref: "#/components/schemas/ProjectVolumeAccessMode" }
+        volumeMode: { $ref: "#/components/schemas/ProjectVolumeMode" }
+        sourceApplicationId: { type: string }
+        sourceApplicationName: { type: string }
+        sourceDeploymentTargetId: { type: string }
+        bindingSummary: { $ref: "#/components/schemas/ProjectVolumeBindingSummary" }
+        revision: { type: integer, format: int64, minimum: 1 }
+        lastErrorCode: { type: string }
+        observation: { $ref: "#/components/schemas/ProjectVolumeObservation" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    PaginatedProjectVolumes:
       type: object
+      additionalProperties: false
       required: [items, page, pageSize, sortBy, sortOrder, total, totalPages]
       properties:
         items:
           type: array
-          items: { $ref: "#/components/schemas/RetainedVolume" }
+          items: { $ref: "#/components/schemas/ProjectVolume" }
         page: { type: integer, minimum: 1 }
         pageSize: { type: integer, minimum: 1, maximum: 100 }
-        sortBy: { type: string }
+        sortBy: { type: string, enum: [createdAt, updatedAt, displayName, capacity] }
         sortOrder: { type: string, enum: [asc, desc] }
-        total: { type: integer, minimum: 0 }
+        total: { type: integer, format: int64, minimum: 0 }
         totalPages: { type: integer, minimum: 0 }
+    ProjectVolumeBinding:
+      type: object
+      additionalProperties: false
+      required: [id, applicationId, deploymentTargetId, logicalName, sourceType, readOnly, activationState, createdAt, updatedAt]
+      properties:
+        id: { type: string, pattern: '^dvmt_' }
+        applicationId: { type: string }
+        deploymentTargetId: { type: string }
+        logicalName: { type: string }
+        sourceType: { type: string, enum: [project_volume, empty_dir] }
+        mountPath: { type: string }
+        devicePath: { type: string }
+        readOnly: { type: boolean }
+        activationState: { type: string, enum: [reserved, active, release_pending, error] }
+        lastErrorCode: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ProjectVolumeDetail:
+      allOf:
+        - $ref: "#/components/schemas/ProjectVolume"
+        - type: object
+          required: [bindings, bindingPage, bindingPageSize, bindingTotal, bindingTotalPages, recentTransfers, transferPage, transferPageSize, transferTotal, transferTotalPages]
+          properties:
+            bindings:
+              type: array
+              items: { $ref: "#/components/schemas/ProjectVolumeBinding" }
+            bindingPage: { type: integer, minimum: 1 }
+            bindingPageSize: { type: integer, minimum: 1, maximum: 100 }
+            bindingTotal: { type: integer, format: int64, minimum: 0 }
+            bindingTotalPages: { type: integer, minimum: 0 }
+            recentTransfers:
+              type: array
+              items: { $ref: "#/components/schemas/VolumeTransfer" }
+            transferPage: { type: integer, minimum: 1 }
+            transferPageSize: { type: integer, minimum: 1, maximum: 100 }
+            transferTotal: { type: integer, format: int64, minimum: 0 }
+            transferTotalPages: { type: integer, minimum: 0 }
+    ProjectVolumeBlankSource:
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type: { type: string, const: blank }
+    ProjectVolumeExistingClaimSource:
+      type: object
+      additionalProperties: false
+      required: [type, claimName, ownershipMode]
+      properties:
+        type: { type: string, const: existingClaim }
+        claimName: { type: string, minLength: 1, maxLength: 253 }
+        ownershipMode: { $ref: "#/components/schemas/ProjectVolumeOwnershipMode" }
+    ProjectVolumeSnapshotSource:
+      type: object
+      additionalProperties: false
+      required: [type, snapshotName]
+      properties:
+        type: { type: string, const: volumeSnapshot }
+        snapshotName: { type: string, minLength: 1, maxLength: 253 }
+    ProjectVolumeCreateInput:
+      type: object
+      additionalProperties: false
+      required: [displayName, clusterId, source]
+      properties:
+        displayName: { type: string, minLength: 1, maxLength: 120 }
+        clusterId: { type: string }
+        capacity: { type: string }
+        storageClassName: { type: string }
+        accessMode: { $ref: "#/components/schemas/ProjectVolumeAccessMode" }
+        volumeMode: { $ref: "#/components/schemas/ProjectVolumeMode" }
+        source:
+          oneOf:
+            - $ref: "#/components/schemas/ProjectVolumeBlankSource"
+            - $ref: "#/components/schemas/ProjectVolumeExistingClaimSource"
+            - $ref: "#/components/schemas/ProjectVolumeSnapshotSource"
+          discriminator:
+            propertyName: type
+    ProjectVolumeUpdateInput:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        displayName: { type: string, minLength: 1, maxLength: 120 }
+        capacity: { type: string, description: Requested capacity must be greater than or equal to the current capacity. }
+    ProjectVolumeDeletionPreview:
+      type: object
+      additionalProperties: false
+      required: [volumeId, ownershipMode, dataAction, hasActiveBindings, hasRunningTransfers, bindings, runningTransfers, underlyingClaimWillBeDeleted, observation]
+      properties:
+        volumeId: { type: string }
+        ownershipMode: { $ref: "#/components/schemas/ProjectVolumeOwnershipMode" }
+        dataAction: { type: string, enum: [delete, detach] }
+        hasActiveBindings: { type: boolean }
+        hasRunningTransfers: { type: boolean, description: True when a transfer is active or a cancelled transfer still has pending cleanup. }
+        bindings:
+          type: array
+          items: { $ref: "#/components/schemas/ProjectVolumeBinding" }
+        runningTransfers:
+          type: array
+          description: Active transfers and cancelled transfers whose cleanup has not completed.
+          items: { $ref: "#/components/schemas/VolumeTransfer" }
+        underlyingClaimWillBeDeleted: { type: boolean }
+        observation: { $ref: "#/components/schemas/ProjectVolumeObservation" }
+    ProjectVolumeStorageClass:
+      type: object
+      additionalProperties: false
+      required: [name, provisioner, isDefault, allowVolumeExpansion, volumeBindingMode, reclaimPolicy, snapshotSupported]
+      properties:
+        name: { type: string }
+        provisioner: { type: string }
+        isDefault: { type: boolean }
+        allowVolumeExpansion: { type: boolean }
+        volumeBindingMode: { type: string, enum: [Immediate, WaitForFirstConsumer] }
+        reclaimPolicy: { type: string }
+        snapshotSupported: { type: boolean }
+    PaginatedProjectVolumeStorageClasses:
+      type: object
+      additionalProperties: false
+      required: [items, page, pageSize, sortBy, sortOrder, total, totalPages]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/ProjectVolumeStorageClass" }
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 100 }
+        sortBy: { type: string, enum: [name, provisioner] }
+        sortOrder: { type: string, enum: [asc, desc] }
+        total: { type: integer, format: int64, minimum: 0 }
+        totalPages: { type: integer, minimum: 0 }
+    VolumeTransferDirection:
+      type: string
+      enum: [import, export]
+    VolumeTransferFormat:
+      type: string
+      enum: [tar_gz, raw_zst]
+    VolumeTransferConsistencyMode:
+      type: string
+      enum: [snapshot, live, unmounted]
+    VolumeTransferState:
+      type: string
+      enum: [created, uploading, queued, running, succeeded, failed, cancelled, expired]
+    VolumeTransfer:
+      type: object
+      additionalProperties: false
+      required: [id, projectId, projectVolumeId, direction, format, consistencyMode, state, expectedBytes, transferredBytes, logicalBytes, processedFiles, chunkSize, sha256, dataSHA256, actorId, expiresAt, lastErrorCode, createdAt, updatedAt]
+      properties:
+        id: { type: string, pattern: '^vtx_' }
+        projectId: { type: string }
+        projectVolumeId: { type: string, pattern: '^pvol_' }
+        direction: { $ref: "#/components/schemas/VolumeTransferDirection" }
+        format: { $ref: "#/components/schemas/VolumeTransferFormat" }
+        consistencyMode: { $ref: "#/components/schemas/VolumeTransferConsistencyMode" }
+        state: { $ref: "#/components/schemas/VolumeTransferState" }
+        sourceFilename: { type: string, description: Visible only to the creating user or project Owner/Admin. }
+        expectedBytes: { type: integer, format: int64, minimum: 0 }
+        transferredBytes: { type: integer, format: int64, minimum: 0 }
+        logicalBytes: { type: integer, format: int64, minimum: 0 }
+        processedFiles: { type: integer, format: int64, minimum: 0 }
+        phase: { type: string }
+        uploadOffset: { type: integer, format: int64, minimum: 0 }
+        chunkSize:
+          type: integer
+          format: int64
+          minimum: 67108864
+          maximum: 5368709120
+          description: Server-selected required multipart size. It is at least 64 MiB and grows in MiB steps so a transfer needs no more than 10,000 S3 parts; only the final import part may be smaller.
+        sha256: { type: string, pattern: '^[a-f0-9]{64}$|^$' }
+        dataSHA256: { type: string, pattern: '^[a-f0-9]{64}$|^$' }
+        actorId: { type: string }
+        expiresAt: { type: string, format: date-time }
+        startedAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time }
+        lastErrorCode:
+          type: string
+          description: Stable public transfer error code. `volume_transfer.completion_missing` is produced only by server-side reconciliation when a transfer Job ended without a confirmed callback; Jobs cannot submit that code through VolumeTransferFailInput.
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    PaginatedVolumeTransfers:
+      type: object
+      additionalProperties: false
+      required: [items, page, pageSize, sortBy, sortOrder, total, totalPages]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/VolumeTransfer" }
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 100 }
+        sortBy: { type: string, enum: [createdAt, updatedAt, state, transferredBytes] }
+        sortOrder: { type: string, enum: [asc, desc] }
+        total: { type: integer, format: int64, minimum: 0 }
+        totalPages: { type: integer, minimum: 0 }
+    VolumeImportCreateInput:
+      type: object
+      additionalProperties: false
+      required: [displayName, clusterId, capacity, storageClassName, accessMode, volumeMode, format, filename, contentLength]
+      properties:
+        displayName: { type: string, minLength: 1, maxLength: 120 }
+        clusterId: { type: string }
+        capacity: { type: string }
+        storageClassName: { type: string }
+        accessMode: { $ref: "#/components/schemas/ProjectVolumeAccessMode" }
+        volumeMode: { $ref: "#/components/schemas/ProjectVolumeMode" }
+        format: { $ref: "#/components/schemas/VolumeTransferFormat" }
+        filename: { type: string, minLength: 1, maxLength: 255 }
+        contentLength: { type: integer, format: int64, minimum: 1 }
+        sha256: { type: string, pattern: '^[a-fA-F0-9]{64}$' }
+    VolumeImportCreateResponse:
+      type: object
+      additionalProperties: false
+      required: [volume, transfer]
+      properties:
+        volume: { $ref: "#/components/schemas/ProjectVolume" }
+        transfer: { $ref: "#/components/schemas/VolumeTransfer" }
+    VolumeImportCompleteInput:
+      type: object
+      additionalProperties: false
+      required: [contentLength, sha256]
+      properties:
+        contentLength: { type: integer, format: int64, minimum: 1 }
+        sha256: { type: string, pattern: '^[a-fA-F0-9]{64}$' }
+    VolumeExportCreateInput:
+      type: object
+      additionalProperties: false
+      required: [format, consistency]
+      properties:
+        format: { $ref: "#/components/schemas/VolumeTransferFormat" }
+        consistency: { type: string, enum: [auto, snapshot, live] }
+    VolumeTransferDownloadAuthorization:
+      type: object
+      additionalProperties: false
+      required: [ticket, expiresAt]
+      properties:
+        ticket: { type: string }
+        expiresAt: { type: string, format: date-time }
+    VolumeTransferManifest:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, volumeMode, format, exportedAt, logicalBytes, fileCount, dataSHA256, consistencyMode]
+      properties:
+        schemaVersion: { type: integer, const: 1 }
+        volumeMode: { type: string, const: Block }
+        format: { type: string, const: raw_zst }
+        exportedAt: { type: string, format: date-time }
+        logicalBytes: { type: integer, format: int64, minimum: 1 }
+        fileCount: { type: integer, const: 0 }
+        dataSHA256: { type: string, pattern: '^[0-9a-f]{64}$' }
+        consistencyMode: { type: string, enum: [snapshot, live, unmounted] }
+    VolumeTransferProgressInput:
+      type: object
+      additionalProperties: false
+      required: [expectedState, transferredBytes, processedFiles, stage]
+      properties:
+        expectedState: { type: string, const: running }
+        transferredBytes: { type: integer, format: int64, minimum: 0 }
+        processedFiles: { type: integer, format: int64, minimum: 0 }
+        stage: { type: string, enum: [starting, downloading, extracting, reading_device, archiving, uploading, verifying, completed] }
+    VolumeTransferCompleteInput:
+      type: object
+      additionalProperties: false
+      required: [expectedState, transferredBytes, sha256]
+      properties:
+        expectedState: { type: string, const: running }
+        transferredBytes: { type: integer, format: int64, minimum: 0 }
+        sha256: { type: string, pattern: '^[a-fA-F0-9]{64}$' }
+        logicalBytes:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Required and greater than zero for raw_zst; tar_gz sends zero.
+        dataSHA256:
+          type: string
+          pattern: '^[a-f0-9]{64}$|^$'
+          description: Required for raw_zst; tar_gz sends an empty string.
+    VolumeTransferFailInput:
+      type: object
+      additionalProperties: false
+      required: [expectedState, errorCode]
+      properties:
+        expectedState: { type: string, const: running }
+        errorCode:
+          type: string
+          enum: [volume_transfer.archive_unsafe, volume_transfer.capacity_exceeded, volume_transfer.checksum_mismatch, volume_transfer.store_unavailable, volume_transfer.callback_unavailable, volume_transfer.callback_unauthorized, volume_transfer.format_unsupported, volume.cluster_unavailable, volume_transfer.job_failed]
+        diagnostic: { type: string, maxLength: 4096, description: Bounded internal diagnostics; never returned by production APIs. }
     ArtifactRegistryInput:
       type: object
       properties:
@@ -8259,8 +9389,68 @@ components:
         webConsoleEnabled:
           type: boolean
           description: Project-space master switch. A false value disables Web Console for every deployment target in the project space.
+        currentUserRole:
+          allOf:
+            - $ref: "#/components/schemas/ProjectRole"
+          description: Role of the current authenticated user in this project space. Omitted for platform administrators.
         createdAt: { type: string, format: date-time }
       required: [id, name, identifier, kubernetesNamespace, namespaceStrategy, maxConcurrentBuilds, webConsoleEnabled, createdAt]
+    DeploymentEmptyDirInput:
+      type: object
+      additionalProperties: false
+      properties:
+        medium: { type: string, enum: ["", Memory], default: "" }
+        sizeLimit:
+          type: string
+          description: Optional positive Kubernetes storage quantity.
+    DeploymentProjectVolumeFilesystemMountInput:
+      type: object
+      additionalProperties: false
+      required: [logicalName, sourceType, projectVolumeId, mountPath]
+      properties:
+        logicalName: { type: string, minLength: 1, maxLength: 63 }
+        sourceType: { type: string, const: projectVolume }
+        projectVolumeId: { type: string, minLength: 1 }
+        mountPath: { type: string, pattern: '^/.+' }
+        readOnly: { type: boolean, default: false }
+    DeploymentProjectVolumeBlockMountInput:
+      type: object
+      additionalProperties: false
+      required: [logicalName, sourceType, projectVolumeId, devicePath]
+      properties:
+        logicalName: { type: string, minLength: 1, maxLength: 63 }
+        sourceType: { type: string, const: projectVolume }
+        projectVolumeId: { type: string, minLength: 1 }
+        devicePath: { type: string, pattern: '^/.+' }
+        readOnly: { type: boolean, default: false }
+    DeploymentEmptyDirMountInput:
+      type: object
+      additionalProperties: false
+      required: [logicalName, sourceType, mountPath]
+      properties:
+        logicalName: { type: string, minLength: 1, maxLength: 63 }
+        sourceType: { type: string, const: emptyDir }
+        mountPath: { type: string, pattern: '^/.+' }
+        emptyDir: { $ref: "#/components/schemas/DeploymentEmptyDirInput" }
+    DeploymentDataVolumeInput:
+      oneOf:
+        - $ref: "#/components/schemas/DeploymentProjectVolumeFilesystemMountInput"
+        - $ref: "#/components/schemas/DeploymentProjectVolumeBlockMountInput"
+        - $ref: "#/components/schemas/DeploymentEmptyDirMountInput"
+    DeploymentDataVolume:
+      type: object
+      additionalProperties: false
+      required: [bindingId, logicalName, sourceType, readOnly, activationState]
+      properties:
+        bindingId: { type: string }
+        logicalName: { type: string }
+        sourceType: { type: string, enum: [projectVolume, emptyDir] }
+        projectVolumeId: { type: string }
+        mountPath: { type: string }
+        devicePath: { type: string }
+        readOnly: { type: boolean }
+        emptyDir: { $ref: "#/components/schemas/DeploymentEmptyDirInput" }
+        activationState: { type: string, enum: [reserved, active, release_pending] }
     DeploymentTargetInput:
       type: object
       description: Complete deployment target create/update payload used by the console, CLI, and Agent. Repository sources require repositoryBindingId; image sources require imageRef. Omitted optional fields use platform defaults.
@@ -8561,26 +9751,11 @@ components:
           type: string
           writeOnly: true
           description: JSON array of runtime secret file inputs. Existing plaintext values are never returned.
-        dataRetentionEnabled:
-          type: boolean
-          default: false
-        dataCapacity:
-          type: string
-          default: 1Gi
-        dataMountPath:
-          type: string
-          default: /data
         dataVolumes:
-          type: string
-          description: JSON array of managed, retainedClaim, existingClaim, or emptyDir data-volume objects. retainedClaim requires retainedVolumeId and existingClaimName.
-        dataStorageClassName:
-          type: string
-        dataAccessMode:
-          type: string
-          enum: [ReadWriteOnce, ReadOnlyMany, ReadWriteMany]
-        dataVolumeMode:
-          type: string
-          enum: [Filesystem, Block]
+          type: array
+          maxItems: 32
+          items: { $ref: "#/components/schemas/DeploymentDataVolumeInput" }
+          description: Complete desired mount set. Omission or an empty array unbinds every existing deployment-volume mount; legacy storage fields and serialized JSON strings are rejected.
         requireApproval:
           type: boolean
           default: false
@@ -8604,10 +9779,13 @@ components:
         buildTemplateId: { type: string }
         buildTemplateVersion: { type: string }
         buildTemplateValues: { type: string }
+        dataVolumes:
+          type: array
+          items: { $ref: "#/components/schemas/DeploymentDataVolume" }
         webConsoleEnabled:
           type: [boolean, "null"]
           description: Nullable target restriction. Effective policy is `project.webConsoleEnabled && webConsoleEnabled != false`; a true value is treated as inheritance.
-      required: [id, projectId, applicationId, stage, kubernetesName, webConsoleEnabled]
+      required: [id, projectId, applicationId, stage, kubernetesName, dataVolumes, webConsoleEnabled]
     BuildTemplateParameter:
       type: object
       properties:
@@ -9232,6 +10410,72 @@ components:
         - type: object
           properties:
             relationType: { type: string }
+    AppTemplateDataVolume:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [logicalName, sourceType]
+          properties:
+            logicalName: { type: string, minLength: 1 }
+            sourceType: { type: string, const: projectVolume }
+            mountPath: { type: string, pattern: ^/ }
+            devicePath: { type: string, pattern: ^/ }
+            readOnly: { type: boolean, default: false }
+          oneOf:
+            - required: [mountPath]
+            - required: [devicePath]
+        - type: object
+          additionalProperties: false
+          required: [logicalName, sourceType, mountPath]
+          properties:
+            logicalName: { type: string, minLength: 1 }
+            sourceType: { type: string, const: emptyDir }
+            mountPath: { type: string, pattern: ^/ }
+            emptyDir:
+              type: object
+              additionalProperties: false
+              properties:
+                medium: { type: string, enum: ["", Memory] }
+                sizeLimit: { type: string }
+    AppTemplateValueDefinition:
+      type: object
+      required: [key, label, description, default, required, secret, autoGenerate]
+      properties:
+        key: { type: string }
+        label: { type: string }
+        description: { type: string }
+        default: { type: string }
+        required: { type: boolean }
+        secret: { type: boolean }
+        autoGenerate: { type: boolean }
+    AppTemplate:
+      type: object
+      required: [id, slug, name, description, category, kind, systemComponent, icon, officialWebsite, officialRepository, popularityWeight, image, version, servicePort, defaultReplicas, defaultCPU, defaultMemory, dataVolumes, values]
+      properties:
+        id: { type: string }
+        slug: { type: string }
+        name: { type: string }
+        description: { type: string }
+        category: { type: string }
+        kind: { type: string }
+        systemComponent: { type: string }
+        icon: { type: string }
+        officialWebsite: { type: string }
+        officialRepository: { type: string }
+        popularityWeight: { type: integer }
+        image: { type: string }
+        version: { type: string }
+        servicePort: { type: integer }
+        defaultReplicas: { type: integer }
+        defaultCPU: { type: string }
+        defaultMemory: { type: string }
+        dataVolumes:
+          type: array
+          maxItems: 32
+          items: { $ref: "#/components/schemas/AppTemplateDataVolume" }
+        values:
+          type: array
+          items: { $ref: "#/components/schemas/AppTemplateValueDefinition" }
     AppTemplateInstallInput:
       type: object
       required: [applicationName, applicationIdentifier, deploymentName, stage, clusterId]
@@ -9246,10 +10490,9 @@ components:
         replicas: { type: integer, minimum: 0 }
         cpuRequest: { type: string }
         memoryRequest: { type: string }
-        dataCapacity: { type: string }
-        retainedVolumeId:
+        projectVolumeId:
           type: string
-          description: Optional retained-volume ID to reclaim as the template's managed data volume. The volume must belong to this project and original runtime cluster.
+          description: Existing ready project-volume ID matching the template declaration, project space, cluster, namespace, and volume mode. Required when dataVolumes contains projectVolume; rejected otherwise.
         installNow: { type: boolean }
         values:
           type: object

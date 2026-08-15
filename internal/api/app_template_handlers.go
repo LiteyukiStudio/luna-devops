@@ -13,6 +13,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/resourceidentifier"
 	"github.com/LiteyukiStudio/devops/internal/secret"
+	"github.com/LiteyukiStudio/devops/internal/volume"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -28,8 +29,7 @@ type appTemplateInstallInput struct {
 	Replicas              int               `json:"replicas"`
 	CPURequest            string            `json:"cpuRequest"`
 	MemoryRequest         string            `json:"memoryRequest"`
-	DataCapacity          string            `json:"dataCapacity"`
-	RetainedVolumeID      string            `json:"retainedVolumeId"`
+	ProjectVolumeID       string            `json:"projectVolumeId"`
 	InstallNow            *bool             `json:"installNow"`
 	Values                map[string]string `json:"values"`
 }
@@ -82,6 +82,7 @@ func (h *Handlers) InstallAppTemplate(ctx *gin.Context) {
 		return
 	}
 
+	mountChanges := deploymentVolumeMountChanges{}
 	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := createApplicationRecord(tx, &plan.Application); err != nil {
 			return err
@@ -89,12 +90,10 @@ func (h *Handlers) InstallAppTemplate(ctx *gin.Context) {
 		if err := tx.Create(&plan.DeploymentTarget).Error; err != nil {
 			return err
 		}
-		var dataVolumes []deploymentTargetDataVolumeInput
-		if err := json.Unmarshal([]byte(plan.DeploymentTarget.DataVolumes), &dataVolumes); err != nil {
-			return err
-		}
-		if err := reserveRetainedVolumes(tx, plan.Application.ProjectID, plan.Application.ID, plan.DeploymentTarget.ID, plan.DeploymentTarget.ClusterID, dataVolumes); err != nil {
-			return err
+		var syncErr error
+		mountChanges, syncErr = syncDeploymentTargetVolumeMounts(ctx.Request.Context(), tx, plan.DeploymentTarget, plan.DataVolumes)
+		if syncErr != nil {
+			return syncErr
 		}
 		if plan.Release != nil {
 			revision, err := nextReleaseRevisionFor(tx, plan.Release.ProjectID, plan.Release.ApplicationID, plan.Release.DeploymentTargetID)
@@ -121,13 +120,19 @@ func (h *Handlers) InstallAppTemplate(ctx *gin.Context) {
 		writeApplicationIdentifierConflict(ctx, "active")
 		return
 	} else if err != nil {
-		writeError(ctx, http.StatusBadRequest, err.Error())
+		h.auditDeploymentVolumeMountFailure(ctx.Request.Context(), user.ID, mountChanges, err)
+		if volume.ErrorCode(err) != "" {
+			writeVolumeError(ctx, err)
+		} else {
+			writeError(ctx, http.StatusBadRequest, err.Error())
+		}
 		return
 	}
 
 	for _, entry := range plan.SecretValues {
 		h.auditWithContext(user.ID, "secret.write", entry.ID, true, entry.Resource, ctx.Request.Context())
 	}
+	h.auditDeploymentVolumeMountChanges(ctx.Request.Context(), user.ID, plan.DeploymentTarget, mountChanges)
 	h.auditWithContext(user.ID, "app_template.install", plan.Installation.ID, true, template.ID, ctx.Request.Context())
 
 	if plan.Release != nil && !h.enqueueDeployRun(ctx.Request.Context(), *plan.Release) {
@@ -141,10 +146,15 @@ func (h *Handlers) InstallAppTemplate(ctx *gin.Context) {
 		h.auditWithContext(user.ID, "app_template.deploy_enqueue", plan.Installation.ID, false, message, ctx.Request.Context())
 	}
 
+	mountsByTarget, err := h.deploymentTargetVolumeMountsByTarget(ctx.Request.Context(), []model.DeploymentTarget{plan.DeploymentTarget})
+	if err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
+		return
+	}
 	ctx.JSON(http.StatusCreated, appTemplateInstallResponse{
 		Installation:     plan.Installation,
 		Application:      plan.Application,
-		DeploymentTarget: deploymentTargetResponseFromModel(plan.DeploymentTarget),
+		DeploymentTarget: deploymentTargetResponseFromModel(plan.DeploymentTarget, mountsByTarget[plan.DeploymentTarget.ID]),
 		Release:          plan.Release,
 	})
 }
@@ -152,6 +162,7 @@ func (h *Handlers) InstallAppTemplate(ctx *gin.Context) {
 type templateInstallPlan struct {
 	Application      model.Application
 	DeploymentTarget model.DeploymentTarget
+	DataVolumes      []deploymentTargetDataVolumeInput
 	Installation     model.AppTemplateInstallation
 	Release          *model.Release
 	SecretValues     []model.SecretValue
@@ -218,38 +229,70 @@ func (h *Handlers) buildTemplateInstallPlan(ctx *gin.Context, user model.User, p
 	if !ok {
 		return templateInstallPlan{}, false
 	}
-	dataCapacity, ok := normalizeDataCapacity(ctx, firstNonEmpty(input.DataCapacity, template.DataCapacity), template.DataRetentionEnabled)
-	if !ok {
+	clusterID := strings.TrimSpace(input.ClusterID)
+	if clusterID == "" {
+		clusterID = h.defaultRuntimeClusterID(ctx.Request.Context())
+	}
+	if _, ok := h.runtimeClusterForProjectUse(ctx, user, project.ID, clusterID); !ok {
 		return templateInstallPlan{}, false
 	}
-	dataMountPath, ok := normalizeDataMountPath(ctx, template.DataMountPath, template.DataRetentionEnabled)
-	if !ok {
+	namespace := strings.TrimSpace(input.Namespace)
+	projectVolumeID := strings.TrimSpace(input.ProjectVolumeID)
+	projectVolumeCount := 0
+	var projectVolumeDeclaration *appstore.DataVolume
+	for index := range template.DataVolumes {
+		if template.DataVolumes[index].SourceType == "projectVolume" {
+			projectVolumeCount++
+			projectVolumeDeclaration = &template.DataVolumes[index]
+		}
+	}
+	if projectVolumeCount > 1 {
+		writeErrorCode(ctx, http.StatusInternalServerError, "app_template.volume_contract_invalid", "应用模板包含多个项目数据卷声明")
 		return templateInstallPlan{}, false
 	}
-	dataVolumes, ok := normalizeDataVolumes(ctx, "", template.DataRetentionEnabled, dataMountPath, dataCapacity)
-	if !ok {
-		return templateInstallPlan{}, false
-	}
-	retainedVolumeID := strings.TrimSpace(input.RetainedVolumeID)
-	if retainedVolumeID != "" {
-		if !template.DataRetentionEnabled {
-			writeErrorCode(ctx, http.StatusBadRequest, "app_template.retained_volume_unsupported", "该模板没有持久化数据卷")
+	var selectedProjectVolume *model.ProjectVolume
+	if projectVolumeCount == 1 {
+		if projectVolumeID == "" {
+			writeErrorCode(ctx, http.StatusBadRequest, "app_template.project_volume_required", "该模板需要选择一个已就绪的项目数据卷")
 			return templateInstallPlan{}, false
 		}
-		var retained model.RetainedVolume
-		if err := h.dbFor(ctx).First(&retained, "id = ? and project_id = ? and status = ?", retainedVolumeID, project.ID, model.RetainedVolumeStatusRetained).Error; err != nil {
-			writeErrorCode(ctx, http.StatusConflict, "retained_volume.unavailable", "保留数据卷不存在或已被认领")
+		var projectVolume model.ProjectVolume
+		if err := h.dbFor(ctx).First(&projectVolume, "id = ? and project_id = ?", projectVolumeID, project.ID).Error; err != nil {
+			writeErrorCode(ctx, http.StatusBadRequest, "project_volume.not_found", "项目数据卷不存在")
 			return templateInstallPlan{}, false
 		}
-		dataVolumes[0].SourceType = "retainedClaim"
-		dataVolumes[0].ExistingClaimName = retained.ClaimName
-		dataVolumes[0].RetainedVolumeID = retained.ID
-		dataVolumes[0].Capacity = ""
-		dataVolumes[0].MountPath = firstNonEmpty(retained.MountPath, dataVolumes[0].MountPath)
+		if projectVolume.LifecycleState != model.ProjectVolumeLifecycleReady {
+			writeErrorCode(ctx, http.StatusConflict, "project_volume.not_ready", "项目数据卷尚未就绪")
+			return templateInstallPlan{}, false
+		}
+		if projectVolume.ClusterID != clusterID {
+			writeErrorCode(ctx, http.StatusConflict, "project_volume.cluster_mismatch", "项目数据卷与部署目标必须位于同一集群")
+			return templateInstallPlan{}, false
+		}
+		if namespace == "" {
+			namespace = projectVolume.Namespace
+		} else if projectVolume.Namespace != namespace {
+			writeErrorCode(ctx, http.StatusConflict, "project_volume.namespace_mismatch", "项目数据卷与部署目标必须位于同一命名空间")
+			return templateInstallPlan{}, false
+		}
+		if projectVolume.VolumeMode != model.ProjectVolumeModeFilesystem {
+			if projectVolumeDeclaration == nil || projectVolumeDeclaration.DevicePath == "" {
+				writeErrorCode(ctx, http.StatusConflict, "project_volume.mode_incompatible", "项目数据卷模式与应用模板不兼容")
+				return templateInstallPlan{}, false
+			}
+		}
+		if projectVolume.VolumeMode == model.ProjectVolumeModeFilesystem && (projectVolumeDeclaration == nil || projectVolumeDeclaration.MountPath == "") {
+			writeErrorCode(ctx, http.StatusConflict, "project_volume.mode_incompatible", "项目数据卷模式与应用模板不兼容")
+			return templateInstallPlan{}, false
+		}
+		selectedProjectVolume = &projectVolume
+	} else if projectVolumeID != "" {
+		writeErrorCode(ctx, http.StatusBadRequest, "app_template.project_volume_unsupported", "该模板不使用项目数据卷")
+		return templateInstallPlan{}, false
 	}
-	dataVolumesContent, err := json.Marshal(dataVolumes)
-	if err != nil {
-		writeError(ctx, http.StatusInternalServerError, err.Error())
+	dataVolumes := appTemplateDeploymentDataVolumes(template, selectedProjectVolume)
+	dataVolumes, ok = normalizeDataVolumes(ctx, dataVolumes)
+	if !ok {
 		return templateInstallPlan{}, false
 	}
 	configFilesContent, ok := templateConfigFiles(ctx, rendered.ConfigFiles)
@@ -261,20 +304,6 @@ func (h *Handlers) buildTemplateInstallPlan(ctx *gin.Context, user model.User, p
 		return templateInstallPlan{}, false
 	}
 	secretEntries = append(secretEntries, secretFileEntries...)
-	clusterID := strings.TrimSpace(input.ClusterID)
-	if clusterID == "" {
-		clusterID = h.defaultRuntimeClusterID(ctx.Request.Context())
-	}
-	if _, ok := h.runtimeClusterForProjectUse(ctx, user, project.ID, clusterID); !ok {
-		return templateInstallPlan{}, false
-	}
-	if retainedVolumeID != "" {
-		var retained model.RetainedVolume
-		if err := h.dbFor(ctx).First(&retained, "id = ?", retainedVolumeID).Error; err != nil || strings.TrimSpace(retained.ClusterID) != strings.TrimSpace(clusterID) {
-			writeErrorCode(ctx, http.StatusConflict, "retained_volume.cluster_mismatch", "保留数据卷只能在原运行集群中重新认领")
-			return templateInstallPlan{}, false
-		}
-	}
 
 	installNow := true
 	if input.InstallNow != nil {
@@ -298,46 +327,41 @@ func (h *Handlers) buildTemplateInstallPlan(ctx *gin.Context, user model.User, p
 	}
 
 	application := model.Application{
-		ID:                applicationID,
-		ProjectID:         project.ID,
-		Identifier:        applicationIdentifier,
-		Name:              applicationName,
-		Icon:              templateApplicationIcon(template),
-		DeleteStatus:      "active",
-		DataRetentionMode: "retain",
+		ID:           applicationID,
+		ProjectID:    project.ID,
+		Identifier:   applicationIdentifier,
+		Name:         applicationName,
+		Icon:         templateApplicationIcon(template),
+		DeleteStatus: "active",
 	}
 	target := model.DeploymentTarget{
-		ID:                   targetID,
-		ProjectID:            project.ID,
-		ApplicationID:        applicationID,
-		EnvironmentID:        targetID,
-		Name:                 deploymentName,
-		Stage:                stage,
-		KubernetesName:       resourceidentifier.DeploymentTargetName(applicationIdentifier, stage),
-		ClusterID:            clusterID,
-		Namespace:            strings.TrimSpace(input.Namespace),
-		Replicas:             replicas,
-		CPURequest:           cpuRequest,
-		MemoryRequest:        memoryRequest,
-		ServicePort:          fallbackInt(template.ServicePort, 8080),
-		ServicePorts:         model.EncodeDeploymentServicePorts([]model.DeploymentServicePort{{Name: "http", Port: fallbackInt(template.ServicePort, 8080)}}, fallbackInt(template.ServicePort, 8080)),
-		SourceType:           "image",
-		ImageRef:             imageRef,
-		BuildCPURequest:      defaultBuildCPURequest,
-		BuildMemoryRequest:   defaultBuildMemoryRequest,
-		BuildTimeoutSeconds:  defaultBuildTimeoutSeconds,
-		ConcurrencyPolicy:    "queue",
-		EnvVars:              string(envContent),
-		SecretRefs:           string(secretRefsContent),
-		ConfigFiles:          configFilesContent,
-		SecretFiles:          secretFilesContent,
-		DataRetentionEnabled: template.DataRetentionEnabled,
-		DataCapacity:         dataCapacity,
-		DataMountPath:        dataMountPath,
-		DataVolumes:          string(dataVolumesContent),
-		Enabled:              true,
-		DeleteStatus:         "active",
-		CreatedBy:            user.ID,
+		ID:                  targetID,
+		ProjectID:           project.ID,
+		ApplicationID:       applicationID,
+		EnvironmentID:       targetID,
+		Name:                deploymentName,
+		Stage:               stage,
+		KubernetesName:      resourceidentifier.DeploymentTargetName(applicationIdentifier, stage),
+		ClusterID:           clusterID,
+		Namespace:           namespace,
+		Replicas:            replicas,
+		CPURequest:          cpuRequest,
+		MemoryRequest:       memoryRequest,
+		ServicePort:         fallbackInt(template.ServicePort, 8080),
+		ServicePorts:        model.EncodeDeploymentServicePorts([]model.DeploymentServicePort{{Name: "http", Port: fallbackInt(template.ServicePort, 8080)}}, fallbackInt(template.ServicePort, 8080)),
+		SourceType:          "image",
+		ImageRef:            imageRef,
+		BuildCPURequest:     defaultBuildCPURequest,
+		BuildMemoryRequest:  defaultBuildMemoryRequest,
+		BuildTimeoutSeconds: defaultBuildTimeoutSeconds,
+		ConcurrencyPolicy:   "queue",
+		EnvVars:             string(envContent),
+		SecretRefs:          string(secretRefsContent),
+		ConfigFiles:         configFilesContent,
+		SecretFiles:         secretFilesContent,
+		Enabled:             true,
+		DeleteStatus:        "active",
+		CreatedBy:           user.ID,
 	}
 	installation := model.AppTemplateInstallation{
 		ID:                 installationID,
@@ -368,10 +392,29 @@ func (h *Handlers) buildTemplateInstallPlan(ctx *gin.Context, user model.User, p
 	return templateInstallPlan{
 		Application:      application,
 		DeploymentTarget: target,
+		DataVolumes:      dataVolumes,
 		Installation:     installation,
 		Release:          release,
 		SecretValues:     secretEntries,
 	}, true
+}
+
+func appTemplateDeploymentDataVolumes(template appstore.Template, selectedProjectVolume *model.ProjectVolume) []deploymentTargetDataVolumeInput {
+	dataVolumes := make([]deploymentTargetDataVolumeInput, 0, len(template.DataVolumes))
+	for _, declaration := range template.DataVolumes {
+		input := deploymentTargetDataVolumeInput{
+			LogicalName: declaration.LogicalName, SourceType: declaration.SourceType,
+			MountPath: declaration.MountPath, DevicePath: declaration.DevicePath, ReadOnly: declaration.ReadOnly,
+		}
+		if declaration.SourceType == "projectVolume" && selectedProjectVolume != nil {
+			input.ProjectVolumeID = selectedProjectVolume.ID
+		}
+		if declaration.SourceType == "emptyDir" && declaration.EmptyDir != nil {
+			input.EmptyDir = &deploymentTargetEmptyDirInput{Medium: declaration.EmptyDir.Medium, SizeLimit: declaration.EmptyDir.SizeLimit}
+		}
+		dataVolumes = append(dataVolumes, input)
+	}
+	return dataVolumes
 }
 
 func templateSecretRefs(ctx *gin.Context, userID string, installationID string, values map[string]string) (map[string]string, []model.SecretValue, bool) {

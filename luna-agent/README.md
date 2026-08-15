@@ -2,7 +2,7 @@
 
 Luna DevOps 内嵌 AI 助手的独立 Node.js 服务。当前实现覆盖 P0 服务骨架：内部
 HTTP API、会话/Turn/Run/Timeline 持久化、可恢复事件、Run 租约执行器、
-LangGraph.js `assistant-v1`、Provider 兼容层、身份验证抽象与默认脱敏。
+单一模型运行时、Provider 兼容层、身份验证抽象与默认脱敏。模型运行时只负责上下文编译、工具解析和 Provider 调用；循环、工具执行与暂停恢复由执行器统一编排。
 
 Agent 侧 P1/P2 公共执行管线位于 `src/tools/`：严格 Tool Catalog、JSON Schema
 参数约束、风险/批准/MFA 策略、缺参中断、不可变重试 attempt、工具调用上限、
@@ -10,8 +10,8 @@ Agent 侧 P1/P2 公共执行管线位于 `src/tools/`：严格 Tool Catalog、JS
 `LunaApiToolClient` 先兑换 operation-bound 委托令牌后调用 Luna API；没有
 Kubernetes、业务数据库、任意 URL、Shell 或第三方平台执行器。
 
-配置 Luna API Provider 回调后，真实 Graph 统一使用 `ManagedProvider` 拉取版本化
-配置。API Key 只存在于短 TTL 进程内缓存，不进入文件、数据库、Checkpoint、
+配置 Luna API Provider 回调后，模型运行时统一使用 `ManagedProvider` 拉取版本化
+配置。API Key 只存在于短 TTL 进程内缓存，不进入文件、数据库、上下文摘要、
 Timeline 或日志；缓存过期后的下一次真实调用会使用后台新配置。确定性 Provider
 只用于显式本地开发与测试，生产启动强制要求 Luna API Provider 配置。
 

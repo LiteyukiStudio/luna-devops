@@ -10,42 +10,22 @@ interface InteractionCardTemplateConfig {
 }
 
 export const interactionCardTemplateConfigs: Record<InteractionCardTemplate, InteractionCardTemplateConfig> = {
-  catalog: {
+  candidates: {
     defaultDensity: 'comfortable',
     expandByDefault: false,
     gridClassName: 'grid-cols-[repeat(auto-fit,minmax(min(17rem,100%),1fr))]',
-  },
-  comparison: {
-    defaultDensity: 'compact',
-    expandByDefault: true,
-    gridClassName: 'grid-cols-[repeat(auto-fit,minmax(min(16rem,100%),1fr))]',
-  },
-  inspector: {
-    defaultDensity: 'comfortable',
-    expandByDefault: true,
-    gridClassName: 'grid-cols-1',
   },
   form: {
     defaultDensity: 'comfortable',
     expandByDefault: true,
     gridClassName: 'grid-cols-1',
   },
-  wizard: {
-    defaultDensity: 'comfortable',
-    expandByDefault: true,
-    gridClassName: 'grid-cols-1',
-  },
-  diagnosis: {
+  change_review: {
     defaultDensity: 'compact',
     expandByDefault: true,
     gridClassName: 'grid-cols-1',
   },
-  plan: {
-    defaultDensity: 'compact',
-    expandByDefault: true,
-    gridClassName: 'grid-cols-1',
-  },
-  progress: {
+  live_task: {
     defaultDensity: 'compact',
     expandByDefault: true,
     gridClassName: 'grid-cols-1',
@@ -54,11 +34,6 @@ export const interactionCardTemplateConfigs: Record<InteractionCardTemplate, Int
     defaultDensity: 'compact',
     expandByDefault: true,
     gridClassName: 'grid-cols-1',
-  },
-  dashboard: {
-    defaultDensity: 'compact',
-    expandByDefault: true,
-    gridClassName: 'grid-cols-[repeat(auto-fit,minmax(min(13rem,100%),1fr))]',
   },
 }
 

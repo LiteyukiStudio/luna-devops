@@ -11,4 +11,11 @@ describe('normalizeTelemetryRoute', () => {
     expect(normalizeTelemetryRoute('/api/v1/auth/oidc/provider-id/start'))
       .toBe('/api/v1/auth/oidc/:id/start')
   })
+
+  it('removes project volume and transfer IDs from telemetry routes', () => {
+    expect(normalizeTelemetryRoute('/api/v1/projects/prj_1/volumes/pvol_secret/exports'))
+      .toBe('/api/v1/projects/:id/volumes/:id/exports')
+    expect(normalizeTelemetryRoute('/api/v1/projects/prj_1/volume-transfers/vtx_secret/content?ticket=hidden'))
+      .toBe('/api/v1/projects/:id/volume-transfers/:id/content')
+  })
 })

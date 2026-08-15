@@ -16,6 +16,7 @@ export interface AIAssistantState {
   turnIndexes: Record<string, number>
   itemRevisions: Record<string, number>
   desyncedRunIds: Set<string>
+  desyncRecoverySequences: Record<string, number>
 }
 
 const TURN_ORDER_STRIDE = 1_000_000
@@ -116,6 +117,7 @@ export function stateFromTimeline(timeline: AITimeline): AIAssistantState {
     turnIndexes: Object.fromEntries(timeline.turns.map(turn => [turn.id, turn.turnIndex])),
     itemRevisions: Object.fromEntries(timeline.turns.flatMap(turn => turn.selectedRun?.items.map(item => [item.id, item.revision]) ?? [])),
     desyncedRunIds: new Set(),
+    desyncRecoverySequences: {},
   }
 }
 
@@ -148,7 +150,10 @@ export function mergeTimelineSnapshot(current: AIAssistantState | undefined, tim
     turnIndexes: { ...snapshot.turnIndexes, ...current.turnIndexes },
     itemRevisions: Object.fromEntries([...new Set([...Object.keys(current.itemRevisions), ...Object.keys(snapshot.itemRevisions)])]
       .map(itemId => [itemId, Math.max(current.itemRevisions[itemId] ?? 0, snapshot.itemRevisions[itemId] ?? 0)])),
-    desyncedRunIds: new Set([...current.desyncedRunIds].filter(runId => snapshot.lastEventSequences[runId] === undefined)),
+    desyncedRunIds: new Set([...current.desyncedRunIds].filter(runId =>
+      (snapshot.lastEventSequences[runId] ?? 0) < (current.desyncRecoverySequences[runId] ?? Number.MAX_SAFE_INTEGER))),
+    desyncRecoverySequences: Object.fromEntries(Object.entries(current.desyncRecoverySequences).filter(([runId, sequence]) =>
+      (snapshot.lastEventSequences[runId] ?? 0) < sequence)),
   }
 }
 
@@ -271,6 +276,10 @@ export function reduceAIEvent(state: AIAssistantState, event: AIEvent): AIAssist
     return {
       ...state,
       desyncedRunIds: new Set(state.desyncedRunIds).add(event.runId),
+      desyncRecoverySequences: {
+        ...state.desyncRecoverySequences,
+        [event.runId]: Math.max(state.desyncRecoverySequences[event.runId] ?? 0, event.eventSequence),
+      },
     }
   }
 
@@ -366,4 +375,5 @@ export const emptyAIAssistantState: AIAssistantState = {
   turnIndexes: {},
   itemRevisions: {},
   desyncedRunIds: new Set(),
+  desyncRecoverySequences: {},
 }

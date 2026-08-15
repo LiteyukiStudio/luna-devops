@@ -212,22 +212,21 @@ export const businessCardTemplate = z.discriminatedUnion("templateId", [
 
 export const createBusinessCardTemplateInput = z.object({
   schemaVersion: z.literal(1),
-  generationId: identifier,
   placement: z.enum(["inline", "turn_end"]).optional().describe(
     "卡片在本轮回复中的渲染位置。默认 inline；只有单张、等待用户提交且阻塞后续流程的交互表单才使用 turn_end。",
   ),
   businessTemplate: businessCardTemplate,
-})
+}).strict()
 
 export type CreateBusinessCardTemplateInput = z.infer<typeof createBusinessCardTemplateInput>
 
 export function compileBusinessCardTemplate(input: CreateBusinessCardTemplateInput): unknown {
   const template = input.businessTemplate
-  const base = { schemaVersion: 1, generationId: input.generationId, title: template.title, description: template.description, placement: input.placement ?? "inline" }
+  const base = { schemaVersion: 1, title: template.title, description: template.description, placement: input.placement ?? "inline" }
   switch (template.templateId) {
     case "candidate_picker":
       return {
-        ...base, mode: "interactive", template: "catalog", display: { density: "comfortable" },
+        ...base, mode: "interactive", template: "candidates", display: { density: "comfortable" },
         cards: template.candidates.map(candidate => ({
           id: candidate.id,
           presentation: {
@@ -268,7 +267,7 @@ export function compileBusinessCardTemplate(input: CreateBusinessCardTemplateInp
       }
     case "change_review":
       return {
-        ...base, mode: "interactive", template: "plan", display: { density: "compact" },
+        ...base, mode: "interactive", template: "change_review", display: { density: "compact" },
         cards: [{
           id: "change_review",
           presentation: { variant: "plan", title: template.resourceTitle, subtitle: template.resourceSubtitle, description: template.description },
@@ -281,7 +280,7 @@ export function compileBusinessCardTemplate(input: CreateBusinessCardTemplateInp
       }
     case "diagnosis_report":
       return {
-        ...base, mode: "presentation", template: "diagnosis", display: { density: "compact" },
+        ...base, mode: "presentation", template: "result", display: { density: "compact" },
         cards: [{
           id: "diagnosis_report", presentation: { variant: "finding", title: template.title, description: template.description },
           blocks: [
@@ -293,7 +292,7 @@ export function compileBusinessCardTemplate(input: CreateBusinessCardTemplateInp
       }
     case "execution_progress":
       return {
-        ...base, mode: "presentation", template: "progress", display: { density: "compact" },
+        ...base, mode: "presentation", template: "live_task", display: { density: "compact" },
         cards: [{
           id: "execution_progress", presentation: { variant: "task", title: template.title, description: template.description },
           blocks: [{ id: "progress", type: "live_progress", binding: template.binding, label: template.label, detail: template.detail }],
@@ -313,7 +312,7 @@ export function compileBusinessCardTemplate(input: CreateBusinessCardTemplateInp
       }
     case "health_overview":
       return {
-        ...base, mode: "presentation", template: "dashboard", display: { density: "compact" },
+        ...base, mode: "presentation", template: "result", display: { density: "compact" },
         cards: [{
           id: "health_overview", presentation: { variant: "summary", title: template.title, description: template.description },
           blocks: [{ id: "metrics", type: "metrics", items: template.metrics }, { id: "statuses", type: "status_list", items: template.statuses }],

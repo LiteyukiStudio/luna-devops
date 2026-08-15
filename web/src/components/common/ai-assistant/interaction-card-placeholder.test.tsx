@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
+import i18next from '@/i18n'
 import { AIInteractionCardPlaceholder } from './interaction-card-placeholder'
 
 describe('aI interaction card placeholder', () => {
@@ -17,5 +18,20 @@ describe('aI interaction card placeholder', () => {
 
     expect(screen.getByRole('status')).toHaveAttribute('data-ai-card-preparing')
     expect(screen.getByText('数据库候选').tagName).toBe('STRONG')
+  })
+
+  it('uses the localized fallback when the model has not supplied a title yet', async () => {
+    await i18next.changeLanguage('en-US')
+    render(
+      <AIInteractionCardPlaceholder
+        arguments={{
+          schemaVersion: 1,
+          generationId: 'database-candidates',
+          placement: 'inline',
+        }}
+      />,
+    )
+
+    expect(screen.getByRole('status')).toHaveAccessibleName('Organizing card content')
   })
 })

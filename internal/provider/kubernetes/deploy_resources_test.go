@@ -14,7 +14,11 @@ import (
 )
 
 func TestApplyApplicationResourcesCreatesWorkloadResources(t *testing.T) {
-	client := NewClientForInterface(fake.NewSimpleClientset())
+	claim := &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{
+		Name: "project-data", Namespace: "project-demo",
+		Labels: map[string]string{ManagedByLabel: ManagedByValue, ProjectIDLabel: "prj_demo", ProjectVolumeIDLabel: "pvol_data"},
+	}}
+	client := NewClientForInterface(fake.NewSimpleClientset(claim))
 	spec := ApplicationResourcesSpec{
 		Name:                  "api-dev",
 		Namespace:             "project-demo",
@@ -32,9 +36,9 @@ func TestApplyApplicationResourcesCreatesWorkloadResources(t *testing.T) {
 		RolloutTimeoutSeconds: 120,
 		ConfigData:            map[string]string{"APP_ENV": "dev"},
 		SecretData:            map[string]string{"TOKEN": "secret"},
-		DataRetentionEnabled:  true,
-		DataCapacity:          "2Gi",
-		DataMountPath:         "/data",
+		DataVolumes: []ApplicationDataVolume{{
+			Name: "data", SourceType: "projectVolume", ProjectVolumeID: "pvol_data", ClaimName: claim.Name, MountPath: "/data",
+		}},
 	}
 
 	if err := client.ApplyApplicationResources(context.Background(), spec); err != nil {
@@ -57,8 +61,7 @@ func TestApplyApplicationResourcesCreatesWorkloadResources(t *testing.T) {
 	if deployment.Spec.ProgressDeadlineSeconds == nil || *deployment.Spec.ProgressDeadlineSeconds != 120 {
 		t.Fatalf("progress deadline = %#v", deployment.Spec.ProgressDeadlineSeconds)
 	}
-	pvcName := persistentDataPVCName(spec, persistentDataVolumes(spec)[0])
-	if len(deployment.Spec.Template.Spec.Volumes) != 1 || deployment.Spec.Template.Spec.Volumes[0].PersistentVolumeClaim == nil || deployment.Spec.Template.Spec.Volumes[0].PersistentVolumeClaim.ClaimName != pvcName {
+	if len(deployment.Spec.Template.Spec.Volumes) != 1 || deployment.Spec.Template.Spec.Volumes[0].PersistentVolumeClaim == nil || deployment.Spec.Template.Spec.Volumes[0].PersistentVolumeClaim.ClaimName != claim.Name {
 		t.Fatalf("deployment data volume = %#v", deployment.Spec.Template.Spec.Volumes)
 	}
 	if len(deployment.Spec.Template.Spec.Containers[0].VolumeMounts) != 1 || deployment.Spec.Template.Spec.Containers[0].VolumeMounts[0].MountPath != "/data" {
@@ -101,15 +104,13 @@ func TestApplyApplicationResourcesCreatesWorkloadResources(t *testing.T) {
 	}
 	assertManagedLabels(t, secret.Labels, spec.Name, spec.ProjectID, spec.ApplicationID, spec.EnvironmentID, spec.DeploymentTargetID, spec.ReleaseID)
 
-	claim, err := client.client.CoreV1().PersistentVolumeClaims(spec.Namespace).Get(context.Background(), pvcName, metav1.GetOptions{})
+	observedClaim, err := client.client.CoreV1().PersistentVolumeClaims(spec.Namespace).Get(context.Background(), claim.Name, metav1.GetOptions{})
 	if err != nil {
-		t.Fatalf("get persistent data claim: %v", err)
+		t.Fatalf("get project volume claim: %v", err)
 	}
-	storage := claim.Spec.Resources.Requests[corev1.ResourceStorage]
-	if storage.String() != "2Gi" {
-		t.Fatalf("data capacity = %s", storage.String())
+	if observedClaim.Labels[ProjectVolumeIDLabel] != "pvol_data" || observedClaim.Labels[DeploymentTargetIDLabel] != "" {
+		t.Fatalf("project volume ownership changed: %#v", observedClaim.Labels)
 	}
-	assertManagedLabels(t, claim.Labels, spec.Name, spec.ProjectID, spec.ApplicationID, spec.EnvironmentID, spec.DeploymentTargetID, spec.ReleaseID)
 }
 
 func TestApplyApplicationResourcesKeepsDeploymentSelectorStableAcrossReleases(t *testing.T) {
@@ -205,40 +206,6 @@ func TestApplyApplicationResourcesRejectsUnmanagedService(t *testing.T) {
 	var conflict *ResourceOwnershipConflictError
 	if !errors.As(err, &conflict) || conflict.Kind != "Service" {
 		t.Fatalf("expected service ownership conflict, got %v", err)
-	}
-}
-
-func TestManagedPVCRejectsDifferentDeploymentTargetLifecycle(t *testing.T) {
-	client := NewClientForInterface(fake.NewSimpleClientset())
-	base := ApplicationResourcesSpec{
-		Name:                 "postgres-dev",
-		Namespace:            "project-demo",
-		ProjectID:            "prj_demo",
-		ApplicationID:        "app_postgres",
-		DeploymentTargetID:   "dplt_first_lifecycle",
-		DataRetentionEnabled: true,
-		DataCapacity:         "1Gi",
-	}
-	if err := client.ApplyPersistentDataVolume(context.Background(), base); err != nil {
-		t.Fatalf("apply first lifecycle pvc: %v", err)
-	}
-
-	next := base
-	next.ApplicationID = "app_postgres_recreated"
-	next.DeploymentTargetID = "dplt_second_lifecycle"
-	err := client.ApplyPersistentDataVolume(context.Background(), next)
-	var conflict *ResourceOwnershipConflictError
-	if !errors.As(err, &conflict) || conflict.Kind != "PersistentVolumeClaim" {
-		t.Fatalf("expected retained pvc ownership conflict, got %v", err)
-	}
-
-	claimName := persistentDataPVCName(base, persistentDataVolumes(base)[0])
-	claim, getErr := client.client.CoreV1().PersistentVolumeClaims(base.Namespace).Get(context.Background(), claimName, metav1.GetOptions{})
-	if getErr != nil {
-		t.Fatalf("get retained pvc: %v", getErr)
-	}
-	if claim.Labels[DeploymentTargetIDLabel] != base.DeploymentTargetID {
-		t.Fatalf("retained pvc owner changed: %#v", claim.Labels)
 	}
 }
 
@@ -376,12 +343,7 @@ func TestApplyApplicationResourcesAppliesAdvancedKubernetesOptions(t *testing.T)
 		AutoScalingMinReplicas:       2,
 		AutoScalingMaxReplicas:       5,
 		AutoScalingCPUPercent:        70,
-		DataRetentionEnabled:         true,
-		DataCapacity:                 "2Gi",
-		DataMountPath:                "/data",
-		DataStorageClassName:         "local-path",
-		DataAccessMode:               "ReadWriteMany",
-		DataVolumeMode:               "Filesystem",
+		DataVolumes:                  []ApplicationDataVolume{{Name: "data", SourceType: "emptyDir", MountPath: "/data"}},
 	}
 	if err := client.ApplyApplicationResources(context.Background(), spec); err != nil {
 		t.Fatalf("apply returned error: %v", err)
@@ -464,18 +426,8 @@ func TestApplyApplicationResourcesAppliesAdvancedKubernetesOptions(t *testing.T)
 		t.Fatalf("hpa spec = %#v", hpa.Spec)
 	}
 
-	claim, err := client.client.CoreV1().PersistentVolumeClaims(spec.Namespace).Get(context.Background(), persistentDataPVCName(spec, persistentDataVolumes(spec)[0]), metav1.GetOptions{})
-	if err != nil {
-		t.Fatalf("get pvc: %v", err)
-	}
-	if claim.Spec.StorageClassName == nil || *claim.Spec.StorageClassName != "local-path" {
-		t.Fatalf("storage class = %#v", claim.Spec.StorageClassName)
-	}
-	if len(claim.Spec.AccessModes) != 1 || claim.Spec.AccessModes[0] != corev1.ReadWriteMany {
-		t.Fatalf("access modes = %#v", claim.Spec.AccessModes)
-	}
-	if claim.Spec.VolumeMode == nil || *claim.Spec.VolumeMode != corev1.PersistentVolumeFilesystem {
-		t.Fatalf("volume mode = %#v", claim.Spec.VolumeMode)
+	if len(podSpec.Volumes) != 1 || podSpec.Volumes[0].EmptyDir == nil {
+		t.Fatalf("data volume = %#v", podSpec.Volumes)
 	}
 }
 
@@ -504,10 +456,7 @@ func TestApplyApplicationResourcesSupportsStatefulSetAndHPABehavior(t *testing.T
 		AutoScalingMaxReplicas: 6,
 		AutoScalingCPUPercent:  75,
 		AutoScalingBehavior:    `{"scaleDown":{"stabilizationWindowSeconds":300}}`,
-		DataRetentionEnabled:   true,
-		DataCapacity:           "2Gi",
-		DataMountPath:          "/data",
-		DataStorageClassName:   "local-path",
+		DataVolumes:            []ApplicationDataVolume{{Name: "data", SourceType: "emptyDir", MountPath: "/data"}},
 	}
 	if err := client.ApplyApplicationResources(context.Background(), spec); err != nil {
 		t.Fatalf("apply returned error: %v", err)
@@ -531,21 +480,24 @@ func TestApplyApplicationResourcesSupportsStatefulSetAndHPABehavior(t *testing.T
 	}
 }
 
-func TestApplyApplicationResourcesSupportsExistingClaimAndEmptyDirDataVolumes(t *testing.T) {
-	client := NewClientForInterface(fake.NewSimpleClientset())
+func TestApplyApplicationResourcesSupportsProjectVolumeAndEmptyDirDataVolumes(t *testing.T) {
+	claim := &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{
+		Name: "shared-pvc", Namespace: "project-demo",
+		Labels: map[string]string{ManagedByLabel: ManagedByValue, ProjectIDLabel: "prj_demo", ProjectVolumeIDLabel: "pvol_shared"},
+	}}
+	client := NewClientForInterface(fake.NewSimpleClientset(claim))
 	spec := ApplicationResourcesSpec{
-		Name:                 "api-data-sources",
-		Namespace:            "project-demo",
-		ProjectID:            "prj_demo",
-		ApplicationID:        "app_api",
-		EnvironmentID:        "env_dev",
-		DeploymentTargetID:   "dplt_backend",
-		ReleaseID:            "rel_1",
-		Image:                "registry.example.com/acme/api:prod",
-		ServicePort:          8080,
-		DataRetentionEnabled: true,
+		Name:               "api-data-sources",
+		Namespace:          "project-demo",
+		ProjectID:          "prj_demo",
+		ApplicationID:      "app_api",
+		EnvironmentID:      "env_dev",
+		DeploymentTargetID: "dplt_backend",
+		ReleaseID:          "rel_1",
+		Image:              "registry.example.com/acme/api:prod",
+		ServicePort:        8080,
 		DataVolumes: []ApplicationDataVolume{
-			{Name: "shared", MountPath: "/shared", SourceType: "existingClaim", ExistingClaimName: "shared-pvc"},
+			{Name: "shared", MountPath: "/shared", SourceType: "projectVolume", ProjectVolumeID: "pvol_shared", ClaimName: claim.Name},
 			{Name: "cache", MountPath: "/cache", SourceType: "emptyDir", EmptyDirMedium: "Memory", EmptyDirSizeLimit: "512Mi"},
 		},
 	}
@@ -561,7 +513,7 @@ func TestApplyApplicationResourcesSupportsExistingClaimAndEmptyDirDataVolumes(t 
 		t.Fatalf("volumes = %#v", volumes)
 	}
 	if volumes[0].PersistentVolumeClaim == nil || volumes[0].PersistentVolumeClaim.ClaimName != "shared-pvc" {
-		t.Fatalf("existing claim volume = %#v", volumes[0])
+		t.Fatalf("project volume = %#v", volumes[0])
 	}
 	if volumes[1].EmptyDir == nil || volumes[1].EmptyDir.Medium != corev1.StorageMediumMemory {
 		t.Fatalf("empty dir volume = %#v", volumes[1])
@@ -570,53 +522,8 @@ func TestApplyApplicationResourcesSupportsExistingClaimAndEmptyDirDataVolumes(t 
 	if err != nil {
 		t.Fatalf("list pvc: %v", err)
 	}
-	if len(claims.Items) != 0 {
-		t.Fatalf("unexpected managed pvcs = %#v", claims.Items)
-	}
-}
-
-func TestApplyApplicationResourcesReclaimsRetainedClaim(t *testing.T) {
-	const retainedVolumeID = "rvol_demo"
-	existing := &corev1.PersistentVolumeClaim{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "retained-data",
-			Namespace: "project-demo",
-			Labels: map[string]string{
-				ManagedByLabel:        ManagedByValue,
-				RetainedVolumeIDLabel: retainedVolumeID,
-			},
-		},
-	}
-	client := NewClientForInterface(fake.NewSimpleClientset(existing))
-	spec := ApplicationResourcesSpec{
-		Name: "api-reclaim", Namespace: "project-demo", ProjectID: "prj_demo",
-		ApplicationID: "app_api", EnvironmentID: "env_dev", DeploymentTargetID: "dplt_backend",
-		ReleaseID: "rel_1", Image: "registry.example.com/acme/api:prod", ServicePort: 8080,
-		DataRetentionEnabled: true,
-		DataVolumes: []ApplicationDataVolume{{
-			Name: "data", MountPath: "/data", SourceType: "retainedClaim",
-			ExistingClaimName: "retained-data", RetainedVolumeID: retainedVolumeID,
-		}},
-	}
-	if err := client.ApplyApplicationResources(context.Background(), spec); err != nil {
-		t.Fatalf("apply retained claim: %v", err)
-	}
-	claim, err := client.client.CoreV1().PersistentVolumeClaims(spec.Namespace).Get(context.Background(), "retained-data", metav1.GetOptions{})
-	if err != nil {
-		t.Fatalf("get reclaimed claim: %v", err)
-	}
-	if claim.Labels[ApplicationIDLabel] != spec.ApplicationID || claim.Labels[DeploymentTargetIDLabel] != spec.DeploymentTargetID {
-		t.Fatalf("reclaimed labels = %#v", claim.Labels)
-	}
-	if _, ok := claim.Labels[RetainedVolumeIDLabel]; ok {
-		t.Fatalf("retained ownership label was not removed: %#v", claim.Labels)
-	}
-	deployment, err := client.client.AppsV1().Deployments(spec.Namespace).Get(context.Background(), spec.Name, metav1.GetOptions{})
-	if err != nil {
-		t.Fatalf("get deployment: %v", err)
-	}
-	if deployment.Spec.Template.Spec.Volumes[0].PersistentVolumeClaim.ClaimName != "retained-data" {
-		t.Fatalf("deployment did not mount retained claim: %#v", deployment.Spec.Template.Spec.Volumes)
+	if len(claims.Items) != 1 || claims.Items[0].Name != claim.Name {
+		t.Fatalf("provider must not create deployment-owned PVCs: %#v", claims.Items)
 	}
 }
 

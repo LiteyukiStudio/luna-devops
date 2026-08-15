@@ -31,6 +31,7 @@ import projectHooks from './zh-CN/projectHooks'
 import projectMembers from './zh-CN/projectMembers'
 import projectSpaces from './zh-CN/projectSpaces'
 import projectTopology from './zh-CN/projectTopology'
+import projectVolumes from './zh-CN/projectVolumes'
 import registriesPage from './zh-CN/registriesPage'
 import repositories from './zh-CN/repositories'
 import root from './zh-CN/root'
@@ -61,6 +62,7 @@ const zhCN = {
   loginPage,
   projectSpaces,
   projectTopology,
+  projectVolumes,
   dashboardPage,
   buildsPage,
   buildTemplates,

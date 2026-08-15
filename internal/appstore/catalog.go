@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"path"
 	"regexp"
 	"strings"
 )
@@ -14,31 +15,43 @@ import (
 var templateFS embed.FS
 
 type Template struct {
-	ID                   string            `json:"id"`
-	Slug                 string            `json:"slug"`
-	Name                 string            `json:"name"`
-	Description          string            `json:"description"`
-	Category             string            `json:"category"`
-	Kind                 string            `json:"kind"`
-	SystemComponent      string            `json:"systemComponent"`
-	Icon                 string            `json:"icon"`
-	OfficialWebsite      string            `json:"officialWebsite"`
-	OfficialRepository   string            `json:"officialRepository"`
-	PopularityWeight     int               `json:"popularityWeight"`
-	Image                string            `json:"image"`
-	Version              string            `json:"version"`
-	ServicePort          int               `json:"servicePort"`
-	DefaultReplicas      int               `json:"defaultReplicas"`
-	DefaultCPU           string            `json:"defaultCPU"`
-	DefaultMemory        string            `json:"defaultMemory"`
-	DataRetentionEnabled bool              `json:"dataRetentionEnabled"`
-	DataMountPath        string            `json:"dataMountPath"`
-	DataCapacity         string            `json:"dataCapacity"`
-	Env                  map[string]string `json:"env"`
-	SecretEnv            map[string]string `json:"secretEnv"`
-	ConfigFiles          []ConfigFile      `json:"configFiles"`
-	SecretFiles          []ConfigFile      `json:"secretFiles"`
-	Values               []ValueDefinition `json:"values"`
+	ID                 string            `json:"id"`
+	Slug               string            `json:"slug"`
+	Name               string            `json:"name"`
+	Description        string            `json:"description"`
+	Category           string            `json:"category"`
+	Kind               string            `json:"kind"`
+	SystemComponent    string            `json:"systemComponent"`
+	Icon               string            `json:"icon"`
+	OfficialWebsite    string            `json:"officialWebsite"`
+	OfficialRepository string            `json:"officialRepository"`
+	PopularityWeight   int               `json:"popularityWeight"`
+	Image              string            `json:"image"`
+	Version            string            `json:"version"`
+	ServicePort        int               `json:"servicePort"`
+	DefaultReplicas    int               `json:"defaultReplicas"`
+	DefaultCPU         string            `json:"defaultCPU"`
+	DefaultMemory      string            `json:"defaultMemory"`
+	DataVolumes        []DataVolume      `json:"dataVolumes"`
+	Env                map[string]string `json:"env"`
+	SecretEnv          map[string]string `json:"secretEnv"`
+	ConfigFiles        []ConfigFile      `json:"configFiles"`
+	SecretFiles        []ConfigFile      `json:"secretFiles"`
+	Values             []ValueDefinition `json:"values"`
+}
+
+type DataVolume struct {
+	LogicalName string        `json:"logicalName"`
+	SourceType  string        `json:"sourceType"`
+	MountPath   string        `json:"mountPath,omitempty"`
+	DevicePath  string        `json:"devicePath,omitempty"`
+	ReadOnly    bool          `json:"readOnly,omitempty"`
+	EmptyDir    *EmptyDirSpec `json:"emptyDir,omitempty"`
+}
+
+type EmptyDirSpec struct {
+	Medium    string `json:"medium,omitempty"`
+	SizeLimit string `json:"sizeLimit,omitempty"`
 }
 
 type ConfigFile struct {
@@ -81,8 +94,59 @@ func Catalog() ([]Template, error) {
 		if templates[index].OfficialWebsite == "" {
 			templates[index].OfficialWebsite = templates[index].OfficialRepository
 		}
+		if err := validateTemplateDataVolumes(templates[index]); err != nil {
+			return nil, fmt.Errorf("template %s: %w", templates[index].ID, err)
+		}
 	}
 	return templates, nil
+}
+
+func validateTemplateDataVolumes(template Template) error {
+	projectVolumeCount := 0
+	logicalNames := make(map[string]struct{}, len(template.DataVolumes))
+	paths := make(map[string]struct{}, len(template.DataVolumes))
+	for _, dataVolume := range template.DataVolumes {
+		logicalName := strings.TrimSpace(dataVolume.LogicalName)
+		if logicalName == "" {
+			return fmt.Errorf("data volume logicalName is required")
+		}
+		if _, exists := logicalNames[logicalName]; exists {
+			return fmt.Errorf("data volume logicalName %q is duplicated", logicalName)
+		}
+		logicalNames[logicalName] = struct{}{}
+
+		mountPath := strings.TrimSpace(dataVolume.MountPath)
+		devicePath := strings.TrimSpace(dataVolume.DevicePath)
+		switch strings.TrimSpace(dataVolume.SourceType) {
+		case "projectVolume":
+			projectVolumeCount++
+			if projectVolumeCount > 1 {
+				return fmt.Errorf("only one projectVolume declaration is supported")
+			}
+			if (mountPath == "") == (devicePath == "") || dataVolume.EmptyDir != nil {
+				return fmt.Errorf("projectVolume %q requires exactly one mountPath or devicePath", logicalName)
+			}
+		case "emptyDir":
+			if mountPath == "" || devicePath != "" || dataVolume.ReadOnly {
+				return fmt.Errorf("emptyDir %q requires mountPath and cannot use devicePath or readOnly", logicalName)
+			}
+		default:
+			return fmt.Errorf("data volume %q sourceType must be projectVolume or emptyDir", logicalName)
+		}
+		volumePath := mountPath
+		if volumePath == "" {
+			volumePath = devicePath
+		}
+		if !strings.HasPrefix(volumePath, "/") || path.Clean(volumePath) == "/" {
+			return fmt.Errorf("data volume %q path must be absolute and cannot be root", logicalName)
+		}
+		cleaned := path.Clean(volumePath)
+		if _, exists := paths[cleaned]; exists {
+			return fmt.Errorf("data volume path %q is duplicated", cleaned)
+		}
+		paths[cleaned] = struct{}{}
+	}
+	return nil
 }
 
 func Find(id string) (Template, bool, error) {

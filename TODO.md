@@ -1,5 +1,31 @@
 # TODO
 
+## 2026-08-15 Block 数据卷导出校验清单
+
+- [x] 为成功的 Block `raw.zst` 导出持久化服务端观察的未压缩字节数与 SHA-256，并通过同一下载授权提供可移植 `.manifest.json`。
+- [x] 在数据卷详情提供清单下载；大归档在浏览器不支持 File System Access API 时改用原生流式下载，避免页面内存累积完整 Blob。
+
+## 2026-08-15 数据库迁移单一权威
+
+- [x] 将 API 启动时的 GORM `AutoMigrate`、遗留列清理、计费归属/发布目标回填和默认费率 seed 收敛为编号 SQL 迁移。
+- [x] 移除无迁移历史旧库的自动 `Force` 认领；保留启动前 PostgreSQL 真实连接检查，并让 dirty/迁移失败阻止服务启动。
+- [x] 为可销毁 PostgreSQL 增加完整空库迁移、重复迁移、稳定模型表列覆盖和 dirty fail-closed 验收。
+
+## 2026-08-15 AI 助手入口稳定性
+
+- [x] 将 AI 助手入口可见性收敛为平台启用状态和用户访问范围，不再用 Agent 的瞬时健康状态卸载侧边栏入口、悬浮球或聊天窗口。
+- [x] Agent 暂时不可达时保留助手入口，由实际会话请求返回稳定错误；同步 API 契约、前端状态所有权、中英文文档和回归测试。
+
+## 2026-08-15 应用副本状态可见性
+
+- [x] 在应用部署页的运行状态与发布状态中统一展示 Kubernetes 就绪副本数 / 期望副本数。
+- [x] 在项目空间应用列表按需读取实时运行状态并展示副本 badge；没有实际工作负载时显示黄色“未部署”，上游不可用时保留不可用语义。
+
+## 2026-08-15 Agent 项目空间检索范围
+
+- [x] 为 Agent 的项目空间列表工具增加 `related` / `all` 范围参数，默认只查询与当前用户相关的项目空间。
+- [x] 将全项目空间查询限制为用户明确要求且调用者为平台管理员的场景，并同步 OpenAPI、后端授权、Agent 工具描述、中英文文档与契约测试。
+
 ## 2026-08-14 账单价格表
 
 - [x] 在账单页增加独立价格表 Tab，向已登录用户展示平台全部计费项、计费单位、Credits 单价、启停状态和说明。
@@ -974,6 +1000,26 @@
 - [ ] 资源详情抽屉展示 labels/annotations 摘要、状态条件、关联业务对象和 Events，不展示 Secret data。
 - [ ] 集群资源管理 MVP 验收：在测试集群发布一次应用后，集群资源页能看到对应 Namespace、Deployment、Pod、Service、HTTPRoute/Gateway，并能查看相关事件；已有未打平台标签资源默认不显示。
 
+### 8.4 项目空间数据卷中心
+
+实施契约以 [`docs-internal/17-项目空间数据卷中心与数据迁移方案.md`](docs-internal/17-项目空间数据卷中心与数据迁移方案.md) 为准。最终产品一次性收敛到
+`ProjectVolume + DeploymentVolumeMount + VolumeTransfer`，不保留旧保留卷/JSON 运行时兼容分支。
+
+- [x] 完成 `project_volumes`、`deployment_volume_mounts`、`volume_transfers`、`volume_transfer_parts` 迁移、约束、Repository 和真实 PostgreSQL 并发测试。
+- [x] 完成 ProjectVolume Service、Kubernetes PVC/Snapshot 实时观察、空白卷创建、已有 PVC 引用/纳管、扩容和异步删除。
+- [x] 完成 S3-compatible `VolumeTransferStore`、TUS 分块上传、Range 下载、`cmd/volume-transfer` 和 Filesystem/Block 导入导出。
+  - [x] 上传数据面采用 64 MiB 起步、按 10,000 parts 动态放大的服务端分片契约；请求体先进入受预算与磁盘余量保护的 0600 spool，再通过持久 part lease 在 PostgreSQL 短事务外写 S3，覆盖崩溃接管与多副本冲突测试。
+- [x] 完成 Transfer Asynq 任务、Kubernetes Job、CSI Snapshot、取消/重试/过期清理、Context/Trace 传播和权威回读。
+- [x] 将部署数据卷契约改为强类型挂载数组，实现同集群分页选择、RWO 独占/RWX 共享、Filesystem `volumeMounts` 和 Block `volumeDevices`。
+- [x] 新增项目空间“数据卷”页、详情 Sheet、创建/纳管/导入/导出 Dialog、Transfer 历史与中英 i18n。
+- [x] 同步 OpenAPI、稳定错误码、`volume:*` Action/OAuth Scope、Step-up、Audit、API Client/types、Luna CLI、Agent Tool/Skill/检索评测。
+- [x] 将存储计费改为覆盖 `available/reserved/in_use` 托管 ProjectVolume，补齐容量配额、Transfer 计量和余额不足稳定错误。
+- [x] 完成 expand/backfill/switch，运行时只读取新挂载关系，删除旧导出路由和临时双写，并提供可重入迁移工具。
+- [ ] 在备份校验、对账和不可逆迁移门禁满足后执行 Contract DROP，物理删除 `retained_volumes` 与部署目标旧存储字段。
+- [x] 使用可销毁 PostgreSQL、Kubernetes、S3-compatible 对象存储、浏览器和 OTel 栈完成迁移/并发、PVC、分块传输及一条成功/失败 HTTP Trace 验收。
+- [ ] 补齐真实取消、权限拒绝、计费终态和 Asynq 跨服务 Trace 的整链路外部 E2E 矩阵。
+- [x] 同步中英文公开数据卷管理、导入/导出、配置参考和故障排查，通过 `pnpm --dir docs build` 和桌面/移动端浏览器验收。
+
 ## 9. 网关与域名
 
 ### 9.1 网关与域名 API/CRUD 优先
@@ -1204,7 +1250,7 @@ CLI 已迁移到独立仓库 [`LiteyukiStudio/luna-cli`](https://github.com/Lite
 - [x] CLI 接入逐实例能力协商和版本兼容判断；OpenAPI 业务命令在首次请求前校验 API 代际、最低 CLI 版本和契约摘要，对缺少接口或不兼容实例 fail closed，不通过试探业务接口猜测能力。
 - [x] 实现 CLI 基础框架、`~/.luna/auth.json` 单活动登录、`project current/use/unset`、项目空间解析优先级、稳定输出、完整 Help、机器可读 Help 和 Shell Completion；重新登录其他实例或账号会覆盖旧凭据并清除默认项目空间，临时跨源 `server=` 不复用当前 Token。
 - [ ] 实现由平台固定初始化、无需动态注册的内置 OAuth 公共 CLI Client：Token Endpoint 支持 `token_endpoint_auth_method=none`，仅允许严格 loopback redirect，完成 Authorization Code + PKCE、刷新和吊销。
-- [x] 拆分 OAuth 与个人访问令牌 Scope 策略：普通用户可授权项目空间和账号级 OAuth Scope，平台管理 Scope 仅允许平台管理员；敏感 Scope 不进入默认推荐集合或个人访问令牌目录。CLI 会在已知命令发送前检查 Grant，缺少 Scope 时返回可执行的重新授权提示；数据导出统一使用 `deployment:data_export`，且项目 RBAC 与 Step-up MFA 仍由后端最终判断。
+- [x] 拆分 OAuth 与个人访问令牌 Scope 策略：普通用户可授权项目空间和账号级 OAuth Scope，平台管理 Scope 仅允许平台管理员；敏感 Scope 不进入默认推荐集合或个人访问令牌目录。CLI 会在已知命令发送前检查 Grant，缺少 Scope 时返回可执行的重新授权提示；项目数据卷导出统一使用 `volume:export`，且项目 RBAC 与 `volume_export` Step-up MFA 仍由后端最终判断。
 - [x] 实现 RFC 8628 Device Authorization Grant，包括设备授权端点、浏览器 GET/POST 确认接口、CSRF 防护、哈希状态、批准/拒绝、轮询限流、过期清理和一次性兑换；`luna login` 默认使用该流程。
 - [x] 改造 Step-up MFA 与交互认证上下文：OAuth Bearer 可验证 OTP/恢复码并按 OAuth Grant + purpose 读取 assertion；终端预授权、终端存活监控和数据导出票据支持绑定 Web Session 或 OAuth Grant；个人访问令牌仍不得绕过 MFA 保护。
 - [x] 将 OAuth Device Code、Token、Revoke 和 Discovery 协议端点纳入 OpenAPI 隐藏协议适配层，并增加 OpenAPI operation 到 Gin Router 的常驻契约测试，防止 CLI 已登记能力落入后端空路由。
@@ -1233,8 +1279,8 @@ CLI 已迁移到独立仓库 [`LiteyukiStudio/luna-cli`](https://github.com/Lite
 - [x] 将模型请求超时、单次 Run 超时和 Agent 实例并发数迁移到 Web 高级设置，通过受认证内部配置动态下发；轮询、租约和刷新周期收敛为代码安全默认值，部署环境只保留连接与鉴权配置。
 
 详细规格见 [`docs-internal/11-AI助手与Agent规格.md`](docs-internal/11-AI助手与Agent规格.md)。此前移除的
-旧 MCP 内嵌方案保持移除；新方案使用独立 `luna-agent`、LangGraph.js 和平台
-OpenAPI，不把 MCP 作为内部服务总线。
+旧 MCP 内嵌方案保持移除；新方案使用独立 `luna-agent`、显式模型运行时和平台 OpenAPI，
+不把 MCP 作为内部服务总线。
 
 - [x] 确定产品形态、独立运行架构、编排框架、OpenAPI 工具边界、会话模型、多用户隔离、批准与 MFA、安全不变量、可观测性和分阶段实施方案。
 - [x] 基于 Mock 数据实现首版前端交互壳：全局悬浮入口、桌面可拖动/调整尺寸窗口、移动端全屏布局、三行 Thinking、默认折叠 Tool Call、参数与结果详情、Mock 会话切换和声明式路由联动；暂不接入 AI API。
@@ -1250,7 +1296,7 @@ OpenAPI，不把 MCP 作为内部服务总线。
 - [x] 将固定两次模型调用重构为统一有界 Agent Loop：按调用 ID 回灌 assistant tool_calls 与 tool result，支持任意轮次继续调用平台工具，并以批准、MFA、补充输入、取消、超时、调用上限或最终答复作为明确退出条件。
 - [x] 确定 AI 声明式交互内容与卡片 V1 Schema：固定场景模板、受控内容块、动态输入、可信来源、Tool 参数绑定、Secret 隔离、运行状态和安全提交链路。
 - [x] 实现 `create_interaction_cards`、卡片 Timeline/SSE、Web 固定内容块与动态输入渲染器；卡片动作复用 Agent Run 和用户绑定 Tool 委托链路，非法 Schema 与模型伪造审批卡 fail closed。
-- [x] 为交互卡片增加 `prepare_interaction_cards` 准备握手和原位流光占位；卡片占满助手回复可用宽度，候选布局按容器自适应，宽表格与代码仅在内部滚动，展示文本使用禁用 HTML 的安全 Markdown。
+- [x] 将交互卡片收敛为单次 `create_interaction_cards` 调用：Agent 在调用开始时签发生成标识并创建原位流光占位，校验成功后原子替换；卡片占满助手回复可用宽度，候选布局按容器自适应，宽表格与代码仅在内部滚动，展示文本使用禁用 HTML 的安全 Markdown。
 - [x] 将交互卡片扩展为候选、对比、详情、表单、向导、诊断、计划、进度、回执和看板十类模板，补齐按模板密度与展开策略、真实图表、分段选择、动作幂等语义，并覆盖逐模板与极端窄窗测试。
 - [x] 在通用声明式卡片之上增加业务模板编译层，封装短候选、长候选、资源配置、变更核对、诊断报告、执行进度、操作结果和健康概览八类高频模板；系统 Prompt 与按需 Skill reference 优先精准命中业务模板，无法表达时才回退通用卡片。
 - [x] 为交互卡片增加模型参数校验失败后的有界自修复回路，并支持用 `{{field_id}}` 将已校验的非敏感表单值带回会话；Secret 保持隔离，含必填字段的继续动作在校验通过前禁用。
@@ -1264,7 +1310,7 @@ OpenAPI，不把 MCP 作为内部服务总线。
 - [x] 在 Luna API 实现通用互联网搜索与网页读取，Agent 只注册只读 `webSearch`、`fetchWebPage` 工具且不直接访问第三方服务；后端复用站点域名/IP 黑名单与端口配置，逐跳校验重定向并限制响应类型、大小和返回文本，Prompt/Skill 将外部内容标记为不可信数据。
 - [x] 为 Agent 网络搜索与网页读取增加 Web 可配置的独立 HTTP/HTTPS 代理池，支持带认证代理、加密且不回显的凭据、请求级轮换，并保持目标地址及重定向的域名/IP 黑名单校验。
 - [x] 重构多会话流式运行：顶栏新增会话入口，草稿/Run/SSE/reducer 按会话隔离，支持跨会话并行发送和逐会话中断；消息与工具块按持久 Turn/Timeline 顺序稳定渲染，避免流式阶段跳序。
-- [x] 将 AI 实时时间线重构为服务端权威 Item 协议：原子分配不可变位置与事件序号，Item 创建/更新和 SSE 事件同事务提交，快照与事件共享完整 Item `revision`；前端只按位置和版本投影，序号缺口自动回读快照，消除首次流式与刷新后顺序不一致。
+- [x] 将 AI 实时时间线重构为服务端权威 Item 协议：原子分配不可变位置与事件序号，Item 创建/更新和 SSE 事件同事务提交，快照与事件共享完整 Item `revision`；前端以 TanStack Query 时间线缓存作为唯一事实源，每个 Run 只保留一条 SSE，序号缺口自动回读快照，消除首次流式与刷新后顺序不一致。
 - [x] 将 AI 助手会话列表入口调整到小窗顶栏最左侧并使用列表图标，右侧只保留新建会话与窗口控制，明确区分导航和当前会话操作。
 - [x] 重构助手会话生命周期：关闭重开保留当前会话，浏览器刷新后默认进入新会话并限时提供返回上一会话；会话切换不再自动收起目录，目录头部移除重复的返回与新建入口。
 - [x] 移除与关闭到悬浮球语义重复的助手缩小按钮及 minimized 状态，只保留单一关闭与恢复路径。
@@ -1285,7 +1331,8 @@ OpenAPI，不把 MCP 作为内部服务总线。
 - [x] 修正 Tool Call 状态图标映射：仅运行态显示旋转加载图标，失败、成功、取消、跳过、等待批准与等待 MFA 使用明确语义图标。
 - [x] 扩展 AI 页面上下文信封与最近 6 轮角色化会话历史；每个正常完成的 Turn 强制生成 2-5 个意图预测选项，并为 Provider 格式偏差提供结构化重试和安全兜底。
 - [x] 为不熟悉平台且尚无明确任务的用户增加新手意图约束：询问助手能力、使用方法或起步方式时必须生成 2-5 个可点击具体目标，优先用消息选项继续对应工作流，不以功能介绍或页面入口代替选择。
-- [x] 收紧 Agent 结构化输入交互：创建、安装、配置、修改、诊断或执行需要用户补充参数时必须生成 `form` / `wizard` 卡片，禁止用快捷选项、纯文本追问或空白消息模板代替字段输入与校验。
+- [x] 收紧 Agent 结构化输入交互：创建、安装、配置、修改、诊断或执行需要用户补充参数时必须生成 `form` 卡片，字段依赖通过 section 与 `visibleWhen` 表达，禁止用快捷选项、纯文本追问或空白消息模板代替字段输入与校验。
+- [x] 将通用交互卡片模板从十套重复语义收敛为 `candidates`、`form`、`change_review`、`result`、`live_task` 五类稳定职责，业务模板、内容块、安全动作与动态进度能力保持不变。
 - [x] 为 AI 卡片建立展示式 / 交互式职责契约：等待用户选择、填写或确认时必须提供可提交控件，展示式卡片禁止包含表单，交互式多候选列表不得退化为不可点击的 `item_list`。
 - [x] 建立 Agent 目标完成契约与领域验收标准：卡片仅承担输入或呈现，展示卡片结果回灌模型继续工作；创建、安装、发布、修复等操作按“执行 → 权威回读 → 终态结论”闭环；平台工具调用次数不设上限，模型步骤与 Run 超时只作为防失控保护而非完成条件。
 - [x] 审计并扩展 Agent 常用工作流 Skill：覆盖模板、镜像、源码三条完整交付路径，以及项目与成员、Git/Registry、构建发布、运行时、网关、应用诊断、Hook、服务关系、通知、安全、账单、数据保留和系统组件等 28 条高频旅程；全部定义发现、交互、执行、回读、验收与阻塞终态，并保持 reference 按需加载。

@@ -15,6 +15,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/retention"
 	"github.com/LiteyukiStudio/devops/internal/secret"
 	"github.com/LiteyukiStudio/devops/internal/security"
+	"github.com/LiteyukiStudio/devops/internal/volume"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -46,7 +47,7 @@ var configDefinitions = []configDefinition{
 	{
 		Key:         aiAssistantEnabledConfigKey,
 		Label:       "启用内嵌 AI 助手",
-		Description: "部署级 AI 开关、Agent 和模型配置均就绪时，允许已登录用户使用内嵌助手。",
+		Description: "部署级 AI 功能可用时，允许访问范围内的已登录用户使用内嵌助手。",
 		Type:        "boolean",
 		Public:      false,
 		Default:     "false",
@@ -437,6 +438,14 @@ var configDefinitions = []configDefinition{
 		Default:     "false",
 		Options:     []string{"true", "false"},
 	},
+	{
+		Key:         volume.ProjectManagedCapacityLimitConfigKey,
+		Label:       "项目空间托管数据卷容量上限（GiB）",
+		Description: "每个项目空间可预留的托管数据卷总容量；0 表示不限制。已存在的超额卷不会被截断，但新增和扩容会被拒绝。",
+		Type:        "number",
+		Public:      false,
+		Default:     "0",
+	},
 }
 
 type configCache struct {
@@ -792,6 +801,12 @@ func validateConfigValues(input map[string]any) (map[string]string, error) {
 			days, err := strconv.Atoi(strings.TrimSpace(value))
 			if err != nil || days < 0 || days > retention.MaxRetentionDays {
 				return nil, fmt.Errorf("invalid config value for %s: must be an integer between 0 and %d", key, retention.MaxRetentionDays)
+			}
+		}
+		if key == volume.ProjectManagedCapacityLimitConfigKey {
+			limitGiB, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+			if err != nil || limitGiB < 0 || limitGiB > 1048576 {
+				return nil, fmt.Errorf("invalid config value for %s: must be an integer between 0 and 1048576", key)
 			}
 		}
 		values[key] = value

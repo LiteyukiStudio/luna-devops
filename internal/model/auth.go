@@ -1,8 +1,9 @@
 package model
 
 import (
-	"gorm.io/gorm"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 type AuthProvider struct {
@@ -39,10 +40,10 @@ type ExternalIdentity struct {
 type AuthAdmissionPolicy struct {
 	ID                       string    `gorm:"primaryKey" json:"id"`
 	AllowLocalLogin          bool      `gorm:"not null;default:true" json:"allowLocalLogin"`
-	AllowOIDCLogin           bool      `gorm:"not null;default:true" json:"allowOidcLogin"`
-	RequireVerifiedOIDCEmail bool      `gorm:"not null;default:true" json:"requireVerifiedOidcEmail"`
+	AllowOIDCLogin           bool      `gorm:"column:allow_oidc_login;not null;default:true" json:"allowOidcLogin"`
+	RequireVerifiedOIDCEmail bool      `gorm:"column:require_verified_oidc_email;not null;default:true" json:"requireVerifiedOidcEmail"`
 	AllowedEmailDomains      string    `json:"allowedEmailDomains"`
-	AllowedOIDCGroups        string    `json:"allowedOidcGroups"`
+	AllowedOIDCGroups        string    `gorm:"column:allowed_oidc_groups" json:"allowedOidcGroups"`
 	InvitedEmails            string    `json:"invitedEmails"`
 	DefaultRole              string    `gorm:"not null;default:user" json:"defaultRole"`
 	CreatedAt                time.Time `json:"createdAt"`

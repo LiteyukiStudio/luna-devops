@@ -57,7 +57,7 @@ export function SiteSettingsPage() {
     .filter(definition => definition.key.startsWith('site.'))
     .sort((left, right) => Number(right.key === siteBrandColorPresetKey) - Number(left.key === siteBrandColorPresetKey)), [definitions.data])
   const securityDefinitions = useMemo(() => (definitions.data ?? []).filter(definition => definition.key.startsWith('security.')), [definitions.data])
-  const billingDefinitions = useMemo(() => (definitions.data ?? []).filter(definition => definition.key.startsWith('billing.')), [definitions.data])
+  const billingDefinitions = useMemo(() => (definitions.data ?? []).filter(definition => definition.key.startsWith('billing.') || definition.key.startsWith('storage.')), [definitions.data])
   const retentionDefinitions = useMemo(() => (definitions.data ?? []).filter(definition => definition.key.startsWith('retention.')), [definitions.data])
   const resolvedValues = useMemo(() => {
     const nextValues: Record<string, string> = {}

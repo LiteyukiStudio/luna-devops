@@ -21,7 +21,8 @@ import (
 const (
 	aiAssistantEnabledConfigKey = "ai.assistant.enabled"
 	aiAccessModeConfigKey       = "ai.access.mode"
-	aiMaxInputBytes             = 32768
+	aiMaxInputBytesConfigKey    = "ai.run.max_input_k_bytes"
+	aiDefaultMaxInputKBytes     = 48
 )
 
 type aiProxyRoute struct {
@@ -32,32 +33,21 @@ type aiProxyRoute struct {
 	validate func(*Handlers, *gin.Context, model.User, []byte) bool
 }
 
+type aiCapabilitiesResponse struct {
+	Enabled       bool `json:"enabled"`
+	MaxInputBytes int  `json:"maxInputBytes"`
+}
+
 func (h *Handlers) GetAICapabilities(ctx *gin.Context) {
-	actor, role, ok := h.aiActorFromSession(ctx)
+	ctx.Header("Cache-Control", "no-store")
+	_, role, ok := h.aiActorFromSession(ctx)
 	if !ok {
 		return
 	}
-	if !h.aiAccessAllowed(role) {
-		ctx.JSON(http.StatusOK, unavailableAICapabilities("ai.user_not_allowed"))
-		return
-	}
-	if reason := h.aiUnavailableReason(); reason != "" {
-		ctx.JSON(http.StatusOK, unavailableAICapabilities(reason))
-		return
-	}
-	response, err := h.aiAgent.Do(ctx.Request.Context(), actor, aiagent.Request{
-		Method: http.MethodGet, Path: "/internal/v1/capabilities",
+	ctx.JSON(http.StatusOK, aiCapabilitiesResponse{
+		Enabled:       h.aiAssistantEnabled() && h.aiAccessAllowed(role),
+		MaxInputBytes: h.aiMaxInputBytes(),
 	})
-	if err != nil {
-		ctx.JSON(http.StatusOK, unavailableAICapabilities("ai.agent_unavailable"))
-		return
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		ctx.JSON(http.StatusOK, unavailableAICapabilities("ai.agent_unavailable"))
-		return
-	}
-	h.copyAIResponse(ctx, response, http.StatusOK, "ai.agent_unavailable")
 }
 
 func (h *Handlers) ProxyAIRequest(ctx *gin.Context) {
@@ -79,7 +69,7 @@ func (h *Handlers) ProxyAIRequest(ctx *gin.Context) {
 		return
 	}
 
-	body, ok := readAIBody(ctx)
+	body, ok := h.readAIBody(ctx)
 	if !ok {
 		return
 	}
@@ -253,10 +243,7 @@ func enrichAIPageContext(raw any, actor aiagent.ActorContext, now time.Time) map
 }
 
 func (h *Handlers) aiUnavailableReason() string {
-	if !h.aiDeploymentEnabled {
-		return "ai.disabled"
-	}
-	if !strings.EqualFold(strings.TrimSpace(h.configs.get([]string{aiAssistantEnabledConfigKey})[aiAssistantEnabledConfigKey]), "true") {
+	if !h.aiAssistantEnabled() {
 		return "ai.disabled"
 	}
 	if h.aiAgent == nil {
@@ -265,12 +252,26 @@ func (h *Handlers) aiUnavailableReason() string {
 	return ""
 }
 
-func unavailableAICapabilities(reason string) gin.H {
-	return gin.H{
-		"available": false, "reasonCode": reason,
-		"features": gin.H{"streaming": false, "approvals": false, "stepUpMFA": false, "uiActions": false, "longTermMemory": false},
-		"limits":   gin.H{"maxInputBytes": aiMaxInputBytes, "maxConcurrentRuns": 0},
+func (h *Handlers) aiAssistantEnabled() bool {
+	if !h.aiDeploymentEnabled || h.configs == nil {
+		return false
 	}
+	return strings.EqualFold(strings.TrimSpace(h.configs.get([]string{aiAssistantEnabledConfigKey})[aiAssistantEnabledConfigKey]), "true")
+}
+
+func (h *Handlers) aiMaxInputBytes() int {
+	if h.configs == nil {
+		return aiDefaultMaxInputKBytes * 1024
+	}
+	return configuredAIMaxInputBytes(h.configs.get([]string{aiMaxInputBytesConfigKey}))
+}
+
+func configuredAIMaxInputBytes(values map[string]string) int {
+	maxInputBytes := aiRuntimeKTokens(values, aiMaxInputBytesConfigKey, aiDefaultMaxInputKBytes)
+	if maxInputBytes < 8*1024 || maxInputBytes > 1024*1024 {
+		return aiDefaultMaxInputKBytes * 1024
+	}
+	return maxInputBytes
 }
 
 func (h *Handlers) copyAIResponse(ctx *gin.Context, response *aiagent.Response, fallbackStatus int, errorCode string) {
@@ -313,16 +314,17 @@ func (h *Handlers) copyAIResponse(ctx *gin.Context, response *aiagent.Response, 
 	_, _ = io.Copy(ctx.Writer, response.Body)
 }
 
-func readAIBody(ctx *gin.Context) ([]byte, bool) {
+func (h *Handlers) readAIBody(ctx *gin.Context) ([]byte, bool) {
 	if ctx.Request.Body == nil {
 		return nil, true
 	}
-	body, err := io.ReadAll(io.LimitReader(ctx.Request.Body, aiMaxInputBytes+1))
+	maxInputBytes := h.aiMaxInputBytes()
+	body, err := io.ReadAll(io.LimitReader(ctx.Request.Body, int64(maxInputBytes)+1))
 	if err != nil {
 		writeErrorCode(ctx, http.StatusBadRequest, "request.invalid", "cannot read request body")
 		return nil, false
 	}
-	if len(body) > aiMaxInputBytes {
+	if len(body) > maxInputBytes {
 		writeErrorCode(ctx, http.StatusRequestEntityTooLarge, "ai.input_too_large", "AI request body exceeds the limit")
 		return nil, false
 	}

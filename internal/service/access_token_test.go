@@ -49,20 +49,3 @@ func TestRequiredAccessTokenScopeKeepsReleaseRuntimeLogsDeploymentReadOnly(t *te
 		t.Fatal("expected deployment:read token to read runtime logs")
 	}
 }
-
-func TestRequiredAccessTokenScopeSeparatesDeploymentDataExportFromRead(t *testing.T) {
-	required := RequiredAccessTokenScope(
-		"/api/v1/projects/:projectId/applications/:applicationId/deployment-targets/:targetId/data-export",
-		http.MethodGet,
-	)
-
-	if required != "deployment:data_export" {
-		t.Fatalf("data export required scope = %q, want deployment:data_export", required)
-	}
-	if AccessTokenAllows("deployment:read", required) {
-		t.Fatal("expected deployment:read token to be denied deployment data export")
-	}
-	if !AccessTokenAllows("deployment:data_export", required) {
-		t.Fatal("expected deployment:data_export to remain a valid fine-grained scope")
-	}
-}

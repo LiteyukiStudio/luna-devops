@@ -11,15 +11,14 @@ import (
 	"gorm.io/gorm"
 )
 
-const legacyAutoMigrateBaselineVersion = 8
+var errUnversionedNonEmptySchema = errors.New("database schema is non-empty but has no migration history")
 
 func runSQLMigrations(db *gorm.DB) error {
 	sqlDB, err := db.DB()
 	if err != nil {
 		return fmt.Errorf("open sql database for migrations: %w", err)
 	}
-	adoptLegacySchema, err := shouldAdoptLegacySchema(db)
-	if err != nil {
+	if err := ensureVersionedOrEmptySchema(db); err != nil {
 		return err
 	}
 	sourceDriver, err := iofs.New(sqlmigrations.FS, ".")
@@ -35,44 +34,35 @@ func runSQLMigrations(db *gorm.DB) error {
 		return fmt.Errorf("create migration runner: %w", err)
 	}
 
-	if adoptLegacySchema {
-		if err := runner.Force(legacyAutoMigrateBaselineVersion); err != nil {
-			return fmt.Errorf("adopt legacy schema at migration %d: %w", legacyAutoMigrateBaselineVersion, err)
-		}
-	}
 	if err := runner.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return fmt.Errorf("run sql migrations: %w", err)
 	}
 	return nil
 }
 
-func shouldAdoptLegacySchema(db *gorm.DB) (bool, error) {
-	var state legacyMigrationState
+func ensureVersionedOrEmptySchema(db *gorm.DB) error {
+	var state struct {
+		HasMigrationTable bool
+		HasTables         bool
+	}
 	if err := db.Raw(`SELECT
-  to_regclass('schema_migrations') IS NOT NULL AS has_migration_table,
-  to_regclass('users') IS NOT NULL AS has_users,
-  to_regclass('projects') IS NOT NULL AS has_projects,
-  to_regclass('deployment_targets') IS NOT NULL AS has_deployment_targets,
-  to_regclass('billing_ledger_entries') IS NOT NULL AS has_billing_ledger_entries`).Scan(&state).Error; err != nil {
-		return false, fmt.Errorf("inspect legacy schema state: %w", err)
+  EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = current_schema()
+      AND table_name = 'schema_migrations'
+      AND table_type = 'BASE TABLE'
+  ) AS has_migration_table,
+  EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = current_schema()
+      AND table_type = 'BASE TABLE'
+  ) AS has_tables`).Scan(&state).Error; err != nil {
+		return fmt.Errorf("inspect migration history: %w", err)
 	}
-	return shouldAdoptLegacyMigrationState(state), nil
-}
-
-func shouldAdoptLegacyMigrationState(state legacyMigrationState) bool {
-	if state.HasMigrationTable {
-		return false
+	if !state.HasMigrationTable && state.HasTables {
+		return errUnversionedNonEmptySchema
 	}
-	return state.HasUsers &&
-		state.HasProjects &&
-		state.HasDeploymentTargets &&
-		state.HasBillingLedgerEntries
-}
-
-type legacyMigrationState struct {
-	HasMigrationTable       bool
-	HasUsers                bool
-	HasProjects             bool
-	HasDeploymentTargets    bool
-	HasBillingLedgerEntries bool
+	return nil
 }

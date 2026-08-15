@@ -58,7 +58,7 @@ Cluster settings also include domain suffixes, the external protocol, Gateway, a
 
 The platform does not create ACME accounts or DNS provider credentials. Before changing cluster, Gateway, or certificate settings, confirm the affected routes and recovery plan.
 
-Project, application, and deployment-stage identifiers cannot be changed after creation. A failed application deletion may temporarily prevent identifier reuse. Retained PVCs are managed through separate retained-volume records and can be explicitly reclaimed by a new deployment target on the same runtime cluster; a same-named resource never takes ownership automatically.
+Project, application, and deployment-stage identifiers cannot be changed after creation. A failed application deletion may temporarily prevent identifier reuse. Persistent data is managed independently through project volumes: deleting an application only unbinds its mounts and does not delete the project volume. To reuse the data, select that volume again in a deployment on the same project and runtime cluster; a same-named resource never takes ownership automatically.
 
 ## Personal tokens and secrets
 

@@ -19,7 +19,6 @@ const (
 
 	stepUpPurposeRuntimeExec              = "runtime_exec"
 	stepUpPurposeRuntimeTerminal          = "runtime_terminal"
-	stepUpPurposeDataExport               = "data_export"
 	stepUpPurposeSecretUpdate             = "secret_update"
 	stepUpPurposeRegistryCredentialUpdate = "registry_credential_update"
 	stepUpPurposeKubeconfigUpdate         = "kubeconfig_update"
@@ -31,6 +30,10 @@ const (
 	stepUpPurposePasswordUpdate           = "password_update"
 	stepUpPurposeAccessTokenManage        = "access_token_manage"
 	stepUpPurposeBillingOwnerTransfer     = "billing_owner_transfer"
+	stepUpPurposeVolumeImport             = "volume_import"
+	stepUpPurposeVolumeExport             = "volume_export"
+	stepUpPurposeVolumeAdopt              = "volume_adopt"
+	stepUpPurposeVolumeDelete             = "volume_delete"
 
 	defaultStepUpIdleTimeout     = 10 * time.Minute
 	defaultStepUpAbsoluteTimeout = 60 * time.Minute
@@ -39,7 +42,6 @@ const (
 var allowedStepUpPurposes = map[string]struct{}{
 	stepUpPurposeRuntimeExec:              {},
 	stepUpPurposeRuntimeTerminal:          {},
-	stepUpPurposeDataExport:               {},
 	stepUpPurposeSecretUpdate:             {},
 	stepUpPurposeRegistryCredentialUpdate: {},
 	stepUpPurposeKubeconfigUpdate:         {},
@@ -51,6 +53,10 @@ var allowedStepUpPurposes = map[string]struct{}{
 	stepUpPurposePasswordUpdate:           {},
 	stepUpPurposeAccessTokenManage:        {},
 	stepUpPurposeBillingOwnerTransfer:     {},
+	stepUpPurposeVolumeImport:             {},
+	stepUpPurposeVolumeExport:             {},
+	stepUpPurposeVolumeAdopt:              {},
+	stepUpPurposeVolumeDelete:             {},
 }
 
 var errStepUpAuthorizationChanged = errors.New("step-up authorization changed")

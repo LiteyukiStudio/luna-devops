@@ -94,13 +94,7 @@ type deploymentTargetResponse struct {
 	SecretRefsSet                bool                                 `json:"secretRefsSet"`
 	ConfigFiles                  string                               `json:"configFiles"`
 	SecretFilesSet               bool                                 `json:"secretFilesSet"`
-	DataRetentionEnabled         bool                                 `json:"dataRetentionEnabled"`
-	DataCapacity                 string                               `json:"dataCapacity"`
-	DataMountPath                string                               `json:"dataMountPath"`
-	DataVolumes                  string                               `json:"dataVolumes"`
-	DataStorageClassName         string                               `json:"dataStorageClassName"`
-	DataAccessMode               string                               `json:"dataAccessMode"`
-	DataVolumeMode               string                               `json:"dataVolumeMode"`
+	DataVolumes                  []deploymentTargetDataVolumeResponse `json:"dataVolumes"`
 	RequireApproval              bool                                 `json:"requireApproval"`
 	WebConsoleEnabled            *bool                                `json:"webConsoleEnabled"`
 	Enabled                      bool                                 `json:"enabled"`
@@ -119,15 +113,22 @@ type deploymentTargetResponse struct {
 	CreatedAt                    time.Time                            `json:"createdAt"`
 }
 
-func deploymentTargetResponses(targets []model.DeploymentTarget) []deploymentTargetResponse {
+func deploymentTargetResponses(targets []model.DeploymentTarget, mountsByTarget map[string][]model.DeploymentVolumeMount) []deploymentTargetResponse {
 	responses := make([]deploymentTargetResponse, 0, len(targets))
 	for _, target := range targets {
-		responses = append(responses, deploymentTargetResponseFromModel(target))
+		responses = append(responses, deploymentTargetResponseFromModel(target, mountsByTarget[target.ID]))
 	}
 	return responses
 }
 
-func deploymentTargetResponseFromModel(target model.DeploymentTarget) deploymentTargetResponse {
+func deploymentTargetResponseFromModel(target model.DeploymentTarget, mounts ...[]model.DeploymentVolumeMount) deploymentTargetResponse {
+	var dataVolumes []deploymentTargetDataVolumeResponse
+	if len(mounts) > 0 {
+		dataVolumes = deploymentTargetDataVolumeResponses(mounts[0])
+	}
+	if dataVolumes == nil {
+		dataVolumes = []deploymentTargetDataVolumeResponse{}
+	}
 	return deploymentTargetResponse{
 		ID:                           target.ID,
 		ProjectID:                    target.ProjectID,
@@ -213,13 +214,7 @@ func deploymentTargetResponseFromModel(target model.DeploymentTarget) deployment
 		SecretRefsSet:                strings.TrimSpace(target.SecretRefs) != "",
 		ConfigFiles:                  target.ConfigFiles,
 		SecretFilesSet:               strings.TrimSpace(target.SecretFiles) != "" && strings.TrimSpace(target.SecretFiles) != "{}",
-		DataRetentionEnabled:         target.DataRetentionEnabled,
-		DataCapacity:                 target.DataCapacity,
-		DataMountPath:                deploymentTargetDataMountPath(target),
-		DataVolumes:                  encodeDataVolumes(deploymentTargetDataVolumes(target)),
-		DataStorageClassName:         strings.TrimSpace(target.DataStorageClassName),
-		DataAccessMode:               normalizePersistentVolumeAccessMode(target.DataAccessMode),
-		DataVolumeMode:               normalizePersistentVolumeMode(target.DataVolumeMode),
+		DataVolumes:                  dataVolumes,
 		RequireApproval:              target.RequireApproval,
 		WebConsoleEnabled:            target.WebConsoleEnabled,
 		Enabled:                      target.Enabled,
@@ -362,27 +357,37 @@ type deploymentTargetInput struct {
 	SecretRefs                   string                             `json:"secretRefs"`
 	ConfigFiles                  string                             `json:"configFiles"`
 	SecretFiles                  string                             `json:"secretFiles"`
-	DataRetentionEnabled         bool                               `json:"dataRetentionEnabled"`
-	DataCapacity                 string                             `json:"dataCapacity"`
-	DataMountPath                string                             `json:"dataMountPath"`
-	DataVolumes                  string                             `json:"dataVolumes"`
-	DataStorageClassName         string                             `json:"dataStorageClassName"`
-	DataAccessMode               string                             `json:"dataAccessMode"`
-	DataVolumeMode               string                             `json:"dataVolumeMode"`
+	DataVolumes                  []deploymentTargetDataVolumeInput  `json:"dataVolumes"`
 	RequireApproval              bool                               `json:"requireApproval"`
 	WebConsoleEnabled            *bool                              `json:"webConsoleEnabled"`
 	Enabled                      bool                               `json:"enabled"`
 }
 
+type deploymentTargetEmptyDirInput struct {
+	Medium    string `json:"medium"`
+	SizeLimit string `json:"sizeLimit"`
+}
+
 type deploymentTargetDataVolumeInput struct {
-	Name              string `json:"name"`
-	MountPath         string `json:"mountPath"`
-	Capacity          string `json:"capacity"`
-	SourceType        string `json:"sourceType"`
-	ExistingClaimName string `json:"existingClaimName"`
-	RetainedVolumeID  string `json:"retainedVolumeId"`
-	EmptyDirMedium    string `json:"emptyDirMedium"`
-	EmptyDirSizeLimit string `json:"emptyDirSizeLimit"`
+	LogicalName     string                         `json:"logicalName"`
+	SourceType      string                         `json:"sourceType"`
+	ProjectVolumeID string                         `json:"projectVolumeId,omitempty"`
+	MountPath       string                         `json:"mountPath,omitempty"`
+	DevicePath      string                         `json:"devicePath,omitempty"`
+	ReadOnly        bool                           `json:"readOnly,omitempty"`
+	EmptyDir        *deploymentTargetEmptyDirInput `json:"emptyDir,omitempty"`
+}
+
+type deploymentTargetDataVolumeResponse struct {
+	BindingID       string                         `json:"bindingId"`
+	LogicalName     string                         `json:"logicalName"`
+	SourceType      string                         `json:"sourceType"`
+	ProjectVolumeID string                         `json:"projectVolumeId,omitempty"`
+	MountPath       string                         `json:"mountPath,omitempty"`
+	DevicePath      string                         `json:"devicePath,omitempty"`
+	ReadOnly        bool                           `json:"readOnly"`
+	EmptyDir        *deploymentTargetEmptyDirInput `json:"emptyDir,omitempty"`
+	ActivationState string                         `json:"activationState"`
 }
 
 type deploymentTargetHookBindingInput struct {

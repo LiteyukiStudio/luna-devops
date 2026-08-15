@@ -1,11 +1,11 @@
 import type { Config } from "./config.js"
 import type { ConversationToolInteraction } from "./domain.js"
 import type {
+  InteractionCardGroup,
   InteractionCardValidationFailure,
   InteractionCardValidationIssue,
-  PrepareInteractionCardsInput,
 } from "@luna-devops/ai-interaction-card-contract"
-import type { AssistantGraphState, GraphVersionRegistry } from "./graph/registry.js"
+import type { AssistantModelInput, ModelRuntime } from "./model-runtime.js"
 import { RunStateConflictError, type Repository } from "./persistence/repository.js"
 import type { ModelMessage, ModelToolCall } from "./provider/provider.js"
 import { createId } from "./id.js"
@@ -15,7 +15,6 @@ import { renameConversationInput } from "./tools/conversation-title.js"
 import {
   createInteractionCardsInput,
   normalizeInteractionCardsInput,
-  prepareInteractionCardsInput,
 } from "./tools/ui-cards.js"
 import { createOptionsInput, optionUIActions } from "./tools/ui-options.js"
 import { automaticRouteUIAction, navigateToRouteInput } from "./tools/ui-route.js"
@@ -33,7 +32,7 @@ export class RunExecutor {
   private runtimeRefreshTimer?: NodeJS.Timeout
   constructor(
     private readonly repository: Repository,
-    private readonly graphs: GraphVersionRegistry,
+    private readonly modelRuntime: ModelRuntime,
     private readonly config: Config,
     private readonly tools?: ToolOrchestrator,
     private readonly runtimeConfig?: Pick<ProviderConfigClient, "get">,
@@ -97,7 +96,6 @@ export class RunExecutor {
       "gen_ai.conversation.id": run.conversationId,
       "luna.run.id": run.id,
       "luna.turn.id": run.turnId,
-      "luna.graph.version": run.graphVersion,
     }), async span => {
     const startedAt = performance.now()
     let outcome = "completed"
@@ -109,14 +107,11 @@ export class RunExecutor {
       void this.repository.renewLease(run.id, this.config.INSTANCE_ID, agentRuntimeInternals.runLeaseSeconds)
         .then(ok => { if (!ok) abort.abort(new Error("ai.run_lease_lost")) })
     }, Math.max(1000, agentRuntimeInternals.runLeaseSeconds * 333))
-    const cardPreparations = new Map<string, CardPreparation>()
-    const failedCardGenerationIds = new Set<string>()
-    const cardPreparationRepairState = { attempt: 0 }
+    let cardGeneration: CardGeneration | undefined
     const providerArgumentRepairAttempts = new Map<string, number>()
     try {
       telemetryLog("agent.run.started", "info", {
         "luna.run.id": run.id,
-        "luna.graph.version": run.graphVersion,
       })
       const running = await this.repository.updateRun(run.id, "queued", "running", { startedAt: new Date().toISOString() })
       await this.repository.appendEvent(run.id, "run.started", { state: "running", expectedVersion: running.rowVersion })
@@ -137,7 +132,7 @@ export class RunExecutor {
       const loadedOperationIds = new Set(resumedOperationIds(executionInput.toolInteractions))
       const searchedToolQueries = new Set<string>()
       for (let step = 0; step < this.runtimeSettings.maxModelSteps; step += 1) {
-        const result = await this.streamModel(run.graphVersion, run.id, run.turnId, {
+        const result = await this.streamModel(run.id, run.turnId, {
           conversationId: executionInput.conversationId,
           input: executionInput.input,
           pageContext: executionInput.pageContext,
@@ -157,12 +152,9 @@ export class RunExecutor {
           break
         }
         if (!result.toolCalls.length) {
-          if (cardPreparations.size > 0) {
-            continuationMessages.push({
-              role: "user",
-              content: "交互卡片准备占位仍在等待最终内容。请立即使用相同 generationId 调用 create_interaction_cards；不要输出其他文本。",
-            })
-            continue
+          if (cardGeneration) {
+            await this.failCardGeneration(run.id, cardGeneration, "ai.interaction_card_schema_invalid")
+            cardGeneration = undefined
           }
           completed = true
           break
@@ -175,16 +167,16 @@ export class RunExecutor {
         continuationMessages.push({ role: "assistant", content: result.answer, toolCalls })
         let platformToolCalled = false
         let createOptionsCalled = false
-        let prepareInteractionCardsCalled = false
         let createInteractionCardsCalled = false
         let createdInteractionCardMode: "presentation" | "interactive" | undefined
         let recoverableToolError = false
         const hasPlatformTool = toolCalls.some(call => !internalToolOperationIds.has(call.operationId))
         for (const toolCall of toolCalls) {
           if (toolCall.argumentError) {
-            const key = toolCall.operationId === "create_interaction_cards" && cardPreparations.size === 1
-              ? [...cardPreparations.keys()][0]!
-              : toolCall.operationId
+            if (toolCall.operationId === "create_interaction_cards" && !hasPlatformTool) {
+              cardGeneration ??= await this.startCardGeneration(run.id, run.turnId, toolCall.arguments)
+            }
+            const key = cardGeneration?.generationId ?? toolCall.operationId
             let attempt = (providerArgumentRepairAttempts.get(key) ?? 0) + 1
             providerArgumentRepairAttempts.set(key, attempt)
             const issues: InteractionCardValidationIssue[] = [{
@@ -193,44 +185,19 @@ export class RunExecutor {
               message: toolCall.argumentError.message,
               expected: "完整 JSON 对象",
             }]
-            const preparation = toolCall.operationId === "create_interaction_cards" && cardPreparations.size === 1
-              ? [...cardPreparations.values()][0]
-              : undefined
-            if (preparation) {
-              attempt = await this.recordCardRepairFailure(run.id, preparation, issues, "ai.tool_arguments_json_invalid", cardPreparations, failedCardGenerationIds)
+            if (toolCall.operationId === "create_interaction_cards" && cardGeneration) {
+              attempt = await this.recordCardRepairFailure(run.id, cardGeneration, issues, "ai.tool_arguments_json_invalid")
             }
-            const failure = providerArgumentFailure(toolCall.argumentError, attempt, preparation?.input.generationId)
+            const failure = providerArgumentFailure(toolCall.argumentError, attempt, cardGeneration?.generationId)
             recoverableToolError ||= failure.retryable
             cardRepairExhausted ||= !failure.retryable && cardToolOperationIds.has(toolCall.operationId)
             continuationMessages.push(toolResultMessage(toolCall, { ...failure }))
             continue
           }
-          if (toolCall.operationId === "prepare_interaction_cards") {
-            if (!hasPlatformTool) {
-              const preparation = await this.traceInternalTool("prepare_interaction_cards", run.id, toolCall.arguments, () => this.prepareInteractionCards(run.id, run.turnId, toolCall.arguments, cardPreparations, failedCardGenerationIds, cardPreparationRepairState))
-              if (!preparation.accepted) {
-                recoverableToolError ||= preparation.failure.retryable
-                cardRepairExhausted ||= !preparation.failure.retryable
-                continuationMessages.push(toolResultMessage(toolCall, { ...preparation.failure }))
-                continue
-              }
-              prepareInteractionCardsCalled = true
-              continuationMessages.push(toolResultMessage(toolCall, {
-                status: "accepted",
-                generationId: preparation.preparation.input.generationId,
-                attempt: preparation.preparation.attempt,
-                guidance: "请原样复用 generationId 调用 create_interaction_cards。",
-              }))
-              continue
-            }
-            continuationMessages.push(toolResultMessage(toolCall, {
-              status: "deferred_until_platform_results",
-            }))
-            continue
-          }
           if (toolCall.operationId === "create_interaction_cards") {
             if (!hasPlatformTool) {
-              const creation = await this.traceInternalTool("create_interaction_cards", run.id, toolCall.arguments, () => this.createInteractionCards(run.id, toolCall.arguments, cardPreparations, failedCardGenerationIds))
+              cardGeneration ??= await this.startCardGeneration(run.id, run.turnId, toolCall.arguments)
+              const creation = await this.traceInternalTool("create_interaction_cards", run.id, toolCall.arguments, () => this.createInteractionCards(run.id, toolCall.arguments, cardGeneration!))
               if (!creation.accepted) {
                 recoverableToolError ||= creation.failure.retryable
                 cardRepairExhausted ||= !creation.failure.retryable
@@ -240,6 +207,7 @@ export class RunExecutor {
               createInteractionCardsCalled = true
               createdInteractionCardMode = creation.mode
               interactionCardsCreated = true
+              cardGeneration = undefined
             }
             continuationMessages.push(toolResultMessage(toolCall, {
               status: hasPlatformTool ? "deferred_until_platform_results" : "succeeded",
@@ -277,7 +245,7 @@ export class RunExecutor {
                 totalMatches: 0,
               }
               searchedToolQueries.add(normalizedQuery)
-              return this.graphs.searchAvailableTools(input.query, executionInput.pageContext, input.maxResults)
+              return this.modelRuntime.searchAvailableTools(input.query, executionInput.pageContext, input.maxResults)
             })
             result.loadedOperationIds.forEach(operationId => loadedOperationIds.add(operationId))
             const searchOutcome = alreadySearched ? "duplicate" : result.matches.length ? "succeeded" : "no_matches"
@@ -339,7 +307,6 @@ export class RunExecutor {
         if (recoverableToolError) continue
         if (cardRepairExhausted) continue
         if (platformToolCalled) pendingOptions = undefined
-        if (prepareInteractionCardsCalled && !createInteractionCardsCalled) continue
         if (!platformToolCalled && createInteractionCardsCalled) {
           if (createdInteractionCardMode === "presentation") continue
           completed = true
@@ -352,7 +319,7 @@ export class RunExecutor {
       }
       if (!completed) throw new Error("ai.limit_exceeded")
       if (executionInput.conversation.titleSource === "default" && !assistantRenamed) try {
-        const title = await this.graphs.generateConversationTitle(executionInput.input, finalAnswer, abort.signal)
+        const title = await this.modelRuntime.generateConversationTitle(executionInput.input, finalAnswer, abort.signal)
         if (title) await this.renameConversation(run.id, run.turnId, run.conversationId, { title })
       } catch {
         // Title generation is best-effort and must never fail a completed response.
@@ -385,7 +352,7 @@ export class RunExecutor {
           "luna.run.id": run.id,
           "luna.run.cancel_source": error instanceof RunStateConflictError ? "durable_state" : "abort_signal",
         })
-        await this.failCardPreparations(run.id, cardPreparations, "ai.run_canceled")
+        if (cardGeneration) await this.failCardGeneration(run.id, cardGeneration, "ai.run_canceled")
         return true
       }
       outcome = error instanceof ToolInterruption ? error.state : stableErrorCode(error)
@@ -411,7 +378,7 @@ export class RunExecutor {
             }
           : {}),
       })
-      await this.failCardPreparations(run.id, cardPreparations, stableError(message))
+      if (cardGeneration) await this.failCardGeneration(run.id, cardGeneration, stableError(message))
       if (error instanceof ToolInterruption && error.state === "waiting_input") {
         outcome = "waiting_input"
         await this.repository.appendEvent(run.id, "run.input_required", { fields: error.fields })
@@ -426,7 +393,7 @@ export class RunExecutor {
       this.controllers.delete(run.id)
       await this.repository.finalizeStreamingItems(run.id, "completed")
       await this.repository.releaseLease(run.id, this.config.INSTANCE_ID)
-      const metricAttributes = { outcome, graph_version: run.graphVersion }
+      const metricAttributes = { outcome }
       agentMetrics.activeRuns.add(-1)
       agentMetrics.runs.add(1, metricAttributes)
       agentMetrics.runDuration.record((performance.now() - startedAt) / 1000, metricAttributes)
@@ -440,7 +407,7 @@ export class RunExecutor {
       return
     try {
       const runtimeSettings = (await this.runtimeConfig.get()).runtime
-      this.graphs.setContextOptions({
+      this.modelRuntime.setContextOptions({
         inputTokenBudget: runtimeSettings.contextInputTokenBudget,
         compressionTriggerRatio: runtimeSettings.contextCompressionTriggerRatio,
         compressionTargetRatio: runtimeSettings.contextCompressionTargetRatio,
@@ -452,7 +419,7 @@ export class RunExecutor {
         summaryMaxOutputTokens: runtimeSettings.contextSummaryMaxOutputTokens,
         historicalToolTokenBudget: runtimeSettings.contextHistoricalToolTokenBudget,
       })
-      this.graphs.setAssistantMaxOutputTokens(runtimeSettings.assistantMaxOutputTokens)
+      this.modelRuntime.setAssistantMaxOutputTokens(runtimeSettings.assistantMaxOutputTokens)
       setToolResultPayloadBudget(runtimeSettings.toolResultPayloadBudget)
       setMaxCardRepairAttempts(runtimeSettings.maxCardRepairAttempts)
       this.runtimeSettings = runtimeSettings
@@ -478,40 +445,22 @@ export class RunExecutor {
     }, "tool.completed", { itemId, toolCallId, operationId: "create_options", result, uiActions: result.uiActions })
   }
 
-  private async prepareInteractionCards(
-    runId: string,
-    turnId: string,
-    raw: unknown,
-    preparations: Map<string, CardPreparation>,
-    failedGenerationIds: Set<string>,
-    repairState: { attempt: number },
-  ) {
-    if (failedGenerationIds.size > 0) return {
-      accepted: false as const,
-      failure: cardValidationFailure("prepare", [{
-        code: "repair_exhausted",
-        path: "$",
-        message: "当前 Run 的交互卡片已达到自动修正上限。",
-        expected: "停止生成卡片并向用户说明失败",
-      }], maxCardRepairAttempts),
-    }
-    const parsed = prepareInteractionCardsInput.safeParse(raw)
-    if (!parsed.success) {
-      repairState.attempt += 1
-      if (repairState.attempt >= maxCardRepairAttempts) failedGenerationIds.add("prepare")
-      return {
-        accepted: false as const,
-        failure: cardValidationFailure("prepare", validationIssues(parsed.error.issues), repairState.attempt),
-      }
-    }
-    const existing = [...preparations.values()].find(preparation => preparation.status === "repairing")
-    if (existing) return { accepted: true as const, preparation: existing }
-    const input: PrepareInteractionCardsInput & { generationId: string } = {
-      schemaVersion: parsed.data.schemaVersion,
-      title: parsed.data.title,
-      ...(parsed.data.description !== undefined ? { description: parsed.data.description } : {}),
-      ...(parsed.data.placement !== undefined ? { placement: parsed.data.placement } : {}),
-      generationId: createId("aicardgen"),
+  private async startCardGeneration(runId: string, turnId: string, raw: unknown): Promise<CardGeneration> {
+    const rawObject = raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : {}
+    const title = typeof rawObject.title === "string" && rawObject.title.trim()
+      ? rawObject.title.trim().slice(0, 120)
+      : undefined
+    const description = typeof rawObject.description === "string" && rawObject.description.trim()
+      ? rawObject.description.trim().slice(0, 500)
+      : undefined
+    const placement: "inline" | "turn_end" = rawObject.placement === "turn_end" ? "turn_end" : "inline"
+    const generationId = createId("aicardgen")
+    const placeholderArguments = {
+      schemaVersion: 1 as const,
+      generationId,
+      ...(title ? { title } : {}),
+      ...(description ? { description } : {}),
+      placement,
     }
     const itemId = createId("aiitm")
     const toolCallId = createId("aitool")
@@ -523,13 +472,13 @@ export class RunExecutor {
       status: "streaming",
       content: {
         toolCallId,
-        operationId: "prepare_interaction_cards",
+        operationId: "create_interaction_cards",
         titleKey: "aiAssistant.cards.preparingToolTitle",
         status: "running",
-        arguments: input,
+        arguments: placeholderArguments,
         result: {
           summaryKey: "aiAssistant.cards.preparing",
-          generationId: input.generationId,
+          generationId,
           attempt: 0,
           maxAttempts: maxCardRepairAttempts,
         },
@@ -537,45 +486,37 @@ export class RunExecutor {
     }, "tool.started", {
       itemId,
       toolCallId,
-      operationId: "prepare_interaction_cards",
+      operationId: "create_interaction_cards",
       titleKey: "aiAssistant.cards.preparingToolTitle",
-      arguments: input,
+      arguments: placeholderArguments,
     })
-    const preparation: CardPreparation = {
+    const generation: CardGeneration = {
       itemId,
       toolCallId,
       timelineIndex: item.timelineIndex,
-      input,
+      generationId,
+      placeholderArguments,
       attempt: 0,
-      status: "repairing",
+      status: "streaming",
     }
-    preparations.set(input.generationId, preparation)
-    agentMetrics.cards.add(1, { phase: "prepared" })
-    telemetryLog("agent.card.prepared", "info", {
+    agentMetrics.cards.add(1, { phase: "started" })
+    telemetryLog("agent.card.started", "info", {
       "luna.run.id": runId,
-      "card.placement": input.placement ?? "inline",
+      "card.placement": placement,
     })
-    return { accepted: true as const, preparation }
+    return generation
   }
 
   private async createInteractionCards(
     runId: string,
     raw: unknown,
-    preparations: Map<string, CardPreparation>,
-    failedGenerationIds: Set<string>,
+    generation: CardGeneration,
   ) {
     const parsed = createInteractionCardsInput.safeParse(normalizeInteractionCardsInput(raw))
     if (!parsed.success) {
       const issues = validationIssues(parsed.error.issues)
-      const rawObject = raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : {}
-      const generationId = typeof rawObject.generationId === "string"
-        ? rawObject.generationId
-        : preparations.size === 1 ? [...preparations.keys()][0] : undefined
-      const preparation = generationId ? preparations.get(generationId) : undefined
-      const attempt = preparation
-        ? await this.recordCardRepairFailure(runId, preparation, issues, "ai.interaction_card_schema_invalid", preparations, failedGenerationIds)
-        : 1
-      const failure = cardValidationFailure("create", issues, attempt, generationId)
+      const attempt = await this.recordCardRepairFailure(runId, generation, issues, "ai.interaction_card_schema_invalid")
+      const failure = cardValidationFailure("create", issues, attempt, generation.generationId)
       agentMetrics.cards.add(1, { phase: "rejected", mode: "unknown" })
       telemetryLog("agent.card.schema_rejected", "warn", {
         "luna.run.id": runId,
@@ -584,38 +525,11 @@ export class RunExecutor {
       })
       return { accepted: false as const, failure }
     }
-    const input = parsed.data
-    const preparation = preparations.get(input.generationId)
-    if (!preparation) {
-      const exhausted = failedGenerationIds.has(input.generationId)
-      return {
-        accepted: false as const,
-        failure: cardValidationFailure("create", [{
-          code: "missing_preparation",
-          path: "generationId",
-          message: "generationId 未对应当前 Run 中已接受的卡片准备任务。",
-          expected: "prepare_interaction_cards 返回的 generationId",
-          received: input.generationId,
-        }], exhausted ? maxCardRepairAttempts : 1, input.generationId),
-      }
-    }
-    const preparedPlacement = preparation.input.placement ?? "inline"
-    const createdPlacement = input.placement ?? "inline"
-    if (preparedPlacement !== createdPlacement) {
-      const issues: InteractionCardValidationIssue[] = [{
-        code: "placement_mismatch",
-        path: "placement",
-        message: "最终卡片 placement 必须与准备阶段保持一致。",
-        expected: preparedPlacement,
-        received: createdPlacement,
-      }]
-      const attempt = await this.recordCardRepairFailure(runId, preparation, issues, "ai.interaction_card_schema_invalid", preparations, failedGenerationIds)
-      return {
-        accepted: false as const,
-        failure: cardValidationFailure("create", issues, attempt, input.generationId),
-      }
-    }
-    const { itemId, toolCallId, timelineIndex } = preparation
+    const input = {
+      ...parsed.data,
+      generationId: generation.generationId,
+    } as InteractionCardGroup
+    const { itemId, toolCallId, timelineIndex } = generation
     const result = {
       summaryKey: "aiAssistant.cards.created",
       title: input.title,
@@ -632,7 +546,7 @@ export class RunExecutor {
       itemId, toolCallId, operationId: "create_interaction_cards", titleKey: "aiAssistant.cards.toolTitle",
       arguments: input, result, timelineIndex,
     })
-    preparations.delete(input.generationId)
+    generation.status = "completed"
     agentMetrics.cards.add(1, { phase: "created", mode: input.mode })
     telemetryLog("agent.card.created", "info", {
       "luna.run.id": runId,
@@ -644,84 +558,73 @@ export class RunExecutor {
 
   private async recordCardRepairFailure(
     runId: string,
-    preparation: CardPreparation,
+    generation: CardGeneration,
     issues: InteractionCardValidationIssue[],
     errorCode: InteractionCardValidationFailure["errorCode"],
-    preparations: Map<string, CardPreparation>,
-    failedGenerationIds: Set<string>,
   ): Promise<number> {
-    const attempt = preparation.attempt + 1
-    preparation.attempt = attempt
-    preparation.issues = issues
+    const attempt = generation.attempt + 1
+    generation.attempt = attempt
+    generation.issues = issues
     if (attempt >= maxCardRepairAttempts) {
-      preparation.status = "failed"
-      await this.failCardPreparation(runId, preparation, errorCode)
-      preparations.delete(preparation.input.generationId)
-      failedGenerationIds.add(preparation.input.generationId)
+      await this.failCardGeneration(runId, generation, errorCode)
       return attempt
     }
-    await this.repository.updateItemWithEvent(preparation.itemId, "streaming", {
-      toolCallId: preparation.toolCallId,
-      operationId: "prepare_interaction_cards",
+    await this.repository.updateItemWithEvent(generation.itemId, "streaming", {
+      toolCallId: generation.toolCallId,
+      operationId: "create_interaction_cards",
       titleKey: "aiAssistant.cards.preparingToolTitle",
       status: "running",
-      arguments: preparation.input,
+      arguments: generation.placeholderArguments,
       result: {
         summaryKey: "aiAssistant.cards.repairing",
-        generationId: preparation.input.generationId,
+        generationId: generation.generationId,
         attempt,
         maxAttempts: maxCardRepairAttempts,
         issues,
       },
     }, "tool.progress", {
-      itemId: preparation.itemId,
-      toolCallId: preparation.toolCallId,
-      operationId: "prepare_interaction_cards",
-      timelineIndex: preparation.timelineIndex,
-      result: cardValidationFailure("create", issues, attempt, preparation.input.generationId, errorCode),
+      itemId: generation.itemId,
+      toolCallId: generation.toolCallId,
+      operationId: "create_interaction_cards",
+      timelineIndex: generation.timelineIndex,
+      result: cardValidationFailure("create", issues, attempt, generation.generationId, errorCode),
     })
     return attempt
   }
 
-  private async failCardPreparations(runId: string, preparations: Map<string, CardPreparation>, errorCode: string) {
-    if (preparations.size > 0) {
-      const canceled = errorCode === "ai.run_canceled"
-      agentMetrics.cards.add(preparations.size, { phase: canceled ? "canceled" : "failed" })
-      telemetryLog(canceled ? "agent.card.canceled" : "agent.card.failed", canceled ? "info" : "error", {
-        "luna.run.id": runId,
-        ...(canceled ? {} : { "error.code": errorCode }),
-        "card.count": preparations.size,
-      })
-    }
-    await Promise.allSettled([...preparations.values()].map(preparation => this.failCardPreparation(runId, preparation, errorCode)))
-    preparations.clear()
-  }
-
-  private async failCardPreparation(runId: string, preparation: CardPreparation, errorCode: string) {
+  private async failCardGeneration(runId: string, generation: CardGeneration, errorCode: string) {
+    if (generation.status !== "streaming") return
+    generation.status = "failed"
+    const canceled = errorCode === "ai.run_canceled"
+    agentMetrics.cards.add(1, { phase: canceled ? "canceled" : "failed" })
+    telemetryLog(canceled ? "agent.card.canceled" : "agent.card.failed", canceled ? "info" : "error", {
+      "luna.run.id": runId,
+      ...(canceled ? {} : { "error.code": errorCode }),
+    })
     const result = {
       summaryKey: "aiAssistant.cards.failed",
       errorCode,
-      generationId: preparation.input.generationId,
-      attempt: preparation.attempt,
+      generationId: generation.generationId,
+      attempt: generation.attempt,
       maxAttempts: maxCardRepairAttempts,
-      ...(preparation.issues?.length ? { issues: preparation.issues } : {}),
+      ...(generation.issues?.length ? { issues: generation.issues } : {}),
     }
-    await this.repository.updateItemWithEvent(preparation.itemId, "failed", {
-      toolCallId: preparation.toolCallId,
-      operationId: "prepare_interaction_cards",
+    await this.repository.updateItemWithEvent(generation.itemId, "failed", {
+      toolCallId: generation.toolCallId,
+      operationId: "create_interaction_cards",
       titleKey: "aiAssistant.cards.preparingToolTitle",
       status: "failed",
-      arguments: preparation.input,
+      arguments: generation.placeholderArguments,
       errorCode,
       result,
     }, "tool.failed", {
-      itemId: preparation.itemId,
-      toolCallId: preparation.toolCallId,
-      operationId: "prepare_interaction_cards",
+      itemId: generation.itemId,
+      toolCallId: generation.toolCallId,
+      operationId: "create_interaction_cards",
       titleKey: "aiAssistant.cards.preparingToolTitle",
       errorCode,
       result,
-      timelineIndex: preparation.timelineIndex,
+      timelineIndex: generation.timelineIndex,
       runId,
     })
   }
@@ -729,7 +632,7 @@ export class RunExecutor {
   private async ensureOptions(
     runId: string,
     turnId: string,
-    context: Parameters<GraphVersionRegistry["predictNextSteps"]>[0],
+    context: Parameters<ModelRuntime["predictNextSteps"]>[0],
     preferred: unknown,
     signal: AbortSignal,
   ) {
@@ -741,7 +644,7 @@ export class RunExecutor {
       }
     }
     try {
-      const predicted = await this.graphs.predictNextSteps(context, signal)
+      const predicted = await this.modelRuntime.predictNextSteps(context, signal)
       const parsed = createOptionsInput.safeParse(predicted)
       if (parsed.success) {
         await this.traceInternalTool("create_options", runId, parsed.data, () => this.createOptions(runId, turnId, parsed.data))
@@ -821,14 +724,13 @@ export class RunExecutor {
     return renamed
   }
 
-  private async streamModel(version: string, runId: string, turnId: string, input: AssistantGraphState, signal: AbortSignal): Promise<AssistantGraphState> {
+  private async streamModel(runId: string, turnId: string, input: AssistantModelInput, signal: AbortSignal): Promise<AssistantModelInput> {
     const startedAt = performance.now()
     let outcome = "success"
     return withSpan("agent.model.stream", internalSpanOptions({
       "gen_ai.operation.name": "chat",
       "luna.run.id": runId,
       "luna.turn.id": turnId,
-      "luna.graph.version": version,
     }), async span => {
     const reasoningItemId = createId("aiitm")
     const messageItemId = createId("aiitm")
@@ -840,7 +742,7 @@ export class RunExecutor {
     let messageTimelineIndex: number | undefined
     try {
     await this.repository.appendEvent(runId, "model.started", {})
-    for await (const event of this.graphs.stream(version, input, signal)) {
+    for await (const event of this.modelRuntime.stream(input, signal)) {
       if (!firstOutputRecorded && ["reasoning_summary_delta", "message_delta", "tool_call_delta"].includes(event.type)) {
         firstOutputRecorded = true
         const outputType = event.type === "reasoning_summary_delta"
@@ -1123,13 +1025,20 @@ export function setMaxCardRepairAttempts(attempts: number): void {
   maxCardRepairAttempts = attempts
 }
 
-type CardPreparation = {
+type CardGeneration = {
   itemId: string
   toolCallId: string
   timelineIndex: number
-  input: PrepareInteractionCardsInput & { generationId: string }
+  generationId: string
+  placeholderArguments: {
+    schemaVersion: 1
+    generationId: string
+    title?: string
+    description?: string
+    placement: "inline" | "turn_end"
+  }
   attempt: number
-  status: "repairing" | "failed"
+  status: "streaming" | "completed" | "failed"
   issues?: InteractionCardValidationIssue[]
 }
 
@@ -1164,7 +1073,7 @@ function cardValidationFailure(
     maxAttempts: maxCardRepairAttempts,
     issues,
     guidance: retryable
-      ? `只修正 issues 中列出的字段；${generationId ? "保持 generationId 不变并" : ""}重新调用 ${phase === "prepare" ? "prepare_interaction_cards" : "create_interaction_cards"}。`
+      ? "只修正 issues 中列出的字段并重新调用 create_interaction_cards；不要提供 generationId，Agent 会复用当前占位项。"
       : "已达到自动修正上限。不要再次生成同一张卡片；请向用户简要说明卡片生成失败，并保留当前业务上下文。",
   }
 }
@@ -1183,10 +1092,10 @@ function providerArgumentFailure(
   return {
     ...failure,
     guidance: failure.retryable
-      ? `重新生成完整的 JSON 工具参数；${generationId ? "保持 generationId 不变；" : ""}不要复用被截断的参数文本。`
+      ? "重新生成完整的 JSON 工具参数；不要提供 generationId，也不要复用被截断的参数文本。"
       : failure.guidance,
   }
 }
 
-const internalToolOperationIds = new Set(["create_options", "prepare_interaction_cards", "create_interaction_cards", "rename_conversation", "navigate_to_route", "search_tools"])
-const cardToolOperationIds = new Set(["prepare_interaction_cards", "create_interaction_cards"])
+const internalToolOperationIds = new Set(["create_options", "create_interaction_cards", "rename_conversation", "navigate_to_route", "search_tools"])
+const cardToolOperationIds = new Set(["create_interaction_cards"])

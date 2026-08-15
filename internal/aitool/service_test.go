@@ -9,6 +9,7 @@ import (
 
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	projectservice "github.com/LiteyukiStudio/devops/internal/project"
 	"gorm.io/gorm/schema"
 )
 
@@ -34,6 +35,14 @@ func TestListAppTemplatesReturnsSummariesWithoutValues(t *testing.T) {
 		}
 		if _, exists := item["valueCount"]; !exists {
 			t.Fatal("list summary should report parameter count")
+		}
+		if _, exists := item["dataVolumes"]; !exists {
+			t.Fatal("list summary should expose typed data volume declarations")
+		}
+		for _, legacy := range []string{"dataRetentionEnabled", "dataCapacity", "dataMountPath"} {
+			if _, exists := item[legacy]; exists {
+				t.Fatalf("list summary exposes legacy volume field %s", legacy)
+			}
 		}
 		if item["id"].(string) == "" || item["name"].(string) == "" {
 			t.Fatal("list summary must keep identity fields")
@@ -61,6 +70,14 @@ func TestGetAppTemplateReturnsFullValuesAndHidesSecretDefaults(t *testing.T) {
 		t.Fatalf("get app template: %v", err)
 	}
 	detail := result.Value.(map[string]any)
+	if _, exists := detail["dataVolumes"]; !exists {
+		t.Fatal("template detail should expose typed data volume declarations")
+	}
+	for _, legacy := range []string{"dataRetentionEnabled", "dataCapacity", "dataMountPath"} {
+		if _, exists := detail[legacy]; exists {
+			t.Fatalf("template detail exposes legacy volume field %s", legacy)
+		}
+	}
 	values, ok := detail["values"].([]map[string]any)
 	if !ok {
 		t.Fatalf("detail values = %#v", detail["values"])
@@ -122,5 +139,45 @@ func TestTargetProjectComesOnlyFromBoundToolArguments(t *testing.T) {
 	}
 	if _, err := targetProjectID(Policy{}, map[string]any{"projectId": "prj_page"}); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("platform tool project error = %v", err)
+	}
+}
+
+func TestProjectListOptionsDefaultToRelatedAndBoundedPagination(t *testing.T) {
+	for _, platformAdmin := range []bool{false, true} {
+		options, err := resolveProjectListOptions(map[string]any{}, platformAdmin)
+		if err != nil {
+			t.Fatalf("platformAdmin=%t default options error = %v", platformAdmin, err)
+		}
+		if options.Scope != projectservice.ListScopeRelated || options.Page != 1 || options.PageSize != 20 {
+			t.Fatalf("platformAdmin=%t default options = %#v", platformAdmin, options)
+		}
+	}
+
+	options, err := resolveProjectListOptions(map[string]any{"scope": "all", "page": float64(3), "pageSize": float64(100)}, true)
+	if err != nil {
+		t.Fatalf("admin all options error = %v", err)
+	}
+	if options.Scope != projectservice.ListScopeAll || options.Page != 3 || options.PageSize != 100 {
+		t.Fatalf("admin all options = %#v", options)
+	}
+}
+
+func TestProjectListOptionsRejectUnauthorizedOrInvalidArguments(t *testing.T) {
+	for name, testCase := range map[string]struct {
+		arguments     map[string]any
+		platformAdmin bool
+		want          error
+	}{
+		"non-admin all":      {arguments: map[string]any{"scope": "all"}, want: ErrForbidden},
+		"unknown scope":      {arguments: map[string]any{"scope": "mine"}, platformAdmin: true, want: ErrInvalidInput},
+		"zero page":          {arguments: map[string]any{"page": float64(0)}, want: ErrInvalidInput},
+		"fractional page":    {arguments: map[string]any{"page": 1.5}, want: ErrInvalidInput},
+		"oversized pageSize": {arguments: map[string]any{"pageSize": float64(101)}, want: ErrInvalidInput},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := resolveProjectListOptions(testCase.arguments, testCase.platformAdmin); !errors.Is(err, testCase.want) {
+				t.Fatalf("error = %v, want %v", err, testCase.want)
+			}
+		})
 	}
 }

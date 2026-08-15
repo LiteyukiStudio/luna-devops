@@ -11,10 +11,8 @@ const (
 	RetainedVolumeStatusFailed    = "delete_failed"
 )
 
-// RetainedVolume is the durable platform record for a managed PVC whose
-// application lifecycle has ended. It keeps storage ownership independent
-// from soft-deleted applications and makes an explicit, auditable reclaim
-// possible.
+// RetainedVolume maps the legacy table only for the explicit volume-center
+// backfill command. API, worker, and provider runtime paths must not use it.
 type RetainedVolume struct {
 	ID                       string     `gorm:"primaryKey" json:"id"`
 	ProjectID                string     `gorm:"index;not null" json:"projectId"`

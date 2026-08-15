@@ -24,9 +24,10 @@ export class ApiError extends Error {
   path: string
   purpose?: string
   requestId?: string
+  retryAfterMs?: number
   status: number
 
-  constructor(message: string, options: { code?: string, detail?: string, path: string, purpose?: string, requestId?: string, status: number }) {
+  constructor(message: string, options: { code?: string, detail?: string, path: string, purpose?: string, requestId?: string, retryAfterMs?: number, status: number }) {
     super(message)
     this.name = 'ApiError'
     this.code = options.code || 'request.failed'
@@ -34,6 +35,7 @@ export class ApiError extends Error {
     this.path = options.path
     this.purpose = options.purpose
     this.requestId = options.requestId
+    this.retryAfterMs = options.retryAfterMs
     this.status = options.status
   }
 }

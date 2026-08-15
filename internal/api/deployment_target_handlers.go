@@ -3,8 +3,6 @@ package api
 import (
 	"context"
 	"errors"
-	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -12,9 +10,9 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
-	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/LiteyukiStudio/devops/internal/resourceidentifier"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
+	"github.com/LiteyukiStudio/devops/internal/volume"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -47,8 +45,13 @@ func (h *Handlers) ListDeploymentTargets(ctx *gin.Context) {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
+	mountsByTarget, err := h.deploymentTargetVolumeMountsByTarget(ctx.Request.Context(), targets)
+	if err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
+		return
+	}
 	h.observeDeploymentTargets(ctx.Request.Context(), project, targets)
-	ctx.JSON(http.StatusOK, paginatedResponse(deploymentTargetResponses(targets), total, pagination))
+	ctx.JSON(http.StatusOK, paginatedResponse(deploymentTargetResponses(targets, mountsByTarget), total, pagination))
 }
 
 func deploymentTargetPageQuery(query *gorm.DB, pagination paginationParams) *gorm.DB {
@@ -92,7 +95,7 @@ func (h *Handlers) CreateDeploymentTarget(ctx *gin.Context) {
 	}
 	targetID := id.New("dplt")
 	kubernetesName := resourceidentifier.DeploymentTargetName(app.Identifier, stage)
-	target, ok := h.deploymentTargetFromInput(ctx, user, app, input, targetID, kubernetesName, nil, "")
+	target, dataVolumes, ok := h.deploymentTargetFromInput(ctx, user, app, input, targetID, kubernetesName, nil, "")
 	if !ok {
 		return
 	}
@@ -101,19 +104,28 @@ func (h *Handlers) CreateDeploymentTarget(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := h.createDeploymentTarget(target, input.BuildHookBindings, buildEnvironment, ctx.Request.Context()); errors.Is(err, errDeploymentStageExists) {
+	changes, err := h.createDeploymentTarget(target, dataVolumes, input.BuildHookBindings, buildEnvironment, ctx.Request.Context())
+	if errors.Is(err, errDeploymentStageExists) {
 		writeErrorCode(ctx, http.StatusConflict, "deployment.stage_exists", "deployment stage already exists in this application")
 		return
 	} else if err != nil {
-		writeError(ctx, http.StatusBadRequest, err.Error())
+		h.auditDeploymentVolumeMountFailure(ctx.Request.Context(), user.ID, changes, err)
+		if volume.ErrorCode(err) != "" {
+			writeVolumeError(ctx, err)
+		} else {
+			writeError(ctx, http.StatusBadRequest, err.Error())
+		}
 		return
 	}
-	if !h.syncDeploymentTargetDataVolume(ctx, target) {
-		return
-	}
+	h.auditDeploymentVolumeMountChanges(ctx.Request.Context(), user.ID, target, changes)
 	target, _ = h.deploymentTargetWithHookBindings(target, ctx.Request.Context())
 	target = h.observeDeploymentTarget(ctx.Request.Context(), project, target)
-	ctx.JSON(http.StatusCreated, deploymentTargetResponseFromModel(target))
+	mountsByTarget, err := h.deploymentTargetVolumeMountsByTarget(ctx.Request.Context(), []model.DeploymentTarget{target})
+	if err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
+		return
+	}
+	ctx.JSON(http.StatusCreated, deploymentTargetResponseFromModel(target, mountsByTarget[target.ID]))
 }
 
 func (h *Handlers) UpdateDeploymentTarget(ctx *gin.Context) {
@@ -151,7 +163,7 @@ func (h *Handlers) UpdateDeploymentTarget(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusConflict, "deployment.stage_immutable", "deployment stage cannot be changed")
 		return
 	}
-	target, ok := h.deploymentTargetFromInput(ctx, user, app, input, existing.ID, existing.KubernetesName, decodeSecretRefs(existing.SecretFiles), existing.RuntimeConfigRefs)
+	target, dataVolumes, ok := h.deploymentTargetFromInput(ctx, user, app, input, existing.ID, existing.KubernetesName, decodeSecretRefs(existing.SecretFiles), existing.RuntimeConfigRefs)
 	if !ok {
 		return
 	}
@@ -174,16 +186,25 @@ func (h *Handlers) UpdateDeploymentTarget(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := h.saveDeploymentTarget(target, input.BuildHookBindings, buildEnvironment, ctx.Request.Context()); err != nil {
-		writeError(ctx, http.StatusBadRequest, err.Error())
+	changes, err := h.saveDeploymentTarget(target, dataVolumes, input.BuildHookBindings, buildEnvironment, ctx.Request.Context())
+	if err != nil {
+		h.auditDeploymentVolumeMountFailure(ctx.Request.Context(), user.ID, changes, err)
+		if volume.ErrorCode(err) != "" {
+			writeVolumeError(ctx, err)
+		} else {
+			writeError(ctx, http.StatusBadRequest, err.Error())
+		}
 		return
 	}
-	if !h.syncDeploymentTargetDataVolume(ctx, target) {
-		return
-	}
+	h.auditDeploymentVolumeMountChanges(ctx.Request.Context(), user.ID, target, changes)
 	target, _ = h.deploymentTargetWithHookBindings(target, ctx.Request.Context())
 	target = h.observeDeploymentTarget(ctx.Request.Context(), project, target)
-	ctx.JSON(http.StatusOK, deploymentTargetResponseFromModel(target))
+	mountsByTarget, err := h.deploymentTargetVolumeMountsByTarget(ctx.Request.Context(), []model.DeploymentTarget{target})
+	if err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
+		return
+	}
+	ctx.JSON(http.StatusOK, deploymentTargetResponseFromModel(target, mountsByTarget[target.ID]))
 }
 
 func (h *Handlers) ensureDeploymentStageAvailable(ctx *gin.Context, applicationID, stage, excludeTargetID string) bool {
@@ -212,148 +233,6 @@ func writeDeploymentStageConflict(ctx *gin.Context, deleteStatus string) {
 	default:
 		writeErrorCode(ctx, http.StatusConflict, "deployment.stage_exists", "deployment stage already exists in this application")
 	}
-}
-
-type deploymentTargetDataExportAuthorization struct {
-	user    model.User
-	project model.Project
-	app     model.Application
-	target  model.DeploymentTarget
-	binding dataExportAuthorizationBinding
-}
-
-func (h *Handlers) authorizeDeploymentTargetDataExport(ctx *gin.Context) (deploymentTargetDataExportAuthorization, bool) {
-	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin)
-	if !ok {
-		return deploymentTargetDataExportAuthorization{}, false
-	}
-	if !h.ensureProjectCanMutate(ctx, project) {
-		return deploymentTargetDataExportAuthorization{}, false
-	}
-	binding, ok := h.requireDataExportAuthorizationBinding(ctx, user)
-	if !ok {
-		return deploymentTargetDataExportAuthorization{}, false
-	}
-	app, ok := h.findApplication(ctx)
-	if !ok {
-		return deploymentTargetDataExportAuthorization{}, false
-	}
-	if !applicationCanMutate(app) {
-		writeErrorCode(ctx, http.StatusConflict, "application.delete_in_progress", "应用正在删除中，不能导出运行数据")
-		return deploymentTargetDataExportAuthorization{}, false
-	}
-	var target model.DeploymentTarget
-	if err := h.dbFor(ctx).First(&target, "id = ? and project_id = ? and application_id = ?", ctx.Param("targetId"), app.ProjectID, app.ID).Error; err != nil {
-		writeError(ctx, http.StatusNotFound, "deployment target not found")
-		return deploymentTargetDataExportAuthorization{}, false
-	}
-	if !h.ensureDeploymentTargetCanMutate(ctx, target) {
-		return deploymentTargetDataExportAuthorization{}, false
-	}
-	if !target.DataRetentionEnabled {
-		writeError(ctx, http.StatusBadRequest, "该部署配置未启用运行数据保留")
-		return deploymentTargetDataExportAuthorization{}, false
-	}
-	return deploymentTargetDataExportAuthorization{
-		user: user, project: project, app: app, target: target, binding: binding,
-	}, true
-}
-
-func (h *Handlers) AuthorizeDeploymentTargetDataExport(ctx *gin.Context) {
-	authorization, ok := h.authorizeDeploymentTargetDataExport(ctx)
-	if !ok {
-		return
-	}
-	ticket, expiresAt, err := h.issueDataExportTicket(ctx.Request.Context(), authorization)
-	if err != nil {
-		h.auditWithContext(authorization.user.ID, "deployment_target.data_export_authorize", authorization.target.ID, false, err.Error(), ctx.Request.Context())
-		writeErrorCode(ctx, http.StatusServiceUnavailable, "data_export.ticket_unavailable", "data export authorization is temporarily unavailable")
-		return
-	}
-	ctx.JSON(http.StatusOK, dataExportTicketResponse{Ticket: ticket, ExpiresAt: expiresAt})
-}
-
-func (h *Handlers) ExportDeploymentTargetData(ctx *gin.Context) {
-	ticket := strings.TrimSpace(ctx.Query("ticket"))
-	if ticket == "" {
-		writeErrorCode(ctx, http.StatusBadRequest, "data_export.ticket_required", "data export ticket is required")
-		return
-	}
-	ticketValue, valid, err := h.consumeDataExportTicket(ctx.Request.Context(), ticket)
-	if err != nil {
-		writeErrorCode(ctx, http.StatusServiceUnavailable, "data_export.ticket_unavailable", "data export authorization is temporarily unavailable")
-		return
-	}
-	if !valid || !ticketValue.matchesResource(ctx.Param("projectId"), ctx.Param("applicationId"), ctx.Param("targetId")) {
-		writeErrorCode(ctx, http.StatusForbidden, "data_export.ticket_invalid", "data export ticket is invalid, expired, consumed, or bound to another request")
-		return
-	}
-	authorization, ok := h.dataExportAuthorizationFromTicket(ctx.Request.Context(), ticketValue)
-	if !ok {
-		writeErrorCode(ctx, http.StatusForbidden, "data_export.ticket_invalid", "data export ticket authorization is no longer valid")
-		return
-	}
-	user, project, app, target := authorization.user, authorization.project, authorization.app, authorization.target
-	client, namespace, ok := h.kubernetesClientForDeploymentTarget(ctx, project, target, "运行集群不可用，无法导出运行数据")
-	if !ok {
-		return
-	}
-	filename := fmt.Sprintf("%s-%s-data.tar.gz", app.Identifier, target.ID)
-	requestCtx, cancel := context.WithTimeout(ctx.Request.Context(), 5*time.Minute)
-	defer cancel()
-	archiveReader, archiveWriter := io.Pipe()
-	streamResult := make(chan error, 1)
-	go func() {
-		err := client.StreamDataArchive(requestCtx, kubeprovider.DataExportSpec{
-			Name:      "lyd-export-" + shortResourceID(target.ID),
-			Namespace: namespace,
-			MountPath: deploymentTargetDataMountPath(target),
-			Volumes:   deploymentTargetDataExportVolumes(target),
-		}, archiveWriter)
-		_ = archiveWriter.CloseWithError(err)
-		streamResult <- err
-	}()
-	defer archiveReader.Close()
-
-	firstChunk := make([]byte, 32*1024)
-	readCount, readErr := archiveReader.Read(firstChunk)
-	if readCount == 0 && readErr != nil {
-		streamErr := <-streamResult
-		if streamErr == nil {
-			streamErr = readErr
-		}
-		h.auditWithContext(user.ID, "deployment_target.data_export", target.ID, false, streamErr.Error(), ctx.Request.Context())
-		writeErrorCode(ctx, http.StatusBadGateway, "data_export.stream_failed", "runtime data export could not be started")
-		return
-	}
-
-	ctx.Header("Content-Type", "application/gzip")
-	ctx.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
-	ctx.Header("X-Content-Type-Options", "nosniff")
-	ctx.Header("Cache-Control", "no-store")
-	ctx.Header("Referrer-Policy", "no-referrer")
-	if _, err := ctx.Writer.Write(firstChunk[:readCount]); err != nil {
-		_ = archiveReader.CloseWithError(err)
-		streamErr := <-streamResult
-		if streamErr == nil {
-			streamErr = err
-		}
-		h.auditWithContext(user.ID, "deployment_target.data_export", target.ID, false, streamErr.Error(), ctx.Request.Context())
-		return
-	}
-	_, copyErr := io.Copy(ctx.Writer, archiveReader)
-	if copyErr != nil {
-		_ = archiveReader.CloseWithError(copyErr)
-	}
-	streamErr := <-streamResult
-	if streamErr == nil {
-		streamErr = copyErr
-	}
-	if streamErr != nil {
-		h.auditWithContext(user.ID, "deployment_target.data_export", target.ID, false, streamErr.Error(), ctx.Request.Context())
-		return
-	}
-	h.auditWithContext(user.ID, "deployment_target.data_export", target.ID, true, filename, ctx.Request.Context())
 }
 
 func requireInteractiveSession(ctx *gin.Context) bool {
@@ -436,21 +315,33 @@ func (h *Handlers) DeleteDeploymentTarget(ctx *gin.Context) {
 	if !h.ensureNoIncomingServiceBindings(ctx, target.ProjectID, target.ApplicationID, target.ID) {
 		return
 	}
+	volumeChanges := deploymentVolumeMountChanges{}
 	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := markResourceDeleting(tx, &model.DeploymentTarget{}, target.ID); err != nil {
 			return err
 		}
-		return markDeploymentTargetGatewayRoutesDeleting(tx, target)
+		if err := markDeploymentTargetGatewayRoutesDeleting(tx, target); err != nil {
+			return err
+		}
+		var syncErr error
+		volumeChanges, syncErr = syncDeploymentTargetVolumeMounts(ctx.Request.Context(), tx, target, nil)
+		return syncErr
 	}); err != nil {
-		writeError(ctx, http.StatusInternalServerError, err.Error())
+		h.auditDeploymentVolumeMountFailure(ctx.Request.Context(), user.ID, volumeChanges, err)
+		if volume.ErrorCode(err) != "" {
+			writeVolumeError(ctx, err)
+		} else {
+			writeError(ctx, http.StatusInternalServerError, err.Error())
+		}
 		return
 	}
+	h.auditDeploymentVolumeMountChanges(ctx.Request.Context(), user.ID, target, volumeChanges)
 	if !h.enqueueResourceCleanup(ctx.Request.Context(), tasks.ResourceCleanupPayload{
 		ResourceType: "deployment_target",
 		ResourceID:   target.ID,
 		ProjectID:    target.ProjectID,
 		ActorID:      user.ID,
-		DeleteData:   !target.DataRetentionEnabled,
+		DeleteData:   false,
 	}) {
 		_ = markResourceDeleteFailed(h.dbFor(ctx), &model.DeploymentTarget{}, target.ID, "资源清理任务投递失败，请稍后重试")
 		_ = markDeploymentTargetGatewayRoutesDeleteFailed(h.dbFor(ctx), target, "资源清理任务投递失败，请稍后重试")

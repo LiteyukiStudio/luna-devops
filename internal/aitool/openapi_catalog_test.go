@@ -36,7 +36,10 @@ func TestPlatformCatalogCoversAgentEligibleControlPlane(t *testing.T) {
 		"createGatewayRoute", "getBuildRun", "getReleaseRuntimeLogs",
 		"createReleaseRuntimeCommandSession", "executeReleaseRuntimeCommandSession",
 		"closeReleaseRuntimeCommandSession",
-		"previewApplicationDeletion", "listRetainedVolumes", "deleteRetainedVolume",
+		"previewApplicationDeletion",
+		"listProjectVolumes", "getProjectVolume", "createProjectVolume", "updateProjectVolume",
+		"previewProjectVolumeDeletion", "deleteProjectVolume", "createVolumeExport",
+		"listVolumeTransfers", "getVolumeTransfer", "cancelVolumeTransfer",
 	} {
 		if _, ok := byID[operationID]; !ok {
 			t.Errorf("missing common workflow operation %s", operationID)
@@ -45,6 +48,9 @@ func TestPlatformCatalogCoversAgentEligibleControlPlane(t *testing.T) {
 	for _, operationID := range []string{
 		"login", "exchangeOAuthToken", "receiveGitWebhook",
 		"streamReleaseRuntimeTerminal", "createAccessToken",
+		"getVolumeImportUploadOffset", "uploadVolumeImportContent",
+		"authorizeVolumeTransferDownload", "headVolumeTransferContent", "downloadVolumeTransferContent",
+		"retryProjectVolumeOperation", "retryVolumeTransfer",
 	} {
 		if _, ok := byID[operationID]; ok {
 			t.Errorf("unsafe protocol or secret operation entered catalog: %s", operationID)
@@ -63,6 +69,28 @@ func TestPlatformCatalogProvidesSemanticSearchHints(t *testing.T) {
 	}
 	if !strings.HasPrefix(operation.Description, "调用 Luna DevOps") {
 		t.Fatalf("model-facing fallback description must remain Chinese: %q", operation.Description)
+	}
+}
+
+func TestProjectListCatalogExposesExplicitScope(t *testing.T) {
+	operation, ok := PlatformOperation("listProjects")
+	if !ok {
+		t.Fatal("missing operation listProjects")
+	}
+	properties, _ := operation.InputSchema["properties"].(map[string]any)
+	scope, _ := properties["scope"].(map[string]any)
+	values, _ := scope["enum"].([]any)
+	if scope["default"] != "related" || len(values) != 2 || values[0] != "related" || values[1] != "all" {
+		t.Fatalf("listProjects scope schema = %#v", scope)
+	}
+	found := false
+	for _, parameter := range operation.Parameters {
+		if parameter.InputName == "scope" && parameter.WireName == "scope" && parameter.In == "query" && !parameter.Required {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("listProjects scope query parameter missing: %#v", operation.Parameters)
 	}
 }
 
@@ -94,7 +122,7 @@ func TestPlatformCatalogClassifiesRuntimeCommandSessions(t *testing.T) {
 }
 
 func TestPlatformCatalogClassifiesDestructiveOperations(t *testing.T) {
-	for _, operationID := range []string{"deleteApplication", "deleteProject", "deleteRetainedVolume", "rollbackRelease"} {
+	for _, operationID := range []string{"deleteApplication", "deleteProject", "rollbackRelease"} {
 		operation, ok := PlatformOperation(operationID)
 		if !ok {
 			t.Fatalf("missing operation %s", operationID)
@@ -105,21 +133,13 @@ func TestPlatformCatalogClassifiesDestructiveOperations(t *testing.T) {
 	}
 }
 
-func TestApplicationDeletionCatalogRequiresDataLifecycleChoice(t *testing.T) {
+func TestApplicationDeletionCatalogDoesNotExposeLegacyDataAction(t *testing.T) {
 	operation, ok := PlatformOperation("deleteApplication")
 	if !ok {
 		t.Fatal("missing operation deleteApplication")
 	}
 	properties, _ := operation.InputSchema["properties"].(map[string]any)
-	body, _ := properties["body"].(map[string]any)
-	required, _ := body["required"].([]string)
-	if len(required) != 1 || required[0] != "dataAction" {
-		t.Fatalf("deleteApplication body must require dataAction: %#v", body)
-	}
-	bodyProperties, _ := body["properties"].(map[string]any)
-	dataAction, _ := bodyProperties["dataAction"].(map[string]any)
-	values, _ := dataAction["enum"].([]any)
-	if len(values) != 2 || values[0] != "retain" || values[1] != "delete" {
-		t.Fatalf("deleteApplication dataAction enum drifted: %#v", dataAction)
+	if _, exists := properties["body"]; exists {
+		t.Fatalf("deleteApplication must not expose a legacy dataAction body: %#v", properties)
 	}
 }

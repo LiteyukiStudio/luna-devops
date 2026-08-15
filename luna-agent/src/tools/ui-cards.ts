@@ -310,7 +310,6 @@ const card = z.object({
 
 export const createInteractionCardsInput = z.object({
   schemaVersion: z.literal(1),
-  generationId: identifier,
   title: shortText,
   description,
   mode: z.enum(["presentation", "interactive"]).describe(
@@ -319,13 +318,13 @@ export const createInteractionCardsInput = z.object({
   placement: z.enum(["inline", "turn_end"]).optional().describe(
     "卡片在本轮助手回复中的渲染位置。inline 保持真实事件位置；turn_end 将单张、等待提交的交互表单投影到本轮回复末尾。默认 inline。",
   ),
-  template: z.enum(["catalog", "comparison", "inspector", "form", "wizard", "diagnosis", "plan", "progress", "result", "dashboard"]),
+  template: z.enum(["candidates", "form", "change_review", "result", "live_task"]),
   display: z.object({
     density: z.enum(["comfortable", "compact"]).optional(),
   }).optional(),
   cards: z.array(card).min(1).max(12),
   groupActions: z.array(cardAction).max(3).optional(),
-}).superRefine((input, context) => {
+}).strict().superRefine((input, context) => {
   const formCards = input.cards.filter(item => item.form)
   const responseActions = [
     ...input.cards.flatMap(item => item.actions ?? []),
@@ -357,32 +356,46 @@ export const createInteractionCardsInput = z.object({
       path: ["placement"],
     })
   }
-  if ((input.template === "form" || input.template === "wizard") && input.mode !== "interactive") {
+  if (input.template === "form" && input.mode !== "interactive") {
     context.addIssue({
       code: "custom",
       message: `${input.template} templates must use interactive mode.`,
       path: ["mode"],
     })
   }
-  if ((input.template === "form" || input.template === "wizard") && formCards.length === 0) {
+  if (input.template === "form" && formCards.length === 0) {
     context.addIssue({
       code: "custom",
       message: `${input.template} templates must contain input fields.`,
       path: ["cards"],
     })
   }
-  const liveProgressBlocks = input.cards.flatMap(item => item.blocks ?? []).filter(block => block.type === "live_progress")
-  if (input.template === "progress" && (input.mode !== "presentation" || liveProgressBlocks.length === 0)) {
+  if (input.template === "change_review" && input.mode !== "interactive") {
     context.addIssue({
       code: "custom",
-      message: "Progress templates must be presentation cards bound to at least one authoritative live progress operation.",
+      message: "Change-review templates must use interactive mode so the user can confirm or revise the proposed change.",
+      path: ["mode"],
+    })
+  }
+  if (input.template === "result" && input.mode !== "presentation") {
+    context.addIssue({
+      code: "custom",
+      message: "Result templates must use presentation mode because they only present facts or completed outcomes.",
+      path: ["mode"],
+    })
+  }
+  const liveProgressBlocks = input.cards.flatMap(item => item.blocks ?? []).filter(block => block.type === "live_progress")
+  if (input.template === "live_task" && (input.mode !== "presentation" || liveProgressBlocks.length === 0)) {
+    context.addIssue({
+      code: "custom",
+      message: "Live-task templates must be presentation cards bound to at least one authoritative live progress operation.",
       path: ["template"],
     })
   }
-  if (input.template !== "progress" && liveProgressBlocks.length > 0) {
+  if (input.template !== "live_task" && liveProgressBlocks.length > 0) {
     context.addIssue({
       code: "custom",
-      message: "Live progress blocks are only valid in the progress template.",
+      message: "Live progress blocks are only valid in the live_task template.",
       path: ["template"],
     })
   }
@@ -643,23 +656,13 @@ export const createInteractionCardsInput = z.object({
     context.addIssue({ code: "custom", message: "Card group exceeds 96 KiB." })
 })
 
-export type CreateInteractionCardsInput = InteractionCardGroup
+export type CreateInteractionCardsInput = Omit<InteractionCardGroup, "generationId">
 
 
 const createInteractionCardsRequestInput = z.union([
   createBusinessCardTemplateInput,
   createInteractionCardsInput,
 ])
-
-export const prepareInteractionCardsInput = z.object({
-  schemaVersion: z.literal(1),
-  title: shortText,
-  description,
-  placement: z.enum(["inline", "turn_end"]).optional().describe(
-    "准备占位的渲染位置。默认 inline；必须与随后 create_interaction_cards 的 placement 一致。",
-  ),
-}).strict()
-
 
 export function normalizeInteractionCardsInput(raw: unknown): unknown {
   if (!raw || typeof raw !== "object" || Array.isArray(raw))
@@ -705,24 +708,8 @@ function normalizeCardSections(input: Record<string, unknown>): unknown {
 
 export const createInteractionCardsTool: ModelToolDefinition = {
   operationId: "create_interaction_cards",
-  description: "完成一组受控的声明式内容与交互卡片。调用前必须先单独调用 prepare_interaction_cards，等待 accepted，再复用 generationId，并保持 placement 完全一致。placement 默认 inline，按真实事件位置呈现；只有本轮恰好一张、包含提交表单且工作流必须等待用户后才能继续的 interactive 卡片，才可使用 turn_end 放到本轮回复末尾。多卡片、候选卡、无表单确认、展示卡片和进度卡片必须使用 inline。优先使用 businessTemplate：2～5 个丰富候选用 candidate_picker，6～50 个候选用 candidate_select，需要结构化参数用 resource_configuration，执行前核对变更用 change_review，诊断结论用 diagnosis_report，已取得平台任务 ID 的运行中状态用 execution_progress，终态回执用 operation_result，健康概览用 health_overview。execution_progress 必须使用平台工具结果中的 projectId、operationId 和 operationType 建立实时绑定，禁止填写或猜测静态百分比、步骤和运行状态；卡片标题、说明和徽标只能描述稳定的任务身份，不得写入“正在”“已完成”“失败”等动态状态；没有可绑定任务 ID 时不得生成进度卡片。任何会继续变化的运行状态不得用 status_list、timeline、metrics 或 chart 冒充动态进度，这些内容块只用于已经完成的历史事实或当前读取的瞬时快照。只有业务模板无法表达必要结构时，才直接提供 mode/template/cards 自定义卡片。需要用户选择、填写或确认时必须生成交互模板；只呈现事实、状态或结果时使用展示模板。卡片事实和 ID 必须来自当前可信工具结果；tool action 只能引用当前模型工具列表中的真实 operationId，并继续接受平台鉴权、批准和 MFA。不得生成 HTML、CSS、脚本、任意 URL 或虚构状态；简单的 2～5 个无丰富内容且无需结构化输入的建议继续使用 create_options。",
+  description: "一次性创建受控的声明式内容或交互卡片。调用开始后客户端会自动显示准备占位，校验通过后原位替换，无需准备工具或 generationId。placement 默认 inline；仅当本轮恰好一张、包含提交表单且工作流必须等待用户后才能继续时使用 turn_end。优先使用业务模板：2～5 个丰富候选用 candidate_picker，6～50 个候选用 candidate_select，结构化参数用 resource_configuration，写操作前核对用 change_review，诊断结论用 diagnosis_report，权威异步任务用 execution_progress，终态回执用 operation_result，健康概览用 health_overview。需要用户选择、填写或确认时使用 interactive；只呈现可信事实或结果时使用 presentation。动态状态只能使用绑定权威任务的 execution_progress，不得猜测百分比或步骤。tool action 只能引用当前可用的真实 operationId，并继续接受平台鉴权、批准和 MFA。不得生成 HTML、CSS、脚本、任意 URL 或虚构事实；轻量建议使用 create_options。",
   inputSchema: cardInputJsonSchema(),
-}
-
-export const prepareInteractionCardsTool: ModelToolDefinition = {
-  operationId: "prepare_interaction_cards",
-  description: "在开始组织复杂交互卡片前显示准备动画。只有已经取得生成卡片所需的可信工具结果，并且下一步确定要生成 create_interaction_cards 时才调用。必须单独调用本工具并等待 accepted；Agent 会在工具结果中生成 generationId，随后必须原样复用 generationId 和 placement 调用 create_interaction_cards。placement 默认 inline；只有确定最终产物是本轮唯一一张、包含提交表单且阻塞后续流程的 interactive 卡片时才能选择 turn_end。title 和 description 应简短说明正在组织什么内容，不得声称卡片或业务操作已经完成。",
-  inputSchema: {
-    type: "object",
-    additionalProperties: false,
-    required: ["schemaVersion", "title"],
-    properties: {
-      schemaVersion: { const: 1 },
-      title: { type: "string", minLength: 1, maxLength: 120 },
-      description: { type: "string", maxLength: 500 },
-      placement: { type: "string", enum: ["inline", "turn_end"], default: "inline" },
-    },
-  },
 }
 
 function messageTemplateFieldIds(message: string): string[] {

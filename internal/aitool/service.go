@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -126,15 +127,28 @@ func (s *Service) Execute(ctx context.Context, input Request) (Result, error) {
 		err := query.Order("projects.updated_at desc").Limit(limit).Scan(&projects).Error
 		return databaseResult(Result{Value: map[string]any{"projects": projects}, Truncated: len(projects) == limit}, err)
 	case "listProjects":
+		options, err := resolveProjectListOptions(input.Arguments, s.platformAdmin(ctx, input.UserID))
+		if err != nil {
+			return Result{}, err
+		}
 		var projects []map[string]any
 		query := s.db.WithContext(ctx).Table("projects").
 			Select("projects.id, projects.name, projects.identifier, projects.description, project_members.role, projects.created_at, projects.updated_at").
 			Joins("left join project_members on project_members.project_id = projects.id and project_members.user_id = ?", input.UserID)
-		if !s.platformAdmin(ctx, input.UserID) {
+		if options.Scope == projectservice.ListScopeRelated {
 			query = query.Where("project_members.user_id = ?", input.UserID)
 		}
-		err := query.Order("projects.updated_at desc").Limit(limit).Scan(&projects).Error
-		return databaseResult(Result{Value: map[string]any{"items": projects}, Truncated: len(projects) == limit}, err)
+		err = query.Order("projects.updated_at desc").
+			Offset((options.Page - 1) * options.PageSize).
+			Limit(options.PageSize + 1).
+			Scan(&projects).Error
+		truncated := len(projects) > options.PageSize
+		if truncated {
+			projects = projects[:options.PageSize]
+		}
+		return databaseResult(Result{Value: map[string]any{
+			"items": projects, "page": options.Page, "pageSize": options.PageSize, "scope": options.Scope,
+		}, Truncated: truncated}, err)
 	case "listAppTemplates":
 		templates, err := appstore.Catalog()
 		if err != nil {
@@ -169,9 +183,8 @@ func (s *Service) Execute(ctx context.Context, input Request) (Result, error) {
 				"icon": template.Icon, "officialWebsite": template.OfficialWebsite,
 				"officialRepository": template.OfficialRepository, "version": template.Version,
 				"defaultReplicas": template.DefaultReplicas, "defaultCPU": template.DefaultCPU,
-				"defaultMemory": template.DefaultMemory, "dataRetentionEnabled": template.DataRetentionEnabled,
-				"dataCapacity": template.DataCapacity,
-				"valueCount":   len(template.Values), "requiredValueCount": requiredCount,
+				"defaultMemory": template.DefaultMemory, "dataVolumes": template.DataVolumes,
+				"valueCount": len(template.Values), "requiredValueCount": requiredCount,
 			})
 			if len(items) == limit {
 				break
@@ -340,8 +353,7 @@ func (s *Service) getAppTemplate(input Request) (Result, error) {
 		"icon": template.Icon, "officialWebsite": template.OfficialWebsite,
 		"officialRepository": template.OfficialRepository, "version": template.Version,
 		"defaultReplicas": template.DefaultReplicas, "defaultCPU": template.DefaultCPU,
-		"defaultMemory": template.DefaultMemory, "dataRetentionEnabled": template.DataRetentionEnabled,
-		"dataCapacity": template.DataCapacity, "values": values,
+		"defaultMemory": template.DefaultMemory, "dataVolumes": template.DataVolumes, "values": values,
 	}}, nil
 }
 
@@ -359,6 +371,54 @@ func intArgument(arguments map[string]any, key string) int {
 	default:
 		return 0
 	}
+}
+
+type projectListOptions struct {
+	Scope    projectservice.ListScope
+	Page     int
+	PageSize int
+}
+
+func resolveProjectListOptions(arguments map[string]any, platformAdmin bool) (projectListOptions, error) {
+	scope, err := projectservice.ResolveListScope(stringArgument(arguments, "scope"), platformAdmin)
+	if errors.Is(err, projectservice.ErrListScopeForbidden) {
+		return projectListOptions{}, ErrForbidden
+	}
+	if err != nil {
+		return projectListOptions{}, ErrInvalidInput
+	}
+	page, err := boundedPositiveIntegerArgument(arguments, "page", 1, 100000)
+	if err != nil {
+		return projectListOptions{}, ErrInvalidInput
+	}
+	pageSize, err := boundedPositiveIntegerArgument(arguments, "pageSize", 20, 100)
+	if err != nil {
+		return projectListOptions{}, ErrInvalidInput
+	}
+	return projectListOptions{Scope: scope, Page: page, PageSize: pageSize}, nil
+}
+
+func boundedPositiveIntegerArgument(arguments map[string]any, key string, defaultValue, maximum int) (int, error) {
+	raw, exists := arguments[key]
+	if !exists || raw == nil {
+		return defaultValue, nil
+	}
+	var value int
+	switch typed := raw.(type) {
+	case int:
+		value = typed
+	case float64:
+		if math.Trunc(typed) != typed {
+			return 0, ErrInvalidInput
+		}
+		value = int(typed)
+	default:
+		return 0, ErrInvalidInput
+	}
+	if value < 1 || value > maximum {
+		return 0, ErrInvalidInput
+	}
+	return value, nil
 }
 
 func (s *Service) scanProjectRows(ctx context.Context, table, projectID, columns string, limit int) (Result, error) {

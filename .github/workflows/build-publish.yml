@@ -95,7 +95,7 @@ jobs:
           - title: Worker
             image: luna-worker
             file: Dockerfile
-            target: runtime
+            target: runtime-worker
             build_args: TARGET=worker
           - title: Agent
             image: luna-agent

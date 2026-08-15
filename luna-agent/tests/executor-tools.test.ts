@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
 import { loadConfig } from "../src/config.js"
 import { RunExecutor } from "../src/executor.js"
-import { GraphVersionRegistry } from "../src/graph/registry.js"
+import { ModelRuntime } from "../src/model-runtime.js"
 import { MemoryRepository } from "../src/persistence/memory.js"
 import type { RunStateConflictError } from "../src/persistence/repository.js"
 import { DeterministicProvider } from "../src/provider/deterministic.js"
@@ -13,16 +13,6 @@ import { MemoryToolCallStore, ProjectingToolCallStore, ToolOrchestrator } from "
 import { createOptionsInput, createOptionsTool } from "../src/tools/ui-options.js"
 import { navigateToRouteTool } from "../src/tools/ui-route.js"
 import { searchToolsTool } from "../src/tools/tool-search.js"
-
-function preparedGenerationId(request: ModelRequest): string {
-  for (const message of request.messages.toReversed()) {
-    if (message.role !== "tool") continue
-    const payload = message.content.slice(message.content.indexOf("\n") + 1)
-    const result = JSON.parse(payload) as { status?: string, generationId?: string }
-    if (result.status === "accepted" && result.generationId) return result.generationId
-  }
-  throw new Error("accepted interaction-card generationId was not returned")
-}
 
 describe("provider to tool to subsequent model invocation", () => {
   it("reports the authoritative state when a run transition loses a race", async () => {
@@ -55,7 +45,7 @@ describe("provider to tool to subsequent model invocation", () => {
     const created = await repository.createTurn("usr_a", {
       conversationId: conversation.id, input: "hello", pageContext: {}, idempotencyKey: "completion-race",
     })
-    const executor = new RunExecutor(repository, new GraphVersionRegistry(new DeterministicProvider()), loadConfig({ NODE_ENV: "test", INSTANCE_ID: "completion-race-worker" }))
+    const executor = new RunExecutor(repository, new ModelRuntime(new DeterministicProvider()), loadConfig({ NODE_ENV: "test", INSTANCE_ID: "completion-race-worker" }))
 
     await expect(executor.runOnce()).resolves.toBe(true)
 
@@ -89,7 +79,7 @@ describe("provider to tool to subsequent model invocation", () => {
       capabilities: () => ({ streaming: true, toolCalling: false, structuredOutput: false }),
       health: async () => ({ ok: true }),
     }
-    const executor = new RunExecutor(repository, new GraphVersionRegistry(provider), loadConfig({ NODE_ENV: "test", INSTANCE_ID: "cancel-worker" }))
+    const executor = new RunExecutor(repository, new ModelRuntime(provider), loadConfig({ NODE_ENV: "test", INSTANCE_ID: "cancel-worker" }))
     const execution = executor.runOnce()
     await vi.waitFor(async () => {
       expect((await repository.getRun("usr_a", created.run.id))?.status).toBe("running")
@@ -107,7 +97,7 @@ describe("provider to tool to subsequent model invocation", () => {
     await repository.createTurn("usr_a", {
       conversationId: conversation.id, input: "检查今天失败的构建", pageContext: {}, idempotencyKey: "auto-title",
     })
-    const executor = new RunExecutor(repository, new GraphVersionRegistry(new DeterministicProvider()), loadConfig({ NODE_ENV: "test", INSTANCE_ID: "title-worker" }))
+    const executor = new RunExecutor(repository, new ModelRuntime(new DeterministicProvider()), loadConfig({ NODE_ENV: "test", INSTANCE_ID: "title-worker" }))
     await executor.runOnce()
     expect(await repository.getConversation("usr_a", conversation.id)).toMatchObject({
       titleSource: "assistant",
@@ -146,7 +136,7 @@ describe("provider to tool to subsequent model invocation", () => {
       capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
       health: async () => ({ ok: true }),
     }
-    const executor = new RunExecutor(repository, new GraphVersionRegistry(provider), loadConfig({ NODE_ENV: "test", INSTANCE_ID: "retitle-worker" }))
+    const executor = new RunExecutor(repository, new ModelRuntime(provider), loadConfig({ NODE_ENV: "test", INSTANCE_ID: "retitle-worker" }))
 
     await executor.runOnce()
 
@@ -182,7 +172,7 @@ describe("provider to tool to subsequent model invocation", () => {
       capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
       health: async () => ({ ok: true }),
     }
-    const executor = new RunExecutor(repository, new GraphVersionRegistry(provider), loadConfig({ NODE_ENV: "test", INSTANCE_ID: "locked-title-worker" }))
+    const executor = new RunExecutor(repository, new ModelRuntime(provider), loadConfig({ NODE_ENV: "test", INSTANCE_ID: "locked-title-worker" }))
 
     await executor.runOnce()
 
@@ -226,7 +216,7 @@ describe("provider to tool to subsequent model invocation", () => {
       capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
       health: async () => ({ ok: true }),
     }
-    const executor = new RunExecutor(repository, new GraphVersionRegistry(provider), loadConfig({ NODE_ENV: "test", INSTANCE_ID: "options-worker" }))
+    const executor = new RunExecutor(repository, new ModelRuntime(provider), loadConfig({ NODE_ENV: "test", INSTANCE_ID: "options-worker" }))
 
     await executor.runOnce()
 
@@ -262,54 +252,20 @@ describe("provider to tool to subsequent model invocation", () => {
             type: "completed",
             usage: { inputTokens: 10, outputTokens: 10 },
             toolCalls: [{
-              id: "prepare_card",
-              operationId: "prepare_interaction_cards",
-              arguments: {
-                schemaVersion: 1,
-                title: "正在组织 Redis 配置",
-                placement: "turn_end",
-              },
-            }],
-          }
-          return
-        }
-        if (modelStep === 2) {
-          const generationId = preparedGenerationId(request)
-          yield {
-            type: "completed",
-            usage: { inputTokens: 10, outputTokens: 10 },
-            toolCalls: [{
               id: "invalid_card",
               operationId: "create_interaction_cards",
               arguments: {
                 schemaVersion: 1,
-                generationId,
-                placement: "inline",
+                placement: "turn_end",
                 title: "Redis 配置",
                 mode: "interactive",
                 template: "form",
-                cards: [{
-                  id: "redis",
-                  presentation: { variant: "form", title: "Redis" },
-                  form: {
-                    sections: [{
-                      id: "basic",
-                      fields: [{ id: "name", type: "text", label: "实例名称", required: true }],
-                    }],
-                  },
-                  actions: [{
-                    id: "continue",
-                    type: "send_message",
-                    label: "继续",
-                    message: "继续配置 {{name}}",
-                  }],
-                }],
+                cards: [],
               },
             }],
           }
           return
         }
-        const generationId = preparedGenerationId(request)
         yield { type: "message_delta", delta: "请填写 Redis 配置。" }
         yield {
           type: "completed",
@@ -319,7 +275,6 @@ describe("provider to tool to subsequent model invocation", () => {
             operationId: "create_interaction_cards",
             arguments: {
               schemaVersion: 1,
-              generationId,
               placement: "turn_end",
               title: "Redis 配置",
               mode: "interactive",
@@ -352,18 +307,18 @@ describe("provider to tool to subsequent model invocation", () => {
     }
     const executor = new RunExecutor(
       repository,
-      new GraphVersionRegistry(provider),
+      new ModelRuntime(provider),
       loadConfig({ NODE_ENV: "test", INSTANCE_ID: "repair-card-worker" }),
     )
 
     await executor.runOnce()
 
     expect((await repository.getRun("usr_a", created.run.id))?.status).toBe("completed")
-    expect(requests).toHaveLength(3)
-    const retryMessage = requests[2]?.messages.find(message => message.role === "tool" && message.toolCallId === "invalid_card")
+    expect(requests).toHaveLength(2)
+    const retryMessage = requests[1]?.messages.find(message => message.role === "tool" && message.toolCallId === "invalid_card")
     expect(retryMessage).toMatchObject({ role: "tool", toolCallId: "invalid_card" })
     expect(retryMessage?.content).toContain("ai.interaction_card_schema_invalid")
-    expect(retryMessage?.content).toContain("placement_mismatch")
+    expect(retryMessage?.content).toContain('"path":"cards"')
     expect(retryMessage?.content).toContain('"attempt":1')
     expect(retryMessage?.content).toContain('"retryable":true')
     const timeline = await presentTimeline(repository, "usr_a", conversation.id)
@@ -393,27 +348,10 @@ describe("provider to tool to subsequent model invocation", () => {
             type: "completed",
             usage: { inputTokens: 10, outputTokens: 5 },
             toolCalls: [{
-              id: "prepare_summary",
-              operationId: "prepare_interaction_cards",
-              arguments: {
-                schemaVersion: 1,
-                title: "正在整理部署摘要",
-              },
-            }],
-          }
-          return
-        }
-        if (modelStep === 2) {
-          const generationId = preparedGenerationId(request)
-          yield {
-            type: "completed",
-            usage: { inputTokens: 10, outputTokens: 5 },
-            toolCalls: [{
               id: "create_summary",
               operationId: "create_interaction_cards",
               arguments: {
                 schemaVersion: 1,
-                generationId,
                 title: "部署摘要",
                 mode: "presentation",
                 template: "result",
@@ -437,15 +375,15 @@ describe("provider to tool to subsequent model invocation", () => {
     }
     const executor = new RunExecutor(
       repository,
-      new GraphVersionRegistry(provider),
+      new ModelRuntime(provider),
       loadConfig({ NODE_ENV: "test", INSTANCE_ID: "presentation-continuation-worker" }),
     )
 
     await executor.runOnce()
 
     expect((await repository.getRun("usr_a", created.run.id))?.status).toBe("completed")
-    expect(requests).toHaveLength(3)
-    const cardResult = requests[2]?.messages.find(message =>
+    expect(requests).toHaveLength(2)
+    const cardResult = requests[1]?.messages.find(message =>
       message.role === "tool" && message.toolCallId === "create_summary",
     )
     expect(cardResult?.content).toContain('"workflowState":"evidence_presented"')
@@ -464,33 +402,17 @@ describe("provider to tool to subsequent model invocation", () => {
     })
     let modelStep = 0
     const provider: ModelProvider = {
-      async *stream(request) {
-        if (modelStep++ === 0) {
-          yield {
-            type: "completed",
-            usage: { inputTokens: 10, outputTokens: 5 },
-            toolCalls: [{
-              id: "prepare_card",
-              operationId: "prepare_interaction_cards",
-              arguments: {
-                schemaVersion: 1,
-                title: "正在生成配置卡片",
-              },
-            }],
-          }
-          return
-        }
-        const generationId = preparedGenerationId(request)
+      async *stream() {
+        modelStep += 1
         yield {
           type: "completed",
           usage: { inputTokens: 10, outputTokens: 5 },
           toolCalls: [{
             id: `invalid_card_${modelStep}`,
-            operationId: "create_interaction_cards",
-            arguments: {
-              schemaVersion: 1,
-              generationId,
-              title: "无效卡片",
+              operationId: "create_interaction_cards",
+              arguments: {
+                schemaVersion: 1,
+                title: "无效卡片",
               mode: "interactive",
               template: "form",
               cards: [],
@@ -506,7 +428,7 @@ describe("provider to tool to subsequent model invocation", () => {
     }
     const executor = new RunExecutor(
       repository,
-      new GraphVersionRegistry(provider),
+      new ModelRuntime(provider),
       loadConfig({ NODE_ENV: "test", INSTANCE_ID: "failed-card-repair-worker" }),
     )
 
@@ -514,10 +436,10 @@ describe("provider to tool to subsequent model invocation", () => {
 
     expect((await repository.getRun("usr_a", created.run.id))?.status).toBe("failed")
     const timeline = await presentTimeline(repository, "usr_a", conversation.id)
-    const preparation = timeline?.turns[0]?.selectedRun?.items.find(item =>
-      "toolCall" in item && item.toolCall.operationId === "prepare_interaction_cards",
+    const generation = timeline?.turns[0]?.selectedRun?.items.find(item =>
+      "toolCall" in item && item.toolCall.operationId === "create_interaction_cards",
     )
-    expect(preparation && "toolCall" in preparation ? preparation.toolCall : undefined).toMatchObject({
+    expect(generation && "toolCall" in generation ? generation.toolCall : undefined).toMatchObject({
       status: "failed",
       errorCode: "ai.interaction_card_schema_invalid",
       result: {
@@ -527,7 +449,7 @@ describe("provider to tool to subsequent model invocation", () => {
         maxAttempts: 5,
       },
     })
-    expect(JSON.stringify(preparation)).toContain('"path":"cards"')
+    expect(JSON.stringify(generation)).toContain('"path":"cards"')
   })
 
   it("continues through multiple platform tool rounds before completing the run", async () => {
@@ -597,7 +519,7 @@ describe("provider to tool to subsequent model invocation", () => {
     )
     const executor = new RunExecutor(
       repository,
-      new GraphVersionRegistry(provider, catalog.modelTools()),
+      new ModelRuntime(provider, catalog.modelTools()),
       loadConfig({ NODE_ENV: "test", INSTANCE_ID: "multi-step-worker" }),
       tools,
     )
@@ -654,11 +576,11 @@ describe("provider to tool to subsequent model invocation", () => {
     }
     const client = new DeterministicLunaApiClient(() => ({ status: 200, body: { id: "gwr_test" } }))
     const tools = new ToolOrchestrator(catalog, client, new ProjectingToolCallStore(new MemoryToolCallStore(), repository), undefined, undefined, async () => "opaque-grant")
-    const registry = new GraphVersionRegistry(provider, {
+    const runtime = new ModelRuntime(provider, {
       resolve: (pageContext, input, loaded) => [...catalog.resolve(pageContext, input, loaded), searchToolsTool],
       search: (query, pageContext, limit) => catalog.search(query, pageContext, limit),
     })
-    const executor = new RunExecutor(repository, registry, loadConfig({ NODE_ENV: "test", INSTANCE_ID: "full-catalog-worker" }), tools)
+    const executor = new RunExecutor(repository, runtime, loadConfig({ NODE_ENV: "test", INSTANCE_ID: "full-catalog-worker" }), tools)
 
     await executor.runOnce()
 
@@ -708,7 +630,7 @@ describe("provider to tool to subsequent model invocation", () => {
     }
     const executor = new RunExecutor(
       repository,
-      new GraphVersionRegistry(provider, [createOptionsTool, navigateToRouteTool]),
+      new ModelRuntime(provider, [createOptionsTool, navigateToRouteTool]),
       loadConfig({ NODE_ENV: "test", INSTANCE_ID: "route-worker" }),
     )
 
@@ -773,7 +695,7 @@ describe("provider to tool to subsequent model invocation", () => {
       capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
       health: async () => ({ ok: true }),
     }
-    const executor = new RunExecutor(repository, new GraphVersionRegistry(provider), loadConfig({ NODE_ENV: "test", INSTANCE_ID: "required-options-worker" }))
+    const executor = new RunExecutor(repository, new ModelRuntime(provider), loadConfig({ NODE_ENV: "test", INSTANCE_ID: "required-options-worker" }))
 
     await executor.runOnce()
 
@@ -812,7 +734,7 @@ describe("provider to tool to subsequent model invocation", () => {
       capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
       health: async () => ({ ok: true }),
     }
-    const executor = new RunExecutor(repository, new GraphVersionRegistry(provider), loadConfig({ NODE_ENV: "test", INSTANCE_ID: "invalid-options-worker" }))
+    const executor = new RunExecutor(repository, new ModelRuntime(provider), loadConfig({ NODE_ENV: "test", INSTANCE_ID: "invalid-options-worker" }))
 
     await executor.runOnce()
 
@@ -836,7 +758,7 @@ describe("provider to tool to subsequent model invocation", () => {
     const client = new DeterministicLunaApiClient(() => ({ status: 200, body: { id: "build_a", status: "failed" } }))
     const tools = new ToolOrchestrator(catalog, client, new ProjectingToolCallStore(new MemoryToolCallStore(), repository), undefined, undefined, async () => "opaque-grant")
     const config = loadConfig({ NODE_ENV: "test", INSTANCE_ID: "test-worker" })
-    const executor = new RunExecutor(repository, new GraphVersionRegistry(new DeterministicProvider()), config, tools)
+    const executor = new RunExecutor(repository, new ModelRuntime(new DeterministicProvider()), config, tools)
     expect(await executor.runOnce()).toBe(true)
     expect((await repository.getRun("usr_a", created.run.id))?.status).toBe("completed")
     const timeline = await repository.getTimeline("usr_a", conversation.id)
@@ -862,7 +784,7 @@ describe("provider to tool to subsequent model invocation", () => {
     }])
     const store = new MemoryToolCallStore()
     const tools = new ToolOrchestrator(catalog, new DeterministicLunaApiClient(() => ({ status: 200, body: { restarted: true } })), new ProjectingToolCallStore(store, repository), undefined, undefined, async () => "grant")
-    const executor = new RunExecutor(repository, new GraphVersionRegistry(new DeterministicProvider()), loadConfig({ NODE_ENV: "test", INSTANCE_ID: "approval-worker" }), tools)
+    const executor = new RunExecutor(repository, new ModelRuntime(new DeterministicProvider()), loadConfig({ NODE_ENV: "test", INSTANCE_ID: "approval-worker" }), tools)
     await executor.runOnce()
     expect((await repository.getRun("usr_a", created.run.id))?.status).toBe("waiting_approval")
     const pending = [...store.records.values()][0]!
@@ -887,7 +809,7 @@ describe("provider to tool to subsequent model invocation", () => {
       inputSchema: { type: "object", properties: { buildId: { type: "string" } }, required: ["buildId"], additionalProperties: false },
     }])
     const tools = new ToolOrchestrator(catalog, new DeterministicLunaApiClient(() => ({ status: 200, body: { id: "build_a" } })), new ProjectingToolCallStore(new MemoryToolCallStore(), repository), undefined, undefined, async () => "grant")
-    const executor = new RunExecutor(repository, new GraphVersionRegistry(new DeterministicProvider()), loadConfig({ NODE_ENV: "test", INSTANCE_ID: "input-worker" }), tools)
+    const executor = new RunExecutor(repository, new ModelRuntime(new DeterministicProvider()), loadConfig({ NODE_ENV: "test", INSTANCE_ID: "input-worker" }), tools)
     await executor.runOnce()
     const waiting = await repository.getRun("usr_a", created.run.id)
     expect(waiting?.status).toBe("waiting_input")
@@ -935,11 +857,11 @@ describe("provider to tool to subsequent model invocation", () => {
       capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
       health: async () => ({ ok: true }),
     }
-    const registry = new GraphVersionRegistry(provider, {
+    const runtime = new ModelRuntime(provider, {
       resolve: (pageContext, input, loaded) => [...catalog.resolve(pageContext, input, loaded), searchToolsTool],
       search: (query, pageContext, limit) => catalog.search(query, pageContext, limit),
     })
-    const executor = new RunExecutor(repository, registry, loadConfig({ NODE_ENV: "test", INSTANCE_ID: "secret-worker" }), tools)
+    const executor = new RunExecutor(repository, runtime, loadConfig({ NODE_ENV: "test", INSTANCE_ID: "secret-worker" }), tools)
     await executor.runOnce()
 
     expect((await repository.getRun("usr_a", created.run.id))?.status).toBe("completed")

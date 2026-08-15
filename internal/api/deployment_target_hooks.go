@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"strings"
 
@@ -14,16 +13,17 @@ import (
 
 var errDeploymentStageExists = errors.New("deployment stage already exists")
 
-func (h *Handlers) createDeploymentTarget(target model.DeploymentTarget, hookInputs []deploymentTargetHookBindingInput, buildEnvironment *model.BuildEnvironmentConfig, ctx context.Context) error {
-	return h.persistDeploymentTarget(target, hookInputs, buildEnvironment, true, ctx)
+func (h *Handlers) createDeploymentTarget(target model.DeploymentTarget, dataVolumes []deploymentTargetDataVolumeInput, hookInputs []deploymentTargetHookBindingInput, buildEnvironment *model.BuildEnvironmentConfig, ctx context.Context) (deploymentVolumeMountChanges, error) {
+	return h.persistDeploymentTarget(target, dataVolumes, hookInputs, buildEnvironment, true, ctx)
 }
 
-func (h *Handlers) saveDeploymentTarget(target model.DeploymentTarget, hookInputs []deploymentTargetHookBindingInput, buildEnvironment *model.BuildEnvironmentConfig, ctx context.Context) error {
-	return h.persistDeploymentTarget(target, hookInputs, buildEnvironment, false, ctx)
+func (h *Handlers) saveDeploymentTarget(target model.DeploymentTarget, dataVolumes []deploymentTargetDataVolumeInput, hookInputs []deploymentTargetHookBindingInput, buildEnvironment *model.BuildEnvironmentConfig, ctx context.Context) (deploymentVolumeMountChanges, error) {
+	return h.persistDeploymentTarget(target, dataVolumes, hookInputs, buildEnvironment, false, ctx)
 }
 
-func (h *Handlers) persistDeploymentTarget(target model.DeploymentTarget, hookInputs []deploymentTargetHookBindingInput, buildEnvironment *model.BuildEnvironmentConfig, create bool, ctx context.Context) error {
-	return h.dbWithContext(ctx).Transaction(func(tx *gorm.DB) error {
+func (h *Handlers) persistDeploymentTarget(target model.DeploymentTarget, dataVolumes []deploymentTargetDataVolumeInput, hookInputs []deploymentTargetHookBindingInput, buildEnvironment *model.BuildEnvironmentConfig, create bool, ctx context.Context) (deploymentVolumeMountChanges, error) {
+	changes := deploymentVolumeMountChanges{}
+	err := h.dbWithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if create {
 			result := tx.Clauses(clause.OnConflict{
 				Columns:     []clause.Column{{Name: "application_id"}, {Name: "stage"}},
@@ -39,14 +39,10 @@ func (h *Handlers) persistDeploymentTarget(target model.DeploymentTarget, hookIn
 		} else if err := tx.Save(&target).Error; err != nil {
 			return err
 		}
-		var dataVolumes []deploymentTargetDataVolumeInput
-		if strings.TrimSpace(target.DataVolumes) != "" {
-			if err := json.Unmarshal([]byte(target.DataVolumes), &dataVolumes); err != nil {
-				return err
-			}
-		}
-		if err := reserveRetainedVolumes(tx, target.ProjectID, target.ApplicationID, target.ID, target.ClusterID, dataVolumes); err != nil {
-			return err
+		var syncErr error
+		changes, syncErr = syncDeploymentTargetVolumeMounts(ctx, tx, target, dataVolumes)
+		if syncErr != nil {
+			return syncErr
 		}
 		if err := h.replaceDeploymentTargetHookBindings(tx, target, hookInputs); err != nil {
 			return err
@@ -56,6 +52,10 @@ func (h *Handlers) persistDeploymentTarget(target model.DeploymentTarget, hookIn
 		}
 		return nil
 	})
+	if err != nil {
+		return changes, err
+	}
+	return changes, nil
 }
 
 func (h *Handlers) attachDeploymentTargetHookBindings(targets []model.DeploymentTarget, ctx context.Context) error {

@@ -2,17 +2,22 @@ package database
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/model"
 	sqlmigrations "github.com/LiteyukiStudio/devops/migrations"
+	"github.com/golang-migrate/migrate/v4"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/schema"
 )
 
 func TestMigrateBootstrapsFreshPostgresSchema(t *testing.T) {
@@ -91,7 +96,54 @@ func TestMigrateBootstrapsFreshPostgresSchema(t *testing.T) {
 	}
 
 	assertFreshMigrationState(t, testDB)
+	assertStableModelMigrationCoverage(t, testDB)
 	assertActiveDeploymentStageUniqueness(t, testDB)
+	assertDirtyMigrationFailsClosed(t, testDB)
+}
+
+func TestMigrateRejectsUnversionedNonEmptySchema(t *testing.T) {
+	databaseURL := os.Getenv("AUTH_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("AUTH_TEST_DATABASE_URL is not configured")
+	}
+
+	adminDB, err := gorm.Open(postgres.Open(databaseURL), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open integration database: %v", err)
+	}
+	schemaName := fmt.Sprintf("unversioned_schema_test_%d", time.Now().UnixNano())
+	if err := adminDB.Exec(`CREATE SCHEMA "` + schemaName + `"`).Error; err != nil {
+		t.Fatalf("create integration schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = adminDB.Exec(`DROP SCHEMA IF EXISTS "` + schemaName + `" CASCADE`).Error
+		if sqlDB, dbErr := adminDB.DB(); dbErr == nil {
+			_ = sqlDB.Close()
+		}
+	})
+
+	parsedURL, err := url.Parse(databaseURL)
+	if err != nil {
+		t.Fatalf("parse integration database URL: %v", err)
+	}
+	query := parsedURL.Query()
+	query.Set("search_path", schemaName)
+	parsedURL.RawQuery = query.Encode()
+	db, err := gorm.Open(postgres.Open(parsedURL.String()), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open unversioned integration schema: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE legacy_data (id text PRIMARY KEY)`).Error; err != nil {
+		t.Fatalf("create unversioned table: %v", err)
+	}
+
+	err = MigrateContext(context.Background(), db)
+	if !errors.Is(err, errUnversionedNonEmptySchema) {
+		t.Fatalf("unversioned non-empty schema error = %v, want %v", err, errUnversionedNonEmptySchema)
+	}
+	if db.Migrator().HasTable("schema_migrations") {
+		t.Fatal("failed preflight unexpectedly created schema_migrations")
+	}
 }
 
 func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
@@ -125,6 +177,8 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 		"oauth_refresh_tokens",
 		"auth_registration_settings",
 		"email_registration_challenges",
+		"project_volume_quota_usage",
+		"project_volume_quota_reservations",
 		"ai.ui_actions",
 		"ai.conversation_summaries",
 	} {
@@ -146,6 +200,15 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 		{table: "projects", column: "kubernetes_namespace"},
 		{table: "applications", column: "identifier"},
 		{table: "deployment_targets", column: "kubernetes_name"},
+		{table: "volume_transfers", column: "logical_bytes"},
+		{table: "volume_transfers", column: "data_sha256"},
+		{table: "volume_transfers", column: "completion_reported_at"},
+		{table: "volume_transfers", column: "job_succeeded_at"},
+		{table: "volume_transfers", column: "execution_cleanup_completed_at"},
+		{table: "volume_transfers", column: "execution_generation"},
+		{table: "volume_transfers", column: "creation_lease_owner"},
+		{table: "volume_transfers", column: "creation_lease_expires_at"},
+		{table: "volume_transfers", column: "job_created_at"},
 		{table: "ai.runs", column: "client_instance_id"},
 		{table: "ai.runs", column: "next_item_position"},
 		{table: "ai.runs", column: "next_event_sequence"},
@@ -154,6 +217,9 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 		if !db.Migrator().HasColumn(expected.table, expected.column) {
 			t.Fatalf("fresh database is missing %s.%s", expected.table, expected.column)
 		}
+	}
+	if db.Migrator().HasColumn("ai.runs", "graph_version") {
+		t.Fatal("fresh database contains obsolete ai.runs.graph_version")
 	}
 	for _, table := range []string{
 		"o_auth_applications",
@@ -222,7 +288,122 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 	if defaultRuleCount == 0 {
 		t.Fatal("fresh database did not seed default billing rules")
 	}
+	var transferRate struct {
+		Enabled        bool
+		CreditsPerUnit string
+	}
+	if err := db.Table("billing_rate_rules").Select("enabled, credits_per_unit::text AS credits_per_unit").Where("meter = ?", "storage.transfer_gib").Scan(&transferRate).Error; err != nil {
+		t.Fatalf("read default volume transfer billing rule: %v", err)
+	}
+	if transferRate.Enabled || transferRate.CreditsPerUnit != "0.00000000" {
+		t.Fatalf("default volume transfer billing rule = %#v", transferRate)
+	}
 
+}
+
+func assertStableModelMigrationCoverage(t *testing.T, db *gorm.DB) {
+	t.Helper()
+
+	models := []any{
+		&model.User{},
+		&model.UserSession{},
+		&model.UserMFAConfig{},
+		&model.MFARecoveryCode{},
+		&model.StepUpAssertion{},
+		&model.UserRememberToken{},
+		&model.OAuthApplication{},
+		&model.OAuthGrant{},
+		&model.OAuthAuthorizationCode{},
+		&model.OAuthRefreshToken{},
+		&model.OAuthDeviceAuthorization{},
+		&model.AuthProvider{},
+		&model.ExternalIdentity{},
+		&model.AuthAdmissionPolicy{},
+		&model.AuthRegistrationSettings{},
+		&model.EmailRegistrationChallenge{},
+		&model.Project{},
+		&model.ProjectMember{},
+		&model.ProjectPin{},
+		&model.ProjectVolumeQuotaUsage{},
+		&model.ProjectVolumeQuotaReservation{},
+		&model.UserWallet{},
+		&model.ProjectHookConfig{},
+		&model.HookRun{},
+		&model.HookRunLog{},
+		&model.AccessToken{},
+		&model.AuditLog{},
+		&model.WorkerTaskEvent{},
+		&model.SecretValue{},
+		&model.ScopedResourceProjectBinding{},
+		&model.Application{},
+		&model.RetainedVolume{},
+		&model.ServiceBinding{},
+		&model.ProjectTopologyEdge{},
+		&model.AppTemplateInstallation{},
+		&model.SystemComponentInstallation{},
+		&model.GitProvider{},
+		&model.GitAccount{},
+		&model.RepositoryBinding{},
+		&model.ArtifactRegistry{},
+		&model.RegistryCredential{},
+		&model.ContainerImage{},
+		&model.DeploymentTargetHookBinding{},
+		&model.BuildVariableSet{},
+		&model.BuildEnvironmentConfig{},
+		&model.BuildRun{},
+		&model.BuildJob{},
+		&model.BuildLog{},
+		&model.BillingRateRule{},
+		&model.BillingUsageRecord{},
+		&model.BillingLedgerEntry{},
+		&model.RuntimeCluster{},
+		&model.Environment{},
+		&model.Release{},
+		&model.ReleaseLog{},
+		&model.ProjectRuntimeConfigSet{},
+		&model.DeploymentTarget{},
+		&model.GatewayRoute{},
+		&model.NotificationChannel{},
+		&model.NotificationTemplate{},
+		&model.NotificationRule{},
+		&model.NotificationDelivery{},
+		&model.PlatformEvent{},
+		&model.InboxActionRequest{},
+		&model.InboxMessage{},
+		&model.AppConfig{},
+	}
+
+	for _, value := range models {
+		parsed, err := schema.Parse(value, &sync.Map{}, db.NamingStrategy)
+		if err != nil {
+			t.Fatalf("parse model schema %T: %v", value, err)
+		}
+		if !db.Migrator().HasTable(value) {
+			t.Errorf("versioned migrations are missing table %s for %T", parsed.Table, value)
+			continue
+		}
+		for _, field := range parsed.Fields {
+			if field.DBName == "" || field.IgnoreMigration {
+				continue
+			}
+			if !db.Migrator().HasColumn(value, field.DBName) {
+				t.Errorf("versioned migrations are missing column %s.%s for %T", parsed.Table, field.DBName, value)
+			}
+		}
+	}
+}
+
+func assertDirtyMigrationFailsClosed(t *testing.T, db *gorm.DB) {
+	t.Helper()
+
+	if err := db.Exec(`UPDATE schema_migrations SET dirty = true`).Error; err != nil {
+		t.Fatalf("mark migration state dirty: %v", err)
+	}
+	err := MigrateContext(context.Background(), db)
+	var dirtyErr migrate.ErrDirty
+	if !errors.As(err, &dirtyErr) {
+		t.Fatalf("migration with dirty state error = %v, want migrate.ErrDirty", err)
+	}
 }
 
 func latestEmbeddedMigrationVersion(t *testing.T) uint {

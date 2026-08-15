@@ -94,6 +94,14 @@ app.kubernetes.io/component: {{ .component }}
 {{- default .Chart.AppVersion .tag -}}
 {{- end -}}
 
+{{- define "luna-devops.volumeTransferJobImage" -}}
+{{- if .Values.volumeTransfer.jobImage -}}
+{{- .Values.volumeTransfer.jobImage -}}
+{{- else -}}
+{{- printf "%s:%s" .Values.worker.image.repository (include "luna-devops.imageTag" (dict "Chart" .Chart "tag" .Values.worker.image.tag)) -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "luna-devops.databaseUrlSecretName" -}}
 {{- if .Values.externalDatabase.existingSecret -}}
 {{- .Values.externalDatabase.existingSecret -}}
@@ -164,6 +172,18 @@ redis-url
       name: {{ .Values.observability.existingSecret }}
       key: {{ .Values.observability.headersKey }}
 {{- end }}
+{{- end }}
+{{- if .Values.volumeTransfer.enabled }}
+- name: VOLUME_TRANSFER_S3_ACCESS_KEY_ID
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.volumeTransfer.s3.existingSecret }}
+      key: {{ .Values.volumeTransfer.s3.accessKeyIdKey }}
+- name: VOLUME_TRANSFER_S3_SECRET_ACCESS_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.volumeTransfer.s3.existingSecret }}
+      key: {{ .Values.volumeTransfer.s3.secretAccessKeyKey }}
 {{- end }}
 {{- range $name, $value := .Values.app.extraEnv }}
 - name: {{ $name }}

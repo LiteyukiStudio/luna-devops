@@ -5,8 +5,9 @@ import type { ProjectBuildVariableSetsPageHandle } from '@/pages/projects/Projec
 import type { ProjectHooksPageHandle } from '@/pages/projects/ProjectHooksPage'
 import type { ProjectMembersPageHandle } from '@/pages/projects/ProjectMembersPage'
 import type { ProjectRuntimeConfigSetsPageHandle } from '@/pages/projects/ProjectRuntimeConfigSetsPage'
+import type { ProjectVolumesPageHandle } from '@/pages/projects/volumes/ProjectVolumesPage'
 import { useQuery } from '@tanstack/react-query'
-import { Activity, ArrowRight, FileCode2, Globe2, KeyRound, Package, Plus, Rocket, ScrollText, UserPlus } from 'lucide-react'
+import { Activity, ArrowRight, FileCode2, Globe2, KeyRound, Package, Plus, Rocket, ScrollText, Upload, UserPlus } from 'lucide-react'
 import { motion } from 'motion/react'
 import { lazy, Suspense, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -30,8 +31,10 @@ import { ProjectBuildVariableSetsPage } from '@/pages/projects/ProjectBuildVaria
 import { ProjectHooksPage } from '@/pages/projects/ProjectHooksPage'
 import { ProjectMembersPage } from '@/pages/projects/ProjectMembersPage'
 import { ProjectRuntimeConfigSetsPage } from '@/pages/projects/ProjectRuntimeConfigSetsPage'
+import { projectVolumeCapabilities } from '@/pages/projects/volumes/project-volume-capabilities'
 
 const ProjectTopologyPanel = lazy(() => import('@/pages/projects/project-topology-panel').then(module => ({ default: module.ProjectTopologyPanel })))
+const ProjectVolumesPage = lazy(() => import('@/pages/projects/volumes/ProjectVolumesPage'))
 
 export function ProjectWorkspacePage() {
   const { t } = useTranslation()
@@ -44,6 +47,7 @@ export function ProjectWorkspacePage() {
   const hooksPageRef = useRef<ProjectHooksPageHandle>(null)
   const membersPageRef = useRef<ProjectMembersPageHandle>(null)
   const runtimeConfigSetsPageRef = useRef<ProjectRuntimeConfigSetsPageHandle>(null)
+  const volumesPageRef = useRef<ProjectVolumesPageHandle>(null)
   const project = useQuery({ queryKey: ['project', projectId], queryFn: () => api.getProject(projectId), enabled: Boolean(projectId) })
   const applications = useQuery({ queryKey: ['applications', projectId], queryFn: () => api.listApplications(projectId), enabled: Boolean(projectId) })
   const variableSets = useQuery({ queryKey: ['build-variable-sets', projectId], queryFn: () => api.listBuildVariableSets(projectId), enabled: Boolean(projectId) })
@@ -62,8 +66,9 @@ export function ProjectWorkspacePage() {
     return <ErrorState title={t('projectSpaces.workspaceLoadFailedTitle')} description={t('projectSpaces.workspaceLoadFailedDescription')} />
 
   const currentProject = project.data
-  const currentMember = members.data?.find(member => member.userId === user?.id)
-  const canManageTopology = isPlatformAdmin(user?.role) || currentMember?.role === ProjectRole.Owner || currentMember?.role === ProjectRole.Admin
+  const currentProjectRole = currentProject?.currentUserRole
+  const canManageTopology = isPlatformAdmin(user?.role) || currentProjectRole === ProjectRole.Owner || currentProjectRole === ProjectRole.Admin
+  const volumeCapabilities = projectVolumeCapabilities(user?.role, currentProjectRole, user?.id)
   const activeContent = (() => {
     switch (activeTab) {
       case 'apps':
@@ -76,6 +81,12 @@ export function ProjectWorkspacePage() {
         return <ProjectHooksPage ref={hooksPageRef} projectId={projectId} />
       case 'members':
         return <ProjectMembersPage ref={membersPageRef} embedded projectId={projectId} />
+      case 'volumes':
+        return (
+          <Suspense fallback={<ToolViewportSkeleton />}>
+            <ProjectVolumesPage key={projectId} ref={volumesPageRef} capabilities={volumeCapabilities} projectId={projectId} />
+          </Suspense>
+        )
       case 'topology':
         return (
           <Suspense fallback={<ToolViewportSkeleton />}>
@@ -95,7 +106,7 @@ export function ProjectWorkspacePage() {
             events={recentEvents.data?.items ?? []}
             members={members.data ?? []}
             project={currentProject}
-            canTransferBillingOwnership={currentMember?.role === ProjectRole.Owner && currentProject?.billingOwnerUserId === user?.id}
+            canTransferBillingOwnership={currentProjectRole === ProjectRole.Owner && currentProject?.billingOwnerUserId === user?.id}
             releases={releases.data ?? []}
             routes={routes.data ?? []}
             runtimeConfigSetCount={runtimeConfigSets.data?.length ?? 0}
@@ -151,6 +162,27 @@ export function ProjectWorkspacePage() {
       )
     }
 
+    if (activeTab === 'volumes') {
+      if (!volumeCapabilities.canImport && !volumeCapabilities.canWrite)
+        return null
+      return (
+        <div className="flex items-center gap-2">
+          {volumeCapabilities.canImport && (
+            <Button type="button" variant="outline" onClick={() => volumesPageRef.current?.openImportDialog()}>
+              <Upload size={16} />
+              {t('projectVolumes.import')}
+            </Button>
+          )}
+          {volumeCapabilities.canWrite && (
+            <Button type="button" onClick={() => volumesPageRef.current?.openCreateDialog()}>
+              <Plus size={16} />
+              {t('projectVolumes.create')}
+            </Button>
+          )}
+        </div>
+      )
+    }
+
     return null
   })()
 
@@ -163,6 +195,7 @@ export function ProjectWorkspacePage() {
           { value: 'build-variables', label: t('buildsPage.variablesAndSecrets') },
           { value: 'runtime-configs', label: t('runtimeConfigSets.tab') },
           { value: 'hooks', label: t('projectHooks.tab') },
+          { value: 'volumes', label: t('projectVolumes.tab') },
           { value: 'members', label: t('projectSpaces.members') },
           { value: 'topology', label: t('projectTopology.tab') },
         ]}

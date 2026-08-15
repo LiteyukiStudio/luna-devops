@@ -1,6 +1,8 @@
 package billing
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -13,26 +15,6 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
-
-func TestDeploymentTargetStorageGiBSumsDataVolumes(t *testing.T) {
-	target := model.DeploymentTarget{
-		DataRetentionEnabled: true,
-		DataCapacity:         "1Gi",
-		DataVolumes:          `[{"name":"app1","mountPath":"/data/app1","capacity":"20Gi"},{"name":"app2","mountPath":"/data/app2","capacity":"40Gi"}]`,
-	}
-	got := deploymentTargetStorageGiB(target)
-	if !got.Equal(decimalFromInt(60)) {
-		t.Fatalf("storage GiB = %s", got)
-	}
-}
-
-func TestDeploymentTargetStorageGiBFallsBackToPrimaryCapacity(t *testing.T) {
-	target := model.DeploymentTarget{DataRetentionEnabled: true, DataCapacity: "5Gi"}
-	got := deploymentTargetStorageGiB(target)
-	if !got.Equal(decimalFromInt(5)) {
-		t.Fatalf("storage GiB = %s", got)
-	}
-}
 
 func TestDefaultRateRulesPreferGatewayTrafficOverRequestBilling(t *testing.T) {
 	rules := defaultRateRuleByMeter()
@@ -140,8 +122,96 @@ func TestGatewayTrafficUsageResourceIDUsesMinuteWindow(t *testing.T) {
 	}
 }
 
-func decimalFromInt(value int64) decimal.Decimal {
-	return decimal.NewFromInt(value)
+func TestProjectVolumeStorageUsageResourceIDUsesVolumeAndHour(t *testing.T) {
+	periodStart := time.Date(2026, 8, 15, 18, 42, 0, 0, time.FixedZone("CST", 8*3600))
+	if got := projectVolumeStorageUsageResourceID("pvol_demo", periodStart); got != "pvol_demo:2026081510" {
+		t.Fatalf("resource id = %q", got)
+	}
+}
+
+func TestReferencedProjectVolumeIsNotBilledAsManagedStorage(t *testing.T) {
+	service := Service{}
+	err := service.SettleProjectVolumeStorageWindow(context.Background(), ProjectVolumeStorageUsageInput{
+		Volume: model.ProjectVolume{
+			ID: "pvol_ref", ProjectID: "prj_demo", OwnershipMode: model.ProjectVolumeOwnershipReferenced,
+		},
+		ObservedCapacityBytes: 10 * 1024 * 1024 * 1024,
+		PeriodStart:           time.Now().Add(-time.Hour),
+		PeriodEnd:             time.Now(),
+	})
+	if err != nil {
+		t.Fatalf("referenced volume settlement error = %v", err)
+	}
+}
+
+func TestManagedProjectVolumeStorageUsesObservedCapacityAsTheOnlyAuthority(t *testing.T) {
+	db := openBillingTestDB(t)
+	if err := db.AutoMigrate(
+		&model.User{}, &model.Project{}, &model.UserWallet{}, &model.BillingRateRule{},
+		&model.BillingUsageRecord{}, &model.BillingLedgerEntry{},
+	); err != nil {
+		t.Fatalf("migrate authoritative storage billing tables: %v", err)
+	}
+	user := model.User{ID: "usr_storage_owner", Email: "storage-owner@example.invalid", Name: "Storage Owner", Role: "user"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create storage billing owner: %v", err)
+	}
+	project := model.Project{ID: "prj_storage", Identifier: "storage", Name: "Storage", BillingOwnerUserID: user.ID}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatalf("create storage billing project: %v", err)
+	}
+	service := Service{DB: db}
+	if err := service.EnsureDefaultRateRules(); err != nil {
+		t.Fatalf("seed storage billing rate: %v", err)
+	}
+	periodStart := time.Date(2026, 8, 15, 8, 0, 0, 0, time.UTC)
+	err := service.SettleProjectVolumeStorageWindow(context.Background(), ProjectVolumeStorageUsageInput{
+		Volume: model.ProjectVolume{
+			ID: "pvol_authoritative", ProjectID: project.ID, OwnershipMode: model.ProjectVolumeOwnershipManaged,
+		},
+		ObservedCapacityBytes: 12 * 1024 * 1024 * 1024,
+		PeriodStart:           periodStart,
+		PeriodEnd:             periodStart.Add(time.Hour),
+		ActorID:               "system",
+	})
+	if err != nil {
+		t.Fatalf("settle authoritative project volume storage: %v", err)
+	}
+	var usage model.BillingUsageRecord
+	if err := db.First(&usage, "meter = ?", "storage.gib_day").Error; err != nil {
+		t.Fatalf("load authoritative storage usage: %v", err)
+	}
+	if usage.ResourceType != ResourceTypeStorage || usage.ResourceID != projectVolumeStorageUsageResourceID("pvol_authoritative", periodStart) || usage.ApplicationID != "" {
+		t.Fatalf("storage usage authority = %#v", usage)
+	}
+	var metadata map[string]string
+	if err := json.Unmarshal([]byte(usage.Metadata), &metadata); err != nil {
+		t.Fatalf("decode storage usage metadata: %v", err)
+	}
+	if metadata["projectVolumeId"] != "pvol_authoritative" || metadata["capacityGiB"] != "12" || metadata["deploymentTargetId"] != "" {
+		t.Fatalf("storage usage metadata = %#v", metadata)
+	}
+}
+
+func TestProjectVolumeStorageSettlementPropagatesCancellationToRateLookup(t *testing.T) {
+	db := openBillingTestDB(t)
+	if err := db.AutoMigrate(&model.BillingRateRule{}); err != nil {
+		t.Fatalf("migrate storage rate table: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	periodStart := time.Now().UTC().Add(-time.Hour)
+	err := (Service{DB: db}).SettleProjectVolumeStorageWindow(ctx, ProjectVolumeStorageUsageInput{
+		Volume: model.ProjectVolume{
+			ID: "pvol_cancelled", ProjectID: "prj_cancelled", OwnershipMode: model.ProjectVolumeOwnershipManaged,
+		},
+		ObservedCapacityBytes: 1024 * 1024 * 1024,
+		PeriodStart:           periodStart,
+		PeriodEnd:             periodStart.Add(time.Hour),
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled storage settlement error = %v, want context cancellation", err)
+	}
 }
 
 func openBillingTestDB(t *testing.T) *gorm.DB {

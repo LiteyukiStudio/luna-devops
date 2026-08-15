@@ -37,7 +37,6 @@ create table if not exists ai.runs (
   run_index integer not null,
   status text not null,
   row_version integer not null default 1,
-  graph_version text not null,
   prompt_version text not null,
   tool_catalog_digest text not null,
   page_context jsonb not null default '{}',

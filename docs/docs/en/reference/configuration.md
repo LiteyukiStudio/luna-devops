@@ -32,6 +32,14 @@ See [Connect an Observability Backend](./observability.md) for monitoring setup 
 
 OIDC identity provider Redirect URI is generated from `PUBLIC_BASE_URL`, and the admin identity provider form shows a copyable value. Admission policy requires OIDC to return a non-empty email and `email_verified=true` by default. For trusted internal identity providers that cannot return the standard `email_verified` claim, disable “Require verified OIDC email” in the admission policy; the platform still requires a non-empty email.
 
+## Console global settings
+
+Administrators change the following setting in the console; it is not an environment variable:
+
+| Key | Default | Purpose |
+| --- | --- | --- |
+| `storage.projectManagedCapacityLimitGiB` | `0` | Managed-volume capacity limit in GiB for each project space. `0` means unlimited. Lowering it never truncates an existing volume, but blocks new creation and expansion until usage is below the limit. |
+
 
 ## Frontend Build Settings
 
@@ -66,6 +74,8 @@ OIDC identity provider Redirect URI is generated from `PUBLIC_BASE_URL`, and the
 | Advanced | `BUILD_BLOCKED_EGRESS_CIDRS` | Empty | Extra blocked CIDRs in `restricted` mode. |
 
 Worker metrics are exported through OTLP; see [Connect an Observability Backend](./observability.md).
+
+For S3-compatible storage, callback URL, job image, and size limits used by volume import/export, see [Volume Transfer Configuration](./volume-transfer.md). These variables can remain unset when transfers are not used; volume creation, mounting, and deletion remain available.
 
 ## Agent Settings
 

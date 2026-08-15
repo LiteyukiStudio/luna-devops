@@ -31,6 +31,7 @@ import projectHooks from './en-US/projectHooks'
 import projectMembers from './en-US/projectMembers'
 import projectSpaces from './en-US/projectSpaces'
 import projectTopology from './en-US/projectTopology'
+import projectVolumes from './en-US/projectVolumes'
 import registriesPage from './en-US/registriesPage'
 import repositories from './en-US/repositories'
 import root from './en-US/root'
@@ -73,6 +74,7 @@ const enUS = {
   projectMembers,
   projectSpaces,
   projectTopology,
+  projectVolumes,
   dashboardPage,
   auth,
   nav,

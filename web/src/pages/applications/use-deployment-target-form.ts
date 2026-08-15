@@ -80,10 +80,7 @@ export function deploymentTargetFormValues({
     runtimeConfigSetIds: runtimeConfigLiveSetIds(runtimeConfigRefs),
     secretRefs: '',
     secretFiles: '',
-    dataRetentionEnabled: target?.dataRetentionEnabled ?? false,
-    dataCapacity: target?.dataCapacity || '1Gi',
-    dataMountPath: target?.dataMountPath || '/data',
-    dataVolumes: target?.dataVolumes || serializeRuntimeDataVolumes(parseRuntimeDataVolumes('', target?.dataMountPath || '/data', target?.dataCapacity || '1Gi')),
+    dataVolumes: target?.dataVolumes ?? [],
     webConsoleEnabled: normalizeWebConsoleOverride(target?.webConsoleEnabled),
     enabled: target?.enabled ?? true,
   }
@@ -210,10 +207,7 @@ export function useDeploymentTargetForm({
     form.setValue('buildHookBindings', normalizeDeploymentHookBindings(bindings), { shouldDirty: true, shouldValidate: true })
   }, [form])
 
-  const dataVolumes = useMemo(
-    () => parseRuntimeDataVolumes(values.dataVolumes, values.dataMountPath || '/data', values.dataCapacity || '1Gi'),
-    [values.dataCapacity, values.dataMountPath, values.dataVolumes],
-  )
+  const dataVolumes = useMemo(() => parseRuntimeDataVolumes(values.dataVolumes), [values.dataVolumes])
 
   const updateDataVolumes = useCallback((rows: typeof dataVolumes) => {
     form.setValue('dataVolumes', serializeRuntimeDataVolumes(rows), { shouldDirty: true, shouldValidate: true })
@@ -248,7 +242,7 @@ export function useDeploymentTargetForm({
     changeRuntimeConfigRefMode,
     closeDialog,
     configFilesValid,
-    dataRetentionEnabled: normalizeBoolean(values.dataRetentionEnabled, false),
+    hasDataVolumes: dataVolumes.length > 0,
     dataVolumes,
     dialogOpen,
     editingTarget,

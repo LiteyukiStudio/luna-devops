@@ -69,13 +69,7 @@ type ApplicationResourcesSpec struct {
 	SecretData                   map[string]string
 	ConfigFiles                  []ApplicationConfigFile
 	SecretFiles                  []ApplicationConfigFile
-	DataRetentionEnabled         bool
-	DataCapacity                 string
-	DataMountPath                string
 	DataVolumes                  []ApplicationDataVolume
-	DataStorageClassName         string
-	DataAccessMode               string
-	DataVolumeMode               string
 	ForceImagePull               bool
 }
 
@@ -94,10 +88,11 @@ type ApplicationConfigFile struct {
 type ApplicationDataVolume struct {
 	Name              string
 	MountPath         string
-	Capacity          string
+	DevicePath        string
 	SourceType        string
-	ExistingClaimName string
-	RetainedVolumeID  string
+	ProjectVolumeID   string
+	ReadOnly          bool
+	ClaimName         string
 	EmptyDirMedium    string
 	EmptyDirSizeLimit string
 }
@@ -140,19 +135,6 @@ const (
 	hookJobFailureTTLSeconds int32 = 86400
 )
 
-type DataExportSpec struct {
-	Name      string
-	Namespace string
-	PVCName   string
-	MountPath string
-	Volumes   []DataExportVolume
-}
-
-type DataExportVolume struct {
-	Name    string
-	PVCName string
-}
-
 func (c *Client) ApplyApplicationResources(ctx context.Context, spec ApplicationResourcesSpec) error {
 	if err := c.PreflightApplicationResources(ctx, spec); err != nil {
 		return err
@@ -162,17 +144,9 @@ func (c *Client) ApplyApplicationResources(ctx context.Context, spec Application
 	if err := c.applyApplicationRuntimeConfig(ctx, spec, objectLabels); err != nil {
 		return err
 	}
-	if spec.DataRetentionEnabled {
-		for _, volume := range persistentDataVolumes(spec) {
-			if err := validateApplicationDataVolume(volume); err != nil {
-				return err
-			}
-			if !dataVolumeNeedsPVC(volume) {
-				continue
-			}
-			if err := c.applyPersistentDataVolume(ctx, spec, volume, objectLabels); err != nil {
-				return err
-			}
+	for _, volume := range spec.DataVolumes {
+		if err := validateApplicationDataVolume(volume); err != nil {
+			return err
 		}
 	}
 	effectiveSelectorLabels, err := c.applyApplicationWorkload(ctx, spec, objectLabels, selectorLabels)
@@ -277,14 +251,9 @@ func validateApplicationResourcesSpec(spec ApplicationResourcesSpec) error {
 	if _, err := applicationAutoScalingBehavior(spec); err != nil {
 		return err
 	}
-	if spec.DataRetentionEnabled {
-		for _, volume := range persistentDataVolumes(spec) {
-			if !dataVolumeNeedsPVC(volume) || dataVolumeSourceType(volume) == "retainedClaim" {
-				continue
-			}
-			if _, err := persistentDataCapacity(volume); err != nil {
-				return err
-			}
+	for _, volume := range spec.DataVolumes {
+		if err := validateApplicationDataVolume(volume); err != nil {
+			return err
 		}
 	}
 	return nil

@@ -24,11 +24,19 @@
 ## 配置与数据
 
 - 运行变量按项目配置集、部署级覆盖和 Secret 引用分层；明确跟随引用或快照语义。
-- 持久化数据区分平台托管 PVC、平台保留卷、用户已有 PVC 和 `emptyDir`。PVC
-  storageClass/accessMode 通常只能首次创建，扩容不等于迁移。平台保留卷必须通过
-  `retainedClaim` 和可信 `retainedVolumeId` 重新认领；普通 `existingClaim` 不表示平台接管其生命周期。
-- 数据导出前确认数据卷类型、用户角色和 Step-up MFA；一次性票据已签发不等于导出
-  已完成，应确认下载流成功结束。
+- 持久化数据统一使用项目空间数据卷中心。部署配置只引用可信工具结果中的
+  `projectVolumeId`；临时目录使用 `emptyDir`。不要让用户在部署表单中直接填写 PVC 名，已有
+  PVC 必须先在数据卷中心选择“引用”或“纳管”。
+- 创建或选择数据卷前确认目标集群、StorageClass、访问模式和卷模式。Filesystem 卷使用
+  `mountPath`；Block 卷使用 `devicePath`。扩容只能增加容量，变更 StorageClass、访问模式或
+  卷模式需要创建新卷并迁移数据。
+- 数据卷删除必须先调用 `previewProjectVolumeDeletion`。托管卷使用 `dataAction=delete`，引用卷
+  使用 `dataAction=detach`；存在挂载或运行中 Transfer 时不得绕过阻断。
+- 导出前确认数据卷状态、一致性模式、用户角色和 Step-up MFA。任务进入 `queued/running`
+  不代表完成，必须用 `getVolumeTransfer` 回读到 `succeeded`。下载票据、Range 会话和本地文件
+  传输由 Web/CLI 处理，Agent 不调用上传/下载协议端点。
+- 导入本地 `tar.gz` 或 `raw.zst` 时，引导用户通过 Web 或 Luna CLI 选择文件；不要读取本地
+  文件、把文件内容编码到工具参数，或声称仅创建 Import 记录就已导入成功。
 - Web Console 和命令执行必须遵守项目开关、角色、MFA 与审计，不把终端当普通读工具。
 - 只有连续诊断确实需要保留工作目录或环境变量时，才按 `application-diagnostics.md` 的流程创建、复用
   并显式关闭运行命令会话；单条独立检查仍使用一次性命令。会话创建成功不代表后续命令已获授权。

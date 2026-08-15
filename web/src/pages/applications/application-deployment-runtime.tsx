@@ -1,6 +1,6 @@
 import type { DeploymentRuntimeStatus, InternalServiceEndpointValue } from './application-deployment-runtime-utils'
 import { useTranslation } from 'react-i18next'
-import { StatusValueBadge } from '@/components/common/status-badge'
+import { DeploymentReplicaBadge } from '@/components/common/deployment-replica-badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 export function InternalServiceEndpoint({ endpoint, onCopy }: { endpoint?: InternalServiceEndpointValue, onCopy: (value?: string) => void }) {
@@ -24,14 +24,14 @@ export function InternalServiceEndpoint({ endpoint, onCopy }: { endpoint?: Inter
   )
 }
 
-export function DeploymentRuntimeStatusBadge({ status }: { status: DeploymentRuntimeStatus }) {
+export function DeploymentRuntimeStatusBadge({ deployed, desiredReplicas, readyReplicas, status }: { deployed: boolean, desiredReplicas: number, readyReplicas: number, status: DeploymentRuntimeStatus }) {
   const { t } = useTranslation()
   const detail = status.summary.trim() || t(`deploymentsPage.runtimeStatusDetails.${status.value}`, { defaultValue: '' })
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <span className="inline-flex">
-          <StatusValueBadge labelKeyPrefix="deploymentsPage.runtimeStatuses" value={status.value} />
+          <DeploymentReplicaBadge deployed={deployed} desiredReplicas={desiredReplicas} readyReplicas={readyReplicas} status={status.value} />
         </span>
       </TooltipTrigger>
       <TooltipContent className="grid max-w-96 gap-1 leading-5" side="top">

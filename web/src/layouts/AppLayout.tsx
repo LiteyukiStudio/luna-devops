@@ -5,7 +5,7 @@ import { lazy, useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, Navigate, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { toast } from 'sonner'
-import { api, isUsableAICapabilities } from '@/api'
+import { api } from '@/api'
 import { useDocumentTitle } from '@/app/document-title'
 import { usePublicConfig } from '@/app/public-config-context'
 import { useSession } from '@/app/session-context'
@@ -152,16 +152,17 @@ export function AppLayout() {
   const [hasTopbarTabs, registerTopbarTabs] = useChromeSlotPresence()
   const [hasTopbarTools, registerTopbarTools] = useChromeSlotPresence()
   const projects = useQuery({ queryKey: ['projects'], queryFn: api.listProjects, enabled: Boolean(user) })
-  // 与 AI 助手共享同一 capabilities 查询（TanStack 缓存复用，assistant 已在轮询同 key），
-  // 用于在 AI 不可用时不显示侧边栏入口，与悬浮球行为保持一致。
+  // 布局层是 AI 访问状态的唯一查询者。Agent 短暂不可达时仍保留入口和已打开窗口，
+  // 只有平台关闭助手或当前用户不在允许范围时才不挂载。
   const aiCapabilities = useQuery({
     queryKey: ['ai', 'capabilities'],
     queryFn: api.getAICapabilities,
-    retry: false,
+    retry: 2,
     staleTime: 30_000,
+    refetchInterval: 30_000,
     enabled: Boolean(user),
   })
-  const aiAssistantAvailable = isUsableAICapabilities(aiCapabilities.data)
+  const enabledAICapabilities = aiCapabilities.data?.enabled ? aiCapabilities.data : undefined
   useEffect(() => {
     const mountAssistant = () => setAssistantMounted(true)
     window.addEventListener(AI_ASSISTANT_OPEN_EVENT, mountAssistant)
@@ -263,7 +264,7 @@ export function AppLayout() {
         </SidebarHeader>
         <SidebarContent>
           {navSections.map((section, index) => {
-            const items = section.items.filter(item => (!item.permission || user.permissions.includes(item.permission)) && (item.action !== 'ai-assistant' || aiAssistantAvailable))
+            const items = section.items.filter(item => (!item.permission || user.permissions.includes(item.permission)) && (item.action !== 'ai-assistant' || enabledAICapabilities))
             if (items.length === 0)
               return null
 
@@ -386,7 +387,7 @@ export function AppLayout() {
         </div>
       </div>
       <DebugFloatingPanel />
-      {aiAssistantAvailable && !assistantMounted && (
+      {enabledAICapabilities && !assistantMounted && (
         <DeferredAIAssistantLauncher
           label={t('aiAssistant.open')}
           position={deferredAssistantPosition}
@@ -394,9 +395,9 @@ export function AppLayout() {
           onPositionChange={setDeferredAssistantPosition}
         />
       )}
-      {aiAssistantAvailable && assistantMounted && (
+      {enabledAICapabilities && assistantMounted && (
         <LazyLoadBoundary fallback={null} resetKey="ai-assistant">
-          <AiAssistant initiallyOpen />
+          <AiAssistant capabilities={enabledAICapabilities} initiallyOpen />
         </LazyLoadBoundary>
       )}
     </div>

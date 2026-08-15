@@ -20,6 +20,8 @@ An application is an independently deployable service. One repository may contai
 
 The application topology shows current workloads and dependencies. Projects can also record relationships between applications. A service reference may change the source service's configuration on its next release. Remove references before deleting an application that other services use.
 
+The project application list shows ready replicas versus desired replicas. Applications without a runtime workload are marked as not deployed. This status is observed from the runtime cluster; an unreachable upstream is shown as unavailable instead of reusing stale state.
+
 ## 3. Deployment targets
 
 A deployment target defines where an application comes from, how it runs, and which cluster receives it. For the first target, confirm:
@@ -37,15 +39,17 @@ Consider validating runtime and routing with an existing image before adding a G
 
 A build creates an image from source. A release deploys a selected image to the runtime cluster. After a release, check its status, workloads, logs, and health instead of treating task submission as completion.
 
+Runtime and release status on the deployment page use `n/m` for ready and desired replicas. For example, `2/3` means that two of three desired replicas are ready.
+
 Configuration or image changes require a new release. Reusing an image tag makes version verification and rollback harder; use traceable, unique tags in production.
 
 ## Advanced runtime settings
 
 Most services can use the defaults. Configure health probes, startup commands, StatefulSets, autoscaling, scheduling, security contexts, sidecars, and advanced storage only when the application requires them.
 
-PVC storage properties are generally chosen at creation time; do not assume automatic migration. `emptyDir` data disappears with its Pod and is not included in data exports. Confirm backup and recovery before changing or retaining storage.
+Create or reference persistent data in the project [volume center](./project-volumes.md), then select its stable project volume from a deployment target. PVC storage properties are generally chosen at creation time; `emptyDir` data disappears with its Pod and is not included in exports.
 
-Deleting an application retains its managed PVCs by default and registers them as data volumes that can be reclaimed. To restore the data, select the retained volume in a new deployment target on the same runtime cluster. The platform deletes a PVC only after you explicitly choose permanent deletion and confirm the operation; export a backup first when the data may still be needed.
+Deleting an application or deployment target only unbinds its project volumes. It does not change project ownership or automatically delete a PVC. A managed PVC is deleted only from the volume details after impact review, explicit permanent deletion, and step-up verification; [export an archive](./volume-transfer.md) first when the data may still be needed.
 
 Shared configuration can follow the latest value or use a snapshot. Deployment hooks suit one-time tasks such as database migrations. A failed hook can stop a release, so scripts should be repeatable and have a rollback plan.
 
@@ -53,7 +57,7 @@ Shared configuration can follow the latest value or use a snapshot. Deployment h
 
 Web Console access depends on project settings, account permission, and MFA policy. Terminal use is audited; avoid printing or pasting unnecessary secrets.
 
-Data export requires project Owner or Admin permission and any required step-up verification. The browser completes verification on the current page and starts the download only after authorization, without opening a download page in advance. It includes managed or attached PVCs, not `emptyDir`. Before export or cleanup, consider file size, sensitive content, and destination storage.
+A data export is an asynchronous transfer created from the volume details. It requires project Owner or Admin permission and any required step-up verification. The browser exchanges authorization for a short-lived download session and supports resuming. `emptyDir` is not included, and the transfer must reach Succeeded before the backup is complete. See [Import and Export Volumes](./volume-transfer.md).
 
 ## Routes
 

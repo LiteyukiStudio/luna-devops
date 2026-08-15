@@ -88,13 +88,7 @@ export const deploymentTargetDefaults: DeploymentTargetPayload = {
   secretRefs: '',
   configFiles: '',
   secretFiles: '',
-  dataRetentionEnabled: false,
-  dataCapacity: '1Gi',
-  dataMountPath: '/data',
-  dataVolumes: JSON.stringify([{ name: 'data', mountPath: '/data', capacity: '1Gi' }]),
-  dataStorageClassName: '',
-  dataAccessMode: '',
-  dataVolumeMode: '',
+  dataVolumes: [],
   requireApproval: false,
   webConsoleEnabled: null,
   enabled: true,
@@ -218,13 +212,7 @@ export function deploymentTargetRuntimeChanged(current: DeploymentTarget, next: 
     'envVars',
     'configRefs',
     'configFiles',
-    'dataRetentionEnabled',
-    'dataCapacity',
-    'dataMountPath',
     'dataVolumes',
-    'dataStorageClassName',
-    'dataAccessMode',
-    'dataVolumeMode',
   ]
   if (nextPayload.sourceType === 'image')
     fields.push('imageRef')
@@ -242,12 +230,8 @@ export function normalizeDeploymentTargetPayload(values: DeploymentTargetPayload
   const autoDeploy = normalizeBoolean(values.autoDeploy, true)
   const requireApproval = normalizeBoolean(values.requireApproval, false)
   const buildHooksEnabled = normalizeBoolean(values.buildHooksEnabled, true)
-  const dataRetentionEnabled = normalizeBoolean(values.dataRetentionEnabled, false)
   const readOnlyRootFilesystem = normalizeBoolean(values.readOnlyRootFilesystem, false)
-  const dataVolumes = dataRetentionEnabled
-    ? parseRuntimeDataVolumes(values.dataVolumes, values.dataMountPath || '/data', values.dataCapacity || '1Gi')
-    : []
-  const primaryDataVolume = dataVolumes[0]
+  const dataVolumes = parseRuntimeDataVolumes(values.dataVolumes)
   const sourceType = values.sourceType === 'image' ? 'image' : 'repository'
   const buildDefinitionMode = values.buildDefinitionMode === 'template' ? 'template' : 'repository_dockerfile'
   const servicePorts = normalizeDeploymentServicePorts(values.servicePorts, values.servicePort)
@@ -303,13 +287,7 @@ export function normalizeDeploymentTargetPayload(values: DeploymentTargetPayload
     requireApproval,
     webConsoleEnabled: normalizeWebConsoleOverride(values.webConsoleEnabled),
     buildHooksEnabled,
-    dataRetentionEnabled,
-    dataCapacity: dataRetentionEnabled ? (primaryDataVolume?.capacity?.trim() || '1Gi') : '',
-    dataMountPath: dataRetentionEnabled ? (primaryDataVolume?.mountPath?.trim() || '/data') : '',
-    dataVolumes: dataRetentionEnabled ? serializeRuntimeDataVolumes(dataVolumes) : '',
-    dataStorageClassName: dataRetentionEnabled ? (values.dataStorageClassName?.trim() ?? '') : '',
-    dataAccessMode: dataRetentionEnabled ? normalizeChoice(values.dataAccessMode, ['ReadWriteOnce', 'ReadWriteMany', 'ReadOnlyMany']) : '',
-    dataVolumeMode: dataRetentionEnabled ? normalizeChoice(values.dataVolumeMode, ['Filesystem', 'Block']) : '',
+    dataVolumes: serializeRuntimeDataVolumes(dataVolumes),
     repositoryBindingId: sourceType === 'repository' ? values.repositoryBindingId : '',
     buildDefinitionMode,
     buildTemplateId: sourceType === 'repository' && buildDefinitionMode === 'template' ? values.buildTemplateId?.trim() : '',

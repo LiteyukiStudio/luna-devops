@@ -22,16 +22,6 @@ func (c *Client) ApplyApplicationRuntimeConfig(ctx context.Context, spec Applica
 	if err := c.applyApplicationRuntimeConfig(ctx, spec, objectLabels); err != nil {
 		return err
 	}
-	if spec.DataRetentionEnabled {
-		for _, volume := range persistentDataVolumes(spec) {
-			if !dataVolumeNeedsPVC(volume) {
-				continue
-			}
-			if err := c.applyPersistentDataVolume(ctx, spec, volume, objectLabels); err != nil {
-				return err
-			}
-		}
-	}
 	return nil
 }
 

@@ -181,6 +181,16 @@ func TestStepUpPurposeAndBearerTokenValidation(t *testing.T) {
 	if got := normalizeStepUpPurpose(stepUpPurposeDataRetentionCleanup); got != stepUpPurposeDataRetentionCleanup {
 		t.Fatalf("data retention purpose = %q", got)
 	}
+	for _, purpose := range []string{
+		stepUpPurposeVolumeImport,
+		stepUpPurposeVolumeExport,
+		stepUpPurposeVolumeAdopt,
+		stepUpPurposeVolumeDelete,
+	} {
+		if got := normalizeStepUpPurpose(purpose); got != purpose {
+			t.Fatalf("volume purpose %q normalized to %q", purpose, got)
+		}
+	}
 	if got := normalizeStepUpPurpose("arbitrary_admin_action"); got != "" {
 		t.Fatalf("unknown purpose should be rejected, got %q", got)
 	}

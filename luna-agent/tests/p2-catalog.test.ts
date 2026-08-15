@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { ToolCatalog } from "../src/tools/catalog.js"
+import { ToolCatalog, validateArguments } from "../src/tools/catalog.js"
 import { platformOperations } from "../src/tools/generated/platform.js"
 
 describe("platform tool catalog", () => {
@@ -28,7 +28,13 @@ describe("platform tool catalog", () => {
 
     expect(catalog.modelTools().map(tool => tool.operationId)).toContain("listPlatformEvents")
     expect(catalog.get("listApplications").inputSchema.required).toEqual(["projectId"])
-    expect(catalog.get("listProjects").inputSchema.properties).not.toHaveProperty("projectId")
+    const listProjects = catalog.get("listProjects")
+    expect(listProjects.inputSchema.properties).not.toHaveProperty("projectId")
+    expect(listProjects.inputSchema.properties.scope).toMatchObject({ enum: ["related", "all"], default: "related" })
+    expect(validateArguments(listProjects.inputSchema, {})).toEqual({})
+    expect(validateArguments(listProjects.inputSchema, { scope: "related", page: 1, pageSize: 100 })).toEqual({ scope: "related", page: 1, pageSize: 100 })
+    expect(() => validateArguments(listProjects.inputSchema, { scope: "mine" })).toThrow("ai.tool_arguments_invalid")
+    expect(() => validateArguments(listProjects.inputSchema, { page: 0 })).toThrow("ai.tool_arguments_invalid")
   })
 
   it("exposes project creation as a user-authorized low-risk write without high-risk approval", () => {
@@ -137,5 +143,55 @@ describe("platform tool catalog", () => {
 
     expect(result.loadedOperationIds).toContain(expectedOperationId)
     expect(result.matches.find(match => match.operationId === expectedOperationId)?.description).toContain("适用：")
+  })
+
+  it.each([
+    ["列出这个项目空间里当前可挂载的数据卷", "listProjectVolumes"],
+    ["把项目数据卷扩容到 100Gi", "updateProjectVolume"],
+    ["删除这个 PVC 前先确认有哪些挂载", "previewProjectVolumeDeletion"],
+    ["把数据库卷导出成备份归档", "createVolumeExport"],
+    ["查看数据卷导入任务为什么失败", "getVolumeTransfer"],
+  ])("retrieves the project-volume operation within the first eight results: %s", (query, expectedOperationId) => {
+    const operationIds = [
+      "listProjectVolumes", "getProjectVolume", "createProjectVolume", "updateProjectVolume",
+      "previewProjectVolumeDeletion", "deleteProjectVolume", "createVolumeExport",
+      "listVolumeTransfers", "getVolumeTransfer", "retryVolumeTransfer", "cancelVolumeTransfer",
+      "createDeploymentTarget", "listRuntimeClusters",
+    ]
+    const operations = operationIds.map(operationId => ({
+      operationId,
+      method: /^(list|get)/.test(operationId) || operationId.startsWith("preview") ? "GET" as const : "POST" as const,
+      path: `/api/v1/test/${operationId}`,
+      category: operationId.includes("Transfer") ? "Volume Transfers" : operationId.includes("Volume") ? "Project Volumes" : "Deployments",
+      description: `调用 Luna DevOps 的 ${operationId} 平台操作。`,
+      risk: operationId.startsWith("delete") ? "destructive" as const : "read" as const,
+      requiredScopes: ["volume:read"],
+      approval: operationId.startsWith("delete") ? "always" as const : "never" as const,
+      idempotent: true,
+      timeoutMs: 30_000,
+      inputSchema: { type: "object" as const, properties: {}, required: [], additionalProperties: false as const },
+    }))
+
+    const result = ToolCatalog.load(operations).search(query, {}, 8)
+    expect(result.loadedOperationIds).toContain(expectedOperationId)
+    expect(result.matches.find(match => match.operationId === expectedOperationId)?.description).toContain("适用：")
+  })
+
+  it("tells the model to use Web or CLI for local archive upload", () => {
+    const importOperation = {
+      operationId: "createVolumeImport",
+      method: "POST" as const,
+      path: "/api/v1/test/createVolumeImport",
+      category: "Volume Transfers",
+      risk: "sensitive" as const,
+      requiredScopes: ["volume:import"],
+      approval: "always" as const,
+      idempotent: false,
+      timeoutMs: 30_000,
+      inputSchema: { type: "object" as const, properties: {}, required: [], additionalProperties: false as const },
+    }
+    const description = ToolCatalog.load([importOperation]).modelTools()[0]?.description ?? ""
+    expect(description).toContain("Web 或 Luna CLI")
+    expect(description).toContain("不能把文件内容编码进参数")
   })
 })

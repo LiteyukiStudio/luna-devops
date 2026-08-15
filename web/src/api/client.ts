@@ -13,6 +13,7 @@ import type { projectsApi } from './domains/projects'
 import type { registriesApi } from './domains/registries'
 import type { runtimeApi } from './domains/runtime'
 import type { topologyApi } from './domains/topology'
+import type { volumesApi } from './domains/volumes'
 
 type ApiClient = typeof aiApi
   & typeof applicationsApi
@@ -29,6 +30,7 @@ type ApiClient = typeof aiApi
   & typeof registriesApi
   & typeof runtimeApi
   & typeof topologyApi
+  & typeof volumesApi
 
 const domainLoaders = {
   ai: () => import('./domains/ai').then(module => module.aiApi),
@@ -46,6 +48,7 @@ const domainLoaders = {
   registries: () => import('./domains/registries').then(module => module.registriesApi),
   runtime: () => import('./domains/runtime').then(module => module.runtimeApi),
   topology: () => import('./domains/topology').then(module => module.topologyApi),
+  volumes: () => import('./domains/volumes').then(module => module.volumesApi),
 } as const
 
 type DomainName = keyof typeof domainLoaders
@@ -77,14 +80,11 @@ const domainOperations = {
     'updateApplication',
     'previewApplicationDeletion',
     'deleteApplication',
-    'listRetainedVolumes',
-    'deleteRetainedVolume',
     'listDeploymentTargets',
     'listDeploymentTargetsPage',
     'createDeploymentTarget',
     'updateDeploymentTarget',
     'restartDeploymentTarget',
-    'authorizeDeploymentTargetDataExport',
     'deleteDeploymentTarget',
     'listRepositoryBindings',
     'listRepositoryBindingsPage',
@@ -330,6 +330,32 @@ const domainOperations = {
     'createProjectTopologyEdge',
     'updateProjectTopologyEdge',
     'deleteProjectTopologyEdge',
+  ],
+  volumes: [
+    'listProjectVolumes',
+    'createProjectVolume',
+    'listProjectVolumeStorageClasses',
+    'getProjectVolume',
+    'updateProjectVolume',
+    'previewProjectVolumeDeletion',
+    'deleteProjectVolume',
+    'retryProjectVolumeOperation',
+    'createVolumeImport',
+    'getVolumeImportUploadOffset',
+    'uploadVolumeImportChunk',
+    'completeVolumeImportUpload',
+    'createVolumeExport',
+    'listVolumeTransfers',
+    'getVolumeTransfer',
+    'retryVolumeTransfer',
+    'cancelVolumeTransfer',
+    'authorizeVolumeTransferDownload',
+    'volumeTransferContentURL',
+    'volumeTransferManifestURL',
+    'headVolumeTransferContent',
+    'headVolumeTransferManifest',
+    'downloadVolumeTransferManifest',
+    'downloadVolumeTransferContent',
   ],
 } satisfies Record<DomainName, readonly (keyof ApiClient)[]>
 

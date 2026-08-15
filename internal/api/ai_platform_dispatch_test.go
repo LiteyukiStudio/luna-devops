@@ -18,13 +18,13 @@ func TestBuildAIPlatformRequestBindsPathQueryAndBody(t *testing.T) {
 		OperationID: "updateApplication", Method: http.MethodPut,
 		Path: "/api/v1/projects/{projectId}/applications/{applicationId}",
 		Parameters: []aitool.OpenAPIParameter{
-			{Name: "projectId", In: "path", Required: true},
-			{Name: "applicationId", In: "path", Required: true},
-			{Name: "dryRun", In: "query"},
+			{InputName: "projectId", WireName: "projectId", In: "path", Required: true},
+			{InputName: "applicationId", WireName: "applicationId", In: "path", Required: true},
+			{InputName: "dryRun", WireName: "dryRun", In: "query"},
 		},
 		RequestBody: true, RequestRequired: true, RequestType: "application/json",
 	}
-	target, body, err := buildAIPlatformRequest(operation, map[string]any{
+	target, body, _, err := buildAIPlatformRequest(operation, map[string]any{
 		"projectId": "prj_1", "applicationId": "app/1", "dryRun": true,
 		"body": map[string]any{"name": "Example"},
 	})
@@ -45,13 +45,13 @@ func TestBuildAIPlatformRequestRejectsUnknownOrMissingArguments(t *testing.T) {
 	operation := aitool.OpenAPIOperation{
 		OperationID: "getProject", Method: http.MethodGet,
 		Path:       "/api/v1/projects/{projectId}",
-		Parameters: []aitool.OpenAPIParameter{{Name: "projectId", In: "path", Required: true}},
+		Parameters: []aitool.OpenAPIParameter{{InputName: "projectId", WireName: "projectId", In: "path", Required: true}},
 	}
 	for _, arguments := range []map[string]any{
 		{},
 		{"projectId": "prj_1", "unexpected": "value"},
 	} {
-		if _, _, err := buildAIPlatformRequest(operation, arguments); err == nil {
+		if _, _, _, err := buildAIPlatformRequest(operation, arguments); err == nil {
 			t.Fatalf("arguments should be rejected: %#v", arguments)
 		}
 	}
@@ -60,14 +60,92 @@ func TestBuildAIPlatformRequestRejectsUnknownOrMissingArguments(t *testing.T) {
 func TestAppendAIQueryValuePreservesRepeatedValues(t *testing.T) {
 	operation := aitool.OpenAPIOperation{
 		OperationID: "listExample", Method: http.MethodGet, Path: "/api/v1/example",
-		Parameters: []aitool.OpenAPIParameter{{Name: "status", In: "query"}},
+		Parameters: []aitool.OpenAPIParameter{{InputName: "status", WireName: "status", In: "query"}},
 	}
-	target, _, err := buildAIPlatformRequest(operation, map[string]any{"status": []any{"ready", "failed"}})
+	target, _, _, err := buildAIPlatformRequest(operation, map[string]any{"status": []any{"ready", "failed"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(target, "status=ready") || !strings.Contains(target, "status=failed") {
 		t.Fatalf("target = %q", target)
+	}
+}
+
+func TestBuildAIProjectListRequestPreservesExplicitScope(t *testing.T) {
+	operation, ok := aitool.PlatformOperation("listProjects")
+	if !ok {
+		t.Fatal("missing operation listProjects")
+	}
+	target, _, _, err := buildAIPlatformRequest(operation, map[string]any{
+		"scope": "all", "page": float64(2), "pageSize": float64(50),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if target != "/api/v1/projects?page=2&pageSize=50&scope=all" {
+		t.Fatalf("target = %q", target)
+	}
+}
+
+func TestProjectVolumeRevisionCatalogDispatchesIfMatch(t *testing.T) {
+	testCases := []struct {
+		operationID string
+		arguments   map[string]any
+	}{
+		{operationID: "updateProjectVolume", arguments: map[string]any{
+			"projectId": "prj_1", "volumeId": "pvol_1", "revision": 7,
+			"body": map[string]any{"displayName": "renamed"},
+		}},
+		{operationID: "deleteProjectVolume", arguments: map[string]any{
+			"projectId": "prj_1", "volumeId": "pvol_1", "revision": 7, "dataAction": "detach",
+		}},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.operationID, func(t *testing.T) {
+			operation, ok := aitool.PlatformOperation(testCase.operationID)
+			if !ok {
+				t.Fatalf("missing catalog operation %s", testCase.operationID)
+			}
+			properties, _ := operation.InputSchema["properties"].(map[string]any)
+			if _, ok := properties["revision"]; !ok {
+				t.Fatalf("catalog input schema omits revision: %#v", operation.InputSchema)
+			}
+			if _, ok := properties["If-Match"]; ok {
+				t.Fatalf("catalog leaked wire header as model input: %#v", operation.InputSchema)
+			}
+			parameterFound := false
+			for _, parameter := range operation.Parameters {
+				if parameter.InputName == "revision" && parameter.WireName == "If-Match" && parameter.In == "header" && parameter.Required {
+					parameterFound = true
+				}
+			}
+			if !parameterFound {
+				t.Fatalf("catalog revision mapping missing: %#v", operation.Parameters)
+			}
+
+			gin.SetMode(gin.TestMode)
+			router := gin.New()
+			router.Handle(operation.Method, "/api/v1/projects/:projectId/volumes/:volumeId", func(ctx *gin.Context) {
+				if got := ctx.GetHeader("If-Match"); got != "7" {
+					t.Errorf("If-Match = %q", got)
+				}
+				ctx.JSON(http.StatusOK, gin.H{"revision": 7})
+			})
+			handlers := &Handlers{platformRouter: router}
+			recorder := httptest.NewRecorder()
+			parent, _ := gin.CreateTestContext(recorder)
+			parent.Request = httptest.NewRequest(http.MethodPost, "/internal/v1/ai/tools/execute", nil)
+			result, err := handlers.dispatchAIPlatformOperation(parent, aiagent.DelegationClaims{
+				RunID: "airun_1", ToolCallID: "aitool_1", ArgumentsHash: "sha256:test",
+			}, operation, testCase.arguments)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Status != http.StatusOK {
+				t.Fatalf("status = %d, body = %#v", result.Status, result.Body)
+			}
+		})
 	}
 }
 

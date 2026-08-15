@@ -184,6 +184,9 @@ const settings = {
       blockNewBuildsWhenInsufficient: { label: 'Block new builds when balance is insufficient', description: 'Reject new build jobs while allowing already-started jobs to finish settlement.' },
       blockDeployChangesWhenInsufficient: { label: 'Block deployment changes when balance is insufficient', description: 'Block paid changes such as releases, scaling, and new data volumes.' },
     },
+    storage: {
+      projectManagedCapacityLimitGiB: { label: 'Managed volume limit per project (GiB)', description: 'Limits the total managed-volume capacity reserved by each project space. Set 0 for unlimited. Existing over-limit volumes are not truncated, but new volumes and expansions are rejected.' },
+    },
     retention: {
       platformEventsDays: { label: 'Platform event retention', description: 'Days to retain platform event details. Set to 0 to disable automatic cleanup.' },
       notificationDeliveriesDays: { label: 'Notification delivery retention', description: 'Days to retain notification delivery records. Set to 0 to disable automatic cleanup.' },
@@ -297,6 +300,7 @@ const settings = {
     'runtime.cpu_vcpu_hour': 'Runtime CPU usage; 1 vCPU-hour means 1 vCPU used for 1 hour.',
     'runtime.memory_gib_hour': 'Runtime memory usage; 1 GiB-hour means 1 GiB of memory used for 1 hour.',
     'storage.gib_day': 'Persistent storage declared capacity; 1 GiB-day means 1 GiB stored for 1 day.',
+    'storage.transfer_gib': 'Actual volume import and export traffic; each terminal transfer job is settled once.',
     'gateway.egress_gib': 'Gateway response egress traffic; billed by the GiB transferred.',
     'gateway.requests_1000': 'Gateway request count; 1 unit represents 1,000 requests.',
     'ai.input_tokens_1000': 'AI model input tokens; 1 unit represents 1,000 tokens.',

@@ -134,22 +134,22 @@ describe('mfa request retry flow', () => {
       if (attempt > 1)
         return jsonResponse({ path })
       return path.endsWith('/exports')
-        ? jsonResponse({ code: 'mfa_required', purpose: 'data_export' }, 403)
+        ? jsonResponse({ code: 'mfa_required', purpose: 'volume_export' }, 403)
         : jsonResponse({ code: 'mfa_required', purpose: 'secret_update' }, 403)
     })
     const purposes: string[] = []
     const challengeHandler = vi.fn((challenge: MFAChallenge) => {
       purposes.push(challenge.purpose)
-      return challenge.purpose === 'data_export' ? firstGate.promise : secondGate.promise
+      return challenge.purpose === 'volume_export' ? firstGate.promise : secondGate.promise
     })
     const unregister = registerMFAChallengeHandler(challengeHandler)
     vi.stubGlobal('fetch', fetchMock)
 
     try {
       const requests = [request('/exports'), request('/secrets')]
-      await vi.waitFor(() => expect(purposes).toEqual(['data_export']))
+      await vi.waitFor(() => expect(purposes).toEqual(['volume_export']))
       firstGate.resolve()
-      await vi.waitFor(() => expect(purposes).toEqual(['data_export', 'secret_update']))
+      await vi.waitFor(() => expect(purposes).toEqual(['volume_export', 'secret_update']))
       secondGate.resolve()
 
       await expect(Promise.all(requests)).resolves.toHaveLength(2)

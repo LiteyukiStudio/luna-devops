@@ -41,9 +41,6 @@ type deploymentKubernetesAdvancedInput struct {
 	ServiceAnnotations           string
 	ServiceExternalTrafficPolicy string
 	ServiceSessionAffinity       string
-	DataStorageClassName         string
-	DataAccessMode               string
-	DataVolumeMode               string
 }
 
 func normalizeDeploymentKubernetesAdvanced(ctx *gin.Context, input deploymentTargetInput) (deploymentKubernetesAdvancedInput, bool) {
@@ -139,9 +136,6 @@ func normalizeDeploymentKubernetesAdvanced(ctx *gin.Context, input deploymentTar
 		ServiceAnnotations:           serviceAnnotations,
 		ServiceExternalTrafficPolicy: normalizeServiceExternalTrafficPolicy(input.ServiceExternalTrafficPolicy),
 		ServiceSessionAffinity:       normalizeServiceSessionAffinity(input.ServiceSessionAffinity),
-		DataStorageClassName:         strings.TrimSpace(input.DataStorageClassName),
-		DataAccessMode:               normalizePersistentVolumeAccessMode(input.DataAccessMode),
-		DataVolumeMode:               normalizePersistentVolumeMode(input.DataVolumeMode),
 	}, true
 }
 

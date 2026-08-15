@@ -190,13 +190,12 @@ func (h *Handlers) systemComponentApplicationPlan(ctx *gin.Context, user model.U
 	}
 	applicationName := template.Name
 	application := model.Application{
-		ID:                id.New("app"),
-		ProjectID:         project.ID,
-		Identifier:        applicationIdentifier,
-		Name:              applicationName,
-		Icon:              templateApplicationIcon(template),
-		DeleteStatus:      "active",
-		DataRetentionMode: "retain",
+		ID:           id.New("app"),
+		ProjectID:    project.ID,
+		Identifier:   applicationIdentifier,
+		Name:         applicationName,
+		Icon:         templateApplicationIcon(template),
+		DeleteStatus: "active",
 	}
 	var existingApp model.Application
 	if err := h.dbFor(ctx).First(&existingApp, "project_id = ? and identifier = ?", project.ID, applicationIdentifier).Error; err == nil {
@@ -233,7 +232,6 @@ func (h *Handlers) systemComponentApplicationPlan(ctx *gin.Context, user model.U
 		BuildTimeoutSeconds:          defaultBuildTimeoutSeconds,
 		ConcurrencyPolicy:            "queue",
 		EnvVars:                      systemComponentProbeEnv(cluster, componentID, mode, apiBaseURL, traefikMetricsURL),
-		DataRetentionEnabled:         false,
 		Enabled:                      true,
 		DeleteStatus:                 "active",
 		ServiceAccountName:           model.GatewayTrafficProbeServiceAccountName,

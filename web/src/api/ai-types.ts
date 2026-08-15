@@ -1,34 +1,8 @@
 import type { AIOptionVisual, AIToolVisibility } from '@luna-devops/ai-interaction-card-contract'
 
 export interface AICapabilities {
-  available: boolean
-  reasonCode: string | null
-  features: {
-    streaming: boolean
-    approvals: boolean
-    stepUpMFA: boolean
-    uiActions: boolean
-    longTermMemory: boolean
-  }
-  limits: {
-    maxInputBytes: number
-    maxConcurrentRuns: number
-  }
-}
-
-export function isUsableAICapabilities(value: unknown): value is AICapabilities {
-  if (!value || typeof value !== 'object')
-    return false
-  const candidate = value as Partial<AICapabilities>
-  return candidate.available === true
-    && typeof candidate.features?.streaming === 'boolean'
-    && typeof candidate.features?.approvals === 'boolean'
-    && typeof candidate.features?.stepUpMFA === 'boolean'
-    && typeof candidate.features?.uiActions === 'boolean'
-    && typeof candidate.limits?.maxInputBytes === 'number'
-    && candidate.limits.maxInputBytes > 0
-    && typeof candidate.limits?.maxConcurrentRuns === 'number'
-    && candidate.limits.maxConcurrentRuns > 0
+  enabled: boolean
+  maxInputBytes: number
 }
 
 export interface AIConversation {

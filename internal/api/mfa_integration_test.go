@@ -166,13 +166,13 @@ func TestMFAEnrollmentVerificationRecoveryAndDisableFlow(t *testing.T) {
 	}
 
 	recoveryCode := regenerated.RecoveryCodes[0]
-	recoveryRecorder, recoveryContext := newMFAIntegrationContext(http.MethodPost, "/api/v1/auth/mfa/verify", map[string]string{"purpose": stepUpPurposeDataExport, "recoveryCode": recoveryCode}, sessionToken)
+	recoveryRecorder, recoveryContext := newMFAIntegrationContext(http.MethodPost, "/api/v1/auth/mfa/verify", map[string]string{"purpose": stepUpPurposeVolumeExport, "recoveryCode": recoveryCode}, sessionToken)
 	handlers.VerifyMFA(recoveryContext)
 	if recoveryRecorder.Code != http.StatusOK {
 		t.Fatalf("recovery verify = %d %s", recoveryRecorder.Code, recoveryRecorder.Body.String())
 	}
 	assertionRecorder, assertionContext := newMFAIntegrationContext(http.MethodGet, "/sensitive", nil, sessionToken)
-	if !handlers.requireMFAAssertion(assertionContext, user, stepUpPurposeDataExport) || assertionRecorder.Code != http.StatusOK {
+	if !handlers.requireMFAAssertion(assertionContext, user, stepUpPurposeVolumeExport) || assertionRecorder.Code != http.StatusOK {
 		t.Fatalf("assertion refresh = %d %s", assertionRecorder.Code, assertionRecorder.Body.String())
 	}
 

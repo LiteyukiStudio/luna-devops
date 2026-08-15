@@ -32,7 +32,6 @@ CREATE TABLE ai.runs (
     run_index integer NOT NULL,
     status text NOT NULL,
     row_version integer NOT NULL DEFAULT 1,
-    graph_version text NOT NULL,
     prompt_version text NOT NULL,
     tool_catalog_digest text NOT NULL,
     page_context jsonb NOT NULL DEFAULT '{}'::jsonb,

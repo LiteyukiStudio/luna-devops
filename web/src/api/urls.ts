@@ -22,10 +22,6 @@ export function buildJobLogsStreamUrl(projectId: string, jobId: string, after = 
   return `${API_BASE_URL}/projects/${encodeURIComponent(projectId)}/build-jobs/${encodeURIComponent(jobId)}/logs/stream?${query.toString()}`
 }
 
-export function deploymentTargetDataExportUrl(projectId: string, applicationId: string, targetId: string) {
-  return `${API_BASE_URL}/projects/${encodeURIComponent(projectId)}/applications/${encodeURIComponent(applicationId)}/deployment-targets/${encodeURIComponent(targetId)}/data-export`
-}
-
 export function deploymentTargetMetricsStreamUrl(projectId: string, applicationId: string, targetId: string) {
   return `${API_BASE_URL}/projects/${encodeURIComponent(projectId)}/applications/${encodeURIComponent(applicationId)}/deployment-targets/${encodeURIComponent(targetId)}/metrics/stream`
 }

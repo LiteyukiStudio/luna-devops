@@ -149,15 +149,74 @@ func TestAIProxyTreatsPageProjectAsContextInsteadOfAuthorizationBoundary(t *test
 	}
 }
 
-func TestAICapabilitiesFailClosedWithoutAgent(t *testing.T) {
-	handler := aiTestHandlers(nil, true)
+func TestAICapabilitiesDependOnPlatformConfigurationNotAgentHealth(t *testing.T) {
+	fake := &fakeAIAgentClient{err: aiagent.ErrUnavailable}
+	handler := aiTestHandlers(fake, true)
 	router := gin.New()
 	router.GET("/api/v1/ai/capabilities", handler.GetAICapabilities)
 
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/ai/capabilities", nil))
-	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"available":false`) ||
-		!strings.Contains(response.Body.String(), `"reasonCode":"ai.agent_unavailable"`) {
+	if response.Code != http.StatusOK || response.Body.String() != `{"enabled":true,"maxInputBytes":49152}` {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+	if fake.calls != 0 {
+		t.Fatalf("capabilities probed Agent %d times", fake.calls)
+	}
+	if response.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("cache control = %q", response.Header().Get("Cache-Control"))
+	}
+
+	handler.configs.set(aiMaxInputBytesConfigKey, "64")
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/ai/capabilities", nil))
+	if response.Code != http.StatusOK || response.Body.String() != `{"enabled":true,"maxInputBytes":65536}` {
+		t.Fatalf("configured capability limits not returned: status = %d, body = %s", response.Code, response.Body.String())
+	}
+
+	handler.configs.set(aiAssistantEnabledConfigKey, "false")
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/ai/capabilities", nil))
+	if response.Code != http.StatusOK || response.Body.String() != `{"enabled":false,"maxInputBytes":65536}` {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+
+	handler.configs.set(aiAssistantEnabledConfigKey, "true")
+	handler.aiDeploymentEnabled = false
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/ai/capabilities", nil))
+	if response.Code != http.StatusOK || response.Body.String() != `{"enabled":false,"maxInputBytes":65536}` {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+}
+
+func TestAIProxyBodyLimitUsesPlatformInputConfiguration(t *testing.T) {
+	handler := aiTestHandlers(nil, true)
+	handler.configs.set(aiMaxInputBytesConfigKey, "64")
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/ai/conversations", strings.NewReader(strings.Repeat("x", 48*1024)))
+	if _, ok := handler.readAIBody(ctx); !ok {
+		t.Fatalf("48 KiB body rejected under 64 KiB limit: status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+
+	handler.configs.set(aiMaxInputBytesConfigKey, "8")
+	recorder = httptest.NewRecorder()
+	ctx, _ = gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/ai/conversations", strings.NewReader(strings.Repeat("x", 8*1024+1)))
+	if _, ok := handler.readAIBody(ctx); ok || recorder.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversized body accepted: status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestAIProxyStillReportsUnavailableAgentWhenEnabled(t *testing.T) {
+	handler := aiTestHandlers(nil, true)
+	router := gin.New()
+	router.GET("/api/v1/ai/conversations", handler.ProxyAIRequest)
+
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/ai/conversations", nil))
+	if response.Code != http.StatusServiceUnavailable || !strings.Contains(response.Body.String(), `"code":"ai.agent_unavailable"`) {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 	}
 }
@@ -166,7 +225,7 @@ func TestAIAccessModeDefaultsToAuthenticatedUsersAndCanRestrictAdmins(t *testing
 	fake := &fakeAIAgentClient{response: &aiagent.Response{
 		StatusCode: http.StatusOK,
 		Header:     http.Header{"Content-Type": []string{"application/json"}},
-		Body:       io.NopCloser(strings.NewReader(`{"available":true}`)),
+		Body:       io.NopCloser(strings.NewReader(`{"enabled":true}`)),
 	}}
 	handler := aiTestHandlers(fake, true)
 	if !handler.aiAccessAllowed("user") || !handler.aiAccessAllowed("platform_admin") {
@@ -183,7 +242,7 @@ func TestAIAccessModeDefaultsToAuthenticatedUsersAndCanRestrictAdmins(t *testing
 	router.GET("/api/v1/ai/conversations", handler.ProxyAIRequest)
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/ai/capabilities", nil))
-	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"reasonCode":"ai.user_not_allowed"`) || fake.calls != 0 {
+	if response.Code != http.StatusOK || response.Body.String() != `{"enabled":false,"maxInputBytes":49152}` || fake.calls != 0 {
 		t.Fatalf("status = %d, calls = %d, body = %s", response.Code, fake.calls, response.Body.String())
 	}
 

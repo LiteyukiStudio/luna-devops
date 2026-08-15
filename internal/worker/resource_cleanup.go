@@ -42,7 +42,7 @@ func (r *Runner) pendingResourceCleanupPayloads() []tasks.ResourceCleanupPayload
 	var targets []model.DeploymentTarget
 	if err := r.db.Where("delete_status in ?", statuses).Limit(50).Find(&targets).Error; err == nil {
 		for _, target := range targets {
-			payloads = append(payloads, tasks.ResourceCleanupPayload{ResourceType: "deployment_target", ResourceID: target.ID, ProjectID: target.ProjectID, ActorID: "system", DeleteData: !target.DataRetentionEnabled})
+			payloads = append(payloads, tasks.ResourceCleanupPayload{ResourceType: "deployment_target", ResourceID: target.ID, ProjectID: target.ProjectID, ActorID: "system", DeleteData: false})
 		}
 	}
 	var routes []model.GatewayRoute
@@ -245,7 +245,7 @@ func resourceCleanupCanRun(status string) bool {
 	return status == "deleting" || status == "delete_failed"
 }
 
-func (r *Runner) cleanupDeploymentTargetRuntimeResources(ctx context.Context, target model.DeploymentTarget, deleteData bool) error {
+func (r *Runner) cleanupDeploymentTargetRuntimeResources(ctx context.Context, target model.DeploymentTarget, _ bool) error {
 	var project model.Project
 	if err := r.db.First(&project, "id = ?", target.ProjectID).Error; err != nil {
 		return fmt.Errorf("project not found: %w", err)
@@ -256,19 +256,7 @@ func (r *Runner) cleanupDeploymentTargetRuntimeResources(ctx context.Context, ta
 		return err
 	}
 	namespace := deploymentNamespace(project, environment)
-	if !deleteData {
-		var app model.Application
-		if err := r.db.WithContext(ctx).First(&app, "id = ? and project_id = ?", target.ApplicationID, target.ProjectID).Error; err != nil {
-			return err
-		}
-		if err := r.retainApplicationVolumes(ctx, manager, project, app, target, namespace); err != nil {
-			return err
-		}
-	}
 	kinds := []string{"services", "workloads", "configs"}
-	if deleteData {
-		kinds = append(kinds, "storage")
-	}
 	for _, kind := range kinds {
 		items, err := manager.ListManagedResources(ctx, kubeprovider.ResourceListOptions{
 			Kind:               kind,
@@ -285,15 +273,12 @@ func (r *Runner) cleanupDeploymentTargetRuntimeResources(ctx context.Context, ta
 			return fmt.Errorf("list %s resources in %s: %w", kind, namespace, err)
 		}
 		for _, item := range items {
-			if !deleteData && strings.EqualFold(item.Kind, "PersistentVolumeClaim") {
-				continue
-			}
 			if err := manager.DeleteManagedResource(ctx, item.Kind, item.Namespace, item.Name); err != nil && !isKubernetesNotFound(err) {
 				return fmt.Errorf("delete %s %s/%s: %w", item.Kind, item.Namespace, item.Name, err)
 			}
 		}
 	}
-	return nil
+	return r.releaseDeploymentTargetVolumeMountsAfterCleanup(ctx, target, manager, namespace)
 }
 
 func (r *Runner) cleanupGatewayRuntimeResources(ctx context.Context, route model.GatewayRoute) error {

@@ -10,22 +10,22 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, app model.Application, input deploymentTargetInput, targetID, kubernetesName string, existingSecretFiles map[string]string, existingRuntimeConfigRefs string) (model.DeploymentTarget, bool) {
+func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, app model.Application, input deploymentTargetInput, targetID, kubernetesName string, existingSecretFiles map[string]string, existingRuntimeConfigRefs string) (model.DeploymentTarget, []deploymentTargetDataVolumeInput, bool) {
 	sourceType := normalizeDeploymentSourceType(input.SourceType)
 	repositoryBindingID := strings.TrimSpace(input.RepositoryBindingID)
 	if sourceType == "repository" {
 		if repositoryBindingID == "" {
 			writeErrorCode(ctx, http.StatusBadRequest, "deployment_target.repository_binding_required", "代码仓库不能为空")
-			return model.DeploymentTarget{}, false
+			return model.DeploymentTarget{}, nil, false
 		}
 		var binding model.RepositoryBinding
 		if err := h.dbFor(ctx).First(&binding, "id = ? and project_id = ? and application_id = ?", repositoryBindingID, app.ProjectID, app.ID).Error; err != nil {
 			writeErrorCode(ctx, http.StatusBadRequest, "deployment_target.repository_binding_not_found", "代码仓库绑定不存在")
-			return model.DeploymentTarget{}, false
+			return model.DeploymentTarget{}, nil, false
 		}
 	} else if strings.TrimSpace(input.ImageRef) == "" {
 		writeErrorCode(ctx, http.StatusBadRequest, "deployment_target.image_ref_required", "镜像地址不能为空")
-		return model.DeploymentTarget{}, false
+		return model.DeploymentTarget{}, nil, false
 	}
 	targetRepository, targetTag := splitTargetImageRef(input.TargetImageRef)
 	if targetRepository == "" {
@@ -41,25 +41,13 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 	if input.BuildHooksEnabled != nil {
 		buildHooksEnabled = *input.BuildHooksEnabled
 	}
-	dataCapacity, ok := normalizeDataCapacity(ctx, input.DataCapacity, input.DataRetentionEnabled)
+	dataVolumes, ok := normalizeDataVolumes(ctx, input.DataVolumes)
 	if !ok {
-		return model.DeploymentTarget{}, false
-	}
-	dataMountPath, ok := normalizeDataMountPath(ctx, input.DataMountPath, input.DataRetentionEnabled)
-	if !ok {
-		return model.DeploymentTarget{}, false
-	}
-	dataVolumes, ok := normalizeDataVolumes(ctx, input.DataVolumes, input.DataRetentionEnabled, dataMountPath, dataCapacity)
-	if !ok {
-		return model.DeploymentTarget{}, false
-	}
-	if len(dataVolumes) > 0 {
-		dataMountPath = dataVolumes[0].MountPath
-		dataCapacity = dataVolumes[0].Capacity
+		return model.DeploymentTarget{}, nil, false
 	}
 	servicePorts, ok := normalizeDeploymentServicePorts(ctx, input.ServicePorts, input.ServicePort)
 	if !ok {
-		return model.DeploymentTarget{}, false
+		return model.DeploymentTarget{}, nil, false
 	}
 	servicePort := servicePorts[0].Port
 	replicas := input.Replicas
@@ -68,43 +56,43 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 	}
 	runtimeCPURequest, ok := normalizeBuildResourceQuantity(ctx, input.CPURequest, "1", "运行 CPU")
 	if !ok {
-		return model.DeploymentTarget{}, false
+		return model.DeploymentTarget{}, nil, false
 	}
 	runtimeMemoryRequest, ok := normalizeBuildResourceQuantity(ctx, input.MemoryRequest, "1Gi", "运行内存")
 	if !ok {
-		return model.DeploymentTarget{}, false
+		return model.DeploymentTarget{}, nil, false
 	}
 	runtimeCPULimit, ok := normalizeOptionalResourceQuantity(ctx, input.CPULimit, "运行 CPU 上限")
 	if !ok {
-		return model.DeploymentTarget{}, false
+		return model.DeploymentTarget{}, nil, false
 	}
 	runtimeMemoryLimit, ok := normalizeOptionalResourceQuantity(ctx, input.MemoryLimit, "运行内存上限")
 	if !ok {
-		return model.DeploymentTarget{}, false
+		return model.DeploymentTarget{}, nil, false
 	}
 	kubernetesAdvanced, ok := normalizeDeploymentKubernetesAdvanced(ctx, input)
 	if !ok {
-		return model.DeploymentTarget{}, false
+		return model.DeploymentTarget{}, nil, false
 	}
 	autoScaling, ok := normalizeDeploymentAutoScaling(ctx, input, replicas)
 	if !ok {
-		return model.DeploymentTarget{}, false
+		return model.DeploymentTarget{}, nil, false
 	}
 	buildCPURequest, ok := normalizeBuildResourceQuantity(ctx, input.BuildCPURequest, defaultBuildCPURequest, "构建 CPU")
 	if !ok {
-		return model.DeploymentTarget{}, false
+		return model.DeploymentTarget{}, nil, false
 	}
 	buildMemoryRequest, ok := normalizeBuildResourceQuantity(ctx, input.BuildMemoryRequest, defaultBuildMemoryRequest, "构建内存")
 	if !ok {
-		return model.DeploymentTarget{}, false
+		return model.DeploymentTarget{}, nil, false
 	}
 	buildTimeoutSeconds, ok := normalizeBuildTimeoutSeconds(ctx, input.BuildTimeoutSeconds)
 	if !ok {
-		return model.DeploymentTarget{}, false
+		return model.DeploymentTarget{}, nil, false
 	}
 	buildArgs, ok := normalizeBuildArgsInput(ctx, input.BuildArgs)
 	if !ok {
-		return model.DeploymentTarget{}, false
+		return model.DeploymentTarget{}, nil, false
 	}
 	buildDefinitionMode := buildtemplate.DefinitionModeRepository
 	buildTemplateID := ""
@@ -117,12 +105,12 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 		definition, found := buildtemplate.Find(buildTemplateID, buildTemplateVersion)
 		if !found {
 			writeErrorCode(ctx, http.StatusBadRequest, "build_template.not_found", "build template not found")
-			return model.DeploymentTarget{}, false
+			return model.DeploymentTarget{}, nil, false
 		}
 		values, err := buildtemplate.NormalizeValues(definition, input.BuildTemplateValues)
 		if err != nil {
 			writeErrorCode(ctx, http.StatusBadRequest, "build_template.invalid", err.Error())
-			return model.DeploymentTarget{}, false
+			return model.DeploymentTarget{}, nil, false
 		}
 		buildTemplateVersion = definition.Version
 		buildTemplateValues = buildtemplate.EncodeValues(values)
@@ -130,7 +118,7 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 	clusterID := strings.TrimSpace(input.ClusterID)
 	targetRegistryID := strings.TrimSpace(input.TargetRegistryID)
 	if _, ok := h.runtimeClusterForProjectUse(ctx, user, app.ProjectID, clusterID); !ok {
-		return model.DeploymentTarget{}, false
+		return model.DeploymentTarget{}, nil, false
 	}
 	targetRepository, targetTag, ok = h.applyRegistryCredentialImageTemplate(ctx, user, app, sourceType, targetRegistryID, targetRepository, targetTag, model.DeploymentTarget{
 		ID:    targetID,
@@ -138,30 +126,30 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 		Stage: stage,
 	})
 	if !ok {
-		return model.DeploymentTarget{}, false
+		return model.DeploymentTarget{}, nil, false
 	}
 	runtimeConfigRefs, ok := h.runtimeConfigRefsFromInput(ctx, app.ProjectID, input, existingRuntimeConfigRefs)
 	if !ok {
-		return model.DeploymentTarget{}, false
+		return model.DeploymentTarget{}, nil, false
 	}
 	runtimeConfigSetIDs := model.DeploymentRuntimeConfigLiveSetIDs(runtimeConfigRefs)
 	configFiles, ok := normalizeRuntimeConfigFilesInput(ctx, input.ConfigFiles)
 	if !ok {
-		return model.DeploymentTarget{}, false
+		return model.DeploymentTarget{}, nil, false
 	}
 	secretFiles, ok := h.runtimeSecretFilesFromInput(ctx, user, targetID, input.SecretFiles, existingSecretFiles)
 	if !ok {
-		return model.DeploymentTarget{}, false
+		return model.DeploymentTarget{}, nil, false
 	}
 	secretFilesContent, err := json.Marshal(secretFiles)
 	if err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
-		return model.DeploymentTarget{}, false
+		return model.DeploymentTarget{}, nil, false
 	}
 	for _, volume := range dataVolumes {
 		if runtimeDataPathConflicts(volume.MountPath, configFiles, string(secretFilesContent)) {
 			writeError(ctx, http.StatusBadRequest, "运行数据目录不能与配置文件或密钥文件挂载路径重叠")
-			return model.DeploymentTarget{}, false
+			return model.DeploymentTarget{}, nil, false
 		}
 	}
 	return model.DeploymentTarget{
@@ -248,16 +236,9 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 		SecretRefs:                   normalizeSecretRefsInput(input.SecretRefs),
 		ConfigFiles:                  configFiles,
 		SecretFiles:                  string(secretFilesContent),
-		DataRetentionEnabled:         input.DataRetentionEnabled,
-		DataCapacity:                 dataCapacity,
-		DataMountPath:                dataMountPath,
-		DataVolumes:                  encodeDataVolumes(dataVolumes),
-		DataStorageClassName:         kubernetesAdvanced.DataStorageClassName,
-		DataAccessMode:               kubernetesAdvanced.DataAccessMode,
-		DataVolumeMode:               kubernetesAdvanced.DataVolumeMode,
 		RequireApproval:              input.RequireApproval,
 		WebConsoleEnabled:            normalizeWebConsoleOverride(input.WebConsoleEnabled),
 		Enabled:                      input.Enabled,
 		CreatedBy:                    user.ID,
-	}, true
+	}, dataVolumes, true
 }

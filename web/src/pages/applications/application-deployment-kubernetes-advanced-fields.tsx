@@ -6,13 +6,12 @@ import { Input } from '@/components/ui/input'
 import { NativeSelect as Select } from '@/components/ui/native-select'
 
 interface KubernetesAdvancedFieldsProps {
-  dataRetentionEnabled: boolean
   form: UseFormReturn<DeploymentTargetPayload>
 }
 
 const textareaClassName = 'min-h-24 rounded-md border border-input bg-background px-3 py-2 text-sm outline-none transition focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/20'
 
-export function KubernetesAdvancedFields({ dataRetentionEnabled, form }: KubernetesAdvancedFieldsProps) {
+export function KubernetesAdvancedFields({ form }: KubernetesAdvancedFieldsProps) {
   const { t } = useTranslation()
 
   return (
@@ -198,32 +197,6 @@ export function KubernetesAdvancedFields({ dataRetentionEnabled, form }: Kuberne
           <textarea className={textareaClassName} {...form.register('serviceAnnotations')} placeholder={t('deploymentsPage.serviceAnnotationsPlaceholder')} />
         </Field>
       </div>
-
-      {dataRetentionEnabled && (
-        <div className="grid gap-3 rounded-md border border-dashed border-border p-3">
-          <p className="text-sm font-medium text-foreground">{t('deploymentsPage.kubernetesAdvancedStorage')}</p>
-          <div className="grid gap-3 md:grid-cols-3">
-            <Field hint={t('deploymentsPage.dataStorageClassNameHint')} label={t('deploymentsPage.dataStorageClassName')}>
-              <Input {...form.register('dataStorageClassName')} placeholder={t('deploymentsPage.dataStorageClassNamePlaceholder')} />
-            </Field>
-            <Field hint={t('deploymentsPage.dataAccessModeHint')} label={t('deploymentsPage.dataAccessMode')}>
-              <Select {...form.register('dataAccessMode')}>
-                <option value="">{t('deploymentsPage.kubernetesDefaultReadWriteOnce')}</option>
-                <option value="ReadWriteOnce">{t('deploymentsPage.kubernetesValues.ReadWriteOnce')}</option>
-                <option value="ReadWriteMany">{t('deploymentsPage.kubernetesValues.ReadWriteMany')}</option>
-                <option value="ReadOnlyMany">{t('deploymentsPage.kubernetesValues.ReadOnlyMany')}</option>
-              </Select>
-            </Field>
-            <Field hint={t('deploymentsPage.dataVolumeModeHint')} label={t('deploymentsPage.dataVolumeMode')}>
-              <Select {...form.register('dataVolumeMode')}>
-                <option value="">{t('deploymentsPage.kubernetesDefaultFilesystem')}</option>
-                <option value="Filesystem">{t('deploymentsPage.kubernetesValues.Filesystem')}</option>
-                <option value="Block">{t('deploymentsPage.kubernetesValues.Block')}</option>
-              </Select>
-            </Field>
-          </div>
-        </div>
-      )}
 
       <div className="grid gap-3 rounded-md border border-dashed border-border p-3">
         <p className="text-sm font-medium text-foreground">{t('deploymentsPage.kubernetesAdvancedMultiContainer')}</p>

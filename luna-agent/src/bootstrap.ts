@@ -3,7 +3,7 @@ import { BffHmacAuthenticator, DevelopmentAuthenticator } from "./auth.js"
 import { loadConfig } from "./config.js"
 import { RunExecutor } from "./executor.js"
 import { ContextCompiler } from "./context/compiler.js"
-import { GraphVersionRegistry } from "./graph/registry.js"
+import { ModelRuntime } from "./model-runtime.js"
 import { PayloadCipher } from "./payload-cipher.js"
 import { deriveInternalKeys } from "./internal-secret.js"
 import { MemoryRepository } from "./persistence/memory.js"
@@ -18,7 +18,7 @@ import { HttpLunaApiToolClient } from "./tools/luna-api-client.js"
 import { MemoryToolCallStore, ProjectingToolCallStore, ToolOrchestrator } from "./tools/orchestrator.js"
 import { PostgresToolCallStore } from "./tools/postgres-store.js"
 import { platformOperations } from "./tools/generated/platform.js"
-import { createInteractionCardsTool, prepareInteractionCardsTool } from "./tools/ui-cards.js"
+import { createInteractionCardsTool } from "./tools/ui-cards.js"
 import { createOptionsTool } from "./tools/ui-options.js"
 import { navigateToRouteTool } from "./tools/ui-route.js"
 import { searchToolsTool } from "./tools/tool-search.js"
@@ -90,7 +90,7 @@ export async function startAgent(): Promise<void> {
     summaryMaxOutputTokens: runtime.contextSummaryMaxOutputTokens,
     historicalToolTokenBudget: runtime.contextHistoricalToolTokenBudget,
   })
-  const graphs = new GraphVersionRegistry(provider, {
+  const modelRuntime = new ModelRuntime(provider, {
     resolve: (pageContext, userInput, loadedOperationIds) => [
     ...(tools
       ? catalog.resolve({
@@ -101,7 +101,6 @@ export async function startAgent(): Promise<void> {
       : []),
     ...(tools ? [searchToolsTool] : []),
     createOptionsTool,
-    prepareInteractionCardsTool,
     createInteractionCardsTool,
     navigateToRouteTool,
     ],
@@ -111,9 +110,9 @@ export async function startAgent(): Promise<void> {
       ...(typeof pageContext.routeName === "string" ? { routeName: pageContext.routeName } : {}),
     }, limit),
   }, contextCompiler)
-  const executor = new RunExecutor(repository, graphs, config, tools, providerConfigClient)
+  const executor = new RunExecutor(repository, modelRuntime, config, tools, providerConfigClient)
   const server = buildServer({
-    config, repository, authenticator, provider, graphVersions: graphs.versions(), grantCipher,
+    config, repository, authenticator, provider, grantCipher,
     cancelRun: runId => { executor.cancel(runId) },
     toolCatalogDigest: catalog.digest,
     ...(tools ? { tools } : {}),

@@ -21,6 +21,16 @@
   },
   {
     "type": "file",
+    "name": "project-volumes",
+    "label": "Project Volumes"
+  },
+  {
+    "type": "file",
+    "name": "volume-transfer",
+    "label": "Volume Import and Export"
+  },
+  {
+    "type": "file",
     "name": "notifications",
     "label": "Notifications"
   },

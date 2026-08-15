@@ -3,12 +3,12 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { AIInteractionCards } from './interaction-cards'
 
-const catalogCard = {
+const candidatesCard = {
   schemaVersion: 1,
   generationId: 'database-candidates',
   title: '选择数据库',
   mode: 'interactive',
-  template: 'catalog',
+  template: 'candidates',
   cards: [{
     id: 'postgresql',
     presentation: {
@@ -71,7 +71,7 @@ const catalogCard = {
 describe('ai interaction cards', () => {
   it('binds safe form values to a tool request and omits secret fields', async () => {
     const onAction = vi.fn<(action: AIUIAction) => Promise<boolean>>().mockResolvedValue(true)
-    render(<AIInteractionCards arguments={catalogCard} onAction={onAction} />)
+    render(<AIInteractionCards arguments={candidatesCard} onAction={onAction} />)
 
     const actionButton = screen.getByRole('button', { name: '安装 PostgreSQL' })
     await waitFor(() => expect(actionButton).toBeEnabled())
@@ -93,7 +93,7 @@ describe('ai interaction cards', () => {
   })
 
   it('keeps a tool action disabled until required fields are valid', async () => {
-    const card = structuredClone(catalogCard) as unknown as {
+    const card = structuredClone(candidatesCard) as unknown as {
       cards: Array<{ form: { sections: Array<{ fields: Array<{ id: string, defaultValue?: string }> }> } }>
     }
     const nameField = card.cards[0]!.form.sections[0]!.fields.find(field => field.id === 'applicationName')
@@ -108,7 +108,7 @@ describe('ai interaction cards', () => {
 
   it('validates and expands non-sensitive form fields in a send-message action', async () => {
     const onAction = vi.fn<(action: AIUIAction) => Promise<boolean>>().mockResolvedValue(true)
-    const card = structuredClone(catalogCard) as unknown as {
+    const card = structuredClone(candidatesCard) as unknown as {
       cards: Array<{
         form: { sections: Array<{ fields: Array<{ id: string, defaultValue?: string }> }> }
         actions: unknown[]
@@ -200,7 +200,7 @@ describe('ai interaction cards', () => {
           generationId: 'template-selection',
           title: '请选择应用模板',
           mode: 'interactive',
-          template: 'catalog',
+          template: 'candidates',
           cards: [{
             id: 'templates',
             presentation: { variant: 'application', title: '应用模板市场' },
@@ -355,7 +355,7 @@ describe('ai interaction cards', () => {
       generationId: 'isolated-render-error',
       title: '诊断结果',
       mode: 'presentation',
-      template: 'inspector',
+      template: 'result',
       cards: [{
         id: 'resource',
         presentation: { variant: 'resource', title: '资源详情' },
@@ -375,7 +375,7 @@ describe('ai interaction cards', () => {
   })
 
   it('renders card descriptions as safe markdown and ignores model HTML', () => {
-    const card = structuredClone(catalogCard) as unknown as {
+    const card = structuredClone(candidatesCard) as unknown as {
       description?: string
       cards: Array<{ presentation: { description?: string } }>
     }

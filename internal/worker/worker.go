@@ -12,35 +12,45 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/observability"
 	dnsprovider "github.com/LiteyukiStudio/devops/internal/provider/dns"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
+	"github.com/LiteyukiStudio/devops/internal/provider/volumestore"
 	"github.com/LiteyukiStudio/devops/internal/redisconfig"
 	"github.com/LiteyukiStudio/devops/internal/secret"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
+	"github.com/LiteyukiStudio/devops/internal/volume"
 	"github.com/hibiken/asynq"
 	"gorm.io/gorm"
 )
 
 type Runner struct {
-	db                          *gorm.DB
-	secrets                     secret.Store
-	deployRolloutTimeoutSeconds int64
-	certManagerClusterIssuer    string
-	publicBaseURL               string
-	buildExecutorImage          string
-	buildNPMRegistry            string
-	buildEgressMode             string
-	buildCacheEnabled           bool
-	buildCacheTag               string
-	buildJobTimeoutSeconds      int64
-	buildJobTTLSeconds          int64
-	buildPrivateEgressCIDRs     []string
-	buildPrivateEgressPorts     []int
-	buildBlockedEgressCIDRs     []string
-	dnsResolver                 dnsprovider.Resolver
-	taskClient                  *tasks.Client
-	runAutomaticRetention       func(context.Context, time.Time) error
-	namespaceFactory            func(kubeconfig string) (kubeprovider.NamespaceManager, error)
-	kubernetesManagerFactory    func(environment model.Environment) (kubeprovider.NamespaceManager, error)
-	workerMetrics               *observability.WorkerMetrics
+	db                           *gorm.DB
+	secrets                      secret.Store
+	deployRolloutTimeoutSeconds  int64
+	certManagerClusterIssuer     string
+	publicBaseURL                string
+	buildExecutorImage           string
+	buildNPMRegistry             string
+	buildEgressMode              string
+	buildCacheEnabled            bool
+	buildCacheTag                string
+	buildJobTimeoutSeconds       int64
+	buildJobTTLSeconds           int64
+	buildPrivateEgressCIDRs      []string
+	buildPrivateEgressPorts      []int
+	buildBlockedEgressCIDRs      []string
+	dnsResolver                  dnsprovider.Resolver
+	taskClient                   *tasks.Client
+	runAutomaticRetention        func(context.Context, time.Time) error
+	namespaceFactory             func(kubeconfig string) (kubeprovider.NamespaceManager, error)
+	kubernetesManagerFactory     func(environment model.Environment) (kubeprovider.NamespaceManager, error)
+	projectVolumeProviderFactory func(context.Context, string) (kubeprovider.ProjectVolumeProvider, error)
+	volumeTransferJobFactory     func(context.Context, string) (kubeprovider.VolumeTransferJobProvider, error)
+	volumeService                volumeWorkerService
+	volumeTaskEnqueuer           volumeTaskEnqueuer
+	volumeTransferStore          volumestore.Store
+	volumeTransferCallbackURL    string
+	volumeTransferJobImage       string
+	volumeTransferMaxBytes       int64
+	workerMetrics                *observability.WorkerMetrics
 }
 
 const (
@@ -63,6 +73,10 @@ type Options struct {
 	BuildPrivateEgressCIDRs     []string
 	BuildPrivateEgressPorts     []int
 	BuildBlockedEgressCIDRs     []string
+	VolumeTransferStore         volumestore.Store
+	VolumeTransferCallbackURL   string
+	VolumeTransferJobImage      string
+	VolumeTransferMaxBytes      int64
 }
 
 func Run(redisAddr string, db *gorm.DB, options Options) error {
@@ -101,6 +115,7 @@ func RunWithRedis(redisOptions redisconfig.Options, db *gorm.DB, options Options
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	runner.taskClient = tasks.NewClientWithRedis(redisOptions)
+	runner.volumeTaskEnqueuer = runner.taskClient
 	defer runner.taskClient.Close()
 	go runner.syncBuildJobStatus(ctx)
 
@@ -120,6 +135,12 @@ func registerTaskHandlers(mux *asynq.ServeMux, runner *Runner) {
 	mux.HandleFunc(tasks.TypeBillingAI, runner.withTaskEvents((*Runner).handleBillingAI))
 	mux.HandleFunc(tasks.TypeBillingRuntime, runner.withTaskEvents((*Runner).handleBillingRuntime))
 	mux.HandleFunc(tasks.TypeRetentionRun, runner.withTaskEvents((*Runner).handleRetentionRun))
+	mux.HandleFunc(tasks.TypeVolumeProvision, runner.withTaskEvents((*Runner).handleVolumeProvision))
+	mux.HandleFunc(tasks.TypeVolumeImport, runner.withTaskEvents((*Runner).handleVolumeImport))
+	mux.HandleFunc(tasks.TypeVolumeExport, runner.withTaskEvents((*Runner).handleVolumeExport))
+	mux.HandleFunc(tasks.TypeVolumeDelete, runner.withTaskEvents((*Runner).handleVolumeDelete))
+	mux.HandleFunc(tasks.TypeVolumeReconcile, runner.withTaskEvents((*Runner).handleVolumeReconcile))
+	mux.HandleFunc(tasks.TypeVolumeTransferCleanup, runner.withTaskEvents((*Runner).handleVolumeTransferCleanup))
 }
 
 func (r *Runner) withTaskEvents(handler func(*Runner, context.Context, *asynq.Task) error) func(context.Context, *asynq.Task) error {
@@ -218,6 +239,10 @@ func NewRunner(db *gorm.DB, options Options) *Runner {
 	if buildJobTTLSeconds <= 0 {
 		buildJobTTLSeconds = 3600
 	}
+	volumeTransferMaxBytes := options.VolumeTransferMaxBytes
+	if volumeTransferMaxBytes <= 0 {
+		volumeTransferMaxBytes = 100 * 1024 * 1024 * 1024
+	}
 	return &Runner{
 		db:                          db,
 		secrets:                     secret.NewStore(db, nil),
@@ -237,6 +262,11 @@ func NewRunner(db *gorm.DB, options Options) *Runner {
 		dnsResolver:                 dnsprovider.NewNetResolver(),
 		workerMetrics:               options.WorkerMetrics,
 		runAutomaticRetention:       newAutomaticRetentionRunner(db),
+		volumeService:               volume.NewGormService(db),
+		volumeTransferStore:         options.VolumeTransferStore,
+		volumeTransferCallbackURL:   strings.TrimRight(strings.TrimSpace(options.VolumeTransferCallbackURL), "/"),
+		volumeTransferJobImage:      strings.TrimSpace(options.VolumeTransferJobImage),
+		volumeTransferMaxBytes:      volumeTransferMaxBytes,
 		namespaceFactory: func(kubeconfig string) (kubeprovider.NamespaceManager, error) {
 			return kubeprovider.NewClientFromKubeconfig(kubeconfig)
 		},

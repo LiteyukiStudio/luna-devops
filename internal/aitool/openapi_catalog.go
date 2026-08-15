@@ -37,9 +37,10 @@ type OpenAPIOperation struct {
 }
 
 type OpenAPIParameter struct {
-	Name     string
-	In       string
-	Required bool
+	InputName string
+	WireName  string
+	In        string
+	Required  bool
 }
 
 type openAPIDocument struct {
@@ -128,15 +129,19 @@ func catalogOperation(document openAPIDocument, path, method, operationID string
 	required := make([]string, 0)
 	for _, parameterRaw := range arrayValue(raw["parameters"]) {
 		parameter := resolveOpenAPIObject(document, parameterRaw)
-		name, location := stringValue(parameter["name"]), stringValue(parameter["in"])
-		if name == "" || (location != "path" && location != "query") {
+		wireName, location := stringValue(parameter["name"]), stringValue(parameter["in"])
+		inputName := wireName
+		if location == "header" {
+			inputName = stringValue(parameter["x-luna-agent-input-name"])
+		}
+		if wireName == "" || inputName == "" || (location != "path" && location != "query" && location != "header") {
 			continue
 		}
 		isRequired := boolValue(parameter["required"]) || location == "path"
-		parameters = append(parameters, OpenAPIParameter{Name: name, In: location, Required: isRequired})
-		properties[name] = normalizeOpenAPISchema(document, mapValue(parameter["schema"]), 0)
+		parameters = append(parameters, OpenAPIParameter{InputName: inputName, WireName: wireName, In: location, Required: isRequired})
+		properties[inputName] = normalizeOpenAPISchema(document, mapValue(parameter["schema"]), 0)
 		if isRequired {
-			required = append(required, name)
+			required = append(required, inputName)
 		}
 	}
 
@@ -238,8 +243,7 @@ func agentEligibleOperation(path, method, operationID string, raw map[string]any
 	if boolValue(extension["streaming"]) || boolValue(extension["hidden"]) {
 		return false
 	}
-	if strings.Contains(path, "/stream") || strings.Contains(path, "/terminal") ||
-		strings.HasSuffix(path, "/data-export") {
+	if strings.Contains(path, "/stream") || strings.Contains(path, "/terminal") {
 		return false
 	}
 	if method == "get" && (strings.HasSuffix(path, "/start") || strings.Contains(path, "/callback")) {

@@ -36,7 +36,7 @@ func (r *Runner) markExpiredBuildJobsLost(ctx context.Context) error {
 	}
 	now := time.Now()
 	var lostRuns []model.BuildRun
-	err := r.db.Transaction(func(tx *gorm.DB) error {
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var jobs []model.BuildJob
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
 			Joins("join build_runs on build_runs.id = build_jobs.build_run_id").
@@ -98,7 +98,7 @@ func (r *Runner) syncReleaseRuntimeStatus(ctx context.Context) error {
 		return nil
 	}
 	var releases []model.Release
-	if err := r.db.
+	if err := r.db.WithContext(ctx).
 		Where("status in ?", []string{"pending", "running"}).
 		Order("created_at desc").
 		Limit(200).
@@ -115,14 +115,14 @@ func (r *Runner) syncReleaseRuntimeStatus(ctx context.Context) error {
 
 func (r *Runner) syncReleaseRuntimeSnapshot(ctx context.Context, release model.Release) error {
 	var project model.Project
-	if err := r.db.First(&project, "id = ?", release.ProjectID).Error; err != nil {
+	if err := r.db.WithContext(ctx).First(&project, "id = ?", release.ProjectID).Error; err != nil {
 		return err
 	}
 	var application model.Application
-	if err := r.db.First(&application, "id = ? and project_id = ?", release.ApplicationID, release.ProjectID).Error; err != nil {
+	if err := r.db.WithContext(ctx).First(&application, "id = ? and project_id = ?", release.ApplicationID, release.ProjectID).Error; err != nil {
 		return err
 	}
-	deploymentTarget, err := r.releaseDeploymentTarget(release)
+	deploymentTarget, err := r.releaseDeploymentTarget(ctx, release)
 	if err != nil {
 		return err
 	}
@@ -146,10 +146,10 @@ func (r *Runner) syncReleaseRuntimeSnapshot(ctx context.Context, release model.R
 		return r.markReleaseRolloutFailed(ctx, release, firstNonEmpty(snapshot.Message, "Deployment runtime check failed"))
 	}
 	if snapshot.Phase == kubeprovider.DeploymentSucceeded {
-		r.appendReleaseLog(release, firstNonEmpty(snapshot.Message, "Deployment rollout completed"))
+		r.appendReleaseLog(ctx, release, firstNonEmpty(snapshot.Message, "Deployment rollout completed"))
 		return r.finishDeployRelease(ctx, release, "succeeded", firstNonEmpty(snapshot.Message, "Deployment rollout completed"))
 	}
-	return r.db.Model(&model.Release{}).Where("id = ?", release.ID).Updates(map[string]any{
+	return r.db.WithContext(ctx).Model(&model.Release{}).Where("id = ?", release.ID).Updates(map[string]any{
 		"status":  "running",
 		"message": firstNonEmpty(snapshot.Message, release.Message),
 	}).Error
@@ -168,7 +168,7 @@ func (r *Runner) markReleaseRolloutFailed(ctx context.Context, release model.Rel
 	if err := r.finishDeployRelease(ctx, release, "failed", message); err != nil {
 		return err
 	}
-	r.appendReleaseLog(release, "发布收敛失败: "+message)
+	r.appendReleaseLog(ctx, release, "发布收敛失败: "+message)
 	return nil
 }
 

@@ -45,7 +45,7 @@ func (h *Handlers) dispatchAIPlatformOperation(
 	if h.platformRouter == nil {
 		return aiPlatformDispatchResult{}, fmt.Errorf("platform router is unavailable")
 	}
-	target, body, err := buildAIPlatformRequest(operation, arguments)
+	target, body, headers, err := buildAIPlatformRequest(operation, arguments)
 	if err != nil {
 		return aiPlatformDispatchResult{}, err
 	}
@@ -66,6 +66,9 @@ func (h *Handlers) dispatchAIPlatformOperation(
 	request.Header.Set("X-Luna-AI-Run-ID", claims.RunID)
 	request.Header.Set("X-Luna-AI-Tool-Call-ID", claims.ToolCallID)
 	request.Header.Set("Idempotency-Key", claims.ToolCallID+":"+claims.ArgumentsHash)
+	for name := range headers {
+		request.Header.Set(name, headers.Get(name))
+	}
 	if operation.RequestBody {
 		request.Header.Set("Content-Type", operation.RequestType)
 	}
@@ -93,24 +96,31 @@ func (h *Handlers) dispatchAIPlatformOperation(
 	}, nil
 }
 
-func buildAIPlatformRequest(operation aitool.OpenAPIOperation, arguments map[string]any) (string, io.Reader, error) {
+func buildAIPlatformRequest(operation aitool.OpenAPIOperation, arguments map[string]any) (string, io.Reader, http.Header, error) {
 	allowed := map[string]struct{}{}
 	targetPath := operation.Path
 	query := url.Values{}
+	headers := http.Header{}
 	for _, parameter := range operation.Parameters {
-		allowed[parameter.Name] = struct{}{}
-		value, exists := arguments[parameter.Name]
+		allowed[parameter.InputName] = struct{}{}
+		value, exists := arguments[parameter.InputName]
 		if parameter.Required && (!exists || value == nil || strings.TrimSpace(fmt.Sprint(value)) == "") {
-			return "", nil, fmt.Errorf("required parameter %q is missing", parameter.Name)
+			return "", nil, nil, fmt.Errorf("required parameter %q is missing", parameter.InputName)
 		}
 		if !exists || value == nil {
 			continue
 		}
 		switch parameter.In {
 		case "path":
-			targetPath = strings.ReplaceAll(targetPath, "{"+parameter.Name+"}", url.PathEscape(fmt.Sprint(value)))
+			targetPath = strings.ReplaceAll(targetPath, "{"+parameter.WireName+"}", url.PathEscape(fmt.Sprint(value)))
 		case "query":
-			appendAIQueryValue(query, parameter.Name, value)
+			appendAIQueryValue(query, parameter.WireName, value)
+		case "header":
+			headerValue := strings.TrimSpace(fmt.Sprint(value))
+			if strings.ContainsAny(headerValue, "\r\n") {
+				return "", nil, nil, fmt.Errorf("header parameter %q is invalid", parameter.InputName)
+			}
+			headers.Set(parameter.WireName, headerValue)
 		}
 	}
 	var body io.Reader
@@ -118,28 +128,28 @@ func buildAIPlatformRequest(operation aitool.OpenAPIOperation, arguments map[str
 		allowed["body"] = struct{}{}
 		value, exists := arguments["body"]
 		if operation.RequestRequired && (!exists || value == nil) {
-			return "", nil, fmt.Errorf("required request body is missing")
+			return "", nil, nil, fmt.Errorf("required request body is missing")
 		}
 		if exists && value != nil {
 			encoded, err := json.Marshal(value)
 			if err != nil {
-				return "", nil, fmt.Errorf("encode request body: %w", err)
+				return "", nil, nil, fmt.Errorf("encode request body: %w", err)
 			}
 			body = bytes.NewReader(encoded)
 		}
 	}
 	for name := range arguments {
 		if _, ok := allowed[name]; !ok {
-			return "", nil, fmt.Errorf("unknown argument %q", name)
+			return "", nil, nil, fmt.Errorf("unknown argument %q", name)
 		}
 	}
 	if strings.Contains(targetPath, "{") {
-		return "", nil, fmt.Errorf("platform path parameters are incomplete")
+		return "", nil, nil, fmt.Errorf("platform path parameters are incomplete")
 	}
 	if encoded := query.Encode(); encoded != "" {
 		targetPath += "?" + encoded
 	}
-	return targetPath, body, nil
+	return targetPath, body, headers, nil
 }
 
 func appendAIQueryValue(query url.Values, name string, value any) {

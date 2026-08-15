@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { NativeSelect as Select } from '@/components/ui/native-select'
+import { projectVolumeRowsAreValid } from '@/lib/runtime-data-volumes'
 import { RuntimeDataVolumesEditor } from './application-deployment-data-volumes-editor'
 import { ApplicationDeploymentHooksEditor } from './application-deployment-hooks-editor'
 import { KubernetesAdvancedFields } from './application-deployment-kubernetes-advanced-fields'
@@ -55,7 +56,7 @@ export function ApplicationDeploymentTargetDialog({
   targetBuildOptionsFetching,
   targetCanRedeploy,
   targetConfigFilesValid,
-  targetDataRetentionEnabled,
+  targetHasDataVolumes,
   targetDataVolumes,
   targetHasRuntimeChanges,
   targetImagePrefix,
@@ -113,7 +114,7 @@ export function ApplicationDeploymentTargetDialog({
   targetBuildOptionsFetching: boolean
   targetCanRedeploy: boolean
   targetConfigFilesValid: boolean
-  targetDataRetentionEnabled: boolean
+  targetHasDataVolumes: boolean
   targetDataVolumes: Parameters<typeof RuntimeDataVolumesEditor>[0]['rows']
   targetHasRuntimeChanges: boolean
   targetImagePrefix: string
@@ -148,6 +149,9 @@ export function ApplicationDeploymentTargetDialog({
   onUpdateServicePorts: (rows: DeploymentTargetPayload['servicePorts']) => void
 }) {
   const { t } = useTranslation()
+  const effectiveVolumeClusterId = form.watch('clusterId') || defaultRuntimeCluster?.id || ''
+  const targetDataVolumesValid = !targetHasDataVolumes || projectVolumeRowsAreValid(targetDataVolumes)
+  const saveDisabled = !targetRuntimeFilesValid || !targetConfigFilesValid || !targetSecretFilesValid || !targetDataVolumesValid || savePending
 
   return (
     <Dialog
@@ -163,7 +167,13 @@ export function ApplicationDeploymentTargetDialog({
           <DialogTitle>{editingTarget ? t('deploymentsPage.editDeploymentTarget') : t('deploymentsPage.createDeploymentTarget')}</DialogTitle>
           <DialogDescription>{t('deploymentsPage.deploymentTargetDialogDescription')}</DialogDescription>
         </DialogHeader>
-        <form className="flex min-h-0 flex-1 flex-col" onSubmit={form.handleSubmit(values => onSave(values, false))}>
+        <form
+          className="flex min-h-0 flex-1 flex-col"
+          onSubmit={form.handleSubmit((values) => {
+            if (targetDataVolumesValid)
+              onSave(values, false)
+          })}
+        >
           <div className="grid gap-3 overflow-y-auto px-6 py-4 pb-6">
             <ProgressiveSection
               defaultOpen
@@ -188,7 +198,12 @@ export function ApplicationDeploymentTargetDialog({
                   </Select>
                 </Field>
                 <Field hint={t('deploymentsPage.runtimeEnvironmentHint')} label={t('clustersPage.runtimeCluster')}>
-                  <Select {...form.register('clusterId')}>
+                  <Select {...form.register('clusterId', {
+                    onChange: () => onUpdateDataVolumes(targetDataVolumes.map(volume => volume.sourceType === 'projectVolume'
+                      ? { ...volume, capacity: '', devicePath: '', projectVolumeId: '' }
+                      : volume)),
+                  })}
+                  >
                     <option value="">{defaultRuntimeCluster ? t('deploymentsPage.clusterDefaultOption', { name: defaultRuntimeCluster.name }) : t('common.select')}</option>
                     {runtimeClusters.map(cluster => <option key={cluster.id} value={cluster.id}>{cluster.name}</option>)}
                   </Select>
@@ -368,15 +383,14 @@ export function ApplicationDeploymentTargetDialog({
               title={t('deploymentsPage.runtimeData')}
             >
               <div className="grid gap-3">
-                <Field hint={t('deploymentsPage.dataRetentionHint')} label={t('deploymentsPage.dataRetention')}>
-                  <Select {...form.register('dataRetentionEnabled')}>
-                    <option value="false">{t('common.disabled')}</option>
-                    <option value="true">{t('common.enabled')}</option>
-                  </Select>
-                </Field>
-                {targetDataRetentionEnabled && (
-                  <RuntimeDataVolumesEditor enabled={targetDataRetentionEnabled} rows={targetDataVolumes} onChange={onUpdateDataVolumes} />
-                )}
+                <RuntimeDataVolumesEditor
+                  clusterId={effectiveVolumeClusterId}
+                  enabled
+                  rows={targetDataVolumes}
+                  runtimeClusters={runtimeClusters}
+                  onChange={onUpdateDataVolumes}
+                />
+                {!targetDataVolumesValid && <p className="text-sm text-danger">{t('projectVolumes.deploymentSelectionIncomplete')}</p>}
               </div>
             </ProgressiveSection>
             <ProgressiveSection
@@ -385,7 +399,7 @@ export function ApplicationDeploymentTargetDialog({
               summary={summaries.kubernetesAdvanced}
               title={t('deploymentsPage.progressiveKubernetesAdvancedTitle')}
             >
-              <KubernetesAdvancedFields dataRetentionEnabled={targetDataRetentionEnabled} form={form} />
+              <KubernetesAdvancedFields form={form} />
             </ProgressiveSection>
             {targetHasRuntimeChanges && (
               <div className="flex gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-amber-950 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100">
@@ -402,7 +416,7 @@ export function ApplicationDeploymentTargetDialog({
           <DialogFooter className="shrink-0 border-t border-border bg-background px-6 py-4">
             {targetHasRuntimeChanges && (
               <Button
-                disabled={!targetRuntimeFilesValid || !targetConfigFilesValid || !targetSecretFilesValid || !targetCanRedeploy || savePending}
+                disabled={saveDisabled || !targetCanRedeploy}
                 type="button"
                 variant="secondary"
                 onClick={form.handleSubmit(values => onSave(values, true))}
@@ -411,7 +425,7 @@ export function ApplicationDeploymentTargetDialog({
                 {t('deploymentsPage.saveAndRedeploy')}
               </Button>
             )}
-            <Button disabled={!targetRuntimeFilesValid || !targetConfigFilesValid || !targetSecretFilesValid || savePending} type="submit">
+            <Button disabled={saveDisabled} type="submit">
               <Save className="size-4" />
               {t('common.save')}
             </Button>

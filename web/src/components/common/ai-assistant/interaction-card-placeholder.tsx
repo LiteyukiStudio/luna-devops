@@ -1,4 +1,3 @@
-import type { PrepareInteractionCardsInput } from '@luna-devops/ai-interaction-card-contract'
 import type { AIToolDisplayResult } from '@/api'
 import { LayoutTemplate, Sparkles } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -6,7 +5,10 @@ import { AIMarkdown } from './markdown'
 
 export function AIInteractionCardPlaceholder({ arguments: rawArguments, result }: { arguments: Record<string, unknown>, result?: AIToolDisplayResult }) {
   const { t } = useTranslation()
-  const preparation = rawArguments as unknown as PrepareInteractionCardsInput & { generationId?: string }
+  const preparation = rawArguments as {
+    title?: unknown
+    description?: unknown
+  }
   const title = typeof preparation.title === 'string' ? preparation.title : t('aiAssistant.cards.preparing')
   const description = typeof preparation.description === 'string' ? preparation.description : undefined
   const repairing = Boolean(result?.attempt && result.attempt > 0)

@@ -15,9 +15,13 @@
     "defaultReplicas": 1,
     "defaultCPU": "1",
     "defaultMemory": "1Gi",
-    "dataRetentionEnabled": true,
-    "dataMountPath": "/var/lib/postgresql/data",
-    "dataCapacity": "5Gi",
+    "dataVolumes": [
+      {
+        "logicalName": "data",
+        "sourceType": "projectVolume",
+        "mountPath": "/var/lib/postgresql/data"
+      }
+    ],
     "env": {
       "POSTGRES_USER": "{{username}}",
       "POSTGRES_DB": "{{database}}"
@@ -63,9 +67,13 @@
     "defaultReplicas": 1,
     "defaultCPU": "500m",
     "defaultMemory": "512Mi",
-    "dataRetentionEnabled": true,
-    "dataMountPath": "/data",
-    "dataCapacity": "1Gi",
+    "dataVolumes": [
+      {
+        "logicalName": "data",
+        "sourceType": "projectVolume",
+        "mountPath": "/data"
+      }
+    ],
     "values": []
   },
   {
@@ -84,9 +92,13 @@
     "defaultReplicas": 1,
     "defaultCPU": "500m",
     "defaultMemory": "512Mi",
-    "dataRetentionEnabled": true,
-    "dataMountPath": "/data",
-    "dataCapacity": "1Gi",
+    "dataVolumes": [
+      {
+        "logicalName": "data",
+        "sourceType": "projectVolume",
+        "mountPath": "/data"
+      }
+    ],
     "values": []
   },
   {
@@ -105,9 +117,13 @@
     "defaultReplicas": 1,
     "defaultCPU": "1",
     "defaultMemory": "1Gi",
-    "dataRetentionEnabled": true,
-    "dataMountPath": "/var/lib/mysql",
-    "dataCapacity": "5Gi",
+    "dataVolumes": [
+      {
+        "logicalName": "data",
+        "sourceType": "projectVolume",
+        "mountPath": "/var/lib/mysql"
+      }
+    ],
     "env": {
       "MYSQL_DATABASE": "{{database}}",
       "MYSQL_USER": "{{username}}"
@@ -161,9 +177,13 @@
     "defaultReplicas": 1,
     "defaultCPU": "1",
     "defaultMemory": "1Gi",
-    "dataRetentionEnabled": true,
-    "dataMountPath": "/data/db",
-    "dataCapacity": "5Gi",
+    "dataVolumes": [
+      {
+        "logicalName": "data",
+        "sourceType": "projectVolume",
+        "mountPath": "/data/db"
+      }
+    ],
     "env": {
       "MONGO_INITDB_ROOT_USERNAME": "{{username}}"
     },
@@ -202,9 +222,13 @@
     "defaultReplicas": 1,
     "defaultCPU": "1",
     "defaultMemory": "1Gi",
-    "dataRetentionEnabled": true,
-    "dataMountPath": "/var/lib/mysql",
-    "dataCapacity": "5Gi",
+    "dataVolumes": [
+      {
+        "logicalName": "data",
+        "sourceType": "projectVolume",
+        "mountPath": "/var/lib/mysql"
+      }
+    ],
     "env": {
       "MARIADB_DATABASE": "{{database}}",
       "MARIADB_USER": "{{username}}"
@@ -258,9 +282,7 @@
     "defaultReplicas": 1,
     "defaultCPU": "250m",
     "defaultMemory": "256Mi",
-    "dataRetentionEnabled": false,
-    "dataMountPath": "/data",
-    "dataCapacity": "",
+    "dataVolumes": [],
     "values": []
   },
   {
@@ -279,9 +301,13 @@
     "defaultReplicas": 1,
     "defaultCPU": "500m",
     "defaultMemory": "512Mi",
-    "dataRetentionEnabled": true,
-    "dataMountPath": "/var/lib/rabbitmq",
-    "dataCapacity": "2Gi",
+    "dataVolumes": [
+      {
+        "logicalName": "data",
+        "sourceType": "projectVolume",
+        "mountPath": "/var/lib/rabbitmq"
+      }
+    ],
     "env": {
       "RABBITMQ_DEFAULT_USER": "{{username}}"
     },
@@ -320,9 +346,13 @@
     "defaultReplicas": 1,
     "defaultCPU": "1",
     "defaultMemory": "1Gi",
-    "dataRetentionEnabled": true,
-    "dataMountPath": "/meili_data",
-    "dataCapacity": "3Gi",
+    "dataVolumes": [
+      {
+        "logicalName": "data",
+        "sourceType": "projectVolume",
+        "mountPath": "/meili_data"
+      }
+    ],
     "secretEnv": {
       "MEILI_MASTER_KEY": "{{masterKey}}"
     },
@@ -352,9 +382,13 @@
     "defaultReplicas": 1,
     "defaultCPU": "500m",
     "defaultMemory": "512Mi",
-    "dataRetentionEnabled": true,
-    "dataMountPath": "/var/lib/grafana",
-    "dataCapacity": "2Gi",
+    "dataVolumes": [
+      {
+        "logicalName": "data",
+        "sourceType": "projectVolume",
+        "mountPath": "/var/lib/grafana"
+      }
+    ],
     "env": {
       "GF_SECURITY_ADMIN_USER": "{{username}}"
     },
@@ -393,9 +427,13 @@
     "defaultReplicas": 1,
     "defaultCPU": "500m",
     "defaultMemory": "512Mi",
-    "dataRetentionEnabled": true,
-    "dataMountPath": "/prometheus",
-    "dataCapacity": "5Gi",
+    "dataVolumes": [
+      {
+        "logicalName": "data",
+        "sourceType": "projectVolume",
+        "mountPath": "/prometheus"
+      }
+    ],
     "configFiles": [
       {
         "path": "/etc/prometheus/prometheus.yml",
@@ -420,9 +458,13 @@
     "defaultReplicas": 1,
     "defaultCPU": "500m",
     "defaultMemory": "512Mi",
-    "dataRetentionEnabled": true,
-    "dataMountPath": "/app/data",
-    "dataCapacity": "2Gi",
+    "dataVolumes": [
+      {
+        "logicalName": "data",
+        "sourceType": "projectVolume",
+        "mountPath": "/app/data"
+      }
+    ],
     "values": []
   },
   {
@@ -441,9 +483,13 @@
     "defaultReplicas": 1,
     "defaultCPU": "500m",
     "defaultMemory": "512Mi",
-    "dataRetentionEnabled": true,
-    "dataMountPath": "/var/opt/memos",
-    "dataCapacity": "2Gi",
+    "dataVolumes": [
+      {
+        "logicalName": "data",
+        "sourceType": "projectVolume",
+        "mountPath": "/var/opt/memos"
+      }
+    ],
     "values": []
   },
   {
@@ -462,9 +508,7 @@
     "defaultReplicas": 1,
     "defaultCPU": "250m",
     "defaultMemory": "256Mi",
-    "dataRetentionEnabled": false,
-    "dataMountPath": "/data",
-    "dataCapacity": "",
+    "dataVolumes": [],
     "values": []
   },
   {
@@ -483,9 +527,7 @@
     "defaultReplicas": 1,
     "defaultCPU": "250m",
     "defaultMemory": "256Mi",
-    "dataRetentionEnabled": false,
-    "dataMountPath": "/data",
-    "dataCapacity": "",
+    "dataVolumes": [],
     "values": []
   },
   {
@@ -504,9 +546,13 @@
     "defaultReplicas": 1,
     "defaultCPU": "500m",
     "defaultMemory": "512Mi",
-    "dataRetentionEnabled": true,
-    "dataMountPath": "/verdaccio/storage",
-    "dataCapacity": "5Gi",
+    "dataVolumes": [
+      {
+        "logicalName": "data",
+        "sourceType": "projectVolume",
+        "mountPath": "/verdaccio/storage"
+      }
+    ],
     "values": []
   },
   {
@@ -525,9 +571,13 @@
     "defaultReplicas": 1,
     "defaultCPU": "500m",
     "defaultMemory": "512Mi",
-    "dataRetentionEnabled": true,
-    "dataMountPath": "/var/lib/registry",
-    "dataCapacity": "10Gi",
+    "dataVolumes": [
+      {
+        "logicalName": "data",
+        "sourceType": "projectVolume",
+        "mountPath": "/var/lib/registry"
+      }
+    ],
     "values": []
   },
   {
@@ -546,9 +596,13 @@
     "defaultReplicas": 1,
     "defaultCPU": "500m",
     "defaultMemory": "512Mi",
-    "dataRetentionEnabled": true,
-    "dataMountPath": "/var/lib/pgadmin",
-    "dataCapacity": "2Gi",
+    "dataVolumes": [
+      {
+        "logicalName": "data",
+        "sourceType": "projectVolume",
+        "mountPath": "/var/lib/pgadmin"
+      }
+    ],
     "env": {
       "PGADMIN_DEFAULT_EMAIL": "{{email}}"
     },
@@ -587,9 +641,13 @@
     "defaultReplicas": 1,
     "defaultCPU": "1",
     "defaultMemory": "1Gi",
-    "dataRetentionEnabled": true,
-    "dataMountPath": "/var/opt/bytebase",
-    "dataCapacity": "5Gi",
+    "dataVolumes": [
+      {
+        "logicalName": "data",
+        "sourceType": "projectVolume",
+        "mountPath": "/var/opt/bytebase"
+      }
+    ],
     "values": []
   },
   {
@@ -610,9 +668,7 @@
     "defaultReplicas": 1,
     "defaultCPU": "100m",
     "defaultMemory": "128Mi",
-    "dataRetentionEnabled": false,
-    "dataMountPath": "",
-    "dataCapacity": "",
+    "dataVolumes": [],
     "values": [
       {
         "key": "apiBaseUrl",
@@ -646,9 +702,13 @@
     "defaultReplicas": 1,
     "defaultCPU": "1",
     "defaultMemory": "1Gi",
-    "dataRetentionEnabled": true,
-    "dataMountPath": "/var/lib/garage",
-    "dataCapacity": "10Gi",
+    "dataVolumes": [
+      {
+        "logicalName": "data",
+        "sourceType": "projectVolume",
+        "mountPath": "/var/lib/garage"
+      }
+    ],
     "secretFiles": [
       {
         "path": "/etc/garage.toml",
@@ -695,9 +755,7 @@
     "defaultReplicas": 1,
     "defaultCPU": "250m",
     "defaultMemory": "256Mi",
-    "dataRetentionEnabled": false,
-    "dataMountPath": "/data",
-    "dataCapacity": "",
+    "dataVolumes": [],
     "values": []
   },
   {
@@ -716,9 +774,13 @@
     "defaultReplicas": 1,
     "defaultCPU": "1",
     "defaultMemory": "2Gi",
-    "dataRetentionEnabled": true,
-    "dataMountPath": "/var/lib/clickhouse",
-    "dataCapacity": "10Gi",
+    "dataVolumes": [
+      {
+        "logicalName": "data",
+        "sourceType": "projectVolume",
+        "mountPath": "/var/lib/clickhouse"
+      }
+    ],
     "env": {
       "CLICKHOUSE_DB": "{{database}}",
       "CLICKHOUSE_USER": "{{username}}"
@@ -764,9 +826,13 @@
     "defaultReplicas": 1,
     "defaultCPU": "1",
     "defaultMemory": "1Gi",
-    "dataRetentionEnabled": true,
-    "dataMountPath": "/qdrant/storage",
-    "dataCapacity": "5Gi",
+    "dataVolumes": [
+      {
+        "logicalName": "data",
+        "sourceType": "projectVolume",
+        "mountPath": "/qdrant/storage"
+      }
+    ],
     "secretEnv": {
       "QDRANT__SERVICE__API_KEY": "{{apiKey}}"
     },
@@ -796,9 +862,13 @@
     "defaultReplicas": 1,
     "defaultCPU": "500m",
     "defaultMemory": "512Mi",
-    "dataRetentionEnabled": true,
-    "dataMountPath": "/data",
-    "dataCapacity": "3Gi",
+    "dataVolumes": [
+      {
+        "logicalName": "data",
+        "sourceType": "projectVolume",
+        "mountPath": "/data"
+      }
+    ],
     "env": {
       "TYPESENSE_DATA_DIR": "/data"
     },
@@ -831,9 +901,7 @@
     "defaultReplicas": 1,
     "defaultCPU": "250m",
     "defaultMemory": "256Mi",
-    "dataRetentionEnabled": false,
-    "dataMountPath": "/data",
-    "dataCapacity": "",
+    "dataVolumes": [],
     "values": []
   },
   {
@@ -852,9 +920,7 @@
     "defaultReplicas": 1,
     "defaultCPU": "250m",
     "defaultMemory": "256Mi",
-    "dataRetentionEnabled": false,
-    "dataMountPath": "/data",
-    "dataCapacity": "",
+    "dataVolumes": [],
     "env": {
       "ME_CONFIG_BASICAUTH_ENABLED": "true",
       "ME_CONFIG_BASICAUTH_USERNAME": "{{username}}"
@@ -902,9 +968,13 @@
     "defaultReplicas": 1,
     "defaultCPU": "250m",
     "defaultMemory": "256Mi",
-    "dataRetentionEnabled": true,
-    "dataMountPath": "/data",
-    "dataCapacity": "1Gi",
+    "dataVolumes": [
+      {
+        "logicalName": "data",
+        "sourceType": "projectVolume",
+        "mountPath": "/data"
+      }
+    ],
     "configFiles": [
       {
         "path": "/etc/caddy/Caddyfile",
@@ -929,9 +999,13 @@
     "defaultReplicas": 1,
     "defaultCPU": "1",
     "defaultMemory": "1Gi",
-    "dataRetentionEnabled": true,
-    "dataMountPath": "/var/lib/gitea",
-    "dataCapacity": "10Gi",
+    "dataVolumes": [
+      {
+        "logicalName": "data",
+        "sourceType": "projectVolume",
+        "mountPath": "/var/lib/gitea"
+      }
+    ],
     "env": {
       "GITEA__database__DB_TYPE": "sqlite3",
       "GITEA__server__HTTP_PORT": "3000"
@@ -954,9 +1028,13 @@
     "defaultReplicas": 1,
     "defaultCPU": "500m",
     "defaultMemory": "512Mi",
-    "dataRetentionEnabled": true,
-    "dataMountPath": "/data",
-    "dataCapacity": "2Gi",
+    "dataVolumes": [
+      {
+        "logicalName": "data",
+        "sourceType": "projectVolume",
+        "mountPath": "/data"
+      }
+    ],
     "env": {
       "SIGNUPS_ALLOWED": "true",
       "WEBSOCKET_ENABLED": "true"
@@ -990,9 +1068,13 @@
     "defaultReplicas": 1,
     "defaultCPU": "500m",
     "defaultMemory": "512Mi",
-    "dataRetentionEnabled": true,
-    "dataMountPath": "/usr/app/data",
-    "dataCapacity": "5Gi",
+    "dataVolumes": [
+      {
+        "logicalName": "data",
+        "sourceType": "projectVolume",
+        "mountPath": "/usr/app/data"
+      }
+    ],
     "values": []
   },
   {
@@ -1011,9 +1093,13 @@
     "defaultReplicas": 1,
     "defaultCPU": "500m",
     "defaultMemory": "512Mi",
-    "dataRetentionEnabled": true,
-    "dataMountPath": "/wiki/data",
-    "dataCapacity": "3Gi",
+    "dataVolumes": [
+      {
+        "logicalName": "data",
+        "sourceType": "projectVolume",
+        "mountPath": "/wiki/data"
+      }
+    ],
     "env": {
       "DB_TYPE": "sqlite",
       "DB_FILEPATH": "/wiki/data/wiki.db"
@@ -1036,9 +1122,13 @@
     "defaultReplicas": 1,
     "defaultCPU": "500m",
     "defaultMemory": "512Mi",
-    "dataRetentionEnabled": true,
-    "dataMountPath": "/var/www/html",
-    "dataCapacity": "5Gi",
+    "dataVolumes": [
+      {
+        "logicalName": "data",
+        "sourceType": "projectVolume",
+        "mountPath": "/var/www/html"
+      }
+    ],
     "env": {
       "WORDPRESS_DB_HOST": "{{dbHost}}",
       "WORDPRESS_DB_NAME": "{{database}}",

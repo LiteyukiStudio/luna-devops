@@ -1,81 +1,91 @@
+import type { DeploymentDataVolumeInput } from '@/api'
+
 export interface RuntimeDataVolumeRow {
-  emptyDirMedium: string
+  emptyDirMedium: '' | 'Memory'
   emptyDirSizeLimit: string
-  existingClaimName: string
-  retainedVolumeId: string
+  devicePath: string
+  projectVolumeId: string
+  readOnly: boolean
   id: string
   name: string
   mountPath: string
-  capacity: string
-  sourceType: 'managed' | 'existingClaim' | 'retainedClaim' | 'emptyDir'
+  sourceType: 'projectVolume' | 'emptyDir'
 }
 
 export function defaultRuntimeDataVolumeRow(): RuntimeDataVolumeRow {
-  return { id: runtimeDataVolumeRowId(0), capacity: '1Gi', emptyDirMedium: '', emptyDirSizeLimit: '', existingClaimName: '', retainedVolumeId: '', mountPath: '/data', name: 'data', sourceType: 'managed' }
+  return {
+    id: runtimeDataVolumeRowId(0),
+    emptyDirMedium: '',
+    emptyDirSizeLimit: '',
+    devicePath: '',
+    projectVolumeId: '',
+    readOnly: false,
+    mountPath: '/data',
+    name: 'data',
+    sourceType: 'projectVolume',
+  }
 }
 
 export function emptyRuntimeDataVolumeRow(index: number): RuntimeDataVolumeRow {
-  return { id: runtimeDataVolumeRowId(index), capacity: '1Gi', emptyDirMedium: '', emptyDirSizeLimit: '', existingClaimName: '', retainedVolumeId: '', mountPath: '', name: `data-${index + 1}`, sourceType: 'managed' }
+  return {
+    ...defaultRuntimeDataVolumeRow(),
+    id: runtimeDataVolumeRowId(index),
+    mountPath: '',
+    name: `data-${index + 1}`,
+  }
 }
 
-export function parseRuntimeDataVolumes(value?: string, fallbackMountPath = '/data', fallbackCapacity = '1Gi'): RuntimeDataVolumeRow[] {
-  const trimmed = value?.trim() ?? ''
-  if (!trimmed || trimmed === '[]') {
-    return [{
-      id: runtimeDataVolumeRowId(0),
-      capacity: fallbackCapacity || '1Gi',
-      emptyDirMedium: '',
-      emptyDirSizeLimit: '',
-      existingClaimName: '',
-      retainedVolumeId: '',
-      mountPath: fallbackMountPath || '/data',
-      name: 'data',
-      sourceType: 'managed',
-    }]
-  }
-  try {
-    const parsed = JSON.parse(trimmed)
-    if (Array.isArray(parsed)) {
-      const rows = parsed.map((item, index) => ({
-        id: runtimeDataVolumeRowId(index),
-        capacity: String(item?.capacity ?? '1Gi'),
-        emptyDirMedium: String(item?.emptyDirMedium ?? ''),
-        emptyDirSizeLimit: String(item?.emptyDirSizeLimit ?? ''),
-        existingClaimName: String(item?.existingClaimName ?? ''),
-        retainedVolumeId: String(item?.retainedVolumeId ?? ''),
-        mountPath: String(item?.mountPath ?? ''),
-        name: String(item?.name ?? `data-${index + 1}`),
-        sourceType: normalizeRuntimeDataVolumeSourceType(item?.sourceType),
-      })).filter(row => row.name.trim() || row.mountPath.trim() || row.capacity.trim())
-      return rows.length > 0 ? rows : [defaultRuntimeDataVolumeRow()]
-    }
-  }
-  catch {
-    return [defaultRuntimeDataVolumeRow()]
-  }
-  return [defaultRuntimeDataVolumeRow()]
-}
-
-export function serializeRuntimeDataVolumes(rows: RuntimeDataVolumeRow[]) {
-  const volumes = rows
-    .map(row => ({
-      capacity: row.sourceType === 'managed' ? (row.capacity.trim() || '1Gi') : '',
-      emptyDirMedium: row.sourceType === 'emptyDir' ? row.emptyDirMedium.trim() : '',
-      emptyDirSizeLimit: row.sourceType === 'emptyDir' ? row.emptyDirSizeLimit.trim() : '',
-      existingClaimName: row.sourceType === 'existingClaim' || row.sourceType === 'retainedClaim' ? row.existingClaimName.trim() : '',
-      retainedVolumeId: row.sourceType === 'retainedClaim' ? row.retainedVolumeId.trim() : '',
-      mountPath: row.mountPath.trim(),
-      name: row.name.trim(),
-      sourceType: row.sourceType || 'managed',
+export function parseRuntimeDataVolumes(value?: DeploymentDataVolumeInput[]): RuntimeDataVolumeRow[] {
+  if (!Array.isArray(value))
+    return []
+  return value
+    .filter(item => item?.sourceType === 'projectVolume' || item?.sourceType === 'emptyDir')
+    .map((item, index) => ({
+      id: runtimeDataVolumeRowId(index),
+      emptyDirMedium: item.emptyDir?.medium === 'Memory' ? 'Memory' : '',
+      emptyDirSizeLimit: String(item.emptyDir?.sizeLimit ?? ''),
+      devicePath: String(item.devicePath ?? ''),
+      projectVolumeId: String(item.projectVolumeId ?? ''),
+      readOnly: Boolean(item.readOnly),
+      mountPath: String(item.mountPath ?? ''),
+      name: String(item.logicalName ?? `data-${index + 1}`),
+      sourceType: item.sourceType,
     }))
-    .filter(row => row.name || row.mountPath)
-  return volumes.length > 0 ? JSON.stringify(volumes) : ''
 }
 
-function normalizeRuntimeDataVolumeSourceType(value: unknown): RuntimeDataVolumeRow['sourceType'] {
-  if (value === 'existingClaim' || value === 'retainedClaim' || value === 'emptyDir')
-    return value
-  return 'managed'
+export function serializeRuntimeDataVolumes(rows: RuntimeDataVolumeRow[]): DeploymentDataVolumeInput[] {
+  return rows.map(row => row.sourceType === 'emptyDir'
+    ? {
+        logicalName: row.name.trim(),
+        sourceType: 'emptyDir',
+        mountPath: row.mountPath.trim(),
+        emptyDir: {
+          medium: row.emptyDirMedium,
+          sizeLimit: row.emptyDirSizeLimit.trim(),
+        },
+      }
+    : {
+        logicalName: row.name.trim(),
+        sourceType: 'projectVolume',
+        projectVolumeId: row.projectVolumeId.trim(),
+        mountPath: row.devicePath.trim() ? undefined : row.mountPath.trim(),
+        devicePath: row.devicePath.trim() || undefined,
+        readOnly: row.readOnly,
+      })
+}
+
+export function projectVolumeRowsAreValid(rows: RuntimeDataVolumeRow[]) {
+  return rows.every((row) => {
+    if (!row.name.trim())
+      return false
+    if (row.sourceType === 'emptyDir')
+      return row.mountPath.trim().startsWith('/') && !row.devicePath.trim() && !row.projectVolumeId.trim()
+    const mountPath = row.mountPath.trim()
+    const devicePath = row.devicePath.trim()
+    return row.projectVolumeId.trim().startsWith('pvol_')
+      && Boolean(mountPath) !== Boolean(devicePath)
+      && (mountPath || devicePath).startsWith('/')
+  })
 }
 
 function runtimeDataVolumeRowId(index: number) {

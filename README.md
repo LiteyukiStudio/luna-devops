@@ -59,7 +59,7 @@ Luna DevOps 将代码仓库、镜像站、BuildKit、Kubernetes、访问入口�
 | 层级 | 技术栈 |
 | --- | --- |
 | 后端 | Go、Gin、GORM、PostgreSQL、Redis、Asynq、client-go |
-| AI Agent | Node.js 24、TypeScript、Fastify、LangGraph.js、PostgreSQL Checkpoint |
+| AI Agent | Node.js 24、TypeScript、Fastify、显式模型运行时、PostgreSQL 持久化 |
 | 前端 | Vite、React、TypeScript、Tailwind CSS、shadcn/ui、TanStack Query |
 | 表单与交互 | React Hook Form、Zod、i18next、react-i18next、Sonner |
 | 交付 | Docker Compose、Helm、Kubernetes Job、BuildKit、Gateway API |

@@ -12,7 +12,7 @@ import (
 const ResourceOwnershipConflictCode = "kubernetes.resource_ownership_conflict"
 
 var immutableOwnershipLabels = []string{
-	RetainedVolumeIDLabel,
+	ProjectVolumeIDLabel,
 	DeploymentTargetIDLabel,
 	GatewayRouteIDLabel,
 	ProjectIDLabel,
@@ -111,16 +111,15 @@ func (c *Client) ensureApplicationWorkloadOwnership(ctx context.Context, spec Ap
 }
 
 func (c *Client) ensureApplicationStorageOwnership(ctx context.Context, spec ApplicationResourcesSpec) error {
-	labels := appObjectLabels(spec)
 	for _, volume := range persistentDataVolumes(spec) {
-		if !dataVolumeNeedsPVC(volume) {
+		if dataVolumeSourceType(volume) != "projectVolume" {
 			continue
 		}
-		claim, err := c.client.CoreV1().PersistentVolumeClaims(spec.Namespace).Get(ctx, persistentDataPVCName(spec, volume), metav1.GetOptions{})
-		if err == nil && dataVolumeSourceType(volume) == "retainedClaim" && strings.TrimSpace(claim.Labels[RetainedVolumeIDLabel]) == strings.TrimSpace(volume.RetainedVolumeID) {
-			continue
+		claim, err := c.client.CoreV1().PersistentVolumeClaims(spec.Namespace).Get(ctx, strings.TrimSpace(volume.ClaimName), metav1.GetOptions{})
+		if err != nil {
+			return err
 		}
-		if err := checkExistingOwnership("PersistentVolumeClaim", claim, err, labels); err != nil {
+		if err := ensureProjectVolumeOwnership(claim.Labels, spec.ProjectID, volume.ProjectVolumeID); err != nil {
 			return err
 		}
 	}

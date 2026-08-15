@@ -12,10 +12,13 @@ import (
 )
 
 type periodicTaskSpec struct {
-	Cron    string
-	Task    *asynq.Task
-	Queue   string
-	Timeout time.Duration
+	Cron      string
+	Task      *asynq.Task
+	Queue     string
+	Timeout   time.Duration
+	MaxRetry  int
+	Retention time.Duration
+	Unique    time.Duration
 }
 
 func periodicTaskSpecs() ([]periodicTaskSpec, error) {
@@ -23,13 +26,31 @@ func periodicTaskSpecs() ([]periodicTaskSpec, error) {
 	if err != nil {
 		return nil, err
 	}
+	volumeReconcileTask, err := tasks.NewVolumeReconcileTask(tasks.VolumeReconcilePayload{ActorID: "system"})
+	if err != nil {
+		return nil, err
+	}
+	volumeTransferCleanupTask, err := tasks.NewVolumeTransferCleanupTask(tasks.VolumeTransferCleanupPayload{ActorID: "system"})
+	if err != nil {
+		return nil, err
+	}
 	return []periodicTaskSpec{
 		{Cron: "@every 5m", Task: gitRefreshTask, Queue: tasks.QueueLight, Timeout: 10 * time.Minute},
+		periodicVolumeTaskSpec("@every 5m", volumeReconcileTask),
+		periodicVolumeTaskSpec("@every 15m", volumeTransferCleanupTask),
 		{Cron: "@every 1m", Task: asynq.NewTask(tasks.TypeSyncStatus, []byte("{}")), Queue: tasks.QueueLight, Timeout: 5 * time.Minute},
 		{Cron: "@every 1m", Task: asynq.NewTask(tasks.TypeBillingAI, []byte("{}")), Queue: tasks.QueueLight, Timeout: time.Minute},
 		{Cron: "@every 10m", Task: asynq.NewTask(tasks.TypeBillingRuntime, []byte("{}")), Queue: tasks.QueueLight, Timeout: 5 * time.Minute},
 		{Cron: "@every 24h", Task: asynq.NewTask(tasks.TypeRetentionRun, []byte("{}")), Queue: tasks.QueueLight, Timeout: 30 * time.Minute},
 	}, nil
+}
+
+func periodicVolumeTaskSpec(cron string, task *asynq.Task) periodicTaskSpec {
+	policy := tasks.PolicyForType(task.Type())
+	return periodicTaskSpec{
+		Cron: cron, Task: task, Queue: policy.Queue, Timeout: policy.Timeout,
+		MaxRetry: policy.MaxRetry, Retention: policy.Retention, Unique: policy.Unique,
+	}
 }
 
 func startScheduler(redisAddr string) (*asynq.Scheduler, error) {
@@ -46,7 +67,17 @@ func startSchedulerWithRedis(options redisconfig.Options) (*asynq.Scheduler, err
 		return nil, err
 	}
 	for _, spec := range specs {
-		if _, err := scheduler.Register(spec.Cron, spec.Task, asynq.Queue(spec.Queue), asynq.Timeout(spec.Timeout)); err != nil {
+		options := []asynq.Option{asynq.Queue(spec.Queue), asynq.Timeout(spec.Timeout)}
+		if spec.MaxRetry > 0 {
+			options = append(options, asynq.MaxRetry(spec.MaxRetry))
+		}
+		if spec.Retention > 0 {
+			options = append(options, asynq.Retention(spec.Retention))
+		}
+		if spec.Unique > 0 {
+			options = append(options, asynq.Unique(spec.Unique))
+		}
+		if _, err := scheduler.Register(spec.Cron, spec.Task, options...); err != nil {
 			return nil, err
 		}
 	}

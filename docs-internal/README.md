@@ -34,6 +34,7 @@
 方案正文。
 
 - [16-application-deployments-panel重构方案.md](16-application-deployments-panel重构方案.md) — 应用部署面板的局部、行为保持型后续拆分方案
+- [17-项目空间数据卷中心与数据迁移方案.md](17-项目空间数据卷中心与数据迁移方案.md) — 数据卷资产、挂载、导入/导出、计费和迁移的端到端方案
 
 ## 边界
 

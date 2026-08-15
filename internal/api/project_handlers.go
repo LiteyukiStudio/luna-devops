@@ -22,7 +22,21 @@ func (h *Handlers) ListProjects(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	if authz.IsPlatformAdmin(user.Role) {
+	platformAdmin := authz.IsPlatformAdmin(user.Role)
+	scope, err := projectservice.ResolveListScope(ctx.Query("scope"), platformAdmin)
+	if errors.Is(err, projectservice.ErrListScopeInvalid) {
+		writeErrorCode(ctx, http.StatusBadRequest, "request.invalid", err.Error())
+		return
+	}
+	if errors.Is(err, projectservice.ErrListScopeForbidden) {
+		writeErrorCode(ctx, http.StatusForbidden, "auth.forbidden", err.Error())
+		return
+	}
+	if err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if platformAdmin {
 		if _, err := h.ensurePlatformSystemProject(user, ctx.Request.Context()); err != nil {
 			writeError(ctx, http.StatusInternalServerError, err.Error())
 			return
@@ -35,7 +49,7 @@ func (h *Handlers) ListProjects(ctx *gin.Context) {
 		Joins("left join project_members on project_members.project_id = projects.id and project_members.user_id = ?", user.ID).
 		Joins("left join project_pins on project_pins.project_id = projects.id and project_pins.user_id = project_members.user_id").
 		Where("projects.deleted_at is null")
-	if !authz.IsPlatformAdmin(user.Role) || strings.EqualFold(strings.TrimSpace(ctx.Query("scope")), "related") {
+	if scope == projectservice.ListScopeRelated {
 		baseQuery = baseQuery.Where("project_members.user_id = ?", user.ID)
 	}
 	baseQuery = applySearch(ctx, baseQuery, "projects.name", "projects.identifier")
@@ -110,7 +124,11 @@ func (h *Handlers) GetProject(ctx *gin.Context) {
 		return
 	}
 	h.recordProjectUsage(user.ID, project.ID, ctx.Request.Context())
-	ctx.JSON(http.StatusOK, h.projectResponse(project, ctx.Request.Context()))
+	response := h.projectResponse(project, ctx.Request.Context())
+	if role, exists := ctx.Get(currentProjectRoleContextKey); exists {
+		response.CurrentUserRole, _ = role.(string)
+	}
+	ctx.JSON(http.StatusOK, response)
 }
 
 func (h *Handlers) UpdateProject(ctx *gin.Context) {
@@ -610,6 +628,7 @@ func (h *Handlers) findProjectForCurrentUserWithRoles(ctx *gin.Context, allowedR
 		writeError(ctx, http.StatusForbidden, "你没有执行该项目操作的权限")
 		return model.Project{}, false
 	}
+	ctx.Set(currentProjectRoleContextKey, member.Role)
 
 	return project, true
 }
@@ -666,7 +685,8 @@ type projectPinResponse struct {
 
 type projectResponse struct {
 	model.Project
-	BillingOwner *projectBillingOwnerResponse `json:"billingOwner,omitempty"`
+	BillingOwner    *projectBillingOwnerResponse `json:"billingOwner,omitempty"`
+	CurrentUserRole string                       `json:"currentUserRole,omitempty"`
 }
 
 type projectBillingOwnerResponse struct {
@@ -730,13 +750,6 @@ func projectListOrderClause(sortBy string, sortOrder string) string {
 	default:
 		return "coalesce(project_members.last_used_at, projects.created_at) " + order + ", projects.created_at desc"
 	}
-}
-
-func projectListScope(scope string) string {
-	if strings.TrimSpace(scope) == "all" {
-		return "all"
-	}
-	return "related"
 }
 
 func (h *Handlers) recordProjectUsage(userID string, projectID string, ctx context.Context) {

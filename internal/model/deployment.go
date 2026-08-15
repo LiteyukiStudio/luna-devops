@@ -33,8 +33,8 @@ type RuntimeCluster struct {
 	GatewayNamespace              string         `gorm:"not null;default:kube-system" json:"gatewayNamespace"`
 	GatewayHTTPListenerName       string         `gorm:"not null;default:web" json:"gatewayHttpListenerName"`
 	GatewayHTTPListenerPort       int            `gorm:"not null;default:8080" json:"gatewayHttpListenerPort"`
-	GatewayHTTPSListenerName      string         `gorm:"not null;default:websecure" json:"gatewayHttpsListenerName"`
-	GatewayHTTPSListenerPort      int            `gorm:"not null;default:8443" json:"gatewayHttpsListenerPort"`
+	GatewayHTTPSListenerName      string         `gorm:"column:gateway_https_listener_name;not null;default:websecure" json:"gatewayHttpsListenerName"`
+	GatewayHTTPSListenerPort      int            `gorm:"column:gateway_https_listener_port;not null;default:8443" json:"gatewayHttpsListenerPort"`
 	GatewayTLSSecretName          string         `gorm:"not null;default:''" json:"gatewayTlsSecretName"`
 	GatewayTLSSecretNamespace     string         `gorm:"not null;default:''" json:"gatewayTlsSecretNamespace"`
 	GatewayCertIssuerKind         string         `gorm:"not null;default:ClusterIssuer" json:"gatewayCertIssuerKind"`
@@ -187,27 +187,29 @@ type DeploymentTarget struct {
 	SecretRefs                   string                        `gorm:"type:text;not null;default:''" json:"-"`
 	ConfigFiles                  string                        `gorm:"type:text;not null;default:''" json:"configFiles"`
 	SecretFiles                  string                        `gorm:"type:text;not null;default:''" json:"-"`
-	DataRetentionEnabled         bool                          `gorm:"not null;default:false" json:"dataRetentionEnabled"`
-	DataCapacity                 string                        `gorm:"not null;default:''" json:"dataCapacity"`
-	DataMountPath                string                        `gorm:"not null;default:'/data'" json:"dataMountPath"`
-	DataVolumes                  string                        `gorm:"type:text;not null;default:''" json:"dataVolumes"`
-	DataStorageClassName         string                        `gorm:"not null;default:''" json:"dataStorageClassName"`
-	DataAccessMode               string                        `gorm:"not null;default:''" json:"dataAccessMode"`
-	DataVolumeMode               string                        `gorm:"not null;default:''" json:"dataVolumeMode"`
-	RequireApproval              bool                          `gorm:"not null;default:false" json:"requireApproval"`
-	WebConsoleEnabled            *bool                         `json:"webConsoleEnabled"`
-	Enabled                      bool                          `gorm:"not null;default:true" json:"enabled"`
-	Status                       string                        `gorm:"-" json:"status"`
-	ObservationCode              string                        `gorm:"-" json:"observationCode,omitempty"`
-	LastCheckedAt                *time.Time                    `gorm:"-" json:"lastCheckedAt,omitempty"`
-	DesiredReplicas              int32                         `gorm:"-" json:"desiredReplicas"`
-	UpdatedReplicas              int32                         `gorm:"-" json:"updatedReplicas"`
-	ReadyReplicas                int32                         `gorm:"-" json:"readyReplicas"`
-	AvailableReplicas            int32                         `gorm:"-" json:"availableReplicas"`
-	CreatedBy                    string                        `gorm:"index" json:"createdBy"`
-	CreatedAt                    time.Time                     `json:"createdAt"`
-	UpdatedAt                    time.Time                     `json:"updatedAt"`
-	DeletedAt                    gorm.DeletedAt                `gorm:"index" json:"-"`
+	// Legacy deployment storage columns are retained only for the explicit
+	// backfill command. Request and worker paths use DeploymentVolumeMount.
+	DataRetentionEnabled bool           `gorm:"not null;default:false" json:"-"`
+	DataCapacity         string         `gorm:"not null;default:''" json:"-"`
+	DataMountPath        string         `gorm:"not null;default:'/data'" json:"-"`
+	DataVolumes          string         `gorm:"type:text;not null;default:''" json:"-"`
+	DataStorageClassName string         `gorm:"not null;default:''" json:"-"`
+	DataAccessMode       string         `gorm:"not null;default:''" json:"-"`
+	DataVolumeMode       string         `gorm:"not null;default:''" json:"-"`
+	RequireApproval      bool           `gorm:"not null;default:false" json:"requireApproval"`
+	WebConsoleEnabled    *bool          `json:"webConsoleEnabled"`
+	Enabled              bool           `gorm:"not null;default:true" json:"enabled"`
+	Status               string         `gorm:"-" json:"status"`
+	ObservationCode      string         `gorm:"-" json:"observationCode,omitempty"`
+	LastCheckedAt        *time.Time     `gorm:"-" json:"lastCheckedAt,omitempty"`
+	DesiredReplicas      int32          `gorm:"-" json:"desiredReplicas"`
+	UpdatedReplicas      int32          `gorm:"-" json:"updatedReplicas"`
+	ReadyReplicas        int32          `gorm:"-" json:"readyReplicas"`
+	AvailableReplicas    int32          `gorm:"-" json:"availableReplicas"`
+	CreatedBy            string         `gorm:"index" json:"createdBy"`
+	CreatedAt            time.Time      `json:"createdAt"`
+	UpdatedAt            time.Time      `json:"updatedAt"`
+	DeletedAt            gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
 const (

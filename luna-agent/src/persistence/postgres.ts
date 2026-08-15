@@ -165,7 +165,6 @@ export class PostgresRepository implements Repository {
         turnId,
         runIndex: 0,
         status: "queued",
-        graphVersion: "assistant-v1",
         promptVersion: "system-v4",
         toolCatalogDigest: input.toolCatalogDigest ?? "sha256:platform-tools-v1",
         pageContext: input.pageContext,

@@ -23,9 +23,10 @@ AI 助手不是悬浮在控制台上的通用聊天机器人。它理解用户�
 - 独立 `luna-agent` 服务承载模型编排，与 `cmd/api`、`cmd/worker` 分离；无状态可水平扩容。
 - 平台能力以 OpenAPI 和既有 API 为唯一业务入口；MCP 不作为内部服务总线，仅保留为未来
   连接外部工具的可选协议。
-- 编排内核选用 LangGraph.js，原因是工具调用必须受权限、审批、MFA、租约、幂等和审计约束，
-  需要一个能把这些约束作为一等公民的执行内核，而非功能最多的框架。
+- 编排采用显式 ModelRuntime + RunExecutor：ModelRuntime 只负责上下文编译、工具解析和 Provider 调用；RunExecutor 统一负责循环、工具执行、权限、审批、MFA、租约、幂等和审计，避免引入没有实际状态图语义的框架空壳。
 - 数据落 PostgreSQL `ai` schema；事件按 Run 单调递增 sequence 持久化后再可读，SSE 支持断线续传。
+- Web 以服务端 Timeline 快照在 TanStack Query 中的投影作为唯一事实源；每个 Run 最多保留一条
+  SSE 连接，事件直接合并到查询缓存，序号缺口通过权威快照恢复，不再维护独立 reducer 镜像状态。
 - Agent 不直接持有业务权限：Luna API 为每次工具调用签发短时用户委托令牌，与 API 服务 JWT、
   Agent 服务 JWT、Actor Context、Run Actor Grant 的用途与验证路径完全分离。
 

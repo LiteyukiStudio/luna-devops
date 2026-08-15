@@ -16,6 +16,11 @@
   },
   {
     "type": "file",
+    "name": "volume-transfer",
+    "label": "数据卷传输"
+  },
+  {
+    "type": "file",
     "name": "gateway-traffic-probe",
     "label": "网关流量探针"
   },
