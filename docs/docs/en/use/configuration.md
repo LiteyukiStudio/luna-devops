@@ -14,7 +14,11 @@ Global settings place the save action for the current tab in the tab action area
 
 Production responses include baseline browser protections. Enable HSTS only when the site is always available over HTTPS, because browsers may otherwise refuse later HTTP access to the domain.
 
-The platform can require step-up MFA for sensitive operations. Before enabling it globally, ensure that at least one active platform administrator has enrolled an offline TOTP authenticator.
+The platform can require step-up MFA for sensitive operations after sign-in; it does not currently request a second factor at every sign-in. Before enabling it globally, ensure that at least one active platform administrator has enrolled an offline TOTP authenticator.
+
+When connecting an authenticator, scan the QR code with a password manager or authenticator that supports verification codes. On iPhone or iPad, use the Camera app to add it to Passwords. An enabled authenticator is never overwritten in place: to connect a new one, complete step-up verification, disable two-step verification, and then enable it again. Disabling invalidates the old authenticator, recovery codes, and existing step-up state.
+
+After setup, Luna DevOps generates 10 recovery codes formatted like `ABCD-EFGH-JKLM-NPQR`. They are shown only once and each can be used once; regenerating them invalidates every old code. Use an unused recovery code if the authenticator is unavailable. If both the authenticator and recovery codes are lost, contact another platform administrator to reset MFA.
 
 Sign-in and step-up verification fields support standard browser password and one-time-code autofill semantics. To use a TOTP stored in a password manager, make sure the matching login item includes the current site address, the extension is unlocked, and inline autofill is enabled. If no suggestion appears, focus the verification-code field and select the code from the password manager.
 

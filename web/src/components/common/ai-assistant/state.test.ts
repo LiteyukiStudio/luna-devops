@@ -49,7 +49,7 @@ function toolItem(overrides: Partial<AITimelineItem> = {}): AITimelineItem {
 describe('aI assistant state', () => {
   it('rejects incomplete timeline snapshots fail closed', () => {
     expect(isValidAITimeline({ conversation: { id: 'c' }, turns: [] })).toBe(false)
-    expect(isValidAITimeline({ conversation: { id: 'c' }, turns: [], eventCursors: [] })).toBe(true)
+    expect(isValidAITimeline({ conversation: { id: 'c' }, turns: [], eventCursors: [], pageInfo: { hasOlder: false } })).toBe(true)
   })
 
   it('merges streaming deltas and ignores duplicate or stale events', () => {
@@ -106,6 +106,7 @@ describe('aI assistant state', () => {
       item: messageItem({ id: 'answer', revision: 2, parts: [{ id: 'answer:0', partIndex: 0, type: 'text', text: 'streamed answer' }] }),
     }))
     const snapshot: AITimeline = {
+      pageInfo: { hasOlder: false },
       conversation: { id: 'conversation-1', title: 't', titleSource: 'assistant', status: 'active' },
       eventCursors: [{ runId: 'run', after: 0 }],
       turns: [{
@@ -146,6 +147,7 @@ describe('aI assistant state', () => {
 
   it('restores a failed run notice from a timeline snapshot', () => {
     const timeline: AITimeline = {
+      pageInfo: { hasOlder: false },
       conversation: { id: 'c', title: 't', titleSource: 'assistant', status: 'active' },
       eventCursors: [],
       turns: [{
@@ -171,6 +173,7 @@ describe('aI assistant state', () => {
 
   it('projects tool result into its tool call without a duplicate block', () => {
     const timeline: AITimeline = {
+      pageInfo: { hasOlder: false },
       conversation: { id: 'c', title: 't', titleSource: 'assistant', status: 'active' },
       eventCursors: [],
       turns: [{

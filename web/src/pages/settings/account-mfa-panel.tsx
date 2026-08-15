@@ -1,6 +1,6 @@
 import type { ApiError, MFAEnrollment, MFAEnrollmentRequest } from '@/api'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Copy, KeyRound, RefreshCw, ShieldCheck, ShieldOff } from 'lucide-react'
+import { Copy, ExternalLink, KeyRound, RefreshCw, ShieldCheck, ShieldOff } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -16,11 +16,12 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { getDocumentationUrl } from '@/lib/docs-url'
 
 const mfaStatusQueryKey = ['mfa-status'] as const
 
 export function AccountMFAPanel() {
-  const { t } = useTranslation()
+  const { i18n, t } = useTranslation()
   const { actualUser, user } = useSession()
   const queryClient = useQueryClient()
   const [enrollment, setEnrollment] = useState<MFAEnrollment>()
@@ -225,7 +226,22 @@ export function AccountMFAPanel() {
           >
             <PasswordManagerUsernameField value={(actualUser ?? user)?.email} />
             {enrollment?.qrCodeDataUrl && (
-              <img alt={t('accountPage.mfa.qrCodeAlt')} className="mx-auto size-48 rounded-md border border-border bg-white p-2" src={enrollment.qrCodeDataUrl} />
+              <div className="grid justify-items-center gap-2">
+                <img alt={t('accountPage.mfa.qrCodeAlt')} className="size-48 rounded-md border border-border bg-white p-2" src={enrollment.qrCodeDataUrl} />
+                <p className="max-w-sm text-center text-sm text-muted-foreground">
+                  {t('accountPage.mfa.qrCodeHint')}
+                  {' '}
+                  <a
+                    className="inline-flex items-center gap-1 font-medium text-primary-text underline underline-offset-4"
+                    href={getDocumentationUrl('use/configuration', i18n.resolvedLanguage)}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    {t('accountPage.mfa.qrCodeHelp')}
+                    <ExternalLink aria-hidden="true" className="size-3" />
+                  </a>
+                </p>
+              </div>
             )}
             <Field hint={t('accountPage.mfa.uriHint')} label={t('accountPage.mfa.uri')}>
               <Input className="font-mono text-xs" readOnly value={enrollment?.otpauthUrl ?? ''} />

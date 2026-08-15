@@ -66,6 +66,13 @@ export function parseAIOptionAction(value: unknown): AIOptionAction | null {
   return parsed.data as AIOptionAction
 }
 
+export function parseAIOptionActions(values: readonly unknown[]): AIOptionAction[] {
+  return values
+    .map(parseAIOptionAction)
+    .filter((action): action is AIOptionAction => action !== null)
+    .slice(0, 5)
+}
+
 export function isAIUIActionRepeatable(action: AIUIAction): boolean {
   if (action.type === 'send_message' || action.type === 'request_tool')
     return false

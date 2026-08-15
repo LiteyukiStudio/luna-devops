@@ -27,6 +27,8 @@ On desktop, you can move and resize the assistant window. In a compact window, t
 
 The conversation browser shortens update timestamps by age: conversations updated today show only the time, earlier entries from the current year show month, day, and time, and older entries include the year. A running conversation shows its activity indicator beside the timestamp without taking space from the title.
 
+When you open a long conversation, the assistant first shows the most recent complete turns. Scrolling near the top loads older content while preserving your reading position, avoiding the delay of loading the entire history at once.
+
 Long conversations retain their complete history for review. Before a request approaches the model context limit, earlier turns are summarized into task goals, constraints, resources, and pending work. Each model request prioritizes the current work, recent verbatim turns, and those retained facts, so a long-running task does not require a new conversation merely because its turn count grows.
 
 Administrators can change the **Context input budget** under advanced runtime settings. It defaults to 256K tokens. This is the maximum input allowed for one model request, not a fixed cost per turn, and it must not exceed the context capacity supported by the selected model.
@@ -38,6 +40,8 @@ Under **Advanced settings**, the Agent's internal parameters can be tuned by cat
 The assistant can inspect platform resources, analyze logs and status, read public web pages, collect settings through interactive cards, and report operation results. Long-running builds and releases show their real status, and the assistant checks the outcome after they finish.
 
 An interaction card first shows a preparation placeholder at its actual conversation position, then replaces that same item with validated content. When a reply contains exactly one blocking configuration form, the assistant may place it at the end of that reply so you can read the explanation before filling it in. Candidate lists, multiple cards, progress, and results stay in their real event order.
+
+Next-step options generated for a reply appear inside that assistant bubble at their real position among messages, reasoning, and tool calls, making their context clear. Before the first message in a new conversation, page presets remain above the composer for quick access to common tasks.
 
 Cards use five stable roles: candidate discovery and comparison (`candidates`), structured configuration (`form`), change review (`change_review`), facts or operation outcomes (`result`), and platform-backed live tasks (`live_task`). Resource details, diagnostics, charts, and tables remain available as content blocks; you do not need to select or know these template names.
 

@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
+import type { CreatedTurn } from "../src/domain.js"
 import { PostgresRepository } from "../src/persistence/postgres.js"
 import { RunStateConflictError } from "../src/persistence/repository.js"
 
@@ -38,6 +39,8 @@ suite("PostgresRepository (Drizzle) integration", () => {
     const page = await repository.listConversations(owner, 1, 1)
     expect(page.total).toBe(2)
     expect(page.items).toHaveLength(1)
+    const filtered = await repository.listConversations(owner, 1, 20, { search: "诊断", sortOrder: "asc" })
+    expect(filtered.items.map(item => item.id)).toEqual([c2.id])
     expect(await repository.renameConversation(owner, c2.id, "手动标题")).toBeDefined()
     expect(await repository.renameConversationByAssistant(c2.id, "自动标题")).toBeUndefined()
     expect(await repository.getConversation("other", c2.id)).toBeUndefined()
@@ -159,6 +162,42 @@ suite("PostgresRepository (Drizzle) integration", () => {
     const executionInput = await repository.getExecutionInput(created.run.id)
     expect(executionInput?.pageContext).toEqual({ nested: { a: [1, 2] } })
     expect(executionInput?.toolInteractions).toHaveLength(1)
+  })
+
+  it("pages complete timeline turns and keeps item snapshots aligned with event cursors", async () => {
+    const conversation = await repository.createConversation(owner, "分页一致性")
+    const createdTurns: CreatedTurn[] = []
+    for (let turnIndex = 0; turnIndex < 13; turnIndex += 1) {
+      createdTurns.push(await repository.createTurn(owner, {
+        conversationId: conversation.id,
+        input: `turn-${turnIndex}`,
+        pageContext: {},
+        idempotencyKey: key(`timeline-page-${turnIndex}`),
+      }))
+    }
+
+    const latest = await repository.getTimeline(owner, conversation.id, { limit: 5 })
+    expect(latest?.turns.map(turn => turn.turnIndex)).toEqual([8, 9, 10, 11, 12])
+    expect(latest?.pageInfo).toEqual({ hasOlder: true, oldestTurnIndex: 8 })
+    const older = await repository.getTimeline(owner, conversation.id, { beforeTurnIndex: 8, limit: 5 })
+    expect(older?.turns.map(turn => turn.turnIndex)).toEqual([3, 4, 5, 6, 7])
+
+    const active = createdTurns.at(-1)
+    if (!active) throw new Error("expected a created turn")
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const mutationPromise = repository.appendItemWithEvent({
+        runId: active.run.id,
+        turnId: active.turn.id,
+        type: "assistant_message",
+        status: "completed",
+        content: { parts: [{ type: "text", text: `message-${attempt}` }] },
+      }, "item.completed")
+      const snapshotPromise = repository.getTimeline(owner, conversation.id, { limit: 1 })
+      const [mutation, snapshot] = await Promise.all([mutationPromise, snapshotPromise])
+      const cursor = snapshot?.eventCursors.find(item => item.runId === active.run.id)?.after ?? 0
+      const containsItem = snapshot?.turns[0]?.items.some(item => item.id === mutation.item.id) ?? false
+      if (cursor >= mutation.event.sequence) expect(containsItem).toBe(true)
+    }
   })
 
   it("advances conversation summaries monotonically", async () => {

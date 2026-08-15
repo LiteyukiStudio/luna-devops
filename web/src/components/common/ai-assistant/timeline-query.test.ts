@@ -1,10 +1,12 @@
-import type { AIEvent, AITimeline, AITimelineItem } from '@/api'
+import type { AIEvent, AITimeline, AITimelineItem, AITimelineTurn } from '@/api'
 import { describe, expect, it, vi } from 'vitest'
 import {
   activeRunStreamSubscriptions,
   applyTimelineQueryEvent,
+  mergeLatestTimelineSnapshot,
   mergeTimelineQuerySnapshot,
   recoverTimelineOnce,
+  timelineQueryDataFromInfinite,
   timelineQueryDataFromSnapshot,
 } from './timeline-query'
 
@@ -12,6 +14,7 @@ function snapshot(after = 0, item?: AITimelineItem): AITimeline {
   return {
     conversation: { id: 'conversation-1', title: '诊断', titleSource: 'assistant', status: 'active' },
     eventCursors: [{ runId: 'run-1', after }],
+    pageInfo: { hasOlder: false },
     turns: [{
       id: 'turn-1',
       turnIndex: 0,
@@ -60,7 +63,63 @@ function event(sequence: number, item = messageItem(sequence, `answer-${sequence
   }
 }
 
+function completedTurn(turnIndex: number): AITimelineTurn {
+  return {
+    id: `turn-${turnIndex}`,
+    turnIndex,
+    status: 'completed',
+    input: {
+      id: `turn-${turnIndex}:input`,
+      type: 'user_message',
+      createdAt: new Date(Date.UTC(2026, 7, 15, 0, turnIndex + 30)).toISOString(),
+      parts: [{ id: `turn-${turnIndex}:input:0`, partIndex: 0, type: 'text', text: `message-${turnIndex}` }],
+    },
+  }
+}
+
+function timelinePage(turnIndexes: number[], pageInfo: AITimeline['pageInfo']) {
+  return timelineQueryDataFromSnapshot({
+    conversation: { id: 'conversation-1', title: '诊断', titleSource: 'assistant', status: 'active' },
+    eventCursors: [],
+    pageInfo,
+    turns: turnIndexes.map(completedTurn),
+  })
+}
+
 describe('timeline query cache', () => {
+  it('keeps an already displayed turn when the latest window advances before history was loaded', () => {
+    const current = {
+      pageParams: [null],
+      pages: [timelinePage(Array.from({ length: 30 }, (_, index) => index + 1), { hasOlder: true, olderCursor: 'before-1' })],
+    }
+    const merged = mergeLatestTimelineSnapshot(
+      current,
+      timelinePage(Array.from({ length: 30 }, (_, index) => index + 2), { hasOlder: true, olderCursor: 'before-2' }),
+    )
+
+    expect(merged.pages[0]?.snapshot?.turns.map(turn => turn.turnIndex)).toEqual(Array.from({ length: 31 }, (_, index) => index + 1))
+    expect(merged.pages[0]?.snapshot?.pageInfo).toEqual({ hasOlder: true, olderCursor: 'before-1' })
+  })
+
+  it('preserves a turn displaced from the growing latest window without changing the older cursor', () => {
+    const current = {
+      pageParams: ['before-1', null],
+      pages: [
+        timelinePage(Array.from({ length: 24 }, (_, index) => index - 23), { hasOlder: true, olderCursor: 'before--23' }),
+        timelinePage(Array.from({ length: 25 }, (_, index) => index + 1), { hasOlder: true, olderCursor: 'before-1' }),
+      ],
+    }
+    const merged = mergeLatestTimelineSnapshot(
+      current,
+      timelinePage(Array.from({ length: 25 }, (_, index) => index + 2), { hasOlder: true, olderCursor: 'before-2' }),
+    )
+    const aggregate = timelineQueryDataFromInfinite(merged)
+
+    expect(aggregate?.snapshot?.turns.map(turn => turn.turnIndex)).toEqual(Array.from({ length: 50 }, (_, index) => index - 23))
+    expect(new Set(aggregate?.snapshot?.turns.map(turn => turn.id)).size).toBe(50)
+    expect(merged.pages[0]?.snapshot?.pageInfo).toEqual({ hasOlder: true, olderCursor: 'before--23' })
+  })
+
   it('keeps newer streamed revisions when a delayed snapshot replaces query data', () => {
     const initial = timelineQueryDataFromSnapshot(snapshot(0, messageItem(1, 'snapshot')))
     const streamed = applyTimelineQueryEvent(initial, event(1, messageItem(2, 'streamed')))

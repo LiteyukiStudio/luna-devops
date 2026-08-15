@@ -29,8 +29,11 @@ export function isValidAITimeline(value: unknown): value is AITimeline {
   if (!value || typeof value !== 'object')
     return false
   const candidate = value as Partial<AITimeline>
-  if (!candidate.conversation || typeof candidate.conversation.id !== 'string' || !Array.isArray(candidate.turns) || !Array.isArray(candidate.eventCursors))
+  if (!candidate.conversation || typeof candidate.conversation.id !== 'string' || !Array.isArray(candidate.turns) || !Array.isArray(candidate.eventCursors)
+    || !candidate.pageInfo || typeof candidate.pageInfo.hasOlder !== 'boolean'
+    || (candidate.pageInfo.olderCursor !== undefined && typeof candidate.pageInfo.olderCursor !== 'string')) {
     return false
+  }
   return candidate.turns.every(turn =>
     Boolean(turn)
     && typeof turn.id === 'string'

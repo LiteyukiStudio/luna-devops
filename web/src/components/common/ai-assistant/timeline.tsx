@@ -3,18 +3,21 @@ import type { AIBlock } from './state'
 import type { AIApprovalDecision, ToolCallBlock } from './tool-call'
 import type { MessageBlock } from './turns'
 import type { AIUIAction } from '@/api'
-import { AlertCircle, Bot, ChevronRight, CircleStop, RotateCcw, Sparkles } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { AlertCircle, Bot, ChevronRight, CircleStop, LoaderCircle, RotateCcw, Sparkles } from 'lucide-react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
+import { parseAIOptionActions } from './actions'
 import { runFailureTranslationKey } from './errors'
+import { useInfiniteLoadTrigger } from './infinite-load-trigger'
 import { AIInteractionCardPlaceholder } from './interaction-card-placeholder'
 import { AIInteractionCards } from './interaction-cards'
 import { AIMarkdown } from './markdown'
 import { AIMessageMeta } from './message-meta'
 import { AINavigationEvent } from './navigation-event'
+import { AIOptionsBar } from './options'
 import { AIToolCallCard } from './tool-call'
 import { groupAIAssistantBlocksByTurn } from './turns'
 
@@ -23,10 +26,14 @@ interface AIAssistantTimelineProps {
   blocks: AIBlock[]
   error: Error | null
   generating: boolean
+  hasOlder?: boolean
   loading: boolean
+  loadingOlder?: boolean
+  olderError?: Error | null
   onAction: (action: AIUIAction) => Promise<boolean>
   onApproval: (block: ToolCallBlock, decision: AIApprovalDecision, reason?: string) => Promise<void>
   onMFA: (block: ToolCallBlock, code: string) => Promise<void>
+  onLoadOlder?: () => Promise<void>
   onResend: (message: string) => void
   onRetry: () => void
   resetKey?: string
@@ -38,13 +45,20 @@ interface AIAssistantTimelineProps {
 const latestPositionThreshold = 12
 
 function isVisibleResponseBlock(block: AIBlock, showInternalTools: boolean): boolean {
+  if (block.type === 'tool_call' && block.operationId === 'create_options')
+    return block.status === 'succeeded' && parseAIOptionActions(block.uiActions).length > 0 ? true : showInternalTools
   return block.type !== 'tool_call' || block.visibility !== 'internal' || showInternalTools
 }
 
-export function AIAssistantTimeline({ bottomInset = false, blocks, error, generating, loading, onAction, onApproval, onMFA, onResend, onRetry, resetKey, resendDisabled, showInternalTools = false, topContent }: AIAssistantTimelineProps) {
+export function AIAssistantTimeline({ bottomInset = false, blocks, error, generating, hasOlder = false, loading, loadingOlder = false, olderError = null, onAction, onApproval, onLoadOlder = async () => {}, onMFA, onResend, onRetry, resetKey, resendDisabled, showInternalTools = false, topContent }: AIAssistantTimelineProps) {
   const { t } = useTranslation()
   const viewportRef = useRef<HTMLDivElement>(null)
   const shouldFollowLatestRef = useRef(true)
+  const skipLatestFollowRef = useRef(false)
+  const lastScrollTopRef = useRef(0)
+  const prependAnchorRef = useRef<{ element: HTMLElement, offsetTop: number, scrollTop: number } | undefined>(undefined)
+  const [historyAutoLoadKey, setHistoryAutoLoadKey] = useState<string>()
+  const historyAutoLoadEnabled = Boolean(resetKey && historyAutoLoadKey === resetKey)
   const showTypingIndicator = generating && !blocks.some(block => block.status === 'streaming')
   const turns = groupAIAssistantBlocksByTurn(blocks)
 
@@ -56,17 +70,56 @@ export function AIAssistantTimeline({ bottomInset = false, blocks, error, genera
 
   const handleScroll = (event: UIEvent<HTMLDivElement>) => {
     const viewport = event.currentTarget
+    if (viewport.scrollTop < lastScrollTopRef.current - 1)
+      setHistoryAutoLoadKey(resetKey)
+    lastScrollTopRef.current = viewport.scrollTop
     const distanceFromLatest = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight
     shouldFollowLatestRef.current = distanceFromLatest <= latestPositionThreshold
   }
 
+  const loadOlder = useCallback(async () => {
+    const viewport = viewportRef.current
+    const firstTurn = viewport?.querySelector<HTMLElement>('[data-ai-turn]')
+    if (viewport && firstTurn) {
+      prependAnchorRef.current = {
+        element: firstTurn,
+        offsetTop: firstTurn.offsetTop,
+        scrollTop: viewport.scrollTop,
+      }
+    }
+    await onLoadOlder()
+  }, [onLoadOlder])
+  const olderTrigger = useInfiniteLoadTrigger({
+    enabled: hasOlder,
+    loading: loadingOlder,
+    observe: historyAutoLoadEnabled,
+    onLoad: loadOlder,
+    rootRef: viewportRef,
+    rootMargin: '320px 0px 0px',
+  })
+
+  useLayoutEffect(() => {
+    const anchor = prependAnchorRef.current
+    const viewport = viewportRef.current
+    if (!anchor || !viewport || loadingOlder)
+      return
+    viewport.scrollTop = anchor.scrollTop + anchor.element.offsetTop - anchor.offsetTop
+    prependAnchorRef.current = undefined
+    skipLatestFollowRef.current = true
+  }, [blocks, loadingOlder])
+
   useEffect(() => {
     shouldFollowLatestRef.current = true
+    lastScrollTopRef.current = 0
     const frame = requestAnimationFrame(scrollToLatest)
     return () => cancelAnimationFrame(frame)
   }, [resetKey])
 
   useEffect(() => {
+    if (skipLatestFollowRef.current) {
+      skipLatestFollowRef.current = false
+      return
+    }
     if (!shouldFollowLatestRef.current)
       return
     const frame = requestAnimationFrame(scrollToLatest)
@@ -104,6 +157,22 @@ export function AIAssistantTimeline({ bottomInset = false, blocks, error, genera
       onScroll={handleScroll}
     >
       {topContent}
+      {hasOlder && (
+        <div ref={olderTrigger.sentinelRef} className="flex min-h-8 items-center justify-center gap-2 pb-2" data-ai-history-sentinel>
+          {olderError && <span className="text-[11px] text-danger">{t('aiAssistant.olderLoadFailed')}</span>}
+          <Button
+            aria-label={t(loadingOlder ? 'aiAssistant.loadingOlder' : 'aiAssistant.loadOlder')}
+            className="h-7 gap-1.5 px-2 text-[11px] text-muted-foreground"
+            disabled={loadingOlder}
+            size="sm"
+            variant="ghost"
+            onClick={() => void olderTrigger.load()}
+          >
+            {loadingOlder && <LoaderCircle className="size-3 animate-spin motion-reduce:animate-none" />}
+            {t(loadingOlder ? 'aiAssistant.loadingOlder' : 'aiAssistant.loadOlder')}
+          </Button>
+        </div>
+      )}
       {turns.length === 0 && !showTypingIndicator
         ? (
             <div className="mx-auto grid h-full max-w-64 place-content-center gap-2.5 text-center text-muted-foreground">
@@ -147,8 +216,9 @@ function ConversationTurn({ generating, responseBlocks, userMessage, onAction, o
   showInternalTools?: boolean
 }) {
   const visibleResponseBlocks = responseBlocks.filter(block => isVisibleResponseBlock(block, showInternalTools ?? false))
+  const turnId = userMessage?.turnId ?? visibleResponseBlocks[0]?.turnId
   return (
-    <article className="grid min-w-0 gap-2.5" data-ai-turn>
+    <article className="grid min-w-0 gap-2.5" data-ai-turn data-ai-turn-id={turnId}>
       {userMessage && (
         <div className="flex min-w-0 max-w-full justify-end" data-ai-user-message>
           <div className="group/message flex min-w-0 max-w-[78%] flex-col items-end" data-ai-message-group>
@@ -231,6 +301,16 @@ function ResponseBlock({ block, onAction, onApproval, onMFA }: { block: AIBlock,
     return <AIInteractionCardPlaceholder arguments={block.arguments} result={block.result} />
   if (block.type === 'tool_call' && block.operationId === 'create_interaction_cards' && block.status === 'succeeded')
     return <AIInteractionCards arguments={block.arguments} onAction={onAction} />
+  if (block.type === 'tool_call' && block.operationId === 'create_options' && block.status === 'succeeded' && parseAIOptionActions(block.uiActions).length > 0) {
+    return (
+      <AIOptionsBar
+        actions={block.uiActions}
+        placement="inline"
+        sourceKey={`agent:${block.id}`}
+        onAction={onAction}
+      />
+    )
+  }
   if (block.type === 'tool_call' && block.operationId === 'navigate_to_route')
     return <AINavigationEvent block={block} onAction={onAction} />
   if (block.type === 'tool_call')

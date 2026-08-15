@@ -19,6 +19,8 @@ interface PendingChallenge {
   resolve: () => void
 }
 
+const mfaChallengeErrorId = 'mfa-challenge-error'
+
 export function MFADialogProvider({ children }: { children: ReactNode }) {
   const { t } = useTranslation()
   const { actualUser, pendingLoginUsername, user } = useSession()
@@ -84,7 +86,7 @@ export function MFADialogProvider({ children }: { children: ReactNode }) {
           </div>
 
           <form
-            className="grid gap-3"
+            className="grid min-w-0 gap-3"
             onSubmit={(event) => {
               event.preventDefault()
               void verify()
@@ -110,6 +112,7 @@ export function MFADialogProvider({ children }: { children: ReactNode }) {
             {method === 'otp'
               ? (
                   <OneTimeCodeInput
+                    aria-describedby={error ? mfaChallengeErrorId : undefined}
                     aria-label={t('accountPage.mfa.otpPlaceholder')}
                     autoFocus
                     disabled={verifying}
@@ -121,6 +124,7 @@ export function MFADialogProvider({ children }: { children: ReactNode }) {
                 )
               : (
                   <Input
+                    aria-describedby={error ? mfaChallengeErrorId : undefined}
                     aria-invalid={Boolean(error)}
                     autoComplete="off"
                     name="recovery-code"
@@ -130,7 +134,7 @@ export function MFADialogProvider({ children }: { children: ReactNode }) {
                     onChange={event => setCode(event.target.value)}
                   />
                 )}
-            {error && <p className="text-sm text-danger">{error}</p>}
+            {error && <p id={mfaChallengeErrorId} className="text-sm text-danger" role="alert">{error}</p>}
             <DialogFooter>
               <Button disabled={verifying} type="button" variant="secondary" onClick={cancel}>
                 {t('cancel')}

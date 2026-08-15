@@ -173,4 +173,29 @@ describe('ai conversation list', () => {
     )
     expect(screen.getByText('没有匹配的会话')).toBeInTheDocument()
   })
+
+  it('provides a reliable manual fallback for loading conversations beyond the first page', async () => {
+    await i18next.changeLanguage('zh-CN')
+    const user = userEvent.setup()
+    const onLoadMore = vi.fn(async () => {})
+    render(
+      <AIConversationList
+        conversations={conversations}
+        deleting={false}
+        hasMore
+        loading={false}
+        loadingMore={false}
+        runningConversationIds={new Set()}
+        search=""
+        onDeleteMany={vi.fn(async () => {})}
+        onLoadMore={onLoadMore}
+        onRename={vi.fn()}
+        onSearch={vi.fn()}
+        onSelect={vi.fn()}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: '加载更多会话' }))
+    expect(onLoadMore).toHaveBeenCalledOnce()
+  })
 })

@@ -167,6 +167,7 @@ describe("internal API", () => {
     const response = await app.inject({ method: "GET", url: `/internal/v1/conversations/${conversationId}/timeline`, headers })
     const timeline: AITimeline = response.json<AITimeline>()
     expect(response.statusCode).toBe(200)
+    expect(response.headers["cache-control"]).toBe("no-store")
     expect(timeline).toMatchObject({
       conversation: { id: conversationId, title: "Timeline", status: "active" },
       turns: [{
@@ -175,6 +176,7 @@ describe("internal API", () => {
         selectedRun: { id: runId, runIndex: 0, status: "queued", expectedVersion: 1, items: [] },
       }],
       eventCursors: [{ runId, after: 1 }],
+      pageInfo: { hasOlder: false },
     })
     expect(Array.isArray(timeline.eventCursors)).toBe(true)
     const directlyTyped = await presentTimeline(repository, "usr_timeline", conversationId) as AITimeline | undefined
@@ -193,6 +195,91 @@ describe("internal API", () => {
         payload: { state: "queued" },
       }],
     })
+    await app.close()
+  })
+  it("paginates complete timeline turns toward older history with an opaque exclusive cursor", async () => {
+    const { app, repository } = fixture()
+    const ownerUserId = "usr_timeline_pages"
+    const headers = { "x-luna-dev-user": ownerUserId }
+    const conversation = await repository.createConversation(ownerUserId, "Long timeline")
+    for (let turnIndex = 0; turnIndex < 33; turnIndex += 1) {
+      await repository.createTurn(ownerUserId, {
+        conversationId: conversation.id,
+        input: `turn-${turnIndex}`,
+        pageContext: {},
+        idempotencyKey: `server-timeline-page-${turnIndex}`,
+      })
+    }
+
+    const latestResponse = await app.inject({
+      method: "GET",
+      url: `/internal/v1/conversations/${conversation.id}/timeline?limit=10`,
+      headers,
+    })
+    const latest = latestResponse.json<{
+      turns: Array<{ turnIndex: number }>
+      pageInfo: { hasOlder: boolean, olderCursor?: string }
+    }>()
+    expect(latestResponse.statusCode).toBe(200)
+    expect(latest.turns.map(turn => turn.turnIndex)).toEqual([23, 24, 25, 26, 27, 28, 29, 30, 31, 32])
+    expect(latest.pageInfo.hasOlder).toBe(true)
+    expect(latest.pageInfo.olderCursor).toEqual(expect.any(String))
+
+    const olderResponse = await app.inject({
+      method: "GET",
+      url: `/internal/v1/conversations/${conversation.id}/timeline?limit=10&before=${encodeURIComponent(latest.pageInfo.olderCursor!)}`,
+      headers,
+    })
+    const older = olderResponse.json<{ turns: Array<{ turnIndex: number }> }>()
+    expect(older.turns.map(turn => turn.turnIndex)).toEqual([13, 14, 15, 16, 17, 18, 19, 20, 21, 22])
+    expect(new Set([...latest.turns, ...older.turns].map(turn => turn.turnIndex)).size).toBe(20)
+
+    const invalidResponse = await app.inject({
+      method: "GET",
+      url: `/internal/v1/conversations/${conversation.id}/timeline?before=not-a-valid-cursor`,
+      headers,
+    })
+    expect(invalidResponse.statusCode).toBe(400)
+    expect(invalidResponse.headers["cache-control"]).toBe("no-store")
+    expect(invalidResponse.json()).toMatchObject({ error: { code: "ai.timeline_cursor_invalid" } })
+
+    const otherConversation = await repository.createConversation(ownerUserId, "Other timeline")
+    const crossConversationResponse = await app.inject({
+      method: "GET",
+      url: `/internal/v1/conversations/${otherConversation.id}/timeline?before=${encodeURIComponent(latest.pageInfo.olderCursor!)}`,
+      headers,
+    })
+    expect(crossConversationResponse.statusCode).toBe(400)
+    expect(crossConversationResponse.json()).toMatchObject({ error: { code: "ai.timeline_cursor_invalid" } })
+    await app.close()
+  })
+  it("applies conversation directory search and validates the requested sort order", async () => {
+    const { app, repository } = fixture()
+    const ownerUserId = "usr_conversation_search"
+    const headers = { "x-luna-dev-user": ownerUserId }
+    await repository.createConversation(ownerUserId, "Build diagnostics")
+    await repository.createConversation(ownerUserId, "Deployment review")
+    await repository.createConversation("usr_other", "Build from another owner")
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/internal/v1/conversations?search=build&sortBy=updatedAt&sortOrder=asc&page=1&pageSize=20",
+      headers,
+    })
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({
+      total: 1,
+      items: [{ title: "Build diagnostics" }],
+      sortBy: "updatedAt",
+      sortOrder: "asc",
+    })
+
+    const invalid = await app.inject({
+      method: "GET",
+      url: "/internal/v1/conversations?sortOrder=random",
+      headers,
+    })
+    expect(invalid.statusCode).toBe(400)
     await app.close()
   })
   it("uses SSE when EventSource negotiates text/event-stream without a query flag", async () => {

@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import i18next from '@/i18n'
@@ -62,5 +62,46 @@ describe('mfa challenge dialog', () => {
     expect(oneTimeCode).toHaveAttribute('name', 'one-time-code')
     expect(form?.querySelector('input[autocomplete="username"]')).toHaveValue('login@example.test')
     expect(screen.getByRole('button', { name: i18next.t('accountPage.mfa.verify') })).toHaveAttribute('type', 'submit')
+  })
+
+  it('shows the accepted recovery-code format and explains that hyphens are optional', async () => {
+    render(
+      <TooltipProvider>
+        <MFADialogProvider><main /></MFADialogProvider>
+      </TooltipProvider>,
+    )
+
+    await waitFor(() => expect(mocks.challengeHandler).toBeTypeOf('function'))
+    act(() => {
+      void mocks.challengeHandler?.({ purpose: 'password_update' })
+    })
+
+    await screen.findByRole('combobox', { name: i18next.t('accountPage.mfa.verificationMethod') })
+    const nativeSelect = document.querySelector('select[aria-hidden="true"]')
+    expect(nativeSelect).toBeInstanceOf(HTMLSelectElement)
+    fireEvent.change(nativeSelect as HTMLSelectElement, { target: { value: 'recovery' } })
+
+    expect(screen.getByPlaceholderText('XXXX-XXXX-XXXX-XXXX (hyphens optional)')).toHaveAttribute('name', 'recovery-code')
+  })
+
+  it('announces a verification failure and associates it with the code input', async () => {
+    mocks.verifyMFA.mockRejectedValueOnce(new Error('Invalid verification code'))
+    render(
+      <TooltipProvider>
+        <MFADialogProvider><main /></MFADialogProvider>
+      </TooltipProvider>,
+    )
+
+    await waitFor(() => expect(mocks.challengeHandler).toBeTypeOf('function'))
+    act(() => {
+      void mocks.challengeHandler?.({ purpose: 'password_update' })
+    })
+
+    const oneTimeCode = await screen.findByRole('textbox', { name: i18next.t('accountPage.mfa.otpPlaceholder') })
+    fireEvent.change(oneTimeCode, { target: { value: '123456' } })
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('Invalid verification code')
+    expect(oneTimeCode).toHaveAttribute('aria-describedby', alert.id)
   })
 })

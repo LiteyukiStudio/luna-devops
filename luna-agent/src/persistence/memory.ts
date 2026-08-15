@@ -13,7 +13,12 @@ import type {
   UIActionDelivery,
 } from "../domain.js"
 import { createId } from "../id.js"
-import { RunStateConflictError, type Repository } from "./repository.js"
+import {
+  RunStateConflictError,
+  type ConversationListOptions,
+  type Repository,
+  type TimelinePageOptions,
+} from "./repository.js"
 import { createTurnRequestHash } from "./create-turn-hash.js"
 
 type StoredRun = Run & { ownerUserId: string, leaseOwner?: string, leaseExpiresAt?: number, runActorGrantCiphertext?: string }
@@ -50,9 +55,13 @@ export class MemoryRepository implements Repository {
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]
   }
 
-  async listConversations(ownerUserId: string, page: number, pageSize: number) {
-    const all = [...this.conversations.values()].filter(item => item.ownerUserId === ownerUserId)
-      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  async listConversations(ownerUserId: string, page: number, pageSize: number, options: ConversationListOptions = {}) {
+    const search = options.search?.trim().toLowerCase()
+    const direction = options.sortOrder === "asc" ? 1 : -1
+    const all = [...this.conversations.values()]
+      .filter(item => item.ownerUserId === ownerUserId
+        && (!search || item.title.toLowerCase().includes(search)))
+      .sort((a, b) => direction * (a.updatedAt.localeCompare(b.updatedAt) || a.id.localeCompare(b.id)))
     return { items: all.slice((page - 1) * pageSize, page * pageSize), total: all.length }
   }
 
@@ -371,16 +380,40 @@ export class MemoryRepository implements Repository {
     return action
   }
 
-  async getTimeline(ownerUserId: string, conversationId: string) {
+  async getTimeline(ownerUserId: string, conversationId: string, options: TimelinePageOptions = {}) {
     const conversation = await this.getConversation(ownerUserId, conversationId)
     if (!conversation) return undefined
-    const turns = [...this.turns.values()].filter(turn => turn.conversationId === conversationId)
-      .sort((a, b) => a.turnIndex - b.turnIndex)
-      .map(turn => {
+    const limit = Math.max(1, Math.min(100, Math.trunc(options.limit ?? 30)))
+    const recentTurns = [...this.turns.values()]
+      .filter(turn => turn.conversationId === conversationId
+        && (options.beforeTurnIndex === undefined || turn.turnIndex < options.beforeTurnIndex))
+      .sort((a, b) => b.turnIndex - a.turnIndex)
+      .slice(0, limit + 1)
+    const hasOlder = recentTurns.length > limit
+    const boundedTurns = recentTurns.slice(0, limit).reverse()
+    const pageTurns = boundedTurns.map(turn => {
         const run = this.runs.get(turn.selectedRunId)
         return { id: turn.id, turnIndex: turn.turnIndex, status: turn.status, input: turn.input, createdAt: turn.createdAt, ...(run ? { run } : {}), items: this.items.filter(i => i.runId === run?.id).sort((a, b) => a.timelineIndex - b.timelineIndex) }
       })
-    return { conversation, turns }
+    const eventCursors = pageTurns.flatMap((turn) => {
+      if (!turn.run) return []
+      const runId = turn.run.id
+      return [{
+        runId,
+        after: this.events
+          .filter(event => event.runId === runId)
+          .reduce((maximum, event) => Math.max(maximum, event.sequence), 0),
+      }]
+    })
+    return {
+      conversation,
+      turns: pageTurns,
+      eventCursors,
+      pageInfo: {
+        hasOlder,
+        ...(hasOlder && pageTurns[0] ? { oldestTurnIndex: pageTurns[0].turnIndex } : {}),
+      },
+    }
   }
 }
 

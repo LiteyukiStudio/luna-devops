@@ -1,5 +1,4 @@
 import type { TFunction } from 'i18next'
-import type { AIBlock } from './state'
 import type { AIUIAction } from '@/api'
 
 interface PresetSuggestion {
@@ -40,28 +39,8 @@ const presetGroups: PresetGroup[] = [
 
 const fallbackSuggestions = suggestions('general', ['overview', 'diagnose', 'guide'])
 
-export function resolveAISuggestions(blocks: AIBlock[], pathname: string, t: TFunction, generating: boolean, allowPresets: boolean): AISuggestionSet | null {
-  if (generating)
-    return null
-
-  const lastUserIndex = blocks.reduce((latest, block) =>
-    block.type === 'message' && block.role === 'user' ? Math.max(latest, block.index) : latest, Number.NEGATIVE_INFINITY)
-  const latestOptions = [...blocks]
-    .reverse()
-    .find(block => block.type === 'tool_call'
-      && block.operationId === 'create_options'
-      && block.status === 'succeeded'
-      && block.index > lastUserIndex
-      && block.uiActions.length > 0)
-
-  if (latestOptions?.type === 'tool_call') {
-    return {
-      actions: latestOptions.uiActions,
-      sourceKey: `agent:${latestOptions.id}`,
-    }
-  }
-
-  if (lastUserIndex !== Number.NEGATIVE_INFINITY || !allowPresets)
+export function resolveAIPresetSuggestions(pathname: string, t: TFunction, allowPresets: boolean): AISuggestionSet | null {
+  if (!allowPresets)
     return null
 
   const group = presetGroups.find(candidate => candidate.matches(pathname))

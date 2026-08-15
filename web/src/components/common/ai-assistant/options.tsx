@@ -5,11 +5,13 @@ import { useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { isAIUIActionRepeatable, parseAIOptionAction } from './actions'
+import { cn } from '@/lib/utils'
+import { isAIUIActionRepeatable, parseAIOptionActions } from './actions'
 import { AIOptionLeadingVisual } from './option-visual'
 
-export function AIOptionsBar({ actions, sourceKey, onAction }: {
+export function AIOptionsBar({ actions, placement = 'floating', sourceKey, onAction }: {
   actions: AIUIAction[]
+  placement?: 'floating' | 'inline'
   sourceKey: string
   onAction: (action: AIUIAction) => Promise<boolean>
 }) {
@@ -19,7 +21,7 @@ export function AIOptionsBar({ actions, sourceKey, onAction }: {
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(() => new Set())
   const pendingKeysRef = useRef(new Set<string>())
   const selectedKeysRef = useRef(new Set<string>())
-  const options = useMemo(() => actions.map(parseAIOptionAction).filter(action => action !== null).slice(0, 5), [actions])
+  const options = useMemo(() => parseAIOptionActions(actions), [actions])
   const visualType = options[0]?.visual?.type
   const showVisuals = Boolean(visualType && options.every(option => option.visual?.type === visualType))
 
@@ -59,13 +61,22 @@ export function AIOptionsBar({ actions, sourceKey, onAction }: {
   return (
     <section
       aria-label={t('aiAssistant.options.suggested')}
-      className="pointer-events-none absolute inset-x-0 bottom-0 z-10 overflow-hidden px-3 pb-2"
+      className={cn(
+        'min-w-0 overflow-hidden',
+        placement === 'floating' && 'pointer-events-none absolute inset-x-0 bottom-0 z-10 px-3 pb-2',
+      )}
+      data-ai-options-placement={placement}
     >
       <AnimatePresence initial mode="popLayout">
         <motion.div
           key={sourceKey}
           animate={{ opacity: 1, x: 0 }}
-          className="pointer-events-auto flex min-w-0 gap-2 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          className={cn(
+            'pointer-events-auto flex min-w-0 gap-2',
+            placement === 'floating'
+              ? 'overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
+              : 'flex-wrap py-0.5',
+          )}
           exit={reduceMotion ? { opacity: 0 } : { opacity: 0, x: -12 }}
           initial={reduceMotion ? { opacity: 0 } : { opacity: 0, x: 32 }}
           transition={reduceMotion ? { duration: 0.12 } : { type: 'spring', stiffness: 420, damping: 30, mass: 0.75 }}
@@ -81,7 +92,7 @@ export function AIOptionsBar({ actions, sourceKey, onAction }: {
               <motion.div
                 key={key}
                 animate={{ opacity: 1, x: 0, scale: 1 }}
-                className="shrink-0"
+                className={placement === 'floating' ? 'shrink-0' : 'min-w-0 max-w-full'}
                 initial={reduceMotion ? { opacity: 0 } : { opacity: 0, x: 24, scale: 0.94 }}
                 transition={reduceMotion
                   ? { duration: 0.1 }
@@ -89,7 +100,12 @@ export function AIOptionsBar({ actions, sourceKey, onAction }: {
               >
                 <Button
                   aria-pressed={selected}
-                  className="h-8 max-w-52 shrink-0 rounded-full px-3 !text-[11px] shadow-none [&_svg]:size-3.5"
+                  className={cn(
+                    'shrink-0 rounded-full shadow-none [&_svg]:size-3.5',
+                    placement === 'floating'
+                      ? 'h-8 max-w-52 px-3 !text-[11px]'
+                      : 'h-7 max-w-full px-2.5 !text-xs',
+                  )}
                   disabled={pending || (!repeatable && selected)}
                   title={label}
                   variant={variant}

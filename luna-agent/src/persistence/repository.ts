@@ -10,6 +10,7 @@ import type {
   RunEvent,
   TimelineItem,
   TimelineMutation,
+  TimelinePage,
   UIActionAcknowledgement,
   UIActionDelivery,
 } from "../domain.js"
@@ -27,11 +28,21 @@ export class RunStateConflictError extends Error {
   }
 }
 
+export type ConversationListOptions = {
+  search?: string
+  sortOrder?: "asc" | "desc"
+}
+
+export type TimelinePageOptions = {
+  beforeTurnIndex?: number
+  limit?: number
+}
+
 export interface Repository {
   health(): Promise<boolean>
   createConversation(ownerUserId: string, title: string, projectId?: string, titleSource?: ConversationTitleSource): Promise<Conversation>
   findEmptyConversation(ownerUserId: string, projectId?: string): Promise<Conversation | undefined>
-  listConversations(ownerUserId: string, page: number, pageSize: number): Promise<{ items: Conversation[], total: number }>
+  listConversations(ownerUserId: string, page: number, pageSize: number, options?: ConversationListOptions): Promise<{ items: Conversation[], total: number }>
   getConversation(ownerUserId: string, conversationId: string): Promise<Conversation | undefined>
   renameConversation(ownerUserId: string, conversationId: string, title: string): Promise<Conversation | undefined>
   renameConversationByAssistant(conversationId: string, title: string): Promise<Conversation | undefined>
@@ -69,5 +80,5 @@ export interface Repository {
   createUIAction(runId: string, toolCallId: string, action: Record<string, unknown>, expiresAt: string): Promise<UIActionDelivery>
   listPendingUIActions(ownerUserId: string, clientInstanceId: string): Promise<UIActionDelivery[]>
   acknowledgeUIAction(ownerUserId: string, clientInstanceId: string, actionId: string, acknowledgement: UIActionAcknowledgement): Promise<UIActionDelivery | undefined>
-  getTimeline(ownerUserId: string, conversationId: string): Promise<{ conversation: Conversation, turns: Array<{ id: string, turnIndex: number, status: string, input: string, createdAt: string, run?: Run, items: TimelineItem[] }> } | undefined>
+  getTimeline(ownerUserId: string, conversationId: string, options?: TimelinePageOptions): Promise<TimelinePage | undefined>
 }

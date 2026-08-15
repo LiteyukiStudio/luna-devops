@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, gt, gte, inArray, isNull, lt, ne, sql } from "drizzle-orm"
+import { and, asc, count, desc, eq, gt, gte, ilike, inArray, isNull, lt, ne, sql } from "drizzle-orm"
 import type { Pool } from "pg"
 import type {
   ConversationHistoryEntry,
@@ -12,7 +12,12 @@ import type {
 } from "../domain.js"
 import { createId } from "../id.js"
 import { internalSpanOptions, withSpan } from "../telemetry.js"
-import { RunStateConflictError, type Repository } from "./repository.js"
+import {
+  RunStateConflictError,
+  type ConversationListOptions,
+  type Repository,
+  type TimelinePageOptions,
+} from "./repository.js"
 import { createTurnRequestHash } from "./create-turn-hash.js"
 import { AgentDatabase, type AgentDb, type AgentTx } from "./database.js"
 import {
@@ -91,15 +96,19 @@ export class PostgresRepository implements Repository {
     return row ? mapConversation(row) : undefined
   }
 
-  async listConversations(ownerUserId: string, page: number, pageSize: number) {
+  async listConversations(ownerUserId: string, page: number, pageSize: number, options: ConversationListOptions = {}) {
+    const search = options.search?.trim()
+    const filters = [eq(conversations.ownerUserId, ownerUserId)]
+    if (search) filters.push(ilike(conversations.title, `%${escapeLikePattern(search)}%`))
+    const direction = options.sortOrder === "asc" ? asc : desc
     const [rows, total] = await Promise.all([
       this.db.select().from(conversations)
-        .where(eq(conversations.ownerUserId, ownerUserId))
-        .orderBy(desc(conversations.updatedAt))
+        .where(and(...filters))
+        .orderBy(direction(conversations.updatedAt), direction(conversations.id))
         .limit(pageSize)
         .offset((page - 1) * pageSize),
       this.db.select({ value: count() }).from(conversations)
-        .where(eq(conversations.ownerUserId, ownerUserId)),
+        .where(and(...filters)),
     ])
     return { items: rows.map(mapConversation), total: total[0]?.value ?? 0 }
   }
@@ -598,28 +607,68 @@ export class PostgresRepository implements Repository {
     return existing ? mapUIAction(existing.action) : undefined
   }
 
-  async getTimeline(ownerUserId: string, conversationId: string) {
-    const conversation = await this.getConversation(ownerUserId, conversationId)
-    if (!conversation) return undefined
-    const boundedTurns = await this.db.select().from(turns)
-      .where(eq(turns.conversationId, conversationId))
-      .orderBy(asc(turns.turnIndex))
-    const result = await Promise.all(boundedTurns.map(async (turn) => {
-      const run = await this.getRun(ownerUserId, turn.selectedRunId)
-      const turnItems = run
-        ? await this.db.select().from(items).where(eq(items.runId, run.id)).orderBy(asc(items.timelineIndex))
-        : []
-      return {
-        id: turn.id,
-        turnIndex: turn.turnIndex,
-        status: turn.status,
-        input: turn.input,
-        createdAt: turn.createdAt.toISOString(),
-        ...(run ? { run } : {}),
-        items: turnItems.map(mapTimelineItem),
+  async getTimeline(ownerUserId: string, conversationId: string, options: TimelinePageOptions = {}) {
+    const limit = Math.max(1, Math.min(100, Math.trunc(options.limit ?? 30)))
+    // Items 与 next_event_sequence 必须来自同一个 MVCC 快照。否则并发提交的
+    // item+event 可能只被 cursor 查询看到，SSE 从过新的 cursor 恢复后会永久漏掉该 item。
+    return this.db.transaction(async (tx) => {
+      const conversationRow = (await tx.select().from(conversations)
+        .where(and(eq(conversations.id, conversationId), eq(conversations.ownerUserId, ownerUserId))))[0]
+      if (!conversationRow) return undefined
+      const conversation = mapConversation(conversationRow)
+      const constraints = [eq(turns.conversationId, conversationId)]
+      if (options.beforeTurnIndex !== undefined) constraints.push(lt(turns.turnIndex, options.beforeTurnIndex))
+      const recentTurns = await tx.select().from(turns)
+        .where(and(...constraints))
+        .orderBy(desc(turns.turnIndex))
+        .limit(limit + 1)
+      const hasOlder = recentTurns.length > limit
+      const boundedTurns = recentTurns.slice(0, limit).reverse()
+      if (boundedTurns.length === 0) {
+        return { conversation, turns: [], eventCursors: [], pageInfo: { hasOlder: false } }
       }
-    }))
-    return { conversation, turns: result }
+
+      const runIds = boundedTurns.map(turn => turn.selectedRunId)
+      const runRows = await tx.select().from(runs)
+        .where(and(inArray(runs.id, runIds), eq(runs.ownerUserId, ownerUserId)))
+      const authorizedRunIds = runRows.map(run => run.id)
+      const itemRows = authorizedRunIds.length === 0
+        ? []
+        : await tx.select().from(items)
+            .where(inArray(items.runId, authorizedRunIds))
+            .orderBy(asc(items.runId), asc(items.timelineIndex))
+      const runById = new Map(runRows.map(row => [row.id, row]))
+      const itemsByRun = new Map<string, TimelineItem[]>()
+      for (const row of itemRows) {
+        const values = itemsByRun.get(row.runId) ?? []
+        values.push(mapTimelineItem(row))
+        itemsByRun.set(row.runId, values)
+      }
+      const pageTurns = boundedTurns.map((turn) => {
+        const runRow = runById.get(turn.selectedRunId)
+        return {
+          id: turn.id,
+          turnIndex: turn.turnIndex,
+          status: turn.status,
+          input: turn.input,
+          createdAt: turn.createdAt.toISOString(),
+          ...(runRow ? { run: mapRun(runRow) } : {}),
+          items: itemsByRun.get(turn.selectedRunId) ?? [],
+        }
+      })
+      return {
+        conversation,
+        turns: pageTurns,
+        eventCursors: boundedTurns.flatMap((turn) => {
+          const runRow = runById.get(turn.selectedRunId)
+          return runRow ? [{ runId: runRow.id, after: Math.max(0, runRow.nextEventSequence - 1) }] : []
+        }),
+        pageInfo: {
+          hasOlder,
+          ...(hasOlder && pageTurns[0] ? { oldestTurnIndex: pageTurns[0].turnIndex } : {}),
+        },
+      }
+    }, { isolationLevel: "repeatable read", accessMode: "read only" })
   }
 
   /** 原子推进 next_item_position 并插入 Timeline Item；计数器原子更新无法以 ORM 查询安全表达，保留最小 sql 模板 */
@@ -714,4 +763,8 @@ function driverRow(
       : (candidate.mapFromDriverValue as (input: unknown) => unknown)(value)
   }
   return result
+}
+
+function escapeLikePattern(value: string): string {
+  return value.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_")
 }

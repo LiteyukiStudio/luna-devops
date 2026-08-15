@@ -126,6 +126,10 @@ export interface AITimeline {
   conversation: Pick<AIConversation, 'id' | 'title' | 'titleSource' | 'status'>
   turns: AITimelineTurn[]
   eventCursors: Array<{ runId: string, after: number }>
+  pageInfo: {
+    olderCursor?: string
+    hasOlder: boolean
+  }
 }
 
 export interface AIEvent {

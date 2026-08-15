@@ -20,8 +20,15 @@ export const aiApi = {
     request<AIConversation>(`/ai/conversations/${encodeURIComponent(conversationId)}`, { method: 'PATCH', body: JSON.stringify({ title }) }),
   deleteAIConversation: (conversationId: string) =>
     request<void>(`/ai/conversations/${encodeURIComponent(conversationId)}`, { method: 'DELETE' }),
-  getAIConversationTimeline: (conversationId: string) =>
-    request<AITimeline>(`/ai/conversations/${encodeURIComponent(conversationId)}/timeline`),
+  getAIConversationTimeline: (conversationId: string, params: { before?: string, limit?: number } = {}) => {
+    const query = new URLSearchParams()
+    if (params.before)
+      query.set('before', params.before)
+    if (params.limit !== undefined)
+      query.set('limit', String(params.limit))
+    const suffix = query.size > 0 ? `?${query}` : ''
+    return request<AITimeline>(`/ai/conversations/${encodeURIComponent(conversationId)}/timeline${suffix}`)
+  },
   createAITurn: (conversationId: string, payload: { input: { parts: Array<{ type: 'text', text: string }> }, pageContext: Record<string, unknown>, clientInstanceId: string }, idempotencyKey: string) =>
     request<AITurnCreated>(`/ai/conversations/${encodeURIComponent(conversationId)}/turns`, {
       method: 'POST',

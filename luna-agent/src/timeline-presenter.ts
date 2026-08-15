@@ -1,16 +1,24 @@
 import type { Repository } from "./persistence/repository.js"
 import type { RunEvent, TimelineItem } from "./domain.js"
 import { normalizeEventSequence } from "./event-sequence.js"
+import { decodeTimelineCursor, encodeTimelineCursor } from "./timeline-cursor.js"
 import type { optionUIActions } from "./tools/ui-options.js"
 import { toolVisibility } from "./tools/tool-presentation.js"
 
-export async function presentTimeline(repository: Repository, ownerUserId: string, conversationId: string) {
-  const snapshot = await repository.getTimeline(ownerUserId, conversationId)
+export async function presentTimeline(
+  repository: Repository,
+  ownerUserId: string,
+  conversationId: string,
+  options: { before?: string, limit?: number } = {},
+) {
+  const beforeTurnIndex = options.before === undefined
+    ? undefined
+    : decodeTimelineCursor(options.before, conversationId)
+  const snapshot = await repository.getTimeline(ownerUserId, conversationId, {
+    ...(beforeTurnIndex === undefined ? {} : { beforeTurnIndex }),
+    ...(options.limit === undefined ? {} : { limit: options.limit }),
+  })
   if (!snapshot) return undefined
-  const eventCursors = await Promise.all(snapshot.turns.flatMap(turn => turn.run ? [turn.run] : []).map(async run => {
-    const events = await repository.getEvents(ownerUserId, run.id, 0)
-    return { runId: run.id, after: events.at(-1) ? normalizeEventSequence(events.at(-1)!.sequence) : 0 }
-  }))
   return {
     conversation: {
       id: snapshot.conversation.id,
@@ -39,7 +47,13 @@ export async function presentTimeline(repository: Repository, ownerUserId: strin
         },
       } : {}),
     })),
-    eventCursors,
+    eventCursors: snapshot.eventCursors,
+    pageInfo: {
+      hasOlder: snapshot.pageInfo.hasOlder,
+      ...(snapshot.pageInfo.hasOlder && snapshot.pageInfo.oldestTurnIndex !== undefined
+        ? { olderCursor: encodeTimelineCursor(conversationId, snapshot.pageInfo.oldestTurnIndex) }
+        : {}),
+    },
   }
 }
 

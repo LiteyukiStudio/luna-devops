@@ -81,6 +81,7 @@ describe('mfa settings flows', () => {
     mocks.getAuthRegistrationStatus.mockResolvedValue({ externalIdentityPasswordEnabled: true })
     mocks.enrollMFA.mockResolvedValue({
       otpauthUrl: 'otpauth://totp/Luna%20DevOps:test',
+      qrCodeDataUrl: 'data:image/png;base64,dGVzdA==',
       secret: 'TESTSECRET',
     })
     mocks.resetUserMFA.mockResolvedValue(undefined)
@@ -121,9 +122,31 @@ describe('mfa settings flows', () => {
     await user.click(screen.getByRole('button', { name: i18next.t('accountPage.mfa.continueEnrollment') }))
 
     await waitFor(() => expect(mocks.enrollMFA.mock.calls[0]?.[0]).toEqual({ currentPassword: 'current-password' }))
+    expect(await screen.findByRole('img', { name: i18next.t('accountPage.mfa.qrCodeAlt') })).toBeInTheDocument()
+    expect(screen.getByText(i18next.t('accountPage.mfa.qrCodeHint'))).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: i18next.t('accountPage.mfa.qrCodeHelp') })).toHaveAttribute(
+      'href',
+      'https://luna-devops.liteyuki.org/en/use/configuration',
+    )
     const oneTimeCode = await screen.findByRole('textbox', { name: i18next.t('accountPage.mfa.otpPlaceholder') })
     expect(oneTimeCode).toHaveAttribute('autocomplete', 'one-time-code')
     expect(oneTimeCode.closest('form')?.querySelector('input[autocomplete="username"]')).toHaveValue('admin@example.test')
+  })
+
+  it('explains that reconnecting an authenticator requires disabling the current enrollment', async () => {
+    mocks.getMFAStatus.mockResolvedValue({
+      confirmedAt: '2026-08-15T00:00:00Z',
+      enabled: true,
+      enrollmentReauthMode: 'password',
+      pending: false,
+      policyEnabled: true,
+      recoveryCodesRemaining: 10,
+    })
+    const user = userEvent.setup()
+    renderPage(<AccountMFAPanel />)
+
+    await user.click(await screen.findByRole('button', { name: i18next.t('accountPage.mfa.disable') }))
+    expect(await screen.findByText(i18next.t('accountPage.mfa.disableDescription'))).toBeInTheDocument()
   })
 
   it('confirms an administrator reset for another user', async () => {

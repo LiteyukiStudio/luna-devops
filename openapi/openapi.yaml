@@ -7120,8 +7120,14 @@ paths:
       tags: [AI Assistant]
       summary: List conversations owned by the current session user
       security: [{ SessionCookie: [] }]
+      parameters:
+        - { name: page, in: query, required: false, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: pageSize, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - { name: search, in: query, required: false, schema: { type: string, maxLength: 120 }, description: Case-insensitive title search. }
+        - { name: sortBy, in: query, required: false, schema: { type: string, enum: [updatedAt], default: updatedAt } }
+        - { name: sortOrder, in: query, required: false, schema: { type: string, enum: [asc, desc], default: desc } }
       responses:
-        "200": { description: Paginated conversation list, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }
+        "200": { description: Paginated conversation list, content: { application/json: { schema: { $ref: "#/components/schemas/AIConversationPage" } } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
     post:
       operationId: createAIConversation
@@ -7156,8 +7162,15 @@ paths:
       operationId: getAIConversationTimeline
       tags: [AI Assistant]
       security: [{ SessionCookie: [] }]
-      parameters: [{ name: conversationId, in: path, required: true, schema: { type: string } }]
-      responses: { "200": { description: Durable conversation timeline snapshot, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }, "401": { $ref: "#/components/responses/Unauthorized" }, "404": { $ref: "#/components/responses/NotFound" } }
+      parameters:
+        - { name: conversationId, in: path, required: true, schema: { type: string } }
+        - { name: before, in: query, required: false, schema: { type: string, minLength: 1, maxLength: 512, pattern: "^[A-Za-z0-9_-]+$" }, description: Opaque exclusive cursor returned by pageInfo.olderCursor; only requests older complete turns. }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 30 } }
+      responses:
+        "200": { description: Durable conversation timeline page ordered by turnIndex ascending, content: { application/json: { schema: { $ref: "#/components/schemas/AITimelinePage" } } } }
+        "400": { description: Invalid, malformed, or cross-conversation cursor; error code is ai.timeline_cursor_invalid., content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /api/v1/ai/conversations/{conversationId}/turns:
     post:
       operationId: createAITurn
@@ -7165,8 +7178,6 @@ paths:
       security: [{ SessionCookie: [] }]
       parameters:
         - { name: conversationId, in: path, required: true, schema: { type: string } }
-        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
-        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
         - { name: Idempotency-Key, in: header, required: true, schema: { type: string } }
       requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }
       responses: { "202": { description: Turn and initial run accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }, "401": { $ref: "#/components/responses/Unauthorized" }, "404": { $ref: "#/components/responses/NotFound" }, "409": { $ref: "#/components/responses/Conflict" } }
@@ -7890,6 +7901,118 @@ components:
       type: object
       additionalProperties: true
       description: Versioned AI Agent response projected through the Luna API BFF.
+    AIConversation:
+      type: object
+      additionalProperties: false
+      required: [id, title, titleSource, status, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        titleSource: { type: string, enum: [default, assistant, user] }
+        status: { type: string }
+        projectId: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    AIConversationPage:
+      type: object
+      additionalProperties: false
+      required: [items, page, pageSize, sortBy, sortOrder, total, totalPages]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/AIConversation" } }
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 100 }
+        sortBy: { type: string, enum: [updatedAt] }
+        sortOrder: { type: string, enum: [asc, desc] }
+        total: { type: integer, minimum: 0 }
+        totalPages: { type: integer, minimum: 0 }
+    AIConversationTimelineSummary:
+      type: object
+      additionalProperties: false
+      required: [id, title, titleSource, status]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        titleSource: { type: string, enum: [default, assistant, user] }
+        status: { type: string }
+    AIMessagePart:
+      type: object
+      additionalProperties: false
+      required: [id, partIndex, type]
+      properties:
+        id: { type: string }
+        partIndex: { type: integer, minimum: 0 }
+        type: { type: string, enum: [text, structured_data] }
+        text: { type: string }
+        data: { type: object, additionalProperties: true }
+    AITimelineItem:
+      type: object
+      additionalProperties: false
+      required: [id, timelineIndex, revision, createdAt, type, status, parts]
+      properties:
+        id: { type: string }
+        timelineIndex: { type: integer, minimum: 0 }
+        revision: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        type: { type: string, enum: [reasoning_summary, progress, assistant_message, tool_call, tool_result] }
+        status: { type: string }
+        relatedItemId: { type: string }
+        display: { type: string, enum: [summary, progress] }
+        parts: { type: array, items: { $ref: "#/components/schemas/AIMessagePart" } }
+        toolCall: { $ref: "#/components/schemas/AIObject" }
+    AITimelineTurn:
+      type: object
+      additionalProperties: false
+      required: [id, turnIndex, status, input]
+      properties:
+        id: { type: string }
+        turnIndex: { type: integer, minimum: 0 }
+        status: { type: string }
+        input:
+          type: object
+          additionalProperties: false
+          required: [id, type, createdAt, parts]
+          properties:
+            id: { type: string }
+            type: { type: string, enum: [user_message] }
+            createdAt: { type: string, format: date-time }
+            parts: { type: array, items: { $ref: "#/components/schemas/AIMessagePart" } }
+        selectedRun:
+          type: object
+          additionalProperties: false
+          required: [id, runIndex, status, items]
+          properties:
+            id: { type: string }
+            runIndex: { type: integer, minimum: 0 }
+            status: { type: string, enum: [queued, running, waiting_approval, waiting_mfa, waiting_input, completed, failed, canceled] }
+            expectedVersion: { type: integer, format: int64, minimum: 0 }
+            errorCode: { type: string }
+            items: { type: array, items: { $ref: "#/components/schemas/AITimelineItem" } }
+    AITimelineEventCursor:
+      type: object
+      additionalProperties: false
+      required: [runId, after]
+      properties:
+        runId: { type: string }
+        after: { type: integer, format: int64, minimum: 0 }
+    AITimelinePageInfo:
+      type: object
+      additionalProperties: false
+      required: [hasOlder]
+      properties:
+        hasOlder: { type: boolean }
+        olderCursor: { type: string, description: Opaque cursor for the next older page; omitted when hasOlder is false. }
+    AITimelinePage:
+      type: object
+      additionalProperties: false
+      required: [conversation, turns, eventCursors, pageInfo]
+      properties:
+        conversation: { $ref: "#/components/schemas/AIConversationTimelineSummary" }
+        turns:
+          type: array
+          description: Complete turns in chronological order within this page; a turn is never split across pages.
+          items: { $ref: "#/components/schemas/AITimelineTurn" }
+        eventCursors: { type: array, items: { $ref: "#/components/schemas/AITimelineEventCursor" } }
+        pageInfo: { $ref: "#/components/schemas/AITimelinePageInfo" }
     AIProgressOperationType:
       type: string
       enum: [build_run, release, hook_run, app_template_installation]

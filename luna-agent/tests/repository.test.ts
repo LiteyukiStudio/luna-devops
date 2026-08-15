@@ -60,6 +60,50 @@ describe("conversation repository", () => {
     const conversation = await repository.createConversation("usr_a", "private")
     expect(await repository.getConversation("usr_b", conversation.id)).toBeUndefined()
   })
+  it("filters the conversation directory and respects stable ascending or descending activity order", async () => {
+    vi.useFakeTimers()
+    const repository = new MemoryRepository()
+    vi.setSystemTime(new Date("2026-08-15T01:00:00.000Z"))
+    const older = await repository.createConversation("usr_a", "Build failure")
+    vi.setSystemTime(new Date("2026-08-15T02:00:00.000Z"))
+    const newer = await repository.createConversation("usr_a", "BUILD release")
+    await repository.createConversation("usr_a", "unrelated")
+    await repository.createConversation("usr_b", "build from another owner")
+
+    const ascending = await repository.listConversations("usr_a", 1, 20, { search: "build", sortOrder: "asc" })
+    const descending = await repository.listConversations("usr_a", 1, 20, { search: "BUILD", sortOrder: "desc" })
+
+    expect(ascending.total).toBe(2)
+    expect(ascending.items.map(item => item.id)).toEqual([older.id, newer.id])
+    expect(descending.items.map(item => item.id)).toEqual([newer.id, older.id])
+  })
+  it("returns recent complete turns and pages older turns with an exclusive stable boundary", async () => {
+    const repository = new MemoryRepository()
+    const conversation = await repository.createConversation("usr_a", "long history")
+    for (let turnIndex = 0; turnIndex < 35; turnIndex += 1) {
+      await repository.createTurn("usr_a", {
+        conversationId: conversation.id,
+        input: `turn-${turnIndex}`,
+        pageContext: {},
+        idempotencyKey: `history-page-${turnIndex}`,
+      })
+    }
+
+    const latest = await repository.getTimeline("usr_a", conversation.id)
+    expect(latest?.turns.map(turn => turn.turnIndex)).toEqual(Array.from({ length: 30 }, (_, index) => index + 5))
+    expect(latest?.eventCursors).toHaveLength(30)
+    expect(latest?.pageInfo).toEqual({ hasOlder: true, oldestTurnIndex: 5 })
+
+    await repository.createTurn("usr_a", {
+      conversationId: conversation.id,
+      input: "concurrent-newer-turn",
+      pageContext: {},
+      idempotencyKey: "history-page-concurrent",
+    })
+    const older = await repository.getTimeline("usr_a", conversation.id, { beforeTurnIndex: 5, limit: 30 })
+    expect(older?.turns.map(turn => turn.turnIndex)).toEqual([0, 1, 2, 3, 4])
+    expect(older?.pageInfo).toEqual({ hasOlder: false })
+  })
   it("reuses only empty conversations and protects manually renamed titles", async () => {
     const repository = new MemoryRepository()
     const empty = await repository.createConversation("usr_a", "新会话")

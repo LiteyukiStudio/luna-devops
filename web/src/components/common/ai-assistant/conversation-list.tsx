@@ -1,6 +1,6 @@
 import type { AIConversation } from '@/api'
 import { ArrowLeft, CheckSquare2, Ellipsis, ListChecks, LoaderCircle, LockKeyhole, MessageSquareText, Pencil, Search, Trash2, X } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { Button } from '@/components/ui/button'
@@ -10,17 +10,21 @@ import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { formatAIConversationTimestamp } from './conversation-timestamp'
+import { useInfiniteLoadTrigger } from './infinite-load-trigger'
 
 export interface AIConversationListProps {
   activeId?: string
   conversations: AIConversation[]
   deleting: boolean
+  hasMore?: boolean
   loading: boolean
+  loadingMore?: boolean
   runningConversationIds: Set<string>
   search: string
   variant?: 'drawer' | 'sidebar' | 'mobile'
   onBack?: () => void
   onDeleteMany: (ids: string[]) => Promise<void>
+  onLoadMore?: () => Promise<void>
   onRename: (id: string, title: string) => void
   onSearch: (search: string) => void
   onSelect: (id: string) => void
@@ -30,12 +34,15 @@ export function AIConversationList({
   activeId,
   conversations,
   deleting,
+  hasMore = false,
   loading,
+  loadingMore = false,
   runningConversationIds,
   search,
   variant = 'sidebar',
   onBack,
   onDeleteMany,
+  onLoadMore = async () => {},
   onRename,
   onSearch,
   onSelect,
@@ -46,6 +53,13 @@ export function AIConversationList({
   const [renamingId, setRenamingId] = useState<string>()
   const [deleteTargets, setDeleteTargets] = useState<AIConversation[]>([])
   const [title, setTitle] = useState('')
+  const viewportRef = useRef<HTMLDivElement>(null)
+  const moreTrigger = useInfiniteLoadTrigger({
+    enabled: hasMore,
+    loading: loadingMore,
+    onLoad: onLoadMore,
+    rootRef: viewportRef,
+  })
   const visibleIds = useMemo(() => conversations.map(conversation => conversation.id), [conversations])
   const selectedIds = visibleIds.filter(id => selectedKeys.has(id))
   const allSelected = conversations.length > 0 && selectedIds.length === conversations.length
@@ -152,7 +166,7 @@ export function AIConversationList({
           </div>
         )}
       </div>
-      <div className={cn('min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-x-none px-2', mobile ? 'pb-[max(0.5rem,env(safe-area-inset-bottom))]' : 'pb-2')}>
+      <div ref={viewportRef} className={cn('min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-x-none px-2', mobile ? 'pb-[max(0.5rem,env(safe-area-inset-bottom))]' : 'pb-2')}>
         {loading && <Skeleton className="h-12 w-full" />}
         {!loading && conversations.length === 0 && (
           <div className="grid min-h-48 place-items-center px-5 text-center">
@@ -226,6 +240,20 @@ export function AIConversationList({
             )}
           </div>
         ))}
+        {hasMore && (
+          <div ref={moreTrigger.sentinelRef} className="flex min-h-10 items-center justify-center py-1" data-ai-conversation-sentinel>
+            <Button
+              className="h-7 gap-1.5 px-2 text-[11px] text-muted-foreground"
+              disabled={loadingMore}
+              size="sm"
+              variant="ghost"
+              onClick={() => void moreTrigger.load()}
+            >
+              {loadingMore && <LoaderCircle className="size-3 animate-spin motion-reduce:animate-none" />}
+              {t(loadingMore ? 'aiAssistant.conversations.loadingMore' : 'aiAssistant.conversations.loadMore')}
+            </Button>
+          </div>
+        )}
       </div>
       <ConfirmDialog
         confirmText={deleteTargets.length > 1 ? t('aiAssistant.conversations.deleteCount', { count: deleteTargets.length }) : t('common.delete')}

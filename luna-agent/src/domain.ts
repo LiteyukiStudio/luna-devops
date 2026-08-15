@@ -111,6 +111,26 @@ export type TimelineMutation = {
   event: RunEvent
 }
 
+export type TimelineTurn = {
+  id: string
+  turnIndex: number
+  status: RunStatus
+  input: string
+  createdAt: string
+  run?: Run
+  items: TimelineItem[]
+}
+
+export type TimelinePage = {
+  conversation: Conversation
+  turns: TimelineTurn[]
+  eventCursors: Array<{ runId: string, after: number }>
+  pageInfo: {
+    hasOlder: boolean
+    oldestTurnIndex?: number
+  }
+}
+
 export type RunEvent = {
   id: string
   runId: string

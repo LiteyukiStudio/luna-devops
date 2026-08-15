@@ -24,6 +24,7 @@ const relativePath = z.string().trim().min(1).max(2048).regex(/^\/(?!\/)/)
 const stableErrorCode = z.string().trim().min(3).max(120).regex(/^[a-z][a-z0-9_.-]+$/)
 const page = z.coerce.number().int().min(1).default(1)
 const pageSize = z.coerce.number().int().min(1).max(100).default(20)
+const timelineLimit = z.coerce.number().int().min(1).max(100).default(30)
 
 export function buildServer(input: {
   config: Config
@@ -120,8 +121,17 @@ export function buildServer(input: {
     })
 
     secured.get("/internal/v1/conversations", async request => {
-      const query = z.object({ page, pageSize, sortBy: z.literal("updatedAt").default("updatedAt"), sortOrder: z.enum(["asc", "desc"]).default("desc") }).parse(request.query)
-      const result = await input.repository.listConversations(request.actor.userId, query.page, query.pageSize)
+      const query = z.object({
+        page,
+        pageSize,
+        search: z.string().trim().max(120).optional(),
+        sortBy: z.literal("updatedAt").default("updatedAt"),
+        sortOrder: z.enum(["asc", "desc"]).default("desc"),
+      }).parse(request.query)
+      const result = await input.repository.listConversations(request.actor.userId, query.page, query.pageSize, {
+        ...(query.search ? { search: query.search } : {}),
+        sortOrder: query.sortOrder,
+      })
       return { ...result, page: query.page, pageSize: query.pageSize, sortBy: query.sortBy, sortOrder: query.sortOrder, totalPages: Math.ceil(result.total / query.pageSize) }
     })
     secured.post("/internal/v1/conversations", async (request, reply) => {
@@ -155,8 +165,16 @@ export function buildServer(input: {
       return deleted ? reply.code(204).send() : reply.code(404).send(errorBody("ai.conversation_not_found", request.id))
     })
     secured.get("/internal/v1/conversations/:conversationId/timeline", async (request, reply) => {
+      reply.header("cache-control", "no-store")
       const { conversationId } = z.object({ conversationId: id }).parse(request.params)
-      const value = await presentTimeline(input.repository, request.actor.userId, conversationId)
+      const query = z.object({
+        before: z.string().min(1).max(512).optional(),
+        limit: timelineLimit,
+      }).parse(request.query)
+      const value = await presentTimeline(input.repository, request.actor.userId, conversationId, {
+        ...(query.before ? { before: query.before } : {}),
+        limit: query.limit,
+      })
       return value ?? reply.code(404).send(errorBody("ai.conversation_not_found", request.id))
     })
     secured.post("/internal/v1/conversations/:conversationId/turns", async (request, reply) => {

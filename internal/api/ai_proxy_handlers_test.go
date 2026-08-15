@@ -101,6 +101,70 @@ func TestAIProxyUsesSessionActorAndForwardsIdempotencyKey(t *testing.T) {
 	}
 }
 
+func TestAIProxyForwardsTimelineCursorPagination(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	fake := &fakeAIAgentClient{response: &aiagent.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body: io.NopCloser(strings.NewReader(
+			`{"conversation":{"id":"aicnv_owned"},"turns":[],"eventCursors":[],"pageInfo":{"hasOlder":true,"olderCursor":"next-opaque-cursor"}}`,
+		)),
+	}}
+	handler := aiTestHandlers(fake, true)
+	router := gin.New()
+	router.GET("/api/v1/ai/conversations/:conversationId/timeline", handler.ProxyAIRequest)
+
+	request := httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/ai/conversations/aicnv_owned/timeline?before=opaque-cursor&limit=30",
+		nil,
+	)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+	if fake.request.Path != "/internal/v1/conversations/aicnv_owned/timeline" {
+		t.Fatalf("agent request path = %q", fake.request.Path)
+	}
+	if fake.request.Query.Get("before") != "opaque-cursor" || fake.request.Query.Get("limit") != "30" {
+		t.Fatalf("agent request query = %#v", fake.request.Query)
+	}
+	if !strings.Contains(response.Body.String(), `"olderCursor":"next-opaque-cursor"`) {
+		t.Fatalf("timeline page response = %s", response.Body.String())
+	}
+}
+
+func TestAIProxyForwardsConversationDirectorySearchAndSort(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	fake := &fakeAIAgentClient{response: &aiagent.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"items":[],"page":2,"pageSize":20,"sortBy":"updatedAt","sortOrder":"asc","total":0,"totalPages":0}`)),
+	}}
+	handler := aiTestHandlers(fake, true)
+	router := gin.New()
+	router.GET("/api/v1/ai/conversations", handler.ProxyAIRequest)
+
+	request := httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/ai/conversations?page=2&pageSize=20&search=deploy&sortBy=updatedAt&sortOrder=asc",
+		nil,
+	)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+	if fake.request.Path != "/internal/v1/conversations" || fake.request.Query.Get("page") != "2" ||
+		fake.request.Query.Get("pageSize") != "20" || fake.request.Query.Get("search") != "deploy" ||
+		fake.request.Query.Get("sortBy") != "updatedAt" || fake.request.Query.Get("sortOrder") != "asc" {
+		t.Fatalf("agent request = %#v", fake.request)
+	}
+}
+
 func TestAIProxyRejectsBrowserSuppliedActorIdentity(t *testing.T) {
 	fake := &fakeAIAgentClient{}
 	handler := aiTestHandlers(fake, true)

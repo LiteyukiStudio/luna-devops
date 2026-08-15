@@ -48,6 +48,15 @@ describe('ai assistant options', () => {
     expect(screen.queryByText('打开项目空间列表')).not.toBeInTheDocument()
   })
 
+  it('wraps agent-created options inside the assistant bubble without floating positioning', () => {
+    render(<AIOptionsBar actions={actions} placement="inline" sourceKey="agent:turn-inline" onAction={vi.fn()} />)
+
+    const region = screen.getByRole('region', { name: i18next.t('aiAssistant.options.suggested') })
+    expect(region).toHaveAttribute('data-ai-options-placement', 'inline')
+    expect(region).not.toHaveClass('absolute', 'bottom-0')
+    expect(region.firstElementChild).toHaveClass('flex-wrap')
+  })
+
   it('keeps repeatable navigation and sibling actions available after a one-time choice', async () => {
     const user = userEvent.setup()
     const onAction = vi.fn(async () => true)

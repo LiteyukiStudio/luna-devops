@@ -1,5 +1,5 @@
 import type { AIBlock } from './state'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
 import i18next from '@/i18n'
@@ -360,7 +360,7 @@ describe('ai assistant turn topology', () => {
     expect(container.querySelector('[data-ai-reply]')).not.toBeInTheDocument()
   })
 
-  it('keeps create_options out of the message bubble for the fixed suggestion bar', () => {
+  it('renders create_options inline at its actual position in the assistant bubble', () => {
     const { container } = render(
       <MemoryRouter>
         <AIAssistantTimeline
@@ -374,6 +374,16 @@ describe('ai assistant turn topology', () => {
               status: 'completed',
               text: '下一步做什么',
               createdAt: '2026-08-01T09:04:00+08:00',
+            },
+            {
+              id: 'message-before-options',
+              turnId: 'turn-options',
+              index: 0,
+              type: 'message',
+              role: 'assistant',
+              status: 'completed',
+              text: '请选择下一步',
+              createdAt: '2026-08-01T09:04:01+08:00',
             },
             {
               id: 'options-tool',
@@ -395,6 +405,16 @@ describe('ai assistant turn topology', () => {
                 payload: { message: '继续分析' },
               }],
             },
+            {
+              id: 'message-after-options',
+              turnId: 'turn-options',
+              index: 2,
+              type: 'message',
+              role: 'assistant',
+              status: 'completed',
+              text: '选好后我会继续处理',
+              createdAt: '2026-08-01T09:04:02+08:00',
+            },
           ]}
           error={null}
           generating={false}
@@ -409,7 +429,62 @@ describe('ai assistant turn topology', () => {
     )
 
     expect(screen.getByText('下一步做什么')).toBeInTheDocument()
-    expect(screen.queryByText('继续分析')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /继续分析/ })).toBeInTheDocument()
+    const bubble = container.querySelector('[data-ai-assistant-bubble]')
+    const responseItems = Array.from(bubble?.children ?? [])
+    expect(responseItems).toHaveLength(3)
+    expect(responseItems[0]).toHaveTextContent('请选择下一步')
+    expect(responseItems[1]).toHaveAttribute('data-ai-options-placement', 'inline')
+    expect(responseItems[2]).toHaveTextContent('选好后我会继续处理')
+  })
+
+  it('does not create an empty assistant bubble for invalid create_options actions', () => {
+    const { container } = render(
+      <MemoryRouter>
+        <AIAssistantTimeline
+          blocks={[
+            {
+              id: 'user-invalid-options',
+              turnId: 'turn-invalid-options',
+              index: -1,
+              type: 'message',
+              role: 'user',
+              status: 'completed',
+              text: '打开外部页面',
+              createdAt: '2026-08-01T09:04:00+08:00',
+            },
+            {
+              id: 'invalid-options-tool',
+              turnId: 'turn-invalid-options',
+              runId: 'run-invalid-options',
+              index: 0,
+              type: 'tool_call',
+              toolCallId: 'invalid-options-tool-call',
+              operationId: 'create_options',
+              visibility: 'internal',
+              status: 'succeeded',
+              arguments: {},
+              uiActions: [{
+                version: 1,
+                type: 'navigate',
+                label: '打开外站',
+                payload: { routeName: 'https://evil.example', params: {}, query: {} },
+              } as never],
+            },
+          ]}
+          error={null}
+          generating={false}
+          loading={false}
+          onAction={vi.fn(async () => true)}
+          onApproval={vi.fn(async () => {})}
+          onMFA={vi.fn(async () => {})}
+          onResend={vi.fn()}
+          onRetry={vi.fn()}
+        />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByText('打开外部页面')).toBeInTheDocument()
     expect(container.querySelector('[data-ai-reply]')).not.toBeInTheDocument()
   })
 
@@ -504,5 +579,139 @@ describe('ai assistant turn topology', () => {
 
     fireEvent.click(navigationEvent)
     expect(onAction).toHaveBeenCalledWith(expect.objectContaining({ type: 'navigate' }))
+  })
+
+  it('keeps loaded messages visible when loading an older page fails', async () => {
+    await i18next.changeLanguage('zh-CN')
+    render(
+      <MemoryRouter>
+        <AIAssistantTimeline
+          blocks={blocks}
+          error={null}
+          generating={false}
+          hasOlder
+          loading={false}
+          olderError={new Error('network')}
+          onAction={vi.fn(async () => true)}
+          onApproval={vi.fn(async () => {})}
+          onLoadOlder={vi.fn(async () => {})}
+          onMFA={vi.fn(async () => {})}
+          onResend={vi.fn()}
+          onRetry={vi.fn()}
+        />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByText('最终答复')).toBeInTheDocument()
+    expect(screen.getByText('更早的消息加载失败，请重试')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '加载更早的消息' })).toBeEnabled()
+  })
+
+  it('does not auto-page on mount and enables the top sentinel after a real upward scroll', async () => {
+    const onLoadOlder = vi.fn(async () => {})
+    const observe = vi.fn()
+    const disconnect = vi.fn()
+    const constructed = vi.fn()
+    class MockIntersectionObserver {
+      private readonly callback: IntersectionObserverCallback
+
+      constructor(callback: IntersectionObserverCallback) {
+        constructed()
+        this.callback = callback
+      }
+
+      disconnect = disconnect
+      observe = (element: Element) => {
+        observe(element)
+        this.callback([{ isIntersecting: true, target: element } as IntersectionObserverEntry], this as unknown as IntersectionObserver)
+      }
+
+      takeRecords = () => []
+      unobserve = vi.fn()
+    }
+    vi.stubGlobal('IntersectionObserver', MockIntersectionObserver)
+    const { container } = render(
+      <MemoryRouter>
+        <AIAssistantTimeline
+          blocks={blocks}
+          error={null}
+          generating={false}
+          hasOlder
+          loading={false}
+          onAction={vi.fn(async () => true)}
+          onApproval={vi.fn(async () => {})}
+          onLoadOlder={onLoadOlder}
+          onMFA={vi.fn(async () => {})}
+          onResend={vi.fn()}
+          onRetry={vi.fn()}
+          resetKey="conversation-pagination"
+        />
+      </MemoryRouter>,
+    )
+    expect(constructed).not.toHaveBeenCalled()
+    expect(onLoadOlder).not.toHaveBeenCalled()
+
+    const viewport = container.querySelector<HTMLElement>('[data-slot="ai-assistant-timeline"]')!
+    viewport.scrollTop = 500
+    fireEvent.scroll(viewport)
+    viewport.scrollTop = 100
+    fireEvent.scroll(viewport)
+
+    await waitFor(() => expect(onLoadOlder).toHaveBeenCalledOnce())
+    expect(observe).toHaveBeenCalledOnce()
+    vi.unstubAllGlobals()
+  })
+
+  it('preserves the visible turn anchor when older turns are prepended', async () => {
+    await i18next.changeLanguage('zh-CN')
+    const onLoadOlder = vi.fn(() => new Promise<void>(() => {}))
+    const props = {
+      error: null,
+      generating: false,
+      hasOlder: true,
+      loading: false,
+      onAction: vi.fn(async () => true),
+      onApproval: vi.fn(async () => {}),
+      onLoadOlder,
+      onMFA: vi.fn(async () => {}),
+      onResend: vi.fn(),
+      onRetry: vi.fn(),
+      resetKey: 'conversation-anchor',
+    }
+    const { container, rerender } = render(
+      <MemoryRouter>
+        <AIAssistantTimeline {...props} blocks={blocks} loadingOlder={false} />
+      </MemoryRouter>,
+    )
+    const viewport = container.querySelector<HTMLElement>('[data-slot="ai-assistant-timeline"]')!
+    const retainedTurn = container.querySelector<HTMLElement>('[data-ai-turn]')!
+    let retainedOffset = 120
+    Object.defineProperty(retainedTurn, 'offsetTop', { configurable: true, get: () => retainedOffset })
+    viewport.scrollTop = 180
+    fireEvent.click(screen.getByRole('button', { name: '加载更早的消息' }))
+
+    const olderBlocks: AIBlock[] = [{
+      id: 'older-user-message',
+      turnId: 'turn-older',
+      index: -2_000_001,
+      type: 'message',
+      role: 'user',
+      status: 'completed',
+      text: '更早的问题',
+      createdAt: '2026-08-01T08:00:00+08:00',
+    }, ...blocks]
+    rerender(
+      <MemoryRouter>
+        <AIAssistantTimeline {...props} blocks={olderBlocks} loadingOlder />
+      </MemoryRouter>,
+    )
+    retainedOffset = 360
+    rerender(
+      <MemoryRouter>
+        <AIAssistantTimeline {...props} blocks={olderBlocks} loadingOlder={false} />
+      </MemoryRouter>,
+    )
+
+    expect(viewport.scrollTop).toBe(420)
   })
 })

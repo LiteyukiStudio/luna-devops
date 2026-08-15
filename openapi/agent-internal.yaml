@@ -26,8 +26,15 @@ paths:
   /internal/v1/conversations:
     get:
       operationId: listInternalAIConversations
-      parameters: [{ $ref: "#/components/parameters/ActorContext" }, { $ref: "#/components/parameters/ActorSignature" }]
-      responses: { "200": { description: Paginated conversation list, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }, "401": { $ref: "#/components/responses/AgentError" } }
+      parameters:
+        - { $ref: "#/components/parameters/ActorContext" }
+        - { $ref: "#/components/parameters/ActorSignature" }
+        - { name: page, in: query, required: false, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: pageSize, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - { name: search, in: query, required: false, schema: { type: string, maxLength: 120 } }
+        - { name: sortBy, in: query, required: false, schema: { type: string, enum: [updatedAt], default: updatedAt } }
+        - { name: sortOrder, in: query, required: false, schema: { type: string, enum: [asc, desc], default: desc } }
+      responses: { "200": { description: Paginated conversation list, content: { application/json: { schema: { $ref: "#/components/schemas/AgentConversationPage" } } } }, "401": { $ref: "#/components/responses/AgentError" } }
     post:
       operationId: createInternalAIConversation
       parameters: [{ $ref: "#/components/parameters/ActorContext" }, { $ref: "#/components/parameters/ActorSignature" }]
@@ -55,7 +62,12 @@ paths:
         - { $ref: "#/components/parameters/ActorContext" }
         - { $ref: "#/components/parameters/ActorSignature" }
         - { $ref: "#/components/parameters/ConversationId" }
-      responses: { "200": { description: Durable timeline snapshot, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }, "404": { $ref: "#/components/responses/AgentError" } }
+        - { name: before, in: query, required: false, schema: { type: string, minLength: 1, maxLength: 512, pattern: "^[A-Za-z0-9_-]+$" }, description: Opaque exclusive cursor returned by pageInfo.olderCursor; only requests older complete turns. }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 30 } }
+      responses:
+        "200": { description: Durable timeline page ordered by turnIndex ascending, content: { application/json: { schema: { $ref: "#/components/schemas/AgentTimelinePage" } } } }
+        "400": { description: Invalid, malformed, or cross-conversation cursor; error code is ai.timeline_cursor_invalid., content: { application/json: { schema: { $ref: "#/components/schemas/AgentError" } } } }
+        "404": { $ref: "#/components/responses/AgentError" }
   /internal/v1/conversations/{conversationId}/turns:
     post:
       operationId: createInternalAITurn
@@ -147,6 +159,44 @@ components:
     ToolCallId: { name: toolCallId, in: path, required: true, schema: { type: string } }
   schemas:
     AgentObject: { type: object, additionalProperties: true }
+    AgentConversationPage:
+      type: object
+      additionalProperties: false
+      required: [items, page, pageSize, sortBy, sortOrder, total, totalPages]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/AgentObject" } }
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 100 }
+        sortBy: { type: string, enum: [updatedAt] }
+        sortOrder: { type: string, enum: [asc, desc] }
+        total: { type: integer, minimum: 0 }
+        totalPages: { type: integer, minimum: 0 }
+    AgentTimelinePage:
+      type: object
+      additionalProperties: false
+      required: [conversation, turns, eventCursors, pageInfo]
+      properties:
+        conversation: { $ref: "#/components/schemas/AgentObject" }
+        turns:
+          type: array
+          description: Complete turns in chronological order within this page; a turn is never split across pages.
+          items: { $ref: "#/components/schemas/AgentObject" }
+        eventCursors:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [runId, after]
+            properties:
+              runId: { type: string }
+              after: { type: integer, format: int64, minimum: 0 }
+        pageInfo:
+          type: object
+          additionalProperties: false
+          required: [hasOlder]
+          properties:
+            hasOlder: { type: boolean }
+            olderCursor: { type: string, description: Opaque cursor for the next older page; omitted when hasOlder is false. }
     AgentError:
       type: object
       properties:

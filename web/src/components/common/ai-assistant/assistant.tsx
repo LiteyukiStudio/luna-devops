@@ -1,7 +1,7 @@
 import type { AutomaticRouteDelivery } from './automatic-actions'
-import type { AITimelineQueryData } from './timeline-query'
+import type { AITimelineInfiniteData, AITimelineQueryData } from './timeline-query'
 import type { AICapabilities, AIUIAction } from '@/api'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Bug, List, LoaderCircle, MessageSquarePlus, Sparkles, X } from 'lucide-react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
@@ -51,15 +51,19 @@ import { pendingUIActionsPollInterval } from './pending-ui-actions-query'
 import { AIRefreshConversationReturn } from './refresh-conversation-return'
 import { useAIRunStreamManager } from './run-stream-manager'
 import { emptyAIAssistantState } from './state'
-import { resolveAISuggestions } from './suggestions'
+import { resolveAIPresetSuggestions } from './suggestions'
 import { AIAssistantTimeline } from './timeline'
 import {
   activeRunStreamSubscriptions,
   addOptimisticTimelineTurn,
+  AI_TIMELINE_PAGE_SIZE,
   aiTimelineQueryKey,
-  applyTimelineQueryEvent,
-  mergeTimelineQuerySnapshot,
+  applyTimelineInfiniteEvent,
+  mergeLatestTimelineSnapshot,
+  mergeTimelineInfiniteSnapshot,
+  olderTimelinePageParam,
   recoverTimelineOnce,
+  timelineQueryDataFromInfinite,
   timelineQueryDataFromSnapshot,
 } from './timeline-query'
 import { useAIToolDebugMode } from './tool-debug-mode'
@@ -106,12 +110,23 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
     staleTime: 0,
   })
 
-  const conversations = useQuery({
+  const conversations = useInfiniteQuery({
     queryKey: ['ai', 'conversations', conversationSearch],
-    queryFn: () => api.listAIConversations({ page: 1, pageSize: 50, search: conversationSearch || undefined }),
+    queryFn: ({ pageParam }) => api.listAIConversations({ page: pageParam, pageSize: 50, search: conversationSearch || undefined }),
     enabled: open,
+    initialPageParam: 1,
+    getNextPageParam: page => page.page < page.totalPages ? page.page + 1 : undefined,
   })
-  const previousConversation = conversations.data?.items[0]
+  const conversationItems = useMemo(() => {
+    const seen = new Set<string>()
+    return conversations.data?.pages.flatMap(page => page.items.filter((conversation) => {
+      if (seen.has(conversation.id))
+        return false
+      seen.add(conversation.id)
+      return true
+    })) ?? []
+  }, [conversations.data?.pages])
+  const previousConversation = conversationItems[0]
   const refreshReturnOpenedAt = conversationSession.refreshReturnExpiresAt
     ? conversationSession.refreshReturnExpiresAt - REFRESH_CONVERSATION_RETURN_DURATION_MS
     : undefined
@@ -127,40 +142,43 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
     setDrafts(current => ({ ...current, [draftKey]: value }))
   }, [draftKey])
 
-  const timeline = useQuery<AITimelineQueryData>({
+  const timeline = useInfiniteQuery<AITimelineQueryData, Error, AITimelineInfiniteData, ReturnType<typeof aiTimelineQueryKey>, string | null>({
     queryKey: aiTimelineQueryKey(selectedConversationId),
-    queryFn: async () => timelineQueryDataFromSnapshot(await api.getAIConversationTimeline(selectedConversationId!)),
+    queryFn: async ({ pageParam }) => timelineQueryDataFromSnapshot(await api.getAIConversationTimeline(selectedConversationId!, {
+      before: pageParam ?? undefined,
+      limit: AI_TIMELINE_PAGE_SIZE,
+    })),
     enabled: open && Boolean(selectedConversationId),
-    structuralSharing: (current, incoming) => mergeTimelineQuerySnapshot(
-      current as AITimelineQueryData | undefined,
-      incoming as AITimelineQueryData,
+    initialPageParam: null as string | null,
+    getPreviousPageParam: olderTimelinePageParam,
+    getNextPageParam: () => undefined,
+    structuralSharing: (current, incoming) => mergeTimelineInfiniteSnapshot(
+      current as AITimelineInfiniteData | undefined,
+      incoming as AITimelineInfiniteData,
     ),
   })
-  const streamState = timeline.data?.state ?? emptyAIAssistantState
+  const timelineData = useMemo(() => timelineQueryDataFromInfinite(timeline.data), [timeline.data])
+  const streamState = timelineData?.state ?? emptyAIAssistantState
   const recoverTimeline = useCallback((conversationId: string) => recoverTimelineOnce(
     timelineRecoveriesRef.current,
     conversationId,
     async () => {
-      await queryClient.fetchQuery<AITimelineQueryData>({
-        queryKey: aiTimelineQueryKey(conversationId),
-        queryFn: async () => timelineQueryDataFromSnapshot(await api.getAIConversationTimeline(conversationId)),
-        staleTime: 0,
-        structuralSharing: (current, incoming) => mergeTimelineQuerySnapshot(
-          current as AITimelineQueryData | undefined,
-          incoming as AITimelineQueryData,
-        ),
-      })
+      const latest = timelineQueryDataFromSnapshot(await api.getAIConversationTimeline(conversationId, { limit: AI_TIMELINE_PAGE_SIZE }))
+      queryClient.setQueryData<AITimelineInfiniteData>(aiTimelineQueryKey(conversationId), current => mergeLatestTimelineSnapshot(current, latest))
     },
   ), [queryClient])
-  const handleStreamEvent = useCallback((event: Parameters<typeof applyTimelineQueryEvent>[1]) => {
+  const handleStreamEvent = useCallback((event: Parameters<typeof applyTimelineInfiniteEvent>[1]) => {
     let desynced = false
     let accepted = false
-    queryClient.setQueryData<AITimelineQueryData>(aiTimelineQueryKey(event.conversationId), (current) => {
-      const next = applyTimelineQueryEvent(current, event)
-      desynced = next.state.desyncedRunIds.has(event.runId)
+    queryClient.setQueryData<AITimelineInfiniteData>(aiTimelineQueryKey(event.conversationId), (current) => {
+      const next = applyTimelineInfiniteEvent(current, event)
+      if (!next)
+        return current
+      const nextData = timelineQueryDataFromInfinite(next)
+      desynced = nextData?.state.desyncedRunIds.has(event.runId) ?? false
       accepted = next !== current
         && !desynced
-        && next.state.lastEventSequences[event.runId] === event.eventSequence
+        && nextData?.state.lastEventSequences[event.runId] === event.eventSequence
       return next
     })
     const automaticDelivery = accepted ? automaticRouteDeliveryFromEvent(event) : undefined
@@ -189,8 +207,8 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
   useEffect(() => {
     if (!open || !selectedConversationId)
       return
-    syncRunStreams(selectedConversationId, activeRunStreamSubscriptions(timeline.data, selectedConversationId, runSubscriptions))
-  }, [open, runSubscriptions, selectedConversationId, syncRunStreams, timeline.data])
+    syncRunStreams(selectedConversationId, activeRunStreamSubscriptions(timelineData, selectedConversationId, runSubscriptions))
+  }, [open, runSubscriptions, selectedConversationId, syncRunStreams, timelineData])
 
   const createConversation = useMutation({
     mutationFn: () => api.createAIConversation({ projectId: pageContext().projectId }),
@@ -255,7 +273,7 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
     },
     onSuccess: async (result) => {
       setDrafts(current => ({ ...current, [result.sourceDraftKey]: '', [result.conversationId]: '' }))
-      queryClient.setQueryData<AITimelineQueryData>(aiTimelineQueryKey(result.conversationId), current => addOptimisticTimelineTurn(current, {
+      queryClient.setQueryData<AITimelineInfiniteData>(aiTimelineQueryKey(result.conversationId), current => addOptimisticTimelineTurn(current, {
         turnId: result.turnId,
         turnIndex: result.turnIndex,
         runId: result.runId,
@@ -304,10 +322,11 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
     return ids
   }, [generating, runSubscriptions, selectedConversationId])
   const allowPresetSuggestions = !conversations.isLoading
-    && (!selectedConversationId || timeline.data?.snapshot?.turns.length === 0)
+    && (!selectedConversationId || timelineData?.snapshot?.turns.length === 0)
+    && !activeRunId
   const suggestions = useMemo(
-    () => resolveAISuggestions(streamState.blocks, location.pathname, t, Boolean(activeRunId), allowPresetSuggestions),
-    [activeRunId, allowPresetSuggestions, location.pathname, streamState.blocks, t],
+    () => resolveAIPresetSuggestions(location.pathname, t, allowPresetSuggestions),
+    [allowPresetSuggestions, location.pathname, t],
   )
   const executeAction = useCallback((action: AIUIAction) => executeAIUIAction(action, {
     pathname: location.pathname,
@@ -439,8 +458,10 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
     : undefined
   const conversationListProps = {
     activeId: selectedConversationId,
-    conversations: conversations.data?.items ?? [],
+    conversations: conversationItems,
     deleting: deleteConversations.isPending,
+    hasMore: conversations.hasNextPage,
+    loadingMore: conversations.isFetchingNextPage,
     loading: conversations.isLoading,
     search: conversationSearch,
     onDeleteMany: (ids: string[]) => deleteConversations.mutateAsync(ids).then(() => undefined),
@@ -448,6 +469,7 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
     runningConversationIds,
     onSearch: setConversationSearch,
     onSelect: (id: string) => dispatchConversationSession({ type: 'select', conversationId: id } as const),
+    onLoadMore: () => conversations.fetchNextPage().then(() => undefined),
   }
   const chatView = (
     <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
@@ -467,7 +489,7 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
         </Button>
         <span className="grid size-8 shrink-0 place-items-center rounded-control bg-primary text-primary-foreground"><Sparkles className="size-4" /></span>
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-[13px] font-semibold leading-5">{timeline.data?.snapshot?.conversation.title || t('aiAssistant.title')}</h2>
+          <h2 className="truncate text-[13px] font-semibold leading-5">{timelineData?.snapshot?.conversation.title || t('aiAssistant.title')}</h2>
           <p className="truncate text-[10px] leading-4 text-muted-foreground">{t('aiAssistant.context', { path: location.pathname })}</p>
         </div>
         {canDebugInternalTools && (
@@ -490,8 +512,11 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
         <AIAssistantTimeline
           bottomInset={Boolean(visibleSuggestions)}
           blocks={streamState.blocks}
-          error={timeline.error}
+          error={timeline.data ? null : timeline.error}
           generating={generating}
+          hasOlder={timeline.hasPreviousPage}
+          loadingOlder={timeline.isFetchingPreviousPage}
+          olderError={timeline.isFetchPreviousPageError ? timeline.error : null}
           loading={timeline.isLoading}
           onAction={executeAction}
           onApproval={(block, decision, reason) => api.decideAIToolApproval(block.runId, block.toolCallId, {
@@ -511,6 +536,7 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
           }}
           onResend={message => sendTurn.mutate({ conversationId: selectedConversationId, message })}
           onRetry={() => void timeline.refetch()}
+          onLoadOlder={() => timeline.fetchPreviousPage().then(() => undefined)}
           resetKey={selectedConversationId}
           resendDisabled={Boolean(activeRunId || sendingSelected)}
           showInternalTools={toolDebugMode.enabled}
