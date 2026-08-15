@@ -22,7 +22,7 @@ const (
 	aiAssistantEnabledConfigKey    = "ai.assistant.enabled"
 	aiAccessModeConfigKey          = "ai.access.mode"
 	aiMaxInputBytesConfigKey       = "ai.run.max_input_k_bytes"
-	aiDefaultMaxInputKBytes        = 48
+	aiDefaultMaxInputKBytes        = 1024
 	aiPendingUIActionsRetrySeconds = 30
 	aiPendingUIActionsDrainLimit   = 64 << 10
 )
@@ -299,7 +299,7 @@ func (h *Handlers) aiMaxInputBytes() int {
 
 func configuredAIMaxInputBytes(values map[string]string) int {
 	maxInputBytes := aiRuntimeKTokens(values, aiMaxInputBytesConfigKey, aiDefaultMaxInputKBytes)
-	if maxInputBytes < 8*1024 || maxInputBytes > 1024*1024 {
+	if maxInputBytes < 8*1024 || maxInputBytes > 8*1024*1024 {
 		return aiDefaultMaxInputKBytes * 1024
 	}
 	return maxInputBytes

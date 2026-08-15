@@ -13,6 +13,7 @@ import { systemPromptFor } from "./prompt/system.js"
 import { recordAvailableTools } from "./telemetry.js"
 import { renameConversationTool } from "./tools/conversation-title.js"
 import { createOptionsTool } from "./tools/ui-options.js"
+import { defaultRuntimeSettings } from "./runtime-settings.js"
 
 export type ConversationPromptContext = {
   title: string
@@ -34,14 +35,12 @@ export type AssistantModelInput = {
   loadedOperationIds: string[]
 }
 
-const assistantDefaultMaxOutputTokens = 4096
-
 /**
  * 模型运行时只负责编译上下文、解析可用工具并调用 Provider。
  * Agent 循环、工具执行和暂停/恢复都由 RunExecutor 统一编排。
  */
 export class ModelRuntime {
-  private assistantMaxOutputTokens = assistantDefaultMaxOutputTokens
+  private assistantMaxOutputTokens = defaultRuntimeSettings.assistantMaxOutputTokens
   private readonly resolveTools: (pageContext: Record<string, unknown>, userInput: string, loadedOperationIds: string[]) => ModelToolDefinition[]
   private readonly searchTools?: (query: string, pageContext: Record<string, unknown>, limit: number) => ModelToolSearchResult
 

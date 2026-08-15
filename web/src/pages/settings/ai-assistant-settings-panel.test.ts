@@ -120,9 +120,9 @@ describe('aI assistant admin settings', () => {
     expect(aiSettingsSchema.safeParse({ ...validValues, contextMaxRecentTurnCount: 1 }).success).toBe(false)
     expect(aiSettingsSchema.safeParse({ ...validValues, modelMaxOutputTokens: 100 }).success).toBe(false)
     expect(aiSettingsSchema.safeParse({ ...validValues, runMaxModelSteps: 0 }).success).toBe(false)
-    expect(aiSettingsSchema.safeParse({ ...validValues, runMaxInputKBytes: 2000 }).success).toBe(false)
+    expect(aiSettingsSchema.safeParse({ ...validValues, runMaxInputKBytes: 8193 }).success).toBe(false)
     expect(aiSettingsSchema.safeParse({ ...validValues, runNavigateActionTtlSeconds: 5 }).success).toBe(false)
-    expect(aiSettingsSchema.safeParse({ ...validValues, toolsResultPayloadKBytes: 1000 }).success).toBe(false)
+    expect(aiSettingsSchema.safeParse({ ...validValues, toolsResultPayloadKBytes: 4097 }).success).toBe(false)
     expect(aiSettingsSchema.safeParse({ ...validValues, toolsMaxCardRepairAttempts: 0 }).success).toBe(false)
   })
 

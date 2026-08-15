@@ -46,12 +46,12 @@ export const aiSettingsSchema = z.object({
   providerTimeoutSeconds: z.number({ message: i18next.t('settings.ai.providerTimeoutInvalid') })
     .int({ message: i18next.t('settings.ai.providerTimeoutInvalid') })
     .min(1, { message: i18next.t('settings.ai.providerTimeoutInvalid') })
-    .max(120, { message: i18next.t('settings.ai.providerTimeoutInvalid') }),
+    .max(900, { message: i18next.t('settings.ai.providerTimeoutInvalid') }),
   maxRequestRetries: boundedInt(0, 10, 'settings.ai.maxRequestRetriesInvalid'),
   runTimeoutSeconds: z.number({ message: i18next.t('settings.ai.runTimeoutInvalid') })
     .int({ message: i18next.t('settings.ai.runTimeoutInvalid') })
     .min(30, { message: i18next.t('settings.ai.runTimeoutInvalid') })
-    .max(900, { message: i18next.t('settings.ai.runTimeoutInvalid') }),
+    .max(7200, { message: i18next.t('settings.ai.runTimeoutInvalid') }),
   agentConcurrentRuns: z.number({ message: i18next.t('settings.ai.agentConcurrentRunsInvalid') })
     .int({ message: i18next.t('settings.ai.agentConcurrentRunsInvalid') })
     .min(1, { message: i18next.t('settings.ai.agentConcurrentRunsInvalid') })
@@ -63,20 +63,20 @@ export const aiSettingsSchema = z.object({
   // 高级设置：上下文与压缩
   contextCompressionTriggerRatio: boundedRatio(0.5, 0.95, 'settings.ai.advancedNumberInvalid'),
   contextCompressionTargetRatio: boundedRatio(0.1, 0.8, 'settings.ai.advancedNumberInvalid'),
-  contextRecentTurnCount: boundedInt(1, 16, 'settings.ai.advancedNumberInvalid'),
-  contextMaxRecentTurnCount: boundedInt(2, 32, 'settings.ai.advancedNumberInvalid'),
-  contextMaxUncompressedTurnCount: boundedInt(4, 200, 'settings.ai.advancedNumberInvalid'),
-  contextMaxCompressionTurnsPerCompile: boundedInt(8, 500, 'settings.ai.advancedNumberInvalid'),
-  contextSummaryInputKTokens: boundedInt(4, 128, 'settings.ai.advancedNumberInvalid'),
-  contextSummaryMaxOutputTokens: boundedInt(200, 8000, 'settings.ai.advancedNumberInvalid'),
-  contextHistoricalToolKTokens: boundedInt(1, 64, 'settings.ai.advancedNumberInvalid'),
+  contextRecentTurnCount: boundedInt(1, 32, 'settings.ai.advancedNumberInvalid'),
+  contextMaxRecentTurnCount: boundedInt(2, 64, 'settings.ai.advancedNumberInvalid'),
+  contextMaxUncompressedTurnCount: boundedInt(4, 128, 'settings.ai.advancedNumberInvalid'),
+  contextMaxCompressionTurnsPerCompile: boundedInt(8, 1024, 'settings.ai.advancedNumberInvalid'),
+  contextSummaryInputKTokens: boundedInt(4, 512, 'settings.ai.advancedNumberInvalid'),
+  contextSummaryMaxOutputTokens: boundedInt(200, 32768, 'settings.ai.advancedNumberInvalid'),
+  contextHistoricalToolKTokens: boundedInt(1, 256, 'settings.ai.advancedNumberInvalid'),
   // 高级设置：模型与执行
-  modelMaxOutputTokens: boundedInt(256, 16384, 'settings.ai.advancedNumberInvalid'),
-  runMaxModelSteps: boundedInt(1, 200, 'settings.ai.advancedNumberInvalid'),
-  runMaxInputKBytes: boundedInt(8, 1024, 'settings.ai.advancedNumberInvalid'),
+  modelMaxOutputTokens: boundedInt(256, 131072, 'settings.ai.advancedNumberInvalid'),
+  runMaxModelSteps: boundedInt(1, 1024, 'settings.ai.advancedNumberInvalid'),
+  runMaxInputKBytes: boundedInt(8, 8192, 'settings.ai.advancedNumberInvalid'),
   runNavigateActionTtlSeconds: boundedInt(10, 600, 'settings.ai.advancedNumberInvalid'),
   // 高级设置：工具结果与卡片
-  toolsResultPayloadKBytes: boundedInt(4, 512, 'settings.ai.advancedNumberInvalid'),
+  toolsResultPayloadKBytes: boundedInt(4, 4096, 'settings.ai.advancedNumberInvalid'),
   toolsMaxCardRepairAttempts: boundedInt(1, 10, 'settings.ai.advancedNumberInvalid'),
   observabilityEnabled: z.boolean(),
   prometheusUrl: observabilityUrl,

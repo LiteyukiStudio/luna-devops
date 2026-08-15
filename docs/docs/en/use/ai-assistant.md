@@ -31,7 +31,7 @@ When you open a long conversation, the assistant first shows the most recent com
 
 Long conversations retain their complete history for review. Before a request approaches the model context limit, earlier turns are summarized into task goals, constraints, resources, and pending work. Each model request prioritizes the current work, recent verbatim turns, and those retained facts, so a long-running task does not require a new conversation merely because its turn count grows.
 
-Administrators can change the **Context input budget** under advanced runtime settings. It defaults to 256K tokens. This is the maximum input allowed for one model request, not a fixed cost per turn, and it must not exceed the context capacity supported by the selected model.
+Administrators can change the **Context input budget** under advanced runtime settings. It defaults to 512K tokens, while the maximum output per reply defaults to 64K tokens and can be configured up to 128K when the model supports it. These are per-request ceilings rather than fixed usage, and they must not exceed the selected model's actual input and output capacities.
 
 Under **Advanced settings**, the Agent's internal parameters can be tuned by category: context & compression (compression trigger/target ratios, recent-turn retention, summary budgets, etc.), model & execution (max output tokens per reply, max model steps per Run, user-input size limit, navigation-action TTL), and tool results & cards (tool-result context budget, interaction-card repair limit). Every item ships with a platform default and is delivered to the Agent dynamically; keep the defaults for ordinary deployments and avoid tuning without a specific need.
 

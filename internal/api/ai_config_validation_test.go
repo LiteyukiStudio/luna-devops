@@ -73,7 +73,7 @@ func TestAIConfigAcceptsSafePublicProviderWithoutManualDomainAllowlist(t *testin
 
 func TestAIConfigRejectsUnsafeRuntimeBounds(t *testing.T) {
 	for key, value := range map[string]string{
-		"ai.runtime.provider_timeout_seconds":          "121",
+		"ai.runtime.provider_timeout_seconds":          "901",
 		"ai.runtime.max_request_retries":               "11",
 		"ai.runtime.run_timeout_seconds":               "10",
 		"ai.runtime.agent_concurrent_runs":             "0",
@@ -87,11 +87,11 @@ func TestAIConfigRejectsUnsafeRuntimeBounds(t *testing.T) {
 		"ai.context.historical_tool_k_tokens":          "0",
 		"ai.context.compression_trigger_ratio":         "0.99",
 		"ai.context.compression_target_ratio":          "0.05",
-		"ai.model.max_output_tokens":                   "16385",
-		"ai.run.max_model_steps":                       "201",
+		"ai.model.max_output_tokens":                   "131073",
+		"ai.run.max_model_steps":                       "1025",
 		"ai.run.max_input_k_bytes":                     "7",
 		"ai.run.navigate_action_ttl_seconds":           "601",
-		"ai.tools.result_payload_k_bytes":              "3",
+		"ai.tools.result_payload_k_bytes":              "4097",
 		"ai.tools.max_card_repair_attempts":            "11",
 	} {
 		h := &Handlers{configs: &configCache{values: aiConfigDefaults()}}

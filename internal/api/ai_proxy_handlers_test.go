@@ -238,7 +238,7 @@ func TestAICapabilitiesDependOnPlatformConfigurationNotAgentHealth(t *testing.T)
 
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/ai/capabilities", nil))
-	if response.Code != http.StatusOK || response.Body.String() != `{"enabled":true,"maxInputBytes":49152}` {
+	if response.Code != http.StatusOK || response.Body.String() != `{"enabled":true,"maxInputBytes":1048576}` {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 	}
 	if fake.calls != 0 {
@@ -441,7 +441,7 @@ func TestAIAccessModeDefaultsToAuthenticatedUsersAndCanRestrictAdmins(t *testing
 	router.GET("/api/v1/ai/conversations", handler.ProxyAIRequest)
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/ai/capabilities", nil))
-	if response.Code != http.StatusOK || response.Body.String() != `{"enabled":false,"maxInputBytes":49152}` || fake.calls != 0 {
+	if response.Code != http.StatusOK || response.Body.String() != `{"enabled":false,"maxInputBytes":1048576}` || fake.calls != 0 {
 		t.Fatalf("status = %d, calls = %d, body = %s", response.Code, fake.calls, response.Body.String())
 	}
 
