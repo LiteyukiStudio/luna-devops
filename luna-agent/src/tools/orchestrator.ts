@@ -11,7 +11,7 @@ export type ToolCallStatus = "proposed" | "awaiting_approval" | "awaiting_mfa" |
 export type ToolCallRecord = {
   id: string; runId: string; operationId: string; status: ToolCallStatus; arguments: Record<string, unknown>
   argumentsHash: string; attempt: number; rowVersion: number; approvalExpiresAt?: number; mfaPurpose?: string
-  result?: unknown; modelResult?: unknown; errorCode?: string
+  inputMode?: "model" | "direct"; result?: unknown; errorCode?: string
 }
 export type ToolEvent = { type: string, toolCallId: string, data: Record<string, unknown> }
 
@@ -36,6 +36,12 @@ export class ToolInterruption extends Error {
   }
 }
 
+export class SensitiveInputRejected extends Error {
+  constructor(readonly operationId: string) {
+    super("ai.sensitive_input_requires_user_form")
+  }
+}
+
 export class ToolOrchestrator {
   constructor(
     private readonly catalog: ToolCatalog,
@@ -46,7 +52,7 @@ export class ToolOrchestrator {
     private readonly grantResolver: (runId: string) => Promise<string> = async () => { throw new Error("ai.run_grant_unavailable") },
   ) {}
 
-  async propose(input: { runId: string, operationId: string, arguments: unknown }): Promise<ToolCallRecord> {
+  async propose(input: { runId: string, operationId: string, arguments: unknown, inputMode?: "model" | "direct" }): Promise<ToolCallRecord> {
     const operation = this.catalog.get(input.operationId)
     let args: Record<string, unknown>
     try {
@@ -55,10 +61,13 @@ export class ToolOrchestrator {
       const value = input.arguments && typeof input.arguments === "object" ? input.arguments as Record<string, unknown> : {}
       throw new ToolInterruption("waiting_input", operation.inputSchema.required.filter(field => value[field] === undefined))
     }
+    const inputMode = input.inputMode ?? "model"
+    if (inputMode !== "direct" && hasSensitiveInput(operation.inputSchema, args))
+      throw new SensitiveInputRejected(operation.operationId)
     const argumentsHash = hashCanonicalJSON(args)
     const record: ToolCallRecord = {
       id: createId("aitool"), runId: input.runId, operationId: input.operationId,
-      status: "proposed", arguments: args, argumentsHash, attempt: 1, rowVersion: 1,
+      status: "proposed", arguments: args, argumentsHash, attempt: 1, rowVersion: 1, inputMode,
     }
     await this.store.insert(record)
     telemetryLog("agent.tool.proposed", "info", {
@@ -114,6 +123,7 @@ export class ToolOrchestrator {
       id: createId("aitool"), runId: previous.runId, operationId: previous.operationId,
       status: "proposed", arguments: previous.arguments, argumentsHash: previous.argumentsHash,
       attempt: previous.attempt + 1, rowVersion: 1,
+      ...(previous.inputMode ? { inputMode: previous.inputMode } : {}),
     }
     await this.store.insert(retry)
     await this.store.emit({ type: "tool.started", toolCallId: retry.id, data: {
@@ -158,6 +168,7 @@ export class ToolOrchestrator {
             runId: call.runId, toolCallId: call.id, operation, arguments: call.arguments,
             argumentsHash: call.argumentsHash, runActorGrant: await this.grantResolver(call.runId),
             approvalGranted: authorization.approvalGranted,
+            inputMode: call.inputMode ?? "model",
             ...(authorization.mfaPurpose ? { mfaPurpose: authorization.mfaPurpose } : {}),
             ...(authorization.stepUpAssertionId ? { stepUpAssertionId: authorization.stepUpAssertionId } : {}),
           })
@@ -211,11 +222,8 @@ export class ToolOrchestrator {
 
   private async finish(call: ToolCallRecord, result: ToolExecutionResult, diagnostics: { durationMs: number, traceId: string }): Promise<ToolCallRecord> {
     const code = extractCode(result.body)
-    // generateSecret 的生成值需要明文回灌模型以便直接填入后续表单；
-    // 持久化 result 仍使用掩码投影，模型可见明文仅保存在内存的 modelResult。
     const plainResult = withRequestId(result.body, result.requestId)
     const storedResult = redact(plainResult)
-    const modelResult = call.operationId === "generateSecret" ? plainResult : undefined
     if (result.status === 401 || result.status === 403) return this.transition(call, "failed", { errorCode: code ?? "ai.tool_forbidden", result: storedResult }, "tool_call.failed", diagnostics)
     if (result.status === 428 && code === "mfa_required") {
       const purpose = (result.body as Record<string, unknown>).purpose
@@ -224,7 +232,7 @@ export class ToolOrchestrator {
     if (result.status < 200 || result.status >= 300) return this.transition(call, "failed", { errorCode: code ?? "ai.tool_failed", result: storedResult }, "tool_call.failed", diagnostics)
     const verification = await this.verifier.verify(call.operationId, result)
     if (!verification.ok) return this.transition(call, "failed", { errorCode: verification.code ?? "verification_inconclusive", result: storedResult }, "tool_call.failed", diagnostics)
-    return this.transition(call, "succeeded", { result: storedResult, modelResult }, "tool_call.succeeded", diagnostics)
+    return this.transition(call, "succeeded", { result: storedResult }, "tool_call.succeeded", diagnostics)
   }
 
   private async transition(call: ToolCallRecord, status: ToolCallStatus, patch: Partial<ToolCallRecord>, event: string, eventData: Record<string, unknown> = {}) {
@@ -250,6 +258,18 @@ export class ToolOrchestrator {
       throw new Error("ai.approval_expired")
     }
   }
+}
+
+function hasSensitiveInput(schema: Record<string, unknown>, value: unknown): boolean {
+  if (schema.writeOnly === true || schema["x-luna-sensitive"] === true)
+    return value !== undefined && value !== null && (!Array.isArray(value) || value.length > 0) && (!(typeof value === "string") || value.length > 0)
+  if (value && typeof value === "object" && !Array.isArray(value) && schema.properties && typeof schema.properties === "object") {
+    const properties = schema.properties as Record<string, Record<string, unknown>>
+    return Object.entries(value as Record<string, unknown>).some(([key, item]) => properties[key] && hasSensitiveInput(properties[key], item))
+  }
+  if (Array.isArray(value) && schema.items && typeof schema.items === "object")
+    return value.some(item => hasSensitiveInput(schema.items as Record<string, unknown>, item))
+  return false
 }
 
 function contentError(error: unknown): Record<string, unknown> {

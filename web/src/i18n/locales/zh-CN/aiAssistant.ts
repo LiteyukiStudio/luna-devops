@@ -38,6 +38,7 @@ const aiAssistant = {
       tool_storage_unavailable: '平台数据暂时无法读取，请稍后重试；如持续失败，请提供请求编号。',
       tool_arguments_key_unavailable: '工具参数暂时无法安全解密，请重新发起该操作。',
       tool_permission_denied: '当前用户没有访问目标资源或执行该操作的权限。',
+      sensitive_input_requires_user_form: '密钥等敏感输入只能通过安全表单提交，不能写入普通聊天或模型工具参数。',
       web_target_blocked: '目标网站命中了平台域名或 IP 黑名单，已停止访问。',
       web_content_rejected: '目标内容不是可读取文本，或响应大小超过平台限制。',
       web_request_failed: '目标网站暂时无法访问，请检查链接或稍后重试。',

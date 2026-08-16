@@ -310,6 +310,7 @@ func NewRouterWithStaticFSAndMetrics(db *gorm.DB, staticFS fs.FS, httpMetrics *o
 		v1.POST("/projects/:projectId/applications/:applicationId/deployment-target-imports/preview", handlers.PreviewDeploymentTargetBundleImport)
 		v1.POST("/projects/:projectId/applications/:applicationId/deployment-target-imports", handlers.ImportDeploymentTargetBundle)
 		v1.PUT("/projects/:projectId/applications/:applicationId/deployment-targets/:targetId", handlers.UpdateDeploymentTarget)
+		v1.PUT("/projects/:projectId/applications/:applicationId/deployment-targets/:targetId/runtime-secrets", handlers.UpdateDeploymentTargetRuntimeSecrets)
 		v1.POST("/projects/:projectId/applications/:applicationId/deployment-targets/:targetId/restart", handlers.RestartDeploymentTarget)
 		v1.GET("/projects/:projectId/applications/:applicationId/deployment-targets/:targetId/metrics/stream", handlers.StreamDeploymentTargetMetrics)
 		v1.DELETE("/projects/:projectId/applications/:applicationId/deployment-targets/:targetId", handlers.DeleteDeploymentTarget)

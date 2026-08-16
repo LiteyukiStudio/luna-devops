@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { ToolCatalog } from "../src/tools/catalog.js"
 import { DeterministicLunaApiClient } from "../src/tools/luna-api-client.js"
-import { MemoryToolCallStore, ToolOrchestrator, type ToolInterruption } from "../src/tools/orchestrator.js"
+import { MemoryToolCallStore, SensitiveInputRejected, ToolOrchestrator, type ToolInterruption } from "../src/tools/orchestrator.js"
 
 const catalog = ToolCatalog.load([
   {
@@ -23,6 +23,26 @@ describe("tool catalog and orchestration", () => {
     const orchestrator = new ToolOrchestrator(catalog, new DeterministicLunaApiClient(() => ({ status: 200, body: {} })), new MemoryToolCallStore())
     await expect(orchestrator.propose({ runId: "airun_test", operationId: "getBuildRun", arguments: {} }))
       .rejects.toMatchObject({ state: "waiting_input", fields: ["buildId"] } satisfies Partial<ToolInterruption>)
+  })
+  it("requires a Direct Tool Action for sensitive arguments", async () => {
+    const sensitiveCatalog = ToolCatalog.load([{
+      operationId: "updateRuntimeSecret", method: "PUT", path: "/api/v1/runtime-secrets", category: "deployment",
+      risk: "sensitive", requiredScopes: ["deployment:update"], approval: "always", stepUpPurpose: "secret_update", idempotent: true, timeoutMs: 5000,
+      inputSchema: {
+        type: "object",
+        properties: { values: { type: "object", writeOnly: true, "x-luna-sensitive": true, additionalProperties: { type: "string" } } },
+        required: ["values"], additionalProperties: false,
+      },
+    }])
+    const client = new DeterministicLunaApiClient(() => ({ status: 200, body: { accepted: true } }))
+    const store = new MemoryToolCallStore()
+    const orchestrator = new ToolOrchestrator(sensitiveCatalog, client, store, undefined, undefined, resolveGrant)
+    await expect(orchestrator.propose({ runId: "airun_test", operationId: "updateRuntimeSecret", arguments: { values: { TOKEN: "secret-value" } } }))
+      .rejects.toBeInstanceOf(SensitiveInputRejected)
+    await expect(orchestrator.propose({ runId: "airun_test", operationId: "updateRuntimeSecret", arguments: { values: { TOKEN: "secret-value" } }, inputMode: "direct" }))
+      .resolves.toMatchObject({ status: "awaiting_approval", inputMode: "direct" })
+    expect(client.calls).toHaveLength(0)
+    expect(store.records.size).toBe(1)
   })
   it("executes a read tool only through the Luna API client", async () => {
     const client = new DeterministicLunaApiClient(() => ({ status: 200, body: { id: "build_a", status: "failed", token: "must-hide" } }))

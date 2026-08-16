@@ -152,6 +152,9 @@ func (h *Handlers) projectRuntimeConfigSetFromInput(ctx *gin.Context, user model
 		writeError(ctx, http.StatusBadRequest, "请输入运行配置集名称")
 		return model.ProjectRuntimeConfigSet{}, false
 	}
+	if !validateDeploymentTargetPublicEnvVars(ctx, input.EnvVars) {
+		return model.ProjectRuntimeConfigSet{}, false
+	}
 	configFiles, ok := normalizeRuntimeConfigFilesInput(ctx, input.ConfigFiles)
 	if !ok {
 		return model.ProjectRuntimeConfigSet{}, false

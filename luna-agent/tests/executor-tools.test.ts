@@ -921,26 +921,29 @@ describe("provider to tool to subsequent model invocation", () => {
     expect((await repository.getRun("usr_a", created.run.id))?.status).toBe("completed")
   })
 
-  it("feeds generated secrets to the model while persisting masked results", async () => {
+  it("rejects model-generated sensitive input and keeps it out of execution", async () => {
     const repository = new MemoryRepository()
     const conversation = await repository.createConversation("usr_a", "secret")
     const created = await repository.createTurn("usr_a", {
-      conversationId: conversation.id, input: "部署应用并生成 JWT 密钥", pageContext: {}, idempotencyKey: "secret-loop",
+      conversationId: conversation.id, input: "部署应用并配置 JWT 密钥", pageContext: {}, idempotencyKey: "secret-loop",
     })
     const catalog = ToolCatalog.load([{
-      operationId: "generateSecret", method: "GET", path: "/api/v1/ai-tools/generateSecret", category: "secret",
-      risk: "read", requiredScopes: ["secret:generate"], approval: "never", idempotent: true, timeoutMs: 5000,
+      operationId: "updateDeploymentTargetRuntimeSecrets", method: "PUT", path: "/api/v1/projects/{projectId}/applications/{applicationId}/deployment-targets/{targetId}/runtime-secrets", category: "deployment",
+      risk: "sensitive", requiredScopes: ["deployment:update"], approval: "always", stepUpPurpose: "secret_update", idempotent: true, timeoutMs: 5000,
       inputSchema: {
         type: "object",
-        properties: { length: { type: "integer" }, encoding: { type: "string" }, count: { type: "integer" } },
-        required: [], additionalProperties: false,
+        properties: {
+          body: {
+            type: "object",
+            properties: { values: { type: "object", writeOnly: true, "x-luna-sensitive": true, additionalProperties: { type: "string" } } },
+            required: [], additionalProperties: false,
+          },
+        },
+        required: ["body"], additionalProperties: false,
       },
     }])
     const generated = "s3cretValu3_forJwt"
-    const client = new DeterministicLunaApiClient(() => ({
-      status: 200,
-      body: { secrets: [generated], encoding: "alphanumeric", length: generated.length },
-    }))
+    const client = new DeterministicLunaApiClient(() => ({ status: 200, body: { accepted: true } }))
     const store = new MemoryToolCallStore()
     const tools = new ToolOrchestrator(catalog, client, new ProjectingToolCallStore(store, repository), undefined, undefined, async () => "grant")
     const requests: ModelRequest[] = []
@@ -949,10 +952,10 @@ describe("provider to tool to subsequent model invocation", () => {
       async *stream(request) {
         requests.push(request)
         if (modelStep++ === 0) {
-          yield { type: "completed", usage: { inputTokens: 5, outputTokens: 2 }, toolCalls: [{ id: "secret", operationId: "generateSecret", arguments: {} }] }
+          yield { type: "completed", usage: { inputTokens: 5, outputTokens: 2 }, toolCalls: [{ id: "secret", operationId: "updateDeploymentTargetRuntimeSecrets", arguments: { body: { values: { JWT_SECRET: generated } } } }] }
           return
         }
-        yield { type: "message_delta", delta: "已生成密钥并继续部署。" }
+        yield { type: "message_delta", delta: "请通过安全表单提交密钥。" }
         yield { type: "completed", usage: { inputTokens: 9, outputTokens: 5 } }
       },
       async complete() { return { text: "", usage: { inputTokens: 1, outputTokens: 0 }, toolCalls: [] } },
@@ -967,13 +970,11 @@ describe("provider to tool to subsequent model invocation", () => {
     await executor.runOnce()
 
     expect((await repository.getRun("usr_a", created.run.id))?.status).toBe("completed")
-    // 模型可见的工具结果包含明文生成值
     const toolMessage = requests[1]?.messages.find(message => message.role === "tool" && message.toolCallId === "secret")
-    expect(String(toolMessage?.content)).toContain(generated)
-    // 持久化投影不包含明文，遥测 redact 后按等长 * 掩码
-    const persisted = [...store.records.values()][0]!
-    expect(JSON.stringify(persisted.result)).not.toContain(generated)
-    expect(JSON.stringify(persisted.result)).toContain("*".repeat(generated.length))
+    expect(String(toolMessage?.content)).toContain("ai.sensitive_input_requires_user_form")
+    expect(String(toolMessage?.content)).not.toContain(generated)
+    expect(client.calls).toHaveLength(0)
+    expect(store.records.size).toBe(0)
     const timeline = await presentTimeline(repository, "usr_a", conversation.id)
     expect(JSON.stringify(timeline)).not.toContain(generated)
   })

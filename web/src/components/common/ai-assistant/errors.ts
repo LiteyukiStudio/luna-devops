@@ -15,6 +15,7 @@ const publicRunFailureKeys: Readonly<Record<string, string>> = {
   'ai.tool_storage_unavailable': 'tool_storage_unavailable',
   'ai.tool_arguments_key_unavailable': 'tool_arguments_key_unavailable',
   'ai.tool_permission_denied': 'tool_permission_denied',
+  'ai.sensitive_input_requires_user_form': 'sensitive_input_requires_user_form',
   'ai.web_target_blocked': 'web_target_blocked',
   'ai.web_content_rejected': 'web_content_rejected',
   'ai.web_request_failed': 'web_request_failed',

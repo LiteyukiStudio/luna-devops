@@ -70,14 +70,35 @@ const fetchWebPageInputSchema = {
   additionalProperties: false,
 } as const
 
-const generateSecretInputSchema = {
+const updateDeploymentTargetRuntimeSecretsInputSchema = {
   type: "object",
   properties: {
-    length: { type: "integer", minimum: 8, maximum: 256 },
-    encoding: { type: "string", enum: ["base64", "hex", "alphanumeric", "numeric"] },
-    count: { type: "integer", minimum: 1, maximum: 10 },
+    projectId: { type: "string", maxLength: 64 },
+    applicationId: { type: "string", maxLength: 64 },
+    targetId: { type: "string", maxLength: 64 },
+    body: {
+      type: "object",
+      properties: {
+        values: { type: "object", writeOnly: true, "x-luna-sensitive": true, additionalProperties: { type: "string", maxLength: 8192 } },
+        generate: {
+          type: "object",
+          additionalProperties: {
+            type: "object",
+            properties: {
+              length: { type: "integer", minimum: 8, maximum: 256, default: 32 },
+              encoding: { type: "string", enum: ["base64", "hex", "alphanumeric", "numeric"], default: "base64" },
+            },
+            required: [],
+            additionalProperties: false,
+          },
+        },
+        clear: { type: "array", items: { type: "string", maxLength: 128 } },
+      },
+      required: [],
+      additionalProperties: false,
+    },
   },
-  required: [],
+  required: ["projectId", "applicationId", "targetId", "body"],
   additionalProperties: false,
 } as const
 
@@ -88,7 +109,21 @@ export const platformOperations = [
   operation("getAppTemplate", "application", "application:read", appTemplateDetailInputSchema),
   operation("webSearch", "web", "web:read", webSearchInputSchema),
   operation("fetchWebPage", "web", "web:read", fetchWebPageInputSchema),
-  operation("generateSecret", "secret", "secret:generate", generateSecretInputSchema),
+  {
+    operationId: "updateDeploymentTargetRuntimeSecrets",
+    method: "PUT",
+    path: "/api/v1/projects/{projectId}/applications/{applicationId}/deployment-targets/{targetId}/runtime-secrets",
+    category: "deployments",
+    risk: "sensitive",
+    requiredScopes: ["deployment:update"],
+    approval: "always",
+    stepUpPurpose: "secret_update",
+    idempotent: true,
+    timeoutMs: 30000,
+    inputSchema: updateDeploymentTargetRuntimeSecretsInputSchema,
+    sensitivePaths: ["body.values"],
+    resultVerifier: "updateDeploymentTargetRuntimeSecrets_accepted",
+  },
   {
     operationId: "createProject",
     method: "POST",
@@ -131,7 +166,7 @@ function operation(
   operationId: string,
   category: string,
   scope: string,
-  inputSchema: typeof platformListInputSchema | typeof platformProjectListInputSchema | typeof projectListInputSchema | typeof appTemplateListInputSchema | typeof appTemplateDetailInputSchema | typeof webSearchInputSchema | typeof fetchWebPageInputSchema | typeof generateSecretInputSchema,
+  inputSchema: typeof platformListInputSchema | typeof platformProjectListInputSchema | typeof projectListInputSchema | typeof appTemplateListInputSchema | typeof appTemplateDetailInputSchema | typeof webSearchInputSchema | typeof fetchWebPageInputSchema,
 ) {
   return {
     operationId,

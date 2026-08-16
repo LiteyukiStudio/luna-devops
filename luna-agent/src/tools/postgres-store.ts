@@ -12,13 +12,14 @@ export class PostgresToolCallStore implements ToolCallStore {
   ) {}
   async insert(value: ToolCallRecord) {
     await this.pool.query(
-      `insert into ai.tool_calls(id,run_id,operation_id,status,arguments,arguments_ciphertext,arguments_hash,attempt,row_version,approval_expires_at,mfa_purpose)
-       values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      `insert into ai.tool_calls(id,run_id,operation_id,status,input_mode,arguments,arguments_ciphertext,arguments_hash,attempt,row_version,approval_expires_at,mfa_purpose)
+       values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
       [
         value.id,
         value.runId,
         value.operationId,
         value.status,
+        value.inputMode ?? "model",
         JSON.stringify(redact(value.arguments)),
         this.argumentsCipher.encrypt(JSON.stringify(value.arguments)),
         value.argumentsHash,
@@ -90,6 +91,7 @@ export class PostgresToolCallStore implements ToolCallStore {
     return {
       id: row.id, runId: row.run_id, operationId: row.operation_id, status: row.status,
       arguments: argumentsValue, argumentsHash: row.arguments_hash, attempt: row.attempt, rowVersion: row.row_version,
+      ...(row.input_mode === "direct" || row.input_mode === "model" ? { inputMode: row.input_mode } : {}),
       ...(row.approval_expires_at ? { approvalExpiresAt: row.approval_expires_at.getTime() } : {}),
       ...(row.mfa_purpose ? { mfaPurpose: row.mfa_purpose } : {}),
       ...(row.result !== null ? { result: row.result } : {}),
@@ -116,7 +118,7 @@ function publicToolEventType(type: string) {
 }
 
 type DbToolCall = {
-  id: string; run_id: string; operation_id: string; status: ToolCallStatus; arguments: Record<string, unknown>;
+  id: string; run_id: string; operation_id: string; status: ToolCallStatus; input_mode: string; arguments: Record<string, unknown>;
   arguments_ciphertext: string | null;
   arguments_hash: string; attempt: number; row_version: number; approval_expires_at: Date | null;
   mfa_purpose: string | null; result: unknown; error_code: string | null

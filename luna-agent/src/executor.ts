@@ -10,7 +10,7 @@ import { RunStateConflictError, type Repository } from "./persistence/repository
 import type { ModelMessage, ModelToolCall } from "./provider/provider.js"
 import { createId } from "./id.js"
 import { redact } from "./redaction.js"
-import { ToolInterruption, type ToolOrchestrator } from "./tools/orchestrator.js"
+import { SensitiveInputRejected, ToolInterruption, type ToolOrchestrator } from "./tools/orchestrator.js"
 import { renameConversationInput } from "./tools/conversation-title.js"
 import {
   createInteractionCardsInput,
@@ -297,11 +297,23 @@ export class RunExecutor {
           }
           if (!this.tools) throw new Error("ai.tool_not_available")
           platformToolCalled = true
-          const call = await this.tools.propose({ runId: run.id, operationId: toolCall.operationId, arguments: toolCall.arguments })
+          let call: Awaited<ReturnType<ToolOrchestrator["propose"]>>
+          try {
+            call = await this.tools.propose({ runId: run.id, operationId: toolCall.operationId, arguments: toolCall.arguments, inputMode: "model" })
+          } catch (error) {
+            if (!(error instanceof SensitiveInputRejected)) throw error
+            recoverableToolError = true
+            continuationMessages.push(toolResultMessage(toolCall, {
+              status: "failed",
+              errorCode: error.message,
+              guidance: "敏感输入只能通过安全表单提交；请创建或修复安全表单，不要把密钥写入普通工具参数、聊天消息或回复。",
+            }))
+            continue
+          }
           const failureGuidance = platformToolFailureGuidance(call.operationId, call.errorCode)
           continuationMessages.push(toolResultMessage(toolCall, {
             status: call.status,
-            ...(call.modelResult !== undefined ? { result: call.modelResult } : call.result !== undefined ? { result: call.result } : {}),
+            ...(call.result !== undefined ? { result: call.result } : {}),
             ...(call.errorCode ? { errorCode: call.errorCode } : {}),
             ...(failureGuidance ?? {}),
           }))
@@ -928,9 +940,7 @@ export function setToolResultPayloadBudget(bytes: number): void {
 }
 
 function toolResultMessage(toolCall: ModelToolCall & { id: string }, result: Record<string, unknown>): ModelMessage {
-  // generateSecret 的模型可见结果通过 modelResult 明文注入（仅生成值，无其他敏感字段），
-  // 不再做二次 redact，否则模型拿不到生成值就无法直接填入后续表单。
-  const payload = toolCall.operationId === "generateSecret" ? result : redact(result)
+  const payload = redact(result)
   return {
     role: "tool",
     toolCallId: toolCall.id,

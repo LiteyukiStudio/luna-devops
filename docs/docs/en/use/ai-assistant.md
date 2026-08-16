@@ -45,6 +45,8 @@ An interaction card first shows a preparation placeholder at its actual conversa
 
 Password and secret fields in configuration forms can be entered directly and are displayed as password inputs. When you submit a tool action, the secret travels only through the controlled tool execution path; it is not added to a normal chat message or model context, and message actions cannot reference it.
 
+Runtime secrets for a deployment target must be submitted through the security form. User-entered `values` travel only through a Direct Tool Action; platform-generated credentials are generated and stored by the platform, and clearing a credential requires explicitly selecting its field. Ordinary environment variables reject password, token, and secret-like names as well as values containing embedded URL credentials. Results report field status only and never return plaintext secrets.
+
 Next-step options generated for a reply appear inside that assistant bubble at their real position among messages, reasoning, and tool calls, making their context clear. Before the first message in a new conversation, page presets remain above the composer for quick access to common tasks.
 
 When a high-risk tool is waiting for approval or MFA step-up, its action card appears directly below the tool row without requiring you to expand the details. Parameters, results, and invocation identifiers remain collapsed until you choose to inspect them.

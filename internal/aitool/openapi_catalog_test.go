@@ -72,6 +72,25 @@ func TestPlatformCatalogProvidesSemanticSearchHints(t *testing.T) {
 	}
 }
 
+func TestPlatformCatalogMarksRuntimeSecretInputsAsSensitive(t *testing.T) {
+	operation, ok := PlatformOperation("updateDeploymentTargetRuntimeSecrets")
+	if !ok {
+		t.Fatal("missing secure runtime secret operation")
+	}
+	if operation.Risk != "sensitive" || operation.Approval != "always" || operation.StepUpPurpose != "secret_update" {
+		t.Fatalf("runtime secret policy = %#v", operation)
+	}
+	if len(operation.SensitivePaths) != 1 || operation.SensitivePaths[0] != "body.values" {
+		t.Fatalf("runtime secret sensitive paths = %#v", operation.SensitivePaths)
+	}
+	if _, exists := operation.InputSchema["generateSecret"]; exists {
+		t.Fatal("legacy generateSecret input leaked into runtime secret schema")
+	}
+	if _, exists := PlatformOperation("generateSecret"); exists {
+		t.Fatal("legacy generateSecret operation remains in Agent catalog")
+	}
+}
+
 func TestProjectListCatalogExposesExplicitScope(t *testing.T) {
 	operation, ok := PlatformOperation("listProjects")
 	if !ok {

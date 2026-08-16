@@ -29,7 +29,7 @@ function visit(value: unknown, seen: WeakSet<object>): unknown {
   const secretContainer = record.type === "secret" || record.valueMode === "secret"
   const keyValuePair = typeof record.key === "string" && Object.prototype.hasOwnProperty.call(record, "value")
   return Object.fromEntries(Object.entries(record).map(([key, item]) => {
-    // generateSecret 的生成值（secrets 数组）按等长 `*` 掩码，保留可辨识的位数信息；
+    // 生成值数组按等长 `*` 掩码，保留可辨识的位数信息；
     // 其余敏感键继续使用固定 [REDACTED] 占位。
     if (key === "secrets" && Array.isArray(item)) return [key, maskSecrets(item)]
     return [

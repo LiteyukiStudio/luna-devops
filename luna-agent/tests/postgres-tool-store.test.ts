@@ -53,9 +53,9 @@ describe("Postgres tool argument storage", () => {
       rowVersion: 1,
     })
 
-    expect(calls[0]?.[4]).toContain("[REDACTED]")
-    expect(calls[0]?.[4]).not.toContain("generated-secret")
+    expect(calls[0]?.[5]).toContain("[REDACTED]")
     expect(calls[0]?.[5]).not.toContain("generated-secret")
+    expect(calls[0]?.[6]).not.toContain("generated-secret")
     await expect(store.get("aitool_1")).resolves.toMatchObject({ arguments: executable })
   })
 

@@ -1,5 +1,10 @@
 # TODO
 
+## 2026-08-17 网站更新刷新提示
+
+- [x] 使用 GitHub commit SHA 贯通 Docker 构建、API Meta 与前端版本检查；旧页面检测到服务端新版本时显示中英文刷新 Toast，且不自动刷新。
+- [x] 为版本接口增加 `Cache-Control: no-store`，补充前后端版本检查、刷新动作与缓存语义测试，并同步中英文用户文档。
+
 ## 2026-08-16 交互卡片密钥字段提交
 
 - [x] 允许 Secret 与 Secret Key/Value 字段手动填写，按动作类型分流工具参数和公开消息值。
@@ -89,10 +94,11 @@
 - [x] 将生成式交互卡片的字段、选项和可访问性关联改为组件实例级 DOM 标识，避免历史卡片复用业务字段 ID 时发生跨卡片点击与滚动跳转。
 - [x] 为卡片组、单卡、内容块、字段和动作增加局部错误隔离，收紧 Agent 内部集合标识唯一性，并完成双卡片、流式恢复、前端构建和浏览器交互验收。
 
-## 2026-08-14 Agent 随机密钥生成工具
+## 2026-08-17 Agent—人—平台密钥交互链路重构
 
-- [x] 新增 `generateSecret` 手写 AI 工具：加密安全随机源生成 base64/hex/alphanumeric/numeric 随机字符串，长度 8~256（默认 32），支持批量生成候选；按五处注册闭环同步（Agent 工具定义、后端 Execute、策略白名单、目录描述/意图、Skill 参考）。
-- [x] 生成值以明文回灌模型便于直接填入部署表单；持久化投影与遥测按等长 `*` 掩码，日志/Span/审计不出现明文；补 redact、后端生成与端到端明文回灌测试。
+- [x] 移除 `generateSecret` 旧模型工具及明文回灌路径，改为 `updateDeploymentTargetRuntimeSecrets`：用户值只经 Direct Tool Action，生成值由平台后端生成并直接存入 Secret Store，清除操作显式按字段执行。
+- [x] 为 OpenAPI、Agent 工具目录、Delegation、执行器、数据库工具调用记录和部署配置输入同步敏感元数据与 `inputMode` 边界；普通模型调用返回稳定错误 `ai.sensitive_input_requires_user_form`，不创建执行记录、不调用平台 API。
+- [x] 拒绝普通 `envVars` 中的密钥语义字段和 URL 内嵌凭据，补充安全表单、后端接口、Secret 生成/引用校验、脱敏与中英文文档测试。
 
 ## 2026-08-14 Agent 工具全量下发与交互收敛
 

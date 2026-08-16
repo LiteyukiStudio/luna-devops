@@ -128,6 +128,9 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 	if !ok {
 		return model.DeploymentTarget{}, nil, false
 	}
+	if !validateDeploymentTargetPublicEnvVars(ctx, input.EnvVars) || !validateDeploymentTargetSecretRefs(ctx, input.SecretRefs) {
+		return model.DeploymentTarget{}, nil, false
+	}
 	runtimeConfigRefs, ok := h.runtimeConfigRefsFromInput(ctx, app.ProjectID, input, existingRuntimeConfigRefs)
 	if !ok {
 		return model.DeploymentTarget{}, nil, false

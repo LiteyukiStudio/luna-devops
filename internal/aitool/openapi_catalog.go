@@ -27,6 +27,7 @@ type OpenAPIOperation struct {
 	Idempotent     bool           `json:"idempotent"`
 	TimeoutMS      int            `json:"timeoutMs"`
 	InputSchema    map[string]any `json:"inputSchema"`
+	SensitivePaths []string       `json:"sensitivePaths,omitempty"`
 	MaxItems       int            `json:"maxItems,omitempty"`
 	ResultVerifier string         `json:"resultVerifier,omitempty"`
 
@@ -180,6 +181,7 @@ func catalogOperation(document openAPIDocument, path, method, operationID string
 		"required":             uniqueStrings(required),
 		"additionalProperties": false,
 	}
+	sensitivePaths := schemaSensitivePaths(inputSchema, "")
 	description := fmt.Sprintf(
 		"调用 Luna DevOps 的 %s 平台操作（%s %s）。参数与结果遵循平台 OpenAPI。",
 		operationID,
@@ -193,7 +195,7 @@ func catalogOperation(document openAPIDocument, path, method, operationID string
 		RequiredScopes: scopes, Approval: approval,
 		StepUpPurpose: stringValue(extension["mfaPurpose"]),
 		Idempotent:    method == "get" || method == "put" || method == "delete",
-		TimeoutMS:     30000, InputSchema: inputSchema,
+		TimeoutMS:     30000, InputSchema: inputSchema, SensitivePaths: sensitivePaths,
 		MaxItems: 100, ResultVerifier: resultVerifierFor(operationID, method),
 		Parameters: parameters, RequestBody: len(requestSchema) > 0,
 		RequestRequired: requestRequired, RequestType: requestType,
@@ -309,6 +311,7 @@ func normalizeOpenAPISchema(document openAPIDocument, schema map[string]any, dep
 	for _, key := range []string{
 		"type", "format", "description", "pattern", "minimum", "maximum",
 		"minLength", "maxLength", "minItems", "maxItems", "default",
+		"writeOnly", "readOnly", "x-luna-sensitive",
 	} {
 		if value, ok := schema[key]; ok {
 			result[key] = value
@@ -352,6 +355,30 @@ func normalizeOpenAPISchema(document openAPIDocument, schema map[string]any, dep
 		result["type"] = "object"
 	}
 	return result
+}
+
+func schemaSensitivePaths(schema map[string]any, prefix string) []string {
+	paths := make([]string, 0)
+	if boolValue(schema["writeOnly"]) || boolValue(schema["x-luna-sensitive"]) {
+		if prefix != "" {
+			paths = append(paths, prefix)
+		}
+	}
+	for name, property := range mapValue(schema["properties"]) {
+		path := name
+		if prefix != "" {
+			path = prefix + "." + name
+		}
+		paths = append(paths, schemaSensitivePaths(mapValue(property), path)...)
+	}
+	if items := mapValue(schema["items"]); len(items) > 0 {
+		path := prefix + ".*"
+		if prefix == "" {
+			path = "*"
+		}
+		paths = append(paths, schemaSensitivePaths(items, path)...)
+	}
+	return uniqueStrings(paths)
 }
 
 func agentRisk(method, declared, operationID string) string {

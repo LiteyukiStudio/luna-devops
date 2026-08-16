@@ -23,6 +23,24 @@ describe("platform tool catalog", () => {
     ])
   })
 
+  it("exposes runtime secret updates with a Direct Tool Action boundary", () => {
+    const catalog = ToolCatalog.load(platformOperations)
+    const operation = catalog.get("updateDeploymentTargetRuntimeSecrets")
+    const body = operation.inputSchema.properties.body as Record<string, unknown>
+    const values = (body.properties as Record<string, unknown>).values
+
+    expect(operation).toMatchObject({
+      risk: "sensitive",
+      approval: "always",
+      stepUpPurpose: "secret_update",
+      sensitivePaths: ["body.values"],
+    })
+    expect(values).toMatchObject({ writeOnly: true, "x-luna-sensitive": true })
+    expect(catalog.modelTools().map(tool => tool.operationId)).not.toContain("generateSecret")
+    expect(catalog.modelTools().find(tool => tool.operationId === operation.operationId)?.description)
+      .toContain("安全表单")
+  })
+
   it("offers project-scoped tools independently of page context and requires an explicit target", () => {
     const catalog = ToolCatalog.load(platformOperations)
 

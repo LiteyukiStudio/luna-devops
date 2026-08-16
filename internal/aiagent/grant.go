@@ -33,6 +33,7 @@ type DelegationClaims struct {
 	SessionID     string   `json:"sessionId"`
 	Scopes        []string `json:"scopes"`
 	ArgumentsHash string   `json:"argumentsHash"`
+	InputMode     string   `json:"inputMode,omitempty"`
 	MFAPurpose    string   `json:"mfaPurpose,omitempty"`
 	MFAAssertion  string   `json:"mfaAssertion,omitempty"`
 	IssuedAt      int64    `json:"iat"`
@@ -74,7 +75,8 @@ func VerifyDelegationToken(token, key string, now time.Time) (DelegationClaims, 
 	if claims.Audience != "luna-api-ai-tools" || claims.Purpose != "execute_registered_tool" ||
 		claims.RunID == "" || claims.ToolCallID == "" || claims.OperationID == "" ||
 		claims.UserID == "" || claims.SessionID == "" || claims.IssuedAt > now.Unix()+5 ||
-		claims.ExpiresAt <= now.Unix() || claims.ExpiresAt-claims.IssuedAt > 60 {
+		claims.ExpiresAt <= now.Unix() || claims.ExpiresAt-claims.IssuedAt > 60 ||
+		(claims.InputMode != "" && claims.InputMode != "model" && claims.InputMode != "direct") {
 		return claims, ErrInvalidGrant
 	}
 	return claims, nil

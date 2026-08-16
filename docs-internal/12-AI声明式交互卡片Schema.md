@@ -95,6 +95,8 @@ Agent 使用：
 - Secret 不进入对话消息、Agent Context、Timeline、浏览器草稿、日志和遥测。
 - `type: secret` 与 `key_value.valueMode: secret` 允许用户在卡片内手动填写；工具动作通过一次性受控提交通道直接进入工具参数，消息动作和组级动作不得引用 Secret。
 - `generation: disabled` 的必填 Secret 必须由用户填写；`optional` 和 `required` 允许用户填写或留空，留空时保留平台生成路径。
+- 部署目标运行时密钥的工具动作必须绑定 `updateDeploymentTargetRuntimeSecrets`：用户填写的 `values` 只能由 Direct Tool Action 提交，`generate` 由平台后端生成并写入 Secret Store，`clear` 只清除明确字段。普通模型工具调用收到敏感值时必须返回稳定错误 `ai.sensitive_input_requires_user_form`。
+- 普通 `envVars` 只允许公开配置；密钥语义字段名和包含 URL 内嵌凭据的值必须拒绝，并引导用户改用安全密钥表单。
 - 校验失败保留非 Secret 输入，Secret 始终清空。
 
 ## 7. Action 与执行边界

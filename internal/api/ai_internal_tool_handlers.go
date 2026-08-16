@@ -40,9 +40,6 @@ func buildAIToolPolicies() map[string]aiToolPolicy {
 		"listRuntimeEvents":       {OperationID: "listRuntimeEvents", Scopes: []string{"event:read"}, ProjectAction: authz.ActionProjectRead, Risk: "read"},
 		// getAppTemplate 是手写 service 操作，无独立 OpenAPI 路由，需手动注册策略
 		"getAppTemplate": {OperationID: "getAppTemplate", Scopes: []string{"application:read"}, Risk: "read"},
-		// generateSecret 是手写 service 操作，无独立 OpenAPI 路由，需手动注册策略；
-		// 生成值仅经工具结果回传，不触达平台资源，按 read 处理且不需要批准。
-		"generateSecret": {OperationID: "generateSecret", Scopes: []string{"secret:generate"}, Risk: "read"},
 	}
 	operations, err := aitool.PlatformCatalog()
 	if err != nil {
@@ -66,6 +63,7 @@ type aiDelegationExchangeInput struct {
 	OperationID       string   `json:"operationId"`
 	RequestedScopes   []string `json:"requestedScopes"`
 	ArgumentsHash     string   `json:"argumentsHash"`
+	InputMode         string   `json:"inputMode"`
 	ApprovalGranted   bool     `json:"approvalGranted"`
 	MFAPurpose        string   `json:"mfaPurpose"`
 	StepUpAssertionID string   `json:"stepUpAssertionId"`
@@ -115,6 +113,14 @@ func (h *Handlers) ExchangeAIDelegation(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusForbidden, "ai.delegation_scope_invalid", "requested scopes do not match tool policy")
 		return
 	}
+	input.InputMode = strings.TrimSpace(input.InputMode)
+	if input.InputMode == "" {
+		input.InputMode = "model"
+	}
+	if input.InputMode != "model" && input.InputMode != "direct" {
+		writeErrorCode(ctx, http.StatusBadRequest, "ai.delegation_request_invalid", "input mode is invalid")
+		return
+	}
 	now := time.Now()
 	internalKeys, err := aiagent.LoadInternalKeys()
 	if err != nil {
@@ -139,6 +145,7 @@ func (h *Handlers) ExchangeAIDelegation(ctx *gin.Context) {
 		RunID: grant.RunID, ToolCallID: input.ToolCallID, OperationID: input.OperationID,
 		UserID: grant.UserID, SessionID: grant.SessionID,
 		Scopes: append([]string(nil), policy.Scopes...), ArgumentsHash: input.ArgumentsHash,
+		InputMode:  input.InputMode,
 		MFAPurpose: effectiveMFAPurpose, MFAAssertion: input.StepUpAssertionID,
 		IssuedAt: now.Unix(), ExpiresAt: now.Add(time.Minute).Unix(),
 	}
@@ -184,6 +191,10 @@ func (h *Handlers) ExecuteAIInternalTool(ctx *gin.Context) {
 		return
 	}
 	if operation, exists := aitool.PlatformOperation(claims.OperationID); exists {
+		if claims.InputMode != "direct" && aiOperationHasSensitiveArguments(operation.InputSchema, arguments) {
+			writeErrorCode(ctx, http.StatusBadRequest, "ai.sensitive_input_requires_user_form", "敏感输入必须通过安全表单提交")
+			return
+		}
 		result, err := h.dispatchAIPlatformOperation(ctx, claims, operation, arguments)
 		if err != nil {
 			h.auditWithContext(claims.UserID, "ai.tool.execute", claims.OperationID+":"+claims.ToolCallID, false, "request.invalid", ctx.Request.Context())
@@ -222,6 +233,52 @@ func (h *Handlers) ExecuteAIInternalTool(ctx *gin.Context) {
 	}
 	h.auditWithContext(claims.UserID, "ai.tool.execute", claims.OperationID+":"+claims.ToolCallID, true, "registered user-bound AI tool executed", ctx.Request.Context())
 	ctx.JSON(http.StatusOK, gin.H{"operationId": claims.OperationID, "verified": true, "result": result})
+}
+
+func aiOperationHasSensitiveArguments(schema map[string]any, value any) bool {
+	if boolSchemaValue(schema["writeOnly"]) || boolSchemaValue(schema["x-luna-sensitive"]) {
+		if value == nil {
+			return false
+		}
+		if text, ok := value.(string); ok {
+			return strings.TrimSpace(text) != ""
+		}
+		if values, ok := value.([]any); ok {
+			return len(values) > 0
+		}
+		if values, ok := value.(map[string]any); ok {
+			return len(values) > 0
+		}
+		return true
+	}
+	if object, ok := value.(map[string]any); ok {
+		properties := mapValue(schema["properties"])
+		for key, item := range object {
+			if property := mapValue(properties[key]); len(property) > 0 && aiOperationHasSensitiveArguments(property, item) {
+				return true
+			}
+		}
+	}
+	if values, ok := value.([]any); ok {
+		if items := mapValue(schema["items"]); len(items) > 0 {
+			for _, item := range values {
+				if aiOperationHasSensitiveArguments(items, item) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func boolSchemaValue(value any) bool {
+	result, _ := value.(bool)
+	return result
+}
+
+func mapValue(value any) map[string]any {
+	result, _ := value.(map[string]any)
+	return result
 }
 
 func (h *Handlers) VerifyAIInternalTool(ctx *gin.Context) {

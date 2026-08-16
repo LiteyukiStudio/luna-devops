@@ -54,10 +54,11 @@ AI 助手不是悬浮在控制台上的通用聊天机器人。它理解用户�
   `listRuntimeClusters` 的真实结果询问，禁止无候选凭空问“选择哪个集群”。
 - `create_options` 只用于确有清晰、可独立点选的下一步；等待表单提交、批准/MFA 阻塞或
   无下一步时不生成。结构化参数必须用交互表单，不得用快捷选项收集。
-- `generateSecret` 用加密安全随机源生成随机字符串（base64/hex/alphanumeric/numeric，
-  长度 8~256，默认 32，可批量生成候选），用于部署参数中的随机凭据。生成值以明文返回给
-  模型以便直接填入后续表单；持久化投影与遥测均按等长 `*` 掩码，日志/Span/审计不得出现
-  明文或可重建完整值的截断片段。该操作按 `read` 风险注册，不需要批准或 MFA。
+- 运行时密钥只能通过 `updateDeploymentTargetRuntimeSecrets` 处理：`values` 仅接受用户可见
+  安全表单触发的 Direct Tool Action，`generate` 由平台后端生成并直接写入 Secret Store，
+  `clear` 只清除明确列出的字段。普通模型工具调用、聊天消息、最终回复和页面上下文都不得
+  携带敏感值；成功结果只返回 configured/generated/cleared 字段状态，不返回明文。部署配置
+  的普通 `envVars` 拒绝密钥语义字段名和带 URL 内嵌凭据的值。
 
 ## 4. 记忆与上下文
 

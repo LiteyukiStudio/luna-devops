@@ -240,7 +240,7 @@ export function buildServer(input: {
         return value
       })
       try {
-        const call = await input.tools.propose({ runId: created.run.id, operationId: body.operationId, arguments: body.arguments })
+        const call = await input.tools.propose({ runId: created.run.id, operationId: body.operationId, arguments: body.arguments, inputMode: "direct" })
         if (call.status === "awaiting_approval")
           await input.repository.updateRun(created.run.id, "queued", "waiting_approval")
         else if (call.status === "awaiting_mfa")

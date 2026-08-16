@@ -85,6 +85,7 @@ create table if not exists ai.tool_calls (
   run_id text not null references ai.runs(id) on delete cascade,
   operation_id text not null,
   status text not null,
+  input_mode text not null default 'model',
   arguments jsonb not null,
   arguments_ciphertext text,
   arguments_hash text not null,
@@ -97,6 +98,8 @@ create table if not exists ai.tool_calls (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table ai.tool_calls add column if not exists input_mode text not null default 'model';
 create index if not exists tool_calls_run_created on ai.tool_calls(run_id, created_at);
 
 create table if not exists ai.ui_actions (

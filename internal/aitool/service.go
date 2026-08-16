@@ -197,8 +197,6 @@ func (s *Service) Execute(ctx context.Context, input Request) (Result, error) {
 		return s.webSearch(ctx, input.UserID, input.Arguments)
 	case "fetchWebPage":
 		return s.fetchWebPage(ctx, input.UserID, input.Arguments)
-	case "generateSecret":
-		return s.generateSecret(input.Arguments)
 	case "createProject":
 		webConsoleEnabled, _ := input.Arguments["webConsoleEnabled"].(bool)
 		webConsoleConfigured := input.Arguments["webConsoleEnabled"] != nil

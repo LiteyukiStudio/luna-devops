@@ -7,6 +7,7 @@ export const toolCalls = aiSchema.table("tool_calls", {
   runId: text("run_id").notNull().references(() => runs.id, { onDelete: "cascade" }),
   operationId: text("operation_id").notNull(),
   status: text("status").notNull(),
+  inputMode: text("input_mode").notNull().default("model"),
   arguments: jsonb("arguments").notNull().$type<Record<string, unknown>>(),
   argumentsCiphertext: text("arguments_ciphertext"),
   argumentsHash: text("arguments_hash").notNull(),

@@ -2890,6 +2890,35 @@ paths:
         "204":
           description: Deployment target deletion accepted and queued for asynchronous runtime cleanup.
 
+  /api/v1/projects/{projectId}/applications/{applicationId}/deployment-targets/{targetId}/runtime-secrets:
+    put:
+      operationId: updateDeploymentTargetRuntimeSecrets
+      tags: [Deployments]
+      summary: Securely update deployment target runtime secrets
+      x-luna-cli:
+        risk: high
+        mfaPurpose: secret_update
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/ApplicationId"
+        - $ref: "#/components/parameters/TargetId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeploymentTargetRuntimeSecretsInput"
+      responses:
+        "200":
+          description: Secret field status only; plaintext values are never returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeploymentTargetRuntimeSecretsResponse"
+        "428": { $ref: "#/components/responses/PreconditionRequired" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
   /api/v1/projects/{projectId}/applications/{applicationId}/deployment-targets/{targetId}/export:
     get:
       operationId: exportDeploymentTargetBundle
@@ -8154,6 +8183,7 @@ components:
         operationId: { type: string }
         requestedScopes: { type: array, items: { type: string } }
         argumentsHash: { type: string, pattern: "^sha256:[0-9a-f]{64}$" }
+        inputMode: { type: string, enum: [model, direct], description: Direct mode is issued only for a user-visible security form. }
         approvalGranted: { type: boolean, description: True only after the Agent validated the current parameter-bound approval. }
         mfaPurpose: { type: string, description: Present only after a matching Step-up resume. }
         stepUpAssertionId: { type: string, description: API-issued assertion revalidated for the delegated user, session, and purpose. }
@@ -8175,7 +8205,7 @@ components:
           properties:
             baseUrl: { type: string, format: uri }
             model: { type: string }
-            apiKey: { type: string, description: In-memory Agent use only; never returned to browser APIs. }
+            apiKey: { type: string, writeOnly: true, x-luna-sensitive: true, description: In-memory Agent use only; never returned to browser APIs. }
             configured: { type: boolean }
           required: [baseUrl, model, apiKey, configured]
         runtime:
@@ -9515,7 +9545,7 @@ components:
         enabled: { type: boolean }
         issuerUrl: { type: string }
         clientId: { type: string }
-        clientSecret: { type: string }
+        clientSecret: { type: string, writeOnly: true, x-luna-sensitive: true }
         scopes: { type: string }
         groupClaim: { type: string }
         emailClaim: { type: string }
@@ -9965,6 +9995,7 @@ components:
           type: object
           additionalProperties: { type: string }
           writeOnly: true
+          x-luna-sensitive: true
           description: Optional deployment-level secret updates. Existing keys with an empty value are retained; omitted keys are removed. Values are encrypted and never returned.
         buildHooksEnabled:
           type: boolean
@@ -10005,19 +10036,22 @@ components:
             required: [setId]
         envVars:
           type: string
-          description: JSON object or newline-separated runtime environment variables.
+          description: JSON object or newline-separated public runtime environment variables. Secret-like keys and URLs containing embedded credentials must use the secure runtime secret action.
         configRefs:
           type: string
           description: Serialized runtime ConfigMap references.
         secretRefs:
           type: string
-          description: Serialized runtime Secret references; plaintext secret values are not accepted here.
+          writeOnly: true
+          x-luna-sensitive: true
+          description: Internal serialized runtime Secret references; plaintext secret values are never accepted here and Direct Tool Actions must use the secure runtime secret action.
         configFiles:
           type: string
           description: JSON array of runtime configuration file mounts.
         secretFiles:
           type: string
           writeOnly: true
+          x-luna-sensitive: true
           description: JSON array of runtime secret file inputs. Existing plaintext values are never returned.
         dataVolumes:
           type: array
@@ -10054,6 +10088,39 @@ components:
           type: [boolean, "null"]
           description: Nullable target restriction. Effective policy is `project.webConsoleEnabled && webConsoleEnabled != false`; a true value is treated as inheritance.
       required: [id, projectId, applicationId, stage, kubernetesName, dataVolumes, webConsoleEnabled]
+    DeploymentTargetRuntimeSecretsInput:
+      type: object
+      additionalProperties: false
+      properties:
+        values:
+          type: object
+          writeOnly: true
+          x-luna-sensitive: true
+          additionalProperties:
+            type: string
+            maxLength: 8192
+          description: Plaintext values accepted only from a Direct Tool Action security form; empty values keep existing secrets.
+        generate:
+          type: object
+          additionalProperties:
+            type: object
+            additionalProperties: false
+            properties:
+              length: { type: integer, minimum: 8, maximum: 256, default: 32 }
+              encoding: { type: string, enum: [base64, hex, alphanumeric, numeric], default: base64 }
+        clear:
+          type: array
+          maxItems: 128
+          items: { type: string, minLength: 1, maxLength: 128 }
+    DeploymentTargetRuntimeSecretsResponse:
+      type: object
+      additionalProperties: false
+      required: [configuredKeys, generatedKeys, clearedKeys, secretSet]
+      properties:
+        configuredKeys: { type: array, items: { type: string } }
+        generatedKeys: { type: array, items: { type: string } }
+        clearedKeys: { type: array, items: { type: string } }
+        secretSet: { type: boolean }
     DeploymentTargetBundle:
       type: object
       additionalProperties: false
@@ -10653,6 +10720,7 @@ components:
         secrets:
           type: object
           writeOnly: true
+          x-luna-sensitive: true
           additionalProperties: { type: string }
         enabled: { type: boolean }
     RuntimeClusterInput:
@@ -10670,6 +10738,7 @@ components:
         kubeconfig:
           type: string
           writeOnly: true
+          x-luna-sensitive: true
         isDefault: { type: boolean }
         maxConcurrentBuilds: { type: integer, minimum: 1 }
         gatewayProvider: { type: string, enum: [gateway-api] }
@@ -10722,6 +10791,7 @@ components:
         secrets:
           type: object
           writeOnly: true
+          x-luna-sensitive: true
           additionalProperties: { type: string }
         enabled: { type: boolean }
     NotificationPresetChannelInput:
@@ -10732,6 +10802,7 @@ components:
         secrets:
           type: object
           writeOnly: true
+          x-luna-sensitive: true
           additionalProperties: { type: string }
         enabled: { type: boolean }
     NotificationTemplateInput:

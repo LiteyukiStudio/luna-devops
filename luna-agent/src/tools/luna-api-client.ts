@@ -10,6 +10,7 @@ export type ToolExecutionRequest = {
   operation: ToolOperation
   arguments: Record<string, unknown>
   argumentsHash: string
+  inputMode?: "model" | "direct"
   runActorGrant: string
   approvalGranted: boolean
   mfaPurpose?: string
@@ -43,6 +44,7 @@ export class HttpLunaApiToolClient implements LunaApiToolClient {
         runActorGrant: request.runActorGrant, runId: request.runId, toolCallId: request.toolCallId,
         operationId: request.operation.operationId, requestedScopes: request.operation.requiredScopes,
         argumentsHash: request.argumentsHash,
+        inputMode: request.inputMode ?? "model",
         approvalGranted: request.approvalGranted,
         ...(request.mfaPurpose ? { mfaPurpose: request.mfaPurpose } : {}),
         ...(request.stepUpAssertionId ? { stepUpAssertionId: request.stepUpAssertionId } : {}),
