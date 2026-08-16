@@ -1,5 +1,18 @@
 # TODO
 
+## 2026-08-16 交互卡片密钥字段提交
+
+- [x] 允许 Secret 与 Secret Key/Value 字段手动填写，按动作类型分流工具参数和公开消息值。
+- [x] 通过独立工具动作提交通道传递密钥，避免进入普通聊天消息、模型上下文和未脱敏事件；同步 Agent 校验、脱敏、OpenAPI、文档和回归测试。
+
+## 2026-08-16 部署默认值与运行计量口径收敛
+
+- [x] 将新部署阶段默认值收敛为 `dev`，移除数据库默认阶段作为第二事实源，保留 `dev/test/staging/prod` 与既有 `sys-*` 语义。
+- [x] 区分 configured/desired/updated/ready/available 副本，实时容量使用同次 Kubernetes 观察的 desired，保留 scale-to-zero 的数字 `0`。
+- [x] 新增按部署目标与小时窗口幂等的运行观察快照；历史窗口缺失观察时跳过结算，不使用当前副本或当前资源配置冒充历史。
+- [x] 同步 HPA scale-to-zero、服务端口投影、ApplicationListItem `updatedAt`、OpenAPI、Agent 动态 schema、Web 类型和中英文用户文档。
+- [ ] 补充使用可销毁 PostgreSQL、Kubernetes 与临时 OTel 栈的运行计费跨服务 E2E，覆盖观察采样失败、历史窗口待补结算和重算策略。
+
 ## 2026-08-16 Luna CLI Skill 安装引导
 
 - [x] 在中英文 Luna CLI 安装文档中提供可复制的 AI 安装提示词，指向 GitHub Release，并要求 CLI 与 Skill 版本严格一致。

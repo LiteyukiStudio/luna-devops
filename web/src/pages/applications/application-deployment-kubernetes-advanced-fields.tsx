@@ -83,7 +83,7 @@ export function KubernetesAdvancedFields({ form }: KubernetesAdvancedFieldsProps
             </Select>
           </Field>
           <Field hint={t('deploymentsPage.autoScalingMinReplicasHint')} label={t('deploymentsPage.autoScalingMinReplicas')}>
-            <Input {...form.register('autoScalingMinReplicas', { valueAsNumber: true })} min={1} type="number" />
+            <Input {...form.register('autoScalingMinReplicas', { valueAsNumber: true })} min={0} type="number" />
           </Field>
           <Field hint={t('deploymentsPage.autoScalingMaxReplicasHint')} label={t('deploymentsPage.autoScalingMaxReplicas')}>
             <Input {...form.register('autoScalingMaxReplicas', { valueAsNumber: true })} min={1} type="number" />

@@ -7265,6 +7265,17 @@ paths:
         - { name: Idempotency-Key, in: header, required: true, schema: { type: string } }
       requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }
       responses: { "202": { description: Turn and initial run accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }, "401": { $ref: "#/components/responses/Unauthorized" }, "404": { $ref: "#/components/responses/NotFound" }, "409": { $ref: "#/components/responses/Conflict" } }
+  /api/v1/ai/conversations/{conversationId}/tool-actions:
+    post:
+      operationId: executeAIInteractionCardToolAction
+      tags: [AI Assistant]
+      summary: Execute an interaction-card tool action without adding its arguments to chat input
+      security: [{ SessionCookie: [] }]
+      parameters:
+        - { name: conversationId, in: path, required: true, schema: { type: string } }
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }
+      responses: { "202": { description: Tool action accepted; sensitive arguments are encrypted in the Agent tool-call store and omitted from timeline projections, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }, "401": { $ref: "#/components/responses/Unauthorized" }, "404": { $ref: "#/components/responses/NotFound" }, "409": { $ref: "#/components/responses/Conflict" } }
   /api/v1/ai/ui-actions/pending:
     get:
       operationId: listPendingAIUIActions
@@ -9022,6 +9033,27 @@ components:
           type: string
           enum: [ready, degraded, progressing, unavailable, not-deployed]
       required: [targetCount, desiredReplicas, readyReplicas, status]
+    DeploymentTargetMetrics:
+      type: object
+      additionalProperties: false
+      properties:
+        available: { type: boolean }
+        status: { type: string, enum: [ready, unavailable] }
+        reason: { type: string }
+        configuredReplicas: { type: integer, minimum: 0 }
+        desiredReplicas: { type: integer, minimum: 0 }
+        readyReplicas: { type: integer, minimum: 0 }
+        availableReplicas: { type: integer, minimum: 0 }
+        podCount: { type: integer, minimum: 0 }
+        containerCount: { type: integer, minimum: 0 }
+        cpuUsageMilli: { type: integer, minimum: 0 }
+        cpuCapacityMilli: { type: integer, minimum: 0 }
+        cpuUsagePercent: { type: number, minimum: 0 }
+        memoryUsageBytes: { type: integer, minimum: 0 }
+        memoryCapacityBytes: { type: integer, minimum: 0 }
+        memoryUsagePercent: { type: number, minimum: 0 }
+        updatedAt: { type: string, format: date-time }
+      required: [available, status, configuredReplicas, desiredReplicas, readyReplicas, availableReplicas, podCount, containerCount, cpuUsageMilli, cpuCapacityMilli, cpuUsagePercent, memoryUsageBytes, memoryCapacityBytes, memoryUsagePercent, updatedAt]
     ApplicationListItem:
       type: object
       properties:
@@ -9823,7 +9855,8 @@ components:
           default: false
         autoScalingMinReplicas:
           type: integer
-          minimum: 1
+          minimum: 0
+          description: Minimum desired replicas. Zero enables HPA scale-to-zero.
         autoScalingMaxReplicas:
           type: integer
           minimum: 1
@@ -9843,11 +9876,11 @@ components:
           minimum: 1
           maximum: 65535
           default: 8080
-          description: Legacy single-port fallback used when servicePorts is empty.
+          description: Legacy single-port projection of servicePorts[0]. New clients should use servicePorts.
         servicePorts:
           type: array
           maxItems: 16
-          description: Unique container service ports.
+          description: Unique container service ports. This list is the authoritative port configuration.
           items:
             type: object
             additionalProperties: false

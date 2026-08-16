@@ -42,6 +42,7 @@ const deploymentsPage = {
   },
   bundleImport: {
     open: 'Import JSON',
+    invalidStage: 'The bundle contains an unsupported stage: {{stage}}. Use dev, test, staging, or prod.',
   },
   deploymentTargetDialogDescription: 'Configure runtime, build, and release policy for one deploy config.',
   progressiveBasicTitle: 'Basic deployment',
@@ -275,7 +276,7 @@ const deploymentsPage = {
     m: 'm',
   },
   memoryRequest: 'Memory',
-  runtimeEstimatedPrice: 'Estimated runtime price: {{price}} / hour',
+  runtimeEstimatedPrice: 'Configured runtime estimate: {{price}} / hour',
   kubernetesAdvancedContainer: 'Container and probes',
   kubernetesAdvancedSecurity: 'Security context',
   kubernetesAdvancedScheduling: 'Scheduling',

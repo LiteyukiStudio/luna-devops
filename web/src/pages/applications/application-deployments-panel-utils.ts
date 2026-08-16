@@ -11,7 +11,7 @@ export const releaseDefaults: ReleaseForm = { applicationId: '', buildRunId: '',
 export const deploymentTargetDefaults: DeploymentTargetPayload = {
   name: '',
   environmentId: '',
-  stage: 'prod',
+  stage: 'dev',
   clusterId: '',
   namespace: '',
   workloadType: 'Deployment',
@@ -274,8 +274,8 @@ export function normalizeDeploymentTargetPayload(values: DeploymentTargetPayload
     serviceExternalTrafficPolicy: normalizeChoice(values.serviceExternalTrafficPolicy, ['Cluster', 'Local']),
     serviceSessionAffinity: normalizeChoice(values.serviceSessionAffinity, ['None', 'ClientIP']),
     autoScalingEnabled: normalizeBoolean(values.autoScalingEnabled, false),
-    autoScalingMinReplicas: normalizePositiveInteger(values.autoScalingMinReplicas, 1),
-    autoScalingMaxReplicas: normalizePositiveInteger(values.autoScalingMaxReplicas, normalizePositiveInteger(values.replicas, 1)),
+    autoScalingMinReplicas: normalizeNonNegativeInteger(values.autoScalingMinReplicas),
+    autoScalingMaxReplicas: Math.max(normalizePositiveInteger(values.autoScalingMaxReplicas, 1), normalizePositiveInteger(values.replicas, 1)),
     autoScalingCpuPercent: normalizeNonNegativeInteger(values.autoScalingCpuPercent),
     autoScalingMemoryPercent: normalizeNonNegativeInteger(values.autoScalingMemoryPercent),
     autoScalingBehavior: values.autoScalingBehavior?.trim() ?? '',
@@ -500,7 +500,7 @@ function normalizedComparable(value: unknown) {
 }
 
 function normalizeDeploymentStage(value: string) {
-  return value.trim() || 'prod'
+  return value.trim() || 'dev'
 }
 
 function normalizePositiveInteger(value: number, fallback: number) {

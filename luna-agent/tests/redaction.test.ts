@@ -20,6 +20,20 @@ describe("redact", () => {
       .toEqual({ secrets: ["******", "**********"], encoding: "base64", length: 6 })
     expect(redact({ secrets: [] })).toEqual({ secrets: [] })
   })
+  it("redacts values inside secret key-value fields", () => {
+    const value = redact({
+      field: {
+        environment: [{ key: "CONFIG_VALUE", value: "database-secret" }],
+      },
+    })
+
+    expect(value).toEqual({
+      field: {
+        environment: [{ key: "CONFIG_VALUE", value: "[REDACTED]" }],
+      },
+    })
+    expect(JSON.stringify(value)).not.toContain("database-secret")
+  })
   it("keeps non-secrets fields intact next to generated secrets", () => {
     expect(redact({ secrets: ["s3cr3t"], encoding: "alphanumeric" }))
       .toEqual({ secrets: ["******"], encoding: "alphanumeric" })

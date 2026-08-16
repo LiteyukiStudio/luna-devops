@@ -69,6 +69,7 @@ const templateField = z.discriminatedUnion("type", [
   }),
   z.object({
     id: identifier, label: shortText, description, required: z.boolean().optional(), type: z.literal("secret"),
+    defaultValue: z.string().max(12000).optional(),
     placeholder: z.string().max(200).optional(), generation: z.enum(["disabled", "optional", "required"]),
     defaultMode: z.enum(["manual", "generate"]).optional(),
   }),

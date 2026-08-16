@@ -62,7 +62,7 @@ export function deploymentTargetFormValues({
     replicas: target?.replicas ?? 1,
     cpuRequest: target?.cpuRequest || '1',
     memoryRequest: target?.memoryRequest || '1Gi',
-    stage: target?.stage || 'prod',
+    stage: target?.stage || 'dev',
     buildEnvironmentId: target?.buildEnvironmentId || '',
     buildCpuRequest: target?.buildCpuRequest || defaultBuildCpuRequest,
     buildMemoryRequest: target?.buildMemoryRequest || defaultBuildMemoryRequest,

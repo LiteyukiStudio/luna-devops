@@ -411,7 +411,7 @@ function defaultGatewayHostPlaceholder(projectIdentifier: string, applicationIde
   const prefix = [
     gatewayHostSegment(projectIdentifier),
     gatewayHostSegment(applicationIdentifier),
-    gatewayHostSegment(stage || 'prod'),
+    gatewayHostSegment(stage || 'dev'),
   ].filter(Boolean).join('-')
   return prefix ? `${prefix}.${suffix}` : ''
 }

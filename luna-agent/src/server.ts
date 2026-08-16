@@ -206,6 +206,54 @@ export function buildServer(input: {
       })
       return reply.code(202).send({ turnId: created.turn.id, turnIndex: created.turn.turnIndex, runId: created.run.id, state: created.run.status, eventsUrl: `/api/v1/ai/runs/${created.run.id}/events` })
     })
+    secured.post("/internal/v1/conversations/:conversationId/tool-actions", async (request, reply) => {
+      if (!input.tools) return reply.code(503).send(errorBody("ai.tool_not_available", request.id))
+      const { conversationId } = z.object({ conversationId: id }).parse(request.params)
+      const key = request.headers["idempotency-key"]
+      if (typeof key !== "string" || key.length < 8 || key.length > 128) return reply.code(400).send(errorBody("idempotency_key_required", request.id))
+      const body = z.object({
+        operationId: z.string().regex(/^[a-zA-Z][a-zA-Z0-9_.-]{2,100}$/),
+        arguments: z.record(z.string(), z.unknown()),
+        message: z.string().trim().min(1).max(2000),
+        clientInstanceId,
+        runId: id,
+        runActorGrant: z.string().min(16).max(8192),
+      }).parse(request.body)
+      if (body.runId !== request.actor.runId) return reply.code(409).send(errorBody("ai.run_state_conflict", request.id))
+      const created = await withSpan("agent.tool_action.accept", internalSpanOptions({
+        "gen_ai.operation.name": "create_tool_action",
+        "gen_ai.conversation.id": conversationId,
+      }), async span => {
+        const value = await input.repository.createTurn(request.actor.userId, {
+          conversationId,
+          input: body.message,
+          pageContext: { __lunaDirectToolAction: true },
+          traceContext: captureTraceContext(),
+          idempotencyKey: key,
+          preallocatedRunId: body.runId,
+          runActorGrantCiphertext: input.grantCipher.encrypt(body.runActorGrant),
+          ...(input.toolCatalogDigest ? { toolCatalogDigest: input.toolCatalogDigest } : {}),
+          clientInstanceId: body.clientInstanceId,
+        })
+        span.setAttribute("luna.turn.id", value.turn.id)
+        span.setAttribute("luna.run.id", value.run.id)
+        return value
+      })
+      try {
+        const call = await input.tools.propose({ runId: created.run.id, operationId: body.operationId, arguments: body.arguments })
+        if (call.status === "awaiting_approval")
+          await input.repository.updateRun(created.run.id, "queued", "waiting_approval")
+        else if (call.status === "awaiting_mfa")
+          await input.repository.updateRun(created.run.id, "queued", "waiting_mfa")
+        else
+          await input.repository.updateRun(created.run.id, "queued", call.status === "failed" ? "failed" : "completed", { completedAt: new Date().toISOString() })
+        const run = await input.repository.getRun(request.actor.userId, created.run.id)
+        return reply.code(202).send({ turnId: created.turn.id, turnIndex: created.turn.turnIndex, runId: created.run.id, state: run?.status ?? "completed", toolCallId: call.id, eventsUrl: `/api/v1/ai/runs/${created.run.id}/events` })
+      } catch (error) {
+        try { await input.repository.updateRun(created.run.id, "queued", "failed", { completedAt: new Date().toISOString(), errorCode: telemetryErrorCode(error) }) } catch { /* the tool may already have transitioned the run */ }
+        throw error
+      }
+    })
     secured.get("/internal/v1/ui-actions/pending", async request => {
       const query = z.object({ clientInstanceId }).parse(request.query)
       const items = await input.repository.listPendingUIActions(request.actor.userId, query.clientInstanceId)

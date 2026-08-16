@@ -246,7 +246,7 @@ func applicationIdentifierValue(application model.Application) string {
 }
 
 func stageValue(target model.DeploymentTarget) string {
-	return dnsSafeSegment(fallback(target.Stage, "prod"))
+	return dnsSafeSegment(fallback(target.Stage, model.DefaultDeploymentStage))
 }
 
 func targetValue(target model.DeploymentTarget) string {

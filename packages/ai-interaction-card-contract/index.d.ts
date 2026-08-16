@@ -100,7 +100,7 @@ export type InteractionFormField
     | InteractionFormFieldBase & { type: 'select', defaultValue?: string, placeholder?: string, display?: 'select' | 'radio' | 'segmented', submissionFormat?: 'value' | 'label_value', options: InteractionCardSelectOption[] }
     | InteractionFormFieldBase & { type: 'multi_select', defaultValue?: string[], placeholder?: string, minItems?: number, maxItems?: number, submissionFormat?: 'value' | 'label_value', options: InteractionCardSelectOption[] }
     | InteractionFormFieldBase & { type: 'key_value', defaultValue?: Array<{ key: string, value: string }>, keyFormat?: 'plain' | 'identifier' | 'environment_variable', valueMode?: 'plain' | 'secret', minItems?: number, maxItems?: number }
-    | InteractionFormFieldBase & { type: 'secret', placeholder?: string, generation: 'disabled' | 'optional' | 'required', defaultMode?: 'manual' | 'generate' }
+    | InteractionFormFieldBase & { type: 'secret', defaultValue?: string, placeholder?: string, generation: 'disabled' | 'optional' | 'required', defaultMode?: 'manual' | 'generate' }
 
 export type InteractionCardBindingValue
   = | { type: 'field', fieldId: string }

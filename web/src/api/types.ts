@@ -215,6 +215,7 @@ export interface Application {
   deleteFinishedAt?: string | null
   deploymentSummary?: ApplicationDeploymentSummary
   createdAt: string
+  updatedAt: string
 }
 
 export interface ApplicationDeploymentSummary {
@@ -1224,6 +1225,10 @@ export interface DeploymentTargetMetrics {
   available: boolean
   status: 'ready' | 'unavailable'
   reason?: string
+  configuredReplicas: number
+  desiredReplicas: number
+  readyReplicas: number
+  availableReplicas: number
   podCount: number
   containerCount: number
   cpuUsageMilli: number

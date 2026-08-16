@@ -338,7 +338,19 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
         throw new Error(t('aiAssistant.actions.runActive'))
       await sendTurn.mutateAsync({ conversationId: selectedConversationId, message })
     },
-  }), [activeRunId, location.pathname, location.search, navigate, queryClient, selectedConversationId, sendTurn, t])
+    requestTool: async (action) => {
+      if (activeRunId)
+        throw new Error(t('aiAssistant.actions.runActive'))
+      if (!selectedConversationId)
+        throw new Error('ai.conversation_missing')
+      await api.executeAIToolAction(selectedConversationId, {
+        operationId: action.payload.operationId,
+        arguments: action.payload.arguments ?? {},
+        message: action.payload.message,
+        clientInstanceId,
+      }, crypto.randomUUID())
+    },
+  }), [activeRunId, clientInstanceId, location.pathname, location.search, navigate, queryClient, selectedConversationId, sendTurn, t])
   const processAutomaticDelivery = useCallback(async (delivery: AutomaticRouteDelivery) => {
     if (processingAutomaticActionsRef.current.has(delivery.actionId))
       return

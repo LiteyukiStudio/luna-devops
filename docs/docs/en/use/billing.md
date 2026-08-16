@@ -28,6 +28,8 @@ Cost analysis groups settled usage by project, application, and deployment targe
 
 Usage without a specific application or deployment target appears as **Unassigned**. For unexpected costs, narrow the time range and inspect each project, application, and deployment target.
 
+Runtime resources are settled from an authoritative observation for each completed hour. Replica-hours use the Kubernetes workload's desired replicas for that window, while CPU and memory use the resource configuration captured with that observation. HPA changes affect later observation windows. A missing historical observation or an unreachable cluster is not replaced with the current value, so the platform does not silently overcharge.
+
 ## AI tokens
 
 AI usage is billed from the input and output tokens reported by the model and charged to the user who started the conversation. Administrators can change prices or disable a meter under **Global Settings → Billing**. Changes only affect later model calls.

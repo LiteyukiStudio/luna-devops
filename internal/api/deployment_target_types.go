@@ -129,20 +129,25 @@ func deploymentTargetResponseFromModel(target model.DeploymentTarget, mounts ...
 	if dataVolumes == nil {
 		dataVolumes = []deploymentTargetDataVolumeResponse{}
 	}
+	servicePorts := model.DeploymentTargetServicePorts(target)
+	servicePort := target.ServicePort
+	if len(servicePorts) > 0 {
+		servicePort = servicePorts[0].Port
+	}
 	return deploymentTargetResponse{
 		ID:                           target.ID,
 		ProjectID:                    target.ProjectID,
 		ApplicationID:                target.ApplicationID,
 		EnvironmentID:                target.EnvironmentID,
 		Name:                         target.Name,
-		Stage:                        fallback(strings.TrimSpace(target.Stage), "dev"),
+		Stage:                        fallback(strings.TrimSpace(target.Stage), model.DefaultDeploymentStage),
 		KubernetesName:               strings.TrimSpace(target.KubernetesName),
 		ClusterID:                    target.ClusterID,
 		Namespace:                    target.Namespace,
 		WorkloadType:                 normalizeWorkloadType(target.WorkloadType),
 		Replicas:                     fallbackInt(target.Replicas, 1),
-		CPURequest:                   fallback(strings.TrimSpace(target.CPURequest), "1"),
-		MemoryRequest:                fallback(strings.TrimSpace(target.MemoryRequest), "1Gi"),
+		CPURequest:                   fallback(strings.TrimSpace(target.CPURequest), model.DefaultDeploymentCPURequest),
+		MemoryRequest:                fallback(strings.TrimSpace(target.MemoryRequest), model.DefaultDeploymentMemoryRequest),
 		CPULimit:                     strings.TrimSpace(target.CPULimit),
 		MemoryLimit:                  strings.TrimSpace(target.MemoryLimit),
 		ImagePullPolicy:              normalizeImagePullPolicyValue(target.ImagePullPolicy),
@@ -179,8 +184,8 @@ func deploymentTargetResponseFromModel(target model.DeploymentTarget, mounts ...
 		AutoScalingCPUPercent:        target.AutoScalingCPUPercent,
 		AutoScalingMemoryPercent:     target.AutoScalingMemoryPercent,
 		AutoScalingBehavior:          target.AutoScalingBehavior,
-		ServicePort:                  fallbackInt(target.ServicePort, 8080),
-		ServicePorts:                 model.DeploymentTargetServicePorts(target),
+		ServicePort:                  fallbackInt(servicePort, 8080),
+		ServicePorts:                 servicePorts,
 		SourceType:                   normalizeDeploymentSourceType(target.SourceType),
 		RepositoryBindingID:          target.RepositoryBindingID,
 		BuildDefinitionMode:          fallback(strings.TrimSpace(target.BuildDefinitionMode), buildtemplate.DefinitionModeRepository),
@@ -264,7 +269,7 @@ func deploymentTargetEnvironmentProfile(target model.DeploymentTarget) model.Env
 		ID:            environmentID,
 		ProjectID:     target.ProjectID,
 		Name:          firstNonEmpty(strings.TrimSpace(target.Name), strings.TrimSpace(target.Stage), target.ID),
-		Slug:          firstNonEmpty(strings.TrimSpace(target.Stage), strings.TrimSpace(target.Name), "prod"),
+		Slug:          firstNonEmpty(strings.TrimSpace(target.Stage), strings.TrimSpace(target.Name), model.DefaultDeploymentStage),
 		ClusterID:     strings.TrimSpace(target.ClusterID),
 		Namespace:     strings.TrimSpace(target.Namespace),
 		Replicas:      replicas,

@@ -35,10 +35,14 @@ type BuildUsageInput struct {
 }
 
 type RuntimeUsageInput struct {
+	Context            context.Context
 	ProjectID          string
 	ApplicationID      string
 	DeploymentTargetID string
-	Environment        model.Environment
+	EnvironmentID      string
+	DesiredReplicas    int32
+	CPURequest         string
+	MemoryRequest      string
 	PeriodStart        time.Time
 	PeriodEnd          time.Time
 	ActorID            string
@@ -127,36 +131,39 @@ func (s Service) SettleBuildRun(input BuildUsageInput) error {
 }
 
 func (s Service) SettleRuntimeTargetWindow(input RuntimeUsageInput) error {
+	service := s
+	if input.Context != nil {
+		service.DB = s.DB.WithContext(input.Context)
+	}
 	if input.ProjectID == "" || input.DeploymentTargetID == "" || !input.PeriodEnd.After(input.PeriodStart) {
 		return nil
 	}
-	replicas := input.Environment.Replicas
-	if replicas <= 0 {
-		replicas = 1
+	if input.DesiredReplicas < 0 {
+		return nil
 	}
-	durationHours := decimal.NewFromInt(int64(input.PeriodEnd.Sub(input.PeriodStart) / time.Second)).Div(decimal.NewFromInt(3600))
+	durationHours := runtimeDurationHours(input)
 	if durationHours.LessThanOrEqual(decimal.Zero) {
 		return nil
 	}
-	replicaHours := decimal.NewFromInt(int64(replicas)).Mul(durationHours)
-	cpuQuantity := cpuCoresFromQuantity(input.Environment.CPURequest).Mul(replicaHours)
-	memoryQuantity := memoryGiBFromQuantity(input.Environment.MemoryRequest).Mul(replicaHours)
-	cpuRate, err := s.rate("runtime.cpu_vcpu_hour")
+	replicaHours := runtimeReplicaHours(input)
+	cpuQuantity := cpuCoresFromQuantity(input.CPURequest).Mul(replicaHours)
+	memoryQuantity := memoryGiBFromQuantity(input.MemoryRequest).Mul(replicaHours)
+	cpuRate, err := service.rate("runtime.cpu_vcpu_hour")
 	if err != nil {
 		return err
 	}
-	memoryRate, err := s.rate("runtime.memory_gib_hour")
+	memoryRate, err := service.rate("runtime.memory_gib_hour")
 	if err != nil {
 		return err
 	}
 	resourceID := runtimeUsageResourceID(input.DeploymentTargetID, input.PeriodStart)
 	metadata, _ := json.Marshal(map[string]string{
 		"deploymentTargetId": input.DeploymentTargetID,
-		"environmentId":      input.Environment.ID,
-		"replicas":           decimal.NewFromInt(int64(replicas)).String(),
+		"environmentId":      input.EnvironmentID,
+		"replicas":           decimal.NewFromInt(int64(input.DesiredReplicas)).String(),
 		"durationHours":      durationHours.String(),
-		"cpuCores":           cpuCoresFromQuantity(input.Environment.CPURequest).String(),
-		"memoryGiB":          memoryGiBFromQuantity(input.Environment.MemoryRequest).String(),
+		"cpuCores":           cpuCoresFromQuantity(input.CPURequest).String(),
+		"memoryGiB":          memoryGiBFromQuantity(input.MemoryRequest).String(),
 	})
 	now := time.Now()
 	records := []model.BillingUsageRecord{
@@ -193,7 +200,19 @@ func (s Service) SettleRuntimeTargetWindow(input RuntimeUsageInput) error {
 			SettledAt:     &now,
 		},
 	}
-	return s.debitUsages(records, ReasonRuntimeUsage, "Runtime resource usage", input.ActorID)
+	return service.debitUsages(records, ReasonRuntimeUsage, "Runtime resource usage", input.ActorID)
+}
+
+func runtimeReplicaHours(input RuntimeUsageInput) decimal.Decimal {
+	durationHours := runtimeDurationHours(input)
+	if durationHours.LessThanOrEqual(decimal.Zero) || input.DesiredReplicas < 0 {
+		return decimal.Zero
+	}
+	return decimal.NewFromInt(int64(input.DesiredReplicas)).Mul(durationHours)
+}
+
+func runtimeDurationHours(input RuntimeUsageInput) decimal.Decimal {
+	return decimal.NewFromInt(int64(input.PeriodEnd.Sub(input.PeriodStart) / time.Second)).Div(decimal.NewFromInt(3600))
 }
 
 // SettleProjectVolumeStorageWindow bills the Kubernetes-observed capacity of

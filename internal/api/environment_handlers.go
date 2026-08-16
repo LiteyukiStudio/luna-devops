@@ -192,13 +192,26 @@ func validateEnvironmentSlug(ctx *gin.Context, slug string) bool {
 }
 
 func normalizeStage(value string) string {
-	switch strings.ToLower(strings.TrimSpace(value)) {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	switch normalized {
 	case "prod", "production":
 		return "prod"
-	case "staging", "test":
-		return strings.ToLower(strings.TrimSpace(value))
+	case "dev", "staging", "test":
+		return normalized
+	case "":
+		return model.DefaultDeploymentStage
 	default:
-		return "dev"
+		return normalized
+	}
+}
+
+func normalizePublicStage(value string) (string, bool) {
+	stage := normalizeStage(value)
+	switch stage {
+	case "dev", "test", "staging", "prod":
+		return stage, true
+	default:
+		return stage, false
 	}
 }
 

@@ -83,3 +83,28 @@ func TestDeploymentTargetResponsePreservesSystemStage(t *testing.T) {
 		t.Fatalf("deploymentTargetResponseFromModel().Stage = %q, want system stage", response.Stage)
 	}
 }
+
+func TestNormalizePublicStage(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+		valid bool
+	}{
+		{name: "missing uses dev", want: "dev", valid: true},
+		{name: "empty uses dev", input: "  ", want: "dev", valid: true},
+		{name: "development", input: "dev", want: "dev", valid: true},
+		{name: "production alias", input: "production", want: "prod", valid: true},
+		{name: "prod", input: "prod", want: "prod", valid: true},
+		{name: "system stage is not a create stage", input: "sys-cluster1", want: "sys-cluster1", valid: false},
+		{name: "invalid stage is rejected", input: "qa", want: "qa", valid: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, valid := normalizePublicStage(test.input)
+			if got != test.want || valid != test.valid {
+				t.Fatalf("normalizePublicStage(%q) = %q, %v; want %q, %v", test.input, got, valid, test.want, test.valid)
+			}
+		})
+	}
+}

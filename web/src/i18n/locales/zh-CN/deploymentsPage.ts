@@ -42,6 +42,7 @@ const deploymentsPage = {
   },
   bundleImport: {
     open: '导入 JSON',
+    invalidStage: '导入包包含不支持的阶段：{{stage}}。请使用 dev、test、staging 或 prod。',
   },
   deploymentTargetDialogDescription: '配置一个部署配置的运行、构建和发布策略。',
   progressiveBasicTitle: '基础部署',
@@ -275,7 +276,7 @@ const deploymentsPage = {
     m: 'm',
   },
   memoryRequest: '内存',
-  runtimeEstimatedPrice: '预计运行单价：{{price}} / 小时',
+  runtimeEstimatedPrice: '按配置估算的运行费用：{{price}} / 小时',
   kubernetesAdvancedContainer: '容器与探针',
   kubernetesAdvancedSecurity: '安全上下文',
   kubernetesAdvancedScheduling: '调度策略',

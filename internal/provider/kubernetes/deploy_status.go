@@ -25,6 +25,7 @@ type DeploymentSnapshot struct {
 	UpdatedReplicas   int32
 	ReadyReplicas     int32
 	AvailableReplicas int32
+	ObservedAt        time.Time
 }
 
 func (c *Client) GetDeploymentSnapshot(ctx context.Context, namespace, name string) (DeploymentSnapshot, error) {
@@ -64,6 +65,7 @@ func deploymentStatusSnapshot(deployment *appsv1.Deployment) DeploymentSnapshot 
 		UpdatedReplicas:   deployment.Status.UpdatedReplicas,
 		ReadyReplicas:     deployment.Status.ReadyReplicas,
 		AvailableReplicas: deployment.Status.AvailableReplicas,
+		ObservedAt:        time.Now().UTC(),
 	}
 
 	for _, condition := range deployment.Status.Conditions {
@@ -106,6 +108,7 @@ func (c *Client) getStatefulSetSnapshot(ctx context.Context, namespace, name str
 		UpdatedReplicas:   statefulSet.Status.UpdatedReplicas,
 		ReadyReplicas:     statefulSet.Status.ReadyReplicas,
 		AvailableReplicas: statefulSet.Status.AvailableReplicas,
+		ObservedAt:        time.Now().UTC(),
 	}
 	if statefulSet.Status.ObservedGeneration >= statefulSet.Generation &&
 		statefulSet.Status.UpdatedReplicas >= desired &&

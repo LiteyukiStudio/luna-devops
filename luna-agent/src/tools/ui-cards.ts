@@ -247,6 +247,7 @@ const formField = z.discriminatedUnion("type", [
   z.object({
     ...fieldBase,
     type: z.literal("secret"),
+    defaultValue: z.string().max(12000).optional(),
     placeholder: z.string().max(200).optional(),
     generation: z.enum(["disabled", "optional", "required"]),
     defaultMode: z.enum(["manual", "generate"]).optional(),
@@ -612,13 +613,6 @@ export const createInteractionCardsInput = z.object({
               path: ["cards", cardIndex, "actions", actionIndex, "bindings", bindingIndex],
             })
           }
-          else if (field.type === "secret" || (field.type === "key_value" && field.valueMode === "secret")) {
-            context.addIssue({
-              code: "custom",
-              message: `Tool binding cannot expose sensitive field "${itemBinding.value.fieldId}".`,
-              path: ["cards", cardIndex, "actions", actionIndex, "bindings", bindingIndex],
-            })
-          }
         })
       }
       if (action.type !== "send_message")
@@ -644,10 +638,17 @@ export const createInteractionCardsInput = z.object({
     })
   })
   input.groupActions?.forEach((action, actionIndex) => {
+    if (action.type === "tool" && action.bindings.some(binding => binding.value.type === "field")) {
+      context.addIssue({
+        code: "custom",
+        message: "组级动作不能引用卡片表单字段。",
+        path: ["groupActions", actionIndex, "bindings"],
+      })
+    }
     if (action.type === "send_message" && messageTemplateFieldIds(action.message).length > 0) {
       context.addIssue({
         code: "custom",
-        message: "Group actions cannot reference card form fields.",
+        message: "组级动作不能引用卡片表单字段。",
         path: ["groupActions", actionIndex, "message"],
       })
     }
@@ -708,7 +709,7 @@ function normalizeCardSections(input: Record<string, unknown>): unknown {
 
 export const createInteractionCardsTool: ModelToolDefinition = {
   operationId: "create_interaction_cards",
-  description: "一次性创建受控的声明式内容或交互卡片。调用开始后客户端会自动显示准备占位，校验通过后原位替换，无需准备工具或 generationId。placement 默认 inline；仅当本轮恰好一张、包含提交表单且工作流必须等待用户后才能继续时使用 turn_end。优先使用业务模板：2～5 个丰富候选用 candidate_picker，6～50 个候选用 candidate_select，结构化参数用 resource_configuration，写操作前核对用 change_review，诊断结论用 diagnosis_report，权威异步任务用 execution_progress，终态回执用 operation_result，健康概览用 health_overview。需要用户选择、填写或确认时使用 interactive；只呈现可信事实或结果时使用 presentation。动态状态只能使用绑定权威任务的 execution_progress，不得猜测百分比或步骤。tool action 只能引用当前可用的真实 operationId，并继续接受平台鉴权、批准和 MFA。不得生成 HTML、CSS、脚本、任意 URL 或虚构事实；轻量建议使用 create_options。",
+  description: "一次性创建受控的声明式内容或交互卡片。调用开始后客户端会自动显示准备占位，校验通过后原位替换，无需准备工具或 generationId。placement 默认 inline；仅当本轮恰好一张、包含提交表单且工作流必须等待用户后才能继续时使用 turn_end。优先使用业务模板：2～5 个丰富候选用 candidate_picker，6～50 个候选用 candidate_select，结构化参数用 resource_configuration，写操作前核对用 change_review，诊断结论用 diagnosis_report，权威异步任务用 execution_progress，终态回执用 operation_result，健康概览用 health_overview。需要用户选择、填写或确认时使用 interactive；只呈现可信事实或结果时使用 presentation。动态状态只能使用绑定权威任务的 execution_progress，不得猜测百分比或步骤。secret 字段和 valueMode 为 secret 的 key_value 字段可以由用户手动填写并绑定到 tool action；它们不得出现在 send_message、组级动作、卡片描述或普通上下文中。tool action 只能引用当前可用的真实 operationId，并继续接受平台鉴权、批准和 MFA。不得生成 HTML、CSS、脚本、任意 URL 或虚构事实；轻量建议使用 create_options。",
   inputSchema: cardInputJsonSchema(),
 }
 

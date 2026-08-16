@@ -45,7 +45,7 @@ func deploymentTargetEnvironment(target model.DeploymentTarget) model.Environmen
 		ID:            environmentID,
 		ProjectID:     target.ProjectID,
 		Name:          firstNonEmpty(target.Name, target.Stage, target.ID),
-		Slug:          firstNonEmpty(target.Stage, target.Name, "prod"),
+		Slug:          firstNonEmpty(target.Stage, target.Name, model.DefaultDeploymentStage),
 		ClusterID:     strings.TrimSpace(target.ClusterID),
 		Namespace:     strings.TrimSpace(target.Namespace),
 		Replicas:      replicas,
@@ -336,7 +336,11 @@ func applicationResourcesSpec(release model.Release, project model.Project, appl
 	if err != nil {
 		return kubeprovider.ApplicationResourcesSpec{}, err
 	}
+	configuredServicePorts := model.DeploymentTargetServicePorts(deploymentTarget)
 	servicePort := deploymentTarget.ServicePort
+	if len(configuredServicePorts) > 0 {
+		servicePort = configuredServicePorts[0].Port
+	}
 	if servicePort <= 0 {
 		servicePort = 8080
 	}

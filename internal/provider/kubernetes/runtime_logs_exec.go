@@ -30,6 +30,14 @@ func (c *Client) RuntimeMetrics(ctx context.Context, options RuntimeMetricsOptio
 	if deploymentTargetID == "" {
 		return RuntimeMetricsSnapshot{}, fmt.Errorf("deployment target is required")
 	}
+	workloadName := strings.TrimSpace(options.WorkloadName)
+	if workloadName == "" {
+		return RuntimeMetricsSnapshot{Available: false, Reason: "workload_unavailable", UpdatedAt: time.Now()}, nil
+	}
+	workload, err := c.GetWorkloadSnapshot(ctx, namespace, workloadName, options.WorkloadType)
+	if err != nil {
+		return RuntimeMetricsSnapshot{Available: false, Reason: "workload_unavailable", UpdatedAt: time.Now()}, nil
+	}
 	selector := strings.Join([]string{
 		ManagedByLabel + "=" + ManagedByValue,
 		DeploymentTargetIDLabel + "=" + deploymentTargetID,
@@ -38,9 +46,17 @@ func (c *Client) RuntimeMetrics(ctx context.Context, options RuntimeMetricsOptio
 	gvr := schema.GroupVersionResource{Group: "metrics.k8s.io", Version: "v1beta1", Resource: "pods"}
 	list, err := c.dynamic.Resource(gvr).Namespace(namespace).List(ctx, metav1.ListOptions{LabelSelector: selector})
 	if err != nil {
-		return RuntimeMetricsSnapshot{Available: false, Reason: "metrics_unavailable", UpdatedAt: time.Now()}, nil
+		return RuntimeMetricsSnapshot{
+			Available: false, Reason: "metrics_unavailable", DesiredReplicas: workload.DesiredReplicas,
+			UpdatedReplicas: workload.UpdatedReplicas, ReadyReplicas: workload.ReadyReplicas,
+			AvailableReplicas: workload.AvailableReplicas, UpdatedAt: time.Now(),
+		}, nil
 	}
-	snapshot := RuntimeMetricsSnapshot{Available: true, PodCount: len(list.Items), UpdatedAt: time.Now()}
+	snapshot := RuntimeMetricsSnapshot{
+		Available: true, DesiredReplicas: workload.DesiredReplicas, UpdatedReplicas: workload.UpdatedReplicas,
+		ReadyReplicas: workload.ReadyReplicas, AvailableReplicas: workload.AvailableReplicas,
+		PodCount: len(list.Items), UpdatedAt: time.Now(),
+	}
 	for _, item := range list.Items {
 		containers, _, _ := unstructured.NestedSlice(item.Object, "containers")
 		for _, rawContainer := range containers {

@@ -153,14 +153,14 @@ func normalizeDeploymentAutoScaling(ctx *gin.Context, input deploymentTargetInpu
 		return deploymentAutoScalingInput{MinReplicas: 1, MaxReplicas: fallbackInt(replicas, 1)}, true
 	}
 	minReplicas := input.AutoScalingMinReplicas
-	if minReplicas <= 0 {
+	if minReplicas < 0 {
 		minReplicas = fallbackInt(replicas, 1)
 	}
 	maxReplicas := input.AutoScalingMaxReplicas
 	if maxReplicas <= 0 {
 		maxReplicas = minReplicas
 	}
-	if maxReplicas < minReplicas {
+	if maxReplicas < 1 || maxReplicas < minReplicas {
 		writeError(ctx, http.StatusBadRequest, "自动伸缩最大副本数不能小于最小副本数")
 		return deploymentAutoScalingInput{}, false
 	}

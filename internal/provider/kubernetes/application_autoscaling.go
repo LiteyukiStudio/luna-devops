@@ -75,7 +75,7 @@ func validateApplicationAutoScaling(spec ApplicationResourcesSpec) error {
 }
 
 func autoScalingMinReplicas(spec ApplicationResourcesSpec) int32 {
-	if spec.AutoScalingMinReplicas > 0 {
+	if spec.AutoScalingMinReplicas >= 0 {
 		return spec.AutoScalingMinReplicas
 	}
 	if spec.Replicas > 0 {
@@ -88,7 +88,14 @@ func autoScalingMaxReplicas(spec ApplicationResourcesSpec) int32 {
 	if spec.AutoScalingMaxReplicas > 0 {
 		return spec.AutoScalingMaxReplicas
 	}
-	return autoScalingMinReplicas(spec)
+	return maxInt32(autoScalingMinReplicas(spec), 1)
+}
+
+func maxInt32(left, right int32) int32 {
+	if left > right {
+		return left
+	}
+	return right
 }
 
 func autoScalingMetrics(spec ApplicationResourcesSpec) []autoscalingv2.MetricSpec {

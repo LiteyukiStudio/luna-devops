@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	defaultBuildCPURequest     = "2"
-	defaultBuildMemoryRequest  = "4Gi"
+	defaultBuildCPURequest     = model.DefaultBuildCPURequest
+	defaultBuildMemoryRequest  = model.DefaultBuildMemoryRequest
 	defaultBuildTimeoutSeconds = 1800
 	minBuildTimeoutSeconds     = 60
 	maxBuildTimeoutSeconds     = 24 * 60 * 60

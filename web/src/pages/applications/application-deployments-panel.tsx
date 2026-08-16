@@ -363,7 +363,7 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
   const targetRuntimeSummary = t('deploymentsPage.progressiveRuntimeSummary', {
     cpu: watchedTargetValues.cpuRequest || '1',
     memory: watchedTargetValues.memoryRequest || '1Gi',
-    replicas: watchedTargetValues.replicas || 1,
+    replicas: watchedTargetValues.replicas ?? 1,
   })
   const targetPolicySummary = t('deploymentsPage.progressivePolicySummary', {
     autoDeploy: t(normalizeBoolean(watchedTargetValues.autoDeploy, true) ? 'common.enabled' : 'common.disabled'),

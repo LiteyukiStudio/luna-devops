@@ -139,8 +139,12 @@ func TestDeploymentTargetAgentSchemaDescribesSourceAndStructuredFields(t *testin
 
 	assertSchemaEnum(t, properties, "sourceType", "repository", "image")
 	stage, ok := properties["stage"].(map[string]any)
-	if !ok || stage["pattern"] != "^(dev|test|staging|prod|sys-[a-z0-9-]+)$" {
+	if !ok || stage["pattern"] != "^(dev|test|staging|prod|sys-[a-z0-9-]+)$" || stage["default"] != "dev" {
 		t.Fatalf("stage must accept public stages and persisted system stages: %#v", stage)
+	}
+	autoScalingMin, ok := properties["autoScalingMinReplicas"].(map[string]any)
+	if !ok || autoScalingMin["minimum"] != float64(0) {
+		t.Fatalf("autoScalingMinReplicas must allow scale-to-zero: %#v", autoScalingMin)
 	}
 	assertSchemaEnum(t, properties, "workloadType", "Deployment", "StatefulSet")
 

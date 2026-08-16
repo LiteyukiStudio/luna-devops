@@ -787,7 +787,7 @@ function emptyInstallPayload(): AppTemplateInstallPayload {
     applicationName: '',
     applicationIdentifier: '',
     deploymentName: 'default',
-    stage: 'prod',
+    stage: 'dev',
     clusterId: '',
     namespace: '',
     imageRef: '',

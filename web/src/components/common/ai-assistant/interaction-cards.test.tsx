@@ -69,10 +69,13 @@ const candidatesCard = {
 } as const
 
 describe('ai interaction cards', () => {
-  it('binds safe form values to a tool request and omits secret fields', async () => {
+  it('renders an editable password field and binds the entered secret to a tool request', async () => {
     const onAction = vi.fn<(action: AIUIAction) => Promise<boolean>>().mockResolvedValue(true)
     render(<AIInteractionCards arguments={candidatesCard} onAction={onAction} />)
 
+    const password = screen.getByLabelText('数据库密码 *')
+    expect(password).toHaveAttribute('type', 'password')
+    fireEvent.change(password, { target: { value: 'database-password' } })
     const actionButton = screen.getByRole('button', { name: '安装 PostgreSQL' })
     await waitFor(() => expect(actionButton).toBeEnabled())
     fireEvent.click(actionButton)
@@ -85,11 +88,145 @@ describe('ai interaction cards', () => {
         arguments: {
           projectId: 'prj_example',
           applicationName: 'postgresql',
+          password: 'database-password',
           templateId: 'postgresql',
         },
         message: '安装 PostgreSQL',
       },
     }))
+  })
+
+  it('keeps secrets out of a send-message payload and visible text', async () => {
+    const onAction = vi.fn<(action: AIUIAction) => Promise<boolean>>().mockResolvedValue(true)
+    const card = structuredClone(candidatesCard) as unknown as { cards: Array<{ actions: unknown[] }> }
+    card.cards[0]!.actions = [{
+      id: 'continue',
+      type: 'send_message',
+      label: '继续配置',
+      emphasis: 'primary',
+      message: '继续配置 {{password}}。',
+    }]
+    render(<AIInteractionCards arguments={card as unknown as Record<string, unknown>} onAction={onAction} />)
+
+    fireEvent.change(screen.getByLabelText('数据库密码 *'), { target: { value: 'do-not-display' } })
+    const actionButton = screen.getByRole('button', { name: '继续配置' })
+    await waitFor(() => expect(actionButton).toBeEnabled())
+    fireEvent.click(actionButton)
+
+    await waitFor(() => expect(onAction).toHaveBeenCalledOnce())
+    expect(onAction).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'send_message',
+      payload: { message: '继续配置 。' },
+    }))
+    expect(screen.queryByText('do-not-display')).not.toBeInTheDocument()
+  })
+
+  it('supports secret key-value editing and binds non-empty values to a tool request', async () => {
+    const onAction = vi.fn<(action: AIUIAction) => Promise<boolean>>().mockResolvedValue(true)
+    const card = {
+      schemaVersion: 1,
+      generationId: 'secret-key-values',
+      title: '配置环境变量',
+      mode: 'interactive',
+      template: 'form',
+      cards: [{
+        id: 'environment',
+        presentation: { variant: 'form', title: '环境变量' },
+        form: {
+          sections: [{
+            id: 'main',
+            fields: [{
+              id: 'secrets',
+              type: 'key_value',
+              label: '密钥变量',
+              required: true,
+              valueMode: 'secret',
+              defaultValue: [{ key: 'DATABASE_PASSWORD', value: '' }],
+            }],
+          }],
+        },
+        actions: [{
+          id: 'save',
+          type: 'tool',
+          label: '保存配置',
+          emphasis: 'primary',
+          operationId: 'saveConfig',
+          bindings: [{ target: '/environment', value: { type: 'field', fieldId: 'secrets' } }],
+        }],
+      }],
+    }
+    render(<AIInteractionCards arguments={card} onAction={onAction} />)
+
+    const value = screen.getByLabelText('Value')
+    expect(value).toHaveAttribute('type', 'password')
+    fireEvent.change(value, { target: { value: 'env-password' } })
+    const saveButton = screen.getByRole('button', { name: '保存配置' })
+    await waitFor(() => expect(saveButton).toBeEnabled())
+    fireEvent.click(saveButton)
+
+    await waitFor(() => expect(onAction).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'request_tool',
+      payload: { operationId: 'saveConfig', arguments: { environment: [{ key: 'DATABASE_PASSWORD', value: 'env-password' }] }, message: '保存配置' },
+    })))
+  })
+
+  it('applies disabled, optional, and required generation semantics to manual secrets', async () => {
+    const makeCard = (generation: 'disabled' | 'optional' | 'required', required = true) => ({
+      schemaVersion: 1,
+      generationId: `secret-${generation}-${required}`,
+      title: '填写密钥',
+      mode: 'interactive',
+      template: 'form',
+      cards: [{
+        id: 'secret',
+        presentation: { variant: 'form', title: '密钥' },
+        form: {
+          sections: [{
+            id: 'main',
+            fields: [{
+              id: 'value',
+              type: 'secret',
+              label: '密钥',
+              required,
+              generation,
+              placeholder: '输入密钥',
+              defaultValue: generation === 'required' ? 'preset-password' : undefined,
+            }],
+          }],
+        },
+        actions: [{
+          id: 'submit',
+          type: 'tool',
+          label: '提交',
+          operationId: 'saveSecret',
+          bindings: [{ target: '/value', value: { type: 'field', fieldId: 'value' } }],
+        }],
+      }],
+    })
+
+    const disabledAction = vi.fn<(action: AIUIAction) => Promise<boolean>>().mockResolvedValue(true)
+    const { unmount } = render(<AIInteractionCards arguments={makeCard('disabled')} onAction={disabledAction} />)
+    const disabledButton = screen.getByRole('button', { name: '提交' })
+    expect(disabledButton).toBeDisabled()
+    fireEvent.change(screen.getByLabelText('密钥 *'), { target: { value: 'disabled-password' } })
+    await waitFor(() => expect(disabledButton).toBeEnabled())
+    unmount()
+
+    const optionalAction = vi.fn<(action: AIUIAction) => Promise<boolean>>().mockResolvedValue(true)
+    const optional = render(<AIInteractionCards arguments={makeCard('optional')} onAction={optionalAction} />)
+    const optionalButton = screen.getByRole('button', { name: '提交' })
+    await waitFor(() => expect(optionalButton).toBeEnabled())
+    fireEvent.click(optionalButton)
+    await waitFor(() => expect(optionalAction).toHaveBeenCalledWith(expect.objectContaining({ payload: expect.objectContaining({ arguments: {} }) })))
+    optional.unmount()
+
+    const requiredAction = vi.fn<(action: AIUIAction) => Promise<boolean>>().mockResolvedValue(true)
+    render(<AIInteractionCards arguments={makeCard('required')} onAction={requiredAction} />)
+    expect(screen.getByLabelText('密钥 *')).toHaveValue('preset-password')
+    const requiredButton = screen.getByRole('button', { name: '提交' })
+    await waitFor(() => expect(requiredButton).toBeEnabled())
+    fireEvent.click(requiredButton)
+    await waitFor(() => expect(requiredAction).toHaveBeenCalledWith(expect.objectContaining({ payload: expect.objectContaining({ arguments: { value: 'preset-password' } }) })))
   })
 
   it('keeps a tool action disabled until required fields are valid', async () => {

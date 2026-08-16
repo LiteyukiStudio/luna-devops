@@ -195,6 +195,73 @@ describe("interaction card tool", () => {
     expect(createInteractionCardsInput.safeParse(input).success).toBe(false)
   })
 
+  it("allows secret fields in tool bindings while keeping them out of messages and group actions", () => {
+    const input = structuredClone(databaseCard) as unknown as {
+      cards: Array<{
+        form: { sections: Array<{ fields: Array<Record<string, unknown>> }> }
+        actions: Array<Record<string, unknown>>
+      }>
+      groupActions?: Array<Record<string, unknown>>
+    }
+    input.cards[0]!.form.sections[0]!.fields.push({
+      id: "password",
+      type: "secret",
+      label: "密码",
+      required: true,
+      generation: "disabled",
+      defaultValue: "preset-password",
+    })
+    input.cards[0]!.actions = [{
+      id: "install",
+      type: "tool",
+      label: "安装",
+      operationId: "installAppTemplate",
+      bindings: [{ target: "/password", value: { type: "field", fieldId: "password" } }],
+    }]
+    expect(createInteractionCardsInput.safeParse(input).success).toBe(true)
+
+    input.cards[0]!.actions[0] = {
+      id: "continue",
+      type: "send_message",
+      label: "继续",
+      message: "密码是 {{password}}",
+    }
+    expect(createInteractionCardsInput.safeParse(input).success).toBe(false)
+
+    input.cards[0]!.actions = [{
+      id: "install",
+      type: "tool",
+      label: "安装",
+      operationId: "installAppTemplate",
+      bindings: [{ target: "/password", value: { type: "field", fieldId: "password" } }],
+    }]
+    input.groupActions = [{
+      id: "group-install",
+      type: "tool",
+      label: "组级安装",
+      operationId: "installAppTemplate",
+      bindings: [{ target: "/password", value: { type: "field", fieldId: "password" } }],
+    }]
+    expect(createInteractionCardsInput.safeParse(input).success).toBe(false)
+
+    delete input.groupActions
+    const secretKeyValues = structuredClone(input)
+    secretKeyValues.cards[0]!.form.sections[0]!.fields.push({
+      id: "environment",
+      type: "key_value",
+      label: "环境变量",
+      valueMode: "secret",
+    })
+    secretKeyValues.cards[0]!.actions[0] = {
+      id: "install",
+      type: "tool",
+      label: "安装",
+      operationId: "installAppTemplate",
+      bindings: [{ target: "/environment", value: { type: "field", fieldId: "environment" } }],
+    }
+    expect(createInteractionCardsInput.safeParse(secretKeyValues).success).toBe(true)
+  })
+
   it("publishes the full generated JSON schema to the model", () => {
     expect(createInteractionCardsTool.inputSchema.type).toBe("object")
     expect(Array.isArray(createInteractionCardsTool.inputSchema.anyOf)).toBe(true)

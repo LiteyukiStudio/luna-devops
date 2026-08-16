@@ -3,13 +3,17 @@ package worker
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/billing"
+	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
+	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/hibiken/asynq"
 	"go.opentelemetry.io/otel/attribute"
+	"gorm.io/gorm/clause"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 
@@ -36,6 +40,7 @@ func (r *Runner) settleRuntimeUsageWindows(ctx context.Context, now time.Time) e
 		return err
 	}
 	service := billing.Service{DB: r.db}
+	var runtimeErr error
 	for _, target := range targets {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -48,9 +53,8 @@ func (r *Runner) settleRuntimeUsageWindows(ctx context.Context, now time.Time) e
 		if err != nil {
 			continue
 		}
-		environment := deploymentTargetEnvironment(target)
 		manager, err := workerStageValue(ctx, "billing.connect_runtime", func(stageCtx context.Context) (kubeprovider.NamespaceManager, error) {
-			return r.kubernetesManager(stageCtx, environment)
+			return r.kubernetesManager(stageCtx, deploymentTargetEnvironment(target))
 		}, attribute.String("deployment_target.id", target.ID))
 		if err != nil {
 			continue
@@ -62,12 +66,14 @@ func (r *Runner) settleRuntimeUsageWindows(ctx context.Context, now time.Time) e
 		snapshot, err := workerStageValue(ctx, "billing.observe_runtime", func(stageCtx context.Context) (kubeprovider.DeploymentSnapshot, error) {
 			return manager.GetWorkloadSnapshot(stageCtx, namespace, applicationResourceName(target), target.WorkloadType)
 		}, attribute.String("deployment_target.id", target.ID))
-		if err == nil && snapshot.DesiredReplicas > 0 {
-			liveEnvironment := environment
-			liveEnvironment.Replicas = int(snapshot.DesiredReplicas)
-			_ = workerStage(ctx, "billing.settle_runtime", func(stageCtx context.Context) error {
-				return r.settleRuntimeUsageForTarget(stageCtx, service, target, liveEnvironment, snapshot.CreatedAt, windows)
+		if err == nil {
+			if observationErr := r.recordRuntimeObservation(ctx, target, snapshot); observationErr != nil {
+				return observationErr
+			}
+			settlementErr := workerStage(ctx, "billing.settle_runtime", func(stageCtx context.Context) error {
+				return r.settleRuntimeUsageForTarget(stageCtx, service, target, windows)
 			}, attribute.String("deployment_target.id", target.ID))
+			runtimeErr = errors.Join(runtimeErr, settlementErr)
 		}
 	}
 	volumeErr := workerStage(ctx, "billing.settle_project_volumes", func(stageCtx context.Context) error {
@@ -76,24 +82,36 @@ func (r *Runner) settleRuntimeUsageWindows(ctx context.Context, now time.Time) e
 	transferErr := workerStage(ctx, "billing.settle_volume_transfers", func(stageCtx context.Context) error {
 		return r.settleVolumeTransferUsage(stageCtx, service, now)
 	})
-	return errors.Join(volumeErr, transferErr)
+	return errors.Join(runtimeErr, volumeErr, transferErr)
 }
 
-func (r *Runner) settleRuntimeUsageForTarget(ctx context.Context, service billing.Service, target model.DeploymentTarget, environment model.Environment, workloadCreatedAt time.Time, windows []hourlyWindow) error {
+func (r *Runner) settleRuntimeUsageForTarget(ctx context.Context, service billing.Service, target model.DeploymentTarget, windows []hourlyWindow) error {
 	var result error
 	for _, window := range windows {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		periodStart, periodEnd, ok := runtimeBillingEffectivePeriod(window.Start, window.End, workloadCreatedAt)
+		var observation model.RuntimeObservation
+		if err := r.db.WithContext(ctx).Where("deployment_target_id = ? AND period_start = ?", target.ID, window.Start).First(&observation).Error; err != nil {
+			telemetry.Logger().WarnContext(ctx, "runtime billing window has no authoritative observation",
+				slog.String("event.name", "billing.runtime.observation_missing"),
+				slog.String("billing.observation.status", "pending"),
+			)
+			continue
+		}
+		periodStart, periodEnd, ok := runtimeBillingEffectivePeriod(window.Start, window.End, observation.WorkloadCreatedAt)
 		if !ok {
 			continue
 		}
 		err := service.SettleRuntimeTargetWindow(billing.RuntimeUsageInput{
+			Context:            ctx,
 			ProjectID:          target.ProjectID,
 			ApplicationID:      target.ApplicationID,
 			DeploymentTargetID: target.ID,
-			Environment:        environment,
+			EnvironmentID:      target.EnvironmentID,
+			DesiredReplicas:    observation.DesiredReplicas,
+			CPURequest:         observation.CPURequest,
+			MemoryRequest:      observation.MemoryRequest,
 			PeriodStart:        periodStart,
 			PeriodEnd:          periodEnd,
 			ActorID:            "system",
@@ -103,6 +121,50 @@ func (r *Runner) settleRuntimeUsageForTarget(ctx context.Context, service billin
 		}
 	}
 	return result
+}
+
+func (r *Runner) recordRuntimeObservation(ctx context.Context, target model.DeploymentTarget, snapshot kubeprovider.DeploymentSnapshot) error {
+	observedAt := snapshot.ObservedAt.UTC()
+	if observedAt.IsZero() {
+		observedAt = time.Now().UTC()
+	}
+	periodStart, periodEnd, ok := runtimeObservationWindow(observedAt, time.Now().UTC())
+	if !ok {
+		return nil
+	}
+	observation := model.RuntimeObservation{
+		ID:                 id.New("robs"),
+		DeploymentTargetID: target.ID,
+		PeriodStart:        periodStart,
+		PeriodEnd:          periodEnd,
+		DesiredReplicas:    snapshot.DesiredReplicas,
+		UpdatedReplicas:    snapshot.UpdatedReplicas,
+		ReadyReplicas:      snapshot.ReadyReplicas,
+		AvailableReplicas:  snapshot.AvailableReplicas,
+		CPURequest:         target.CPURequest,
+		MemoryRequest:      target.MemoryRequest,
+		WorkloadCreatedAt:  snapshot.CreatedAt,
+		Status:             snapshot.Phase,
+		ObservationCode:    "deployment_target.observed",
+		ObservedAt:         observedAt,
+	}
+	return r.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "deployment_target_id"}, {Name: "period_start"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"period_end", "desired_replicas", "updated_replicas", "ready_replicas", "available_replicas",
+			"cpu_request", "memory_request", "workload_created_at", "status", "observation_code", "observed_at", "updated_at",
+		}),
+	}).Create(&observation).Error
+}
+
+func runtimeObservationWindow(observedAt, now time.Time) (time.Time, time.Time, bool) {
+	observedAt = observedAt.UTC()
+	now = now.UTC()
+	periodStart := observedAt.Truncate(time.Hour)
+	if !periodStart.Equal(now.Truncate(time.Hour)) {
+		return time.Time{}, time.Time{}, false
+	}
+	return periodStart, periodStart.Add(time.Hour), true
 }
 
 func (r *Runner) settleProjectVolumeStorageWindows(ctx context.Context, service billing.Service, windows []hourlyWindow) error {

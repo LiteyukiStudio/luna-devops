@@ -59,12 +59,12 @@ func summarizeApplicationDeploymentTargets(targets []model.DeploymentTarget) app
 	}
 
 	allReady := true
-	hasRuntimeExpectation := false
+	hasRuntimeObservation := false
 	for _, target := range targets {
 		summary.DesiredReplicas += target.DesiredReplicas
 		summary.ReadyReplicas += target.ReadyReplicas
-		if target.DesiredReplicas > 0 {
-			hasRuntimeExpectation = true
+		if target.Status == observation.StatusReady || target.Status == observation.StatusProgressing || target.Status == observation.StatusDegraded {
+			hasRuntimeObservation = true
 		}
 		if target.Status != observation.StatusReady {
 			allReady = false
@@ -82,11 +82,11 @@ func summarizeApplicationDeploymentTargets(targets []model.DeploymentTarget) app
 	if summary.Status == observation.StatusUnavailable || summary.Status == observation.StatusDegraded {
 		return summary
 	}
-	if allReady && hasRuntimeExpectation && summary.ReadyReplicas >= summary.DesiredReplicas {
+	if allReady && hasRuntimeObservation && summary.ReadyReplicas >= summary.DesiredReplicas {
 		summary.Status = observation.StatusReady
 		return summary
 	}
-	if hasRuntimeExpectation {
+	if hasRuntimeObservation {
 		summary.Status = observation.StatusProgressing
 	}
 	return summary

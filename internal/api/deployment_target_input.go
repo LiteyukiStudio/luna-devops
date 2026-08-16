@@ -54,11 +54,11 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 	if replicas <= 0 {
 		replicas = 1
 	}
-	runtimeCPURequest, ok := normalizeBuildResourceQuantity(ctx, input.CPURequest, "1", "运行 CPU")
+	runtimeCPURequest, ok := normalizeBuildResourceQuantity(ctx, input.CPURequest, model.DefaultDeploymentCPURequest, "运行 CPU")
 	if !ok {
 		return model.DeploymentTarget{}, nil, false
 	}
-	runtimeMemoryRequest, ok := normalizeBuildResourceQuantity(ctx, input.MemoryRequest, "1Gi", "运行内存")
+	runtimeMemoryRequest, ok := normalizeBuildResourceQuantity(ctx, input.MemoryRequest, model.DefaultDeploymentMemoryRequest, "运行内存")
 	if !ok {
 		return model.DeploymentTarget{}, nil, false
 	}

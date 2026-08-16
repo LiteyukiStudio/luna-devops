@@ -69,6 +69,8 @@ func (h *Handlers) writeDeploymentTargetMetricsEvent(ctx *gin.Context, client *k
 	snapshot, err := client.RuntimeMetrics(requestCtx, kubeprovider.RuntimeMetricsOptions{
 		Namespace:          deploymentTargetNamespace(project, target),
 		DeploymentTargetID: target.ID,
+		WorkloadName:       target.KubernetesName,
+		WorkloadType:       normalizeWorkloadType(target.WorkloadType),
 	})
 	if err != nil {
 		writeSSE(ctx.Writer, "metrics", "", deploymentTargetMetricsResponse{
@@ -109,6 +111,10 @@ type deploymentTargetMetricsResponse struct {
 	Available           bool      `json:"available"`
 	Status              string    `json:"status"`
 	Reason              string    `json:"reason,omitempty"`
+	ConfiguredReplicas  int       `json:"configuredReplicas"`
+	DesiredReplicas     int32     `json:"desiredReplicas"`
+	ReadyReplicas       int32     `json:"readyReplicas"`
+	AvailableReplicas   int32     `json:"availableReplicas"`
 	PodCount            int       `json:"podCount"`
 	ContainerCount      int       `json:"containerCount"`
 	CPUUsageMilli       int64     `json:"cpuUsageMilli"`
@@ -121,16 +127,16 @@ type deploymentTargetMetricsResponse struct {
 }
 
 func deploymentTargetMetricsResponseFromSnapshot(snapshot kubeprovider.RuntimeMetricsSnapshot, target model.DeploymentTarget) deploymentTargetMetricsResponse {
-	replicas := target.Replicas
-	if replicas <= 0 {
-		replicas = 1
-	}
-	cpuCapacityMilli := quantityMilliValue(target.CPURequest) * int64(replicas)
-	memoryCapacityBytes := quantityValue(target.MemoryRequest) * int64(replicas)
+	cpuCapacityMilli := quantityMilliValue(target.CPURequest) * int64(snapshot.DesiredReplicas)
+	memoryCapacityBytes := quantityValue(target.MemoryRequest) * int64(snapshot.DesiredReplicas)
 	return deploymentTargetMetricsResponse{
 		Available:           snapshot.Available,
 		Status:              deploymentTargetMetricsStatus(snapshot.Available),
 		Reason:              snapshot.Reason,
+		ConfiguredReplicas:  target.Replicas,
+		DesiredReplicas:     snapshot.DesiredReplicas,
+		ReadyReplicas:       snapshot.ReadyReplicas,
+		AvailableReplicas:   snapshot.AvailableReplicas,
 		PodCount:            snapshot.PodCount,
 		ContainerCount:      snapshot.ContainerCount,
 		CPUUsageMilli:       snapshot.CPUUsageMilli,

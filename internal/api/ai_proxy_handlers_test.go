@@ -101,6 +101,47 @@ func TestAIProxyUsesSessionActorAndForwardsIdempotencyKey(t *testing.T) {
 	}
 }
 
+func TestAIProxyForwardsInteractionCardToolActionWithoutConvertingArgumentsToChatInput(t *testing.T) {
+	t.Setenv("AI_INTERNAL_SECRET", "test-ai-internal-secret-32-bytes-minimum")
+	gin.SetMode(gin.TestMode)
+	fake := &fakeAIAgentClient{response: &aiagent.Response{
+		StatusCode: http.StatusAccepted,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"turnId":"aitrn_1","runId":"airun_1"}`)),
+	}}
+	handler := aiTestHandlers(fake, true)
+	router := gin.New()
+	router.POST("/api/v1/ai/conversations/:conversationId/tool-actions", handler.ProxyAIRequest)
+
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/ai/conversations/aicnv_owned/tool-actions", strings.NewReader(
+		`{"operationId":"saveConfig","arguments":{"environment":[{"key":"DATABASE_PASSWORD","value":"database-password"}]},"message":"提交配置","clientInstanceId":"browser-client-instance-1"}`,
+	))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Idempotency-Key", "tool-action-1")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+	if fake.request.Path != "/internal/v1/conversations/aicnv_owned/tool-actions" || fake.request.IdempotencyKey != "tool-action-1" {
+		t.Fatalf("agent request = %#v", fake.request)
+	}
+	var forwarded map[string]any
+	if err := json.Unmarshal(fake.request.Body, &forwarded); err != nil {
+		t.Fatal(err)
+	}
+	if forwarded["runId"] == "" || forwarded["runActorGrant"] == "" {
+		t.Fatalf("secure action was not bound to a run grant: %#v", forwarded)
+	}
+	arguments, _ := forwarded["arguments"].(map[string]any)
+	environment, _ := arguments["environment"].([]any)
+	entry, _ := environment[0].(map[string]any)
+	if entry["value"] != "database-password" {
+		t.Fatalf("tool action arguments were filtered before Agent execution: %#v", forwarded)
+	}
+}
+
 func TestAIProxyForwardsTimelineCursorPagination(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	fake := &fakeAIAgentClient{response: &aiagent.Response{

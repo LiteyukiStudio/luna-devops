@@ -31,8 +31,8 @@ type BuildRun struct {
 	BuildDirectory          string         `json:"buildDirectory"`
 	BuildArgs               string         `gorm:"type:text;not null;default:''" json:"buildArgs"`
 	BuildEnvironmentID      string         `gorm:"index;not null;default:''" json:"buildEnvironmentId"`
-	BuildCPURequest         string         `gorm:"not null;default:'1'" json:"buildCpuRequest"`
-	BuildMemoryRequest      string         `gorm:"not null;default:'1Gi'" json:"buildMemoryRequest"`
+	BuildCPURequest         string         `gorm:"not null;default:'2'" json:"buildCpuRequest"`
+	BuildMemoryRequest      string         `gorm:"not null;default:'4Gi'" json:"buildMemoryRequest"`
 	BuildTimeoutSeconds     int            `gorm:"not null;default:1800" json:"buildTimeoutSeconds"`
 	TargetRegistryID        string         `gorm:"index" json:"targetRegistryId"`
 	TargetRepository        string         `json:"targetRepository"`

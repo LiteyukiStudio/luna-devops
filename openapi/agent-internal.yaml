@@ -78,6 +78,16 @@ paths:
         - { $ref: "#/components/parameters/IdempotencyKey" }
       requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }
       responses: { "202": { description: Turn and run accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }, "409": { $ref: "#/components/responses/AgentError" } }
+  /internal/v1/conversations/{conversationId}/tool-actions:
+    post:
+      operationId: executeInternalInteractionCardToolAction
+      parameters:
+        - { $ref: "#/components/parameters/ActorContext" }
+        - { $ref: "#/components/parameters/ActorSignature" }
+        - { $ref: "#/components/parameters/ConversationId" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }
+      responses: { "202": { description: Tool action accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }, "409": { $ref: "#/components/responses/AgentError" } }
   /internal/v1/ui-actions/pending:
     get:
       operationId: listInternalPendingAIUIActions

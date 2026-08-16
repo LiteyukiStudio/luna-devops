@@ -87,8 +87,11 @@ func (h *Handlers) buildDeploymentTargetImportPlan(ctx *gin.Context, user model.
 		preview.Warnings = append(preview.Warnings, "deployment_bundle.namespace_review_required")
 	}
 
-	stage := normalizeStage(input.Stage)
-	if err := resourceidentifier.Validate(stage, stageIdentifierMinLength, stageIdentifierMaxLength); err != nil {
+	stage, validStage := normalizePublicStage(input.Stage)
+	if !validStage {
+		preview.Status = deploymentBundleStatusInvalid
+		preview.Warnings = append(preview.Warnings, "deployment.stage_invalid")
+	} else if err := resourceidentifier.Validate(stage, stageIdentifierMinLength, stageIdentifierMaxLength); err != nil {
 		preview.Status = deploymentBundleStatusInvalid
 		preview.Warnings = append(preview.Warnings, "deployment.stage_invalid")
 	} else {

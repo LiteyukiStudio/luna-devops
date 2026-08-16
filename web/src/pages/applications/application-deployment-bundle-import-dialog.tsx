@@ -113,9 +113,12 @@ export function ApplicationDeploymentBundleImportDialog({ applicationId, onImpor
       if (parsed.kind !== 'luna-devops.deployment-target' || parsed.schemaVersion !== 1 || !parsed.configuration)
         throw new Error(t('deploymentsPage.bundleImport.unsupportedFile'))
       const nextBundle = parsed as DeploymentTargetBundle
-      const stage = ['dev', 'test', 'staging', 'prod'].includes(nextBundle.configuration.stage)
-        ? nextBundle.configuration.stage as ImportForm['stage']
-        : 'dev'
+      if (!['dev', 'test', 'staging', 'prod'].includes(nextBundle.configuration.stage)) {
+        setFileName(file.name)
+        setError(t('deploymentsPage.bundleImport.invalidStage', { stage: nextBundle.configuration.stage }))
+        return
+      }
+      const stage = nextBundle.configuration.stage as ImportForm['stage']
       const nextValues: ImportForm = {
         mappings: {},
         name: nextBundle.configuration.name || nextBundle.configuration.stage || '',

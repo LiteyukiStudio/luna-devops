@@ -140,8 +140,9 @@ function InteractionCardView({ card, density, group, onAction }: {
     mode: 'onChange',
   })
   const watchedValues = form.watch()
-  const actionValues = publicFormValues(fields, watchedValues)
-  const messageValues = messageFormValues(fields, actionValues)
+  const toolFormValues = watchedValues
+  const publicFormValues = getPublicFormValues(fields, watchedValues)
+  const messageValues = messageFormValues(fields, publicFormValues)
   const hasDetails = Boolean(card.blocks?.length || card.form)
   const primaryAction = card.actions?.find(action => action.emphasis === 'primary') ?? card.actions?.[0]
   const secondaryActions = card.actions?.filter(action => action !== primaryAction) ?? []
@@ -208,12 +209,12 @@ function InteractionCardView({ card, density, group, onAction }: {
             <div className="flex flex-wrap justify-end gap-1.5 pt-0.5">
               {withStableKeys(secondaryActions, action => action.id).map(({ item: action, key: actionKey }) => (
                 <InteractionCardErrorBoundary key={actionKey} resetKey={`${group.generationId}:${card.id}:action:${actionKey}`} scope="action">
-                  <CardActionButton action={action} cardId={card.id} disabled={actionNeedsValidForm(action) && !form.formState.isValid} messageValues={messageValues} values={actionValues} onAction={onAction} />
+                  <CardActionButton action={action} cardId={card.id} disabled={actionNeedsValidForm(action) && !form.formState.isValid} messageValues={messageValues} values={toolFormValues} onAction={onAction} />
                 </InteractionCardErrorBoundary>
               ))}
               {primaryAction && (
                 <InteractionCardErrorBoundary resetKey={`${group.generationId}:${card.id}:action:${primaryAction.id}`} scope="action">
-                  <CardActionButton action={primaryAction} cardId={card.id} disabled={actionNeedsValidForm(primaryAction) && !form.formState.isValid} messageValues={messageValues} values={actionValues} onAction={onAction} />
+                  <CardActionButton action={primaryAction} cardId={card.id} disabled={actionNeedsValidForm(primaryAction) && !form.formState.isValid} messageValues={messageValues} values={toolFormValues} onAction={onAction} />
                 </InteractionCardErrorBoundary>
               )}
             </div>
@@ -469,11 +470,9 @@ function DynamicField({ control, field, error }: { control: Control<FormValues>,
                         </div>
                       )
                     : field.type === 'key_value'
-                      ? field.valueMode === 'secret'
-                        ? <div aria-describedby={describedBy} aria-labelledby={labelId} className="rounded-control bg-info-subtle px-2.5 py-2 text-[10px] text-info" role="note">{t('aiAssistant.cards.secretManualUnavailable')}</div>
-                        : <KeyValueInput controlId={controlId} describedBy={describedBy} labelId={labelId} value={Array.isArray(input.value) ? input.value as Array<{ key: string, value: string }> : []} secret={false} onChange={input.onChange} />
+                      ? <KeyValueInput controlId={controlId} describedBy={describedBy} labelId={labelId} value={Array.isArray(input.value) ? input.value as Array<{ key: string, value: string }> : []} secret={field.valueMode === 'secret'} onChange={input.onChange} />
                       : field.type === 'secret'
-                        ? <div aria-describedby={describedBy} aria-labelledby={labelId} className="rounded-control bg-info-subtle px-2.5 py-2 text-[10px] text-info" role="note">{t(field.generation === 'disabled' ? 'aiAssistant.cards.secretManualUnavailable' : 'aiAssistant.cards.secretGenerated')}</div>
+                        ? <Input {...input} id={controlId} aria-describedby={describedBy} aria-invalid={Boolean(error)} aria-labelledby={labelId} aria-required={field.required} placeholder={field.placeholder} type="password" value={String(input.value ?? '')} />
                         : <Input {...input} id={controlId} aria-describedby={describedBy} aria-invalid={Boolean(error)} aria-required={field.required} placeholder={field.placeholder} type="text" value={String(input.value ?? '')} />}
           {error && <p id={errorId} className="text-[9px] text-danger" role="alert">{error}</p>}
         </div>
@@ -725,8 +724,11 @@ function fieldSchema(field: InteractionFormField): z.ZodType {
       entriesSchema = entriesSchema.max(field.maxItems)
     schema = entriesSchema
   }
-  else if (field.type === 'secret' && field.generation === 'required') {
-    schema = z.string().optional()
+  else if (field.type === 'secret') {
+    let secretSchema = z.string()
+    if (field.required && field.generation === 'disabled')
+      secretSchema = secretSchema.min(1)
+    schema = secretSchema
   }
   else {
     let stringSchema = z.string()
@@ -738,7 +740,7 @@ function fieldSchema(field: InteractionFormField): z.ZodType {
       stringSchema = stringSchema.max(field.maxLength)
     schema = stringSchema
   }
-  return field.required && !(field.type === 'secret' && field.generation === 'required') ? schema : schema.optional()
+  return field.required && !(field.type === 'secret' && field.generation !== 'disabled') ? schema : schema.optional()
 }
 
 function defaultValues(fields: InteractionFormField[]): FormValues {
@@ -753,7 +755,7 @@ function defaultValues(fields: InteractionFormField[]): FormValues {
   }))
 }
 
-function publicFormValues(fields: InteractionFormField[], values: FormValues): FormValues {
+function getPublicFormValues(fields: InteractionFormField[], values: FormValues): FormValues {
   const sensitiveIds = new Set(fields.filter(field => field.type === 'secret' || (field.type === 'key_value' && field.valueMode === 'secret')).map(field => field.id))
   return Object.fromEntries(Object.entries(values).filter(([key]) => !sensitiveIds.has(key)))
 }

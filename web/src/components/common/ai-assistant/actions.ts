@@ -3,7 +3,6 @@ import type { NavigateFunction } from 'react-router-dom'
 import type { AIUIAction } from '@/api'
 import { aiOptionIconNames } from '@luna-devops/ai-interaction-card-contract'
 import { z } from 'zod'
-import i18next from '@/i18n'
 import { aiInternalRouteNames, buildAIInternalRoute } from './internal-routes'
 
 export interface AIActionContext {
@@ -12,6 +11,7 @@ export interface AIActionContext {
   navigate: NavigateFunction
   queryClient: QueryClient
   sendMessage?: (message: string) => Promise<void>
+  requestTool?: (action: Extract<AIUIAction, { type: 'request_tool' }>) => Promise<void>
 }
 
 const identifiers = z.record(z.string(), z.string().regex(/^[\w.:-]{1,160}$/)).default({})
@@ -128,28 +128,21 @@ export async function executeAIUIAction(action: AIUIAction, context: AIActionCon
   if (action.type === 'highlight')
     return highlightSchema.safeParse(action.payload).success
   if (action.type === 'send_message' || action.type === 'request_tool') {
-    if (!context.sendMessage)
-      return false
     if (action.type === 'send_message') {
+      if (!context.sendMessage)
+        return false
       const parsed = sendMessageSchema.safeParse(action.payload)
       if (!parsed.success)
         return false
       await context.sendMessage(parsed.data.message)
       return true
     }
+    if (!context.requestTool)
+      return false
     const parsed = requestToolSchema.safeParse(action.payload)
     if (!parsed.success)
       return false
-    const message = [
-      parsed.data.message,
-      '',
-      i18next.t('aiAssistant.cards.toolRequestEnvelope'),
-      JSON.stringify({
-        operationId: parsed.data.operationId,
-        arguments: parsed.data.arguments ?? {},
-      }),
-    ].join('\n')
-    await context.sendMessage(message)
+    await context.requestTool({ ...action, payload: { ...parsed.data, arguments: parsed.data.arguments ?? {} } })
     return true
   }
   return false

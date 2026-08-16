@@ -104,7 +104,7 @@ type DeploymentTarget struct {
 	ApplicationID                string                        `gorm:"index;uniqueIndex:idx_deployment_targets_application_stage_active,where:deleted_at IS NULL;not null" json:"applicationId"`
 	EnvironmentID                string                        `gorm:"index;not null;default:''" json:"environmentId"`
 	Name                         string                        `gorm:"not null" json:"name"`
-	Stage                        string                        `gorm:"uniqueIndex:idx_deployment_targets_application_stage_active,where:deleted_at IS NULL;not null;default:prod" json:"stage"`
+	Stage                        string                        `gorm:"uniqueIndex:idx_deployment_targets_application_stage_active,where:deleted_at IS NULL;not null" json:"stage"`
 	KubernetesName               string                        `gorm:"not null;default:''" json:"kubernetesName"`
 	ClusterID                    string                        `gorm:"index;not null;default:''" json:"clusterId"`
 	Namespace                    string                        `gorm:"not null;default:''" json:"namespace"`
@@ -165,8 +165,8 @@ type DeploymentTarget struct {
 	BuildDirectory               string                        `json:"buildDirectory"`
 	BuildArgs                    string                        `gorm:"type:text;not null;default:''" json:"buildArgs"`
 	BuildEnvironmentID           string                        `gorm:"index;not null;default:''" json:"buildEnvironmentId"`
-	BuildCPURequest              string                        `gorm:"not null;default:'1'" json:"buildCpuRequest"`
-	BuildMemoryRequest           string                        `gorm:"not null;default:'1Gi'" json:"buildMemoryRequest"`
+	BuildCPURequest              string                        `gorm:"not null;default:'2'" json:"buildCpuRequest"`
+	BuildMemoryRequest           string                        `gorm:"not null;default:'4Gi'" json:"buildMemoryRequest"`
 	BuildTimeoutSeconds          int                           `gorm:"not null;default:1800" json:"buildTimeoutSeconds"`
 	TargetRegistryID             string                        `gorm:"index" json:"targetRegistryId"`
 	TargetRepository             string                        `json:"targetRepository"`

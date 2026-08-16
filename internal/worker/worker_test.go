@@ -184,6 +184,17 @@ func TestRuntimeBillingEffectivePeriodProratesWindowStart(t *testing.T) {
 	}
 }
 
+func TestRuntimeObservationWindowOnlyAcceptsCurrentHour(t *testing.T) {
+	now := time.Date(2026, 8, 16, 12, 10, 0, 0, time.UTC)
+	start, end, ok := runtimeObservationWindow(now.Add(-10*time.Minute), now)
+	if !ok || !start.Equal(time.Date(2026, 8, 16, 12, 0, 0, 0, time.UTC)) || !end.Equal(time.Date(2026, 8, 16, 13, 0, 0, 0, time.UTC)) {
+		t.Fatalf("current observation window = %s %s %v", start, end, ok)
+	}
+	if _, _, ok := runtimeObservationWindow(now.Add(-time.Hour), now); ok {
+		t.Fatal("closed historical hour must not be overwritten by a new observation")
+	}
+}
+
 func TestStorageBillingEffectivePeriodProratesWindowStart(t *testing.T) {
 	windowStart := time.Date(2026, 6, 19, 6, 0, 0, 0, time.UTC)
 	windowEnd := windowStart.Add(time.Hour)

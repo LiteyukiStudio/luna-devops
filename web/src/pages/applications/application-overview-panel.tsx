@@ -347,7 +347,7 @@ function DeploymentSummary({ latestRelease, target, t }: { latestRelease?: Relea
           label={t('deploymentsPage.replicas')}
           value={target.status === 'unavailable'
             ? '-'
-            : `${target.readyReplicas || 0} / ${target.desiredReplicas || target.replicas || 1}`}
+            : `${target.readyReplicas} / ${target.desiredReplicas}`}
         />
         <DeploymentResourceItem label={t('deploymentsPage.cpuRequest')} value={target.cpuRequest || '1'} />
         <DeploymentResourceItem label={t('deploymentsPage.memoryRequest')} value={target.memoryRequest || '1Gi'} />

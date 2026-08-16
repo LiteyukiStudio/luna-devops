@@ -977,6 +977,52 @@ describe("provider to tool to subsequent model invocation", () => {
     const timeline = await presentTimeline(repository, "usr_a", conversation.id)
     expect(JSON.stringify(timeline)).not.toContain(generated)
   })
+
+  it("passes a submitted secret only to the real tool client and redacts projections", async () => {
+    const repository = new MemoryRepository()
+    const conversation = await repository.createConversation("usr_a", "配置密码")
+    const created = await repository.createTurn("usr_a", {
+      conversationId: conversation.id,
+      input: "提交配置",
+      pageContext: {},
+      idempotencyKey: "submitted-secret-tool",
+      runActorGrantCiphertext: "encrypted-test-grant",
+    })
+    const catalog = ToolCatalog.load([{
+      operationId: "saveConfig", method: "POST", path: "/api/v1/config", category: "application",
+      risk: "write", requiredScopes: ["application:write"], approval: "never", idempotent: true, timeoutMs: 5000,
+      inputSchema: {
+        type: "object",
+        properties: { environment: { type: "array" } },
+        required: ["environment"], additionalProperties: false,
+      },
+    }])
+    const submitted = "database-password"
+    const client = new DeterministicLunaApiClient(() => ({
+      status: 200,
+      body: { accepted: true },
+    }))
+    const store = new MemoryToolCallStore()
+    const tools = new ToolOrchestrator(
+      catalog,
+      client,
+      new ProjectingToolCallStore(store, repository),
+      undefined,
+      undefined,
+      async () => "opaque-grant",
+    )
+
+    const call = await tools.propose({
+      runId: created.run.id,
+      operationId: "saveConfig",
+      arguments: { environment: [{ key: "DATABASE_PASSWORD", value: submitted }] },
+    })
+
+    expect(call.status).toBe("succeeded")
+    expect(client.calls[0]?.arguments).toEqual({ environment: [{ key: "DATABASE_PASSWORD", value: submitted }] })
+    expect(JSON.stringify(store.events)).not.toContain(submitted)
+    expect(JSON.stringify(await presentTimeline(repository, "usr_a", conversation.id))).not.toContain(submitted)
+  })
 })
 
 function resolveNever(): never {

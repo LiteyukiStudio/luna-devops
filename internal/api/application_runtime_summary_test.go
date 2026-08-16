@@ -36,6 +36,13 @@ func TestSummarizeApplicationDeploymentTargets(t *testing.T) {
 			},
 			want: applicationDeploymentSummary{TargetCount: 1, Status: observation.StatusUnavailable},
 		},
+		{
+			name: "scale to zero remains an observed ready runtime",
+			targets: []model.DeploymentTarget{
+				{Status: observation.StatusReady, DesiredReplicas: 0, ReadyReplicas: 0},
+			},
+			want: applicationDeploymentSummary{TargetCount: 1, Status: observation.StatusReady},
+		},
 	}
 
 	for _, test := range tests {

@@ -33,6 +33,8 @@ A deployment target defines where an application comes from, how it runs, and wh
 - Environment variables, secrets, files, and volumes.
 - Whether a successful build should release automatically.
 
+When the stage is omitted for a new deployment target, the platform uses `dev`. A stage is immutable after creation; `sys-*` stages are reserved for existing platform-managed components.
+
 Consider validating runtime and routing with an existing image before adding a Git provider and automated builds.
 
 ## 4. Builds and releases
@@ -40,6 +42,8 @@ Consider validating runtime and routing with an existing image before adding a G
 A build creates an image from source. A release deploys a selected image to the runtime cluster. After a release, check its status, workloads, logs, and health instead of treating task submission as completion.
 
 Runtime and release status on the deployment page use `n/m` for ready and desired replicas. For example, `2/3` means that two of three desired replicas are ready.
+
+With autoscaling enabled, the runtime cost shown in the form is a baseline estimate based on configured replicas, not a live charge. HPA can change the live desired replica count. An HPA minimum of `0` is supported; `0/0` means the workload is observed and currently scaled to zero.
 
 Configuration or image changes require a new release. Reusing an image tag makes version verification and rollback harder; use traceable, unique tags in production.
 

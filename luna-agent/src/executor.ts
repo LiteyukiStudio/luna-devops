@@ -117,6 +117,18 @@ export class RunExecutor {
       await this.repository.appendEvent(run.id, "run.started", { state: "running", expectedVersion: running.rowVersion })
       const executionInput = await this.repository.getExecutionInput(run.id)
       if (!executionInput) throw new Error("ai.turn_not_found")
+      if (executionInput.pageContext.__lunaDirectToolAction === true) {
+        const directTool = executionInput.toolInteractions.find(item => item.type === "tool_call" && ["succeeded", "failed"].includes(String(item.content.status)))
+        if (!directTool) throw new Error("ai.direct_tool_not_ready")
+        const directStatus = directTool.content.status === "failed" ? "failed" : "completed"
+        await this.repository.updateRun(run.id, "running", directStatus, { completedAt: new Date().toISOString() })
+        telemetryLog("agent.direct_tool.completed", "info", {
+          "luna.run.id": run.id,
+          "tool.name": typeof directTool.content.operationId === "string" ? directTool.content.operationId : "unknown",
+          "tool.outcome": directStatus,
+        })
+        return true
+      }
       let conversationContext = {
         ...executionInput.conversation,
         turnIndex: executionInput.turnIndex,

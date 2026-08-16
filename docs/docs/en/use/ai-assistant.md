@@ -43,6 +43,8 @@ The assistant can inspect platform resources, analyze logs and status, read publ
 
 An interaction card first shows a preparation placeholder at its actual conversation position, then replaces that same item with validated content. When a reply contains exactly one blocking configuration form, the assistant may place it at the end of that reply so you can read the explanation before filling it in. Candidate lists, multiple cards, progress, and results stay in their real event order.
 
+Password and secret fields in configuration forms can be entered directly and are displayed as password inputs. When you submit a tool action, the secret travels only through the controlled tool execution path; it is not added to a normal chat message or model context, and message actions cannot reference it.
+
 Next-step options generated for a reply appear inside that assistant bubble at their real position among messages, reasoning, and tool calls, making their context clear. Before the first message in a new conversation, page presets remain above the composer for quick access to common tasks.
 
 When a high-risk tool is waiting for approval or MFA step-up, its action card appears directly below the tool row without requiring you to expand the details. Parameters, results, and invocation identifiers remain collapsed until you choose to inspect them.

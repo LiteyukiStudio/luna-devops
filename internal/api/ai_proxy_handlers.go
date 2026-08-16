@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -26,6 +27,8 @@ const (
 	aiPendingUIActionsRetrySeconds = 30
 	aiPendingUIActionsDrainLimit   = 64 << 10
 )
+
+var aiToolActionOperationID = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_.-]{2,100}$`)
 
 type aiProxyRoute struct {
 	method   string
@@ -89,7 +92,7 @@ func (h *Handlers) ProxyAIRequest(ctx *gin.Context) {
 
 	actor.ProjectID = projectIDFromAIRequest(ctx, body)
 	actor.RunID = strings.TrimSpace(ctx.Param("runId"))
-	if ctx.FullPath() == "/api/v1/ai/conversations/:conversationId/turns" {
+	if ctx.FullPath() == "/api/v1/ai/conversations/:conversationId/turns" || ctx.FullPath() == "/api/v1/ai/conversations/:conversationId/tool-actions" {
 		var prepared bool
 		body, actor, prepared = prepareAITurnGrant(ctx, actor, body)
 		if !prepared {
@@ -444,6 +447,32 @@ func validateTurnInput(_ *Handlers, ctx *gin.Context, _ model.User, body []byte)
 	return true
 }
 
+func validateToolActionInput(_ *Handlers, ctx *gin.Context, _ model.User, body []byte) bool {
+	var input struct {
+		OperationID      string         `json:"operationId"`
+		Arguments        map[string]any `json:"arguments"`
+		Message          string         `json:"message"`
+		ClientInstanceID string         `json:"clientInstanceId"`
+	}
+	if json.Unmarshal(body, &input) != nil || !aiToolActionOperationID.MatchString(input.OperationID) || strings.TrimSpace(input.Message) == "" || len([]byte(input.Message)) > 2000 {
+		writeErrorCode(ctx, http.StatusBadRequest, "ai.input_invalid", "invalid AI tool action input")
+		return false
+	}
+	if input.Arguments == nil {
+		writeErrorCode(ctx, http.StatusBadRequest, "ai.input_invalid", "tool action arguments are required")
+		return false
+	}
+	if !validAIClientInstanceID(input.ClientInstanceID) {
+		writeErrorCode(ctx, http.StatusBadRequest, "ai.client_instance_invalid", "clientInstanceId is invalid")
+		return false
+	}
+	if strings.TrimSpace(ctx.GetHeader("Idempotency-Key")) == "" {
+		writeErrorCode(ctx, http.StatusBadRequest, "idempotency_key_required", "Idempotency-Key is required")
+		return false
+	}
+	return true
+}
+
 func validAIClientInstanceID(value string) bool {
 	value = strings.TrimSpace(value)
 	if len(value) < 16 || len(value) > 80 {
@@ -516,6 +545,7 @@ var aiProxyRoutes = map[string]aiProxyRoute{
 	"DELETE /api/v1/ai/conversations/:conversationId":            {method: "DELETE", internal: "/internal/v1/conversations/:conversationId"},
 	"GET /api/v1/ai/conversations/:conversationId/timeline":      {method: "GET", internal: "/internal/v1/conversations/:conversationId/timeline"},
 	"POST /api/v1/ai/conversations/:conversationId/turns":        {method: "POST", internal: "/internal/v1/conversations/:conversationId/turns", status: http.StatusAccepted, validate: validateTurnInput},
+	"POST /api/v1/ai/conversations/:conversationId/tool-actions": {method: "POST", internal: "/internal/v1/conversations/:conversationId/tool-actions", status: http.StatusAccepted, validate: validateToolActionInput},
 	"GET /api/v1/ai/ui-actions/pending":                          {method: "GET", internal: "/internal/v1/ui-actions/pending"},
 	"POST /api/v1/ai/ui-actions/:actionId/ack":                   {method: "POST", internal: "/internal/v1/ui-actions/:actionId/ack", status: http.StatusAccepted},
 	"GET /api/v1/ai/turns/:turnId/runs":                          {method: "GET", internal: "/internal/v1/turns/:turnId/runs"},
