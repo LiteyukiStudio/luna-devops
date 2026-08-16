@@ -40,41 +40,48 @@ export function AIToolCallCard({ block, onAction, onApproval, onMFA }: { block: 
     : block.result?.summaryKey && i18n.exists(block.result.summaryKey)
       ? t(block.result.summaryKey, block.result.summaryParams)
       : t('aiAssistant.resultAvailable')
-  const hasControls = block.uiActions.length > 0 || block.status === 'awaiting_approval' || block.status === 'awaiting_mfa'
   return (
-    <details className="group overflow-hidden rounded-container bg-surface" open={block.status === 'awaiting_approval' || block.status === 'awaiting_mfa' ? true : undefined}>
-      <summary className="flex min-h-9 cursor-pointer list-none items-center gap-1.5 px-2 py-1 outline-none hover:bg-surface-inset focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&::-webkit-details-marker]:hidden" data-ai-tool-summary>
-        <strong className="min-w-0 flex-1 truncate text-xs font-medium">{title}</strong>
-        {block.visibility === 'internal' && (
-          <Badge className="border-transparent bg-warning-subtle px-1.5 py-0 text-[10px] leading-4 text-warning">
-            {t('aiAssistant.toolDebug.internal')}
-          </Badge>
-        )}
-        <Badge className={cn('gap-1 border-transparent px-1.5 py-0 text-[10px] leading-4', statusTone[block.status])}>
-          <ToolStatusIcon status={block.status} />
-          <span>{t(`aiAssistant.status.${block.status}`)}</span>
-          {block.durationMs !== undefined && (
-            <span className="hidden sm:contents" data-ai-tool-duration>
-              <span aria-hidden="true" className="opacity-60">·</span>
-              <span>{formatMillisecondsDuration(block.durationMs, i18n.language)}</span>
-            </span>
+    <div className="overflow-hidden rounded-container bg-surface">
+      <details className="group">
+        <summary className="flex min-h-9 cursor-pointer list-none items-center gap-1.5 px-2 py-1 outline-none hover:bg-surface-inset focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&::-webkit-details-marker]:hidden" data-ai-tool-summary>
+          <strong className="min-w-0 flex-1 truncate text-xs font-medium">{title}</strong>
+          {block.visibility === 'internal' && (
+            <Badge className="border-transparent bg-warning-subtle px-1.5 py-0 text-[10px] leading-4 text-warning">
+              {t('aiAssistant.toolDebug.internal')}
+            </Badge>
           )}
-        </Badge>
-        <ChevronRight className="size-3.5 shrink-0 text-muted-foreground transition-transform group-open:rotate-90" />
-      </summary>
-      <AIToolCallDetails block={block} errorCode={errorCode} summary={summary} />
-      {hasControls && (
-        <div className="bg-surface-subtle/40 px-3 pb-3">
-          {block.uiActions.length > 0 && (
+          <Badge className={cn('gap-1 border-transparent px-1.5 py-0 text-[10px] leading-4', statusTone[block.status])}>
+            <ToolStatusIcon status={block.status} />
+            <span>{t(`aiAssistant.status.${block.status}`)}</span>
+            {block.durationMs !== undefined && (
+              <span className="hidden sm:contents" data-ai-tool-duration>
+                <span aria-hidden="true" className="opacity-60">·</span>
+                <span>{formatMillisecondsDuration(block.durationMs, i18n.language)}</span>
+              </span>
+            )}
+          </Badge>
+          <ChevronRight className="size-3.5 shrink-0 text-muted-foreground transition-transform group-open:rotate-90" />
+        </summary>
+        <AIToolCallDetails block={block} errorCode={errorCode} summary={summary} />
+        {block.uiActions.length > 0 && (
+          <div className="bg-surface-subtle/40 px-3 pb-3">
             <div className="mt-3 flex flex-wrap justify-end gap-2">
               {block.uiActions.map(action => <ActionButton key={`${action.type}-${JSON.stringify(action.payload)}`} action={action} onAction={onAction} />)}
             </div>
-          )}
-          {block.status === 'awaiting_approval' && <ApprovalControls block={block} onApproval={onApproval} />}
-          {block.status === 'awaiting_mfa' && <MFAControls block={block} onMFA={onMFA} />}
+          </div>
+        )}
+      </details>
+      {block.status === 'awaiting_approval' && (
+        <div className="bg-surface-subtle/40 px-3 pb-3" data-ai-tool-intervention>
+          <ApprovalControls block={block} onApproval={onApproval} />
         </div>
       )}
-    </details>
+      {block.status === 'awaiting_mfa' && (
+        <div className="bg-surface-subtle/40 px-3 pb-3" data-ai-tool-intervention>
+          <MFAControls block={block} onMFA={onMFA} />
+        </div>
+      )}
+    </div>
   )
 }
 

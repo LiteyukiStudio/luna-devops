@@ -8,9 +8,11 @@ const settings = {
   retentionConfigTitle: 'Data retention',
   configDefinitionsFailedTitle: 'Config definitions failed to load',
   configDefinitionsFailedDescription: 'Confirm that the current account can access site settings.',
+  restoreDefaults: 'Restore defaults',
   saveConfig: 'Save settings',
   ai: {
     tab: 'AI Assistant',
+    defaultsRestored: 'Agent runtime settings were restored to the platform defaults. Save to apply them.',
     enabled: 'Enable the site AI assistant',
     enabledHint: 'Enter the API URL, API key, and model name. The platform connects the Agent automatically.',
     accessMode: 'Access scope',

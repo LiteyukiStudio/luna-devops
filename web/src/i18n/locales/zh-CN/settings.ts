@@ -8,9 +8,11 @@ const settings = {
   retentionConfigTitle: '数据保留',
   configDefinitionsFailedTitle: '配置定义加载失败',
   configDefinitionsFailedDescription: '请确认当前账号有权限访问全局设置。',
+  restoreDefaults: '恢复默认',
   saveConfig: '保存配置',
   ai: {
     tab: 'AI 助手',
+    defaultsRestored: 'Agent 运行参数已恢复为平台默认值，保存后生效。',
     enabled: '启用站点 AI 助手',
     enabledHint: '填写 API 地址、API Key 和模型名称即可启用；平台会自动连接后台模型配置。',
     accessMode: '使用范围',

@@ -1,8 +1,8 @@
 import type { AISettingsFormValues } from './ai-assistant-settings'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { FlaskConical, LoaderCircle } from 'lucide-react'
-import { useEffect } from 'react'
+import { FlaskConical, LoaderCircle, RotateCcw } from 'lucide-react'
+import { useEffect, useMemo } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -65,6 +65,29 @@ const defaults: FormValues = {
   tempoToken: '',
   tempoTokenConfigured: false,
 }
+
+const runtimeDefaultFields = [
+  ['ai.runtime.provider_timeout_seconds', 'providerTimeoutSeconds'],
+  ['ai.runtime.max_request_retries', 'maxRequestRetries'],
+  ['ai.runtime.run_timeout_seconds', 'runTimeoutSeconds'],
+  ['ai.runtime.agent_concurrent_runs', 'agentConcurrentRuns'],
+  ['ai.runtime.context_input_k_tokens', 'contextInputKTokens'],
+  ['ai.context.compression_trigger_ratio', 'contextCompressionTriggerRatio'],
+  ['ai.context.compression_target_ratio', 'contextCompressionTargetRatio'],
+  ['ai.context.recent_turn_count', 'contextRecentTurnCount'],
+  ['ai.context.max_recent_turn_count', 'contextMaxRecentTurnCount'],
+  ['ai.context.max_uncompressed_turn_count', 'contextMaxUncompressedTurnCount'],
+  ['ai.context.max_compression_turns_per_compile', 'contextMaxCompressionTurnsPerCompile'],
+  ['ai.context.summary_input_k_tokens', 'contextSummaryInputKTokens'],
+  ['ai.context.summary_max_output_tokens', 'contextSummaryMaxOutputTokens'],
+  ['ai.context.historical_tool_k_tokens', 'contextHistoricalToolKTokens'],
+  ['ai.model.max_output_tokens', 'modelMaxOutputTokens'],
+  ['ai.run.max_model_steps', 'runMaxModelSteps'],
+  ['ai.run.max_input_k_bytes', 'runMaxInputKBytes'],
+  ['ai.run.navigate_action_ttl_seconds', 'runNavigateActionTtlSeconds'],
+  ['ai.tools.result_payload_k_bytes', 'toolsResultPayloadKBytes'],
+  ['ai.tools.max_card_repair_attempts', 'toolsMaxCardRepairAttempts'],
+] as const
 
 // 高级设置字段：对应 Agent 运行时中原本写死、现已由平台下发的参数。
 // 每个字段提供平台默认值；普通部署保持默认即可。
@@ -140,7 +163,12 @@ export function AIAssistantSettingsPanel() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const configs = useQuery({ queryKey: ['configs'], queryFn: api.getConfigs })
+  const definitions = useQuery({ queryKey: ['config-definitions'], queryFn: api.listConfigDefinitions })
   const form = useForm<FormValues>({ resolver: zodResolver(aiSettingsSchema), mode: 'onChange', defaultValues: defaults })
+  const runtimeDefaults = useMemo(() => Object.fromEntries(
+    (definitions.data ?? []).map(definition => [definition.key, definition.default]),
+  ), [definitions.data])
+  const runtimeDefaultsReady = runtimeDefaultFields.every(([configKey]) => Number.isFinite(Number(runtimeDefaults[configKey])))
 
   useEffect(() => {
     if (!configs.data)
@@ -159,6 +187,17 @@ export function AIAssistantSettingsPanel() {
     onError: error => toast.error(error instanceof Error ? error.message : t('settings.ai.saveFailed')),
   })
 
+  const restoreRuntimeDefaults = () => {
+    if (!runtimeDefaultsReady)
+      return
+    const restoredValues = { ...form.getValues() }
+    for (const [configKey, fieldName] of runtimeDefaultFields)
+      restoredValues[fieldName] = Number(runtimeDefaults[configKey])
+    form.reset(restoredValues, { keepDefaultValues: true })
+    void form.trigger()
+    toast.info(t('settings.ai.defaultsRestored'))
+  }
+
   const errors = form.formState.errors
   const providerTimeoutSeconds = form.watch('providerTimeoutSeconds')
   const maxRequestRetries = form.watch('maxRequestRetries')
@@ -170,6 +209,15 @@ export function AIAssistantSettingsPanel() {
   return (
     <form className="max-w-3xl" onSubmit={form.handleSubmit(values => save.mutate(values))}>
       <PageChromeTools>
+        <Button
+          disabled={!runtimeDefaultsReady || save.isPending}
+          type="button"
+          variant="outline"
+          onClick={restoreRuntimeDefaults}
+        >
+          <RotateCcw aria-hidden="true" className="size-4" />
+          {t('settings.restoreDefaults')}
+        </Button>
         <SettingsTabSaveButton
           disabled={!form.formState.isDirty || !form.formState.isValid}
           label={t('settings.saveConfig')}

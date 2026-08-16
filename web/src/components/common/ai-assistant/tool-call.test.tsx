@@ -193,7 +193,7 @@ describe('ai assistant tool status icon', () => {
   it('offers reject, approve, and current-run approve-all decisions for a bound high-risk call', async () => {
     await i18next.changeLanguage('zh-CN')
     const onApproval = vi.fn(async () => {})
-    render(
+    const { container } = render(
       <AIToolCallCard
         block={{
           ...toolBlock('awaiting_approval'),
@@ -206,6 +206,10 @@ describe('ai assistant tool status icon', () => {
       />,
     )
 
+    expect(container.querySelector('details')).not.toHaveAttribute('open')
+    expect(container.querySelector('[data-ai-tool-intervention]')).toBeVisible()
+    expect(screen.getByRole('button', { name: '批准执行' })).toBeVisible()
+
     fireEvent.click(screen.getByRole('button', { name: '全部同意' }))
     await waitFor(() => expect(onApproval).toHaveBeenCalledWith(
       expect.objectContaining({ runId: 'run-1', toolCallId: 'tool-call-1' }),
@@ -216,7 +220,7 @@ describe('ai assistant tool status icon', () => {
 
   it('associates the MFA code with the current password-manager credential', async () => {
     await i18next.changeLanguage('en-US')
-    render(
+    const { container } = render(
       <AIToolCallCard
         block={{
           ...toolBlock('awaiting_mfa'),
@@ -229,6 +233,8 @@ describe('ai assistant tool status icon', () => {
       />,
     )
 
+    expect(container.querySelector('details')).not.toHaveAttribute('open')
+    expect(container.querySelector('[data-ai-tool-intervention]')).toBeVisible()
     const oneTimeCode = screen.getByRole('textbox', { name: i18next.t('aiAssistant.mfa.code') })
     const form = oneTimeCode.closest('form')
     expect(oneTimeCode).toHaveAttribute('autocomplete', 'one-time-code')

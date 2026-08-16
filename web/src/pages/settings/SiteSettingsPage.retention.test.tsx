@@ -127,6 +127,57 @@ describe('site settings page', () => {
     expect(brandColorGroup.compareDocumentPosition(siteTitleInput) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
+  it('restores AI runtime settings from platform definitions before saving', async () => {
+    const user = userEvent.setup()
+    const runtimeDefaults = {
+      'ai.runtime.provider_timeout_seconds': '300',
+      'ai.runtime.max_request_retries': '5',
+      'ai.runtime.run_timeout_seconds': '3600',
+      'ai.runtime.agent_concurrent_runs': '10',
+      'ai.runtime.context_input_k_tokens': '512',
+      'ai.context.compression_trigger_ratio': '0.9',
+      'ai.context.compression_target_ratio': '0.7',
+      'ai.context.recent_turn_count': '16',
+      'ai.context.max_recent_turn_count': '32',
+      'ai.context.max_uncompressed_turn_count': '64',
+      'ai.context.max_compression_turns_per_compile': '512',
+      'ai.context.summary_input_k_tokens': '256',
+      'ai.context.summary_max_output_tokens': '16384',
+      'ai.context.historical_tool_k_tokens': '64',
+      'ai.model.max_output_tokens': '65536',
+      'ai.run.max_model_steps': '256',
+      'ai.run.max_input_k_bytes': '1024',
+      'ai.run.navigate_action_ttl_seconds': '120',
+      'ai.tools.result_payload_k_bytes': '512',
+      'ai.tools.max_card_repair_attempts': '5',
+    }
+    const savedValues = { ...runtimeDefaults, 'ai.model.max_output_tokens': '8192' }
+    mocks.listConfigDefinitions.mockResolvedValue(Object.entries(runtimeDefaults).map(([key, defaultValue]) => ({
+      default: defaultValue,
+      key,
+      public: false,
+      type: 'number' as const,
+    })))
+    mocks.getConfigs.mockResolvedValue(savedValues)
+    mocks.updateConfigs.mockResolvedValue(runtimeDefaults)
+    renderPage()
+
+    await user.click(await screen.findByRole('tab', { name: i18next.t('settings.ai.tab') }))
+    await user.click(screen.getByRole('button', { name: i18next.t('settings.ai.advancedTitle') }))
+    expect(await screen.findByDisplayValue('8192')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: i18next.t('settings.restoreDefaults') }))
+    expect(screen.getByDisplayValue('65536')).toBeInTheDocument()
+    expect(mocks.updateConfigs).not.toHaveBeenCalled()
+
+    const saveButton = screen.getByRole('button', { name: i18next.t('settings.saveConfig') })
+    await waitFor(() => expect(saveButton).toBeEnabled())
+    await user.click(saveButton)
+    await waitFor(() => expect(mocks.updateConfigs).toHaveBeenCalledWith(expect.objectContaining({
+      'ai.model.max_output_tokens': 65536,
+    })))
+  })
+
   it('keeps the AI settings form outside other forms', async () => {
     const user = userEvent.setup()
     const { container } = renderPage()

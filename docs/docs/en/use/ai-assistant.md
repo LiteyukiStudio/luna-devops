@@ -35,6 +35,8 @@ Administrators can change the **Context input budget** under advanced runtime se
 
 Under **Advanced settings**, the Agent's internal parameters can be tuned by category: context & compression (compression trigger/target ratios, recent-turn retention, summary budgets, etc.), model & execution (max output tokens per reply, max model steps per Run, user-input size limit, navigation-action TTL), and tool results & cards (tool-result context budget, interaction-card repair limit). Every item ships with a platform default and is delivered to the Agent dynamically; keep the defaults for ordinary deployments and avoid tuning without a specific need.
 
+To discard runtime tuning, select **Restore defaults** beside **Save settings**. This restores only Agent runtime, context, model-execution, and tool-budget settings; provider details, API keys, access scope, observability, and proxy settings stay unchanged. Review the restored values, then select **Save settings** to apply them.
+
 ## Capabilities and operations
 
 The assistant can inspect platform resources, analyze logs and status, read public web pages, collect settings through interactive cards, and report operation results. Long-running builds and releases show their real status, and the assistant checks the outcome after they finish.
@@ -42,6 +44,8 @@ The assistant can inspect platform resources, analyze logs and status, read publ
 An interaction card first shows a preparation placeholder at its actual conversation position, then replaces that same item with validated content. When a reply contains exactly one blocking configuration form, the assistant may place it at the end of that reply so you can read the explanation before filling it in. Candidate lists, multiple cards, progress, and results stay in their real event order.
 
 Next-step options generated for a reply appear inside that assistant bubble at their real position among messages, reasoning, and tool calls, making their context clear. Before the first message in a new conversation, page presets remain above the composer for quick access to common tasks.
+
+When a high-risk tool is waiting for approval or MFA step-up, its action card appears directly below the tool row without requiring you to expand the details. Parameters, results, and invocation identifiers remain collapsed until you choose to inspect them.
 
 Cards use five stable roles: candidate discovery and comparison (`candidates`), structured configuration (`form`), change review (`change_review`), facts or operation outcomes (`result`), and platform-backed live tasks (`live_task`). Resource details, diagnostics, charts, and tables remain available as content blocks; you do not need to select or know these template names.
 
