@@ -145,6 +145,8 @@ export class RunExecutor {
       const searchedToolQueries = new Set<string>()
       for (let step = 0; step < this.runtimeSettings.maxModelSteps; step += 1) {
         const result = await this.streamModel(run.id, run.turnId, {
+          runId: run.id,
+          ownerUserId: run.ownerUserId,
           conversationId: executionInput.conversationId,
           input: executionInput.input,
           pageContext: executionInput.pageContext,
@@ -346,13 +348,15 @@ export class RunExecutor {
       }
       if (!completed) throw new Error("ai.limit_exceeded")
       if (executionInput.conversation.titleSource === "default" && !assistantRenamed) try {
-        const title = await this.modelRuntime.generateConversationTitle(executionInput.input, finalAnswer, abort.signal, executionInput.model)
+        const title = await this.modelRuntime.generateConversationTitle(executionInput.input, finalAnswer, { runId: run.id, ownerUserId: run.ownerUserId }, abort.signal, executionInput.model)
         if (title) await this.renameConversation(run.id, run.turnId, run.conversationId, { title })
       } catch {
         // Title generation is best-effort and must never fail a completed response.
       }
       if (!interactionCardsCreated) {
         await this.ensureOptions(run.id, run.turnId, {
+          runId: run.id,
+          ownerUserId: run.ownerUserId,
           userInput: executionInput.input,
           answer: finalAnswer,
           pageContext: executionInput.pageContext,
@@ -844,17 +848,7 @@ export class RunExecutor {
             cachedInputTokens: event.usage.cachedInputTokens ?? 0,
             cachedOutputTokens: event.usage.cachedOutputTokens ?? 0,
           },
-          ...(input.model ? {
-            modelId: input.model.id,
-            modelName: input.model.name,
-            pricing: {
-              inputCreditsPerMillion: input.model.inputCreditsPerMillion,
-              outputCreditsPerMillion: input.model.outputCreditsPerMillion,
-              cachedInputCreditsPerMillion: input.model.cachedInputCreditsPerMillion,
-              cachedOutputCreditsPerMillion: input.model.cachedOutputCreditsPerMillion,
-            },
-            usageSchemaVersion: 1,
-          } : {}),
+          ...(event.reservationId ? { reservationId: event.reservationId } : {}),
         })
       }
     }

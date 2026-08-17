@@ -1,55 +1,20 @@
+import type { ModelFormValues } from './ai-model-management-utils'
 import type { AIModelConfig } from '@/api'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import i18next from 'i18next'
 import { Pencil, Plus } from 'lucide-react'
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { z } from 'zod'
-import { api, ApiError } from '@/api'
+import { api } from '@/api'
 import { FormField as Field } from '@/components/common/form-field'
 import { StatusBadge } from '@/components/common/status-badge'
 import { Surface } from '@/components/common/surface'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-
-const price = () => z.string().trim().regex(/^\d+(?:\.\d{1,8})?$/, { message: i18next.t('settings.ai.models.priceInvalid') })
-const modelSchema = z.object({
-  name: z.string().trim().min(1, { message: i18next.t('settings.ai.models.nameRequired') }),
-  inputCreditsPerMillion: price(),
-  outputCreditsPerMillion: price(),
-  cachedInputCreditsPerMillion: price(),
-  cachedOutputCreditsPerMillion: price(),
-  enabled: z.boolean(),
-})
-type ModelFormValues = z.infer<typeof modelSchema>
-
-function modelSaveErrorMessage(error: unknown, fallback: string, translate: (key: string) => string) {
-  if (!(error instanceof ApiError))
-    return fallback
-  switch (error.code) {
-    case 'ai.model_name_conflict':
-      return translate('settings.ai.models.errors.nameConflict')
-    case 'ai.last_model_cannot_be_disabled':
-      return translate('settings.ai.models.errors.lastEnabled')
-    case 'ai.model_not_found':
-      return translate('settings.ai.models.errors.notFound')
-    default:
-      return fallback
-  }
-}
-
-const emptyModel: ModelFormValues = {
-  name: '',
-  inputCreditsPerMillion: '0',
-  outputCreditsPerMillion: '0',
-  cachedInputCreditsPerMillion: '0',
-  cachedOutputCreditsPerMillion: '0',
-  enabled: true,
-}
+import { aiModelFormSchema, emptyModel, modelFormValues, modelSaveErrorMessage } from './ai-model-management-utils'
 
 export function AIModelManagement() {
   const { t } = useTranslation()
@@ -57,7 +22,7 @@ export function AIModelManagement() {
   const [editing, setEditing] = useState<AIModelConfig | null>(null)
   const [open, setOpen] = useState(false)
   const models = useQuery({ queryKey: ['configs', 'ai', 'models'], queryFn: api.listAIModelConfigs })
-  const form = useForm<ModelFormValues>({ resolver: zodResolver(modelSchema), defaultValues: emptyModel, mode: 'onChange' })
+  const form = useForm<ModelFormValues>({ resolver: zodResolver(aiModelFormSchema), defaultValues: emptyModel, mode: 'onChange' })
   const save = useMutation({
     mutationFn: (values: ModelFormValues) => editing
       ? api.updateAIModel(editing.id, values)
@@ -78,14 +43,7 @@ export function AIModelManagement() {
   }
   const startEdit = (model: AIModelConfig) => {
     setEditing(model)
-    form.reset({
-      name: model.name,
-      inputCreditsPerMillion: model.inputCreditsPerMillion,
-      outputCreditsPerMillion: model.outputCreditsPerMillion,
-      cachedInputCreditsPerMillion: model.cachedInputCreditsPerMillion,
-      cachedOutputCreditsPerMillion: model.cachedOutputCreditsPerMillion,
-      enabled: model.enabled,
-    })
+    form.reset(modelFormValues(model))
     setOpen(true)
   }
   const errors = form.formState.errors
@@ -111,6 +69,7 @@ export function AIModelManagement() {
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-medium">{model.name}</p>
                   <p className="text-xs text-muted-foreground">{t('settings.ai.models.priceSummary', { input: model.inputCreditsPerMillion, output: model.outputCreditsPerMillion })}</p>
+                  <p className="text-xs text-muted-foreground">{t('settings.ai.models.capabilitySummary', { contextTokens: model.maxContextTokens, outputTokens: model.maxOutputTokens })}</p>
                 </div>
                 <StatusBadge tone={model.enabled ? 'success' : 'neutral'}>{t(model.enabled ? 'settings.ai.models.enabled' : 'settings.ai.models.disabled')}</StatusBadge>
                 <Button aria-label={t('settings.ai.models.edit')} size="icon" type="button" variant="ghost" onClick={() => startEdit(model)}><Pencil className="size-4" /></Button>
@@ -127,6 +86,10 @@ export function AIModelManagement() {
           </DialogHeader>
           <form className="grid gap-4" onSubmit={form.handleSubmit(values => save.mutate(values))}>
             <Field error={errors.name?.message} label={t('settings.ai.models.name')} required><Input {...form.register('name')} /></Field>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field error={errors.maxContextTokens?.message} hint={t('settings.ai.models.contextLimitHint')} label={t('settings.ai.models.contextLimit')} required><Input max={2097152} min={4096} step={1} type="number" {...form.register('maxContextTokens', { valueAsNumber: true })} /></Field>
+              <Field error={errors.maxOutputTokens?.message} hint={t('settings.ai.models.outputLimitHint')} label={t('settings.ai.models.outputLimit')} required><Input max={262144} min={256} step={1} type="number" {...form.register('maxOutputTokens', { valueAsNumber: true })} /></Field>
+            </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field error={errors.inputCreditsPerMillion?.message} hint={t('settings.ai.models.priceHint')} label={t('settings.ai.models.inputPrice')} required><Input inputMode="decimal" {...form.register('inputCreditsPerMillion')} /></Field>
               <Field error={errors.outputCreditsPerMillion?.message} hint={t('settings.ai.models.priceHint')} label={t('settings.ai.models.outputPrice')} required><Input inputMode="decimal" {...form.register('outputCreditsPerMillion')} /></Field>

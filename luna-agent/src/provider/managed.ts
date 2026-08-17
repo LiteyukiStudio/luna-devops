@@ -99,7 +99,7 @@ function resolveModel(config: RemoteProviderConfig, request: ModelRequest): Remo
 }
 
 function snapshotModel(name: string): RemoteAIModel {
-  return { id: "legacy", name, inputCreditsPerMillion: "0", outputCreditsPerMillion: "0", cachedInputCreditsPerMillion: "0", cachedOutputCreditsPerMillion: "0" }
+  return { id: "legacy", name, maxContextTokens: 524_288, maxOutputTokens: 65_536, inputCreditsPerMillion: "0", outputCreditsPerMillion: "0", cachedInputCreditsPerMillion: "0", cachedOutputCreditsPerMillion: "0" }
 }
 
 function defaultFactory(config: RemoteProviderConfig): ModelProvider {

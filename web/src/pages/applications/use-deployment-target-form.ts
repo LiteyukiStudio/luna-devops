@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { api } from '@/api'
 import { buildVariableRecordToRows, buildVariableRowsToRecord, secretStateToRows } from '@/lib/build-variables'
+import { publicRuntimeEnvironmentInputs, publicRuntimeEnvironmentRecord } from '@/lib/runtime-environment'
 import { defaultBuildCpuRequest, defaultBuildMemoryRequest, defaultBuildTimeoutSeconds } from './application-build-defaults'
 import { defaultTargetImageRef, deploymentTargetImageRef } from './application-config-utils'
 import { deploymentTargetDefaults, normalizeBoolean, normalizeDeploymentHookBindings, normalizeDeploymentTargetPayload, normalizeRuntimeConfigRefs, normalizeStringIds, parseRuntimeDataVolumes, runtimeConfigLiveSetIds, serializeRuntimeDataVolumes } from './application-deployments-panel-utils'
@@ -78,6 +79,7 @@ export function deploymentTargetFormValues({
     buildVariableSetIds: normalizeStringIds(target?.buildVariableSetIds),
     runtimeConfigRefs,
     runtimeConfigSetIds: runtimeConfigLiveSetIds(runtimeConfigRefs),
+    environmentVariables: publicRuntimeEnvironmentInputs(publicRuntimeEnvironmentRecord(target?.environmentVariables)),
     secretFiles: '',
     dataVolumes: target?.dataVolumes ?? [],
     webConsoleEnabled: normalizeWebConsoleOverride(target?.webConsoleEnabled),

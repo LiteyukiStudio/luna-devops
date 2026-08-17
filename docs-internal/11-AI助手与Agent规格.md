@@ -54,11 +54,17 @@ AI 助手不是悬浮在控制台上的通用聊天机器人。它理解用户�
   `listRuntimeClusters` 的真实结果询问，禁止无候选凭空问“选择哪个集群”。
 - `create_options` 只用于确有清晰、可独立点选的下一步；等待表单提交、批准/MFA 阻塞或
   无下一步时不生成。结构化参数必须用交互表单，不得用快捷选项收集。
-- 运行时密钥只能通过 `updateDeploymentTargetRuntimeSecrets` 处理：`values` 仅接受用户可见
-  安全表单触发的 Direct Tool Action，`generate` 由平台后端生成并直接写入 Secret Store，
-  `clear` 只清除明确列出的字段。普通模型工具调用、聊天消息、最终回复和页面上下文都不得
-  携带敏感值；成功结果只返回 configured/generated/cleared 字段状态，不返回明文。部署配置
-  的普通 `envVars` 拒绝密钥语义字段名和带 URL 内嵌凭据的值。
+- 运行时密钥只能通过 `updateDeploymentTargetRuntimeSecrets` 或
+  `updateProjectRuntimeConfigSetRuntimeSecrets` 处理：请求使用 `items[]`，每项必须声明
+  `valueMode: secret` 和 `operation: set | generate | clear`。`set` 的非空 `value` 仅接受用户可见
+  安全表单触发的 Direct Tool Action，空值表示不修改；`generate` 由平台后端生成并直接写入
+  Secret Store，`clear` 只清除明确字段。普通模型工具调用、聊天消息、最终回复和页面上下文
+  都不得携带敏感值；成功结果仅返回键、`valueMode` 与 configured/generated/cleared 状态，不返回
+  明文或 Secret 引用。部署目标和运行配置集的普通 `environmentVariables[]` 每项必须声明
+  `valueMode: public`；密钥语义字段名和带 URL 内嵌凭据的值作为纵深防御继续拒绝。
+- 模型不得为 `secret` 或 `key_value.valueMode: secret` 字段提供 `defaultValue`、示例密钥或任何
+  预填明文；Web 对修复前持久化记录继续强制清空。用户没有主动输入时 Direct Tool Action 不
+  提交该字段，随机生成与清除分别使用后端 `generate` 和独立 `clear` 操作。
 
 ## 4. 记忆与上下文
 
@@ -67,6 +73,21 @@ AI 助手不是悬浮在控制台上的通用聊天机器人。它理解用户�
   覆盖水位增量持久化，压缩失败安全回退且不修改权威完整历史。
 - 禁止进入上下文与记忆：Secret、Token、Cookie、Authorization、kubeconfig、Registry 密码、
   Git Access Token、完整终端历史、未脱敏的第三方响应与日志。
+
+### 4.1 模型能力与 Run 预算
+
+- 模型目录的最大上下文、最大单次输出和四类价格由 `internal/aimodel`
+  统一校验；Run 创建时连同站点累计 Token/Credits 上限快照，后续管理变更不影响历史 Run。
+- 所有归属 Run 的 Provider 调用经过 `BudgetedModelProvider`，且在调用前由 PostgreSQL
+  原子 reservation 批准。输出上限是 Agent/站点上限、模型输出、上下文剩余、Run
+  剩余 Token/Credits 与个人钱包可负担额度的最小值。
+- 过期的 `reserved` 不可直接释放，因为 Provider 可能已收到请求；恢复时按全额
+  保守确认。只有明确在外部请求前失败或 Provider 调用前取消才可释放。
+- Worker 以 reservation ID 作为计费资源与幂等键，从 `confirmed` reservation
+  生成四类 usage/ledger 并与 `settled` 转换同事务完成。AI 费用只属于发起用户个人钱包，
+  `project_id` 始终为空。钱包普通 debit 和负 adjustment 都要扣除未结束 hold。
+- 全链路锁序为 wallet → Run → reservation（无 Run 的结算/普通扣费为 wallet →
+  reservation）；结算可用余额检查排除当前 reservation，但不排除其他活跃 hold。
 
 ## 5. 安全与 Prompt Injection 防护
 
@@ -79,7 +100,8 @@ AI 助手不是悬浮在控制台上的通用聊天机器人。它理解用户�
 - 模型看到的日志使用明确数据边界和长度上限。
 - 网页读取仅允许无凭据的只读 HTTP/HTTPS GET，限制响应类型、大小、重定向次数与文本长度，
   重定向逐跳重新校验；目标由站点级域名/IP 黑名单和端口策略约束。
-- 配额按用户、项目空间、全局三层限制（并发 Run、请求速率、Token、成本）。
+- 并发 Run 与请求速率按现有站点/用户边界限制；AI Token 和费用按 Run 快照与发起用户
+  个人钱包限制，不关联项目空间计费归属。
 
 ## 6. 明确不做
 

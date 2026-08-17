@@ -69,6 +69,8 @@ const remoteProviderConfigSchema = z.object({
     configured: z.boolean(),
     models: z.array(z.object({
       id: z.string().min(1), name: z.string().min(1),
+      maxContextTokens: z.number().int().min(4096).max(2097152),
+      maxOutputTokens: z.number().int().min(256).max(262144),
       inputCreditsPerMillion: z.string(), outputCreditsPerMillion: z.string(),
       cachedInputCreditsPerMillion: z.string(), cachedOutputCreditsPerMillion: z.string(),
     })).default([]),

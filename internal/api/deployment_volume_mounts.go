@@ -10,8 +10,9 @@ import (
 )
 
 type deploymentVolumeMountChanges struct {
-	Bound   []model.DeploymentVolumeMount
-	Unbound []model.DeploymentVolumeMount
+	Bound        []model.DeploymentVolumeMount
+	Unbound      []model.DeploymentVolumeMount
+	HookBindings []model.DeploymentTargetHookBinding
 	// Attempted records every binding mutation that belongs to the surrounding
 	// transaction. It is retained when that transaction rolls back so the HTTP
 	// boundary can emit a failure audit without persisting paths or user input.

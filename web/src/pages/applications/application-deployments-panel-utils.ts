@@ -1,6 +1,7 @@
 import type { UseFormReturn } from 'react-hook-form'
 import type { DeploymentRuntimeConfigRef, DeploymentTarget, DeploymentTargetHookBinding, DeploymentTargetPayload, HookPhase, ProjectRuntimeConfigSetPayload, Release, RepositoryBinding } from '@/api'
 import { emptyRuntimeDataVolumeRow, parseRuntimeDataVolumes, serializeRuntimeDataVolumes } from '@/lib/runtime-data-volumes'
+import { publicRuntimeEnvironmentInputs, publicRuntimeEnvironmentRecord } from '@/lib/runtime-environment'
 import { defaultBuildCpuRequest, defaultBuildMemoryRequest, defaultBuildTimeoutSeconds } from './application-build-defaults'
 import { normalizeWebConsoleOverride } from './web-console-policy'
 
@@ -83,7 +84,7 @@ export const deploymentTargetDefaults: DeploymentTargetPayload = {
   concurrencyPolicy: 'queue',
   runtimeConfigSetIds: [],
   runtimeConfigRefs: [],
-  envVars: {},
+  environmentVariables: [],
   configRefs: {},
   configFiles: '',
   secretFiles: '',
@@ -96,7 +97,7 @@ export const deploymentTargetDefaults: DeploymentTargetPayload = {
 export const runtimeConfigDefaults: ProjectRuntimeConfigSetPayload = {
   configFiles: '',
   enabled: true,
-  envVars: {},
+  environmentVariables: [],
   name: '',
   secretFiles: '',
 }
@@ -158,6 +159,7 @@ export function deploymentTargetRuntimeChanged(current: DeploymentTarget, next: 
   const currentPayload = normalizeDeploymentTargetPayload({
     ...deploymentTargetDefaults,
     ...current,
+    environmentVariables: publicRuntimeEnvironmentInputs(publicRuntimeEnvironmentRecord(current.environmentVariables)),
   })
   const nextPayload = normalizeDeploymentTargetPayload(next)
   const fields: Array<keyof DeploymentTargetPayload> = [
@@ -206,7 +208,7 @@ export function deploymentTargetRuntimeChanged(current: DeploymentTarget, next: 
     'servicePorts',
     'sourceType',
     'runtimeConfigRefs',
-    'envVars',
+    'environmentVariables',
     'configRefs',
     'configFiles',
     'dataVolumes',
@@ -383,7 +385,7 @@ export function normalizeRuntimeConfigPayload(values: ProjectRuntimeConfigSetPay
   return {
     configFiles: values.configFiles?.trim() ?? '',
     enabled: Boolean(values.enabled),
-    envVars: values.envVars ?? {},
+    environmentVariables: publicRuntimeEnvironmentInputs(Object.fromEntries((values.environmentVariables ?? []).map(item => [item.key, item.value]))),
     name: values.name.trim(),
     secretFiles: values.secretFiles?.trim() ?? '',
   }

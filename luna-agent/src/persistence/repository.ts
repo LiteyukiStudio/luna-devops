@@ -39,6 +39,16 @@ export type TimelinePageOptions = {
   limit?: number
 }
 
+export type ModelBudgetOperation = "assistant" | "summary" | "title" | "next_steps"
+export type ModelBudgetUsage = {
+  inputTokens: number
+  outputTokens: number
+  cachedInputTokens?: number
+  cachedOutputTokens?: number
+  reported: boolean
+}
+export type ModelBudgetReservation = { id: string, maxOutputTokens: number }
+
 export interface Repository {
   health(): Promise<boolean>
   createConversation(ownerUserId: string, title: string, projectId?: string, titleSource?: ConversationTitleSource): Promise<Conversation>
@@ -64,6 +74,17 @@ export interface Repository {
     conversation: Pick<Conversation, "title" | "titleSource">
     model?: AIModelSnapshot
   } | undefined>
+  reserveModelBudget(input: {
+    id: string
+    runId: string
+    ownerUserId: string
+    operation: ModelBudgetOperation
+    estimatedInputTokens: number
+    requestedOutputTokens: number
+    leaseSeconds: number
+  }): Promise<ModelBudgetReservation>
+  confirmModelBudget(reservationId: string, usage?: ModelBudgetUsage): Promise<void>
+  releaseModelBudget(reservationId: string): Promise<void>
   getConversationSummary(conversationId: string): Promise<ConversationSummary | undefined>
   saveConversationSummary(summary: Omit<ConversationSummary, "createdAt" | "updatedAt">): Promise<ConversationSummary>
   listConversationHistory(conversationId: string, afterTurnIndex: number, beforeTurnIndex: number, limit: number): Promise<ConversationHistoryEntry[]>

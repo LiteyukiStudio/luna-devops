@@ -75,7 +75,7 @@ func deploymentBundleConfiguration(target model.DeploymentTarget, mounts []model
 	for _, key := range []string{
 		"id", "projectId", "applicationId", "environmentId", "kubernetesName", "clusterId", "repositoryBindingId",
 		"buildEnvironmentId", "targetRegistryId", "buildVariableSetIds", "buildHookBindings", "runtimeConfigSetIds", "runtimeConfigRefs",
-		"secretRefsSet", "secretFilesSet", "status", "observationCode", "lastCheckedAt", "desiredReplicas", "updatedReplicas",
+		"secretFilesSet", "status", "observationCode", "lastCheckedAt", "desiredReplicas", "updatedReplicas",
 		"readyReplicas", "availableReplicas", "deleteStatus", "deleteMessage", "deleteStartedAt", "deleteFinishedAt", "createdBy", "createdAt",
 	} {
 		delete(values, key)
@@ -130,6 +130,7 @@ func deploymentBundleConfiguration(target model.DeploymentTarget, mounts []model
 	configuration.BuildHookBindings = nil
 	configuration.RuntimeConfigSetIDs = nil
 	configuration.RuntimeConfigRefs = nil
+	configuration.EnvironmentVariables = publicEnvironmentVariableInputs(target.EnvVars)
 	configuration.SecretFiles = ""
 	return configuration, nil
 }

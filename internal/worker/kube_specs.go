@@ -328,6 +328,12 @@ func applicationResourcesSpec(release model.Release, project model.Project, appl
 	if err != nil {
 		return kubeprovider.ApplicationResourcesSpec{}, err
 	}
+	// A key must have one authoritative value mode in the rendered workload.
+	// Secret wins across configuration layers so plaintext can never shadow an
+	// already configured secret through ConfigMap precedence.
+	for key := range secretData {
+		delete(configData, key)
+	}
 	expandEnvRefsCrossBoundary(configData, secretData)
 	configFiles, err := mergeRuntimeConfigFiles(configFileValues...)
 	if err != nil {

@@ -27,6 +27,8 @@ const (
 
 var ErrMissingEncryptionKey = errors.New("SECRET_ENCRYPTION_KEY is required in production")
 
+var ErrStoreUnavailable = errors.New("secret store is unavailable")
+
 // Generate returns a cryptographically random value for a server-side secret binding.
 // The plaintext must be passed directly to StoreContext and must not be returned to an Agent.
 func Generate(length int, encoding string) (string, error) {
@@ -152,9 +154,28 @@ func NewStore(db *gorm.DB, audit ContextAuditFunc) Store {
 }
 
 func (s Store) StoreContext(ctx context.Context, secret, createdBy, resource string) string {
-	cipherRef := Encrypt(secret)
-	if cipherRef == "" {
+	ref, err := s.StoreContextWithDB(ctx, s.db, secret, createdBy, resource)
+	if err != nil {
 		return ""
+	}
+	if s.auditContext != nil {
+		s.auditContext(ctx, createdBy, "secret.write", strings.TrimPrefix(ref, storedSecretIDPrefix), true, strings.TrimSpace(resource))
+	}
+	return ref
+}
+
+// StoreContextWithDB persists a secret through the supplied GORM handle and
+// returns an error to the transaction owner. This method deliberately does not
+// emit the StoreContext secret.write callback: transaction owners must write a
+// single aggregate audit record through the same transaction, so neither an
+// audit nor a secret row can outlive a rolled-back owner update.
+func (s Store) StoreContextWithDB(ctx context.Context, db *gorm.DB, plaintext, createdBy, resource string) (string, error) {
+	if db == nil {
+		return "", ErrStoreUnavailable
+	}
+	cipherRef := Encrypt(plaintext)
+	if cipherRef == "" {
+		return "", ErrStoreUnavailable
 	}
 	value := model.SecretValue{
 		ID:        id.New("sec"),
@@ -162,13 +183,26 @@ func (s Store) StoreContext(ctx context.Context, secret, createdBy, resource str
 		CreatedBy: strings.TrimSpace(createdBy),
 		Resource:  strings.TrimSpace(resource),
 	}
-	if err := s.db.WithContext(ctx).Create(&value).Error; err != nil {
-		return ""
+	if err := db.WithContext(ctx).Create(&value).Error; err != nil {
+		return "", err
 	}
-	if s.auditContext != nil {
-		s.auditContext(ctx, createdBy, "secret.write", value.ID, true, value.Resource)
+	return storedSecretIDPrefix + value.ID, nil
+}
+
+// DeleteRefContextWithDB removes a stored secret only when both its reference
+// and owning resource match. Inline legacy references are not database rows and
+// therefore require no deletion.
+func (s Store) DeleteRefContextWithDB(ctx context.Context, db *gorm.DB, ref, resource string) error {
+	if db == nil {
+		return ErrStoreUnavailable
 	}
-	return storedSecretIDPrefix + value.ID
+	ref = strings.TrimSpace(ref)
+	if !strings.HasPrefix(ref, storedSecretIDPrefix) {
+		return nil
+	}
+	return db.WithContext(ctx).
+		Where("id = ? and resource = ?", strings.TrimPrefix(ref, storedSecretIDPrefix), strings.TrimSpace(resource)).
+		Delete(&model.SecretValue{}).Error
 }
 
 func (s Store) ResolveContext(ctx context.Context, ref string) string {

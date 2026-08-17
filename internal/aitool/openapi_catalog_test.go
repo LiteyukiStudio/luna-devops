@@ -80,7 +80,7 @@ func TestPlatformCatalogMarksRuntimeSecretInputsAsSensitive(t *testing.T) {
 	if operation.Risk != "sensitive" || operation.Approval != "always" || operation.StepUpPurpose != "secret_update" {
 		t.Fatalf("runtime secret policy = %#v", operation)
 	}
-	if len(operation.SensitivePaths) != 1 || operation.SensitivePaths[0] != "body.values" {
+	if len(operation.SensitivePaths) != 1 || operation.SensitivePaths[0] != "body.items.*.value" {
 		t.Fatalf("runtime secret sensitive paths = %#v", operation.SensitivePaths)
 	}
 	if _, exists := operation.InputSchema["generateSecret"]; exists {

@@ -1,16 +1,20 @@
 package billing
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/shopspring/decimal"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
+
+var ErrAIUsageSettlementFailed = errors.New("billing.ai_usage_settlement_failed")
 
 const (
 	ReasonAIUsage              = "ai.usage"
@@ -46,6 +50,23 @@ type pendingAIModelUsage struct {
 	UserID     string          `gorm:"column:user_id"`
 	Data       json.RawMessage `gorm:"column:data"`
 	OccurredAt time.Time       `gorm:"column:occurred_at"`
+}
+
+type pendingAIModelReservation struct {
+	ID                            string          `gorm:"column:id"`
+	RunID                         string          `gorm:"column:run_id"`
+	UserID                        string          `gorm:"column:owner_user_id"`
+	ModelID                       string          `gorm:"column:model_id"`
+	ModelName                     string          `gorm:"column:model_name"`
+	InputTokens                   int64           `gorm:"column:input_tokens"`
+	OutputTokens                  int64           `gorm:"column:output_tokens"`
+	CachedInputTokens             int64           `gorm:"column:cached_input_tokens"`
+	CachedOutputTokens            int64           `gorm:"column:cached_output_tokens"`
+	InputCreditsPerMillion        decimal.Decimal `gorm:"column:input_credits_per_million"`
+	OutputCreditsPerMillion       decimal.Decimal `gorm:"column:output_credits_per_million"`
+	CachedInputCreditsPerMillion  decimal.Decimal `gorm:"column:cached_input_credits_per_million"`
+	CachedOutputCreditsPerMillion decimal.Decimal `gorm:"column:cached_output_credits_per_million"`
+	OccurredAt                    time.Time       `gorm:"column:created_at"`
 }
 
 type aiModelCompletedData struct {
@@ -125,79 +146,100 @@ func newAIUsageRecord(meter string, quantity, rate decimal.Decimal, input AIMode
 	}
 }
 
-func (s Service) SettlePendingAIModelUsage(limit int) (int, error) {
+func (s Service) SettlePendingAIModelUsage(ctx context.Context, limit int) (int, error) {
 	if limit <= 0 || limit > defaultAIUsageBatchSize {
 		limit = defaultAIUsageBatchSize
 	}
-	var pending []pendingAIModelUsage
-	err := s.DB.Raw(`
-		SELECT event.id AS event_id,
-		       event.run_id,
-		       run.owner_user_id AS user_id,
-		       event.data,
-		       event.created_at AS occurred_at
-		FROM ai.run_events AS event
-		JOIN ai.runs AS run ON run.id = event.run_id
-		WHERE event.type = 'model.completed'
-		  AND NULLIF(event.data->>'modelId', '') IS NOT NULL
-		  AND NULLIF(event.data->>'modelName', '') IS NOT NULL
-		  AND jsonb_typeof(event.data->'pricing') = 'object'
-		  AND (
-			NOT EXISTS (
-				SELECT 1 FROM billing_usage_records AS usage
-				WHERE usage.resource_type = ? AND usage.resource_id = event.id AND usage.meter = ?
-			)
-			OR NOT EXISTS (
-				SELECT 1 FROM billing_usage_records AS usage
-				WHERE usage.resource_type = ? AND usage.resource_id = event.id AND usage.meter = ?
-			)
-			OR NOT EXISTS (
-				SELECT 1 FROM billing_usage_records AS usage
-				WHERE usage.resource_type = ? AND usage.resource_id = event.id AND usage.meter = ?
-			)
-			OR NOT EXISTS (
-				SELECT 1 FROM billing_usage_records AS usage
-				WHERE usage.resource_type = ? AND usage.resource_id = event.id AND usage.meter = ?
-			)
-		  )
-		ORDER BY event.created_at ASC
-		LIMIT ?`,
-		ResourceTypeAIModelRequest, MeterAIInputTokens,
-		ResourceTypeAIModelRequest, MeterAIOutputTokens,
-		ResourceTypeAIModelRequest, MeterAICachedInputTokens,
-		ResourceTypeAIModelRequest, MeterAICachedOutputTokens, limit).Scan(&pending).Error
+	db := s.DB.WithContext(ctx)
+	var pending []pendingAIModelReservation
+	err := db.Raw(`
+		SELECT id, run_id, owner_user_id, model_id, model_name,
+		       input_tokens, output_tokens, cached_input_tokens, cached_output_tokens,
+		       input_credits_per_million, output_credits_per_million,
+		       cached_input_credits_per_million, cached_output_credits_per_million,
+		       created_at
+		FROM ai.model_budget_reservations
+		WHERE state = 'confirmed'
+		ORDER BY updated_at ASC, created_at ASC
+		LIMIT ?`, limit).Scan(&pending).Error
 	if err != nil {
 		return 0, err
 	}
 	settled := 0
-	var result error
+	failed := false
 	for _, item := range pending {
-		var data aiModelCompletedData
-		if err := json.Unmarshal(item.Data, &data); err != nil {
-			result = errors.Join(result, fmt.Errorf("decode AI usage event %s: %w", item.EventID, err))
-			continue
-		}
-		err := s.SettleAIModelUsage(AIModelUsageInput{
-			EventID: item.EventID, RunID: item.RunID, UserID: item.UserID,
-			ModelID: data.ModelID, ModelName: data.ModelName,
-			InputTokens: data.Usage.InputTokens, OutputTokens: data.Usage.OutputTokens,
-			CachedInputTokens: data.Usage.CachedInputTokens, CachedOutputTokens: data.Usage.CachedOutputTokens,
-			Pricing: AIModelPricingSnapshot{
-				InputCreditsPerMillion: data.Pricing.InputCreditsPerMillion, OutputCreditsPerMillion: data.Pricing.OutputCreditsPerMillion,
-				CachedInputCreditsPerMillion: data.Pricing.CachedInputCreditsPerMillion, CachedOutputCreditsPerMillion: data.Pricing.CachedOutputCreditsPerMillion,
-			},
-			OccurredAt: item.OccurredAt,
-		})
+		err := (Service{DB: db}).settleAIModelReservation(item)
 		if errors.Is(err, ErrAlreadySettled) {
 			continue
 		}
 		if err != nil {
-			result = errors.Join(result, fmt.Errorf("settle AI usage event %s: %w", item.EventID, err))
+			failed = true
+			// Move a transiently failing row behind newer confirmed work so one
+			// bounded batch cannot starve the queue. Never persist raw error text.
+			_ = db.Exec("UPDATE ai.model_budget_reservations SET updated_at = now() WHERE id = ? AND state = 'confirmed'", item.ID).Error
 			continue
 		}
 		settled++
 	}
-	return settled, result
+	if failed {
+		return settled, ErrAIUsageSettlementFailed
+	}
+	return settled, nil
+}
+
+func (s Service) settleAIModelReservation(item pendingAIModelReservation) error {
+	return s.DB.Transaction(func(tx *gorm.DB) error {
+		// Keep the global lock order wallet -> reservation. Agent reservations and
+		// ordinary debits use the same order, preventing a settlement/debit cycle.
+		if err := ensureWallet(tx, item.UserID); err != nil {
+			return err
+		}
+		var wallet model.UserWallet
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&wallet, "user_id = ?", item.UserID).Error; err != nil {
+			return err
+		}
+		var state struct {
+			State       string `gorm:"column:state"`
+			OwnerUserID string `gorm:"column:owner_user_id"`
+		}
+		if err := tx.Raw("SELECT state, owner_user_id FROM ai.model_budget_reservations WHERE id = ? FOR UPDATE", item.ID).Scan(&state).Error; err != nil {
+			return err
+		}
+		if state.OwnerUserID != item.UserID {
+			return errors.New("AI model reservation owner changed")
+		}
+		if state.State == "settled" {
+			return ErrAlreadySettled
+		}
+		if state.State != "confirmed" {
+			return errors.New("AI model reservation is not ready for settlement")
+		}
+		input := AIModelUsageInput{
+			EventID: item.ID, RunID: item.RunID, UserID: item.UserID,
+			ModelID: item.ModelID, ModelName: item.ModelName,
+			InputTokens: item.InputTokens, OutputTokens: item.OutputTokens,
+			CachedInputTokens: item.CachedInputTokens, CachedOutputTokens: item.CachedOutputTokens,
+			Pricing: AIModelPricingSnapshot{
+				InputCreditsPerMillion: item.InputCreditsPerMillion, OutputCreditsPerMillion: item.OutputCreditsPerMillion,
+				CachedInputCreditsPerMillion: item.CachedInputCreditsPerMillion, CachedOutputCreditsPerMillion: item.CachedOutputCreditsPerMillion,
+			},
+			OccurredAt: item.OccurredAt,
+		}
+		periodStart := input.OccurredAt
+		periodEnd := periodStart.Add(time.Nanosecond)
+		metadata, _ := json.Marshal(map[string]any{"runId": input.RunID, "reservationId": item.ID, "modelId": input.ModelID, "modelName": input.ModelName})
+		now := time.Now()
+		records := []model.BillingUsageRecord{
+			newAIUsageRecord(MeterAIInputTokens, tokenBillingQuantity(maxNormalTokens(input.InputTokens, input.CachedInputTokens)), input.Pricing.InputCreditsPerMillion, input, periodStart, periodEnd, metadata, now),
+			newAIUsageRecord(MeterAIOutputTokens, tokenBillingQuantity(maxNormalTokens(input.OutputTokens, input.CachedOutputTokens)), input.Pricing.OutputCreditsPerMillion, input, periodStart, periodEnd, metadata, now),
+			newAIUsageRecord(MeterAICachedInputTokens, tokenBillingQuantity(input.CachedInputTokens), input.Pricing.CachedInputCreditsPerMillion, input, periodStart, periodEnd, metadata, now),
+			newAIUsageRecord(MeterAICachedOutputTokens, tokenBillingQuantity(input.CachedOutputTokens), input.Pricing.CachedOutputCreditsPerMillion, input, periodStart, periodEnd, metadata, now),
+		}
+		if err := debitUsagesForUser(tx, records, ReasonAIUsage, "AI model token usage", "system", item.UserID, item.ID); err != nil && !errors.Is(err, ErrAlreadySettled) {
+			return err
+		}
+		return tx.Exec("UPDATE ai.model_budget_reservations SET state = 'settled', updated_at = now() WHERE id = ? AND state = 'confirmed'", item.ID).Error
+	})
 }
 
 func maxNormalTokens(total, cached int64) int64 {

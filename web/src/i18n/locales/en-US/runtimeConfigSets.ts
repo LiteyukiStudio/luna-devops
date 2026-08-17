@@ -15,7 +15,7 @@ const runtimeConfigSets = {
   deleteDescription: 'This config will be deleted. Existing release history is not deleted automatically.',
   emptyTitle: 'No config',
   envVars: 'Plain config',
-  envVarsHint: 'Supports a JSON object or one KEY=VALUE per line. Use it for reusable non-sensitive app config.',
+  envVarsHint: 'Public variables only. Supports a JSON object or one KEY=VALUE per line for reusable non-sensitive app config.',
   envVarsPlaceholder: 'LOG_LEVEL=info\nFEATURE_FLAG=true',
   configFiles: 'Config files',
   configFilesHint: 'Add one or more config files. Each file needs an absolute container path and file content.',

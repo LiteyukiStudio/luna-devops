@@ -181,6 +181,7 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 		"project_volume_quota_reservations",
 		"ai.ui_actions",
 		"ai.conversation_summaries",
+		"ai.model_budget_reservations",
 	} {
 		if !db.Migrator().HasTable(table) {
 			t.Fatalf("fresh database is missing table %s", table)
@@ -212,6 +213,12 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 		{table: "ai.runs", column: "client_instance_id"},
 		{table: "ai.runs", column: "next_item_position"},
 		{table: "ai.runs", column: "next_event_sequence"},
+		{table: "ai.runs", column: "max_context_tokens"},
+		{table: "ai.runs", column: "max_output_tokens"},
+		{table: "ai.runs", column: "total_token_budget"},
+		{table: "ai.runs", column: "total_credit_budget"},
+		{table: "ai_models", column: "max_context_tokens"},
+		{table: "ai_models", column: "max_output_tokens"},
 		{table: "ai.items", column: "revision"},
 	} {
 		if !db.Migrator().HasColumn(expected.table, expected.column) {

@@ -10,6 +10,7 @@ import { RuntimeConfigSetSecretsEditor } from '@/components/common/runtime-confi
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { publicRuntimeEnvironmentInputs, publicRuntimeEnvironmentRecord } from '@/lib/runtime-environment'
 import { runtimeConfigDefaults } from './application-deployments-panel-utils'
 
 export function ApplicationRuntimeConfigSetDialog({
@@ -60,8 +61,8 @@ export function ApplicationRuntimeConfigSetDialog({
             <Field label={t('common.name')} required><Input {...form.register('name', { required: true })} /></Field>
             <Field hint={t('runtimeConfigSets.envVarsHint')} label={t('runtimeConfigSets.envVars')}>
               <KeyValueTextEditor
-                initialValue={form.getValues('envVars')}
-                onChange={value => form.setValue('envVars', value, { shouldDirty: true, shouldValidate: true })}
+                initialValue={publicRuntimeEnvironmentRecord(form.getValues('environmentVariables'))}
+                onChange={value => form.setValue('environmentVariables', publicRuntimeEnvironmentInputs(value), { shouldDirty: true, shouldValidate: true })}
               />
             </Field>
             <Field hint={t('runtimeConfigSets.configFilesHint')} label={t('runtimeConfigSets.configFiles')}>

@@ -16,6 +16,18 @@ function boundedRatio(min: number, max: number, messageKey: string) {
   return z.number({ message }).min(min, { message }).max(max, { message })
 }
 
+function boundedPositiveDecimal(maxWhole: bigint, messageKey: string) {
+  const message = i18next.t(messageKey)
+  return z.string()
+    .trim()
+    .regex(/^(?=.*[1-9])\d+(?:\.\d{1,8})?$/, { message })
+    .refine((value) => {
+      const [whole, fraction = ''] = value.split('.')
+      const normalizedWhole = BigInt(whole!)
+      return normalizedWhole < maxWhole || (normalizedWhole === maxWhole && !/[1-9]/.test(fraction))
+    }, { message })
+}
+
 export const aiSettingsSchema = z.object({
   enabled: z.boolean(),
   accessMode: z.enum(['all_authenticated', 'admins']),
@@ -72,6 +84,8 @@ export const aiSettingsSchema = z.object({
   // 高级设置：模型与执行
   modelMaxOutputTokens: boundedInt(256, 131072, 'settings.ai.advancedNumberInvalid'),
   runMaxModelSteps: boundedInt(1, 1024, 'settings.ai.advancedNumberInvalid'),
+  runMaxTotalTokens: boundedInt(16384, 16000000, 'settings.ai.advancedNumberInvalid'),
+  runMaxCredits: boundedPositiveDecimal(100_000_000n, 'settings.ai.runMaxCreditsInvalid'),
   runMaxInputKBytes: boundedInt(8, 8192, 'settings.ai.advancedNumberInvalid'),
   runNavigateActionTtlSeconds: boundedInt(10, 600, 'settings.ai.advancedNumberInvalid'),
   // 高级设置：工具结果与卡片
@@ -134,6 +148,8 @@ export function aiSettingsPayload(values: AISettingsFormValues) {
     'ai.context.historical_tool_k_tokens': values.contextHistoricalToolKTokens,
     'ai.model.max_output_tokens': values.modelMaxOutputTokens,
     'ai.run.max_model_steps': values.runMaxModelSteps,
+    'ai.run.max_total_tokens': values.runMaxTotalTokens,
+    'ai.run.max_credits': values.runMaxCredits,
     'ai.run.max_input_k_bytes': values.runMaxInputKBytes,
     'ai.run.navigate_action_ttl_seconds': values.runNavigateActionTtlSeconds,
     'ai.tools.result_payload_k_bytes': values.toolsResultPayloadKBytes,

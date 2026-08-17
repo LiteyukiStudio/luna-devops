@@ -26,6 +26,8 @@ const validValues = {
   contextHistoricalToolKTokens: 8,
   modelMaxOutputTokens: 8192,
   runMaxModelSteps: 64,
+  runMaxTotalTokens: 2000000,
+  runMaxCredits: '10000',
   runMaxInputKBytes: 64,
   runNavigateActionTtlSeconds: 120,
   toolsResultPayloadKBytes: 48,
@@ -73,6 +75,8 @@ describe('aI assistant admin settings', () => {
       'ai.context.historical_tool_k_tokens': 8,
       'ai.model.max_output_tokens': 8192,
       'ai.run.max_model_steps': 64,
+      'ai.run.max_total_tokens': 2000000,
+      'ai.run.max_credits': '10000',
       'ai.run.max_input_k_bytes': 64,
       'ai.run.navigate_action_ttl_seconds': 120,
       'ai.tools.result_payload_k_bytes': 48,
@@ -122,6 +126,9 @@ describe('aI assistant admin settings', () => {
     expect(aiSettingsSchema.safeParse({ ...validValues, runNavigateActionTtlSeconds: 5 }).success).toBe(false)
     expect(aiSettingsSchema.safeParse({ ...validValues, toolsResultPayloadKBytes: 4097 }).success).toBe(false)
     expect(aiSettingsSchema.safeParse({ ...validValues, toolsMaxCardRepairAttempts: 0 }).success).toBe(false)
+    expect(aiSettingsSchema.safeParse({ ...validValues, runMaxCredits: '100000000' }).success).toBe(true)
+    expect(aiSettingsSchema.safeParse({ ...validValues, runMaxCredits: '100000000.00000001' }).success).toBe(false)
+    expect(aiSettingsSchema.safeParse({ ...validValues, runMaxCredits: '99999999.99999999' }).success).toBe(true)
   })
 
   it('rejects inconsistent advanced context settings', () => {

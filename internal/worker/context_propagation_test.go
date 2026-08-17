@@ -68,3 +68,31 @@ func TestDeploymentDatabaseOperationsPreserveTraceAndCancellationContext(t *test
 		}
 	}
 }
+
+func TestAIBillingDatabaseOperationsPreserveStageTraceContext(t *testing.T) {
+	db, err := gorm.Open(postgres.New(postgres.Config{
+		DSN: "host=127.0.0.1 port=1 user=context_test dbname=context_test sslmode=disable",
+	}), &gorm.Config{DryRun: true, DisableAutomaticPing: true})
+	if err != nil {
+		t.Fatalf("open dry-run database: %v", err)
+	}
+	var observed context.Context
+	if err := db.Callback().Row().Before("gorm:row").Register("test:capture_ai_billing_context", func(tx *gorm.DB) {
+		observed = tx.Statement.Context
+	}); err != nil {
+		t.Fatalf("register row callback: %v", err)
+	}
+	traceID := trace.TraceID{9, 8, 7, 6, 5, 4, 3, 2, 1, 9, 8, 7, 6, 5, 4, 3}
+	parent := trace.ContextWithRemoteSpanContext(context.Background(), trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: traceID, SpanID: trace.SpanID{9, 8, 7, 6, 5, 4, 3, 2}, Remote: true,
+	}))
+	if err := (&Runner{db: db}).handleBillingAI(parent, nil); err == nil {
+		t.Fatal("handle AI billing returned nil error in unsupported dry-run scan")
+	}
+	if observed == nil {
+		t.Fatal("AI billing did not execute a database operation")
+	}
+	if got := trace.SpanContextFromContext(observed).TraceID(); got != traceID {
+		t.Fatalf("AI billing database trace ID = %s, want %s", got, traceID)
+	}
+}

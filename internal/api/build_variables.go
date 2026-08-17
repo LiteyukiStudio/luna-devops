@@ -39,7 +39,7 @@ func normalizeBuildVariables(ctx *gin.Context, input map[string]string) (map[str
 func normalizeBuildArgsInput(ctx *gin.Context, raw string) (string, bool) {
 	values, err := parseBuildArgsInput(raw)
 	if err != nil {
-		writeError(ctx, http.StatusBadRequest, err.Error())
+		writeErrorCode(ctx, http.StatusBadRequest, "deployment.build_args_invalid", "deployment build arguments are invalid")
 		return "", false
 	}
 	return model.EncodeBuildArgs(values), true
@@ -221,7 +221,7 @@ func builderVisibleToUser(rawScopes string, userID string, projectIDs []string) 
 func (h *Handlers) buildVariablesForRun(ctx *gin.Context, user model.User, projectID string, setIDs []string) (map[string]string, bool) {
 	variables, err := h.buildVariablesForRunByIDs(h.dbFor(ctx), user, projectID, setIDs, ctx.Request.Context())
 	if err != nil {
-		writeError(ctx, http.StatusBadRequest, err.Error())
+		writeErrorCode(ctx, http.StatusBadRequest, "build.variable_set_unavailable", "build variable set is unavailable")
 		return nil, false
 	}
 	return variables, true

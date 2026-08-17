@@ -103,7 +103,7 @@ func normalizeDeploymentKubernetesAdvanced(ctx *gin.Context, input deploymentTar
 	serviceAccountName := strings.TrimSpace(input.ServiceAccountName)
 	if serviceAccountName != "" {
 		if problems := validation.IsDNS1123Subdomain(serviceAccountName); len(problems) > 0 {
-			writeErrorCode(ctx, http.StatusBadRequest, "deployment_target.service_account_invalid", strings.Join(problems, "; "))
+			writeErrorCode(ctx, http.StatusBadRequest, "deployment_target.service_account_invalid", "deployment service account configuration is invalid")
 			return deploymentKubernetesAdvancedInput{}, false
 		}
 	}

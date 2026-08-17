@@ -10,6 +10,7 @@ import { MemoryRepository } from "./persistence/memory.js"
 import { PostgresRepository } from "./persistence/postgres.js"
 import { ProviderConfigClient } from "./provider/config-client.js"
 import { createRuntimeProvider } from "./provider/runtime.js"
+import { BudgetedModelProvider } from "./provider/budgeted.js"
 import { buildServer } from "./server.js"
 import { configureAIContentCapture, shutdownTelemetry, telemetryLog } from "./telemetry.js"
 import { defaultRuntimeSettings } from "./runtime-settings.js"
@@ -39,7 +40,8 @@ export async function startAgent(): Promise<void> {
   const initialRemoteConfig = providerConfigClient
     ? await providerConfigClient.get()
     : undefined
-  const provider = createRuntimeProvider(config, providerConfigClient)
+  const rawProvider = createRuntimeProvider(config, providerConfigClient)
+  const provider = new BudgetedModelProvider(rawProvider, repository)
   const authenticator = config.AUTH_MODE === "bff-hmac"
     ? new BffHmacAuthenticator(internalKeys!.serviceToken, internalKeys!.actorSigningKey)
     : new DevelopmentAuthenticator()

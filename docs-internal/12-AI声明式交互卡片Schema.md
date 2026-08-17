@@ -94,10 +94,12 @@ Agent 使用：
   列表项、关系节点和图表系列标识；Web 的 React key 仍需包含实例序号，安全呈现修复前的持久记录。
 - Secret 不进入对话消息、Agent Context、Timeline、浏览器草稿、日志和遥测。
 - `type: secret` 与 `key_value.valueMode: secret` 允许用户在卡片内手动填写；工具动作通过一次性受控提交通道直接进入工具参数，消息动作和组级动作不得引用 Secret。
+- 模型不得为上述两类字段提供 `defaultValue`、示例密钥或其他预填明文；Agent Schema 必须拒绝，Web 对修复前持久化或恶意载荷也必须忽略。未输入的字段及空键值记录不进入工具参数，必填密钥键值至少包含一条键和值都非空的完整记录。
 - `generation: disabled` 的必填 Secret 必须由用户填写；`optional` 和 `required` 允许用户填写或留空，留空时保留平台生成路径。
-- 部署目标运行时密钥的工具动作必须绑定 `updateDeploymentTargetRuntimeSecrets`：用户填写的 `values` 只能由 Direct Tool Action 提交，`generate` 由平台后端生成并写入 Secret Store，`clear` 只清除明确字段。普通模型工具调用收到敏感值时必须返回稳定错误 `ai.sensitive_input_requires_user_form`。
-- 普通 `envVars` 只允许公开配置；密钥语义字段名和包含 URL 内嵌凭据的值必须拒绝，并引导用户改用安全密钥表单。
+- 部署目标或运行配置集的运行时密钥工具动作必须分别绑定 `updateDeploymentTargetRuntimeSecrets` 或 `updateProjectRuntimeConfigSetRuntimeSecrets`。工具请求使用 `items[]`，每项声明 `valueMode: secret` 与 `operation: set | generate | clear`；用户填写的非空 `value` 只能由 Direct Tool Action 提交，空值表示不修改，`generate` 由平台后端生成并写入 Secret Store，`clear` 只清除明确字段。普通模型工具调用收到敏感值时必须返回稳定错误 `ai.sensitive_input_requires_user_form`。
+- 普通 `environmentVariables[]` 每项必须声明 `valueMode: public`，只能进入普通配置；密钥语义字段名和包含 URL 内嵌凭据的值必须作为纵深防御拒绝，并引导用户改用安全密钥表单。
 - 校验失败保留非 Secret 输入，Secret 始终清空。
+- 随机生成只能表达为后端 `generate` 动作，模型和前端不得携带生成后的明文；清除只能由独立明确的 `clear` 动作表达，空值永远不等同于清除。
 
 ## 7. Action 与执行边界
 

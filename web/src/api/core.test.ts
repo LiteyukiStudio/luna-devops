@@ -208,6 +208,23 @@ describe('api error boundary', () => {
     })
   })
 
+  it.each([
+    'billing.wallet_unavailable',
+    'ai.model_context_limit_invalid',
+    'ai.model_context_insufficient',
+    'ai.model_output_limit_invalid',
+    'ai.run_token_budget_exhausted',
+    'ai.run_credit_budget_exhausted',
+    'ai.wallet_balance_insufficient',
+  ])('localizes the stable model budget code %s', async (code) => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({ code, error: 'generic backend error' }, 422))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const error = await request('/ai/budget').catch((requestError: unknown) => requestError)
+
+    expect(error).toMatchObject({ code, message: i18next.t(`errors.${code}`) })
+  })
+
   it('does not present a non-JSON proxy response as a user-facing error', async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(
       'dial tcp http://internal-provider.local: connection refused',

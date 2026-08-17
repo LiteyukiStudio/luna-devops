@@ -110,7 +110,7 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 		}
 		values, err := buildtemplate.NormalizeValues(definition, input.BuildTemplateValues)
 		if err != nil {
-			writeErrorCode(ctx, http.StatusBadRequest, "build_template.invalid", err.Error())
+			writeErrorCode(ctx, http.StatusBadRequest, "build_template.invalid", "build template values are invalid")
 			return model.DeploymentTarget{}, nil, false
 		}
 		buildTemplateVersion = definition.Version
@@ -129,10 +129,11 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 	if !ok {
 		return model.DeploymentTarget{}, nil, false
 	}
-	if !validateDeploymentTargetPublicEnvVars(ctx, input.EnvVars) || !validateDeploymentTargetPublicEnvVars(ctx, input.ConfigRefs) {
+	publicEnvironment, ok := normalizePublicEnvironmentVariables(ctx, input.EnvironmentVariables)
+	if !ok || !validateDeploymentTargetPublicEnvVars(ctx, input.ConfigRefs) {
 		return model.DeploymentTarget{}, nil, false
 	}
-	envVars, err := runtimeconfig.EncodeKeyValue(input.EnvVars)
+	envVars, err := runtimeconfig.EncodeKeyValue(publicEnvironment)
 	if err != nil {
 		writeErrorCode(ctx, http.StatusBadRequest, "deployment.runtime_config_invalid", "运行时环境变量格式无效")
 		return model.DeploymentTarget{}, nil, false
@@ -157,12 +158,12 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 	}
 	secretFilesContent, err := json.Marshal(secretFiles)
 	if err != nil {
-		writeError(ctx, http.StatusInternalServerError, err.Error())
+		writeErrorCode(ctx, http.StatusInternalServerError, "deployment.runtime_secret_files_invalid", "runtime secret files could not be encoded")
 		return model.DeploymentTarget{}, nil, false
 	}
 	for _, volume := range dataVolumes {
 		if runtimeDataPathConflicts(volume.MountPath, configFiles, string(secretFilesContent)) {
-			writeError(ctx, http.StatusBadRequest, "运行数据目录不能与配置文件或密钥文件挂载路径重叠")
+			writeErrorCode(ctx, http.StatusBadRequest, "deployment.runtime_path_invalid", "deployment runtime paths conflict")
 			return model.DeploymentTarget{}, nil, false
 		}
 	}

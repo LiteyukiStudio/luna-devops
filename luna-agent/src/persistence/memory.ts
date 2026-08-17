@@ -18,6 +18,8 @@ import {
   type ConversationListOptions,
   type Repository,
   type TimelinePageOptions,
+  type ModelBudgetOperation,
+  type ModelBudgetUsage,
 } from "./repository.js"
 import { createTurnRequestHash } from "./create-turn-hash.js"
 
@@ -32,6 +34,7 @@ export class MemoryRepository implements Repository {
   private readonly uiActions = new Map<string, UIActionDelivery>()
   private readonly summaries = new Map<string, ConversationSummary>()
   private readonly idempotency = new Map<string, { hash: string, created: CreatedTurn }>()
+  private readonly modelReservations = new Map<string, { runId: string, tokens: number, state: "reserved" | "confirmed" | "released", maxOutputTokens: number }>()
 
   async health(): Promise<boolean> { return true }
 
@@ -121,6 +124,7 @@ export class MemoryRepository implements Repository {
       clientInstanceId: input.clientInstanceId ?? "memory-client-instance", createdAt: now, ownerUserId,
       ...(input.runActorGrantCiphertext ? { runActorGrantCiphertext: input.runActorGrantCiphertext } : {}),
       ...(input.modelSnapshot ? { model: input.modelSnapshot } : {}),
+      budget: input.runBudgetSnapshot ?? { totalTokens: 2_000_000, totalCredits: "10000" },
     }
     this.turns.set(turn.id, turn)
     this.runs.set(run.id, run)
@@ -165,6 +169,41 @@ export class MemoryRepository implements Repository {
       }
     }
     return count
+  }
+
+  async reserveModelBudget(input: {
+    id: string
+    runId: string
+    ownerUserId: string
+    operation: ModelBudgetOperation
+    estimatedInputTokens: number
+    requestedOutputTokens: number
+    leaseSeconds: number
+  }) {
+    const run = this.runs.get(input.runId)
+    if (!run || run.ownerUserId !== input.ownerUserId) throw new Error("ai.run_not_found")
+    const used = [...this.modelReservations.values()]
+      .filter(item => item.runId === input.runId && item.state !== "released")
+      .reduce((total, item) => total + item.tokens, 0)
+    const contextCapacity = (run.model?.maxContextTokens ?? 524_288) - input.estimatedInputTokens
+    if (contextCapacity < 1) throw new Error("ai.model_context_insufficient")
+    const tokenCapacity = (run.budget?.totalTokens ?? 2_000_000) - used - input.estimatedInputTokens
+    if (tokenCapacity < 1) throw new Error("ai.run_token_budget_exhausted")
+    const maxOutputTokens = Math.min(input.requestedOutputTokens, run.model?.maxOutputTokens ?? 65_536, contextCapacity, tokenCapacity)
+    this.modelReservations.set(input.id, { runId: input.runId, tokens: input.estimatedInputTokens + maxOutputTokens, state: "reserved", maxOutputTokens })
+    return { id: input.id, maxOutputTokens }
+  }
+
+  async confirmModelBudget(reservationId: string, usage?: ModelBudgetUsage): Promise<void> {
+    const item = this.modelReservations.get(reservationId)
+    if (!item || item.state !== "reserved") return
+    if (usage?.reported) item.tokens = usage.inputTokens + usage.outputTokens
+    item.state = "confirmed"
+  }
+
+  async releaseModelBudget(reservationId: string): Promise<void> {
+    const item = this.modelReservations.get(reservationId)
+    if (item?.state === "reserved") item.state = "released"
   }
   async getExecutionInput(runId: string) {
     const run = this.runs.get(runId)

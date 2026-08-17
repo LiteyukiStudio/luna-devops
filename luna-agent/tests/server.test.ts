@@ -38,6 +38,39 @@ describe("internal API", () => {
     expect(turn.json()).toMatchObject({ state: "queued", turnIndex: 0 })
     await app.close()
   })
+  it.each([
+    {
+      modelSnapshot: {
+        id: "aimod_test", name: "test", maxContextTokens: 4096, maxOutputTokens: 4096,
+        inputCreditsPerMillion: "0", outputCreditsPerMillion: "0",
+        cachedInputCreditsPerMillion: "0", cachedOutputCreditsPerMillion: "0",
+      },
+      runBudgetSnapshot: { totalTokens: 2000000, totalCredits: "10000" },
+    },
+    {
+      modelSnapshot: {
+        id: "aimod_test", name: "test", maxContextTokens: 4096, maxOutputTokens: 256,
+        inputCreditsPerMillion: "0", outputCreditsPerMillion: "0",
+        cachedInputCreditsPerMillion: "0", cachedOutputCreditsPerMillion: "0",
+      },
+      runBudgetSnapshot: { totalTokens: 2000000, totalCredits: "100000000.00000001" },
+    },
+  ])("rejects an invalid immutable model or Run budget snapshot", async (snapshots) => {
+    const { app } = fixture()
+    const headers = { "x-luna-dev-user": "usr_snapshot_contract" }
+    const conversation = await app.inject({ method: "POST", url: "/internal/v1/conversations", headers, payload: {} })
+    const id = conversation.json<{ id: string }>().id
+    const response = await app.inject({
+      method: "POST", url: `/internal/v1/conversations/${id}/turns`,
+      headers: { ...headers, "idempotency-key": `snapshot-${snapshots.runBudgetSnapshot.totalCredits}` },
+      payload: {
+        modelId: "aimod_test", ...snapshots,
+        input: { parts: [{ type: "text", text: "test" }] }, pageContext: {}, clientInstanceId: "browser-client-snapshot-1",
+      },
+    })
+    expect(response.statusCode).toBe(400)
+    await app.close()
+  })
   it("never exposes persisted trace propagation state in run responses", async () => {
     const { app, repository } = fixture()
     const conversation = await repository.createConversation("usr_trace_response", "trace")

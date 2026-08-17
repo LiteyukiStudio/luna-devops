@@ -32,7 +32,7 @@ func (h *Handlers) runtimeConfigRefsFromInput(ctx *gin.Context, projectID string
 	var sets []model.ProjectRuntimeConfigSet
 	if len(setIDs) > 0 {
 		if err := h.dbFor(ctx).Where("project_id = ? and id in ?", projectID, setIDs).Find(&sets).Error; err != nil {
-			writeError(ctx, http.StatusInternalServerError, err.Error())
+			writeErrorCode(ctx, http.StatusInternalServerError, "deployment.runtime_config_unavailable", "runtime configuration is unavailable")
 			return nil, false
 		}
 	}

@@ -78,8 +78,8 @@ function configForModels() {
       apiKey: "secret-value",
       configured: true,
       models: [
-        { id: "model-a-id", name: "model-a", inputCreditsPerMillion: "1", outputCreditsPerMillion: "1", cachedInputCreditsPerMillion: "0", cachedOutputCreditsPerMillion: "0" },
-        { id: "model-b-id", name: "model-b", inputCreditsPerMillion: "1", outputCreditsPerMillion: "1", cachedInputCreditsPerMillion: "0", cachedOutputCreditsPerMillion: "0" },
+        { id: "model-a-id", name: "model-a", maxContextTokens: 524_288, maxOutputTokens: 65_536, inputCreditsPerMillion: "1", outputCreditsPerMillion: "1", cachedInputCreditsPerMillion: "0", cachedOutputCreditsPerMillion: "0" },
+        { id: "model-b-id", name: "model-b", maxContextTokens: 524_288, maxOutputTokens: 65_536, inputCreditsPerMillion: "1", outputCreditsPerMillion: "1", cachedInputCreditsPerMillion: "0", cachedOutputCreditsPerMillion: "0" },
       ],
     },
     runtime: { ...defaultRuntimeSettings, providerTimeoutMs: 30_000, runTimeoutMs: 300_000, agentConcurrentRuns: 2, userConcurrentRuns: 10, contextInputTokenBudget: 256 * 1024 },

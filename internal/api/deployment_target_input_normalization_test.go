@@ -94,6 +94,8 @@ func TestNormalizePublicStage(t *testing.T) {
 		{name: "missing uses dev", want: "dev", valid: true},
 		{name: "empty uses dev", input: "  ", want: "dev", valid: true},
 		{name: "development", input: "dev", want: "dev", valid: true},
+		{name: "test", input: "test", want: "test", valid: true},
+		{name: "staging", input: "staging", want: "staging", valid: true},
 		{name: "production alias", input: "production", want: "prod", valid: true},
 		{name: "prod", input: "prod", want: "prod", valid: true},
 		{name: "system stage is not a create stage", input: "sys-cluster1", want: "sys-cluster1", valid: false},

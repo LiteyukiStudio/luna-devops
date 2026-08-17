@@ -2945,7 +2945,7 @@ paths:
       operationId: exportDeploymentTargetBundle
       tags: [Deployments]
       summary: Export one deployment target as a portable JSON bundle
-      description: Exports desired deployment configuration and logical dependency descriptors. Resource IDs, credentials, secret values, runtime state, and workflow history are omitted. Importing the bundle never starts a build or release.
+      description: Exports desired deployment configuration and logical dependency descriptors. Resource IDs, credentials, secret values, runtime state, and workflow history are omitted. Importing the bundle never starts a build or release. If an existing target has a stage outside dev, test, staging, or prod, the exported file remains readable but preview requires a legal stage override before import.
       x-luna-cli:
         classification: protocol-adapter
         hidden: true
@@ -2963,13 +2963,14 @@ paths:
               schema: { $ref: "#/components/schemas/DeploymentTargetBundle" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "500": { description: Export failed with the stable code deployment_bundle.export_failed; internal diagnostics are never returned., content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
 
   /api/v1/projects/{projectId}/applications/{applicationId}/deployment-target-imports/preview:
     post:
       operationId: previewDeploymentTargetBundleImport
       tags: [Deployments]
       summary: Validate a deployment target bundle and resolve destination references
-      description: Stateless preview. The destination project and application are authoritative. Missing, ambiguous, forbidden, or incompatible references must be mapped explicitly before commit. No database record, Secret, build, release, or asynchronous task is created.
+      description: Stateless preview. The destination project and application are authoritative. The effective stage must be dev, test, staging, or prod; production is normalized to prod, and an invalid stage can be repaired with a legal override. Missing, ambiguous, forbidden, or incompatible references must be mapped explicitly before commit. No database record, Secret, build, release, or asynchronous task is created.
       x-luna-cli:
         classification: protocol-adapter
         hidden: true
@@ -2993,13 +2994,60 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "409": { $ref: "#/components/responses/Conflict" }
         "413": { description: Bundle exceeds 1 MiB, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "500": { description: Internal failure with a stable deployment bundle error code and no dependency diagnostics., content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+
+  /api/v1/projects/{projectId}/applications/{applicationId}/deployment-target-imports/reference-candidates:
+    post:
+      operationId: listDeploymentTargetBundleReferenceCandidates
+      tags: [Deployments]
+      summary: List destination candidates for one portable deployment reference
+      description: Returns a permission-scoped, searchable and fully paginated candidate page. Invisible and missing mapped resource IDs are intentionally indistinguishable during import validation to prevent resource enumeration. The response uses Cache-Control no-store.
+      x-luna-cli:
+        classification: protocol-adapter
+        hidden: true
+        agentAllowed: false
+        exclusionReason: Interactive local bundle reference mapping is handled by the Web console deployment bundle adapter.
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/ApplicationId"
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: search
+          in: query
+          schema: { type: string, maxLength: 120 }
+        - name: sortBy
+          in: query
+          schema: { type: string, enum: [name, createdAt], default: name }
+        - name: sortOrder
+          in: query
+          schema: { type: string, enum: [asc, desc], default: asc }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DeploymentBundleReferenceCandidatesRequest" }
+      responses:
+        "200":
+          description: One candidate page scoped to the current user, project space, application, resource state, and reference kind.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeploymentBundleReferenceCandidatePage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "413": { description: Request exceeds 1 MiB, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "500": { description: Internal failure with a stable deployment bundle error code and no dependency diagnostics., content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
 
   /api/v1/projects/{projectId}/applications/{applicationId}/deployment-target-imports:
     post:
       operationId: importDeploymentTargetBundle
       tags: [Deployments]
       summary: Create a deployment target from a validated portable bundle
-      description: Revalidates the bundle digest, destination mappings, permissions, billing gate, stage uniqueness, dependency visibility, and Secret requirements. Creates one new deployment target transactionally and does not start a build, release, or deployment.
+      description: Revalidates the bundle digest, destination mappings, permissions, billing gate, public stage invariant, dependency visibility, and Secret requirements. Creates one new deployment target transactionally and does not start a build, release, or deployment. A commit that is not ready, including one with an invalid stage, creates no target, Secret, build environment, or volume mount.
       x-luna-cli:
         classification: protocol-adapter
         hidden: true
@@ -3023,6 +3071,7 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "409": { $ref: "#/components/responses/Conflict" }
         "413": { description: Bundle exceeds 1 MiB, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "500": { description: Internal failure with a stable deployment bundle error code and no dependency diagnostics., content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
 
   /api/v1/projects/{projectId}/releases/{releaseId}/terminal/authorize:
     post:
@@ -7303,6 +7352,7 @@ paths:
       operationId: createAIModel
       tags: [Settings]
       summary: Create a platform AI model configuration
+      description: Creates a catalog entry. If the catalog has no enabled model, the first entry is enabled even when enabled=false so the platform always retains an available model.
       security: [{ SessionCookie: [] }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AIModelWriteInput" } } } }
       responses:
@@ -7318,6 +7368,7 @@ paths:
       operationId: updateAIModel
       tags: [Settings]
       summary: Update a platform AI model configuration
+      description: Updates a catalog entry. Disabling the final enabled model is rejected atomically with conflict code ai.last_model_cannot_be_disabled, including when administrators mutate the catalog concurrently.
       security: [{ SessionCookie: [] }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AIModelWriteInput" } } } }
       responses:
@@ -8124,46 +8175,54 @@ components:
     AIModelOption:
       type: object
       additionalProperties: false
-      required: [id, name]
+      required: [id, name, maxContextTokens, maxOutputTokens]
       properties:
         id: { type: string }
         name: { type: string, minLength: 1 }
+        maxContextTokens: { type: integer, format: int64, minimum: 4096, maximum: 2097152 }
+        maxOutputTokens: { type: integer, format: int64, minimum: 256, maximum: 262144 }
     AIModelConfig:
       type: object
       additionalProperties: false
-      required: [id, name, inputCreditsPerMillion, outputCreditsPerMillion, cachedInputCreditsPerMillion, cachedOutputCreditsPerMillion, enabled, createdAt, updatedAt]
+      required: [id, name, maxContextTokens, maxOutputTokens, inputCreditsPerMillion, outputCreditsPerMillion, cachedInputCreditsPerMillion, cachedOutputCreditsPerMillion, enabled, createdAt, updatedAt]
       properties:
         id: { type: string }
         name: { type: string, minLength: 1 }
-        inputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d+)?$" }
-        outputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d+)?$" }
-        cachedInputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d+)?$" }
-        cachedOutputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d+)?$" }
+        maxContextTokens: { type: integer, format: int64, minimum: 4096, maximum: 2097152 }
+        maxOutputTokens: { type: integer, format: int64, minimum: 256, maximum: 262144 }
+        inputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d{1,8})?$" }
+        outputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d{1,8})?$" }
+        cachedInputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d{1,8})?$" }
+        cachedOutputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d{1,8})?$" }
         enabled: { type: boolean }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
     AIModelWriteInput:
       type: object
       additionalProperties: false
-      required: [name, inputCreditsPerMillion, outputCreditsPerMillion, cachedInputCreditsPerMillion, cachedOutputCreditsPerMillion]
+      required: [name, maxContextTokens, maxOutputTokens, inputCreditsPerMillion, outputCreditsPerMillion, cachedInputCreditsPerMillion, cachedOutputCreditsPerMillion]
       properties:
         name: { type: string, minLength: 1 }
-        inputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d+)?$" }
-        outputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d+)?$" }
-        cachedInputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d+)?$" }
-        cachedOutputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d+)?$" }
+        maxContextTokens: { type: integer, format: int64, minimum: 4096, maximum: 2097152 }
+        maxOutputTokens: { type: integer, format: int64, minimum: 256, maximum: 262144 }
+        inputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d{1,8})?$" }
+        outputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d{1,8})?$" }
+        cachedInputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d{1,8})?$" }
+        cachedOutputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d{1,8})?$" }
         enabled: { type: boolean }
     AIModelPricingSnapshot:
       type: object
       additionalProperties: false
-      required: [id, name, inputCreditsPerMillion, outputCreditsPerMillion, cachedInputCreditsPerMillion, cachedOutputCreditsPerMillion]
+      required: [id, name, maxContextTokens, maxOutputTokens, inputCreditsPerMillion, outputCreditsPerMillion, cachedInputCreditsPerMillion, cachedOutputCreditsPerMillion]
       properties:
         id: { type: string }
         name: { type: string, minLength: 1 }
-        inputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d+)?$" }
-        outputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d+)?$" }
-        cachedInputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d+)?$" }
-        cachedOutputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d+)?$" }
+        maxContextTokens: { type: integer, format: int64, minimum: 4096, maximum: 2097152 }
+        maxOutputTokens: { type: integer, format: int64, minimum: 256, maximum: 262144 }
+        inputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d{1,8})?$" }
+        outputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d{1,8})?$" }
+        cachedInputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d{1,8})?$" }
+        cachedOutputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d{1,8})?$" }
     AICreateTurnInput:
       type: object
       additionalProperties: false
@@ -9932,7 +9991,7 @@ components:
           type: string
           pattern: '^(dev|test|staging|prod|sys-[a-z0-9-]+)$'
           default: dev
-          description: Immutable stage identifier, unique among active deployment targets in the application. Create requests use dev, test, staging, or prod. Updates to platform-managed components echo their existing sys-* value. It may be reused after deletion cleanup.
+          description: Immutable stage identifier, unique among active deployment targets in the application. Public create requests accept dev, test, staging, or prod and normalize production to prod. Updates to platform-managed components echo their existing sys-* value. A portable bundle may contain a historical non-public value, but preview/import require a public override. It may be reused after deletion cleanup.
         clusterId:
           type: string
           description: Runtime cluster ID available to the project. Empty selects the platform default cluster.
@@ -10202,10 +10261,11 @@ components:
               setId: { type: string }
               mode: { type: string, enum: [live, snapshot], default: live }
             required: [setId]
-        envVars:
-          type: object
-          additionalProperties: { type: string }
-          description: Public runtime environment variables. Secret-like keys and URLs containing embedded credentials must use the secure runtime secret action.
+        environmentVariables:
+          type: array
+          maxItems: 128
+          items: { $ref: "#/components/schemas/RuntimeEnvironmentVariableInput" }
+          description: Explicitly typed public runtime environment variables. Secret values are accepted only by the dedicated runtime secret action.
         configRefs:
           type: object
           additionalProperties: { type: string }
@@ -10246,16 +10306,12 @@ components:
         buildTemplateId: { type: string }
         buildTemplateVersion: { type: string }
         buildTemplateValues: { type: string }
-        envVars:
-          type: object
-          additionalProperties: { type: string }
+        environmentVariables:
+          type: array
+          items: { $ref: "#/components/schemas/RuntimeEnvironmentVariable" }
         configRefs:
           type: object
           additionalProperties: { type: string }
-        secretKeys:
-          type: array
-          items: { type: string }
-        secretRefsSet: { type: boolean }
         dataVolumes:
           type: array
           items: { $ref: "#/components/schemas/DeploymentDataVolume" }
@@ -10266,46 +10322,71 @@ components:
     DeploymentTargetRuntimeSecretsInput:
       type: object
       additionalProperties: false
+      required: [items]
       properties:
-        values:
-          type: object
-          writeOnly: true
-          x-luna-sensitive: true
-          additionalProperties:
-            type: string
-            maxLength: 8192
-          description: Plaintext values accepted only from the human Web console security form; empty values keep existing secrets.
-        generate:
-          type: object
-          additionalProperties:
-            type: object
-            additionalProperties: false
-            properties:
-              length: { type: integer, minimum: 8, maximum: 256, default: 32 }
-              encoding: { type: string, enum: [base64, hex, alphanumeric, numeric], default: base64 }
-        clear:
+        items:
           type: array
+          minItems: 1
           maxItems: 128
-          items: { type: string, minLength: 1, maxLength: 128 }
+          items: { $ref: "#/components/schemas/RuntimeSecretMutationItem" }
     DeploymentTargetRuntimeSecretsResponse:
       type: object
       additionalProperties: false
-      required: [configuredKeys, generatedKeys, clearedKeys, secretKeys, secretRefsSet]
+      required: [configuredKeys, generatedKeys, clearedKeys, environmentVariables]
       properties:
         configuredKeys: { type: array, items: { type: string } }
         generatedKeys: { type: array, items: { type: string } }
         clearedKeys: { type: array, items: { type: string } }
-        secretKeys: { type: array, items: { type: string } }
-        secretRefsSet: { type: boolean }
+        environmentVariables:
+          type: array
+          items: { $ref: "#/components/schemas/RuntimeEnvironmentVariable" }
     DeploymentTargetRuntimeSecretsSummary:
       type: object
       additionalProperties: false
-      required: [secretKeys, secretRefsSet]
+      required: [environmentVariables]
       properties:
-        secretKeys:
+        environmentVariables:
           type: array
-          items: { type: string, minLength: 1, maxLength: 128 }
-        secretRefsSet: { type: boolean }
+          items: { $ref: "#/components/schemas/RuntimeEnvironmentVariable" }
+    RuntimeEnvironmentVariableInput:
+      type: object
+      additionalProperties: false
+      required: [key, valueMode, value]
+      properties:
+        key: { type: string, pattern: '^[A-Za-z_][A-Za-z0-9_]*$', minLength: 1, maxLength: 128 }
+        valueMode: { type: string, enum: [public] }
+        value: { type: string, maxLength: 8192 }
+    RuntimeEnvironmentVariable:
+      type: object
+      additionalProperties: false
+      required: [key, valueMode, configured]
+      properties:
+        key: { type: string, pattern: '^[A-Za-z_][A-Za-z0-9_]*$', minLength: 1, maxLength: 128 }
+        valueMode: { type: string, enum: [public, secret] }
+        value:
+          type: string
+          description: Present only for public variables. Secret values and storage references are never returned.
+        configured: { type: boolean }
+    RuntimeSecretMutationItem:
+      type: object
+      additionalProperties: false
+      required: [key, valueMode, operation]
+      properties:
+        key: { type: string, pattern: '^[A-Za-z_][A-Za-z0-9_]*$', minLength: 1, maxLength: 128 }
+        valueMode: { type: string, enum: [secret] }
+        operation: { type: string, enum: [set, generate, clear] }
+        value:
+          type: string
+          writeOnly: true
+          x-luna-sensitive: true
+          maxLength: 8192
+          description: Used only by set. Empty values retain the existing secret.
+        generation:
+          type: object
+          additionalProperties: false
+          properties:
+            length: { type: integer, minimum: 8, maximum: 256, default: 32 }
+            encoding: { type: string, enum: [base64, hex, alphanumeric, numeric], default: base64 }
     DeploymentTargetBundle:
       type: object
       additionalProperties: false
@@ -10376,7 +10457,7 @@ components:
       additionalProperties: false
       properties:
         name: { type: string, maxLength: 120 }
-        stage: { type: string, pattern: '^(dev|test|staging|prod)$' }
+        stage: { type: string, enum: [dev, test, staging, prod], description: Public destination stage. Use this to repair a bundle containing a historical or invalid stage. }
         namespace: { type: [string, "null"] }
     DeploymentTargetBundleImportRequest:
       type: object
@@ -10419,6 +10500,26 @@ components:
         description: { type: string }
         matched: { type: boolean }
         compatible: { type: boolean }
+    DeploymentBundleReferenceCandidatesRequest:
+      type: object
+      additionalProperties: false
+      required: [reference]
+      properties:
+        reference: { $ref: "#/components/schemas/DeploymentBundleReference" }
+    DeploymentBundleReferenceCandidatePage:
+      type: object
+      additionalProperties: false
+      required: [items, page, pageSize, sortBy, sortOrder, total, totalPages]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/DeploymentBundleReferenceCandidate" }
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 100 }
+        sortBy: { type: string, enum: [name, createdAt] }
+        sortOrder: { type: string, enum: [asc, desc] }
+        total: { type: integer, minimum: 0 }
+        totalPages: { type: integer, minimum: 0 }
     DeploymentBundleReferenceResolution:
       type: object
       additionalProperties: false
@@ -10461,7 +10562,59 @@ components:
           items: { $ref: "#/components/schemas/DeploymentBundleSecretRequirement" }
         warnings:
           type: array
-          items: { type: string }
+          items: { type: string, description: Stable warning code. An invalid effective stage is deployment.stage_invalid. }
+    DeploymentBundleErrorCode:
+      type: string
+      description: Published stable codes produced by deployment bundle validation, preview, import, and export. Authorization middleware may additionally return shared authentication and authorization codes.
+      enum:
+        - build_template.invalid
+        - build_template.not_found
+        - deployment.build_args_invalid
+        - deployment.resource_quantity_invalid
+        - deployment.runtime_config_unavailable
+        - deployment.runtime_config_files_invalid
+        - deployment.runtime_config_path_invalid
+        - deployment.runtime_path_invalid
+        - deployment.runtime_secret_files_invalid
+        - deployment.stage_invalid
+        - deployment_target.image_ref_required
+        - deployment_target.service_account_invalid
+        - deployment_bundle.candidate_query_invalid
+        - deployment_bundle.digest_mismatch
+        - deployment_bundle.export_failed
+        - deployment_bundle.internal_error
+        - deployment_bundle.invalid_json
+        - deployment_bundle.not_ready
+        - deployment_bundle.reference_ambiguous
+        - deployment_bundle.reference_forbidden
+        - deployment_bundle.reference_incompatible
+        - deployment_bundle.reference_missing
+        - deployment_bundle.registry_push_credential_required
+        - deployment_bundle.repository_binding_missing
+        - deployment_bundle.runtime_path_conflict
+        - deployment_bundle.secret_encrypt_failed
+        - deployment_bundle.secret_required
+        - deployment_bundle.secret_requirement_invalid
+        - deployment_bundle.stage_conflict
+        - deployment_bundle.too_large
+        - deployment_bundle.unsupported_kind
+        - deployment_bundle.unsupported_version
+        - volume.binding_conflict
+        - volume.claim_conflict
+        - volume.claim_not_found
+        - volume.claim_spec_conflict
+        - volume.cluster_unavailable
+        - volume.idempotency_conflict
+        - volume.in_use
+        - volume.incompatible_cluster
+        - volume.invalid_input
+        - volume.name_conflict
+        - volume.not_found
+        - volume.ownership_conflict
+        - volume.quota_exceeded
+        - volume.quota_unavailable
+        - volume.revision_conflict
+        - volume.state_conflict
     BuildTemplateParameter:
       type: object
       properties:
@@ -11031,9 +11184,10 @@ components:
       required: [name]
       properties:
         name: { type: string, minLength: 1 }
-        envVars:
-          type: object
-          additionalProperties: { type: string }
+        environmentVariables:
+          type: array
+          maxItems: 128
+          items: { $ref: "#/components/schemas/RuntimeEnvironmentVariableInput" }
         configFiles: { type: string }
         secretFiles: { type: string }
         enabled: { type: boolean }

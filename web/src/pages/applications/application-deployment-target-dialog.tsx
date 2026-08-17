@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input'
 import { NativeSelect as Select } from '@/components/ui/native-select'
 import { projectVolumeRowsAreValid } from '@/lib/runtime-data-volumes'
+import { publicRuntimeEnvironmentInputs, publicRuntimeEnvironmentRecord } from '@/lib/runtime-environment'
 import { RuntimeDataVolumesEditor } from './application-deployment-data-volumes-editor'
 import { ApplicationDeploymentHooksEditor } from './application-deployment-hooks-editor'
 import { KubernetesAdvancedFields } from './application-deployment-kubernetes-advanced-fields'
@@ -309,8 +310,8 @@ export function ApplicationDeploymentTargetDialog({
                   <p className="text-sm font-medium text-foreground">{t('deploymentsPage.advancedRuntimeOverrides')}</p>
                   <Field hint={t('deploymentsPage.runtimeEnvVarsHint')} label={t('deploymentsPage.runtimeEnvVars')}>
                     <KeyValueTextEditor
-                      initialValue={form.getValues('envVars')}
-                      onChange={value => form.setValue('envVars', value, { shouldDirty: true, shouldValidate: true })}
+                      initialValue={publicRuntimeEnvironmentRecord(form.getValues('environmentVariables'))}
+                      onChange={value => form.setValue('environmentVariables', publicRuntimeEnvironmentInputs(value), { shouldDirty: true, shouldValidate: true })}
                     />
                   </Field>
                   <Field hint={t('deploymentsPage.runtimeConfigRefsHint')} label={t('deploymentsPage.runtimeConfigRefs')}>

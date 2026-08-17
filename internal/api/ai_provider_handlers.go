@@ -25,6 +25,8 @@ var aiProviderConfigKeys = []string{
 	"ai.quota.user_concurrent_runs",
 	"ai.model.max_output_tokens",
 	"ai.run.max_model_steps",
+	"ai.run.max_total_tokens",
+	"ai.run.max_credits",
 	"ai.run.max_input_k_bytes",
 	"ai.run.navigate_action_ttl_seconds",
 	"ai.tools.result_payload_k_bytes",
@@ -94,6 +96,8 @@ func (h *Handlers) GetAIProviderConfigInternal(ctx *gin.Context) {
 			"contextInputTokenBudget":              aiRuntimeKTokens(values, "ai.runtime.context_input_k_tokens", 512),
 			"assistantMaxOutputTokens":             aiRuntimeInteger(values, "ai.model.max_output_tokens", 65536),
 			"maxModelSteps":                        aiRuntimeInteger(values, "ai.run.max_model_steps", 256),
+			"runTotalTokenBudget":                  aiRuntimeInteger(values, "ai.run.max_total_tokens", 2_000_000),
+			"runTotalCreditBudget":                 aiRuntimeString(values, "ai.run.max_credits", "10000"),
 			"maxInputBytes":                        aiRuntimeKTokens(values, "ai.run.max_input_k_bytes", 1024),
 			"navigateActionTtlSeconds":             aiRuntimeInteger(values, "ai.run.navigate_action_ttl_seconds", 120),
 			"toolResultPayloadBudget":              aiRuntimeKTokens(values, "ai.tools.result_payload_k_bytes", 512),
@@ -123,7 +127,7 @@ func aiProviderConfigVersionWithModels(base string, models []model.AIModel) stri
 	hash := sha256.New()
 	_, _ = hash.Write([]byte(base))
 	for _, item := range models {
-		_, _ = hash.Write([]byte("\x00" + item.ID + "\x00" + item.Name + "\x00" + item.InputCreditsPerMillion.String() + "\x00" + item.OutputCreditsPerMillion.String() + "\x00" + item.CachedInputCreditsPerMillion.String() + "\x00" + item.CachedOutputCreditsPerMillion.String() + "\x00" + item.UpdatedAt.UTC().String()))
+		_, _ = hash.Write([]byte("\x00" + item.ID + "\x00" + item.Name + "\x00" + strconv.FormatInt(item.MaxContextTokens, 10) + "\x00" + strconv.FormatInt(item.MaxOutputTokens, 10) + "\x00" + item.InputCreditsPerMillion.String() + "\x00" + item.OutputCreditsPerMillion.String() + "\x00" + item.CachedInputCreditsPerMillion.String() + "\x00" + item.CachedOutputCreditsPerMillion.String() + "\x00" + item.UpdatedAt.UTC().String()))
 	}
 	return "aipcfg_" + hex.EncodeToString(hash.Sum(nil))[:16]
 }
@@ -188,6 +192,14 @@ func aiRuntimeMilliseconds(values map[string]string, key string, fallbackSeconds
 func aiRuntimeInteger(values map[string]string, key string, fallback int) int {
 	value, err := strconv.Atoi(strings.TrimSpace(values[key]))
 	if err != nil {
+		return fallback
+	}
+	return value
+}
+
+func aiRuntimeString(values map[string]string, key string, fallback string) string {
+	value := strings.TrimSpace(values[key])
+	if value == "" {
 		return fallback
 	}
 	return value

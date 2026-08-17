@@ -96,6 +96,7 @@ const domainOperations = {
     'updateDeploymentTargetRuntimeSecrets',
     'exportDeploymentTargetBundle',
     'previewDeploymentTargetBundleImport',
+    'listDeploymentTargetBundleReferenceCandidates',
     'importDeploymentTargetBundle',
     'restartDeploymentTarget',
     'deleteDeploymentTarget',

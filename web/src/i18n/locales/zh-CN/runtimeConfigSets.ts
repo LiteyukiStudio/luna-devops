@@ -15,7 +15,7 @@ const runtimeConfigSets = {
   deleteDescription: '该配置会被删除，已发布的历史记录不会被自动删除。',
   emptyTitle: '暂无配置',
   envVars: '普通配置',
-  envVarsHint: '支持 JSON 对象或每行 KEY=VALUE，适合多个应用复用的非敏感配置。',
+  envVarsHint: '仅用于普通变量；支持 JSON 对象或每行 KEY=VALUE，适合多个应用复用的非敏感配置。',
   envVarsPlaceholder: 'LOG_LEVEL=info\nFEATURE_FLAG=true',
   configFiles: '配置文件',
   configFilesHint: '可添加多个配置文件；每个文件需要填写容器内绝对路径和文件内容。',

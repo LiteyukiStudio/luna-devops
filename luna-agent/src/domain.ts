@@ -21,11 +21,15 @@ export type PromptVersion = "system-v4"
 export type AIModelSnapshot = {
   id: string
   name: string
+  maxContextTokens: number
+  maxOutputTokens: number
   inputCreditsPerMillion: string
   outputCreditsPerMillion: string
   cachedInputCreditsPerMillion: string
   cachedOutputCreditsPerMillion: string
 }
+
+export type RunBudgetSnapshot = { totalTokens: number, totalCredits: string }
 
 export type Conversation = {
   id: string
@@ -103,6 +107,7 @@ export type Run = {
   completedAt?: string
   errorCode?: string
   model?: AIModelSnapshot
+  budget?: RunBudgetSnapshot
 }
 
 export type TimelineItem = {
@@ -163,6 +168,7 @@ export type CreateTurn = {
   clientInstanceId?: string
   modelId?: string
   modelSnapshot?: AIModelSnapshot
+  runBudgetSnapshot?: RunBudgetSnapshot
 }
 
 export type CreatedTurn = { turn: Turn, run: Run }

@@ -33,7 +33,18 @@ const selectOption = z.object({
   disabled: z.boolean().optional(),
 })
 
-const templateField = z.discriminatedUnion("type", [
+const templateKeyValueFieldBase = {
+  id: identifier,
+  label: shortText,
+  description,
+  required: z.boolean().optional(),
+  type: z.literal("key_value"),
+  keyFormat: z.enum(["plain", "identifier", "environment_variable"]).optional(),
+  minItems: z.number().int().min(0).max(30).optional(),
+  maxItems: z.number().int().min(1).max(30).optional(),
+}
+const templateKeyValueEntry = z.object({ key: z.string().max(200), value: z.string().max(2000) })
+const templateField = z.union([
   z.object({
     id: identifier, label: shortText, description, required: z.boolean().optional(), type: z.literal("text"),
     defaultValue: z.string().max(4000).optional(), placeholder: z.string().max(200).optional(),
@@ -62,14 +73,18 @@ const templateField = z.discriminatedUnion("type", [
     submissionFormat: z.enum(["value", "label_value"]).optional(), options: z.array(selectOption).min(1).max(50),
   }),
   z.object({
-    id: identifier, label: shortText, description, required: z.boolean().optional(), type: z.literal("key_value"),
-    defaultValue: z.array(z.object({ key: z.string().max(200), value: z.string().max(2000) })).max(30).optional(),
-    keyFormat: z.enum(["plain", "identifier", "environment_variable"]).optional(), valueMode: z.enum(["plain", "secret"]).optional(),
-    minItems: z.number().int().min(0).max(30).optional(), maxItems: z.number().int().min(1).max(30).optional(),
+    ...templateKeyValueFieldBase,
+    defaultValue: z.array(templateKeyValueEntry).max(30).optional(),
+    valueMode: z.literal("plain").optional(),
+  }),
+  z.object({
+    ...templateKeyValueFieldBase,
+    defaultValue: z.never().optional().describe("Secret 键值字段禁止模型提供默认值，必须由用户当次手动输入。"),
+    valueMode: z.literal("secret"),
   }),
   z.object({
     id: identifier, label: shortText, description, required: z.boolean().optional(), type: z.literal("secret"),
-    defaultValue: z.string().max(12000).optional(),
+    defaultValue: z.never().optional().describe("Secret 字段禁止模型提供默认值，必须由用户当次手动输入。"),
     placeholder: z.string().max(200).optional(), generation: z.enum(["disabled", "optional", "required"]),
     defaultMode: z.enum(["manual", "generate"]).optional(),
   }),

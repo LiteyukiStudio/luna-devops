@@ -80,6 +80,36 @@ describe("business interaction card templates", () => {
     expect(result.cards[0]?.actions?.[0]).toMatchObject({ type: "tool", operationId: "createApplication" })
   })
 
+  it("rejects secret defaults through the business-template path", () => {
+    const template = (field: Record<string, unknown>) => ({
+      templateId: "resource_configuration",
+      title: "配置应用",
+      resourceTitle: "安全配置",
+      sections: [{ id: "main", fields: [field] }],
+      submit: {
+        type: "tool",
+        label: "保存",
+        operationId: "saveConfig",
+        fieldBindings: [{ target: "/value", fieldId: String(field.id) }],
+      },
+    })
+
+    expect(() => compile(template({
+      id: "password",
+      type: "secret",
+      label: "密码",
+      generation: "disabled",
+      defaultValue: "model-injected-password",
+    }))).toThrow()
+    expect(() => compile(template({
+      id: "credentials",
+      type: "key_value",
+      label: "密钥变量",
+      valueMode: "secret",
+      defaultValue: [{ key: "TOKEN", value: "model-injected-token" }],
+    }))).toThrow()
+  })
+
   it("compiles a change review without pretending approval is complete", () => {
     const result = compile({
       templateId: "change_review",

@@ -112,7 +112,7 @@ func normalizeDeploymentServicePortName(value string, port int, index int) strin
 func normalizeBuildResourceQuantity(ctx *gin.Context, value string, fallbackValue string, label string) (string, bool) {
 	normalized, err := normalizeBuildResourceQuantityValue(value, fallbackValue, label)
 	if err != nil {
-		writeError(ctx, http.StatusBadRequest, err.Error())
+		writeErrorCode(ctx, http.StatusBadRequest, "deployment.resource_quantity_invalid", "deployment resource quantity is invalid")
 		return "", false
 	}
 	return normalized, true
