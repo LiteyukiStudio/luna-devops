@@ -12,14 +12,10 @@ import { toast } from 'sonner'
 import { z } from 'zod'
 import { api } from '@/api'
 import { ApplicationBasicFields } from '@/components/common/application-basic-fields'
-import { ApplicationIcon } from '@/components/common/application-icon-picker'
 import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { DataList } from '@/components/common/data-list'
-import { DeploymentReplicaBadge } from '@/components/common/deployment-replica-badge'
 import { EditActionButton } from '@/components/common/edit-action-button'
 import { ErrorState } from '@/components/common/error-state'
-import { HoverText } from '@/components/common/hover-text'
-import { StatusValueBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { buttonVariants } from '@/components/ui/button-variants'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -28,6 +24,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { APPLICATION_IDENTIFIER_MAX_LENGTH, APPLICATION_IDENTIFIER_MIN_LENGTH } from '@/lib/identifier-limits'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
+import { ApplicationSummary } from './application-summary'
 
 const schema = z.object({
   name: z.string().min(1, i18next.t('apps.nameRequired')),
@@ -362,42 +359,6 @@ export function ApplicationsPage({ embedded = false, projectId: projectIdProp, r
           </form>
         </DialogContent>
       </Dialog>
-    </div>
-  )
-}
-
-function ApplicationSummary({ application, projectId }: { application: Application, projectId: string }) {
-  const deleting = application.deleteStatus === 'deleting'
-  const deleteFailedMessage = application.deleteStatus === 'delete_failed' ? application.deleteMessage?.trim() : ''
-  return (
-    <div className="flex min-w-0 items-center gap-3">
-      <span className="flex size-10 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
-        <ApplicationIcon name={application.icon} />
-      </span>
-      <div className="min-w-0 w-full">
-        <div className="flex items-center gap-2">
-          <Link className={`min-w-0 truncate font-medium transition hover:text-primary-text ${deleting ? 'pointer-events-none opacity-60' : ''}`} to={`/projects/${projectId}/apps/${application.id}`}>
-            {application.name}
-          </Link>
-          {application.deleteStatus && application.deleteStatus !== 'active' && (
-            <StatusValueBadge labelKeyPrefix="apps.deleteStatuses" value={application.deleteStatus} />
-          )}
-          {deleteFailedMessage && (
-            <HoverText className="flex-1 text-xs text-muted-foreground" value={deleteFailedMessage} />
-          )}
-          {application.deleteStatus !== 'deleting' && application.deploymentSummary && (
-            <DeploymentReplicaBadge
-              deployed={application.deploymentSummary.targetCount > 0}
-              desiredReplicas={application.deploymentSummary.desiredReplicas}
-              readyReplicas={application.deploymentSummary.readyReplicas}
-              status={application.deploymentSummary.status}
-            />
-          )}
-        </div>
-        <p className="truncate text-sm text-muted-foreground">
-          {application.identifier}
-        </p>
-      </div>
     </div>
   )
 }

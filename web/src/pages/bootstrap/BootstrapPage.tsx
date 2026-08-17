@@ -59,7 +59,7 @@ export function BootstrapPage() {
       form.setError('bootstrapToken', { message: t('bootstrap.tokenRequired') })
       return
     }
-    session.initializeAdmin({ ...values, language: i18n.language === 'en-US' ? 'en-US' : 'zh-CN' })
+    session.initializeAdmin({ ...values, language: i18n.language as 'zh-CN' | 'zh-TW' | 'en-US' | 'ja-JP' | 'ko-KR' })
       .then(() => {
         toast.success(t('bootstrap.success'))
         navigate('/projects')

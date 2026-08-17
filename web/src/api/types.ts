@@ -228,6 +228,15 @@ export interface ApplicationDeploymentSummary {
   desiredReplicas: number
   readyReplicas: number
   status: LiveObservationStatus | 'not-deployed'
+  targets: ApplicationDeploymentTargetSummary[]
+}
+
+export interface ApplicationDeploymentTargetSummary {
+  id: string
+  stage: string
+  desiredReplicas: number
+  readyReplicas: number
+  status: LiveObservationStatus | 'disabled'
 }
 
 export interface ApplicationTopologyTarget {
@@ -1912,7 +1921,7 @@ export interface CurrentUser {
   avatarUrl: string
   passwordSet: boolean
   role: PlatformRoleValue
-  language: 'zh-CN' | 'en-US'
+  language: 'zh-CN' | 'zh-TW' | 'en-US' | 'ja-JP' | 'ko-KR'
   brandColorPreset: '' | 'aurora' | 'harbor' | 'sunset' | 'botanical' | 'meadow' | 'citrus' | 'gold' | 'bronze' | 'brown' | 'yellow' | 'amber' | 'orange' | 'tomato' | 'red' | 'ruby' | 'crimson' | 'pink' | 'plum' | 'purple' | 'violet' | 'iris' | 'indigo' | 'blue' | 'cyan' | 'teal' | 'jade' | 'green' | 'grass' | 'lime' | 'mint' | 'sky'
   interfaceStyle: '' | 'minimal' | 'themed'
   permissions: string[]
@@ -1925,7 +1934,7 @@ export interface User {
   avatarUrl: string
   passwordSet: boolean
   role: PlatformRoleValue
-  language: 'zh-CN' | 'en-US'
+  language: 'zh-CN' | 'zh-TW' | 'en-US' | 'ja-JP' | 'ko-KR'
   disabled: boolean
   mfaEnabled: boolean
   balanceCredits: string

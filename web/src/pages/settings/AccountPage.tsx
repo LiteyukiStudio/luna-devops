@@ -35,7 +35,7 @@ import { BrandColorPresetField } from './brand-color-preset-field'
 const profileSchema = z.object({
   name: z.string().min(1, i18next.t('accountPage.profileNameRequired')),
   avatarUrl: z.string().optional(),
-  language: z.enum(['zh-CN', 'en-US']),
+  language: z.enum(['zh-CN', 'zh-TW', 'en-US', 'ja-JP', 'ko-KR']),
   brandColorPreset: z.union([z.literal(''), z.enum(brandColorPresets)]),
   interfaceStyle: z.enum(['', 'minimal', 'themed']),
 })
@@ -158,7 +158,10 @@ function ProfilePanel() {
         <Field error={form.formState.errors.language?.message} hint={t('accountPage.languageHint')} label={t('language')} required>
           <Select {...form.register('language')} aria-invalid={Boolean(form.formState.errors.language)}>
             <option value="zh-CN">{t('languages.zhCN')}</option>
+            <option value="zh-TW">{t('languages.zhTW')}</option>
             <option value="en-US">{t('languages.enUS')}</option>
+            <option value="ja-JP">{t('languages.jaJP')}</option>
+            <option value="ko-KR">{t('languages.koKR')}</option>
           </Select>
         </Field>
         <Field hint={t('accountPage.appearanceModeHint')} label={t('theme.mode')}>

@@ -32,7 +32,7 @@ const schema = z.object({
   name: z.string().min(1, i18next.t('usersPage.nameRequired')),
   password: z.string(),
   role: z.enum(PLATFORM_ROLES),
-  language: z.enum(['zh-CN', 'en-US']),
+  language: z.enum(['zh-CN', 'zh-TW', 'en-US', 'ja-JP', 'ko-KR']),
   disabled: z.boolean(),
 })
 
@@ -154,7 +154,10 @@ export function UsersPage() {
       header: t('language'),
       className: 'w-[10%] px-4 py-3 align-middle text-muted-foreground',
       mobile: 'hidden',
-      render: user => user.language === 'en-US' ? t('languages.enUS') : t('languages.zhCN'),
+      render: (user) => {
+        const languageKeys: Record<string, string> = { 'zh-CN': 'languages.zhCN', 'zh-TW': 'languages.zhTW', 'en-US': 'languages.enUS', 'ja-JP': 'languages.jaJP', 'ko-KR': 'languages.koKR' }
+        return t(languageKeys[user.language] ?? 'languages.zhCN')
+      },
     },
     {
       key: 'status',
@@ -294,7 +297,10 @@ export function UsersPage() {
             <Field error={form.formState.errors.language?.message} hint={t('usersPage.languageHint')} label={t('language')} required>
               <Select {...form.register('language')} aria-invalid={Boolean(form.formState.errors.language)}>
                 <option value="zh-CN">{t('languages.zhCN')}</option>
+                <option value="zh-TW">{t('languages.zhTW')}</option>
                 <option value="en-US">{t('languages.enUS')}</option>
+                <option value="ja-JP">{t('languages.jaJP')}</option>
+                <option value="ko-KR">{t('languages.koKR')}</option>
               </Select>
             </Field>
             <CheckboxField {...form.register('disabled')}>

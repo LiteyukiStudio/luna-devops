@@ -9310,7 +9310,23 @@ components:
         status:
           type: string
           enum: [ready, scaled-to-zero, degraded, progressing, unavailable, not-deployed]
-      required: [targetCount, desiredReplicas, readyReplicas, status]
+        targets:
+          type: array
+          description: Point-in-time Kubernetes runtime summaries for each deployment target, ordered by runtime severity and then stage priority.
+          items: { $ref: "#/components/schemas/ApplicationDeploymentTargetSummary" }
+      required: [targetCount, desiredReplicas, readyReplicas, status, targets]
+    ApplicationDeploymentTargetSummary:
+      type: object
+      additionalProperties: false
+      properties:
+        id: { type: string }
+        stage: { type: string }
+        desiredReplicas: { type: integer, minimum: 0 }
+        readyReplicas: { type: integer, minimum: 0 }
+        status:
+          type: string
+          enum: [ready, scaled-to-zero, degraded, progressing, not-found, not-configured, unavailable, disabled, unknown]
+      required: [id, stage, desiredReplicas, readyReplicas, status]
     DeploymentTargetMetrics:
       type: object
       additionalProperties: false

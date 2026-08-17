@@ -9,10 +9,11 @@ describe('deployment replica badge', () => {
   })
 
   it('shows the current and desired replica counts for an observed workload', () => {
-    render(<DeploymentReplicaBadge desiredReplicas={3} readyReplicas={2} status="progressing" />)
+    render(<DeploymentReplicaBadge desiredReplicas={3} prefix="生产" readyReplicas={2} status="progressing" />)
 
     expect(screen.getByText('2/3')).toBeVisible()
     expect(screen.getByText('部署中')).toBeVisible()
+    expect(screen.getByText('生产')).toBeVisible()
   })
 
   it('uses the warning undeployed state when no workload exists', () => {
@@ -25,7 +26,7 @@ describe('deployment replica badge', () => {
   it('shows an observed zero replica workload as scaled down instead of ready', () => {
     render(<DeploymentReplicaBadge availableReplicas={0} desiredReplicas={0} readyReplicas={0} status="ready" />)
 
-    const badge = screen.getByText('已缩容').closest('span')
+    const badge = screen.getByText('已缩容').parentElement
     expect(screen.getByText('0/0')).toBeVisible()
     expect(badge).toHaveClass('text-zinc-700')
     expect(badge).not.toHaveClass('text-success')
@@ -34,7 +35,7 @@ describe('deployment replica badge', () => {
   it('downgrades an inconsistent ready status when replicas are not ready and available', () => {
     render(<DeploymentReplicaBadge availableReplicas={0} desiredReplicas={1} readyReplicas={0} status="ready" />)
 
-    const badge = screen.getByText('部署中').closest('span')
+    const badge = screen.getByText('部署中').parentElement
     expect(screen.getByText('0/1')).toBeVisible()
     expect(badge).toHaveClass('text-warning')
   })
