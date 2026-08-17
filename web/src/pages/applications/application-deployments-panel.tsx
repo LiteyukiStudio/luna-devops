@@ -21,7 +21,7 @@ import { deploymentReleaseKey, deploymentTargetCanRelease, registryInputPrefix }
 import { DeferredCreateReleaseDialog, DeferredDeploymentBundleImportDialog, DeferredDeploymentTargetDialog, DeferredReleaseLogsDialog, DeferredRepositoryBindingDialog, DeferredRuntimeConfigSetDialog, DeferredWebConsoleDialog } from './application-deployment-dialogs'
 import { buildDeploymentRuntimeStatus, buildInternalServiceEndpoint } from './application-deployment-runtime-utils'
 import { ApplicationDeploymentTargetsList } from './application-deployment-targets-list'
-import { applyDockerfileBuildDefaults, deploymentTargetRuntimeChanged, normalizeBoolean, normalizeDeploymentTargetPayload, normalizeRuntimeConfigPayload, normalizeRuntimeConfigRefs, redeployReleasePayload, releaseDefaults, repositoryBindingItems, runtimeConfigDefaults, runtimeConfigLiveSetIds, runtimeConfigRefIds } from './application-deployments-panel-utils'
+import { applyDockerfileBuildDefaults, deploymentTargetHasRunningInstances, deploymentTargetRuntimeChanged, normalizeBoolean, normalizeDeploymentTargetPayload, normalizeRuntimeConfigPayload, normalizeRuntimeConfigRefs, redeployReleasePayload, releaseDefaults, repositoryBindingItems, runtimeConfigDefaults, runtimeConfigLiveSetIds, runtimeConfigRefIds } from './application-deployments-panel-utils'
 import { useDeploymentTargetForm } from './use-deployment-target-form'
 import { effectiveWebConsoleEnabled } from './web-console-policy'
 
@@ -238,8 +238,15 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
   const releaseReadyTargets = useMemo(() => deploymentTargets.filter(target => deploymentTargetCanRelease(target, deployableBuildRuns)), [deployableBuildRuns, deploymentTargets])
   const selectedBuildRun = buildRunMap[form.watch('buildRunId')]
   const latestEditingTargetRelease = editingTarget ? latestReleaseByTarget[deploymentReleaseKey(editingTarget.id)] : undefined
-  const targetHasRuntimeChanges = editingTarget ? deploymentTargetRuntimeChanged(editingTarget, normalizeDeploymentTargetPayload(watchedTargetValues)) : false
-  const targetCanRedeploy = Boolean(editingTarget && latestEditingTargetRelease && normalizeBoolean(watchedTargetValues.enabled, editingTarget.enabled))
+  const normalizedTargetValues = normalizeDeploymentTargetPayload(watchedTargetValues)
+  const targetHasRuntimeChanges = editingTarget ? deploymentTargetRuntimeChanged(editingTarget, normalizedTargetValues) : false
+  const targetHasRunningInstances = Boolean(editingTarget && deploymentTargetHasRunningInstances(editingTarget))
+  const targetCanRedeploy = Boolean(
+    editingTarget
+    && targetHasRunningInstances
+    && normalizedTargetValues.enabled
+    && (normalizedTargetValues.sourceType === 'image' ? normalizedTargetValues.imageRef.trim() : latestEditingTargetRelease?.imageRef.trim()),
+  )
   useEffect(() => {
     if (!targetDialogOpen || editingTarget || targetSourceType !== 'repository' || targetImageRefDirty)
       return
@@ -729,6 +736,7 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
         targetHasDataVolumes={targetHasDataVolumes}
         targetDataVolumes={targetDataVolumes}
         targetHasRuntimeChanges={targetHasRuntimeChanges}
+        targetHasRunningInstances={targetHasRunningInstances}
         targetImagePrefix={targetImagePrefix}
         targetRuntimeFilesValid={targetRuntimeFilesValid}
         targetSecretFilesValid={targetSecretFilesValid}

@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import type { DeploymentRuntimeStatus, InternalServiceEndpointValue } from './application-deployment-runtime-utils'
 import type { BuildRun, DeploymentTarget, Release } from '@/api'
-import { Download, Eye, MoreHorizontal, Package, Pencil, RefreshCw, RotateCcw, Terminal, Trash2 } from 'lucide-react'
+import { ChevronDown, CircleGauge, Download, Eye, MoreHorizontal, Network, Package, Pencil, RefreshCw, RotateCcw, Terminal, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -468,47 +468,64 @@ function DeploymentTargetDetails({
   const runtimeData = item.target.dataVolumes.length > 0
     ? t('deploymentsPage.dataVolumeCount', { count: item.target.dataVolumes.length })
     : t('common.disabled')
-  const releaseMessage = item.release?.message?.trim()
+  const releaseMessage = item.release?.status === 'succeeded' ? '' : item.release?.message?.trim()
 
   return (
     <details className={cn('group min-w-0 text-sm text-muted-foreground', className)}>
-      <summary className="cursor-pointer list-none text-xs font-medium text-muted-foreground transition hover:text-foreground [&::-webkit-details-marker]:hidden">
+      <summary className="inline-flex min-h-8 cursor-pointer list-none items-center gap-1.5 rounded-control px-2 py-1 text-xs font-medium text-muted-foreground outline-none transition-colors hover:bg-surface-subtle hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 [&::-webkit-details-marker]:hidden">
+        <ChevronDown className="size-3.5 shrink-0 transition-transform group-open:rotate-180" aria-hidden="true" />
         {children}
       </summary>
-      <div className="mt-3 grid gap-3 rounded-md bg-muted/40 p-3">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <LabeledValue label={t('deploymentsPage.internalEndpoint')}>
+      <div className="mt-2 grid gap-4 rounded-container bg-surface-subtle/60 p-4">
+        <div className={cn('grid gap-4', showMetrics && 'sm:grid-cols-[minmax(0,1.35fr)_minmax(12rem,0.65fr)]')}>
+          <DeploymentDetailItem icon={<Network className="size-3.5" aria-hidden="true" />} label={t('deploymentsPage.internalEndpoint')}>
             <InternalServiceEndpoint endpoint={item.internalEndpoint} onCopy={onCopy} />
-          </LabeledValue>
+          </DeploymentDetailItem>
           {showMetrics && (
-            <LabeledValue label={t('deploymentsPage.runtimeMetrics')}>
+            <DeploymentDetailItem icon={<CircleGauge className="size-3.5" aria-hidden="true" />} label={t('deploymentsPage.runtimeMetrics')}>
               <DeploymentTargetMetricsCell applicationId={applicationId} enabled={item.target.enabled && Boolean(item.release)} projectId={projectId} targetId={item.target.id} />
-            </LabeledValue>
+            </DeploymentDetailItem>
           )}
-          <LabeledValue label={t('deploymentsPage.runtimeData')}>
-            <span>{runtimeData}</span>
-          </LabeledValue>
-          <LabeledValue label={t('deploymentsPage.autoDeploy')}>
-            <StatusValueBadge value={item.target.autoDeploy ? 'enabled' : 'disabled'} />
-          </LabeledValue>
-          <LabeledValue label={t('deploymentsPage.revision')}>
-            <span>{item.release ? `#${item.release.revision}` : '-'}</span>
-          </LabeledValue>
-          <LabeledValue label={t('deploymentsPage.releaseTime')}>
-            <span>{item.release ? formatReleaseTime(item.release, t) : '-'}</span>
-          </LabeledValue>
         </div>
+        <dl className="flex flex-wrap gap-x-5 gap-y-2 border-t border-separator-subtle pt-3">
+          <DeploymentDetailMeta label={t('deploymentsPage.revision')} value={item.release ? `#${item.release.revision}` : '-'} />
+          <DeploymentDetailMeta label={t('deploymentsPage.releaseTime')} value={item.release ? formatReleaseTime(item.release, t) : '-'} />
+          <DeploymentDetailMeta label={t('deploymentsPage.runtimeData')} value={runtimeData} />
+        </dl>
         {releaseMessage && (
-          <LabeledValue label={t('deploymentsPage.rolloutMessage')}>
-            <CopyableHoverText
-              className="max-w-full overflow-visible whitespace-pre-wrap break-words text-xs text-muted-foreground"
-              display={<span className="whitespace-pre-wrap break-words">{releaseMessage}</span>}
-              value={releaseMessage}
-            />
-          </LabeledValue>
+          <div className="border-t border-separator-subtle pt-3">
+            <DeploymentDetailItem label={t('deploymentsPage.rolloutMessage')}>
+              <CopyableHoverText
+                className="max-w-full overflow-visible whitespace-pre-wrap break-words text-xs text-muted-foreground"
+                display={<span className="whitespace-pre-wrap break-words">{releaseMessage}</span>}
+                value={releaseMessage}
+              />
+            </DeploymentDetailItem>
+          </div>
         )}
       </div>
     </details>
+  )
+}
+
+function DeploymentDetailItem({ children, icon, label }: { children: ReactNode, icon?: ReactNode, label: string }) {
+  return (
+    <div className="grid min-w-0 content-start gap-2">
+      <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+        {icon}
+        <span>{label}</span>
+      </div>
+      <div className="min-w-0 text-sm text-foreground">{children}</div>
+    </div>
+  )
+}
+
+function DeploymentDetailMeta({ label, value }: { label: string, value: string }) {
+  return (
+    <div className="inline-flex min-w-0 items-baseline gap-1.5">
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd className="truncate text-xs font-medium text-foreground">{value}</dd>
+    </div>
   )
 }
 

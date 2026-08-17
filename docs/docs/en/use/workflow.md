@@ -47,6 +47,8 @@ With autoscaling enabled, the runtime cost shown in the form is a baseline estim
 
 Configuration or image changes require a new release. Reusing an image tag makes version verification and rollback harder; use traceable, unique tags in production.
 
+When editing a deploy config with live instances, changing replicas or resources, the image, Service/HPA settings, runtime configuration, volumes, advanced Kubernetes settings, or deployment-phase hooks adds an inline redeploy notice and the **Save only** and **Save and redeploy** actions. Settings that do not change the current instances—such as the display name, build parameters, automatic deployment and approval policies, or Web Console access—only need to be saved and do not show the redeploy action. The platform decides whether instances exist from the runtime cluster's live desired replica count; scaled-to-zero and not-yet-deployed configs do not show this notice.
+
 ## Advanced runtime settings
 
 Most services can use the defaults. Configure health probes, startup commands, StatefulSets, autoscaling, scheduling, security contexts, sidecars, and advanced storage only when the application requires them.

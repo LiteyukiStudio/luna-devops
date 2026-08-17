@@ -193,6 +193,8 @@ export function deploymentTargetRuntimeChanged(current: DeploymentTarget, next: 
     'affinity',
     'topologySpreadConstraints',
     'priorityClassName',
+    'serviceAccountName',
+    'automountServiceAccountToken',
     'serviceType',
     'serviceAnnotations',
     'serviceExternalTrafficPolicy',
@@ -217,7 +219,14 @@ export function deploymentTargetRuntimeChanged(current: DeploymentTarget, next: 
     fields.push('imageRef')
   if (String(nextPayload.secretFiles ?? '').trim())
     return true
-  return fields.some(field => normalizedComparable(currentPayload[field]) !== normalizedComparable(nextPayload[field]))
+  if (fields.some(field => normalizedComparable(currentPayload[field]) !== normalizedComparable(nextPayload[field])))
+    return true
+  return normalizedComparable(deploymentRuntimeHookBindings(currentPayload.buildHookBindings))
+    !== normalizedComparable(deploymentRuntimeHookBindings(nextPayload.buildHookBindings))
+}
+
+export function deploymentTargetHasRunningInstances(target: DeploymentTarget) {
+  return target.desiredReplicas > 0
 }
 
 export function repositoryBindingItems(items: RepositoryBinding[] | null | undefined) {
@@ -268,6 +277,8 @@ export function normalizeDeploymentTargetPayload(values: DeploymentTargetPayload
     affinity: values.affinity?.trim() ?? '',
     topologySpreadConstraints: values.topologySpreadConstraints?.trim() ?? '',
     priorityClassName: values.priorityClassName?.trim() ?? '',
+    serviceAccountName: values.serviceAccountName?.trim() ?? '',
+    automountServiceAccountToken: normalizeChoice(values.automountServiceAccountToken, ['true', 'false']),
     serviceType: normalizeChoice(values.serviceType, ['ClusterIP', 'NodePort', 'LoadBalancer']),
     serviceAnnotations: values.serviceAnnotations?.trim() ?? '',
     serviceExternalTrafficPolicy: normalizeChoice(values.serviceExternalTrafficPolicy, ['Cluster', 'Local']),
@@ -494,7 +505,15 @@ function normalizedComparable(value: unknown) {
     return value.trim()
   if (Array.isArray(value))
     return JSON.stringify(value)
+  if (value && typeof value === 'object')
+    return JSON.stringify(Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right))))
   return String(value ?? '').trim()
+}
+
+function deploymentRuntimeHookBindings(value: unknown) {
+  return normalizeDeploymentHookBindings(value)
+    .filter(binding => binding.phase === 'preDeployment' || binding.phase === 'postDeployment')
+    .map(binding => ({ hookConfigId: binding.hookConfigId, phase: binding.phase, runOrder: binding.runOrder }))
 }
 
 function normalizeDeploymentStage(value: string) {
