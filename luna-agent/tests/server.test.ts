@@ -32,7 +32,7 @@ describe("internal API", () => {
     const turn = await app.inject({
       method: "POST", url: `/internal/v1/conversations/${id}/turns`,
       headers: { ...headers, "idempotency-key": "browser-request-1" },
-      payload: { input: { parts: [{ type: "text", text: "为什么失败？" }] }, pageContext: { routeName: "application.builds" }, clientInstanceId: "browser-client-instance-1" },
+      payload: { modelId: "aimod_test", input: { parts: [{ type: "text", text: "为什么失败？" }] }, pageContext: { routeName: "application.builds" }, clientInstanceId: "browser-client-instance-1" },
     })
     expect(turn.statusCode).toBe(202)
     expect(turn.json()).toMatchObject({ state: "queued", turnIndex: 0 })
@@ -97,7 +97,7 @@ describe("internal API", () => {
       method: "POST",
       url: `/internal/v1/conversations/${conversationId}/turns`,
       headers: { ...headers, "idempotency-key": "cancel-request-1" },
-      payload: { input: { parts: [{ type: "text", text: "stop" }] }, pageContext: {}, clientInstanceId: "browser-client-instance-2" },
+      payload: { modelId: "aimod_test", input: { parts: [{ type: "text", text: "stop" }] }, pageContext: {}, clientInstanceId: "browser-client-instance-2" },
     })
     const runId = created.json<AITurnCreated>().runId
     const canceled = await app.inject({ method: "POST", url: `/internal/v1/runs/${runId}/cancel`, headers })
@@ -157,7 +157,7 @@ describe("internal API", () => {
       method: "POST",
       url: `/internal/v1/conversations/${conversationId}/turns`,
       headers: { ...headers, "idempotency-key": "timeline-request-1" },
-      payload: { input: { parts: [{ type: "text", text: "检查构建状态" }] }, pageContext: {}, clientInstanceId: "browser-client-instance-3" },
+      payload: { modelId: "aimod_test", input: { parts: [{ type: "text", text: "检查构建状态" }] }, pageContext: {}, clientInstanceId: "browser-client-instance-3" },
     })
     const turnCreated: AITurnCreated = created.json<AITurnCreated>()
     const runId = turnCreated.runId
@@ -291,7 +291,7 @@ describe("internal API", () => {
       method: "POST",
       url: `/internal/v1/conversations/${conversationId}/turns`,
       headers: { ...headers, "idempotency-key": "sse-request-1" },
-      payload: { input: { parts: [{ type: "text", text: "hello" }] }, pageContext: {}, clientInstanceId: "browser-client-instance-4" },
+      payload: { modelId: "aimod_test", input: { parts: [{ type: "text", text: "hello" }] }, pageContext: {}, clientInstanceId: "browser-client-instance-4" },
     })
     const runId = created.json<AITurnCreated>().runId
     await app.inject({ method: "POST", url: `/internal/v1/runs/${runId}/cancel`, headers })
@@ -317,7 +317,7 @@ describe("internal API", () => {
       method: "POST",
       url: `/internal/v1/conversations/${conversationId}/turns`,
       headers: { ...headers, "idempotency-key": "ui-action-request-1" },
-      payload: { input: { parts: [{ type: "text", text: "打开项目空间" }] }, pageContext: {}, clientInstanceId },
+      payload: { modelId: "aimod_test", input: { parts: [{ type: "text", text: "打开项目空间" }] }, pageContext: {}, clientInstanceId },
     })
     const runId = created.json<AITurnCreated>().runId
     const delivery = await repository.createUIAction(runId, "aitool_navigation", {

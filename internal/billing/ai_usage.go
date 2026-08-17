@@ -16,15 +16,28 @@ const (
 	ReasonAIUsage              = "ai.usage"
 	ResourceTypeAIModelRequest = "ai_model_request"
 	defaultAIUsageBatchSize    = 200
+	aiUsageSchemaVersion       = 1
 )
 
+type AIModelPricingSnapshot struct {
+	InputCreditsPerMillion        decimal.Decimal
+	OutputCreditsPerMillion       decimal.Decimal
+	CachedInputCreditsPerMillion  decimal.Decimal
+	CachedOutputCreditsPerMillion decimal.Decimal
+}
+
 type AIModelUsageInput struct {
-	EventID      string
-	RunID        string
-	UserID       string
-	InputTokens  int64
-	OutputTokens int64
-	OccurredAt   time.Time
+	EventID            string
+	RunID              string
+	UserID             string
+	ModelID            string
+	ModelName          string
+	InputTokens        int64
+	OutputTokens       int64
+	CachedInputTokens  int64
+	CachedOutputTokens int64
+	Pricing            AIModelPricingSnapshot
+	OccurredAt         time.Time
 }
 
 type pendingAIModelUsage struct {
@@ -36,57 +49,80 @@ type pendingAIModelUsage struct {
 }
 
 type aiModelCompletedData struct {
-	Usage struct {
-		InputTokens  int64 `json:"inputTokens"`
-		OutputTokens int64 `json:"outputTokens"`
+	ModelID   string `json:"modelId"`
+	ModelName string `json:"modelName"`
+	Usage     struct {
+		InputTokens        int64 `json:"inputTokens"`
+		OutputTokens       int64 `json:"outputTokens"`
+		CachedInputTokens  int64 `json:"cachedInputTokens"`
+		CachedOutputTokens int64 `json:"cachedOutputTokens"`
 	} `json:"usage"`
+	Pricing struct {
+		InputCreditsPerMillion        decimal.Decimal `json:"inputCreditsPerMillion"`
+		OutputCreditsPerMillion       decimal.Decimal `json:"outputCreditsPerMillion"`
+		CachedInputCreditsPerMillion  decimal.Decimal `json:"cachedInputCreditsPerMillion"`
+		CachedOutputCreditsPerMillion decimal.Decimal `json:"cachedOutputCreditsPerMillion"`
+	} `json:"pricing"`
 }
 
 func (s Service) SettleAIModelUsage(input AIModelUsageInput) error {
 	if strings.TrimSpace(input.EventID) == "" || strings.TrimSpace(input.RunID) == "" || strings.TrimSpace(input.UserID) == "" {
 		return errors.New("AI model usage identity is incomplete")
 	}
-	if input.InputTokens < 0 || input.OutputTokens < 0 {
+	if strings.TrimSpace(input.ModelID) == "" || strings.TrimSpace(input.ModelName) == "" {
+		return errors.New("AI model usage model snapshot is incomplete")
+	}
+	if input.InputTokens < 0 || input.OutputTokens < 0 || input.CachedInputTokens < 0 || input.CachedOutputTokens < 0 {
 		return errors.New("AI model token usage cannot be negative")
 	}
-	inputRate, err := s.rate(MeterAIInputTokens)
-	if err != nil {
-		return err
-	}
-	outputRate, err := s.rate(MeterAIOutputTokens)
-	if err != nil {
-		return err
+	if input.Pricing.InputCreditsPerMillion.IsNegative() || input.Pricing.OutputCreditsPerMillion.IsNegative() ||
+		input.Pricing.CachedInputCreditsPerMillion.IsNegative() || input.Pricing.CachedOutputCreditsPerMillion.IsNegative() {
+		return errors.New("AI model pricing cannot be negative")
 	}
 	periodStart := input.OccurredAt
 	if periodStart.IsZero() {
 		periodStart = time.Now()
 	}
 	periodEnd := periodStart.Add(time.Nanosecond)
-	inputQuantity := tokenBillingQuantity(input.InputTokens)
-	outputQuantity := tokenBillingQuantity(input.OutputTokens)
+	inputQuantity := tokenBillingQuantity(maxNormalTokens(input.InputTokens, input.CachedInputTokens))
+	outputQuantity := tokenBillingQuantity(maxNormalTokens(input.OutputTokens, input.CachedOutputTokens))
+	cachedInputQuantity := tokenBillingQuantity(input.CachedInputTokens)
+	cachedOutputQuantity := tokenBillingQuantity(input.CachedOutputTokens)
 	metadata, _ := json.Marshal(map[string]any{
-		"runId":        input.RunID,
-		"usageEventId": input.EventID,
-		"inputTokens":  input.InputTokens,
-		"outputTokens": input.OutputTokens,
+		"usageSchemaVersion": aiUsageSchemaVersion,
+		"runId":              input.RunID,
+		"usageEventId":       input.EventID,
+		"modelId":            input.ModelID,
+		"modelName":          input.ModelName,
+		"inputTokens":        input.InputTokens,
+		"outputTokens":       input.OutputTokens,
+		"cachedInputTokens":  input.CachedInputTokens,
+		"cachedOutputTokens": input.CachedOutputTokens,
+		"pricing": map[string]any{
+			"inputCreditsPerMillion":        input.Pricing.InputCreditsPerMillion,
+			"outputCreditsPerMillion":       input.Pricing.OutputCreditsPerMillion,
+			"cachedInputCreditsPerMillion":  input.Pricing.CachedInputCreditsPerMillion,
+			"cachedOutputCreditsPerMillion": input.Pricing.CachedOutputCreditsPerMillion,
+		},
 	})
 	now := time.Now()
 	records := []model.BillingUsageRecord{
-		{
-			// AI 费用只归属发起用户，不关联项目空间：ProjectID 恒为空。
-			ID: id.New("busg"), ProjectID: "", Meter: MeterAIInputTokens,
-			Quantity: inputQuantity, Unit: "1000_tokens", AmountCredits: inputQuantity.Mul(inputRate),
-			ResourceType: ResourceTypeAIModelRequest, ResourceID: input.EventID,
-			PeriodStart: periodStart, PeriodEnd: periodEnd, Status: "settled", Metadata: string(metadata), SettledAt: &now,
-		},
-		{
-			ID: id.New("busg"), ProjectID: "", Meter: MeterAIOutputTokens,
-			Quantity: outputQuantity, Unit: "1000_tokens", AmountCredits: outputQuantity.Mul(outputRate),
-			ResourceType: ResourceTypeAIModelRequest, ResourceID: input.EventID,
-			PeriodStart: periodStart, PeriodEnd: periodEnd, Status: "settled", Metadata: string(metadata), SettledAt: &now,
-		},
+		newAIUsageRecord(MeterAIInputTokens, inputQuantity, input.Pricing.InputCreditsPerMillion, input, periodStart, periodEnd, metadata, now),
+		newAIUsageRecord(MeterAIOutputTokens, outputQuantity, input.Pricing.OutputCreditsPerMillion, input, periodStart, periodEnd, metadata, now),
+		newAIUsageRecord(MeterAICachedInputTokens, cachedInputQuantity, input.Pricing.CachedInputCreditsPerMillion, input, periodStart, periodEnd, metadata, now),
+		newAIUsageRecord(MeterAICachedOutputTokens, cachedOutputQuantity, input.Pricing.CachedOutputCreditsPerMillion, input, periodStart, periodEnd, metadata, now),
 	}
 	return s.debitUserUsages(records, ReasonAIUsage, "AI model token usage", "system", input.UserID)
+}
+
+func newAIUsageRecord(meter string, quantity, rate decimal.Decimal, input AIModelUsageInput, periodStart, periodEnd time.Time, metadata []byte, now time.Time) model.BillingUsageRecord {
+	return model.BillingUsageRecord{
+		// AI 费用只归属发起用户，不关联项目空间：ProjectID 恒为空。
+		ID: id.New("busg"), ProjectID: "", Meter: meter,
+		Quantity: quantity, Unit: "million_tokens", AmountCredits: quantity.Mul(rate),
+		ResourceType: ResourceTypeAIModelRequest, ResourceID: input.EventID,
+		PeriodStart: periodStart, PeriodEnd: periodEnd, Status: "settled", Metadata: string(metadata), SettledAt: &now,
+	}
 }
 
 func (s Service) SettlePendingAIModelUsage(limit int) (int, error) {
@@ -103,6 +139,9 @@ func (s Service) SettlePendingAIModelUsage(limit int) (int, error) {
 		FROM ai.run_events AS event
 		JOIN ai.runs AS run ON run.id = event.run_id
 		WHERE event.type = 'model.completed'
+		  AND NULLIF(event.data->>'modelId', '') IS NOT NULL
+		  AND NULLIF(event.data->>'modelName', '') IS NOT NULL
+		  AND jsonb_typeof(event.data->'pricing') = 'object'
 		  AND (
 			NOT EXISTS (
 				SELECT 1 FROM billing_usage_records AS usage
@@ -112,9 +151,21 @@ func (s Service) SettlePendingAIModelUsage(limit int) (int, error) {
 				SELECT 1 FROM billing_usage_records AS usage
 				WHERE usage.resource_type = ? AND usage.resource_id = event.id AND usage.meter = ?
 			)
+			OR NOT EXISTS (
+				SELECT 1 FROM billing_usage_records AS usage
+				WHERE usage.resource_type = ? AND usage.resource_id = event.id AND usage.meter = ?
+			)
+			OR NOT EXISTS (
+				SELECT 1 FROM billing_usage_records AS usage
+				WHERE usage.resource_type = ? AND usage.resource_id = event.id AND usage.meter = ?
+			)
 		  )
 		ORDER BY event.created_at ASC
-		LIMIT ?`, ResourceTypeAIModelRequest, MeterAIInputTokens, ResourceTypeAIModelRequest, MeterAIOutputTokens, limit).Scan(&pending).Error
+		LIMIT ?`,
+		ResourceTypeAIModelRequest, MeterAIInputTokens,
+		ResourceTypeAIModelRequest, MeterAIOutputTokens,
+		ResourceTypeAIModelRequest, MeterAICachedInputTokens,
+		ResourceTypeAIModelRequest, MeterAICachedOutputTokens, limit).Scan(&pending).Error
 	if err != nil {
 		return 0, err
 	}
@@ -128,7 +179,14 @@ func (s Service) SettlePendingAIModelUsage(limit int) (int, error) {
 		}
 		err := s.SettleAIModelUsage(AIModelUsageInput{
 			EventID: item.EventID, RunID: item.RunID, UserID: item.UserID,
-			InputTokens: data.Usage.InputTokens, OutputTokens: data.Usage.OutputTokens, OccurredAt: item.OccurredAt,
+			ModelID: data.ModelID, ModelName: data.ModelName,
+			InputTokens: data.Usage.InputTokens, OutputTokens: data.Usage.OutputTokens,
+			CachedInputTokens: data.Usage.CachedInputTokens, CachedOutputTokens: data.Usage.CachedOutputTokens,
+			Pricing: AIModelPricingSnapshot{
+				InputCreditsPerMillion: data.Pricing.InputCreditsPerMillion, OutputCreditsPerMillion: data.Pricing.OutputCreditsPerMillion,
+				CachedInputCreditsPerMillion: data.Pricing.CachedInputCreditsPerMillion, CachedOutputCreditsPerMillion: data.Pricing.CachedOutputCreditsPerMillion,
+			},
+			OccurredAt: item.OccurredAt,
 		})
 		if errors.Is(err, ErrAlreadySettled) {
 			continue
@@ -142,6 +200,14 @@ func (s Service) SettlePendingAIModelUsage(limit int) (int, error) {
 	return settled, result
 }
 
+func maxNormalTokens(total, cached int64) int64 {
+	normal := total - cached
+	if normal < 0 {
+		return 0
+	}
+	return normal
+}
+
 func tokenBillingQuantity(tokens int64) decimal.Decimal {
-	return decimal.NewFromInt(tokens).Div(decimal.NewFromInt(1000))
+	return decimal.NewFromInt(tokens).Div(decimal.NewFromInt(1_000_000))
 }

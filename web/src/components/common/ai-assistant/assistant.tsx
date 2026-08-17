@@ -12,6 +12,7 @@ import { toast } from 'sonner'
 import { api } from '@/api'
 import { useSession } from '@/app/session-context'
 import { Button } from '@/components/ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { isPlatformAdmin } from '@/lib/roles'
 import { executeAIUIAction } from './actions'
 import {
@@ -97,9 +98,21 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
   const [pendingSends, setPendingSends] = useState<Record<string, number>>({})
   const [preference, setPreference] = useState(readWindowPreference)
   const [launcherPosition, setLauncherPosition] = useState(readLauncherPosition)
+  const [selectedModelId, setSelectedModelId] = useState<string | undefined>()
   const [clientInstanceId] = useState(readAIClientInstanceId)
   const canDebugInternalTools = isPlatformAdmin(actualUser?.role)
   const toolDebugMode = useAIToolDebugMode(actualUser?.id, canDebugInternalTools)
+  const aiModels = useQuery({
+    queryKey: ['ai', 'models'],
+    queryFn: api.listAIModels,
+    enabled: open,
+    staleTime: 0,
+    retry: false,
+  })
+  const selectedModel = useMemo(
+    () => aiModels.data?.find(model => model.id === selectedModelId) ?? aiModels.data?.[0],
+    [aiModels.data, selectedModelId],
+  )
 
   const pendingUIActions = useQuery({
     queryKey: ['ai', 'ui-actions', 'pending', clientInstanceId],
@@ -254,6 +267,8 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
   const sendTurn = useMutation({
     mutationFn: async ({ conversationId: requestedConversationId, message }: { conversationId?: string, message: string }) => {
       const text = message.trim()
+      if (!selectedModel)
+        throw new Error(t('aiAssistant.modelUnavailable'))
       let conversationId = requestedConversationId
       if (!conversationId) {
         const conversation = await api.createAIConversation({ projectId: pageContext().projectId })
@@ -261,6 +276,7 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
         dispatchConversationSession({ type: 'select', conversationId })
       }
       const result = await api.createAITurn(conversationId, {
+        modelId: selectedModel.id,
         input: { parts: [{ type: 'text', text }] },
         pageContext: pageContext(),
         clientInstanceId,
@@ -504,6 +520,18 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
           <h2 className="truncate text-[13px] font-semibold leading-5">{timelineData?.snapshot?.conversation.title || t('aiAssistant.title')}</h2>
           <p className="truncate text-[10px] leading-4 text-muted-foreground">{t('aiAssistant.context', { path: location.pathname })}</p>
         </div>
+        <Select
+          disabled={Boolean(activeRunId || sendingSelected || sendTurn.isPending)}
+          value={selectedModel?.id ?? ''}
+          onValueChange={setSelectedModelId}
+        >
+          <SelectTrigger aria-label={t('aiAssistant.modelLabel')} className="h-8 w-[7.5rem] shrink-0 text-[11px] sm:w-40">
+            <SelectValue placeholder={t('aiAssistant.modelEmpty')} />
+          </SelectTrigger>
+          <SelectContent>
+            {(aiModels.data ?? []).map(model => <SelectItem key={model.id} value={model.id}>{model.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
         {canDebugInternalTools && (
           <Button
             aria-label={t(toolDebugMode.enabled ? 'aiAssistant.toolDebug.disable' : 'aiAssistant.toolDebug.enable')}
@@ -574,6 +602,7 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
         activeRun={Boolean(activeRunId)}
         canceling={cancelingSelected}
         canCancel={Boolean(activeRunId && selectedConversationId)}
+        modelAvailable={Boolean(selectedModel)}
         draft={draft}
         inputRef={inputRef}
         maxLength={capabilities.maxInputBytes}

@@ -83,9 +83,8 @@ export const deploymentTargetDefaults: DeploymentTargetPayload = {
   concurrencyPolicy: 'queue',
   runtimeConfigSetIds: [],
   runtimeConfigRefs: [],
-  envVars: '',
-  configRefs: '',
-  secretRefs: '',
+  envVars: {},
+  configRefs: {},
   configFiles: '',
   secretFiles: '',
   dataVolumes: [],
@@ -97,10 +96,9 @@ export const deploymentTargetDefaults: DeploymentTargetPayload = {
 export const runtimeConfigDefaults: ProjectRuntimeConfigSetPayload = {
   configFiles: '',
   enabled: true,
-  envVars: '',
+  envVars: {},
   name: '',
   secretFiles: '',
-  secretRefs: '',
 }
 
 export function shortImageRef(imageRef: string) {
@@ -160,7 +158,6 @@ export function deploymentTargetRuntimeChanged(current: DeploymentTarget, next: 
   const currentPayload = normalizeDeploymentTargetPayload({
     ...deploymentTargetDefaults,
     ...current,
-    secretRefs: '',
   })
   const nextPayload = normalizeDeploymentTargetPayload(next)
   const fields: Array<keyof DeploymentTargetPayload> = [
@@ -216,7 +213,7 @@ export function deploymentTargetRuntimeChanged(current: DeploymentTarget, next: 
   ]
   if (nextPayload.sourceType === 'image')
     fields.push('imageRef')
-  if (String(nextPayload.secretRefs ?? '').trim() || String(nextPayload.secretFiles ?? '').trim())
+  if (String(nextPayload.secretFiles ?? '').trim())
     return true
   return fields.some(field => normalizedComparable(currentPayload[field]) !== normalizedComparable(nextPayload[field]))
 }
@@ -386,10 +383,9 @@ export function normalizeRuntimeConfigPayload(values: ProjectRuntimeConfigSetPay
   return {
     configFiles: values.configFiles?.trim() ?? '',
     enabled: Boolean(values.enabled),
-    envVars: values.envVars?.trim() ?? '',
+    envVars: values.envVars ?? {},
     name: values.name.trim(),
     secretFiles: values.secretFiles?.trim() ?? '',
-    secretRefs: values.secretRefs?.trim() ?? '',
   }
 }
 

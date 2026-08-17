@@ -12,7 +12,9 @@ If you're new to servers, containers, or Kubernetes, just say so ("I'm new to th
 
 ## Get started
 
-An administrator enters the provider URL, API key, and model under **Global Settings → AI Assistant**, then enables the assistant. All signed-in users can use it by default, or the administrator can restrict access to platform administrators. The provider must support an OpenAI-compatible `chat/completions` API, streaming, and tool calls.
+An administrator enters the provider URL and API key under **Global Settings → AI Assistant**, adds model names and four prices (input, output, cached input, and cached output) in the **AI model catalog**, and then enables the assistant. All signed-in users can use it by default, or the administrator can restrict access to platform administrators. The provider must support an OpenAI-compatible `chat/completions` API, streaming, and tool calls.
+
+The assistant header lets you choose an enabled model for the current conversation. The selection is locked while a Run is active. Each Run stores the model name and all four price values as an immutable snapshot, so disabling a model or changing its prices does not alter an existing Run. If no model is available, an administrator must add and enable one first.
 
 The assistant retries transient network errors, timeouts, rate limits, and server failures five times by default with exponential backoff. Administrators can set 0–10 retries under **Advanced runtime settings**; 0 disables retries. A stream is never replayed after visible output has started, and non-idempotent writes are not resubmitted when the outcome is unknown, preventing duplicate content or resources.
 
@@ -85,7 +87,7 @@ Ask an administrator to confirm that the assistant is enabled and that its acces
 
 ### The model is unavailable
 
-Check provider availability, balance, model name, and API key, then retry.
+Check provider availability, balance, the model name in the catalog, and the API key, then retry. Existing Runs keep their snapshot after a model is disabled; new messages can only select enabled models.
 
 ### A tool failed
 

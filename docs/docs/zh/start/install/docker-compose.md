@@ -57,7 +57,7 @@ printf 'AI_INTERNAL_SECRET=%s\n' "$(openssl rand -hex 32)" >> .env
 AI_ASSISTANT_AVAILABLE=true docker compose --profile ai up -d
 ```
 
-登录后在“全局设置 → AI 助手”配置 Provider、模型、访问范围和配额。Provider API Key 由平台 Secret Store 保存，不写入 `.env`。排障时可查看 `docker compose --profile ai logs -f agent`。
+登录后在“全局设置 → AI 助手”配置 Provider、模型目录、访问范围和配额。Provider API Key 由平台 Secret Store 保存，不写入 `.env`。排障时可查看 `docker compose --profile ai logs -f agent`。
 
 ## 打开控制台
 

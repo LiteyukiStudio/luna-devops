@@ -1090,7 +1090,7 @@ paths:
         command: retention.catalog
         classification: business-command
         risk: low
-        requiredScopes: [retention:read]
+        requiredScopes: ["retention:read"]
       security:
         - SessionCookie: []
       responses:
@@ -1115,7 +1115,7 @@ paths:
         command: retention.preview
         classification: business-command
         risk: low
-        requiredScopes: [retention:read]
+        requiredScopes: ["retention:read"]
       security:
         - SessionCookie: []
       requestBody:
@@ -1150,7 +1150,7 @@ paths:
         command: retention.cleanup
         classification: business-command
         risk: critical
-        requiredScopes: [retention:manage]
+        requiredScopes: ["retention:manage"]
       security:
         - SessionCookie: []
       requestBody:
@@ -1767,7 +1767,7 @@ paths:
         command: dashboard.show
         classification: business-command
         risk: low
-        requiredScopes: [dashboard:read]
+        requiredScopes: ["dashboard:read"]
       responses:
         "200":
           description: Dashboard overview scoped to the current user's visible project spaces and resources.
@@ -2126,7 +2126,7 @@ paths:
         command: volume.list
         classification: business-command
         risk: low
-        requiredScopes: [volume:read]
+        requiredScopes: ["volume:read"]
       parameters:
         - $ref: "#/components/parameters/ProjectId"
         - $ref: "#/components/parameters/Page"
@@ -2160,7 +2160,7 @@ paths:
         command: volume.create
         classification: business-command
         risk: high
-        requiredScopes: [volume:write]
+        requiredScopes: ["volume:write"]
       parameters:
         - $ref: "#/components/parameters/ProjectId"
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -2190,7 +2190,7 @@ paths:
         command: volume.storage-classes
         classification: business-command
         risk: low
-        requiredScopes: [volume:read]
+        requiredScopes: ["volume:read"]
       parameters:
         - $ref: "#/components/parameters/ProjectId"
         - name: clusterId
@@ -2221,7 +2221,7 @@ paths:
         command: volume.get
         classification: business-command
         risk: low
-        requiredScopes: [volume:read]
+        requiredScopes: ["volume:read"]
       parameters:
         - $ref: "#/components/parameters/ProjectId"
         - $ref: "#/components/parameters/VolumeId"
@@ -2246,7 +2246,7 @@ paths:
         command: volume.update
         classification: business-command
         risk: high
-        requiredScopes: [volume:write]
+        requiredScopes: ["volume:write"]
       parameters:
         - $ref: "#/components/parameters/ProjectId"
         - $ref: "#/components/parameters/VolumeId"
@@ -2278,7 +2278,7 @@ paths:
         command: volume.delete
         classification: business-command
         risk: critical
-        requiredScopes: [volume:delete]
+        requiredScopes: ["volume:delete"]
         mfaPurpose: volume_delete
       parameters:
         - $ref: "#/components/parameters/ProjectId"
@@ -2312,7 +2312,7 @@ paths:
         command: volume.retry
         classification: business-command
         risk: high
-        requiredScopes: [volume:read]
+        requiredScopes: ["volume:read"]
         agentAllowed: false
         exclusionReason: Retrying must first read the failed operation and dynamically re-authorize its original action and step-up purpose; generic Agent delegation cannot express that policy safely.
       parameters:
@@ -2342,7 +2342,7 @@ paths:
         command: volume.delete-preview
         classification: business-command
         risk: high
-        requiredScopes: [volume:delete]
+        requiredScopes: ["volume:delete"]
       parameters:
         - $ref: "#/components/parameters/ProjectId"
         - $ref: "#/components/parameters/VolumeId"
@@ -2500,7 +2500,7 @@ paths:
         command: volume.export
         classification: business-command
         risk: high
-        requiredScopes: [volume:export]
+        requiredScopes: ["volume:export"]
         mfaPurpose: volume_export
       parameters:
         - $ref: "#/components/parameters/ProjectId"
@@ -2530,7 +2530,7 @@ paths:
         command: volume-transfer.list
         classification: business-command
         risk: low
-        requiredScopes: [volume:read]
+        requiredScopes: ["volume:read"]
       parameters:
         - $ref: "#/components/parameters/ProjectId"
         - $ref: "#/components/parameters/Page"
@@ -2558,7 +2558,7 @@ paths:
         command: volume-transfer.get
         classification: business-command
         risk: low
-        requiredScopes: [volume:read]
+        requiredScopes: ["volume:read"]
       parameters:
         - $ref: "#/components/parameters/ProjectId"
         - $ref: "#/components/parameters/TransferId"
@@ -2579,7 +2579,7 @@ paths:
         command: volume-transfer.retry
         classification: business-command
         risk: high
-        requiredScopes: [volume:read]
+        requiredScopes: ["volume:read"]
         agentAllowed: false
         exclusionReason: Retrying must first read the transfer direction and dynamically re-authorize the original import or export scope; generic Agent delegation cannot express that policy safely.
       parameters:
@@ -2606,7 +2606,7 @@ paths:
         command: volume-transfer.cancel
         classification: business-command
         risk: high
-        requiredScopes: [volume:read]
+        requiredScopes: ["volume:read"]
       parameters:
         - $ref: "#/components/parameters/ProjectId"
         - $ref: "#/components/parameters/TransferId"
@@ -2739,7 +2739,7 @@ paths:
         hidden: true
         agentAllowed: false
         transport: download
-        requiredScopes: [volume:export]
+        requiredScopes: ["volume:export"]
         exclusionReason: Manifest authentication and attachment download are consumed by Web or Luna CLI protocol adapters.
       parameters:
         - $ref: "#/components/parameters/ProjectId"
@@ -2773,7 +2773,7 @@ paths:
         hidden: true
         agentAllowed: false
         transport: download
-        requiredScopes: [volume:export]
+        requiredScopes: ["volume:export"]
         exclusionReason: Manifest authentication and attachment download are consumed by Web or Luna CLI protocol adapters.
       parameters:
         - $ref: "#/components/parameters/ProjectId"
@@ -2891,6 +2891,27 @@ paths:
           description: Deployment target deletion accepted and queued for asynchronous runtime cleanup.
 
   /api/v1/projects/{projectId}/applications/{applicationId}/deployment-targets/{targetId}/runtime-secrets:
+    get:
+      operationId: getDeploymentTargetRuntimeSecretsSummary
+      tags: [Deployments]
+      summary: Get configured runtime secret keys without values
+      x-luna-cli:
+        agentAllowed: false
+        hidden: true
+        exclusionReason: Runtime secret metadata is displayed only in the human Web console.
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/ApplicationId"
+        - $ref: "#/components/parameters/TargetId"
+      responses:
+        "200":
+          description: Configured key names only; secret references and plaintext values are never returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeploymentTargetRuntimeSecretsSummary"
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
     put:
       operationId: updateDeploymentTargetRuntimeSecrets
       tags: [Deployments]
@@ -3157,7 +3178,7 @@ paths:
         command: access-token.scope-list
         classification: business-command
         risk: low
-        requiredScopes: [token:manage]
+        requiredScopes: ["token:manage"]
       responses:
         "200":
           description: Access-token scope catalog.
@@ -5253,6 +5274,38 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+  /api/v1/projects/{projectId}/runtime-config-sets/{setId}/runtime-secrets:
+    put:
+      operationId: updateProjectRuntimeConfigSetRuntimeSecrets
+      tags: [Projects]
+      summary: Securely update project runtime config set secrets
+      x-luna-cli:
+        risk: high
+        mfaPurpose: secret_update
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: setId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DeploymentTargetRuntimeSecretsInput" }
+      responses:
+        "200":
+          description: Secret field status only; plaintext values are never returned.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeploymentTargetRuntimeSecretsResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "428": { $ref: "#/components/responses/PreconditionRequired" }
   /api/v1/projects/{projectId}/hooks:
     get:
       operationId: listProjectHookConfigs
@@ -7227,6 +7280,53 @@ paths:
       responses:
         "200": { description: Assistant access result, content: { application/json: { schema: { $ref: "#/components/schemas/AIAssistantAccess" } } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/ai/models:
+    get:
+      operationId: listAIModels
+      tags: [AI Assistant]
+      summary: List enabled AI models available to the current user
+      security: [{ SessionCookie: [] }]
+      responses:
+        "200": { description: Enabled model identifiers and names, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/AIModelOption" } } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/configs/ai/models:
+    get:
+      operationId: listAIModelConfigs
+      tags: [Settings]
+      summary: List all platform AI model configurations
+      security: [{ SessionCookie: [] }]
+      responses:
+        "200": { description: AI model configurations, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/AIModelConfig" } } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      operationId: createAIModel
+      tags: [Settings]
+      summary: Create a platform AI model configuration
+      security: [{ SessionCookie: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AIModelWriteInput" } } } }
+      responses:
+        "201": { description: Created AI model, content: { application/json: { schema: { $ref: "#/components/schemas/AIModelConfig" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/v1/configs/ai/models/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    put:
+      operationId: updateAIModel
+      tags: [Settings]
+      summary: Update a platform AI model configuration
+      security: [{ SessionCookie: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AIModelWriteInput" } } } }
+      responses:
+        "200": { description: Updated AI model, content: { application/json: { schema: { $ref: "#/components/schemas/AIModelConfig" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
   /api/v1/ai/conversations:
     get:
       operationId: listAIConversations
@@ -7292,7 +7392,7 @@ paths:
       parameters:
         - { name: conversationId, in: path, required: true, schema: { type: string } }
         - { name: Idempotency-Key, in: header, required: true, schema: { type: string } }
-      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AICreateTurnInput" } } } }
       responses: { "202": { description: Turn and initial run accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }, "401": { $ref: "#/components/responses/Unauthorized" }, "404": { $ref: "#/components/responses/NotFound" }, "409": { $ref: "#/components/responses/Conflict" } }
   /api/v1/ai/conversations/{conversationId}/tool-actions:
     post:
@@ -8021,6 +8121,73 @@ components:
           minimum: 8192
           maximum: 1048576
           description: Maximum UTF-8 request body size enforced by the Luna API BFF.
+    AIModelOption:
+      type: object
+      additionalProperties: false
+      required: [id, name]
+      properties:
+        id: { type: string }
+        name: { type: string, minLength: 1 }
+    AIModelConfig:
+      type: object
+      additionalProperties: false
+      required: [id, name, inputCreditsPerMillion, outputCreditsPerMillion, cachedInputCreditsPerMillion, cachedOutputCreditsPerMillion, enabled, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        name: { type: string, minLength: 1 }
+        inputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d+)?$" }
+        outputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d+)?$" }
+        cachedInputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d+)?$" }
+        cachedOutputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d+)?$" }
+        enabled: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    AIModelWriteInput:
+      type: object
+      additionalProperties: false
+      required: [name, inputCreditsPerMillion, outputCreditsPerMillion, cachedInputCreditsPerMillion, cachedOutputCreditsPerMillion]
+      properties:
+        name: { type: string, minLength: 1 }
+        inputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d+)?$" }
+        outputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d+)?$" }
+        cachedInputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d+)?$" }
+        cachedOutputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d+)?$" }
+        enabled: { type: boolean }
+    AIModelPricingSnapshot:
+      type: object
+      additionalProperties: false
+      required: [id, name, inputCreditsPerMillion, outputCreditsPerMillion, cachedInputCreditsPerMillion, cachedOutputCreditsPerMillion]
+      properties:
+        id: { type: string }
+        name: { type: string, minLength: 1 }
+        inputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d+)?$" }
+        outputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d+)?$" }
+        cachedInputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d+)?$" }
+        cachedOutputCreditsPerMillion: { type: string, pattern: "^\\d+(\\.\\d+)?$" }
+    AICreateTurnInput:
+      type: object
+      additionalProperties: false
+      required: [modelId, input, pageContext, clientInstanceId]
+      properties:
+        modelId: { type: string, minLength: 1 }
+        input:
+          type: object
+          additionalProperties: false
+          required: [parts]
+          properties:
+            parts:
+              type: array
+              minItems: 1
+              maxItems: 10
+              items:
+                type: object
+                additionalProperties: false
+                required: [type, text]
+                properties:
+                  type: { type: string, const: text }
+                  text: { type: string, minLength: 1, maxLength: 12000 }
+        pageContext: { type: object, additionalProperties: true }
+        clientInstanceId: { type: string, minLength: 16, maxLength: 80 }
     AIObject:
       type: object
       additionalProperties: true
@@ -8207,7 +8374,8 @@ components:
             model: { type: string }
             apiKey: { type: string, writeOnly: true, x-luna-sensitive: true, description: In-memory Agent use only; never returned to browser APIs. }
             configured: { type: boolean }
-          required: [baseUrl, model, apiKey, configured]
+            models: { type: array, items: { $ref: "#/components/schemas/AIModelPricingSnapshot" } }
+          required: [baseUrl, model, apiKey, configured, models]
         runtime:
           type: object
           properties:
@@ -10035,16 +10203,13 @@ components:
               mode: { type: string, enum: [live, snapshot], default: live }
             required: [setId]
         envVars:
-          type: string
-          description: JSON object or newline-separated public runtime environment variables. Secret-like keys and URLs containing embedded credentials must use the secure runtime secret action.
+          type: object
+          additionalProperties: { type: string }
+          description: Public runtime environment variables. Secret-like keys and URLs containing embedded credentials must use the secure runtime secret action.
         configRefs:
-          type: string
-          description: Serialized runtime ConfigMap references.
-        secretRefs:
-          type: string
-          writeOnly: true
-          x-luna-sensitive: true
-          description: Internal serialized runtime Secret references; plaintext secret values are never accepted here and Direct Tool Actions must use the secure runtime secret action.
+          type: object
+          additionalProperties: { type: string }
+          description: Runtime ConfigMap references.
         configFiles:
           type: string
           description: JSON array of runtime configuration file mounts.
@@ -10081,6 +10246,16 @@ components:
         buildTemplateId: { type: string }
         buildTemplateVersion: { type: string }
         buildTemplateValues: { type: string }
+        envVars:
+          type: object
+          additionalProperties: { type: string }
+        configRefs:
+          type: object
+          additionalProperties: { type: string }
+        secretKeys:
+          type: array
+          items: { type: string }
+        secretRefsSet: { type: boolean }
         dataVolumes:
           type: array
           items: { $ref: "#/components/schemas/DeploymentDataVolume" }
@@ -10099,7 +10274,7 @@ components:
           additionalProperties:
             type: string
             maxLength: 8192
-          description: Plaintext values accepted only from a Direct Tool Action security form; empty values keep existing secrets.
+          description: Plaintext values accepted only from the human Web console security form; empty values keep existing secrets.
         generate:
           type: object
           additionalProperties:
@@ -10115,12 +10290,22 @@ components:
     DeploymentTargetRuntimeSecretsResponse:
       type: object
       additionalProperties: false
-      required: [configuredKeys, generatedKeys, clearedKeys, secretSet]
+      required: [configuredKeys, generatedKeys, clearedKeys, secretKeys, secretRefsSet]
       properties:
         configuredKeys: { type: array, items: { type: string } }
         generatedKeys: { type: array, items: { type: string } }
         clearedKeys: { type: array, items: { type: string } }
-        secretSet: { type: boolean }
+        secretKeys: { type: array, items: { type: string } }
+        secretRefsSet: { type: boolean }
+    DeploymentTargetRuntimeSecretsSummary:
+      type: object
+      additionalProperties: false
+      required: [secretKeys, secretRefsSet]
+      properties:
+        secretKeys:
+          type: array
+          items: { type: string, minLength: 1, maxLength: 128 }
+        secretRefsSet: { type: boolean }
     DeploymentTargetBundle:
       type: object
       additionalProperties: false
@@ -10846,9 +11031,10 @@ components:
       required: [name]
       properties:
         name: { type: string, minLength: 1 }
-        envVars: { type: string }
+        envVars:
+          type: object
+          additionalProperties: { type: string }
         configFiles: { type: string }
-        secretRefs: { type: string }
         secretFiles: { type: string }
         enabled: { type: boolean }
     ProjectHookConfigInput:

@@ -1,6 +1,7 @@
 import { z } from "zod"
 import {
   conversationSummaryVersion,
+  type AIModelSnapshot,
   type ConversationHistoryEntry,
   type ConversationSummary,
   type ConversationSummaryContent,
@@ -47,6 +48,7 @@ export type CompileContextInput = {
   continuationMessages: ModelMessage[]
   tools: ModelToolDefinition[]
   signal?: AbortSignal
+  model?: AIModelSnapshot
 }
 
 export type CompiledContext = {
@@ -145,7 +147,7 @@ export class ContextCompiler {
             forceForBacklog || forceForRetention || authoritativeHistory.length > this.options.maxUncompressedTurnCount,
           )
           if (candidates.length > 0) {
-            summary = await this.summarizeBatches(input.conversationId, summary, candidates, input.signal)
+            summary = await this.summarizeBatches(input.conversationId, summary, candidates, input.signal, input.model)
             authoritativeHistory = authoritativeHistory.filter(entry => entry.turnIndex > summary!.coveredThroughTurnIndex)
             historyHasGap = hasHistoryGap(summary.coveredThroughTurnIndex, authoritativeHistory, input.beforeTurnIndex)
             outcome = historyHasGap ? "catching_up" : "compressed"
@@ -232,6 +234,7 @@ export class ContextCompiler {
     previous: ConversationSummary | undefined,
     entries: ConversationHistoryEntry[],
     signal?: AbortSignal,
+    model?: AIModelSnapshot,
   ): Promise<ConversationSummary> {
     let summary = previous
     let remaining = entries
@@ -241,7 +244,7 @@ export class ContextCompiler {
         summary,
         this.options.summaryInputTokenBudget,
       )
-      summary = await this.summarize(conversationId, summary, batch, signal)
+      summary = await this.summarize(conversationId, summary, batch, signal, model)
       remaining = remaining.slice(batch.length)
     }
     if (!summary) throw new Error("ai.context_summary_empty")
@@ -253,6 +256,7 @@ export class ContextCompiler {
     previous: ConversationSummary | undefined,
     entries: ConversationHistoryEntry[],
     signal?: AbortSignal,
+    model?: AIModelSnapshot,
   ): Promise<ConversationSummary> {
     const response = await this.provider.complete({
       messages: [
@@ -270,6 +274,7 @@ confirmedResources 的每项只包含 type、可选 name、可选 id。所有其
       ],
       maxOutputTokens: this.options.summaryMaxOutputTokens,
       ...(signal ? { signal } : {}),
+      ...(model ? { modelId: model.id, modelName: model.name, modelPricing: model } : {}),
     })
     const parsed = summaryContentSchema.parse(parseJSONObject(response.text))
     const content: ConversationSummaryContent = redact({

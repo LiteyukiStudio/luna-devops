@@ -46,6 +46,16 @@ describe('billing price list', () => {
         createdAt: '2026-08-14T00:00:00Z',
         updatedAt: '2026-08-14T00:00:00Z',
       },
+      {
+        id: 'brte_ai_input',
+        meter: 'ai.input_tokens_1m',
+        unit: 'million_tokens',
+        creditsPerUnit: '3',
+        enabled: true,
+        description: 'AI input tokens',
+        createdAt: '2026-08-14T00:00:00Z',
+        updatedAt: '2026-08-14T00:00:00Z',
+      },
     ])
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
 
@@ -65,5 +75,6 @@ describe('billing price list', () => {
     expect(screen.getByText('核分')).toBeInTheDocument()
     expect(screen.getByText('访问请求')).toBeInTheDocument()
     expect(screen.getByText('已禁用')).toBeInTheDocument()
+    expect(screen.queryByText('AI input tokens')).not.toBeInTheDocument()
   })
 })

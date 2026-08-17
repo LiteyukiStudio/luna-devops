@@ -2,6 +2,9 @@ const aiAssistant = {
   aiAssistant: {
     open: '打开 Luna 助手',
     title: 'Luna 助手',
+    modelLabel: 'AI 模型',
+    modelEmpty: '暂无可用模型',
+    modelUnavailable: '暂无启用的 AI 模型，请联系管理员配置后再试。',
     context: '当前页面：{{path}}',
     emptyTitle: '今天想处理什么？',
     empty: '助手会结合当前页面上下文，帮你诊断问题或执行平台操作',

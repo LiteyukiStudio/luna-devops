@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"path"
 	"strings"
@@ -12,6 +11,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/LiteyukiStudio/devops/internal/runtimeconfig"
 	"github.com/LiteyukiStudio/devops/internal/tasks"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -57,7 +57,7 @@ func (h *Handlers) CreateProjectRuntimeConfigSet(ctx *gin.Context) {
 	if !bindJSON(ctx, &input) {
 		return
 	}
-	set, ok := h.projectRuntimeConfigSetFromInput(ctx, user, project.ID, input, id.New("prcs"), nil, nil)
+	set, ok := h.projectRuntimeConfigSetFromInput(ctx, user, project.ID, input, id.New("prcs"), nil)
 	if !ok {
 		return
 	}
@@ -93,14 +93,13 @@ func (h *Handlers) UpdateProjectRuntimeConfigSet(ctx *gin.Context) {
 	if !bindJSON(ctx, &input) {
 		return
 	}
-	next, ok := h.projectRuntimeConfigSetFromInput(ctx, user, project.ID, input, existing.ID, decodeSecretRefs(existing.SecretRefs), decodeSecretRefs(existing.SecretFiles))
+	next, ok := h.projectRuntimeConfigSetFromInput(ctx, user, project.ID, input, existing.ID, decodeSecretRefs(existing.SecretFiles))
 	if !ok {
 		return
 	}
 	existing.Name = next.Name
 	existing.EnvVars = next.EnvVars
 	existing.ConfigFiles = next.ConfigFiles
-	existing.SecretRefs = next.SecretRefs
 	existing.SecretFiles = next.SecretFiles
 	existing.Enabled = next.Enabled
 	if err := h.dbFor(ctx).Save(&existing).Error; err != nil {
@@ -146,7 +145,7 @@ func (h *Handlers) DeleteProjectRuntimeConfigSet(ctx *gin.Context) {
 	ctx.Status(http.StatusNoContent)
 }
 
-func (h *Handlers) projectRuntimeConfigSetFromInput(ctx *gin.Context, user model.User, projectID string, input projectRuntimeConfigSetInput, setID string, existingSecretRefs map[string]string, existingSecretFiles map[string]string) (model.ProjectRuntimeConfigSet, bool) {
+func (h *Handlers) projectRuntimeConfigSetFromInput(ctx *gin.Context, user model.User, projectID string, input projectRuntimeConfigSetInput, setID string, existingSecretFiles map[string]string) (model.ProjectRuntimeConfigSet, bool) {
 	name := strings.TrimSpace(input.Name)
 	if name == "" {
 		writeError(ctx, http.StatusBadRequest, "请输入运行配置集名称")
@@ -155,21 +154,17 @@ func (h *Handlers) projectRuntimeConfigSetFromInput(ctx *gin.Context, user model
 	if !validateDeploymentTargetPublicEnvVars(ctx, input.EnvVars) {
 		return model.ProjectRuntimeConfigSet{}, false
 	}
-	configFiles, ok := normalizeRuntimeConfigFilesInput(ctx, input.ConfigFiles)
-	if !ok {
+	envVars, err := runtimeconfig.EncodeKeyValue(input.EnvVars)
+	if err != nil {
+		writeErrorCode(ctx, http.StatusBadRequest, "deployment.runtime_config_invalid", "运行时环境变量格式无效")
 		return model.ProjectRuntimeConfigSet{}, false
 	}
-	secretRefs, ok := h.runtimeSecretRefsFromInput(ctx, user, setID, input.SecretRefs, existingSecretRefs)
+	configFiles, ok := normalizeRuntimeConfigFilesInput(ctx, input.ConfigFiles)
 	if !ok {
 		return model.ProjectRuntimeConfigSet{}, false
 	}
 	secretFiles, ok := h.runtimeSecretFilesFromInput(ctx, user, setID, input.SecretFiles, existingSecretFiles)
 	if !ok {
-		return model.ProjectRuntimeConfigSet{}, false
-	}
-	secretRefsContent, err := json.Marshal(secretRefs)
-	if err != nil {
-		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return model.ProjectRuntimeConfigSet{}, false
 	}
 	secretFilesContent, err := json.Marshal(secretFiles)
@@ -181,9 +176,8 @@ func (h *Handlers) projectRuntimeConfigSetFromInput(ctx *gin.Context, user model
 		ID:          setID,
 		ProjectID:   projectID,
 		Name:        name,
-		EnvVars:     strings.TrimSpace(input.EnvVars),
+		EnvVars:     envVars,
 		ConfigFiles: configFiles,
-		SecretRefs:  string(secretRefsContent),
 		SecretFiles: string(secretFilesContent),
 		Enabled:     input.Enabled,
 	}, true
@@ -232,35 +226,6 @@ func normalizeRuntimeConfigFilePathInput(ctx *gin.Context, value string) (string
 	return cleaned, true
 }
 
-func (h *Handlers) runtimeSecretRefsFromInput(ctx *gin.Context, user model.User, ownerID string, value string, existing map[string]string) (map[string]string, bool) {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
-		return copyStringMap(existing), true
-	}
-	if trimmed == "{}" {
-		return map[string]string{}, true
-	}
-	parsed, ok := parseRuntimeKeyValueInput(ctx, trimmed, "密钥变量格式无效")
-	if !ok {
-		return nil, false
-	}
-	output := map[string]string{}
-	for key, item := range parsed {
-		if !isBuildEnvKey(key) {
-			writeError(ctx, http.StatusBadRequest, "密钥变量名只能使用字母、数字和下划线，且不能以数字开头")
-			return nil, false
-		}
-		if strings.TrimSpace(item) == "" {
-			if existingRef := strings.TrimSpace(existing[key]); existingRef != "" {
-				output[key] = existingRef
-			}
-			continue
-		}
-		output[key] = h.secrets.StoreContext(ctx.Request.Context(), item, user.ID, "runtime_config:"+ownerID+":secret:"+key)
-	}
-	return output, true
-}
-
 func (h *Handlers) runtimeSecretFilesFromInput(ctx *gin.Context, user model.User, ownerID string, value string, existing map[string]string) (map[string]string, bool) {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
@@ -286,35 +251,6 @@ func (h *Handlers) runtimeSecretFilesFromInput(ctx *gin.Context, user model.User
 			continue
 		}
 		output[filePath] = h.secrets.StoreContext(ctx.Request.Context(), content, user.ID, "runtime_config:"+ownerID+":file:"+filePath)
-	}
-	return output, true
-}
-
-func parseRuntimeKeyValueInput(ctx *gin.Context, value string, errorMessage string) (map[string]string, bool) {
-	if strings.HasPrefix(value, "{") {
-		var raw map[string]any
-		if err := json.Unmarshal([]byte(value), &raw); err != nil {
-			writeError(ctx, http.StatusBadRequest, errorMessage)
-			return nil, false
-		}
-		output := map[string]string{}
-		for key, item := range raw {
-			output[strings.TrimSpace(key)] = fmt.Sprint(item)
-		}
-		return output, true
-	}
-	output := map[string]string{}
-	for _, line := range strings.Split(value, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		key, item, ok := strings.Cut(line, "=")
-		if !ok {
-			writeError(ctx, http.StatusBadRequest, errorMessage)
-			return nil, false
-		}
-		output[strings.TrimSpace(key)] = strings.TrimSpace(item)
 	}
 	return output, true
 }
@@ -360,28 +296,28 @@ type runtimeConfigFileInput struct {
 }
 
 type projectRuntimeConfigSetInput struct {
-	Name        string `json:"name" binding:"required"`
-	EnvVars     string `json:"envVars"`
-	ConfigFiles string `json:"configFiles"`
-	SecretRefs  string `json:"secretRefs"`
-	SecretFiles string `json:"secretFiles"`
-	Enabled     bool   `json:"enabled"`
+	Name        string            `json:"name" binding:"required"`
+	EnvVars     map[string]string `json:"envVars"`
+	ConfigFiles string            `json:"configFiles"`
+	SecretFiles string            `json:"secretFiles"`
+	Enabled     bool              `json:"enabled"`
 }
 
 type projectRuntimeConfigSetResponse struct {
-	ID                            string    `json:"id"`
-	ProjectID                     string    `json:"projectId"`
-	Name                          string    `json:"name"`
-	EnvVars                       string    `json:"envVars"`
-	ConfigFiles                   string    `json:"configFiles"`
-	SecretRefsSet                 bool      `json:"secretRefsSet"`
-	SecretFilesSet                bool      `json:"secretFilesSet"`
-	Enabled                       bool      `json:"enabled"`
-	DeleteStatus                  string    `json:"deleteStatus"`
-	DeleteMessage                 string    `json:"deleteMessage"`
-	CreatedBy                     string    `json:"createdBy"`
-	CreatedAt                     time.Time `json:"createdAt"`
-	AffectedDeploymentTargetCount int       `json:"affectedDeploymentTargetCount,omitempty"`
+	ID                            string            `json:"id"`
+	ProjectID                     string            `json:"projectId"`
+	Name                          string            `json:"name"`
+	EnvVars                       map[string]string `json:"envVars"`
+	ConfigFiles                   string            `json:"configFiles"`
+	SecretKeys                    []string          `json:"secretKeys"`
+	SecretRefsSet                 bool              `json:"secretRefsSet"`
+	SecretFilesSet                bool              `json:"secretFilesSet"`
+	Enabled                       bool              `json:"enabled"`
+	DeleteStatus                  string            `json:"deleteStatus"`
+	DeleteMessage                 string            `json:"deleteMessage"`
+	CreatedBy                     string            `json:"createdBy"`
+	CreatedAt                     time.Time         `json:"createdAt"`
+	AffectedDeploymentTargetCount int               `json:"affectedDeploymentTargetCount,omitempty"`
 }
 
 func projectRuntimeConfigSetResponses(sets []model.ProjectRuntimeConfigSet) []projectRuntimeConfigSetResponse {
@@ -397,9 +333,10 @@ func projectRuntimeConfigSetResponseFor(set model.ProjectRuntimeConfigSet) proje
 		ID:             set.ID,
 		ProjectID:      set.ProjectID,
 		Name:           set.Name,
-		EnvVars:        set.EnvVars,
+		EnvVars:        runtimeConfigMap(set.EnvVars),
 		ConfigFiles:    set.ConfigFiles,
-		SecretRefsSet:  strings.TrimSpace(set.SecretRefs) != "" && strings.TrimSpace(set.SecretRefs) != "{}",
+		SecretKeys:     runtimeSecretKeys(set.SecretRefs),
+		SecretRefsSet:  len(runtimeSecretKeys(set.SecretRefs)) > 0,
 		SecretFilesSet: strings.TrimSpace(set.SecretFiles) != "" && strings.TrimSpace(set.SecretFiles) != "{}",
 		Enabled:        set.Enabled,
 		DeleteStatus:   set.DeleteStatus,

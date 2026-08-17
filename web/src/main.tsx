@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import { Toaster } from 'sonner'
 import App from './App.tsx'
+import { AppUpdateChecker } from './app/app-update-checker'
 import { PublicConfigProvider } from './app/public-config'
 import { SessionProvider } from './app/session'
 import { TelemetryRouteObserver } from './app/telemetry-route-observer'
@@ -22,6 +23,7 @@ createRoot(document.getElementById('root')!).render(
           <BrowserRouter>
             <TelemetryRouteObserver />
             <SessionProvider>
+              <AppUpdateChecker />
               <MFADialogProvider>
                 <App />
               </MFADialogProvider>

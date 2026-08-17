@@ -6,6 +6,7 @@ import type {
   ConversationTitleSource,
   CreatedTurn,
   CreateTurn,
+  AIModelSnapshot,
   Run,
   RunEvent,
   TimelineItem,
@@ -61,6 +62,7 @@ export interface Repository {
     toolInteractions: ConversationToolInteraction[]
     history: ConversationHistoryEntry[]
     conversation: Pick<Conversation, "title" | "titleSource">
+    model?: AIModelSnapshot
   } | undefined>
   getConversationSummary(conversationId: string): Promise<ConversationSummary | undefined>
   saveConversationSummary(summary: Omit<ConversationSummary, "createdAt" | "updatedAt">): Promise<ConversationSummary>

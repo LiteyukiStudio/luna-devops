@@ -60,7 +60,7 @@ func TestAIProxyUsesSessionActorAndForwardsIdempotencyKey(t *testing.T) {
 	router.POST("/api/v1/ai/conversations/:conversationId/turns", handler.ProxyAIRequest)
 
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/ai/conversations/aicnv_owned/turns", strings.NewReader(
-		`{"input":{"parts":[{"type":"text","text":"diagnose"}]},"pageContext":{"projectId":"prj_visible"},"clientInstanceId":"browser-client-instance-1"}`,
+		`{"modelId":"aimod_test","input":{"parts":[{"type":"text","text":"diagnose"}]},"pageContext":{"projectId":"prj_visible"},"clientInstanceId":"browser-client-instance-1"}`,
 	))
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Idempotency-Key", "msg_1")
@@ -239,7 +239,7 @@ func TestAIProxyTreatsPageProjectAsContextInsteadOfAuthorizationBoundary(t *test
 	router.POST("/api/v1/ai/conversations/:conversationId/turns", handler.ProxyAIRequest)
 
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/ai/conversations/aicnv_old/turns", strings.NewReader(
-		`{"input":{"parts":[{"type":"text","text":"read another project"}]},"pageContext":{"projectId":"prj_hidden"},"clientInstanceId":"browser-client-instance-2"}`,
+		`{"modelId":"aimod_test","input":{"parts":[{"type":"text","text":"read another project"}]},"pageContext":{"projectId":"prj_hidden"},"clientInstanceId":"browser-client-instance-2"}`,
 	))
 	request.Header.Set("Idempotency-Key", "msg_hidden")
 	response := httptest.NewRecorder()

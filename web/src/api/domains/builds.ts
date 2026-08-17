@@ -1,4 +1,4 @@
-import type { BuildEnvironmentConfig, BuildEnvironmentConfigParams, BuildEnvironmentConfigPayload, BuildJob, BuildLog, BuildRun, BuildRunListParams, BuildTemplate, BuildTemplatePreview, BuildVariableSet, BuildVariableSetPayload, HookRun, HookRunLog, PaginatedResponse, PaginationParams, ProjectHookConfig, ProjectHookConfigPayload, ProjectRuntimeConfigSet, ProjectRuntimeConfigSetPayload } from '../types'
+import type { BuildEnvironmentConfig, BuildEnvironmentConfigParams, BuildEnvironmentConfigPayload, BuildJob, BuildLog, BuildRun, BuildRunListParams, BuildTemplate, BuildTemplatePreview, BuildVariableSet, BuildVariableSetPayload, DeploymentTargetRuntimeSecretsPayload, HookRun, HookRunLog, PaginatedResponse, PaginationParams, ProjectHookConfig, ProjectHookConfigPayload, ProjectRuntimeConfigSet, ProjectRuntimeConfigSetPayload, RuntimeSecretMutationResponse } from '../types'
 import { buildRunListQuery, paginationQuery, paginationWithProjectQuery, request } from '../core'
 import { selectionItems, selectionPageParams } from '../selection-page'
 
@@ -28,6 +28,8 @@ export const buildsApi = {
     request<ProjectRuntimeConfigSet>(`/projects/${projectId}/runtime-config-sets`, { method: 'POST', body: JSON.stringify(payload) }),
   updateProjectRuntimeConfigSet: (projectId: string, setId: string, payload: ProjectRuntimeConfigSetPayload) =>
     request<ProjectRuntimeConfigSet>(`/projects/${projectId}/runtime-config-sets/${setId}`, { method: 'PUT', body: JSON.stringify(payload) }),
+  updateProjectRuntimeConfigSetRuntimeSecrets: (projectId: string, setId: string, payload: DeploymentTargetRuntimeSecretsPayload) =>
+    request<RuntimeSecretMutationResponse>(`/projects/${projectId}/runtime-config-sets/${setId}/runtime-secrets`, { method: 'PUT', body: JSON.stringify(payload) }),
   deleteProjectRuntimeConfigSet: (projectId: string, setId: string) =>
     request<void>(`/projects/${projectId}/runtime-config-sets/${setId}`, { method: 'DELETE' }),
   listProjectHooks: (projectId: string) =>

@@ -156,6 +156,7 @@ export class RunExecutor {
           toolCalls: [],
           continuationMessages,
           loadedOperationIds: [...loadedOperationIds],
+          ...(executionInput.model ? { model: executionInput.model } : {}),
         }, abort.signal)
         finalAnswer = result.answer
         if (cardRepairExhausted) {
@@ -345,7 +346,7 @@ export class RunExecutor {
       }
       if (!completed) throw new Error("ai.limit_exceeded")
       if (executionInput.conversation.titleSource === "default" && !assistantRenamed) try {
-        const title = await this.modelRuntime.generateConversationTitle(executionInput.input, finalAnswer, abort.signal)
+        const title = await this.modelRuntime.generateConversationTitle(executionInput.input, finalAnswer, abort.signal, executionInput.model)
         if (title) await this.renameConversation(run.id, run.turnId, run.conversationId, { title })
       } catch {
         // Title generation is best-effort and must never fail a completed response.
@@ -357,6 +358,7 @@ export class RunExecutor {
           pageContext: executionInput.pageContext,
           conversation: conversationContext,
           history: executionInput.history,
+          ...(executionInput.model ? { model: executionInput.model } : {}),
         }, pendingOptions, abort.signal)
       }
       await this.repository.updateRun(run.id, "running", "completed", { completedAt: new Date().toISOString() })
@@ -835,7 +837,25 @@ export class RunExecutor {
         span.setAttribute("luna.tool_call.count", toolCalls.length)
         agentMetrics.modelTokens.add(event.usage.inputTokens, { direction: "input" })
         agentMetrics.modelTokens.add(event.usage.outputTokens, { direction: "output" })
-        await this.repository.appendEvent(runId, "model.completed", { usage: event.usage })
+        await this.repository.appendEvent(runId, "model.completed", {
+          usage: {
+            inputTokens: event.usage.inputTokens,
+            outputTokens: event.usage.outputTokens,
+            cachedInputTokens: event.usage.cachedInputTokens ?? 0,
+            cachedOutputTokens: event.usage.cachedOutputTokens ?? 0,
+          },
+          ...(input.model ? {
+            modelId: input.model.id,
+            modelName: input.model.name,
+            pricing: {
+              inputCreditsPerMillion: input.model.inputCreditsPerMillion,
+              outputCreditsPerMillion: input.model.outputCreditsPerMillion,
+              cachedInputCreditsPerMillion: input.model.cachedInputCreditsPerMillion,
+              cachedOutputCreditsPerMillion: input.model.cachedOutputCreditsPerMillion,
+            },
+            usageSchemaVersion: 1,
+          } : {}),
+        })
       }
     }
     if (reasoningSummary) {

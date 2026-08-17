@@ -2,6 +2,8 @@ import type {
   AICapabilities,
   AIConversation,
   AIMFAResumePayload,
+  AIModelConfig,
+  AIModelOption,
   AIPaginatedResponse,
   AIPendingUIActions,
   AITimeline,
@@ -12,6 +14,12 @@ import { paginationQuery, request } from '../core'
 
 export const aiApi = {
   getAICapabilities: () => request<AICapabilities>('/ai/capabilities'),
+  listAIModels: () => request<AIModelOption[]>('/ai/models'),
+  listAIModelConfigs: () => request<AIModelConfig[]>('/configs/ai/models'),
+  createAIModel: (payload: { name: string, inputCreditsPerMillion: string, outputCreditsPerMillion: string, cachedInputCreditsPerMillion: string, cachedOutputCreditsPerMillion: string, enabled?: boolean }) =>
+    request<AIModelConfig>('/configs/ai/models', { method: 'POST', body: JSON.stringify(payload) }),
+  updateAIModel: (id: string, payload: Partial<{ name: string, inputCreditsPerMillion: string, outputCreditsPerMillion: string, cachedInputCreditsPerMillion: string, cachedOutputCreditsPerMillion: string, enabled: boolean }>) =>
+    request<AIModelConfig>(`/configs/ai/models/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(payload) }),
   listAIConversations: (params: { page: number, pageSize: number, search?: string }) =>
     request<AIPaginatedResponse<AIConversation>>(`/ai/conversations?${paginationQuery({ ...params, sortBy: 'updatedAt', sortOrder: 'desc' })}`),
   createAIConversation: (payload: { projectId?: string, title?: string }) =>
@@ -29,7 +37,7 @@ export const aiApi = {
     const suffix = query.size > 0 ? `?${query}` : ''
     return request<AITimeline>(`/ai/conversations/${encodeURIComponent(conversationId)}/timeline${suffix}`)
   },
-  createAITurn: (conversationId: string, payload: { input: { parts: Array<{ type: 'text', text: string }> }, pageContext: Record<string, unknown>, clientInstanceId: string }, idempotencyKey: string) =>
+  createAITurn: (conversationId: string, payload: { modelId: string, input: { parts: Array<{ type: 'text', text: string }> }, pageContext: Record<string, unknown>, clientInstanceId: string }, idempotencyKey: string) =>
     request<AITurnCreated>(`/ai/conversations/${encodeURIComponent(conversationId)}/turns`, {
       method: 'POST',
       headers: { 'Idempotency-Key': idempotencyKey },

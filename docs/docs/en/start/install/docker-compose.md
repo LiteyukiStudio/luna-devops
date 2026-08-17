@@ -57,7 +57,7 @@ Then start the profile:
 AI_ASSISTANT_AVAILABLE=true docker compose --profile ai up -d
 ```
 
-Configure the Provider, model, access rules, and quotas under **Global Settings → AI Assistant**. The Provider API key is stored by the platform Secret Store and does not belong in `.env`. For diagnostics, run `docker compose --profile ai logs -f agent`.
+Configure the Provider, model catalog, access rules, and quotas under **Global Settings → AI Assistant**. The Provider API key is stored by the platform Secret Store and does not belong in `.env`. For diagnostics, run `docker compose --profile ai logs -f agent`.
 
 ## Open The Console
 

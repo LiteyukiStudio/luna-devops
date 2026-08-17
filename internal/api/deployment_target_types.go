@@ -7,6 +7,7 @@ import (
 
 	"github.com/LiteyukiStudio/devops/internal/buildtemplate"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/LiteyukiStudio/devops/internal/runtimeconfig"
 )
 
 type deploymentTargetResponse struct {
@@ -89,8 +90,9 @@ type deploymentTargetResponse struct {
 	ConcurrencyPolicy            string                               `json:"concurrencyPolicy"`
 	RuntimeConfigSetIDs          string                               `json:"runtimeConfigSetIds"`
 	RuntimeConfigRefs            []deploymentRuntimeConfigRefResponse `json:"runtimeConfigRefs"`
-	EnvVars                      string                               `json:"envVars"`
-	ConfigRefs                   string                               `json:"configRefs"`
+	EnvVars                      map[string]string                    `json:"envVars"`
+	ConfigRefs                   map[string]string                    `json:"configRefs"`
+	SecretKeys                   []string                             `json:"secretKeys"`
 	SecretRefsSet                bool                                 `json:"secretRefsSet"`
 	ConfigFiles                  string                               `json:"configFiles"`
 	SecretFilesSet               bool                                 `json:"secretFilesSet"`
@@ -214,9 +216,10 @@ func deploymentTargetResponseFromModel(target model.DeploymentTarget, mounts ...
 		ConcurrencyPolicy:            target.ConcurrencyPolicy,
 		RuntimeConfigSetIDs:          target.RuntimeConfigSetIDs,
 		RuntimeConfigRefs:            deploymentRuntimeConfigRefsResponse(target),
-		EnvVars:                      target.EnvVars,
-		ConfigRefs:                   target.ConfigRefs,
-		SecretRefsSet:                strings.TrimSpace(target.SecretRefs) != "",
+		EnvVars:                      runtimeConfigMap(target.EnvVars),
+		ConfigRefs:                   runtimeConfigMap(target.ConfigRefs),
+		SecretKeys:                   runtimeSecretKeys(target.SecretRefs),
+		SecretRefsSet:                len(runtimeSecretKeys(target.SecretRefs)) > 0,
 		ConfigFiles:                  target.ConfigFiles,
 		SecretFilesSet:               strings.TrimSpace(target.SecretFiles) != "" && strings.TrimSpace(target.SecretFiles) != "{}",
 		DataVolumes:                  dataVolumes,
@@ -357,15 +360,22 @@ type deploymentTargetInput struct {
 	ConcurrencyPolicy            string                             `json:"concurrencyPolicy"`
 	RuntimeConfigSetIDs          []string                           `json:"runtimeConfigSetIds"`
 	RuntimeConfigRefs            []deploymentRuntimeConfigRefInput  `json:"runtimeConfigRefs"`
-	EnvVars                      string                             `json:"envVars"`
-	ConfigRefs                   string                             `json:"configRefs"`
-	SecretRefs                   string                             `json:"secretRefs"`
+	EnvVars                      map[string]string                  `json:"envVars"`
+	ConfigRefs                   map[string]string                  `json:"configRefs"`
 	ConfigFiles                  string                             `json:"configFiles"`
 	SecretFiles                  string                             `json:"secretFiles"`
 	DataVolumes                  []deploymentTargetDataVolumeInput  `json:"dataVolumes"`
 	RequireApproval              bool                               `json:"requireApproval"`
 	WebConsoleEnabled            *bool                              `json:"webConsoleEnabled"`
 	Enabled                      bool                               `json:"enabled"`
+}
+
+func runtimeConfigMap(raw string) map[string]string {
+	values, err := runtimeconfig.ParseLegacyKeyValue(raw)
+	if err != nil {
+		return map[string]string{}
+	}
+	return values
 }
 
 type deploymentTargetEmptyDirInput struct {

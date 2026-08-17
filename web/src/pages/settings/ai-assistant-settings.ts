@@ -22,7 +22,6 @@ export const aiSettingsSchema = z.object({
   baseUrl: z.union([z.literal(''), z.url().refine(value => value.startsWith('https://'))]),
   apiKey: z.string(),
   apiKeyConfigured: z.boolean(),
-  model: z.string(),
   webProxyEnabled: z.boolean(),
   webProxyPool: z.string().superRefine((value, context) => {
     const entries = value.split(/\r?\n/).map(item => item.trim()).filter(Boolean)
@@ -94,8 +93,6 @@ export const aiSettingsSchema = z.object({
   if (value.enabled) {
     if (!value.baseUrl)
       context.addIssue({ code: 'custom', path: ['baseUrl'], message: i18next.t('settings.ai.baseUrlRequired') })
-    if (!value.model.trim())
-      context.addIssue({ code: 'custom', path: ['model'], message: i18next.t('settings.ai.modelRequired') })
     if (!value.apiKey.trim() && !value.apiKeyConfigured)
       context.addIssue({ code: 'custom', path: ['apiKey'], message: i18next.t('settings.ai.apiKeyRequired') })
   }
@@ -120,7 +117,6 @@ export function aiSettingsPayload(values: AISettingsFormValues) {
     'ai.assistant.enabled': values.enabled,
     'ai.access.mode': values.accessMode,
     'ai.provider.base_url': values.baseUrl.trim(),
-    'ai.provider.default_model': values.model.trim(),
     'ai.web.proxy_enabled': values.webProxyEnabled,
     'ai.runtime.provider_timeout_seconds': values.providerTimeoutSeconds,
     'ai.runtime.max_request_retries': values.maxRequestRetries,

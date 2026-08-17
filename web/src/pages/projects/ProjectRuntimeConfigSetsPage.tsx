@@ -14,13 +14,14 @@ import { EditActionButton } from '@/components/common/edit-action-button'
 import { ErrorState } from '@/components/common/error-state'
 import { FormField as Field } from '@/components/common/form-field'
 import { HoverText } from '@/components/common/hover-text'
+import { KeyValueTextEditor } from '@/components/common/key-value-text-editor'
 import { RuntimeConfigFilesEditor } from '@/components/common/runtime-config-files-editor'
+import { RuntimeConfigSetSecretsEditor } from '@/components/common/runtime-config-set-secrets-editor'
 import { StatusValueBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
 import { runtimeConfigFileCount } from '@/lib/runtime-config-files'
 
 export interface ProjectRuntimeConfigSetsPageHandle {
@@ -30,10 +31,9 @@ export interface ProjectRuntimeConfigSetsPageHandle {
 const runtimeConfigDefaults: ProjectRuntimeConfigSetPayload = {
   configFiles: '',
   enabled: true,
-  envVars: '',
+  envVars: {},
   name: '',
   secretFiles: '',
-  secretRefs: '',
 }
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
 
@@ -107,7 +107,6 @@ export function ProjectRuntimeConfigSetsPage({ projectId, ref }: { projectId: st
           envVars: set.envVars,
           name: set.name,
           secretFiles: '',
-          secretRefs: '',
         }
       : runtimeConfigDefaults)
     setDialogOpen(true)
@@ -190,7 +189,10 @@ export function ProjectRuntimeConfigSetsPage({ projectId, ref }: { projectId: st
             <div className="grid gap-4 overflow-y-auto px-6 py-5">
               <Field label={t('common.name')} required><Input {...form.register('name', { required: true })} /></Field>
               <Field hint={t('runtimeConfigSets.envVarsHint')} label={t('runtimeConfigSets.envVars')}>
-                <Textarea className="min-h-24 font-mono text-sm" {...form.register('envVars')} placeholder={t('runtimeConfigSets.envVarsPlaceholder')} />
+                <KeyValueTextEditor
+                  initialValue={form.getValues('envVars')}
+                  onChange={value => form.setValue('envVars', value, { shouldDirty: true, shouldValidate: true })}
+                />
               </Field>
               <Field hint={t('runtimeConfigSets.configFilesHint')} label={t('runtimeConfigSets.configFiles')}>
                 <RuntimeConfigFilesEditor
@@ -200,9 +202,7 @@ export function ProjectRuntimeConfigSetsPage({ projectId, ref }: { projectId: st
                   onValidationChange={setConfigFilesValid}
                 />
               </Field>
-              <Field hint={editingSet?.secretRefsSet ? t('runtimeConfigSets.secretRefsConfiguredHint') : t('runtimeConfigSets.secretRefsHint')} label={t('runtimeConfigSets.secretRefs')}>
-                <Textarea className="min-h-24 font-mono text-sm" {...form.register('secretRefs')} placeholder={editingSet?.secretRefsSet ? t('common.secretSetPlaceholder') : t('runtimeConfigSets.secretRefsPlaceholder')} />
-              </Field>
+              <RuntimeConfigSetSecretsEditor projectId={projectId} set={editingSet} />
               <Field hint={editingSet?.secretFilesSet ? t('runtimeConfigSets.secretFilesConfiguredHint') : t('runtimeConfigSets.secretFilesHint')} label={t('runtimeConfigSets.secretFiles')}>
                 <RuntimeConfigFilesEditor
                   key={`${editingSet?.id ?? 'new'}-secret-files`}
@@ -242,9 +242,8 @@ function normalizeRuntimeConfigPayload(values: ProjectRuntimeConfigSetPayload): 
   return {
     configFiles: values.configFiles?.trim() ?? '',
     enabled: Boolean(values.enabled),
-    envVars: values.envVars?.trim() ?? '',
+    envVars: values.envVars ?? {},
     name: values.name.trim(),
     secretFiles: values.secretFiles?.trim() ?? '',
-    secretRefs: values.secretRefs?.trim() ?? '',
   }
 }

@@ -2,6 +2,9 @@ const aiAssistant = {
   aiAssistant: {
     open: 'Open Luna Assistant',
     title: 'Luna Assistant',
+    modelLabel: 'AI model',
+    modelEmpty: 'No model available',
+    modelUnavailable: 'No enabled AI model is available. Ask an administrator to configure one.',
     context: 'Current page: {{path}}',
     emptyTitle: 'What would you like to do?',
     empty: 'The assistant can diagnose issues or perform platform actions using the current page context',

@@ -14,6 +14,7 @@ import { useParams, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import { api } from '@/api'
+import { useSession } from '@/app/session-context'
 import { ApplicationBasicFields } from '@/components/common/application-basic-fields'
 import { ContentTabs } from '@/components/common/content-tabs'
 import { ErrorState } from '@/components/common/error-state'
@@ -26,6 +27,7 @@ import { TabsContent } from '@/components/ui/tabs'
 import { APPLICATION_IDENTIFIER_MAX_LENGTH, APPLICATION_IDENTIFIER_MIN_LENGTH } from '@/lib/identifier-limits'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { WORKFLOW_STATUS_REFETCH_INTERVAL_MS } from '@/lib/polling'
+import { isPlatformAdmin } from '@/lib/roles'
 import { firstReleaseReadyTarget } from './application-config-utils'
 import { ApplicationOverviewPanel } from './application-overview-panel'
 
@@ -59,6 +61,7 @@ type ApplicationForm = z.output<typeof schema>
 const APPLICATION_CONFIG_FORM_ID = 'application-config-form'
 export function ApplicationConfigPage() {
   const { t } = useTranslation()
+  const { user } = useSession()
   const { projectId = '', applicationId = '' } = useParams()
   const [searchParams, setSearchParams] = useSearchParams()
   const queryClient = useQueryClient()
@@ -318,6 +321,7 @@ export function ApplicationConfigPage() {
               projectId={projectId}
               projectIdentifier={project.data?.identifier ?? ''}
               projectWebConsoleEnabled={project.data?.webConsoleEnabled ?? true}
+              canManageRuntimeSecrets={isPlatformAdmin(user?.role) || ['owner', 'admin', 'developer'].includes(project.data?.currentUserRole ?? '')}
               registries={registries.data ?? []}
               repositoryBindings={appRepositoryBindings}
               releases={appReleases}

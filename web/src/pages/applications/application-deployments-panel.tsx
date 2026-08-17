@@ -66,10 +66,11 @@ function buildArgLineCount(raw?: string) {
   return value.split('\n').map(line => line.trim()).filter(line => line && !line.startsWith('#')).length
 }
 
-export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifier, buildRuns, deploymentTargets, projectId, projectIdentifier, projectWebConsoleEnabled, ref, registries, releases, repositoryBindings }: {
+export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifier, buildRuns, canManageRuntimeSecrets, deploymentTargets, projectId, projectIdentifier, projectWebConsoleEnabled, ref, registries, releases, repositoryBindings }: {
   applicationId: string
   applicationIdentifier: string
   buildRuns: BuildRun[]
+  canManageRuntimeSecrets: boolean
   deploymentTargets: DeploymentTarget[]
   projectId: string
   projectIdentifier: string
@@ -376,10 +377,9 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
     ? t('deploymentsPage.progressiveDataEnabledSummary', { count: targetDataVolumes.length })
     : t('deploymentsPage.progressiveDataDisabledSummary')
   const targetHasAdvancedConfig = Boolean(
-    String(watchedTargetValues.envVars ?? '').trim()
-    || String(watchedTargetValues.configRefs ?? '').trim()
+    Object.keys(watchedTargetValues.envVars ?? {}).length > 0
+    || Object.keys(watchedTargetValues.configRefs ?? {}).length > 0
     || String(watchedTargetValues.configFiles ?? '').trim()
-    || String(watchedTargetValues.secretRefs ?? '').trim()
     || String(watchedTargetValues.secretFiles ?? '').trim()
     || editingTarget?.secretRefsSet
     || editingTarget?.secretFilesSet,
@@ -440,7 +440,6 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
           envVars: set.envVars,
           name: set.name,
           secretFiles: '',
-          secretRefs: '',
         }
       : runtimeConfigDefaults)
     setRuntimeConfigDialogOpen(true)
@@ -678,6 +677,8 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
         onSubmit={values => createRelease.mutate(values)}
       />
       <DeferredDeploymentTargetDialog
+        applicationId={applicationId}
+        projectId={projectId}
         buildContextSuggestions={buildContextSuggestions}
         buildMinutePriceText={billingDisplay.formatAmountWithUnit(buildMinuteCost)}
         buildTemplates={buildTemplates.data ?? []}
@@ -719,6 +720,7 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
         }}
         targetBuildHooksEnabled={targetBuildHooksEnabled}
         buildVariableRows={targetBuildVariableRows}
+        canManageRuntimeSecrets={canManageRuntimeSecrets}
         targetBuildOptionsError={targetBuildOptions.isError}
         targetBuildOptionsFetching={targetBuildOptions.isFetching}
         targetCanRedeploy={targetCanRedeploy}
@@ -771,6 +773,8 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
         filesValid={runtimeConfigFilesValid}
         form={runtimeConfigForm}
         open={runtimeConfigDialogOpen}
+        projectId={projectId}
+        canManageRuntimeSecrets={canManageRuntimeSecrets}
         pending={saveRuntimeConfigSet.isPending}
         secretFilesValid={runtimeSecretFilesValid}
         setFilesValid={setRuntimeConfigFilesValid}

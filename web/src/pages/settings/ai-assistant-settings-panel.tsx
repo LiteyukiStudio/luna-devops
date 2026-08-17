@@ -18,6 +18,7 @@ import { Input } from '@/components/ui/input'
 import { NativeSelect as Select } from '@/components/ui/native-select'
 import { Textarea } from '@/components/ui/textarea'
 import { aiSettingsPayload, aiSettingsSchema } from './ai-assistant-settings'
+import { AIModelManagement } from './ai-model-management'
 import { SettingsTabSaveButton } from './settings-tab-save-button'
 
 type FormValues = AISettingsFormValues
@@ -28,7 +29,6 @@ const defaults: FormValues = {
   baseUrl: '',
   apiKey: '',
   apiKeyConfigured: false,
-  model: '',
   webProxyEnabled: false,
   webProxyPool: '',
   webProxyPoolConfigured: false,
@@ -207,129 +207,129 @@ export function AIAssistantSettingsPanel() {
   const webProxyEnabled = form.watch('webProxyEnabled')
   const observabilityEnabled = form.watch('observabilityEnabled')
   return (
-    <form className="max-w-3xl" onSubmit={form.handleSubmit(values => save.mutate(values))}>
-      <PageChromeTools>
-        <Button
-          disabled={!runtimeDefaultsReady || save.isPending}
-          type="button"
-          variant="outline"
-          onClick={restoreRuntimeDefaults}
-        >
-          <RotateCcw aria-hidden="true" className="size-4" />
-          {t('settings.restoreDefaults')}
-        </Button>
-        <SettingsTabSaveButton
-          disabled={!form.formState.isDirty || !form.formState.isValid}
-          label={t('settings.saveConfig')}
-          pending={save.isPending}
-          type="button"
-          onClick={() => void form.handleSubmit(values => save.mutate(values))()}
-        />
-      </PageChromeTools>
-      <Surface className="grid gap-5 rounded-xl p-6" variant="bordered">
-        <CheckboxField description={t('settings.ai.enabledHint')} {...form.register('enabled')}>{t('settings.ai.enabled')}</CheckboxField>
-        <Field hint={t('settings.ai.accessModeHint')} label={t('settings.ai.accessMode')} required>
-          <Select {...form.register('accessMode')}>
-            <option value="all_authenticated">{t('settings.ai.accessModeAllAuthenticated')}</option>
-            <option value="admins">{t('settings.ai.accessModeAdmins')}</option>
-          </Select>
-        </Field>
-        <div className="grid gap-4 md:grid-cols-2">
-          <Field error={errors.model?.message} label={t('settings.ai.model')} required>
-            <Input placeholder="deepseek-v4-pro" {...form.register('model')} />
+    <>
+      <form className="max-w-3xl" onSubmit={form.handleSubmit(values => save.mutate(values))}>
+        <PageChromeTools>
+          <Button
+            disabled={!runtimeDefaultsReady || save.isPending}
+            type="button"
+            variant="outline"
+            onClick={restoreRuntimeDefaults}
+          >
+            <RotateCcw aria-hidden="true" className="size-4" />
+            {t('settings.restoreDefaults')}
+          </Button>
+          <SettingsTabSaveButton
+            disabled={!form.formState.isDirty || !form.formState.isValid}
+            label={t('settings.saveConfig')}
+            pending={save.isPending}
+            type="button"
+            onClick={() => void form.handleSubmit(values => save.mutate(values))()}
+          />
+        </PageChromeTools>
+        <Surface className="grid gap-5 rounded-xl p-6" variant="bordered">
+          <CheckboxField description={t('settings.ai.enabledHint')} {...form.register('enabled')}>{t('settings.ai.enabled')}</CheckboxField>
+          <Field hint={t('settings.ai.accessModeHint')} label={t('settings.ai.accessMode')} required>
+            <Select {...form.register('accessMode')}>
+              <option value="all_authenticated">{t('settings.ai.accessModeAllAuthenticated')}</option>
+              <option value="admins">{t('settings.ai.accessModeAdmins')}</option>
+            </Select>
           </Field>
-          <Field error={errors.baseUrl?.message} hint={t('settings.ai.baseUrlHint')} label={t('settings.ai.baseUrl')} required>
-            <Input autoComplete="url" placeholder="https://api.example.com/v1" {...form.register('baseUrl')} />
-          </Field>
-        </div>
-        <Field error={errors.apiKey?.message} hint={t('settings.ai.apiKeyHint')} label={t('settings.ai.apiKey')} required>
-          <Input autoComplete="off" placeholder={form.getValues('apiKeyConfigured') ? t('settings.ai.secretUnchanged') : 'sk-…'} type="password" {...form.register('apiKey')} />
-        </Field>
-        <ProgressiveSection
-          description={t('settings.ai.runtimeDescription')}
-          storageKey="luna-settings-ai-runtime-open"
-          summary={t('settings.ai.runtimeSummary', {
-            providerTimeout: providerTimeoutSeconds,
-            retries: maxRequestRetries,
-            runTimeout: runTimeoutSeconds,
-            concurrency: agentConcurrentRuns,
-            contextBudget: contextInputKTokens,
-          })}
-          title={t('settings.ai.runtimeTitle')}
-        >
           <div className="grid gap-4 md:grid-cols-2">
-            <Field error={errors.providerTimeoutSeconds?.message} hint={t('settings.ai.providerTimeoutHint')} label={t('settings.ai.providerTimeout')}>
-              <Input max={900} min={1} step={1} type="number" {...form.register('providerTimeoutSeconds', { valueAsNumber: true })} />
-            </Field>
-            <Field error={errors.maxRequestRetries?.message} hint={t('settings.ai.maxRequestRetriesHint')} label={t('settings.ai.maxRequestRetries')}>
-              <Input max={10} min={0} step={1} type="number" {...form.register('maxRequestRetries', { valueAsNumber: true })} />
-            </Field>
-            <Field error={errors.runTimeoutSeconds?.message} hint={t('settings.ai.runTimeoutHint')} label={t('settings.ai.runTimeout')}>
-              <Input max={7200} min={30} step={1} type="number" {...form.register('runTimeoutSeconds', { valueAsNumber: true })} />
-            </Field>
-            <Field error={errors.agentConcurrentRuns?.message} hint={t('settings.ai.agentConcurrentRunsHint')} label={t('settings.ai.agentConcurrentRuns')}>
-              <Input max={100} min={1} step={1} type="number" {...form.register('agentConcurrentRuns', { valueAsNumber: true })} />
-            </Field>
-            <Field error={errors.contextInputKTokens?.message} hint={t('settings.ai.contextInputBudgetHint')} label={t('settings.ai.contextInputBudget')}>
-              <Input max={1024} min={64} step={1} type="number" {...form.register('contextInputKTokens', { valueAsNumber: true })} />
+            <Field error={errors.baseUrl?.message} hint={t('settings.ai.baseUrlHint')} label={t('settings.ai.baseUrl')} required>
+              <Input autoComplete="url" placeholder="https://api.example.com/v1" {...form.register('baseUrl')} />
             </Field>
           </div>
-        </ProgressiveSection>
-        <ProgressiveSection
-          description={t('settings.ai.advancedDescription')}
-          storageKey="luna-settings-ai-advanced-open"
-          summary={t('settings.ai.advancedSummary', { count: advancedGroups.reduce((total, group) => total + group.fields.length, 0) })}
-          title={t('settings.ai.advancedTitle')}
-        >
-          {advancedGroups.map(group => (
-            <div className="grid gap-4 rounded-lg bg-surface-subtle p-4" key={group.titleKey}>
-              <div className="grid gap-1">
-                <p className="text-sm font-medium">{t(group.titleKey)}</p>
-                <p className="text-xs text-muted-foreground">{t(group.descriptionKey)}</p>
-              </div>
-              <div className="grid gap-4 md:grid-cols-2">
-                {group.fields.map(field => (
-                  <Field key={field.name} error={errors[field.name]?.message} hint={t(field.hintKey)} label={t(field.labelKey)}>
-                    <Input max={field.max} min={field.min} step={field.step} type="number" {...form.register(field.name, { valueAsNumber: true })} />
-                  </Field>
-                ))}
-              </div>
+          <Field error={errors.apiKey?.message} hint={t('settings.ai.apiKeyHint')} label={t('settings.ai.apiKey')} required>
+            <Input autoComplete="off" placeholder={form.getValues('apiKeyConfigured') ? t('settings.ai.secretUnchanged') : 'sk-…'} type="password" {...form.register('apiKey')} />
+          </Field>
+          <ProgressiveSection
+            description={t('settings.ai.runtimeDescription')}
+            storageKey="luna-settings-ai-runtime-open"
+            summary={t('settings.ai.runtimeSummary', {
+              providerTimeout: providerTimeoutSeconds,
+              retries: maxRequestRetries,
+              runTimeout: runTimeoutSeconds,
+              concurrency: agentConcurrentRuns,
+              contextBudget: contextInputKTokens,
+            })}
+            title={t('settings.ai.runtimeTitle')}
+          >
+            <div className="grid gap-4 md:grid-cols-2">
+              <Field error={errors.providerTimeoutSeconds?.message} hint={t('settings.ai.providerTimeoutHint')} label={t('settings.ai.providerTimeout')}>
+                <Input max={900} min={1} step={1} type="number" {...form.register('providerTimeoutSeconds', { valueAsNumber: true })} />
+              </Field>
+              <Field error={errors.maxRequestRetries?.message} hint={t('settings.ai.maxRequestRetriesHint')} label={t('settings.ai.maxRequestRetries')}>
+                <Input max={10} min={0} step={1} type="number" {...form.register('maxRequestRetries', { valueAsNumber: true })} />
+              </Field>
+              <Field error={errors.runTimeoutSeconds?.message} hint={t('settings.ai.runTimeoutHint')} label={t('settings.ai.runTimeout')}>
+                <Input max={7200} min={30} step={1} type="number" {...form.register('runTimeoutSeconds', { valueAsNumber: true })} />
+              </Field>
+              <Field error={errors.agentConcurrentRuns?.message} hint={t('settings.ai.agentConcurrentRunsHint')} label={t('settings.ai.agentConcurrentRuns')}>
+                <Input max={100} min={1} step={1} type="number" {...form.register('agentConcurrentRuns', { valueAsNumber: true })} />
+              </Field>
+              <Field error={errors.contextInputKTokens?.message} hint={t('settings.ai.contextInputBudgetHint')} label={t('settings.ai.contextInputBudget')}>
+                <Input max={1024} min={64} step={1} type="number" {...form.register('contextInputKTokens', { valueAsNumber: true })} />
+              </Field>
             </div>
-          ))}
-        </ProgressiveSection>
-        <ProgressiveSection
-          description={t('settings.ai.observabilityDescription')}
-          storageKey="luna-settings-ai-observability-open"
-          summary={observabilityEnabled ? t('settings.ai.observabilitySummaryEnabled') : t('settings.ai.observabilitySummaryDisabled')}
-          title={t('settings.ai.observabilityTitle')}
-        >
-          <CheckboxField description={t('settings.ai.observabilityEnabledHint')} {...form.register('observabilityEnabled')}>{t('settings.ai.observabilityEnabled')}</CheckboxField>
-          <ObservabilitySourceFields form={form} source="prometheus" />
-          <ObservabilitySourceFields form={form} source="loki" tenant />
-          <ObservabilitySourceFields form={form} source="tempo" tenant />
-          <p className="text-xs text-muted-foreground">{t('settings.ai.observabilitySaveWarning')}</p>
-        </ProgressiveSection>
-        <ProgressiveSection
-          description={t('settings.ai.webProxyDescription')}
-          storageKey="luna-settings-ai-web-proxy-open"
-          summary={webProxyEnabled ? t('settings.ai.webProxySummaryEnabled') : t('settings.ai.webProxySummaryDirect')}
-          title={t('settings.ai.webProxyTitle')}
-        >
-          <div className="grid gap-4">
-            <CheckboxField description={t('settings.ai.webProxyEnabledHint')} {...form.register('webProxyEnabled')}>{t('settings.ai.webProxyEnabled')}</CheckboxField>
-            <Field error={errors.webProxyPool?.message} hint={t('settings.ai.webProxyPoolHint')} label={t('settings.ai.webProxyPool')}>
-              <Textarea
-                autoComplete="off"
-                className="min-h-28 font-mono text-sm"
-                placeholder={form.getValues('webProxyPoolConfigured') ? t('settings.ai.secretUnchanged') : 'http://user:password@proxy.example.com:888'}
-                {...form.register('webProxyPool')}
-              />
-            </Field>
-          </div>
-        </ProgressiveSection>
-        <p className="text-sm leading-6 text-muted-foreground">{t('settings.ai.securitySummary')}</p>
-      </Surface>
-    </form>
+          </ProgressiveSection>
+          <ProgressiveSection
+            description={t('settings.ai.advancedDescription')}
+            storageKey="luna-settings-ai-advanced-open"
+            summary={t('settings.ai.advancedSummary', { count: advancedGroups.reduce((total, group) => total + group.fields.length, 0) })}
+            title={t('settings.ai.advancedTitle')}
+          >
+            {advancedGroups.map(group => (
+              <div className="grid gap-4 rounded-lg bg-surface-subtle p-4" key={group.titleKey}>
+                <div className="grid gap-1">
+                  <p className="text-sm font-medium">{t(group.titleKey)}</p>
+                  <p className="text-xs text-muted-foreground">{t(group.descriptionKey)}</p>
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  {group.fields.map(field => (
+                    <Field key={field.name} error={errors[field.name]?.message} hint={t(field.hintKey)} label={t(field.labelKey)}>
+                      <Input max={field.max} min={field.min} step={field.step} type="number" {...form.register(field.name, { valueAsNumber: true })} />
+                    </Field>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </ProgressiveSection>
+          <ProgressiveSection
+            description={t('settings.ai.observabilityDescription')}
+            storageKey="luna-settings-ai-observability-open"
+            summary={observabilityEnabled ? t('settings.ai.observabilitySummaryEnabled') : t('settings.ai.observabilitySummaryDisabled')}
+            title={t('settings.ai.observabilityTitle')}
+          >
+            <CheckboxField description={t('settings.ai.observabilityEnabledHint')} {...form.register('observabilityEnabled')}>{t('settings.ai.observabilityEnabled')}</CheckboxField>
+            <ObservabilitySourceFields form={form} source="prometheus" />
+            <ObservabilitySourceFields form={form} source="loki" tenant />
+            <ObservabilitySourceFields form={form} source="tempo" tenant />
+            <p className="text-xs text-muted-foreground">{t('settings.ai.observabilitySaveWarning')}</p>
+          </ProgressiveSection>
+          <ProgressiveSection
+            description={t('settings.ai.webProxyDescription')}
+            storageKey="luna-settings-ai-web-proxy-open"
+            summary={webProxyEnabled ? t('settings.ai.webProxySummaryEnabled') : t('settings.ai.webProxySummaryDirect')}
+            title={t('settings.ai.webProxyTitle')}
+          >
+            <div className="grid gap-4">
+              <CheckboxField description={t('settings.ai.webProxyEnabledHint')} {...form.register('webProxyEnabled')}>{t('settings.ai.webProxyEnabled')}</CheckboxField>
+              <Field error={errors.webProxyPool?.message} hint={t('settings.ai.webProxyPoolHint')} label={t('settings.ai.webProxyPool')}>
+                <Textarea
+                  autoComplete="off"
+                  className="min-h-28 font-mono text-sm"
+                  placeholder={form.getValues('webProxyPoolConfigured') ? t('settings.ai.secretUnchanged') : 'http://user:password@proxy.example.com:888'}
+                  {...form.register('webProxyPool')}
+                />
+              </Field>
+            </div>
+          </ProgressiveSection>
+          <p className="text-sm leading-6 text-muted-foreground">{t('settings.ai.securitySummary')}</p>
+        </Surface>
+      </form>
+      <AIModelManagement />
+    </>
   )
 }
 
@@ -340,7 +340,6 @@ function aiSettingsFormValues(values: Record<string, string>): FormValues {
     baseUrl: values['ai.provider.base_url'] ?? '',
     apiKey: '',
     apiKeyConfigured: values['ai.provider.api_key'] === 'true',
-    model: values['ai.provider.default_model'] ?? '',
     webProxyEnabled: values['ai.web.proxy_enabled'] === 'true',
     webProxyPool: '',
     webProxyPoolConfigured: values['ai.web.proxy_pool'] === 'true',

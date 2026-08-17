@@ -563,7 +563,7 @@ function BillingRateRulesSection() {
   if (rateRules.isError)
     return <ErrorState title={t('settings.billingRateRulesFailedTitle')} description={t('settings.billingRateRulesFailedDescription')} />
 
-  const rules = rateRules.data ?? []
+  const rules = (rateRules.data ?? []).filter(rule => !rule.meter.startsWith('ai.'))
   const payload = rules
     .map(rule => drafts[rule.meter] ?? billingRateRulePayloadFromRule(rule))
     .filter((rule): rule is BillingRateRulePayload => Boolean(rule))

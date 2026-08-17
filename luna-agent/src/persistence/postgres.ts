@@ -166,6 +166,7 @@ export class PostgresRepository implements Repository {
         status: "queued",
         input: input.input,
         selectedRunId: runId,
+        modelId: input.modelId ?? null,
       })
       await tx.insert(runs).values({
         id: runId,
@@ -180,6 +181,12 @@ export class PostgresRepository implements Repository {
         traceContext: input.traceContext ?? {},
         runActorGrantCiphertext: input.runActorGrantCiphertext ?? null,
         clientInstanceId: input.clientInstanceId ?? null,
+        modelId: input.modelSnapshot?.id ?? input.modelId ?? null,
+        modelName: input.modelSnapshot?.name ?? null,
+        inputCreditsPerMillion: input.modelSnapshot?.inputCreditsPerMillion ?? null,
+        outputCreditsPerMillion: input.modelSnapshot?.outputCreditsPerMillion ?? null,
+        cachedInputCreditsPerMillion: input.modelSnapshot?.cachedInputCreditsPerMillion ?? null,
+        cachedOutputCreditsPerMillion: input.modelSnapshot?.cachedOutputCreditsPerMillion ?? null,
       })
       await tx.insert(idempotencyKeys).values({
         ownerUserId,
@@ -252,6 +259,12 @@ export class PostgresRepository implements Repository {
       pageContext: runs.pageContext,
       title: conversations.title,
       titleSource: conversations.titleSource,
+      modelId: runs.modelId,
+      modelName: runs.modelName,
+      inputCreditsPerMillion: runs.inputCreditsPerMillion,
+      outputCreditsPerMillion: runs.outputCreditsPerMillion,
+      cachedInputCreditsPerMillion: runs.cachedInputCreditsPerMillion,
+      cachedOutputCreditsPerMillion: runs.cachedOutputCreditsPerMillion,
     })
       .from(runs)
       .innerJoin(turns, eq(turns.id, runs.turnId))
@@ -310,6 +323,16 @@ export class PostgresRepository implements Repository {
       conversationId: row.conversationId,
       input: row.input,
       pageContext: row.pageContext,
+      ...(row.modelId && row.modelName ? {
+        model: {
+          id: row.modelId,
+          name: row.modelName,
+          inputCreditsPerMillion: row.inputCreditsPerMillion ?? "0",
+          outputCreditsPerMillion: row.outputCreditsPerMillion ?? "0",
+          cachedInputCreditsPerMillion: row.cachedInputCreditsPerMillion ?? "0",
+          cachedOutputCreditsPerMillion: row.cachedOutputCreditsPerMillion ?? "0",
+        },
+      } : {}),
       toolInteractions: currentToolInteractions.map(item => ({ itemId: item.id, type: item.type as "tool_call" | "tool_result", status: item.status, content: item.content })),
       history: historyRows.rows.map((item): ConversationHistoryEntry => ({
         turnIndex: item.turn_index,

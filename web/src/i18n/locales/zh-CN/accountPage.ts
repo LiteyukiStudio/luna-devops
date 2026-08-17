@@ -91,6 +91,7 @@ const accountPage = {
       runtime_exec: '执行运行命令',
       runtime_terminal: '打开 Web Console',
       secret_update: '修改密钥',
+      secret_view: '查看运行时密钥',
       registry_credential_update: '修改镜像凭据',
       kubeconfig_update: '修改 kubeconfig',
       auth_provider_update: '修改身份源',

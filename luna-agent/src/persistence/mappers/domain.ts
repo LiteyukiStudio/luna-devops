@@ -61,6 +61,16 @@ export function mapRun(row: RunRow): Run {
     ...(row.startedAt ? { startedAt: row.startedAt.toISOString() } : {}),
     ...(row.completedAt ? { completedAt: row.completedAt.toISOString() } : {}),
     ...(row.errorCode ? { errorCode: row.errorCode } : {}),
+    ...(row.modelId && row.modelName ? {
+      model: {
+        id: row.modelId,
+        name: row.modelName,
+        inputCreditsPerMillion: row.inputCreditsPerMillion ?? "0",
+        outputCreditsPerMillion: row.outputCreditsPerMillion ?? "0",
+        cachedInputCreditsPerMillion: row.cachedInputCreditsPerMillion ?? "0",
+        cachedOutputCreditsPerMillion: row.cachedOutputCreditsPerMillion ?? "0",
+      },
+    } : {}),
   }
 }
 

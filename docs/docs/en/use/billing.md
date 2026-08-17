@@ -12,9 +12,9 @@ Settlement uses Credits. Administrators may configure a display currency and con
 
 ## Price table
 
-The **Price table** tab lists every billing meter currently configured by the platform, including build CPU and memory, runtime resources, persistent storage, gateway traffic, and AI tokens. Each item shows its billing unit, Credits price, and enabled state.
+The **Price table** tab lists platform resource meters, including build CPU and memory, runtime resources, persistent storage, and gateway traffic. AI Token prices are managed per model in **Global Settings → AI Assistant**, rather than in the generic price table.
 
-Disabled meters remain visible but do not currently generate charges. Price and state changes only affect future usage; settled bills are not recalculated.
+Disabled resource meters remain visible but do not currently generate charges. Resource price and state changes only affect future usage; settled bills are not recalculated.
 
 ## Volume charges
 
@@ -32,7 +32,7 @@ Runtime resources are settled from an authoritative observation for each complet
 
 ## AI tokens
 
-AI usage is billed from the input and output tokens reported by the model and charged to the user who started the conversation. Administrators can change prices or disable a meter under **Global Settings → Billing**. Changes only affect later model calls.
+AI usage is billed from the input, output, cached-input, and cached-output tokens reported by the model and charged to the user who started the conversation. Prices are credits per one million tokens and are snapshotted on Run creation; catalog changes affect only later Runs. Older events without a model or price snapshot are not rebilled.
 
 ## Gateway traffic
 

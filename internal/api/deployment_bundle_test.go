@@ -78,7 +78,7 @@ func TestDeploymentBundleConfigurationOmitsDestinationIdentifiersAndSecrets(t *t
 	if configuration.EnvironmentID != "" || configuration.ClusterID != "" || configuration.RepositoryBindingID != "" || configuration.TargetRegistryID != "" {
 		t.Fatalf("portable configuration contains destination identifiers: %#v", configuration)
 	}
-	if configuration.SecretRefs != "" || configuration.SecretFiles != "" || configuration.BuildSecrets != nil || configuration.Enabled {
+	if configuration.SecretFiles != "" || configuration.BuildSecrets != nil || configuration.Enabled {
 		t.Fatalf("portable configuration contains secrets or enabled state: %#v", configuration)
 	}
 	if len(configuration.DataVolumes) != 1 || configuration.DataVolumes[0].ProjectVolumeID != "" || configuration.DataVolumes[0].MountPath != "/data" {
@@ -120,7 +120,7 @@ func TestDeploymentBundleValidationRejectsEmbeddedIdentifiersAndSecrets(t *testi
 		t.Fatalf("embedded identifier error code = %q", code)
 	}
 	base.Configuration.ClusterID = ""
-	base.Configuration.SecretRefs = `{"TOKEN":"plaintext"}`
+	base.Configuration.SecretFiles = `[ {"path":"/run/token","content":"plaintext"} ]`
 	if code := deploymentBundleErrorCode(validateDeploymentTargetBundle(base)); code != "deployment_bundle.invalid_json" {
 		t.Fatalf("embedded secret error code = %q", code)
 	}

@@ -7,7 +7,6 @@ const validValues = {
   baseUrl: 'https://api.example.com/v1',
   apiKey: '',
   apiKeyConfigured: true,
-  model: 'model-1',
   webProxyEnabled: false,
   webProxyPool: '',
   webProxyPoolConfigured: false,
@@ -57,7 +56,6 @@ describe('aI assistant admin settings', () => {
       'ai.assistant.enabled': false,
       'ai.access.mode': 'all_authenticated',
       'ai.provider.base_url': 'https://api.example.com/v1',
-      'ai.provider.default_model': 'model-1',
       'ai.web.proxy_enabled': false,
       'ai.runtime.provider_timeout_seconds': 30,
       'ai.runtime.max_request_retries': 5,
@@ -94,7 +92,7 @@ describe('aI assistant admin settings', () => {
     expect(aiSettingsPayload(restricted)['ai.access.mode']).toBe('admins')
   })
 
-  it('requires all three model settings before enabling the assistant', () => {
+  it('requires the Provider API key before enabling the assistant', () => {
     expect(aiSettingsSchema.safeParse({ ...validValues, enabled: true, apiKeyConfigured: false }).success).toBe(false)
   })
 

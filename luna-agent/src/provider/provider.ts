@@ -28,13 +28,15 @@ export type ModelRequest = {
   maxOutputTokens: number
   signal?: AbortSignal
   thinking?: { type: string }
-  
+  modelId?: string
+  modelName?: string
+  modelPricing?: AIModelSnapshot
 }
 export type ModelEvent =
   | { type: "reasoning_summary_delta", delta: string }
   | { type: "message_delta", delta: string }
   | { type: "tool_call_delta" }
-  | { type: "completed", usage: { inputTokens: number, outputTokens: number }, toolCalls?: ModelToolCall[] }
+  | { type: "completed", usage: { inputTokens: number, outputTokens: number, cachedInputTokens?: number, cachedOutputTokens?: number }, toolCalls?: ModelToolCall[] }
 export type ModelToolArgumentError = {
   code: "invalid_json"
   message: string
@@ -45,7 +47,7 @@ export type ModelToolCall = {
   arguments: Record<string, unknown>
   argumentError?: ModelToolArgumentError
 }
-export type ModelResponse = { text: string, reasoningSummary?: string, toolCalls?: ModelToolCall[], usage: { inputTokens: number, outputTokens: number } }
+export type ModelResponse = { text: string, reasoningSummary?: string, toolCalls?: ModelToolCall[], usage: { inputTokens: number, outputTokens: number, cachedInputTokens?: number, cachedOutputTokens?: number } }
 export type ModelCapabilities = { streaming: boolean, toolCalling: boolean, structuredOutput: boolean }
 
 export interface ModelProvider {
@@ -54,3 +56,4 @@ export interface ModelProvider {
   capabilities(): ModelCapabilities
   health(): Promise<{ ok: boolean, requestId?: string }>
 }
+import type { AIModelSnapshot } from "../domain.js"

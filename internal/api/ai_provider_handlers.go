@@ -55,16 +55,35 @@ func (h *Handlers) GetAIProviderConfigInternal(ctx *gin.Context) {
 	apiKey := h.secrets.ResolveContext(ctx.Request.Context(), secretConfig.Value)
 	version := aiProviderConfigVersion(values, secretConfig.UpdatedAt.String())
 	baseURL := strings.TrimSpace(values["ai.provider.base_url"])
-	modelName := strings.TrimSpace(values["ai.provider.default_model"])
+	var configuredModels []model.AIModel
+	if err := h.dbFor(ctx).Where("enabled = ?", true).Order("name asc").Find(&configuredModels).Error; err != nil {
+		writeErrorCode(ctx, http.StatusServiceUnavailable, "ai.models_unavailable", "AI models are unavailable")
+		return
+	}
+	version = aiProviderConfigVersionWithModels(version, configuredModels)
+	models := make([]gin.H, 0, len(configuredModels))
+	for _, item := range configuredModels {
+		models = append(models, gin.H{
+			"id":                            item.ID,
+			"name":                          item.Name,
+			"inputCreditsPerMillion":        item.InputCreditsPerMillion,
+			"outputCreditsPerMillion":       item.OutputCreditsPerMillion,
+			"cachedInputCreditsPerMillion":  item.CachedInputCreditsPerMillion,
+			"cachedOutputCreditsPerMillion": item.CachedOutputCreditsPerMillion,
+		})
+	}
 	ctx.Header("Cache-Control", "no-store")
 	ctx.Header("ETag", `"`+version+`"`)
 	ctx.JSON(http.StatusOK, gin.H{
 		"version": version,
 		"provider": gin.H{
-			"baseUrl":    baseURL,
-			"model":      modelName,
+			"baseUrl": baseURL,
+			// model is retained as a compatibility hint for older Agents; new
+			// requests must select from models by id.
+			"model":      firstAIModelName(configuredModels),
 			"apiKey":     apiKey,
-			"configured": baseURL != "" && modelName != "" && strings.TrimSpace(apiKey) != "",
+			"configured": baseURL != "" && len(models) > 0 && strings.TrimSpace(apiKey) != "",
+			"models":     models,
 		},
 		"runtime": gin.H{
 			"providerTimeoutMs":                    aiRuntimeMilliseconds(values, "ai.runtime.provider_timeout_seconds", 300),
@@ -91,6 +110,22 @@ func (h *Handlers) GetAIProviderConfigInternal(ctx *gin.Context) {
 		},
 		"toolCatalog": toolCatalog,
 	})
+}
+
+func firstAIModelName(models []model.AIModel) string {
+	if len(models) == 0 {
+		return ""
+	}
+	return models[0].Name
+}
+
+func aiProviderConfigVersionWithModels(base string, models []model.AIModel) string {
+	hash := sha256.New()
+	_, _ = hash.Write([]byte(base))
+	for _, item := range models {
+		_, _ = hash.Write([]byte("\x00" + item.ID + "\x00" + item.Name + "\x00" + item.InputCreditsPerMillion.String() + "\x00" + item.OutputCreditsPerMillion.String() + "\x00" + item.CachedInputCreditsPerMillion.String() + "\x00" + item.CachedOutputCreditsPerMillion.String() + "\x00" + item.UpdatedAt.UTC().String()))
+	}
+	return "aipcfg_" + hex.EncodeToString(hash.Sum(nil))[:16]
 }
 
 func aiRuntimeRatio(values map[string]string, key string, fallback float64) float64 {

@@ -40,21 +40,27 @@ func TestDefaultRateRulesPreferGatewayTrafficOverRequestBilling(t *testing.T) {
 	}
 }
 
-func TestDefaultRateRulesIncludeAIInputAndOutputTokens(t *testing.T) {
+func TestDefaultRateRulesExcludeAIModelTokenRates(t *testing.T) {
 	rules := defaultRateRuleByMeter()
-	input := rules[MeterAIInputTokens]
-	if input.Unit != "1000_tokens" || !input.Enabled || !input.CreditsPerUnit.Equal(decimal.NewFromInt(1)) {
-		t.Fatalf("AI input token rule = %#v", input)
-	}
-	output := rules[MeterAIOutputTokens]
-	if output.Unit != "1000_tokens" || !output.Enabled || !output.CreditsPerUnit.Equal(decimal.NewFromInt(4)) {
-		t.Fatalf("AI output token rule = %#v", output)
+	for _, meter := range []string{MeterAIInputTokens, MeterAIOutputTokens, MeterAICachedInputTokens, MeterAICachedOutputTokens} {
+		if _, ok := rules[meter]; ok {
+			t.Fatalf("AI model token rate %q must not be a generic default rate", meter)
+		}
 	}
 }
 
-func TestTokenBillingQuantityPreservesPartialThousands(t *testing.T) {
-	if got := tokenBillingQuantity(1250); !got.Equal(decimal.RequireFromString("1.25")) {
+func TestTokenBillingQuantityPreservesPartialMillions(t *testing.T) {
+	if got := tokenBillingQuantity(1_250_000); !got.Equal(decimal.RequireFromString("1.25")) {
 		t.Fatalf("token billing quantity = %s", got)
+	}
+}
+
+func TestNormalTokenBillingNeverBecomesNegativeWhenCacheExceedsTotal(t *testing.T) {
+	if got := maxNormalTokens(10, 25); got != 0 {
+		t.Fatalf("normal token count = %d, want 0", got)
+	}
+	if got := maxNormalTokens(25, 10); got != 15 {
+		t.Fatalf("normal token count = %d, want 15", got)
 	}
 }
 
@@ -66,7 +72,11 @@ func TestSettleAIModelUsageBillsRunOwnerOnce(t *testing.T) {
 	service := Service{DB: db}
 	input := AIModelUsageInput{
 		EventID: "aievt_usage", RunID: "airun_usage", UserID: "usr_owner",
-		InputTokens: 2000, OutputTokens: 1000, OccurredAt: time.Now(),
+		ModelID: "aimod_test", ModelName: "test-model",
+		InputTokens: 2_000_000, OutputTokens: 1_000_000, OccurredAt: time.Now(),
+		Pricing: AIModelPricingSnapshot{
+			InputCreditsPerMillion: decimal.NewFromInt(1), OutputCreditsPerMillion: decimal.NewFromInt(4),
+		},
 	}
 	if err := service.SettleAIModelUsage(input); err != nil {
 		t.Fatalf("settle AI model usage: %v", err)
@@ -85,7 +95,7 @@ func TestSettleAIModelUsageBillsRunOwnerOnce(t *testing.T) {
 	if err := db.Model(&model.BillingLedgerEntry{}).Count(&ledgerCount).Error; err != nil {
 		t.Fatalf("count ledger entries: %v", err)
 	}
-	if usageCount != 2 || ledgerCount != 2 {
+	if usageCount != 4 || ledgerCount != 4 {
 		t.Fatalf("usage count = %d, ledger count = %d", usageCount, ledgerCount)
 	}
 	// AI 费用只归属个人，不关联项目空间：所有记录的 project_id 必须为空
@@ -109,7 +119,7 @@ func TestSettleAIModelUsageBillsRunOwnerOnce(t *testing.T) {
 	if err := db.Model(&model.BillingUsageRecord{}).Count(&usageCount).Error; err != nil {
 		t.Fatalf("recount usage records: %v", err)
 	}
-	if usageCount != 2 {
+	if usageCount != 4 {
 		t.Fatalf("usage count after replay = %d", usageCount)
 	}
 }

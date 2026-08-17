@@ -7,6 +7,7 @@ export interface AIAssistantComposerProps {
   activeRun: boolean
   canceling: boolean
   canCancel: boolean
+  modelAvailable?: boolean
   draft: string
   inputRef: RefObject<HTMLTextAreaElement | null>
   maxLength?: number
@@ -26,6 +27,7 @@ export function AIAssistantComposer({
   activeRun,
   canceling,
   canCancel,
+  modelAvailable = true,
   draft,
   inputRef,
   maxLength,
@@ -38,7 +40,7 @@ export function AIAssistantComposer({
 }: AIAssistantComposerProps) {
   const { t } = useTranslation()
   const busy = sending || submitting
-  const canSubmit = !activeRun || waitingInput
+  const canSubmit = modelAvailable && (!activeRun || waitingInput)
   return (
     <footer className="shrink-0 border-t border-separator-subtle bg-surface p-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))]">
       <div className="flex min-h-16 gap-2 rounded-container border border-input bg-surface px-3 py-2 focus-within:ring-2 focus-within:ring-ring">
@@ -75,7 +77,7 @@ export function AIAssistantComposer({
               <Button
                 aria-label={waitingInput ? t('aiAssistant.continue') : t('aiAssistant.send')}
                 className="self-end"
-                disabled={!draft.trim() || busy}
+                disabled={!draft.trim() || busy || !modelAvailable}
                 size="icon"
                 onClick={onSubmit}
               >
@@ -83,6 +85,7 @@ export function AIAssistantComposer({
               </Button>
             )}
       </div>
+      {!modelAvailable && <p className="mt-1.5 px-1 text-[10px] text-destructive">{t('aiAssistant.modelUnavailable')}</p>}
       <p className="mt-1.5 truncate px-1 text-[10px] text-muted-foreground">{t('aiAssistant.securityHint')}</p>
     </footer>
   )

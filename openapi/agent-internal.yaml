@@ -76,7 +76,7 @@ paths:
         - { $ref: "#/components/parameters/ActorSignature" }
         - { $ref: "#/components/parameters/ConversationId" }
         - { $ref: "#/components/parameters/IdempotencyKey" }
-      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AgentCreateTurnInput" } } } }
       responses: { "202": { description: Turn and run accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }, "409": { $ref: "#/components/responses/AgentError" } }
   /internal/v1/conversations/{conversationId}/tool-actions:
     post:
@@ -169,6 +169,16 @@ components:
     ToolCallId: { name: toolCallId, in: path, required: true, schema: { type: string } }
   schemas:
     AgentObject: { type: object, additionalProperties: true }
+    AgentCreateTurnInput:
+      type: object
+      additionalProperties: false
+      required: [modelId, input, pageContext, clientInstanceId]
+      properties:
+        modelId: { type: string, minLength: 1 }
+        modelSnapshot: { type: object, additionalProperties: true, description: Immutable model identity and price snapshot attached by the Luna API BFF. }
+        input: { type: object, additionalProperties: true }
+        pageContext: { type: object, additionalProperties: true }
+        clientInstanceId: { type: string, minLength: 16, maxLength: 80 }
     AgentConversationPage:
       type: object
       additionalProperties: false

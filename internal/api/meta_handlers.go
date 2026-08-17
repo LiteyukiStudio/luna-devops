@@ -33,6 +33,7 @@ type apiMetaResponse struct {
 }
 
 func (h *Handlers) GetAPIMeta(ctx *gin.Context) {
+	ctx.Header("Cache-Control", "no-store")
 	ctx.JSON(http.StatusOK, apiMetaResponse{
 		APIVersion:        apiVersion,
 		ServerVersion:     serverVersion(),

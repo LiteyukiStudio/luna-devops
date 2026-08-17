@@ -20,6 +20,7 @@ const (
 	stepUpPurposeRuntimeExec              = "runtime_exec"
 	stepUpPurposeRuntimeTerminal          = "runtime_terminal"
 	stepUpPurposeSecretUpdate             = "secret_update"
+	stepUpPurposeSecretView               = "secret_view"
 	stepUpPurposeRegistryCredentialUpdate = "registry_credential_update"
 	stepUpPurposeKubeconfigUpdate         = "kubeconfig_update"
 	stepUpPurposeAuthProviderUpdate       = "auth_provider_update"
@@ -43,6 +44,7 @@ var allowedStepUpPurposes = map[string]struct{}{
 	stepUpPurposeRuntimeExec:              {},
 	stepUpPurposeRuntimeTerminal:          {},
 	stepUpPurposeSecretUpdate:             {},
+	stepUpPurposeSecretView:               {},
 	stepUpPurposeRegistryCredentialUpdate: {},
 	stepUpPurposeKubeconfigUpdate:         {},
 	stepUpPurposeAuthProviderUpdate:       {},
@@ -95,6 +97,10 @@ func (h *Handlers) stepUpMiddleware(purpose string) gin.HandlerFunc {
 }
 
 func (h *Handlers) requireMFAAssertion(ctx *gin.Context, user model.User, purpose string) bool {
+	return h.requireMFAAssertionWithStatus(ctx, user, purpose, http.StatusForbidden)
+}
+
+func (h *Handlers) requireMFAAssertionWithStatus(ctx *gin.Context, user model.User, purpose string, requiredStatus int) bool {
 	purpose = normalizeStepUpPurpose(purpose)
 	if purpose == "" {
 		h.auditWithContext(user.ID, "mfa.step_up_rejected", "unknown", false, "invalid purpose", ctx.Request.Context())
@@ -127,7 +133,7 @@ func (h *Handlers) requireMFAAssertion(ctx *gin.Context, user model.User, purpos
 	).Error
 	if err != nil || !stepUpAssertionActive(assertion, now) {
 		h.auditWithContext(user.ID, "mfa.step_up_required", purpose, false, "assertion missing or expired", ctx.Request.Context())
-		writeMFARequired(ctx, purpose)
+		writeMFARequiredStatus(ctx, purpose, requiredStatus)
 		return false
 	}
 
@@ -138,7 +144,7 @@ func (h *Handlers) requireMFAAssertion(ctx *gin.Context, user model.User, purpos
 		Updates(map[string]any{"last_activity_at": now, "idle_expires_at": idleExpiresAt, "updated_at": now})
 	if result.Error != nil || result.RowsAffected != 1 {
 		h.auditWithContext(user.ID, "mfa.step_up_required", purpose, false, "assertion refresh failed", ctx.Request.Context())
-		writeMFARequired(ctx, purpose)
+		writeMFARequiredStatus(ctx, purpose, requiredStatus)
 		return false
 	}
 	return true
@@ -287,7 +293,11 @@ func requestUsesBearerToken(ctx *gin.Context) bool {
 }
 
 func writeMFARequired(ctx *gin.Context, purpose string) {
-	ctx.JSON(http.StatusForbidden, gin.H{
+	writeMFARequiredStatus(ctx, purpose, http.StatusForbidden)
+}
+
+func writeMFARequiredStatus(ctx *gin.Context, purpose string, status int) {
+	ctx.JSON(status, gin.H{
 		"code":      "mfa_required",
 		"error":     messageFor(requestLanguage(ctx), "mfa_required"),
 		"purpose":   purpose,

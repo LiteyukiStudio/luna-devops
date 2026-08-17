@@ -5,6 +5,21 @@ export interface AICapabilities {
   maxInputBytes: number
 }
 
+export interface AIModelOption {
+  id: string
+  name: string
+}
+
+export interface AIModelConfig extends AIModelOption {
+  inputCreditsPerMillion: string
+  outputCreditsPerMillion: string
+  cachedInputCreditsPerMillion: string
+  cachedOutputCreditsPerMillion: string
+  enabled: boolean
+  createdAt: string
+  updatedAt: string
+}
+
 export interface AIConversation {
   id: string
   title: string

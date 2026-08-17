@@ -3,6 +3,8 @@ FROM node:25-alpine AS web-build
 
 WORKDIR /src
 
+ARG VITE_APP_COMMIT_SHA=dev
+
 # 固定 pnpm 版本，与 web/package.json 声明保持一致。
 RUN npm install -g pnpm@11.1.0
 
@@ -48,6 +50,9 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -tags=embed_web -ldflags="-s -w"
 # API 完整部署运行镜像：包含 embed_web 构建产物，可直接提供前端 SPA。
 FROM alpine:3.22 AS runtime-embed-web
 
+ARG APP_VERSION=dev
+ENV APP_VERSION=${APP_VERSION}
+
 # 安装运行期所需证书、git 和 docker CLI，并创建非 root 用户运行应用。
 RUN apk add --no-cache ca-certificates docker-cli git && addgroup -S app && adduser -S app -G app
 
@@ -62,6 +67,9 @@ ENTRYPOINT ["/app/app"]
 
 # 普通运行镜像：用于 api / worker 等不需要内嵌前端的目标。
 FROM alpine:3.22 AS runtime
+
+ARG APP_VERSION=dev
+ENV APP_VERSION=${APP_VERSION}
 
 # 保持与 embed_web runtime 相同的基础运行环境，降低不同镜像目标的差异。
 RUN apk add --no-cache ca-certificates docker-cli git && addgroup -S app && adduser -S app -G app
@@ -85,6 +93,9 @@ RUN test -x /usr/local/bin/luna-volume-transfer
 
 # Gateway Traffic Probe 运行镜像：只需要证书和独立 9090 健康/指标端口。
 FROM alpine:3.22 AS runtime-probe
+
+ARG APP_VERSION=dev
+ENV APP_VERSION=${APP_VERSION}
 
 RUN apk add --no-cache ca-certificates && addgroup -S app && adduser -S app -G app
 

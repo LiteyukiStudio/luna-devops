@@ -26,6 +26,9 @@ func TestGetAPIMeta(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
 	}
+	if got := recorder.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("Cache-Control = %q, want no-store", got)
+	}
 
 	var response apiMetaResponse
 	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {

@@ -14,6 +14,7 @@ type PriceDisplay = Pick<BillingDisplay, 'formatAmountWithUnit' | 'formatFiatAmo
 export function BillingPriceList({ billingDisplay }: { billingDisplay: PriceDisplay }) {
   const { t } = useTranslation()
   const rateRules = useQuery({ queryKey: ['billing-rate-rules'], queryFn: api.listBillingRateRules })
+  const resourceRateRules = useMemo(() => (rateRules.data ?? []).filter(rule => !rule.meter.startsWith('ai.')), [rateRules.data])
   const columns = useMemo<DataListColumn<BillingRateRule>[]>(() => [
     {
       key: 'meter',
@@ -86,11 +87,12 @@ export function BillingPriceList({ billingDisplay }: { billingDisplay: PriceDisp
   return (
     <div className="grid gap-3">
       <p className="text-sm text-muted-foreground">{t('billingPage.priceTableDescription')}</p>
+      <p className="text-sm text-muted-foreground">{t('billingPage.aiModelPricingNote')}</p>
       <DataList
         columns={columns}
         emptyDescription={t('billingPage.emptyPriceTableDescription')}
         emptyTitle={t('billingPage.emptyPriceTableTitle')}
-        items={rateRules.data ?? []}
+        items={resourceRateRules}
         loading={rateRules.isLoading}
         rowKey={rule => rule.meter}
       />

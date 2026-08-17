@@ -2,7 +2,7 @@ import Fastify, { type FastifyInstance } from "fastify"
 import { z } from "zod"
 import type { RequestAuthenticator } from "./auth.js"
 import type { Config } from "./config.js"
-import type { ActorContext, Run } from "./domain.js"
+import type { AIModelSnapshot, ActorContext, Run } from "./domain.js"
 import type { PayloadCipher } from "./payload-cipher.js"
 import type { Repository } from "./persistence/repository.js"
 import type { ModelProvider } from "./provider/provider.js"
@@ -25,6 +25,14 @@ const stableErrorCode = z.string().trim().min(3).max(120).regex(/^[a-z][a-z0-9_.
 const page = z.coerce.number().int().min(1).default(1)
 const pageSize = z.coerce.number().int().min(1).max(100).default(20)
 const timelineLimit = z.coerce.number().int().min(1).max(100).default(30)
+const aiModelSnapshot = z.object({
+  id: id,
+  name: z.string().trim().min(1).max(200),
+  inputCreditsPerMillion: z.string(),
+  outputCreditsPerMillion: z.string(),
+  cachedInputCreditsPerMillion: z.string(),
+  cachedOutputCreditsPerMillion: z.string(),
+}) satisfies z.ZodType<AIModelSnapshot>
 
 export function buildServer(input: {
   config: Config
@@ -183,6 +191,8 @@ export function buildServer(input: {
       if (typeof key !== "string" || key.length < 8 || key.length > 128) return reply.code(400).send(errorBody("idempotency_key_required", request.id))
       const body = z.object({
         input: z.object({ parts: z.array(z.object({ type: z.literal("text"), text: z.string().trim().min(1).max(12000) })).min(1).max(10) }),
+        modelId: id,
+        modelSnapshot: aiModelSnapshot.optional(),
         pageContext: z.record(z.string(), z.unknown()).default({}),
         clientInstanceId,
         runId: id.optional(),
@@ -199,6 +209,8 @@ export function buildServer(input: {
           ...(body.runActorGrant ? { runActorGrantCiphertext: input.grantCipher.encrypt(body.runActorGrant) } : {}),
           ...(input.toolCatalogDigest ? { toolCatalogDigest: input.toolCatalogDigest } : {}),
           clientInstanceId: body.clientInstanceId,
+          modelId: body.modelId,
+          ...(body.modelSnapshot ? { modelSnapshot: body.modelSnapshot } : {}),
         })
         span.setAttribute("luna.turn.id", value.turn.id)
         span.setAttribute("luna.run.id", value.run.id)

@@ -25,6 +25,7 @@ create table if not exists ai.turns (
   status text not null,
   input text not null,
   selected_run_id text not null,
+  model_id text,
   created_at timestamptz not null default now(),
   unique(conversation_id, turn_index)
 );
@@ -48,6 +49,12 @@ create table if not exists ai.runs (
   started_at timestamptz,
   completed_at timestamptz,
   error_code text,
+  model_id text,
+  model_name text,
+  input_credits_per_million numeric(24,8),
+  output_credits_per_million numeric(24,8),
+  cached_input_credits_per_million numeric(24,8),
+  cached_output_credits_per_million numeric(24,8),
   client_instance_id text,
   trace_context jsonb not null default '{}'::jsonb
     check (jsonb_typeof(trace_context) = 'object'),
@@ -56,6 +63,13 @@ create table if not exists ai.runs (
   unique(turn_id, run_index)
 );
 create index if not exists runs_queue on ai.runs(status, lease_expires_at) where status = 'queued';
+alter table ai.turns add column if not exists model_id text;
+alter table ai.runs add column if not exists model_id text;
+alter table ai.runs add column if not exists model_name text;
+alter table ai.runs add column if not exists input_credits_per_million numeric(24,8);
+alter table ai.runs add column if not exists output_credits_per_million numeric(24,8);
+alter table ai.runs add column if not exists cached_input_credits_per_million numeric(24,8);
+alter table ai.runs add column if not exists cached_output_credits_per_million numeric(24,8);
 
 create table if not exists ai.items (
   id text primary key,

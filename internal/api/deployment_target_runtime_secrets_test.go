@@ -10,13 +10,13 @@ import (
 )
 
 func TestValidateDeploymentTargetPublicEnvVarsRejectsSecretSemantics(t *testing.T) {
-	for _, raw := range []string{
-		`{"DATABASE_PASSWORD":"value"}`,
-		`PUBLIC_URL=https://user:password@example.com/api`,
+	for _, values := range []map[string]string{
+		{"DATABASE_PASSWORD": "value"},
+		{"PUBLIC_URL": "https://user:password@example.com/api"},
 	} {
 		ctx, recorder := testRuntimeSecretContext()
-		if validateDeploymentTargetPublicEnvVars(ctx, raw) {
-			t.Fatalf("validateDeploymentTargetPublicEnvVars(%q) = true, want false", raw)
+		if validateDeploymentTargetPublicEnvVars(ctx, values) {
+			t.Fatalf("validateDeploymentTargetPublicEnvVars(%#v) = true, want false", values)
 		}
 		if recorder.Code != http.StatusBadRequest {
 			t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
@@ -31,27 +31,41 @@ func TestValidateDeploymentTargetPublicEnvVarsRejectsSecretSemantics(t *testing.
 	}
 }
 
-func TestValidateDeploymentTargetSecretRefsRejectsPlaintext(t *testing.T) {
+func TestValidateDeploymentTargetRuntimeSecretMutationRejectsConflictingFields(t *testing.T) {
 	ctx, recorder := testRuntimeSecretContext()
-	if validateDeploymentTargetSecretRefs(ctx, `{"TOKEN":"plaintext"}`) {
-		t.Fatal("validateDeploymentTargetSecretRefs() = true, want false")
+	input := runtimeSecretMutationInput{
+		Values:   map[string]string{"TOKEN": "value"},
+		Generate: map[string]runtimeSecretGeneration{"TOKEN": {Length: 32, Encoding: "base64"}},
+	}
+	if validateRuntimeSecretMutation(ctx, &input) {
+		t.Fatal("validateDeploymentTargetRuntimeSecretMutation() = true, want false")
 	}
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
 	}
 }
 
-func TestValidateDeploymentTargetRuntimeSecretMutationRejectsConflictingFields(t *testing.T) {
+func TestRuntimeSecretKeysExposeOnlyConfiguredBuildEnvironmentKeys(t *testing.T) {
+	keys := runtimeSecretKeys(`{"TOKEN":"secret-id:token","EMPTY":"","bad.key":"secret-id:bad","PASSWORD":"secret:v1:password"}`)
+	if got, want := len(keys), 2; got != want {
+		t.Fatalf("runtimeSecretKeys() returned %d keys, want %d: %#v", got, want, keys)
+	}
+	if keys[0] != "PASSWORD" || keys[1] != "TOKEN" {
+		t.Fatalf("runtimeSecretKeys() = %#v, want sorted configured keys", keys)
+	}
+}
+
+func TestRuntimeSecretResponsesSetNoStoreHeaders(t *testing.T) {
 	ctx, recorder := testRuntimeSecretContext()
-	input := deploymentTargetRuntimeSecretsInput{
-		Values:   map[string]string{"TOKEN": "value"},
-		Generate: map[string]deploymentTargetRuntimeSecretGeneration{"TOKEN": {Length: 32, Encoding: "base64"}},
+	setRuntimeSecretNoStoreHeaders(ctx)
+	if got := recorder.Header().Get("Cache-Control"); got != "no-store, private" {
+		t.Fatalf("Cache-Control = %q, want no-store, private", got)
 	}
-	if validateDeploymentTargetRuntimeSecretMutation(ctx, &input) {
-		t.Fatal("validateDeploymentTargetRuntimeSecretMutation() = true, want false")
+	if got := recorder.Header().Get("Pragma"); got != "no-cache" {
+		t.Fatalf("Pragma = %q, want no-cache", got)
 	}
-	if recorder.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
+	if got := recorder.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Fatalf("X-Content-Type-Options = %q, want nosniff", got)
 	}
 }
 

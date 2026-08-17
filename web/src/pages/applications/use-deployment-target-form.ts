@@ -78,7 +78,6 @@ export function deploymentTargetFormValues({
     buildVariableSetIds: normalizeStringIds(target?.buildVariableSetIds),
     runtimeConfigRefs,
     runtimeConfigSetIds: runtimeConfigLiveSetIds(runtimeConfigRefs),
-    secretRefs: '',
     secretFiles: '',
     dataVolumes: target?.dataVolumes ?? [],
     webConsoleEnabled: normalizeWebConsoleOverride(target?.webConsoleEnabled),

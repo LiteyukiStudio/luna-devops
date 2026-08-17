@@ -7,6 +7,7 @@ import (
 
 	"github.com/LiteyukiStudio/devops/internal/buildtemplate"
 	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/LiteyukiStudio/devops/internal/runtimeconfig"
 	"github.com/gin-gonic/gin"
 )
 
@@ -128,7 +129,17 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 	if !ok {
 		return model.DeploymentTarget{}, nil, false
 	}
-	if !validateDeploymentTargetPublicEnvVars(ctx, input.EnvVars) || !validateDeploymentTargetSecretRefs(ctx, input.SecretRefs) {
+	if !validateDeploymentTargetPublicEnvVars(ctx, input.EnvVars) || !validateDeploymentTargetPublicEnvVars(ctx, input.ConfigRefs) {
+		return model.DeploymentTarget{}, nil, false
+	}
+	envVars, err := runtimeconfig.EncodeKeyValue(input.EnvVars)
+	if err != nil {
+		writeErrorCode(ctx, http.StatusBadRequest, "deployment.runtime_config_invalid", "运行时环境变量格式无效")
+		return model.DeploymentTarget{}, nil, false
+	}
+	configRefs, err := runtimeconfig.EncodeKeyValue(input.ConfigRefs)
+	if err != nil {
+		writeErrorCode(ctx, http.StatusBadRequest, "deployment.runtime_config_invalid", "运行时配置引用格式无效")
 		return model.DeploymentTarget{}, nil, false
 	}
 	runtimeConfigRefs, ok := h.runtimeConfigRefsFromInput(ctx, app.ProjectID, input, existingRuntimeConfigRefs)
@@ -234,9 +245,8 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 		ConcurrencyPolicy:            normalizeBuildConcurrencyPolicy(input.ConcurrencyPolicy),
 		RuntimeConfigSetIDs:          encodeBuildVariableSetIDs(runtimeConfigSetIDs),
 		RuntimeConfigRefs:            model.EncodeDeploymentRuntimeConfigRefs(runtimeConfigRefs),
-		EnvVars:                      strings.TrimSpace(input.EnvVars),
-		ConfigRefs:                   strings.TrimSpace(input.ConfigRefs),
-		SecretRefs:                   normalizeSecretRefsInput(input.SecretRefs),
+		EnvVars:                      envVars,
+		ConfigRefs:                   configRefs,
 		ConfigFiles:                  configFiles,
 		SecretFiles:                  string(secretFilesContent),
 		RequireApproval:              input.RequireApproval,

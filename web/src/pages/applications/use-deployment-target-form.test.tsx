@@ -101,7 +101,6 @@ describe('deployment target form', () => {
 
     expect(editValues.runtimeConfigSetIds).toEqual(['live-set'])
     expect(editValues.secretFiles).toBe('')
-    expect(editValues.secretRefs).toBe('')
   })
 
   it('ignores an older build environment response after switching targets', async () => {

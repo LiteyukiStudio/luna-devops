@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next'
 import { CheckboxField } from '@/components/common/checkbox-field'
 import { FormField as Field } from '@/components/common/form-field'
 import { KeyValueRowsEditor } from '@/components/common/key-value-rows-editor'
+import { KeyValueTextEditor } from '@/components/common/key-value-text-editor'
 import { ProgressiveSection } from '@/components/common/progressive-section'
 import { RuntimeConfigFilesEditor } from '@/components/common/runtime-config-files-editor'
 import { Button } from '@/components/ui/button'
@@ -17,12 +18,14 @@ import { RuntimeDataVolumesEditor } from './application-deployment-data-volumes-
 import { ApplicationDeploymentHooksEditor } from './application-deployment-hooks-editor'
 import { KubernetesAdvancedFields } from './application-deployment-kubernetes-advanced-fields'
 import { RuntimeResourceFields } from './application-deployment-resource-fields'
+import { ApplicationDeploymentRuntimeSecretsEditor } from './application-deployment-runtime-secrets-editor'
 import { ServicePortsEditor } from './application-deployment-service-ports-editor'
 import { ApplicationDeploymentBuildSettingsFields, ApplicationDeploymentSourceFields } from './application-deployment-source-fields'
 import { deploymentTargetDefaults } from './application-deployments-panel-utils'
 import { ApplicationRuntimeConfigSelector } from './application-runtime-config-selector'
 
 export function ApplicationDeploymentTargetDialog({
+  applicationId,
   buildContextSuggestions,
   buildMinutePriceText,
   buildEnvironmentStatus,
@@ -52,6 +55,8 @@ export function ApplicationDeploymentTargetDialog({
   sourceType,
   targetBuildHooksEnabled,
   buildVariableRows,
+  canManageRuntimeSecrets,
+  projectId,
   targetBuildOptionsError,
   targetBuildOptionsFetching,
   targetCanRedeploy,
@@ -81,6 +86,7 @@ export function ApplicationDeploymentTargetDialog({
   onUpdateDataVolumes,
   onUpdateServicePorts,
 }: {
+  applicationId: string
   buildContextSuggestions: string[]
   buildMinutePriceText: string
   buildEnvironmentStatus: 'loading' | 'ready' | 'unavailable'
@@ -110,6 +116,8 @@ export function ApplicationDeploymentTargetDialog({
   sourceType: DeploymentTargetPayload['sourceType']
   targetBuildHooksEnabled: boolean
   buildVariableRows: KeyValueRow[]
+  canManageRuntimeSecrets: boolean
+  projectId: string
   targetBuildOptionsError: boolean
   targetBuildOptionsFetching: boolean
   targetCanRedeploy: boolean
@@ -281,49 +289,62 @@ export function ApplicationDeploymentTargetDialog({
               title={t('deploymentsPage.runtimeConfig')}
             >
               <RuntimeResourceFields form={form} priceText={runtimeCostText} />
-              <div className="grid gap-4 border-t border-border pt-4">
-                <ApplicationRuntimeConfigSelector
-                  redeployableCount={runtimeConfigRedeployableCount}
-                  redeployPending={runtimeConfigRedeployPending}
-                  restartAffectedCount={runtimeConfigRestartAffectedCount}
-                  selectedRefs={selectedRuntimeConfigRefs}
-                  sets={runtimeConfigSets}
-                  onCreate={() => onEditRuntimeConfigSet()}
-                  onDismissRestart={onDismissRuntimeConfigRestart}
-                  onEdit={onEditRuntimeConfigSet}
-                  onModeChange={onChangeRuntimeConfigMode}
-                  onRedeployAffected={onRedeployRuntimeConfigTargets}
-                  onToggle={onToggleRuntimeConfigSet}
-                />
-              </div>
-              <div className="grid gap-3 border-t border-border pt-4">
-                <p className="text-sm font-medium text-foreground">{t('deploymentsPage.advancedRuntimeOverrides')}</p>
-                <Field hint={t('deploymentsPage.runtimeEnvVarsHint')} label={t('deploymentsPage.runtimeEnvVars')}>
-                  <textarea className="min-h-24 rounded-md border border-input bg-background px-3 py-2 text-sm outline-none transition focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/20" {...form.register('envVars')} placeholder={t('deploymentsPage.runtimeEnvVarsPlaceholder')} />
-                </Field>
-                <Field hint={t('deploymentsPage.runtimeConfigRefsHint')} label={t('deploymentsPage.runtimeConfigRefs')}>
-                  <textarea className="min-h-24 rounded-md border border-input bg-background px-3 py-2 text-sm outline-none transition focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/20" {...form.register('configRefs')} placeholder={t('deploymentsPage.runtimeConfigRefsPlaceholder')} />
-                </Field>
-                <Field hint={t('deploymentsPage.runtimeConfigFilesHint')} label={t('deploymentsPage.runtimeConfigFiles')}>
-                  <RuntimeConfigFilesEditor
-                    key={`${editingTarget?.id ?? 'new'}-config-files`}
-                    initialValue={form.getValues('configFiles') ?? ''}
-                    onChange={value => form.setValue('configFiles', value, { shouldDirty: true, shouldValidate: true })}
-                    onValidationChange={onSetConfigFilesValid}
+              <div className="grid min-w-0 grid-cols-1 gap-6 border-t border-border pt-4">
+                <div className="grid min-w-0 gap-4">
+                  <ApplicationRuntimeConfigSelector
+                    redeployableCount={runtimeConfigRedeployableCount}
+                    redeployPending={runtimeConfigRedeployPending}
+                    restartAffectedCount={runtimeConfigRestartAffectedCount}
+                    selectedRefs={selectedRuntimeConfigRefs}
+                    sets={runtimeConfigSets}
+                    onCreate={() => onEditRuntimeConfigSet()}
+                    onDismissRestart={onDismissRuntimeConfigRestart}
+                    onEdit={onEditRuntimeConfigSet}
+                    onModeChange={onChangeRuntimeConfigMode}
+                    onRedeployAffected={onRedeployRuntimeConfigTargets}
+                    onToggle={onToggleRuntimeConfigSet}
                   />
-                </Field>
-                <Field hint={editingTarget?.secretRefsSet ? t('deploymentsPage.runtimeSecretRefsConfigured') : t('deploymentsPage.runtimeSecretRefsHint')} label={t('deploymentsPage.runtimeSecretRefs')}>
-                  <textarea className="min-h-24 rounded-md border border-input bg-background px-3 py-2 text-sm outline-none transition placeholder:text-muted-foreground focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/20" {...form.register('secretRefs')} placeholder={editingTarget?.secretRefsSet ? t('common.secretSetPlaceholder') : t('deploymentsPage.runtimeSecretRefsPlaceholder')} />
-                </Field>
-                <Field hint={editingTarget?.secretFilesSet ? t('deploymentsPage.runtimeSecretFilesConfigured') : t('deploymentsPage.runtimeSecretFilesHint')} label={t('deploymentsPage.runtimeSecretFiles')}>
-                  <RuntimeConfigFilesEditor
-                    key={`${editingTarget?.id ?? 'new'}-secret-files`}
-                    configuredPlaceholder={editingTarget?.secretFilesSet ? t('common.secretSetPlaceholder') : undefined}
-                    initialValue={form.getValues('secretFiles') ?? ''}
-                    onChange={value => form.setValue('secretFiles', value, { shouldDirty: true, shouldValidate: true })}
-                    onValidationChange={onSetSecretFilesValid}
+                </div>
+                <div className="grid min-w-0 gap-3 border-t border-border pt-6">
+                  <p className="text-sm font-medium text-foreground">{t('deploymentsPage.advancedRuntimeOverrides')}</p>
+                  <Field hint={t('deploymentsPage.runtimeEnvVarsHint')} label={t('deploymentsPage.runtimeEnvVars')}>
+                    <KeyValueTextEditor
+                      initialValue={form.getValues('envVars')}
+                      onChange={value => form.setValue('envVars', value, { shouldDirty: true, shouldValidate: true })}
+                    />
+                  </Field>
+                  <Field hint={t('deploymentsPage.runtimeConfigRefsHint')} label={t('deploymentsPage.runtimeConfigRefs')}>
+                    <KeyValueTextEditor
+                      initialValue={form.getValues('configRefs')}
+                      onChange={value => form.setValue('configRefs', value, { shouldDirty: true, shouldValidate: true })}
+                    />
+                  </Field>
+                  <Field hint={t('deploymentsPage.runtimeConfigFilesHint')} label={t('deploymentsPage.runtimeConfigFiles')}>
+                    <RuntimeConfigFilesEditor
+                      key={`${editingTarget?.id ?? 'new'}-config-files`}
+                      initialValue={form.getValues('configFiles') ?? ''}
+                      onChange={value => form.setValue('configFiles', value, { shouldDirty: true, shouldValidate: true })}
+                      onValidationChange={onSetConfigFilesValid}
+                    />
+                  </Field>
+                  <ApplicationDeploymentRuntimeSecretsEditor
+                    key={`${editingTarget?.id ?? 'new'}-${open}`}
+                    applicationId={applicationId}
+                    canManage={canManageRuntimeSecrets}
+                    open={open}
+                    projectId={projectId}
+                    targetId={editingTarget?.id}
                   />
-                </Field>
+                  <Field hint={editingTarget?.secretFilesSet ? t('deploymentsPage.runtimeSecretFilesConfigured') : t('deploymentsPage.runtimeSecretFilesHint')} label={t('deploymentsPage.runtimeSecretFiles')}>
+                    <RuntimeConfigFilesEditor
+                      key={`${editingTarget?.id ?? 'new'}-secret-files`}
+                      configuredPlaceholder={editingTarget?.secretFilesSet ? t('common.secretSetPlaceholder') : undefined}
+                      initialValue={form.getValues('secretFiles') ?? ''}
+                      onChange={value => form.setValue('secretFiles', value, { shouldDirty: true, shouldValidate: true })}
+                      onValidationChange={onSetSecretFilesValid}
+                    />
+                  </Field>
+                </div>
               </div>
             </ProgressiveSection>
             <ProgressiveSection

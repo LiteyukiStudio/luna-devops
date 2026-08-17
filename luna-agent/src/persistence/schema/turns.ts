@@ -10,6 +10,7 @@ export const turns = aiSchema.table("turns", {
   status: text("status").notNull().$type<RunStatus>(),
   input: text("input").notNull(),
   selectedRunId: text("selected_run_id").notNull(),
+  modelId: text("model_id"),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
 }, table => [
   unique("turns_conversation_id_turn_index_key").on(table.conversationId, table.turnIndex),

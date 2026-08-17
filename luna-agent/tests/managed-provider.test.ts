@@ -52,7 +52,39 @@ describe("ManagedProvider", () => {
     expect(resolver.get).toHaveBeenCalledOnce()
     expect(JSON.stringify(provider)).not.toContain("secret-value")
   })
+
+  it("keeps concurrent first requests on their selected models", async () => {
+    let resolveConfig!: (config: Awaited<ReturnType<typeof configForModels>>) => void
+    const configPromise = new Promise<Awaited<ReturnType<typeof configForModels>>>(resolve => { resolveConfig = resolve })
+    const resolver = { get: vi.fn(() => configPromise) }
+    const provider = new ManagedProvider(resolver, 1000, config => fakeProvider(config.provider.model))
+    const request = (modelId: string) => provider.complete({ modelId, messages: [], maxOutputTokens: 10 })
+
+    const first = request("model-a-id")
+    const second = request("model-b-id")
+    resolveConfig(configForModels())
+
+    expect((await first).text).toBe("model-a")
+    expect((await second).text).toBe("model-b")
+  })
 })
+
+function configForModels() {
+  return {
+    version: "cfg-1",
+    provider: {
+      baseUrl: "https://provider.example/v1/",
+      model: "model-a",
+      apiKey: "secret-value",
+      configured: true,
+      models: [
+        { id: "model-a-id", name: "model-a", inputCreditsPerMillion: "1", outputCreditsPerMillion: "1", cachedInputCreditsPerMillion: "0", cachedOutputCreditsPerMillion: "0" },
+        { id: "model-b-id", name: "model-b", inputCreditsPerMillion: "1", outputCreditsPerMillion: "1", cachedInputCreditsPerMillion: "0", cachedOutputCreditsPerMillion: "0" },
+      ],
+    },
+    runtime: { ...defaultRuntimeSettings, providerTimeoutMs: 30_000, runTimeoutMs: 300_000, agentConcurrentRuns: 2, userConcurrentRuns: 10, contextInputTokenBudget: 256 * 1024 },
+  }
+}
 
 function fakeProvider(model: string): ModelProvider {
   return {

@@ -51,6 +51,8 @@ Configuration or image changes require a new release. Reusing an image tag makes
 
 Most services can use the defaults. Configure health probes, startup commands, StatefulSets, autoscaling, scheduling, security contexts, sidecars, and advanced storage only when the application requires them.
 
+Ordinary environment variables and ConfigMap references use one `KEY=VALUE` entry per line in the form and are returned by the API as JSON objects. Runtime secrets are managed separately from ordinary configuration and secret files. Save the target first, then use **Runtime secrets** to add, replace, generate, or clear a key. Values remain masked and are never returned as plaintext by the API, personal access tokens, or the AI assistant.
+
 Create or reference persistent data in the project [volume center](./project-volumes.md), then select its stable project volume from a deployment target. PVC storage properties are generally chosen at creation time; `emptyDir` data disappears with its Pod and is not included in exports.
 
 Deleting an application or deployment target only unbinds its project volumes. It does not change project ownership or automatically delete a PVC. A managed PVC is deleted only from the volume details after impact review, explicit permanent deletion, and step-up verification; [export an archive](./volume-transfer.md) first when the data may still be needed.

@@ -18,6 +18,15 @@ export type ActorContext = {
 export type ConversationTitleSource = "default" | "assistant" | "user"
 export type PromptVersion = "system-v4"
 
+export type AIModelSnapshot = {
+  id: string
+  name: string
+  inputCreditsPerMillion: string
+  outputCreditsPerMillion: string
+  cachedInputCreditsPerMillion: string
+  cachedOutputCreditsPerMillion: string
+}
+
 export type Conversation = {
   id: string
   ownerUserId: string
@@ -36,6 +45,7 @@ export type Turn = {
   status: RunStatus
   input: string
   selectedRunId: string
+  modelId?: string
   createdAt: string
 }
 
@@ -92,6 +102,7 @@ export type Run = {
   startedAt?: string
   completedAt?: string
   errorCode?: string
+  model?: AIModelSnapshot
 }
 
 export type TimelineItem = {
@@ -150,6 +161,8 @@ export type CreateTurn = {
   runActorGrantCiphertext?: string
   toolCatalogDigest?: string
   clientInstanceId?: string
+  modelId?: string
+  modelSnapshot?: AIModelSnapshot
 }
 
 export type CreatedTurn = { turn: Turn, run: Run }

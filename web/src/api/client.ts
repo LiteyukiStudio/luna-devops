@@ -7,6 +7,7 @@ import type { eventsApi } from './domains/events'
 import type { gatewayApi } from './domains/gateway'
 import type { gitApi } from './domains/git'
 import type { inboxApi } from './domains/inbox'
+import type { metaApi } from './domains/meta'
 import type { notificationsApi } from './domains/notifications'
 import type { oauthApi } from './domains/oauth'
 import type { projectsApi } from './domains/projects'
@@ -24,6 +25,7 @@ type ApiClient = typeof aiApi
   & typeof gatewayApi
   & typeof gitApi
   & typeof inboxApi
+  & typeof metaApi
   & typeof notificationsApi
   & typeof oauthApi
   & typeof projectsApi
@@ -42,6 +44,7 @@ const domainLoaders = {
   gateway: () => import('./domains/gateway').then(module => module.gatewayApi),
   git: () => import('./domains/git').then(module => module.gitApi),
   inbox: () => import('./domains/inbox').then(module => module.inboxApi),
+  meta: () => import('./domains/meta').then(module => module.metaApi),
   notifications: () => import('./domains/notifications').then(module => module.notificationsApi),
   oauth: () => import('./domains/oauth').then(module => module.oauthApi),
   projects: () => import('./domains/projects').then(module => module.projectsApi),
@@ -58,6 +61,10 @@ type DomainApi = Record<string, ApiMethod>
 const domainOperations = {
   ai: [
     'getAICapabilities',
+    'listAIModels',
+    'listAIModelConfigs',
+    'createAIModel',
+    'updateAIModel',
     'listAIConversations',
     'createAIConversation',
     'renameAIConversation',
@@ -85,6 +92,8 @@ const domainOperations = {
     'listDeploymentTargetsPage',
     'createDeploymentTarget',
     'updateDeploymentTarget',
+    'getDeploymentTargetRuntimeSecretsSummary',
+    'updateDeploymentTargetRuntimeSecrets',
     'exportDeploymentTargetBundle',
     'previewDeploymentTargetBundleImport',
     'importDeploymentTargetBundle',
@@ -158,6 +167,7 @@ const domainOperations = {
     'listProjectRuntimeConfigSetsPage',
     'createProjectRuntimeConfigSet',
     'updateProjectRuntimeConfigSet',
+    'updateProjectRuntimeConfigSetRuntimeSecrets',
     'deleteProjectRuntimeConfigSet',
     'listProjectHooks',
     'listProjectHooksPage',
@@ -217,6 +227,7 @@ const domainOperations = {
     'archiveInboxMessage',
     'decideInboxActionRequest',
   ],
+  meta: ['getAPIMeta'],
   notifications: [
     'listNotificationPresets',
     'createNotificationChannelFromPreset',

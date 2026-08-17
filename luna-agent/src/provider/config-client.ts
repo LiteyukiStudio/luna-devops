@@ -4,6 +4,9 @@ import type { RuntimeSettings } from "../runtime-settings.js"
 import { agentMetrics, clientSpanOptions, telemetryLog, withSpan } from "../telemetry.js"
 import { isRetryableHTTPStatus, parseRetryAfter, waitForRetry } from "../retry.js"
 import { defaultRuntimeSettings } from "../runtime-settings.js"
+import type { AIModelSnapshot } from "../domain.js"
+
+export type RemoteAIModel = AIModelSnapshot
 
 export type RemoteProviderConfig = {
   version: string
@@ -12,6 +15,7 @@ export type RemoteProviderConfig = {
     model: string
     apiKey: string
     configured: boolean
+    models?: RemoteAIModel[]
   }
   runtime: RuntimeSettings
   toolCatalog?: unknown[]
@@ -63,6 +67,11 @@ const remoteProviderConfigSchema = z.object({
     model: z.string(),
     apiKey: z.string(),
     configured: z.boolean(),
+    models: z.array(z.object({
+      id: z.string().min(1), name: z.string().min(1),
+      inputCreditsPerMillion: z.string(), outputCreditsPerMillion: z.string(),
+      cachedInputCreditsPerMillion: z.string(), cachedOutputCreditsPerMillion: z.string(),
+    })).default([]),
   }),
   runtime: runtimeSettingsSchema,
   toolCatalog: z.array(z.record(z.string(), z.unknown())).default([]),

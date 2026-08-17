@@ -177,9 +177,7 @@ func (h *Handlers) UpdateDeploymentTarget(ctx *gin.Context) {
 	// components. Keep the persisted value authoritative instead of passing it
 	// through the public-stage normalizer used by create requests.
 	target.Stage = existing.Stage
-	if strings.TrimSpace(input.SecretRefs) == "" {
-		target.SecretRefs = existing.SecretRefs
-	}
+	target.SecretRefs = existing.SecretRefs
 	target = model.ApplyPlatformDeploymentTargetDefaults(project, app, target)
 	existingBuildEnvironment, err := h.findBuildEnvironmentConfig(h.dbFor(ctx), model.BuildEnvironmentScopeDeployment, target.ID)
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {

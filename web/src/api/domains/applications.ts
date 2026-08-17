@@ -1,4 +1,4 @@
-import type { Application, ApplicationDeletionPreview, ApplicationListParams, ApplicationPayload, ApplicationTopology, DeploymentTarget, DeploymentTargetBundle, DeploymentTargetBundleImportRequest, DeploymentTargetBundlePreview, DeploymentTargetBundlePreviewRequest, DeploymentTargetPayload, PaginatedResponse, PaginationParams, RepositoryBinding, RepositoryBindingPayload } from '../types'
+import type { Application, ApplicationDeletionPreview, ApplicationListParams, ApplicationPayload, ApplicationTopology, DeploymentTarget, DeploymentTargetBundle, DeploymentTargetBundleImportRequest, DeploymentTargetBundlePreview, DeploymentTargetBundlePreviewRequest, DeploymentTargetPayload, DeploymentTargetRuntimeSecretsPayload, DeploymentTargetRuntimeSecretsSummary, PaginatedResponse, PaginationParams, RepositoryBinding, RepositoryBindingPayload, RuntimeSecretMutationResponse } from '../types'
 import { paginationQuery, request } from '../core'
 import { selectionItems, selectionPageParams } from '../selection-page'
 
@@ -31,6 +31,10 @@ export const applicationsApi = {
     request<DeploymentTarget>(`/projects/${projectId}/applications/${applicationId}/deployment-targets`, { method: 'POST', body: JSON.stringify(payload) }),
   updateDeploymentTarget: (projectId: string, applicationId: string, targetId: string, payload: DeploymentTargetPayload) =>
     request<DeploymentTarget>(`/projects/${projectId}/applications/${applicationId}/deployment-targets/${targetId}`, { method: 'PUT', body: JSON.stringify(payload) }),
+  getDeploymentTargetRuntimeSecretsSummary: (projectId: string, applicationId: string, targetId: string) =>
+    request<DeploymentTargetRuntimeSecretsSummary>(`/projects/${projectId}/applications/${applicationId}/deployment-targets/${targetId}/runtime-secrets`),
+  updateDeploymentTargetRuntimeSecrets: (projectId: string, applicationId: string, targetId: string, payload: DeploymentTargetRuntimeSecretsPayload) =>
+    request<RuntimeSecretMutationResponse>(`/projects/${projectId}/applications/${applicationId}/deployment-targets/${targetId}/runtime-secrets`, { method: 'PUT', body: JSON.stringify(payload) }),
   exportDeploymentTargetBundle: (projectId: string, applicationId: string, targetId: string) =>
     request<DeploymentTargetBundle>(`/projects/${projectId}/applications/${applicationId}/deployment-targets/${targetId}/export`),
   previewDeploymentTargetBundleImport: (projectId: string, applicationId: string, payload: DeploymentTargetBundlePreviewRequest) =>

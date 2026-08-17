@@ -12,6 +12,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/model"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
 	"github.com/LiteyukiStudio/devops/internal/resourcename"
+	"github.com/LiteyukiStudio/devops/internal/runtimeconfig"
 	"github.com/LiteyukiStudio/devops/internal/variables"
 	"gorm.io/gorm"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -552,34 +553,7 @@ func compactStringList(values []string) []string {
 }
 
 func parseKeyValueMap(value string) (map[string]string, error) {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return map[string]string{}, nil
-	}
-	if strings.HasPrefix(value, "{") {
-		var raw map[string]any
-		if err := json.Unmarshal([]byte(value), &raw); err != nil {
-			return nil, err
-		}
-		parsed := make(map[string]string, len(raw))
-		for key, item := range raw {
-			parsed[strings.TrimSpace(key)] = fmt.Sprint(item)
-		}
-		return compactKeyValueMap(parsed), nil
-	}
-	parsed := map[string]string{}
-	for _, line := range strings.Split(value, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		key, item, ok := strings.Cut(line, "=")
-		if !ok {
-			return nil, fmt.Errorf("invalid key-value line %q", line)
-		}
-		parsed[strings.TrimSpace(key)] = strings.TrimSpace(item)
-	}
-	return compactKeyValueMap(parsed), nil
+	return runtimeconfig.ParseLegacyKeyValue(value)
 }
 
 // expandEnvRefsCrossBoundary 合并 config 和 secret 数据作为引用源，展开 config 中的 ${VAR_NAME} 引用。
@@ -604,18 +578,6 @@ func expandEnvRefsCrossBoundary(config, secret map[string]string) {
 			config[key] = value
 		}
 	}
-}
-
-func compactKeyValueMap(values map[string]string) map[string]string {
-	compacted := map[string]string{}
-	for key, value := range values {
-		key = strings.TrimSpace(key)
-		if key == "" {
-			continue
-		}
-		compacted[key] = value
-	}
-	return compacted
 }
 
 func buildResourceName(buildRunID, prefix string) string {

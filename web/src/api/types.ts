@@ -15,6 +15,10 @@ export type LiveObservationStatus
 export type AgentObservabilitySource = 'prometheus' | 'loki' | 'tempo'
 export type AgentObservabilityRange = '1h' | '6h' | '24h' | '7d' | '30d' | '1y'
 
+export interface APIMeta {
+  serverVersion: string
+}
+
 export interface AgentObservabilityTestResult {
   source: AgentObservabilitySource
   reachable: boolean
@@ -959,8 +963,9 @@ export interface ProjectRuntimeConfigSet {
   id: string
   projectId: string
   name: string
-  envVars: string
+  envVars: Record<string, string>
   configFiles: string
+  secretKeys: string[]
   secretRefsSet: boolean
   secretFilesSet: boolean
   enabled: boolean
@@ -978,8 +983,7 @@ export interface DeploymentRuntimeConfigRef {
   mode: RuntimeConfigRefMode
 }
 
-export type ProjectRuntimeConfigSetPayload = Omit<ProjectRuntimeConfigSet, 'id' | 'projectId' | 'createdBy' | 'createdAt' | 'secretRefsSet' | 'secretFilesSet' | 'deleteStatus' | 'deleteMessage'> & {
-  secretRefs?: string
+export type ProjectRuntimeConfigSetPayload = Omit<ProjectRuntimeConfigSet, 'id' | 'projectId' | 'createdBy' | 'createdAt' | 'secretKeys' | 'secretRefsSet' | 'secretFilesSet' | 'deleteStatus' | 'deleteMessage'> & {
   secretFiles?: string
 }
 
@@ -1191,8 +1195,9 @@ export interface DeploymentTarget {
   concurrencyPolicy: 'queue' | 'parallel'
   runtimeConfigSetIds: string | string[]
   runtimeConfigRefs: DeploymentRuntimeConfigRef[]
-  envVars: string
-  configRefs: string
+  envVars: Record<string, string>
+  configRefs: Record<string, string>
+  secretKeys: string[]
   secretRefsSet: boolean
   configFiles: string
   secretFilesSet: boolean
@@ -1240,13 +1245,31 @@ export interface DeploymentTargetMetrics {
   updatedAt: string
 }
 
-export type DeploymentTargetPayload = Omit<DeploymentTarget, 'id' | 'projectId' | 'applicationId' | 'kubernetesName' | 'createdBy' | 'createdAt' | 'buildVariableSetIds' | 'runtimeConfigSetIds' | 'runtimeConfigRefs' | 'secretRefsSet' | 'secretFilesSet' | 'dataVolumes' | 'status' | 'observationCode' | 'lastCheckedAt' | 'desiredReplicas' | 'updatedReplicas' | 'readyReplicas' | 'availableReplicas' | 'deleteStatus' | 'deleteMessage' | 'deleteStartedAt' | 'deleteFinishedAt'> & {
+export interface DeploymentTargetRuntimeSecretsSummary {
+  secretKeys: string[]
+  secretRefsSet: boolean
+}
+
+export interface DeploymentTargetRuntimeSecretsPayload {
+  values?: Record<string, string>
+  generate?: Record<string, { length?: number, encoding?: 'base64' | 'hex' | 'alphanumeric' | 'numeric' }>
+  clear?: string[]
+}
+
+export interface RuntimeSecretMutationResponse {
+  configuredKeys: string[]
+  generatedKeys: string[]
+  clearedKeys: string[]
+  secretKeys: string[]
+  secretRefsSet: boolean
+}
+
+export type DeploymentTargetPayload = Omit<DeploymentTarget, 'id' | 'projectId' | 'applicationId' | 'kubernetesName' | 'createdBy' | 'createdAt' | 'buildVariableSetIds' | 'runtimeConfigSetIds' | 'runtimeConfigRefs' | 'secretKeys' | 'secretRefsSet' | 'secretFilesSet' | 'dataVolumes' | 'status' | 'observationCode' | 'lastCheckedAt' | 'desiredReplicas' | 'updatedReplicas' | 'readyReplicas' | 'availableReplicas' | 'deleteStatus' | 'deleteMessage' | 'deleteStartedAt' | 'deleteFinishedAt'> & {
   buildVariableSetIds: string | string[]
   buildVariables?: Record<string, string>
   buildSecrets?: Record<string, string>
   runtimeConfigSetIds: string | string[]
   runtimeConfigRefs: DeploymentRuntimeConfigRef[]
-  secretRefs?: string
   secretFiles?: string
   dataVolumes: DeploymentDataVolumeInput[]
 }
@@ -2005,6 +2028,7 @@ export const mfaPurposes = [
   'runtime_exec',
   'runtime_terminal',
   'secret_update',
+  'secret_view',
   'registry_credential_update',
   'kubeconfig_update',
   'auth_provider_update',

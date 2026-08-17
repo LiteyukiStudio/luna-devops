@@ -89,6 +89,15 @@ func TestPlatformCatalogMarksRuntimeSecretInputsAsSensitive(t *testing.T) {
 	if _, exists := PlatformOperation("generateSecret"); exists {
 		t.Fatal("legacy generateSecret operation remains in Agent catalog")
 	}
+	for _, operationID := range []string{"getDeploymentTargetRuntimeSecretsSummary"} {
+		if _, exists := PlatformOperation(operationID); exists {
+			t.Fatalf("human-only runtime secret operation entered Agent catalog: %s", operationID)
+		}
+	}
+	configOperation, ok := PlatformOperation("updateProjectRuntimeConfigSetRuntimeSecrets")
+	if !ok || configOperation.Risk != "sensitive" || configOperation.StepUpPurpose != "secret_update" {
+		t.Fatalf("runtime config secret policy = %#v", configOperation)
+	}
 }
 
 func TestProjectListCatalogExposesExplicitScope(t *testing.T) {

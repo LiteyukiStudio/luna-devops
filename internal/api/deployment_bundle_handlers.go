@@ -114,7 +114,6 @@ func (h *Handlers) ImportDeploymentTargetBundle(ctx *gin.Context) {
 		return
 	}
 	input := plan.Input
-	input.SecretRefs = encodeStringMap(runtimeSecretRefs)
 	// Secret files have already been encrypted into transaction-local entries.
 	// Keep the regular input parser from storing them before the target transaction.
 	input.SecretFiles = "[]"
@@ -127,6 +126,7 @@ func (h *Handlers) ImportDeploymentTargetBundle(ctx *gin.Context) {
 		operationErr = errors.New("deployment bundle target validation failed")
 		return
 	}
+	target.SecretRefs = encodeStringMap(runtimeSecretRefs)
 	target.SecretFiles = encodeStringMap(runtimeSecretFiles)
 	for _, volumeInput := range dataVolumes {
 		if runtimeDataPathConflicts(volumeInput.MountPath, target.ConfigFiles, target.SecretFiles) {

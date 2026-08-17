@@ -1,5 +1,5 @@
 import type { ContextCompiler, ContextCompilerOptions } from "./context/compiler.js"
-import type { ConversationHistoryEntry, ConversationTitleSource, PromptVersion } from "./domain.js"
+import type { AIModelSnapshot, ConversationHistoryEntry, ConversationTitleSource, PromptVersion } from "./domain.js"
 import type {
   ModelMessage,
   ModelProvider,
@@ -33,6 +33,7 @@ export type AssistantModelInput = {
   toolCalls: ModelToolCall[]
   continuationMessages: ModelMessage[]
   loadedOperationIds: string[]
+  model?: AIModelSnapshot
 }
 
 /**
@@ -86,7 +87,7 @@ export class ModelRuntime {
     return this.searchTools(query, pageContext, limit)
   }
 
-  async generateConversationTitle(input: string, answer: string, signal?: AbortSignal): Promise<string | undefined> {
+  async generateConversationTitle(input: string, answer: string, signal?: AbortSignal, model?: AIModelSnapshot): Promise<string | undefined> {
     const response = await this.provider.complete({
       messages: [
         { role: "system", content: "根据会话内容生成一个简洁标题，并使用用户当前语言。只返回标题，不要添加引号、Markdown、句末标点或解释；标题不超过 30 个字符。" },
@@ -94,6 +95,7 @@ export class ModelRuntime {
       ],
       maxOutputTokens: 48,
       ...(signal ? { signal } : {}),
+      ...(model ? { modelId: model.id, modelName: model.name, modelPricing: model } : {}),
     })
     const title = response.text.trim().split(/\r?\n/, 1)[0]?.replace(/^["'“”‘’]+|["'“”‘’。.！!？?]+$/g, "").trim()
     return title ? [...title].slice(0, 60).join("") : undefined
@@ -105,6 +107,7 @@ export class ModelRuntime {
     pageContext: Record<string, unknown>
     conversation: ConversationPromptContext
     history: ConversationHistoryEntry[]
+    model?: AIModelSnapshot
   }, signal?: AbortSignal): Promise<Record<string, unknown> | undefined> {
     const availableOperations = this.modelTools(input.pageContext, input.conversation, input.userInput)
       .map(tool => tool.operationId)
@@ -125,6 +128,7 @@ export class ModelRuntime {
       thinking: { type: "disabled" },
       maxOutputTokens: 2100,
       ...(signal ? { signal } : {}),
+      ...(input.model ? { modelId: input.model.id, modelName: input.model.name, modelPricing: input.model } : {}),
     })
     return response.toolCalls?.find(call => call.operationId === "create_options")?.arguments
   }
@@ -141,6 +145,7 @@ export class ModelRuntime {
           history: input.history,
           continuationMessages: input.continuationMessages,
           tools,
+          ...(input.model ? { model: input.model } : {}),
           ...(signal ? { signal } : {}),
         })).messages
       : modelMessages(base.system, base.currentUser, input.history.slice(-4), input.continuationMessages)
@@ -149,6 +154,7 @@ export class ModelRuntime {
       maxOutputTokens: this.assistantMaxOutputTokens,
       tools,
       ...(signal ? { signal } : {}),
+      ...(input.model ? { modelId: input.model.id, modelName: input.model.name, modelPricing: input.model } : {}),
     }
   }
 

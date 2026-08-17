@@ -54,8 +54,6 @@ func TestListBillingRateRulesAllowsAuthenticatedUser(t *testing.T) {
 		meters = append(meters, rule.Meter)
 	}
 	wantMeters := []string{
-		"ai.input_tokens_1000",
-		"ai.output_tokens_1000",
 		"build.cpu_vcpu_minute",
 		"build.memory_gib_minute",
 		"gateway.egress_gib",

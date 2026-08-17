@@ -62,7 +62,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
     if (!response.body) throw new Error("ai.provider_empty_stream")
     const decoder = new TextDecoder()
     let buffer = ""
-    let usage = { inputTokens: 0, outputTokens: 0 }
+    let usage: { inputTokens: number, outputTokens: number, cachedInputTokens?: number, cachedOutputTokens?: number } = { inputTokens: 0, outputTokens: 0 }
     let responseText = ""
     let reasoningText = ""
     let toolCallDeltaEmitted = false
@@ -116,6 +116,8 @@ export class OpenAICompatibleProvider implements ModelProvider {
           usage = {
             inputTokens: payload.usage.prompt_tokens ?? usage.inputTokens,
             outputTokens: payload.usage.completion_tokens ?? usage.outputTokens,
+            ...(payload.usage.prompt_tokens_details?.cached_tokens !== undefined ? { cachedInputTokens: payload.usage.prompt_tokens_details.cached_tokens } : usage.cachedInputTokens !== undefined ? { cachedInputTokens: usage.cachedInputTokens } : {}),
+            ...(payload.usage.completion_tokens_details?.cached_tokens !== undefined ? { cachedOutputTokens: payload.usage.completion_tokens_details.cached_tokens } : usage.cachedOutputTokens !== undefined ? { cachedOutputTokens: usage.cachedOutputTokens } : {}),
           }
         }
       }
@@ -151,7 +153,12 @@ export class OpenAICompatibleProvider implements ModelProvider {
           ...parsed,
         }
       }).filter(call => call.operationId),
-      usage: { inputTokens: body.usage?.prompt_tokens ?? 0, outputTokens: body.usage?.completion_tokens ?? 0 },
+      usage: {
+        inputTokens: body.usage?.prompt_tokens ?? 0,
+        outputTokens: body.usage?.completion_tokens ?? 0,
+        ...(body.usage?.prompt_tokens_details?.cached_tokens !== undefined ? { cachedInputTokens: body.usage.prompt_tokens_details.cached_tokens } : {}),
+        ...(body.usage?.completion_tokens_details?.cached_tokens !== undefined ? { cachedOutputTokens: body.usage.completion_tokens_details.cached_tokens } : {}),
+      },
       requestId: response.headers.get("x-request-id") ?? undefined,
     }
     if (activeSpan) recordAIContent(activeSpan, "gen_ai.content.output", "gen_ai.output.messages", result)
@@ -365,12 +372,18 @@ function providerTransportError(error: unknown, signal?: AbortSignal): Error {
 type ToolCallShape = { index: number, id?: string, function?: { name?: string, arguments?: string } }
 type ReasoningShape = { reasoning_summary?: unknown, reasoning_content?: unknown }
 type MessageShape = ReasoningShape & { content?: unknown, tool_calls?: Array<{ id?: string, function?: { name?: string, arguments?: string } }> }
-type CompletionBody = { id?: string, model?: string, choices?: Array<{ message?: MessageShape }>, usage?: { prompt_tokens?: number, completion_tokens?: number } }
+type CompletionUsage = {
+  prompt_tokens?: number
+  completion_tokens?: number
+  prompt_tokens_details?: { cached_tokens?: number }
+  completion_tokens_details?: { cached_tokens?: number }
+}
+type CompletionBody = { id?: string, model?: string, choices?: Array<{ message?: MessageShape }>, usage?: CompletionUsage }
 type StreamChunk = {
   id?: string
   model?: string
   choices?: Array<{ delta?: ReasoningShape & { content?: unknown, tool_calls?: ToolCallShape[] } }>
-  usage?: { prompt_tokens?: number, completion_tokens?: number }
+  usage?: CompletionUsage
   error?: unknown
 }
 

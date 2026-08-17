@@ -89,6 +89,13 @@ func (h *Handlers) ProxyAIRequest(ctx *gin.Context) {
 	if route.validate != nil && !route.validate(h, ctx, model.User{ID: actor.UserID, Language: actor.Locale}, body) {
 		return
 	}
+	if ctx.FullPath() == "/api/v1/ai/conversations/:conversationId/turns" {
+		var attached bool
+		body, attached = h.attachAIModelSnapshot(ctx, body)
+		if !attached {
+			return
+		}
+	}
 
 	actor.ProjectID = projectIDFromAIRequest(ctx, body)
 	actor.RunID = strings.TrimSpace(ctx.Param("runId"))
@@ -142,6 +149,42 @@ func (h *Handlers) ProxyAIRequest(ctx *gin.Context) {
 		response.Header.Set("Cache-Control", "no-store")
 	}
 	h.copyAIResponse(ctx, response, route.status, "ai.agent_unavailable")
+}
+
+func (h *Handlers) attachAIModelSnapshot(ctx *gin.Context, body []byte) ([]byte, bool) {
+	var input map[string]any
+	if json.Unmarshal(body, &input) != nil {
+		writeErrorCode(ctx, http.StatusBadRequest, "request.invalid_json", "invalid turn input")
+		return nil, false
+	}
+	modelID, ok := input["modelId"].(string)
+	if !ok || strings.TrimSpace(modelID) == "" {
+		writeErrorCode(ctx, http.StatusBadRequest, "ai.model_required", "AI model is required")
+		return nil, false
+	}
+	db := h.dbFor(ctx)
+	if db == nil {
+		return body, true
+	}
+	var selected model.AIModel
+	if err := db.Where("id = ? AND enabled = ?", strings.TrimSpace(modelID), true).First(&selected).Error; err != nil {
+		writeErrorCode(ctx, http.StatusConflict, "ai.model_not_available", "selected AI model is unavailable")
+		return nil, false
+	}
+	input["modelSnapshot"] = gin.H{
+		"id":                            selected.ID,
+		"name":                          selected.Name,
+		"inputCreditsPerMillion":        selected.InputCreditsPerMillion,
+		"outputCreditsPerMillion":       selected.OutputCreditsPerMillion,
+		"cachedInputCreditsPerMillion":  selected.CachedInputCreditsPerMillion,
+		"cachedOutputCreditsPerMillion": selected.CachedOutputCreditsPerMillion,
+	}
+	prepared, err := json.Marshal(input)
+	if err != nil {
+		writeErrorCode(ctx, http.StatusInternalServerError, "ai.run_create_failed", "cannot prepare AI model selection")
+		return nil, false
+	}
+	return prepared, true
 }
 
 func isPendingAIUIActionsRoute(route aiProxyRoute) bool {
@@ -416,8 +459,9 @@ func validateCreateAIConversation(h *Handlers, ctx *gin.Context, user model.User
 	return true
 }
 
-func validateTurnInput(_ *Handlers, ctx *gin.Context, _ model.User, body []byte) bool {
+func validateTurnInput(h *Handlers, ctx *gin.Context, _ model.User, body []byte) bool {
 	var input struct {
+		ModelID          string `json:"modelId"`
 		ClientInstanceID string `json:"clientInstanceId"`
 		Input            struct {
 			Parts []struct {
@@ -429,6 +473,17 @@ func validateTurnInput(_ *Handlers, ctx *gin.Context, _ model.User, body []byte)
 	if json.Unmarshal(body, &input) != nil || len(input.Input.Parts) == 0 {
 		writeErrorCode(ctx, http.StatusBadRequest, "request.invalid_json", "invalid turn input")
 		return false
+	}
+	if strings.TrimSpace(input.ModelID) == "" {
+		writeErrorCode(ctx, http.StatusBadRequest, "ai.model_required", "AI model is required")
+		return false
+	}
+	if db := h.dbFor(ctx); db != nil {
+		var selected model.AIModel
+		if db.Where("id = ? AND enabled = ?", strings.TrimSpace(input.ModelID), true).First(&selected).Error != nil {
+			writeErrorCode(ctx, http.StatusConflict, "ai.model_not_available", "selected AI model is unavailable")
+			return false
+		}
 	}
 	if !validAIClientInstanceID(input.ClientInstanceID) {
 		writeErrorCode(ctx, http.StatusBadRequest, "ai.client_instance_invalid", "clientInstanceId is invalid")

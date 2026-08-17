@@ -36,6 +36,17 @@ describe('lazy API client', () => {
     expect(api.getDashboard).toBe(api.getDashboard)
   })
 
+  it('requests API metadata without caching', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async () => jsonResponse({ serverVersion: 'commit-1' }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(api.getAPIMeta()).resolves.toEqual({ serverVersion: 'commit-1' })
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/meta'),
+      expect.objectContaining({ cache: 'no-store' }),
+    )
+  })
+
   it('keeps application detail aggregation bounded and server-filtered', async () => {
     const fetchMock = vi.fn<typeof fetch>().mockImplementation(async () => jsonResponse({
       items: [],

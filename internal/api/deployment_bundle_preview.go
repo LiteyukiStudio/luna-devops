@@ -168,7 +168,7 @@ func validateDeploymentTargetBundle(bundle deploymentTargetBundle) error {
 	if strings.TrimSpace(input.EnvironmentID) != "" || strings.TrimSpace(input.ClusterID) != "" || strings.TrimSpace(input.RepositoryBindingID) != "" ||
 		strings.TrimSpace(input.BuildEnvironmentID) != "" || strings.TrimSpace(input.TargetRegistryID) != "" || len(input.BuildVariableSetIDs) > 0 ||
 		input.BuildSecrets != nil || len(input.BuildHookBindings) > 0 || len(input.RuntimeConfigSetIDs) > 0 || len(input.RuntimeConfigRefs) > 0 ||
-		strings.TrimSpace(input.SecretRefs) != "" || strings.TrimSpace(input.SecretFiles) != "" || input.Enabled {
+		strings.TrimSpace(input.SecretFiles) != "" || input.Enabled {
 		return &deploymentBundleError{Code: "deployment_bundle.invalid_json", Message: "deployment bundle contains a non-portable identifier or secret field"}
 	}
 	for _, volume := range input.DataVolumes {

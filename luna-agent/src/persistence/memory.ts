@@ -111,6 +111,7 @@ export class MemoryRepository implements Repository {
     const turn: Turn = {
       id: createId("aitrn"), conversationId: input.conversationId, turnIndex, status: "queued",
       input: input.input, selectedRunId: runId, createdAt: now,
+      ...(input.modelId ? { modelId: input.modelId } : {}),
     }
     const run: StoredRun = {
       id: runId, conversationId: input.conversationId, turnId: turn.id, runIndex: 0,
@@ -119,6 +120,7 @@ export class MemoryRepository implements Repository {
       ...(input.traceContext ? { traceContext: input.traceContext } : {}),
       clientInstanceId: input.clientInstanceId ?? "memory-client-instance", createdAt: now, ownerUserId,
       ...(input.runActorGrantCiphertext ? { runActorGrantCiphertext: input.runActorGrantCiphertext } : {}),
+      ...(input.modelSnapshot ? { model: input.modelSnapshot } : {}),
     }
     this.turns.set(turn.id, turn)
     this.runs.set(run.id, run)
@@ -178,6 +180,7 @@ export class MemoryRepository implements Repository {
           turnIndex: turn.turnIndex,
           input: turn.input,
           pageContext: run.pageContext,
+          ...(run.model ? { model: run.model } : {}),
           toolInteractions: this.items
             .filter(item => item.runId === runId && (item.type === "tool_call" || item.type === "tool_result"))
             .map(item => ({ itemId: item.id, type: item.type as "tool_call" | "tool_result", status: item.status, content: item.content })),

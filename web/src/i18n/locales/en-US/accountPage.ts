@@ -91,6 +91,7 @@ const accountPage = {
       runtime_exec: 'run a runtime command',
       runtime_terminal: 'open Web Console',
       secret_update: 'update a secret',
+      secret_view: 'view a runtime secret',
       registry_credential_update: 'update registry credentials',
       kubeconfig_update: 'update kubeconfig',
       auth_provider_update: 'update an identity provider',

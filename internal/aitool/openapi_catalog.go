@@ -248,6 +248,9 @@ func agentEligibleOperation(path, method, operationID string, raw map[string]any
 	if strings.Contains(path, "/stream") || strings.Contains(path, "/terminal") {
 		return false
 	}
+	if strings.HasSuffix(path, "/runtime-secrets/reveal") || (strings.HasSuffix(path, "/runtime-secrets") && method != "put") {
+		return false
+	}
 	if method == "get" && (strings.HasSuffix(path, "/start") || strings.Contains(path, "/callback")) {
 		return false
 	}

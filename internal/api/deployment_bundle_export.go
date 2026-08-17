@@ -130,7 +130,6 @@ func deploymentBundleConfiguration(target model.DeploymentTarget, mounts []model
 	configuration.BuildHookBindings = nil
 	configuration.RuntimeConfigSetIDs = nil
 	configuration.RuntimeConfigRefs = nil
-	configuration.SecretRefs = ""
 	configuration.SecretFiles = ""
 	return configuration, nil
 }
