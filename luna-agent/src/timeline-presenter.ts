@@ -25,6 +25,7 @@ export async function presentTimeline(
       title: snapshot.conversation.title,
       titleSource: snapshot.conversation.titleSource,
       status: snapshot.conversation.status,
+      ...(snapshot.conversation.modelId ? { modelId: snapshot.conversation.modelId } : {}),
     },
     turns: snapshot.turns.map(turn => ({
       id: turn.id,

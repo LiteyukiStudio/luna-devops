@@ -7398,9 +7398,10 @@ paths:
       tags: [AI Assistant]
       summary: Create a private AI conversation
       security: [{ SessionCookie: [] }]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AIConversationCreateInput" } } } }
       responses:
-        "201": { description: Conversation created, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }
+        "200": { description: Existing empty conversation reused with the requested model, content: { application/json: { schema: { $ref: "#/components/schemas/AIConversation" } } } }
+        "201": { description: Conversation created, content: { application/json: { schema: { $ref: "#/components/schemas/AIConversation" } } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
   /api/v1/ai/conversations/{conversationId}:
     parameters:
@@ -7409,13 +7410,13 @@ paths:
       operationId: getAIConversation
       tags: [AI Assistant]
       security: [{ SessionCookie: [] }]
-      responses: { "200": { description: Conversation, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }, "401": { $ref: "#/components/responses/Unauthorized" }, "404": { $ref: "#/components/responses/NotFound" } }
+      responses: { "200": { description: Conversation, content: { application/json: { schema: { $ref: "#/components/schemas/AIConversation" } } } }, "401": { $ref: "#/components/responses/Unauthorized" }, "404": { $ref: "#/components/responses/NotFound" } }
     patch:
       operationId: updateAIConversation
       tags: [AI Assistant]
       security: [{ SessionCookie: [] }]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }
-      responses: { "200": { description: Updated conversation, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }, "401": { $ref: "#/components/responses/Unauthorized" }, "404": { $ref: "#/components/responses/NotFound" } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AIConversationUpdateInput" } } } }
+      responses: { "200": { description: Updated conversation, content: { application/json: { schema: { $ref: "#/components/schemas/AIConversation" } } } }, "401": { $ref: "#/components/responses/Unauthorized" }, "404": { $ref: "#/components/responses/NotFound" } }
     delete:
       operationId: deleteAIConversation
       tags: [AI Assistant]
@@ -8261,8 +8262,26 @@ components:
         titleSource: { type: string, enum: [default, assistant, user] }
         status: { type: string }
         projectId: { type: string }
+        modelId: { type: string, minLength: 5, maxLength: 64, description: Model preference used by subsequent turns in this conversation. }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+    AIConversationCreateInput:
+      type: object
+      additionalProperties: false
+      required: [modelId]
+      properties:
+        projectId: { type: string, minLength: 5, maxLength: 64 }
+        modelId: { type: string, minLength: 5, maxLength: 64 }
+        title: { type: string, minLength: 1, maxLength: 120 }
+    AIConversationUpdateInput:
+      type: object
+      additionalProperties: false
+      anyOf:
+        - required: [title]
+        - required: [modelId]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 120 }
+        modelId: { type: string, minLength: 5, maxLength: 64 }
     AIConversationPage:
       type: object
       additionalProperties: false
@@ -8284,6 +8303,7 @@ components:
         title: { type: string }
         titleSource: { type: string, enum: [default, assistant, user] }
         status: { type: string }
+        modelId: { type: string, minLength: 5, maxLength: 64, description: Model preference used by subsequent turns in this conversation. }
     AIMessagePart:
       type: object
       additionalProperties: false

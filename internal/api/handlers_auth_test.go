@@ -247,6 +247,39 @@ func TestBootstrapStatusIncludesDevLoginHintInDevelopment(t *testing.T) {
 	}
 }
 
+func TestDevelopmentAdminFreeQuotaCredits(t *testing.T) {
+	t.Run("defaults to a positive local quota", func(t *testing.T) {
+		t.Setenv("LOCAL_ADMIN_FREE_QUOTA_CREDITS", "")
+		credits, err := developmentAdminFreeQuotaCredits()
+		if err != nil {
+			t.Fatalf("developmentAdminFreeQuotaCredits() error = %v", err)
+		}
+		if credits.String() != "1000" {
+			t.Fatalf("developmentAdminFreeQuotaCredits() = %s, want 1000", credits)
+		}
+	})
+
+	t.Run("zero disables the grant", func(t *testing.T) {
+		t.Setenv("LOCAL_ADMIN_FREE_QUOTA_CREDITS", "0")
+		credits, err := developmentAdminFreeQuotaCredits()
+		if err != nil {
+			t.Fatalf("developmentAdminFreeQuotaCredits() error = %v", err)
+		}
+		if !credits.IsZero() {
+			t.Fatalf("developmentAdminFreeQuotaCredits() = %s, want 0", credits)
+		}
+	})
+
+	for _, value := range []string{"invalid", "-1"} {
+		t.Run("rejects "+value, func(t *testing.T) {
+			t.Setenv("LOCAL_ADMIN_FREE_QUOTA_CREDITS", value)
+			if _, err := developmentAdminFreeQuotaCredits(); err == nil {
+				t.Fatalf("developmentAdminFreeQuotaCredits() accepted %q", value)
+			}
+		})
+	}
+}
+
 func TestAuthProviderResponseHidesStoredClientSecret(t *testing.T) {
 	t.Setenv("SECRET_ENCRYPTION_KEY", "test-key")
 	provider := model.AuthProvider{ClientSecretRef: secret.Encrypt("super-secret")}

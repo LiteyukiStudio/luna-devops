@@ -17,6 +17,7 @@ const (
 	ReasonExternalAdjust   = "billing.external_adjustment"
 	ReasonManualRecharge   = "billing.recharge"
 	ReasonManualAdjust     = "billing.adjustment"
+	ReasonDevelopmentQuota = "billing.development_free_quota"
 	ResourceTypeWallet     = "user_wallet"
 )
 

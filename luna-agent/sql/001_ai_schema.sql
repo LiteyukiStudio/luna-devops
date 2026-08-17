@@ -6,6 +6,7 @@ create table if not exists ai.conversations (
   id text primary key,
   owner_user_id text not null,
   project_id text,
+  model_id text,
   title text not null,
   title_source text not null default 'default' check (title_source in ('default', 'assistant', 'user')),
   status text not null default 'active' check (status = 'active'),
@@ -16,6 +17,7 @@ create index if not exists conversations_owner_updated on ai.conversations(owner
 alter table ai.conversations
   add column if not exists title_source text not null default 'default'
   check (title_source in ('default', 'assistant', 'user'));
+alter table ai.conversations add column if not exists model_id text;
 update ai.conversations set title_source = 'user' where title <> '新会话' and title_source = 'default';
 
 create table if not exists ai.turns (
@@ -68,6 +70,16 @@ create table if not exists ai.runs (
 );
 create index if not exists runs_queue on ai.runs(status, lease_expires_at) where status = 'queued';
 alter table ai.turns add column if not exists model_id text;
+update ai.conversations as conversation
+set model_id = latest_turn.model_id
+from (
+  select distinct on (conversation_id) conversation_id, model_id
+  from ai.turns
+  where model_id is not null
+  order by conversation_id, turn_index desc
+) as latest_turn
+where conversation.id = latest_turn.conversation_id
+  and conversation.model_id is null;
 alter table ai.runs add column if not exists model_id text;
 alter table ai.runs add column if not exists model_name text;
 alter table ai.runs add column if not exists max_context_tokens bigint;

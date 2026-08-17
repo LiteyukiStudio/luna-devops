@@ -9,6 +9,7 @@ For a first deployment, configure the Basic values only. Once the platform is ru
 | Type | Key | Default | Purpose and when to change |
 | --- | --- | --- | --- |
 | Basic | `APP_ENV` | `production` | Runtime mode; set `development` explicitly only for local development. |
+| Advanced | `LOCAL_ADMIN_FREE_QUOTA_CREDITS` | `1000` | In `development` mode only, grants this many free credits to the local administrator wallet once using an idempotent transaction. Set it to `0` to create the wallet without a grant. Production ignores this setting. |
 | Basic | `SECRET_ENCRYPTION_KEY` | Empty | Secret encryption key; required and stable in production. |
 | Basic | `DATABASE_URL` | `postgres://devops:devops@postgres:5432/devops?sslmode=disable` | PostgreSQL URL; change when using another database or credential. |
 | Basic | `REDIS_ADDR` | `redis://localhost:6379/0` | Complete Redis URI in the form `redis://username:password@host:port/database`; use `rediss://` for TLS. Username, password, and DB are no longer configured separately. |

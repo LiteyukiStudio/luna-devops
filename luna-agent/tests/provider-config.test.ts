@@ -102,7 +102,7 @@ describe("ProviderConfigClient", () => {
       runtime: { providerTimeoutMs: 0, runTimeoutMs: 1_000, agentConcurrentRuns: 101, userConcurrentRuns: 0, contextInputTokenBudget: 32 * 1024 },
     }), { status: 200 })))
     await expect(new ProviderConfigClient("https://luna-api.internal", "callback-token-value").get())
-      .rejects.toThrow()
+      .rejects.toThrow("ai.provider_config_invalid")
   })
 
   it("rejects inconsistent advanced context settings", async () => {
@@ -112,6 +112,13 @@ describe("ProviderConfigClient", () => {
       runtime: { ...defaultRuntimeSettings, contextCompressionTriggerRatio: 0.5, contextCompressionTargetRatio: 0.6 },
     }), { status: 200 })))
     await expect(new ProviderConfigClient("https://luna-api.internal", "callback-token-value").get())
-      .rejects.toThrow()
+      .rejects.toThrow("ai.provider_config_invalid")
+  })
+
+  it("maps an unavailable platform configuration endpoint to a stable error", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unauthorized", { status: 401 })))
+
+    await expect(new ProviderConfigClient("https://luna-api.internal", "callback-token-value").get())
+      .rejects.toThrow("ai.provider_config_unavailable")
   })
 })

@@ -67,6 +67,7 @@ const domainOperations = {
     'updateAIModel',
     'listAIConversations',
     'createAIConversation',
+    'updateAIConversation',
     'renameAIConversation',
     'deleteAIConversation',
     'getAIConversationTimeline',

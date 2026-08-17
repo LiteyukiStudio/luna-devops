@@ -9,6 +9,7 @@ API 和 Worker 都通过环境变量读取运行配置。使用 Docker Compose�
 | 类型 | 配置项 | 默认值 | 用途与修改时机 |
 | --- | --- | --- | --- |
 | 基本 | `APP_ENV` | `production` | 运行模式；只有本地开发时显式改为 `development`。 |
+| 进阶 | `LOCAL_ADMIN_FREE_QUOTA_CREDITS` | `1000` | 仅在 `development` 模式下，为本地管理员钱包幂等发放一次的免费 Credits；设为 `0` 时只创建钱包、不发放额度。生产模式忽略此项。 |
 | 基本 | `SECRET_ENCRYPTION_KEY` | 空 | 加密密钥；生产环境必须设置稳定随机值。 |
 | 基本 | `DATABASE_URL` | `postgres://devops:devops@postgres:5432/devops?sslmode=disable` | PostgreSQL 连接串；换数据库或账号时改。 |
 | 基本 | `REDIS_ADDR` | `redis://localhost:6379/0` | 完整 Redis URI，格式为 `redis://用户名:密码@域名:端口/数据库`；TLS 连接使用 `rediss://`。不再拆分配置用户名、密码或 DB。 |

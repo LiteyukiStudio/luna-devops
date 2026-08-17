@@ -22,10 +22,12 @@ export const aiApi = {
     request<AIModelConfig>(`/configs/ai/models/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(payload) }),
   listAIConversations: (params: { page: number, pageSize: number, search?: string }) =>
     request<AIPaginatedResponse<AIConversation>>(`/ai/conversations?${paginationQuery({ ...params, sortBy: 'updatedAt', sortOrder: 'desc' })}`),
-  createAIConversation: (payload: { projectId?: string, title?: string }) =>
+  createAIConversation: (payload: { modelId: string, projectId?: string, title?: string }) =>
     request<AIConversation>('/ai/conversations', { method: 'POST', body: JSON.stringify(payload) }),
+  updateAIConversation: (conversationId: string, payload: { title?: string, modelId?: string }) =>
+    request<AIConversation>(`/ai/conversations/${encodeURIComponent(conversationId)}`, { method: 'PATCH', body: JSON.stringify(payload) }),
   renameAIConversation: (conversationId: string, title: string) =>
-    request<AIConversation>(`/ai/conversations/${encodeURIComponent(conversationId)}`, { method: 'PATCH', body: JSON.stringify({ title }) }),
+    aiApi.updateAIConversation(conversationId, { title }),
   deleteAIConversation: (conversationId: string) =>
     request<void>(`/ai/conversations/${encodeURIComponent(conversationId)}`, { method: 'DELETE' }),
   getAIConversationTimeline: (conversationId: string, params: { before?: string, limit?: number } = {}) => {

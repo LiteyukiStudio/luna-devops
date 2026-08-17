@@ -5,12 +5,14 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/authz"
+	"github.com/LiteyukiStudio/devops/internal/billing"
 	"github.com/LiteyukiStudio/devops/internal/config"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
@@ -610,6 +612,47 @@ func ensureDevelopmentAdmin(db *gorm.DB) {
 	if needsSave {
 		_ = db.Save(&user).Error
 	}
+	ensureDevelopmentAdminWallet(db, user)
+}
+
+func ensureDevelopmentAdminWallet(db *gorm.DB, user model.User) {
+	credits, err := developmentAdminFreeQuotaCredits()
+	if err != nil {
+		slog.Error("development administrator wallet bootstrap failed",
+			"event.name", "billing.development_wallet_bootstrap.failed",
+			"error.type", "billing.development_free_quota_invalid",
+		)
+		return
+	}
+
+	service := billing.Service{DB: db}
+	if credits.IsZero() {
+		_, err = service.EnsureWallet(user.ID)
+	} else {
+		_, err = service.ApplyWalletTransaction(billing.WalletTransactionInput{
+			UserID:         user.ID,
+			AmountCredits:  credits,
+			Type:           "credit",
+			Reason:         billing.ReasonDevelopmentQuota,
+			Description:    "Development administrator free quota",
+			IdempotencyKey: "development-admin-free-quota:" + user.ID,
+			ActorID:        "system:development-bootstrap",
+		})
+	}
+	if err != nil {
+		slog.Error("development administrator wallet bootstrap failed",
+			"event.name", "billing.development_wallet_bootstrap.failed",
+			"error.type", "billing.development_wallet_bootstrap_failed",
+		)
+	}
+}
+
+func developmentAdminFreeQuotaCredits() (decimal.Decimal, error) {
+	credits, err := decimal.NewFromString(strings.TrimSpace(env("LOCAL_ADMIN_FREE_QUOTA_CREDITS", "1000")))
+	if err != nil || credits.IsNegative() {
+		return decimal.Zero, errors.New("development administrator free quota must be a non-negative decimal")
+	}
+	return credits, nil
 }
 
 func developmentAdminEmail() string {

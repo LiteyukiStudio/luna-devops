@@ -1378,6 +1378,7 @@ CLI 已迁移到独立仓库 [`LiteyukiStudio/luna-cli`](https://github.com/Lite
 
 ## 17. 内嵌 AI 助手
 
+- [x] 将模型偏好持久化到会话并隔离不同会话的切换状态；新会话记录初始模型，后续仅在用户主动切换当前会话时更新，同时把模型选择器移到输入框底部。
 - [x] 将 Agent 权限边界重构为当前登录用户的实时权限：页面与会话上下文只作模型指引，项目目标由哈希绑定的工具参数确定，执行期按 Session、目标项目和统一 RBAC Action 重新校验；平台工具拒绝项目参数，并恢复 viewer 的真实只读能力。
 - [x] 将内置中文交互与导航 Skills 拆成精简入口和按领域加载的 references，覆盖项目、应用、源码、构建、镜像、发布、运行时、网关、诊断、安全、管理与账单等主要工作流。
 - [x] 修复 `listApplications` 读取已移除 `description` 字段导致的工具失败；为工具数据库异常增加稳定错误分类和请求编号透传，前端展示可追踪原因而不暴露 SQL 或堆栈，并明确 API 启动迁移的 fail-closed 行为。
@@ -1456,6 +1457,7 @@ CLI 已迁移到独立仓库 [`LiteyukiStudio/luna-cli`](https://github.com/Lite
 - [x] 将 Agent 页面切换升级为意图感知导航：明确或隐含页面意图均可在唯一可信目标上触发 `navigate_to_route`，跳转不替代业务操作；时间线按真实顺序渲染可重复点击的轻量导航 Badge，不再展示普通工具卡。
 - [x] 强化普通用户的一句话任务展开：新增 Git 仓库取证与源码交付 reference，要求交叉验证 README、真实目录、构建入口、配置和迁移，多服务按独立生命周期拆分并闭环验收；Tool Call 折叠标题改为前端本地化业务名称，原始 operation ID 仅在展开详情展示。
 - [x] 将下一步选项改为独立点击状态：路由跳转可重复，发送消息与请求操作仅成功一次且不锁定兄弟选项；新增实时 SSE 驱动、注册表校验和重放去重的 `navigate_to_route` 自动前端路由工具，并将悬浮入口改为主题色语义渐变圆形。
+- [x] 修复本地 Agent 真实运行故障：由 API 自动迁移补齐 Tool Call 输入模式，Agent 启动时容忍平台配置短暂不可达并通过 readiness 暴露稳定原因，开发管理员获得幂等免费额度，模型必须生成可见最终答复后 Run 才能完成。
 - [x] 新增 `luna-devops-interaction` 内置 Skill，并统一主 Prompt、独立意图预测与安全兜底：缺失参数使用消息选项回答，准备完备的变更使用受控操作，只有读取或明确打开资源时才建议导航。
 - [x] 完成独立 `luna-agent` 生产骨架、`ai` schema 迁移、动态 Provider 配置、Secret Store、Helm/Docker Compose 部署、NetworkPolicy、双语使用文档和 OpenAPI 契约。
 - [x] 将 `luna-agent` 纳入工程化发版链路：生产/源码/开发 Compose、环境变量示例、Helm 镜像说明、release quality gate、DockerHub 多镜像矩阵、SBOM 与 provenance。

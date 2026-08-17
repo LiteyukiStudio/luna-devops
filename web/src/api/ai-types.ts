@@ -28,6 +28,7 @@ export interface AIConversation {
   titleSource: 'default' | 'assistant' | 'user'
   status: string
   projectId?: string
+  modelId?: string
   createdAt: string
   updatedAt: string
 }
@@ -140,7 +141,7 @@ export interface AITimelineTurn {
 }
 
 export interface AITimeline {
-  conversation: Pick<AIConversation, 'id' | 'title' | 'titleSource' | 'status'>
+  conversation: Pick<AIConversation, 'id' | 'title' | 'titleSource' | 'status' | 'modelId'>
   turns: AITimelineTurn[]
   eventCursors: Array<{ runId: string, after: number }>
   pageInfo: {

@@ -38,7 +38,12 @@ export async function startAgent(): Promise<void> {
     ? new ProviderConfigClient(config.LUNA_API_BASE_URL, internalKeys.callbackServiceToken)
     : undefined
   const initialRemoteConfig = providerConfigClient
-    ? await providerConfigClient.get()
+    ? await providerConfigClient.get().catch(() => {
+        telemetryLog("agent.provider_config.degraded_start", "warn", {
+          "error.code": "ai.provider_config_unavailable",
+        })
+        return undefined
+      })
     : undefined
   const rawProvider = createRuntimeProvider(config, providerConfigClient)
   const provider = new BudgetedModelProvider(rawProvider, repository)

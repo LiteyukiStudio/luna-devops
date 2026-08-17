@@ -3,6 +3,7 @@ import { DevelopmentAuthenticator } from "../src/auth.js"
 import { loadConfig } from "../src/config.js"
 import { MemoryRepository } from "../src/persistence/memory.js"
 import { DeterministicProvider } from "../src/provider/deterministic.js"
+import { ProviderConfigClient } from "../src/provider/config-client.js"
 import { defaultRuntimeSettings } from "../src/runtime-settings.js"
 import { buildServer } from "../src/server.js"
 import { PayloadCipher } from "../src/payload-cipher.js"
@@ -17,6 +18,45 @@ function fixture() {
 }
 
 describe("internal API", () => {
+  it("reports readiness dimensions and fails with stable dependency codes", async () => {
+    const healthy = fixture()
+    const healthyResponse = await healthy.app.inject({ method: "GET", url: "/internal/health/ready" })
+    expect(healthyResponse.statusCode).toBe(200)
+    expect(healthyResponse.json()).toEqual({
+      status: "ready",
+      checks: { database: true, schema: true, providerConfigAvailable: true, providerConfigured: true },
+    })
+    await healthy.app.close()
+
+    class SchemaMismatchRepository extends MemoryRepository {
+      override async readiness() { return { database: true, schema: false } }
+    }
+    const schemaApp = buildServer({
+      config: loadConfig({ NODE_ENV: "test" }),
+      repository: new SchemaMismatchRepository(),
+      provider: new DeterministicProvider(),
+      authenticator: new DevelopmentAuthenticator(),
+      grantCipher: new PayloadCipher(Buffer.alloc(32, 1)),
+    })
+    const schemaResponse = await schemaApp.inject({ method: "GET", url: "/internal/health/ready" })
+    expect(schemaResponse.statusCode).toBe(503)
+    expect(schemaResponse.json()).toMatchObject({ errorCode: "ai.database_schema_mismatch" })
+    await schemaApp.close()
+
+    const configApp = buildServer({
+      config: loadConfig({ NODE_ENV: "test" }),
+      repository: new MemoryRepository(),
+      provider: new DeterministicProvider(),
+      authenticator: new DevelopmentAuthenticator(),
+      grantCipher: new PayloadCipher(Buffer.alloc(32, 1)),
+      providerConfigClient: new ProviderConfigClient("https://luna-api.internal", "callback-token-value"),
+    })
+    const configResponse = await configApp.inject({ method: "GET", url: "/internal/health/ready" })
+    expect(configResponse.statusCode).toBe(503)
+    expect(configResponse.json()).toMatchObject({ errorCode: "ai.provider_config_unavailable" })
+    await configApp.close()
+  })
+
   it("requires an authenticated actor", async () => {
     const { app } = fixture()
     const response = await app.inject({ method: "GET", url: "/internal/v1/conversations" })
@@ -26,8 +66,9 @@ describe("internal API", () => {
   it("creates a conversation and a durable turn", async () => {
     const { app } = fixture()
     const headers = { "x-luna-dev-user": "usr_test" }
-    const conversation = await app.inject({ method: "POST", url: "/internal/v1/conversations", headers, payload: { title: "构建诊断" } })
+    const conversation = await app.inject({ method: "POST", url: "/internal/v1/conversations", headers, payload: { title: "构建诊断", modelId: "aimod_test" } })
     expect(conversation.statusCode).toBe(201)
+    expect(conversation.json()).toMatchObject({ modelId: "aimod_test" })
     const id = conversation.json<{ id: string }>().id
     const turn = await app.inject({
       method: "POST", url: `/internal/v1/conversations/${id}/turns`,
@@ -58,7 +99,7 @@ describe("internal API", () => {
   ])("rejects an invalid immutable model or Run budget snapshot", async (snapshots) => {
     const { app } = fixture()
     const headers = { "x-luna-dev-user": "usr_snapshot_contract" }
-    const conversation = await app.inject({ method: "POST", url: "/internal/v1/conversations", headers, payload: {} })
+    const conversation = await app.inject({ method: "POST", url: "/internal/v1/conversations", headers, payload: { modelId: "aimod_test" } })
     const id = conversation.json<{ id: string }>().id
     const response = await app.inject({
       method: "POST", url: `/internal/v1/conversations/${id}/turns`,
@@ -95,7 +136,7 @@ describe("internal API", () => {
   it("marks browser title edits as user-owned and permanently blocks assistant renames", async () => {
     const { app, repository } = fixture()
     const headers = { "x-luna-dev-user": "usr_title_owner" }
-    const created = await app.inject({ method: "POST", url: "/internal/v1/conversations", headers, payload: {} })
+    const created = await app.inject({ method: "POST", url: "/internal/v1/conversations", headers, payload: { modelId: "aimod_test" } })
     const conversationId = created.json<{ id: string }>().id
     expect(created.json<{ titleSource: string }>().titleSource).toBe("default")
 
@@ -112,6 +153,30 @@ describe("internal API", () => {
     expect((await repository.getConversation("usr_title_owner", conversationId))?.title).toBe("我的固定标题")
     await app.close()
   })
+  it("persists model changes only on the selected conversation", async () => {
+    const { app } = fixture()
+    const headers = { "x-luna-dev-user": "usr_model_scope" }
+    const first = await app.inject({
+      method: "POST", url: "/internal/v1/conversations", headers,
+      payload: { title: "First", modelId: "aimod_fast" },
+    })
+    const second = await app.inject({
+      method: "POST", url: "/internal/v1/conversations", headers,
+      payload: { title: "Second", modelId: "aimod_deep" },
+    })
+    const firstId = first.json<{ id: string }>().id
+    const secondId = second.json<{ id: string }>().id
+
+    const updated = await app.inject({
+      method: "PATCH", url: `/internal/v1/conversations/${firstId}`, headers,
+      payload: { modelId: "aimod_balanced" },
+    })
+    const untouched = await app.inject({ method: "GET", url: `/internal/v1/conversations/${secondId}`, headers })
+
+    expect(updated.json()).toMatchObject({ id: firstId, modelId: "aimod_balanced" })
+    expect(untouched.json()).toMatchObject({ id: secondId, modelId: "aimod_deep" })
+    await app.close()
+  })
   it("keeps a durable cancellation successful when the local abort hook fails", async () => {
     const repository = new MemoryRepository()
     const provider = new DeterministicProvider()
@@ -124,7 +189,7 @@ describe("internal API", () => {
       cancelRun: () => { throw new Error("local abort failed") },
     })
     const headers = { "x-luna-dev-user": "usr_cancel" }
-    const conversation = await app.inject({ method: "POST", url: "/internal/v1/conversations", headers, payload: { title: "Cancel" } })
+    const conversation = await app.inject({ method: "POST", url: "/internal/v1/conversations", headers, payload: { title: "Cancel", modelId: "aimod_test" } })
     const conversationId = conversation.json<{ id: string }>().id
     const created = await app.inject({
       method: "POST",
@@ -184,7 +249,7 @@ describe("internal API", () => {
   it("presents a created turn as the strict Web timeline contract", async () => {
     const { app, repository } = fixture()
     const headers = { "x-luna-dev-user": "usr_timeline" }
-    const conversation = await app.inject({ method: "POST", url: "/internal/v1/conversations", headers, payload: { title: "Timeline" } })
+    const conversation = await app.inject({ method: "POST", url: "/internal/v1/conversations", headers, payload: { title: "Timeline", modelId: "aimod_test" } })
     const conversationId = conversation.json<{ id: string }>().id
     const created = await app.inject({
       method: "POST",
@@ -202,7 +267,7 @@ describe("internal API", () => {
     expect(response.statusCode).toBe(200)
     expect(response.headers["cache-control"]).toBe("no-store")
     expect(timeline).toMatchObject({
-      conversation: { id: conversationId, title: "Timeline", status: "active" },
+      conversation: { id: conversationId, title: "Timeline", status: "active", modelId: "aimod_test" },
       turns: [{
         turnIndex: 0,
         input: { type: "user_message", parts: [{ partIndex: 0, type: "text", text: "检查构建状态" }] },
@@ -318,7 +383,7 @@ describe("internal API", () => {
   it("uses SSE when EventSource negotiates text/event-stream without a query flag", async () => {
     const { app } = fixture()
     const headers = { "x-luna-dev-user": "usr_sse" }
-    const conversation = await app.inject({ method: "POST", url: "/internal/v1/conversations", headers, payload: { title: "SSE" } })
+    const conversation = await app.inject({ method: "POST", url: "/internal/v1/conversations", headers, payload: { title: "SSE", modelId: "aimod_test" } })
     const conversationId = conversation.json<{ id: string }>().id
     const created = await app.inject({
       method: "POST",
@@ -344,7 +409,7 @@ describe("internal API", () => {
     const { app, repository } = fixture()
     const headers = { "x-luna-dev-user": "usr_ui_action" }
     const clientInstanceId = "browser-client-instance-5"
-    const conversation = await app.inject({ method: "POST", url: "/internal/v1/conversations", headers, payload: { title: "Navigation" } })
+    const conversation = await app.inject({ method: "POST", url: "/internal/v1/conversations", headers, payload: { title: "Navigation", modelId: "aimod_test" } })
     const conversationId = conversation.json<{ id: string }>().id
     const created = await app.inject({
       method: "POST",

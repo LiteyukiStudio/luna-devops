@@ -217,6 +217,7 @@ func assertFreshMigrationState(t *testing.T, db *gorm.DB) {
 		{table: "ai.runs", column: "max_output_tokens"},
 		{table: "ai.runs", column: "total_token_budget"},
 		{table: "ai.runs", column: "total_credit_budget"},
+		{table: "ai.tool_calls", column: "input_mode"},
 		{table: "ai_models", column: "max_context_tokens"},
 		{table: "ai_models", column: "max_output_tokens"},
 		{table: "ai.items", column: "revision"},
