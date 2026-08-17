@@ -53,6 +53,8 @@ describe("Postgres tool argument storage", () => {
       rowVersion: 1,
     })
 
+    expect(query.mock.calls[0]?.[0]).toContain("input_mode")
+    expect(calls[0]?.[4]).toBe("model")
     expect(calls[0]?.[5]).toContain("[REDACTED]")
     expect(calls[0]?.[5]).not.toContain("generated-secret")
     expect(calls[0]?.[6]).not.toContain("generated-secret")
@@ -84,5 +86,27 @@ describe("Postgres tool argument storage", () => {
     )
 
     await expect(store.get("aitool_legacy")).rejects.toThrow("ai.tool_arguments_key_unavailable")
+  })
+
+  it("maps a missing input_mode column to a stable schema error", async () => {
+    const query = vi.fn(async () => {
+      throw Object.assign(new Error("column input_mode does not exist"), { code: "42703" })
+    })
+    const store = new PostgresToolCallStore(
+      { query } as unknown as Pool,
+      {} as Repository,
+      new PayloadCipher(Buffer.alloc(32, 9), "tool-arguments-test"),
+    )
+
+    await expect(store.insert({
+      id: "aitool_schema",
+      runId: "airun_schema",
+      operationId: "listProjects",
+      status: "proposed",
+      arguments: {},
+      argumentsHash: "sha256:schema",
+      attempt: 1,
+      rowVersion: 1,
+    })).rejects.toThrow("ai.database_schema_mismatch")
   })
 })

@@ -4,6 +4,24 @@ import { MemoryRepository } from "../src/persistence/memory.js"
 describe("conversation repository", () => {
   afterEach(() => vi.useRealTimers())
 
+  it("keeps the preferred model on the conversation and updates it with each explicit turn model", async () => {
+    const repository = new MemoryRepository()
+    const conversation = await repository.createConversation("usr_models", "models", undefined, "user", "aimod_fast")
+    expect(conversation.modelId).toBe("aimod_fast")
+
+    await repository.updateConversation("usr_models", conversation.id, { modelId: "aimod_deep" })
+    expect((await repository.getConversation("usr_models", conversation.id))?.modelId).toBe("aimod_deep")
+
+    await repository.createTurn("usr_models", {
+      conversationId: conversation.id,
+      input: "use balanced",
+      pageContext: {},
+      idempotencyKey: "model-preference-turn",
+      modelId: "aimod_balanced",
+    })
+    expect((await repository.getConversation("usr_models", conversation.id))?.modelId).toBe("aimod_balanced")
+  })
+
   it("updates conversation activity when a user or assistant message is appended", async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date("2026-08-03T10:00:00.000Z"))

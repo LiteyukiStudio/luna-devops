@@ -516,6 +516,7 @@ const aiAssistant = {
     },
     errors: {
       createConversation: 'Could not create the conversation',
+      updateModel: 'Could not switch the model for this conversation',
       renameConversation: 'Could not rename the conversation',
       deleteConversation: 'Could not delete the conversation',
       timeline: 'Could not load the conversation',

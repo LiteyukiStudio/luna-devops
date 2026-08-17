@@ -516,6 +516,7 @@ const aiAssistant = {
     },
     errors: {
       createConversation: '无法创建会话',
+      updateModel: '无法切换当前会话的模型',
       renameConversation: '无法重命名会话',
       deleteConversation: '无法删除会话',
       timeline: '无法加载会话记录',

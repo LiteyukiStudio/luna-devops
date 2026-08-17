@@ -77,12 +77,24 @@ export function buildServer(input: {
 
   app.get("/internal/health/live", { logLevel: "silent" }, async () => ({ status: "ok" }))
   app.get("/internal/health/ready", { logLevel: "silent" }, async (_request, reply) => {
-    const database = await input.repository.health()
-    if (!database) {
-      telemetryLog("agent.readiness.failed", "warn", { "error.code": "ai.persistence_unavailable" })
-      return reply.code(503).send({ status: "not_ready", checks: { database } })
+    const persistence = await input.repository.readiness()
+    const remoteConfig = input.providerConfigClient?.current()
+    const providerConfigAvailable = !input.providerConfigClient || remoteConfig !== undefined
+    const providerConfigured = input.providerConfigClient ? remoteConfig?.provider.configured === true : true
+    if (!persistence.database || !persistence.schema || !providerConfigAvailable) {
+      const errorCode = !persistence.database
+        ? "ai.persistence_unavailable"
+        : !persistence.schema
+          ? "ai.database_schema_mismatch"
+          : "ai.provider_config_unavailable"
+      telemetryLog("agent.readiness.failed", "warn", { "error.code": errorCode })
+      return reply.code(503).send({
+        status: "not_ready",
+        checks: { ...persistence, providerConfigAvailable, providerConfigured },
+        errorCode,
+      })
     }
-    return { status: "ready", checks: { database, providerConfigured: true } }
+    return { status: "ready", checks: { ...persistence, providerConfigAvailable, providerConfigured } }
   })
   app.get("/internal/v1/health/compatibility", async () => ({
     component: "luna-agent", version: "0.1.0", internalApiVersions: ["v1"],
@@ -154,16 +166,24 @@ export function buildServer(input: {
       return { ...result, page: query.page, pageSize: query.pageSize, sortBy: query.sortBy, sortOrder: query.sortOrder, totalPages: Math.ceil(result.total / query.pageSize) }
     })
     secured.post("/internal/v1/conversations", async (request, reply) => {
-      const body = z.object({ projectId: id.optional(), title: z.string().trim().min(1).max(120).default("新会话") }).parse(request.body)
+      const body = z.object({
+        projectId: id.optional(),
+        modelId: id,
+        title: z.string().trim().min(1).max(120).default("新会话"),
+      }).parse(request.body)
       if (body.title === "新会话") {
         const existing = await input.repository.findEmptyConversation(request.actor.userId, body.projectId)
-        if (existing) return reply.code(200).send(existing)
+        if (existing) {
+          const updated = await input.repository.updateConversation(request.actor.userId, existing.id, { modelId: body.modelId })
+          return reply.code(200).send(updated)
+        }
       }
       const value = await input.repository.createConversation(
         request.actor.userId,
         body.title,
         body.projectId,
         body.title === "新会话" ? "default" : "user",
+        body.modelId,
       )
       return reply.code(201).send(value)
     })
@@ -174,8 +194,14 @@ export function buildServer(input: {
     })
     secured.patch("/internal/v1/conversations/:conversationId", async (request, reply) => {
       const { conversationId } = z.object({ conversationId: id }).parse(request.params)
-      const { title } = z.object({ title: z.string().trim().min(1).max(120) }).parse(request.body)
-      const value = await input.repository.renameConversation(request.actor.userId, conversationId, title)
+      const body = z.object({
+        title: z.string().trim().min(1).max(120).optional(),
+        modelId: id.optional(),
+      }).refine(value => value.title !== undefined || value.modelId !== undefined).parse(request.body)
+      const value = await input.repository.updateConversation(request.actor.userId, conversationId, {
+        ...(body.title !== undefined ? { title: body.title } : {}),
+        ...(body.modelId !== undefined ? { modelId: body.modelId } : {}),
+      })
       return value ?? reply.code(404).send(errorBody("ai.conversation_not_found", request.id))
     })
     secured.delete("/internal/v1/conversations/:conversationId", async (request, reply) => {

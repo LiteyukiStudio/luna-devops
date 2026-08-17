@@ -89,14 +89,29 @@ export class ProviderConfigClient {
     return withSpan("luna_api.provider_config.get", clientSpanOptions({
       "server.address": new URL(this.baseUrl).hostname,
     }), async span => {
-    const response = await this.fetchConfig(signal)
+    let response: Response
+    try {
+      response = await this.fetchConfig(signal)
+    }
+    catch (error) {
+      if (signal?.aborted) throw error
+      telemetryLog("agent.provider_config.failed", "warn", { "error.code": "ai.provider_config_unavailable" })
+      throw new Error("ai.provider_config_unavailable")
+    }
     span.setAttribute("http.response.status_code", response.status)
     agentMetrics.externalRequests.add(1, { target: "luna_api", operation: "provider_config", outcome: response.ok ? "success" : String(response.status) })
     if (!response.ok) {
       telemetryLog("agent.provider_config.failed", "warn", { "http.response.status_code": response.status })
       throw new Error("ai.provider_config_unavailable")
     }
-    const config = remoteProviderConfigSchema.parse(await response.json())
+    let config: RemoteProviderConfig
+    try {
+      config = remoteProviderConfigSchema.parse(await response.json())
+    }
+    catch {
+      telemetryLog("agent.provider_config.failed", "warn", { "error.code": "ai.provider_config_invalid" })
+      throw new Error("ai.provider_config_invalid")
+    }
     this.currentConfig = config
     span.setAttribute("luna.provider.config_version", config.version)
     return config

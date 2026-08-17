@@ -189,7 +189,7 @@ describe("provider to tool to subsequent model invocation", () => {
     expect(renameCall?.toolCall?.status).toBe("skipped")
   })
 
-  it("persists create_options arguments and returns visible UI actions without a business API call", async () => {
+  it("persists create_options arguments and continues until the model returns a visible answer", async () => {
     const repository = new MemoryRepository()
     const conversation = await repository.createConversation("usr_a", "options")
     await repository.createTurn("usr_a", {
@@ -202,8 +202,14 @@ describe("provider to tool to subsequent model invocation", () => {
         { id: "continue", label: "Continue diagnosis", action: { type: "send_message", message: "Continue the diagnosis" } },
       ],
     }
+    let modelStep = 0
     const provider: ModelProvider = {
       async *stream() {
+        if (modelStep++ > 0) {
+          yield { type: "message_delta", delta: "Choose a next step." }
+          yield { type: "completed", usage: { inputTokens: 5, outputTokens: 5 } }
+          return
+        }
         yield {
           type: "completed",
           usage: { inputTokens: 10, outputTokens: 10 },
@@ -222,6 +228,8 @@ describe("provider to tool to subsequent model invocation", () => {
 
     const timeline = await presentTimeline(repository, "usr_a", conversation.id)
     const items = timeline?.turns[0]?.selectedRun?.items as Array<{
+      type?: string
+      parts?: Array<{ type: string, text?: string }>
       toolCall?: { operationId: string, arguments: Record<string, unknown>, uiActions?: Array<{ type: string, label?: string }> }
     }> | undefined
     const optionsItem = items?.find(item => item.toolCall?.operationId === "create_options")
@@ -230,6 +238,9 @@ describe("provider to tool to subsequent model invocation", () => {
       expect.objectContaining({ type: "navigate", label: "Open projects" }),
       expect.objectContaining({ type: "send_message", label: "Continue diagnosis" }),
     ])
+    const assistantMessage = items?.find(item => item.type === "assistant_message")
+    expect(assistantMessage?.parts?.some(part => part.type === "text" && part.text === "Choose a next step.")).toBe(true)
+    expect(modelStep).toBe(2)
   })
 
   it("returns invalid interaction-card arguments to the model for a bounded self-correction", async () => {

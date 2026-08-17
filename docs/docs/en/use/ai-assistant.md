@@ -14,7 +14,7 @@ If you're new to servers, containers, or Kubernetes, just say so ("I'm new to th
 
 An administrator enters the provider URL and API key under **Global Settings → AI Assistant**, then adds each model's name, maximum context tokens, maximum output tokens, and four prices (input, output, cached input, and cached output) in the **AI model catalog**. Use conservative limits published by the provider; the output limit must be lower than the context limit. The catalog always keeps at least one model enabled: its first model is enabled automatically, and its final enabled model cannot be disabled. All signed-in users can use it by default, or the administrator can restrict access to platform administrators. The provider must support an OpenAI-compatible `chat/completions` API, streaming, and tool calls.
 
-The assistant header lets you choose an enabled model for the current conversation. The selection is locked while a Run is active. Each Run stores the model identity, capabilities, all four prices, and cumulative budgets as an immutable snapshot, so disabling a model or changing its configuration does not alter an existing Run. If no model is available, an administrator must add and enable one first.
+The model picker in the lower-left corner of the composer selects an enabled model for the current conversation. The preference is conversation-scoped: a new conversation records its initial model and keeps using it until you explicitly switch that conversation, without affecting any other conversation. The selection is locked while a Run is active. Each Run stores the model identity, capabilities, all four prices, and cumulative budgets as an immutable snapshot, so disabling a model or changing its configuration does not alter an existing Run. If no model is available, an administrator must add and enable one first.
 
 The assistant retries transient network errors, timeouts, rate limits, and server failures five times by default with exponential backoff. Administrators can set 0–10 retries under **Advanced runtime settings**; 0 disables retries. A stream is never replayed after visible output has started, and non-idempotent writes are not resubmitted when the outcome is unknown, preventing duplicate content or resources.
 
@@ -100,6 +100,10 @@ For a context error, shorten the current input, remove unneeded history, or ask 
 ### A tool failed
 
 Expand its details and inspect the error code and request ID. Common causes include changed resources, insufficient permission, unavailable dependencies, invalid parameters, or an operation that needs approval again.
+
+For `ai.database_schema_mismatch`, start or restart Luna API first so it can apply database migrations automatically, then start the Agent. The Agent never changes the database schema itself. If Luna API is temporarily unreachable, the Agent process stays live while readiness reports `ai.provider_config_unavailable`, and reloads configuration automatically after connectivity recovers.
+
+For `ai.final_response_missing`, the model returned tools or options without a visible conclusion and did not repair the response within the bounded model steps. Retry the request, or verify that the Provider reliably returns message content.
 
 ### A web page cannot be read
 

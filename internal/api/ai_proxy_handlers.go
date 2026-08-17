@@ -457,6 +457,7 @@ func containsUntrustedAIIdentity(body []byte) bool {
 func validateCreateAIConversation(h *Handlers, ctx *gin.Context, user model.User, body []byte) bool {
 	var input struct {
 		ProjectID string `json:"projectId"`
+		ModelID   string `json:"modelId"`
 		Title     string `json:"title"`
 	}
 	if len(body) == 0 || json.Unmarshal(body, &input) != nil {
@@ -467,8 +468,43 @@ func validateCreateAIConversation(h *Handlers, ctx *gin.Context, user model.User
 		writeErrorCode(ctx, http.StatusBadRequest, "ai.title_too_large", "conversation title is too large")
 		return false
 	}
+	if !validateEnabledAIModel(h, ctx, input.ModelID) {
+		return false
+	}
 	if input.ProjectID != "" {
 		if _, ok := h.findProjectForCurrentUserByID(ctx, input.ProjectID); !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func validateUpdateAIConversation(h *Handlers, ctx *gin.Context, _ model.User, body []byte) bool {
+	var input struct {
+		Title   *string `json:"title"`
+		ModelID *string `json:"modelId"`
+	}
+	if len(body) == 0 || json.Unmarshal(body, &input) != nil || (input.Title == nil && input.ModelID == nil) {
+		writeErrorCode(ctx, http.StatusBadRequest, "request.invalid_json", "invalid conversation update")
+		return false
+	}
+	if input.Title != nil && (strings.TrimSpace(*input.Title) == "" || len([]byte(*input.Title)) > 200) {
+		writeErrorCode(ctx, http.StatusBadRequest, "ai.title_too_large", "conversation title is invalid")
+		return false
+	}
+	return input.ModelID == nil || validateEnabledAIModel(h, ctx, *input.ModelID)
+}
+
+func validateEnabledAIModel(h *Handlers, ctx *gin.Context, modelID string) bool {
+	modelID = strings.TrimSpace(modelID)
+	if modelID == "" {
+		writeErrorCode(ctx, http.StatusBadRequest, "ai.model_required", "AI model is required")
+		return false
+	}
+	if db := h.dbFor(ctx); db != nil {
+		var selected model.AIModel
+		if db.Where("id = ? AND enabled = ?", modelID, true).First(&selected).Error != nil {
+			writeErrorCode(ctx, http.StatusConflict, "ai.model_not_available", "selected AI model is unavailable")
 			return false
 		}
 	}
@@ -490,16 +526,8 @@ func validateTurnInput(h *Handlers, ctx *gin.Context, _ model.User, body []byte)
 		writeErrorCode(ctx, http.StatusBadRequest, "request.invalid_json", "invalid turn input")
 		return false
 	}
-	if strings.TrimSpace(input.ModelID) == "" {
-		writeErrorCode(ctx, http.StatusBadRequest, "ai.model_required", "AI model is required")
+	if !validateEnabledAIModel(h, ctx, input.ModelID) {
 		return false
-	}
-	if db := h.dbFor(ctx); db != nil {
-		var selected model.AIModel
-		if db.Where("id = ? AND enabled = ?", strings.TrimSpace(input.ModelID), true).First(&selected).Error != nil {
-			writeErrorCode(ctx, http.StatusConflict, "ai.model_not_available", "selected AI model is unavailable")
-			return false
-		}
 	}
 	if !validAIClientInstanceID(input.ClientInstanceID) {
 		writeErrorCode(ctx, http.StatusBadRequest, "ai.client_instance_invalid", "clientInstanceId is invalid")
@@ -612,7 +640,7 @@ var aiProxyRoutes = map[string]aiProxyRoute{
 	"GET /api/v1/ai/conversations":                               {method: "GET", internal: "/internal/v1/conversations"},
 	"POST /api/v1/ai/conversations":                              {method: "POST", internal: "/internal/v1/conversations", status: http.StatusCreated, validate: validateCreateAIConversation},
 	"GET /api/v1/ai/conversations/:conversationId":               {method: "GET", internal: "/internal/v1/conversations/:conversationId"},
-	"PATCH /api/v1/ai/conversations/:conversationId":             {method: "PATCH", internal: "/internal/v1/conversations/:conversationId"},
+	"PATCH /api/v1/ai/conversations/:conversationId":             {method: "PATCH", internal: "/internal/v1/conversations/:conversationId", validate: validateUpdateAIConversation},
 	"DELETE /api/v1/ai/conversations/:conversationId":            {method: "DELETE", internal: "/internal/v1/conversations/:conversationId"},
 	"GET /api/v1/ai/conversations/:conversationId/timeline":      {method: "GET", internal: "/internal/v1/conversations/:conversationId/timeline"},
 	"POST /api/v1/ai/conversations/:conversationId/turns":        {method: "POST", internal: "/internal/v1/conversations/:conversationId/turns", status: http.StatusAccepted, validate: validateTurnInput},

@@ -48,13 +48,16 @@ export type ModelBudgetUsage = {
   reported: boolean
 }
 export type ModelBudgetReservation = { id: string, maxOutputTokens: number }
+export type RepositoryReadiness = { database: boolean, schema: boolean }
 
 export interface Repository {
   health(): Promise<boolean>
-  createConversation(ownerUserId: string, title: string, projectId?: string, titleSource?: ConversationTitleSource): Promise<Conversation>
+  readiness(): Promise<RepositoryReadiness>
+  createConversation(ownerUserId: string, title: string, projectId?: string, titleSource?: ConversationTitleSource, modelId?: string): Promise<Conversation>
   findEmptyConversation(ownerUserId: string, projectId?: string): Promise<Conversation | undefined>
   listConversations(ownerUserId: string, page: number, pageSize: number, options?: ConversationListOptions): Promise<{ items: Conversation[], total: number }>
   getConversation(ownerUserId: string, conversationId: string): Promise<Conversation | undefined>
+  updateConversation(ownerUserId: string, conversationId: string, input: { title?: string, modelId?: string }): Promise<Conversation | undefined>
   renameConversation(ownerUserId: string, conversationId: string, title: string): Promise<Conversation | undefined>
   renameConversationByAssistant(conversationId: string, title: string): Promise<Conversation | undefined>
   deleteConversation(ownerUserId: string, conversationId: string): Promise<boolean>

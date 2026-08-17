@@ -26,6 +26,24 @@ export class AgentDatabase {
     }
   }
 
+  async readiness(): Promise<{ database: boolean, schema: boolean }> {
+    try {
+      const result = await this.pool.query<{ schema_ready: boolean }>(`
+        select exists (
+          select 1
+          from information_schema.columns
+          where table_schema = 'ai'
+            and table_name = 'tool_calls'
+            and column_name = 'input_mode'
+        ) as schema_ready
+      `)
+      return { database: true, schema: result.rows[0]?.schema_ready === true }
+    }
+    catch {
+      return { database: false, schema: false }
+    }
+  }
+
   async close(): Promise<void> {
     await this.pool.end()
   }

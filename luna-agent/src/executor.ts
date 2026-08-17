@@ -139,6 +139,7 @@ export class RunExecutor {
       let cardRepairExhausted = false
       let finalAnswer = ""
       let completed = false
+      let finalResponseMissing = false
       const continuationMessages = resumedToolMessages(executionInput.toolInteractions)
       // 恢复审批/MFA 后仍保留此前已经使用过的工具，避免动态工具集在断点续跑时漂移。
       const loadedOperationIds = new Set(resumedOperationIds(executionInput.toolInteractions))
@@ -161,6 +162,7 @@ export class RunExecutor {
           ...(executionInput.model ? { model: executionInput.model } : {}),
         }, abort.signal)
         finalAnswer = result.answer
+        finalResponseMissing = false
         if (cardRepairExhausted) {
           if (result.toolCalls.length > 0) throw new Error("ai.interaction_card_schema_invalid")
           completed = true
@@ -171,8 +173,12 @@ export class RunExecutor {
             await this.failCardGeneration(run.id, cardGeneration, "ai.interaction_card_schema_invalid")
             cardGeneration = undefined
           }
-          completed = true
-          break
+          if (result.answer.trim()) {
+            completed = true
+            break
+          }
+          finalResponseMissing = true
+          continue
         }
 
         const toolCalls = result.toolCalls.map((call, index) => ({
@@ -341,12 +347,13 @@ export class RunExecutor {
           completed = true
           break
         }
-        if (!platformToolCalled && (result.answer || createOptionsCalled)) {
+        if (!platformToolCalled && result.answer.trim()) {
           completed = true
           break
         }
+        if (!platformToolCalled && createOptionsCalled) finalResponseMissing = true
       }
-      if (!completed) throw new Error("ai.limit_exceeded")
+      if (!completed) throw new Error(finalResponseMissing ? "ai.final_response_missing" : "ai.limit_exceeded")
       if (executionInput.conversation.titleSource === "default" && !assistantRenamed) try {
         const title = await this.modelRuntime.generateConversationTitle(executionInput.input, finalAnswer, { runId: run.id, ownerUserId: run.ownerUserId }, abort.signal, executionInput.model)
         if (title) await this.renameConversation(run.id, run.turnId, run.conversationId, { title })

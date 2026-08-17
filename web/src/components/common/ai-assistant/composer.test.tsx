@@ -12,6 +12,8 @@ function renderComposer({ activeRun = false, onCancel = vi.fn(), onDraftChange =
       canCancel={activeRun}
       draft="测试消息"
       inputRef={createRef<HTMLTextAreaElement>()}
+      models={[{ id: 'aimod_test', name: 'Test model', maxContextTokens: 128_000, maxOutputTokens: 16_000 }]}
+      selectedModelId="aimod_test"
       sending={false}
       submitting={false}
       waitingInput={false}
@@ -29,6 +31,51 @@ function renderComposer({ activeRun = false, onCancel = vi.fn(), onDraftChange =
 }
 
 describe('ai assistant composer keyboard submission', () => {
+  it('renders the conversation model picker inside the composer and locks it during a run', () => {
+    const { rerender } = render(
+      <AIAssistantComposer
+        activeRun={false}
+        canceling={false}
+        canCancel={false}
+        draft=""
+        inputRef={createRef<HTMLTextAreaElement>()}
+        models={[{ id: 'aimod_test', name: 'Test model', maxContextTokens: 128_000, maxOutputTokens: 16_000 }]}
+        selectedModelId="aimod_test"
+        sending={false}
+        submitting={false}
+        waitingInput={false}
+        onCancel={vi.fn()}
+        onDraftChange={vi.fn()}
+        onModelChange={vi.fn()}
+        onSubmit={vi.fn()}
+      />,
+    )
+    const picker = screen.getByRole('combobox', { name: i18next.t('aiAssistant.modelLabel') })
+    expect(picker.closest('footer')).not.toBeNull()
+    expect(picker).toBeEnabled()
+
+    rerender(
+      <AIAssistantComposer
+        activeRun
+        canceling={false}
+        canCancel
+        draft=""
+        inputRef={createRef<HTMLTextAreaElement>()}
+        models={[{ id: 'aimod_test', name: 'Test model', maxContextTokens: 128_000, maxOutputTokens: 16_000 }]}
+        modelSelectionDisabled
+        selectedModelId="aimod_test"
+        sending={false}
+        submitting={false}
+        waitingInput={false}
+        onCancel={vi.fn()}
+        onDraftChange={vi.fn()}
+        onModelChange={vi.fn()}
+        onSubmit={vi.fn()}
+      />,
+    )
+    expect(screen.getByRole('combobox', { name: i18next.t('aiAssistant.modelLabel') })).toBeDisabled()
+  })
+
   it('does not submit when Enter confirms an IME candidate', () => {
     const onSubmit = vi.fn()
     const { input } = renderComposer({ onSubmit })

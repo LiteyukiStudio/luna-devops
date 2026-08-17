@@ -12,7 +12,6 @@ import { toast } from 'sonner'
 import { api } from '@/api'
 import { useSession } from '@/app/session-context'
 import { Button } from '@/components/ui/button'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { isPlatformAdmin } from '@/lib/roles'
 import { executeAIUIAction } from './actions'
 import {
@@ -45,6 +44,7 @@ import {
   WINDOW_STORAGE_KEY,
 } from './layout'
 import { AIMobileViewport } from './mobile-viewport'
+import { aiConversationModelKey, resolveAIConversationModel } from './model-selection'
 import { AIOptionsBar } from './options'
 import { shouldDisplayAIOptions } from './options-visibility'
 import { buildAIPageContext } from './page-context'
@@ -98,7 +98,7 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
   const [pendingSends, setPendingSends] = useState<Record<string, number>>({})
   const [preference, setPreference] = useState(readWindowPreference)
   const [launcherPosition, setLauncherPosition] = useState(readLauncherPosition)
-  const [selectedModelId, setSelectedModelId] = useState<string | undefined>()
+  const [modelSelectionOverrides, setModelSelectionOverrides] = useState<Record<string, string>>({})
   const [clientInstanceId] = useState(readAIClientInstanceId)
   const canDebugInternalTools = isPlatformAdmin(actualUser?.role)
   const toolDebugMode = useAIToolDebugMode(actualUser?.id, canDebugInternalTools)
@@ -109,11 +109,6 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
     staleTime: 0,
     retry: false,
   })
-  const selectedModel = useMemo(
-    () => aiModels.data?.find(model => model.id === selectedModelId) ?? aiModels.data?.[0],
-    [aiModels.data, selectedModelId],
-  )
-
   const pendingUIActions = useQuery({
     queryKey: ['ai', 'ui-actions', 'pending', clientInstanceId],
     queryFn: () => api.listPendingAIUIActions(clientInstanceId),
@@ -149,7 +144,7 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
     && isRecentConversationInteraction(previousConversation.updatedAt, refreshReturnOpenedAt),
   )
   const selectedConversationId = conversationSession.activeConversationId
-  const draftKey = selectedConversationId ?? '__new__'
+  const draftKey = aiConversationModelKey(selectedConversationId)
   const draft = drafts[draftKey] ?? ''
   const setDraft = useCallback((value: string) => {
     setDrafts(current => ({ ...current, [draftKey]: value }))
@@ -171,6 +166,26 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
     ),
   })
   const timelineData = useMemo(() => timelineQueryDataFromInfinite(timeline.data), [timeline.data])
+  const selectedConversation = useMemo(
+    () => conversationItems.find(conversation => conversation.id === selectedConversationId),
+    [conversationItems, selectedConversationId],
+  )
+  const timelineSnapshotConversation = timelineData?.snapshot?.conversation
+  const timelineConversation = timelineSnapshotConversation?.id === selectedConversationId
+    ? timelineSnapshotConversation
+    : undefined
+  const selectedModel = useMemo(() => resolveAIConversationModel(
+    aiModels.data ?? [],
+    selectedConversationId,
+    timelineConversation?.modelId ?? selectedConversation?.modelId,
+    modelSelectionOverrides,
+  ), [aiModels.data, modelSelectionOverrides, selectedConversation?.modelId, selectedConversationId, timelineConversation?.modelId])
+  const newConversationModel = useMemo(() => resolveAIConversationModel(
+    aiModels.data ?? [],
+    undefined,
+    undefined,
+    modelSelectionOverrides,
+  ), [aiModels.data, modelSelectionOverrides])
   const streamState = timelineData?.state ?? emptyAIAssistantState
   const recoverTimeline = useCallback((conversationId: string) => recoverTimelineOnce(
     timelineRecoveriesRef.current,
@@ -224,7 +239,7 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
   }, [open, runSubscriptions, selectedConversationId, syncRunStreams, timelineData])
 
   const createConversation = useMutation({
-    mutationFn: () => api.createAIConversation({ projectId: pageContext().projectId }),
+    mutationFn: ({ modelId }: { modelId: string }) => api.createAIConversation({ modelId, projectId: pageContext().projectId }),
     onMutate: () => dispatchConversationSession({ type: 'start_new' }),
     onSuccess: async (conversation) => {
       await queryClient.invalidateQueries({ queryKey: ['ai', 'conversations'] })
@@ -242,6 +257,34 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
       ])
     },
     onError: error => toast.error(error instanceof Error ? error.message : t('aiAssistant.errors.renameConversation')),
+  })
+  const updateConversationModel = useMutation({
+    mutationFn: ({ conversationId, modelId }: { conversationId: string, modelId: string }) => api.updateAIConversation(conversationId, { modelId }),
+    onSuccess: async (_, { conversationId, modelId }) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['ai', 'conversations'] }),
+        queryClient.invalidateQueries({ queryKey: aiTimelineQueryKey(conversationId) }),
+      ])
+      setModelSelectionOverrides((current) => {
+        const key = aiConversationModelKey(conversationId)
+        if (current[key] !== modelId)
+          return current
+        const next = { ...current }
+        delete next[key]
+        return next
+      })
+    },
+    onError: (error, { conversationId, modelId }) => {
+      setModelSelectionOverrides((current) => {
+        const key = aiConversationModelKey(conversationId)
+        if (current[key] !== modelId)
+          return current
+        const next = { ...current }
+        delete next[key]
+        return next
+      })
+      toast.error(error instanceof Error ? error.message : t('aiAssistant.errors.updateModel'))
+    },
   })
   const deleteConversations = useMutation({
     mutationFn: async (ids: string[]) => Promise.all(ids.map(id => api.deleteAIConversation(id))),
@@ -271,7 +314,7 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
         throw new Error(t('aiAssistant.modelUnavailable'))
       let conversationId = requestedConversationId
       if (!conversationId) {
-        const conversation = await api.createAIConversation({ projectId: pageContext().projectId })
+        const conversation = await api.createAIConversation({ modelId: selectedModel.id, projectId: pageContext().projectId })
         conversationId = conversation.id
         dispatchConversationSession({ type: 'select', conversationId })
       }
@@ -281,10 +324,10 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
         pageContext: pageContext(),
         clientInstanceId,
       }, crypto.randomUUID())
-      return { ...result, conversationId, text, sourceDraftKey: requestedConversationId ?? '__new__' }
+      return { ...result, conversationId, text, sourceDraftKey: aiConversationModelKey(requestedConversationId) }
     },
     onMutate: ({ conversationId }) => {
-      const key = conversationId ?? '__new__'
+      const key = aiConversationModelKey(conversationId)
       setPendingSends(current => ({ ...current, [key]: (current[key] ?? 0) + 1 }))
     },
     onSuccess: async (result) => {
@@ -303,7 +346,7 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
     },
     onError: error => toast.error(error instanceof Error ? error.message : t('aiAssistant.errors.send')),
     onSettled: (_data, _error, { conversationId }) => {
-      const key = conversationId ?? '__new__'
+      const key = aiConversationModelKey(conversationId)
       setPendingSends((current) => {
         const next = { ...current, [key]: Math.max(0, (current[key] ?? 1) - 1) }
         if (next[key] === 0)
@@ -331,6 +374,7 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
   const sendingSelected = Boolean(pendingSends[draftKey])
   const cancelingSelected = cancelRun.isPending && cancelRun.variables?.runId === activeRunId
   const submittingSelected = submitRunInput.isPending && submitRunInput.variables?.conversationId === selectedConversationId
+  const modelChangingSelected = updateConversationModel.isPending && updateConversationModel.variables?.conversationId === selectedConversationId
   const runningConversationIds = useMemo(() => {
     const ids = new Set(runSubscriptions.map(subscription => subscription.conversationId))
     if (generating && selectedConversationId)
@@ -418,6 +462,12 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
     if (generating)
       return
     sendTurn.mutate({ conversationId: selectedConversationId, message: draft })
+  }
+  const selectModel = (modelId: string) => {
+    const key = aiConversationModelKey(selectedConversationId)
+    setModelSelectionOverrides(current => ({ ...current, [key]: modelId }))
+    if (selectedConversationId)
+      updateConversationModel.mutate({ conversationId: selectedConversationId, modelId })
   }
   const dismissRefreshReturn = useCallback(() => {
     dispatchConversationSession({ type: 'dismiss_refresh_return' })
@@ -520,18 +570,6 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
           <h2 className="truncate text-[13px] font-semibold leading-5">{timelineData?.snapshot?.conversation.title || t('aiAssistant.title')}</h2>
           <p className="truncate text-[10px] leading-4 text-muted-foreground">{t('aiAssistant.context', { path: location.pathname })}</p>
         </div>
-        <Select
-          disabled={Boolean(activeRunId || sendingSelected || sendTurn.isPending)}
-          value={selectedModel?.id ?? ''}
-          onValueChange={setSelectedModelId}
-        >
-          <SelectTrigger aria-label={t('aiAssistant.modelLabel')} className="h-8 w-[7.5rem] shrink-0 text-[11px] sm:w-40">
-            <SelectValue placeholder={t('aiAssistant.modelEmpty')} />
-          </SelectTrigger>
-          <SelectContent>
-            {(aiModels.data ?? []).map(model => <SelectItem key={model.id} value={model.id}>{model.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
         {canDebugInternalTools && (
           <Button
             aria-label={t(toolDebugMode.enabled ? 'aiAssistant.toolDebug.disable' : 'aiAssistant.toolDebug.enable')}
@@ -545,7 +583,18 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
             <Bug className="size-4" />
           </Button>
         )}
-        <Button aria-label={t('aiAssistant.conversations.new')} disabled={createConversation.isPending} size="icon" variant="ghost" onClick={() => createConversation.mutate()}>{createConversation.isPending ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" /> : <MessageSquarePlus className="size-4" />}</Button>
+        <Button
+          aria-label={t('aiAssistant.conversations.new')}
+          disabled={createConversation.isPending || !newConversationModel}
+          size="icon"
+          variant="ghost"
+          onClick={() => {
+            if (newConversationModel)
+              createConversation.mutate({ modelId: newConversationModel.id })
+          }}
+        >
+          {createConversation.isPending ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" /> : <MessageSquarePlus className="size-4" />}
+        </Button>
         <Button aria-label={t('common.close')} size="icon" variant="ghost" onClick={close}><X className="size-4" /></Button>
       </header>
       <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
@@ -602,7 +651,11 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
         activeRun={Boolean(activeRunId)}
         canceling={cancelingSelected}
         canCancel={Boolean(activeRunId && selectedConversationId)}
+        models={aiModels.data ?? []}
         modelAvailable={Boolean(selectedModel)}
+        modelChanging={modelChangingSelected}
+        modelSelectionDisabled={Boolean(activeRunId || sendingSelected || sendTurn.isPending)}
+        selectedModelId={selectedModel?.id}
         draft={draft}
         inputRef={inputRef}
         maxLength={capabilities.maxInputBytes}
@@ -614,6 +667,7 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
             cancelRun.mutate({ runId: activeRunId, conversationId: selectedConversationId })
         }}
         onDraftChange={setDraft}
+        onModelChange={selectModel}
         onSubmit={submitDraft}
       />
     </div>

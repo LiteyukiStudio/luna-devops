@@ -73,6 +73,10 @@ export class PostgresRepository implements Repository {
     return this.database.health()
   }
 
+  async readiness() {
+    return this.database.readiness()
+  }
+
   async reserveModelBudget(input: {
     id: string
     runId: string
@@ -255,11 +259,12 @@ export class PostgresRepository implements Repository {
     })
   }
 
-  async createConversation(ownerUserId: string, title: string, projectId?: string, titleSource?: ConversationTitleSource) {
+  async createConversation(ownerUserId: string, title: string, projectId?: string, titleSource?: ConversationTitleSource, modelId?: string) {
     const row = (await this.db.insert(conversations).values({
       id: createId("aicnv"),
       ownerUserId,
       projectId: projectId ?? null,
+      modelId: modelId ?? null,
       title,
       titleSource: titleSource ?? (title === "新会话" ? "default" : "user"),
     }).returning())[0]
@@ -304,8 +309,16 @@ export class PostgresRepository implements Repository {
   }
 
   async renameConversation(ownerUserId: string, id: string, title: string) {
+    return this.updateConversation(ownerUserId, id, { title })
+  }
+
+  async updateConversation(ownerUserId: string, id: string, input: { title?: string, modelId?: string }) {
     const row = (await this.db.update(conversations)
-      .set({ title, titleSource: "user", updatedAt: sql`now()` })
+      .set({
+        ...(input.title ? { title: input.title, titleSource: "user" as const } : {}),
+        ...(input.modelId ? { modelId: input.modelId } : {}),
+        updatedAt: sql`now()`,
+      })
       .where(and(eq(conversations.id, id), eq(conversations.ownerUserId, ownerUserId)))
       .returning())[0]
     return row ? mapConversation(row) : undefined
@@ -339,6 +352,11 @@ export class PostgresRepository implements Repository {
         .where(and(eq(conversations.id, input.conversationId), eq(conversations.ownerUserId, ownerUserId)))
         .for("update"))[0]
       if (!owned) throw new Error("ai.conversation_not_found")
+      if (input.modelId) {
+        await tx.update(conversations)
+          .set({ modelId: input.modelId, updatedAt: sql`now()` })
+          .where(eq(conversations.id, input.conversationId))
+      }
       const index = (await tx.select({ value: count() }).from(turns)
         .where(eq(turns.conversationId, input.conversationId)))[0]?.value ?? 0
       const turnId = createId("aitrn")

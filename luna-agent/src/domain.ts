@@ -35,6 +35,7 @@ export type Conversation = {
   id: string
   ownerUserId: string
   projectId?: string
+  modelId?: string
   title: string
   titleSource: ConversationTitleSource
   status: "active"

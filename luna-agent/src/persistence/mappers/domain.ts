@@ -28,6 +28,7 @@ export function mapConversation(row: ConversationRow): Conversation {
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     ...(row.projectId ? { projectId: row.projectId } : {}),
+    ...(row.modelId ? { modelId: row.modelId } : {}),
   }
 }
 

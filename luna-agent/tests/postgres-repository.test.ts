@@ -31,10 +31,12 @@ suite("PostgresRepository (Drizzle) integration", () => {
   })
 
   it("creates, queries, renames and paginates conversations", async () => {
-    const c1 = await repository.createConversation(owner, "新会话")
-    const c2 = await repository.createConversation(owner, "诊断构建", "prj_1")
+    const c1 = await repository.createConversation(owner, "新会话", undefined, undefined, "aimod_fast")
+    const c2 = await repository.createConversation(owner, "诊断构建", "prj_1", undefined, "aimod_deep")
     expect(c1.titleSource).toBe("default")
     expect(c2.titleSource).toBe("user")
+    expect(c1.modelId).toBe("aimod_fast")
+    expect(c2.modelId).toBe("aimod_deep")
     expect((await repository.findEmptyConversation(owner, "prj_1"))?.id).toBe(c2.id)
     const page = await repository.listConversations(owner, 1, 1)
     expect(page.total).toBe(2)
@@ -42,6 +44,8 @@ suite("PostgresRepository (Drizzle) integration", () => {
     const filtered = await repository.listConversations(owner, 1, 20, { search: "诊断", sortOrder: "asc" })
     expect(filtered.items.map(item => item.id)).toEqual([c2.id])
     expect(await repository.renameConversation(owner, c2.id, "手动标题")).toBeDefined()
+    expect((await repository.updateConversation(owner, c1.id, { modelId: "aimod_balanced" }))?.modelId).toBe("aimod_balanced")
+    expect((await repository.getConversation(owner, c2.id))?.modelId).toBe("aimod_deep")
     expect(await repository.renameConversationByAssistant(c2.id, "自动标题")).toBeUndefined()
     expect(await repository.getConversation("other", c2.id)).toBeUndefined()
   })

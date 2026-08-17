@@ -38,8 +38,8 @@ paths:
     post:
       operationId: createInternalAIConversation
       parameters: [{ $ref: "#/components/parameters/ActorContext" }, { $ref: "#/components/parameters/ActorSignature" }]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }
-      responses: { "201": { description: Conversation created, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }, "401": { $ref: "#/components/responses/AgentError" } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AgentConversationCreateInput" } } } }
+      responses: { "200": { description: Existing empty conversation reused with the requested model, content: { application/json: { schema: { $ref: "#/components/schemas/AgentConversation" } } } }, "201": { description: Conversation created, content: { application/json: { schema: { $ref: "#/components/schemas/AgentConversation" } } } }, "401": { $ref: "#/components/responses/AgentError" } }
   /internal/v1/conversations/{conversationId}:
     parameters:
       - { $ref: "#/components/parameters/ActorContext" }
@@ -47,11 +47,11 @@ paths:
       - { $ref: "#/components/parameters/ConversationId" }
     get:
       operationId: getInternalAIConversation
-      responses: { "200": { description: Conversation, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }, "404": { $ref: "#/components/responses/AgentError" } }
+      responses: { "200": { description: Conversation, content: { application/json: { schema: { $ref: "#/components/schemas/AgentConversation" } } } }, "404": { $ref: "#/components/responses/AgentError" } }
     patch:
       operationId: updateInternalAIConversation
-      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }
-      responses: { "200": { description: Conversation updated, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObject" } } } }, "404": { $ref: "#/components/responses/AgentError" } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AgentConversationUpdateInput" } } } }
+      responses: { "200": { description: Conversation updated, content: { application/json: { schema: { $ref: "#/components/schemas/AgentConversation" } } } }, "404": { $ref: "#/components/responses/AgentError" } }
     delete:
       operationId: deleteInternalAIConversation
       responses: { "204": { description: Conversation physically deleted }, "404": { $ref: "#/components/responses/AgentError" }, "409": { $ref: "#/components/responses/AgentError" } }
@@ -169,6 +169,47 @@ components:
     ToolCallId: { name: toolCallId, in: path, required: true, schema: { type: string } }
   schemas:
     AgentObject: { type: object, additionalProperties: true }
+    AgentConversation:
+      type: object
+      additionalProperties: false
+      required: [id, ownerUserId, title, titleSource, status, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        ownerUserId: { type: string }
+        projectId: { type: string }
+        modelId: { type: string, minLength: 5, maxLength: 64 }
+        title: { type: string }
+        titleSource: { type: string, enum: [default, assistant, user] }
+        status: { type: string, enum: [active] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    AgentConversationCreateInput:
+      type: object
+      additionalProperties: false
+      required: [modelId]
+      properties:
+        projectId: { type: string, minLength: 5, maxLength: 64 }
+        modelId: { type: string, minLength: 5, maxLength: 64 }
+        title: { type: string, minLength: 1, maxLength: 120 }
+    AgentConversationSummary:
+      type: object
+      additionalProperties: false
+      required: [id, title, titleSource, status]
+      properties:
+        id: { type: string }
+        modelId: { type: string, minLength: 5, maxLength: 64 }
+        title: { type: string }
+        titleSource: { type: string, enum: [default, assistant, user] }
+        status: { type: string, enum: [active] }
+    AgentConversationUpdateInput:
+      type: object
+      additionalProperties: false
+      anyOf:
+        - required: [title]
+        - required: [modelId]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 120 }
+        modelId: { type: string, minLength: 5, maxLength: 64 }
     AgentCreateTurnInput:
       type: object
       additionalProperties: false
@@ -198,7 +239,7 @@ components:
       additionalProperties: false
       required: [items, page, pageSize, sortBy, sortOrder, total, totalPages]
       properties:
-        items: { type: array, items: { $ref: "#/components/schemas/AgentObject" } }
+        items: { type: array, items: { $ref: "#/components/schemas/AgentConversation" } }
         page: { type: integer, minimum: 1 }
         pageSize: { type: integer, minimum: 1, maximum: 100 }
         sortBy: { type: string, enum: [updatedAt] }
@@ -210,7 +251,7 @@ components:
       additionalProperties: false
       required: [conversation, turns, eventCursors, pageInfo]
       properties:
-        conversation: { $ref: "#/components/schemas/AgentObject" }
+        conversation: { $ref: "#/components/schemas/AgentConversationSummary" }
         turns:
           type: array
           description: Complete turns in chronological order within this page; a turn is never split across pages.

@@ -37,14 +37,16 @@ export class MemoryRepository implements Repository {
   private readonly modelReservations = new Map<string, { runId: string, tokens: number, state: "reserved" | "confirmed" | "released", maxOutputTokens: number }>()
 
   async health(): Promise<boolean> { return true }
+  async readiness() { return { database: true, schema: true } }
 
-  async createConversation(ownerUserId: string, title: string, projectId?: string, titleSource?: ConversationTitleSource): Promise<Conversation> {
+  async createConversation(ownerUserId: string, title: string, projectId?: string, titleSource?: ConversationTitleSource, modelId?: string): Promise<Conversation> {
     const now = new Date().toISOString()
     const value: Conversation = {
       id: createId("aicnv"), ownerUserId, title,
       titleSource: titleSource ?? (title === "新会话" ? "default" : "user"),
       status: "active", createdAt: now, updatedAt: now,
       ...(projectId ? { projectId } : {}),
+      ...(modelId ? { modelId } : {}),
     }
     this.conversations.set(value.id, value)
     return value
@@ -74,9 +76,18 @@ export class MemoryRepository implements Repository {
   }
 
   async renameConversation(ownerUserId: string, id: string, title: string) {
+    return this.updateConversation(ownerUserId, id, { title })
+  }
+
+  async updateConversation(ownerUserId: string, id: string, input: { title?: string, modelId?: string }) {
     const value = await this.getConversation(ownerUserId, id)
     if (!value) return undefined
-    const next: Conversation = { ...value, title, titleSource: "user", updatedAt: new Date().toISOString() }
+    const next: Conversation = {
+      ...value,
+      ...(input.title ? { title: input.title, titleSource: "user" as const } : {}),
+      ...(input.modelId ? { modelId: input.modelId } : {}),
+      updatedAt: new Date().toISOString(),
+    }
     this.conversations.set(id, next)
     return next
   }
@@ -109,6 +120,10 @@ export class MemoryRepository implements Repository {
       return previous.created
     }
     const now = new Date().toISOString()
+    if (input.modelId) {
+      const conversation = this.conversations.get(input.conversationId)!
+      this.conversations.set(input.conversationId, { ...conversation, modelId: input.modelId, updatedAt: now })
+    }
     const turnIndex = [...this.turns.values()].filter(t => t.conversationId === input.conversationId).length
     const runId = input.preallocatedRunId ?? createId("airun")
     const turn: Turn = {

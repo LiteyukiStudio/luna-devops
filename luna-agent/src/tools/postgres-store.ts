@@ -11,24 +11,29 @@ export class PostgresToolCallStore implements ToolCallStore {
     private readonly argumentsCipher: PayloadCipher,
   ) {}
   async insert(value: ToolCallRecord) {
-    await this.pool.query(
-      `insert into ai.tool_calls(id,run_id,operation_id,status,input_mode,arguments,arguments_ciphertext,arguments_hash,attempt,row_version,approval_expires_at,mfa_purpose)
-       values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-      [
-        value.id,
-        value.runId,
-        value.operationId,
-        value.status,
-        value.inputMode ?? "model",
-        JSON.stringify(redact(value.arguments)),
-        this.argumentsCipher.encrypt(JSON.stringify(value.arguments)),
-        value.argumentsHash,
-        value.attempt,
-        value.rowVersion,
-        value.approvalExpiresAt ? new Date(value.approvalExpiresAt) : null,
-        value.mfaPurpose ?? null,
-      ],
-    )
+    try {
+      await this.pool.query(
+        `insert into ai.tool_calls(id,run_id,operation_id,status,input_mode,arguments,arguments_ciphertext,arguments_hash,attempt,row_version,approval_expires_at,mfa_purpose)
+         values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+        [
+          value.id,
+          value.runId,
+          value.operationId,
+          value.status,
+          value.inputMode ?? "model",
+          JSON.stringify(redact(value.arguments)),
+          this.argumentsCipher.encrypt(JSON.stringify(value.arguments)),
+          value.argumentsHash,
+          value.attempt,
+          value.rowVersion,
+          value.approvalExpiresAt ? new Date(value.approvalExpiresAt) : null,
+          value.mfaPurpose ?? null,
+        ],
+      )
+    }
+    catch (error) {
+      throw toolPersistenceError(error)
+    }
   }
   async get(id: string) {
     const row = (await this.pool.query<DbToolCall>(`select * from ai.tool_calls where id=$1`, [id])).rows[0]
@@ -122,4 +127,11 @@ type DbToolCall = {
   arguments_ciphertext: string | null;
   arguments_hash: string; attempt: number; row_version: number; approval_expires_at: Date | null;
   mfa_purpose: string | null; result: unknown; error_code: string | null
+}
+
+function toolPersistenceError(error: unknown): Error {
+  const postgresCode = error && typeof error === "object" && "code" in error
+    ? String(error.code)
+    : ""
+  return new Error(postgresCode === "42703" ? "ai.database_schema_mismatch" : "ai.tool_persistence_failed")
 }

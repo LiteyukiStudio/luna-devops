@@ -206,6 +206,47 @@ func TestAIProxyForwardsConversationDirectorySearchAndSort(t *testing.T) {
 	}
 }
 
+func TestAIProxyForwardsConversationScopedModelUpdate(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	fake := &fakeAIAgentClient{response: &aiagent.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"id":"aicnv_owned","modelId":"aimod_deep"}`)),
+	}}
+	handler := aiTestHandlers(fake, true)
+	router := gin.New()
+	router.PATCH("/api/v1/ai/conversations/:conversationId", handler.ProxyAIRequest)
+
+	request := httptest.NewRequest(http.MethodPatch, "/api/v1/ai/conversations/aicnv_owned", strings.NewReader(`{"modelId":"aimod_deep"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK || fake.request.Path != "/internal/v1/conversations/aicnv_owned" {
+		t.Fatalf("status = %d, request = %#v, body = %s", response.Code, fake.request, response.Body.String())
+	}
+	if string(fake.request.Body) != `{"modelId":"aimod_deep"}` {
+		t.Fatalf("forwarded body = %s", fake.request.Body)
+	}
+}
+
+func TestAIProxyRequiresInitialConversationModel(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	fake := &fakeAIAgentClient{}
+	handler := aiTestHandlers(fake, true)
+	router := gin.New()
+	router.POST("/api/v1/ai/conversations", handler.ProxyAIRequest)
+
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/ai/conversations", strings.NewReader(`{"title":"Missing model"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "ai.model_required") || fake.calls != 0 {
+		t.Fatalf("status = %d, calls = %d, body = %s", response.Code, fake.calls, response.Body.String())
+	}
+}
+
 func TestAIProxyRejectsBrowserSuppliedActorIdentity(t *testing.T) {
 	fake := &fakeAIAgentClient{}
 	handler := aiTestHandlers(fake, true)
@@ -620,6 +661,7 @@ func TestAIRouteContractContainsP0Endpoints(t *testing.T) {
 	expected := []string{
 		"GET /api/v1/ai/conversations",
 		"POST /api/v1/ai/conversations",
+		"PATCH /api/v1/ai/conversations/:conversationId",
 		"GET /api/v1/ai/conversations/:conversationId/timeline",
 		"POST /api/v1/ai/conversations/:conversationId/turns",
 		"POST /api/v1/ai/turns/:turnId/runs",
