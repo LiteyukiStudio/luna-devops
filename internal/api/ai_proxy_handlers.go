@@ -13,6 +13,7 @@ import (
 
 	"github.com/LiteyukiStudio/devops/internal/aiagent"
 	"github.com/LiteyukiStudio/devops/internal/authz"
+	"github.com/LiteyukiStudio/devops/internal/billing"
 	"github.com/LiteyukiStudio/devops/internal/config"
 	"github.com/LiteyukiStudio/devops/internal/id"
 	"github.com/LiteyukiStudio/devops/internal/model"
@@ -166,6 +167,14 @@ func (h *Handlers) attachAIModelSnapshot(ctx *gin.Context, body []byte) ([]byte,
 	if db == nil {
 		return body, true
 	}
+	user, ok := h.currentUser(ctx)
+	if !ok {
+		return nil, false
+	}
+	if _, err := (billing.Service{DB: db}).EnsureWallet(user.ID); err != nil {
+		writeErrorCode(ctx, http.StatusServiceUnavailable, "billing.wallet_unavailable", "personal wallet is unavailable")
+		return nil, false
+	}
 	var selected model.AIModel
 	if err := db.Where("id = ? AND enabled = ?", strings.TrimSpace(modelID), true).First(&selected).Error; err != nil {
 		writeErrorCode(ctx, http.StatusConflict, "ai.model_not_available", "selected AI model is unavailable")
@@ -174,10 +183,17 @@ func (h *Handlers) attachAIModelSnapshot(ctx *gin.Context, body []byte) ([]byte,
 	input["modelSnapshot"] = gin.H{
 		"id":                            selected.ID,
 		"name":                          selected.Name,
+		"maxContextTokens":              selected.MaxContextTokens,
+		"maxOutputTokens":               selected.MaxOutputTokens,
 		"inputCreditsPerMillion":        selected.InputCreditsPerMillion,
 		"outputCreditsPerMillion":       selected.OutputCreditsPerMillion,
 		"cachedInputCreditsPerMillion":  selected.CachedInputCreditsPerMillion,
 		"cachedOutputCreditsPerMillion": selected.CachedOutputCreditsPerMillion,
+	}
+	values := h.configs.get([]string{"ai.run.max_total_tokens", "ai.run.max_credits"})
+	input["runBudgetSnapshot"] = gin.H{
+		"totalTokens":  aiRuntimeInteger(values, "ai.run.max_total_tokens", 2_000_000),
+		"totalCredits": aiRuntimeString(values, "ai.run.max_credits", "10000"),
 	}
 	prepared, err := json.Marshal(input)
 	if err != nil {

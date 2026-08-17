@@ -1,19 +1,14 @@
-import type { DeploymentTargetRuntimeSecretsSummary } from '@/api'
-import { zodResolver } from '@hookform/resolvers/zod'
+import type { DeploymentTargetRuntimeSecretsPayload, DeploymentTargetRuntimeSecretsSummary } from '@/api'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { KeyRound, RefreshCw, Trash2 } from 'lucide-react'
 import { useState } from 'react'
-import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { z } from 'zod'
 import { api } from '@/api'
 import { FormField as Field } from '@/components/common/form-field'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-
-const replaceSchema = z.object({ key: z.string().trim().min(1), value: z.string().min(1) })
-type ReplaceForm = z.infer<typeof replaceSchema>
+import { runtimeSecretKeys } from '@/lib/runtime-environment'
 
 export function ApplicationDeploymentRuntimeSecretsEditor({ applicationId, canManage, open, projectId, targetId }: {
   applicationId: string
@@ -25,7 +20,9 @@ export function ApplicationDeploymentRuntimeSecretsEditor({ applicationId, canMa
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [editingKey, setEditingKey] = useState<string | null>(null)
-  const replaceForm = useForm<ReplaceForm>({ resolver: zodResolver(replaceSchema), defaultValues: { key: '', value: '' } })
+  const [replacementValue, setReplacementValue] = useState('')
+  const [newKey, setNewKey] = useState('')
+  const [newValue, setNewValue] = useState('')
   const summary = useQuery({
     queryKey: ['deployment-target-runtime-secrets', projectId, applicationId, targetId],
     queryFn: () => api.getDeploymentTargetRuntimeSecretsSummary(projectId, applicationId, targetId!),
@@ -34,11 +31,13 @@ export function ApplicationDeploymentRuntimeSecretsEditor({ applicationId, canMa
 
   const clearEditorState = () => {
     setEditingKey(null)
-    replaceForm.reset({ key: '', value: '' })
+    setReplacementValue('')
+    setNewKey('')
+    setNewValue('')
   }
 
   const update = useMutation({
-    mutationFn: (payload: { values?: Record<string, string>, generate?: Record<string, { length: number, encoding: 'base64' }>, clear?: string[] }) =>
+    mutationFn: (payload: DeploymentTargetRuntimeSecretsPayload) =>
       api.updateDeploymentTargetRuntimeSecrets(projectId, applicationId, targetId!, payload),
     onSuccess: () => {
       clearEditorState()
@@ -51,12 +50,16 @@ export function ApplicationDeploymentRuntimeSecretsEditor({ applicationId, canMa
   if (!targetId)
     return <p className="text-sm text-muted-foreground">{t('deploymentsPage.runtimeSecretsSaveTargetFirst')}</p>
 
-  const keys = (summary.data as DeploymentTargetRuntimeSecretsSummary | undefined)?.secretKeys ?? []
-  const submitReplace = replaceForm.handleSubmit(({ key, value }) => {
-    const normalizedKey = editingKey === '__new__' ? key.trim() : (editingKey ?? key.trim())
-    if (normalizedKey)
-      update.mutate({ values: { [normalizedKey]: value } })
-  })
+  const keys = runtimeSecretKeys((summary.data as DeploymentTargetRuntimeSecretsSummary | undefined)?.environmentVariables)
+  const addSecret = () => {
+    const key = newKey.trim()
+    if (key && newValue)
+      update.mutate({ items: [{ key, operation: 'set', value: newValue, valueMode: 'secret' }] })
+  }
+  const replaceSecret = () => {
+    if (editingKey && replacementValue)
+      update.mutate({ items: [{ key: editingKey, operation: 'set', value: replacementValue, valueMode: 'secret' }] })
+  }
 
   return (
     <div className="grid gap-3 rounded-control bg-surface-inset/60 p-4" data-testid="runtime-secrets-editor">
@@ -85,16 +88,16 @@ export function ApplicationDeploymentRuntimeSecretsEditor({ applicationId, canMa
                   variant="outline"
                   onClick={() => {
                     setEditingKey(key)
-                    replaceForm.reset({ key, value: '' })
+                    setReplacementValue('')
                   }}
                 >
                   {t('deploymentsPage.runtimeSecretReplace')}
                 </Button>
-                <Button aria-label={t('deploymentsPage.runtimeSecretGenerate', { key })} disabled={update.isPending} size="sm" type="button" variant="outline" onClick={() => update.mutate({ generate: { [key]: { length: 32, encoding: 'base64' } } })}>
+                <Button aria-label={t('deploymentsPage.runtimeSecretGenerate', { key })} disabled={update.isPending} size="sm" type="button" variant="outline" onClick={() => update.mutate({ items: [{ generation: { length: 32, encoding: 'base64' }, key, operation: 'generate', valueMode: 'secret' }] })}>
                   <RefreshCw className="size-4" />
                   {t('deploymentsPage.runtimeSecretGenerate')}
                 </Button>
-                <Button aria-label={t('deploymentsPage.runtimeSecretClear', { key })} disabled={update.isPending} size="sm" type="button" variant="ghost" onClick={() => update.mutate({ clear: [key] })}>
+                <Button aria-label={t('deploymentsPage.runtimeSecretClear', { key })} disabled={update.isPending} size="sm" type="button" variant="ghost" onClick={() => update.mutate({ items: [{ key, operation: 'clear', valueMode: 'secret' }] })}>
                   <Trash2 className="size-4" />
                   {t('deploymentsPage.runtimeSecretClear')}
                 </Button>
@@ -104,28 +107,43 @@ export function ApplicationDeploymentRuntimeSecretsEditor({ applicationId, canMa
         </div>
       ))}
       {editingKey && (
-        <form className="grid gap-3 rounded-control bg-background p-3" onSubmit={submitReplace}>
-          <Field error={replaceForm.formState.errors.value ? t('deploymentsPage.runtimeSecretValueRequired') : undefined} label={t('deploymentsPage.runtimeSecretReplaceLabel', { key: editingKey })}>
-            <Input autoComplete="new-password" type="password" {...replaceForm.register('value')} />
+        <div className="grid gap-3 rounded-control bg-background p-3">
+          <Field label={t('deploymentsPage.runtimeSecretReplaceLabel', { key: editingKey })}>
+            <Input
+              aria-label={t('deploymentsPage.runtimeSecretReplaceLabel', { key: editingKey })}
+              autoComplete="new-password"
+              type="password"
+              value={replacementValue}
+              onChange={event => setReplacementValue(event.target.value)}
+            />
           </Field>
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="ghost" onClick={() => setEditingKey(null)}>{t('common.cancel')}</Button>
-            <Button disabled={update.isPending} type="submit">{t('common.save')}</Button>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setEditingKey(null)
+                setReplacementValue('')
+              }}
+            >
+              {t('common.cancel')}
+            </Button>
+            <Button disabled={update.isPending || !replacementValue} type="button" onClick={replaceSecret}>{t('common.save')}</Button>
           </div>
-        </form>
+        </div>
       )}
       {canManage && !editingKey && (
-        <form className="grid gap-3 rounded-control bg-background p-3 md:grid-cols-2" onSubmit={submitReplace}>
+        <div className="grid gap-3 rounded-control bg-background p-3 md:grid-cols-2">
           <Field label={t('deploymentsPage.runtimeSecretNewKey')}>
-            <Input {...replaceForm.register('key')} />
+            <Input aria-label={t('deploymentsPage.runtimeSecretNewKey')} value={newKey} onChange={event => setNewKey(event.target.value)} />
           </Field>
           <Field label={t('deploymentsPage.runtimeSecretNewValue')}>
-            <Input autoComplete="new-password" type="password" {...replaceForm.register('value')} />
+            <Input aria-label={t('deploymentsPage.runtimeSecretNewValue')} autoComplete="new-password" type="password" value={newValue} onChange={event => setNewValue(event.target.value)} />
           </Field>
           <div className="md:col-span-2 flex justify-end">
-            <Button disabled={update.isPending} type="submit">{t('deploymentsPage.runtimeSecretAdd')}</Button>
+            <Button disabled={update.isPending || !newKey.trim() || !newValue} type="button" onClick={addSecret}>{t('deploymentsPage.runtimeSecretAdd')}</Button>
           </div>
-        </form>
+        </div>
       )}
     </div>
   )

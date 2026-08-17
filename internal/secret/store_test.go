@@ -1,9 +1,13 @@
 package secret
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
+
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
 func TestGenerateUsesBoundedRequestedEncoding(t *testing.T) {
@@ -74,5 +78,32 @@ func TestDevelopmentUsesLocalEncryptionFallback(t *testing.T) {
 	}
 	if got := ResolveInline(ref); got != "secret" {
 		t.Fatalf("ResolveInline() = %q, want secret", got)
+	}
+}
+
+func TestStoreContextWithDBUsesExplicitDatabaseHandle(t *testing.T) {
+	t.Setenv("APP_ENV", "development")
+	t.Setenv("SECRET_ENCRYPTION_KEY", "runtime-secret-store-test-key")
+	db, err := gorm.Open(postgres.New(postgres.Config{
+		DSN: "host=127.0.0.1 user=test password=test dbname=test port=1 sslmode=disable",
+	}), &gorm.Config{DryRun: true, DisableAutomaticPing: true, SkipDefaultTransaction: true})
+	if err != nil {
+		t.Fatalf("open dry-run database: %v", err)
+	}
+
+	auditCalls := 0
+	store := NewStore(nil, func(context.Context, string, string, string, bool, string) { auditCalls++ })
+	ref, err := store.StoreContextWithDB(t.Context(), db, "transaction-secret", "usr_test", "runtime_config:set_test:runtime:TOKEN")
+	if err != nil {
+		t.Fatalf("StoreContextWithDB() error = %v", err)
+	}
+	if !strings.HasPrefix(ref, storedSecretIDPrefix) {
+		t.Fatalf("StoreContextWithDB() ref = %q, want stored ref", ref)
+	}
+	if err := store.DeleteRefContextWithDB(t.Context(), db, ref, "runtime_config:set_test:runtime:TOKEN"); err != nil {
+		t.Fatalf("DeleteRefContextWithDB() error = %v", err)
+	}
+	if auditCalls != 0 {
+		t.Fatalf("transaction-bound store emitted %d standalone audits, want aggregate owner audit only", auditCalls)
 	}
 }

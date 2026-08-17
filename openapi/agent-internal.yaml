@@ -175,7 +175,21 @@ components:
       required: [modelId, input, pageContext, clientInstanceId]
       properties:
         modelId: { type: string, minLength: 1 }
-        modelSnapshot: { type: object, additionalProperties: true, description: Immutable model identity and price snapshot attached by the Luna API BFF. }
+        modelSnapshot:
+          type: object
+          additionalProperties: false
+          required: [id, name, maxContextTokens, maxOutputTokens, inputCreditsPerMillion, outputCreditsPerMillion, cachedInputCreditsPerMillion, cachedOutputCreditsPerMillion]
+          description: Immutable model identity, capability, and price snapshot attached by the Luna API BFF. maxOutputTokens must be less than maxContextTokens.
+          properties:
+            id: { type: string, minLength: 5, maxLength: 64 }
+            name: { type: string, minLength: 1, maxLength: 200 }
+            maxContextTokens: { type: integer, minimum: 4096, maximum: 2097152 }
+            maxOutputTokens: { type: integer, minimum: 256, maximum: 262144 }
+            inputCreditsPerMillion: { type: string, pattern: '^\d+(\.\d{1,8})?$' }
+            outputCreditsPerMillion: { type: string, pattern: '^\d+(\.\d{1,8})?$' }
+            cachedInputCreditsPerMillion: { type: string, pattern: '^\d+(\.\d{1,8})?$' }
+            cachedOutputCreditsPerMillion: { type: string, pattern: '^\d+(\.\d{1,8})?$' }
+        runBudgetSnapshot: { type: object, additionalProperties: false, required: [totalTokens, totalCredits], properties: { totalTokens: { type: integer, minimum: 16384, maximum: 16000000 }, totalCredits: { type: string, pattern: '^(?=.*[1-9])\d+(\.\d{1,8})?$', description: Fixed decimal greater than 0 and no greater than 100000000. } }, description: Immutable cumulative token and credit budget for this Run. }
         input: { type: object, additionalProperties: true }
         pageContext: { type: object, additionalProperties: true }
         clientInstanceId: { type: string, minLength: 16, maxLength: 80 }

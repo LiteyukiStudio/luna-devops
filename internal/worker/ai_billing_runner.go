@@ -13,8 +13,8 @@ func (r *Runner) handleBillingAI(ctx context.Context, _ *asynq.Task) error {
 	if r.db == nil {
 		return nil
 	}
-	settled, err := workerStageValue(ctx, "billing.settle_ai_usage", func(context.Context) (int, error) {
-		return (billing.Service{DB: r.db}).SettlePendingAIModelUsage(200)
+	settled, err := workerStageValue(ctx, "billing.settle_ai_usage", func(stageCtx context.Context) (int, error) {
+		return (billing.Service{DB: r.db.WithContext(stageCtx)}).SettlePendingAIModelUsage(stageCtx, 200)
 	})
 	if err != nil {
 		return err

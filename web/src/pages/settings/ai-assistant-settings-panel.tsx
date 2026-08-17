@@ -48,6 +48,8 @@ const defaults: FormValues = {
   contextHistoricalToolKTokens: 64,
   modelMaxOutputTokens: 65536,
   runMaxModelSteps: 256,
+  runMaxTotalTokens: 2000000,
+  runMaxCredits: '10000',
   runMaxInputKBytes: 1024,
   runNavigateActionTtlSeconds: 120,
   toolsResultPayloadKBytes: 512,
@@ -103,6 +105,7 @@ type AdvancedFieldName
     | 'contextHistoricalToolKTokens'
     | 'modelMaxOutputTokens'
     | 'runMaxModelSteps'
+    | 'runMaxTotalTokens'
     | 'runMaxInputKBytes'
     | 'runNavigateActionTtlSeconds'
     | 'toolsResultPayloadKBytes'
@@ -145,6 +148,7 @@ const advancedGroups: AdvancedGroup[] = [
     fields: [
       { name: 'modelMaxOutputTokens', labelKey: 'settings.ai.modelMaxOutputTokens', hintKey: 'settings.ai.modelMaxOutputTokensHint', min: 256, max: 131072, step: 1 },
       { name: 'runMaxModelSteps', labelKey: 'settings.ai.runMaxModelSteps', hintKey: 'settings.ai.runMaxModelStepsHint', min: 1, max: 1024, step: 1 },
+      { name: 'runMaxTotalTokens', labelKey: 'settings.ai.runMaxTotalTokens', hintKey: 'settings.ai.runMaxTotalTokensHint', min: 16384, max: 16000000, step: 1 },
       { name: 'runMaxInputKBytes', labelKey: 'settings.ai.runMaxInputKBytes', hintKey: 'settings.ai.runMaxInputKBytesHint', min: 8, max: 8192, step: 1 },
       { name: 'runNavigateActionTtlSeconds', labelKey: 'settings.ai.runNavigateActionTtlSeconds', hintKey: 'settings.ai.runNavigateActionTtlSecondsHint', min: 10, max: 600, step: 1 },
     ],
@@ -193,6 +197,8 @@ export function AIAssistantSettingsPanel() {
     const restoredValues = { ...form.getValues() }
     for (const [configKey, fieldName] of runtimeDefaultFields)
       restoredValues[fieldName] = Number(runtimeDefaults[configKey])
+    restoredValues.runMaxTotalTokens = Number(runtimeDefaults['ai.run.max_total_tokens'] ?? 2000000)
+    restoredValues.runMaxCredits = String(runtimeDefaults['ai.run.max_credits'] ?? '10000')
     form.reset(restoredValues, { keepDefaultValues: true })
     void form.trigger()
     toast.info(t('settings.ai.defaultsRestored'))
@@ -273,6 +279,9 @@ export function AIAssistantSettingsPanel() {
               </Field>
             </div>
           </ProgressiveSection>
+          <Field error={errors.runMaxCredits?.message} hint={t('settings.ai.runMaxCreditsHint')} label={t('settings.ai.runMaxCredits')} required>
+            <Input inputMode="decimal" {...form.register('runMaxCredits')} />
+          </Field>
           <ProgressiveSection
             description={t('settings.ai.advancedDescription')}
             storageKey="luna-settings-ai-advanced-open"
@@ -359,6 +368,8 @@ function aiSettingsFormValues(values: Record<string, string>): FormValues {
     contextHistoricalToolKTokens: Number(values['ai.context.historical_tool_k_tokens'] ?? 64),
     modelMaxOutputTokens: Number(values['ai.model.max_output_tokens'] ?? 65536),
     runMaxModelSteps: Number(values['ai.run.max_model_steps'] ?? 256),
+    runMaxTotalTokens: Number(values['ai.run.max_total_tokens'] ?? 2000000),
+    runMaxCredits: values['ai.run.max_credits'] ?? '10000',
     runMaxInputKBytes: Number(values['ai.run.max_input_k_bytes'] ?? 1024),
     runNavigateActionTtlSeconds: Number(values['ai.run.navigate_action_ttl_seconds'] ?? 120),
     toolsResultPayloadKBytes: Number(values['ai.tools.result_payload_k_bytes'] ?? 512),

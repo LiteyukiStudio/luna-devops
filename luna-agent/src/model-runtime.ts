@@ -22,6 +22,8 @@ export type ConversationPromptContext = {
 }
 
 export type AssistantModelInput = {
+  runId: string
+  ownerUserId: string
   conversationId: string
   input: string
   pageContext: Record<string, unknown>
@@ -87,13 +89,14 @@ export class ModelRuntime {
     return this.searchTools(query, pageContext, limit)
   }
 
-  async generateConversationTitle(input: string, answer: string, signal?: AbortSignal, model?: AIModelSnapshot): Promise<string | undefined> {
+  async generateConversationTitle(input: string, answer: string, budget: { runId: string, ownerUserId: string }, signal?: AbortSignal, model?: AIModelSnapshot): Promise<string | undefined> {
     const response = await this.provider.complete({
       messages: [
         { role: "system", content: "根据会话内容生成一个简洁标题，并使用用户当前语言。只返回标题，不要添加引号、Markdown、句末标点或解释；标题不超过 30 个字符。" },
         { role: "user", content: `用户消息：${input}\n助手回复：${answer.slice(0, 600)}` },
       ],
       maxOutputTokens: 48,
+      budget: { ...budget, operation: "title" },
       ...(signal ? { signal } : {}),
       ...(model ? { modelId: model.id, modelName: model.name, modelPricing: model } : {}),
     })
@@ -102,6 +105,8 @@ export class ModelRuntime {
   }
 
   async predictNextSteps(input: {
+    runId: string
+    ownerUserId: string
     userInput: string
     answer: string
     pageContext: Record<string, unknown>
@@ -127,6 +132,7 @@ export class ModelRuntime {
       toolChoice: { operationId: "create_options" },
       thinking: { type: "disabled" },
       maxOutputTokens: 2100,
+      budget: { runId: input.runId, ownerUserId: input.ownerUserId, operation: "next_steps" },
       ...(signal ? { signal } : {}),
       ...(input.model ? { modelId: input.model.id, modelName: input.model.name, modelPricing: input.model } : {}),
     })
@@ -145,6 +151,8 @@ export class ModelRuntime {
           history: input.history,
           continuationMessages: input.continuationMessages,
           tools,
+          budget: { runId: input.runId, ownerUserId: input.ownerUserId },
+          maxOutputTokens: this.assistantMaxOutputTokens,
           ...(input.model ? { model: input.model } : {}),
           ...(signal ? { signal } : {}),
         })).messages
@@ -152,6 +160,7 @@ export class ModelRuntime {
     return {
       messages,
       maxOutputTokens: this.assistantMaxOutputTokens,
+      budget: { runId: input.runId, ownerUserId: input.ownerUserId, operation: "assistant" as const },
       tools,
       ...(signal ? { signal } : {}),
       ...(input.model ? { modelId: input.model.id, modelName: input.model.name, modelPricing: input.model } : {}),

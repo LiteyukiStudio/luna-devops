@@ -90,10 +90,8 @@ type deploymentTargetResponse struct {
 	ConcurrencyPolicy            string                               `json:"concurrencyPolicy"`
 	RuntimeConfigSetIDs          string                               `json:"runtimeConfigSetIds"`
 	RuntimeConfigRefs            []deploymentRuntimeConfigRefResponse `json:"runtimeConfigRefs"`
-	EnvVars                      map[string]string                    `json:"envVars"`
+	EnvironmentVariables         []runtimeEnvironmentVariableResponse `json:"environmentVariables"`
 	ConfigRefs                   map[string]string                    `json:"configRefs"`
-	SecretKeys                   []string                             `json:"secretKeys"`
-	SecretRefsSet                bool                                 `json:"secretRefsSet"`
 	ConfigFiles                  string                               `json:"configFiles"`
 	SecretFilesSet               bool                                 `json:"secretFilesSet"`
 	DataVolumes                  []deploymentTargetDataVolumeResponse `json:"dataVolumes"`
@@ -216,10 +214,8 @@ func deploymentTargetResponseFromModel(target model.DeploymentTarget, mounts ...
 		ConcurrencyPolicy:            target.ConcurrencyPolicy,
 		RuntimeConfigSetIDs:          target.RuntimeConfigSetIDs,
 		RuntimeConfigRefs:            deploymentRuntimeConfigRefsResponse(target),
-		EnvVars:                      runtimeConfigMap(target.EnvVars),
+		EnvironmentVariables:         runtimeEnvironmentVariables(target.EnvVars, target.SecretRefs),
 		ConfigRefs:                   runtimeConfigMap(target.ConfigRefs),
-		SecretKeys:                   runtimeSecretKeys(target.SecretRefs),
-		SecretRefsSet:                len(runtimeSecretKeys(target.SecretRefs)) > 0,
 		ConfigFiles:                  target.ConfigFiles,
 		SecretFilesSet:               strings.TrimSpace(target.SecretFiles) != "" && strings.TrimSpace(target.SecretFiles) != "{}",
 		DataVolumes:                  dataVolumes,
@@ -360,7 +356,7 @@ type deploymentTargetInput struct {
 	ConcurrencyPolicy            string                             `json:"concurrencyPolicy"`
 	RuntimeConfigSetIDs          []string                           `json:"runtimeConfigSetIds"`
 	RuntimeConfigRefs            []deploymentRuntimeConfigRefInput  `json:"runtimeConfigRefs"`
-	EnvVars                      map[string]string                  `json:"envVars"`
+	EnvironmentVariables         []runtimeEnvironmentVariableInput  `json:"environmentVariables"`
 	ConfigRefs                   map[string]string                  `json:"configRefs"`
 	ConfigFiles                  string                             `json:"configFiles"`
 	SecretFiles                  string                             `json:"secretFiles"`

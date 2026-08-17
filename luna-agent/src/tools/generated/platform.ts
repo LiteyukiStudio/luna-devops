@@ -79,22 +79,32 @@ const updateDeploymentTargetRuntimeSecretsInputSchema = {
     body: {
       type: "object",
       properties: {
-        values: { type: "object", writeOnly: true, "x-luna-sensitive": true, additionalProperties: { type: "string", maxLength: 8192 } },
-        generate: {
-          type: "object",
-          additionalProperties: {
+        items: {
+          type: "array",
+          maxItems: 128,
+          items: {
             type: "object",
             properties: {
-              length: { type: "integer", minimum: 8, maximum: 256, default: 32 },
-              encoding: { type: "string", enum: ["base64", "hex", "alphanumeric", "numeric"], default: "base64" },
+              key: { type: "string", pattern: "^[A-Za-z_][A-Za-z0-9_]*$", minLength: 1, maxLength: 128 },
+              valueMode: { type: "string", enum: ["secret"] },
+              operation: { type: "string", enum: ["set", "generate", "clear"] },
+              value: { type: "string", writeOnly: true, "x-luna-sensitive": true, maxLength: 8192 },
+              generation: {
+                type: "object",
+                properties: {
+                  length: { type: "integer", minimum: 8, maximum: 256, default: 32 },
+                  encoding: { type: "string", enum: ["base64", "hex", "alphanumeric", "numeric"], default: "base64" },
+                },
+                required: [],
+                additionalProperties: false,
+              },
             },
-            required: [],
+            required: ["key", "valueMode", "operation"],
             additionalProperties: false,
           },
         },
-        clear: { type: "array", items: { type: "string", maxLength: 128 } },
       },
-      required: [],
+      required: ["items"],
       additionalProperties: false,
     },
   },
@@ -121,7 +131,7 @@ export const platformOperations = [
     idempotent: true,
     timeoutMs: 30000,
     inputSchema: updateDeploymentTargetRuntimeSecretsInputSchema,
-    sensitivePaths: ["body.values"],
+    sensitivePaths: ["body.items.*.value"],
     resultVerifier: "updateDeploymentTargetRuntimeSecrets_accepted",
   },
   {

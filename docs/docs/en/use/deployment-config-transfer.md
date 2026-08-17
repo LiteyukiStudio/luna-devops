@@ -15,10 +15,16 @@ The file contains runtime specs, build settings, release policy, and non-secret 
 1. Open the destination app's **Deployments** page and select **Import JSON**.
 2. Select an exported JSON file.
 3. Confirm the destination name, stage, and namespace.
-4. Resolve every resource mapping reported by preflight and re-enter each Secret.
+4. Resolve every resource mapping reported by preflight and re-enter each Secret. When many candidates are available, search by name or type, sort, and move between pages instead of entering a resource ID manually.
 5. When the status becomes **Ready to import**, select **Import config**.
 
 The new config appears in the list after import. Luna DevOps does not automatically build or release it; review the result before starting either action.
+
+## Recover from an unsupported stage
+
+Public deployment stages are limited to `dev`, `test`, `staging`, and `prod`; `production` in a file is treated as `prod`. If an older file, or a file exported from an existing config, contains another stage such as `qa`, the first preflight reports an invalid stage and creates no deployment config, Secret, build environment, or volume mount.
+
+Choose an allowed destination stage, then select **Run preflight again**. Commit is enabled only after preflight becomes **Ready to import**. Do not edit the summary or reuse a digest from an invalid preflight; import revalidates the file, overrides, and digest.
 
 ## Cross-project imports and empty apps
 

@@ -19,6 +19,8 @@ const definitions = [
   ["listRuntimeEvents", "runtime", "查看 Pod 调度、拉取镜像和卷挂载事件", "List Kubernetes runtime events"],
   ["webSearch", "platform", "搜索互联网和官方资料", "Search the public web"],
   ["fetchWebPage", "platform", "读取明确网址、README 和部署文档", "Fetch a web page"],
+  ["updateDeploymentTargetRuntimeSecrets", "deployment", "安全更新部署目标的运行时密钥", "Update deployment runtime secrets"],
+  ["updateProjectRuntimeConfigSetRuntimeSecrets", "deployment", "安全更新运行时配置集的密钥变量", "Update runtime config set secrets"],
   ["createNotificationChannel", "notifications", "", "Create notification channel"],
   ["listNotificationChannels", "notifications", "", "List notification channels"],
 ] as const
@@ -56,6 +58,8 @@ describe("tool retrieval evaluation", () => {
     ["为什么 Pod 一直调度失败", "listRuntimeEvents"],
     ["搜索项目的官方部署说明", "webSearch"],
     ["读取这个 GitHub README 链接", "fetchWebPage"],
+    ["给部署目标安全填写运行时密码", "updateDeploymentTargetRuntimeSecrets"],
+    ["给运行时配置集绑定密钥变量", "updateProjectRuntimeConfigSetRuntimeSecrets"],
     ["创建一个新的通知渠道", "createNotificationChannel"],
     ["查询现有通知渠道", "listNotificationChannels"],
   ])("puts the expected operation in the first eight results: %s", (query, expected) => {

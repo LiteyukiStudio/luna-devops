@@ -15,8 +15,6 @@ import (
 	"gorm.io/gorm"
 )
 
-const deploymentBundleCandidateLimit = 100
-
 type deploymentBundleCandidate struct {
 	Public     deploymentBundleReferenceCandidate
 	Descriptor deploymentBundleReferenceDescriptor
@@ -87,11 +85,11 @@ func (h *Handlers) buildDeploymentTargetImportPlan(ctx *gin.Context, user model.
 		preview.Warnings = append(preview.Warnings, "deployment_bundle.namespace_review_required")
 	}
 
-	// Bundle imports must preserve valid stages from previously exported targets,
-	// including legacy custom stages. Public target creation remains restricted to
-	// the normalized public stage set by normalizePublicStage.
-	stage := normalizeStage(input.Stage)
-	if err := resourceidentifier.Validate(stage, stageIdentifierMinLength, stageIdentifierMaxLength); err != nil {
+	stage, validStage := normalizePublicStage(input.Stage)
+	if !validStage {
+		preview.Status = deploymentBundleStatusInvalid
+		preview.Warnings = append(preview.Warnings, "deployment.stage_invalid")
+	} else if err := resourceidentifier.Validate(stage, stageIdentifierMinLength, stageIdentifierMaxLength); err != nil {
 		preview.Status = deploymentBundleStatusInvalid
 		preview.Warnings = append(preview.Warnings, "deployment.stage_invalid")
 	} else {
@@ -298,7 +296,9 @@ func markDeploymentBundleVolumeResolution(preview *deploymentTargetBundlePreview
 }
 
 func (h *Handlers) resolveDeploymentBundleReference(ctx *gin.Context, user model.User, project model.Project, app model.Application, reference deploymentBundleReference, mappedID string) (deploymentBundleReferenceResolution, []deploymentBundleCandidate, error) {
-	candidates, total, err := h.deploymentBundleCandidates(ctx.Request.Context(), user, project, app, reference)
+	page, candidates, err := h.deploymentBundleCandidates(ctx.Request.Context(), user, project, app, reference, deploymentBundleCandidateQuery{
+		Pagination: paginationParams{Page: 1, PageSize: defaultPageSize, SortBy: "name", SortOrder: "asc"},
+	})
 	if err != nil {
 		return deploymentBundleReferenceResolution{}, nil, err
 	}
@@ -306,8 +306,8 @@ func (h *Handlers) resolveDeploymentBundleReference(ctx *gin.Context, user model
 		deploymentBundleReference: reference,
 		Status:                    deploymentBundleReferenceMissing,
 		Candidates:                make([]deploymentBundleReferenceCandidate, 0, len(candidates)),
-		CandidateCount:            total,
-		Truncated:                 total > len(candidates),
+		CandidateCount:            int(page.Total),
+		Truncated:                 page.Total > int64(len(candidates)),
 		Code:                      "deployment_bundle.reference_missing",
 	}
 	for index := range candidates {
@@ -315,31 +315,44 @@ func (h *Handlers) resolveDeploymentBundleReference(ctx *gin.Context, user model
 		resolution.Candidates = append(resolution.Candidates, candidates[index].Public)
 	}
 	if mappedID != "" {
-		for _, candidate := range candidates {
-			if candidate.Public.ID != mappedID {
-				continue
-			}
-			if !candidate.Public.Compatible {
-				resolution.Status = deploymentBundleReferenceIncompatible
-				resolution.Code = "deployment_bundle.reference_incompatible"
-				return resolution, candidates, nil
-			}
-			resolution.Status = deploymentBundleReferenceResolved
-			resolution.ResolvedID = candidate.Public.ID
-			resolution.Code = ""
+		_, mappedCandidates, mappedErr := h.deploymentBundleCandidates(ctx.Request.Context(), user, project, app, reference, deploymentBundleCandidateQuery{
+			Pagination: paginationParams{Page: 1, PageSize: 1, SortBy: "name", SortOrder: "asc"},
+			ID:         mappedID,
+		})
+		if mappedErr != nil {
+			return deploymentBundleReferenceResolution{}, nil, mappedErr
+		}
+		if len(mappedCandidates) == 0 {
+			// Deliberately collapse missing and invisible IDs so project members
+			// cannot use this endpoint to enumerate resources outside their scope.
+			resolution.Status = deploymentBundleReferenceForbidden
+			resolution.Code = "deployment_bundle.reference_forbidden"
 			return resolution, candidates, nil
 		}
-		resolution.Status = deploymentBundleReferenceForbidden
-		resolution.Code = "deployment_bundle.reference_forbidden"
+		mappedCandidate := mappedCandidates[0]
+		if !slices.ContainsFunc(resolution.Candidates, func(candidate deploymentBundleReferenceCandidate) bool {
+			return candidate.ID == mappedCandidate.Public.ID
+		}) {
+			resolution.Candidates = append(resolution.Candidates, mappedCandidate.Public)
+		}
+		if !mappedCandidate.Public.Compatible {
+			resolution.Status = deploymentBundleReferenceIncompatible
+			resolution.Code = "deployment_bundle.reference_incompatible"
+			return resolution, candidates, nil
+		}
+		resolution.Status = deploymentBundleReferenceResolved
+		resolution.ResolvedID = mappedCandidate.Public.ID
+		resolution.Code = ""
 		return resolution, candidates, nil
 	}
-	matches := make([]deploymentBundleCandidate, 0)
-	for _, candidate := range candidates {
-		if candidate.Public.Compatible && candidate.Public.Matched {
-			matches = append(matches, candidate)
-		}
+	matches, matchErr := h.deploymentBundleCompatibleMatches(ctx.Request.Context(), user, project, app, reference)
+	if matchErr != nil {
+		return deploymentBundleReferenceResolution{}, nil, matchErr
 	}
 	if len(matches) == 1 {
+		if !slices.ContainsFunc(resolution.Candidates, func(candidate deploymentBundleReferenceCandidate) bool { return candidate.ID == matches[0].Public.ID }) {
+			resolution.Candidates = append(resolution.Candidates, matches[0].Public)
+		}
 		resolution.Status = deploymentBundleReferenceResolved
 		resolution.ResolvedID = matches[0].Public.ID
 		resolution.Code = ""
@@ -348,121 +361,6 @@ func (h *Handlers) resolveDeploymentBundleReference(ctx *gin.Context, user model
 		resolution.Code = "deployment_bundle.reference_ambiguous"
 	}
 	return resolution, candidates, nil
-}
-
-func (h *Handlers) deploymentBundleCandidates(ctx context.Context, user model.User, project model.Project, app model.Application, reference deploymentBundleReference) ([]deploymentBundleCandidate, int, error) {
-	candidates := make([]deploymentBundleCandidate, 0)
-	appendCandidate := func(id, name, description string, descriptor deploymentBundleReferenceDescriptor, compatible bool) {
-		candidates = append(candidates, deploymentBundleCandidate{
-			Public:     deploymentBundleReferenceCandidate{ID: id, Name: name, Description: description, Compatible: compatible},
-			Descriptor: descriptor,
-		})
-	}
-	switch reference.Kind {
-	case deploymentBundleReferenceRepositoryBinding:
-		var items []struct {
-			model.RepositoryBinding
-			ProviderType string `gorm:"column:provider_type"`
-		}
-		err := h.dbWithContext(ctx).Table("repository_bindings").
-			Select("repository_bindings.*, git_providers.type as provider_type").
-			Joins("join git_providers on git_providers.id = repository_bindings.git_provider_id and git_providers.deleted_at is null").
-			Where("repository_bindings.project_id = ? and repository_bindings.application_id = ? and repository_bindings.deleted_at is null", project.ID, app.ID).
-			Order("repository_bindings.created_at asc").Limit(deploymentBundleCandidateLimit + 1).Scan(&items).Error
-		if err != nil {
-			return nil, 0, err
-		}
-		for _, item := range items {
-			name := strings.Trim(strings.TrimSpace(item.Owner)+"/"+strings.TrimSpace(item.Repo), "/")
-			appendCandidate(item.ID, name, item.ProviderType, deploymentBundleReferenceDescriptor{Name: name, Type: item.ProviderType, Owner: item.Owner, Repository: item.Repo}, true)
-		}
-	case deploymentBundleReferenceRuntimeCluster:
-		var items []model.RuntimeCluster
-		query := h.applyScopedResourceVisibilityForProject(h.dbWithContext(ctx).Model(&model.RuntimeCluster{}), scopedResourceRuntimeCluster, user, project.ID, ctx)
-		if err := query.Where("type in ?", []string{"kubernetes", "k3s"}).Order("name asc, created_at asc").Limit(deploymentBundleCandidateLimit + 1).Find(&items).Error; err != nil {
-			return nil, 0, err
-		}
-		for _, item := range items {
-			appendCandidate(item.ID, item.Name, item.Type, deploymentBundleReferenceDescriptor{Name: item.Name, Type: item.Type}, true)
-		}
-	case deploymentBundleReferenceArtifactRegistry:
-		var items []model.ArtifactRegistry
-		query := h.applyScopedResourceVisibilityForProject(h.dbWithContext(ctx).Model(&model.ArtifactRegistry{}), scopedResourceArtifactRegistry, user, project.ID, ctx)
-		if err := query.Order("name asc, created_at asc").Limit(deploymentBundleCandidateLimit + 1).Find(&items).Error; err != nil {
-			return nil, 0, err
-		}
-		for _, item := range items {
-			_, hasPushCredential := h.registryPushCredentialForProject(user, item, project.ID, ctx)
-			appendCandidate(item.ID, item.Name, item.Provider, deploymentBundleReferenceDescriptor{Name: item.Name, Type: item.Provider, Namespace: item.Namespace}, hasPushCredential)
-		}
-	case deploymentBundleReferenceBuildVariableSet:
-		var items []model.BuildVariableSet
-		query := h.applyScopedResourceVisibilityForProject(h.dbWithContext(ctx).Model(&model.BuildVariableSet{}), scopedResourceBuildVariableSet, user, project.ID, ctx)
-		if err := query.Where("enabled = ?", true).Order("name asc, created_at asc").Limit(deploymentBundleCandidateLimit + 1).Find(&items).Error; err != nil {
-			return nil, 0, err
-		}
-		for _, item := range items {
-			appendCandidate(item.ID, item.Name, item.Scope, deploymentBundleReferenceDescriptor{Name: item.Name, Scope: item.Scope}, true)
-		}
-	case deploymentBundleReferenceRuntimeConfigSet:
-		var items []model.ProjectRuntimeConfigSet
-		if err := h.dbWithContext(ctx).Where("project_id = ? and enabled = ? and delete_status = ?", project.ID, true, "active").Order("name asc, created_at asc").Limit(deploymentBundleCandidateLimit + 1).Find(&items).Error; err != nil {
-			return nil, 0, err
-		}
-		for _, item := range items {
-			appendCandidate(item.ID, item.Name, "", deploymentBundleReferenceDescriptor{Name: item.Name}, true)
-		}
-	case deploymentBundleReferenceHookConfig:
-		var items []model.ProjectHookConfig
-		if err := h.dbWithContext(ctx).Where("project_id = ?", project.ID).Order("name asc, created_at asc").Limit(deploymentBundleCandidateLimit + 1).Find(&items).Error; err != nil {
-			return nil, 0, err
-		}
-		for _, item := range items {
-			appendCandidate(item.ID, item.Name, item.Shell, deploymentBundleReferenceDescriptor{Name: item.Name, Type: item.Shell}, true)
-		}
-	case deploymentBundleReferenceProjectVolume:
-		var items []model.ProjectVolume
-		if err := h.dbWithContext(ctx).Where("project_id = ?", project.ID).Order("display_name asc, created_at asc").Limit(deploymentBundleCandidateLimit + 1).Find(&items).Error; err != nil {
-			return nil, 0, err
-		}
-		clusterNames := map[string]model.RuntimeCluster{}
-		clusterIDs := make([]string, 0)
-		for _, item := range items {
-			clusterIDs = append(clusterIDs, item.ClusterID)
-		}
-		var clusters []model.RuntimeCluster
-		if len(clusterIDs) > 0 {
-			_ = h.dbWithContext(ctx).Where("id in ?", uniqueStrings(clusterIDs)).Find(&clusters).Error
-		}
-		for _, cluster := range clusters {
-			clusterNames[cluster.ID] = cluster
-		}
-		for _, item := range items {
-			cluster := clusterNames[item.ClusterID]
-			descriptor := deploymentBundleReferenceDescriptor{
-				Name: item.DisplayName, AccessMode: item.AccessMode, VolumeMode: item.VolumeMode, StorageClassName: item.StorageClassName,
-				ClusterName: cluster.Name, ClusterType: cluster.Type,
-			}
-			compatible := item.LifecycleState == model.ProjectVolumeLifecycleReady && strings.TrimSpace(item.PendingOperation) == ""
-			appendCandidate(item.ID, item.DisplayName, item.VolumeMode+" · "+cluster.Name, descriptor, compatible)
-		}
-	default:
-		return nil, 0, &deploymentBundleError{Code: "deployment_bundle.invalid_json", Message: "unsupported deployment bundle reference kind"}
-	}
-	total := len(candidates)
-	if total > deploymentBundleCandidateLimit {
-		candidates = candidates[:deploymentBundleCandidateLimit]
-	}
-	for index := range candidates {
-		if reference.Kind == deploymentBundleReferenceProjectVolume && !deploymentBundleReferenceDescriptorMatches(reference.Source, candidates[index].Descriptor) {
-			// A user may explicitly map a differently named volume, but mode and
-			// access semantics must remain compatible.
-			candidates[index].Public.Compatible = candidates[index].Public.Compatible &&
-				reference.Source.VolumeMode == candidates[index].Descriptor.VolumeMode &&
-				reference.Source.AccessMode == candidates[index].Descriptor.AccessMode
-		}
-	}
-	return candidates, total, nil
 }
 
 func deploymentBundleReferenceDescriptorMatches(source, candidate deploymentBundleReferenceDescriptor) bool {

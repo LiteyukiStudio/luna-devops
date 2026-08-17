@@ -959,14 +959,25 @@ export interface BuildEnvironmentConfigPayload {
   secrets: Record<string, string>
 }
 
+export interface RuntimeEnvironmentVariableInput {
+  key: string
+  valueMode: 'public'
+  value: string
+}
+
+export interface RuntimeEnvironmentVariable {
+  key: string
+  valueMode: 'public' | 'secret'
+  value?: string
+  configured: boolean
+}
+
 export interface ProjectRuntimeConfigSet {
   id: string
   projectId: string
   name: string
-  envVars: Record<string, string>
+  environmentVariables: RuntimeEnvironmentVariable[]
   configFiles: string
-  secretKeys: string[]
-  secretRefsSet: boolean
   secretFilesSet: boolean
   enabled: boolean
   deleteStatus: 'active' | 'deleting' | 'delete_failed' | 'deleted' | string
@@ -983,7 +994,8 @@ export interface DeploymentRuntimeConfigRef {
   mode: RuntimeConfigRefMode
 }
 
-export type ProjectRuntimeConfigSetPayload = Omit<ProjectRuntimeConfigSet, 'id' | 'projectId' | 'createdBy' | 'createdAt' | 'secretKeys' | 'secretRefsSet' | 'secretFilesSet' | 'deleteStatus' | 'deleteMessage'> & {
+export type ProjectRuntimeConfigSetPayload = Omit<ProjectRuntimeConfigSet, 'id' | 'projectId' | 'createdBy' | 'createdAt' | 'environmentVariables' | 'secretFilesSet' | 'deleteStatus' | 'deleteMessage'> & {
+  environmentVariables: RuntimeEnvironmentVariableInput[]
   secretFiles?: string
 }
 
@@ -1195,10 +1207,8 @@ export interface DeploymentTarget {
   concurrencyPolicy: 'queue' | 'parallel'
   runtimeConfigSetIds: string | string[]
   runtimeConfigRefs: DeploymentRuntimeConfigRef[]
-  envVars: Record<string, string>
+  environmentVariables: RuntimeEnvironmentVariable[]
   configRefs: Record<string, string>
-  secretKeys: string[]
-  secretRefsSet: boolean
   configFiles: string
   secretFilesSet: boolean
   dataVolumes: DeploymentDataVolume[]
@@ -1246,30 +1256,33 @@ export interface DeploymentTargetMetrics {
 }
 
 export interface DeploymentTargetRuntimeSecretsSummary {
-  secretKeys: string[]
-  secretRefsSet: boolean
+  environmentVariables: RuntimeEnvironmentVariable[]
 }
 
 export interface DeploymentTargetRuntimeSecretsPayload {
-  values?: Record<string, string>
-  generate?: Record<string, { length?: number, encoding?: 'base64' | 'hex' | 'alphanumeric' | 'numeric' }>
-  clear?: string[]
+  items: Array<{
+    key: string
+    valueMode: 'secret'
+    operation: 'set' | 'generate' | 'clear'
+    value?: string
+    generation?: { length?: number, encoding?: 'base64' | 'hex' | 'alphanumeric' | 'numeric' }
+  }>
 }
 
 export interface RuntimeSecretMutationResponse {
   configuredKeys: string[]
   generatedKeys: string[]
   clearedKeys: string[]
-  secretKeys: string[]
-  secretRefsSet: boolean
+  environmentVariables: RuntimeEnvironmentVariable[]
 }
 
-export type DeploymentTargetPayload = Omit<DeploymentTarget, 'id' | 'projectId' | 'applicationId' | 'kubernetesName' | 'createdBy' | 'createdAt' | 'buildVariableSetIds' | 'runtimeConfigSetIds' | 'runtimeConfigRefs' | 'secretKeys' | 'secretRefsSet' | 'secretFilesSet' | 'dataVolumes' | 'status' | 'observationCode' | 'lastCheckedAt' | 'desiredReplicas' | 'updatedReplicas' | 'readyReplicas' | 'availableReplicas' | 'deleteStatus' | 'deleteMessage' | 'deleteStartedAt' | 'deleteFinishedAt'> & {
+export type DeploymentTargetPayload = Omit<DeploymentTarget, 'id' | 'projectId' | 'applicationId' | 'kubernetesName' | 'createdBy' | 'createdAt' | 'buildVariableSetIds' | 'runtimeConfigSetIds' | 'runtimeConfigRefs' | 'environmentVariables' | 'secretFilesSet' | 'dataVolumes' | 'status' | 'observationCode' | 'lastCheckedAt' | 'desiredReplicas' | 'updatedReplicas' | 'readyReplicas' | 'availableReplicas' | 'deleteStatus' | 'deleteMessage' | 'deleteStartedAt' | 'deleteFinishedAt'> & {
   buildVariableSetIds: string | string[]
   buildVariables?: Record<string, string>
   buildSecrets?: Record<string, string>
   runtimeConfigSetIds: string | string[]
   runtimeConfigRefs: DeploymentRuntimeConfigRef[]
+  environmentVariables: RuntimeEnvironmentVariableInput[]
   secretFiles?: string
   dataVolumes: DeploymentDataVolumeInput[]
 }
@@ -1326,6 +1339,12 @@ export interface DeploymentBundleReferenceCandidate {
   description?: string
   matched: boolean
   compatible: boolean
+}
+
+export interface DeploymentBundleReferenceCandidatePage extends PaginatedResponse<DeploymentBundleReferenceCandidate> {}
+
+export interface DeploymentBundleReferenceCandidateListRequest {
+  reference: DeploymentBundleReference
 }
 
 export interface DeploymentBundleReferenceResolution extends DeploymentBundleReference {

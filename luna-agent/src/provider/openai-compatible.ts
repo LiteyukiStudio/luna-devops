@@ -63,6 +63,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
     const decoder = new TextDecoder()
     let buffer = ""
     let usage: { inputTokens: number, outputTokens: number, cachedInputTokens?: number, cachedOutputTokens?: number } = { inputTokens: 0, outputTokens: 0 }
+    let usageReported = false
     let responseText = ""
     let reasoningText = ""
     let toolCallDeltaEmitted = false
@@ -113,6 +114,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
           toolFragments.set(fragment.index, current)
         }
         if (payload.usage) {
+          usageReported = true
           usage = {
             inputTokens: payload.usage.prompt_tokens ?? usage.inputTokens,
             outputTokens: payload.usage.completion_tokens ?? usage.outputTokens,
@@ -132,7 +134,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
         usage,
       })
     }
-    yield { type: "completed", usage, ...(toolCalls.length ? { toolCalls } : {}) }
+    yield { type: "completed", usage: { ...usage, reported: usageReported }, ...(toolCalls.length ? { toolCalls } : {}) }
   }
 
   private async request(messages: ModelRequest["messages"], maxTokens: number, signal?: AbortSignal, tools?: ModelRequest["tools"], toolChoice?: ModelRequest["toolChoice"], thinking?: ModelRequest["thinking"]) {
@@ -156,6 +158,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
       usage: {
         inputTokens: body.usage?.prompt_tokens ?? 0,
         outputTokens: body.usage?.completion_tokens ?? 0,
+        reported: body.usage !== undefined,
         ...(body.usage?.prompt_tokens_details?.cached_tokens !== undefined ? { cachedInputTokens: body.usage.prompt_tokens_details.cached_tokens } : {}),
         ...(body.usage?.completion_tokens_details?.cached_tokens !== undefined ? { cachedOutputTokens: body.usage.completion_tokens_details.cached_tokens } : {}),
       },

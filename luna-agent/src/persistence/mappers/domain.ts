@@ -61,10 +61,16 @@ export function mapRun(row: RunRow): Run {
     ...(row.startedAt ? { startedAt: row.startedAt.toISOString() } : {}),
     ...(row.completedAt ? { completedAt: row.completedAt.toISOString() } : {}),
     ...(row.errorCode ? { errorCode: row.errorCode } : {}),
+    budget: {
+      totalTokens: row.totalTokenBudget ?? 2_000_000,
+      totalCredits: row.totalCreditBudget ?? "10000",
+    },
     ...(row.modelId && row.modelName ? {
       model: {
         id: row.modelId,
         name: row.modelName,
+        maxContextTokens: row.maxContextTokens ?? 524_288,
+        maxOutputTokens: row.maxOutputTokens ?? 65_536,
         inputCreditsPerMillion: row.inputCreditsPerMillion ?? "0",
         outputCreditsPerMillion: row.outputCreditsPerMillion ?? "0",
         cachedInputCreditsPerMillion: row.cachedInputCreditsPerMillion ?? "0",

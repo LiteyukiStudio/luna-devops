@@ -140,7 +140,7 @@ function InteractionCardView({ card, density, group, onAction }: {
     mode: 'onChange',
   })
   const watchedValues = form.watch()
-  const toolFormValues = watchedValues
+  const toolFormValues = getToolFormValues(fields, watchedValues)
   const publicFormValues = getPublicFormValues(fields, watchedValues)
   const messageValues = messageFormValues(fields, publicFormValues)
   const hasDetails = Boolean(card.blocks?.length || card.form)
@@ -714,7 +714,7 @@ function fieldSchema(field: InteractionFormField): z.ZodType {
   }
   else if (field.type === 'key_value') {
     let entriesSchema = field.valueMode === 'secret'
-      ? z.array(z.object({ key: z.string(), value: z.string() }))
+      ? z.array(z.object({ key: z.string().trim().min(1), value: z.string().min(1) }))
       : z.array(z.object({ key: z.string().min(1), value: z.string() }))
     if (field.required)
       entriesSchema = entriesSchema.min(field.minItems ?? 1)
@@ -745,6 +745,11 @@ function fieldSchema(field: InteractionFormField): z.ZodType {
 
 function defaultValues(fields: InteractionFormField[]): FormValues {
   return Object.fromEntries(fields.map((field) => {
+    // Agent 校验是第一道边界；这里继续忽略修复前持久化或恶意载荷中的 Secret 默认值。
+    if (field.type === 'secret')
+      return [field.id, '']
+    if (field.type === 'key_value' && field.valueMode === 'secret')
+      return [field.id, []]
     if ('defaultValue' in field && field.defaultValue !== undefined)
       return [field.id, field.defaultValue]
     if (field.type === 'boolean')
@@ -752,6 +757,28 @@ function defaultValues(fields: InteractionFormField[]): FormValues {
     if (field.type === 'multi_select' || field.type === 'key_value')
       return [field.id, []]
     return [field.id, '']
+  }))
+}
+
+function getToolFormValues(fields: InteractionFormField[], values: FormValues): FormValues {
+  return Object.fromEntries(fields.flatMap((field) => {
+    const value = values[field.id]
+    if (field.type === 'secret')
+      return typeof value === 'string' && value.length > 0 ? [[field.id, value]] : []
+    if (field.type === 'key_value' && field.valueMode === 'secret') {
+      const entries = Array.isArray(value)
+        ? value.filter((entry): entry is { key: string, value: string } => Boolean(
+            entry
+            && typeof entry === 'object'
+            && typeof entry.key === 'string'
+            && entry.key.trim().length > 0
+            && typeof entry.value === 'string'
+            && entry.value.length > 0,
+          ))
+        : []
+      return entries.length > 0 ? [[field.id, entries]] : []
+    }
+    return value === undefined ? [] : [[field.id, value]]
   }))
 }
 

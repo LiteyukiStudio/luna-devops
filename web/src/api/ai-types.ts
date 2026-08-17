@@ -8,6 +8,8 @@ export interface AICapabilities {
 export interface AIModelOption {
   id: string
   name: string
+  maxContextTokens: number
+  maxOutputTokens: number
 }
 
 export interface AIModelConfig extends AIModelOption {

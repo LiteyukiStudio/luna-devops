@@ -23,6 +23,7 @@ import { Card } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { runtimeConfigFileCount } from '@/lib/runtime-config-files'
+import { publicRuntimeEnvironmentInputs, publicRuntimeEnvironmentRecord } from '@/lib/runtime-environment'
 
 export interface ProjectRuntimeConfigSetsPageHandle {
   openCreateDialog: () => void
@@ -31,7 +32,7 @@ export interface ProjectRuntimeConfigSetsPageHandle {
 const runtimeConfigDefaults: ProjectRuntimeConfigSetPayload = {
   configFiles: '',
   enabled: true,
-  envVars: {},
+  environmentVariables: [],
   name: '',
   secretFiles: '',
 }
@@ -104,7 +105,7 @@ export function ProjectRuntimeConfigSetsPage({ projectId, ref }: { projectId: st
       ? {
           configFiles: set.configFiles,
           enabled: set.enabled,
-          envVars: set.envVars,
+          environmentVariables: publicRuntimeEnvironmentInputs(publicRuntimeEnvironmentRecord(set.environmentVariables)),
           name: set.name,
           secretFiles: '',
         }
@@ -190,8 +191,8 @@ export function ProjectRuntimeConfigSetsPage({ projectId, ref }: { projectId: st
               <Field label={t('common.name')} required><Input {...form.register('name', { required: true })} /></Field>
               <Field hint={t('runtimeConfigSets.envVarsHint')} label={t('runtimeConfigSets.envVars')}>
                 <KeyValueTextEditor
-                  initialValue={form.getValues('envVars')}
-                  onChange={value => form.setValue('envVars', value, { shouldDirty: true, shouldValidate: true })}
+                  initialValue={publicRuntimeEnvironmentRecord(form.getValues('environmentVariables'))}
+                  onChange={value => form.setValue('environmentVariables', publicRuntimeEnvironmentInputs(value), { shouldDirty: true, shouldValidate: true })}
                 />
               </Field>
               <Field hint={t('runtimeConfigSets.configFilesHint')} label={t('runtimeConfigSets.configFiles')}>
@@ -242,7 +243,7 @@ function normalizeRuntimeConfigPayload(values: ProjectRuntimeConfigSetPayload): 
   return {
     configFiles: values.configFiles?.trim() ?? '',
     enabled: Boolean(values.enabled),
-    envVars: values.envVars ?? {},
+    environmentVariables: publicRuntimeEnvironmentInputs(publicRuntimeEnvironmentRecord(values.environmentVariables)),
     name: values.name.trim(),
     secretFiles: values.secretFiles?.trim() ?? '',
   }

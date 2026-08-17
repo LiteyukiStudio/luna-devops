@@ -6,7 +6,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/LiteyukiStudio/devops/internal/fixeddecimal"
 	"github.com/LiteyukiStudio/devops/internal/security"
+	"github.com/shopspring/decimal"
 )
 
 func containsAIConfig[T any](values map[string]T) bool {
@@ -81,6 +83,7 @@ func (h *Handlers) validateAIConfigValues(values map[string]string) error {
 		"ai.context.historical_tool_k_tokens":          {1, 256},
 		"ai.model.max_output_tokens":                   {256, 131072},
 		"ai.run.max_model_steps":                       {1, 1024},
+		"ai.run.max_total_tokens":                      {16384, 16000000},
 		"ai.run.max_input_k_bytes":                     {8, 8192},
 		"ai.run.navigate_action_ttl_seconds":           {10, 600},
 		"ai.tools.result_payload_k_bytes":              {4, 4096},
@@ -115,6 +118,9 @@ func (h *Handlers) validateAIConfigValues(values map[string]string) error {
 		if err != nil || number < 0 {
 			return fmt.Errorf("%s must be a non-negative number", key)
 		}
+	}
+	if _, err := fixeddecimal.Parse(current["ai.run.max_credits"], false, decimal.NewFromInt(100_000_000)); err != nil {
+		return fmt.Errorf("ai.run.max_credits must be a positive decimal no greater than 100000000")
 	}
 	if mode := strings.TrimSpace(current["ai.access.mode"]); mode != "all_authenticated" && mode != "admins" {
 		return fmt.Errorf("ai.access.mode must be all_authenticated or admins")

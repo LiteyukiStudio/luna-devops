@@ -17,7 +17,6 @@ function deploymentTarget(id: string, overrides: Partial<DeploymentTarget> = {})
     createdAt: '2026-08-10T00:00:00Z',
     createdBy: 'user-1',
     secretFilesSet: false,
-    secretRefsSet: false,
     status: 'ready',
     desiredReplicas: 1,
     updatedReplicas: 1,
@@ -95,7 +94,7 @@ describe('deployment target form', () => {
         runtimeConfigRefs: [{ mode: 'live', setId: 'live-set' }, { mode: 'snapshot', setId: 'snapshot-set' }],
         runtimeConfigSetIds: ['legacy-set'],
         secretFilesSet: true,
-        secretRefsSet: true,
+        environmentVariables: [{ configured: true, key: 'API_TOKEN', valueMode: 'secret' }],
       }),
     })
 

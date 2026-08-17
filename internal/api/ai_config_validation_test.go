@@ -131,6 +131,20 @@ func TestAIConfigAcceptsAdvancedContextSettingsWithinBounds(t *testing.T) {
 	}
 }
 
+func TestAIConfigValidatesRunCreditFixedDecimalBoundaries(t *testing.T) {
+	h := &Handlers{configs: &configCache{values: aiConfigDefaults()}}
+	for _, value := range []string{"0.00000001", "100000000", "100000000.00000000"} {
+		if err := h.validateAIConfigValues(map[string]string{"ai.run.max_credits": value}); err != nil {
+			t.Errorf("valid Run credit budget %q rejected: %v", value, err)
+		}
+	}
+	for _, value := range []string{"100000000.00000001", "1e3", "0.000000001", "+1", " 1"} {
+		if err := h.validateAIConfigValues(map[string]string{"ai.run.max_credits": value}); err == nil {
+			t.Errorf("invalid Run credit budget %q accepted", value)
+		}
+	}
+}
+
 func TestAIConfigRequiresProxyPoolWhenEnabled(t *testing.T) {
 	h := &Handlers{configs: &configCache{values: aiConfigDefaults()}}
 	if err := h.validateAIConfigValues(map[string]string{"ai.web.proxy_enabled": "true"}); err == nil {

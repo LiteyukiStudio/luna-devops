@@ -16,8 +16,10 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/hibiken/asynq"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -53,6 +55,52 @@ func TestTaskTelemetryMiddlewareContinuesProducerTrace(t *testing.T) {
 	}
 	if gotTraceID != wantTraceID {
 		t.Fatalf("consumer trace ID = %s, want %s", gotTraceID, wantTraceID)
+	}
+}
+
+func TestAIBillingStageFailurePreservesParentAndDoesNotRecordReservationText(t *testing.T) {
+	previousProvider := otel.GetTracerProvider()
+	recorder := tracetest.NewSpanRecorder()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	otel.SetTracerProvider(provider)
+	t.Cleanup(func() {
+		otel.SetTracerProvider(previousProvider)
+		_ = provider.Shutdown(context.Background())
+	})
+	parentCtx, parent := provider.Tracer("worker-test").Start(t.Context(), "billing-task")
+	parentID := parent.SpanContext().SpanID()
+	const secretMarker = "aibgt-high-cardinality-secret-marker"
+	_, err := workerStageValue(parentCtx, "billing.settle_ai_usage", func(context.Context) (int, error) {
+		return 0, errors.New(secretMarker)
+	})
+	parent.End()
+	if err == nil {
+		t.Fatal("failed AI billing stage returned nil error")
+	}
+	var stage sdktrace.ReadOnlySpan
+	for _, span := range recorder.Ended() {
+		if span.Name() == "worker.billing.settle_ai_usage" {
+			stage = span
+			break
+		}
+	}
+	if stage == nil {
+		t.Fatal("AI billing stage span was not recorded")
+	}
+	if stage.Parent().SpanID() != parentID || stage.Status().Code != codes.Error {
+		t.Fatalf("AI billing stage parent/status = %s/%s, want %s/Error", stage.Parent().SpanID(), stage.Status().Code, parentID)
+	}
+	for _, attr := range stage.Attributes() {
+		if strings.Contains(attr.Value.Emit(), secretMarker) {
+			t.Fatalf("span attribute %s exposed reservation text", attr.Key)
+		}
+	}
+	for _, event := range stage.Events() {
+		for _, attr := range event.Attributes {
+			if strings.Contains(attr.Value.Emit(), secretMarker) {
+				t.Fatalf("span event %s exposed reservation text", attr.Key)
+			}
+		}
 	}
 }
 
@@ -1166,6 +1214,29 @@ func TestApplicationResourcesSpecAppliesDefaults(t *testing.T) {
 	}
 	if spec.ConfigData["APP_ENV"] != "dev" || spec.ConfigData["LOG_LEVEL"] != "debug" || spec.SecretData["TOKEN"] != "secret" {
 		t.Fatalf("spec data = config:%#v secret:%#v", spec.ConfigData, spec.SecretData)
+	}
+}
+
+func TestApplicationResourcesSpecUsesSecretAsSingleAuthoritativeMode(t *testing.T) {
+	spec, err := applicationResourcesSpec(
+		model.Release{ImageRef: "registry.example.com/acme/api:v1"},
+		model.Project{ID: "prj_demo", Identifier: "demo"},
+		model.Application{ID: "app_api", Identifier: "api"},
+		model.Environment{ID: "env_dev", Slug: "dev"},
+		model.DeploymentTarget{ID: "dplt_backend", EnvVars: `{"TOKEN":"must-not-render"}`, SecretRefs: `{"TOKEN":"secret-value"}`},
+		nil,
+		nil,
+		"ns-demo",
+		120,
+	)
+	if err != nil {
+		t.Fatalf("applicationResourcesSpec returned error: %v", err)
+	}
+	if _, leaked := spec.ConfigData["TOKEN"]; leaked {
+		t.Fatalf("secret key leaked into ConfigData: %#v", spec.ConfigData)
+	}
+	if spec.SecretData["TOKEN"] != "secret-value" {
+		t.Fatalf("SecretData = %#v, want authoritative TOKEN", spec.SecretData)
 	}
 }
 

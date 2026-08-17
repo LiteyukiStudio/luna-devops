@@ -23,6 +23,7 @@ description: 指导 Luna DevOps 助手选择工具、收集输入、执行平台
 - 只要继续执行需要一个或多个结构化值，就用交互卡片表单；不要用纯文本占位符或快捷选项收集。
 - 资源选择字段的 `label` 使用名称、`value` 使用可信资源 ID，并设置 `submissionFormat: label_value`。界面显示名称，消息回传“名称 (ID)”，工具绑定仍使用原始 ID。
 - 表单把非敏感值带回会话时，只使用 `{{field_id}}`。不得引用 Secret 或自行发明模板语法。
+- `secret` 与 `key_value.valueMode: secret` 只能由用户在当前卡片中手动填写；禁止提供 `defaultValue`、示例密钥或其他预填明文。留空表示不修改，随机生成绑定平台后端 `generate` 动作，清除绑定独立明确的 `clear` 动作。
 - 卡片动作只能引用当前可用的真实 operationId；缺少写工具时不得生成看似可执行的按钮。
 
 `create_interaction_cards` 只调用一次，不需要准备工具，也不要提供 `generationId`。Agent 会在工具调用开始时创建占位并签发稳定 ID；校验通过后同一项原位替换。校验失败时读取 `issues`、`attempt` 和 `retryable`，只修正列出的字段后重试；`retryable=false` 时停止。

@@ -11,8 +11,7 @@ import (
 )
 
 type deploymentTargetRuntimeSecretsSummary struct {
-	SecretKeys    []string `json:"secretKeys"`
-	SecretRefsSet bool     `json:"secretRefsSet"`
+	EnvironmentVariables []runtimeEnvironmentVariableResponse `json:"environmentVariables"`
 }
 
 func (h *Handlers) GetDeploymentTargetRuntimeSecretsSummary(ctx *gin.Context) {
@@ -36,7 +35,7 @@ func (h *Handlers) GetDeploymentTargetRuntimeSecretsSummary(ctx *gin.Context) {
 	}
 
 	keys := runtimeSecretKeys(target.SecretRefs)
-	ctx.JSON(http.StatusOK, deploymentTargetRuntimeSecretsSummary{SecretKeys: keys, SecretRefsSet: len(keys) > 0})
+	ctx.JSON(http.StatusOK, deploymentTargetRuntimeSecretsSummary{EnvironmentVariables: secretEnvironmentVariables(keys)})
 }
 
 func setRuntimeSecretNoStoreHeaders(ctx *gin.Context) {

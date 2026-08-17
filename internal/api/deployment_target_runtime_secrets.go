@@ -2,15 +2,16 @@ package api
 
 import (
 	"net/http"
-	"regexp"
-	"strings"
 
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 func (h *Handlers) UpdateDeploymentTargetRuntimeSecrets(ctx *gin.Context) {
+	setRuntimeSecretNoStoreHeaders(ctx)
 	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
 	if !ok || !h.ensureProjectCanMutate(ctx, project) {
 		return
@@ -27,44 +28,49 @@ func (h *Handlers) UpdateDeploymentTargetRuntimeSecrets(ctx *gin.Context) {
 	if !h.ensureDeploymentTargetCanMutate(ctx, target) || !h.requireStepUp(ctx, user, stepUpPurposeSecretUpdate) {
 		return
 	}
-	var input runtimeSecretMutationInput
+	var input runtimeSecretMutationRequest
 	if !bindJSON(ctx, &input) {
 		return
 	}
-	refs := decodeSecretRefs(target.SecretRefs)
-	refs, response, ok := h.applyRuntimeSecretMutation(ctx, user, input, refs, "deployment_target:"+target.ID+":runtime")
-	if !ok {
+	mutationInput, ok := runtimeSecretMutationInputFromRequest(ctx, input)
+	if !ok || !validateRuntimeSecretMutation(ctx, &mutationInput) {
 		return
 	}
-	encoded := encodeStringMap(refs)
-	if err := h.dbWithContext(ctx.Request.Context()).Model(&model.DeploymentTarget{}).
-		Where("id = ? and project_id = ? and application_id = ?", target.ID, project.ID, app.ID).
-		Update("secret_refs", encoded).Error; err != nil {
-		writeErrorCode(ctx, http.StatusInternalServerError, "deployment.secret_store_unavailable", "密钥保存失败")
+	prepared, err := prepareRuntimeSecretMutation(mutationInput)
+	if err != nil {
+		writeRuntimeSecretMutationError(ctx, "deployment_target", err)
 		return
 	}
-	h.auditWithContext(user.ID, "deployment_target.runtime_secrets.update", target.ID, true, "runtime secret state updated", ctx.Request.Context())
+	response, err := h.mutateRuntimeSecrets(ctx.Request.Context(), user, prepared, deploymentTargetRuntimeSecretMutationOwner(target.ID, project.ID, app.ID))
+	if err != nil {
+		writeRuntimeSecretMutationError(ctx, "deployment_target", err)
+		return
+	}
 	ctx.JSON(http.StatusOK, response)
 }
 
-var runtimeSecretURLCredentials = regexp.MustCompile(`(?i)[a-z][a-z0-9+.-]*://[^\s/@:]+:[^\s/@]+@`)
-
-func validateDeploymentTargetPublicEnvVars(ctx *gin.Context, values map[string]string) bool {
-	for key, value := range values {
-		if secretLikeEnvironmentKey(key) || runtimeSecretURLCredentials.MatchString(strings.TrimSpace(value)) {
-			writeErrorCode(ctx, http.StatusBadRequest, "deployment.secret_must_use_secure_input", "敏感运行时配置必须通过安全密钥表单提交")
-			return false
-		}
+func deploymentTargetRuntimeSecretMutationOwner(targetID, projectID, applicationID string) runtimeSecretMutationOwner {
+	return runtimeSecretMutationOwner{
+		ResourceID:     targetID,
+		ResourcePrefix: "deployment_target:" + targetID + ":runtime",
+		AuditAction:    "deployment_target.runtime_secrets.update",
+		LoadRefs: func(tx *gorm.DB) (string, error) {
+			var current model.DeploymentTarget
+			err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Select("id", "secret_refs").
+				First(&current, "id = ? and project_id = ? and application_id = ? and delete_status in ?", targetID, projectID, applicationID, []string{"", "active", "delete_failed"}).Error
+			return current.SecretRefs, err
+		},
+		LoadPublic: func(tx *gorm.DB) (string, error) {
+			var current model.DeploymentTarget
+			err := tx.Select("env_vars").First(&current, "id = ? and project_id = ? and application_id = ?", targetID, projectID, applicationID).Error
+			return current.EnvVars, err
+		},
+		SaveRefs: func(tx *gorm.DB, encoded string) error {
+			return tx.Model(&model.DeploymentTarget{}).
+				Where("id = ? and project_id = ? and application_id = ?", targetID, projectID, applicationID).
+				Update("secret_refs", encoded).Error
+		},
+		EncodeRefs: encodeStringMap,
 	}
-	return true
-}
-
-func secretLikeEnvironmentKey(key string) bool {
-	upper := strings.ToUpper(strings.TrimSpace(key))
-	for _, marker := range []string{"SECRET", "PASSWORD", "TOKEN", "API_KEY", "PRIVATE_KEY", "CLIENT_SECRET", "ACCESS_KEY", "REFRESH_TOKEN", "KUBECONFIG", "CREDENTIAL"} {
-		if strings.Contains(upper, marker) {
-			return true
-		}
-	}
-	return false
 }

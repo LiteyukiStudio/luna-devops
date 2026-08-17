@@ -51,6 +51,10 @@ create table if not exists ai.runs (
   error_code text,
   model_id text,
   model_name text,
+  max_context_tokens bigint,
+  max_output_tokens bigint,
+  total_token_budget bigint,
+  total_credit_budget numeric(24,8),
   input_credits_per_million numeric(24,8),
   output_credits_per_million numeric(24,8),
   cached_input_credits_per_million numeric(24,8),
@@ -66,10 +70,41 @@ create index if not exists runs_queue on ai.runs(status, lease_expires_at) where
 alter table ai.turns add column if not exists model_id text;
 alter table ai.runs add column if not exists model_id text;
 alter table ai.runs add column if not exists model_name text;
+alter table ai.runs add column if not exists max_context_tokens bigint;
+alter table ai.runs add column if not exists max_output_tokens bigint;
+alter table ai.runs add column if not exists total_token_budget bigint;
+alter table ai.runs add column if not exists total_credit_budget numeric(24,8);
 alter table ai.runs add column if not exists input_credits_per_million numeric(24,8);
 alter table ai.runs add column if not exists output_credits_per_million numeric(24,8);
 alter table ai.runs add column if not exists cached_input_credits_per_million numeric(24,8);
 alter table ai.runs add column if not exists cached_output_credits_per_million numeric(24,8);
+
+create table if not exists ai.model_budget_reservations (
+  id text primary key,
+  run_id text not null references ai.runs(id) on delete cascade,
+  owner_user_id text not null,
+  operation text not null check (operation in ('assistant', 'summary', 'title', 'next_steps')),
+  state text not null check (state in ('reserved', 'confirmed', 'released', 'settled')),
+  model_id text not null,
+  model_name text not null,
+  input_credits_per_million numeric(24,8) not null,
+  output_credits_per_million numeric(24,8) not null,
+  cached_input_credits_per_million numeric(24,8) not null,
+  cached_output_credits_per_million numeric(24,8) not null,
+  reserved_tokens bigint not null,
+  reserved_input_tokens bigint not null,
+  reserved_output_tokens bigint not null,
+  confirmed_tokens bigint,
+  reserved_credits numeric(24,8) not null,
+  confirmed_credits numeric(24,8),
+  input_tokens bigint,
+  output_tokens bigint,
+  cached_input_tokens bigint,
+  cached_output_tokens bigint,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  expires_at timestamptz not null
+);
 
 create table if not exists ai.items (
   id text primary key,

@@ -16,32 +16,40 @@ import (
 )
 
 func bindDeploymentBundleJSON(ctx *gin.Context, destination *deploymentTargetBundleImportRequest) bool {
+	return bindDeploymentBundlePayload(ctx, destination)
+}
+
+func bindDeploymentBundleCandidateJSON(ctx *gin.Context, destination *deploymentBundleReferenceCandidatesRequest) bool {
+	return bindDeploymentBundlePayload(ctx, destination)
+}
+
+func bindDeploymentBundlePayload(ctx *gin.Context, destination any) bool {
 	ctx.Request.Body = http.MaxBytesReader(ctx.Writer, ctx.Request.Body, deploymentBundleMaxBytes)
 	payload, err := io.ReadAll(ctx.Request.Body)
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "request body too large") {
-			writeErrorCode(ctx, http.StatusRequestEntityTooLarge, "deployment_bundle.too_large", "deployment bundle exceeds the 1 MiB limit")
+			writeDeploymentBundleCode(ctx, "deployment_bundle.too_large")
 		} else {
-			writeErrorCode(ctx, http.StatusBadRequest, "deployment_bundle.invalid_json", "deployment bundle JSON could not be read")
+			writeDeploymentBundleCode(ctx, "deployment_bundle.invalid_json")
 		}
 		return false
 	}
 	if !utf8.Valid(payload) {
-		writeErrorCode(ctx, http.StatusBadRequest, "deployment_bundle.invalid_json", "deployment bundle must be UTF-8 JSON")
+		writeDeploymentBundleCode(ctx, "deployment_bundle.invalid_json")
 		return false
 	}
 	if err := validateDeploymentBundleJSON(payload); err != nil {
-		writeErrorCode(ctx, http.StatusBadRequest, "deployment_bundle.invalid_json", err.Error())
+		writeDeploymentBundleCode(ctx, "deployment_bundle.invalid_json")
 		return false
 	}
 	decoder := json.NewDecoder(bytes.NewReader(payload))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(destination); err != nil {
-		writeErrorCode(ctx, http.StatusBadRequest, "deployment_bundle.invalid_json", "deployment bundle contains an unknown or invalid field")
+		writeDeploymentBundleCode(ctx, "deployment_bundle.invalid_json")
 		return false
 	}
 	if err := ensureJSONEOF(decoder); err != nil {
-		writeErrorCode(ctx, http.StatusBadRequest, "deployment_bundle.invalid_json", "deployment bundle must contain exactly one JSON value")
+		writeDeploymentBundleCode(ctx, "deployment_bundle.invalid_json")
 		return false
 	}
 	return true

@@ -15,6 +15,7 @@ import { buildRunImageRef, latestDeployableBuildRuns } from '@/components/common
 import { useBillingDisplay } from '@/lib/billing-display'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { WORKFLOW_STATUS_REFETCH_INTERVAL_MS } from '@/lib/polling'
+import { publicRuntimeEnvironmentInputs, publicRuntimeEnvironmentRecord, runtimeSecretKeys } from '@/lib/runtime-environment'
 import { defaultBuildCpuRequest, defaultBuildMemoryRequest, defaultBuildTimeoutSeconds } from './application-build-defaults'
 import { deploymentReleaseKey, deploymentTargetCanRelease, registryInputPrefix } from './application-config-utils'
 import { DeferredCreateReleaseDialog, DeferredDeploymentBundleImportDialog, DeferredDeploymentTargetDialog, DeferredReleaseLogsDialog, DeferredRepositoryBindingDialog, DeferredRuntimeConfigSetDialog, DeferredWebConsoleDialog } from './application-deployment-dialogs'
@@ -377,11 +378,11 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
     ? t('deploymentsPage.progressiveDataEnabledSummary', { count: targetDataVolumes.length })
     : t('deploymentsPage.progressiveDataDisabledSummary')
   const targetHasAdvancedConfig = Boolean(
-    Object.keys(watchedTargetValues.envVars ?? {}).length > 0
+    watchedTargetValues.environmentVariables.length > 0
     || Object.keys(watchedTargetValues.configRefs ?? {}).length > 0
     || String(watchedTargetValues.configFiles ?? '').trim()
     || String(watchedTargetValues.secretFiles ?? '').trim()
-    || editingTarget?.secretRefsSet
+    || runtimeSecretKeys(editingTarget?.environmentVariables).length > 0
     || editingTarget?.secretFilesSet,
   )
   const targetConfigSummary = t('deploymentsPage.progressiveConfigSummary', {
@@ -437,7 +438,7 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
       ? {
           configFiles: set.configFiles,
           enabled: set.enabled,
-          envVars: set.envVars,
+          environmentVariables: publicRuntimeEnvironmentInputs(publicRuntimeEnvironmentRecord(set.environmentVariables)),
           name: set.name,
           secretFiles: '',
         }

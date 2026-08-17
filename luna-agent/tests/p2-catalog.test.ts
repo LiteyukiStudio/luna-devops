@@ -27,15 +27,17 @@ describe("platform tool catalog", () => {
     const catalog = ToolCatalog.load(platformOperations)
     const operation = catalog.get("updateDeploymentTargetRuntimeSecrets")
     const body = operation.inputSchema.properties.body as Record<string, unknown>
-    const values = (body.properties as Record<string, unknown>).values
+    const bodyProperties = body.properties as Record<string, unknown>
+    const items = bodyProperties.items as { items: { properties: Record<string, unknown> } }
+    const value = items.items.properties.value
 
     expect(operation).toMatchObject({
       risk: "sensitive",
       approval: "always",
       stepUpPurpose: "secret_update",
-      sensitivePaths: ["body.values"],
+      sensitivePaths: ["body.items.*.value"],
     })
-    expect(values).toMatchObject({ writeOnly: true, "x-luna-sensitive": true })
+    expect(value).toMatchObject({ writeOnly: true, "x-luna-sensitive": true })
     expect(catalog.modelTools().map(tool => tool.operationId)).not.toContain("generateSecret")
     expect(catalog.modelTools().find(tool => tool.operationId === operation.operationId)?.description)
       .toContain("安全表单")

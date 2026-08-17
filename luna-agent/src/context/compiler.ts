@@ -49,6 +49,8 @@ export type CompileContextInput = {
   tools: ModelToolDefinition[]
   signal?: AbortSignal
   model?: AIModelSnapshot
+  budget?: { runId: string, ownerUserId: string }
+  maxOutputTokens?: number
 }
 
 export type CompiledContext = {
@@ -102,7 +104,11 @@ export class ContextCompiler {
       let summary: ConversationSummary | undefined
       let authoritativeHistory = input.history
       let historyHasGap = false
-      const inputTokenBudget = this.options.inputTokenBudget
+      const modelContextBudget = input.model
+        ? input.model.maxContextTokens - Math.min(input.maxOutputTokens ?? this.options.summaryMaxOutputTokens, input.model.maxOutputTokens)
+        : this.options.inputTokenBudget
+      const inputTokenBudget = Math.min(this.options.inputTokenBudget, modelContextBudget)
+      if (inputTokenBudget < 1) throw new Error("ai.model_context_insufficient")
       const baseTokens = estimateModelTokens([input.systemMessage, input.currentUserMessage]) + estimateTokens(JSON.stringify(input.tools))
       if (baseTokens >= inputTokenBudget) throw new Error("ai.context_base_budget_exhausted")
       // 为结构化摘要和缺口说明保留空间，避免本轮工具结果恰好吃满预算后，
@@ -147,7 +153,7 @@ export class ContextCompiler {
             forceForBacklog || forceForRetention || authoritativeHistory.length > this.options.maxUncompressedTurnCount,
           )
           if (candidates.length > 0) {
-            summary = await this.summarizeBatches(input.conversationId, summary, candidates, input.signal, input.model)
+            summary = await this.summarizeBatches(input.conversationId, summary, candidates, input.budget, input.signal, input.model)
             authoritativeHistory = authoritativeHistory.filter(entry => entry.turnIndex > summary!.coveredThroughTurnIndex)
             historyHasGap = hasHistoryGap(summary.coveredThroughTurnIndex, authoritativeHistory, input.beforeTurnIndex)
             outcome = historyHasGap ? "catching_up" : "compressed"
@@ -233,6 +239,7 @@ export class ContextCompiler {
     conversationId: string,
     previous: ConversationSummary | undefined,
     entries: ConversationHistoryEntry[],
+    budget: { runId: string, ownerUserId: string } | undefined,
     signal?: AbortSignal,
     model?: AIModelSnapshot,
   ): Promise<ConversationSummary> {
@@ -244,7 +251,7 @@ export class ContextCompiler {
         summary,
         this.options.summaryInputTokenBudget,
       )
-      summary = await this.summarize(conversationId, summary, batch, signal, model)
+      summary = await this.summarize(conversationId, summary, batch, budget, signal, model)
       remaining = remaining.slice(batch.length)
     }
     if (!summary) throw new Error("ai.context_summary_empty")
@@ -255,6 +262,7 @@ export class ContextCompiler {
     conversationId: string,
     previous: ConversationSummary | undefined,
     entries: ConversationHistoryEntry[],
+    budget: { runId: string, ownerUserId: string } | undefined,
     signal?: AbortSignal,
     model?: AIModelSnapshot,
   ): Promise<ConversationSummary> {
@@ -273,6 +281,7 @@ confirmedResources 的每项只包含 type、可选 name、可选 id。所有其
         },
       ],
       maxOutputTokens: this.options.summaryMaxOutputTokens,
+      ...(budget ? { budget: { ...budget, operation: "summary" as const } } : {}),
       ...(signal ? { signal } : {}),
       ...(model ? { modelId: model.id, modelName: model.name, modelPricing: model } : {}),
     })

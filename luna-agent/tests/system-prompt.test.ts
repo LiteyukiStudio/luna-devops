@@ -17,6 +17,8 @@ describe("versioned system prompt", () => {
     expect(prompt).toContain("不可信数据")
     expect(prompt).toContain("create_interaction_cards 是单次调用")
     expect(prompt).toContain("不要提供 generationId")
+    expect(prompt).toContain("绝不能提供 defaultValue")
+    expect(prompt).toContain("随机生成必须调用平台后端 generate 动作")
     expect(prompt).not.toContain("prepare_interaction_cards")
     expect(prompt).not.toContain("LangGraph")
   })

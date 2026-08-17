@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"path"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/tasks"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 func (h *Handlers) ListProjectRuntimeConfigSets(ctx *gin.Context) {
@@ -102,7 +104,21 @@ func (h *Handlers) UpdateProjectRuntimeConfigSet(ctx *gin.Context) {
 	existing.ConfigFiles = next.ConfigFiles
 	existing.SecretFiles = next.SecretFiles
 	existing.Enabled = next.Enabled
-	if err := h.dbFor(ctx).Save(&existing).Error; err != nil {
+	if err := h.dbFor(ctx).Transaction(func(tx *gorm.DB) error {
+		var current model.ProjectRuntimeConfigSet
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "secret_refs").First(&current, "id = ? and project_id = ?", existing.ID, project.ID).Error; err != nil {
+			return err
+		}
+		existing.SecretRefs = current.SecretRefs
+		if publicEnvironmentConflictsWithSecretRefs(existing.EnvVars, existing.SecretRefs) {
+			return errRuntimeEnvironmentValueModeConflict
+		}
+		return tx.Save(&existing).Error
+	}); err != nil {
+		if errors.Is(err, errRuntimeEnvironmentValueModeConflict) {
+			writeErrorCode(ctx, http.StatusConflict, "deployment.runtime_environment_value_mode_conflict", "同一运行时环境变量不能同时使用普通值和密钥值")
+			return
+		}
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -151,10 +167,11 @@ func (h *Handlers) projectRuntimeConfigSetFromInput(ctx *gin.Context, user model
 		writeError(ctx, http.StatusBadRequest, "请输入运行配置集名称")
 		return model.ProjectRuntimeConfigSet{}, false
 	}
-	if !validateDeploymentTargetPublicEnvVars(ctx, input.EnvVars) {
+	publicEnvironment, ok := normalizePublicEnvironmentVariables(ctx, input.EnvironmentVariables)
+	if !ok {
 		return model.ProjectRuntimeConfigSet{}, false
 	}
-	envVars, err := runtimeconfig.EncodeKeyValue(input.EnvVars)
+	envVars, err := runtimeconfig.EncodeKeyValue(publicEnvironment)
 	if err != nil {
 		writeErrorCode(ctx, http.StatusBadRequest, "deployment.runtime_config_invalid", "运行时环境变量格式无效")
 		return model.ProjectRuntimeConfigSet{}, false
@@ -189,12 +206,12 @@ func normalizeRuntimeConfigFilesInput(ctx *gin.Context, value string) (string, b
 		return "", true
 	}
 	if !strings.HasPrefix(normalized, "[") {
-		writeError(ctx, http.StatusBadRequest, "配置文件必须使用文件数组格式")
+		writeErrorCode(ctx, http.StatusBadRequest, "deployment.runtime_config_files_invalid", "runtime configuration files are invalid")
 		return "", false
 	}
 	var raw []runtimeConfigFileInput
 	if err := json.Unmarshal([]byte(normalized), &raw); err != nil {
-		writeError(ctx, http.StatusBadRequest, "配置文件格式无效")
+		writeErrorCode(ctx, http.StatusBadRequest, "deployment.runtime_config_files_invalid", "runtime configuration files are invalid")
 		return "", false
 	}
 	seenPaths := map[string]bool{}
@@ -204,7 +221,7 @@ func normalizeRuntimeConfigFilesInput(ctx *gin.Context, value string) (string, b
 			return "", false
 		}
 		if seenPaths[filePath] {
-			writeError(ctx, http.StatusBadRequest, "配置文件路径不能重复")
+			writeErrorCode(ctx, http.StatusBadRequest, "deployment.runtime_config_files_invalid", "runtime configuration files are invalid")
 			return "", false
 		}
 		seenPaths[filePath] = true
@@ -215,12 +232,12 @@ func normalizeRuntimeConfigFilesInput(ctx *gin.Context, value string) (string, b
 func normalizeRuntimeConfigFilePathInput(ctx *gin.Context, value string) (string, bool) {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" || !strings.HasPrefix(trimmed, "/") {
-		writeError(ctx, http.StatusBadRequest, "配置文件路径必须使用绝对路径")
+		writeErrorCode(ctx, http.StatusBadRequest, "deployment.runtime_config_path_invalid", "runtime configuration path is invalid")
 		return "", false
 	}
 	cleaned := path.Clean(trimmed)
 	if cleaned == "/" {
-		writeError(ctx, http.StatusBadRequest, "配置文件路径不能是根目录")
+		writeErrorCode(ctx, http.StatusBadRequest, "deployment.runtime_config_path_invalid", "runtime configuration path is invalid")
 		return "", false
 	}
 	return cleaned, true
@@ -296,28 +313,26 @@ type runtimeConfigFileInput struct {
 }
 
 type projectRuntimeConfigSetInput struct {
-	Name        string            `json:"name" binding:"required"`
-	EnvVars     map[string]string `json:"envVars"`
-	ConfigFiles string            `json:"configFiles"`
-	SecretFiles string            `json:"secretFiles"`
-	Enabled     bool              `json:"enabled"`
+	Name                 string                            `json:"name" binding:"required"`
+	EnvironmentVariables []runtimeEnvironmentVariableInput `json:"environmentVariables"`
+	ConfigFiles          string                            `json:"configFiles"`
+	SecretFiles          string                            `json:"secretFiles"`
+	Enabled              bool                              `json:"enabled"`
 }
 
 type projectRuntimeConfigSetResponse struct {
-	ID                            string            `json:"id"`
-	ProjectID                     string            `json:"projectId"`
-	Name                          string            `json:"name"`
-	EnvVars                       map[string]string `json:"envVars"`
-	ConfigFiles                   string            `json:"configFiles"`
-	SecretKeys                    []string          `json:"secretKeys"`
-	SecretRefsSet                 bool              `json:"secretRefsSet"`
-	SecretFilesSet                bool              `json:"secretFilesSet"`
-	Enabled                       bool              `json:"enabled"`
-	DeleteStatus                  string            `json:"deleteStatus"`
-	DeleteMessage                 string            `json:"deleteMessage"`
-	CreatedBy                     string            `json:"createdBy"`
-	CreatedAt                     time.Time         `json:"createdAt"`
-	AffectedDeploymentTargetCount int               `json:"affectedDeploymentTargetCount,omitempty"`
+	ID                            string                               `json:"id"`
+	ProjectID                     string                               `json:"projectId"`
+	Name                          string                               `json:"name"`
+	EnvironmentVariables          []runtimeEnvironmentVariableResponse `json:"environmentVariables"`
+	ConfigFiles                   string                               `json:"configFiles"`
+	SecretFilesSet                bool                                 `json:"secretFilesSet"`
+	Enabled                       bool                                 `json:"enabled"`
+	DeleteStatus                  string                               `json:"deleteStatus"`
+	DeleteMessage                 string                               `json:"deleteMessage"`
+	CreatedBy                     string                               `json:"createdBy"`
+	CreatedAt                     time.Time                            `json:"createdAt"`
+	AffectedDeploymentTargetCount int                                  `json:"affectedDeploymentTargetCount,omitempty"`
 }
 
 func projectRuntimeConfigSetResponses(sets []model.ProjectRuntimeConfigSet) []projectRuntimeConfigSetResponse {
@@ -330,19 +345,17 @@ func projectRuntimeConfigSetResponses(sets []model.ProjectRuntimeConfigSet) []pr
 
 func projectRuntimeConfigSetResponseFor(set model.ProjectRuntimeConfigSet) projectRuntimeConfigSetResponse {
 	return projectRuntimeConfigSetResponse{
-		ID:             set.ID,
-		ProjectID:      set.ProjectID,
-		Name:           set.Name,
-		EnvVars:        runtimeConfigMap(set.EnvVars),
-		ConfigFiles:    set.ConfigFiles,
-		SecretKeys:     runtimeSecretKeys(set.SecretRefs),
-		SecretRefsSet:  len(runtimeSecretKeys(set.SecretRefs)) > 0,
-		SecretFilesSet: strings.TrimSpace(set.SecretFiles) != "" && strings.TrimSpace(set.SecretFiles) != "{}",
-		Enabled:        set.Enabled,
-		DeleteStatus:   set.DeleteStatus,
-		DeleteMessage:  set.DeleteMessage,
-		CreatedBy:      set.CreatedBy,
-		CreatedAt:      set.CreatedAt,
+		ID:                   set.ID,
+		ProjectID:            set.ProjectID,
+		Name:                 set.Name,
+		EnvironmentVariables: runtimeEnvironmentVariables(set.EnvVars, set.SecretRefs),
+		ConfigFiles:          set.ConfigFiles,
+		SecretFilesSet:       strings.TrimSpace(set.SecretFiles) != "" && strings.TrimSpace(set.SecretFiles) != "{}",
+		Enabled:              set.Enabled,
+		DeleteStatus:         set.DeleteStatus,
+		DeleteMessage:        set.DeleteMessage,
+		CreatedBy:            set.CreatedBy,
+		CreatedAt:            set.CreatedAt,
 	}
 }
 

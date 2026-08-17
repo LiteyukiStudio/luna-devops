@@ -27,7 +27,7 @@ describe("OpenAICompatibleProvider streaming", () => {
 
     expect(events).toEqual([
       { type: "reasoning_summary_delta", delta: "分析中" },
-      { type: "completed", usage: { inputTokens: 0, outputTokens: 0 } },
+      { type: "completed", usage: { inputTokens: 0, outputTokens: 0, reported: false } },
     ])
   })
 
@@ -81,7 +81,7 @@ describe("OpenAICompatibleProvider streaming", () => {
       { type: "message_delta", delta: "正在" },
       { type: "message_delta", delta: "诊断" },
       { type: "tool_call_delta" },
-      { type: "completed", usage: { inputTokens: 12, outputTokens: 8 }, toolCalls: [{ operationId: "getBuild", arguments: { id: "build_a" } }] },
+      { type: "completed", usage: { inputTokens: 12, outputTokens: 8, reported: true }, toolCalls: [{ operationId: "getBuild", arguments: { id: "build_a" } }] },
     ])
     const requestBody = fetchMock.mock.calls[0]?.[1]?.body
     expect(JSON.parse(typeof requestBody === "string" ? requestBody : "{}")).toMatchObject({

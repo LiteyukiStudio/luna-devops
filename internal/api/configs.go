@@ -159,6 +159,20 @@ var configDefinitions = []configDefinition{
 		Default:     "256",
 	},
 	{
+		Key:         "ai.run.max_total_tokens",
+		Label:       "Run 累计 Token 预算",
+		Description: "同一 Run 内主回答、工具循环、摘要、标题与恢复调用共享的累计 Token 上限，范围 16384–16000000，默认 2000000。",
+		Type:        "number",
+		Default:     "2000000",
+	},
+	{
+		Key:         "ai.run.max_credits",
+		Label:       "Run 累计费用预算",
+		Description: "同一 Run 允许消耗的最大 Credits，使用十进制定点语义，范围 0.00000001–100000000，默认 10000。实际调用仍受个人钱包可用余额限制。",
+		Type:        "string",
+		Default:     "10000",
+	},
+	{
 		Key:         "ai.run.max_input_k_bytes",
 		Label:       "用户输入大小上限（KB）",
 		Description: "单轮用户输入允许的最大字节数，范围 8–8192K，默认 1024K。",

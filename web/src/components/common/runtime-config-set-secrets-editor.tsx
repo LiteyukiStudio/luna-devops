@@ -1,5 +1,5 @@
-import type { ProjectRuntimeConfigSet } from '@/api'
-import { useMutation } from '@tanstack/react-query'
+import type { DeploymentTargetRuntimeSecretsPayload, ProjectRuntimeConfigSet } from '@/api'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { KeyRound, RefreshCw, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -8,14 +8,16 @@ import { api } from '@/api'
 import { FormField as Field } from '@/components/common/form-field'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { runtimeSecretKeys } from '@/lib/runtime-environment'
 
 export function RuntimeConfigSetSecretsEditor({ projectId, set }: { projectId: string, set: ProjectRuntimeConfigSet | null }) {
   const { t } = useTranslation()
+  const queryClient = useQueryClient()
   const [key, setKey] = useState('')
   const [value, setValue] = useState('')
-  const keys = set?.secretKeys ?? []
+  const keys = runtimeSecretKeys(set?.environmentVariables)
   const update = useMutation({
-    mutationFn: (payload: { values?: Record<string, string>, generate?: Record<string, { length: number, encoding: 'base64' }>, clear?: string[] }) => {
+    mutationFn: (payload: DeploymentTargetRuntimeSecretsPayload) => {
       if (!set)
         throw new Error(t('runtimeConfigSets.saveBeforeSecrets'))
       return api.updateProjectRuntimeConfigSetRuntimeSecrets(projectId, set.id, payload)
@@ -23,6 +25,7 @@ export function RuntimeConfigSetSecretsEditor({ projectId, set }: { projectId: s
     onSuccess: () => {
       setKey('')
       setValue('')
+      void queryClient.invalidateQueries({ queryKey: ['runtime-config-sets', projectId] })
       toast.success(t('runtimeConfigSets.secretsUpdated'))
     },
     onError: error => toast.error(error instanceof Error ? error.message : t('runtimeConfigSets.secretsUpdateFailed')),
@@ -48,37 +51,34 @@ export function RuntimeConfigSetSecretsEditor({ projectId, set }: { projectId: s
             <p className="font-mono text-sm text-muted-foreground">{t('common.secretValueMasked')}</p>
           </div>
           <div className="flex shrink-0 gap-2">
-            <Button disabled={update.isPending} size="sm" type="button" variant="outline" onClick={() => update.mutate({ generate: { [secretKey]: { length: 32, encoding: 'base64' } } })}>
+            <Button disabled={update.isPending} size="sm" type="button" variant="outline" onClick={() => update.mutate({ items: [{ generation: { length: 32, encoding: 'base64' }, key: secretKey, operation: 'generate', valueMode: 'secret' }] })}>
               <RefreshCw className="size-4" />
               {t('deploymentsPage.runtimeSecretGenerate')}
             </Button>
-            <Button aria-label={t('deploymentsPage.runtimeSecretClear', { key: secretKey })} disabled={update.isPending} size="sm" type="button" variant="ghost" onClick={() => update.mutate({ clear: [secretKey] })}>
+            <Button aria-label={t('deploymentsPage.runtimeSecretClear', { key: secretKey })} disabled={update.isPending} size="sm" type="button" variant="ghost" onClick={() => update.mutate({ items: [{ key: secretKey, operation: 'clear', valueMode: 'secret' }] })}>
               <Trash2 className="size-4" />
               {t('deploymentsPage.runtimeSecretClear')}
             </Button>
           </div>
         </div>
       ))}
-      <form
-        className="grid gap-3 rounded-control bg-background p-3 md:grid-cols-2"
-        onSubmit={(event) => {
-          event.preventDefault()
-          const normalizedKey = key.trim()
-          if (!normalizedKey || !value)
-            return
-          update.mutate({ values: { [normalizedKey]: value } })
-        }}
-      >
+      <div className="grid gap-3 rounded-control bg-background p-3 md:grid-cols-2">
         <Field label={t('deploymentsPage.runtimeSecretNewKey')}>
-          <Input value={key} onChange={event => setKey(event.target.value)} />
+          <Input aria-label={t('deploymentsPage.runtimeSecretNewKey')} value={key} onChange={event => setKey(event.target.value)} />
         </Field>
         <Field label={t('deploymentsPage.runtimeSecretNewValue')}>
-          <Input autoComplete="new-password" type="password" value={value} onChange={event => setValue(event.target.value)} />
+          <Input aria-label={t('deploymentsPage.runtimeSecretNewValue')} autoComplete="new-password" type="password" value={value} onChange={event => setValue(event.target.value)} />
         </Field>
         <div className="md:col-span-2 flex justify-end">
-          <Button disabled={update.isPending || !key.trim() || !value} type="submit">{t('deploymentsPage.runtimeSecretAdd')}</Button>
+          <Button
+            disabled={update.isPending || !key.trim() || !value}
+            type="button"
+            onClick={() => update.mutate({ items: [{ key: key.trim(), operation: 'set', value, valueMode: 'secret' }] })}
+          >
+            {t('deploymentsPage.runtimeSecretAdd')}
+          </Button>
         </div>
-      </form>
+      </div>
     </div>
   )
 }

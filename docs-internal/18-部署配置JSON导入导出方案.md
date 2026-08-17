@@ -118,6 +118,13 @@ POST /api/v1/projects/{projectId}/applications/{applicationId}/deployment-target
 - 导出响应使用 `Cache-Control: no-store`、`X-Content-Type-Options: nosniff` 和安全附件文件名。
 - 生产错误只返回稳定 code、公共 error 和 requestId；开发模式可保留 detail。
 - 导出、预检失败、导入成功/失败写入 AuditLog；审计只记录部署配置 ID、目标应用 ID、稳定错误码和依赖数量，不记录正文或资源密钥。
+- 候选列表使用独立的权限作用域分页接口，支持名称/类型搜索与白名单排序，返回真实 `total`；高频搜索和翻页只保留 Trace，不逐页写入 AuditLog。
+- 显式映射 ID 使用同资源种类、当前用户、目标项目空间和目标应用约束直接查询，不依赖当前候选页。普通成员看到的不存在和不可见结果统一为 `reference_forbidden`，避免将接口用作跨作用域 ID 枚举器。
+- 自动匹配在完整的描述符精确匹配结果中统计兼容候选，最多发现两个兼容项即可确认歧义；不能把不兼容项计入唯一性，也不能依赖首屏或固定 100 条上限。
+- 普通创建、模板安装与部署配置 preview/import 共用公开阶段不变量：仅接受 `dev|test|staging|prod`，`production` 归一为 `prod`。导出保留已有非公开阶段以便迁移，但首次 preview 必须返回 `invalid` 与 `deployment.stage_invalid`；只有显式合法 override 可以恢复，commit 必须重复校验并 fail closed。
+- 部署配置错误通过单一注册表映射稳定 code、HTTP status 和静态安全 message；未知数据库、Secret、序列化或回读错误统一映射为 `deployment_bundle.internal_error`，导出统一为 `deployment_bundle.export_failed`。生产与开发响应都不得拼接依赖诊断、用户键名、路径、映射 ID 或 Secret 元数据。
+- import 事务返回实际创建的 VolumeMount 与 HookBinding（含 ID、phase、runOrder）作为 201 响应来源。事务提交后禁止用可能失败的额外回读把已创建资源伪装成普通失败。
+- AuditLog 保留可追溯资源 ID，但 message 只写稳定 outcome/code；审计落库失败日志的 `resource.type` 必须由 action 的稳定类别推导，不得把资源 ID、bundle digest 或输入写入遥测。
 
 建议稳定错误码：
 
@@ -143,7 +150,11 @@ POST /api/v1/projects/{projectId}/applications/{applicationId}/deployment-target
 2. 调用预检，展示目标名称/阶段、已自动匹配项、缺失/歧义/不兼容项、候选选择器、密钥输入和警告；
 3. 只有所有必需引用已解析、阶段可用且必需密钥已填写时才允许确认。成功后刷新部署配置列表并关闭 Dialog。
 
-界面不让用户手填资源 ID。RepositoryBinding、集群、镜像站、变量集、运行配置集、Hook 和数据卷都使用服务端返回的受控候选。无候选时提供对应管理入口说明；关闭或切换文件要清空旧预检、候选和密钥草稿，避免展示上一文件状态。
+界面不让用户手填资源 ID。RepositoryBinding、集群、镜像站、变量集、运行配置集、Hook 和数据卷都使用服务端返回的受控候选；候选支持搜索、名称/创建时间排序和完整分页。无候选时提供对应管理入口说明；关闭或切换文件要清空旧预检、候选和密钥草稿，避免展示上一文件状态。
+
+读取到非公开阶段时，Web 必须保留原 bundle，表单可以显示安全的公共默认值，但首次 preview 不发送 stage override，使后端如实返回 `deployment.stage_invalid`。只有用户选择阶段或明确重新预检后才发送合法 override；不得在客户端静默修正并绕过首次错误状态。
+
+调用边界为 Web 本地文件选择/覆盖 → API preview/digest → API commit → PostgreSQL 事务副作用与事务返回值。Worker 只在后续构建/发布时消费已经满足公开阶段不变量的 DeploymentTarget，本事项不改变其载荷；Agent 不读取浏览器本地文件且无对应导入工具，因此两者均不参与本导入协议。
 
 ## 7. 端到端与验收
 

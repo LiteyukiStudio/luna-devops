@@ -886,7 +886,30 @@ describe("provider to tool to subsequent model invocation", () => {
     }])
     const store = new MemoryToolCallStore()
     const tools = new ToolOrchestrator(catalog, new DeterministicLunaApiClient(() => ({ status: 200, body: { restarted: true } })), new ProjectingToolCallStore(store, repository), undefined, undefined, async () => "grant")
-    const executor = new RunExecutor(repository, new ModelRuntime(new DeterministicProvider()), loadConfig({ NODE_ENV: "test", INSTANCE_ID: "approval-worker" }), tools)
+    const requests: ModelRequest[] = []
+    let modelStep = 0
+    const provider: ModelProvider = {
+      async *stream(request) {
+        requests.push(request)
+        if (modelStep++ === 0) {
+          yield {
+            type: "completed",
+            usage: { inputTokens: 10, outputTokens: 5 },
+            toolCalls: [{ operationId: "restartRelease", arguments: { releaseId: "rel_a" } }],
+          }
+          return
+        }
+        yield { type: "message_delta", delta: "已重启。" }
+        yield { type: "completed", usage: { inputTokens: 12, outputTokens: 4 } }
+      },
+      async complete(request) {
+        requests.push(request)
+        return { text: "完成", usage: { inputTokens: 3, outputTokens: 2 } }
+      },
+      capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
+      health: async () => ({ ok: true }),
+    }
+    const executor = new RunExecutor(repository, new ModelRuntime(provider), loadConfig({ NODE_ENV: "test", INSTANCE_ID: "approval-worker" }), tools)
     await executor.runOnce()
     expect((await repository.getRun("usr_a", created.run.id))?.status).toBe("waiting_approval")
     const pending = [...store.records.values()][0]!
@@ -897,6 +920,8 @@ describe("provider to tool to subsequent model invocation", () => {
     await repository.updateRun(created.run.id, "waiting_mfa", "queued")
     await executor.runOnce()
     expect((await repository.getRun("usr_a", created.run.id))?.status).toBe("completed")
+    expect(requests.length).toBeGreaterThanOrEqual(2)
+    expect(requests.every(request => request.budget?.runId === created.run.id && request.budget.ownerUserId === "usr_a")).toBe(true)
   })
 
   it("moves missing arguments to waiting_input and resumes with supplied input", async () => {
@@ -935,8 +960,8 @@ describe("provider to tool to subsequent model invocation", () => {
         properties: {
           body: {
             type: "object",
-            properties: { values: { type: "object", writeOnly: true, "x-luna-sensitive": true, additionalProperties: { type: "string" } } },
-            required: [], additionalProperties: false,
+            properties: { items: { type: "array", items: { type: "object", properties: { value: { type: "string", writeOnly: true, "x-luna-sensitive": true } } } } },
+            required: ["items"], additionalProperties: false,
           },
         },
         required: ["body"], additionalProperties: false,
@@ -952,7 +977,15 @@ describe("provider to tool to subsequent model invocation", () => {
       async *stream(request) {
         requests.push(request)
         if (modelStep++ === 0) {
-          yield { type: "completed", usage: { inputTokens: 5, outputTokens: 2 }, toolCalls: [{ id: "secret", operationId: "updateDeploymentTargetRuntimeSecrets", arguments: { body: { values: { JWT_SECRET: generated } } } }] }
+          yield {
+            type: "completed",
+            usage: { inputTokens: 5, outputTokens: 2 },
+            toolCalls: [{
+              id: "secret",
+              operationId: "updateDeploymentTargetRuntimeSecrets",
+              arguments: { body: { items: [{ key: "JWT_SECRET", valueMode: "secret", operation: "set", value: generated }] } },
+            }],
+          }
           return
         }
         yield { type: "message_delta", delta: "请通过安全表单提交密钥。" }

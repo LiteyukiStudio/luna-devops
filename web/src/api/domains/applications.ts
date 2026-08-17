@@ -1,4 +1,4 @@
-import type { Application, ApplicationDeletionPreview, ApplicationListParams, ApplicationPayload, ApplicationTopology, DeploymentTarget, DeploymentTargetBundle, DeploymentTargetBundleImportRequest, DeploymentTargetBundlePreview, DeploymentTargetBundlePreviewRequest, DeploymentTargetPayload, DeploymentTargetRuntimeSecretsPayload, DeploymentTargetRuntimeSecretsSummary, PaginatedResponse, PaginationParams, RepositoryBinding, RepositoryBindingPayload, RuntimeSecretMutationResponse } from '../types'
+import type { Application, ApplicationDeletionPreview, ApplicationListParams, ApplicationPayload, ApplicationTopology, DeploymentBundleReferenceCandidateListRequest, DeploymentBundleReferenceCandidatePage, DeploymentTarget, DeploymentTargetBundle, DeploymentTargetBundleImportRequest, DeploymentTargetBundlePreview, DeploymentTargetBundlePreviewRequest, DeploymentTargetPayload, DeploymentTargetRuntimeSecretsPayload, DeploymentTargetRuntimeSecretsSummary, PaginatedResponse, PaginationParams, RepositoryBinding, RepositoryBindingPayload, RuntimeSecretMutationResponse } from '../types'
 import { paginationQuery, request } from '../core'
 import { selectionItems, selectionPageParams } from '../selection-page'
 
@@ -39,6 +39,8 @@ export const applicationsApi = {
     request<DeploymentTargetBundle>(`/projects/${projectId}/applications/${applicationId}/deployment-targets/${targetId}/export`),
   previewDeploymentTargetBundleImport: (projectId: string, applicationId: string, payload: DeploymentTargetBundlePreviewRequest) =>
     request<DeploymentTargetBundlePreview>(`/projects/${projectId}/applications/${applicationId}/deployment-target-imports/preview`, { method: 'POST', body: JSON.stringify(payload) }),
+  listDeploymentTargetBundleReferenceCandidates: (projectId: string, applicationId: string, payload: DeploymentBundleReferenceCandidateListRequest, params: PaginationParams) =>
+    request<DeploymentBundleReferenceCandidatePage>(`/projects/${projectId}/applications/${applicationId}/deployment-target-imports/reference-candidates?${paginationQuery(params)}`, { method: 'POST', body: JSON.stringify(payload) }),
   importDeploymentTargetBundle: (projectId: string, applicationId: string, payload: DeploymentTargetBundleImportRequest) =>
     request<DeploymentTarget>(`/projects/${projectId}/applications/${applicationId}/deployment-target-imports`, { method: 'POST', body: JSON.stringify(payload) }),
   restartDeploymentTarget: (projectId: string, applicationId: string, targetId: string) =>

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
-import { initializeTelemetry, internalSpanOptions, isDatabaseSpanCaptureEnabled, isExpectedCancellation, isHealthCheckPath, normalizeTraceContext, recordAvailableTools, sanitizeTelemetryURL, stableErrorCode, telemetryLog, withSpan } from "../src/telemetry.js"
+import { SpanStatusCode, type Span } from "@opentelemetry/api"
+import { initializeTelemetry, internalSpanOptions, isDatabaseSpanCaptureEnabled, isExpectedCancellation, isHealthCheckPath, normalizeTraceContext, recordAvailableTools, recordSpanError, sanitizeTelemetryURL, stableErrorCode, telemetryLog, withSpan } from "../src/telemetry.js"
 
 describe("agent telemetry", () => {
   it("keeps noisy database spans opt-in", () => {
@@ -32,6 +33,15 @@ describe("agent telemetry", () => {
   it("only exposes stable error codes", () => {
     expect(stableErrorCode(new Error("ai.provider_timeout"))).toBe("ai.provider_timeout")
     expect(stableErrorCode(new Error("request contained secret abc"))).toBe("ai.internal_error")
+  })
+
+  it("marks failed spans with a stable code without recording sensitive error text", () => {
+    const setStatus = vi.fn()
+    const setAttribute = vi.fn()
+    recordSpanError({ setStatus, setAttribute } as unknown as Span, new Error("provider leaked secret sk-test-value"))
+    expect(setStatus).toHaveBeenCalledWith({ code: SpanStatusCode.ERROR, message: "ai.internal_error" })
+    expect(setAttribute).toHaveBeenCalledWith("error.code", "ai.internal_error")
+    expect(JSON.stringify([setStatus.mock.calls, setAttribute.mock.calls])).not.toContain("sk-test-value")
   })
 
   it("separates expected cancellation from operational failures", () => {

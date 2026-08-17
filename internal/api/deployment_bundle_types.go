@@ -123,6 +123,20 @@ type deploymentBundleReferenceResolution struct {
 	Code           string                               `json:"code,omitempty"`
 }
 
+type deploymentBundleReferenceCandidatesRequest struct {
+	Reference deploymentBundleReference `json:"reference"`
+}
+
+type deploymentBundleReferenceCandidatePage struct {
+	Items      []deploymentBundleReferenceCandidate `json:"items"`
+	Page       int                                  `json:"page"`
+	PageSize   int                                  `json:"pageSize"`
+	SortBy     string                               `json:"sortBy"`
+	SortOrder  string                               `json:"sortOrder"`
+	Total      int64                                `json:"total"`
+	TotalPages int                                  `json:"totalPages"`
+}
+
 type deploymentBundleReferenceCandidate struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
@@ -145,11 +159,22 @@ type deploymentBundleSecretValue struct {
 type deploymentBundleError struct {
 	Code    string
 	Message string
+	Cause   error
 }
 
 func (err *deploymentBundleError) Error() string {
 	if err == nil {
-		return ""
+		return "deployment bundle operation failed"
 	}
-	return err.Message
+	if spec, ok := deploymentBundleErrorSpecFor(err.Code); ok {
+		return spec.Message
+	}
+	return deploymentBundleErrorCatalog["deployment_bundle.internal_error"].Message
+}
+
+func (err *deploymentBundleError) Unwrap() error {
+	if err == nil {
+		return nil
+	}
+	return err.Cause
 }

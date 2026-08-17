@@ -12,6 +12,7 @@ import (
 )
 
 var errDeploymentStageExists = errors.New("deployment stage already exists")
+var errRuntimeEnvironmentValueModeConflict = errors.New("runtime environment value mode conflict")
 
 func (h *Handlers) createDeploymentTarget(target model.DeploymentTarget, dataVolumes []deploymentTargetDataVolumeInput, hookInputs []deploymentTargetHookBindingInput, buildEnvironment *model.BuildEnvironmentConfig, ctx context.Context) (deploymentVolumeMountChanges, error) {
 	return h.persistDeploymentTarget(target, dataVolumes, hookInputs, buildEnvironment, nil, true, ctx)
@@ -36,16 +37,27 @@ func (h *Handlers) persistDeploymentTarget(target model.DeploymentTarget, dataVo
 			if result.RowsAffected == 0 {
 				return errDeploymentStageExists
 			}
-		} else if err := tx.Save(&target).Error; err != nil {
-			return err
+		} else {
+			var current model.DeploymentTarget
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "secret_refs").First(&current, "id = ?", target.ID).Error; err != nil {
+				return err
+			}
+			target.SecretRefs = current.SecretRefs
+			if publicEnvironmentConflictsWithSecretRefs(target.EnvVars, target.SecretRefs) {
+				return errRuntimeEnvironmentValueModeConflict
+			}
+			if err := tx.Save(&target).Error; err != nil {
+				return err
+			}
 		}
 		var syncErr error
 		changes, syncErr = syncDeploymentTargetVolumeMounts(ctx, tx, target, dataVolumes)
 		if syncErr != nil {
 			return syncErr
 		}
-		if err := h.replaceDeploymentTargetHookBindings(tx, target, hookInputs); err != nil {
-			return err
+		changes.HookBindings, syncErr = h.replaceDeploymentTargetHookBindings(tx, target, hookInputs)
+		if syncErr != nil {
+			return syncErr
 		}
 		if buildEnvironment != nil {
 			if err := tx.Save(buildEnvironment).Error; err != nil {
@@ -97,12 +109,12 @@ func (h *Handlers) deploymentTargetWithHookBindings(target model.DeploymentTarge
 	return targets[0], nil
 }
 
-func (h *Handlers) replaceDeploymentTargetHookBindings(tx *gorm.DB, target model.DeploymentTarget, inputs []deploymentTargetHookBindingInput) error {
+func (h *Handlers) replaceDeploymentTargetHookBindings(tx *gorm.DB, target model.DeploymentTarget, inputs []deploymentTargetHookBindingInput) ([]model.DeploymentTargetHookBinding, error) {
 	if err := tx.Where("target_id = ?", target.ID).Delete(&model.DeploymentTargetHookBinding{}).Error; err != nil {
-		return err
+		return nil, err
 	}
 	if len(inputs) == 0 {
-		return nil
+		return nil, nil
 	}
 	hookIDs := make([]string, 0, len(inputs))
 	seen := make(map[string]bool, len(inputs))
@@ -120,11 +132,11 @@ func (h *Handlers) replaceDeploymentTargetHookBindings(tx *gorm.DB, target model
 		hookIDs = append(hookIDs, hookID)
 	}
 	if len(hookIDs) == 0 {
-		return nil
+		return nil, nil
 	}
 	var hooks []model.ProjectHookConfig
 	if err := tx.Where("project_id = ? and id in ?", target.ProjectID, hookIDs).Find(&hooks).Error; err != nil {
-		return err
+		return nil, err
 	}
 	validHookIDs := make(map[string]bool, len(hooks))
 	for _, hook := range hooks {
@@ -144,7 +156,7 @@ func (h *Handlers) replaceDeploymentTargetHookBindings(tx *gorm.DB, target model
 		}
 		created[key] = true
 		if !validHookIDs[hookID] {
-			return errors.New("构建钩子不存在")
+			return nil, errors.New("构建钩子不存在")
 		}
 		bindings = append(bindings, model.DeploymentTargetHookBinding{
 			ID:            id.New("dtmhb"),
@@ -156,5 +168,8 @@ func (h *Handlers) replaceDeploymentTargetHookBindings(tx *gorm.DB, target model
 			RunOrder:      index + 1,
 		})
 	}
-	return tx.Create(&bindings).Error
+	if err := tx.Create(&bindings).Error; err != nil {
+		return nil, err
+	}
+	return bindings, nil
 }

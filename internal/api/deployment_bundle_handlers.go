@@ -14,8 +14,8 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/resourceidentifier"
 	"github.com/LiteyukiStudio/devops/internal/secret"
 	"github.com/LiteyukiStudio/devops/internal/telemetry"
-	"github.com/LiteyukiStudio/devops/internal/volume"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 func (h *Handlers) ExportDeploymentTargetBundle(ctx *gin.Context) {
@@ -34,25 +34,31 @@ func (h *Handlers) ExportDeploymentTargetBundle(ctx *gin.Context) {
 	var target model.DeploymentTarget
 	if err := h.dbFor(ctx).First(&target, "id = ? and project_id = ? and application_id = ?", ctx.Param("targetId"), project.ID, app.ID).Error; err != nil {
 		operationErr = err
-		writeErrorCode(ctx, http.StatusNotFound, "deployment_target.not_found", "deployment target not found")
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			writeErrorCode(ctx, http.StatusNotFound, "deployment_target.not_found", "deployment target not found")
+			return
+		}
+		h.auditWithContext(user.ID, "deployment_bundle.export", ctx.Param("targetId"), false, "deployment_bundle.export_failed", ctx.Request.Context())
+		writeDeploymentBundleCode(ctx, "deployment_bundle.export_failed")
 		return
 	}
 	bundle, err := h.buildDeploymentTargetBundle(ctx.Request.Context(), project, app, target)
 	if err != nil {
 		operationErr = err
 		h.auditWithContext(user.ID, "deployment_bundle.export", target.ID, false, "deployment_bundle.export_failed", ctx.Request.Context())
-		writeError(ctx, http.StatusInternalServerError, err.Error())
+		writeDeploymentBundleCode(ctx, "deployment_bundle.export_failed")
 		return
 	}
 	filename := fmt.Sprintf("luna-deployment-%s-%s.json", deploymentBundleFilenamePart(app.Identifier), deploymentBundleFilenamePart(target.Stage))
 	ctx.Header("Cache-Control", "no-store")
 	ctx.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
 	ctx.Header("X-Content-Type-Options", "nosniff")
-	h.auditWithContext(user.ID, "deployment_bundle.export", target.ID, true, deploymentBundleKind, ctx.Request.Context())
+	h.auditWithContext(user.ID, "deployment_bundle.export", target.ID, true, "deployment_bundle.export_succeeded", ctx.Request.Context())
 	ctx.JSON(http.StatusOK, bundle)
 }
 
 func (h *Handlers) PreviewDeploymentTargetBundleImport(ctx *gin.Context) {
+	ctx.Header("Cache-Control", "no-store")
 	user, project, app, request, ok := h.prepareDeploymentTargetBundleImport(ctx, false)
 	if !ok {
 		return
@@ -68,8 +74,66 @@ func (h *Handlers) PreviewDeploymentTargetBundleImport(ctx *gin.Context) {
 		writeDeploymentBundleError(ctx, err)
 		return
 	}
-	h.auditWithContext(user.ID, "deployment_bundle.preview", app.ID, true, plan.Preview.Status, ctx.Request.Context())
+	h.auditWithContext(user.ID, "deployment_bundle.preview", app.ID, true, "deployment_bundle.preview_"+plan.Preview.Status, ctx.Request.Context())
 	ctx.JSON(http.StatusOK, plan.Preview)
+}
+
+func (h *Handlers) ListDeploymentTargetBundleReferenceCandidates(ctx *gin.Context) {
+	ctx.Header("Cache-Control", "no-store")
+	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
+	if !ok {
+		return
+	}
+	if !h.ensureProjectCanMutate(ctx, project) {
+		return
+	}
+	app, ok := h.findApplication(ctx)
+	if !ok {
+		return
+	}
+	if !applicationCanMutate(app) {
+		writeErrorCode(ctx, http.StatusConflict, "application.delete_in_progress", "application deletion is in progress")
+		return
+	}
+	var request deploymentBundleReferenceCandidatesRequest
+	if !bindDeploymentBundleCandidateJSON(ctx, &request) {
+		return
+	}
+	if strings.TrimSpace(request.Reference.Key) == "" || !deploymentBundleReferenceKindAllowed(request.Reference.Kind) {
+		writeDeploymentBundleError(ctx, &deploymentBundleError{Code: "deployment_bundle.invalid_json", Message: "deployment bundle reference is invalid"})
+		return
+	}
+	if order := strings.ToLower(strings.TrimSpace(ctx.Query("sortOrder"))); order != "" && order != "asc" && order != "desc" {
+		writeDeploymentBundleCode(ctx, "deployment_bundle.candidate_query_invalid")
+		return
+	}
+	if sortBy := strings.TrimSpace(ctx.Query("sortBy")); sortBy != "" && sortBy != "name" && sortBy != "createdAt" {
+		writeDeploymentBundleCode(ctx, "deployment_bundle.candidate_query_invalid")
+		return
+	}
+	search := strings.TrimSpace(ctx.Query("search"))
+	if len([]rune(search)) > 120 {
+		writeDeploymentBundleCode(ctx, "deployment_bundle.candidate_query_invalid")
+		return
+	}
+	pagination := paginationFromQueryWithSort(ctx, map[string]string{"name": "name", "createdAt": "created_at"}, "name")
+	if strings.TrimSpace(ctx.Query("sortOrder")) == "" {
+		pagination.SortOrder = "asc"
+	}
+	operationCtx, endOperation := telemetry.StartOperation(ctx.Request.Context(), "deployment", "bundle_reference_candidates")
+	ctx.Request = ctx.Request.WithContext(operationCtx)
+	var operationErr error
+	defer func() { endOperation(operationErr) }()
+	page, _, err := h.deploymentBundleCandidates(ctx.Request.Context(), user, project, app, request.Reference, deploymentBundleCandidateQuery{
+		Pagination: pagination,
+		Search:     search,
+	})
+	if err != nil {
+		operationErr = err
+		writeDeploymentBundleError(ctx, err)
+		return
+	}
+	ctx.JSON(http.StatusOK, page)
 }
 
 func (h *Handlers) ImportDeploymentTargetBundle(ctx *gin.Context) {
@@ -131,7 +195,8 @@ func (h *Handlers) ImportDeploymentTargetBundle(ctx *gin.Context) {
 	for _, volumeInput := range dataVolumes {
 		if runtimeDataPathConflicts(volumeInput.MountPath, target.ConfigFiles, target.SecretFiles) {
 			operationErr = errors.New("deployment bundle runtime path conflict")
-			writeErrorCode(ctx, http.StatusBadRequest, "deployment_bundle.runtime_path_conflict", "deployment data and configuration paths conflict")
+			h.auditWithContext(user.ID, "deployment_bundle.import", app.ID, false, "deployment_bundle.runtime_path_conflict", ctx.Request.Context())
+			writeDeploymentBundleCode(ctx, "deployment_bundle.runtime_path_conflict")
 			return
 		}
 	}
@@ -139,6 +204,7 @@ func (h *Handlers) ImportDeploymentTargetBundle(ctx *gin.Context) {
 	changes, err := h.persistDeploymentTarget(target, dataVolumes, input.BuildHookBindings, buildEnvironment, secretEntries, true, ctx.Request.Context())
 	if errors.Is(err, errDeploymentStageExists) {
 		operationErr = err
+		h.auditWithContext(user.ID, "deployment_bundle.import", app.ID, false, "deployment_bundle.stage_conflict", ctx.Request.Context())
 		writeDeploymentBundleError(ctx, &deploymentBundleError{Code: "deployment_bundle.stage_conflict", Message: "deployment stage already exists in the destination application"})
 		return
 	}
@@ -146,26 +212,19 @@ func (h *Handlers) ImportDeploymentTargetBundle(ctx *gin.Context) {
 		operationErr = err
 		h.auditDeploymentVolumeMountFailure(ctx.Request.Context(), user.ID, changes, err)
 		h.auditWithContext(user.ID, "deployment_bundle.import", app.ID, false, deploymentBundleErrorCode(err), ctx.Request.Context())
-		if volume.ErrorCode(err) != "" {
-			writeVolumeError(ctx, err)
-		} else {
-			writeError(ctx, http.StatusBadRequest, err.Error())
-		}
+		writeDeploymentBundleError(ctx, err)
 		return
 	}
 	for _, entry := range secretEntries {
-		h.auditWithContext(user.ID, "secret.write", entry.ID, true, entry.Resource, ctx.Request.Context())
+		h.auditWithContext(user.ID, "secret.write", entry.ID, true, "deployment_bundle.secret_stored", ctx.Request.Context())
 	}
 	h.auditDeploymentVolumeMountChanges(ctx.Request.Context(), user.ID, target, changes)
-	h.auditWithContext(user.ID, "deployment_bundle.import", target.ID, true, plan.Preview.Digest, ctx.Request.Context())
-	target, _ = h.deploymentTargetWithHookBindings(target, ctx.Request.Context())
-	mountsByTarget, mountsErr := h.deploymentTargetVolumeMountsByTarget(ctx.Request.Context(), []model.DeploymentTarget{target})
-	if mountsErr != nil {
-		operationErr = mountsErr
-		writeError(ctx, http.StatusInternalServerError, mountsErr.Error())
-		return
-	}
-	ctx.JSON(http.StatusCreated, deploymentTargetResponseFromModel(target, mountsByTarget[target.ID]))
+	h.auditWithContext(user.ID, "deployment_bundle.import", target.ID, true, "deployment_bundle.import_succeeded", ctx.Request.Context())
+	// The transaction has committed at this point. Build the response from the
+	// values returned by that transaction instead of performing a fallible read
+	// and misreporting an already-created deployment as a failed import.
+	target.BuildHookBindings = changes.HookBindings
+	ctx.JSON(http.StatusCreated, deploymentTargetResponseFromModel(target, changes.Bound))
 }
 
 func (h *Handlers) prepareDeploymentTargetBundleImport(ctx *gin.Context, commit bool) (model.User, model.Project, model.Application, deploymentTargetBundleImportRequest, bool) {
@@ -215,7 +274,7 @@ func (h *Handlers) materializeDeploymentBundleSecrets(ctx *gin.Context, user mod
 		}
 		cipherRef := secret.Encrypt(item.Value)
 		if cipherRef == "" {
-			writeErrorCode(ctx, http.StatusInternalServerError, "deployment_bundle.secret_encrypt_failed", "deployment secret encryption failed")
+			writeDeploymentBundleCode(ctx, "deployment_bundle.secret_encrypt_failed")
 			return nil, nil, nil, nil, false
 		}
 		entry := model.SecretValue{
@@ -277,36 +336,4 @@ func deploymentBundleFilenamePart(value string) string {
 		return "deployment"
 	}
 	return builder.String()
-}
-
-func deploymentBundleErrorCode(err error) string {
-	var bundleErr *deploymentBundleError
-	if errors.As(err, &bundleErr) && strings.TrimSpace(bundleErr.Code) != "" {
-		return bundleErr.Code
-	}
-	if code := volume.ErrorCode(err); code != "" {
-		return code
-	}
-	return "deployment_bundle.internal_error"
-}
-
-func writeDeploymentBundleError(ctx *gin.Context, err error) {
-	code := deploymentBundleErrorCode(err)
-	status := http.StatusConflict
-	switch code {
-	case "deployment_bundle.invalid_json", "deployment_bundle.unsupported_kind", "deployment_bundle.unsupported_version", "deployment_bundle.secret_required", "deployment_bundle.secret_requirement_invalid", "deployment_target.image_ref_required", "deployment.stage_invalid", "build_template.not_found":
-		status = http.StatusBadRequest
-	case "deployment_bundle.too_large":
-		status = http.StatusRequestEntityTooLarge
-	case "deployment_bundle.reference_forbidden":
-		status = http.StatusForbidden
-	case "deployment_bundle.internal_error":
-		status = http.StatusInternalServerError
-	}
-	message := "deployment bundle import failed"
-	var bundleErr *deploymentBundleError
-	if errors.As(err, &bundleErr) {
-		message = bundleErr.Message
-	}
-	writeErrorCode(ctx, status, code, message)
 }

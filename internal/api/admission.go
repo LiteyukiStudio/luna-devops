@@ -175,10 +175,20 @@ func (h *Handlers) auditWithContext(userID, action, resource string, success boo
 		telemetry.Logger().ErrorContext(ctx, "audit write failed",
 			slog.String("event.name", "audit.write.failed"),
 			slog.String("audit.action", action),
-			slog.String("resource.type", resource),
+			slog.String("resource.type", auditResourceType(action)),
 			slog.Bool("outcome.success", success),
 			slog.String("error.type", telemetry.ErrorType(err)),
 		)
+	}
+}
+
+func auditResourceType(action string) string {
+	prefix, _, _ := strings.Cut(strings.TrimSpace(action), ".")
+	switch prefix {
+	case "ai", "application", "artifact_registry", "auth", "billing", "build", "build_variable", "deployment", "deployment_bundle", "deployment_volume", "gateway", "git_account", "git_provider", "git_repository", "git_webhook", "mfa", "oidc", "project", "registry", "release", "runtime_cluster", "runtime_config", "secret", "user", "volume":
+		return prefix
+	default:
+		return "unknown"
 	}
 }
 
