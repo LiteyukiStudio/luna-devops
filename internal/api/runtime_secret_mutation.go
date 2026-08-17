@@ -54,7 +54,6 @@ type runtimeSecretMutationOwner struct {
 	ResourcePrefix string
 	AuditAction    string
 	LoadRefs       func(tx *gorm.DB) (string, error)
-	LoadPublic     func(tx *gorm.DB) (string, error)
 	SaveRefs       func(tx *gorm.DB, encoded string) error
 	EncodeRefs     func(refs map[string]string) string
 }
@@ -68,7 +67,6 @@ type preparedRuntimeSecretMutation struct {
 
 var (
 	errRuntimeSecretMutationUnavailable = errors.New("runtime secret mutation unavailable")
-	errRuntimeEnvironmentModeConflict   = errors.New("runtime environment value mode conflict")
 )
 
 func prepareRuntimeSecretMutation(input runtimeSecretMutationInput) (preparedRuntimeSecretMutation, error) {
@@ -115,18 +113,6 @@ func (h *Handlers) mutateRuntimeSecrets(ctx context.Context, user model.User, pr
 			return errRuntimeSecretMutationUnavailable
 		}
 		nextRefs := copyStringMap(previousRefs)
-		if owner.LoadPublic != nil {
-			publicRaw, err := owner.LoadPublic(tx.WithContext(ctx))
-			if err != nil {
-				return err
-			}
-			publicValues := runtimeConfigMap(publicRaw)
-			for key := range prepared.values {
-				if _, conflict := publicValues[key]; conflict {
-					return errRuntimeEnvironmentModeConflict
-				}
-			}
-		}
 
 		for key, value := range prepared.values {
 			ref, err := h.secrets.StoreContextWithDB(ctx, tx, value, user.ID, owner.ResourcePrefix+":"+key)
@@ -281,10 +267,6 @@ func (h *Handlers) deleteSupersededRuntimeSecrets(ctx context.Context, tx *gorm.
 }
 
 func writeRuntimeSecretMutationError(ctx *gin.Context, ownerType string, err error) {
-	if errors.Is(err, errRuntimeEnvironmentModeConflict) {
-		writeErrorCode(ctx, http.StatusConflict, "deployment.runtime_environment_value_mode_conflict", "同一运行时环境变量不能同时使用普通值和密钥值")
-		return
-	}
 	telemetry.Logger().ErrorContext(ctx.Request.Context(), "runtime secret mutation failed",
 		slog.String("event.name", "runtime_secret.mutation.failed"),
 		slog.String("operation", "runtime_secret.mutate"),

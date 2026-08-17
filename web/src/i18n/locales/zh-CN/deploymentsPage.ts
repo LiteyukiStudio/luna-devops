@@ -172,7 +172,7 @@ const deploymentsPage = {
   runtimeConfigFilesHint: '可添加多个配置文件；路径必须是容器内绝对路径，会以只读文件挂载。',
   runtimeConfigFilesPlaceholder: '/app/config.yaml',
   runtimeSecretsTitle: '运行时密钥',
-  runtimeSecretsManageHint: '密钥变量只写入加密存储且永不回显；添加前请先移除同名普通变量。',
+  runtimeSecretsManageHint: '密钥变量只写入加密存储且永不回显；与普通变量同名时，发布运行统一以密钥值为准。',
   runtimeSecretsRoleHint: '密钥值始终保持掩码；具有密钥管理权限的项目角色可以替换、生成或清除值。',
   runtimeSecretsSaveTargetFirst: '请先保存部署目标，再在这里添加或管理运行时密钥。',
   runtimeSecretsLoadFailed: '运行时密钥字段加载失败，请刷新后重试。',

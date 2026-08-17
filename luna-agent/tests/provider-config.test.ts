@@ -32,6 +32,36 @@ describe("ProviderConfigClient", () => {
     expect(fetchMock).toHaveBeenCalledOnce()
   })
 
+  it("accepts model token limits supplied by the Luna API contract", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      version: "cfg-model-limits",
+      provider: {
+        baseUrl: "https://provider.example/v1/",
+        model: "model-a",
+        apiKey: "secret",
+        configured: true,
+        models: [{
+          id: "aimod_test",
+          name: "model-a",
+          maxContextTokens: 524_288,
+          maxOutputTokens: 65_536,
+          inputCreditsPerMillion: "1.25",
+          outputCreditsPerMillion: "2.5",
+          cachedInputCreditsPerMillion: "0.5",
+          cachedOutputCreditsPerMillion: "0.75",
+        }],
+      },
+      runtime: runtimePayload,
+    }), { status: 200 })))
+
+    const config = await new ProviderConfigClient("https://luna-api.internal", "callback-token-value").get()
+    expect(config.provider.models).toEqual([expect.objectContaining({
+      id: "aimod_test",
+      maxContextTokens: 524_288,
+      maxOutputTokens: 65_536,
+    })])
+  })
+
   it("retries transient configuration failures before parsing the response", async () => {
     const fetchMock = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(new Response("busy", { status: 503, headers: { "retry-after": "0" } }))

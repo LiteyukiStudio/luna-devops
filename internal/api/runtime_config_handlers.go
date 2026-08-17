@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"path"
 	"strings"
@@ -110,15 +109,8 @@ func (h *Handlers) UpdateProjectRuntimeConfigSet(ctx *gin.Context) {
 			return err
 		}
 		existing.SecretRefs = current.SecretRefs
-		if publicEnvironmentConflictsWithSecretRefs(existing.EnvVars, existing.SecretRefs) {
-			return errRuntimeEnvironmentValueModeConflict
-		}
 		return tx.Save(&existing).Error
 	}); err != nil {
-		if errors.Is(err, errRuntimeEnvironmentValueModeConflict) {
-			writeErrorCode(ctx, http.StatusConflict, "deployment.runtime_environment_value_mode_conflict", "同一运行时环境变量不能同时使用普通值和密钥值")
-			return
-		}
 		writeError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}

@@ -12,7 +12,6 @@ import (
 )
 
 var errDeploymentStageExists = errors.New("deployment stage already exists")
-var errRuntimeEnvironmentValueModeConflict = errors.New("runtime environment value mode conflict")
 
 func (h *Handlers) createDeploymentTarget(target model.DeploymentTarget, dataVolumes []deploymentTargetDataVolumeInput, hookInputs []deploymentTargetHookBindingInput, buildEnvironment *model.BuildEnvironmentConfig, ctx context.Context) (deploymentVolumeMountChanges, error) {
 	return h.persistDeploymentTarget(target, dataVolumes, hookInputs, buildEnvironment, nil, true, ctx)
@@ -43,9 +42,6 @@ func (h *Handlers) persistDeploymentTarget(target model.DeploymentTarget, dataVo
 				return err
 			}
 			target.SecretRefs = current.SecretRefs
-			if publicEnvironmentConflictsWithSecretRefs(target.EnvVars, target.SecretRefs) {
-				return errRuntimeEnvironmentValueModeConflict
-			}
 			if err := tx.Save(&target).Error; err != nil {
 				return err
 			}

@@ -191,9 +191,7 @@ func (h *Handlers) UpdateDeploymentTarget(ctx *gin.Context) {
 	changes, err := h.saveDeploymentTarget(target, dataVolumes, input.BuildHookBindings, buildEnvironment, ctx.Request.Context())
 	if err != nil {
 		h.auditDeploymentVolumeMountFailure(ctx.Request.Context(), user.ID, changes, err)
-		if errors.Is(err, errRuntimeEnvironmentValueModeConflict) {
-			writeErrorCode(ctx, http.StatusConflict, "deployment.runtime_environment_value_mode_conflict", "同一运行时环境变量不能同时使用普通值和密钥值")
-		} else if volume.ErrorCode(err) != "" {
+		if volume.ErrorCode(err) != "" {
 			writeVolumeError(ctx, err)
 		} else {
 			writeError(ctx, http.StatusBadRequest, err.Error())

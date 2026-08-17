@@ -63,17 +63,7 @@ func (h *Handlers) GetAIProviderConfigInternal(ctx *gin.Context) {
 		return
 	}
 	version = aiProviderConfigVersionWithModels(version, configuredModels)
-	models := make([]gin.H, 0, len(configuredModels))
-	for _, item := range configuredModels {
-		models = append(models, gin.H{
-			"id":                            item.ID,
-			"name":                          item.Name,
-			"inputCreditsPerMillion":        item.InputCreditsPerMillion,
-			"outputCreditsPerMillion":       item.OutputCreditsPerMillion,
-			"cachedInputCreditsPerMillion":  item.CachedInputCreditsPerMillion,
-			"cachedOutputCreditsPerMillion": item.CachedOutputCreditsPerMillion,
-		})
-	}
+	models := aiProviderModels(configuredModels)
 	ctx.Header("Cache-Control", "no-store")
 	ctx.Header("ETag", `"`+version+`"`)
 	ctx.JSON(http.StatusOK, gin.H{
@@ -114,6 +104,34 @@ func (h *Handlers) GetAIProviderConfigInternal(ctx *gin.Context) {
 		},
 		"toolCatalog": toolCatalog,
 	})
+}
+
+type aiProviderModel struct {
+	ID                            string `json:"id"`
+	Name                          string `json:"name"`
+	MaxContextTokens              int64  `json:"maxContextTokens"`
+	MaxOutputTokens               int64  `json:"maxOutputTokens"`
+	InputCreditsPerMillion        string `json:"inputCreditsPerMillion"`
+	OutputCreditsPerMillion       string `json:"outputCreditsPerMillion"`
+	CachedInputCreditsPerMillion  string `json:"cachedInputCreditsPerMillion"`
+	CachedOutputCreditsPerMillion string `json:"cachedOutputCreditsPerMillion"`
+}
+
+func aiProviderModels(configured []model.AIModel) []aiProviderModel {
+	models := make([]aiProviderModel, 0, len(configured))
+	for _, item := range configured {
+		models = append(models, aiProviderModel{
+			ID:                            item.ID,
+			Name:                          item.Name,
+			MaxContextTokens:              item.MaxContextTokens,
+			MaxOutputTokens:               item.MaxOutputTokens,
+			InputCreditsPerMillion:        item.InputCreditsPerMillion.String(),
+			OutputCreditsPerMillion:       item.OutputCreditsPerMillion.String(),
+			CachedInputCreditsPerMillion:  item.CachedInputCreditsPerMillion.String(),
+			CachedOutputCreditsPerMillion: item.CachedOutputCreditsPerMillion.String(),
+		})
+	}
+	return models
 }
 
 func firstAIModelName(models []model.AIModel) string {

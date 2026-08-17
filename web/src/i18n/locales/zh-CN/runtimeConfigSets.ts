@@ -21,7 +21,7 @@ const runtimeConfigSets = {
   configFilesHint: '可添加多个配置文件；每个文件需要填写容器内绝对路径和文件内容。',
   configFilesPlaceholder: '/app/config.yaml',
   secretVariables: '密钥变量',
-  secretVariablesHint: '密钥值只通过安全密钥操作写入，API 永远不会返回明文。',
+  secretVariablesHint: '密钥值只通过安全密钥操作写入，API 永远不会返回明文；与普通变量同名时，发布运行统一以密钥值为准。',
   noSecrets: '尚未配置密钥变量。',
   saveBeforeSecrets: '请先保存配置，再在这里添加或管理密钥变量。',
   secretsUpdated: '密钥变量已更新。',

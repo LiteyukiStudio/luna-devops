@@ -130,7 +130,7 @@ func (h *Handlers) deploymentTargetFromInput(ctx *gin.Context, user model.User, 
 		return model.DeploymentTarget{}, nil, false
 	}
 	publicEnvironment, ok := normalizePublicEnvironmentVariables(ctx, input.EnvironmentVariables)
-	if !ok || !validateDeploymentTargetPublicEnvVars(ctx, input.ConfigRefs) {
+	if !ok {
 		return model.DeploymentTarget{}, nil, false
 	}
 	envVars, err := runtimeconfig.EncodeKeyValue(publicEnvironment)

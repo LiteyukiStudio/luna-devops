@@ -49,7 +49,7 @@ An interaction card first shows a preparation placeholder at its actual conversa
 
 Password and secret fields in configuration forms can be entered directly and are displayed as password inputs. The assistant never prefills these fields; only a non-empty value that you enter for the current action is submitted, while an empty field means no change. When you submit a tool action, the secret travels only through the controlled tool execution path; it is not added to a normal chat message or model context, and message actions cannot reference it.
 
-Runtime secrets for a deployment target must be submitted through the security form. User-entered `values` travel only through a Direct Tool Action; generated credentials are created and stored by the platform backend, so neither the assistant nor the browser receives the generated plaintext. Clearing requires a separate explicit clear action—an empty input never clears an existing value. Ordinary environment variables reject password, token, and secret-like names as well as values containing embedded URL credentials. Approval summaries and results report only which fields will be set, generated, or cleared and their status; they never return plaintext secrets.
+Runtime secrets for a deployment target must be submitted through the security form. User-entered `values` travel only through a Direct Tool Action; generated credentials are created and stored by the platform backend, so neither the assistant nor the browser receives the generated plaintext. Clearing requires a separate explicit clear action—an empty input never clears an existing value. Users explicitly choose ordinary environment variables as `public`; the platform no longer infers sensitivity from names, URLs, or values and does not block them. Choosing an ordinary variable means the value does not receive secret encryption or non-disclosure guarantees. Approval summaries and results report only which secret fields will be set, generated, or cleared and their status; they never return plaintext secrets.
 
 Next-step options generated for a reply appear inside that assistant bubble at their real position among messages, reasoning, and tool calls, making their context clear. Before the first message in a new conversation, page presets remain above the composer for quick access to common tasks.
 
@@ -90,6 +90,8 @@ Ask an administrator to confirm that the assistant is enabled and that its acces
 ### The model is unavailable
 
 Check provider availability, balance, the model name in the catalog, and the API key, then retry. Existing Runs keep their snapshot after a model is disabled; new messages can only select enabled models.
+
+If the Agent startup log reports a missing `maxContextTokens` or `maxOutputTokens` value, confirm that Luna API and Agent come from the same release and upgrade them together. Luna API supplies model capabilities from the model catalog, so they do not need to be configured again in the Agent container.
 
 ### The context or Run budget is insufficient
 

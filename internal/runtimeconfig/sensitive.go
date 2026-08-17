@@ -12,8 +12,9 @@ var (
 	secretKeySeparator   = regexp.MustCompile(`[^A-Z0-9]+`)
 )
 
-// PotentialSecret reports whether a public runtime setting has common secret
-// semantics. It is defense in depth only; valueMode remains the storage boundary.
+// PotentialSecret reports whether a legacy public runtime setting has common
+// secret semantics for the opt-in diagnostic command. It must not be used to
+// reject writes: callers choose the authoritative public or secret valueMode.
 func PotentialSecret(key, value string) bool {
 	return PotentialSecretKey(key) || PotentialSecretValue(value)
 }

@@ -21,7 +21,7 @@ const runtimeConfigSets = {
   configFilesHint: 'Add one or more config files. Each file needs an absolute container path and file content.',
   configFilesPlaceholder: '/app/config.yaml',
   secretVariables: 'Secret variables',
-  secretVariablesHint: 'Values are written only through the secure secret action and are never returned by the API.',
+  secretVariablesHint: 'Values are written only through the secure secret action and are never returned by the API. A secret takes precedence over a same-name public variable at runtime.',
   noSecrets: 'No secret variables are configured.',
   saveBeforeSecrets: 'Save this config first, then add or manage secret variables here.',
   secretsUpdated: 'Secret variables updated.',

@@ -10265,7 +10265,7 @@ components:
           type: array
           maxItems: 128
           items: { $ref: "#/components/schemas/RuntimeEnvironmentVariableInput" }
-          description: Explicitly typed public runtime environment variables. Secret values are accepted only by the dedicated runtime secret action.
+          description: Caller-selected public runtime environment variables. The platform does not infer sensitivity from key names or values. A key may also have a separately managed secret; the secret takes precedence in deployed workloads while both modes remain visible in API state. Choose the dedicated runtime secret action when encrypted storage and non-disclosure are required.
         configRefs:
           type: object
           additionalProperties: { type: string }
@@ -10358,6 +10358,7 @@ components:
         value: { type: string, maxLength: 8192 }
     RuntimeEnvironmentVariable:
       type: object
+      description: One stored runtime environment value mode. Responses may contain public and secret entries with the same key; the secret entry takes precedence in deployed workloads.
       additionalProperties: false
       required: [key, valueMode, configured]
       properties:

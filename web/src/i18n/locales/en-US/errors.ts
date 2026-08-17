@@ -21,13 +21,11 @@ const errors = {
     identifier_delete_failed: 'The previous deletion of a project space with this identifier failed. Finish cleanup before reusing it.',
   },
   deployment: {
-    secret_must_use_secure_input: 'Sensitive runtime configuration must be submitted through the secure secret form.',
     runtime_environment_key_invalid: 'Use a valid environment variable name.',
     runtime_environment_key_duplicate: 'Each environment variable name can appear only once.',
     runtime_environment_items_invalid: 'Configure no more than 128 runtime environment variables.',
     runtime_environment_value_too_long: 'Each runtime environment variable value must be no more than 8192 characters.',
     runtime_environment_value_mode_invalid: 'Choose the correct public or secret value type.',
-    runtime_environment_value_mode_conflict: 'Remove the same-name value from its current public or secret type before changing type.',
     secret_items_invalid: 'Submit between 1 and 128 runtime secret operations.',
     secret_operation_invalid: 'Choose an explicit set, generate, or clear secret operation.',
     secret_value_too_long: 'Each runtime secret value must be no more than 8192 characters.',

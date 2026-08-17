@@ -172,7 +172,7 @@ const deploymentsPage = {
   runtimeConfigFilesHint: 'Add one or more config files. Paths must be absolute paths inside the container and are mounted read-only.',
   runtimeConfigFilesPlaceholder: '/app/config.yaml',
   runtimeSecretsTitle: 'Runtime secrets',
-  runtimeSecretsManageHint: 'Secret variables use encrypted storage and are never returned. Remove a same-name public variable before adding a secret.',
+  runtimeSecretsManageHint: 'Secret variables use encrypted storage and are never returned. A secret takes precedence over a same-name public variable at runtime.',
   runtimeSecretsRoleHint: 'Secret values stay masked. Project roles with secret-management permission can replace, generate, or clear values.',
   runtimeSecretsSaveTargetFirst: 'Save this deploy config first, then add or manage runtime secrets here.',
   runtimeSecretsLoadFailed: 'Runtime secret keys could not be loaded. Refresh and try again.',

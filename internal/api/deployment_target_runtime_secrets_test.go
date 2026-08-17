@@ -11,29 +11,24 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func TestValidateDeploymentTargetPublicEnvVarsRejectsSecretSemantics(t *testing.T) {
-	for _, values := range []map[string]string{
-		{"DATABASE_PASSWORD": "value"},
-		{"REDIS_PASS": "value"},
-		{"APIKEY": "value"},
-		{"AUTH": "value"},
-		{"DATABASE_DSN": "postgres://database.internal/app"},
-		{"PUBLIC_URL": "https://user:password@example.com/api"},
-		{"PUBLIC_URL": "https://example.com/api?password=value"},
-	} {
-		ctx, recorder := testRuntimeSecretContext()
-		if validateDeploymentTargetPublicEnvVars(ctx, values) {
-			t.Fatalf("validateDeploymentTargetPublicEnvVars(%#v) = true, want false", values)
-		}
-		if recorder.Code != http.StatusBadRequest {
-			t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
-		}
-		var body map[string]any
-		if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
-			t.Fatalf("decode response: %v", err)
-		}
-		if body["code"] != "deployment.secret_must_use_secure_input" {
-			t.Fatalf("code = %#v, want stable sensitive-input code", body["code"])
+func TestNormalizePublicEnvironmentVariablesDoesNotGuessSecretSemantics(t *testing.T) {
+	items := []runtimeEnvironmentVariableInput{
+		{Key: "DATABASE_PASSWORD", ValueMode: runtimeEnvironmentValueModePublic, Value: "value"},
+		{Key: "REDIS_PASS", ValueMode: runtimeEnvironmentValueModePublic, Value: "value"},
+		{Key: "APIKEY", ValueMode: runtimeEnvironmentValueModePublic, Value: "value"},
+		{Key: "AUTH", ValueMode: runtimeEnvironmentValueModePublic, Value: "value"},
+		{Key: "DATABASE_DSN", ValueMode: runtimeEnvironmentValueModePublic, Value: "postgres://database.internal/app"},
+		{Key: "URL_WITH_CREDENTIALS", ValueMode: runtimeEnvironmentValueModePublic, Value: "https://user:password@example.com/api"},
+		{Key: "URL_WITH_TOKEN_QUERY", ValueMode: runtimeEnvironmentValueModePublic, Value: "https://example.com/api?password=value"},
+	}
+	ctx, _ := testRuntimeSecretContext()
+	values, ok := normalizePublicEnvironmentVariables(ctx, items)
+	if !ok {
+		t.Fatal("normalizePublicEnvironmentVariables() rejected caller-selected public values")
+	}
+	for _, item := range items {
+		if values[item.Key] != item.Value {
+			t.Fatalf("value[%q] = %q, want %q", item.Key, values[item.Key], item.Value)
 		}
 	}
 }
@@ -47,6 +42,7 @@ func TestNormalizePublicEnvironmentVariablesRequiresExplicitPublicMode(t *testin
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
 	}
+	assertRuntimeSecretErrorCode(t, recorder, "deployment.runtime_environment_value_mode_invalid")
 }
 
 func TestNormalizePublicEnvironmentVariablesEnforcesOpenAPILimits(t *testing.T) {
@@ -81,13 +77,16 @@ func TestNormalizePublicEnvironmentVariablesAcceptsOpenAPIMultibyteBoundary(t *t
 	}
 }
 
-func TestRuntimeEnvironmentVariablesReturnsOneAuthoritativeModePerKey(t *testing.T) {
+func TestRuntimeEnvironmentVariablesReturnsBothModesForOverlappingKey(t *testing.T) {
 	items := runtimeEnvironmentVariables(`{"LOG_LEVEL":"debug","TOKEN":"plaintext"}`, `{"TOKEN":"secret-id:token"}`)
-	if len(items) != 2 {
-		t.Fatalf("variables = %#v, want two unique keys", items)
+	if len(items) != 3 {
+		t.Fatalf("variables = %#v, want public and secret entries", items)
 	}
-	if items[1].Key != "TOKEN" || items[1].ValueMode != runtimeEnvironmentValueModeSecret || items[1].Value != "" || !items[1].Configured {
-		t.Fatalf("TOKEN response = %#v, want configured secret without value", items[1])
+	if items[1].Key != "TOKEN" || items[1].ValueMode != runtimeEnvironmentValueModePublic || items[1].Value != "plaintext" {
+		t.Fatalf("public TOKEN response = %#v, want retained public value", items[1])
+	}
+	if items[2].Key != "TOKEN" || items[2].ValueMode != runtimeEnvironmentValueModeSecret || items[2].Value != "" || !items[2].Configured {
+		t.Fatalf("secret TOKEN response = %#v, want configured secret without value", items[2])
 	}
 }
 

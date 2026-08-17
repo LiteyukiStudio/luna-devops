@@ -21,13 +21,11 @@ const errors = {
     identifier_delete_failed: '同标识项目空间上次删除失败，请先完成资源清理。',
   },
   deployment: {
-    secret_must_use_secure_input: '敏感运行时配置必须通过安全密钥表单提交。',
     runtime_environment_key_invalid: '请输入有效的环境变量名称。',
     runtime_environment_key_duplicate: '同一个环境变量名称只能出现一次。',
     runtime_environment_items_invalid: '运行时环境变量最多可以配置 128 项。',
     runtime_environment_value_too_long: '单个运行时环境变量值不能超过 8192 个字符。',
     runtime_environment_value_mode_invalid: '请选择正确的普通值或密钥值类型。',
-    runtime_environment_value_mode_conflict: '切换类型前，请先移除同名的普通值或密钥值。',
     secret_items_invalid: '请提交 1 至 128 项运行时密钥操作。',
     secret_operation_invalid: '请选择明确的设置、生成或清除密钥操作。',
     secret_value_too_long: '单个运行时密钥值不能超过 8192 个字符。',

@@ -59,9 +59,9 @@ func TestRuntimeSecretMutationReplacesAndClearsAtomically(t *testing.T) {
 	assertRuntimeSecretAuditCount(t, db, "secret.write", "", 0)
 }
 
-func TestRuntimeSecretMutationRejectsPublicValueModeConflict(t *testing.T) {
+func TestRuntimeSecretMutationAllowsPublicValueAndSecretToOverlap(t *testing.T) {
 	db := runtimeSecretMutationIntegrationDB(t)
-	handlers, set, user := runtimeSecretMutationFixture(t, db, "mode_conflict")
+	handlers, set, user := runtimeSecretMutationFixture(t, db, "mode_overlap")
 	set.EnvVars = `{"TOKEN":"public-value"}`
 	if err := db.Model(&model.ProjectRuntimeConfigSet{}).Where("id = ?", set.ID).Update("env_vars", set.EnvVars).Error; err != nil {
 		t.Fatalf("store public runtime fixture: %v", err)
@@ -71,17 +71,28 @@ func TestRuntimeSecretMutationRejectsPublicValueModeConflict(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = handlers.mutateRuntimeSecrets(t.Context(), user, prepared, projectRuntimeConfigSetSecretMutationOwner(set.ID, set.ProjectID))
-	if !errors.Is(err, errRuntimeEnvironmentModeConflict) {
-		t.Fatalf("mutate runtime secrets error = %v, want mode conflict", err)
+	response, err := handlers.mutateRuntimeSecrets(t.Context(), user, prepared, projectRuntimeConfigSetSecretMutationOwner(set.ID, set.ProjectID))
+	if err != nil {
+		t.Fatalf("mutate runtime secrets: %v", err)
 	}
 
 	var stored model.ProjectRuntimeConfigSet
 	if err := db.First(&stored, "id = ?", set.ID).Error; err != nil {
 		t.Fatalf("reload runtime config set: %v", err)
 	}
-	if stored.EnvVars != set.EnvVars || stored.SecretRefs != set.SecretRefs {
-		t.Fatalf("mode conflict changed state: env=%q refs=%q", stored.EnvVars, stored.SecretRefs)
+	if stored.EnvVars != set.EnvVars {
+		t.Fatalf("public value changed: env=%q, want %q", stored.EnvVars, set.EnvVars)
+	}
+	refs := decodeSecretRefs(stored.SecretRefs)
+	if got := handlers.secrets.ResolveContext(t.Context(), refs["TOKEN"]); got != "secret-value" {
+		t.Fatalf("resolved secret = %q, want secret-value", got)
+	}
+	if len(response.EnvironmentVariables) != 1 || response.EnvironmentVariables[0].Key != "TOKEN" || response.EnvironmentVariables[0].ValueMode != runtimeEnvironmentValueModeSecret {
+		t.Fatalf("mutation response = %#v, want configured TOKEN secret", response.EnvironmentVariables)
+	}
+	combined := runtimeEnvironmentVariables(stored.EnvVars, stored.SecretRefs)
+	if len(combined) != 2 || combined[0].ValueMode != runtimeEnvironmentValueModePublic || combined[1].ValueMode != runtimeEnvironmentValueModeSecret {
+		t.Fatalf("combined variables = %#v, want both modes with secret rendered separately", combined)
 	}
 }
 

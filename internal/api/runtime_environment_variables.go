@@ -47,7 +47,7 @@ func normalizePublicEnvironmentVariables(ctx *gin.Context, items []runtimeEnviro
 			return nil, false
 		}
 		if strings.TrimSpace(item.ValueMode) != runtimeEnvironmentValueModePublic {
-			writeErrorCode(ctx, http.StatusBadRequest, "deployment.secret_must_use_secure_input", "敏感运行时配置必须通过安全密钥表单提交")
+			writeErrorCode(ctx, http.StatusBadRequest, "deployment.runtime_environment_value_mode_invalid", "普通运行时环境变量必须使用 public 类型")
 			return nil, false
 		}
 		if utf8.RuneCountInString(item.Value) > maxRuntimeEnvironmentValueLength {
@@ -55,9 +55,6 @@ func normalizePublicEnvironmentVariables(ctx *gin.Context, items []runtimeEnviro
 			return nil, false
 		}
 		values[key] = item.Value
-	}
-	if !validateDeploymentTargetPublicEnvVars(ctx, values) {
-		return nil, false
 	}
 	return values, true
 }
@@ -68,15 +65,8 @@ func runtimeEnvironmentVariables(publicRaw, secretRaw string) []runtimeEnvironme
 		publicValues = map[string]string{}
 	}
 	secretKeys := runtimeSecretKeys(secretRaw)
-	secretKeySet := make(map[string]struct{}, len(secretKeys))
-	for _, key := range secretKeys {
-		secretKeySet[key] = struct{}{}
-	}
 	items := make([]runtimeEnvironmentVariableResponse, 0, len(publicValues)+len(secretKeys))
 	for key, value := range publicValues {
-		if _, secretWins := secretKeySet[key]; secretWins {
-			continue
-		}
 		items = append(items, runtimeEnvironmentVariableResponse{
 			Key:        key,
 			ValueMode:  runtimeEnvironmentValueModePublic,
@@ -100,16 +90,6 @@ func runtimeEnvironmentVariables(publicRaw, secretRaw string) []runtimeEnvironme
 	return items
 }
 
-func publicEnvironmentConflictsWithSecretRefs(publicRaw, secretRaw string) bool {
-	publicValues := runtimeConfigMap(publicRaw)
-	for _, key := range runtimeSecretKeys(secretRaw) {
-		if _, conflict := publicValues[key]; conflict {
-			return true
-		}
-	}
-	return false
-}
-
 func publicEnvironmentVariableInputs(raw string) []runtimeEnvironmentVariableInput {
 	values := runtimeConfigMap(raw)
 	keys := make([]string, 0, len(values))
@@ -122,14 +102,4 @@ func publicEnvironmentVariableInputs(raw string) []runtimeEnvironmentVariableInp
 		items = append(items, runtimeEnvironmentVariableInput{Key: key, ValueMode: runtimeEnvironmentValueModePublic, Value: values[key]})
 	}
 	return items
-}
-
-func validateDeploymentTargetPublicEnvVars(ctx *gin.Context, values map[string]string) bool {
-	for key, value := range values {
-		if runtimeconfig.PotentialSecret(key, value) {
-			writeErrorCode(ctx, http.StatusBadRequest, "deployment.secret_must_use_secure_input", "敏感运行时配置必须通过安全密钥表单提交")
-			return false
-		}
-	}
-	return true
 }

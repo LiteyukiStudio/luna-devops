@@ -9,12 +9,13 @@ describe('runtime environment contract', () => {
     ])
   })
 
-  it('never copies secret entries into a public payload', () => {
+  it('preserves both modes for an overlapping key without copying secret values', () => {
     const variables = [
       { configured: true, key: 'LOG_LEVEL', value: 'debug', valueMode: 'public' as const },
+      { configured: true, key: 'TOKEN', value: 'public-fallback', valueMode: 'public' as const },
       { configured: true, key: 'TOKEN', valueMode: 'secret' as const },
     ]
-    expect(publicRuntimeEnvironmentRecord(variables)).toEqual({ LOG_LEVEL: 'debug' })
+    expect(publicRuntimeEnvironmentRecord(variables)).toEqual({ LOG_LEVEL: 'debug', TOKEN: 'public-fallback' })
     expect(runtimeSecretKeys(variables)).toEqual(['TOKEN'])
   })
 })

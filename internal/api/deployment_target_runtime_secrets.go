@@ -61,11 +61,6 @@ func deploymentTargetRuntimeSecretMutationOwner(targetID, projectID, application
 				First(&current, "id = ? and project_id = ? and application_id = ? and delete_status in ?", targetID, projectID, applicationID, []string{"", "active", "delete_failed"}).Error
 			return current.SecretRefs, err
 		},
-		LoadPublic: func(tx *gorm.DB) (string, error) {
-			var current model.DeploymentTarget
-			err := tx.Select("env_vars").First(&current, "id = ? and project_id = ? and application_id = ?", targetID, projectID, applicationID).Error
-			return current.EnvVars, err
-		},
 		SaveRefs: func(tx *gorm.DB, encoded string) error {
 			return tx.Model(&model.DeploymentTarget{}).
 				Where("id = ? and project_id = ? and application_id = ?", targetID, projectID, applicationID).
