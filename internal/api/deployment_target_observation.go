@@ -113,6 +113,9 @@ func (h *Handlers) deploymentTargetRuntimeCluster(projectID, clusterID string, c
 func deploymentObservationFromSnapshot(snapshot kubeprovider.DeploymentSnapshot) string {
 	switch snapshot.Phase {
 	case kubeprovider.DeploymentSucceeded:
+		if snapshot.DesiredReplicas == 0 {
+			return observation.StatusScaledToZero
+		}
 		return observation.StatusReady
 	case kubeprovider.DeploymentFailed:
 		return observation.StatusDegraded

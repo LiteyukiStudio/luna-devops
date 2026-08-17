@@ -4,6 +4,7 @@ import type { PlatformRoleValue, ProjectRoleValue } from '@/lib/roles'
 
 export type LiveObservationStatus
   = | 'ready'
+    | 'scaled-to-zero'
     | 'degraded'
     | 'progressing'
     | 'not-found'

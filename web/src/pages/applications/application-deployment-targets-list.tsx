@@ -8,10 +8,9 @@ import { toast } from 'sonner'
 import { api } from '@/api'
 import { CopyableHoverText } from '@/components/common/copyable-hover-text'
 import { DataList } from '@/components/common/data-list'
-import { DeploymentReplicaBadge } from '@/components/common/deployment-replica-badge'
 import { EmptyState } from '@/components/common/empty-state'
 import { HoverText } from '@/components/common/hover-text'
-import { StatusValueBadge } from '@/components/common/status-badge'
+import { StatusBadge, StatusValueBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -102,8 +101,8 @@ export function ApplicationDeploymentTargetsList({
             { key: 'name', header: t('common.name'), width: 'primary', render: item => <DeploymentTargetSummary applicationId={applicationId} item={item} projectId={projectId} onCopy={onCopy} /> },
             { key: 'stage', header: t('deploymentsPage.stage'), width: 'compact', render: item => t(`deploymentsPage.stageLabels.${item.target.stage}`, { defaultValue: item.target.stage }) },
             { key: 'runtimeSize', header: t('deploymentsPage.runtimeEnvironment'), width: 'secondary', render: item => formatTargetRuntimeSize(item.target, t) },
-            { key: 'runtimeStatus', header: t('deploymentsPage.runtimeStatus'), width: 'status', render: item => <DeploymentRuntimeStatusBadge deployed={Boolean(item.release)} desiredReplicas={item.target.desiredReplicas} readyReplicas={item.target.readyReplicas} status={item.runtimeStatus} /> },
-            { key: 'status', header: t('deploymentsPage.releaseStatus'), width: 'status', render: item => <ReleaseStatusSummary release={item.release} target={item.target} /> },
+            { key: 'runtimeStatus', header: t('deploymentsPage.runtimeStatus'), width: 'status', render: item => <DeploymentRuntimeStatusBadge availableReplicas={item.target.availableReplicas} deployed={Boolean(item.release)} desiredReplicas={item.target.desiredReplicas} readyReplicas={item.target.readyReplicas} status={item.runtimeStatus} /> },
+            { key: 'status', header: t('deploymentsPage.releaseStatus'), width: 'status', render: item => <ReleaseStatusSummary release={item.release} /> },
             { key: 'image', header: t('deploymentsPage.imageSummary'), width: 'normal', render: item => <DeploymentImageSummary release={item.release} /> },
             {
               key: 'actions',
@@ -308,11 +307,12 @@ function DeploymentTargetSummary({ applicationId, item, onCopy, projectId }: { a
   )
 }
 
-function ReleaseStatusSummary({ release, target }: { release?: Release, target: DeploymentTarget }) {
+function ReleaseStatusSummary({ release }: { release?: Release }) {
+  const { t } = useTranslation()
   const message = release?.message?.trim()
   const badge = release
-    ? <DeploymentReplicaBadge desiredReplicas={target.desiredReplicas} labelKeyPrefix="buildsPage.statuses" readyReplicas={target.readyReplicas} status={release.status} />
-    : <DeploymentReplicaBadge deployed={false} desiredReplicas={0} readyReplicas={0} status="not-deployed" />
+    ? <StatusValueBadge labelKeyPrefix="buildsPage.statuses" value={release.status} />
+    : <StatusBadge tone="warning">{t('deploymentsPage.notDeployed')}</StatusBadge>
 
   if (!message)
     return badge
@@ -422,10 +422,10 @@ function MobileDeploymentTargetCard({
       </div>
       <div className="grid grid-cols-2 gap-3 text-xs">
         <LabeledValue label={t('deploymentsPage.runtimeStatus')}>
-          <DeploymentRuntimeStatusBadge deployed={Boolean(item.release)} desiredReplicas={item.target.desiredReplicas} readyReplicas={item.target.readyReplicas} status={item.runtimeStatus} />
+          <DeploymentRuntimeStatusBadge availableReplicas={item.target.availableReplicas} deployed={Boolean(item.release)} desiredReplicas={item.target.desiredReplicas} readyReplicas={item.target.readyReplicas} status={item.runtimeStatus} />
         </LabeledValue>
         <LabeledValue label={t('deploymentsPage.releaseStatus')}>
-          <ReleaseStatusSummary release={item.release} target={item.target} />
+          <ReleaseStatusSummary release={item.release} />
         </LabeledValue>
       </div>
       <LabeledValue label={t('deploymentsPage.imageSummary')}>

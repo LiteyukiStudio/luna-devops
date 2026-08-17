@@ -24,14 +24,14 @@ export function InternalServiceEndpoint({ endpoint, onCopy }: { endpoint?: Inter
   )
 }
 
-export function DeploymentRuntimeStatusBadge({ deployed, desiredReplicas, readyReplicas, status }: { deployed: boolean, desiredReplicas: number, readyReplicas: number, status: DeploymentRuntimeStatus }) {
+export function DeploymentRuntimeStatusBadge({ availableReplicas, deployed, desiredReplicas, readyReplicas, status }: { availableReplicas: number, deployed: boolean, desiredReplicas: number, readyReplicas: number, status: DeploymentRuntimeStatus }) {
   const { t } = useTranslation()
   const detail = status.summary.trim() || t(`deploymentsPage.runtimeStatusDetails.${status.value}`, { defaultValue: '' })
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <span className="inline-flex">
-          <DeploymentReplicaBadge deployed={deployed} desiredReplicas={desiredReplicas} readyReplicas={readyReplicas} status={status.value} />
+          <DeploymentReplicaBadge availableReplicas={availableReplicas} deployed={deployed} desiredReplicas={desiredReplicas} readyReplicas={readyReplicas} status={status.value} />
         </span>
       </TooltipTrigger>
       <TooltipContent className="grid max-w-96 gap-1 leading-5" side="top">

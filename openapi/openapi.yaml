@@ -2822,6 +2822,7 @@ paths:
       operationId: listDeploymentTargets
       tags: [Deployments]
       summary: List deployment targets for an application
+      description: Returns a no-store point-in-time Kubernetes observation for each target. Replica fields and status belong to the same observation; scaled-to-zero means the workload was observed with desiredReplicas=0 and is not serving a runtime instance.
       parameters:
         - $ref: "#/components/parameters/ProjectId"
         - $ref: "#/components/parameters/ApplicationId"
@@ -9308,7 +9309,7 @@ components:
         readyReplicas: { type: integer, minimum: 0 }
         status:
           type: string
-          enum: [ready, degraded, progressing, unavailable, not-deployed]
+          enum: [ready, scaled-to-zero, degraded, progressing, unavailable, not-deployed]
       required: [targetCount, desiredReplicas, readyReplicas, status]
     DeploymentTargetMetrics:
       type: object
@@ -10335,6 +10336,16 @@ components:
         dataVolumes:
           type: array
           items: { $ref: "#/components/schemas/DeploymentDataVolume" }
+        status:
+          type: string
+          enum: [ready, scaled-to-zero, degraded, progressing, not-found, not-configured, unavailable, unknown, disabled]
+          description: Point-in-time Kubernetes observation. scaled-to-zero is an observed zero-desired-replica runtime, not a serving-ready state.
+        observationCode: { type: string }
+        lastCheckedAt: { type: string, format: date-time }
+        desiredReplicas: { type: integer, minimum: 0 }
+        updatedReplicas: { type: integer, minimum: 0 }
+        readyReplicas: { type: integer, minimum: 0 }
+        availableReplicas: { type: integer, minimum: 0 }
         webConsoleEnabled:
           type: [boolean, "null"]
           description: Nullable target restriction. Effective policy is `project.webConsoleEnabled && webConsoleEnabled != false`; a true value is treated as inheritance.

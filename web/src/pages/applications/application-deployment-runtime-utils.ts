@@ -22,31 +22,33 @@ export function buildDeploymentRuntimeStatus(
 ): DeploymentRuntimeStatus {
   const clusterId = target.clusterId?.trim() || runtimeCluster?.id
   const clusterName = runtimeCluster?.name
+  const observedValue = normalizeDeploymentRuntimeStatus(target.status)
+  const statusValue = (fallback: string) => observedValue === 'unknown' ? fallback : observedValue
   if (!clusterId)
-    return { clusterName, podCount: 0, summary: '', value: 'not-configured' }
+    return { clusterName, podCount: 0, summary: '', value: statusValue('not-configured') }
   if (errorByCluster[clusterId])
-    return { clusterName, podCount: 0, summary: '', value: 'unavailable' }
+    return { clusterName, podCount: 0, summary: '', value: statusValue('unavailable') }
   if (loadingByCluster[clusterId])
-    return { clusterName, podCount: 0, summary: '', value: 'checking' }
+    return { clusterName, podCount: 0, summary: '', value: statusValue('checking') }
 
   const resources = (resourcesByCluster[clusterId] ?? []).filter(resource => resource.deploymentTargetId === target.id)
   const pods = resources.filter(resource => resource.kind.toLowerCase() === 'pod')
-  const deployments = resources.filter(resource => resource.kind.toLowerCase() === 'deployment')
+  const workloads = resources.filter(resource => ['deployment', 'statefulset'].includes(resource.kind.toLowerCase()))
   if (resources.length === 0)
-    return { clusterName, podCount: 0, summary: '', value: 'not-found' }
+    return { clusterName, podCount: 0, summary: '', value: statusValue('not-found') }
 
   const podStatus = aggregatePodRuntimeStatus(pods)
   if (podStatus)
-    return { clusterName, ...podStatus }
+    return { clusterName, ...podStatus, value: statusValue(podStatus.value) }
 
-  const deployment = deployments[0]
-  if (!deployment)
-    return { clusterName, podCount: 0, summary: '', value: 'unknown' }
+  const workload = workloads[0]
+  if (!workload)
+    return { clusterName, podCount: 0, summary: '', value: observedValue }
   return {
     clusterName,
     podCount: 0,
-    summary: deployment.summary,
-    value: normalizeDeploymentRuntimeStatus(deployment.status),
+    summary: workload.summary,
+    value: statusValue(normalizeDeploymentRuntimeStatus(workload.status)),
   }
 }
 
@@ -129,6 +131,8 @@ function normalizeDeploymentRuntimeStatus(status: string) {
     return 'ready'
   if (value === 'progressing')
     return 'progressing'
+  if (value === 'scaled-to-zero')
+    return 'scaled-to-zero'
   if (value === 'failed')
     return 'failed'
   return value || 'unknown'

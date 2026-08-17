@@ -51,6 +51,7 @@ export function statusToneFor(value: string): StatusTone {
       return 'info'
     case 'disabled':
     case 'canceled':
+    case 'scaled-to-zero':
     case 'not-configured':
     case 'not-found':
     case 'missing':

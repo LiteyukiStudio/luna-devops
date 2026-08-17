@@ -37,11 +37,19 @@ func TestSummarizeApplicationDeploymentTargets(t *testing.T) {
 			want: applicationDeploymentSummary{TargetCount: 1, Status: observation.StatusUnavailable},
 		},
 		{
-			name: "scale to zero remains an observed ready runtime",
+			name: "scale to zero has a distinct observed runtime status",
 			targets: []model.DeploymentTarget{
-				{Status: observation.StatusReady, DesiredReplicas: 0, ReadyReplicas: 0},
+				{Status: observation.StatusScaledToZero, DesiredReplicas: 0, ReadyReplicas: 0},
 			},
-			want: applicationDeploymentSummary{TargetCount: 1, Status: observation.StatusReady},
+			want: applicationDeploymentSummary{TargetCount: 1, Status: observation.StatusScaledToZero},
+		},
+		{
+			name: "ready and scaled targets remain ready when the aggregate serves replicas",
+			targets: []model.DeploymentTarget{
+				{Status: observation.StatusReady, DesiredReplicas: 1, ReadyReplicas: 1},
+				{Status: observation.StatusScaledToZero, DesiredReplicas: 0, ReadyReplicas: 0},
+			},
+			want: applicationDeploymentSummary{TargetCount: 2, DesiredReplicas: 1, ReadyReplicas: 1, Status: observation.StatusReady},
 		},
 	}
 

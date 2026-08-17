@@ -41,9 +41,9 @@ Consider validating runtime and routing with an existing image before adding a G
 
 A build creates an image from source. A release deploys a selected image to the runtime cluster. After a release, check its status, workloads, logs, and health instead of treating task submission as completion.
 
-Runtime and release status on the deployment page use `n/m` for ready and desired replicas. For example, `2/3` means that two of three desired replicas are ready.
+Runtime status on the deployment page uses `n/m` from one Kubernetes observation for ready and desired replicas. For example, `2/3` means that two of three desired replicas are ready. Release status reports only the historical Release workflow result and does not include current replica counts; a successful release does not by itself mean that a runtime instance is currently ready.
 
-With autoscaling enabled, the runtime cost shown in the form is a baseline estimate based on configured replicas, not a live charge. HPA can change the live desired replica count. An HPA minimum of `0` is supported; `0/0` means the workload is observed and currently scaled to zero.
+With autoscaling enabled, the runtime cost shown in the form is a baseline estimate based on configured replicas, not a live charge. HPA can change the live desired replica count. An HPA minimum of `0` is supported; the neutral “Scaled to zero · 0/0” state means the workload was observed but currently has no runtime instance, rather than being green and ready. When observation is unavailable, the page omits `0/0` so missing data is not mistaken for a real zero-replica observation.
 
 Configuration or image changes require a new release. Reusing an image tag makes version verification and rollback harder; use traceable, unique tags in production.
 
