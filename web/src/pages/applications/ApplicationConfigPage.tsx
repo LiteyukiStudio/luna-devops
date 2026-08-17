@@ -97,7 +97,13 @@ export function ApplicationConfigPage() {
     enabled: Boolean(projectId && applicationId),
     refetchInterval: activeTab === 'deployments' ? WORKFLOW_STATUS_REFETCH_INTERVAL_MS : false,
   })
-  const deploymentTargets = useQuery({ ...liveObservationQueryPolicy, queryKey: ['deployment-targets', projectId, applicationId], queryFn: () => api.listDeploymentTargets(projectId, applicationId), enabled: Boolean(projectId && applicationId) })
+  const deploymentTargets = useQuery({
+    ...liveObservationQueryPolicy,
+    queryKey: ['deployment-targets', projectId, applicationId],
+    queryFn: () => api.listDeploymentTargets(projectId, applicationId),
+    enabled: Boolean(projectId && applicationId),
+    refetchInterval: activeTab === 'deployments' ? WORKFLOW_STATUS_REFETCH_INTERVAL_MS : false,
+  })
   const routes = useQuery({
     ...liveObservationQueryPolicy,
     queryKey: ['gateway-routes', projectId, applicationId],

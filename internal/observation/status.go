@@ -4,6 +4,7 @@ import "time"
 
 const (
 	StatusReady         = "ready"
+	StatusScaledToZero  = "scaled-to-zero"
 	StatusDegraded      = "degraded"
 	StatusProgressing   = "progressing"
 	StatusNotFound      = "not-found"

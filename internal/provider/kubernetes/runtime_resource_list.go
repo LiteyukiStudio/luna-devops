@@ -221,7 +221,9 @@ func deploymentSnapshot(item appsv1.Deployment) ResourceSnapshot {
 		desired = *item.Spec.Replicas
 	}
 	status := "progressing"
-	if item.Status.ReadyReplicas >= desired && item.Status.AvailableReplicas >= desired {
+	if desired == 0 && item.Status.ObservedGeneration >= item.Generation {
+		status = "scaled-to-zero"
+	} else if desired > 0 && item.Status.ObservedGeneration >= item.Generation && item.Status.ReadyReplicas >= desired && item.Status.AvailableReplicas >= desired {
 		status = "ready"
 	}
 	return snapshotFromMeta("Deployment", item.ObjectMeta, "", status, fmt.Sprintf("ready %d/%d", item.Status.ReadyReplicas, desired))
@@ -233,7 +235,9 @@ func statefulSetSnapshot(item appsv1.StatefulSet) ResourceSnapshot {
 		desired = *item.Spec.Replicas
 	}
 	status := "progressing"
-	if item.Status.ReadyReplicas >= desired {
+	if desired == 0 && item.Status.ObservedGeneration >= item.Generation {
+		status = "scaled-to-zero"
+	} else if desired > 0 && item.Status.ObservedGeneration >= item.Generation && item.Status.ReadyReplicas >= desired {
 		status = "ready"
 	}
 	return snapshotFromMeta("StatefulSet", item.ObjectMeta, "", status, fmt.Sprintf("ready %d/%d", item.Status.ReadyReplicas, desired))

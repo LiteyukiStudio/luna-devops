@@ -58,16 +58,16 @@ func summarizeApplicationDeploymentTargets(targets []model.DeploymentTarget) app
 		return summary
 	}
 
-	allReady := true
+	allObservedTargetsHealthy := true
 	hasRuntimeObservation := false
 	for _, target := range targets {
 		summary.DesiredReplicas += target.DesiredReplicas
 		summary.ReadyReplicas += target.ReadyReplicas
-		if target.Status == observation.StatusReady || target.Status == observation.StatusProgressing || target.Status == observation.StatusDegraded {
+		if target.Status == observation.StatusReady || target.Status == observation.StatusScaledToZero || target.Status == observation.StatusProgressing || target.Status == observation.StatusDegraded {
 			hasRuntimeObservation = true
 		}
-		if target.Status != observation.StatusReady {
-			allReady = false
+		if target.Status != observation.StatusReady && target.Status != observation.StatusScaledToZero {
+			allObservedTargetsHealthy = false
 		}
 		switch target.Status {
 		case observation.StatusUnavailable:
@@ -82,7 +82,11 @@ func summarizeApplicationDeploymentTargets(targets []model.DeploymentTarget) app
 	if summary.Status == observation.StatusUnavailable || summary.Status == observation.StatusDegraded {
 		return summary
 	}
-	if allReady && hasRuntimeObservation && summary.ReadyReplicas >= summary.DesiredReplicas {
+	if allObservedTargetsHealthy && hasRuntimeObservation && summary.DesiredReplicas == 0 {
+		summary.Status = observation.StatusScaledToZero
+		return summary
+	}
+	if allObservedTargetsHealthy && hasRuntimeObservation && summary.ReadyReplicas >= summary.DesiredReplicas {
 		summary.Status = observation.StatusReady
 		return summary
 	}

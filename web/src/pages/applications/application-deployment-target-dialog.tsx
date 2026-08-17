@@ -65,6 +65,7 @@ export function ApplicationDeploymentTargetDialog({
   targetHasDataVolumes,
   targetDataVolumes,
   targetHasRuntimeChanges,
+  targetHasRunningInstances,
   targetImagePrefix,
   targetRuntimeFilesValid,
   targetSecretFilesValid,
@@ -126,6 +127,7 @@ export function ApplicationDeploymentTargetDialog({
   targetHasDataVolumes: boolean
   targetDataVolumes: Parameters<typeof RuntimeDataVolumesEditor>[0]['rows']
   targetHasRuntimeChanges: boolean
+  targetHasRunningInstances: boolean
   targetImagePrefix: string
   targetRuntimeFilesValid: boolean
   targetSecretFilesValid: boolean
@@ -423,37 +425,54 @@ export function ApplicationDeploymentTargetDialog({
             >
               <KubernetesAdvancedFields form={form} />
             </ProgressiveSection>
-            {targetHasRuntimeChanges && (
-              <div className="flex gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-amber-950 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100">
-                <Rocket className="mt-0.5 size-4 shrink-0" />
-                <div className="grid gap-1 text-sm">
-                  <p className="font-medium">{t('deploymentsPage.runtimeChangesNeedRedeployTitle')}</p>
-                  <p className="text-amber-900/80 dark:text-amber-100/80">
-                    {targetCanRedeploy ? t('deploymentsPage.runtimeChangesNeedRedeployDescription') : t('deploymentsPage.runtimeChangesNeedRedeployUnavailable')}
-                  </p>
-                </div>
-              </div>
-            )}
           </div>
-          <DialogFooter className="shrink-0 border-t border-border bg-background px-6 py-4">
-            {targetHasRuntimeChanges && (
-              <Button
-                disabled={saveDisabled || !targetCanRedeploy}
-                type="button"
-                variant="secondary"
-                onClick={form.handleSubmit(values => onSave(values, true))}
-              >
-                <Rocket className="size-4" />
-                {t('deploymentsPage.saveAndRedeploy')}
-              </Button>
-            )}
-            <Button disabled={saveDisabled} type="submit">
-              <Save className="size-4" />
-              {t('common.save')}
-            </Button>
-          </DialogFooter>
+          <DeploymentTargetDialogFooter
+            canRedeploy={targetCanRedeploy}
+            hasRunningInstances={targetHasRunningInstances}
+            hasRuntimeChanges={targetHasRuntimeChanges}
+            saveDisabled={saveDisabled}
+            onSaveAndRedeploy={form.handleSubmit(values => onSave(values, true))}
+          />
         </form>
       </DialogContent>
     </Dialog>
+  )
+}
+
+export function DeploymentTargetDialogFooter({ canRedeploy, hasRunningInstances, hasRuntimeChanges, onSaveAndRedeploy, saveDisabled }: {
+  canRedeploy: boolean
+  hasRunningInstances: boolean
+  hasRuntimeChanges: boolean
+  onSaveAndRedeploy: () => void
+  saveDisabled: boolean
+}) {
+  const { t } = useTranslation()
+  const showRedeployActions = hasRunningInstances && hasRuntimeChanges
+
+  return (
+    <DialogFooter className="shrink-0 flex-col gap-3 border-t border-border bg-background px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+      {showRedeployActions && (
+        <p className="min-w-0 text-xs leading-5 text-warning" role="status">
+          {t(canRedeploy ? 'deploymentsPage.runtimeChangesNeedRedeployInline' : 'deploymentsPage.runtimeChangesNeedRedeployUnavailableInline')}
+        </p>
+      )}
+      <div className="flex w-full shrink-0 gap-2 sm:ml-auto sm:w-auto">
+        {showRedeployActions && (
+          <Button className="flex-1 sm:flex-none" disabled={saveDisabled} type="submit" variant="outline">
+            <Save className="size-4" />
+            {t('deploymentsPage.saveOnly')}
+          </Button>
+        )}
+        <Button
+          className="flex-1 sm:flex-none"
+          disabled={saveDisabled || (showRedeployActions && !canRedeploy)}
+          type={showRedeployActions ? 'button' : 'submit'}
+          onClick={showRedeployActions ? onSaveAndRedeploy : undefined}
+        >
+          {showRedeployActions ? <Rocket className="size-4" /> : <Save className="size-4" />}
+          {t(showRedeployActions ? 'deploymentsPage.saveAndRedeploy' : 'common.save')}
+        </Button>
+      </div>
+    </DialogFooter>
   )
 }

@@ -34,7 +34,7 @@ export function KeyValueTextEditor({ initialValue, onChange, onValidationChange,
           }
         }}
       />
-      {error && <p className="text-sm text-destructive">{t(`common.${error.message}`)}</p>}
+      {error && <p className="text-sm text-destructive" role="alert">{t(`common.${error.code}`)}</p>}
     </div>
   )
 }

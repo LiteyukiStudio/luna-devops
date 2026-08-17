@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatKeyValueText, parseKeyValueText } from './key-value-text'
+import { formatKeyValueText, KeyValueTextError, parseKeyValueText } from './key-value-text'
 
 describe('key-value text', () => {
   it('parses first separator and preserves internal value equals', () => {
@@ -13,5 +13,9 @@ describe('key-value text', () => {
   it('rejects empty and duplicate keys', () => {
     expect(() => parseKeyValueText('=value')).toThrow()
     expect(() => parseKeyValueText('TOKEN=one\nTOKEN=two')).toThrow()
+  })
+
+  it('returns a stable error code for a line without a separator', () => {
+    expect(() => parseKeyValueText('MISSING_SEPARATOR')).toThrow(new KeyValueTextError('invalid_line'))
   })
 })
