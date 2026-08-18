@@ -24,7 +24,7 @@ import {
 } from '@xyflow/react'
 import dagre from 'dagre'
 import { AppWindow } from 'lucide-react'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { statusToneFor } from '@/components/common/status-tone'
@@ -170,6 +170,8 @@ function ProjectTopologyChartCanvas({ edges, nodes, onSelectEdge }: ProjectTopol
   /* hover 聚焦（临时态）：hoverKey 为节点 id 或成组边的 hoverKey，共用一个状态位 */
   const [hoverKey, setHoverKey] = useState<string | null>(null)
   const { setCenter } = useReactFlow()
+  /* hover 去抖定时器：进入立即、退出延迟，打破“边加粗→命中区域变化→进出事件循环”导致的闪烁 */
+  const hoverClearRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const degreeByNodeId = useMemo(() => {
     const map = new Map<string, { in: number, out: number }>()
@@ -311,10 +313,11 @@ function ProjectTopologyChartCanvas({ edges, nodes, onSelectEdge }: ProjectTopol
       },
       style: {
         stroke,
-        strokeWidth: hovered ? 2.4 : 1.8,
+        /* hover 不改 strokeWidth，避免命中区域几何变化引发进出事件抖动；用透明度区分 */
+        strokeWidth: 1.8,
         strokeDasharray: group.some(edge => edge.origin === 'manual') ? '6 5' : undefined,
         opacity: dimmed ? FADED_OPACITY : hovered ? 1 : 0.9,
-        transition: 'opacity 200ms ease, stroke-width 150ms ease',
+        transition: 'opacity 200ms ease',
       },
       markerEnd: {
         type: MarkerType.ArrowClosed,
@@ -336,17 +339,38 @@ function ProjectTopologyChartCanvas({ edges, nodes, onSelectEdge }: ProjectTopol
     }
   }), [collapsedEdges, highlightedNodeIds, hoverKey])
 
-  const clearHover = useCallback(() => setHoverKey(null), [])
+  /* 进入：取消未决的退出，立即设置 hoverKey */
+  const applyHover = useCallback((key: string) => {
+    if (hoverClearRef.current) {
+      clearTimeout(hoverClearRef.current)
+      hoverClearRef.current = null
+    }
+    setHoverKey(key)
+  }, [])
+  /* 退出：延迟清空，期间的进入事件会取消本次退出，避免几何命中变化引起的 hoverKey 抖动 */
+  const clearHover = useCallback(() => {
+    if (hoverClearRef.current)
+      clearTimeout(hoverClearRef.current)
+    hoverClearRef.current = setTimeout(() => {
+      hoverClearRef.current = null
+      setHoverKey(null)
+    }, 120)
+  }, [])
+  /* 卸载时清理未决定时器 */
+  useEffect(() => () => {
+    if (hoverClearRef.current)
+      clearTimeout(hoverClearRef.current)
+  }, [])
   const handleEdgeClick = useCallback((_: unknown, edge: TopologyFlowEdge) => {
     onSelectEdge(edge.data?.selectEdgeId ?? edge.id)
   }, [onSelectEdge])
   const handleEdgeMouseEnter = useCallback((_: unknown, edge: TopologyFlowEdge) => {
-    setHoverKey(edge.data?.hoverKey ?? edge.id)
-  }, [])
+    applyHover(edge.data?.hoverKey ?? edge.id)
+  }, [applyHover])
   const handleNodeMouseEnter = useCallback((_: unknown, node: TopologyFlowNode) => {
     if (node.type === 'service')
-      setHoverKey(node.id)
-  }, [])
+      applyHover(node.id)
+  }, [applyHover])
   const handleNodeDoubleClick = useCallback((_: unknown, node: TopologyFlowNode) => {
     if (node.type !== 'service')
       return
