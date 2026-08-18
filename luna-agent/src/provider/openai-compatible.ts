@@ -1,7 +1,9 @@
 import type { ModelCapabilities, ModelEvent, ModelProvider, ModelRequest, ModelResponse, ModelToolCall } from "./provider.js"
-import { agentMetrics, clientSpanOptions, isAIContentCaptureEnabled, recordAIContent, telemetryLog, withSpan } from "../telemetry.js"
+import type { Span } from "@opentelemetry/api"
 import { trace } from "@opentelemetry/api"
+import { genAIInputMessages, genAIModelSpan, genAIOutputMessages, genAIToolDefinitions } from "../genai-semconv.js"
 import { isRetryableHTTPStatus, parseRetryAfter, waitForRetry } from "../retry.js"
+import { agentMetrics, clientSpanOptions, isAIContentCaptureEnabled, recordAIContent, telemetryLog, withSpan, withSpanStream } from "../telemetry.js"
 
 type Options = { baseUrl: string, apiKey: string, model: string, timeoutMs: number, maxRetries?: number }
 
@@ -13,37 +15,32 @@ export class OpenAICompatibleProvider implements ModelProvider {
   }
 
   async health(): Promise<{ ok: boolean, requestId?: string }> {
-    return withSpan("gen_ai.chat.health", clientSpanOptions(), async span => {
-      const response = await this.request([{ role: "user", content: "只回复 OK。" }], 32)
-      span.setAttribute("gen_ai.usage.input_tokens", response.usage.inputTokens)
-      span.setAttribute("gen_ai.usage.output_tokens", response.usage.outputTokens)
-      const ok = Boolean(response.text.trim() || response.reasoningSummary.trim() || response.usage.outputTokens > 0)
-      return { ok, ...(response.requestId ? { requestId: response.requestId } : {}) }
-    })
+    const response = await this.completeWithTelemetry({
+      messages: [{ role: "user", content: "只回复 OK。" }],
+      maxOutputTokens: 32,
+    }, "health")
+    const ok = Boolean(response.text.trim() || response.reasoningSummary?.trim() || response.usage.outputTokens > 0)
+    return { ok, ...(response.requestId ? { requestId: response.requestId } : {}) }
   }
 
   async complete(request: ModelRequest): Promise<ModelResponse> {
-    return withSpan("gen_ai.chat.complete", clientSpanOptions(), async span => {
-      const response = await this.request(request.messages, request.maxOutputTokens, request.signal, request.tools, request.toolChoice, request.thinking)
-      span.setAttribute("gen_ai.usage.input_tokens", response.usage.inputTokens)
-      span.setAttribute("gen_ai.usage.output_tokens", response.usage.outputTokens)
-      span.setAttribute("luna.tool_call.count", response.toolCalls.length)
-      return {
-        text: response.text,
-        usage: response.usage,
-        ...(response.reasoningSummary ? { reasoningSummary: response.reasoningSummary } : {}),
-        ...(response.toolCalls.length ? { toolCalls: response.toolCalls } : {}),
-      }
-    })
+    return this.completeWithTelemetry(request, "complete")
   }
 
   async *stream(request: ModelRequest): AsyncIterable<ModelEvent> {
+    const modelSpan = genAIModelSpan(this.options.baseUrl, this.options.model, request.maxOutputTokens, true)
+    yield* withSpanStream(modelSpan.name, clientSpanOptions(modelSpan.attributes), span => this.streamWithTelemetry(request, span))
+  }
+
+  private async *streamWithTelemetry(request: ModelRequest, span: Span): AsyncIterable<ModelEvent> {
+    this.recordRequestContent(span, request)
     let retry = 0
     while (true) {
       let outputStarted = false
       try {
         for await (const event of this.streamAttempt(request)) {
           if (event.type !== "completed") outputStarted = true
+          if (event.type === "completed") this.recordResponseAttributes(span, event.usage, event.finishReason, event.toolCalls?.length ?? 0)
           yield event
         }
         return
@@ -57,6 +54,48 @@ export class OpenAICompatibleProvider implements ModelProvider {
     }
   }
 
+  private async completeWithTelemetry(request: ModelRequest, purpose: "complete" | "health") {
+    const modelSpan = genAIModelSpan(this.options.baseUrl, this.options.model, request.maxOutputTokens, false)
+    return withSpan(modelSpan.name, clientSpanOptions({
+      ...modelSpan.attributes,
+      "luna.gen_ai.request.purpose": purpose,
+    }), async span => {
+      this.recordRequestContent(span, request)
+      const response = await this.request(request.messages, request.maxOutputTokens, request.signal, request.tools, request.toolChoice, request.thinking)
+      this.recordResponseAttributes(span, response.usage, response.finishReason, response.toolCalls.length)
+      return {
+        text: response.text,
+        usage: response.usage,
+        ...(response.reasoningSummary ? { reasoningSummary: response.reasoningSummary } : {}),
+        ...(response.toolCalls.length ? { toolCalls: response.toolCalls } : {}),
+        ...(response.finishReason ? { finishReason: response.finishReason } : {}),
+        ...(response.requestId ? { requestId: response.requestId } : {}),
+      }
+    })
+  }
+
+  private recordRequestContent(span: Span, request: ModelRequest): void {
+    recordAIContent(span, "luna.gen_ai.content.input", "gen_ai.input.messages", genAIInputMessages(request.messages))
+    if (request.tools?.length) {
+      recordAIContent(span, "luna.gen_ai.content.tools", "gen_ai.tool.definitions", genAIToolDefinitions(request.tools))
+    }
+  }
+
+  private recordResponseAttributes(
+    span: Span,
+    usage: ModelResponse["usage"],
+    finishReason: string | undefined,
+    toolCallCount: number,
+  ): void {
+    if (usage.reported !== false) {
+      span.setAttribute("gen_ai.usage.input_tokens", usage.inputTokens)
+      span.setAttribute("gen_ai.usage.output_tokens", usage.outputTokens)
+      if (usage.cachedInputTokens !== undefined) span.setAttribute("gen_ai.usage.cache_read.input_tokens", usage.cachedInputTokens)
+    }
+    if (finishReason) span.setAttribute("gen_ai.response.finish_reasons", [finishReason])
+    span.setAttribute("luna.tool_call.count", toolCallCount)
+  }
+
   private async *streamAttempt(request: ModelRequest): AsyncIterable<ModelEvent> {
     const response = await this.fetchCompletionOnce(request.messages, request.maxOutputTokens, true, request.signal, request.tools, request.toolChoice, request.thinking)
     if (!response.body) throw new Error("ai.provider_empty_stream")
@@ -66,6 +105,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
     let usageReported = false
     let responseText = ""
     let reasoningText = ""
+    let finishReason: string | undefined
     let toolCallDeltaEmitted = false
     const toolFragments = new Map<number, { id?: string, operationId: string, arguments: string }>()
     const reader = (response.body as ReadableStream<Uint8Array>).getReader()
@@ -92,6 +132,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
         if (payload.id) activeSpan?.setAttribute("gen_ai.response.id", payload.id)
         if (payload.model) activeSpan?.setAttribute("gen_ai.response.model", payload.model)
         const delta = payload.choices?.[0]?.delta
+        finishReason = payload.choices?.[0]?.finish_reason ?? finishReason
         const reasoning = extractReasoningText(delta)
         const content = contentText(delta?.content)
         if (reasoning) {
@@ -127,14 +168,19 @@ export class OpenAICompatibleProvider implements ModelProvider {
     const toolCalls = parseToolCalls(toolFragments)
     const activeSpan = trace.getActiveSpan()
     if (activeSpan) {
-      recordAIContent(activeSpan, "gen_ai.content.output", "gen_ai.output.messages", {
+      recordAIContent(activeSpan, "luna.gen_ai.content.output", "gen_ai.output.messages", genAIOutputMessages({
         text: responseText,
-        reasoningSummary: reasoningText,
-        toolCalls,
-        usage,
-      })
+        ...(reasoningText ? { reasoningSummary: reasoningText } : {}),
+        ...(toolCalls.length ? { toolCalls } : {}),
+        ...(finishReason ? { finishReason } : {}),
+      }))
     }
-    yield { type: "completed", usage: { ...usage, reported: usageReported }, ...(toolCalls.length ? { toolCalls } : {}) }
+    yield {
+      type: "completed",
+      usage: { ...usage, reported: usageReported },
+      ...(toolCalls.length ? { toolCalls } : {}),
+      ...(finishReason ? { finishReason } : {}),
+    }
   }
 
   private async request(messages: ModelRequest["messages"], maxTokens: number, signal?: AbortSignal, tools?: ModelRequest["tools"], toolChoice?: ModelRequest["toolChoice"], thinking?: ModelRequest["thinking"]) {
@@ -144,6 +190,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
     if (body.id) activeSpan?.setAttribute("gen_ai.response.id", body.id)
     if (body.model) activeSpan?.setAttribute("gen_ai.response.model", body.model)
     const message = body.choices?.[0]?.message
+    const finishReason = body.choices?.[0]?.finish_reason
     const result = {
       text: contentText(message?.content),
       reasoningSummary: extractReasoningText(message),
@@ -163,8 +210,16 @@ export class OpenAICompatibleProvider implements ModelProvider {
         ...(body.usage?.completion_tokens_details?.cached_tokens !== undefined ? { cachedOutputTokens: body.usage.completion_tokens_details.cached_tokens } : {}),
       },
       requestId: response.headers.get("x-request-id") ?? undefined,
+      finishReason,
     }
-    if (activeSpan) recordAIContent(activeSpan, "gen_ai.content.output", "gen_ai.output.messages", result)
+    if (activeSpan) {
+      recordAIContent(activeSpan, "luna.gen_ai.content.output", "gen_ai.output.messages", genAIOutputMessages({
+        text: result.text,
+        reasoningSummary: result.reasoningSummary,
+        toolCalls: result.toolCalls,
+        ...(finishReason ? { finishReason } : {}),
+      }))
+    }
     return result
   }
 
@@ -189,22 +244,6 @@ export class OpenAICompatibleProvider implements ModelProvider {
     const abort = () => controller.abort(signal?.reason)
     signal?.addEventListener("abort", abort, { once: true })
     const activeSpan = trace.getActiveSpan()
-    activeSpan?.setAttributes({
-      "gen_ai.provider.name": "openai_compatible",
-      "gen_ai.request.model": this.options.model,
-      "gen_ai.request.max_tokens": maxTokens,
-      "gen_ai.request.streaming": stream,
-      "server.address": new URL(this.options.baseUrl).hostname,
-    })
-    if (activeSpan) {
-      recordAIContent(activeSpan, "gen_ai.content.input", "gen_ai.input.messages", {
-        messages,
-        tools,
-        toolChoice,
-        maxOutputTokens: maxTokens,
-        streaming: stream,
-      })
-    }
     try {
       let response: Response
       try {
@@ -235,7 +274,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
         })
       } catch (error) {
         if (activeSpan) {
-          recordAIContent(activeSpan, "gen_ai.content.error", "gen_ai.response.error_body", contentError(error))
+          recordAIContent(activeSpan, "luna.gen_ai.content.error", "luna.gen_ai.response.error_body", contentError(error))
         }
         const transportError = providerTransportError(error, signal)
         agentMetrics.externalRequests.add(1, {
@@ -252,7 +291,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
         const errorCode = providerHTTPError(response.status)
         if (activeSpan && isAIContentCaptureEnabled()) {
           const responseBody = await response.clone().text().catch(() => "")
-          recordAIContent(activeSpan, "gen_ai.content.error", "gen_ai.response.error_body", {
+          recordAIContent(activeSpan, "luna.gen_ai.content.error", "luna.gen_ai.response.error_body", {
             status: response.status,
             body: responseBody,
           })
@@ -289,7 +328,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
 
   private async scheduleRetry(error: unknown, attempt: number, operation: string, signal?: AbortSignal): Promise<void> {
     const retryAfterMs = error instanceof ProviderRequestError ? error.retryAfterMs : undefined
-    trace.getActiveSpan()?.addEvent("gen_ai.request.retry_scheduled", {
+    trace.getActiveSpan()?.addEvent("luna.gen_ai.request.retry_scheduled", {
       "retry.attempt": attempt,
       "retry.max_retries": this.maxRetries,
       "error.code": errorCode(error),
@@ -381,11 +420,11 @@ type CompletionUsage = {
   prompt_tokens_details?: { cached_tokens?: number }
   completion_tokens_details?: { cached_tokens?: number }
 }
-type CompletionBody = { id?: string, model?: string, choices?: Array<{ message?: MessageShape }>, usage?: CompletionUsage }
+type CompletionBody = { id?: string, model?: string, choices?: Array<{ message?: MessageShape, finish_reason?: string }>, usage?: CompletionUsage }
 type StreamChunk = {
   id?: string
   model?: string
-  choices?: Array<{ delta?: ReasoningShape & { content?: unknown, tool_calls?: ToolCallShape[] } }>
+  choices?: Array<{ delta?: ReasoningShape & { content?: unknown, tool_calls?: ToolCallShape[] }, finish_reason?: string }>
   usage?: CompletionUsage
   error?: unknown
 }

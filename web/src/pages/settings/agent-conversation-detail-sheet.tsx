@@ -103,7 +103,7 @@ function traceFromTurn(traceId: string, createdAt: string, durationMs: number): 
   return {
     traceId,
     rootServiceName: 'luna-agent',
-    rootTraceName: 'agent.run.execute',
+    rootTraceName: 'invoke_agent Luna Agent',
     startTimeUnixNano: String(new Date(createdAt).getTime() * 1_000_000),
     durationMs,
   }

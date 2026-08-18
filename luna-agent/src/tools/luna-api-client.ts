@@ -33,8 +33,8 @@ export class HttpLunaApiToolClient implements LunaApiToolClient {
     const startedAt = performance.now()
     return withSpan("luna_api.tool.execute", clientSpanOptions({
       "server.address": new URL(this.baseUrl).hostname,
-      "gen_ai.tool.name": request.operation.operationId,
       "luna.run.id": request.runId,
+      "luna.tool.name": request.operation.operationId,
       "luna.tool_call.id": request.toolCallId,
     }), async span => {
     const exchange = await this.fetchWithRetry(new URL("/internal/v1/ai/delegations/exchange", this.baseUrl), {

@@ -78,5 +78,5 @@ function formatJSON(value: unknown) {
 }
 
 function toolTrace(call: AgentObservabilityConversationToolCall): AgentObservabilityTrace {
-  return { traceId: call.traceId ?? '', rootServiceName: 'luna-agent', rootTraceName: 'agent.tool.execute', startTimeUnixNano: '0', durationMs: call.durationMs ?? 0 }
+  return { traceId: call.traceId ?? '', rootServiceName: 'luna-agent', rootTraceName: `execute_tool ${call.operationId}`, startTimeUnixNano: '0', durationMs: call.durationMs ?? 0 }
 }

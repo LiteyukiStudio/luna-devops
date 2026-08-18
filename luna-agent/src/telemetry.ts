@@ -13,10 +13,11 @@ import { envDetector } from "@opentelemetry/resources"
 import { BatchLogRecordProcessor } from "@opentelemetry/sdk-logs"
 import { PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics"
 import { NodeSDK } from "@opentelemetry/sdk-node"
+import { genAISchemaURL } from "./genai-semconv.js"
 import { redact } from "./redaction.js"
 
 const instrumentationName = "luna-agent"
-const tracer = trace.getTracer(instrumentationName)
+const tracer = trace.getTracerProvider().getTracer(instrumentationName, undefined, { schemaUrl: genAISchemaURL })
 const logger = logs.getLogger(instrumentationName)
 const aiCorrelationStorage = new AsyncLocalStorage<Attributes>()
 const aiCorrelationAttributeNames = [
@@ -57,13 +58,22 @@ export function recordAIContent(
 ): void {
   if (!aiContentCaptureEnabled) return
   const content = serializeAIContent(value)
+  if (content.truncated) {
+    span.setAttribute("luna.ai.content.truncated", true)
+    telemetryLog(eventName, "debug", {
+      ...attributes,
+      "luna.ai.content.truncated": true,
+    })
+    return
+  }
   const contentAttributes: Attributes = {
     ...activeAICorrelationAttributes(),
     ...attributes,
     [attributeName]: content.value,
     "luna.ai.content.truncated": content.truncated,
   }
-  span.addEvent(eventName, contentAttributes)
+  span.setAttribute(attributeName, content.value)
+  span.setAttribute("luna.ai.content.truncated", false)
   telemetryLog(eventName, "debug", contentAttributes)
 }
 
@@ -252,6 +262,41 @@ export async function withSpan<T>(
   })
 }
 
+export async function* withSpanStream<T>(
+  name: string,
+  options: SpanOptions,
+  operation: (span: Span) => AsyncIterable<T>,
+  parentContext: Context = context.active(),
+): AsyncIterable<T> {
+  const span = tracer.startSpan(name, options, parentContext)
+  const spanContext = trace.setSpan(parentContext, span)
+  const correlationAttributes = mergeAICorrelationAttributes(activeAICorrelationAttributes(), options.attributes)
+  const iterator = operation(span)[Symbol.asyncIterator]()
+  let completed = false
+  try {
+    while (true) {
+      const next = await context.with(spanContext, () => aiCorrelationStorage.run(correlationAttributes, () => iterator.next()))
+      if (next.done) {
+        completed = true
+        return
+      }
+      yield next.value
+    }
+  }
+  catch (error) {
+    if (isExpectedCancellation(error)) span.setAttribute("luna.operation.outcome", "canceled")
+    else recordSpanError(span, error)
+    throw error
+  }
+  finally {
+    if (!completed && iterator.return) {
+      await context.with(spanContext, () => aiCorrelationStorage.run(correlationAttributes, () => iterator.return!()))
+        .catch(() => undefined)
+    }
+    span.end()
+  }
+}
+
 export function isExpectedCancellation(error: unknown): boolean {
   const code = stableErrorCode(error)
   return code === "ai.run_canceled" || code === "ai.agent_stopping"
@@ -291,7 +336,9 @@ export function normalizeTraceContext(carrier: Record<string, string>): Record<s
 export function recordSpanError(span: Span, error: unknown): void {
   const code = stableErrorCode(error)
   span.setStatus({ code: SpanStatusCode.ERROR, message: code })
-  span.setAttribute("error.type", error instanceof Error ? error.name : "UnknownError")
+  span.setAttribute("error.type", code === "ai.internal_error"
+    ? error instanceof Error ? error.name : "_OTHER"
+    : code)
   span.setAttribute("error.code", code)
 }
 

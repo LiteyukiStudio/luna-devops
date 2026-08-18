@@ -37,7 +37,7 @@ export type ModelEvent =
   | { type: "reasoning_summary_delta", delta: string }
   | { type: "message_delta", delta: string }
   | { type: "tool_call_delta" }
-  | { type: "completed", usage: { inputTokens: number, outputTokens: number, cachedInputTokens?: number, cachedOutputTokens?: number, reported?: boolean }, reservationId?: string, toolCalls?: ModelToolCall[] }
+  | { type: "completed", usage: { inputTokens: number, outputTokens: number, cachedInputTokens?: number, cachedOutputTokens?: number, reported?: boolean }, reservationId?: string, toolCalls?: ModelToolCall[], finishReason?: string }
 export type ModelToolArgumentError = {
   code: "invalid_json"
   message: string
@@ -48,7 +48,7 @@ export type ModelToolCall = {
   arguments: Record<string, unknown>
   argumentError?: ModelToolArgumentError
 }
-export type ModelResponse = { text: string, reasoningSummary?: string, toolCalls?: ModelToolCall[], reservationId?: string, usage: { inputTokens: number, outputTokens: number, cachedInputTokens?: number, cachedOutputTokens?: number, reported?: boolean } }
+export type ModelResponse = { text: string, reasoningSummary?: string, toolCalls?: ModelToolCall[], finishReason?: string, reservationId?: string, usage: { inputTokens: number, outputTokens: number, cachedInputTokens?: number, cachedOutputTokens?: number, reported?: boolean } }
 export type ModelCapabilities = { streaming: boolean, toolCalling: boolean, structuredOutput: boolean }
 
 export interface ModelProvider {

@@ -362,13 +362,25 @@ type tempoSpanEvent struct {
 }
 
 type tempoAttribute struct {
-	Key   string `json:"key"`
-	Value struct {
-		StringValue *string  `json:"stringValue"`
-		IntValue    *string  `json:"intValue"`
-		DoubleValue *float64 `json:"doubleValue"`
-		BoolValue   *bool    `json:"boolValue"`
-	} `json:"value"`
+	Key   string        `json:"key"`
+	Value tempoAnyValue `json:"value"`
+}
+
+type tempoAnyValue struct {
+	StringValue *string          `json:"stringValue"`
+	IntValue    *string          `json:"intValue"`
+	DoubleValue *float64         `json:"doubleValue"`
+	BoolValue   *bool            `json:"boolValue"`
+	ArrayValue  *tempoArrayValue `json:"arrayValue"`
+	KVListValue *tempoKVList     `json:"kvlistValue"`
+}
+
+type tempoArrayValue struct {
+	Values []tempoAnyValue `json:"values"`
+}
+
+type tempoKVList struct {
+	Values []tempoAttribute `json:"values"`
 }
 
 func (span *tempoSpan) UnmarshalJSON(data []byte) error {
@@ -383,11 +395,19 @@ func (span *tempoSpan) UnmarshalJSON(data []byte) error {
 }
 
 var traceAttributeAllowlist = map[string]struct{}{
-	"gen_ai.operation.name": {}, "gen_ai.provider.name": {}, "gen_ai.request.model": {},
-	"gen_ai.response.model": {}, "gen_ai.usage.input_tokens": {}, "gen_ai.usage.output_tokens": {},
-	"gen_ai.tool.name": {}, "gen_ai.conversation.id": {}, "luna.turn.id": {}, "luna.run.id": {},
+	"gen_ai.operation.name": {}, "gen_ai.provider.name": {}, "gen_ai.agent.name": {},
+	"gen_ai.agent.description": {}, "gen_ai.agent.version": {}, "gen_ai.conversation.id": {},
+	"gen_ai.request.model": {}, "gen_ai.request.max_tokens": {}, "gen_ai.response.id": {},
+	"gen_ai.response.model": {}, "gen_ai.response.finish_reasons": {}, "gen_ai.output.type": {},
+	"gen_ai.usage.input_tokens": {}, "gen_ai.usage.output_tokens": {}, "gen_ai.usage.cache_read.input_tokens": {},
+	"gen_ai.system_instructions": {}, "gen_ai.input.messages": {}, "gen_ai.output.messages": {}, "gen_ai.tool.definitions": {},
+	"gen_ai.tool.name": {}, "gen_ai.tool.call.id": {}, "gen_ai.tool.description": {}, "gen_ai.tool.type": {},
+	"gen_ai.tool.call.arguments": {}, "gen_ai.tool.call.result": {},
+	"server.address": {}, "server.port": {}, "luna.turn.id": {}, "luna.run.id": {},
 	"luna.agent.available_tool.count": {}, "luna.agent.available_tool.names": {},
-	"luna.tool_call.id": {}, "http.request.method": {}, "http.response.status_code": {},
+	"luna.tool_call.id": {}, "luna.tool_call.count": {}, "luna.ai.content.truncated": {}, "luna.gen_ai.request.streaming": {},
+	"luna.gen_ai.request.purpose": {}, "luna.gen_ai.response.error_body": {}, "luna.operation.name": {},
+	"http.request.method": {}, "http.response.status_code": {},
 	"db.system.name": {}, "error.type": {}, "luna.run.outcome": {},
 }
 
@@ -471,18 +491,70 @@ func tempoAttributes(attributes []tempoAttribute, allowlist map[string]struct{})
 				continue
 			}
 		}
-		switch {
-		case attribute.Value.StringValue != nil:
-			result[attribute.Key] = *attribute.Value.StringValue
-		case attribute.Value.IntValue != nil:
-			result[attribute.Key] = *attribute.Value.IntValue
-		case attribute.Value.DoubleValue != nil:
-			result[attribute.Key] = strconv.FormatFloat(*attribute.Value.DoubleValue, 'f', -1, 64)
-		case attribute.Value.BoolValue != nil:
-			result[attribute.Key] = strconv.FormatBool(*attribute.Value.BoolValue)
+		if value, ok := tempoAttributeString(attribute.Value); ok {
+			result[attribute.Key] = value
 		}
 	}
 	return result
+}
+
+func tempoAttributeString(value tempoAnyValue) (string, bool) {
+	switch {
+	case value.StringValue != nil:
+		return *value.StringValue, true
+	case value.IntValue != nil:
+		return *value.IntValue, true
+	case value.DoubleValue != nil:
+		return strconv.FormatFloat(*value.DoubleValue, 'f', -1, 64), true
+	case value.BoolValue != nil:
+		return strconv.FormatBool(*value.BoolValue), true
+	case value.ArrayValue != nil, value.KVListValue != nil:
+		normalized, ok := tempoAttributeJSONValue(value)
+		if !ok {
+			return "", false
+		}
+		encoded, err := json.Marshal(normalized)
+		return string(encoded), err == nil
+	default:
+		return "", false
+	}
+}
+
+func tempoAttributeJSONValue(value tempoAnyValue) (any, bool) {
+	switch {
+	case value.StringValue != nil:
+		return *value.StringValue, true
+	case value.IntValue != nil:
+		parsed, err := strconv.ParseInt(*value.IntValue, 10, 64)
+		if err != nil {
+			return *value.IntValue, true
+		}
+		return parsed, true
+	case value.DoubleValue != nil:
+		return *value.DoubleValue, true
+	case value.BoolValue != nil:
+		return *value.BoolValue, true
+	case value.ArrayValue != nil:
+		items := make([]any, 0, len(value.ArrayValue.Values))
+		for _, item := range value.ArrayValue.Values {
+			normalized, ok := tempoAttributeJSONValue(item)
+			if ok {
+				items = append(items, normalized)
+			}
+		}
+		return items, true
+	case value.KVListValue != nil:
+		items := make(map[string]any, len(value.KVListValue.Values))
+		for _, item := range value.KVListValue.Values {
+			normalized, ok := tempoAttributeJSONValue(item.Value)
+			if ok {
+				items[item.Key] = normalized
+			}
+		}
+		return items, true
+	default:
+		return nil, false
+	}
 }
 
 func prometheusSeries(items []struct {
