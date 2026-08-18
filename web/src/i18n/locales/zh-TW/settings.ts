@@ -42,6 +42,8 @@ const settings = {
       priceInvalid: '請輸入非負小數，最多保留 8 位小數。',
       nameRequired: '請輸入模型名稱。',
       priceSummary: '輸入 {{input}} · 輸出 {{output}} 額度 / 1M',
+      suggestedPrice: '建議價格：輸入 {{input}} · 輸出 {{output}} · 快取輸入 {{cachedInput}} · 快取輸出 {{cachedOutput}} 額度 / 1M（按官方刊例價折算）',
+      applySuggestedPrice: '使用建議價格',
       enabled: '已啟用',
       disabled: '已停用',
       edit: '編輯模型',

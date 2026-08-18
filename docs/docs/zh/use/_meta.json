@@ -51,6 +51,11 @@
   },
   {
     "type": "file",
+    "name": "default-pricing",
+    "label": "默认定价与建议价格"
+  },
+  {
+    "type": "file",
     "name": "data-retention",
     "label": "数据保留与清理"
   },

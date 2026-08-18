@@ -14,6 +14,7 @@ import { Surface } from '@/components/common/surface'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { findSuggestedModelPrice } from '@/lib/ai-model-suggested-prices'
 import { aiModelFormSchema, emptyModel, modelFormValues, modelSaveErrorMessage } from './ai-model-management-utils'
 
 export function AIModelManagement() {
@@ -47,6 +48,17 @@ export function AIModelManagement() {
     setOpen(true)
   }
   const errors = form.formState.errors
+  const watchedName = form.watch('name')
+  const suggestedPrice = findSuggestedModelPrice(watchedName ?? '')
+  const applySuggestedPrice = () => {
+    if (!suggestedPrice) {
+      return
+    }
+    form.setValue('inputCreditsPerMillion', suggestedPrice.input, { shouldValidate: true })
+    form.setValue('outputCreditsPerMillion', suggestedPrice.output, { shouldValidate: true })
+    form.setValue('cachedInputCreditsPerMillion', suggestedPrice.cachedInput, { shouldValidate: true })
+    form.setValue('cachedOutputCreditsPerMillion', suggestedPrice.cachedOutput, { shouldValidate: true })
+  }
   return (
     <>
       <Surface className="mt-6 grid gap-4 rounded-xl p-6" variant="bordered">
@@ -86,6 +98,21 @@ export function AIModelManagement() {
           </DialogHeader>
           <form className="grid gap-4" onSubmit={form.handleSubmit(values => save.mutate(values))}>
             <Field error={errors.name?.message} label={t('settings.ai.models.name')} required><Input {...form.register('name')} /></Field>
+            {suggestedPrice && (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-control bg-surface-subtle px-4 py-3 text-sm">
+                <span className="text-muted-foreground">
+                  {t('settings.ai.models.suggestedPrice', {
+                    input: suggestedPrice.input,
+                    output: suggestedPrice.output,
+                    cachedInput: suggestedPrice.cachedInput,
+                    cachedOutput: suggestedPrice.cachedOutput,
+                  })}
+                </span>
+                <Button size="sm" type="button" variant="outline" onClick={applySuggestedPrice}>
+                  {t('settings.ai.models.applySuggestedPrice')}
+                </Button>
+              </div>
+            )}
             <div className="grid gap-4 sm:grid-cols-2">
               <Field error={errors.maxContextTokens?.message} hint={t('settings.ai.models.contextLimitHint')} label={t('settings.ai.models.contextLimit')} required><Input max={2097152} min={4096} step={1} type="number" {...form.register('maxContextTokens', { valueAsNumber: true })} /></Field>
               <Field error={errors.maxOutputTokens?.message} hint={t('settings.ai.models.outputLimitHint')} label={t('settings.ai.models.outputLimit')} required><Input max={262144} min={256} step={1} type="number" {...form.register('maxOutputTokens', { valueAsNumber: true })} /></Field>

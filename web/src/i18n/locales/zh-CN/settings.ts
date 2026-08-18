@@ -42,6 +42,8 @@ const settings = {
       priceInvalid: '请输入非负小数，最多保留 8 位小数。',
       nameRequired: '请输入模型名称。',
       priceSummary: '输入 {{input}} · 输出 {{output}} 额度 / 1M',
+      suggestedPrice: '建议价格：输入 {{input}} · 输出 {{output}} · 缓存输入 {{cachedInput}} · 缓存输出 {{cachedOutput}} 额度 / 1M（按官方刊例价折算）',
+      applySuggestedPrice: '使用建议价格',
       enabled: '已启用',
       disabled: '已停用',
       edit: '编辑模型',

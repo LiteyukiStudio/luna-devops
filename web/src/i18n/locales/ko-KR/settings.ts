@@ -42,6 +42,8 @@ const settings = {
       priceInvalid: '비음수 소수를 입력하고 최대 8자리 소수를 유지하세요.',
       nameRequired: '모델 이름을 입력하세요.',
       priceSummary: '입력 {{input}} · 출력 {{output}} 크레딧 / 1M',
+      suggestedPrice: '권장 가격: 입력 {{input}} · 출력 {{output}} · 캐시 입력 {{cachedInput}} · 캐시 출력 {{cachedOutput}} 크레딧 / 1M (공식 정가에서 환산)',
+      applySuggestedPrice: '권장 가격 사용',
       enabled: '활성화됨',
       disabled: '비활성화됨',
       edit: '모델 편집',

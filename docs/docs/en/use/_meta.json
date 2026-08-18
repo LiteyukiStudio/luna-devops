@@ -51,6 +51,11 @@
   },
   {
     "type": "file",
+    "name": "default-pricing",
+    "label": "Default and Suggested Pricing"
+  },
+  {
+    "type": "file",
     "name": "data-retention",
     "label": "Data Retention and Cleanup"
   },

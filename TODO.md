@@ -1,5 +1,12 @@
 # TODO
 
+## 2026-08-18 默认计费单价与 AI 模型建议价格
+
+- [x] 调研主流公有云（AWS、阿里云、腾讯云、GCP）计算/存储/流量刊例价与 OpenAI、Anthropic、Google、DeepSeek、阿里、月之暗面、字节、智谱官方模型刊例价，确认现有资源默认单价（1 美元 = 100 Credits 口径下）合理并保留为默认值。
+- [x] 新增 `web/src/lib/ai-model-suggested-prices.ts` 建议价目录（官方美元刊例价 × 100），AI 模型表单命中已收录模型时展示建议价格并支持一键填入，带日期/版本后缀的同系型号沿用同系价格。
+- [x] 新增中英文公开文档「默认定价与建议价格」页并接入导航，账单页链接到该页；补充五语言 i18n 与查找逻辑单元测试。
+- [ ] 在具备已登录浏览器会话的环境验收模型表单建议价格提示与一键填充交互。
+
 ## 2026-08-18 Agent OpenTelemetry GenAI 语义对齐
 
 - [x] 将 Agent、模型与工具调用 Span 对齐 OpenTelemetry GenAI 官方命名、Kind、字段和 Schema URL，并保留 Luna 低风险扩展字段。

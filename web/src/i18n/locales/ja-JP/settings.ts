@@ -42,6 +42,8 @@ const settings = {
       priceInvalid: '非負の小数を入力し、最大 8 桁の小数を保持してください。',
       nameRequired: 'モデル名を入力してください。',
       priceSummary: '入力 {{input}} · 出力 {{output}} クレジット / 1M',
+      suggestedPrice: '推奨価格：入力 {{input}} · 出力 {{output}} · キャッシュ入力 {{cachedInput}} · キャッシュ出力 {{cachedOutput}} クレジット / 1M（公式定価から換算）',
+      applySuggestedPrice: '推奨価格を使用',
       enabled: '有効',
       disabled: '無効',
       edit: 'モデルを編集',

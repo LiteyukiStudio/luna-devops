@@ -42,6 +42,8 @@ const settings = {
       priceInvalid: 'Enter a non-negative decimal with up to 8 fractional digits.',
       nameRequired: 'Enter a model name.',
       priceSummary: 'Input {{input}} · Output {{output}} credits / 1M',
+      suggestedPrice: 'Suggested price: input {{input}} · output {{output}} · cached input {{cachedInput}} · cached output {{cachedOutput}} credits / 1M (converted from official list prices)',
+      applySuggestedPrice: 'Use suggested price',
       enabled: 'Enabled',
       disabled: 'Disabled',
       edit: 'Edit model',
