@@ -24,8 +24,10 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Textarea } from '@/components/ui/textarea'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
+import { cn } from '@/lib/utils'
 import { projectTopologyKeys } from './project-topology-query'
 
 const envNamePattern = /^[A-Z_][A-Z0-9_]*$/
@@ -193,20 +195,30 @@ export function ProjectTopologyRelationDialog({
         </DialogHeader>
         <form className="grid gap-4" onSubmit={form.handleSubmit(values => saveRelation.mutate(values))}>
           <Field hint={t('projectTopology.form.modeHint')} label={t('projectTopology.form.mode')} required>
-            <NativeSelect
+            <RadioGroup
+              className="grid gap-3 sm:grid-cols-2"
               disabled={Boolean(editing)}
               value={mode}
-              onChange={(event) => {
-                const nextMode = event.target.value as RelationDialogMode
+              onValueChange={(value) => {
+                const nextMode = value as RelationDialogMode
                 form.setValue('mode', nextMode, { shouldDirty: true, shouldValidate: true })
                 form.setValue('sourceDeploymentTargetId', nextMode === 'manual' ? applicationTargetValue : '', { shouldDirty: true, shouldValidate: true })
                 form.setValue('targetDeploymentTargetId', nextMode === 'manual' ? applicationTargetValue : '', { shouldDirty: true, shouldValidate: true })
                 form.setValue('targetPortName', '', { shouldDirty: true, shouldValidate: true })
               }}
             >
-              <option value="service_binding">{t('projectTopology.form.serviceBinding')}</option>
-              <option value="manual">{t('projectTopology.form.manual')}</option>
-            </NativeSelect>
+              <ModeOption
+                description={t('projectTopology.form.serviceBindingOptionDescription')}
+                title={t('projectTopology.form.serviceBindingOptionTitle')}
+                value="service_binding"
+              />
+              <ModeOption
+                description={t('projectTopology.form.manualOptionDescription')}
+                hint={t('projectTopology.form.manualOptionHint')}
+                title={t('projectTopology.form.manualOptionTitle')}
+                value="manual"
+              />
+            </RadioGroup>
           </Field>
 
           <ProgressiveSection defaultOpen description={t('projectTopology.form.basicSectionDescription')} title={t('projectTopology.form.basicSection')}>
@@ -550,6 +562,31 @@ function manualEdgePayload(values: RelationFormValues): ProjectTopologyManualEdg
 
 function optionalTargetId(value: string) {
   return value && value !== applicationTargetValue ? value : null
+}
+
+/** 关系模式选项卡片：带说明的单选项，编辑态禁用切换 */
+function ModeOption({ description, hint, title, value }: { description: string, hint?: string, title: string, value: RelationDialogMode }) {
+  return (
+    <label
+      className={cn(
+        'group/mode relative grid cursor-pointer gap-1 rounded-container border border-border bg-surface p-3 transition-colors',
+        'hover:border-separator-strong',
+        'has-[:checked]:border-primary has-[:checked]:bg-primary-subtle/40',
+        'has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60',
+      )}
+    >
+      <span className="flex items-center gap-2">
+        <RadioGroupItem aria-label={title} value={value} />
+        <span className="text-sm font-medium">{title}</span>
+      </span>
+      <span className="pl-6 text-xs leading-5 text-muted-foreground">{description}</span>
+      {hint && (
+        <span className="mt-1 ml-6 rounded-control border border-border bg-muted/40 px-2 py-1 text-[11px] leading-4 text-muted-foreground">
+          {hint}
+        </span>
+      )}
+    </label>
+  )
 }
 
 function normalizeProtocol(value: string): RelationFormValues['protocol'] {

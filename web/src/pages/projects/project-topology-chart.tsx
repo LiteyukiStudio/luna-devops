@@ -1,16 +1,39 @@
+import type {
+  Edge,
+  EdgeProps,
+  EdgeTypes,
+  Node,
+  NodeProps,
+  NodeTypes,
+} from '@xyflow/react'
 import type { CSSProperties } from 'react'
 import type { ProjectTopologyEdge, ProjectTopologyNode } from '@/api'
 import type { StatusTone } from '@/components/common/status-tone'
+import {
+  Background,
+  BaseEdge,
+  Controls,
+  EdgeLabelRenderer,
+  getSmoothStepPath,
+  Handle,
+  MarkerType,
+  Position,
+  ReactFlow,
+} from '@xyflow/react'
+import dagre from 'dagre'
 import { AppWindow } from 'lucide-react'
-import { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { statusToneFor } from '@/components/common/status-tone'
 import { cn } from '@/lib/utils'
 
+import '@xyflow/react/dist/style.css'
+
 /**
- * 项目服务拓扑 · 分层流向图（Sugiyama 分层 DAG）。
- * 按边方向做最长路径分层，主调在上、被调在下；同层节点用重心法排序减少边交叉。
- * 连线为 SVG 正交曼哈顿路由（圆角转角、中途障碍检测绕行），覆盖在泳道画布上。
+ * 项目服务拓扑 · 分层流向图（React Flow + dagre）。
+ * dagre 负责 Sugiyama 分层坐标（rankdir TB，主调在上、被调在下），
+ * React Flow 负责渲染、正交走线（smoothstep）、画布缩放/平移与焦点高亮。
+ * 泳道用 zIndex -1 的背景节点实现，随视口变换并参与 fitView。
  */
 
 interface ProjectTopologyChartProps {
@@ -31,42 +54,55 @@ const CATEGORY_COLORS: Record<TopologyCategory, string> = {
   infra: 'var(--topology-cat-infra)',
 }
 
-/* ---------- 走线工程参数 ---------- */
-const ROUTE_GAP = 14 // 节点与层间通道的净空
-const TURN_R = 9 // 转角圆角半径
-const OBSTACLE_PAD = 6 // 障碍检测时节点盒的外扩量
-const MARKER_ID = 'topology-edge-arrow'
+/* ---------- 布局常量 ---------- */
+const NODE_WIDTH = 224
+const NODE_HEIGHT = 78
+const NODE_SEP = 48 // 同层节点水平间距
+const RANK_SEP = 96 // 层间垂直通道
+const LANE_PADDING_Y = 28 // 泳道背景在节点上下的留白
+const LANE_PADDING_X = 24 // 泳道背景在图左右的留白
+const LANE_GAP = 24 // 相邻泳道之间的间隙
 
-interface NodeRect {
-  bottom: number
-  cx: number
-  left: number
-  right: number
-  top: number
+/* ---------- 自定义节点/边数据 ---------- */
+interface ServiceFlowNodeData extends Record<string, unknown> {
+  node: ProjectTopologyNode
+  category: TopologyCategory
+  degree: { in: number, out: number }
+  statusLabel: string
+  categoryLabel: string
+  stageSummary: string
+  dimmed: boolean
+  focused: boolean
+  onFocus: (nodeId: string) => void
 }
 
-interface EdgeGeometry {
-  d: string
-  labelX: number
-  labelY: number
+interface LaneFlowNodeData extends Record<string, unknown> {
+  layerIndex: number
+  serviceCount: number
+  dimmed: boolean
 }
 
+interface TopologyFlowEdgeData extends Record<string, unknown> {
+  dimmed: boolean
+  label?: string
+}
+
+type ServiceFlowNode = Node<ServiceFlowNodeData, 'service'>
+type LaneFlowNode = Node<LaneFlowNodeData, 'lane'>
+type TopologyFlowNode = LaneFlowNode | ServiceFlowNode
+type TopologyFlowEdge = Edge<TopologyFlowEdgeData, 'topology'>
+
+/* ============================================================
+   主组件
+   ============================================================ */
 export function ProjectTopologyChart({ edges, nodes, onSelectEdge }: ProjectTopologyChartProps) {
   const { t } = useTranslation()
-  const canvasRef = useRef<HTMLDivElement>(null)
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null)
-  const [geometryVersion, setGeometryVersion] = useState(0)
 
-  const layers = useMemo(() => computeLayers(nodes, edges), [edges, nodes])
-  const layerByNodeId = useMemo(() => {
-    const map = new Map<string, number>()
-    layers.forEach((layer, index) => layer.forEach(node => map.set(node.id, index)))
-    return map
-  }, [layers])
-  const nodeById = useMemo(() => new Map(nodes.map(node => [node.id, node])), [nodes])
   const degreeByNodeId = useMemo(() => {
     const map = new Map<string, { in: number, out: number }>()
-    for (const node of nodes) map.set(node.id, { in: 0, out: 0 })
+    for (const node of nodes)
+      map.set(node.id, { in: 0, out: 0 })
     for (const edge of edges) {
       const source = map.get(edge.source)
       const target = map.get(edge.target)
@@ -78,6 +114,19 @@ export function ProjectTopologyChart({ edges, nodes, onSelectEdge }: ProjectTopo
     return map
   }, [edges, nodes])
 
+  const focusNode = useCallback((nodeId: string) => {
+    setFocusedNodeId(current => (current === nodeId ? null : nodeId))
+  }, [])
+
+  /* dagre 分层布局：节点坐标 + 层索引 + 泳道背景几何 */
+  const layout = useMemo(() => layoutTopology(nodes, edges), [edges, nodes])
+  const layerByNodeId = useMemo(() => {
+    const map = new Map<string, number>()
+    layout.layers.forEach((layer, index) => layer.forEach(id => map.set(id, index)))
+    return map
+  }, [layout])
+
+  /* 焦点邻域（degree-of-interest）：非关联节点/边淡出 */
   const relatedNodeIds = useMemo(() => {
     if (!focusedNodeId)
       return null
@@ -91,139 +140,134 @@ export function ProjectTopologyChart({ edges, nodes, onSelectEdge }: ProjectTopo
     return related
   }, [edges, focusedNodeId])
 
-  /* 节点渲染完成后测量卡片位置并计算走线；尺寸变化时重绘 */
-  useLayoutEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas)
-      return
-    let frame = requestAnimationFrame(() => setGeometryVersion(version => version + 1))
-    const observer = new ResizeObserver(() => {
-      cancelAnimationFrame(frame)
-      frame = requestAnimationFrame(() => setGeometryVersion(version => version + 1))
+  const nodeTypes = useMemo<NodeTypes>(() => ({ service: ServiceFlowNodeCard, lane: LaneBandNode }), [])
+  const edgeTypes = useMemo<EdgeTypes>(() => ({ topology: TopologyFlowEdgeComponent }), [])
+
+  const flowNodes = useMemo<TopologyFlowNode[]>(() => {
+    const serviceNodes: ServiceFlowNode[] = nodes.map((node) => {
+      const layerIndex = layerByNodeId.get(node.id) ?? 0
+      const category = categoryForLayer(layerIndex)
+      const statusKey = node.status?.trim() || 'unknown'
+      const targets = node.deploymentTargets
+      const primaryTarget = targets[0]
+      return {
+        id: node.id,
+        type: 'service',
+        position: layout.positions.get(node.id) ?? { x: 0, y: 0 },
+        style: { width: NODE_WIDTH, height: NODE_HEIGHT },
+        data: {
+          node,
+          category,
+          degree: degreeByNodeId.get(node.id) ?? { in: 0, out: 0 },
+          statusLabel: t(`projectTopology.statuses.${statusKey}`, {
+            defaultValue: statusKey === 'unknown' ? t('projectTopology.chart.statusUnknown') : statusKey,
+          }),
+          categoryLabel: t('projectTopology.chart.category'),
+          stageSummary: primaryTarget
+            ? targets.length > 1
+              ? `${primaryTarget.stage} +${targets.length - 1}`
+              : primaryTarget.stage
+            : '',
+          dimmed: relatedNodeIds !== null && !relatedNodeIds.has(node.id),
+          focused: focusedNodeId === node.id,
+          onFocus: focusNode,
+        },
+        draggable: false,
+        connectable: false,
+        selectable: false,
+      }
     })
-    observer.observe(canvas)
-    return () => {
-      cancelAnimationFrame(frame)
-      observer.disconnect()
+    const laneNodes: LaneFlowNode[] = layout.laneBands.map(band => ({
+      id: `lane-${band.index}`,
+      type: 'lane',
+      position: { x: -LANE_PADDING_X, y: band.y },
+      style: { width: layout.width + LANE_PADDING_X * 2, height: band.height },
+      className: 'pointer-events-none',
+      data: {
+        layerIndex: band.index,
+        serviceCount: layout.layers[band.index]?.length ?? 0,
+        dimmed: relatedNodeIds !== null && !(layout.layers[band.index] ?? []).some(id => relatedNodeIds.has(id)),
+      },
+      draggable: false,
+      connectable: false,
+      selectable: false,
+      focusable: false,
+      zIndex: -1,
+    }))
+    return [...laneNodes, ...serviceNodes]
+  }, [degreeByNodeId, focusNode, focusedNodeId, layerByNodeId, layout, nodes, relatedNodeIds, t])
+
+  const flowEdges = useMemo<TopologyFlowEdge[]>(() => edges.map((edge) => {
+    const dimmed = focusedNodeId !== null && edge.source !== focusedNodeId && edge.target !== focusedNodeId
+    const label = edge.protocol
+      ? `${edge.protocol.toUpperCase()}${edge.port ? `·${edge.port}` : ''}`
+      : undefined
+    return {
+      id: edge.id,
+      type: 'topology',
+      source: edge.source,
+      target: edge.target,
+      data: { dimmed, label },
+      style: {
+        stroke: `var(--color-${edgeStrokeToken(edge.status)})`,
+        strokeWidth: 1.8,
+        strokeDasharray: edge.origin === 'manual' ? '6 5' : undefined,
+        opacity: dimmed ? 0.12 : 0.85,
+        transition: 'opacity 200ms ease',
+      },
+      markerEnd: {
+        type: MarkerType.ArrowClosed,
+        width: 14,
+        height: 14,
+        color: `var(--color-${edgeStrokeToken(edge.status)})`,
+      },
     }
-  }, [layers])
+  }), [edges, focusedNodeId])
 
-  const edgeGeometry = useMemo(
-    // geometryVersion 驱动 DOM 测量后的重算；nodes/edges 内容变化时 layers 变化同步触发
-    () => {
-      void geometryVersion
-      return computeEdgeGeometry(canvasRef.current, edges, layerByNodeId)
-    },
-    [edges, layerByNodeId, geometryVersion],
-  )
-
-  const focusNode = (nodeId: string) => {
-    setFocusedNodeId(current => (current === nodeId ? null : nodeId))
-  }
+  const handleEdgeClick = useCallback((_: unknown, edge: TopologyFlowEdge) => {
+    onSelectEdge(edge.id)
+  }, [onSelectEdge])
+  const handleNodeClick = useCallback((_: unknown, node: TopologyFlowNode) => {
+    if (node.type === 'service')
+      focusNode(node.id)
+  }, [focusNode])
+  const handlePaneClick = useCallback(() => setFocusedNodeId(null), [])
 
   return (
     <div className="relative">
-      {/* 泳道分层画布 */}
       <div
-        ref={canvasRef}
         aria-label={t('projectTopology.chart.canvas')}
-        className="relative grid bg-surface [background-image:radial-gradient(circle,hsl(var(--border))_1px,transparent_1px)] [background-position:10px_10px] [background-size:20px_20px]"
+        className={cn(
+          'relative h-[560px]',
+          // Controls 控件走语义 token，适配 light/dark
+          '[--xy-controls-button-background-color:hsl(var(--surface))]',
+          '[--xy-controls-button-background-color-hover:hsl(var(--surface-subtle))]',
+          '[--xy-controls-button-border-color:hsl(var(--border))]',
+          '[--xy-controls-button-color:hsl(var(--muted-foreground))]',
+        )}
         role="group"
       >
-        <svg aria-hidden="true" className="pointer-events-none absolute inset-0 z-10 h-full w-full overflow-visible">
-          <defs>
-            <marker
-              id={MARKER_ID}
-              markerHeight="7"
-              markerWidth="7"
-              orient="auto-start-reverse"
-              refX="7"
-              refY="4"
-              viewBox="0 0 8 8"
-            >
-              <path d="M 0 0.5 L 7.5 4 L 0 7.5 Z" fill="context-stroke" />
-            </marker>
-          </defs>
-          {edges.map((edge) => {
-            const geometry = edgeGeometry.get(edge.id)
-            if (!geometry)
-              return null
-            const active = focusedNodeId === null || edge.source === focusedNodeId || edge.target === focusedNodeId
-            const label = edge.protocol
-              ? `${edge.protocol.toUpperCase()}${edge.port ? `·${edge.port}` : ''}`
-              : ''
-            return (
-              <g key={edge.id} style={{ opacity: active ? 1 : 0.12, transition: 'opacity 200ms ease' }}>
-                <path
-                  className="pointer-events-auto cursor-pointer fill-none stroke-transparent"
-                  d={geometry.d}
-                  onClick={() => onSelectEdge(edge.id)}
-                  strokeWidth={14}
-                >
-                  <title>
-                    {t('projectTopology.chart.focusRelation', {
-                      source: nodeById.get(edge.source)?.name ?? edge.source,
-                      target: nodeById.get(edge.target)?.name ?? edge.target,
-                    })}
-                  </title>
-                </path>
-                <path
-                  className={cn(
-                    'fill-none transition-[stroke-width] duration-fast hover:stroke-[2.5]',
-                    edgeStrokeClass(edge.status),
-                  )}
-                  d={geometry.d}
-                  markerEnd={`url(#${MARKER_ID})`}
-                  opacity={0.85}
-                  strokeDasharray={edge.origin === 'manual' ? '6 5' : undefined}
-                  strokeWidth={1.8}
-                />
-                {label && (
-                  <text
-                    className="pointer-events-none fill-muted-foreground font-mono [paint-order:stroke] stroke-surface"
-                    fontSize={10}
-                    strokeWidth={3}
-                    textAnchor="middle"
-                    x={geometry.labelX}
-                    y={geometry.labelY}
-                  >
-                    {label}
-                  </text>
-                )}
-              </g>
-            )
-          })}
-        </svg>
-
-        {layers.map((layer, layerIndex) => (
-          <div key={layer.map(node => node.id).join('|') || `lane-${layerIndex}`} className="relative border-b border-border last:border-b-0">
-            {/* 层标签：绝对定位覆盖层，不参与连线坐标系 */}
-            <div className="pointer-events-none absolute inset-y-0 left-0 z-20 flex w-32 flex-col gap-0.5 border-r border-dashed border-border bg-gradient-to-r from-surface-subtle via-surface-subtle/90 to-transparent p-4">
-              <span className="text-xs font-semibold tracking-wide text-muted-foreground">
-                {t('projectTopology.chart.laneLabel', { number: layerIndex + 1 })}
-              </span>
-              <span className="text-[11px] text-muted-foreground/80">
-                {t('projectTopology.chart.laneSub', { number: layerIndex })}
-              </span>
-              <span className="mt-auto text-[11px] tabular-nums text-muted-foreground/80">
-                {t('projectTopology.chart.laneServiceCount', { count: layer.length })}
-              </span>
-            </div>
-            <div className="flex flex-wrap items-center gap-x-12 gap-y-6 py-6 pr-8 pl-40">
-              {layer.map(node => (
-                <ServiceNodeCard
-                  key={node.id}
-                  category={categoryForLayer(layerIndex)}
-                  degree={degreeByNodeId.get(node.id) ?? { in: 0, out: 0 }}
-                  dimmed={relatedNodeIds !== null && !relatedNodeIds.has(node.id)}
-                  focused={focusedNodeId === node.id}
-                  node={node}
-                  onFocus={() => focusNode(node.id)}
-                />
-              ))}
-            </div>
-          </div>
-        ))}
+        <ReactFlow
+          edges={flowEdges}
+          edgeTypes={edgeTypes}
+          elementsSelectable
+          fitView
+          fitViewOptions={{ padding: 0.12, maxZoom: 1.2 }}
+          maxZoom={2}
+          minZoom={0.25}
+          nodes={flowNodes}
+          nodesConnectable={false}
+          nodesDraggable={false}
+          nodeTypes={nodeTypes}
+          panOnDrag
+          zoomOnScroll
+          onEdgeClick={handleEdgeClick}
+          onNodeClick={handleNodeClick}
+          onPaneClick={handlePaneClick}
+        >
+          <Background bgColor="transparent" color="hsl(var(--border))" gap={20} size={1} />
+          <Controls position="bottom-right" showInteractive={false} />
+        </ReactFlow>
       </div>
 
       <TopologyLegend />
@@ -232,40 +276,41 @@ export function ProjectTopologyChart({ edges, nodes, onSelectEdge }: ProjectTopo
 }
 
 /* ============================================================
+   泳道背景节点：zIndex -1 渲染在边与服务节点之下，
+   标签 = 层名 + 调用深度副标 + 服务数
+   ============================================================ */
+function LaneBandNode({ data }: NodeProps<LaneFlowNode>) {
+  const { t } = useTranslation()
+  return (
+    <div
+      className={cn(
+        'h-full w-full border-y border-dashed border-border bg-surface-subtle/70 transition-opacity duration-standard',
+        data.dimmed && 'opacity-40',
+      )}
+    >
+      <div className="flex flex-col gap-0.5 p-3">
+        <span className="text-[11px] font-semibold tracking-wide text-muted-foreground">
+          {t('projectTopology.chart.laneLabel', { number: data.layerIndex + 1 })}
+        </span>
+        <span className="text-[10px] text-muted-foreground/80">
+          {`${t('projectTopology.chart.laneSub', { number: data.layerIndex })} · ${t('projectTopology.chart.laneServiceCount', { count: data.serviceCount })}`}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+/* ============================================================
    服务节点卡片：白底卡片 + 细边框 + 左侧 3px 分类色条，
    状态用色点 + 文字徽章双重编码（对齐 StatusBadge 五档 tone）
    ============================================================ */
-function ServiceNodeCard({
-  category,
-  degree,
-  dimmed,
-  focused,
-  node,
-  onFocus,
-}: {
-  category: TopologyCategory
-  degree: { in: number, out: number }
-  dimmed: boolean
-  focused: boolean
-  node: ProjectTopologyNode
-  onFocus: () => void
-}) {
+function ServiceFlowNodeCard({ data }: NodeProps<ServiceFlowNode>) {
   const { t } = useTranslation()
-  const statusKey = node.status?.trim() || 'unknown'
-  const statusLabel = t(`projectTopology.statuses.${statusKey}`, {
-    defaultValue: statusKey === 'unknown' ? t('projectTopology.chart.statusUnknown') : statusKey,
-  })
-  const tone = statusToneFor(statusKey)
-  const targets = node.deploymentTargets
-  const primaryTarget = targets[0]
-  const stageSummary = primaryTarget
-    ? targets.length > 1
-      ? `${primaryTarget.stage} +${targets.length - 1}`
-      : primaryTarget.stage
-    : ''
+  const { node, category, degree, statusLabel, categoryLabel, stageSummary, dimmed, focused, onFocus } = data
+  const tone = statusToneFor(node.status?.trim() || 'unknown')
 
   return (
-    <button
+    <div
       aria-label={t('projectTopology.chart.nodeAriaLabel', {
         name: node.name,
         status: statusLabel,
@@ -273,7 +318,7 @@ function ServiceNodeCard({
         out: degree.out,
       })}
       className={cn(
-        'relative w-56 cursor-pointer rounded-container border border-border bg-surface py-3 pr-4 pl-5 text-left',
+        'relative h-full w-full cursor-pointer rounded-container border border-border bg-surface py-3 pr-4 pl-5 text-left',
         'transition-[box-shadow,border-color,opacity,filter] duration-standard',
         'before:absolute before:top-2.5 before:bottom-2.5 before:left-0 before:w-[3px] before:rounded-full before:bg-(--topology-node-cat)',
         'hover:border-separator-strong hover:shadow-raised',
@@ -281,11 +326,18 @@ function ServiceNodeCard({
         dimmed && 'opacity-30 saturate-50',
         focused && 'border-primary shadow-[0_0_0_3px_var(--primary-subtle)]',
       )}
-      data-topology-node={node.id}
+      role="button"
       style={{ '--topology-node-cat': CATEGORY_COLORS[category] } as CSSProperties}
-      type="button"
-      onClick={onFocus}
+      tabIndex={0}
+      onClick={() => onFocus(node.id)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onFocus(node.id)
+        }
+      }}
     >
+      <Handle className="!pointer-events-none !opacity-0" position={Position.Top} type="target" />
       <div className="flex items-center gap-2">
         <span
           className="grid size-7 flex-none place-items-center rounded-control"
@@ -298,7 +350,7 @@ function ServiceNodeCard({
         </span>
         <div className="min-w-0">
           <div className="truncate text-[13.5px] font-semibold tracking-tight">{node.name}</div>
-          <div className="truncate text-[11px] text-muted-foreground/80">{t('projectTopology.chart.category')}</div>
+          <div className="truncate text-[11px] text-muted-foreground/80">{categoryLabel}</div>
         </div>
       </div>
       <div className="mt-2 flex items-center gap-2 text-[11px] text-muted-foreground">
@@ -312,7 +364,64 @@ function ServiceNodeCard({
           <span>{`→${degree.out}`}</span>
         </span>
       </div>
-    </button>
+      <Handle className="!pointer-events-none !opacity-0" position={Position.Bottom} type="source" />
+    </div>
+  )
+}
+
+/* ============================================================
+   自定义边：smoothstep 正交走线，EdgeLabelRenderer 放协议·端口等宽字体标签，
+   加宽透明热区让细边也容易点击，焦点态同步淡出
+   ============================================================ */
+function TopologyFlowEdgeComponent({
+  id,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  sourcePosition,
+  targetPosition,
+  style,
+  markerEnd,
+  data,
+}: EdgeProps<TopologyFlowEdge>) {
+  const [edgePath, labelX, labelY] = getSmoothStepPath({
+    sourceX,
+    sourceY,
+    sourcePosition,
+    targetX,
+    targetY,
+    targetPosition,
+    borderRadius: 8,
+  })
+  const dimmed = data?.dimmed ?? false
+
+  return (
+    <>
+      {/* 加宽透明热区，保证细边可点击 */}
+      <path
+        className="react-flow__edge-interaction"
+        d={edgePath}
+        fill="none"
+        strokeOpacity={0}
+        strokeWidth={16}
+      />
+      <BaseEdge id={id} markerEnd={markerEnd} path={edgePath} style={style} />
+      {data?.label && (
+        <EdgeLabelRenderer>
+          <span
+            className="nodrag nopan pointer-events-none absolute rounded-[3px] bg-surface/85 px-1 py-px font-mono text-[10px] text-muted-foreground"
+            style={{
+              transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
+              opacity: dimmed ? 0.12 : 1,
+              transition: 'opacity 200ms ease',
+            }}
+          >
+            {data.label}
+          </span>
+        </EdgeLabelRenderer>
+      )}
+    </>
   )
 }
 
@@ -382,219 +491,74 @@ function LegendLine({ dashed }: { dashed?: boolean }) {
 }
 
 /* ============================================================
-   布局：最长路径分层（Sugiyama layering）+ 重心法排序减交叉
+   布局：dagre 计算分层坐标（rankdir TB），并按层推导泳道背景条带。
+   dagre 内部完成拓扑排序、最长路径分层与交叉最小化排序。
    ============================================================ */
-function computeLayers(nodes: ProjectTopologyNode[], edges: ProjectTopologyEdge[]): ProjectTopologyNode[][] {
-  if (nodes.length === 0)
-    return []
+interface TopologyLayout {
+  laneBands: Array<{ height: number, index: number, y: number }>
+  layers: string[][]
+  positions: Map<string, { x: number, y: number }>
+  width: number
+}
+
+function layoutTopology(nodes: ProjectTopologyNode[], edges: ProjectTopologyEdge[]): TopologyLayout {
+  const graph = new dagre.graphlib.Graph()
+  graph.setGraph({
+    rankdir: 'TB',
+    nodesep: NODE_SEP,
+    ranksep: RANK_SEP,
+    marginx: 0,
+    marginy: 0,
+  })
+  graph.setDefaultEdgeLabel(() => ({}))
   const nodeIds = new Set(nodes.map(node => node.id))
-  const outgoing = new Map<string, string[]>()
-  const indegree = new Map<string, number>()
-  for (const node of nodes) {
-    outgoing.set(node.id, [])
-    indegree.set(node.id, 0)
-  }
+  for (const node of nodes)
+    graph.setNode(node.id, { width: NODE_WIDTH, height: NODE_HEIGHT })
   for (const edge of edges) {
     if (!nodeIds.has(edge.source) || !nodeIds.has(edge.target) || edge.source === edge.target)
       continue
-    outgoing.get(edge.source)?.push(edge.target)
-    indegree.set(edge.target, (indegree.get(edge.target) ?? 0) + 1)
+    graph.setEdge(edge.source, edge.target)
   }
+  dagre.layout(graph)
 
-  // Kahn 拓扑序（按输入顺序取源，保证确定性）；有环时追加剩余节点
-  const queue = nodes.filter(node => (indegree.get(node.id) ?? 0) === 0).map(node => node.id)
-  const order: string[] = []
-  const remainingIndegree = new Map(indegree)
-  while (queue.length > 0) {
-    const id = queue.shift() as string
-    order.push(id)
-    for (const next of outgoing.get(id) ?? []) {
-      const left = (remainingIndegree.get(next) ?? 0) - 1
-      remainingIndegree.set(next, left)
-      if (left === 0)
-        queue.push(next)
-    }
-  }
-  const inOrder = new Set(order)
+  const positions = new Map<string, { x: number, y: number }>()
+  const centerYById = new Map<string, number>()
+  let maxRight = 0
   for (const node of nodes) {
-    if (!inOrder.has(node.id))
-      order.push(node.id)
+    const laidOut = graph.node(node.id)
+    if (!laidOut)
+      continue
+    const x = laidOut.x - NODE_WIDTH / 2
+    const y = laidOut.y - NODE_HEIGHT / 2
+    positions.set(node.id, { x, y })
+    centerYById.set(node.id, laidOut.y)
+    maxRight = Math.max(maxRight, x + NODE_WIDTH)
   }
 
-  // 最长路径分层：layer(v) = 0 或 max(layer(u)) + 1
-  const layerById = new Map<string, number>()
-  for (const id of order) {
-    const previous = edges.filter(edge => edge.target === id && layerById.has(edge.source))
-    layerById.set(id, previous.length === 0 ? 0 : Math.max(...previous.map(edge => layerById.get(edge.source) as number)) + 1)
+  /* dagre 不直接暴露 rank；rankdir TB 下同一层的 y 中心一致，按 y 聚类得到层 */
+  const uniqueYs = [...new Set([...centerYById.values()].map(y => Math.round(y)))].sort((a, b) => a - b)
+  const layerIndexByY = new Map<number, number>()
+  uniqueYs.forEach((y, index) => layerIndexByY.set(y, index))
+
+  const layers: string[][] = uniqueYs.map(() => [])
+  for (const node of nodes) {
+    const y = centerYById.get(node.id)
+    if (y === undefined)
+      continue
+    layers[layerIndexByY.get(Math.round(y)) ?? 0].push(node.id)
   }
 
-  const layerCount = Math.max(...layerById.values()) + 1
-  const layers: string[][] = Array.from({ length: layerCount }, () => [])
-  for (const node of nodes)
-    layers[layerById.get(node.id) ?? 0].push(node.id)
-
-  // 重心法排序：两轮（自上而下 + 自下而上），同层按邻居平均位置排序减少边交叉
-  const positionOf = (layersByIds: string[][]) => {
-    const position = new Map<string, number>()
-    layersByIds.forEach((layer, index) => layer.forEach(id => position.set(id, index * 1000 + layer.indexOf(id))))
-    return position
-  }
-  for (let pass = 0; pass < 2; pass++) {
-    const position = positionOf(layers)
-    const sweepDown = pass % 2 === 0
-    const indices = sweepDown
-      ? Array.from({ length: layerCount }, (_, index) => index)
-      : Array.from({ length: layerCount }, (_, index) => layerCount - 1 - index)
-    for (const layerIndex of indices) {
-      const anchor = (id: string) => {
-        const neighbors = edges
-          .filter(edge => (sweepDown ? edge.target === id : edge.source === id))
-          .map(edge => position.get(sweepDown ? edge.source : edge.target))
-          .filter((value): value is number => value !== undefined && Math.floor(value / 1000) !== layerIndex)
-        if (neighbors.length === 0)
-          return position.get(id) ?? 0
-        return neighbors.reduce((sum, value) => sum + value, 0) / neighbors.length
-      }
-      layers[layerIndex].sort((a, b) => anchor(a) - anchor(b))
+  /* 泳道条带：覆盖该层节点上下留白，层间留出间隙 */
+  const laneBands: TopologyLayout['laneBands'] = uniqueYs.map((y, index) => {
+    const layerTop = y - NODE_HEIGHT / 2
+    return {
+      index,
+      y: layerTop - LANE_PADDING_Y - (index === 0 ? 0 : LANE_GAP / 2),
+      height: NODE_HEIGHT + LANE_PADDING_Y * 2 + (index === 0 || index === uniqueYs.length - 1 ? LANE_GAP / 2 : LANE_GAP),
     }
-  }
-
-  const nodeById = new Map(nodes.map(node => [node.id, node]))
-  return layers.map(layer => layer.map(id => nodeById.get(id) as ProjectTopologyNode))
-}
-
-/* ============================================================
-   走线：正交曼哈顿路由，圆角转角，端点垂直出/入；中途障碍检测，
-   必要时经源泳道底部横向通道绕行
-   ============================================================ */
-function computeEdgeGeometry(
-  canvas: HTMLDivElement | null,
-  edges: ProjectTopologyEdge[],
-  layerByNodeId: Map<string, number>,
-): Map<string, EdgeGeometry> {
-  const geometry = new Map<string, EdgeGeometry>()
-  if (!canvas)
-    return geometry
-  const canvasRect = canvas.getBoundingClientRect()
-  if (canvasRect.width === 0)
-    return geometry
-
-  const rects = new Map<string, NodeRect>()
-  canvas.querySelectorAll<HTMLElement>('[data-topology-node]').forEach((element) => {
-    const rect = element.getBoundingClientRect()
-    rects.set(element.dataset.topologyNode as string, {
-      left: rect.left - canvasRect.left,
-      right: rect.right - canvasRect.left,
-      top: rect.top - canvasRect.top,
-      bottom: rect.bottom - canvasRect.top,
-      cx: rect.left - canvasRect.left + rect.width / 2,
-    })
   })
 
-  const crosses = (rect: NodeRect, x1: number, y1: number, x2: number, y2: number) => {
-    const rx1 = rect.left - OBSTACLE_PAD
-    const rx2 = rect.right + OBSTACLE_PAD
-    const ry1 = rect.top - OBSTACLE_PAD
-    const ry2 = rect.bottom + OBSTACLE_PAD
-    if (Math.abs(x1 - x2) < 1) {
-      const lo = Math.min(y1, y2)
-      const hi = Math.max(y1, y2)
-      return x1 > rx1 && x1 < rx2 && hi > ry1 && lo < ry2
-    }
-    if (Math.abs(y1 - y2) < 1) {
-      const lo = Math.min(x1, x2)
-      const hi = Math.max(x1, x2)
-      return y1 > ry1 && y1 < ry2 && hi > rx1 && lo < rx2
-    }
-    for (let step = 1; step < 16; step++) {
-      const ratio = step / 16
-      const x = x1 + (x2 - x1) * ratio
-      const y = y1 + (y2 - y1) * ratio
-      if (x > rx1 && x < rx2 && y > ry1 && y < ry2)
-        return true
-    }
-    return false
-  }
-  const blocked = (x1: number, y1: number, x2: number, y2: number, skip: Set<string>) =>
-    [...rects.entries()].some(([id, rect]) => !skip.has(id) && crosses(rect, x1, y1, x2, y2))
-
-  for (const edge of edges) {
-    const source = rects.get(edge.source)
-    const target = rects.get(edge.target)
-    if (!source || !target)
-      continue
-    const skip = new Set([edge.source, edge.target])
-    const sameLane = (layerByNodeId.get(edge.source) ?? -1) === (layerByNodeId.get(edge.target) ?? -2)
-
-    if (sameLane) {
-      // 同层：从顶边正交流出，向上方净空做圆角拱门
-      const lift = 30
-      const top = Math.min(source.top, target.top) - lift
-      const r = TURN_R
-      const dir = target.cx > source.cx ? r : -r
-      geometry.set(edge.id, {
-        d: [
-          `M ${source.cx} ${source.top}`,
-          `L ${source.cx} ${top + r}`,
-          `Q ${source.cx} ${top} ${source.cx + dir} ${top}`,
-          `L ${target.cx - dir} ${top}`,
-          `Q ${target.cx} ${top} ${target.cx} ${top + r}`,
-          `L ${target.cx} ${target.top - 1}`,
-        ].join(' '),
-        labelX: (source.cx + target.cx) / 2,
-        labelY: top - 6,
-      })
-      continue
-    }
-
-    const midY = (source.bottom + target.top) / 2
-    const directBlocked = blocked(source.cx, source.bottom + ROUTE_GAP, target.cx, target.top - ROUTE_GAP, skip)
-    if (!directBlocked) {
-      // 优先：底边 → 层间通道中线 → 目标列 → 顶边
-      const r = TURN_R
-      if (Math.abs(target.cx - source.cx) < 2 * r + 4) {
-        geometry.set(edge.id, {
-          d: `M ${source.cx} ${source.bottom} L ${source.cx} ${target.top - 1}`,
-          labelX: source.cx + 14,
-          labelY: midY,
-        })
-      }
-      else {
-        const dir = target.cx > source.cx ? r : -r
-        geometry.set(edge.id, {
-          d: [
-            `M ${source.cx} ${source.bottom}`,
-            `L ${source.cx} ${midY - r}`,
-            `Q ${source.cx} ${midY} ${source.cx + dir} ${midY}`,
-            `L ${target.cx - dir} ${midY}`,
-            `Q ${target.cx} ${midY} ${target.cx} ${midY + r}`,
-            `L ${target.cx} ${target.top - 1}`,
-          ].join(' '),
-          labelX: (source.cx + target.cx) / 2 + 8,
-          labelY: midY - 5,
-        })
-      }
-      continue
-    }
-
-    // 绕行：源底边 → 下方横向通道 → 目标列 → 目标顶边
-    const corridorY = Math.min(source.bottom + 30, target.top - 30)
-    const r = TURN_R
-    const dir = target.cx > source.cx ? r : -r
-    geometry.set(edge.id, {
-      d: [
-        `M ${source.cx} ${source.bottom}`,
-        `L ${source.cx} ${corridorY - r}`,
-        `Q ${source.cx} ${corridorY} ${source.cx + dir} ${corridorY}`,
-        `L ${target.cx - dir} ${corridorY}`,
-        `Q ${target.cx} ${corridorY} ${target.cx} ${corridorY - r}`,
-        `L ${target.cx} ${target.top - 1}`,
-      ].join(' '),
-      labelX: (source.cx + target.cx) / 2,
-      labelY: corridorY - 6,
-    })
-  }
-  return geometry
+  return { layers, laneBands, positions, width: Math.max(maxRight, NODE_WIDTH) }
 }
 
 /* ---------- 语义映射 ---------- */
@@ -603,14 +567,15 @@ function categoryForLayer(layerIndex: number): TopologyCategory {
   return CATEGORY_ORDER[Math.min(layerIndex, CATEGORY_ORDER.length - 1)]
 }
 
-function edgeStrokeClass(status: string) {
+/** 边颜色语义 token 名：异常状态上色，正常中性灰 */
+function edgeStrokeToken(status: string) {
   switch (statusToneFor(status || 'unknown')) {
     case 'warning':
-      return 'stroke-warning'
+      return 'warning'
     case 'danger':
-      return 'stroke-danger'
+      return 'danger'
     default:
-      return 'stroke-muted-foreground/60'
+      return 'muted-foreground'
   }
 }
 
