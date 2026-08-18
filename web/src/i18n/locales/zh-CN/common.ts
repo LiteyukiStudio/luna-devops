@@ -88,6 +88,53 @@ const common = {
   loginRequiredDescription: '请先使用本地账号或已授权的 OIDC 账号登录平台。',
   pinProject: '固定项目空间',
   unpinProject: '取消固定项目空间',
+
+  // 公共标签区域 - 用于消除重复翻译
+  labels: {
+    projectSpace: '项目空间',
+    application: '应用',
+    deploymentTarget: '部署配置',
+    runtimeCluster: '运行集群',
+    registry: '镜像站',
+    gatewayRoute: '访问入口',
+    event: '事件',
+    user: '用户',
+    build: '构建',
+    release: '发布',
+    image: '镜像',
+    serviceBinding: '服务引用',
+    username: '用户名',
+    servicePort: '服务端口',
+    stage: '阶段',
+    result: '结果',
+    updatedAt: '更新时间',
+  },
+
+  // 公共状态区域 - 用于消除重复状态翻译
+  statuses: {
+    failed: '失败',
+    succeeded: '成功',
+    canceled: '已取消',
+    expired: '已过期',
+    running: '运行中',
+    unavailable: '不可用',
+    unknown: '未知',
+    degraded: '异常',
+    notConfigured: '未配置',
+    error: '错误',
+  },
+
+  // 公共提示语区域
+  messages: {
+    adminRequired: '请确认当前账号具有平台管理员权限，或稍后重试。',
+    selectProjectSpace: '选择项目空间',
+  },
+
+  // 分页相关（扩展已有 pagination）
+  pagination: {
+    pageInfo: '第 {{page}} / {{totalPages}} 页，共 {{total}} 条',
+    pageInfoWithUnit: '第 {{page}} / {{totalPages}} 页，共 {{total}} {{unit}}',
+  },
 }
 
 export default common

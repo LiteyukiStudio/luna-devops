@@ -88,6 +88,49 @@ const common = {
   loginRequiredDescription: 'ローカルアカウントまたは承認済みの OIDC アカウントでプラットフォームにログインしてください。',
   pinProject: 'プロジェクトスペースを固定',
   unpinProject: 'プロジェクトスペースの固定を解除',
+
+  labels: {
+    projectSpace: 'プロジェクトスペース',
+    application: 'アプリケーション',
+    deploymentTarget: 'デプロイ設定',
+    runtimeCluster: '実行クラスター',
+    registry: 'レジストリ',
+    gatewayRoute: 'アクセスエントリ',
+    event: 'イベント',
+    user: 'ユーザー',
+    build: 'ビルド',
+    release: 'リリース',
+    image: 'イメージ',
+    serviceBinding: 'サービス参照',
+    username: 'ユーザー名',
+    servicePort: 'サービスポート',
+    stage: 'ステージ',
+    result: '結果',
+    updatedAt: '更新日時',
+  },
+
+  statuses: {
+    failed: '失敗',
+    succeeded: '成功',
+    canceled: 'キャンセル済み',
+    expired: '期限切れ',
+    running: '実行中',
+    unavailable: '利用不可',
+    unknown: '不明',
+    degraded: '異常',
+    notConfigured: '未設定',
+    error: 'エラー',
+  },
+
+  messages: {
+    adminRequired: '現在のアカウントにプラットフォーム管理者権限があることを確認するか、後ほど再試行してください。',
+    selectProjectSpace: 'プロジェクトスペースを選択',
+  },
+
+  pagination: {
+    pageInfo: '{{page}} / {{totalPages}} ページ、全 {{total}} 件',
+    pageInfoWithUnit: '{{page}} / {{totalPages}} ページ、全 {{total}} {{unit}}',
+  },
 }
 
 export default common

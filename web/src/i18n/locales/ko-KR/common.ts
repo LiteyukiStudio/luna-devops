@@ -88,6 +88,49 @@ const common = {
   loginRequiredDescription: '로컬 계정 또는 승인된 OIDC 계정으로 플랫폼에 로그인하세요.',
   pinProject: '프로젝트 스페이스 고정',
   unpinProject: '프로젝트 스페이스 고정 해제',
+
+  labels: {
+    projectSpace: '프로젝트 스페이스',
+    application: '애플리케이션',
+    deploymentTarget: '배포 구성',
+    runtimeCluster: '실행 클러스터',
+    registry: '레지스트리',
+    gatewayRoute: '접근 진입점',
+    event: '이벤트',
+    user: '사용자',
+    build: '빌드',
+    release: '릴리스',
+    image: '이미지',
+    serviceBinding: '서비스 참조',
+    username: '사용자 이름',
+    servicePort: '서비스 포트',
+    stage: '단계',
+    result: '결과',
+    updatedAt: '업데이트 시간',
+  },
+
+  statuses: {
+    failed: '실패',
+    succeeded: '성공',
+    canceled: '취소됨',
+    expired: '만료됨',
+    running: '실행 중',
+    unavailable: '사용 불가',
+    unknown: '알 수 없음',
+    degraded: '이상',
+    notConfigured: '미설정',
+    error: '오류',
+  },
+
+  messages: {
+    adminRequired: '현재 계정에 플랫폼 관리자 권한이 있는지 확인하거나 잠시 후 다시 시도하세요.',
+    selectProjectSpace: '프로젝트 스페이스 선택',
+  },
+
+  pagination: {
+    pageInfo: '{{page}} / {{totalPages}}페이지, 총 {{total}}개',
+    pageInfoWithUnit: '{{page}} / {{totalPages}}페이지, 총 {{total}} {{unit}}',
+  },
 }
 
 export default common
