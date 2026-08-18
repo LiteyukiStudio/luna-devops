@@ -81,9 +81,13 @@ const projectTopology = {
       serviceBinding: 'Service binding (solid)',
       manual: 'Manual relation (dashed)',
       arrow: 'Arrow points to = callee',
+      bidirectional: 'Bidirectional call (arrows on both ends)',
+      colorNote: 'Normal edges cycle through a fixed palette; abnormal states use alert colors',
+      nodeAction: 'Click a service node to open its detail page; double-click to center it',
       responsiveNote: '(Graph and edges are hidden on narrow screens; use the relation list instead)',
     },
     nodeAriaLabel: '{{name}}, application service, status {{status}}, {{in}} inbound, {{out}} outbound',
+    openServiceDetail: 'Open service detail',
     focusRelation: 'View relation from {{source}} to {{target}}',
   },
   origins: {

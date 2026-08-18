@@ -14,16 +14,18 @@ import {
   BaseEdge,
   Controls,
   EdgeLabelRenderer,
-  getSmoothStepPath,
+  getBezierPath,
   Handle,
   MarkerType,
   Position,
   ReactFlow,
+  useReactFlow,
 } from '@xyflow/react'
 import dagre from 'dagre'
 import { AppWindow } from 'lucide-react'
 import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Link, useParams } from 'react-router-dom'
 import { statusToneFor } from '@/components/common/status-tone'
 import { cn } from '@/lib/utils'
 
@@ -32,7 +34,7 @@ import '@xyflow/react/dist/style.css'
 /**
  * 项目服务拓扑 · 分层流向图（React Flow + dagre）。
  * dagre 负责 Sugiyama 分层坐标（rankdir TB，主调在上、被调在下），
- * React Flow 负责渲染、正交走线（smoothstep）、画布缩放/平移与焦点高亮。
+ * React Flow 负责渲染、自然贝塞尔走线、画布缩放/平移与 hover 邻域聚焦。
  * 泳道用 zIndex -1 的背景节点实现，随视口变换并参与 fitView。
  */
 
@@ -54,6 +56,59 @@ const CATEGORY_COLORS: Record<TopologyCategory, string> = {
   infra: 'var(--topology-cat-infra)',
 }
 
+/* ---------- 连线循环色板（正常边按稳定序取色；异常边让位 warning/danger 语义色） ---------- */
+const EDGE_CYCLE_COLORS = [
+  'var(--primary)',
+  'var(--color-info)',
+  'var(--color-success)',
+  'var(--color-theme-supporting)',
+  'var(--color-theme-secondary)',
+  'var(--color-theme-highlight)',
+]
+
+/** 焦点点亮节点/边/泳道时的统一淡出程度 */
+const FADED_OPACITY = 0.18
+
+/** 双向线两侧的曲线平行偏移（px） */
+const BIDIRECTIONAL_OFFSET = 10
+
+/** 连线排序稳定键：优先后端 id，其次四元组 */
+function edgeOrderKey(edge: ProjectTopologyEdge) {
+  return edge.id || `${edge.source}→${edge.target}:${edge.origin}:${edge.protocol ?? ''}:${edge.port ?? ''}`
+}
+
+/** 双向线取排序后的第一条作为打开详情的代表边 */
+function pickPrimaryEdge(group: ProjectTopologyEdge[]) {
+  return [...group].sort((a, b) => edgeOrderKey(a).localeCompare(edgeOrderKey(b)))[0]
+}
+
+/** 同向多条边（含两端点相同）按稳定序展开并留出曲线间隙；成对反向边合并为一条双向线 */
+function collapseEdges(edges: ProjectTopologyEdge[]): Array<{ group: ProjectTopologyEdge[], isBidirectional: boolean }> {
+  const ordered = [...edges].sort((a, b) => edgeOrderKey(a).localeCompare(edgeOrderKey(b)))
+  const seen = new Set<string>()
+  const result: Array<{ group: ProjectTopologyEdge[], isBidirectional: boolean }> = []
+  for (const edge of ordered) {
+    if (seen.has(edge.id))
+      continue
+    const reverse = ordered.find(other => !seen.has(other.id) && other.id !== edge.id && other.source === edge.target && other.target === edge.source)
+    if (reverse)
+      seen.add(reverse.id)
+    seen.add(edge.id)
+    result.push({ group: reverse ? [edge, reverse] : [edge], isBidirectional: Boolean(reverse) })
+  }
+  return result
+}
+
+/** 贝塞尔中点向两侧做平行偏移，避免成组连线重叠 */
+function offsetCurvePoint(x1: number, y1: number, x2: number, y2: number, mx: number, my: number, offset: number) {
+  const dx = x2 - x1
+  const dy = y2 - y1
+  const length = Math.hypot(dx, dy)
+  if (!offset || length < 1)
+    return { x: mx, y: my }
+  return { x: mx + (-dy / length) * offset, y: my + (dx / length) * offset }
+}
+
 /* ---------- 布局常量 ---------- */
 const NODE_WIDTH = 224
 const NODE_HEIGHT = 78
@@ -72,8 +127,8 @@ interface ServiceFlowNodeData extends Record<string, unknown> {
   categoryLabel: string
   stageSummary: string
   dimmed: boolean
-  focused: boolean
-  onFocus: (nodeId: string) => void
+  hovered: boolean
+  detailTo: string
 }
 
 interface LaneFlowNodeData extends Record<string, unknown> {
@@ -84,7 +139,11 @@ interface LaneFlowNodeData extends Record<string, unknown> {
 
 interface TopologyFlowEdgeData extends Record<string, unknown> {
   dimmed: boolean
+  hoverKey: string
+  isBidirectional: boolean
   label?: string
+  offset: number
+  selectEdgeId: string
 }
 
 type ServiceFlowNode = Node<ServiceFlowNodeData, 'service'>
@@ -97,7 +156,10 @@ type TopologyFlowEdge = Edge<TopologyFlowEdgeData, 'topology'>
    ============================================================ */
 export function ProjectTopologyChart({ edges, nodes, onSelectEdge }: ProjectTopologyChartProps) {
   const { t } = useTranslation()
-  const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null)
+  const { projectId = '' } = useParams()
+  /* hover 聚焦（临时态）：hoverKey 为节点 id 或成组边的 hoverKey，共用一个状态位 */
+  const [hoverKey, setHoverKey] = useState<string | null>(null)
+  const { setCenter } = useReactFlow()
 
   const degreeByNodeId = useMemo(() => {
     const map = new Map<string, { in: number, out: number }>()
@@ -114,10 +176,6 @@ export function ProjectTopologyChart({ edges, nodes, onSelectEdge }: ProjectTopo
     return map
   }, [edges, nodes])
 
-  const focusNode = useCallback((nodeId: string) => {
-    setFocusedNodeId(current => (current === nodeId ? null : nodeId))
-  }, [])
-
   /* dagre 分层布局：节点坐标 + 层索引 + 泳道背景几何 */
   const layout = useMemo(() => layoutTopology(nodes, edges), [edges, nodes])
   const layerByNodeId = useMemo(() => {
@@ -126,19 +184,31 @@ export function ProjectTopologyChart({ edges, nodes, onSelectEdge }: ProjectTopo
     return map
   }, [layout])
 
-  /* 焦点邻域（degree-of-interest）：非关联节点/边淡出 */
-  const relatedNodeIds = useMemo(() => {
-    if (!focusedNodeId)
+  /* 渲染层归并：同向多条边展开为平行曲线，成对反向边合并为一条双向线 */
+  const collapsedEdges = useMemo(() => collapseEdges(edges), [edges])
+
+  /* hover 邻域：非关联节点/边/泳道淡出 */
+  const highlightedNodeIds = useMemo(() => {
+    if (!hoverKey)
       return null
-    const related = new Set([focusedNodeId])
-    for (const edge of edges) {
-      if (edge.source === focusedNodeId)
-        related.add(edge.target)
-      if (edge.target === focusedNodeId)
-        related.add(edge.source)
+    const highlighted = new Set<string>()
+    if (degreeByNodeId.has(hoverKey)) {
+      highlighted.add(hoverKey)
+      for (const edge of edges) {
+        if (edge.source === hoverKey)
+          highlighted.add(edge.target)
+        if (edge.target === hoverKey)
+          highlighted.add(edge.source)
+      }
+      return highlighted
     }
-    return related
-  }, [edges, focusedNodeId])
+    const group = collapsedEdges.find(item => `pair:${item.group[0].source}:${item.group[0].target}` === hoverKey)
+    if (group) {
+      highlighted.add(group.group[0].source)
+      highlighted.add(group.group[0].target)
+    }
+    return highlighted
+  }, [collapsedEdges, degreeByNodeId, edges, hoverKey])
 
   const nodeTypes = useMemo<NodeTypes>(() => ({ service: ServiceFlowNodeCard, lane: LaneBandNode }), [])
   const edgeTypes = useMemo<EdgeTypes>(() => ({ topology: TopologyFlowEdgeComponent }), [])
@@ -168,9 +238,9 @@ export function ProjectTopologyChart({ edges, nodes, onSelectEdge }: ProjectTopo
               ? `${primaryTarget.stage} +${targets.length - 1}`
               : primaryTarget.stage
             : '',
-          dimmed: relatedNodeIds !== null && !relatedNodeIds.has(node.id),
-          focused: focusedNodeId === node.id,
-          onFocus: focusNode,
+          dimmed: highlightedNodeIds !== null && !highlightedNodeIds.has(node.id),
+          hovered: hoverKey === node.id,
+          detailTo: `/projects/${projectId}/apps/${node.id}`,
         },
         draggable: false,
         connectable: false,
@@ -186,7 +256,7 @@ export function ProjectTopologyChart({ edges, nodes, onSelectEdge }: ProjectTopo
       data: {
         layerIndex: band.index,
         serviceCount: layout.layers[band.index]?.length ?? 0,
-        dimmed: relatedNodeIds !== null && !(layout.layers[band.index] ?? []).some(id => relatedNodeIds.has(id)),
+        dimmed: highlightedNodeIds !== null && !(layout.layers[band.index] ?? []).some(id => highlightedNodeIds.has(id)),
       },
       draggable: false,
       connectable: false,
@@ -195,43 +265,82 @@ export function ProjectTopologyChart({ edges, nodes, onSelectEdge }: ProjectTopo
       zIndex: -1,
     }))
     return [...laneNodes, ...serviceNodes]
-  }, [degreeByNodeId, focusNode, focusedNodeId, layerByNodeId, layout, nodes, relatedNodeIds, t])
+  }, [degreeByNodeId, highlightedNodeIds, hoverKey, layerByNodeId, layout, nodes, projectId, t])
 
-  const flowEdges = useMemo<TopologyFlowEdge[]>(() => edges.map((edge) => {
-    const dimmed = focusedNodeId !== null && edge.source !== focusedNodeId && edge.target !== focusedNodeId
-    const label = edge.protocol
-      ? `${edge.protocol.toUpperCase()}${edge.port ? `·${edge.port}` : ''}`
-      : undefined
+  const flowEdges = useMemo<TopologyFlowEdge[]>(() => collapsedEdges.map(({ group, isBidirectional }, index) => {
+    const primary = pickPrimaryEdge(group)
+    const reversed = primary.source !== group[0].source
+    const edgeHoverKey = `pair:${group[0].source}:${group[0].target}`
+    const dimmed = highlightedNodeIds !== null && !highlightedNodeIds.has(group[0].source) && !highlightedNodeIds.has(group[0].target)
+    const hovered = hoverKey === edgeHoverKey
+    const labelParts = [...new Set(group
+      .map(edge => edge.protocol ? `${edge.protocol.toUpperCase()}${edge.port ? `·${edge.port}` : ''}` : undefined)
+      .filter((label): label is string => Boolean(label)))]
+    const tone = statusToneFor(primary.status || 'unknown')
+    const stroke = tone === 'warning'
+      ? 'var(--color-warning)'
+      : tone === 'danger'
+        ? 'var(--color-danger)'
+        : EDGE_CYCLE_COLORS[index % EDGE_CYCLE_COLORS.length]
+    const offset = isBidirectional ? BIDIRECTIONAL_OFFSET : 0
     return {
-      id: edge.id,
+      id: `topology:${group.map(edge => edge.id).sort().join('~')}`,
       type: 'topology',
-      source: edge.source,
-      target: edge.target,
-      data: { dimmed, label },
+      source: primary.source,
+      target: primary.target,
+      data: {
+        dimmed,
+        hoverKey: edgeHoverKey,
+        isBidirectional,
+        label: labelParts.length > 0 ? labelParts.join(' ⇄ ') : undefined,
+        offset: reversed ? -offset : offset,
+        selectEdgeId: primary.id,
+      },
       style: {
-        stroke: `var(--color-${edgeStrokeToken(edge.status)})`,
-        strokeWidth: 1.8,
-        strokeDasharray: edge.origin === 'manual' ? '6 5' : undefined,
-        opacity: dimmed ? 0.12 : 0.85,
-        transition: 'opacity 200ms ease',
+        stroke,
+        strokeWidth: hovered ? 2.4 : 1.8,
+        strokeDasharray: group.some(edge => edge.origin === 'manual') ? '6 5' : undefined,
+        opacity: dimmed ? FADED_OPACITY : hovered ? 1 : 0.9,
+        transition: 'opacity 200ms ease, stroke-width 150ms ease',
       },
       markerEnd: {
         type: MarkerType.ArrowClosed,
         width: 14,
         height: 14,
-        color: `var(--color-${edgeStrokeToken(edge.status)})`,
+        color: stroke,
       },
+      ...(isBidirectional
+        ? {
+            markerStart: {
+              type: MarkerType.ArrowClosed,
+              orient: 'auto-start-reverse',
+              width: 14,
+              height: 14,
+              color: stroke,
+            },
+          }
+        : {}),
     }
-  }), [edges, focusedNodeId])
+  }), [collapsedEdges, highlightedNodeIds, hoverKey])
 
+  const clearHover = useCallback(() => setHoverKey(null), [])
   const handleEdgeClick = useCallback((_: unknown, edge: TopologyFlowEdge) => {
-    onSelectEdge(edge.id)
+    onSelectEdge(edge.data?.selectEdgeId ?? edge.id)
   }, [onSelectEdge])
-  const handleNodeClick = useCallback((_: unknown, node: TopologyFlowNode) => {
+  const handleEdgeMouseEnter = useCallback((_: unknown, edge: TopologyFlowEdge) => {
+    setHoverKey(edge.data?.hoverKey ?? edge.id)
+  }, [])
+  const handleNodeMouseEnter = useCallback((_: unknown, node: TopologyFlowNode) => {
     if (node.type === 'service')
-      focusNode(node.id)
-  }, [focusNode])
-  const handlePaneClick = useCallback(() => setFocusedNodeId(null), [])
+      setHoverKey(node.id)
+  }, [])
+  const handleNodeDoubleClick = useCallback((_: unknown, node: TopologyFlowNode) => {
+    if (node.type !== 'service')
+      return
+    const position = layout.positions.get(node.id)
+    if (position)
+      void setCenter(position.x + NODE_WIDTH / 2, position.y + NODE_HEIGHT / 2, { duration: 300, zoom: 1.1 })
+  }, [layout, setCenter])
 
   return (
     <div className="relative">
@@ -262,8 +371,11 @@ export function ProjectTopologyChart({ edges, nodes, onSelectEdge }: ProjectTopo
           panOnDrag
           zoomOnScroll
           onEdgeClick={handleEdgeClick}
-          onNodeClick={handleNodeClick}
-          onPaneClick={handlePaneClick}
+          onEdgeMouseEnter={handleEdgeMouseEnter}
+          onEdgeMouseLeave={clearHover}
+          onNodeDoubleClick={handleNodeDoubleClick}
+          onNodeMouseEnter={handleNodeMouseEnter}
+          onNodeMouseLeave={clearHover}
         >
           <Background bgColor="transparent" color="hsl(var(--border))" gap={20} size={1} />
           <Controls position="bottom-right" showInteractive={false} />
@@ -306,11 +418,11 @@ function LaneBandNode({ data }: NodeProps<LaneFlowNode>) {
    ============================================================ */
 function ServiceFlowNodeCard({ data }: NodeProps<ServiceFlowNode>) {
   const { t } = useTranslation()
-  const { node, category, degree, statusLabel, categoryLabel, stageSummary, dimmed, focused, onFocus } = data
+  const { node, category, degree, statusLabel, categoryLabel, stageSummary, dimmed, hovered, detailTo } = data
   const tone = statusToneFor(node.status?.trim() || 'unknown')
 
   return (
-    <div
+    <Link
       aria-label={t('projectTopology.chart.nodeAriaLabel', {
         name: node.name,
         status: statusLabel,
@@ -318,24 +430,17 @@ function ServiceFlowNodeCard({ data }: NodeProps<ServiceFlowNode>) {
         out: degree.out,
       })}
       className={cn(
-        'relative h-full w-full cursor-pointer rounded-container border border-border bg-surface py-3 pr-4 pl-5 text-left',
+        'relative block h-full w-full cursor-pointer rounded-container border border-border bg-surface py-3 pr-4 pl-5 text-left',
         'transition-[box-shadow,border-color,opacity,filter] duration-standard',
         'before:absolute before:top-2.5 before:bottom-2.5 before:left-0 before:w-[3px] before:rounded-full before:bg-(--topology-node-cat)',
         'hover:border-separator-strong hover:shadow-raised',
         'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
         dimmed && 'opacity-30 saturate-50',
-        focused && 'border-primary shadow-[0_0_0_3px_var(--primary-subtle)]',
+        hovered && 'border-primary shadow-[0_0_0_3px_var(--primary-subtle)]',
       )}
-      role="button"
       style={{ '--topology-node-cat': CATEGORY_COLORS[category] } as CSSProperties}
-      tabIndex={0}
-      onClick={() => onFocus(node.id)}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault()
-          onFocus(node.id)
-        }
-      }}
+      title={t('projectTopology.chart.openServiceDetail')}
+      to={detailTo}
     >
       <Handle className="!pointer-events-none !opacity-0" position={Position.Top} type="target" />
       <div className="flex items-center gap-2">
@@ -365,13 +470,14 @@ function ServiceFlowNodeCard({ data }: NodeProps<ServiceFlowNode>) {
         </span>
       </div>
       <Handle className="!pointer-events-none !opacity-0" position={Position.Bottom} type="source" />
-    </div>
+    </Link>
   )
 }
 
 /* ============================================================
-   自定义边：smoothstep 正交走线，EdgeLabelRenderer 放协议·端口等宽字体标签，
-   加宽透明热区让细边也容易点击，焦点态同步淡出
+   自定义边：自然贝塞尔曲线（bidirectional 时向一侧平行偏移），
+   EdgeLabelRenderer 放协议·端口等宽字体标签，
+   加宽透明热区让细边也容易点击，hover 焦点态同步淡出
    ============================================================ */
 function TopologyFlowEdgeComponent({
   id,
@@ -383,18 +489,19 @@ function TopologyFlowEdgeComponent({
   targetPosition,
   style,
   markerEnd,
+  markerStart,
   data,
 }: EdgeProps<TopologyFlowEdge>) {
-  const [edgePath, labelX, labelY] = getSmoothStepPath({
+  const [edgePath, rawLabelX, rawLabelY] = getBezierPath({
     sourceX,
     sourceY,
     sourcePosition,
     targetX,
     targetY,
     targetPosition,
-    borderRadius: 8,
   })
   const dimmed = data?.dimmed ?? false
+  const { x: labelX, y: labelY } = offsetCurvePoint(sourceX, sourceY, targetX, targetY, rawLabelX, rawLabelY, data?.offset ?? 0)
 
   return (
     <>
@@ -406,14 +513,14 @@ function TopologyFlowEdgeComponent({
         strokeOpacity={0}
         strokeWidth={16}
       />
-      <BaseEdge id={id} markerEnd={markerEnd} path={edgePath} style={style} />
+      <BaseEdge id={id} markerEnd={markerEnd} markerStart={markerStart} path={edgePath} style={style} />
       {data?.label && (
         <EdgeLabelRenderer>
           <span
             className="nodrag nopan pointer-events-none absolute rounded-[3px] bg-surface/85 px-1 py-px font-mono text-[10px] text-muted-foreground"
             style={{
               transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
-              opacity: dimmed ? 0.12 : 1,
+              opacity: dimmed ? FADED_OPACITY : 1,
               transition: 'opacity 200ms ease',
             }}
           >
@@ -475,16 +582,23 @@ function TopologyLegend() {
           <LegendLine dashed />
           {t('projectTopology.chart.legend.manual')}
         </span>
+        <span className="inline-flex items-center gap-1.5">
+          <LegendLine bidirectional />
+          {t('projectTopology.chart.legend.bidirectional')}
+        </span>
         <span>{t('projectTopology.chart.legend.arrow')}</span>
+        <span className="text-muted-foreground/70">{t('projectTopology.chart.legend.colorNote')}</span>
+        <span className="text-muted-foreground/70">{t('projectTopology.chart.legend.nodeAction')}</span>
         <span className="text-muted-foreground/70">{t('projectTopology.chart.legend.responsiveNote')}</span>
       </div>
     </div>
   )
 }
 
-function LegendLine({ dashed }: { dashed?: boolean }) {
+function LegendLine({ bidirectional, dashed }: { bidirectional?: boolean, dashed?: boolean }) {
   return (
     <span className={cn('relative h-0 w-6 border-t-2 border-muted-foreground/60', dashed && 'border-dashed')}>
+      {bidirectional && <span className="absolute -top-[5px] -left-px border-y-4 border-r-[6px] border-y-transparent border-r-muted-foreground/60" />}
       <span className="absolute -top-[5px] -right-px border-y-4 border-l-[6px] border-y-transparent border-l-muted-foreground/60" />
     </span>
   )
@@ -565,18 +679,6 @@ function layoutTopology(nodes: ProjectTopologyNode[], edges: ProjectTopologyEdge
 /** 分类色与泳道层级对应：0 接入 / 1 核心 / 2 支撑 / ≥3 基础设施 */
 function categoryForLayer(layerIndex: number): TopologyCategory {
   return CATEGORY_ORDER[Math.min(layerIndex, CATEGORY_ORDER.length - 1)]
-}
-
-/** 边颜色语义 token 名：异常状态上色，正常中性灰 */
-function edgeStrokeToken(status: string) {
-  switch (statusToneFor(status || 'unknown')) {
-    case 'warning':
-      return 'warning'
-    case 'danger':
-      return 'danger'
-    default:
-      return 'muted-foreground'
-  }
 }
 
 function tonePillClass(tone: StatusTone) {

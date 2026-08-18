@@ -81,9 +81,13 @@ const projectTopology = {
       serviceBinding: 'サービス参照（実線）',
       manual: '手動関係（破線）',
       arrow: '矢印の向き = 呼び出し先',
+      bidirectional: '双方向呼び出し（両端矢印）',
+      colorNote: '正常なエッジは固定パレットを順に使用し、異常状態は警告色で表示',
+      nodeAction: 'ノードカードをクリックでサービス詳細を開き、ダブルクリックで中央に移動',
       responsiveNote: '（狭い画面ではグラフとエッジを非表示にし、関係リストを使用）',
     },
     nodeAriaLabel: '{{name}}、アプリケーションサービス、ステータス {{status}}、入次数 {{in}}、出次数 {{out}}',
+    openServiceDetail: 'サービス詳細を開く',
     focusRelation: '{{source}} から {{target}} への関係を表示',
   },
   origins: {

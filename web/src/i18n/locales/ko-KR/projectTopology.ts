@@ -81,9 +81,13 @@ const projectTopology = {
       serviceBinding: '서비스 참조(실선)',
       manual: '수동 관계(점선)',
       arrow: '화살표 방향 = 피호출자',
+      bidirectional: '양방향 호출(양쪽 화살표)',
+      colorNote: '정상 연결선은 고정 팔레트를 순환 사용하고, 비정상 상태는 경고 색으로 표시합니다',
+      nodeAction: '노드 카드를 클릭하면 서비스 상세 페이지로 이동하고, 더블 클릭하면 중앙에 배치합니다',
       responsiveNote: '(좁은 화면에서는 그래프와 연결선이 숨겨지고 관계 목록을 사용합니다)',
     },
     nodeAriaLabel: '{{name}}, 애플리케이션 서비스, 상태 {{status}}, 진입 차수 {{in}}, 진출 차수 {{out}}',
+    openServiceDetail: '서비스 상세 열기',
     focusRelation: '{{source}}에서 {{target}}(으)로의 관계 보기',
   },
   origins: {

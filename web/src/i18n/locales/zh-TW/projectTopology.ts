@@ -81,9 +81,13 @@ const projectTopology = {
       serviceBinding: '服務引用（實線）',
       manual: '手工關係（虛線）',
       arrow: '箭頭指向 = 被調方',
+      bidirectional: '雙向呼叫（雙箭頭）',
+      colorNote: '正常連線依序循環配色，異常狀態以警示色顯示',
+      nodeAction: '點擊節點卡片開啟服務詳情，雙擊節點置中定位',
       responsiveNote: '（窄螢幕下圖與連線隱藏，複用關係列表）',
     },
     nodeAriaLabel: '{{name}}，應用服務，狀態 {{status}}，入度 {{in}}，出度 {{out}}',
+    openServiceDetail: '開啟服務詳情',
     focusRelation: '檢視 {{source}} 到 {{target}} 的關係',
   },
   origins: {
