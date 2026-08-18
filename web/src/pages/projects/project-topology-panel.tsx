@@ -8,7 +8,7 @@ import type {
   ServiceBinding,
 } from '@/api'
 import { useQuery } from '@tanstack/react-query'
-import { AlertTriangle, Focus, Plus, RefreshCw } from 'lucide-react'
+import { AlertTriangle, Plus, RefreshCw } from 'lucide-react'
 import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
@@ -45,7 +45,6 @@ export function ProjectTopologyPanel({ applications, canManage, projectId }: Pro
   const [stage, setStage] = useState('')
   const [origin, setOrigin] = useState<'all' | ProjectTopologyOrigin>('all')
   const [search, setSearch] = useState('')
-  const [fitVersion, setFitVersion] = useState(0)
   const [selectedEdgeId, setSelectedEdgeId] = useState('')
   const [dialog, setDialog] = useState<RelationDialogState | null>(null)
   const [pendingReleaseApplicationId, setPendingReleaseApplicationId] = useState('')
@@ -208,9 +207,6 @@ export function ProjectTopologyPanel({ applications, canManage, projectId }: Pro
                 {t('projectTopology.addRelation')}
               </Button>
             )}
-            <Button aria-label={t('projectTopology.fit')} className="hidden md:inline-flex" size="icon" variant="ghost" onClick={() => setFitVersion(value => value + 1)}>
-              <Focus className="size-4" />
-            </Button>
             <Button aria-label={t('projectTopology.refresh')} disabled={topology.isFetching} size="icon" variant="ghost" onClick={refresh}>
               <RefreshCw className={topology.isFetching ? 'size-4 animate-spin' : 'size-4'} />
             </Button>
@@ -220,7 +216,7 @@ export function ProjectTopologyPanel({ applications, canManage, projectId }: Pro
           ? (
               <>
                 <div className="hidden md:block">
-                  <ProjectTopologyChart edges={visibleEdges} fitVersion={fitVersion} nodes={visibleNodes} onSelectEdge={selectEdge} />
+                  <ProjectTopologyChart edges={visibleEdges} nodes={visibleNodes} onSelectEdge={selectEdge} />
                 </div>
                 <div className="grid gap-2 p-3 md:hidden">
                   {visibleEdges.map(edge => (
