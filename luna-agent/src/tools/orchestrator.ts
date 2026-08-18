@@ -4,6 +4,7 @@ import { redact } from "../redaction.js"
 import type { Repository } from "../persistence/repository.js"
 import { validateArguments, type ToolCatalog } from "./catalog.js"
 import type { LunaApiToolClient, ToolExecutionResult } from "./luna-api-client.js"
+import { genAIToolCallObject, genAIToolSpanAttributes } from "../genai-semconv.js"
 import { ToolPolicy } from "./policy.js"
 import { agentMetrics, internalSpanOptions, recordAIContent, stableErrorCode, telemetryLog, withSpan } from "../telemetry.js"
 
@@ -148,16 +149,19 @@ export class ToolOrchestrator {
   private async execute(call: ToolCallRecord, authorization: { approvalGranted: boolean, mfaPurpose?: string, stepUpAssertionId?: string }): Promise<ToolCallRecord> {
     const startedAt = performance.now()
     let outcome = "succeeded"
+    const operation = this.catalog.get(call.operationId)
     try {
-      return await withSpan("agent.tool.execute", internalSpanOptions({
-        "gen_ai.operation.name": "execute_tool",
-        "gen_ai.tool.name": call.operationId,
+      return await withSpan(`execute_tool ${call.operationId}`, internalSpanOptions({
+        ...genAIToolSpanAttributes({
+          name: call.operationId,
+          callId: call.id,
+          ...(operation.description ? { description: operation.description } : {}),
+        }),
         "luna.run.id": call.runId,
         "luna.tool_call.id": call.id,
         "luna.tool.approval_granted": authorization.approvalGranted,
       }), async span => {
-        const operation = this.catalog.get(call.operationId)
-        recordAIContent(span, "gen_ai.tool.content.input", "gen_ai.tool.call.arguments", call.arguments, {
+        recordAIContent(span, "luna.gen_ai.tool.content.input", "gen_ai.tool.call.arguments", genAIToolCallObject(call.arguments), {
           "gen_ai.tool.name": call.operationId,
           "luna.tool_call.id": call.id,
         })
@@ -173,18 +177,23 @@ export class ToolOrchestrator {
             ...(authorization.stepUpAssertionId ? { stepUpAssertionId: authorization.stepUpAssertionId } : {}),
           })
         } catch (error) {
-          recordAIContent(span, "gen_ai.tool.content.output", "gen_ai.tool.call.result", contentError(error), {
+          recordAIContent(span, "luna.gen_ai.tool.content.output", "gen_ai.tool.call.result", {
+            error: {
+              type: error instanceof Error ? error.name : "UnknownError",
+              code: stableErrorCode(error),
+            },
+          }, {
             "gen_ai.tool.name": call.operationId,
             "luna.tool_call.id": call.id,
           })
           throw error
         }
         span.setAttribute("http.response.status_code", result.status)
-        recordAIContent(span, "gen_ai.tool.content.output", "gen_ai.tool.call.result", {
+        recordAIContent(span, "luna.gen_ai.tool.content.output", "gen_ai.tool.call.result", genAIToolCallObject({
           status: result.status,
           body: result.body,
           requestId: result.requestId,
-        }, {
+        }), {
           "gen_ai.tool.name": call.operationId,
           "luna.tool_call.id": call.id,
         })
@@ -270,12 +279,6 @@ function hasSensitiveInput(schema: Record<string, unknown>, value: unknown): boo
   if (Array.isArray(value) && schema.items && typeof schema.items === "object")
     return value.some(item => hasSensitiveInput(schema.items as Record<string, unknown>, item))
   return false
-}
-
-function contentError(error: unknown): Record<string, unknown> {
-  return error instanceof Error
-    ? { errorType: error.name, errorMessage: error.message, cause: error.cause }
-    : { errorType: "UnknownError", errorMessage: String(error) }
 }
 
 function extractCode(body: unknown): string | undefined {

@@ -25,23 +25,39 @@ describe("AI content telemetry", () => {
     expect(serializeAIContent({ count: 12n }).value).toBe('{"count":"12"}')
   })
 
-  it("does not add content events unless capture is explicitly enabled", () => {
-    const events: Array<{ name: string, attributes?: unknown }> = []
+  it("does not add content attributes unless capture is explicitly enabled", () => {
+    const attributes: Record<string, unknown> = {}
     const span = {
-      addEvent(name: string, attributes?: unknown) {
-        events.push({ name, attributes })
+      setAttribute(name: string, value: unknown) {
+        attributes[name] = value
         return this
       },
     } as unknown as Span
 
     configureAIContentCapture(false)
-    recordAIContent(span, "gen_ai.content.input", "gen_ai.input.messages", { content: "hidden" })
-    expect(events).toHaveLength(0)
+    recordAIContent(span, "luna.gen_ai.content.input", "gen_ai.input.messages", { content: "hidden" })
+    expect(attributes).toEqual({})
 
     configureAIContentCapture(true)
-    recordAIContent(span, "gen_ai.content.input", "gen_ai.input.messages", { content: "visible" })
-    expect(events).toHaveLength(1)
-    expect(events[0]?.name).toBe("gen_ai.content.input")
+    recordAIContent(span, "luna.gen_ai.content.input", "gen_ai.input.messages", { content: "visible" })
+    expect(JSON.parse(attributes["gen_ai.input.messages"] as string)).toEqual({ content: "visible" })
+    expect(attributes["luna.ai.content.truncated"]).toBe(false)
+    configureAIContentCapture(false)
+  })
+
+  it("omits overlong content instead of emitting invalid JSON", () => {
+    const attributes: Record<string, unknown> = {}
+    const span = {
+      setAttribute(name: string, value: unknown) {
+        attributes[name] = value
+        return this
+      },
+    } as unknown as Span
+
+    configureAIContentCapture(true)
+    recordAIContent(span, "luna.gen_ai.content.input", "gen_ai.input.messages", { content: "a".repeat(40_000) })
+    expect(attributes["gen_ai.input.messages"]).toBeUndefined()
+    expect(attributes["luna.ai.content.truncated"]).toBe(true)
     configureAIContentCapture(false)
   })
 })

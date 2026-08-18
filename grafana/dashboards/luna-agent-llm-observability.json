@@ -636,7 +636,7 @@
         {
           "datasource": { "type": "tempo", "uid": "${tempo}" },
           "limit": 100,
-          "query": "{ resource.service.name = \"luna-agent\" && span:name = \"agent.run.execute\" && span.gen_ai.conversation.id =~ \"${conversation_id:raw}\" && span.luna.turn.id =~ \"${turn_id:raw}\" && span.luna.run.id =~ \"${run_id:raw}\" }",
+          "query": "{ resource.service.name = \"luna-agent\" && span.gen_ai.operation.name = \"invoke_agent\" && span.gen_ai.conversation.id =~ \"${conversation_id:raw}\" && span.luna.turn.id =~ \"${turn_id:raw}\" && span.luna.run.id =~ \"${run_id:raw}\" }",
           "queryType": "traceql",
           "refId": "A",
           "tableType": "traces"
@@ -662,7 +662,7 @@
         {
           "datasource": { "type": "tempo", "uid": "${tempo}" },
           "limit": 100,
-          "query": "{ resource.service.name = \"luna-agent\" && span:name = \"agent.run.execute\" && span.gen_ai.conversation.id =~ \"${conversation_id:raw}\" && span:status = error }",
+          "query": "{ resource.service.name = \"luna-agent\" && span.gen_ai.operation.name = \"invoke_agent\" && span.gen_ai.conversation.id =~ \"${conversation_id:raw}\" && span:status = error }",
           "queryType": "traceql",
           "refId": "A",
           "tableType": "traces"
@@ -788,6 +788,6 @@
   "timezone": "browser",
   "title": "Luna Agent / LLM Observability",
   "uid": "luna-agent-llm-observability",
-  "version": 2,
+  "version": 3,
   "weekStart": ""
 }

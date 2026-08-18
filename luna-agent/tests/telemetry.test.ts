@@ -73,12 +73,13 @@ describe("agent telemetry", () => {
   it("correlates nested logs with the active AI conversation, turn, and run", async () => {
     const write = vi.spyOn(process.stdout, "write").mockImplementation(() => true)
     try {
-      await withSpan("agent.run.execute", internalSpanOptions({
+      await withSpan("invoke_agent Luna Agent", internalSpanOptions({
+        "gen_ai.operation.name": "invoke_agent",
         "gen_ai.conversation.id": "aicnv_test",
         "luna.turn.id": "aitrn_test",
         "luna.run.id": "airun_test",
       }), async () => {
-        await withSpan("agent.model.stream", internalSpanOptions(), async () => {
+        await withSpan("agent.response.process", internalSpanOptions(), async () => {
           telemetryLog("agent.model.completed", "info")
         })
       })

@@ -1,5 +1,11 @@
 # TODO
 
+## 2026-08-18 Agent OpenTelemetry GenAI 语义对齐
+
+- [x] 将 Agent、模型与工具调用 Span 对齐 OpenTelemetry GenAI 官方命名、Kind、字段和 Schema URL，并保留 Luna 低风险扩展字段。
+- [x] 将可选高敏内容编码为官方输入消息、输出消息、工具定义、工具参数与结果 JSON Schema；超限时整项省略，避免无效截断 JSON。
+- [x] 同步 Tempo 属性归一化、Agent 观测页面、Grafana TraceQL、中英文文档与端到端回归测试。
+
 ## 2026-08-17 部署配置保存与重新部署交互
 
 - [x] 仅在运行集群实时观察到期望副本且运行态字段确有变化时，展示“仅保存”和“保存并重新部署”；构建与发布策略等非运行态配置不误触发。
@@ -271,7 +277,7 @@
 
 ## 0. 全链路可观测改造
 
-- [x] Agent 观测按 `service.name` 与稳定 Span 名区分业务工具调用和 API 传输：界面以 `luna-agent / agent.tool.execute` 为权威工具步骤，过滤重复的 `luna_api.tool.execute` 子 Span，同时在原始 Trace 与诊断导出中保留完整链路。
+- [x] Agent 观测按 `service.name` 与稳定语义区分业务工具调用和 API 传输：界面以 `luna-agent` 的 `gen_ai.operation.name=execute_tool` Span 为权威工具步骤，过滤重复的 `luna_api.tool.execute` 子 Span，同时在原始 Trace 与诊断导出中保留完整链路。
 
 - [x] 新增仅绑定本机的开发用 Compose 观测栈，集成 OpenTelemetry Collector、Prometheus、Loki、Tempo 和 Grafana，自动配置数据源并加载仓库 Dashboard。
 - [x] 在全局设置的 AI 助手中新增默认折叠的 AI 高级设置，支持加密配置 Prometheus、Loki、Tempo 查询连接和独立启用 Agent 可观测，为运营面板原生 Agent 观测提供受控数据源入口。

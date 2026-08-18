@@ -20,6 +20,7 @@ import { createOptionsInput, optionUIActions } from "./tools/ui-options.js"
 import { automaticRouteUIAction, navigateToRouteInput } from "./tools/ui-route.js"
 import { searchToolsInput } from "./tools/tool-search.js"
 import type { ProviderConfigClient } from "./provider/config-client.js"
+import { genAIAgentName, genAIAgentSpanAttributes, genAIInputMessages, genAIOutputMessages, genAIToolCallObject, genAIToolSpanAttributes } from "./genai-semconv.js"
 import { agentRuntimeInternals, defaultRuntimeSettings, type RuntimeSettings } from "./runtime-settings.js"
 import { agentMetrics, extractTraceContext, internalSpanOptions, isExpectedCancellation, recordAIContent, recordSpanError, stableErrorCode, telemetryLog, withSpan } from "./telemetry.js"
 
@@ -91,9 +92,8 @@ export class RunExecutor {
  } catch { /* state may have changed */ }
       return true
     }
-    return withSpan("agent.run.execute", internalSpanOptions({
-      "gen_ai.operation.name": "agent",
-      "gen_ai.conversation.id": run.conversationId,
+    return withSpan(`invoke_agent ${genAIAgentName}`, internalSpanOptions({
+      ...genAIAgentSpanAttributes(run.conversationId, run.model?.name, this.runtimeSettings.assistantMaxOutputTokens),
       "luna.run.id": run.id,
       "luna.turn.id": run.turnId,
     }), async span => {
@@ -117,6 +117,9 @@ export class RunExecutor {
       await this.repository.appendEvent(run.id, "run.started", { state: "running", expectedVersion: running.rowVersion })
       const executionInput = await this.repository.getExecutionInput(run.id)
       if (!executionInput) throw new Error("ai.turn_not_found")
+      recordAIContent(span, "luna.gen_ai.content.input", "gen_ai.input.messages", genAIInputMessages([
+        { role: "user", content: executionInput.input },
+      ]))
       if (executionInput.pageContext.__lunaDirectToolAction === true) {
         const directTool = executionInput.toolInteractions.find(item => item.type === "tool_call" && ["succeeded", "failed"].includes(String(item.content.status)))
         if (!directTool) throw new Error("ai.direct_tool_not_ready")
@@ -218,7 +221,7 @@ export class RunExecutor {
           if (toolCall.operationId === "create_interaction_cards") {
             if (!hasPlatformTool) {
               cardGeneration ??= await this.startCardGeneration(run.id, run.turnId, toolCall.arguments)
-              const creation = await this.traceInternalTool("create_interaction_cards", run.id, toolCall.arguments, () => this.createInteractionCards(run.id, toolCall.arguments, cardGeneration!))
+              const creation = await this.traceInternalTool("create_interaction_cards", run.id, toolCall.arguments, () => this.createInteractionCards(run.id, toolCall.arguments, cardGeneration!), toolCall.id)
               if (!creation.accepted) {
                 recoverableToolError ||= creation.failure.retryable
                 cardRepairExhausted ||= !creation.failure.retryable
@@ -267,7 +270,7 @@ export class RunExecutor {
               }
               searchedToolQueries.add(normalizedQuery)
               return this.modelRuntime.searchAvailableTools(input.query, executionInput.pageContext, input.maxResults)
-            })
+            }, toolCall.id)
             result.loadedOperationIds.forEach(operationId => loadedOperationIds.add(operationId))
             const searchOutcome = alreadySearched ? "duplicate" : result.matches.length ? "succeeded" : "no_matches"
             agentMetrics.toolSearches.add(1, { outcome: searchOutcome })
@@ -284,7 +287,7 @@ export class RunExecutor {
             continue
           }
           if (toolCall.operationId === "rename_conversation") {
-            const renamed = await this.traceInternalTool("rename_conversation", run.id, toolCall.arguments, () => this.renameConversation(run.id, run.turnId, run.conversationId, toolCall.arguments))
+            const renamed = await this.traceInternalTool("rename_conversation", run.id, toolCall.arguments, () => this.renameConversation(run.id, run.turnId, run.conversationId, toolCall.arguments), toolCall.id)
             if (renamed) {
               assistantRenamed = true
               conversationContext = { ...conversationContext, title: renamed.title, titleSource: renamed.titleSource }
@@ -296,7 +299,7 @@ export class RunExecutor {
             continue
           }
           if (toolCall.operationId === "navigate_to_route") {
-            const delivery = await this.traceInternalTool("navigate_to_route", run.id, toolCall.arguments, () => this.navigateToRoute(run.id, run.turnId, toolCall.arguments))
+            const delivery = await this.traceInternalTool("navigate_to_route", run.id, toolCall.arguments, () => this.navigateToRoute(run.id, run.turnId, toolCall.arguments), toolCall.id)
             continuationMessages.push(toolResultMessage(toolCall, {
               status: "dispatched",
               actionId: delivery.id,
@@ -372,6 +375,11 @@ export class RunExecutor {
           ...(executionInput.model ? { model: executionInput.model } : {}),
         }, pendingOptions, abort.signal)
       }
+      recordAIContent(span, "luna.gen_ai.content.output", "gen_ai.output.messages", genAIOutputMessages({
+        text: finalAnswer,
+        finishReason: "stop",
+      }))
+      span.setAttribute("gen_ai.response.finish_reasons", ["stop"])
       await this.repository.updateRun(run.id, "running", "completed", { completedAt: new Date().toISOString() })
       telemetryLog("agent.run.completed", "info", { "luna.run.id": run.id })
     } catch (error) {
@@ -766,8 +774,7 @@ export class RunExecutor {
   private async streamModel(runId: string, turnId: string, input: AssistantModelInput, signal: AbortSignal): Promise<AssistantModelInput> {
     const startedAt = performance.now()
     let outcome = "success"
-    return withSpan("agent.model.stream", internalSpanOptions({
-      "gen_ai.operation.name": "chat",
+    return withSpan("agent.response.process", internalSpanOptions({
       "luna.run.id": runId,
       "luna.turn.id": turnId,
     }), async span => {
@@ -788,7 +795,7 @@ export class RunExecutor {
           ? "reasoning"
           : event.type === "message_delta" ? "message" : "tool_call"
         agentMetrics.modelFirstTokenDuration.record((performance.now() - startedAt) / 1000, { output_type: outputType })
-        span.addEvent("gen_ai.first_output", { "gen_ai.output.type": outputType })
+        span.addEvent("luna.agent.first_output", { "luna.agent.output.type": outputType })
       }
       if (event.type === "reasoning_summary_delta" && event.delta) {
         reasoningSummary += event.delta
@@ -843,8 +850,6 @@ export class RunExecutor {
       }
       if (event.type === "completed") {
         toolCalls = event.toolCalls ?? []
-        span.setAttribute("gen_ai.usage.input_tokens", event.usage.inputTokens)
-        span.setAttribute("gen_ai.usage.output_tokens", event.usage.outputTokens)
         span.setAttribute("luna.tool_call.count", toolCalls.length)
         agentMetrics.modelTokens.add(event.usage.inputTokens, { direction: "input" })
         agentMetrics.modelTokens.add(event.usage.outputTokens, { direction: "output" })
@@ -883,7 +888,7 @@ export class RunExecutor {
     telemetryLog("agent.model.completed", "info", { "luna.run.id": runId, "tool_call.count": toolCalls.length })
     return { ...input, reasoningSummary, answer, toolCalls }
     } catch (error) {
-      recordAIContent(span, "gen_ai.content.error", "gen_ai.response.error_body", contentError(error))
+      recordAIContent(span, "luna.gen_ai.content.error", "luna.gen_ai.response.error_body", contentError(error))
       throw error
     }
     }).catch(error => {
@@ -901,28 +906,32 @@ export class RunExecutor {
     })
   }
 
-  private async traceInternalTool<T>(operationId: string, runId: string, input: unknown, operation: () => Promise<T>): Promise<T> {
+  private async traceInternalTool<T>(operationId: string, runId: string, input: unknown, operation: () => Promise<T>, callId?: string): Promise<T> {
     const startedAt = performance.now()
     let outcome = "succeeded"
     try {
-      return await withSpan("agent.tool.internal", internalSpanOptions({
-        "gen_ai.operation.name": "execute_tool",
-        "gen_ai.tool.name": operationId,
+      return await withSpan(`execute_tool ${operationId}`, internalSpanOptions({
+        ...genAIToolSpanAttributes({ name: operationId, ...(callId ? { callId } : {}) }),
         "luna.run.id": runId,
       }), async span => {
-        recordAIContent(span, "gen_ai.tool.content.input", "gen_ai.tool.call.arguments", input, {
+        recordAIContent(span, "luna.gen_ai.tool.content.input", "gen_ai.tool.call.arguments", genAIToolCallObject(input), {
           "gen_ai.tool.name": operationId,
         })
         let result: T
         try {
           result = await operation()
         } catch (error) {
-          recordAIContent(span, "gen_ai.tool.content.output", "gen_ai.tool.call.result", contentError(error), {
+          recordAIContent(span, "luna.gen_ai.tool.content.output", "gen_ai.tool.call.result", {
+            error: {
+              type: error instanceof Error ? error.name : "UnknownError",
+              code: stableErrorCode(error),
+            },
+          }, {
             "gen_ai.tool.name": operationId,
           })
           throw error
         }
-        recordAIContent(span, "gen_ai.tool.content.output", "gen_ai.tool.call.result", result, {
+        recordAIContent(span, "luna.gen_ai.tool.content.output", "gen_ai.tool.call.result", genAIToolCallObject(result), {
           "gen_ai.tool.name": operationId,
         })
         return result

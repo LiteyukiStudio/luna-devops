@@ -20,18 +20,26 @@ import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import { availableToolNames } from './agent-available-tools'
 import { ObservabilityJsonBlock, ObservabilityJsonValue } from './agent-observability-json'
-import { agentModelOutput, agentSpanContentSections, agentSpanMessageMarkdown, agentSpanMessages, formatSpanJSON } from './agent-span-content'
+import { agentModelOutput, agentSpanContentSections, agentSpanMessageMarkdown, agentSpanMessages, formatSpanJSON, isAgentSpanContentAttribute } from './agent-span-content'
 import { agentTurnDiagnosticFilename, formatAgentTurnDiagnosticExport } from './agent-turn-diagnostic-export'
 import { agentTurnTimelineKind, filterAgentTurnTimelineSpans } from './agent-turn-timeline'
 
 const spanAttributeLabelKeys: Record<string, string> = {
   'gen_ai.operation.name': 'operation',
   'gen_ai.provider.name': 'provider',
+  'gen_ai.agent.name': 'agentName',
+  'gen_ai.agent.version': 'agentVersion',
   'gen_ai.request.model': 'requestModel',
+  'gen_ai.request.max_tokens': 'maxTokens',
+  'gen_ai.response.id': 'responseId',
   'gen_ai.response.model': 'responseModel',
+  'gen_ai.response.finish_reasons': 'finishReasons',
   'gen_ai.usage.input_tokens': 'inputTokens',
   'gen_ai.usage.output_tokens': 'outputTokens',
+  'gen_ai.usage.cache_read.input_tokens': 'cachedInputTokens',
   'gen_ai.tool.name': 'toolName',
+  'gen_ai.tool.call.id': 'toolCallId',
+  'gen_ai.tool.type': 'toolType',
   'gen_ai.conversation.id': 'conversationId',
   'luna.turn.id': 'turnId',
   'luna.run.id': 'runId',
@@ -233,7 +241,7 @@ function TimelineStep({ span, expanded, isLast, userMessage, assistantMessage, o
   const kind = agentTurnTimelineKind(span)
   const availableTools = availableToolNames(span)
   const attributes = Object.entries(span.attributes)
-    .filter(([key]) => availableTools.length === 0 || key !== 'luna.agent.available_tool.names')
+    .filter(([key]) => !isAgentSpanContentAttribute(key) && (availableTools.length === 0 || key !== 'luna.agent.available_tool.names'))
   const contentSections = agentSpanContentSections(span)
   return (
     <li className="grid grid-cols-[4.5rem_1.5rem_minmax(0,1fr)] gap-3">
@@ -321,7 +329,7 @@ function TimelineStep({ span, expanded, isLast, userMessage, assistantMessage, o
   )
 }
 
-function SpanContentSection({ kind, value }: { kind: 'modelInput' | 'modelOutput' | 'modelError' | 'toolArguments' | 'toolResult', value: unknown }) {
+function SpanContentSection({ kind, value }: { kind: 'systemInstructions' | 'modelInput' | 'modelOutput' | 'modelError' | 'toolDefinitions' | 'toolArguments' | 'toolResult', value: unknown }) {
   const { t } = useTranslation()
   const messages = kind === 'modelInput' ? agentSpanMessages(value) : []
   const output = kind === 'modelOutput' ? agentModelOutput(value) : undefined
@@ -354,11 +362,11 @@ function SpanContentSection({ kind, value }: { kind: 'modelInput' | 'modelOutput
                 )}
               </div>
             )
-          : kind === 'toolArguments' || kind === 'toolResult'
+          : kind === 'toolDefinitions' || kind === 'toolArguments' || kind === 'toolResult'
             ? <ObservabilityJsonBlock className="max-h-96" value={value} />
             : kind === 'modelError' && typeof value !== 'string'
               ? <ObservabilityJsonBlock className="max-h-96" value={value} />
-              : <TimelineMarkdownContent value={kind === 'modelOutput' ? t('operationsDashboardPage.turnDetail.noReadableModelContent') : displayContent(value)} />}
+              : <TimelineMarkdownContent value={kind === 'modelOutput' ? t('operationsDashboardPage.turnDetail.noReadableModelContent') : agentSpanMessageMarkdown(value) || displayContent(value)} />}
     </section>
   )
 }
@@ -393,7 +401,7 @@ function spanAttributeLabel(key: string, t: (key: string, options?: Record<strin
 function spanAttributeValue(key: string, value: string, t: (key: string, options?: Record<string, unknown>) => string, language: string) {
   if (key === 'gen_ai.operation.name' || key === 'luna.run.outcome')
     return t(`operationsDashboardPage.turnDetail.attributeValues.${value}`, { defaultValue: value })
-  if (key === 'gen_ai.usage.input_tokens' || key === 'gen_ai.usage.output_tokens') {
+  if (key === 'gen_ai.usage.input_tokens' || key === 'gen_ai.usage.output_tokens' || key === 'gen_ai.usage.cache_read.input_tokens' || key === 'gen_ai.request.max_tokens') {
     const number = Number(value)
     return Number.isFinite(number) ? new Intl.NumberFormat(language).format(number) : value
   }

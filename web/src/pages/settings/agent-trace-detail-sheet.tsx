@@ -11,8 +11,9 @@ import { StatusBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
+import { isAgentSpanContentAttribute } from './agent-span-content'
 import { AgentTraceContextPanel } from './agent-trace-context-panel'
-import { filterAgentTraceDisplaySpans, isCanonicalAgentToolSpan } from './agent-turn-timeline'
+import { filterAgentTraceDisplaySpans, isAgentModelSpan, isCanonicalAgentToolSpan } from './agent-turn-timeline'
 
 export function AgentTraceDetailSheet({ trace, onOpenChange }: {
   trace: AgentObservabilityTrace | null
@@ -32,7 +33,7 @@ export function AgentTraceDetailSheet({ trace, onOpenChange }: {
   const collapsibleSpanIds = useMemo(() => getCollapsibleSpanIds(displaySpans), [displaySpans])
   const spans = useMemo(() => buildSpanRows(displaySpans, collapsedSpanIds), [collapsedSpanIds, displaySpans])
   const selected = displaySpans.find(span => span.spanId === selectedSpanId) ?? displaySpans[0]
-  const modelSpans = detail.data?.spans.filter(span => isModelSpan(span)).length ?? 0
+  const modelSpans = detail.data?.spans.filter(span => isAgentModelSpan(span)).length ?? 0
   const toolSpans = detail.data?.spans.filter(span => isCanonicalAgentToolSpan(span)).length ?? 0
   const updateCollapsedSpanIds = (values: Set<string>) => {
     if (traceId)
@@ -47,7 +48,7 @@ export function AgentTraceDetailSheet({ trace, onOpenChange }: {
     updateCollapsedSpanIds(next)
   }
   const selectToolSpan = (call: AgentObservabilityConversationToolCall) => {
-    const exact = detail.data?.spans.find(span => isCanonicalAgentToolSpan(span) && span.attributes['luna.tool_call.id'] === call.id)
+    const exact = detail.data?.spans.find(span => isCanonicalAgentToolSpan(span) && (span.attributes['gen_ai.tool.call.id'] === call.id || span.attributes['luna.tool_call.id'] === call.id))
     const matchingName = detail.data?.spans.find(span => isCanonicalAgentToolSpan(span) && span.attributes['gen_ai.tool.name'] === call.operationId)
     setSelectedSpanId((exact ?? matchingName)?.spanId ?? null)
   }
@@ -176,9 +177,9 @@ function SpanInspector({ span }: { span: AgentObservabilityTraceSpan }) {
       </div>
       <div className="grid gap-2">
         <p className="text-xs font-medium text-muted-foreground">{t('operationsDashboardPage.traceDetail.attributes')}</p>
-        {Object.keys(span.attributes).length === 0
+        {!Object.keys(span.attributes).some(key => !isAgentSpanContentAttribute(key))
           ? <p className="text-sm text-muted-foreground">{t('operationsDashboardPage.traceDetail.noAttributes')}</p>
-          : Object.entries(span.attributes).map(([key, value]) => (
+          : Object.entries(span.attributes).filter(([key]) => !isAgentSpanContentAttribute(key)).map(([key, value]) => (
               <div key={key} className="grid gap-1 rounded-control bg-muted p-2">
                 <span className="font-mono text-[11px] text-muted-foreground">{key}</span>
                 <span className="break-all text-sm">{value}</span>
@@ -225,7 +226,7 @@ function buildSpanRows(spans: AgentObservabilityTraceSpan[], collapsedSpanIds: S
 
 function SpanIcon({ span }: { span: AgentObservabilityTraceSpan }) {
   const className = cn('size-4 shrink-0', span.status === 'error' ? 'text-danger' : 'text-muted-foreground')
-  if (isModelSpan(span))
+  if (isAgentModelSpan(span))
     return <Bot className={className} />
   if (isToolSpan(span))
     return <Wrench className={className} />
@@ -236,16 +237,13 @@ function SpanIcon({ span }: { span: AgentObservabilityTraceSpan }) {
   return <Braces className={className} />
 }
 
-function isModelSpan(span: AgentObservabilityTraceSpan) {
-  return span.name.includes('model') || span.name.startsWith('gen_ai.chat')
-}
 function isToolSpan(span: AgentObservabilityTraceSpan) {
   return span.name !== 'agent.tools.available' && (span.name.includes('tool') || Boolean(span.attributes['gen_ai.tool.name']))
 }
 function spanBarClass(span: AgentObservabilityTraceSpan) {
   if (span.status === 'error')
     return 'bg-danger'
-  if (isModelSpan(span))
+  if (isAgentModelSpan(span))
     return 'bg-primary'
   if (isToolSpan(span))
     return 'bg-warning'

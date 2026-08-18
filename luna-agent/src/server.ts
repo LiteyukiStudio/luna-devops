@@ -237,7 +237,7 @@ export function buildServer(input: {
         runActorGrant: z.string().min(16).max(8192).optional(),
       }).parse(request.body)
       const created = await withSpan("agent.turn.accept", internalSpanOptions({
-        "gen_ai.operation.name": "create_turn",
+        "luna.operation.name": "create_turn",
         "gen_ai.conversation.id": conversationId,
       }), async span => {
         const value = await input.repository.createTurn(request.actor.userId, {
@@ -272,7 +272,7 @@ export function buildServer(input: {
       }).parse(request.body)
       if (body.runId !== request.actor.runId) return reply.code(409).send(errorBody("ai.run_state_conflict", request.id))
       const created = await withSpan("agent.tool_action.accept", internalSpanOptions({
-        "gen_ai.operation.name": "create_tool_action",
+        "luna.operation.name": "create_tool_action",
         "gen_ai.conversation.id": conversationId,
       }), async span => {
         const value = await input.repository.createTurn(request.actor.userId, {

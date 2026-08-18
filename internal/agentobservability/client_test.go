@@ -20,7 +20,7 @@ func TestPrometheusPointRejectsNonFiniteValues(t *testing.T) {
 }
 
 func TestTempoTraceDetailNormalizesAgentSpans(t *testing.T) {
-	const payload = `{"batches":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"luna-agent"}}]},"scopeSpans":[{"spans":[{"spanId":"root","name":"agent.run.execute","kind":"SPAN_KIND_INTERNAL","startTimeUnixNano":"1000000000","endTimeUnixNano":"2000000000","status":{"code":"STATUS_CODE_OK"}},{"spanId":"model","parentSpanId":"root","name":"agent.model.stream","kind":"SPAN_KIND_INTERNAL","startTimeUnixNano":"1100000000","endTimeUnixNano":"1900000000","attributes":[{"key":"gen_ai.usage.input_tokens","value":{"intValue":"42"}},{"key":"luna.tool_call.id","value":{"stringValue":"tool-call-1"}},{"key":"gen_ai.input.messages","value":{"stringValue":"must not escape"}}],"events":[{"name":"gen_ai.content.input","timeUnixNano":"1200000000","attributes":[{"key":"gen_ai.input.messages","value":{"stringValue":"{\"messages\":[{\"role\":\"system\",\"content\":\"You are Luna\"},{\"role\":\"user\",\"content\":\"Deploy it\"}]}"}}]},{"name":"gen_ai.content.output","timeUnixNano":"1800000000","attributes":[{"key":"gen_ai.output.messages","value":{"stringValue":"{\"text\":\"Done\"}"}}]}],"status":{"code":"STATUS_CODE_ERROR"}}]}]}]}`
+	const payload = `{"batches":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"luna-agent"}}]},"scopeSpans":[{"spans":[{"spanId":"root","name":"invoke_agent Luna Agent","kind":"SPAN_KIND_INTERNAL","startTimeUnixNano":"1000000000","endTimeUnixNano":"2000000000","attributes":[{"key":"gen_ai.operation.name","value":{"stringValue":"invoke_agent"}},{"key":"gen_ai.agent.name","value":{"stringValue":"Luna Agent"}}],"status":{"code":"STATUS_CODE_OK"}},{"spanId":"model","parentSpanId":"root","name":"chat gpt-5","kind":"SPAN_KIND_CLIENT","startTimeUnixNano":"1100000000","endTimeUnixNano":"1900000000","attributes":[{"key":"gen_ai.operation.name","value":{"stringValue":"chat"}},{"key":"gen_ai.usage.input_tokens","value":{"intValue":"42"}},{"key":"gen_ai.tool.call.id","value":{"stringValue":"tool-call-1"}},{"key":"gen_ai.response.finish_reasons","value":{"arrayValue":{"values":[{"stringValue":"tool_call"}]} }},{"key":"gen_ai.input.messages","value":{"stringValue":"[{\"role\":\"user\",\"parts\":[{\"type\":\"text\",\"content\":\"Deploy it\"}]}]"}},{"key":"gen_ai.output.messages","value":{"stringValue":"[{\"role\":\"assistant\",\"parts\":[{\"type\":\"text\",\"content\":\"Done\"}],\"finish_reason\":\"stop\"}]"}}],"status":{"code":"STATUS_CODE_ERROR"}}]}]}]}`
 	var response tempoTraceResponse
 	if err := json.Unmarshal([]byte(payload), &response); err != nil {
 		t.Fatalf("decode fixture: %v", err)
@@ -32,17 +32,17 @@ func TestTempoTraceDetailNormalizesAgentSpans(t *testing.T) {
 	if detail.Spans[1].StartOffsetMS != 100 || detail.Spans[1].Attributes["gen_ai.usage.input_tokens"] != "42" {
 		t.Fatalf("model span was not normalized: %+v", detail.Spans[1])
 	}
-	if detail.Spans[1].Attributes["luna.tool_call.id"] != "tool-call-1" {
+	if detail.Spans[1].Attributes["gen_ai.tool.call.id"] != "tool-call-1" {
 		t.Fatalf("tool call correlation attribute was not retained: %+v", detail.Spans[1])
 	}
-	if _, exists := detail.Spans[1].Attributes["gen_ai.input.messages"]; exists {
-		t.Fatal("sensitive model content escaped the trace attribute allowlist")
+	if detail.Spans[1].Attributes["gen_ai.input.messages"] == "" || detail.Spans[1].Attributes["gen_ai.output.messages"] == "" {
+		t.Fatalf("schema-shaped model content was not retained: %+v", detail.Spans[1])
 	}
-	if len(detail.Spans[1].Events) != 2 || detail.Spans[1].Events[0].Attributes["gen_ai.input.messages"] == "" {
-		t.Fatalf("model content events were not retained: %+v", detail.Spans[1].Events)
+	if detail.Spans[1].Attributes["gen_ai.response.finish_reasons"] != `["tool_call"]` {
+		t.Fatalf("array-valued semantic attribute was not normalized: %+v", detail.Spans[1].Attributes)
 	}
 	var raw map[string]any
-	if err := json.Unmarshal(detail.Spans[1].Raw, &raw); err != nil || raw["events"] == nil {
+	if err := json.Unmarshal(detail.Spans[1].Raw, &raw); err != nil || raw["attributes"] == nil {
 		t.Fatalf("raw Tempo span was not retained: raw=%s err=%v", detail.Spans[1].Raw, err)
 	}
 }
@@ -59,6 +59,33 @@ func TestTempoTraceDetailRetainsAvailableToolInventory(t *testing.T) {
 	}
 	if got := detail.Spans[0].Attributes["luna.agent.available_tool.names"]; got != `["createGatewayRoute","listGatewayRoutes"]` {
 		t.Fatalf("available tool inventory was lost: %q", got)
+	}
+}
+
+func TestTempoAttributesNormalizesStructuredAnyValues(t *testing.T) {
+	finishReason := "stop"
+	projectID := "proj-1"
+	attributes := []tempoAttribute{
+		{
+			Key: "gen_ai.response.finish_reasons",
+			Value: tempoAnyValue{ArrayValue: &tempoArrayValue{Values: []tempoAnyValue{
+				{StringValue: &finishReason},
+			}}},
+		},
+		{
+			Key: "gen_ai.tool.call.arguments",
+			Value: tempoAnyValue{KVListValue: &tempoKVList{Values: []tempoAttribute{
+				{Key: "projectId", Value: tempoAnyValue{StringValue: &projectID}},
+			}}},
+		},
+	}
+
+	got := tempoAttributes(attributes, traceAttributeAllowlist)
+	if got["gen_ai.response.finish_reasons"] != `["stop"]` {
+		t.Fatalf("unexpected finish reasons: %q", got["gen_ai.response.finish_reasons"])
+	}
+	if got["gen_ai.tool.call.arguments"] != `{"projectId":"proj-1"}` {
+		t.Fatalf("unexpected structured tool arguments: %q", got["gen_ai.tool.call.arguments"])
 	}
 }
 
