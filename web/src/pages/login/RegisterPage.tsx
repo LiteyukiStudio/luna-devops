@@ -50,7 +50,7 @@ export function RegisterPage() {
   useDocumentTitle(t('loginPage.registration.title'))
 
   const requestCode = useMutation({
-    mutationFn: (email: string) => api.requestEmailRegistrationCode({ email, language: i18n.resolvedLanguage === 'en-US' ? 'en-US' : 'zh-CN' }),
+    mutationFn: (email: string) => api.requestEmailRegistrationCode({ email, language: i18n.resolvedLanguage as 'zh-CN' | 'zh-TW' | 'en-US' | 'ja-JP' | 'ko-KR' }),
     onSuccess: () => {
       form.setValue('code', '')
       form.clearErrors('code')
@@ -68,7 +68,7 @@ export function RegisterPage() {
       email: values.email,
       name: values.name,
       password: values.password,
-      language: i18n.resolvedLanguage === 'en-US' ? 'en-US' : 'zh-CN',
+      language: i18n.resolvedLanguage as 'zh-CN' | 'zh-TW' | 'en-US' | 'ja-JP' | 'ko-KR',
       rememberMe: values.rememberMe,
     }),
     onSuccess: async () => {

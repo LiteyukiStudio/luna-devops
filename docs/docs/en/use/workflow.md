@@ -20,7 +20,7 @@ An application is an independently deployable service. One repository may contai
 
 The application topology shows current workloads and dependencies. Projects can also record relationships between applications. A service reference may change the source service's configuration on its next release. Remove references before deleting an application that other services use.
 
-The project application list shows ready replicas versus desired replicas. Applications without a runtime workload are marked as not deployed. This status is observed from the runtime cluster; an unreachable upstream is shown as unavailable instead of reusing stale state.
+The project application list shows runtime status and ready versus desired replicas separately for each deployment stage, such as development, test, staging, and production. It does not merge replicas from different stages into one total. Applications without a runtime workload are marked as not deployed. This status is observed from the runtime cluster; an unreachable upstream is shown as unavailable instead of reusing stale state.
 
 ## 3. Deployment targets
 
@@ -42,6 +42,8 @@ Consider validating runtime and routing with an existing image before adding a G
 A build creates an image from source. A release deploys a selected image to the runtime cluster. After a release, check its status, workloads, logs, and health instead of treating task submission as completion.
 
 Runtime status on the deployment page uses `n/m` from one Kubernetes observation for ready and desired replicas. For example, `2/3` means that two of three desired replicas are ready. Release status reports only the historical Release workflow result and does not include current replica counts; a successful release does not by itself mean that a runtime instance is currently ready.
+
+The deployment target list shows runtime specs as `CPU · memory` and uses the **Domain** column for the Kubernetes Service name that is directly reachable inside the same namespace. Choose **View details** from the row's overflow menu to open a right-side panel with the same-namespace Service, cross-namespace FQDN, project addresses, live resource usage, and current release information.
 
 With autoscaling enabled, the runtime cost shown in the form is a baseline estimate based on configured replicas, not a live charge. HPA can change the live desired replica count. An HPA minimum of `0` is supported; the neutral “Scaled to zero · 0/0” state means the workload was observed but currently has no runtime instance, rather than being green and ready. When observation is unavailable, the page omits `0/0` so missing data is not mistaken for a real zero-replica observation.
 

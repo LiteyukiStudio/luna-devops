@@ -1,6 +1,7 @@
 import type { DeploymentTargetRow } from './application-deployment-targets-list'
-import type { DeploymentTarget, Release } from '@/api'
-import { render, screen } from '@testing-library/react'
+import type { DeploymentTarget, GatewayRoute, Release } from '@/api'
+import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { ApplicationDeploymentTargetsList } from './application-deployment-targets-list'
@@ -11,7 +12,7 @@ const deploymentTarget = {
   autoDeploy: false,
   availableReplicas: 1,
   clusterId: 'cluster_1',
-  cpuRequest: '100m',
+  cpuRequest: '500m',
   dataVolumes: [],
   deleteStatus: 'active',
   desiredReplicas: 1,
@@ -19,11 +20,14 @@ const deploymentTarget = {
   environmentId: 'env_1',
   id: 'target_1',
   imageRef: 'registry.example/app:v1',
-  memoryRequest: '128Mi',
+  kubernetesName: 'app-dev',
+  memoryRequest: '1Gi',
   name: 'app-dev',
   projectId: 'prj_1',
   readyReplicas: 1,
   replicas: 1,
+  servicePort: 3000,
+  servicePorts: [{ name: 'http', port: 3000 }],
   sourceType: 'image',
   stage: 'dev',
 } as unknown as DeploymentTarget
@@ -59,7 +63,6 @@ function renderList(items: DeploymentTargetRow[] = []) {
         pullLatestPending={false}
         restartPending={false}
         rollbackPending={false}
-        onCopy={vi.fn()}
         onDeleteTarget={vi.fn()}
         onOpenConsole={vi.fn()}
         onOpenReleaseDialog={vi.fn()}
@@ -96,14 +99,22 @@ describe('application deployment targets layout', () => {
     )
   })
 
-  it('keeps successful deployment details focused on operational information', () => {
-    const { container } = renderList([{
+  it('opens operational details from the actions menu', async () => {
+    const user = userEvent.setup()
+    renderList([{
       internalEndpoint: {
         fqdn: 'app-dev.luna-dev.svc.cluster.local',
         namespace: 'luna-dev',
         serviceName: 'app-dev',
       },
       release,
+      routes: [{
+        accessUrl: 'https://outline.example.com',
+        deploymentTargetId: 'target_1',
+        enabled: true,
+        id: 'route_1',
+        status: 'ready',
+      } as unknown as GatewayRoute],
       runtimeStatus: { podCount: 1, summary: '', value: 'ready' },
       target: deploymentTarget,
       webConsoleEnabled: false,
@@ -111,18 +122,29 @@ describe('application deployment targets layout', () => {
 
     expect(screen.queryByText(/自动部署|Auto deploy/i)).not.toBeInTheDocument()
     expect(screen.queryByText('Deployment has minimum availability.')).not.toBeInTheDocument()
-    expect(container.querySelectorAll('details dl')).toHaveLength(2)
-    expect(screen.getAllByText('#3')).toHaveLength(2)
+    await user.click(screen.getAllByLabelText('Actions')[0])
+    await user.click(await screen.findByRole('menuitem', { name: 'View details' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Access addresses')).toBeInTheDocument()
+    expect(within(dialog).getByText('app-dev.luna-dev.svc.cluster.local')).toBeInTheDocument()
+    expect(within(dialog).getByText('https://outline.example.com')).toBeInTheDocument()
+    expect(within(dialog).getByText('0.5 vCPU · 1G')).toBeInTheDocument()
+    expect(within(dialog).getByText('#3')).toBeInTheDocument()
   })
 
-  it('keeps actionable rollout diagnostics in deployment details', () => {
+  it('keeps actionable rollout diagnostics in deployment details', async () => {
+    const user = userEvent.setup()
     renderList([{
       release: { ...release, message: 'ImagePullBackOff', status: 'failed' },
+      routes: [],
       runtimeStatus: { podCount: 1, summary: 'ImagePullBackOff', value: 'image-pull-back-off' },
       target: deploymentTarget,
       webConsoleEnabled: false,
     }])
 
-    expect(screen.getAllByText('ImagePullBackOff').length).toBeGreaterThan(0)
+    await user.click(screen.getAllByLabelText('Actions')[0])
+    await user.click(await screen.findByRole('menuitem', { name: 'View details' }))
+    expect(within(await screen.findByRole('dialog')).getAllByText('ImagePullBackOff').length).toBeGreaterThan(0)
   })
 })

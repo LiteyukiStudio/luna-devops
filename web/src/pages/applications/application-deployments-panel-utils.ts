@@ -126,11 +126,9 @@ export function compactReleaseMessage(message?: string) {
 }
 
 export function formatTargetRuntimeSize(target: DeploymentTarget, t: (key: string, options?: Record<string, unknown>) => string) {
-  const replicas = target.replicas > 0 ? target.replicas : 1
   return t('deploymentsPage.runtimeSizeValue', {
     cpu: formatCPU(target.cpuRequest),
     memory: formatMemoryGi(target.memoryRequest),
-    replicas,
   })
 }
 
@@ -490,12 +488,27 @@ export function formatMetricsBytes(value: number, locale: string) {
 
 function formatCPU(value: string) {
   const normalized = value?.trim() || '1'
-  return normalized.endsWith('m') ? normalized : `${normalized}c`
+  const cpu = normalized.endsWith('m')
+    ? Number(normalized.slice(0, -1)) / 1000
+    : Number(normalized)
+  return Number.isFinite(cpu) ? formatRuntimeQuantity(cpu) : normalized
 }
 
 function formatMemoryGi(value: string) {
   const normalized = value?.trim() || '1Gi'
-  return normalized.endsWith('Gi') ? normalized.replace('Gi', 'g') : normalized
+  const matched = normalized.match(/^(\d+(?:\.\d+)?)\s*([kmgt])i?$/i)
+  if (!matched)
+    return normalized
+  const amount = Number(matched[1])
+  const unit = matched[2].toLowerCase()
+  const gibibytes = unit === 'k'
+    ? amount / (1024 ** 2)
+    : unit === 'm' ? amount / 1024 : unit === 't' ? amount * 1024 : amount
+  return `${formatRuntimeQuantity(gibibytes)}G`
+}
+
+function formatRuntimeQuantity(value: number) {
+  return Number(value.toFixed(3)).toString()
 }
 
 function normalizedComparable(value: unknown) {

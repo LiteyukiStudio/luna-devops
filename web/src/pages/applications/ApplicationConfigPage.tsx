@@ -331,6 +331,7 @@ export function ApplicationConfigPage() {
               registries={registries.data ?? []}
               repositoryBindings={appRepositoryBindings}
               releases={appReleases}
+              routes={appRoutes}
             />
           </Suspense>
         </TabsContent>

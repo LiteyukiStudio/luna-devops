@@ -1,27 +1,14 @@
-import type { DeploymentRuntimeStatus, InternalServiceEndpointValue } from './application-deployment-runtime-utils'
+import type { DeploymentRuntimeStatus } from './application-deployment-runtime-utils'
+import type { DeploymentTarget } from '@/api'
 import { useTranslation } from 'react-i18next'
 import { DeploymentReplicaBadge } from '@/components/common/deployment-replica-badge'
+import { StatusBadge } from '@/components/common/status-badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { formatTargetRuntimeSize } from './application-deployments-panel-utils'
 
-export function InternalServiceEndpoint({ endpoint, onCopy }: { endpoint?: InternalServiceEndpointValue, onCopy: (value?: string) => void }) {
+export function DeploymentRuntimeSpecBadge({ target }: { target: DeploymentTarget }) {
   const { t } = useTranslation()
-  if (!endpoint)
-    return <span className="text-sm text-muted-foreground">-</span>
-
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button className="grid min-w-0 max-w-64 gap-0.5 text-left transition hover:text-primary-text" type="button" onClick={() => onCopy(endpoint.fqdn)}>
-          <span className="truncate font-mono text-xs">{endpoint.serviceName}</span>
-          <span className="truncate text-xs text-muted-foreground">{endpoint.fqdn}</span>
-        </button>
-      </TooltipTrigger>
-      <TooltipContent className="grid max-w-96 gap-1 break-all leading-5" side="top">
-        <span>{t('deploymentsPage.internalEndpointHint')}</span>
-        <span className="font-mono">{endpoint.fqdn}</span>
-      </TooltipContent>
-    </Tooltip>
-  )
+  return <StatusBadge tone="neutral">{formatTargetRuntimeSize(target, t)}</StatusBadge>
 }
 
 export function DeploymentRuntimeStatusBadge({ availableReplicas, deployed, desiredReplicas, readyReplicas, status }: { availableReplicas: number, deployed: boolean, desiredReplicas: number, readyReplicas: number, status: DeploymentRuntimeStatus }) {

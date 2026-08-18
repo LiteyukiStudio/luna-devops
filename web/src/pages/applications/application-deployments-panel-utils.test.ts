@@ -1,6 +1,6 @@
 import type { DeploymentTarget, DeploymentTargetPayload } from '@/api'
 import { describe, expect, it } from 'vitest'
-import { deploymentTargetDefaults, deploymentTargetHasRunningInstances, deploymentTargetRuntimeChanged, normalizeDeploymentTargetPayload } from './application-deployments-panel-utils'
+import { deploymentTargetDefaults, deploymentTargetHasRunningInstances, deploymentTargetRuntimeChanged, formatTargetRuntimeSize, normalizeDeploymentTargetPayload } from './application-deployments-panel-utils'
 
 const currentTarget = {
   ...deploymentTargetDefaults,
@@ -31,6 +31,13 @@ function changedPayload(overrides: Partial<DeploymentTargetPayload>) {
 }
 
 describe('deployment target runtime changes', () => {
+  it('formats runtime specs without repeating replicas', () => {
+    const format = (_key: string, options?: Record<string, unknown>) => `${options?.cpu} · ${options?.memory}`
+
+    expect(formatTargetRuntimeSize({ ...currentTarget, cpuRequest: '500m', memoryRequest: '1Gi' }, format)).toBe('0.5 · 1G')
+    expect(formatTargetRuntimeSize({ ...currentTarget, cpuRequest: '125m', memoryRequest: '512Mi' }, format)).toBe('0.125 · 0.5G')
+  })
+
   it('uses the live desired replica observation to identify running instances', () => {
     expect(deploymentTargetHasRunningInstances(currentTarget)).toBe(true)
     expect(deploymentTargetHasRunningInstances({ ...currentTarget, desiredReplicas: 0 })).toBe(false)

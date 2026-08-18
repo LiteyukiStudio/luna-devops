@@ -1,6 +1,6 @@
 import type { ReleaseForm } from './application-deployments-panel-utils'
 import type { RepositoryBindingDialogForm, RepositoryBindingDialogFormInput } from './application-repository-binding-dialog'
-import type { ArtifactRegistry, BuildRun, DeploymentTarget, DeploymentTargetPayload, ProjectRuntimeConfigSet, ProjectRuntimeConfigSetPayload, Release, RepositoryBinding } from '@/api'
+import type { ArtifactRegistry, BuildRun, DeploymentTarget, DeploymentTargetPayload, GatewayRoute, ProjectRuntimeConfigSet, ProjectRuntimeConfigSetPayload, Release, RepositoryBinding } from '@/api'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import i18next from 'i18next'
@@ -67,7 +67,7 @@ function buildArgLineCount(raw?: string) {
   return value.split('\n').map(line => line.trim()).filter(line => line && !line.startsWith('#')).length
 }
 
-export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifier, buildRuns, canManageRuntimeSecrets, deploymentTargets, projectId, projectIdentifier, projectWebConsoleEnabled, ref, registries, releases, repositoryBindings }: {
+export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifier, buildRuns, canManageRuntimeSecrets, deploymentTargets, projectId, projectIdentifier, projectWebConsoleEnabled, ref, registries, releases, repositoryBindings, routes }: {
   applicationId: string
   applicationIdentifier: string
   buildRuns: BuildRun[]
@@ -80,6 +80,7 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
   registries: ArtifactRegistry[]
   repositoryBindings: RepositoryBinding[]
   releases: Release[]
+  routes: GatewayRoute[]
 }) {
   const { i18n, t } = useTranslation()
   const queryClient = useQueryClient()
@@ -255,14 +256,6 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
       return
     targetForm.setValue('targetImageRef', nextImageRef, { shouldDirty: false, shouldValidate: true })
   }, [editingTarget, targetDialogOpen, targetForm, targetImageRefDirty, targetImageTemplateDefault.data?.targetImageRef, targetSourceType])
-  const copyDeploymentText = (value?: string) => {
-    const text = value?.trim()
-    if (!text || text === '-')
-      return
-    navigator.clipboard.writeText(text)
-      .then(() => toast.success(t('common.copied')))
-      .catch(error => toast.error(error.message))
-  }
   const runtimeConfigSets = useQuery({
     queryKey: ['runtime-config-sets', projectId],
     queryFn: () => api.listProjectRuntimeConfigSets(projectId),
@@ -313,6 +306,7 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
     return {
       internalEndpoint: buildInternalServiceEndpoint(target, serviceResourcesByCluster[clusterId] ?? []),
       release: latestReleaseByTarget[deploymentReleaseKey(target.id)],
+      routes: routes.filter(route => route.deploymentTargetId === target.id),
       runtimeStatus: buildDeploymentRuntimeStatus(
         target,
         runtimeCluster ?? defaultRuntimeCluster,
@@ -323,7 +317,7 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
       target,
       webConsoleEnabled: effectiveWebConsoleEnabled(projectWebConsoleEnabled, target.webConsoleEnabled),
     }
-  }), [defaultRuntimeCluster, deploymentTargets, latestReleaseByTarget, projectWebConsoleEnabled, runtimeClusterMap, serviceResourcesByCluster, workloadErrorByCluster, workloadLoadingByCluster, workloadResourcesByCluster])
+  }), [defaultRuntimeCluster, deploymentTargets, latestReleaseByTarget, projectWebConsoleEnabled, routes, runtimeClusterMap, serviceResourcesByCluster, workloadErrorByCluster, workloadLoadingByCluster, workloadResourcesByCluster])
   const runtimeConfigRestartTargets = useMemo(() => {
     if (!runtimeConfigRestartSetId)
       return []
@@ -655,7 +649,6 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
         pullLatestPending={pullLatestImageDeploy.isPending}
         restartPending={restartTarget.isPending}
         rollbackPending={rollbackRelease.isPending}
-        onCopy={copyDeploymentText}
         onDeleteTarget={setTargetToDelete}
         onOpenConsole={setConsoleRelease}
         onOpenReleaseDialog={openReleaseDialog}

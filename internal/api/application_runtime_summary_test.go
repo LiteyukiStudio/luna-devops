@@ -1,6 +1,7 @@
 package api
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/LiteyukiStudio/devops/internal/model"
@@ -55,9 +56,28 @@ func TestSummarizeApplicationDeploymentTargets(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := summarizeApplicationDeploymentTargets(test.targets); got != test.want {
+			got := summarizeApplicationDeploymentTargets(test.targets)
+			got.Targets = nil
+			if !reflect.DeepEqual(got, test.want) {
 				t.Fatalf("summarizeApplicationDeploymentTargets() = %#v, want %#v", got, test.want)
 			}
 		})
+	}
+}
+
+func TestSummarizeApplicationDeploymentTargetsKeepsStageStatusSeparate(t *testing.T) {
+	summary := summarizeApplicationDeploymentTargets([]model.DeploymentTarget{
+		{ID: "dev-target", Stage: "dev", Status: observation.StatusReady, DesiredReplicas: 1, ReadyReplicas: 1},
+		{ID: "test-target", Stage: "test", Status: "disabled"},
+		{ID: "prod-target", Stage: "prod", Status: observation.StatusDegraded, DesiredReplicas: 2, ReadyReplicas: 1},
+	})
+
+	want := []applicationDeploymentTargetSummary{
+		{ID: "prod-target", Stage: "prod", Status: observation.StatusDegraded, DesiredReplicas: 2, ReadyReplicas: 1},
+		{ID: "dev-target", Stage: "dev", Status: observation.StatusReady, DesiredReplicas: 1, ReadyReplicas: 1},
+		{ID: "test-target", Stage: "test", Status: "disabled"},
+	}
+	if !reflect.DeepEqual(summary.Targets, want) {
+		t.Fatalf("summarizeApplicationDeploymentTargets().Targets = %#v, want %#v", summary.Targets, want)
 	}
 }

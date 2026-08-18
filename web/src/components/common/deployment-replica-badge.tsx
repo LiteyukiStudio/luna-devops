@@ -9,6 +9,7 @@ export function DeploymentReplicaBadge({
   desiredReplicas,
   label,
   labelKeyPrefix = 'deploymentsPage.runtimeStatuses',
+  prefix,
   readyReplicas,
   status,
 }: {
@@ -17,6 +18,7 @@ export function DeploymentReplicaBadge({
   desiredReplicas: number
   label?: ReactNode
   labelKeyPrefix?: string
+  prefix?: ReactNode
   readyReplicas: number
   status: string
 }) {
@@ -34,7 +36,13 @@ export function DeploymentReplicaBadge({
   const statusLabel = label ?? t(`${labelKeyPrefix}.${effectiveStatus}`, { defaultValue: effectiveStatus })
   return (
     <StatusBadge className="gap-1" tone={statusToneFor(effectiveStatus)}>
-      {statusLabel}
+      {prefix && (
+        <>
+          <span>{prefix}</span>
+          <span aria-hidden="true">·</span>
+        </>
+      )}
+      <span>{statusLabel}</span>
       {hasReplicaObservation && (
         <>
           <span aria-hidden="true">·</span>

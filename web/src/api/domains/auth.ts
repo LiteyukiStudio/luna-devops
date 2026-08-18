@@ -6,7 +6,7 @@ export const authApi = {
   getPublicConfigs: (keys: string[]) =>
     request<Record<string, string>>('/public/configs', { method: 'POST', body: JSON.stringify({ keys }) }),
   getBootstrapStatus: () => request<BootstrapStatus>('/auth/bootstrap'),
-  initializeAdmin: (payload: { email: string, name: string, password: string, language: 'zh-CN' | 'en-US', rememberMe: boolean, bootstrapToken: string }) =>
+  initializeAdmin: (payload: { email: string, name: string, password: string, language: 'zh-CN' | 'zh-TW' | 'en-US' | 'ja-JP' | 'ko-KR', rememberMe: boolean, bootstrapToken: string }) =>
     request<{ user: CurrentUser }>('/auth/bootstrap/admin', { method: 'POST', body: JSON.stringify(payload) }),
   login: (payload: { email: string, password: string, rememberMe: boolean }) =>
     request<{ user: CurrentUser }>('/auth/login', { method: 'POST', body: JSON.stringify(payload) }),
@@ -17,9 +17,9 @@ export const authApi = {
   getAuthRegistrationSettings: () => request<AuthRegistrationSettings>('/auth/registration/settings'),
   updateAuthRegistrationSettings: (payload: Omit<AuthRegistrationSettings, 'smtpPasswordSet'> & { smtpPassword?: string }) =>
     request<AuthRegistrationSettings>('/auth/registration/settings', { method: 'PUT', body: JSON.stringify(payload) }),
-  requestEmailRegistrationCode: (payload: { email: string, language: 'zh-CN' | 'en-US' }) =>
+  requestEmailRegistrationCode: (payload: { email: string, language: 'zh-CN' | 'zh-TW' | 'en-US' | 'ja-JP' | 'ko-KR' }) =>
     request<{ challengeId: string, expiresAt: string }>('/auth/registration/email/code', { method: 'POST', body: JSON.stringify(payload) }),
-  completeEmailRegistration: (payload: { challengeId: string, code: string, email: string, name: string, password: string, language: 'zh-CN' | 'en-US', rememberMe: boolean }) =>
+  completeEmailRegistration: (payload: { challengeId: string, code: string, email: string, name: string, password: string, language: 'zh-CN' | 'zh-TW' | 'en-US' | 'ja-JP' | 'ko-KR', rememberMe: boolean }) =>
     request<{ user: CurrentUser }>('/auth/registration/email', { method: 'POST', body: JSON.stringify(payload) }),
   getMFAStatus: () => request<MFAStatus>('/auth/mfa/status'),
   enrollMFA: (payload: MFAEnrollmentRequest) => request<MFAEnrollment>('/auth/mfa/totp/enroll', { method: 'POST', body: JSON.stringify(payload) }),
@@ -41,7 +41,7 @@ export const authApi = {
   updateAuthAdmissionPolicy: (payload: Omit<AuthAdmissionPolicy, 'id'>) =>
     request<AuthAdmissionPolicy>('/auth/admission-policy', { method: 'PUT', body: JSON.stringify(payload) }),
   getCurrentUser: () => request<CurrentUser>('/users/me'),
-  updateCurrentUser: (payload: { name?: string, avatarUrl?: string, language?: 'zh-CN' | 'en-US', brandColorPreset?: CurrentUser['brandColorPreset'], interfaceStyle?: CurrentUser['interfaceStyle'] }) =>
+  updateCurrentUser: (payload: { name?: string, avatarUrl?: string, language?: 'zh-CN' | 'zh-TW' | 'en-US' | 'ja-JP' | 'ko-KR', brandColorPreset?: CurrentUser['brandColorPreset'], interfaceStyle?: CurrentUser['interfaceStyle'] }) =>
     request<CurrentUser>('/users/me', { method: 'PUT', body: JSON.stringify(payload) }),
   updateMyPassword: (payload: { currentPassword?: string, newPassword: string }) =>
     request<void>('/users/me/password', { method: 'PUT', body: JSON.stringify(payload) }),
@@ -50,9 +50,9 @@ export const authApi = {
     request<void>(`/users/me/external-identities/${identityId}`, { method: 'DELETE' }),
   listUsers: (params: PaginationParams) =>
     request<PaginatedResponse<User>>(`/users?${paginationQuery(params)}`),
-  createUser: (payload: { email: string, name: string, password: string, role: PlatformRoleValue, language: 'zh-CN' | 'en-US', disabled: boolean }) =>
+  createUser: (payload: { email: string, name: string, password: string, role: PlatformRoleValue, language: 'zh-CN' | 'zh-TW' | 'en-US' | 'ja-JP' | 'ko-KR', disabled: boolean }) =>
     request<User>('/users', { method: 'POST', body: JSON.stringify(payload) }),
-  updateUser: (userId: string, payload: { email: string, name: string, password?: string, role: PlatformRoleValue, language: 'zh-CN' | 'en-US', disabled: boolean }) =>
+  updateUser: (userId: string, payload: { email: string, name: string, password?: string, role: PlatformRoleValue, language: 'zh-CN' | 'zh-TW' | 'en-US' | 'ja-JP' | 'ko-KR', disabled: boolean }) =>
     request<User>(`/users/${userId}`, { method: 'PUT', body: JSON.stringify(payload) }),
   resetUserMFA: (userId: string) => request<void>(`/users/${userId}/mfa`, { method: 'DELETE' }),
   listConfigDefinitions: () => request<ConfigDefinition[]>('/configs/definitions'),
