@@ -80,7 +80,7 @@ const common = {
   secretValueMasked: '••••••••',
   empty_key: 'Please enter a key name first.',
   duplicate_key: 'Key names must be unique.',
-  invalid_line: 'Please use KEY=VALUE format, one per line.',
+  invalid_line: 'Use one KEY=VALUE entry per line.',
   failed: 'Failed',
   forbiddenTitle: 'Access denied',
   forbiddenDescription: 'You are not a member of this project space, or you do not have permission to perform this action. Please return to the project space list or contact the project space admin.',

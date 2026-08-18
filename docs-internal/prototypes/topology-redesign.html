@@ -180,22 +180,24 @@
   .lane-label .lane-name { font-size: 12px; font-weight: 650; letter-spacing: 0.04em; color: var(--gray-11); }
   .lane-label .lane-desc { font-size: 11px; color: var(--gray-9); }
   .lane-label .lane-count { font-size: 11px; color: var(--gray-9); margin-top: auto; font-variant-numeric: tabular-nums; }
-  /* 桌面端：泳道标签为覆盖层，不占布局宽度，画布节点区通铺，连线永远不被截断 */
-  @media (min-width: 721px) {
-    .lane-label {
-      position: absolute; top: 0; bottom: 0; left: 0; width: 150px;
-      pointer-events: none; z-index: 1;
-      background: linear-gradient(to right, var(--gray-2) 0%, rgb(248 249 250 / 0.75) 60%, transparent 100%);
-      border-right: 1px dashed var(--gray-5);
-    }
-    .lane-nodes { padding-left: 178px; }
-  }
-
+  /* 桌面端：泳道标签为绝对定位覆盖层，节点区整体右移让位；连线 SVG 覆盖整个 .lanes，坐标连续、跨层穿透 */
   .lane-nodes {
     display: flex; flex-wrap: wrap; align-items: center;
     gap: var(--sp-5) var(--sp-8);
     padding: var(--sp-5) var(--sp-6);
     position: relative;
+  }
+  .edge-layer { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
+
+  /* 桌面端覆盖：泳道标签为绝对定位覆盖层，节点区让位、单行不折行。
+     放在基础 .lane-nodes 规则之后，确保级联生效。 */
+  @media (min-width: 721px) {
+    .lane-label {
+      position: absolute; top: 0; bottom: 0; left: 0; width: 172px; z-index: 2; pointer-events: none;
+      background: linear-gradient(to right, var(--gray-2) 0%, rgb(248 249 250 / 0.92) 55%, transparent 100%);
+      border-right: 1px dashed var(--gray-5);
+    }
+    .lane-nodes { padding: var(--sp-5) var(--sp-6) var(--sp-5) 200px; flex-wrap: nowrap; gap: var(--sp-5) var(--sp-5); overflow-x: auto; }
   }
 
   /* ============================================================
@@ -349,7 +351,8 @@
 
   @media (max-width: 720px) {
     .page { padding: var(--sp-4); }
-    .lane-label { flex-direction: row; align-items: baseline; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); border-bottom: 1px dashed var(--gray-5); background: var(--gray-2); }
+    .lane { grid-template-columns: 1fr; }
+    .lane-label { flex-direction: row; align-items: baseline; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); border-bottom: 1px dashed var(--gray-5); background: var(--gray-2); border-right: none; }
     .lane-label .lane-count { margin: 0 0 0 auto; }
     .lane-nodes { padding: var(--sp-4); gap: var(--sp-4); }
     /* 窄屏为纵向滚动信息流：连线不再承载布局语义，隐藏 SVG 连线层与边上标签 */
