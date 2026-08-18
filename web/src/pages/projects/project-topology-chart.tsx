@@ -19,6 +19,7 @@ import {
   MarkerType,
   Position,
   ReactFlow,
+  ReactFlowProvider,
   useReactFlow,
 } from '@xyflow/react'
 import dagre from 'dagre'
@@ -154,7 +155,16 @@ type TopologyFlowEdge = Edge<TopologyFlowEdgeData, 'topology'>
 /* ============================================================
    主组件
    ============================================================ */
-export function ProjectTopologyChart({ edges, nodes, onSelectEdge }: ProjectTopologyChartProps) {
+export function ProjectTopologyChart(props: ProjectTopologyChartProps) {
+  // useReactFlow 必须位于 ReactFlowProvider 内部，故拆为外层 Provider + 内部画布组件
+  return (
+    <ReactFlowProvider>
+      <ProjectTopologyChartCanvas {...props} />
+    </ReactFlowProvider>
+  )
+}
+
+function ProjectTopologyChartCanvas({ edges, nodes, onSelectEdge }: ProjectTopologyChartProps) {
   const { t } = useTranslation()
   const { projectId = '' } = useParams()
   /* hover 聚焦（临时态）：hoverKey 为节点 id 或成组边的 hoverKey，共用一个状态位 */
