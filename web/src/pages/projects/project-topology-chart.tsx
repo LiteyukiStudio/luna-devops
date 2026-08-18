@@ -26,7 +26,7 @@ import dagre from 'dagre'
 import { AppWindow } from 'lucide-react'
 import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { statusToneFor } from '@/components/common/status-tone'
 import { cn } from '@/lib/utils'
 
@@ -282,7 +282,10 @@ function ProjectTopologyChartCanvas({ edges, nodes, onSelectEdge }: ProjectTopol
     const reversed = primary.source !== group[0].source
     const edgeHoverKey = `pair:${group[0].source}:${group[0].target}`
     const dimmed = highlightedNodeIds !== null && !highlightedNodeIds.has(group[0].source) && !highlightedNodeIds.has(group[0].target)
+    /* 高亮：hover 该边，或 hover 该边任意一端节点（邻域聚焦） */
     const hovered = hoverKey === edgeHoverKey
+      || hoverKey === group[0].source
+      || hoverKey === group[0].target
     const labelParts = [...new Set(group
       .map(edge => edge.protocol ? `${edge.protocol.toUpperCase()}${edge.port ? `·${edge.port}` : ''}` : undefined)
       .filter((label): label is string => Boolean(label)))]
@@ -378,7 +381,8 @@ function ProjectTopologyChartCanvas({ edges, nodes, onSelectEdge }: ProjectTopol
           nodesConnectable={false}
           nodesDraggable={false}
           nodeTypes={nodeTypes}
-          panOnDrag
+          panOnDrag={false}
+          panOnScroll
           zoomOnScroll
           onEdgeClick={handleEdgeClick}
           onEdgeMouseEnter={handleEdgeMouseEnter}
@@ -428,6 +432,7 @@ function LaneBandNode({ data }: NodeProps<LaneFlowNode>) {
    ============================================================ */
 function ServiceFlowNodeCard({ data }: NodeProps<ServiceFlowNode>) {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const { node, category, degree, statusLabel, categoryLabel, stageSummary, dimmed, hovered, detailTo } = data
   const tone = statusToneFor(node.status?.trim() || 'unknown')
 
@@ -440,7 +445,7 @@ function ServiceFlowNodeCard({ data }: NodeProps<ServiceFlowNode>) {
         out: degree.out,
       })}
       className={cn(
-        'relative block h-full w-full cursor-pointer rounded-container border border-border bg-surface py-3 pr-4 pl-5 text-left',
+        'nodrag relative block h-full w-full cursor-pointer rounded-container border border-border bg-surface py-3 pr-4 pl-5 text-left',
         'transition-[box-shadow,border-color,opacity,filter] duration-standard',
         'before:absolute before:top-2.5 before:bottom-2.5 before:left-0 before:w-[3px] before:rounded-full before:bg-(--topology-node-cat)',
         'hover:border-separator-strong hover:shadow-raised',
@@ -451,6 +456,11 @@ function ServiceFlowNodeCard({ data }: NodeProps<ServiceFlowNode>) {
       style={{ '--topology-node-cat': CATEGORY_COLORS[category] } as CSSProperties}
       title={t('projectTopology.chart.openServiceDetail')}
       to={detailTo}
+      onClick={(event) => {
+        /* 走 SPA 路由跳转，阻止 <a> 默认整页刷新 */
+        event.preventDefault()
+        navigate(detailTo)
+      }}
     >
       <Handle className="!pointer-events-none !opacity-0" position={Position.Top} type="target" />
       <div className="flex items-center gap-2">
