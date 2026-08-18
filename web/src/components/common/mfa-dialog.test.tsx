@@ -1,5 +1,5 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import i18next from '@/i18n'
 import { MFADialogProvider } from './mfa-dialog'
@@ -42,21 +42,28 @@ describe('mfa challenge dialog', () => {
     vi.clearAllMocks()
     mocks.challengeHandler = undefined
     await i18next.changeLanguage('en-US')
+    vi.useFakeTimers()
   })
 
-  it('renders a credential-associated one-time-code form', async () => {
+  afterEach(() => {
+    cleanup()
+    act(() => vi.runOnlyPendingTimers())
+    vi.useRealTimers()
+  })
+
+  it('renders a credential-associated one-time-code form', () => {
     render(
       <TooltipProvider>
         <MFADialogProvider><main /></MFADialogProvider>
       </TooltipProvider>,
     )
 
-    await waitFor(() => expect(mocks.challengeHandler).toBeTypeOf('function'))
+    expect(mocks.challengeHandler).toBeTypeOf('function')
     act(() => {
       void mocks.challengeHandler?.({ purpose: 'password_update' })
     })
 
-    const oneTimeCode = await screen.findByRole('textbox', { name: i18next.t('accountPage.mfa.otpPlaceholder') })
+    const oneTimeCode = screen.getByRole('textbox', { name: i18next.t('accountPage.mfa.otpPlaceholder') })
     const form = oneTimeCode.closest('form')
     expect(oneTimeCode).toHaveAttribute('autocomplete', 'one-time-code')
     expect(oneTimeCode).toHaveAttribute('name', 'one-time-code')
@@ -64,19 +71,19 @@ describe('mfa challenge dialog', () => {
     expect(screen.getByRole('button', { name: i18next.t('accountPage.mfa.verify') })).toHaveAttribute('type', 'submit')
   })
 
-  it('shows the accepted recovery-code format and explains that hyphens are optional', async () => {
+  it('shows the accepted recovery-code format and explains that hyphens are optional', () => {
     render(
       <TooltipProvider>
         <MFADialogProvider><main /></MFADialogProvider>
       </TooltipProvider>,
     )
 
-    await waitFor(() => expect(mocks.challengeHandler).toBeTypeOf('function'))
+    expect(mocks.challengeHandler).toBeTypeOf('function')
     act(() => {
       void mocks.challengeHandler?.({ purpose: 'password_update' })
     })
 
-    await screen.findByRole('combobox', { name: i18next.t('accountPage.mfa.verificationMethod') })
+    screen.getByRole('combobox', { name: i18next.t('accountPage.mfa.verificationMethod') })
     const nativeSelect = document.querySelector('select[aria-hidden="true"]')
     expect(nativeSelect).toBeInstanceOf(HTMLSelectElement)
     fireEvent.change(nativeSelect as HTMLSelectElement, { target: { value: 'recovery' } })
@@ -92,15 +99,17 @@ describe('mfa challenge dialog', () => {
       </TooltipProvider>,
     )
 
-    await waitFor(() => expect(mocks.challengeHandler).toBeTypeOf('function'))
+    expect(mocks.challengeHandler).toBeTypeOf('function')
     act(() => {
       void mocks.challengeHandler?.({ purpose: 'password_update' })
     })
 
-    const oneTimeCode = await screen.findByRole('textbox', { name: i18next.t('accountPage.mfa.otpPlaceholder') })
-    fireEvent.change(oneTimeCode, { target: { value: '123456' } })
+    const oneTimeCode = screen.getByRole('textbox', { name: i18next.t('accountPage.mfa.otpPlaceholder') })
+    await act(async () => {
+      fireEvent.change(oneTimeCode, { target: { value: '123456' } })
+    })
 
-    const alert = await screen.findByRole('alert')
+    const alert = screen.getByRole('alert')
     expect(alert).toHaveTextContent('Invalid verification code')
     expect(oneTimeCode).toHaveAttribute('aria-describedby', alert.id)
   })
