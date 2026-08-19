@@ -136,50 +136,58 @@ function AgentObservabilityView({ active, enabled, userId }: { active: boolean, 
   }
   const refreshWorkspace = () => void Promise.all([overview.refetch(), turns.refetch()])
   const turnColumns = useMemo<DataListColumn<AgentObservabilityTurn>[]>(() => [
-    { key: 'conversation', header: t('operationsDashboardPage.turn'), minWidth: 200, maxWidth: 240, render: item => (
-      <span className="min-w-0">
-        <span className="block truncate font-medium">{item.conversationTitle}</span>
-        <span className="mt-1 flex min-w-0 items-center gap-1.5 truncate text-xs text-muted-foreground">
-          <UserRound className="size-3.5 shrink-0" />
-          {t('operationsDashboardPage.turnNumber', { index: item.turnIndex + 1 })}
-          {' · '}
-          {item.user.name || item.user.email}
-          {' · '}
-          {formatDateTime(item.createdAt, i18n.language)}
+    {
+      key: 'conversation', header: t('operationsDashboardPage.turn'), minWidth: 200, maxWidth: 240, render: item => (
+        <span className="min-w-0">
+          <span className="block truncate font-medium">{item.conversationTitle}</span>
+          <span className="mt-1 flex min-w-0 items-center gap-1.5 truncate text-xs text-muted-foreground">
+            <UserRound className="size-3.5 shrink-0" />
+            {t('operationsDashboardPage.turnNumber', { index: item.turnIndex + 1 })}
+            {' · '}
+            {item.user.name || item.user.email}
+            {' · '}
+            {formatDateTime(item.createdAt, i18n.language)}
+          </span>
         </span>
-      </span>
-    ) },
-    { key: 'message', header: t('operationsDashboardPage.turnContent'), minWidth: 220, maxWidth: 360, mobile: 'hidden', render: item => (
-      <span className="grid min-w-0 gap-1">
-        <span className="block truncate text-sm" title={item.userMessage}>{t('operationsDashboardPage.userMessagePrefix', { message: item.userMessage || '—' })}</span>
-        <span className="block truncate text-xs text-muted-foreground" title={item.assistantMessage}>{t('operationsDashboardPage.assistantMessagePrefix', { message: item.assistantMessage || '—' })}</span>
-      </span>
-    ) },
-    { key: 'summary', header: t('operationsDashboardPage.executionSummary'), minWidth: 170, maxWidth: 196, mobile: 'hidden', render: item => (
-      <span className="grid gap-1">
-        <span className="flex items-center gap-2">
-          <StatusBadge tone={runStatusTone(item.status)}>{t(`operationsDashboardPage.runStatus.${item.status}`, { defaultValue: item.status })}</StatusBadge>
-          <span className="font-mono text-xs text-muted-foreground">{item.durationMs > 0 ? formatDuration(item.durationMs) : '—'}</span>
+      )
+    },
+    {
+      key: 'message', header: t('operationsDashboardPage.turnContent'), minWidth: 220, maxWidth: 360, mobile: 'hidden', render: item => (
+        <span className="grid min-w-0 gap-1">
+          <span className="block truncate text-sm" title={item.userMessage}>{t('operationsDashboardPage.userMessagePrefix', { message: item.userMessage || '—' })}</span>
+          <span className="block truncate text-xs text-muted-foreground" title={item.assistantMessage}>{t('operationsDashboardPage.assistantMessagePrefix', { message: item.assistantMessage || '—' })}</span>
         </span>
-        <span className="flex items-center gap-1 font-mono text-xs text-muted-foreground">
-          ↓
-          {formatNumber(item.inputTokens)}
-          {' · '}
-          ↑
-          {formatNumber(item.outputTokens)}
+      )
+    },
+    {
+      key: 'summary', header: t('operationsDashboardPage.executionSummary'), minWidth: 170, maxWidth: 196, mobile: 'hidden', render: item => (
+        <span className="grid gap-1">
+          <span className="flex items-center gap-2">
+            <StatusBadge tone={runStatusTone(item.status)}>{t(`operationsDashboardPage.runStatus.${item.status}`, { defaultValue: item.status })}</StatusBadge>
+            <span className="font-mono text-xs text-muted-foreground">{item.durationMs > 0 ? formatDuration(item.durationMs) : '—'}</span>
+          </span>
+          <span className="flex items-center gap-1 font-mono text-xs text-muted-foreground">
+            ↑
+            {formatNumber(item.inputTokens)}
+            {' · '}
+            ↓
+            {formatNumber(item.outputTokens)}
+          </span>
+          <span className="flex items-center gap-1 font-mono text-xs text-muted-foreground" title={t('operationsDashboardPage.toolCalls')}>
+            <Wrench className="size-3" />
+            {formatNumber(item.toolCallCount)}
+          </span>
         </span>
-        <span className="flex items-center gap-1 font-mono text-xs text-muted-foreground" title={t('operationsDashboardPage.toolCalls')}>
-          <Wrench className="size-3" />
-          {formatNumber(item.toolCallCount)}
-        </span>
-      </span>
-    ) },
-    { key: 'actions', header: t('operationsDashboardPage.actions'), width: 'actions', sticky: 'right', mobileActions: 'inline', render: item => (
-      <Button size="sm" variant="outline" onClick={() => setSelectedTurn(item)}>
-        <Eye className="size-4" />
-        {t('operationsDashboardPage.viewTurn')}
-      </Button>
-    ) },
+      )
+    },
+    {
+      key: 'actions', header: t('operationsDashboardPage.actions'), width: 'actions', sticky: 'right', mobileActions: 'inline', render: item => (
+        <Button size="sm" variant="outline" onClick={() => setSelectedTurn(item)}>
+          <Eye className="size-4" />
+          {t('operationsDashboardPage.viewTurn')}
+        </Button>
+      )
+    },
   ], [i18n.language, t])
 
   if (!enabled) {
@@ -218,30 +226,30 @@ function AgentObservabilityView({ active, enabled, userId }: { active: boolean, 
         {turns.isError
           ? <ErrorState title={t('operationsDashboardPage.turnsLoadFailed')} description={t('operationsDashboardPage.turnsLoadFailedDescription')} />
           : (
-              <DataList
-                columns={turnColumns}
-                constrainedHeight
-                emptyDescription={t('operationsDashboardPage.noRunsDescription')}
-                emptyMode={turnSearch ? 'filtered' : 'actionable'}
-                emptyTitle={t('operationsDashboardPage.noRuns')}
-                items={turns.data?.items ?? []}
-                loading={turns.isLoading}
-                pagination={{
-                  page: turnPage,
-                  pageSize: turnPageSize,
-                  total: turns.data?.total ?? 0,
-                  totalPages: turns.data?.totalPages ?? 0,
-                  pageInfoLabel: t('pagination.pageInfo', { page: turns.data?.page ?? turnPage, totalPages: turns.data?.totalPages ?? 0, total: turns.data?.total ?? 0 }),
-                  onPageChange: setTurnPage,
-                  onPageSizeChange: changeTurnPageSize,
-                }}
-                rowActionLabel={item => t('operationsDashboardPage.openTurnLabel', { index: item.turnIndex + 1, title: item.conversationTitle })}
-                rowKey={item => item.id}
-                search={{ value: turnSearch, placeholder: t('operationsDashboardPage.searchTurns'), onChange: changeTurnSearch }}
-                viewportOffset={24}
-                onRowClick={setSelectedTurn}
-              />
-            )}
+            <DataList
+              columns={turnColumns}
+              constrainedHeight
+              emptyDescription={t('operationsDashboardPage.noRunsDescription')}
+              emptyMode={turnSearch ? 'filtered' : 'actionable'}
+              emptyTitle={t('operationsDashboardPage.noRuns')}
+              items={turns.data?.items ?? []}
+              loading={turns.isLoading}
+              pagination={{
+                page: turnPage,
+                pageSize: turnPageSize,
+                total: turns.data?.total ?? 0,
+                totalPages: turns.data?.totalPages ?? 0,
+                pageInfoLabel: t('pagination.pageInfo', { page: turns.data?.page ?? turnPage, totalPages: turns.data?.totalPages ?? 0, total: turns.data?.total ?? 0 }),
+                onPageChange: setTurnPage,
+                onPageSizeChange: changeTurnPageSize,
+              }}
+              rowActionLabel={item => t('operationsDashboardPage.openTurnLabel', { index: item.turnIndex + 1, title: item.conversationTitle })}
+              rowKey={item => item.id}
+              search={{ value: turnSearch, placeholder: t('operationsDashboardPage.searchTurns'), onChange: changeTurnSearch }}
+              viewportOffset={24}
+              onRowClick={setSelectedTurn}
+            />
+          )}
       </Section>
       <AgentTurnDetailSheet key={selectedTurn?.id ?? 'closed'} turn={selectedTurn} onOpenChange={open => !open && setSelectedTurn(null)} />
     </div>
