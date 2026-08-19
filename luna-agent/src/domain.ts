@@ -78,6 +78,8 @@ export type ConversationSummaryContent = {
   failures: string[]
   pendingWork: string[]
   durableFacts: string[]
+  /** 原样保留的最近助手回复原文（不被摘要改写），用于保持模型自我一致性。 */
+  recentAssistantMessages?: string[]
 }
 
 export type ConversationSummary = {
@@ -117,7 +119,7 @@ export type TimelineItem = {
   turnId: string
   timelineIndex: number
   revision: number
-  type: "user_message" | "reasoning_summary" | "assistant_message" | "tool_call" | "tool_result"
+  type: "user_message" | "reasoning_summary" | "assistant_message" | "tool_call" | "tool_result" | "system_notice"
   status: "streaming" | "completed" | "failed"
   content: Record<string, unknown>
   createdAt: string

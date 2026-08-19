@@ -105,6 +105,7 @@ function presentItem(item: TimelineItem) {
     return {
       ...base,
       ...(item.type === "reasoning_summary" ? { display: item.content.display === "progress" ? "progress" as const : "summary" as const } : {}),
+      ...(item.type === "system_notice" ? { notice: stringValue(item.content.notice) ?? "unknown" } : {}),
     }
   }
   const toolCallId = stringValue(item.content.toolCallId) ?? item.id

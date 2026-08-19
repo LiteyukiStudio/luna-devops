@@ -1,6 +1,7 @@
 import type { ContextCompiler, ContextCompilerOptions } from "./context/compiler.js"
 import type { AIModelSnapshot, ConversationHistoryEntry, ConversationTitleSource, PromptVersion } from "./domain.js"
 import type {
+  ModelEvent,
   ModelMessage,
   ModelProvider,
   ModelResponse,
@@ -13,6 +14,11 @@ import { systemPromptFor } from "./prompt/system.js"
 import { recordAvailableTools } from "./telemetry.js"
 import { renameConversationTool } from "./tools/conversation-title.js"
 import { createOptionsTool } from "./tools/ui-options.js"
+
+/** ModelRuntime 在 provider 事件之上额外透出的事件。
+ *  当前用于让上层在压缩实际发生时向时间线写入一条用户可见的系统提示。 */
+export type ModelRuntimeEvent = ModelEvent
+  | { type: "context.compacted", summarizedThroughTurnIndex: number, estimatedInputTokens: number }
 import { defaultRuntimeSettings } from "./runtime-settings.js"
 
 export type ConversationPromptContext = {
@@ -74,14 +80,16 @@ export class ModelRuntime {
     this.assistantMaxOutputTokens = tokens
   }
 
-  async *stream(input: AssistantModelInput, signal?: AbortSignal) {
-    const request = await this.modelRequest(input, signal)
+  async *stream(input: AssistantModelInput, signal?: AbortSignal): AsyncIterable<ModelRuntimeEvent> {
+    const { request, compaction } = await this.modelRequest(input, signal)
     recordAvailableTools(request.tools ?? [])
+    if (compaction) yield { type: "context.compacted", ...compaction }
     yield* this.provider.stream(request)
   }
 
   async complete(input: AssistantModelInput, signal?: AbortSignal): Promise<ModelResponse> {
-    return this.provider.complete(await this.modelRequest(input, signal))
+    const { request } = await this.modelRequest(input, signal)
+    return this.provider.complete(request)
   }
 
   searchAvailableTools(query: string, pageContext: Record<string, unknown>, limit: number): ModelToolSearchResult {
@@ -165,15 +173,23 @@ export class ModelRuntime {
         || compiled.compressionOutcome === "catching_up"
         || compiled.compressionOutcome === "reused"
       : undefined
+    // 仅“本轮实际发生了压缩”才需要透传事件；
+    // reused/catching_up 都在之前轮次已通知过，避免重复提醒。
+    const compaction = compiled?.compressionOutcome === "compressed" && compiled.summarizedThroughTurnIndex !== undefined
+      ? { summarizedThroughTurnIndex: compiled.summarizedThroughTurnIndex, estimatedInputTokens: compiled.estimatedInputTokens }
+      : undefined
     return {
-      messages,
-      maxOutputTokens: this.assistantMaxOutputTokens,
-      budget: { runId: input.runId, ownerUserId: input.ownerUserId, operation: "assistant" as const },
-      tools,
-      conversationId: input.conversationId,
-      ...(conversationCompacted !== undefined ? { conversationCompacted } : {}),
-      ...(signal ? { signal } : {}),
-      ...(input.model ? { modelId: input.model.id, modelName: input.model.name, modelPricing: input.model } : {}),
+      request: {
+        messages,
+        maxOutputTokens: this.assistantMaxOutputTokens,
+        budget: { runId: input.runId, ownerUserId: input.ownerUserId, operation: "assistant" as const },
+        tools,
+        conversationId: input.conversationId,
+        ...(conversationCompacted !== undefined ? { conversationCompacted } : {}),
+        ...(signal ? { signal } : {}),
+        ...(input.model ? { modelId: input.model.id, modelName: input.model.name, modelPricing: input.model } : {}),
+      },
+      compaction,
     }
   }
 

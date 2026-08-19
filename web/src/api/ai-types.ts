@@ -96,11 +96,12 @@ export interface AITimelineItem {
   timelineIndex: number
   revision: number
   createdAt: string
-  type: 'reasoning_summary' | 'progress' | 'assistant_message' | 'tool_call' | 'tool_result'
+  type: 'reasoning_summary' | 'progress' | 'assistant_message' | 'tool_call' | 'tool_result' | 'system_notice'
   status: string
   relatedItemId?: string
   parts: AIMessagePart[]
   display?: 'summary' | 'progress'
+  notice?: string
   toolCall?: {
     id: string
     operationId: string

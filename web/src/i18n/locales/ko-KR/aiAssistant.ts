@@ -116,6 +116,10 @@ const aiAssistant = {
       unavailable: '현재 페이지에서 이 작업을 실행할 수 없습니다',
       runActive: '현재 작업이 완료된 후 다음 단계를 선택할 수 있습니다',
     },
+    contextCompacted: {
+      label: '컨텍스트 압축됨',
+      ariaLabel: '컨텍스트 공간을 절약하기 위해 이 세션의 이전 대화가 요약되었습니다',
+    },
     navigation: {
       completed: '{{target}}(으)로 이동했습니다',
       reopen: '{{target}} 다시 열기',

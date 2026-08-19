@@ -116,6 +116,10 @@ const aiAssistant = {
       unavailable: '當前頁面無法執行此操作',
       runActive: '當前任務完成後才能選擇下一步',
     },
+    contextCompacted: {
+      label: '上下文已壓縮',
+      ariaLabel: '本對話較早的內容已被摘要，以節省上下文空間',
+    },
     navigation: {
       completed: '已跳轉到{{target}}',
       reopen: '再次開啟{{target}}',

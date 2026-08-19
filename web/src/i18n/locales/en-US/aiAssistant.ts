@@ -116,6 +116,10 @@ const aiAssistant = {
       unavailable: 'This action is not available on the current page',
       runActive: 'Wait for the current run to finish before choosing the next step',
     },
+    contextCompacted: {
+      label: 'Context compacted',
+      ariaLabel: 'Earlier conversation in this session has been summarized to save context space',
+    },
     navigation: {
       completed: 'Switched to {{target}}',
       reopen: 'Open {{target}} again',

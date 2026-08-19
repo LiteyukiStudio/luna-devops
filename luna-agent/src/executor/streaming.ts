@@ -41,6 +41,22 @@ export async function streamModel(
           agentMetrics.modelFirstTokenDuration.record((performance.now() - startedAt) / 1000, { output_type: outputType })
           span.addEvent("luna.agent.first_output", { "luna.agent.output.type": outputType })
         }
+        if (event.type === "context.compacted") {
+          // 本轮发生了实际上下文压缩，向时间线写入一条系统提示，
+          // 让前端推送一个轻量 badge 告知用户历史已被摘要。
+          await repository.appendItemWithEvent({
+            id: createId("aiitm"), runId, turnId, type: "system_notice", status: "completed",
+            content: redact({
+              notice: "context_compacted",
+              summarizedThroughTurnIndex: event.summarizedThroughTurnIndex,
+              estimatedInputTokens: event.estimatedInputTokens,
+            }),
+          }, "context.compacted", redact({
+            summarizedThroughTurnIndex: event.summarizedThroughTurnIndex,
+            estimatedInputTokens: event.estimatedInputTokens,
+          }))
+          continue
+        }
         if (event.type === "reasoning_summary_delta" && event.delta) {
           reasoningSummary += event.delta
           if (reasoningTimelineIndex === undefined) {

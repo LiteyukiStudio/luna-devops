@@ -27,6 +27,7 @@ export const AI_EVENT_TYPES = [
   'mfa.resolved',
   'ui.action',
   'model.completed',
+  'context.compacted',
   'run.failed',
   'run.completed',
   'run.canceled',

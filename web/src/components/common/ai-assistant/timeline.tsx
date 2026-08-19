@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { parseAIOptionActions } from './actions'
+import { AIContextCompactedBadge } from './context-compacted-badge'
 import { runFailureTranslationKey } from './errors'
 import { useInfiniteLoadTrigger } from './infinite-load-trigger'
 import { AIInteractionCardPlaceholder } from './interaction-card-placeholder'
@@ -317,6 +318,8 @@ function ResponseBlock({ block, onAction, onApproval, onMFA }: { block: AIBlock,
     return <AIToolCallCard block={block} onAction={onAction} onApproval={onApproval} onMFA={onMFA} />
   if (block.type === 'run_status')
     return <RunStatusBlock block={block} />
+  if (block.type === 'context_compacted')
+    return <AIContextCompactedBadge />
   if (block.role === 'user')
     return null
   return (

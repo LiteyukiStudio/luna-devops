@@ -14,8 +14,11 @@ import { Surface } from '@/components/common/surface'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { findSuggestedModelPrice } from '@/lib/ai-model-suggested-prices'
+import { findSuggestedModelPreset, listSuggestedModelPresets } from '@/lib/ai-model-suggested-prices'
 import { aiModelFormSchema, emptyModel, modelFormValues, modelSaveErrorMessage } from './ai-model-management-utils'
+
+const suggestedPresets = listSuggestedModelPresets()
+const presetDatalistId = 'ai-model-name-presets'
 
 export function AIModelManagement() {
   const { t } = useTranslation()
@@ -49,18 +52,21 @@ export function AIModelManagement() {
   }
   const errors = form.formState.errors
   const watchedName = form.watch('name')
-  const suggestedPrice = findSuggestedModelPrice(watchedName ?? '')
-  const applySuggestedPrice = () => {
-    if (!suggestedPrice) {
+  const suggestedPreset = findSuggestedModelPreset(watchedName ?? '')
+  const applySuggestedPreset = () => {
+    if (!suggestedPreset) {
       return
     }
-    form.setValue('inputCreditsPerMillion', suggestedPrice.input, { shouldValidate: true })
-    form.setValue('outputCreditsPerMillion', suggestedPrice.output, { shouldValidate: true })
-    form.setValue('cachedInputCreditsPerMillion', suggestedPrice.cachedInput, { shouldValidate: true })
-    form.setValue('cachedOutputCreditsPerMillion', suggestedPrice.cachedOutput, { shouldValidate: true })
+    form.setValue('name', suggestedPreset.displayName, { shouldValidate: true })
+    form.setValue('maxContextTokens', suggestedPreset.maxContextTokens, { shouldValidate: true })
+    form.setValue('maxOutputTokens', suggestedPreset.maxOutputTokens, { shouldValidate: true })
+    form.setValue('inputCreditsPerMillion', suggestedPreset.prices.input, { shouldValidate: true })
+    form.setValue('outputCreditsPerMillion', suggestedPreset.prices.output, { shouldValidate: true })
+    form.setValue('cachedInputCreditsPerMillion', suggestedPreset.prices.cachedInput, { shouldValidate: true })
+    form.setValue('cachedOutputCreditsPerMillion', suggestedPreset.prices.cachedOutput, { shouldValidate: true })
   }
   return (
-    <>
+    <div className="max-w-3xl">
       <Surface className="mt-6 grid gap-4 rounded-xl p-6" variant="bordered">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="grid gap-1">
@@ -97,19 +103,30 @@ export function AIModelManagement() {
             <DialogDescription>{t('settings.ai.models.formDescription')}</DialogDescription>
           </DialogHeader>
           <form className="grid gap-4" onSubmit={form.handleSubmit(values => save.mutate(values))}>
-            <Field error={errors.name?.message} label={t('settings.ai.models.name')} required><Input {...form.register('name')} /></Field>
-            {suggestedPrice && (
+            <Field error={errors.name?.message} hint={t('settings.ai.models.namePresetHint')} label={t('settings.ai.models.name')} required>
+              <Input list={presetDatalistId} {...form.register('name')} />
+            </Field>
+            <datalist id={presetDatalistId}>
+              {suggestedPresets.map(preset => (
+                <option key={preset.displayName} value={preset.displayName}>
+                  {t('settings.ai.models.presetOption', { contextTokens: preset.maxContextTokens, outputTokens: preset.maxOutputTokens })}
+                </option>
+              ))}
+            </datalist>
+            {suggestedPreset && (
               <div className="flex flex-wrap items-center justify-between gap-2 rounded-control bg-surface-subtle px-4 py-3 text-sm">
                 <span className="text-muted-foreground">
-                  {t('settings.ai.models.suggestedPrice', {
-                    input: suggestedPrice.input,
-                    output: suggestedPrice.output,
-                    cachedInput: suggestedPrice.cachedInput,
-                    cachedOutput: suggestedPrice.cachedOutput,
+                  {t('settings.ai.models.suggestedPreset', {
+                    contextTokens: suggestedPreset.maxContextTokens,
+                    outputTokens: suggestedPreset.maxOutputTokens,
+                    input: suggestedPreset.prices.input,
+                    output: suggestedPreset.prices.output,
+                    cachedInput: suggestedPreset.prices.cachedInput,
+                    cachedOutput: suggestedPreset.prices.cachedOutput,
                   })}
                 </span>
-                <Button size="sm" type="button" variant="outline" onClick={applySuggestedPrice}>
-                  {t('settings.ai.models.applySuggestedPrice')}
+                <Button size="sm" type="button" variant="outline" onClick={applySuggestedPreset}>
+                  {t('settings.ai.models.applySuggestedPreset')}
                 </Button>
               </div>
             )}
@@ -134,6 +151,6 @@ export function AIModelManagement() {
           </form>
         </DialogContent>
       </Dialog>
-    </>
+    </div>
   )
 }

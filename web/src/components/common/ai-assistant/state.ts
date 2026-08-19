@@ -5,6 +5,7 @@ export type AIBlock
   = | { id: string, turnId: string, index: number, type: 'thinking', status: string, display: 'summary' | 'progress', text: string }
     | { id: string, turnId: string, index: number, type: 'message', role: 'user' | 'assistant', status: string, text: string, createdAt: string }
     | { id: string, turnId: string, runId: string, index: number, type: 'run_status', status: 'failed' | 'canceled', errorCode?: string }
+    | { id: string, turnId: string, index: number, type: 'context_compacted', status: string }
     | { id: string, turnId: string, runId: string, index: number, type: 'tool_call', toolCallId: string, operationId: string, visibility: AIToolVisibility, titleKey?: string, errorCode?: string, status: AIToolStatus, arguments: Record<string, unknown>, result?: AIToolDisplayResult, uiActions: AIUIAction[], durationMs?: number, traceId?: string, argumentsHash?: string, expectedVersion?: number, mfaPurpose?: string }
 
 export interface AIAssistantState {
@@ -72,6 +73,9 @@ export function stateFromTimeline(timeline: AITimeline): AIAssistantState {
       }
       else if (item.type === 'reasoning_summary' || item.type === 'progress') {
         blocks.push({ id: item.id, turnId: turn.id, index: blockIndex(turn.turnIndex, item.timelineIndex), type: 'thinking', status: item.status, display: item.type === 'progress' ? 'progress' : 'summary', text: textFromParts(item.parts) })
+      }
+      else if (item.type === 'system_notice' && item.notice === 'context_compacted') {
+        blocks.push({ id: item.id, turnId: turn.id, index: blockIndex(turn.turnIndex, item.timelineIndex), type: 'context_compacted', status: item.status })
       }
       else if (item.type === 'tool_call' && item.toolCall) {
         const resultItem = results.get(item.id)
@@ -225,6 +229,11 @@ function blockFromTimelineItem(item: AITimelineItem, turnId: string, runId: stri
       display: item.type === 'progress' ? 'progress' : item.display ?? 'summary',
       text: textFromParts(item.parts),
     }
+  }
+  if (item.type === 'system_notice') {
+    if (item.notice !== 'context_compacted')
+      return undefined
+    return { id: item.id, turnId, index, type: 'context_compacted', status: item.status }
   }
   if (item.type !== 'tool_call' || !item.toolCall)
     return undefined
