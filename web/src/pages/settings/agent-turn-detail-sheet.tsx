@@ -31,19 +31,28 @@ const spanAttributeLabelKeys: Record<string, string> = {
   'gen_ai.agent.version': 'agentVersion',
   'gen_ai.request.model': 'requestModel',
   'gen_ai.request.max_tokens': 'maxTokens',
+  'gen_ai.request.stream': 'requestStream',
+  'gen_ai.request.reasoning.level': 'reasoningLevel',
   'gen_ai.response.id': 'responseId',
   'gen_ai.response.model': 'responseModel',
   'gen_ai.response.finish_reasons': 'finishReasons',
+  'gen_ai.response.time_to_first_chunk': 'timeToFirstChunk',
   'gen_ai.usage.input_tokens': 'inputTokens',
   'gen_ai.usage.output_tokens': 'outputTokens',
   'gen_ai.usage.cache_read.input_tokens': 'cachedInputTokens',
+  'gen_ai.usage.cache_creation.input_tokens': 'cacheCreationInputTokens',
+  'gen_ai.usage.reasoning.output_tokens': 'reasoningOutputTokens',
+  'gen_ai.conversation.compacted': 'conversationCompacted',
   'gen_ai.tool.name': 'toolName',
   'gen_ai.tool.call.id': 'toolCallId',
   'gen_ai.tool.type': 'toolType',
   'gen_ai.conversation.id': 'conversationId',
+  'openai.response.service_tier': 'serviceTier',
+  'openai.response.system_fingerprint': 'systemFingerprint',
   'luna.turn.id': 'turnId',
   'luna.run.id': 'runId',
   'luna.tool_call.id': 'toolCallId',
+  'luna.gen_ai.usage.reported': 'usageReported',
   'http.request.method': 'httpMethod',
   'http.response.status_code': 'httpStatus',
   'db.system.name': 'databaseSystem',
@@ -401,7 +410,13 @@ function spanAttributeLabel(key: string, t: (key: string, options?: Record<strin
 function spanAttributeValue(key: string, value: string, t: (key: string, options?: Record<string, unknown>) => string, language: string) {
   if (key === 'gen_ai.operation.name' || key === 'luna.run.outcome')
     return t(`operationsDashboardPage.turnDetail.attributeValues.${value}`, { defaultValue: value })
-  if (key === 'gen_ai.usage.input_tokens' || key === 'gen_ai.usage.output_tokens' || key === 'gen_ai.usage.cache_read.input_tokens' || key === 'gen_ai.request.max_tokens') {
+  if (key === 'gen_ai.request.stream' || key === 'gen_ai.conversation.compacted' || key === 'luna.gen_ai.usage.reported')
+    return t(`operationsDashboardPage.turnDetail.booleanValue.${value === 'true' ? 'true' : 'false'}`, { defaultValue: value })
+  if (key === 'gen_ai.response.time_to_first_chunk') {
+    const seconds = Number(value)
+    return Number.isFinite(seconds) ? `${new Intl.NumberFormat(language, { maximumFractionDigits: 3 }).format(seconds)} s` : value
+  }
+  if (key === 'gen_ai.usage.input_tokens' || key === 'gen_ai.usage.output_tokens' || key === 'gen_ai.usage.cache_read.input_tokens' || key === 'gen_ai.usage.cache_creation.input_tokens' || key === 'gen_ai.usage.reasoning.output_tokens' || key === 'gen_ai.request.max_tokens') {
     const number = Number(value)
     return Number.isFinite(number) ? new Intl.NumberFormat(language).format(number) : value
   }

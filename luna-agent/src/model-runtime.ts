@@ -142,8 +142,8 @@ export class ModelRuntime {
   private async modelRequest(input: AssistantModelInput, signal?: AbortSignal) {
     const tools = this.modelTools(input.pageContext, input.conversation, input.input, input.loadedOperationIds)
     const base = modelMessageParts(input.promptVersion, input.input, input.pageContext, input.conversation, tools)
-    const messages = this.contextCompiler
-      ? (await this.contextCompiler.compile({
+    const compiled = this.contextCompiler
+      ? await this.contextCompiler.compile({
           conversationId: input.conversationId,
           beforeTurnIndex: input.conversation.turnIndex,
           systemMessage: base.system,
@@ -155,13 +155,23 @@ export class ModelRuntime {
           maxOutputTokens: this.assistantMaxOutputTokens,
           ...(input.model ? { model: input.model } : {}),
           ...(signal ? { signal } : {}),
-        })).messages
+        })
+      : undefined
+    const messages = compiled
+      ? compiled.messages
       : modelMessages(base.system, base.currentUser, input.history.slice(-4), input.continuationMessages)
+    const conversationCompacted = compiled
+      ? compiled.compressionOutcome === "compressed"
+        || compiled.compressionOutcome === "catching_up"
+        || compiled.compressionOutcome === "reused"
+      : undefined
     return {
       messages,
       maxOutputTokens: this.assistantMaxOutputTokens,
       budget: { runId: input.runId, ownerUserId: input.ownerUserId, operation: "assistant" as const },
       tools,
+      conversationId: input.conversationId,
+      ...(conversationCompacted !== undefined ? { conversationCompacted } : {}),
       ...(signal ? { signal } : {}),
       ...(input.model ? { modelId: input.model.id, modelName: input.model.name, modelPricing: input.model } : {}),
     }

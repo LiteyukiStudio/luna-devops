@@ -29,9 +29,10 @@ describe("OpenTelemetry GenAI semantic conventions", () => {
         "gen_ai.provider.name": "openai",
         "gen_ai.request.model": "gpt-5",
         "gen_ai.request.max_tokens": 4096,
+        "gen_ai.output.type": "text",
+        "gen_ai.request.stream": true,
         "server.address": "models.example.com",
         "server.port": 443,
-        "luna.gen_ai.request.streaming": true,
       },
     })
     expect(genAIToolSpanAttributes({ name: "listProjects", callId: "call-1", description: "List projects" })).toEqual({

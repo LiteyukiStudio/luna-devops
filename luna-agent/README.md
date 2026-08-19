@@ -1,149 +1,179 @@
-# Luna Agent
+# luna-agent
 
-Luna DevOps 内嵌 AI 助手的独立 Node.js 服务。当前实现覆盖 P0 服务骨架：内部
-HTTP API、会话/Turn/Run/Timeline 持久化、可恢复事件、Run 租约执行器、
-单一模型运行时、Provider 兼容层、身份验证抽象与默认脱敏。模型运行时只负责上下文编译、工具解析和 Provider 调用；循环、工具执行与暂停恢复由执行器统一编排。
+Luna DevOps 的 AI 助手运行时。一个**自研的、以 PostgreSQL 为权威状态的 Agent 执行器**——没有使用 LangGraph / Vercel AI SDK 等编排框架，这是有意为之的技术选型，本文档解释架构、选型理由和扩展规范。
 
-Agent 侧 P1/P2 公共执行管线位于 `src/tools/`：严格 Tool Catalog、JSON Schema
-参数约束、风险/批准/MFA 策略、缺参中断、不可变重试 attempt、工具调用上限、
-最终状态验证和结构化 Timeline Event。所有业务操作只能通过
-`LunaApiToolClient` 先兑换 operation-bound 委托令牌后调用 Luna API；没有
-Kubernetes、业务数据库、任意 URL、Shell 或第三方平台执行器。
+## 为什么不使用 Agent 框架
 
-配置 Luna API Provider 回调后，模型运行时统一使用 `ManagedProvider` 拉取版本化
-配置。API Key 只存在于短 TTL 进程内缓存，不进入文件、数据库、上下文摘要、
-Timeline 或日志；缓存过期后的下一次真实调用会使用后台新配置。确定性 Provider
-只用于显式本地开发与测试，生产启动强制要求 Luna API Provider 配置。
+核心原因：这个 Agent 的计费、安全、可观测要求**穿透控制流的每一步**，框架在这些地方全部是负资产：
 
-浏览器不能访问本服务。生产流量只能由 Luna API 通过 `/internal/v1/*` 进入；
-本服务不连接 Luna 业务数据库、Kubernetes、Redis 业务队列或外部平台。
+- 每次模型调用前要经过五重预算闸（站点上限 / 模型能力 / 上下文剩余 / Run 剩余 / 个人钱包余额），调用后按四类 token 价格（输入 / 输出 / 缓存输入 / 缓存输出）结算到**用户个人钱包**——框架不知道你的计费模型。
+- 敏感输入（密钥、Token）必须走用户表单通道，**永不进入模型上下文**——这是定制到工具 schema 层的约束。
+- 审批 / MFA step-up 的断点续跑与多实例租约竞争绑定，框架的 interrupt/resume 语义覆盖不了租约丢失、实例漂移的场景。
+- 全链路 OTel GenAI 语义 + 零高基数 label，与 LangChain 的 callback/LangSmith 体系是两套。
 
-## 本地运行
+选型结论（2026-08 评审）：**工具循环 + 动态工具检索 + 审批断点**的形态，自写循环完全可控。触发重新评估的条件：出现多 Agent 协作（handoff 语义）、多步会签 / 超时升级类复杂人机协同、或团队规模使自研内核的上手成本成为瓶颈。届时优先考虑 Temporal（持久工作流）而非 LangGraph（Node 版为二等公民）。
 
-服务是独立 pnpm 项目，依赖和 lockfile 都由 `luna-agent/` 自己维护。
+## 运行时拓扑
 
-```bash
-cd luna-agent
-pnpm install
-pnpm dev
+```
+Web ──► luna-gateway (Go BFF) ──HMAC──► luna-agent (本服务)
+                                          │
+              ┌───────────────────────────┼───────────────────────────┐
+              ▼                           ▼                           ▼
+        PostgreSQL                 Luna API (Go 后端)            模型 Provider
+   (runs/turns/timeline/       (平台工具 HTTP 调用,          (OpenAI 兼容端点,
+    summaries/tool_calls,       HMAC + Run Actor Grant)       budgeted/托管配置)
+    权威状态 + 租约)
 ```
 
-`dev` 会自动读取 `luna-agent/.env.local`（文件不存在时继续使用当前进程环境），
-因此本地 Provider、模型和测试密钥可以保存在该 Git 忽略文件中，不需要写入命令行
-或提交到仓库。
+- **无内存权威状态**：run、turn、时间线、工具调用、上下文摘要全部落 PostgreSQL。多实例通过 `claimRun` + 租约心跳竞争执行权，实例宕机后 run 可被其他实例接管。
+- **平台能力零直连**：Agent 不直接持有任何平台凭据。工具调用经 `ToolOrchestrator` 发给 Go 后端，携带按 run 加密的 Actor Grant（`runActorGrantCiphertext`），权限在服务端按用户身份裁决。
 
-与宿主机 API 联调时，先将 `.env.example` 复制为 `.env.local`，设置
-`DATABASE_URL=postgres://devops:devops@localhost:5432/devops?sslmode=disable`、
-`LUNA_API_BASE_URL=http://localhost:8080` 和 `AUTH_MODE=bff-hmac`，并确保
-`AI_INTERNAL_SECRET` 与根目录 `.env` 一致。本地 Agent 不通过 Compose 启动。
+## 目录结构与模块职责
 
-开发环境未填写模型配置时使用内存 Repository、确定性测试 Provider 和显式开发身份：
-
-```bash
-curl -H 'X-Luna-Dev-User: usr_local' \
-  http://127.0.0.1:8091/internal/v1/capabilities
+```
+src/
+├── index.ts / bootstrap.ts   进程入口与依赖组装（唯一的 wiring 层）
+├── server.ts                 Fastify HTTP：BFF 回调、审批/MFA 决议、健康检查
+├── config.ts                 环境变量加载与校验
+│
+├── executor/                 ★ Run 执行内核（2026-08 从单文件拆分）
+│   ├── index.ts              RunExecutor：调度循环、并发配额、租约心跳、
+│   │                         step 循环（模型→工具→模型）、run 终态裁决
+│   ├── streaming.ts          单次模型流式调用：事件消费、reasoning/正文
+│   │                         时间线投影、首 token 与用量遥测
+│   ├── cards.ts              CardGenerationService：交互卡片的占位项、
+│   │                         schema 校验、修复重试（上限内复用同一占位）、终态
+│   ├── internal-tools.ts     内部工具副作用：create_options / navigate_to_route /
+│   │                         rename_conversation 的时间线与 UI Action 写入
+│   ├── tool-results.ts       工具结果序列化与字节预算瘦身（数组按元素粒度保留）、
+│   │                         平台工具失败引导（如 registry 凭据前置检查）
+│   └── resume.ts             断点续跑：把已完成工具调用重建为 assistant+tool
+│                             消息对；恢复已加载工具集防止漂移
+├── executor.ts               兼容 re-export，新代码请直接 import executor/ 子模块
+│
+├── model-runtime.ts          模型调用门面：消息组装、标题生成、下一步预测、
+│                             工具集解析；持有 ContextCompiler
+├── context/compiler.ts       上下文编译器：增量水位摘要 + 近期原文装填 +
+│                             continuation 有界截断（详见下文）
+├── prompt/system.ts          系统 Prompt（中文，按项目规范）
+│
+├── provider/                 模型 Provider 层
+│   ├── provider.ts           ModelProvider 接口与消息/事件类型
+│   ├── openai-compatible.ts  OpenAI 兼容客户端（SSE 流、usage 解析、重试）
+│   ├── budgeted.ts           ★ 预算装饰器：调用前 clamp、预留、调用后结算
+│   ├── managed.ts / runtime.ts / config-client.ts
+│   │                         平台托管模型配置拉取与动态刷新
+│   └── deterministic.ts      测试用确定性 Provider
+│
+├── tools/                    工具系统
+│   ├── orchestrator.ts       平台工具编排：提议→审批/MFA→执行→结果投影，
+│   │                         ToolInterruption 驱动断点续跑
+│   ├── catalog.ts            工具目录：静态下发 + search_tools 动态检索
+│   ├── policy.ts             工具策略（范围、风险级别）
+│   ├── generated/platform.ts 由 OpenAPI 生成的平台操作定义（勿手改）
+│   ├── postgres-store.ts     工具调用记录（参数密文存储）
+│   └── ui-cards/ui-options/ui-route/tool-search/conversation-title
+│                             内部工具的 schema 与输入校验
+│
+├── persistence/              持久化
+│   ├── repository.ts         Repository 接口（领域操作的唯一入口）
+│   ├── postgres.ts           PostgreSQL 实现（drizzle），含租约、单调水位
+│   │                         upsert、行版本乐观锁
+│   ├── memory.ts             内存实现（测试/本地）
+│   └── schema/               drizzle 表定义
+│
+├── telemetry.ts              OTel 封装：span、metric、结构化日志、Trace
+│                             Context 提取；内容捕获默认关闭
+├── genai-semconv.ts          OTel GenAI 语义约定对齐
+├── redaction.ts              凭据/敏感字段脱敏
+├── payload-cipher.ts         AEAD 载荷加密（run grant、工具参数）
+├── auth.ts                   BFF HMAC 认证 / 开发模式认证
+└── runtime-settings.ts       运行时参数默认值（可被平台高级设置动态下发）
 ```
 
-生产必须配置 PostgreSQL、`bff-hmac` 验证和内部根密钥，服务启动时会拒绝不安全的默认值。持久层使用
-Drizzle ORM 访问 `ai` schema；Schema 只负责运行时类型与查询，数据库迁移继续由平台统一的
-golang-migrate Job 管理，Agent 不会在启动时自动迁移。本地验证可使用 `sql/001_ai_schema.sql`
-参考 DDL 初始化专用临时库，并通过 `AGENT_TEST_DATABASE_URL` 运行真实 PostgreSQL 集成测试：
+## 核心流程：一个 Run 的生命周期
 
-```bash
-AGENT_TEST_DATABASE_URL=postgres://devops:devops@127.0.0.1:5432/<临时库> pnpm vitest run tests/postgres-repository.test.ts
+```
+queued ──claimRun──► running ──┬─► completed
+                               ├─► waiting_approval ──(用户批准)──► 重新入队续跑
+                               ├─► waiting_mfa ──(MFA 通过)──► 重新入队续跑
+                               ├─► waiting_input ──(用户提交表单)──► 重新入队续跑
+                               ├─► failed（稳定错误码）
+                               └─► canceled（用户取消 / 租约丢失 / 超时）
 ```
 
-## 配置
+1. **领取**：`RunExecutor` 轮询 `claimRun`（实例 ID + 租约秒数），领取后心跳续租；租约续期失败立即 abort——意味着另一个实例已接管。
+2. **step 循环**（`maxModelSteps` 上限内）：
+   - `streaming.ts` 消费模型事件流，实时投影 reasoning/正文到时间线（SSE 推给前端）；
+   - 模型返回 tool calls 后逐个派发：**内部工具**（`internalToolOperationIds`：create_options / create_interaction_cards / rename_conversation / navigate_to_route / search_tools）在进程内处理；**平台工具**经 `ToolOrchestrator.propose` 走审批/MFA/敏感输入检查，需要人工介入时抛 `ToolInterruption`，run 进入 waiting_* 状态并归还租约；
+   - 每个工具结果以 `tool` 角色消息追加到 continuation，进入下一 step。
+3. **续跑**：审批/MFA/表单完成后由服务端重新入队 run。`resume.ts` 把暂停前已完成的工具调用重建为 assistant+tool 消息对，并恢复此前已加载的动态工具集——保证续跑时模型看到的上下文与暂停前连续。
+4. **收尾**：自动生成会话标题（best-effort，失败不影响结果）、预测下一步操作选项、写终态与遥测。
 
-| 变量 | 默认值 | 说明 |
-| --- | --- | --- |
-| `HOST` / `PORT` | `127.0.0.1` / `8091` | 内部监听地址 |
-| `DATABASE_URL` | 空 | 开发为空时使用内存；生产必填 |
-| `AUTH_MODE` | `development` | 生产使用 `bff-hmac` |
-| `AI_INTERNAL_SECRET` | 空 | API 与 Agent 共享的稳定内部根密钥，至少 32 字节；自动派生用途隔离子密钥 |
-| `LUNA_API_BASE_URL` | 空 | Luna API 内部 Service 根地址 |
-| `TOOL_CATALOG_JSON` | 空 | 由 OpenAPI 生成的严格 operation metadata JSON |
-| `PROVIDER_BASE_URL` | 空 | 本地直连时使用的 OpenAI-compatible API 根地址 |
-| `PROVIDER_API_KEY` | 空 | 本地直连密钥，仅驻留进程内 |
-| `PROVIDER_MODEL` | 空 | 本地直连模型名称 |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | 空 | OTLP/HTTP Collector 根地址；为空时不初始化遥测 SDK |
-| `OTEL_RESOURCE_ATTRIBUTES` | 空 | 附加资源属性，例如 `deployment.environment.name=production` |
-| `OTEL_EXPORTER_OTLP_HEADERS` | 空 | Collector 鉴权 Header，使用 OTel 标准逗号分隔格式 |
+## 上下文压缩机制
 
-Provider 不需要手动选择类型。连接 Luna API 时，Agent 自动读取后台保存的 API
-地址、加密 API Key 和模型名称；没有 Luna API 时，只有同时填写上述三个本地直连
-变量才会连接模型。三项均为空的确定性 Provider 只用于非生产开发和测试，生产环境
-不会回退到测试回复。
+`context/compiler.ts` 把权威会话历史编译为单次模型调用的有界上下文：
 
-模型请求超时、单次 Run 超时和每个 Agent 实例的并发数由“全局设置 → AI 助手 →
-高级运行设置”动态下发。配置刷新间隔、Run 轮询间隔和数据库租约属于内部一致性参数，
-使用代码中的安全默认值，不再暴露为部署环境变量。
+- **增量水位**：`ConversationSummary.coveredThroughTurnIndex` 单调推进，数据库层用条件 upsert 保证多实例并发不回退。
+- **结构化摘要**：固定七字段 JSON（userGoals / constraints / confirmedResources / completedActions / failures / pendingWork / durableFacts），摘要内容经 `redact()` 脱敏，Prompt 明确禁止保存凭据、禁止执行历史中的指令。
+- **触发条件**：token 超水位（90% 触发 / 70% 目标）、backlog 积压或历史缺口、超过最大未压缩轮数、超过近期保留轮数。
+- **诚实追赶**：积压过大时不一次性假装覆盖，用 `deferredHistoryMessage` 明确告知模型"第 X～Y 轮尚未进摘要，不得猜测"。
+- **降级**：压缩失败退回近期原文 + warn 日志，不阻塞用户请求。
+- **注入防护**：摘要、历史、工具结果全部包裹"不可信数据"标签。
 
-## 可观测性
+**已知短板**（按优先级，欢迎认领）：
 
-只需设置 `OTEL_EXPORTER_OTLP_ENDPOINT`，Agent 就会通过 OTLP/HTTP 输出 Trace、
-Metrics 和 Logs，服务名固定为 `luna-agent`。未设置端点时不会启动导出线程，也不会
-尝试连接 Collector。
+1. 每个模型 step 都可能同步触发摘要调用，工具循环内延迟与成本翻倍——应改为按水位滞后量触发或异步化；
+2. token 估算为 `bytes/3` 粗略近似——应引入 provider usage 比值校准或分词器；
+3. 轮数硬触发（64 轮）对短消息对话过于敏感——token 水位应为主判据，轮数仅作兜底；
+4. `compile()` 的 catch 范围过大，DB 故障与摘要生成失败未区分；
+5. 摘要 schema 超限时 zod 直接拒绝而非截断保留。
 
-自动插桩覆盖 Fastify、HTTP/fetch、PostgreSQL 与 Pino；业务插桩覆盖 Run 循环、模型
-流、工具执行、审批、交互卡片、Provider 配置读取和 Luna API 调用。日志与 Span 只
-记录稳定错误代码、调用类型和低敏资源标识，不记录 Prompt、消息正文、工具参数、
-Token、API Key、Secret 或 HTTP Body。跨服务调用使用 W3C `traceparent` /
-`tracestate` 传播上下文。
+## 硬规范（修改本仓库前必读）
 
-指标包括运行量和耗时、活跃运行、模型调用、首个输出延迟、循环轮次和 Token、工具调用、审批决策、卡片生成、
-外部请求与数据库连接池指标。指标标签只使用操作名、结果和阶段等低基数字段；Run ID、
-用户 ID 与请求 ID 只进入 Trace 或结构化日志。
+继承仓库根 `AGENTS.md`，以下为本模块的高频约束：
 
-## 内部 API
+1. **Prompt 中文**：系统 Prompt、工具描述、摘要 Prompt、给模型的 guidance 文案一律中文；工具名、参数名、枚举、错误码保持原值。
+2. **错误码稳定**：抛给控制流的错误用 `ai.*` 稳定错误码（如 `ai.run_timeout`），不要把原始异常文本泄漏到 run 状态或用户可见层。`stableError` / `stableErrorCode` 是边界。
+3. **遥测三件套**：新控制流路径必须带 span（内部操作用 `internalSpanOptions`）、结构化日志（事件名稳定）、低基数 metric label。**禁止**把用户输入、URL 查询、资源名、ID 放进 span 名/日志事件名/metric label；Secret、Token、Prompt 不进遥测（内容捕获开关仅诊断用途，默认关闭）。
+4. **Context 传播**：跨进程调用（Luna API、Provider）必须延续现有 Trace Context；不要在业务链路里新建 `context.Background()` 等价物。
+5. **工具注册闭环**：新增/修改 Agent 可调用工具时，按根 AGENTS.md 的 MUST 条款逐项核对 Agent operation 定义、后端 `Execute` case、策略白名单 `requiredScopes`、catalog 下发与描述四端一致，并用真实调用链验证。
+6. **状态只走 Repository**：executor、tools、persistence 之外不得出现 SQL；状态迁移必须用 `updateRun(from, to)` 的条件迁移形式，依赖行版本或状态冲突处理并发，禁止"先查再写"。
+7. **不可信数据边界**：所有进入模型上下文的外部内容（历史、工具结果、页面上下文、摘要）必须包裹"不可信数据"声明；离开模型的内容（工具参数）必须经 zod schema 校验后才触碰副作用。
+8. **模块边界**：
+   - `executor/` 是唯一的控制流层，可以依赖 tools/provider/persistence/context，反向依赖禁止；
+   - `streaming.ts` / `cards.ts` / `internal-tools.ts` 只做"一件事 + 时间线投影"，不含 step 循环语义；
+   - 纯函数（序列化、瘦身、重建消息）放 `tool-results.ts` / `resume.ts`，便于脱离 RunExecutor 单测。
 
-- `GET /internal/health/live`
-- `GET /internal/health/ready`
-- `GET /internal/v1/health/compatibility`
-- `GET /internal/v1/capabilities`
-- `GET /internal/v1/provider/health`
-- Conversation CRUD
-- `GET .../timeline`
-- `POST .../turns`
-- `GET /internal/v1/runs/:runId`
-- `GET /internal/v1/runs/:runId/events?after=0&stream=true`
-- `POST /internal/v1/runs/:runId/cancel`
+## 扩展方向与建议路径
 
-SSE 游标是单 Run 单调递增的 `event_sequence`。事件先持久化，随后才能被读取；
-Redis fan-out 接入后也必须维持这一顺序。Provider 的原始 partial JSON、隐藏思维
-链和续接 artifact 不进入 Timeline。
+**近期（不改变架构）**：
 
-新 Run 统一使用中文系统提示 `system-v4`。系统提示会向模型提供当前会话标题、标题
-来源和轮次，并加载 `skills/luna-devops-navigation` 与
-`skills/luna-devops-interaction`。领域指引根据当前消息、页面上下文和可用工具从
-`references/` 按需加载；页面路由清单只在读取、浏览或明确跳转意图下加载。
+- 上下文压缩器短板修复（见上节 1–5），优先做"按水位滞后触发"和"usage 比值校准"，收益最直接；
+- `RunExecutor.claimAndExecute` 的 step 循环体仍可继续提取（平台工具派发段、`argumentError` 修复段），目标是把 index.ts 压到纯编排；
+- 平台工具失败引导（`platformToolFailureGuidance`）目前是硬编码单例，若出现第二个场景应改为按 (operationId, errorCode) 注册的表驱动结构。
 
-内建 `rename_conversation` 工具负责首轮命名与明显话题漂移后的标题修正；浏览器手动
-命名会把来源持久化为 `user`，之后模型不再看到该工具，Repository 也会拒绝 Agent
-覆盖。项目仅维护当前 Prompt 版本；系统提示、模型任务提示、工具描述和 Skill 后续
-均使用中文编写。
+**中期（需要设计评审）**：
 
-内建 `create_options` 为每个下一步选项保存稳定 ID 和独立重复策略：注册路由跳转
-默认可重复，发送消息与请求操作成功后只锁定自身。`navigate_to_route` 是单独的
-自动 UI 工具，仅用于用户明确要求的页面切换；浏览器只消费实时 SSE 完成事件并按
-Tool Call ID 去重，历史 Timeline 不会再次触发跳转。
+- **并行工具调用**：当前同一 step 内工具串行执行。并行化需要先解决审批/MFA 中断与部分完成的续跑语义（`resume.ts` 要支持乱序完成），以及计费预留的合并；
+- **摘要异步化**：压缩从请求路径挪到后台任务，请求路径只读水位 + deferred 提示。需要处理"摘要落后过多时是否阻塞"的策略；
+- **多模型路由**：Provider 层已支持按 run 快照选模型，下一步是按任务类型（摘要 / 主循环 / 标题）路由到不同档位模型，`budgeted.ts` 的预留逻辑要相应分组。
 
-Run 使用统一的有界 Agent Loop：模型发起 Tool Call 后，执行器完成策略与权限检查，
-把带调用 ID 的工具结果按 OpenAI-compatible `assistant.tool_calls` / `tool` 消息回灌，
-再继续下一轮模型判断，直到得到最终答复或进入批准、MFA、补充输入、取消、超时及
-调用上限等明确终态。执行器不得把第二轮及后续平台 Tool Call 当作最终回复丢弃。
+**远期（触发前文"重新评估框架"的条件）**：
 
-## 验证
+- 多 Agent 协作 / 任务委派树；
+- 多步会签、超时升级类复杂审批流；
+- 出现这两类需求时，先评估 Temporal 承接持久工作流部分，Agent 保持为无状态执行器。
+
+## 常用命令
 
 ```bash
-cd luna-agent
-pnpm lint
-pnpm typecheck
-pnpm test
-pnpm build
+pnpm --dir luna-agent dev         # 本地开发（tsx watch）
+pnpm --dir luna-agent test        # vitest
+pnpm --dir luna-agent typecheck   # tsc --noEmit
+pnpm --dir luna-agent lint        # eslint
+pnpm --dir luna-agent build       # 产物构建
 ```
 
-尚未在本目录实现的跨模块 P0 内容包括：平台 OpenAPI 生成 Client、Go BFF、
-golang-migrate 正式迁移和 Redis live fan-out。Run Actor Grant 兑换与工具执行
-已经接入 Luna API 的固定内部 callback 路由；真实 Tool Catalog 必须由平台
-OpenAPI 构建产物通过配置注入，不能由 Agent 猜测或按任意 URL 执行。
+交付前 `lint` / `typecheck` / `test` 必须无新增错误；涉及 executor 控制流、持久化迁移、工具契约的改动按根 AGENTS.md 执行完整验证。

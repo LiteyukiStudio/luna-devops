@@ -7,6 +7,8 @@ import { agentMetrics, clientSpanOptions, isAIContentCaptureEnabled, recordAICon
 
 type Options = { baseUrl: string, apiKey: string, model: string, timeoutMs: number, maxRetries?: number }
 
+type RequestIdentity = { conversationId?: string, conversationCompacted?: boolean }
+
 export class OpenAICompatibleProvider implements ModelProvider {
   constructor(private readonly options: Options) {}
 
@@ -29,7 +31,10 @@ export class OpenAICompatibleProvider implements ModelProvider {
 
   async *stream(request: ModelRequest): AsyncIterable<ModelEvent> {
     const modelSpan = genAIModelSpan(this.options.baseUrl, this.options.model, request.maxOutputTokens, true)
-    yield* withSpanStream(modelSpan.name, clientSpanOptions(modelSpan.attributes), span => this.streamWithTelemetry(request, span))
+    yield* withSpanStream(modelSpan.name, clientSpanOptions({
+      ...modelSpan.attributes,
+      ...requestSpanIdentityAttributes(request),
+    }), span => this.streamWithTelemetry(request, span))
   }
 
   private async *streamWithTelemetry(request: ModelRequest, span: Span): AsyncIterable<ModelEvent> {
@@ -58,11 +63,13 @@ export class OpenAICompatibleProvider implements ModelProvider {
     const modelSpan = genAIModelSpan(this.options.baseUrl, this.options.model, request.maxOutputTokens, false)
     return withSpan(modelSpan.name, clientSpanOptions({
       ...modelSpan.attributes,
+      ...requestSpanIdentityAttributes(request),
       "luna.gen_ai.request.purpose": purpose,
     }), async span => {
       this.recordRequestContent(span, request)
       const response = await this.request(request.messages, request.maxOutputTokens, request.signal, request.tools, request.toolChoice, request.thinking)
       this.recordResponseAttributes(span, response.usage, response.finishReason, response.toolCalls.length)
+      this.recordProviderResponseMetadata(span, response.serviceTier, response.systemFingerprint)
       return {
         text: response.text,
         usage: response.usage,
@@ -70,14 +77,24 @@ export class OpenAICompatibleProvider implements ModelProvider {
         ...(response.toolCalls.length ? { toolCalls: response.toolCalls } : {}),
         ...(response.finishReason ? { finishReason: response.finishReason } : {}),
         ...(response.requestId ? { requestId: response.requestId } : {}),
+        ...(response.serviceTier ? { serviceTier: response.serviceTier } : {}),
+        ...(response.systemFingerprint ? { systemFingerprint: response.systemFingerprint } : {}),
       }
     })
   }
 
   private recordRequestContent(span: Span, request: ModelRequest): void {
     recordAIContent(span, "luna.gen_ai.content.input", "gen_ai.input.messages", genAIInputMessages(request.messages))
+    const systemMessages = request.messages.filter(message => message.role === "system")
+    if (systemMessages.length > 0) {
+      recordAIContent(span, "luna.gen_ai.content.system_instructions", "gen_ai.system_instructions", genAIInputMessages(systemMessages))
+    }
     if (request.tools?.length) {
       recordAIContent(span, "luna.gen_ai.content.tools", "gen_ai.tool.definitions", genAIToolDefinitions(request.tools))
+    }
+    if (request.thinking) {
+      const level = reasoningLevel(request.thinking)
+      if (level) span.setAttribute("gen_ai.request.reasoning.level", level)
     }
   }
 
@@ -91,21 +108,35 @@ export class OpenAICompatibleProvider implements ModelProvider {
       span.setAttribute("gen_ai.usage.input_tokens", usage.inputTokens)
       span.setAttribute("gen_ai.usage.output_tokens", usage.outputTokens)
       if (usage.cachedInputTokens !== undefined) span.setAttribute("gen_ai.usage.cache_read.input_tokens", usage.cachedInputTokens)
+      if (usage.cachedOutputTokens !== undefined) span.setAttribute("gen_ai.usage.cache_creation.input_tokens", usage.cachedOutputTokens)
+      if (usage.reasoningOutputTokens !== undefined) span.setAttribute("gen_ai.usage.reasoning.output_tokens", usage.reasoningOutputTokens)
+    }
+    else {
+      span.setAttribute("luna.gen_ai.usage.reported", false)
     }
     if (finishReason) span.setAttribute("gen_ai.response.finish_reasons", [finishReason])
     span.setAttribute("luna.tool_call.count", toolCallCount)
   }
 
+  private recordProviderResponseMetadata(span: Span, serviceTier: string | undefined, systemFingerprint: string | undefined): void {
+    if (serviceTier) span.setAttribute("openai.response.service_tier", serviceTier)
+    if (systemFingerprint) span.setAttribute("openai.response.system_fingerprint", systemFingerprint)
+  }
+
   private async *streamAttempt(request: ModelRequest): AsyncIterable<ModelEvent> {
+    const requestStartedAt = performance.now()
+    let firstChunkSeconds: number | undefined
     const response = await this.fetchCompletionOnce(request.messages, request.maxOutputTokens, true, request.signal, request.tools, request.toolChoice, request.thinking)
     if (!response.body) throw new Error("ai.provider_empty_stream")
     const decoder = new TextDecoder()
     let buffer = ""
-    let usage: { inputTokens: number, outputTokens: number, cachedInputTokens?: number, cachedOutputTokens?: number } = { inputTokens: 0, outputTokens: 0 }
+    let usage: { inputTokens: number, outputTokens: number, cachedInputTokens?: number, cachedOutputTokens?: number, reasoningOutputTokens?: number } = { inputTokens: 0, outputTokens: 0 }
     let usageReported = false
     let responseText = ""
     let reasoningText = ""
     let finishReason: string | undefined
+    let responseServiceTier: string | undefined
+    let responseSystemFingerprint: string | undefined
     let toolCallDeltaEmitted = false
     const toolFragments = new Map<number, { id?: string, operationId: string, arguments: string }>()
     const reader = (response.body as ReadableStream<Uint8Array>).getReader()
@@ -129,8 +160,14 @@ export class OpenAICompatibleProvider implements ModelProvider {
         }
         if (payload.error) throw new Error(providerPayloadError(payload.error))
         const activeSpan = trace.getActiveSpan()
+        if (firstChunkSeconds === undefined) {
+          firstChunkSeconds = (performance.now() - requestStartedAt) / 1000
+          activeSpan?.setAttribute("gen_ai.response.time_to_first_chunk", firstChunkSeconds)
+        }
         if (payload.id) activeSpan?.setAttribute("gen_ai.response.id", payload.id)
         if (payload.model) activeSpan?.setAttribute("gen_ai.response.model", payload.model)
+        if (payload.service_tier) responseServiceTier = payload.service_tier
+        if (payload.system_fingerprint) responseSystemFingerprint = payload.system_fingerprint
         const delta = payload.choices?.[0]?.delta
         finishReason = payload.choices?.[0]?.finish_reason ?? finishReason
         const reasoning = extractReasoningText(delta)
@@ -161,6 +198,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
             outputTokens: payload.usage.completion_tokens ?? usage.outputTokens,
             ...(payload.usage.prompt_tokens_details?.cached_tokens !== undefined ? { cachedInputTokens: payload.usage.prompt_tokens_details.cached_tokens } : usage.cachedInputTokens !== undefined ? { cachedInputTokens: usage.cachedInputTokens } : {}),
             ...(payload.usage.completion_tokens_details?.cached_tokens !== undefined ? { cachedOutputTokens: payload.usage.completion_tokens_details.cached_tokens } : usage.cachedOutputTokens !== undefined ? { cachedOutputTokens: usage.cachedOutputTokens } : {}),
+            ...(payload.usage.completion_tokens_details?.reasoning_tokens !== undefined ? { reasoningOutputTokens: payload.usage.completion_tokens_details.reasoning_tokens } : usage.reasoningOutputTokens !== undefined ? { reasoningOutputTokens: usage.reasoningOutputTokens } : {}),
           }
         }
       }
@@ -168,6 +206,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
     const toolCalls = parseToolCalls(toolFragments)
     const activeSpan = trace.getActiveSpan()
     if (activeSpan) {
+      this.recordProviderResponseMetadata(activeSpan, responseServiceTier, responseSystemFingerprint)
       recordAIContent(activeSpan, "luna.gen_ai.content.output", "gen_ai.output.messages", genAIOutputMessages({
         text: responseText,
         ...(reasoningText ? { reasoningSummary: reasoningText } : {}),
@@ -208,9 +247,12 @@ export class OpenAICompatibleProvider implements ModelProvider {
         reported: body.usage !== undefined,
         ...(body.usage?.prompt_tokens_details?.cached_tokens !== undefined ? { cachedInputTokens: body.usage.prompt_tokens_details.cached_tokens } : {}),
         ...(body.usage?.completion_tokens_details?.cached_tokens !== undefined ? { cachedOutputTokens: body.usage.completion_tokens_details.cached_tokens } : {}),
+        ...(body.usage?.completion_tokens_details?.reasoning_tokens !== undefined ? { reasoningOutputTokens: body.usage.completion_tokens_details.reasoning_tokens } : {}),
       },
       requestId: response.headers.get("x-request-id") ?? undefined,
       finishReason,
+      ...(body.service_tier ? { serviceTier: body.service_tier } : {}),
+      ...(body.system_fingerprint ? { systemFingerprint: body.system_fingerprint } : {}),
     }
     if (activeSpan) {
       recordAIContent(activeSpan, "luna.gen_ai.content.output", "gen_ai.output.messages", genAIOutputMessages({
@@ -255,6 +297,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
             messages: providerMessages(messages),
             max_tokens: maxTokens,
             stream,
+            ...(stream ? { stream_options: { include_usage: true } } : {}),
             ...(thinking ? { thinking } : {}),
             ...(tools?.length
               ? {
@@ -418,15 +461,32 @@ type CompletionUsage = {
   prompt_tokens?: number
   completion_tokens?: number
   prompt_tokens_details?: { cached_tokens?: number }
-  completion_tokens_details?: { cached_tokens?: number }
+  completion_tokens_details?: { cached_tokens?: number, reasoning_tokens?: number }
 }
-type CompletionBody = { id?: string, model?: string, choices?: Array<{ message?: MessageShape, finish_reason?: string }>, usage?: CompletionUsage }
+type CompletionBody = { id?: string, model?: string, service_tier?: string, system_fingerprint?: string, choices?: Array<{ message?: MessageShape, finish_reason?: string }>, usage?: CompletionUsage }
 type StreamChunk = {
   id?: string
   model?: string
+  service_tier?: string
+  system_fingerprint?: string
   choices?: Array<{ delta?: ReasoningShape & { content?: unknown, tool_calls?: ToolCallShape[] }, finish_reason?: string }>
   usage?: CompletionUsage
   error?: unknown
+}
+
+function requestSpanIdentityAttributes(request: RequestIdentity): Record<string, string | boolean> {
+  return {
+    ...(request.conversationId ? { "gen_ai.conversation.id": request.conversationId } : {}),
+    ...(request.conversationCompacted !== undefined ? { "gen_ai.conversation.compacted": request.conversationCompacted } : {}),
+  }
+}
+
+function reasoningLevel(thinking: { type: string }): string | undefined {
+  const value = thinking.type.trim().toLowerCase()
+  if (value === "enabled" || value === "high") return "high"
+  if (value === "medium") return "medium"
+  if (value === "disabled" || value === "low") return "low"
+  return undefined
 }
 
 function textValue(value: unknown): string {

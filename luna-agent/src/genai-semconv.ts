@@ -56,9 +56,10 @@ export function genAIModelSpan(baseUrl: string, model: string, maxTokens: number
       "gen_ai.provider.name": "openai",
       "gen_ai.request.model": model,
       "gen_ai.request.max_tokens": maxTokens,
+      "gen_ai.output.type": "text",
       "server.address": endpoint.hostname,
       "server.port": port,
-      "luna.gen_ai.request.streaming": streaming,
+      ...(streaming ? { "gen_ai.request.stream": true } : {}),
     } satisfies Attributes,
   }
 }
