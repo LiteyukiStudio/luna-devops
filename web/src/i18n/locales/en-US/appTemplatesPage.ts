@@ -37,6 +37,8 @@ const appTemplatesPage = {
   stage: 'Stage',
   imageRef: 'Image Reference',
   imageRefHint: 'Defaults to the template image. If you use Harbor, a DockerHub proxy, or a private registry, replace it with your full image reference.',
+  provisionAccess: 'Provision ServiceAccount and RBAC via the platform',
+  provisionAccessDescription: 'When enabled, the platform creates a dedicated ServiceAccount and grants it read access to Gateway API routes. When disabled, the workload runs on the namespace default account and you manage RBAC yourself.',
   replicas: 'Replicas',
   cpu: 'CPU',
   memory: 'Memory',

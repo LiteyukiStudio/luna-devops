@@ -175,7 +175,6 @@ type fakeBuildTaskEnqueuer struct {
 	buildPayload             tasks.BuildRunPayload
 	deployPayload            tasks.DeployRunPayload
 	gatewayPayload           tasks.GatewayApplyPayload
-	systemComponentPayload   tasks.SystemComponentApplyPayload
 	notificationPayload      tasks.NotificationDeliverPayload
 	applicationDeletePayload tasks.ApplicationDeletePayload
 	resourceCleanupPayload   tasks.ResourceCleanupPayload
@@ -193,11 +192,6 @@ func (f *fakeBuildTaskEnqueuer) EnqueueDeployRun(_ context.Context, payload task
 
 func (f *fakeBuildTaskEnqueuer) EnqueueGatewayApply(_ context.Context, payload tasks.GatewayApplyPayload) (*asynq.TaskInfo, error) {
 	f.gatewayPayload = payload
-	return &asynq.TaskInfo{}, nil
-}
-
-func (f *fakeBuildTaskEnqueuer) EnqueueSystemComponentApply(_ context.Context, payload tasks.SystemComponentApplyPayload) (*asynq.TaskInfo, error) {
-	f.systemComponentPayload = payload
 	return &asynq.TaskInfo{}, nil
 }
 

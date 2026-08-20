@@ -37,6 +37,8 @@ const appTemplatesPage = {
   stage: '阶段',
   imageRef: '镜像地址',
   imageRefHint: '默认使用模板镜像；如果你有 Harbor、DockerHub 代理或私有镜像，可以改成自己的完整镜像地址。',
+  provisionAccess: '由平台创建 ServiceAccount 与 RBAC 权限',
+  provisionAccessDescription: '勾选后平台会为该组件创建专用 ServiceAccount 并授予读取 Gateway API 路由的权限；不勾选则使用命名空间默认账号，由你自行配置 RBAC。',
   replicas: '副本数',
   cpu: 'CPU',
   memory: '内存',

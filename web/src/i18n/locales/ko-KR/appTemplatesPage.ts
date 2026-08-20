@@ -37,6 +37,8 @@ const appTemplatesPage = {
   stage: '단계',
   imageRef: '이미지 주소',
   imageRefHint: '기본적으로 템플릿 이미지를 사용합니다. Harbor, DockerHub 프록시 또는 프라이빗 이미지가 있는 경우 자신의 전체 이미지 주소로 변경할 수 있습니다.',
+  provisionAccess: '플랫폼에서 ServiceAccount 및 RBAC 권한 생성',
+  provisionAccessDescription: '활성화하면 플랫폼이 전용 ServiceAccount를 생성하고 Gateway API 경로에 대한 읽기 권한을 부여합니다. 비활성화하면 네임스페이스 기본 계정으로 실행되며 RBAC는 직접 관리합니다.',
   replicas: '레플리카 수',
   cpu: 'CPU',
   memory: '메모리',

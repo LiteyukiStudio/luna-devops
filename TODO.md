@@ -1,5 +1,12 @@
 # TODO
 
+## 2026-08-20 网关流量探针普通应用安装与 AI 预算修复
+
+- [x] 修复 AI 助手设置修改单次 Run 预算时误报参数错误：`validateAIConfigValues` 改为仅校验本次提交的字段，`ai.provider.base_url` 等依赖运行时 DNS/egress 的校验只在对应字段变更时执行，不再因改无关字段被存量配置卡死。
+- [x] 移除网关流量探针的特判部署链路：删除 `ApplyGatewayTrafficProbe` 直连资源下发、`system_component:apply` 任务、`applyPlatformDeploymentTargetDefaults` 强塞 SA/Automount 以及 worker 里按 identifier 硬编码的 RBAC 门禁。
+- [x] 探针改为普通应用安装：用户可在应用市场安装对话框自选镜像（默认 nightly 并强制 `Always` 拉取避免节点缓存旧 tag）、可选勾选由平台创建 ServiceAccount 与 RBAC，Report Token 由后端安装时生成专用值并写入密钥存储。
+- [x] 新增 AI 助手输入区 Token 预算圆环：模型切换器左侧显示当前 Run 累计 token / 预算上限占比，上下文占用环保留在右侧；预算快照随 `run.started` SSE 事件下发，前端逐次 `model.completed` 累加用量。
+
 ## 2026-08-18 默认计费单价与 AI 模型建议价格
 
 - [x] 调研主流公有云（AWS、阿里云、腾讯云、GCP）计算/存储/流量刊例价与 OpenAI、Anthropic、Google、DeepSeek、阿里、月之暗面、字节、智谱官方模型刊例价，确认现有资源默认单价（1 美元 = 100 Credits 口径下）合理并保留为默认值。

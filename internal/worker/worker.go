@@ -126,7 +126,6 @@ func registerTaskHandlers(mux *asynq.ServeMux, runner *Runner) {
 	mux.HandleFunc(tasks.TypeBuildRun, runner.withTaskEvents((*Runner).handleBuildRun))
 	mux.HandleFunc(tasks.TypeDeployRun, runner.withTaskEvents((*Runner).handleDeployRun))
 	mux.HandleFunc(tasks.TypeGatewayApply, runner.withTaskEvents((*Runner).handleGatewayApply))
-	mux.HandleFunc(tasks.TypeSystemComponentApply, runner.withTaskEvents((*Runner).handleSystemComponentApply))
 	mux.HandleFunc(tasks.TypeApplicationDelete, runner.withTaskEvents((*Runner).handleApplicationDelete))
 	mux.HandleFunc(tasks.TypeResourceCleanup, runner.withTaskEvents((*Runner).handleResourceCleanup))
 	mux.HandleFunc(tasks.TypeNotificationDeliver, runner.withTaskEvents((*Runner).handleNotificationDeliver))

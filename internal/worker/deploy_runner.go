@@ -43,7 +43,6 @@ func (r *Runner) handleDeployRun(ctx context.Context, task *asynq.Task) error {
 		r.appendReleaseLog(ctx, release, message)
 		return r.finishDeployRelease(ctx, release, "failed", message)
 	}
-	deploymentTarget = r.applyPlatformDeploymentTargetDefaults(ctx, project, application, deploymentTarget)
 	environment := deploymentTargetEnvironment(deploymentTarget)
 
 	now := time.Now()
@@ -156,10 +155,12 @@ func (r *Runner) handleDeployRun(ctx context.Context, task *asynq.Task) error {
 	return nil
 }
 
+// ensurePlatformApplicationDependencies provisions the optional ServiceAccount and
+// RBAC for a deployment that explicitly opts into a dedicated service account.
+// This is a generic capability driven by target.ServiceAccountName, not a special
+// case for any particular component: users may set a service account on any
+// deployment target to have the platform create the matching access rules.
 func (r *Runner) ensurePlatformApplicationDependencies(ctx context.Context, release model.Release, project model.Project, application model.Application, target model.DeploymentTarget, namespace string) error {
-	if !model.IsGatewayTrafficProbeApplication(project, application) {
-		return nil
-	}
 	serviceAccountName := strings.TrimSpace(target.ServiceAccountName)
 	if serviceAccountName == "" {
 		return nil
@@ -173,20 +174,6 @@ func (r *Runner) ensurePlatformApplicationDependencies(ctx context.Context, rele
 		Namespace:        namespace,
 		RuntimeClusterID: strings.TrimSpace(target.ClusterID),
 	})
-}
-
-func (r *Runner) applyPlatformDeploymentTargetDefaults(ctx context.Context, project model.Project, application model.Application, target model.DeploymentTarget) model.DeploymentTarget {
-	next := model.ApplyPlatformDeploymentTargetDefaults(project, application, target)
-	if next.ServiceAccountName == target.ServiceAccountName && next.AutomountServiceAccountToken == target.AutomountServiceAccountToken {
-		return next
-	}
-	_ = r.db.WithContext(ctx).Model(&model.DeploymentTarget{}).
-		Where("id = ?", target.ID).
-		Updates(map[string]any{
-			"service_account_name":            next.ServiceAccountName,
-			"automount_service_account_token": next.AutomountServiceAccountToken,
-		}).Error
-	return next
 }
 
 func (r *Runner) markSystemComponentDeployment(ctx context.Context, release model.Release, status string, message string) {

@@ -119,11 +119,13 @@ export function AppTemplatesPage() {
   })
 
   const installSystemTemplate = useMutation({
-    mutationFn: (payload: { templateId: string, clusterId: string, apiBaseUrl: string, traefikMetricsUrl?: string }) =>
+    mutationFn: (payload: { templateId: string, clusterId: string, apiBaseUrl: string, traefikMetricsUrl?: string, image?: string, provisionAccess?: boolean }) =>
       api.installSystemAppTemplate(payload.templateId, {
         apiBaseUrl: payload.apiBaseUrl,
         clusterId: payload.clusterId,
+        image: payload.image,
         mode: 'traefik-metrics',
+        provisionAccess: payload.provisionAccess,
         traefikMetricsUrl: payload.traefikMetricsUrl,
       }),
     onSuccess: async (result) => {
@@ -193,6 +195,8 @@ export function AppTemplatesPage() {
       installSystemTemplate.mutate({
         apiBaseUrl: form.values.apiBaseUrl ?? '',
         clusterId: form.clusterId,
+        image: form.imageRef.trim(),
+        provisionAccess: form.provisionAccess,
         templateId: selectedTemplate.id,
         traefikMetricsUrl: form.values.traefikMetricsUrl ?? '',
       })
@@ -584,6 +588,23 @@ function InstallTemplateDialog({
               <Field label={t('appTemplatesPage.componentNamespace')}>
                 <Input disabled value="luna-system" />
               </Field>
+              <div className="md:col-span-2">
+                <Field hint={t('appTemplatesPage.imageRefHint')} label={t('appTemplatesPage.imageRef')} required>
+                  <Input
+                    value={form.imageRef}
+                    onChange={event => onUpdate('imageRef', event.target.value)}
+                  />
+                </Field>
+              </div>
+              <CheckboxField
+                checked={form.provisionAccess}
+                className="rounded-lg border border-border p-3 md:col-span-2"
+                description={t('appTemplatesPage.provisionAccessDescription')}
+                disabled={installing}
+                onChange={event => onUpdate('provisionAccess', event.target.checked)}
+              >
+                {t('appTemplatesPage.provisionAccess')}
+              </CheckboxField>
             </div>
           )}
 
@@ -796,6 +817,7 @@ function emptyInstallPayload(): AppTemplateInstallPayload {
     memoryRequest: '1Gi',
     projectVolumeId: '',
     installNow: true,
+    provisionAccess: false,
     values: {},
   }
 }

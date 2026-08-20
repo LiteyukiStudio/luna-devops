@@ -3,6 +3,8 @@ const aiAssistant = {
     open: '打开 Luna 助手',
     title: 'Luna 助手',
     modelLabel: 'AI 模型',
+    contextUsage: '上下文 {{used}}/{{total}} · {{percent}}%',
+    budgetUsage: 'Token 预算 {{used}}/{{total}} · {{percent}}%',
     modelEmpty: '暂无可用模型',
     modelUnavailable: '暂无启用的 AI 模型，请联系管理员配置后再试。',
     context: '当前页面：{{path}}',

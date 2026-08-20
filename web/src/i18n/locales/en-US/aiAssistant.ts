@@ -3,6 +3,8 @@ const aiAssistant = {
     open: 'Open Luna Assistant',
     title: 'Luna Assistant',
     modelLabel: 'AI model',
+    contextUsage: 'Context {{used}}/{{total}} · {{percent}}%',
+    budgetUsage: 'Token budget {{used}}/{{total}} · {{percent}}%',
     modelEmpty: 'No model available',
     modelUnavailable: 'No enabled AI model is available. Ask an administrator to configure one.',
     context: 'Current page: {{path}}',

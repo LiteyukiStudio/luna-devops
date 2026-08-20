@@ -200,7 +200,6 @@ func (h *Handlers) ImportDeploymentTargetBundle(ctx *gin.Context) {
 			return
 		}
 	}
-	target = model.ApplyPlatformDeploymentTargetDefaults(project, app, target)
 	changes, err := h.persistDeploymentTarget(target, dataVolumes, input.BuildHookBindings, buildEnvironment, secretEntries, true, ctx.Request.Context())
 	if errors.Is(err, errDeploymentStageExists) {
 		operationErr = err

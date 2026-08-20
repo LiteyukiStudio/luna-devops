@@ -145,6 +145,19 @@ func TestAIConfigValidatesRunCreditFixedDecimalBoundaries(t *testing.T) {
 	}
 }
 
+func TestAIConfigEditingUnrelatedFieldDoesNotRevalidateStoredBaseURL(t *testing.T) {
+	// Regression: previously validateAIConfigValues merged the submission into the
+	// full stored config and re-ran the egress/DNS check on ai.provider.base_url,
+	// so editing an unrelated field (e.g. the Run credit budget) failed whenever the
+	// stored base_url no longer resolved to a public address.
+	defaults := aiConfigDefaults()
+	defaults["ai.provider.base_url"] = "https://api.internal-only.example/v1"
+	h := &Handlers{configs: &configCache{values: defaults}}
+	if err := h.validateAIConfigValues(map[string]string{"ai.run.max_credits": "5000"}); err != nil {
+		t.Fatalf("editing Run credit budget revalidated stored base_url: %v", err)
+	}
+}
+
 func TestAIConfigRequiresProxyPoolWhenEnabled(t *testing.T) {
 	h := &Handlers{configs: &configCache{values: aiConfigDefaults()}}
 	if err := h.validateAIConfigValues(map[string]string{"ai.web.proxy_enabled": "true"}); err == nil {

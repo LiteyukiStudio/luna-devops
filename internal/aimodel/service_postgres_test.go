@@ -142,6 +142,65 @@ func TestUpdateRepairsCatalogWithoutEnabledModel(t *testing.T) {
 	assertEnabledModelCount(t, db, 1)
 }
 
+func TestDeleteRemovesModel(t *testing.T) {
+	db := openAIModelTestDB(t)
+	service := NewService(db)
+	disabled := false
+	target := createModelFixture(t, service, "delete-target", disabled)
+	createModelFixture(t, service, "delete-keeper", true)
+
+	deleted, err := service.Delete(t.Context(), target.ID)
+	if err != nil {
+		t.Fatalf("Delete() error = %v", err)
+	}
+	if deleted.ID != target.ID {
+		t.Fatalf("Delete() id = %q, want %q", deleted.ID, target.ID)
+	}
+	var count int64
+	if err := db.Model(&model.AIModel{}).Where("id = ?", target.ID).Count(&count).Error; err != nil {
+		t.Fatalf("count deleted model: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("deleted model still present, count = %d", count)
+	}
+	if _, err := service.Delete(t.Context(), target.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("second Delete() error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestConcurrentDeletePreservesEnabledModel(t *testing.T) {
+	db := openAIModelTestDB(t)
+	service := NewService(db)
+	for iteration := 0; iteration < 12; iteration++ {
+		if err := db.Exec("TRUNCATE TABLE ai_models").Error; err != nil {
+			t.Fatalf("truncate models: %v", err)
+		}
+		first := createModelFixture(t, service, fmt.Sprintf("first-%d", iteration), true)
+		second := createModelFixture(t, service, fmt.Sprintf("second-%d", iteration), true)
+
+		start := make(chan struct{})
+		errorsByModel := make(chan error, 2)
+		var ready sync.WaitGroup
+		ready.Add(2)
+		for _, item := range []model.AIModel{first, second} {
+			item := item
+			go func() {
+				ready.Done()
+				<-start
+				_, err := NewService(db).Delete(t.Context(), item.ID)
+				errorsByModel <- err
+			}()
+		}
+		ready.Wait()
+		close(start)
+		firstErr, secondErr := <-errorsByModel, <-errorsByModel
+		if !(errors.Is(firstErr, ErrLastEnabled) || errors.Is(secondErr, ErrLastEnabled)) {
+			t.Fatalf("iteration %d errors = (%v, %v), want one last-enabled rejection", iteration, firstErr, secondErr)
+		}
+		assertEnabledModelCount(t, db, 1)
+	}
+}
+
 func createModelFixture(t *testing.T, service *Service, name string, enabled bool) model.AIModel {
 	t.Helper()
 	created, err := service.Create(t.Context(), writeInputFor(name, &enabled))

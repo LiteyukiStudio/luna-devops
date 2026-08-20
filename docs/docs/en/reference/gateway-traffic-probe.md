@@ -2,6 +2,17 @@
 
 `Luna Gateway Traffic Probe` is an optional collector deployed into a target runtime cluster. It measures response egress traffic from platform-managed routes so billing can meter it as `gateway.egress_gib`. Clusters that do not need traffic-based billing do not need it.
 
+## Installation
+
+Install the probe from the application marketplace:
+
+1. Select the target runtime cluster.
+2. Adjust the image reference if needed. The default is `liteyukistudio/devops-gateway-traffic-probe:nightly`; replace it with a full reference when using Harbor, a DockerHub proxy, or a private registry. The platform always pulls with `Always` so each deployment resolves the current image.
+3. Optionally enable "Provision ServiceAccount and RBAC via the platform". When enabled the platform creates a dedicated ServiceAccount and grants it read access to Gateway API routes; when disabled the probe runs on the namespace default account and you manage RBAC yourself.
+4. Provide `API_BASE_URL` and optionally `TRAEFIK_METRICS_URL`. The platform generates a dedicated report token at install time and stores it in the secret store; the probe references it via the `REPORT_TOKEN` environment variable and the plaintext is never displayed.
+
+The probe is deployed as a regular application into the cluster's system namespace. You can inspect its deployment status, edit environment variables, or redeploy it from the application list in the project space.
+
 ## How it works
 
 The probe runs a collection cycle on a fixed interval (1 minute by default):
@@ -24,7 +35,7 @@ Only response egress traffic from platform-managed HTTPRoutes is counted. Traffi
 
 The probe is configured through environment variables. Sensible defaults are written at install time; usually you only need to confirm the following:
 
-To change the metrics address or collection interval, edit the corresponding environment variables in the probe application's deployment target. The platform preserves the system component's internal deployment stage; do not change `REPORT_TOKEN`, the runtime cluster identifier, or the ServiceAccount configuration.
+To change the metrics address or collection interval, edit the corresponding environment variables in the probe application's deployment target. Do not change `REPORT_TOKEN` or the runtime cluster identifier; if you did not let the platform provision RBAC at install time, do not change the ServiceAccount configuration either.
 
 | Variable | Default | Description |
 | --- | --- | --- |

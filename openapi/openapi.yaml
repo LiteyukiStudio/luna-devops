@@ -7379,6 +7379,18 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      operationId: deleteAIModel
+      tags: [Settings]
+      summary: Delete a platform AI model configuration
+      description: Deletes a catalog entry. Historical runs keep their own price snapshots and are unaffected. Deleting the final enabled model is rejected atomically with conflict code ai.last_model_cannot_be_deleted, including when administrators mutate the catalog concurrently.
+      security: [{ SessionCookie: [] }]
+      responses:
+        "204": { description: AI model deleted }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
   /api/v1/ai/conversations:
     get:
       operationId: listAIConversations

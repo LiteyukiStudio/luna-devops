@@ -213,6 +213,71 @@ func (s *Service) Update(ctx context.Context, modelID string, input WriteInput) 
 	return updated, nil
 }
 
+func (s *Service) Delete(ctx context.Context, modelID string) (deleted model.AIModel, err error) {
+	ctx, end := telemetry.StartOperation(ctx, "ai_model", "delete")
+	defer func() {
+		if err != nil {
+			code, outcome := mutationFailure(err)
+			telemetry.RecordError(ctx, "ai.model.delete_failed", err,
+				slog.String("operation", "delete"),
+				slog.String("outcome", outcome),
+				slog.String("error.code", code),
+				slog.String("resource.type", "ai_model"),
+				slog.String("resource.id", modelID),
+			)
+		}
+		end(err)
+	}()
+
+	modelID = strings.TrimSpace(modelID)
+	if modelID == "" {
+		return model.AIModel{}, ErrNotFound
+	}
+	if s == nil || s.db == nil {
+		return model.AIModel{}, ErrDatabaseUnavailable
+	}
+
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if lockErr := lockCatalogMutations(tx); lockErr != nil {
+			return lockErr
+		}
+		var current model.AIModel
+		if findErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&current, "id = ?", modelID).Error; findErr != nil {
+			if errors.Is(findErr, gorm.ErrRecordNotFound) {
+				return ErrNotFound
+			}
+			return findErr
+		}
+		if current.Enabled {
+			var enabledCount int64
+			if countErr := tx.Model(&model.AIModel{}).
+				Where("enabled = ? AND id <> ?", true, current.ID).
+				Count(&enabledCount).Error; countErr != nil {
+				return countErr
+			}
+			if enabledCount == 0 {
+				return ErrLastEnabled
+			}
+		}
+		if deleteErr := tx.Delete(&model.AIModel{}, "id = ?", current.ID).Error; deleteErr != nil {
+			return normalizePersistenceError(deleteErr)
+		}
+		deleted = current
+		return nil
+	})
+	if err != nil {
+		return model.AIModel{}, err
+	}
+	telemetry.Logger().InfoContext(ctx, "AI model deleted",
+		slog.String("event.name", "ai.model.deleted"),
+		slog.String("operation", "delete"),
+		slog.String("outcome", "succeeded"),
+		slog.String("resource.type", "ai_model"),
+		slog.String("resource.id", deleted.ID),
+	)
+	return deleted, nil
+}
+
 func ErrorCode(err error) string {
 	switch {
 	case errors.Is(err, ErrNameRequired):

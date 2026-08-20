@@ -1,15 +1,7 @@
 package model
 
 import (
-	"strings"
 	"time"
-)
-
-const (
-	PlatformSystemProjectKey                 = "platform"
-	GatewayTrafficProbeApplicationIdentifier = "gateway-traffic-probe"
-	GatewayTrafficProbeServiceAccountName    = "luna-gateway-traffic-probe"
-	GatewayTrafficProbeAutomountServiceToken = "true"
 )
 
 type SystemComponentInstallation struct {
@@ -35,17 +27,4 @@ type SystemComponentInstallation struct {
 	RuntimeStatus      string     `gorm:"-" json:"runtimeStatus"`
 	ObservationCode    string     `gorm:"-" json:"observationCode,omitempty"`
 	ObservedAt         *time.Time `gorm:"-" json:"observedAt,omitempty"`
-}
-
-func IsGatewayTrafficProbeApplication(project Project, application Application) bool {
-	return strings.TrimSpace(project.SystemKey) == PlatformSystemProjectKey &&
-		strings.TrimSpace(application.Identifier) == GatewayTrafficProbeApplicationIdentifier
-}
-
-func ApplyPlatformDeploymentTargetDefaults(project Project, application Application, target DeploymentTarget) DeploymentTarget {
-	if IsGatewayTrafficProbeApplication(project, application) {
-		target.ServiceAccountName = GatewayTrafficProbeServiceAccountName
-		target.AutomountServiceAccountToken = GatewayTrafficProbeAutomountServiceToken
-	}
-	return target
 }

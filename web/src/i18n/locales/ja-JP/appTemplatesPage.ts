@@ -37,6 +37,8 @@ const appTemplatesPage = {
   stage: 'ステージ',
   imageRef: 'イメージアドレス',
   imageRefHint: 'デフォルトではテンプレートイメージを使用します。Harbor、DockerHub プロキシ、またはプライベートイメージがある場合は、独自の完全なイメージアドレスに変更できます。',
+  provisionAccess: 'プラットフォームで ServiceAccount と RBAC 権限を作成',
+  provisionAccessDescription: '有効にすると、プラットフォームが専用 ServiceAccount を作成し、Gateway API ルートの読み取り権限を付与します。無効の場合は名前空間のデフォルトアカウントで実行され、RBAC は自分で管理します。',
   replicas: 'レプリカ数',
   cpu: 'CPU',
   memory: 'メモリ',

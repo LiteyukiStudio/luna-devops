@@ -18,6 +18,12 @@ export interface AIAssistantState {
   itemRevisions: Record<string, number>
   desyncedRunIds: Set<string>
   desyncRecoverySequences: Record<string, number>
+  /** 最近一次模型调用 provider 实际返回的输入 token 数（model.completed usage）。 */
+  latestInputTokens?: number
+  /** 当前 Run 累计消耗的 token 数（逐次 model.completed 累加 input+output）。 */
+  runUsedTokens?: number
+  /** 当前 Run 的 token 预算上限（来自 run.started 事件的预算快照）。 */
+  runTokenBudget?: number
 }
 
 const TURN_ORDER_STRIDE = 1_000_000
@@ -157,6 +163,8 @@ export function mergeTimelineSnapshot(current: AIAssistantState | undefined, tim
     turnIndexes: { ...snapshot.turnIndexes, ...current.turnIndexes },
     itemRevisions: Object.fromEntries([...new Set([...Object.keys(current.itemRevisions), ...Object.keys(snapshot.itemRevisions)])]
       .map(itemId => [itemId, Math.max(current.itemRevisions[itemId] ?? 0, snapshot.itemRevisions[itemId] ?? 0)])),
+    // latestInputTokens 来自 SSE 而非 timeline 快照，合并时保留实时值。
+    ...(current.latestInputTokens !== undefined ? { latestInputTokens: current.latestInputTokens } : {}),
     desyncedRunIds: new Set([...current.desyncedRunIds].filter(runId =>
       (snapshot.lastEventSequences[runId] ?? 0) < (current.desyncRecoverySequences[runId] ?? Number.MAX_SAFE_INTEGER))),
     desyncRecoverySequences: Object.fromEntries(Object.entries(current.desyncRecoverySequences).filter(([runId, sequence]) =>
@@ -196,6 +204,15 @@ export function addOptimisticTurn(state: AIAssistantState, input: { turnId: stri
 
 function stringPayload(payload: Record<string, unknown>, key: string) {
   return typeof payload[key] === 'string' ? payload[key] : ''
+}
+
+// budgetTotalTokens extracts the total token budget from a run.started payload.
+function budgetTotalTokens(payload: Record<string, unknown>): number | undefined {
+  const budget = payload.budget
+  if (!budget || typeof budget !== 'object' || Array.isArray(budget))
+    return undefined
+  const total = (budget as Record<string, unknown>).totalTokens
+  return typeof total === 'number' && Number.isFinite(total) && total > 0 ? total : undefined
 }
 
 function updateBlock(state: AIAssistantState, id: string, update: (block: AIBlock) => AIBlock, create?: () => AIBlock) {
@@ -321,10 +338,29 @@ export function reduceAIEvent(state: AIAssistantState, event: AIEvent): AIAssist
     return {
       ...next,
       blocks: terminalBlock,
+      runTokenBudget: budgetTotalTokens(event.payload) ?? next.runTokenBudget,
       runStatuses: { ...next.runStatuses, [event.runId]: status },
       runExpectedVersions: typeof event.payload.expectedVersion === 'number'
         ? { ...next.runExpectedVersions, [event.runId]: event.payload.expectedVersion }
         : next.runExpectedVersions,
+    }
+  }
+  if (event.type === 'model.completed') {
+    const usage = event.payload.usage
+    const usageRecord = usage && typeof usage === 'object' && !Array.isArray(usage)
+      ? (usage as Record<string, unknown>)
+      : undefined
+    const inputTokens = usageRecord?.inputTokens
+    const outputTokens = usageRecord?.outputTokens
+    const hasInput = typeof inputTokens === 'number' && Number.isFinite(inputTokens)
+    const hasOutput = typeof outputTokens === 'number' && Number.isFinite(outputTokens)
+    if (!hasInput && !hasOutput)
+      return next
+    const delta = (hasInput ? inputTokens : 0) + (hasOutput ? outputTokens : 0)
+    return {
+      ...next,
+      latestInputTokens: hasInput ? inputTokens : next.latestInputTokens,
+      runUsedTokens: (next.runUsedTokens ?? 0) + delta,
     }
   }
   if (event.type === 'approval.required' || event.type === 'approval.resolved' || event.type === 'mfa.required' || event.type === 'mfa.resolved') {

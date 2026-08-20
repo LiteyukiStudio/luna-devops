@@ -121,3 +121,31 @@ func (h *Handlers) UpdateAIModel(ctx *gin.Context) {
 	ctx.Header("Cache-Control", "no-store")
 	ctx.JSON(http.StatusOK, updated)
 }
+
+func (h *Handlers) DeleteAIModel(ctx *gin.Context) {
+	user, ok := h.currentUser(ctx)
+	if !ok {
+		return
+	}
+	modelID := strings.TrimSpace(ctx.Param("id"))
+	deleted, err := aimodel.NewService(h.dbFor(ctx)).Delete(requestContext(ctx), modelID)
+	if err != nil {
+		auditCode := aimodel.ErrorCode(err)
+		if auditCode == "" {
+			auditCode = "ai.model_delete_failed"
+		}
+		h.auditWithContext(user.ID, "ai.model.delete", modelID, false, auditCode, ctx.Request.Context())
+		switch {
+		case errors.Is(err, aimodel.ErrNotFound):
+			writeErrorCode(ctx, http.StatusNotFound, "ai.model_not_found", "AI model was not found")
+		case errors.Is(err, aimodel.ErrLastEnabled):
+			writeErrorCode(ctx, http.StatusConflict, "ai.last_model_cannot_be_deleted", "at least one enabled AI model must remain")
+		default:
+			writeErrorCode(ctx, http.StatusInternalServerError, "ai.model_delete_failed", "AI model could not be deleted")
+		}
+		return
+	}
+	h.auditWithContext(user.ID, "ai.model.delete", deleted.ID, true, "AI model deleted", ctx.Request.Context())
+	ctx.Header("Cache-Control", "no-store")
+	ctx.Status(http.StatusNoContent)
+}

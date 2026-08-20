@@ -1,9 +1,11 @@
 import type { KeyboardEvent, RefObject } from 'react'
 import type { AIModelOption } from '@/api'
-import { CircleStop, LoaderCircle, Send } from 'lucide-react'
+import { Check, ChevronDown, CircleStop, LoaderCircle, Send } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { cn } from '@/lib/utils'
 
 export interface AIAssistantComposerProps {
   activeRun: boolean
@@ -14,6 +16,12 @@ export interface AIAssistantComposerProps {
   modelChanging?: boolean
   modelSelectionDisabled?: boolean
   selectedModelId?: string
+  /** 最近一次模型调用 provider 实际返回的输入 token 数；undefined 表示暂无数据。 */
+  contextUsedTokens?: number
+  /** 当前 Run 累计消耗的 token 数；undefined 表示暂无数据。 */
+  runUsedTokens?: number
+  /** 当前 Run 的 token 预算上限；undefined 表示暂无数据。 */
+  runTokenBudget?: number
   draft: string
   inputRef: RefObject<HTMLTextAreaElement | null>
   maxLength?: number
@@ -30,6 +38,90 @@ function isConfirmingIME(event: KeyboardEvent<HTMLTextAreaElement>): boolean {
   return event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229
 }
 
+function formatTokenCount(value: number): string {
+  if (value >= 1000) {
+    const k = value / 1000
+    return `${k >= 100 ? Math.round(k) : k.toFixed(1).replace(/\.0$/, '')}k`
+  }
+  return String(value)
+}
+
+function TokenRing({ ratio, ariaLabel, tooltip }: { ratio: number, ariaLabel: string, tooltip: string }) {
+  const clamped = Math.min(1, Math.max(0, ratio))
+  // 圆环几何：r=7，周长≈43.98
+  const radius = 7
+  const circumference = 2 * Math.PI * radius
+  const filled = clamped * circumference
+  const over = ratio >= 1
+  const warn = !over && ratio >= 0.8
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span
+            aria-label={ariaLabel}
+            className="inline-flex size-7 shrink-0 items-center justify-center"
+          >
+            <svg className="size-5 -rotate-90" viewBox="0 0 18 18" role="img">
+              <circle
+                className="text-separator-subtle"
+                cx="9"
+                cy="9"
+                fill="none"
+                r={radius}
+                stroke="currentColor"
+                strokeWidth="2"
+              />
+              <circle
+                className={cn(
+                  'transition-[stroke-dashoffset] duration-200',
+                  over ? 'text-destructive' : warn ? 'text-warning' : 'text-primary',
+                )}
+                cx="9"
+                cy="9"
+                fill="none"
+                r={radius}
+                stroke="currentColor"
+                strokeDasharray={circumference}
+                strokeDashoffset={circumference - filled}
+                strokeLinecap="round"
+                strokeWidth="2"
+              />
+            </svg>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="top">
+          {tooltip}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
+}
+
+function ContextUsageRing({ ratio, used, total }: { ratio: number, used: number, total: number }) {
+  const { t } = useTranslation()
+  const percent = Math.round(Math.min(1, Math.max(0, ratio)) * 100)
+  return (
+    <TokenRing
+      ariaLabel={t('aiAssistant.contextUsage', { used: formatTokenCount(used), total: formatTokenCount(total), percent })}
+      ratio={ratio}
+      tooltip={t('aiAssistant.contextUsage', { used: formatTokenCount(used), total: formatTokenCount(total), percent })}
+    />
+  )
+}
+
+function BudgetUsageRing({ ratio, used, total }: { ratio: number, used: number, total: number }) {
+  const { t } = useTranslation()
+  const percent = Math.round(Math.min(1, Math.max(0, ratio)) * 100)
+  return (
+    <TokenRing
+      ariaLabel={t('aiAssistant.budgetUsage', { used: formatTokenCount(used), total: formatTokenCount(total), percent })}
+      ratio={ratio}
+      tooltip={t('aiAssistant.budgetUsage', { used: formatTokenCount(used), total: formatTokenCount(total), percent })}
+    />
+  )
+}
+
 export function AIAssistantComposer({
   activeRun,
   canceling,
@@ -39,6 +131,9 @@ export function AIAssistantComposer({
   modelChanging = false,
   modelSelectionDisabled = false,
   selectedModelId,
+  contextUsedTokens,
+  runUsedTokens,
+  runTokenBudget,
   draft,
   inputRef,
   maxLength,
@@ -53,6 +148,12 @@ export function AIAssistantComposer({
   const { t } = useTranslation()
   const busy = sending || submitting
   const canSubmit = modelAvailable && (!activeRun || waitingInput)
+  const selectedModel = models.find(model => model.id === selectedModelId)
+  const contextTotal = selectedModel?.maxContextTokens ?? 0
+  const hasUsage = contextUsedTokens !== undefined && contextTotal > 0
+  const contextRatio = hasUsage ? contextUsedTokens / contextTotal : 0
+  const hasBudget = runUsedTokens !== undefined && runTokenBudget !== undefined && runTokenBudget > 0
+  const budgetRatio = hasBudget ? runUsedTokens / runTokenBudget : 0
   return (
     <footer className="shrink-0 border-t border-separator-subtle bg-surface p-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))]">
       <div className="flex min-h-20 flex-col gap-1 rounded-container border border-input bg-surface px-2 py-2 focus-within:ring-2 focus-within:ring-ring">
@@ -72,7 +173,10 @@ export function AIAssistantComposer({
             }
           }}
         />
-        <div className="flex items-end justify-between gap-2">
+        <div className="flex items-center justify-end gap-1.5">
+          {hasBudget && (
+            <BudgetUsageRing ratio={budgetRatio} total={runTokenBudget} used={runUsedTokens} />
+          )}
           <Select
             disabled={modelSelectionDisabled || modelChanging || models.length === 0}
             value={selectedModelId ?? ''}
@@ -80,36 +184,51 @@ export function AIAssistantComposer({
           >
             <SelectTrigger
               aria-label={t('aiAssistant.modelLabel')}
-              className="!h-11 min-w-0 max-w-[70%] border-0 bg-transparent px-2 text-sm shadow-none hover:bg-surface-subtle focus:ring-0 sm:!h-9 sm:text-xs"
+              className="!h-7 w-auto min-w-0 max-w-[55%] gap-1 rounded-full border border-separator-subtle bg-surface-subtle px-2.5 text-xs shadow-none hover:bg-surface-inset focus:ring-1 focus:ring-ring [&_svg]:hidden"
             >
-              <SelectValue placeholder={t('aiAssistant.modelEmpty')} />
+              <span className="truncate">
+                <SelectValue placeholder={t('aiAssistant.modelEmpty')} />
+              </span>
+              {modelChanging
+                ? <LoaderCircle className="size-3 shrink-0 animate-spin text-muted-foreground motion-reduce:animate-none" />
+                : <ChevronDown className="size-3 shrink-0 text-muted-foreground" />}
             </SelectTrigger>
             <SelectContent>
-              {models.map(model => <SelectItem key={model.id} value={model.id}>{model.name}</SelectItem>)}
+              {models.map(model => (
+                <SelectItem key={model.id} value={model.id}>
+                  <span className="flex items-center gap-1.5">
+                    {model.id === selectedModelId && <Check className="size-3.5" />}
+                    <span className={model.id === selectedModelId ? '' : 'pl-5'}>{model.name}</span>
+                  </span>
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
+          {hasUsage && (
+            <ContextUsageRing ratio={contextRatio} total={contextTotal} used={contextUsedTokens} />
+          )}
           {activeRun && !waitingInput
             ? (
                 <Button
                   aria-label={t('aiAssistant.stop')}
-                  className="size-11 shrink-0 rounded-full sm:size-9"
+                  className="size-7 shrink-0 rounded-full"
                   disabled={canceling || !canCancel}
                   size="icon"
                   variant="outline"
                   onClick={onCancel}
                 >
-                  {canceling ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" /> : <CircleStop className="size-4" />}
+                  {canceling ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" /> : <CircleStop className="size-3.5" />}
                 </Button>
               )
             : (
                 <Button
                   aria-label={waitingInput ? t('aiAssistant.continue') : t('aiAssistant.send')}
-                  className="size-11 shrink-0 rounded-full sm:size-9"
+                  className="size-7 shrink-0 rounded-full"
                   disabled={!draft.trim() || busy || !modelAvailable}
                   size="icon"
                   onClick={onSubmit}
                 >
-                  {busy ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" /> : <Send className="size-4" />}
+                  {busy ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" /> : <Send className="size-3.5" />}
                 </Button>
               )}
         </div>

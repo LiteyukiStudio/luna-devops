@@ -24,7 +24,6 @@ const (
 	TypeGatewayApply         = "gateway:apply"
 	TypeApplicationDelete    = "application:delete"
 	TypeResourceCleanup      = "resource:cleanup"
-	TypeSystemComponentApply = "system_component:apply"
 	TypeNotificationDeliver  = "notification:deliver"
 	TypeGitAccountRefresh    = "git:accounts:refresh"
 	TypeSyncStatus           = "sync:status"
@@ -74,15 +73,6 @@ type ResourceCleanupPayload struct {
 	ProjectID    string       `json:"projectId"`
 	ActorID      string       `json:"actorId"`
 	DeleteData   bool         `json:"deleteData"`
-}
-
-type SystemComponentApplyPayload struct {
-	Envelope       TaskEnvelope `json:"envelope"`
-	InstallationID string       `json:"installationId"`
-	ComponentID    string       `json:"componentId"`
-	ClusterID      string       `json:"clusterId"`
-	ActorID        string       `json:"actorId"`
-	ReportToken    string       `json:"reportToken"`
 }
 
 type NotificationDeliverPayload struct {
@@ -198,15 +188,6 @@ func (c *Client) EnqueueResourceCleanup(ctx context.Context, payload ResourceCle
 	}
 
 	return c.enqueueWithPolicy(ctx, task, PolicyForType(TypeResourceCleanup))
-}
-
-func (c *Client) EnqueueSystemComponentApply(ctx context.Context, payload SystemComponentApplyPayload) (*asynq.TaskInfo, error) {
-	task, err := NewSystemComponentApplyTask(payload)
-	if err != nil {
-		return nil, err
-	}
-
-	return c.enqueueWithPolicy(ctx, task, PolicyForType(TypeSystemComponentApply))
 }
 
 func (c *Client) EnqueueNotificationDeliver(ctx context.Context, payload NotificationDeliverPayload) (*asynq.TaskInfo, error) {
@@ -346,8 +327,6 @@ func PolicyForType(taskType string) EnqueuePolicy {
 		return EnqueuePolicy{Queue: QueueDeploy, MaxRetry: 3, Timeout: 15 * time.Minute, Retention: 24 * time.Hour, Unique: 10 * time.Minute}
 	case TypeResourceCleanup:
 		return EnqueuePolicy{Queue: QueueDeploy, MaxRetry: 3, Timeout: 15 * time.Minute, Retention: 24 * time.Hour, Unique: 10 * time.Minute}
-	case TypeSystemComponentApply:
-		return EnqueuePolicy{Queue: QueueDeploy, MaxRetry: 3, Timeout: 10 * time.Minute, Retention: 24 * time.Hour, Unique: 5 * time.Minute}
 	case TypeNotificationDeliver:
 		return EnqueuePolicy{Queue: QueueLight, MaxRetry: 5, Timeout: 2 * time.Minute, Retention: 24 * time.Hour, Unique: 30 * time.Second}
 	case TypeGitAccountRefresh:
@@ -450,25 +429,6 @@ func NewResourceCleanupTask(payload ResourceCleanupPayload) (*asynq.Task, error)
 		return nil, err
 	}
 	return asynq.NewTask(TypeResourceCleanup, data), nil
-}
-
-func NewSystemComponentApplyTask(payload SystemComponentApplyPayload) (*asynq.Task, error) {
-	if strings.TrimSpace(payload.InstallationID) == "" {
-		return nil, errors.New("system component installation id is required")
-	}
-	if strings.TrimSpace(payload.ComponentID) == "" {
-		return nil, errors.New("system component id is required")
-	}
-	if strings.TrimSpace(payload.ClusterID) == "" {
-		return nil, errors.New("runtime cluster id is required")
-	}
-
-	payload.Envelope = ensureEnvelope(payload.Envelope, TypeSystemComponentApply, payload.ActorID, payload.ClusterID, payload.InstallationID)
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return nil, err
-	}
-	return asynq.NewTask(TypeSystemComponentApply, data), nil
 }
 
 func NewNotificationDeliverTask(payload NotificationDeliverPayload) (*asynq.Task, error) {

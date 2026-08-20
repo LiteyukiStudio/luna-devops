@@ -2,7 +2,7 @@ import type { ModelFormValues } from './ai-model-management-utils'
 import type { AIModelConfig } from '@/api'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Pencil, Plus } from 'lucide-react'
+import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -11,11 +11,12 @@ import { api } from '@/api'
 import { FormField as Field } from '@/components/common/form-field'
 import { StatusBadge } from '@/components/common/status-badge'
 import { Surface } from '@/components/common/surface'
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { findSuggestedModelPreset, listSuggestedModelPresets } from '@/lib/ai-model-suggested-prices'
-import { aiModelFormSchema, emptyModel, modelFormValues, modelSaveErrorMessage } from './ai-model-management-utils'
+import { aiModelFormSchema, emptyModel, modelDeleteErrorMessage, modelFormValues, modelSaveErrorMessage } from './ai-model-management-utils'
 
 const suggestedPresets = listSuggestedModelPresets()
 const presetDatalistId = 'ai-model-name-presets'
@@ -24,6 +25,7 @@ export function AIModelManagement() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [editing, setEditing] = useState<AIModelConfig | null>(null)
+  const [deleting, setDeleting] = useState<AIModelConfig | null>(null)
   const [open, setOpen] = useState(false)
   const models = useQuery({ queryKey: ['configs', 'ai', 'models'], queryFn: api.listAIModelConfigs })
   const form = useForm<ModelFormValues>({ resolver: zodResolver(aiModelFormSchema), defaultValues: emptyModel, mode: 'onChange' })
@@ -38,6 +40,16 @@ export function AIModelManagement() {
       toast.success(t('settings.ai.models.saved'))
     },
     onError: error => toast.error(modelSaveErrorMessage(error, t('settings.ai.models.saveFailed'), t)),
+  })
+  const remove = useMutation({
+    mutationFn: (id: string) => api.deleteAIModel(id),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['configs', 'ai', 'models'] })
+      await queryClient.invalidateQueries({ queryKey: ['ai', 'models'] })
+      setDeleting(null)
+      toast.success(t('settings.ai.models.deleted'))
+    },
+    onError: error => toast.error(modelDeleteErrorMessage(error, t('settings.ai.models.deleteFailed'), t)),
   })
 
   const startCreate = () => {
@@ -91,6 +103,7 @@ export function AIModelManagement() {
                 </div>
                 <StatusBadge tone={model.enabled ? 'success' : 'neutral'}>{t(model.enabled ? 'settings.ai.models.enabled' : 'settings.ai.models.disabled')}</StatusBadge>
                 <Button aria-label={t('settings.ai.models.edit')} size="icon" type="button" variant="ghost" onClick={() => startEdit(model)}><Pencil className="size-4" /></Button>
+                <Button aria-label={t('settings.ai.models.delete')} size="icon" type="button" variant="ghost" onClick={() => setDeleting(model)}><Trash2 className="size-4" /></Button>
               </div>
             ))}
           </div>
@@ -151,6 +164,20 @@ export function AIModelManagement() {
           </form>
         </DialogContent>
       </Dialog>
+      <AlertDialog open={deleting !== null} onOpenChange={value => !value && setDeleting(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('settings.ai.models.deleteTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>{t('settings.ai.models.deleteDescription', { name: deleting?.name ?? '' })}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogAction disabled={remove.isPending} onClick={() => deleting && remove.mutate(deleting.id)}>
+              {t('settings.ai.models.deleteConfirm')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

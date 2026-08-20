@@ -2,6 +2,17 @@
 
 `Luna Gateway Traffic Probe` 是部署在目标运行集群内的可选采集组件，用于统计平台访问入口的响应出站流量，供账单按 `gateway.egress_gib` 计量。不需要按流量计费的集群可以不安装。
 
+## 安装
+
+在应用市场搜索「Luna Gateway Traffic Probe」，点击安装后：
+
+1. 选择目标运行集群。
+2. 按需修改镜像地址；默认使用 `liteyukistudio/devops-gateway-traffic-probe:nightly`，如使用 Harbor、DockerHub 代理或私有镜像，替换为完整镜像引用。平台始终使用 `Always` 拉取策略，确保每次部署都解析最新镜像。
+3. 按需勾选「由平台创建 ServiceAccount 与 RBAC 权限」；勾选后平台会为探针创建专用 ServiceAccount 并授予读取 Gateway API 路由的权限，不勾选则使用命名空间默认账号，由你自行配置 RBAC。
+4. 填写 `API_BASE_URL` 和可选的 `TRAEFIK_METRICS_URL`；安装时平台生成专用上报令牌并写入密钥存储，探针通过环境变量 `REPORT_TOKEN` 引用，不回显明文。
+
+安装后探针作为普通应用部署到目标集群的系统命名空间，可在项目空间的应用列表中查看部署状态、编辑环境变量或重新部署。
+
 ## 工作原理
 
 探针按固定间隔（默认 1 分钟）执行一个采集周期：
@@ -24,7 +35,7 @@
 
 探针通过环境变量配置，安装时已写入合理默认值，通常只需确认以下几项：
 
-需要调整指标地址或采集间隔时，可在探针应用的部署配置中编辑对应环境变量。平台会保留该系统组件的内部部署阶段；不要修改 `REPORT_TOKEN`、运行集群标识或 ServiceAccount 配置。
+需要调整指标地址或采集间隔时，可在探针应用的部署配置中编辑对应环境变量。不要修改 `REPORT_TOKEN` 或运行集群标识；如未在安装时勾选平台创建 RBAC，也不要修改 ServiceAccount 配置。
 
 | 变量 | 默认 | 说明 |
 | --- | --- | --- |

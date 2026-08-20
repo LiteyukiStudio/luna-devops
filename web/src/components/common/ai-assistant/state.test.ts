@@ -370,4 +370,56 @@ describe('aI assistant state', () => {
     expect(gap.desyncedRunIds.has('run-1')).toBe(true)
     expect(gap.lastEventSequences['run-1']).toBe(1)
   })
+
+  it('records provider-reported input tokens from model.completed usage', () => {
+    const started = reduceAIEvent(emptyAIAssistantState, event({ eventId: 'event-1', eventSequence: 1, type: 'run.started', item: undefined, payload: {} }))
+    const completed = reduceAIEvent(started, event({
+      eventId: 'event-2',
+      eventSequence: 2,
+      type: 'model.completed',
+      item: undefined,
+      payload: { usage: { inputTokens: 25600, outputTokens: 512, cachedInputTokens: 0, cachedOutputTokens: 0 } },
+    }))
+    expect(completed.latestInputTokens).toBe(25600)
+
+    const withoutUsage = reduceAIEvent(completed, event({
+      eventId: 'event-3',
+      eventSequence: 3,
+      type: 'model.completed',
+      item: undefined,
+      payload: {},
+    }))
+    expect(withoutUsage.latestInputTokens).toBe(25600)
+  })
+
+  it('accumulates run token usage across model.completed events', () => {
+    const started = reduceAIEvent(emptyAIAssistantState, event({ eventId: 'event-1', eventSequence: 1, type: 'run.started', item: undefined, payload: {} }))
+    const first = reduceAIEvent(started, event({
+      eventId: 'event-2',
+      eventSequence: 2,
+      type: 'model.completed',
+      item: undefined,
+      payload: { usage: { inputTokens: 1000, outputTokens: 500 } },
+    }))
+    expect(first.runUsedTokens).toBe(1500)
+    const second = reduceAIEvent(first, event({
+      eventId: 'event-3',
+      eventSequence: 3,
+      type: 'model.completed',
+      item: undefined,
+      payload: { usage: { inputTokens: 200, outputTokens: 300 } },
+    }))
+    expect(second.runUsedTokens).toBe(2000)
+  })
+
+  it('captures the token budget snapshot from run.started', () => {
+    const state = reduceAIEvent(emptyAIAssistantState, event({
+      eventId: 'event-1',
+      eventSequence: 1,
+      type: 'run.started',
+      item: undefined,
+      payload: { budget: { totalTokens: 2_000_000, totalCredits: '10000' } },
+    }))
+    expect(state.runTokenBudget).toBe(2_000_000)
+  })
 })

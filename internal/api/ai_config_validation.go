@@ -20,38 +20,61 @@ func containsAIConfig[T any](values map[string]T) bool {
 	return false
 }
 
+// validateAIConfigValues validates only the keys present in values. Configuration
+// values that depend on runtime network state (egress/DNS resolution) or that
+// reference secrets are validated only when the caller submits them, so editing an
+// unrelated field never fails because of an unrelated stored value.
 func (h *Handlers) validateAIConfigValues(values map[string]string) error {
-	current := h.configs.get(knownConfigKeys())
-	for key, value := range values {
-		current[key] = value
-	}
-	if raw := strings.TrimSpace(current["ai.provider.base_url"]); raw != "" {
-		parsed, err := url.Parse(raw)
-		if err != nil || parsed.Scheme != "https" || parsed.User != nil || parsed.Hostname() == "" {
-			return fmt.Errorf("ai.provider.base_url must be an HTTPS URL without user info")
+	// base_url is only validated when it is part of this submission; validating a
+	// stored URL against the live egress policy on every unrelated change makes
+	// editing unrelated fields fail spuriously when DNS/egress state changes.
+	if raw, submitted := values["ai.provider.base_url"]; submitted {
+		raw = strings.TrimSpace(raw)
+		if raw != "" {
+			parsed, err := url.Parse(raw)
+			if err != nil || parsed.Scheme != "https" || parsed.User != nil || parsed.Hostname() == "" {
+				return fmt.Errorf("ai.provider.base_url must be an HTTPS URL without user info")
+			}
+			allowlist := splitConfigList(h.configs.get([]string{"security.egress.domainAllowList"})["security.egress.domainAllowList"])
+			policy := security.PublicEgressPolicy()
+			policy.DomainAllowList = allowlist
+			policy.DomainBlockList = splitConfigList(h.configs.get([]string{"security.egress.domainBlockList"})["security.egress.domainBlockList"])
+			policy.IPAllowList = splitConfigList(h.configs.get([]string{"security.egress.ipAllowList"})["security.egress.ipAllowList"])
+			policy.IPBlockList = splitConfigList(h.configs.get([]string{"security.egress.ipBlockList"})["security.egress.ipBlockList"])
+			policy.AllowedPorts = []int{443}
+			if _, err := policy.ValidateURL(raw); err != nil {
+				return fmt.Errorf("ai.provider.base_url is blocked by egress policy")
+			}
 		}
-		allowlist := splitConfigList(current["security.egress.domainAllowList"])
-		policy := security.PublicEgressPolicy()
-		policy.DomainAllowList = allowlist
-		policy.DomainBlockList = splitConfigList(current["security.egress.domainBlockList"])
-		policy.IPAllowList = splitConfigList(current["security.egress.ipAllowList"])
-		policy.IPBlockList = splitConfigList(current["security.egress.ipBlockList"])
-		policy.AllowedPorts = []int{443}
-		if _, err := policy.ValidateURL(raw); err != nil {
-			return fmt.Errorf("ai.provider.base_url is blocked by egress policy")
-		}
 	}
-	if configBool(current["ai.web.proxy_enabled"]) && current["ai.web.proxy_pool"] != "true" {
-		return fmt.Errorf("ai.web.proxy_pool is required when the proxy pool is enabled")
+	if enabled, submitted := values["ai.web.proxy_enabled"]; submitted && configBool(enabled) {
+		pool := strings.TrimSpace(values["ai.web.proxy_pool"])
+		if pool == "" {
+			pool = h.configs.get([]string{"ai.web.proxy_pool"})["ai.web.proxy_pool"]
+		}
+		if pool != "true" {
+			return fmt.Errorf("ai.web.proxy_pool is required when the proxy pool is enabled")
+		}
 	}
 	for _, key := range []string{
 		"ai.observability.prometheus_url",
 		"ai.observability.loki_url",
 		"ai.observability.tempo_url",
 	} {
-		raw := strings.TrimSpace(current[key])
+		raw, submitted := values[key]
+		if !submitted {
+			// Only enforce presence when observability is being enabled in this submission.
+			if enabled, ok := values["ai.observability.enabled"]; ok && configBool(enabled) {
+				stored := strings.TrimSpace(h.configs.get([]string{key})[key])
+				if stored == "" {
+					return fmt.Errorf("%s is required when Agent observability is enabled", key)
+				}
+			}
+			continue
+		}
+		raw = strings.TrimSpace(raw)
 		if raw == "" {
-			if configBool(current["ai.observability.enabled"]) {
+			if configBool(h.configs.get([]string{"ai.observability.enabled"})["ai.observability.enabled"]) || configBool(values["ai.observability.enabled"]) {
 				return fmt.Errorf("%s is required when Agent observability is enabled", key)
 			}
 			continue
@@ -89,7 +112,11 @@ func (h *Handlers) validateAIConfigValues(values map[string]string) error {
 		"ai.tools.result_payload_k_bytes":              {4, 4096},
 		"ai.tools.max_card_repair_attempts":            {1, 10},
 	} {
-		number, err := strconv.Atoi(strings.TrimSpace(current[key]))
+		raw, submitted := values[key]
+		if !submitted {
+			continue
+		}
+		number, err := strconv.Atoi(strings.TrimSpace(raw))
 		if err != nil || number < bounds[0] || number > bounds[1] {
 			return fmt.Errorf("%s must be between %d and %d", key, bounds[0], bounds[1])
 		}
@@ -98,32 +125,66 @@ func (h *Handlers) validateAIConfigValues(values map[string]string) error {
 		"ai.context.compression_trigger_ratio": {0.5, 0.95},
 		"ai.context.compression_target_ratio":  {0.1, 0.8},
 	} {
-		ratio, err := strconv.ParseFloat(strings.TrimSpace(current[key]), 64)
+		raw, submitted := values[key]
+		if !submitted {
+			continue
+		}
+		ratio, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
 		if err != nil || ratio < bounds[0] || ratio > bounds[1] {
 			return fmt.Errorf("%s must be between %.2f and %.2f", key, bounds[0], bounds[1])
 		}
 	}
-	triggerRatio, triggerErr := strconv.ParseFloat(strings.TrimSpace(current["ai.context.compression_trigger_ratio"]), 64)
-	targetRatio, targetErr := strconv.ParseFloat(strings.TrimSpace(current["ai.context.compression_target_ratio"]), 64)
-	if triggerErr == nil && targetErr == nil && triggerRatio <= targetRatio {
-		return fmt.Errorf("ai.context.compression_trigger_ratio must be greater than ai.context.compression_target_ratio")
+	// Cross-field constraints are only evaluated when at least one of the fields
+	// is part of this submission; the other side falls back to the stored value.
+	if _, tSubmitted := values["ai.context.compression_trigger_ratio"]; tSubmitted || values["ai.context.compression_target_ratio"] != "" {
+		triggerRaw := firstSubmittedOrStored(values, h, "ai.context.compression_trigger_ratio")
+		targetRaw := firstSubmittedOrStored(values, h, "ai.context.compression_target_ratio")
+		triggerRatio, triggerErr := strconv.ParseFloat(strings.TrimSpace(triggerRaw), 64)
+		targetRatio, targetErr := strconv.ParseFloat(strings.TrimSpace(targetRaw), 64)
+		if triggerErr == nil && targetErr == nil && triggerRatio <= targetRatio {
+			return fmt.Errorf("ai.context.compression_trigger_ratio must be greater than ai.context.compression_target_ratio")
+		}
 	}
-	recentTurns, recentErr := strconv.Atoi(strings.TrimSpace(current["ai.context.recent_turn_count"]))
-	maxRecentTurns, maxRecentErr := strconv.Atoi(strings.TrimSpace(current["ai.context.max_recent_turn_count"]))
-	if recentErr == nil && maxRecentErr == nil && recentTurns > maxRecentTurns {
-		return fmt.Errorf("ai.context.recent_turn_count must not exceed ai.context.max_recent_turn_count")
+	if _, rSubmitted := values["ai.context.recent_turn_count"]; rSubmitted || values["ai.context.max_recent_turn_count"] != "" {
+		recentRaw := firstSubmittedOrStored(values, h, "ai.context.recent_turn_count")
+		maxRecentRaw := firstSubmittedOrStored(values, h, "ai.context.max_recent_turn_count")
+		recentTurns, recentErr := strconv.Atoi(strings.TrimSpace(recentRaw))
+		maxRecentTurns, maxRecentErr := strconv.Atoi(strings.TrimSpace(maxRecentRaw))
+		if recentErr == nil && maxRecentErr == nil && recentTurns > maxRecentTurns {
+			return fmt.Errorf("ai.context.recent_turn_count must not exceed ai.context.max_recent_turn_count")
+		}
 	}
 	for _, key := range []string{"ai.quota.platform_daily_cost_soft", "ai.quota.platform_daily_cost_hard"} {
-		number, err := strconv.ParseFloat(strings.TrimSpace(current[key]), 64)
+		raw, submitted := values[key]
+		if !submitted {
+			continue
+		}
+		number, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
 		if err != nil || number < 0 {
 			return fmt.Errorf("%s must be a non-negative number", key)
 		}
 	}
-	if _, err := fixeddecimal.Parse(current["ai.run.max_credits"], false, decimal.NewFromInt(100_000_000)); err != nil {
-		return fmt.Errorf("ai.run.max_credits must be a positive decimal no greater than 100000000")
+	if raw, submitted := values["ai.run.max_credits"]; submitted {
+		// fixeddecimal.Parse intentionally rejects surrounding whitespace; the API
+		// contract requires the canonical decimal form.
+		if _, err := fixeddecimal.Parse(raw, false, decimal.NewFromInt(100_000_000)); err != nil {
+			return fmt.Errorf("ai.run.max_credits must be a positive decimal no greater than 100000000")
+		}
 	}
-	if mode := strings.TrimSpace(current["ai.access.mode"]); mode != "all_authenticated" && mode != "admins" {
-		return fmt.Errorf("ai.access.mode must be all_authenticated or admins")
+	if mode, submitted := values["ai.access.mode"]; submitted {
+		mode = strings.TrimSpace(mode)
+		if mode != "all_authenticated" && mode != "admins" {
+			return fmt.Errorf("ai.access.mode must be all_authenticated or admins")
+		}
 	}
 	return nil
+}
+
+// firstSubmittedOrStored returns the submitted value for key when present in this
+// request, otherwise the value currently stored in the config cache.
+func firstSubmittedOrStored(values map[string]string, h *Handlers, key string) string {
+	if raw, ok := values[key]; ok && strings.TrimSpace(raw) != "" {
+		return raw
+	}
+	return h.configs.get([]string{key})[key]
 }

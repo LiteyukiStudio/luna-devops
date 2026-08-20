@@ -107,6 +107,7 @@ func NewRouterWithStaticFSAndMetrics(db *gorm.DB, staticFS fs.FS, httpMetrics *o
 		v1.GET("/configs/ai/models", handlers.platformAdminMiddleware(), handlers.ListAIModelConfigs)
 		v1.POST("/configs/ai/models", handlers.platformAdminMiddleware(), handlers.stepUpMiddleware(stepUpPurposeSecuritySettingsUpdate), handlers.CreateAIModel)
 		v1.PUT("/configs/ai/models/:id", handlers.platformAdminMiddleware(), handlers.stepUpMiddleware(stepUpPurposeSecuritySettingsUpdate), handlers.UpdateAIModel)
+		v1.DELETE("/configs/ai/models/:id", handlers.platformAdminMiddleware(), handlers.stepUpMiddleware(stepUpPurposeSecuritySettingsUpdate), handlers.DeleteAIModel)
 		v1.POST("/configs/ai/provider/test", handlers.platformAdminMiddleware(), handlers.stepUpMiddleware(stepUpPurposeSecuritySettingsUpdate), handlers.TestAIProviderConnection)
 		v1.POST("/configs/ai/observability/test", handlers.platformAdminMiddleware(), handlers.TestAgentObservabilitySource)
 		v1.GET("/ai/observability/overview", handlers.platformAdminMiddleware(), handlers.GetAgentObservabilityOverview)

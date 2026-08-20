@@ -128,7 +128,10 @@ const suggestedModelPresets: SuggestedModelEntry[] = [
   entry(['qwen3-235b-a22b'], ['70', '280'], [262144, 32768]),
   entry(['qwen3-32b'], ['40', '80'], [131072, 16384]),
 
-  // Moonshot Kimi（https://platform.moonshot.ai/docs/pricing/chat；缓存价即官方缓存命中价）
+  // Moonshot Kimi（https://platform.moonshot.ai/docs/pricing/chat；缓存价即官方缓存命中价。
+  // kimi-k3 为 2026-08 新型号，官方刊例价页尚未更新，价格为 OpenRouter 当下观测值（含转售溢价），
+  // 能力取官方标称 1M 上下文，输出上限按 K2 系列对齐保守取值；待官方定价页更新后校准）
+  entry(['kimi-k3'], ['300', '1500', '30'], [1048576, 65536], ['kimi-k3-']),
   entry(['kimi-k2.7-code'], ['95', '400', '19'], [262144, 32768]),
   entry(['kimi-k2.6'], ['56', '236', '9.4'], [262144, 32768]),
   entry(['kimi-k2.5', 'kimi-k2-5'], ['400', '2000', '70'], [262144, 32768], ['kimi-k2.5-']),

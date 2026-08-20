@@ -97,6 +97,64 @@ describe('ai assistant composer keyboard submission', () => {
     expect(onSubmit).toHaveBeenCalledOnce()
   })
 
+  it('shows the provider-reported context usage as a ring with a formatted tooltip label', () => {
+    render(
+      <AIAssistantComposer
+        activeRun={false}
+        canceling={false}
+        canCancel={false}
+        contextUsedTokens={25600}
+        draft="测试消息"
+        inputRef={createRef<HTMLTextAreaElement>()}
+        models={[{ id: 'aimod_test', name: 'Test model', maxContextTokens: 128_000, maxOutputTokens: 16_000 }]}
+        selectedModelId="aimod_test"
+        sending={false}
+        submitting={false}
+        waitingInput={false}
+        onCancel={vi.fn()}
+        onDraftChange={vi.fn()}
+        onModelChange={vi.fn()}
+        onSubmit={vi.fn()}
+      />,
+    )
+    const ring = document.querySelector('span[aria-label*="/128k"]')
+    expect(ring).not.toBeNull()
+    expect(ring?.getAttribute('aria-label')).toContain('25.6k')
+    expect(ring?.getAttribute('aria-label')).toContain('20%')
+  })
+
+  it('shows the run token budget as a ring to the left of the model switcher', () => {
+    render(
+      <AIAssistantComposer
+        activeRun={false}
+        canceling={false}
+        canCancel={false}
+        draft="测试消息"
+        inputRef={createRef<HTMLTextAreaElement>()}
+        models={[{ id: 'aimod_test', name: 'Test model', maxContextTokens: 128_000, maxOutputTokens: 16_000 }]}
+        runTokenBudget={2_000_000}
+        runUsedTokens={400_000}
+        selectedModelId="aimod_test"
+        sending={false}
+        submitting={false}
+        waitingInput={false}
+        onCancel={vi.fn()}
+        onDraftChange={vi.fn()}
+        onModelChange={vi.fn()}
+        onSubmit={vi.fn()}
+      />,
+    )
+    const budgetRing = document.querySelector('span[aria-label*="/2000k"]')
+    expect(budgetRing).not.toBeNull()
+    expect(budgetRing?.getAttribute('aria-label')).toContain('400k')
+    expect(budgetRing?.getAttribute('aria-label')).toContain('20%')
+    // 预算环必须出现在模型切换器左边。
+    const modelSwitcher = document.querySelector('button[aria-label]')
+    expect(budgetRing && modelSwitcher
+      ? Boolean(budgetRing.compareDocumentPosition(modelSwitcher) & Node.DOCUMENT_POSITION_FOLLOWING)
+      : false).toBe(true)
+  })
+
   it('keeps the draft editable but blocks submission while the current run is active', () => {
     const onCancel = vi.fn()
     const onDraftChange = vi.fn()

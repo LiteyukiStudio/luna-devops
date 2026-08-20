@@ -362,6 +362,7 @@ export interface AppTemplateInstallPayload {
   memoryRequest: string
   projectVolumeId?: string
   installNow: boolean
+  provisionAccess?: boolean
   values: Record<string, string>
 }
 
@@ -422,6 +423,8 @@ export interface SystemComponentInstallPayload {
   clusterId: string
   namespace?: string
   mode?: string
+  image?: string
+  provisionAccess?: boolean
   apiBaseUrl: string
   traefikMetricsUrl?: string
 }

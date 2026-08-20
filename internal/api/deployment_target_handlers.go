@@ -103,7 +103,6 @@ func (h *Handlers) CreateDeploymentTarget(ctx *gin.Context) {
 	if !ok {
 		return
 	}
-	target = model.ApplyPlatformDeploymentTargetDefaults(project, app, target)
 	buildEnvironment, ok := h.deploymentBuildEnvironmentFromInput(ctx, user, project.ID, target.ID, input, nil)
 	if !ok {
 		return
@@ -178,7 +177,6 @@ func (h *Handlers) UpdateDeploymentTarget(ctx *gin.Context) {
 	// through the public-stage normalizer used by create requests.
 	target.Stage = existing.Stage
 	target.SecretRefs = existing.SecretRefs
-	target = model.ApplyPlatformDeploymentTargetDefaults(project, app, target)
 	existingBuildEnvironment, err := h.findBuildEnvironmentConfig(h.dbFor(ctx), model.BuildEnvironmentScopeDeployment, target.ID)
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		writeError(ctx, http.StatusInternalServerError, err.Error())

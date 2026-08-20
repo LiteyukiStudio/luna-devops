@@ -51,6 +51,19 @@ export function modelSaveErrorMessage(error: unknown, fallback: string, translat
   }
 }
 
+export function modelDeleteErrorMessage(error: unknown, fallback: string, translate: (key: string) => string) {
+  if (!(error instanceof ApiError))
+    return fallback
+  switch (error.code) {
+    case 'ai.last_model_cannot_be_deleted':
+      return translate('settings.ai.models.errors.lastEnabledDelete')
+    case 'ai.model_not_found':
+      return translate('settings.ai.models.errors.notFound')
+    default:
+      return fallback
+  }
+}
+
 export function modelFormValues(model: AIModelConfig): ModelFormValues {
   return {
     name: model.name,

@@ -22,13 +22,15 @@ import (
 )
 
 const (
-	systemComponentGatewayTrafficProbe = model.GatewayTrafficProbeApplicationIdentifier
+	systemComponentGatewayTrafficProbe = "gateway-traffic-probe"
 )
 
 type systemComponentInstallInput struct {
 	ClusterID         string `json:"clusterId"`
 	Namespace         string `json:"namespace"`
 	Mode              string `json:"mode"`
+	Image             string `json:"image"`
+	ProvisionAccess   bool   `json:"provisionAccess"`
 	APIBaseURL        string `json:"apiBaseUrl"`
 	TraefikMetricsURL string `json:"traefikMetricsUrl"`
 }
@@ -128,7 +130,7 @@ func (h *Handlers) InstallSystemAppTemplate(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusBadRequest, "system_component.traefik_metrics_url_invalid", err.Error())
 		return
 	}
-	configJSON, err := json.Marshal(map[string]string{"apiBaseUrl": apiBaseURL, "traefikMetricsUrl": traefikMetricsURL})
+	configJSON, err := json.Marshal(map[string]string{"apiBaseUrl": apiBaseURL, "traefikMetricsUrl": traefikMetricsURL, "image": strings.TrimSpace(input.Image)})
 	if err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
@@ -142,7 +144,7 @@ func (h *Handlers) InstallSystemAppTemplate(ctx *gin.Context) {
 		return
 	}
 
-	plan, ok := h.systemComponentApplicationPlan(ctx, user, platformProject, cluster, template, componentID, mode, string(configJSON), apiBaseURL, traefikMetricsURL, reportToken)
+	plan, ok := h.systemComponentApplicationPlan(ctx, user, platformProject, cluster, template, componentID, mode, string(configJSON), apiBaseURL, traefikMetricsURL, reportToken, strings.TrimSpace(input.Image), input.ProvisionAccess)
 	if !ok {
 		return
 	}
@@ -183,7 +185,7 @@ type systemComponentApplicationPlan struct {
 	SecretValue      model.SecretValue
 }
 
-func (h *Handlers) systemComponentApplicationPlan(ctx *gin.Context, user model.User, project model.Project, cluster model.RuntimeCluster, template appstore.Template, componentID string, mode string, configJSON string, apiBaseURL string, traefikMetricsURL string, reportToken string) (systemComponentApplicationPlan, bool) {
+func (h *Handlers) systemComponentApplicationPlan(ctx *gin.Context, user model.User, project model.Project, cluster model.RuntimeCluster, template appstore.Template, componentID string, mode string, configJSON string, apiBaseURL string, traefikMetricsURL string, reportToken string, imageOverride string, provisionAccess bool) (systemComponentApplicationPlan, bool) {
 	applicationIdentifier := strings.TrimSpace(template.Slug)
 	if applicationIdentifier == "" {
 		applicationIdentifier = componentID
@@ -210,6 +212,16 @@ func (h *Handlers) systemComponentApplicationPlan(ctx *gin.Context, user model.U
 
 	clusterSuffix := shortID(cluster.ID)
 	systemStage := "sys-" + clusterSuffix
+	// provisionAccess lets the platform create a dedicated ServiceAccount plus the
+	// RBAC rules the probe needs to read Gateway API routes. Without it the
+	// workload runs on the namespace default account and users manage RBAC
+	// themselves.
+	serviceAccountName := ""
+	automountToken := ""
+	if provisionAccess {
+		serviceAccountName = "luna-gateway-traffic-probe"
+		automountToken = "true"
+	}
 	target := model.DeploymentTarget{
 		ID:                           id.New("dplt"),
 		ProjectID:                    project.ID,
@@ -225,8 +237,10 @@ func (h *Handlers) systemComponentApplicationPlan(ctx *gin.Context, user model.U
 		ServicePort:                  fallbackInt(template.ServicePort, 9090),
 		ServicePorts:                 model.EncodeDeploymentServicePorts([]model.DeploymentServicePort{{Name: "metrics", Port: fallbackInt(template.ServicePort, 9090)}}, fallbackInt(template.ServicePort, 9090)),
 		SourceType:                   "image",
-		ImageRef:                     firstNonEmpty(template.Image, "liteyukistudio/devops-gateway-traffic-probe:nightly"),
-		ImagePullPolicy:              "IfNotPresent",
+		// Users may override the probe image; always pull so mutable tags such as
+		// nightly are re-resolved instead of served from a stale node cache.
+		ImageRef:                     firstNonEmpty(imageOverride, template.Image, "liteyukistudio/devops-gateway-traffic-probe:nightly"),
+		ImagePullPolicy:              "Always",
 		BuildCPURequest:              defaultBuildCPURequest,
 		BuildMemoryRequest:           defaultBuildMemoryRequest,
 		BuildTimeoutSeconds:          defaultBuildTimeoutSeconds,
@@ -234,8 +248,8 @@ func (h *Handlers) systemComponentApplicationPlan(ctx *gin.Context, user model.U
 		EnvVars:                      systemComponentProbeEnv(cluster, componentID, mode, apiBaseURL, traefikMetricsURL),
 		Enabled:                      true,
 		DeleteStatus:                 "active",
-		ServiceAccountName:           model.GatewayTrafficProbeServiceAccountName,
-		AutomountServiceAccountToken: model.GatewayTrafficProbeAutomountServiceToken,
+		ServiceAccountName:           serviceAccountName,
+		AutomountServiceAccountToken: automountToken,
 		CreatedBy:                    user.ID,
 	}
 	var existingTarget model.DeploymentTarget
@@ -244,6 +258,12 @@ func (h *Handlers) systemComponentApplicationPlan(ctx *gin.Context, user model.U
 		target.KubernetesName = firstNonEmpty(existingTarget.KubernetesName, target.KubernetesName)
 		target.CreatedAt = existingTarget.CreatedAt
 		target.CreatedBy = firstNonEmpty(existingTarget.CreatedBy, user.ID)
+		// A reinstall that does not ask for access provisioning keeps whatever
+		// service account the existing target already uses.
+		if !provisionAccess {
+			target.ServiceAccountName = existingTarget.ServiceAccountName
+			target.AutomountServiceAccountToken = existingTarget.AutomountServiceAccountToken
+		}
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return systemComponentApplicationPlan{}, false

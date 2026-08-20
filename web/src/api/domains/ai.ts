@@ -20,6 +20,8 @@ export const aiApi = {
     request<AIModelConfig>('/configs/ai/models', { method: 'POST', body: JSON.stringify(payload) }),
   updateAIModel: (id: string, payload: Partial<{ name: string, maxContextTokens: number, maxOutputTokens: number, inputCreditsPerMillion: string, outputCreditsPerMillion: string, cachedInputCreditsPerMillion: string, cachedOutputCreditsPerMillion: string, enabled: boolean }>) =>
     request<AIModelConfig>(`/configs/ai/models/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(payload) }),
+  deleteAIModel: (id: string) =>
+    request<void>(`/configs/ai/models/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   listAIConversations: (params: { page: number, pageSize: number, search?: string }) =>
     request<AIPaginatedResponse<AIConversation>>(`/ai/conversations?${paginationQuery({ ...params, sortBy: 'updatedAt', sortOrder: 'desc' })}`),
   createAIConversation: (payload: { modelId: string, projectId?: string, title?: string }) =>
