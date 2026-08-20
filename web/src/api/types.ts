@@ -1483,9 +1483,24 @@ export interface RuntimeCluster {
   createdAt: string
 }
 
+export type RuntimeClusterResourceCategory = 'namespaces' | 'workloads' | 'services' | 'configs' | 'storage'
+
+export type RuntimeClusterResourceKind
+  = | 'Namespace'
+    | 'Deployment'
+    | 'StatefulSet'
+    | 'Pod'
+    | 'HorizontalPodAutoscaler'
+    | 'Service'
+    | 'HTTPRoute'
+    | 'Gateway'
+    | 'ConfigMap'
+    | 'Secret'
+    | 'PersistentVolumeClaim'
+
 export interface ClusterResource {
   id: string
-  kind: string
+  kind: RuntimeClusterResourceKind
   name: string
   namespace: string
   status: string
@@ -1521,7 +1536,7 @@ export interface ClusterResourceYAML {
 }
 
 export interface RuntimeClusterResourceListParams extends PaginationParams {
-  kind: string
+  resourceCategory: RuntimeClusterResourceCategory
   namespace?: string
   projectId?: string
   applicationId?: string

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -14,27 +15,67 @@ import (
 )
 
 type OpenAPIOperation struct {
-	OperationID    string         `json:"operationId"`
-	Method         string         `json:"method"`
-	Path           string         `json:"path"`
-	Category       string         `json:"category"`
-	Description    string         `json:"description"`
-	SearchHints    []string       `json:"searchHints,omitempty"`
-	Risk           string         `json:"risk"`
-	RequiredScopes []string       `json:"requiredScopes"`
-	Approval       string         `json:"approval"`
-	StepUpPurpose  string         `json:"stepUpPurpose,omitempty"`
-	Idempotent     bool           `json:"idempotent"`
-	TimeoutMS      int            `json:"timeoutMs"`
-	InputSchema    map[string]any `json:"inputSchema"`
-	SensitivePaths []string       `json:"sensitivePaths,omitempty"`
-	MaxItems       int            `json:"maxItems,omitempty"`
-	ResultVerifier string         `json:"resultVerifier,omitempty"`
+	OperationID    string            `json:"operationId"`
+	Method         string            `json:"method"`
+	Path           string            `json:"path"`
+	Category       string            `json:"category"`
+	Description    string            `json:"description"`
+	SearchHints    []string          `json:"searchHints,omitempty"`
+	Risk           string            `json:"risk"`
+	RequiredScopes []string          `json:"requiredScopes"`
+	Approval       string            `json:"approval"`
+	StepUpPurpose  string            `json:"stepUpPurpose,omitempty"`
+	Idempotent     bool              `json:"idempotent"`
+	TimeoutMS      int               `json:"timeoutMs"`
+	InputSchema    map[string]any    `json:"inputSchema"`
+	SensitivePaths []string          `json:"sensitivePaths,omitempty"`
+	MaxItems       int               `json:"maxItems,omitempty"`
+	Contract       AgentToolContract `json:"contract"`
 
-	Parameters      []OpenAPIParameter `json:"-"`
-	RequestBody     bool               `json:"-"`
-	RequestRequired bool               `json:"-"`
-	RequestType     string             `json:"-"`
+	Parameters      []OpenAPIParameter     `json:"-"`
+	RequestBody     bool                   `json:"-"`
+	RequestRequired bool                   `json:"-"`
+	RequestType     string                 `json:"-"`
+	ResponseSchemas map[int]map[string]any `json:"-"`
+}
+
+type AgentToolContract struct {
+	Allowed          bool                  `json:"allowed"`
+	ResourceTypes    []string              `json:"resourceTypes"`
+	Action           string                `json:"action"`
+	SideEffect       string                `json:"sideEffect"`
+	Idempotent       bool                  `json:"idempotent"`
+	ReplaySafe       bool                  `json:"replaySafe"`
+	Risk             string                `json:"risk"`
+	Approval         string                `json:"approval"`
+	MFAPurpose       string                `json:"mfaPurpose,omitempty"`
+	Intents          []string              `json:"intents"`
+	UseWhen          []string              `json:"useWhen"`
+	AvoidWhen        []string              `json:"avoidWhen"`
+	Prerequisites    []string              `json:"prerequisites"`
+	ParameterSummary []string              `json:"parameterSummary"`
+	SuccessEvidence  []string              `json:"successEvidence"`
+	CommonErrorCodes []string              `json:"commonErrorCodes"`
+	Predecessors     []string              `json:"predecessors"`
+	Followups        []string              `json:"followups"`
+	Verification     AgentToolVerification `json:"verification"`
+}
+
+type AgentToolVerification struct {
+	Mode             string               `json:"mode"`
+	SuccessCodes     []int                `json:"successCodes,omitempty"`
+	OperationID      string               `json:"operationId,omitempty"`
+	IDSource         string               `json:"idSource,omitempty"`
+	ArgumentBindings map[string]string    `json:"argumentBindings,omitempty"`
+	Completion       *AgentToolCompletion `json:"completion,omitempty"`
+}
+
+type AgentToolCompletion struct {
+	Mode          string   `json:"mode"`
+	Path          string   `json:"path,omitempty"`
+	PendingStates []string `json:"pendingStates,omitempty"`
+	SuccessStates []string `json:"successStates,omitempty"`
+	FailureStates []string `json:"failureStates,omitempty"`
 }
 
 type OpenAPIParameter struct {
@@ -50,6 +91,7 @@ type openAPIDocument struct {
 		Parameters    map[string]any `json:"parameters"`
 		RequestBodies map[string]any `json:"requestBodies"`
 		Schemas       map[string]any `json:"schemas"`
+		Responses     map[string]any `json:"responses"`
 	} `json:"components"`
 }
 
@@ -121,10 +163,17 @@ func buildPlatformCatalog(source []byte) ([]OpenAPIOperation, error) {
 	sort.Slice(operations, func(i, j int) bool {
 		return operations[i].OperationID < operations[j].OperationID
 	})
+	if err := validateAgentContractReferences(operations); err != nil {
+		return nil, err
+	}
 	return operations, nil
 }
 
 func catalogOperation(document openAPIDocument, path, method, operationID string, raw map[string]any) (OpenAPIOperation, error) {
+	contract, err := parseAgentToolContract(operationID, mapValue(raw["x-luna-agent"]))
+	if err != nil {
+		return OpenAPIOperation{}, err
+	}
 	parameters := make([]OpenAPIParameter, 0)
 	properties := map[string]any{}
 	required := make([]string, 0)
@@ -161,12 +210,7 @@ func catalogOperation(document openAPIDocument, path, method, operationID string
 	if len(tags) > 0 {
 		category = strings.ToLower(tags[0])
 	}
-	extension := mapValue(raw["x-luna-cli"])
-	risk := agentRisk(method, stringValue(extension["risk"]), operationID)
-	approval := "never"
-	if risk == "sensitive" || risk == "destructive" {
-		approval = "always"
-	}
+	risk := agentPolicyRisk(contract)
 	scope := authz.RequiredAccessTokenScope(openAPIPathToGin(path), strings.ToUpper(method))
 	if scope == "" || scope == string(authz.ActionSystemUnmapped) {
 		scope = fallbackAgentScope(category, method)
@@ -182,24 +226,45 @@ func catalogOperation(document openAPIDocument, path, method, operationID string
 		"additionalProperties": false,
 	}
 	sensitivePaths := schemaSensitivePaths(inputSchema, "")
-	description := fmt.Sprintf(
-		"调用 Luna DevOps 的 %s 平台操作（%s %s）。参数与结果遵循平台 OpenAPI。",
-		operationID,
-		strings.ToUpper(method),
-		path,
+	responseSchemas := operationResponseSchemas(document, raw)
+	description := "用途：" + strings.Join(contract.UseWhen, "；") + "。成功依据：" + strings.Join(contract.SuccessEvidence, "；") + "。"
+	searchHints := compactSearchHints(
+		strings.Join(contract.ResourceTypes, " "),
+		strings.Join(contract.Intents, " "),
+		strings.Join(contract.ParameterSummary, " "),
+		strings.Join(contract.CommonErrorCodes, " "),
 	)
-	searchHints := compactSearchHints(stringValue(raw["summary"]), stringValue(raw["description"]))
 	return OpenAPIOperation{
 		OperationID: operationID, Method: strings.ToUpper(method), Path: path,
 		Category: category, Description: description, SearchHints: searchHints, Risk: risk,
-		RequiredScopes: scopes, Approval: approval,
-		StepUpPurpose: stringValue(extension["mfaPurpose"]),
-		Idempotent:    method == "get" || method == "put" || method == "delete",
+		RequiredScopes: scopes, Approval: contract.Approval,
+		StepUpPurpose: contract.MFAPurpose,
+		Idempotent:    contract.Idempotent,
 		TimeoutMS:     30000, InputSchema: inputSchema, SensitivePaths: sensitivePaths,
-		MaxItems: 100, ResultVerifier: resultVerifierFor(operationID, method),
+		MaxItems: 100, Contract: contract,
 		Parameters: parameters, RequestBody: len(requestSchema) > 0,
 		RequestRequired: requestRequired, RequestType: requestType,
+		ResponseSchemas: responseSchemas,
 	}, nil
+}
+
+func operationResponseSchemas(document openAPIDocument, operation map[string]any) map[int]map[string]any {
+	result := make(map[int]map[string]any)
+	for rawCode, rawResponse := range mapValue(operation["responses"]) {
+		code, err := strconv.Atoi(rawCode)
+		if err != nil || code < 100 || code > 599 {
+			continue
+		}
+		response := resolveOpenAPIResponse(document, rawResponse)
+		content := mapValue(response["content"])
+		media := mapValue(content["application/json"])
+		if schema := mapValue(media["schema"]); len(schema) > 0 {
+			result[code] = normalizeOpenAPISchema(document, schema, 0)
+		} else {
+			result[code] = nil
+		}
+	}
+	return result
 }
 
 // compactSearchHints keeps OpenAPI prose out of the model-visible description while
@@ -230,10 +295,12 @@ func agentEligibleOperation(path, method, operationID string, raw map[string]any
 			return false
 		}
 	}
-	extension := mapValue(raw["x-luna-cli"])
-	if value, exists := extension["agentAllowed"]; exists && !boolValue(value) {
+	agentExtension := mapValue(raw["x-luna-agent"])
+	allowed, declared := agentExtension["allowed"].(bool)
+	if !declared || !allowed {
 		return false
 	}
+	extension := mapValue(raw["x-luna-cli"])
 	switch stringValue(extension["classification"]) {
 	case "protocol-adapter", "browser-callback", "webhook-receiver":
 		return false
@@ -301,6 +368,15 @@ func resolveOpenAPIObject(document openAPIDocument, raw any) map[string]any {
 	default:
 		return value
 	}
+}
+
+func resolveOpenAPIResponse(document openAPIDocument, raw any) map[string]any {
+	value := mapValue(raw)
+	const responsePrefix = "#/components/responses/"
+	if ref := stringValue(value["$ref"]); strings.HasPrefix(ref, responsePrefix) {
+		return mapValue(document.Components.Responses[strings.TrimPrefix(ref, responsePrefix)])
+	}
+	return value
 }
 
 func normalizeOpenAPISchema(document openAPIDocument, schema map[string]any, depth int) map[string]any {
@@ -384,36 +460,17 @@ func schemaSensitivePaths(schema map[string]any, prefix string) []string {
 	return uniqueStrings(paths)
 }
 
-func agentRisk(method, declared, operationID string) string {
-	switch declared {
+func agentPolicyRisk(contract AgentToolContract) string {
+	switch contract.Risk {
 	case "critical":
 		return "destructive"
 	case "high":
 		return "sensitive"
-	case "medium":
-		return "write"
-	case "low":
-		if method == "get" {
-			return "read"
-		}
-		return "write"
 	}
-	if method == "get" {
+	if contract.SideEffect == "none" || contract.SideEffect == "external-read" {
 		return "read"
 	}
-	if method == "delete" || strings.HasPrefix(operationID, "delete") ||
-		strings.HasPrefix(operationID, "revoke") || strings.HasPrefix(operationID, "cleanup") ||
-		strings.Contains(strings.ToLower(operationID), "rollback") {
-		return "destructive"
-	}
 	return "write"
-}
-
-func resultVerifierFor(operationID, method string) string {
-	if strings.EqualFold(method, http.MethodGet) {
-		return ""
-	}
-	return operationID + "_accepted"
 }
 
 func fallbackAgentScope(category, method string) string {

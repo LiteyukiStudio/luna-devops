@@ -1,8 +1,16 @@
 import type { ConversationToolInteraction } from "../domain.js"
 import type { ModelMessage } from "../provider/provider.js"
+import { businessCardToolOperationIds } from "../tools/business-card-tools.js"
 
-export const internalToolOperationIds = new Set(["create_options", "create_interaction_cards", "rename_conversation", "navigate_to_route", "search_tools"])
-export const cardToolOperationIds = new Set(["create_interaction_cards"])
+export const internalToolOperationIds = new Set<string>([
+  "create_options",
+  "create_interaction_cards",
+  "rename_conversation",
+  "navigate_to_route",
+  "search_tools",
+  ...businessCardToolOperationIds,
+])
+export const cardToolOperationIds = new Set<string>(["create_interaction_cards", ...businessCardToolOperationIds])
 
 // 审批/MFA 恢复后，把已完成的工具调用重建为 assistant + tool 消息对，
 // 让模型在断点续跑时看到暂停前的工具结果。只重建有结果的调用。

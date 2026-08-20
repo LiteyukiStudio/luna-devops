@@ -7,6 +7,10 @@ Prometheus、Loki、Tempo、Grafana 证据共同判断结果。
 本文只定义测试方案，不代表当前实现已经满足这些用例。工具检索、循环保护、真实 verifier 和
 窄化交互工具应分别达到对应里程碑后再启用相关门禁。
 
+工具搜索的全目录覆盖不再只依赖本文件的 6 个 `RET-*` 代表场景。51 个准入工具的 300 条离线
+评测集、15 组真实串行搜索对话及向量化取舍见
+[`23-Agent工具搜索专项测试方案.md`](23-Agent工具搜索专项测试方案.md)。
+
 ## 1. 测试目标
 
 每个场景至少回答以下问题：
@@ -590,6 +594,25 @@ agent.context.compression_deferred
 
 日志必须带 Trace 关联字段和稳定 outcome/error code。普通日志不得包含用户原话、Prompt、工具正文、
 Secret 或任意高基数 Metric 维度。
+
+### 11.5 2026-08-20 问题场景修复复测记录
+
+本批次使用本地测试集群和浏览器串行执行，不并发发起 LLM Run。只复跑首批验收暴露的失败场景；
+60/300 轮上下文压缩暴力测试仍属于后续独立批次，不与缺陷复测混跑。
+
+| 场景 | 复测结果 | 关键证据 |
+| --- | --- | --- |
+| `FLOW-01` 部署交付 | 通过 | 读取真实集群 `clu_7652dfce0ea0576372483a53`，更新既有部署目标 `dplt_5de4f1eab49d9f8222e198a8`，创建 Release `rel_b2851dab491d676147cf8ad2`；自动 `getRelease` 从 pending 进入成功终态，未再出现 `ai.tool_verification_id_missing`，也未创建重复应用或部署目标。 |
+| `RET-06` 工具目录检索 | 通过 | 当前 Run 内真实执行一次 `search_tools`，观测页可查看 `maxResults=8`、查询、Top K、降级原因和完整返回；不可执行的数据卷导入能力得到确定结论，未由 `create_options` 代替检索。额外 `TRACE-01` 发现模型可能把工具调用前的“现在检索”误当最终文本，执行循环已改为检索后无条件进入下一模型步，并补充包含过渡文本的回归用例；`TRACE-02` 浏览器复测已在工具行之后输出明确的“没有可执行工具”正文结论。 |
+| `LOAD-01` 跨轮无新信息 | 通过 | 相同 `listProjectHookRuns({projectId:"prj_edf9301051ee080208c67f80"})` 在五分钟窗口内由执行层返回 `ai.tool_no_new_information`、`retryable=false`；观测中的真实 API 调用数保持为 2，证明拦截发生在委托请求前。 |
+| Agent 周期聚合 | 通过 | 1h 概览显示输入 1,460,124、输出 26,498、P95 45.5 秒；修正了 Token 为 0 和毫秒误当秒导致 45,492 秒的问题。 |
+| 内部工具与 Trace | 通过 | `search_tools` 以内部工具进入调用明细；本地 API/Agent 临时启用 OTLP 后，Trace 面板在同一调用链中回读 `luna-devops-api`、`luna-agent`、模型调用、`execute_tool search_tools` 与检索 Span。未修改或提交本地 `.env`。 |
+
+本次还对目录内每个显式准入 OpenAPI 操作执行契约枚举校验：HTTP 方法与副作用、幂等性、批准/MFA、
+成功状态码和响应 Schema 必须一致；所有 async-readback 写操作还必须逐项校验 verifier 存在、双向工作流
+引用、ID/参数绑定 JSON Pointer、必填参数覆盖、终态互斥和响应路径可达。当前 48 个显式准入 OpenAPI
+操作全部通过，3 组权威回读链分别为 `triggerBuildRun -> getBuildRun`、`createRelease -> getRelease` 和
+`createGatewayRoute -> getGatewayRoute`；3 个手写目录工具也通过 TypeScript 目录门禁。
 
 ## 12. 批次判定和优化回灌
 

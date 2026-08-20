@@ -120,7 +120,7 @@ const candidate = z.object({
   selectionMessage: z.string().trim().min(1).max(1000),
 })
 
-const candidatePicker = z.object({
+export const candidatePickerTemplate = z.object({
   templateId: z.literal("candidate_picker"),
   title: shortText,
   description,
@@ -132,7 +132,7 @@ const candidatePicker = z.object({
   }).optional().describe("当现有候选可能不满足用户需求时提供的新建入口。"),
 })
 
-const candidateSelect = z.object({
+export const candidateSelectTemplate = z.object({
   templateId: z.literal("candidate_select"),
   title: shortText,
   description,
@@ -150,7 +150,7 @@ const candidateSelect = z.object({
   path: ["submitMessage"],
 })
 
-const resourceConfiguration = z.object({
+export const resourceConfigurationTemplate = z.object({
   templateId: z.literal("resource_configuration"),
   title: shortText,
   description,
@@ -161,7 +161,7 @@ const resourceConfiguration = z.object({
   submit: submitAction,
 })
 
-const changeReview = z.object({
+export const changeReviewTemplate = z.object({
   templateId: z.literal("change_review"),
   title: shortText,
   description,
@@ -172,7 +172,7 @@ const changeReview = z.object({
   submit: submitAction,
 })
 
-const diagnosisReport = z.object({
+export const diagnosisReportTemplate = z.object({
   templateId: z.literal("diagnosis_report"),
   title: shortText,
   description,
@@ -188,7 +188,7 @@ const liveProgressBinding = z.object({
   operationId: z.string().trim().min(1).max(120),
 })
 
-const executionProgress = z.object({
+export const executionProgressTemplate = z.object({
   templateId: z.literal("execution_progress"),
   title: shortText.describe("稳定的任务名称，不得包含正在、已完成、失败等会随任务变化的状态。"),
   description: description.describe("稳定的任务说明，不得写入会随任务变化的状态、百分比或步骤。"),
@@ -197,7 +197,7 @@ const executionProgress = z.object({
   detail: description,
 }).describe("只用于绑定平台已经创建且仍在运行的权威任务。不得由模型填写百分比、步骤状态或在标题、说明中固化动态状态。")
 
-const operationResult = z.object({
+export const operationResultTemplate = z.object({
   templateId: z.literal("operation_result"),
   title: shortText,
   description,
@@ -207,7 +207,7 @@ const operationResult = z.object({
   steps: z.array(statusItem).max(20).optional(),
 })
 
-const healthOverview = z.object({
+export const healthOverviewTemplate = z.object({
   templateId: z.literal("health_overview"),
   title: shortText,
   description,
@@ -216,14 +216,14 @@ const healthOverview = z.object({
 })
 
 export const businessCardTemplate = z.discriminatedUnion("templateId", [
-  candidatePicker,
-  candidateSelect,
-  resourceConfiguration,
-  changeReview,
-  diagnosisReport,
-  executionProgress,
-  operationResult,
-  healthOverview,
+  candidatePickerTemplate,
+  candidateSelectTemplate,
+  resourceConfigurationTemplate,
+  changeReviewTemplate,
+  diagnosisReportTemplate,
+  executionProgressTemplate,
+  operationResultTemplate,
+  healthOverviewTemplate,
 ])
 
 export const createBusinessCardTemplateInput = z.object({

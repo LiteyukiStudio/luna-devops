@@ -5,28 +5,27 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LiteyukiStudio/devops/internal/aitool"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
 func TestListRegistryCredentialsAcceptsOptionalProjectFilterInOpenAPI(t *testing.T) {
-	operation, ok := aitool.PlatformOperation("listRegistryCredentials")
-	if !ok {
-		t.Fatal("listRegistryCredentials is missing from the platform operation catalog")
-	}
-	properties := schemaProperties(t, operation.InputSchema)
-	projectID, ok := properties["projectId"].(map[string]any)
-	if !ok || projectID["type"] != "string" {
-		t.Fatalf("projectId schema = %#v, want optional string", properties["projectId"])
-	}
-	required, _ := schemaStringList(operation.InputSchema["required"])
-	for _, name := range required {
-		if name == "projectId" {
-			t.Fatalf("projectId must remain optional: %#v", required)
+	document := readOpenAPIDocument(t, apiRepositoryRoot(t)+"/openapi/openapi.yaml")
+	paths := document["paths"].(map[string]any)
+	operation := paths["/api/v1/registries/{registryId}/credentials"].(map[string]any)["get"].(map[string]any)
+	for _, raw := range operation["parameters"].([]any) {
+		parameter, ok := raw.(map[string]any)
+		if !ok || parameter["name"] != "projectId" {
+			continue
 		}
+		schema := parameter["schema"].(map[string]any)
+		if schema["type"] != "string" || parameter["required"] == true {
+			t.Fatalf("projectId parameter = %#v, want optional string", parameter)
+		}
+		return
 	}
+	t.Fatal("listRegistryCredentials is missing optional projectId parameter")
 }
 
 func TestListRegistryCredentialsUsesUnifiedProjectVisibility(t *testing.T) {

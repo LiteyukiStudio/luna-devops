@@ -242,7 +242,7 @@ export function buildServer(input: {
       }), async span => {
         const value = await input.repository.createTurn(request.actor.userId, {
           conversationId, input: body.input.parts.map(part => part.text).join("\n"), pageContext: redact(body.pageContext),
-          traceContext: captureTraceContext(),
+          traceContext: captureTraceContext(request.headers),
           idempotencyKey: key, ...(body.runId ? { preallocatedRunId: body.runId } : {}),
           ...(body.runActorGrant ? { runActorGrantCiphertext: input.grantCipher.encrypt(body.runActorGrant) } : {}),
           ...(input.toolCatalogDigest ? { toolCatalogDigest: input.toolCatalogDigest } : {}),
@@ -279,7 +279,7 @@ export function buildServer(input: {
           conversationId,
           input: body.message,
           pageContext: { __lunaDirectToolAction: true },
-          traceContext: captureTraceContext(),
+          traceContext: captureTraceContext(request.headers),
           idempotencyKey: key,
           preallocatedRunId: body.runId,
           runActorGrantCiphertext: input.grantCipher.encrypt(body.runActorGrant),

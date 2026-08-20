@@ -1,6 +1,18 @@
 package agentobservability
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
+
+func TestSummarizeRunsUsesTheOverviewSecondsContract(t *testing.T) {
+	if !strings.Contains(summarizeRunsSQL, "EXTRACT(EPOCH FROM (completed_at - started_at)) AS duration_seconds") {
+		t.Fatal("run duration SQL must return seconds for the overview contract")
+	}
+	if strings.Contains(summarizeRunsSQL, "* 1000") || strings.Contains(summarizeRunsSQL, "duration_ms") {
+		t.Fatal("run duration SQL must not expose milliseconds to the seconds-based overview field")
+	}
+}
 
 func TestTraceIDFromContext(t *testing.T) {
 	tests := []struct {

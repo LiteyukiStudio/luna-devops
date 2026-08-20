@@ -7,6 +7,7 @@ import type {
   ModelResponse,
   ModelToolCall,
   ModelToolDefinition,
+  ModelToolRetrievalState,
   ModelToolResolver,
   ModelToolSearchResult,
 } from "./provider/provider.js"
@@ -20,6 +21,7 @@ import { createOptionsTool } from "./tools/ui-options.js"
 export type ModelRuntimeEvent = ModelEvent
   | { type: "context.compacted", summarizedThroughTurnIndex: number, estimatedInputTokens: number }
 import { defaultRuntimeSettings } from "./runtime-settings.js"
+import { isBusinessCardToolOperationId } from "./tools/business-card-tools.js"
 
 export type ConversationPromptContext = {
   title: string
@@ -41,6 +43,7 @@ export type AssistantModelInput = {
   toolCalls: ModelToolCall[]
   continuationMessages: ModelMessage[]
   loadedOperationIds: string[]
+  toolRetrievalState?: ModelToolRetrievalState
   model?: AIModelSnapshot
 }
 
@@ -50,8 +53,20 @@ export type AssistantModelInput = {
  */
 export class ModelRuntime {
   private assistantMaxOutputTokens = defaultRuntimeSettings.assistantMaxOutputTokens
-  private readonly resolveTools: (pageContext: Record<string, unknown>, userInput: string, loadedOperationIds: string[]) => ModelToolDefinition[]
-  private readonly searchTools?: (query: string, pageContext: Record<string, unknown>, limit: number) => ModelToolSearchResult
+  private readonly resolveTools: (
+    pageContext: Record<string, unknown>,
+    userInput: string,
+    loadedOperationIds: string[],
+    retrievalState?: ModelToolRetrievalState,
+    signal?: AbortSignal,
+  ) => ModelToolDefinition[] | Promise<ModelToolDefinition[]>
+  private readonly searchTools?: (
+    query: string,
+    pageContext: Record<string, unknown>,
+    limit: number,
+    retrievalState?: ModelToolRetrievalState,
+    signal?: AbortSignal,
+  ) => ModelToolSearchResult | Promise<ModelToolSearchResult>
 
   constructor(
     private readonly provider: ModelProvider,
@@ -92,9 +107,15 @@ export class ModelRuntime {
     return this.provider.complete(request)
   }
 
-  searchAvailableTools(query: string, pageContext: Record<string, unknown>, limit: number): ModelToolSearchResult {
+  async searchAvailableTools(
+    query: string,
+    pageContext: Record<string, unknown>,
+    limit: number,
+    retrievalState?: ModelToolRetrievalState,
+    signal?: AbortSignal,
+  ): Promise<ModelToolSearchResult> {
     if (!this.searchTools) return { query, matches: [], loadedOperationIds: [], totalMatches: 0 }
-    return this.searchTools(query, pageContext, limit)
+    return this.searchTools(query, pageContext, limit, retrievalState, signal)
   }
 
   async generateConversationTitle(input: string, answer: string, budget: { runId: string, ownerUserId: string }, signal?: AbortSignal, model?: AIModelSnapshot): Promise<string | undefined> {
@@ -122,9 +143,10 @@ export class ModelRuntime {
     history: ConversationHistoryEntry[]
     model?: AIModelSnapshot
   }, signal?: AbortSignal): Promise<Record<string, unknown> | undefined> {
-    const availableOperations = this.modelTools(input.pageContext, input.conversation, input.userInput)
+    const availableOperations = (await this.modelTools(input.pageContext, input.conversation, input.userInput, [], undefined, signal))
       .map(tool => tool.operationId)
-      .filter(operationId => !["create_options", "create_interaction_cards", "rename_conversation", "navigate_to_route", "search_tools"].includes(operationId))
+      .filter(operationId => !["create_options", "create_interaction_cards", "rename_conversation", "navigate_to_route", "search_tools"].includes(operationId)
+        && !isBusinessCardToolOperationId(operationId))
     const response = await this.provider.complete({
       messages: [
         {
@@ -148,7 +170,14 @@ export class ModelRuntime {
   }
 
   private async modelRequest(input: AssistantModelInput, signal?: AbortSignal) {
-    const tools = this.modelTools(input.pageContext, input.conversation, input.input, input.loadedOperationIds)
+    const tools = await this.modelTools(
+      input.pageContext,
+      input.conversation,
+      input.input,
+      input.loadedOperationIds,
+      input.toolRetrievalState,
+      signal,
+    )
     const base = modelMessageParts(input.promptVersion, input.input, input.pageContext, input.conversation, tools)
     const compiled = this.contextCompiler
       ? await this.contextCompiler.compile({
@@ -193,9 +222,16 @@ export class ModelRuntime {
     }
   }
 
-  private modelTools(pageContext: Record<string, unknown>, conversation: ConversationPromptContext, userInput: string, loadedOperationIds: string[] = []) {
+  private async modelTools(
+    pageContext: Record<string, unknown>,
+    conversation: ConversationPromptContext,
+    userInput: string,
+    loadedOperationIds: string[] = [],
+    retrievalState?: ModelToolRetrievalState,
+    signal?: AbortSignal,
+  ) {
     return [
-      ...this.resolveTools(pageContext, userInput, loadedOperationIds),
+      ...await this.resolveTools(pageContext, userInput, loadedOperationIds, retrievalState, signal),
       ...(conversation.titleSource === "user" ? [] : [renameConversationTool]),
     ]
   }

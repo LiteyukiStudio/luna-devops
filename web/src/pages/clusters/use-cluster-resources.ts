@@ -1,5 +1,5 @@
 import type { ClusterResourcePagination } from './cluster-resources-panel'
-import type { ClusterResource, CurrentUser, RuntimeCluster } from '@/api'
+import type { ClusterResource, CurrentUser, RuntimeCluster, RuntimeClusterResourceCategory } from '@/api'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -31,8 +31,8 @@ export function useClusterResources({ activeTab, manageableClusters, user }: {
     ? selectedResourceClusterId
     : manageableClusters[0]?.id ?? ''
   const selectedResourceCluster = manageableClusters.find(cluster => cluster.id === effectiveResourceClusterId)
-  const resourceKind = activeTab === 'clusters' ? 'namespaces' : activeTab
-  const resourceScope = `${effectiveResourceClusterId}:${resourceKind}`
+  const resourceCategory = (activeTab === 'clusters' ? 'namespaces' : activeTab) as RuntimeClusterResourceCategory
+  const resourceScope = `${effectiveResourceClusterId}:${resourceCategory}`
   const currentResourceView = resourceViewState.scope === resourceScope
     ? resourceViewState
     : { scope: resourceScope, page: 1, selectedKeys: [] }
@@ -49,9 +49,9 @@ export function useClusterResources({ activeTab, manageableClusters, user }: {
   }
   const clusterResources = useQuery({
     ...liveObservationQueryPolicy,
-    queryKey: ['runtime-cluster-resources', selectedResourceCluster?.id, resourceKind, resourcePage, resourcePageSize],
+    queryKey: ['runtime-cluster-resources', selectedResourceCluster?.id, resourceCategory, resourcePage, resourcePageSize],
     queryFn: () => api.listRuntimeClusterResourcesPage(selectedResourceCluster?.id ?? '', {
-      kind: resourceKind,
+      resourceCategory,
       page: resourcePage,
       pageSize: resourcePageSize,
       sortBy: 'updatedAt',
@@ -76,7 +76,7 @@ export function useClusterResources({ activeTab, manageableClusters, user }: {
     ...liveObservationQueryPolicy,
     queryKey: ['runtime-cluster-resource-events', selectedResourceCluster?.id, eventResource?.kind, eventResource?.namespace, eventResource?.name],
     queryFn: () => api.listRuntimeClusterResourceEvents(selectedResourceCluster?.id ?? '', {
-      kind: eventResource?.kind ?? '',
+      resourceKind: eventResource?.kind ?? 'Pod',
       namespace: eventResource?.namespace,
       name: eventResource?.name ?? '',
     }),
@@ -86,7 +86,7 @@ export function useClusterResources({ activeTab, manageableClusters, user }: {
     ...liveObservationQueryPolicy,
     queryKey: ['runtime-cluster-resource-yaml', selectedResourceCluster?.id, yamlResource?.kind, yamlResource?.namespace, yamlResource?.name],
     queryFn: () => api.getRuntimeClusterResourceYAML(selectedResourceCluster?.id ?? '', {
-      kind: yamlResource?.kind ?? '',
+      resourceKind: yamlResource?.kind ?? 'Pod',
       namespace: yamlResource?.namespace,
       name: yamlResource?.name ?? '',
     }),
@@ -95,14 +95,14 @@ export function useClusterResources({ activeTab, manageableClusters, user }: {
 
   const deleteResource = useMutation({
     mutationFn: (resource: ClusterResource) => api.deleteRuntimeClusterResource(effectiveResourceClusterId, {
-      kind: resource.kind,
+      resourceKind: resource.kind,
       namespace: resource.namespace,
       name: resource.name,
     }),
     onSuccess: () => {
       toast.success(t('clustersPage.resourceDeleted'))
       setResourceToDelete(null)
-      queryClient.invalidateQueries({ queryKey: ['runtime-cluster-resources', selectedResourceCluster?.id, resourceKind] })
+      queryClient.invalidateQueries({ queryKey: ['runtime-cluster-resources', selectedResourceCluster?.id, resourceCategory] })
     },
     onError: error => toast.error(error.message),
   })
@@ -110,7 +110,7 @@ export function useClusterResources({ activeTab, manageableClusters, user }: {
     mutationFn: async (resources: ClusterResource[]) => {
       for (const resource of resources) {
         await api.deleteRuntimeClusterResource(effectiveResourceClusterId, {
-          kind: resource.kind,
+          resourceKind: resource.kind,
           namespace: resource.namespace,
           name: resource.name,
         })
@@ -122,7 +122,7 @@ export function useClusterResources({ activeTab, manageableClusters, user }: {
       setSelectedResourceKeys([])
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['runtime-cluster-resources', selectedResourceCluster?.id, resourceKind] })
+      queryClient.invalidateQueries({ queryKey: ['runtime-cluster-resources', selectedResourceCluster?.id, resourceCategory] })
     },
     onError: error => toast.error(error.message),
   })

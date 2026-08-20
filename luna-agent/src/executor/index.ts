@@ -7,13 +7,17 @@ import { genAIAgentName, genAIAgentSpanAttributes, genAIInputMessages, genAIOutp
 import { agentRuntimeInternals, defaultRuntimeSettings, type RuntimeSettings } from "../runtime-settings.js"
 import { agentMetrics, extractTraceContext, internalSpanOptions, recordAIContent, recordSpanError, stableErrorCode, telemetryLog, withSpan } from "../telemetry.js"
 import { SensitiveInputRejected, ToolInterruption, type ToolOrchestrator } from "../tools/orchestrator.js"
+import { ToolLoopStoppedError } from "../tools/loop-guard.js"
+import { businessCardToolInputs, compileBusinessCardToolInput, isBusinessCardToolOperationId } from "../tools/business-card-tools.js"
 import { searchToolsInput } from "../tools/tool-search.js"
 import { createOptionsInput } from "../tools/ui-options.js"
-import { CardGenerationService, providerArgumentFailure, setMaxCardRepairAttempts, type CardGeneration } from "./cards.js"
+import { CardGenerationService, cardValidationFailure, providerArgumentFailure, setMaxCardRepairAttempts, validationIssues, type CardGeneration } from "./cards.js"
+import { recentEmptyReadResults, requestsExplicitLiveRefresh } from "./conversation-loop-state.js"
 import { InternalToolHandlers } from "./internal-tools.js"
 import { internalToolOperationIds, cardToolOperationIds, normalizeToolSearchQuery, resumedOperationIds, resumedToolMessages } from "./resume.js"
+import { ToolRetrievalStateTracker } from "./retrieval-state.js"
 import { streamModel } from "./streaming.js"
-import { platformToolFailureGuidance, setToolResultPayloadBudget, stableError, toolResultMessage } from "./tool-results.js"
+import { platformToolFailureGuidance, platformToolVerificationGuidance, setToolResultPayloadBudget, stableError, toolResultMessage } from "./tool-results.js"
 
 export class RunExecutor {
   private timer?: NodeJS.Timeout
@@ -145,8 +149,14 @@ export class RunExecutor {
         let completed = false
         let finalResponseMissing = false
         const continuationMessages = resumedToolMessages(executionInput.toolInteractions)
+        if (!requestsExplicitLiveRefresh(executionInput.input)) {
+          for (const historical of recentEmptyReadResults(executionInput.history)) {
+            this.tools?.seedRunStableResult({ runId: run.id, ...historical })
+          }
+        }
         // 恢复审批/MFA 后仍保留此前已经使用过的工具，避免动态工具集在断点续跑时漂移。
         const loadedOperationIds = new Set(resumedOperationIds(executionInput.toolInteractions))
+        const toolRetrievalState = new ToolRetrievalStateTracker(executionInput.pageContext, executionInput.toolInteractions)
         const searchedToolQueries = new Set<string>()
         for (let step = 0; step < this.runtimeSettings.maxModelSteps; step += 1) {
           const result = await this.streamModel(run.id, run.turnId, {
@@ -163,6 +173,7 @@ export class RunExecutor {
             toolCalls: [],
             continuationMessages,
             loadedOperationIds: [...loadedOperationIds],
+            toolRetrievalState: toolRetrievalState.snapshot(),
             ...(executionInput.model ? { model: executionInput.model } : {}),
           }, abort.signal)
           finalAnswer = result.answer
@@ -192,16 +203,21 @@ export class RunExecutor {
           continuationMessages.push({ role: "assistant", content: result.answer, toolCalls })
           let platformToolCalled = false
           let createOptionsCalled = false
+          let searchToolsCalled = false
           let createInteractionCardsCalled = false
           let createdInteractionCardMode: "presentation" | "interactive" | undefined
           let recoverableToolError = false
           const hasPlatformTool = toolCalls.some(call => !internalToolOperationIds.has(call.operationId))
           for (const toolCall of toolCalls) {
             if (toolCall.argumentError) {
-              if (toolCall.operationId === "create_interaction_cards" && !hasPlatformTool) {
-                cardGeneration ??= await this.cards.start(run.id, run.turnId, toolCall.arguments)
+              if (cardToolOperationIds.has(toolCall.operationId) && !hasPlatformTool) {
+                if (cardGeneration && cardGeneration.operationId !== toolCall.operationId) {
+                  await this.cards.fail(run.id, cardGeneration, "ai.interaction_card_schema_invalid")
+                  cardGeneration = undefined
+                }
+                cardGeneration ??= await this.cards.start(run.id, run.turnId, toolCall.arguments, toolCall.operationId)
               }
-              const key = cardGeneration?.generationId ?? toolCall.operationId
+              const key = toolCall.operationId
               let attempt = (providerArgumentRepairAttempts.get(key) ?? 0) + 1
               providerArgumentRepairAttempts.set(key, attempt)
               const issues: InteractionCardValidationIssue[] = [{
@@ -210,19 +226,45 @@ export class RunExecutor {
                 message: toolCall.argumentError.message,
                 expected: "完整 JSON 对象",
               }]
-              if (toolCall.operationId === "create_interaction_cards" && cardGeneration) {
+              if (cardToolOperationIds.has(toolCall.operationId) && cardGeneration?.operationId === toolCall.operationId) {
                 attempt = await this.cards.recordRepairFailure(run.id, cardGeneration, issues, "ai.tool_arguments_json_invalid")
               }
-              const failure = providerArgumentFailure(toolCall.argumentError, attempt, cardGeneration?.generationId)
+              const failure = providerArgumentFailure(toolCall.argumentError, attempt, cardGeneration?.generationId, toolCall.operationId)
               recoverableToolError ||= failure.retryable
               cardRepairExhausted ||= !failure.retryable && cardToolOperationIds.has(toolCall.operationId)
               continuationMessages.push(toolResultMessage(toolCall, { ...failure }))
               continue
             }
-            if (toolCall.operationId === "create_interaction_cards") {
+            if (cardToolOperationIds.has(toolCall.operationId)) {
               if (!hasPlatformTool) {
-                cardGeneration ??= await this.cards.start(run.id, run.turnId, toolCall.arguments)
-                const creation = await this.traceInternalTool("create_interaction_cards", run.id, toolCall.arguments, () => this.cards.create(run.id, toolCall.arguments, cardGeneration!), toolCall.id)
+                if (cardGeneration && cardGeneration.operationId !== toolCall.operationId) {
+                  await this.cards.fail(run.id, cardGeneration, "ai.interaction_card_schema_invalid")
+                  cardGeneration = undefined
+                }
+                let cardInput: unknown = toolCall.arguments
+                if (isBusinessCardToolOperationId(toolCall.operationId)) {
+                  const parsed = businessCardToolInputs[toolCall.operationId].safeParse(toolCall.arguments)
+                  if (!parsed.success) {
+                    cardGeneration ??= await this.cards.start(run.id, run.turnId, toolCall.arguments, toolCall.operationId)
+                    const issues = validationIssues(parsed.error.issues)
+                    const attempt = await this.cards.recordRepairFailure(run.id, cardGeneration, issues, "ai.interaction_card_schema_invalid")
+                    const failure = cardValidationFailure(
+                      "create",
+                      issues,
+                      attempt,
+                      cardGeneration.generationId,
+                      "ai.interaction_card_schema_invalid",
+                      toolCall.operationId,
+                    )
+                    recoverableToolError ||= failure.retryable
+                    cardRepairExhausted ||= !failure.retryable
+                    continuationMessages.push(toolResultMessage(toolCall, { ...failure }))
+                    continue
+                  }
+                  cardInput = compileBusinessCardToolInput(toolCall.operationId, parsed.data)
+                }
+                cardGeneration ??= await this.cards.start(run.id, run.turnId, cardInput, toolCall.operationId)
+                const creation = await this.traceInternalTool(toolCall.operationId, run.id, toolCall.arguments, () => this.cards.create(run.id, cardInput, cardGeneration!), toolCall.id)
                 if (!creation.accepted) {
                   recoverableToolError ||= creation.failure.retryable
                   cardRepairExhausted ||= !creation.failure.retryable
@@ -259,19 +301,78 @@ export class RunExecutor {
               continue
             }
             if (toolCall.operationId === "search_tools") {
-              const input = searchToolsInput.parse(toolCall.arguments)
+              searchToolsCalled = true
+              const parsedInput = searchToolsInput.safeParse(toolCall.arguments)
+              if (!parsedInput.success) {
+                const errorCode = "ai.tool_arguments_invalid"
+                await this.internalTools.recordToolCall(
+                  run.id,
+                  run.turnId,
+                  "search_tools",
+                  toolCall.arguments,
+                  "failed",
+                  { issues: parsedInput.error.issues.map(issue => ({ path: issue.path, code: issue.code })) },
+                  errorCode,
+                  toolCall.id,
+                )
+                recoverableToolError = true
+                continuationMessages.push(toolResultMessage(toolCall, {
+                  status: "failed",
+                  errorCode,
+                  retryable: true,
+                  guidance: "请修正 query 或 maxResults 后，在当前 Run 内重试一次 search_tools。",
+                }))
+                continue
+              }
+              const input = parsedInput.data
               const normalizedQuery = normalizeToolSearchQuery(input.query)
               const alreadySearched = searchedToolQueries.has(normalizedQuery)
-              const searchResult = await this.traceInternalTool("search_tools", run.id, input, async () => {
-                if (alreadySearched) return {
-                  query: input.query,
-                  matches: [],
-                  loadedOperationIds: [] as string[],
-                  totalMatches: 0,
-                }
-                searchedToolQueries.add(normalizedQuery)
-                return this.modelRuntime.searchAvailableTools(input.query, executionInput.pageContext, input.maxResults)
-              }, toolCall.id)
+              const searchStartedAt = performance.now()
+              let searchResult: Awaited<ReturnType<ModelRuntime["searchAvailableTools"]>>
+              try {
+                searchResult = await this.traceInternalTool("search_tools", run.id, input, async () => {
+                  if (alreadySearched) return {
+                    query: input.query,
+                    matches: [],
+                    loadedOperationIds: [] as string[],
+                    totalMatches: 0,
+                  }
+                  searchedToolQueries.add(normalizedQuery)
+                  return this.modelRuntime.searchAvailableTools(
+                    input.query,
+                    executionInput.pageContext,
+                    input.maxResults,
+                    toolRetrievalState.snapshot(),
+                    abort.signal,
+                  )
+                }, toolCall.id)
+                await this.internalTools.recordToolCall(
+                  run.id,
+                  run.turnId,
+                  "search_tools",
+                  input,
+                  "succeeded",
+                  searchResult,
+                  undefined,
+                  toolCall.id,
+                  performance.now() - searchStartedAt,
+                )
+              }
+              catch (error) {
+                const errorCode = stableErrorCode(error)
+                await this.internalTools.recordToolCall(
+                  run.id,
+                  run.turnId,
+                  "search_tools",
+                  input,
+                  "failed",
+                  undefined,
+                  errorCode,
+                  toolCall.id,
+                  performance.now() - searchStartedAt,
+                )
+                throw error
+              }
               searchResult.loadedOperationIds.forEach(operationId => loadedOperationIds.add(operationId))
               const searchOutcome = alreadySearched ? "duplicate" : searchResult.matches.length ? "succeeded" : "no_matches"
               agentMetrics.toolSearches.add(1, { outcome: searchOutcome })
@@ -315,6 +416,17 @@ export class RunExecutor {
               call = await this.tools.propose({ runId: run.id, operationId: toolCall.operationId, arguments: toolCall.arguments, inputMode: "model" })
             }
             catch (error) {
+              if (error instanceof ToolLoopStoppedError) {
+                recoverableToolError = true
+                continuationMessages.push(toolResultMessage(toolCall, {
+                  status: "failed",
+                  ...error.toJSON(),
+                  guidance: error.code === "ai.tool_no_new_information"
+                    ? "相同参数的近期只读调用已经得到空结果；不要再次调用。请基于已有结果直接说明当前未发现资源，或改用能带来新信息的不同查询。"
+                    : "工具循环保护已停止这次调用；不要原样重试。请基于现有结果回答，或改用参数和信息来源都不同的下一步。",
+                }))
+                continue
+              }
               if (!(error instanceof SensitiveInputRejected)) throw error
               recoverableToolError = true
               continuationMessages.push(toolResultMessage(toolCall, {
@@ -325,10 +437,14 @@ export class RunExecutor {
               continue
             }
             const failureGuidance = platformToolFailureGuidance(call.operationId, call.errorCode)
+            const verificationGuidance = platformToolVerificationGuidance(call.result)
+            loadedOperationIds.add(call.operationId)
+            toolRetrievalState.record(call.operationId, call.status, call.result, call.errorCode)
             continuationMessages.push(toolResultMessage(toolCall, {
               status: call.status,
               ...(call.result !== undefined ? { result: call.result } : {}),
               ...(call.errorCode ? { errorCode: call.errorCode } : {}),
+              ...(verificationGuidance ?? {}),
               ...(failureGuidance ?? {}),
             }))
             if (call.status === "awaiting_approval") {
@@ -346,6 +462,9 @@ export class RunExecutor {
           }
           if (recoverableToolError) continue
           if (cardRepairExhausted) continue
+          // search_tools 只完成能力发现；工具调用前的“现在检索”之类文本不是最终答复。
+          // 无论模型是否在同一条 assistant 消息里附带了文本，都必须把检索结果送入下一模型步。
+          if (searchToolsCalled) continue
           if (platformToolCalled) pendingOptions = undefined
           if (!platformToolCalled && createInteractionCardsCalled) {
             if (createdInteractionCardMode === "presentation") continue
@@ -447,6 +566,8 @@ export class RunExecutor {
         this.controllers.delete(run.id)
         await this.repository.finalizeStreamingItems(run.id, "completed")
         await this.repository.releaseLease(run.id, this.config.INSTANCE_ID)
+        if (!["waiting_approval", "waiting_mfa", "waiting_input"].includes(outcome))
+          this.tools?.clearRunLoopState(run.id)
         const metricAttributes = { outcome }
         agentMetrics.activeRuns.add(-1)
         agentMetrics.runs.add(1, metricAttributes)
@@ -476,6 +597,7 @@ export class RunExecutor {
       this.modelRuntime.setAssistantMaxOutputTokens(runtimeSettings.assistantMaxOutputTokens)
       setToolResultPayloadBudget(runtimeSettings.toolResultPayloadBudget)
       setMaxCardRepairAttempts(runtimeSettings.maxCardRepairAttempts)
+      this.tools?.setRunMaxToolCalls(runtimeSettings.runMaxToolCalls)
       this.runtimeSettings = runtimeSettings
     }
     catch {

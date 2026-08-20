@@ -24,6 +24,13 @@ func TestToolObservabilityQueriesAgainstPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatalf("summarize tools: %v", err)
 	}
+	runs, err := store.SummarizeRuns(t.Context(), start)
+	if err != nil {
+		t.Fatalf("summarize runs: %v", err)
+	}
+	if runs.InputTokens < 0 || runs.OutputTokens < 0 || runs.DurationP95Seconds < 0 {
+		t.Fatalf("invalid run summary: %#v", runs)
+	}
 	result, err := store.ListToolSummaries(t.Context(), ToolSummaryListOptions{Start: start, Page: 1, PageSize: 20})
 	if err != nil {
 		t.Fatalf("list tool summaries: %v", err)

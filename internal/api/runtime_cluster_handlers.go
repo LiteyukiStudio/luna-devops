@@ -192,7 +192,8 @@ func (h *Handlers) TestRuntimeCluster(ctx *gin.Context) {
 		writeError(ctx, http.StatusNotFound, "runtime cluster not found")
 		return
 	}
-	if !h.canManageScopedResourceByID(ctx, user, cluster.Scope, cluster.OwnerRef, scopedResourceRuntimeCluster, cluster.ID, "无权测试该运行集群") {
+	if !h.canUseScopedResourceByID(user, cluster.Scope, cluster.OwnerRef, scopedResourceRuntimeCluster, cluster.ID, ctx.Request.Context()) {
+		writeErrorCode(ctx, http.StatusForbidden, "runtime_cluster.forbidden", "无权测试该运行集群")
 		return
 	}
 	cluster = h.runtimeClusterResponseForUser(user, cluster, ctx.Request.Context())
@@ -230,11 +231,15 @@ func (h *Handlers) DeleteRuntimeClusterResource(ctx *gin.Context) {
 		writeError(ctx, http.StatusBadRequest, "运行集群 kubeconfig 无效")
 		return
 	}
-	kind := strings.TrimSpace(ctx.Query("kind"))
+	kind := strings.TrimSpace(ctx.Query("resourceKind"))
 	namespace := strings.TrimSpace(ctx.Query("namespace"))
 	name := strings.TrimSpace(ctx.Query("name"))
-	if kind == "" || name == "" {
-		writeError(ctx, http.StatusBadRequest, "资源类型和名称不能为空")
+	if !validRuntimeResourceKind(kind) {
+		writeRuntimeResourceArgumentError(ctx, "cluster.resource_kind_invalid", "resourceKind", runtimeResourceKinds)
+		return
+	}
+	if name == "" {
+		writeErrorCode(ctx, http.StatusBadRequest, "cluster.resource_name_required", "resource name is required")
 		return
 	}
 	requestCtx, cancel := context.WithTimeout(ctx.Request.Context(), 10*time.Second)

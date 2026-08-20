@@ -70,6 +70,14 @@ const errors = {
   kubernetes: {
     resource_ownership_conflict: 'Kubernetes の同名リソースは他のリソースライフサイクルに属しています。プラットフォームは自動的に引き継ぎません。先に残留リソースを処理してください。',
   },
+  cluster: {
+    resource_category_invalid: '有効なランタイムリソースカテゴリを選択してください。',
+    resource_kind_invalid: '有効な Kubernetes リソース種別を選択してください。',
+    resource_name_required: 'リソース名を入力してください。',
+  },
+  runtime_cluster: {
+    forbidden: 'このランタイムクラスターのリソースを表示する権限がありません。',
+  },
   billing: {
     insufficient_balance: '請求帰属者の残高が不足しています。現在の操作は課金リスク管理によってブロックされました。チャージするか、プラットフォーム管理者に連絡して処理してください。',
     wallet_unavailable: '個人ウォレットが一時的に利用できません。今回の AI リクエストは作成されませんでした。後ほど再試行してください。',

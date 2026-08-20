@@ -9,33 +9,15 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/aitool"
 )
 
-func TestProjectVolumeAgentOperationsUseFineGrainedScopes(t *testing.T) {
-	tests := map[string]struct {
-		scope   string
-		purpose string
-	}{
-		"listProjectVolumes":              {scope: "volume:read"},
-		"getProjectVolume":                {scope: "volume:read"},
-		"listProjectVolumeStorageClasses": {scope: "volume:read"},
-		"createProjectVolume":             {scope: "volume:write"},
-		"updateProjectVolume":             {scope: "volume:write"},
-		"previewProjectVolumeDeletion":    {scope: "volume:delete"},
-		"deleteProjectVolume":             {scope: "volume:delete", purpose: stepUpPurposeVolumeDelete},
-		"createVolumeExport":              {scope: "volume:export", purpose: stepUpPurposeVolumeExport},
-	}
-	for operationID, test := range tests {
-		t.Run(operationID, func(t *testing.T) {
-			operation, ok := aitool.PlatformOperation(operationID)
-			if !ok {
-				t.Fatalf("%s is missing from the Agent platform catalog", operationID)
-			}
-			if !reflect.DeepEqual(operation.RequiredScopes, []string{test.scope}) {
-				t.Fatalf("required scopes = %v, want %q", operation.RequiredScopes, test.scope)
-			}
-			if operation.StepUpPurpose != test.purpose {
-				t.Fatalf("step-up purpose = %q, want %q", operation.StepUpPurpose, test.purpose)
-			}
-		})
+func TestProjectVolumeOperationsRequireExplicitAgentAdmission(t *testing.T) {
+	for _, operationID := range []string{
+		"listProjectVolumes", "getProjectVolume", "listProjectVolumeStorageClasses",
+		"createProjectVolume", "updateProjectVolume", "previewProjectVolumeDeletion",
+		"deleteProjectVolume", "createVolumeExport",
+	} {
+		if operation, ok := aitool.PlatformOperation(operationID); ok {
+			t.Fatalf("unreviewed volume operation %s entered Agent catalog: %#v", operationID, operation.Contract)
+		}
 	}
 }
 

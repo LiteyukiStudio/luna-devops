@@ -1,4 +1,4 @@
-import type { ClusterResource, ClusterResourceEvent, ClusterResourceYAML, PaginatedResponse, PaginationParams, Release, ReleaseImageCandidates, ReleaseLog, ReleaseRuntimeExecResult, ReleaseRuntimeLog, RuntimeCluster, RuntimeClusterResourceListParams } from '../types'
+import type { ClusterResource, ClusterResourceEvent, ClusterResourceYAML, PaginatedResponse, PaginationParams, Release, ReleaseImageCandidates, ReleaseLog, ReleaseRuntimeExecResult, ReleaseRuntimeLog, RuntimeCluster, RuntimeClusterResourceCategory, RuntimeClusterResourceKind, RuntimeClusterResourceListParams } from '../types'
 import { paginationWithProjectQuery, request, runtimeClusterResourceListQuery } from '../core'
 import { selectionItems, selectionPageParams } from '../selection-page'
 
@@ -15,15 +15,15 @@ export const runtimeApi = {
     request<void>(`/runtime/clusters/${clusterId}`, { method: 'DELETE' }),
   testRuntimeCluster: (clusterId: string) =>
     request<RuntimeCluster>(`/runtime/clusters/${clusterId}/test`, { method: 'POST' }),
-  listRuntimeClusterResources: (clusterId: string, params: { kind: string, namespace?: string, projectId?: string, applicationId?: string, environmentId?: string }) => {
+  listRuntimeClusterResources: (clusterId: string, params: { resourceCategory: RuntimeClusterResourceCategory, namespace?: string, projectId?: string, applicationId?: string, environmentId?: string }) => {
     const query = runtimeClusterResourceListQuery({ ...selectionPageParams, ...params })
     return request<PaginatedResponse<ClusterResource>>(`/runtime/clusters/${clusterId}/resources?${query}`).then(selectionItems)
   },
   listRuntimeClusterResourcesPage: (clusterId: string, params: RuntimeClusterResourceListParams) =>
     request<PaginatedResponse<ClusterResource>>(`/runtime/clusters/${clusterId}/resources?${runtimeClusterResourceListQuery(params)}`),
-  listRuntimeClusterResourceEvents: (clusterId: string, params: { kind: string, namespace?: string, name: string }) => {
+  listRuntimeClusterResourceEvents: (clusterId: string, params: { resourceKind: RuntimeClusterResourceKind, namespace?: string, name: string }) => {
     const search = new URLSearchParams({
-      kind: params.kind,
+      resourceKind: params.resourceKind,
       name: params.name,
       page: String(selectionPageParams.page),
       pageSize: String(selectionPageParams.pageSize),
@@ -32,14 +32,14 @@ export const runtimeApi = {
       search.set('namespace', params.namespace)
     return request<PaginatedResponse<ClusterResourceEvent>>(`/runtime/clusters/${clusterId}/resource-events?${search.toString()}`).then(selectionItems)
   },
-  getRuntimeClusterResourceYAML: (clusterId: string, params: { kind: string, namespace?: string, name: string }) => {
-    const search = new URLSearchParams({ kind: params.kind, name: params.name })
+  getRuntimeClusterResourceYAML: (clusterId: string, params: { resourceKind: RuntimeClusterResourceKind, namespace?: string, name: string }) => {
+    const search = new URLSearchParams({ resourceKind: params.resourceKind, name: params.name })
     if (params.namespace)
       search.set('namespace', params.namespace)
     return request<ClusterResourceYAML>(`/runtime/clusters/${clusterId}/resource-yaml?${search.toString()}`)
   },
-  deleteRuntimeClusterResource: (clusterId: string, params: { kind: string, namespace?: string, name: string }) => {
-    const search = new URLSearchParams({ kind: params.kind, name: params.name })
+  deleteRuntimeClusterResource: (clusterId: string, params: { resourceKind: RuntimeClusterResourceKind, namespace?: string, name: string }) => {
+    const search = new URLSearchParams({ resourceKind: params.resourceKind, name: params.name })
     if (params.namespace)
       search.set('namespace', params.namespace)
     return request<void>(`/runtime/clusters/${clusterId}/resources?${search.toString()}`, { method: 'DELETE' })

@@ -12,15 +12,14 @@ import { ProviderConfigClient } from "./provider/config-client.js"
 import { createRuntimeProvider } from "./provider/runtime.js"
 import { BudgetedModelProvider } from "./provider/budgeted.js"
 import { buildServer } from "./server.js"
-import { configureAIContentCapture, shutdownTelemetry, telemetryLog } from "./telemetry.js"
+import { agentMetrics, configureAIContentCapture, internalSpanOptions, shutdownTelemetry, telemetryLog, withSpan } from "./telemetry.js"
 import { defaultRuntimeSettings } from "./runtime-settings.js"
-import { ToolCatalog } from "./tools/catalog.js"
+import { ToolCatalog, type RetrievalContext } from "./tools/catalog.js"
 import { HttpLunaApiToolClient } from "./tools/luna-api-client.js"
 import { MemoryToolCallStore, ProjectingToolCallStore, ToolOrchestrator } from "./tools/orchestrator.js"
 import { PostgresToolCallStore } from "./tools/postgres-store.js"
 import { platformOperations } from "./tools/generated/platform.js"
-import { createInteractionCardsTool } from "./tools/ui-cards.js"
-import { createOptionsTool } from "./tools/ui-options.js"
+import { businessCardTools } from "./tools/business-card-tools.js"
 import { navigateToRouteTool } from "./tools/ui-route.js"
 import { searchToolsTool } from "./tools/tool-search.js"
 
@@ -37,14 +36,9 @@ export async function startAgent(): Promise<void> {
   const providerConfigClient = config.LUNA_API_BASE_URL && internalKeys
     ? new ProviderConfigClient(config.LUNA_API_BASE_URL, internalKeys.callbackServiceToken)
     : undefined
-  const initialRemoteConfig = providerConfigClient
-    ? await providerConfigClient.get().catch(() => {
-        telemetryLog("agent.provider_config.degraded_start", "warn", {
-          "error.code": "ai.provider_config_unavailable",
-        })
-        return undefined
-      })
-    : undefined
+  // 托管模式的工具契约只能由 Luna API 权威下发。首次拉取失败时直接阻止启动，
+  // 避免使用无契约 fallback 后在配置恢复时仍永久缺失平台工具。
+  const initialRemoteConfig = providerConfigClient ? await providerConfigClient.get() : undefined
   const rawProvider = createRuntimeProvider(config, providerConfigClient)
   const provider = new BudgetedModelProvider(rawProvider, repository)
   const authenticator = config.AUTH_MODE === "bff-hmac"
@@ -85,6 +79,7 @@ export async function startAgent(): Promise<void> {
         return grantCipher.decrypt(encrypted)
       })
     : undefined
+  tools?.setRunMaxToolCalls(runtime.runMaxToolCalls)
   const contextCompiler = new ContextCompiler(repository, provider, {
     inputTokenBudget: runtime.contextInputTokenBudget,
     compressionTriggerRatio: runtime.contextCompressionTriggerRatio,
@@ -98,24 +93,64 @@ export async function startAgent(): Promise<void> {
     historicalToolTokenBudget: runtime.contextHistoricalToolTokenBudget,
   })
   const modelRuntime = new ModelRuntime(provider, {
-    resolve: (pageContext, userInput, loadedOperationIds) => [
-    ...(tools
-      ? catalog.resolve({
-          ...(typeof pageContext.projectId === "string" ? { projectId: pageContext.projectId } : {}),
-          ...(typeof pageContext.pathname === "string" ? { pathname: pageContext.pathname } : {}),
-          ...(typeof pageContext.routeName === "string" ? { routeName: pageContext.routeName } : {}),
-        }, userInput, loadedOperationIds)
-      : []),
-    ...(tools ? [searchToolsTool] : []),
-    createOptionsTool,
-    createInteractionCardsTool,
-    navigateToRouteTool,
-    ],
-    search: (query, pageContext, limit) => catalog.search(query, {
-      ...(typeof pageContext.projectId === "string" ? { projectId: pageContext.projectId } : {}),
-      ...(typeof pageContext.pathname === "string" ? { pathname: pageContext.pathname } : {}),
-      ...(typeof pageContext.routeName === "string" ? { routeName: pageContext.routeName } : {}),
-    }, limit),
+    resolve: async (pageContext, userInput, loadedOperationIds, retrievalState, signal) => {
+      const startedAt = performance.now()
+      let outcome = "succeeded"
+      let strategy = "base_only"
+      let candidateCount = 0
+      let matchCount = 0
+      try {
+        return await withSpan("agent.tools.retrieve", internalSpanOptions({
+          "luna.agent.tool_retrieval.trigger": "automatic",
+        }), async span => {
+          const retrieval = tools
+            ? await catalog.resolveDetailedAsync(toolRetrievalContext(pageContext, retrievalState), userInput, loadedOperationIds, signal)
+            : undefined
+          const retrievedTools = retrieval?.tools ?? []
+          outcome = retrieval?.retrieval.outcome ?? outcome
+          strategy = retrieval?.retrieval.strategy ?? strategy
+          candidateCount = retrieval?.retrieval.totalMatches ?? 0
+          matchCount = retrievedTools.length
+          if (!tools) outcome = "unavailable"
+          const platformTools = tools
+            ? config.TOOL_RETRIEVAL_MODE === "dynamic" ? retrievedTools : catalog.allowedModelTools()
+            : []
+          if (tools && retrievedTools.length === 0) {
+            outcome = "unavailable"
+            telemetryLog("agent.tool_retrieval.unavailable", "warn", {
+              "error.code": "ai.tool_retrieval_unavailable",
+            })
+          }
+          span.setAttribute("luna.agent.tool_retrieval.outcome", outcome)
+          span.setAttribute("luna.agent.tool_retrieval.strategy", strategy)
+          span.setAttribute("luna.agent.tool_retrieval.match_count", matchCount)
+          span.setAttribute("luna.agent.tool_retrieval.mode", config.TOOL_RETRIEVAL_MODE)
+          return [
+            ...platformTools,
+            ...(tools ? [searchToolsTool] : []),
+            ...businessCardTools,
+            navigateToRouteTool,
+          ]
+        })
+      }
+      catch (error) {
+        outcome = "failed"
+        throw error
+      }
+      finally {
+        const attributes = { outcome, mode: config.TOOL_RETRIEVAL_MODE, strategy }
+        agentMetrics.toolRetrievals.add(1, attributes)
+        agentMetrics.toolRetrievalCandidates.record(candidateCount, attributes)
+        agentMetrics.toolRetrievalLoaded.record(matchCount, attributes)
+        agentMetrics.toolRetrievalDuration.record((performance.now() - startedAt) / 1000, attributes)
+      }
+    },
+    search: (query, pageContext, limit, retrievalState, signal) => catalog.searchAsync(
+      query,
+      toolRetrievalContext(pageContext, retrievalState),
+      limit,
+      signal,
+    ),
   }, contextCompiler)
   const executor = new RunExecutor(repository, modelRuntime, config, tools, providerConfigClient)
   const server = buildServer({
@@ -142,4 +177,26 @@ export async function startAgent(): Promise<void> {
   }
   process.once("SIGTERM", () => { void shutdown() })
   process.once("SIGINT", () => { void shutdown() })
+}
+
+function toolRetrievalContext(
+  pageContext: Record<string, unknown>,
+  state?: {
+    resourceContext: string[]
+    completedOperations: string[]
+    stableOutcomes: string[]
+    pendingState?: "user_input" | "approval" | "mfa" | "async_terminal_check"
+    stableErrorCodes: string[]
+  },
+): RetrievalContext {
+  return {
+    ...(typeof pageContext.projectId === "string" ? { projectId: pageContext.projectId } : {}),
+    ...(typeof pageContext.pathname === "string" ? { pathname: pageContext.pathname } : {}),
+    ...(typeof pageContext.routeName === "string" ? { routeName: pageContext.routeName } : {}),
+    ...(state?.resourceContext.length ? { resourceTypes: state.resourceContext } : {}),
+    ...(state?.completedOperations.length ? { completedOperations: state.completedOperations } : {}),
+    ...(state?.stableOutcomes.length ? { stableOutcomes: state.stableOutcomes } : {}),
+    ...(state?.pendingState ? { pendingState: state.pendingState } : {}),
+    ...(state?.stableErrorCodes.length ? { stableErrorCodes: state.stableErrorCodes } : {}),
+  }
 }

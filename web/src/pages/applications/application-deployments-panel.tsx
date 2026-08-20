@@ -278,7 +278,7 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
   const workloadResourceQueries = useQueries({
     queries: workloadClusterIds.map(clusterId => ({
       enabled: Boolean(projectId && applicationId && clusterId),
-      queryFn: () => api.listRuntimeClusterResources(clusterId, { kind: 'workloads', projectId, applicationId }),
+      queryFn: () => api.listRuntimeClusterResources(clusterId, { resourceCategory: 'workloads', projectId, applicationId }),
       queryKey: ['runtime-cluster-resources', clusterId, 'workloads', projectId, applicationId],
       refetchInterval: WORKFLOW_STATUS_REFETCH_INTERVAL_MS,
       ...liveObservationQueryPolicy,
@@ -287,7 +287,7 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
   const serviceResourceQueries = useQueries({
     queries: workloadClusterIds.map(clusterId => ({
       enabled: Boolean(projectId && applicationId && clusterId),
-      queryFn: () => api.listRuntimeClusterResources(clusterId, { kind: 'services', projectId, applicationId }),
+      queryFn: () => api.listRuntimeClusterResources(clusterId, { resourceCategory: 'services', projectId, applicationId }),
       queryKey: ['runtime-cluster-resources', clusterId, 'services', projectId, applicationId],
       refetchInterval: WORKFLOW_STATUS_REFETCH_INTERVAL_MS,
       ...liveObservationQueryPolicy,

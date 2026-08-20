@@ -300,6 +300,25 @@ paths:
       operationId: previewBuildTemplate
       tags: [Builds]
       summary: Validate template parameters and preview the generated Dockerfile
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [build-template, dockerfile]
+        action: verify
+        sideEffect: none
+        idempotent: true
+        replaySafe: true
+        risk: low
+        approval: never
+        intents: [预览构建模板, 校验模板参数, 生成 Dockerfile 预览]
+        useWhen: [触发构建前需要校验模板参数和生成内容时]
+        avoidWhen: [需要真实触发构建或读取构建任务日志时]
+        prerequisites: [已有 templateId, 已准备模板参数]
+        parameterSummary: [body 只包含用于预览的模板参数，不创建构建记录]
+        successEvidence: [200 响应返回校验后的 Dockerfile 预览]
+        commonErrorCodes: []
+        predecessors: []
+        followups: [triggerBuildRun]
+        verification: { mode: response, successCodes: [200] }
       parameters:
         - name: templateId
           in: path
@@ -1241,6 +1260,25 @@ paths:
       tags: [Runtime]
       summary: List runtime clusters
       description: Pagination is always applied; omitted parameters use page 1 and pageSize 20.
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [runtime-cluster]
+        action: discover
+        sideEffect: external-read
+        idempotent: true
+        replaySafe: true
+        risk: low
+        approval: never
+        intents: [查找运行集群, 选择部署集群, 查看集群连接状态]
+        useWhen: [需要获得当前用户可见的运行集群候选或实时状态时]
+        avoidWhen: [已经有明确 clusterId 且只需查看该集群资源时]
+        prerequisites: []
+        parameterSummary: [projectId 可限制到项目空间, page 和 pageSize 控制分页]
+        successEvidence: [响应返回分页集群列表及实时观察状态]
+        commonErrorCodes: [runtime_cluster.observation_unavailable]
+        predecessors: []
+        followups: [testRuntimeCluster, listRuntimeClusterResources]
+        verification: { mode: response, successCodes: [200] }
       parameters:
         - name: projectId
           in: query
@@ -1542,6 +1580,25 @@ paths:
       operationId: listArtifactRegistries
       tags: [Registries]
       summary: List artifact registries
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [artifact-registry]
+        action: discover
+        sideEffect: none
+        idempotent: true
+        replaySafe: true
+        risk: low
+        approval: never
+        intents: [查找镜像站, 选择构建推送仓库, 查看镜像仓库列表]
+        useWhen: [构建或部署前需要获得可见镜像站候选时]
+        avoidWhen: [已有明确 registryId 且只需测试连接时]
+        prerequisites: []
+        parameterSummary: [支持按作用域、提供商和搜索词过滤]
+        successEvidence: [响应返回分页镜像站列表且不回显凭据]
+        commonErrorCodes: []
+        predecessors: []
+        followups: [testArtifactRegistry]
+        verification: { mode: response, successCodes: [200] }
       parameters:
         - name: projectId
           in: query
@@ -1607,6 +1664,25 @@ paths:
       operationId: testArtifactRegistry
       tags: [Registries]
       summary: Test artifact registry connectivity
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [artifact-registry]
+        action: verify
+        sideEffect: external-read
+        idempotent: true
+        replaySafe: true
+        risk: low
+        approval: never
+        intents: [测试镜像站连接, 验证仓库凭据是否可用]
+        useWhen: [镜像拉取或推送异常且已有 registryId 时]
+        avoidWhen: [需要列出镜像站或修改仓库配置时]
+        prerequisites: [已有 registryId]
+        parameterSummary: [registryId 指向已保存凭据的镜像站；不会返回凭据]
+        successEvidence: [200 响应返回本次连接测试结果]
+        commonErrorCodes: [registry.test_failed]
+        predecessors: [listArtifactRegistries]
+        followups: []
+        verification: { mode: response, successCodes: [200] }
       parameters:
         - $ref: "#/components/parameters/RegistryId"
       responses:
@@ -1768,6 +1844,25 @@ paths:
         classification: business-command
         risk: low
         requiredScopes: ["dashboard:read"]
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [dashboard, project, application, release]
+        action: read
+        sideEffect: none
+        idempotent: true
+        replaySafe: true
+        risk: low
+        approval: never
+        intents: [查看平台概览, 了解当前任务和资源摘要]
+        useWhen: [用户询问总体运行情况且尚未指定单个资源时]
+        avoidWhen: [用户已经指定项目、应用或发布并要求详细诊断时]
+        prerequisites: []
+        parameterSummary: []
+        successEvidence: [响应返回当前用户可见的仪表盘聚合]
+        commonErrorCodes: [dashboard.load_failed]
+        predecessors: []
+        followups: [listProjects]
+        verification: { mode: response, successCodes: [200] }
       responses:
         "200":
           description: Dashboard overview scoped to the current user's visible project spaces and resources.
@@ -1792,6 +1887,25 @@ paths:
       tags: [Projects]
       summary: List projects
       description: Pagination is always applied; omitted parameters use page 1 and pageSize 20. Project discovery defaults to project spaces related to the caller. Platform administrators may explicitly request all project spaces.
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [project]
+        action: discover
+        sideEffect: none
+        idempotent: true
+        replaySafe: true
+        risk: low
+        approval: never
+        intents: [查找项目空间, 选择项目, 列出我的项目]
+        useWhen: [缺少 projectId 或需要消歧项目空间时]
+        avoidWhen: [已有明确 projectId 且只需读取项目详情时]
+        prerequisites: []
+        parameterSummary: [scope 默认 related，只有平台管理员可显式使用 all, 支持分页和排序]
+        successEvidence: [响应返回分页项目空间列表]
+        commonErrorCodes: []
+        predecessors: []
+        followups: [getProject, listApplications]
+        verification: { mode: response, successCodes: [200] }
       parameters:
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
@@ -1821,6 +1935,25 @@ paths:
       operationId: createProject
       tags: [Projects]
       summary: Create project
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [project]
+        action: create
+        sideEffect: platform-write
+        idempotent: false
+        replaySafe: false
+        risk: medium
+        approval: never
+        intents: [创建项目空间, 新建团队工作空间]
+        useWhen: [用户明确要求新建项目空间并已给出名称和标识]
+        avoidWhen: [只是查找现有项目或名称标识尚未确认时]
+        prerequisites: [已获得项目名称与唯一标识]
+        parameterSummary: [body 包含项目名称、标识和可选描述]
+        successEvidence: [201 响应返回已持久化项目空间]
+        commonErrorCodes: []
+        predecessors: [listProjects]
+        followups: [getProject]
+        verification: { mode: response, successCodes: [201] }
       requestBody:
         required: true
         content:
@@ -1857,6 +1990,25 @@ paths:
       operationId: getProject
       tags: [Projects]
       summary: Get project
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [project]
+        action: read
+        sideEffect: none
+        idempotent: true
+        replaySafe: true
+        risk: low
+        approval: never
+        intents: [查看项目空间详情, 确认项目是否存在]
+        useWhen: [已有明确 projectId 且需要项目空间权威详情时]
+        avoidWhen: [缺少 projectId 或需要从多个项目中选择时]
+        prerequisites: [已有 projectId]
+        parameterSummary: [projectId 为项目空间标识]
+        successEvidence: [响应返回匹配 projectId 的项目空间]
+        commonErrorCodes: []
+        predecessors: [listProjects]
+        followups: [listApplications]
+        verification: { mode: response, successCodes: [200] }
       parameters:
         - $ref: "#/components/parameters/ProjectId"
       responses:
@@ -2021,6 +2173,25 @@ paths:
       operationId: listApplications
       tags: [Applications]
       summary: List applications
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [application]
+        action: discover
+        sideEffect: none
+        idempotent: true
+        replaySafe: true
+        risk: low
+        approval: never
+        intents: [查找应用, 列出项目应用, 按名称搜索应用]
+        useWhen: [已有 projectId 但缺少 applicationId 或需要消歧应用时]
+        avoidWhen: [已有明确 applicationId 且只需应用详情时]
+        prerequisites: [已有 projectId]
+        parameterSummary: [projectId 限定项目空间，search 支持名称检索]
+        successEvidence: [响应返回项目空间内的分页应用列表]
+        commonErrorCodes: []
+        predecessors: [getProject]
+        followups: [getApplication, listDeploymentTargets]
+        verification: { mode: response, successCodes: [200] }
       parameters:
         - $ref: "#/components/parameters/ProjectId"
         - $ref: "#/components/parameters/Page"
@@ -2049,6 +2220,25 @@ paths:
       operationId: createApplication
       tags: [Applications]
       summary: Create application
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [application]
+        action: create
+        sideEffect: platform-write
+        idempotent: false
+        replaySafe: false
+        risk: medium
+        approval: never
+        intents: [创建应用, 在项目空间中新建应用]
+        useWhen: [用户明确要求创建应用并已给出名称和标识]
+        avoidWhen: [只是部署已有应用或应用标识尚未确认时]
+        prerequisites: [已有 projectId, 已获得应用名称和唯一标识]
+        parameterSummary: [projectId 限定项目空间，body 描述应用]
+        successEvidence: [201 响应返回已持久化应用]
+        commonErrorCodes: []
+        predecessors: [getProject, listApplications]
+        followups: [getApplication, createDeploymentTarget]
+        verification: { mode: response, successCodes: [201] }
       parameters:
         - $ref: "#/components/parameters/ProjectId"
       requestBody:
@@ -2068,6 +2258,25 @@ paths:
       operationId: getApplication
       tags: [Applications]
       summary: Get application
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [application]
+        action: read
+        sideEffect: none
+        idempotent: true
+        replaySafe: true
+        risk: low
+        approval: never
+        intents: [查看应用详情, 确认应用配置]
+        useWhen: [已有 projectId 和 applicationId 且需要应用权威详情时]
+        avoidWhen: [缺少 applicationId 或需要按名称查找应用时]
+        prerequisites: [已有 projectId, 已有 applicationId]
+        parameterSummary: [projectId 与 applicationId 唯一定位应用]
+        successEvidence: [响应返回匹配标识的应用]
+        commonErrorCodes: []
+        predecessors: [listApplications]
+        followups: [listDeploymentTargets, listReleases]
+        verification: { mode: response, successCodes: [200] }
       parameters:
         - $ref: "#/components/parameters/ProjectId"
         - $ref: "#/components/parameters/ApplicationId"
@@ -2106,6 +2315,25 @@ paths:
       operationId: previewApplicationDeletion
       tags: [Applications]
       summary: Inspect persistent data before deleting an application
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [application, project-volume]
+        action: verify
+        sideEffect: external-read
+        idempotent: true
+        replaySafe: true
+        risk: low
+        approval: never
+        intents: [预览删除应用影响, 检查应用持久化数据]
+        useWhen: [删除应用前需要确认关联卷和不可逆影响时]
+        avoidWhen: [只是查看应用详情或没有删除意图时]
+        prerequisites: [已有 projectId, 已有 applicationId]
+        parameterSummary: [projectId 与 applicationId 定位待删除应用]
+        successEvidence: [响应返回实时删除影响预览]
+        commonErrorCodes: []
+        predecessors: [getApplication]
+        followups: []
+        verification: { mode: response, successCodes: [200] }
       parameters:
         - $ref: "#/components/parameters/ProjectId"
         - $ref: "#/components/parameters/ApplicationId"
@@ -2362,6 +2590,8 @@ paths:
       operationId: createVolumeImport
       tags: [Volumes]
       summary: Create a resumable archive import session and provisioning volume
+      x-luna-agent:
+        allowed: false
       x-luna-cli:
         classification: protocol-adapter
         hidden: true
@@ -2823,6 +3053,25 @@ paths:
       tags: [Deployments]
       summary: List deployment targets for an application
       description: Returns a no-store point-in-time Kubernetes observation for each target. Replica fields and status belong to the same observation; scaled-to-zero means the workload was observed with desiredReplicas=0 and is not serving a runtime instance.
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [deployment-target, kubernetes-workload]
+        action: discover
+        sideEffect: external-read
+        idempotent: true
+        replaySafe: true
+        risk: low
+        approval: never
+        intents: [查看部署配置, 查找部署目标, 查看应用运行状态]
+        useWhen: [已有项目和应用，需要选择部署目标或读取实时副本状态时]
+        avoidWhen: [只需查看发布历史或容器日志时]
+        prerequisites: [已有 projectId, 已有 applicationId]
+        parameterSummary: [projectId 和 applicationId 限定应用，支持分页]
+        successEvidence: [响应返回部署目标及同一次 Kubernetes 实时观察]
+        commonErrorCodes: [runtime.observation_unavailable]
+        predecessors: [getApplication]
+        followups: [listReleases, createRelease]
+        verification: { mode: response, successCodes: [200] }
       parameters:
         - $ref: "#/components/parameters/ProjectId"
         - $ref: "#/components/parameters/ApplicationId"
@@ -2842,6 +3091,25 @@ paths:
       operationId: createDeploymentTarget
       tags: [Deployments]
       summary: Create a deployment target
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [deployment-target]
+        action: create
+        sideEffect: platform-write
+        idempotent: false
+        replaySafe: false
+        risk: medium
+        approval: never
+        intents: [创建部署配置, 配置应用运行目标]
+        useWhen: [已有应用且用户明确给出了部署阶段、镜像或构建来源及运行配置时]
+        avoidWhen: [只需发布到已有部署目标，或关键运行配置尚未确定时]
+        prerequisites: [已有 projectId, 已有 applicationId, 已确认部署阶段和运行配置]
+        parameterSummary: [body 是完整部署目标配置；复杂配置应优先由后续 Agent façade 承担]
+        successEvidence: [201 响应返回已持久化部署目标]
+        commonErrorCodes: [deployment.stage_invalid]
+        predecessors: [getApplication, listRuntimeClusters]
+        followups: [listDeploymentTargets, createRelease]
+        verification: { mode: response, successCodes: [201] }
       parameters:
         - $ref: "#/components/parameters/ProjectId"
         - $ref: "#/components/parameters/ApplicationId"
@@ -2864,6 +3132,25 @@ paths:
       operationId: updateDeploymentTarget
       tags: [Deployments]
       summary: Update a deployment target
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [deployment-target]
+        action: update
+        sideEffect: platform-write
+        idempotent: true
+        replaySafe: true
+        risk: medium
+        approval: never
+        intents: [更新部署配置, 为已有部署目标补充运行集群, 修改副本和端口]
+        useWhen: [已有部署目标需要修正集群、镜像来源、资源、端口或副本配置时]
+        avoidWhen: [只是查看实时状态，或尚未回读现有完整部署配置时]
+        prerequisites: [已用 listDeploymentTargets 回读目标的完整配置, 已用 listRuntimeClusters 取得并确认真实 clusterId]
+        parameterSummary: [projectId、applicationId 和 targetId 定位目标；body 提交完整配置且 clusterId 必须来自可信集群结果]
+        successEvidence: [200 响应返回更新后的部署目标，后续 listDeploymentTargets 可回读相同 clusterId]
+        commonErrorCodes: [deployment.stage_invalid, runtime.cluster_not_found]
+        predecessors: [listDeploymentTargets, listRuntimeClusters]
+        followups: [listDeploymentTargets, createRelease]
+        verification: { mode: response, successCodes: [200] }
       parameters:
         - $ref: "#/components/parameters/ProjectId"
         - $ref: "#/components/parameters/ApplicationId"
@@ -2920,6 +3207,26 @@ paths:
       x-luna-cli:
         risk: high
         mfaPurpose: secret_update
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [deployment-target, runtime-secret]
+        action: update
+        sideEffect: platform-write
+        idempotent: true
+        replaySafe: true
+        risk: high
+        approval: always
+        mfaPurpose: secret_update
+        intents: [更新部署运行密钥, 生成或清除运行密钥]
+        useWhen: [用户通过安全表单明确提交部署目标密钥变更时]
+        avoidWhen: [模型正文包含密钥值，或用户只想查看密钥摘要时]
+        prerequisites: [已有项目、应用和部署目标, 已完成用户批准和 Step-up MFA, 敏感值来自 direct 输入]
+        parameterSummary: [body.items 逐项声明 set、generate 或 clear；模型模式不得携带敏感 value]
+        successEvidence: [响应返回不含明文值的最新密钥摘要]
+        commonErrorCodes: [ai.sensitive_input_requires_user_form, mfa_required]
+        predecessors: [listDeploymentTargets]
+        followups: []
+        verification: { mode: response, successCodes: [200] }
       parameters:
         - $ref: "#/components/parameters/ProjectId"
         - $ref: "#/components/parameters/ApplicationId"
@@ -3920,6 +4227,25 @@ paths:
       tags:
         - Runtime
       summary: Test Runtime Cluster
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [runtime-cluster]
+        action: verify
+        sideEffect: external-read
+        idempotent: true
+        replaySafe: true
+        risk: low
+        approval: never
+        intents: [测试运行集群连接, 检查 kubeconfig 是否可用]
+        useWhen: [集群不可用或在部署前需要主动验证连接时]
+        avoidWhen: [只需列出集群，或需要查看具体 Kubernetes 资源时]
+        prerequisites: [已有 clusterId]
+        parameterSummary: [clusterId 指向需要进行只读连通性测试的运行集群]
+        successEvidence: [200 响应返回本次实时集群观察]
+        commonErrorCodes: [runtime_cluster.not_configured, runtime_cluster.unavailable]
+        predecessors: [listRuntimeClusters]
+        followups: [listRuntimeClusterResources]
+        verification: { mode: response, successCodes: [200] }
       parameters:
         - name: clusterId
           in: path
@@ -3945,17 +4271,37 @@ paths:
       tags:
         - Runtime
       summary: List Runtime Cluster Resources
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [kubernetes-resource]
+        action: discover
+        sideEffect: external-read
+        idempotent: true
+        replaySafe: true
+        risk: low
+        approval: never
+        intents: [列出集群资源, 查看工作负载服务配置或存储, 诊断 Kubernetes 运行状态]
+        useWhen: [需要按资源分类获得平台管理的 Kubernetes 资源列表时]
+        avoidWhen: [需要读取单个对象 YAML、事件或执行删除时]
+        prerequisites: [已有 clusterId, 已选择 resourceCategory]
+        parameterSummary: [resourceCategory 只接受 namespaces、workloads、services、configs、storage]
+        successEvidence: [响应返回第一屏有界且实时的资源列表]
+        commonErrorCodes: [cluster.resource_category_invalid, pagination.cursor_required]
+        predecessors: [listRuntimeClusters]
+        followups: [getRuntimeClusterResourceYAML, listRuntimeClusterResourceEvents]
+        verification: { mode: response, successCodes: [200] }
       parameters:
         - name: clusterId
           in: path
           required: true
           schema:
             type: string
-        - name: kind
+        - name: resourceCategory
           in: query
-          required: false
+          required: true
           schema:
             type: string
+            enum: [namespaces, workloads, services, configs, storage]
         - name: namespace
           in: query
           required: false
@@ -4002,17 +4348,37 @@ paths:
       tags:
         - Runtime
       summary: Delete Runtime Cluster Resource
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [kubernetes-resource]
+        action: delete
+        sideEffect: destructive
+        idempotent: true
+        replaySafe: false
+        risk: critical
+        approval: always
+        intents: [删除平台管理的 Kubernetes 资源]
+        useWhen: [用户明确要求删除单个已确认身份的集群资源时]
+        avoidWhen: [只需诊断、查看 YAML 或资源并非 Luna DevOps 管理时]
+        prerequisites: [已有 clusterId、resourceKind、namespace 和 name, 已完成删除批准]
+        parameterSummary: [resourceKind 是严格 Kubernetes 对象种类，不是资源分类]
+        successEvidence: [204 响应表明平台完成 Kubernetes 删除请求]
+        commonErrorCodes: [cluster.resource_kind_invalid, cluster.resource_name_required]
+        predecessors: [listRuntimeClusterResources, getRuntimeClusterResourceYAML]
+        followups: []
+        verification: { mode: response, successCodes: [204] }
       parameters:
         - name: clusterId
           in: path
           required: true
           schema:
             type: string
-        - name: kind
+        - name: resourceKind
           in: query
           required: true
           schema:
             type: string
+            enum: [Namespace, Deployment, StatefulSet, Pod, HorizontalPodAutoscaler, Service, HTTPRoute, Gateway, ConfigMap, Secret, PersistentVolumeClaim]
         - name: namespace
           in: query
           required: true
@@ -4038,17 +4404,37 @@ paths:
       tags:
         - Runtime
       summary: Get Runtime Cluster Resource YAML
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [kubernetes-resource, kubernetes-yaml]
+        action: read
+        sideEffect: external-read
+        idempotent: true
+        replaySafe: true
+        risk: low
+        approval: never
+        intents: [查看 Kubernetes 资源 YAML, 检查单个资源配置]
+        useWhen: [已经从资源列表获得对象身份并需要配置详情时]
+        avoidWhen: [还没有确定单个资源，或需要查看事件而非配置时]
+        prerequisites: [已有 clusterId、resourceKind、namespace 和 name]
+        parameterSummary: [resourceKind 是严格 Kubernetes 对象种类；Secret 数据始终脱敏]
+        successEvidence: [响应返回平台管理对象的脱敏 YAML]
+        commonErrorCodes: [cluster.resource_kind_invalid, cluster.resource_name_required]
+        predecessors: [listRuntimeClusterResources]
+        followups: [listRuntimeClusterResourceEvents]
+        verification: { mode: response, successCodes: [200] }
       parameters:
         - name: clusterId
           in: path
           required: true
           schema:
             type: string
-        - name: kind
+        - name: resourceKind
           in: query
           required: true
           schema:
             type: string
+            enum: [Namespace, Deployment, StatefulSet, Pod, HorizontalPodAutoscaler, Service, HTTPRoute, Gateway, ConfigMap, Secret, PersistentVolumeClaim]
         - name: namespace
           in: query
           required: true
@@ -4078,17 +4464,37 @@ paths:
       tags:
         - Runtime
       summary: List Runtime Cluster Resource Events
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [kubernetes-resource, kubernetes-event]
+        action: read
+        sideEffect: external-read
+        idempotent: true
+        replaySafe: true
+        risk: low
+        approval: never
+        intents: [查看 Kubernetes 事件, 诊断拉取失败调度失败或探针异常]
+        useWhen: [已确定单个资源且需要事件证据解释异常状态时]
+        avoidWhen: [需要容器 stdout/stderr 日志或构建日志时]
+        prerequisites: [已有 clusterId、resourceKind、namespace 和 name]
+        parameterSummary: [resourceKind 是严格 Kubernetes 对象种类；结果只覆盖指定对象事件]
+        successEvidence: [响应返回按 lastSeen 排序的第一屏事件]
+        commonErrorCodes: [cluster.resource_kind_invalid, pagination.cursor_required]
+        predecessors: [listRuntimeClusterResources]
+        followups: [getRuntimeClusterResourceYAML]
+        verification: { mode: response, successCodes: [200] }
       parameters:
         - name: clusterId
           in: path
           required: true
           schema:
             type: string
-        - name: kind
+        - name: resourceKind
           in: query
           required: true
           schema:
             type: string
+            enum: [Namespace, Deployment, StatefulSet, Pod, HorizontalPodAutoscaler, Service, HTTPRoute, Gateway, ConfigMap, Secret, PersistentVolumeClaim]
         - name: namespace
           in: query
           required: true
@@ -4282,6 +4688,25 @@ paths:
       tags:
         - Notifications
       summary: List Notification Channels
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [notification-channel]
+        action: discover
+        sideEffect: none
+        idempotent: true
+        replaySafe: true
+        risk: low
+        approval: never
+        intents: [查看通知渠道, 查找需要测试的渠道]
+        useWhen: [缺少 channelId 或需要查看通知渠道状态时]
+        avoidWhen: [已有 channelId 且用户明确要求发送测试通知时]
+        prerequisites: []
+        parameterSummary: [支持按项目和渠道类型筛选；不会回显凭据]
+        successEvidence: [响应返回分页通知渠道列表]
+        commonErrorCodes: []
+        predecessors: []
+        followups: [testNotificationChannel]
+        verification: { mode: response, successCodes: [200] }
       parameters:
         - name: search
           in: query
@@ -4394,6 +4819,25 @@ paths:
       tags:
         - Notifications
       summary: Test Notification Channel
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [notification-channel, notification-delivery]
+        action: execute
+        sideEffect: external-write
+        idempotent: false
+        replaySafe: false
+        risk: medium
+        approval: never
+        intents: [发送测试通知, 验证通知渠道是否可达]
+        useWhen: [用户明确要求向已选择渠道发送一次测试消息时]
+        avoidWhen: [只想检查配置，或不能接受外部收件人收到测试消息时]
+        prerequisites: [已有 channelId, 用户已知晓会真实发送外部测试消息]
+        parameterSummary: [channelId 指向已保存渠道；调用会产生一次真实外部投递]
+        successEvidence: [200 响应返回本次测试投递结果]
+        commonErrorCodes: [notification.test_failed]
+        predecessors: [listNotificationChannels]
+        followups: []
+        verification: { mode: response, successCodes: [200] }
       parameters:
         - name: channelId
           in: path
@@ -4648,6 +5092,25 @@ paths:
       tags:
         - Notifications
       summary: List Notification Deliveries
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [notification-delivery]
+        action: read
+        sideEffect: none
+        idempotent: true
+        replaySafe: true
+        risk: low
+        approval: never
+        intents: [查看通知投递记录, 诊断通知失败]
+        useWhen: [需要按状态、事件类型或渠道检查投递结果时]
+        avoidWhen: [需要发送测试通知或修改通知渠道时]
+        prerequisites: []
+        parameterSummary: [支持按状态、事件类型、渠道和项目过滤并分页]
+        successEvidence: [响应返回分页通知投递记录]
+        commonErrorCodes: []
+        predecessors: []
+        followups: []
+        verification: { mode: response, successCodes: [200] }
       parameters:
         - name: status
           in: query
@@ -4993,6 +5456,25 @@ paths:
       tags:
         - Events
       summary: List Platform Events
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [platform-event]
+        action: read
+        sideEffect: none
+        idempotent: true
+        replaySafe: true
+        risk: low
+        approval: never
+        intents: [查看平台事件, 查找资源状态变化和失败事件]
+        useWhen: [需要按时间范围、资源或事件类型追踪平台历史时]
+        avoidWhen: [需要 Kubernetes 单对象事件、容器日志或 Trace 时]
+        prerequisites: []
+        parameterSummary: [支持按作用域、资源类型、事件类型、项目和搜索词过滤]
+        successEvidence: [响应返回分页平台事件记录]
+        commonErrorCodes: []
+        predecessors: []
+        followups: []
+        verification: { mode: response, successCodes: [200] }
       parameters:
         - name: scope
           in: query
@@ -5162,6 +5644,25 @@ paths:
       tags:
         - AppTemplates
       summary: List App Templates
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [app-template]
+        action: discover
+        sideEffect: none
+        idempotent: true
+        replaySafe: true
+        risk: low
+        approval: never
+        intents: [查找应用模板, 浏览应用市场, 选择安装模板]
+        useWhen: [用户希望安装常见服务但尚未确定 templateId 时]
+        avoidWhen: [用户已经有镜像或代码仓库并希望手工创建应用时]
+        prerequisites: []
+        parameterSummary: [结果为可安装模板目录；详细模板可用 getAppTemplate 手写工具读取]
+        successEvidence: [响应返回可见应用模板列表]
+        commonErrorCodes: []
+        predecessors: []
+        followups: [installAppTemplate]
+        verification: { mode: response, successCodes: [200] }
       responses:
         "200":
           description: Successful business response.
@@ -5332,6 +5833,26 @@ paths:
       x-luna-cli:
         risk: high
         mfaPurpose: secret_update
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [runtime-config-set, runtime-secret]
+        action: update
+        sideEffect: platform-write
+        idempotent: true
+        replaySafe: true
+        risk: high
+        approval: always
+        mfaPurpose: secret_update
+        intents: [更新项目运行配置集密钥, 生成或清除共享运行密钥]
+        useWhen: [用户通过安全表单明确提交运行配置集密钥变更时]
+        avoidWhen: [模型正文包含密钥值，或目标是部署目标而非运行配置集时]
+        prerequisites: [已有 projectId 和 setId, 已完成用户批准和 Step-up MFA, 敏感值来自 direct 输入]
+        parameterSummary: [body.items 逐项声明 set、generate 或 clear；模型模式不得携带敏感 value]
+        successEvidence: [响应返回不含明文值的最新密钥摘要]
+        commonErrorCodes: [ai.sensitive_input_requires_user_form, mfa_required]
+        predecessors: [getProject]
+        followups: []
+        verification: { mode: response, successCodes: [200] }
       parameters:
         - name: projectId
           in: path
@@ -5528,6 +6049,25 @@ paths:
       tags:
         - Topology
       summary: List Service Bindings
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [service-binding, topology]
+        action: discover
+        sideEffect: none
+        idempotent: true
+        replaySafe: true
+        risk: low
+        approval: never
+        intents: [查看服务绑定, 查找应用依赖关系]
+        useWhen: [诊断服务间连接且需要获得 bindingId 时]
+        avoidWhen: [已有 bindingId 且只需执行连通性检查时]
+        prerequisites: [已有 projectId]
+        parameterSummary: [可按应用和适配器类型过滤]
+        successEvidence: [响应返回项目空间内服务绑定列表]
+        commonErrorCodes: []
+        predecessors: [getProject]
+        followups: [checkServiceBinding]
+        verification: { mode: response, successCodes: [200] }
       parameters:
         - name: projectId
           in: path
@@ -5644,6 +6184,25 @@ paths:
       tags:
         - Topology
       summary: Check Service Binding
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [service-binding, topology]
+        action: verify
+        sideEffect: external-read
+        idempotent: true
+        replaySafe: true
+        risk: low
+        approval: never
+        intents: [检查服务绑定, 验证服务依赖连通性]
+        useWhen: [已有 bindingId 且需要本次实时连通性结果时]
+        avoidWhen: [需要创建、修改绑定或检查容器日志时]
+        prerequisites: [已有 projectId 和 bindingId]
+        parameterSummary: [只检查指定服务绑定，不修改拓扑配置]
+        successEvidence: [200 响应返回本次绑定检查结果]
+        commonErrorCodes: []
+        predecessors: [listServiceBindings]
+        followups: []
+        verification: { mode: response, successCodes: [200] }
       parameters:
         - name: projectId
           in: path
@@ -5790,6 +6349,25 @@ paths:
       tags:
         - Projects
       summary: List Project Hook Runs
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [project-hook-run]
+        action: discover
+        sideEffect: none
+        idempotent: true
+        replaySafe: true
+        risk: low
+        approval: never
+        intents: [查看 Hook 执行历史, 查找失败的部署前后钩子]
+        useWhen: [需要按项目、阶段、构建或发布定位 Hook 运行时]
+        avoidWhen: [已有 runId 且只需单次 Hook 日志时]
+        prerequisites: [已有 projectId]
+        parameterSummary: [可按 phase、buildRunId、releaseId 和 applicationId 过滤并分页]
+        successEvidence: [响应返回分页 Hook 运行列表]
+        commonErrorCodes: []
+        predecessors: [getProject]
+        followups: [getProjectHookRunLog]
+        verification: { mode: response, successCodes: [200] }
       parameters:
         - name: projectId
           in: path
@@ -5836,6 +6414,25 @@ paths:
       tags:
         - Projects
       summary: Get Project Hook Run Log
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [project-hook-run, hook-log]
+        action: read
+        sideEffect: none
+        idempotent: true
+        replaySafe: true
+        risk: low
+        approval: never
+        intents: [查看 Hook 日志, 诊断部署前后脚本失败]
+        useWhen: [已有 Hook runId 且需要该次脚本输出时]
+        avoidWhen: [需要构建 Job、发布编排或容器运行日志时]
+        prerequisites: [已有 projectId 和 Hook runId]
+        parameterSummary: [结果只覆盖指定项目 Hook 运行]
+        successEvidence: [响应返回指定 Hook 运行日志]
+        commonErrorCodes: []
+        predecessors: [listProjectHookRuns]
+        followups: []
+        verification: { mode: response, successCodes: [200] }
       parameters:
         - name: projectId
           in: path
@@ -5866,6 +6463,25 @@ paths:
       tags:
         - Projects
       summary: Install App Template
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [app-template, application, deployment-target]
+        action: create
+        sideEffect: platform-write
+        idempotent: false
+        replaySafe: false
+        risk: medium
+        approval: never
+        intents: [安装应用模板, 从应用市场创建应用]
+        useWhen: [用户明确选定模板并确认应用标识、模板参数和数据卷选择时]
+        avoidWhen: [还没有读取模板详情，或必填模板参数与持久化选择不完整时]
+        prerequisites: [已有 projectId 和 templateId, 已通过 getAppTemplate 获得字段约束, 已确认安装参数]
+        parameterSummary: [body 仅传模板安装业务参数，不上传任意 Kubernetes YAML]
+        successEvidence: [201 响应返回安装记录及创建资源标识]
+        commonErrorCodes: []
+        predecessors: [listAppTemplates]
+        followups: [listApplications, listReleases]
+        verification: { mode: response, successCodes: [201] }
       parameters:
         - name: projectId
           in: path
@@ -6012,6 +6628,25 @@ paths:
       tags:
         - Builds
       summary: List Build Runs
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [build-run]
+        action: discover
+        sideEffect: none
+        idempotent: true
+        replaySafe: true
+        risk: low
+        approval: never
+        intents: [查看构建历史, 查找失败构建, 选择构建产物]
+        useWhen: [已有 projectId 并需要从构建历史选择 runId 时]
+        avoidWhen: [已有唯一 runId 且只需读取状态时]
+        prerequisites: [已有 projectId]
+        parameterSummary: [可按应用、部署目标和状态过滤并分页]
+        successEvidence: [响应返回分页构建运行列表]
+        commonErrorCodes: []
+        predecessors: [getProject]
+        followups: [getBuildRun]
+        verification: { mode: response, successCodes: [200] }
       parameters:
         - name: projectId
           in: path
@@ -6073,6 +6708,35 @@ paths:
       tags:
         - Builds
       summary: Trigger Build Run
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [build-run, container-image]
+        action: execute
+        sideEffect: external-write
+        idempotent: false
+        replaySafe: false
+        risk: medium
+        approval: never
+        intents: [触发构建, 从代码生成镜像, 重新构建应用]
+        useWhen: [用户明确要求构建且代码源、部署目标和构建参数已确定时]
+        avoidWhen: [只是查看历史构建或缺少仓库、分支、部署目标时]
+        prerequisites: [已有 projectId、applicationId 和 deploymentTargetId, 已确认构建输入]
+        parameterSummary: [body 描述构建来源、目标部署配置和可选变量]
+        successEvidence: [getBuildRun 回读到终态 succeeded]
+        commonErrorCodes: []
+        predecessors: [listDeploymentTargets]
+        followups: [getBuildRun]
+        verification:
+          mode: async-readback
+          operationId: getBuildRun
+          idSource: /id
+          argumentBindings: { projectId: /projectId, runId: /id }
+          completion:
+            mode: state
+            path: /status
+            pendingStates: [queued, running]
+            successStates: [succeeded]
+            failureStates: [failed, canceled, lost, timeout]
       parameters:
         - name: projectId
           in: path
@@ -6091,7 +6755,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/BusinessObject"
+                $ref: "#/components/schemas/AgentBuildRunResult"
         "400":
           $ref: "#/components/responses/BadRequest"
         "403":
@@ -6114,6 +6778,25 @@ paths:
       tags:
         - Builds
       summary: Get Build Run
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [build-run]
+        action: verify
+        sideEffect: none
+        idempotent: true
+        replaySafe: true
+        risk: low
+        approval: never
+        intents: [查看构建状态, 验收构建结果, 获取镜像引用]
+        useWhen: [已有 projectId 和 runId，需要权威构建状态或异步终态时]
+        avoidWhen: [需要浏览多个构建，或需要具体构建任务日志时]
+        prerequisites: [已有 projectId 和 runId]
+        parameterSummary: [projectId 与 runId 唯一定位构建运行]
+        successEvidence: [响应返回当前构建状态、镜像和错误信息]
+        commonErrorCodes: []
+        predecessors: [listBuildRuns, triggerBuildRun]
+        followups: [getBuildJobLogs, createRelease]
+        verification: { mode: response, successCodes: [200] }
       parameters:
         - name: projectId
           in: path
@@ -6131,7 +6814,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/BusinessObject"
+                $ref: "#/components/schemas/AgentBuildRunResult"
         "400":
           $ref: "#/components/responses/BadRequest"
         "403":
@@ -6280,6 +6963,25 @@ paths:
       tags:
         - Builds
       summary: Get Build Job
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [build-job]
+        action: read
+        sideEffect: none
+        idempotent: true
+        replaySafe: true
+        risk: low
+        approval: never
+        intents: [查看构建任务详情, 确认构建任务状态]
+        useWhen: [已经从构建运行获得 jobId 并需要任务级详情时]
+        avoidWhen: [只需要构建运行总体状态或日志正文时]
+        prerequisites: [已有 projectId 和 jobId]
+        parameterSummary: [projectId 与 jobId 唯一定位构建任务]
+        successEvidence: [响应返回构建任务当前状态]
+        commonErrorCodes: []
+        predecessors: [getBuildRun]
+        followups: [getBuildJobLogs]
+        verification: { mode: response, successCodes: [200] }
       parameters:
         - name: projectId
           in: path
@@ -6310,6 +7012,25 @@ paths:
       tags:
         - Builds
       summary: Get Build Job Logs
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [build-job, build-log]
+        action: read
+        sideEffect: none
+        idempotent: true
+        replaySafe: true
+        risk: low
+        approval: never
+        intents: [查看构建日志, 诊断 Dockerfile 或依赖安装失败]
+        useWhen: [已有 jobId 且构建任务失败或卡住，需要任务 stdout/stderr 时]
+        avoidWhen: [需要容器运行日志、发布编排日志或项目 Hook 日志时]
+        prerequisites: [已有 projectId 和 jobId]
+        parameterSummary: [结果只覆盖指定构建 Job 的持久日志，不是实时流]
+        successEvidence: [响应返回指定构建任务日志快照]
+        commonErrorCodes: []
+        predecessors: [getBuildJob, getBuildRun]
+        followups: []
+        verification: { mode: response, successCodes: [200] }
       parameters:
         - name: projectId
           in: path
@@ -6368,6 +7089,25 @@ paths:
       tags:
         - Releases
       summary: List Releases
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [release]
+        action: discover
+        sideEffect: none
+        idempotent: true
+        replaySafe: true
+        risk: low
+        approval: never
+        intents: [查看发布历史, 查找失败发布, 选择回读发布]
+        useWhen: [已有 projectId 但缺少 releaseId 或需要比较发布历史时]
+        avoidWhen: [已有明确 releaseId 且只需当前状态时]
+        prerequisites: [已有 projectId]
+        parameterSummary: [可按环境、应用和部署目标过滤并分页]
+        successEvidence: [响应返回分页发布列表]
+        commonErrorCodes: []
+        predecessors: [getProject]
+        followups: [getRelease]
+        verification: { mode: response, successCodes: [200] }
       parameters:
         - name: projectId
           in: path
@@ -6413,6 +7153,35 @@ paths:
       tags:
         - Releases
       summary: Create Release
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [release, deployment-target]
+        action: execute
+        sideEffect: external-write
+        idempotent: false
+        replaySafe: false
+        risk: medium
+        approval: never
+        intents: [创建发布, 部署镜像, 发布成功构建产物]
+        useWhen: [用户明确要求把已确认镜像或成功构建部署到既有部署目标时]
+        avoidWhen: [缺少 deploymentTargetId，构建尚未成功，或只是查看发布状态时]
+        prerequisites: [已有 projectId、applicationId 和 deploymentTargetId, 已确认 buildRunId 或 imageRef]
+        parameterSummary: [body 选择部署目标以及成功构建 runId 或明确镜像引用]
+        successEvidence: [getRelease 回读到 status=succeeded]
+        commonErrorCodes: [application.delete_in_progress]
+        predecessors: [listDeploymentTargets]
+        followups: [getRelease]
+        verification:
+          mode: async-readback
+          operationId: getRelease
+          idSource: /id
+          argumentBindings: { projectId: /projectId, releaseId: /id }
+          completion:
+            mode: state
+            path: /status
+            pendingStates: [pending, running]
+            successStates: [succeeded]
+            failureStates: [failed]
       parameters:
         - name: projectId
           in: path
@@ -6431,19 +7200,83 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/BusinessObject"
+                $ref: "#/components/schemas/Release"
         "400":
           $ref: "#/components/responses/BadRequest"
         "403":
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+  /api/v1/projects/{projectId}/releases/{releaseId}:
+    get:
+      operationId: getRelease
+      tags: [Releases]
+      summary: Get Release
+      description: Returns the authoritative persisted workflow state for one release. The response is not cached.
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [release]
+        action: verify
+        sideEffect: none
+        idempotent: true
+        replaySafe: true
+        risk: low
+        approval: never
+        intents: [查看单个发布状态, 验收部署终态]
+        useWhen: [已有 projectId 和 releaseId，需要权威发布状态或异步终态时]
+        avoidWhen: [需要浏览多个发布，或需要发布日志和容器日志时]
+        prerequisites: [已有 projectId 和 releaseId]
+        parameterSummary: [projectId 与 releaseId 唯一定位发布]
+        successEvidence: [响应返回当前 status、message 和终止时间]
+        commonErrorCodes: []
+        predecessors: [listReleases, createRelease]
+        followups: [getReleaseLogs, getReleaseRuntimeLogs]
+        verification: { mode: response, successCodes: [200] }
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: releaseId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Authoritative release workflow state.
+          headers:
+            Cache-Control:
+              schema: { type: string, example: no-store }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Release" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /api/v1/projects/{projectId}/releases/{releaseId}/logs:
     get:
       operationId: getReleaseLogs
       tags:
         - Releases
       summary: Get Release Logs
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [release, deployment-log]
+        action: read
+        sideEffect: none
+        idempotent: true
+        replaySafe: true
+        risk: low
+        approval: never
+        intents: [查看发布编排日志, 诊断部署任务失败]
+        useWhen: [发布失败或卡住，需要平台部署编排日志时]
+        avoidWhen: [需要容器 stdout/stderr、构建日志或 Kubernetes 事件时]
+        prerequisites: [已有 projectId 和 releaseId]
+        parameterSummary: [结果只覆盖平台发布编排日志]
+        successEvidence: [响应返回指定发布的持久日志快照]
+        commonErrorCodes: []
+        predecessors: [getRelease]
+        followups: [getReleaseRuntimeLogs]
+        verification: { mode: response, successCodes: [200] }
       parameters:
         - name: projectId
           in: path
@@ -6474,6 +7307,25 @@ paths:
       tags:
         - Releases
       summary: Get Release Runtime Logs
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [release, container-log]
+        action: read
+        sideEffect: external-read
+        idempotent: true
+        replaySafe: true
+        risk: low
+        approval: never
+        intents: [查看容器运行日志, 诊断 CrashLoopBackOff 或应用启动失败]
+        useWhen: [发布已创建且需要工作负载容器 stdout/stderr 时]
+        avoidWhen: [需要构建日志、平台发布编排日志或项目 Hook 日志时]
+        prerequisites: [已有 projectId 和 releaseId]
+        parameterSummary: [tailLines 限制日志尾部行数，container 选择容器；结果不是完整历史]
+        successEvidence: [响应返回指定发布工作负载的有界容器日志]
+        commonErrorCodes: [runtime.observation_unavailable]
+        predecessors: [getRelease]
+        followups: [listRuntimeClusterResourceEvents]
+        verification: { mode: response, successCodes: [200] }
       parameters:
         - name: projectId
           in: path
@@ -6515,6 +7367,8 @@ paths:
       tags:
         - Releases
       summary: Exec Release Runtime Command
+      x-luna-agent:
+        allowed: false
       parameters:
         - name: projectId
           in: path
@@ -6555,6 +7409,26 @@ paths:
         classification: business-command
         risk: high
         mfaPurpose: runtime_exec
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [runtime-command-session, release]
+        action: execute
+        sideEffect: external-write
+        idempotent: false
+        replaySafe: false
+        risk: high
+        approval: always
+        mfaPurpose: runtime_exec
+        intents: [创建容器诊断命令会话, 准备连续执行只读诊断命令]
+        useWhen: [用户批准并完成 MFA，且需要在同一发布容器内连续诊断时]
+        avoidWhen: [只需容器日志，或还没有明确发布、容器和诊断目的时]
+        prerequisites: [已有 projectId 和 releaseId, 已选择容器, 已完成批准和 runtime_exec MFA]
+        parameterSummary: [body 配置非 TTY、有界生命周期的命令会话]
+        successEvidence: [201 响应返回受 Run 与用户绑定的 sessionId]
+        commonErrorCodes: [mfa_required, ai.approval_required]
+        predecessors: [getRelease, getReleaseRuntimeLogs]
+        followups: [executeReleaseRuntimeCommandSession, closeReleaseRuntimeCommandSession]
+        verification: { mode: response, successCodes: [201] }
       parameters:
         - name: projectId
           in: path
@@ -6588,6 +7462,26 @@ paths:
         classification: business-command
         risk: high
         mfaPurpose: runtime_exec
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [runtime-command-session, kubernetes-workload]
+        action: execute
+        sideEffect: external-write
+        idempotent: false
+        replaySafe: false
+        risk: high
+        approval: always
+        mfaPurpose: runtime_exec
+        intents: [在容器中执行诊断命令, 获取进程网络或文件系统诊断信息]
+        useWhen: [已有活跃 sessionId 且用户对本次具体命令重新批准并完成 MFA 时]
+        avoidWhen: [命令会修改业务数据、可以通过日志或只读 API 获得答案、或会话已关闭时]
+        prerequisites: [已有绑定当前 Run 的 sessionId, 已完成本次命令批准和 runtime_exec MFA]
+        parameterSummary: [body.command 是单条有界命令；每次执行都会重新鉴权]
+        successEvidence: [200 响应返回本次命令退出状态和有界输出]
+        commonErrorCodes: [mfa_required, ai.approval_required]
+        predecessors: [createReleaseRuntimeCommandSession]
+        followups: [closeReleaseRuntimeCommandSession]
+        verification: { mode: response, successCodes: [200] }
       parameters:
         - name: projectId
           in: path
@@ -6634,6 +7528,25 @@ paths:
       x-luna-cli:
         classification: business-command
         risk: medium
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [runtime-command-session]
+        action: execute
+        sideEffect: external-write
+        idempotent: true
+        replaySafe: true
+        risk: medium
+        approval: never
+        intents: [关闭容器诊断命令会话, 释放 exec 连接]
+        useWhen: [诊断完成、失败或取消后需要关闭已有 sessionId 时]
+        avoidWhen: [会话仍需执行后续命令或没有 sessionId 时]
+        prerequisites: [已有绑定当前 Run 的 sessionId]
+        parameterSummary: [projectId、releaseId 和 sessionId 定位会话]
+        successEvidence: [204 响应表明命令会话已关闭或已不存在]
+        commonErrorCodes: []
+        predecessors: [createReleaseRuntimeCommandSession]
+        followups: []
+        verification: { mode: response, successCodes: [204] }
       parameters:
         - name: projectId
           in: path
@@ -6732,6 +7645,25 @@ paths:
       tags:
         - Gateway
       summary: List Gateway Routes
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [gateway-route]
+        action: discover
+        sideEffect: external-read
+        idempotent: true
+        replaySafe: true
+        risk: low
+        approval: never
+        intents: [查看访问入口, 查找域名路由, 诊断网关状态]
+        useWhen: [已有 projectId 但缺少 routeId 或需要比较多个访问入口时]
+        avoidWhen: [已有明确 routeId 且只需权威实时状态时]
+        prerequisites: [已有 projectId]
+        parameterSummary: [可按 applicationId 过滤并分页]
+        successEvidence: [响应返回路由配置及实时 Gateway API 观察]
+        commonErrorCodes: [gateway.observation_unavailable]
+        predecessors: [getProject]
+        followups: [getGatewayRoute]
+        verification: { mode: response, successCodes: [200] }
       parameters:
         - name: projectId
           in: path
@@ -6767,6 +7699,35 @@ paths:
       tags:
         - Gateway
       summary: Create Gateway Route
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [gateway-route, domain]
+        action: create
+        sideEffect: external-write
+        idempotent: false
+        replaySafe: false
+        risk: medium
+        approval: never
+        intents: [创建访问入口, 为应用绑定域名, 创建 Gateway API 路由]
+        useWhen: [用户明确要求创建入口且应用、部署目标、主机名和端口均已确认时]
+        avoidWhen: [域名或后端目标尚未确认，或只是检查已有入口时]
+        prerequisites: [已有 projectId、applicationId 和 deploymentTargetId, 已确认 host、path、端口和 TLS 策略]
+        parameterSummary: [body 描述业务访问入口，平台后端负责适配 Gateway API]
+        successEvidence: [getGatewayRoute 回读到 ready 或 active]
+        commonErrorCodes: []
+        predecessors: [listDeploymentTargets]
+        followups: [getGatewayRoute]
+        verification:
+          mode: async-readback
+          operationId: getGatewayRoute
+          idSource: /id
+          argumentBindings: { projectId: /projectId, routeId: /id }
+          completion:
+            mode: state
+            path: /status
+            pendingStates: [pending, progressing]
+            successStates: [ready, active]
+            failureStates: [failed, rejected, unavailable]
       parameters:
         - name: projectId
           in: path
@@ -6785,7 +7746,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/BusinessObject"
+                $ref: "#/components/schemas/AgentGatewayRouteResult"
         "400":
           $ref: "#/components/responses/BadRequest"
         "403":
@@ -6793,6 +7754,47 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
   /api/v1/projects/{projectId}/gateway-routes/{routeId}:
+    get:
+      operationId: getGatewayRoute
+      tags: [Gateway]
+      summary: Get Gateway Route
+      description: Returns one gateway route with a no-store point-in-time Gateway API observation.
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [gateway-route]
+        action: verify
+        sideEffect: external-read
+        idempotent: true
+        replaySafe: true
+        risk: low
+        approval: never
+        intents: [查看单个访问入口, 验收网关路由状态]
+        useWhen: [已有 projectId 和 routeId，需要权威实时路由状态时]
+        avoidWhen: [需要浏览多个入口或尚未确定 routeId 时]
+        prerequisites: [已有 projectId 和 routeId]
+        parameterSummary: [projectId 与 routeId 唯一定位访问入口]
+        successEvidence: [响应返回路由配置、访问 URL 和本次实时观察]
+        commonErrorCodes: [gateway.observation_unavailable]
+        predecessors: [listGatewayRoutes, createGatewayRoute]
+        followups: []
+        verification: { mode: response, successCodes: [200] }
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: routeId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Gateway route with live observation.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AgentGatewayRouteResult" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
     put:
       operationId: updateGatewayRoute
       tags:
@@ -8817,6 +9819,16 @@ components:
         requestId:
           type: string
           description: Request identifier for support and log correlation.
+        retryable:
+          type: boolean
+          description: Whether retrying the same operation without changing arguments may succeed.
+        path:
+          type: string
+          description: Stable argument path associated with a structured validation error.
+        allowedValues:
+          type: array
+          items: { type: string }
+          description: Allowed enum values for a structured validation error.
         purpose:
           type: string
           description: Step-up purpose returned with `mfa_required`.
@@ -11533,6 +12545,33 @@ components:
         cacheConfig:
           type: object
           additionalProperties: true
+    AgentBuildRunResult:
+      type: object
+      additionalProperties: true
+      required: [id, projectId, status]
+      properties:
+        id: { type: string, minLength: 1 }
+        projectId: { type: string, minLength: 1 }
+        applicationId: { type: string }
+        deploymentTargetId: { type: string }
+        status: { type: string, enum: [queued, running, succeeded, failed, canceled, lost, timeout] }
+        imageRef: { type: string }
+        imageDigest: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    AgentGatewayRouteResult:
+      type: object
+      additionalProperties: true
+      required: [id, projectId, status]
+      properties:
+        id: { type: string, minLength: 1 }
+        projectId: { type: string, minLength: 1 }
+        applicationId: { type: string }
+        deploymentTargetId: { type: string }
+        host: { type: string }
+        status: { type: string, enum: [pending, progressing, ready, active, failed, rejected, unavailable] }
+        observationCode: { type: string }
+        accessUrl: { type: string }
     ReleaseInput:
       type: object
       required: [applicationId, deploymentTargetId]
@@ -11544,9 +12583,31 @@ components:
         imageRef: { type: string }
         forceImagePull: { type: boolean }
         type: { type: string }
-        status: { type: string }
-        revision: { type: string }
+        revision: { type: integer, format: int32, minimum: 1 }
         message: { type: string }
+    Release:
+      type: object
+      additionalProperties: false
+      required: [id, projectId, applicationId, environmentId, deploymentTargetId, imageRef, forceImagePull, type, status, revision, createdBy, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        projectId: { type: string }
+        applicationId: { type: string }
+        environmentId: { type: string }
+        deploymentTargetId: { type: string }
+        buildRunId: { type: string }
+        imageRef: { type: string }
+        forceImagePull: { type: boolean }
+        type: { type: string, enum: [deploy, rollback] }
+        status: { type: string, enum: [pending, running, succeeded, failed] }
+        revision: { type: integer, format: int32, minimum: 1 }
+        rollbackFromId: { type: string }
+        message: { type: string }
+        startedAt: { type: string, format: date-time, nullable: true }
+        finishedAt: { type: string, format: date-time, nullable: true }
+        createdBy: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
     ReleaseRuntimeExecInput:
       type: object
       required: [command]

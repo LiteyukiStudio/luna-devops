@@ -8,6 +8,7 @@ export interface RuntimeSettings {
   // 高级设置：模型与执行
   assistantMaxOutputTokens: number
   maxModelSteps: number
+  runMaxToolCalls: number
   maxInputBytes: number
   navigateActionTtlSeconds: number
   // 高级设置：工具结果与卡片
@@ -34,6 +35,7 @@ export const defaultRuntimeSettings: RuntimeSettings = {
   contextInputTokenBudget: 1024 * 1024,
   assistantMaxOutputTokens: 64 * 1024,
   maxModelSteps: 256,
+  runMaxToolCalls: 256,
   maxInputBytes: 1024 * 1024,
   navigateActionTtlSeconds: 120,
   toolResultPayloadBudget: 512 * 1024,

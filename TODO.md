@@ -12,17 +12,24 @@
 
 - [x] 完成 Agent 工具目录、描述、参数复杂度和交互卡片模型工具审计，并形成 `docs-internal/21-Agent工具语义检索与工具设计优化方案.md`。
 - [x] 合并补充工具审计：核准全量目录、显式准入缺失、通用输出、参数错误、死调用上限、虚假 verifier、运行时资源 kind、preview/test/log 与不可执行工具问题，并按依赖关系重排治理顺序。
-- [ ] 将 Agent Catalog 改为 `x-luna-agent.allowed: true` 显式准入；为准入工具建立统一语义与执行契约，覆盖资源、动作、适用/禁用场景、前置、参数/输出、风险、副作用、可重放性、成功证据、错误码和工作流关系，并生成覆盖与悬空引用报告。
-- [ ] 接入完整 JSON Schema 校验和字段级结构化错误；仅把真正缺失且需要用户决策的值转为 `waiting_input`，阻止同一非法参数原样重试。
-- [ ] 接通可配置的高位 Run 工具调用兜底上限，并增加确定性失败指纹、无新信息结果检测和合法异步轮询退避；删除或改写“单 Run 无上限”的旧测试。
-- [ ] 删除虚构 `<operationId>_accepted` verifier；为每个准入写操作建立响应 ID 提取、真实回读工具和 pending/success/failure/cancelled 终态契约。
-- [ ] 统一运行时资源工具为 `resourceCategory`/`resourceKind` 严格 enum、稳定字段级错误和读写权限；禁用旧 `execReleaseRuntimeCommand` 与 Agent 无法上传的 `createVolumeImport`。
-- [ ] 逐项声明 preview/test/check/log/Secret/认证/Provider 工具的风险、副作用、可重放、MFA 与结果边界；逐步替换准入工具中的通用 `BusinessObject/AIObject` 输出。
+- [x] 将 Agent Catalog 改为显式准入；首批 47 个 OpenAPI 平台工具使用 `x-luna-agent.allowed: true`，`webSearch`、`fetchWebPage`、`getAppTemplate` 3 个手写工具使用同构契约，未审计工具保持不可见，并以构建期校验阻止缺字段、未知字段和悬空工作流引用。
+- [x] 接入 Ajv 2020-12 完整 JSON Schema 校验和字段级结构化错误；仅把真正缺失且需要用户决策的值转为 `waiting_input`，阻止同一非法参数原样重试。
+- [x] 接通默认 256、可配置 32～2048 的高位 Run 工具调用兜底上限，并增加确定性失败指纹和无新信息结果检测，删除“单 Run 无上限”的旧测试。
+- [x] 兼容读取全部 Agent 运行参数与 Run 预算的历史非法值：数据库原值保持不变，API 和 Agent 在读取时按单项回退平台默认值，跨字段约束成对回退；新提交仍按共享范围严格校验，日志只记录稳定字段路径而不记录配置值或密钥。
+- [ ] 将工具调用计数与异步轮询状态从进程内保护扩展为可恢复状态，并为合法 `async-readback` 增加有界退避/`Retry-After`，避免多实例接管后重置计数或高频轮询。
+- [x] 删除虚构 `<operationId>_accepted` verifier，并为 `triggerBuildRun → getBuildRun`、`createRelease → getRelease`、`createGatewayRoute → getGatewayRoute` 建立响应 ID 绑定、真实回读和 pending/success/failure 终态契约。
+- [ ] 为其余准入写操作逐项建立权威回读映射；不具备可回读终态的操作继续使用精确成功响应契约，不得把“请求已接受”描述为业务完成。
+- [x] 统一运行时资源工具为 `resourceCategory`/`resourceKind` 严格 enum、稳定字段级错误和读写权限；禁用旧 `execReleaseRuntimeCommand` 与 Agent 无法上传的 `createVolumeImport`。
+- [x] 为首批准入的 preview/test/check/log 代表工具声明风险、副作用、可重放、适用/禁用场景与结果边界。
+- [ ] 继续审计剩余 Secret/认证/Provider 工具的 MFA 与回读，并逐步替换准入工具中的通用 `BusinessObject/AIObject` 输出。
 - [ ] 建立不少于 300 条的中英文工具检索评测集和 hard-negative 用例，输出当前字符串检索、BM25、向量、混合召回及语义重排的可比较基线。
-- [ ] 实现工具多向量索引、BM25、RRF、工作流邻居、run sticky tools、语义重排及安全降级；索引按 Catalog digest 持久化并原子切换，查询向量不落库。
-- [ ] 先以全量目录运行影子检索；达到 Recall@8、安全和端到端门禁后，按读取、写入、高风险业务域灰度启用 Top 8 动态工具加载，并确保 `search_tools` 真实扩张后续工具集合。
+- [x] 实现 Unicode/BM25、多向量内存索引、RRF、工作流邻居、run sticky tools、可插拔语义重排和安全降级；自动检索与 `search_tools` 复用同一管线且后者真实扩张后续集合。
+- [ ] 接入实际 Embedding/Rerank Provider，并按 Catalog digest 持久化工具向量、原子切换索引；查询向量不落库，Provider 失败继续使用当前 BM25 + 工作流降级路径。
+- [x] 增加 `shadow`/`dynamic` 检索模式，默认影子计算 Top 8；动态模式限制 Top 8、平台工具总量 12，并保留 sticky/predecessor/verifier。
+- [ ] 建立不少于 300 条评测集并通过 Recall@8、安全与端到端门禁后，再将生产默认从 `shadow` 灰度切换到 `dynamic`。
 - [ ] 为参数超限工具提供任务型 Agent façade 或正式评审例外，优先治理部署目标、运行集群、网关路由和构建触发工具。
-- [ ] 按业务意图拆分交互卡片模型工具，复用现有 Card Contract；实现 schema 驱动表单、权威进度和结果自动投影，最终移除模型可见的大型通用卡片联合 Schema。
+- [x] 按业务意图拆分 7 个交互卡片模型工具并复用现有 Card Contract；模型可见 Schema 最大缩小约 82.9%，大型通用卡片联合 Schema 仅保留为内部编译与历史恢复协议。
+- [ ] 将权威异步进度与终态结果从“窄工具受控呈现”继续收敛为工具契约驱动的自动投影，并补充线上首次通过率/修复率门禁。
 
 ## 2026-08-20 网关流量探针普通应用安装与 AI 预算修复
 
@@ -1437,6 +1444,15 @@ CLI 已迁移到独立仓库 [`LiteyukiStudio/luna-cli`](https://github.com/Lite
 
 ## 17. 内嵌 AI 助手
 
+- [x] 建立 Agent 工具搜索专项测试方案：按当前 Catalog 的 48 个 OpenAPI 工具和 3 个手写工具形成 51/51 全目录覆盖矩阵，定义 204 条多语言正例、51 条 hard negative、24 条无能力/安全负例和 21 条工作流状态例，共 300 条离线评测；另定义 15 组真实串行对话验证命中到实际使用，并以词法基线门禁决定是否进入向量/重排影子 A/B。
+- [x] 执行工具搜索零成本中文探针：使用真实 Contract 和生产 BM25 + workflow 降级路径验证 51/51 工具进入 Top 8，Recall@8=100%、MRR=0.7925，Rank 1/2/3/4 分布为 33/10/5/3；确认 `getDashboard`、`listProjects`、`listAppTemplates`、`listRuntimeClusters`、`listGatewayRoutes`、`triggerBuildRun` 和 `updateDeploymentTarget` 等仍存在动作或工作流排序偏差，不能以 Top 8 全命中代替专项门禁。
+- [ ] 执行工具搜索专项基线：固定模型与 Catalog digest，跑完 300 条离线评测和 15 组串行对话，输出分语言 Recall@8、MRR、NDCG@8、forbidden Top 8、最终工具使用率、延迟与成本报告；未达到门禁前不得把 `TOOL_RETRIEVAL_MODE=dynamic` 设为生产默认值。
+- [x] 2026-08-20 使用浏览器按串行方式完成首批真实对话验收：覆盖 `RET-01`、`RET-03`、`RET-06`、`LOAD-01` 和适配真实测试项目空间的 `FLOW-01`，共 14 个对话轮、48 次可观测工具调用；读取工具消歧、`resourceCategory=workloads`、不可执行旧工具、破坏性运行命令拒绝和工具调用参数/返回详情通过。`agt-demo` 测试夹具缺失，实际使用「测试项目空间」继续验收；未执行并行 LLM Run，也未继续 60/300 轮压缩压测，避免在阻断缺陷未修复时放大 API 消耗。
+- [x] 修复真实写入链路的权威回读信封语义：Orchestrator 仅解包真实委托信封后再应用 `idSource`、`argumentBindings` 和完成态路径；契约测试覆盖 pending、成功和失败终态。真实复测中 `createRelease` 创建 `rel_b2851dab491d676147cf8ad2`，随后 `getRelease` 权威回读成功，不再出现 `ai.tool_verification_id_missing`。
+- [x] 收紧部署交付前置条件：`updateDeploymentTarget` 已显式准入，交付前必须读取并绑定真实 `clusterId`。真实复测复用既有目标 `dplt_5de4f1eab49d9f8222e198a8`，绑定就绪集群 `clu_7652dfce0ea0576372483a53`，未新建重复应用或部署目标。
+- [x] 修复 `search_tools` 对话闭环：目录检索在当前 Run 内真实执行并把 Top K 扩张到下一模型步，内部工具参数、结果、耗时和 Trace 均进入 Agent 观测；即使模型在工具调用前输出“现在检索”等过渡文本，也必须进入下一模型步生成检索结论。`RET-06`、`TRACE-01` 和修复后的 `TRACE-02` 串行复测均产生一次可见 `search_tools` 调用，`TRACE-02` 已输出确定正文结论，未再用快捷选项替代检索或提前结束。
+- [x] 将无新信息保护扩展到连续对话轮：会话级有界指纹复用近期成功空结果，默认窗口为 5 分钟；只有用户明确要求刷新实时状态时才绕过。`LOAD-01` 相同 `listProjectHookRuns` 参数在窗口内返回 `ai.tool_no_new_information`、`retryable=false`，工具观测中的真实 API 调用总数保持为 2。
+- [x] 修复 Agent 观测周期聚合：1h 概览已从持久化 Run 台账聚合输入/输出 Token，P95 统一使用秒；真实页面显示输入 1,460,124、输出 26,498、P95 45.5 秒。内部 `search_tools` 可查看脱敏参数/结果，临时启用本地 OTLP 后同一 Trace 成功回读 API、模型、检索和工具 Span。
 - [x] 将模型偏好持久化到会话并隔离不同会话的切换状态；新会话记录初始模型，后续仅在用户主动切换当前会话时更新，同时把模型选择器移到输入框底部。
 - [x] 将 Agent 权限边界重构为当前登录用户的实时权限：页面与会话上下文只作模型指引，项目目标由哈希绑定的工具参数确定，执行期按 Session、目标项目和统一 RBAC Action 重新校验；平台工具拒绝项目参数，并恢复 viewer 的真实只读能力。
 - [x] 将内置中文交互与导航 Skills 拆成精简入口和按领域加载的 references，覆盖项目、应用、源码、构建、镜像、发布、运行时、网关、诊断、安全、管理与账单等主要工作流。

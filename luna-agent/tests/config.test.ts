@@ -11,6 +11,11 @@ describe("configuration", () => {
     expect(config.PROVIDER_API_KEY).toBeUndefined()
     expect(config.PROVIDER_MODEL).toBeUndefined()
     expect(config.AI_OBSERVABILITY_CAPTURE_CONTENT).toBe(false)
+    expect(config.TOOL_RETRIEVAL_MODE).toBe("shadow")
+  })
+  it("only accepts explicit tool retrieval rollout modes", () => {
+    expect(loadConfig({ NODE_ENV: "test", TOOL_RETRIEVAL_MODE: "dynamic" }).TOOL_RETRIEVAL_MODE).toBe("dynamic")
+    expect(() => loadConfig({ NODE_ENV: "test", TOOL_RETRIEVAL_MODE: "all" })).toThrow()
   })
   it("enables sensitive AI content observability only when explicitly requested", () => {
     expect(loadConfig({ NODE_ENV: "test", AI_OBSERVABILITY_CAPTURE_CONTENT: "true" }).AI_OBSERVABILITY_CAPTURE_CONTENT).toBe(true)

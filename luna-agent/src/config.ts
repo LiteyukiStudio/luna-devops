@@ -17,6 +17,7 @@ const schema = z.object({
   PROVIDER_MODEL: optionalValue(z.string().min(1)),
   LUNA_API_BASE_URL: optionalValue(z.string().url()),
   TOOL_CATALOG_JSON: optionalValue(z.string()),
+  TOOL_RETRIEVAL_MODE: z.enum(["shadow", "dynamic"]).default("shadow"),
   OTEL_EXPORTER_OTLP_ENDPOINT: optionalValue(z.string().url()),
   OTEL_RESOURCE_ATTRIBUTES: optionalValue(z.string()),
   OTEL_EXPORTER_OTLP_HEADERS: optionalValue(z.string()),

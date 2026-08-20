@@ -70,6 +70,14 @@ const errors = {
   kubernetes: {
     resource_ownership_conflict: 'Kubernetes 同名资源属于其他资源生命周期，平台不会自动接管，请先处理残留资源。',
   },
+  cluster: {
+    resource_category_invalid: '请选择有效的运行时资源分类。',
+    resource_kind_invalid: '请选择有效的 Kubernetes 资源类型。',
+    resource_name_required: '请输入资源名称。',
+  },
+  runtime_cluster: {
+    forbidden: '没有查看该运行集群资源的权限。',
+  },
   billing: {
     insufficient_balance: '计费归属人余额不足，当前操作已被计费风控拦截。请充值或联系平台管理员处理。',
     wallet_unavailable: '个人钱包暂时不可用，本次 AI 请求未创建，请稍后重试。',

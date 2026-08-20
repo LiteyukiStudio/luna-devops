@@ -192,8 +192,8 @@ func (h *Handlers) attachAIModelSnapshot(ctx *gin.Context, body []byte) ([]byte,
 	}
 	values := h.configs.get([]string{"ai.run.max_total_tokens", "ai.run.max_credits"})
 	input["runBudgetSnapshot"] = gin.H{
-		"totalTokens":  aiRuntimeInteger(values, "ai.run.max_total_tokens", 2_000_000),
-		"totalCredits": aiRuntimeString(values, "ai.run.max_credits", "10000"),
+		"totalTokens":  aiBoundedIntegerConfig(values, "ai.run.max_total_tokens"),
+		"totalCredits": aiBoundedCreditConfig(values, "ai.run.max_credits"),
 	}
 	prepared, err := json.Marshal(input)
 	if err != nil {
@@ -360,11 +360,7 @@ func (h *Handlers) aiMaxInputBytes() int {
 }
 
 func configuredAIMaxInputBytes(values map[string]string) int {
-	maxInputBytes := aiRuntimeKTokens(values, aiMaxInputBytesConfigKey, aiDefaultMaxInputKBytes)
-	if maxInputBytes < 8*1024 || maxInputBytes > 8*1024*1024 {
-		return aiDefaultMaxInputKBytes * 1024
-	}
-	return maxInputBytes
+	return aiBoundedIntegerConfig(values, aiMaxInputBytesConfigKey) * 1024
 }
 
 func (h *Handlers) copyAIResponse(ctx *gin.Context, response *aiagent.Response, fallbackStatus int, errorCode string) {

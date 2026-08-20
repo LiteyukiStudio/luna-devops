@@ -70,6 +70,14 @@ const errors = {
   kubernetes: {
     resource_ownership_conflict: 'A same-name Kubernetes resource belongs to another lifecycle. The platform will not adopt it automatically. Handle the retained resource first.',
   },
+  cluster: {
+    resource_category_invalid: 'Select a valid runtime resource category.',
+    resource_kind_invalid: 'Select a valid Kubernetes resource kind.',
+    resource_name_required: 'Enter the resource name.',
+  },
+  runtime_cluster: {
+    forbidden: 'You do not have permission to view resources in this runtime cluster.',
+  },
   billing: {
     insufficient_balance: 'The billing owner balance is insufficient. Billing controls blocked this operation. Recharge or contact a platform administrator.',
     wallet_unavailable: 'Your personal wallet is temporarily unavailable. The AI request was not created. Try again later.',

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { serializeToolResultPayload } from "../src/executor.js"
+import { platformToolVerificationGuidance, serializeToolResultPayload } from "../src/executor/tool-results.js"
 
 describe("tool result payload bounding", () => {
   const testPayloadBudget = 24 * 1024
@@ -27,5 +27,17 @@ describe("tool result payload bounding", () => {
     const serialized = serializeToolResultPayload(result, testPayloadBudget)
     expect(() => { JSON.parse(serialized) }).not.toThrow()
     expect(Buffer.byteLength(serialized, "utf8")).toBeLessThanOrEqual(26_000)
+  })
+
+  it("does not treat an accepted async write as completion evidence", () => {
+    expect(platformToolVerificationGuidance({
+      id: "release-1",
+      lunaVerification: { status: "pending", operationId: "getRelease", state: "running" },
+    })).toMatchObject({
+      workflowState: "awaiting_async_terminal_state",
+      completionEvidence: false,
+      requiredReadbackOperationId: "getRelease",
+    })
+    expect(platformToolVerificationGuidance({ lunaVerification: { status: "succeeded" } })).toBeUndefined()
   })
 })

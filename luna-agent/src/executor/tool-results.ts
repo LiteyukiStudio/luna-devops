@@ -32,6 +32,20 @@ export function platformToolFailureGuidance(operationId: string, errorCode?: str
   }
 }
 
+export function platformToolVerificationGuidance(result: unknown): Record<string, unknown> | undefined {
+  if (!result || typeof result !== "object" || Array.isArray(result)) return undefined
+  const verification = (result as Record<string, unknown>).lunaVerification
+  if (!verification || typeof verification !== "object" || Array.isArray(verification)) return undefined
+  const evidence = verification as Record<string, unknown>
+  if (evidence.status !== "pending") return undefined
+  return {
+    workflowState: "awaiting_async_terminal_state",
+    completionEvidence: false,
+    ...(typeof evidence.operationId === "string" ? { requiredReadbackOperationId: evidence.operationId } : {}),
+    guidance: "写请求已被平台接受，但权威回读仍处于 pending/running；当前业务目标尚未完成。只使用契约指定的回读工具继续检查终态，不得提前生成成功回执。",
+  }
+}
+
 export function serializeToolResultPayload(result: unknown, budget = toolResultPayloadBudget): string {
   const full = JSON.stringify(result)
   if (Buffer.byteLength(full, "utf8") <= budget) return full

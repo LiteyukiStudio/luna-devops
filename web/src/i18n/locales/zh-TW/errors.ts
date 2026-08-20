@@ -70,6 +70,14 @@ const errors = {
   kubernetes: {
     resource_ownership_conflict: 'Kubernetes 同名資源屬於其他資源生命週期，平臺不會自動接管，請先處理殘留資源。',
   },
+  cluster: {
+    resource_category_invalid: '請選擇有效的執行階段資源分類。',
+    resource_kind_invalid: '請選擇有效的 Kubernetes 資源類型。',
+    resource_name_required: '請輸入資源名稱。',
+  },
+  runtime_cluster: {
+    forbidden: '沒有檢視該執行階段叢集資源的權限。',
+  },
   billing: {
     insufficient_balance: '計費歸屬人餘額不足，當前操作已被計費風控攔截。請充值或聯絡平臺管理員處理。',
     wallet_unavailable: '個人錢包暫時不可用，本次 AI 請求未建立，請稍後重試。',

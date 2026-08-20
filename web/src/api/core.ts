@@ -120,7 +120,7 @@ export function buildRunListQuery(params: BuildRunListParams) {
 
 export function runtimeClusterResourceListQuery(params: RuntimeClusterResourceListParams) {
   const search = new URLSearchParams(paginationQuery(params))
-  search.set('kind', params.kind)
+  search.set('resourceCategory', params.resourceCategory)
   if (params.namespace)
     search.set('namespace', params.namespace)
   if (params.projectId)

@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"math"
 	"net/url"
 	"strconv"
 	"strings"
@@ -11,6 +12,40 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+var aiIntegerConfigBounds = map[string][2]int{
+	"ai.runtime.provider_timeout_seconds":          {1, 900},
+	"ai.runtime.max_request_retries":               {0, 10},
+	"ai.runtime.run_timeout_seconds":               {30, 7200},
+	"ai.runtime.agent_concurrent_runs":             {1, 100},
+	"ai.runtime.context_input_k_tokens":            {64, 2048},
+	"ai.quota.user_concurrent_runs":                {1, 100},
+	"ai.quota.user_daily_tokens":                   {1000, 10000000},
+	"ai.quota.project_concurrent_runs":             {1, 100},
+	"ai.quota.run_max_tool_calls":                  {aiRunMaxToolCallsMin, aiRunMaxToolCallsMax},
+	"ai.retention.conversation_days":               {0, 365},
+	"ai.retention.run_event_days":                  {0, 90},
+	"ai.retention.checkpoint_days":                 {1, 30},
+	"ai.context.recent_turn_count":                 {1, 32},
+	"ai.context.max_recent_turn_count":             {2, 64},
+	"ai.context.max_uncompressed_turn_count":       {4, 128},
+	"ai.context.max_compression_turns_per_compile": {8, 1024},
+	"ai.context.summary_input_k_tokens":            {4, 512},
+	"ai.context.summary_max_output_tokens":         {200, 32768},
+	"ai.context.historical_tool_k_tokens":          {1, 256},
+	"ai.model.max_output_tokens":                   {256, 131072},
+	"ai.run.max_model_steps":                       {1, 1024},
+	"ai.run.max_total_tokens":                      {16384, 16000000},
+	"ai.run.max_input_k_bytes":                     {8, 8192},
+	"ai.run.navigate_action_ttl_seconds":           {10, 600},
+	"ai.tools.result_payload_k_bytes":              {4, 4096},
+	"ai.tools.max_card_repair_attempts":            {1, 10},
+}
+
+var aiRatioConfigBounds = map[string][2]float64{
+	"ai.context.compression_trigger_ratio": {0.5, 0.95},
+	"ai.context.compression_target_ratio":  {0.1, 0.8},
+}
+
 func containsAIConfig[T any](values map[string]T) bool {
 	for key := range values {
 		if strings.HasPrefix(key, "ai.") {
@@ -18,6 +53,35 @@ func containsAIConfig[T any](values map[string]T) bool {
 		}
 	}
 	return false
+}
+
+func validateAIConfigInputTypes(values map[string]any) error {
+	for key, value := range values {
+		if !strings.HasPrefix(key, "ai.") {
+			continue
+		}
+		definition := configDefinitionByKey(key)
+		if definition == nil {
+			continue
+		}
+		switch definition.Type {
+		case "boolean":
+			switch typed := value.(type) {
+			case bool:
+			case string:
+				if !isBooleanConfigValue(typed) {
+					return fmt.Errorf("%s must be a boolean", key)
+				}
+			default:
+				return fmt.Errorf("%s must be a boolean", key)
+			}
+		case "string", "secret", "select":
+			if _, ok := value.(string); !ok {
+				return fmt.Errorf("%s must be a string", key)
+			}
+		}
+	}
+	return nil
 }
 
 // validateAIConfigValues validates only the keys present in values. Configuration
@@ -84,34 +148,7 @@ func (h *Handlers) validateAIConfigValues(values map[string]string) error {
 			return fmt.Errorf("%s must be an HTTP(S) URL without user info, query, or fragment", key)
 		}
 	}
-	for key, bounds := range map[string][2]int{
-		"ai.runtime.provider_timeout_seconds":          {1, 900},
-		"ai.runtime.max_request_retries":               {0, 10},
-		"ai.runtime.run_timeout_seconds":               {30, 7200},
-		"ai.runtime.agent_concurrent_runs":             {1, 100},
-		"ai.runtime.context_input_k_tokens":            {64, 2048},
-		"ai.quota.user_concurrent_runs":                {1, 100},
-		"ai.quota.user_daily_tokens":                   {1000, 10000000},
-		"ai.quota.project_concurrent_runs":             {1, 100},
-		"ai.quota.run_max_tool_calls":                  {1, 100},
-		"ai.retention.conversation_days":               {0, 365},
-		"ai.retention.run_event_days":                  {0, 90},
-		"ai.retention.checkpoint_days":                 {1, 30},
-		"ai.context.recent_turn_count":                 {1, 32},
-		"ai.context.max_recent_turn_count":             {2, 64},
-		"ai.context.max_uncompressed_turn_count":       {4, 128},
-		"ai.context.max_compression_turns_per_compile": {8, 1024},
-		"ai.context.summary_input_k_tokens":            {4, 512},
-		"ai.context.summary_max_output_tokens":         {200, 32768},
-		"ai.context.historical_tool_k_tokens":          {1, 256},
-		"ai.model.max_output_tokens":                   {256, 131072},
-		"ai.run.max_model_steps":                       {1, 1024},
-		"ai.run.max_total_tokens":                      {16384, 16000000},
-		"ai.run.max_input_k_bytes":                     {8, 8192},
-		"ai.run.navigate_action_ttl_seconds":           {10, 600},
-		"ai.tools.result_payload_k_bytes":              {4, 4096},
-		"ai.tools.max_card_repair_attempts":            {1, 10},
-	} {
+	for key, bounds := range aiIntegerConfigBounds {
 		raw, submitted := values[key]
 		if !submitted {
 			continue
@@ -121,36 +158,54 @@ func (h *Handlers) validateAIConfigValues(values map[string]string) error {
 			return fmt.Errorf("%s must be between %d and %d", key, bounds[0], bounds[1])
 		}
 	}
-	for key, bounds := range map[string][2]float64{
-		"ai.context.compression_trigger_ratio": {0.5, 0.95},
-		"ai.context.compression_target_ratio":  {0.1, 0.8},
-	} {
+	for key, bounds := range aiRatioConfigBounds {
 		raw, submitted := values[key]
 		if !submitted {
 			continue
 		}
 		ratio, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
-		if err != nil || ratio < bounds[0] || ratio > bounds[1] {
+		if err != nil || math.IsNaN(ratio) || math.IsInf(ratio, 0) || ratio < bounds[0] || ratio > bounds[1] {
 			return fmt.Errorf("%s must be between %.2f and %.2f", key, bounds[0], bounds[1])
 		}
 	}
 	// Cross-field constraints are only evaluated when at least one of the fields
-	// is part of this submission; the other side falls back to the stored value.
-	if _, tSubmitted := values["ai.context.compression_trigger_ratio"]; tSubmitted || values["ai.context.compression_target_ratio"] != "" {
-		triggerRaw := firstSubmittedOrStored(values, h, "ai.context.compression_trigger_ratio")
-		targetRaw := firstSubmittedOrStored(values, h, "ai.context.compression_target_ratio")
-		triggerRatio, triggerErr := strconv.ParseFloat(strings.TrimSpace(triggerRaw), 64)
-		targetRatio, targetErr := strconv.ParseFloat(strings.TrimSpace(targetRaw), 64)
-		if triggerErr == nil && targetErr == nil && triggerRatio <= targetRatio {
+	// is part of this submission. An invalid legacy counterpart is read as the
+	// current platform default instead of blocking an otherwise valid update.
+	_, triggerSubmitted := values["ai.context.compression_trigger_ratio"]
+	_, targetSubmitted := values["ai.context.compression_target_ratio"]
+	if triggerSubmitted || targetSubmitted {
+		stored := h.configs.get([]string{
+			"ai.context.compression_trigger_ratio",
+			"ai.context.compression_target_ratio",
+		})
+		triggerRatio := aiBoundedRatioConfig(stored, "ai.context.compression_trigger_ratio")
+		targetRatio := aiBoundedRatioConfig(stored, "ai.context.compression_target_ratio")
+		if triggerSubmitted {
+			triggerRatio, _ = strconv.ParseFloat(strings.TrimSpace(values["ai.context.compression_trigger_ratio"]), 64)
+		}
+		if targetSubmitted {
+			targetRatio, _ = strconv.ParseFloat(strings.TrimSpace(values["ai.context.compression_target_ratio"]), 64)
+		}
+		if triggerRatio <= targetRatio {
 			return fmt.Errorf("ai.context.compression_trigger_ratio must be greater than ai.context.compression_target_ratio")
 		}
 	}
-	if _, rSubmitted := values["ai.context.recent_turn_count"]; rSubmitted || values["ai.context.max_recent_turn_count"] != "" {
-		recentRaw := firstSubmittedOrStored(values, h, "ai.context.recent_turn_count")
-		maxRecentRaw := firstSubmittedOrStored(values, h, "ai.context.max_recent_turn_count")
-		recentTurns, recentErr := strconv.Atoi(strings.TrimSpace(recentRaw))
-		maxRecentTurns, maxRecentErr := strconv.Atoi(strings.TrimSpace(maxRecentRaw))
-		if recentErr == nil && maxRecentErr == nil && recentTurns > maxRecentTurns {
+	_, recentSubmitted := values["ai.context.recent_turn_count"]
+	_, maxRecentSubmitted := values["ai.context.max_recent_turn_count"]
+	if recentSubmitted || maxRecentSubmitted {
+		stored := h.configs.get([]string{
+			"ai.context.recent_turn_count",
+			"ai.context.max_recent_turn_count",
+		})
+		recentTurns := aiBoundedIntegerConfig(stored, "ai.context.recent_turn_count")
+		maxRecentTurns := aiBoundedIntegerConfig(stored, "ai.context.max_recent_turn_count")
+		if recentSubmitted {
+			recentTurns, _ = strconv.Atoi(strings.TrimSpace(values["ai.context.recent_turn_count"]))
+		}
+		if maxRecentSubmitted {
+			maxRecentTurns, _ = strconv.Atoi(strings.TrimSpace(values["ai.context.max_recent_turn_count"]))
+		}
+		if recentTurns > maxRecentTurns {
 			return fmt.Errorf("ai.context.recent_turn_count must not exceed ai.context.max_recent_turn_count")
 		}
 	}
@@ -160,7 +215,7 @@ func (h *Handlers) validateAIConfigValues(values map[string]string) error {
 			continue
 		}
 		number, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
-		if err != nil || number < 0 {
+		if err != nil || math.IsNaN(number) || math.IsInf(number, 0) || number < 0 {
 			return fmt.Errorf("%s must be a non-negative number", key)
 		}
 	}
@@ -178,13 +233,4 @@ func (h *Handlers) validateAIConfigValues(values map[string]string) error {
 		}
 	}
 	return nil
-}
-
-// firstSubmittedOrStored returns the submitted value for key when present in this
-// request, otherwise the value currently stored in the config cache.
-func firstSubmittedOrStored(values map[string]string, h *Handlers, key string) string {
-	if raw, ok := values[key]; ok && strings.TrimSpace(raw) != "" {
-		return raw
-	}
-	return h.configs.get([]string{key})[key]
 }

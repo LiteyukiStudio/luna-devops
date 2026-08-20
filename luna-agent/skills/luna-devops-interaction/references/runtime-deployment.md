@@ -18,6 +18,9 @@
   证书策略；Kubeconfig 只通过受控 Secret 字段提交。
 - 保存后执行连接测试，并读取集群实时资源或系统组件确认权限范围。创建记录成功但
   连接测试失败时，状态是配置未就绪。
+- 列举集群资源时，`listRuntimeClusterResources.resourceCategory` 只使用
+  `namespaces/workloads/services/configs/storage`。读取 YAML、事件或删除单个对象时才使用
+  `resourceKind` 表示 Kubernetes Kind；两者不能互换。
 - 更新或删除集群前读取其项目、部署配置和系统组件引用；删除属于高影响操作。
 - 资源浏览、YAML、事件和 Pod 终端用于诊断，不得通过终端绕过平台已有业务操作。
 

@@ -285,7 +285,7 @@ export class MemoryRepository implements Repository {
         const toolInteractions = this.items
           .filter(candidate => candidate.runId === item.selectedRunId && ["tool_call", "tool_result"].includes(candidate.type))
           .sort((a, b) => a.timelineIndex - b.timelineIndex)
-          .map(candidate => ({ type: candidate.type, status: candidate.status, content: structuredClone(candidate.content) }))
+          .map(candidate => ({ type: candidate.type, status: candidate.status, content: structuredClone(candidate.content), createdAt: candidate.createdAt }))
         return {
           turnIndex: item.turnIndex,
           user: item.input,

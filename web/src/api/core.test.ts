@@ -1,7 +1,7 @@
 import type { MFAChallenge } from './types'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import i18next from '@/i18n'
-import { ApiError, registerMFAChallengeHandler, request } from './core'
+import { ApiError, registerMFAChallengeHandler, request, runtimeClusterResourceListQuery } from './core'
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -225,6 +225,20 @@ describe('api error boundary', () => {
     expect(error).toMatchObject({ code, message: i18next.t(`errors.${code}`) })
   })
 
+  it.each([
+    'cluster.resource_category_invalid',
+    'cluster.resource_kind_invalid',
+    'cluster.resource_name_required',
+    'runtime_cluster.forbidden',
+  ])('localizes the runtime resource contract code %s', async (code) => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({ code, error: 'generic backend error' }, 400))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const error = await request('/runtime/clusters/cluster/resources').catch((requestError: unknown) => requestError)
+
+    expect(error).toMatchObject({ code, message: i18next.t(`errors.${code}`) })
+  })
+
   it('does not present a non-JSON proxy response as a user-facing error', async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(
       'dial tcp http://internal-provider.local: connection refused',
@@ -241,5 +255,20 @@ describe('api error boundary', () => {
       status: 502,
     })
     expect((error as ApiError).message).not.toContain('internal-provider.local')
+  })
+})
+
+describe('runtime resource query contract', () => {
+  it('uses resourceCategory for collection queries and does not emit the ambiguous kind key', () => {
+    const query = new URLSearchParams(runtimeClusterResourceListQuery({
+      resourceCategory: 'workloads',
+      page: 1,
+      pageSize: 20,
+      projectId: 'project-1',
+    }))
+
+    expect(query.get('resourceCategory')).toBe('workloads')
+    expect(query.has('kind')).toBe(false)
+    expect(query.get('projectId')).toBe('project-1')
   })
 })

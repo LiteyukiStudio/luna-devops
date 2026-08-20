@@ -107,6 +107,12 @@ type ToolPeriodSummary struct {
 	SuccessRate float64
 }
 
+type RunPeriodSummary struct {
+	InputTokens        int64
+	OutputTokens       int64
+	DurationP95Seconds float64
+}
+
 type ToolSummary struct {
 	OperationID    string    `json:"operationId"`
 	TotalCalls     int64     `json:"totalCalls"`
@@ -260,6 +266,39 @@ func summarizeToolPeriod(total, successful, failed int64) ToolPeriodSummary {
 	}
 	return result
 }
+
+// SummarizeRuns uses the durable run ledger as the overview source of truth.
+// Prometheus remains useful for operational health, but process restarts or a
+// temporarily missing exporter must not make persisted token usage disappear.
+func (s *ConversationStore) SummarizeRuns(ctx context.Context, start time.Time) (RunPeriodSummary, error) {
+	var row struct {
+		InputTokens        int64
+		OutputTokens       int64
+		DurationP95Seconds float64
+	}
+	if err := s.db.WithContext(ctx).Raw(summarizeRunsSQL, start, start).Scan(&row).Error; err != nil {
+		return RunPeriodSummary{}, err
+	}
+	return RunPeriodSummary{
+		InputTokens: row.InputTokens, OutputTokens: row.OutputTokens, DurationP95Seconds: row.DurationP95Seconds,
+	}, nil
+}
+
+const summarizeRunsSQL = `
+		WITH usage AS (
+			SELECT
+				COALESCE(SUM(CASE WHEN data->'usage'->>'inputTokens' ~ '^[0-9]+$' THEN (data->'usage'->>'inputTokens')::bigint ELSE 0 END), 0) AS input_tokens,
+				COALESCE(SUM(CASE WHEN data->'usage'->>'outputTokens' ~ '^[0-9]+$' THEN (data->'usage'->>'outputTokens')::bigint ELSE 0 END), 0) AS output_tokens
+			FROM ai.run_events
+			WHERE type = 'model.completed' AND created_at >= ?
+		), durations AS (
+			SELECT EXTRACT(EPOCH FROM (completed_at - started_at)) AS duration_seconds
+			FROM ai.runs
+			WHERE completed_at IS NOT NULL AND started_at IS NOT NULL AND completed_at >= ?
+		)
+		SELECT usage.input_tokens, usage.output_tokens,
+			COALESCE((SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_seconds) FROM durations), 0) AS duration_p95_seconds
+		FROM usage`
 
 func (s *ConversationStore) ListToolSummaries(ctx context.Context, options ToolSummaryListOptions) (ToolSummaryListResult, error) {
 	options = normalizeToolSummaryListOptions(options)

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { ToolCatalog } from "../src/tools/catalog.js"
+import type { AgentToolAction, AgentToolContract } from "../src/tools/contracts.js"
 
 const definitions = [
   ["listProjects", "projects", "列出项目空间", "List project workspaces"],
@@ -21,24 +22,61 @@ const definitions = [
   ["fetchWebPage", "platform", "读取明确网址、README 和部署文档", "Fetch a web page"],
   ["updateDeploymentTargetRuntimeSecrets", "deployment", "安全更新部署目标的运行时密钥", "Update deployment runtime secrets"],
   ["updateProjectRuntimeConfigSetRuntimeSecrets", "deployment", "安全更新运行时配置集的密钥变量", "Update runtime config set secrets"],
-  ["createNotificationChannel", "notifications", "", "Create notification channel"],
-  ["listNotificationChannels", "notifications", "", "List notification channels"],
+  ["createNotificationChannel", "notifications", "创建新的通知渠道", "Create notification channel"],
+  ["listNotificationChannels", "notifications", "查询现有通知渠道", "List notification channels"],
 ] as const
 
-const catalog = ToolCatalog.load(definitions.map(([operationId, category, description, hint]) => ({
-  operationId,
-  method: operationId.startsWith("list") || operationId.startsWith("get") || operationId.startsWith("fetch") ? "GET" : "POST",
-  path: `/api/v1/eval/${operationId}`,
-  category,
-  description,
-  searchHints: [hint],
-  risk: "read",
-  requiredScopes: ["project:read"],
-  approval: "never",
-  idempotent: true,
-  timeoutMs: 30_000,
-  inputSchema: { type: "object", properties: {}, required: [], additionalProperties: false },
-})))
+const catalog = ToolCatalog.load(definitions.map(([operationId, category, description, hint]) => {
+  const contract = retrievalContract(operationId, description, hint)
+  return {
+    operationId,
+    method: operationId.startsWith("list") || operationId.startsWith("get") || operationId.startsWith("fetch") ? "GET" : "POST",
+    path: `/api/v1/eval/${operationId}`,
+    category,
+    description,
+    searchHints: [hint],
+    risk: "read" as const,
+    requiredScopes: ["project:read"],
+    approval: contract.approval,
+    idempotent: contract.idempotent,
+    timeoutMs: 30_000,
+    inputSchema: { type: "object" as const, properties: {}, required: [], additionalProperties: false },
+    contract,
+  }
+}))
+
+function retrievalContract(operationId: string, description: string, hint: string): AgentToolContract {
+  const action = actionFor(operationId)
+  const writes = ["create", "update", "delete", "execute"].includes(action)
+  return {
+    allowed: true,
+    resourceTypes: [operationId],
+    action,
+    sideEffect: writes ? "platform-write" : "none",
+    idempotent: !operationId.startsWith("trigger"),
+    replaySafe: !writes,
+    risk: writes ? "medium" : "low",
+    approval: "never",
+    intents: [description || hint, hint],
+    useWhen: [description || hint],
+    avoidWhen: writes ? ["用户只要求查询或比较候选时"] : [],
+    prerequisites: writes ? ["目标资源与必填参数已经确定"] : [],
+    parameterSummary: [],
+    successEvidence: ["响应返回当前操作的稳定结果"],
+    commonErrorCodes: [],
+    predecessors: [],
+    followups: [],
+    verification: { mode: "response", successCodes: [200] },
+  }
+}
+
+function actionFor(operationId: string): AgentToolAction {
+  if (operationId.startsWith("list") || operationId.startsWith("search")) return "discover"
+  if (operationId.startsWith("get") || operationId.startsWith("fetch")) return "read"
+  if (operationId.startsWith("create") || operationId.startsWith("install")) return "create"
+  if (operationId.startsWith("update")) return "update"
+  return "execute"
+}
 
 describe("tool retrieval evaluation", () => {
   it.each([

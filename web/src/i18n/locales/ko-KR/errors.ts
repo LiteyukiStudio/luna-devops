@@ -70,6 +70,14 @@ const errors = {
   kubernetes: {
     resource_ownership_conflict: 'Kubernetes의 동일한 이름의 리소스는 다른 리소스 수명 주기에 속합니다. 플랫폼은 자동으로 인수하지 않습니다. 먼저 잔여 리소스를 처리하세요.',
   },
+  cluster: {
+    resource_category_invalid: '유효한 런타임 리소스 범주를 선택하세요.',
+    resource_kind_invalid: '유효한 Kubernetes 리소스 종류를 선택하세요.',
+    resource_name_required: '리소스 이름을 입력하세요.',
+  },
+  runtime_cluster: {
+    forbidden: '이 런타임 클러스터의 리소스를 볼 권한이 없습니다.',
+  },
   billing: {
     insufficient_balance: '청구 귀속자의 잔액이 부족합니다. 현재 작업은 과금 리스크 관리에 의해 차단되었습니다. 충전하거나 플랫폼 관리자에게 문의하여 처리하세요.',
     wallet_unavailable: '개인 지갑을 일시적으로 사용할 수 없습니다. 이번 AI 요청은 생성되지 않았습니다. 잠시 후 다시 시도하세요.',

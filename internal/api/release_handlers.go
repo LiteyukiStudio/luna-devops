@@ -44,6 +44,18 @@ func (h *Handlers) ListReleases(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, paginatedResponse(releases, total, pagination))
 }
 
+func (h *Handlers) GetRelease(ctx *gin.Context) {
+	if _, ok := h.findProjectForCurrentUser(ctx); !ok {
+		return
+	}
+	release, ok := h.findRelease(ctx)
+	if !ok {
+		return
+	}
+	ctx.Header("Cache-Control", "no-store")
+	ctx.JSON(http.StatusOK, release)
+}
+
 func (h *Handlers) CreateRelease(ctx *gin.Context) {
 	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
 	if !ok {

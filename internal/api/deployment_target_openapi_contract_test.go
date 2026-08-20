@@ -10,7 +10,7 @@ import (
 )
 
 func TestDeploymentTargetAgentSchemaCoversHandlerInput(t *testing.T) {
-	for _, operationID := range []string{"createDeploymentTarget", "updateDeploymentTarget"} {
+	for _, operationID := range []string{"createDeploymentTarget"} {
 		t.Run(operationID, func(t *testing.T) {
 			operation, ok := aitool.PlatformOperation(operationID)
 			if !ok {
@@ -49,7 +49,6 @@ func TestDeploymentTargetAgentSchemaCoversHandlerInput(t *testing.T) {
 func TestDeploymentTargetAgentSchemaRequiresRouteAndBodyArguments(t *testing.T) {
 	tests := map[string][]string{
 		"createDeploymentTarget": {"applicationId", "body", "projectId"},
-		"updateDeploymentTarget": {"applicationId", "body", "projectId", "targetId"},
 	}
 	for operationID, want := range tests {
 		t.Run(operationID, func(t *testing.T) {

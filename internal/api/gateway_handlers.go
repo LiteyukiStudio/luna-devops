@@ -42,6 +42,22 @@ func (h *Handlers) ListGatewayRoutes(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, paginatedResponse(h.gatewayRoutesWithAccessURL(routes, ctx.Request.Context()), total, pagination))
 }
 
+func (h *Handlers) GetGatewayRoute(ctx *gin.Context) {
+	if _, ok := h.findProjectForCurrentUser(ctx); !ok {
+		return
+	}
+	route, ok := h.findGatewayRoute(ctx)
+	if !ok {
+		return
+	}
+	markLiveObservationResponse(ctx)
+	routes := h.observeGatewayRoutes(ctx.Request.Context(), []model.GatewayRoute{route})
+	if len(routes) == 1 {
+		route = routes[0]
+	}
+	ctx.JSON(http.StatusOK, h.gatewayRouteWithAccessURL(route, ctx.Request.Context()))
+}
+
 func (h *Handlers) CreateGatewayRoute(ctx *gin.Context) {
 	user, project, ok := h.projectAndCurrentUserWithRoles(ctx, authz.ProjectRoleOwner, authz.ProjectRoleAdmin, authz.ProjectRoleDeveloper)
 	if !ok {

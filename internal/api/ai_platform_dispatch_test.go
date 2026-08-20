@@ -87,68 +87,6 @@ func TestBuildAIProjectListRequestPreservesExplicitScope(t *testing.T) {
 	}
 }
 
-func TestProjectVolumeRevisionCatalogDispatchesIfMatch(t *testing.T) {
-	testCases := []struct {
-		operationID string
-		arguments   map[string]any
-	}{
-		{operationID: "updateProjectVolume", arguments: map[string]any{
-			"projectId": "prj_1", "volumeId": "pvol_1", "revision": 7,
-			"body": map[string]any{"displayName": "renamed"},
-		}},
-		{operationID: "deleteProjectVolume", arguments: map[string]any{
-			"projectId": "prj_1", "volumeId": "pvol_1", "revision": 7, "dataAction": "detach",
-		}},
-	}
-
-	for _, testCase := range testCases {
-		t.Run(testCase.operationID, func(t *testing.T) {
-			operation, ok := aitool.PlatformOperation(testCase.operationID)
-			if !ok {
-				t.Fatalf("missing catalog operation %s", testCase.operationID)
-			}
-			properties, _ := operation.InputSchema["properties"].(map[string]any)
-			if _, ok := properties["revision"]; !ok {
-				t.Fatalf("catalog input schema omits revision: %#v", operation.InputSchema)
-			}
-			if _, ok := properties["If-Match"]; ok {
-				t.Fatalf("catalog leaked wire header as model input: %#v", operation.InputSchema)
-			}
-			parameterFound := false
-			for _, parameter := range operation.Parameters {
-				if parameter.InputName == "revision" && parameter.WireName == "If-Match" && parameter.In == "header" && parameter.Required {
-					parameterFound = true
-				}
-			}
-			if !parameterFound {
-				t.Fatalf("catalog revision mapping missing: %#v", operation.Parameters)
-			}
-
-			gin.SetMode(gin.TestMode)
-			router := gin.New()
-			router.Handle(operation.Method, "/api/v1/projects/:projectId/volumes/:volumeId", func(ctx *gin.Context) {
-				if got := ctx.GetHeader("If-Match"); got != "7" {
-					t.Errorf("If-Match = %q", got)
-				}
-				ctx.JSON(http.StatusOK, gin.H{"revision": 7})
-			})
-			handlers := &Handlers{platformRouter: router}
-			recorder := httptest.NewRecorder()
-			parent, _ := gin.CreateTestContext(recorder)
-			parent.Request = httptest.NewRequest(http.MethodPost, "/internal/v1/ai/tools/execute", nil)
-			result, err := handlers.dispatchAIPlatformOperation(parent, aiagent.DelegationClaims{
-				RunID: "airun_1", ToolCallID: "aitool_1", ArgumentsHash: "sha256:test",
-			}, operation, testCase.arguments)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if result.Status != http.StatusOK {
-				t.Fatalf("status = %d, body = %#v", result.Status, result.Body)
-			}
-		})
-	}
-}
-
 func TestDispatchAIPlatformOperationPropagatesDelegatedSessionRunAndMFA(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()

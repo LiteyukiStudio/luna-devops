@@ -99,6 +99,10 @@ export const agentMetrics = {
   toolDuration: deferredHistogram("luna_devops_agent_tool_call_duration", "工具调用耗时", "s"),
   toolSearches: deferredCounter("luna_devops_agent_tool_searches", "工具目录检索次数"),
   toolSearchMatches: deferredHistogram("luna_devops_agent_tool_search_matches", "单次工具目录检索命中数量", "tool"),
+  toolRetrievals: deferredCounter("luna_devops_agent_tool_retrieval_total", "自动工具检索次数"),
+  toolRetrievalCandidates: deferredHistogram("luna_devops_agent_tool_retrieval_candidates", "单次自动工具检索候选数量", "tool"),
+  toolRetrievalLoaded: deferredHistogram("luna_devops_agent_tool_retrieval_loaded", "单次自动工具检索最终加载数量", "tool"),
+  toolRetrievalDuration: deferredHistogram("luna_devops_agent_tool_retrieval_duration", "自动工具检索耗时", "s"),
   approvals: deferredCounter("luna_devops_agent_approval_decisions", "工具审批决策次数"),
   cards: deferredCounter("luna_devops_agent_interaction_cards", "交互卡片生成次数"),
   externalRequests: deferredCounter("luna_devops_agent_external_requests", "外部请求次数"),
@@ -317,10 +321,14 @@ function mergeAICorrelationAttributes(inherited: Attributes, current: Attributes
 
 const traceContextKeys = new Set(["traceparent", "tracestate"])
 
-export function captureTraceContext(): Record<string, string> {
+export function captureTraceContext(fallbackCarrier: Record<string, string | string[] | undefined> = {}): Record<string, string> {
   const carrier: Record<string, string> = {}
   propagation.inject(context.active(), carrier)
-  return normalizeTraceContext(carrier)
+  const active = normalizeTraceContext(carrier)
+  if (active.traceparent) return active
+  const fallback = Object.fromEntries(Object.entries(fallbackCarrier)
+    .flatMap(([key, value]) => typeof value === "string" ? [[key, value]] : []))
+  return normalizeTraceContext(fallback)
 }
 
 export function extractTraceContext(carrier: Record<string, string> | undefined): Context {

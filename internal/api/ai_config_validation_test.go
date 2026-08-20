@@ -43,6 +43,23 @@ func TestAIConfigDefinitionsCoverSpecificationCatalog(t *testing.T) {
 	if got := aiConfigDefaults()["ai.runtime.context_input_k_tokens"]; got != "1024" {
 		t.Fatalf("context input budget default = %q, want 1024", got)
 	}
+	if got := aiConfigDefaults()["ai.quota.run_max_tool_calls"]; got != "256" {
+		t.Fatalf("Run tool-call guard default = %q, want 256", got)
+	}
+}
+
+func TestAINumericConfigDefinitionsHaveStrictWriteBounds(t *testing.T) {
+	for _, definition := range configDefinitions {
+		if !strings.HasPrefix(definition.Key, "ai.") || definition.Type != "number" {
+			continue
+		}
+		_, integerBounded := aiIntegerConfigBounds[definition.Key]
+		_, ratioBounded := aiRatioConfigBounds[definition.Key]
+		costBounded := definition.Key == "ai.quota.platform_daily_cost_soft" || definition.Key == "ai.quota.platform_daily_cost_hard"
+		if !integerBounded && !ratioBounded && !costBounded {
+			t.Errorf("AI numeric config %s has no strict write contract", definition.Key)
+		}
+	}
 }
 
 func TestAIProviderAPIKeyIsMaskedByConfigCache(t *testing.T) {
@@ -67,6 +84,30 @@ func TestAIConfigRejectsUnsafeProviderURLBeforeSaving(t *testing.T) {
 	}
 }
 
+func TestAIConfigInputTypesAreStrictOnlyForSubmittedValues(t *testing.T) {
+	for name, values := range map[string]map[string]any{
+		"boolean object": {"ai.assistant.enabled": map[string]any{"value": true}},
+		"invalid boolean string": {"ai.web.proxy_enabled": "sometimes"},
+		"null secret": {"ai.provider.api_key": nil},
+		"numeric tenant": {"ai.observability.loki_tenant_id": 123},
+		"numeric credit string": {"ai.run.max_credits": 100},
+	} {
+		if err := validateAIConfigInputTypes(values); err == nil {
+			t.Errorf("invalid submitted AI config type accepted: %s", name)
+		}
+	}
+	for name, values := range map[string]map[string]any{
+		"native boolean": {"ai.assistant.enabled": true},
+		"canonical boolean string": {"ai.observability.enabled": "false"},
+		"secret string": {"ai.provider.api_key": "secret"},
+		"credit decimal string": {"ai.run.max_credits": "100"},
+	} {
+		if err := validateAIConfigInputTypes(values); err != nil {
+			t.Errorf("valid submitted AI config type rejected for %s: %v", name, err)
+		}
+	}
+}
+
 func TestAIConfigAcceptsSafePublicProviderWithoutManualDomainAllowlist(t *testing.T) {
 	h := &Handlers{configs: &configCache{values: aiConfigDefaults()}}
 	if err := h.validateAIConfigValues(map[string]string{"ai.provider.base_url": "https://1.1.1.1/v1"}); err != nil {
@@ -81,6 +122,7 @@ func TestAIConfigRejectsUnsafeRuntimeBounds(t *testing.T) {
 		"ai.runtime.run_timeout_seconds":               "10",
 		"ai.runtime.agent_concurrent_runs":             "0",
 		"ai.runtime.context_input_k_tokens":            "32",
+		"ai.quota.run_max_tool_calls":                  "31",
 		"ai.context.recent_turn_count":                 "0",
 		"ai.context.max_recent_turn_count":             "1",
 		"ai.context.max_uncompressed_turn_count":       "3",
@@ -101,6 +143,30 @@ func TestAIConfigRejectsUnsafeRuntimeBounds(t *testing.T) {
 		if err := h.validateAIConfigValues(map[string]string{key: value}); err == nil {
 			t.Errorf("unsafe runtime setting accepted: %s=%s", key, value)
 		}
+	}
+}
+
+func TestAIConfigRejectsNonFiniteNumbers(t *testing.T) {
+	h := &Handlers{configs: &configCache{values: aiConfigDefaults()}}
+	for key, value := range map[string]string{
+		"ai.context.compression_trigger_ratio": "NaN",
+		"ai.context.compression_target_ratio":  "+Inf",
+		"ai.quota.platform_daily_cost_soft":    "NaN",
+		"ai.quota.platform_daily_cost_hard":    "+Inf",
+	} {
+		if err := h.validateAIConfigValues(map[string]string{key: value}); err == nil {
+			t.Errorf("non-finite value accepted for %s", key)
+		}
+	}
+}
+
+func TestAIConfigAcceptsHighRunToolCallGuard(t *testing.T) {
+	h := &Handlers{configs: &configCache{values: aiConfigDefaults()}}
+	if err := h.validateAIConfigValues(map[string]string{"ai.quota.run_max_tool_calls": "2048"}); err != nil {
+		t.Fatalf("high Run tool-call guard rejected: %v", err)
+	}
+	if err := h.validateAIConfigValues(map[string]string{"ai.quota.run_max_tool_calls": "2049"}); err == nil {
+		t.Fatal("Run tool-call guard above hard limit was accepted")
 	}
 }
 
@@ -141,6 +207,30 @@ func TestAIConfigAcceptsAdvancedContextSettingsWithinBounds(t *testing.T) {
 		"ai.context.max_recent_turn_count":     "10",
 	}); err != nil {
 		t.Fatalf("valid advanced context settings rejected: %v", err)
+	}
+}
+
+func TestAIConfigValidatesSubmittedCrossFieldAgainstSafeLegacyFallback(t *testing.T) {
+	defaults := aiConfigDefaults()
+	defaults["ai.context.compression_target_ratio"] = "legacy-invalid"
+	defaults["ai.context.max_recent_turn_count"] = "legacy-invalid"
+	h := &Handlers{configs: &configCache{values: defaults}}
+
+	if err := h.validateAIConfigValues(map[string]string{
+		"ai.context.compression_trigger_ratio": "0.8",
+		"ai.context.recent_turn_count":         "20",
+	}); err != nil {
+		t.Fatalf("valid submitted values were blocked by legacy counterparts: %v", err)
+	}
+	if err := h.validateAIConfigValues(map[string]string{
+		"ai.context.compression_trigger_ratio": "0.6",
+	}); err == nil {
+		t.Fatal("submitted trigger below the safe target fallback was accepted")
+	}
+	if err := h.validateAIConfigValues(map[string]string{
+		"ai.context.recent_turn_count": "33",
+	}); err == nil {
+		t.Fatal("submitted recent-turn count above the current range was accepted")
 	}
 }
 

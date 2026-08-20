@@ -2,11 +2,14 @@ import { hashCanonicalJSON } from "../canonical-json.js"
 import { createId } from "../id.js"
 import { redact } from "../redaction.js"
 import type { Repository } from "../persistence/repository.js"
-import { validateArguments, type ToolCatalog } from "./catalog.js"
+import { ToolArgumentsInvalidError, requiredInputFields, validateToolArguments } from "./argument-validator.js"
+import { InMemoryLoopGuard, type LoopGuard, type ToolLoopSnapshot } from "./loop-guard.js"
+import type { ToolCatalog, ToolOperation } from "./catalog.js"
 import type { LunaApiToolClient, ToolExecutionResult } from "./luna-api-client.js"
 import { genAIToolCallObject, genAIToolSpanAttributes } from "../genai-semconv.js"
 import { ToolPolicy } from "./policy.js"
 import { agentMetrics, internalSpanOptions, recordAIContent, stableErrorCode, telemetryLog, withSpan } from "../telemetry.js"
+import { isRetryableHTTPStatus } from "../retry.js"
 
 export type ToolCallStatus = "proposed" | "awaiting_approval" | "awaiting_mfa" | "running" | "succeeded" | "failed" | "canceled" | "skipped"
 export type ToolCallRecord = {
@@ -26,8 +29,19 @@ export interface ToolCallStore {
 export interface ToolResultVerifier {
   verify(operationId: string, result: ToolExecutionResult): Promise<{ ok: boolean, code?: string }>
 }
-export class AcceptingResultVerifier implements ToolResultVerifier {
-  async verify(_operationId: string, result: ToolExecutionResult) {
+export class ContractResultVerifier implements ToolResultVerifier {
+  constructor(private readonly catalog: ToolCatalog) {}
+
+  async verify(operationId: string, result: ToolExecutionResult) {
+    const verification = this.catalog.get(operationId).contract?.verification
+    if (!verification)
+      return { ok: false, code: "ai.tool_verification_contract_missing" }
+    if (verification.mode === "response") {
+      return {
+        ok: verification.successCodes.includes(result.status),
+        ...(!verification.successCodes.includes(result.status) ? { code: "ai.tool_response_status_unexpected" } : {}),
+      }
+    }
     return { ok: result.status >= 200 && result.status < 300 }
   }
 }
@@ -49,23 +63,31 @@ export class ToolOrchestrator {
     private readonly client: LunaApiToolClient,
     private readonly store: ToolCallStore,
     private readonly policy = new ToolPolicy(),
-    private readonly verifier: ToolResultVerifier = new AcceptingResultVerifier(),
+    private readonly verifier: ToolResultVerifier = new ContractResultVerifier(catalog),
     private readonly grantResolver: (runId: string) => Promise<string> = async () => { throw new Error("ai.run_grant_unavailable") },
+    private readonly loopGuard: LoopGuard = new InMemoryLoopGuard({
+      isAsyncReadbackOperation: operationId => isAsyncReadbackOperation(catalog, operationId),
+    }),
   ) {}
 
   async propose(input: { runId: string, operationId: string, arguments: unknown, inputMode?: "model" | "direct" }): Promise<ToolCallRecord> {
     const operation = this.catalog.get(input.operationId)
+    const rawArgumentsHash = safeArgumentsHash(input.arguments)
+    this.loopGuard.beforePropose({ runId: input.runId, operationId: input.operationId, argumentsHash: rawArgumentsHash })
     let args: Record<string, unknown>
     try {
-      args = validateArguments(operation.inputSchema, input.arguments)
-    } catch {
-      const value = input.arguments && typeof input.arguments === "object" ? input.arguments as Record<string, unknown> : {}
-      throw new ToolInterruption("waiting_input", operation.inputSchema.required.filter(field => value[field] === undefined))
+      args = validateToolArguments(operation.inputSchema, input.arguments)
+    }
+    catch (error) {
+      if (!(error instanceof ToolArgumentsInvalidError)) throw error
+      const fields = requiredInputFields(error)
+      if (fields) throw new ToolInterruption("waiting_input", fields)
+      return this.rejectInvalidArguments(input, rawArgumentsHash, error)
     }
     const inputMode = input.inputMode ?? "model"
     if (inputMode !== "direct" && hasSensitiveInput(operation.inputSchema, args))
       throw new SensitiveInputRejected(operation.operationId)
-    const argumentsHash = hashCanonicalJSON(args)
+    const argumentsHash = rawArgumentsHash
     const record: ToolCallRecord = {
       id: createId("aitool"), runId: input.runId, operationId: input.operationId,
       status: "proposed", arguments: args, argumentsHash, attempt: 1, rowVersion: 1, inputMode,
@@ -120,6 +142,11 @@ export class ToolOrchestrator {
   async retryFailed(id: string): Promise<ToolCallRecord> {
     const previous = await this.require(id)
     if (previous.status !== "failed") throw new Error("ai.tool_call_not_retryable")
+    this.loopGuard.beforePropose({
+      runId: previous.runId,
+      operationId: previous.operationId,
+      argumentsHash: previous.argumentsHash,
+    })
     const retry: ToolCallRecord = {
       id: createId("aitool"), runId: previous.runId, operationId: previous.operationId,
       status: "proposed", arguments: previous.arguments, argumentsHash: previous.argumentsHash,
@@ -132,6 +159,36 @@ export class ToolOrchestrator {
       attempt: retry.attempt, argumentsHash: retry.argumentsHash, expectedVersion: retry.rowVersion,
     } })
     return this.advance(retry, { approved: false })
+  }
+
+  setRunMaxToolCalls(limit: number): void {
+    this.loopGuard.setMaxToolCalls(limit)
+  }
+
+  toolLoopSnapshot(runId: string): ToolLoopSnapshot {
+    return this.loopGuard.snapshot(runId)
+  }
+
+  clearRunLoopState(runId: string): void {
+    this.loopGuard.clearRun(runId)
+  }
+
+  seedRunStableResult(input: { runId: string, operationId: string, argumentsHash: string, result: unknown }): void {
+    let operation: ToolOperation
+    try {
+      operation = this.catalog.get(input.operationId)
+    }
+    catch {
+      return
+    }
+    const contract = operation.contract
+    if (!contract?.replaySafe || !["none", "external-read"].includes(contract.sideEffect)) return
+    this.loopGuard.seedResult({
+      runId: input.runId,
+      operationId: input.operationId,
+      argumentsHash: input.argumentsHash,
+      stableResultHash: safeArgumentsHash(input.result),
+    })
   }
 
   private async advance(call: ToolCallRecord, state: { approved: boolean }): Promise<ToolCallRecord> {
@@ -150,6 +207,7 @@ export class ToolOrchestrator {
     const startedAt = performance.now()
     let outcome = "succeeded"
     const operation = this.catalog.get(call.operationId)
+    this.loopGuard.beforeExecute({ runId: call.runId, operationId: call.operationId, argumentsHash: call.argumentsHash })
     try {
       return await withSpan(`execute_tool ${call.operationId}`, internalSpanOptions({
         ...genAIToolSpanAttributes({
@@ -230,18 +288,226 @@ export class ToolOrchestrator {
   }
 
   private async finish(call: ToolCallRecord, result: ToolExecutionResult, diagnostics: { durationMs: number, traceId: string }): Promise<ToolCallRecord> {
+    const operation = this.catalog.get(call.operationId)
     const code = extractCode(result.body)
     const plainResult = withRequestId(result.body, result.requestId)
-    const storedResult = redact(plainResult)
-    if (result.status === 401 || result.status === 403) return this.transition(call, "failed", { errorCode: code ?? "ai.tool_forbidden", result: storedResult }, "tool_call.failed", diagnostics)
+    let storedResult = redact(plainResult)
+    if (result.status === 401 || result.status === 403)
+      return this.fail(call, result, code ?? "ai.tool_forbidden", storedResult, diagnostics)
     if (result.status === 428 && code === "mfa_required") {
       const purpose = (result.body as Record<string, unknown>).purpose
       return this.transition(call, "awaiting_mfa", { mfaPurpose: typeof purpose === "string" ? purpose : "" }, "tool_call.awaiting_mfa")
     }
-    if (result.status < 200 || result.status >= 300) return this.transition(call, "failed", { errorCode: code ?? "ai.tool_failed", result: storedResult }, "tool_call.failed", diagnostics)
+    if (result.status < 200 || result.status >= 300)
+      return this.fail(call, result, code ?? "ai.tool_failed", storedResult, diagnostics)
     const verification = await this.verifier.verify(call.operationId, result)
-    if (!verification.ok) return this.transition(call, "failed", { errorCode: verification.code ?? "verification_inconclusive", result: storedResult }, "tool_call.failed", diagnostics)
-    return this.transition(call, "succeeded", { result: storedResult }, "tool_call.succeeded", diagnostics)
+    if (!verification.ok)
+      return this.fail(call, result, verification.code ?? "verification_inconclusive", storedResult, diagnostics)
+    if (operation.contract?.verification.mode === "readback" || operation.contract?.verification.mode === "async-readback") {
+      let readback: Awaited<ReturnType<ToolOrchestrator["performContractReadback"]>>
+      try {
+        readback = await this.performContractReadback(call, operation, plainResult)
+      }
+      catch (error) {
+        const errorCode = stableErrorCode(error)
+        storedResult = withVerificationEvidence(storedResult, {
+          mode: operation.contract.verification.mode,
+          operationId: operation.contract.verification.operationId,
+          status: "failed",
+          errorCode,
+        })
+        return this.fail(call, { ...result, body: storedResult }, errorCode, storedResult, diagnostics)
+      }
+      storedResult = withVerificationEvidence(storedResult, readback.evidence)
+      if (readback.outcome === "failed") {
+        return this.fail(
+          call,
+          { ...result, body: storedResult },
+          readback.errorCode ?? "ai.tool_verification_readback_failed",
+          storedResult,
+          diagnostics,
+        )
+      }
+    }
+    const succeeded = await this.transition(call, "succeeded", { result: storedResult }, "tool_call.succeeded", diagnostics)
+    this.loopGuard.recordResult({
+      runId: call.runId,
+      operationId: call.operationId,
+      argumentsHash: call.argumentsHash,
+      stableResultHash: safeArgumentsHash(storedResult),
+    })
+    return succeeded
+  }
+
+  private async performContractReadback(
+    call: ToolCallRecord,
+    operation: ToolOperation,
+    writeResult: unknown,
+  ): Promise<{
+      outcome: "succeeded" | "pending" | "failed"
+      errorCode?: string
+      evidence: Record<string, unknown>
+    }> {
+    const verification = operation.contract?.verification
+    if (!verification || verification.mode === "response")
+      throw new Error("ai.tool_verification_contract_missing")
+    const verifier = this.catalog.get(verification.operationId)
+    if (verifier.contract?.verification.mode !== "response")
+      throw new Error("ai.tool_verifier_contract_invalid")
+    // Luna API 的委托执行端点会把真实业务响应放在 result 字段中。
+    // 契约里的 JSON Pointer 始终相对业务响应，不能相对传输信封解析。
+    const writeBusinessResult = delegatedBusinessResult(writeResult)
+    if (jsonPointerValue(writeBusinessResult, verification.idSource) === undefined)
+      throw new Error("ai.tool_verification_id_missing")
+
+    const argumentsValue: Record<string, unknown> = {}
+    for (const [argument, pointer] of Object.entries(verification.argumentBindings)) {
+      const value = jsonPointerValue(writeBusinessResult, pointer)
+      if (value === undefined)
+        throw new Error("ai.tool_verification_binding_missing")
+      argumentsValue[argument] = value
+    }
+
+    let readback: ToolCallRecord
+    try {
+      readback = await this.propose({
+        runId: call.runId,
+        operationId: verification.operationId,
+        arguments: argumentsValue,
+        inputMode: "model",
+      })
+    }
+    catch (error) {
+      const errorCode = stableErrorCode(error)
+      return {
+        outcome: "failed",
+        errorCode,
+        evidence: {
+          mode: verification.mode,
+          operationId: verification.operationId,
+          status: "failed",
+          errorCode,
+        },
+      }
+    }
+    if (readback.status !== "succeeded") {
+      return {
+        outcome: "failed",
+        errorCode: readback.errorCode ?? "ai.tool_verification_readback_failed",
+        evidence: {
+          mode: verification.mode,
+          operationId: verification.operationId,
+          toolCallId: readback.id,
+          status: readback.status,
+          ...(readback.errorCode ? { errorCode: readback.errorCode } : {}),
+        },
+      }
+    }
+
+    const completion = verification.completion
+    if (completion.mode === "readback-success") {
+      return {
+        outcome: "succeeded",
+        evidence: {
+          mode: verification.mode,
+          operationId: verification.operationId,
+          toolCallId: readback.id,
+          status: "succeeded",
+          result: readback.result,
+        },
+      }
+    }
+
+    const stateValue = jsonPointerValue(delegatedBusinessResult(readback.result), completion.path)
+    const state = typeof stateValue === "string" ? stateValue : undefined
+    if (!state) {
+      return {
+        outcome: "failed",
+        errorCode: "ai.tool_verification_state_missing",
+        evidence: {
+          mode: verification.mode,
+          operationId: verification.operationId,
+          toolCallId: readback.id,
+          status: "failed",
+          errorCode: "ai.tool_verification_state_missing",
+        },
+      }
+    }
+    const evidence = {
+      mode: verification.mode,
+      operationId: verification.operationId,
+      toolCallId: readback.id,
+      state,
+      result: readback.result,
+    }
+    if (completion.successStates.includes(state)) return { outcome: "succeeded", evidence: { ...evidence, status: "succeeded" } }
+    if (completion.failureStates.includes(state)) {
+      return {
+        outcome: "failed",
+        errorCode: "ai.tool_verification_terminal_failure",
+        evidence: { ...evidence, status: "failed", errorCode: "ai.tool_verification_terminal_failure" },
+      }
+    }
+    if (verification.mode === "async-readback" && completion.pendingStates.includes(state)) {
+      return { outcome: "pending", evidence: { ...evidence, status: "pending" } }
+    }
+    return {
+      outcome: "failed",
+      errorCode: "ai.tool_verification_state_unexpected",
+      evidence: { ...evidence, status: "failed", errorCode: "ai.tool_verification_state_unexpected" },
+    }
+  }
+
+  private async fail(call: ToolCallRecord, result: ToolExecutionResult, errorCode: string, storedResult: unknown, diagnostics: { durationMs: number, traceId: string }): Promise<ToolCallRecord> {
+    const failed = await this.transition(call, "failed", { errorCode, result: storedResult }, "tool_call.failed", diagnostics)
+    this.loopGuard.recordFailure({
+      runId: call.runId,
+      operationId: call.operationId,
+      argumentsHash: call.argumentsHash,
+      errorCode,
+      stableResultHash: safeArgumentsHash(storedResult),
+      deterministic: !toolFailureRetryable(result),
+    })
+    return failed
+  }
+
+  private async rejectInvalidArguments(input: { runId: string, operationId: string, inputMode?: "model" | "direct" }, argumentsHash: string, error: ToolArgumentsInvalidError): Promise<ToolCallRecord> {
+    const result = error.toJSON()
+    const record: ToolCallRecord = {
+      id: createId("aitool"),
+      runId: input.runId,
+      operationId: input.operationId,
+      status: "proposed",
+      arguments: {},
+      argumentsHash,
+      attempt: 1,
+      rowVersion: 1,
+      errorCode: error.code,
+      result,
+      ...(input.inputMode ? { inputMode: input.inputMode } : {}),
+    }
+    await this.store.insert(record)
+    telemetryLog("agent.tool.arguments_invalid", "warn", {
+      "luna.run.id": input.runId,
+      "tool.name": input.operationId,
+      "error.code": error.code,
+    })
+    await this.store.emit({
+      type: "tool.started",
+      toolCallId: record.id,
+      data: { operationId: record.operationId, arguments: {}, argumentsHash, expectedVersion: record.rowVersion },
+    })
+    const failed = await this.transition(record, "failed", {}, "tool_call.failed")
+    this.loopGuard.recordFailure({
+      runId: input.runId,
+      operationId: input.operationId,
+      argumentsHash,
+      errorCode: error.code,
+      stableResultHash: safeArgumentsHash(result),
+      deterministic: true,
+    })
+    agentMetrics.toolCalls.add(1, { tool: input.operationId, outcome: error.code })
+    return failed
   }
 
   private async transition(call: ToolCallRecord, status: ToolCallStatus, patch: Partial<ToolCallRecord>, event: string, eventData: Record<string, unknown> = {}) {
@@ -291,6 +557,66 @@ function withRequestId(body: unknown, requestId: string | undefined): unknown {
   if (!requestId || !body || typeof body !== "object" || Array.isArray(body)) return body
   const object = body as Record<string, unknown>
   return typeof object.requestId === "string" ? body : { ...object, requestId }
+}
+
+function withVerificationEvidence(result: unknown, evidence: Record<string, unknown>): unknown {
+  if (result && typeof result === "object" && !Array.isArray(result))
+    return { ...(result as Record<string, unknown>), lunaVerification: evidence }
+  return { value: result, lunaVerification: evidence }
+}
+
+/**
+ * 平台工具经委托端点执行时返回稳定传输信封；测试客户端和未来的本地执行器
+ * 也允许直接返回业务对象。这里只解一层明确的委托信封，避免把业务对象中名为
+ * result 的普通字段误当成传输层。
+ */
+function delegatedBusinessResult(input: unknown): unknown {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return input
+  const envelope = input as Record<string, unknown>
+  const isDelegationEnvelope = typeof envelope.operationId === "string"
+    && typeof envelope.verified === "boolean"
+    && Object.hasOwn(envelope, "result")
+  return isDelegationEnvelope ? envelope.result : input
+}
+
+function jsonPointerValue(input: unknown, pointer: string): unknown {
+  if (!pointer.startsWith("/")) return undefined
+  let current = input
+  for (const rawSegment of pointer.slice(1).split("/")) {
+    const segment = rawSegment.replaceAll("~1", "/").replaceAll("~0", "~")
+    if (Array.isArray(current)) {
+      if (!/^\d+$/.test(segment)) return undefined
+      current = current[Number(segment)]
+      continue
+    }
+    if (!current || typeof current !== "object" || !(segment in current)) return undefined
+    current = (current as Record<string, unknown>)[segment]
+  }
+  return current
+}
+
+function toolFailureRetryable(result: ToolExecutionResult): boolean {
+  if (result.body && typeof result.body === "object") {
+    const body = result.body as Record<string, unknown>
+    if (typeof body.retryable === "boolean") return body.retryable
+    if (body.error && typeof body.error === "object" && typeof (body.error as Record<string, unknown>).retryable === "boolean")
+      return (body.error as { retryable: boolean }).retryable
+  }
+  return isRetryableHTTPStatus(result.status)
+}
+
+function safeArgumentsHash(value: unknown): string {
+  try {
+    return hashCanonicalJSON(value)
+  }
+  catch {
+    return hashCanonicalJSON({ invalidArgumentsType: typeof value })
+  }
+}
+
+function isAsyncReadbackOperation(catalog: ToolCatalog, operationId: string): boolean {
+  return catalog.all().some(operation => operation.contract?.verification.mode === "async-readback"
+    && operation.contract.verification.operationId === operationId)
 }
 
 export class MemoryToolCallStore implements ToolCallStore {

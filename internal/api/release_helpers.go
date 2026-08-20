@@ -124,7 +124,7 @@ func releaseFromInput(projectID, userID string, input releaseInput, releaseID st
 		ImageRef:           strings.TrimSpace(input.ImageRef),
 		ForceImagePull:     input.ForceImagePull,
 		Type:               normalizeReleaseType(input.Type),
-		Status:             fallback(strings.TrimSpace(input.Status), "pending"),
+		Status:             "pending",
 		Revision:           fallbackInt(input.Revision, 1),
 		Message:            strings.TrimSpace(input.Message),
 		CreatedBy:          userID,
@@ -162,7 +162,6 @@ type releaseInput struct {
 	ImageRef           string `json:"imageRef"`
 	ForceImagePull     bool   `json:"forceImagePull"`
 	Type               string `json:"type"`
-	Status             string `json:"status"`
 	Revision           int    `json:"revision"`
 	Message            string `json:"message"`
 }

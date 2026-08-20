@@ -118,7 +118,7 @@ func (h *Handlers) canInspectClusterResourceProject(ctx *gin.Context, user model
 	if user.Role == authz.PlatformRoleAdmin {
 		return true
 	}
-	if _, ok := h.findProjectForCurrentUserWithRolesByID(ctx, projectID, authz.ProjectRoleOwner, authz.ProjectRoleAdmin); ok {
+	if _, ok := h.findProjectForCurrentUserByID(ctx, projectID); ok {
 		return true
 	}
 	return false

@@ -158,6 +158,14 @@ func (h *Handlers) GetAgentObservabilityOverview(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusInternalServerError, "ai.observability.tools_failed", "Agent tool summaries are unavailable")
 		return
 	}
+	runSummary, err := store.SummarizeRuns(ctx.Request.Context(), start)
+	if err != nil {
+		writeErrorCode(ctx, http.StatusInternalServerError, "ai.observability.runs_failed", "Agent run summaries are unavailable")
+		return
+	}
+	result.Summary.InputTokens = float64(runSummary.InputTokens)
+	result.Summary.OutputTokens = float64(runSummary.OutputTokens)
+	result.Summary.RunDurationP95 = runSummary.DurationP95Seconds
 	result.Summary.TurnCount = turnSummary.Total
 	result.Summary.TurnSuccessRate = turnSummary.SuccessRate
 	result.Summary.ToolCalls = float64(toolSummary.Total)

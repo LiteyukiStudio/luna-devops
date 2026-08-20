@@ -1,6 +1,18 @@
 import { createHash } from "node:crypto"
 import { z } from "zod"
 import type { ModelToolDefinition, ModelToolSearchResult } from "../provider/provider.js"
+import { redact } from "../redaction.js"
+import { validateToolArguments } from "./argument-validator.js"
+import {
+  agentToolContractSchema,
+  type ToolRetrievalPendingState,
+  type ToolRetrievalQuery,
+  type ToolRetrievalResult,
+} from "./contracts.js"
+import {
+  HybridToolRetriever,
+  type HybridToolRetrieverOptions,
+} from "./retrieval/pipeline.js"
 
 export const toolRisk = z.enum(["read", "ui", "write", "sensitive", "destructive"])
 export type ToolRisk = z.infer<typeof toolRisk>
@@ -27,7 +39,7 @@ const operation = z.object({
   inputSchema: jsonSchema,
   sensitivePaths: z.array(z.string()).max(100).optional(),
   maxItems: z.number().int().min(1).max(500).optional(),
-  resultVerifier: z.string().optional(),
+  contract: agentToolContractSchema.optional(),
 }).superRefine((value, context) => {
   if (["sensitive", "destructive"].includes(value.risk) && value.approval === "never") {
     context.addIssue({ code: "custom", message: "high-risk operation requires approval" })
@@ -71,8 +83,34 @@ const operationDescriptions: Record<string, string> = {
   createVolumeImport: "建立本地归档导入会话，但 Agent 不能读取或上传用户本地文件。仅用于解释能力；实际导入必须引导用户通过 Luna DevOps Web 或 Luna CLI 选择文件并完成可续传上传。",
 }
 
-type RetrievalContext = { projectId?: string, pathname?: string, routeName?: string }
+export type RetrievalContext = {
+  projectId?: string
+  pathname?: string
+  routeName?: string
+  resourceTypes?: string[]
+  completedOperations?: string[]
+  stableOutcomes?: string[]
+  pendingState?: ToolRetrievalPendingState
+  stableErrorCodes?: string[]
+}
 type ToolGuidance = { intents: string[], useWhen: string, avoidWhen?: string, prerequisites?: string, followups?: string[] }
+
+export type ToolCatalogOptions = HybridToolRetrieverOptions & {
+  automaticLimit?: number
+  platformToolLimit?: number
+}
+
+export type CatalogSearchResult = ModelToolSearchResult & {
+  strategy: ToolRetrievalResult["strategy"]
+  outcome: ToolRetrievalResult["outcome"]
+  degradedReason?: string
+  retrieval: ToolRetrievalResult
+}
+
+export type CatalogResolveResult = {
+  tools: ModelToolDefinition[]
+  retrieval: ToolRetrievalResult
+}
 
 const operationGuidance: Record<string, ToolGuidance> = {
   listProjects: { intents: ["项目空间", "选择项目", "全部项目空间", "project workspace"], useWhen: "需要发现与当前用户相关的项目空间，或为项目级操作确定真实 projectId 时；默认使用 scope=related。", avoidWhen: "已经从可信工具结果取得唯一 projectId，或用户没有明确要求全平台搜索时不要使用 scope=all。", prerequisites: "scope=all 仅限平台管理员，且必须由用户明确要求在全部项目空间中搜索。" },
@@ -132,14 +170,25 @@ const operationGuidance: Record<string, ToolGuidance> = {
 
 export class ToolCatalog {
   private readonly operations: Map<string, ToolOperation>
+  private readonly allowedOperations: Map<string, ToolOperation & { contract: NonNullable<ToolOperation["contract"]> }>
+  private readonly retriever: HybridToolRetriever
+  private readonly automaticLimit: number
+  private readonly platformToolLimit: number
   readonly digest: string
-  private constructor(values: ToolOperation[]) {
+  private constructor(values: ToolOperation[], options: ToolCatalogOptions = {}) {
     this.operations = new Map(values.map(value => [value.operationId, value]))
     if (this.operations.size !== values.length) throw new Error("ai.tool_catalog_duplicate_operation")
-    this.digest = `sha256:${createHash("sha256").update(JSON.stringify([...values].sort((a, b) => a.operationId.localeCompare(b.operationId)))).digest("hex")}`
+    this.allowedOperations = new Map(values
+      .filter((value): value is ToolOperation & { contract: NonNullable<ToolOperation["contract"]> } => value.contract?.allowed === true)
+      .map(value => [value.operationId, value]))
+    validateWorkflowReferences(this.allowedOperations)
+    this.retriever = new HybridToolRetriever([...this.allowedOperations.values()], options)
+    this.automaticLimit = boundedLimit(options.automaticLimit ?? 8, 8)
+    this.platformToolLimit = boundedLimit(options.platformToolLimit ?? 12, 12)
+    this.digest = `sha256:${createHash("sha256").update(JSON.stringify([...values].sort((left, right) => compareOperationIds(left.operationId, right.operationId)))).digest("hex")}`
   }
-  static load(input: unknown): ToolCatalog {
-    return new ToolCatalog(z.array(operation).min(1).parse(input))
+  static load(input: unknown, options: ToolCatalogOptions = {}): ToolCatalog {
+    return new ToolCatalog(z.array(operation).min(1).parse(input), options)
   }
   get(operationId: string): ToolOperation {
     const value = this.operations.get(operationId)
@@ -149,142 +198,206 @@ export class ToolCatalog {
   all(): ToolOperation[] {
     return [...this.operations.values()]
   }
-  resolve(_context: RetrievalContext = {}, _userInput = "", _loadedOperationIds: string[] = []): ModelToolDefinition[] {
-    // 平台工具目录较小：全部工具随每次模型请求下发，上下文与用户输入不再用于过滤。
-    void _context
-    void _userInput
-    void _loadedOperationIds
-    return this.all().map(item => this.toModelTool(item))
+  allowedModelTools(): ModelToolDefinition[] {
+    return [...this.allowedOperations.values()]
+      .sort((left, right) => compareOperationIds(left.operationId, right.operationId))
+      .map(item => this.toModelTool(item))
+  }
+  resolve(context: RetrievalContext = {}, userInput = "", loadedOperationIds: string[] = []): ModelToolDefinition[] {
+    const retrieval = this.retriever.retrieveSync(retrievalQuery(context, userInput), {
+      limit: this.automaticLimit,
+      stickyOperationIds: loadedOperationIds,
+    })
+    return this.resolveResult(retrieval, loadedOperationIds)
+  }
+  async resolveAsync(
+    context: RetrievalContext = {},
+    userInput = "",
+    loadedOperationIds: string[] = [],
+    signal?: AbortSignal,
+  ): Promise<ModelToolDefinition[]> {
+    return (await this.resolveDetailedAsync(context, userInput, loadedOperationIds, signal)).tools
+  }
+  async resolveDetailedAsync(
+    context: RetrievalContext = {},
+    userInput = "",
+    loadedOperationIds: string[] = [],
+    signal?: AbortSignal,
+  ): Promise<CatalogResolveResult> {
+    const retrieval = await this.retriever.retrieve(retrievalQuery(context, userInput), {
+      limit: this.automaticLimit,
+      stickyOperationIds: loadedOperationIds,
+    }, signal)
+    return { tools: this.resolveResult(retrieval, loadedOperationIds), retrieval }
   }
   modelTools(context: RetrievalContext = {}, userInput = "", loadedOperationIds: string[] = []): ModelToolDefinition[] {
     return this.resolve(context, userInput, loadedOperationIds)
   }
-  search(query: string, context: RetrievalContext = {}, limit = 8): ModelToolSearchResult {
-    const boundedLimit = Math.max(1, Math.min(12, limit))
-    const ranked = this.rank(context, query).filter(candidate => candidate.score > 0)
-    const matches = ranked
-      .slice(0, boundedLimit)
-      .map(({ operation: item }) => ({
-        operationId: item.operationId,
-        category: item.category,
-        description: this.toModelTool(item).description,
-      }))
+  search(query: string, context: RetrievalContext = {}, limit = 8): CatalogSearchResult {
+    return this.searchResult(query, this.retriever.retrieveSync(retrievalQuery(context, query), { limit }))
+  }
+  async searchAsync(
+    query: string,
+    context: RetrievalContext = {},
+    limit = 8,
+    signal?: AbortSignal,
+  ): Promise<CatalogSearchResult> {
+    return this.searchResult(query, await this.retriever.retrieve(retrievalQuery(context, query), { limit }, signal))
+  }
+  select(category: string, limit = 15): ToolOperation[] {
+    return [...this.allowedOperations.values()].filter(item => item.category === category).slice(0, Math.min(15, limit))
+  }
+
+  private searchResult(query: string, retrieval: ToolRetrievalResult): CatalogSearchResult {
+    const matches = retrieval.matches.flatMap(match => {
+      const item = this.allowedOperations.get(match.operationId)
+      return item
+        ? [{ operationId: item.operationId, category: item.category, description: this.toModelTool(item).description }]
+        : []
+    })
     return {
       query,
       matches,
       loadedOperationIds: matches.map(item => item.operationId),
-      totalMatches: ranked.length,
+      totalMatches: retrieval.totalMatches,
+      strategy: retrieval.strategy,
+      outcome: retrieval.outcome,
+      ...(retrieval.degradedReason ? { degradedReason: retrieval.degradedReason } : {}),
+      retrieval,
     }
   }
-  select(category: string, limit = 15): ToolOperation[] {
-    return [...this.operations.values()].filter(item => item.category === category).slice(0, Math.min(15, limit))
+
+  private resolveResult(retrieval: ToolRetrievalResult, loadedOperationIds: string[]): ModelToolDefinition[] {
+    const safeOperationId = (operationId: string) => {
+      const operation = this.allowedOperations.get(operationId)
+      if (!operation) return false
+      return !retrieval.query.pendingState || !["external-write", "platform-write", "destructive"].includes(operation.contract.sideEffect)
+    }
+    const workflowOperationIds = retrieval.matches
+      .filter(match => match.reasonCode === "required_verifier" || match.reasonCode === "required_predecessor")
+      .map(match => match.operationId)
+      .filter(safeOperationId)
+    const stickyOperationIds = loadedOperationIds.filter(safeOperationId)
+    const goalOperationIds = retrieval.matches
+      .filter(match => match.reasonCode === "goal_match" || match.reasonCode === "ambiguous_candidate")
+      .map(match => match.operationId)
+      .filter(safeOperationId)
+    const followupOperationIds = retrieval.matches
+      .filter(match => match.reasonCode === "workflow_followup")
+      .map(match => match.operationId)
+      .filter(safeOperationId)
+    const operationIds = unique(workflowOperationIds).slice(0, this.platformToolLimit)
+    const reserveGoal = goalOperationIds.some(operationId => !operationIds.includes(operationId)) && operationIds.length < this.platformToolLimit ? 1 : 0
+    appendOperationIds(operationIds, stickyOperationIds, this.platformToolLimit - reserveGoal)
+    appendOperationIds(operationIds, goalOperationIds, this.platformToolLimit)
+    appendOperationIds(operationIds, followupOperationIds, this.platformToolLimit)
+    appendOperationIds(operationIds, baseOperationIds.filter(safeOperationId), this.platformToolLimit)
+    return operationIds.map(operationId => this.toModelTool(this.allowedOperations.get(operationId)!))
   }
 
-  private rank(context: RetrievalContext, query: string) {
-    const contextualQuery = `${query}\n${context.pathname ?? ""}\n${context.routeName ?? ""}`
-    const categories = relevantCategories(contextualQuery)
-    const queryTerms = searchTerms(contextualQuery)
-    return this.all().map(operation => {
-      const guidance = operationGuidance[operation.operationId]
-      const document = [operation.operationId, splitIdentifier(operation.operationId), semanticIdentifier(operation.operationId), operation.category, operation.description ?? "", ...(operation.searchHints ?? []), operationDescriptions[operation.operationId] ?? "", ...(guidance?.intents ?? []), guidance?.useWhen ?? "", ...Object.keys(operation.inputSchema.properties)].join(" ").toLowerCase()
-      let score = categories.has(normalizeCategory(operation.category)) ? 18 : 0
-      for (const term of queryTerms) {
-        if (document.includes(term)) score += term.length >= 4 ? 7 : 3
-        if (operation.operationId.toLowerCase().includes(term)) score += 8
-      }
-      if (guidance?.intents.some(intent => contextualQuery.toLowerCase().includes(intent.toLowerCase()))) score += 24
-      if (essentialWorkflowOperations.has(operation.operationId) && score > 0) score += 3
-      return { operation, score }
-    }).sort((left, right) => right.score - left.score || operationPriority(right.operation.operationId) - operationPriority(left.operation.operationId) || left.operation.operationId.localeCompare(right.operation.operationId))
-  }
-
-  private toModelTool(item: ToolOperation): ModelToolDefinition {
+  private toModelTool(item: ToolOperation & { contract: NonNullable<ToolOperation["contract"]> }): ModelToolDefinition {
     const guidance = operationGuidance[item.operationId]
-    const generatedDescription = item.description?.startsWith("调用 Luna DevOps 的 ") ? undefined : item.description
+    const contract = item.contract
+    const generatedDescription = item.description?.startsWith("调用 Luna DevOps 的 ") || item.description?.startsWith("用途：")
+      ? undefined
+      : item.description
     const parameterNames = Object.keys(item.inputSchema.properties)
     const base = operationDescriptions[item.operationId] ?? generatedDescription
-      ?? `${operationVerb(item.operationId)} Luna DevOps 的 ${categoryLabel(item.category)}能力 ${item.operationId}。${parameterNames.length ? `主要参数：${parameterNames.join("、")}。` : "无需参数。"}`
-    const boundary = platformContextOperations.has(item.operationId)
-      ? "该操作作用于平台范围，不能传入 projectId。"
-      : "资源标识必须来自用户输入或可信工具结果；页面上下文只提供指引，不代表授权。"
-    const behavior = guidance
-      ? `适用：${guidance.useWhen}${guidance.avoidWhen ? ` 不适用：${guidance.avoidWhen}` : ""}${guidance.prerequisites ? ` 前置：${guidance.prerequisites}` : ""}${item.resultVerifier ? ` 成功后必须按 ${item.resultVerifier} 权威回读验收。` : ""}`
-      : `${boundary}只有用户需要查询当前 Luna DevOps 数据或明确执行平台操作时才可使用。${item.resultVerifier ? ` 执行后按 ${item.resultVerifier} 权威回读验收。` : ""}`
+      ?? guidance?.useWhen
+      ?? `${operationVerb(item.operationId)} Luna DevOps 的 ${categoryLabel(item.category)}能力 ${item.operationId}。`
+    const boundary = platformContextOperations.has(item.operationId) ? "平台范围工具。" : "资源标识必须来自用户输入或可信工具结果。"
+    const behavior = [
+      `适用：${contract.useWhen.join("；")}。`,
+      ...(contract.avoidWhen.length ? [`不适用：${contract.avoidWhen.join("；")}。`] : []),
+      ...(contract.prerequisites.length ? [`前置：${contract.prerequisites.join("；")}。`] : []),
+      ...(contract.parameterSummary.length ? [`主要参数：${contract.parameterSummary.join("；")}。`] : parameterNames.length ? [`主要参数名：${parameterNames.join("、")}。`] : []),
+      ...(contract.commonErrorCodes.length ? [`常见错误码：${contract.commonErrorCodes.join("、")}。`] : []),
+      `成功证据：${contract.successEvidence.join("；")}。`,
+    ].join(" ")
     const sensitiveBoundary = item.sensitivePaths?.length
       ? "该操作包含敏感输入，只能通过用户可见的安全表单或 Direct Tool Action 提交；不得把敏感值写入普通模型工具参数、聊天消息或最终回复，结果也不得回显明文。"
       : ""
-    return { operationId: item.operationId, description: `${base} ${sensitiveBoundary} ${behavior}`.trim(), inputSchema: item.inputSchema }
+    return { operationId: item.operationId, description: `${base} ${boundary} ${sensitiveBoundary} ${behavior}`.trim(), inputSchema: item.inputSchema }
   }
 }
 
-const essentialWorkflowOperations = new Set([
-  "getDashboard", "listProjects", "getProject", "createProject",
-  "listAppTemplates", "getAppTemplate", "installAppTemplate",
-  "listApplications", "getApplication", "createApplication", "previewApplicationDeletion", "deleteApplication",
-  "listDeploymentTargets", "createDeploymentTarget", "updateDeploymentTarget",
-  "listBuildRuns", "getBuildRun", "triggerBuildRun", "retryBuildRun", "cancelBuildRun", "listRegistryCredentials",
-  "listReleases", "getRelease", "createRelease", "rollbackRelease",
-  "listGatewayRoutes", "getGatewayRoute", "createGatewayRoute", "updateGatewayRoute",
-  "getReleaseRuntimeLogs", "listRuntimeEvents", "listRuntimeClusters",
-  "listProjectVolumes", "getProjectVolume", "createProjectVolume", "updateProjectVolume",
-  "previewProjectVolumeDeletion", "deleteProjectVolume", "createVolumeExport",
-  "listVolumeTransfers", "getVolumeTransfer", "retryVolumeTransfer", "cancelVolumeTransfer",
-  "webSearch", "fetchWebPage", "updateDeploymentTargetRuntimeSecrets", "updateProjectRuntimeConfigSetRuntimeSecrets",
-])
+const baseOperationIds = ["getDashboard", "listProjects", "listAppTemplates", "webSearch", "fetchWebPage"]
 
-function operationPriority(operationId: string): number {
-  return essentialWorkflowOperations.has(operationId) ? 1 : 0
+function validateWorkflowReferences(
+  operations: Map<string, ToolOperation & { contract: NonNullable<ToolOperation["contract"]> }>,
+): void {
+  for (const operation of operations.values()) {
+    const contract = operation.contract
+    if (operation.idempotent !== contract.idempotent
+      || operation.approval !== contract.approval
+      || (operation.stepUpPurpose ?? "") !== (contract.mfaPurpose ?? "")) {
+      throw new Error(`ai.tool_contract_transport_mismatch:${operation.operationId}`)
+    }
+    if (contract.replaySafe && !contract.idempotent)
+      throw new Error(`ai.tool_contract_replay_unsafe:${operation.operationId}`)
+    if (operation.method === "GET" && ["external-write", "platform-write", "destructive"].includes(contract.sideEffect))
+      throw new Error(`ai.tool_contract_get_side_effect:${operation.operationId}`)
+    const references = [
+      ...contract.predecessors,
+      ...contract.followups,
+      ...(contract.verification.mode === "response" ? [] : [contract.verification.operationId]),
+    ]
+    for (const operationId of references) {
+      if (!operations.has(operationId)) throw new Error(`ai.tool_contract_reference_unavailable:${operation.operationId}:${operationId}`)
+    }
+    if (contract.verification.mode === "response") continue
+    const verifier = operations.get(contract.verification.operationId)!
+    if (verifier.contract.verification.mode !== "response" || !verifier.contract.idempotent || !verifier.contract.replaySafe)
+      throw new Error(`ai.tool_contract_verifier_invalid:${operation.operationId}:${verifier.operationId}`)
+    if (!contract.followups.includes(verifier.operationId) || !verifier.contract.predecessors.includes(operation.operationId))
+      throw new Error(`ai.tool_contract_workflow_relation_invalid:${operation.operationId}:${verifier.operationId}`)
+    const verifierProperties = verifier.inputSchema.properties
+    for (const argument of Object.keys(contract.verification.argumentBindings)) {
+      if (!(argument in verifierProperties))
+        throw new Error(`ai.tool_contract_binding_unknown:${operation.operationId}:${argument}`)
+    }
+    for (const argument of verifier.inputSchema.required) {
+      if (!(argument in contract.verification.argumentBindings))
+        throw new Error(`ai.tool_contract_binding_missing:${operation.operationId}:${argument}`)
+    }
+  }
 }
 
-function relevantCategories(input: string): Set<string> {
-  const value = input.toLowerCase()
-  const categories = new Set<string>()
-  const add = (...items: string[]) => items.forEach(item => categories.add(normalizeCategory(item)))
-  if (/部署|安装|上线|发布|构建|源码|代码|仓库|镜像|模板|deploy|install|release|build|source|repository|image/.test(value)) {
-    add("projects", "applications", "deployments", "builds", "releases", "runtime", "registries", "git", "gateway", "topology")
+function retrievalQuery(context: RetrievalContext, currentGoal: string): ToolRetrievalQuery {
+  return {
+    currentGoal: [...redact(currentGoal)].slice(0, 1200).join(""),
+    ...(context.routeName ? { routeName: [...context.routeName].slice(0, 120).join("") } : {}),
+    resourceContext: unique([
+      ...(context.resourceTypes ?? []).map(item => [...item].slice(0, 120).join("")),
+      ...(context.projectId ? ["project-context"] : []),
+    ]).filter(Boolean).slice(0, 20),
+    completedOperations: unique(context.completedOperations ?? []).map(item => [...item].slice(0, 120).join("")).filter(Boolean).slice(0, 40),
+    stableOutcomes: unique(context.stableOutcomes ?? []).map(item => [...item].slice(0, 120).join("")).filter(Boolean).slice(0, 40),
+    ...(context.pendingState ? { pendingState: context.pendingState } : {}),
+    stableErrorCodes: unique(context.stableErrorCodes ?? []).map(item => [...item].slice(0, 160).join("")).filter(Boolean).slice(0, 40),
   }
-  if (/诊断|故障|异常|失败|日志|事件|健康|diagnos|error|fail|log|health/.test(value)) {
-    add("deployments", "builds", "releases", "runtime", "gateway", "notifications")
-  }
-  if (/网关|域名|证书|路由|公网|外网|访问地址|访问入口|暴露服务|gateway|domain|certificate|dns|ingress|public url|public access|expose service/.test(value)) add("gateway", "deployments", "runtime")
-  if (/集群|运行时|pod|kubernetes|k3s|cluster|runtime/.test(value)) add("runtime", "deployments")
-  if (/数据卷|项目卷|存储卷|pvc|volume|transfer|导入归档|导出归档/.test(value)) add("projectvolumes", "volumetransfers", "deployments", "runtime")
-  if (/通知|投递|notification|delivery/.test(value)) add("notifications", "events")
-  if (/成员|用户|权限|认证|安全|mfa|oauth|token|member|user|permission|auth|security/.test(value)) {
-    add("users", "auth", "oauthapplications", "configs")
-  }
-  if (/账单|费用|成本|余额|billing|cost|wallet/.test(value)) add("billing")
-  if (/设置|配置|保留|清理|setting|config|retention|cleanup/.test(value)) add("configs", "dataretention")
-  if (/关系|拓扑|依赖|绑定|relation|topology|dependency|binding/.test(value)) add("topology")
-  if (/项目空间|项目列表|project|\/projects/.test(value)) add("project")
-  if (/应用|服务|application|\/applications/.test(value)) add("application")
-  if (/事件|event|\/events/.test(value)) add("event")
-  if (/模板|应用市场|template|marketplace|\/app-templates/.test(value)) add("apptemplate", "application")
-  return categories
 }
 
-function normalizeCategory(value: string): string {
-  const normalized = value.toLowerCase().replace(/[\s_-]+/g, "")
-  return normalized.endsWith("s") ? normalized.slice(0, -1) : normalized
+function boundedLimit(value: number, maximum: number): number {
+  return Math.max(1, Math.min(maximum, Number.isSafeInteger(value) ? value : maximum))
 }
 
-function splitIdentifier(value: string): string {
-  return value.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[._-]+/g, " ").toLowerCase()
+function unique<T>(input: T[]): T[] {
+  return [...new Set(input)]
 }
 
-function semanticIdentifier(value: string): string {
-  const aliases: Record<string, string> = {
-    account: "账户", application: "应用", approval: "审批", artifact: "制品", billing: "计费账单",
-    build: "构建", certificate: "证书", channel: "渠道", cluster: "集群", config: "配置",
-    create: "创建", credential: "凭据", delete: "删除", delivery: "投递", deployment: "部署",
-    domain: "域名", event: "事件", execute: "执行", gateway: "网关", get: "读取详情",
-    git: "代码源", hook: "钩子", install: "安装", invoice: "账单", list: "列出查询",
-    log: "日志", member: "成员", notification: "通知", oauth: "OAuth", project: "项目空间",
-    provider: "提供方", registry: "镜像站", release: "发布", retained: "保留", route: "路由访问入口",
-    runtime: "运行时", search: "搜索", secret: "密钥", session: "会话", template: "模板应用市场",
-    topology: "拓扑", trigger: "触发启动", update: "更新修改", user: "用户", volume: "数据卷",
+function appendOperationIds(target: string[], input: string[], maximum: number): void {
+  const seen = new Set(target)
+  for (const operationId of input) {
+    if (target.length >= maximum) return
+    if (seen.has(operationId)) continue
+    seen.add(operationId)
+    target.push(operationId)
   }
-  return splitIdentifier(value).split(" ").map(part => aliases[part] ?? part).join(" ")
+}
+
+function compareOperationIds(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0
 }
 
 function operationVerb(operationId: string): string {
@@ -320,50 +433,6 @@ function categoryLabel(category: string): string {
   return labels[category.toLowerCase()] ?? `${category} `
 }
 
-function searchTerms(value: string): string[] {
-  const normalized = value.toLowerCase()
-  const latin = normalized.match(/[a-z][a-z0-9_-]{1,}/g) ?? []
-  const cjkChunks = normalized.match(/[\u3400-\u9fff]{2,}/g) ?? []
-  const cjk = cjkChunks.flatMap(chunk => chunk.length <= 4 ? [chunk] : [chunk, ...Array.from({ length: chunk.length - 1 }, (_, index) => chunk.slice(index, index + 2))])
-  return [...new Set([...latin, ...cjk])]
-}
-
 export function validateArguments(schema: ToolOperation["inputSchema"], input: unknown): Record<string, unknown> {
-  if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("ai.tool_arguments_invalid")
-  const value = input as Record<string, unknown>
-  const allowed = new Set(Object.keys(schema.properties))
-  if (Object.keys(value).some(key => !allowed.has(key)) || schema.required.some(key => value[key] === undefined)) throw new Error("ai.tool_arguments_invalid")
-  for (const [key, item] of Object.entries(value)) {
-    const rule = schema.properties[key]
-    if (!rule || !validateSchemaValue(rule, item)) throw new Error("ai.tool_arguments_invalid")
-  }
-  return value
-}
-
-function validateSchemaValue(rule: Record<string, unknown>, value: unknown): boolean {
-  const type = rule.type
-  if (typeof type === "string" && !matches(type, value)) return false
-  if (Array.isArray(rule.enum) && !rule.enum.includes(value)) return false
-  if (typeof value === "string" && typeof rule.maxLength === "number" && value.length > rule.maxLength) return false
-  if (typeof value === "number" && typeof rule.minimum === "number" && value < rule.minimum) return false
-  if (typeof value === "number" && typeof rule.maximum === "number" && value > rule.maximum) return false
-  if (Array.isArray(value) && rule.items && typeof rule.items === "object") {
-    return value.every(item => validateSchemaValue(rule.items as Record<string, unknown>, item))
-  }
-  if (value && typeof value === "object" && !Array.isArray(value) && rule.properties && typeof rule.properties === "object") {
-    const object = value as Record<string, unknown>
-    const properties = rule.properties as Record<string, Record<string, unknown>>
-    const required = Array.isArray(rule.required) ? rule.required.filter((item): item is string => typeof item === "string") : []
-    if (required.some(key => object[key] === undefined)) return false
-    if (rule.additionalProperties === false && Object.keys(object).some(key => !properties[key])) return false
-    return Object.entries(object).every(([key, item]) => !properties[key] || validateSchemaValue(properties[key], item))
-  }
-  return true
-}
-
-function matches(type: string, value: unknown): boolean {
-  if (type === "array") return Array.isArray(value)
-  if (type === "object") return Boolean(value) && typeof value === "object" && !Array.isArray(value)
-  if (type === "integer") return typeof value === "number" && Number.isInteger(value)
-  return typeof value === type
+  return validateToolArguments(schema, input)
 }

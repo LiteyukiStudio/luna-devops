@@ -732,6 +732,10 @@ Metrics 使用低基数维度：
 
 建立版本化的 Agent 工具检索评测集，首版不少于 300 条，目标 500 条以上。每条包括：
 
+51 个当前准入工具的逐项覆盖矩阵、300 条样本组成、15 组真实串行对话和向量化成本决策门见
+[`23-Agent工具搜索专项测试方案.md`](23-Agent工具搜索专项测试方案.md)。新增或移除准入工具时，
+必须在同一变更中同步专项矩阵，不能只更新 Catalog。
+
 ```ts
 type ToolRetrievalCase = {
   id: string
@@ -777,7 +781,7 @@ type ToolRetrievalCase = {
 - 显式 `allowed`、用途指导、风险/副作用/重放、输入与输出契约覆盖率 100%。
 - Agent 可用写操作真实 verifier 覆盖率 100%，虚构 `_accepted` verifier 数量为 0。
 - 参数字段级错误完整率 100%；可修复非法参数首次修复成功率 ≥ 95%，确定性错误原样重放为 0。
-- 合法异步轮询不被误杀；相同确定性失败和相同无新信息结果均在第二次原样调用前被阻止。
+- 合法异步轮询不被误杀；相同确定性失败在第二次原样调用前被阻止；普通读取允许一次权威复查，连续两次得到相同稳定结果后才在第三次调用前阻止。
 - 安全不变量、Secret 和越权工具选择用例 100% 通过。
 - 相同 Catalog、查询和状态的排序稳定；并列结果使用 operationId 确定性排序。
 - embedding/rerank 降级用例仍能返回明确能力状态，不错误宣称工具不存在。
@@ -805,6 +809,57 @@ Recall@8 是必要条件，不是唯一指标。还需记录 MRR、NDCG@8、错�
 增加正则或 operationId 特判。
 
 ## 15. 实施里程碑
+
+### 2026-08-20 实施状态
+
+本轮已经完成 M1 的主要正确性底座、M2 的内存检索管线、M4 的可切换加载路径和 M5 的卡片
+Stage 1；生产默认仍保持 `TOOL_RETRIEVAL_MODE=shadow`，不得在 300 条以上评测集、Recall@8、
+安全和端到端成功率门禁完成前改为 `dynamic`：
+
+- OpenAPI/Go/TypeScript 统一 `contract`，首批显式准入 48 个 OpenAPI 平台工具；另为
+  `webSearch`、`fetchWebPage`、`getAppTemplate` 3 个可执行手写工具补齐同构契约。缺字段、未知字段、
+  写操作缺边界/前置、高风险无批准或工作流引用悬空均 fail closed。其他未审计 fallback 操作仍可
+  用于历史恢复，但不能进入模型目录；托管模式首次无法取得权威 Catalog 时阻止启动，避免配置
+  恢复后仍以残缺目录假装就绪。
+- Ajv 2020-12 返回 JSON Pointer 字段问题；真正缺失才暂停输入，非法已提供值回灌模型修复。
+- Run 工具调用上限接通为默认 256、范围 32～2048，并增加确定性失败与无新信息指纹。计数的
+  多实例恢复以及异步轮询退避仍未完成，不能把当前进程内保护当成最终持久化实现。
+- Agent 消费的运行参数和后端 Run 预算采用“存量兼容读取、新值严格写入”：历史越界、格式错误
+  或跨字段冲突不会被改写，也不再阻止 Agent 启动，执行时按单项或关联参数组回退当前平台默认值；
+  设置 API 只校验本次提交字段，并继续强制当前范围。Provider、模型能力和工具契约保持 fail closed。
+- 删除 `_accepted`；`triggerBuildRun`、`createRelease`、`createGatewayRoute` 已使用真实详情工具回读。
+  其余写操作仍需按准入清单补齐权威终态映射，精确 2xx 响应只能证明该响应契约成立。
+- 已实现 Unicode 分词、BM25、多向量内存索引、RRF、工作流 predecessor/followup/verifier、
+  sticky tools、可插拔 Embedding/Reranker 和明确降级；实际 Provider、Catalog digest 向量持久化
+  与原子索引切换仍待完成。
+- 自动检索默认 Top 8、模型可见平台工具上限 12；`search_tools` 复用同一检索器并真实扩张下一
+  步集合。影子模式仍向模型下发全部“显式准入”工具，只记录有限枚举检索遥测。
+- 大型 `create_interaction_cards` 联合 Schema 已退出生产模型工具集，替换为 7 个按业务意图拆分
+  的窄工具；旧 operationId 只保留 Timeline/Web/历史恢复协议。最大模型可见卡片 Schema 相比旧
+  联合 Schema 缩小约 82.9%。权威进度/结果的契约自动投影仍属于后续阶段。
+
+首轮浏览器场景测试后的正确性收口还补充了以下门禁，均属于现有 M1/M2 契约的实现修复，而不是
+新增 Prompt 特例：
+
+- 委托执行信封与业务响应分层：写后回读先解包 `{ operationId, verified, result }` 的业务 `result`，
+  再应用 `idSource`、`argumentBindings` 和完成态路径；`createRelease` 的成功、pending 和失败回读均
+  使用真实信封夹具覆盖。
+- `updateDeploymentTarget` 显式准入；创建或修复部署目标前必须由 `listRuntimeClusters` 取得真实
+  `clusterId`，不得以空值或重复创建资源规避前置条件。
+- `search_tools` 只能在当前 Run 内真实执行一次并把命中工具扩张到下一模型步；主模型不再通过
+  `create_options` 把检索责任退回给用户。内部检索调用会持久化脱敏参数、结果、耗时和 Trace。
+- 最近 5 分钟内的相同成功空读取会以会话历史指纹种入新 Run 的 LoopGuard；第二次实际调用前返回
+  `ai.tool_no_new_information`，执行器把它转换为模型可解释的结构化结果，不把整轮会话打成失败。
+  非空实时状态不继承该指纹，用户明确刷新时仍可重新观察。
+- OpenAPI Catalog 启动时逐个校验传输层与 Agent Contract 的幂等、批准、MFA、副作用和成功状态；
+  每个异步回读对还校验 verifier 存在、双向工作流关系、所有必填参数绑定、写响应 ID 指针、完成态
+  路径及终态 enum。当前 48 个准入平台工具和 3 对异步回读必须全量通过，否则 Catalog fail closed。
+- `predecessors` 的检索语义按副作用收紧：只有写目标可以提升未完成的只读前置；读取/verifier 上
+  为表达反向关系登记的写操作不得成为 `required_predecessor`。该门禁防止“读取应用详情”把“创建
+  应用”排到首位。
+
+因此，下面 M2 的“持久化/原子切换”、M3 的“实际重排与影子评测”、M4 的“生产灰度默认切换”
+以及 M5 的平台 façade/自动投影仍是开放事项，不能因本轮单元测试通过而标记整个方案完成。
 
 ### M1：Catalog 与执行正确性底座
 

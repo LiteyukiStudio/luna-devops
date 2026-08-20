@@ -507,6 +507,7 @@ export class PostgresRepository implements Repository {
         status: items.status,
         content: items.content,
         timelineIndex: items.timelineIndex,
+        createdAt: items.createdAt,
       })
         .from(turns)
         .innerJoin(items, eq(items.runId, turns.selectedRunId))
@@ -549,7 +550,7 @@ export class PostgresRepository implements Repository {
         user: item.input,
         assistant: item.assistant,
         ...((toolInteractionsByTurn.get(item.turn_index)?.length ?? 0) > 0
-          ? { toolInteractions: toolInteractionsByTurn.get(item.turn_index)!.map(tool => ({ type: tool.type, status: tool.status, content: tool.content })) }
+          ? { toolInteractions: toolInteractionsByTurn.get(item.turn_index)!.map(tool => ({ type: tool.type, status: tool.status, content: tool.content, createdAt: tool.createdAt.toISOString() })) }
           : {}),
       })),
       conversation: { title: row.title, titleSource: row.titleSource },

@@ -1,18 +1,21 @@
 import { describe, expect, it, vi } from "vitest"
+import { hashCanonicalJSON } from "../src/canonical-json.js"
 import { loadConfig } from "../src/config.js"
 import { RunExecutor } from "../src/executor.js"
 import { ModelRuntime } from "../src/model-runtime.js"
 import { MemoryRepository } from "../src/persistence/memory.js"
 import type { RunStateConflictError } from "../src/persistence/repository.js"
 import { DeterministicProvider } from "../src/provider/deterministic.js"
-import type { ModelProvider, ModelRequest } from "../src/provider/provider.js"
+import type { ModelProvider, ModelRequest, ModelToolRetrievalState } from "../src/provider/provider.js"
 import { presentTimeline } from "../src/timeline-presenter.js"
 import { ToolCatalog } from "../src/tools/catalog.js"
+import { businessCardTools } from "../src/tools/business-card-tools.js"
 import { DeterministicLunaApiClient } from "../src/tools/luna-api-client.js"
 import { MemoryToolCallStore, ProjectingToolCallStore, ToolOrchestrator } from "../src/tools/orchestrator.js"
 import { createOptionsInput, createOptionsTool } from "../src/tools/ui-options.js"
 import { navigateToRouteTool } from "../src/tools/ui-route.js"
 import { searchToolsTool } from "../src/tools/tool-search.js"
+import { responseToolContract } from "./tool-contract-fixtures.js"
 
 describe("provider to tool to subsequent model invocation", () => {
   it("reports the authoritative state when a run transition loses a race", async () => {
@@ -340,6 +343,79 @@ describe("provider to tool to subsequent model invocation", () => {
     )).toBe(false)
   })
 
+  it("dispatches a narrow card tool through the stable card protocol and repairs the same operation", async () => {
+    const repository = new MemoryRepository()
+    const conversation = await repository.createConversation("usr_a", "应用配置", undefined, "user")
+    const created = await repository.createTurn("usr_a", {
+      conversationId: conversation.id,
+      input: "收集应用名称",
+      pageContext: {},
+      idempotencyKey: "narrow-card-tool",
+    })
+    const requests: ModelRequest[] = []
+    let modelStep = 0
+    const provider: ModelProvider = {
+      async *stream(request) {
+        requests.push(request)
+        yield {
+          type: "completed",
+          usage: { inputTokens: 10, outputTokens: 10 },
+          toolCalls: [{
+            id: modelStep++ === 0 ? "invalid_narrow_card" : "valid_narrow_card",
+            operationId: "request_tool_input",
+            arguments: modelStep === 1
+              ? {
+                  title: "配置应用",
+                  resourceTitle: "示例应用",
+                  sections: [],
+                  submit: { type: "send_message", label: "继续", message: "继续创建应用" },
+                }
+              : {
+                  title: "配置应用",
+                  resourceTitle: "示例应用",
+                  sections: [{
+                    id: "main",
+                    fields: [{ id: "name", type: "text", label: "应用名称", required: true }],
+                  }],
+                  submit: { type: "send_message", label: "继续", message: "继续创建 {{name}}" },
+                },
+          }],
+        }
+      },
+      async complete() {
+        return { text: "", usage: { inputTokens: 1, outputTokens: 0 }, toolCalls: [] }
+      },
+      capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
+      health: async () => ({ ok: true }),
+    }
+    const executor = new RunExecutor(
+      repository,
+      new ModelRuntime(provider, businessCardTools),
+      loadConfig({ NODE_ENV: "test", INSTANCE_ID: "narrow-card-worker" }),
+    )
+
+    await executor.runOnce()
+
+    expect((await repository.getRun("usr_a", created.run.id))?.status).toBe("completed")
+    expect(requests).toHaveLength(2)
+    expect(requests[0]?.tools?.map(tool => tool.operationId)).toContain("request_tool_input")
+    expect(requests[0]?.tools?.map(tool => tool.operationId)).not.toContain("create_interaction_cards")
+    const retry = requests[1]?.messages.find(message => message.role === "tool" && message.toolCallId === "invalid_narrow_card")
+    expect(retry?.content).toContain("request_tool_input")
+    expect(retry?.content).toContain('"path":"sections"')
+
+    const timeline = await presentTimeline(repository, "usr_a", conversation.id)
+    const card = timeline?.turns[0]?.selectedRun?.items.find(item =>
+      "toolCall" in item && item.toolCall.operationId === "create_interaction_cards",
+    )
+    expect(card && "toolCall" in card ? card.toolCall.arguments : undefined).toMatchObject({
+      schemaVersion: 1,
+      placement: "turn_end",
+      mode: "interactive",
+      template: "form",
+    })
+  })
+
   it("feeds presentation-card completion back to the model before ending the workflow", async () => {
     const repository = new MemoryRepository()
     const conversation = await repository.createConversation("usr_a", "部署状态", undefined, "user")
@@ -477,11 +553,13 @@ describe("provider to tool to subsequent model invocation", () => {
       {
         operationId: "listProjects", method: "GET", path: "/api/v1/projects", category: "project",
         risk: "read", requiredScopes: ["project:read"], approval: "never", idempotent: true, timeoutMs: 5000,
+        contract: responseToolContract({ resourceTypes: ["project"] }),
         inputSchema: { type: "object", properties: {}, required: [], additionalProperties: false },
       },
       {
         operationId: "listApplications", method: "GET", path: "/api/v1/applications", category: "application",
         risk: "read", requiredScopes: ["application:read"], approval: "never", idempotent: true, timeoutMs: 5000,
+        contract: responseToolContract({ resourceTypes: ["application"] }),
         inputSchema: { type: "object", properties: { projectId: { type: "string" } }, required: ["projectId"], additionalProperties: false },
       },
     ])
@@ -655,12 +733,12 @@ describe("provider to tool to subsequent model invocation", () => {
     expect(toolMessage?.content).toContain("不要修改分支、Dockerfile、构建上下文、镜像引用或 Tag")
   })
 
-  it("exposes the full catalog from the first model step and executes the requested tool", async () => {
+  it("loads a task-relevant tool from the first model step and executes it", async () => {
     const repository = new MemoryRepository()
     const conversation = await repository.createConversation("usr_a", "公网入口", undefined, "user")
     const created = await repository.createTurn("usr_a", {
       conversationId: conversation.id,
-      input: "继续处理刚才的事情",
+      input: "为这个应用创建公网入口",
       pageContext: { routeName: "applications" },
       idempotencyKey: "full-catalog-tool",
       runActorGrantCiphertext: "encrypted-test-grant",
@@ -670,6 +748,26 @@ describe("provider to tool to subsequent model invocation", () => {
       description: "创建公网网关路由。", risk: "write", requiredScopes: ["gateway:write"], approval: "never",
       idempotent: true, timeoutMs: 5000,
       inputSchema: { type: "object", properties: {}, required: [], additionalProperties: false },
+      contract: {
+        allowed: true,
+        resourceTypes: ["gateway-route"],
+        action: "create",
+        sideEffect: "platform-write",
+        idempotent: true,
+        replaySafe: false,
+        risk: "medium",
+        approval: "never",
+        intents: ["为应用创建公网入口", "创建网关路由"],
+        useWhen: ["应用和目标服务已经确定，需要创建公网访问地址时"],
+        avoidWhen: ["只是查询已有公网入口时"],
+        prerequisites: ["目标服务和端口已经确定"],
+        parameterSummary: [],
+        successEvidence: ["响应返回新网关路由标识"],
+        commonErrorCodes: [],
+        predecessors: [],
+        followups: [],
+        verification: { mode: "response", successCodes: [200] },
+      },
     }])
     const requests: ModelRequest[] = []
     let modelStep = 0
@@ -689,9 +787,13 @@ describe("provider to tool to subsequent model invocation", () => {
     }
     const client = new DeterministicLunaApiClient(() => ({ status: 200, body: { id: "gwr_test" } }))
     const tools = new ToolOrchestrator(catalog, client, new ProjectingToolCallStore(new MemoryToolCallStore(), repository), undefined, undefined, async () => "opaque-grant")
+    const retrievalStates: Array<ModelToolRetrievalState | undefined> = []
     const runtime = new ModelRuntime(provider, {
-      resolve: (pageContext, input, loaded) => [...catalog.resolve(pageContext, input, loaded), searchToolsTool],
-      search: (query, pageContext, limit) => catalog.search(query, pageContext, limit),
+      resolve: async (pageContext, input, loaded, state, signal) => {
+        retrievalStates.push(state)
+        return [...await catalog.resolveAsync(pageContext, input, loaded, signal), searchToolsTool]
+      },
+      search: (query, pageContext, limit, _state, signal) => catalog.searchAsync(query, pageContext, limit, signal),
     })
     const executor = new RunExecutor(repository, runtime, loadConfig({ NODE_ENV: "test", INSTANCE_ID: "full-catalog-worker" }), tools)
 
@@ -700,6 +802,104 @@ describe("provider to tool to subsequent model invocation", () => {
     expect((await repository.getRun("usr_a", created.run.id))?.status).toBe("completed")
     expect(requests[0]?.tools?.map(tool => tool.operationId)).toContain("createGatewayRoute")
     expect(client.calls.map(call => call.operation.operationId)).toEqual(["createGatewayRoute"])
+    expect(retrievalStates[1]).toMatchObject({
+      completedOperations: ["createGatewayRoute"],
+      stableOutcomes: ["createGatewayRoute:succeeded"],
+    })
+  })
+
+  it("executes search_tools in the current run, persists it, and loads the matched tool on the next model step", async () => {
+    const repository = new MemoryRepository()
+    const conversation = await repository.createConversation("usr_a", "工具检索", undefined, "user")
+    const created = await repository.createTurn("usr_a", {
+      conversationId: conversation.id,
+      input: "找到平台概览工具并执行",
+      pageContext: { routeName: "dashboard" },
+      idempotencyKey: "search-tool-closure",
+      runActorGrantCiphertext: "encrypted-test-grant",
+    })
+    const catalog = ToolCatalog.load([{
+      operationId: "getDashboard",
+      method: "GET",
+      path: "/api/v1/dashboard",
+      category: "dashboard",
+      description: "读取平台概览。",
+      risk: "read",
+      requiredScopes: ["dashboard:read"],
+      approval: "never",
+      idempotent: true,
+      timeoutMs: 5000,
+      inputSchema: { type: "object", properties: {}, required: [], additionalProperties: false },
+      contract: {
+        allowed: true,
+        resourceTypes: ["dashboard"],
+        action: "read",
+        sideEffect: "none",
+        idempotent: true,
+        replaySafe: true,
+        risk: "low",
+        approval: "never",
+        intents: ["读取平台概览"],
+        useWhen: ["需要平台概览时"],
+        avoidWhen: [],
+        prerequisites: [],
+        parameterSummary: [],
+        successEvidence: ["返回平台概览"],
+        commonErrorCodes: [],
+        predecessors: [],
+        followups: [],
+        verification: { mode: "response", successCodes: [200] },
+      },
+    }])
+    const requests: ModelRequest[] = []
+    let step = 0
+    const provider: ModelProvider = {
+      async *stream(request) {
+        requests.push(request)
+        if (step++ === 0) {
+          yield { type: "message_delta", delta: "我现在检索平台概览工具。" }
+          yield { type: "completed", usage: { inputTokens: 4, outputTokens: 2 }, toolCalls: [{ id: "search-1", operationId: "search_tools", arguments: { query: "读取平台概览", maxResults: 8 } }] }
+          return
+        }
+        if (step === 2) {
+          yield { type: "completed", usage: { inputTokens: 5, outputTokens: 2 }, toolCalls: [{ id: "dashboard-1", operationId: "getDashboard", arguments: {} }] }
+          return
+        }
+        yield { type: "message_delta", delta: "平台概览已读取。" }
+        yield { type: "completed", usage: { inputTokens: 6, outputTokens: 3 } }
+      },
+      async complete() { return { text: "", usage: { inputTokens: 1, outputTokens: 0 }, toolCalls: [] } },
+      capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
+      health: async () => ({ ok: true }),
+    }
+    const client = new DeterministicLunaApiClient(() => ({ status: 200, body: { status: "healthy" } }))
+    const tools = new ToolOrchestrator(catalog, client, new ProjectingToolCallStore(new MemoryToolCallStore(), repository), undefined, undefined, async () => "opaque-grant")
+    const runtime = new ModelRuntime(provider, {
+      resolve: (_pageContext, _input, loaded) => [
+        searchToolsTool,
+        ...(loaded.includes("getDashboard") ? catalog.allowedModelTools() : []),
+      ],
+      search: query => ({
+        query,
+        matches: [{ operationId: "getDashboard", category: "dashboard", description: "读取平台概览" }],
+        loadedOperationIds: ["getDashboard"],
+        totalMatches: 1,
+      }),
+    })
+    const executor = new RunExecutor(repository, runtime, loadConfig({ NODE_ENV: "test", INSTANCE_ID: "search-closure-worker" }), tools)
+
+    await executor.runOnce()
+
+    expect((await repository.getRun("usr_a", created.run.id))?.status).toBe("completed")
+    expect(requests[0]?.tools?.map(tool => tool.operationId)).toEqual(["search_tools"])
+    expect(requests[1]?.tools?.map(tool => tool.operationId)).toEqual(expect.arrayContaining(["search_tools", "getDashboard"]))
+    expect(client.calls.map(call => call.operation.operationId)).toEqual(["getDashboard"])
+    const timeline = await presentTimeline(repository, "usr_a", conversation.id)
+    const search = timeline?.turns[0]?.selectedRun?.items.find(item => "toolCall" in item && item.toolCall.operationId === "search_tools")
+    expect(search && "toolCall" in search ? search.toolCall : undefined).toMatchObject({
+      status: "succeeded",
+      arguments: { query: "读取平台概览", maxResults: 8 },
+    })
   })
 
   it("persists an automatic registered-route action without invoking the business tool orchestrator", async () => {
@@ -866,6 +1066,7 @@ describe("provider to tool to subsequent model invocation", () => {
     const catalog = ToolCatalog.load([{
       operationId: "getBuildRun", method: "GET", path: "/api/v1/builds", category: "build",
       risk: "read", requiredScopes: ["build:read"], approval: "never", idempotent: true, timeoutMs: 5000,
+      contract: responseToolContract({ resourceTypes: ["build-run"] }),
       inputSchema: { type: "object", properties: { buildId: { type: "string" } }, required: ["buildId"], additionalProperties: false },
     }])
     const client = new DeterministicLunaApiClient(() => ({ status: 200, body: { id: "build_a", status: "failed" } }))
@@ -882,6 +1083,63 @@ describe("provider to tool to subsequent model invocation", () => {
     expect(toolItem && "toolCall" in toolItem ? toolItem.toolCall.durationMs : undefined).toEqual(expect.any(Number))
     expect(client.calls[0]?.runActorGrant).toBe("opaque-grant")
   })
+
+  it("turns a cross-turn empty-read loop stop into model guidance instead of failing the run", async () => {
+    const repository = new MemoryRepository()
+    const conversation = await repository.createConversation("usr_a", "empty read loop")
+    const created = await repository.createTurn("usr_a", {
+      conversationId: conversation.id,
+      input: "再查一次不存在的构建记录",
+      pageContext: {},
+      idempotencyKey: "empty-read-loop",
+      runActorGrantCiphertext: "encrypted-test-grant",
+    })
+    const catalog = ToolCatalog.load([{
+      operationId: "listBuildRuns", method: "GET", path: "/api/v1/builds", category: "build",
+      risk: "read", requiredScopes: ["build:read"], approval: "never", idempotent: true, timeoutMs: 5000,
+      contract: responseToolContract({ resourceTypes: ["build-run"] }),
+      inputSchema: { type: "object", properties: { projectId: { type: "string" } }, required: ["projectId"], additionalProperties: false },
+    }])
+    const client = new DeterministicLunaApiClient(() => ({ status: 200, body: { items: [], total: 0 } }))
+    const tools = new ToolOrchestrator(catalog, client, new ProjectingToolCallStore(new MemoryToolCallStore(), repository), undefined, undefined, async () => "opaque-grant")
+    tools.seedRunStableResult({
+      runId: created.run.id,
+      operationId: "listBuildRuns",
+      argumentsHash: hashCanonicalJSON({ projectId: "prj_missing" }),
+      result: { items: [], total: 0 },
+    })
+
+    const requests: ModelRequest[] = []
+    let step = 0
+    const provider: ModelProvider = {
+      async *stream(request) {
+        requests.push(request)
+        if (step++ === 0) {
+          yield {
+            type: "completed",
+            usage: { inputTokens: 10, outputTokens: 5 },
+            toolCalls: [{ operationId: "listBuildRuns", arguments: { projectId: "prj_missing" } }],
+          }
+          return
+        }
+        yield { type: "message_delta", delta: "当前未发现构建记录。" }
+        yield { type: "completed", usage: { inputTokens: 12, outputTokens: 4 } }
+      },
+      async complete(request) {
+        requests.push(request)
+        return { text: "当前未发现构建记录。", usage: { inputTokens: 3, outputTokens: 2 } }
+      },
+      capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
+      health: async () => ({ ok: true }),
+    }
+    const executor = new RunExecutor(repository, new ModelRuntime(provider), loadConfig({ NODE_ENV: "test", INSTANCE_ID: "empty-read-loop-worker" }), tools)
+
+    expect(await executor.runOnce()).toBe(true)
+    expect((await repository.getRun("usr_a", created.run.id))?.status).toBe("completed")
+    expect(client.calls).toHaveLength(0)
+    expect(String(requests[1]?.messages.find(message => message.role === "tool")?.content)).toContain("ai.tool_no_new_information")
+  })
+
   it("persists approval and MFA interruptions, then resumes the same run", async () => {
     const repository = new MemoryRepository()
     const conversation = await repository.createConversation("usr_a", "restart")
@@ -893,6 +1151,10 @@ describe("provider to tool to subsequent model invocation", () => {
       operationId: "restartRelease", method: "POST", path: "/api/v1/releases/restart", category: "deployment",
       risk: "destructive", requiredScopes: ["deployment:write"], approval: "always", stepUpPurpose: "deployment_restart",
       idempotent: true, timeoutMs: 5000,
+      contract: responseToolContract({
+        resourceTypes: ["release"], action: "execute", sideEffect: "platform-write", replaySafe: false,
+        risk: "high", approval: "always", mfaPurpose: "deployment_restart", avoidWhen: ["目标未确认时"], prerequisites: ["必须取得真实 releaseId"],
+      }),
       inputSchema: { type: "object", properties: { releaseId: { type: "string" } }, required: ["releaseId"], additionalProperties: false },
     }])
     const store = new MemoryToolCallStore()
@@ -944,6 +1206,7 @@ describe("provider to tool to subsequent model invocation", () => {
     const catalog = ToolCatalog.load([{
       operationId: "getBuildRun", method: "GET", path: "/api/v1/builds", category: "build",
       risk: "read", requiredScopes: ["build:read"], approval: "never", idempotent: true, timeoutMs: 5000,
+      contract: responseToolContract({ resourceTypes: ["build-run"] }),
       inputSchema: { type: "object", properties: { buildId: { type: "string" } }, required: ["buildId"], additionalProperties: false },
     }])
     const tools = new ToolOrchestrator(catalog, new DeterministicLunaApiClient(() => ({ status: 200, body: { id: "build_a" } })), new ProjectingToolCallStore(new MemoryToolCallStore(), repository), undefined, undefined, async () => "grant")
@@ -1036,6 +1299,10 @@ describe("provider to tool to subsequent model invocation", () => {
     const catalog = ToolCatalog.load([{
       operationId: "saveConfig", method: "POST", path: "/api/v1/config", category: "application",
       risk: "write", requiredScopes: ["application:write"], approval: "never", idempotent: true, timeoutMs: 5000,
+      contract: responseToolContract({
+        resourceTypes: ["application-config"], action: "update", sideEffect: "platform-write", replaySafe: false,
+        risk: "medium", approval: "never", avoidWhen: ["没有安全提交时"], prerequisites: ["必须取得目标配置"],
+      }),
       inputSchema: {
         type: "object",
         properties: { environment: { type: "array" } },

@@ -1,5 +1,7 @@
 import { createId } from "../id.js"
+import { trace } from "@opentelemetry/api"
 import type { Repository } from "../persistence/repository.js"
+import { redact } from "../redaction.js"
 import type { RuntimeSettings } from "../runtime-settings.js"
 import { renameConversationInput } from "../tools/conversation-title.js"
 import { createOptionsInput, optionUIActions } from "../tools/ui-options.js"
@@ -12,6 +14,43 @@ export class InternalToolHandlers {
     private readonly repository: Repository,
     private readonly runtimeSettings: () => RuntimeSettings,
   ) {}
+
+  async recordToolCall(
+    runId: string,
+    turnId: string,
+    operationId: string,
+    rawArguments: unknown,
+    status: "succeeded" | "failed",
+    result?: unknown,
+    errorCode?: string,
+    toolCallId = createId("aitool"),
+    durationMs?: number,
+  ) {
+    const itemId = createId("aiitm")
+    await this.repository.appendItemWithEvent({
+      id: itemId,
+      runId,
+      turnId,
+      type: "tool_call",
+      status: status === "succeeded" ? "completed" : "failed",
+      content: {
+        toolCallId,
+        operationId,
+        status,
+        arguments: redact(rawArguments),
+        ...(result !== undefined ? { result: redact(result) } : {}),
+        ...(errorCode ? { errorCode } : {}),
+        ...(typeof durationMs === "number" && Number.isFinite(durationMs) ? { durationMs: Math.max(0, Math.round(durationMs)) } : {}),
+        ...(activeTraceId() ? { traceId: activeTraceId() } : {}),
+      },
+    }, status === "succeeded" ? "tool.completed" : "tool.failed", {
+      itemId,
+      toolCallId,
+      operationId,
+      status,
+      ...(errorCode ? { errorCode } : {}),
+    })
+  }
 
   async createOptions(runId: string, turnId: string, raw: unknown) {
     const input = createOptionsInput.parse(raw)
@@ -95,4 +134,9 @@ export class InternalToolHandlers {
     })
     return renamed
   }
+}
+
+function activeTraceId(): string | undefined {
+  const traceId = trace.getActiveSpan()?.spanContext().traceId
+  return traceId && /^(?!0{32}$)[a-f0-9]{32}$/i.test(traceId) ? traceId : undefined
 }

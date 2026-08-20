@@ -19,7 +19,7 @@ func TestAIToolRegistryRejectsArbitraryOperationsAndPaths(t *testing.T) {
 	if _, exists := aiToolPolicies["executeSQL"]; exists {
 		t.Fatal("arbitrary SQL must never enter the AI tool catalog")
 	}
-	if len(aiToolPolicies) < 150 {
+	if len(aiToolPolicies) < 45 || len(aiToolPolicies) > 90 {
 		t.Fatalf("Agent platform catalog is unexpectedly small: %d", len(aiToolPolicies))
 	}
 	for operationID, policy := range aiToolPolicies {
@@ -35,6 +35,11 @@ func TestAIToolRegistryRejectsArbitraryOperationsAndPaths(t *testing.T) {
 	}
 	if policy := aiToolPolicies["createProject"]; policy.Risk != "write" || policy.ApprovalRequired {
 		t.Fatalf("unexpected low-risk project creation policy = %#v", policy)
+	}
+	for _, operationID := range []string{"updateProject", "deleteApplication", "execReleaseRuntimeCommand", "createVolumeImport"} {
+		if _, exists := aiToolPolicies[operationID]; exists {
+			t.Fatalf("unreviewed or legacy operation entered Agent policy registry: %s", operationID)
+		}
 	}
 }
 

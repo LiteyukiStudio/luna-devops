@@ -1,8 +1,9 @@
 # 业务卡片模板命中规则
 
-业务卡片模板把高频交互固化为稳定参数契约。调用 `create_interaction_cards` 时，优先只提供
-`schemaVersion` 和 `businessTemplate`；`generationId` 由 Agent 在执行链内签发。平台会把业务模板编译为受控通用卡片，
-前端仍使用同一套渲染、校验、权限和提交链路。
+业务卡片模板把高频交互固化为稳定参数契约。模型只调用 `request_resource_choice`、
+`request_tool_input`、`review_tool_action` 或对应的 `present_*` 窄工具，并一次提供完整输入；
+`schemaVersion`、`templateId` 和 `generationId` 由 Agent 在执行链内补齐。平台会把窄工具输入
+编译为受控通用卡片，前端仍使用同一套渲染、校验、权限和提交链路。
 
 ## 选择顺序
 

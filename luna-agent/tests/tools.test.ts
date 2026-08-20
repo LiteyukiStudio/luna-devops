@@ -2,17 +2,23 @@ import { describe, expect, it } from "vitest"
 import { ToolCatalog } from "../src/tools/catalog.js"
 import { DeterministicLunaApiClient } from "../src/tools/luna-api-client.js"
 import { MemoryToolCallStore, SensitiveInputRejected, ToolOrchestrator, type ToolInterruption } from "../src/tools/orchestrator.js"
+import { responseToolContract } from "./tool-contract-fixtures.js"
 
 const catalog = ToolCatalog.load([
   {
     operationId: "getBuildRun", method: "GET", path: "/api/v1/builds", category: "build",
     risk: "read", requiredScopes: ["build:read"], approval: "never", idempotent: true, timeoutMs: 5000,
+    contract: responseToolContract({ resourceTypes: ["build-run"] }),
     inputSchema: { type: "object", properties: { buildId: { type: "string", maxLength: 64 } }, required: ["buildId"], additionalProperties: false },
   },
   {
     operationId: "restartRelease", method: "POST", path: "/api/v1/releases/restart", category: "deployment",
     risk: "destructive", requiredScopes: ["deployment:write"], approval: "always", stepUpPurpose: "deployment_restart",
     idempotent: true, timeoutMs: 5000,
+    contract: responseToolContract({
+      resourceTypes: ["release"], action: "execute", sideEffect: "platform-write", replaySafe: false,
+      risk: "high", approval: "always", mfaPurpose: "deployment_restart", avoidWhen: ["未取得明确目标时"], prerequisites: ["必须取得真实 releaseId"],
+    }),
     inputSchema: { type: "object", properties: { releaseId: { type: "string" } }, required: ["releaseId"], additionalProperties: false },
   },
 ])
@@ -28,6 +34,10 @@ describe("tool catalog and orchestration", () => {
     const sensitiveCatalog = ToolCatalog.load([{
       operationId: "updateRuntimeSecret", method: "PUT", path: "/api/v1/runtime-secrets", category: "deployment",
       risk: "sensitive", requiredScopes: ["deployment:update"], approval: "always", stepUpPurpose: "secret_update", idempotent: true, timeoutMs: 5000,
+      contract: responseToolContract({
+        resourceTypes: ["runtime-secret"], action: "update", sideEffect: "platform-write", replaySafe: false,
+        risk: "high", approval: "always", mfaPurpose: "secret_update", avoidWhen: ["没有安全表单输入时"], prerequisites: ["必须由用户安全提交"],
+      }),
       inputSchema: {
         type: "object",
         properties: { values: { type: "object", writeOnly: true, "x-luna-sensitive": true, additionalProperties: { type: "string" } } },
@@ -70,6 +80,10 @@ describe("tool catalog and orchestration", () => {
     const sensitiveCatalog = ToolCatalog.load([{
       operationId: "installTemplate", method: "POST", path: "/api/v1/templates/install", category: "application",
       risk: "sensitive", requiredScopes: ["application:write"], approval: "always", idempotent: true, timeoutMs: 5000,
+      contract: responseToolContract({
+        resourceTypes: ["application"], action: "create", sideEffect: "platform-write", replaySafe: false,
+        risk: "high", approval: "always", avoidWhen: ["参数不完整时"], prerequisites: ["必须取得真实 projectId"],
+      }),
       inputSchema: {
         type: "object",
         properties: {
@@ -99,14 +113,52 @@ describe("tool catalog and orchestration", () => {
       body: { username: "app", password: "[REDACTED]" },
     })
   })
-  it("does not impose a per-run tool-call ceiling", async () => {
+  it("enforces the configured high per-run tool-call ceiling", async () => {
     const client = new DeterministicLunaApiClient(() => ({ status: 200, body: {} }))
     const orchestrator = new ToolOrchestrator(catalog, client, new MemoryToolCallStore(), undefined, undefined, resolveGrant)
-    for (let index = 0; index < 65; index += 1) {
+    orchestrator.setRunMaxToolCalls(32)
+    for (let index = 0; index < 32; index += 1) {
       await expect(orchestrator.propose({ runId: "airun_test", operationId: "getBuildRun", arguments: { buildId: `build_${index}` } }))
         .resolves.toMatchObject({ status: "succeeded" })
     }
-    expect(client.calls).toHaveLength(65)
+    await expect(orchestrator.propose({ runId: "airun_test", operationId: "getBuildRun", arguments: { buildId: "overflow" } }))
+      .rejects.toMatchObject({ code: "ai.run_tool_call_budget_exceeded", retryable: false })
+    expect(client.calls).toHaveLength(32)
+    expect(orchestrator.toolLoopSnapshot("airun_test")).toEqual({ proposed: 33, executed: 32, maxToolCalls: 32 })
+  })
+  it("returns invalid present values to the model as structured repairable failures", async () => {
+    const constrainedCatalog = ToolCatalog.load([{
+      operationId: "listRuntimeClusterResources", method: "GET", path: "/api/v1/runtime/resources", category: "runtime",
+      risk: "read", requiredScopes: ["runtime:read"], approval: "never", idempotent: true, timeoutMs: 5000,
+      contract: responseToolContract({ resourceTypes: ["runtime-resource"] }),
+      inputSchema: {
+        type: "object",
+        properties: { resourceCategory: { type: "string", enum: ["namespaces", "workloads", "services", "configs", "storage"] } },
+        required: ["resourceCategory"],
+        additionalProperties: false,
+      },
+    }])
+    const client = new DeterministicLunaApiClient(() => ({ status: 200, body: {} }))
+    const orchestrator = new ToolOrchestrator(constrainedCatalog, client, new MemoryToolCallStore(), undefined, undefined, resolveGrant)
+    const failed = await orchestrator.propose({ runId: "airun_invalid", operationId: "listRuntimeClusterResources", arguments: { resourceCategory: "Deployment" } })
+    expect(failed).toMatchObject({
+      status: "failed",
+      errorCode: "ai.tool_arguments_invalid",
+      result: {
+        code: "ai.tool_arguments_invalid",
+        retryable: true,
+        issues: [{
+          path: "/resourceCategory",
+          code: "enum",
+          allowedValues: ["namespaces", "workloads", "services", "configs", "storage"],
+        }],
+      },
+    })
+    expect(client.calls).toHaveLength(0)
+    await expect(orchestrator.propose({ runId: "airun_invalid", operationId: "listRuntimeClusterResources", arguments: { resourceCategory: "Deployment" } }))
+      .rejects.toMatchObject({ code: "ai.tool_deterministic_failure_repeated", retryable: false })
+    await expect(orchestrator.propose({ runId: "airun_invalid", operationId: "listRuntimeClusterResources", arguments: { resourceCategory: "workloads" } }))
+      .resolves.toMatchObject({ status: "succeeded" })
   })
   it("fails when final-state verification is inconclusive", async () => {
     const client = new DeterministicLunaApiClient(() => ({ status: 202, body: { accepted: true } }))

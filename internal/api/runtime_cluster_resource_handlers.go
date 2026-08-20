@@ -26,7 +26,8 @@ func (h *Handlers) ListRuntimeClusterResources(ctx *gin.Context) {
 		writeError(ctx, http.StatusNotFound, "runtime cluster not found")
 		return
 	}
-	if !h.canManageScopedResourceByID(ctx, user, cluster.Scope, cluster.OwnerRef, scopedResourceRuntimeCluster, cluster.ID, "无权查看该集群资源") {
+	if !h.canUseScopedResourceByID(user, cluster.Scope, cluster.OwnerRef, scopedResourceRuntimeCluster, cluster.ID, ctx.Request.Context()) {
+		writeErrorCode(ctx, http.StatusForbidden, "runtime_cluster.forbidden", "无权查看该集群资源")
 		return
 	}
 	pagination := paginationFromQuery(ctx)
@@ -45,12 +46,16 @@ func (h *Handlers) ListRuntimeClusterResources(ctx *gin.Context) {
 		return
 	}
 	options := kubeprovider.ResourceListOptions{
-		Kind:          strings.TrimSpace(ctx.Query("kind")),
+		Kind:          strings.TrimSpace(ctx.Query("resourceCategory")),
 		Namespace:     strings.TrimSpace(ctx.Query("namespace")),
 		ProjectID:     strings.TrimSpace(ctx.Query("projectId")),
 		ApplicationID: strings.TrimSpace(ctx.Query("applicationId")),
 		EnvironmentID: strings.TrimSpace(ctx.Query("environmentId")),
 		Limit:         int64(pagination.PageSize),
+	}
+	if !validRuntimeResourceCategory(options.Kind) {
+		writeRuntimeResourceArgumentError(ctx, "cluster.resource_category_invalid", "resourceCategory", runtimeResourceCategories)
+		return
 	}
 	if options.ProjectID != "" && !h.canInspectClusterResourceProject(ctx, user, options.ProjectID) {
 		return
@@ -92,7 +97,8 @@ func (h *Handlers) GetRuntimeClusterResourceYAML(ctx *gin.Context) {
 		writeError(ctx, http.StatusNotFound, "runtime cluster not found")
 		return
 	}
-	if !h.canManageScopedResourceByID(ctx, user, cluster.Scope, cluster.OwnerRef, scopedResourceRuntimeCluster, cluster.ID, "无权查看该集群资源") {
+	if !h.canUseScopedResourceByID(user, cluster.Scope, cluster.OwnerRef, scopedResourceRuntimeCluster, cluster.ID, ctx.Request.Context()) {
+		writeErrorCode(ctx, http.StatusForbidden, "runtime_cluster.forbidden", "无权查看该集群资源")
 		return
 	}
 	kubeconfig := h.secrets.ResolveContext(ctx.Request.Context(), cluster.KubeconfigRef)
@@ -105,11 +111,15 @@ func (h *Handlers) GetRuntimeClusterResourceYAML(ctx *gin.Context) {
 		writeError(ctx, http.StatusBadRequest, "运行集群 kubeconfig 无效")
 		return
 	}
-	kind := strings.TrimSpace(ctx.Query("kind"))
+	kind := strings.TrimSpace(ctx.Query("resourceKind"))
 	namespace := strings.TrimSpace(ctx.Query("namespace"))
 	name := strings.TrimSpace(ctx.Query("name"))
-	if kind == "" || name == "" {
-		writeError(ctx, http.StatusBadRequest, "资源类型和名称不能为空")
+	if !validRuntimeResourceKind(kind) {
+		writeRuntimeResourceArgumentError(ctx, "cluster.resource_kind_invalid", "resourceKind", runtimeResourceKinds)
+		return
+	}
+	if name == "" {
+		writeErrorCode(ctx, http.StatusBadRequest, "cluster.resource_name_required", "resource name is required")
 		return
 	}
 	requestCtx, cancel := context.WithTimeout(ctx.Request.Context(), 10*time.Second)
@@ -136,7 +146,8 @@ func (h *Handlers) ListRuntimeClusterResourceEvents(ctx *gin.Context) {
 		writeError(ctx, http.StatusNotFound, "runtime cluster not found")
 		return
 	}
-	if !h.canManageScopedResourceByID(ctx, user, cluster.Scope, cluster.OwnerRef, scopedResourceRuntimeCluster, cluster.ID, "无权查看该集群资源") {
+	if !h.canUseScopedResourceByID(user, cluster.Scope, cluster.OwnerRef, scopedResourceRuntimeCluster, cluster.ID, ctx.Request.Context()) {
+		writeErrorCode(ctx, http.StatusForbidden, "runtime_cluster.forbidden", "无权查看该集群资源")
 		return
 	}
 	pagination := paginationFromQueryWithSort(ctx, map[string]string{"lastSeen": "last_seen"}, "lastSeen")
@@ -154,11 +165,15 @@ func (h *Handlers) ListRuntimeClusterResourceEvents(ctx *gin.Context) {
 		writeError(ctx, http.StatusBadRequest, "运行集群 kubeconfig 无效")
 		return
 	}
-	kind := strings.TrimSpace(ctx.Query("kind"))
+	kind := strings.TrimSpace(ctx.Query("resourceKind"))
 	namespace := strings.TrimSpace(ctx.Query("namespace"))
 	name := strings.TrimSpace(ctx.Query("name"))
-	if kind == "" || name == "" {
-		writeError(ctx, http.StatusBadRequest, "资源类型和名称不能为空")
+	if !validRuntimeResourceKind(kind) {
+		writeRuntimeResourceArgumentError(ctx, "cluster.resource_kind_invalid", "resourceKind", runtimeResourceKinds)
+		return
+	}
+	if name == "" {
+		writeErrorCode(ctx, http.StatusBadRequest, "cluster.resource_name_required", "resource name is required")
 		return
 	}
 	requestCtx, cancel := context.WithTimeout(ctx.Request.Context(), 10*time.Second)

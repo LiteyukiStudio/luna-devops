@@ -120,8 +120,8 @@ GHCR 或其他 OCI Registry 镜像。对每个可独立部署的服务分别评�
    根据字符串存在就假定镜像可用。
 3. 尽量在一张 `resource_configuration` 表单中收齐全部参数：项目空间、应用名称与标识符、
    镜像引用、环境阶段、服务端口、运行配置、数据卷和必要的非敏感环境变量；Secret 通过
-   平台受控字段处理。只有确实需要用户决定时才询问目标集群（`clusterId` 为空即平台默认
-   集群），不要因为表单里存在该字段就要求用户填写。
+   平台受控字段处理。创建或更新部署目标前先用 `listRuntimeClusters` 读取实时候选；唯一候选
+   直接采用但仍把真实 `clusterId` 写入参数，多个候选且用户未指定时才询问，不依赖空值暗选。
 3.1 需要随机凭据（JWT_SECRET、会话密钥、访问令牌、随机密码）且用户未提供值时，使用
    `updateDeploymentTargetRuntimeSecrets` 的 `generate` 参数，让平台后端直接生成并绑定
    Secret。需要用户提供值时，只能展示安全表单并用 Direct Tool Action 提交 `values`；

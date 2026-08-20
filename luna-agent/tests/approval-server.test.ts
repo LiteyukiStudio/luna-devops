@@ -8,6 +8,7 @@ import { buildServer } from "../src/server.js"
 import { ToolCatalog } from "../src/tools/catalog.js"
 import { DeterministicLunaApiClient } from "../src/tools/luna-api-client.js"
 import { MemoryToolCallStore, ProjectingToolCallStore, ToolOrchestrator } from "../src/tools/orchestrator.js"
+import { responseToolContract } from "./tool-contract-fixtures.js"
 
 const approvalCatalog = ToolCatalog.load([{
   operationId: "updateThing",
@@ -19,6 +20,10 @@ const approvalCatalog = ToolCatalog.load([{
   approval: "always",
   idempotent: true,
   timeoutMs: 1000,
+  contract: responseToolContract({
+    resourceTypes: ["thing"], action: "update", sideEffect: "platform-write", replaySafe: false,
+    risk: "medium", approval: "always", avoidWhen: ["目标未确认时"], prerequisites: ["必须取得目标"],
+  }),
   inputSchema: {
     type: "object",
     properties: { value: { type: "string" } },

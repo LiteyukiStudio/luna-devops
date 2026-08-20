@@ -37,9 +37,13 @@ Administrators can change the **Context input budget** under advanced runtime se
 
 The same page sets cumulative limits for one Run: 2,000,000 tokens and 10,000 credits by default. The credit limit covers normal input, output, cached input, and cached output, while the user's available personal-wallet balance remains the smaller limit. Main replies, tool loops, summaries, titles, and next-step predictions all count toward the same Run. Before each request, the platform automatically tightens the output allowance. If the context window, Run budget, or wallet can no longer cover the request, the model request is not sent.
 
+Each Run also has a high tool-call safety guard. It defaults to 256 platform-tool calls and can be configured from 32 to 2048. This guard stops repeated deterministic failures and queries that return no new information; it is not a target for normal workflows. When reached, the assistant reports why it stopped instead of claiming success. Legitimate asynchronous work may continue polling according to its authoritative task state.
+
 The single ring at the bottom of the composer shows the context usage reported by the latest main assistant model call. Hover or focus the ring to see both that context usage and the current Run's cumulative token-budget usage, including each limit and percentage. Reopening a conversation restores the latest usage from the authoritative timeline.
 
 Under **Advanced settings**, the Agent's internal parameters can be tuned by category: context & compression (compression trigger/target ratios, recent-turn retention, summary budgets, etc.), model & execution (max output tokens per reply, max model steps per Run, user-input size limit, navigation-action TTL), and tool results & cards (tool-result context budget, interaction-card repair limit). Every item ships with a platform default and is delivered to the Agent dynamically; keep the defaults for ordinary deployments and avoid tuning without a specific need.
+
+After an upgrade, an existing runtime value may fall outside the current range or use an obsolete format. The platform preserves that stored value and does not block Agent startup; runtime execution uses the current platform default for that item instead. The next time an administrator submits that setting, the value must satisfy the range shown in the settings page. Provider endpoints, model capability catalogs, and tool contracts are not guessed or silently repaired. Incomplete structures still fail closed to avoid contacting the wrong target or relying on fabricated model capacity.
 
 To discard runtime tuning, select **Restore defaults** beside **Save settings**. This restores only Agent runtime, context, model-execution, and tool-budget settings; provider details, API keys, access scope, observability, and proxy settings stay unchanged. Review the restored values, then select **Save settings** to apply them.
 
@@ -61,7 +65,9 @@ Cards use five stable roles: candidate discovery and comparison (`candidates`), 
 
 A conversation can contain several cards with the same configuration fields. Each card keeps its inputs and selections isolated, so operating the current card does not change or jump to an earlier card. If one generated element cannot be displayed, only that position shows a fallback notice; the rest of the conversation and its cards remain available, and refreshing can restore them from the saved conversation.
 
-When the platform has many tools, the assistant first selects a focused set for the current goal. If that set is insufficient, it searches the tool catalog in the background and continues the same task. Tool discovery does not bypass your permissions or mean that an operation has already run, and you do not need to know tool names.
+When the platform has many tools, the assistant only uses capabilities that have been audited and explicitly admitted. The system evaluates relevant tools for the current goal and searches the catalog within the current turn when the current set is insufficient. Tool discovery does not bypass your permissions or mean that a business operation has already run, and you do not need to know tool names. Administrators can inspect each search and its result in Agent observability tool details.
+
+When creating asynchronous resources such as releases, builds, or gateway routes, the assistant extracts the real resource ID from the platform's business result and then invokes the contract-declared detail tool to read back authoritative state. An accepted HTTP request does not mean that the task has succeeded. If the same recent read has already produced an empty result, the assistant reports that no resource was found instead of repeating the request across adjacent turns; an explicit request to refresh live state still performs a new observation.
 
 When deploying from a repository or official deployment guide, the assistant first evaluates official container images maintained by the project. It normally recommends direct image deployment when the version, architecture, and pull requirements match the target. It falls back to a source build when the image cannot be verified, does not fit the deployment, or you explicitly request a source build.
 
@@ -103,7 +109,7 @@ For a context error, shorten the current input, remove unneeded history, or ask 
 
 Expand its details and inspect the error code and request ID. Common causes include changed resources, insufficient permission, unavailable dependencies, invalid parameters, or an operation that needs approval again.
 
-For `ai.database_schema_mismatch`, start or restart Luna API first so it can apply database migrations automatically, then start the Agent. The Agent never changes the database schema itself. If Luna API is temporarily unreachable, the Agent process stays live while readiness reports `ai.provider_config_unavailable`, and reloads configuration automatically after connectivity recovers.
+For `ai.database_schema_mismatch`, start or restart Luna API first so it can apply database migrations automatically, then start the Agent. The Agent never changes the database schema itself. In managed mode, the first startup must obtain the authoritative provider and tool catalog from Luna API and exits if that fetch fails. After a successful startup, a transient configuration-refresh failure keeps using the last valid configuration.
 
 For `ai.final_response_missing`, the model returned tools or options without a visible conclusion and did not repair the response within the bounded model steps. Retry the request, or verify that the Provider reliably returns message content.
 

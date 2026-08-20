@@ -181,6 +181,12 @@ func RequiredAccessTokenScope(path, method string) string {
 		return string(ActionConfigRead)
 	case strings.HasPrefix(path, "/api/v1/configs") && method != http.MethodGet:
 		return string(ActionConfigWrite)
+	case strings.HasPrefix(path, "/api/v1/build/templates/") && strings.HasSuffix(path, "/preview") && method == http.MethodPost:
+		return string(ActionBuildRead)
+	case strings.HasPrefix(path, "/api/v1/registries/") && strings.HasSuffix(path, "/test") && method == http.MethodPost:
+		return string(ActionRegistryRead)
+	case strings.HasPrefix(path, "/api/v1/projects/:projectId/service-bindings/") && strings.HasSuffix(path, "/check") && method == http.MethodPost:
+		return string(ActionProjectRead)
 	case isRuntimeClusterPodTerminalPath(path):
 		return string(ActionClusterManage)
 	case strings.HasPrefix(path, "/api/v1/runtime/clusters") && method == http.MethodGet:

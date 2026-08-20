@@ -13,12 +13,38 @@ export type ModelToolSearchResult = {
   loadedOperationIds: string[]
   totalMatches: number
 }
+export type ModelToolRetrievalState = {
+  resourceContext: string[]
+  completedOperations: string[]
+  stableOutcomes: string[]
+  pendingState?: "user_input" | "approval" | "mfa" | "async_terminal_check"
+  stableErrorCodes: string[]
+}
+type Awaitable<T> = T | Promise<T>
 export type ModelToolRegistry = {
-  resolve: (pageContext: Record<string, unknown>, userInput: string, loadedOperationIds: string[]) => ModelToolDefinition[]
-  search: (query: string, pageContext: Record<string, unknown>, limit: number) => ModelToolSearchResult
+  resolve: (
+    pageContext: Record<string, unknown>,
+    userInput: string,
+    loadedOperationIds: string[],
+    retrievalState?: ModelToolRetrievalState,
+    signal?: AbortSignal,
+  ) => Awaitable<ModelToolDefinition[]>
+  search: (
+    query: string,
+    pageContext: Record<string, unknown>,
+    limit: number,
+    retrievalState?: ModelToolRetrievalState,
+    signal?: AbortSignal,
+  ) => Awaitable<ModelToolSearchResult>
 }
 export type ModelToolResolver = ModelToolDefinition[]
-  | ((pageContext: Record<string, unknown>, userInput: string, loadedOperationIds: string[]) => ModelToolDefinition[])
+  | ((
+    pageContext: Record<string, unknown>,
+    userInput: string,
+    loadedOperationIds: string[],
+    retrievalState?: ModelToolRetrievalState,
+    signal?: AbortSignal,
+  ) => Awaitable<ModelToolDefinition[]>)
   | ModelToolRegistry
 export type ModelToolChoice = "auto" | "required" | { operationId: string }
 export type ModelRequest = {

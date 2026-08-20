@@ -64,7 +64,7 @@ describe("internal API", () => {
     await app.close()
   })
   it("creates a conversation and a durable turn", async () => {
-    const { app } = fixture()
+    const { app, repository } = fixture()
     const headers = { "x-luna-dev-user": "usr_test" }
     const conversation = await app.inject({ method: "POST", url: "/internal/v1/conversations", headers, payload: { title: "构建诊断", modelId: "aimod_test" } })
     expect(conversation.statusCode).toBe(201)
@@ -72,11 +72,19 @@ describe("internal API", () => {
     const id = conversation.json<{ id: string }>().id
     const turn = await app.inject({
       method: "POST", url: `/internal/v1/conversations/${id}/turns`,
-      headers: { ...headers, "idempotency-key": "browser-request-1" },
+      headers: {
+        ...headers,
+        "idempotency-key": "browser-request-1",
+        traceparent: "00-abcdefabcdefabcdefabcdefabcdefab-0123456789abcdef-01",
+      },
       payload: { modelId: "aimod_test", input: { parts: [{ type: "text", text: "为什么失败？" }] }, pageContext: { routeName: "application.builds" }, clientInstanceId: "browser-client-instance-1" },
     })
     expect(turn.statusCode).toBe(202)
     expect(turn.json()).toMatchObject({ state: "queued", turnIndex: 0 })
+    const runId = turn.json<{ runId: string }>().runId
+    expect((await repository.getRun("usr_test", runId))?.traceContext).toEqual({
+      traceparent: "00-abcdefabcdefabcdefabcdefabcdefab-0123456789abcdef-01",
+    })
     await app.close()
   })
   it.each([

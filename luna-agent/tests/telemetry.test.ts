@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
 import { SpanStatusCode, type Span } from "@opentelemetry/api"
-import { initializeTelemetry, internalSpanOptions, isDatabaseSpanCaptureEnabled, isExpectedCancellation, isHealthCheckPath, normalizeTraceContext, recordAvailableTools, recordSpanError, sanitizeTelemetryURL, stableErrorCode, telemetryLog, withSpan } from "../src/telemetry.js"
+import { captureTraceContext, initializeTelemetry, internalSpanOptions, isDatabaseSpanCaptureEnabled, isExpectedCancellation, isHealthCheckPath, normalizeTraceContext, recordAvailableTools, recordSpanError, sanitizeTelemetryURL, stableErrorCode, telemetryLog, withSpan } from "../src/telemetry.js"
 
 describe("agent telemetry", () => {
   it("keeps noisy database spans opt-in", () => {
@@ -59,6 +59,15 @@ describe("agent telemetry", () => {
     })).toEqual({
       traceparent: "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01",
       tracestate: "vendor=value",
+    })
+  })
+
+  it("falls back to the inbound W3C header when telemetry is disabled locally", () => {
+    expect(captureTraceContext({
+      traceparent: "00-abcdefabcdefabcdefabcdefabcdefab-0123456789abcdef-01",
+      authorization: "Bearer secret",
+    })).toEqual({
+      traceparent: "00-abcdefabcdefabcdefabcdefabcdefab-0123456789abcdef-01",
     })
   })
 

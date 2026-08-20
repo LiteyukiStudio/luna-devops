@@ -78,6 +78,15 @@ func TestRollbackReleaseFromTargetUsesPreviousSuccessfulRelease(t *testing.T) {
 	}
 }
 
+func TestReleaseFromInputKeepsWorkflowStatusServerOwned(t *testing.T) {
+	release := releaseFromInput("prj_1", "usr_1", releaseInput{
+		ApplicationID: "app_1", DeploymentTargetID: "target_1", ImageRef: "example.test/app:v1", Revision: 2,
+	}, "")
+	if release.Status != "pending" || release.Revision != 2 {
+		t.Fatalf("release workflow fields = %#v", release)
+	}
+}
+
 func TestDeploymentTargetMatchesBuildRunUsesTargetPatterns(t *testing.T) {
 	run := model.BuildRun{SourceBranch: "main", SourceTag: "v1.2.3"}
 	if !deploymentTargetMatchesBuildRun(model.DeploymentTarget{BranchPattern: "main", TagPattern: "v*"}, run) {

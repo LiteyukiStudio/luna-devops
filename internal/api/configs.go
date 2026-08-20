@@ -33,6 +33,12 @@ type configDefinition struct {
 
 const stepUpPolicyMutationLockID int64 = 0x4c594d4641504f4c
 
+const (
+	aiRunMaxToolCallsMin     = 32
+	aiRunMaxToolCallsMax     = 2048
+	aiRunMaxToolCallsDefault = 256
+)
+
 type configDefinitionResponse struct {
 	Key            string   `json:"key"`
 	LabelKey       string   `json:"labelKey"`
@@ -75,7 +81,7 @@ var configDefinitions = []configDefinition{
 	{Key: "ai.quota.user_concurrent_runs", Label: "用户并发 Run", Type: "number", Default: "10"},
 	{Key: "ai.quota.user_daily_tokens", Label: "用户每日 Token", Type: "number", Default: "200000"},
 	{Key: "ai.quota.project_concurrent_runs", Label: "项目并发 Run", Type: "number", Default: "5"},
-	{Key: "ai.quota.run_max_tool_calls", Label: "Run 最大工具调用", Type: "number", Default: "20"},
+	{Key: "ai.quota.run_max_tool_calls", Label: "Run 最大工具调用", Type: "number", Default: strconv.Itoa(aiRunMaxToolCallsDefault)},
 	{Key: "ai.quota.platform_daily_cost_soft", Label: "平台每日成本软上限", Type: "number", Default: "0"},
 	{Key: "ai.quota.platform_daily_cost_hard", Label: "平台每日成本硬上限", Type: "number", Default: "0"},
 	{Key: "ai.retention.conversation_days", Label: "AI 会话保留天数", Type: "number", Default: "90"},
@@ -575,6 +581,10 @@ func (h *Handlers) UpdateConfigs(ctx *gin.Context) {
 
 	var input updateConfigsInput
 	if !bindJSON(ctx, &input) {
+		return
+	}
+	if err := validateAIConfigInputTypes(input.Values); err != nil {
+		writeErrorCode(ctx, http.StatusBadRequest, "ai.config_invalid", err.Error())
 		return
 	}
 	apiKeyInput := ""

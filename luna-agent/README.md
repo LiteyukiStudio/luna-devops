@@ -69,7 +69,9 @@ src/
 ├── tools/                    工具系统
 │   ├── orchestrator.ts       平台工具编排：提议→审批/MFA→执行→结果投影，
 │   │                         ToolInterruption 驱动断点续跑
-│   ├── catalog.ts            工具目录：静态下发 + search_tools 动态检索
+│   ├── catalog.ts            工具目录：显式准入 + 自动/二次混合检索
+│   ├── contracts.ts          Agent 工具语义、风险、工作流与验收契约
+│   ├── retrieval/            BM25、多向量召回、RRF 与可插拔重排
 │   ├── policy.ts             工具策略（范围、风险级别）
 │   ├── generated/platform.ts 由 OpenAPI 生成的平台操作定义（勿手改）
 │   ├── postgres-store.ts     工具调用记录（参数密文存储）
@@ -106,10 +108,19 @@ queued ──claimRun──► running ──┬─► completed
 1. **领取**：`RunExecutor` 轮询 `claimRun`（实例 ID + 租约秒数），领取后心跳续租；租约续期失败立即 abort——意味着另一个实例已接管。
 2. **step 循环**（`maxModelSteps` 上限内）：
    - `streaming.ts` 消费模型事件流，实时投影 reasoning/正文到时间线（SSE 推给前端）；
-   - 模型返回 tool calls 后逐个派发：**内部工具**（`internalToolOperationIds`：create_options / create_interaction_cards / rename_conversation / navigate_to_route / search_tools）在进程内处理；**平台工具**经 `ToolOrchestrator.propose` 走审批/MFA/敏感输入检查，需要人工介入时抛 `ToolInterruption`，run 进入 waiting_* 状态并归还租约；
+   - 模型返回 tool calls 后逐个派发：**内部工具**（快捷选项、工具检索、会话命名、页面导航，以及 `request_resource_choice` / `request_tool_input` / `review_tool_action` / `present_*` 业务卡片工具）在进程内处理；**平台工具**经 `ToolOrchestrator.propose` 走审批/MFA/敏感输入检查，需要人工介入时抛 `ToolInterruption`，run 进入 waiting_* 状态并归还租约；
+   - 模型只接收按业务意图拆分的窄卡片 Schema。Agent 在单次调用内补齐 `schemaVersion` 和业务模板类型、编译为稳定 `InteractionCardGroup`；Timeline 继续使用 `create_interaction_cards` 运行协议，便于历史卡片恢复和既有 Web 渲染，完整 DSL 不再下发给生产模型；
    - 每个工具结果以 `tool` 角色消息追加到 continuation，进入下一 step。
 3. **续跑**：审批/MFA/表单完成后由服务端重新入队 run。`resume.ts` 把暂停前已完成的工具调用重建为 assistant+tool 消息对，并恢复此前已加载的动态工具集——保证续跑时模型看到的上下文与暂停前连续。
 4. **收尾**：自动生成会话标题（best-effort，失败不影响结果）、预测下一步操作选项、写终态与遥测。
+
+工具语义检索默认以 `TOOL_RETRIEVAL_MODE=shadow` 运行：模型只看到 `allowed: true` 的已审计目录，
+同时后台计算 Top 8 并记录有限枚举遥测。离线评测与影子门禁通过后再切换为 `dynamic`；此时每次
+主模型调用只注入 Top 8、当前 Run 的 sticky 工具和契约要求的前置/回读工具，平台工具总数上限
+为 12。向量或重排 Provider 不可用时明确降级为 BM25 + 工作流，不会回退未审计工具。
+托管模式启动时必须先从 Luna API 取得完整 Catalog 契约；获取失败会阻止 Agent 启动并交由进程
+管理器重试，不会以无契约 fallback 假装就绪。`webSearch`、`fetchWebPage` 和 `getAppTemplate`
+没有独立 OpenAPI 路由，但仍使用与平台工具相同的显式准入契约和后端 Scope 策略。
 
 ## 上下文压缩机制
 
