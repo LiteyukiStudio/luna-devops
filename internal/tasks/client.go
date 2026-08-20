@@ -19,17 +19,17 @@ import (
 )
 
 const (
-	TypeDeployRun            = "deploy:run"
-	TypeBuildRun             = "build:run"
-	TypeGatewayApply         = "gateway:apply"
-	TypeApplicationDelete    = "application:delete"
-	TypeResourceCleanup      = "resource:cleanup"
-	TypeNotificationDeliver  = "notification:deliver"
-	TypeGitAccountRefresh    = "git:accounts:refresh"
-	TypeSyncStatus           = "sync:status"
-	TypeBillingRuntime       = "billing:runtime"
-	TypeBillingAI            = "billing:ai"
-	TypeRetentionRun         = "retention:run"
+	TypeDeployRun           = "deploy:run"
+	TypeBuildRun            = "build:run"
+	TypeGatewayApply        = "gateway:apply"
+	TypeApplicationDelete   = "application:delete"
+	TypeResourceCleanup     = "resource:cleanup"
+	TypeNotificationDeliver = "notification:deliver"
+	TypeGitAccountRefresh   = "git:accounts:refresh"
+	TypeSyncStatus          = "sync:status"
+	TypeBillingRuntime      = "billing:runtime"
+	TypeBillingAI           = "billing:ai"
+	TypeRetentionRun        = "retention:run"
 
 	QueueDeploy = "deploy"
 	QueueBuild  = "build"
