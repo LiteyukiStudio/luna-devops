@@ -10335,7 +10335,10 @@ components:
       properties:
         verified: { type: boolean, const: true }
         purpose: { $ref: "#/components/schemas/MFAPurpose" }
-      required: [verified, purpose]
+        stepUpAssertionId:
+          type: string
+          description: Opaque assertion identifier bound to the current user, authenticated session, and purpose; required when resuming an Agent tool after MFA.
+      required: [verified, purpose, stepUpAssertionId]
     AccessTokenInput:
       type: object
       properties:

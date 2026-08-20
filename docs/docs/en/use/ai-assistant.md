@@ -61,6 +61,8 @@ Next-step options generated for a reply appear inside that assistant bubble at t
 
 When a high-risk tool is waiting for approval or MFA step-up, its action card appears directly below the tool row without requiring you to expand the details. Parameters, results, and invocation identifiers remain collapsed until you choose to inspect them.
 
+After MFA succeeds, the platform issues a short-lived step-up assertion bound to the current user, authenticated session, and operation purpose, then hands it to the assistant to resume the blocked tool call. TOTP codes are replay-protected and recovery codes are single-use, so you should not need to enter the same credential again for that tool call. If verification succeeds but the tool does not continue, refresh the conversation to confirm its current state instead of repeatedly submitting the same code.
+
 Cards use five stable roles: candidate discovery and comparison (`candidates`), structured configuration (`form`), change review (`change_review`), facts or operation outcomes (`result`), and platform-backed live tasks (`live_task`). Resource details, diagnostics, charts, and tables remain available as content blocks; you do not need to select or know these template names.
 
 A conversation can contain several cards with the same configuration fields. Each card keeps its inputs and selections isolated, so operating the current card does not change or jump to an earlier card. If one generated element cannot be displayed, only that position shows a fallback notice; the rest of the conversation and its cards remain available, and refreshing can restore them from the saved conversation.

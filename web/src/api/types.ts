@@ -2139,7 +2139,7 @@ export type MFAVerifyPayload
 export interface MFAVerifyResponse {
   verified: boolean
   purpose: string
-  stepUpAssertionId?: string
+  stepUpAssertionId: string
 }
 
 export interface BootstrapStatus {

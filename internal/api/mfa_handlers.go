@@ -274,7 +274,8 @@ func (h *Handlers) VerifyMFA(ctx *gin.Context) {
 		return
 	}
 
-	if err := h.createStepUpAssertion(user.ID, subject, purpose, time.Now(), ctx.Request.Context()); err != nil {
+	assertionID, err := h.createStepUpAssertion(user.ID, subject, purpose, time.Now(), ctx.Request.Context())
+	if err != nil {
 		h.auditWithContext(user.ID, "mfa.verify", purpose, false, "failed to persist assertion", ctx.Request.Context())
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
@@ -284,7 +285,8 @@ func (h *Handlers) VerifyMFA(ctx *gin.Context) {
 	}
 	h.clearMFAUserAttempts(ctx.Request.Context(), user.ID, "verify")
 	h.auditWithContext(user.ID, "mfa.verify", purpose, true, "step-up assertion created", ctx.Request.Context())
-	ctx.JSON(http.StatusOK, gin.H{"verified": true, "purpose": purpose})
+	ctx.Header("Cache-Control", "no-store")
+	ctx.JSON(http.StatusOK, gin.H{"verified": true, "purpose": purpose, "stepUpAssertionId": assertionID})
 }
 
 func (h *Handlers) RegenerateMFARecoveryCodes(ctx *gin.Context) {
@@ -555,7 +557,7 @@ func maxInt(left, right int) int {
 	return right
 }
 
-func (h *Handlers) createStepUpAssertion(userID, sessionID, purpose string, now time.Time, ctx context.Context) error {
+func (h *Handlers) createStepUpAssertion(userID, sessionID, purpose string, now time.Time, ctx context.Context) (string, error) {
 	idleTimeout, absoluteTimeout := h.stepUpTimeouts()
 	absoluteExpiresAt := now.Add(absoluteTimeout)
 	assertion := model.StepUpAssertion{
@@ -568,12 +570,13 @@ func (h *Handlers) createStepUpAssertion(userID, sessionID, purpose string, now 
 		IdleExpiresAt:     refreshedStepUpIdleExpiry(now, idleTimeout, absoluteExpiresAt),
 		AbsoluteExpiresAt: absoluteExpiresAt,
 	}
-	return h.dbWithContext(ctx).Clauses(clause.OnConflict{
+	result := h.dbWithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "session_id"}, {Name: "purpose"}},
 		DoUpdates: clause.AssignmentColumns([]string{
 			"user_id", "verified_at", "last_activity_at", "idle_expires_at", "absolute_expires_at", "updated_at",
 		}),
-	}).Create(&assertion).Error
+	}, clause.Returning{Columns: []clause.Column{{Name: "id"}}}).Create(&assertion)
+	return assertion.ID, result.Error
 }
 
 func (h *Handlers) consumeRecoveryCode(userID, normalizedCode string, ctx context.Context) bool {

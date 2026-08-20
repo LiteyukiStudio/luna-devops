@@ -1,5 +1,12 @@
 # TODO
 
+## 2026-08-20 Agent Step-up MFA 恢复
+
+- [x] 修复 `/auth/mfa/verify` 已创建 Step-up assertion 却未返回 `stepUpAssertionId`，导致 AI 工具验证成功后无法恢复的问题。
+- [x] 对齐后端响应、OpenAPI 和前端类型，成功响应使用 `no-store`，并保持 assertion 继续绑定当前用户、登录会话和用途。
+- [x] 完成 TOTP / 恢复码验证、重复用途 upsert 和 AI resume 转发的 PostgreSQL 集成回归。
+- [ ] 重启本地 API 后，在真实浏览器中完成一次高风险 Agent 工具的 MFA 验证与恢复验收。
+
 ## 2026-08-20 Agent 工具成功率观测
 
 - [x] 在 Agent 观测周期内按 operation 汇总工具调用总数、成功、失败、其他状态与成功率；成功率仅以 `succeeded + failed` 为分母。

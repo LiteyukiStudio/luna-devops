@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LiteyukiStudio/devops/internal/aiagent"
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/secret"
@@ -132,6 +133,23 @@ func TestMFAEnrollmentVerificationRecoveryAndDisableFlow(t *testing.T) {
 	if securityVerifyRecorder.Code != http.StatusOK {
 		t.Fatalf("security settings verify = %d %s", securityVerifyRecorder.Code, securityVerifyRecorder.Body.String())
 	}
+	securityAssertionID := requireMFAVerifyAssertion(t, securityVerifyRecorder, user.ID, session.ID, stepUpPurposeSecuritySettingsUpdate, db)
+	refreshedAssertionID, err := handlers.createStepUpAssertion(user.ID, session.ID, stepUpPurposeSecuritySettingsUpdate, time.Now().Add(time.Second), context.Background())
+	if err != nil || refreshedAssertionID != securityAssertionID {
+		t.Fatalf("refreshed assertion ID = %q, want %q, err=%v", refreshedAssertionID, securityAssertionID, err)
+	}
+	resumeInput, err := json.Marshal(map[string]any{"stepUpAssertionId": securityAssertionID, "expectedVersion": 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resumeRecorder, resumeContext := newMFAIntegrationContext(http.MethodPost, "/api/v1/ai/runs/run/mfa/tool/resume", nil, sessionToken)
+	preparedResume, prepared := handlers.prepareAIToolMFAResume(resumeContext, aiagent.ActorContext{UserID: user.ID, SessionID: session.ID}, resumeInput)
+	if !prepared || resumeRecorder.Code != http.StatusOK {
+		t.Fatalf("prepare AI MFA resume = %t, status=%d body=%s", prepared, resumeRecorder.Code, resumeRecorder.Body.String())
+	}
+	if jsonString(t, preparedResume, "stepUpAssertionId") != securityAssertionID || jsonString(t, preparedResume, "purpose") != stepUpPurposeSecuritySettingsUpdate {
+		t.Fatalf("prepared AI MFA resume = %s", preparedResume)
+	}
 	policyEnableRecorder, policyEnableContext := newMFAIntegrationContext(http.MethodPut, "/api/v1/configs", map[string]any{"values": map[string]any{"security.stepUpMfa.enabled": true}}, sessionToken)
 	handlers.UpdateConfigs(policyEnableContext)
 	if policyEnableRecorder.Code != http.StatusOK || !handlers.stepUpMFAEnabled() {
@@ -149,6 +167,7 @@ func TestMFAEnrollmentVerificationRecoveryAndDisableFlow(t *testing.T) {
 	if verifyRecorder.Code != http.StatusOK {
 		t.Fatalf("verify = %d %s", verifyRecorder.Code, verifyRecorder.Body.String())
 	}
+	requireMFAVerifyAssertion(t, verifyRecorder, user.ID, session.ID, stepUpPurposeMFAManage, db)
 
 	regenerateRecorder, regenerateContext := newMFAIntegrationContext(http.MethodPost, "/api/v1/auth/mfa/recovery-codes", nil, sessionToken)
 	handlers.RegenerateMFARecoveryCodes(regenerateContext)
@@ -171,6 +190,7 @@ func TestMFAEnrollmentVerificationRecoveryAndDisableFlow(t *testing.T) {
 	if recoveryRecorder.Code != http.StatusOK {
 		t.Fatalf("recovery verify = %d %s", recoveryRecorder.Code, recoveryRecorder.Body.String())
 	}
+	requireMFAVerifyAssertion(t, recoveryRecorder, user.ID, session.ID, stepUpPurposeVolumeExport, db)
 	assertionRecorder, assertionContext := newMFAIntegrationContext(http.MethodGet, "/sensitive", nil, sessionToken)
 	if !handlers.requireMFAAssertion(assertionContext, user, stepUpPurposeVolumeExport) || assertionRecorder.Code != http.StatusOK {
 		t.Fatalf("assertion refresh = %d %s", assertionRecorder.Code, assertionRecorder.Body.String())
@@ -830,4 +850,23 @@ func jsonString(t *testing.T, data []byte, key string) string {
 	}
 	value, _ := body[key].(string)
 	return value
+}
+
+func requireMFAVerifyAssertion(t *testing.T, recorder *httptest.ResponseRecorder, userID, sessionID, purpose string, db *gorm.DB) string {
+	t.Helper()
+	if recorder.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("MFA verify Cache-Control = %q", recorder.Header().Get("Cache-Control"))
+	}
+	assertionID := jsonString(t, recorder.Body.Bytes(), "stepUpAssertionId")
+	if assertionID == "" {
+		t.Fatalf("MFA verify response is missing stepUpAssertionId: %s", recorder.Body.String())
+	}
+	var assertion model.StepUpAssertion
+	if err := db.First(&assertion, "id = ?", assertionID).Error; err != nil {
+		t.Fatalf("load returned Step-up assertion: %v", err)
+	}
+	if assertion.UserID != userID || assertion.SessionID != sessionID || assertion.Purpose != purpose {
+		t.Fatalf("returned Step-up assertion binding = %#v", assertion)
+	}
+	return assertionID
 }
