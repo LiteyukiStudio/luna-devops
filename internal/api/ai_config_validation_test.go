@@ -86,21 +86,21 @@ func TestAIConfigRejectsUnsafeProviderURLBeforeSaving(t *testing.T) {
 
 func TestAIConfigInputTypesAreStrictOnlyForSubmittedValues(t *testing.T) {
 	for name, values := range map[string]map[string]any{
-		"boolean object": {"ai.assistant.enabled": map[string]any{"value": true}},
+		"boolean object":         {"ai.assistant.enabled": map[string]any{"value": true}},
 		"invalid boolean string": {"ai.web.proxy_enabled": "sometimes"},
-		"null secret": {"ai.provider.api_key": nil},
-		"numeric tenant": {"ai.observability.loki_tenant_id": 123},
-		"numeric credit string": {"ai.run.max_credits": 100},
+		"null secret":            {"ai.provider.api_key": nil},
+		"numeric tenant":         {"ai.observability.loki_tenant_id": 123},
+		"numeric credit string":  {"ai.run.max_credits": 100},
 	} {
 		if err := validateAIConfigInputTypes(values); err == nil {
 			t.Errorf("invalid submitted AI config type accepted: %s", name)
 		}
 	}
 	for name, values := range map[string]map[string]any{
-		"native boolean": {"ai.assistant.enabled": true},
+		"native boolean":           {"ai.assistant.enabled": true},
 		"canonical boolean string": {"ai.observability.enabled": "false"},
-		"secret string": {"ai.provider.api_key": "secret"},
-		"credit decimal string": {"ai.run.max_credits": "100"},
+		"secret string":            {"ai.provider.api_key": "secret"},
+		"credit decimal string":    {"ai.run.max_credits": "100"},
 	} {
 		if err := validateAIConfigInputTypes(values); err != nil {
 			t.Errorf("valid submitted AI config type rejected for %s: %v", name, err)
