@@ -15,7 +15,7 @@
 
 ## 必读
 
-1. 视觉基准原型（浏览器可打开）：`docs-internal/prototypes/topology-redesign.html` —— 节点卡片、泳道、走线、图例、焦点高亮的样式都以此为准
+1. 视觉基准原型（浏览器可打开）：`docs-internal/legacy/prototypes/topology-redesign.html` —— 节点卡片、泳道、走线、图例、焦点高亮的样式都以此为准
 2. 现有实现（要被替换）：`web/src/pages/projects/project-topology-chart.tsx`
 3. 面板（小幅配合）：`web/src/pages/projects/project-topology-panel.tsx`
 4. 关系 dialog（需求 2 主要改动点）：`web/src/pages/projects/project-topology-relation-dialog.tsx`

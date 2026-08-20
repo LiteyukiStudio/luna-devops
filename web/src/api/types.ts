@@ -109,6 +109,25 @@ export interface AgentObservabilityTurn {
   durationMs: number
   createdAt: string
 }
+export interface AgentObservabilityToolSummary {
+  operationId: string
+  totalCalls: number
+  succeededCalls: number
+  failedCalls: number
+  otherCalls: number
+  successRate: number
+  lastCalledAt: string
+}
+export interface AgentObservabilityToolCall extends AgentObservabilityConversationToolCall {
+  durationMs: number
+  runId: string
+  turnId: string
+  turnIndex: number
+  conversationId: string
+  conversationTitle: string
+  user: AgentObservabilityConversationUser
+  createdAt: string
+}
 export interface AgentObservabilityConversationLoop {
   loopIndex: number
   items: AgentObservabilityConversationRunItem[]
@@ -149,6 +168,7 @@ export interface AgentObservabilityOverview {
     inputTokens: number
     outputTokens: number
     toolCalls: number
+    toolSuccessRate: number
     turnCount: number
     turnSuccessRate: number
     runDurationP95: number

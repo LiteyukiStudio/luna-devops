@@ -47,6 +47,7 @@ type agentObservabilitySummary struct {
 	InputTokens     float64 `json:"inputTokens"`
 	OutputTokens    float64 `json:"outputTokens"`
 	ToolCalls       float64 `json:"toolCalls"`
+	ToolSuccessRate float64 `json:"toolSuccessRate"`
 	TurnCount       int64   `json:"turnCount"`
 	TurnSuccessRate float64 `json:"turnSuccessRate"`
 	RunDurationP95  float64 `json:"runDurationP95"`
@@ -126,7 +127,6 @@ func (h *Handlers) GetAgentObservabilityOverview(ctx *gin.Context) {
 	}{
 		{queries["inputTokens"], &result.Summary.InputTokens},
 		{queries["outputTokens"], &result.Summary.OutputTokens},
-		{queries["toolCalls"], &result.Summary.ToolCalls},
 		{queries["runDurationP95"], &result.Summary.RunDurationP95},
 	}
 	var wait sync.WaitGroup
@@ -147,13 +147,21 @@ func (h *Handlers) GetAgentObservabilityOverview(ctx *gin.Context) {
 		}()
 	}
 	wait.Wait()
-	turnSummary, err := agentobservability.NewConversationStore(h.dbFor(ctx)).SummarizeTurns(ctx.Request.Context(), start)
+	store := agentobservability.NewConversationStore(h.dbFor(ctx))
+	turnSummary, err := store.SummarizeTurns(ctx.Request.Context(), start)
 	if err != nil {
 		writeErrorCode(ctx, http.StatusInternalServerError, "ai.observability.turns_failed", "Agent turns are unavailable")
 		return
 	}
+	toolSummary, err := store.SummarizeTools(ctx.Request.Context(), start)
+	if err != nil {
+		writeErrorCode(ctx, http.StatusInternalServerError, "ai.observability.tools_failed", "Agent tool summaries are unavailable")
+		return
+	}
 	result.Summary.TurnCount = turnSummary.Total
 	result.Summary.TurnSuccessRate = turnSummary.SuccessRate
+	result.Summary.ToolCalls = float64(toolSummary.Total)
+	result.Summary.ToolSuccessRate = toolSummary.SuccessRate
 	ctx.Header("Cache-Control", "no-store")
 	ctx.JSON(http.StatusOK, result)
 }
@@ -162,7 +170,6 @@ func agentObservabilitySummaryQueries(rangeText string) map[string]string {
 	return map[string]string{
 		"inputTokens":    fmt.Sprintf(`sum(increase(luna_devops_agent_model_tokens_total{direction="input"}[%s])) or vector(0)`, rangeText),
 		"outputTokens":   fmt.Sprintf(`sum(increase(luna_devops_agent_model_tokens_total{direction="output"}[%s])) or vector(0)`, rangeText),
-		"toolCalls":      fmt.Sprintf(`sum(increase(luna_devops_agent_tool_calls_total[%s])) or vector(0)`, rangeText),
 		"runDurationP95": fmt.Sprintf(`histogram_quantile(0.95, sum(increase(luna_devops_agent_run_duration_seconds_bucket[%s])) by (le)) or vector(0)`, rangeText),
 	}
 }
@@ -242,6 +249,57 @@ func (h *Handlers) ListAgentObservabilityTurns(ctx *gin.Context) {
 		return
 	}
 	h.auditWithContext(user.ID, "ai.observability.turns.list", rangeText, true, "Agent observability turns listed", ctx.Request.Context())
+	ctx.Header("Cache-Control", "no-store")
+	ctx.JSON(http.StatusOK, gin.H{
+		"items": result.Items, "page": result.Page, "pageSize": result.PageSize, "sortBy": result.SortBy,
+		"sortOrder": result.SortOrder, "total": result.Total, "totalPages": result.TotalPages,
+	})
+}
+
+func (h *Handlers) ListAgentObservabilityTools(ctx *gin.Context) {
+	user, ok := h.requireAgentObservabilityAdmin(ctx)
+	if !ok {
+		return
+	}
+	rangeText, duration := observabilityRange(ctx.Query("range"))
+	pagination := paginationFromQuery(ctx)
+	result, err := agentobservability.NewConversationStore(h.dbFor(ctx)).ListToolSummaries(ctx.Request.Context(), agentobservability.ToolSummaryListOptions{
+		Start: time.Now().Add(-duration), Search: ctx.Query("search"), Page: pagination.Page, PageSize: pagination.PageSize,
+		SortBy: pagination.SortBy, SortOrder: pagination.SortOrder,
+	})
+	if err != nil {
+		writeErrorCode(ctx, http.StatusInternalServerError, "ai.observability.tools_failed", "Agent tool summaries are unavailable")
+		return
+	}
+	h.auditWithContext(user.ID, "ai.observability.tools.list", rangeText, true, "Agent observability tool summaries listed", ctx.Request.Context())
+	ctx.Header("Cache-Control", "no-store")
+	ctx.JSON(http.StatusOK, gin.H{
+		"items": result.Items, "page": result.Page, "pageSize": result.PageSize, "sortBy": result.SortBy,
+		"sortOrder": result.SortOrder, "total": result.Total, "totalPages": result.TotalPages,
+	})
+}
+
+func (h *Handlers) ListAgentObservabilityToolCalls(ctx *gin.Context) {
+	user, ok := h.requireAgentObservabilityAdmin(ctx)
+	if !ok {
+		return
+	}
+	operationID := strings.TrimSpace(ctx.Param("operationId"))
+	if operationID == "" {
+		writeErrorCode(ctx, http.StatusBadRequest, "ai.observability.tool_required", "Agent tool operation is required")
+		return
+	}
+	rangeText, duration := observabilityRange(ctx.Query("range"))
+	pagination := paginationFromQuery(ctx)
+	result, err := agentobservability.NewConversationStore(h.dbFor(ctx)).ListToolCalls(ctx.Request.Context(), agentobservability.ToolCallListOptions{
+		Start: time.Now().Add(-duration), OperationID: operationID, Page: pagination.Page, PageSize: pagination.PageSize,
+		SortBy: pagination.SortBy, SortOrder: pagination.SortOrder,
+	})
+	if err != nil {
+		writeErrorCode(ctx, http.StatusInternalServerError, "ai.observability.tool_calls_failed", "Agent tool calls are unavailable")
+		return
+	}
+	h.auditWithContext(user.ID, "ai.observability.tool_calls.list", operationID, true, "Agent observability tool calls listed for "+rangeText, ctx.Request.Context())
 	ctx.Header("Cache-Control", "no-store")
 	ctx.JSON(http.StatusOK, gin.H{
 		"items": result.Items, "page": result.Page, "pageSize": result.PageSize, "sortBy": result.SortBy,

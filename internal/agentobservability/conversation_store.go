@@ -100,6 +100,41 @@ type TurnPeriodSummary struct {
 	SuccessRate float64
 }
 
+type ToolPeriodSummary struct {
+	Total       int64
+	Successful  int64
+	Failed      int64
+	SuccessRate float64
+}
+
+type ToolSummary struct {
+	OperationID    string    `json:"operationId"`
+	TotalCalls     int64     `json:"totalCalls"`
+	SucceededCalls int64     `json:"succeededCalls"`
+	FailedCalls    int64     `json:"failedCalls"`
+	OtherCalls     int64     `json:"otherCalls"`
+	SuccessRate    float64   `json:"successRate"`
+	LastCalledAt   time.Time `json:"lastCalledAt"`
+}
+
+type ToolCall struct {
+	ID                string           `json:"id"`
+	OperationID       string           `json:"operationId"`
+	Status            string           `json:"status"`
+	Arguments         map[string]any   `json:"arguments"`
+	Result            any              `json:"result,omitempty"`
+	ErrorCode         string           `json:"errorCode,omitempty"`
+	DurationMs        float64          `json:"durationMs"`
+	TraceID           string           `json:"traceId,omitempty"`
+	RunID             string           `json:"runId"`
+	TurnID            string           `json:"turnId"`
+	TurnIndex         int              `json:"turnIndex"`
+	ConversationID    string           `json:"conversationId"`
+	ConversationTitle string           `json:"conversationTitle"`
+	User              ConversationUser `gorm:"embedded;embeddedPrefix:user_" json:"user"`
+	CreatedAt         time.Time        `json:"createdAt"`
+}
+
 type TraceContext struct {
 	Conversation ConversationSummary `json:"conversation"`
 	Turn         ConversationTurn    `json:"turn"`
@@ -126,6 +161,44 @@ type ConversationListResult struct {
 
 type TurnListResult struct {
 	Items      []TurnSummary
+	Total      int64
+	Page       int
+	PageSize   int
+	SortBy     string
+	SortOrder  string
+	TotalPages int
+}
+
+type ToolSummaryListOptions struct {
+	Start     time.Time
+	Search    string
+	Page      int
+	PageSize  int
+	SortBy    string
+	SortOrder string
+}
+
+type ToolSummaryListResult struct {
+	Items      []ToolSummary
+	Total      int64
+	Page       int
+	PageSize   int
+	SortBy     string
+	SortOrder  string
+	TotalPages int
+}
+
+type ToolCallListOptions struct {
+	Start       time.Time
+	OperationID string
+	Page        int
+	PageSize    int
+	SortBy      string
+	SortOrder   string
+}
+
+type ToolCallListResult struct {
+	Items      []ToolCall
 	Total      int64
 	Page       int
 	PageSize   int
@@ -161,6 +234,139 @@ func summarizeTurnPeriod(total, successful, terminal int64) TurnPeriodSummary {
 		result.SuccessRate = float64(successful) * 100 / float64(terminal)
 	}
 	return result
+}
+
+func (s *ConversationStore) SummarizeTools(ctx context.Context, start time.Time) (ToolPeriodSummary, error) {
+	var row struct {
+		Total      int64
+		Successful int64
+		Failed     int64
+	}
+	if err := s.db.WithContext(ctx).Raw(`
+		SELECT COUNT(*) AS total,
+			COUNT(*) FILTER (WHERE COALESCE(NULLIF(content->>'status', ''), CASE status WHEN 'failed' THEN 'failed' WHEN 'completed' THEN 'succeeded' ELSE status END) = 'succeeded') AS successful,
+			COUNT(*) FILTER (WHERE COALESCE(NULLIF(content->>'status', ''), CASE status WHEN 'failed' THEN 'failed' WHEN 'completed' THEN 'succeeded' ELSE status END) = 'failed') AS failed
+		FROM ai.items
+		WHERE type = 'tool_call' AND created_at >= ?`, start).Scan(&row).Error; err != nil {
+		return ToolPeriodSummary{}, err
+	}
+	return summarizeToolPeriod(row.Total, row.Successful, row.Failed), nil
+}
+
+func summarizeToolPeriod(total, successful, failed int64) ToolPeriodSummary {
+	result := ToolPeriodSummary{Total: total, Successful: successful, Failed: failed}
+	if terminal := successful + failed; terminal > 0 {
+		result.SuccessRate = float64(successful) * 100 / float64(terminal)
+	}
+	return result
+}
+
+func (s *ConversationStore) ListToolSummaries(ctx context.Context, options ToolSummaryListOptions) (ToolSummaryListResult, error) {
+	options = normalizeToolSummaryListOptions(options)
+	base := s.db.WithContext(ctx).Table("ai.items AS item").
+		Where("item.type = 'tool_call' AND item.created_at >= ? AND COALESCE(item.content->>'operationId', '') <> ''", options.Start)
+	if keyword := strings.TrimSpace(options.Search); keyword != "" {
+		escaped := strings.NewReplacer("\\", "\\\\", "%", "\\%", "_", "\\_").Replace(strings.ToLower(keyword))
+		base = base.Where(`LOWER(item.content->>'operationId') LIKE ? ESCAPE '\'`, "%"+escaped+"%")
+	}
+	var total int64
+	if err := base.Select("COUNT(DISTINCT item.content->>'operationId')").Scan(&total).Error; err != nil {
+		return ToolSummaryListResult{}, err
+	}
+	options.Page = pageWithinTotal(options.Page, options.PageSize, total)
+	items := make([]ToolSummary, 0)
+	if err := base.Select(`item.content->>'operationId' AS operation_id,
+		COUNT(*) AS total_calls,
+		COUNT(*) FILTER (WHERE COALESCE(NULLIF(item.content->>'status', ''), CASE item.status WHEN 'failed' THEN 'failed' WHEN 'completed' THEN 'succeeded' ELSE item.status END) = 'succeeded') AS succeeded_calls,
+		COUNT(*) FILTER (WHERE COALESCE(NULLIF(item.content->>'status', ''), CASE item.status WHEN 'failed' THEN 'failed' WHEN 'completed' THEN 'succeeded' ELSE item.status END) = 'failed') AS failed_calls,
+		COUNT(*) FILTER (WHERE COALESCE(NULLIF(item.content->>'status', ''), CASE item.status WHEN 'failed' THEN 'failed' WHEN 'completed' THEN 'succeeded' ELSE item.status END) NOT IN ('succeeded', 'failed')) AS other_calls,
+		CASE WHEN COUNT(*) FILTER (WHERE COALESCE(NULLIF(item.content->>'status', ''), CASE item.status WHEN 'failed' THEN 'failed' WHEN 'completed' THEN 'succeeded' ELSE item.status END) IN ('succeeded', 'failed')) > 0
+			THEN COUNT(*) FILTER (WHERE COALESCE(NULLIF(item.content->>'status', ''), CASE item.status WHEN 'failed' THEN 'failed' WHEN 'completed' THEN 'succeeded' ELSE item.status END) = 'succeeded') * 100.0 /
+				COUNT(*) FILTER (WHERE COALESCE(NULLIF(item.content->>'status', ''), CASE item.status WHEN 'failed' THEN 'failed' WHEN 'completed' THEN 'succeeded' ELSE item.status END) IN ('succeeded', 'failed'))
+			ELSE 0 END AS success_rate,
+		MAX(item.created_at) AS last_called_at`).
+		Group("item.content->>'operationId'").Order(toolSummarySortClause(options.SortBy, options.SortOrder)).
+		Limit(options.PageSize).Offset((options.Page - 1) * options.PageSize).Scan(&items).Error; err != nil {
+		return ToolSummaryListResult{}, err
+	}
+	return ToolSummaryListResult{
+		Items: items, Total: total, Page: options.Page, PageSize: options.PageSize,
+		SortBy: options.SortBy, SortOrder: options.SortOrder, TotalPages: pageCount(total, options.PageSize),
+	}, nil
+}
+
+func (s *ConversationStore) ListToolCalls(ctx context.Context, options ToolCallListOptions) (ToolCallListResult, error) {
+	options = normalizeToolCallListOptions(options)
+	base := s.db.WithContext(ctx).Table("ai.items AS item").
+		Joins("JOIN ai.runs AS r ON r.id = item.run_id").
+		Joins("JOIN ai.turns AS t ON t.id = r.turn_id").
+		Joins("JOIN ai.conversations AS c ON c.id = t.conversation_id").
+		Joins("LEFT JOIN users AS u ON u.id = c.owner_user_id AND u.deleted_at IS NULL").
+		Where("item.type = 'tool_call' AND item.created_at >= ? AND item.content->>'operationId' = ?", options.Start, options.OperationID)
+	var total int64
+	if err := base.Count(&total).Error; err != nil {
+		return ToolCallListResult{}, err
+	}
+	options.Page = pageWithinTotal(options.Page, options.PageSize, total)
+	type toolCallRow struct {
+		ID                string
+		OperationID       string
+		Status            string
+		Arguments         []byte
+		Result            []byte
+		ErrorCode         string
+		DurationMs        float64
+		ItemTraceID       string
+		TraceContext      []byte
+		RunID             string
+		TurnID            string
+		TurnIndex         int
+		ConversationID    string
+		ConversationTitle string
+		UserID            string
+		UserName          string
+		UserEmail         string
+		UserAvatarURL     string
+		CreatedAt         time.Time
+	}
+	var rows []toolCallRow
+	selectSQL := `COALESCE(NULLIF(item.content->>'toolCallId', ''), item.id) AS id,
+		item.content->>'operationId' AS operation_id,
+		COALESCE(NULLIF(item.content->>'status', ''), CASE item.status WHEN 'failed' THEN 'failed' WHEN 'completed' THEN 'succeeded' ELSE item.status END) AS status,
+		COALESCE(item.content->'arguments', '{}'::jsonb) AS arguments, item.content->'result' AS result,
+		COALESCE(item.content->>'errorCode', '') AS error_code,
+		CASE WHEN COALESCE(item.content->>'durationMs', '') ~ '^[0-9]+([.][0-9]+)?$'
+			THEN (item.content->>'durationMs')::double precision ELSE 0 END AS duration_ms,
+		COALESCE(item.content->>'traceId', '') AS item_trace_id,
+		COALESCE(r.trace_context, '{}'::jsonb) AS trace_context,
+		r.id AS run_id, t.id AS turn_id, t.turn_index, c.id AS conversation_id,
+		c.title AS conversation_title, c.owner_user_id AS user_id,
+		COALESCE(u.name, '') AS user_name, COALESCE(u.email, '') AS user_email,
+		COALESCE(u.avatar_url, '') AS user_avatar_url, item.created_at`
+	if err := base.Select(selectSQL).Order(toolCallSortClause(options.SortBy, options.SortOrder)).
+		Limit(options.PageSize).Offset((options.Page - 1) * options.PageSize).Scan(&rows).Error; err != nil {
+		return ToolCallListResult{}, err
+	}
+	items := make([]ToolCall, 0, len(rows))
+	for _, row := range rows {
+		traceID := validTraceID(row.ItemTraceID)
+		if traceID == "" {
+			traceID = traceIDFromContext(row.TraceContext)
+		}
+		items = append(items, ToolCall{
+			ID: row.ID, OperationID: row.OperationID, Status: row.Status,
+			Arguments: decodeSanitizedToolObject(row.Arguments), Result: decodeSanitizedToolValue(row.Result),
+			ErrorCode: row.ErrorCode, DurationMs: row.DurationMs, TraceID: traceID,
+			RunID: row.RunID, TurnID: row.TurnID, TurnIndex: row.TurnIndex,
+			ConversationID: row.ConversationID, ConversationTitle: row.ConversationTitle,
+			User:      ConversationUser{ID: row.UserID, Name: row.UserName, Email: row.UserEmail, AvatarURL: row.UserAvatarURL},
+			CreatedAt: row.CreatedAt,
+		})
+	}
+	return ToolCallListResult{
+		Items: items, Total: total, Page: options.Page, PageSize: options.PageSize,
+		SortBy: options.SortBy, SortOrder: options.SortOrder, TotalPages: pageCount(total, options.PageSize),
+	}, nil
 }
 
 func (s *ConversationStore) FindTraceContext(ctx context.Context, traceID string) (*TraceContext, error) {
@@ -664,6 +870,28 @@ func normalizeTurnListOptions(options ConversationListOptions) ConversationListO
 	return options
 }
 
+func normalizeToolSummaryListOptions(options ToolSummaryListOptions) ToolSummaryListOptions {
+	options.Page, options.PageSize = normalizePage(options.Page, options.PageSize)
+	if options.SortBy != "operationId" && options.SortBy != "totalCalls" && options.SortBy != "successRate" && options.SortBy != "failedCalls" {
+		options.SortBy = "lastCalledAt"
+	}
+	if options.SortOrder != "asc" {
+		options.SortOrder = "desc"
+	}
+	return options
+}
+
+func normalizeToolCallListOptions(options ToolCallListOptions) ToolCallListOptions {
+	options.Page, options.PageSize = normalizePage(options.Page, options.PageSize)
+	if options.SortBy != "status" && options.SortBy != "user" && options.SortBy != "conversation" {
+		options.SortBy = "createdAt"
+	}
+	if options.SortOrder != "asc" {
+		options.SortOrder = "desc"
+	}
+	return options
+}
+
 func normalizePage(page, pageSize int) (int, int) {
 	if page < 1 {
 		page = 1
@@ -702,6 +930,55 @@ func turnSortClause(sortBy, sortOrder string) string {
 		sortOrder = "desc"
 	}
 	return fmt.Sprintf("%s %s, t.id %s", column, sortOrder, sortOrder)
+}
+
+func toolSummarySortClause(sortBy, sortOrder string) string {
+	columns := map[string]string{
+		"operationId": "operation_id", "totalCalls": "total_calls", "successRate": "success_rate",
+		"failedCalls": "failed_calls", "lastCalledAt": "last_called_at",
+	}
+	column := columns[sortBy]
+	if column == "" {
+		column = "last_called_at"
+	}
+	if sortOrder != "asc" {
+		sortOrder = "desc"
+	}
+	return fmt.Sprintf("%s %s, operation_id asc", column, sortOrder)
+}
+
+func toolCallSortClause(sortBy, sortOrder string) string {
+	columns := map[string]string{
+		"createdAt": "item.created_at", "status": "status", "user": "u.name", "conversation": "c.title",
+	}
+	column := columns[sortBy]
+	if column == "" {
+		column = "item.created_at"
+	}
+	if sortOrder != "asc" {
+		sortOrder = "desc"
+	}
+	return fmt.Sprintf("%s %s, item.id %s", column, sortOrder, sortOrder)
+}
+
+func decodeSanitizedToolObject(raw []byte) map[string]any {
+	value := decodeSanitizedToolValue(raw)
+	result, _ := value.(map[string]any)
+	if result == nil {
+		return map[string]any{}
+	}
+	return result
+}
+
+func decodeSanitizedToolValue(raw []byte) any {
+	if len(raw) == 0 {
+		return nil
+	}
+	var value any
+	if json.Unmarshal(raw, &value) != nil {
+		return nil
+	}
+	return sanitizeToolValue(value, 0)
 }
 
 func pageCount(total int64, pageSize int) int {

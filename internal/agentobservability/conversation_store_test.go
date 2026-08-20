@@ -47,6 +47,18 @@ func TestTurnSortClauseUsesWhitelistAndStableTieBreaker(t *testing.T) {
 	}
 }
 
+func TestToolSortClausesUseWhitelists(t *testing.T) {
+	if got := toolSummarySortClause("successRate; DROP TABLE ai.tool_calls", "asc"); got != "last_called_at asc, operation_id asc" {
+		t.Fatalf("unsafe tool summary sort clause = %q", got)
+	}
+	if got := toolSummarySortClause("successRate", "desc"); got != "success_rate desc, operation_id asc" {
+		t.Fatalf("tool summary sort clause = %q", got)
+	}
+	if got := toolCallSortClause("user", "asc"); got != "u.name asc, item.id asc" {
+		t.Fatalf("tool call sort clause = %q", got)
+	}
+}
+
 func TestPageWithinTotalClampsEmptyAndOverflowPages(t *testing.T) {
 	if got := pageWithinTotal(4, 20, 0); got != 1 {
 		t.Fatalf("empty result page = %d", got)
@@ -83,6 +95,17 @@ func TestSummarizeTurnPeriodUsesOnlyTerminalTurnsForSuccessRate(t *testing.T) {
 	}
 }
 
+func TestSummarizeToolPeriodUsesOnlyExecutedTerminalCalls(t *testing.T) {
+	summary := summarizeToolPeriod(10, 7, 1)
+	if summary.Total != 10 || summary.Successful != 7 || summary.Failed != 1 || summary.SuccessRate != 87.5 {
+		t.Fatalf("unexpected tool summary: %#v", summary)
+	}
+	empty := summarizeToolPeriod(3, 0, 0)
+	if empty.SuccessRate != 0 {
+		t.Fatalf("non-terminal calls must not produce a success rate: %#v", empty)
+	}
+}
+
 func TestToolCallFromContentSanitizesSensitiveValues(t *testing.T) {
 	raw := []byte(`{"toolCallId":"tool-1","operationId":"get_build","status":"succeeded","arguments":{"projectId":"project-1","token":"hidden","nested":{"password":"hidden","ok":true}},"result":{"requestId":"req-1","secret":"hidden"},"traceId":"ABCDEFABCDEFABCDEFABCDEFABCDEFAB"}`)
 	call := toolCallFromContent("item-1", "completed", raw)
@@ -99,5 +122,20 @@ func TestToolCallFromContentSanitizesSensitiveValues(t *testing.T) {
 	result := call.Result.(map[string]any)
 	if _, ok := result["secret"]; ok {
 		t.Fatal("result secret must be removed")
+	}
+}
+
+func TestDecodeSanitizedToolValueDropsSensitiveFields(t *testing.T) {
+	value := decodeSanitizedToolValue([]byte(`{"requestId":"req-1","token":"hidden","nested":{"password":"hidden","ok":true}}`))
+	result := value.(map[string]any)
+	if result["requestId"] != "req-1" {
+		t.Fatalf("unexpected decoded result: %#v", result)
+	}
+	if _, ok := result["token"]; ok {
+		t.Fatal("token must be removed")
+	}
+	nested := result["nested"].(map[string]any)
+	if _, ok := nested["password"]; ok {
+		t.Fatal("nested password must be removed")
 	}
 }

@@ -1,4 +1,4 @@
-import type { AgentObservabilityConversation, AgentObservabilityConversationDetail, AgentObservabilityOverview, AgentObservabilityRange, AgentObservabilitySource, AgentObservabilityTestResult, AgentObservabilityTraceDetail, AgentObservabilityTurn, AuthAdmissionPolicy, AuthProvider, AuthRegistrationSettings, AuthRegistrationStatus, BootstrapStatus, ConfigDefinition, CurrentUser, DataRetentionCatalogResponse, DataRetentionPayload, DataRetentionResultResponse, ExternalIdentity, MFAEnrollment, MFAEnrollmentRequest, MFARecoveryCodes, MFAStatus, MFAVerifyPayload, MFAVerifyResponse, OIDCCallbackConfig, PaginatedResponse, PaginationParams, User } from '../types'
+import type { AgentObservabilityConversation, AgentObservabilityConversationDetail, AgentObservabilityOverview, AgentObservabilityRange, AgentObservabilitySource, AgentObservabilityTestResult, AgentObservabilityToolCall, AgentObservabilityToolSummary, AgentObservabilityTraceDetail, AgentObservabilityTurn, AuthAdmissionPolicy, AuthProvider, AuthRegistrationSettings, AuthRegistrationStatus, BootstrapStatus, ConfigDefinition, CurrentUser, DataRetentionCatalogResponse, DataRetentionPayload, DataRetentionResultResponse, ExternalIdentity, MFAEnrollment, MFAEnrollmentRequest, MFARecoveryCodes, MFAStatus, MFAVerifyPayload, MFAVerifyResponse, OIDCCallbackConfig, PaginatedResponse, PaginationParams, User } from '../types'
 import type { PlatformRoleValue } from '@/lib/roles'
 import { paginationQuery, request } from '../core'
 
@@ -67,6 +67,10 @@ export const authApi = {
     request<PaginatedResponse<AgentObservabilityConversation>>(`/ai/observability/conversations?${paginationQuery({ ...params, sortBy: 'updatedAt', sortOrder: 'desc' })}&range=${params.range}`),
   listAgentObservabilityTurns: (params: { range: AgentObservabilityRange, page: number, pageSize: number, search?: string }) =>
     request<PaginatedResponse<AgentObservabilityTurn>>(`/ai/observability/turns?${paginationQuery({ ...params, sortBy: 'createdAt', sortOrder: 'desc' })}&range=${params.range}`),
+  listAgentObservabilityTools: (params: { range: AgentObservabilityRange, page: number, pageSize: number, search?: string }) =>
+    request<PaginatedResponse<AgentObservabilityToolSummary>>(`/ai/observability/tools?${paginationQuery({ ...params, sortBy: 'lastCalledAt', sortOrder: 'desc' })}&range=${params.range}`),
+  listAgentObservabilityToolCalls: (operationId: string, params: { range: AgentObservabilityRange, page: number, pageSize: number }) =>
+    request<PaginatedResponse<AgentObservabilityToolCall>>(`/ai/observability/tools/${encodeURIComponent(operationId)}/calls?${paginationQuery({ ...params, sortBy: 'createdAt', sortOrder: 'desc' })}&range=${params.range}`),
   getAgentObservabilityConversation: (conversationId: string, page = 1, pageSize = 20) =>
     request<AgentObservabilityConversationDetail>(`/ai/observability/conversations/${encodeURIComponent(conversationId)}?page=${page}&pageSize=${pageSize}`),
   getAgentObservabilityTrace: (traceId: string) =>

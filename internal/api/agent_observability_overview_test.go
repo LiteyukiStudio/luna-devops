@@ -16,7 +16,7 @@ func TestAgentObservabilitySummaryQueriesUseSelectedRange(t *testing.T) {
 			t.Fatalf("query %s still uses a rolling rate: %s", key, query)
 		}
 	}
-	for _, key := range []string{"inputTokens", "outputTokens", "toolCalls", "runDurationP95"} {
+	for _, key := range []string{"inputTokens", "outputTokens", "runDurationP95"} {
 		if queries[key] == "" {
 			t.Fatalf("missing summary query %s", key)
 		}

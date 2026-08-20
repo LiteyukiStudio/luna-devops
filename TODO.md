@@ -1,5 +1,29 @@
 # TODO
 
+## 2026-08-20 Agent 工具成功率观测
+
+- [x] 在 Agent 观测周期内按 operation 汇总工具调用总数、成功、失败、其他状态与成功率；成功率仅以 `succeeded + failed` 为分母。
+- [x] 在对话轮列表旁增加“工具情况”Tab，支持工具搜索、分页和语义状态展示；点击工具可查看周期内每次调用的脱敏参数、返回、错误码、关联轮次与 Trace。
+- [x] 新增平台管理员只读、`no-store`、审计可追踪的工具汇总与调用明细 API；密文执行参数不进入响应，并同步 OpenAPI、前端类型/API Client、五语言 i18n 和中英文使用文档。
+- [x] 完成真实 PostgreSQL 只读查询、Go 测试、前端测试/lint/build、文档构建与差异格式检查。
+- [ ] 在具备已登录会话的浏览器中验收“对话轮 / 工具情况”切换、工具搜索分页、调用明细展开和 Trace 下钻；当前内嵌浏览器会话已过期且 Chrome 控制连接不可用。
+
+## 2026-08-20 Agent 工具语义检索与工具设计优化
+
+- [x] 完成 Agent 工具目录、描述、参数复杂度和交互卡片模型工具审计，并形成 `docs-internal/21-Agent工具语义检索与工具设计优化方案.md`。
+- [x] 合并补充工具审计：核准全量目录、显式准入缺失、通用输出、参数错误、死调用上限、虚假 verifier、运行时资源 kind、preview/test/log 与不可执行工具问题，并按依赖关系重排治理顺序。
+- [ ] 将 Agent Catalog 改为 `x-luna-agent.allowed: true` 显式准入；为准入工具建立统一语义与执行契约，覆盖资源、动作、适用/禁用场景、前置、参数/输出、风险、副作用、可重放性、成功证据、错误码和工作流关系，并生成覆盖与悬空引用报告。
+- [ ] 接入完整 JSON Schema 校验和字段级结构化错误；仅把真正缺失且需要用户决策的值转为 `waiting_input`，阻止同一非法参数原样重试。
+- [ ] 接通可配置的高位 Run 工具调用兜底上限，并增加确定性失败指纹、无新信息结果检测和合法异步轮询退避；删除或改写“单 Run 无上限”的旧测试。
+- [ ] 删除虚构 `<operationId>_accepted` verifier；为每个准入写操作建立响应 ID 提取、真实回读工具和 pending/success/failure/cancelled 终态契约。
+- [ ] 统一运行时资源工具为 `resourceCategory`/`resourceKind` 严格 enum、稳定字段级错误和读写权限；禁用旧 `execReleaseRuntimeCommand` 与 Agent 无法上传的 `createVolumeImport`。
+- [ ] 逐项声明 preview/test/check/log/Secret/认证/Provider 工具的风险、副作用、可重放、MFA 与结果边界；逐步替换准入工具中的通用 `BusinessObject/AIObject` 输出。
+- [ ] 建立不少于 300 条的中英文工具检索评测集和 hard-negative 用例，输出当前字符串检索、BM25、向量、混合召回及语义重排的可比较基线。
+- [ ] 实现工具多向量索引、BM25、RRF、工作流邻居、run sticky tools、语义重排及安全降级；索引按 Catalog digest 持久化并原子切换，查询向量不落库。
+- [ ] 先以全量目录运行影子检索；达到 Recall@8、安全和端到端门禁后，按读取、写入、高风险业务域灰度启用 Top 8 动态工具加载，并确保 `search_tools` 真实扩张后续工具集合。
+- [ ] 为参数超限工具提供任务型 Agent façade 或正式评审例外，优先治理部署目标、运行集群、网关路由和构建触发工具。
+- [ ] 按业务意图拆分交互卡片模型工具，复用现有 Card Contract；实现 schema 驱动表单、权威进度和结果自动投影，最终移除模型可见的大型通用卡片联合 Schema。
+
 ## 2026-08-20 网关流量探针普通应用安装与 AI 预算修复
 
 - [x] 修复 AI 助手设置修改单次 Run 预算时误报参数错误：`validateAIConfigValues` 改为仅校验本次提交的字段，`ai.provider.base_url` 等依赖运行时 DNS/egress 的校验只在对应字段变更时执行，不再因改无关字段被存量配置卡死。
@@ -119,9 +143,9 @@
 
 ## 2026-08-16 部署配置 JSON 导入导出
 
-- [x] 按 [部署配置 JSON 导入导出契约](docs-internal/18-部署配置JSON导入导出方案.md) 实现版本化配置包、严格解析、依赖预检/映射、Secret 重填和事务化导入。
+- [x] 按 [部署配置 JSON 导入导出历史方案](docs-internal/legacy/18-部署配置JSON导入导出方案.md) 实现版本化配置包、严格解析、依赖预检/映射、Secret 重填和事务化导入。
 - [x] 同步 OpenAPI、Web API 类型和 Client、部署页导入导出交互、中英文公开文档，并覆盖跨项目、空应用、阶段冲突、权限撤销和零部分写入测试。
-- [x] 完成 Go、Web、Docs、CLI 契约和浏览器端到端验收；稳定边界保留在内部契约文档中供后续版本演进复用。
+- [x] 完成 Go、Web、Docs、CLI 契约和浏览器端到端验收；历史方案已归档，现行边界以 OpenAPI、公开文档和测试为准。
 
 ## 2026-08-15 AI 助手历史按需加载
 

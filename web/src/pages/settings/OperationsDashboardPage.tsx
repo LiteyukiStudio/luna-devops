@@ -1,4 +1,4 @@
-import type { AgentObservabilityRange, AgentObservabilityTurn } from '@/api'
+import type { AgentObservabilityRange, AgentObservabilityToolSummary, AgentObservabilityTurn } from '@/api'
 import type { DataListColumn } from '@/components/common/data-list'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowDownToLine, ArrowUpFromLine, CircleGauge, Clock3, ExternalLink, Eye, MessagesSquare, RefreshCw, Settings, UserRound, Wrench } from 'lucide-react'
@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { api } from '@/api'
 import { useSession } from '@/app/session-context'
+import { toolDisplayName } from '@/components/common/ai-assistant/tool-display-name'
 import { ContentTabs } from '@/components/common/content-tabs'
 import { DataList } from '@/components/common/data-list'
 import { EmptyState } from '@/components/common/empty-state'
@@ -18,9 +19,10 @@ import { Section } from '@/components/common/section'
 import { StatusBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { TabsContent } from '@/components/ui/tabs'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { isPlatformAdmin } from '@/lib/roles'
 import { agentObservabilityRanges, readAgentObservabilityRange, writeAgentObservabilityRange } from './agent-observability-range-preference'
+import { AgentToolDetailSheet } from './agent-tool-detail-sheet'
 import { AgentTurnDetailSheet } from './agent-turn-detail-sheet'
 
 const OPERATIONS_DASHBOARD_URL_KEY = 'site.operationsDashboardUrl'
@@ -108,6 +110,11 @@ function AgentObservabilityView({ active, enabled, userId }: { active: boolean, 
   const [turnPageSize, setTurnPageSize] = useState(20)
   const [turnSearch, setTurnSearch] = useState('')
   const [selectedTurn, setSelectedTurn] = useState<AgentObservabilityTurn | null>(null)
+  const [dataTab, setDataTab] = useState('turns')
+  const [toolPage, setToolPage] = useState(1)
+  const [toolPageSize, setToolPageSize] = useState(20)
+  const [toolSearch, setToolSearch] = useState('')
+  const [selectedTool, setSelectedTool] = useState<AgentObservabilityToolSummary | null>(null)
   const overview = useQuery({
     queryKey: ['agent-observability', range],
     queryFn: () => api.getAgentObservabilityOverview(range),
@@ -117,7 +124,13 @@ function AgentObservabilityView({ active, enabled, userId }: { active: boolean, 
   const turns = useQuery({
     queryKey: ['agent-observability-turns', range, turnPage, turnPageSize, turnSearch],
     queryFn: () => api.listAgentObservabilityTurns({ range, page: turnPage, pageSize: turnPageSize, search: turnSearch }),
-    enabled: active && enabled,
+    enabled: active && enabled && dataTab === 'turns',
+    refetchInterval: 30_000,
+  })
+  const tools = useQuery({
+    queryKey: ['agent-observability-tools', range, toolPage, toolPageSize, toolSearch],
+    queryFn: () => api.listAgentObservabilityTools({ range, page: toolPage, pageSize: toolPageSize, search: toolSearch }),
+    enabled: active && enabled && dataTab === 'tools',
     refetchInterval: 30_000,
   })
   const changeTurnPageSize = (value: number) => {
@@ -128,13 +141,24 @@ function AgentObservabilityView({ active, enabled, userId }: { active: boolean, 
     setTurnSearch(value)
     setTurnPage(1)
   }
+  const changeToolPageSize = (value: number) => {
+    setToolPageSize(value)
+    setToolPage(1)
+  }
+  const changeToolSearch = (value: string) => {
+    setToolSearch(value)
+    setToolPage(1)
+  }
   const changeRange = (value: AgentObservabilityRange) => {
     setRange(value)
     writeAgentObservabilityRange(userId, value)
     setTurnPage(1)
+    setToolPage(1)
     setSelectedTurn(null)
+    setSelectedTool(null)
   }
-  const refreshWorkspace = () => void Promise.all([overview.refetch(), turns.refetch()])
+  const refreshWorkspace = () => void Promise.all([overview.refetch(), dataTab === 'turns' ? turns.refetch() : tools.refetch()])
+  const workspaceFetching = overview.isFetching || (dataTab === 'turns' ? turns.isFetching : tools.isFetching)
   const turnColumns = useMemo<DataListColumn<AgentObservabilityTurn>[]>(() => [
     {
       key: 'conversation',
@@ -208,12 +232,71 @@ function AgentObservabilityView({ active, enabled, userId }: { active: boolean, 
       ),
     },
   ], [i18n.language, t])
+  const toolColumns = useMemo<DataListColumn<AgentObservabilityToolSummary>[]>(() => [
+    {
+      key: 'tool',
+      header: t('operationsDashboardPage.tool'),
+      minWidth: 220,
+      maxWidth: 360,
+      render: item => (
+        <span className="grid min-w-0 gap-1">
+          <span className="truncate font-medium">{toolDisplayName(t, item.operationId)}</span>
+          <span className="truncate font-mono text-xs text-muted-foreground">{item.operationId}</span>
+        </span>
+      ),
+    },
+    {
+      key: 'successRate',
+      header: t('operationsDashboardPage.toolSuccessRate'),
+      width: 'status',
+      render: item => (
+        <StatusBadge tone={successRateTone(item.successRate)}>
+          {item.successRate.toFixed(1)}
+          %
+        </StatusBadge>
+      ),
+    },
+    {
+      key: 'calls',
+      header: t('operationsDashboardPage.callDistribution'),
+      minWidth: 190,
+      maxWidth: 240,
+      mobile: 'hidden',
+      render: item => (
+        <span className="grid gap-1 font-mono text-xs">
+          <span>{t('operationsDashboardPage.totalCallsValue', { count: item.totalCalls })}</span>
+          <span className="text-muted-foreground">{t('operationsDashboardPage.callOutcomeValue', { succeeded: item.succeededCalls, failed: item.failedCalls, other: item.otherCalls })}</span>
+        </span>
+      ),
+    },
+    {
+      key: 'lastCalledAt',
+      header: t('operationsDashboardPage.lastCalledAt'),
+      width: 'compact',
+      mobile: 'hidden',
+      render: item => <span className="text-xs text-muted-foreground">{formatDateTime(item.lastCalledAt, i18n.language)}</span>,
+    },
+    {
+      key: 'actions',
+      header: t('operationsDashboardPage.actions'),
+      width: 'actions',
+      sticky: 'right',
+      mobileActions: 'inline',
+      render: item => (
+        <Button size="sm" variant="outline" onClick={() => setSelectedTool(item)}>
+          <Eye className="size-4" />
+          {t('operationsDashboardPage.viewToolCalls')}
+        </Button>
+      ),
+    },
+  ], [i18n.language, t])
 
   if (!enabled) {
     return <ObservabilityConfigEmpty title={t('operationsDashboardPage.agentDisabledTitle')} description={t('operationsDashboardPage.agentDisabledDescription')} />
   }
   const data = overview.data
   const successRate = data?.summary.turnSuccessRate ?? 0
+  const toolSuccessRate = data?.summary.toolSuccessRate ?? 0
   return (
     <div className="grid gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -226,51 +309,99 @@ function AgentObservabilityView({ active, enabled, userId }: { active: boolean, 
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
           {agentObservabilityRanges.map(item => <Button key={item} size="sm" variant={range === item ? 'default' : 'outline'} onClick={() => changeRange(item)}>{t(`operationsDashboardPage.timeRange.${item}`)}</Button>)}
-          <Button aria-label={t('common.refresh')} disabled={overview.isFetching || turns.isFetching} size="icon" variant="ghost" onClick={refreshWorkspace}><RefreshCw className={overview.isFetching || turns.isFetching ? 'animate-spin' : ''} /></Button>
+          <Button aria-label={t('common.refresh')} disabled={workspaceFetching} size="icon" variant="ghost" onClick={refreshWorkspace}><RefreshCw className={workspaceFetching ? 'animate-spin' : ''} /></Button>
         </div>
       </div>
       {overview.isLoading && <ToolViewportSkeleton />}
       {overview.isError && <ErrorState title={t('operationsDashboardPage.agentLoadFailedTitle')} description={t('operationsDashboardPage.agentLoadFailedDescription')} />}
       {data && (
-        <MetricGroup className="grid-cols-2 xl:grid-cols-6">
+        <MetricGroup className="grid-cols-2 xl:grid-cols-7">
           <MetricItem icon={<ArrowDownToLine className="size-4" />} label={t('operationsDashboardPage.inputTokens')} value={formatNumber(data.summary.inputTokens)} />
           <MetricItem icon={<ArrowUpFromLine className="size-4" />} label={t('operationsDashboardPage.outputTokens')} value={formatNumber(data.summary.outputTokens)} />
           <MetricItem icon={<Wrench className="size-4" />} label={t('operationsDashboardPage.toolCalls')} value={formatNumber(data.summary.toolCalls)} />
+          <MetricItem icon={<CircleGauge className="size-4" />} label={t('operationsDashboardPage.toolSuccessRate')} value={`${toolSuccessRate.toFixed(1)}%`} tone={successRateTone(toolSuccessRate)} />
           <MetricItem icon={<MessagesSquare className="size-4" />} label={t('operationsDashboardPage.turnCount')} value={formatNumber(data.summary.turnCount)} />
           <MetricItem icon={<CircleGauge className="size-4" />} label={t('operationsDashboardPage.turnSuccessRate')} value={`${successRate.toFixed(1)}%`} tone={successRate >= 95 ? 'success' : successRate >= 85 ? 'warning' : 'danger'} />
           <MetricItem icon={<Clock3 className="size-4" />} label={t('operationsDashboardPage.runDurationP95')} value={formatSeconds(data.summary.runDurationP95)} />
         </MetricGroup>
       )}
-      <Section title={t('operationsDashboardPage.turnList')} description={t('operationsDashboardPage.turnListDescription')}>
-        {turns.isError
-          ? <ErrorState title={t('operationsDashboardPage.turnsLoadFailed')} description={t('operationsDashboardPage.turnsLoadFailedDescription')} />
-          : (
-              <DataList
-                columns={turnColumns}
-                constrainedHeight
-                emptyDescription={t('operationsDashboardPage.noRunsDescription')}
-                emptyMode={turnSearch ? 'filtered' : 'actionable'}
-                emptyTitle={t('operationsDashboardPage.noRuns')}
-                items={turns.data?.items ?? []}
-                loading={turns.isLoading}
-                pagination={{
-                  page: turnPage,
-                  pageSize: turnPageSize,
-                  total: turns.data?.total ?? 0,
-                  totalPages: turns.data?.totalPages ?? 0,
-                  pageInfoLabel: t('pagination.pageInfo', { page: turns.data?.page ?? turnPage, totalPages: turns.data?.totalPages ?? 0, total: turns.data?.total ?? 0 }),
-                  onPageChange: setTurnPage,
-                  onPageSizeChange: changeTurnPageSize,
-                }}
-                rowActionLabel={item => t('operationsDashboardPage.openTurnLabel', { index: item.turnIndex + 1, title: item.conversationTitle })}
-                rowKey={item => item.id}
-                search={{ value: turnSearch, placeholder: t('operationsDashboardPage.searchTurns'), onChange: changeTurnSearch }}
-                viewportOffset={24}
-                onRowClick={setSelectedTurn}
-              />
-            )}
-      </Section>
+      <Tabs
+        value={dataTab}
+        onValueChange={(value) => {
+          setDataTab(value)
+          setSelectedTurn(null)
+          setSelectedTool(null)
+        }}
+      >
+        <TabsList aria-label={t('operationsDashboardPage.dataScope')}>
+          <TabsTrigger value="turns">{t('operationsDashboardPage.turnScope')}</TabsTrigger>
+          <TabsTrigger value="tools">{t('operationsDashboardPage.toolScope')}</TabsTrigger>
+        </TabsList>
+        <TabsContent value="turns">
+          <Section title={t('operationsDashboardPage.turnList')} description={t('operationsDashboardPage.turnListDescription')}>
+            {turns.isError
+              ? <ErrorState title={t('operationsDashboardPage.turnsLoadFailed')} description={t('operationsDashboardPage.turnsLoadFailedDescription')} />
+              : (
+                  <DataList
+                    columns={turnColumns}
+                    constrainedHeight
+                    emptyDescription={t('operationsDashboardPage.noRunsDescription')}
+                    emptyMode={turnSearch ? 'filtered' : 'actionable'}
+                    emptyTitle={t('operationsDashboardPage.noRuns')}
+                    items={turns.data?.items ?? []}
+                    loading={turns.isLoading}
+                    pagination={{
+                      page: turnPage,
+                      pageSize: turnPageSize,
+                      total: turns.data?.total ?? 0,
+                      totalPages: turns.data?.totalPages ?? 0,
+                      pageInfoLabel: t('pagination.pageInfo', { page: turns.data?.page ?? turnPage, totalPages: turns.data?.totalPages ?? 0, total: turns.data?.total ?? 0 }),
+                      onPageChange: setTurnPage,
+                      onPageSizeChange: changeTurnPageSize,
+                    }}
+                    rowActionLabel={item => t('operationsDashboardPage.openTurnLabel', { index: item.turnIndex + 1, title: item.conversationTitle })}
+                    rowKey={item => item.id}
+                    search={{ value: turnSearch, placeholder: t('operationsDashboardPage.searchTurns'), onChange: changeTurnSearch }}
+                    viewportOffset={28}
+                    onRowClick={setSelectedTurn}
+                  />
+                )}
+          </Section>
+        </TabsContent>
+        <TabsContent value="tools">
+          <Section title={t('operationsDashboardPage.toolList')} description={t('operationsDashboardPage.toolListDescription')}>
+            {tools.isError
+              ? <ErrorState title={t('operationsDashboardPage.toolsLoadFailed')} description={t('operationsDashboardPage.toolsLoadFailedDescription')} />
+              : (
+                  <DataList
+                    columns={toolColumns}
+                    constrainedHeight
+                    emptyDescription={t('operationsDashboardPage.noToolsDescription')}
+                    emptyMode={toolSearch ? 'filtered' : 'actionable'}
+                    emptyTitle={t('operationsDashboardPage.noTools')}
+                    items={tools.data?.items ?? []}
+                    loading={tools.isLoading}
+                    pagination={{
+                      page: toolPage,
+                      pageSize: toolPageSize,
+                      total: tools.data?.total ?? 0,
+                      totalPages: tools.data?.totalPages ?? 0,
+                      pageInfoLabel: t('pagination.pageInfo', { page: tools.data?.page ?? toolPage, totalPages: tools.data?.totalPages ?? 0, total: tools.data?.total ?? 0 }),
+                      onPageChange: setToolPage,
+                      onPageSizeChange: changeToolPageSize,
+                    }}
+                    rowActionLabel={item => t('operationsDashboardPage.openToolLabel', { tool: item.operationId })}
+                    rowKey={item => item.operationId}
+                    search={{ value: toolSearch, placeholder: t('operationsDashboardPage.searchTools'), onChange: changeToolSearch }}
+                    viewportOffset={28}
+                    onRowClick={setSelectedTool}
+                  />
+                )}
+          </Section>
+        </TabsContent>
+      </Tabs>
       <AgentTurnDetailSheet key={selectedTurn?.id ?? 'closed'} turn={selectedTurn} onOpenChange={open => !open && setSelectedTurn(null)} />
+      <AgentToolDetailSheet key={selectedTool?.operationId ?? 'closed'} range={range} summary={selectedTool} onOpenChange={open => !open && setSelectedTool(null)} />
     </div>
   )
 }
@@ -377,4 +508,12 @@ function runStatusTone(status: string): 'success' | 'danger' | 'warning' | 'neut
   if (status.startsWith('waiting_'))
     return 'warning'
   return 'neutral'
+}
+
+function successRateTone(value: number): 'success' | 'danger' | 'warning' {
+  if (value >= 95)
+    return 'success'
+  if (value >= 85)
+    return 'warning'
+  return 'danger'
 }

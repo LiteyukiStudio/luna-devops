@@ -9,7 +9,7 @@
 1. 当前实现：`web/src/pages/projects/project-topology-chart.tsx`（React Flow + dagre，自定义 `service` 节点 / `topology` 边 / `lane` 泳道背景节点）
 2. 面板：`web/src/pages/projects/project-topology-panel.tsx`（选中边逻辑、`onSelectEdge`、跳转服务详情页的 `Link` 先例）
 3. 详情侧滑：`web/src/pages/projects/project-topology-detail-sheet.tsx`（边详情）
-4. 视觉基准原型：`docs-internal/prototypes/topology-redesign.html`
+4. 视觉基准原型：`docs-internal/legacy/prototypes/topology-redesign.html`
 5. 规范：仓库根 `AGENTS.md` 第 6 节、MUST i18n、设计 token；状态语义 `web/src/components/common/status-tone.ts`
 6. 既有循环色板先例：`web/src/pages/settings/agent-observability-chart.tsx` 的 `chartColors[index % length]`
 

@@ -113,6 +113,8 @@ func NewRouterWithStaticFSAndMetrics(db *gorm.DB, staticFS fs.FS, httpMetrics *o
 		v1.GET("/ai/observability/overview", handlers.platformAdminMiddleware(), handlers.GetAgentObservabilityOverview)
 		v1.GET("/ai/observability/conversations", handlers.platformAdminMiddleware(), handlers.ListAgentObservabilityConversations)
 		v1.GET("/ai/observability/turns", handlers.platformAdminMiddleware(), handlers.ListAgentObservabilityTurns)
+		v1.GET("/ai/observability/tools", handlers.platformAdminMiddleware(), handlers.ListAgentObservabilityTools)
+		v1.GET("/ai/observability/tools/:operationId/calls", handlers.platformAdminMiddleware(), handlers.ListAgentObservabilityToolCalls)
 		v1.GET("/ai/observability/conversations/:conversationId", handlers.platformAdminMiddleware(), handlers.GetAgentObservabilityConversation)
 		v1.GET("/ai/observability/traces/:traceId", handlers.platformAdminMiddleware(), handlers.GetAgentObservabilityTrace)
 		v1.GET("/ai/conversations", handlers.ProxyAIRequest)

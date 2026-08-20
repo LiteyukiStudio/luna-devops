@@ -7786,6 +7786,52 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "503": { description: Agent observability is disabled, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+  /api/v1/ai/observability/tools:
+    get:
+      operationId: listAgentObservabilityTools
+      tags: [AI Assistant]
+      summary: List selected-period Agent tool success summaries for the platform-admin operations UI
+      x-luna-cli:
+        classification: internal-observability
+        hidden: true
+        agentAllowed: false
+        exclusionReason: The administrator operations UI consumes this sensitive diagnostic endpoint; Agent self-inspection would create recursive telemetry.
+      security: [{ SessionCookie: [] }]
+      parameters:
+        - { name: range, in: query, schema: { type: string, enum: [1h, 6h, 24h, 7d, 30d, 1y], default: 1h } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - { name: search, in: query, schema: { type: string, maxLength: 128 } }
+        - { name: sortBy, in: query, schema: { type: string, enum: [lastCalledAt, operationId, totalCalls, successRate, failedCalls], default: lastCalledAt } }
+        - { name: sortOrder, in: query, schema: { type: string, enum: [asc, desc], default: desc } }
+      responses:
+        "200": { description: Paginated tool success summaries, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObservabilityToolSummaryPage" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { description: Agent observability is disabled, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+  /api/v1/ai/observability/tools/{operationId}/calls:
+    get:
+      operationId: listAgentObservabilityToolCalls
+      tags: [AI Assistant]
+      summary: List selected-period redacted calls for one Agent tool
+      x-luna-cli:
+        classification: internal-observability
+        hidden: true
+        agentAllowed: false
+        exclusionReason: The response contains sensitive diagnostic arguments and results for administrators and must never be callable by Agent itself.
+      security: [{ SessionCookie: [] }]
+      parameters:
+        - { name: operationId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128, pattern: "^[A-Za-z][A-Za-z0-9_.-]{0,127}$" } }
+        - { name: range, in: query, schema: { type: string, enum: [1h, 6h, 24h, 7d, 30d, 1y], default: 1h } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - { name: sortBy, in: query, schema: { type: string, enum: [createdAt, status, user, conversation], default: createdAt } }
+        - { name: sortOrder, in: query, schema: { type: string, enum: [asc, desc], default: desc } }
+      responses:
+        "200": { description: Paginated redacted tool calls, content: { application/json: { schema: { $ref: "#/components/schemas/AgentObservabilityToolCallPage" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { description: Agent observability is disabled, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
   /internal/v1/volume-transfers/{transferId}/content:
     head:
       operationId: headInternalVolumeTransferContent
@@ -8685,6 +8731,58 @@ components:
         sortOrder: { type: string, enum: [asc, desc] }
         total: { type: integer, format: int64 }
         totalPages: { type: integer }
+    AgentObservabilityToolSummary:
+      type: object
+      required: [operationId, totalCalls, succeededCalls, failedCalls, otherCalls, successRate, lastCalledAt]
+      properties:
+        operationId: { type: string }
+        totalCalls: { type: integer, format: int64, minimum: 0 }
+        succeededCalls: { type: integer, format: int64, minimum: 0 }
+        failedCalls: { type: integer, format: int64, minimum: 0 }
+        otherCalls: { type: integer, format: int64, minimum: 0, description: Calls not yet executed to a succeeded or failed terminal state. }
+        successRate: { type: number, minimum: 0, maximum: 100, description: Succeeded calls divided by succeeded plus failed calls; canceled, skipped, and waiting calls are excluded. }
+        lastCalledAt: { type: string, format: date-time }
+    AgentObservabilityToolCall:
+      type: object
+      required: [id, operationId, status, arguments, durationMs, runId, turnId, turnIndex, conversationId, conversationTitle, user, createdAt]
+      properties:
+        id: { type: string }
+        operationId: { type: string }
+        status: { type: string }
+        arguments: { type: object, additionalProperties: true, description: Redacted and size-limited arguments; encrypted executable arguments are never returned. }
+        result: { description: Redacted and size-limited tool result. }
+        errorCode: { type: string }
+        durationMs: { type: number, format: double, minimum: 0 }
+        traceId: { type: string, pattern: "^[0-9a-f]{32}$" }
+        runId: { type: string }
+        turnId: { type: string }
+        turnIndex: { type: integer }
+        conversationId: { type: string }
+        conversationTitle: { type: string }
+        user: { $ref: "#/components/schemas/AgentObservabilityConversationUser" }
+        createdAt: { type: string, format: date-time }
+    AgentObservabilityToolSummaryPage:
+      type: object
+      required: [items, page, pageSize, sortBy, sortOrder, total, totalPages]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/AgentObservabilityToolSummary" } }
+        page: { type: integer }
+        pageSize: { type: integer }
+        sortBy: { type: string }
+        sortOrder: { type: string, enum: [asc, desc] }
+        total: { type: integer, format: int64 }
+        totalPages: { type: integer }
+    AgentObservabilityToolCallPage:
+      type: object
+      required: [items, page, pageSize, sortBy, sortOrder, total, totalPages]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/AgentObservabilityToolCall" } }
+        page: { type: integer }
+        pageSize: { type: integer }
+        sortBy: { type: string }
+        sortOrder: { type: string, enum: [asc, desc] }
+        total: { type: integer, format: int64 }
+        totalPages: { type: integer }
     AgentObservabilityOverview:
       type: object
       required: [generatedAt, range, summary, sourceStatus, observationCode]
@@ -8693,11 +8791,12 @@ components:
         range: { type: string, enum: [1h, 6h, 24h, 7d, 30d, 1y] }
         summary:
           type: object
-          required: [inputTokens, outputTokens, toolCalls, turnCount, turnSuccessRate, runDurationP95]
+          required: [inputTokens, outputTokens, toolCalls, toolSuccessRate, turnCount, turnSuccessRate, runDurationP95]
           properties:
             inputTokens: { type: number, minimum: 0, description: Input tokens consumed during the selected period. }
             outputTokens: { type: number, minimum: 0, description: Output tokens generated during the selected period. }
-            toolCalls: { type: number, minimum: 0, description: Tool calls executed during the selected period. }
+            toolCalls: { type: number, minimum: 0, description: Tool calls recorded during the selected period, including internal UI tools and non-terminal calls. }
+            toolSuccessRate: { type: number, minimum: 0, maximum: 100, description: Succeeded tool calls divided by succeeded plus failed calls during the selected period. }
             turnCount: { type: integer, format: int64, minimum: 0, description: Conversation turns created during the selected period. }
             turnSuccessRate: { type: number, minimum: 0, maximum: 100, description: Completed turns divided by terminal turns during the selected period. }
             runDurationP95: { type: number, minimum: 0, description: P95 Agent Run duration in seconds during the selected period. }

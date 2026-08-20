@@ -6,7 +6,7 @@
 
 ## 必读（按顺序）
 
-1. 原型稿（唯一视觉基准，浏览器可打开交互）：`docs-internal/prototypes/topology-redesign.html`
+1. 原型稿（唯一视觉基准，浏览器可打开交互）：`docs-internal/legacy/prototypes/topology-redesign.html`
    - 重点看其中的 CSS 设计 token、`.svc-node` 服务卡片、`.lane` 泳道、`.edge-layer` SVG 走线、`.legend` 图例、`.detail-sheet` 详情侧滑
 2. 现有实现：
    - `web/src/pages/projects/project-topology-chart.tsx` ← **主要重写对象**（ECharts 环形图）

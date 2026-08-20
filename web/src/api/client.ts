@@ -150,6 +150,8 @@ const domainOperations = {
     'getAgentObservabilityOverview',
     'listAgentObservabilityConversations',
     'listAgentObservabilityTurns',
+    'listAgentObservabilityTools',
+    'listAgentObservabilityToolCalls',
     'getAgentObservabilityConversation',
     'getAgentObservabilityTrace',
     'getDataRetentionCatalog',
