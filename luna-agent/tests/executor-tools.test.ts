@@ -408,11 +408,25 @@ describe("provider to tool to subsequent model invocation", () => {
     const card = timeline?.turns[0]?.selectedRun?.items.find(item =>
       "toolCall" in item && item.toolCall.operationId === "create_interaction_cards",
     )
+    expect(card && "toolCall" in card ? card.toolCall.operationId : undefined).toBe("create_interaction_cards")
     expect(card && "toolCall" in card ? card.toolCall.arguments : undefined).toMatchObject({
       schemaVersion: 1,
       placement: "turn_end",
       mode: "interactive",
       template: "form",
+    })
+    const history = await repository.listConversationHistory(conversation.id, -1, 1, 1)
+    const rawCard = history[0]?.toolInteractions?.find((interaction) => {
+      const content = interaction.content
+      return interaction.type === "tool_call"
+        && content !== null
+        && typeof content === "object"
+        && !Array.isArray(content)
+        && (content as Record<string, unknown>).operationId === "create_interaction_cards"
+    })
+    expect(rawCard?.content).toMatchObject({
+      operationId: "create_interaction_cards",
+      modelOperationId: "request_tool_input",
     })
   })
 

@@ -51,6 +51,8 @@ describe("Postgres tool argument storage", () => {
       argumentsHash: "sha256:test",
       attempt: 1,
       rowVersion: 1,
+      result: { code: "ai.tool_arguments_invalid", retryable: true },
+      errorCode: "ai.tool_arguments_invalid",
     })
 
     expect(query.mock.calls[0]?.[0]).toContain("input_mode")
@@ -58,6 +60,8 @@ describe("Postgres tool argument storage", () => {
     expect(calls[0]?.[5]).toContain("[REDACTED]")
     expect(calls[0]?.[5]).not.toContain("generated-secret")
     expect(calls[0]?.[6]).not.toContain("generated-secret")
+    expect(calls[0]?.[12]).toBe(JSON.stringify({ code: "ai.tool_arguments_invalid", retryable: true }))
+    expect(calls[0]?.[13]).toBe("ai.tool_arguments_invalid")
     await expect(store.get("aitool_1")).resolves.toMatchObject({ arguments: executable })
   })
 

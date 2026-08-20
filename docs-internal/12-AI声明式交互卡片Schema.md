@@ -106,8 +106,12 @@ Agent 使用：
 - 浏览器不能根据 `operationId` 拼接业务 URL，也不能直接调用第三方平台。
 - Tool Action 只能引用 Tool Catalog 已注册的 `operationId`，通过白名单 JSON Pointer 绑定字段、
   卡片 ID或受控字面量。
+- JSON Pointer 绑定必须按后继段判定对象或数组容器，数组下标只接受规范非负整数并设置有界上限；
+  `__proto__`、`prototype`、`constructor` 等原型链段在 Agent 与 Web 两端都必须拒绝。
 - 平台对绑定后的最终参数重新校验当前用户、Scope、RBAC、风险、确认、MFA 和参数摘要。
 - Tool Action 必须沿用平台幂等和审计语义；模型不能通过卡片声明 `approved`、`force` 或成功终态。
+- Timeline 为兼容 Web 可以把窄卡片工具投影为稳定的内部卡片 operation，但必须同时保存真实模型
+  operationId；恢复模型历史时还原真实窄工具，禁止让模型误判自己使用了已下线的大型通用工具。
 - 站内导航使用注册路由，不替代业务操作，也不能作为已完成证明。
 - 发送消息动作只回灌已校验且非敏感的用户选择/输入，不伪造历史消息。
 - 工具动作的参数不得序列化为普通聊天消息；BFF/Agent 必须将动作绑定为独立 Run，工具调用记录只保留加密原文和脱敏投影。

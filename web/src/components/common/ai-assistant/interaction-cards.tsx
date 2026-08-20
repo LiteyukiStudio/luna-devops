@@ -31,6 +31,7 @@ import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { z } from 'zod'
+import { SearchSelect } from '@/components/common/search-select'
 import { StatusBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -409,7 +410,7 @@ function DynamicField({ control, field, error }: { control: Control<FormValues>,
   const grouped = field.type === 'multi_select'
     || field.type === 'key_value'
     || field.type === 'secret'
-    || (field.type === 'select' && field.display !== undefined && field.display !== 'select')
+    || (field.type === 'select' && (field.options.length >= 6 || (field.display !== undefined && field.display !== 'select')))
   const labelContent = (
     <>
       <AIInlineMarkdown>{field.label}</AIInlineMarkdown>
@@ -495,6 +496,23 @@ function SelectField({ controlId, describedBy, error, field, labelId, name, requ
 }) {
   const { t } = useTranslation()
   if (!field.display || field.display === 'select') {
+    if (field.options.length >= 6) {
+      return (
+        <SearchSelect
+          ariaLabel={`${field.label}${required ? ' *' : ''}`}
+          filterLocally
+          options={field.options}
+          placeholder={field.placeholder ?? t('aiAssistant.cards.selectPlaceholder')}
+          searchPlaceholder={t('common.search')}
+          size="sm"
+          value={value}
+          onValueChange={(next) => {
+            onChange(next)
+            onBlur()
+          }}
+        />
+      )
+    }
     return (
       <NativeSelect id={controlId} aria-describedby={describedBy} aria-invalid={error} aria-required={required} name={name} value={value} onBlur={onBlur} onChange={event => onChange(event.target.value)}>
         <option value="">{field.placeholder ?? t('aiAssistant.cards.selectPlaceholder')}</option>
@@ -672,17 +690,55 @@ function bindArguments(action: Extract<InteractionCardAction, { type: 'tool' }>,
 
 function setJsonPointer(target: Record<string, unknown>, pointer: string, value: unknown) {
   const parts = pointer.split('/').slice(1).map(part => part.replaceAll('~1', '/').replaceAll('~0', '~'))
-  let current = target
+  if (parts.length === 0 || parts.some(isUnsafeJsonPointerPart))
+    throw new Error('ai.card_binding_invalid')
+
+  let current: Record<string, unknown> | unknown[] = target
   parts.forEach((part, index) => {
     if (index === parts.length - 1) {
-      current[part] = value
+      setJsonPointerPart(current, part, value)
       return
     }
-    const next = current[part]
-    if (!next || typeof next !== 'object' || Array.isArray(next))
-      current[part] = {}
-    current = current[part] as Record<string, unknown>
+    const nextPart = parts[index + 1]!
+    const expectedArray = isJsonPointerArrayIndex(nextPart)
+    const next = readJsonPointerPart(current, part)
+    if (!next || typeof next !== 'object' || Array.isArray(next) !== expectedArray) {
+      const container = expectedArray ? [] : {}
+      setJsonPointerPart(current, part, container)
+      current = container
+      return
+    }
+    current = next as Record<string, unknown> | unknown[]
   })
+}
+
+function readJsonPointerPart(current: Record<string, unknown> | unknown[], part: string): unknown {
+  return Array.isArray(current) ? current[jsonPointerArrayIndex(part)] : current[part]
+}
+
+function setJsonPointerPart(current: Record<string, unknown> | unknown[], part: string, value: unknown) {
+  if (Array.isArray(current)) {
+    current[jsonPointerArrayIndex(part)] = value
+    return
+  }
+  current[part] = value
+}
+
+function jsonPointerArrayIndex(part: string): number {
+  if (!isJsonPointerArrayIndex(part))
+    throw new Error('ai.card_binding_invalid')
+  const value = Number(part)
+  if (!Number.isSafeInteger(value) || value > 999)
+    throw new Error('ai.card_binding_invalid')
+  return value
+}
+
+function isJsonPointerArrayIndex(part: string) {
+  return /^(?:0|[1-9]\d*)$/.test(part)
+}
+
+function isUnsafeJsonPointerPart(part: string) {
+  return part === '__proto__' || part === 'prototype' || part === 'constructor'
 }
 
 function buildFormSchema(fields: InteractionFormField[]) {

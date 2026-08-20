@@ -13,8 +13,8 @@ export class PostgresToolCallStore implements ToolCallStore {
   async insert(value: ToolCallRecord) {
     try {
       await this.pool.query(
-        `insert into ai.tool_calls(id,run_id,operation_id,status,input_mode,arguments,arguments_ciphertext,arguments_hash,attempt,row_version,approval_expires_at,mfa_purpose)
-         values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+        `insert into ai.tool_calls(id,run_id,operation_id,status,input_mode,arguments,arguments_ciphertext,arguments_hash,attempt,row_version,approval_expires_at,mfa_purpose,result,error_code)
+         values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
         [
           value.id,
           value.runId,
@@ -28,6 +28,8 @@ export class PostgresToolCallStore implements ToolCallStore {
           value.rowVersion,
           value.approvalExpiresAt ? new Date(value.approvalExpiresAt) : null,
           value.mfaPurpose ?? null,
+          value.result === undefined ? null : JSON.stringify(value.result),
+          value.errorCode ?? null,
         ],
       )
     }

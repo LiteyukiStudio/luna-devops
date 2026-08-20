@@ -5,6 +5,7 @@ import {
   compileBusinessCardTemplate,
   createBusinessCardTemplateInput,
 } from "./business-card-templates.js"
+import { safeJsonPointer } from "./json-pointer-schema.js"
 import { registeredRouteName, routeIdentifiers } from "./ui-route.js"
 
 const identifier = z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/)
@@ -269,7 +270,7 @@ const bindingValue = z.discriminatedUnion("type", [
   z.object({ type: z.literal("literal"), value: z.union([z.string(), z.number(), z.boolean(), z.null()]) }),
 ])
 const binding = z.object({
-  target: z.string().regex(/^\/(?:[^/~]|~[01])+(?:\/(?:[^/~]|~[01])+)*$/).max(240),
+  target: safeJsonPointer,
   value: bindingValue,
 })
 const actionBase = {

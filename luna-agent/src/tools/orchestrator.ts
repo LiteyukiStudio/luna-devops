@@ -497,7 +497,7 @@ export class ToolOrchestrator {
       toolCallId: record.id,
       data: { operationId: record.operationId, arguments: {}, argumentsHash, expectedVersion: record.rowVersion },
     })
-    const failed = await this.transition(record, "failed", {}, "tool_call.failed")
+    const failed = await this.transition(record, "failed", { errorCode: error.code, result }, "tool_call.failed")
     this.loopGuard.recordFailure({
       runId: input.runId,
       operationId: input.operationId,

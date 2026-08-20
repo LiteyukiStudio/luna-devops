@@ -1,5 +1,13 @@
 # TODO
 
+## 2026-08-20 Agent 交互卡片与密钥链路回归
+
+- [x] 修复交互卡片 JSON Pointer 将 `/body/items/0/...` 错组装为对象的问题；数组下标按有界数组写入，并在 Agent 与 Web 双边拒绝原型链污染路径。
+- [x] 修复 Direct Tool Action 提交后未接入运行时间线与 SSE 的问题，卡片操作可立即展示批准、MFA、执行终态和结构化失败。
+- [x] 修复非法工具参数的 `errorCode/result/issues` 在 PostgreSQL 首次写入和状态转换时丢失的问题，保留字段级自修复证据。
+- [x] 长候选单选改用可搜索选择器；Timeline 保持旧 Web operation 兼容，同时向模型历史恢复 7 个真实窄卡片 operationId。
+- [x] 使用真实浏览器串行覆盖资源短选/长选、密钥输入、变更核对、诊断、健康概览、执行进度和操作结果 8 个场景变体；完成密钥设置/清理、批准、TOTP Step-up、权威回读和明文泄露检查。
+
 ## 2026-08-20 Agent Step-up MFA 恢复
 
 - [x] 修复 `/auth/mfa/verify` 已创建 Step-up assertion 却未返回 `stepUpAssertionId`，导致 AI 工具验证成功后无法恢复的问题。

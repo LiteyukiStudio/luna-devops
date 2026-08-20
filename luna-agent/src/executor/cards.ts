@@ -73,6 +73,7 @@ export class CardGenerationService {
       content: {
         toolCallId,
         operationId: "create_interaction_cards",
+        modelOperationId: operationId,
         titleKey: "aiAssistant.cards.preparingToolTitle",
         status: "running",
         arguments: placeholderArguments,
@@ -87,6 +88,7 @@ export class CardGenerationService {
       itemId,
       toolCallId,
       operationId: "create_interaction_cards",
+      modelOperationId: operationId,
       titleKey: "aiAssistant.cards.preparingToolTitle",
       arguments: placeholderArguments,
     })
@@ -141,13 +143,20 @@ export class CardGenerationService {
     await this.repository.updateItemWithEvent(itemId, "completed", {
       toolCallId,
       operationId: "create_interaction_cards",
+      modelOperationId: generation.operationId,
       titleKey: "aiAssistant.cards.toolTitle",
       status: "succeeded",
       arguments: input,
       result,
     }, "tool.completed", {
-      itemId, toolCallId, operationId: "create_interaction_cards", titleKey: "aiAssistant.cards.toolTitle",
-      arguments: input, result, timelineIndex,
+      itemId,
+      toolCallId,
+      operationId: "create_interaction_cards",
+      modelOperationId: generation.operationId,
+      titleKey: "aiAssistant.cards.toolTitle",
+      arguments: input,
+      result,
+      timelineIndex,
     })
     generation.status = "completed"
     agentMetrics.cards.add(1, { phase: "created", mode: input.mode })
@@ -176,6 +185,7 @@ export class CardGenerationService {
     await this.repository.updateItemWithEvent(generation.itemId, "streaming", {
       toolCallId: generation.toolCallId,
       operationId: "create_interaction_cards",
+      modelOperationId: generation.operationId,
       titleKey: "aiAssistant.cards.preparingToolTitle",
       status: "running",
       arguments: generation.placeholderArguments,
@@ -190,6 +200,7 @@ export class CardGenerationService {
       itemId: generation.itemId,
       toolCallId: generation.toolCallId,
       operationId: "create_interaction_cards",
+      modelOperationId: generation.operationId,
       timelineIndex: generation.timelineIndex,
       result: cardValidationFailure("create", issues, attempt, generation.generationId, errorCode, generation.operationId),
     })
@@ -217,6 +228,7 @@ export class CardGenerationService {
     await this.repository.updateItemWithEvent(generation.itemId, "failed", {
       toolCallId: generation.toolCallId,
       operationId: "create_interaction_cards",
+      modelOperationId: generation.operationId,
       titleKey: "aiAssistant.cards.preparingToolTitle",
       status: "failed",
       arguments: generation.placeholderArguments,
@@ -226,6 +238,7 @@ export class CardGenerationService {
       itemId: generation.itemId,
       toolCallId: generation.toolCallId,
       operationId: "create_interaction_cards",
+      modelOperationId: generation.operationId,
       titleKey: "aiAssistant.cards.preparingToolTitle",
       errorCode,
       result,

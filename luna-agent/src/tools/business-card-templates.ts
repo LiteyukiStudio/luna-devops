@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { safeJsonPointer } from "./json-pointer-schema.js"
 
 const identifier = z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/)
 const shortText = z.string().trim().min(1).max(120)
@@ -91,11 +92,11 @@ const templateField = z.union([
 ])
 
 const literalBinding = z.object({
-  target: z.string().regex(/^\/(?:[^/~]|~[01])+(?:\/(?:[^/~]|~[01])+)*$/).max(240),
+  target: safeJsonPointer,
   value: z.union([z.string(), z.number(), z.boolean(), z.null()]),
 })
 const fieldBinding = z.object({
-  target: z.string().regex(/^\/(?:[^/~]|~[01])+(?:\/(?:[^/~]|~[01])+)*$/).max(240),
+  target: safeJsonPointer,
   fieldId: identifier,
 })
 const submitAction = z.discriminatedUnion("type", [

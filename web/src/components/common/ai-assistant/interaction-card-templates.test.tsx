@@ -122,12 +122,13 @@ describe('interaction card template edge cases', () => {
     expect(screen.getByRole('radio', { name: 'Gitea' })).toBeVisible()
   })
 
-  it('uses a compact selectable field instead of a long display-only list for many candidates', () => {
+  it('uses a compact searchable field instead of a long display-only list for many candidates', () => {
     const { container } = render(<AIInteractionCards arguments={templateSelectionInteractionCardFixture} onAction={vi.fn()} />)
 
     expect(container.querySelector('[data-ai-card-mode="interactive"]')).not.toBeNull()
-    expect(screen.getByRole('combobox', { name: /应用模板/ })).toBeVisible()
-    expect(screen.getAllByRole('option')).toHaveLength(9)
+    fireEvent.click(screen.getByRole('button', { name: '应用模板 *' }))
+    expect(screen.getByPlaceholderText('搜索')).toBeVisible()
+    expect(within(screen.getByRole('dialog')).getAllByRole('button')).toHaveLength(8)
     expect(container.querySelector('[data-ai-content-block="item_list"]')).toBeNull()
     expect(screen.getByRole('button', { name: '继续配置' })).toBeDisabled()
   })

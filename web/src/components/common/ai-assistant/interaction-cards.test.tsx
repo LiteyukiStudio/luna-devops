@@ -96,6 +96,71 @@ describe('ai interaction cards', () => {
     }))
   })
 
+  it('builds array arguments for runtime secret bindings', async () => {
+    const onAction = vi.fn<(action: AIUIAction) => Promise<boolean>>().mockResolvedValue(true)
+    const card = structuredClone(candidatesCard) as unknown as {
+      cards: Array<{
+        form: { sections: Array<{ fields: Array<Record<string, unknown>> }> }
+        actions: unknown[]
+      }>
+    }
+    card.cards[0]!.form.sections[0]!.fields = [
+      { id: 'accessKey', type: 'secret', label: 'Access Key', required: true, generation: 'disabled' },
+      { id: 'secretKey', type: 'secret', label: 'Secret Key', required: true, generation: 'disabled' },
+    ]
+    card.cards[0]!.actions = [{
+      id: 'save',
+      type: 'tool',
+      label: '保存密钥',
+      operationId: 'updateDeploymentTargetRuntimeSecrets',
+      bindings: [
+        { target: '/projectId', value: { type: 'literal', value: 'prj_test' } },
+        { target: '/body/items/0/key', value: { type: 'literal', value: 'ACCESS_KEY' } },
+        { target: '/body/items/0/valueMode', value: { type: 'literal', value: 'secret' } },
+        { target: '/body/items/0/operation', value: { type: 'literal', value: 'set' } },
+        { target: '/body/items/0/value', value: { type: 'field', fieldId: 'accessKey' } },
+        { target: '/body/items/1/key', value: { type: 'literal', value: 'SECRET_KEY' } },
+        { target: '/body/items/1/valueMode', value: { type: 'literal', value: 'secret' } },
+        { target: '/body/items/1/operation', value: { type: 'literal', value: 'set' } },
+        { target: '/body/items/1/value', value: { type: 'field', fieldId: 'secretKey' } },
+      ],
+    }]
+
+    render(<AIInteractionCards arguments={card as unknown as Record<string, unknown>} onAction={onAction} />)
+    fireEvent.change(screen.getByLabelText('Access Key *'), { target: { value: 'access-value' } })
+    fireEvent.change(screen.getByLabelText('Secret Key *'), { target: { value: 'secret-value' } })
+    const save = screen.getByRole('button', { name: '保存密钥' })
+    await waitFor(() => expect(save).toBeEnabled())
+    fireEvent.click(save)
+
+    await waitFor(() => expect(onAction).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'request_tool',
+      payload: expect.objectContaining({
+        arguments: {
+          projectId: 'prj_test',
+          body: {
+            items: [
+              { key: 'ACCESS_KEY', valueMode: 'secret', operation: 'set', value: 'access-value' },
+              { key: 'SECRET_KEY', valueMode: 'secret', operation: 'set', value: 'secret-value' },
+            ],
+          },
+        },
+      }),
+    })))
+  })
+
+  it('rejects prototype-mutating binding paths in the browser boundary', async () => {
+    const onAction = vi.fn<(action: AIUIAction) => Promise<boolean>>().mockResolvedValue(true)
+    const card = structuredClone(candidatesCard) as unknown as { cards: Array<{ actions: Array<Record<string, unknown>> }> }
+    card.cards[0]!.actions[0]!.bindings = [{ target: '/__proto__/polluted', value: { type: 'literal', value: true } }]
+
+    render(<AIInteractionCards arguments={card as unknown as Record<string, unknown>} onAction={onAction} />)
+    fireEvent.click(screen.getByRole('button', { name: '安装 PostgreSQL' }))
+
+    await waitFor(() => expect(onAction).not.toHaveBeenCalled())
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined()
+  })
+
   it('keeps secrets out of a send-message payload and visible text', async () => {
     const onAction = vi.fn<(action: AIUIAction) => Promise<boolean>>().mockResolvedValue(true)
     const card = structuredClone(candidatesCard) as unknown as { cards: Array<{ actions: unknown[] }> }
@@ -506,6 +571,52 @@ describe('ai interaction cards', () => {
     await waitFor(() => expect(onAction).toHaveBeenCalledWith(expect.objectContaining({
       type: 'send_message',
       payload: { message: '继续配置 postgresql。' },
+    })))
+  })
+
+  it('uses a searchable selector when a card has many candidates', async () => {
+    const onAction = vi.fn<(action: AIUIAction) => Promise<boolean>>().mockResolvedValue(true)
+    const card = structuredClone(candidatesCard) as unknown as {
+      cards: Array<{
+        form: { sections: Array<{ fields: Array<Record<string, unknown>> }> }
+        actions: unknown[]
+      }>
+    }
+    card.cards[0]!.form.sections[0]!.fields = [{
+      id: 'templateId',
+      type: 'select',
+      label: '应用模板',
+      required: true,
+      submissionFormat: 'label_value',
+      options: [
+        { value: 'postgresql', label: 'PostgreSQL' },
+        { value: 'redis', label: 'Redis' },
+        { value: 'grafana', label: 'Grafana' },
+        { value: 'prometheus', label: 'Prometheus' },
+        { value: 'minio', label: 'MinIO' },
+        { value: 'n8n', label: 'n8n' },
+      ],
+    }]
+    card.cards[0]!.actions = [{
+      id: 'continue',
+      type: 'send_message',
+      label: '继续配置',
+      message: '继续配置 {{templateId}}。',
+    }]
+
+    render(<AIInteractionCards arguments={card as unknown as Record<string, unknown>} onAction={onAction} />)
+    fireEvent.click(screen.getByRole('button', { name: '应用模板 *' }))
+    const search = screen.getByPlaceholderText('Search')
+    fireEvent.change(search, { target: { value: 'graf' } })
+    expect(screen.queryByRole('button', { name: /^PostgreSQL/ })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Grafana/ }))
+    const continueButton = screen.getByRole('button', { name: '继续配置' })
+    await waitFor(() => expect(continueButton).toBeEnabled())
+    fireEvent.click(continueButton)
+
+    await waitFor(() => expect(onAction).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'send_message',
+      payload: { message: '继续配置 Grafana (grafana)。' },
     })))
   })
 

@@ -405,14 +405,25 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
         throw new Error(t('aiAssistant.actions.runActive'))
       if (!selectedConversationId)
         throw new Error('ai.conversation_missing')
-      await api.executeAIToolAction(selectedConversationId, {
+      const result = await api.executeAIToolAction(selectedConversationId, {
         operationId: action.payload.operationId,
         arguments: action.payload.arguments ?? {},
         message: action.payload.message,
         clientInstanceId,
       }, crypto.randomUUID())
+      queryClient.setQueryData<AITimelineInfiniteData>(aiTimelineQueryKey(selectedConversationId), current => addOptimisticTimelineTurn(current, {
+        turnId: result.turnId,
+        turnIndex: result.turnIndex,
+        runId: result.runId,
+        text: action.payload.message,
+      }))
+      connectRunStream({ conversationId: selectedConversationId, eventsUrl: result.eventsUrl, runId: result.runId, after: 0 })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['ai', 'conversations'] }),
+        queryClient.invalidateQueries({ queryKey: aiTimelineQueryKey(selectedConversationId) }),
+      ])
     },
-  }), [activeRunId, clientInstanceId, location.pathname, location.search, navigate, queryClient, selectedConversationId, sendTurn, t])
+  }), [activeRunId, clientInstanceId, connectRunStream, location.pathname, location.search, navigate, queryClient, selectedConversationId, sendTurn, t])
   const processAutomaticDelivery = useCallback(async (delivery: AutomaticRouteDelivery) => {
     if (processingAutomaticActionsRef.current.has(delivery.actionId))
       return

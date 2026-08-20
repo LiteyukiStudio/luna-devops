@@ -80,6 +80,42 @@ describe("business interaction card templates", () => {
     expect(result.cards[0]?.actions?.[0]).toMatchObject({ type: "tool", operationId: "createApplication" })
   })
 
+  it("rejects prototype-mutating JSON Pointer bindings", () => {
+    expect(() => compile({
+      templateId: "resource_configuration",
+      title: "配置密钥",
+      resourceTitle: "测试部署目标",
+      sections: [{
+        id: "main",
+        fields: [{ id: "value", type: "secret", label: "密钥", generation: "disabled" }],
+      }],
+      submit: {
+        type: "tool",
+        label: "保存",
+        operationId: "saveSecret",
+        fieldBindings: [{ target: "/__proto__/polluted", fieldId: "value" }],
+      },
+    })).toThrow()
+  })
+
+  it("rejects JSON Pointer array indexes beyond the browser binding limit", () => {
+    expect(() => compile({
+      templateId: "resource_configuration",
+      title: "配置密钥",
+      resourceTitle: "测试部署目标",
+      sections: [{
+        id: "main",
+        fields: [{ id: "value", type: "secret", label: "密钥", generation: "disabled" }],
+      }],
+      submit: {
+        type: "tool",
+        label: "保存",
+        operationId: "saveSecret",
+        fieldBindings: [{ target: "/body/items/1000/value", fieldId: "value" }],
+      },
+    })).toThrow()
+  })
+
   it("rejects secret defaults through the business-template path", () => {
     const template = (field: Record<string, unknown>) => ({
       templateId: "resource_configuration",
