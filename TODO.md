@@ -5,7 +5,8 @@
 - [x] 修复 `/auth/mfa/verify` 已创建 Step-up assertion 却未返回 `stepUpAssertionId`，导致 AI 工具验证成功后无法恢复的问题。
 - [x] 对齐后端响应、OpenAPI 和前端类型，成功响应使用 `no-store`，并保持 assertion 继续绑定当前用户、登录会话和用途。
 - [x] 完成 TOTP / 恢复码验证、重复用途 upsert 和 AI resume 转发的 PostgreSQL 集成回归。
-- [ ] 重启本地 API 后，在真实浏览器中完成一次高风险 Agent 工具的 MFA 验证与恢复验收。
+- [x] 兼容部分思考模式 Provider 在工具恢复后要求回传 `reasoning_content` 的行为：仅在命中特定 400 响应且尚未产生可见输出时补齐兼容字段并重试一次，无关客户端错误不重试。
+- [x] 重启本地 API 后，在真实浏览器中完成高风险 Agent 工具的批准、TOTP Step-up、工具恢复与模型自动续答；数据库确认 Run/工具成功终态，Loki 确认思考模式兼容重试，最后使用一次性恢复码关闭测试账号 MFA 并清理临时凭据。
 
 ## 2026-08-20 Agent 工具成功率观测
 

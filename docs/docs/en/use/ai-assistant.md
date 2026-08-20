@@ -18,6 +18,8 @@ The model picker in the lower-left corner of the composer selects an enabled mod
 
 The assistant retries transient network errors, timeouts, rate limits, and server failures five times by default with exponential backoff. Administrators can set 0–10 retries under **Advanced runtime settings**; 0 disables retries. A stream is never replayed after visible output has started, and non-idempotent writes are not resubmitted when the outcome is unknown, preventing duplicate content or resources.
 
+Some OpenAI-compatible providers in thinking mode require the prior assistant reasoning field when a tool call resumes. The platform adds that compatibility field and retries once only when the provider explicitly reports this parameter error and no visible output has started. The tool itself is not executed again, and unrelated parameter errors do not trigger this compatibility retry.
+
 After it is enabled, open the assistant from the lower-right corner. You can ask it to:
 
 - Find out why an application is unreachable.

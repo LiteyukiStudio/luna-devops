@@ -40,10 +40,11 @@ export class OpenAICompatibleProvider implements ModelProvider {
   private async *streamWithTelemetry(request: ModelRequest, span: Span): AsyncIterable<ModelEvent> {
     this.recordRequestContent(span, request)
     let retry = 0
+    let reasoningReplayCompatibility = false
     while (true) {
       let outputStarted = false
       try {
-        for await (const event of this.streamAttempt(request)) {
+        for await (const event of this.streamAttempt(request, reasoningReplayCompatibility)) {
           if (event.type !== "completed") outputStarted = true
           if (event.type === "completed") this.recordResponseAttributes(span, event.usage, event.finishReason, event.toolCalls?.length ?? 0)
           yield event
@@ -51,6 +52,11 @@ export class OpenAICompatibleProvider implements ModelProvider {
         return
       }
       catch (error) {
+        if (!outputStarted && !reasoningReplayCompatibility && isReasoningReplayRequired(error)) {
+          reasoningReplayCompatibility = true
+          this.recordReasoningReplayCompatibility("chat_stream")
+          continue
+        }
         if (outputStarted || retry >= this.maxRetries || !isRetryableProviderError(error, true))
           throw error
         retry += 1
@@ -123,10 +129,10 @@ export class OpenAICompatibleProvider implements ModelProvider {
     if (systemFingerprint) span.setAttribute("openai.response.system_fingerprint", systemFingerprint)
   }
 
-  private async *streamAttempt(request: ModelRequest): AsyncIterable<ModelEvent> {
+  private async *streamAttempt(request: ModelRequest, reasoningReplayCompatibility = false): AsyncIterable<ModelEvent> {
     const requestStartedAt = performance.now()
     let firstChunkSeconds: number | undefined
-    const response = await this.fetchCompletionOnce(request.messages, request.maxOutputTokens, true, request.signal, request.tools, request.toolChoice, request.thinking)
+    const response = await this.fetchCompletionOnce(request.messages, request.maxOutputTokens, true, request.signal, request.tools, request.toolChoice, request.thinking, reasoningReplayCompatibility)
     if (!response.body) throw new Error("ai.provider_empty_stream")
     const decoder = new TextDecoder()
     let buffer = ""
@@ -267,11 +273,17 @@ export class OpenAICompatibleProvider implements ModelProvider {
 
   private async fetchCompletion(messages: ModelRequest["messages"], maxTokens: number, stream: boolean, signal?: AbortSignal, tools?: ModelRequest["tools"], toolChoice?: ModelRequest["toolChoice"], thinking?: ModelRequest["thinking"]) {
     let retry = 0
+    let reasoningReplayCompatibility = false
     while (true) {
       try {
-        return await this.fetchCompletionOnce(messages, maxTokens, stream, signal, tools, toolChoice, thinking)
+        return await this.fetchCompletionOnce(messages, maxTokens, stream, signal, tools, toolChoice, thinking, reasoningReplayCompatibility)
       }
       catch (error) {
+        if (!reasoningReplayCompatibility && isReasoningReplayRequired(error)) {
+          reasoningReplayCompatibility = true
+          this.recordReasoningReplayCompatibility(stream ? "chat_stream" : "chat_complete")
+          continue
+        }
         if (retry >= this.maxRetries || !isRetryableProviderError(error, false))
           throw error
         retry += 1
@@ -280,7 +292,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
     }
   }
 
-  private async fetchCompletionOnce(messages: ModelRequest["messages"], maxTokens: number, stream: boolean, signal?: AbortSignal, tools?: ModelRequest["tools"], toolChoice?: ModelRequest["toolChoice"], thinking?: ModelRequest["thinking"]) {
+  private async fetchCompletionOnce(messages: ModelRequest["messages"], maxTokens: number, stream: boolean, signal?: AbortSignal, tools?: ModelRequest["tools"], toolChoice?: ModelRequest["toolChoice"], thinking?: ModelRequest["thinking"], reasoningReplayCompatibility = false) {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), this.options.timeoutMs)
     const abort = () => controller.abort(signal?.reason)
@@ -294,7 +306,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
           headers: { authorization: `Bearer ${this.options.apiKey}`, "content-type": "application/json" },
           body: JSON.stringify({
             model: this.options.model,
-            messages: providerMessages(messages),
+            messages: providerMessages(messages, reasoningReplayCompatibility),
             max_tokens: maxTokens,
             stream,
             ...(stream ? { stream_options: { include_usage: true } } : {}),
@@ -332,8 +344,9 @@ export class OpenAICompatibleProvider implements ModelProvider {
       }
       if (!response.ok) {
         const errorCode = providerHTTPError(response.status)
+        const needsErrorBody = response.status === httpBadRequest || Boolean(activeSpan && isAIContentCaptureEnabled())
+        const responseBody = needsErrorBody ? await boundedProviderResponseText(response) : ""
         if (activeSpan && isAIContentCaptureEnabled()) {
-          const responseBody = await response.clone().text().catch(() => "")
           recordAIContent(activeSpan, "luna.gen_ai.content.error", "luna.gen_ai.response.error_body", {
             status: response.status,
             body: responseBody,
@@ -348,7 +361,12 @@ export class OpenAICompatibleProvider implements ModelProvider {
           "http.response.status_code": response.status,
           "error.code": errorCode,
         })
-        throw new ProviderRequestError(errorCode, response.status, parseRetryAfter(response.headers))
+        throw new ProviderRequestError(
+          errorCode,
+          response.status,
+          parseRetryAfter(response.headers),
+          providerRequiresReasoningReplay(response.status, responseBody),
+        )
       }
       activeSpan?.setAttribute("http.response.status_code", response.status)
       const providerRequestId = response.headers.get("x-request-id")
@@ -384,13 +402,67 @@ export class OpenAICompatibleProvider implements ModelProvider {
     })
     await waitForRetry(attempt, { maxRetries: this.maxRetries, ...(signal ? { signal } : {}), ...(retryAfterMs !== undefined ? { retryAfterMs } : {}) })
   }
+
+  private recordReasoningReplayCompatibility(operation: string): void {
+    trace.getActiveSpan()?.addEvent("luna.gen_ai.reasoning_replay_compatibility", {
+      "luna.gen_ai.compatibility.mode": "reasoning_content",
+    })
+    telemetryLog("agent.provider.reasoning_replay_compatibility", "warn", {
+      "luna.gen_ai.compatibility.mode": "reasoning_content",
+      operation,
+    })
+  }
 }
 
 class ProviderRequestError extends Error {
-  constructor(message: string, readonly status?: number, readonly retryAfterMs?: number) {
+  constructor(message: string, readonly status?: number, readonly retryAfterMs?: number, readonly reasoningReplayRequired = false) {
     super(message)
     this.name = "ProviderRequestError"
   }
+}
+
+const httpBadRequest = 400
+
+function isReasoningReplayRequired(error: unknown): boolean {
+  return error instanceof ProviderRequestError && error.reasoningReplayRequired
+}
+
+function providerRequiresReasoningReplay(status: number, responseBody: string): boolean {
+  if (status !== httpBadRequest) return false
+  const fingerprint = responseBody.toLowerCase()
+  return fingerprint.includes("reasoning_content")
+    && fingerprint.includes("thinking")
+    && fingerprint.includes("passed back")
+}
+
+async function boundedProviderResponseText(response: Response, limit = 16 * 1024): Promise<string> {
+  const reader = response.clone().body?.getReader()
+  if (!reader) return ""
+  const decoder = new TextDecoder()
+  let output = ""
+  let consumed = 0
+  while (consumed < limit) {
+    let done = false
+    let value: Uint8Array | undefined
+    try {
+      const result = await reader.read() as { done: boolean, value?: Uint8Array }
+      done = result.done
+      value = result.value
+    }
+    catch {
+      break
+    }
+    if (done || !value) break
+    const remaining = limit - consumed
+    const chunk = value.byteLength > remaining ? value.subarray(0, remaining) : value
+    consumed += chunk.byteLength
+    output += decoder.decode(chunk, { stream: true })
+    if (value.byteLength > remaining) {
+      await reader.cancel().catch(() => undefined)
+      break
+    }
+  }
+  return output + decoder.decode()
 }
 
 function errorCode(error: unknown): string {
@@ -603,7 +675,7 @@ function parseToolCalls(fragments: Map<number, { id?: string, operationId: strin
   }).filter(call => call.operationId)
 }
 
-function providerMessages(messages: ModelRequest["messages"]) {
+function providerMessages(messages: ModelRequest["messages"], reasoningReplayCompatibility = false) {
   return messages.map((message, messageIndex) => {
     if (message.role === "tool") {
       return { role: "tool", tool_call_id: message.toolCallId, content: message.content }
@@ -612,6 +684,9 @@ function providerMessages(messages: ModelRequest["messages"]) {
       return {
         role: "assistant",
         content: message.content || null,
+        ...(reasoningReplayCompatibility
+          ? { reasoning_content: message.content || "继续处理此前已完成的工具调用。" }
+          : {}),
         tool_calls: message.toolCalls.map((call, callIndex) => ({
           id: call.id ?? `call_${messageIndex}_${callIndex}`,
           type: "function",

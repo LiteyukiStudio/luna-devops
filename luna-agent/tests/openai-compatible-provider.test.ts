@@ -230,6 +230,96 @@ describe("OpenAICompatibleProvider streaming", () => {
     ])
   })
 
+  it("replays compatible reasoning content after a thinking provider rejects a resumed tool call", async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        error: {
+          code: "invalid_request_error",
+          type: "invalid_request_error",
+          message: "The `reasoning_content` in the thinking mode must be passed back to the API.",
+        },
+      }), { status: 400, headers: { "content-type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        choices: [{ message: { content: "完成" }, finish_reason: "stop" }],
+        usage: { prompt_tokens: 8, completion_tokens: 2 },
+      }), { status: 200, headers: { "content-type": "application/json" } }))
+    vi.stubGlobal("fetch", fetchMock)
+    const provider = new OpenAICompatibleProvider({ baseUrl: "https://provider.example/v1", apiKey: "secret", model: "model-a", timeoutMs: 5000, maxRetries: 0 })
+
+    await expect(provider.complete({
+      messages: [
+        { role: "user", content: "查询项目空间" },
+        { role: "assistant", content: "正在查询。", toolCalls: [{ id: "call_projects", operationId: "listProjects", arguments: {} }] },
+        { role: "tool", toolCallId: "call_projects", content: "{\"items\":[]}" },
+      ],
+      tools: [{ operationId: "listProjects", description: "查询项目空间", inputSchema: { type: "object" } }],
+      maxOutputTokens: 100,
+    })).resolves.toMatchObject({ text: "完成" })
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    const firstRawBody = fetchMock.mock.calls[0]?.[1]?.body
+    const replayRawBody = fetchMock.mock.calls[1]?.[1]?.body
+    expect(typeof firstRawBody).toBe("string")
+    expect(typeof replayRawBody).toBe("string")
+    if (typeof firstRawBody !== "string" || typeof replayRawBody !== "string") throw new Error("expected JSON request bodies")
+    const firstBody = JSON.parse(firstRawBody) as { messages: Array<Record<string, unknown>> }
+    const replayBody = JSON.parse(replayRawBody) as { messages: Array<Record<string, unknown>> }
+    expect(firstBody.messages[1]).not.toHaveProperty("reasoning_content")
+    expect(replayBody.messages[1]).toMatchObject({
+      role: "assistant",
+      content: "正在查询。",
+      reasoning_content: "正在查询。",
+    })
+  })
+
+  it("retries a resumed tool stream once with reasoning replay compatibility", async () => {
+    const frames = `data: ${JSON.stringify({ choices: [{ delta: { content: "完成" }, finish_reason: "stop" }], usage: { prompt_tokens: 8, completion_tokens: 2 } })}\n\ndata: [DONE]\n\n`
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        error: { message: "The `reasoning_content` in the thinking mode must be passed back to the API." },
+      }), { status: 400, headers: { "content-type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(frames, { status: 200, headers: { "content-type": "text/event-stream" } }))
+    vi.stubGlobal("fetch", fetchMock)
+    const provider = new OpenAICompatibleProvider({ baseUrl: "https://provider.example/v1", apiKey: "secret", model: "model-a", timeoutMs: 5000, maxRetries: 0 })
+
+    const events = []
+    for await (const event of provider.stream({
+      messages: [
+        { role: "assistant", content: "", toolCalls: [{ id: "call_projects", operationId: "listProjects", arguments: {} }] },
+        { role: "tool", toolCallId: "call_projects", content: "{\"items\":[]}" },
+      ],
+      tools: [{ operationId: "listProjects", description: "查询项目空间", inputSchema: { type: "object" } }],
+      maxOutputTokens: 100,
+    })) events.push(event)
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(events).toEqual([
+      { type: "message_delta", delta: "完成" },
+      { type: "completed", usage: { inputTokens: 8, outputTokens: 2, reported: true }, finishReason: "stop" },
+    ])
+    const replayRawBody = fetchMock.mock.calls[1]?.[1]?.body
+    expect(typeof replayRawBody).toBe("string")
+    if (typeof replayRawBody !== "string") throw new Error("expected JSON request body")
+    const replayBody = JSON.parse(replayRawBody) as { messages: Array<Record<string, unknown>> }
+    expect(replayBody.messages[0]).toMatchObject({
+      reasoning_content: "继续处理此前已完成的工具调用。",
+    })
+  })
+
+  it("does not retry unrelated provider 400 responses as reasoning compatibility", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
+      error: { message: "tool schema is invalid" },
+    }), { status: 400, headers: { "content-type": "application/json" } }))
+    vi.stubGlobal("fetch", fetchMock)
+    const provider = new OpenAICompatibleProvider({ baseUrl: "https://provider.example/v1", apiKey: "secret", model: "model-a", timeoutMs: 5000, maxRetries: 0 })
+
+    await expect(provider.complete({
+      messages: [{ role: "user", content: "hello" }],
+      maxOutputTokens: 100,
+    })).rejects.toThrow("ai.provider_request_failed")
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
   it("normalizes a quota error embedded in an otherwise successful SSE response", async () => {
     const body = new ReadableStream<Uint8Array>({
       start(controller) {
