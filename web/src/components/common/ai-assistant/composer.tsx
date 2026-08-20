@@ -150,8 +150,9 @@ export function AIAssistantComposer({
   const canSubmit = modelAvailable && (!activeRun || waitingInput)
   const selectedModel = models.find(model => model.id === selectedModelId)
   const contextTotal = selectedModel?.maxContextTokens ?? 0
-  const hasUsage = contextUsedTokens !== undefined && contextTotal > 0
-  const contextRatio = hasUsage ? contextUsedTokens / contextTotal : 0
+  const contextUsed = contextUsedTokens ?? 0
+  const hasContext = contextTotal > 0
+  const contextRatio = hasContext ? contextUsed / contextTotal : 0
   const hasBudget = runUsedTokens !== undefined && runTokenBudget !== undefined && runTokenBudget > 0
   const budgetRatio = hasBudget ? runUsedTokens / runTokenBudget : 0
   return (
@@ -204,8 +205,8 @@ export function AIAssistantComposer({
               ))}
             </SelectContent>
           </Select>
-          {hasUsage && (
-            <ContextUsageRing ratio={contextRatio} total={contextTotal} used={contextUsedTokens} />
+          {hasContext && (
+            <ContextUsageRing ratio={contextRatio} total={contextTotal} used={contextUsed} />
           )}
           {activeRun && !waitingInput
             ? (
