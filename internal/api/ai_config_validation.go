@@ -89,7 +89,7 @@ func (h *Handlers) validateAIConfigValues(values map[string]string) error {
 		"ai.runtime.max_request_retries":               {0, 10},
 		"ai.runtime.run_timeout_seconds":               {30, 7200},
 		"ai.runtime.agent_concurrent_runs":             {1, 100},
-		"ai.runtime.context_input_k_tokens":            {64, 1024},
+		"ai.runtime.context_input_k_tokens":            {64, 2048},
 		"ai.quota.user_concurrent_runs":                {1, 100},
 		"ai.quota.user_daily_tokens":                   {1000, 10000000},
 		"ai.quota.project_concurrent_runs":             {1, 100},

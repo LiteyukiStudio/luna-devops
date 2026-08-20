@@ -31,7 +31,7 @@ export const defaultRuntimeSettings: RuntimeSettings = {
   runTimeoutMs: 3_600_000,
   agentConcurrentRuns: 10,
   userConcurrentRuns: 10,
-  contextInputTokenBudget: 512 * 1024,
+  contextInputTokenBudget: 1024 * 1024,
   assistantMaxOutputTokens: 64 * 1024,
   maxModelSteps: 256,
   maxInputBytes: 1024 * 1024,

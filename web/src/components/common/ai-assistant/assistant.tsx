@@ -369,6 +369,8 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
     onError: error => toast.error(error instanceof Error ? error.message : t('aiAssistant.errors.input')),
   })
   const activeRunStatus = activeRunId ? streamState.runStatuses[activeRunId] ?? 'queued' : undefined
+  const latestRunId = timelineData?.snapshot?.turns.at(-1)?.selectedRun?.id
+  const displayedRunUsage = streamState.runUsage[activeRunId ?? latestRunId ?? '']
   const generating = activeRunStatus === 'queued' || activeRunStatus === 'running'
   const waitingInput = activeRunStatus === 'waiting_input'
   const sendingSelected = Boolean(pendingSends[draftKey])
@@ -654,9 +656,9 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
         models={aiModels.data ?? []}
         modelAvailable={Boolean(selectedModel)}
         modelChanging={modelChangingSelected}
-        contextUsedTokens={streamState.latestInputTokens}
-        runTokenBudget={streamState.runTokenBudget}
-        runUsedTokens={streamState.runUsedTokens}
+        contextUsedTokens={displayedRunUsage?.latestInputTokens}
+        runTokenBudget={displayedRunUsage?.tokenBudget}
+        runUsedTokens={displayedRunUsage?.usedTokens}
         modelSelectionDisabled={Boolean(activeRunId || sendingSelected || sendTurn.isPending)}
         selectedModelId={selectedModel?.id}
         draft={draft}

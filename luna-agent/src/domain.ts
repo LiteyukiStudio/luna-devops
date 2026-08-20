@@ -111,6 +111,10 @@ export type Run = {
   errorCode?: string
   model?: AIModelSnapshot
   budget?: RunBudgetSnapshot
+  /** 当前 Run 已消耗的 token 总数（含 input+output），从预算 reservation 聚合。 */
+  usedTokens?: number
+  /** 当前 Run 最近一次主回答模型调用的输入 token 数，用于展示上下文占用。 */
+  latestInputTokens?: number
 }
 
 export type TimelineItem = {

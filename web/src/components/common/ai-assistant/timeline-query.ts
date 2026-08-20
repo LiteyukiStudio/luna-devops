@@ -168,6 +168,7 @@ function combinedState(pages: AITimelineQueryData[], snapshot: AITimeline): AIAs
   const lastEventSequences = { ...authoritative.lastEventSequences }
   const runStatuses = { ...authoritative.runStatuses }
   const runExpectedVersions = { ...authoritative.runExpectedVersions }
+  const runUsage = { ...authoritative.runUsage }
   const turnIndexes = { ...authoritative.turnIndexes }
   const desyncRecoverySequences: Record<string, number> = {}
 
@@ -176,6 +177,7 @@ function combinedState(pages: AITimelineQueryData[], snapshot: AITimeline): AIAs
     page.state.desyncedRunIds.forEach(runId => desyncedRunIds.add(runId))
     Object.assign(runStatuses, page.state.runStatuses)
     Object.assign(runExpectedVersions, page.state.runExpectedVersions)
+    Object.assign(runUsage, page.state.runUsage)
     Object.assign(turnIndexes, page.state.turnIndexes)
     for (const [runId, sequence] of Object.entries(page.state.lastEventSequences))
       lastEventSequences[runId] = Math.max(lastEventSequences[runId] ?? 0, sequence)
@@ -197,6 +199,7 @@ function combinedState(pages: AITimelineQueryData[], snapshot: AITimeline): AIAs
     seenEventIds,
     runStatuses,
     runExpectedVersions,
+    runUsage,
     lastEventSequences,
     turnIndexes,
     itemRevisions,

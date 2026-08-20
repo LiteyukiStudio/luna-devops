@@ -40,6 +40,9 @@ func TestAIConfigDefinitionsCoverSpecificationCatalog(t *testing.T) {
 			t.Errorf("missing AI config definition %s", key)
 		}
 	}
+	if got := aiConfigDefaults()["ai.runtime.context_input_k_tokens"]; got != "1024" {
+		t.Fatalf("context input budget default = %q, want 1024", got)
+	}
 }
 
 func TestAIProviderAPIKeyIsMaskedByConfigCache(t *testing.T) {
@@ -98,6 +101,16 @@ func TestAIConfigRejectsUnsafeRuntimeBounds(t *testing.T) {
 		if err := h.validateAIConfigValues(map[string]string{key: value}); err == nil {
 			t.Errorf("unsafe runtime setting accepted: %s=%s", key, value)
 		}
+	}
+}
+
+func TestAIConfigAcceptsExpandedContextBudget(t *testing.T) {
+	h := &Handlers{configs: &configCache{values: aiConfigDefaults()}}
+	if err := h.validateAIConfigValues(map[string]string{"ai.runtime.context_input_k_tokens": "2048"}); err != nil {
+		t.Fatalf("expanded context budget rejected: %v", err)
+	}
+	if err := h.validateAIConfigValues(map[string]string{"ai.runtime.context_input_k_tokens": "2049"}); err == nil {
+		t.Fatal("context budget above model catalog capacity was accepted")
 	}
 }
 

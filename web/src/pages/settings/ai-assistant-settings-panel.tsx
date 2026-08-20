@@ -36,7 +36,7 @@ const defaults: FormValues = {
   maxRequestRetries: 5,
   runTimeoutSeconds: 3600,
   agentConcurrentRuns: 10,
-  contextInputKTokens: 512,
+  contextInputKTokens: 1024,
   contextCompressionTriggerRatio: 0.9,
   contextCompressionTargetRatio: 0.7,
   contextRecentTurnCount: 16,
@@ -275,7 +275,7 @@ export function AIAssistantSettingsPanel() {
                 <Input max={100} min={1} step={1} type="number" {...form.register('agentConcurrentRuns', { valueAsNumber: true })} />
               </Field>
               <Field error={errors.contextInputKTokens?.message} hint={t('settings.ai.contextInputBudgetHint')} label={t('settings.ai.contextInputBudget')}>
-                <Input max={1024} min={64} step={1} type="number" {...form.register('contextInputKTokens', { valueAsNumber: true })} />
+                <Input max={2048} min={64} step={1} type="number" {...form.register('contextInputKTokens', { valueAsNumber: true })} />
               </Field>
             </div>
           </ProgressiveSection>
@@ -356,7 +356,7 @@ function aiSettingsFormValues(values: Record<string, string>): FormValues {
     maxRequestRetries: Number(values['ai.runtime.max_request_retries'] ?? 5),
     runTimeoutSeconds: Number(values['ai.runtime.run_timeout_seconds'] ?? 3600),
     agentConcurrentRuns: Number(values['ai.runtime.agent_concurrent_runs'] ?? 10),
-    contextInputKTokens: Number(values['ai.runtime.context_input_k_tokens'] ?? 512),
+    contextInputKTokens: Number(values['ai.runtime.context_input_k_tokens'] ?? 1024),
     contextCompressionTriggerRatio: Number(values['ai.context.compression_trigger_ratio'] ?? 0.9),
     contextCompressionTargetRatio: Number(values['ai.context.compression_target_ratio'] ?? 0.7),
     contextRecentTurnCount: Number(values['ai.context.recent_turn_count'] ?? 16),

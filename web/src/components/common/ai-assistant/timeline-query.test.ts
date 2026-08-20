@@ -2,6 +2,7 @@ import type { AIEvent, AITimeline, AITimelineItem, AITimelineTurn } from '@/api'
 import { describe, expect, it, vi } from 'vitest'
 import {
   activeRunStreamSubscriptions,
+  applyTimelineInfiniteEvent,
   applyTimelineQueryEvent,
   mergeLatestTimelineSnapshot,
   mergeTimelineQuerySnapshot,
@@ -133,6 +134,52 @@ describe('timeline query cache', () => {
     const streamed = applyTimelineQueryEvent(timelineQueryDataFromSnapshot(snapshot()), event(1))
 
     expect(applyTimelineQueryEvent(streamed, event(1))).toBe(streamed)
+  })
+
+  it('preserves live token usage through infinite timeline aggregation', () => {
+    const initial = {
+      pageParams: [null],
+      pages: [timelineQueryDataFromSnapshot(snapshot())],
+    }
+    const started = applyTimelineInfiniteEvent(initial, {
+      ...event(1),
+      type: 'run.started',
+      item: undefined,
+      payload: { budget: { totalTokens: 2_000_000, totalCredits: '10000' } },
+    })
+    const completed = applyTimelineInfiniteEvent(started, {
+      ...event(2),
+      type: 'model.completed',
+      item: undefined,
+      payload: { usage: { inputTokens: 25_600, outputTokens: 512 } },
+    })
+    const aggregate = timelineQueryDataFromInfinite(completed)
+
+    expect(aggregate?.state.runUsage['run-1']).toEqual({
+      latestInputTokens: 25_600,
+      usedTokens: 26_112,
+      tokenBudget: 2_000_000,
+    })
+  })
+
+  it('restores token usage from a durable timeline snapshot', () => {
+    const durable = snapshot(8)
+    durable.turns[0]!.selectedRun = {
+      ...durable.turns[0]!.selectedRun!,
+      latestInputTokens: 32_000,
+      usedTokens: 40_000,
+      budget: { totalTokens: 2_000_000, totalCredits: '10000' },
+    }
+    const aggregate = timelineQueryDataFromInfinite({
+      pageParams: [null],
+      pages: [timelineQueryDataFromSnapshot(durable)],
+    })
+
+    expect(aggregate?.state.runUsage['run-1']).toEqual({
+      latestInputTokens: 32_000,
+      usedTokens: 40_000,
+      tokenBudget: 2_000_000,
+    })
   })
 
   it('marks a sequence gap and only clears it after an authoritative snapshot covers the missing event', () => {

@@ -8369,6 +8369,15 @@ components:
             status: { type: string, enum: [queued, running, waiting_approval, waiting_mfa, waiting_input, completed, failed, canceled] }
             expectedVersion: { type: integer, format: int64, minimum: 0 }
             errorCode: { type: string }
+            usedTokens: { type: integer, format: int64, minimum: 0, description: Cumulative input and output tokens consumed by this Run, including active reservations. }
+            latestInputTokens: { type: integer, format: int64, minimum: 0, description: Provider-reported input tokens for the latest completed assistant model call in this Run. }
+            budget:
+              type: object
+              additionalProperties: false
+              required: [totalTokens, totalCredits]
+              properties:
+                totalTokens: { type: integer, format: int64, minimum: 16384, maximum: 16000000 }
+                totalCredits: { type: string, pattern: '^\d+(\.\d{1,8})?$' }
             items: { type: array, items: { $ref: "#/components/schemas/AITimelineItem" } }
     AITimelineEventCursor:
       type: object

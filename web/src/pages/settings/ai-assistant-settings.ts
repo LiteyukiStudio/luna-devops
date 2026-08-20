@@ -70,7 +70,7 @@ export const aiSettingsSchema = z.object({
   contextInputKTokens: z.number({ message: i18next.t('settings.ai.contextInputBudgetInvalid') })
     .int({ message: i18next.t('settings.ai.contextInputBudgetInvalid') })
     .min(64, { message: i18next.t('settings.ai.contextInputBudgetInvalid') })
-    .max(1024, { message: i18next.t('settings.ai.contextInputBudgetInvalid') }),
+    .max(2048, { message: i18next.t('settings.ai.contextInputBudgetInvalid') }),
   // 高级设置：上下文与压缩
   contextCompressionTriggerRatio: boundedRatio(0.5, 0.95, 'settings.ai.advancedNumberInvalid'),
   contextCompressionTargetRatio: boundedRatio(0.1, 0.8, 'settings.ai.advancedNumberInvalid'),

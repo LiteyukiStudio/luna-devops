@@ -865,6 +865,35 @@ export class PostgresRepository implements Repository {
       const runRows = await tx.select().from(runs)
         .where(and(inArray(runs.id, runIds), eq(runs.ownerUserId, ownerUserId)))
       const authorizedRunIds = runRows.map(run => run.id)
+      // 聚合每个 run 的累计 token 用量，供前端展示预算占用。
+      const usageRows = authorizedRunIds.length === 0
+        ? { rows: [] as { runId: string, usedTokens: string, latestInputTokens: string | null }[] }
+        : await tx.execute<{ runId: string, usedTokens: string, latestInputTokens: string | null }>(sql`
+            with run_usage as (
+              select run_id,
+                     coalesce(sum(coalesce(confirmed_tokens, reserved_tokens)), 0)::bigint as used_tokens
+              from ai.model_budget_reservations
+              where run_id in ${authorizedRunIds} and state in ('reserved', 'confirmed', 'settled')
+              group by run_id
+            ), latest_assistant as (
+              select distinct on (run_id) run_id, input_tokens
+              from ai.model_budget_reservations
+              where run_id in ${authorizedRunIds}
+                and operation = 'assistant'
+                and state in ('confirmed', 'settled')
+                and input_tokens is not null
+              order by run_id, created_at desc, id desc
+            )
+            select run_usage.run_id as "runId",
+                   run_usage.used_tokens as "usedTokens",
+                   latest_assistant.input_tokens as "latestInputTokens"
+            from run_usage
+            left join latest_assistant using (run_id)
+          `)
+      const usageByRun = new Map(usageRows.rows.map(row => [row.runId, {
+        usedTokens: Number(row.usedTokens),
+        ...(row.latestInputTokens !== null ? { latestInputTokens: Number(row.latestInputTokens) } : {}),
+      }]))
       const itemRows = authorizedRunIds.length === 0
         ? []
         : await tx.select().from(items)
@@ -879,13 +908,14 @@ export class PostgresRepository implements Repository {
       }
       const pageTurns = boundedTurns.map((turn) => {
         const runRow = runById.get(turn.selectedRunId)
+        const mappedRun = runRow ? mapRun(runRow) : undefined
         return {
           id: turn.id,
           turnIndex: turn.turnIndex,
           status: turn.status,
           input: turn.input,
           createdAt: turn.createdAt.toISOString(),
-          ...(runRow ? { run: mapRun(runRow) } : {}),
+          ...(mappedRun ? { run: { ...mappedRun, usedTokens: 0, ...usageByRun.get(mappedRun.id) } } : {}),
           items: itemsByRun.get(turn.selectedRunId) ?? [],
         }
       })

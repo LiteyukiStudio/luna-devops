@@ -115,6 +115,8 @@ describe('aI assistant admin settings', () => {
     expect(aiSettingsSchema.safeParse({ ...validValues, runTimeoutSeconds: 10 }).success).toBe(false)
     expect(aiSettingsSchema.safeParse({ ...validValues, agentConcurrentRuns: 101 }).success).toBe(false)
     expect(aiSettingsSchema.safeParse({ ...validValues, contextInputKTokens: 32 }).success).toBe(false)
+    expect(aiSettingsSchema.safeParse({ ...validValues, contextInputKTokens: 2049 }).success).toBe(false)
+    expect(aiSettingsSchema.safeParse({ ...validValues, contextInputKTokens: 2048 }).success).toBe(true)
   })
 
   it('rejects unsafe advanced settings', () => {

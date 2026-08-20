@@ -134,7 +134,7 @@ describe('site settings page', () => {
       'ai.runtime.max_request_retries': '5',
       'ai.runtime.run_timeout_seconds': '3600',
       'ai.runtime.agent_concurrent_runs': '10',
-      'ai.runtime.context_input_k_tokens': '512',
+      'ai.runtime.context_input_k_tokens': '1024',
       'ai.context.compression_trigger_ratio': '0.9',
       'ai.context.compression_target_ratio': '0.7',
       'ai.context.recent_turn_count': '16',

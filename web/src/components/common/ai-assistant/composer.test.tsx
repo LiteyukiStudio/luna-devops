@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { createRef } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import i18next from '@/i18n'
@@ -103,10 +104,10 @@ describe('ai assistant composer keyboard submission', () => {
         activeRun={false}
         canceling={false}
         canCancel={false}
-        contextUsedTokens={25600}
+        contextUsedTokens={74_600}
         draft="测试消息"
         inputRef={createRef<HTMLTextAreaElement>()}
-        models={[{ id: 'aimod_test', name: 'Test model', maxContextTokens: 128_000, maxOutputTokens: 16_000 }]}
+        models={[{ id: 'aimod_test', name: 'Test model', maxContextTokens: 524_000, maxOutputTokens: 16_000 }]}
         selectedModelId="aimod_test"
         sending={false}
         submitting={false}
@@ -117,18 +118,20 @@ describe('ai assistant composer keyboard submission', () => {
         onSubmit={vi.fn()}
       />,
     )
-    const ring = document.querySelector('span[aria-label*="/128k"]')
+    const ring = document.querySelector('[aria-label*="74.6/524k"]')
     expect(ring).not.toBeNull()
-    expect(ring?.getAttribute('aria-label')).toContain('25.6k')
-    expect(ring?.getAttribute('aria-label')).toContain('20%')
+    expect(ring?.getAttribute('aria-label')).not.toContain('74.6k')
+    expect(ring?.getAttribute('aria-label')).toContain('14%')
   })
 
-  it('shows the run token budget as a ring to the left of the model switcher', () => {
+  it('shows the run token budget in the context ring tooltip instead of a second ring', async () => {
+    const user = userEvent.setup()
     render(
       <AIAssistantComposer
         activeRun={false}
         canceling={false}
         canCancel={false}
+        contextUsedTokens={25_600}
         draft="测试消息"
         inputRef={createRef<HTMLTextAreaElement>()}
         models={[{ id: 'aimod_test', name: 'Test model', maxContextTokens: 128_000, maxOutputTokens: 16_000 }]}
@@ -144,15 +147,12 @@ describe('ai assistant composer keyboard submission', () => {
         onSubmit={vi.fn()}
       />,
     )
-    const budgetRing = document.querySelector('span[aria-label*="/2000k"]')
-    expect(budgetRing).not.toBeNull()
-    expect(budgetRing?.getAttribute('aria-label')).toContain('400k')
-    expect(budgetRing?.getAttribute('aria-label')).toContain('20%')
-    // 预算环必须出现在模型切换器左边。
-    const modelSwitcher = document.querySelector('button[aria-label]')
-    expect(budgetRing && modelSwitcher
-      ? Boolean(budgetRing.compareDocumentPosition(modelSwitcher) & Node.DOCUMENT_POSITION_FOLLOWING)
-      : false).toBe(true)
+    const contextRing = document.querySelector('[aria-label*="/128k"]')
+    expect(contextRing).not.toBeNull()
+    expect(document.querySelector('[aria-label*="/2000k"]')).toBeNull()
+
+    await user.hover(contextRing!)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(i18next.t('aiAssistant.budgetUsage', { used: '400', total: '2000k', percent: 20 }))
   })
 
   it('keeps the draft editable but blocks submission while the current run is active', () => {

@@ -380,7 +380,7 @@ describe('aI assistant state', () => {
       item: undefined,
       payload: { usage: { inputTokens: 25600, outputTokens: 512, cachedInputTokens: 0, cachedOutputTokens: 0 } },
     }))
-    expect(completed.latestInputTokens).toBe(25600)
+    expect(completed.runUsage['run-1']?.latestInputTokens).toBe(25600)
 
     const withoutUsage = reduceAIEvent(completed, event({
       eventId: 'event-3',
@@ -389,7 +389,7 @@ describe('aI assistant state', () => {
       item: undefined,
       payload: {},
     }))
-    expect(withoutUsage.latestInputTokens).toBe(25600)
+    expect(withoutUsage.runUsage['run-1']?.latestInputTokens).toBe(25600)
   })
 
   it('accumulates run token usage across model.completed events', () => {
@@ -401,7 +401,7 @@ describe('aI assistant state', () => {
       item: undefined,
       payload: { usage: { inputTokens: 1000, outputTokens: 500 } },
     }))
-    expect(first.runUsedTokens).toBe(1500)
+    expect(first.runUsage['run-1']?.usedTokens).toBe(1500)
     const second = reduceAIEvent(first, event({
       eventId: 'event-3',
       eventSequence: 3,
@@ -409,7 +409,7 @@ describe('aI assistant state', () => {
       item: undefined,
       payload: { usage: { inputTokens: 200, outputTokens: 300 } },
     }))
-    expect(second.runUsedTokens).toBe(2000)
+    expect(second.runUsage['run-1']?.usedTokens).toBe(2000)
   })
 
   it('captures the token budget snapshot from run.started', () => {
@@ -420,6 +420,28 @@ describe('aI assistant state', () => {
       item: undefined,
       payload: { budget: { totalTokens: 2_000_000, totalCredits: '10000' } },
     }))
-    expect(state.runTokenBudget).toBe(2_000_000)
+    expect(state.runUsage['run-1']?.tokenBudget).toBe(2_000_000)
+  })
+
+  it('isolates token usage between runs', () => {
+    const first = reduceAIEvent(emptyAIAssistantState, event({
+      eventId: 'event-1',
+      eventSequence: 1,
+      type: 'model.completed',
+      item: undefined,
+      payload: { usage: { inputTokens: 1000, outputTokens: 200 } },
+    }))
+    const nextRun = reduceAIEvent(first, event({
+      eventId: 'event-next-1',
+      eventSequence: 1,
+      runId: 'run-2',
+      turnId: 'turn-2',
+      type: 'run.started',
+      item: undefined,
+      payload: { budget: { totalTokens: 500_000, totalCredits: '1000' } },
+    }))
+
+    expect(nextRun.runUsage['run-1']).toMatchObject({ latestInputTokens: 1000, usedTokens: 1200 })
+    expect(nextRun.runUsage['run-2']).toEqual({ usedTokens: 0, tokenBudget: 500_000 })
   })
 })

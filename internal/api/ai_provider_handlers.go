@@ -83,7 +83,7 @@ func (h *Handlers) GetAIProviderConfigInternal(ctx *gin.Context) {
 			"runTimeoutMs":                         aiRuntimeMilliseconds(values, "ai.runtime.run_timeout_seconds", 3600),
 			"agentConcurrentRuns":                  aiRuntimeInteger(values, "ai.runtime.agent_concurrent_runs", 10),
 			"userConcurrentRuns":                   aiRuntimeInteger(values, "ai.quota.user_concurrent_runs", 10),
-			"contextInputTokenBudget":              aiRuntimeKTokens(values, "ai.runtime.context_input_k_tokens", 512),
+			"contextInputTokenBudget":              aiRuntimeKTokens(values, "ai.runtime.context_input_k_tokens", 1024),
 			"assistantMaxOutputTokens":             aiRuntimeInteger(values, "ai.model.max_output_tokens", 65536),
 			"maxModelSteps":                        aiRuntimeInteger(values, "ai.run.max_model_steps", 256),
 			"runTotalTokenBudget":                  aiRuntimeInteger(values, "ai.run.max_total_tokens", 2_000_000),

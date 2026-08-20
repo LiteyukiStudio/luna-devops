@@ -1,4 +1,4 @@
-import type { KeyboardEvent, RefObject } from 'react'
+import type { KeyboardEvent, ReactNode, RefObject } from 'react'
 import type { AIModelOption } from '@/api'
 import { Check, ChevronDown, CircleStop, LoaderCircle, Send } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -38,15 +38,18 @@ function isConfirmingIME(event: KeyboardEvent<HTMLTextAreaElement>): boolean {
   return event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229
 }
 
-function formatTokenCount(value: number): string {
-  if (value >= 1000) {
+function formatTokenRatio(used: number, total: number): { used: string, total: string } {
+  if (total < 1000)
+    return { used: String(used), total: String(total) }
+
+  const formatKValue = (value: number) => {
     const k = value / 1000
-    return `${k >= 100 ? Math.round(k) : k.toFixed(1).replace(/\.0$/, '')}k`
+    return k >= 100 ? String(Math.round(k)) : k.toFixed(1).replace(/\.0$/, '')
   }
-  return String(value)
+  return { used: formatKValue(used), total: `${formatKValue(total)}k` }
 }
 
-function TokenRing({ ratio, ariaLabel, tooltip }: { ratio: number, ariaLabel: string, tooltip: string }) {
+function TokenRing({ ratio, ariaLabel, tooltip }: { ratio: number, ariaLabel: string, tooltip: ReactNode }) {
   const clamped = Math.min(1, Math.max(0, ratio))
   // 圆环几何：r=7，周长≈43.98
   const radius = 7
@@ -58,9 +61,10 @@ function TokenRing({ ratio, ariaLabel, tooltip }: { ratio: number, ariaLabel: st
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
-          <span
+          <button
+            type="button"
             aria-label={ariaLabel}
-            className="inline-flex size-7 shrink-0 items-center justify-center"
+            className="inline-flex size-7 shrink-0 items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <svg className="size-5 -rotate-90" viewBox="0 0 18 18" role="img">
               <circle
@@ -88,7 +92,7 @@ function TokenRing({ ratio, ariaLabel, tooltip }: { ratio: number, ariaLabel: st
                 strokeWidth="2"
               />
             </svg>
-          </span>
+          </button>
         </TooltipTrigger>
         <TooltipContent side="top">
           {tooltip}
@@ -98,26 +102,38 @@ function TokenRing({ ratio, ariaLabel, tooltip }: { ratio: number, ariaLabel: st
   )
 }
 
-function ContextUsageRing({ ratio, used, total }: { ratio: number, used: number, total: number }) {
+function ContextUsageRing({
+  ratio,
+  used,
+  total,
+  runUsed,
+  runTotal,
+}: {
+  ratio: number
+  used: number
+  total: number
+  runUsed?: number
+  runTotal?: number
+}) {
   const { t } = useTranslation()
   const percent = Math.round(Math.min(1, Math.max(0, ratio)) * 100)
+  const contextTokens = formatTokenRatio(used, total)
+  const contextLabel = t('aiAssistant.contextUsage', { ...contextTokens, percent })
+  const hasRunBudget = runUsed !== undefined && runTotal !== undefined && runTotal > 0
+  const runPercent = hasRunBudget ? Math.round(Math.min(1, Math.max(0, runUsed / runTotal)) * 100) : 0
+  const runTokens = hasRunBudget ? formatTokenRatio(runUsed, runTotal) : undefined
   return (
     <TokenRing
-      ariaLabel={t('aiAssistant.contextUsage', { used: formatTokenCount(used), total: formatTokenCount(total), percent })}
+      ariaLabel={contextLabel}
       ratio={ratio}
-      tooltip={t('aiAssistant.contextUsage', { used: formatTokenCount(used), total: formatTokenCount(total), percent })}
-    />
-  )
-}
-
-function BudgetUsageRing({ ratio, used, total }: { ratio: number, used: number, total: number }) {
-  const { t } = useTranslation()
-  const percent = Math.round(Math.min(1, Math.max(0, ratio)) * 100)
-  return (
-    <TokenRing
-      ariaLabel={t('aiAssistant.budgetUsage', { used: formatTokenCount(used), total: formatTokenCount(total), percent })}
-      ratio={ratio}
-      tooltip={t('aiAssistant.budgetUsage', { used: formatTokenCount(used), total: formatTokenCount(total), percent })}
+      tooltip={(
+        <span className="grid gap-0.5">
+          <span>{contextLabel}</span>
+          {runTokens && (
+            <span>{t('aiAssistant.budgetUsage', { ...runTokens, percent: runPercent })}</span>
+          )}
+        </span>
+      )}
     />
   )
 }
@@ -153,8 +169,6 @@ export function AIAssistantComposer({
   const contextUsed = contextUsedTokens ?? 0
   const hasContext = contextTotal > 0
   const contextRatio = hasContext ? contextUsed / contextTotal : 0
-  const hasBudget = runUsedTokens !== undefined && runTokenBudget !== undefined && runTokenBudget > 0
-  const budgetRatio = hasBudget ? runUsedTokens / runTokenBudget : 0
   return (
     <footer className="shrink-0 border-t border-separator-subtle bg-surface p-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))]">
       <div className="flex min-h-20 flex-col gap-1 rounded-container border border-input bg-surface px-2 py-2 focus-within:ring-2 focus-within:ring-ring">
@@ -175,9 +189,6 @@ export function AIAssistantComposer({
           }}
         />
         <div className="flex items-center justify-end gap-1.5">
-          {hasBudget && (
-            <BudgetUsageRing ratio={budgetRatio} total={runTokenBudget} used={runUsedTokens} />
-          )}
           <Select
             disabled={modelSelectionDisabled || modelChanging || models.length === 0}
             value={selectedModelId ?? ''}
@@ -206,7 +217,13 @@ export function AIAssistantComposer({
             </SelectContent>
           </Select>
           {hasContext && (
-            <ContextUsageRing ratio={contextRatio} total={contextTotal} used={contextUsed} />
+            <ContextUsageRing
+              ratio={contextRatio}
+              runTotal={runTokenBudget}
+              runUsed={runUsedTokens}
+              total={contextTotal}
+              used={contextUsed}
+            />
           )}
           {activeRun && !waitingInput
             ? (

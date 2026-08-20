@@ -27,7 +27,7 @@ const runtimeSettingsSchema = z.object({
   runTimeoutMs: z.number().int().min(30_000).max(7_200_000),
   agentConcurrentRuns: z.number().int().min(1).max(100),
   userConcurrentRuns: z.number().int().min(1).max(100),
-  contextInputTokenBudget: z.number().int().min(64 * 1024).max(1024 * 1024),
+  contextInputTokenBudget: z.number().int().min(64 * 1024).max(2048 * 1024),
   assistantMaxOutputTokens: z.number().int().min(256).max(128 * 1024).default(64 * 1024),
   maxModelSteps: z.number().int().min(1).max(1024).default(256),
   maxInputBytes: z.number().int().min(8 * 1024).max(8 * 1024 * 1024).default(1024 * 1024),

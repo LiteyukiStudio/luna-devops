@@ -14,6 +14,10 @@ const runtimePayload = {
 }
 
 describe("ProviderConfigClient", () => {
+  it("defaults to a log-heavy DevOps context budget", () => {
+    expect(defaultRuntimeSettings.contextInputTokenBudget).toBe(1024 * 1024)
+  })
+
   it("uses only the callback service identity and parses no-store configuration", async () => {
     const fetchMock = vi.fn(async (_url: URL, init: RequestInit) => {
       expect(init.headers).toMatchObject({ authorization: "Bearer callback-token-value" })
@@ -60,6 +64,28 @@ describe("ProviderConfigClient", () => {
       maxContextTokens: 524_288,
       maxOutputTokens: 65_536,
     })])
+  })
+
+  it("accepts the expanded context budget up to the model catalog capacity", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      version: "cfg-expanded-context",
+      provider: { baseUrl: "", model: "", apiKey: "", configured: false },
+      runtime: { ...runtimePayload, contextInputTokenBudget: 2048 * 1024 },
+    }), { status: 200 })))
+
+    const config = await new ProviderConfigClient("https://luna-api.internal", "callback-token-value").get()
+    expect(config.runtime.contextInputTokenBudget).toBe(2048 * 1024)
+  })
+
+  it("rejects a context budget above the model catalog capacity", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      version: "cfg-context-too-large",
+      provider: { baseUrl: "", model: "", apiKey: "", configured: false },
+      runtime: { ...runtimePayload, contextInputTokenBudget: 2049 * 1024 },
+    }), { status: 200 })))
+
+    await expect(new ProviderConfigClient("https://luna-api.internal", "callback-token-value").get())
+      .rejects.toThrow("ai.provider_config_invalid")
   })
 
   it("retries transient configuration failures before parsing the response", async () => {

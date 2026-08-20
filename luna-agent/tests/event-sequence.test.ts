@@ -30,6 +30,52 @@ describe("PostgreSQL bigint event sequence normalization", () => {
     expect(() => normalizeEventSequence("1.5")).toThrow("ai.event_sequence_invalid")
   })
 
+  it("projects authoritative Run and context token usage into timeline snapshots", async () => {
+    const repository = new MemoryRepository()
+    const conversation = await repository.createConversation("usr_usage", "usage")
+    const created = await repository.createTurn("usr_usage", {
+      conversationId: conversation.id,
+      input: "inspect usage",
+      pageContext: {},
+      idempotencyKey: "usage-request",
+    })
+    await repository.reserveModelBudget({
+      id: "aibgt_assistant_1",
+      runId: created.run.id,
+      ownerUserId: "usr_usage",
+      operation: "assistant",
+      estimatedInputTokens: 20_000,
+      requestedOutputTokens: 4_000,
+      leaseSeconds: 60,
+    })
+    await repository.confirmModelBudget("aibgt_assistant_1", {
+      reported: true,
+      inputTokens: 18_000,
+      outputTokens: 2_000,
+    })
+    await repository.reserveModelBudget({
+      id: "aibgt_title_1",
+      runId: created.run.id,
+      ownerUserId: "usr_usage",
+      operation: "title",
+      estimatedInputTokens: 800,
+      requestedOutputTokens: 200,
+      leaseSeconds: 60,
+    })
+    await repository.confirmModelBudget("aibgt_title_1", {
+      reported: true,
+      inputTokens: 700,
+      outputTokens: 100,
+    })
+
+    const timeline = await presentTimeline(repository, "usr_usage", conversation.id)
+    expect(timeline?.turns[0]?.selectedRun).toMatchObject({
+      latestInputTokens: 18_000,
+      usedTokens: 20_800,
+      budget: { totalTokens: 2_000_000, totalCredits: "10000" },
+    })
+  })
+
   it("projects bounded non-sensitive tool results consistently for snapshots and events", async () => {
     const repository = new MemoryRepository()
     const conversation = await repository.createConversation("usr_a", "tool results")

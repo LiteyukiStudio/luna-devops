@@ -61,7 +61,7 @@ var configDefinitions = []configDefinition{
 	{Key: "ai.runtime.max_request_retries", Label: "瞬时故障重试次数", Type: "number", Default: "5"},
 	{Key: "ai.runtime.run_timeout_seconds", Label: "单次 Run 超时", Type: "number", Default: "3600"},
 	{Key: "ai.runtime.agent_concurrent_runs", Label: "Agent 实例并发 Run", Type: "number", Default: "10"},
-	{Key: "ai.runtime.context_input_k_tokens", Label: "上下文输入预算", Type: "number", Default: "512"},
+	{Key: "ai.runtime.context_input_k_tokens", Label: "上下文输入预算", Description: "单次模型请求允许使用的最大输入上下文，范围 64–2048K，默认 1024K；实际用量仍受所选模型上下文容量和输出预留限制。", Type: "number", Default: "1024"},
 	{Key: "ai.observability.enabled", Label: "启用 Agent 可观测", Type: "boolean", Default: "false"},
 	{Key: "ai.observability.prometheus_url", Label: "Prometheus 查询地址", Type: "string", Default: ""},
 	{Key: "ai.observability.prometheus_token", Label: "Prometheus 访问令牌", Type: "secret", Default: ""},

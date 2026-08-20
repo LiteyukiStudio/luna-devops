@@ -34,7 +34,14 @@ export class MemoryRepository implements Repository {
   private readonly uiActions = new Map<string, UIActionDelivery>()
   private readonly summaries = new Map<string, ConversationSummary>()
   private readonly idempotency = new Map<string, { hash: string, created: CreatedTurn }>()
-  private readonly modelReservations = new Map<string, { runId: string, tokens: number, state: "reserved" | "confirmed" | "released", maxOutputTokens: number }>()
+  private readonly modelReservations = new Map<string, {
+    runId: string
+    operation: ModelBudgetOperation
+    inputTokens: number
+    tokens: number
+    state: "reserved" | "confirmed" | "released"
+    maxOutputTokens: number
+  }>()
 
   async health(): Promise<boolean> { return true }
   async readiness() { return { database: true, schema: true } }
@@ -205,14 +212,24 @@ export class MemoryRepository implements Repository {
     const tokenCapacity = (run.budget?.totalTokens ?? 2_000_000) - used - input.estimatedInputTokens
     if (tokenCapacity < 1) throw new Error("ai.run_token_budget_exhausted")
     const maxOutputTokens = Math.min(input.requestedOutputTokens, run.model?.maxOutputTokens ?? 65_536, contextCapacity, tokenCapacity)
-    this.modelReservations.set(input.id, { runId: input.runId, tokens: input.estimatedInputTokens + maxOutputTokens, state: "reserved", maxOutputTokens })
+    this.modelReservations.set(input.id, {
+      runId: input.runId,
+      operation: input.operation,
+      inputTokens: input.estimatedInputTokens,
+      tokens: input.estimatedInputTokens + maxOutputTokens,
+      state: "reserved",
+      maxOutputTokens,
+    })
     return { id: input.id, maxOutputTokens }
   }
 
   async confirmModelBudget(reservationId: string, usage?: ModelBudgetUsage): Promise<void> {
     const item = this.modelReservations.get(reservationId)
     if (!item || item.state !== "reserved") return
-    if (usage?.reported) item.tokens = usage.inputTokens + usage.outputTokens
+    if (usage?.reported) {
+      item.inputTokens = usage.inputTokens
+      item.tokens = usage.inputTokens + usage.outputTokens
+    }
     item.state = "confirmed"
   }
 
@@ -448,10 +465,29 @@ export class MemoryRepository implements Repository {
       .slice(0, limit + 1)
     const hasOlder = recentTurns.length > limit
     const boundedTurns = recentTurns.slice(0, limit).reverse()
-    const pageTurns = boundedTurns.map(turn => {
-        const run = this.runs.get(turn.selectedRunId)
-        return { id: turn.id, turnIndex: turn.turnIndex, status: turn.status, input: turn.input, createdAt: turn.createdAt, ...(run ? { run } : {}), items: this.items.filter(i => i.runId === run?.id).sort((a, b) => a.timelineIndex - b.timelineIndex) }
-      })
+    const pageTurns = boundedTurns.map((turn) => {
+      const storedRun = this.runs.get(turn.selectedRunId)
+      const reservations = storedRun
+        ? [...this.modelReservations.values()].filter(item => item.runId === storedRun.id && item.state !== "released")
+        : []
+      const latestAssistant = reservations.findLast(item => item.operation === "assistant" && item.state === "confirmed")
+      const run = storedRun
+        ? {
+            ...storedRun,
+            usedTokens: reservations.reduce((total, item) => total + item.tokens, 0),
+            ...(latestAssistant ? { latestInputTokens: latestAssistant.inputTokens } : {}),
+          }
+        : undefined
+      return {
+        id: turn.id,
+        turnIndex: turn.turnIndex,
+        status: turn.status,
+        input: turn.input,
+        createdAt: turn.createdAt,
+        ...(run ? { run } : {}),
+        items: this.items.filter(item => item.runId === run?.id).sort((a, b) => a.timelineIndex - b.timelineIndex),
+      }
+    })
     const eventCursors = pageTurns.flatMap((turn) => {
       if (!turn.run) return []
       const runId = turn.run.id
