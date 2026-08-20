@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import type { ApiError } from '@/api'
 import { KeyRound, ShieldCheck } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/api'
 import { registerMFAChallengeHandler } from '@/api/core'
@@ -29,6 +29,7 @@ export function MFADialogProvider({ children }: { children: ReactNode }) {
   const [method, setMethod] = useState<'otp' | 'recovery'>('otp')
   const [error, setError] = useState('')
   const [verifying, setVerifying] = useState(false)
+  const verifyingRef = useRef(false)
 
   useEffect(() => registerMFAChallengeHandler(({ purpose }) => new Promise<void>((resolve, reject) => {
     setCode('')
@@ -45,10 +46,11 @@ export function MFADialogProvider({ children }: { children: ReactNode }) {
   }
 
   const verify = async (candidate = code) => {
-    if (!challenge || candidate.trim().length < 6)
+    if (!challenge || candidate.trim().length < 6 || verifyingRef.current)
       return
 
     try {
+      verifyingRef.current = true
       setVerifying(true)
       setError('')
       const value = candidate.trim()
@@ -62,6 +64,7 @@ export function MFADialogProvider({ children }: { children: ReactNode }) {
       setError((requestError as ApiError).message || t('accountPage.mfa.verifyFailed'))
     }
     finally {
+      verifyingRef.current = false
       setVerifying(false)
     }
   }

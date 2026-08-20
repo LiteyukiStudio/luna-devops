@@ -52,6 +52,9 @@ AI 助手不是悬浮在控制台上的通用聊天机器人。它理解用户�
 - 目标状态由 Agent 在主模型调用前自动检索当前阶段工具；`search_tools` 只负责运行中的二次
   扩展，并必须真实改变后续 `loadedOperationIds`。相同检索不重复执行，审批/MFA 恢复后保留
   已使用、待执行和权威回读所需工具定义。
+- `browse_tools` 提供不依赖语义召回的确定性目录路径：`list` 只返回准入工具的 operationId、分类、
+  风险和一句话用途，`details` 按最多 8 个精确 operationId 加载完整描述与 Schema。目录浏览不授予
+  权限、不执行工具，也不替代权威回读；无法从轻量目录确定候选时才回退 `search_tools`。
 - 新增或变更工具必须同步更新用途、禁用场景、前置条件、主要参数、成功证据、工作流关系和
   hard-negative 评测；正确下一步工具必须进入前 8 个结果。
 - 部署配置的 `clusterId` 为空表示平台默认集群：只有存在多个候选且必须由用户决定时才用
@@ -119,8 +122,10 @@ AI 助手不是悬浮在控制台上的通用聊天机器人。它理解用户�
 Agent 诊断容器时可创建短期、有状态的非 TTY Shell，多条命令间保留工作目录和环境变量；
 浏览器 Web Console 继续使用原有 WebSocket + TTY 协议，两者不复用传输层。
 
-- 会话固定绑定用户、登录 Session、Agent Run、项目空间、应用、Release、部署配置和容器，
-  任一边界变化即拒绝复用。创建与每条命令都需敏感操作批准与 `runtime_exec` MFA。
+- 命令会话固定绑定用户、登录 Session、Agent Run、项目空间、应用、Release、部署配置和容器，
+  任一边界变化即拒绝复用。创建与每条命令的工具策略都声明敏感操作批准与 `runtime_exec` MFA；
+  用户未开启 AI 会话自动批准时逐条呈现，开启后可由当前会话授权满足批准与 Step-up，但每次仍重新执行
+  当前账号、登录 Session、RBAC、项目开关、工具策略、参数 Schema 与审计检查。
 - 审计只记录命令长度和 SHA-256，不保存命令正文；返回输出有大小上限。
 - SPDY 流和 Shell 进程只能由创建它的 API 实例持有，不落 PostgreSQL/Redis。`sessionId` 编码
   owner，非 owner 实例返回稳定的 `runtime.command_session.owner_mismatch`，绝不静默创建另一条
@@ -128,7 +133,21 @@ Agent 诊断容器时可创建短期、有状态的非 TTY Shell，多条命令�
 - 不用数据库持久化会话：进程内 Shell、管道和 SPDY 连接无法从数据库恢复，持久化元数据只会
   制造"记录存在但连接不存在"的伪可用状态。
 
-## 8. 运行时与 Skill 覆盖
+## 8. AI 会话自动批准
+
+- “同意（本会话不再询问）”由 API 在统一 `ai_conversation_tools` Step-up 后签发不超过 60 分钟的
+  不透明授权，精确绑定用户、浏览器登录 Session 和 AI 会话；Agent 仅加密保存授权正文，同时绑定
+  当前工具目录 digest。普通单次“同意”继续只绑定本次工具参数哈希与版本。
+- 后续需要批准或 MFA 的 Agent 工具可携带该授权换取一次 60 秒执行委托。API 每次都验证签名、
+  会话边界和授权有效期，并重新校验当前用户、Session、RBAC、工具准入/Scope、参数哈希和业务 Handler
+  权限；MFA 开启时还必须刷新与授权绑定的专用 Step-up assertion。
+- 注销、Session 变化、工具目录变化、专用 assertion 过期或被 MFA 重置删除、权限变化都会 fail closed，
+  工具回到普通批准流程。用户可从助手中的授权提示显式撤销；授权不扩展到普通 Web/API 请求，
+  不携带 OTP、恢复码、Cookie、Secret 或工具参数，也不得进入 Timeline、模型上下文或遥测。
+- Web 对所有 `mfa_required` 统一使用全局 MFA Dialog，按用途串行并发起挑战、成功后只重放原请求一次；
+  BFF 从当前浏览器 Session 权威解析有效 assertion，不再由业务卡片接收或转发 Step-up 凭据。
+
+## 9. 运行时与 Skill 覆盖
 
 Agent 通过 Skill 引导完成平台工作流。Skill 以公开使用文档、控制台主要页面和业务 API 的高频
 用户旅程为覆盖口径，一个工作流需同时具备"发现目标 → 收集参数 → 真实操作（缺工具时明确阻塞）→
@@ -137,7 +156,7 @@ Agent 通过 Skill 引导完成平台工作流。Skill 以公开使用文档、�
 Skill 已覆盖不代表对应写工具已在 Tool Catalog 开放；工具未注册时 Skill 必须阻止模型虚构执行，
 明确报告"尚未执行"。
 
-## 9. 参考与事实源
+## 10. 参考与事实源
 
 - 交互卡片协议契约：[`12-AI声明式交互卡片Schema.md`](12-AI声明式交互卡片Schema.md)
 - 工具注册闭环与调用链约束：`AGENTS.md`

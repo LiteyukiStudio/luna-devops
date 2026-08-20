@@ -127,7 +127,7 @@ func TestEveryHandwrittenAIToolHasRegisteredPolicy(t *testing.T) {
 	}
 }
 
-func TestAIToolRegistryRequiresFreshApprovalAndMFAForEveryRuntimeSessionCommand(t *testing.T) {
+func TestAIToolRegistryDeclaresApprovalAndMFAForRuntimeSessionCommands(t *testing.T) {
 	for _, operationID := range []string{
 		"createReleaseRuntimeCommandSession",
 		"executeReleaseRuntimeCommandSession",

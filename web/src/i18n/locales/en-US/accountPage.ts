@@ -88,6 +88,7 @@ const accountPage = {
     verify: 'Verify and continue',
     verifyFailed: 'Verification failed. Check the code and try again.',
     purposes: {
+      ai_conversation_tools: 'authorize high-risk tools in this AI conversation',
       runtime_exec: 'run a runtime command',
       runtime_terminal: 'open Web Console',
       secret_update: 'update a secret',

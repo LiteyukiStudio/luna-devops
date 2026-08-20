@@ -2096,6 +2096,7 @@ export const mfaPurposes = [
   'runtime_terminal',
   'secret_update',
   'secret_view',
+  'ai_conversation_tools',
   'registry_credential_update',
   'kubeconfig_update',
   'auth_provider_update',

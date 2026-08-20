@@ -15,6 +15,7 @@ import { MemoryToolCallStore, ProjectingToolCallStore, ToolOrchestrator } from "
 import { createOptionsInput, createOptionsTool } from "../src/tools/ui-options.js"
 import { navigateToRouteTool } from "../src/tools/ui-route.js"
 import { searchToolsTool } from "../src/tools/tool-search.js"
+import { browseToolsTool } from "../src/tools/tool-directory.js"
 import { responseToolContract } from "./tool-contract-fixtures.js"
 
 describe("provider to tool to subsequent model invocation", () => {
@@ -916,6 +917,84 @@ describe("provider to tool to subsequent model invocation", () => {
     })
   })
 
+  it("browses the compact directory, loads exact details, and executes the selected tool", async () => {
+    const repository = new MemoryRepository()
+    const conversation = await repository.createConversation("usr_a", "目录浏览", undefined, "user")
+    const created = await repository.createTurn("usr_a", {
+      conversationId: conversation.id,
+      input: "从目录找到平台概览并执行",
+      pageContext: { routeName: "dashboard" },
+      idempotencyKey: "browse-tool-closure",
+      runActorGrantCiphertext: "encrypted-test-grant",
+    })
+    const catalog = ToolCatalog.load([{
+      operationId: "getDashboard",
+      method: "GET",
+      path: "/api/v1/dashboard",
+      category: "dashboard",
+      description: "读取平台概览。",
+      risk: "read",
+      requiredScopes: ["dashboard:read"],
+      approval: "never",
+      idempotent: true,
+      timeoutMs: 5000,
+      inputSchema: { type: "object", properties: {}, required: [], additionalProperties: false },
+      contract: responseToolContract({
+        resourceTypes: ["dashboard"],
+        intents: ["读取平台概览"],
+        useWhen: ["需要平台概览时"],
+        successEvidence: ["返回平台概览"],
+      }),
+    }])
+    const requests: ModelRequest[] = []
+    let step = 0
+    const provider: ModelProvider = {
+      async *stream(request) {
+        requests.push(request)
+        if (step++ === 0) {
+          yield { type: "completed", usage: { inputTokens: 4, outputTokens: 2 }, toolCalls: [{ id: "browse-list", operationId: "browse_tools", arguments: { mode: "list", page: 1, pageSize: 100 } }] }
+          return
+        }
+        if (step === 2) {
+          yield { type: "completed", usage: { inputTokens: 5, outputTokens: 2 }, toolCalls: [{ id: "browse-details", operationId: "browse_tools", arguments: { mode: "details", operationIds: ["getDashboard"] } }] }
+          return
+        }
+        if (step === 3) {
+          yield { type: "completed", usage: { inputTokens: 5, outputTokens: 2 }, toolCalls: [{ id: "dashboard", operationId: "getDashboard", arguments: {} }] }
+          return
+        }
+        yield { type: "message_delta", delta: "平台概览已读取。" }
+        yield { type: "completed", usage: { inputTokens: 6, outputTokens: 3 } }
+      },
+      async complete() { return { text: "", usage: { inputTokens: 1, outputTokens: 0 }, toolCalls: [] } },
+      capabilities: () => ({ streaming: true, toolCalling: true, structuredOutput: true }),
+      health: async () => ({ ok: true }),
+    }
+    const client = new DeterministicLunaApiClient(() => ({ status: 200, body: { status: "healthy" } }))
+    const tools = new ToolOrchestrator(catalog, client, new ProjectingToolCallStore(new MemoryToolCallStore(), repository), undefined, undefined, async () => "opaque-grant")
+    const runtime = new ModelRuntime(provider, {
+      resolve: (_pageContext, _input, loaded) => [
+        browseToolsTool,
+        ...(loaded.includes("getDashboard") ? catalog.allowedModelTools() : []),
+      ],
+      search: query => ({ query, matches: [], loadedOperationIds: [], totalMatches: 0 }),
+      browse: request => catalog.browse(request),
+    })
+    const executor = new RunExecutor(repository, runtime, loadConfig({ NODE_ENV: "test", INSTANCE_ID: "browse-closure-worker" }), tools)
+
+    await executor.runOnce()
+
+    expect((await repository.getRun("usr_a", created.run.id))?.status).toBe("completed")
+    expect(requests).toHaveLength(4)
+    expect(requests[0]?.tools?.map(tool => tool.operationId)).toEqual(["browse_tools"])
+    expect(requests[2]?.tools?.map(tool => tool.operationId)).toEqual(expect.arrayContaining(["browse_tools", "getDashboard"]))
+    expect(client.calls.map(call => call.operation.operationId)).toEqual(["getDashboard"])
+    const timeline = await presentTimeline(repository, "usr_a", conversation.id)
+    const browseCalls = timeline?.turns[0]?.selectedRun?.items.filter(item => "toolCall" in item && item.toolCall.operationId === "browse_tools") ?? []
+    expect(browseCalls).toHaveLength(2)
+    expect(browseCalls.every(item => "toolCall" in item && item.toolCall.status === "succeeded")).toBe(true)
+  })
+
   it("persists an automatic registered-route action without invoking the business tool orchestrator", async () => {
     const repository = new MemoryRepository()
     const conversation = await repository.createConversation("usr_a", "route", undefined, "user")
@@ -1172,7 +1251,9 @@ describe("provider to tool to subsequent model invocation", () => {
       inputSchema: { type: "object", properties: { releaseId: { type: "string" } }, required: ["releaseId"], additionalProperties: false },
     }])
     const store = new MemoryToolCallStore()
-    const tools = new ToolOrchestrator(catalog, new DeterministicLunaApiClient(() => ({ status: 200, body: { restarted: true } })), new ProjectingToolCallStore(store, repository), undefined, undefined, async () => "grant")
+    const tools = new ToolOrchestrator(catalog, new DeterministicLunaApiClient(request => request.stepUpAssertionId
+      ? { status: 200, body: { restarted: true } }
+      : { status: 428, body: { code: "mfa_required", purpose: "deployment_restart" } }), new ProjectingToolCallStore(store, repository), undefined, undefined, async () => "grant")
     const requests: ModelRequest[] = []
     let modelStep = 0
     const provider: ModelProvider = {

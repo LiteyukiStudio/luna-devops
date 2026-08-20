@@ -36,6 +36,7 @@ async function approvalFixture() {
   const repository = new MemoryRepository()
   const store = new MemoryToolCallStore()
   const client = new DeterministicLunaApiClient(() => ({ status: 200, body: { ok: true } }))
+  const grantCipher = new PayloadCipher(Buffer.alloc(32, 1))
   const tools = new ToolOrchestrator(
     approvalCatalog,
     client,
@@ -43,13 +44,18 @@ async function approvalFixture() {
     undefined,
     undefined,
     async () => "opaque-run-grant",
+    undefined,
+    async runId => {
+      const authorization = await repository.getRunConversationAuthorization(runId)
+      return authorization ? grantCipher.decrypt(authorization.grantCiphertext) : undefined
+    },
   )
   const app = buildServer({
     config: loadConfig({ NODE_ENV: "test" }),
     repository,
     provider: new DeterministicProvider(),
     authenticator: new DevelopmentAuthenticator(),
-    grantCipher: new PayloadCipher(Buffer.alloc(32, 1)),
+    grantCipher,
     tools,
   })
   return { app, repository, store, client, tools }
@@ -90,7 +96,7 @@ describe("approval decisions", () => {
     await fixture.app.close()
   })
 
-  it("approves only already pending calls in the current run", async () => {
+  it("authorizes all pending calls and later tools in the current conversation", async () => {
     const fixture = await approvalFixture()
     const runId = await waitingRun(fixture, "usr_owner", "approve-all")
     const first = await fixture.tools.propose({ runId, operationId: "updateThing", arguments: { value: "one" } })
@@ -101,14 +107,56 @@ describe("approval decisions", () => {
       method: "POST",
       url: `/internal/v1/runs/${runId}/approvals/${first.id}/decision`,
       headers: { "x-luna-dev-user": "usr_owner" },
-      payload: { decision: "approve_all", argumentsHash: first.argumentsHash, expectedVersion: first.rowVersion },
+      payload: {
+        decision: "approve_conversation",
+        argumentsHash: first.argumentsHash,
+        expectedVersion: first.rowVersion,
+        conversationId: (await fixture.repository.getRun("usr_owner", runId))!.conversationId,
+        conversationAuthorizationGrant: "conversation-authorization-grant",
+        conversationAuthorizationExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+      },
     })
 
     expect(response.statusCode).toBe(202)
     expect(fixture.store.records.get(first.id)?.status).toBe("succeeded")
     expect(fixture.store.records.get(second.id)?.status).toBe("succeeded")
     expect(fixture.client.calls).toHaveLength(2)
+    expect(fixture.client.calls.every(call => call.conversationAuthorizationGrant === "conversation-authorization-grant")).toBe(true)
     expect((await fixture.repository.getRun("usr_owner", runId))?.status).toBe("queued")
+
+    const conversationId = (await fixture.repository.getRun("usr_owner", runId))!.conversationId
+    const authorization = await fixture.app.inject({
+      method: "GET",
+      url: `/internal/v1/conversations/${conversationId}/authorization`,
+      headers: { "x-luna-dev-user": "usr_owner" },
+    })
+    expect(authorization.statusCode).toBe(200)
+    expect(authorization.json()).toMatchObject({ active: true })
+
+    const later = await fixture.repository.createTurn("usr_owner", {
+      conversationId,
+      input: "later",
+      pageContext: {},
+      idempotencyKey: "approval-later",
+    })
+    const laterCall = await fixture.tools.propose({ runId: later.run.id, operationId: "updateThing", arguments: { value: "later" } })
+    expect(laterCall.status).toBe("succeeded")
+    expect(fixture.client.calls.at(-1)?.conversationAuthorizationGrant).toBe("conversation-authorization-grant")
+
+    const revoked = await fixture.app.inject({
+      method: "DELETE",
+      url: `/internal/v1/conversations/${conversationId}/authorization`,
+      headers: { "x-luna-dev-user": "usr_owner" },
+    })
+    expect(revoked.statusCode).toBe(204)
+    const afterRevoke = await fixture.repository.createTurn("usr_owner", {
+      conversationId,
+      input: "after revoke",
+      pageContext: {},
+      idempotencyKey: "approval-after-revoke",
+    })
+    await expect(fixture.tools.propose({ runId: afterRevoke.run.id, operationId: "updateThing", arguments: { value: "after-revoke" } }))
+      .resolves.toMatchObject({ status: "awaiting_approval" })
     await fixture.app.close()
   })
 

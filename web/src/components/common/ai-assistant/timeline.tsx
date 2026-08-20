@@ -33,7 +33,7 @@ interface AIAssistantTimelineProps {
   olderError?: Error | null
   onAction: (action: AIUIAction) => Promise<boolean>
   onApproval: (block: ToolCallBlock, decision: AIApprovalDecision, reason?: string) => Promise<void>
-  onMFA: (block: ToolCallBlock, code: string) => Promise<void>
+  onMFA: (block: ToolCallBlock) => Promise<void>
   onLoadOlder?: () => Promise<void>
   onResend: (message: string) => void
   onRetry: () => void
@@ -211,7 +211,7 @@ function ConversationTurn({ generating, responseBlocks, userMessage, onAction, o
   userMessage?: MessageBlock
   onAction: (action: AIUIAction) => Promise<boolean>
   onApproval: (block: ToolCallBlock, decision: AIApprovalDecision, reason?: string) => Promise<void>
-  onMFA: (block: ToolCallBlock, code: string) => Promise<void>
+  onMFA: (block: ToolCallBlock) => Promise<void>
   onResend: (message: string) => void
   resendDisabled?: boolean
   showInternalTools?: boolean
@@ -254,7 +254,7 @@ function AssistantReply({ generating, responseBlocks, onAction, onApproval, onMF
   responseBlocks: AIBlock[]
   onAction: (action: AIUIAction) => Promise<boolean>
   onApproval: (block: ToolCallBlock, decision: AIApprovalDecision, reason?: string) => Promise<void>
-  onMFA: (block: ToolCallBlock, code: string) => Promise<void>
+  onMFA: (block: ToolCallBlock) => Promise<void>
 }) {
   const hasWideContent = responseBlocks.some(block =>
     block.type === 'tool_call'
@@ -295,7 +295,7 @@ function TypingIndicator() {
   )
 }
 
-function ResponseBlock({ block, onAction, onApproval, onMFA }: { block: AIBlock, onAction: (action: AIUIAction) => Promise<boolean>, onApproval: (block: ToolCallBlock, decision: AIApprovalDecision, reason?: string) => Promise<void>, onMFA: (block: ToolCallBlock, code: string) => Promise<void> }) {
+function ResponseBlock({ block, onAction, onApproval, onMFA }: { block: AIBlock, onAction: (action: AIUIAction) => Promise<boolean>, onApproval: (block: ToolCallBlock, decision: AIApprovalDecision, reason?: string) => Promise<void>, onMFA: (block: ToolCallBlock) => Promise<void> }) {
   if (block.type === 'thinking')
     return <ThinkingBlock block={block} />
   if (block.type === 'tool_call' && block.operationId === 'create_interaction_cards' && block.status === 'running')

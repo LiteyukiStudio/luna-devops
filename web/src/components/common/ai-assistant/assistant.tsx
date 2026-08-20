@@ -21,6 +21,7 @@ import {
 import { executeAutomaticRouteDelivery } from './automatic-route-delivery'
 import { readAIClientInstanceId } from './client-instance'
 import { AIAssistantComposer } from './composer'
+import { AIConversationAuthorizationNotice } from './conversation-authorization'
 import { AIConversationList } from './conversation-list'
 import {
   aiConversationSessionReducer,
@@ -164,6 +165,17 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
       current as AITimelineInfiniteData | undefined,
       incoming as AITimelineInfiniteData,
     ),
+  })
+  const conversationAuthorization = useQuery({
+    queryKey: ['ai', 'conversation-authorization', selectedConversationId],
+    queryFn: () => api.getAIConversationAuthorization(selectedConversationId!),
+    enabled: open && Boolean(selectedConversationId),
+    staleTime: 0,
+    retry: false,
+  })
+  const revokeConversationAuthorization = useMutation({
+    mutationFn: (conversationId: string) => api.revokeAIConversationAuthorization(conversationId),
+    onSuccess: (_value, conversationId) => queryClient.invalidateQueries({ queryKey: ['ai', 'conversation-authorization', conversationId] }),
   })
   const timelineData = useMemo(() => timelineQueryDataFromInfinite(timeline.data), [timeline.data])
   const selectedConversation = useMemo(
@@ -621,34 +633,46 @@ export function AiAssistant({ capabilities, initiallyOpen = false }: { capabilit
           olderError={timeline.isFetchPreviousPageError ? timeline.error : null}
           loading={timeline.isLoading}
           onAction={executeAction}
-          onApproval={(block, decision, reason) => api.decideAIToolApproval(block.runId, block.toolCallId, {
-            decision,
-            argumentsHash: block.argumentsHash!,
-            expectedVersion: block.expectedVersion!,
-            reason,
-          })}
-          onMFA={async (block, code) => {
-            const verification = await api.verifyMFA({ code, purpose: block.mfaPurpose! })
-            if (!verification.stepUpAssertionId)
-              throw new Error(t('aiAssistant.errors.mfaAssertion'))
-            await api.resumeAIToolMFA(block.runId, block.toolCallId, {
-              stepUpAssertionId: verification.stepUpAssertionId,
+          onApproval={async (block, decision, reason) => {
+            await api.decideAIToolApproval(block.runId, block.toolCallId, {
+              decision,
+              argumentsHash: block.argumentsHash!,
               expectedVersion: block.expectedVersion!,
+              ...(decision === 'approve_conversation' && selectedConversationId ? { conversationId: selectedConversationId } : {}),
+              reason,
             })
+            if (decision === 'approve_conversation' && selectedConversationId)
+              await queryClient.invalidateQueries({ queryKey: ['ai', 'conversation-authorization', selectedConversationId] })
           }}
+          onMFA={block => api.resumeAIToolMFA(block.runId, block.toolCallId, {
+            purpose: block.mfaPurpose!,
+            expectedVersion: block.expectedVersion!,
+          })}
           onResend={message => sendTurn.mutate({ conversationId: selectedConversationId, message })}
           onRetry={() => void timeline.refetch()}
           onLoadOlder={() => timeline.fetchPreviousPage().then(() => undefined)}
           resetKey={selectedConversationId}
           resendDisabled={Boolean(activeRunId || sendingSelected)}
           showInternalTools={toolDebugMode.enabled}
-          topContent={conversationSession.refreshReturnExpiresAt && canReturnToPreviousConversation && !selectedConversationId && !conversationSearch
+          topContent={(conversationSession.refreshReturnExpiresAt && canReturnToPreviousConversation && !selectedConversationId && !conversationSearch)
+            || (conversationAuthorization.data?.active && conversationAuthorization.data.expiresAt)
             ? (
-                <AIRefreshConversationReturn
-                  expiresAt={conversationSession.refreshReturnExpiresAt}
-                  onExpire={dismissRefreshReturn}
-                  onReturn={returnToPreviousConversation}
-                />
+                <div className="grid gap-2">
+                  {conversationSession.refreshReturnExpiresAt && canReturnToPreviousConversation && !selectedConversationId && !conversationSearch && (
+                    <AIRefreshConversationReturn
+                      expiresAt={conversationSession.refreshReturnExpiresAt}
+                      onExpire={dismissRefreshReturn}
+                      onReturn={returnToPreviousConversation}
+                    />
+                  )}
+                  {selectedConversationId && conversationAuthorization.data?.active && conversationAuthorization.data.expiresAt && (
+                    <AIConversationAuthorizationNotice
+                      expiresAt={conversationAuthorization.data.expiresAt}
+                      revoking={revokeConversationAuthorization.isPending}
+                      onRevoke={() => revokeConversationAuthorization.mutate(selectedConversationId)}
+                    />
+                  )}
+                </div>
               )
             : undefined}
         />

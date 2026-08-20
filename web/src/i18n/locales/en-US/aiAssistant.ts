@@ -531,7 +531,6 @@ const aiAssistant = {
       input: 'Could not submit the additional input',
       approval: 'Could not submit the approval decision',
       mfa: 'Verification failed',
-      mfaAssertion: 'Verification succeeded without a usable step-up assertion',
     },
     approval: {
       title: 'Approval required',
@@ -540,14 +539,15 @@ const aiAssistant = {
       reasonPlaceholder: 'Optional, up to 500 characters',
       invalidBinding: 'Approval binding is incomplete, so this operation was blocked.',
       reject: 'Reject',
-      approveAll: 'Approve all',
+      approveConversation: 'Approve and don’t ask again',
+      conversationActive: 'Tools requiring approval or step-up are auto-approved in this conversation, no later than {{expiry}}',
+      revokeConversation: 'Revoke',
       approve: 'Approve',
     },
     mfa: {
       title: 'Additional verification required',
       description: 'Complete platform step-up MFA before the assistant continues this tool call.',
-      code: 'Six-digit code',
-      verify: 'Verify and continue',
+      continue: 'Verify and continue',
     },
     conversations: {
       title: 'Conversations',

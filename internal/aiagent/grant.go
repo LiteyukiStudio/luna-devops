@@ -13,31 +13,34 @@ import (
 var ErrInvalidGrant = errors.New("invalid AI grant")
 
 type RunActorGrant struct {
-	Audience     string `json:"aud"`
-	Purpose      string `json:"purpose"`
-	RunID        string `json:"runId"`
-	UserID       string `json:"userId"`
-	SessionID    string `json:"sessionId"`
-	OAuthGrantID string `json:"oauthGrantId,omitempty"`
-	IssuedAt     int64  `json:"iat"`
-	ExpiresAt    int64  `json:"exp"`
+	Audience       string `json:"aud"`
+	Purpose        string `json:"purpose"`
+	RunID          string `json:"runId"`
+	ConversationID string `json:"conversationId"`
+	UserID         string `json:"userId"`
+	SessionID      string `json:"sessionId"`
+	OAuthGrantID   string `json:"oauthGrantId,omitempty"`
+	IssuedAt       int64  `json:"iat"`
+	ExpiresAt      int64  `json:"exp"`
 }
 
 type DelegationClaims struct {
-	Audience      string   `json:"aud"`
-	Purpose       string   `json:"purpose"`
-	RunID         string   `json:"runId"`
-	ToolCallID    string   `json:"toolCallId"`
-	OperationID   string   `json:"operationId"`
-	UserID        string   `json:"userId"`
-	SessionID     string   `json:"sessionId"`
-	Scopes        []string `json:"scopes"`
-	ArgumentsHash string   `json:"argumentsHash"`
-	InputMode     string   `json:"inputMode,omitempty"`
-	MFAPurpose    string   `json:"mfaPurpose,omitempty"`
-	MFAAssertion  string   `json:"mfaAssertion,omitempty"`
-	IssuedAt      int64    `json:"iat"`
-	ExpiresAt     int64    `json:"exp"`
+	Audience               string   `json:"aud"`
+	Purpose                string   `json:"purpose"`
+	RunID                  string   `json:"runId"`
+	ConversationID         string   `json:"conversationId"`
+	ToolCallID             string   `json:"toolCallId"`
+	OperationID            string   `json:"operationId"`
+	UserID                 string   `json:"userId"`
+	SessionID              string   `json:"sessionId"`
+	Scopes                 []string `json:"scopes"`
+	ArgumentsHash          string   `json:"argumentsHash"`
+	InputMode              string   `json:"inputMode,omitempty"`
+	MFAPurpose             string   `json:"mfaPurpose,omitempty"`
+	MFAAssertion           string   `json:"mfaAssertion,omitempty"`
+	ConversationAuthorized bool     `json:"conversationAuthorized,omitempty"`
+	IssuedAt               int64    `json:"iat"`
+	ExpiresAt              int64    `json:"exp"`
 }
 
 func SignRunActorGrant(claims RunActorGrant, key string) (string, error) {
@@ -53,7 +56,7 @@ func VerifyRunActorGrant(token, key string, now time.Time) (RunActorGrant, error
 		return claims, err
 	}
 	if claims.Audience != "luna-ai-run-grant" || claims.Purpose != "agent_delegation_exchange" ||
-		claims.RunID == "" || claims.UserID == "" || claims.SessionID == "" ||
+		claims.RunID == "" || claims.ConversationID == "" || claims.UserID == "" || claims.SessionID == "" ||
 		claims.IssuedAt > now.Unix()+5 || claims.ExpiresAt <= now.Unix() {
 		return claims, ErrInvalidGrant
 	}
@@ -73,10 +76,42 @@ func VerifyDelegationToken(token, key string, now time.Time) (DelegationClaims, 
 		return claims, err
 	}
 	if claims.Audience != "luna-api-ai-tools" || claims.Purpose != "execute_registered_tool" ||
-		claims.RunID == "" || claims.ToolCallID == "" || claims.OperationID == "" ||
+		claims.RunID == "" || claims.ConversationID == "" || claims.ToolCallID == "" || claims.OperationID == "" ||
 		claims.UserID == "" || claims.SessionID == "" || claims.IssuedAt > now.Unix()+5 ||
 		claims.ExpiresAt <= now.Unix() || claims.ExpiresAt-claims.IssuedAt > 60 ||
 		(claims.InputMode != "" && claims.InputMode != "model" && claims.InputMode != "direct") {
+		return claims, ErrInvalidGrant
+	}
+	return claims, nil
+}
+
+type ConversationAuthorizationGrant struct {
+	Audience          string `json:"aud"`
+	Purpose           string `json:"purpose"`
+	GrantID           string `json:"grantId"`
+	ConversationID    string `json:"conversationId"`
+	UserID            string `json:"userId"`
+	SessionID         string `json:"sessionId"`
+	StepUpAssertionID string `json:"stepUpAssertionId,omitempty"`
+	IssuedAt          int64  `json:"iat"`
+	ExpiresAt         int64  `json:"exp"`
+}
+
+func SignConversationAuthorizationGrant(claims ConversationAuthorizationGrant, key string) (string, error) {
+	if strings.TrimSpace(key) == "" {
+		return "", ErrInvalidGrant
+	}
+	return signCompact(claims, key)
+}
+
+func VerifyConversationAuthorizationGrant(token, key string, now time.Time) (ConversationAuthorizationGrant, error) {
+	var claims ConversationAuthorizationGrant
+	if err := verifyCompact(token, key, &claims); err != nil {
+		return claims, err
+	}
+	if claims.Audience != "luna-ai-conversation-authorization" || claims.Purpose != "approve_conversation_tools" ||
+		claims.GrantID == "" || claims.ConversationID == "" || claims.UserID == "" || claims.SessionID == "" ||
+		claims.IssuedAt > now.Unix()+5 || claims.ExpiresAt <= now.Unix() || claims.ExpiresAt-claims.IssuedAt > 3600 {
 		return claims, ErrInvalidGrant
 	}
 	return claims, nil

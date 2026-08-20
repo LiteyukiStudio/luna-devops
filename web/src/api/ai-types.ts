@@ -33,6 +33,12 @@ export interface AIConversation {
   updatedAt: string
 }
 
+export interface AIConversationAuthorization {
+  active: boolean
+  expiresAt?: string
+  updatedAt?: string
+}
+
 export interface AIPaginatedResponse<T> {
   items: T[]
   page: number
@@ -206,6 +212,6 @@ export interface AIUIActionAcknowledgement {
 }
 
 export interface AIMFAResumePayload {
-  stepUpAssertionId: string
+  purpose: string
   expectedVersion: number
 }

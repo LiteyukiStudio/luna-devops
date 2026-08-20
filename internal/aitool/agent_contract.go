@@ -260,13 +260,28 @@ func schemaAtJSONPointer(schema map[string]any, pointer string) (map[string]any,
 	current := schema
 	for _, raw := range strings.Split(strings.TrimPrefix(pointer, "/"), "/") {
 		segment := strings.ReplaceAll(strings.ReplaceAll(raw, "~1", "/"), "~0", "~")
-		property, ok := mapValue(current["properties"])[segment]
+		property, ok := schemaProperty(current, segment, 0)
 		if !ok {
 			return nil, false
 		}
-		current = mapValue(property)
+		current = property
 	}
 	return current, true
+}
+
+func schemaProperty(schema map[string]any, name string, depth int) (map[string]any, bool) {
+	if depth > 20 {
+		return nil, false
+	}
+	if property, ok := mapValue(schema["properties"])[name]; ok {
+		return mapValue(property), true
+	}
+	for _, candidate := range arrayValue(schema["allOf"]) {
+		if property, ok := schemaProperty(mapValue(candidate), name, depth+1); ok {
+			return property, true
+		}
+	}
+	return nil, false
 }
 
 func containsString(values []string, expected string) bool {

@@ -7,6 +7,7 @@ export const internalToolOperationIds = new Set<string>([
   "create_interaction_cards",
   "rename_conversation",
   "navigate_to_route",
+  "browse_tools",
   "search_tools",
   ...businessCardToolOperationIds,
 ])

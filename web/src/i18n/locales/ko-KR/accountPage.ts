@@ -88,6 +88,7 @@ const accountPage = {
     verify: '검증하고 계속',
     verifyFailed: '검증에 실패했습니다. 코드를 확인하고 다시 시도하세요.',
     purposes: {
+      ai_conversation_tools: '이 AI 대화의 고위험 도구 승인',
       runtime_exec: '실행 명령 실행',
       runtime_terminal: 'Web Console 열기',
       secret_update: '시크릿 수정',

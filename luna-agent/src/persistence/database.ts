@@ -29,13 +29,13 @@ export class AgentDatabase {
   async readiness(): Promise<{ database: boolean, schema: boolean }> {
     try {
       const result = await this.pool.query<{ schema_ready: boolean }>(`
-        select exists (
-          select 1
-          from information_schema.columns
-          where table_schema = 'ai'
-            and table_name = 'tool_calls'
-            and column_name = 'input_mode'
-        ) as schema_ready
+        select count(*) = 2 as schema_ready
+        from information_schema.columns
+        where table_schema = 'ai'
+          and (table_name, column_name) in (
+            ('tool_calls', 'input_mode'),
+            ('conversations', 'authorization_grant_ciphertext')
+          )
       `)
       return { database: true, schema: result.rows[0]?.schema_ready === true }
     }

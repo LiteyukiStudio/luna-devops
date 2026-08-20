@@ -10,6 +10,7 @@ import { SensitiveInputRejected, ToolInterruption, type ToolOrchestrator } from 
 import { ToolLoopStoppedError } from "../tools/loop-guard.js"
 import { businessCardToolInputs, compileBusinessCardToolInput, isBusinessCardToolOperationId } from "../tools/business-card-tools.js"
 import { searchToolsInput } from "../tools/tool-search.js"
+import { browseToolsInput } from "../tools/tool-directory.js"
 import { createOptionsInput } from "../tools/ui-options.js"
 import { CardGenerationService, cardValidationFailure, providerArgumentFailure, setMaxCardRepairAttempts, validationIssues, type CardGeneration } from "./cards.js"
 import { recentEmptyReadResults, requestsExplicitLiveRefresh } from "./conversation-loop-state.js"
@@ -158,6 +159,7 @@ export class RunExecutor {
         const loadedOperationIds = new Set(resumedOperationIds(executionInput.toolInteractions))
         const toolRetrievalState = new ToolRetrievalStateTracker(executionInput.pageContext, executionInput.toolInteractions)
         const searchedToolQueries = new Set<string>()
+        const browsedToolRequests = new Set<string>()
         for (let step = 0; step < this.runtimeSettings.maxModelSteps; step += 1) {
           const result = await this.streamModel(run.id, run.turnId, {
             runId: run.id,
@@ -203,6 +205,7 @@ export class RunExecutor {
           continuationMessages.push({ role: "assistant", content: result.answer, toolCalls })
           let platformToolCalled = false
           let createOptionsCalled = false
+          let browseToolsCalled = false
           let searchToolsCalled = false
           let createInteractionCardsCalled = false
           let createdInteractionCardMode: "presentation" | "interactive" | undefined
@@ -297,6 +300,93 @@ export class RunExecutor {
               if (!hasPlatformTool) pendingOptions = toolCall.arguments
               continuationMessages.push(toolResultMessage(toolCall, {
                 status: hasPlatformTool ? "deferred_until_final_response" : "accepted",
+              }))
+              continue
+            }
+            if (toolCall.operationId === "browse_tools") {
+              browseToolsCalled = true
+              const parsedInput = browseToolsInput.safeParse(toolCall.arguments)
+              if (!parsedInput.success) {
+                const errorCode = "ai.tool_arguments_invalid"
+                await this.internalTools.recordToolCall(
+                  run.id,
+                  run.turnId,
+                  "browse_tools",
+                  toolCall.arguments,
+                  "failed",
+                  { issues: parsedInput.error.issues.map(issue => ({ path: issue.path, code: issue.code })) },
+                  errorCode,
+                  toolCall.id,
+                )
+                recoverableToolError = true
+                continuationMessages.push(toolResultMessage(toolCall, {
+                  status: "failed",
+                  errorCode,
+                  retryable: true,
+                  guidance: "请按 list 或 details 模式修正参数后，在当前 Run 内重试一次 browse_tools。",
+                }))
+                continue
+              }
+              const input = parsedInput.data
+              const requestKey = JSON.stringify(input)
+              const alreadyBrowsed = browsedToolRequests.has(requestKey)
+              const browseStartedAt = performance.now()
+              let browseResult: Awaited<ReturnType<ModelRuntime["browseAvailableTools"]>>
+              try {
+                browseResult = await this.traceInternalTool("browse_tools", run.id, input, async () => {
+                  if (alreadyBrowsed) {
+                    return {
+                      mode: input.mode,
+                      entries: [],
+                      details: [],
+                      loadedOperationIds: [],
+                      missingOperationIds: [],
+                      total: 0,
+                    }
+                  }
+                  browsedToolRequests.add(requestKey)
+                  return this.modelRuntime.browseAvailableTools(input)
+                }, toolCall.id)
+                await this.internalTools.recordToolCall(
+                  run.id,
+                  run.turnId,
+                  "browse_tools",
+                  input,
+                  "succeeded",
+                  browseResult,
+                  undefined,
+                  toolCall.id,
+                  performance.now() - browseStartedAt,
+                )
+              }
+              catch (error) {
+                const errorCode = stableErrorCode(error)
+                await this.internalTools.recordToolCall(
+                  run.id,
+                  run.turnId,
+                  "browse_tools",
+                  input,
+                  "failed",
+                  undefined,
+                  errorCode,
+                  toolCall.id,
+                  performance.now() - browseStartedAt,
+                )
+                throw error
+              }
+              browseResult.loadedOperationIds.forEach(operationId => loadedOperationIds.add(operationId))
+              const itemCount = browseResult.entries.length + browseResult.details.length
+              const browseOutcome = alreadyBrowsed ? "duplicate" : itemCount ? "succeeded" : "empty"
+              agentMetrics.toolDirectoryBrowses.add(1, { mode: input.mode, outcome: browseOutcome })
+              agentMetrics.toolDirectoryItems.record(itemCount, { mode: input.mode, outcome: browseOutcome })
+              continuationMessages.push(toolResultMessage(toolCall, {
+                status: itemCount ? "succeeded" : "empty",
+                ...browseResult,
+                guidance: input.mode === "list"
+                  ? "这是轻量能力目录，不代表任何工具已执行。请从中选择最多 8 个精确 operationId，用 details 模式加载完整契约；无法确定时再使用 search_tools。"
+                  : browseResult.loadedOperationIds.length
+                    ? "这些工具已加入本轮后续模型步骤。请继续调用最适合的具体工具；目录详情不代表业务执行结果。"
+                    : "没有加载到已准入工具。请核对 operationId，或先用 list 模式读取当前权威目录。",
               }))
               continue
             }
@@ -462,9 +552,8 @@ export class RunExecutor {
           }
           if (recoverableToolError) continue
           if (cardRepairExhausted) continue
-          // search_tools 只完成能力发现；工具调用前的“现在检索”之类文本不是最终答复。
-          // 无论模型是否在同一条 assistant 消息里附带了文本，都必须把检索结果送入下一模型步。
-          if (searchToolsCalled) continue
+          // 目录浏览和语义检索都只完成能力发现；无论模型是否附带文本，都必须把结果送入下一模型步。
+          if (browseToolsCalled || searchToolsCalled) continue
           if (platformToolCalled) pendingOptions = undefined
           if (!platformToolCalled && createInteractionCardsCalled) {
             if (createdInteractionCardMode === "presentation") continue

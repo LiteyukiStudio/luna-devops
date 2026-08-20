@@ -13,6 +13,26 @@ export type ModelToolSearchResult = {
   loadedOperationIds: string[]
   totalMatches: number
 }
+export type ModelToolDirectoryRequest =
+  | { mode: "list", category?: string | undefined, page: number, pageSize: number }
+  | { mode: "details", operationIds: string[] }
+export type ModelToolDirectoryResult = {
+  mode: "list" | "details"
+  entries: Array<{
+    operationId: string
+    category: string
+    action: string
+    risk: string
+    summary: string
+  }>
+  details: Array<{ operationId: string, category: string, description: string }>
+  loadedOperationIds: string[]
+  missingOperationIds: string[]
+  total: number
+  page?: number
+  pageSize?: number
+  totalPages?: number
+}
 export type ModelToolRetrievalState = {
   resourceContext: string[]
   completedOperations: string[]
@@ -36,6 +56,7 @@ export type ModelToolRegistry = {
     retrievalState?: ModelToolRetrievalState,
     signal?: AbortSignal,
   ) => Awaitable<ModelToolSearchResult>
+  browse?: (request: ModelToolDirectoryRequest) => Awaitable<ModelToolDirectoryResult>
 }
 export type ModelToolResolver = ModelToolDefinition[]
   | ((

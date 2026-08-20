@@ -22,6 +22,7 @@ import { platformOperations } from "./tools/generated/platform.js"
 import { businessCardTools } from "./tools/business-card-tools.js"
 import { navigateToRouteTool } from "./tools/ui-route.js"
 import { searchToolsTool } from "./tools/tool-search.js"
+import { browseToolsTool } from "./tools/tool-directory.js"
 
 export async function startAgent(): Promise<void> {
   const config = loadConfig()
@@ -77,6 +78,9 @@ export async function startAgent(): Promise<void> {
         const encrypted = await repository.getRunActorGrantCiphertext(runId)
         if (!encrypted) throw new Error("ai.run_grant_unavailable")
         return grantCipher.decrypt(encrypted)
+      }, undefined, async runId => {
+        const authorization = await repository.getRunConversationAuthorization(runId)
+        return authorization ? grantCipher.decrypt(authorization.grantCiphertext) : undefined
       })
     : undefined
   tools?.setRunMaxToolCalls(runtime.runMaxToolCalls)
@@ -127,7 +131,7 @@ export async function startAgent(): Promise<void> {
           span.setAttribute("luna.agent.tool_retrieval.mode", config.TOOL_RETRIEVAL_MODE)
           return [
             ...platformTools,
-            ...(tools ? [searchToolsTool] : []),
+            ...(tools ? [browseToolsTool, searchToolsTool] : []),
             ...businessCardTools,
             navigateToRouteTool,
           ]
@@ -151,6 +155,7 @@ export async function startAgent(): Promise<void> {
       limit,
       signal,
     ),
+    browse: request => catalog.browse(request),
   }, contextCompiler)
   const executor = new RunExecutor(repository, modelRuntime, config, tools, providerConfigClient)
   const server = buildServer({

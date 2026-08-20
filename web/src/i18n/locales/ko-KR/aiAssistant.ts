@@ -531,7 +531,6 @@ const aiAssistant = {
       input: '보충 정보를 제출할 수 없습니다',
       approval: '승인 결정을 제출할 수 없습니다',
       mfa: '검증에 실패했습니다',
-      mfaAssertion: '검증은 성공했지만 사용 가능한 Step-up 자격 증명이 반환되지 않았습니다',
     },
     approval: {
       title: '작업 승인이 필요합니다',
@@ -540,14 +539,15 @@ const aiAssistant = {
       reasonPlaceholder: '선택 사항, 최대 500자',
       invalidBinding: '승인 파라미터 바인딩 정보가 불완전합니다. 작업이 차단되었습니다.',
       reject: '거부',
-      approveAll: '모두 승인',
+      approveConversation: '동의(이 대화에서 다시 묻지 않음)',
+      conversationActive: '이 대화에서는 승인 또는 2단계 인증이 필요한 도구를 자동 승인합니다(최대 {{expiry}}까지)',
+      revokeConversation: '철회',
       approve: '실행 승인',
     },
     mfa: {
       title: '2단계 인증이 필요합니다',
       description: '플랫폼 Step-up MFA를 완료하면 어시스턴트가 현재 도구 호출을 계속합니다.',
-      code: '6자리 코드',
-      verify: '검증하고 계속',
+      continue: '검증하고 계속',
     },
     conversations: {
       title: '세션',

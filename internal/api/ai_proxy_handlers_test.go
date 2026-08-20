@@ -90,7 +90,7 @@ func TestAIProxyUsesSessionActorAndForwardsIdempotencyKey(t *testing.T) {
 		t.Fatal(keyErr)
 	}
 	grant, err := aiagent.VerifyRunActorGrant(rawGrant, internalKeys.RunActorGrantSigningKey, time.Now())
-	if err != nil || runID == "" || grant.RunID != runID || grant.UserID != "usr_session_owner" {
+	if err != nil || runID == "" || grant.RunID != runID || grant.ConversationID != "aicnv_owned" || grant.UserID != "usr_session_owner" {
 		t.Fatalf("forwarded Run Actor Grant = %#v, error = %v", grant, err)
 	}
 	pageContext, _ := forwarded["pageContext"].(map[string]any)

@@ -2350,6 +2350,25 @@ paths:
       tags: [Volumes]
       summary: List project-space volumes with current Kubernetes observations
       description: Returns only the requested page. Current state is observed from Kubernetes and is never served from a persisted status cache.
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [project-volume]
+        action: discover
+        sideEffect: external-read
+        idempotent: true
+        replaySafe: true
+        risk: low
+        approval: never
+        intents: [列出项目空间数据卷, 查找可挂载的持久卷, 为数据库或应用模板选择 ProjectVolume]
+        useWhen: [需要确认项目空间是否已有可用数据卷，或为部署选择真实 projectVolumeId 时]
+        avoidWhen: [已经取得唯一 projectVolumeId 且只需读取该卷详情时]
+        prerequisites: [已有真实 projectId, 为部署选择数据卷时应已确定目标 clusterId]
+        parameterSummary: [projectId 限定项目空间，可按 clusterId、availability、生命周期和名称分页筛选]
+        successEvidence: [200 响应返回分页数据卷以及本次 Kubernetes 实时观察]
+        commonErrorCodes: [volume.cluster_unavailable]
+        predecessors: [getProject]
+        followups: [getProjectVolume, createProjectVolume]
+        verification: { mode: response, successCodes: [200] }
       x-luna-cli:
         command: volume.list
         classification: business-command
@@ -2384,6 +2403,35 @@ paths:
       tags: [Volumes]
       summary: Create a blank volume, reference or adopt a claim, or restore a snapshot
       description: Existing-claim adoption is checked against live Pod references and existing Luna ownership. The endpoint never supports a force bypass.
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [project-volume, persistent-volume-claim]
+        action: create
+        sideEffect: external-write
+        idempotent: true
+        replaySafe: true
+        risk: high
+        approval: always
+        intents: [创建项目数据卷, 为 PostgreSQL 创建持久卷, 从 VolumeSnapshot 恢复数据卷, 引用已有 PVC]
+        useWhen: [用户明确要求创建独立持久卷，且项目空间、集群、来源和存储规格已经确定时]
+        avoidWhen: [只是需要临时 emptyDir，或需要把已有 PVC 纳管为 managed；后者具有条件 MFA，当前应改用控制台或 Luna CLI]
+        prerequisites: [先读取真实运行集群和 StorageClass, 空白卷或快照恢复必须确认容量、访问模式和卷模式]
+        parameterSummary: [projectId 限定项目空间，body.source 选择 blank、volumeSnapshot 或 referenced existingClaim；不得用占位资源 ID]
+        successEvidence: [getProjectVolume 权威回读到 lifecycleState=ready]
+        commonErrorCodes: [volume.cluster_unavailable, volume.invalid_input, volume.quota_exceeded, volume.claim_not_found]
+        predecessors: [listRuntimeClusters, listProjectVolumeStorageClasses, listProjectVolumes]
+        followups: [getProjectVolume]
+        verification:
+          mode: async-readback
+          operationId: getProjectVolume
+          idSource: /id
+          argumentBindings: { projectId: /projectId, volumeId: /id }
+          completion:
+            mode: state
+            path: /lifecycleState
+            pendingStates: [provisioning]
+            successStates: [ready]
+            failureStates: [error]
       x-luna-cli:
         command: volume.create
         classification: business-command
@@ -2414,6 +2462,25 @@ paths:
       operationId: listProjectVolumeStorageClasses
       tags: [Volumes]
       summary: List storage classes and volume capabilities from a runtime cluster
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [project-volume, storage-class]
+        action: discover
+        sideEffect: external-read
+        idempotent: true
+        replaySafe: true
+        risk: low
+        approval: never
+        intents: [列出数据卷 StorageClass, 查询集群存储类, 创建持久卷前检查存储能力]
+        useWhen: [创建项目数据卷前需要选择真实 StorageClass 或确认扩容、快照能力时]
+        avoidWhen: [已经取得并确认目标 StorageClass，或只需查看已有数据卷时]
+        prerequisites: [已有真实 projectId 和 clusterId]
+        parameterSummary: [projectId 与 clusterId 限定目标集群，结果支持分页和稳定排序]
+        successEvidence: [200 响应返回该集群实时 StorageClass 能力列表]
+        commonErrorCodes: [volume.cluster_unavailable]
+        predecessors: [listRuntimeClusters]
+        followups: [createProjectVolume]
+        verification: { mode: response, successCodes: [200] }
       x-luna-cli:
         command: volume.storage-classes
         classification: business-command
@@ -2445,6 +2512,25 @@ paths:
       operationId: getProjectVolume
       tags: [Volumes]
       summary: Get a project volume, bindings, recent transfers, and current observation
+      x-luna-agent:
+        allowed: true
+        resourceTypes: [project-volume]
+        action: read
+        sideEffect: external-read
+        idempotent: true
+        replaySafe: true
+        risk: low
+        approval: never
+        intents: [读取项目数据卷详情, 检查持久卷是否就绪, 查看卷挂载关系和传输摘要]
+        useWhen: [已经取得真实 projectVolumeId，需要权威回读规格、生命周期和 Kubernetes 实时状态时]
+        avoidWhen: [缺少 projectVolumeId 或需要按名称查找多个候选数据卷时]
+        prerequisites: [projectId 和 volumeId 必须来自用户输入或可信工具结果]
+        parameterSummary: [projectId 与 volumeId 唯一定位数据卷，可分别分页读取挂载和最近 Transfer]
+        successEvidence: [200 响应返回期望规格、实时观察、挂载关系和最近传输]
+        commonErrorCodes: [volume.not_found, volume.cluster_unavailable]
+        predecessors: [listProjectVolumes, createProjectVolume]
+        followups: []
+        verification: { mode: response, successCodes: [200] }
       x-luna-cli:
         command: volume.get
         classification: business-command
@@ -8451,6 +8537,27 @@ paths:
         "400": { description: Invalid, malformed, or cross-conversation cursor; error code is ai.timeline_cursor_invalid., content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/ai/conversations/{conversationId}/authorization:
+    get:
+      operationId: getAIConversationAuthorization
+      tags: [AI Assistant]
+      summary: Read the current-session conversation tool authorization state
+      security: [{ SessionCookie: [] }]
+      parameters: [{ name: conversationId, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: Conversation authorization state, content: { application/json: { schema: { $ref: "#/components/schemas/AIConversationAuthorization" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: revokeAIConversationAuthorization
+      tags: [AI Assistant]
+      summary: Revoke automatic tool approval for the conversation
+      security: [{ SessionCookie: [] }]
+      parameters: [{ name: conversationId, in: path, required: true, schema: { type: string } }]
+      responses:
+        "204": { description: Conversation authorization revoked }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /api/v1/ai/conversations/{conversationId}/turns:
     post:
       operationId: createAITurn
@@ -8470,7 +8577,7 @@ paths:
       parameters:
         - { name: conversationId, in: path, required: true, schema: { type: string } }
         - { name: Idempotency-Key, in: header, required: true, schema: { type: string } }
-      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AIInteractionCardToolActionInput" } } } }
       responses: { "202": { description: Tool action accepted; sensitive arguments are encrypted in the Agent tool-call store and omitted from timeline projections, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }, "401": { $ref: "#/components/responses/Unauthorized" }, "404": { $ref: "#/components/responses/NotFound" }, "409": { $ref: "#/components/responses/Conflict" } }
   /api/v1/ai/ui-actions/pending:
     get:
@@ -8491,7 +8598,7 @@ paths:
       security: [{ SessionCookie: [] }]
       parameters:
         - { name: actionId, in: path, required: true, schema: { type: string } }
-      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AIUIActionAcknowledgementInput" } } } }
       responses:
         "202": { description: UI action acknowledgement accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
@@ -8555,8 +8662,8 @@ paths:
       parameters:
         - { name: runId, in: path, required: true, schema: { type: string } }
         - { name: toolCallId, in: path, required: true, schema: { type: string } }
-      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }
-      responses: { "202": { description: Approval decision accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }, "401": { $ref: "#/components/responses/Unauthorized" }, "404": { $ref: "#/components/responses/NotFound" }, "409": { $ref: "#/components/responses/Conflict" } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AIToolApprovalDecisionInput" } } } }
+      responses: { "202": { description: Approval decision accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { description: Conversation approval requires a shared MFA challenge., content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }, "404": { $ref: "#/components/responses/NotFound" }, "409": { $ref: "#/components/responses/Conflict" } }
   /api/v1/ai/runs/{runId}/mfa/{toolCallId}/resume:
     post:
       operationId: resumeAIRunAfterMFA
@@ -8565,8 +8672,8 @@ paths:
       parameters:
         - { name: runId, in: path, required: true, schema: { type: string } }
         - { name: toolCallId, in: path, required: true, schema: { type: string } }
-      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }
-      responses: { "202": { description: MFA resume accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }, "401": { $ref: "#/components/responses/Unauthorized" }, "404": { $ref: "#/components/responses/NotFound" }, "409": { $ref: "#/components/responses/Conflict" } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AIToolMFAResumeInput" } } } }
+      responses: { "202": { description: MFA resume accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AIObject" } } } }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { description: No active assertion exists for the requested purpose; response code is mfa_required., content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }, "404": { $ref: "#/components/responses/NotFound" }, "409": { $ref: "#/components/responses/Conflict" } }
   /api/v1/ai/progress/projects/{projectId}/{operationType}/{operationId}:
     get:
       operationId: getAIProgress
@@ -9326,6 +9433,59 @@ components:
         modelId: { type: string, minLength: 5, maxLength: 64, description: Model preference used by subsequent turns in this conversation. }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+    AIConversationAuthorization:
+      type: object
+      additionalProperties: false
+      required: [active]
+      properties:
+        active: { type: boolean }
+        expiresAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    AIToolApprovalDecisionInput:
+      type: object
+      additionalProperties: false
+      required: [decision, argumentsHash, expectedVersion]
+      allOf:
+        - if:
+            properties: { decision: { const: approve_conversation } }
+          then:
+            required: [conversationId]
+      properties:
+        decision: { type: string, enum: [approve, reject, approve_conversation] }
+        argumentsHash: { type: string, pattern: "^sha256:[0-9a-f]{64}$" }
+        expectedVersion: { type: integer, minimum: 1 }
+        conversationId: { type: string, minLength: 5, maxLength: 64, description: Required only for approve_conversation. }
+        reason: { type: string, maxLength: 500 }
+    AIInteractionCardToolActionInput:
+      type: object
+      additionalProperties: false
+      required: [operationId, arguments, message, clientInstanceId]
+      properties:
+        operationId: { type: string, pattern: "^[a-zA-Z][a-zA-Z0-9_.-]{2,100}$" }
+        arguments: { type: object, additionalProperties: true }
+        message: { type: string, minLength: 1, maxLength: 2000 }
+        clientInstanceId: { type: string, minLength: 16, maxLength: 80, pattern: "^[A-Za-z0-9_-]+$" }
+    AIUIActionAcknowledgementInput:
+      type: object
+      additionalProperties: false
+      required: [clientInstanceId, status]
+      oneOf:
+        - properties: { status: { const: succeeded } }
+          required: [actualPath]
+        - properties: { status: { const: failed } }
+          required: [errorCode]
+      properties:
+        clientInstanceId: { type: string, minLength: 16, maxLength: 80, pattern: "^[A-Za-z0-9_-]+$" }
+        status: { type: string, enum: [succeeded, failed] }
+        actualPath: { type: string, minLength: 1, maxLength: 2048, pattern: "^/(?!/)" }
+        errorCode: { type: string, minLength: 3, maxLength: 120, pattern: "^[a-z][a-z0-9_.-]+$" }
+    AIToolMFAResumeInput:
+      type: object
+      additionalProperties: false
+      required: [purpose, expectedVersion]
+      properties:
+        purpose: { $ref: "#/components/schemas/MFAPurpose" }
+        expectedVersion: { type: integer, minimum: 1 }
     AIConversationCreateInput:
       type: object
       additionalProperties: false
@@ -9503,6 +9663,7 @@ components:
         approvalGranted: { type: boolean, description: True only after the Agent validated the current parameter-bound approval. }
         mfaPurpose: { type: string, description: Present only after a matching Step-up resume. }
         stepUpAssertionId: { type: string, description: API-issued assertion revalidated for the delegated user, session, and purpose. }
+        conversationAuthorizationGrant: { type: string, writeOnly: true, x-luna-sensitive: true, description: Opaque API-signed conversation authorization forwarded only by Agent. }
       required: [runActorGrant, runId, toolCallId, operationId, requestedScopes, argumentsHash, approvalGranted]
     AIDelegationResponse:
       type: object
@@ -10302,6 +10463,8 @@ components:
         - runtime_exec
         - runtime_terminal
         - secret_update
+        - secret_view
+        - ai_conversation_tools
         - registry_credential_update
         - kubeconfig_update
         - auth_provider_update

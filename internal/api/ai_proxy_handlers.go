@@ -107,6 +107,13 @@ func (h *Handlers) ProxyAIRequest(ctx *gin.Context) {
 			return
 		}
 	}
+	if ctx.FullPath() == "/api/v1/ai/runs/:runId/approvals/:toolCallId/decision" {
+		var prepared bool
+		body, prepared = h.prepareAIApprovalDecision(ctx, actor, body)
+		if !prepared {
+			return
+		}
+	}
 	if ctx.FullPath() == "/api/v1/ai/runs/:runId/mfa/:toolCallId/resume" {
 		var prepared bool
 		body, prepared = h.prepareAIToolMFAResume(ctx, actor, body)
@@ -218,32 +225,101 @@ func writePendingAIUIActionsUnavailable(ctx *gin.Context) {
 
 func (h *Handlers) prepareAIToolMFAResume(ctx *gin.Context, actor aiagent.ActorContext, body []byte) ([]byte, bool) {
 	var input struct {
-		StepUpAssertionID string `json:"stepUpAssertionId"`
-		ExpectedVersion   int    `json:"expectedVersion"`
+		Purpose         string `json:"purpose"`
+		ExpectedVersion int    `json:"expectedVersion"`
 	}
-	if json.Unmarshal(body, &input) != nil || strings.TrimSpace(input.StepUpAssertionID) == "" || input.ExpectedVersion < 1 {
+	if json.Unmarshal(body, &input) != nil || input.ExpectedVersion < 1 {
 		writeErrorCode(ctx, http.StatusBadRequest, "request.invalid_json", "invalid MFA resume input")
 		return nil, false
 	}
+	purpose := normalizeStepUpPurpose(input.Purpose)
+	if purpose == "" {
+		writeErrorCode(ctx, http.StatusBadRequest, "mfa.invalid_purpose", "invalid MFA resume purpose")
+		return nil, false
+	}
 	now := time.Now()
-	var assertion model.StepUpAssertion
-	if h.dbFor(ctx) == nil || h.dbFor(ctx).First(
-		&assertion,
-		"id = ? and user_id = ? and session_id = ? and idle_expires_at > ? and absolute_expires_at > ?",
-		input.StepUpAssertionID, actor.UserID, actor.SessionID, now, now,
-	).Error != nil || !stepUpAssertionActive(assertion, now) {
-		writeErrorCode(ctx, http.StatusForbidden, "mfa.assertion_invalid", "step-up assertion is invalid or expired")
+	assertion, ok := h.refreshActiveStepUpAssertion(ctx.Request.Context(), actor.UserID, actor.SessionID, purpose, "", now)
+	if !ok {
+		writeMFARequired(ctx, purpose)
 		return nil, false
 	}
 	prepared, err := json.Marshal(gin.H{
 		"stepUpAssertionId": assertion.ID,
-		"purpose":           assertion.Purpose,
+		"purpose":           purpose,
 		"expectedVersion":   input.ExpectedVersion,
 	})
 	if err != nil {
 		writeErrorCode(ctx, http.StatusInternalServerError, "ai.run_resume_failed", "cannot prepare MFA resume")
 		return nil, false
 	}
+	return prepared, true
+}
+
+func (h *Handlers) prepareAIApprovalDecision(ctx *gin.Context, actor aiagent.ActorContext, body []byte) ([]byte, bool) {
+	var input map[string]any
+	if json.Unmarshal(body, &input) != nil {
+		writeErrorCode(ctx, http.StatusBadRequest, "request.invalid_json", "invalid approval decision")
+		return nil, false
+	}
+	decision, _ := input["decision"].(string)
+	if decision != "approve_conversation" {
+		return body, true
+	}
+	conversationID, _ := input["conversationId"].(string)
+	conversationID = strings.TrimSpace(conversationID)
+	if len(conversationID) < 5 || len(conversationID) > 64 || strings.ContainsAny(conversationID, "/\\") {
+		writeErrorCode(ctx, http.StatusBadRequest, "request.invalid", "conversation authorization binding is invalid")
+		return nil, false
+	}
+	user, ok := h.currentUser(ctx)
+	if !ok || user.ID != actor.UserID {
+		return nil, false
+	}
+	now := time.Now()
+	var assertionID string
+	expiresAt := now.Add(defaultStepUpAbsoluteTimeout)
+	if h.stepUpMFAEnabled() {
+		if !h.requireMFAAssertion(ctx, user, stepUpPurposeAIConversationTools) {
+			return nil, false
+		}
+		assertion, active := h.refreshActiveStepUpAssertion(
+			ctx.Request.Context(), actor.UserID, actor.SessionID, stepUpPurposeAIConversationTools, "", now,
+		)
+		if !active {
+			writeMFARequired(ctx, stepUpPurposeAIConversationTools)
+			return nil, false
+		}
+		assertionID = assertion.ID
+		if assertion.AbsoluteExpiresAt.Before(expiresAt) {
+			expiresAt = assertion.AbsoluteExpiresAt
+		}
+	}
+	if actor.SessionExpiresAt > 0 && time.Unix(actor.SessionExpiresAt, 0).Before(expiresAt) {
+		expiresAt = time.Unix(actor.SessionExpiresAt, 0)
+	}
+	internalKeys, err := aiagent.LoadInternalKeys()
+	if err != nil {
+		writeErrorCode(ctx, http.StatusServiceUnavailable, "ai.delegation_not_configured", "conversation authorization trust is not configured")
+		return nil, false
+	}
+	grant, err := aiagent.SignConversationAuthorizationGrant(aiagent.ConversationAuthorizationGrant{
+		Audience: "luna-ai-conversation-authorization", Purpose: "approve_conversation_tools",
+		GrantID: id.New("aicag"), ConversationID: conversationID,
+		UserID: actor.UserID, SessionID: actor.SessionID, StepUpAssertionID: assertionID,
+		IssuedAt: now.Unix(), ExpiresAt: expiresAt.Unix(),
+	}, internalKeys.ConversationAuthorizationSigningKey)
+	if err != nil {
+		writeErrorCode(ctx, http.StatusServiceUnavailable, "ai.delegation_not_configured", "conversation authorization trust is not configured")
+		return nil, false
+	}
+	input["conversationAuthorizationGrant"] = grant
+	input["conversationAuthorizationExpiresAt"] = expiresAt.UTC().Format(time.RFC3339Nano)
+	prepared, err := json.Marshal(input)
+	if err != nil {
+		writeErrorCode(ctx, http.StatusInternalServerError, "ai.approval_failed", "cannot prepare conversation authorization")
+		return nil, false
+	}
+	h.auditWithContext(actor.UserID, "ai.conversation_authorization.issue", conversationID, true, "conversation-scoped AI tool authorization issued", ctx.Request.Context())
 	return prepared, true
 }
 
@@ -302,7 +378,7 @@ func prepareAITurnGrant(ctx *gin.Context, actor aiagent.ActorContext, body []byt
 	}
 	grant, err := aiagent.SignRunActorGrant(aiagent.RunActorGrant{
 		Audience: "luna-ai-run-grant", Purpose: "agent_delegation_exchange",
-		RunID: runID, UserID: actor.UserID, SessionID: actor.SessionID,
+		RunID: runID, ConversationID: strings.TrimSpace(ctx.Param("conversationId")), UserID: actor.UserID, SessionID: actor.SessionID,
 		OAuthGrantID: actor.OAuthGrantID,
 		IssuedAt:     now.Unix(), ExpiresAt: expiresAt.Unix(),
 	}, internalKeys.RunActorGrantSigningKey)
@@ -633,22 +709,24 @@ func aiRouteFor(ctx *gin.Context) (aiProxyRoute, bool) {
 }
 
 var aiProxyRoutes = map[string]aiProxyRoute{
-	"GET /api/v1/ai/conversations":                               {method: "GET", internal: "/internal/v1/conversations"},
-	"POST /api/v1/ai/conversations":                              {method: "POST", internal: "/internal/v1/conversations", status: http.StatusCreated, validate: validateCreateAIConversation},
-	"GET /api/v1/ai/conversations/:conversationId":               {method: "GET", internal: "/internal/v1/conversations/:conversationId"},
-	"PATCH /api/v1/ai/conversations/:conversationId":             {method: "PATCH", internal: "/internal/v1/conversations/:conversationId", validate: validateUpdateAIConversation},
-	"DELETE /api/v1/ai/conversations/:conversationId":            {method: "DELETE", internal: "/internal/v1/conversations/:conversationId"},
-	"GET /api/v1/ai/conversations/:conversationId/timeline":      {method: "GET", internal: "/internal/v1/conversations/:conversationId/timeline"},
-	"POST /api/v1/ai/conversations/:conversationId/turns":        {method: "POST", internal: "/internal/v1/conversations/:conversationId/turns", status: http.StatusAccepted, validate: validateTurnInput},
-	"POST /api/v1/ai/conversations/:conversationId/tool-actions": {method: "POST", internal: "/internal/v1/conversations/:conversationId/tool-actions", status: http.StatusAccepted, validate: validateToolActionInput},
-	"GET /api/v1/ai/ui-actions/pending":                          {method: "GET", internal: "/internal/v1/ui-actions/pending"},
-	"POST /api/v1/ai/ui-actions/:actionId/ack":                   {method: "POST", internal: "/internal/v1/ui-actions/:actionId/ack", status: http.StatusAccepted},
-	"GET /api/v1/ai/turns/:turnId/runs":                          {method: "GET", internal: "/internal/v1/turns/:turnId/runs"},
-	"POST /api/v1/ai/turns/:turnId/runs":                         {method: "POST", internal: "/internal/v1/turns/:turnId/runs", status: http.StatusAccepted},
-	"GET /api/v1/ai/runs/:runId":                                 {method: "GET", internal: "/internal/v1/runs/:runId"},
-	"GET /api/v1/ai/runs/:runId/events":                          {method: "GET", internal: "/internal/v1/runs/:runId/events", stream: true},
-	"POST /api/v1/ai/runs/:runId/cancel":                         {method: "POST", internal: "/internal/v1/runs/:runId/cancel", status: http.StatusAccepted},
-	"POST /api/v1/ai/runs/:runId/input":                          {method: "POST", internal: "/internal/v1/runs/:runId/input", status: http.StatusAccepted},
-	"POST /api/v1/ai/runs/:runId/approvals/:toolCallId/decision": {method: "POST", internal: "/internal/v1/runs/:runId/approvals/:toolCallId/decision", status: http.StatusAccepted},
-	"POST /api/v1/ai/runs/:runId/mfa/:toolCallId/resume":         {method: "POST", internal: "/internal/v1/runs/:runId/mfa/:toolCallId/resume", status: http.StatusAccepted},
+	"GET /api/v1/ai/conversations":                                  {method: "GET", internal: "/internal/v1/conversations"},
+	"POST /api/v1/ai/conversations":                                 {method: "POST", internal: "/internal/v1/conversations", status: http.StatusCreated, validate: validateCreateAIConversation},
+	"GET /api/v1/ai/conversations/:conversationId":                  {method: "GET", internal: "/internal/v1/conversations/:conversationId"},
+	"PATCH /api/v1/ai/conversations/:conversationId":                {method: "PATCH", internal: "/internal/v1/conversations/:conversationId", validate: validateUpdateAIConversation},
+	"DELETE /api/v1/ai/conversations/:conversationId":               {method: "DELETE", internal: "/internal/v1/conversations/:conversationId"},
+	"GET /api/v1/ai/conversations/:conversationId/timeline":         {method: "GET", internal: "/internal/v1/conversations/:conversationId/timeline"},
+	"GET /api/v1/ai/conversations/:conversationId/authorization":    {method: "GET", internal: "/internal/v1/conversations/:conversationId/authorization"},
+	"DELETE /api/v1/ai/conversations/:conversationId/authorization": {method: "DELETE", internal: "/internal/v1/conversations/:conversationId/authorization"},
+	"POST /api/v1/ai/conversations/:conversationId/turns":           {method: "POST", internal: "/internal/v1/conversations/:conversationId/turns", status: http.StatusAccepted, validate: validateTurnInput},
+	"POST /api/v1/ai/conversations/:conversationId/tool-actions":    {method: "POST", internal: "/internal/v1/conversations/:conversationId/tool-actions", status: http.StatusAccepted, validate: validateToolActionInput},
+	"GET /api/v1/ai/ui-actions/pending":                             {method: "GET", internal: "/internal/v1/ui-actions/pending"},
+	"POST /api/v1/ai/ui-actions/:actionId/ack":                      {method: "POST", internal: "/internal/v1/ui-actions/:actionId/ack", status: http.StatusAccepted},
+	"GET /api/v1/ai/turns/:turnId/runs":                             {method: "GET", internal: "/internal/v1/turns/:turnId/runs"},
+	"POST /api/v1/ai/turns/:turnId/runs":                            {method: "POST", internal: "/internal/v1/turns/:turnId/runs", status: http.StatusAccepted},
+	"GET /api/v1/ai/runs/:runId":                                    {method: "GET", internal: "/internal/v1/runs/:runId"},
+	"GET /api/v1/ai/runs/:runId/events":                             {method: "GET", internal: "/internal/v1/runs/:runId/events", stream: true},
+	"POST /api/v1/ai/runs/:runId/cancel":                            {method: "POST", internal: "/internal/v1/runs/:runId/cancel", status: http.StatusAccepted},
+	"POST /api/v1/ai/runs/:runId/input":                             {method: "POST", internal: "/internal/v1/runs/:runId/input", status: http.StatusAccepted},
+	"POST /api/v1/ai/runs/:runId/approvals/:toolCallId/decision":    {method: "POST", internal: "/internal/v1/runs/:runId/approvals/:toolCallId/decision", status: http.StatusAccepted},
+	"POST /api/v1/ai/runs/:runId/mfa/:toolCallId/resume":            {method: "POST", internal: "/internal/v1/runs/:runId/mfa/:toolCallId/resume", status: http.StatusAccepted},
 }

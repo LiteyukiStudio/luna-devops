@@ -68,6 +68,7 @@ export class ToolOrchestrator {
     private readonly loopGuard: LoopGuard = new InMemoryLoopGuard({
       isAsyncReadbackOperation: operationId => isAsyncReadbackOperation(catalog, operationId),
     }),
+    private readonly conversationAuthorizationResolver: (runId: string) => Promise<string | undefined> = async () => undefined,
   ) {}
 
   async propose(input: { runId: string, operationId: string, arguments: unknown, inputMode?: "model" | "direct" }): Promise<ToolCallRecord> {
@@ -112,12 +113,27 @@ export class ToolOrchestrator {
     return this.advance(call, { approved: true })
   }
 
-  async approveAll(runId: string): Promise<ToolCallRecord[]> {
+  async approveConversation(id: string, argumentsHash: string, expectedVersion: number, conversationAuthorizationGrant: string): Promise<ToolCallRecord> {
+    const call = await this.require(id)
+    this.requireApprovalBinding(call, argumentsHash, expectedVersion)
+    if (!conversationAuthorizationGrant) throw new Error("ai.conversation_authorization_invalid")
+    agentMetrics.approvals.add(1, { decision: "approve_conversation", tool: call.operationId })
+    telemetryLog("agent.approval.resolved", "info", {
+      "luna.run.id": call.runId,
+      "tool.name": call.operationId,
+      decision: "approve_conversation",
+    })
+    await this.store.emit({ type: "approval.resolved", toolCallId: call.id, data: {
+      decision: "approve_conversation", argumentsHash, expectedVersion,
+    } })
+    return this.execute(call, { approvalGranted: false, conversationAuthorizationGrant })
+  }
+
+  async approvePendingWithConversationAuthorization(runId: string, conversationAuthorizationGrant: string): Promise<ToolCallRecord[]> {
     const pending = await this.store.listAwaitingApproval(runId)
     const results: ToolCallRecord[] = []
-    for (const call of pending) {
-      results.push(await this.approve(call.id, call.argumentsHash, call.rowVersion))
-    }
+    for (const call of pending)
+      results.push(await this.approveConversation(call.id, call.argumentsHash, call.rowVersion, conversationAuthorizationGrant))
     return results
   }
 
@@ -194,16 +210,23 @@ export class ToolOrchestrator {
   private async advance(call: ToolCallRecord, state: { approved: boolean }): Promise<ToolCallRecord> {
     const operation = this.catalog.get(call.operationId)
     const decision = this.policy.evaluate(operation, state)
+    const supportsConversationAuthorization = decision.action === "wait_approval"
+      || Boolean(operation.contract?.mfaPurpose ?? operation.stepUpPurpose)
+    const conversationAuthorizationGrant = supportsConversationAuthorization
+      ? await this.conversationAuthorizationResolver(call.runId)
+      : undefined
     if (decision.action === "wait_approval") {
+      if (conversationAuthorizationGrant)
+        return this.execute(call, { approvalGranted: false, conversationAuthorizationGrant })
       return this.transition(call, "awaiting_approval", { approvalExpiresAt: Date.now() + 30 * 60_000 }, "approval.required")
     }
-    if (decision.action === "wait_mfa") {
-      return this.transition(call, "awaiting_mfa", { mfaPurpose: decision.purpose }, "mfa.required")
-    }
-    return this.execute(call, { approvalGranted: state.approved })
+    return this.execute(call, {
+      approvalGranted: state.approved,
+      ...(conversationAuthorizationGrant ? { conversationAuthorizationGrant } : {}),
+    })
   }
 
-  private async execute(call: ToolCallRecord, authorization: { approvalGranted: boolean, mfaPurpose?: string, stepUpAssertionId?: string }): Promise<ToolCallRecord> {
+  private async execute(call: ToolCallRecord, authorization: { approvalGranted: boolean, mfaPurpose?: string, stepUpAssertionId?: string, conversationAuthorizationGrant?: string }): Promise<ToolCallRecord> {
     const startedAt = performance.now()
     let outcome = "succeeded"
     const operation = this.catalog.get(call.operationId)
@@ -233,6 +256,7 @@ export class ToolOrchestrator {
             inputMode: call.inputMode ?? "model",
             ...(authorization.mfaPurpose ? { mfaPurpose: authorization.mfaPurpose } : {}),
             ...(authorization.stepUpAssertionId ? { stepUpAssertionId: authorization.stepUpAssertionId } : {}),
+            ...(authorization.conversationAuthorizationGrant ? { conversationAuthorizationGrant: authorization.conversationAuthorizationGrant } : {}),
           })
         } catch (error) {
           recordAIContent(span, "luna.gen_ai.tool.content.output", "gen_ai.tool.call.result", {
@@ -298,6 +322,8 @@ export class ToolOrchestrator {
       const purpose = (result.body as Record<string, unknown>).purpose
       return this.transition(call, "awaiting_mfa", { mfaPurpose: typeof purpose === "string" ? purpose : "" }, "tool_call.awaiting_mfa")
     }
+    if (result.status === 428 && code === "ai.approval_required")
+      return this.transition(call, "awaiting_approval", { approvalExpiresAt: Date.now() + 30 * 60_000 }, "approval.required")
     if (result.status < 200 || result.status >= 300)
       return this.fail(call, result, code ?? "ai.tool_failed", storedResult, diagnostics)
     const verification = await this.verifier.verify(call.operationId, result)

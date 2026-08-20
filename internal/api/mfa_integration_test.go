@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/LiteyukiStudio/devops/internal/aiagent"
+	"github.com/LiteyukiStudio/devops/internal/aitool"
 	"github.com/LiteyukiStudio/devops/internal/authz"
 	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/secret"
@@ -30,6 +31,100 @@ func newContextAuditedTestSecretStore(db *gorm.DB, handlers *Handlers) secret.St
 	return secret.NewStore(db, func(ctx context.Context, userID, action, resource string, success bool, message string) {
 		handlers.auditWithContext(userID, action, resource, success, message, ctx)
 	})
+}
+
+func TestAIConversationAuthorizationGrantSatisfiesApprovalAndMFAPolicy(t *testing.T) {
+	db := newMFAIntegrationDB(t)
+	t.Setenv(aiagent.InternalSecretEnvironment, "ai-conversation-authorization-integration-secret")
+	now := time.Now().UTC()
+	user := model.User{ID: "usr_ai_conversation_auth", Email: "ai-conversation-auth@example.test", Name: "AI Conversation Auth", Role: authz.PlatformRoleAdmin}
+	session := model.UserSession{ID: "ses_ai_conversation_auth", UserID: user.ID, TokenHash: "ai-conversation-auth-session", ExpiresAt: now.Add(time.Hour)}
+	assertion := model.StepUpAssertion{
+		ID: "mfaas_ai_conversation_auth", UserID: user.ID, SessionID: session.ID,
+		Purpose: stepUpPurposeAIConversationTools, VerifiedAt: now, LastActivityAt: now,
+		IdleExpiresAt: now.Add(10 * time.Minute), AbsoluteExpiresAt: now.Add(time.Hour),
+	}
+	for _, value := range []any{&user, &session, &assertion, &model.AppConfig{Key: "security.stepUpMfa.enabled", Value: "true"}} {
+		if err := db.Create(value).Error; err != nil {
+			t.Fatalf("seed %T: %v", value, err)
+		}
+	}
+	handlers := &Handlers{db: db, configs: newConfigCache(db), aiTools: aitool.NewService(db)}
+	keys, err := aiagent.LoadInternalKeys()
+	if err != nil {
+		t.Fatal(err)
+	}
+	conversationID := "aicnv_conversation_auth"
+	runGrant, err := aiagent.SignRunActorGrant(aiagent.RunActorGrant{
+		Audience: "luna-ai-run-grant", Purpose: "agent_delegation_exchange",
+		RunID: "airun_conversation_auth", ConversationID: conversationID,
+		UserID: user.ID, SessionID: session.ID, IssuedAt: now.Unix(), ExpiresAt: now.Add(time.Hour).Unix(),
+	}, keys.RunActorGrantSigningKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conversationGrant, err := aiagent.SignConversationAuthorizationGrant(aiagent.ConversationAuthorizationGrant{
+		Audience: "luna-ai-conversation-authorization", Purpose: "approve_conversation_tools",
+		GrantID: "aicag_conversation_auth", ConversationID: conversationID,
+		UserID: user.ID, SessionID: session.ID, StepUpAssertionID: assertion.ID,
+		IssuedAt: now.Unix(), ExpiresAt: now.Add(time.Hour).Unix(),
+	}, keys.ConversationAuthorizationSigningKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy := aiToolPolicies["executeReleaseRuntimeCommandSession"]
+	exchange := func(grant string) *httptest.ResponseRecorder {
+		payload, _ := json.Marshal(map[string]any{
+			"runActorGrant": runGrant, "runId": "airun_conversation_auth", "toolCallId": "aitool_conversation_auth",
+			"operationId": "executeReleaseRuntimeCommandSession", "requestedScopes": policy.Scopes,
+			"argumentsHash": "sha256:" + strings.Repeat("a", 64), "approvalGranted": false,
+			"conversationAuthorizationGrant": grant,
+		})
+		recorder := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(recorder)
+		ctx.Request = httptest.NewRequest(http.MethodPost, "/internal/v1/ai/delegations/exchange", bytes.NewReader(payload))
+		ctx.Request.Header.Set("Authorization", "Bearer "+keys.CallbackServiceToken)
+		ctx.Request.Header.Set("Content-Type", "application/json")
+		handlers.ExchangeAIDelegation(ctx)
+		return recorder
+	}
+
+	mismatchedGrant, err := aiagent.SignConversationAuthorizationGrant(aiagent.ConversationAuthorizationGrant{
+		Audience: "luna-ai-conversation-authorization", Purpose: "approve_conversation_tools",
+		GrantID: "aicag_wrong_conversation", ConversationID: "aicnv_wrong",
+		UserID: user.ID, SessionID: session.ID, StepUpAssertionID: assertion.ID,
+		IssuedAt: now.Unix(), ExpiresAt: now.Add(time.Hour).Unix(),
+	}, keys.ConversationAuthorizationSigningKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mismatch := exchange(mismatchedGrant)
+	if mismatch.Code != http.StatusPreconditionRequired || jsonString(t, mismatch.Body.Bytes(), "code") != "ai.approval_required" {
+		t.Fatalf("mismatched conversation grant = %d %s", mismatch.Code, mismatch.Body.String())
+	}
+
+	accepted := exchange(conversationGrant)
+	if accepted.Code != http.StatusOK {
+		t.Fatalf("conversation-authorized exchange = %d %s", accepted.Code, accepted.Body.String())
+	}
+	var response struct {
+		AccessToken string `json:"accessToken"`
+	}
+	if err := json.Unmarshal(accepted.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	claims, err := aiagent.VerifyDelegationToken(response.AccessToken, keys.DelegationTokenSigningKey, time.Now())
+	if err != nil || !claims.ConversationAuthorized || claims.ConversationID != conversationID || claims.MFAPurpose != stepUpPurposeRuntimeExec {
+		t.Fatalf("delegation claims = %#v, err=%v", claims, err)
+	}
+
+	if err := db.Delete(&assertion).Error; err != nil {
+		t.Fatal(err)
+	}
+	revoked := exchange(conversationGrant)
+	if revoked.Code != http.StatusPreconditionRequired || jsonString(t, revoked.Body.Bytes(), "code") != "ai.approval_required" {
+		t.Fatalf("revoked conversation assertion = %d %s", revoked.Code, revoked.Body.String())
+	}
 }
 
 func TestMFAEnrollmentVerificationRecoveryAndDisableFlow(t *testing.T) {
@@ -138,7 +233,7 @@ func TestMFAEnrollmentVerificationRecoveryAndDisableFlow(t *testing.T) {
 	if err != nil || refreshedAssertionID != securityAssertionID {
 		t.Fatalf("refreshed assertion ID = %q, want %q, err=%v", refreshedAssertionID, securityAssertionID, err)
 	}
-	resumeInput, err := json.Marshal(map[string]any{"stepUpAssertionId": securityAssertionID, "expectedVersion": 2})
+	resumeInput, err := json.Marshal(map[string]any{"purpose": stepUpPurposeSecuritySettingsUpdate, "expectedVersion": 2})
 	if err != nil {
 		t.Fatal(err)
 	}

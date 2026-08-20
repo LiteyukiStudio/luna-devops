@@ -43,6 +43,15 @@ export type Conversation = {
   updatedAt: string
 }
 
+export type ConversationAuthorization = {
+  conversationId: string
+  sessionId: string
+  catalogDigest: string
+  grantCiphertext: string
+  expiresAt: string
+  updatedAt: string
+}
+
 export type Turn = {
   id: string
   conversationId: string

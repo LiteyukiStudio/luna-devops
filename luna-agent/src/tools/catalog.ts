@@ -1,6 +1,11 @@
 import { createHash } from "node:crypto"
 import { z } from "zod"
-import type { ModelToolDefinition, ModelToolSearchResult } from "../provider/provider.js"
+import type {
+  ModelToolDefinition,
+  ModelToolDirectoryRequest,
+  ModelToolDirectoryResult,
+  ModelToolSearchResult,
+} from "../provider/provider.js"
 import { redact } from "../redaction.js"
 import { validateToolArguments } from "./argument-validator.js"
 import {
@@ -71,7 +76,7 @@ const operationDescriptions: Record<string, string> = {
   listRuntimeClusters: "列出当前项目空间可见的运行集群（名称、类型、作用域）。用于部署配置前发现真实可用集群；clusterId 为空时平台默认使用默认集群，因此只有存在多个候选且必须由用户决定时才需要用它取得真实候选。一次最多返回 20 条，结果可能包含 truncated 标记。",
   listProjectVolumes: "分页列出项目空间数据卷及 Kubernetes 实时观察，用于查找可用、已预留、使用中或异常的数据卷。先用 projectId、clusterId、availability 和 search 收窄范围；不要把旧保留卷接口当作新数据卷中心。",
   getProjectVolume: "读取单个项目数据卷的期望规格、实时观察、挂载关系和最近传输摘要。适合在挂载、扩容、导出、重试或删除前完成权威回读。",
-  createProjectVolume: "创建空白项目数据卷、引用或纳管同 Namespace 已有 PVC，或从同集群 VolumeSnapshot 恢复。必须先取得真实 projectId、clusterId 和存储类；纳管需要明确确认与 Step-up。",
+  createProjectVolume: "创建空白项目数据卷、引用同 Namespace 已有 PVC，或从同集群 VolumeSnapshot 恢复。必须先取得真实 projectId、clusterId 和存储类；把已有 PVC 纳管为 managed 需改用能完成条件 MFA 的控制台或 Luna CLI。",
   updateProjectVolume: "更新项目数据卷展示名或扩容。容量只能增加，必须携带详情回读得到的 revision；存储类、访问模式和卷模式不能就地修改。",
   previewProjectVolumeDeletion: "删除或移除项目数据卷引用前，读取挂载、运行中传输和底层 PVC 影响。任何删除请求都必须先调用此操作，并依据 dataAction 与阻断项向用户解释影响。",
   deleteProjectVolume: "删除托管数据卷或移除外部 PVC 引用。托管卷只允许 delete，引用卷只允许 detach；操作不可逆且必须在预检、明确确认和 Step-up 后执行。",
@@ -140,7 +145,7 @@ const operationGuidance: Record<string, ToolGuidance> = {
   },
   listProjectVolumes: { intents: ["数据卷列表", "查找数据卷", "可用卷", "项目卷", "project volumes"], useWhen: "需要发现项目空间中的数据卷、检查消费状态或为部署选择真实 projectVolumeId 时。", prerequisites: "必须先取得真实 projectId；为部署选择时还应确定目标 clusterId。", followups: ["getProjectVolume"] },
   getProjectVolume: { intents: ["数据卷详情", "卷状态", "挂载关系", "volume details"], useWhen: "已经取得 projectVolumeId，需要权威回读实时 PVC 状态、挂载关系或 Transfer 摘要时。", prerequisites: "projectVolumeId 必须来自用户输入或可信工具结果。" },
-  createProjectVolume: { intents: ["创建数据卷", "空白卷", "纳管PVC", "快照恢复", "create volume"], useWhen: "用户明确要创建独立项目数据卷，并已确定集群、容量、存储类、访问模式和来源时。", avoidWhen: "用户要导入本地归档时应引导使用 Web/CLI，不要把文件内容放入工具参数。", prerequisites: "先查询真实运行集群和存储类；纳管已有 PVC 必须获得明确确认。", followups: ["getProjectVolume"] },
+  createProjectVolume: { intents: ["创建数据卷", "空白卷", "引用PVC", "快照恢复", "create volume"], useWhen: "用户明确要创建独立项目数据卷，并已确定集群、容量、存储类、访问模式和来源时。", avoidWhen: "用户要导入本地归档或把已有 PVC 纳管为 managed 时应引导使用 Web/CLI；不要把文件内容放入工具参数。", prerequisites: "先查询真实运行集群和存储类；已有 PVC 仅使用 referenced 引用模式。", followups: ["getProjectVolume"] },
   updateProjectVolume: { intents: ["数据卷扩容", "卷改名", "expand volume", "rename volume"], useWhen: "用户明确要扩容或修改展示名，且已从详情取得最新 revision 时。", avoidWhen: "不得尝试缩容或就地更换存储类、访问模式、卷模式。", prerequisites: "先调用 getProjectVolume 回读最新 revision。", followups: ["getProjectVolume"] },
   previewProjectVolumeDeletion: { intents: ["删除数据卷预检", "卷删除影响", "volume deletion preview"], useWhen: "用户要求删除卷或移除外部 PVC 引用时，必须先检查阻断挂载、Transfer 与底层数据影响。", prerequisites: "先取得真实 projectVolumeId。", followups: ["deleteProjectVolume"] },
   deleteProjectVolume: { intents: ["删除数据卷", "移除PVC引用", "delete volume", "detach volume"], useWhen: "预检允许、用户已明确选择 delete/detach 并确认数据影响时。", avoidWhen: "存在挂载或运行中 Transfer 时不得尝试绕过。", prerequisites: "必须先调用 previewProjectVolumeDeletion，并取得最新 revision 与 Step-up。" },
@@ -246,6 +251,51 @@ export class ToolCatalog {
   }
   select(category: string, limit = 15): ToolOperation[] {
     return [...this.allowedOperations.values()].filter(item => item.category === category).slice(0, Math.min(15, limit))
+  }
+
+  browse(request: ModelToolDirectoryRequest): ModelToolDirectoryResult {
+    if (request.mode === "details") {
+      const requested = unique(request.operationIds)
+      const details = requested.flatMap((operationId) => {
+        const item = this.allowedOperations.get(operationId)
+        return item
+          ? [{ operationId: item.operationId, category: item.category, description: this.toModelTool(item).description }]
+          : []
+      })
+      const loadedOperationIds = details.map(item => item.operationId)
+      const loaded = new Set(loadedOperationIds)
+      return {
+        mode: "details",
+        entries: [],
+        details,
+        loadedOperationIds,
+        missingOperationIds: requested.filter(operationId => !loaded.has(operationId)),
+        total: details.length,
+      }
+    }
+
+    const normalizedCategory = request.category?.trim().toLowerCase()
+    const values = [...this.allowedOperations.values()]
+      .filter(item => !normalizedCategory || item.category.toLowerCase() === normalizedCategory)
+      .sort((left, right) => compareOperationIds(left.operationId, right.operationId))
+    const offset = (request.page - 1) * request.pageSize
+    return {
+      mode: "list",
+      entries: values.slice(offset, offset + request.pageSize).map(item => ({
+        operationId: item.operationId,
+        category: item.category,
+        action: item.contract.action,
+        risk: item.contract.risk,
+        summary: directorySummary(item),
+      })),
+      details: [],
+      loadedOperationIds: [],
+      missingOperationIds: [],
+      total: values.length,
+      page: request.page,
+      pageSize: request.pageSize,
+      totalPages: values.length ? Math.ceil(values.length / request.pageSize) : 0,
+    }
   }
 
   private searchResult(query: string, retrieval: ToolRetrievalResult): CatalogSearchResult {
@@ -409,6 +459,14 @@ function operationVerb(operationId: string): string {
   return "执行"
 }
 
+function directorySummary(item: ToolOperation & { contract: NonNullable<ToolOperation["contract"]> }): string {
+  const value = operationDescriptions[item.operationId]
+    || item.contract.intents.slice(0, 2).join("；")
+    || item.contract.useWhen[0]
+    || item.operationId
+  return [...value].slice(0, 120).join("")
+}
+
 function categoryLabel(category: string): string {
   const labels: Record<string, string> = {
     applications: "应用",
@@ -423,6 +481,7 @@ function categoryLabel(category: string): string {
     notifications: "通知",
     projects: "项目空间",
     projectvolumes: "项目数据卷",
+    volumes: "项目数据卷",
     registries: "镜像站",
     releases: "发布",
     runtime: "运行时",

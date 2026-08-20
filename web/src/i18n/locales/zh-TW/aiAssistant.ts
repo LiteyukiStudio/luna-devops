@@ -531,7 +531,6 @@ const aiAssistant = {
       input: '無法提交補充資訊',
       approval: '無法提交審批決定',
       mfa: '驗證失敗',
-      mfaAssertion: '驗證成功但未返回可用的 Step-up 憑據',
     },
     approval: {
       title: '需要操作批准',
@@ -540,14 +539,15 @@ const aiAssistant = {
       reasonPlaceholder: '可選，最多 500 字',
       invalidBinding: '批准引數繫結資訊不完整，已阻止操作。',
       reject: '拒絕',
-      approveAll: '全部同意',
+      approveConversation: '同意（本會話不再詢問）',
+      conversationActive: '本會話已自動批准需要確認或二次驗證的工具，最晚有效至 {{expiry}}',
+      revokeConversation: '撤銷',
       approve: '批准執行',
     },
     mfa: {
       title: '需要二次驗證',
       description: '完成平臺 Step-up MFA 後，助手才會繼續當前工具呼叫。',
-      code: '六位驗證碼',
-      verify: '驗證並繼續',
+      continue: '完成驗證並繼續',
     },
     conversations: {
       title: '會話',

@@ -18,8 +18,9 @@
   -> Top 8 完整 Schema 按需注入主模型
 ```
 
-检索必须在每次主模型调用前由 Agent 自动完成。`search_tools` 只保留为工具结果引出新业务域、
-当前候选不足或模型需要二次发现时的扩展入口，不能再要求模型通过一次主动搜索才能获得第一批
+检索必须在每次主模型调用前由 Agent 自动完成。`browse_tools` 提供确定性兜底：先返回轻量全目录，
+再按精确 operationId 加载最多 8 个完整工具；`search_tools` 只保留为无法从轻量目录确定候选、工具
+结果引出新业务域或当前候选不足时的语义扩展入口，不能再要求模型通过一次主动搜索才能获得第一批
 平台工具。
 
 工具目录约两百项，首版不引入独立向量数据库。工具向量按 Catalog digest 持久化为派生数据，
@@ -399,6 +400,11 @@ type ToolRerankResult = {
 工具进入候选不代表获得执行权限。
 
 ### 9.2 二次检索
+
+`browse_tools` 不参与语义排序。`list` 只返回已准入工具的 operationId、分类、风险和一句话用途，
+并支持分类过滤与分页；`details` 只接受目录中出现的精确 operationId，将完整说明与 Schema 加入
+后续 `loadedOperationIds`。该路径用于消除“召回没命中就误判没有能力”的单点失败，不授予权限，
+也不把目录结果当成业务执行证据。
 
 `search_tools` 复用同一检索管线，不维护第二套算法。适用范围：
 
@@ -832,8 +838,9 @@ Stage 1；生产默认仍保持 `TOOL_RETRIEVAL_MODE=shadow`，不得在 300 条
 - 已实现 Unicode 分词、BM25、多向量内存索引、RRF、工作流 predecessor/followup/verifier、
   sticky tools、可插拔 Embedding/Reranker 和明确降级；实际 Provider、Catalog digest 向量持久化
   与原子索引切换仍待完成。
-- 自动检索默认 Top 8、模型可见平台工具上限 12；`search_tools` 复用同一检索器并真实扩张下一
-  步集合。影子模式仍向模型下发全部“显式准入”工具，只记录有限枚举检索遥测。
+- 自动检索默认 Top 8、模型可见平台工具上限 12；`browse_tools` 可按精确 operationId 确定性加载，
+  `search_tools` 复用同一检索器并真实扩张下一步集合。影子模式仍向模型下发全部“显式准入”工具，
+  只记录有限枚举检索遥测。
 - 大型 `create_interaction_cards` 联合 Schema 已退出生产模型工具集，替换为 7 个按业务意图拆分
   的窄工具；旧 operationId 只保留 Timeline/Web/历史恢复协议。最大模型可见卡片 Schema 相比旧
   联合 Schema 缩小约 82.9%。权威进度/结果的契约自动投影仍属于后续阶段。
@@ -846,14 +853,15 @@ Stage 1；生产默认仍保持 `TOOL_RETRIEVAL_MODE=shadow`，不得在 300 条
   使用真实信封夹具覆盖。
 - `updateDeploymentTarget` 显式准入；创建或修复部署目标前必须由 `listRuntimeClusters` 取得真实
   `clusterId`，不得以空值或重复创建资源规避前置条件。
-- `search_tools` 只能在当前 Run 内真实执行一次并把命中工具扩张到下一模型步；主模型不再通过
-  `create_options` 把检索责任退回给用户。内部检索调用会持久化脱敏参数、结果、耗时和 Trace。
+- `browse_tools` 与 `search_tools` 都必须在当前 Run 内真实执行并把详情或命中工具扩张到下一模型步；
+  主模型不再通过 `create_options` 把发现责任退回给用户。内部目录调用会持久化脱敏参数、结果、耗时
+  和 Trace，并使用有限枚举 Metric，不记录目录请求正文。
 - 最近 5 分钟内的相同成功空读取会以会话历史指纹种入新 Run 的 LoopGuard；第二次实际调用前返回
   `ai.tool_no_new_information`，执行器把它转换为模型可解释的结构化结果，不把整轮会话打成失败。
   非空实时状态不继承该指纹，用户明确刷新时仍可重新观察。
 - OpenAPI Catalog 启动时逐个校验传输层与 Agent Contract 的幂等、批准、MFA、副作用和成功状态；
   每个异步回读对还校验 verifier 存在、双向工作流关系、所有必填参数绑定、写响应 ID 指针、完成态
-  路径及终态 enum。当前 48 个准入平台工具和 3 对异步回读必须全量通过，否则 Catalog fail closed。
+  路径及终态 enum。当前 52 个准入平台工具和 4 对异步回读必须全量通过，否则 Catalog fail closed。
 - `predecessors` 的检索语义按副作用收紧：只有写目标可以提升未完成的只读前置；读取/verifier 上
   为表达反向关系登记的写操作不得成为 `required_predecessor`。该门禁防止“读取应用详情”把“创建
   应用”排到首位。
@@ -899,6 +907,7 @@ Stage 1；生产默认仍保持 `TOOL_RETRIEVAL_MODE=shadow`，不得在 300 条
 ### M4：动态加载灰度
 
 - 初始自动 Top 8、平台工具总量上限、run sticky 和 verifier 保留生效。
+- `browse_tools` 轻量列表与精确详情加载作为确定性能力发现兜底。
 - `search_tools` 复用同一检索器并真实扩张后续工具集合。
 - 按读取、写入、高风险域逐级灰度，提供快速配置回退。
 

@@ -66,7 +66,9 @@ describe("tool catalog and orchestration", () => {
     expect(store.events.at(-1)?.data.durationMs).toEqual(expect.any(Number))
   })
   it("binds approval to arguments and requires MFA separately", async () => {
-    const client = new DeterministicLunaApiClient(() => ({ status: 200, body: { restarted: true } }))
+    const client = new DeterministicLunaApiClient(request => request.stepUpAssertionId
+      ? { status: 200, body: { restarted: true } }
+      : { status: 428, body: { code: "mfa_required", purpose: "deployment_restart" } })
     const orchestrator = new ToolOrchestrator(catalog, client, new MemoryToolCallStore(), undefined, undefined, resolveGrant)
     const pending = await orchestrator.propose({ runId: "airun_test", operationId: "restartRelease", arguments: { releaseId: "rel_a" } })
     expect(pending.status).toBe("awaiting_approval")
@@ -74,7 +76,9 @@ describe("tool catalog and orchestration", () => {
     expect(mfa).toMatchObject({ status: "awaiting_mfa", mfaPurpose: "deployment_restart" })
     const completed = await orchestrator.resumeMfa(mfa.id, "deployment_restart", mfa.rowVersion, "mfa_assertion_1")
     expect(completed.status).toBe("succeeded")
-    expect(client.calls[0]).toMatchObject({ approvalGranted: true, mfaPurpose: "deployment_restart", stepUpAssertionId: "mfa_assertion_1" })
+    expect(client.calls).toHaveLength(2)
+    expect(client.calls[0]).toMatchObject({ approvalGranted: true })
+    expect(client.calls[1]).toMatchObject({ approvalGranted: true, mfaPurpose: "deployment_restart", stepUpAssertionId: "mfa_assertion_1" })
   })
   it("executes the approved original arguments while only emitting a redacted projection", async () => {
     const sensitiveCatalog = ToolCatalog.load([{
@@ -111,6 +115,55 @@ describe("tool catalog and orchestration", () => {
     expect(sensitiveStore.events[0]?.data.arguments).toEqual({
       projectId: "prj_1",
       body: { username: "app", password: "[REDACTED]" },
+    })
+  })
+  it("reuses a conversation authorization for later approval-required tools", async () => {
+    const client = new DeterministicLunaApiClient(() => ({ status: 200, body: { restarted: true } }))
+    const orchestrator = new ToolOrchestrator(
+      catalog,
+      client,
+      new MemoryToolCallStore(),
+      undefined,
+      undefined,
+      resolveGrant,
+      undefined,
+      async () => "conversation-authorization-grant",
+    )
+    const completed = await orchestrator.propose({
+      runId: "airun_later",
+      operationId: "restartRelease",
+      arguments: { releaseId: "rel_later" },
+    })
+    expect(completed.status).toBe("succeeded")
+    expect(client.calls[0]).toMatchObject({
+      approvalGranted: false,
+      conversationAuthorizationGrant: "conversation-authorization-grant",
+    })
+  })
+  it("reuses a conversation authorization for MFA-only tools", async () => {
+    const mfaOnlyCatalog = ToolCatalog.load([{
+      operationId: "viewProtectedLog", method: "GET", path: "/api/v1/logs/protected", category: "logs",
+      risk: "read", requiredScopes: ["logs:read"], approval: "never", stepUpPurpose: "secret_view",
+      idempotent: true, timeoutMs: 5000,
+      contract: responseToolContract({ resourceTypes: ["log"], mfaPurpose: "secret_view" }),
+      inputSchema: { type: "object", properties: {}, required: [], additionalProperties: false },
+    }])
+    const client = new DeterministicLunaApiClient(() => ({ status: 200, body: { protected: true } }))
+    const orchestrator = new ToolOrchestrator(
+      mfaOnlyCatalog,
+      client,
+      new MemoryToolCallStore(),
+      undefined,
+      undefined,
+      resolveGrant,
+      undefined,
+      async () => "conversation-authorization-grant",
+    )
+    const completed = await orchestrator.propose({ runId: "airun_mfa_only", operationId: "viewProtectedLog", arguments: {} })
+    expect(completed.status).toBe("succeeded")
+    expect(client.calls[0]).toMatchObject({
+      approvalGranted: false,
+      conversationAuthorizationGrant: "conversation-authorization-grant",
     })
   })
   it("enforces the configured high per-run tool-call ceiling", async () => {

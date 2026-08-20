@@ -9,14 +9,39 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/aitool"
 )
 
-func TestProjectVolumeOperationsRequireExplicitAgentAdmission(t *testing.T) {
+func TestProjectVolumeInstallPathHasExplicitAgentAdmission(t *testing.T) {
+	tests := map[string]struct {
+		scope    string
+		risk     string
+		approval string
+	}{
+		"listProjectVolumes":              {scope: "volume:read", risk: "read", approval: "never"},
+		"getProjectVolume":                {scope: "volume:read", risk: "read", approval: "never"},
+		"listProjectVolumeStorageClasses": {scope: "volume:read", risk: "read", approval: "never"},
+		"createProjectVolume":             {scope: "volume:write", risk: "sensitive", approval: "always"},
+	}
+	for operationID, test := range tests {
+		operation, ok := aitool.PlatformOperation(operationID)
+		if !ok {
+			t.Fatalf("reviewed volume operation %s is missing from Agent catalog", operationID)
+		}
+		if !reflect.DeepEqual(operation.RequiredScopes, []string{test.scope}) || operation.Risk != test.risk || operation.Approval != test.approval {
+			t.Fatalf("%s Agent policy = %#v", operationID, operation)
+		}
+	}
+
+	create, _ := aitool.PlatformOperation("createProjectVolume")
+	verification := create.Contract.Verification
+	if verification.Mode != "async-readback" || verification.OperationID != "getProjectVolume" || verification.Completion == nil || !slices.Contains(verification.Completion.SuccessStates, "ready") {
+		t.Fatalf("createProjectVolume verification = %#v", verification)
+	}
+
 	for _, operationID := range []string{
-		"listProjectVolumes", "getProjectVolume", "listProjectVolumeStorageClasses",
-		"createProjectVolume", "updateProjectVolume", "previewProjectVolumeDeletion",
+		"updateProjectVolume", "previewProjectVolumeDeletion",
 		"deleteProjectVolume", "createVolumeExport",
 	} {
 		if operation, ok := aitool.PlatformOperation(operationID); ok {
-			t.Fatalf("unreviewed volume operation %s entered Agent catalog: %#v", operationID, operation.Contract)
+			t.Fatalf("out-of-scope volume operation %s entered Agent catalog: %#v", operationID, operation.Contract)
 		}
 	}
 }

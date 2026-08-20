@@ -88,6 +88,7 @@ const accountPage = {
     verify: '驗證並繼續',
     verifyFailed: '驗證失敗，請檢查驗證碼後重試。',
     purposes: {
+      ai_conversation_tools: '授權目前 AI 會話中的高風險工具',
       runtime_exec: '執行執行命令',
       runtime_terminal: '開啟 Web Console',
       secret_update: '修改金鑰',

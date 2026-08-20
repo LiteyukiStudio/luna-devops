@@ -15,6 +15,7 @@ export type ToolExecutionRequest = {
   approvalGranted: boolean
   mfaPurpose?: string
   stepUpAssertionId?: string
+  conversationAuthorizationGrant?: string
   signal?: AbortSignal
 }
 export type ToolExecutionResult = { status: number, body: unknown, requestId?: string }
@@ -48,6 +49,7 @@ export class HttpLunaApiToolClient implements LunaApiToolClient {
         approvalGranted: request.approvalGranted,
         ...(request.mfaPurpose ? { mfaPurpose: request.mfaPurpose } : {}),
         ...(request.stepUpAssertionId ? { stepUpAssertionId: request.stepUpAssertionId } : {}),
+        ...(request.conversationAuthorizationGrant ? { conversationAuthorizationGrant: request.conversationAuthorizationGrant } : {}),
       }),
       ...(request.signal ? { signal: request.signal } : {}),
     }, "delegation_exchange", request.signal, true)

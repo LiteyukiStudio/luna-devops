@@ -400,6 +400,30 @@ describe("platform tool catalog", () => {
     expect(result.matches.find(match => match.operationId === expectedOperationId)?.description).toContain("适用：")
   })
 
+  it("lists a compact deterministic directory and loads exact tool details", () => {
+    const catalog = ToolCatalog.load(contractedPlatformOperations)
+    const directory = catalog.browse({ mode: "list", page: 1, pageSize: 200 })
+
+    expect(directory.mode).toBe("list")
+    expect(directory.entries.map(item => item.operationId)).toEqual(
+      [...directory.entries.map(item => item.operationId)].sort(),
+    )
+    expect(directory.entries.find(item => item.operationId === "getDashboard")).toMatchObject({
+      category: "dashboard",
+      action: "read",
+      risk: "low",
+    })
+    expect(directory.loadedOperationIds).toEqual([])
+
+    const details = catalog.browse({
+      mode: "details",
+      operationIds: ["getDashboard", "missingOperation", "getDashboard"],
+    })
+    expect(details.loadedOperationIds).toEqual(["getDashboard"])
+    expect(details.missingOperationIds).toEqual(["missingOperation"])
+    expect(details.details[0]?.description).toContain("适用：")
+  })
+
   it("keeps the unsupported local archive upload operation out of the model directory", () => {
     const importOperation = {
       operationId: "createVolumeImport",

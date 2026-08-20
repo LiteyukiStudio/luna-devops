@@ -15,12 +15,13 @@ const (
 )
 
 type InternalKeys struct {
-	ServiceToken               string
-	ActorSigningKey            string
-	CallbackServiceToken       string
-	RunActorGrantSigningKey    string
-	DelegationTokenSigningKey  string
-	RunGrantEncryptionKeyBytes []byte
+	ServiceToken                        string
+	ActorSigningKey                     string
+	CallbackServiceToken                string
+	RunActorGrantSigningKey             string
+	DelegationTokenSigningKey           string
+	ConversationAuthorizationSigningKey string
+	RunGrantEncryptionKeyBytes          []byte
 }
 
 func LoadInternalKeys() (InternalKeys, error) {
@@ -58,17 +59,22 @@ func DeriveInternalKeys(secret string) (InternalKeys, error) {
 	if err != nil {
 		return InternalKeys{}, err
 	}
+	conversationAuthorizationSigningKey, err := deriveText("conversation-authorization-signing-key")
+	if err != nil {
+		return InternalKeys{}, err
+	}
 	runGrantEncryptionKey, err := deriveInternalKey(secret, "run-grant-encryption-key")
 	if err != nil {
 		return InternalKeys{}, err
 	}
 	return InternalKeys{
-		ServiceToken:               serviceToken,
-		ActorSigningKey:            actorSigningKey,
-		CallbackServiceToken:       callbackServiceToken,
-		RunActorGrantSigningKey:    runActorGrantSigningKey,
-		DelegationTokenSigningKey:  delegationTokenSigningKey,
-		RunGrantEncryptionKeyBytes: runGrantEncryptionKey,
+		ServiceToken:                        serviceToken,
+		ActorSigningKey:                     actorSigningKey,
+		CallbackServiceToken:                callbackServiceToken,
+		RunActorGrantSigningKey:             runActorGrantSigningKey,
+		DelegationTokenSigningKey:           delegationTokenSigningKey,
+		ConversationAuthorizationSigningKey: conversationAuthorizationSigningKey,
+		RunGrantEncryptionKeyBytes:          runGrantEncryptionKey,
 	}, nil
 }
 

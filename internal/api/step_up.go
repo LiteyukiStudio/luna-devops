@@ -35,6 +35,7 @@ const (
 	stepUpPurposeVolumeExport             = "volume_export"
 	stepUpPurposeVolumeAdopt              = "volume_adopt"
 	stepUpPurposeVolumeDelete             = "volume_delete"
+	stepUpPurposeAIConversationTools      = "ai_conversation_tools"
 
 	defaultStepUpIdleTimeout     = 10 * time.Minute
 	defaultStepUpAbsoluteTimeout = 60 * time.Minute
@@ -59,6 +60,7 @@ var allowedStepUpPurposes = map[string]struct{}{
 	stepUpPurposeVolumeExport:             {},
 	stepUpPurposeVolumeAdopt:              {},
 	stepUpPurposeVolumeDelete:             {},
+	stepUpPurposeAIConversationTools:      {},
 }
 
 var errStepUpAuthorizationChanged = errors.New("step-up authorization changed")
@@ -307,6 +309,36 @@ func writeMFARequiredStatus(ctx *gin.Context, purpose string, status int) {
 
 func stepUpAssertionActive(assertion model.StepUpAssertion, now time.Time) bool {
 	return assertion.ID != "" && assertion.IdleExpiresAt.After(now) && assertion.AbsoluteExpiresAt.After(now)
+}
+
+func (h *Handlers) refreshActiveStepUpAssertion(ctx context.Context, userID, sessionID, purpose, assertionID string, now time.Time) (model.StepUpAssertion, bool) {
+	purpose = normalizeStepUpPurpose(purpose)
+	if h.dbWithContext(ctx) == nil || userID == "" || sessionID == "" || purpose == "" {
+		return model.StepUpAssertion{}, false
+	}
+	query := h.dbWithContext(ctx).Where(
+		"user_id = ? and session_id = ? and purpose = ? and idle_expires_at > ? and absolute_expires_at > ?",
+		userID, sessionID, purpose, now, now,
+	)
+	if strings.TrimSpace(assertionID) != "" {
+		query = query.Where("id = ?", strings.TrimSpace(assertionID))
+	}
+	var assertion model.StepUpAssertion
+	if query.First(&assertion).Error != nil || !stepUpAssertionActive(assertion, now) {
+		return model.StepUpAssertion{}, false
+	}
+	idleTimeout, _ := h.stepUpTimeouts()
+	idleExpiresAt := refreshedStepUpIdleExpiry(now, idleTimeout, assertion.AbsoluteExpiresAt)
+	result := h.dbWithContext(ctx).Model(&model.StepUpAssertion{}).
+		Where("id = ? and idle_expires_at > ? and absolute_expires_at > ?", assertion.ID, now, now).
+		Updates(map[string]any{"last_activity_at": now, "idle_expires_at": idleExpiresAt, "updated_at": now})
+	if result.Error != nil || result.RowsAffected != 1 {
+		return model.StepUpAssertion{}, false
+	}
+	assertion.LastActivityAt = now
+	assertion.IdleExpiresAt = idleExpiresAt
+	assertion.UpdatedAt = now
+	return assertion, true
 }
 
 func refreshedStepUpIdleExpiry(now time.Time, idleTimeout time.Duration, absoluteExpiresAt time.Time) time.Time {

@@ -9,7 +9,7 @@ import type { ModelProvider } from "./provider/provider.js"
 import type { ProviderConfigClient } from "./provider/config-client.js"
 import { OpenAICompatibleProvider } from "./provider/openai-compatible.js"
 import { redact } from "./redaction.js"
-import type { ToolOrchestrator } from "./tools/orchestrator.js"
+import type { ToolCallRecord, ToolOrchestrator } from "./tools/orchestrator.js"
 import { presentEvent, presentTimeline } from "./timeline-presenter.js"
 import { defaultRuntimeSettings } from "./runtime-settings.js"
 import { captureTraceContext, internalSpanOptions, stableErrorCode as telemetryErrorCode, telemetryLog, withSpan } from "./telemetry.js"
@@ -120,6 +120,7 @@ export function buildServer(input: {
           longTermMemory: false,
           mfa: Boolean(input.tools),
           toolCalling: Boolean(input.tools),
+          conversationApprovals: Boolean(input.tools),
         },
         limits: {
           maxInputBytes: runtime.maxInputBytes,
@@ -208,6 +209,28 @@ export function buildServer(input: {
       const { conversationId } = z.object({ conversationId: id }).parse(request.params)
       const deleted = await input.repository.deleteConversation(request.actor.userId, conversationId)
       return deleted ? reply.code(204).send() : reply.code(404).send(errorBody("ai.conversation_not_found", request.id))
+    })
+    secured.get("/internal/v1/conversations/:conversationId/authorization", async (request, reply) => {
+      reply.header("cache-control", "no-store")
+      const { conversationId } = z.object({ conversationId: id }).parse(request.params)
+      const authorization = await input.repository.getConversationAuthorization(
+        request.actor.userId,
+        conversationId,
+        request.actor.sessionId,
+        input.toolCatalogDigest ?? "sha256:platform-tools-v1",
+      )
+      if (!await input.repository.getConversation(request.actor.userId, conversationId))
+        return reply.code(404).send(errorBody("ai.conversation_not_found", request.id))
+      return authorization
+        ? { active: true, expiresAt: authorization.expiresAt, updatedAt: authorization.updatedAt }
+        : { active: false }
+    })
+    secured.delete("/internal/v1/conversations/:conversationId/authorization", async (request, reply) => {
+      const { conversationId } = z.object({ conversationId: id }).parse(request.params)
+      const revoked = await input.repository.revokeConversationAuthorization(request.actor.userId, conversationId)
+      if (!revoked) return reply.code(404).send(errorBody("ai.conversation_not_found", request.id))
+      telemetryLog("agent.conversation_authorization.revoked", "info")
+      return reply.code(204).send()
     })
     secured.get("/internal/v1/conversations/:conversationId/timeline", async (request, reply) => {
       reply.header("cache-control", "no-store")
@@ -365,7 +388,18 @@ export function buildServer(input: {
     secured.post("/internal/v1/runs/:runId/approvals/:toolCallId/decision", async (request, reply) => {
       if (!input.tools) return reply.code(503).send(errorBody("ai.tool_not_available", request.id))
       const { runId, toolCallId } = z.object({ runId: id, toolCallId: id }).parse(request.params)
-      const body = z.object({ decision: z.enum(["approve", "reject", "approve_all"]), argumentsHash: z.string(), expectedVersion: z.number().int(), reason: z.string().max(500).optional() }).parse(request.body)
+      const body = z.object({
+        decision: z.enum(["approve", "reject", "approve_conversation"]),
+        argumentsHash: z.string(),
+        expectedVersion: z.number().int(),
+        reason: z.string().max(500).optional(),
+        conversationId: id.optional(),
+        conversationAuthorizationGrant: z.string().min(16).max(8192).optional(),
+        conversationAuthorizationExpiresAt: z.string().datetime().optional(),
+      }).superRefine((value, context) => {
+        if (value.decision === "approve_conversation" && (!value.conversationId || !value.conversationAuthorizationGrant || !value.conversationAuthorizationExpiresAt))
+          context.addIssue({ code: "custom", path: ["conversationAuthorizationGrant"], message: "conversation authorization is required" })
+      }).parse(request.body)
       const run = await input.repository.getRun(request.actor.userId, runId)
       if (!run || run.status !== "waiting_approval") return reply.code(409).send(errorBody("ai.run_not_resumable", request.id))
       const selected = await input.tools.inspect(toolCallId)
@@ -375,9 +409,31 @@ export function buildServer(input: {
         const canceled = await input.repository.cancelRun(request.actor.userId, runId)
         return canceled ? presentRun(canceled) : canceled
       }
-      const approved = [await input.tools.approve(toolCallId, body.argumentsHash, body.expectedVersion)]
-      if (body.decision === "approve_all") approved.push(...await input.tools.approveAll(runId))
-      if (approved.some(call => call.status === "awaiting_mfa")) return presentRun(await input.repository.updateRun(runId, "waiting_approval", "waiting_mfa"))
+      let resolved: ToolCallRecord[]
+      if (body.decision === "approve_conversation") {
+        if (body.conversationId !== run.conversationId) throw new Error("ai.conversation_authorization_invalid")
+        const authorization = await input.repository.authorizeConversation(request.actor.userId, run.conversationId, {
+          sessionId: request.actor.sessionId,
+          catalogDigest: run.toolCatalogDigest,
+          grantCiphertext: input.grantCipher.encrypt(body.conversationAuthorizationGrant!),
+          expiresAt: body.conversationAuthorizationExpiresAt!,
+        })
+        if (!authorization) throw new Error("ai.conversation_not_found")
+        telemetryLog("agent.conversation_authorization.activated", "info")
+        const selectedCall = await input.tools.approveConversation(
+          toolCallId,
+          body.argumentsHash,
+          body.expectedVersion,
+          body.conversationAuthorizationGrant!,
+        )
+        const remaining = await input.tools.approvePendingWithConversationAuthorization(runId, body.conversationAuthorizationGrant!)
+        resolved = [selectedCall, ...remaining]
+      }
+      else {
+        resolved = [await input.tools.approve(toolCallId, body.argumentsHash, body.expectedVersion)]
+      }
+      if (resolved.some(call => call.status === "awaiting_mfa")) return presentRun(await input.repository.updateRun(runId, "waiting_approval", "waiting_mfa"))
+      if (resolved.some(call => call.status === "awaiting_approval")) return presentRun(run)
       await input.repository.updateRun(runId, "waiting_approval", "queued")
       return reply.code(202).send({ runId, state: "queued" })
     })

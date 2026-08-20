@@ -18,6 +18,8 @@
    - **VolumeSnapshot**：从同集群可用快照恢复。
 4. 提交后等待状态变为“就绪”。`WaitForFirstConsumer` StorageClass 可能在首次挂载前保持 Pending，这不代表创建失败。
 
+AI 助手可以列出当前项目空间的数据卷和目标集群 StorageClass，并在确认参数后创建空白卷、引用已有 PVC 或从 VolumeSnapshot 恢复。把已有 PVC 纳管为平台托管卷需要条件 MFA，当前请使用控制台或 Luna CLI 完成；助手不会用占位 ID 或 `emptyDir` 代替持久卷。
+
 集群暂时不可达时，页面会显示“观察不可用”，不会沿用旧的 PVC 状态。修复连接后刷新或重试最近操作。
 
 ## 容量配额与余额

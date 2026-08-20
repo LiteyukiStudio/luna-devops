@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
@@ -16,7 +15,6 @@ import (
 	"github.com/LiteyukiStudio/devops/internal/aiagent"
 	"github.com/LiteyukiStudio/devops/internal/aitool"
 	"github.com/LiteyukiStudio/devops/internal/authz"
-	"github.com/LiteyukiStudio/devops/internal/model"
 	"github.com/LiteyukiStudio/devops/internal/telemetry"
 	"github.com/gin-gonic/gin"
 )
@@ -57,16 +55,17 @@ func buildAIToolPolicies() map[string]aiToolPolicy {
 }
 
 type aiDelegationExchangeInput struct {
-	RunActorGrant     string   `json:"runActorGrant"`
-	RunID             string   `json:"runId"`
-	ToolCallID        string   `json:"toolCallId"`
-	OperationID       string   `json:"operationId"`
-	RequestedScopes   []string `json:"requestedScopes"`
-	ArgumentsHash     string   `json:"argumentsHash"`
-	InputMode         string   `json:"inputMode"`
-	ApprovalGranted   bool     `json:"approvalGranted"`
-	MFAPurpose        string   `json:"mfaPurpose"`
-	StepUpAssertionID string   `json:"stepUpAssertionId"`
+	RunActorGrant                  string   `json:"runActorGrant"`
+	RunID                          string   `json:"runId"`
+	ToolCallID                     string   `json:"toolCallId"`
+	OperationID                    string   `json:"operationId"`
+	RequestedScopes                []string `json:"requestedScopes"`
+	ArgumentsHash                  string   `json:"argumentsHash"`
+	InputMode                      string   `json:"inputMode"`
+	ApprovalGranted                bool     `json:"approvalGranted"`
+	MFAPurpose                     string   `json:"mfaPurpose"`
+	StepUpAssertionID              string   `json:"stepUpAssertionId"`
+	ConversationAuthorizationGrant string   `json:"conversationAuthorizationGrant"`
 }
 
 func (h *Handlers) ExchangeAIDelegation(ctx *gin.Context) {
@@ -87,25 +86,7 @@ func (h *Handlers) ExchangeAIDelegation(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusBadRequest, "ai.delegation_request_invalid", "delegation binding is incomplete")
 		return
 	}
-	highRisk := policy.Risk == "sensitive" || policy.Risk == "destructive"
-	if (highRisk || policy.ApprovalRequired) && !input.ApprovalGranted {
-		writeErrorCode(ctx, http.StatusPreconditionRequired, "ai.approval_required", "high-risk tool requires bound approval")
-		return
-	}
-	effectiveMFAPurpose := policy.MFAPurpose
-	if input.MFAPurpose != "" {
-		requestedPurpose := normalizeStepUpPurpose(input.MFAPurpose)
-		if requestedPurpose == "" || (effectiveMFAPurpose != "" && requestedPurpose != effectiveMFAPurpose) {
-			writeErrorCode(ctx, http.StatusPreconditionRequired, "mfa_required", "high-risk tool requires step-up verification")
-			return
-		}
-		effectiveMFAPurpose = requestedPurpose
-	}
-	if policy.MFAPurpose != "" && effectiveMFAPurpose != policy.MFAPurpose {
-		writeErrorCode(ctx, http.StatusPreconditionRequired, "mfa_required", "high-risk tool requires step-up verification")
-		return
-	}
-	if input.StepUpAssertionID != "" && effectiveMFAPurpose == "" {
+	if input.StepUpAssertionID != "" && strings.TrimSpace(input.MFAPurpose) == "" {
 		writeErrorCode(ctx, http.StatusBadRequest, "ai.delegation_request_invalid", "step-up purpose is required with an assertion")
 		return
 	}
@@ -132,22 +113,61 @@ func (h *Handlers) ExchangeAIDelegation(ctx *gin.Context) {
 		writeErrorCode(ctx, http.StatusUnauthorized, "ai.run_actor_grant_invalid", "Run Actor Grant is invalid")
 		return
 	}
+	// Re-check the current user, browser session, role and scopes before consuming
+	// any cached step-up assertion. Conversation authorization never replaces RBAC.
 	if !h.authorizeAIGrantActor(ctx, grant, policy) {
 		writeErrorCode(ctx, http.StatusForbidden, "ai.authorization_changed", "actor authorization is no longer valid")
 		return
 	}
-	if effectiveMFAPurpose != "" && !h.validAIToolMFAAssertion(grant, input.StepUpAssertionID, effectiveMFAPurpose, now, ctx.Request.Context()) {
-		writeErrorCode(ctx, http.StatusForbidden, "mfa.assertion_invalid", "step-up assertion is invalid for this tool")
+	conversationAuthorized := false
+	if strings.TrimSpace(input.ConversationAuthorizationGrant) != "" {
+		conversationGrant, verifyErr := aiagent.VerifyConversationAuthorizationGrant(
+			input.ConversationAuthorizationGrant, internalKeys.ConversationAuthorizationSigningKey, now,
+		)
+		conversationAuthorized = verifyErr == nil && conversationGrant.ConversationID == grant.ConversationID &&
+			conversationGrant.UserID == grant.UserID && conversationGrant.SessionID == grant.SessionID
+		if conversationAuthorized && h.stepUpMFAEnabled() {
+			_, conversationAuthorized = h.refreshActiveStepUpAssertion(
+				ctx.Request.Context(), grant.UserID, grant.SessionID, stepUpPurposeAIConversationTools,
+				conversationGrant.StepUpAssertionID, now,
+			)
+		}
+	}
+	highRisk := policy.Risk == "sensitive" || policy.Risk == "destructive"
+	if (highRisk || policy.ApprovalRequired) && !input.ApprovalGranted && !conversationAuthorized {
+		writeErrorCode(ctx, http.StatusPreconditionRequired, "ai.approval_required", "high-risk tool requires bound approval")
 		return
+	}
+	effectiveMFAPurpose := ""
+	effectiveMFAAssertionID := ""
+	if policy.MFAPurpose != "" && h.stepUpMFAEnabled() {
+		effectiveMFAPurpose = policy.MFAPurpose
+		if !conversationAuthorized {
+			requestedPurpose := normalizeStepUpPurpose(input.MFAPurpose)
+			if requestedPurpose != "" && requestedPurpose != effectiveMFAPurpose {
+				writeMFARequiredStatus(ctx, effectiveMFAPurpose, http.StatusPreconditionRequired)
+				return
+			}
+			assertion, valid := h.refreshActiveStepUpAssertion(
+				ctx.Request.Context(), grant.UserID, grant.SessionID, effectiveMFAPurpose,
+				input.StepUpAssertionID, now,
+			)
+			if !valid {
+				writeMFARequiredStatus(ctx, effectiveMFAPurpose, http.StatusPreconditionRequired)
+				return
+			}
+			effectiveMFAAssertionID = assertion.ID
+		}
 	}
 	claims := aiagent.DelegationClaims{
 		Audience: "luna-api-ai-tools", Purpose: "execute_registered_tool",
-		RunID: grant.RunID, ToolCallID: input.ToolCallID, OperationID: input.OperationID,
+		RunID: grant.RunID, ConversationID: grant.ConversationID, ToolCallID: input.ToolCallID, OperationID: input.OperationID,
 		UserID: grant.UserID, SessionID: grant.SessionID,
 		Scopes: append([]string(nil), policy.Scopes...), ArgumentsHash: input.ArgumentsHash,
 		InputMode:  input.InputMode,
-		MFAPurpose: effectiveMFAPurpose, MFAAssertion: input.StepUpAssertionID,
-		IssuedAt: now.Unix(), ExpiresAt: now.Add(time.Minute).Unix(),
+		MFAPurpose: effectiveMFAPurpose, MFAAssertion: effectiveMFAAssertionID,
+		ConversationAuthorized: conversationAuthorized,
+		IssuedAt:               now.Unix(), ExpiresAt: now.Add(time.Minute).Unix(),
 	}
 	token, err := aiagent.SignDelegationToken(claims, internalKeys.DelegationTokenSigningKey)
 	if err != nil {
@@ -156,18 +176,6 @@ func (h *Handlers) ExchangeAIDelegation(ctx *gin.Context) {
 	}
 	h.auditWithContext(grant.UserID, "ai.delegation.exchange", input.OperationID+":"+input.ToolCallID, true, "short-lived user-bound AI tool delegation issued", ctx.Request.Context())
 	ctx.JSON(http.StatusOK, gin.H{"accessToken": token, "tokenType": "Bearer", "expiresIn": 60, "operationId": input.OperationID})
-}
-
-func (h *Handlers) validAIToolMFAAssertion(grant aiagent.RunActorGrant, assertionID, purpose string, now time.Time, ctx context.Context) bool {
-	if h.dbWithContext(ctx) == nil || strings.TrimSpace(assertionID) == "" {
-		return false
-	}
-	var assertion model.StepUpAssertion
-	return h.dbWithContext(ctx).First(
-		&assertion,
-		"id = ? and user_id = ? and session_id = ? and purpose = ? and idle_expires_at > ? and absolute_expires_at > ?",
-		assertionID, grant.UserID, grant.SessionID, purpose, now, now,
-	).Error == nil && stepUpAssertionActive(assertion, now)
 }
 
 func (h *Handlers) ExecuteAIInternalTool(ctx *gin.Context) {

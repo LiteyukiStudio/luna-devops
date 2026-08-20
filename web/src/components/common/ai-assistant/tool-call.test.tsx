@@ -190,7 +190,7 @@ describe('ai assistant tool status icon', () => {
     expect(screen.getByText(/"name": "PostgreSQL"/)).toBeInTheDocument()
   })
 
-  it('offers reject, approve, and current-run approve-all decisions for a bound high-risk call', async () => {
+  it('offers reject, approve, and conversation authorization decisions for a bound high-risk call', async () => {
     await i18next.changeLanguage('zh-CN')
     const onApproval = vi.fn(async () => {})
     const { container } = render(
@@ -210,16 +210,17 @@ describe('ai assistant tool status icon', () => {
     expect(container.querySelector('[data-ai-tool-intervention]')).toBeVisible()
     expect(screen.getByRole('button', { name: '批准执行' })).toBeVisible()
 
-    fireEvent.click(screen.getByRole('button', { name: '全部同意' }))
+    fireEvent.click(screen.getByRole('button', { name: '同意（本会话不再询问）' }))
     await waitFor(() => expect(onApproval).toHaveBeenCalledWith(
       expect.objectContaining({ runId: 'run-1', toolCallId: 'tool-call-1' }),
-      'approve_all',
+      'approve_conversation',
       undefined,
     ))
   })
 
-  it('associates the MFA code with the current password-manager credential', async () => {
+  it('delegates MFA input to the shared challenge dialog', async () => {
     await i18next.changeLanguage('en-US')
+    const onMFA = vi.fn(async () => {})
     const { container } = render(
       <AIToolCallCard
         block={{
@@ -229,16 +230,16 @@ describe('ai assistant tool status icon', () => {
         }}
         onAction={vi.fn(async () => true)}
         onApproval={vi.fn(async () => {})}
-        onMFA={vi.fn(async () => {})}
+        onMFA={onMFA}
       />,
     )
 
     expect(container.querySelector('details')).not.toHaveAttribute('open')
     expect(container.querySelector('[data-ai-tool-intervention]')).toBeVisible()
-    const oneTimeCode = screen.getByRole('textbox', { name: i18next.t('aiAssistant.mfa.code') })
-    const form = oneTimeCode.closest('form')
-    expect(oneTimeCode).toHaveAttribute('autocomplete', 'one-time-code')
-    expect(form?.querySelector('input[autocomplete="username"]')).toHaveValue('admin@example.test')
-    expect(screen.getByRole('button', { name: i18next.t('aiAssistant.mfa.verify') })).toHaveAttribute('type', 'submit')
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+    const continueButton = screen.getByRole('button', { name: i18next.t('aiAssistant.mfa.continue') })
+    expect(continueButton).toHaveAttribute('type', 'button')
+    fireEvent.click(continueButton)
+    await waitFor(() => expect(onMFA).toHaveBeenCalledTimes(1))
   })
 })

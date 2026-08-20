@@ -1,6 +1,7 @@
 import { and, asc, count, desc, eq, gt, gte, ilike, inArray, isNull, lt, ne, sql } from "drizzle-orm"
 import type { Pool } from "pg"
 import type {
+  ConversationAuthorization,
   ConversationHistoryEntry,
   ConversationSummary,
   ConversationTitleSource,
@@ -40,12 +41,26 @@ import {
   runs,
   turns,
   uiActions,
+  type ConversationRow,
   type RunRow,
   type UIActionRow,
 } from "./schema/index.js"
 
 /** Drizzle 事务回调或共享 db 实例均可执行的最小查询接口 */
 type Querier = AgentDb | AgentTx
+
+function conversationAuthorization(row: ConversationRow): ConversationAuthorization | undefined {
+  if (!row.authorizationGrantCiphertext || !row.authorizationSessionId || !row.authorizationCatalogDigest
+    || !row.authorizationExpiresAt || !row.authorizationUpdatedAt) return undefined
+  return {
+    conversationId: row.id,
+    sessionId: row.authorizationSessionId,
+    catalogDigest: row.authorizationCatalogDigest,
+    grantCiphertext: row.authorizationGrantCiphertext,
+    expiresAt: row.authorizationExpiresAt.toISOString(),
+    updatedAt: row.authorizationUpdatedAt.toISOString(),
+  }
+}
 
 const historyTurnWindow = 8
 
@@ -337,6 +352,60 @@ export class PostgresRepository implements Repository {
       .where(and(eq(conversations.id, id), eq(conversations.ownerUserId, ownerUserId)))
       .returning({ id: conversations.id })
     return deleted.length === 1
+  }
+
+  async authorizeConversation(ownerUserId: string, conversationId: string, input: Omit<ConversationAuthorization, "conversationId" | "updatedAt">) {
+    const row = (await this.db.update(conversations)
+      .set({
+        authorizationGrantCiphertext: input.grantCiphertext,
+        authorizationSessionId: input.sessionId,
+        authorizationCatalogDigest: input.catalogDigest,
+        authorizationExpiresAt: new Date(input.expiresAt),
+        authorizationUpdatedAt: sql`now()`,
+      })
+      .where(and(eq(conversations.id, conversationId), eq(conversations.ownerUserId, ownerUserId)))
+      .returning())[0]
+    return row ? conversationAuthorization(row) : undefined
+  }
+
+  async getConversationAuthorization(ownerUserId: string, conversationId: string, sessionId: string, catalogDigest: string) {
+    const now = new Date()
+    const row = (await this.db.select().from(conversations).where(and(
+      eq(conversations.id, conversationId),
+      eq(conversations.ownerUserId, ownerUserId),
+      eq(conversations.authorizationSessionId, sessionId),
+      eq(conversations.authorizationCatalogDigest, catalogDigest),
+      gt(conversations.authorizationExpiresAt, now),
+    )))[0]
+    return row ? conversationAuthorization(row) : undefined
+  }
+
+  async getRunConversationAuthorization(runId: string) {
+    const now = new Date()
+    const row = (await this.db.select({ conversation: conversations }).from(runs)
+      .innerJoin(conversations, and(
+        eq(conversations.id, runs.conversationId),
+        eq(conversations.authorizationCatalogDigest, runs.toolCatalogDigest),
+      ))
+      .where(and(
+        eq(runs.id, runId),
+        gt(conversations.authorizationExpiresAt, now),
+      )))[0]?.conversation
+    return row ? conversationAuthorization(row) : undefined
+  }
+
+  async revokeConversationAuthorization(ownerUserId: string, conversationId: string) {
+    const rows = await this.db.update(conversations)
+      .set({
+        authorizationGrantCiphertext: null,
+        authorizationSessionId: null,
+        authorizationCatalogDigest: null,
+        authorizationExpiresAt: null,
+        authorizationUpdatedAt: sql`now()`,
+      })
+      .where(and(eq(conversations.id, conversationId), eq(conversations.ownerUserId, ownerUserId)))
+      .returning({ id: conversations.id })
+    return rows.length === 1
   }
 
   async createTurn(ownerUserId: string, input: CreateTurn): Promise<CreatedTurn> {

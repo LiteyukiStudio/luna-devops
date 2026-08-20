@@ -7,6 +7,8 @@ import type {
   ModelResponse,
   ModelToolCall,
   ModelToolDefinition,
+  ModelToolDirectoryRequest,
+  ModelToolDirectoryResult,
   ModelToolRetrievalState,
   ModelToolResolver,
   ModelToolSearchResult,
@@ -68,6 +70,7 @@ export class ModelRuntime {
     retrievalState?: ModelToolRetrievalState,
     signal?: AbortSignal,
   ) => ModelToolSearchResult | Promise<ModelToolSearchResult>
+  private readonly browseTools: ((request: ModelToolDirectoryRequest) => ModelToolDirectoryResult | Promise<ModelToolDirectoryResult>) | undefined
 
   constructor(
     private readonly provider: ModelProvider,
@@ -79,6 +82,7 @@ export class ModelRuntime {
     else {
       this.resolveTools = tools.resolve
       this.searchTools = tools.search
+      this.browseTools = tools.browse
     }
   }
 
@@ -119,6 +123,20 @@ export class ModelRuntime {
     return this.searchTools(query, pageContext, limit, retrievalState, signal)
   }
 
+  async browseAvailableTools(request: ModelToolDirectoryRequest): Promise<ModelToolDirectoryResult> {
+    if (!this.browseTools) {
+      return {
+        mode: request.mode,
+        entries: [],
+        details: [],
+        loadedOperationIds: [],
+        missingOperationIds: request.mode === "details" ? request.operationIds : [],
+        total: 0,
+      }
+    }
+    return this.browseTools(request)
+  }
+
   async generateConversationTitle(input: string, answer: string, budget: { runId: string, ownerUserId: string }, signal?: AbortSignal, model?: AIModelSnapshot): Promise<string | undefined> {
     const response = await this.provider.complete({
       messages: [
@@ -146,7 +164,7 @@ export class ModelRuntime {
   }, signal?: AbortSignal): Promise<Record<string, unknown> | undefined> {
     const availableOperations = (await this.modelTools(input.pageContext, input.conversation, input.userInput, [], undefined, signal))
       .map(tool => tool.operationId)
-      .filter(operationId => !["create_options", "create_interaction_cards", "rename_conversation", "navigate_to_route", "search_tools"].includes(operationId)
+      .filter(operationId => !["create_options", "create_interaction_cards", "rename_conversation", "navigate_to_route", "browse_tools", "search_tools"].includes(operationId)
         && !isBusinessCardToolOperationId(operationId))
     const response = await this.provider.complete({
       messages: [

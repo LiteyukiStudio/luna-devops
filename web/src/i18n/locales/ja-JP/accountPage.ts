@@ -88,6 +88,7 @@ const accountPage = {
     verify: '検証して続行',
     verifyFailed: '検証に失敗しました。コードを確認して再試行してください。',
     purposes: {
+      ai_conversation_tools: 'この AI 会話の高リスクツールを承認',
       runtime_exec: '実行コマンドを実行',
       runtime_terminal: 'Web Console を開く',
       secret_update: 'シークレットを変更',

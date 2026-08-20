@@ -99,6 +99,8 @@ export const agentMetrics = {
   toolDuration: deferredHistogram("luna_devops_agent_tool_call_duration", "工具调用耗时", "s"),
   toolSearches: deferredCounter("luna_devops_agent_tool_searches", "工具目录检索次数"),
   toolSearchMatches: deferredHistogram("luna_devops_agent_tool_search_matches", "单次工具目录检索命中数量", "tool"),
+  toolDirectoryBrowses: deferredCounter("luna_devops_agent_tool_directory_browse_total", "工具目录确定性浏览次数"),
+  toolDirectoryItems: deferredHistogram("luna_devops_agent_tool_directory_items", "单次工具目录浏览返回数量", "tool"),
   toolRetrievals: deferredCounter("luna_devops_agent_tool_retrieval_total", "自动工具检索次数"),
   toolRetrievalCandidates: deferredHistogram("luna_devops_agent_tool_retrieval_candidates", "单次自动工具检索候选数量", "tool"),
   toolRetrievalLoaded: deferredHistogram("luna_devops_agent_tool_retrieval_loaded", "单次自动工具检索最终加载数量", "tool"),

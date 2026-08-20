@@ -1,6 +1,7 @@
 import type {
   AICapabilities,
   AIConversation,
+  AIConversationAuthorization,
   AIMFAResumePayload,
   AIModelConfig,
   AIModelOption,
@@ -41,6 +42,10 @@ export const aiApi = {
     const suffix = query.size > 0 ? `?${query}` : ''
     return request<AITimeline>(`/ai/conversations/${encodeURIComponent(conversationId)}/timeline${suffix}`)
   },
+  getAIConversationAuthorization: (conversationId: string) =>
+    request<AIConversationAuthorization>(`/ai/conversations/${encodeURIComponent(conversationId)}/authorization`),
+  revokeAIConversationAuthorization: (conversationId: string) =>
+    request<void>(`/ai/conversations/${encodeURIComponent(conversationId)}/authorization`, { method: 'DELETE' }),
   createAITurn: (conversationId: string, payload: { modelId: string, input: { parts: Array<{ type: 'text', text: string }> }, pageContext: Record<string, unknown>, clientInstanceId: string }, idempotencyKey: string) =>
     request<AITurnCreated>(`/ai/conversations/${encodeURIComponent(conversationId)}/turns`, {
       method: 'POST',
@@ -62,7 +67,7 @@ export const aiApi = {
     }),
   cancelAIRun: (runId: string) =>
     request<void>(`/ai/runs/${encodeURIComponent(runId)}/cancel`, { method: 'POST' }),
-  decideAIToolApproval: (runId: string, toolCallId: string, payload: { decision: 'approve' | 'reject' | 'approve_all', argumentsHash: string, expectedVersion: number, reason?: string }) =>
+  decideAIToolApproval: (runId: string, toolCallId: string, payload: { decision: 'approve' | 'reject' | 'approve_conversation', argumentsHash: string, expectedVersion: number, conversationId?: string, reason?: string }) =>
     request<void>(`/ai/runs/${encodeURIComponent(runId)}/approvals/${encodeURIComponent(toolCallId)}/decision`, { method: 'POST', body: JSON.stringify(payload) }),
   resumeAIToolMFA: (runId: string, toolCallId: string, payload: AIMFAResumePayload) =>
     request<void>(`/ai/runs/${encodeURIComponent(runId)}/mfa/${encodeURIComponent(toolCallId)}/resume`, { method: 'POST', body: JSON.stringify(payload) }),

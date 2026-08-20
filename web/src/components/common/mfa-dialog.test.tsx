@@ -113,4 +113,29 @@ describe('mfa challenge dialog', () => {
     expect(alert).toHaveTextContent('Invalid verification code')
     expect(oneTimeCode).toHaveAttribute('aria-describedby', alert.id)
   })
+
+  it('submits a completed TOTP only once when completion and form submit race', async () => {
+    let finishVerification: (() => void) | undefined
+    mocks.verifyMFA.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      finishVerification = resolve
+    }))
+    render(
+      <TooltipProvider>
+        <MFADialogProvider><main /></MFADialogProvider>
+      </TooltipProvider>,
+    )
+    act(() => {
+      void mocks.challengeHandler?.({ purpose: 'ai_conversation_tools' })
+    })
+    const oneTimeCode = screen.getByRole('textbox', { name: i18next.t('accountPage.mfa.otpPlaceholder') })
+    const form = oneTimeCode.closest('form')!
+    fireEvent.change(oneTimeCode, { target: { value: '123456' } })
+    fireEvent.submit(form)
+    expect(mocks.verifyMFA).toHaveBeenCalledTimes(1)
+    await act(async () => {
+      finishVerification?.()
+      await Promise.resolve()
+    })
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
 })

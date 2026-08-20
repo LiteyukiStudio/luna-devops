@@ -1,5 +1,6 @@
 import type {
   Conversation,
+  ConversationAuthorization,
   ConversationHistoryEntry,
   ConversationSummary,
   ConversationToolInteraction,
@@ -61,6 +62,10 @@ export interface Repository {
   renameConversation(ownerUserId: string, conversationId: string, title: string): Promise<Conversation | undefined>
   renameConversationByAssistant(conversationId: string, title: string): Promise<Conversation | undefined>
   deleteConversation(ownerUserId: string, conversationId: string): Promise<boolean>
+  authorizeConversation(ownerUserId: string, conversationId: string, authorization: Omit<ConversationAuthorization, "conversationId" | "updatedAt">): Promise<ConversationAuthorization | undefined>
+  getConversationAuthorization(ownerUserId: string, conversationId: string, sessionId: string, catalogDigest: string): Promise<ConversationAuthorization | undefined>
+  getRunConversationAuthorization(runId: string): Promise<ConversationAuthorization | undefined>
+  revokeConversationAuthorization(ownerUserId: string, conversationId: string): Promise<boolean>
   createTurn(ownerUserId: string, input: CreateTurn): Promise<CreatedTurn>
   getRun(ownerUserId: string, runId: string): Promise<Run | undefined>
   cancelRun(ownerUserId: string, runId: string): Promise<Run | undefined>

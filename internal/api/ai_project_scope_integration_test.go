@@ -64,7 +64,7 @@ func executeAIProjectList(t *testing.T, router http.Handler, user model.User, se
 	toolCallID := fmt.Sprintf("aitool_scope_%s", arguments["scope"])
 	grant, err := aiagent.SignRunActorGrant(aiagent.RunActorGrant{
 		Audience: "luna-ai-run-grant", Purpose: "agent_delegation_exchange",
-		RunID: runID, UserID: user.ID, SessionID: session.ID,
+		RunID: runID, ConversationID: "aicnv_scope", UserID: user.ID, SessionID: session.ID,
 		IssuedAt: now.Unix(), ExpiresAt: now.Add(time.Minute).Unix(),
 	}, keys.RunActorGrantSigningKey)
 	if err != nil {

@@ -1,5 +1,6 @@
 import type {
   Conversation,
+  ConversationAuthorization,
   ConversationHistoryEntry,
   ConversationSummary,
   ConversationTitleSource,
@@ -33,6 +34,7 @@ export class MemoryRepository implements Repository {
   private readonly events: RunEvent[] = []
   private readonly uiActions = new Map<string, UIActionDelivery>()
   private readonly summaries = new Map<string, ConversationSummary>()
+  private readonly authorizations = new Map<string, ConversationAuthorization>()
   private readonly idempotency = new Map<string, { hash: string, created: CreatedTurn }>()
   private readonly modelReservations = new Map<string, {
     runId: string
@@ -111,9 +113,42 @@ export class MemoryRepository implements Repository {
     if (!await this.getConversation(ownerUserId, id)) return false
     this.conversations.delete(id)
     this.summaries.delete(id)
+    this.authorizations.delete(id)
     const turnIds = [...this.turns.values()].filter(t => t.conversationId === id).map(t => t.id)
     for (const turnId of turnIds) this.turns.delete(turnId)
     for (const [runId, run] of this.runs) if (run.conversationId === id) this.runs.delete(runId)
+    return true
+  }
+
+  async authorizeConversation(ownerUserId: string, conversationId: string, input: Omit<ConversationAuthorization, "conversationId" | "updatedAt">) {
+    if (!await this.getConversation(ownerUserId, conversationId)) return undefined
+    const value: ConversationAuthorization = {
+      conversationId,
+      ...input,
+      updatedAt: new Date().toISOString(),
+    }
+    this.authorizations.set(conversationId, value)
+    return value
+  }
+
+  async getConversationAuthorization(ownerUserId: string, conversationId: string, sessionId: string, catalogDigest: string) {
+    if (!await this.getConversation(ownerUserId, conversationId)) return undefined
+    const value = this.authorizations.get(conversationId)
+    if (!value || value.sessionId !== sessionId || value.catalogDigest !== catalogDigest || Date.parse(value.expiresAt) <= Date.now()) return undefined
+    return value
+  }
+
+  async getRunConversationAuthorization(runId: string) {
+    const run = this.runs.get(runId)
+    if (!run) return undefined
+    const value = this.authorizations.get(run.conversationId)
+    if (!value || value.catalogDigest !== run.toolCatalogDigest || Date.parse(value.expiresAt) <= Date.now()) return undefined
+    return value
+  }
+
+  async revokeConversationAuthorization(ownerUserId: string, conversationId: string) {
+    if (!await this.getConversation(ownerUserId, conversationId)) return false
+    this.authorizations.delete(conversationId)
     return true
   }
 

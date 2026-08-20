@@ -421,7 +421,7 @@ func normalizeOpenAPISchema(document openAPIDocument, schema map[string]any, dep
 	if items := mapValue(schema["items"]); len(items) > 0 {
 		result["items"] = normalizeOpenAPISchema(document, items, depth+1)
 	}
-	for _, key := range []string{"oneOf", "anyOf"} {
+	for _, key := range []string{"oneOf", "anyOf", "allOf"} {
 		if values := arrayValue(schema[key]); len(values) > 0 {
 			normalized := make([]any, 0, len(values))
 			for _, value := range values {

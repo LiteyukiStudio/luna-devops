@@ -531,7 +531,6 @@ const aiAssistant = {
       input: '補足情報を送信できません',
       approval: '承認決定を送信できません',
       mfa: '検証に失敗しました',
-      mfaAssertion: '検証は成功しましたが、利用可能な Step-up クレデンシャルが返されませんでした',
     },
     approval: {
       title: '操作承認が必要です',
@@ -540,14 +539,15 @@ const aiAssistant = {
       reasonPlaceholder: 'オプション、最大 500 文字',
       invalidBinding: '承認パラメータバインディング情報が不完全です。操作をブロックしました。',
       reject: '拒否',
-      approveAll: 'すべて承認',
+      approveConversation: '承認（この会話では再確認しない）',
+      conversationActive: 'この会話では承認または二次認証が必要なツールを自動承認します（最長 {{expiry}} まで）',
+      revokeConversation: '取り消す',
       approve: '実行を承認',
     },
     mfa: {
       title: '二次検証が必要です',
       description: 'プラットフォーム Step-up MFA を完了すると、アシスタントは現在のツール呼び出しを続行します。',
-      code: '6 桁のコード',
-      verify: '検証して続行',
+      continue: '検証して続行',
     },
     conversations: {
       title: 'セッション',

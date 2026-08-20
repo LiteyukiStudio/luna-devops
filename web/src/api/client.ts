@@ -72,6 +72,8 @@ const domainOperations = {
     'renameAIConversation',
     'deleteAIConversation',
     'getAIConversationTimeline',
+    'getAIConversationAuthorization',
+    'revokeAIConversationAuthorization',
     'createAITurn',
     'executeAIToolAction',
     'listPendingAIUIActions',

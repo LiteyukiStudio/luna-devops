@@ -40,6 +40,7 @@ func TestPlatformCatalogUsesExplicitAgentAdmission(t *testing.T) {
 		"previewBuildTemplate", "triggerBuildRun", "getBuildRun", "getBuildJobLogs",
 		"listReleases", "createRelease", "getRelease", "getReleaseRuntimeLogs",
 		"listGatewayRoutes", "createGatewayRoute", "getGatewayRoute",
+		"listProjectVolumes", "getProjectVolume", "listProjectVolumeStorageClasses", "createProjectVolume",
 	} {
 		if _, ok := byID[operationID]; !ok {
 			t.Errorf("missing explicitly admitted workflow operation %s", operationID)
@@ -78,8 +79,8 @@ func TestEveryAdmittedOperationPassesTransportAndReadbackContractValidation(t *t
 			t.Errorf("%s: %v", operation.OperationID, err)
 		}
 	}
-	if readbackPairs != 3 {
-		t.Fatalf("validated %d readback pairs, want 3", readbackPairs)
+	if readbackPairs != 4 {
+		t.Fatalf("validated %d readback pairs, want 4", readbackPairs)
 	}
 }
 

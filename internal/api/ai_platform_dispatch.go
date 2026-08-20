@@ -24,10 +24,11 @@ const aiPlatformResponseLimit = 1024 * 1024
 type aiPlatformActorContextKey struct{}
 
 type aiPlatformActor struct {
-	UserID       string
-	SessionID    string
-	MFAPurpose   string
-	MFAAssertion string
+	UserID                 string
+	SessionID              string
+	MFAPurpose             string
+	MFAAssertion           string
+	ConversationAuthorized bool
 }
 
 type aiPlatformDispatchResult struct {
@@ -53,6 +54,7 @@ func (h *Handlers) dispatchAIPlatformOperation(
 		context.WithValue(parent.Request.Context(), aiPlatformActorContextKey{}, aiPlatformActor{
 			UserID: claims.UserID, SessionID: claims.SessionID,
 			MFAPurpose: claims.MFAPurpose, MFAAssertion: claims.MFAAssertion,
+			ConversationAuthorized: claims.ConversationAuthorized,
 		}),
 		operation.Method,
 		target,
@@ -186,6 +188,11 @@ func (h *Handlers) currentAIPlatformUser(ctx *gin.Context) (model.User, bool) {
 		return model.User{}, true
 	}
 	if actor.MFAPurpose != "" {
+		if actor.ConversationAuthorized {
+			ctx.Set(stepUpPurposeContextKey, actor.MFAPurpose)
+			ctx.Set(currentUserContextKey, user)
+			return user, true
+		}
 		var assertion model.StepUpAssertion
 		if actor.MFAAssertion == "" || h.dbFor(ctx).First(
 			&assertion,
