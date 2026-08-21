@@ -6,6 +6,10 @@
     "target": "ES2023",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
+    "baseUrl": ".",
+    "paths": {
+      "@luna-devops/ai-interaction-card-contract": ["../packages/ai-interaction-card-contract/index.d.ts"]
+    },
     "lib": ["ES2023"],
     "types": ["node"],
     "strict": true,
