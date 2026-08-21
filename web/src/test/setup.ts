@@ -1,5 +1,5 @@
 import { cleanup } from '@testing-library/react'
-import { afterEach } from 'vitest'
+import { afterEach, beforeAll } from 'vitest'
 import '@testing-library/jest-dom/vitest'
 
 const storageValues = new Map<string, string>()
@@ -33,6 +33,11 @@ Object.defineProperty(globalThis, 'ResizeObserver', {
 Object.defineProperty(document, 'elementFromPoint', {
   configurable: true,
   value: () => null,
+})
+
+beforeAll(async () => {
+  const { i18nextReady } = await import('@/i18n')
+  await i18nextReady
 })
 
 afterEach(() => {

@@ -1,21 +1,33 @@
+import type { BackendModule, ResourceKey } from 'i18next'
 import i18next from 'i18next'
 import { initReactI18next } from 'react-i18next'
 
-import enUS from './locales/en-US'
-import jaJP from './locales/ja-JP'
-import koKR from './locales/ko-KR'
-import zhCN from './locales/zh-CN'
-import zhTW from './locales/zh-TW'
+type SupportedLanguage = 'zh-CN' | 'zh-TW' | 'en-US' | 'ja-JP' | 'ko-KR'
 
-const resources = {
-  'zh-CN': { translation: zhCN },
-  'zh-TW': { translation: zhTW },
-  'en-US': { translation: enUS },
-  'ja-JP': { translation: jaJP },
-  'ko-KR': { translation: koKR },
+const supportedLanguages = ['zh-CN', 'zh-TW', 'en-US', 'ja-JP', 'ko-KR'] as const satisfies readonly SupportedLanguage[]
+const localeLoaders: Record<SupportedLanguage, () => Promise<{ default: ResourceKey }>> = {
+  'zh-CN': () => import('./locales/zh-CN'),
+  'zh-TW': () => import('./locales/zh-TW'),
+  'en-US': () => import('./locales/en-US'),
+  'ja-JP': () => import('./locales/ja-JP'),
+  'ko-KR': () => import('./locales/ko-KR'),
 }
 
-type SupportedLanguage = 'zh-CN' | 'zh-TW' | 'en-US' | 'ja-JP' | 'ko-KR'
+const localeBackend: BackendModule = {
+  type: 'backend',
+  init() {},
+  read(language, _namespace, callback) {
+    const normalized = normalizeLanguage(language)
+    if (!normalized) {
+      callback(new Error(`Unsupported language: ${language}`), false)
+      return
+    }
+
+    localeLoaders[normalized]()
+      .then(module => callback(null, module.default))
+      .catch(error => callback(error instanceof Error ? error : new Error(String(error)), false))
+  },
+}
 
 function detectBrowserLanguage() {
   const storedLanguage = normalizeLanguage(localStorage.getItem('luna-devops-language'))
@@ -43,13 +55,14 @@ function normalizeLanguage(language?: string | null): SupportedLanguage | undefi
   return undefined
 }
 
-i18next.use(initReactI18next).init({
+export const i18nextReady = i18next.use(localeBackend).use(initReactI18next).init({
   lng: detectBrowserLanguage(),
-  fallbackLng: 'zh-CN',
+  fallbackLng: false,
+  supportedLngs: supportedLanguages,
+  load: 'currentOnly',
   interpolation: {
     escapeValue: false,
   },
-  resources,
 })
 
 export default i18next

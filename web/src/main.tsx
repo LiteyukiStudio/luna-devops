@@ -9,26 +9,28 @@ import { PublicConfigProvider } from './app/public-config'
 import { SessionProvider } from './app/session'
 import { TelemetryRouteObserver } from './app/telemetry-route-observer'
 import { ThemeProvider } from './app/theme'
+import { i18nextReady } from './i18n'
 import './index.css'
-import './i18n'
 
 const queryClient = new QueryClient()
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <ThemeProvider>
-        <PublicConfigProvider>
-          <BrowserRouter>
-            <TelemetryRouteObserver />
-            <SessionProvider>
-              <AppUpdateChecker />
-              <App />
-              <Toaster richColors duration={4000} position="top-right" />
-            </SessionProvider>
-          </BrowserRouter>
-        </PublicConfigProvider>
-      </ThemeProvider>
-    </QueryClientProvider>
-  </StrictMode>,
-)
+void i18nextReady.then(() => {
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <QueryClientProvider client={queryClient}>
+        <ThemeProvider>
+          <PublicConfigProvider>
+            <BrowserRouter>
+              <TelemetryRouteObserver />
+              <SessionProvider>
+                <AppUpdateChecker />
+                <App />
+                <Toaster richColors duration={4000} position="top-right" />
+              </SessionProvider>
+            </BrowserRouter>
+          </PublicConfigProvider>
+        </ThemeProvider>
+      </QueryClientProvider>
+    </StrictMode>,
+  )
+})

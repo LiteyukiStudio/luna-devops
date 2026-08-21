@@ -1,6 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
 import { Bell, ChartNoAxesCombined, CircleUserRound, Container, CreditCard, Fingerprint, FolderKanban, GitBranch, LayoutDashboard, Menu, ScrollText, Server, Settings, Sparkles, Store, Users } from 'lucide-react'
-import { AnimatePresence } from 'motion/react'
 import { lazy, useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, Navigate, NavLink, Outlet, useLocation } from 'react-router-dom'
@@ -376,11 +375,9 @@ export function AppLayout() {
             >
               <div className="flex min-h-full min-w-0 flex-col gap-group py-0">
                 {pageMeta.backNavigation && <PageBackNavigation {...pageMeta.backNavigation} />}
-                <AnimatePresence mode="wait">
-                  <PageMotion key={pageMotionKey} className="w-full min-w-0 max-w-full">
-                    <Outlet />
-                  </PageMotion>
-                </AnimatePresence>
+                <PageMotion key={pageMotionKey} className="w-full min-w-0 max-w-full">
+                  <Outlet />
+                </PageMotion>
               </div>
             </main>
           </WorkspaceChromeTargetsProvider>

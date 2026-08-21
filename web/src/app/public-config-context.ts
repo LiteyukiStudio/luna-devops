@@ -1,5 +1,4 @@
 import { createContext, use } from 'react'
-import i18next from '@/i18n'
 
 export const defaultPublicConfigs: Record<string, string> = {
   'billing.creditsDisplayName': 'Credits',
@@ -8,7 +7,6 @@ export const defaultPublicConfigs: Record<string, string> = {
   'site.title': 'Luna DevOps',
   'site.logoUrl': '/luna-devops-logo.svg',
   'site.faviconUrl': '/luna-devops-logo.svg',
-  'site.loginSubtitle': i18next.t('loginPage.subtitle'),
   'site.brandColorPreset': 'blue',
   'site.minimalModeDefault': 'false',
 }

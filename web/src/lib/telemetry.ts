@@ -1,10 +1,5 @@
 import type { Attributes, Span, SpanOptions } from '@opentelemetry/api'
-import type { BatchSpanProcessor } from '@opentelemetry/sdk-trace-web'
 import { context, propagation, SpanKind, SpanStatusCode, trace } from '@opentelemetry/api'
-import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-proto'
-import { resourceFromAttributes } from '@opentelemetry/resources'
-import { BatchSpanProcessor as WebBatchSpanProcessor, WebTracerProvider } from '@opentelemetry/sdk-trace-web'
-import { ATTR_SERVICE_NAME } from '@opentelemetry/semantic-conventions'
 
 const tracerName = 'luna-web'
 const dynamicResourceParents = new Set([
@@ -28,34 +23,20 @@ const dynamicResourceParents = new Set([
   'volumes',
 ])
 
-let provider: WebTracerProvider | undefined
-let spanProcessor: BatchSpanProcessor | undefined
+let telemetryRuntimePromise: Promise<void> | undefined
 
 export function enableBrowserTelemetry() {
-  if (provider || typeof window === 'undefined')
+  if (telemetryRuntimePromise || typeof window === 'undefined')
     return
 
-  const exporter = createBrowserTraceExporter()
-  spanProcessor = new WebBatchSpanProcessor(exporter, {
-    maxExportBatchSize: 64,
-    maxQueueSize: 256,
-    scheduledDelayMillis: 3_000,
+  const runtimePromise = import('./browser-telemetry-runtime').then(({ enableBrowserTelemetryRuntime }) => {
+    enableBrowserTelemetryRuntime()
   })
-  provider = new WebTracerProvider({
-    resource: resourceFromAttributes({
-      [ATTR_SERVICE_NAME]: 'luna-web',
-      'deployment.environment.name': import.meta.env.MODE,
-    }),
-    spanProcessors: [spanProcessor],
+  telemetryRuntimePromise = runtimePromise
+  void runtimePromise.catch(() => {
+    if (telemetryRuntimePromise === runtimePromise)
+      telemetryRuntimePromise = undefined
   })
-  provider.register()
-  window.addEventListener('pagehide', flushBrowserTelemetry, { capture: true })
-  window.addEventListener('error', recordWindowError)
-  window.addEventListener('unhandledrejection', recordUnhandledRejection)
-}
-
-export function createBrowserTraceExporter(url = browserTraceRelayURL()) {
-  return new OTLPTraceExporter({ url })
 }
 
 export function startAPIRequestSpan(method: string, path: string) {
@@ -213,33 +194,4 @@ function normalizeRoute(input: string) {
       return ':id'
     return segment
   }).join('/')}`
-}
-
-function browserTraceRelayURL() {
-  const apiBase = import.meta.env.VITE_API_BASE_URL ?? '/api/v1'
-  return `${apiBase.replace(/\/$/, '')}/telemetry/v1/traces`
-}
-
-function flushBrowserTelemetry() {
-  void spanProcessor?.forceFlush().catch(() => undefined)
-}
-
-function recordWindowError(event: ErrorEvent) {
-  const span = startSpan('browser.error', {
-    attributes: {
-      'error.type': event.error instanceof Error ? event.error.name : 'ErrorEvent',
-    },
-  })
-  span.setStatus({ code: SpanStatusCode.ERROR, message: 'Unhandled browser error' })
-  span.end()
-}
-
-function recordUnhandledRejection(event: PromiseRejectionEvent) {
-  const span = startSpan('browser.unhandled_rejection', {
-    attributes: {
-      'error.type': event.reason instanceof Error ? event.reason.name : typeof event.reason,
-    },
-  })
-  span.setStatus({ code: SpanStatusCode.ERROR, message: 'Unhandled promise rejection' })
-  span.end()
 }

@@ -3,7 +3,8 @@ import { createServer } from 'node:http'
 import { resourceFromAttributes } from '@opentelemetry/resources'
 import { BatchSpanProcessor, WebTracerProvider } from '@opentelemetry/sdk-trace-web'
 import { describe, expect, it } from 'vitest'
-import { createBrowserTraceExporter, normalizeTelemetryRoute } from './telemetry'
+import { createBrowserTraceExporter } from './browser-telemetry-runtime'
+import { normalizeTelemetryRoute } from './telemetry'
 
 describe('browser trace exporter', () => {
   it('sends OTLP protobuf to the same-origin relay contract', async () => {

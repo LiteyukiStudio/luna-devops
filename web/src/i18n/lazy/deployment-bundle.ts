@@ -1,4 +1,4 @@
-import i18next from '@/i18n'
+import i18next, { i18nextReady } from '@/i18n'
 
 const translations = {
   'zh-CN': {
@@ -147,6 +147,13 @@ const translations = {
   },
 } as const
 
-for (const [language, bundleImport] of Object.entries(translations)) {
-  i18next.addResourceBundle(language, 'translation', { deploymentsPage: { bundleImport } }, true, true)
+function registerTranslations() {
+  for (const [language, bundleImport] of Object.entries(translations)) {
+    i18next.addResourceBundle(language, 'translation', { deploymentsPage: { bundleImport } }, true, true)
+  }
 }
+
+if (i18next.isInitialized)
+  registerTranslations()
+else
+  void i18nextReady.then(registerTranslations)
