@@ -236,6 +236,7 @@ func NewRouterWithStaticFSAndMetrics(db *gorm.DB, staticFS fs.FS, httpMetrics *o
 		v1.GET("/dashboard", handlers.GetDashboard)
 
 		v1.GET("/app-templates", handlers.ListAppTemplates)
+		v1.GET("/app-templates/:templateId", handlers.GetAppTemplate)
 
 		v1.GET("/projects", handlers.ListProjects)
 		v1.GET("/projects/pins", handlers.ListProjectPins)

@@ -1,4 +1,4 @@
-import type { AppTemplate, AppTemplateInstallPayload, AppTemplateInstallResponse, BillingDeploymentSpend, BillingLedgerEntry, BillingListParams, BillingPeriodParams, BillingRateRule, BillingRateRulePayload, BillingSummary, BillingUsageRecord, BillingUsageSettlementResult, BillingWalletTransactionPayload, GatewayTrafficStatus, GatewayTrafficUsagePayload, InboxActionRequest, PaginatedResponse, PaginationParams, Project, ProjectListParams, ProjectMember, ProjectMemberCandidate, ProjectPin, SystemComponentInstallPayload, SystemComponentInstallResponse, SystemComponentStatusResponse } from '../types'
+import type { AppTemplate, AppTemplateInstallPayload, AppTemplateInstallResponse, AppTemplateSummary, BillingDeploymentSpend, BillingLedgerEntry, BillingListParams, BillingPeriodParams, BillingRateRule, BillingRateRulePayload, BillingSummary, BillingUsageRecord, BillingUsageSettlementResult, BillingWalletTransactionPayload, GatewayTrafficStatus, GatewayTrafficUsagePayload, InboxActionRequest, PaginatedResponse, PaginationParams, Project, ProjectListParams, ProjectMember, ProjectMemberCandidate, ProjectPin, SystemComponentInstallPayload, SystemComponentInstallResponse, SystemComponentStatusResponse } from '../types'
 import { billingQuery, billingSummaryQuery, paginationQuery, request } from '../core'
 import { selectionItems, selectionPageParams } from '../selection-page'
 
@@ -6,7 +6,16 @@ export const projectsApi = {
   listProjects: () => request<PaginatedResponse<Project>>(`/projects?${paginationQuery(selectionPageParams)}`).then(selectionItems),
   listProjectsPage: (params: ProjectListParams) =>
     request<PaginatedResponse<Project>>(`/projects?${paginationQuery(params)}`),
-  listAppTemplates: () => request<AppTemplate[]>('/app-templates'),
+  listAppTemplates: (params?: { query?: string, category?: string }) => {
+    const search = new URLSearchParams()
+    if (params?.query)
+      search.set('query', params.query)
+    if (params?.category)
+      search.set('category', params.category)
+    const suffix = search.size > 0 ? `?${search.toString()}` : ''
+    return request<AppTemplateSummary[]>(`/app-templates${suffix}`)
+  },
+  getAppTemplate: (templateId: string) => request<AppTemplate>(`/app-templates/${encodeURIComponent(templateId)}`),
   installAppTemplate: (projectId: string, templateId: string, payload: AppTemplateInstallPayload) =>
     request<AppTemplateInstallResponse>(`/projects/${projectId}/app-templates/${encodeURIComponent(templateId)}/install`, { method: 'POST', body: JSON.stringify(payload) }),
   listSystemComponents: (params?: { componentId?: string, clusterId?: string }) => {

@@ -125,7 +125,7 @@ func buildPlatformCatalog(source []byte) ([]OpenAPIOperation, error) {
 			if _, exists := seen[operationID]; exists {
 				return nil, fmt.Errorf("duplicate Agent operationId %q", operationID)
 			}
-			operation, err := catalogOperation(document, path, method, operationID, raw)
+			operation, err := catalogOperation(document, path, method, operationID, pathItem, raw)
 			if err != nil {
 				return nil, err
 			}
@@ -142,11 +142,11 @@ func buildPlatformCatalog(source []byte) ([]OpenAPIOperation, error) {
 	return operations, nil
 }
 
-func catalogOperation(document openAPIDocument, path, method, operationID string, raw map[string]any) (OpenAPIOperation, error) {
+func catalogOperation(document openAPIDocument, path, method, operationID string, pathItem, raw map[string]any) (OpenAPIOperation, error) {
 	parameters := make([]OpenAPIParameter, 0)
 	properties := map[string]any{}
 	required := make([]string, 0)
-	for _, parameterRaw := range arrayValue(raw["parameters"]) {
+	for _, parameterRaw := range mergedOpenAPIParameters(document, pathItem["parameters"], raw["parameters"]) {
 		parameter := resolveOpenAPIObject(document, parameterRaw)
 		wireName, location := stringValue(parameter["name"]), stringValue(parameter["in"])
 		inputName := wireName
@@ -236,6 +236,27 @@ func catalogOperation(document openAPIDocument, path, method, operationID string
 		RequestRequired:  requestRequired,
 		RequestType:      requestType,
 	}, nil
+}
+
+func mergedOpenAPIParameters(document openAPIDocument, pathParameters, operationParameters any) []any {
+	merged := make([]any, 0, len(arrayValue(pathParameters))+len(arrayValue(operationParameters)))
+	indexByKey := map[string]int{}
+	for _, source := range [][]any{arrayValue(pathParameters), arrayValue(operationParameters)} {
+		for _, raw := range source {
+			parameter := resolveOpenAPIObject(document, raw)
+			key := stringValue(parameter["in"]) + "\x00" + stringValue(parameter["name"])
+			if key == "\x00" {
+				continue
+			}
+			if index, exists := indexByKey[key]; exists {
+				merged[index] = raw
+				continue
+			}
+			indexByKey[key] = len(merged)
+			merged = append(merged, raw)
+		}
+	}
+	return merged
 }
 
 func preferredOutputSchema(document openAPIDocument, operation map[string]any) map[string]any {

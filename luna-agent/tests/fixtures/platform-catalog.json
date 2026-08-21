@@ -5830,13 +5830,27 @@
     ],
     "inputSchema": {
       "additionalProperties": false,
-      "properties": {},
-      "required": [],
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
       "type": "object"
     },
     "outputSchema": {
       "type": "object"
     },
+    "parameters": [
+      {
+        "inputName": "id",
+        "wireName": "id",
+        "in": "path",
+        "required": true
+      }
+    ],
     "requestBody": false,
     "requestRequired": false
   },
@@ -8196,6 +8210,284 @@
     "requestBody": true,
     "requestRequired": true,
     "requestType": "application/json"
+  },
+  {
+    "operationId": "getAppTemplate",
+    "name": "getAppTemplate",
+    "summary": "Get App Template",
+    "category": "apptemplates",
+    "tags": [
+      "AppTemplates"
+    ],
+    "aliases": {
+      "zh": [
+        "查看应用模板详情",
+        "获取模板定义",
+        "读取模板安装参数"
+      ],
+      "en": [
+        "AppTemplates",
+        "app template details",
+        "get app template",
+        "getAppTemplate",
+        "template install parameters"
+      ]
+    },
+    "purpose": {
+      "zh": "读取已选应用模板的完整安装参数定义。",
+      "en": "Read the complete install parameter definition for a selected app template."
+    },
+    "avoidWhen": {
+      "zh": "尚未筛选候选模板时应先使用 listAppTemplates。",
+      "en": "Use listAppTemplates first when a template has not been selected."
+    },
+    "preconditions": {
+      "zh": [
+        "已从模板列表取得真实 templateId"
+      ],
+      "en": [
+        "An authoritative templateId was obtained from the template list"
+      ]
+    },
+    "successEvidence": {
+      "zh": "返回完整模板定义，Secret 参数不包含默认明文。",
+      "en": "Returns the complete template definition without plaintext defaults for secret parameters."
+    },
+    "requiresApproval": false,
+    "idempotent": true,
+    "method": "GET",
+    "path": "/api/v1/app-templates/{templateId}",
+    "requiredScopes": [
+      "application:read"
+    ],
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "templateId": {
+          "maxLength": 120,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "templateId"
+      ],
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "type": "string"
+        },
+        "dataVolumes": {
+          "items": {
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "oneOf": [
+                  {
+                    "required": [
+                      "mountPath"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "devicePath"
+                    ]
+                  }
+                ],
+                "properties": {
+                  "devicePath": {
+                    "pattern": "^/",
+                    "type": "string"
+                  },
+                  "logicalName": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "mountPath": {
+                    "pattern": "^/",
+                    "type": "string"
+                  },
+                  "readOnly": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "sourceType": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "logicalName",
+                  "sourceType"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "emptyDir": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "medium": {
+                        "enum": [
+                          "",
+                          "Memory"
+                        ],
+                        "type": "string"
+                      },
+                      "sizeLimit": {
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "logicalName": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "mountPath": {
+                    "pattern": "^/",
+                    "type": "string"
+                  },
+                  "sourceType": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "logicalName",
+                  "sourceType",
+                  "mountPath"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "maxItems": 32,
+          "type": "array"
+        },
+        "defaultCPU": {
+          "type": "string"
+        },
+        "defaultMemory": {
+          "type": "string"
+        },
+        "defaultReplicas": {
+          "type": "integer"
+        },
+        "description": {
+          "type": "string"
+        },
+        "icon": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "image": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "officialRepository": {
+          "type": "string"
+        },
+        "officialWebsite": {
+          "type": "string"
+        },
+        "popularityWeight": {
+          "type": "integer"
+        },
+        "servicePort": {
+          "type": "integer"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "systemComponent": {
+          "type": "string"
+        },
+        "values": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "autoGenerate": {
+                "type": "boolean"
+              },
+              "default": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "key": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "required": {
+                "type": "boolean"
+              },
+              "secret": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "key",
+              "label",
+              "description",
+              "default",
+              "required",
+              "secret",
+              "autoGenerate"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "slug",
+        "name",
+        "description",
+        "category",
+        "kind",
+        "systemComponent",
+        "icon",
+        "officialWebsite",
+        "officialRepository",
+        "popularityWeight",
+        "image",
+        "version",
+        "servicePort",
+        "defaultReplicas",
+        "defaultCPU",
+        "defaultMemory",
+        "dataVolumes",
+        "values"
+      ],
+      "type": "object"
+    },
+    "parameters": [
+      {
+        "inputName": "templateId",
+        "wireName": "templateId",
+        "in": "path",
+        "required": true
+      }
+    ],
+    "requestBody": false,
+    "requestRequired": false
   },
   {
     "operationId": "getApplication",
@@ -12816,6 +13108,10 @@
           "minimum": 1,
           "type": "integer"
         },
+        "search": {
+          "maxLength": 200,
+          "type": "string"
+        },
         "sortBy": {
           "default": "createdAt",
           "enum": [
@@ -12852,6 +13148,12 @@
       {
         "inputName": "pageSize",
         "wireName": "pageSize",
+        "in": "query",
+        "required": false
+      },
+      {
+        "inputName": "search",
+        "wireName": "search",
         "in": "query",
         "required": false
       },
@@ -13036,28 +13338,39 @@
       "AppTemplates"
     ],
     "aliases": {
-      "zh": [],
+      "zh": [
+        "应用模板列表",
+        "按分类查模板",
+        "搜索应用市场",
+        "查询应用模板"
+      ],
       "en": [
         "AppTemplates",
+        "app marketplace templates",
         "list app templates",
-        "listAppTemplates"
+        "listAppTemplates",
+        "search app templates"
       ]
     },
     "purpose": {
-      "zh": "用于调用 listAppTemplates 对应的平台能力。",
-      "en": "List App Templates"
+      "zh": "按关键词或分类查询应用市场模板摘要。",
+      "en": "Search app-template summaries by keyword or category."
     },
     "avoidWhen": {
-      "zh": "",
-      "en": ""
+      "zh": "已选定模板并需要完整安装参数时应使用 getAppTemplate。",
+      "en": "Use getAppTemplate after selecting a template and needing its complete parameters."
     },
     "preconditions": {
-      "zh": [],
-      "en": []
+      "zh": [
+        "当前用户可以读取应用模板"
+      ],
+      "en": [
+        "The current user can read app templates"
+      ]
     },
     "successEvidence": {
-      "zh": "",
-      "en": ""
+      "zh": "返回匹配模板的摘要和真实模板 ID；无匹配时返回空数组。",
+      "en": "Returns matching summaries with authoritative template IDs"
     },
     "requiresApproval": false,
     "idempotent": true,
@@ -13068,7 +13381,16 @@
     ],
     "inputSchema": {
       "additionalProperties": false,
-      "properties": {},
+      "properties": {
+        "category": {
+          "maxLength": 80,
+          "type": "string"
+        },
+        "query": {
+          "maxLength": 160,
+          "type": "string"
+        }
+      },
       "required": [],
       "type": "object"
     },
@@ -13202,6 +13524,10 @@
           "popularityWeight": {
             "type": "integer"
           },
+          "requiredValueCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
           "servicePort": {
             "type": "integer"
           },
@@ -13211,44 +13537,9 @@
           "systemComponent": {
             "type": "string"
           },
-          "values": {
-            "items": {
-              "additionalProperties": false,
-              "properties": {
-                "autoGenerate": {
-                  "type": "boolean"
-                },
-                "default": {
-                  "type": "string"
-                },
-                "description": {
-                  "type": "string"
-                },
-                "key": {
-                  "type": "string"
-                },
-                "label": {
-                  "type": "string"
-                },
-                "required": {
-                  "type": "boolean"
-                },
-                "secret": {
-                  "type": "boolean"
-                }
-              },
-              "required": [
-                "key",
-                "label",
-                "description",
-                "default",
-                "required",
-                "secret",
-                "autoGenerate"
-              ],
-              "type": "object"
-            },
-            "type": "array"
+          "valueCount": {
+            "minimum": 0,
+            "type": "integer"
           },
           "version": {
             "type": "string"
@@ -13273,12 +13564,27 @@
           "defaultCPU",
           "defaultMemory",
           "dataVolumes",
-          "values"
+          "valueCount",
+          "requiredValueCount"
         ],
         "type": "object"
       },
       "type": "array"
     },
+    "parameters": [
+      {
+        "inputName": "query",
+        "wireName": "query",
+        "in": "query",
+        "required": false
+      },
+      {
+        "inputName": "category",
+        "wireName": "category",
+        "in": "query",
+        "required": false
+      }
+    ],
     "requestBody": false,
     "requestRequired": false
   },
@@ -13665,6 +13971,10 @@
         "projectId": {
           "type": "string"
         },
+        "search": {
+          "maxLength": 200,
+          "type": "string"
+        },
         "sortBy": {
           "default": "createdAt",
           "enum": [
@@ -13756,6 +14066,12 @@
         "required": false
       },
       {
+        "inputName": "search",
+        "wireName": "search",
+        "in": "query",
+        "required": false
+      },
+      {
         "inputName": "sortBy",
         "wireName": "sortBy",
         "in": "query",
@@ -13812,13 +14128,26 @@
     ],
     "inputSchema": {
       "additionalProperties": false,
-      "properties": {},
+      "properties": {
+        "includeDisabled": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
       "required": [],
       "type": "object"
     },
     "outputSchema": {
       "type": "object"
     },
+    "parameters": [
+      {
+        "inputName": "includeDisabled",
+        "wireName": "includeDisabled",
+        "in": "query",
+        "required": false
+      }
+    ],
     "requestBody": false,
     "requestRequired": false
   },
@@ -13887,6 +14216,24 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "sortBy": {
+          "default": "amountCredits",
+          "enum": [
+            "amountCredits",
+            "projectName",
+            "applicationName",
+            "deploymentTargetName"
+          ],
+          "type": "string"
+        },
+        "sortOrder": {
+          "default": "desc",
+          "enum": [
+            "asc",
+            "desc"
+          ],
+          "type": "string"
         },
         "userId": {
           "type": "string"
@@ -13981,6 +14328,18 @@
         "wireName": "pageSize",
         "in": "query",
         "required": false
+      },
+      {
+        "inputName": "sortBy",
+        "wireName": "sortBy",
+        "in": "query",
+        "required": false
+      },
+      {
+        "inputName": "sortOrder",
+        "wireName": "sortOrder",
+        "in": "query",
+        "required": false
       }
     ],
     "requestBody": false,
@@ -14051,6 +14410,23 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "sortBy": {
+          "default": "createdAt",
+          "enum": [
+            "createdAt",
+            "amountCredits",
+            "reason"
+          ],
+          "type": "string"
+        },
+        "sortOrder": {
+          "default": "desc",
+          "enum": [
+            "asc",
+            "desc"
+          ],
+          "type": "string"
         },
         "type": {
           "type": "string"
@@ -14152,6 +14528,18 @@
       {
         "inputName": "pageSize",
         "wireName": "pageSize",
+        "in": "query",
+        "required": false
+      },
+      {
+        "inputName": "sortBy",
+        "wireName": "sortBy",
+        "in": "query",
+        "required": false
+      },
+      {
+        "inputName": "sortOrder",
+        "wireName": "sortOrder",
         "in": "query",
         "required": false
       }
@@ -14327,6 +14715,23 @@
           },
           "type": "array"
         },
+        "sortBy": {
+          "default": "createdAt",
+          "enum": [
+            "createdAt",
+            "amountCredits",
+            "meter"
+          ],
+          "type": "string"
+        },
+        "sortOrder": {
+          "default": "desc",
+          "enum": [
+            "asc",
+            "desc"
+          ],
+          "type": "string"
+        },
         "userId": {
           "type": "string"
         }
@@ -14424,6 +14829,18 @@
       {
         "inputName": "pageSize",
         "wireName": "pageSize",
+        "in": "query",
+        "required": false
+      },
+      {
+        "inputName": "sortBy",
+        "wireName": "sortBy",
+        "in": "query",
+        "required": false
+      },
+      {
+        "inputName": "sortOrder",
+        "wireName": "sortOrder",
         "in": "query",
         "required": false
       }
@@ -14691,6 +15108,10 @@
         "projectId": {
           "type": "string"
         },
+        "search": {
+          "maxLength": 200,
+          "type": "string"
+        },
         "sortBy": {
           "default": "createdAt",
           "enum": [
@@ -14816,6 +15237,12 @@
       {
         "inputName": "createdBy",
         "wireName": "createdBy",
+        "in": "query",
+        "required": false
+      },
+      {
+        "inputName": "search",
+        "wireName": "search",
         "in": "query",
         "required": false
       },
@@ -15033,6 +15460,10 @@
         "projectId": {
           "type": "string"
         },
+        "search": {
+          "maxLength": 200,
+          "type": "string"
+        },
         "sortBy": {
           "default": "createdAt",
           "enum": [
@@ -15120,6 +15551,12 @@
       {
         "inputName": "pageSize",
         "wireName": "pageSize",
+        "in": "query",
+        "required": false
+      },
+      {
+        "inputName": "search",
+        "wireName": "search",
         "in": "query",
         "required": false
       },
@@ -15302,6 +15739,10 @@
         "registryId": {
           "type": "string"
         },
+        "search": {
+          "maxLength": 200,
+          "type": "string"
+        },
         "sortBy": {
           "default": "createdAt",
           "enum": [
@@ -15404,6 +15845,12 @@
       {
         "inputName": "pageSize",
         "wireName": "pageSize",
+        "in": "query",
+        "required": false
+      },
+      {
+        "inputName": "search",
+        "wireName": "search",
         "in": "query",
         "required": false
       },
@@ -15583,6 +16030,10 @@
         "projectId": {
           "type": "string"
         },
+        "search": {
+          "maxLength": 200,
+          "type": "string"
+        },
         "sortBy": {
           "default": "createdAt",
           "enum": [
@@ -15682,6 +16133,12 @@
         "required": false
       },
       {
+        "inputName": "search",
+        "wireName": "search",
+        "in": "query",
+        "required": false
+      },
+      {
         "inputName": "sortBy",
         "wireName": "sortBy",
         "in": "query",
@@ -15765,6 +16222,10 @@
           "type": "integer"
         },
         "projectId": {
+          "type": "string"
+        },
+        "search": {
+          "maxLength": 200,
           "type": "string"
         },
         "sortBy": {
@@ -15854,6 +16315,12 @@
         "required": false
       },
       {
+        "inputName": "search",
+        "wireName": "search",
+        "in": "query",
+        "required": false
+      },
+      {
         "inputName": "page",
         "wireName": "page",
         "in": "query",
@@ -15935,6 +16402,10 @@
           "type": "integer"
         },
         "projectId": {
+          "type": "string"
+        },
+        "search": {
+          "maxLength": 200,
           "type": "string"
         },
         "sortBy": {
@@ -16027,6 +16498,12 @@
         "required": false
       },
       {
+        "inputName": "search",
+        "wireName": "search",
+        "in": "query",
+        "required": false
+      },
+      {
         "inputName": "sortBy",
         "wireName": "sortBy",
         "in": "query",
@@ -16087,10 +16564,20 @@
         "accountId": {
           "type": "string"
         },
+        "limit": {
+          "default": 50,
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        },
         "owner": {
           "type": "string"
         },
         "repo": {
+          "type": "string"
+        },
+        "search": {
+          "maxLength": 200,
           "type": "string"
         }
       },
@@ -16122,6 +16609,18 @@
         "wireName": "repo",
         "in": "path",
         "required": true
+      },
+      {
+        "inputName": "search",
+        "wireName": "search",
+        "in": "query",
+        "required": false
+      },
+      {
+        "inputName": "limit",
+        "wireName": "limit",
+        "in": "query",
+        "required": false
       }
     ],
     "requestBody": false,
@@ -16404,6 +16903,10 @@
         "projectId": {
           "type": "string"
         },
+        "search": {
+          "maxLength": 200,
+          "type": "string"
+        },
         "sortBy": {
           "default": "createdAt",
           "enum": [
@@ -16495,6 +16998,12 @@
         "required": false
       },
       {
+        "inputName": "search",
+        "wireName": "search",
+        "in": "query",
+        "required": false
+      },
+      {
         "inputName": "sortBy",
         "wireName": "sortBy",
         "in": "query",
@@ -16554,6 +17063,10 @@
       "properties": {
         "accountId": {
           "type": "string"
+        },
+        "includePublic": {
+          "default": false,
+          "type": "boolean"
         },
         "page": {
           "default": 1,
@@ -16675,6 +17188,12 @@
         "wireName": "search",
         "in": "query",
         "required": false
+      },
+      {
+        "inputName": "includePublic",
+        "wireName": "includePublic",
+        "in": "query",
+        "required": false
       }
     ],
     "requestBody": false,
@@ -16776,7 +17295,35 @@
     ],
     "inputSchema": {
       "additionalProperties": false,
-      "properties": {},
+      "properties": {
+        "page": {
+          "default": 1,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "pageSize": {
+          "default": 20,
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "sortBy": {
+          "default": "updatedAt",
+          "enum": [
+            "createdAt",
+            "updatedAt"
+          ],
+          "type": "string"
+        },
+        "sortOrder": {
+          "default": "desc",
+          "enum": [
+            "asc",
+            "desc"
+          ],
+          "type": "string"
+        }
+      },
       "required": [],
       "type": "object"
     },
@@ -16858,6 +17405,32 @@
       ],
       "type": "object"
     },
+    "parameters": [
+      {
+        "inputName": "page",
+        "wireName": "page",
+        "in": "query",
+        "required": false
+      },
+      {
+        "inputName": "pageSize",
+        "wireName": "pageSize",
+        "in": "query",
+        "required": false
+      },
+      {
+        "inputName": "sortBy",
+        "wireName": "sortBy",
+        "in": "query",
+        "required": false
+      },
+      {
+        "inputName": "sortOrder",
+        "wireName": "sortOrder",
+        "in": "query",
+        "required": false
+      }
+    ],
     "requestBody": false,
     "requestRequired": false
   },
@@ -16924,6 +17497,24 @@
           "type": "integer"
         },
         "search": {
+          "type": "string"
+        },
+        "sortBy": {
+          "default": "createdAt",
+          "enum": [
+            "createdAt",
+            "updatedAt",
+            "name",
+            "adapter"
+          ],
+          "type": "string"
+        },
+        "sortOrder": {
+          "default": "desc",
+          "enum": [
+            "asc",
+            "desc"
+          ],
           "type": "string"
         }
       },
@@ -16998,6 +17589,18 @@
         "wireName": "pageSize",
         "in": "query",
         "required": false
+      },
+      {
+        "inputName": "sortBy",
+        "wireName": "sortBy",
+        "in": "query",
+        "required": false
+      },
+      {
+        "inputName": "sortOrder",
+        "wireName": "sortOrder",
+        "in": "query",
+        "required": false
       }
     ],
     "requestBody": false,
@@ -17059,6 +17662,23 @@
         "pageSize": {
           "format": "int32",
           "type": "integer"
+        },
+        "sortBy": {
+          "default": "createdAt",
+          "enum": [
+            "createdAt",
+            "status",
+            "eventType"
+          ],
+          "type": "string"
+        },
+        "sortOrder": {
+          "default": "desc",
+          "enum": [
+            "asc",
+            "desc"
+          ],
+          "type": "string"
         },
         "status": {
           "type": "string"
@@ -17139,6 +17759,18 @@
       {
         "inputName": "pageSize",
         "wireName": "pageSize",
+        "in": "query",
+        "required": false
+      },
+      {
+        "inputName": "sortBy",
+        "wireName": "sortBy",
+        "in": "query",
+        "required": false
+      },
+      {
+        "inputName": "sortOrder",
+        "wireName": "sortOrder",
         "in": "query",
         "required": false
       }
@@ -17262,6 +17894,23 @@
         },
         "search": {
           "type": "string"
+        },
+        "sortBy": {
+          "default": "createdAt",
+          "enum": [
+            "createdAt",
+            "updatedAt",
+            "name"
+          ],
+          "type": "string"
+        },
+        "sortOrder": {
+          "default": "desc",
+          "enum": [
+            "asc",
+            "desc"
+          ],
+          "type": "string"
         }
       },
       "required": [],
@@ -17335,6 +17984,18 @@
         "wireName": "pageSize",
         "in": "query",
         "required": false
+      },
+      {
+        "inputName": "sortBy",
+        "wireName": "sortBy",
+        "in": "query",
+        "required": false
+      },
+      {
+        "inputName": "sortOrder",
+        "wireName": "sortOrder",
+        "in": "query",
+        "required": false
       }
     ],
     "requestBody": false,
@@ -17399,6 +18060,24 @@
         "pageSize": {
           "format": "int32",
           "type": "integer"
+        },
+        "sortBy": {
+          "default": "createdAt",
+          "enum": [
+            "createdAt",
+            "updatedAt",
+            "name",
+            "eventType"
+          ],
+          "type": "string"
+        },
+        "sortOrder": {
+          "default": "desc",
+          "enum": [
+            "asc",
+            "desc"
+          ],
+          "type": "string"
         }
       },
       "required": [],
@@ -17478,6 +18157,18 @@
         "wireName": "pageSize",
         "in": "query",
         "required": false
+      },
+      {
+        "inputName": "sortBy",
+        "wireName": "sortBy",
+        "in": "query",
+        "required": false
+      },
+      {
+        "inputName": "sortOrder",
+        "wireName": "sortOrder",
+        "in": "query",
+        "required": false
       }
     ],
     "requestBody": false,
@@ -17524,7 +18215,40 @@
     ],
     "inputSchema": {
       "additionalProperties": false,
-      "properties": {},
+      "properties": {
+        "page": {
+          "default": 1,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "pageSize": {
+          "default": 20,
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "search": {
+          "maxLength": 200,
+          "type": "string"
+        },
+        "sortBy": {
+          "default": "createdAt",
+          "enum": [
+            "createdAt",
+            "updatedAt",
+            "name"
+          ],
+          "type": "string"
+        },
+        "sortOrder": {
+          "default": "desc",
+          "enum": [
+            "asc",
+            "desc"
+          ],
+          "type": "string"
+        }
+      },
       "required": [],
       "type": "object"
     },
@@ -17603,6 +18327,38 @@
       ],
       "type": "object"
     },
+    "parameters": [
+      {
+        "inputName": "page",
+        "wireName": "page",
+        "in": "query",
+        "required": false
+      },
+      {
+        "inputName": "pageSize",
+        "wireName": "pageSize",
+        "in": "query",
+        "required": false
+      },
+      {
+        "inputName": "search",
+        "wireName": "search",
+        "in": "query",
+        "required": false
+      },
+      {
+        "inputName": "sortBy",
+        "wireName": "sortBy",
+        "in": "query",
+        "required": false
+      },
+      {
+        "inputName": "sortOrder",
+        "wireName": "sortOrder",
+        "in": "query",
+        "required": false
+      }
+    ],
     "requestBody": false,
     "requestRequired": false
   },
@@ -18341,6 +19097,10 @@
         "projectId": {
           "type": "string"
         },
+        "search": {
+          "maxLength": 200,
+          "type": "string"
+        },
         "sortBy": {
           "default": "createdAt",
           "enum": [
@@ -18431,6 +19191,12 @@
       {
         "inputName": "pageSize",
         "wireName": "pageSize",
+        "in": "query",
+        "required": false
+      },
+      {
+        "inputName": "search",
+        "wireName": "search",
         "in": "query",
         "required": false
       },
@@ -18666,6 +19432,10 @@
         "projectId": {
           "type": "string"
         },
+        "search": {
+          "maxLength": 200,
+          "type": "string"
+        },
         "sortBy": {
           "default": "createdAt",
           "enum": [
@@ -18754,6 +19524,12 @@
       {
         "inputName": "pageSize",
         "wireName": "pageSize",
+        "in": "query",
+        "required": false
+      },
+      {
+        "inputName": "search",
+        "wireName": "search",
         "in": "query",
         "required": false
       },
@@ -19640,6 +20416,10 @@
           ],
           "type": "string"
         },
+        "search": {
+          "maxLength": 200,
+          "type": "string"
+        },
         "sortBy": {
           "default": "createdAt",
           "enum": [
@@ -19773,6 +20553,12 @@
       {
         "inputName": "pageSize",
         "wireName": "pageSize",
+        "in": "query",
+        "required": false
+      },
+      {
+        "inputName": "search",
+        "wireName": "search",
         "in": "query",
         "required": false
       },
@@ -20469,6 +21255,10 @@
         "projectId": {
           "type": "string"
         },
+        "search": {
+          "maxLength": 200,
+          "type": "string"
+        },
         "sortBy": {
           "default": "createdAt",
           "enum": [
@@ -20564,6 +21354,12 @@
       {
         "inputName": "pageSize",
         "wireName": "pageSize",
+        "in": "query",
+        "required": false
+      },
+      {
+        "inputName": "search",
+        "wireName": "search",
         "in": "query",
         "required": false
       },
@@ -21095,6 +21891,10 @@
         "projectId": {
           "type": "string"
         },
+        "search": {
+          "maxLength": 200,
+          "type": "string"
+        },
         "sortBy": {
           "default": "createdAt",
           "enum": [
@@ -21184,6 +21984,12 @@
       {
         "inputName": "pageSize",
         "wireName": "pageSize",
+        "in": "query",
+        "required": false
+      },
+      {
+        "inputName": "search",
+        "wireName": "search",
         "in": "query",
         "required": false
       },
@@ -21416,6 +22222,10 @@
           "minimum": 1,
           "type": "integer"
         },
+        "search": {
+          "maxLength": 200,
+          "type": "string"
+        },
         "sortBy": {
           "default": "createdAt",
           "enum": [
@@ -21453,6 +22263,12 @@
       {
         "inputName": "pageSize",
         "wireName": "pageSize",
+        "in": "query",
+        "required": false
+      },
+      {
+        "inputName": "search",
+        "wireName": "search",
         "in": "query",
         "required": false
       },
@@ -24564,10 +25380,14 @@
             "cachedOutputCreditsPerMillion"
           ],
           "type": "object"
+        },
+        "id": {
+          "type": "string"
         }
       },
       "required": [
-        "body"
+        "body",
+        "id"
       ],
       "type": "object"
     },
@@ -24636,6 +25456,14 @@
       ],
       "type": "object"
     },
+    "parameters": [
+      {
+        "inputName": "id",
+        "wireName": "id",
+        "in": "path",
+        "required": true
+      }
+    ],
     "requestBody": true,
     "requestRequired": true,
     "requestType": "application/json"

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import type { AppTemplate, AppTemplateInstallPayload, Project, RuntimeCluster } from '@/api'
+import type { AppTemplate, AppTemplateInstallPayload, AppTemplateSummary, Project, RuntimeCluster } from '@/api'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowRight, CircleHelp, ExternalLink, PackagePlus, Search, Sparkles } from 'lucide-react'
 import { useMemo, useState } from 'react'
@@ -40,11 +40,11 @@ export function AppTemplatesPage() {
   const [category, setCategory] = useState('all')
   const [sortBy, setSortBy] = useState<'popularity' | 'name'>('popularity')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
-  const [selectedTemplateOverride, setSelectedTemplateOverride] = useState<AppTemplate | null>(null)
+  const [selectedTemplateOverride, setSelectedTemplateOverride] = useState<AppTemplateSummary | null>(null)
   const [selectedProjectId, setSelectedProjectId] = useState('')
   const [formState, setFormState] = useState<{ templateId: string, value: AppTemplateInstallPayload } | null>(null)
   const requestedTemplateId = searchParams.get('template')
-  const templates = useQuery({ queryKey: ['app-templates'], queryFn: api.listAppTemplates })
+  const templates = useQuery({ queryKey: ['app-templates'], queryFn: () => api.listAppTemplates() })
   const projects = useQuery({ queryKey: ['projects'], queryFn: api.listProjects })
   const projectItems = useMemo(() => projects.data ?? [], [projects.data])
   const projectId = projectItems.some(project => project.id === selectedProjectId)
@@ -54,7 +54,13 @@ export function AppTemplatesPage() {
     () => templates.data?.find(template => template.id === requestedTemplateId) ?? null,
     [requestedTemplateId, templates.data],
   )
-  const selectedTemplate = selectedTemplateOverride ?? requestedTemplate
+  const selectedTemplateSummary = selectedTemplateOverride ?? requestedTemplate
+  const templateDetail = useQuery({
+    queryKey: ['app-template', selectedTemplateSummary?.id],
+    queryFn: () => api.getAppTemplate(selectedTemplateSummary!.id),
+    enabled: Boolean(selectedTemplateSummary?.id),
+  })
+  const selectedTemplate = templateDetail.data ?? null
   const selectedTemplateIsSystem = isSystemComponentTemplate(selectedTemplate)
   const canInstallSystemComponent = isPlatformAdmin(user?.role)
   const defaultForm = useMemo(
@@ -147,9 +153,9 @@ export function AppTemplatesPage() {
     onError: error => toast.error(error.message),
   })
 
-  function openInstallDialog(template: AppTemplate) {
+  function openInstallDialog(template: AppTemplateSummary) {
     setSelectedTemplateOverride(template)
-    setFormState({ templateId: template.id, value: payloadFromTemplate(template) })
+    setFormState(null)
   }
 
   function closeInstallDialog() {
@@ -320,7 +326,7 @@ export function AppTemplatesPage() {
   )
 }
 
-function TemplateCard({ canInstallSystemComponent, template, onInstall }: { canInstallSystemComponent: boolean, template: AppTemplate, onInstall: () => void }) {
+function TemplateCard({ canInstallSystemComponent, template, onInstall }: { canInstallSystemComponent: boolean, template: AppTemplateSummary, onInstall: () => void }) {
   const { t } = useTranslation()
   const systemComponent = isSystemComponentTemplate(template)
   const installDisabled = systemComponent && !canInstallSystemComponent
@@ -370,7 +376,7 @@ function MarketplaceMetric({ label, value }: { label: string, value: number }) {
   )
 }
 
-function TemplateSourceLinks({ template }: { template: AppTemplate }) {
+function TemplateSourceLinks({ template }: { template: Pick<AppTemplate, 'officialRepository' | 'officialWebsite'> }) {
   const { t } = useTranslation()
   return (
     <div className="flex shrink-0 items-center gap-2">
@@ -836,7 +842,7 @@ function payloadFromTemplate(template: AppTemplate): AppTemplateInstallPayload {
   }
 }
 
-function isSystemComponentTemplate(template: AppTemplate | null | undefined) {
+function isSystemComponentTemplate(template: Pick<AppTemplate, 'kind' | 'systemComponent'> | null | undefined) {
   return template?.kind === 'system_component' || Boolean(template?.systemComponent)
 }
 

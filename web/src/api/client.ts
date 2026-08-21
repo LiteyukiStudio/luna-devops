@@ -262,6 +262,7 @@ const domainOperations = {
     'listProjects',
     'listProjectsPage',
     'listAppTemplates',
+    'getAppTemplate',
     'installAppTemplate',
     'listSystemComponents',
     'installSystemAppTemplate',

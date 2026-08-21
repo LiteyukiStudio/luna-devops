@@ -3,9 +3,13 @@ package aitool
 import (
 	"encoding/json"
 	"reflect"
+	"regexp"
+	"sort"
 	"strings"
 	"testing"
 )
+
+var openAPIPathParameterPattern = regexp.MustCompile(`\{([^}]+)\}`)
 
 func TestPlatformCatalogDefaultsToRegularOpenAPIOperations(t *testing.T) {
 	operations, err := PlatformCatalog()
@@ -48,6 +52,30 @@ func TestPlatformCatalogDefaultsToRegularOpenAPIOperations(t *testing.T) {
 	}
 }
 
+func TestPlatformCatalogPathParametersExactlyMatchRoutePlaceholders(t *testing.T) {
+	operations, err := PlatformCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, operation := range operations {
+		placeholders := make([]string, 0)
+		for _, match := range openAPIPathParameterPattern.FindAllStringSubmatch(operation.Path, -1) {
+			placeholders = append(placeholders, match[1])
+		}
+		declared := make([]string, 0)
+		for _, parameter := range operation.Parameters {
+			if parameter.In == "path" {
+				declared = append(declared, parameter.WireName)
+			}
+		}
+		sort.Strings(placeholders)
+		sort.Strings(declared)
+		if !reflect.DeepEqual(placeholders, declared) {
+			t.Errorf("%s path parameters = %v, placeholders = %v", operation.OperationID, declared, placeholders)
+		}
+	}
+}
+
 func TestPlatformCatalogJSONIsMinimalAndSelfContained(t *testing.T) {
 	operation, ok := PlatformOperation("createProjectVolume")
 	if !ok {
@@ -80,6 +108,7 @@ func TestHighFrequencyOperationsCarryExplicitSemanticMetadata(t *testing.T) {
 		"deleteProjectVolume", "retryProjectVolumeOperation", "previewProjectVolumeDeletion",
 		"listRuntimeClusters", "listRuntimeClusterResources", "getDashboard", "listUsers",
 		"getBillingSummary", "listNotificationChannels", "webSearch", "fetchWebPage",
+		"listAppTemplates", "getAppTemplate",
 		"listApplications", "createApplication", "getApplication", "updateApplication", "deleteApplication",
 		"listDeploymentTargets", "createDeploymentTarget", "updateDeploymentTarget", "deleteDeploymentTarget",
 		"listBuildRuns", "triggerBuildRun", "getBuildRun", "retryBuildRun",

@@ -353,6 +353,11 @@ export interface AppTemplate {
   values: AppTemplateValueDefinition[]
 }
 
+export type AppTemplateSummary = Omit<AppTemplate, 'values'> & {
+  valueCount: number
+  requiredValueCount: number
+}
+
 export interface AppTemplateInstallation {
   id: string
   templateId: string

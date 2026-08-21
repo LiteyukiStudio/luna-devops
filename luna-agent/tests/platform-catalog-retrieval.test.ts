@@ -1,6 +1,7 @@
-import { readFileSync } from "node:fs"
+import { readdirSync, readFileSync } from "node:fs"
+import { join } from "node:path"
 import { describe, expect, it } from "vitest"
-import { ToolCatalog } from "../src/tools/catalog.js"
+import { ToolCatalog, validateArguments } from "../src/tools/catalog.js"
 
 const platformCatalog = ToolCatalog.load(JSON.parse(readFileSync(
   new URL("./fixtures/platform-catalog.json", import.meta.url),
@@ -28,6 +29,8 @@ describe("real PlatformCatalog retrieval", () => {
     ["list project volumes", "listProjectVolumes"],
     ["get project volume", "getProjectVolume"],
     ["查看删除影响", "previewProjectVolumeDeletion"],
+    ["在应用市场搜索 Dify 模板", "listAppTemplates"],
+    ["读取已选应用模板的完整安装参数", "getAppTemplate"],
   ])("ranks the intended real operation first for %s", (query, operationId) => {
     const result = platformCatalog.search({ query, pageSize: 20 })
     expect(result.items[0]?.operationId).toBe(operationId)
@@ -58,11 +61,38 @@ describe("real PlatformCatalog retrieval", () => {
     const browsed = Array.from({ length: Math.ceil(operations.length / 100) }, (_, index) =>
       platformCatalog.search({ page: index + 1, pageSize: 100 }).items.map(item => item.operationId)).flat()
 
-    expect(operations).toHaveLength(207)
+    expect(operations).toHaveLength(208)
     expect(new Set(browsed)).toEqual(new Set(operations.map(operation => operation.operationId)))
     for (const operation of operations) {
       expect(platformCatalog.search({ query: operation.operationId, pageSize: 8 }).items[0]?.operationId)
         .toBe(operation.operationId)
+    }
+  })
+
+  it("keeps every operation discoverable in the first eight results by its human-readable intent", () => {
+    for (const operation of platformCatalog.all()) {
+      const matches = platformCatalog.search({ query: operation.summary, pageSize: 8 }).items
+        .map(item => item.operationId)
+      expect(matches, `${operation.operationId}: ${operation.summary}`)
+        .toContain(operation.operationId)
+    }
+  })
+
+  it("accepts app-template filters and every route placeholder required by the HTTP transport", () => {
+    const list = platformCatalog.get("listAppTemplates")
+    const detail = platformCatalog.get("getAppTemplate")
+    expect(validateArguments(list.inputSchema, { query: "Dify", category: "ai" }))
+      .toEqual({ query: "Dify", category: "ai" })
+    expect(validateArguments(detail.inputSchema, { templateId: "postgresql" }))
+      .toEqual({ templateId: "postgresql" })
+
+    for (const operation of platformCatalog.all()) {
+      for (const placeholder of operation.path.matchAll(/\{([^}]+)\}/g)) {
+        expect(operation.parameters, `${operation.operationId}:${placeholder[1]}`)
+          .toContainEqual(expect.objectContaining({ in: "path", wireName: placeholder[1], required: true }))
+        expect(operation.inputSchema.properties, `${operation.operationId}:${placeholder[1]}`)
+          .toHaveProperty(placeholder[1]!)
+      }
     }
   })
 
@@ -95,4 +125,26 @@ describe("real PlatformCatalog retrieval", () => {
     expect(platformCatalog.search({ query: "zzqxwvplm" }))
       .toMatchObject({ items: [], total: 0, totalPages: 0 })
   })
+
+  it("keeps every platform operation named by a Skill available in the real catalog", () => {
+    const known = new Set([
+      ...platformCatalog.all().map(operation => operation.operationId),
+      "search_tools", "get_tool_details", "present_card", "request_input", "request_choice",
+      "navigate_to_route", "rename_conversation", "present_diagnosis", "present_execution_progress",
+      "present_health_overview", "present_operation_result", "request_resource_choice",
+      "request_tool_input", "review_tool_action",
+    ])
+    const operationLike = /^(?:get|list|create|update|delete|preview|retry|install|trigger|check|test|read|fetch|search|rotate|revoke|unbind|pin|unpin|rollback|cancel|cleanup|export|import|resolve|set|start|complete|authorize|reconfigure)[A-Z_]/
+    const missing = skillMarkdownFiles(new URL("../skills", import.meta.url).pathname)
+      .flatMap(file => [...readFileSync(file, "utf8").matchAll(/`([A-Za-z][A-Za-z0-9_]+)`/g)].map(match => match[1]!))
+      .filter((operationId, index, values) => operationLike.test(operationId) && !known.has(operationId) && values.indexOf(operationId) === index)
+    expect(missing).toEqual([])
+  })
 })
+
+function skillMarkdownFiles(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap(entry =>
+    entry.isDirectory()
+      ? skillMarkdownFiles(join(directory, entry.name))
+      : entry.name.endsWith(".md") ? [join(directory, entry.name)] : [])
+}

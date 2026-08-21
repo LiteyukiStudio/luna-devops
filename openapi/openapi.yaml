@@ -533,6 +533,10 @@ paths:
       operationId: listAuthProviders
       tags: [Auth]
       summary: List auth providers
+      parameters:
+        - name: includeDisabled
+          in: query
+          schema: { type: boolean, default: false }
       responses:
         "200":
           description: Auth provider list.
@@ -709,6 +713,7 @@ paths:
       parameters:
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Search"
         - name: sortBy
           in: query
           schema:
@@ -970,6 +975,7 @@ paths:
           schema: { type: string }
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Search"
         - name: sortBy
           in: query
           schema:
@@ -1020,6 +1026,7 @@ paths:
             type: string
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Search"
         - name: sortBy
           in: query
           schema: { type: string, enum: [createdAt, name, scope], default: createdAt }
@@ -1137,6 +1144,7 @@ paths:
             type: string
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Search"
         - name: sortBy
           in: query
           schema: { type: string, enum: [createdAt, username], default: createdAt }
@@ -1217,6 +1225,10 @@ paths:
           in: query
           schema:
             type: string
+        - name: includePublic
+          in: query
+          description: For the anonymous account, search public repositories when the account list has no match.
+          schema: { type: boolean, default: false }
       responses:
         "200":
           description: Paginated repository list. For upstreams without an exact total, a full page reports a bounded lower bound that keeps the next page available.
@@ -1233,6 +1245,12 @@ paths:
         - $ref: "#/components/parameters/AccountId"
         - $ref: "#/components/parameters/Owner"
         - $ref: "#/components/parameters/Repo"
+        - name: search
+          in: query
+          schema: { type: string, maxLength: 200 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
       responses:
         "200":
           description: Branch list.
@@ -1272,6 +1290,7 @@ paths:
             type: string
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Search"
         - name: sortBy
           in: query
           schema:
@@ -1456,6 +1475,7 @@ paths:
             type: string
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Search"
         - name: sortBy
           in: query
           schema: { type: string, enum: [createdAt, repository, tag, sourceType, scanStatus, sourceCommit], default: createdAt }
@@ -1532,6 +1552,7 @@ paths:
       parameters:
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Search"
         - name: scope
           in: query
           description: Use `related` by default. `all` is allowed only for platform administrators and must be requested explicitly.
@@ -1690,6 +1711,7 @@ paths:
         - $ref: "#/components/parameters/ProjectId"
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Search"
         - name: sortBy
           in: query
           schema: { type: string, enum: [createdAt, email, name, role], default: createdAt }
@@ -2662,6 +2684,7 @@ paths:
         - $ref: "#/components/parameters/ApplicationId"
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Search"
         - name: sortBy
           in: query
           schema: { type: string, enum: [createdAt, name], default: createdAt }
@@ -3003,6 +3026,7 @@ paths:
           schema: { type: string }
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Search"
         - name: sortBy
           in: query
           schema: { type: string, enum: [createdAt, owner, repo], default: createdAt }
@@ -3107,6 +3131,7 @@ paths:
       parameters:
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Search"
         - name: sortBy
           in: query
           schema:
@@ -3167,6 +3192,14 @@ paths:
       tags:
         - OAuthApplications
       summary: List OAuth Applications
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Search"
+        - name: sortBy
+          in: query
+          schema: { type: string, enum: [createdAt, updatedAt, name], default: createdAt }
+        - $ref: "#/components/parameters/SortOrder"
       responses:
         "200":
           description: Successful business response.
@@ -3286,6 +3319,13 @@ paths:
       tags:
         - OAuthApplications
       summary: List My OAuth Grants
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: sortBy
+          in: query
+          schema: { type: string, enum: [createdAt, updatedAt], default: updatedAt }
+        - $ref: "#/components/parameters/SortOrder"
       responses:
         "200":
           description: Successful business response.
@@ -3622,6 +3662,7 @@ paths:
             type: string
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Search"
         - name: sortBy
           in: query
           schema: { type: string, enum: [createdAt, name, scope], default: createdAt }
@@ -4169,6 +4210,10 @@ paths:
           schema:
             type: integer
             format: int32
+        - name: sortBy
+          in: query
+          schema: { type: string, enum: [createdAt, updatedAt, name, adapter], default: createdAt }
+        - $ref: "#/components/parameters/SortOrder"
       responses:
         "200":
           description: Successful business response.
@@ -4311,6 +4356,10 @@ paths:
           schema:
             type: integer
             format: int32
+        - name: sortBy
+          in: query
+          schema: { type: string, enum: [createdAt, updatedAt, name, eventType], default: createdAt }
+        - $ref: "#/components/parameters/SortOrder"
       responses:
         "200":
           description: Successful business response.
@@ -4423,6 +4472,10 @@ paths:
           schema:
             type: integer
             format: int32
+        - name: sortBy
+          in: query
+          schema: { type: string, enum: [createdAt, updatedAt, name], default: createdAt }
+        - $ref: "#/components/parameters/SortOrder"
       responses:
         "200":
           description: Successful business response.
@@ -4540,6 +4593,10 @@ paths:
           schema:
             type: integer
             format: int32
+        - name: sortBy
+          in: query
+          schema: { type: string, enum: [createdAt, status, eventType], default: createdAt }
+        - $ref: "#/components/parameters/SortOrder"
       responses:
         "200":
           description: Successful business response.
@@ -5031,17 +5088,66 @@ paths:
       tags:
         - AppTemplates
       summary: List App Templates
+      x-luna-agent:
+        aliases:
+          zh: [查询应用模板, 搜索应用市场, 应用模板列表, 按分类查模板]
+          en: [search app templates, list app templates, app marketplace templates]
+        purpose: { zh: 按关键词或分类查询应用市场模板摘要。, en: Search app-template summaries by keyword or category. }
+        avoidWhen: { zh: 已选定模板并需要完整安装参数时应使用 getAppTemplate。, en: Use getAppTemplate after selecting a template and needing its complete parameters. }
+        preconditions: { zh: [当前用户可以读取应用模板], en: [The current user can read app templates] }
+        successEvidence: { zh: 返回匹配模板的摘要和真实模板 ID；无匹配时返回空数组。, en: Returns matching summaries with authoritative template IDs, or an empty array when none match. }
+      parameters:
+        - name: query
+          in: query
+          required: false
+          description: Case-insensitive match over template identity, name, description, category, image, and official links.
+          schema: { type: string, maxLength: 160 }
+        - name: category
+          in: query
+          required: false
+          description: Exact case-insensitive template category.
+          schema: { type: string, maxLength: 80 }
       responses:
         "200":
-          description: Successful business response.
+          description: Matching app-template summaries.
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: "#/components/schemas/AppTemplate"
+                  $ref: "#/components/schemas/AppTemplateSummary"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/app-templates/{templateId}:
+    get:
+      operationId: getAppTemplate
+      tags:
+        - AppTemplates
+      summary: Get App Template
+      x-luna-agent:
+        aliases:
+          zh: [查看应用模板详情, 读取模板安装参数, 获取模板定义]
+          en: [get app template, app template details, template install parameters]
+        purpose: { zh: 读取已选应用模板的完整安装参数定义。, en: Read the complete install parameter definition for a selected app template. }
+        avoidWhen: { zh: 尚未筛选候选模板时应先使用 listAppTemplates。, en: Use listAppTemplates first when a template has not been selected. }
+        preconditions: { zh: [已从模板列表取得真实 templateId], en: [An authoritative templateId was obtained from the template list] }
+        successEvidence: { zh: 返回完整模板定义，Secret 参数不包含默认明文。, en: Returns the complete template definition without plaintext defaults for secret parameters. }
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 120 }
+      responses:
+        "200":
+          description: Sanitized complete app-template definition.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppTemplate"
         "403":
           $ref: "#/components/responses/Forbidden"
         "404":
@@ -5085,6 +5191,7 @@ paths:
             type: string
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Search"
         - name: sortBy
           in: query
           schema: { type: string, enum: [createdAt, name], default: createdAt }
@@ -5922,6 +6029,7 @@ paths:
           required: false
           schema:
             type: string
+        - $ref: "#/components/parameters/Search"
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
         - name: sortBy
@@ -6683,6 +6791,7 @@ paths:
           required: false
           schema:
             type: string
+        - $ref: "#/components/parameters/Search"
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
         - name: sortBy
@@ -7015,6 +7124,10 @@ paths:
           schema:
             type: integer
             format: int32
+        - name: sortBy
+          in: query
+          schema: { type: string, enum: [amountCredits, projectName, applicationName, deploymentTargetName], default: amountCredits }
+        - $ref: "#/components/parameters/SortOrder"
       responses:
         "200":
           description: Successful business response.
@@ -7076,6 +7189,10 @@ paths:
           schema:
             type: integer
             format: int32
+        - name: sortBy
+          in: query
+          schema: { type: string, enum: [createdAt, amountCredits, reason], default: createdAt }
+        - $ref: "#/components/parameters/SortOrder"
       responses:
         "200":
           description: Successful business response.
@@ -7137,6 +7254,10 @@ paths:
           schema:
             type: integer
             format: int32
+        - name: sortBy
+          in: query
+          schema: { type: string, enum: [createdAt, amountCredits, meter], default: createdAt }
+        - $ref: "#/components/parameters/SortOrder"
       responses:
         "200":
           description: Successful business response.
@@ -8165,6 +8286,13 @@ components:
         minimum: 1
         maximum: 100
         default: 20
+    Search:
+      name: search
+      in: query
+      required: false
+      schema:
+        type: string
+        maxLength: 200
     ProjectId:
       name: projectId
       in: path
@@ -11486,6 +11614,7 @@ components:
                 sizeLimit: { type: string }
     AppTemplateValueDefinition:
       type: object
+      additionalProperties: false
       required: [key, label, description, default, required, secret, autoGenerate]
       properties:
         key: { type: string }
@@ -11495,8 +11624,37 @@ components:
         required: { type: boolean }
         secret: { type: boolean }
         autoGenerate: { type: boolean }
+    AppTemplateSummary:
+      type: object
+      additionalProperties: false
+      required: [id, slug, name, description, category, kind, systemComponent, icon, officialWebsite, officialRepository, popularityWeight, image, version, servicePort, defaultReplicas, defaultCPU, defaultMemory, dataVolumes, valueCount, requiredValueCount]
+      properties:
+        id: { type: string }
+        slug: { type: string }
+        name: { type: string }
+        description: { type: string }
+        category: { type: string }
+        kind: { type: string }
+        systemComponent: { type: string }
+        icon: { type: string }
+        officialWebsite: { type: string }
+        officialRepository: { type: string }
+        popularityWeight: { type: integer }
+        image: { type: string }
+        version: { type: string }
+        servicePort: { type: integer }
+        defaultReplicas: { type: integer }
+        defaultCPU: { type: string }
+        defaultMemory: { type: string }
+        dataVolumes:
+          type: array
+          maxItems: 32
+          items: { $ref: "#/components/schemas/AppTemplateDataVolume" }
+        valueCount: { type: integer, minimum: 0 }
+        requiredValueCount: { type: integer, minimum: 0 }
     AppTemplate:
       type: object
+      additionalProperties: false
       required: [id, slug, name, description, category, kind, systemComponent, icon, officialWebsite, officialRepository, popularityWeight, image, version, servicePort, defaultReplicas, defaultCPU, defaultMemory, dataVolumes, values]
       properties:
         id: { type: string }

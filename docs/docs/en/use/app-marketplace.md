@@ -12,6 +12,8 @@ A template usually creates an application, an image-based deployment target, req
 4. Fill in required template settings. Leave supported generated passwords empty to let the platform create them.
 5. Choose whether to deploy immediately and confirm.
 
+The directory loads only summaries for search and comparison, then fetches the complete install parameters after you select a template. Secret parameters never include plaintext defaults, and a search with no match returns an empty result instead of failing.
+
 After installation, the application deployment page opens. Check the release and workload status to confirm that the application is running.
 
 ## Platform components

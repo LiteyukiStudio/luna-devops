@@ -71,6 +71,13 @@ AI 助手不是悬浮在控制台上的通用聊天机器人。它理解用户�
 - Catalog 必须从真实 OpenAPI operation 归一化 operationId、用途、标签、别名、审批要求、幂等性、
   HTTP 路由、Scope、输入/输出 Schema、敏感路径和传输参数。目录只负责发现，最终权限仍由 Luna API
   权威回读用户、Session、会话、项目空间、ToolCall 与审批状态后进入原 Handler/Service/RBAC。
+- OpenAPI path item 与 operation 两层的 parameters 必须按 `in + name` 合并，operation 层覆盖同名定义；
+  Agent 可调用 Handler 直接消费的 `Query`、分页、排序、搜索和布尔查询参数必须全部进入模型可见输入
+  Schema。契约测试需要从 Handler 源码反向核对这些字段，禁止依赖 Handler 宽松读取或模型重试掩盖
+  OpenAPI 漏项。
+- 应用市场工具使用两阶段契约：`listAppTemplates(query?, category?)` 只返回可检索摘要，选定真实
+  `templateId` 后调用 `getAppTemplate(templateId)` 获取安装参数。列表无匹配时返回空数组，不视为工具
+  失败；详情不得回显内部渲染字段，Secret 参数的默认值必须清空。
 - 普通 `/api/v1` JSON operation 自动纳入目录；OAuth/OIDC 回调、认证凭据、文件传输、SSE、
   WebSocket 和其他特殊协议必须在集中 `operationId -> reason` deny map 中排除并测试。不得在 Agent
   维护重复白名单、执行路由或权限 fallback。

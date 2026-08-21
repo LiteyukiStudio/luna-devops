@@ -41,13 +41,114 @@ type appTemplateInstallResponse struct {
 	Release          *model.Release                `json:"release,omitempty"`
 }
 
+type appTemplateSummaryResponse struct {
+	ID                 string                `json:"id"`
+	Slug               string                `json:"slug"`
+	Name               string                `json:"name"`
+	Description        string                `json:"description"`
+	Category           string                `json:"category"`
+	Kind               string                `json:"kind"`
+	SystemComponent    string                `json:"systemComponent"`
+	Icon               string                `json:"icon"`
+	OfficialWebsite    string                `json:"officialWebsite"`
+	OfficialRepository string                `json:"officialRepository"`
+	PopularityWeight   int                   `json:"popularityWeight"`
+	Image              string                `json:"image"`
+	Version            string                `json:"version"`
+	ServicePort        int                   `json:"servicePort"`
+	DefaultReplicas    int                   `json:"defaultReplicas"`
+	DefaultCPU         string                `json:"defaultCPU"`
+	DefaultMemory      string                `json:"defaultMemory"`
+	DataVolumes        []appstore.DataVolume `json:"dataVolumes"`
+	ValueCount         int                   `json:"valueCount"`
+	RequiredValueCount int                   `json:"requiredValueCount"`
+}
+
+type appTemplateValueResponse struct {
+	Key          string `json:"key"`
+	Label        string `json:"label"`
+	Description  string `json:"description"`
+	Default      string `json:"default"`
+	Required     bool   `json:"required"`
+	Secret       bool   `json:"secret"`
+	AutoGenerate bool   `json:"autoGenerate"`
+}
+
+type appTemplateResponse struct {
+	appTemplateSummaryResponse
+	Values []appTemplateValueResponse `json:"values"`
+}
+
 func (h *Handlers) ListAppTemplates(ctx *gin.Context) {
 	templates, err := appstore.Catalog()
 	if err != nil {
 		writeError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
-	ctx.JSON(http.StatusOK, templates)
+	query := strings.ToLower(strings.TrimSpace(ctx.Query("query")))
+	category := strings.ToLower(strings.TrimSpace(ctx.Query("category")))
+	items := make([]appTemplateSummaryResponse, 0, len(templates))
+	for _, template := range templates {
+		if category != "" && strings.ToLower(template.Category) != category {
+			continue
+		}
+		searchable := strings.ToLower(strings.Join([]string{
+			template.ID, template.Slug, template.Name, template.Description, template.Category,
+			template.Image, template.OfficialWebsite, template.OfficialRepository,
+		}, " "))
+		if query != "" && !strings.Contains(searchable, query) {
+			continue
+		}
+		items = append(items, appTemplateSummaryFrom(template))
+	}
+	ctx.JSON(http.StatusOK, items)
+}
+
+func (h *Handlers) GetAppTemplate(ctx *gin.Context) {
+	template, found, err := appstore.Find(ctx.Param("templateId"))
+	if err != nil {
+		writeError(ctx, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !found {
+		writeError(ctx, http.StatusNotFound, "应用模板不存在")
+		return
+	}
+	ctx.JSON(http.StatusOK, appTemplateDetailFrom(template))
+}
+
+func appTemplateSummaryFrom(template appstore.Template) appTemplateSummaryResponse {
+	requiredValueCount := 0
+	for _, definition := range template.Values {
+		if definition.Required {
+			requiredValueCount++
+		}
+	}
+	return appTemplateSummaryResponse{
+		ID: template.ID, Slug: template.Slug, Name: template.Name, Description: template.Description,
+		Category: template.Category, Kind: template.Kind, SystemComponent: template.SystemComponent,
+		Icon: template.Icon, OfficialWebsite: template.OfficialWebsite, OfficialRepository: template.OfficialRepository,
+		PopularityWeight: template.PopularityWeight, Image: template.Image, Version: template.Version,
+		ServicePort: template.ServicePort, DefaultReplicas: template.DefaultReplicas,
+		DefaultCPU: template.DefaultCPU, DefaultMemory: template.DefaultMemory, DataVolumes: template.DataVolumes,
+		ValueCount: len(template.Values), RequiredValueCount: requiredValueCount,
+	}
+}
+
+func appTemplateDetailFrom(template appstore.Template) appTemplateResponse {
+	values := make([]appTemplateValueResponse, 0, len(template.Values))
+	for _, definition := range template.Values {
+		defaultValue := definition.Default
+		if definition.Secret {
+			defaultValue = ""
+		}
+		values = append(values, appTemplateValueResponse{
+			Key: definition.Key, Label: definition.Label, Description: definition.Description,
+			Default: defaultValue, Required: definition.Required, Secret: definition.Secret,
+			AutoGenerate: definition.AutoGenerate,
+		})
+	}
+	return appTemplateResponse{appTemplateSummaryResponse: appTemplateSummaryFrom(template), Values: values}
 }
 
 func (h *Handlers) InstallAppTemplate(ctx *gin.Context) {
