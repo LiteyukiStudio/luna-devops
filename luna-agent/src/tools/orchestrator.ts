@@ -43,12 +43,6 @@ export class ToolInterruption extends Error {
   }
 }
 
-export class SensitiveInputRejected extends Error {
-  constructor(readonly operationId: string) {
-    super("ai.sensitive_input_requires_user_form")
-  }
-}
-
 type ApprovalRepository = Pick<Repository, "hasToolApprovalExemption" | "grantToolApprovalExemption">
 type ToolCatalogResolver = ToolCatalog | ((runId: string) => ToolCatalog | Promise<ToolCatalog>)
 
@@ -83,9 +77,6 @@ export class ToolOrchestrator {
       return this.rejectInvalidArguments(input, argumentsHash, error)
     }
     const inputMode = input.inputMode ?? "model"
-    if (inputMode !== "direct" && hasSensitiveInput(operation.inputSchema, args))
-      throw new SensitiveInputRejected(operation.operationId)
-
     const record: ToolCallRecord = {
       id: createId("aitool"),
       runId: input.runId,
@@ -364,18 +355,6 @@ export class ToolOrchestrator {
   private catalogForRun(runId: string): ToolCatalog | Promise<ToolCatalog> {
     return typeof this.catalogResolver === "function" ? this.catalogResolver(runId) : this.catalogResolver
   }
-}
-
-function hasSensitiveInput(schema: Record<string, unknown>, value: unknown): boolean {
-  if (schema.writeOnly === true || schema["x-luna-sensitive"] === true)
-    return value !== undefined && value !== null && (!Array.isArray(value) || value.length > 0) && (typeof value !== "string" || value.length > 0)
-  if (value && typeof value === "object" && !Array.isArray(value) && schema.properties && typeof schema.properties === "object") {
-    const properties = schema.properties as Record<string, Record<string, unknown>>
-    return Object.entries(value as Record<string, unknown>).some(([key, item]) => properties[key] && hasSensitiveInput(properties[key], item))
-  }
-  if (Array.isArray(value) && schema.items && typeof schema.items === "object")
-    return value.some(item => hasSensitiveInput(schema.items as Record<string, unknown>, item))
-  return false
 }
 
 function extractCode(body: unknown): string | undefined {

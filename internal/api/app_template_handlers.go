@@ -358,7 +358,7 @@ func (h *Handlers) buildTemplateInstallPlan(ctx *gin.Context, user model.User, p
 	var selectedProjectVolume *model.ProjectVolume
 	if projectVolumeCount == 1 {
 		if projectVolumeID == "" {
-			writeErrorCode(ctx, http.StatusBadRequest, "app_template.project_volume_required", "该模板需要选择一个已就绪的项目数据卷")
+			writeErrorCode(ctx, http.StatusBadRequest, "app_template.project_volume_required", "该模板需要选择一个可挂载的项目数据卷")
 			return templateInstallPlan{}, false
 		}
 		var projectVolume model.ProjectVolume
@@ -366,8 +366,8 @@ func (h *Handlers) buildTemplateInstallPlan(ctx *gin.Context, user model.User, p
 			writeErrorCode(ctx, http.StatusBadRequest, "project_volume.not_found", "项目数据卷不存在")
 			return templateInstallPlan{}, false
 		}
-		if projectVolume.LifecycleState != model.ProjectVolumeLifecycleReady {
-			writeErrorCode(ctx, http.StatusConflict, "project_volume.not_ready", "项目数据卷尚未就绪")
+		if !volume.CanAttachProjectVolume(projectVolume) {
+			writeErrorCode(ctx, http.StatusConflict, "project_volume.not_attachable", "项目数据卷当前不可挂载")
 			return templateInstallPlan{}, false
 		}
 		if projectVolume.ClusterID != clusterID {

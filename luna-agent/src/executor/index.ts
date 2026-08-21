@@ -9,7 +9,7 @@ import type { ToolCatalogRegistry } from "../tools/catalog-registry.js"
 import { genAIAgentName, genAIAgentSpanAttributes, genAIInputMessages, genAIOutputMessages, genAIToolCallObject, genAIToolSpanAttributes } from "../genai-semconv.js"
 import { agentRuntimeInternals, defaultRuntimeSettings, type RuntimeSettings } from "../runtime-settings.js"
 import { agentMetrics, extractTraceContext, internalSpanOptions, recordAIContent, recordSpanError, stableErrorCode, telemetryLog, withSpan } from "../telemetry.js"
-import { SensitiveInputRejected, ToolInterruption, type ToolOrchestrator } from "../tools/orchestrator.js"
+import { ToolInterruption, type ToolOrchestrator } from "../tools/orchestrator.js"
 import { ToolLoopStoppedError } from "../tools/loop-guard.js"
 import { businessCardToolInputs, compileBusinessCardToolInput, isBusinessCardToolOperationId } from "../tools/business-card-tools.js"
 import { searchToolsInput } from "../tools/tool-search.js"
@@ -500,21 +500,12 @@ export class RunExecutor {
               call = await this.tools.propose({ runId: run.id, operationId: toolCall.operationId, arguments: toolCall.arguments, inputMode: "model" })
             }
             catch (error) {
-              if (error instanceof ToolLoopStoppedError) {
-                recoverableToolError = true
-                continuationMessages.push(toolResultMessage(toolCall, {
-                  status: "failed",
-                  ...error.toJSON(),
-                  guidance: "工具循环保护已停止这次调用；不要原样重试。请基于现有结果回答，或改用参数和信息来源都不同的下一步。",
-                }))
-                continue
-              }
-              if (!(error instanceof SensitiveInputRejected)) throw error
+              if (!(error instanceof ToolLoopStoppedError)) throw error
               recoverableToolError = true
               continuationMessages.push(toolResultMessage(toolCall, {
                 status: "failed",
-                errorCode: error.message,
-                guidance: "敏感输入只能通过安全表单提交；请创建或修复安全表单，不要把密钥写入普通工具参数、聊天消息或回复。",
+                ...error.toJSON(),
+                guidance: "工具循环保护已停止这次调用；不要原样重试。请基于现有结果回答，或改用参数和信息来源都不同的下一步。",
               }))
               continue
             }

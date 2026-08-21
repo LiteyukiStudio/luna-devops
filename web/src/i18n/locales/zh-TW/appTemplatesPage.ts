@@ -43,7 +43,7 @@ const appTemplatesPage = {
   cpu: 'CPU',
   memory: '記憶體',
   projectVolume: '專案資料卷',
-  selectProjectVolume: '請選擇已就緒的專案資料卷',
+  selectProjectVolume: '請選擇可掛載的專案資料卷',
   projectVolumeNotRequired: '此模板不需要持久化資料卷',
   templateParameters: '模板引數',
   templateParametersDescription: '留空的自動生成金鑰會由後端生成並寫入金鑰儲存。',

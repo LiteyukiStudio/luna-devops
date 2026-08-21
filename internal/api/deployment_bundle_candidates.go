@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/LiteyukiStudio/devops/internal/model"
+	"github.com/LiteyukiStudio/devops/internal/volume"
 	"gorm.io/gorm"
 )
 
@@ -267,7 +268,7 @@ func (h *Handlers) deploymentBundleCandidates(ctx context.Context, user model.Us
 				Name: item.DisplayName, AccessMode: item.AccessMode, VolumeMode: item.VolumeMode, StorageClassName: item.StorageClassName,
 				ClusterName: item.ClusterName, ClusterType: item.ClusterType,
 			}
-			compatible := item.LifecycleState == model.ProjectVolumeLifecycleReady && strings.TrimSpace(item.PendingOperation) == ""
+			compatible := volume.CanAttachProjectVolume(item.ProjectVolume)
 			appendCandidate(item.ID, item.DisplayName, item.VolumeMode+" · "+item.ClusterName, descriptor, compatible)
 		}
 

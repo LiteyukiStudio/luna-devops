@@ -43,7 +43,7 @@ const appTemplatesPage = {
   cpu: 'CPU',
   memory: '메모리',
   projectVolume: '프로젝트 데이터 볼륨',
-  selectProjectVolume: '준비 완료된 프로젝트 데이터 볼륨을 선택하세요',
+  selectProjectVolume: '마운트 가능한 프로젝트 데이터 볼륨을 선택하세요',
   projectVolumeNotRequired: '이 템플릿은 영구 데이터 볼륨이 필요하지 않습니다',
   templateParameters: '템플릿 파라미터',
   templateParametersDescription: '비워 둔 자동 생성 시크릿은 백엔드에서 생성되어 시크릿 저장소에 기록됩니다.',

@@ -142,6 +142,16 @@ func TestVolumeResponsesDoNotExposeInternalDiagnosticsOrObjectKeys(t *testing.T)
 	}
 }
 
+func TestProjectVolumeResponseKeepsFirstConsumerProvisioningAvailable(t *testing.T) {
+	response := projectVolumeResponseFor(model.ProjectVolume{
+		ID: "pvol_first_consumer", LifecycleState: model.ProjectVolumeLifecycleProvisioning,
+		PendingOperation: volume.OperationProvision, Availability: model.ProjectVolumeAvailabilityAvailable,
+	})
+	if response.Availability != model.ProjectVolumeAvailabilityAvailable {
+		t.Fatalf("availability=%q, want %q", response.Availability, model.ProjectVolumeAvailabilityAvailable)
+	}
+}
+
 func TestVolumeTransferResponsePublishesRequiredFiveTiBChunkSize(t *testing.T) {
 	const fiveTiB = int64(5 * 1024 * 1024 * 1024 * 1024)
 	response := volumeTransferResponseFor(model.VolumeTransfer{

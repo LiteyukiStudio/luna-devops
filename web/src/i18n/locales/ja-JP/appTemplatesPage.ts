@@ -43,7 +43,7 @@ const appTemplatesPage = {
   cpu: 'CPU',
   memory: 'メモリ',
   projectVolume: 'プロジェクトデータボリューム',
-  selectProjectVolume: '準備完了のプロジェクトデータボリュームを選択してください',
+  selectProjectVolume: 'マウント可能なプロジェクトデータボリュームを選択してください',
   projectVolumeNotRequired: 'このテンプレートは永続データボリュームを必要としません',
   templateParameters: 'テンプレートパラメータ',
   templateParametersDescription: '空欄の自動生成シークレットはバックエンドで生成され、シークレットストアに書き込まれます。',

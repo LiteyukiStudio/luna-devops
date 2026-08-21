@@ -48,7 +48,6 @@ const aiAssistant = {
       tool_storage_unavailable: 'Platform data is temporarily unavailable. Try again later and include the request ID if the problem continues.',
       tool_arguments_key_unavailable: 'The tool arguments cannot be decrypted safely. Start the action again.',
       tool_permission_denied: 'The current user cannot access the target resource or perform this action.',
-      sensitive_input_requires_user_form: 'Secrets and other sensitive inputs must be submitted through the security form, not ordinary chat or model tool arguments.',
       web_target_blocked: 'The target matched a platform domain or IP blocklist, so access was stopped.',
       web_content_rejected: 'The target is not readable text or exceeds the platform response limit.',
       web_request_failed: 'The target website is currently unavailable. Check the URL or try again later.',

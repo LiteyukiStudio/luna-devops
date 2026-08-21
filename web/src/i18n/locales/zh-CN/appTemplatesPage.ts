@@ -43,7 +43,7 @@ const appTemplatesPage = {
   cpu: 'CPU',
   memory: '内存',
   projectVolume: '项目数据卷',
-  selectProjectVolume: '请选择已就绪的项目数据卷',
+  selectProjectVolume: '请选择可挂载的项目数据卷',
   projectVolumeNotRequired: '此模板不需要持久化数据卷',
   templateParameters: '模板参数',
   templateParametersDescription: '留空的自动生成密钥会由后端生成并写入密钥存储。',

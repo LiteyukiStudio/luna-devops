@@ -481,7 +481,7 @@ func projectVolumeResponseFor(item model.ProjectVolume) projectVolumeResponse {
 
 func projectVolumeResponseForObservation(item model.ProjectVolume, observation projectVolumeObservationResponse) projectVolumeResponse {
 	availability := item.Availability
-	if item.LifecycleState != model.ProjectVolumeLifecycleReady {
+	if !volume.CanAttachProjectVolume(item) {
 		availability = model.ProjectVolumeAvailabilityUnavailable
 	}
 	if availability == "" {

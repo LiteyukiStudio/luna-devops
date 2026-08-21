@@ -29,6 +29,29 @@ func TestProjectVolumeLifecycleTransitions(t *testing.T) {
 	}
 }
 
+func TestProjectVolumeAttachabilityAllowsFirstConsumerProvisioning(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		item model.ProjectVolume
+		want bool
+	}{
+		{name: "ready", item: model.ProjectVolume{LifecycleState: model.ProjectVolumeLifecycleReady}, want: true},
+		{name: "first consumer provision", item: model.ProjectVolume{LifecycleState: model.ProjectVolumeLifecycleProvisioning, PendingOperation: OperationProvision}, want: true},
+		{name: "expansion keeps existing claim attachable", item: model.ProjectVolume{LifecycleState: model.ProjectVolumeLifecycleProvisioning, PendingOperation: OperationExpand}, want: true},
+		{name: "archive import is incomplete", item: model.ProjectVolume{LifecycleState: model.ProjectVolumeLifecycleProvisioning, PendingOperation: OperationImport}, want: false},
+		{name: "failed", item: model.ProjectVolume{LifecycleState: model.ProjectVolumeLifecycleError, PendingOperation: OperationProvision}, want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			if got := CanAttachProjectVolume(test.item); got != test.want {
+				t.Fatalf("CanAttachProjectVolume(%#v) = %t, want %t", test.item, got, test.want)
+			}
+		})
+	}
+}
+
 func TestVolumeTransferStateMachineHasNoTerminalRollback(t *testing.T) {
 	t.Parallel()
 	if !CanTransitionVolumeTransfer(model.VolumeTransferStateCreated, model.VolumeTransferStateUploading) ||

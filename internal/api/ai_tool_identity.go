@@ -38,7 +38,6 @@ type aiToolExecutionBinding struct {
 	ConversationProjectID string `gorm:"column:conversation_project_id"`
 	OperationID           string `gorm:"column:operation_id"`
 	ToolStatus            string `gorm:"column:tool_status"`
-	InputMode             string `gorm:"column:input_mode"`
 	ApprovalDecision      string `gorm:"column:approval_decision"`
 }
 
@@ -95,12 +94,6 @@ func (h *Handlers) aiToolExecutionIdentityMiddleware() gin.HandlerFunc {
 			ctx.Abort()
 			return
 		}
-		if len(operation.SensitivePaths) > 0 && binding.InputMode != "direct" {
-			writeErrorCode(ctx, http.StatusBadRequest, "ai.sensitive_input_requires_user_form", "sensitive input requires a direct user action")
-			ctx.Abort()
-			return
-		}
-
 		requestContext := context.WithValue(ctx.Request.Context(), aiPlatformActorContextKey{}, aiPlatformActor{
 			UserID: binding.OwnerUserID, SessionID: binding.ActorSessionID, ProjectID: binding.ConversationProjectID,
 		})
@@ -246,7 +239,6 @@ func (h *Handlers) resolveAIToolExecutionBinding(ctx *gin.Context, runID, toolCa
 		       COALESCE(c.project_id, '') AS conversation_project_id,
 		       tc.operation_id,
 		       tc.status AS tool_status,
-		       COALESCE(tc.input_mode, 'model') AS input_mode,
 		       COALESCE(tc.approval_decision, '') AS approval_decision
 		FROM ai.runs AS r
 		JOIN ai.conversations AS c ON c.id = r.conversation_id

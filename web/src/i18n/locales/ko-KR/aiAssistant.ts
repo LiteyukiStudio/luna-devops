@@ -48,7 +48,6 @@ const aiAssistant = {
       tool_storage_unavailable: '플랫폼 데이터를 일시적으로 읽을 수 없습니다. 잠시 후 다시 시도하세요. 계속 실패하면 요청 번호를 제공하세요.',
       tool_arguments_key_unavailable: '도구 파라미터를 일시적으로 안전하게 복호화할 수 없습니다. 이 작업을 다시 시작하세요.',
       tool_permission_denied: '현재 사용자는 대상 리소스에 접근하거나 이 작업을 실행할 권한이 없습니다.',
-      sensitive_input_requires_user_form: '시크릿 등 민감한 입력은 안전한 폼을 통해서만 제출할 수 있으며 일반 채팅이나 모델 도구 파라미터에 기록할 수 없습니다.',
       web_target_blocked: '대상 웹사이트가 플랫폼 도메인 또는 IP 블랙리스트에 히트되었습니다. 접근이 중지되었습니다.',
       web_content_rejected: '대상 콘텐츠가 읽을 수 있는 텍스트가 아니거나 응답 크기가 플랫폼 제한을 초과합니다.',
       web_request_failed: '대상 웹사이트에 일시적으로 접근할 수 없습니다. 링크를 확인하거나 잠시 후 다시 시도하세요.',

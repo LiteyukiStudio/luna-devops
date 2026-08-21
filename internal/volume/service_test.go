@@ -30,7 +30,9 @@ type repositoryStub struct {
 	transitionErrorCode string
 	mountTransitionFrom []string
 	mountTransitionTo   string
+	lockedTarget        model.DeploymentTarget
 	lockedVolume        model.ProjectVolume
+	createdMount        model.DeploymentVolumeMount
 	lockedTransfer      model.VolumeTransfer
 	createdTransfer     model.VolumeTransfer
 	transferByID        model.VolumeTransfer
@@ -116,6 +118,22 @@ func (repository *repositoryStub) TransitionDeploymentVolumeMount(ctx context.Co
 func (repository *repositoryStub) LockProjectVolume(ctx context.Context, _, _ string) (model.ProjectVolume, error) {
 	repository.captureContext(ctx)
 	return repository.lockedVolume, nil
+}
+
+func (repository *repositoryStub) LockDeploymentTarget(ctx context.Context, _, _ string) (model.DeploymentTarget, error) {
+	repository.captureContext(ctx)
+	return repository.lockedTarget, nil
+}
+
+func (repository *repositoryStub) ListDeploymentTargetMounts(ctx context.Context, _, _ string) ([]model.DeploymentVolumeMount, error) {
+	repository.captureContext(ctx)
+	return nil, nil
+}
+
+func (repository *repositoryStub) CreateDeploymentVolumeMount(ctx context.Context, mount *model.DeploymentVolumeMount) error {
+	repository.captureContext(ctx)
+	repository.createdMount = *mount
+	return nil
 }
 
 func (repository *repositoryStub) CountBlockingMounts(ctx context.Context, _ string) (int64, error) {
@@ -615,6 +633,51 @@ func TestMutatingCreateRequiresOperationDispatcher(t *testing.T) {
 	}
 	if repository.transitionTo != model.ProjectVolumeLifecycleError || repository.transitionErrorCode != CodeTaskEnqueueFailed {
 		t.Fatalf("failed enqueue did not move the durable record to error: to=%q code=%q", repository.transitionTo, repository.transitionErrorCode)
+	}
+}
+
+func TestReserveDeploymentVolumeMountAllowsWaitForFirstConsumerProvisioning(t *testing.T) {
+	t.Parallel()
+	repository := &repositoryStub{
+		lockedTarget: model.DeploymentTarget{
+			ID: "dtgt_demo", ProjectID: "prj_demo", ApplicationID: "app_demo", ClusterID: "rclu_demo", Namespace: "luna-demo",
+		},
+		lockedVolume: model.ProjectVolume{
+			ID: "pvol_demo", ProjectID: "prj_demo", ClusterID: "rclu_demo", Namespace: "luna-demo", ClaimName: "data",
+			LifecycleState: model.ProjectVolumeLifecycleProvisioning, PendingOperation: OperationProvision,
+			AccessMode: model.ProjectVolumeAccessReadWriteOnce, VolumeMode: model.ProjectVolumeModeFilesystem,
+		},
+	}
+	result, err := NewService(repository).ReserveDeploymentVolumeMount(context.Background(), ReserveMountInput{
+		ProjectID: "prj_demo", ApplicationID: "app_demo", DeploymentTargetID: "dtgt_demo",
+		SourceType: model.DeploymentVolumeSourceProjectVolume, ProjectVolumeID: "pvol_demo", LogicalName: "data", MountPath: "/data",
+	})
+	if err != nil {
+		t.Fatalf("reserve first-consumer volume: %v", err)
+	}
+	if result.ProjectVolumeID == nil || *result.ProjectVolumeID != "pvol_demo" || repository.createdMount.ID != result.ID {
+		t.Fatalf("reserved mount=%#v created=%#v", result, repository.createdMount)
+	}
+}
+
+func TestReserveDeploymentVolumeMountRejectsIncompleteImport(t *testing.T) {
+	t.Parallel()
+	repository := &repositoryStub{
+		lockedTarget: model.DeploymentTarget{
+			ID: "dtgt_demo", ProjectID: "prj_demo", ApplicationID: "app_demo", ClusterID: "rclu_demo", Namespace: "luna-demo",
+		},
+		lockedVolume: model.ProjectVolume{
+			ID: "pvol_demo", ProjectID: "prj_demo", ClusterID: "rclu_demo", Namespace: "luna-demo", ClaimName: "data",
+			LifecycleState: model.ProjectVolumeLifecycleProvisioning, PendingOperation: OperationImport,
+			AccessMode: model.ProjectVolumeAccessReadWriteOnce, VolumeMode: model.ProjectVolumeModeFilesystem,
+		},
+	}
+	_, err := NewService(repository).ReserveDeploymentVolumeMount(context.Background(), ReserveMountInput{
+		ProjectID: "prj_demo", ApplicationID: "app_demo", DeploymentTargetID: "dtgt_demo",
+		SourceType: model.DeploymentVolumeSourceProjectVolume, ProjectVolumeID: "pvol_demo", LogicalName: "data", MountPath: "/data",
+	})
+	if ErrorCode(err) != CodeStateConflict {
+		t.Fatalf("incomplete import error=%v code=%q", err, ErrorCode(err))
 	}
 }
 

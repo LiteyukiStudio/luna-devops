@@ -47,8 +47,8 @@ func (r *Runner) deploymentTargetDataVolumes(ctx context.Context, target model.D
 			if volumeErr != nil {
 				return nil, volumeErr
 			}
-			if projectVolume.LifecycleState != model.ProjectVolumeLifecycleReady {
-				return nil, fmt.Errorf("project volume %s is not ready", projectVolume.ID)
+			if !volume.CanAttachProjectVolume(projectVolume) {
+				return nil, fmt.Errorf("project volume %s is not attachable", projectVolume.ID)
 			}
 			if projectVolume.ClusterID != target.ClusterID || projectVolume.Namespace != namespace {
 				return nil, fmt.Errorf("project volume %s is not compatible with the deployment target", projectVolume.ID)

@@ -50,6 +50,26 @@ VALUES
 		}
 	})
 
+	t.Run("first consumer provisioning volume is available for reservation", func(t *testing.T) {
+		projectVolume := postgresTestProjectVolume(500)
+		projectVolume.DisplayName = "first-consumer-volume"
+		projectVolume.LifecycleState = model.ProjectVolumeLifecycleProvisioning
+		projectVolume.PendingOperation = OperationProvision
+		if err := repository.CreateProjectVolume(context.Background(), &projectVolume); err != nil {
+			t.Fatalf("create first-consumer volume: %v", err)
+		}
+		result, err := service.ListProjectVolumes(context.Background(), projectVolume.ProjectID, ProjectVolumeListOptions{
+			Page: 1, PageSize: 20, SortBy: "displayName", SortOrder: "asc",
+			Search: "first-consumer-volume", Availability: model.ProjectVolumeAvailabilityAvailable,
+		})
+		if err != nil {
+			t.Fatalf("list attachable provisioning volume: %v", err)
+		}
+		if result.Total != 1 || len(result.Items) != 1 || result.Items[0].ID != projectVolume.ID || result.Items[0].Availability != model.ProjectVolumeAvailabilityAvailable {
+			t.Fatalf("attachable provisioning result=%#v", result)
+		}
+	})
+
 	t.Run("maintenance scan is bounded and stable", func(t *testing.T) {
 		cutoff := time.Now().UTC().Add(-time.Hour)
 		if err := db.Model(&model.ProjectVolume{}).

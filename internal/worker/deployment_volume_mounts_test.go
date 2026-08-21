@@ -6,6 +6,7 @@ import (
 
 	"github.com/LiteyukiStudio/devops/internal/model"
 	kubeprovider "github.com/LiteyukiStudio/devops/internal/provider/kubernetes"
+	"github.com/LiteyukiStudio/devops/internal/volume"
 )
 
 func TestDeploymentTargetDataVolumesUsesAuthoritativeMountsAndClaim(t *testing.T) {
@@ -28,7 +29,8 @@ func TestDeploymentTargetDataVolumesUsesAuthoritativeMountsAndClaim(t *testing.T
 			}
 			return model.ProjectVolume{
 				ID: "volume", ProjectID: "project", ClusterID: "cluster", Namespace: "project-ns",
-				ClaimName: "authoritative-claim", LifecycleState: model.ProjectVolumeLifecycleReady, CapacityRequest: "10Gi",
+				ClaimName: "authoritative-claim", LifecycleState: model.ProjectVolumeLifecycleProvisioning,
+				PendingOperation: volume.OperationProvision, CapacityRequest: "10Gi",
 			}, nil
 		},
 	}

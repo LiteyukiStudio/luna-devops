@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { ToolCatalog } from "../src/tools/catalog.js"
 import { DeterministicLunaApiClient } from "../src/tools/luna-api-client.js"
-import { MemoryToolCallStore, SensitiveInputRejected, ToolOrchestrator, type ToolInterruption } from "../src/tools/orchestrator.js"
+import { MemoryToolCallStore, ToolOrchestrator, type ToolInterruption } from "../src/tools/orchestrator.js"
 
 const catalog = ToolCatalog.load([
   {
@@ -86,7 +86,7 @@ describe("tool catalog and orchestration", () => {
     expect(later).toMatchObject({ status: "succeeded", approvalDecision: "approve_always" })
   })
 
-  it("requires Direct Tool Action for sensitive model input", async () => {
+  it("allows model tools to submit schema-sensitive input through the normal approval flow", async () => {
     const sensitive = ToolCatalog.load([{
       operationId: "updateRuntimeSecret", name: "更新密钥", summary: "更新运行密钥。", method: "PUT", path: "/api/v1/runtime-secrets", category: "deployment",
       requiredScopes: ["deployment:update"], requiresApproval: true, idempotent: true, requestBody: true,
@@ -96,8 +96,12 @@ describe("tool catalog and orchestration", () => {
         required: ["values"], additionalProperties: false,
       },
     }])
-    const orchestrator = new ToolOrchestrator(sensitive, new DeterministicLunaApiClient(() => ({ status: 200, body: {} })), new MemoryToolCallStore())
-    await expect(orchestrator.propose({ runId: "airun_test", operationId: "updateRuntimeSecret", arguments: { values: { TOKEN: "secret" } } }))
-      .rejects.toBeInstanceOf(SensitiveInputRejected)
+    const client = new DeterministicLunaApiClient(() => ({ status: 200, body: { configured: ["TOKEN"] } }))
+    const orchestrator = new ToolOrchestrator(sensitive, client, new MemoryToolCallStore())
+    const pending = await orchestrator.propose({ runId: "airun_test", operationId: "updateRuntimeSecret", arguments: { values: { TOKEN: "secret" } } })
+    expect(pending.status).toBe("awaiting_approval")
+    const completed = await orchestrator.resolveApproval(pending.id, "approve")
+    expect(completed).toMatchObject({ status: "succeeded", result: { configured: ["TOKEN"] } })
+    expect(client.calls).toHaveLength(1)
   })
 })

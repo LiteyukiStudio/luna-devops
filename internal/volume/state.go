@@ -20,6 +20,19 @@ func CanTransitionProjectVolume(from, to string) bool {
 	}
 }
 
+// CanAttachProjectVolume reports whether a deployment may become the first
+// consumer of the claim. A newly provisioned or expanding PVC can remain
+// Pending with WaitForFirstConsumer until Kubernetes sees that deployment.
+func CanAttachProjectVolume(item model.ProjectVolume) bool {
+	if item.LifecycleState == model.ProjectVolumeLifecycleReady {
+		return true
+	}
+	if item.LifecycleState != model.ProjectVolumeLifecycleProvisioning {
+		return false
+	}
+	return item.PendingOperation == OperationProvision || item.PendingOperation == OperationExpand
+}
+
 func CanTransitionVolumeTransfer(from, to string) bool {
 	if from == to {
 		return true

@@ -630,8 +630,8 @@ func (service *Service) ReserveDeploymentVolumeMount(ctx context.Context, input 
 				return normalizeRepositoryError(volumeErr)
 			}
 			metricSourceKind = volume.SourceKind
-			if volume.LifecycleState != model.ProjectVolumeLifecycleReady {
-				return newDomainError(CodeStateConflict, "project volume is not ready to bind")
+			if !CanAttachProjectVolume(volume) {
+				return newDomainError(CodeStateConflict, "project volume is not attachable")
 			}
 			if volume.ClusterID != target.ClusterID || (strings.TrimSpace(target.Namespace) != "" && volume.Namespace != target.Namespace) {
 				return newDomainError(CodeIncompatibleCluster, "project volume and deployment target must use the same cluster and namespace")

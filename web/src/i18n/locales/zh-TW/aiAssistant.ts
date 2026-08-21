@@ -48,7 +48,6 @@ const aiAssistant = {
       tool_storage_unavailable: '平臺資料暫時無法讀取，請稍後重試；如持續失敗，請提供請求編號。',
       tool_arguments_key_unavailable: '工具引數暫時無法安全解密，請重新發起該操作。',
       tool_permission_denied: '當前使用者沒有訪問目標資源或執行該操作的許可權。',
-      sensitive_input_requires_user_form: '金鑰等敏感輸入只能透過安全表單提交，不能寫入普通聊天或模型工具引數。',
       web_target_blocked: '目標網站命中了平臺域名或 IP 黑名單，已停止訪問。',
       web_content_rejected: '目標內容不是可讀取文字，或響應大小超過平臺限制。',
       web_request_failed: '目標網站暫時無法訪問，請檢查連結或稍後重試。',

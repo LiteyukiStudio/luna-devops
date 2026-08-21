@@ -1,5 +1,11 @@
 # TODO
 
+## 2026-08-21 Agent 部署配置与数据卷首次消费者修复
+
+- [x] 移除 Agent 与 Luna API 基于 `inputMode` 的敏感参数强制表单门禁，模型工具调用按正常 Schema、审批和业务接口执行。
+- [x] 将 `provisioning + provision/expand` 项目数据卷定义为可挂载，贯通卷列表、应用模板、部署配置预留、部署包候选和 Worker Pod 下发链路。
+- [x] 覆盖模型敏感工具审批、WaitForFirstConsumer 首次挂载、未完成归档导入拒绝和可用性筛选回归测试，并同步中英文用户文档。
+
 ## 2026-08-21 Web 首屏性能优化
 
 - [x] 固定生产构建基线与目标：首屏关键 JS（含当前语言）不高于 350 KB gzip、最大关键 Chunk 不高于 300 KB raw，并消除 500 KB Chunk 告警。
@@ -267,8 +273,8 @@
 
 ## 2026-08-17 Agent—人—平台密钥交互链路重构
 
-- [x] 移除 `generateSecret` 旧模型工具及明文回灌路径，改为 `updateDeploymentTargetRuntimeSecrets`：用户值只经 Direct Tool Action，生成值由平台后端生成并直接存入 Secret Store，清除操作显式按字段执行。
-- [x] 为 OpenAPI、Agent 工具目录、Delegation、执行器、数据库工具调用记录和部署配置输入同步敏感元数据与 `inputMode` 边界；普通模型调用返回稳定错误 `ai.sensitive_input_requires_user_form`，不创建执行记录、不调用平台 API。
+- [x] 移除 `generateSecret` 旧模型工具及明文回灌路径，改为 `updateDeploymentTargetRuntimeSecrets`：用户值可经模型工具调用或 Direct Tool Action 提交，生成值由平台后端生成并直接存入 Secret Store，清除操作显式按字段执行。
+- [x] 为 OpenAPI、Agent 工具目录、Delegation、执行器、数据库工具调用记录和部署配置输入同步敏感元数据；`inputMode` 仅记录来源，不作为模型工具调用的执行门禁。
 - [x] 普通 `envVars` 由用户显式选择 `public`，不再按字段名或 URL 内容推测敏感性；安全表单、后端 Secret 生成/引用校验、脱敏与中英文文档测试继续保留。
 
 ## 2026-08-14 Agent 工具全量下发与交互收敛

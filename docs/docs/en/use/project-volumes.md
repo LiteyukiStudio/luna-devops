@@ -16,7 +16,7 @@ A project volume is persistent data owned independently from an application. It 
    - **Blank volume** creates a new platform-managed PVC.
    - **Existing PVC** references or adopts a PVC in the project namespace. A reference is not deleted or billed as platform storage; adoption transfers lifecycle ownership to the platform and requires confirmation.
    - **VolumeSnapshot** restores an available snapshot from the same cluster.
-4. Submit and wait for the lifecycle state to become Ready. A `WaitForFirstConsumer` StorageClass may keep the PVC Pending until its first mount; this alone is not a creation failure.
+4. After submission, the volume normally becomes Ready. A `WaitForFirstConsumer` StorageClass may keep it Provisioning/Pending until the first mount; it is already selectable at that point, and the Pod becomes the first consumer that triggers binding.
 
 The AI assistant can list project volumes and StorageClasses for the target cluster, then create a blank volume, reference an existing PVC, or restore from a VolumeSnapshot after the parameters are confirmed. Before blank creation or snapshot restore, it must read the target cluster's StorageClasses and submit a returned name together with capacity, access mode, and volume mode; creation is not attempted when any value is missing. High-risk actions such as adopting an existing PVC require approval bound to the current parameters. The assistant never substitutes a placeholder ID or `emptyDir` for required persistent storage.
 
@@ -32,14 +32,14 @@ A failed or cancelled initial creation/import releases that reservation. A faile
 
 ## Mount it in a deployment target
 
-1. Edit an application deployment target and add a mount under Data volumes. Persistent data must select a ready project volume from the volume center; use `emptyDir` only for temporary data.
+1. Edit an application deployment target and add a mount under Data volumes. Persistent data can select either a Ready volume or a Provisioning volume waiting for its first consumer; use `emptyDir` only for temporary data.
 2. Select **Project volume**, then search the available volumes in the same cluster.
 3. Enter an absolute `mountPath` for a Filesystem volume or an absolute `devicePath` for a Block volume. Read-only and shared mounts are allowed only when the access mode permits them.
 4. Save the target and create a new release.
 
 The volume is Reserved first. It becomes In use only after the worker authoritatively observes the expected PVC on the Kubernetes workload. Switching or removing a volume also requires a successful release; the volume returns to Available only after the old workload no longer references it.
 
-When an app marketplace template declares persistent storage, its install form requires a ready project volume from the same project and cluster with a matching volume mode. Installation is rejected without a real selected volume; the platform neither creates an implicit PVC nor falls back to `emptyDir`.
+When an app marketplace template declares persistent storage, its install form requires an attachable project volume from the same project and cluster with a matching volume mode. A Provisioning volume waiting for its first consumer is selectable, and the template Pod triggers PVC binding. Installation is rejected without a real selected volume; the platform neither creates an implicit PVC nor falls back to `emptyDir`.
 
 ## Expand or delete
 

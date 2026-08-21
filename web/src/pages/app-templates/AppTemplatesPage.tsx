@@ -690,7 +690,6 @@ function TemplateProjectVolumePicker({ clusterId, disabled, mode, onChange, proj
       pageSize: 20,
       search: search.trim() || undefined,
       availability: 'available',
-      lifecycleState: 'ready',
       clusterId,
       volumeMode: mode,
       sortBy: 'displayName',

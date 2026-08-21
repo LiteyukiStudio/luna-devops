@@ -143,7 +143,7 @@ func applyProjectVolumeFilters(query *gorm.DB, options ProjectVolumeListOptions)
 	}
 	switch options.Availability {
 	case model.ProjectVolumeAvailabilityAvailable:
-		query = query.Where("lifecycle_state = ?", model.ProjectVolumeLifecycleReady).
+		query = applyProjectVolumeAttachableFilter(query, true).
 			Where("NOT EXISTS (?)", activeMountSubquery(query, []string{
 				model.DeploymentVolumeActivationReserved,
 				model.DeploymentVolumeActivationActive,
@@ -151,7 +151,7 @@ func applyProjectVolumeFilters(query *gorm.DB, options ProjectVolumeListOptions)
 				model.DeploymentVolumeActivationError,
 			}))
 	case model.ProjectVolumeAvailabilityReserved:
-		query = query.Where("lifecycle_state = ?", model.ProjectVolumeLifecycleReady).
+		query = applyProjectVolumeAttachableFilter(query, true).
 			Where("EXISTS (?)", activeMountSubquery(query, []string{
 				model.DeploymentVolumeActivationReserved,
 				model.DeploymentVolumeActivationError,
@@ -161,15 +161,24 @@ func applyProjectVolumeFilters(query *gorm.DB, options ProjectVolumeListOptions)
 				model.DeploymentVolumeActivationReleasePending,
 			}))
 	case model.ProjectVolumeAvailabilityInUse:
-		query = query.Where("lifecycle_state = ?", model.ProjectVolumeLifecycleReady).
+		query = applyProjectVolumeAttachableFilter(query, true).
 			Where("EXISTS (?)", activeMountSubquery(query, []string{
 				model.DeploymentVolumeActivationActive,
 				model.DeploymentVolumeActivationReleasePending,
 			}))
 	case model.ProjectVolumeAvailabilityUnavailable:
-		query = query.Where("lifecycle_state <> ?", model.ProjectVolumeLifecycleReady)
+		query = applyProjectVolumeAttachableFilter(query, false)
 	}
 	return query
+}
+
+func applyProjectVolumeAttachableFilter(query *gorm.DB, attachable bool) *gorm.DB {
+	clause := "(lifecycle_state = ? OR (lifecycle_state = ? AND pending_operation IN ?))"
+	args := []any{model.ProjectVolumeLifecycleReady, model.ProjectVolumeLifecycleProvisioning, []string{OperationProvision, OperationExpand}}
+	if attachable {
+		return query.Where(clause, args...)
+	}
+	return query.Where("NOT "+clause, args...)
 }
 
 func activeMountSubquery(query *gorm.DB, states []string) *gorm.DB {
@@ -223,7 +232,7 @@ func (repository *GormRepository) populateVolumeBindingSummaries(ctx context.Con
 }
 
 func availabilityForVolume(volume model.ProjectVolume, summary model.ProjectVolumeBindingSummary) string {
-	if volume.LifecycleState != model.ProjectVolumeLifecycleReady {
+	if !CanAttachProjectVolume(volume) {
 		return model.ProjectVolumeAvailabilityUnavailable
 	}
 	if summary.Active > 0 {

@@ -87,13 +87,13 @@ AI 助手不是悬浮在控制台上的通用聊天机器人。它理解用户�
   不再额外调用模型预测下一步。
 - 运行时密钥只能通过 `updateDeploymentTargetRuntimeSecrets` 或
   `updateProjectRuntimeConfigSetRuntimeSecrets` 处理：请求使用 `items[]`，每项必须声明
-  `valueMode: secret` 和 `operation: set | generate | clear`。`set` 的非空 `value` 仅接受用户可见
-  安全表单触发的 Direct Tool Action，空值表示不修改；`generate` 由平台后端生成并直接写入
-  Secret Store，`clear` 只清除明确字段。普通模型工具调用、聊天消息、最终回复和页面上下文
-  都不得携带敏感值；成功结果仅返回键、`valueMode` 与 configured/generated/cleared 状态，不返回
-  明文或 Secret 引用。部署目标和运行配置集的普通 `environmentVariables[]` 每项必须声明
+  `valueMode: secret` 和 `operation: set | generate | clear`。`set` 的非空 `value` 可由普通模型工具
+  调用或用户可见安全表单触发的 Direct Tool Action 提交，空值表示不修改；`generate` 由平台后端
+  生成并直接写入 Secret Store，`clear` 只清除明确字段。`inputMode` 只记录调用来源，不得作为执行
+  门禁；聊天消息、最终回复和页面上下文仍不主动回显敏感值。成功结果仅返回键、`valueMode` 与
+  configured/generated/cleared 状态，不返回明文或 Secret 引用。部署目标和运行配置集的普通 `environmentVariables[]` 每项必须声明
   `valueMode: public`；密钥语义字段名和带 URL 内嵌凭据的值作为纵深防御继续拒绝。
-- 模型不得为 `secret` 或 `key_value.valueMode: secret` 字段提供 `defaultValue`、示例密钥或任何
+- 模型不得为交互卡片中的 `secret` 或 `key_value.valueMode: secret` 字段提供 `defaultValue`、示例密钥或任何
   预填明文；Web 对修复前持久化记录继续强制清空。用户没有主动输入时 Direct Tool Action 不
   提交该字段，随机生成与清除分别使用后端 `generate` 和独立 `clear` 操作。
 
