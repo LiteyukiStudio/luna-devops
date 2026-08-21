@@ -25,14 +25,14 @@ import { Card } from '@/components/ui/card'
 import { TabsContent } from '@/components/ui/tabs'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
 import { isPlatformAdmin, ProjectRole } from '@/lib/roles'
-import { ApplicationsPage } from '@/pages/applications/ApplicationsPage'
 import { BillingOwnerTransferDialog } from '@/pages/projects/billing-owner-transfer-dialog'
-import { ProjectBuildVariableSetsPage } from '@/pages/projects/ProjectBuildVariableSetsPage'
-import { ProjectHooksPage } from '@/pages/projects/ProjectHooksPage'
-import { ProjectMembersPage } from '@/pages/projects/ProjectMembersPage'
-import { ProjectRuntimeConfigSetsPage } from '@/pages/projects/ProjectRuntimeConfigSetsPage'
 import { projectVolumeCapabilities } from '@/pages/projects/volumes/project-volume-capabilities'
 
+const ApplicationsPage = lazy(() => import('@/pages/applications/ApplicationsPage').then(module => ({ default: module.ApplicationsPage })))
+const ProjectBuildVariableSetsPage = lazy(() => import('@/pages/projects/ProjectBuildVariableSetsPage').then(module => ({ default: module.ProjectBuildVariableSetsPage })))
+const ProjectHooksPage = lazy(() => import('@/pages/projects/ProjectHooksPage').then(module => ({ default: module.ProjectHooksPage })))
+const ProjectMembersPage = lazy(() => import('@/pages/projects/ProjectMembersPage').then(module => ({ default: module.ProjectMembersPage })))
+const ProjectRuntimeConfigSetsPage = lazy(() => import('@/pages/projects/ProjectRuntimeConfigSetsPage').then(module => ({ default: module.ProjectRuntimeConfigSetsPage })))
 const ProjectTopologyPanel = lazy(() => import('@/pages/projects/project-topology-panel').then(module => ({ default: module.ProjectTopologyPanel })))
 const ProjectVolumesPage = lazy(() => import('@/pages/projects/volumes/ProjectVolumesPage'))
 
@@ -49,17 +49,18 @@ export function ProjectWorkspacePage() {
   const runtimeConfigSetsPageRef = useRef<ProjectRuntimeConfigSetsPageHandle>(null)
   const volumesPageRef = useRef<ProjectVolumesPageHandle>(null)
   const project = useQuery({ queryKey: ['project', projectId], queryFn: () => api.getProject(projectId), enabled: Boolean(projectId) })
-  const applications = useQuery({ queryKey: ['applications', projectId], queryFn: () => api.listApplications(projectId), enabled: Boolean(projectId) })
-  const variableSets = useQuery({ queryKey: ['build-variable-sets', projectId], queryFn: () => api.listBuildVariableSets(projectId), enabled: Boolean(projectId) })
-  const runtimeConfigSets = useQuery({ queryKey: ['runtime-config-sets', projectId], queryFn: () => api.listProjectRuntimeConfigSets(projectId), enabled: Boolean(projectId) })
-  const members = useQuery({ queryKey: ['project-members', projectId], queryFn: () => api.listProjectMembers(projectId), enabled: Boolean(projectId) })
-  const recentBuilds = useQuery({ queryKey: ['project-overview-build-runs', projectId], queryFn: () => api.listBuildRunsPage(projectId, { page: 1, pageSize: 5, sortBy: 'createdAt', sortOrder: 'desc' }), enabled: Boolean(projectId) })
-  const recentEvents = useQuery({ queryKey: ['project-overview-events', projectId], queryFn: () => api.listPlatformEvents({ page: 1, pageSize: 5, projectId, sortBy: 'occurredAt', sortOrder: 'desc' }), enabled: Boolean(projectId) })
-  const releases = useQuery({ queryKey: ['project-overview-releases', projectId], queryFn: () => api.listReleases(projectId), enabled: Boolean(projectId) })
+  const isOverview = activeTab === 'overview'
+  const applications = useQuery({ queryKey: ['applications', projectId], queryFn: () => api.listApplications(projectId), enabled: Boolean(projectId && (isOverview || activeTab === 'topology')) })
+  const variableSets = useQuery({ queryKey: ['build-variable-sets', projectId], queryFn: () => api.listBuildVariableSets(projectId), enabled: Boolean(projectId && isOverview) })
+  const runtimeConfigSets = useQuery({ queryKey: ['runtime-config-sets', projectId], queryFn: () => api.listProjectRuntimeConfigSets(projectId), enabled: Boolean(projectId && isOverview) })
+  const members = useQuery({ queryKey: ['project-members', projectId], queryFn: () => api.listProjectMembers(projectId), enabled: Boolean(projectId && isOverview) })
+  const recentBuilds = useQuery({ queryKey: ['project-overview-build-runs', projectId], queryFn: () => api.listBuildRunsPage(projectId, { page: 1, pageSize: 5, sortBy: 'createdAt', sortOrder: 'desc' }), enabled: Boolean(projectId && isOverview) })
+  const recentEvents = useQuery({ queryKey: ['project-overview-events', projectId], queryFn: () => api.listPlatformEvents({ page: 1, pageSize: 5, projectId, sortBy: 'occurredAt', sortOrder: 'desc' }), enabled: Boolean(projectId && isOverview) })
+  const releases = useQuery({ queryKey: ['project-overview-releases', projectId], queryFn: () => api.listReleases(projectId), enabled: Boolean(projectId && isOverview) })
   const routes = useQuery({
     queryKey: ['project-overview-gateway-routes', projectId],
     queryFn: () => api.listGatewayRoutes(projectId),
-    enabled: Boolean(projectId),
+    enabled: Boolean(projectId && isOverview),
     ...liveObservationQueryPolicy,
   })
   if (project.isError)
@@ -220,7 +221,9 @@ export function ProjectWorkspacePage() {
             initial={{ opacity: 0, y: 6 }}
             transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
           >
-            {activeContent}
+            <Suspense fallback={<ToolViewportSkeleton />}>
+              {activeContent}
+            </Suspense>
           </motion.div>
         </TabsContent>
       </ContentTabs>

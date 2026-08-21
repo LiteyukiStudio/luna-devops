@@ -1,6 +1,8 @@
 package api
 
 import (
+	"compress/gzip"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -44,6 +46,74 @@ func TestStaticUIServesIndexWithoutRedirect(t *testing.T) {
 			t.Fatalf("GET %s Cache-Control = %q", path, got)
 		}
 	}
+}
+
+func TestStaticUIServesBestPrecompressedAsset(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	files := fstest.MapFS{
+		"index.html":       {Data: []byte("<!doctype html><title>Luna DevOps</title>")},
+		"assets/app.js":    {Data: []byte("identity")},
+		"assets/app.js.br": {Data: []byte("brotli")},
+		"assets/app.js.gz": {Data: gzipBytes(t, []byte("gzip"))},
+	}
+	router := gin.New()
+	registerStaticUI(router, files, nil)
+
+	for _, test := range []struct {
+		acceptEncoding string
+		body           string
+		encoding       string
+	}{
+		{acceptEncoding: "gzip, br", body: "brotli", encoding: "br"},
+		{acceptEncoding: "br;q=0, gzip;q=1", body: "gzip", encoding: "gzip"},
+		{acceptEncoding: "gzip;q=0, *;q=0.8", body: "brotli", encoding: "br"},
+		{acceptEncoding: "identity", body: "identity", encoding: ""},
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/assets/app.js", nil)
+		req.Header.Set("Accept-Encoding", test.acceptEncoding)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("Accept-Encoding %q expected 200, got %d", test.acceptEncoding, rec.Code)
+		}
+		if got := rec.Header().Get("Content-Encoding"); got != test.encoding {
+			t.Fatalf("Accept-Encoding %q Content-Encoding = %q, want %q", test.acceptEncoding, got, test.encoding)
+		}
+		body := rec.Body.Bytes()
+		if test.encoding == "gzip" {
+			reader, err := gzip.NewReader(strings.NewReader(rec.Body.String()))
+			if err != nil {
+				t.Fatalf("open gzip body: %v", err)
+			}
+			body, err = io.ReadAll(reader)
+			if err != nil {
+				t.Fatalf("read gzip body: %v", err)
+			}
+		}
+		if string(body) != test.body {
+			t.Fatalf("Accept-Encoding %q body = %q, want %q", test.acceptEncoding, body, test.body)
+		}
+		if !strings.Contains(rec.Header().Get("Vary"), "Accept-Encoding") {
+			t.Fatalf("Accept-Encoding %q should vary on encoding", test.acceptEncoding)
+		}
+		if got := rec.Header().Get("Content-Type"); got != "text/javascript; charset=utf-8" {
+			t.Fatalf("Accept-Encoding %q Content-Type = %q", test.acceptEncoding, got)
+		}
+	}
+}
+
+func gzipBytes(t *testing.T, data []byte) []byte {
+	t.Helper()
+	var output strings.Builder
+	writer := gzip.NewWriter(&output)
+	if _, err := writer.Write(data); err != nil {
+		t.Fatalf("write gzip fixture: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close gzip fixture: %v", err)
+	}
+	return []byte(output.String())
 }
 
 func TestStaticUIServesAssetsAndSkipsAPI(t *testing.T) {

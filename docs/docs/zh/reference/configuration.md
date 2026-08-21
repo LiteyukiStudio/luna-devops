@@ -48,6 +48,8 @@ OIDC 身份源的 Redirect URI 由 `PUBLIC_BASE_URL` 生成，后台“身份源
 | --- | --- | --- | --- |
 | 进阶 | `VITE_DOCS_BASE_URL` | `https://luna-devops.liteyuki.org` | 文档站基础地址；账单页等帮助链接会基于它生成。文档站独立域名或路径变化时，在构建前设置。 |
 
+生产构建会为 JavaScript、CSS、JSON 和 SVG 自动生成 Brotli 与 gzip 版本，内嵌 Web 服务会根据浏览器的 `Accept-Encoding` 返回体积更小的版本，并设置 `Vary: Accept-Encoding`。不需要额外环境变量；如果前方还有反向代理或 CDN，请保留这些请求头和响应头，不要对同一资源重复压缩。
+
 ## Worker 配置项
 
 | 类型 | 配置项 | 默认值 | 用途与修改时机 |

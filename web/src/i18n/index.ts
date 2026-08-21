@@ -4,6 +4,10 @@ import { initReactI18next } from 'react-i18next'
 
 type SupportedLanguage = 'zh-CN' | 'zh-TW' | 'en-US' | 'ja-JP' | 'ko-KR'
 
+interface LocaleModule {
+  default: ResourceKey
+}
+
 const supportedLanguages = ['zh-CN', 'zh-TW', 'en-US', 'ja-JP', 'ko-KR'] as const satisfies readonly SupportedLanguage[]
 const localeLoaders: Record<SupportedLanguage, () => Promise<{ default: ResourceKey }>> = {
   'zh-CN': () => import('./locales/zh-CN'),
@@ -12,6 +16,23 @@ const localeLoaders: Record<SupportedLanguage, () => Promise<{ default: Resource
   'ja-JP': () => import('./locales/ja-JP'),
   'ko-KR': () => import('./locales/ko-KR'),
 }
+
+const featureLocaleLoaders = import.meta.glob<LocaleModule>([
+  './locales/*/*.ts',
+  '!./locales/*/root.ts',
+  '!./locales/*/languages.ts',
+  '!./locales/*/common.ts',
+  '!./locales/*/time.ts',
+  '!./locales/*/errors.ts',
+  '!./locales/*/auth.ts',
+  '!./locales/*/pagination.ts',
+  '!./locales/*/oauthApps.ts',
+  '!./locales/*/theme.ts',
+  '!./locales/*/loginPage.ts',
+  '!./locales/*/bootstrap.ts',
+])
+const activeFeatureBundles = new Set<string>()
+const spreadFeatureBundles = new Set(['aiAssistant', 'inbox'])
 
 const localeBackend: BackendModule = {
   type: 'backend',
@@ -63,6 +84,45 @@ export const i18nextReady = i18next.use(localeBackend).use(initReactI18next).ini
   interpolation: {
     escapeValue: false,
   },
+})
+
+export async function loadTranslationBundles(bundleNames: readonly string[]) {
+  for (const bundleName of bundleNames)
+    activeFeatureBundles.add(bundleName)
+
+  await i18nextReady
+  await loadFeatureBundles(normalizeLanguage(i18next.language) ?? 'zh-CN', bundleNames)
+}
+
+export async function loadAllTranslationBundlesForTests() {
+  const bundleNames = [...new Set(Object.keys(featureLocaleLoaders).map(modulePath => modulePath.split('/').at(-1)?.replace(/\.ts$/, '')).filter((name): name is string => Boolean(name)))]
+  for (const bundleName of bundleNames)
+    activeFeatureBundles.add(bundleName)
+  await i18nextReady
+  await Promise.all(supportedLanguages.map(async (language) => {
+    const core = await localeLoaders[language]()
+    i18next.addResourceBundle(language, 'translation', core.default, true, true)
+    await loadFeatureBundles(language, bundleNames)
+  }))
+}
+
+async function loadFeatureBundles(language: SupportedLanguage, bundleNames: readonly string[]) {
+  await Promise.all(bundleNames.map(async (bundleName) => {
+    const loader = featureLocaleLoaders[`./locales/${language}/${bundleName}.ts`]
+    if (!loader)
+      throw new Error(`Missing translation bundle: ${language}/${bundleName}`)
+    const module = await loader()
+    const resources = spreadFeatureBundles.has(bundleName)
+      ? module.default
+      : { [bundleName]: module.default }
+    i18next.addResourceBundle(language, 'translation', resources, true, true)
+  }))
+}
+
+i18next.on('languageChanged', (language) => {
+  const normalized = normalizeLanguage(language)
+  if (normalized && activeFeatureBundles.size > 0)
+    void loadFeatureBundles(normalized, [...activeFeatureBundles])
 })
 
 export default i18next

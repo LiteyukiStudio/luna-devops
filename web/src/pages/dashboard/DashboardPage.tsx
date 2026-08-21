@@ -17,7 +17,7 @@ import { Surface } from '@/components/common/surface'
 import { formatCompactDateTime } from '@/components/common/time-format'
 import { Button } from '@/components/ui/button'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
-import { WORKFLOW_STATUS_REFETCH_INTERVAL_MS } from '@/lib/polling'
+import { statusRefetchInterval } from '@/lib/polling'
 
 export function DashboardPage() {
   const { t } = useTranslation()
@@ -26,7 +26,10 @@ export function DashboardPage() {
     ...liveObservationQueryPolicy,
     queryKey: ['dashboard'],
     queryFn: api.getDashboard,
-    refetchInterval: WORKFLOW_STATUS_REFETCH_INTERVAL_MS,
+    refetchInterval: query => statusRefetchInterval(Boolean(
+      query.state.data
+      && (query.state.data.summary.activeBuilds > 0 || query.state.data.summary.activeReleases > 0),
+    )),
   })
   const toggleProjectPin = useMutation<void, Error, { pinned: boolean, projectId: string }>({
     mutationFn: async ({ pinned, projectId }) => {

@@ -36,8 +36,8 @@ Object.defineProperty(document, 'elementFromPoint', {
 })
 
 beforeAll(async () => {
-  const { i18nextReady } = await import('@/i18n')
-  await i18nextReady
+  const { loadAllTranslationBundlesForTests } = await import('@/i18n')
+  await loadAllTranslationBundlesForTests()
 })
 
 afterEach(() => {

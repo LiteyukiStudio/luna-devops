@@ -7,7 +7,7 @@
   "license": "MIT",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && node scripts/optimize-dist.mjs",
     "check:singletons": "node scripts/check-singleton-dependencies.mjs",
     "lint": "eslint .",
     "preview": "vite preview",

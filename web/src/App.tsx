@@ -3,30 +3,31 @@ import { lazy } from 'react'
 import { Navigate, Route, Routes, useParams } from 'react-router-dom'
 import { LazyLoadBoundary } from './components/common/lazy-load-boundary'
 import { TooltipProvider } from './components/ui/tooltip'
-import { AppLayout } from './layouts/AppLayout'
+import { loadTranslationBundles } from './i18n'
 
-const AccountPage = lazyNamed(() => import('./pages/settings/AccountPage'), 'AccountPage')
-const AppTemplatesPage = lazyNamed(() => import('./pages/app-templates/AppTemplatesPage'), 'AppTemplatesPage')
-const ApplicationConfigPage = lazyNamed(() => import('./pages/applications/ApplicationConfigPage'), 'ApplicationConfigPage')
-const AuthProvidersPage = lazyNamed(() => import('./pages/settings/AuthProvidersPage'), 'AuthProvidersPage')
-const BillingPage = lazyNamed(() => import('./pages/billing/BillingPage'), 'BillingPage')
+const AppLayout = lazyTranslated(() => import('./layouts/AppLayout'), 'AppLayout', ['nav', 'inbox', 'accountPage', 'aiAssistant', 'debugPanel'])
+const AccountPage = lazyTranslated(() => import('./pages/settings/AccountPage'), 'AccountPage', ['accountPage', 'accessTokens', 'settings'])
+const AppTemplatesPage = lazyTranslated(() => import('./pages/app-templates/AppTemplatesPage'), 'AppTemplatesPage', ['appTemplatesPage'])
+const ApplicationConfigPage = lazyTranslated(() => import('./pages/applications/ApplicationConfigPage'), 'ApplicationConfigPage', ['apps', 'buildsPage', 'deploymentsPage', 'gatewayRoutesPage', 'repositories', 'runtimeConfigSets', 'runtimeConfigFilesEditor', 'clustersPage', 'billingPage', 'projectHooks'])
+const AuthProvidersPage = lazyTranslated(() => import('./pages/settings/AuthProvidersPage'), 'AuthProvidersPage', ['authProvidersPage', 'settings'])
+const BillingPage = lazyTranslated(() => import('./pages/billing/BillingPage'), 'BillingPage', ['billingPage'])
 const BootstrapPage = lazyNamed(() => import('./pages/bootstrap/BootstrapPage'), 'BootstrapPage')
-const ClustersPage = lazyNamed(() => import('./pages/clusters/ClustersPage'), 'ClustersPage')
-const CodeRepositoriesPage = lazyNamed(() => import('./pages/code-repositories/CodeRepositoriesPage'), 'CodeRepositoriesPage')
-const DashboardPage = lazyNamed(() => import('./pages/dashboard/DashboardPage'), 'DashboardPage')
-const EventsPage = lazyNamed(() => import('./pages/events/EventsPage'), 'EventsPage')
+const ClustersPage = lazyTranslated(() => import('./pages/clusters/ClustersPage'), 'ClustersPage', ['clustersPage'])
+const CodeRepositoriesPage = lazyTranslated(() => import('./pages/code-repositories/CodeRepositoriesPage'), 'CodeRepositoriesPage', ['codeRepositoriesPage', 'codeRepositoriesView', 'repositories'])
+const DashboardPage = lazyTranslated(() => import('./pages/dashboard/DashboardPage'), 'DashboardPage', ['dashboardPage', 'registriesPage', 'clustersPage'])
+const EventsPage = lazyTranslated(() => import('./pages/events/EventsPage'), 'EventsPage', ['eventsPage'])
 const LoginPage = lazyNamed(() => import('./pages/login/LoginPage'), 'LoginPage')
-const InboxPage = lazyNamed(() => import('./pages/inbox/InboxPage'), 'InboxPage')
+const InboxPage = lazyTranslated(() => import('./pages/inbox/InboxPage'), 'InboxPage', ['inbox'])
 const RegisterPage = lazyNamed(() => import('./pages/login/RegisterPage'), 'RegisterPage')
-const NotificationsPage = lazyNamed(() => import('./pages/settings/NotificationsPage'), 'NotificationsPage')
+const NotificationsPage = lazyTranslated(() => import('./pages/settings/NotificationsPage'), 'NotificationsPage', ['notificationsPage', 'settings'])
 const OAuthAuthorizePage = lazyNamed(() => import('./pages/oauth/OAuthAuthorizePage'), 'OAuthAuthorizePage')
 const OAuthDevicePage = lazyNamed(() => import('./pages/oauth/OAuthDevicePage'), 'OAuthDevicePage')
-const OperationsDashboardPage = lazyNamed(() => import('./pages/settings/OperationsDashboardPage'), 'OperationsDashboardPage')
-const ProjectsPage = lazyNamed(() => import('./pages/projects/ProjectsPage'), 'ProjectsPage')
-const ProjectWorkspacePage = lazyNamed(() => import('./pages/projects/ProjectWorkspacePage'), 'ProjectWorkspacePage')
-const RegistriesPage = lazyNamed(() => import('./pages/registries/RegistriesPage'), 'RegistriesPage')
-const SiteSettingsPage = lazyNamed(() => import('./pages/settings/SiteSettingsPage'), 'SiteSettingsPage')
-const UsersPage = lazyNamed(() => import('./pages/settings/UsersPage'), 'UsersPage')
+const OperationsDashboardPage = lazyTranslated(() => import('./pages/settings/OperationsDashboardPage'), 'OperationsDashboardPage', ['operationsDashboardPage', 'settings'])
+const ProjectsPage = lazyTranslated(() => import('./pages/projects/ProjectsPage'), 'ProjectsPage', ['projectSpaces'])
+const ProjectWorkspacePage = lazyTranslated(() => import('./pages/projects/ProjectWorkspacePage'), 'ProjectWorkspacePage', ['projectSpaces', 'apps', 'buildsPage', 'runtimeConfigSets', 'projectHooks', 'projectMembers', 'projectVolumes', 'projectTopology', 'deploymentsPage', 'gatewayRoutesPage', 'billingPage'])
+const RegistriesPage = lazyTranslated(() => import('./pages/registries/RegistriesPage'), 'RegistriesPage', ['registriesPage'])
+const SiteSettingsPage = lazyTranslated(() => import('./pages/settings/SiteSettingsPage'), 'SiteSettingsPage', ['settings'])
+const UsersPage = lazyTranslated(() => import('./pages/settings/UsersPage'), 'UsersPage', ['usersPage', 'settings'])
 const AIInteractionCardGallery = import.meta.env.DEV
   ? lazyNamed(() => import('./dev/AIInteractionCardGallery'), 'AIInteractionCardGallery')
   : null
@@ -78,6 +79,17 @@ function lazyNamed<T extends Record<string, ComponentType<object>>, K extends ke
   exportName: K,
 ) {
   return lazy(async () => ({ default: (await loader())[exportName] }))
+}
+
+function lazyTranslated<T extends Record<string, ComponentType<object>>, K extends keyof T>(
+  loader: () => Promise<T>,
+  exportName: K,
+  bundleNames: readonly string[],
+) {
+  return lazy(async () => {
+    await loadTranslationBundles(bundleNames)
+    return { default: (await loader())[exportName] }
+  })
 }
 
 function RouteFallback() {

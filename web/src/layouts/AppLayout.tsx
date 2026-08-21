@@ -12,7 +12,6 @@ import { AccountMenu } from '@/components/common/account-menu'
 import { DeferredAIAssistantLauncher } from '@/components/common/ai-assistant/deferred-launcher'
 import { AI_ASSISTANT_OPEN_EVENT } from '@/components/common/ai-assistant/events'
 import { LAUNCHER_STORAGE_KEY, readLauncherPosition } from '@/components/common/ai-assistant/layout'
-import { DebugFloatingPanel } from '@/components/common/debug-floating-panel'
 import { InboxTrigger } from '@/components/common/inbox/inbox-trigger'
 import { LazyLoadBoundary } from '@/components/common/lazy-load-boundary'
 import { AppLoadingState } from '@/components/common/loading-states'
@@ -33,6 +32,9 @@ import {
 import { cn } from '@/lib/utils'
 
 const AiAssistant = lazy(async () => ({ default: (await import('@/components/common/ai-assistant/assistant')).AiAssistant }))
+const DebugFloatingPanel = import.meta.env.DEV
+  ? lazy(() => import('@/components/common/debug-floating-panel').then(module => ({ default: module.DebugFloatingPanel })))
+  : null
 
 interface TopbarCrumb {
   label: string
@@ -383,7 +385,11 @@ export function AppLayout() {
           </WorkspaceChromeTargetsProvider>
         </div>
       </div>
-      <DebugFloatingPanel />
+      {DebugFloatingPanel && (
+        <LazyLoadBoundary fallback={null} resetKey="debug-floating-panel">
+          <DebugFloatingPanel />
+        </LazyLoadBoundary>
+      )}
       {enabledAICapabilities && !assistantMounted && (
         <DeferredAIAssistantLauncher
           label={t('aiAssistant.open')}

@@ -48,6 +48,8 @@ Administrators change the following setting in the console; it is not an environ
 | --- | --- | --- | --- |
 | Advanced | `VITE_DOCS_BASE_URL` | `https://luna-devops.liteyuki.org` | Documentation site base URL. Help links on pages such as Billing are generated from it. Set it before building the frontend when the docs site uses another domain or path. |
 
+Production builds automatically generate Brotli and gzip variants for JavaScript, CSS, JSON, and SVG. The embedded web server selects the smaller representation from the browser's `Accept-Encoding` header and returns `Vary: Accept-Encoding`. No additional environment variable is required. When a reverse proxy or CDN sits in front of Luna DevOps, preserve these request and response headers and avoid compressing the same response twice.
+
 ## Worker Settings
 
 | Type | Key | Default | Purpose and when to change |

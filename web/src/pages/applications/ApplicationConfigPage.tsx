@@ -26,7 +26,7 @@ import { Card } from '@/components/ui/card'
 import { TabsContent } from '@/components/ui/tabs'
 import { APPLICATION_IDENTIFIER_MAX_LENGTH, APPLICATION_IDENTIFIER_MIN_LENGTH } from '@/lib/identifier-limits'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
-import { WORKFLOW_STATUS_REFETCH_INTERVAL_MS } from '@/lib/polling'
+import { statusRefetchInterval, WORKFLOW_STATUS_REFETCH_INTERVAL_MS } from '@/lib/polling'
 import { isPlatformAdmin } from '@/lib/roles'
 import { firstReleaseReadyTarget } from './application-config-utils'
 import { ApplicationOverviewPanel } from './application-overview-panel'
@@ -67,6 +67,12 @@ export function ApplicationConfigPage() {
   const queryClient = useQueryClient()
   const [activeTab, setActiveTab] = useState(() => searchParams.get('tab') || 'overview')
   const shouldPollWorkflowStatus = activeTab === 'builds' || activeTab === 'deployments'
+  const needsOverviewData = activeTab === 'overview'
+  const needsRepositoryBindings = needsOverviewData || activeTab === 'repositories' || activeTab === 'deployments'
+  const needsBuildRuns = needsOverviewData || activeTab === 'builds' || activeTab === 'deployments'
+  const needsDeploymentData = needsOverviewData || activeTab === 'deployments'
+  const needsDeploymentTargets = needsDeploymentData || activeTab === 'builds' || activeTab === 'gateway'
+  const needsRoutes = needsDeploymentData || activeTab === 'gateway'
   const buildsPanelRef = useRef<BuildsPanelHandle>(null)
   const deploymentsPanelRef = useRef<DeploymentsPanelHandle>(null)
   const gatewayPanelRef = useRef<ApplicationGatewayPanelHandle>(null)
@@ -76,39 +82,47 @@ export function ApplicationConfigPage() {
     queryFn: () => api.getApplication(projectId, applicationId),
     enabled: Boolean(projectId && applicationId),
   })
-  const project = useQuery({ queryKey: ['project', projectId], queryFn: () => api.getProject(projectId), enabled: Boolean(projectId) })
-  const repositoryBindings = useQuery({ ...liveObservationQueryPolicy, queryKey: ['repository-bindings', projectId, applicationId], queryFn: () => api.listRepositoryBindings(projectId, applicationId), enabled: Boolean(projectId && applicationId) })
-  const registries = useQuery({ ...liveObservationQueryPolicy, queryKey: ['registries', projectId], queryFn: () => api.listRegistries(projectId), enabled: Boolean(projectId) })
+  const project = useQuery({ queryKey: ['project', projectId], queryFn: () => api.getProject(projectId), enabled: Boolean(projectId && (activeTab === 'builds' || activeTab === 'deployments')) })
+  const repositoryBindings = useQuery({ ...liveObservationQueryPolicy, queryKey: ['repository-bindings', projectId, applicationId], queryFn: () => api.listRepositoryBindings(projectId, applicationId), enabled: Boolean(projectId && applicationId && needsRepositoryBindings) })
+  const registries = useQuery({ ...liveObservationQueryPolicy, queryKey: ['registries', projectId], queryFn: () => api.listRegistries(projectId), enabled: Boolean(projectId && activeTab === 'deployments') })
   const buildRuns = useQuery({
     queryKey: ['build-runs', projectId, applicationId],
     queryFn: () => api.listBuildRuns(projectId, applicationId),
-    enabled: Boolean(projectId && applicationId),
-    refetchInterval: shouldPollWorkflowStatus ? WORKFLOW_STATUS_REFETCH_INTERVAL_MS : false,
+    enabled: Boolean(projectId && applicationId && needsBuildRuns),
+    refetchInterval: query => shouldPollWorkflowStatus
+      ? statusRefetchInterval((query.state.data ?? []).some(run => run.status === 'queued' || run.status === 'running'))
+      : false,
   })
   const buildJobs = useQuery({
     queryKey: ['build-jobs', projectId, applicationId],
     queryFn: () => api.listBuildJobs(projectId, undefined, applicationId),
-    enabled: Boolean(projectId && applicationId),
-    refetchInterval: shouldPollWorkflowStatus ? WORKFLOW_STATUS_REFETCH_INTERVAL_MS : false,
+    enabled: Boolean(projectId && applicationId && activeTab === 'builds'),
+    refetchInterval: query => activeTab === 'builds'
+      ? statusRefetchInterval((query.state.data ?? []).some(job => job.status === 'queued' || job.status === 'running'))
+      : false,
   })
   const releases = useQuery({
     queryKey: ['releases', projectId, applicationId],
     queryFn: () => api.listReleases(projectId, applicationId),
-    enabled: Boolean(projectId && applicationId),
-    refetchInterval: activeTab === 'deployments' ? WORKFLOW_STATUS_REFETCH_INTERVAL_MS : false,
+    enabled: Boolean(projectId && applicationId && needsDeploymentData),
+    refetchInterval: query => activeTab === 'deployments'
+      ? statusRefetchInterval((query.state.data ?? []).some(release => release.status === 'pending' || release.status === 'running'))
+      : false,
   })
   const deploymentTargets = useQuery({
     ...liveObservationQueryPolicy,
     queryKey: ['deployment-targets', projectId, applicationId],
     queryFn: () => api.listDeploymentTargets(projectId, applicationId),
-    enabled: Boolean(projectId && applicationId),
-    refetchInterval: activeTab === 'deployments' ? WORKFLOW_STATUS_REFETCH_INTERVAL_MS : false,
+    enabled: Boolean(projectId && applicationId && needsDeploymentTargets),
+    refetchInterval: activeTab === 'deployments'
+      ? statusRefetchInterval((releases.data ?? []).some(release => release.status === 'pending' || release.status === 'running'))
+      : false,
   })
   const routes = useQuery({
     ...liveObservationQueryPolicy,
     queryKey: ['gateway-routes', projectId, applicationId],
     queryFn: () => api.listGatewayRoutes(projectId, applicationId),
-    enabled: Boolean(projectId && applicationId),
+    enabled: Boolean(projectId && applicationId && needsRoutes),
     refetchInterval: query => activeTab === 'gateway' && (query.state.data ?? []).some(route => route.certificateStatus === 'pending')
       ? WORKFLOW_STATUS_REFETCH_INTERVAL_MS
       : false,

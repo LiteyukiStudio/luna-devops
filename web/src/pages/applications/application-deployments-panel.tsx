@@ -14,7 +14,7 @@ import { ConfirmDialog } from '@/components/common/confirm-dialog'
 import { buildRunImageRef, latestDeployableBuildRuns } from '@/components/common/deployment-build-runs'
 import { useBillingDisplay } from '@/lib/billing-display'
 import { liveObservationQueryPolicy } from '@/lib/live-observation-query'
-import { WORKFLOW_STATUS_REFETCH_INTERVAL_MS } from '@/lib/polling'
+import { statusRefetchInterval } from '@/lib/polling'
 import { publicRuntimeEnvironmentInputs, publicRuntimeEnvironmentRecord, runtimeSecretKeys } from '@/lib/runtime-environment'
 import { defaultBuildCpuRequest, defaultBuildMemoryRequest, defaultBuildTimeoutSeconds } from './application-build-defaults'
 import { deploymentReleaseKey, deploymentTargetCanRelease, registryInputPrefix } from './application-config-utils'
@@ -275,12 +275,13 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
     }
     return [...ids].sort()
   }, [defaultRuntimeCluster?.id, deploymentTargets])
+  const runtimeObservationInterval = statusRefetchInterval(releases.some(release => release.status === 'pending' || release.status === 'running'))
   const workloadResourceQueries = useQueries({
     queries: workloadClusterIds.map(clusterId => ({
       enabled: Boolean(projectId && applicationId && clusterId),
       queryFn: () => api.listRuntimeClusterResources(clusterId, { resourceCategory: 'workloads', projectId, applicationId }),
       queryKey: ['runtime-cluster-resources', clusterId, 'workloads', projectId, applicationId],
-      refetchInterval: WORKFLOW_STATUS_REFETCH_INTERVAL_MS,
+      refetchInterval: runtimeObservationInterval,
       ...liveObservationQueryPolicy,
     })),
   })
@@ -289,7 +290,7 @@ export function ApplicationDeploymentsPanel({ applicationId, applicationIdentifi
       enabled: Boolean(projectId && applicationId && clusterId),
       queryFn: () => api.listRuntimeClusterResources(clusterId, { resourceCategory: 'services', projectId, applicationId }),
       queryKey: ['runtime-cluster-resources', clusterId, 'services', projectId, applicationId],
-      refetchInterval: WORKFLOW_STATUS_REFETCH_INTERVAL_MS,
+      refetchInterval: runtimeObservationInterval,
       ...liveObservationQueryPolicy,
     })),
   })
